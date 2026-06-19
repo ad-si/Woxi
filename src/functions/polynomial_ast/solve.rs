@@ -3532,6 +3532,17 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Multivariate form: FindRoot[{eqns}, {{x, x0}, {y, y0}, ...}] — every
+  // variable spec is itself a {var, start} list. Solved with multidimensional
+  // Newton iteration.
+  if let Expr::List(specs) = &args[1]
+    && !specs.is_empty()
+    && specs.iter().all(|s| matches!(s, Expr::List(p)
+      if p.len() == 2 && matches!(&p[0], Expr::Identifier(_))))
+  {
+    return find_root_multivariate(&args[0], specs);
+  }
+
   // Parse options from additional arguments (Method, etc.) — currently ignored
   let mut use_secant = false;
   for opt in &args[2..] {
@@ -4098,6 +4109,171 @@ pub fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
       }
     }
   }
+}
+
+/// Evaluate `expr` to an f64 with every variable in `vars` bound to the
+/// corresponding value in `vals`.
+fn find_root_eval_multivar(
+  expr: &Expr,
+  vars: &[String],
+  vals: &[f64],
+) -> Result<f64, InterpreterError> {
+  let mut e = expr.clone();
+  for (v, &x) in vars.iter().zip(vals) {
+    e = crate::syntax::substitute_variable(&e, v, &Expr::Real(x));
+  }
+  let evaled = crate::evaluator::evaluate_expr_to_expr(&e)?;
+  match &evaled {
+    Expr::Integer(k) => Ok(*k as f64),
+    Expr::Real(r) => Ok(*r),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Ok(*n as f64 / *d as f64)
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "FindRoot: cannot evaluate expression numerically".into(),
+        ))
+      }
+    }
+    _ => {
+      let n_result = crate::functions::math_ast::n_ast(&[evaled])?;
+      match &n_result {
+        Expr::Real(r) => Ok(*r),
+        Expr::Integer(k) => Ok(*k as f64),
+        _ => Err(InterpreterError::EvaluationError(
+          "FindRoot: cannot evaluate expression numerically".into(),
+        )),
+      }
+    }
+  }
+}
+
+/// Solve the square f64 linear system `A x = b` by Gaussian elimination with
+/// partial pivoting. None if the matrix is (near-)singular.
+fn find_root_solve_linear(
+  mut a: Vec<Vec<f64>>,
+  mut b: Vec<f64>,
+) -> Option<Vec<f64>> {
+  let n = a.len();
+  for col in 0..n {
+    let piv = (col..n).max_by(|&r1, &r2| {
+      a[r1][col].abs().partial_cmp(&a[r2][col].abs()).unwrap()
+    })?;
+    if a[piv][col].abs() < 1e-14 {
+      return None;
+    }
+    a.swap(col, piv);
+    b.swap(col, piv);
+    for r in 0..n {
+      if r == col {
+        continue;
+      }
+      let factor = a[r][col] / a[col][col];
+      for c in col..n {
+        a[r][c] -= factor * a[col][c];
+      }
+      b[r] -= factor * b[col];
+    }
+  }
+  Some((0..n).map(|i| b[i] / a[i][i]).collect())
+}
+
+/// Multivariate FindRoot via Newton's method:
+/// FindRoot[{f1==g1, ...}, {{x, x0}, {y, y0}, ...}] -> {x -> .., y -> ..}.
+fn find_root_multivariate(
+  eqns_arg: &Expr,
+  specs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Variables and starting points.
+  let mut vars: Vec<String> = Vec::new();
+  let mut x: Vec<f64> = Vec::new();
+  for spec in specs {
+    if let Expr::List(p) = spec {
+      let v = match &p[0] {
+        Expr::Identifier(n) => n.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "FindRoot: variable must be a symbol".into(),
+          ));
+        }
+      };
+      vars.push(v);
+      x.push(find_root_eval_number(&p[1])?);
+    }
+  }
+  let n = vars.len();
+
+  // Equations as f_i = lhs - rhs (or bare expression).
+  let eqns: Vec<Expr> = match eqns_arg {
+    Expr::List(es) => es.iter().map(build_find_root_func).collect(),
+    other => vec![build_find_root_func(other)],
+  };
+  if eqns.len() != n {
+    return Err(InterpreterError::EvaluationError(
+      "FindRoot: number of equations must match number of variables".into(),
+    ));
+  }
+
+  // Jacobian J[i][j] = d f_i / d x_j (symbolic).
+  let mut jac: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  for f in &eqns {
+    let mut row = Vec::with_capacity(n);
+    for v in &vars {
+      let d = crate::functions::calculus_ast::differentiate_expr(f, v)
+        .map(simplify)
+        .map_err(|_| {
+          InterpreterError::EvaluationError(
+            "FindRoot: cannot differentiate equation".into(),
+          )
+        })?;
+      row.push(d);
+    }
+    jac.push(row);
+  }
+
+  // Newton iteration.
+  let max_iter = 100;
+  let tol = 1e-13;
+  for _ in 0..max_iter {
+    let mut fv = vec![0.0; n];
+    for (i, f) in eqns.iter().enumerate() {
+      fv[i] = find_root_eval_multivar(f, &vars, &x)?;
+    }
+    if fv.iter().fold(0.0f64, |a, &b| a.max(b.abs())) < tol {
+      break;
+    }
+    let mut jm = vec![vec![0.0; n]; n];
+    for (i, row) in jac.iter().enumerate() {
+      for (j, dij) in row.iter().enumerate() {
+        jm[i][j] = find_root_eval_multivar(dij, &vars, &x)?;
+      }
+    }
+    let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
+    let delta = match find_root_solve_linear(jm, neg_f) {
+      Some(d) => d,
+      None => break,
+    };
+    let mut max_d = 0.0f64;
+    for (j, &dj) in delta.iter().enumerate() {
+      x[j] += dj;
+      max_d = max_d.max(dj.abs());
+    }
+    if max_d < tol {
+      break;
+    }
+  }
+
+  let rules: Vec<Expr> = vars
+    .iter()
+    .zip(&x)
+    .map(|(v, &xv)| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(v.clone())),
+      replacement: Box::new(Expr::Real(xv)),
+    })
+    .collect();
+  Ok(Expr::List(rules.into()))
 }
 
 /// Check if an expression contains an unevaluated D[...] or Dt[...] call.

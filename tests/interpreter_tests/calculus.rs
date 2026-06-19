@@ -4938,6 +4938,28 @@ mod findroot_symbolic_start {
       "{x -> 0.}"
     );
   }
+
+  // Multivariate FindRoot: a system of equations with one {var, start} per
+  // variable, solved by multidimensional Newton iteration.
+  #[test]
+  fn findroot_multivariate_linear() {
+    assert_eq!(
+      interpret("FindRoot[{x + y == 3, x - y == 1}, {{x, 0}, {y, 0}}]")
+        .unwrap(),
+      "{x -> 2., y -> 1.}"
+    );
+  }
+
+  #[test]
+  fn findroot_multivariate_nonlinear() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{x^2 + y^2 == 1, x == y}, {{x, 0.5}, {y, 0.5}}]"
+      )
+      .unwrap(),
+      "{x -> 0.7071067811865476, y -> 0.7071067811865476}"
+    );
+  }
 }
 
 mod laplace_transform {
