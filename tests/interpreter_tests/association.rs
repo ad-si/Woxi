@@ -360,6 +360,24 @@ mod merge {
   fn merge_single_rule() {
     assert_eq!(interpret("Merge[{a -> 1}, Total]").unwrap(), "<|a -> 1|>");
   }
+
+  // Operator form: Merge[f][assocs] == Merge[assocs, f].
+  #[test]
+  fn merge_operator_form() {
+    assert_eq!(
+      interpret("Merge[Identity][{<|a -> 1|>, <|a -> 2|>}]").unwrap(),
+      "<|a -> {1, 2}|>"
+    );
+    assert_eq!(
+      interpret("Merge[Total][{<|a -> 1, b -> 2|>, <|a -> 3|>}]").unwrap(),
+      "<|a -> 4, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn merge_operator_stays_inert() {
+    assert_eq!(interpret("Merge[Total]").unwrap(), "Merge[Total]");
+  }
 }
 
 mod key_map {
