@@ -2750,10 +2750,8 @@ mod array_rules {
   #[test]
   fn normal_threads_into_list_of_sparse_arrays() {
     assert_eq!(
-      interpret(
-        "Normal[{SparseArray[{1 -> 3}, 2], SparseArray[{2 -> 5}, 3]}]"
-      )
-      .unwrap(),
+      interpret("Normal[{SparseArray[{1 -> 3}, 2], SparseArray[{2 -> 5}, 3]}]")
+        .unwrap(),
       "{{3, 0}, {0, 5, 0}}"
     );
     assert_eq!(
