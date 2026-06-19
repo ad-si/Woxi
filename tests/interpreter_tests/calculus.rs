@@ -1991,6 +1991,26 @@ mod limit {
     assert_eq!(interpret("Limit[ArcCoth[x], x -> Infinity]").unwrap(), "0");
   }
 
+  // A function with a known finite value at Infinity is resolved by direct
+  // substitution. Regression: Limit[HarmonicNumber[n, 2], n -> Infinity] used
+  // to fall into the numeric fallback and hang summing ~10^7 exact terms;
+  // it now resolves to Zeta[2] = Pi^2/6 immediately.
+  #[test]
+  fn limit_harmonic_number_at_infinity() {
+    assert_eq!(
+      interpret("Limit[HarmonicNumber[n, 2], n -> Infinity]").unwrap(),
+      "Pi^2/6"
+    );
+    assert_eq!(
+      interpret("Limit[HarmonicNumber[n], n -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("DiscreteLimit[Sum[1/k^2, {k, 1, n}], n -> Infinity]").unwrap(),
+      "Pi^2/6"
+    );
+  }
+
   // Reciprocals of slowly-diverging forms decay to 0 (and sums of those with
   // constants tend to the constant part) — detected structurally because the
   // numeric path's threshold misses the slow decay.

@@ -492,6 +492,23 @@ mod harmonic_number {
     assert_eq!(interpret("HarmonicNumber[0, -1]").unwrap(), "0");
   }
 
+  // The limiting value of the (generalized) harmonic series at Infinity.
+  #[test]
+  fn at_infinity() {
+    assert_eq!(interpret("HarmonicNumber[Infinity, 2]").unwrap(), "Pi^2/6");
+    assert_eq!(interpret("HarmonicNumber[Infinity, 3]").unwrap(), "Zeta[3]");
+    assert_eq!(interpret("HarmonicNumber[Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("HarmonicNumber[Infinity, 1]").unwrap(), "Infinity");
+    assert_eq!(
+      interpret("HarmonicNumber[Infinity, 1/2]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[Infinity, -1]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
   #[test]
   fn real_argument() {
     assert_eq!(

@@ -8359,6 +8359,30 @@ fn limit_at_infinity(
     return Ok(result);
   }
 
+  // Direct substitution of the limit point: if substituting `point` yields a
+  // finite, variable-free value (e.g. HarmonicNumber[Infinity, 2] -> Pi^2/6,
+  // ArcTan[Infinity] -> Pi/2, 1/n -> 0), that is the limit. Indeterminate
+  // forms (0*Inf, Inf-Inf, Inf/Inf) evaluate to Indeterminate / ComplexInfinity
+  // / Infinity and are rejected here, deferring to the heuristics below. This
+  // also avoids the numeric fallback evaluating functions like HarmonicNumber
+  // at n = 10^7, which would sum ten million terms.
+  {
+    let subst = crate::syntax::substitute_variable(expr, var_name, point);
+    // The substitution is speculative — indeterminate forms like Inf/Inf emit
+    // messages (e.g. Infinity::indet) we then discard, so suppress them.
+    crate::push_quiet();
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&subst);
+    crate::pop_quiet();
+    if let Ok(val) = evaluated
+      && is_constant_wrt(&val, var_name)
+      && (is_finite_value(&val)
+        || is_infinity(&val)
+        || is_negative_infinity(&val))
+    {
+      return Ok(val);
+    }
+  }
+
   // For simple expressions, try evaluating at two large values to detect convergence
   let sign = if is_negative_infinity(point) { -1 } else { 1 };
   let val1 = eval_at_large_n(expr, var_name, sign * 1_000_000);
@@ -8460,6 +8484,41 @@ fn limit_at_infinity(
     ]
     .into(),
   })
+}
+
+/// True when `e` is a finite value: a number, or a constant expression (e.g.
+/// Pi^2/6, Zeta[3]) that reduces to a finite real under N. The Infinity /
+/// Indeterminate / ComplexInfinity / Undefined sentinels are explicitly
+/// rejected so indeterminate forms don't get mistaken for a finite limit.
+fn is_finite_value(e: &Expr) -> bool {
+  if matches!(e, Expr::Identifier(n) | Expr::Constant(n)
+    if n == "Infinity"
+      || n == "Indeterminate"
+      || n == "ComplexInfinity"
+      || n == "Undefined")
+  {
+    return false;
+  }
+  // Reject any expression that still carries an infinity/indeterminate head.
+  if matches!(e, Expr::FunctionCall { name, .. }
+    if name == "DirectedInfinity" || name == "Indeterminate")
+  {
+    return false;
+  }
+  if let Some(f) = crate::functions::math_ast::try_eval_to_f64(e) {
+    return f.is_finite();
+  }
+  // Symbolic constant such as Pi^2/6 or Zeta[3]: confirm it is finite via N.
+  let napprox = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![e.clone()].into(),
+  };
+  if let Ok(nv) = crate::evaluator::evaluate_expr_to_expr(&napprox)
+    && let Some(f) = crate::functions::math_ast::try_eval_to_f64(&nv)
+  {
+    return f.is_finite();
+  }
+  false
 }
 
 /// Evaluate an expression numerically at var = n

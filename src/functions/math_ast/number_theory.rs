@@ -1590,6 +1590,37 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Infinity argument: the limiting value of the (generalized) harmonic
+  // series. H[Infinity] diverges -> Infinity; H[Infinity, s] -> Zeta[s] for
+  // s > 1, Infinity for 0 <= s <= 1, and Indeterminate for s < 0. Handling
+  // this directly also stops Limit[HarmonicNumber[n, s], n -> Infinity] from
+  // falling into the numeric fallback, which would try to sum ~10^7 terms.
+  let is_infinity = matches!(&args[0],
+    Expr::Identifier(n) | Expr::Constant(n) if n == "Infinity");
+  if is_infinity {
+    if args.len() == 1 {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    if let Some(s) = expr_to_num(&args[1]) {
+      if s > 1.0 {
+        let zeta = Expr::FunctionCall {
+          name: "Zeta".to_string(),
+          args: vec![args[1].clone()].into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&zeta);
+      } else if s >= 0.0 {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      } else {
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      }
+    }
+    // Symbolic order: stay unevaluated.
+    return Ok(Expr::FunctionCall {
+      name: "HarmonicNumber".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // Handle real/float argument: H(x) = digamma(x+1) + EulerGamma
   if args.len() == 1
     && let Some(x) = expr_to_num(&args[0])
