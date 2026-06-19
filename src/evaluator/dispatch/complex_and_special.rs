@@ -1939,6 +1939,9 @@ pub fn dispatch_complex_and_special(
     "Insphere" if args.len() == 1 => {
       return Some(compute_insphere(&args[0]));
     }
+    "Circumsphere" if args.len() == 1 => {
+      return Some(compute_circumsphere(&args[0]));
+    }
     "RegionWithin" if args.len() == 2 => {
       return Some(region_within(&args[0], &args[1], args));
     }
@@ -7963,6 +7966,187 @@ fn compute_polygon_angle(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute the insphere (incircle) of a geometric region.
 /// For a 2D Triangle: returns Sphere[{cx, cy}, r]
 /// For a 3D Tetrahedron: returns Sphere[{cx, cy, cz}, r]
+/// Solve the square rational linear system `A x = b` by Gauss-Jordan
+/// elimination. Returns None if the matrix is singular (degenerate points).
+fn solve_rational_system(
+  mut a: Vec<Vec<(i128, i128)>>,
+  b: &[(i128, i128)],
+) -> Option<Vec<(i128, i128)>> {
+  let n = a.len();
+  for (i, row) in a.iter_mut().enumerate() {
+    row.push(b[i]);
+  }
+  for col in 0..n {
+    let pivot_row = (col..n).find(|&r| a[r][col].0 != 0)?;
+    a.swap(col, pivot_row);
+    let pivot = a[col][col];
+    for j in col..=n {
+      a[col][j] = rat_div(a[col][j], pivot)?;
+    }
+    for r in 0..n {
+      if r == col {
+        continue;
+      }
+      let factor = a[r][col];
+      if factor.0 == 0 {
+        continue;
+      }
+      for j in col..=n {
+        a[r][j] = rat_sub(a[r][j], rat_mul(factor, a[col][j]));
+      }
+    }
+  }
+  Some((0..n).map(|i| a[i][n]).collect())
+}
+
+/// Circumsphere[{p0, …, pd}] — the unique sphere through `d + 1` points in
+/// `d` dimensions, returned as `Sphere[center, radius]`. The circumcenter is
+/// equidistant from every point, giving the linear system
+/// `2 (pi - p0) . c = |pi|^2 - |p0|^2`. Exact rational inputs yield an exact
+/// center and a (possibly radical) radius; otherwise a machine-float result.
+/// Wrong point counts or degenerate (collinear/coplanar) inputs stay
+/// unevaluated, matching wolframscript.
+fn compute_circumsphere(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let uneval = || {
+    Ok(Expr::FunctionCall {
+      name: "Circumsphere".to_string(),
+      args: vec![expr.clone()].into(),
+    })
+  };
+  let Expr::List(points) = expr else {
+    return uneval();
+  };
+  // Every point must be a coordinate list of the same dimension d, and there
+  // must be exactly d + 1 of them.
+  let coords: Vec<&[Expr]> = points
+    .iter()
+    .filter_map(|p| match p {
+      Expr::List(c) => Some(c.as_slice()),
+      _ => None,
+    })
+    .collect();
+  if coords.len() != points.len() {
+    return uneval();
+  }
+  let n = coords.len();
+  if n < 2 {
+    return uneval();
+  }
+  let d = coords[0].len();
+  if d == 0 || n != d + 1 || coords.iter().any(|c| c.len() != d) {
+    return uneval();
+  }
+
+  // Exact path when every coordinate is an integer or rational.
+  let rpts: Option<Vec<Vec<(i128, i128)>>> = coords
+    .iter()
+    .map(|pt| pt.iter().map(expr_to_rational).collect::<Option<Vec<_>>>())
+    .collect();
+  if let Some(rpts) = rpts {
+    let p0 = &rpts[0];
+    let mut a: Vec<Vec<(i128, i128)>> = Vec::with_capacity(d);
+    let mut b: Vec<(i128, i128)> = Vec::with_capacity(d);
+    for pi in rpts.iter().skip(1) {
+      let mut row = Vec::with_capacity(d);
+      let mut rhs = (0i128, 1i128);
+      for j in 0..d {
+        row.push(rat_mul((2, 1), rat_sub(pi[j], p0[j])));
+        rhs = rat_add(rhs, rat_sub(rat_mul(pi[j], pi[j]), rat_mul(p0[j], p0[j])));
+      }
+      a.push(row);
+      b.push(rhs);
+    }
+    let Some(center) = solve_rational_system(a, &b) else {
+      return uneval();
+    };
+    // radius^2 = sum (center_j - p0_j)^2
+    let mut r2 = (0i128, 1i128);
+    for j in 0..d {
+      let diff = rat_sub(center[j], p0[j]);
+      r2 = rat_add(r2, rat_mul(diff, diff));
+    }
+    let center_expr = Expr::List(
+      center
+        .iter()
+        .map(|&(cn, cd)| rational_to_expr(cn, cd))
+        .collect::<Vec<_>>()
+        .into(),
+    );
+    let radius = crate::evaluator::evaluate_function_call_ast(
+      "Sqrt",
+      &[rational_to_expr(r2.0, r2.1)],
+    )?;
+    return Ok(Expr::FunctionCall {
+      name: "Sphere".to_string(),
+      args: vec![center_expr, radius].into(),
+    });
+  }
+
+  // Float path.
+  let fpts: Option<Vec<Vec<f64>>> = coords
+    .iter()
+    .map(|pt| {
+      pt.iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect::<Option<Vec<_>>>()
+    })
+    .collect();
+  let Some(fpts) = fpts else {
+    return uneval();
+  };
+  let p0 = &fpts[0];
+  let mut a = vec![vec![0.0f64; d]; d];
+  let mut b = vec![0.0f64; d];
+  for (i, pi) in fpts.iter().skip(1).enumerate() {
+    for j in 0..d {
+      a[i][j] = 2.0 * (pi[j] - p0[j]);
+      b[i] += pi[j] * pi[j] - p0[j] * p0[j];
+    }
+  }
+  let Some(center) = solve_float_system(a, b) else {
+    return uneval();
+  };
+  let r2: f64 = (0..d).map(|j| (center[j] - p0[j]).powi(2)).sum();
+  let center_expr =
+    Expr::List(center.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into());
+  Ok(Expr::FunctionCall {
+    name: "Sphere".to_string(),
+    args: vec![center_expr, Expr::Real(r2.sqrt())].into(),
+  })
+}
+
+/// Gauss-Jordan solve for a small f64 system. None if singular.
+fn solve_float_system(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
+  let n = a.len();
+  for (i, row) in a.iter_mut().enumerate() {
+    row.push(b[i]);
+  }
+  for col in 0..n {
+    let pivot_row = (col..n).max_by(|&r1, &r2| {
+      a[r1][col].abs().partial_cmp(&a[r2][col].abs()).unwrap()
+    })?;
+    if a[pivot_row][col].abs() < 1e-12 {
+      return None;
+    }
+    a.swap(col, pivot_row);
+    let pivot = a[col][col];
+    for j in col..=n {
+      a[col][j] /= pivot;
+    }
+    for r in 0..n {
+      if r == col {
+        continue;
+      }
+      let factor = a[r][col];
+      for j in col..=n {
+        a[r][j] -= factor * a[col][j];
+      }
+    }
+  }
+  b = (0..n).map(|i| a[i][n]).collect();
+  Some(b)
+}
+
 fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {

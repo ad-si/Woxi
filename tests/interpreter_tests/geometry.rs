@@ -1929,3 +1929,59 @@ mod signed_region_distance {
     );
   }
 }
+
+mod circumsphere {
+  use super::*;
+
+  // The unique sphere through d+1 points in d dimensions, as
+  // Sphere[center, radius]. Exact rational inputs stay exact.
+  #[test]
+  fn triangle_2d() {
+    assert_eq!(
+      interpret("Circumsphere[{{0, 0}, {2, 0}, {0, 2}}]").unwrap(),
+      "Sphere[{1, 1}, Sqrt[2]]"
+    );
+  }
+
+  #[test]
+  fn right_triangle_rational_center() {
+    assert_eq!(
+      interpret("Circumsphere[{{0, 0}, {4, 0}, {0, 3}}]").unwrap(),
+      "Sphere[{2, 3/2}, 5/2]"
+    );
+  }
+
+  #[test]
+  fn tetrahedron_3d() {
+    assert_eq!(
+      interpret("Circumsphere[{{0,0,0},{2,0,0},{0,2,0},{0,0,2}}]").unwrap(),
+      "Sphere[{1, 1, 1}, Sqrt[3]]"
+    );
+  }
+
+  #[test]
+  fn float_input() {
+    assert_eq!(
+      interpret("Circumsphere[{{0., 0.}, {2., 0.}, {0., 2.}}]").unwrap(),
+      "Sphere[{1., 1.}, 1.4142135623730951]"
+    );
+  }
+
+  // Wrong point count (need d+1) stays unevaluated, like wolframscript.
+  #[test]
+  fn wrong_point_count_unevaluated() {
+    assert_eq!(
+      interpret("Circumsphere[{{0, 0}, {4, 0}}]").unwrap(),
+      "Circumsphere[{{0, 0}, {4, 0}}]"
+    );
+  }
+
+  // Collinear points give a singular system and stay unevaluated.
+  #[test]
+  fn degenerate_collinear_unevaluated() {
+    assert_eq!(
+      interpret("Circumsphere[{{0, 0}, {1, 1}, {2, 2}}]").unwrap(),
+      "Circumsphere[{{0, 0}, {1, 1}, {2, 2}}]"
+    );
+  }
+}

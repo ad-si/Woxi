@@ -1988,7 +1988,7 @@ AirTemperatureData,,🚫,,10.0,2024
 ListVectorPlot,Vector field plot from list data (plotting),🚫,,7.0,2024
 OrderDistribution,Order statistics distribution (complex statistics),🚫,,8.0,2024
 TracePrint,Print evaluation trace (debugging/tracing),🚫,,2.0,2025
-Circumsphere,Circumsphere of a simplex (computational geometry),🚫,,10.0,2026
+Circumsphere,Circumsphere of a simplex (computational geometry),✅,pure,10.0,2026
 AnyTrue,Checks if any element in a list is true,✅,pure,10.0,2031
 Convergents,List of convergents of a continued fraction representation,✅,none,6.0,2031
 ImageMeasurements,Measure image properties (image processing),🚫,,9.0,2031
