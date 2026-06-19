@@ -607,6 +607,14 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return apply_sign(curr);
   }
 
+  // Real argument: analytic continuation
+  // LucasL[x] = phi^x + Cos[pi x] phi^-x (phi = golden ratio).
+  if let Expr::Real(x) = &args[0] {
+    let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+    let val = phi.powf(*x) + (std::f64::consts::PI * *x).cos() * phi.powf(-*x);
+    return Ok(Expr::Real(val));
+  }
+
   // Negative index uses the reflection LucasL[-n] = (-1)^n LucasL[n].
   let n_raw = match expr_to_i128(&args[0]) {
     Some(n) => n,
@@ -1748,6 +1756,18 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn fibonacci_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
     return fibonacci_polynomial_ast(&args[0], &args[1]);
+  }
+
+  // Real argument: evaluate via the analytic continuation
+  // Fibonacci[x] = (phi^x - Cos[pi x] phi^-x) / Sqrt[5], where phi is the
+  // golden ratio. This is what wolframscript returns for non-integer (and
+  // for N[Fibonacci[1/2]], which first numericizes the index to a Real).
+  if let Expr::Real(x) = &args[0] {
+    let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+    let val = (phi.powf(*x)
+      - (std::f64::consts::PI * *x).cos() * phi.powf(-*x))
+      / 5.0_f64.sqrt();
+    return Ok(Expr::Real(val));
   }
 
   match expr_to_i128(&args[0]) {
