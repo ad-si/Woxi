@@ -1033,6 +1033,26 @@ mod slot_zero_self_reference {
       "10"
     );
   }
+
+  // #0 self-reference through the Apply form `#0 @@ {arg}` (Expr::Apply).
+  #[test]
+  fn factorial_via_slot_zero_apply() {
+    assert_eq!(
+      interpret("If[# <= 1, 1, # * #0 @@ {# - 1}]& [5]").unwrap(),
+      "120"
+    );
+  }
+
+  // #0 self-reference through the Map form `#0 /@ list` (Expr::MapApply):
+  // recursively totals an arbitrarily nested list.
+  #[test]
+  fn slot_zero_via_map_over_nested_list() {
+    assert_eq!(
+      interpret("If[ListQ[#], Total[#0 /@ #], #]& [{1, {2, 3}, {{4}}}]")
+        .unwrap(),
+      "10"
+    );
+  }
 }
 
 mod sub_value_assignments {
