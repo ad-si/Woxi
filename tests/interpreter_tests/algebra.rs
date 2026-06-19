@@ -442,6 +442,24 @@ mod simplify {
   }
 
   #[test]
+  fn simplify_scalar_times_sum_of_fractions() {
+    // `k * (sum of fractions)` must distribute and combine for any scalar k
+    // (numeric, rational, or symbolic), not stay as an uncombined product.
+    assert_eq!(
+      interpret("Simplify[3 (1/(a - I x) + 1/(a + I x))]").unwrap(),
+      "(6*a)/(a^2 + x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[1/2 (1/(a - I x) + 1/(a + I x))]").unwrap(),
+      "a/(a^2 + x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[c (1/(a - I x) + 1/(a + I x))]").unwrap(),
+      "(2*a*c)/(a^2 + x^2)"
+    );
+  }
+
+  #[test]
   fn simplify_rational_equality_proves_true() {
     // Equation simplification must combine rational functions over a common
     // denominator, not just Expand: both sides reduce to 1/(1+x^2).
@@ -1105,6 +1123,17 @@ mod together {
     assert_eq!(
       interpret("Together[a/b + c/d]").unwrap(),
       "(b*c + a*d)/(b*d)"
+    );
+  }
+
+  #[test]
+  fn together_scalar_times_sum_of_fractions() {
+    // A sum of fractions wrapped in a scalar product must still be combined;
+    // preprocessing previously left `Times[scalar, Plus[...]]` uncombined.
+    assert_eq!(interpret("Together[x (1/x + 1/y)]").unwrap(), "(x + y)/y");
+    assert_eq!(
+      interpret("Together[3 (1/(a - I x) + 1/(a + I x))]").unwrap(),
+      "(6*a)/(a^2 + x^2)"
     );
   }
 

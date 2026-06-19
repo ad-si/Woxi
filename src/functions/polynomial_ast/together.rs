@@ -399,6 +399,21 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
       }
     }
 
+    // Times (binary): each factor must be fully combined so that a Plus
+    // factor like `(1/x + 1/y)` becomes a single fraction before the product
+    // is taken. Otherwise `Together[3 (1/x + 1/y)]` leaves the inner sum
+    // uncombined (the outer together_expr sees the whole product as one
+    // additive term and returns it untouched).
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(together_expr(left)),
+      right: Box::new(together_expr(right)),
+    },
+
     // Binary plus/minus: recurse into each side. together_expr itself will
     // combine additive terms after preprocessing.
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
@@ -412,10 +427,21 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
       operand: Box::new(together_expr_preprocess(operand)),
     },
 
-    // Plus/Times as FunctionCall: recurse into each argument.
-    Expr::FunctionCall { name, args } if name == "Plus" || name == "Times" => {
+    // Plus as FunctionCall: recurse into each argument; the outer
+    // together_expr combines the additive terms afterwards.
+    Expr::FunctionCall { name, args } if name == "Plus" => {
       let new_args: Vec<Expr> =
         args.iter().map(together_expr_preprocess).collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+
+    // Times as FunctionCall: fully combine each factor (see the binary Times
+    // case above) so a Plus factor becomes a single fraction.
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let new_args: Vec<Expr> = args.iter().map(together_expr).collect();
       Expr::FunctionCall {
         name: name.clone(),
         args: new_args.into(),
@@ -453,9 +479,59 @@ pub fn together_expr(expr: &Expr) -> Expr {
   // Collect additive terms and put them over a common denominator
   let terms = collect_additive_terms(&expr_rec);
   if terms.len() <= 1 {
-    // Even though there is nothing to combine additively at this level, the
-    // recursive preprocessing may have produced a cleaner form — return that.
-    return expr_rec;
+    // A single additive term with no denominator has nothing to combine —
+    // return the (preprocessed) form. A single term that carries a
+    // *variable* denominator must still flow through the num/den logic below:
+    // distributing a scalar into a combined fraction yields a single term
+    // like `3 * (2 a)/((a-I x)(a+I x))` whose numerator needs folding to
+    // `6 a`, and `x * (x+y)/(x y)` needs its common `x` cancelled.
+    //
+    // A purely *constant* denominator (e.g. `(-4 (-3+2 x))/13`) is left
+    // alone: re-combining would expand the numerator, but wolframscript keeps
+    // the common numeric content factored out (`-4 (-3+2 x)`), so don't touch
+    // those.
+    //
+    // Only a genuine *product involving a combined fraction* is folded —
+    // e.g. a scalar distributed onto a fraction (`3 * (2 a)/denom`,
+    // `1/2 * (2 a)/denom`) or `x * (x+y)/(x y)`. These carry a `Divide` node
+    // (produced when together_expr combined the inner sum) alongside at least
+    // one other factor, or have two distinct numerator-contributing factors.
+    //
+    // A bare single fraction is left alone. In particular `(-m+x) * (1/s) *
+    // (1/Sqrt[2])` is structurally a Times but is already a single fraction
+    // (only inverse Power factors, one numerator factor); re-combining it
+    // would only reorder its denominator (`Sqrt[2]*s` → `s*Sqrt[2]`). And a
+    // purely constant denominator (`(-4 (-3+2 x))/13`) is left factored.
+    let is_foldable_product = terms
+      .first()
+      .map(|t| {
+        let den = extract_num_den(t).1;
+        if matches!(den, Expr::Integer(1)) {
+          return false;
+        }
+        let mut vars = std::collections::HashSet::new();
+        super::simplify::collect_variables(&den, &mut vars);
+        if vars.is_empty() {
+          return false;
+        }
+        let factors = flatten_times_args(std::slice::from_ref(t));
+        if factors.len() < 2 {
+          return false;
+        }
+        let has_divide_node = factors.iter().any(|f| {
+          matches!(f, Expr::BinaryOp { op: BinaryOperator::Divide, .. })
+            || matches!(f, Expr::FunctionCall { name, .. } if name == "Divide")
+        });
+        let num_contributors = factors
+          .iter()
+          .filter(|f| !matches!(extract_num_den(f).0, Expr::Integer(1)))
+          .count();
+        has_divide_node || num_contributors >= 2
+      })
+      .unwrap_or(false);
+    if !is_foldable_product {
+      return expr_rec;
+    }
   }
 
   // Extract numerator and denominator for each term
