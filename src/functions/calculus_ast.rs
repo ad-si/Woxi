@@ -8410,9 +8410,7 @@ fn net_poly_order(expr: &Expr, var: &str) -> Option<f64> {
   match expr {
     Expr::Identifier(v) if v == var => Some(1.0),
     // Sqrt[g] has half the order of g.
-    Expr::FunctionCall { name, args }
-      if name == "Sqrt" && args.len() == 1 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       Some(net_poly_order(&args[0], var)? / 2.0)
     }
     // Any (real) power of a diverging logarithm is sub-polynomial: order 0.
@@ -8544,6 +8542,162 @@ fn limit_decay_at_infinity(
     },
   };
   crate::evaluator::evaluate_expr_to_expr(&sum).ok()
+}
+
+/// The radicand of `Sqrt[P]` / `Power[P, 1/2]`, or `mag^2` for a polynomial
+/// `mag` (so a polynomial term `p` counts as `Sqrt[p^2]` in a difference).
+fn sqrt_radicand(mag: &Expr, _var: &str) -> Option<Expr> {
+  if let Expr::FunctionCall { name, args } = mag
+    && name == "Sqrt"
+    && args.len() == 1
+  {
+    return Some(args[0].clone());
+  }
+  if let Some((base, exp)) = extract_power(mag)
+    && matches!(
+      &exp,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2
+          && matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2)))
+    )
+  {
+    return Some(base);
+  }
+  // Treat the term as Sqrt[mag^2]; coefflist later rejects non-polynomials.
+  let sq = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(mag.clone()),
+    right: Box::new(Expr::Integer(2)),
+  };
+  crate::evaluator::evaluate_function_call_ast("Expand", &[sq]).ok()
+}
+
+/// CoefficientList[P, var] as a vector of exact coefficient expressions
+/// (ascending degree), or None if `P` isn't a polynomial in `var`.
+fn poly_coefflist(p: &Expr, var: &str) -> Option<Vec<Expr>> {
+  let cl = Expr::FunctionCall {
+    name: "CoefficientList".to_string(),
+    args: vec![p.clone(), Expr::Identifier(var.to_string())].into(),
+  };
+  let evaled = crate::evaluator::evaluate_expr_to_expr(&cl).ok()?;
+  match &evaled {
+    Expr::List(items) => Some(items.iter().cloned().collect()),
+    _ => None,
+  }
+}
+
+/// Limit at +Infinity of a two-term difference `Sqrt[A] - Sqrt[B]` (a
+/// polynomial term `p` counting as `Sqrt[p^2]`), via the leading-coefficient
+/// asymptotics. For radicands of equal degree `d` and equal leading
+/// coefficient `c`, `Sqrt[A] - Sqrt[B] ~ (a1 - b1)/(2 Sqrt[c]) * x^(d/2 - 1)`,
+/// where `a1`, `b1` are the next coefficients: 0 for `d < 2`, the finite
+/// constant for `d == 2`. Other shapes return None.
+fn limit_sqrt_difference(
+  expr: &Expr,
+  var: &str,
+  point: &Expr,
+) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  if !is_infinity(point) {
+    return None;
+  }
+  let terms: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().cloned().collect()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => vec![
+      (**left).clone(),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), (**right).clone()].into(),
+      },
+    ],
+    _ => return None,
+  };
+  if terms.len() != 2 {
+    return None;
+  }
+  // Classify each term: sign from a numeric probe, radicand of its magnitude.
+  let mut pos_rad: Option<Expr> = None;
+  let mut neg_rad: Option<Expr> = None;
+  for t in &terms {
+    let probe = eval_at_large_n(t, var, 1_000_000)?;
+    if probe == 0.0 {
+      return None;
+    }
+    let mag = if probe > 0.0 {
+      t.clone()
+    } else {
+      simplify(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), t.clone()].into(),
+      })
+    };
+    let radicand = sqrt_radicand(&mag, var)?;
+    if probe > 0.0 {
+      if pos_rad.is_some() {
+        return None;
+      }
+      pos_rad = Some(radicand);
+    } else {
+      if neg_rad.is_some() {
+        return None;
+      }
+      neg_rad = Some(radicand);
+    }
+  }
+  let (a, b) = (pos_rad?, neg_rad?);
+  let ca = poly_coefflist(&a, var)?;
+  let cb = poly_coefflist(&b, var)?;
+  let d = ca.len().checked_sub(1)?;
+  // Both radicands must be genuine polynomials of equal degree (>= 1) with the
+  // same positive leading coefficient — otherwise the difference diverges.
+  if d == 0 || cb.len().checked_sub(1)? != d || !expr_str_eq(&ca[d], &cb[d]) {
+    return None;
+  }
+  if !matches!(
+    crate::functions::math_ast::try_eval_to_f64(&ca[d]),
+    Some(c) if c > 0.0
+  ) {
+    return None;
+  }
+  if d < 2 {
+    // x^(d/2 - 1) -> 0 (d == 1).
+    return Some(Expr::Integer(0));
+  }
+  if d == 2 {
+    // (a1 - b1) / (2 Sqrt[c]).
+    let result = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(ca[d - 1].clone()),
+        right: Box::new(cb[d - 1].clone()),
+      }),
+      right: Box::new(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(2),
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![ca[d].clone()].into(),
+          },
+        ]
+        .into(),
+      }),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result).ok();
+  }
+  None
 }
 
 /// Handle limits at infinity.
@@ -8703,6 +8857,12 @@ fn limit_at_infinity(
   // reciprocals the numeric path misses: 1/Log[x] -> 0, 2/Log[x] -> 0,
   // 1 + 1/Log[x] -> 1, 5 - 3/Sqrt[x] -> 5.
   if let Some(result) = limit_decay_at_infinity(expr, var_name, point) {
+    return Ok(result);
+  }
+
+  // Conjugate-difference forms (Sqrt[x^2+x] - x -> 1/2, Sqrt[n+1] - Sqrt[n]
+  // -> 0) are ∞ - ∞ indeterminates the numeric path can't recognize exactly.
+  if let Some(result) = limit_sqrt_difference(expr, var_name, point) {
     return Ok(result);
   }
 

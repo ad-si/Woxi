@@ -2085,16 +2085,39 @@ mod limit {
       interpret("Limit[Log[x]/Sqrt[x], x -> Infinity]").unwrap(),
       "0"
     );
-    assert_eq!(
-      interpret("Limit[Log[x]^3/x, x -> Infinity]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("Limit[Log[x]^3/x, x -> Infinity]").unwrap(), "0");
     assert_eq!(
       interpret("Limit[Log[x]^2/Sqrt[x], x -> Infinity]").unwrap(),
       "0"
     );
     assert_eq!(
       interpret("Limit[Log[x]/x^(1/3), x -> Infinity]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn limit_conjugate_difference() {
+    // Sqrt[A] - Sqrt[B] (a polynomial term counting as Sqrt[p^2]) at infinity.
+    assert_eq!(
+      interpret("Limit[Sqrt[x^2 + x] - x, x -> Infinity]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Limit[Sqrt[x^2 + 3 x] - x, x -> Infinity]").unwrap(),
+      "3/2"
+    );
+    assert_eq!(
+      interpret("Limit[x - Sqrt[x^2 - x], x -> Infinity]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Limit[Sqrt[4 x^2 + x] - 2 x, x -> Infinity]").unwrap(),
+      "1/4"
+    );
+    // Degree-1 radicands: the difference decays to 0.
+    assert_eq!(
+      interpret("Limit[Sqrt[n + 1] - Sqrt[n], n -> Infinity]").unwrap(),
       "0"
     );
   }
