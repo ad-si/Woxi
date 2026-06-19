@@ -213,6 +213,126 @@ pub fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
   }
 }
 
+/// Collect the additive terms of a sum, handling both the `Plus[...]` and the
+/// `BinaryOp` Plus/Minus representations.
+fn collect_plus_terms(e: &Expr, out: &mut Vec<Expr>) {
+  use crate::syntax::BinaryOperator;
+  match e {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for a in args {
+        collect_plus_terms(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      collect_plus_terms(left, out);
+      collect_plus_terms(right, out);
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      collect_plus_terms(left, out);
+      out.push(negate_expr((**right).clone()));
+    }
+    _ => out.push(e.clone()),
+  }
+}
+
+/// If `arg` is a sum containing integer multiples of `Pi/2`, return
+/// `(k mod 4, rest)` with `arg = rest + k*(Pi/2)` and `rest` the remaining
+/// `Pi/2`-free part. Returns None when there is no such term, when nothing is
+/// left over (a pure fraction, handled elsewhere), or when a `Pi` term has a
+/// denominator that does not divide 2 (e.g. `Pi/3`) — those require the fuller
+/// trig canonicalization wolframscript performs and are left untouched.
+fn extract_half_pi_shift(arg: &Expr) -> Option<(i64, Expr)> {
+  use crate::syntax::BinaryOperator;
+  let is_sum = matches!(arg, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      arg,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    );
+  if !is_sum {
+    return None;
+  }
+  let mut terms = Vec::new();
+  collect_plus_terms(arg, &mut terms);
+  let mut m: i64 = 0;
+  let mut found = false;
+  let mut rest: Vec<Expr> = Vec::new();
+  for t in terms {
+    match try_symbolic_pi_fraction(&t) {
+      // term = (a/b)*Pi; it is an integer multiple of Pi/2 iff b divides 2.
+      Some((a, b)) if a != 0 => match b {
+        1 => {
+          m += 2 * a;
+          found = true;
+        }
+        2 => {
+          m += a;
+          found = true;
+        }
+        _ => return None,
+      },
+      _ => rest.push(t),
+    }
+  }
+  if !found || rest.is_empty() {
+    return None;
+  }
+  let rest_expr = if rest.len() == 1 {
+    rest.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: rest.into(),
+    }
+  };
+  Some((m.rem_euclid(4), rest_expr))
+}
+
+/// Apply the `[trig](rest + k*Pi/2)` shift identity (k taken mod 4), e.g.
+/// `Sin[x + Pi/2] -> Cos[x]`, `Cos[x + Pi/2] -> -Sin[x]`,
+/// `Tan[x + Pi/2] -> -Cot[x]`. Returns None for an unrecognized head.
+fn try_trig_half_pi_shift(
+  head: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let (k, rest) = extract_half_pi_shift(arg)?;
+  let (new_head, neg): (&str, bool) = match (head, k) {
+    ("Sin", 0) => ("Sin", false),
+    ("Sin", 1) => ("Cos", false),
+    ("Sin", 2) => ("Sin", true),
+    ("Sin", 3) => ("Cos", true),
+    ("Cos", 0) => ("Cos", false),
+    ("Cos", 1) => ("Sin", true),
+    ("Cos", 2) => ("Cos", true),
+    ("Cos", 3) => ("Sin", false),
+    ("Tan", 0) | ("Tan", 2) => ("Tan", false),
+    ("Tan", 1) | ("Tan", 3) => ("Cot", true),
+    ("Cot", 0) | ("Cot", 2) => ("Cot", false),
+    ("Cot", 1) | ("Cot", 3) => ("Tan", true),
+    ("Sec", 0) => ("Sec", false),
+    ("Sec", 1) => ("Csc", true),
+    ("Sec", 2) => ("Sec", true),
+    ("Sec", 3) => ("Csc", false),
+    ("Csc", 0) => ("Csc", false),
+    ("Csc", 1) => ("Sec", false),
+    ("Csc", 2) => ("Csc", true),
+    ("Csc", 3) => ("Sec", true),
+    _ => return None,
+  };
+  let inner = crate::evaluator::evaluate_function_call_ast(new_head, &[rest]);
+  Some(inner.map(|e| if neg { negate_expr(e) } else { e }))
+}
+
 /// Exact Sin value for k*Pi/n. Returns None if no simple exact form.
 /// Parse a fixed trig closed-form literal into an `Expr`. The argument is a
 /// constant Wolfram expression, so parsing never fails at runtime.
@@ -1185,6 +1305,10 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(exact);
   }
+  // Pi/2 shift: Sin[rest + k*Pi/2] -> +/-Sin/Cos[rest].
+  if let Some(r) = try_trig_half_pi_shift("Sin", &args[0]) {
+    return r;
+  }
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "Sin".to_string(),
@@ -1370,6 +1494,9 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(exact);
   }
+  if let Some(r) = try_trig_half_pi_shift("Cos", &args[0]) {
+    return r;
+  }
   Ok(Expr::FunctionCall {
     name: "Cos".to_string(),
     args: args.to_vec().into(),
@@ -1462,6 +1589,9 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(exact);
   }
+  if let Some(r) = try_trig_half_pi_shift("Tan", &args[0]) {
+    return r;
+  }
   Ok(Expr::FunctionCall {
     name: "Tan".to_string(),
     args: args.to_vec().into(),
@@ -1499,6 +1629,9 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(exact) = exact_sec(k, n)
   {
     return Ok(exact);
+  }
+  if let Some(r) = try_trig_half_pi_shift("Sec", &args[0]) {
+    return r;
   }
   Ok(Expr::FunctionCall {
     name: "Sec".to_string(),
@@ -1539,6 +1672,9 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(exact);
   }
+  if let Some(r) = try_trig_half_pi_shift("Csc", &args[0]) {
+    return r;
+  }
   Ok(Expr::FunctionCall {
     name: "Csc".to_string(),
     args: args.to_vec().into(),
@@ -1577,6 +1713,9 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(exact) = exact_cot(k, n)
   {
     return Ok(exact);
+  }
+  if let Some(r) = try_trig_half_pi_shift("Cot", &args[0]) {
+    return r;
   }
   Ok(Expr::FunctionCall {
     name: "Cot".to_string(),

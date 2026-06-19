@@ -730,3 +730,51 @@ mod cases {
     assert_case(r#"I; 0; 1; Pi"#, r#"Pi"#);
   }
 }
+
+mod trig_half_pi_shift {
+  use super::*;
+
+  // Sin[x + k Pi/2] folds to +/-Sin/Cos[x], matching wolframscript's
+  // automatic argument simplification.
+  #[test]
+  fn sin_shifts() {
+    assert_eq!(interpret("Sin[x + Pi/2]").unwrap(), "Cos[x]");
+    assert_eq!(interpret("Sin[x + Pi]").unwrap(), "-Sin[x]");
+    assert_eq!(interpret("Sin[x + 3 Pi/2]").unwrap(), "-Cos[x]");
+    assert_eq!(interpret("Sin[x + 2 Pi]").unwrap(), "Sin[x]");
+    assert_eq!(interpret("Sin[x - Pi/2]").unwrap(), "-Cos[x]");
+    assert_eq!(interpret("Sin[x + 5 Pi/2]").unwrap(), "Cos[x]");
+  }
+
+  #[test]
+  fn cos_shifts() {
+    assert_eq!(interpret("Cos[x + Pi/2]").unwrap(), "-Sin[x]");
+    assert_eq!(interpret("Cos[x + Pi]").unwrap(), "-Cos[x]");
+    assert_eq!(interpret("Cos[x + 3 Pi/2]").unwrap(), "Sin[x]");
+  }
+
+  #[test]
+  fn other_trig_shifts() {
+    assert_eq!(interpret("Tan[x + Pi/2]").unwrap(), "-Cot[x]");
+    assert_eq!(interpret("Tan[x + Pi]").unwrap(), "Tan[x]");
+    assert_eq!(interpret("Cot[x + Pi/2]").unwrap(), "-Tan[x]");
+    assert_eq!(interpret("Sec[x + Pi]").unwrap(), "-Sec[x]");
+    assert_eq!(interpret("Csc[x + Pi/2]").unwrap(), "Sec[x]");
+  }
+
+  // Numeric and multi-term remainders also fold.
+  #[test]
+  fn numeric_and_multiterm_remainder() {
+    assert_eq!(interpret("Sin[1 + Pi/2]").unwrap(), "Cos[1]");
+    assert_eq!(interpret("Cos[1 + Pi/2]").unwrap(), "-Sin[1]");
+    assert_eq!(interpret("Sin[a + b + Pi/2]").unwrap(), "Cos[a + b]");
+    assert_eq!(interpret("Sin[2 x + Pi/2]").unwrap(), "Cos[2*x]");
+  }
+
+  // Shifts that are not integer multiples of Pi/2 are left untouched.
+  #[test]
+  fn non_half_pi_shift_unchanged() {
+    assert_eq!(interpret("Cos[x + Pi/4]").unwrap(), "Cos[Pi/4 + x]");
+    assert_eq!(interpret("Sin[x + y]").unwrap(), "Sin[x + y]");
+  }
+}
