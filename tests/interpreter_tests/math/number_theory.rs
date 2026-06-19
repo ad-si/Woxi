@@ -160,15 +160,9 @@ mod fibonacci_builtin {
   fn fibonacci_real_argument() {
     assert_eq!(interpret("Fibonacci[2.0]").unwrap(), "1.");
     assert_eq!(interpret("Fibonacci[3.0]").unwrap(), "2.");
-    assert_eq!(
-      interpret("Fibonacci[2.5]").unwrap(),
-      "1.4893065462657091"
-    );
+    assert_eq!(interpret("Fibonacci[2.5]").unwrap(), "1.4893065462657091");
     assert_eq!(interpret("Fibonacci[0.5]").unwrap(), "0.5688644810057831");
-    assert_eq!(
-      interpret("Fibonacci[-0.5]").unwrap(),
-      "0.35157758425414287"
-    );
+    assert_eq!(interpret("Fibonacci[-0.5]").unwrap(), "0.35157758425414287");
     // N[Fibonacci[1/2]] numericizes the index, then evaluates.
     assert_eq!(
       interpret("N[Fibonacci[1/2]]").unwrap(),
