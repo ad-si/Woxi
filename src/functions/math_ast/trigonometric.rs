@@ -3569,6 +3569,26 @@ fn hyperbolic_of_log(
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
 }
 
+/// Special values of the six hyperbolic functions at (Complex)Infinity.
+/// Handles positive real `Infinity` and `ComplexInfinity`; `-Infinity` flows
+/// through each function's own odd/even reflection arm (e.g. `Tanh[-Infinity]`
+/// → `-Tanh[Infinity]` → `-1`).
+fn hyperbolic_at_infinity(name: &str, arg: &Expr) -> Option<Expr> {
+  let Expr::Identifier(id) = arg else {
+    return None;
+  };
+  match id.as_str() {
+    "Infinity" => match name {
+      "Sinh" | "Cosh" => Some(Expr::Identifier("Infinity".to_string())),
+      "Tanh" | "Coth" => Some(Expr::Integer(1)),
+      "Sech" | "Csch" => Some(Expr::Integer(0)),
+      _ => None,
+    },
+    "ComplexInfinity" => Some(Expr::Identifier("Indeterminate".to_string())),
+    _ => None,
+  }
+}
+
 pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -3597,6 +3617,9 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  if let Some(r) = hyperbolic_at_infinity("Sinh", &args[0]) {
+    return Ok(r);
   }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
@@ -3641,6 +3664,9 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  if let Some(r) = hyperbolic_at_infinity("Cosh", &args[0]) {
+    return Ok(r);
   }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(1)),
@@ -3691,6 +3717,9 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
+  if let Some(r) = hyperbolic_at_infinity("Tanh", &args[0]) {
+    return Ok(r);
+  }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => return Ok(Expr::Real(f.tanh())),
@@ -3723,6 +3752,9 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  if let Some(r) = hyperbolic_at_infinity("Coth", &args[0]) {
+    return Ok(r);
   }
   // Coth[ArcCoth[x]] = x (inverse function identity)
   if let Expr::FunctionCall { name, args: ia } = &args[0]
@@ -3772,6 +3804,9 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
+  if let Some(r) = hyperbolic_at_infinity("Sech", &args[0]) {
+    return Ok(r);
+  }
   // Sech[ArcSech[x]] = x (inverse function identity)
   if let Expr::FunctionCall { name, args: ia } = &args[0]
     && name == "ArcSech"
@@ -3810,6 +3845,9 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  if let Some(r) = hyperbolic_at_infinity("Csch", &args[0]) {
+    return Ok(r);
   }
   // Csch[ArcCsch[x]] = x (inverse function identity)
   if let Expr::FunctionCall { name, args: ia } = &args[0]

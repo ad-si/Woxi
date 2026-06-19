@@ -227,6 +227,51 @@ mod degree_trig_functions {
   }
 
   #[test]
+  fn hyperbolic_at_infinity() {
+    assert_eq!(interpret("Sinh[Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("Sinh[-Infinity]").unwrap(), "-Infinity");
+    assert_eq!(interpret("Cosh[Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("Cosh[-Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("Tanh[Infinity]").unwrap(), "1");
+    assert_eq!(interpret("Tanh[-Infinity]").unwrap(), "-1");
+    assert_eq!(interpret("Coth[Infinity]").unwrap(), "1");
+    assert_eq!(interpret("Coth[-Infinity]").unwrap(), "-1");
+    assert_eq!(interpret("Sech[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Sech[-Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Csch[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Csch[-Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn hyperbolic_at_complex_infinity() {
+    // All six hyperbolic functions are Indeterminate at ComplexInfinity.
+    assert_eq!(
+      interpret("Sinh[ComplexInfinity]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Cosh[ComplexInfinity]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Tanh[ComplexInfinity]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Coth[ComplexInfinity]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Sech[ComplexInfinity]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Csch[ComplexInfinity]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
   fn arctan_degrees_exact() {
     assert_eq!(interpret("ArcTanDegrees[1]").unwrap(), "45");
     assert_eq!(interpret("ArcTanDegrees[0]").unwrap(), "0");
