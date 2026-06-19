@@ -1684,9 +1684,12 @@ pub fn evaluate_expr_to_expr_inner(
           };
           return Err(InterpreterError::ThrowValue(Box::new(val), tag));
         }
-        // Special handling for Catch[expr] and Catch[expr, form]
-        if name == "Catch" && !args.is_empty() && args.len() <= 2 {
-          let tag_pattern = if args.len() == 2 {
+        // Special handling for Catch[expr], Catch[expr, form] and
+        // Catch[expr, form, f]. The form is matched as a pattern (so `a | b`
+        // and `_` work); with the 3-argument form, `f[value, tag]` is returned
+        // instead of the bare thrown value.
+        if name == "Catch" && !args.is_empty() && args.len() <= 3 {
+          let tag_pattern = if args.len() >= 2 {
             Some(evaluate_expr_to_expr(&args[1])?)
           } else {
             None
@@ -1694,18 +1697,42 @@ pub fn evaluate_expr_to_expr_inner(
           match evaluate_expr_to_expr(&args[0]) {
             Ok(result) => return Ok(result),
             Err(InterpreterError::ThrowValue(val, thrown_tag)) => {
-              // If Catch has a tag pattern, check if it matches
-              if let Some(ref pattern) = tag_pattern {
-                if let Some(ref tag) = thrown_tag
-                  && crate::syntax::expr_to_string(pattern)
-                    == crate::syntax::expr_to_string(tag)
-                {
-                  return Ok(*val);
-                }
-                // Tag doesn't match - re-throw
+              let matched = match &tag_pattern {
+                // No form: catch everything.
+                None => true,
+                // A form only matches a tagged Throw whose tag matches it.
+                Some(pattern) => match &thrown_tag {
+                  Some(tag) => {
+                    crate::functions::list_helpers_ast::matches_pattern_ast(
+                      tag, pattern,
+                    )
+                  }
+                  None => false,
+                },
+              };
+              if !matched {
+                // Tag doesn't match - re-throw.
                 return Err(InterpreterError::ThrowValue(val, thrown_tag));
               }
-              // No tag pattern - catch everything
+              // Caught. With a third argument, apply f to value and tag.
+              if args.len() == 3 {
+                let f = evaluate_expr_to_expr(&args[2])?;
+                let tag_expr = thrown_tag
+                  .map(|t| *t)
+                  .unwrap_or_else(|| Expr::Identifier("Null".to_string()));
+                let application = if let Expr::Identifier(fname) = &f {
+                  Expr::FunctionCall {
+                    name: fname.clone(),
+                    args: vec![*val, tag_expr].into(),
+                  }
+                } else {
+                  Expr::CurriedCall {
+                    func: Box::new(f),
+                    args: vec![*val, tag_expr].into(),
+                  }
+                };
+                return evaluate_expr_to_expr(&application);
+              }
               return Ok(*val);
             }
             Err(e) => return Err(e),
@@ -1776,6 +1803,11 @@ pub fn evaluate_expr_to_expr_inner(
               });
             }
           }
+        }
+        // AbortProtect[expr] evaluates expr and returns its result (the body
+        // runs transparently; the deferred-abort nuance is not modeled).
+        if name == "AbortProtect" && args.len() == 1 {
+          return evaluate_expr_to_expr(&args[0]);
         }
         // Special handling for CheckAbort[expr, failexpr]
         if name == "CheckAbort" && args.len() == 2 {

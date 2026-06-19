@@ -347,7 +347,7 @@ ArcSinh,Returns the inverse hyperbolic sine,✅,pure,1.0,349
 Tanh,Returns the hyperbolic tangent,✅,pure,1.0,350
 SeedRandom,Seeds the random number generator,✅,stateful,1.0,351
 ContourPlot3D,Placeholder 3D contour plot returning a Graphics3D shell,✅,pure,6.0,352
-Catch,Catches a value thrown by Throw,✅,pure,1.0,353
+Catch,Catches a value thrown by Throw; the form is matched as a pattern and the 3-arg form applies f to the value and tag,✅,pure,1.0,353
 InputForm,Converts expression to input form,✅,pure,1.0,354
 Sow,Sows an expression for collection by Reap,✅,stateful,5.0,355
 Switch,Evaluates an expression and matches it against patterns,✅,pure,1.0,356
@@ -2048,7 +2048,7 @@ CurveClosed,Check if curve is closed,🚫,,8.0,2084
 FactorialPower,Falling factorial n*(n-1)*...*(n-k+1) (Listable),✅,pure,7.0,2085
 SuperMinus,Typesetting notation for superscript minus,✅,none,6.0,2087
 Symmetric,Symmetric tensor symmetry,🚫,,9.0,2087
-AbortProtect,Protect computation from abort,🚫,,2.0,2089
+AbortProtect,Evaluates its argument and returns the result (abort protection during the body),✅,pure,2.0,2089
 ConnectedGraphQ,Test whether a graph is connected (strongly connected for directed graphs),✅,pure,8.0,2089
 PowerSpectralDensity,Power spectral density of signal,🚫,,9.0,2091
 Thursday,Day of the week symbol,🚫,,9.0,2091

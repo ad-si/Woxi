@@ -2005,6 +2005,34 @@ mod cases {
     );
   }
   #[test]
+  fn catch_three_arg_applies_function() {
+    // Catch[expr, form, f] returns f[value, tag] when caught.
+    assert_case(r#"Catch[Throw[5, t], t, f]"#, r#"f[5, t]"#);
+  }
+  #[test]
+  fn catch_three_arg_form_is_a_pattern() {
+    // The form is matched as a pattern: a | b catches tag a.
+    assert_case(r#"Catch[Throw[1, a]; Throw[2, b], a | b, f]"#, r#"f[1, a]"#);
+    // Blank form catches any tagged throw.
+    assert_case(r#"Catch[Throw[42, a], _, g]"#, r#"g[42, a]"#);
+  }
+  #[test]
+  fn catch_three_arg_no_throw_returns_expr() {
+    // With no Throw, the expression value is returned and f is not applied.
+    assert_case(r#"Catch[10, t, f]"#, r#"10"#);
+  }
+  #[test]
+  fn catch_two_arg_form_pattern_matches() {
+    // The two-argument form also matches the form as a pattern.
+    assert_case(r#"Catch[Throw[5, b], a | b]"#, r#"5"#);
+  }
+  #[test]
+  fn abort_protect_returns_body() {
+    // AbortProtect[expr] evaluates and returns its body (no wrapper).
+    assert_case(r#"AbortProtect[1 + 1]"#, r#"2"#);
+    assert_case(r#"AbortProtect[Total[{1, 2, 3}]]"#, r#"6"#);
+  }
+  #[test]
   fn check_abort_1() {
     assert_case(r#"CheckAbort[Abort[]; 1, 2] + x"#, r#"2 + x"#);
   }
