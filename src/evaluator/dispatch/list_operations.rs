@@ -769,6 +769,16 @@ pub fn dispatch_list_operations(
         Some(&args[2]),
       ));
     }
+    "Discard" if args.len() == 2 => {
+      return Some(list_helpers_ast::discard_ast(&args[0], &args[1], None));
+    }
+    "Discard" if args.len() == 3 => {
+      return Some(list_helpers_ast::discard_ast(
+        &args[0],
+        &args[1],
+        Some(&args[2]),
+      ));
+    }
     "AllSameBy" if args.len() == 2 => {
       return Some(list_helpers_ast::all_same_by_ast(args));
     }

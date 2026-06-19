@@ -4659,6 +4659,59 @@ mod select {
   }
 }
 
+mod discard {
+  use super::*;
+
+  // Discard is the complement of Select: keep elements where crit is not True.
+  #[test]
+  fn basic_predicate() {
+    assert_eq!(
+      interpret("Discard[{1, 2, 4, 7, 6, 2}, EvenQ]").unwrap(),
+      "{1, 7}"
+    );
+    assert_eq!(
+      interpret("Discard[{1, 2, 3, 4, 5}, # > 3 &]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  // The three-argument form discards only the first n matching elements.
+  #[test]
+  fn first_n_form() {
+    assert_eq!(
+      interpret("Discard[{1, 2, 4, 7, 6, 2}, OddQ, 1]").unwrap(),
+      "{2, 4, 7, 6, 2}"
+    );
+  }
+
+  #[test]
+  fn association() {
+    assert_eq!(
+      interpret("Discard[<|a -> 1, b -> 2, c -> 3|>, EvenQ]").unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+  }
+
+  // Operator form: Discard[crit][data].
+  #[test]
+  fn operator_form() {
+    assert_eq!(
+      interpret("Discard[EvenQ][{1, 2, 4, 7, 6, 2}]").unwrap(),
+      "{1, 7}"
+    );
+  }
+
+  #[test]
+  fn operator_stays_inert() {
+    assert_eq!(interpret("Discard[EvenQ]").unwrap(), "Discard[EvenQ]");
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("Discard[{}, EvenQ]").unwrap(), "{}");
+  }
+}
+
 mod subset_q {
   use super::*;
 

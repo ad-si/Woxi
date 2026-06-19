@@ -83,6 +83,79 @@ pub fn select_ast(
   }
 }
 
+/// AST-based Discard: the complement of Select — keep elements for which the
+/// criterion is NOT True.
+/// Discard[{a, b, c}, crit] -> elements where crit[elem] is not True
+/// Discard[{a, b, c}, crit, n] -> discard only the first n matching elements
+pub fn discard_ast(
+  list: &Expr,
+  crit: &Expr,
+  n: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  let limit = match n {
+    Some(Expr::Integer(i)) => Some(*i as usize),
+    _ => None,
+  };
+
+  // Associations: test the criterion against the values, keep non-matching
+  // key-value pairs.
+  if let Expr::Association(pairs) = list {
+    let mut kept = Vec::new();
+    let mut discarded = 0usize;
+    for (key, val) in pairs {
+      let is_match = expr_to_bool(&apply_func_ast(crit, val)?) == Some(true);
+      let drop = is_match && limit.is_none_or(|lim| discarded < lim);
+      if drop {
+        discarded += 1;
+      } else {
+        kept.push((key.clone(), val.clone()));
+      }
+    }
+    return Ok(Expr::Association(kept));
+  }
+
+  // Works on any expression with arguments, preserving the head.
+  let (items, head_name): (&[Expr], Option<String>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
+    _ => {
+      let mut args = vec![list.clone(), crit.clone()];
+      if let Some(limit) = n {
+        args.push(limit.clone());
+      }
+      if is_atomic_arg(list) {
+        emit_nonatomic_normal_message("Discard", &args);
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Discard".to_string(),
+        args: args.into(),
+      });
+    }
+  };
+
+  let mut kept = Vec::new();
+  let mut discarded = 0usize;
+  for item in items {
+    let is_match = expr_to_bool(&apply_func_ast(crit, item)?) == Some(true);
+    let drop = is_match && limit.is_none_or(|lim| discarded < lim);
+    if drop {
+      discarded += 1;
+    } else {
+      kept.push(item.clone());
+    }
+  }
+
+  match head_name {
+    Some(name) => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name,
+        args: kept.into(),
+      })
+    }
+    None => Ok(Expr::List(kept.into())),
+  }
+}
+
 /// AST-based SelectFirst: first element where predicate returns True.
 /// SelectFirst[list, pred] -> first matching element or Missing["NotFound"]
 /// SelectFirst[list, pred, default] -> first matching element or default
