@@ -7518,6 +7518,37 @@ pub fn nminimize_ast(
     }
   };
 
+  // A constraint coupling two or more of the optimization variables (e.g.
+  // x + y == 1 or x^2 + y^2 <= 1) can't be reduced to per-variable bounds, so
+  // the numeric grid sampler below would silently ignore it. Delegate such
+  // cases to the symbolic Minimize/Maximize solver (which respects the
+  // constraints) and numericize its result. Single-variable box bounds still
+  // go through the grid sampler.
+  let has_coupling_constraint = constraints.iter().any(|c| {
+    vars
+      .iter()
+      .filter(|v| crate::functions::polynomial_ast::contains_var(c, v))
+      .count()
+      >= 2
+  });
+  if has_coupling_constraint {
+    // Route through the full Minimize/Maximize dispatch (not minimize_ast
+    // directly) so specialized symbolic handlers like the linear-objective /
+    // disk-constraint solver are also exercised. Only adopt the symbolic
+    // result when it solved cleanly to a {value, rules} list.
+    let sym_name = if maximize { "Maximize" } else { "Minimize" };
+    if let Ok(sym) = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: sym_name.to_string(),
+      args: args.to_vec().into(),
+    }) && matches!(&sym, Expr::List(items) if items.len() == 2)
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "N".to_string(),
+        args: vec![sym].into(),
+      });
+    }
+  }
+
   // Extract bounds from constraints (e.g. 0 < x < Pi/2)
   let bounds = extract_bounds(&constraints, &vars)?;
 

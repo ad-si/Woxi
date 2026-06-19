@@ -4915,6 +4915,32 @@ mod nmaximize {
       result
     );
   }
+
+  #[test]
+  fn nminimize_equality_coupling_constraint() {
+    // A constraint coupling two variables (x + y == 1) can't be reduced to
+    // per-variable box bounds; the numeric solver must respect it rather than
+    // ignore it. Minimum of x^2+y^2 on x+y==1 is at x=y=1/2, value 1/2.
+    let result =
+      interpret("NMinimize[{x^2 + y^2, x + y == 1}, {x, y}]").unwrap();
+    assert_eq!(result, "{0.5, {x -> 0.5, y -> 0.5}}");
+  }
+
+  #[test]
+  fn nminimize_equality_coupling_constraint_2() {
+    // Minimum of x^2+y^2 on x+y==2 is at x=y=1, value 2.
+    let result =
+      interpret("NMinimize[{x^2 + y^2, x + y == 2}, {x, y}]").unwrap();
+    assert_eq!(result, "{2., {x -> 1., y -> 1.}}");
+  }
+
+  #[test]
+  fn nminimize_equality_coupling_weighted() {
+    // Minimum of 2x^2+y^2 on x+y==3 is at x=1, y=2, value 6.
+    let result =
+      interpret("NMinimize[{2 x^2 + y^2, x + y == 3}, {x, y}]").unwrap();
+    assert_eq!(result, "{6., {x -> 1., y -> 2.}}");
+  }
 }
 
 mod findroot_symbolic_start {
