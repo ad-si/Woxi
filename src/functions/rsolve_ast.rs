@@ -1005,8 +1005,7 @@ fn build_solution(
     let (rn, rd) = roots[i];
     // Occurrence index among earlier equal roots — the power of `n` carried by
     // a repeated root's basis term (e.g. a double root 2 gives 2^n and 2^n n).
-    let mult_index =
-      roots[..i].iter().filter(|&&r| r == (rn, rd)).count();
+    let mult_index = roots[..i].iter().filter(|&&r| r == (rn, rd)).count();
 
     // Display order matching wolframscript: numeric coefficient, then r^n,
     // then n^mult_index.
