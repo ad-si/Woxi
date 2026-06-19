@@ -6367,6 +6367,44 @@ mod sign_simplifications {
   }
 }
 
+mod non_negative_non_positive {
+  use super::*;
+
+  // Real-valued numeric expressions are decided by sign, matching
+  // Positive/Negative (previously NonNegative/NonPositive stayed unevaluated).
+  #[test]
+  fn non_negative_numeric_expressions() {
+    assert_eq!(interpret("NonNegative[Pi - 3]").unwrap(), "True");
+    assert_eq!(interpret("NonNegative[3 - Pi]").unwrap(), "False");
+    assert_eq!(interpret("NonNegative[Sqrt[2] - 2]").unwrap(), "False");
+    assert_eq!(interpret("NonNegative[Sin[1]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn non_positive_numeric_expressions() {
+    assert_eq!(interpret("NonPositive[Pi - 3]").unwrap(), "False");
+    assert_eq!(interpret("NonPositive[3 - Pi]").unwrap(), "True");
+    assert_eq!(interpret("NonPositive[Sqrt[2] - 2]").unwrap(), "True");
+    assert_eq!(interpret("NonPositive[Cos[3]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn complex_is_neither() {
+    assert_eq!(interpret("NonNegative[2 + 3 I]").unwrap(), "False");
+    assert_eq!(interpret("NonPositive[2 + 3 I]").unwrap(), "False");
+    assert_eq!(interpret("NonNegative[I]").unwrap(), "False");
+  }
+
+  #[test]
+  fn exact_and_symbolic_unchanged() {
+    assert_eq!(interpret("NonNegative[0]").unwrap(), "True");
+    assert_eq!(interpret("NonNegative[1/3]").unwrap(), "True");
+    assert_eq!(interpret("NonNegative[-1/3]").unwrap(), "False");
+    assert_eq!(interpret("NonNegative[x]").unwrap(), "NonNegative[x]");
+    assert_eq!(interpret("NonPositive[x]").unwrap(), "NonPositive[x]");
+  }
+}
+
 // Trig/hyperbolic of an imaginary argument I*z reduce to the counterpart
 // function (Cos[I z] = Cosh[z], Sin[I z] = I Sinh[z], …). Verified against
 // wolframscript.

@@ -953,17 +953,26 @@ pub fn non_positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = interval_sign(&args[0], "NonPositive") {
     return Ok(r);
   }
+  // A non-real complex value is not NonPositive.
+  if has_nonzero_imag_part(&args[0]) {
+    return Ok(bool_expr(false));
+  }
   // NonPositive: x <= 0, i.e. negative or zero
   if is_zero(&args[0]) {
     return Ok(bool_expr(true));
   }
-  match is_known_negative(&args[0]) {
-    Some(val) => Ok(bool_expr(val)),
-    None => Ok(Expr::FunctionCall {
-      name: "NonPositive".to_string(),
-      args: args.to_vec().into(),
-    }),
+  if let Some(val) = is_known_negative(&args[0]) {
+    return Ok(bool_expr(val));
   }
+  // Real-valued numeric expressions (Pi - 3, Sqrt[2] - 2, …) are decided
+  // by their numeric value, matching Positive/Negative.
+  if let Some(b) = sign_via_numeric(&args[0], |f| f <= 0.0) {
+    return Ok(bool_expr(b));
+  }
+  Ok(Expr::FunctionCall {
+    name: "NonPositive".to_string(),
+    args: args.to_vec().into(),
+  })
 }
 
 /// NonNegativeQ[x] - Tests if x is >= 0
@@ -976,17 +985,26 @@ pub fn non_negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = interval_sign(&args[0], "NonNegative") {
     return Ok(r);
   }
+  // A non-real complex value is not NonNegative.
+  if has_nonzero_imag_part(&args[0]) {
+    return Ok(bool_expr(false));
+  }
   // NonNegative: x >= 0, i.e. positive or zero
   if is_zero(&args[0]) {
     return Ok(bool_expr(true));
   }
-  match is_known_positive(&args[0]) {
-    Some(val) => Ok(bool_expr(val)),
-    None => Ok(Expr::FunctionCall {
-      name: "NonNegative".to_string(),
-      args: args.to_vec().into(),
-    }),
+  if let Some(val) = is_known_positive(&args[0]) {
+    return Ok(bool_expr(val));
   }
+  // Real-valued numeric expressions (Pi - 3, Sqrt[2] - 2, …) are decided
+  // by their numeric value, matching Positive/Negative.
+  if let Some(b) = sign_via_numeric(&args[0], |f| f >= 0.0) {
+    return Ok(bool_expr(b));
+  }
+  Ok(Expr::FunctionCall {
+    name: "NonNegative".to_string(),
+    args: args.to_vec().into(),
+  })
 }
 
 fn is_zero(expr: &Expr) -> bool {
