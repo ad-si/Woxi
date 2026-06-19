@@ -1252,7 +1252,9 @@ fn periodic_continued_fraction(
   let disc_rat = Rat::int(disc);
   for &t in prefix.iter().rev() {
     // 1/(a + b sqrt(disc)) = (a - b sqrt(disc)) / (a^2 - b^2 disc).
-    let norm = acc_a.mul(acc_a).add(acc_b.mul(acc_b).mul(disc_rat).mul(Rat::int(-1)));
+    let norm = acc_a
+      .mul(acc_a)
+      .add(acc_b.mul(acc_b).mul(disc_rat).mul(Rat::int(-1)));
     if norm.is_zero() {
       return None;
     }
