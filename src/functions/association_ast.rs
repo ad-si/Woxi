@@ -120,26 +120,71 @@ fn values_recursive(expr: &Expr) -> Expr {
 }
 
 /// Keys[assoc] - Returns a list of keys from an association or list of rules
+/// Apply an optional head `h` to a single extracted key/value leaf, wrapping it
+/// as `h[leaf]` and evaluating. With no head the leaf is returned unchanged.
+fn apply_optional_head(
+  head: Option<&Expr>,
+  leaf: Expr,
+) -> Result<Expr, InterpreterError> {
+  match head {
+    None => Ok(leaf),
+    Some(Expr::Identifier(name)) => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![leaf].into(),
+      })
+    }
+    Some(h) => crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+      func: Box::new(h.clone()),
+      args: vec![leaf].into(),
+    }),
+  }
+}
+
+/// Wrap every leaf of a (possibly nested) extraction result with `head`,
+/// preserving the list nesting produced by `keys_recursive`/`values_recursive`.
+fn wrap_leaves(
+  expr: Expr,
+  head: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  if head.is_none() {
+    return Ok(expr);
+  }
+  if let Expr::List(items) = &expr {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      out.push(wrap_leaves(item.clone(), head)?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
+  apply_optional_head(head, expr)
+}
+
 pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Keys expects exactly 1 argument".into(),
+      "Keys expects 1 or 2 arguments".into(),
     ));
   }
+  // Optional second argument: a head wrapped around each key before evaluation.
+  let head = args.get(1);
   match &args[0] {
     Expr::Association(items) => {
-      let keys: Vec<Expr> = items.iter().map(|(k, _)| k.clone()).collect();
+      let mut keys = Vec::with_capacity(items.len());
+      for (k, _) in items.iter() {
+        keys.push(apply_optional_head(head, k.clone())?);
+      }
       Ok(Expr::List(keys.into()))
     }
-    Expr::List(_) => Ok(keys_recursive(&args[0])),
+    Expr::List(_) => wrap_leaves(keys_recursive(&args[0]), head),
     // Keys[k -> v] = k, Keys[k :> v] = k
     Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
-      Ok(pattern.as_ref().clone())
+      apply_optional_head(head, pattern.as_ref().clone())
     }
     Expr::FunctionCall { name, args: rargs }
       if (name == "Rule" || name == "RuleDelayed") && rargs.len() == 2 =>
     {
-      Ok(rargs[0].clone())
+      apply_optional_head(head, rargs[0].clone())
     }
     _ => Ok(invalid_subject_message(
       "Keys",
@@ -153,24 +198,29 @@ pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Values[assoc] - Returns a list of values from an association or list of rules
 pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Values expects exactly 1 argument".into(),
+      "Values expects 1 or 2 arguments".into(),
     ));
   }
+  // Optional second argument: a head wrapped around each value before evaluation.
+  let head = args.get(1);
   match &args[0] {
     Expr::Association(items) => {
-      let values: Vec<Expr> = items.iter().map(|(_, v)| v.clone()).collect();
+      let mut values = Vec::with_capacity(items.len());
+      for (_, v) in items.iter() {
+        values.push(apply_optional_head(head, v.clone())?);
+      }
       Ok(Expr::List(values.into()))
     }
-    Expr::List(_) => Ok(values_recursive(&args[0])),
+    Expr::List(_) => wrap_leaves(values_recursive(&args[0]), head),
     Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. } => {
-      Ok(replacement.as_ref().clone())
+      apply_optional_head(head, replacement.as_ref().clone())
     }
     Expr::FunctionCall { name, args: rargs }
       if (name == "Rule" || name == "RuleDelayed") && rargs.len() == 2 =>
     {
-      Ok(rargs[1].clone())
+      apply_optional_head(head, rargs[1].clone())
     }
     _ => Ok(invalid_subject_message(
       "Values",

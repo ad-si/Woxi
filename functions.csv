@@ -554,7 +554,7 @@ InputField,Input field for interactive interfaces,✅,none,6.0,556
 FindMaximum,Finds a local maximum of a function numerically,✅,pure,5.0,557
 RegionFunction,Option to restrict plotting to a region,✅,none,6.0,558
 ColorFunctionScaling,Option to scale color function input,✅,none,4.0,559
-Values,Returns the values of an association,✅,pure,10.0,560
+Values,Returns the values of an association (optionally wrapping each with a head),✅,pure,10.0,560
 Cuboid,3D graphics primitive representing a cuboid,✅,none,2.0,561
 AbsoluteTime,Total seconds since January 1 1900,✅,contextual,2.0,562
 ExampleData,,🚫,,6.0,563
@@ -659,7 +659,7 @@ RightComposition,Compose functions left-to-right,✅,pure,10.0,662
 TextCell,A text cell in a notebook,✅,none,6.0,663
 BesselI,Modified Bessel function of the first kind,✅,pure,1.0,664
 Median,Returns the median value of a list or an association's values,✅,pure,5.0,666
-Keys,Returns the keys of an association,✅,pure,10.0,667
+Keys,Returns the keys of an association (optionally wrapping each with a head),✅,pure,10.0,667
 AccuracyGoal,Option for accuracy goals,✅,pure,1.0,668
 WeatherData,,🚫,,7.0,669
 LaguerreL,Laguerre polynomial,✅,pure,1.0,670

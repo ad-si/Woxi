@@ -36,6 +36,54 @@ mod association_ast {
   }
 
   #[test]
+  fn keys_with_head() {
+    // Keys[expr, h] wraps each key with head h.
+    assert_eq!(
+      interpret("Keys[<|a -> 1, b -> 2|>, f]").unwrap(),
+      "{f[a], f[b]}"
+    );
+    assert_eq!(interpret("Keys[{a -> 1, b -> 2}, f]").unwrap(), "{f[a], f[b]}");
+    assert_eq!(interpret("Keys[a -> 1, f]").unwrap(), "f[a]");
+  }
+
+  #[test]
+  fn values_with_head() {
+    // Values[expr, h] wraps each value with head h.
+    assert_eq!(
+      interpret("Values[<|a -> 1, b -> 2|>, f]").unwrap(),
+      "{f[1], f[2]}"
+    );
+    assert_eq!(interpret("Values[{a -> 1, b -> 2}, f]").unwrap(), "{f[1], f[2]}");
+    // A list-valued value is wrapped whole, not threaded.
+    assert_eq!(
+      interpret("Values[<|a -> {1, 2}, b -> 3|>, f]").unwrap(),
+      "{f[{1, 2}], f[3]}"
+    );
+  }
+
+  #[test]
+  fn values_with_head_hold_is_held() {
+    // The head wraps before evaluation, so Hold keeps the value held.
+    assert_eq!(
+      interpret("Values[<|a -> 1, b -> 2|>, Hold]").unwrap(),
+      "{Hold[1], Hold[2]}"
+    );
+  }
+
+  #[test]
+  fn keys_values_head_preserves_nesting() {
+    // Nested lists of rules keep their structure; the head wraps leaves.
+    assert_eq!(
+      interpret("Values[{<|a -> 1|>, <|b -> 2|>}, f]").unwrap(),
+      "{{f[1]}, {f[2]}}"
+    );
+    assert_eq!(
+      interpret("Keys[{{a -> 1}, {b -> 2}}, f]").unwrap(),
+      "{{f[a]}, {f[b]}}"
+    );
+  }
+
+  #[test]
   fn key_exists_q_true() {
     assert_eq!(
       interpret("h = <|\"a\" -> 1|>; KeyExistsQ[h, \"a\"]").unwrap(),

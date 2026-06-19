@@ -6,10 +6,10 @@ pub fn dispatch_association_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
-    "Keys" if args.len() == 1 => {
+    "Keys" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::association_ast::keys_ast(args));
     }
-    "Values" if args.len() == 1 => {
+    "Values" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::association_ast::values_ast(args));
     }
     "KeyDropFrom" if args.len() == 2 => {
