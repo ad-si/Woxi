@@ -3390,6 +3390,26 @@ fn extract_trig_factor(expr: &Expr) -> Option<(&str, &Expr, i64)> {
   None
 }
 
+/// The reciprocal of a (hyperbolic) trig function, used to rewrite
+/// `Cos[x]^-n` as `Sec[x]^n` etc. so the named-reciprocal integrators apply.
+fn reciprocal_trig_name(name: &str) -> Option<&'static str> {
+  Some(match name {
+    "Cos" => "Sec",
+    "Sin" => "Csc",
+    "Tan" => "Cot",
+    "Sec" => "Cos",
+    "Csc" => "Sin",
+    "Cot" => "Tan",
+    "Cosh" => "Sech",
+    "Sinh" => "Csch",
+    "Tanh" => "Coth",
+    "Sech" => "Cosh",
+    "Csch" => "Sinh",
+    "Coth" => "Tanh",
+    _ => return None,
+  })
+}
+
 /// Try to integrate `E^(a x) Sin[b x]` or `E^(a x) Cos[b x]` (with `a`, `b`
 /// constant w.r.t. `var` and the exponent / trig argument linear in `var`):
 ///   ∫ E^(a x) Sin[b x] dx = E^(a x) (a Sin[b x] - b Cos[b x]) / (a^2 + b^2)
@@ -3414,8 +3434,10 @@ fn try_integrate_exp_trig_product(
       } if matches!(left.as_ref(), Expr::Constant(c) | Expr::Identifier(c) if c == "E") => {
         Some((**right).clone())
       }
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2
-        && matches!(&args[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E") =>
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E") =>
       {
         Some(args[1].clone())
       }
@@ -6987,6 +7009,39 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             }
           {
             return Some(result);
+          }
+          // ∫ 1/Trig[x]^|n| dx: rewrite to the reciprocal-trig form
+          // (Cos[x]^-2 → Sec[x]^2, Sin[x]^-2 → Csc[x]^2, …) and retry, so the
+          // named-reciprocal integrators apply. The rewrite is an exact
+          // identity; if the reciprocal form isn't integrable it falls through
+          // unchanged.
+          if let Expr::Integer(n) = right.as_ref()
+            && *n < 0
+            && let Expr::FunctionCall {
+              name: tname,
+              args: targs,
+            } = left.as_ref()
+            && targs.len() == 1
+            && let Some(recip) = reciprocal_trig_name(tname)
+          {
+            let recip_call = Expr::FunctionCall {
+              name: recip.to_string(),
+              args: vec![targs[0].clone()].into(),
+            };
+            // |n| == 1 yields the bare reciprocal (Sec[x]); higher powers keep
+            // the Power wrapper (Sec[x]^2).
+            let rewritten = if *n == -1 {
+              recip_call
+            } else {
+              Expr::BinaryOp {
+                op: Power,
+                left: Box::new(recip_call),
+                right: Box::new(Expr::Integer(-*n)),
+              }
+            };
+            if let Some(result) = integrate(&rewritten, var) {
+              return Some(result);
+            }
           }
           // ∫ (a*x + b)^n dx where n >= 3 and the base is linear in var:
           // Use substitution: result = (a*x + b)^(n+1) / ((n+1) * a)

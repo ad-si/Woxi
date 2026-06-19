@@ -297,6 +297,32 @@ mod integrate_with_sum {
   }
 
   #[test]
+  fn integrate_reciprocal_trig_squared() {
+    // 1/Cos[x]^2 = Sec[x]^2 etc. — integrate via the reciprocal-trig rewrite.
+    assert_eq!(interpret("Integrate[1/Cos[x]^2, x]").unwrap(), "Tan[x]");
+    assert_eq!(interpret("Integrate[1/Sin[x]^2, x]").unwrap(), "-Cot[x]");
+    assert_eq!(interpret("Integrate[1/Cosh[x]^2, x]").unwrap(), "Tanh[x]");
+    assert_eq!(interpret("Integrate[1/Sinh[x]^2, x]").unwrap(), "-Coth[x]");
+    // A linear argument scales the result.
+    assert_eq!(
+      interpret("Integrate[1/Cos[2 x]^2, x]").unwrap(),
+      "Tan[2*x]/2"
+    );
+  }
+
+  #[test]
+  fn integrate_reciprocal_trig_first_power() {
+    assert_eq!(
+      interpret("Integrate[1/Cos[x], x]").unwrap(),
+      "ArcCoth[Sin[x]]"
+    );
+    assert_eq!(
+      interpret("Integrate[1/Sin[x], x]").unwrap(),
+      "-ArcTanh[Cos[x]]"
+    );
+  }
+
+  #[test]
   fn integrate_one_over_x_one_plus_log() {
     assert_eq!(
       interpret("Integrate[1/(x (1 + Log[x])), x]").unwrap(),
@@ -9359,10 +9385,7 @@ mod symbolic_sum_constant_factor {
 
   #[test]
   fn symbolic_coefficient() {
-    assert_eq!(
-      interpret("Sum[a k, {k, 1, n}]").unwrap(),
-      "(a*n*(1 + n))/2"
-    );
+    assert_eq!(interpret("Sum[a k, {k, 1, n}]").unwrap(), "(a*n*(1 + n))/2");
     assert_eq!(
       interpret("Sum[a k^2, {k, 1, n}]").unwrap(),
       "(a*n*(1 + n)*(1 + 2*n))/6"
