@@ -8020,24 +8020,28 @@ pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
-  let mut counts: Vec<(char, i128, usize)> = Vec::new();
-  for (pos, ch) in s.chars().enumerate() {
+  // Count letters preserving first-occurrence order.
+  let mut counts: Vec<(char, i128)> = Vec::new();
+  let mut seen: std::collections::HashMap<char, usize> =
+    std::collections::HashMap::new();
+  for ch in s.chars() {
     if ch.is_alphabetic() {
-      if let Some(entry) = counts.iter_mut().find(|(c, _, _)| *c == ch) {
-        entry.1 += 1;
-        entry.2 = pos;
+      if let Some(&idx) = seen.get(&ch) {
+        counts[idx].1 += 1;
       } else {
-        counts.push((ch, 1, pos));
+        seen.insert(ch, counts.len());
+        counts.push((ch, 1));
       }
     }
   }
-  counts.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+  // Sort by frequency descending, breaking ties by reverse first-occurrence
+  // (reverse, then stable-sort), matching CharacterCounts and wolframscript.
+  counts.reverse();
+  counts.sort_by(|a, b| b.1.cmp(&a.1));
   Ok(Expr::Association(
     counts
       .into_iter()
-      .map(|(ch, count, _)| {
-        (Expr::String(ch.to_string()), Expr::Integer(count))
-      })
+      .map(|(ch, count)| (Expr::String(ch.to_string()), Expr::Integer(count)))
       .collect(),
   ))
 }

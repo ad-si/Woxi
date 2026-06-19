@@ -3195,6 +3195,25 @@ mod batch_unevaluated_wrappers_2 {
       "<|l -> 3, o -> 2, d -> 1, r -> 1, w -> 1, e -> 1, h -> 1|>"
     );
   }
+
+  #[test]
+  fn letter_counts_ties_use_reverse_first_occurrence() {
+    // Repeated letters with equal counts are ordered by reverse first
+    // occurrence (matching CharacterCounts and wolframscript): in
+    // "mississippi" s first appears after i, so s -> 4 precedes i -> 4.
+    assert_eq!(
+      interpret("LetterCounts[\"mississippi\"]").unwrap(),
+      "<|s -> 4, i -> 4, p -> 2, m -> 1|>"
+    );
+    assert_eq!(
+      interpret("LetterCounts[\"tooth\"]").unwrap(),
+      "<|o -> 2, t -> 2, h -> 1|>"
+    );
+    assert_eq!(
+      interpret("LetterCounts[\"xxyyzz\"]").unwrap(),
+      "<|z -> 2, y -> 2, x -> 2|>"
+    );
+  }
   #[test]
   fn text_words_basic() {
     assert_eq!(
