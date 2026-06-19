@@ -200,9 +200,21 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(num_to_expr((re * re + im * im).sqrt()));
   }
-  // Fallback: try to evaluate to f64 for numeric expressions (e.g. Abs[Sqrt[2] + 1])
-  if let Some(n) = try_eval_to_f64(&args[0]) {
-    return Ok(num_to_expr(n.abs()));
+  // Fallback for a real-valued numeric expression that wasn't simplified
+  // above (e.g. a sum like Sqrt[2] - 3): |x| exactly. Negative values are
+  // negated (Abs[Sqrt[2] - 3] -> 3 - Sqrt[2]); non-negative values are
+  // returned unchanged (Abs[Sqrt[2] + 1] -> 1 + Sqrt[2]). Floatifying here
+  // would lose exactness. A Real-leaf expression still collapses to a Real
+  // because the negation/identity re-evaluates the original arithmetic.
+  if let Some(v) = try_eval_to_f64(&args[0]) {
+    if v < 0.0 {
+      let neg = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), args[0].clone()].into(),
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&neg);
+    }
+    return Ok(args[0].clone());
   }
   Ok(Expr::FunctionCall {
     name: "Abs".to_string(),

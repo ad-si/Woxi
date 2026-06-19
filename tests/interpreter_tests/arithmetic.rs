@@ -6302,6 +6302,20 @@ mod abs_simplifications {
     assert_eq!(interpret("Abs[2 Pi]").unwrap(), "2*Pi");
   }
 
+  // Abs of a real-valued numeric sum stays exact: a negative value is negated,
+  // a non-negative value is returned unchanged (previously floatified).
+  #[test]
+  fn abs_real_sum_stays_exact() {
+    assert_eq!(interpret("Abs[Sqrt[2] - 3]").unwrap(), "3 - Sqrt[2]");
+    assert_eq!(interpret("Abs[Pi - 3]").unwrap(), "-3 + Pi");
+    assert_eq!(interpret("Abs[E - 3]").unwrap(), "3 - E");
+    assert_eq!(interpret("Abs[2 Pi - 7]").unwrap(), "7 - 2*Pi");
+    assert_eq!(interpret("Abs[Sqrt[2] + 1]").unwrap(), "1 + Sqrt[2]");
+    assert_eq!(interpret("Abs[-3 - Sqrt[2]]").unwrap(), "3 + Sqrt[2]");
+    // A Real-leaf argument still collapses to a Real.
+    assert_eq!(interpret("Abs[2.0 - Pi]").unwrap(), "1.1415926535897931");
+  }
+
   // The Sqrt of a complex modulus must pull out perfect-square factors rather
   // than leaving e.g. Sqrt[8]; wolframscript returns 2 Sqrt[2].
   #[test]
