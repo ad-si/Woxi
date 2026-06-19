@@ -42,7 +42,10 @@ mod association_ast {
       interpret("Keys[<|a -> 1, b -> 2|>, f]").unwrap(),
       "{f[a], f[b]}"
     );
-    assert_eq!(interpret("Keys[{a -> 1, b -> 2}, f]").unwrap(), "{f[a], f[b]}");
+    assert_eq!(
+      interpret("Keys[{a -> 1, b -> 2}, f]").unwrap(),
+      "{f[a], f[b]}"
+    );
     assert_eq!(interpret("Keys[a -> 1, f]").unwrap(), "f[a]");
   }
 
@@ -53,7 +56,10 @@ mod association_ast {
       interpret("Values[<|a -> 1, b -> 2|>, f]").unwrap(),
       "{f[1], f[2]}"
     );
-    assert_eq!(interpret("Values[{a -> 1, b -> 2}, f]").unwrap(), "{f[1], f[2]}");
+    assert_eq!(
+      interpret("Values[{a -> 1, b -> 2}, f]").unwrap(),
+      "{f[1], f[2]}"
+    );
     // A list-valued value is wrapped whole, not threaded.
     assert_eq!(
       interpret("Values[<|a -> {1, 2}, b -> 3|>, f]").unwrap(),

@@ -136,7 +136,7 @@ fn apply_optional_head(
     }
     Some(h) => crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
       func: Box::new(h.clone()),
-      args: vec![leaf].into(),
+      args: vec![leaf],
     }),
   }
 }

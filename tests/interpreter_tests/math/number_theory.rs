@@ -3095,7 +3095,10 @@ mod cases {
   }
   #[test]
   fn continued_fraction_real_3() {
-    assert_case(r#"ContinuedFraction[0.1]; ContinuedFraction[-3.245]"#, r#"{-3, -4, -12}"#);
+    assert_case(
+      r#"ContinuedFraction[0.1]; ContinuedFraction[-3.245]"#,
+      r#"{-3, -4, -12}"#,
+    );
   }
   #[test]
   fn continued_fraction_real_4() {

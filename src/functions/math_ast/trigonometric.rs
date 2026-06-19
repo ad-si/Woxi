@@ -901,9 +901,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
 fn denom_integer_factor(denom: &Expr) -> Option<(i128, Option<Expr>)> {
   match denom {
     Expr::Integer(n) if *n > 1 => Some((*n, None)),
-    Expr::FunctionCall { name, args }
-      if name == "Times" && args.len() >= 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       if let Expr::Integer(n) = &args[0]
         && *n > 1
       {

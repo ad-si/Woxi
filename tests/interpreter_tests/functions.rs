@@ -4133,7 +4133,10 @@ mod string_extract {
       interpret(r#"StringExtract["a bbb cccc", 0 ;; 2]"#).unwrap(),
       "{a, bbb}"
     );
-    assert_eq!(interpret(r#"StringExtract["a bbb cccc", 3 ;; 2]"#).unwrap(), "{}");
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc", 3 ;; 2]"#).unwrap(),
+      "{}"
+    );
   }
 
   #[test]

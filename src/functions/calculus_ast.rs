@@ -8592,11 +8592,7 @@ fn poly_coefflist(p: &Expr, var: &str) -> Option<Vec<Expr>> {
 /// coefficient `c`, `Sqrt[A] - Sqrt[B] ~ (a1 - b1)/(2 Sqrt[c]) * x^(d/2 - 1)`,
 /// where `a1`, `b1` are the next coefficients: 0 for `d < 2`, the finite
 /// constant for `d == 2`. Other shapes return None.
-fn limit_sqrt_difference(
-  expr: &Expr,
-  var: &str,
-  point: &Expr,
-) -> Option<Expr> {
+fn limit_sqrt_difference(expr: &Expr, var: &str, point: &Expr) -> Option<Expr> {
   use crate::syntax::BinaryOperator;
   if !is_infinity(point) {
     return None;

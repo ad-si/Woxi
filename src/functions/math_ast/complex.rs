@@ -991,8 +991,11 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             imz,
             Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![Expr::Integer(-2 * k), Expr::Constant("Pi".to_string())]
-                .into(),
+              args: vec![
+                Expr::Integer(-2 * k),
+                Expr::Constant("Pi".to_string()),
+              ]
+              .into(),
             },
           ]
           .into(),

@@ -3063,8 +3063,14 @@ mod string_match_q_patterns {
       interpret(r#"StringCases["a-5b+3c", NumberString]"#).unwrap(),
       "{-5, +3}"
     );
-    assert_eq!(interpret(r#"StringMatchQ["-5", NumberString]"#).unwrap(), "True");
-    assert_eq!(interpret(r#"StringMatchQ["+5", NumberString]"#).unwrap(), "True");
+    assert_eq!(
+      interpret(r#"StringMatchQ["-5", NumberString]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["+5", NumberString]"#).unwrap(),
+      "True"
+    );
     // Only a single sign is allowed.
     assert_eq!(
       interpret(r#"StringMatchQ["--5", NumberString]"#).unwrap(),
@@ -3075,8 +3081,14 @@ mod string_match_q_patterns {
   #[test]
   fn number_string_leading_and_trailing_decimal() {
     // A leading-decimal form (.5) and a trailing-decimal form (1.) both match.
-    assert_eq!(interpret(r#"StringCases[".5", NumberString]"#).unwrap(), "{.5}");
-    assert_eq!(interpret(r#"StringCases["1.", NumberString]"#).unwrap(), "{1.}");
+    assert_eq!(
+      interpret(r#"StringCases[".5", NumberString]"#).unwrap(),
+      "{.5}"
+    );
+    assert_eq!(
+      interpret(r#"StringCases["1.", NumberString]"#).unwrap(),
+      "{1.}"
+    );
     assert_eq!(
       interpret(r#"StringCases["-.5", NumberString]"#).unwrap(),
       "{-.5}"

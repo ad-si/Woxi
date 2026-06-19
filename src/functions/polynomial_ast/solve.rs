@@ -7537,10 +7537,12 @@ pub fn nminimize_ast(
     // disk-constraint solver are also exercised. Only adopt the symbolic
     // result when it solved cleanly to a {value, rules} list.
     let sym_name = if maximize { "Maximize" } else { "Minimize" };
-    if let Ok(sym) = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: sym_name.to_string(),
-      args: args.to_vec().into(),
-    }) && matches!(&sym, Expr::List(items) if items.len() == 2)
+    if let Ok(sym) =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: sym_name.to_string(),
+        args: args.to_vec().into(),
+      })
+      && matches!(&sym, Expr::List(items) if items.len() == 2)
     {
       return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "N".to_string(),
