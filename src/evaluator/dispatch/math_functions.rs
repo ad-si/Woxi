@@ -389,9 +389,20 @@ pub fn dispatch_math_functions(
           // Let Listable attribute handle threading
         }
         _ => {
-          if let Some(n) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+          // Real-valued numeric x: |x| exactly. Negative values are negated
+          // (RealAbs[Sqrt[2] - 3] -> 3 - Sqrt[2]); non-negative values are
+          // returned unchanged. Floatifying here would lose exactness
+          // (RealAbs[Pi] must stay Pi). Complex/symbolic x stays unevaluated.
+          if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
           {
-            return Some(Ok(crate::functions::math_ast::num_to_expr(n.abs())));
+            if v < 0.0 {
+              let neg = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), args[0].clone()].into(),
+              };
+              return Some(crate::evaluator::evaluate_expr_to_expr(&neg));
+            }
+            return Some(Ok(args[0].clone()));
           }
           return Some(Ok(Expr::FunctionCall {
             name: "RealAbs".to_string(),
@@ -439,7 +450,18 @@ pub fn dispatch_math_functions(
           // Let Listable attribute handle threading
         }
         _ => {
-          // Stay symbolic for complex or symbolic args
+          // Real-valued numeric x (Pi, Sqrt[2] - 3, …): decide the sign by its
+          // numeric value. Complex or symbolic x stays unevaluated.
+          if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+          {
+            return Some(Ok(Expr::Integer(if v > 0.0 {
+              1
+            } else if v < 0.0 {
+              -1
+            } else {
+              0
+            })));
+          }
           return Some(Ok(Expr::FunctionCall {
             name: "RealSign".to_string(),
             args: args.to_vec().into(),

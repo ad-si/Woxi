@@ -1407,6 +1407,50 @@ mod real_sign {
   fn listable() {
     assert_eq!(interpret("RealSign[{-3, 0, 5}]").unwrap(), "{-1, 0, 1}");
   }
+
+  #[test]
+  fn symbolic_numeric_decided_by_sign() {
+    // Real-valued constants and expressions are decided by their value.
+    assert_eq!(interpret("RealSign[-Pi]").unwrap(), "-1");
+    assert_eq!(interpret("RealSign[Pi - 3]").unwrap(), "1");
+    assert_eq!(interpret("RealSign[Sqrt[2] - 3]").unwrap(), "-1");
+  }
+}
+
+mod real_abs {
+  use super::*;
+
+  #[test]
+  fn integers_and_reals() {
+    assert_eq!(interpret("RealAbs[-5]").unwrap(), "5");
+    assert_eq!(interpret("RealAbs[3.5]").unwrap(), "3.5");
+    assert_eq!(interpret("RealAbs[-3.5]").unwrap(), "3.5");
+    assert_eq!(interpret("RealAbs[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn exact_symbolic_kept_exact() {
+    // Negative values are negated exactly; non-negative are returned as-is.
+    assert_eq!(interpret("RealAbs[-Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("RealAbs[Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("RealAbs[-2/3]").unwrap(), "2/3");
+    assert_eq!(interpret("RealAbs[Sqrt[2] - 3]").unwrap(), "3 - Sqrt[2]");
+    assert_eq!(interpret("RealAbs[1/2 - Pi]").unwrap(), "-1/2 + Pi");
+  }
+
+  #[test]
+  fn complex_and_symbolic_stay_unevaluated() {
+    assert_eq!(interpret("RealAbs[I]").unwrap(), "RealAbs[I]");
+    assert_eq!(interpret("RealAbs[x]").unwrap(), "RealAbs[x]");
+  }
+
+  #[test]
+  fn listable() {
+    assert_eq!(
+      interpret("RealAbs[{-Pi, 2/3, -5}]").unwrap(),
+      "{Pi, 2/3, 5}"
+    );
+  }
 }
 
 mod reverse_sort {
