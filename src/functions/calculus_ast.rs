@@ -8314,6 +8314,18 @@ fn diverges_pos_infinity(expr: &Expr, var: &str) -> Option<i32> {
     };
   }
 
+  // A product of powers of `var` and logarithms with positive net polynomial
+  // order diverges (e.g. x/Log[x]); the sign is that of the expression at a
+  // large argument. (net_poly_order returns None for Sin/E^x/… so those aren't
+  // misclassified here.)
+  if let Some(order) = net_poly_order(expr, var)
+    && order > 0.0
+    && let Some(v) = eval_at_large_n(expr, var, 1_000_000)
+    && v != 0.0
+  {
+    return Some(if v > 0.0 { 1 } else { -1 });
+  }
+
   // Product / sum of factors.
   times_divergence(expr, var).or_else(|| plus_divergence(expr, var))
 }
@@ -8386,6 +8398,58 @@ fn plus_divergence(expr: &Expr, var: &str) -> Option<i32> {
 /// 1/Sqrt[x], Log[x]^(-2), x^(-1/3)) and products of such with finite
 /// factors (2/Log[x]). Returns false whenever it can't prove decay, so the
 /// numeric path still gets a chance.
+/// Net polynomial order of `var` in a product of powers of `var`, `Sqrt`s and
+/// logarithms (logs count as order 0, since they grow slower than any positive
+/// power). Returns `None` for any other var-dependent factor (Sin, E^x, …) so
+/// such expressions aren't misclassified. Used to prove decay for mixed
+/// log/power products like `Log[x]/Sqrt[x]` (order -1/2 -> 0).
+fn net_poly_order(expr: &Expr, var: &str) -> Option<f64> {
+  if is_constant_wrt(expr, var) {
+    return Some(0.0);
+  }
+  match expr {
+    Expr::Identifier(v) if v == var => Some(1.0),
+    // Sqrt[g] has half the order of g.
+    Expr::FunctionCall { name, args }
+      if name == "Sqrt" && args.len() == 1 =>
+    {
+      Some(net_poly_order(&args[0], var)? / 2.0)
+    }
+    // Any (real) power of a diverging logarithm is sub-polynomial: order 0.
+    Expr::FunctionCall { name, args }
+      if name == "Log"
+        && args.len() == 1
+        && diverges_pos_infinity(&args[0], var) == Some(1) =>
+    {
+      Some(0.0)
+    }
+    // Times: orders add.
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut total = 0.0;
+      for a in args.iter() {
+        total += net_poly_order(a, var)?;
+      }
+      Some(total)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => Some(net_poly_order(left, var)? + net_poly_order(right, var)?),
+    _ => {
+      // base^exp with a constant exponent scales the base's order; this also
+      // covers Log[g]^q (base order 0 -> 0) and x^p.
+      if let Some((base, exp)) = extract_power(expr)
+        && is_constant_wrt(&exp, var)
+        && let Some(ev) = crate::functions::math_ast::try_eval_to_f64(&exp)
+      {
+        return Some(net_poly_order(&base, var)? * ev);
+      }
+      None
+    }
+  }
+}
+
 fn tends_to_zero(expr: &Expr, var: &str) -> bool {
   // A negative constant power of a base that diverges to +/-Infinity.
   if let Some((base, exp)) = extract_power(expr)
@@ -8393,6 +8457,14 @@ fn tends_to_zero(expr: &Expr, var: &str) -> bool {
     && let Some(ev) = crate::functions::math_ast::try_eval_to_f64(&exp)
     && ev < 0.0
     && diverges_pos_infinity(&base, var).is_some()
+  {
+    return true;
+  }
+  // A product of powers of `var` and logarithms whose net polynomial order is
+  // negative decays to 0 (e.g. Log[x]/Sqrt[x], Log[x]^5/x). The power of `var`
+  // dominates any logarithmic factor.
+  if let Some(order) = net_poly_order(expr, var)
+    && order < 0.0
   {
     return true;
   }
@@ -9773,9 +9845,7 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               || is_negative_infinity(val)
               || matches!(val, Expr::FunctionCall { name, .. } if name == "DirectedInfinity" || name == "Indeterminate");
             if !is_special_marker
-              && !crate::functions::polynomial_ast::contains_var(
-                val, &var_name,
-              )
+              && !crate::functions::polynomial_ast::contains_var(val, &var_name)
             {
               return Ok(reconcile_one_sided_direct(
                 val.clone(),

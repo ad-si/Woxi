@@ -2079,6 +2079,44 @@ mod limit {
   }
 
   #[test]
+  fn limit_log_over_power_decays() {
+    // A power of x dominates any logarithm: Log[x]/x^p -> 0 for p > 0.
+    assert_eq!(
+      interpret("Limit[Log[x]/Sqrt[x], x -> Infinity]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Limit[Log[x]^3/x, x -> Infinity]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Limit[Log[x]^2/Sqrt[x], x -> Infinity]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Limit[Log[x]/x^(1/3), x -> Infinity]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn limit_power_over_log_diverges() {
+    // Dually, x^p / Log[x] -> Infinity.
+    assert_eq!(
+      interpret("Limit[x/Log[x], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[Sqrt[x]/Log[x], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[-x/Log[x], x -> Infinity]").unwrap(),
+      "-Infinity"
+    );
+  }
+
+  #[test]
   fn limit_negated_log_at_infinity() {
     assert_eq!(
       interpret("Limit[-Log[x], x -> Infinity]").unwrap(),
