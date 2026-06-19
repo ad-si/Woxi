@@ -663,6 +663,31 @@ mod rescale {
       "{20, 40, 60}"
     );
   }
+
+  #[test]
+  fn rescale_preserves_exact_rational() {
+    // A rational input must stay exact, not be floatified to 0.333…
+    assert_eq!(interpret("Rescale[1/3, {0, 1}]").unwrap(), "1/3");
+    assert_eq!(interpret("Rescale[1/3, {1, 4}]").unwrap(), "-2/9");
+  }
+
+  #[test]
+  fn rescale_symbolic_constant_kept_exact() {
+    // Symbolic real numerics rescale exactly (xmin = 0).
+    assert_eq!(interpret("Rescale[Pi, {0, 10}]").unwrap(), "Pi/10");
+    assert_eq!(interpret("Rescale[Sqrt[2], {0, 2}]").unwrap(), "1/Sqrt[2]");
+  }
+
+  #[test]
+  fn rescale_symbolic_variable() {
+    assert_eq!(interpret("Rescale[x, {0, 10}]").unwrap(), "x/10");
+    assert_eq!(interpret("Rescale[x, {0, 10}, {5, 15}]").unwrap(), "5 + x");
+  }
+
+  #[test]
+  fn rescale_real_input_stays_real() {
+    assert_eq!(interpret("Rescale[2.0, {0, 10}]").unwrap(), "0.2");
+  }
 }
 
 mod bin_counts {

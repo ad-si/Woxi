@@ -1923,51 +1923,74 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (&Expr::Integer(0) as &Expr, &Expr::Integer(1) as &Expr)
   };
 
-  // Try integer exact path
-  if let (
-    Expr::Integer(x),
-    Expr::Integer(xmin),
-    Expr::Integer(xmax),
-    Expr::Integer(yn),
-    Expr::Integer(yx),
-  ) = (&args[0], &range[0], &range[1], ymin, ymax)
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Rescale".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // A literal exact number: Integer, BigInteger, Real or Rational[p, q].
+  let is_numeric_literal = |e: &Expr| -> bool {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2)
+  };
+
+  // The bounds and targets must be literal numbers. Symbolic bounds/targets
+  // ({a, b}) make wolframscript produce an Apart/Expand-normalized form that
+  // Woxi's canonicalization does not reproduce, so those stay unevaluated.
+  if !is_numeric_literal(&range[0])
+    || !is_numeric_literal(&range[1])
+    || !is_numeric_literal(ymin)
+    || !is_numeric_literal(ymax)
   {
-    if xmax == xmin {
-      return Err(InterpreterError::EvaluationError(
-        "Rescale: xmin and xmax must be different".into(),
-      ));
-    }
-    // result = ymin + (x - xmin) * (ymax - ymin) / (xmax - xmin)
-    let numer = yn * (xmax - xmin) + (x - xmin) * (yx - yn);
-    let denom = xmax - xmin;
-    return Ok(make_rational(numer, denom));
+    return unevaluated();
+  }
+  let xmin_n = try_eval_to_f64(&range[0]).unwrap();
+  let xmax_n = try_eval_to_f64(&range[1]).unwrap();
+  if (xmax_n - xmin_n).abs() < f64::EPSILON {
+    return unevaluated();
+  }
+  // For a non-literal x (a symbol or constant like Pi), only xmin == 0 is
+  // safe: with a nonzero xmin wolframscript distributes the offset
+  // (10 + 5 (x - 2) -> 5 x) in a way Woxi's evaluator leaves factored.
+  if !is_numeric_literal(&args[0]) && xmin_n.abs() >= f64::EPSILON {
+    return unevaluated();
   }
 
-  // Float path
-  if let (Some(x), Some(xmin), Some(xmax)) = (
-    try_eval_to_f64(&args[0]),
-    try_eval_to_f64(&range[0]),
-    try_eval_to_f64(&range[1]),
-  ) {
-    if (xmax - xmin).abs() < f64::EPSILON {
-      return Err(InterpreterError::EvaluationError(
-        "Rescale: xmin and xmax must be different".into(),
-      ));
-    }
-    let t = (x - xmin) / (xmax - xmin);
-    if args.len() == 3
-      && let (Some(yn), Some(yx)) =
-        (try_eval_to_f64(ymin), try_eval_to_f64(ymax))
-    {
-      return Ok(num_to_expr(yn + t * (yx - yn)));
-    }
-    return Ok(num_to_expr(t));
-  }
-
-  Ok(Expr::FunctionCall {
-    name: "Rescale".to_string(),
-    args: args.to_vec().into(),
-  })
+  // Build and evaluate  ymin + (x - xmin) * (ymax - ymin) / (xmax - xmin).
+  // Evaluating the symbolic expression keeps exact and symbolic values
+  // (Pi/10, 1/3, x/10, …) instead of floatifying, and a Real input still
+  // yields a Real.
+  let neg = |e: &Expr| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(-1), e.clone()].into(),
+  };
+  let sub = |a: &Expr, b: &Expr| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![a.clone(), neg(b)].into(),
+  };
+  let x_minus_min = sub(&args[0], &range[0]);
+  let y_span = sub(ymax, ymin);
+  let x_span = sub(&range[1], &range[0]);
+  let fraction = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      x_minus_min,
+      y_span,
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![x_span, Expr::Integer(-1)].into(),
+      },
+    ]
+    .into(),
+  };
+  let result = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![ymin.clone(), fraction].into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Normalize[v] - normalizes a vector to unit length
