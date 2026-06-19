@@ -9404,11 +9404,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       pattern,
       replacement,
     } => {
-      // Parenthesize the LHS when it is itself a rule: `->` is
-      // right-associative, so `(a -> b) -> c` must keep its parentheses
-      // (otherwise it would read as `a -> (b -> c)`).
+      // Parenthesize the LHS when it is itself a rule (`->` is
+      // right-associative, so `(a -> b) -> c` must keep its parentheses) or a
+      // pure function (`&` binds looser than `->`, so `(f & ) -> x`).
       let lhs = match pattern.as_ref() {
-        Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+        Expr::Rule { .. }
+        | Expr::RuleDelayed { .. }
+        | Expr::Function { .. } => {
           format!("({})", fmt(pattern))
         }
         _ => fmt(pattern),
@@ -9425,9 +9427,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       pattern,
       replacement,
     } => {
-      // Parenthesize the LHS when it is itself a rule (see Expr::Rule).
+      // Parenthesize the LHS when it is itself a rule or a pure function
+      // (see Expr::Rule).
       let lhs = match pattern.as_ref() {
-        Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+        Expr::Rule { .. }
+        | Expr::RuleDelayed { .. }
+        | Expr::Function { .. } => {
           format!("({})", fmt(pattern))
         }
         _ => fmt(pattern),

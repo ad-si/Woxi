@@ -1190,6 +1190,17 @@ mod rule_display {
     assert_eq!(interpret("(a :> b) -> c").unwrap(), "(a :> b) -> c");
   }
 
+  // A pure function on the LHS of a rule is parenthesized (`&` binds looser
+  // than `->`), matching wolframscript.
+  #[test]
+  fn rule_lhs_pure_function_parenthesized() {
+    assert_eq!(interpret("(#^2 &) -> x").unwrap(), "(#1^2 & ) -> x");
+    assert_eq!(interpret("Rule[# &, x]").unwrap(), "(#1 & ) -> x");
+    assert_eq!(interpret("(# &) :> 5").unwrap(), "(#1 & ) :> 5");
+    // RHS pure function is also parenthesized (unchanged).
+    assert_eq!(interpret("x -> (#^2 &)").unwrap(), "x -> (#1^2 & )");
+  }
+
   // The same parenthesization applies to rule-valued association keys.
   #[test]
   fn rule_keyed_association_parenthesized() {
