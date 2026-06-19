@@ -21,6 +21,39 @@ mod symbolic_product {
     assert_eq!(interpret("Product[i^2, {i, 1, 6}]").unwrap(), "518400");
   }
 
+  // Monomial body c*k^p: c == 1 keeps the bare factorial, while a coefficient
+  // switches to Gamma[1+n] (matching wolframscript). A unit-fraction
+  // coefficient renders as a denominator power.
+  #[test]
+  fn product_monomial_unit_coeff() {
+    assert_eq!(interpret("Product[1/k, {k, 1, n}]").unwrap(), "n!^(-1)");
+    assert_eq!(interpret("Product[1/k^2, {k, 1, n}]").unwrap(), "n!^(-2)");
+  }
+
+  #[test]
+  fn product_monomial_with_coeff() {
+    assert_eq!(
+      interpret("Product[2 k, {k, 1, n}]").unwrap(),
+      "2^n*Gamma[1 + n]"
+    );
+    assert_eq!(
+      interpret("Product[3 k^2, {k, 1, n}]").unwrap(),
+      "3^n*Gamma[1 + n]^2"
+    );
+    assert_eq!(
+      interpret("Product[c k, {k, 1, n}]").unwrap(),
+      "c^n*Gamma[1 + n]"
+    );
+    assert_eq!(
+      interpret("Product[k/2, {k, 1, n}]").unwrap(),
+      "Gamma[1 + n]/2^n"
+    );
+    assert_eq!(
+      interpret("Product[2 k/3, {k, 1, n}]").unwrap(),
+      "(2/3)^n*Gamma[1 + n]"
+    );
+  }
+
   #[test]
   fn factorial_formatting() {
     // Factorial[n] should display as n!

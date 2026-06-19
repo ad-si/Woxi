@@ -704,6 +704,118 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
 
+          // Monomial body c*var^p (p a nonzero integer, c free of var):
+          //   Product[c var^p, {k, 1, n}] = c^n * n!^p.
+          // wolframscript keeps the bare factorial when c == 1
+          // (Product[1/k] -> n!^(-1)) but switches to Gamma[1+n] once a
+          // coefficient is present (Product[2 k] -> 2^n Gamma[1+n]).
+          if min_concrete == Some(1)
+            && max_concrete.is_none()
+            && !max_is_infinity
+            && crate::functions::polynomial_ast::contains_var(body, &var_name)
+            && let Ok(dbody) =
+              crate::functions::calculus_ast::differentiate_expr(
+                body, &var_name,
+              )
+          {
+            use crate::syntax::BinaryOperator;
+            // p = (d body / d var) * var / body — the exponent of a monomial.
+            let p_expr = Expr::FunctionCall {
+              name: "Simplify".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  dbody,
+                  Expr::Identifier(var_name.clone()),
+                  Expr::FunctionCall {
+                    name: "Power".to_string(),
+                    args: vec![body.clone(), Expr::Integer(-1)].into(),
+                  },
+                ]
+                .into(),
+              }]
+              .into(),
+            };
+            let p_val =
+              crate::evaluator::evaluate_expr_to_expr(&p_expr).ok();
+            if let Some(p) = p_val.as_ref().and_then(expr_to_i128)
+              && p != 0
+            {
+              // c = body with var -> 1.
+              let c = crate::evaluator::evaluate_expr_to_expr(
+                &crate::syntax::substitute_variable(
+                  body,
+                  &var_name,
+                  &Expr::Integer(1),
+                ),
+              )?;
+              if !crate::functions::polynomial_ast::contains_var(
+                &c, &var_name,
+              ) {
+                let c_is_one = matches!(&c, Expr::Integer(1));
+                let base = if c_is_one {
+                  Expr::FunctionCall {
+                    name: "Factorial".to_string(),
+                    args: vec![max_expr.clone()].into(),
+                  }
+                } else {
+                  Expr::FunctionCall {
+                    name: "Gamma".to_string(),
+                    args: vec![Expr::BinaryOp {
+                      op: BinaryOperator::Plus,
+                      left: Box::new(Expr::Integer(1)),
+                      right: Box::new(max_expr.clone()),
+                    }]
+                    .into(),
+                  }
+                };
+                let pow_part = if p == 1 {
+                  base
+                } else {
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Power,
+                    left: Box::new(base),
+                    right: Box::new(Expr::Integer(p)),
+                  }
+                };
+                // Coefficient c^n. wolframscript renders a *unit fraction* 1/b as
+                // a denominator power (Product[k/2] -> Gamma[1+n]/2^n), but keeps
+                // any other coefficient as c^n (Product[2k/3] -> (2/3)^n Gamma).
+                let pow_n = |b: &Expr| Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(b.clone()),
+                  right: Box::new(max_expr.clone()),
+                };
+                let unit_fraction_den = match &c {
+                  Expr::FunctionCall { name, args }
+                    if name == "Rational" && args.len() == 2 =>
+                  {
+                    match (&args[0], &args[1]) {
+                      (Expr::Integer(1), Expr::Integer(b)) => Some(*b),
+                      _ => None,
+                    }
+                  }
+                  _ => None,
+                };
+                let result = if c_is_one {
+                  pow_part
+                } else if let Some(b) = unit_fraction_den {
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Divide,
+                    left: Box::new(pow_part),
+                    right: Box::new(pow_n(&Expr::Integer(b))),
+                  }
+                } else {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![pow_n(&c), pow_part].into(),
+                  }
+                };
+                return crate::evaluator::evaluate_expr_to_expr(&result);
+              }
+            }
+          }
+
           // Closed form for the classical infinite product
           //   ∏_{k=1}^∞ (1 + 1/k²) = Sinh[π] / π
           // (the `x = π` case of the Weierstrass factorisation
