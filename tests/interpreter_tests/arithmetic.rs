@@ -6360,6 +6360,19 @@ mod trig_of_inverse_trig {
     assert_eq!(interpret("Tan[ArcCos[x]]").unwrap(), "Sqrt[1 - x^2]/x");
   }
 
+  // With a rational argument the algebraic form collapses to a number:
+  // the radicand (Sqrt[16/25]) and the resulting quotient are evaluated.
+  #[test]
+  fn rational_argument_collapses() {
+    assert_eq!(interpret("Cos[ArcSin[3/5]]").unwrap(), "4/5");
+    assert_eq!(interpret("Sin[ArcCos[4/5]]").unwrap(), "3/5");
+    assert_eq!(interpret("Cos[ArcSin[5/13]]").unwrap(), "12/13");
+    assert_eq!(interpret("Tan[ArcSin[3/5]]").unwrap(), "3/4");
+    assert_eq!(interpret("Tan[ArcCos[3/5]]").unwrap(), "4/3");
+    assert_eq!(interpret("Sin[ArcTan[3/4]]").unwrap(), "3/5");
+    assert_eq!(interpret("Sec[ArcTan[3/4]]").unwrap(), "5/4");
+  }
+
   // Compound arguments expand the inner square: (3 x)^2 -> 9 x^2.
   #[test]
   fn compound_argument_expands() {

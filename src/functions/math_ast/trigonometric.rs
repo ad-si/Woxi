@@ -990,10 +990,14 @@ fn sqrt_one_pm_sq(x: &Expr, plus: bool) -> Expr {
     right: Box::new(x_sq),
   };
   let inner = crate::evaluator::evaluate_expr_to_expr(&inner).unwrap_or(inner);
-  Expr::FunctionCall {
+  // Evaluate the Sqrt too, so a rational radicand collapses (e.g.
+  // Cos[ArcSin[3/5]] = Sqrt[16/25] -> 4/5). A symbolic radicand such as
+  // 1 - x^2 stays as Sqrt[1 - x^2].
+  let sqrt = Expr::FunctionCall {
     name: "Sqrt".to_string(),
     args: vec![inner].into(),
-  }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sqrt).unwrap_or(sqrt)
 }
 
 /// `Sqrt[1 - x^2]` (used for trig-of-inverse-trig identities).
@@ -1007,11 +1011,15 @@ fn sqrt_one_plus_sq(x: &Expr) -> Expr {
 }
 
 fn divide(num: Expr, den: Expr) -> Expr {
-  Expr::BinaryOp {
+  let quotient = Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Divide,
     left: Box::new(num),
     right: Box::new(den),
-  }
+  };
+  // Evaluate so a rational numerator/denominator collapses, e.g.
+  // Tan[ArcSin[3/5]] = (3/5)/(4/5) -> 3/4; a symbolic quotient such as
+  // x/Sqrt[1 - x^2] is left in its canonical printed form.
+  crate::evaluator::evaluate_expr_to_expr(&quotient).unwrap_or(quotient)
 }
 
 /// The bare reciprocal `1/x`, canonicalized the way wolframscript prints it:
