@@ -3071,6 +3071,29 @@ mod cases {
     );
   }
   #[test]
+  fn from_continued_fraction_periodic() {
+    // A trailing sublist denotes the repeating block; the value is an exact
+    // quadratic surd in wolframscript's canonical (P + S Sqrt[D])/Q form.
+    assert_case(r#"FromContinuedFraction[{1, {2}}]"#, r#"Sqrt[2]"#);
+    assert_case(r#"FromContinuedFraction[{{1}}]"#, r#"(1 + Sqrt[5])/2"#);
+    assert_case(r#"FromContinuedFraction[{{2}}]"#, r#"1 + Sqrt[2]"#);
+    assert_case(
+      r#"FromContinuedFraction[{1, 2, {3, 4}}]"#,
+      r#"(4 + Sqrt[3])/4"#,
+    );
+    assert_case(r#"FromContinuedFraction[{0, {1}}]"#, r#"(-1 + Sqrt[5])/2"#);
+    assert_case(r#"FromContinuedFraction[{-1, {2}}]"#, r#"-2 + Sqrt[2]"#);
+    assert_case(r#"FromContinuedFraction[{{2, 3}}]"#, r#"(3 + Sqrt[15])/3"#);
+  }
+  #[test]
+  fn from_continued_fraction_periodic_invalid() {
+    // The repeating block must be the last element; otherwise unevaluated.
+    assert_case(
+      r#"FromContinuedFraction[{1, {2}, 3}]"#,
+      r#"FromContinuedFraction[{1, {2}, 3}]"#,
+    );
+  }
+  #[test]
   fn next_prime_1() {
     assert_case(r#"NextPrime[100]"#, r#"101"#);
   }

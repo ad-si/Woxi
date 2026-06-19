@@ -1138,6 +1138,209 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Greatest common divisor of two non-negative integers.
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+  a = a.abs();
+  b = b.abs();
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+/// Exact rational with i128 numerator/denominator, kept reduced with a
+/// positive denominator. Used to evaluate a periodic continued fraction in
+/// the field Q(sqrt(disc)).
+#[derive(Clone, Copy)]
+struct Rat {
+  num: i128,
+  den: i128,
+}
+
+impl Rat {
+  fn new(num: i128, den: i128) -> Rat {
+    let mut r = Rat { num, den };
+    r.reduce();
+    r
+  }
+  fn int(n: i128) -> Rat {
+    Rat { num: n, den: 1 }
+  }
+  fn reduce(&mut self) {
+    if self.den < 0 {
+      self.num = -self.num;
+      self.den = -self.den;
+    }
+    let g = gcd_i128(self.num, self.den);
+    if g > 1 {
+      self.num /= g;
+      self.den /= g;
+    }
+    if self.num == 0 {
+      self.den = 1;
+    }
+  }
+  fn add(self, o: Rat) -> Rat {
+    Rat::new(self.num * o.den + o.num * self.den, self.den * o.den)
+  }
+  fn mul(self, o: Rat) -> Rat {
+    Rat::new(self.num * o.num, self.den * o.den)
+  }
+  fn div(self, o: Rat) -> Rat {
+    Rat::new(self.num * o.den, self.den * o.num)
+  }
+  fn is_zero(self) -> bool {
+    self.num == 0
+  }
+}
+
+/// Factor the largest square out of `n >= 0`: returns (f, d) with n = f^2 * d
+/// and d square-free.
+fn pull_square_factor(n: i128) -> (i128, i128) {
+  let mut d = n;
+  let mut f = 1i128;
+  let mut i = 2i128;
+  while i * i <= d {
+    while d % (i * i) == 0 {
+      d /= i * i;
+      f *= i;
+    }
+    i += 1;
+  }
+  (f, d)
+}
+
+/// Evaluate a periodic continued fraction `[prefix; {period}]` to its exact
+/// quadratic-surd value, returned as a Woxi expression in WL's canonical
+/// `(P + S Sqrt[D])/Q` form. Returns None if the (small-integer) arithmetic
+/// degenerates or would overflow into a non-surd.
+fn periodic_continued_fraction(
+  prefix: &[i128],
+  period: &[i128],
+) -> Option<Expr> {
+  // Convergents h_i/k_i of the finite period block, with the standard
+  // h_{-2}=0, h_{-1}=1, k_{-2}=1, k_{-1}=0 seeds.
+  let (mut h_prev2, mut h_prev1) = (0i128, 1i128);
+  let (mut k_prev2, mut k_prev1) = (1i128, 0i128);
+  for &p in period {
+    let h = p.checked_mul(h_prev1)?.checked_add(h_prev2)?;
+    h_prev2 = h_prev1;
+    h_prev1 = h;
+    let k = p.checked_mul(k_prev1)?.checked_add(k_prev2)?;
+    k_prev2 = k_prev1;
+    k_prev1 = k;
+  }
+  let (hm1, hm2, km1, km2) = (h_prev1, h_prev2, k_prev1, k_prev2);
+
+  // The purely periodic value y satisfies A y^2 + B y + C = 0 with
+  // A = k_{m-1}, B = k_{m-2} - h_{m-1}, C = -h_{m-2}.
+  let a_co = km1;
+  let b_co = km2 - hm1;
+  let c_co = -hm2;
+  let disc = b_co * b_co - 4 * a_co * c_co;
+  if disc <= 0 || a_co == 0 {
+    return None;
+  }
+  // y = (-B + sqrt(disc)) / (2A) = acc_a + acc_b * sqrt(disc).
+  let two_a = 2 * a_co;
+  let mut acc_a = Rat::new(-b_co, two_a);
+  let mut acc_b = Rat::new(1, two_a);
+
+  // Fold the non-periodic prefix in from the right: acc -> a_i + 1/acc.
+  let disc_rat = Rat::int(disc);
+  for &t in prefix.iter().rev() {
+    // 1/(a + b sqrt(disc)) = (a - b sqrt(disc)) / (a^2 - b^2 disc).
+    let norm = acc_a.mul(acc_a).add(acc_b.mul(acc_b).mul(disc_rat).mul(Rat::int(-1)));
+    if norm.is_zero() {
+      return None;
+    }
+    let inv_a = acc_a.div(norm);
+    let inv_b = acc_b.div(norm).mul(Rat::int(-1));
+    acc_a = inv_a.add(Rat::int(t));
+    acc_b = inv_b;
+  }
+
+  // value = acc_a + acc_b * sqrt(disc); render as (P + S Sqrt[D])/Q.
+  let q = acc_a.den / gcd_i128(acc_a.den, acc_b.den) * acc_b.den; // lcm
+  let pn = acc_a.num * (q / acc_a.den);
+  let rn = acc_b.num * (q / acc_b.den);
+  if rn == 0 {
+    // Degenerate to a rational (shouldn't happen for a genuine periodic CF).
+    let g = gcd_i128(pn, q);
+    let (pn, q) = (pn / g, q / g);
+    return Some(if q == 1 {
+      Expr::Integer(pn)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(pn), Expr::Integer(q)].into(),
+      }
+    });
+  }
+  // rn*sqrt(disc) = sign(rn) * sqrt(rn^2 * disc) = sign(rn) * f * sqrt(d).
+  let inner = rn.checked_mul(rn)?.checked_mul(disc)?;
+  let (f, d) = pull_square_factor(inner);
+  let s = rn.signum() * f;
+  if d == 1 {
+    // Perfect square under the root: the value is rational.
+    let total = pn + s;
+    let g = gcd_i128(total, q);
+    let (total, q) = (total / g, q / g);
+    return Some(if q == 1 {
+      Expr::Integer(total)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(total), Expr::Integer(q)].into(),
+      }
+    });
+  }
+  // Reduce (P, S, Q) by their common factor so D stays square-free and the
+  // fraction is in lowest terms, matching wolframscript.
+  let g = gcd_i128(gcd_i128(pn, s), q);
+  let (pn, s, q) = (pn / g, s / g, q / g);
+
+  // Build (pn + s*Sqrt[d])/q and let the evaluator canonicalize the surd.
+  let sqrt_d = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::Integer(d)].into(),
+  };
+  let s_sqrt = if s == 1 {
+    sqrt_d
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(s), sqrt_d].into(),
+    }
+  };
+  let numer = if pn == 0 {
+    s_sqrt
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Integer(pn), s_sqrt].into(),
+    }
+  };
+  let value = if q == 1 {
+    numer
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        numer,
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![Expr::Integer(q), Expr::Integer(-1)].into(),
+        },
+      ]
+      .into(),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&value).ok()
+}
+
 /// FromContinuedFraction[{a0, a1, a2, ...}] - reconstruct a number from its continued fraction
 pub fn from_continued_fraction_ast(
   args: &[Expr],
@@ -1160,6 +1363,39 @@ pub fn from_continued_fraction_ast(
 
   if elements.is_empty() {
     return Ok(Expr::Identifier("Infinity".to_string()));
+  }
+
+  // Periodic continued fraction: the last element is a sublist holding the
+  // repeating block, e.g. {1, {2}} -> Sqrt[2], {{1}} -> GoldenRatio. The
+  // value is a quadratic surd. All other elements must be the integer
+  // non-periodic prefix.
+  if let Some(Expr::List(period)) = elements.last() {
+    let prefix: Option<Vec<i128>> = elements[..elements.len() - 1]
+      .iter()
+      .map(|e| match e {
+        Expr::Integer(n) => Some(*n),
+        _ => None,
+      })
+      .collect();
+    let per: Option<Vec<i128>> = period
+      .iter()
+      .map(|e| match e {
+        Expr::Integer(n) => Some(*n),
+        _ => None,
+      })
+      .collect();
+    match (prefix, per) {
+      (Some(prefix), Some(per)) if !per.is_empty() => {
+        if let Some(expr) = periodic_continued_fraction(&prefix, &per) {
+          return Ok(expr);
+        }
+      }
+      _ => {}
+    }
+    return Ok(Expr::FunctionCall {
+      name: "FromContinuedFraction".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // Collect all integers
