@@ -8051,7 +8051,8 @@ fn compute_circumsphere(expr: &Expr) -> Result<Expr, InterpreterError> {
       let mut rhs = (0i128, 1i128);
       for j in 0..d {
         row.push(rat_mul((2, 1), rat_sub(pi[j], p0[j])));
-        rhs = rat_add(rhs, rat_sub(rat_mul(pi[j], pi[j]), rat_mul(p0[j], p0[j])));
+        rhs =
+          rat_add(rhs, rat_sub(rat_mul(pi[j], pi[j]), rat_mul(p0[j], p0[j])));
       }
       a.push(row);
       b.push(rhs);
@@ -8107,8 +8108,13 @@ fn compute_circumsphere(expr: &Expr) -> Result<Expr, InterpreterError> {
     return uneval();
   };
   let r2: f64 = (0..d).map(|j| (center[j] - p0[j]).powi(2)).sum();
-  let center_expr =
-    Expr::List(center.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into());
+  let center_expr = Expr::List(
+    center
+      .iter()
+      .map(|&c| Expr::Real(c))
+      .collect::<Vec<_>>()
+      .into(),
+  );
   Ok(Expr::FunctionCall {
     name: "Sphere".to_string(),
     args: vec![center_expr, Expr::Real(r2.sqrt())].into(),
@@ -8116,7 +8122,10 @@ fn compute_circumsphere(expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Gauss-Jordan solve for a small f64 system. None if singular.
-fn solve_float_system(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
+fn solve_float_system(
+  mut a: Vec<Vec<f64>>,
+  mut b: Vec<f64>,
+) -> Option<Vec<f64>> {
   let n = a.len();
   for (i, row) in a.iter_mut().enumerate() {
     row.push(b[i]);
