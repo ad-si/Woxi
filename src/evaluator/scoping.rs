@@ -301,6 +301,27 @@ const REAL_CONSTANTS: &[&str] = &[
   "Glaisher",
 ];
 
+/// Constants known to be irrational (so not in Rationals).
+const IRRATIONAL_CONSTANTS: &[&str] = &["Pi", "E", "Degree", "GoldenRatio"];
+/// Constants known to be transcendental (so not in Algebraics).
+const TRANSCENDENTAL_CONSTANTS: &[&str] = &["Pi", "E", "Degree"];
+/// Constants known to be algebraic (so in Algebraics).
+const ALGEBRAIC_CONSTANTS: &[&str] = &["GoldenRatio"];
+
+/// A literal rational number: an integer or `Rational[p, q]`.
+fn is_rational_literal(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+    || matches!(e, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
+}
+
+/// A non-integer literal rational, i.e. `Rational[p, q]` (always stored in
+/// lowest terms with q != 1).
+fn is_non_integer_rational(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+    if name == "Rational" && args.len() == 2)
+}
+
 /// Check if an expression is a member of a given domain
 pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
   match domain {
@@ -335,8 +356,26 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       {
         Some(true)
       }
-      // Known irrational constants
-      Expr::Constant(c) if REAL_CONSTANTS.contains(&c.as_str()) => Some(false),
+      // Known irrational constants (Pi, E, Degree, GoldenRatio); other
+      // constants (EulerGamma, Catalan, …) have open irrationality and stay
+      // unevaluated.
+      Expr::Constant(c) | Expr::Identifier(c)
+        if IRRATIONAL_CONSTANTS.contains(&c.as_str()) =>
+      {
+        Some(false)
+      }
+      // The imaginary unit is not real, hence not rational.
+      Expr::Identifier(name) if name == "I" => Some(false),
+      // A surviving radical Power[rational, non-integer rational] is
+      // irrational (perfect powers are already simplified to integers).
+      // Radicals are stored as a Power BinaryOp.
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } if is_rational_literal(left) && is_non_integer_rational(right) => {
+        Some(false)
+      }
       _ => None,
     },
     "Reals" => match expr {
@@ -415,6 +454,28 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       Expr::FunctionCall { name, args }
         if name == "Rational" && args.len() == 2 =>
       {
+        Some(true)
+      }
+      // The imaginary unit and known algebraic constants are algebraic.
+      Expr::Identifier(name) if name == "I" => Some(true),
+      Expr::Constant(c) | Expr::Identifier(c)
+        if ALGEBRAIC_CONSTANTS.contains(&c.as_str()) =>
+      {
+        Some(true)
+      }
+      // Known transcendental constants are not algebraic.
+      Expr::Constant(c) | Expr::Identifier(c)
+        if TRANSCENDENTAL_CONSTANTS.contains(&c.as_str()) =>
+      {
+        Some(false)
+      }
+      // A radical Power[rational, rational] (e.g. Sqrt[2], 2^(1/3)) is
+      // algebraic. Radicals are stored as a Power BinaryOp.
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } if is_rational_literal(left) && is_rational_literal(right) => {
         Some(true)
       }
       _ => None,

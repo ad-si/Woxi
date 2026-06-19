@@ -1613,6 +1613,67 @@ mod reals {
   }
 }
 
+mod algebraics_and_rationals {
+  use super::*;
+
+  #[test]
+  fn transcendental_constants_not_algebraic() {
+    assert_eq!(interpret("Element[Pi, Algebraics]").unwrap(), "False");
+    assert_eq!(interpret("Element[E, Algebraics]").unwrap(), "False");
+    assert_eq!(interpret("Element[Degree, Algebraics]").unwrap(), "False");
+  }
+
+  #[test]
+  fn algebraic_constants_and_imaginary_unit() {
+    assert_eq!(
+      interpret("Element[GoldenRatio, Algebraics]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("Element[I, Algebraics]").unwrap(), "True");
+  }
+
+  #[test]
+  fn radicals_are_algebraic() {
+    assert_eq!(interpret("Element[Sqrt[2], Algebraics]").unwrap(), "True");
+    assert_eq!(interpret("Element[2^(1/3), Algebraics]").unwrap(), "True");
+    assert_eq!(interpret("Element[Sqrt[2/3], Algebraics]").unwrap(), "True");
+  }
+
+  #[test]
+  fn radicals_are_not_rational() {
+    assert_eq!(interpret("Element[Sqrt[2], Rationals]").unwrap(), "False");
+    assert_eq!(interpret("Element[2^(1/3), Rationals]").unwrap(), "False");
+  }
+
+  #[test]
+  fn irrational_constants_not_rational() {
+    assert_eq!(
+      interpret("Element[GoldenRatio, Rationals]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("Element[I, Rationals]").unwrap(), "False");
+  }
+
+  #[test]
+  fn open_constants_stay_unevaluated() {
+    // The irrationality/transcendence of these is an open problem.
+    assert_eq!(
+      interpret("Element[Catalan, Algebraics]").unwrap(),
+      "Element[Catalan, Algebraics]"
+    );
+    assert_eq!(
+      interpret("Element[EulerGamma, Rationals]").unwrap(),
+      "Element[EulerGamma, Rationals]"
+    );
+  }
+
+  #[test]
+  fn rationals_and_integers_are_algebraic() {
+    assert_eq!(interpret("Element[2, Algebraics]").unwrap(), "True");
+    assert_eq!(interpret("Element[1/2, Algebraics]").unwrap(), "True");
+  }
+}
+
 mod plus_minus {
   use super::*;
 
