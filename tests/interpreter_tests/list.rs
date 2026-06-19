@@ -2539,6 +2539,40 @@ mod clip {
       "{a, 0.5, b}"
     );
   }
+
+  #[test]
+  fn clip_preserves_exact_rational() {
+    // A rational within range stays exact (not floatified to 0.5).
+    assert_eq!(interpret("Clip[1/2]").unwrap(), "1/2");
+    assert_eq!(interpret("Clip[3/2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn clip_symbolic_constants() {
+    // Symbolic real numerics clamp to the exact bound.
+    assert_eq!(interpret("Clip[Pi]").unwrap(), "1");
+    assert_eq!(interpret("Clip[E]").unwrap(), "1");
+    assert_eq!(interpret("Clip[-Pi]").unwrap(), "-1");
+    assert_eq!(interpret("Clip[Sqrt[2]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn clip_symbolic_within_range_kept_exact() {
+    // Within the explicit range, the exact expression is returned unchanged.
+    assert_eq!(interpret("Clip[Pi, {0, 10}]").unwrap(), "Pi");
+    assert_eq!(interpret("Clip[Sqrt[2]/2]").unwrap(), "1/Sqrt[2]");
+  }
+
+  #[test]
+  fn clip_symbolic_with_replacements() {
+    assert_eq!(interpret("Clip[2 Pi, {0, 5}, {a, b}]").unwrap(), "b");
+    assert_eq!(interpret("Clip[Pi, {0, 2}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn clip_nonnumeric_stays_unevaluated() {
+    assert_eq!(interpret("Clip[x]").unwrap(), "Clip[x]");
+  }
 }
 
 mod random_choice {

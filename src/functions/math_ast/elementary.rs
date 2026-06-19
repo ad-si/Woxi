@@ -2398,60 +2398,63 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
-  let x = match expr_to_num(&args[0]) {
-    Some(v) => v,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "Clip".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Clip".to_string(),
+      args: args.to_vec().into(),
+    })
   };
 
-  let (min_val, max_val) = if args.len() >= 2 {
+  // Numeric value of x, used only to decide the branch. The exact input is
+  // preserved in the result, so Clip[1/2] stays 1/2 and Clip[Pi, {0, 10}] stays
+  // Pi rather than being floatified.
+  let x = match crate::functions::math_ast::try_eval_to_f64(&args[0]) {
+    Some(v) => v,
+    None => return unevaluated(),
+  };
+
+  // Bounds: exact expressions plus their numeric values. The default range is
+  // {-1, 1}.
+  let (min_expr, max_expr, min_val, max_val) = if args.len() >= 2 {
     match &args[1] {
       Expr::List(bounds) if bounds.len() == 2 => {
-        let min = expr_to_num(&bounds[0]).ok_or_else(|| {
-          InterpreterError::EvaluationError("Clip: min must be numeric".into())
-        })?;
-        let max = expr_to_num(&bounds[1]).ok_or_else(|| {
-          InterpreterError::EvaluationError("Clip: max must be numeric".into())
-        })?;
-        (min, max)
+        let min = match crate::functions::math_ast::try_eval_to_f64(&bounds[0])
+        {
+          Some(v) => v,
+          None => return unevaluated(),
+        };
+        let max = match crate::functions::math_ast::try_eval_to_f64(&bounds[1])
+        {
+          Some(v) => v,
+          None => return unevaluated(),
+        };
+        (bounds[0].clone(), bounds[1].clone(), min, max)
       }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Clip: second argument must be {min, max}".into(),
-        ));
-      }
+      _ => return unevaluated(),
     }
   } else {
-    (-1.0, 1.0)
+    (Expr::Integer(-1), Expr::Integer(1), -1.0, 1.0)
   };
 
-  // 3rd arg: replacement values {vMin, vMax} for out-of-range values
-  if args.len() == 3
-    && let Expr::List(replacements) = &args[2]
-    && replacements.len() == 2
-  {
-    if x < min_val {
-      return Ok(replacements[0].clone());
-    } else if x > max_val {
-      return Ok(replacements[1].clone());
-    } else {
-      return Ok(args[0].clone());
+  // 3rd arg: replacement values {vBelow, vAbove} for out-of-range inputs;
+  // otherwise the clamped bound itself is used.
+  let (below_expr, above_expr) = if args.len() == 3 {
+    match &args[2] {
+      Expr::List(r) if r.len() == 2 => (r[0].clone(), r[1].clone()),
+      _ => return unevaluated(),
     }
-  }
+  } else {
+    (min_expr, max_expr)
+  };
 
-  let clipped = if x < min_val {
-    min_val
+  if x < min_val {
+    Ok(below_expr)
   } else if x > max_val {
-    max_val
+    Ok(above_expr)
   } else {
-    x
-  };
-
-  Ok(num_to_expr(clipped))
+    // Within range: return the exact input unchanged.
+    Ok(args[0].clone())
+  }
 }
 
 /// IntegerExponent[n, b] - largest power of b that divides n
