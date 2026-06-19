@@ -11142,7 +11142,33 @@ pub fn contains_slot_zero(expr: &Expr) -> bool {
     Expr::Rule {
       pattern,
       replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
     } => contains_slot_zero(pattern) || contains_slot_zero(replacement),
+    // Application / replacement / mapping operators all carry sub-expressions
+    // that can hold `#0` (e.g. the `@` in `#0@Quotient[#, 3]`). Without these
+    // arms the self-substitution pass is skipped and `#0` is wrongly filled
+    // with the first argument.
+    Expr::PrefixApply { func, arg } => {
+      contains_slot_zero(func) || contains_slot_zero(arg)
+    }
+    Expr::Postfix { expr: e, func } => {
+      contains_slot_zero(e) || contains_slot_zero(func)
+    }
+    Expr::Map { func, list }
+    | Expr::Apply { func, list }
+    | Expr::MapApply { func, list } => {
+      contains_slot_zero(func) || contains_slot_zero(list)
+    }
+    Expr::ReplaceAll { expr: e, rules }
+    | Expr::ReplaceRepeated { expr: e, rules } => {
+      contains_slot_zero(e) || contains_slot_zero(rules)
+    }
+    Expr::Part { expr: e, index } => {
+      contains_slot_zero(e) || contains_slot_zero(index)
+    }
     // Nested Function/NamedFunction bodies introduce their own #0 scope.
     Expr::Function { .. } | Expr::NamedFunction { .. } => false,
     _ => false,
@@ -11277,6 +11303,55 @@ pub fn substitute_slot_zero_with_self(expr: &Expr, self_fn: &Expr) -> Expr {
         .map(|e| substitute_slot_zero_with_self(e, self_fn))
         .collect(),
     ),
+    // Application / replacement / mapping operators carry sub-expressions that
+    // can hold `#0` (mirrors the same arms in contains_slot_zero so the two
+    // stay in lockstep).
+    Expr::PrefixApply { func, arg } => Expr::PrefixApply {
+      func: Box::new(substitute_slot_zero_with_self(func, self_fn)),
+      arg: Box::new(substitute_slot_zero_with_self(arg, self_fn)),
+    },
+    Expr::Postfix { expr: e, func } => Expr::Postfix {
+      expr: Box::new(substitute_slot_zero_with_self(e, self_fn)),
+      func: Box::new(substitute_slot_zero_with_self(func, self_fn)),
+    },
+    Expr::Map { func, list } => Expr::Map {
+      func: Box::new(substitute_slot_zero_with_self(func, self_fn)),
+      list: Box::new(substitute_slot_zero_with_self(list, self_fn)),
+    },
+    Expr::Apply { func, list } => Expr::Apply {
+      func: Box::new(substitute_slot_zero_with_self(func, self_fn)),
+      list: Box::new(substitute_slot_zero_with_self(list, self_fn)),
+    },
+    Expr::MapApply { func, list } => Expr::MapApply {
+      func: Box::new(substitute_slot_zero_with_self(func, self_fn)),
+      list: Box::new(substitute_slot_zero_with_self(list, self_fn)),
+    },
+    Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
+      expr: Box::new(substitute_slot_zero_with_self(e, self_fn)),
+      rules: Box::new(substitute_slot_zero_with_self(rules, self_fn)),
+    },
+    Expr::ReplaceRepeated { expr: e, rules } => Expr::ReplaceRepeated {
+      expr: Box::new(substitute_slot_zero_with_self(e, self_fn)),
+      rules: Box::new(substitute_slot_zero_with_self(rules, self_fn)),
+    },
+    Expr::Part { expr: e, index } => Expr::Part {
+      expr: Box::new(substitute_slot_zero_with_self(e, self_fn)),
+      index: Box::new(substitute_slot_zero_with_self(index, self_fn)),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(substitute_slot_zero_with_self(pattern, self_fn)),
+      replacement: Box::new(substitute_slot_zero_with_self(replacement, self_fn)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(substitute_slot_zero_with_self(pattern, self_fn)),
+      replacement: Box::new(substitute_slot_zero_with_self(replacement, self_fn)),
+    },
     // Don't recurse into nested Function bodies — inner #0 refers to that
     // inner function, not this one.
     Expr::Function { .. } | Expr::NamedFunction { .. } => expr.clone(),

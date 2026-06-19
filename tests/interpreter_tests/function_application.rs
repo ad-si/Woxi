@@ -1003,6 +1003,36 @@ mod slot_zero_self_reference {
   fn unnumbered_slot_self_reference() {
     assert_eq!(interpret("If[# <= 1, 1, # #0[#-1]]& [4]").unwrap(), "24");
   }
+
+  // #0 must self-reference through the prefix-application form `#0@arg`, not
+  // only the bracket form `#0[arg]`. Regression: the slot-zero substitution
+  // pass did not descend into Expr::PrefixApply, so `#0` was wrongly filled
+  // with the first argument (e.g. `fact[5]` produced `5*5[4]`).
+  #[test]
+  fn factorial_via_slot_zero_prefix_apply() {
+    assert_eq!(
+      interpret("If[# <= 1, 1, # * #0@(# - 1)]& [5]").unwrap(),
+      "120"
+    );
+  }
+
+  // Mirrors the balanced-ternary `tobt` idiom: `#0@Quotient[...]` recursion.
+  #[test]
+  fn slot_zero_prefix_apply_with_quotient() {
+    assert_eq!(
+      interpret(r#"If[# == 0, "z", #0@Quotient[#, 3]]& [10]"#).unwrap(),
+      "z"
+    );
+  }
+
+  // #0 self-reference must also survive inside a ReplaceAll right-hand side.
+  #[test]
+  fn slot_zero_inside_replace_all() {
+    assert_eq!(
+      interpret("If[# <= 0, 0, (# + #0[# - 1]) /. x_ -> x]& [4]").unwrap(),
+      "10"
+    );
+  }
 }
 
 mod sub_value_assignments {
