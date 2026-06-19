@@ -3537,8 +3537,10 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Newton iteration.
   if let Expr::List(specs) = &args[1]
     && !specs.is_empty()
-    && specs.iter().all(|s| matches!(s, Expr::List(p)
-      if p.len() == 2 && matches!(&p[0], Expr::Identifier(_))))
+    && specs.iter().all(|s| {
+      matches!(s, Expr::List(p)
+      if p.len() == 2 && matches!(&p[0], Expr::Identifier(_)))
+    })
   {
     return find_root_multivariate(&args[0], specs);
   }

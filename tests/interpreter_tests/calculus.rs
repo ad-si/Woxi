@@ -4953,10 +4953,8 @@ mod findroot_symbolic_start {
   #[test]
   fn findroot_multivariate_nonlinear() {
     assert_eq!(
-      interpret(
-        "FindRoot[{x^2 + y^2 == 1, x == y}, {{x, 0.5}, {y, 0.5}}]"
-      )
-      .unwrap(),
+      interpret("FindRoot[{x^2 + y^2 == 1, x == y}, {{x, 0.5}, {y, 0.5}}]")
+        .unwrap(),
       "{x -> 0.7071067811865476, y -> 0.7071067811865476}"
     );
   }
