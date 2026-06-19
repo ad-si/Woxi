@@ -1240,6 +1240,42 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
+  // z = 1: LerchPhi[1, s, a] == HurwitzZeta[s, a]. Delegate for exact s and a
+  // so the result stays exact (e.g. LerchPhi[1, 2, 1] -> Pi^2/6) instead of
+  // being floatified, matching wolframscript.
+  //
+  // The delegation is restricted to the regime where Woxi's HurwitzZeta closed
+  // form coincides with wolframscript's LerchPhi output: s an even integer
+  // (always a Pi^(2k) closed form) or a in {1, 2} (Zeta[s] / -1 + Zeta[s]).
+  // For odd s with a >= 3 wolframscript keeps a generalized-Zeta form, and
+  // a <= 0 / s <= 1 diverge, so those stay on the existing paths.
+  let is_exact_number = |e: &Expr| -> bool {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2)
+  };
+  let s_is_even_int = matches!(s, Expr::Integer(n) if *n % 2 == 0);
+  let a_is_1_or_2 = matches!(a, Expr::Integer(1) | Expr::Integer(2));
+  if matches!(z, Expr::Integer(1))
+    && is_exact_number(s)
+    && is_exact_number(a)
+    && try_eval_to_f64(s).is_some_and(|v| v > 1.0)
+    && try_eval_to_f64(a).is_some_and(|v| v > 0.0)
+    && (s_is_even_int || a_is_1_or_2)
+  {
+    let hz = crate::evaluator::evaluate_function_call_ast(
+      "HurwitzZeta",
+      &[s.clone(), a.clone()],
+    )?;
+    // Only use the closed form if HurwitzZeta actually simplified; if it
+    // stayed unevaluated (e.g. a half-integer a Woxi doesn't close-form), fall
+    // through to the existing numeric paths rather than emit HurwitzZeta[...].
+    if !matches!(&hz, Expr::FunctionCall { name, .. } if name == "HurwitzZeta")
+    {
+      return Ok(hz);
+    }
+  }
+
   // Numeric evaluation
   if let (Some(zf), Some(sf), Some(af)) =
     (try_eval_to_f64(z), try_eval_to_f64(s), try_eval_to_f64(a))

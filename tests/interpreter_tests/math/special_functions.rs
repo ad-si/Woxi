@@ -3889,16 +3889,22 @@ mod lerch_phi {
 
   #[test]
   fn lerch_phi_relates_to_zeta() {
-    // LerchPhi[1, 2, 1] = Σ 1/(k+1)^2 = π²/6
-    let result = interpret("LerchPhi[1, 2, 1]").unwrap();
-    let val: f64 = result.parse().expect("should be a number");
-    let expected = std::f64::consts::PI * std::f64::consts::PI / 6.0;
-    assert!(
-      (val - expected).abs() < 1e-6,
-      "LerchPhi[1, 2, 1] should be pi^2/6 = {}, got {}",
-      expected,
-      val
-    );
+    // LerchPhi[1, 2, 1] = Σ 1/(k+1)^2 = π²/6, returned exactly (matching
+    // wolframscript) rather than as a machine float.
+    assert_eq!(interpret("LerchPhi[1, 2, 1]").unwrap(), "Pi^2/6");
+  }
+
+  #[test]
+  fn lerch_phi_z1_exact_via_hurwitz_zeta() {
+    // LerchPhi[1, s, a] == HurwitzZeta[s, a]; exact in the regime where both
+    // engines produce the same closed form (even s, or a in {1, 2}).
+    assert_eq!(interpret("LerchPhi[1, 4, 1]").unwrap(), "Pi^4/90");
+    assert_eq!(interpret("LerchPhi[1, 2, 2]").unwrap(), "-1 + Pi^2/6");
+    assert_eq!(interpret("LerchPhi[1, 2, 3]").unwrap(), "-5/4 + Pi^2/6");
+    assert_eq!(interpret("LerchPhi[1, 3, 1]").unwrap(), "Zeta[3]");
+    assert_eq!(interpret("LerchPhi[1, 3, 2]").unwrap(), "-1 + Zeta[3]");
+    assert_eq!(interpret("LerchPhi[1, 5, 2]").unwrap(), "-1 + Zeta[5]");
+    assert_eq!(interpret("LerchPhi[1, 2, 1/2]").unwrap(), "Pi^2/2");
   }
 
   #[test]
