@@ -1965,6 +1965,235 @@ fn match_exponential_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   Some((coeff, base))
 }
 
+/// gcd of two non-negative integers.
+fn tr_gcd(mut a: i128, mut b: i128) -> i128 {
+  a = a.abs();
+  b = b.abs();
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+/// Reduce a rational (num, den) to lowest terms with a positive denominator.
+fn tr_reduce(n: i128, d: i128) -> (i128, i128) {
+  if d == 0 {
+    return (n, 0);
+  }
+  let g = tr_gcd(n, d).max(1);
+  let (mut n, mut d) = (n / g, d / g);
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  (n, d)
+}
+
+fn tr_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  tr_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
+}
+fn tr_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  tr_reduce(a.0 * b.0, a.1 * b.1)
+}
+
+/// Parse an evaluated expression as an exact rational (n, d).
+fn tr_as_rat(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) => Some((*n, *d)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `CoefficientList[op[body], var]` as a vector of exact rationals, or None if
+/// the result isn't a list of rational coefficients (e.g. non-polynomial).
+fn tr_coeff_list(
+  body: &Expr,
+  var_name: &str,
+  op: &str,
+) -> Option<Vec<(i128, i128)>> {
+  let part = Expr::FunctionCall {
+    name: op.to_string(),
+    args: vec![body.clone()].into(),
+  };
+  let cl = Expr::FunctionCall {
+    name: "CoefficientList".to_string(),
+    args: vec![part, Expr::Identifier(var_name.to_string())].into(),
+  };
+  let evaled = crate::evaluator::evaluate_expr_to_expr(&cl).ok()?;
+  let Expr::List(items) = &evaled else { return None };
+  items.iter().map(tr_as_rat).collect()
+}
+
+/// Horner evaluation of a polynomial (rational coefficients, ascending degree)
+/// at an integer point.
+fn tr_poly_eval(coeffs: &[(i128, i128)], x: i128) -> (i128, i128) {
+  let mut acc = (0i128, 1i128);
+  for c in coeffs.iter().rev() {
+    acc = tr_add(tr_mul(acc, (x, 1)), *c);
+  }
+  acc
+}
+
+/// Evaluate the derivative of a polynomial at an integer point.
+fn tr_poly_deriv_eval(coeffs: &[(i128, i128)], x: i128) -> (i128, i128) {
+  // d/dx sum c_k x^k = sum k c_k x^(k-1).
+  let deriv: Vec<(i128, i128)> = coeffs
+    .iter()
+    .enumerate()
+    .skip(1)
+    .map(|(k, c)| tr_mul(*c, (k as i128, 1)))
+    .collect();
+  tr_poly_eval(&deriv, x)
+}
+
+/// Exact harmonic number H_a = sum_{k=1}^{a} 1/k (H_0 = 0).
+fn tr_harmonic(a: i128) -> (i128, i128) {
+  let mut h = (0i128, 1i128);
+  for k in 1..=a {
+    h = tr_add(h, (1, k));
+  }
+  h
+}
+
+/// Sum of a convergent rational summand with simple integer poles, evaluated
+/// in closed form via residues:
+/// `Sum[P(n)/Q(n), {n, min, Infinity}] = -sum_r residue_r * H_{min-1-r}`,
+/// where r ranges over the (integer, simple) roots of Q. Returns None unless
+/// every pole is a simple integer at or below `min-1` and the series converges
+/// (the residues sum to zero, i.e. the summand decays like 1/n^2).
+fn try_telescoping_rational_sum(
+  body: &Expr,
+  var_name: &str,
+  min: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Trim trailing zero coefficients to get true degrees.
+  let trim = |mut v: Vec<(i128, i128)>| {
+    while v.len() > 1 && v.last() == Some(&(0, 1)) {
+      v.pop();
+    }
+    v
+  };
+  let mut num = tr_coeff_list(body, var_name, "Numerator")
+    .map(&trim)
+    .unwrap_or_default();
+  let mut den = tr_coeff_list(body, var_name, "Denominator")
+    .map(&trim)
+    .unwrap_or_default();
+  // Woxi's Numerator/Denominator don't split a reciprocal power such as
+  // Power[n^2 + n, -1]; in that case the numerator comes back empty. Recover
+  // the form 1/Q by inverting the body: if body^-1 is a polynomial Q, the
+  // summand is 1/Q.
+  if num.is_empty() {
+    let recip = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![body.clone(), Expr::Integer(-1)].into(),
+    };
+    if let Some(q) = tr_coeff_list(&recip, var_name, "Together").map(&trim)
+      && q.len() > 1
+    {
+      num = vec![(1, 1)];
+      den = q;
+    }
+  }
+  // An empty coefficient list means the numerator/denominator isn't a genuine
+  // polynomial in `var`; leave it to other paths.
+  if num.is_empty() || den.is_empty() {
+    return Ok(None);
+  }
+  let deg_num = num.len() - 1;
+  let deg_den = den.len() - 1;
+  // Need a genuine rational function that decays at least like 1/n^2.
+  if deg_den < deg_num + 2 || deg_den == 0 {
+    return Ok(None);
+  }
+
+  // Find the integer roots of Q with multiplicity. A root at 0 shows up as a
+  // run of leading zero coefficients; other integer roots divide the lowest
+  // non-zero coefficient (rational root theorem, integer candidates only).
+  let mut roots: Vec<i128> = Vec::new();
+  // Strip integer denominators so the candidate search works on integers.
+  let lcm_den = den.iter().fold(1i128, |acc, &(_, d)| {
+    let g = tr_gcd(acc, d);
+    acc / g * d
+  });
+  let int_coeffs: Vec<i128> =
+    den.iter().map(|&(n, d)| n * (lcm_den / d)).collect();
+  // Roots at 0 (trailing zero constant terms).
+  let mut lowest = 0usize;
+  while lowest < int_coeffs.len() && int_coeffs[lowest] == 0 {
+    roots.push(0);
+    lowest += 1;
+  }
+  if lowest >= int_coeffs.len() {
+    return Ok(None);
+  }
+  let reduced = &int_coeffs[lowest..];
+  let c0 = reduced[0];
+  // Candidate integer roots r divide c0 (leading coefficient need not be 1, but
+  // for these telescoping cases the relevant roots are integer divisors of c0).
+  let c0a = c0.abs();
+  for cand in 1..=c0a {
+    if c0a % cand != 0 {
+      continue;
+    }
+    for r in [cand, -cand] {
+      // Horner test on the integer polynomial.
+      let mut acc = 0i128;
+      for c in reduced.iter().rev() {
+        acc = acc * r + c;
+      }
+      if acc == 0 {
+        roots.push(r);
+      }
+    }
+  }
+  // Every pole must be simple and the roots must account for the full degree
+  // (Q factors completely over the integers with no repeats).
+  if roots.len() != deg_den {
+    return Ok(None);
+  }
+  let mut sorted = roots.clone();
+  sorted.sort_unstable();
+  if sorted.windows(2).any(|w| w[0] == w[1]) {
+    return Ok(None); // a repeated pole is not handled here
+  }
+  // No pole may lie inside the summation range [min, Infinity).
+  if roots.iter().any(|&r| r > min - 1) {
+    return Ok(None);
+  }
+
+  let mut total = (0i128, 1i128);
+  let mut residue_sum = (0i128, 1i128);
+  for &r in &roots {
+    let pr = tr_poly_eval(&num, r);
+    let dpr = tr_poly_deriv_eval(&den, r);
+    if dpr.0 == 0 {
+      return Ok(None);
+    }
+    // residue = P(r) / Q'(r)
+    let c = tr_mul(pr, (dpr.1, dpr.0));
+    residue_sum = tr_add(residue_sum, c);
+    let h = tr_harmonic(min - 1 - r);
+    total = tr_add(total, tr_mul((-c.0, c.1), h));
+  }
+  // Convergence requires the 1/n coefficient (sum of residues) to vanish.
+  if residue_sum.0 != 0 {
+    return Ok(None);
+  }
+  let (n, d) = tr_reduce(total.0, total.1);
+  Ok(Some(crate::functions::math_ast::make_rational(n, d)))
+}
+
 fn try_infinite_sum(
   body: &Expr,
   var_name: &str,
@@ -2045,6 +2274,13 @@ fn try_infinite_sum(
       return Ok(Some(acc));
     }
     return Ok(None);
+  }
+
+  // Convergent rational summand with simple integer poles telescopes to an
+  // exact rational, e.g. Sum[1/(n(n+1)), {n, 1, Infinity}] = 1. Handled for
+  // any finite lower bound >= 1.
+  if let Some(result) = try_telescoping_rational_sum(body, var_name, min)? {
+    return Ok(Some(result));
   }
 
   if min != 1 {

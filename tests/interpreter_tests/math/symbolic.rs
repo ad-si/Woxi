@@ -131,6 +131,37 @@ mod sum {
     assert_eq!(interpret("Sum[1/n^2, {n, 1, Infinity}]").unwrap(), "Pi^2/6");
   }
 
+  // Convergent rational summands with simple integer poles telescope to an
+  // exact rational, evaluated in closed form via residues.
+  #[test]
+  fn infinite_sum_telescoping_rational() {
+    assert_eq!(
+      interpret("Sum[1/(n (n + 1)), {n, 1, Infinity}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Sum[1/(n (n + 2)), {n, 1, Infinity}]").unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("Sum[1/(n^2 + n), {n, 1, Infinity}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Sum[1/(n (n + 1) (n + 2)), {n, 1, Infinity}]").unwrap(),
+      "1/4"
+    );
+    assert_eq!(
+      interpret("Sum[1/((n + 1) (n + 3)), {n, 1, Infinity}]").unwrap(),
+      "5/12"
+    );
+    // A non-unit lower bound is handled too.
+    assert_eq!(
+      interpret("Sum[1/(n (n + 1)), {n, 2, Infinity}]").unwrap(),
+      "1/2"
+    );
+  }
+
   #[test]
   fn infinite_sum_short_iterator_form() {
     // `{n, max}` is shorthand for `{n, 1, max}`, including when max is Infinity
