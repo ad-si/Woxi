@@ -11343,14 +11343,20 @@ pub fn substitute_slot_zero_with_self(expr: &Expr, self_fn: &Expr) -> Expr {
       replacement,
     } => Expr::Rule {
       pattern: Box::new(substitute_slot_zero_with_self(pattern, self_fn)),
-      replacement: Box::new(substitute_slot_zero_with_self(replacement, self_fn)),
+      replacement: Box::new(substitute_slot_zero_with_self(
+        replacement,
+        self_fn,
+      )),
     },
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => Expr::RuleDelayed {
       pattern: Box::new(substitute_slot_zero_with_self(pattern, self_fn)),
-      replacement: Box::new(substitute_slot_zero_with_self(replacement, self_fn)),
+      replacement: Box::new(substitute_slot_zero_with_self(
+        replacement,
+        self_fn,
+      )),
     },
     // Don't recurse into nested Function bodies — inner #0 refers to that
     // inner function, not this one.
