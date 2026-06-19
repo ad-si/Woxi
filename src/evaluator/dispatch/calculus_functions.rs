@@ -728,7 +728,7 @@ pub fn dispatch_calculus_functions(
       });
     }
     "Interpolation" | "ListInterpolation" if !args.is_empty() => {
-      return Some(crate::functions::ode_ast::interpolation_ast(args));
+      return Some(crate::functions::ode_ast::interpolation_ast(args, name));
     }
     "NDSolve" if args.len() == 3 => {
       return Some(crate::functions::ode_ast::ndsolve_ast(args));

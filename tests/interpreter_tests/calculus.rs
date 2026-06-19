@@ -6559,6 +6559,52 @@ mod list_interpolation {
     let result = interpret("Head[ListInterpolation[{1, 4, 9, 16}]]").unwrap();
     assert_eq!(result, "InterpolatingFunction");
   }
+
+  #[test]
+  fn order_reduction_uses_listinterpolation_tag() {
+    // The order-reduction warning must be tagged with the actual head
+    // (ListInterpolation), not Interpolation.
+    woxi::clear_state();
+    assert_eq!(interpret("ListInterpolation[{1, 4, 9}][2]").unwrap(), "4");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "ListInterpolation::inhr: Requested order is too high; order has been reduced to {2}."
+      )),
+      "expected ListInterpolation::inhr, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn interpolation_order_reduction_keeps_interpolation_tag() {
+    woxi::clear_state();
+    assert_eq!(interpret("Interpolation[{1, 4, 9}][2]").unwrap(), "4");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Interpolation::inhr: Requested order is too high; order has been reduced to {2}."
+      )),
+      "expected Interpolation::inhr, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn non_list_first_argument_emits_innd_and_keeps_head() {
+    // A non-list first argument keeps the call unevaluated with its own head
+    // and emits the Interpolation::innd message (always tagged Interpolation).
+    woxi::clear_state();
+    assert_eq!(
+      interpret("ListInterpolation[foo]").unwrap(),
+      "ListInterpolation[foo]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Interpolation::innd: First argument in foo does not contain a list of data and coordinates."
+      )),
+      "expected Interpolation::innd, got {msgs:?}"
+    );
+  }
 }
 
 mod trig_expand {

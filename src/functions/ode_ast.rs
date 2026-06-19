@@ -2079,10 +2079,13 @@ fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
 
 /// Interpolation[{y1, y2, ...}] or Interpolation[{{x1,y1}, {x2,y2}, ...}]
 /// Returns InterpolatingFunction[domain, data]
-pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn interpolation_ast(
+  args: &[Expr],
+  head: &str,
+) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::FunctionCall {
-      name: "Interpolation".to_string(),
+      name: head.to_string(),
       args: args.to_vec().into(),
     });
   }
@@ -2126,8 +2129,18 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data_list = match &data_evaluated {
     Expr::List(items) => items,
     _ => {
+      // A non-list first argument is not interpolatable. wolframscript emits
+      // this message tagged `Interpolation` (regardless of the actual head)
+      // and keeps the call unevaluated.
+      crate::emit_message(&format!(
+        "Interpolation::innd: First argument in {} does not contain a list of data and coordinates.",
+        crate::syntax::format_expr(
+          &data_evaluated,
+          crate::syntax::ExprForm::Output
+        )
+      ));
       return Ok(Expr::FunctionCall {
-        name: "Interpolation".to_string(),
+        name: head.to_string(),
         args: args.to_vec().into(),
       });
     }
@@ -2176,8 +2189,7 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if order >= n {
     let reduced = n - 1;
     crate::emit_message(&format!(
-      "Interpolation::inhr: Requested order is too high; order has been reduced to {{{}}}.",
-      reduced
+      "{head}::inhr: Requested order is too high; order has been reduced to {{{reduced}}}."
     ));
     order = reduced;
   }
