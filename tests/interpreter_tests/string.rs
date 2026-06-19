@@ -861,6 +861,44 @@ mod string_replace {
     );
   }
 
+  #[test]
+  fn named_pattern_rule_valued_rhs() {
+    // The RHS of a `:>` rule may itself be a rule (w -> d); the named
+    // pattern variables must be substituted on both sides of it.
+    assert_eq!(
+      interpret(
+        r#"StringCases["x=1, y=2", w:WordCharacter ~~ "=" ~~ d:DigitCharacter :> w -> d]"#
+      )
+      .unwrap(),
+      "{x -> 1, y -> 2}"
+    );
+  }
+
+  #[test]
+  fn named_pattern_comparison_rhs() {
+    // A comparison RHS likewise has its pattern variables substituted; here
+    // "x" == "1" evaluates to False (unsubstituted it would stay `w == d`).
+    assert_eq!(
+      interpret(
+        r#"StringCases["x=1", w:WordCharacter ~~ "=" ~~ d:DigitCharacter :> w == d]"#
+      )
+      .unwrap(),
+      "{False}"
+    );
+  }
+
+  #[test]
+  fn named_pattern_delayed_rule_valued_rhs() {
+    // A delayed-rule (:>) RHS nested inside the outer rule also substitutes.
+    assert_eq!(
+      interpret(
+        r#"StringCases["x=1, y=2", w:WordCharacter ~~ "=" ~~ d:DigitCharacter :> (w :> d)]"#
+      )
+      .unwrap(),
+      "{x :> 1, y :> 2}"
+    );
+  }
+
   // IgnoreCase -> True makes a literal pattern match regardless of case.
   #[test]
   fn ignore_case_single_rule() {

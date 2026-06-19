@@ -1989,6 +1989,43 @@ fn substitute_captures(expr: &Expr, captures: &regex::Captures) -> Expr {
         .map(|a| substitute_captures(a, captures))
         .collect(),
     ),
+    // A rule (or delayed rule) RHS such as `w -> d` must have its pattern
+    // variables substituted on both sides, not be left verbatim.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(substitute_captures(pattern, captures)),
+      replacement: Box::new(substitute_captures(replacement, captures)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(substitute_captures(pattern, captures)),
+      replacement: Box::new(substitute_captures(replacement, captures)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands
+        .iter()
+        .map(|a| substitute_captures(a, captures))
+        .collect(),
+      operators: operators.clone(),
+    },
+    Expr::Association(pairs) => Expr::Association(
+      pairs
+        .iter()
+        .map(|(k, v)| {
+          (
+            substitute_captures(k, captures),
+            substitute_captures(v, captures),
+          )
+        })
+        .collect(),
+    ),
     _ => expr.clone(),
   }
 }
