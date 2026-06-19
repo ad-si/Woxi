@@ -6345,9 +6345,7 @@ fn try_integrate_power_derivative(expr: &Expr, var: &str) -> Option<Expr> {
       Expr::Integer(k) => ((**left).clone(), *k),
       _ => return None,
     },
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       match &args[1] {
         Expr::Integer(k) => (args[0].clone(), *k),
         _ => return None,
@@ -9671,6 +9669,12 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // The limit of an expression that doesn't involve the limit variable is the
+  // expression itself (Limit[Log[a], x -> 0] = Log[a], at any point).
+  if !crate::functions::polynomial_ast::contains_var(&args[0], &var_name) {
+    return Ok(args[0].clone());
+  }
+
   // Handle limits at Infinity
   if is_infinity(&point) || is_negative_infinity(&point) {
     return limit_at_infinity(&args[0], &var_name, &point);
@@ -9753,6 +9757,33 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // numeric-complex form that try_eval_to_f64 can't see.
             if is_numeric_complex_constant(val) {
               return result;
+            }
+            // A substituted result free of the limit variable is the value at
+            // a point of continuity (e.g. Limit[a x, x -> 2] = 2 a). Skip the
+            // indeterminate/divergent markers so 0/0, 1/0, … still fall through
+            // to L'Hôpital and the other strategies below.
+            let is_special_marker = matches!(
+              val,
+              Expr::Identifier(s) | Expr::Constant(s)
+                if s == "Indeterminate"
+                  || s == "ComplexInfinity"
+                  || s == "Infinity"
+                  || s == "Undefined"
+            ) || is_infinity(val)
+              || is_negative_infinity(val)
+              || matches!(val, Expr::FunctionCall { name, .. } if name == "DirectedInfinity" || name == "Indeterminate");
+            if !is_special_marker
+              && !crate::functions::polynomial_ast::contains_var(
+                val, &var_name,
+              )
+            {
+              return Ok(reconcile_one_sided_direct(
+                val.clone(),
+                &args[0],
+                &var_name,
+                &point,
+                direction,
+              ));
             }
             // Return unevaluated if substitution doesn't yield a clean result
           }

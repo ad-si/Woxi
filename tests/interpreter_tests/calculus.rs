@@ -1855,6 +1855,29 @@ mod limit {
     assert_eq!(interpret("Limit[x^2, x -> 3]").unwrap(), "9");
   }
 
+  #[test]
+  fn limit_free_of_variable() {
+    // The limit of an expression not involving the limit variable is itself.
+    assert_eq!(interpret("Limit[Log[a], x -> 0]").unwrap(), "Log[a]");
+    assert_eq!(interpret("Limit[a, x -> 0]").unwrap(), "a");
+    assert_eq!(interpret("Limit[a + b, x -> 5]").unwrap(), "a + b");
+    assert_eq!(interpret("Limit[Sin[a], x -> 0]").unwrap(), "Sin[a]");
+  }
+
+  #[test]
+  fn limit_symbolic_substitution_value() {
+    // Direct substitution at a point of continuity yields a symbolic value.
+    assert_eq!(interpret("Limit[a x, x -> 2]").unwrap(), "2*a");
+    assert_eq!(interpret("Limit[a x^2 + b, x -> 3]").unwrap(), "9*a + b");
+    assert_eq!(interpret("Limit[a Sin[x], x -> Pi/2]").unwrap(), "a");
+  }
+
+  #[test]
+  fn limit_symbolic_base_exponential_ratio() {
+    // L'Hopital finishing with a constant-w.r.t.-x value: (a^x-1)/x -> Log[a].
+    assert_eq!(interpret("Limit[(a^x - 1)/x, x -> 0]").unwrap(), "Log[a]");
+  }
+
   // One-sided limits at jump discontinuities must use the value approached
   // from the given side, not the value AT the point.
   #[test]
