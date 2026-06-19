@@ -736,8 +736,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               }]
               .into(),
             };
-            let p_val =
-              crate::evaluator::evaluate_expr_to_expr(&p_expr).ok();
+            let p_val = crate::evaluator::evaluate_expr_to_expr(&p_expr).ok();
             if let Some(p) = p_val.as_ref().and_then(expr_to_i128)
               && p != 0
             {
@@ -749,9 +748,8 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   &Expr::Integer(1),
                 ),
               )?;
-              if !crate::functions::polynomial_ast::contains_var(
-                &c, &var_name,
-              ) {
+              if !crate::functions::polynomial_ast::contains_var(&c, &var_name)
+              {
                 let c_is_one = matches!(&c, Expr::Integer(1));
                 let base = if c_is_one {
                   Expr::FunctionCall {
