@@ -446,10 +446,8 @@ mod simplify {
     // Equation simplification must combine rational functions over a common
     // denominator, not just Expand: both sides reduce to 1/(1+x^2).
     assert_eq!(
-      interpret(
-        "Simplify[1/2 * (1/(1 - I x) + 1/(1 + I x)) == 1/(1 + x*x)]"
-      )
-      .unwrap(),
+      interpret("Simplify[1/2 * (1/(1 - I x) + 1/(1 + I x)) == 1/(1 + x*x)]")
+        .unwrap(),
       "True"
     );
     // A genuinely-unequal pair stays an unevaluated comparison.
