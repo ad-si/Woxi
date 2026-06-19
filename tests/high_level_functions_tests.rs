@@ -902,6 +902,81 @@ mod high_level_functions_tests {
       // Perfect-square input resolves to the Integer case via Sqrt.
       assert_eq!(interpret("ContinuedFraction[Sqrt[25]]").unwrap(), "{5}");
     }
+
+    #[test]
+    fn test_rational_truncates_to_n_terms() {
+      // The exact CF of 649/200 is {3, 4, 12, 4}; requesting 2 terms truncates.
+      assert_eq!(
+        interpret("ContinuedFraction[649/200, 2]").unwrap(),
+        "{3, 4}"
+      );
+      assert_eq!(
+        interpret("ContinuedFraction[649/200, 4]").unwrap(),
+        "{3, 4, 12, 4}"
+      );
+    }
+
+    #[test]
+    fn test_incomp_warning_when_fewer_terms() {
+      // Requesting more terms than the finite CF has emits the incomp warning,
+      // matching wolframscript, while still returning the available terms.
+      woxi::clear_state();
+      assert_eq!(
+        interpret("ContinuedFraction[649/200, 8]").unwrap(),
+        "{3, 4, 12, 4}"
+      );
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(
+          "ContinuedFraction::incomp: Warning: ContinuedFraction terminated before 8 terms."
+        )),
+        "expected incomp warning, got {msgs:?}"
+      );
+    }
+
+    #[test]
+    fn test_incomp_warning_for_integer() {
+      woxi::clear_state();
+      assert_eq!(interpret("ContinuedFraction[5, 3]").unwrap(), "{5}");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(
+          "ContinuedFraction::incomp: Warning: ContinuedFraction terminated before 3 terms."
+        )),
+        "expected incomp warning, got {msgs:?}"
+      );
+    }
+
+    #[test]
+    fn test_real_incomp_warning() {
+      // The machine float 3.245 justifies only 3 terms; requesting 4 warns.
+      woxi::clear_state();
+      assert_eq!(
+        interpret("ContinuedFraction[3.245, 4]").unwrap(),
+        "{3, 4, 12}"
+      );
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(
+          "ContinuedFraction::incomp: Warning: ContinuedFraction terminated before 4 terms."
+        )),
+        "expected incomp warning, got {msgs:?}"
+      );
+    }
+
+    #[test]
+    fn test_no_warning_when_enough_terms() {
+      // Exactly n terms available: no warning.
+      woxi::clear_state();
+      assert_eq!(interpret("ContinuedFraction[3.245, 2]").unwrap(), "{3, 4}");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs
+          .iter()
+          .all(|m| !m.contains("ContinuedFraction::incomp")),
+        "unexpected incomp warning, got {msgs:?}"
+      );
+    }
   }
 
   mod from_continued_fraction_tests {

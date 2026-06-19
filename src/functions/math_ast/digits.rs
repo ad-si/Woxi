@@ -1008,6 +1008,30 @@ fn integer_sqrt(n: i128) -> i128 {
 
 /// ContinuedFraction[x] - exact continued fraction for rational numbers
 /// ContinuedFraction[x, n] - first n terms for real numbers
+/// Apply the term-count argument of the exact (Integer/Rational) forms: with a
+/// positive integer `n`, truncate the terms when longer than `n` and, when the
+/// finite continued fraction is shorter than `n`, emit wolframscript's
+/// `ContinuedFraction::incomp` warning. The 1-argument form is unchanged.
+fn finalize_exact_continued_fraction(
+  mut terms: Vec<Expr>,
+  args: &[Expr],
+) -> Expr {
+  if args.len() == 2
+    && let Expr::Integer(n) = &args[1]
+    && *n > 0
+  {
+    let n = *n as usize;
+    if terms.len() > n {
+      terms.truncate(n);
+    } else if terms.len() < n {
+      crate::emit_message(&format!(
+        "ContinuedFraction::incomp: Warning: ContinuedFraction terminated before {n} terms."
+      ));
+    }
+  }
+  Expr::List(terms.into())
+}
+
 pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1018,7 +1042,10 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Handle Rational[p, q] or Integer
   match &args[0] {
     Expr::Integer(n) => {
-      return Ok(Expr::List(vec![Expr::Integer(*n)].into()));
+      return Ok(finalize_exact_continued_fraction(
+        vec![Expr::Integer(*n)],
+        args,
+      ));
     }
     Expr::FunctionCall { name, args: rargs }
       if name == "Rational" && rargs.len() == 2 =>
@@ -1042,7 +1069,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           a = b;
           b = rem;
         }
-        return Ok(Expr::List(result.into()));
+        return Ok(finalize_exact_continued_fraction(result, args));
       }
     }
     _ => {}
@@ -1083,10 +1110,15 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if terms.is_empty() {
         return unevaluated();
       }
-      if let Some(n) = n_cap
-        && terms.len() > n
-      {
-        terms.truncate(n);
+      if let Some(n) = n_cap {
+        if terms.len() > n {
+          terms.truncate(n);
+        } else if terms.len() < n {
+          // The float's precision didn't justify n terms.
+          crate::emit_message(&format!(
+            "ContinuedFraction::incomp: Warning: ContinuedFraction terminated before {n} terms."
+          ));
+        }
       }
       return Ok(Expr::List(terms.into()));
     }
