@@ -1463,6 +1463,66 @@ fn try_symbolic_sum(
     }));
   }
 
+  // Linearity over a constant factor: Sum[c * f(k), ...] = c * Sum[f(k), ...].
+  {
+    let factors: Option<Vec<Expr>> = match body {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        Some(args.iter().cloned().collect())
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => Some(vec![(**left).clone(), (**right).clone()]),
+      // f / c → f * c^-1, so a constant denominator pulls out (Sum[k/2]).
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => Some(vec![
+        (**left).clone(),
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: right.clone(),
+          right: Box::new(Expr::Integer(-1)),
+        },
+      ]),
+      _ => None,
+    };
+    if let Some(factors) = factors {
+      let (const_factors, var_factors): (Vec<Expr>, Vec<Expr>) =
+        factors.into_iter().partition(|f| {
+          !crate::functions::polynomial_ast::contains_var(f, var_name)
+        });
+      if !const_factors.is_empty() && !var_factors.is_empty() {
+        let inner_body = if var_factors.len() == 1 {
+          var_factors[0].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: var_factors.into(),
+          }
+        };
+        if let Some(inner_sum) = try_symbolic_sum(
+          &inner_body,
+          var_name,
+          min_expr,
+          max_expr,
+          min_concrete,
+          _max_concrete,
+        )? {
+          let mut all = const_factors;
+          all.push(inner_sum);
+          let result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: all.into(),
+          };
+          return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+        }
+      }
+    }
+  }
+
   // Binomial theorem: Sum[c Binomial[N, k] r^k, {k, 0, N}] = c (1 + r)^N.
   if let Some(0) = min_concrete
     && let Some(result) = try_binomial_theorem_sum(body, var_name, max_expr)

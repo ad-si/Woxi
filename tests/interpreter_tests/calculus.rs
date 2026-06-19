@@ -9340,6 +9340,51 @@ mod binomial_theorem_sum {
   }
 }
 
+mod symbolic_sum_constant_factor {
+  use super::*;
+
+  // Sum pulls a constant factor out of a monomial: Sum[c k^p] = c Sum[k^p].
+  #[test]
+  fn integer_coefficient_times_var() {
+    assert_eq!(interpret("Sum[2 k, {k, 1, n}]").unwrap(), "n*(1 + n)");
+  }
+
+  #[test]
+  fn integer_coefficient_times_square() {
+    assert_eq!(
+      interpret("Sum[3 k^2, {k, 1, n}]").unwrap(),
+      "(n*(1 + n)*(1 + 2*n))/2"
+    );
+  }
+
+  #[test]
+  fn symbolic_coefficient() {
+    assert_eq!(
+      interpret("Sum[a k, {k, 1, n}]").unwrap(),
+      "(a*n*(1 + n))/2"
+    );
+    assert_eq!(
+      interpret("Sum[a k^2, {k, 1, n}]").unwrap(),
+      "(a*n*(1 + n)*(1 + 2*n))/6"
+    );
+  }
+
+  #[test]
+  fn divided_by_constant() {
+    assert_eq!(interpret("Sum[k/2, {k, 1, n}]").unwrap(), "(n*(1 + n))/4");
+    assert_eq!(
+      interpret("Sum[k^2/3, {k, 1, n}]").unwrap(),
+      "(n*(1 + n)*(1 + 2*n))/18"
+    );
+  }
+
+  #[test]
+  fn divided_by_constant_symbol() {
+    // n is constant w.r.t. the summation index k.
+    assert_eq!(interpret("Sum[k/n, {k, 1, n}]").unwrap(), "(1 + n)/2");
+  }
+}
+
 mod sum_convergence {
   use super::*;
 
