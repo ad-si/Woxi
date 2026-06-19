@@ -277,6 +277,26 @@ mod conjugate_tests {
   }
 
   #[test]
+  fn conjugate_of_power_positive_real_base() {
+    // For a positive real base the conjugate moves onto the exponent.
+    assert_eq!(interpret("Conjugate[Exp[I]]").unwrap(), "E^(-I)");
+    assert_eq!(interpret("Conjugate[E^(2 I)]").unwrap(), "E^(-2*I)");
+    assert_eq!(interpret("Conjugate[E^z]").unwrap(), "E^Conjugate[z]");
+    assert_eq!(interpret("Conjugate[Exp[2 + 3 I]]").unwrap(), "E^(2 - 3*I)");
+    assert_eq!(interpret("Conjugate[2^I]").unwrap(), "2^(-I)");
+    assert_eq!(interpret("Conjugate[Pi^I]").unwrap(), "Pi^(-I)");
+  }
+
+  #[test]
+  fn conjugate_of_power_integer_exponent() {
+    // For an integer exponent the conjugate distributes onto the base.
+    assert_eq!(interpret("Conjugate[x^2]").unwrap(), "Conjugate[x]^2");
+    assert_eq!(interpret("Conjugate[x^3]").unwrap(), "Conjugate[x]^3");
+    // A complex exponent on a symbolic base stays unevaluated.
+    assert_eq!(interpret("Conjugate[x^I]").unwrap(), "Conjugate[x^I]");
+  }
+
+  #[test]
   fn re_im_of_conjugate() {
     // Re[Conjugate[z]] = Re[z]; Im[Conjugate[z]] = -Im[z].
     assert_eq!(interpret("Re[Conjugate[z]]").unwrap(), "Re[z]");

@@ -753,6 +753,42 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     return times_ast(&[Expr::Integer(-1), conjugate_one(operand)?]);
   }
 
+  // Conjugate[Power[base, exp]]:
+  //   * base a positive real (E, positive number, Pi, …): the conjugate moves
+  //     onto the exponent, since base^exp = E^(exp·Log[base]) with real
+  //     Log[base]. So Conjugate[E^z] = E^Conjugate[z], Conjugate[2^I] = 2^(-I).
+  //   * integer exponent: Conjugate distributes, Conjugate[base^n] =
+  //     Conjugate[base]^n (e.g. Conjugate[x^2] = Conjugate[x]^2).
+  let power_parts: Option<(&Expr, &Expr)> = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  };
+  if let Some((base, exp)) = power_parts {
+    if is_strictly_positive_real(base) {
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(base.clone()),
+        right: Box::new(conjugate_one(exp)?),
+      });
+    }
+    if matches!(exp, Expr::Integer(_)) {
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(conjugate_one(base)?),
+        right: Box::new(exp.clone()),
+      });
+    }
+  }
+
   // Default: return unevaluated Conjugate[expr]
   Ok(Expr::FunctionCall {
     name: "Conjugate".to_string(),
