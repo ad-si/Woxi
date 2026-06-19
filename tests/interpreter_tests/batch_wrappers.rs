@@ -5717,7 +5717,10 @@ mod batch_unevaluated_wrappers_2 {
       "Cycles[{{1, 3, 2}}]"
     );
     // An already-sorted list gives the identity permutation.
-    assert_eq!(interpret("FindPermutation[{1, 2, 3}]").unwrap(), "Cycles[{}]");
+    assert_eq!(
+      interpret("FindPermutation[{1, 2, 3}]").unwrap(),
+      "Cycles[{}]"
+    );
   }
 
   // KeyMemberQ
