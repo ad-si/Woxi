@@ -502,33 +502,34 @@ pub fn together_expr(expr: &Expr) -> Expr {
     // (only inverse Power factors, one numerator factor); re-combining it
     // would only reorder its denominator (`Sqrt[2]*s` → `s*Sqrt[2]`). And a
     // purely constant denominator (`(-4 (-3+2 x))/13`) is left factored.
-    let is_foldable_product = terms
-      .first()
-      .map(|t| {
-        let den = extract_num_den(t).1;
-        if matches!(den, Expr::Integer(1)) {
-          return false;
-        }
-        let mut vars = std::collections::HashSet::new();
-        super::simplify::collect_variables(&den, &mut vars);
-        if vars.is_empty() {
-          return false;
-        }
-        let factors = flatten_times_args(std::slice::from_ref(t));
-        if factors.len() < 2 {
-          return false;
-        }
-        let has_divide_node = factors.iter().any(|f| {
+    let is_foldable_product =
+      terms
+        .first()
+        .map(|t| {
+          let den = extract_num_den(t).1;
+          if matches!(den, Expr::Integer(1)) {
+            return false;
+          }
+          let mut vars = std::collections::HashSet::new();
+          super::simplify::collect_variables(&den, &mut vars);
+          if vars.is_empty() {
+            return false;
+          }
+          let factors = flatten_times_args(std::slice::from_ref(t));
+          if factors.len() < 2 {
+            return false;
+          }
+          let has_divide_node = factors.iter().any(|f| {
           matches!(f, Expr::BinaryOp { op: BinaryOperator::Divide, .. })
             || matches!(f, Expr::FunctionCall { name, .. } if name == "Divide")
         });
-        let num_contributors = factors
-          .iter()
-          .filter(|f| !matches!(extract_num_den(f).0, Expr::Integer(1)))
-          .count();
-        has_divide_node || num_contributors >= 2
-      })
-      .unwrap_or(false);
+          let num_contributors = factors
+            .iter()
+            .filter(|f| !matches!(extract_num_den(f).0, Expr::Integer(1)))
+            .count();
+          has_divide_node || num_contributors >= 2
+        })
+        .unwrap_or(false);
     if !is_foldable_product {
       return expr_rec;
     }

@@ -92,11 +92,39 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // First expand to canonical form
   let expanded = expand_and_combine(&args[0]);
 
+  // If expansion produced Laurent terms — negative powers of a variable, e.g.
+  // `a/b + a/c` from `a (1/b + 1/c)` — the polynomial factorers below assume a
+  // true polynomial and silently drop the `1/(b c)` (returning `a (b + c)`).
+  // Combine over a common denominator first and factor numerator/denominator
+  // separately, matching Wolfram's `Factor[p/q] = Factor[p]/Factor[q]`.
+  if expr_has_negative_var_power(&expanded) {
+    let combined = super::together::together_expr(&expanded);
+    let (num, den) = super::together::extract_num_den(&combined);
+    if !matches!(&den, Expr::Integer(1)) {
+      let factored_num = factor_ast(&[num])?;
+      let factored_den = factor_ast(&[den])?;
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(factored_num),
+        right: Box::new(factored_den),
+      });
+    }
+  }
+
   // Collect all variables
   let mut vars = std::collections::HashSet::new();
   collect_variables(&expanded, &mut vars);
   if vars.is_empty() {
     return Ok(expanded); // constant — return as is
+  }
+  // A single monomial term (constant × product of variable powers) has no
+  // nontrivial polynomial factorization — Factor returns it unchanged. Handle
+  // this before the multivariate path, which would otherwise drop the sign of
+  // the coefficient when pulling out its content (e.g. Factor[-2 a x] gave
+  // `2 a x`). The imaginary unit parses as Identifier("I"), so `-2 I x` is a
+  // two-"variable" monomial that hit exactly this bug.
+  if collect_additive_terms(&expanded).len() == 1 {
+    return crate::evaluator::evaluate_expr_to_expr(&expanded);
   }
   if vars.len() > 1 {
     // Multivariate polynomial — try Kronecker substitution
@@ -183,6 +211,51 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(build_product(result_factors))
+}
+
+/// True when `expr` contains a `Power[base, n]` with a negative exponent whose
+/// base mentions a variable (i.e. a genuine `1/var…` Laurent term, not a pure
+/// numeric reciprocal like `1/2`). Used to route non-polynomial inputs through
+/// Together before the polynomial factorers run.
+fn expr_has_negative_var_power(expr: &Expr) -> bool {
+  fn is_negative_exp(exp: &Expr) -> bool {
+    matches!(exp, Expr::Integer(n) if *n < 0)
+      || matches!(
+        exp,
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          ..
+        }
+      )
+  }
+  fn base_has_var(base: &Expr) -> bool {
+    let mut vars = std::collections::HashSet::new();
+    collect_variables(base, &mut vars);
+    !vars.is_empty()
+  }
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      (is_negative_exp(right) && base_has_var(left))
+        || expr_has_negative_var_power(left)
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (is_negative_exp(&args[1]) && base_has_var(&args[0]))
+        || expr_has_negative_var_power(&args[0])
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_has_negative_var_power(left) || expr_has_negative_var_power(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_has_negative_var_power(operand),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(expr_has_negative_var_power)
+    }
+    Expr::List(items) => items.iter().any(expr_has_negative_var_power),
+    _ => false,
+  }
 }
 
 /// GCD of two i128 values.

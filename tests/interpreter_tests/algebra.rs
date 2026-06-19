@@ -460,6 +460,16 @@ mod simplify {
   }
 
   #[test]
+  fn simplify_complex_conjugate_difference_sign() {
+    // Together produces the correct `-2 I x` numerator; the Factor sign bug
+    // used to flip it to `+2 I x` during Simplify.
+    assert_eq!(
+      interpret("Simplify[1/(1 + I x) - 1/(1 - I x)]").unwrap(),
+      "((-2*I)*x)/(1 + x^2)"
+    );
+  }
+
+  #[test]
   fn simplify_rational_equality_proves_true() {
     // Equation simplification must combine rational functions over a common
     // denominator, not just Expand: both sides reduce to 1/(1+x^2).
@@ -731,6 +741,40 @@ mod factor_multivariate {
   #[test]
   fn common_variable_factor() {
     assert_eq!(interpret("Factor[x^2*y + x*y^2]").unwrap(), "x*y*(x + y)");
+  }
+
+  #[test]
+  fn negative_monomial_keeps_sign() {
+    // A single monomial has no nontrivial factorization; the multivariate
+    // content-extraction used to drop the leading sign (`-2 a x` → `2 a x`).
+    assert_eq!(interpret("Factor[-2 a x]").unwrap(), "-2*a*x");
+    assert_eq!(interpret("Factor[-6 x y]").unwrap(), "-6*x*y");
+  }
+
+  #[test]
+  fn imaginary_monomial_keeps_sign() {
+    // The imaginary unit parses as a symbol, so `-2 I x` was a two-"variable"
+    // monomial that hit the same sign-dropping bug, yielding `(2 I) x`.
+    assert_eq!(interpret("Factor[-2 I x]").unwrap(), "(-2*I)*x");
+    assert_eq!(interpret("Factor[-I x]").unwrap(), "-I*x");
+    assert_eq!(interpret("Factor[-3 I x^2]").unwrap(), "(-3*I)*x^2");
+  }
+
+  #[test]
+  fn laurent_product_keeps_denominator() {
+    // Expanding `a (1/b + 1/c)` yields the Laurent form `a/b + a/c`, which the
+    // polynomial factorer mishandled by dropping `1/(b c)` and returning the
+    // wrong value `a (b + c)`. Together first, then factor num/den.
+    assert_eq!(
+      interpret("Factor[a (1/b + 1/c)]").unwrap(),
+      "(a*(b + c))/(b*c)"
+    );
+    // Simplify keeps the leaf-smaller uncombined form (matching wolframscript);
+    // the point is that it no longer returns the *wrong* value `a (b + c)`.
+    assert_eq!(
+      interpret("Simplify[a (1/b + 1/c)]").unwrap(),
+      "a*(b^(-1) + c^(-1))"
+    );
   }
 
   #[test]
