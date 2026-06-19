@@ -2244,6 +2244,49 @@ mod rsolve {
       "{{a -> Function[{n}, (5 - 3*(-1)^n)/2]}}"
     );
   }
+
+  // Repeated characteristic root with initial conditions: the basis is
+  // r^n, n r^n, so the linear system uses n^mult * r^n columns.
+  #[test]
+  fn repeated_root_double_two() {
+    assert_eq!(
+      interpret(
+        "RSolve[{a[n] == 4 a[n-1] - 4 a[n-2], a[1] == 2, a[2] == 8}, a[n], n]"
+      )
+      .unwrap(),
+      "{{a[n] -> 2^n*n}}"
+    );
+  }
+
+  #[test]
+  fn repeated_root_double_three() {
+    assert_eq!(
+      interpret(
+        "RSolve[{a[n] == 6 a[n-1] - 9 a[n-2], a[1] == 3, a[2] == 18}, a[n], n]"
+      )
+      .unwrap(),
+      "{{a[n] -> 3^n*n}}"
+    );
+  }
+
+  // Repeated root r = 1 (1^n = 1) yields a polynomial in n.
+  #[test]
+  fn repeated_root_unity_linear() {
+    assert_eq!(
+      interpret(
+        "RSolve[{a[n] == 2 a[n-1] - a[n-2], a[0] == 1, a[1] == 3}, a[n], n]"
+      )
+      .unwrap(),
+      "{{a[n] -> 1 + 2*n}}"
+    );
+    assert_eq!(
+      interpret(
+        "RSolve[{a[n] == 2 a[n-1] - a[n-2], a[1] == 1, a[2] == 2}, a[n], n]"
+      )
+      .unwrap(),
+      "{{a[n] -> n}}"
+    );
+  }
 }
 
 mod full_simplify {

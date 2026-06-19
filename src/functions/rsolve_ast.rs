@@ -855,12 +855,18 @@ fn solve_initial_conditions(
 
   for (idx, val) in ics {
     let mut row = Vec::new();
-    for &(rnum, rden) in roots {
-      // (rnum/rden)^idx
+    for (j, &(rnum, rden)) in roots.iter().enumerate() {
+      // Occurrence index of this root among the earlier roots — the power of
+      // `n` in its basis function `n^mult * r^idx`. A repeated root therefore
+      // contributes the independent solutions r^n, n r^n, n^2 r^n, …; without
+      // this the matrix has duplicate columns and the system is unsolvable.
+      let mult_index =
+        roots[..j].iter().filter(|&&r| r == (rnum, rden)).count() as u32;
       let k = *idx as u32;
       let num_k = rnum.checked_pow(k)?;
       let den_k = rden.checked_pow(k)?;
-      row.push((num_k, den_k));
+      let idx_pow = (*idx).checked_pow(mult_index)?;
+      row.push((num_k.checked_mul(idx_pow)?, den_k));
     }
     matrix.push(row);
     // RHS value must be an integer
@@ -997,47 +1003,64 @@ fn build_solution(
       continue;
     }
     let (rn, rd) = roots[i];
+    // Occurrence index among earlier equal roots — the power of `n` carried by
+    // a repeated root's basis term (e.g. a double root 2 gives 2^n and 2^n n).
+    let mult_index =
+      roots[..i].iter().filter(|&&r| r == (rn, rd)).count();
 
-    // Build r^n (with parentheses for negative bases)
-    let power_expr = if rn == 1 && rd == 1 {
-      None // 1^n = 1
-    } else {
+    // Display order matching wolframscript: numeric coefficient, then r^n,
+    // then n^mult_index.
+    let abs_num = num.abs();
+    let mut factors: Vec<Expr> = Vec::new();
+    if abs_num != 1 {
+      factors.push(Expr::Integer(abs_num));
+    }
+    if !(rn == 1 && rd == 1) {
       let root_expr = if rd == 1 {
         Expr::Integer(rn)
       } else {
         crate::functions::math_ast::make_rational_pub(rn, rd)
       };
-      Some(Expr::BinaryOp {
+      factors.push(Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(root_expr),
         right: Box::new(Expr::Identifier(var_name.to_string())),
-      })
-    };
-
-    // Build num * r^n (or just num if r=1)
-    let term = match power_expr {
-      Some(pe) => {
-        let abs_num = num.abs();
-        let base_term = if abs_num == 1 {
-          pe
-        } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(abs_num)),
-            right: Box::new(pe),
-          }
-        };
-        if num < 0 {
-          Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
-            operand: Box::new(base_term),
-          }
-        } else {
-          base_term
+      });
+    }
+    if mult_index >= 1 {
+      factors.push(if mult_index == 1 {
+        Expr::Identifier(var_name.to_string())
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Identifier(var_name.to_string())),
+          right: Box::new(Expr::Integer(mult_index as i128)),
         }
+      });
+    }
+
+    // Combine left-associatively; an empty factor list means the whole term is
+    // the bare coefficient (root 1, multiplicity 0).
+    let mut term = if factors.is_empty() {
+      Expr::Integer(abs_num)
+    } else {
+      let mut iter = factors.into_iter();
+      let mut t = iter.next().unwrap();
+      for f in iter {
+        t = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(t),
+          right: Box::new(f),
+        };
       }
-      None => Expr::Integer(num), // root is 1, so r^n = 1
+      t
     };
+    if num < 0 {
+      term = Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(term),
+      };
+    }
 
     terms.push(term);
   }
