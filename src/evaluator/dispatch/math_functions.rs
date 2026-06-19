@@ -6100,6 +6100,74 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
     {
       Some((expr.clone(), Expr::Integer(0)))
     }
+    // -(a + b*I) = -a - b*I
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let (r, i) = split_real_imag(operand)?;
+      let neg = |e: Expr| {
+        ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(e),
+        })
+      };
+      Some((neg(r), neg(i)))
+    }
+    // (a + b*I) / (c + d*I). For a real denominator this is just
+    // (a/c) + (b/c)*I; a complex denominator uses (n * Conjugate[d])/|d|^2.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let (nr, ni) = split_real_imag(left)?;
+      let (dr, di) = split_real_imag(right)?;
+      let div = |a: Expr, b: Expr| {
+        ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(a),
+          right: Box::new(b),
+        })
+      };
+      if is_expr_zero(&di) {
+        Some((div(nr, dr.clone()), div(ni, dr)))
+      } else {
+        // denom = dr^2 + di^2; result = (n * conj(d)) / denom
+        let sq = |e: Expr| Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(e),
+          right: Box::new(Expr::Integer(2)),
+        };
+        let denom = ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(sq(dr.clone())),
+          right: Box::new(sq(di.clone())),
+        });
+        let mul = |a: Expr, b: Expr| Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(a),
+          right: Box::new(b),
+        };
+        // (nr + ni i)(dr - di i) = (nr*dr + ni*di) + (ni*dr - nr*di) i
+        let re_num = ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(mul(nr.clone(), dr.clone())),
+          right: Box::new(mul(ni.clone(), di.clone())),
+        });
+        let im_num = ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(mul(ni, dr)),
+          right: Box::new(mul(nr, di)),
+        });
+        Some((div(re_num, denom.clone()), div(im_num, denom)))
+      }
+    }
+    // A Rational is a real-valued atom (e.g. the 3/2 in `(3*I)/2`).
+    Expr::FunctionCall { name, .. } if name == "Rational" => {
+      Some((expr.clone(), Expr::Integer(0)))
+    }
     // Numeric atoms and plain symbols: treat as real-valued.
     Expr::Integer(_)
     | Expr::Real(_)

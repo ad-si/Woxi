@@ -96,6 +96,40 @@ fn distribute_re_im(
 }
 
 /// Re[z] - Real part of a complex number (for real numbers, returns the number itself)
+/// When the structural extractors can't resolve `Re`/`Im` of a variable-free
+/// (numeric) argument such as `E^I`, expand the argument with ComplexExpand
+/// (which rewrites `E^I` → `Cos[1] + I Sin[1]`) and retry the extraction. WL
+/// auto-evaluates `Re[E^I]` → `Cos[1]` but leaves the symbolic `Re[E^(I x)]`
+/// untouched, which is exactly the `NumericQ` boundary. Returns `None` (so the
+/// caller falls through to the unevaluated form) when expansion changes nothing,
+/// which prevents unbounded re-entry.
+fn re_im_via_complex_expand(
+  which: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  if !crate::functions::predicate_ast::is_numeric_q_pub(arg) {
+    return None;
+  }
+  let expanded = match crate::evaluator::evaluate_function_call_ast(
+    "ComplexExpand",
+    std::slice::from_ref(arg),
+  ) {
+    Ok(e) => e,
+    Err(e) => return Some(Err(e)),
+  };
+  use crate::syntax::{ExprForm, format_expr};
+  if format_expr(&expanded, ExprForm::Input)
+    == format_expr(arg, ExprForm::Input)
+  {
+    return None;
+  }
+  Some(if which == "Re" {
+    re_ast(&[expanded])
+  } else {
+    im_ast(&[expanded])
+  })
+}
+
 pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -162,6 +196,11 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Distribute over Times (pull real factors) / Plus (split I terms).
   if let Some(result) = distribute_re_im("Re", &args[0]) {
+    return result;
+  }
+
+  // Variable-free numeric argument (e.g. E^I): expand via ComplexExpand.
+  if let Some(result) = re_im_via_complex_expand("Re", &args[0]) {
     return result;
   }
 
@@ -235,6 +274,11 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Distribute over Times (pull real factors) / Plus (split I terms).
   if let Some(result) = distribute_re_im("Im", &args[0]) {
+    return result;
+  }
+
+  // Variable-free numeric argument (e.g. E^I): expand via ComplexExpand.
+  if let Some(result) = re_im_via_complex_expand("Im", &args[0]) {
     return result;
   }
 

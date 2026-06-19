@@ -390,6 +390,36 @@ mod re_tests {
   }
 
   #[test]
+  fn re_im_complex_exponential() {
+    // Re/Im of a variable-free complex exponential resolve via Euler's
+    // formula (NumericQ argument); a symbolic exponent stays unevaluated.
+    assert_eq!(interpret("Re[Exp[I]]").unwrap(), "Cos[1]");
+    assert_eq!(interpret("Im[Exp[I]]").unwrap(), "Sin[1]");
+    assert_eq!(interpret("Re[E^(2*I)]").unwrap(), "Cos[2]");
+    assert_eq!(interpret("Re[E^(-I)]").unwrap(), "Cos[1]");
+    assert_eq!(interpret("Im[E^(-I)]").unwrap(), "-Sin[1]");
+    assert_eq!(interpret("Re[E^(3*I/2)]").unwrap(), "Cos[3/2]");
+    assert_eq!(interpret("Re[E^(2 + 3*I)]").unwrap(), "E^2*Cos[3]");
+    assert_eq!(interpret("Im[E^(2 + 3*I)]").unwrap(), "E^2*Sin[3]");
+    assert_eq!(interpret("Re[2*E^I]").unwrap(), "2*Cos[1]");
+    // Symbolic exponent (could be complex) stays unevaluated.
+    assert_eq!(interpret("Re[E^(I*x)]").unwrap(), "Re[E^(I*x)]");
+  }
+
+  #[test]
+  fn complex_expand_exp_negative_and_rational() {
+    // ComplexExpand now decomposes negated and rational imaginary exponents.
+    assert_eq!(
+      interpret("ComplexExpand[E^(-I)]").unwrap(),
+      "Cos[1] - I*Sin[1]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[E^(3*I/2)]").unwrap(),
+      "Cos[3/2] + I*Sin[3/2]"
+    );
+  }
+
+  #[test]
   fn re_i() {
     assert_eq!(interpret("Re[I]").unwrap(), "0");
   }
