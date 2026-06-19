@@ -4079,6 +4079,21 @@ pub fn dispatch_list_operations(
     }
     // FindPermutation[e1, e2] — find permutation that maps e1 to e2.
     // Accepts Lists or any two FunctionCalls with the same head.
+    "FindPermutation" if args.len() == 1 => {
+      // FindPermutation[list] is the permutation taking Sort[list] to list.
+      let inner = Expr::FunctionCall {
+        name: "FindPermutation".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Sort".to_string(),
+            args: vec![args[0].clone()].into(),
+          },
+          args[0].clone(),
+        ]
+        .into(),
+      };
+      return Some(evaluate_expr_to_expr(&inner));
+    }
     "FindPermutation" if args.len() == 2 => {
       // Pull `&[Expr]` from a List or from a FunctionCall, requiring both
       // sides to share the same head (List vs List, or head[..] vs head[..]).

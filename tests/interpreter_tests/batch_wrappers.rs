@@ -5705,6 +5705,21 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // One-argument form: FindPermutation[list] = FindPermutation[Sort[list], list].
+  #[test]
+  fn find_permutation_single_argument() {
+    assert_eq!(
+      interpret("FindPermutation[{c, a, b}]").unwrap(),
+      "Cycles[{{1, 2, 3}}]"
+    );
+    assert_eq!(
+      interpret("FindPermutation[{b, c, a}]").unwrap(),
+      "Cycles[{{1, 3, 2}}]"
+    );
+    // An already-sorted list gives the identity permutation.
+    assert_eq!(interpret("FindPermutation[{1, 2, 3}]").unwrap(), "Cycles[{}]");
+  }
+
   // KeyMemberQ
   #[test]
   fn key_member_q_true() {

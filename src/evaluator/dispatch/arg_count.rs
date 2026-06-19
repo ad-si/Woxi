@@ -407,7 +407,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FindMaxValue" => Some((2, usize::MAX)),
     "FindMinimum" => Some((2, usize::MAX)),
     "FindMinValue" => Some((2, usize::MAX)),
-    "FindPermutation" => Some((2, 2)),
+    "FindPermutation" => Some((1, 2)),
     "FindRoot" => Some((2, usize::MAX)),
     "FindSequenceFunction" => Some((1, 2)),
     "First" => Some((1, 2)),
