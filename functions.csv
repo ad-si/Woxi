@@ -1236,7 +1236,7 @@ OceanData,,🚫,,10.0,1248
 MaximalBy,Returns elements that maximize a criterion,✅,pure,10.0,1249
 InverseCDF,Inverse cumulative distribution function (quantile) of a distribution,✅,pure,6.0,1251
 StringTemplate,Creates a template that fills slots from positional or named arguments,✅,pure,10.0,1251
-TimeObject,,🚫,,10.0,1252
+TimeObject,Represents a time of day with a granularity from a time-of-day list,✅,pure,10.0,1252
 ParetoDistribution,Represents a Pareto distribution,✅,1,6.0,1254
 Read,Read an object of a specified type from a stream,✅,effectful,1.0,1254
 EdgeCount,Returns the number of edges in a graph,✅,1,8.0,1256

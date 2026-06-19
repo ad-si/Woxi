@@ -24,6 +24,9 @@ pub fn dispatch_datetime_functions(
     "DateRange" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::datetime_ast::date_range_ast(args));
     }
+    "TimeObject" if args.len() == 1 => {
+      return Some(crate::functions::datetime_ast::time_object_ast(args));
+    }
     "DateDifference" if args.len() >= 2 => {
       return Some(crate::functions::datetime_ast::date_difference_ast(args));
     }

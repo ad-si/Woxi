@@ -1171,6 +1171,80 @@ mod date_range {
   }
 }
 
+mod time_object {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn time_object_minute_granularity() {
+    assert_case(r#"TimeObject[{14, 30}]"#, r#"TimeObject[{14, 30}, Minute]"#);
+  }
+
+  #[test]
+  fn time_object_hour_granularity() {
+    assert_case(r#"TimeObject[{14}]"#, r#"TimeObject[{14}, Hour]"#);
+  }
+
+  #[test]
+  fn time_object_instant_granularity() {
+    assert_case(
+      r#"TimeObject[{14, 30, 15}]"#,
+      r#"TimeObject[{14, 30, 15}, Instant]"#,
+    );
+  }
+
+  #[test]
+  fn time_object_keeps_fractional_seconds() {
+    assert_case(
+      r#"TimeObject[{14, 30, 15.5}]"#,
+      r#"TimeObject[{14, 30, 15.5}, Instant]"#,
+    );
+  }
+
+  #[test]
+  fn time_object_hours_wrap_modulo_day() {
+    assert_case(r#"TimeObject[{25, 30}]"#, r#"TimeObject[{1, 30}, Minute]"#);
+  }
+
+  #[test]
+  fn time_object_minutes_carry() {
+    assert_case(r#"TimeObject[{14, 75}]"#, r#"TimeObject[{15, 15}, Minute]"#);
+  }
+
+  #[test]
+  fn time_object_seconds_carry() {
+    assert_case(
+      r#"TimeObject[{14, 30, 75}]"#,
+      r#"TimeObject[{14, 31, 15}, Instant]"#,
+    );
+  }
+
+  #[test]
+  fn time_object_negative_wraps() {
+    assert_case(r#"TimeObject[{-1, 30}]"#, r#"TimeObject[{23, 30}, Minute]"#);
+  }
+
+  #[test]
+  fn time_object_fractional_hours_carry() {
+    assert_case(
+      r#"TimeObject[{14.5, 30}]"#,
+      r#"TimeObject[{15, 0}, Minute]"#,
+    );
+  }
+
+  #[test]
+  fn time_object_full_day_wraps_to_zero() {
+    assert_case(
+      r#"TimeObject[{23, 59, 60}]"#,
+      r#"TimeObject[{0, 0, 0}, Instant]"#,
+    );
+  }
+
+  #[test]
+  fn time_object_fractional_hour_floored_at_hour_granularity() {
+    assert_case(r#"TimeObject[{14.5}]"#, r#"TimeObject[{14}, Hour]"#);
+  }
+}
+
 mod julian_date {
   use super::*;
 

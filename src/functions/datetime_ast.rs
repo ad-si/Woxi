@@ -2066,6 +2066,100 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result.into()))
 }
 
+/// TimeObject[{h}] / TimeObject[{h, m}] / TimeObject[{h, m, s}]
+///
+/// Normalizes a time-of-day list and tags it with a granularity, matching
+/// wolframscript:
+///   * `{h}`       → `TimeObject[{h}, Hour]`     (whole hours)
+///   * `{h, m}`    → `TimeObject[{h, m}, Minute]` (whole minutes)
+///   * `{h, m, s}` → `TimeObject[{h, m, s}, Instant]` (fractional seconds kept)
+///
+/// Components carry over (75 minutes → +1 hour, 15 minutes) and the whole
+/// time wraps modulo 24 hours, so `{25, 30}` becomes `{1, 30}` and `{-1, 30}`
+/// becomes `{23, 30}`. The precision of the least-significant field is set by
+/// the granularity: hours and minutes are truncated to whole numbers, while
+/// the Instant form keeps a fractional seconds value.
+pub fn time_object_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "TimeObject".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // Only the single date-list argument form is handled here; option forms
+  // (TimeZone, string parsing, …) fall through unevaluated.
+  if args.len() != 1 {
+    return unevaluated();
+  }
+
+  let arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  let items = match &arg {
+    Expr::List(items) if !items.is_empty() && items.len() <= 3 => items,
+    _ => return unevaluated(),
+  };
+
+  let mut comps: Vec<f64> = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    match item {
+      Expr::Integer(n) => comps.push(*n as f64),
+      Expr::Real(r) => comps.push(*r),
+      _ => return unevaluated(),
+    }
+  }
+  let n = comps.len();
+
+  // Total seconds since midnight, then wrap into a single day.
+  let mut total = comps.first().copied().unwrap_or(0.0) * 3600.0
+    + comps.get(1).copied().unwrap_or(0.0) * 60.0
+    + comps.get(2).copied().unwrap_or(0.0);
+  total = total.rem_euclid(86400.0);
+
+  // Build a field that is an Integer when whole and a Real otherwise.
+  let field = |v: f64| -> Expr {
+    if v.fract() == 0.0 {
+      Expr::Integer(v as i128)
+    } else {
+      Expr::Real(v)
+    }
+  };
+
+  let (fields, granularity): (Vec<Expr>, &str) = match n {
+    1 => {
+      let h = (total / 3600.0).floor();
+      (vec![Expr::Integer(h as i128)], "Hour")
+    }
+    2 => {
+      let total_min = (total / 60.0).floor();
+      let h = (total_min / 60.0).floor();
+      let m = total_min - h * 60.0;
+      (
+        vec![Expr::Integer(h as i128), Expr::Integer(m as i128)],
+        "Minute",
+      )
+    }
+    _ => {
+      let h = (total / 3600.0).floor();
+      let rem = total - h * 3600.0;
+      let m = (rem / 60.0).floor();
+      let s = rem - m * 60.0;
+      (
+        vec![Expr::Integer(h as i128), Expr::Integer(m as i128), field(s)],
+        "Instant",
+      )
+    }
+  };
+
+  Ok(Expr::FunctionCall {
+    name: "TimeObject".to_string(),
+    args: vec![
+      Expr::List(fields.into()),
+      Expr::Identifier(granularity.to_string()),
+    ]
+    .into(),
+  })
+}
+
 /// DateRange[start, end] / DateRange[start, end, increment]
 ///
 /// Returns the list of dates from `start` to `end` (inclusive), each rendered
