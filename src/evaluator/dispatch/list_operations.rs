@@ -2056,8 +2056,12 @@ pub fn dispatch_list_operations(
     }
     "Transpose" if args.len() == 1 => {
       return Some(match list_helpers_ast::transpose_ast(&args[0]) {
+        // A ragged list, or one whose "rows" are not all lists, cannot be
+        // transposed: emit Transpose::nmtx and stay unevaluated rather than
+        // aborting with a hard error (matching wolframscript).
         Err(InterpreterError::EvaluationError(msg))
-          if msg.contains("same length") =>
+          if msg.contains("same length")
+            || msg.contains("argument must be a matrix") =>
         {
           crate::emit_message(&format!(
             "Transpose::nmtx: The first two levels of {} cannot be transposed.",

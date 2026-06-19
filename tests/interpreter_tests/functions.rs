@@ -1314,6 +1314,16 @@ mod transpose_extended {
   }
 
   #[test]
+  fn ragged_list_stays_unevaluated() {
+    // A ragged list (rows of differing length) cannot be transposed:
+    // wolframscript emits Transpose::nmtx and keeps the expression.
+    assert_eq!(
+      interpret("Transpose[{{1, 2}, {3}}]").unwrap(),
+      "Transpose[{{1, 2}, {3}}]"
+    );
+  }
+
+  #[test]
   fn double_transpose_is_identity() {
     // The classic involution: Transpose[Transpose[m]] == m for any
     // rectangular matrix or higher-rank tensor.
