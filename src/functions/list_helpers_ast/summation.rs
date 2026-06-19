@@ -2030,7 +2030,9 @@ fn tr_coeff_list(
     args: vec![part, Expr::Identifier(var_name.to_string())].into(),
   };
   let evaled = crate::evaluator::evaluate_expr_to_expr(&cl).ok()?;
-  let Expr::List(items) = &evaled else { return None };
+  let Expr::List(items) = &evaled else {
+    return None;
+  };
   items.iter().map(tr_as_rat).collect()
 }
 
