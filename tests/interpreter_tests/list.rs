@@ -1219,6 +1219,19 @@ mod insert {
     );
   }
 
+  // Insert addresses operator expressions by their FullForm parts: x^2 =
+  // Power[x, 2], so inserting y at position 1 yields Power[y, x, 2] = y^x^2.
+  #[test]
+  fn insert_into_power() {
+    assert_eq!(interpret("Insert[x^2, y, 1]").unwrap(), "y^x^2");
+    assert_eq!(interpret("Insert[x^2, y, 2]").unwrap(), "x^y^2");
+    assert_eq!(interpret("Insert[x^2, y, -1]").unwrap(), "x^2^y");
+    assert_eq!(
+      interpret("Insert[x^2, y, {{1}, {3}}]").unwrap(),
+      "y^x^2^y"
+    );
+  }
+
   #[test]
   fn insert_association() {
     // Insert a key -> value pair at an integer position.

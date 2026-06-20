@@ -1211,12 +1211,9 @@ fn insert_paths(
   elem: &Expr,
   paths: &[Vec<i128>],
 ) -> Result<Expr, Vec<i128>> {
-  let (items, head): (Vec<Expr>, Option<String>) = match expr {
-    Expr::List(items) => (items.iter().cloned().collect(), None),
-    Expr::FunctionCall { name, args } => {
-      (args.iter().cloned().collect(), Some(name.clone()))
-    }
-    _ => return Err(paths[0].clone()),
+  let (items, head): (Vec<Expr>, Option<String>) = match parts_and_head(expr) {
+    Some(p) => p,
+    None => return Err(paths[0].clone()),
   };
   let len = items.len() as i128;
 
@@ -1433,7 +1430,9 @@ pub fn insert_ast(
     }
   };
   match insert_paths(list, elem, &paths) {
-    Ok(result) => Ok(result),
+    // Re-evaluate so a rebuilt operator expression (e.g. Power[y, x, 2])
+    // renders in its normal form (y^x^2).
+    Ok(result) => crate::evaluator::evaluate_expr_to_expr(&result),
     Err(failing) => {
       insert_ins_message(&failing, list);
       Ok(unevaluated())
@@ -2230,8 +2229,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let pos: Vec<i128> = pos_list.iter().filter_map(expr_to_i128).collect();
         if pos.len() == pos_list.len() {
           if pos.len() == 1 {
-            let deleted =
-              delete_at_position_general(items, pos[0], head_name)?;
+            let deleted = delete_at_position_general(items, pos[0], head_name)?;
             return crate::evaluator::evaluate_expr_to_expr(&deleted);
           } else {
             match delete_at_deep_position(&args[0], &pos)? {
