@@ -3382,6 +3382,19 @@ mod expand_threading {
     assert_eq!(interpret("Sec[2 Pi/9]").unwrap(), "Sec[(2*Pi)/9]");
   }
 
+  // ─── Sec/Csc exact values at twelfths ─────────────────────────────
+  // Wolfram evaluates the twelfth-angle Sec/Csc to a radical (unlike the
+  // eighth angles, which it leaves symbolic). These follow from
+  //   Sin[Pi/12]  = (Sqrt[3]-1)/(2 Sqrt[2]),
+  //   Sin[5Pi/12] = (Sqrt[3]+1)/(2 Sqrt[2]).
+  #[test]
+  fn sec_csc_twelfths_exact() {
+    assert_eq!(interpret("Csc[Pi/12]").unwrap(), "Sqrt[2]*(1 + Sqrt[3])");
+    assert_eq!(interpret("Csc[5 Pi/12]").unwrap(), "Sqrt[2]*(-1 + Sqrt[3])");
+    assert_eq!(interpret("Sec[Pi/12]").unwrap(), "Sqrt[2]*(-1 + Sqrt[3])");
+    assert_eq!(interpret("Sec[5 Pi/12]").unwrap(), "Sqrt[2]*(1 + Sqrt[3])");
+  }
+
   // ─── Hyperbolic parity ────────────────────────────────────────────
 
   #[test]

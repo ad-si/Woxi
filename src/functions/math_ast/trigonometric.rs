@@ -688,6 +688,10 @@ pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
     (1, 5) => lit("-1 + Sqrt[5]"),
     // Sec(2*Pi/5) = 1 + Sqrt[5]
     (2, 5) => lit("1 + Sqrt[5]"),
+    // Sec(Pi/12) = Sqrt[2]*(-1 + Sqrt[3])
+    (1, 12) => lit("Sqrt[2]*(-1 + Sqrt[3])"),
+    // Sec(5*Pi/12) = Sqrt[2]*(1 + Sqrt[3])
+    (5, 12) => lit("Sqrt[2]*(1 + Sqrt[3])"),
     // Sec(Pi/10) = 1/Sqrt[5/8 + Sqrt[5]/8]
     (1, 10) => lit("1/Sqrt[5/8 + Sqrt[5]/8]"),
     // Sec(3*Pi/10) = 1/Sqrt[5/8 - Sqrt[5]/8]
@@ -741,6 +745,10 @@ pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
     (1, 5) => lit("1/Sqrt[5/8 - Sqrt[5]/8]"),
     // Csc(2*Pi/5) = 1/Sqrt[5/8 + Sqrt[5]/8]
     (2, 5) => lit("1/Sqrt[5/8 + Sqrt[5]/8]"),
+    // Csc(Pi/12) = Sqrt[2]*(1 + Sqrt[3])
+    (1, 12) => lit("Sqrt[2]*(1 + Sqrt[3])"),
+    // Csc(5*Pi/12) = Sqrt[2]*(-1 + Sqrt[3])
+    (5, 12) => lit("Sqrt[2]*(-1 + Sqrt[3])"),
     // Csc(Pi/10) = 1 + Sqrt[5]
     (1, 10) => lit("1 + Sqrt[5]"),
     // Csc(3*Pi/10) = -1 + Sqrt[5]
