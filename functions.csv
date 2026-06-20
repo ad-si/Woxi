@@ -444,7 +444,7 @@ SetOptions,Sets options for functions (no-op in Woxi),✅,effectful,1.0,446
 ReplacePart,Replaces element at a specific position,✅,pure,2.0,447
 Translate,Translates a graphics object,✅,pure,6.0,448
 BarChart,Creates a bar chart from data,✅,pure,7.0,449
-Eigenvectors,Eigenvectors of a square matrix,✅,pure,1.0,450
+Eigenvectors,Eigenvectors of a square matrix; the two-arg form takes the k for the largest-magnitude eigenvalues,✅,pure,1.0,450
 Nest,Applies a function n times to an expression,✅,pure,1.0,451
 Assuming,Evaluate expression under given assumptions,✅,pure,5.0,452
 VertexLabels,Option for specifying labels on graph vertices,✅,pure,8.0,453
@@ -585,7 +585,7 @@ PieChart,Creates a pie chart from data,✅,pure,7.0,586
 NMinimize,Numerical global minimization with constraints using sampling and gradient refinement,✅,pure,5.0,587
 BeginPackage,Begins a package context (no-op in Woxi),✅,effectful,1.0,588
 Throw,Throws a value to be caught by Catch,✅,pure,1.0,589
-Eigensystem,Eigenvalues and eigenvectors of a matrix,✅,pure,1.0,590
+Eigensystem,Eigenvalues and eigenvectors of a matrix; the two-arg form takes the k largest-magnitude pairs,✅,pure,1.0,590
 KroneckerDelta,Returns 1 if all arguments are equal and 0 otherwise,✅,pure,4.0,591
 Coth,Returns the hyperbolic cotangent,✅,pure,1.0,592
 StatusArea,Display status text on mouseover,✅,none,6.0,593

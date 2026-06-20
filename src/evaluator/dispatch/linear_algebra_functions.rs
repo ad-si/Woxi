@@ -427,8 +427,18 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "Eigenvectors" if args.len() == 2 => {
+      return Some(
+        crate::functions::linear_algebra_ast::eigenvectors_count_ast(args),
+      );
+    }
     "Eigensystem" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::eigensystem_ast(args));
+    }
+    "Eigensystem" if args.len() == 2 => {
+      return Some(
+        crate::functions::linear_algebra_ast::eigensystem_count_ast(args),
+      );
     }
     "RowReduce" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::row_reduce_ast(args));

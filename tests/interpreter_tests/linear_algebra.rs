@@ -1285,6 +1285,38 @@ mod eigenvectors {
     assert_eq!(interpret("Eigenvectors[{{5}}]").unwrap(), "{{1}}");
   }
 
+  // Eigenvectors[m, k] takes the eigenvectors for the k largest-magnitude
+  // eigenvalues (k < 0 takes the smallest |k|).
+  #[test]
+  fn count_form() {
+    assert_eq!(
+      interpret("Eigenvectors[{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}, 2]").unwrap(),
+      "{{0, 1, 0}, {1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{{(-3 + Sqrt[33])/6, 1}}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 2}, {3, 4}}, -1]").unwrap(),
+      "{{(-3 - Sqrt[33])/6, 1}}"
+    );
+  }
+
+  #[test]
+  fn count_overflow_emits_take() {
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 2}, {3, 4}}, 3]").unwrap(),
+      "Eigenvectors[{{1, 2}, {3, 4}}, 3]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Eigenvectors::take")),
+      "expected take message, got {:?}",
+      msgs
+    );
+  }
+
   #[test]
   fn diagonal_2x2() {
     assert_eq!(
@@ -1401,6 +1433,33 @@ mod eigensystem {
     assert_eq!(
       interpret("Eigensystem[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]").unwrap(),
       "{{2, -1, 1}, {{1, 1, 1}, {1, -2, 1}, {-1, 0, 1}}}"
+    );
+  }
+
+  // Eigensystem[m, k] takes the k largest-magnitude pairs from each part.
+  #[test]
+  fn count_form() {
+    assert_eq!(
+      interpret("Eigensystem[{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}, 2]").unwrap(),
+      "{{3, 2}, {{0, 1, 0}, {1, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret("Eigensystem[{{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{{(5 + Sqrt[33])/2}, {{(-3 + Sqrt[33])/6, 1}}}"
+    );
+  }
+
+  #[test]
+  fn count_overflow_emits_take() {
+    assert_eq!(
+      interpret("Eigensystem[{{1, 2}, {3, 4}}, 3]").unwrap(),
+      "Eigensystem[{{1, 2}, {3, 4}}, 3]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Eigensystem::take")),
+      "expected take message, got {:?}",
+      msgs
     );
   }
 }

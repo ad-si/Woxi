@@ -2308,6 +2308,94 @@ pub fn eigenvalues_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(taken.into()))
 }
 
+/// Take the first `k` items (k >= 0) or the last `|k|` (k < 0), mirroring Take.
+fn eigen_take_slice(items: &[Expr], k: i128) -> Vec<Expr> {
+  if k >= 0 {
+    items.iter().take(k as usize).cloned().collect()
+  } else {
+    items
+      .iter()
+      .skip(items.len() - k.unsigned_abs() as usize)
+      .cloned()
+      .collect()
+  }
+}
+
+/// Eigenvectors[matrix, k] — the eigenvectors for the k largest-magnitude
+/// eigenvalues (k < 0 takes the last |k|), like Take. |k| greater than the
+/// matrix dimension emits Eigenvectors::take and stays unevaluated.
+pub fn eigenvectors_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Eigenvectors".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let k = match &args[1] {
+    Expr::Integer(k) => *k,
+    _ => return unevaluated(),
+  };
+  let all = eigenvectors_ast(&args[0..1])?;
+  let items = match &all {
+    Expr::List(items) => items,
+    _ => return unevaluated(),
+  };
+  let n = items.len() as i128;
+  if k.abs() > n {
+    let (lo, hi) = if k >= 0 { (1, k) } else { (k, -1) };
+    crate::emit_message(&format!(
+      "Eigenvectors::take: Cannot take eigenvectors {lo} through {hi} out of the total of {n} eigenvectors."
+    ));
+    return unevaluated();
+  }
+  Ok(Expr::List(eigen_take_slice(items, k).into()))
+}
+
+/// Eigensystem[matrix, k] — {values, vectors} for the k largest-magnitude
+/// eigenvalues, like Take applied to each. |k| greater than the matrix
+/// dimension emits Eigensystem::take and stays unevaluated.
+pub fn eigensystem_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Eigensystem".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let k = match &args[1] {
+    Expr::Integer(k) => *k,
+    _ => return unevaluated(),
+  };
+  let all = eigensystem_ast(&args[0..1])?;
+  let (vals, vecs) = match &all {
+    Expr::List(parts)
+      if parts.len() == 2
+        && matches!(&parts[0], Expr::List(_))
+        && matches!(&parts[1], Expr::List(_)) =>
+    {
+      match (&parts[0], &parts[1]) {
+        (Expr::List(vl), Expr::List(vc)) => (vl, vc),
+        _ => unreachable!(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  let n = vals.len() as i128;
+  if k.abs() > n {
+    let (lo, hi) = if k >= 0 { (1, k) } else { (k, -1) };
+    crate::emit_message(&format!(
+      "Eigensystem::take: Cannot take eigenvectors and eigenvalues {lo} through {hi} out of the total of {n} eigenvectors and eigenvalues."
+    ));
+    return unevaluated();
+  }
+  Ok(Expr::List(
+    vec![
+      Expr::List(eigen_take_slice(vals, k).into()),
+      Expr::List(eigen_take_slice(vecs, k).into()),
+    ]
+    .into(),
+  ))
+}
+
 // ─── Eigenvectors ───────────────────────────────────────────────────────
 
 /// Eigenvectors[matrix] - eigenvectors of a square matrix
