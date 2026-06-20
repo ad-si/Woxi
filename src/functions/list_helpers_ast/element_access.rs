@@ -127,10 +127,31 @@ fn nonatomic_message(fname: &str, expr: &Expr) {
   ));
 }
 
+/// If `expr` is a one-dimensional SparseArray, return its dense vector form
+/// so element access yields the scalar entry at each position. Returns None
+/// for higher-rank SparseArrays (whose sub-arrays stay sparse) or non-sparse
+/// expressions.
+fn dense_1d_sparse(expr: &Expr) -> Option<Expr> {
+  if let Expr::FunctionCall { name, args: sa } = expr
+    && name == "SparseArray"
+    && sa.len() == 4
+    && matches!(&sa[1], Expr::List(d) if d.len() == 1)
+  {
+    let dense = crate::functions::list_helpers_ast::sparse_array_ast(sa).ok()?;
+    if matches!(&dense, Expr::List(_)) {
+      return Some(dense);
+    }
+  }
+  None
+}
+
 pub fn first_ast(
   list: &Expr,
   default: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
+  if let Some(dense) = dense_1d_sparse(list) {
+    return first_ast(&dense, default);
+  }
   match list {
     Expr::Association(pairs) => {
       if pairs.is_empty() {
@@ -248,6 +269,9 @@ pub fn last_ast(
   list: &Expr,
   default: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
+  if let Some(dense) = dense_1d_sparse(list) {
+    return last_ast(&dense, default);
+  }
   match list {
     Expr::Association(pairs) => {
       if pairs.is_empty() {
@@ -1073,6 +1097,15 @@ pub fn drop_multi_ast(
 
 /// Part[list, i] or list[[i]] - Extract element at position i (1-indexed)
 pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
+  // A 1-D SparseArray indexed by an integer yields the scalar entry at that
+  // position. (Spans would produce a sub-array, which Wolfram keeps sparse,
+  // so those are left to the generic path.)
+  if matches!(index, Expr::Integer(_) | Expr::BigInteger(_))
+    && let Some(dense) = dense_1d_sparse(list)
+  {
+    return part_ast(&dense, index);
+  }
+
   // Try decomposing BinaryOp/UnaryOp to canonical form first
   if let Some((head_name, ha_args)) = expr_to_head_args(list) {
     let canonical = Expr::FunctionCall {

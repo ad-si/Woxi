@@ -550,6 +550,21 @@ mod outer_extended {
     );
   }
 
+  // First/Last/Part on a 1-D SparseArray return the scalar entry (or the
+  // default value) at that position, like a dense vector.
+  #[test]
+  fn sparse_array_element_access() {
+    assert_eq!(interpret("First[SparseArray[{2 -> 9}, 3]]").unwrap(), "0");
+    assert_eq!(
+      interpret("First[SparseArray[{1 -> 5, 2 -> 6}, 3]]").unwrap(),
+      "5"
+    );
+    assert_eq!(interpret("Last[SparseArray[{1 -> 9}, 3]]").unwrap(), "0");
+    assert_eq!(interpret("SparseArray[{2 -> 9}, 3][[2]]").unwrap(), "9");
+    assert_eq!(interpret("SparseArray[{2 -> 9}, 3][[1]]").unwrap(), "0");
+    assert_eq!(interpret("SparseArray[{i_} :> i^2, 5][[3]]").unwrap(), "9");
+  }
+
   // A bare Band rule (not wrapped in a rule list) is also accepted.
   #[test]
   fn sparse_array_bare_band_rule() {

@@ -304,6 +304,20 @@ pub fn extract_part_ast(
   expr: &Expr,
   index: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // A 1-D SparseArray indexed by an integer yields the scalar entry at that
+  // position. (Spans/higher-rank keep sub-arrays sparse and fall through.)
+  if matches!(index, Expr::Integer(_) | Expr::BigInteger(_))
+    && let Expr::FunctionCall { name, args: sa } = expr
+    && name == "SparseArray"
+    && sa.len() == 4
+    && matches!(&sa[1], Expr::List(d) if d.len() == 1)
+  {
+    let dense = crate::functions::list_helpers_ast::sparse_array_ast(sa)?;
+    if matches!(&dense, Expr::List(_)) {
+      return extract_part_ast(&dense, index);
+    }
+  }
+
   // For associations, handle key-based lookup and integer position indexing
   if let Expr::Association(items) = expr {
     // Positional lookup shared by the single-integer and list-index forms.
