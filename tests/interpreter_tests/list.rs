@@ -1016,6 +1016,27 @@ mod ordering {
       "{5, 4}"
     );
   }
+
+  // With a comparator that does not resolve to a Boolean on the data (Less on
+  // non-numeric symbols, where `c < a` stays symbolic), the elements are
+  // incomparable, so the original order is kept — {1, 2, 3}, not the canonical
+  // {2, 3, 1}.
+  #[test]
+  fn symbolic_data_with_comparator_keeps_order() {
+    assert_eq!(
+      interpret("Ordering[{c, a, b}, All, Less]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Ordering[{c, a, b}, All, Greater]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // Numeric data with Less/Greater still orders by value.
+    assert_eq!(
+      interpret("Ordering[{3, 1, 2}, All, Less]").unwrap(),
+      "{2, 3, 1}"
+    );
+  }
 }
 
 mod delete {

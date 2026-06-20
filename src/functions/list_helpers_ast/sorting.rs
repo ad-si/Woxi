@@ -502,32 +502,41 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut indexed: Vec<(usize, &Expr)> = items.iter().enumerate().collect();
 
-  // Decide which comparator to use. With 3 args, the third is either a
-  // bare symbol (Less/Greater) or a predicate p such that p[a, b] is True
-  // when a should come before b.
-  let comparator: Option<&Expr> = args.get(2);
-  let use_greater = matches!(
-    comparator,
-    Some(Expr::Identifier(n)) if n == "Greater"
-  );
-  let use_less = matches!(
-    comparator,
-    Some(Expr::Identifier(n)) if n == "Less"
-  );
-  let use_predicate = comparator.is_some() && !use_greater && !use_less;
-
-  if use_predicate {
-    let p = comparator.unwrap().clone();
+  // With 3 args the third is an ordering function p (a bare symbol like
+  // Less/Greater, or a predicate). p[a, b] is applied to each pair: a comes
+  // before b when it is True, after when False, and when p[a, b] yields
+  // neither (e.g. Less on non-numeric symbols, where `c < a` stays symbolic)
+  // the pair is treated as incomparable so the original order is kept — this
+  // is why `Ordering[{c, a, b}, All, Less]` is {1, 2, 3}, not the canonical
+  // {2, 3, 1}. Without a comparator, the default canonical order is used.
+  if let Some(comparator) = args.get(2) {
+    let p = comparator.clone();
     let mut err: Option<InterpreterError> = None;
+    // Apply the comparator both ways so the ordering is consistent: a < b when
+    // p[a, b] is True, a > b when p[b, a] is True, and otherwise the pair is
+    // incomparable (equal sort keys, or a symbolic non-Boolean result) and the
+    // stable sort keeps the original order.
+    let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
     indexed.sort_by(|a, b| {
       if err.is_some() {
         return std::cmp::Ordering::Equal;
       }
-      match crate::functions::list_helpers_ast::apply_func_to_two_args(
+      let ab = crate::functions::list_helpers_ast::apply_func_to_two_args(
         &p, a.1, b.1,
+      );
+      match ab {
+        Ok(ref r) if is_true(r) => return std::cmp::Ordering::Less,
+        Ok(_) => {}
+        Err(e) => {
+          err = Some(e);
+          return std::cmp::Ordering::Equal;
+        }
+      }
+      match crate::functions::list_helpers_ast::apply_func_to_two_args(
+        &p, b.1, a.1,
       ) {
-        Ok(Expr::Identifier(ref s)) if s == "True" => std::cmp::Ordering::Less,
-        Ok(_) => std::cmp::Ordering::Greater,
+        Ok(ref r) if is_true(r) => std::cmp::Ordering::Greater,
+        Ok(_) => std::cmp::Ordering::Equal,
         Err(e) => {
           err = Some(e);
           std::cmp::Ordering::Equal
@@ -539,8 +548,7 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else {
     indexed.sort_by(|a, b| {
-      let ord = crate::functions::list_helpers_ast::canonical_cmp(a.1, b.1);
-      if use_greater { ord.reverse() } else { ord }
+      crate::functions::list_helpers_ast::canonical_cmp(a.1, b.1)
     });
   }
 
