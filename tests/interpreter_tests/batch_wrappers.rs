@@ -7182,6 +7182,44 @@ mod batch_unevaluated_wrappers_2 {
       "{Tree[4, None], Tree[5, None], Tree[3, None]}"
     );
   }
+  // RootTree[tree, n]: keep the tree down to level n.
+  #[test]
+  fn root_tree() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // The bare form (and n = 0) gives the root with truncated children ({}).
+    assert_eq!(interpret(&format!("RootTree[{t}]")).unwrap(), "Tree[1, {}]");
+    assert_eq!(
+      interpret(&format!("RootTree[{t}, 0]")).unwrap(),
+      "Tree[1, {}]"
+    );
+    // Down to level 1: an inner child loses its children ({}), a leaf child
+    // keeps None.
+    assert_eq!(
+      interpret(&format!("RootTree[{t}, 1]")).unwrap(),
+      "Tree[1, {Tree[2, {}], Tree[3, None]}]"
+    );
+    // n at or beyond the depth reproduces the whole tree.
+    assert_eq!(
+      interpret(&format!("RootTree[{t}, 2]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], Tree[3, None]}]"
+    );
+    assert_eq!(
+      interpret(&format!("RootTree[{t}, Infinity]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], Tree[3, None]}]"
+    );
+    // A leaf's root is the leaf itself (None stays None).
+    assert_eq!(
+      interpret("RootTree[Tree[9, None]]").unwrap(),
+      "Tree[9, None]"
+    );
+    // Children that were already leaves keep None at the cutoff.
+    assert_eq!(
+      interpret("RootTree[Tree[1, {2, 3}], 1]").unwrap(),
+      "Tree[1, {Tree[2, None], Tree[3, None]}]"
+    );
+    // Non-tree first argument stays unevaluated.
+    assert_eq!(interpret("RootTree[5]").unwrap(), "RootTree[5]");
+  }
 
   // VertexOutComponent
   #[test]

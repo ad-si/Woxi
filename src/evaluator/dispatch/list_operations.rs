@@ -561,6 +561,33 @@ fn tree_size(e: &Expr) -> Option<i128> {
   Some(total)
 }
 
+// RootTree truncation: keep `e` down to level `n` (None = Infinity, no
+// truncation). A node at or below the cutoff loses its children — an internal
+// node becomes `Tree[data, {}]`, a leaf `Tree[data, None]` keeps its None.
+fn root_tree(e: &Expr, depth: i128, n: Option<i128>) -> Expr {
+  let Expr::FunctionCall { name, args } = e else {
+    return e.clone();
+  };
+  if name != "Tree" || args.len() != 2 {
+    return e.clone();
+  }
+  let truncate = n.is_some_and(|n| depth >= n);
+  let new_children = match &args[1] {
+    Expr::List(_) if truncate => Expr::List(vec![].into()),
+    Expr::List(cs) => Expr::List(
+      cs.iter()
+        .map(|c| root_tree(c, depth + 1, n))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    other => other.clone(), // None leaf stays a leaf
+  };
+  Expr::FunctionCall {
+    name: "Tree".to_string(),
+    args: vec![args[0].clone(), new_children].into(),
+  }
+}
+
 // Parse a TreeLevel/Level spec into (lo, hi) bounds, where `hi == None` means
 // Infinity. A bare integer n means {1, n}; {n} means {n, n}; {n1, n2} is a
 // range; Infinity means {1, Infinity}. Negative bounds count from the bottom.
@@ -2842,6 +2869,31 @@ pub fn dispatch_list_operations(
         name: name.to_string(),
         args: args.to_vec().into(),
       }));
+    }
+    // RootTree[tree] gives the root truncated to level 0; RootTree[tree, n]
+    // keeps the tree down to level n (n a non-negative integer or Infinity).
+    "RootTree" if args.len() == 1 || args.len() == 2 => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "RootTree".to_string(),
+        args: args.to_vec().into(),
+      };
+      if tree_node(&args[0]).is_none() {
+        crate::emit_message(&format!(
+          "RootTree::tree: Tree expected at position 1 in {}.",
+          crate::syntax::expr_to_string(&unevaluated())
+        ));
+        return Some(Ok(unevaluated()));
+      }
+      let n: Option<i128> = if args.len() == 2 {
+        match &args[1] {
+          Expr::Integer(k) if *k >= 0 => Some(*k),
+          e if is_infinity_symbol(e) => None,
+          _ => return Some(Ok(unevaluated())),
+        }
+      } else {
+        Some(0)
+      };
+      return Some(Ok(root_tree(&args[0], 0, n)));
     }
     // TreeLeafQ[x]: True iff x is a leaf Tree[data, None]; False otherwise
     // (including non-trees and trees with a children list). No ::tree message.
