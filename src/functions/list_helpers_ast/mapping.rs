@@ -453,18 +453,18 @@ pub fn map_at_ast(
     expr: &Expr,
     path: &[i128],
   ) -> Result<Result<Expr, ()>, InterpreterError> {
-    let (items, head): (&[Expr], Option<&str>) = match expr {
-      Expr::List(items) => (items.as_slice(), None),
-      Expr::FunctionCall { name, args } => {
-        (args.as_slice(), Some(name.as_str()))
-      }
-      _ => return Ok(Err(())),
-    };
+    let (items, head): (Vec<Expr>, Option<String>) =
+      match super::element_access::parts_and_head(expr) {
+        Some(p) => p,
+        None => return Ok(Err(())),
+      };
+    let items = items.as_slice();
     let len = items.len() as i128;
     let n = path[0];
     if n == 0 && path.len() == 1 {
       // Wrap the head: f[head][args...]
-      let head_expr = Expr::Identifier(head.unwrap_or("List").to_string());
+      let head_expr =
+        Expr::Identifier(head.clone().unwrap_or_else(|| "List".to_string()));
       let wrapped = apply_func_ast(func, &head_expr)?;
       return Ok(Ok(Expr::CurriedCall {
         func: Box::new(wrapped),
@@ -487,40 +487,41 @@ pub fn map_at_ast(
     }
     Ok(Ok(match head {
       Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
+        name: h,
         args: new_items.into(),
       },
       None => Expr::List(new_items.into()),
     }))
   }
 
-  let (items, head): (&[Expr], Option<&str>) = match list {
-    Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
-    _ => {
-      // Atomic subject: partw with the spec (when it is positional)
-      match pos_spec {
-        Expr::Integer(n) => partw(&[*n]),
-        Expr::List(parts) => {
-          if let Some(path) = parts
-            .iter()
-            .map(expr_to_i128)
-            .collect::<Option<Vec<i128>>>()
-          {
-            partw(&path);
-          } else {
-            psl();
+  let (items, head): (Vec<Expr>, Option<String>) =
+    match super::element_access::parts_and_head(list) {
+      Some(p) => p,
+      None => {
+        // Atomic subject: partw with the spec (when it is positional)
+        match pos_spec {
+          Expr::Integer(n) => partw(&[*n]),
+          Expr::List(parts) => {
+            if let Some(path) = parts
+              .iter()
+              .map(expr_to_i128)
+              .collect::<Option<Vec<i128>>>()
+            {
+              partw(&path);
+            } else {
+              psl();
+            }
           }
+          _ => psl(),
         }
-        _ => psl(),
+        return Ok(unevaluated());
       }
-      return Ok(unevaluated());
-    }
-  };
+    };
+  let items = items.as_slice();
   let len = items.len() as i128;
-  let wrap = |v: Vec<Expr>| match head {
+  let wrap = |v: Vec<Expr>| match &head {
     Some(h) => Expr::FunctionCall {
-      name: h.to_string(),
+      name: h.clone(),
       args: v.into(),
     },
     None => Expr::List(v.into()),

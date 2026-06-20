@@ -1555,6 +1555,21 @@ mod cases {
   fn map_at_1() {
     assert_case(r#"MapAt[f, {a, b, c}, 2]"#, r#"{a, f[b], c}"#);
   }
+  // MapAt addresses operator expressions by their FullForm parts, so x^2 =
+  // Power[x, 2] has part 1 = x and part 2 = 2.
+  #[test]
+  fn map_at_power() {
+    assert_case(r#"MapAt[f, x^2, 1]"#, r#"f[x]^2"#);
+    assert_case(r#"MapAt[f, x^2, 2]"#, r#"x^f[2]"#);
+  }
+  #[test]
+  fn map_at_power_nested() {
+    assert_case(r#"MapAt[f, Sin[x]^2, {1, 1}]"#, r#"Sin[f[x]]^2"#);
+  }
+  #[test]
+  fn map_at_power_multi() {
+    assert_case(r#"MapAt[f, x^2, {{1}, {2}}]"#, r#"f[x]^f[2]"#);
+  }
   #[test]
   fn map_at_2() {
     assert_case(

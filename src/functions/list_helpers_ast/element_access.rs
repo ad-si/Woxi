@@ -1780,7 +1780,9 @@ fn assoc_position_index(spec: &Expr, pairs: &[(Expr, Expr)]) -> Option<usize> {
 /// `a + b`, `-a`) are decomposed to their full-form head and children so that
 /// integer part indices address them like Wolfram's FullForm. Atoms (and
 /// special symbols such as `Infinity`) yield None and are left unchanged.
-fn parts_and_head(expr: &Expr) -> Option<(Vec<Expr>, Option<String>)> {
+pub(crate) fn parts_and_head(
+  expr: &Expr,
+) -> Option<(Vec<Expr>, Option<String>)> {
   match expr {
     Expr::List(items) => Some((items.to_vec(), None)),
     Expr::FunctionCall { name, args } => {
