@@ -632,28 +632,31 @@ fn tree_level(
 // Collect positions of nodes whose data matches `pattern`, in post-order
 // (descendants before their parent, left to right). The root's position is the
 // empty path. `path` accumulates the current 1-based child indices; each
-// emitted position is an Expr::List of integers. Returns false if `e` is not a
-// tree (so the caller can emit ::tree and stay unevaluated).
+// emitted position is an Expr::List of integers. When `bounds` is `Some`, only
+// nodes within that level spec are collected. Returns the node's height
+// (0 for a leaf), or None if `e` is not a tree (so the caller can emit ::tree).
 fn tree_position(
   e: &Expr,
   pattern: &Expr,
+  depth: i128,
+  bounds: Option<(i128, Option<i128>)>,
   path: &mut Vec<Expr>,
   out: &mut Vec<Expr>,
-) -> bool {
-  let Some((data, children)) = tree_node(e) else {
-    return false;
-  };
+) -> Option<i128> {
+  let (data, children) = tree_node(e)?;
+  let mut height = 0;
   for (i, child) in children.iter().enumerate() {
     path.push(Expr::Integer((i + 1) as i128));
-    if !tree_position(child, pattern, path, out) {
-      return false;
-    }
+    let h = tree_position(child, pattern, depth + 1, bounds, path, out)?;
+    height = height.max(h + 1);
     path.pop();
   }
-  if list_helpers_ast::matches_pattern_ast(data, pattern) {
+  let in_level =
+    bounds.is_none_or(|(lo, hi)| tree_level_in_spec(depth, height + 1, lo, hi));
+  if in_level && list_helpers_ast::matches_pattern_ast(data, pattern) {
     out.push(Expr::List(path.clone().into()));
   }
-  true
+  Some(height)
 }
 
 // Replace the subtree at `path` (1-based child indices) with `value`,
@@ -782,16 +785,29 @@ fn tree_map(func: &Expr, e: &Expr) -> Result<Option<Expr>, InterpreterError> {
   }))
 }
 
-// Count nodes (root + all descendants) whose data matches `pattern`.
-// Returns None if `e` is not a tree.
-fn tree_count(e: &Expr, pattern: &Expr) -> Option<i128> {
+// Count nodes (root + all descendants) whose data matches `pattern`. When
+// `bounds` is `Some`, only nodes within that level spec are counted. Returns
+// (count, height) where height is 0 for a leaf, or None if `e` is not a tree.
+fn tree_count(
+  e: &Expr,
+  pattern: &Expr,
+  depth: i128,
+  bounds: Option<(i128, Option<i128>)>,
+) -> Option<(i128, i128)> {
   let (data, children) = tree_node(e)?;
-  let mut total =
-    i128::from(list_helpers_ast::matches_pattern_ast(data, pattern));
-  for c in children {
-    total += tree_count(c, pattern)?;
+  let mut count = 0;
+  let mut height = 0;
+  for c in &children {
+    let (sub, h) = tree_count(c, pattern, depth + 1, bounds)?;
+    count += sub;
+    height = height.max(h + 1);
   }
-  Some(total)
+  let in_level =
+    bounds.is_none_or(|(lo, hi)| tree_level_in_spec(depth, height + 1, lo, hi));
+  if in_level && list_helpers_ast::matches_pattern_ast(data, pattern) {
+    count += 1;
+  }
+  Some((count, height))
 }
 
 // TreeFold[f, tree]: a leaf folds to its data; an inner node with data `d`
@@ -2931,23 +2947,32 @@ pub fn dispatch_list_operations(
     }
     // TreePosition[tree, patt]: positions of nodes whose data matches patt,
     // in post-order (descendants before parent); the root's position is {}.
-    "TreePosition" if args.len() == 2 => {
+    // The optional third argument restricts positions to a level spec.
+    "TreePosition" if args.len() == 2 || args.len() == 3 => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "TreePosition".to_string(),
+        args: args.to_vec().into(),
+      };
+      let bounds = if args.len() == 3 {
+        match parse_tree_level_spec(&args[2]) {
+          Some(b) => Some(b),
+          None => return Some(Ok(unevaluated())),
+        }
+      } else {
+        None
+      };
       let mut path = Vec::new();
       let mut out = Vec::new();
-      if tree_position(&args[0], &args[1], &mut path, &mut out) {
+      if tree_position(&args[0], &args[1], 0, bounds, &mut path, &mut out)
+        .is_some()
+      {
         return Some(Ok(Expr::List(out.into())));
       }
       crate::emit_message(&format!(
         "TreePosition::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&Expr::FunctionCall {
-          name: "TreePosition".to_string(),
-          args: args.to_vec().into(),
-        })
+        crate::syntax::expr_to_string(&unevaluated())
       ));
-      return Some(Ok(Expr::FunctionCall {
-        name: "TreePosition".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated()));
     }
     // TreeExtract[tree, pos]: extract the subtree(s) at position(s) `pos`.
     // A position is a list of 1-based child indices. `pos` is either a single
@@ -3027,21 +3052,29 @@ pub fn dispatch_list_operations(
       Err(e) => return Some(Err(e)),
     },
     // TreeCount[tree, pattern]: count nodes whose data matches pattern.
-    "TreeCount" if args.len() == 2 => {
-      if let Some(n) = tree_count(&args[0], &args[1]) {
+    // TreeCount[tree, patt] counts all matching nodes; the optional third
+    // argument restricts the count to the given level spec.
+    "TreeCount" if args.len() == 2 || args.len() == 3 => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "TreeCount".to_string(),
+        args: args.to_vec().into(),
+      };
+      let bounds = if args.len() == 3 {
+        match parse_tree_level_spec(&args[2]) {
+          Some(b) => Some(b),
+          None => return Some(Ok(unevaluated())),
+        }
+      } else {
+        None
+      };
+      if let Some((n, _)) = tree_count(&args[0], &args[1], 0, bounds) {
         return Some(Ok(Expr::Integer(n)));
       }
       crate::emit_message(&format!(
         "TreeCount::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&Expr::FunctionCall {
-          name: "TreeCount".to_string(),
-          args: args.to_vec().into(),
-        })
+        crate::syntax::expr_to_string(&unevaluated())
       ));
-      return Some(Ok(Expr::FunctionCall {
-        name: "TreeCount".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated()));
     }
     // TreeFold[f] is the operator form: keep it symbolic so the curried call
     // TreeFold[f][tree] can apply it (handled in apply_curried_call).

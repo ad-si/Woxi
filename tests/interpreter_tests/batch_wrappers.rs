@@ -6837,6 +6837,36 @@ mod batch_unevaluated_wrappers_2 {
       "TreeCount[5, _Integer]"
     );
   }
+  // TreeCount[tree, patt, levelspec]: count matches restricted to levels.
+  #[test]
+  fn tree_count_leveled() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // Only the two level-2 nodes.
+    assert_eq!(
+      interpret(&format!("TreeCount[{t}, _Integer, {{2}}]")).unwrap(),
+      "2"
+    );
+    // Bare integer 1 means levels 1..1: the two level-1 nodes.
+    assert_eq!(
+      interpret(&format!("TreeCount[{t}, _Integer, 1]")).unwrap(),
+      "2"
+    );
+    // Level {0} is the root alone.
+    assert_eq!(
+      interpret(&format!("TreeCount[{t}, _, {{0}}]")).unwrap(),
+      "1"
+    );
+    // All levels reproduces the 2-arg count.
+    assert_eq!(
+      interpret(&format!("TreeCount[{t}, _Integer, {{0, Infinity}}]")).unwrap(),
+      "5"
+    );
+    // Negative spec -1 = {1, -1}: every node except the root.
+    assert_eq!(
+      interpret(&format!("TreeCount[{t}, _Integer, -1]")).unwrap(),
+      "4"
+    );
+  }
   // TreeMap[f, tree]: apply f to every node's data, preserving structure.
   #[test]
   fn tree_map() {
@@ -6929,6 +6959,31 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("TreePosition[5, _Integer]").unwrap(),
       "TreePosition[5, _Integer]"
+    );
+  }
+  // TreePosition[tree, patt, levelspec]: positions restricted to levels.
+  #[test]
+  fn tree_position_leveled() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // Level-2 matches, post-order.
+    assert_eq!(
+      interpret(&format!("TreePosition[{t}, _Integer, {{2}}]")).unwrap(),
+      "{{1, 1}, {1, 2}}"
+    );
+    // Level {0} is just the root position.
+    assert_eq!(
+      interpret(&format!("TreePosition[{t}, _, {{0}}]")).unwrap(),
+      "{{}}"
+    );
+    // Bare integer 1 means level 1.
+    assert_eq!(
+      interpret(&format!("TreePosition[{t}, _Integer, 1]")).unwrap(),
+      "{{1}, {2}}"
+    );
+    // Negative {-1} selects the leaves.
+    assert_eq!(
+      interpret(&format!("TreePosition[{t}, _, {{-1}}]")).unwrap(),
+      "{{1, 1}, {1, 2}, {2}}"
     );
   }
   // TreeReplacePart[tree, pos -> value]: replace the subtree at pos.
