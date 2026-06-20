@@ -3000,6 +3000,21 @@ mod length_function {
     assert_eq!(interpret("Length[a * b * c]").unwrap(), "3");
     assert_eq!(interpret("Length[a^b]").unwrap(), "2");
   }
+
+  // Length of a SparseArray is its first dimension, like a dense array —
+  // not the number of parts in its canonical four-argument form.
+  #[test]
+  fn length_of_sparse_array() {
+    assert_eq!(interpret("Length[SparseArray[{1 -> 1}, 5]]").unwrap(), "5");
+    assert_eq!(
+      interpret("Length[SparseArray[{{1, 1} -> 1}, {2, 3}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Length[SparseArray[{i_} :> i, 7]]").unwrap(),
+      "7"
+    );
+  }
 }
 
 mod part_paren_extended {

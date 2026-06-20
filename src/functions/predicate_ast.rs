@@ -1805,6 +1805,16 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Unevaluated[expr] is consumed by Length: count elements of expr directly.
   let stripped = crate::evaluator::strip_unevaluated(&args[0]);
+  // SparseArray[Automatic, dims, default, rules]: Length is its first
+  // dimension, like a dense array (not the count of canonical-form parts).
+  if let Expr::FunctionCall { name, args: sa } = &stripped
+    && name == "SparseArray"
+    && sa.len() == 4
+    && let Expr::List(dims) = &sa[1]
+    && let Some(Expr::Integer(d)) = dims.first()
+  {
+    return Ok(Expr::Integer(*d));
+  }
   let len = match &stripped {
     Expr::List(items) => items.len() as i128,
     Expr::Association(items) => items.len() as i128,
