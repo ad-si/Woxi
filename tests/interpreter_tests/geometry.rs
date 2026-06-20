@@ -1203,6 +1203,73 @@ mod region_nearest {
       "{1, 1}"
     );
   }
+
+  // A Line is a segment (or polyline): the nearest point is the clamped
+  // projection onto the closest segment, exact for exact inputs.
+  #[test]
+  fn line_projection() {
+    assert_eq!(
+      interpret("RegionNearest[Line[{{0, 0}, {2, 2}}], {2, 0}]").unwrap(),
+      "{1, 1}"
+    );
+    // Projection lands inside the segment.
+    assert_eq!(
+      interpret("RegionNearest[Line[{{0, 0}, {4, 0}}], {2, 5}]").unwrap(),
+      "{2, 0}"
+    );
+    // Beyond an endpoint clamps to that endpoint.
+    assert_eq!(
+      interpret("RegionNearest[Line[{{0, 0}, {4, 0}}], {-1, 3}]").unwrap(),
+      "{0, 0}"
+    );
+    // Exact rational projection.
+    assert_eq!(
+      interpret("RegionNearest[Line[{{0, 0}, {3, 3}}], {3, 0}]").unwrap(),
+      "{3/2, 3/2}"
+    );
+    // A 3D segment.
+    assert_eq!(
+      interpret("RegionNearest[Line[{{0, 0, 0}, {2, 2, 2}}], {2, 0, 0}]")
+        .unwrap(),
+      "{2/3, 2/3, 2/3}"
+    );
+  }
+
+  // A multi-vertex polyline picks the closest segment.
+  #[test]
+  fn line_polyline() {
+    assert_eq!(
+      interpret("RegionNearest[Line[{{0, 0}, {2, 0}, {2, 2}}], {3, 1}]")
+        .unwrap(),
+      "{2, 1}"
+    );
+  }
+}
+
+mod region_distance_line {
+  use super::*;
+
+  // RegionDistance to a Line is the distance to its nearest point.
+  #[test]
+  fn segment_distance() {
+    assert_eq!(
+      interpret("RegionDistance[Line[{{0, 0}, {4, 0}}], {2, 5}]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("RegionDistance[Line[{{0, 0}, {2, 2}}], {2, 0}]").unwrap(),
+      "Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn polyline_distance() {
+    assert_eq!(
+      interpret("RegionDistance[Line[{{0, 0}, {2, 0}, {2, 2}}], {3, 1}]")
+        .unwrap(),
+      "1"
+    );
+  }
 }
 
 mod region_equal {

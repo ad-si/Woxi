@@ -5113,6 +5113,99 @@ fn compute_region_member(
   }
 }
 
+/// Nearest point of a `Line[{v1, v2, …}]` (a segment or polyline) to `point`,
+/// built symbolically so exact inputs give exact coordinates. Each segment's
+/// clamped projection is a candidate; the closest by Euclidean distance wins.
+/// Returns `None` if the vertices are not coordinate vectors of length `n`.
+fn line_nearest_point(
+  verts: &[Expr],
+  point: &Expr,
+  pt: &[Expr],
+  n: usize,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator::{Divide, Minus, Plus, Times};
+  if verts.len() < 2 {
+    return Ok(None);
+  }
+  let mut vlists: Vec<Vec<Expr>> = Vec::with_capacity(verts.len());
+  for v in verts {
+    match v {
+      Expr::List(c) if c.len() == n => vlists.push(c.iter().cloned().collect()),
+      _ => return Ok(None),
+    }
+  }
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let to_f64 = crate::functions::math_ast::try_eval_to_f64;
+  let binop = |op, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let plus = |terms: Vec<Expr>| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let dist_to = |c: &Expr| -> Result<Option<f64>, InterpreterError> {
+    Ok(to_f64(&eval(&Expr::FunctionCall {
+      name: "EuclideanDistance".to_string(),
+      args: vec![point.clone(), c.clone()].into(),
+    })?))
+  };
+
+  let mut best: Option<(f64, Expr)> = None;
+  for seg in vlists.windows(2) {
+    let (a, b) = (&seg[0], &seg[1]);
+    // t = dot(p − a, b − a) / dot(b − a, b − a), clamped to [0, 1].
+    let num = plus(
+      (0..n)
+        .map(|i| {
+          binop(
+            Times,
+            binop(Minus, pt[i].clone(), a[i].clone()),
+            binop(Minus, b[i].clone(), a[i].clone()),
+          )
+        })
+        .collect(),
+    );
+    let den = plus(
+      (0..n)
+        .map(|i| {
+          let d = binop(Minus, b[i].clone(), a[i].clone());
+          binop(Times, d.clone(), d)
+        })
+        .collect(),
+    );
+    let den_val = to_f64(&eval(&den)?);
+    let cand: Vec<Expr> = if den_val.is_none_or(|d| d.abs() < 1e-15) {
+      a.clone() // degenerate (zero-length) segment
+    } else {
+      let t = binop(Divide, num, den);
+      let t_val = to_f64(&eval(&t)?).unwrap_or(0.0);
+      if t_val <= 0.0 {
+        a.clone()
+      } else if t_val >= 1.0 {
+        b.clone()
+      } else {
+        (0..n)
+          .map(|i| {
+            binop(
+              Plus,
+              a[i].clone(),
+              binop(Times, t.clone(), binop(Minus, b[i].clone(), a[i].clone())),
+            )
+          })
+          .collect()
+      }
+    };
+    let cand_list = eval(&Expr::List(cand.into()))?;
+    let d = dist_to(&cand_list)?.unwrap_or(f64::INFINITY);
+    if best.as_ref().is_none_or(|(bd, _)| d < *bd) {
+      best = Some((d, cand_list));
+    }
+  }
+  Ok(best.map(|(_, c)| c))
+}
+
 /// RegionDistance[region, point] — the shortest distance from `point` to the
 /// (closed) `region`, zero when inside a solid region. Handles Point, Disk/Ball
 /// (solid), Circle/Sphere (boundary) and Rectangle/Cuboid (axis-aligned boxes)
@@ -5208,6 +5301,19 @@ fn compute_region_distance(
         })
         .collect();
       euclid(point.clone(), Expr::List(clamped.into()))
+    }
+    "Line" if args.len() == 1 => {
+      let Expr::List(pt) = point else {
+        return unevaluated();
+      };
+      let pt_vec: Vec<Expr> = pt.iter().cloned().collect();
+      let Expr::List(verts) = &args[0] else {
+        return unevaluated();
+      };
+      match line_nearest_point(verts, point, &pt_vec, pt_vec.len())? {
+        Some(nearest) => euclid(point.clone(), nearest),
+        None => return unevaluated(),
+      }
     }
     _ => return unevaluated(),
   };
@@ -5333,6 +5439,14 @@ fn compute_region_nearest(
         })
         .collect();
       eval(&Expr::List(clamped.into()))
+    }
+    "Line" if args.len() == 1 => {
+      if let Expr::List(verts) = &args[0]
+        && let Some(nearest) = line_nearest_point(verts, point, &pt, n)?
+      {
+        return Ok(nearest);
+      }
+      unevaluated()
     }
     _ => unevaluated(),
   }
