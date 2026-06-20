@@ -6165,6 +6165,28 @@ mod batch_unevaluated_wrappers_2 {
       "{1, 2, 3, 4}"
     );
   }
+  // Edges wrap around modularly: CirculantGraph[6, {1}] is the 6-cycle (6
+  // edges, including 1-6), not a 5-edge path.
+  #[test]
+  fn circulant_graph_wraparound() {
+    assert_eq!(
+      interpret("EdgeCount[CirculantGraph[6, {1}]]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("EdgeCount[CirculantGraph[6, {1, 2}]]").unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret("EdgeCount[CirculantGraph[5, {1, 2}]]").unwrap(),
+      "10"
+    );
+  }
+  // The jump may also be given as a bare integer.
+  #[test]
+  fn circulant_graph_integer_jump() {
+    assert_eq!(interpret("EdgeCount[CirculantGraph[6, 2]]").unwrap(), "6");
+  }
 
   // KaryTree
   #[test]

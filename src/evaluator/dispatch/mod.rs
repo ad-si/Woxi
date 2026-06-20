@@ -2797,36 +2797,49 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // CirculantGraph[n, {j1, j2, ...}] — circulant graph
+  // CirculantGraph[n, j] or CirculantGraph[n, {j1, j2, ...}] — each vertex i
+  // connects to i±j (mod n) for every jump j. Edges wrap around modularly and
+  // are deduplicated by undirected pair, listed in lexicographic order.
   if name == "CirculantGraph"
     && args.len() == 2
-    && let (Expr::Integer(n), Expr::List(jumps)) = (&args[0], &args[1])
+    && let Expr::Integer(n) = &args[0]
+    && matches!(&args[1], Expr::List(_) | Expr::Integer(_))
   {
     let n = *n as usize;
+    let jump_vals: Vec<usize> = match &args[1] {
+      Expr::List(jumps) => jumps
+        .iter()
+        .filter_map(|j| match j {
+          Expr::Integer(v) => Some(*v as usize),
+          _ => None,
+        })
+        .collect(),
+      Expr::Integer(v) => vec![*v as usize],
+      _ => unreachable!(),
+    };
     let vertices: Vec<Expr> =
       (1..=n).map(|i| Expr::Integer(i as i128)).collect();
-    let mut edges = Vec::new();
-    let jump_vals: Vec<usize> = jumps
-      .iter()
-      .filter_map(|j| {
-        if let Expr::Integer(v) = j {
-          Some(*v as usize)
-        } else {
-          None
-        }
-      })
-      .collect();
+    // BTreeSet keeps edges deduplicated and in lexicographic (min, max) order.
+    let mut edge_set = std::collections::BTreeSet::new();
     for i in 1..=n {
       for &j in &jump_vals {
+        if n == 0 {
+          continue;
+        }
         let target = ((i - 1 + j) % n) + 1;
-        if i < target {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![Expr::Integer(i as i128), Expr::Integer(target as i128)]
-              .into(),
-          });
+        if i != target {
+          let (a, b) = if i < target { (i, target) } else { (target, i) };
+          edge_set.insert((a, b));
         }
       }
     }
+    let edges: Vec<Expr> = edge_set
+      .into_iter()
+      .map(|(a, b)| Expr::FunctionCall {
+        name: "UndirectedEdge".to_string(),
+        args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
+      })
+      .collect();
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
       args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
