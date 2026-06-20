@@ -50,8 +50,101 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Reduce[trigEq && bounded_range, x]: delegate to Solve, which specializes
+  // the periodic family to the concrete in-range values, then present them as
+  // `x == v1 || x == v2 || …`.
+  if vars.len() == 1
+    && let Some(out) = try_reduce_bounded_trig(expr, &vars[0])?
+  {
+    return Ok(out);
+  }
+
   let result = reduce_expr(expr, &vars, domain)?;
   Ok(result)
+}
+
+/// Does `e` contain a `ConditionalExpression[...]` subexpression?
+fn contains_conditional_expression(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      name == "ConditionalExpression"
+        || args.iter().any(contains_conditional_expression)
+    }
+    Expr::List(items) => items.iter().any(contains_conditional_expression),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_conditional_expression(left)
+        || contains_conditional_expression(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_conditional_expression(operand),
+    _ => false,
+  }
+}
+
+/// Is `eq` a trig equation `Sin/Cos/Tan/Cot[var] == const`?
+fn is_trig_equation(eq: &Expr, var: &str) -> bool {
+  let lhs = match eq {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      &operands[0]
+    }
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      &args[0]
+    }
+    _ => return false,
+  };
+  matches!(lhs, Expr::FunctionCall { name, args }
+    if matches!(name.as_str(), "Sin" | "Cos" | "Tan" | "Cot")
+      && args.len() == 1
+      && matches!(&args[0], Expr::Identifier(s) if s == var))
+}
+
+/// For `Reduce[trigEq && bounding inequalities, x]`, delegate to Solve. When
+/// Solve produces concrete (non-periodic) solutions, present them as the
+/// disjunction `x == v1 || x == v2 || …`; otherwise return `None` so the
+/// general reduction handles it.
+fn try_reduce_bounded_trig(
+  expr: &Expr,
+  var: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let (eq_opt, ineqs) = extract_eq_and_ineq_parts(expr);
+  let Some(eq) = eq_opt else {
+    return Ok(None);
+  };
+  if ineqs.is_empty() || !is_trig_equation(&eq, var) {
+    return Ok(None);
+  }
+  let sols = solve_ast(&[expr.clone(), Expr::Identifier(var.to_string())])?;
+  let Expr::List(sol_list) = &sols else {
+    return Ok(None);
+  };
+  let var_expr = Expr::Identifier(var.to_string());
+  let mut eqs: Vec<Expr> = Vec::new();
+  for sol in sol_list.iter() {
+    let Expr::List(rules) = sol else {
+      return Ok(None);
+    };
+    if rules.len() != 1 {
+      return Ok(None);
+    }
+    let Expr::Rule { replacement, .. } = &rules[0] else {
+      return Ok(None);
+    };
+    // A periodic family means the constraint was not pinned down — leave it to
+    // the general reduction.
+    if contains_conditional_expression(replacement) {
+      return Ok(None);
+    }
+    eqs.push(make_equality(&var_expr, replacement));
+  }
+  if eqs.is_empty() {
+    return Ok(Some(Expr::Identifier("False".to_string())));
+  }
+  Ok(Some(build_or(eqs)))
 }
 
 /// Extract variable names from the second argument of Reduce.

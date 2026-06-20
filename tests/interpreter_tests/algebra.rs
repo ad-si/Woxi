@@ -3094,6 +3094,51 @@ mod reduce {
     assert_eq!(interpret("Reduce[True, x]").unwrap(), "True");
   }
 
+  // Reduce of a trig equation over a bounded interval gives the concrete
+  // in-range roots as a disjunction (or a single equation / False).
+  #[test]
+  fn trig_bounded_sin_zero() {
+    assert_eq!(
+      interpret("Reduce[Sin[x] == 0 && 0 < x < 2 Pi, x]").unwrap(),
+      "x == Pi"
+    );
+  }
+
+  #[test]
+  fn trig_bounded_cos_half() {
+    assert_eq!(
+      interpret("Reduce[Cos[x] == 1/2 && 0 < x < 2 Pi, x]").unwrap(),
+      "x == Pi/3 || x == (5*Pi)/3"
+    );
+  }
+
+  #[test]
+  fn trig_bounded_tan_one() {
+    assert_eq!(
+      interpret("Reduce[Tan[x] == 1 && 0 < x < 2 Pi, x]").unwrap(),
+      "x == Pi/4 || x == (5*Pi)/4"
+    );
+  }
+
+  #[test]
+  fn trig_bounded_no_solution() {
+    assert_eq!(
+      interpret("Reduce[Cos[x] == 5 && 0 < x < 2 Pi, x]").unwrap(),
+      "False"
+    );
+  }
+
+  // Without a bounding constraint the general periodic family is kept.
+  #[test]
+  fn trig_unbounded_keeps_family() {
+    assert_eq!(
+      interpret("Reduce[Cos[x] == 1/2, x]").unwrap(),
+      "x == ConditionalExpression[-1/3*Pi + 2*Pi*C[1], \
+       Element[C[1], Integers]] || x == ConditionalExpression[Pi/3 + \
+       2*Pi*C[1], Element[C[1], Integers]]"
+    );
+  }
+
   #[test]
   fn reduce_exists_quadratic_linear_audit_case() {
     // Audit case: find conditions on `a` such that some (x, y) satisfies
