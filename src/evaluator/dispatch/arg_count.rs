@@ -1300,6 +1300,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Variance" => Some((1, 1)),
     "VectorAngle" => Some((2, 2)),
     "Volume" => Some((1, 1)),
+    "VectorGreater" => Some((1, 2)),
+    "VectorGreaterEqual" => Some((1, 2)),
     "VectorLess" => Some((1, 2)),
     "VectorLessEqual" => Some((1, 2)),
     "VectorPlot" => Some((3, usize::MAX)),

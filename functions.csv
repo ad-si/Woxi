@@ -4171,7 +4171,7 @@ ProcessEnvironment,,🚫,,10.0,4291
 RudinShapiro,,,,10.2,4291
 SliderBox,,🚫,,6.0,4291
 UnconstrainedParameters,,,,12.0,4291
-VectorGreaterEqual,,,,12.0,4291
+VectorGreaterEqual,Componentwise greater-than-or-equal comparison of vectors,✅,pure,12.0,4291
 VolcanoData,,🚫,,10.0,4291
 WaveletScale,,🚫,,8.0,4291
 WordFrequency,Fraction of words in a string equal to a given word (or association for a list of words); IgnoreCase option,✅,pure,10.4,4291
@@ -4980,7 +4980,7 @@ SystemModeler,,🚫,,11.3,5184
 ThompsonGroupTh,,,,8.0,5184
 TotalWidth,Option specifying the total width for formatted output,✅,none,1.0,5184
 TraceOn,,,,2.0,5184
-VectorGreater,,,,12.0,5184
+VectorGreater,Componentwise strict greater-than comparison of vectors,✅,pure,12.0,5184
 VerticalTilde,,,,3.0,5184
 VideoPlay,,🚫,,12.1,5184
 WebSessionObject,,🚫,,12.0,5184

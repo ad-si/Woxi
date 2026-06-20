@@ -1952,6 +1952,64 @@ mod vector_angle {
   }
 }
 
+mod vector_order {
+  use super::*;
+
+  // VectorGreater[{u, v}] is the element-wise strict comparison, And-reduced.
+  #[test]
+  fn pairwise() {
+    assert_eq!(
+      interpret("VectorGreater[{{2, 3}, {1, 2}}]").unwrap(),
+      "True"
+    );
+    // One failing component makes the whole comparison False.
+    assert_eq!(
+      interpret("VectorGreater[{{2, 3}, {1, 5}}]").unwrap(),
+      "False"
+    );
+    // Strict comparison: equal components are not greater.
+    assert_eq!(
+      interpret("VectorGreater[{{2, 3}, {2, 3}}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("VectorGreaterEqual[{{2, 2}, {1, 2}}]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("VectorLess[{{1, 2}, {3, 4}}]").unwrap(), "True");
+    assert_eq!(
+      interpret("VectorLessEqual[{{1, 2}, {1, 3}}]").unwrap(),
+      "True"
+    );
+  }
+
+  // More than two vectors chains the comparison v1 > v2 > ... > vn.
+  #[test]
+  fn chained() {
+    assert_eq!(
+      interpret("VectorGreater[{{3, 4}, {2, 3}, {1, 2}}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("VectorGreater[{{3, 4}, {2, 5}, {1, 2}}]").unwrap(),
+      "False"
+    );
+  }
+
+  // Symbolic comparisons stay unevaluated; mismatched lengths are False.
+  #[test]
+  fn symbolic_and_mismatched() {
+    assert_eq!(
+      interpret("VectorGreater[{{a, b}, {c, d}}]").unwrap(),
+      "VectorGreater[{{a, b}, {c, d}}]"
+    );
+    assert_eq!(
+      interpret("VectorGreater[{{2, 3, 1}, {1, 2}}]").unwrap(),
+      "False"
+    );
+  }
+}
+
 mod upper_triangularize {
   use super::*;
 

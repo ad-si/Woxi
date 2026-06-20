@@ -513,6 +513,12 @@ pub fn dispatch_predicate_functions(
     "NonNegative" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::non_negative_q_ast(args));
     }
+    "VectorGreater" | "VectorGreaterEqual" | "VectorLess"
+    | "VectorLessEqual"
+      if args.len() == 1 =>
+    {
+      return Some(vector_order_ast(name, &args[0]));
+    }
     "PrimeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::prime_q_ast(args));
     }
@@ -1566,6 +1572,75 @@ pub fn dispatch_predicate_functions(
 }
 
 /// Helper to create a Rule expression: name -> value
+/// VectorGreater[{v1, …, vn}] and friends: the chained element-wise
+/// comparison v1 ▷ v2 ▷ … ▷ vn (with the default non-negative-orthant cone),
+/// reduced with And. Returns False as soon as any element comparison is
+/// definitively False (mismatched lengths count as False); stays unevaluated
+/// when some comparison is symbolic and none is False.
+fn vector_order_ast(name: &str, arg: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![arg.clone()].into(),
+    })
+  };
+  let op = match name {
+    "VectorGreater" => "Greater",
+    "VectorGreaterEqual" => "GreaterEqual",
+    "VectorLess" => "Less",
+    _ => "LessEqual",
+  };
+  let Expr::List(vecs) = arg else {
+    return unevaluated();
+  };
+  if vecs.len() < 2 {
+    return unevaluated();
+  }
+  let mut any_false = false;
+  let mut any_symbolic = false;
+  // Compare a single scalar pair, recording whether it is False or symbolic.
+  let compare = |a: &Expr,
+                 b: &Expr,
+                 af: &mut bool,
+                 sym: &mut bool|
+   -> Result<(), InterpreterError> {
+    match crate::evaluator::evaluate_function_call_ast(
+      op,
+      &[a.clone(), b.clone()],
+    )? {
+      Expr::Identifier(ref s) if s == "True" => {}
+      Expr::Identifier(ref s) if s == "False" => *af = true,
+      _ => *sym = true,
+    }
+    Ok(())
+  };
+  for window in vecs.windows(2) {
+    match (&window[0], &window[1]) {
+      // Two vectors: compare element-wise (mismatched lengths are False).
+      (Expr::List(u), Expr::List(v)) => {
+        if u.len() != v.len() {
+          any_false = true;
+          continue;
+        }
+        for (a, b) in u.iter().zip(v.iter()) {
+          compare(a, b, &mut any_false, &mut any_symbolic)?;
+        }
+      }
+      // A mix of a vector and a scalar is not a valid comparison.
+      (Expr::List(_), _) | (_, Expr::List(_)) => return unevaluated(),
+      // Two scalars: a chained scalar comparison.
+      (a, b) => compare(a, b, &mut any_false, &mut any_symbolic)?,
+    }
+  }
+  if any_false {
+    Ok(Expr::Identifier("False".to_string()))
+  } else if any_symbolic {
+    unevaluated()
+  } else {
+    Ok(Expr::Identifier("True".to_string()))
+  }
+}
+
 fn make_rule(name: &str, value: Expr) -> Expr {
   Expr::Rule {
     pattern: Box::new(Expr::Identifier(name.to_string())),
