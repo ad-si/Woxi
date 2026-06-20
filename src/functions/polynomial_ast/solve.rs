@@ -1304,42 +1304,74 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(eq_part) = eq_part_opt
       && !ineqs.is_empty()
     {
-      // Solve the equation part, then filter by inequalities
+      // Solve the equation part, then filter by inequalities. A periodic
+      // solution `var -> ConditionalExpression[a + b C, C ∈ Integers]` is
+      // specialized to the concrete values satisfying the bounds.
       let eq_solutions = solve_ast(&[eq_part, args[1].clone()])?;
       if let Expr::List(solutions) = &eq_solutions {
-        let filtered: Vec<Expr> = solutions
-          .iter()
-          .filter(|sol| {
-            if let Expr::List(rules) = sol {
-              for rule in rules {
-                if let Expr::Rule {
-                  pattern: _,
-                  replacement,
-                } = rule
-                {
-                  for ineq in &ineqs {
-                    let subst = crate::syntax::substitute_variable(
-                      ineq,
-                      &var_name,
-                      replacement,
-                    );
-                    if let Ok(result) =
-                      crate::evaluator::evaluate_expr_to_expr(&subst)
-                      && matches!(&result, Expr::Identifier(s) if s == "False")
-                    {
-                      return false;
-                    }
-                  }
-                }
+        let mut out: Vec<Expr> = Vec::new();
+        let mut seen: std::collections::HashSet<String> =
+          std::collections::HashSet::new();
+        let mut specialized = false;
+        for sol in solutions.iter() {
+          // A single-rule solution `{var -> ConditionalExpression[...]}` may be
+          // specialized into several concrete rules.
+          if let Expr::List(rules) = sol
+            && rules.len() == 1
+            && let Expr::Rule { replacement, .. } = &rules[0]
+            && let Some(concrete) =
+              specialize_periodic_solution(&var_name, replacement, &ineqs)
+          {
+            specialized = true;
+            for c in concrete {
+              let key = crate::syntax::expr_to_string(&c);
+              if seen.insert(key) {
+                out.push(c);
               }
-              true
-            } else {
-              true
             }
-          })
-          .cloned()
-          .collect();
-        return Ok(Expr::List(filtered.into()));
+            continue;
+          }
+          // Otherwise keep the solution unless an inequality is definitely
+          // violated.
+          let ineq_false = |ineq: &Expr, replacement: &Expr| -> bool {
+            let subst =
+              crate::syntax::substitute_variable(ineq, &var_name, replacement);
+            matches!(
+              crate::evaluator::evaluate_expr_to_expr(&subst),
+              Ok(Expr::Identifier(ref s)) if s == "False"
+            )
+          };
+          let violated = matches!(sol, Expr::List(rules) if rules.iter().any(|rule| {
+            matches!(rule, Expr::Rule { replacement, .. }
+              if ineqs.iter().any(|ineq| ineq_false(ineq, replacement)))
+          }));
+          if !violated {
+            let key = crate::syntax::expr_to_string(sol);
+            if seen.insert(key) {
+              out.push(sol.clone());
+            }
+          }
+        }
+        // Specialized periodic solutions are returned in ascending value order,
+        // matching wolframscript.
+        if specialized {
+          let key = |sol: &Expr| -> f64 {
+            if let Expr::List(rules) = sol
+              && let Some(Expr::Rule { replacement, .. }) = rules.first()
+            {
+              crate::functions::math_ast::try_eval_to_f64(replacement)
+                .unwrap_or(f64::INFINITY)
+            } else {
+              f64::INFINITY
+            }
+          };
+          out.sort_by(|a, b| {
+            key(a)
+              .partial_cmp(&key(b))
+              .unwrap_or(std::cmp::Ordering::Equal)
+          });
+        }
+        return Ok(Expr::List(out.into()));
       }
       return Ok(eq_solutions);
     }
@@ -7129,6 +7161,114 @@ pub fn extract_eq_and_ineq_parts(expr: &Expr) -> (Option<Expr>, Vec<Expr>) {
     }
   }
   (eq_part, ineqs)
+}
+
+/// Given a solution value `var -> ConditionalExpression[a + b·C, C ∈ Integers]`
+/// (a periodic family) and bounding inequalities, return the concrete
+/// `var -> value` rules satisfying every inequality. Returns `None` when the
+/// value is not such a family, the body is not linear in the parameter, or the
+/// constraints do not bound the parameter to a finite range.
+fn specialize_periodic_solution(
+  var_name: &str,
+  replacement: &Expr,
+  ineqs: &[Expr],
+) -> Option<Vec<Expr>> {
+  // Unwrap ConditionalExpression[body, Element[param, Integers]].
+  let Expr::FunctionCall { name, args } = replacement else {
+    return None;
+  };
+  if name != "ConditionalExpression" || args.len() != 2 {
+    return None;
+  }
+  let body = &args[0];
+  let Expr::FunctionCall { name: en, args: ea } = &args[1] else {
+    return None;
+  };
+  if en != "Element"
+    || ea.len() != 2
+    || !matches!(&ea[1], Expr::Identifier(s) if s == "Integers")
+  {
+    return None;
+  }
+  let param = &ea[0];
+
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let subst_param = |value: Expr| -> Option<Expr> {
+    eval(Expr::FunctionCall {
+      name: "ReplaceAll".to_string(),
+      args: vec![
+        body.clone(),
+        Expr::Rule {
+          pattern: Box::new(param.clone()),
+          replacement: Box::new(value),
+        },
+      ]
+      .into(),
+    })
+  };
+  // Linear coefficients: a = body | C=0, b = Coefficient[body, C, 1].
+  let a = crate::functions::math_ast::try_eval_to_f64(&subst_param(
+    Expr::Integer(0),
+  )?)?;
+  let b_expr = eval(Expr::FunctionCall {
+    name: "Coefficient".to_string(),
+    args: vec![body.clone(), param.clone(), Expr::Integer(1)].into(),
+  })?;
+  let b = crate::functions::math_ast::try_eval_to_f64(&b_expr)?;
+  if b.abs() < 1e-12 {
+    return None;
+  }
+
+  // Finite numeric bounds on `var` taken from the inequality operands.
+  let mut x_bounds: Vec<f64> = Vec::new();
+  for ineq in ineqs {
+    if let Expr::Comparison { operands, .. } = ineq {
+      for op in operands {
+        if crate::syntax::expr_to_string(op) == var_name {
+          continue;
+        }
+        if let Some(v) = crate::functions::math_ast::try_eval_to_f64(op) {
+          x_bounds.push(v);
+        }
+      }
+    }
+  }
+  if x_bounds.len() < 2 {
+    return None; // not bounded on both sides
+  }
+  let x_lo = x_bounds.iter().cloned().fold(f64::INFINITY, f64::min);
+  let x_hi = x_bounds.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  // Parameter range from x = a + b·C ∈ [x_lo, x_hi], with a margin so that
+  // boundary integers are tested by the exact inequality check below.
+  let c1 = (x_lo - a) / b;
+  let c2 = (x_hi - a) / b;
+  let (c_lo, c_hi) = (c1.min(c2), c1.max(c2));
+  let k_lo = (c_lo.floor() as i64) - 1;
+  let k_hi = (c_hi.ceil() as i64) + 1;
+  if k_hi - k_lo > 100_000 {
+    return None; // runaway guard
+  }
+
+  let mut result: Vec<Expr> = Vec::new();
+  for k in k_lo..=k_hi {
+    let value = subst_param(Expr::Integer(k as i128))?;
+    // Keep k only if every inequality holds for var = value.
+    let ok = ineqs.iter().all(|ineq| {
+      let subst = crate::syntax::substitute_variable(ineq, var_name, &value);
+      matches!(crate::evaluator::evaluate_expr_to_expr(&subst),
+        Ok(Expr::Identifier(ref s)) if s == "True")
+    });
+    if ok {
+      result.push(Expr::List(
+        vec![Expr::Rule {
+          pattern: Box::new(Expr::Identifier(var_name.to_string())),
+          replacement: Box::new(value),
+        }]
+        .into(),
+      ));
+    }
+  }
+  Some(result)
 }
 
 /// Check if an expression is zero.

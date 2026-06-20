@@ -4131,6 +4131,55 @@ mod solve_with_domain {
   }
 }
 
+// Solving a periodic (trig) equation over a bounded interval specializes the
+// general ConditionalExpression family to the concrete solutions in range.
+mod solve_periodic_bounded {
+  use super::*;
+
+  #[test]
+  fn sin_open_interval() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == 0 && 0 < x < 2 Pi, x]").unwrap(),
+      "{{x -> Pi}}"
+    );
+  }
+
+  // A closed interval includes the endpoints, sorted ascending.
+  #[test]
+  fn sin_closed_interval() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == 0 && 0 <= x <= 2 Pi, x]").unwrap(),
+      "{{x -> 0}, {x -> Pi}, {x -> 2*Pi}}"
+    );
+  }
+
+  #[test]
+  fn cos_open_interval() {
+    assert_eq!(
+      interpret("Solve[Cos[x] == 0 && 0 < x < 2 Pi, x]").unwrap(),
+      "{{x -> Pi/2}, {x -> (3*Pi)/2}}"
+    );
+  }
+
+  #[test]
+  fn sin_symmetric_interval() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == 0 && -Pi < x < Pi, x]").unwrap(),
+      "{{x -> 0}}"
+    );
+  }
+
+  // Without a bounding constraint the general periodic family is kept.
+  #[test]
+  fn unbounded_keeps_general_family() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == 0, x]").unwrap(),
+      "{{x -> ConditionalExpression[2*Pi*C[1], Element[C[1], Integers]]}, \
+       {x -> ConditionalExpression[Pi + 2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+}
+
 mod solve_always {
   use super::*;
 
