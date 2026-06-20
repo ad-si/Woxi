@@ -696,6 +696,38 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       expr.clone()
     }
 
+    // (-1)^k → 1 (k even) or -1 (k odd) when k ∈ Integers with known parity.
+    // e.g. Simplify[(-1)^(2 n), n ∈ Integers] = 1.
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1)) => {
+      let refined_exp = refine_expr(right, info, assumption);
+      if let Some(val) = neg_one_integer_power(&refined_exp, info) {
+        return val;
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(refined_exp),
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(-1)) =>
+    {
+      let refined_exp = refine_expr(&args[1], info, assumption);
+      if let Some(val) = neg_one_integer_power(&refined_exp, info) {
+        return val;
+      }
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![Expr::Integer(-1), refined_exp].into(),
+      }
+    }
+
     // Abs[u]^n → u^n when n is a positive even integer and u is real.
     // For real u, |u|^2 = u^2 (and any even power). Odd powers stay |u|^n.
     // e.g. Simplify[Abs[x]^2, x ∈ Reals] = x^2, Abs[2 x]^2 = 4 x^2.
@@ -955,28 +987,43 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
     Expr::FunctionCall { name, args } if name == "Cos" && args.len() == 1 => {
       if let Some((non_pi_part, k_expr)) = split_integer_pi_part(&args[0], info)
       {
-        // Cos[x + k*Pi] = (-1)^k * Cos[x]
-        let cos_x = if matches!(&non_pi_part, Expr::Integer(0)) {
-          Expr::Integer(1)
-        } else {
-          Expr::FunctionCall {
-            name: "Cos".to_string(),
-            args: vec![non_pi_part].into(),
-          }
-        };
-        return Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::BinaryOp {
+        // (-1)^k, collapsed to ±1 when the parity of k is known.
+        let sign = neg_one_integer_power(&k_expr, info).unwrap_or_else(|| {
+          Expr::BinaryOp {
             op: BinaryOperator::Power,
             left: Box::new(Expr::Integer(-1)),
             right: Box::new(k_expr),
-          }),
+          }
+        });
+        // Cos[x + k*Pi] = (-1)^k * Cos[x]; drop the Cos[0] = 1 factor.
+        if matches!(&non_pi_part, Expr::Integer(0)) {
+          return sign;
+        }
+        let cos_x = Expr::FunctionCall {
+          name: "Cos".to_string(),
+          args: vec![non_pi_part].into(),
+        };
+        return Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(sign),
           right: Box::new(cos_x),
         };
       }
       let refined_arg = refine_expr(&args[0], info, assumption);
       Expr::FunctionCall {
         name: "Cos".to_string(),
+        args: vec![refined_arg].into(),
+      }
+    }
+
+    // Tan[k*Pi] → 0 when k ∈ Integers
+    Expr::FunctionCall { name, args } if name == "Tan" && args.len() == 1 => {
+      if is_integer_multiple_of_pi(&args[0], info) {
+        return Expr::Integer(0);
+      }
+      let refined_arg = refine_expr(&args[0], info, assumption);
+      Expr::FunctionCall {
+        name: "Tan".to_string(),
         args: vec![refined_arg].into(),
       }
     }
@@ -1860,27 +1907,121 @@ fn is_imaginary_unit(expr: &Expr) -> bool {
 /// Check if an expression is an integer multiple of Pi.
 /// E.g., k*Pi where k ∈ Integers.
 fn is_integer_multiple_of_pi(expr: &Expr, info: &AssumptionInfo) -> bool {
+  extract_pi_integer_coefficient(expr, info).is_some()
+}
+
+/// Flatten the multiplicative factors of an expression, descending through
+/// nested Times in both BinaryOp and FunctionCall form. A non-product yields
+/// a single-element vector.
+fn collect_times_factors(expr: &Expr) -> Vec<Expr> {
+  fn go(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        go(left, out);
+        go(right, out);
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          go(a, out);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut out = Vec::new();
+  go(expr, &mut out);
+  out
+}
+
+/// Build the product of a list of factors, collapsing the empty/singleton
+/// cases (empty → 1).
+fn build_times_product(mut factors: Vec<Expr>) -> Expr {
+  match factors.len() {
+    0 => Expr::Integer(1),
+    1 => factors.remove(0),
+    _ => {
+      let mut iter = factors.into_iter();
+      let first = iter.next().unwrap();
+      iter.fold(first, |acc, f| Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(acc),
+        right: Box::new(f),
+      })
+    }
+  }
+}
+
+/// Parity of an integer-valued expression under assumptions:
+/// Some(true) = even, Some(false) = odd, None = undetermined.
+fn integer_parity(expr: &Expr, info: &AssumptionInfo) -> Option<bool> {
   match expr {
-    Expr::Constant(c) if c == "Pi" => true,
-    Expr::Integer(0) => true,
+    Expr::Integer(n) => Some(n.rem_euclid(2) == 0),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => integer_parity(operand, info),
+    // Sum/difference: a ± b is even iff a and b have the same parity.
     Expr::BinaryOp {
-      op: BinaryOperator::Times,
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
       left,
       right,
-    } => {
-      (is_known_integer(left, info) && is_pi(right))
-        || (is_pi(left) && is_known_integer(right, info))
+    } => Some(integer_parity(left, info)? == integer_parity(right, info)?),
+    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
+      let mut even = true;
+      for a in args.iter() {
+        // even stays even on adding an even term, flips on an odd term.
+        even = even == integer_parity(a, info)?;
+      }
+      Some(even)
     }
-    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
-      (is_known_integer(&args[0], info) && is_pi(&args[1]))
-        || (is_pi(&args[0]) && is_known_integer(&args[1], info))
+    // Product of integers: even iff at least one factor is even; odd iff all
+    // factors are odd. A factor of unknown parity only blocks the "all odd"
+    // conclusion.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => times_parity(expr, info),
+    Expr::FunctionCall { name, .. } if name == "Times" => {
+      times_parity(expr, info)
     }
-    _ => false,
+    _ => None,
+  }
+}
+
+fn times_parity(expr: &Expr, info: &AssumptionInfo) -> Option<bool> {
+  let factors = collect_times_factors(expr);
+  let mut all_odd = true;
+  for f in &factors {
+    match integer_parity(f, info) {
+      Some(true) => return Some(true), // an even factor makes the product even
+      Some(false) => {}
+      None => all_odd = false,
+    }
+  }
+  if all_odd { Some(false) } else { None }
+}
+
+/// (-1)^k for a known-integer exponent k: 1 when k is even, -1 when odd,
+/// None when the parity can't be pinned down.
+fn neg_one_integer_power(exp: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  if !is_known_integer(exp, info) {
+    return None;
+  }
+  match integer_parity(exp, info) {
+    Some(true) => Some(Expr::Integer(1)),
+    Some(false) => Some(Expr::Integer(-1)),
+    None => None,
   }
 }
 
 fn is_pi(expr: &Expr) -> bool {
-  matches!(expr, Expr::Constant(c) if c == "Pi")
+  // Pi may arrive as either a Constant or a plain Identifier depending on how
+  // the surrounding product was parsed/evaluated.
+  matches!(expr, Expr::Constant(c) | Expr::Identifier(c) if c == "Pi")
 }
 
 /// Split an expression into (non-Pi part, integer k) where expr = non_pi + k*Pi.
@@ -1915,7 +2056,9 @@ fn split_integer_pi_part(
   Some((non_pi, k))
 }
 
-/// Extract integer coefficient k from k*Pi.
+/// Extract the integer coefficient k from k*Pi, for any factor ordering and
+/// arity (Pi, n*Pi, 2*Pi*n, (n+1)*Pi, …). Returns None unless the expression
+/// is exactly one factor of Pi times known-integer factors.
 fn extract_pi_integer_coefficient(
   expr: &Expr,
   info: &AssumptionInfo,
@@ -1923,31 +2066,25 @@ fn extract_pi_integer_coefficient(
   if is_pi(expr) {
     return Some(Expr::Integer(1)); // Just Pi = 1*Pi
   }
-  match expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left,
-      right,
-    } => {
-      if is_pi(right) && is_known_integer(left, info) {
-        Some(*left.clone())
-      } else if is_pi(left) && is_known_integer(right, info) {
-        Some(*right.clone())
-      } else {
-        None
-      }
-    }
-    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
-      if is_pi(&args[1]) && is_known_integer(&args[0], info) {
-        Some(args[0].clone())
-      } else if is_pi(&args[0]) && is_known_integer(&args[1], info) {
-        Some(args[1].clone())
-      } else {
-        None
-      }
-    }
-    _ => None,
+  if matches!(expr, Expr::Integer(0)) {
+    return Some(Expr::Integer(0)); // 0 = 0*Pi
   }
+  let factors = collect_times_factors(expr);
+  let mut pi_count = 0;
+  let mut coeff_factors: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if is_pi(f) {
+      pi_count += 1;
+    } else if is_known_integer(f, info) {
+      coeff_factors.push(f.clone());
+    } else {
+      return None;
+    }
+  }
+  if pi_count != 1 {
+    return None;
+  }
+  Some(build_times_product(coeff_factors))
 }
 
 /// Check if -Pi/2 < Re[x] < Pi/2 is stated in assumptions.

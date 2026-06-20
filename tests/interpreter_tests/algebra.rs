@@ -2728,6 +2728,55 @@ mod simplify_assumptions {
     assert_eq!(interpret("Simplify[(x^2)^(1/2), x > 0]").unwrap(), "x");
   }
 
+  // Trigonometric functions at integer multiples of Pi, under an integer
+  // assumption: Sin[k Pi] = 0, Tan[k Pi] = 0, Cos[k Pi] = (-1)^k. The
+  // coefficient may be any ordering/arity (n Pi, Pi n, 2 Pi n, (2n+1) Pi).
+  #[test]
+  fn simplify_trig_at_integer_multiples_of_pi() {
+    assert_eq!(
+      interpret("Simplify[Sin[Pi n], Element[n, Integers]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Simplify[Sin[2 Pi n], Element[n, Integers]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Simplify[Tan[Pi n], Element[n, Integers]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Simplify[Cos[Pi n], Element[n, Integers]]").unwrap(),
+      "(-1)^n"
+    );
+    assert_eq!(
+      interpret("Simplify[Cos[2 Pi n], Element[n, Integers]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Simplify[Cos[(2 n + 1) Pi], Element[n, Integers]]").unwrap(),
+      "-1"
+    );
+  }
+
+  // (-1)^k collapses to ±1 when the parity of the integer exponent is known.
+  #[test]
+  fn simplify_neg_one_integer_power() {
+    assert_eq!(
+      interpret("Simplify[(-1)^(2 n), Element[n, Integers]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Simplify[(-1)^(2 n + 1), Element[n, Integers]]").unwrap(),
+      "-1"
+    );
+    // Parity unknown: stays symbolic.
+    assert_eq!(
+      interpret("Simplify[(-1)^n, Element[n, Integers]]").unwrap(),
+      "(-1)^n"
+    );
+  }
+
   #[test]
   fn assuming_propagates_to_simplify() {
     assert_eq!(
