@@ -110,6 +110,13 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       {
         return Ok(r);
       }
+      // Root[poly &, k] / Root[poly &, k, 0] — the k-th root numerically.
+      if name == "Root"
+        && (args.len() == 2 || args.len() == 3)
+        && let Some(r) = root_n_eval(&args[0], &args[1])
+      {
+        return Ok(r);
+      }
       // Honour NHoldAll / NHoldFirst / NHoldRest attributes (built-in or
       // user-set). When a slot is held, leave the argument literal and
       // skip the recursive N application.
@@ -5777,6 +5784,72 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
           name: "Times".to_string(),
           args: vec![Expr::Real(sum_im), Expr::Identifier("I".to_string())]
             .into(),
+        },
+      ]
+      .into(),
+    })
+  }
+}
+
+/// `N[Root[poly &, k]]`: the k-th root of the polynomial `poly`, ordered as
+/// wolframscript does — real roots first in increasing order, then the
+/// non-real roots by increasing real part and then increasing imaginary part.
+/// Returns the root as a `Real` (or `Plus[Real, Times[Real, I]]` for complex
+/// roots), or `None` when the shape doesn't fit.
+fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
+  use crate::functions::polynomial_ast::extract_poly_coeffs;
+  let k = expr_to_i128(k_arg)?;
+  if k < 1 {
+    return None;
+  }
+  let poly_body = match poly_arg {
+    Expr::Function { body } => body.as_ref(),
+    _ => return None,
+  };
+  let var = "__root_x__";
+  let poly_in_var = crate::syntax::substitute_variable(
+    poly_body,
+    "#1",
+    &Expr::Identifier(var.to_string()),
+  );
+  let poly_in_var = substitute_slot_with_identifier(&poly_in_var, 1, var);
+  let expanded =
+    crate::functions::polynomial_ast::expand_and_combine(&poly_in_var);
+  let coeffs_i = extract_poly_coeffs(&expanded, var)?;
+  if coeffs_i.len() < 2 {
+    return None;
+  }
+  let coeffs_f: Vec<f64> = coeffs_i.iter().map(|&c| c as f64).collect();
+  let mut roots = aberth_complex_roots(&coeffs_f);
+  if roots.is_empty() || (k as usize) > roots.len() {
+    return None;
+  }
+  let is_real = |re: f64, im: f64| im.abs() < 1e-8 * (1.0 + re.abs());
+  roots.sort_by(|a, b| {
+    use std::cmp::Ordering;
+    let ar = is_real(a.0, a.1);
+    let br = is_real(b.0, b.1);
+    match (ar, br) {
+      (true, false) => Ordering::Less,
+      (false, true) => Ordering::Greater,
+      _ => a
+        .0
+        .partial_cmp(&b.0)
+        .unwrap_or(Ordering::Equal)
+        .then(a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal)),
+    }
+  });
+  let (re, im) = roots[(k - 1) as usize];
+  if is_real(re, im) {
+    Some(Expr::Real(re))
+  } else {
+    Some(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Real(re),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
         },
       ]
       .into(),

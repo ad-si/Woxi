@@ -5752,6 +5752,44 @@ mod root {
     );
   }
 
+  // N of a higher-degree Root (no radical form) numerically finds the k-th
+  // root: real roots first in increasing order.
+  #[test]
+  fn numerical_value_quintic_real_root() {
+    let result = interpret("N[Root[#^5 - # - 1 &, 1]]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - 1.1673039782614187).abs() < 1e-10,
+      "Expected 1.1673..., got {}",
+      val
+    );
+  }
+
+  // A quartic with four real roots is returned in increasing order.
+  #[test]
+  fn numerical_value_quartic_all_real() {
+    assert_eq!(
+      interpret("Table[N[Root[#^4 - 5 #^2 + 4 &, k]], {k, 1, 4}]").unwrap(),
+      "{-2., -1., 1., 2.}"
+    );
+  }
+
+  // Complex roots follow the reals, ordered by increasing real then
+  // imaginary part. Re/Im are checked to avoid last-digit float noise.
+  #[test]
+  fn numerical_value_complex_root() {
+    let re = interpret("Re[N[Root[#^3 - 2 &, 2]]]")
+      .unwrap()
+      .parse::<f64>()
+      .unwrap();
+    let im = interpret("Im[N[Root[#^3 - 2 &, 2]]]")
+      .unwrap()
+      .parse::<f64>()
+      .unwrap();
+    assert!((re - (-0.6299605249474366)).abs() < 1e-10);
+    assert!((im - (-1.0911236359717214)).abs() < 1e-10);
+  }
+
   #[test]
   fn out_of_range_error() {
     assert!(interpret("Root[#^2 - 1 &, 3]").is_err());
