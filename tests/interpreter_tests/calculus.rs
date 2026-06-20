@@ -2292,6 +2292,24 @@ mod limit {
     assert_eq!(interpret("Limit[(1 + 1/n)^n, n -> Infinity]").unwrap(), "E");
   }
 
+  // The generalized e-limit holds with a symbolic rate: (1 + a/n)^n -> E^a.
+  #[test]
+  fn limit_compound_interest_symbolic_rate() {
+    assert_eq!(
+      interpret("Limit[(1 + a/n)^n, n -> Infinity]").unwrap(),
+      "E^a"
+    );
+    assert_eq!(
+      interpret("Limit[(1 + x/n)^n, n -> Infinity]").unwrap(),
+      "E^x"
+    );
+    // Numeric rates still resolve.
+    assert_eq!(
+      interpret("Limit[(1 + 2/n)^n, n -> Infinity]").unwrap(),
+      "E^2"
+    );
+  }
+
   #[test]
   fn limit_compound_interest_general() {
     assert_eq!(

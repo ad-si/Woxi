@@ -8176,7 +8176,17 @@ fn eval_at_infinity_is_one(expr: &Expr, var: &str) -> bool {
   {
     return (f - 1.0).abs() < 0.01;
   }
-  false
+  // Symbolic fallback for a base with free parameters (e.g. 1 + a/n): with
+  // var -> Infinity the var-dependent terms vanish and the base is exactly 1.
+  let subst_inf = crate::syntax::substitute_variable(
+    expr,
+    var,
+    &Expr::Identifier("Infinity".to_string()),
+  );
+  matches!(
+    crate::evaluator::evaluate_expr_to_expr(&subst_inf),
+    Ok(Expr::Integer(1))
+  )
 }
 
 /// Check if an expression diverges to infinity when var -> Infinity
@@ -8923,6 +8933,11 @@ fn limit_at_infinity(
         left: Box::new(exp),
         right: Box::new(f_minus_1),
       };
+      // Simplify g*(f - 1) first so a symbolic coefficient cancels (e.g.
+      // n*((1 + a/n) - 1) → a); otherwise limit_ast's numeric fallback can't
+      // resolve the parameterized form.
+      let product =
+        crate::evaluator::evaluate_expr_to_expr(&product).unwrap_or(product);
       // Take the limit of g * (f - 1) as var -> Infinity
       let rule = Expr::Rule {
         pattern: Box::new(Expr::Identifier(var_name.to_string())),
@@ -8930,8 +8945,13 @@ fn limit_at_infinity(
       };
       let exponent_limit = limit_ast(&[product, rule])?;
 
-      // If the exponent limit is a clean value, return E^limit
-      if is_clean_value(&exponent_limit) {
+      // Return E^limit once the exponent limit has resolved — either a clean
+      // number or a parameter-only expression like `a` (giving E^a). The only
+      // rejected case is an unresolved Limit[...] still containing the var.
+      let resolved = !matches!(&exponent_limit,
+        Expr::FunctionCall { name, .. } if name == "Limit")
+        && is_constant_wrt(&exponent_limit, var_name);
+      if is_clean_value(&exponent_limit) || resolved {
         let result = simplify(Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Power,
           left: Box::new(Expr::Constant("E".to_string())),
