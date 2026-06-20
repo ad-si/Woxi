@@ -650,7 +650,7 @@ PrecisionGoal,Option specifying the precision goal for numeric computation,✅,n
 Unprotect,Removes protection from symbols,✅,stateful,1.0,654
 ChebyshevT,Chebyshev polynomial of the first kind,✅,pure,1.0,655
 PerformanceGoal,Option for performance vs quality tradeoff,✅,none,6.0,656
-VertexList,List of vertices in a graph,✅,none,8.0,657
+VertexList,List of vertices in a graph (optionally matching a pattern),✅,pure,8.0,657
 ColorNegate,Negates the colors of an image or a color directive (preserving its color space),✅,pure,7.0,658
 InterpolatingFunction,Represents an interpolating function object,✅,none,2.0,659
 Prolog,Option specifying graphics primitives drawn before the main plot,✅,none,2.0,660
@@ -753,7 +753,7 @@ ImageResize,Resizes an image to specified dimensions,✅,pure,7.0,759
 LineLegend,Legend with line samples,✅,none,9.0,760
 ChebyshevU,Chebyshev polynomial of the second kind,✅,pure,1.0,761
 WordList,Returns a list of common English words,🚫,io,10.3,762
-EdgeList,List of edges in a graph,✅,none,8.0,763
+EdgeList,List of edges in a graph (optionally matching a pattern),✅,pure,8.0,763
 Refine,Simplifies expressions using assumptions,✅,pure,5.0,764
 Expression,Type specifier for reading expressions,✅,pure,1.0,765
 ColorConvert,Convert colors or images between color spaces (RGB Grayscale CMYK HSB),✅,pure,7.0,766
@@ -1210,7 +1210,7 @@ VoronoiMesh,Voronoi tessellation mesh from 2D points,✅,pure,10.0,1221
 UpTo,Represents a limit specification,✅,1,10.3,1222
 ChartLayout,,🚫,,7.0,1223
 BinCounts,Counts data points in equal-width bins,✅,pure,6.0,1225
-VertexCount,Returns the number of vertices in a graph,✅,1,8.0,1225
+VertexCount,Returns the number of vertices in a graph (optionally matching a pattern),✅,pure,8.0,1225
 LetterCharacter,String pattern for letter characters,✅,1,5.1,1226
 FormatType,Option for output format type,✅,pure,1.0,1227
 BitXor,Returns the bitwise XOR of integers,✅,pure,4.0,1228

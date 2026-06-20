@@ -4193,6 +4193,24 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // EdgeList[graph, patt] keeps the edges matching the pattern, i.e.
+  // Cases[EdgeList[graph], patt].
+  if name == "EdgeList"
+    && args.len() == 2
+    && matches!(&args[0], Expr::FunctionCall { name: g, args: ga }
+      if g == "Graph" && ga.len() >= 2)
+  {
+    let edge_list =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "EdgeList".to_string(),
+        args: vec![args[0].clone()].into(),
+      })?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Cases".to_string(),
+      args: vec![edge_list, args[1].clone()].into(),
+    });
+  }
+
   // VertexList[Graph[vertices, edges]] → vertices list
   if name == "VertexList" && args.len() == 1 {
     if let Expr::FunctionCall {
@@ -4208,6 +4226,24 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
       args: args.to_vec().into(),
+    });
+  }
+
+  // VertexList[graph, patt] keeps the vertices matching the pattern, i.e.
+  // Cases[VertexList[graph], patt] (an integer is a literal-value pattern).
+  if name == "VertexList"
+    && args.len() == 2
+    && matches!(&args[0], Expr::FunctionCall { name: g, args: ga }
+      if g == "Graph" && ga.len() >= 2)
+  {
+    let vertex_list =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "VertexList".to_string(),
+        args: vec![args[0].clone()].into(),
+      })?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Cases".to_string(),
+      args: vec![vertex_list, args[1].clone()].into(),
     });
   }
 
@@ -6558,6 +6594,24 @@ pub fn evaluate_function_call_ast_inner(
     && let Expr::List(verts) = &gargs[0]
   {
     return Ok(Expr::Integer(verts.len() as i128));
+  }
+
+  // VertexCount[graph, patt] counts the vertices matching the pattern, i.e.
+  // Count[VertexList[graph], patt].
+  if name == "VertexCount"
+    && args.len() == 2
+    && matches!(&args[0], Expr::FunctionCall { name: g, args: ga }
+      if g == "Graph" && !ga.is_empty())
+  {
+    let vertex_list =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "VertexList".to_string(),
+        args: vec![args[0].clone()].into(),
+      })?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Count".to_string(),
+      args: vec![vertex_list, args[1].clone()].into(),
+    });
   }
 
   // EdgeCount[Graph[verts, edges]] — number of edges

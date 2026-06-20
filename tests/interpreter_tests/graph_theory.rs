@@ -591,6 +591,47 @@ mod vertex_count {
   fn path_graph() {
     assert_eq!(interpret("VertexCount[PathGraph[{1, 2, 3}]]").unwrap(), "3");
   }
+
+  // VertexCount[graph, patt] counts the vertices matching the pattern.
+  #[test]
+  fn pattern_form() {
+    assert_eq!(interpret("VertexCount[CompleteGraph[5], _]").unwrap(), "5");
+    assert_eq!(
+      interpret("VertexCount[CompleteGraph[5], _?EvenQ]").unwrap(),
+      "2"
+    );
+  }
+}
+
+// VertexList[graph, patt] / EdgeList[graph, patt] keep the matching elements.
+mod vertex_edge_list_pattern {
+  use super::*;
+
+  #[test]
+  fn vertex_list_pattern() {
+    assert_eq!(
+      interpret("VertexList[CompleteGraph[5], _?OddQ]").unwrap(),
+      "{1, 3, 5}"
+    );
+    // An integer is a literal-value pattern, not a count.
+    assert_eq!(
+      interpret("VertexList[Graph[{1 -> 2, 2 -> 3, 1 <-> 3}], 2]").unwrap(),
+      "{2}"
+    );
+  }
+
+  #[test]
+  fn edge_list_pattern() {
+    let g = "Graph[{1 -> 2, 2 -> 3, 1 <-> 3}]";
+    assert_eq!(
+      interpret(&format!("Length[EdgeList[{g}, _DirectedEdge]]")).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(&format!("Length[EdgeList[{g}, _UndirectedEdge]]")).unwrap(),
+      "1"
+    );
+  }
 }
 
 mod edge_count {
