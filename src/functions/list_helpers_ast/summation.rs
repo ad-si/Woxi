@@ -20,7 +20,16 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Option<Expr>,
     Vec<Expr>,
   ) = if args.len() == 2 {
-    let (pos, theta) = parse_initial_spec(&args[0])?;
+    let Some((pos, theta)) = parse_initial_spec(&args[0]) else {
+      crate::emit_message(&format!(
+        "AnglePath::init: Invalid angle path initialization {}.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
+      return Ok(Expr::FunctionCall {
+        name: "AnglePath".to_string(),
+        args: args.to_vec().into(),
+      });
+    };
     let step_items = match &args[1] {
       Expr::List(items) => items.clone(),
       _ => {
@@ -243,19 +252,31 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(points.into()))
 }
 
-/// Parse the 2-argument form's first argument: `{{x0, y0}, θ0}`.
-/// Returns (position, initial_angle).
-fn parse_initial_spec(expr: &Expr) -> Result<(Expr, Expr), InterpreterError> {
-  if let Expr::List(items) = expr
-    && items.len() == 2
-    && let Expr::List(pos) = &items[0]
+/// Parse the 2-argument form's first argument into (position, initial_angle).
+/// Two shapes are accepted, matching Wolfram:
+///   `{{x0, y0}, θ0}` — start point with an initial heading θ0, and
+///   `{x0, y0}`       — start point facing angle 0.
+/// Returns None for anything else (the caller emits `AnglePath::init`).
+fn parse_initial_spec(expr: &Expr) -> Option<(Expr, Expr)> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 2 {
+    return None;
+  }
+  // Nested form `{{x0, y0}, θ0}`.
+  if let Expr::List(pos) = &items[0]
     && pos.len() == 2
   {
-    return Ok((Expr::List(pos.clone()), items[1].clone()));
+    return Some((Expr::List(pos.clone()), items[1].clone()));
   }
-  Err(InterpreterError::EvaluationError(
-    "AnglePath: first argument must be {{x, y}, angle}".into(),
-  ))
+  // Flat point `{x0, y0}` (neither component is itself a list): face angle 0.
+  if !matches!(&items[0], Expr::List(_))
+    && !matches!(&items[1], Expr::List(_))
+  {
+    return Some((expr.clone(), Expr::Integer(0)));
+  }
+  None
 }
 
 /// AST-based Product: product of list elements or iterator product.

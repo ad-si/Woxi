@@ -1226,10 +1226,7 @@ mod insert {
     assert_eq!(interpret("Insert[x^2, y, 1]").unwrap(), "y^x^2");
     assert_eq!(interpret("Insert[x^2, y, 2]").unwrap(), "x^y^2");
     assert_eq!(interpret("Insert[x^2, y, -1]").unwrap(), "x^2^y");
-    assert_eq!(
-      interpret("Insert[x^2, y, {{1}, {3}}]").unwrap(),
-      "y^x^2^y"
-    );
+    assert_eq!(interpret("Insert[x^2, y, {{1}, {3}}]").unwrap(), "y^x^2^y");
   }
 
   #[test]

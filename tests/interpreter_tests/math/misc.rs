@@ -907,6 +907,22 @@ mod cases {
       r#"{{0, 0}, {Cos[a], Sin[a]}, {Cos[a] + Cos[a + b], Sin[a] + Sin[a + b]}}"#,
     );
   }
+  // Two-argument AnglePath with a flat start point {x0, y0} (facing 0):
+  // the path is the one-argument path translated by the start point.
+  #[test]
+  fn angle_path_flat_start_point() {
+    assert_case(
+      r#"AnglePath[{1, 2}, {Pi/2, Pi/2}]"#,
+      r#"{{1, 2}, {1, 3}, {0, 3}}"#,
+    );
+  }
+  #[test]
+  fn angle_path_flat_start_symbolic() {
+    assert_case(
+      r#"AnglePath[{x0, y0}, {a1, a2}]"#,
+      r#"{{x0, y0}, {x0 + Cos[a1], y0 + Sin[a1]}, {x0 + Cos[a1] + Cos[a1 + a2], y0 + Sin[a1] + Sin[a1 + a2]}}"#,
+    );
+  }
   #[test]
   fn divide_1() {
     assert_case(r#"Catalan // N"#, r#"0.915965594177219"#);
