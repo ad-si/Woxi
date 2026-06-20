@@ -2606,7 +2606,7 @@ DistributedContexts,,🚫,,8.0,2662
 FunctionContinuous,Test whether a function is continuous,✅,1,12.2,2662
 ScaleDivisions,option for scale divisions,✅,Symbolic,9.0,2662
 SliceVectorPlot3D,,🚫,,10.2,2662
-CirculantGraph,Circulant graph,✅,1,8.0,2671
+CirculantGraph,Circulant graph on n vertices with given jumps,✅,pure,8.0,2671
 ColumnAlignments,option for column alignments in grids,✅,Symbolic,3.0,2671
 ExtentElementFunction,option for extent element function,✅,Symbolic,8.0,2671
 ExtremeValueDistribution,represents an extreme value distribution,✅,Computation,6.0,2671
