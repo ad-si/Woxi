@@ -1036,7 +1036,7 @@ ClippingStyle,,🚫,,6.0,1046
 Del,Symbolic nabla operator with Unicode display,✅,none,3.0,1046
 Resolve,Quantifier elimination for univariate polynomial formulas over the reals,✅,pure,5.0,1047
 MorphologicalComponents,,🚫,,7.0,1048
-Wedge,Symbolic wedge product operator with Unicode display,✅,none,3.0,1049
+Wedge,Symbolic wedge product operator with Unicode display,✅,pure,3.0,1049
 SumConvergence,Tests convergence of infinite sums (rational geometric alternating and factorial terms),✅,pure,7.0,1050
 TextAlignment,,🚫,,3.0,1051
 InterpolatingPolynomial,Polynomial that interpolates given data points,✅,pure,2.0,1052
@@ -3027,7 +3027,7 @@ IndexGraph,Replace graph vertices with integer indices,✅,pure,8.0,3094
 MenuView,Menu view control (stays symbolic in script mode),✅,unevaluated,6.0,3094
 MinStableDistribution,Min-stable (GEV-min) distribution with shape-cased forms,✅,pure,8.0,3094
 NHoldAll,,,,3.0,3094
-Vee,,,,3.0,3094
+Vee,Symbolic vee (logical or / join) operator with Unicode display,✅,pure,3.0,3094
 BinarySerialize,,,,11.1,3108
 DatePattern,,,,6.0,3108
 GeoVariant,,🚫,,10.0,3108

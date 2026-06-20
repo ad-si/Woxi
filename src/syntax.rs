@@ -4835,8 +4835,10 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[CirclePlus]" | "\u{2295}" => 31, // between Plus and Times
     "\\[CircleMinus]" | "\u{2296}" => 31, // same level as CirclePlus
     "\\[CenterDot]" | "\u{00B7}" => 34,  // just above Times
-    "\\[CircleTimes]" | "\u{2297}" => 35, // above CenterDot, below Dot
-    "." => 36,                           // Dot (higher than arithmetic)
+    "\\[CircleTimes]" | "\u{2297}" => 35, // above CenterDot, below Vee
+    "\\[Vee]" | "\u{22C1}" => 36,        // above CircleTimes, below Wedge
+    "\\[Wedge]" | "\u{22C0}" => 37,      // above Vee, below Dot
+    "." => 38,                           // Dot (higher than the ring ops)
     "@@@" | "@@" => 39,                  // Apply/MapApply
     "/@" => 42,                          // Map (higher than Apply)
     "NEGATE" => 45, // Unary minus (PreMinus): between Times/Dot and Power
@@ -5120,6 +5122,9 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "CircleMinus".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
+    // Wedge and Vee are flat: a ⋀ b ⋀ c -> Wedge[a, b, c].
+    "\\[Wedge]" | "\u{22C0}" => build_flat_op("Wedge", left, right),
+    "\\[Vee]" | "\u{22C1}" => build_flat_op("Vee", left, right),
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => {
       // Cross is Flat/associative — flatten chains: a ⨯ b ⨯ c → Cross[a, b, c].
       let mut parts = Vec::new();
@@ -7433,6 +7438,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "Wedge" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{22C0} ");
+      }
+      // Vee[a, b, ...] displays as a ⋁ b ⋁ ...
+      if name == "Vee" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{22C1} ");
       }
       // Del[f] displays as ∇f
       if name == "Del" && args.len() == 1 {
@@ -10500,6 +10510,10 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Wedge" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{22C0} ")
+    }
+    Expr::FunctionCall { name, args } if name == "Vee" && args.len() >= 2 => {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{22C1} ")
     }
     Expr::FunctionCall { name, args } if name == "Del" && args.len() == 1 => {
       format!("\u{2207}{}", expr_to_input_form(&args[0]))

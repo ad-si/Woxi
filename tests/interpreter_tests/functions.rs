@@ -1939,6 +1939,26 @@ mod ring_operators {
       "CircleMinus"
     );
   }
+
+  // \[Wedge] and \[Vee] are flat infix operators with Wedge tighter than Vee.
+  #[test]
+  fn wedge_vee_operators() {
+    assert_eq!(interpret(r#"a \[Wedge] b"#).unwrap(), "a \u{22C0} b");
+    assert_eq!(interpret(r#"a \[Vee] b"#).unwrap(), "a \u{22C1} b");
+    // Flat: a ⋀ b ⋀ c ⋀ d collapses to Wedge[a, b, c, d].
+    assert_eq!(
+      interpret(r#"Length[a \[Wedge] b \[Wedge] c \[Wedge] d]"#).unwrap(),
+      "4"
+    );
+    // Wedge binds tighter than Vee.
+    assert_eq!(interpret(r#"Head[a \[Wedge] b \[Vee] c]"#).unwrap(), "Vee");
+    // Both bind tighter than CircleTimes; Dot binds tighter than Wedge.
+    assert_eq!(
+      interpret(r#"Head[a \[Wedge] b \[CircleTimes] c]"#).unwrap(),
+      "CircleTimes"
+    );
+    assert_eq!(interpret(r#"Head[a \[Wedge] b . c]"#).unwrap(), "Wedge");
+  }
 }
 
 mod wedge {
