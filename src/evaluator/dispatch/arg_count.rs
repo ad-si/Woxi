@@ -758,6 +758,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Minus" => Some((1, 1)),
     "MissingQ" => Some((1, 1)),
     "FailureQ" => Some((1, 1)),
+    "AlgebraicIntegerQ" => Some((1, 1)),
     "MixedFractionParts" => Some((1, 1)),
     "Mod" => Some((2, 3)),
     "ModularInverse" => Some((2, 2)),

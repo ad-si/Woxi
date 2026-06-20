@@ -262,6 +262,52 @@ pub fn dispatch_predicate_functions(
         if is_failure { "True" } else { "False" }.to_string(),
       )));
     }
+    // AlgebraicIntegerQ[a] is True when a is an algebraic integer: an
+    // algebraic number whose minimal polynomial over the rationals is monic
+    // (leading coefficient ±1). MinimalPolynomial returns the primitive
+    // integer polynomial, so the test reduces to a unit leading coefficient.
+    "AlgebraicIntegerQ" if args.len() == 1 => {
+      let false_result = || Some(Ok(Expr::Identifier("False".to_string())));
+      // Inexact (machine-number) inputs are never algebraic integers.
+      if contains_real(&args[0]) {
+        return false_result();
+      }
+      // A fresh variable avoids any collision with symbols in the input.
+      let var = Expr::Identifier("AlgebraicIntegerQ$x".to_string());
+      let mp = match evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "MinimalPolynomial".to_string(),
+        args: vec![args[0].clone(), var.clone()].into(),
+      }) {
+        Ok(p) => p,
+        Err(e) => return Some(Err(e)),
+      };
+      // MinimalPolynomial stays unevaluated for transcendental or non-numeric
+      // inputs (Pi, symbols, …), which are not algebraic integers.
+      if matches!(&mp, Expr::FunctionCall { name, .. }
+        if name == "MinimalPolynomial")
+      {
+        return false_result();
+      }
+      // Leading coefficient = Coefficient[mp, var, Exponent[mp, var]].
+      let degree = match evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Exponent".to_string(),
+        args: vec![mp.clone(), var.clone()].into(),
+      }) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
+      let lead = match evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Coefficient".to_string(),
+        args: vec![mp, var, degree].into(),
+      }) {
+        Ok(l) => l,
+        Err(e) => return Some(Err(e)),
+      };
+      let is_monic = matches!(&lead, Expr::Integer(1) | Expr::Integer(-1));
+      return Some(Ok(Expr::Identifier(
+        if is_monic { "True" } else { "False" }.to_string(),
+      )));
+    }
     "ColorQ" if args.len() == 1 => {
       let is_color = match &args[0] {
         Expr::FunctionCall { name, .. } => matches!(

@@ -5864,6 +5864,60 @@ mod minimal_polynomial {
   }
 }
 
+mod algebraic_integer_q {
+  use super::*;
+
+  // Ordinary integers (including 0 and negatives) are algebraic integers.
+  #[test]
+  fn integers() {
+    assert_eq!(interpret("AlgebraicIntegerQ[5]").unwrap(), "True");
+    assert_eq!(interpret("AlgebraicIntegerQ[0]").unwrap(), "True");
+    assert_eq!(interpret("AlgebraicIntegerQ[-7]").unwrap(), "True");
+  }
+
+  // Non-integer rationals are not algebraic integers.
+  #[test]
+  fn rationals() {
+    assert_eq!(interpret("AlgebraicIntegerQ[1/2]").unwrap(), "False");
+    assert_eq!(interpret("AlgebraicIntegerQ[2/3]").unwrap(), "False");
+  }
+
+  // Radicals and other algebraic numbers with a monic minimal polynomial.
+  #[test]
+  fn algebraic_integers() {
+    assert_eq!(interpret("AlgebraicIntegerQ[Sqrt[2]]").unwrap(), "True");
+    assert_eq!(interpret("AlgebraicIntegerQ[I]").unwrap(), "True");
+    assert_eq!(interpret("AlgebraicIntegerQ[GoldenRatio]").unwrap(), "True");
+    assert_eq!(
+      interpret("AlgebraicIntegerQ[(1 + Sqrt[5])/2]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AlgebraicIntegerQ[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("AlgebraicIntegerQ[2^(1/3)]").unwrap(), "True");
+    assert_eq!(interpret("AlgebraicIntegerQ[Sqrt[-3]]").unwrap(), "True");
+  }
+
+  // Algebraic numbers whose minimal polynomial is not monic.
+  #[test]
+  fn non_algebraic_integers() {
+    assert_eq!(interpret("AlgebraicIntegerQ[Sqrt[2]/2]").unwrap(), "False");
+    assert_eq!(interpret("AlgebraicIntegerQ[Sqrt[2]/3]").unwrap(), "False");
+  }
+
+  // Transcendentals, free symbols, and inexact numbers are not algebraic
+  // integers.
+  #[test]
+  fn non_algebraic() {
+    assert_eq!(interpret("AlgebraicIntegerQ[Pi]").unwrap(), "False");
+    assert_eq!(interpret("AlgebraicIntegerQ[x]").unwrap(), "False");
+    assert_eq!(interpret("AlgebraicIntegerQ[3.5]").unwrap(), "False");
+    assert_eq!(interpret("AlgebraicIntegerQ[2.0]").unwrap(), "False");
+  }
+}
+
 mod find_instance {
   use super::*;
 
