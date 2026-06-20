@@ -6613,7 +6613,18 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Distance,
     Element,
   }
+  fn prop_view(s: &str) -> Option<View> {
+    match s {
+      "Index" => Some(View::Index),
+      "Distance" => Some(View::Distance),
+      "Element" => Some(View::Element),
+      _ => None,
+    }
+  }
   let mut view = View::Items;
+  // When the Rule's RHS is a list of property names (e.g. {"Element",
+  // "Index"}), each result becomes a list of those properties.
+  let mut multi_props: Option<Vec<View>> = None;
   // Rule form: Nearest[points -> labels, target]. Distances are measured on
   // the `points` list, but the result is drawn from the matching `labels`.
   let (items_owned, labels): (Vec<Expr>, Option<Vec<Expr>>) = match &args[0] {
@@ -6658,6 +6669,19 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         }
+      } else if let Expr::List(plist) = replacement.as_ref()
+        && !plist.is_empty()
+        && let Some(views) = plist
+          .iter()
+          .map(|p| match p {
+            Expr::String(s) => prop_view(s),
+            _ => None,
+          })
+          .collect::<Option<Vec<View>>>()
+      {
+        // points -> {prop1, prop2, …}: multi-property result.
+        multi_props = Some(views);
+        (pts.to_vec(), None)
       } else {
         let lbls = match replacement.as_ref() {
           Expr::List(v) if v.len() == pts.len() => v.clone(),
@@ -6812,8 +6836,8 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => distances.iter().collect(),
   };
 
-  let pick = |i: usize, d: f64| -> Expr {
-    match view {
+  let pick_single = |v: View, i: usize, d: f64| -> Expr {
+    match v {
       View::Index => Expr::Integer((i + 1) as i128),
       View::Distance => Expr::Real(d),
       View::Element => items[i].clone(),
@@ -6821,6 +6845,14 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(l) => l[i].clone(),
         None => items[i].clone(),
       },
+    }
+  };
+  let pick = |i: usize, d: f64| -> Expr {
+    match &multi_props {
+      Some(views) => {
+        Expr::List(views.iter().map(|v| pick_single(*v, i, d)).collect())
+      }
+      None => pick_single(view, i, d),
     }
   };
 

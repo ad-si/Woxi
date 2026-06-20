@@ -4540,6 +4540,36 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // A list of property names returns each neighbour as a list of properties.
+  #[test]
+  fn nearest_multi_property() {
+    assert_eq!(
+      interpret("Nearest[{10, 20, 30} -> {\"Element\", \"Index\"}, 22]")
+        .unwrap(),
+      "{{20, 2}}"
+    );
+    // Order of the properties is preserved.
+    assert_eq!(
+      interpret("Nearest[{10, 20, 30} -> {\"Index\", \"Element\"}, 22]")
+        .unwrap(),
+      "{{2, 20}}"
+    );
+    // Distance is included as a Real.
+    assert_eq!(
+      interpret(
+        "Nearest[{10, 20, 30} -> {\"Element\", \"Index\", \"Distance\"}, 22]"
+      )
+      .unwrap(),
+      "{{20, 2, 2.}}"
+    );
+    // With a count, one property list per neighbour, ordered by distance.
+    assert_eq!(
+      interpret("Nearest[{10, 20, 30, 21} -> {\"Element\", \"Index\"}, 22, 2]")
+        .unwrap(),
+      "{{21, 4}, {20, 2}}"
+    );
+  }
+
   // Nearest[points -> Automatic, target] labels each point by its 1-based
   // position, so the result is the indices of the nearest points.
   #[test]
