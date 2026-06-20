@@ -148,6 +148,17 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    // A list of radii gives the elliptical / n-D disk; a scalar keeps the
+    // existing round-disk implementation.
+    "DiskMatrix" if args.len() == 1 && matches!(&args[0], Expr::List(_)) => {
+      if let Expr::List(elems) = &args[0]
+        && let Some(radii) =
+          elems.iter().map(cross_radius).collect::<Option<Vec<_>>>()
+        && !radii.is_empty()
+      {
+        return Some(Ok(build_disk_matrix(&radii)));
+      }
+    }
     "DiskMatrix" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::disk_matrix_ast(args));
     }
@@ -2483,6 +2494,51 @@ fn build_diamond_matrix(radii: &[i128]) -> Expr {
         .map(|k| 2 * (idx[k] - centers[k]).abs() * (p / a[k]))
         .sum();
       return Expr::Integer(i128::from(lhs <= p));
+    }
+    let mut row = Vec::with_capacity(dims[depth]);
+    for i in 0..dims[depth] {
+      idx.push(i as i128);
+      row.push(rec(dims, centers, a, p, idx, depth + 1));
+      idx.pop();
+    }
+    Expr::List(row.into())
+  }
+  rec(
+    &dims,
+    &centers,
+    &a,
+    p,
+    &mut Vec::with_capacity(dims.len()),
+    0,
+  )
+}
+
+/// Build the n-dimensional DiskMatrix (L2-ball) structuring element for the
+/// given radii. Dimension k has length 2*r_k+1 with center r_k; a cell is 1
+/// when sum_k (|idx_k - r_k| / (r_k + 1/2))^2 <= 1. With A_k = 2*r_k+1 and
+/// P = prod_k A_k the integer test is sum_k 4*d_k^2*(P/A_k)^2 <= P^2.
+fn build_disk_matrix(radii: &[i128]) -> Expr {
+  let a: Vec<i128> = radii.iter().map(|r| 2 * r + 1).collect();
+  let p: i128 = a.iter().product();
+  let dims: Vec<usize> = a.iter().map(|&v| v as usize).collect();
+  let centers: Vec<i128> = radii.to_vec();
+  fn rec(
+    dims: &[usize],
+    centers: &[i128],
+    a: &[i128],
+    p: i128,
+    idx: &mut Vec<i128>,
+    depth: usize,
+  ) -> Expr {
+    if depth == dims.len() {
+      let lhs: i128 = (0..centers.len())
+        .map(|k| {
+          let d = (idx[k] - centers[k]).abs();
+          let w = p / a[k];
+          4 * d * d * w * w
+        })
+        .sum();
+      return Expr::Integer(i128::from(lhs <= p * p));
     }
     let mut row = Vec::with_capacity(dims[depth]);
     for i in 0..dims[depth] {

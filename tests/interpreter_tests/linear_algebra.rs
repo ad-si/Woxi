@@ -3933,6 +3933,30 @@ mod cases {
       r#"{{0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 0, 0}}"#,
     );
   }
+  // DiskMatrix accepts a list of radii for an elliptical / n-D L2 ball.
+  #[test]
+  fn disk_matrix_radii_list() {
+    // Wider than tall.
+    assert_case(
+      r#"DiskMatrix[{2, 3}]"#,
+      r#"{{0, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}}"#,
+    );
+    // Tall and narrow.
+    assert_case(
+      r#"DiskMatrix[{1, 2}]"#,
+      r#"{{0, 1, 1, 1, 0}, {1, 1, 1, 1, 1}, {0, 1, 1, 1, 0}}"#,
+    );
+    // Equal radii reduce to the round disk.
+    assert_case(
+      r#"DiskMatrix[{2, 2}]"#,
+      r#"{{0, 1, 1, 1, 0}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {0, 1, 1, 1, 0}}"#,
+    );
+    // Three radii give a 3D ball.
+    assert_case(
+      r#"DiskMatrix[{1, 1, 1}]"#,
+      r#"{{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}, {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}}"#,
+    );
+  }
   #[test]
   fn identity_matrix() {
     assert_case(
