@@ -875,7 +875,7 @@ ArrayPad,Pads an array with elements on each side,✅,pure,7.0,881
 Convolve,Symbolic convolution of two expressions over the real line,✅,pure,7.0,882
 AircraftData,,🚫,,10.0,883
 IntegerPartitions,Returns the integer partitions of n,✅,pure,6.0,884
-MinMax,Returns the minimum and maximum of a list or an association's values,✅,pure,10.1,885
+MinMax,Returns the minimum and maximum of a list an association values or an interval,✅,pure,10.1,885
 MachinePrecision,Machine-precision number (~15.95 digits),✅,pure,5.0,886
 AbsoluteOptions,,🚫,,4.0,888
 GraphLayout,,🚫,,8.0,888

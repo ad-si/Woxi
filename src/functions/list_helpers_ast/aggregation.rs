@@ -1355,6 +1355,29 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     });
   }
+  // MinMax of an Interval is {Min[iv], Max[iv]}; reuse the list path so the
+  // optional expansion second argument still applies.
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "Interval"
+  {
+    let bound = |head: &str| {
+      crate::evaluator::evaluate_function_call_ast(head, &[args[0].clone()])
+    };
+    // Only reduce when the bounds resolve to concrete numbers; symbolic
+    // intervals stay unevaluated.
+    if let (Ok(mn), Ok(mx)) = (bound("Min"), bound("Max"))
+      && take_expr_to_f64(&mn).is_some()
+      && take_expr_to_f64(&mx).is_some()
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = Expr::List(vec![mn, mx].into());
+      return min_max_ast(&new_args);
+    }
+    return Ok(Expr::FunctionCall {
+      name: "MinMax".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   let list = &args[0];
   let items = match list {
     Expr::List(items) => items,

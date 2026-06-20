@@ -735,3 +735,24 @@ fn cos_interval_ranges() {
     "Interval[{-1/2, 1/2}]"
   );
 }
+
+// ─── MinMax of an interval ────────────────────────────────────────────────────
+
+#[test]
+fn min_max_interval() {
+  // The overall extent of the interval.
+  assert_eq!(interpret("MinMax[Interval[{2, 7}]]").unwrap(), "{2, 7}");
+  assert_eq!(interpret("MinMax[Interval[{-3, 4}]]").unwrap(), "{-3, 4}");
+  // A multi-segment interval spans its outermost endpoints.
+  assert_eq!(
+    interpret("MinMax[Interval[{1, 2}, {5, 8}]]").unwrap(),
+    "{1, 8}"
+  );
+  // The optional expansion argument widens the result.
+  assert_eq!(interpret("MinMax[Interval[{2, 7}], 1]").unwrap(), "{1, 8}");
+  // Symbolic bounds stay unevaluated.
+  assert_eq!(
+    interpret("MinMax[Interval[{a, b}]]").unwrap(),
+    "MinMax[Interval[{a, b}]]"
+  );
+}
