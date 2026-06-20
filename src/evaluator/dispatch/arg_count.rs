@@ -329,7 +329,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "EditDistance" => Some((2, 3)),
     "EffectiveInterest" => Some((2, 2)),
     "Eigensystem" => Some((1, 1)),
-    "Eigenvalues" => Some((1, 1)),
+    "Eigenvalues" => Some((1, 2)),
     "Eigenvectors" => Some((1, 1)),
     "Element" => Some((2, 2)),
     "Eliminate" => Some((2, 2)),

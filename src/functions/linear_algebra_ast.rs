@@ -1082,7 +1082,7 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![Expr::List(minor.into())].into(),
       })?;
       // Sign (-1)^(n + (i+1)).
-      let component = if (n + i + 1) % 2 == 0 {
+      let component = if (n + i + 1).is_multiple_of(2) {
         det
       } else {
         evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -2264,6 +2264,48 @@ fn find_polynomial_roots(coeffs: &[i128]) -> Vec<Expr> {
   }
 
   roots
+}
+
+/// Eigenvalues[matrix, k] — the k eigenvalues of largest absolute value
+/// (k > 0 takes the first k of Eigenvalues[matrix]; k < 0 takes the last |k|,
+/// i.e. the smallest), mirroring Take. |k| greater than the matrix dimension
+/// emits Eigenvalues::take and stays unevaluated, matching wolframscript.
+pub fn eigenvalues_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Eigenvalues".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // Only an integer count is handled; other specs stay unevaluated.
+  let k = match &args[1] {
+    Expr::Integer(k) => *k,
+    _ => return unevaluated(),
+  };
+  let all = eigenvalues_ast(&args[0..1])?;
+  let items = match &all {
+    Expr::List(items) => items,
+    // Symbolic / non-square: keep the 2-argument form unevaluated.
+    _ => return unevaluated(),
+  };
+  let n = items.len() as i128;
+  if k.abs() > n {
+    let (lo, hi) = if k >= 0 { (1, k) } else { (k, -1) };
+    crate::emit_message(&format!(
+      "Eigenvalues::take: Cannot take eigenvalues {lo} through {hi} out of the total of {n} eigenvalues."
+    ));
+    return unevaluated();
+  }
+  let taken: Vec<Expr> = if k >= 0 {
+    items.iter().take(k as usize).cloned().collect()
+  } else {
+    items
+      .iter()
+      .skip(items.len() - k.unsigned_abs() as usize)
+      .cloned()
+      .collect()
+  };
+  Ok(Expr::List(taken.into()))
 }
 
 // ─── Eigenvectors ───────────────────────────────────────────────────────

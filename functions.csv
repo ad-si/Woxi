@@ -269,7 +269,7 @@ Inset,Places an inset in graphics,✅,pure,6.0,271
 DeleteCases,Deletes elements matching a pattern,✅,pure,2.0,272
 UnitStep,Returns the unit step function value,✅,pure,4.0,273
 Pochhammer,Returns the Pochhammer symbol (rising factorial),✅,pure,1.0,274
-Eigenvalues,Computes the eigenvalues of a matrix,✅,pure,1.0,275
+Eigenvalues,Computes the eigenvalues of a matrix; the two-arg form takes the k largest-magnitude eigenvalues,✅,pure,1.0,275
 Timing,Returns the CPU time taken to evaluate an expression,✅,contextual,1.0,276
 RowBox,Represents a horizontal row of boxes for typesetting,✅,pure,3.0,277
 Sinh,Returns the hyperbolic sine,✅,pure,1.0,278

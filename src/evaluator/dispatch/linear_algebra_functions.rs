@@ -308,6 +308,11 @@ pub fn dispatch_linear_algebra_functions(
     "Eigenvalues" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::eigenvalues_ast(args));
     }
+    "Eigenvalues" if args.len() == 2 => {
+      return Some(
+        crate::functions::linear_algebra_ast::eigenvalues_count_ast(args),
+      );
+    }
     "PrincipalComponents" if args.len() == 1 => {
       return Some(
         crate::functions::linear_algebra_ast::principal_components_ast(args),

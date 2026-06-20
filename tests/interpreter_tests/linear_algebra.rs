@@ -808,6 +808,44 @@ mod eigenvalues {
     );
   }
 
+  // Eigenvalues[m, k] takes the k largest-magnitude eigenvalues (k < 0 takes
+  // the smallest |k|), like Take.
+  #[test]
+  fn eigenvalues_count() {
+    assert_eq!(
+      interpret("Eigenvalues[{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}, 2]").unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}, 1]").unwrap(),
+      "{3}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{(5 + Sqrt[33])/2}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{1, 2}, {3, 4}}, -1]").unwrap(),
+      "{(5 - Sqrt[33])/2}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_count_overflow_emits_take() {
+    assert_eq!(
+      interpret("Eigenvalues[{{1, 2}, {3, 4}}, 3]").unwrap(),
+      "Eigenvalues[{{1, 2}, {3, 4}}, 3]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Eigenvalues::take: Cannot take eigenvalues 1 through 3 out of the total of 2 eigenvalues."
+      )),
+      "expected take message, got {:?}",
+      msgs
+    );
+  }
+
   #[test]
   fn diagonalization_identity() {
     // With T = Transpose[Eigenvectors[A]], Inverse[T] . A . T should equal
