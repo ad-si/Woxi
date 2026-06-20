@@ -5035,6 +5035,46 @@ mod hold {
     assert_eq!(interpret("ReleaseHold[5]").unwrap(), "5");
     assert_eq!(interpret("ReleaseHold[x]").unwrap(), "x");
   }
+
+  // ReleaseHold removes Hold-family wrappers wherever they appear, not just at
+  // the top level (one top-down pass, like ReplaceAll).
+  #[test]
+  fn release_hold_recursive() {
+    assert_eq!(
+      interpret("ReleaseHold[{Hold[1 + 1], HoldForm[2 + 2]}]").unwrap(),
+      "{2, 4}"
+    );
+    assert_eq!(interpret("ReleaseHold[f[Hold[1 + 1]]]").unwrap(), "f[2]");
+    assert_eq!(
+      interpret("ReleaseHold[Hold[1 + 1] + Hold[2 + 2]]").unwrap(),
+      "6"
+    );
+    assert_eq!(interpret("ReleaseHold[Hold[1 + 1]^2]").unwrap(), "4");
+    assert_eq!(
+      interpret("ReleaseHold[g[HoldPattern[2 + 3]]]").unwrap(),
+      "g[5]"
+    );
+    assert_eq!(interpret("ReleaseHold[HoldComplete[1 + 1]]").unwrap(), "2");
+  }
+
+  // Releasing does not descend into the content it just released: the inner
+  // Hold survives.
+  #[test]
+  fn release_hold_nested_inner_kept() {
+    assert_eq!(
+      interpret("ReleaseHold[Hold[Hold[1 + 1]]]").unwrap(),
+      "Hold[1 + 1]"
+    );
+  }
+
+  // Defer is not a held wrapper that ReleaseHold removes.
+  #[test]
+  fn release_hold_defer_unchanged() {
+    assert_eq!(
+      interpret("ReleaseHold[Defer[1 + 1]]").unwrap(),
+      "Defer[1 + 1]"
+    );
+  }
 }
 
 mod deeply_nested_lists {

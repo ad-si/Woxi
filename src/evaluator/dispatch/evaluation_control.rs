@@ -30,41 +30,14 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
-    "ReleaseHold" if args.len() == 1 => match &args[0] {
-      Expr::FunctionCall {
-        name: hold_name,
-        args: hold_args,
-      } if (hold_name == "Hold"
-        || hold_name == "HoldForm"
-        || hold_name == "HoldPattern")
-        && hold_args.len() == 1 =>
-      {
-        return Some(evaluate_expr_to_expr(&hold_args[0]));
-      }
-      Expr::FunctionCall {
-        name: hold_name,
-        args: hold_args,
-      } if (hold_name == "Hold"
-        || hold_name == "HoldForm"
-        || hold_name == "HoldPattern")
-        && hold_args.len() > 1 =>
-      {
-        let evaluated: Result<Vec<Expr>, _> =
-          hold_args.iter().map(evaluate_expr_to_expr).collect();
-        match evaluated {
-          Ok(evaled) => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "Sequence".to_string(),
-              args: evaled.into(),
-            }));
-          }
-          Err(e) => return Some(Err(e)),
-        }
-      }
-      other => {
-        return Some(evaluate_expr_to_expr(other));
-      }
-    },
+    "ReleaseHold" if args.len() == 1 => {
+      // ReleaseHold removes Hold/HoldForm/HoldComplete/HoldPattern wrappers
+      // wherever they appear (one top-down pass, like ReplaceAll — it does not
+      // descend into the content it just released, so ReleaseHold[Hold[Hold[…]]]
+      // keeps the inner Hold). The stripped expression is then evaluated.
+      let stripped = release_hold_rec(&args[0]);
+      return Some(evaluate_expr_to_expr(&stripped));
+    }
     "TimeRemaining" if args.is_empty() => {
       return Some(Ok(Expr::Identifier("Infinity".to_string())));
     }
@@ -774,6 +747,57 @@ pub fn dispatch_evaluation_control(
     _ => {}
   }
   None
+}
+
+/// Recursively strip Hold-family wrappers for `ReleaseHold`, mirroring a single
+/// top-down `ReplaceAll` pass: `Hold[e…]`/`HoldComplete[e…]` and
+/// `HoldForm[e]`/`HoldPattern[e]` are replaced by their content, and the
+/// content is NOT re-scanned (so a nested wrapper inside released content is
+/// kept). Multi-argument Hold/HoldComplete release to a `Sequence`. Non-wrapper
+/// heads recurse into their parts. `Defer` is intentionally not released.
+fn release_hold_rec(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Hold" | "HoldComplete")
+        && !args.is_empty() =>
+    {
+      if args.len() == 1 {
+        args[0].clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Sequence".to_string(),
+          args: args.clone(),
+        }
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "HoldForm" | "HoldPattern")
+        && args.len() == 1 =>
+    {
+      args[0].clone()
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(release_hold_rec).collect::<Vec<_>>().into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(release_hold_rec)
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(release_hold_rec(left)),
+      right: Box::new(release_hold_rec(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(release_hold_rec(operand)),
+    },
+    other => other.clone(),
+  }
 }
 
 /// Pick the smallest NumericArray dtype that fits every element in the
