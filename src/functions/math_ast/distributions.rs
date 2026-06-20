@@ -501,6 +501,28 @@ pub fn quantile_distribution_closed_form(
       let expr = divide(neg_log, lambda);
       eval(expr).ok()
     }
+    // Quantile[CauchyDistribution[a, b], q] = a + b*Tan[Pi*(q - 1/2)]
+    "CauchyDistribution" if dargs.len() == 2 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(neg_infinity());
+        }
+        if q_num == 1.0 {
+          return Some(infinity());
+        }
+      }
+      let (a, b) = (dargs[0].clone(), dargs[1].clone());
+      let pi = Expr::Constant("Pi".to_string());
+      let q_minus_half = minus(
+        q.clone(),
+        crate::functions::math_ast::make_rational_pub(1, 2),
+      );
+      let tan = Expr::FunctionCall {
+        name: "Tan".to_string(),
+        args: vec![times(pi, q_minus_half)].into(),
+      };
+      eval(plus(a, times(b, tan))).ok()
+    }
     // Quantile[UniformDistribution[{a, b}], q] = (1 - q)*a + q*b
     "UniformDistribution" if dargs.len() == 1 => {
       let (a, b) = match &dargs[0] {

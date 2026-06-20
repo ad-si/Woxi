@@ -57,6 +57,54 @@ mod cauchy_distribution {
     let expected = 3.0 / (13.0 * std::f64::consts::PI);
     assert!((val - expected).abs() < 1e-10);
   }
+
+  // Quantile[CauchyDistribution[a, b], q] = a + b Tan[Pi (q - 1/2)].
+  #[test]
+  fn quantile_standard() {
+    assert_eq!(
+      interpret("Quantile[CauchyDistribution[0, 1], 1/2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[CauchyDistribution[0, 1], 1/4]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("Quantile[CauchyDistribution[0, 1], 3/4]").unwrap(),
+      "1"
+    );
+    // A non-special probability keeps the exact Tan value.
+    assert_eq!(
+      interpret("Quantile[CauchyDistribution[0, 1], 1/3]").unwrap(),
+      "-(1/Sqrt[3])"
+    );
+  }
+
+  #[test]
+  fn quantile_with_params() {
+    // a + b Tan[-Pi/4] = 2 - 3 = -1.
+    assert_eq!(
+      interpret("Quantile[CauchyDistribution[2, 3], 1/4]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("Quantile[CauchyDistribution[5, 2], 1/2]").unwrap(),
+      "5"
+    );
+  }
+
+  // The boundaries map to the infinite tails.
+  #[test]
+  fn quantile_boundaries() {
+    assert_eq!(
+      interpret("Quantile[CauchyDistribution[0, 1], 0]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("Quantile[CauchyDistribution[0, 1], 1]").unwrap(),
+      "Infinity"
+    );
+  }
 }
 
 mod distribution_list_threading {
