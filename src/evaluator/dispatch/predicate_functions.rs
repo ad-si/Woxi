@@ -656,7 +656,7 @@ pub fn dispatch_predicate_functions(
     "Divisible" if args.len() == 2 => {
       return Some(crate::functions::predicate_ast::divisible_ast(args));
     }
-    "SubsetQ" if args.len() == 2 => {
+    "SubsetQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::predicate_ast::subset_q_ast(args));
     }
     "PossibleZeroQ" => {

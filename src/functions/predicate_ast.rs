@@ -2189,12 +2189,26 @@ fn same_head_elements<'a>(
 }
 
 pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "SubsetQ expects exactly 2 arguments".into(),
+      "SubsetQ expects 2 or 3 arguments".into(),
     ));
   }
-  let (superset, subset) = match same_head_elements("SubsetQ", args) {
+  // Optional `SameTest -> f` (or `{SameTest -> f}`) as the third argument.
+  let same_test: Option<&Expr> = if args.len() == 3 {
+    match extract_same_test(&args[2]) {
+      Some(f) => Some(f),
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "SubsetQ".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
+  } else {
+    None
+  };
+  let (superset, subset) = match same_head_elements("SubsetQ", &args[..2]) {
     Ok(Some(pair)) => pair,
     Ok(None) => {
       return Ok(Expr::FunctionCall {
@@ -2204,7 +2218,23 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Err(unevaluated) => return Ok(unevaluated),
   };
-  // Check that every element in subset appears in superset
+  if let Some(test) = same_test {
+    // Every subset element y must be equivalent to some superset element x,
+    // i.e. test[x, y] evaluates to True.
+    for y in subset {
+      let found = superset.iter().any(|x| {
+        matches!(
+          crate::functions::list_helpers_ast::apply_func_to_two_args(test, x, y),
+          Ok(Expr::Identifier(ref s)) if s == "True"
+        )
+      });
+      if !found {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+    }
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+  // Default: structural membership.
   let superset_strs: Vec<String> =
     superset.iter().map(crate::syntax::expr_to_string).collect();
   for elem in subset {
@@ -2214,6 +2244,24 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   Ok(Expr::Identifier("True".to_string()))
+}
+
+/// Extract the function `f` from a `SameTest -> f` rule, or from a singleton
+/// list `{SameTest -> f}`. Returns None for anything else.
+fn extract_same_test(opt: &Expr) -> Option<&Expr> {
+  let rule = match opt {
+    Expr::List(items) if items.len() == 1 => &items[0],
+    other => other,
+  };
+  match rule {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SameTest") => {
+      Some(replacement)
+    }
+    _ => None,
+  }
 }
 
 /// DisjointQ[a, b] - True if the subjects share no common elements.

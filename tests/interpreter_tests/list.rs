@@ -4915,6 +4915,42 @@ mod subset_q {
   fn symbolic() {
     assert_eq!(interpret("SubsetQ[{a, b, c}, {a, c}]").unwrap(), "True");
   }
+
+  // SubsetQ[super, sub, SameTest -> f]: every sub element y must satisfy
+  // f[x, y] for some super element x.
+  #[test]
+  fn subset_same_test() {
+    assert_eq!(
+      interpret("SubsetQ[{1, 2, 3, 4}, {2, 4}, SameTest -> Equal]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("SubsetQ[{1, 2, 3}, {2, 5}, SameTest -> Equal]").unwrap(),
+      "False"
+    );
+    // Approximate-equality test.
+    assert_eq!(
+      interpret(
+        "SubsetQ[{1, 2, 3}, {1.0, 2.0}, SameTest -> (Abs[#1 - #2] < 0.001 &)]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // The test is applied as f[super, sub]; Greater is asymmetric.
+    assert_eq!(
+      interpret("SubsetQ[{5}, {3}, SameTest -> Greater]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("SubsetQ[{3}, {5}, SameTest -> Greater]").unwrap(),
+      "False"
+    );
+    // Option may also be given as a singleton list.
+    assert_eq!(
+      interpret("SubsetQ[{1, 2, 3}, {2, 3}, {SameTest -> Equal}]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod option_q {
