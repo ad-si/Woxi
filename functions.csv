@@ -2317,7 +2317,7 @@ CloudPut,cloud storage,🚫,None,10.0,2367
 ExponentialMovingAverage,Computes exponential moving average of a list,✅,None,6.0,2367
 GeoDirection,geographic computation,🚫,None,7.0,2367
 MeanDeviation,Mean absolute deviation from the mean,✅,1,6.0,2367
-RegionEmbeddingDimension,geometric region,🚫,None,10.0,2367
+RegionEmbeddingDimension,Dimension of the space a region is embedded in,✅,pure,10.0,2367
 TriangulateMesh,mesh generation,🚫,None,10.0,2367
 CloseKernels,parallel computing,🚫,None,7.0,2371
 DefaultBaseStyle,styling option,🚫,None,7.0,2371

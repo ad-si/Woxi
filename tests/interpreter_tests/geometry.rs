@@ -783,6 +783,47 @@ mod region_dimension {
   }
 }
 
+mod region_embedding_dimension {
+  use super::*;
+
+  // RegionEmbeddingDimension gives the ambient (coordinate) dimension,
+  // i.e. the number of {min, max} pairs in the bounding box.
+  #[test]
+  fn embedding_dimension_regions() {
+    assert_eq!(interpret("RegionEmbeddingDimension[Disk[]]").unwrap(), "2");
+    // Circle is a 1-D curve embedded in the plane.
+    assert_eq!(
+      interpret("RegionEmbeddingDimension[Circle[{1, 1}, 2]]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("RegionEmbeddingDimension[Ball[]]").unwrap(), "3");
+    assert_eq!(interpret("RegionEmbeddingDimension[Cuboid[]]").unwrap(), "3");
+    // Sphere is a 2-D surface embedded in 3-space.
+    assert_eq!(
+      interpret("RegionEmbeddingDimension[Sphere[{0, 0, 0}, 1]]").unwrap(),
+      "3"
+    );
+    // Line embedding dimension follows its point coordinates.
+    assert_eq!(
+      interpret("RegionEmbeddingDimension[Line[{{0, 0, 0}, {1, 1, 1}}]]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("RegionEmbeddingDimension[Point[{1, 2, 3}]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn embedding_dimension_unevaluated() {
+    assert_eq!(
+      interpret("RegionEmbeddingDimension[x]").unwrap(),
+      "RegionEmbeddingDimension[x]"
+    );
+  }
+}
+
 mod triangle {
   use super::*;
 
@@ -991,7 +1032,10 @@ mod region_bounds {
   // Disk/Circle bounds are center +/- radius.
   #[test]
   fn disk_and_circle() {
-    assert_eq!(interpret("RegionBounds[Disk[]]").unwrap(), "{{-1, 1}, {-1, 1}}");
+    assert_eq!(
+      interpret("RegionBounds[Disk[]]").unwrap(),
+      "{{-1, 1}, {-1, 1}}"
+    );
     assert_eq!(
       interpret("RegionBounds[Disk[{1, 2}, 3]]").unwrap(),
       "{{-2, 4}, {-1, 5}}"
@@ -1026,7 +1070,10 @@ mod region_bounds {
       interpret("RegionBounds[Rectangle[{0, 0}, {2, 3}]]").unwrap(),
       "{{0, 2}, {0, 3}}"
     );
-    assert_eq!(interpret("RegionBounds[Rectangle[]]").unwrap(), "{{0, 1}, {0, 1}}");
+    assert_eq!(
+      interpret("RegionBounds[Rectangle[]]").unwrap(),
+      "{{0, 1}, {0, 1}}"
+    );
     assert_eq!(
       interpret("RegionBounds[Cuboid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
       "{{0, 1}, {0, 2}, {0, 3}}"

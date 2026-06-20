@@ -1924,6 +1924,9 @@ pub fn dispatch_complex_and_special(
     "RegionDimension" if args.len() == 1 => {
       return Some(compute_region_dimension(&args[0]));
     }
+    "RegionEmbeddingDimension" if args.len() == 1 => {
+      return Some(compute_region_embedding_dimension(&args[0]));
+    }
     "RegionCentroid" if args.len() == 1 => {
       return Some(compute_region_centroid(&args[0]));
     }
@@ -5684,6 +5687,21 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
   unevaluated()
+}
+
+/// RegionEmbeddingDimension[region] — the dimension of the ambient space the
+/// region lives in, i.e. the number of coordinates. This equals the number of
+/// `{min, max}` pairs in the region's bounding box.
+fn compute_region_embedding_dimension(
+  expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match compute_region_bounds(expr)? {
+    Expr::List(ref bounds) => Ok(Expr::Integer(bounds.len() as i128)),
+    _ => Ok(Expr::FunctionCall {
+      name: "RegionEmbeddingDimension".to_string(),
+      args: vec![expr.clone()].into(),
+    }),
+  }
 }
 
 /// Compute the axis-aligned bounding box of a geometric region as a list of
