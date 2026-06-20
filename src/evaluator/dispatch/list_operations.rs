@@ -561,6 +561,31 @@ fn tree_size(e: &Expr) -> Option<i128> {
   Some(total)
 }
 
+// TreeFold[f, tree]: a leaf folds to its data; an inner node with data `d`
+// and children `c1..cn` folds to f[d, {fold(c1), ..., fold(cn)}].
+// Returns Ok(None) if `e` is not a tree.
+fn tree_fold(func: &Expr, e: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let Some((data, children)) = tree_node(e) else {
+    return Ok(None);
+  };
+  if children.is_empty() {
+    return Ok(Some(data.clone()));
+  }
+  let mut folded = Vec::with_capacity(children.len());
+  for c in children {
+    match tree_fold(func, c)? {
+      Some(v) => folded.push(v),
+      None => return Ok(None),
+    }
+  }
+  let result = list_helpers_ast::apply_func_to_two_args(
+    func,
+    data,
+    &Expr::List(folded.into()),
+  )?;
+  Ok(Some(result))
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -2592,6 +2617,26 @@ pub fn dispatch_list_operations(
         args: args.to_vec().into(),
       }));
     }
+    // TreeFold[f] is the operator form: keep it symbolic so the curried call
+    // TreeFold[f][tree] can apply it (handled in apply_curried_call).
+    "TreeFold" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "TreeFold".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // TreeFold[f, tree] folds f over the tree bottom-up; TreeFold[f] is the
+    // operator form applied via the curried call TreeFold[f][tree].
+    "TreeFold" if args.len() == 2 => match tree_fold(&args[0], &args[1]) {
+      Ok(Some(v)) => return Some(Ok(v)),
+      Ok(None) => {
+        return Some(Ok(Expr::FunctionCall {
+          name: "TreeFold".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      Err(e) => return Some(Err(e)),
+    },
     "Through" if args.len() == 1 => {
       return Some(list_helpers_ast::through_ast(&args[0], None));
     }

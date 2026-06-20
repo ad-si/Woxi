@@ -6785,6 +6785,35 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(interpret("TreeSize[5]").unwrap(), "TreeSize[5]");
   }
+  // TreeFold[f, tree]: leaf -> data, inner node -> f[data, {child results}].
+  #[test]
+  fn tree_fold() {
+    // Reconstructs the nested structure when folded with List.
+    assert_eq!(
+      interpret("TreeFold[List, Tree[1, {Tree[2, {4, 5}], 3}]]").unwrap(),
+      "{1, {{2, {4, 5}}, 3}}"
+    );
+    // A leaf folds to its own data.
+    assert_eq!(interpret("TreeFold[f, Tree[x, None]]").unwrap(), "x");
+    // Symbolic head: f[data, {children}].
+    assert_eq!(
+      interpret("TreeFold[f, Tree[1, {2, 3}]]").unwrap(),
+      "f[1, {2, 3}]"
+    );
+    // Numeric accumulation bottom-up: 1 + Total[{2 + Total[{4, 5}], 3}] = 15.
+    assert_eq!(
+      interpret("TreeFold[#1 + Total[#2] &, Tree[1, {Tree[2, {4, 5}], 3}]]")
+        .unwrap(),
+      "15"
+    );
+    // Operator form TreeFold[f][tree].
+    assert_eq!(
+      interpret("TreeFold[f][Tree[1, {2, 3}]]").unwrap(),
+      "f[1, {2, 3}]"
+    );
+    // Non-tree stays unevaluated.
+    assert_eq!(interpret("TreeFold[f, 5]").unwrap(), "TreeFold[f, 5]");
+  }
 
   // VertexOutComponent
   #[test]
