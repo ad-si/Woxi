@@ -9732,6 +9732,39 @@ fn eval_near_point(
 /// (e.g. Floor, Ceiling, Sign, UnitStep, FractionalPart), where the one-sided
 /// limit — not the value at the point — is the answer, so return the numerical
 /// result. Continuous cases keep their exact (possibly symbolic) form.
+/// Heads that introduce a jump discontinuity (the function is piecewise
+/// constant or otherwise steps). A two-sided limit at such a step does not
+/// exist even though direct substitution returns a finite value.
+fn contains_jump_discontinuous_head(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Floor"
+          | "Ceiling"
+          | "Round"
+          | "IntegerPart"
+          | "FractionalPart"
+          | "Sign"
+          | "RealSign"
+          | "UnitStep"
+          | "HeavisideTheta"
+          | "Mod"
+          | "Quotient"
+          | "KroneckerDelta"
+          | "DiscreteDelta"
+          | "Boole"
+      ) || args.iter().any(contains_jump_discontinuous_head)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_jump_discontinuous_head(left)
+        || contains_jump_discontinuous_head(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_jump_discontinuous_head(operand),
+    _ => false,
+  }
+}
+
 fn reconcile_one_sided_direct(
   direct: Expr,
   expr: &Expr,
@@ -9740,6 +9773,34 @@ fn reconcile_one_sided_direct(
   direction: LimitDirection,
 ) -> Expr {
   if matches!(direction, LimitDirection::TwoSided) {
+    // A finite value from direct substitution is the wrong answer when the
+    // expression steps at the point: Limit[Floor[x], x -> 2] is Indeterminate
+    // (left -> 1, right -> 2), not Floor[2] = 2. Detect a genuine jump by
+    // comparing the two one-sided numerical limits; only override when both
+    // sides resolve numerically and clearly disagree.
+    if contains_jump_discontinuous_head(expr)
+      && let Some(below) = numerical_one_sided_limit(
+        expr,
+        var_name,
+        point,
+        LimitDirection::FromBelow,
+      )
+      && let Some(above) = numerical_one_sided_limit(
+        expr,
+        var_name,
+        point,
+        LimitDirection::FromAbove,
+      )
+      && let (Some(lo), Some(hi)) = (
+        crate::functions::math_ast::try_eval_to_f64(&below),
+        crate::functions::math_ast::try_eval_to_f64(&above),
+      )
+      && lo.is_finite()
+      && hi.is_finite()
+      && (lo - hi).abs() > 1e-6 * (1.0 + lo.abs().max(hi.abs()))
+    {
+      return Expr::Identifier("Indeterminate".to_string());
+    }
     return direct;
   }
   let d_f = match crate::functions::math_ast::try_eval_to_f64(&direct) {

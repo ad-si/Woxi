@@ -1987,6 +1987,54 @@ mod limit {
     );
   }
 
+  // A two-sided (default) limit at a jump discontinuity does NOT exist:
+  // direct substitution returns Floor[2] = 2, but the left limit is 1 and the
+  // right limit is 2, so Wolfram returns Indeterminate.
+  #[test]
+  fn two_sided_jump_is_indeterminate() {
+    assert_eq!(
+      interpret("Limit[Floor[x], x -> 2]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Limit[Ceiling[x], x -> 2]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Limit[Sign[x], x -> 0]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Limit[UnitStep[x], x -> 0]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Limit[FractionalPart[x], x -> 2]").unwrap(),
+      "Indeterminate"
+    );
+    // Round and Mod step at half-integers / multiples of the modulus.
+    assert_eq!(
+      interpret("Limit[Round[x], x -> 5/2]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Limit[Mod[x, 3], x -> 3]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  // ... but where the step function is continuous AT the point, the two-sided
+  // limit is the ordinary value (no spurious Indeterminate).
+  #[test]
+  fn two_sided_continuous_step_point() {
+    // Floor is continuous at non-integers.
+    assert_eq!(interpret("Limit[Floor[x], x -> 5/2]").unwrap(), "2");
+    // Round is continuous at integers (it jumps at half-integers).
+    assert_eq!(interpret("Limit[Round[x], x -> 2]").unwrap(), "2");
+    // x^2 + 1 approaches 1 from above on both sides, so Floor -> 1.
+    assert_eq!(interpret("Limit[Floor[x^2 + 1], x -> 0]").unwrap(), "1");
+  }
+
   #[test]
   fn one_sided_unit_step_from_below() {
     assert_eq!(
