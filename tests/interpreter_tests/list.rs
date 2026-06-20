@@ -3745,6 +3745,54 @@ mod heaviside_theta {
     assert_eq!(interpret("HeavisideTheta[Sqrt[2] - 2]").unwrap(), "0");
     assert_eq!(interpret("HeavisideTheta[E - 3]").unwrap(), "0");
   }
+
+  // HeavisideTheta is Listable: it threads element-wise over a list, leaving
+  // the (undefined) value at 0 symbolic.
+  #[test]
+  fn threads_over_list() {
+    assert_eq!(
+      interpret("HeavisideTheta[{-1, 0, 1}]").unwrap(),
+      "{0, HeavisideTheta[0], 1}"
+    );
+    assert_eq!(
+      interpret("HeavisideTheta[{-1, 2, 3}]").unwrap(),
+      "{0, 1, 1}"
+    );
+  }
+}
+
+mod step_impulse_threading {
+  use super::*;
+
+  // DiracDelta is Listable; the other unit/step functions thread the same way.
+  #[test]
+  fn dirac_delta() {
+    assert_eq!(
+      interpret("DiracDelta[{-1, 0, 2}]").unwrap(),
+      "{0, DiracDelta[0], 0}"
+    );
+  }
+
+  #[test]
+  fn unit_box_and_pi() {
+    assert_eq!(interpret("UnitBox[{0.3, 2}]").unwrap(), "{1, 0}");
+    assert_eq!(interpret("HeavisidePi[{0.2, 2}]").unwrap(), "{1, 0}");
+  }
+
+  #[test]
+  fn unit_triangle_and_lambda() {
+    assert_eq!(interpret("UnitTriangle[{0.3, 2}]").unwrap(), "{0.7, 0}");
+    assert_eq!(interpret("HeavisideLambda[{0.3, 2}]").unwrap(), "{0.7, 0}");
+  }
+
+  // DiscreteDelta is not Listable in wolframscript, so it stays unevaluated.
+  #[test]
+  fn discrete_delta_does_not_thread() {
+    assert_eq!(
+      interpret("DiscreteDelta[{0, 1}]").unwrap(),
+      "DiscreteDelta[{0, 1}]"
+    );
+  }
 }
 
 mod dirac_delta {

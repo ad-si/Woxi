@@ -19,6 +19,27 @@ pub fn dispatch_complex_and_special(
     "UnitStep" if !args.is_empty() => {
       return Some(crate::functions::math_ast::unit_step_ast(args));
     }
+    // These step/impulse functions thread element-wise over a single list
+    // argument in wolframscript (HeavisideTheta and DiracDelta are Listable;
+    // the others thread the same way). Map the scalar form over the elements.
+    "HeavisideTheta" | "DiracDelta" | "UnitBox" | "UnitTriangle"
+    | "HeavisidePi" | "HeavisideLambda"
+      if args.len() == 1 && matches!(&args[0], Expr::List(_)) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        unreachable!();
+      };
+      let results: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|x| {
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: name.to_string(),
+            args: vec![x.clone()].into(),
+          })
+        })
+        .collect();
+      return Some(results.map(|v| Expr::List(v.into())));
+    }
     "HeavisideTheta" if !args.is_empty() => {
       return Some(crate::functions::math_ast::heaviside_theta_ast(args));
     }
