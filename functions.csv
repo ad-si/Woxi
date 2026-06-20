@@ -247,7 +247,7 @@ ArcCos,Returns the arc cosine of a number,✅,pure,1.0,249
 ArcSin,Returns the arc sine of a number,✅,pure,1.0,250
 Det,Computes the determinant of a matrix,✅,pure,1.0,251
 NSolve,Solves equations numerically,✅,pure,2.0,252
-Cross,Computes the cross product of two vectors,✅,pure,3.0,253
+Cross,Computes the generalized cross product of n-1 vectors of length n,✅,pure,3.0,253
 PDF,Probability density function,✅,pure,6.0,254
 TableForm,Formats data as a table,✅,pure,1.0,255
 Circle,Represents a circle graphics primitive,✅,pure,2.0,256

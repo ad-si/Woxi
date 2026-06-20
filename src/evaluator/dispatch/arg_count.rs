@@ -230,7 +230,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "EmpiricalDistribution" => Some((1, 1)),
     "ProductDistribution" => Some((1, usize::MAX)),
     "CovarianceFunction" => Some((2, 3)),
-    "Cross" => Some((1, 2)),
+    "Cross" => Some((1, usize::MAX)),
     "CrossMatrix" => Some((1, 1)),
     "CrossProduct" => Some((2, 2)),
     "Csc" => Some((1, 1)),

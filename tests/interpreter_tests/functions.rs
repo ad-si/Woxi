@@ -4499,6 +4499,42 @@ mod cross_dot_shape_messages {
     assert_eq!(interpret("Cross[{1, 2}]").unwrap(), "{-2, 1}");
   }
 
+  // Generalized cross product: k = n - 1 vectors of length n.
+  #[test]
+  fn cross_generalized_n_dimensional() {
+    assert_eq!(
+      interpret("Cross[{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}]").unwrap(),
+      "{0, 0, 0, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Cross[{1, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 1, 0}]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 1}"
+    );
+    // Symbolic 4D cross matches the determinant expansion.
+    assert_eq!(
+      interpret("Cross[{a, b, c, d}, {e, f, g, h}, {i, j, k, l}]").unwrap(),
+      "{d*g*j - c*h*j - d*f*k + b*h*k + c*f*l - b*g*l, -(d*g*i) + c*h*i + d*e*k - a*h*k - c*e*l + a*g*l, d*f*i - b*h*i - d*e*j + a*h*j + b*e*l - a*f*l, -(c*f*i) + b*g*i + c*e*j - a*g*j - b*e*k + a*f*k}"
+    );
+  }
+
+  // Wrong vector count / length for the N-dim form emits nonn1.
+  #[test]
+  fn cross_generalized_wrong_count_emits_nonn1() {
+    assert_eq!(
+      interpret("Cross[{1, 0, 0}, {0, 1, 0}, {0, 0, 1}]").unwrap(),
+      "Cross[{1, 0, 0}, {0, 1, 0}, {0, 0, 1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Cross::nonn1")),
+      "expected nonn1, got {:?}",
+      msgs
+    );
+  }
+
   #[test]
   fn dot_incompatible_shapes_emit_dotsh() {
     // Regression: shape mismatches raised hard errors

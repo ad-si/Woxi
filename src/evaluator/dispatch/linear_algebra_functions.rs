@@ -460,7 +460,7 @@ pub fn dispatch_linear_algebra_functions(
     "FindFit" if args.len() == 4 => {
       return Some(crate::functions::linear_algebra_ast::find_fit_ast(args));
     }
-    "Cross" if args.len() == 1 || args.len() == 2 => {
+    "Cross" if !args.is_empty() => {
       return Some(crate::functions::linear_algebra_ast::cross_ast(args));
     }
     // DotProduct[a, b] is the legacy VectorAnalysis spelling of Dot[a, b];

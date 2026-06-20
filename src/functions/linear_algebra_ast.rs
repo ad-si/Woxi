@@ -1031,6 +1031,70 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     });
   }
+  // Generalized cross product: k = n - 1 vectors of length n give the vector
+  // orthogonal to all of them, with component i (1-indexed) equal to
+  // (-1)^(n+i) Det[Mi], where Mi is the k×k matrix of the vectors as rows with
+  // column i removed. (The 1- and 2-argument cases above are special cases of
+  // this, kept separate to preserve their exact output form.)
+  if args.len() >= 3 {
+    // All arguments must be explicit lists of equal length n with k = n - 1;
+    // otherwise emit ::nonn1 for all-list inputs, else stay unevaluated.
+    let mut vecs: Vec<&[Expr]> = Vec::with_capacity(args.len());
+    for a in args {
+      match a {
+        Expr::List(items) => vecs.push(items.as_slice()),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Cross".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      }
+    }
+    let n = vecs[0].len();
+    let valid = n == args.len() + 1 && vecs.iter().all(|v| v.len() == n);
+    if !valid {
+      crate::emit_message(
+        "Cross::nonn1: The arguments are expected to be vectors of equal length, and the number of arguments is expected to be one less than their length.",
+      );
+      return Ok(Expr::FunctionCall {
+        name: "Cross".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    let mut result = Vec::with_capacity(n);
+    for i in 0..n {
+      // Minor matrix: vectors as rows, with column i removed.
+      let minor: Vec<Expr> = vecs
+        .iter()
+        .map(|v| {
+          let row: Vec<Expr> = v
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != i)
+            .map(|(_, e)| e.clone())
+            .collect();
+          Expr::List(row.into())
+        })
+        .collect();
+      let det = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Det".to_string(),
+        args: vec![Expr::List(minor.into())].into(),
+      })?;
+      // Sign (-1)^(n + (i+1)).
+      let component = if (n + i + 1) % 2 == 0 {
+        det
+      } else {
+        evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), det].into(),
+        })?
+      };
+      result.push(component);
+    }
+    return Ok(Expr::List(result.into()));
+  }
+
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "Cross expects 1 or 2 arguments".into(),
