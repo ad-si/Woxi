@@ -4007,6 +4007,28 @@ mod ordered_q {
   fn ordered_empty() {
     assert_eq!(interpret("OrderedQ[{}]").unwrap(), "True");
   }
+
+  // OrderedQ[list, p] tests each consecutive pair with p; it is True unless
+  // some p[e_i, e_{i+1}] evaluates to False (a symbolic result counts as
+  // ordered).
+  #[test]
+  fn ordered_with_comparator() {
+    assert_eq!(interpret("OrderedQ[{3, 2, 1}, Greater]").unwrap(), "True");
+    assert_eq!(interpret("OrderedQ[{1, 2, 3}, Greater]").unwrap(), "False");
+    assert_eq!(interpret("OrderedQ[{1, 2, 3}, Less]").unwrap(), "True");
+    assert_eq!(interpret("OrderedQ[{1, 1, 2}, LessEqual]").unwrap(), "True");
+    assert_eq!(interpret("OrderedQ[{2, 2}, Less]").unwrap(), "False");
+    // A symbolic comparison result is treated as ordered.
+    assert_eq!(interpret("OrderedQ[{a, b}, Greater]").unwrap(), "True");
+    // Only consecutive pairs are checked.
+    assert_eq!(
+      interpret("OrderedQ[{1, 2, 3}, (#2 - #1 == 1 &)]").unwrap(),
+      "True"
+    );
+    // Single-element and empty lists are vacuously ordered.
+    assert_eq!(interpret("OrderedQ[{5}, Greater]").unwrap(), "True");
+    assert_eq!(interpret("OrderedQ[{}, Greater]").unwrap(), "True");
+  }
 }
 
 mod random_real {

@@ -1028,6 +1028,31 @@ pub fn dispatch_list_operations(
     "OrderedQ" if args.len() == 1 => {
       return Some(list_helpers_ast::ordered_q_ast(args));
     }
+    // OrderedQ[list, p] — True iff p[e_i, e_{i+1}] does not return False for
+    // every consecutive pair (a symbolic/non-False result counts as ordered).
+    "OrderedQ" if args.len() == 2 => {
+      let elems: Option<&[Expr]> = match &args[0] {
+        Expr::List(items) => Some(items),
+        Expr::FunctionCall { args: items, .. } => Some(items),
+        _ => None,
+      };
+      if let Some(elems) = elems {
+        let comparator = &args[1];
+        let mut ordered = true;
+        for pair in elems.windows(2) {
+          let res = crate::functions::list_helpers_ast::apply_func_to_two_args(
+            comparator, &pair[0], &pair[1],
+          );
+          if matches!(res, Ok(Expr::Identifier(ref s)) if s == "False") {
+            ordered = false;
+            break;
+          }
+        }
+        return Some(Ok(Expr::Identifier(
+          if ordered { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
     "DeleteAdjacentDuplicates" if args.len() == 1 => {
       return Some(list_helpers_ast::delete_adjacent_duplicates_ast(args));
     }
