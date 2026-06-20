@@ -561,6 +561,37 @@ fn tree_size(e: &Expr) -> Option<i128> {
   Some(total)
 }
 
+// Navigate from `tree` along `path` (1-based child indices) to a subtree.
+// Returns None if any index is out of range or steps into a leaf.
+fn tree_navigate(tree: &Expr, path: &[i128]) -> Option<Expr> {
+  if path.is_empty() {
+    return Some(tree.clone());
+  }
+  let (_data, children) = tree_node(tree)?;
+  let idx = path[0];
+  if idx < 1 || idx as usize > children.len() {
+    return None;
+  }
+  let child = children[(idx - 1) as usize];
+  tree_navigate(child, &path[1..])
+}
+
+// Interpret an Expr::List of integers as a position path. Returns None if any
+// element is not an integer.
+fn tree_position_path(e: &Expr) -> Option<Vec<i128>> {
+  if let Expr::List(items) = e {
+    items
+      .iter()
+      .map(|x| match x {
+        Expr::Integer(n) => Some(*n),
+        _ => None,
+      })
+      .collect()
+  } else {
+    None
+  }
+}
+
 // TreeMap[f, tree]: apply `func` to the data of every node, preserving the
 // tree structure (the `None` leaf-marker is kept as-is). Returns Ok(None) if
 // `e` is not a tree.
@@ -2665,6 +2696,65 @@ pub fn dispatch_list_operations(
         name: "TreeMap".to_string(),
         args: args.to_vec().into(),
       }));
+    }
+    // TreeExtract[tree, pos]: extract the subtree(s) at position(s) `pos`.
+    // A position is a list of 1-based child indices. `pos` is either a single
+    // position ({i, j, ...}, all integers) giving one subtree, or a list of
+    // positions ({{...}, {...}}) giving a list of subtrees ({} gives {}).
+    "TreeExtract" if args.len() == 2 => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "TreeExtract".to_string(),
+        args: args.to_vec().into(),
+      };
+      // First argument must be a tree.
+      if tree_node(&args[0]).is_none() {
+        crate::emit_message(&format!(
+          "TreeExtract::tree: Tree expected at position 1 in {}.",
+          crate::syntax::expr_to_string(&unevaluated())
+        ));
+        return Some(Ok(unevaluated()));
+      }
+      // psl1 message uses the short `-Tree-` form for the tree.
+      let psl1 = || {
+        crate::emit_message(&format!(
+          "TreeExtract::psl1: Position specification {} in TreeExtract[-Tree-, {}] is not applicable.",
+          crate::syntax::expr_to_string(&args[1]),
+          crate::syntax::expr_to_string(&args[1])
+        ));
+        unevaluated()
+      };
+      match &args[1] {
+        Expr::List(elems) if elems.is_empty() => {
+          return Some(Ok(Expr::List(vec![].into())));
+        }
+        // List of positions → list of subtrees.
+        Expr::List(elems)
+          if elems.iter().all(|e| matches!(e, Expr::List(_))) =>
+        {
+          let mut out = Vec::with_capacity(elems.len());
+          for e in elems.iter() {
+            match tree_position_path(e)
+              .and_then(|p| tree_navigate(&args[0], &p))
+            {
+              Some(st) => out.push(st),
+              None => return Some(Ok(psl1())),
+            }
+          }
+          return Some(Ok(Expr::List(out.into())));
+        }
+        // Single position (all integers) → one subtree.
+        Expr::List(elems)
+          if elems.iter().all(|e| matches!(e, Expr::Integer(_))) =>
+        {
+          match tree_position_path(&args[1])
+            .and_then(|p| tree_navigate(&args[0], &p))
+          {
+            Some(st) => return Some(Ok(st)),
+            None => return Some(Ok(psl1())),
+          }
+        }
+        _ => return Some(Ok(psl1())),
+      }
     }
     // TreeMap[f, tree]: apply f to the data of every node.
     "TreeMap" if args.len() == 2 => match tree_map(&args[0], &args[1]) {

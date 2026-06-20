@@ -6863,6 +6863,44 @@ mod batch_unevaluated_wrappers_2 {
     // Non-tree second argument stays unevaluated.
     assert_eq!(interpret("TreeMap[f, 5]").unwrap(), "TreeMap[f, 5]");
   }
+  // TreeExtract[tree, pos]: extract subtree(s) at position(s).
+  #[test]
+  fn tree_extract() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // Single position: child 1.
+    assert_eq!(
+      interpret(&format!("TreeExtract[{t}, {{1}}]")).unwrap(),
+      "Tree[2, {Tree[4, None], Tree[5, None]}]"
+    );
+    // Nested single position: child 1 then its child 2.
+    assert_eq!(
+      interpret(&format!("TreeExtract[{t}, {{1, 2}}]")).unwrap(),
+      "Tree[5, None]"
+    );
+    // Single-element list-of-positions yields a one-element list.
+    assert_eq!(
+      interpret(&format!("TreeExtract[{t}, {{{{1}}}}]")).unwrap(),
+      "{Tree[2, {Tree[4, None], Tree[5, None]}]}"
+    );
+    // Multiple positions.
+    assert_eq!(
+      interpret(&format!("TreeExtract[{t}, {{{{1}}, {{2}}}}]")).unwrap(),
+      "{Tree[2, {Tree[4, None], Tree[5, None]}], Tree[3, None]}"
+    );
+    // Empty list of positions.
+    assert_eq!(interpret(&format!("TreeExtract[{t}, {{}}]")).unwrap(), "{}");
+    // Out-of-range position stays unevaluated (full canonical form).
+    assert_eq!(
+      interpret(&format!("TreeExtract[{t}, {{3}}]")).unwrap(),
+      "TreeExtract[Tree[1, {Tree[2, {Tree[4, None], \
+       Tree[5, None]}], Tree[3, None]}], {3}]"
+    );
+    // Non-tree first argument stays unevaluated.
+    assert_eq!(
+      interpret("TreeExtract[5, {1}]").unwrap(),
+      "TreeExtract[5, {1}]"
+    );
+  }
 
   // VertexOutComponent
   #[test]
