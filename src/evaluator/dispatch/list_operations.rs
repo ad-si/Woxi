@@ -1823,25 +1823,26 @@ pub fn dispatch_list_operations(
       if let Expr::Association(entries) = &args[0] {
         let mut sorted = entries.clone();
         let comparator = args[1].clone();
+        let is_true =
+          |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
         let cmp_values = |a: &Expr, b: &Expr| -> std::cmp::Ordering {
-          if let Expr::Identifier(name) = &comparator {
-            match name.as_str() {
-              "Greater" => {
-                return list_helpers_ast::canonical_cmp(a, b).reverse();
-              }
-              "Less" => return list_helpers_ast::canonical_cmp(a, b),
-              _ => {}
-            }
-          }
-          match crate::functions::list_helpers_ast::apply_func_to_two_args(
+          // Apply the comparator both ways (see the list case below) so
+          // Less/Greater on symbolic values keep the original order.
+          let ab = crate::functions::list_helpers_ast::apply_func_to_two_args(
             &comparator,
             a,
             b,
+          );
+          if matches!(ab, Ok(ref r) if is_true(r)) {
+            return std::cmp::Ordering::Less;
+          }
+          match crate::functions::list_helpers_ast::apply_func_to_two_args(
+            &comparator,
+            b,
+            a,
           ) {
-            Ok(Expr::Identifier(ref s)) if s == "True" => {
-              std::cmp::Ordering::Less
-            }
-            _ => std::cmp::Ordering::Greater,
+            Ok(ref r) if is_true(r) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
           }
         };
         sorted.sort_by(|(_, va), (_, vb)| cmp_values(va, vb));
@@ -1866,39 +1867,33 @@ pub fn dispatch_list_operations(
             },
           }
         };
-        // Fast path: the two bare symbol comparators that Sort is most
-        // commonly called with.
-        if let Expr::Identifier(name) = &args[1] {
-          match name.as_str() {
-            "Greater" => {
-              sorted.sort_by(|a, b| {
-                list_helpers_ast::canonical_cmp(a, b).reverse()
-              });
-              return Some(Ok(wrap(sorted.to_vec())));
-            }
-            "Less" => {
-              sorted.sort_by(list_helpers_ast::canonical_cmp);
-              return Some(Ok(wrap(sorted.to_vec())));
-            }
-            _ => {}
-          }
-        }
-        // General path: evaluate p[a, b] for each comparison via the
-        // normal function-application machinery, so pure Functions
-        // (`#1 > #2 &`), NamedFunctions, and curried calls all work.
+        // Apply the comparator p[a, b] via the normal function-application
+        // machinery (so Less/Greater, pure Functions like `#1 > #2 &`,
+        // NamedFunctions and curried calls all work). It is applied both ways
+        // for a consistent ordering: a before b when p[a,b] is True, after when
+        // p[b,a] is True, otherwise incomparable (a symbolic non-Boolean
+        // result, e.g. `c < a`) so the stable sort keeps the original order —
+        // hence Sort[{c, a, b}, Less] is {c, a, b}, not the canonical
+        // {a, b, c}.
         let comparator = args[1].clone();
+        let is_true =
+          |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
         sorted.sort_by(|a, b| {
-          let result =
-            crate::functions::list_helpers_ast::apply_func_to_two_args(
-              &comparator,
-              a,
-              b,
-            );
-          match result {
-            Ok(Expr::Identifier(ref s)) if s == "True" => {
-              std::cmp::Ordering::Less
-            }
-            _ => std::cmp::Ordering::Greater,
+          let ab = crate::functions::list_helpers_ast::apply_func_to_two_args(
+            &comparator,
+            a,
+            b,
+          );
+          if matches!(ab, Ok(ref r) if is_true(r)) {
+            return std::cmp::Ordering::Less;
+          }
+          match crate::functions::list_helpers_ast::apply_func_to_two_args(
+            &comparator,
+            b,
+            a,
+          ) {
+            Ok(ref r) if is_true(r) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
           }
         });
         return Some(Ok(wrap(sorted.to_vec())));

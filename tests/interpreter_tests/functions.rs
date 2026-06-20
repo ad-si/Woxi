@@ -1513,6 +1513,30 @@ mod sort_with_comparator {
   fn less() {
     assert_eq!(interpret("Sort[{3, 1, 2}, Less]").unwrap(), "{1, 2, 3}");
   }
+
+  // With Less/Greater on data they can't compare (non-numeric symbols, where
+  // `c < a` stays symbolic), the elements are incomparable, so the original
+  // order is kept — not the canonical sort.
+  #[test]
+  fn symbolic_data_keeps_order() {
+    assert_eq!(interpret("Sort[{c, a, b}, Less]").unwrap(), "{c, a, b}");
+    assert_eq!(interpret("Sort[{c, a, b}, Greater]").unwrap(), "{c, a, b}");
+    // The pure-function comparator behaves the same way.
+    assert_eq!(
+      interpret("Sort[{c, a, b}, #1 < #2 &]").unwrap(),
+      "{c, a, b}"
+    );
+  }
+
+  // Sort[assoc, p] orders entries by value; a symbolic value with Less keeps
+  // the original order.
+  #[test]
+  fn association_symbolic_values_keep_order() {
+    assert_eq!(
+      interpret("Sort[<|a -> x, b -> y|>, Less]").unwrap(),
+      "<|a -> x, b -> y|>"
+    );
+  }
 }
 
 mod entity {
