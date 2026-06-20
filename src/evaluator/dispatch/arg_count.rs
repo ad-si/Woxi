@@ -1243,7 +1243,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "TeXForm" => Some((1, 1)),
     "TextSentences" => Some((1, 2)),
     "TextWords" => Some((1, 2)),
-    "Thread" => Some((1, 2)),
+    "Thread" => Some((1, 3)),
     "Through" => Some((1, 2)),
     "ToBoxes" => Some((1, 1)),
     "ToCharacterCode" => Some((1, 2)),

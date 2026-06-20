@@ -1714,6 +1714,22 @@ mod cases {
       r#"f[a] + f[b] + f[c]"#,
     );
   }
+  // Thread[expr, h, n] threads only over the first n argument positions.
+  #[test]
+  fn thread_positions_integer() {
+    assert_case(
+      r#"Thread[g[{1, 2}, {3, 4}, {5, 6}], List, 2]"#,
+      r#"{g[1, 3, {5, 6}], g[2, 4, {5, 6}]}"#,
+    );
+  }
+  // Thread[expr, h, {m, n}] threads over positions m through n.
+  #[test]
+  fn thread_positions_range() {
+    assert_case(
+      r#"Thread[f[{a, b}, {c, d}, {e, g}], List, {2, 3}]"#,
+      r#"{f[{a, b}, c, e], f[{a, b}, d, g]}"#,
+    );
+  }
   #[test]
   fn list_literal() {
     assert_case(

@@ -1126,6 +1126,17 @@ pub fn thread_ast(
   expr: &Expr,
   thread_head: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
+  thread_ast_positions(expr, thread_head, None)
+}
+
+/// Thread over the parts of `expr`. When `positions` is `Some`, only the
+/// arguments at those 1-based positions are threaded over; every other
+/// argument is held constant (the three-argument `Thread[expr, h, n]` form).
+pub fn thread_ast_positions(
+  expr: &Expr,
+  thread_head: Option<&str>,
+  positions: Option<&[usize]>,
+) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::FunctionCall { name, args } => {
       // Find which args contain the target head (List by default, or specified head)
@@ -1133,6 +1144,12 @@ pub fn thread_ast(
       let mut list_len: Option<usize> = None;
 
       for (i, arg) in args.iter().enumerate() {
+        // With an explicit position set, only thread over those positions.
+        if let Some(pos) = positions
+          && !pos.contains(&(i + 1))
+        {
+          continue;
+        }
         let matching_items: Option<&crate::ExprList> = match thread_head {
           None => {
             // Default: thread over List

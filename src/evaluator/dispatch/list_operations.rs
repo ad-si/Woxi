@@ -2391,6 +2391,77 @@ pub fn dispatch_list_operations(
         other => other,
       });
     }
+    // Thread[expr, h, n] / Thread[expr, h, {m, n}] — thread only over the
+    // given argument positions (n means positions 1 through n), holding the
+    // rest constant.
+    "Thread" if args.len() == 3 => {
+      let unevaluated = || {
+        Ok(Expr::FunctionCall {
+          name: "Thread".to_string(),
+          args: args.to_vec().into(),
+        })
+      };
+      let head = if let Expr::Identifier(h) = &args[1] {
+        Some(h.as_str())
+      } else {
+        None
+      };
+      // Parse the position spec into a 1-based range [lo, hi].
+      let range: Option<(usize, usize)> = match &args[2] {
+        Expr::Integer(n) if *n >= 1 => Some((1, *n as usize)),
+        Expr::List(items) if items.len() == 1 => match &items[0] {
+          Expr::Integer(n) if *n >= 1 => Some((*n as usize, *n as usize)),
+          _ => None,
+        },
+        Expr::List(items) if items.len() == 2 => {
+          match (&items[0], &items[1]) {
+            (Expr::Integer(m), Expr::Integer(n)) if *m >= 1 && *n >= *m => {
+              Some((*m as usize, *n as usize))
+            }
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      let Some((lo, hi)) = range else {
+        return Some(unevaluated());
+      };
+      let positions: Vec<usize> = (lo..=hi).collect();
+      // The positions must all exist among the expression's arguments.
+      let arg_count = match &args[0] {
+        Expr::FunctionCall { args: fargs, .. } => Some(fargs.len()),
+        _ => None,
+      };
+      if let Some(k) = arg_count
+        && hi > k
+      {
+        crate::emit_message(&format!(
+          "Thread::tpos: Cannot thread over positions {} through {} in {}.",
+          lo,
+          hi,
+          crate::syntax::expr_to_string(&args[0])
+        ));
+        return Some(unevaluated());
+      }
+      return Some(
+        match list_helpers_ast::thread_ast_positions(
+          &args[0],
+          head,
+          Some(&positions),
+        ) {
+          Err(InterpreterError::EvaluationError(msg))
+            if msg.contains("same length") =>
+          {
+            crate::emit_message(&format!(
+              "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
+              crate::syntax::expr_to_string(&args[0])
+            ));
+            Ok(args[0].clone())
+          }
+          other => other,
+        },
+      );
+    }
     "Through" if args.len() == 1 => {
       return Some(list_helpers_ast::through_ast(&args[0], None));
     }
