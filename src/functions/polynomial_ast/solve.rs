@@ -2646,11 +2646,22 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   if !matches!(trig_arg, Expr::Identifier(s) if s == var) {
     return None;
   }
-  // Constant rhs in {-1, 0, 1}.
-  let rhs_int = match rhs {
-    Expr::Integer(n) if matches!(*n, -1..=1) => *n,
-    _ => return None,
+  // Constant rhs. The simplified special forms below apply to Sin/Cos at
+  // {-1, 0, 1} and Tan/Cot at 0; every other numeric constant (including
+  // Tan/Cot at ±1) uses the general inverse-trig family.
+  let rhs_special = match (trig_name, rhs) {
+    ("Sin" | "Cos", Expr::Integer(n)) if matches!(*n, -1..=1) => Some(*n),
+    ("Tan" | "Cot", Expr::Integer(0)) => Some(0),
+    _ => None,
   };
+  if rhs_special.is_none() {
+    // General case: rhs must be a numeric constant, and within [-1, 1] for
+    // Sin/Cos (where the real inverse exists).
+    let c = crate::functions::math_ast::try_eval_to_f64(rhs)?;
+    if matches!(trig_name, "Sin" | "Cos") && c.abs() > 1.0 {
+      return None;
+    }
+  }
 
   let var_expr = Expr::Identifier(var.to_string());
   let pi = Expr::Constant("Pi".to_string());
@@ -2715,16 +2726,35 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     right: Box::new(b),
   };
 
-  let solutions: Vec<Expr> = match (trig_name, rhs_int) {
-    ("Sin", 0) => vec![two_pi_c1.clone(), plus(pi.clone(), two_pi_c1.clone())],
-    ("Sin", 1) => vec![plus(half_pi.clone(), two_pi_c1.clone())],
-    ("Sin", -1) => vec![plus(neg_half_pi.clone(), two_pi_c1.clone())],
-    ("Cos", 0) => vec![
+  // Evaluate an expression (simplifies e.g. ArcSin[1/2] → Pi/6).
+  let eval = |e: Expr| {
+    crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or_else(|_| e.clone())
+  };
+  let inverse = |head: &str| {
+    eval(Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![rhs.clone()].into(),
+    })
+  };
+  let negate = |e: Expr| {
+    eval(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(e),
+    })
+  };
+
+  let solutions: Vec<Expr> = match (trig_name, rhs_special) {
+    ("Sin", Some(0)) => {
+      vec![two_pi_c1.clone(), plus(pi.clone(), two_pi_c1.clone())]
+    }
+    ("Sin", Some(1)) => vec![plus(half_pi.clone(), two_pi_c1.clone())],
+    ("Sin", Some(-1)) => vec![plus(neg_half_pi.clone(), two_pi_c1.clone())],
+    ("Cos", Some(0)) => vec![
       plus(neg_half_pi.clone(), two_pi_c1.clone()),
       plus(half_pi.clone(), two_pi_c1.clone()),
     ],
-    ("Cos", 1) => vec![two_pi_c1.clone()],
-    ("Cos", -1) => {
+    ("Cos", Some(1)) => vec![two_pi_c1.clone()],
+    ("Cos", Some(-1)) => {
       // Wolframscript returns the two-solution list `{x -> -Pi + 2*Pi*C[1],
       // x -> Pi + 2*Pi*C[1]}` even though they coincide modulo 2*Pi.
       let neg_pi = Expr::UnaryOp {
@@ -2736,8 +2766,25 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
         plus(pi.clone(), two_pi_c1.clone()),
       ]
     }
-    ("Tan", 0) => vec![pi_c1.clone()],
-    ("Cot", 0) => vec![plus(half_pi.clone(), pi_c1.clone())],
+    ("Tan", Some(0)) => vec![pi_c1.clone()],
+    ("Cot", Some(0)) => vec![plus(half_pi.clone(), pi_c1.clone())],
+    // General numeric rhs c: x = ArcSin[c] + 2πC, Pi - ArcSin[c] + 2πC for
+    // Sin; -ArcCos[c] + 2πC, ArcCos[c] + 2πC for Cos; ArcTan[c] + πC for Tan.
+    ("Sin", None) => {
+      let a = inverse("ArcSin");
+      vec![
+        plus(a.clone(), two_pi_c1.clone()),
+        plus(eval(plus(pi.clone(), negate(a))), two_pi_c1.clone()),
+      ]
+    }
+    ("Cos", None) => {
+      let a = inverse("ArcCos");
+      vec![
+        plus(negate(a.clone()), two_pi_c1.clone()),
+        plus(a, two_pi_c1.clone()),
+      ]
+    }
+    ("Tan", None) => vec![plus(inverse("ArcTan"), pi_c1.clone())],
     _ => return None,
   };
 

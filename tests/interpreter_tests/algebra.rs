@@ -4178,6 +4178,53 @@ mod solve_periodic_bounded {
        {x -> ConditionalExpression[Pi + 2*Pi*C[1], Element[C[1], Integers]]}}"
     );
   }
+
+  // A non-special right-hand side uses the inverse-trig family, so a bounded
+  // interval still yields concrete solutions.
+  #[test]
+  fn cos_half_bounded() {
+    assert_eq!(
+      interpret("Solve[Cos[x] == 1/2 && 0 < x < 2 Pi, x]").unwrap(),
+      "{{x -> Pi/3}, {x -> (5*Pi)/3}}"
+    );
+  }
+
+  #[test]
+  fn sin_half_bounded() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == 1/2 && 0 < x < 2 Pi, x]").unwrap(),
+      "{{x -> Pi/6}, {x -> (5*Pi)/6}}"
+    );
+  }
+
+  // Tan has period Pi, so a 2-Pi interval gives two solutions.
+  #[test]
+  fn tan_one_bounded() {
+    assert_eq!(
+      interpret("Solve[Tan[x] == 1 && 0 < x < 2 Pi, x]").unwrap(),
+      "{{x -> Pi/4}, {x -> (5*Pi)/4}}"
+    );
+  }
+
+  // An exact irrational right-hand side also resolves.
+  #[test]
+  fn sin_sqrt2_over_2_bounded() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == Sqrt[2]/2 && 0 < x < 2 Pi, x]").unwrap(),
+      "{{x -> Pi/4}, {x -> (3*Pi)/4}}"
+    );
+  }
+
+  // The unbounded general family matches wolframscript's two branches.
+  #[test]
+  fn cos_half_unbounded_family() {
+    assert_eq!(
+      interpret("Solve[Cos[x] == 1/2, x]").unwrap(),
+      "{{x -> ConditionalExpression[-1/3*Pi + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[Pi/3 + 2*Pi*C[1], \
+       Element[C[1], Integers]]}}"
+    );
+  }
 }
 
 mod solve_always {
