@@ -4455,6 +4455,23 @@ mod random_variate {
     );
   }
 
+  // A zero count yields an empty list for any distribution.
+  #[test]
+  fn zero_count_is_empty() {
+    assert_eq!(
+      interpret("RandomVariate[NormalDistribution[], 0]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("RandomVariate[BinomialDistribution[10, 1/2], 0]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("RandomVariate[PoissonDistribution[3], 0]").unwrap(),
+      "{}"
+    );
+  }
+
   #[test]
   fn uniform_values_in_range() {
     assert_eq!(

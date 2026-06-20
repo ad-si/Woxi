@@ -985,6 +985,8 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let dist = &args[0];
   let n = if args.len() == 2 {
     match &args[1] {
+      // A zero count yields an empty list (matching wolframscript).
+      Expr::Integer(0) => return Ok(Expr::List(vec![].into())),
       Expr::Integer(n) if *n > 0 => Some(*n as usize),
       _ => {
         return Err(InterpreterError::EvaluationError(
