@@ -1044,7 +1044,10 @@ mod total {
   // Total of a SparseArray sums its dense form.
   #[test]
   fn total_sparse_array() {
-    assert_eq!(interpret("Total[SparseArray[{1 -> 2, 3 -> 4}, 5]]").unwrap(), "6");
+    assert_eq!(
+      interpret("Total[SparseArray[{1 -> 2, 3 -> 4}, 5]]").unwrap(),
+      "6"
+    );
     assert_eq!(
       interpret("Total[SparseArray[{{1, 1} -> 1, {2, 2} -> 2}, {2, 2}]]")
         .unwrap(),

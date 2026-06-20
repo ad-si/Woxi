@@ -6597,6 +6597,31 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // GraphPower[g, k] connects vertices within graph distance k.
+  #[test]
+  fn graph_power_cycle() {
+    // The square of a 5-cycle is the complete graph K5 (10 edges).
+    assert_eq!(
+      interpret("EdgeCount[GraphPower[CycleGraph[5], 2]]").unwrap(),
+      "10"
+    );
+  }
+  #[test]
+  fn graph_power_path_edge_count() {
+    assert_eq!(
+      interpret("EdgeCount[GraphPower[PathGraph[{1, 2, 3, 4}], 2]]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("EdgeCount[GraphPower[PathGraph[{1, 2, 3, 4}], 3]]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("VertexCount[GraphPower[CycleGraph[5], 2]]").unwrap(),
+      "5"
+    );
+  }
+
   // VertexOutComponent
   #[test]
   fn vertex_out_component_star() {

@@ -5377,6 +5377,70 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // GraphPower[graph, k] — connect every pair of distinct vertices whose
+  // graph distance is at most k. Edges are listed in vertex-index order.
+  if name == "GraphPower"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    && let Some(k) = expr_to_i128(&args[1])
+    && k >= 1
+  {
+    let n = vertices.len();
+    let vertex_strs: Vec<String> =
+      vertices.iter().map(expr_to_string).collect();
+    // Index-based adjacency from the edge list.
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for edge in edges {
+      if let Expr::FunctionCall { args: eargs, .. } = edge
+        && eargs.len() == 2
+        && let (Some(a), Some(b)) = (
+          vertex_strs.iter().position(|v| v == &expr_to_string(&eargs[0])),
+          vertex_strs.iter().position(|v| v == &expr_to_string(&eargs[1])),
+        )
+      {
+        adj[a].push(b);
+        adj[b].push(a);
+      }
+    }
+    // BFS distance from each source, then connect pairs within distance k.
+    let mut power_edges = Vec::new();
+    for i in 0..n {
+      let mut dist = vec![usize::MAX; n];
+      dist[i] = 0;
+      let mut queue = std::collections::VecDeque::from([i]);
+      while let Some(u) = queue.pop_front() {
+        for &w in &adj[u] {
+          if dist[w] == usize::MAX {
+            dist[w] = dist[u] + 1;
+            queue.push_back(w);
+          }
+        }
+      }
+      for j in (i + 1)..n {
+        if dist[j] != usize::MAX && (dist[j] as i128) <= k {
+          power_edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![vertices[i].clone(), vertices[j].clone()].into(),
+          });
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![
+        Expr::List(vertices.clone()),
+        Expr::List(power_edges.into()),
+      ]
+      .into(),
+    });
+  }
+
   // VertexOutComponent[graph, v] — vertices reachable from v
   if name == "VertexOutComponent"
     && args.len() == 2
