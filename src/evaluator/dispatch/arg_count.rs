@@ -322,7 +322,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DSolve" => Some((3, 3)),
     "DSolveValue" => Some((3, 3)),
     "Dt" => Some((1, 2)),
-    "DuplicateFreeQ" => Some((1, 1)),
+    "DuplicateFreeQ" => Some((1, 2)),
     "Echo" => Some((1, 3)),
     "EdgeDetect" => Some((1, 3)),
     "DamerauLevenshteinDistance" => Some((2, 3)),

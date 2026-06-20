@@ -2204,6 +2204,30 @@ mod batch_unevaluated_wrappers_2 {
   fn duplicate_free_q_empty() {
     assert_eq!(interpret("DuplicateFreeQ[{}]").unwrap(), "True");
   }
+  // DuplicateFreeQ[list, test]: True iff no pair i<j has test[e_i, e_j] True.
+  #[test]
+  fn duplicate_free_q_with_test() {
+    assert_eq!(
+      interpret("DuplicateFreeQ[{1, 2, 3}, Greater]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DuplicateFreeQ[{3, 2, 1}, Greater]").unwrap(),
+      "False"
+    );
+    // Custom equivalence: 1 and -1 collide under Abs.
+    assert_eq!(
+      interpret("DuplicateFreeQ[{1, -1, 2}, Abs[#1] == Abs[#2] &]").unwrap(),
+      "False"
+    );
+    // Parity equivalence: 1 and 3 collide.
+    assert_eq!(
+      interpret("DuplicateFreeQ[{1, 3, 5}, Mod[#1, 2] == Mod[#2, 2] &]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("DuplicateFreeQ[{5}, Greater]").unwrap(), "True");
+  }
 
   // ─── Unevaluated batch 10 ─────────────────────────────────────────
   #[test]

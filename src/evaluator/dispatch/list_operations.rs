@@ -508,6 +508,25 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::Identifier("True".to_string())));
       }
     }
+    // DuplicateFreeQ[list, test] — True iff no two elements are equivalent
+    // under `test`, i.e. test[e_i, e_j] is never True for any pair i < j.
+    "DuplicateFreeQ" if args.len() == 2 => {
+      if let Expr::List(items) = &args[0] {
+        let test = &args[1];
+        for i in 0..items.len() {
+          for j in (i + 1)..items.len() {
+            let res =
+              crate::functions::list_helpers_ast::apply_func_to_two_args(
+                test, &items[i], &items[j],
+              );
+            if matches!(res, Ok(Expr::Identifier(ref s)) if s == "True") {
+              return Some(Ok(Expr::Identifier("False".to_string())));
+            }
+          }
+        }
+        return Some(Ok(Expr::Identifier("True".to_string())));
+      }
+    }
     "TakeList" if args.len() == 2 => {
       // Pull the children of args[0] and remember its head so each sublist
       // can be wrapped in the same head (List or any other symbol).
