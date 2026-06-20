@@ -7159,6 +7159,29 @@ mod batch_unevaluated_wrappers_2 {
       "TreeSelect[5, EvenQ]"
     );
   }
+  // TreeLeafQ[x]: True iff x is a leaf Tree[data, None], else False.
+  #[test]
+  fn tree_leaf_q() {
+    // A leaf.
+    assert_eq!(interpret("TreeLeafQ[Tree[5, None]]").unwrap(), "True");
+    assert_eq!(interpret("TreeLeafQ[Tree[x, None]]").unwrap(), "True");
+    // Inner nodes are not leaves.
+    assert_eq!(
+      interpret("TreeLeafQ[Tree[1, {Tree[2, {4, 5}], 3}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("TreeLeafQ[Tree[2, {4, 5}]]").unwrap(), "False");
+    // An empty children list is still not a leaf (only None is).
+    assert_eq!(interpret("TreeLeafQ[Tree[5, {}]]").unwrap(), "False");
+    // A non-tree is simply False (no message, not unevaluated).
+    assert_eq!(interpret("TreeLeafQ[5]").unwrap(), "False");
+    // It composes as a TreeSelect criterion.
+    assert_eq!(
+      interpret("TreeSelect[Tree[1, {Tree[2, {4, 5}], 3}], TreeLeafQ]")
+        .unwrap(),
+      "{Tree[4, None], Tree[5, None], Tree[3, None]}"
+    );
+  }
 
   // VertexOutComponent
   #[test]

@@ -2843,6 +2843,15 @@ pub fn dispatch_list_operations(
         args: args.to_vec().into(),
       }));
     }
+    // TreeLeafQ[x]: True iff x is a leaf Tree[data, None]; False otherwise
+    // (including non-trees and trees with a children list). No ::tree message.
+    "TreeLeafQ" if args.len() == 1 => {
+      let is_leaf = matches!(&args[0], Expr::FunctionCall { name: tn, args: ta }
+        if tn == "Tree"
+          && ta.len() == 2
+          && matches!(&ta[1], Expr::Identifier(s) if s == "None"));
+      return Some(Ok(bool_ident(is_leaf)));
+    }
     // Structural recursions over a canonical Tree. Each emits ::tree and stays
     // unevaluated when given a non-tree (matching TreeData/TreeChildren).
     "TreeDepth" | "TreeLeafCount" | "TreeSize" if args.len() == 1 => {
