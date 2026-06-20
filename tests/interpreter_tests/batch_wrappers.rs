@@ -4628,6 +4628,15 @@ mod batch_unevaluated_wrappers_2 {
       "<|1 -> c, 2 -> b, 10 -> a|>"
     );
   }
+  // Equal sort keys are broken by the canonical order of the key itself
+  // (like SortBy), not by the association's original order.
+  #[test]
+  fn key_sort_by_tie_breaks_on_key() {
+    assert_eq!(
+      interpret("KeySortBy[<|3 -> a, 1 -> b, 2 -> c|>, Mod[#, 2] &]").unwrap(),
+      "<|2 -> c, 1 -> b, 3 -> a|>"
+    );
+  }
   #[test]
   fn max_filter_basic() {
     assert_eq!(

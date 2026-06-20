@@ -4004,14 +4004,19 @@ pub fn dispatch_list_operations(
             apply(func, k).unwrap_or_else(|_| k.clone())
           }
         };
-        let mut indexed: Vec<(usize, Expr)> = pairs
+        // Sort by the computed key, breaking ties by the canonical order of
+        // the key itself (matching SortBy, which orders by {f[x], x}).
+        let mut indexed: Vec<(usize, Expr, Expr)> = pairs
           .iter()
           .enumerate()
-          .map(|(i, (k, _))| (i, key_of(k)))
+          .map(|(i, (k, _))| (i, key_of(k), k.clone()))
           .collect();
-        indexed.sort_by(|a, b| list_helpers_ast::canonical_cmp(&a.1, &b.1));
+        indexed.sort_by(|a, b| {
+          list_helpers_ast::canonical_cmp(&a.1, &b.1)
+            .then_with(|| list_helpers_ast::canonical_cmp(&a.2, &b.2))
+        });
         let sorted_pairs: Vec<(Expr, Expr)> =
-          indexed.iter().map(|(i, _)| pairs[*i].clone()).collect();
+          indexed.iter().map(|(i, _, _)| pairs[*i].clone()).collect();
         return Some(Ok(Expr::Association(sorted_pairs)));
       }
     }
