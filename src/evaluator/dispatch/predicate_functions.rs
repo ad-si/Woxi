@@ -250,6 +250,18 @@ pub fn dispatch_predicate_functions(
         if is_missing { "True" } else { "False" }.to_string(),
       )));
     }
+    // FailureQ[expr] is True for $Failed, $Aborted, and Failure[...] objects
+    // (note: Missing[...] is NOT a failure).
+    "FailureQ" if args.len() == 1 => {
+      let is_failure = match &args[0] {
+        Expr::Identifier(s) => s == "$Failed" || s == "$Aborted",
+        Expr::FunctionCall { name, .. } => name == "Failure",
+        _ => false,
+      };
+      return Some(Ok(Expr::Identifier(
+        if is_failure { "True" } else { "False" }.to_string(),
+      )));
+    }
     "ColorQ" if args.len() == 1 => {
       let is_color = match &args[0] {
         Expr::FunctionCall { name, .. } => matches!(

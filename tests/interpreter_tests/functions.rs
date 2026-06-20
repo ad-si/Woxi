@@ -840,6 +840,46 @@ mod missing_q {
   }
 }
 
+mod failure_q {
+  use super::*;
+
+  // $Failed and $Aborted are failure indicators.
+  #[test]
+  fn failed_and_aborted_are_true() {
+    assert_eq!(interpret("FailureQ[$Failed]").unwrap(), "True");
+    assert_eq!(interpret("FailureQ[$Aborted]").unwrap(), "True");
+  }
+
+  // Any Failure[...] object is a failure, including the bare head.
+  #[test]
+  fn failure_object_is_true() {
+    assert_eq!(
+      interpret("FailureQ[Failure[\"err\", <||>]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("FailureQ[Failure[]]").unwrap(), "True");
+  }
+
+  // Missing[...] is explicitly NOT a failure.
+  #[test]
+  fn missing_is_false() {
+    assert_eq!(interpret("FailureQ[Missing[]]").unwrap(), "False");
+    assert_eq!(
+      interpret("FailureQ[Missing[\"NotFound\"]]").unwrap(),
+      "False"
+    );
+  }
+
+  // Other indicators and ordinary values are not failures.
+  #[test]
+  fn other_values_are_false() {
+    assert_eq!(interpret("FailureQ[$Canceled]").unwrap(), "False");
+    assert_eq!(interpret("FailureQ[5]").unwrap(), "False");
+    assert_eq!(interpret("FailureQ[\"string\"]").unwrap(), "False");
+    assert_eq!(interpret("FailureQ[{1, 2, 3}]").unwrap(), "False");
+  }
+}
+
 mod hilbert_matrix {
   use super::*;
 

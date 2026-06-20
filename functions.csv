@@ -3529,7 +3529,7 @@ ColorBalance,,🚫,,10.2,3636
 CompoundPoissonDistribution,,,,9.0,3636
 DoubleLeftRightArrow,,,,3.0,3636
 EvaluationData,,🚫,,10.0,3636
-FailureQ,,,,10.2,3636
+FailureQ,Tests whether an expression is a failure object such as $Failed or Failure[...],✅,pure,10.2,3636
 HessenbergDecomposition,,,,5.1,3636
 InitializationValue,,🚫,,11.2,3636
 InverseRadon,,,,8.0,3636
