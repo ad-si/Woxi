@@ -2309,6 +2309,49 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(rows.into())));
       }
     }
+    // ScalingMatrix[s, v] — scale by factor s along the direction of v, leaving
+    // the orthogonal complement fixed: M = I + (s-1)/(v.v) (v outer v).
+    "ScalingMatrix" if args.len() == 2 => {
+      if let Expr::List(v) = &args[1]
+        && !v.is_empty()
+      {
+        let times = |xs: Vec<Expr>| Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: xs.into(),
+        };
+        let plus = |xs: Vec<Expr>| Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: xs.into(),
+        };
+        let sq = |a: Expr| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![a, Expr::Integer(2)].into(),
+        };
+        let vdotv = plus(v.iter().cloned().map(sq).collect());
+        let s_minus_1 = plus(vec![args[0].clone(), Expr::Integer(-1)]);
+        let inv = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![vdotv, Expr::Integer(-1)].into(),
+        };
+        let factor = times(vec![s_minus_1, inv]);
+        let n = v.len();
+        let rows: Vec<Expr> = (0..n)
+          .map(|i| {
+            Expr::List(
+              (0..n)
+                .map(|j| {
+                  let delta = Expr::Integer(i128::from(i == j));
+                  let off =
+                    times(vec![factor.clone(), v[i].clone(), v[j].clone()]);
+                  plus(vec![delta, off])
+                })
+                .collect(),
+            )
+          })
+          .collect();
+        return Some(evaluate_expr_to_expr(&Expr::List(rows.into())));
+      }
+    }
     // CrossMatrix[r] / CrossMatrix[{r1, …, rn}] — the n-dimensional "cross"
     // structuring element (the morphology kernel). A scalar r is the 2D cross
     // of radius r in both directions. Each entry is 1 when at most one

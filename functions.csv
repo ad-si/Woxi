@@ -3342,7 +3342,7 @@ NevilleThetaS,,,,3.0,3427
 NextCell,,,,10.0,3427
 PairedTTest,,,,8.0,3427
 PointFigureChart,,🚫,,8.0,3427
-ScalingMatrix,Diagonal scaling matrix,✅,none,6.0,3427
+ScalingMatrix,Scaling matrix from a list of factors (diagonal) or a factor and a direction vector,✅,pure,6.0,3427
 SignedRankTest,,,,8.0,3427
 ThueMorse,,,,10.2,3427
 VertexQ,,,,8.0,3427

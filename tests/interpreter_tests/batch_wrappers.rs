@@ -5419,6 +5419,34 @@ mod batch_unevaluated_wrappers_2 {
       "{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}"
     );
   }
+  // ScalingMatrix[s, v] scales by s along v and fixes the complement.
+  #[test]
+  fn scaling_matrix_directional() {
+    // Along an axis it reduces to a single scaled diagonal entry.
+    assert_eq!(
+      interpret("ScalingMatrix[2, {1, 0}]").unwrap(),
+      "{{2, 0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("ScalingMatrix[2, {0, 0, 1}]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 2}}"
+    );
+    // Along a diagonal direction the off-diagonal terms appear.
+    assert_eq!(
+      interpret("ScalingMatrix[3, {1, 1}]").unwrap(),
+      "{{2, 1}, {1, 2}}"
+    );
+    // A non-unit direction keeps exact rationals.
+    assert_eq!(
+      interpret("ScalingMatrix[2, {3, 4}]").unwrap(),
+      "{{34/25, 12/25}, {12/25, 41/25}}"
+    );
+    // A symbolic factor is preserved.
+    assert_eq!(
+      interpret("ScalingMatrix[s, {1, 0}]").unwrap(),
+      "{{s, 0}, {0, 1}}"
+    );
+  }
 
   // ReverseSortBy
   #[test]

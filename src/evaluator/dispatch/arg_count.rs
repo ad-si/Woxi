@@ -1032,7 +1032,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Save" => Some((2, 2)),
     "SawtoothWave" => Some((1, 2)),
     "ScalarTripleProduct" => Some((3, 3)),
-    "ScalingMatrix" => Some((1, 1)),
+    "ScalingMatrix" => Some((1, 2)),
     "ScalingTransform" => Some((1, 2)),
     "ReflectionTransform" => Some((1, 2)),
     "ShearingTransform" => Some((3, 3)),
