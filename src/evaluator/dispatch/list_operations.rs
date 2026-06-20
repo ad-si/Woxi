@@ -4,6 +4,41 @@ use crate::functions::list_helpers_ast;
 
 /// Parse the `m` argument of NestWhile[f, x, test, m, ...]. Returns `All` for
 /// the symbol `All`, `Last(n)` for a positive integer, and `None` otherwise.
+/// Extract the function `f` from a `SameTest -> f` option, given as either a
+/// bare `SameTest -> f` rule or a singleton list `{SameTest -> f}`.
+fn same_test_option(opt: &Expr) -> Option<&Expr> {
+  let rule = match opt {
+    Expr::List(items) if items.len() == 1 => &items[0],
+    other => other,
+  };
+  match rule {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SameTest") => {
+      Some(replacement)
+    }
+    _ => None,
+  }
+}
+
+/// Whether `test[a, b]` evaluates to `True`.
+fn same_test_true(test: &Expr, a: &Expr, b: &Expr) -> bool {
+  matches!(
+    list_helpers_ast::apply_func_to_two_args(test, a, b),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  )
+}
+
+/// Build the `True`/`False` symbol from a boolean.
+fn bool_ident(b: bool) -> Expr {
+  Expr::Identifier(if b { "True" } else { "False" }.to_string())
+}
+
 fn parse_nest_while_m(expr: &Expr) -> Option<list_helpers_ast::NestWhileM> {
   match expr {
     Expr::Identifier(s) if s == "All" => {
@@ -2568,47 +2603,95 @@ pub fn dispatch_list_operations(
         &args[0], &args[1],
       ));
     }
-    "ContainsAny" if args.len() == 2 => {
+    // ContainsAny[a, b] — some element of b is in a. With SameTest -> f,
+    // membership uses f[a_elem, b_elem].
+    "ContainsAny" if args.len() == 2 || args.len() == 3 => {
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
+        if let Some(opt) = args.get(2) {
+          let Some(test) = same_test_option(opt) else {
+            return Some(Ok(Expr::FunctionCall {
+              name: "ContainsAny".to_string(),
+              args: args.to_vec().into(),
+            }));
+          };
+          let result = list2
+            .iter()
+            .any(|y| list1.iter().any(|x| same_test_true(test, x, y)));
+          return Some(Ok(bool_ident(result)));
+        }
         let set1: std::collections::HashSet<String> =
           list1.iter().map(expr_to_string).collect();
         let result = list2.iter().any(|x| set1.contains(&expr_to_string(x)));
-        return Some(Ok(Expr::Identifier(
-          if result { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_ident(result)));
       }
     }
-    "ContainsAll" if args.len() == 2 => {
+    // ContainsAll[a, b] — every element of b is in a.
+    "ContainsAll" if args.len() == 2 || args.len() == 3 => {
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
+        if let Some(opt) = args.get(2) {
+          let Some(test) = same_test_option(opt) else {
+            return Some(Ok(Expr::FunctionCall {
+              name: "ContainsAll".to_string(),
+              args: args.to_vec().into(),
+            }));
+          };
+          let result = list2
+            .iter()
+            .all(|y| list1.iter().any(|x| same_test_true(test, x, y)));
+          return Some(Ok(bool_ident(result)));
+        }
         let set1: std::collections::HashSet<String> =
           list1.iter().map(expr_to_string).collect();
         let result = list2.iter().all(|x| set1.contains(&expr_to_string(x)));
-        return Some(Ok(Expr::Identifier(
-          if result { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_ident(result)));
       }
     }
-    "ContainsNone" if args.len() == 2 => {
+    // ContainsNone[a, b] — no element of b is in a.
+    "ContainsNone" if args.len() == 2 || args.len() == 3 => {
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
+        if let Some(opt) = args.get(2) {
+          let Some(test) = same_test_option(opt) else {
+            return Some(Ok(Expr::FunctionCall {
+              name: "ContainsNone".to_string(),
+              args: args.to_vec().into(),
+            }));
+          };
+          let result = !list2
+            .iter()
+            .any(|y| list1.iter().any(|x| same_test_true(test, x, y)));
+          return Some(Ok(bool_ident(result)));
+        }
         let set1: std::collections::HashSet<String> =
           list1.iter().map(expr_to_string).collect();
         let result = !list2.iter().any(|x| set1.contains(&expr_to_string(x)));
-        return Some(Ok(Expr::Identifier(
-          if result { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_ident(result)));
       }
     }
-    // ContainsExactly[list1, list2] — True if the two Lists contain
-    // exactly the same elements as sets (duplicates ignored).
-    "ContainsExactly" if args.len() == 2 => {
+    // ContainsExactly[list1, list2] — True if the two Lists contain exactly
+    // the same elements as sets (duplicates ignored). With SameTest -> f
+    // this is ContainsAll[a, b] && ContainsOnly[a, b] under f[a_elem, b_elem].
+    "ContainsExactly" if args.len() == 2 || args.len() == 3 => {
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
+        if let Some(opt) = args.get(2) {
+          let Some(test) = same_test_option(opt) else {
+            return Some(Ok(Expr::FunctionCall {
+              name: "ContainsExactly".to_string(),
+              args: args.to_vec().into(),
+            }));
+          };
+          let all = list2
+            .iter()
+            .all(|y| list1.iter().any(|x| same_test_true(test, x, y)));
+          let only = list1
+            .iter()
+            .all(|x| list2.iter().any(|y| same_test_true(test, x, y)));
+          return Some(Ok(bool_ident(all && only)));
+        }
         let set1: std::collections::HashSet<String> =
           list1.iter().map(expr_to_string).collect();
         let set2: std::collections::HashSet<String> =
           list2.iter().map(expr_to_string).collect();
-        return Some(Ok(Expr::Identifier(
-          if set1 == set2 { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_ident(set1 == set2)));
       }
     }
     // ContainsExactly[list2] — operator form, returns a callable.

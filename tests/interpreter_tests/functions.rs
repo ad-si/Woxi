@@ -784,6 +784,43 @@ mod contains_all {
   fn empty_subset() {
     assert_eq!(interpret("ContainsAll[{1, 2, 3}, {}]").unwrap(), "True");
   }
+
+  // The Contains* family accepts a SameTest -> f option, applied as
+  // f[a_elem, b_elem].
+  #[test]
+  fn contains_same_test() {
+    assert_eq!(
+      interpret("ContainsAll[{1, 2, 3}, {1, 2}, SameTest -> Equal]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsAll[{1, 2, 3}, {1, 5}, SameTest -> Equal]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("ContainsAny[{1, 2, 3}, {5, 2}, SameTest -> Equal]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsNone[{1, 2, 3}, {5, 6}, SameTest -> Equal]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsExactly[{1, 2}, {2, 1}, SameTest -> Equal]")
+        .unwrap(),
+      "True"
+    );
+    // Asymmetric test confirms the f[a, b] argument order.
+    assert_eq!(
+      interpret("ContainsAll[{5}, {3}, SameTest -> Greater]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsAny[{3}, {5}, SameTest -> Greater]").unwrap(),
+      "False"
+    );
+  }
 }
 
 mod missing_q {
