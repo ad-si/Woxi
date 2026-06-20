@@ -1910,6 +1910,35 @@ mod ring_operators {
       "a \u{00B7} b \u{2297} c"
     );
   }
+
+  // \[CircleMinus] is a binary (non-flat), left-associative operator at the
+  // same precedence as \[CirclePlus].
+  #[test]
+  fn circle_minus_operator() {
+    assert_eq!(interpret(r#"a \[CircleMinus] b"#).unwrap(), "a \u{2296} b");
+    assert_eq!(
+      interpret(r#"Head[a \[CircleMinus] b]"#).unwrap(),
+      "CircleMinus"
+    );
+    // Binary, not flat: a ⊖ b ⊖ c is CircleMinus[CircleMinus[a, b], c].
+    assert_eq!(
+      interpret(r#"Length[a \[CircleMinus] b \[CircleMinus] c]"#).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(r#"a \[CircleMinus] b \[CircleMinus] c"#).unwrap(),
+      "a \u{2296} b \u{2296} c"
+    );
+    // Binds tighter than Plus, looser than Times.
+    assert_eq!(
+      interpret(r#"Head[a + b \[CircleMinus] c]"#).unwrap(),
+      "Plus"
+    );
+    assert_eq!(
+      interpret(r#"Head[a \[CircleMinus] b * c]"#).unwrap(),
+      "CircleMinus"
+    );
+  }
 }
 
 mod wedge {

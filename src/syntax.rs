@@ -4833,6 +4833,7 @@ fn operator_precedence(op: &str) -> u8 {
     // Symbolic ring operators, ordered to match wolframscript:
     // Dot > CircleTimes > CenterDot > Times > … > CirclePlus > Plus.
     "\\[CirclePlus]" | "\u{2295}" => 31, // between Plus and Times
+    "\\[CircleMinus]" | "\u{2296}" => 31, // same level as CirclePlus
     "\\[CenterDot]" | "\u{00B7}" => 34,  // just above Times
     "\\[CircleTimes]" | "\u{2297}" => 35, // above CenterDot, below Dot
     "." => 36,                           // Dot (higher than arithmetic)
@@ -5114,6 +5115,11 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     "\\[CirclePlus]" | "\u{2295}" => build_flat_op("CirclePlus", left, right),
     "\\[CircleTimes]" | "\u{2297}" => build_flat_op("CircleTimes", left, right),
     "\\[CenterDot]" | "\u{00B7}" => build_flat_op("CenterDot", left, right),
+    // CircleMinus is binary (not flat): a ⊖ b ⊖ c -> CircleMinus[(a ⊖ b), c].
+    "\\[CircleMinus]" | "\u{2296}" => Expr::FunctionCall {
+      name: "CircleMinus".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => {
       // Cross is Flat/associative — flatten chains: a ⨯ b ⨯ c → Cross[a, b, c].
       let mut parts = Vec::new();
