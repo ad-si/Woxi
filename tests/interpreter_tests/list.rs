@@ -550,6 +550,19 @@ mod outer_extended {
     );
   }
 
+  // A bare Band rule (not wrapped in a rule list) is also accepted.
+  #[test]
+  fn sparse_array_bare_band_rule() {
+    assert_eq!(
+      interpret("Normal[SparseArray[Band[{1, 1}] -> 1, {3, 3}]]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[Band[{2, 1}] -> 9, {3, 3}]]").unwrap(),
+      "{{0, 0, 0}, {9, 0, 0}, {0, 9, 0}}"
+    );
+  }
+
   // A Band starting below the main diagonal fills the subdiagonal until
   // it hits either edge. Multiple Band rules combine.
   #[test]

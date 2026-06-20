@@ -797,7 +797,10 @@ mod region_embedding_dimension {
       "2"
     );
     assert_eq!(interpret("RegionEmbeddingDimension[Ball[]]").unwrap(), "3");
-    assert_eq!(interpret("RegionEmbeddingDimension[Cuboid[]]").unwrap(), "3");
+    assert_eq!(
+      interpret("RegionEmbeddingDimension[Cuboid[]]").unwrap(),
+      "3"
+    );
     // Sphere is a 2-D surface embedded in 3-space.
     assert_eq!(
       interpret("RegionEmbeddingDimension[Sphere[{0, 0, 0}, 1]]").unwrap(),

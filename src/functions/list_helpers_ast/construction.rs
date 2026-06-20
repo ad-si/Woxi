@@ -1738,14 +1738,17 @@ fn parse_sparse_dims(expr: &Expr) -> Option<Vec<usize>> {
 /// when nothing in `data` references Band (so the caller can use the
 /// original expression).
 fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
-  let Expr::List(items) = data else {
-    return None;
-  };
-  let has_band = items.iter().any(|it| {
+  let is_band_rule = |it: &Expr| {
     matches!(it, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::FunctionCall { name, .. } if name == "Band"))
-  });
-  if !has_band {
+  };
+  // Accept either a list of rules or a single bare `Band[...] -> v` rule.
+  let items: Vec<Expr> = match data {
+    Expr::List(items) => items.to_vec(),
+    rule if is_band_rule(rule) => vec![rule.clone()],
+    _ => return None,
+  };
+  if !items.iter().any(is_band_rule) {
     return None;
   }
   let mut expanded: Vec<Expr> = Vec::with_capacity(items.len());
