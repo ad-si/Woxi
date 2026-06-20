@@ -2580,6 +2580,211 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             })
           })
         }
+        // PolyGamma[z] = PolyGamma[0, z] (digamma): D = PolyGamma[1, z] z'
+        "PolyGamma" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let g = Expr::FunctionCall {
+            name: "PolyGamma".to_string(),
+            args: vec![Expr::Integer(1), args[0].clone()].into(),
+          };
+          Ok(if matches!(dz, Expr::Integer(1)) {
+            simplify(g)
+          } else {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(g),
+            })
+          })
+        }
+        // PolyGamma[n, z], n free of var: D[PolyGamma[n, z], z] =
+        //   PolyGamma[n + 1, z] z'. When n depends on var there is no
+        //   elementary form, so this arm only matches for constant n.
+        "PolyGamma" if args.len() == 2 && is_constant_wrt(&args[0], var) => {
+          let dz = differentiate(&args[1], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          // n + 1, canonically ordered (1 + n for symbolic n, k+1 for integer k)
+          let n_plus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(1),
+            args[0].clone(),
+          ])
+          .unwrap_or_else(|_| {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(args[0].clone()),
+              right: Box::new(Expr::Integer(1)),
+            })
+          });
+          let g = Expr::FunctionCall {
+            name: "PolyGamma".to_string(),
+            args: vec![n_plus_1, args[1].clone()].into(),
+          };
+          Ok(if matches!(dz, Expr::Integer(1)) {
+            simplify(g)
+          } else {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(g),
+            })
+          })
+        }
+        // Beta[z, a, b] (incomplete Beta), a and b free of var:
+        //   D[Beta[z, a, b], z] = z^(a-1) (1-z)^(b-1) z'
+        "Beta"
+          if args.len() == 3
+            && is_constant_wrt(&args[1], var)
+            && is_constant_wrt(&args[2], var) =>
+        {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let z = &args[0];
+          // z^(a-1)
+          let a_minus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(-1),
+            args[1].clone(),
+          ])
+          .unwrap_or_else(|_| args[1].clone());
+          let z_pow = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(z.clone()),
+            right: Box::new(a_minus_1),
+          };
+          // (1-z)^(b-1)
+          let b_minus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(-1),
+            args[2].clone(),
+          ])
+          .unwrap_or_else(|_| args[2].clone());
+          let one_minus_z = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(z.clone()),
+          });
+          let omz_pow = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(one_minus_z),
+            right: Box::new(b_minus_1),
+          };
+          // Wolfram orders the (1-z) factor before the z factor; build the
+          // product directly in that order rather than through the canonical
+          // Times sorter (which would put the bare-symbol power first).
+          let g = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(omz_pow),
+            right: Box::new(z_pow),
+          };
+          Ok(if matches!(dz, Expr::Integer(1)) {
+            g
+          } else {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(g),
+            })
+          })
+        }
+        // Hypergeometric1F1[a, b, z], a and b free of var:
+        //   D = (a/b) Hypergeometric1F1[a+1, b+1, z] z'
+        "Hypergeometric1F1"
+          if args.len() == 3
+            && is_constant_wrt(&args[0], var)
+            && is_constant_wrt(&args[1], var) =>
+        {
+          let dz = differentiate(&args[2], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let a_plus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(1),
+            args[0].clone(),
+          ])
+          .unwrap_or_else(|_| args[0].clone());
+          let b_plus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(1),
+            args[1].clone(),
+          ])
+          .unwrap_or_else(|_| args[1].clone());
+          let f = Expr::FunctionCall {
+            name: "Hypergeometric1F1".to_string(),
+            args: vec![a_plus_1, b_plus_1, args[2].clone()].into(),
+          };
+          // (a * F) / b
+          let g = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![args[0].clone(), f].into(),
+            }),
+            right: Box::new(args[1].clone()),
+          });
+          Ok(if matches!(dz, Expr::Integer(1)) {
+            g
+          } else {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(g),
+            })
+          })
+        }
+        // Hypergeometric2F1[a, b, c, z], a, b, c free of var:
+        //   D = (a b / c) Hypergeometric2F1[a+1, b+1, c+1, z] z'
+        "Hypergeometric2F1"
+          if args.len() == 4
+            && is_constant_wrt(&args[0], var)
+            && is_constant_wrt(&args[1], var)
+            && is_constant_wrt(&args[2], var) =>
+        {
+          let dz = differentiate(&args[3], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let a_plus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(1),
+            args[0].clone(),
+          ])
+          .unwrap_or_else(|_| args[0].clone());
+          let b_plus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(1),
+            args[1].clone(),
+          ])
+          .unwrap_or_else(|_| args[1].clone());
+          let c_plus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(1),
+            args[2].clone(),
+          ])
+          .unwrap_or_else(|_| args[2].clone());
+          let f = Expr::FunctionCall {
+            name: "Hypergeometric2F1".to_string(),
+            args: vec![a_plus_1, b_plus_1, c_plus_1, args[3].clone()].into(),
+          };
+          // (a * b * F) / c
+          let g = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![args[0].clone(), args[1].clone(), f].into(),
+            }),
+            right: Box::new(args[2].clone()),
+          });
+          Ok(if matches!(dz, Expr::Integer(1)) {
+            g
+          } else {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(g),
+            })
+          })
+        }
         // InverseErf[z]:  D = (Sqrt[Pi]/2) E^(InverseErf[z]^2) z'
         // InverseErfc[z]: D = -(Sqrt[Pi]/2) E^(InverseErfc[z]^2) z'
         "InverseErf" | "InverseErfc" if args.len() == 1 => {

@@ -3406,6 +3406,67 @@ mod erf {
     assert_eq!(interpret("D[LogIntegral[2 x], x]").unwrap(), "2/Log[2*x]");
   }
 
+  // PolyGamma[n, z]:  D[PolyGamma[n, z], z] = PolyGamma[n+1, z].
+  // PolyGamma[z] is the digamma PolyGamma[0, z], so its derivative is
+  // PolyGamma[1, z].  Differentiating w.r.t. the order n has no elementary
+  // form and must stay an unevaluated Derivative.
+  #[test]
+  fn d_polygamma() {
+    assert_eq!(interpret("D[PolyGamma[x], x]").unwrap(), "PolyGamma[1, x]");
+    assert_eq!(
+      interpret("D[PolyGamma[2, x], x]").unwrap(),
+      "PolyGamma[3, x]"
+    );
+    assert_eq!(
+      interpret("D[PolyGamma[n, x], x]").unwrap(),
+      "PolyGamma[1 + n, x]"
+    );
+    // Chain rule.
+    assert_eq!(
+      interpret("D[PolyGamma[x^2], x]").unwrap(),
+      "2*x*PolyGamma[1, x^2]"
+    );
+    assert_eq!(
+      interpret("D[PolyGamma[3, x^2], x]").unwrap(),
+      "2*x*PolyGamma[4, x^2]"
+    );
+    // Derivative w.r.t. the order stays unevaluated.
+    assert_eq!(
+      interpret("D[PolyGamma[a, x], a]").unwrap(),
+      "Derivative[1, 0][PolyGamma][a, x]"
+    );
+  }
+
+  // Incomplete Beta: D[Beta[z, a, b], z] = z^(a-1) (1-z)^(b-1).
+  #[test]
+  fn d_incomplete_beta() {
+    assert_eq!(
+      interpret("D[Beta[x, a, b], x]").unwrap(),
+      "(1 - x)^(-1 + b)*x^(-1 + a)"
+    );
+  }
+
+  // Hypergeometric derivatives:
+  //   D[Hypergeometric1F1[a, b, z], z] = (a/b) Hypergeometric1F1[a+1, b+1, z]
+  //   D[Hypergeometric2F1[a, b, c, z], z] =
+  //     (a b / c) Hypergeometric2F1[a+1, b+1, c+1, z]
+  #[test]
+  fn d_hypergeometric() {
+    assert_eq!(
+      interpret("D[Hypergeometric1F1[a, b, x], x]").unwrap(),
+      "(a*Hypergeometric1F1[1 + a, 1 + b, x])/b"
+    );
+    assert_eq!(
+      interpret("D[Hypergeometric2F1[a, b, c, x], x]").unwrap(),
+      "(a*b*Hypergeometric2F1[1 + a, 1 + b, 1 + c, x])/c"
+    );
+    // Chain rule through a linear inner argument.
+    assert_eq!(
+      interpret("D[Hypergeometric1F1[a, b, x^2], x]").unwrap(),
+      "(2*a*x*Hypergeometric1F1[1 + a, 1 + b, x^2])/b"
+    );
+  }
+
   #[test]
   fn d_airy() {
     assert_eq!(interpret("D[AiryAi[x], x]").unwrap(), "AiryAiPrime[x]");
