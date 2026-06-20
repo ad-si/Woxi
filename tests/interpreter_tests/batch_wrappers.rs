@@ -3539,10 +3539,7 @@ mod batch_unevaluated_wrappers_2 {
       "7"
     );
     // An empty rule list reconstructs to 0.
-    assert_eq!(
-      interpret("FromCoefficientRules[{}, {x, y}]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("FromCoefficientRules[{}, {x, y}]").unwrap(), "0");
     // Round-trips with CoefficientRules.
     assert_eq!(
       interpret(

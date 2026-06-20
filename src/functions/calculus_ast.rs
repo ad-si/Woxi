@@ -2727,6 +2727,22 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // Erf[z0, z1] = Erf[z1] - Erf[z0]: differentiate the difference so
+        // the one-argument rule supplies each term's derivative.
+        "Erf" if args.len() == 2 => {
+          let diff = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(Expr::FunctionCall {
+              name: "Erf".to_string(),
+              args: vec![args[1].clone()].into(),
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "Erf".to_string(),
+              args: vec![args[0].clone()].into(),
+            }),
+          };
+          return differentiate(&diff, var);
+        }
         // Erf[z]: D[Erf[z], z] = 2*E^(-z^2)/Sqrt[Pi]
         "Erf" if args.len() == 1 => {
           let dz = differentiate(&args[0], var)?;

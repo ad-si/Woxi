@@ -3320,6 +3320,29 @@ mod erf {
     );
   }
 
+  // Wolfram keeps the generalized two-argument Erf symbolic instead of
+  // rewriting it to a difference of one-argument Erfs.
+  #[test]
+  fn erf_two_arg_symbolic() {
+    assert_eq!(interpret("Erf[1, 2]").unwrap(), "Erf[1, 2]");
+    assert_eq!(interpret("Erf[a, b]").unwrap(), "Erf[a, b]");
+    // Erf[z, z] = 0.
+    assert_eq!(interpret("Erf[x, x]").unwrap(), "0");
+  }
+
+  // D[Erf[z0, z1], x] = 2/(Sqrt[Pi] E^(z1^2)) z1' - 2/(Sqrt[Pi] E^(z0^2)) z0'.
+  #[test]
+  fn d_erf_two_arg() {
+    assert_eq!(
+      interpret("D[Erf[a, x], x]").unwrap(),
+      "2/(E^x^2*Sqrt[Pi])"
+    );
+    assert_eq!(
+      interpret("D[Erf[x, b], x]").unwrap(),
+      "-2/(E^x^2*Sqrt[Pi])"
+    );
+  }
+
   #[test]
   fn erfc_negative_arg() {
     // Wolfram keeps Erfc[-x] unevaluated (no symbolic 2 - Erfc[x] rewrite).

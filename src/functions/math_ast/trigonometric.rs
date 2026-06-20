@@ -1838,7 +1838,9 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Two-argument form: Erf[z0, z1] = Erf[z1] - Erf[z0]
+  // Two-argument generalized form Erf[z0, z1] = Erf[z1] - Erf[z0]. Wolfram
+  // keeps this symbolic as `Erf[z0, z1]`; it does NOT auto-expand to a
+  // difference of one-argument Erfs. Only a few special cases reduce.
   if args.len() == 2 {
     // Erf[0, z] = Erf[z]
     if matches!(&args[0], Expr::Integer(0)) {
@@ -1852,19 +1854,21 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         operand: Box::new(erf_z0),
       });
     }
-    // Numeric: both are real
+    // Erf[z, z] = 0
+    if crate::syntax::expr_to_string(&args[0])
+      == crate::syntax::expr_to_string(&args[1])
+    {
+      return Ok(Expr::Integer(0));
+    }
+    // Numeric: both are machine reals
     if let (Expr::Real(f0), Expr::Real(f1)) = (&args[0], &args[1]) {
       return Ok(Expr::Real(erf_f64(*f1) - erf_f64(*f0)));
     }
-    // General case: Erf[z1] - Erf[z0]
-    let erf_z0 = erf_ast(&[args[0].clone()])?;
-    let erf_z1 = erf_ast(&[args[1].clone()])?;
-    let diff = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
-      left: Box::new(erf_z1),
-      right: Box::new(erf_z0),
-    };
-    return crate::evaluator::evaluate_expr_to_expr(&diff);
+    // Otherwise keep the symbolic two-argument form.
+    return Ok(Expr::FunctionCall {
+      name: "Erf".to_string(),
+      args: args.to_vec().into(),
+    });
   }
   // Helper: negate the Erf of the positive part
   let negate_erf = |inner: Expr| -> Expr {
