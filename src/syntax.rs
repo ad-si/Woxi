@@ -4834,6 +4834,7 @@ fn operator_precedence(op: &str) -> u8 {
     // Dot > CircleTimes > CenterDot > Times > … > CirclePlus > Plus.
     "\\[CirclePlus]" | "\u{2295}" => 31, // between Plus and Times
     "\\[CircleMinus]" | "\u{2296}" => 31, // same level as CirclePlus
+    "\\[Star]" | "\u{22C6}" => 32,       // between CirclePlus and Times
     "\\[CenterDot]" | "\u{00B7}" => 34,  // just above Times
     "\\[CircleTimes]" | "\u{2297}" => 35, // above CenterDot, below Vee
     "\\[Vee]" | "\u{22C1}" => 36,        // above CircleTimes, below Wedge
@@ -5122,6 +5123,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "CircleMinus".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
+    "\\[Star]" | "\u{22C6}" => build_flat_op("Star", left, right),
     // Wedge and Vee are flat: a ⋀ b ⋀ c -> Wedge[a, b, c].
     "\\[Wedge]" | "\u{22C0}" => build_flat_op("Wedge", left, right),
     "\\[Vee]" | "\u{22C1}" => build_flat_op("Vee", left, right),
@@ -7438,6 +7440,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "Wedge" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{22C0} ");
+      }
+      // Star[a, b, ...] displays as a ⋆ b ⋆ ...
+      if name == "Star" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{22C6} ");
       }
       // Vee[a, b, ...] displays as a ⋁ b ⋁ ...
       if name == "Vee" && args.len() >= 2 {
@@ -10510,6 +10517,10 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Wedge" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{22C0} ")
+    }
+    Expr::FunctionCall { name, args } if name == "Star" && args.len() >= 2 => {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{22C6} ")
     }
     Expr::FunctionCall { name, args } if name == "Vee" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();

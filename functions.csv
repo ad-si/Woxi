@@ -2281,7 +2281,7 @@ SendMail,email sending,🚫,None,7.0,2324
 FourierSinCoefficient,Half-range Fourier sine coefficient of polynomials,✅,pure,7.0,2329
 HeavisideLambda,Triangular pulse function: 1 - |x| for |x| < 1,✅,1,7.0,2329
 NDEigenvalues,numerical PDE eigenvalues,🚫,None,10.2,2329
-Star,graphics primitive,🚫,None,3.0,2329
+Star,Symbolic star operator with Unicode display,✅,pure,3.0,2329
 TimeSeriesWindow,time series,🚫,None,10.0,2329
 Bra,Dirac bra notation (stays symbolic),✅,unevaluated,13.3,2333
 CellContext,notebook UI,🚫,None,6.0,2333

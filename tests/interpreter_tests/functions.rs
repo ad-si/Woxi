@@ -1959,6 +1959,25 @@ mod ring_operators {
     );
     assert_eq!(interpret(r#"Head[a \[Wedge] b . c]"#).unwrap(), "Wedge");
   }
+
+  // \[Star] is a flat infix operator between CirclePlus and Times.
+  #[test]
+  fn star_operator() {
+    assert_eq!(interpret(r#"a \[Star] b"#).unwrap(), "a \u{22C6} b");
+    assert_eq!(
+      interpret("Star[a, b, c]").unwrap(),
+      "a \u{22C6} b \u{22C6} c"
+    );
+    // Flat.
+    assert_eq!(interpret(r#"Length[a \[Star] b \[Star] c]"#).unwrap(), "3");
+    // Binds looser than Times, tighter than Plus and CirclePlus.
+    assert_eq!(interpret(r#"Head[a \[Star] b * c]"#).unwrap(), "Star");
+    assert_eq!(interpret(r#"Head[a \[Star] b + c]"#).unwrap(), "Plus");
+    assert_eq!(
+      interpret(r#"Head[a \[Star] b \[CirclePlus] c]"#).unwrap(),
+      "CirclePlus"
+    );
+  }
 }
 
 mod wedge {
