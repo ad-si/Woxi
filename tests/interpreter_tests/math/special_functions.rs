@@ -7607,6 +7607,52 @@ mod gamma_incomplete {
     // Gamma[1, x] = E^(-x); with a machine-Real argument it evaluates numerically.
     assert_eq!(interpret("Gamma[1, 1.]").unwrap(), "0.36787944117144233");
   }
+
+  // Real-argument upper incomplete gamma with z >= a+1 uses the continued
+  // fraction branch. Regression: it previously diverged (the Lentz `c` seed
+  // was 1e-30 instead of 1e30) and returned absurd magnitudes like 1e28.
+  #[test]
+  fn gamma_incomplete_real_cf_branch() {
+    assert_eq!(interpret("Gamma[3., 5.]").unwrap(), "0.24930403896616227");
+    assert_eq!(interpret("Gamma[4., 6.]").unwrap(), "0.9072232966598872");
+  }
+
+  // Three-argument generalized incomplete gamma stays symbolic in Wolfram
+  // (it does not expand to Gamma[a, z0] - Gamma[a, z1]).
+  #[test]
+  fn gamma_three_arg_symbolic() {
+    assert_eq!(interpret("Gamma[3, 2, 5]").unwrap(), "Gamma[3, 2, 5]");
+    assert_eq!(interpret("Gamma[a, z0, z1]").unwrap(), "Gamma[a, z0, z1]");
+    // Gamma[a, z0, Infinity] = Gamma[a, z0].
+    assert_eq!(interpret("Gamma[3, 2, Infinity]").unwrap(), "10/E^2");
+    assert_eq!(interpret("Gamma[3, 0, Infinity]").unwrap(), "2");
+    // Gamma[a, z, z] = 0.
+    assert_eq!(interpret("Gamma[2, 1, 1]").unwrap(), "0");
+    // Inexact argument forces numeric evaluation.
+    assert_eq!(
+      interpret("Gamma[3, 2.0, 5.0]").unwrap(),
+      "1.1040487933999648"
+    );
+  }
+
+  // Derivatives of the incomplete gamma: d/dz Gamma[a, z] = -z^(a-1) E^(-z),
+  // and the three-argument form differentiates as the difference.
+  #[test]
+  fn gamma_incomplete_derivatives() {
+    assert_eq!(
+      interpret("D[Gamma[a, x], x]").unwrap(),
+      "-(x^(-1 + a)/E^x)"
+    );
+    assert_eq!(interpret("D[Gamma[3, x], x]").unwrap(), "-(x^2/E^x)");
+    assert_eq!(
+      interpret("D[Gamma[a, x, b], x]").unwrap(),
+      "-(x^(-1 + a)/E^x)"
+    );
+    assert_eq!(
+      interpret("D[Gamma[a, 0, x], x]").unwrap(),
+      "x^(-1 + a)/E^x"
+    );
+  }
 }
 
 mod lambert_w {

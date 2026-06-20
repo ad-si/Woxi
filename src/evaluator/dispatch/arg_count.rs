@@ -469,7 +469,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CountRoots" => Some((2, 2)),
     "FunctionExpand" => Some((1, 1)),
     "FunctionDomain" => Some((2, 3)),
-    "Gamma" => Some((1, 2)),
+    "Gamma" => Some((1, 3)),
     "GraphDistance" => Some((2, 3)),
     "GraphDistanceMatrix" => Some((1, 1)),
     "GammaDistribution" => Some((2, 2)),

@@ -2655,6 +2655,74 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // Gamma[a, z] (upper incomplete), a free of var:
+        //   d/dvar Gamma[a, z] = -z^(a-1) E^(-z) z'
+        // When a depends on var the derivative needs the ∂/∂a term (a
+        // MeijerG expression), so this arm only matches for constant a and
+        // otherwise falls through to the generic handler.
+        "Gamma" if args.len() == 2 && is_constant_wrt(&args[0], var) => {
+          let dz = differentiate(&args[1], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let a = &args[0];
+          let z = &args[1];
+          // z^(a-1)
+          let z_pow = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(z.clone()),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(a.clone()),
+              right: Box::new(Expr::Integer(1)),
+            }),
+          };
+          // E^(-z)
+          let exp_neg_z = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(Expr::Constant("E".to_string())),
+            right: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(z.clone()),
+            }),
+          };
+          // -z^(a-1) E^(-z), times z' (chain rule).
+          let core = Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(z_pow),
+              right: Box::new(exp_neg_z),
+            }),
+          };
+          let full = if matches!(dz, Expr::Integer(1)) {
+            core
+          } else {
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(core),
+            }
+          };
+          crate::evaluator::evaluate_expr_to_expr(&full)
+        }
+        // Gamma[a, z0, z1] = Gamma[a, z0] - Gamma[a, z1], a free of var:
+        // differentiate the difference so the two-argument rule applies.
+        "Gamma" if args.len() == 3 && is_constant_wrt(&args[0], var) => {
+          let diff = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(Expr::FunctionCall {
+              name: "Gamma".to_string(),
+              args: vec![args[0].clone(), args[1].clone()].into(),
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "Gamma".to_string(),
+              args: vec![args[0].clone(), args[2].clone()].into(),
+            }),
+          };
+          let d = differentiate(&diff, var)?;
+          crate::evaluator::evaluate_expr_to_expr(&d)
+        }
         // RealSign[u]: D[RealSign[u], u] = Piecewise[{{0, u != 0}}, Indeterminate]
         "RealSign" if args.len() == 1 => {
           let dz = differentiate(&args[0], var)?;
@@ -2741,7 +2809,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               args: vec![args[0].clone()].into(),
             }),
           };
-          return differentiate(&diff, var);
+          differentiate(&diff, var)
         }
         // Erf[z]: D[Erf[z], z] = 2*E^(-z^2)/Sqrt[Pi]
         "Erf" if args.len() == 1 => {

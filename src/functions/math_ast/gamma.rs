@@ -208,10 +208,44 @@ pub fn factorial_power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Gamma[n] - Gamma function: Gamma[n] = (n-1)! for positive integers
 pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "Gamma expects 1 or 2 arguments".into(),
+      "Gamma expects 1, 2, or 3 arguments".into(),
     ));
+  }
+
+  // Three-argument generalized incomplete gamma:
+  //   Gamma[a, z0, z1] = Gamma[a, z0] - Gamma[a, z1]
+  // Wolfram keeps this symbolic; only a few special cases reduce.
+  if args.len() == 3 {
+    let (a, z0, z1) = (&args[0], &args[1], &args[2]);
+    // Gamma[a, z, z] = 0
+    if crate::syntax::expr_to_string(z0) == crate::syntax::expr_to_string(z1) {
+      return Ok(Expr::Integer(0));
+    }
+    // Gamma[a, z0, Infinity] = Gamma[a, z0]   (Gamma[a, Infinity] = 0)
+    if matches!(z1, Expr::Identifier(s) if s == "Infinity") {
+      return gamma_incomplete_upper(a, z0);
+    }
+    // Numeric when any argument is an inexact (machine) real. Otherwise
+    // Wolfram keeps the symbolic Gamma[a, z0, z1] form (it does NOT expand
+    // to the difference of one-argument incomplete gammas).
+    let has_real = matches!(a, Expr::Real(_))
+      || matches!(z0, Expr::Real(_))
+      || matches!(z1, Expr::Real(_));
+    if has_real {
+      let g0 = gamma_incomplete_upper(a, z0)?;
+      let g1 = gamma_incomplete_upper(a, z1)?;
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(g0),
+        right: Box::new(g1),
+      });
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // Two-argument form: Gamma[a, z] = upper incomplete gamma function
@@ -661,8 +695,10 @@ fn lower_incomplete_gamma_series(a: f64, z: f64) -> f64 {
 
 /// Upper incomplete gamma via continued fraction
 fn upper_incomplete_gamma_cf(a: f64, z: f64) -> f64 {
-  // Modified Lentz's method
-  let mut c = 1e-30_f64;
+  // Modified Lentz's method. `c` starts at 1/FPMIN (a large value), not
+  // FPMIN itself — initializing it small makes the first `an/c` term blow
+  // up and the whole continued fraction diverges.
+  let mut c = 1e30_f64;
   let mut d = z + 1.0 - a;
   if d.abs() < 1e-30 {
     d = 1e-30;

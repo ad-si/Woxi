@@ -3333,14 +3333,8 @@ mod erf {
   // D[Erf[z0, z1], x] = 2/(Sqrt[Pi] E^(z1^2)) z1' - 2/(Sqrt[Pi] E^(z0^2)) z0'.
   #[test]
   fn d_erf_two_arg() {
-    assert_eq!(
-      interpret("D[Erf[a, x], x]").unwrap(),
-      "2/(E^x^2*Sqrt[Pi])"
-    );
-    assert_eq!(
-      interpret("D[Erf[x, b], x]").unwrap(),
-      "-2/(E^x^2*Sqrt[Pi])"
-    );
+    assert_eq!(interpret("D[Erf[a, x], x]").unwrap(), "2/(E^x^2*Sqrt[Pi])");
+    assert_eq!(interpret("D[Erf[x, b], x]").unwrap(), "-2/(E^x^2*Sqrt[Pi])");
   }
 
   #[test]
