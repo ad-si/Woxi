@@ -241,7 +241,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["HoldFirst", "Protected", "ReadProtected"]
     }
     "Message" | "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy"
-    | "ClearAttributes" | "AssociateTo" | "KeyDropFrom" => {
+    | "ClearAttributes" | "AssociateTo" | "KeyDropFrom" | "Inactivate" => {
       vec!["HoldFirst", "Protected"]
     }
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],

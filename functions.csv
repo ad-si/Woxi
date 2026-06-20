@@ -1300,7 +1300,7 @@ ButtonBox,,🚫,,3.0,1313
 RegionDistance,Shortest distance from a point to a region (Point/Disk/Ball/Circle/Sphere/Rectangle),✅,pure,10.0,1314
 FirstPosition,Find the position of the first element matching a pattern (supports associations),✅,pure,10.0,1317
 FourierSeries,,🚫,,7.0,1317
-Inactivate,,✅,,10.0,1317
+Inactivate,Wraps every head in an expression with Inactive so it is held unevaluated,✅,pure,10.0,1317
 RealAbs,Returns the absolute value assuming real input,✅,pure,11.1,1318
 Deploy,Deploy display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,1320
 RegionMeasure,Measure of a region's intrinsic dimension (length/area/volume),✅,pure,2.0,1320

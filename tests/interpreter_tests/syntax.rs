@@ -6684,6 +6684,67 @@ mod batch_inert_symbols_2 {
     );
   }
 
+  // Inactivate[expr] wraps every head with Inactive[...] (holding its
+  // argument); operators map to their full-form heads.
+  #[test]
+  fn inactivate_basic() {
+    assert_eq!(
+      interpret("Inactivate[1 + 1]").unwrap(),
+      "Inactive[Plus][1, 1]"
+    );
+    assert_eq!(
+      interpret("Inactivate[a + b*c]").unwrap(),
+      "Inactive[Plus][a, Inactive[Times][b, c]]"
+    );
+    assert_eq!(
+      interpret("Inactivate[x^2 + 1]").unwrap(),
+      "Inactive[Plus][Inactive[Power][x, 2], 1]"
+    );
+    assert_eq!(
+      interpret("Inactivate[f[g[x]]]").unwrap(),
+      "Inactive[f][Inactive[g][x]]"
+    );
+    // List stays structural; elements are still inactivated.
+    assert_eq!(
+      interpret("Inactivate[{Sin[x], a + b}]").unwrap(),
+      "{Inactive[Sin][x], Inactive[Plus][a, b]}"
+    );
+  }
+
+  // Subtraction, division, and negation desugar to their full forms before
+  // being inactivated, and Plus/Minus chains flatten.
+  #[test]
+  fn inactivate_operators() {
+    assert_eq!(
+      interpret("Inactivate[a - b]").unwrap(),
+      "Inactive[Plus][a, Inactive[Times][-1, b]]"
+    );
+    assert_eq!(
+      interpret("Inactivate[a - b - c]").unwrap(),
+      "Inactive[Plus][a, Inactive[Times][-1, b], Inactive[Times][-1, c]]"
+    );
+    assert_eq!(interpret("Inactivate[-a]").unwrap(), "Inactive[Times][-1, a]");
+    assert_eq!(
+      interpret("Inactivate[a/b]").unwrap(),
+      "Inactive[Times][a, Inactive[Power][b, -1]]"
+    );
+    assert_eq!(
+      interpret("Inactivate[a == b]").unwrap(),
+      "Inactive[Equal][a, b]"
+    );
+  }
+
+  // The two-argument form only inactivates the named head; Activate inverts.
+  #[test]
+  fn inactivate_filter_and_roundtrip() {
+    assert_eq!(
+      interpret("Inactivate[Sin[x] + 1, Plus]").unwrap(),
+      "Inactive[Plus][Sin[x], 1]"
+    );
+    assert_eq!(interpret("Inactivate[a + b, Times]").unwrap(), "a + b");
+    assert_eq!(interpret("Activate[Inactivate[a + b*c]]").unwrap(), "a + b*c");
+  }
+
   #[test]
   fn geo_position() {
     assert_eq!(

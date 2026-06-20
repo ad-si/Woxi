@@ -2007,7 +2007,6 @@ pub fn evaluate_function_call_ast_inner(
     | "ZetaZero"
     | "MixtureDistribution"
     | "PermutationGroup"
-    | "Inactivate"
     | "LegendLabel" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),

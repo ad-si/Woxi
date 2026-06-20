@@ -2101,6 +2101,27 @@ pub fn dispatch_complex_and_special(
       let activated = activate_expr(&args[0], &filter);
       return Some(crate::evaluator::evaluate_expr_to_expr(&activated));
     }
+    // Inactivate[expr] wraps every head H in `expr` with Inactive[H];
+    // Inactivate[expr, h] only wraps heads named `h`. The first argument is
+    // held (HoldFirst), so e.g. Inactivate[1 + 1] = Inactive[Plus][1, 1].
+    "Inactivate" if args.len() == 1 || args.len() == 2 => {
+      let filter: Option<String> = if args.len() == 2 {
+        match &args[1] {
+          Expr::Identifier(h) => Some(h.clone()),
+          // A list of heads is rejected by Wolfram (Inactivate::sympatt);
+          // keep the call unevaluated to mirror that non-result.
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "Inactivate".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        }
+      } else {
+        None
+      };
+      return Some(Ok(inactivate_expr(&args[0], filter.as_deref())));
+    }
     // Form wrappers -- keep as wrappers (matching wolframscript OutputForm behavior)
     "MathMLForm" | "StandardForm" | "InputForm" if !args.is_empty() => {
       return Some(Ok(Expr::FunctionCall {
@@ -4800,6 +4821,195 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
       operand: Box::new(activate_expr(operand, filter)),
     },
     // Atoms: return as-is
+    _ => expr.clone(),
+  }
+}
+
+/// Build `Inactive[head][args...]` (a CurriedCall whose func is
+/// `Inactive[head]`), or the plain `head[args...]` when `head` is filtered
+/// out. `wrap` decides whether this head should be inactivated.
+fn make_inactive_head(head: &str, args: Vec<Expr>, wrap: bool) -> Expr {
+  if wrap {
+    Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: "Inactive".to_string(),
+        args: vec![Expr::Identifier(head.to_string())].into(),
+      }),
+      args,
+    }
+  } else {
+    Expr::FunctionCall {
+      name: head.to_string(),
+      args: args.into(),
+    }
+  }
+}
+
+/// Flatten an associative binary chain (Plus/Times/And/Or/...) of `op` rooted
+/// at `expr` into its operand list, in left-to-right order.
+fn flatten_binop(expr: &Expr, op: crate::syntax::BinaryOperator) -> Vec<Expr> {
+  if let Expr::BinaryOp {
+    op: o,
+    left,
+    right,
+  } = expr
+    && *o == op
+  {
+    let mut out = flatten_binop(left, op);
+    out.extend(flatten_binop(right, op));
+    out
+  } else {
+    vec![expr.clone()]
+  }
+}
+
+/// Negate a Plus operand: numeric literals flip sign in place (`1` → `-1`),
+/// everything else becomes `Times[-1, inactivate(e)]`.
+fn negate_plus_term(e: &Expr, filter: Option<&str>) -> Expr {
+  let wants_times = filter.is_none_or(|f| f == "Times");
+  match e {
+    Expr::Integer(n) => Expr::Integer(-n),
+    Expr::Real(r) => Expr::Real(-r),
+    Expr::BigInteger(n) => Expr::BigInteger(-n.clone()),
+    _ => make_inactive_head(
+      "Times",
+      vec![Expr::Integer(-1), inactivate_expr(e, filter)],
+      wants_times,
+    ),
+  }
+}
+
+/// Flatten a mixed Plus/Minus chain into the list of (inactivated) Plus
+/// operands, in left-to-right order. A `0` left operand of a subtraction
+/// (Woxi's encoding of unary minus) contributes no term.
+fn collect_plus_terms(expr: &Expr, out: &mut Vec<Expr>, filter: Option<&str>) {
+  use crate::syntax::BinaryOperator as B;
+  match expr {
+    Expr::BinaryOp {
+      op: B::Plus,
+      left,
+      right,
+    } => {
+      collect_plus_terms(left, out, filter);
+      collect_plus_terms(right, out, filter);
+    }
+    Expr::BinaryOp {
+      op: B::Minus,
+      left,
+      right,
+    } => {
+      if !matches!(left.as_ref(), Expr::Integer(0)) {
+        collect_plus_terms(left, out, filter);
+      }
+      out.push(negate_plus_term(right, filter));
+    }
+    _ => out.push(inactivate_expr(expr, filter)),
+  }
+}
+
+/// Recursively replace each head `H` in `expr` with `Inactive[H]`, the inverse
+/// of `activate_expr`. Operators are mapped to their full-form heads (`+`→Plus,
+/// `-a`→Times[-1,a], `a/b`→Times[a,Power[b,-1]], …). `List` is left structural.
+/// When `filter` is Some, only that head name is inactivated.
+fn inactivate_expr(expr: &Expr, filter: Option<&str>) -> Expr {
+  let wants = |head: &str| filter.is_none_or(|f| f == head);
+  let inact = |e: &Expr| inactivate_expr(e, filter);
+  match expr {
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator as B;
+      match op {
+        B::Times | B::And | B::Or | B::StringJoin | B::Alternatives => {
+          let head = match op {
+            B::Times => "Times",
+            B::And => "And",
+            B::Or => "Or",
+            B::StringJoin => "StringJoin",
+            _ => "Alternatives",
+          };
+          let operands =
+            flatten_binop(expr, *op).iter().map(&inact).collect();
+          make_inactive_head(head, operands, wants(head))
+        }
+        // Plus/Minus form one flat Plus chain. Subtraction `a - b` becomes
+        // `Plus[a, -b]`, negating numeric literals directly and wrapping
+        // other terms as `Times[-1, b]`. A unary minus (`-b`, which Woxi
+        // parses as `0 - b`) collapses to that single negated term.
+        B::Plus | B::Minus => {
+          let mut terms: Vec<Expr> = Vec::new();
+          let unary =
+            matches!(op, B::Minus) && matches!(left.as_ref(), Expr::Integer(0));
+          collect_plus_terms(expr, &mut terms, filter);
+          if unary && terms.len() == 1 {
+            terms.into_iter().next().unwrap()
+          } else {
+            make_inactive_head("Plus", terms, wants("Plus"))
+          }
+        }
+        // a / b  →  Times[a, Power[b, -1]]
+        B::Divide => {
+          let inv_b = make_inactive_head(
+            "Power",
+            vec![inact(right), Expr::Integer(-1)],
+            wants("Power"),
+          );
+          make_inactive_head(
+            "Times",
+            vec![inact(left), inv_b],
+            wants("Times"),
+          )
+        }
+        B::Power => make_inactive_head(
+          "Power",
+          vec![inact(left), inact(right)],
+          wants("Power"),
+        ),
+      }
+    }
+    Expr::UnaryOp { op, operand } => match op {
+      // -a  →  Times[-1, a]
+      crate::syntax::UnaryOperator::Minus => make_inactive_head(
+        "Times",
+        vec![Expr::Integer(-1), inact(operand)],
+        wants("Times"),
+      ),
+      crate::syntax::UnaryOperator::Not => {
+        make_inactive_head("Not", vec![inact(operand)], wants("Not"))
+      }
+    },
+    // Single-operator comparison `a op b` → Inactive[<Head>][a, b].
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1 && operands.len() == 2 => {
+      use crate::syntax::ComparisonOp as C;
+      let head = match operators[0] {
+        C::Equal => "Equal",
+        C::NotEqual => "Unequal",
+        C::Less => "Less",
+        C::LessEqual => "LessEqual",
+        C::Greater => "Greater",
+        C::GreaterEqual => "GreaterEqual",
+        C::SameQ => "SameQ",
+        C::UnsameQ => "UnsameQ",
+      };
+      make_inactive_head(
+        head,
+        operands.iter().map(&inact).collect(),
+        wants(head),
+      )
+    }
+    // List is structural: never inactivated, but recurse into elements.
+    Expr::List(items) => Expr::List(items.iter().map(&inact).collect()),
+    Expr::FunctionCall { name, args } => make_inactive_head(
+      name,
+      args.iter().map(&inact).collect(),
+      wants(name),
+    ),
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(inact(func)),
+      args: args.iter().map(&inact).collect(),
+    },
+    // Atoms (numbers, symbols, strings) are returned unchanged.
     _ => expr.clone(),
   }
 }

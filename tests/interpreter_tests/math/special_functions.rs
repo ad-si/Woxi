@@ -7639,19 +7639,13 @@ mod gamma_incomplete {
   // and the three-argument form differentiates as the difference.
   #[test]
   fn gamma_incomplete_derivatives() {
-    assert_eq!(
-      interpret("D[Gamma[a, x], x]").unwrap(),
-      "-(x^(-1 + a)/E^x)"
-    );
+    assert_eq!(interpret("D[Gamma[a, x], x]").unwrap(), "-(x^(-1 + a)/E^x)");
     assert_eq!(interpret("D[Gamma[3, x], x]").unwrap(), "-(x^2/E^x)");
     assert_eq!(
       interpret("D[Gamma[a, x, b], x]").unwrap(),
       "-(x^(-1 + a)/E^x)"
     );
-    assert_eq!(
-      interpret("D[Gamma[a, 0, x], x]").unwrap(),
-      "x^(-1 + a)/E^x"
-    );
+    assert_eq!(interpret("D[Gamma[a, 0, x], x]").unwrap(), "x^(-1 + a)/E^x");
   }
 }
 
