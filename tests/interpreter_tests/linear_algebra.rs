@@ -3843,6 +3843,19 @@ mod cases {
       r#"{{1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}}"#,
     );
   }
+  // BoxMatrix accepts a list of radii for a rectangular / n-D box of ones.
+  #[test]
+  fn box_matrix_radii_list() {
+    // {1, 2}: 3 rows by 5 columns.
+    assert_case(
+      r#"BoxMatrix[{1, 2}]"#,
+      r#"{{1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}}"#,
+    );
+    // A zero radius collapses that dimension to length 1.
+    assert_case(r#"BoxMatrix[{0, 1}]"#, r#"{{1, 1, 1}}"#);
+    // Three radii give a 3D box of shape (2ri+1).
+    assert_case(r#"Dimensions[BoxMatrix[{1, 2, 1}]]"#, r#"{3, 5, 3}"#);
+  }
   // CrossMatrix is the n-dimensional cross structuring element.
   #[test]
   fn cross_matrix_scalar() {

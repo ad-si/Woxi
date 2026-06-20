@@ -111,13 +111,20 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(vec.into())));
       }
     }
+    // BoxMatrix[r] / BoxMatrix[{r1, …, rn}] — the all-ones "box" structuring
+    // element. A scalar r is the 2D box of radius r; a list of radii gives an
+    // n-D box of shape (2ri+1).
     "BoxMatrix" if args.len() == 1 => {
-      if let Some(n) = expr_to_i128(&args[0])
-        && n >= 0
+      let radii: Option<Vec<i128>> = match &args[0] {
+        Expr::List(elems) => elems.iter().map(cross_radius).collect(),
+        other => cross_radius(other).map(|r| vec![r, r]),
+      };
+      if let Some(radii) = radii
+        && !radii.is_empty()
       {
-        let size = (2 * n + 1) as usize;
-        let row = Expr::List(vec![Expr::Integer(1); size].into());
-        return Some(Ok(Expr::List(vec![row; size].into())));
+        let dims: Vec<usize> =
+          radii.iter().map(|r| (2 * r + 1) as usize).collect();
+        return Some(Ok(build_ones_tensor(&dims)));
       }
     }
     "DiagonalMatrix" if args.len() == 1 || args.len() == 2 => {
@@ -2440,6 +2447,18 @@ fn build_cross_matrix(radii: &[i128]) -> Expr {
     Expr::List(row.into())
   }
   rec(&dims, &centers, &mut Vec::with_capacity(dims.len()), 0)
+}
+
+/// Build an all-ones tensor of the given shape (nested Lists). An empty shape
+/// yields the scalar 1.
+fn build_ones_tensor(dims: &[usize]) -> Expr {
+  match dims {
+    [] => Expr::Integer(1),
+    [first, rest @ ..] => {
+      let inner = build_ones_tensor(rest);
+      Expr::List(vec![inner; *first].into())
+    }
+  }
 }
 
 /// Hadamard matrix via Sylvester construction for powers of 2,
