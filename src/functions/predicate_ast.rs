@@ -2279,13 +2279,27 @@ fn intersecting_or_disjoint(
   fname: &str,
   want_common: bool,
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects exactly 2 arguments",
+      "{} expects 2 or 3 arguments",
       fname
     )));
   }
-  let (a, b) = match same_head_elements(fname, args) {
+  // Optional `SameTest -> f` (or `{SameTest -> f}`) as the third argument.
+  let same_test: Option<&Expr> = if args.len() == 3 {
+    match extract_same_test(&args[2]) {
+      Some(f) => Some(f),
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: fname.to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
+  } else {
+    None
+  };
+  let (a, b) = match same_head_elements(fname, &args[..2]) {
     Ok(Some(pair)) => pair,
     Ok(None) => {
       return Ok(Expr::FunctionCall {
@@ -2295,11 +2309,23 @@ fn intersecting_or_disjoint(
     }
     Err(unevaluated) => return Ok(unevaluated),
   };
-  let a_strs: Vec<String> =
-    a.iter().map(crate::syntax::expr_to_string).collect();
-  let has_common = b
-    .iter()
-    .any(|e| a_strs.contains(&crate::syntax::expr_to_string(e)));
+  let has_common = if let Some(test) = same_test {
+    // A common element exists iff some pair satisfies test[x, y] (x from the
+    // first subject, y from the second).
+    a.iter().any(|x| {
+      b.iter().any(|y| {
+        matches!(
+          crate::functions::list_helpers_ast::apply_func_to_two_args(test, x, y),
+          Ok(Expr::Identifier(ref s)) if s == "True"
+        )
+      })
+    })
+  } else {
+    let a_strs: Vec<String> =
+      a.iter().map(crate::syntax::expr_to_string).collect();
+    b.iter()
+      .any(|e| a_strs.contains(&crate::syntax::expr_to_string(e)))
+  };
   Ok(Expr::Identifier(
     if has_common == want_common {
       "True"

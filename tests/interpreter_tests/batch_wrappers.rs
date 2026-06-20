@@ -5161,6 +5161,33 @@ mod batch_unevaluated_wrappers_2 {
   fn intersecting_q_empty() {
     assert_eq!(interpret("IntersectingQ[{}, {1}]").unwrap(), "False");
   }
+  // IntersectingQ/DisjointQ accept a SameTest -> f option (applied as
+  // f[a_elem, b_elem]).
+  #[test]
+  fn intersecting_disjoint_same_test() {
+    assert_eq!(
+      interpret("IntersectingQ[{1, 2}, {2, 3}, SameTest -> Equal]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DisjointQ[{1, 2}, {3, 4}, SameTest -> Equal]").unwrap(),
+      "True"
+    );
+    // Cross-type equality via the test.
+    assert_eq!(
+      interpret("IntersectingQ[{1.0}, {1}, SameTest -> Equal]").unwrap(),
+      "True"
+    );
+    // The asymmetric Greater test confirms f[a, b] ordering.
+    assert_eq!(
+      interpret("IntersectingQ[{5}, {3}, SameTest -> Greater]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("IntersectingQ[{3}, {5}, SameTest -> Greater]").unwrap(),
+      "False"
+    );
+  }
 
   // AlternatingFactorial
   #[test]

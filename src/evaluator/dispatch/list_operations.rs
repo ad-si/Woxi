@@ -4115,11 +4115,11 @@ pub fn dispatch_list_operations(
       }));
     }
     // IntersectingQ[list1, list2] — True if lists share any element
-    "IntersectingQ" if args.len() == 2 => {
+    "IntersectingQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::predicate_ast::intersecting_q_ast(args));
     }
     // DisjointQ[list1, list2] — True if lists share no common elements
-    "DisjointQ" if args.len() == 2 => {
+    "DisjointQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::predicate_ast::disjoint_q_ast(args));
     }
     // FindPermutation[e1, e2] — find permutation that maps e1 to e2.
