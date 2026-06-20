@@ -1005,7 +1005,7 @@ Divisible,Tests if one number is divisible by another,✅,pure,6.0,1013
 PlusMinus,Symbolic plus-or-minus operator with Unicode display,✅,none,3.0,1014
 Callout,Annotates a plot element with a label,✅,pure,11.0,1015
 MeshPrimitives,Requires external services or GUI infrastructure,🚫,io,10.0,1016
-CircleTimes,Symbolic tensor product operator with Unicode display,✅,none,3.0,1017
+CircleTimes,Symbolic tensor product operator with Unicode display,✅,pure,3.0,1017
 VectorPlot3D,Creates a 3D vector field plot,✅,pure,7.0,1018
 RandomPoint,,🚫,,10.2,1020
 TemplateBox,,🚫,,7.0,1020
@@ -1144,7 +1144,7 @@ CubeRoot,Returns the real-valued cube root,✅,pure,9.0,1154
 ContinuousAction,,🚫,,6.0,1155
 Overlay,,🚫,,8.0,1156
 Permissions,,🚫,,10.0,1157
-CirclePlus,Represents the direct sum or XOR operator,✅,1,3.0,1158
+CirclePlus,Represents the direct sum or XOR operator,✅,pure,3.0,1158
 TableAlignments,,🚫,,2.0,1159
 PrincipalValue,Represents Cauchy principal value,✅,1,3.0,1160
 OrderedQ,Tests if a list is in canonical order,✅,pure,1.0,1162

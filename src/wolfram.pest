@@ -84,7 +84,7 @@ PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge])
 // which must be parsed as infix operators, not as identifiers in implicit multiplication.
-NamedCharBase = _{ !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
+NamedCharBase = _{ !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -166,6 +166,9 @@ Operator = @{
   | "\\[Function]" | "\u{F4A1}" | "|->" // Function-arrow operator: x \[Function] body / x |-> body → Function[x, body]
   | "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" // Cross product operator: a ⨯ b → Cross[a, b]
   | "\\[TensorProduct]" | "\u{F3DA}" // TensorProduct operator: a ⊗ b → TensorProduct[a, b]
+  | "\\[CircleTimes]" | "\u{2297}" // CircleTimes operator: a ⊗ b → CircleTimes[a, b]
+  | "\\[CirclePlus]" | "\u{2295}" // CirclePlus operator: a ⊕ b → CirclePlus[a, b]
+  | "\\[CenterDot]" | "\u{00B7}" // CenterDot operator: a · b → CenterDot[a, b]
   | "\\[Cap]" | "\u{2322}" // Cap operator: a ⌢ b → Cap[a, b]
   | "\\[Cup]" | "\u{2323}" // Cup operator: a ⌣ b → Cup[a, b]
   | "\\[DoubleRightTee]" | "\u{22A8}" // DoubleRightTee operator: a ⊨ b → DoubleRightTee[a, b]

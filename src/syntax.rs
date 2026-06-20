@@ -4825,14 +4825,19 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Function]" | "\u{F4A1}" | "|->" => 3,
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 21, // Comparisons
-    "~~" => 24,          // StringExpression (lower than Alternatives)
+    "~~" => 24,      // StringExpression (lower than Alternatives)
     "|" => 27, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 30, // Plus/Minus
     "*" | "/" => 33, // Times/Divide
     "<>" => 30, // StringJoin (same level as Plus)
-    "." => 36, // Dot (higher than arithmetic)
-    "@@@" | "@@" => 39, // Apply/MapApply
-    "/@" => 42, // Map (higher than Apply)
+    // Symbolic ring operators, ordered to match wolframscript:
+    // Dot > CircleTimes > CenterDot > Times > … > CirclePlus > Plus.
+    "\\[CirclePlus]" | "\u{2295}" => 31, // between Plus and Times
+    "\\[CenterDot]" | "\u{00B7}" => 34,  // just above Times
+    "\\[CircleTimes]" | "\u{2297}" => 35, // above CenterDot, below Dot
+    "." => 36,                           // Dot (higher than arithmetic)
+    "@@@" | "@@" => 39,                  // Apply/MapApply
+    "/@" => 42,                          // Map (higher than Apply)
     "NEGATE" => 45, // Unary minus (PreMinus): between Times/Dot and Power
     "^" | "^_NEG" => 48, // Power (`^_NEG` is `a^-b` with negated right operand)
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 51, // Tilde infix: a ~f~ b (higher than ^, lower than @)
@@ -4931,6 +4936,24 @@ fn build_expr_with_precedence(
 }
 
 /// Create a binary operation from two expressions and an operator string
+/// Build a flat (associative) binary operator, flattening chains so that
+/// `a op b op c` collapses to `head[a, b, c]`.
+fn build_flat_op(head: &str, left: &Expr, right: &Expr) -> Expr {
+  let mut parts = Vec::new();
+  for side in [left, right] {
+    match side {
+      Expr::FunctionCall { name, args } if name == head => {
+        parts.extend(args.iter().cloned());
+      }
+      other => parts.push(other.clone()),
+    }
+  }
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: parts.into(),
+  }
+}
+
 fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
   match op_str {
     "=." => {
@@ -5087,6 +5110,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "Function".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
+    // Flat symbolic ring operators: a ⊕ b ⊕ c → CirclePlus[a, b, c], etc.
+    "\\[CirclePlus]" | "\u{2295}" => build_flat_op("CirclePlus", left, right),
+    "\\[CircleTimes]" | "\u{2297}" => build_flat_op("CircleTimes", left, right),
+    "\\[CenterDot]" | "\u{00B7}" => build_flat_op("CenterDot", left, right),
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => {
       // Cross is Flat/associative — flatten chains: a ⨯ b ⨯ c → Cross[a, b, c].
       let mut parts = Vec::new();
@@ -7369,6 +7396,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "CircleTimes" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{2297} ");
+      }
+      // CenterDot[a, b, ...] displays as a · b · ...
+      if name == "CenterDot" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{00B7} ");
       }
       // CircleDot[a, b, ...] displays as a ⊙ b ⊙ ...
       // A nested CircleDot argument is parenthesized, matching
@@ -10432,6 +10464,12 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{2297} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "CenterDot" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{00B7} ")
     }
     Expr::FunctionCall { name, args }
       if name == "CircleDot" && args.len() >= 2 =>

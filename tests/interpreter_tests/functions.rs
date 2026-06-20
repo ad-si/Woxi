@@ -1871,6 +1871,47 @@ mod circle_dot {
   }
 }
 
+mod ring_operators {
+  use super::*;
+
+  // \[CirclePlus], \[CircleTimes] and \[CenterDot] are flat infix operators.
+  #[test]
+  fn circle_plus_operator() {
+    assert_eq!(interpret(r#"a \[CirclePlus] b"#).unwrap(), "a \u{2295} b");
+    // Flat: a ⊕ b ⊕ c collapses to CirclePlus[a, b, c].
+    assert_eq!(
+      interpret(r#"Length[a \[CirclePlus] b \[CirclePlus] c]"#).unwrap(),
+      "3"
+    );
+    // Binds tighter than Plus, looser than Times.
+    assert_eq!(interpret(r#"Head[a + b \[CirclePlus] c]"#).unwrap(), "Plus");
+  }
+
+  #[test]
+  fn circle_times_operator() {
+    assert_eq!(interpret(r#"a \[CircleTimes] b"#).unwrap(), "a \u{2297} b");
+    // Binds tighter than Times.
+    assert_eq!(
+      interpret(r#"Head[a \[CircleTimes] b * c]"#).unwrap(),
+      "Times"
+    );
+  }
+
+  #[test]
+  fn center_dot_operator() {
+    assert_eq!(interpret(r#"a \[CenterDot] b"#).unwrap(), "a \u{00B7} b");
+    assert_eq!(
+      interpret(r#"a \[CenterDot] b \[CenterDot] c"#).unwrap(),
+      "a \u{00B7} b \u{00B7} c"
+    );
+    // CircleTimes binds tighter than CenterDot.
+    assert_eq!(
+      interpret(r#"a \[CenterDot] b \[CircleTimes] c"#).unwrap(),
+      "a \u{00B7} b \u{2297} c"
+    );
+  }
+}
+
 mod wedge {
   use super::*;
 
