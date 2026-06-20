@@ -4848,11 +4848,7 @@ fn make_inactive_head(head: &str, args: Vec<Expr>, wrap: bool) -> Expr {
 /// Flatten an associative binary chain (Plus/Times/And/Or/...) of `op` rooted
 /// at `expr` into its operand list, in left-to-right order.
 fn flatten_binop(expr: &Expr, op: crate::syntax::BinaryOperator) -> Vec<Expr> {
-  if let Expr::BinaryOp {
-    op: o,
-    left,
-    right,
-  } = expr
+  if let Expr::BinaryOp { op: o, left, right } = expr
     && *o == op
   {
     let mut out = flatten_binop(left, op);
@@ -4926,8 +4922,7 @@ fn inactivate_expr(expr: &Expr, filter: Option<&str>) -> Expr {
             B::StringJoin => "StringJoin",
             _ => "Alternatives",
           };
-          let operands =
-            flatten_binop(expr, *op).iter().map(&inact).collect();
+          let operands = flatten_binop(expr, *op).iter().map(&inact).collect();
           make_inactive_head(head, operands, wants(head))
         }
         // Plus/Minus form one flat Plus chain. Subtraction `a - b` becomes
@@ -4952,11 +4947,7 @@ fn inactivate_expr(expr: &Expr, filter: Option<&str>) -> Expr {
             vec![inact(right), Expr::Integer(-1)],
             wants("Power"),
           );
-          make_inactive_head(
-            "Times",
-            vec![inact(left), inv_b],
-            wants("Times"),
-          )
+          make_inactive_head("Times", vec![inact(left), inv_b], wants("Times"))
         }
         B::Power => make_inactive_head(
           "Power",
@@ -5000,11 +4991,9 @@ fn inactivate_expr(expr: &Expr, filter: Option<&str>) -> Expr {
     }
     // List is structural: never inactivated, but recurse into elements.
     Expr::List(items) => Expr::List(items.iter().map(&inact).collect()),
-    Expr::FunctionCall { name, args } => make_inactive_head(
-      name,
-      args.iter().map(&inact).collect(),
-      wants(name),
-    ),
+    Expr::FunctionCall { name, args } => {
+      make_inactive_head(name, args.iter().map(&inact).collect(), wants(name))
+    }
     Expr::CurriedCall { func, args } => Expr::CurriedCall {
       func: Box::new(inact(func)),
       args: args.iter().map(&inact).collect(),

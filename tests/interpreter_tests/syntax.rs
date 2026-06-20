@@ -6723,7 +6723,10 @@ mod batch_inert_symbols_2 {
       interpret("Inactivate[a - b - c]").unwrap(),
       "Inactive[Plus][a, Inactive[Times][-1, b], Inactive[Times][-1, c]]"
     );
-    assert_eq!(interpret("Inactivate[-a]").unwrap(), "Inactive[Times][-1, a]");
+    assert_eq!(
+      interpret("Inactivate[-a]").unwrap(),
+      "Inactive[Times][-1, a]"
+    );
     assert_eq!(
       interpret("Inactivate[a/b]").unwrap(),
       "Inactive[Times][a, Inactive[Power][b, -1]]"
@@ -6742,7 +6745,10 @@ mod batch_inert_symbols_2 {
       "Inactive[Plus][Sin[x], 1]"
     );
     assert_eq!(interpret("Inactivate[a + b, Times]").unwrap(), "a + b");
-    assert_eq!(interpret("Activate[Inactivate[a + b*c]]").unwrap(), "a + b*c");
+    assert_eq!(
+      interpret("Activate[Inactivate[a + b*c]]").unwrap(),
+      "a + b*c"
+    );
   }
 
   #[test]

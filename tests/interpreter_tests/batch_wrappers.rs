@@ -4773,6 +4773,31 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // The winsorized count is Floor[f*n], not a rounded value. With n=5 and
+  // f=0.1, Floor[0.5] = 0, so nothing is winsorized and the result is the
+  // plain mean/variance (regression: previously rounded 0.5 up to 1).
+  #[test]
+  fn winsorized_count_uses_floor() {
+    assert_eq!(
+      interpret("WinsorizedMean[{1, 2, 3, 4, 100}, 0.1]").unwrap(),
+      "22"
+    );
+    // f=0.14 -> Floor[0.7] = 0 as well.
+    assert_eq!(
+      interpret("WinsorizedMean[{1, 2, 3, 4, 100}, 0.14]").unwrap(),
+      "22"
+    );
+    // f=0.2 -> Floor[1.0] = 1: winsorize one value at each end.
+    assert_eq!(
+      interpret("WinsorizedMean[{1, 2, 3, 4, 100}, 0.2]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("WinsorizedVariance[{1, 2, 3, 4, 100}, 0.1]").unwrap(),
+      "3805/2"
+    );
+  }
+
   // EqualTo operator form
   #[test]
   fn equal_to_true() {

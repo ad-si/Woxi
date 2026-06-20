@@ -838,25 +838,25 @@ pub fn dispatch_math_functions(
       }
     }
     "WinsorizedMean" if args.len() == 2 => {
-      // WinsorizedMean[list, f]         — replace the lowest/highest round(f*n)
+      // WinsorizedMean[list, f]         — replace the lowest/highest floor(f*n)
       //                                   values with the boundary value, mean.
-      // WinsorizedMean[list, {f1, f2}]  — winsorize round(f1*n) at the bottom,
-      //                                   round(f2*n) at the top.
+      // WinsorizedMean[list, {f1, f2}]  — winsorize floor(f1*n) at the bottom,
+      //                                   floor(f2*n) at the top.
       if let Expr::List(elems) = &args[0] {
         let n = elems.len();
         let (trim_lo, trim_hi) = match &args[1] {
           Expr::List(fs) if fs.len() == 2 => {
             match (expr_to_f64(&fs[0]), expr_to_f64(&fs[1])) {
               (Some(f1), Some(f2)) => (
-                (n as f64 * f1).round() as usize,
-                (n as f64 * f2).round() as usize,
+                (n as f64 * f1).floor() as usize,
+                (n as f64 * f2).floor() as usize,
               ),
               _ => return None,
             }
           }
           other => match expr_to_f64(other) {
             Some(f) => {
-              let t = (n as f64 * f).round() as usize;
+              let t = (n as f64 * f).floor() as usize;
               (t, t)
             }
             None => return None,
@@ -945,7 +945,7 @@ pub fn dispatch_math_functions(
         && let Some(frac) = expr_to_f64(&args[1])
       {
         let n = elems.len();
-        let trim = (n as f64 * frac).round() as usize;
+        let trim = (n as f64 * frac).floor() as usize;
         if 2 * trim < n {
           let mut sorted: Vec<Expr> = elems.to_vec();
           sorted.sort_by(|a, b| {
