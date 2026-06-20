@@ -5281,6 +5281,78 @@ mod longest_common_subsequence_tests {
   }
 }
 
+mod longest_ordered_sequence_tests {
+  use woxi::interpret;
+
+  // LongestOrderedSequence[list]: longest non-decreasing subsequence.
+  #[test]
+  fn list_default() {
+    // {1, 3, 4} is also length 3; wolframscript returns {1, 2, 4}.
+    assert_eq!(
+      interpret("LongestOrderedSequence[{1, 3, 2, 4}]").unwrap(),
+      "{1, 2, 4}"
+    );
+    assert_eq!(
+      interpret("LongestOrderedSequence[{3, 1, 2, 1, 2, 3}]").unwrap(),
+      "{1, 1, 2, 3}"
+    );
+    // An already-ordered list is returned whole.
+    assert_eq!(
+      interpret("LongestOrderedSequence[{1, 2, 2, 3}]").unwrap(),
+      "{1, 2, 2, 3}"
+    );
+    // A strictly decreasing list keeps the last single element.
+    assert_eq!(
+      interpret("LongestOrderedSequence[{5, 4, 3, 2, 1}]").unwrap(),
+      "{1}"
+    );
+    assert_eq!(interpret("LongestOrderedSequence[{42}]").unwrap(), "{42}");
+    assert_eq!(interpret("LongestOrderedSequence[{}]").unwrap(), "{}");
+  }
+
+  // A string argument is processed character-wise and rebuilt as a string.
+  #[test]
+  fn string_argument() {
+    assert_eq!(
+      interpret(r#"LongestOrderedSequence["BAABCA"]"#).unwrap(),
+      "AABC"
+    );
+    assert_eq!(
+      interpret(r#"LongestOrderedSequence[{"B", "A", "A", "C", "B", "C"}]"#)
+        .unwrap(),
+      "{A, A, B, C}"
+    );
+  }
+
+  // The two-argument form takes an ordering predicate.
+  #[test]
+  fn with_comparator() {
+    // Decreasing order.
+    assert_eq!(
+      interpret("LongestOrderedSequence[{1, 3, 2, 4}, OrderedQ[{#2, #1}] &]")
+        .unwrap(),
+      "{3, 2}"
+    );
+    // Strictly increasing (drops the repeated A).
+    assert_eq!(
+      interpret(
+        r#"LongestOrderedSequence[{"B", "A", "A", "C", "B", "C"}, OrderedQ[{#1, #2}] && #1 =!= #2 &]"#
+      )
+      .unwrap(),
+      "{A, B, C}"
+    );
+  }
+
+  // A non-list (and a string in the two-argument form) is rejected.
+  #[test]
+  fn rejects_non_list() {
+    assert_eq!(
+      interpret("LongestOrderedSequence[5]").unwrap(),
+      "LongestOrderedSequence[5]"
+    );
+  }
+}
+
 mod string_count_patterns {
   use woxi::interpret;
 

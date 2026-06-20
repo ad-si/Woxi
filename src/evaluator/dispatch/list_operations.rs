@@ -509,6 +509,89 @@ fn flatten_at_unified(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(flatten_at_apply(subject, &deduped))
 }
 
+// LongestOrderedSequence[list] / [list, p]: longest subsequence whose
+// consecutive elements are "in order" per the comparator `p` (default
+// non-decreasing). Uses an O(n^2) DP; ties resolve to the largest predecessor
+// index and the largest end index, matching wolframscript. A string argument
+// is processed character-wise and the result is rebuilt as a string.
+fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let symbolic = || Expr::FunctionCall {
+    name: "LongestOrderedSequence".to_string(),
+    args: args.to_vec().into(),
+  };
+  // A string is accepted only in the one-argument form; the two-argument form
+  // requires a List. Anything else emits ::list and stays unevaluated.
+  let (elements, is_string): (Vec<Expr>, bool) = match &args[0] {
+    Expr::List(items) => (items.to_vec(), false),
+    Expr::String(s) if args.len() == 1 => (
+      s.chars().map(|c| Expr::String(c.to_string())).collect(),
+      true,
+    ),
+    _ => {
+      crate::emit_message(&format!(
+        "LongestOrderedSequence::list: List expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&symbolic())
+      ));
+      return Ok(symbolic());
+    }
+  };
+  let build = |idxs: &[usize]| -> Expr {
+    if is_string {
+      let s: String = idxs
+        .iter()
+        .map(|&i| match &elements[i] {
+          Expr::String(c) => c.as_str(),
+          _ => "",
+        })
+        .collect();
+      Expr::String(s)
+    } else {
+      Expr::List(idxs.iter().map(|&i| elements[i].clone()).collect())
+    }
+  };
+  let n = elements.len();
+  if n == 0 {
+    return Ok(build(&[]));
+  }
+  // True when (x, y) are in order per the comparator.
+  let in_order = |x: &Expr, y: &Expr| -> Result<bool, InterpreterError> {
+    let r = if args.len() == 2 {
+      list_helpers_ast::apply_func_to_two_args(&args[1], x, y)?
+    } else {
+      crate::evaluator::evaluate_function_call_ast(
+        "OrderedQ",
+        &[Expr::List(vec![x.clone(), y.clone()].into())],
+      )?
+    };
+    Ok(matches!(r, Expr::Identifier(ref s) if s == "True"))
+  };
+  let mut len = vec![1usize; n];
+  let mut pred = vec![usize::MAX; n];
+  for i in 0..n {
+    for j in 0..i {
+      if in_order(&elements[j], &elements[i])? && len[j] + 1 >= len[i] {
+        len[i] = len[j] + 1;
+        pred[i] = j;
+      }
+    }
+  }
+  // End at the largest index achieving the maximum length.
+  let mut best = 0;
+  for i in 1..n {
+    if len[i] >= len[best] {
+      best = i;
+    }
+  }
+  let mut idxs = Vec::new();
+  let mut cur = best;
+  while cur != usize::MAX {
+    idxs.push(cur);
+    cur = pred[cur];
+  }
+  idxs.reverse();
+  Ok(build(&idxs))
+}
+
 // View a canonical tree node `Tree[data, children]` as (data, child subtrees).
 // A leaf is `Tree[data, None]` (no children). Returns None if `e` is not a Tree.
 fn tree_node(e: &Expr) -> Option<(&Expr, Vec<&Expr>)> {
@@ -2660,6 +2743,9 @@ pub fn dispatch_list_operations(
     }
     "Count" if args.len() >= 2 && args.len() <= 4 => {
       return Some(list_helpers_ast::count_unified_ast(args));
+    }
+    "LongestOrderedSequence" if args.len() == 1 || args.len() == 2 => {
+      return Some(longest_ordered_sequence(args));
     }
     "ConstantArray" if args.len() == 2 => {
       return Some(list_helpers_ast::constant_array_ast(&args[0], &args[1]));

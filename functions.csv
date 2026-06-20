@@ -3386,7 +3386,7 @@ GaugeFrameSize,,🚫,,9.0,3474
 HandlerFunctions,,🚫,,11.0,3474
 LogRankTest,,,,9.0,3474
 LogSeriesDistribution,,,,6.0,3474
-LongestOrderedSequence,,,,10.2,3474
+LongestOrderedSequence,Finds the longest ordered (non-decreasing by default) subsequence of a list using an optional ordering predicate,✅,pure,10.2,3474
 SpokenString,,🚫,,7.0,3474
 TemplateObject,,,,10.0,3474
 VoigtDistribution,,,,9.0,3474
