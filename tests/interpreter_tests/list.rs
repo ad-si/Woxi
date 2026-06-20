@@ -8130,6 +8130,73 @@ mod join_non_list {
   }
 }
 
+mod array_filter {
+  use super::*;
+
+  // ArrayFilter[f, list, r] applies f to every radius-r block, replicating
+  // edge elements so each block has 2r+1 entries.
+  #[test]
+  fn one_dimensional() {
+    assert_eq!(
+      interpret("ArrayFilter[Mean, {1, 2, 3, 4, 5}, 1]").unwrap(),
+      "{4/3, 2, 3, 4, 14/3}"
+    );
+    assert_eq!(
+      interpret("ArrayFilter[Total, {1, 2, 3, 4, 5}, 1]").unwrap(),
+      "{4, 6, 9, 12, 14}"
+    );
+    assert_eq!(
+      interpret("ArrayFilter[Max, {1, 5, 2, 8, 3}, 1]").unwrap(),
+      "{5, 5, 8, 8, 8}"
+    );
+  }
+
+  // The whole block (a List) is passed to a symbolic head; edges replicate.
+  #[test]
+  fn passes_whole_block() {
+    assert_eq!(
+      interpret("ArrayFilter[f, {1, 2, 3}, 1]").unwrap(),
+      "{f[{1, 1, 2}], f[{1, 2, 3}], f[{2, 3, 3}]}"
+    );
+  }
+
+  // Radius 0 leaves a singleton block per element.
+  #[test]
+  fn radius_zero() {
+    assert_eq!(
+      interpret("ArrayFilter[Mean, {1, 2, 3}, 0]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  // A radius larger than the array still works via edge replication.
+  #[test]
+  fn radius_beyond_bounds() {
+    assert_eq!(
+      interpret("ArrayFilter[Total, {1, 2, 3}, 5]").unwrap(),
+      "{20, 22, 24}"
+    );
+  }
+
+  // 2D arrays use a square block; f receives the sub-matrix.
+  #[test]
+  fn two_dimensional() {
+    assert_eq!(
+      interpret("ArrayFilter[Total, {{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{{{5, 5, 8}, {5, 8, 8}}, {{7, 7, 10}, {7, 10, 10}}}"
+    );
+  }
+
+  // A list-valued radius is left unevaluated.
+  #[test]
+  fn list_radius_unevaluated() {
+    assert_eq!(
+      interpret("ArrayFilter[Mean, {1, 2, 3, 4}, {1}]").unwrap(),
+      "ArrayFilter[Mean, {1, 2, 3, 4}, {1}]"
+    );
+  }
+}
+
 mod max_min_detect {
   use super::*;
 

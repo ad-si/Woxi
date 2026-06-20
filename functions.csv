@@ -3284,7 +3284,7 @@ NakagamiDistribution,,,,8.0,3363
 NicholsPlot,,🚫,,8.0,3363
 SystemsModelDelete,,🚫,,8.0,3363
 VarianceGammaDistribution,,,,9.0,3363
-ArrayFilter,,,,10.2,3378
+ArrayFilter,Applies a function to every radius-r block of a list or array with edge elements replicated at the boundaries,✅,pure,10.2,3378
 AudioResample,,🚫,,11.0,3378
 CalendarConvert,,,,10.0,3378
 ConformImages,,,,10.0,3378

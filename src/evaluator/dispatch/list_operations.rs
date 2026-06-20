@@ -509,6 +509,77 @@ fn flatten_at_unified(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(flatten_at_apply(subject, &deduped))
 }
 
+// ArrayFilter[f, array, r]: apply `f` to every radius-`r` block of a 1D list
+// or 2D array. Boundaries are handled by replicating the edge elements, so
+// every block has exactly 2r+1 elements per dimension, and the whole block
+// (a List or List of Lists) is passed to `f`. Returns None for inputs not in
+// the supported integer-radius 1D/2D shape (left unevaluated by the caller).
+fn array_filter(
+  f: &Expr,
+  array: &Expr,
+  r: usize,
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::List(elems) = array else {
+    return None;
+  };
+  if elems.is_empty() {
+    return None;
+  }
+  let clamp =
+    |k: i64, len: usize| -> usize { k.clamp(0, len as i64 - 1) as usize };
+  // 2D when every row is a List of the same non-zero length.
+  let row_len = |e: &Expr| match e {
+    Expr::List(items) => Some(items.len()),
+    _ => None,
+  };
+  let is_2d = row_len(&elems[0])
+    .is_some_and(|w| w > 0 && elems.iter().all(|row| row_len(row) == Some(w)));
+  let r = r as i64;
+  if is_2d {
+    let h = elems.len();
+    let w = row_len(&elems[0]).unwrap();
+    let get = |y: usize, x: usize| match &elems[y] {
+      Expr::List(row) => row[x].clone(),
+      _ => unreachable!(),
+    };
+    let mut rows = Vec::with_capacity(h);
+    for y in 0..h {
+      let mut new_row = Vec::with_capacity(w);
+      for x in 0..w {
+        let mut block = Vec::with_capacity((2 * r + 1) as usize);
+        for dy in -r..=r {
+          let yy = clamp(y as i64 + dy, h);
+          let mut brow = Vec::with_capacity((2 * r + 1) as usize);
+          for dx in -r..=r {
+            brow.push(get(yy, clamp(x as i64 + dx, w)));
+          }
+          block.push(Expr::List(brow.into()));
+        }
+        match list_helpers_ast::apply_func_ast(f, &Expr::List(block.into())) {
+          Ok(v) => new_row.push(v),
+          Err(e) => return Some(Err(e)),
+        }
+      }
+      rows.push(Expr::List(new_row.into()));
+    }
+    return Some(Ok(Expr::List(rows.into())));
+  }
+  // 1D path.
+  let n = elems.len();
+  let mut result = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut block = Vec::with_capacity((2 * r + 1) as usize);
+    for d in -r..=r {
+      block.push(elems[clamp(i as i64 + d, n)].clone());
+    }
+    match list_helpers_ast::apply_func_ast(f, &Expr::List(block.into())) {
+      Ok(v) => result.push(v),
+      Err(e) => return Some(Err(e)),
+    }
+  }
+  Some(Ok(Expr::List(result.into())))
+}
+
 // MaxDetect/MinDetect (1-arg): binary mask of regional extrema. A maximal run
 // of equal values is a regional maximum (resp. minimum) when both
 // out-of-run neighbours are strictly smaller (resp. larger); a run at the
@@ -2773,6 +2844,21 @@ pub fn dispatch_list_operations(
     }
     "LongestOrderedSequence" if args.len() == 1 || args.len() == 2 => {
       return Some(longest_ordered_sequence(args));
+    }
+    // ArrayFilter[f, array, r]: apply f to every radius-r block of a list or
+    // matrix (edges replicated). Non-integer radius / template forms are left
+    // unevaluated.
+    "ArrayFilter" if args.len() == 3 => {
+      if let Some(r) = expr_to_i128(&args[2])
+        && r >= 0
+        && let Some(result) = array_filter(&args[0], &args[1], r as usize)
+      {
+        return Some(result);
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "ArrayFilter".to_string(),
+        args: args.to_vec().into(),
+      }));
     }
     // MaxDetect[list] / MinDetect[list]: regional-extrema mask of a numeric
     // list. The 2-argument h-maxima form is left for the morphology code.
