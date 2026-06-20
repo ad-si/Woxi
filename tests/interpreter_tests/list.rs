@@ -7808,6 +7808,19 @@ mod join_non_list {
     );
   }
 
+  // ReplacePart addresses operator expressions by their FullForm parts, so a
+  // power x^2 = Power[x, 2] has part 1 = x and part 2 = 2.
+  #[test]
+  fn replace_part_power() {
+    assert_eq!(interpret("ReplacePart[x^2, 1 -> y]").unwrap(), "y^2");
+    assert_eq!(interpret("ReplacePart[x^2, 2 -> 3]").unwrap(), "x^3");
+    // Nested: the base of Sin[x]^2 is Sin[x]; part {1, 1} is its argument.
+    assert_eq!(
+      interpret("ReplacePart[Sin[x]^2, {1, 1} -> y]").unwrap(),
+      "Sin[y]^2"
+    );
+  }
+
   #[test]
   fn replace_part_out_of_range_returns_original() {
     // Out-of-range positions are silently ignored, matching wolframscript.
@@ -11723,10 +11736,7 @@ mod cases {
   // Return inside the scanned function still short-circuits.
   #[test]
   fn scan_levelspec_return() {
-    assert_case(
-      r#"Scan[If[# > 2, Return[#]] &, {1, 2, 3, 4}, {1}]"#,
-      r#"3"#,
-    );
+    assert_case(r#"Scan[If[# > 2, Return[#]] &, {1, 2, 3, 4}, {1}]"#, r#"3"#);
   }
   #[test]
   fn member_q_6() {

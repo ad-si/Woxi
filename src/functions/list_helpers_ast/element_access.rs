@@ -1775,6 +1775,30 @@ fn assoc_position_index(spec: &Expr, pairs: &[(Expr, Expr)]) -> Option<usize> {
   }
 }
 
+/// Decompose a subject into its replaceable parts and optional head name.
+/// Lists have no head; function calls and operator expressions (e.g. `x^2`,
+/// `a + b`, `-a`) are decomposed to their full-form head and children so that
+/// integer part indices address them like Wolfram's FullForm. Atoms (and
+/// special symbols such as `Infinity`) yield None and are left unchanged.
+fn parts_and_head(expr: &Expr) -> Option<(Vec<Expr>, Option<String>)> {
+  match expr {
+    Expr::List(items) => Some((items.to_vec(), None)),
+    Expr::FunctionCall { name, args } => {
+      Some((args.to_vec(), Some(name.clone())))
+    }
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. } => {
+      use crate::functions::expr_form::{ExprForm, decompose_expr};
+      match decompose_expr(expr) {
+        ExprForm::Composite { head, children } if !children.is_empty() => {
+          Some((children, Some(head)))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 pub fn replace_part_ast(
   expr: &Expr,
   rule: &Expr,
@@ -1875,13 +1899,12 @@ pub fn replace_part_ast(
     rules: &[(Expr, Expr, bool)],
     max_depth: usize,
   ) -> Result<Expr, InterpreterError> {
-    let (items, head): (&[Expr], Option<&str>) = match expr {
-      Expr::List(items) => (items.as_slice(), None),
-      Expr::FunctionCall { name, args } => {
-        (args.as_slice(), Some(name.as_str()))
-      }
-      _ => return Ok(expr.clone()),
+    let (items, head): (Vec<Expr>, Option<String>) = match parts_and_head(expr)
+    {
+      Some(p) => p,
+      None => return Ok(expr.clone()),
     };
+    let items = items.as_slice();
     let len = items.len() as i128;
     // Position 0 at this level replaces the head
     let mut new_head: Option<String> = None;
@@ -1992,14 +2015,14 @@ pub fn replace_part_ast(
         args: out.into(),
       },
       (None, Some(h)) => Expr::FunctionCall {
-        name: h.to_string(),
+        name: h,
         args: out.into(),
       },
       (None, None) => Expr::List(out.into()),
     })
   }
 
-  if !matches!(expr, Expr::List(_) | Expr::FunctionCall { .. }) {
+  if parts_and_head(expr).is_none() {
     // Atomic subjects come back unchanged
     return Ok(expr.clone());
   }
