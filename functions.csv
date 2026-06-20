@@ -1741,7 +1741,7 @@ DialogInput,Dialog input,,unevaluated,6.0,1770
 TimelinePlot,Timeline plot,,unevaluated,10.1,1770
 PassEventsDown,Pass events down option,,unevaluated,6.0,1771
 AssociateTo,Append a key-value pair to an association variable in-place,✅,stateful,10.0,1776
-CircleDot,Symbolic circle dot operator with Unicode display,✅,none,3.0,1776
+CircleDot,Symbolic circle dot operator with Unicode display,✅,pure,3.0,1776
 FindGeneratingFunction,Find generating function,,unevaluated,7.0,1776
 HistogramDistribution,Histogram distribution,,unevaluated,8.0,1776
 VectorScaling,Vector scaling option,,unevaluated,12.1,1776
@@ -3771,7 +3771,7 @@ ChannelObject,,🚫,,11.0,3889
 ControllabilityMatrix,,,,8.0,3889
 ConvexHullRegion,,🚫,,12.2,3889
 Delimiters,Option symbol specifying what delimiters to use or look for,✅,none,1.0,3889
-Diamond,,,,3.0,3889
+Diamond,Symbolic diamond operator with Unicode display,✅,pure,3.0,3889
 FileFormat,,✅,,6.0,3889
 FileTemplateApply,,,,10.0,3889
 FindLibrary,,,,8.0,3889

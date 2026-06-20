@@ -4838,11 +4838,13 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[CenterDot]" | "\u{00B7}" => 34,  // just above Times
     "\\[CircleTimes]" | "\u{2297}" => 35, // above CenterDot, below Vee
     "\\[Vee]" | "\u{22C1}" => 36,        // above CircleTimes, below Wedge
-    "\\[Wedge]" | "\u{22C0}" => 37,      // above Vee, below Dot
-    "." => 38,                           // Dot (higher than the ring ops)
-    "\\[SmallCircle]" | "\u{2218}" => 39, // above Dot, below Apply
-    "@@@" | "@@" => 40,                  // Apply/MapApply
-    "/@" => 42,                          // Map (higher than Apply)
+    "\\[Wedge]" | "\u{22C0}" => 37,      // above Vee, below Diamond
+    "\\[Diamond]" | "\u{22C4}" => 38,    // above Wedge, below Dot
+    "." => 39,                           // Dot (higher than the ring ops)
+    "\\[CircleDot]" | "\u{2299}" => 40,  // above Dot, below SmallCircle
+    "\\[SmallCircle]" | "\u{2218}" => 41, // above CircleDot, below Apply
+    "@@@" | "@@" => 42,                  // Apply/MapApply
+    "/@" => 43,                          // Map (higher than Apply)
     "NEGATE" => 45, // Unary minus (PreMinus): between Times/Dot and Power
     "^" | "^_NEG" => 48, // Power (`^_NEG` is `a^-b` with negated right operand)
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 51, // Tilde infix: a ~f~ b (higher than ^, lower than @)
@@ -5125,6 +5127,8 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       args: vec![left.clone(), right.clone()].into(),
     },
     "\\[Star]" | "\u{22C6}" => build_flat_op("Star", left, right),
+    "\\[Diamond]" | "\u{22C4}" => build_flat_op("Diamond", left, right),
+    "\\[CircleDot]" | "\u{2299}" => build_flat_op("CircleDot", left, right),
     "\\[SmallCircle]" | "\u{2218}" => build_flat_op("SmallCircle", left, right),
     // Wedge and Vee are flat: a ⋀ b ⋀ c -> Wedge[a, b, c].
     "\\[Wedge]" | "\u{22C0}" => build_flat_op("Wedge", left, right),
@@ -7447,6 +7451,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "Star" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{22C6} ");
+      }
+      // Diamond[a, b, ...] displays as a ⋄ b ⋄ ...
+      if name == "Diamond" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{22C4} ");
       }
       // SmallCircle[a, b, ...] displays as a ∘ b ∘ ...
       if name == "SmallCircle" && args.len() >= 2 {
@@ -10528,6 +10537,12 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Star" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{22C6} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Diamond" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{22C4} ")
     }
     Expr::FunctionCall { name, args }
       if name == "SmallCircle" && args.len() >= 2 =>

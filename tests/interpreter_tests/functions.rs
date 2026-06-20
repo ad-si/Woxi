@@ -2009,6 +2009,40 @@ mod ring_operators {
       "SmallCircle"
     );
   }
+
+  // \[Diamond] and \[CircleDot] are flat operators bracketing Dot:
+  // Wedge < Diamond < Dot < CircleDot < SmallCircle.
+  #[test]
+  fn diamond_and_circle_dot_operators() {
+    assert_eq!(interpret(r#"a \[Diamond] b"#).unwrap(), "a \u{22C4} b");
+    assert_eq!(interpret(r#"a \[CircleDot] b"#).unwrap(), "a \u{2299} b");
+    assert_eq!(
+      interpret("Diamond[a, b, c]").unwrap(),
+      "a \u{22C4} b \u{22C4} c"
+    );
+    // Both flat.
+    assert_eq!(
+      interpret(r#"Length[a \[Diamond] b \[Diamond] c]"#).unwrap(),
+      "3"
+    );
+    // Diamond is tighter than Wedge but looser than Dot.
+    assert_eq!(
+      interpret(r#"Head[a \[Diamond] b \[Wedge] c]"#).unwrap(),
+      "Wedge"
+    );
+    assert_eq!(interpret(r#"Head[a \[Diamond] b . c]"#).unwrap(), "Diamond");
+    // CircleDot is tighter than Dot but looser than SmallCircle and Power.
+    assert_eq!(interpret(r#"Head[a \[CircleDot] b . c]"#).unwrap(), "Dot");
+    assert_eq!(
+      interpret(r#"Head[a \[CircleDot] b \[SmallCircle] c]"#).unwrap(),
+      "CircleDot"
+    );
+    // CircleDot binds tighter than Diamond.
+    assert_eq!(
+      interpret(r#"Head[a \[Diamond] b \[CircleDot] c]"#).unwrap(),
+      "Diamond"
+    );
+  }
 }
 
 mod wedge {
