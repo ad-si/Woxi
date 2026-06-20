@@ -1282,7 +1282,7 @@ TextWords,Split text into a list of words (surrounding punctuation trimmed; inte
 WindowTitle,,🚫,,3.0,1296
 CurrentImage,,🚫,,8.0,1298
 Equivalent,Logical equivalence,✅,pure,7.0,1298
-Dilation,Morphological dilation (max filter),✅,pure,7.0,1299
+Dilation,Morphological dilation by a scalar radius or a structuring-element matrix,✅,pure,7.0,1299
 JacobiAmplitude,Amplitude for Jacobi elliptic functions,✅,pure,1.0,1300
 RegionBoundary,,🚫,,10.0,1301
 FormFunction,,🚫,,10.0,1303
@@ -1555,7 +1555,7 @@ CoefficientRules,Coefficient rules for polynomials; one-arg form CoefficientRule
 ConfidenceLevel,Confidence level specification,,unevaluated,7.0,1578
 TextSentences,Splits a string into a list of sentences,✅,pure,10.1,1578
 CreatePalette,Create a palette notebook,,unevaluated,6.0,1579
-Erosion,Morphological erosion (min filter),✅,pure,7.0,1582
+Erosion,Morphological erosion by a scalar radius or a structuring-element matrix,✅,pure,7.0,1582
 NetDecoder,Neural net decoder,,unevaluated,11.0,1582
 Thinning,Morphological thinning,,unevaluated,8.0,1582
 Tolerance,Tolerance specification,,unevaluated,2.0,1583

@@ -3378,6 +3378,56 @@ mod morphological_operations {
       "{1, 1, 1, 1, 1, 1, 1}"
     );
   }
+
+  // The second argument may be a 0/1 structuring-element matrix instead of a
+  // scalar radius.
+  #[test]
+  fn dilation_with_structuring_element() {
+    // Dilating a single pixel by a cross stamps the cross shape.
+    assert_eq!(
+      interpret(
+        "Dilation[{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}]"
+      )
+      .unwrap(),
+      "{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}"
+    );
+    // An even-sized kernel is anchored above-left and reflected for dilation.
+    assert_eq!(
+      interpret(
+        "Dilation[{{1, 0, 0}, {0, 0, 0}, {0, 0, 0}}, {{1, 1}, {1, 1}}]"
+      )
+      .unwrap(),
+      "{{1, 1, 0}, {1, 1, 0}, {0, 0, 0}}"
+    );
+    // It composes with the structuring-element generators.
+    assert_eq!(
+      interpret(
+        "Dilation[{{0, 1, 0}, {0, 1, 0}, {0, 1, 0}}, DiamondMatrix[1]]"
+      )
+      .unwrap(),
+      "{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn erosion_with_structuring_element() {
+    // Erosion truncates the element at the border, so a full image survives.
+    assert_eq!(
+      interpret(
+        "Erosion[{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}]"
+      )
+      .unwrap(),
+      "{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}"
+    );
+    // A cross eroded by a cross leaves only the center.
+    assert_eq!(
+      interpret(
+        "Erosion[{{0, 0, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 0, 0}}, CrossMatrix[1]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}}"
+    );
+  }
 }
 
 mod base_encode_decode {

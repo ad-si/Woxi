@@ -10562,6 +10562,42 @@ fn morphological_op(
   data_expr: &Expr,
   radius_expr: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
+  // Structuring-element form: the second argument is a 0/1 kernel matrix
+  // (e.g. CrossMatrix[1]) rather than a scalar radius. Apply the kernel-based
+  // morphology to a 2D array.
+  if let (Expr::List(kitems), Expr::List(items)) = (radius_expr, data_expr)
+    && !kitems.is_empty()
+    && kitems.iter().all(|r| matches!(r, Expr::List(_)))
+    && !items.is_empty()
+    && items.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let matrix = expr_matrix_to_f64(items)?;
+    let kernel = expr_matrix_to_f64(kitems)?;
+    let result = apply_morphological_kernel_2d(name, &matrix, &kernel);
+    let is_int = items.iter().all(|row| {
+      matches!(row, Expr::List(cols)
+        if cols.iter().all(|e| matches!(e, Expr::Integer(_))))
+    });
+    let result_expr = result
+      .into_iter()
+      .map(|row| {
+        Expr::List(
+          row
+            .into_iter()
+            .map(|v| {
+              if is_int {
+                Expr::Integer(v as i128)
+              } else {
+                Expr::Real(v)
+              }
+            })
+            .collect(),
+        )
+      })
+      .collect();
+    return Some(Ok(Expr::List(result_expr)));
+  }
+
   let radius =
     crate::functions::math_ast::try_eval_to_f64(radius_expr)? as usize;
 
@@ -10662,6 +10698,80 @@ fn apply_morphological_1d(name: &str, data: &[f64], radius: usize) -> Vec<f64> {
     "Closing" => {
       let dilated = min_max_filter_1d(data, radius, false);
       min_max_filter_1d(&dilated, radius, true)
+    }
+    _ => data.to_vec(),
+  }
+}
+
+/// One pass of kernel-based morphology. `use_min` selects erosion (min, the
+/// structuring element is placed directly) versus dilation (max, the element
+/// is reflected through its center). The element is truncated at the image
+/// boundary — out-of-bounds samples are skipped, not counted — so an erosion
+/// does not eat away the border (matching the scalar-radius behavior).
+fn kernel_morph_pass(
+  data: &[Vec<f64>],
+  kernel: &[Vec<f64>],
+  use_min: bool,
+) -> Vec<Vec<f64>> {
+  let h = data.len();
+  let w = if h > 0 { data[0].len() } else { 0 };
+  let kh = kernel.len();
+  let kw = if kh > 0 { kernel[0].len() } else { 0 };
+  let (cr, cc) = ((kh as i64 - 1) / 2, (kw as i64 - 1) / 2);
+  let get = |r: i64, c: i64| -> Option<f64> {
+    if r >= 0 && (r as usize) < h && c >= 0 && (c as usize) < w {
+      Some(data[r as usize][c as usize])
+    } else {
+      None
+    }
+  };
+  let mut out = vec![vec![0.0; w]; h];
+  for (i, out_row) in out.iter_mut().enumerate() {
+    for (j, cell) in out_row.iter_mut().enumerate() {
+      let mut acc: Option<f64> = None;
+      for (kr, krow) in kernel.iter().enumerate() {
+        for (kc, &kv) in krow.iter().enumerate() {
+          if kv != 0.0 {
+            let dr = kr as i64 - cr;
+            let dc = kc as i64 - cc;
+            let (r, c) = if use_min {
+              (i as i64 + dr, j as i64 + dc)
+            } else {
+              (i as i64 - dr, j as i64 - dc)
+            };
+            if let Some(v) = get(r, c) {
+              acc = Some(match acc {
+                None => v,
+                Some(a) if use_min => a.min(v),
+                Some(a) => a.max(v),
+              });
+            }
+          }
+        }
+      }
+      *cell = acc.unwrap_or(0.0);
+    }
+  }
+  out
+}
+
+/// Kernel-based morphology dispatch: Erosion/Dilation are single passes,
+/// Opening = erode then dilate, Closing = dilate then erode.
+fn apply_morphological_kernel_2d(
+  name: &str,
+  data: &[Vec<f64>],
+  kernel: &[Vec<f64>],
+) -> Vec<Vec<f64>> {
+  match name {
+    "Erosion" => kernel_morph_pass(data, kernel, true),
+    "Dilation" => kernel_morph_pass(data, kernel, false),
+    "Opening" => {
+      let eroded = kernel_morph_pass(data, kernel, true);
+      kernel_morph_pass(&eroded, kernel, false)
+    }
+    "Closing" => {
+      let dilated = kernel_morph_pass(data, kernel, false);
+      kernel_morph_pass(&dilated, kernel, true)
     }
     _ => data.to_vec(),
   }
