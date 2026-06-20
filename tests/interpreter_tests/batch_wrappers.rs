@@ -6622,6 +6622,48 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // GraphUnion combines the vertex sets (sorted) and edge sets (deduplicated).
+  #[test]
+  fn graph_union_paths() {
+    assert_eq!(
+      interpret(
+        "VertexList[GraphUnion[PathGraph[{1, 2, 3}], PathGraph[{3, 4, 5}]]]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeCount[GraphUnion[PathGraph[{1, 2, 3}], PathGraph[{3, 4, 5}]]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+  #[test]
+  fn graph_union_dedup_and_sort() {
+    // Shared edges are counted once.
+    assert_eq!(
+      interpret("EdgeCount[GraphUnion[CycleGraph[3], PathGraph[{1, 2, 3}]]]")
+        .unwrap(),
+      "3"
+    );
+    // Vertices come back in canonical (sorted) order.
+    assert_eq!(
+      interpret("VertexList[GraphUnion[Graph[{3, 1}, {}], Graph[{2, 5}, {}]]]")
+        .unwrap(),
+      "{1, 2, 3, 5}"
+    );
+    // Variadic: three paths chained share endpoints.
+    assert_eq!(
+      interpret(
+        "EdgeCount[GraphUnion[PathGraph[{1, 2}], PathGraph[{2, 3}], PathGraph[{3, 4}]]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
   // VertexOutComponent
   #[test]
   fn vertex_out_component_star() {

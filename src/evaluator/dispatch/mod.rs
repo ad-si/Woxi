@@ -5377,6 +5377,59 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // GraphUnion[g1, g2, ...] — graph whose vertices are the (sorted) union of
+  // the inputs' vertices and whose edges are the union of their edges, kept in
+  // first-seen order and deduplicated by undirected endpoint pair.
+  if name == "GraphUnion"
+    && args.len() >= 2
+    && args.iter().all(|a| {
+      matches!(a, Expr::FunctionCall { name: gn, args: ga }
+        if gn == "Graph" && ga.len() >= 2
+          && matches!(&ga[0], Expr::List(_))
+          && matches!(&ga[1], Expr::List(_)))
+    })
+  {
+    let mut vertices: Vec<Expr> = Vec::new();
+    let mut vertex_seen = std::collections::HashSet::new();
+    let mut edges: Vec<Expr> = Vec::new();
+    let mut edge_seen = std::collections::HashSet::new();
+    for g in args.iter() {
+      let Expr::FunctionCall { args: ga, .. } = g else {
+        unreachable!()
+      };
+      if let Expr::List(vs) = &ga[0] {
+        for v in vs.iter() {
+          if vertex_seen.insert(expr_to_string(v)) {
+            vertices.push(v.clone());
+          }
+        }
+      }
+      if let Expr::List(es) = &ga[1] {
+        for edge in es.iter() {
+          if let Expr::FunctionCall { args: ea, .. } = edge
+            && ea.len() == 2
+          {
+            let (sa, sb) = (expr_to_string(&ea[0]), expr_to_string(&ea[1]));
+            // Undirected: normalize the endpoint pair for deduplication.
+            let key = if sa <= sb {
+              (sa.clone(), sb.clone())
+            } else {
+              (sb.clone(), sa.clone())
+            };
+            if edge_seen.insert(key) {
+              edges.push(edge.clone());
+            }
+          }
+        }
+      }
+    }
+    vertices.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
+    });
+  }
+
   // GraphPower[graph, k] — connect every pair of distinct vertices whose
   // graph distance is at most k. Edges are listed in vertex-index order.
   if name == "GraphPower"
@@ -5400,8 +5453,12 @@ pub fn evaluate_function_call_ast_inner(
       if let Expr::FunctionCall { args: eargs, .. } = edge
         && eargs.len() == 2
         && let (Some(a), Some(b)) = (
-          vertex_strs.iter().position(|v| v == &expr_to_string(&eargs[0])),
-          vertex_strs.iter().position(|v| v == &expr_to_string(&eargs[1])),
+          vertex_strs
+            .iter()
+            .position(|v| v == &expr_to_string(&eargs[0])),
+          vertex_strs
+            .iter()
+            .position(|v| v == &expr_to_string(&eargs[1])),
         )
       {
         adj[a].push(b);
@@ -5433,11 +5490,8 @@ pub fn evaluate_function_call_ast_inner(
     }
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![
-        Expr::List(vertices.clone()),
-        Expr::List(power_edges.into()),
-      ]
-      .into(),
+      args: vec![Expr::List(vertices.clone()), Expr::List(power_edges.into())]
+        .into(),
     });
   }
 
