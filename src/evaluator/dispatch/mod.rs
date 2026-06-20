@@ -1906,6 +1906,24 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // RGBColor["#rrggbb"] parses a CSS-style hex string into channel values.
+  // Accepts `#` followed by exactly 3 (shorthand), 6 (RGB), or 8 (RGBA) hex
+  // digits, case-insensitively; anything else is left symbolic.
+  if name == "RGBColor"
+    && args.len() == 1
+    && let Expr::String(s) = &args[0]
+    && let Some(channels) = parse_hex_color(s)
+  {
+    return Ok(Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: channels
+        .into_iter()
+        .map(Expr::Real)
+        .collect::<Vec<_>>()
+        .into(),
+    });
+  }
+
   // Graphics primitives and style directives: return as symbolic (unevaluated)
   match name {
     "RGBColor"
@@ -11229,6 +11247,33 @@ fn compose_permutation_lists(args: &[Expr]) -> Option<Expr> {
     result.push(Expr::Integer(cur));
   }
   Some(Expr::List(result.into()))
+}
+
+/// Parse a CSS-style hex color string into channel values in [0, 1].
+/// Accepts `#` followed by exactly 3, 6, or 8 hex digits (case-insensitive):
+/// 3 digits is the shorthand `#rgb` (each digit doubled), 6 is `#rrggbb`, and
+/// 8 is `#rrggbbaa` with an alpha channel. Returns `None` for any other form.
+fn parse_hex_color(s: &str) -> Option<Vec<f64>> {
+  let hex = s.strip_prefix('#')?;
+  if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+    return None;
+  }
+  // Expand the 3-digit shorthand by doubling each digit (#abc -> #aabbcc).
+  let expanded: String = match hex.len() {
+    3 => hex.chars().flat_map(|c| [c, c]).collect(),
+    6 | 8 => hex.to_string(),
+    _ => return None,
+  };
+  let channels = expanded
+    .as_bytes()
+    .chunks(2)
+    .map(|pair| {
+      let byte =
+        u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).ok();
+      byte.map(|b| b as f64 / 255.0)
+    })
+    .collect::<Option<Vec<f64>>>()?;
+  Some(channels)
 }
 
 fn compose_cycles_args(args: &[Expr]) -> Option<Expr> {

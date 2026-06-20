@@ -556,6 +556,62 @@ mod cmyk_color {
   }
 }
 
+mod rgb_color_hex {
+  use super::*;
+
+  // A 6-digit hex string parses into the three channel values.
+  #[test]
+  fn six_digit() {
+    assert_eq!(
+      interpret("RGBColor[\"#FF0000\"]").unwrap(),
+      "RGBColor[1., 0., 0.]"
+    );
+    assert_eq!(
+      interpret("RGBColor[\"#336699\"]").unwrap(),
+      "RGBColor[0.2, 0.4, 0.6]"
+    );
+  }
+
+  // The 3-digit shorthand doubles each digit (#F00 -> #FF0000).
+  #[test]
+  fn three_digit_shorthand() {
+    assert_eq!(
+      interpret("RGBColor[\"#F00\"]").unwrap(),
+      "RGBColor[1., 0., 0.]"
+    );
+  }
+
+  // Lowercase hex digits are accepted.
+  #[test]
+  fn lowercase() {
+    assert_eq!(
+      interpret("RGBColor[\"#00ff00\"]").unwrap(),
+      "RGBColor[0., 1., 0.]"
+    );
+  }
+
+  // An 8-digit string adds an alpha channel.
+  #[test]
+  fn eight_digit_alpha() {
+    assert_eq!(
+      interpret("RGBColor[\"#FF000080\"]").unwrap(),
+      "RGBColor[1., 0., 0., 0.5019607843137255]"
+    );
+  }
+
+  // Unsupported forms (no `#`, 4 digits, non-hex, wrong length) stay symbolic.
+  #[test]
+  fn invalid_stays_symbolic() {
+    assert_eq!(
+      interpret("RGBColor[\"FF0000\"]").unwrap(),
+      "RGBColor[FF0000]"
+    );
+    assert_eq!(interpret("RGBColor[\"#F008\"]").unwrap(), "RGBColor[#F008]");
+    assert_eq!(interpret("RGBColor[\"#XYZ\"]").unwrap(), "RGBColor[#XYZ]");
+    assert_eq!(interpret("RGBColor[\"#FF00\"]").unwrap(), "RGBColor[#FF00]");
+  }
+}
+
 mod accounting_form {
   use super::*;
 
