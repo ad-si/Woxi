@@ -183,6 +183,31 @@ mod date_plus {
     );
   }
   #[test]
+  fn date_plus_plural_units() {
+    // A {n, unit} pair accepts the plural unit spelling, like Quantity does.
+    assert_eq!(
+      interpret("DatePlus[{2024, 1, 1}, {2, \"Months\"}]").unwrap(),
+      "{2024, 3, 1}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2024, 1, 15}, {3, \"Days\"}]").unwrap(),
+      "{2024, 1, 18}"
+    );
+    // Month overflow rolls into the next year.
+    assert_eq!(
+      interpret("DatePlus[{2024, 11, 1}, {3, \"Months\"}]").unwrap(),
+      "{2025, 2, 1}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2024, 1, 1}, {1, \"Years\"}]").unwrap(),
+      "{2025, 1, 1}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2024, 1, 1}, {2, \"Weeks\"}]").unwrap(),
+      "{2024, 1, 15}"
+    );
+  }
+  #[test]
   fn date_plus_quantity_days() {
     assert_eq!(
       interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], Quantity[7, \"Days\"]]]")

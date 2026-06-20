@@ -862,16 +862,21 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut d = day;
       for (n, unit) in &pairs {
         let n = *n;
-        match unit.as_str() {
-          "Day" | "Week" => {
-            let shift = if unit == "Week" { n * 7 } else { n };
+        // Units accept singular and plural spellings ("Day"/"Days").
+        match unit.to_ascii_lowercase().trim_end_matches('s') {
+          "day" | "week" => {
+            let shift = if unit.to_ascii_lowercase().starts_with("week") {
+              n * 7
+            } else {
+              n
+            };
             let abs = date_to_absolute_days(y, m, d) + shift;
             let (ny, nm, nd) = absolute_days_to_date(abs);
             y = ny;
             m = nm;
             d = nd;
           }
-          "Month" => {
+          "month" => {
             m += n;
             while m > 12 {
               m -= 12;
@@ -883,7 +888,7 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             d = d.min(days_in_month(y, m));
           }
-          "Year" => {
+          "year" => {
             y += n;
             d = d.min(days_in_month(y, m));
           }
