@@ -8130,6 +8130,51 @@ mod join_non_list {
   }
 }
 
+mod parallel_array {
+  use super::*;
+
+  // ParallelArray is the serial Array in Woxi (evaluated sequentially).
+  #[test]
+  fn pure_function() {
+    assert_eq!(
+      interpret("ParallelArray[#^2 &, 4]").unwrap(),
+      "{1, 4, 9, 16}"
+    );
+  }
+
+  #[test]
+  fn symbolic_head() {
+    assert_eq!(
+      interpret("ParallelArray[f, 3]").unwrap(),
+      "{f[1], f[2], f[3]}"
+    );
+  }
+
+  #[test]
+  fn with_origin() {
+    assert_eq!(
+      interpret("ParallelArray[f, 3, 0]").unwrap(),
+      "{f[0], f[1], f[2]}"
+    );
+  }
+
+  #[test]
+  fn multi_dimensional() {
+    assert_eq!(
+      interpret("ParallelArray[Times, {2, 3}]").unwrap(),
+      "{{1, 2, 3}, {2, 4, 6}}"
+    );
+  }
+
+  #[test]
+  fn multi_dim_with_origins() {
+    assert_eq!(
+      interpret("ParallelArray[f, {2, 2}, {1, 0}]").unwrap(),
+      "{{f[1, 0], f[1, 1]}, {f[2, 0], f[2, 1]}}"
+    );
+  }
+}
+
 mod angle_path {
   use super::*;
 

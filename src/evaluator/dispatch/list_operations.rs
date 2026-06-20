@@ -3765,18 +3765,19 @@ pub fn dispatch_list_operations(
     "Insert" if args.len() == 3 => {
       return Some(list_helpers_ast::insert_ast(&args[0], &args[1], &args[2]));
     }
-    "Array" if args.len() >= 2 && args.len() <= 4 => {
+    // ParallelArray is the serial Array (Woxi evaluates sequentially).
+    "Array" | "ParallelArray" if args.len() >= 2 && args.len() <= 4 => {
       let valid_spec = match &args[1] {
         Expr::List(ns) => ns.iter().all(|e| nonneg_machine_int(e).is_some()),
         e => nonneg_machine_int(e).is_some(),
       };
       if !valid_spec {
         let call = Expr::FunctionCall {
-          name: "Array".to_string(),
+          name: name.to_string(),
           args: args.to_vec().into(),
         };
         crate::emit_message(&format!(
-          "Array::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
+          "{name}::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
           crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
         ));
         return Some(Ok(call));
