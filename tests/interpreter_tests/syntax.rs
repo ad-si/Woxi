@@ -6828,6 +6828,30 @@ mod rotation_matrix {
       "{{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}"
     );
   }
+
+  // RotationMatrix[{u, v}] is the 2D rotation taking u to the direction of v.
+  #[test]
+  fn vector_pair_2d() {
+    // Orthonormal axes: a quarter turn (magnitudes are irrelevant).
+    assert_eq!(
+      interpret("RotationMatrix[{{1, 0}, {0, 1}}]").unwrap(),
+      "{{0, -1}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret("RotationMatrix[{{2, 0}, {0, 3}}]").unwrap(),
+      "{{0, -1}, {1, 0}}"
+    );
+    // 45 degrees from the x-axis to {1, 1}.
+    assert_eq!(
+      interpret("RotationMatrix[{{1, 0}, {1, 1}}]").unwrap(),
+      "{{1/Sqrt[2], -(1/Sqrt[2])}, {1/Sqrt[2], 1/Sqrt[2]}}"
+    );
+    // A general (non-unit, non-orthogonal) pair keeps exact radicals.
+    assert_eq!(
+      interpret("RotationMatrix[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{11/(5*Sqrt[5]), 2/(5*Sqrt[5])}, {-2/(5*Sqrt[5]), 11/(5*Sqrt[5])}}"
+    );
+  }
 }
 
 mod batch_inert_symbols_3 {

@@ -797,6 +797,72 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    // RotationMatrix[{u, v}] — the rotation taking vector u to the direction
+    // of v. In 2D this is the planar rotation by the signed angle from u to v:
+    // cos = (u.v)/(|u||v|), sin = (ux vy - uy vx)/(|u||v|). Higher-dimensional
+    // vector pairs are left unevaluated rather than mishandled as an angle.
+    "RotationMatrix"
+      if args.len() == 1
+        && matches!(&args[0], Expr::List(p)
+          if p.len() == 2 && p.iter().all(|e| matches!(e, Expr::List(_)))) =>
+    {
+      let Expr::List(pair) = &args[0] else {
+        unreachable!()
+      };
+      if let (Expr::List(u), Expr::List(v)) = (&pair[0], &pair[1])
+        && u.len() == 2
+        && v.len() == 2
+      {
+        let times = |a: Expr, b: Expr| Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![a, b].into(),
+        };
+        let plus = |a: Expr, b: Expr| Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![a, b].into(),
+        };
+        let sq = |a: Expr| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![a, Expr::Integer(2)].into(),
+        };
+        let neg = |a: Expr| times(Expr::Integer(-1), a);
+        let (ux, uy, vx, vy) =
+          (u[0].clone(), u[1].clone(), v[0].clone(), v[1].clone());
+        let dot =
+          plus(times(ux.clone(), vx.clone()), times(uy.clone(), vy.clone()));
+        let cross = plus(
+          times(ux.clone(), vy.clone()),
+          neg(times(uy.clone(), vx.clone())),
+        );
+        let normsq = times(plus(sq(ux), sq(uy)), plus(sq(vx), sq(vy)));
+        let inv_d = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![normsq].into(),
+            },
+            Expr::Integer(-1),
+          ]
+          .into(),
+        };
+        let cos = times(dot, inv_d.clone());
+        let sin = times(cross, inv_d);
+        let mat = Expr::List(
+          vec![
+            Expr::List(vec![cos.clone(), neg(sin.clone())].into()),
+            Expr::List(vec![sin, cos].into()),
+          ]
+          .into(),
+        );
+        return Some(evaluate_expr_to_expr(&mat));
+      }
+      // A higher-dimensional vector pair: not implemented, stay unevaluated.
+      return Some(Ok(Expr::FunctionCall {
+        name: "RotationMatrix".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "RotationMatrix" if args.len() == 1 => {
       // 2D rotation matrix: {{Cos[θ], -Sin[θ]}, {Sin[θ], Cos[θ]}}
       let theta = &args[0];

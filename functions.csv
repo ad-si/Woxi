@@ -666,7 +666,7 @@ LaguerreL,Laguerre polynomial,✅,pure,1.0,670
 Probability,Compute probability of an event given a distribution,✅,pure,8.0,671
 PauliMatrix,Returns a Pauli spin matrix,✅,pure,7.0,672
 PlotRangeClipping,Option for whether to clip plot elements at the plot range,✅,none,6.0,674
-RotationMatrix,Compute a rotation matrix,✅,none,6.0,674
+RotationMatrix,Compute a rotation matrix from an angle or from a 2D pair of vectors,✅,pure,6.0,674
 Divisors,Returns all divisors of an integer,✅,pure,1.0,675
 RotationTransform,Represent a rotation transformation,✅,none,6.0,676
 BoxStyle,Option specifying the style of 3D boxes in plots,✅,none,2.0,677
