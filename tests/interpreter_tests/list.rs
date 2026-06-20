@@ -3010,10 +3010,7 @@ mod length_function {
       interpret("Length[SparseArray[{{1, 1} -> 1}, {2, 3}]]").unwrap(),
       "2"
     );
-    assert_eq!(
-      interpret("Length[SparseArray[{i_} :> i, 7]]").unwrap(),
-      "7"
-    );
+    assert_eq!(interpret("Length[SparseArray[{i_} :> i, 7]]").unwrap(), "7");
   }
 }
 

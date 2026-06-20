@@ -1041,6 +1041,23 @@ mod total {
     assert_eq!(interpret("Total[{{1, 2}, {3, 4}}, 2]").unwrap(), "10");
   }
 
+  // Total of a SparseArray sums its dense form.
+  #[test]
+  fn total_sparse_array() {
+    assert_eq!(interpret("Total[SparseArray[{1 -> 2, 3 -> 4}, 5]]").unwrap(), "6");
+    assert_eq!(
+      interpret("Total[SparseArray[{{1, 1} -> 1, {2, 2} -> 2}, {2, 2}]]")
+        .unwrap(),
+      "{1, 2}"
+    );
+    // With a level spec, the whole matrix is summed.
+    assert_eq!(
+      interpret("Total[SparseArray[{{1, 1} -> 1, {2, 2} -> 2}, {2, 2}], 2]")
+        .unwrap(),
+      "3"
+    );
+  }
+
   #[test]
   fn total_level_spec_exact_2() {
     // Total[list, {2}] sums at exactly level 2 = row sums

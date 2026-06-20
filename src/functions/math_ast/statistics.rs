@@ -145,6 +145,20 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A SparseArray argument is summed over its dense form.
+  if let Expr::FunctionCall { name, args: sa } = &args[0]
+    && name == "SparseArray"
+  {
+    let dense = crate::functions::list_helpers_ast::sparse_array_ast(sa)?;
+    // Guard against re-entry if normalization left it as a SparseArray.
+    if !matches!(&dense, Expr::FunctionCall { name, .. } if name == "SparseArray")
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = dense;
+      return total_ast(&new_args);
+    }
+  }
+
   // The number of nested list levels of `e` — the maximum valid Total level.
   // A flat list {1, 2, 3} has depth 1; {{1, 2}, {3, 4}} has depth 2.
   fn list_total_depth(e: &Expr) -> usize {
