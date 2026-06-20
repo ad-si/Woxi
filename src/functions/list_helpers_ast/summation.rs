@@ -271,8 +271,7 @@ fn parse_initial_spec(expr: &Expr) -> Option<(Expr, Expr)> {
     return Some((Expr::List(pos.clone()), items[1].clone()));
   }
   // Flat point `{x0, y0}` (neither component is itself a list): face angle 0.
-  if !matches!(&items[0], Expr::List(_))
-    && !matches!(&items[1], Expr::List(_))
+  if !matches!(&items[0], Expr::List(_)) && !matches!(&items[1], Expr::List(_))
   {
     return Some((expr.clone(), Expr::Integer(0)));
   }

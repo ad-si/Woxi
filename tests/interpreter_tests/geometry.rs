@@ -987,6 +987,67 @@ mod region_bounds {
       "{{0, 2}, {-1, 1}}"
     );
   }
+
+  // Disk/Circle bounds are center +/- radius.
+  #[test]
+  fn disk_and_circle() {
+    assert_eq!(interpret("RegionBounds[Disk[]]").unwrap(), "{{-1, 1}, {-1, 1}}");
+    assert_eq!(
+      interpret("RegionBounds[Disk[{1, 2}, 3]]").unwrap(),
+      "{{-2, 4}, {-1, 5}}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Circle[{1, 1}, 2]]").unwrap(),
+      "{{-1, 3}, {-1, 3}}"
+    );
+    // Elliptical disk with {rx, ry} semi-axes.
+    assert_eq!(
+      interpret("RegionBounds[Disk[{0, 0}, {2, 3}]]").unwrap(),
+      "{{-2, 2}, {-3, 3}}"
+    );
+  }
+
+  // Ball/Sphere are 3D; bounds are center +/- radius per axis.
+  #[test]
+  fn ball_and_sphere() {
+    assert_eq!(
+      interpret("RegionBounds[Ball[{0, 0, 0}, 2]]").unwrap(),
+      "{{-2, 2}, {-2, 2}, {-2, 2}}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Sphere[{0, 0, 0}, 2]]").unwrap(),
+      "{{-2, 2}, {-2, 2}, {-2, 2}}"
+    );
+  }
+
+  #[test]
+  fn rectangle_cuboid_default() {
+    assert_eq!(
+      interpret("RegionBounds[Rectangle[{0, 0}, {2, 3}]]").unwrap(),
+      "{{0, 2}, {0, 3}}"
+    );
+    assert_eq!(interpret("RegionBounds[Rectangle[]]").unwrap(), "{{0, 1}, {0, 1}}");
+    assert_eq!(
+      interpret("RegionBounds[Cuboid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
+      "{{0, 1}, {0, 2}, {0, 3}}"
+    );
+  }
+
+  #[test]
+  fn triangle_polygon_point() {
+    assert_eq!(
+      interpret("RegionBounds[Triangle[{{0, 0}, {4, 0}, {1, 3}}]]").unwrap(),
+      "{{0, 4}, {0, 3}}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Polygon[{{0, 0}, {2, 0}, {1, 1}}]]").unwrap(),
+      "{{0, 2}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Point[{3, 4}]]").unwrap(),
+      "{{3, 3}, {4, 4}}"
+    );
+  }
 }
 
 mod region_nearest {
