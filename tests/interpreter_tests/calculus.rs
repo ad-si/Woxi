@@ -7848,6 +7848,33 @@ mod differentiate_integrate_leibniz {
       "-(f[a[x]]*Derivative[1][a][x]) + f[b[x]]*Derivative[1][b][x]"
     );
   }
+
+  // Fundamental theorem for an indefinite integral: differentiating by the
+  // integration variable recovers the integrand.
+  #[test]
+  fn indefinite_integral_fundamental_theorem() {
+    assert_eq!(interpret("D[Integrate[f[x], x], x]").unwrap(), "f[x]");
+    assert_eq!(
+      interpret("D[Integrate[Sin[x^2], x], x]").unwrap(),
+      "Sin[x^2]"
+    );
+    assert_eq!(
+      interpret("D[Integrate[h[x] + f[x], x], x]").unwrap(),
+      "f[x] + h[x]"
+    );
+  }
+
+  // Differentiating an indefinite integral by another variable applies
+  // differentiation under the integral sign.
+  #[test]
+  fn indefinite_integral_other_variable() {
+    assert_eq!(interpret("D[Integrate[f[x], x], y]").unwrap(), "0");
+    assert_eq!(interpret("D[Integrate[x y, x], y]").unwrap(), "x^2/2");
+    assert_eq!(
+      interpret("D[Integrate[f[x, y], x], y]").unwrap(),
+      "Integrate[Derivative[0, 1][f][x, y], x]"
+    );
+  }
 }
 
 mod cases {

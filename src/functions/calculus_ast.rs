@@ -2947,12 +2947,35 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               Ok(simplify(result))
             }
           } else {
-            // Indefinite integral: return unevaluated
-            Ok(Expr::FunctionCall {
-              name: "D".to_string(),
-              args: vec![expr.clone(), Expr::Identifier(var.to_string())]
-                .into(),
-            })
+            // Indefinite integral Integrate[g, t]. With the integration
+            // variable t:
+            //   D[Integrate[g, t], t] = g          (fundamental theorem), and
+            //   D[Integrate[g, t], x] = Integrate[D[g, x], t]
+            //                                       (differentiation under the
+            //                                        integral sign).
+            let int_var = match &args[1] {
+              Expr::Identifier(n) => Some(n.clone()),
+              Expr::List(s) if s.len() == 1 => match &s[0] {
+                Expr::Identifier(n) => Some(n.clone()),
+                _ => None,
+              },
+              _ => None,
+            };
+            match int_var {
+              Some(iv) if iv == var => Ok(args[0].clone()),
+              Some(iv) => {
+                let dg = differentiate(&args[0], var)?;
+                crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+                  name: "Integrate".to_string(),
+                  args: vec![dg, Expr::Identifier(iv)].into(),
+                })
+              }
+              None => Ok(Expr::FunctionCall {
+                name: "D".to_string(),
+                args: vec![expr.clone(), Expr::Identifier(var.to_string())]
+                  .into(),
+              }),
+            }
           }
         }
         // Flattened Derivative[n, f, x]: this is the evaluated form of
