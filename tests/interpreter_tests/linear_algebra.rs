@@ -3843,6 +3843,31 @@ mod cases {
       r#"{{1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}}"#,
     );
   }
+  // CrossMatrix is the n-dimensional cross structuring element.
+  #[test]
+  fn cross_matrix_scalar() {
+    // A scalar radius gives a 2D cross in both directions.
+    assert_case(r#"CrossMatrix[1]"#, r#"{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}"#);
+    assert_case(r#"CrossMatrix[0]"#, r#"{{1}}"#);
+    // A real radius is rounded.
+    assert_case(
+      r#"CrossMatrix[2.0]"#,
+      r#"{{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}}"#,
+    );
+  }
+  #[test]
+  fn cross_matrix_radii_list() {
+    // Different vertical and horizontal radii.
+    assert_case(
+      r#"CrossMatrix[{2, 1}]"#,
+      r#"{{0, 1, 0}, {0, 1, 0}, {1, 1, 1}, {0, 1, 0}, {0, 1, 0}}"#,
+    );
+    // Three radii give a 3D cross.
+    assert_case(
+      r#"CrossMatrix[{1, 1, 1}]"#,
+      r#"{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}, {{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}}"#,
+    );
+  }
   #[test]
   fn diagonal_matrix_1() {
     assert_case(

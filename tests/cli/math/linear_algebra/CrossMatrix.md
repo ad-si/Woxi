@@ -1,6 +1,7 @@
 # `CrossMatrix`
 
-Skew-symmetric matrix for cross product.
+The n-dimensional "cross" structuring element. A numeric radius (or list of
+radii) is required; symbolic arguments stay unevaluated.
 
 ```scrut
 $ wo 'CrossMatrix[{a, b, c}]'

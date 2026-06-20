@@ -2170,34 +2170,20 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(rows.into())));
       }
     }
-    // CrossMatrix[{a, b, c}] — skew-symmetric matrix such that CrossMatrix[v].u == Cross[v, u]
-    // Returns {{0, -c, b}, {c, 0, -a}, {-b, a, 0}} for numeric vectors.
-    // Wolfram requires numeric input and returns SparseArray; we return a plain list.
+    // CrossMatrix[r] / CrossMatrix[{r1, …, rn}] — the n-dimensional "cross"
+    // structuring element (the morphology kernel). A scalar r is the 2D cross
+    // of radius r in both directions. Each entry is 1 when at most one
+    // coordinate differs from the center, else 0. Non-numeric radii emit
+    // ::notre and stay unevaluated.
     "CrossMatrix" if args.len() == 1 => {
-      if let Expr::List(elems) = &args[0]
-        && elems.len() == 3 && elems.iter().all(|e| {
-        matches!(e, Expr::Integer(_) | Expr::Real(_))
-          || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
-      }) {
-        let a = &elems[0];
-        let b = &elems[1];
-        let c = &elems[2];
-        let neg = |e: &Expr| -> Expr {
-          match evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), e.clone()].into(),
-          }) {
-            Ok(result) => result,
-            Err(_) => Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), e.clone()].into(),
-            },
-          }
-        };
-        let row0 = Expr::List(vec![Expr::Integer(0), neg(c), b.clone()].into());
-        let row1 = Expr::List(vec![c.clone(), Expr::Integer(0), neg(a)].into());
-        let row2 = Expr::List(vec![neg(b), a.clone(), Expr::Integer(0)].into());
-        return Some(Ok(Expr::List(vec![row0, row1, row2].into())));
+      let radii: Option<Vec<i128>> = match &args[0] {
+        Expr::List(elems) => elems.iter().map(cross_radius).collect(),
+        other => cross_radius(other).map(|r| vec![r, r]),
+      };
+      if let Some(radii) = radii
+        && !radii.is_empty()
+      {
+        return Some(Ok(build_cross_matrix(&radii)));
       }
       crate::emit_message(&format!(
         "CrossMatrix::notre: The first argument {} must be a non-complex number or a list of non-complex numbers.",
@@ -2399,6 +2385,61 @@ pub fn dispatch_linear_algebra_functions(
     _ => {}
   }
   None
+}
+
+/// Parse a CrossMatrix radius: a non-negative integer, or a real/rational
+/// numeric value rounded to the nearest non-negative integer. Returns None for
+/// anything non-numeric or negative.
+fn cross_radius(e: &Expr) -> Option<i128> {
+  match e {
+    Expr::Integer(n) if *n >= 0 => Some(*n),
+    Expr::Real(r) if *r >= 0.0 => Some(r.round() as i128),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(num), Expr::Integer(den)) = (&args[0], &args[1])
+        && *den != 0
+      {
+        let v = *num as f64 / *den as f64;
+        if v >= 0.0 {
+          return Some(v.round() as i128);
+        }
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Build the n-dimensional CrossMatrix structuring element for the given radii.
+/// Dimension k has length 2*r_k+1 with center index r_k; an entry is 1 when at
+/// most one coordinate differs from its center, else 0.
+fn build_cross_matrix(radii: &[i128]) -> Expr {
+  let centers: Vec<usize> = radii.iter().map(|r| *r as usize).collect();
+  let dims: Vec<usize> = radii.iter().map(|r| (2 * r + 1) as usize).collect();
+  fn rec(
+    dims: &[usize],
+    centers: &[usize],
+    idx: &mut Vec<usize>,
+    depth: usize,
+  ) -> Expr {
+    if depth == dims.len() {
+      let off = idx
+        .iter()
+        .zip(centers.iter())
+        .filter(|(i, c)| i != c)
+        .count();
+      return Expr::Integer(i128::from(off <= 1));
+    }
+    let mut row = Vec::with_capacity(dims[depth]);
+    for i in 0..dims[depth] {
+      idx.push(i);
+      row.push(rec(dims, centers, idx, depth + 1));
+      idx.pop();
+    }
+    Expr::List(row.into())
+  }
+  rec(&dims, &centers, &mut Vec::with_capacity(dims.len()), 0)
 }
 
 /// Hadamard matrix via Sylvester construction for powers of 2,

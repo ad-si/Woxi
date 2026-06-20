@@ -2518,7 +2518,7 @@ DiagonalizableMatrixQ,Test whether a matrix is diagonalizable,✅,none,10.0,2570
 StreamPosition,Returns the current position in an open stream,✅,io,2.0,2570
 CountDistinct,Count distinct elements in a list,✅,none,10.0,2578
 CriterionFunction,option specifying criterion function,✅,Symbolic,10.4,2578
-CrossMatrix,Skew-symmetric matrix for cross product,✅,1,7.0,2578
+CrossMatrix,Gives the n-dimensional cross structuring element for a numeric radius or list of radii,✅,pure,7.0,2578
 DateInterval,Creates an interval between two dates with normalized date list representation,✅,pure,12.1,2578
 DeleteBorderComponents,,🚫,,8.0,2578
 EqualTo,Operator form of Equal,✅,none,10.3,2578

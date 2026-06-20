@@ -5689,26 +5689,31 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
-  // CrossMatrix
+  // CrossMatrix is the n-dimensional "cross" structuring element: each numeric
+  // entry of {r1, …, rn} is a radius, giving a (2ri+1) extent per dimension,
+  // and a cell is 1 when at most one coordinate differs from the center.
   #[test]
   fn cross_matrix_basic() {
+    // Radii {1, 0, 0}: a 3x1x1 column of ones.
     assert_eq!(
       interpret("CrossMatrix[{1, 0, 0}]").unwrap(),
-      "{{0, 0, 0}, {0, 0, -1}, {0, 1, 0}}"
+      "{{{1}}, {{1}}, {{1}}}"
     );
   }
   #[test]
   fn cross_matrix_unit_y() {
+    // Radii {0, 1, 0}: a 1x3x1 row of ones.
     assert_eq!(
       interpret("CrossMatrix[{0, 1, 0}]").unwrap(),
-      "{{0, 0, 1}, {0, 0, 0}, {-1, 0, 0}}"
+      "{{{1}, {1}, {1}}}"
     );
   }
   #[test]
   fn cross_matrix_general_numeric() {
+    // A 2D cross radius {1, 1}.
     assert_eq!(
-      interpret("CrossMatrix[{2, 3, 4}]").unwrap(),
-      "{{0, -4, 3}, {4, 0, -2}, {-3, 2, 0}}"
+      interpret("CrossMatrix[{1, 1}]").unwrap(),
+      "{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}"
     );
   }
   #[test]
