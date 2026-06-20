@@ -8892,61 +8892,104 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(vec![final_x, final_y].into()));
   }
 
-  if name == "CirclePoints" && args.len() == 1 {
-    if let Some(n) = match &args[0] {
-      Expr::Integer(n) if *n >= 1 => Some(*n as usize),
-      _ => None,
-    } {
-      let mut points = Vec::with_capacity(n);
-      for k in 0..n {
-        // angle_k = Pi/2 - (n-1)*Pi/n + k*2*Pi/n
-        let angle = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
-          left: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Minus,
-            left: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
-              left: Box::new(Expr::Identifier("Pi".to_string())),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
-              left: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
-                left: Box::new(Expr::Integer((n - 1) as i128)),
-                right: Box::new(Expr::Identifier("Pi".to_string())),
-              }),
-              right: Box::new(Expr::Integer(n as i128)),
-            }),
-          }),
-          right: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
-            left: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
-              left: Box::new(Expr::Integer(k as i128 * 2)),
-              right: Box::new(Expr::Identifier("Pi".to_string())),
-            }),
-            right: Box::new(Expr::Integer(n as i128)),
-          }),
-        };
-        let cos_expr = Expr::FunctionCall {
-          name: "Cos".to_string(),
-          args: vec![angle.clone()].into(),
-        };
-        let sin_expr = Expr::FunctionCall {
-          name: "Sin".to_string(),
-          args: vec![angle].into(),
-        };
-        let cos_val = evaluate_expr_to_expr(&cos_expr)?;
-        let sin_val = evaluate_expr_to_expr(&sin_expr)?;
-        points.push(Expr::List(vec![cos_val, sin_val].into()));
+  // CirclePoints in its several forms:
+  //   CirclePoints[n]                 — n points on the unit circle
+  //   CirclePoints[r, n]              — radius r, default starting angle
+  //   CirclePoints[{r, theta}, n]     — radius r, explicit starting angle
+  //   CirclePoints[{cx, cy}, ..., n]  — the above translated to a center
+  if name == "CirclePoints" && (1..=3).contains(&args.len()) {
+    let unevaluated = || {
+      Ok(Expr::FunctionCall {
+        name: "CirclePoints".to_string(),
+        args: args.to_vec().into(),
+      })
+    };
+    // n is always the last argument and must be a positive integer.
+    let n = match args.last() {
+      Some(Expr::Integer(n)) if *n >= 1 => *n as usize,
+      _ => return unevaluated(),
+    };
+    // Center (defaults to the origin) when the first arg is a coordinate pair
+    // and there are 3 arguments total.
+    let (center_x, center_y, radius_spec): (Expr, Expr, Option<&Expr>) =
+      if args.len() == 3 {
+        match &args[0] {
+          Expr::List(c) if c.len() == 2 => {
+            (c[0].clone(), c[1].clone(), Some(&args[1]))
+          }
+          _ => return unevaluated(),
+        }
+      } else {
+        (Expr::Integer(0), Expr::Integer(0), args.first())
+      };
+    // Resolve radius and (optional explicit) starting angle.
+    let (radius, theta): (Expr, Option<Expr>) = match radius_spec {
+      // {r, theta}
+      Some(Expr::List(rt)) if rt.len() == 2 => {
+        (rt[0].clone(), Some(rt[1].clone()))
       }
-      return Ok(Expr::List(points.into()));
-    }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
+      // scalar radius, default angle (only valid when given alongside n,
+      // i.e. 2- or 3-arg forms)
+      Some(r) if args.len() >= 2 && !matches!(r, Expr::List(_)) => {
+        (r.clone(), None)
+      }
+      // bare CirclePoints[n]: unit radius, default angle
+      _ if args.len() == 1 => (Expr::Integer(1), None),
+      _ => return unevaluated(),
+    };
+    // Base angle theta0: explicit, or the default Pi/2 - (n-1)*Pi/n.
+    let pi = || Expr::Identifier("Pi".to_string());
+    let base = theta.unwrap_or_else(|| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(pi()),
+        right: Box::new(Expr::Integer(2)),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer((n - 1) as i128)),
+          right: Box::new(pi()),
+        }),
+        right: Box::new(Expr::Integer(n as i128)),
+      }),
     });
+    let mut points = Vec::with_capacity(n);
+    for k in 0..n {
+      // angle_k = base + 2*k*Pi/n
+      let angle = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(base.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(k as i128 * 2)),
+            right: Box::new(pi()),
+          }),
+          right: Box::new(Expr::Integer(n as i128)),
+        }),
+      };
+      // coordinate = center + radius * trig(angle)
+      let coord = |trig: &str, c: &Expr| Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(c.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(radius.clone()),
+          right: Box::new(Expr::FunctionCall {
+            name: trig.to_string(),
+            args: vec![angle.clone()].into(),
+          }),
+        }),
+      };
+      let x = evaluate_expr_to_expr(&coord("Cos", &center_x))?;
+      let y = evaluate_expr_to_expr(&coord("Sin", &center_y))?;
+      points.push(Expr::List(vec![x, y].into()));
+    }
+    return Ok(Expr::List(points.into()));
   }
 
   // Key[k] is an operator form — return unevaluated (applied via CurriedCall)

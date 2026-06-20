@@ -265,4 +265,6 @@ release:
 		"     - https://reddit.com/r/matlab \n" \
 		"     - https://reddit.com/r/sympy/ \n" \
 		"     - https://reddit.com/r/Julia/ \n" \
-		"     - https://reddit.com/r/octave/ \n"
+		"     - https://reddit.com/r/octave/ \n" \
+		"     - https://reddit.com/r/buildinpublic/ \n"
+

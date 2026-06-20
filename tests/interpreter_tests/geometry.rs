@@ -885,6 +885,38 @@ mod circle_points {
     let result = interpret("CirclePoints[6]").unwrap();
     assert!(result.contains("{1, 0}") && result.contains("{-1, 0}"));
   }
+
+  // CirclePoints[{r, theta}, n] starts at angle theta with radius r.
+  #[test]
+  fn radius_and_angle() {
+    assert_eq!(
+      interpret("CirclePoints[{2, 0}, 4]").unwrap(),
+      "{{2, 0}, {0, 2}, {-2, 0}, {0, -2}}"
+    );
+    assert_eq!(
+      interpret("CirclePoints[{1, Pi/2}, 4]").unwrap(),
+      "{{0, 1}, {-1, 0}, {0, -1}, {1, 0}}"
+    );
+  }
+
+  // CirclePoints[r, n] uses the default starting angle, scaled by r.
+  #[test]
+  fn radius_only() {
+    assert_eq!(
+      interpret("CirclePoints[2, 4]").unwrap(),
+      "{{Sqrt[2], -Sqrt[2]}, {Sqrt[2], Sqrt[2]}, {-Sqrt[2], Sqrt[2]}, \
+       {-Sqrt[2], -Sqrt[2]}}"
+    );
+  }
+
+  // CirclePoints[{cx, cy}, {r, theta}, n] translates the points to a center.
+  #[test]
+  fn center_form() {
+    assert_eq!(
+      interpret("CirclePoints[{1, 1}, {2, 0}, 4]").unwrap(),
+      "{{3, 1}, {1, 3}, {-1, 1}, {1, -1}}"
+    );
+  }
 }
 
 mod bezier_function {

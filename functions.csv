@@ -1112,7 +1112,7 @@ AnimationRate,,🚫,,6.0,1122
 HoldAllComplete,Attribute that prevents all evaluation,✅,1,3.0,1122
 Blur,Applies Gaussian blur to an image,✅,pure,7.0,1124
 InverseFourierTransform,computes the symbolic inverse Fourier transform,✅,pure,4.0,1124
-CirclePoints,Gives equally spaced points on a unit circle,✅,1,10.1,1126
+CirclePoints,Gives equally spaced points on a circle,✅,pure,10.1,1126
 NetChain,,🚫,,11.0,1126
 FiniteGroupData,,🚫,,7.0,1127
 Factorial2,Returns the double factorial,✅,pure,1.0,1128

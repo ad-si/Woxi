@@ -137,7 +137,8 @@ fn dense_1d_sparse(expr: &Expr) -> Option<Expr> {
     && sa.len() == 4
     && matches!(&sa[1], Expr::List(d) if d.len() == 1)
   {
-    let dense = crate::functions::list_helpers_ast::sparse_array_ast(sa).ok()?;
+    let dense =
+      crate::functions::list_helpers_ast::sparse_array_ast(sa).ok()?;
     if matches!(&dense, Expr::List(_)) {
       return Some(dense);
     }
