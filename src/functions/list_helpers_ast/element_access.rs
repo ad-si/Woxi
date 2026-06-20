@@ -2073,13 +2073,12 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Association(new_pairs));
   }
 
-  // Extract items and optional head name from List or FunctionCall
-  let (items, head_name) = match &args[0] {
-    Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args: fargs } => {
-      (fargs.as_slice(), Some(name.as_str()))
-    }
-    _ => {
+  // Extract items and optional head name. Operator expressions such as
+  // `x^2` are decomposed to their full-form parts (Power[x, 2]) so integer
+  // positions address them like Wolfram's FullForm.
+  let (items_owned, head_owned) = match parts_and_head(&args[0]) {
+    Some(p) => p,
+    None => {
       // Atomic subject: wolframscript shows the scalar position without
       // braces here (Part 1 of y does not exist.)
       crate::emit_message(&format!(
@@ -2093,6 +2092,8 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+  let items = items_owned.as_slice();
+  let head_name = head_owned.as_deref();
 
   match &args[1] {
     // Delete[expr, n] - delete at position n
@@ -2115,7 +2116,8 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: args.to_vec().into(),
         });
       }
-      return delete_at_position_general(items, pos, head_name);
+      let deleted = delete_at_position_general(items, pos, head_name)?;
+      return crate::evaluator::evaluate_expr_to_expr(&deleted);
     }
     Expr::List(pos_list) => {
       // Determine if this is a multi-part position {i, j, ...} or multiple positions {{p1}, {p2}, ...}
@@ -2161,26 +2163,22 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               });
             }
             // Normalize each index against the original structure
-            let mut cursor = &args[0];
+            let mut cursor = args[0].clone();
             let mut norm = Vec::with_capacity(raw.len());
             for (depth, &ix) in raw.iter().enumerate() {
-              let sub_items: &[Expr] = match cursor {
-                Expr::List(v) => v.as_slice(),
-                Expr::FunctionCall { args: fa, .. } => fa.as_slice(),
-                _ => {
-                  crate::emit_message(&format!(
-                    "Delete::partw: Part {} of {} does not exist.",
-                    raw[depth],
-                    crate::syntax::format_expr(
-                      cursor,
-                      crate::syntax::ExprForm::Output
-                    )
-                  ));
-                  return Ok(Expr::FunctionCall {
-                    name: "Delete".to_string(),
-                    args: args.to_vec().into(),
-                  });
-                }
+              let Some((sub_items, _)) = parts_and_head(&cursor) else {
+                crate::emit_message(&format!(
+                  "Delete::partw: Part {} of {} does not exist.",
+                  raw[depth],
+                  crate::syntax::format_expr(
+                    &cursor,
+                    crate::syntax::ExprForm::Output
+                  )
+                ));
+                return Ok(Expr::FunctionCall {
+                  name: "Delete".to_string(),
+                  args: args.to_vec().into(),
+                });
               };
               let len = sub_items.len() as i128;
               let pos_ix = if ix > 0 { ix } else { len + ix + 1 };
@@ -2193,7 +2191,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               }
               norm.push(pos_ix);
               if depth + 1 < raw.len() {
-                cursor = &sub_items[(pos_ix - 1) as usize];
+                cursor = sub_items[(pos_ix - 1) as usize].clone();
               }
             }
             positions.push(norm);
@@ -2204,12 +2202,14 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut result = args[0].clone();
         for pos in positions.iter().rev() {
           if pos.len() == 1 {
-            let cur_items = match &result {
-              Expr::List(items) => items.as_slice(),
-              Expr::FunctionCall { args: fargs, .. } => fargs.as_slice(),
-              _ => return Ok(result),
+            let Some((cur_items, cur_head)) = parts_and_head(&result) else {
+              return Ok(result);
             };
-            result = delete_at_position_general(cur_items, pos[0], head_name)?;
+            result = delete_at_position_general(
+              &cur_items,
+              pos[0],
+              cur_head.as_deref(),
+            )?;
           } else {
             match delete_at_deep_position(&result, pos)? {
               Ok(v) => result = v,
@@ -2223,16 +2223,19 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
         }
-        return Ok(result);
+        // Evaluate once after all structural deletions (e.g. Power[] -> 1).
+        return crate::evaluator::evaluate_expr_to_expr(&result);
       } else {
         // Multi-part position: Delete[expr, {i, j, ...}]
         let pos: Vec<i128> = pos_list.iter().filter_map(expr_to_i128).collect();
         if pos.len() == pos_list.len() {
           if pos.len() == 1 {
-            return delete_at_position_general(items, pos[0], head_name);
+            let deleted =
+              delete_at_position_general(items, pos[0], head_name)?;
+            return crate::evaluator::evaluate_expr_to_expr(&deleted);
           } else {
             match delete_at_deep_position(&args[0], &pos)? {
-              Ok(v) => return Ok(v),
+              Ok(v) => return crate::evaluator::evaluate_expr_to_expr(&v),
               Err(fail) => {
                 // Descent into an atom names the inner subject (Part 1
                 // of b); an out-of-range final index names the full path
@@ -2339,10 +2342,9 @@ fn delete_at_deep_position(
   if pos.is_empty() {
     return Ok(Ok(expr.clone()));
   }
-  let (items, head): (Vec<Expr>, Option<String>) = match expr {
-    Expr::List(items) => (items.to_vec(), None),
-    Expr::FunctionCall { name, args } => (args.to_vec(), Some(name.clone())),
-    _ => {
+  let (items, head): (Vec<Expr>, Option<String>) = match parts_and_head(expr) {
+    Some(p) => p,
+    None => {
       return Ok(Err(DeepDeleteFailure {
         index: pos[0],
         subject: expr.clone(),

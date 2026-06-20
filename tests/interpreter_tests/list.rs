@@ -6100,6 +6100,26 @@ mod delete_deep {
     // renders as its spliced args — same as wolframscript's display.
     assert_eq!(interpret("Delete[f[a, b, c], 0]").unwrap(), "abc");
   }
+
+  // Delete addresses operator expressions by their FullForm parts and
+  // re-evaluates the result: x^2 = Power[x, 2], so deleting part 1 leaves
+  // Power[2] = 2 and deleting part 2 leaves Power[x] = x.
+  #[test]
+  fn delete_power_parts() {
+    assert_eq!(interpret("Delete[x^2, 1]").unwrap(), "2");
+    assert_eq!(interpret("Delete[x^2, 2]").unwrap(), "x");
+    assert_eq!(interpret("Delete[x^2, {2}]").unwrap(), "x");
+    // Deleting both parts leaves Power[] = 1.
+    assert_eq!(interpret("Delete[x^2, {{1}, {2}}]").unwrap(), "1");
+  }
+
+  // The result of a deletion is re-evaluated: a - b = Plus[a, Times[-1, b]],
+  // and deleting part 2 leaves Plus[a] = a (previously left as Plus[a]).
+  #[test]
+  fn delete_reevaluates_result() {
+    assert_eq!(interpret("Delete[a - b, 2]").unwrap(), "a");
+    assert_eq!(interpret("Delete[a + b, 1]").unwrap(), "b");
+  }
 }
 
 mod extract_multi {
