@@ -7710,6 +7710,22 @@ mod arc_curvature {
     );
   }
 
+  // The result is simplified, so the unit circle has constant curvature 1
+  // (1/Sqrt[Cos^2 + Sin^2] reduces to 1).
+  #[test]
+  fn unit_circle() {
+    assert_eq!(interpret("ArcCurvature[{Cos[t], Sin[t]}, t]").unwrap(), "1");
+  }
+
+  // A circle of radius 2 has curvature 1/2.
+  #[test]
+  fn radius_two_circle() {
+    assert_eq!(
+      interpret("ArcCurvature[{2*Cos[t], 2*Sin[t]}, t]").unwrap(),
+      "1/2"
+    );
+  }
+
   #[test]
   fn scalar_function() {
     // Scalar treated as {t, f(t)}

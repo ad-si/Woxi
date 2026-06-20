@@ -14693,7 +14693,14 @@ pub fn arc_curvature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(Expr::List(curvatures)) = outer.first()
     && let Some(kappa) = curvatures.first()
   {
-    return Ok(kappa.clone());
+    // wolframscript simplifies the curvature (e.g. 1/Sqrt[Cos^2+Sin^2] -> 1).
+    let simplified =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Simplify".to_string(),
+        args: vec![kappa.clone()].into(),
+      })
+      .unwrap_or_else(|_| kappa.clone());
+    return Ok(simplified);
   }
   // Fallback: return unevaluated
   Ok(Expr::FunctionCall {
