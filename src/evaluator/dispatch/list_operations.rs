@@ -509,6 +509,33 @@ fn flatten_at_unified(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(flatten_at_apply(subject, &deduped))
 }
 
+// MaxDetect/MinDetect (1-arg): binary mask of regional extrema. A maximal run
+// of equal values is a regional maximum (resp. minimum) when both
+// out-of-run neighbours are strictly smaller (resp. larger); a run at the
+// boundary treats the missing neighbour as satisfying the condition.
+fn regional_extrema(values: &[f64], find_max: bool) -> Vec<Expr> {
+  let n = values.len();
+  let mut result = vec![Expr::Integer(0); n];
+  let mut i = 0;
+  while i < n {
+    let mut j = i;
+    while j + 1 < n && values[j + 1] == values[i] {
+      j += 1;
+    }
+    let v = values[i];
+    let beats = |x: f64| if find_max { x < v } else { x > v };
+    let left_ok = i == 0 || beats(values[i - 1]);
+    let right_ok = j + 1 == n || beats(values[j + 1]);
+    if left_ok && right_ok {
+      for slot in result.iter_mut().take(j + 1).skip(i) {
+        *slot = Expr::Integer(1);
+      }
+    }
+    i = j + 1;
+  }
+  result
+}
+
 // LongestOrderedSequence[list] / [list, p]: longest subsequence whose
 // consecutive elements are "in order" per the comparator `p` (default
 // non-decreasing). Uses an O(n^2) DP; ties resolve to the largest predecessor
@@ -2746,6 +2773,23 @@ pub fn dispatch_list_operations(
     }
     "LongestOrderedSequence" if args.len() == 1 || args.len() == 2 => {
       return Some(longest_ordered_sequence(args));
+    }
+    // MaxDetect[list] / MinDetect[list]: regional-extrema mask of a numeric
+    // list. The 2-argument h-maxima form is left for the morphology code.
+    "MaxDetect" | "MinDetect" if args.len() == 1 => {
+      if let Expr::List(items) = &args[0]
+        && !items.is_empty()
+        && let Some(values) =
+          items.iter().map(expr_to_f64).collect::<Option<Vec<f64>>>()
+      {
+        let mask = regional_extrema(&values, name == "MaxDetect");
+        return Some(Ok(Expr::List(mask.into())));
+      }
+      // Empty list, non-list, or non-numeric entries: leave unevaluated.
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
     }
     "ConstantArray" if args.len() == 2 => {
       return Some(list_helpers_ast::constant_array_ast(&args[0], &args[1]));

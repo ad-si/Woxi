@@ -8130,6 +8130,69 @@ mod join_non_list {
   }
 }
 
+mod max_min_detect {
+  use super::*;
+
+  // MaxDetect/MinDetect mark the regional extrema of a numeric list.
+  #[test]
+  fn basic_peaks_and_valleys() {
+    assert_eq!(
+      interpret("MaxDetect[{1, 3, 2, 5, 4}]").unwrap(),
+      "{0, 1, 0, 1, 0}"
+    );
+    assert_eq!(
+      interpret("MinDetect[{1, 3, 2, 5, 4}]").unwrap(),
+      "{1, 0, 1, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn plateaus() {
+    // A flat peak marks the whole run.
+    assert_eq!(
+      interpret("MaxDetect[{1, 3, 3, 2}]").unwrap(),
+      "{0, 1, 1, 0}"
+    );
+    // A boundary plateau still counts.
+    assert_eq!(
+      interpret("MaxDetect[{3, 3, 1, 2}]").unwrap(),
+      "{1, 1, 0, 1}"
+    );
+    assert_eq!(
+      interpret("MinDetect[{3, 1, 1, 3}]").unwrap(),
+      "{0, 1, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn monotonic_and_uniform() {
+    // Only the high endpoint of an increasing run is a maximum.
+    assert_eq!(interpret("MaxDetect[{1, 2, 3}]").unwrap(), "{0, 0, 1}");
+    assert_eq!(
+      interpret("MaxDetect[{5, 4, 3, 2}]").unwrap(),
+      "{1, 0, 0, 0}"
+    );
+    // An all-equal list is one regional maximum.
+    assert_eq!(interpret("MaxDetect[{5, 5, 5}]").unwrap(), "{1, 1, 1}");
+    // Both endpoints of a valley are maxima.
+    assert_eq!(interpret("MaxDetect[{3, 1, 3}]").unwrap(), "{1, 0, 1}");
+  }
+
+  #[test]
+  fn single_and_reals() {
+    assert_eq!(interpret("MaxDetect[{7}]").unwrap(), "{1}");
+    assert_eq!(
+      interpret("MaxDetect[{1.0, 2.5, 1.5}]").unwrap(),
+      "{0, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn empty_stays_unevaluated() {
+    assert_eq!(interpret("MaxDetect[{}]").unwrap(), "MaxDetect[{}]");
+  }
+}
+
 mod parallel_array {
   use super::*;
 
