@@ -4321,6 +4321,17 @@ mod cases {
     assert_case(r#"(x \[Function] x^2)[5]"#, r#"25"#);
   }
   #[test]
+  fn function_arrow_ascii() {
+    // `|->` is the ASCII spelling of the \[Function] operator.
+    assert_case(r#"x |-> x^2"#, r#"Function[x, x^2]"#);
+    assert_case(r#"{x, y} |-> x + y"#, r#"Function[{x, y}, x + y]"#);
+    assert_case(r#"(x |-> x^2)[5]"#, r#"25"#);
+    assert_case(r#"({x, y} |-> x + y)[3, 4]"#, r#"7"#);
+    assert_case(r#"Map[x |-> x + 1, {1, 2, 3}]"#, r#"{2, 3, 4}"#);
+    // The right operand absorbs lower-precedence operators, like \[Function].
+    assert_case(r#"x |-> y + 1"#, r#"Function[x, y + 1]"#);
+  }
+  #[test]
   fn ranked_max() {
     assert_case(r#"RankedMax[{482, 17, 181, -12}, 2]"#, r#"181"#);
   }

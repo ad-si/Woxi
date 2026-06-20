@@ -4822,7 +4822,7 @@ fn operator_precedence(op: &str) -> u8 {
     // wolframscript: \[Function] is lower than Set, Condition, and Rule —
     // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
     // level so its rhs stays maximally permissive.
-    "\\[Function]" | "\u{F4A1}" => 3,
+    "\\[Function]" | "\u{F4A1}" | "|->" => 3,
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 21, // Comparisons
     "~~" => 24,          // StringExpression (lower than Alternatives)
@@ -5083,7 +5083,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "Conditioned".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
-    "\\[Function]" | "\u{F4A1}" => Expr::FunctionCall {
+    "\\[Function]" | "\u{F4A1}" | "|->" => Expr::FunctionCall {
       name: "Function".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },

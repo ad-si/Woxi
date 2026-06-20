@@ -163,7 +163,7 @@ Operator = @{
   | "\\[UndirectedEdge]" | "\u{F3D4}" // Named character operator: UndirectedEdge
   | "\\[Distributed]" | "\u{F3D2}" // Named character operator: Distributed
   | "\\[Conditioned]" | "\u{F3D3}" // Named character operator: Conditioned
-  | "\\[Function]" | "\u{F4A1}" // Function-arrow operator: x \[Function] body → Function[x, body]
+  | "\\[Function]" | "\u{F4A1}" | "|->" // Function-arrow operator: x \[Function] body / x |-> body → Function[x, body]
   | "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" // Cross product operator: a ⨯ b → Cross[a, b]
   | "\\[TensorProduct]" | "\u{F3DA}" // TensorProduct operator: a ⊗ b → TensorProduct[a, b]
   | "\\[Cap]" | "\u{2322}" // Cap operator: a ⌢ b → Cap[a, b]
