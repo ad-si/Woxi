@@ -6664,6 +6664,32 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // GraphDifference[g1, g2] removes g2's edges from g1, keeping g1's vertices.
+  #[test]
+  fn graph_difference() {
+    assert_eq!(
+      interpret("EdgeCount[GraphDifference[CompleteGraph[3], PathGraph[{1, 2, 3}]]]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("VertexCount[GraphDifference[CompleteGraph[4], CycleGraph[4]]]")
+        .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("EdgeCount[GraphDifference[CompleteGraph[4], CycleGraph[4]]]")
+        .unwrap(),
+      "2"
+    );
+    // Removing edges absent from g1 changes nothing beyond the shared ones.
+    assert_eq!(
+      interpret("EdgeCount[GraphDifference[CycleGraph[4], CompleteGraph[4]]]")
+        .unwrap(),
+      "0"
+    );
+  }
+
   // VertexOutComponent
   #[test]
   fn vertex_out_component_star() {

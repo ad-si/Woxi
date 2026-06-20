@@ -3411,7 +3411,7 @@ CreateDatabin,,,,10.0,3506
 Deinitialization,,,,6.0,3506
 ExpGammaDistribution,,,,8.0,3506
 FareySequence,Farey fractions of order n (full list or single rank),✅,pure,10.0,3506
-GraphDifference,,,,8.0,3506
+GraphDifference,Graph with the edges of another graph removed,✅,pure,8.0,3506
 GraphPower,Graph connecting vertices within a given distance,✅,pure,8.0,3506
 LaminaData,,🚫,,10.0,3506
 LiouvilleLambda,Liouville lambda function (Listable),✅,pure,7.0,3506

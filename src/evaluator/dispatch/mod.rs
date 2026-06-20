@@ -5430,6 +5430,50 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // GraphDifference[g1, g2] — g1 with the edges of g2 removed. Vertices and
+  // surviving edges keep g1's order; edge matching is by undirected pair.
+  if name == "GraphDifference"
+    && args.len() == 2
+    && let (
+      Expr::FunctionCall {
+        name: n1,
+        args: a1,
+      },
+      Expr::FunctionCall {
+        name: n2,
+        args: a2,
+      },
+    ) = (&args[0], &args[1])
+    && n1 == "Graph"
+    && n2 == "Graph"
+    && a1.len() >= 2
+    && a2.len() >= 2
+    && let (Expr::List(vertices), Expr::List(edges1)) = (&a1[0], &a1[1])
+    && let Expr::List(edges2) = &a2[1]
+  {
+    let edge_key = |edge: &Expr| -> Option<(String, String)> {
+      if let Expr::FunctionCall { args: ea, .. } = edge
+        && ea.len() == 2
+      {
+        let (sa, sb) = (expr_to_string(&ea[0]), expr_to_string(&ea[1]));
+        Some(if sa <= sb { (sa, sb) } else { (sb, sa) })
+      } else {
+        None
+      }
+    };
+    let remove: std::collections::HashSet<(String, String)> =
+      edges2.iter().filter_map(edge_key).collect();
+    let kept: Vec<Expr> = edges1
+      .iter()
+      .filter(|e| edge_key(e).is_none_or(|k| !remove.contains(&k)))
+      .cloned()
+      .collect();
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices.clone()), Expr::List(kept.into())].into(),
+    });
+  }
+
   // GraphPower[graph, k] — connect every pair of distinct vertices whose
   // graph distance is at most k. Edges are listed in vertex-index order.
   if name == "GraphPower"
