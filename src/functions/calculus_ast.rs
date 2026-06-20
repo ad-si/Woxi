@@ -13253,10 +13253,10 @@ const DT_CONSTANT_SYMBOLS: &[&str] = &[
 /// `Sin`; `a x^2 + Sin[y]` contributes `a`, `x`, `y`.
 fn collect_dt_symbols(expr: &Expr, out: &mut Vec<String>) {
   match expr {
-    Expr::Identifier(n) => {
-      if !DT_CONSTANT_SYMBOLS.contains(&n.as_str()) && !out.contains(n) {
-        out.push(n.clone());
-      }
+    Expr::Identifier(n)
+      if !DT_CONSTANT_SYMBOLS.contains(&n.as_str()) && !out.contains(n) =>
+    {
+      out.push(n.clone());
     }
     Expr::FunctionCall { args, .. } => {
       for a in args.iter() {

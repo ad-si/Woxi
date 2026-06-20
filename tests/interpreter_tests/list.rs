@@ -598,6 +598,49 @@ mod outer_extended {
     );
   }
 
+  // A 1-D pattern rule `{i_} :> expr` fills each position with the value of
+  // `expr` evaluated at the position index.
+  #[test]
+  fn sparse_array_pattern_rule_1d() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{i_} :> i, 5]]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{i_} :> i^2, 4]]").unwrap(),
+      "{1, 4, 9, 16}"
+    );
+  }
+
+  // A 2-D pattern rule binds both index variables. Repeated variables
+  // (`{i_, i_}`) only match the diagonal.
+  #[test]
+  fn sparse_array_pattern_rule_2d() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{i_, j_} :> i + j, {2, 3}]]").unwrap(),
+      "{{2, 3, 4}, {3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{i_, i_} :> 1, {3, 3}]]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
+
+  // A `/; cond` condition on the pattern restricts which positions are
+  // filled; the rest take the (default 0) background value.
+  #[test]
+  fn sparse_array_pattern_rule_condition() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{i_} /; i > 2 :> i, 5]]").unwrap(),
+      "{0, 0, 3, 4, 5}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{i_, j_} /; i <= j :> 1, {3, 3}]]")
+        .unwrap(),
+      "{{1, 1, 1}, {0, 1, 1}, {0, 0, 1}}"
+    );
+  }
+
   #[test]
   fn sparse_array_with_list() {
     // wolframscript collapses Outer[Times, …SparseArray…] into a single

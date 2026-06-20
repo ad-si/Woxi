@@ -1800,6 +1800,95 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
   Some(Expr::List(expanded.into()))
 }
 
+/// Expand a pattern rule such as `{i_} :> i` or `{i_, j_} :> i + j` (with an
+/// optional `/; cond`) into explicit `{i, j, ...} -> value` rules over the
+/// grid `dims`. The rule's left-hand side must be a `List` pattern (after
+/// stripping any outer `Condition`) whose length equals the rank of `dims`.
+/// Each position in the grid is tested with `MatchQ` and, when it matches,
+/// the value is obtained with `Replace` (which binds the pattern variables to
+/// the indices). Returns None when `data` is not such a pattern rule, leaving
+/// other constructor forms untouched.
+fn expand_pattern_rule(data: &Expr, dims: &[usize]) -> Option<Expr> {
+  let lhs: &Expr = match data {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => pattern,
+    _ => return None,
+  };
+  // Strip an outer `Condition[inner, test]` to inspect the structural part.
+  let structural: &Expr = match lhs {
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      &args[0]
+    }
+    other => other,
+  };
+  // Only the list-pattern form is handled (e.g. `{i_}`, `{i_, j_}`).
+  let Expr::List(pats) = structural else {
+    return None;
+  };
+  if pats.len() != dims.len() || dims.is_empty() {
+    return None;
+  }
+  // It must actually be a pattern (contain a Blank), otherwise it is an
+  // ordinary explicit position rule that the normal pipeline handles.
+  if !pats.iter().any(expr_contains_pattern) {
+    return None;
+  }
+  let total: usize = dims.iter().product();
+  // Guard against pathological sizes.
+  if total == 0 || total > 1_000_000 {
+    return None;
+  }
+  let mut rules: Vec<Expr> = Vec::new();
+  for flat in 0..total {
+    let mut rem = flat;
+    let mut pos = vec![0i128; dims.len()];
+    for k in (0..dims.len()).rev() {
+      pos[k] = (rem % dims[k]) as i128 + 1;
+      rem /= dims[k];
+    }
+    let pos_list =
+      Expr::List(pos.iter().map(|&p| Expr::Integer(p)).collect());
+    let match_q = Expr::FunctionCall {
+      name: "MatchQ".to_string(),
+      args: vec![pos_list.clone(), lhs.clone()].into(),
+    };
+    let matched = matches!(
+      crate::evaluator::evaluate_expr_to_expr(&match_q),
+      Ok(Expr::Identifier(ref s)) if s == "True"
+    );
+    if !matched {
+      continue;
+    }
+    let replaced = Expr::FunctionCall {
+      name: "Replace".to_string(),
+      args: vec![pos_list.clone(), data.clone()].into(),
+    };
+    let val = crate::evaluator::evaluate_expr_to_expr(&replaced).ok()?;
+    rules.push(Expr::Rule {
+      pattern: Box::new(pos_list),
+      replacement: Box::new(val),
+    });
+  }
+  Some(Expr::List(rules.into()))
+}
+
+/// Whether `expr` contains a pattern (Blank) node anywhere within it.
+fn expr_contains_pattern(expr: &Expr) -> bool {
+  match expr {
+    Expr::Pattern { .. }
+    | Expr::PatternOptional { .. }
+    | Expr::PatternTest { .. } => true,
+    Expr::List(items) => items.iter().any(expr_contains_pattern),
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_pattern),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_pattern(left) || expr_contains_pattern(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_pattern(operand),
+    _ => false,
+  }
+}
+
 fn list_of_positive_ints(e: &Expr, rank: usize) -> Option<Vec<usize>> {
   let Expr::List(items) = e else { return None };
   if items.len() != rank {
@@ -1989,7 +2078,9 @@ pub fn sparse_array_normalize_ast(
     args.get(1).and_then(parse_sparse_dims);
   let expanded_data: Expr;
   let data: &Expr = if let Some(ref dims) = explicit_dims {
-    if let Some(expanded) = expand_band_rules(&args[0], dims) {
+    if let Some(expanded) = expand_pattern_rule(&args[0], dims)
+      .or_else(|| expand_band_rules(&args[0], dims))
+    {
       expanded_data = expanded;
       &expanded_data
     } else {
