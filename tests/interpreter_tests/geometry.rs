@@ -1244,6 +1244,34 @@ mod region_nearest {
       "{2, 1}"
     );
   }
+
+  // Triangle/Polygon: an interior point maps to itself; an exterior point
+  // projects onto the closest boundary edge (exact for exact inputs).
+  #[test]
+  fn triangle_and_polygon() {
+    let t = "Triangle[{{0, 0}, {4, 0}, {0, 3}}]";
+    // Inside → the point itself.
+    assert_eq!(
+      interpret(&format!("RegionNearest[{t}, {{1, 1}}]")).unwrap(),
+      "{1, 1}"
+    );
+    // Outside → exact projection onto the hypotenuse.
+    assert_eq!(
+      interpret(&format!("RegionNearest[{t}, {{5, 5}}]")).unwrap(),
+      "{56/25, 33/25}"
+    );
+    // Past a vertex → that vertex.
+    assert_eq!(
+      interpret(&format!("RegionNearest[{t}, {{-1, -1}}]")).unwrap(),
+      "{0, 0}"
+    );
+    // A square polygon.
+    assert_eq!(
+      interpret("RegionNearest[Polygon[{{0,0},{2,0},{2,2},{0,2}}], {3, 1}]")
+        .unwrap(),
+      "{2, 1}"
+    );
+  }
 }
 
 mod region_distance_line {
@@ -1268,6 +1296,21 @@ mod region_distance_line {
       interpret("RegionDistance[Line[{{0, 0}, {2, 0}, {2, 2}}], {3, 1}]")
         .unwrap(),
       "1"
+    );
+  }
+
+  // RegionDistance to a Triangle/Polygon is 0 inside and the boundary
+  // distance outside.
+  #[test]
+  fn triangle_distance() {
+    let t = "Triangle[{{0, 0}, {4, 0}, {0, 3}}]";
+    assert_eq!(
+      interpret(&format!("RegionDistance[{t}, {{1, 1}}]")).unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(&format!("RegionDistance[{t}, {{5, 5}}]")).unwrap(),
+      "23/5"
     );
   }
 }
@@ -2005,6 +2048,49 @@ mod region_member {
     );
     assert_eq!(
       interpret("RegionMember[Circle[{0, 0}, 1], {0.5, 0.5}]").unwrap(),
+      "False"
+    );
+  }
+
+  // A Triangle/Polygon is a closed region: interior and boundary points
+  // (edges and vertices) are members, exterior points are not.
+  #[test]
+  fn triangle_and_polygon() {
+    let t = "Triangle[{{0, 0}, {4, 0}, {0, 3}}]";
+    assert_eq!(
+      interpret(&format!("RegionMember[{t}, {{1, 1}}]")).unwrap(),
+      "True"
+    );
+    // On an edge and on a vertex.
+    assert_eq!(
+      interpret(&format!("RegionMember[{t}, {{2, 0}}]")).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!("RegionMember[{t}, {{0, 0}}]")).unwrap(),
+      "True"
+    );
+    // Outside.
+    assert_eq!(
+      interpret(&format!("RegionMember[{t}, {{3, 3}}]")).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(&format!("RegionMember[{t}, {{-1, -1}}]")).unwrap(),
+      "False"
+    );
+    // A square polygon.
+    assert_eq!(
+      interpret("RegionMember[Polygon[{{0,0},{2,0},{2,2},{0,2}}], {1, 1}]")
+        .unwrap(),
+      "True"
+    );
+    // A non-convex polygon: the concave notch excludes the point.
+    assert_eq!(
+      interpret(
+        "RegionMember[Polygon[{{0,0},{4,0},{4,4},{2,1},{0,4}}], {2, 3}]"
+      )
+      .unwrap(),
       "False"
     );
   }

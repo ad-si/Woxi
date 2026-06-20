@@ -5109,6 +5109,20 @@ fn compute_region_member(
         });
       boolean(inside)
     }
+    // Triangle/Polygon: a closed 2D region. A point is a member when it is
+    // inside or on the boundary.
+    "Triangle" | "Polygon" if args.len() == 1 => {
+      let Expr::List(vs) = &args[0] else {
+        return unevaluated();
+      };
+      let (Some(verts), 2) = (polygon_verts_f64(vs), pt.len()) else {
+        return unevaluated();
+      };
+      if verts.len() < 3 {
+        return unevaluated();
+      }
+      boolean(point_in_polygon_2d(&verts, [pt[0], pt[1]], EPS))
+    }
     _ => unevaluated(),
   }
 }
@@ -5204,6 +5218,64 @@ fn line_nearest_point(
     }
   }
   Ok(best.map(|(_, c)| c))
+}
+
+/// Convert a list of vertex expressions into 2D floating-point coordinates.
+/// Returns `None` unless every vertex is a length-2 numeric list.
+fn polygon_verts_f64(vs: &[Expr]) -> Option<Vec<[f64; 2]>> {
+  vs.iter()
+    .map(|v| match v {
+      Expr::List(c) if c.len() == 2 => {
+        let x = crate::functions::math_ast::try_eval_to_f64(&c[0])?;
+        let y = crate::functions::math_ast::try_eval_to_f64(&c[1])?;
+        Some([x, y])
+      }
+      _ => None,
+    })
+    .collect()
+}
+
+/// Is `p` on the segment `a`–`b` (within `eps`)?
+fn point_on_segment_2d(
+  a: [f64; 2],
+  b: [f64; 2],
+  p: [f64; 2],
+  eps: f64,
+) -> bool {
+  let cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+  let scale = 1.0 + (b[0] - a[0]).abs() + (b[1] - a[1]).abs();
+  if cross.abs() > eps * scale {
+    return false;
+  }
+  p[0] >= a[0].min(b[0]) - eps
+    && p[0] <= a[0].max(b[0]) + eps
+    && p[1] >= a[1].min(b[1]) - eps
+    && p[1] <= a[1].max(b[1]) + eps
+}
+
+/// Is `p` inside or on the boundary of the (closed) polygon `verts`? Uses an
+/// exact on-boundary test plus an even–odd ray cast for the strict interior.
+fn point_in_polygon_2d(verts: &[[f64; 2]], p: [f64; 2], eps: f64) -> bool {
+  let n = verts.len();
+  for i in 0..n {
+    if point_on_segment_2d(verts[i], verts[(i + 1) % n], p, eps) {
+      return true;
+    }
+  }
+  let mut inside = false;
+  let mut j = n - 1;
+  for i in 0..n {
+    let (xi, yi) = (verts[i][0], verts[i][1]);
+    let (xj, yj) = (verts[j][0], verts[j][1]);
+    if (yi > p[1]) != (yj > p[1]) {
+      let x_int = xi + (p[1] - yi) / (yj - yi) * (xj - xi);
+      if p[0] < x_int {
+        inside = !inside;
+      }
+    }
+    j = i;
+  }
+  inside
 }
 
 /// RegionDistance[region, point] — the shortest distance from `point` to the
@@ -5311,6 +5383,47 @@ fn compute_region_distance(
         return unevaluated();
       };
       match line_nearest_point(verts, point, &pt_vec, pt_vec.len())? {
+        Some(nearest) => euclid(point.clone(), nearest),
+        None => return unevaluated(),
+      }
+    }
+    "Triangle" | "Polygon" if args.len() == 1 => {
+      let Expr::List(pt) = point else {
+        return unevaluated();
+      };
+      let pt_vec: Vec<Expr> = pt.iter().cloned().collect();
+      if pt_vec.len() != 2 {
+        return unevaluated();
+      }
+      let Expr::List(vs) = &args[0] else {
+        return unevaluated();
+      };
+      let Some(verts) = polygon_verts_f64(vs) else {
+        return unevaluated();
+      };
+      if verts.len() < 3 {
+        return unevaluated();
+      }
+      let pf = match (
+        crate::functions::math_ast::try_eval_to_f64(&pt_vec[0]),
+        crate::functions::math_ast::try_eval_to_f64(&pt_vec[1]),
+      ) {
+        (Some(x), Some(y)) => [x, y],
+        _ => return unevaluated(),
+      };
+      // Inside the closed region → distance 0 (typed by input exactness).
+      if point_in_polygon_2d(&verts, pf, 1e-10) {
+        return Ok(
+          if expr_contains_real(point) || expr_contains_real(region) {
+            Expr::Real(0.0)
+          } else {
+            Expr::Integer(0)
+          },
+        );
+      }
+      let mut closed: Vec<Expr> = vs.iter().cloned().collect();
+      closed.push(vs[0].clone());
+      match line_nearest_point(&closed, point, &pt_vec, 2)? {
         Some(nearest) => euclid(point.clone(), nearest),
         None => return unevaluated(),
       }
@@ -5447,6 +5560,36 @@ fn compute_region_nearest(
         return Ok(nearest);
       }
       unevaluated()
+    }
+    // Triangle/Polygon: an interior point maps to itself; otherwise project
+    // onto the closest edge of the closed boundary.
+    "Triangle" | "Polygon" if args.len() == 1 && n == 2 => {
+      let Expr::List(vs) = &args[0] else {
+        return unevaluated();
+      };
+      let Some(verts) = polygon_verts_f64(vs) else {
+        return unevaluated();
+      };
+      if verts.len() < 3 {
+        return unevaluated();
+      }
+      let pf = match (
+        crate::functions::math_ast::try_eval_to_f64(&pt[0]),
+        crate::functions::math_ast::try_eval_to_f64(&pt[1]),
+      ) {
+        (Some(x), Some(y)) => [x, y],
+        _ => return unevaluated(),
+      };
+      if point_in_polygon_2d(&verts, pf, 1e-10) {
+        return eval(point);
+      }
+      // Closed boundary = vertices with the first vertex appended.
+      let mut closed: Vec<Expr> = vs.iter().cloned().collect();
+      closed.push(vs[0].clone());
+      match line_nearest_point(&closed, point, &pt, n)? {
+        Some(nearest) => Ok(nearest),
+        None => unevaluated(),
+      }
     }
     _ => unevaluated(),
   }

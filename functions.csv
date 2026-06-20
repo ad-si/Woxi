@@ -929,7 +929,7 @@ ScalingFunctions,,🚫,,8.0,936
 ChartElementFunction,,🚫,,7.0,937
 ComponentMeasurements,Requires external services or GUI infrastructure,🚫,io,8.0,938
 PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2.0,939
-RegionMember,Tests whether a point lies in a region (Disk/Ball/Circle/Sphere/Rectangle),✅,pure,10.0,940
+RegionMember,Tests whether a point lies in a region (Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon),✅,pure,10.0,940
 Cycles,Permutation cycle notation wrapper,✅,none,8.0,941
 EdgeWeight,,🚫,,8.0,942
 LegendreQ,Legendre function of the second kind Q_n(x),✅,pure,1.0,943
@@ -1297,7 +1297,7 @@ KelvinKer,Kelvin ker function (real part of e^(-Pi I/2) BesselK on a rotated arg
 ComplexPlot3D,Plot the modulus of a complex function as a 3D surface over the complex plane,✅,pure,12.0,1311
 ControlActive,,🚫,,6.0,1312
 ButtonBox,,🚫,,3.0,1313
-RegionDistance,Shortest distance from a point to a region (Point/Line/Disk/Ball/Circle/Sphere/Rectangle),✅,pure,10.0,1314
+RegionDistance,Shortest distance from a point to a region (Point/Line/Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon),✅,pure,10.0,1314
 FirstPosition,Find the position of the first element matching a pattern (supports associations),✅,pure,10.0,1317
 FourierSeries,,🚫,,7.0,1317
 Inactivate,Wraps every head in an expression with Inactive so it is held unevaluated,✅,pure,10.0,1317
