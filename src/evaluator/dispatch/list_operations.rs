@@ -2413,14 +2413,12 @@ pub fn dispatch_list_operations(
           Expr::Integer(n) if *n >= 1 => Some((*n as usize, *n as usize)),
           _ => None,
         },
-        Expr::List(items) if items.len() == 2 => {
-          match (&items[0], &items[1]) {
-            (Expr::Integer(m), Expr::Integer(n)) if *m >= 1 && *n >= *m => {
-              Some((*m as usize, *n as usize))
-            }
-            _ => None,
+        Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
+          (Expr::Integer(m), Expr::Integer(n)) if *m >= 1 && *n >= *m => {
+            Some((*m as usize, *n as usize))
           }
-        }
+          _ => None,
+        },
         _ => None,
       };
       let Some((lo, hi)) = range else {
@@ -2461,6 +2459,63 @@ pub fn dispatch_list_operations(
           other => other,
         },
       );
+    }
+    // Tree[data, children] — canonicalize each child that is not already a
+    // Tree into a leaf Tree[child, None]. A leaf is Tree[data, None].
+    "Tree" if args.len() == 2 => {
+      let is_tree = |e: &Expr| {
+        matches!(e, Expr::FunctionCall { name, args: ta }
+          if name == "Tree" && ta.len() == 2)
+      };
+      if let Expr::List(children) = &args[1] {
+        let canon: Vec<Expr> = children
+          .iter()
+          .map(|c| {
+            if is_tree(c) {
+              c.clone()
+            } else {
+              Expr::FunctionCall {
+                name: "Tree".to_string(),
+                args: vec![c.clone(), Expr::Identifier("None".to_string())]
+                  .into(),
+              }
+            }
+          })
+          .collect();
+        return Some(Ok(Expr::FunctionCall {
+          name: "Tree".to_string(),
+          args: vec![args[0].clone(), Expr::List(canon.into())].into(),
+        }));
+      }
+      // Leaf (children given as None) or any other spec: keep as-is.
+      return Some(Ok(Expr::FunctionCall {
+        name: "Tree".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // TreeData[Tree[d, _]] -> d ; TreeChildren[Tree[_, c]] -> c.
+    "TreeData" | "TreeChildren" if args.len() == 1 => {
+      if let Expr::FunctionCall { name: tn, args: ta } = &args[0]
+        && tn == "Tree"
+        && ta.len() == 2
+      {
+        return Some(Ok(if name == "TreeData" {
+          ta[0].clone()
+        } else {
+          ta[1].clone()
+        }));
+      }
+      crate::emit_message(&format!(
+        "{name}::tree: Tree expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        })
+      ));
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
     }
     "Through" if args.len() == 1 => {
       return Some(list_helpers_ast::through_ast(&args[0], None));

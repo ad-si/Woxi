@@ -6722,6 +6722,32 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // Tree canonicalizes scalar children into leaf Tree[child, None] nodes.
+  #[test]
+  fn tree_canonicalizes_children() {
+    assert_eq!(
+      interpret("Tree[1, {2, 3}]").unwrap(),
+      "Tree[1, {Tree[2, None], Tree[3, None]}]"
+    );
+    // A list child is wrapped as leaf data, not recursed into.
+    assert_eq!(
+      interpret("Tree[1, {2, {3, 4}}]").unwrap(),
+      "Tree[1, {Tree[2, None], Tree[{3, 4}, None]}]"
+    );
+    // A leaf stays as Tree[data, None].
+    assert_eq!(interpret("Tree[1, None]").unwrap(), "Tree[1, None]");
+  }
+  #[test]
+  fn tree_data_and_children() {
+    assert_eq!(interpret("TreeData[Tree[1, {2, 3}]]").unwrap(), "1");
+    assert_eq!(
+      interpret("TreeChildren[Tree[1, {2, 3}]]").unwrap(),
+      "{Tree[2, None], Tree[3, None]}"
+    );
+    // Children of a leaf is None.
+    assert_eq!(interpret("TreeChildren[Tree[x, None]]").unwrap(), "None");
+  }
+
   // VertexOutComponent
   #[test]
   fn vertex_out_component_star() {
