@@ -912,6 +912,89 @@ fn tree_replacement_value(v: &Expr) -> Expr {
   }
 }
 
+// Interpret a TreeInsert/TreeDelete position spec, which may be a bare integer
+// `n` (shorthand for `{n}`) or a list of integers, as a 1-based path.
+fn tree_pos_to_path(e: &Expr) -> Option<Vec<i128>> {
+  match e {
+    Expr::Integer(n) => Some(vec![*n]),
+    Expr::List(_) => tree_position_path(e),
+    _ => None,
+  }
+}
+
+// Resolve a (possibly negative) 1-based index against a list of length `len`.
+// `extra` is the count of slots beyond the end that the index may address:
+// insertion allows index `len + 1` (append), deletion only `len`. Negative
+// indices count from the end (-1 = the last existing slot). Returns the
+// 0-based slot, or None if out of range.
+fn resolve_tree_index(idx: i128, len: i128, extra: i128) -> Option<usize> {
+  let pos = if idx < 0 { len + idx + 1 + extra } else { idx };
+  if pos < 1 || pos > len + extra {
+    None
+  } else {
+    Some((pos - 1) as usize)
+  }
+}
+
+// TreeInsert[tree, child, pos]: insert `child` (wrapped as a leaf when it is not
+// already a Tree) among the children reached by `path`; the last index gives the
+// 1-based sibling position (supporting append at `len + 1` and negative indices
+// counting from the end). Returns None when the path runs out of range or
+// descends into a leaf, so the caller leaves the expression unevaluated.
+fn tree_insert_at(tree: &Expr, path: &[i128], value: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = tree else {
+    return None;
+  };
+  if name != "Tree" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(children) = &args[1] else {
+    return None; // leaf: cannot insert
+  };
+  let len = children.len() as i128;
+  let mut new_children: Vec<Expr> = children.to_vec();
+  if path.len() == 1 {
+    let slot = resolve_tree_index(path[0], len, 1)?;
+    new_children.insert(slot, tree_replacement_value(value));
+  } else {
+    let i = resolve_tree_index(path[0], len, 0)?;
+    new_children[i] = tree_insert_at(&children[i], &path[1..], value)?;
+  }
+  Some(Expr::FunctionCall {
+    name: "Tree".to_string(),
+    args: vec![args[0].clone(), Expr::List(new_children.into())].into(),
+  })
+}
+
+// TreeDelete[tree, pos]: remove the child reached by `path` (the last index
+// selects the sibling, the rest navigate into the children). The parent keeps a
+// possibly-empty children list, so deleting a node's only child yields
+// `Tree[data, {}]` rather than a leaf. Returns None on out-of-range or leaf
+// descent.
+fn tree_delete_at(tree: &Expr, path: &[i128]) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = tree else {
+    return None;
+  };
+  if name != "Tree" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(children) = &args[1] else {
+    return None; // leaf: cannot delete
+  };
+  let len = children.len() as i128;
+  let i = resolve_tree_index(path[0], len, 0)?;
+  let mut new_children: Vec<Expr> = children.to_vec();
+  if path.len() == 1 {
+    new_children.remove(i);
+  } else {
+    new_children[i] = tree_delete_at(&children[i], &path[1..])?;
+  }
+  Some(Expr::FunctionCall {
+    name: "Tree".to_string(),
+    args: vec![args[0].clone(), Expr::List(new_children.into())].into(),
+  })
+}
+
 // Destructure a rule `lhs -> rhs` (or :>) into its two parts.
 fn as_rule(e: &Expr) -> Option<(&Expr, &Expr)> {
   match e {
@@ -3200,6 +3283,65 @@ pub fn dispatch_list_operations(
         }
       }
       return Some(Ok(current));
+    }
+    // TreeInsert[tree, child, pos]: insert `child` at the position `pos` (the
+    // last index selects the sibling slot, earlier indices navigate into the
+    // children). A scalar child becomes a leaf. Out-of-range or leaf-descending
+    // positions leave the expression unevaluated.
+    "TreeInsert" if args.len() == 3 => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "TreeInsert".to_string(),
+        args: args.to_vec().into(),
+      };
+      if tree_node(&args[0]).is_none() {
+        crate::emit_message(&format!(
+          "TreeInsert::tree: Tree expected at position 1 in {}.",
+          crate::syntax::expr_to_string(&unevaluated())
+        ));
+        return Some(Ok(unevaluated()));
+      }
+      let Some(path) = tree_pos_to_path(&args[2]) else {
+        return Some(Ok(unevaluated()));
+      };
+      if path.is_empty() {
+        return Some(Ok(unevaluated()));
+      }
+      match tree_insert_at(&args[0], &path, &args[1]) {
+        Some(updated) => return Some(Ok(updated)),
+        None => {
+          crate::emit_message(&format!(
+            "TreeInsert::ins: Cannot insert at position {} in {}.",
+            crate::syntax::expr_to_string(&args[2]),
+            crate::syntax::expr_to_string(&args[0])
+          ));
+          return Some(Ok(unevaluated()));
+        }
+      }
+    }
+    // TreeDelete[tree, pos]: remove the subtree at `pos`. The root position {}
+    // and out-of-range positions leave the expression unevaluated.
+    "TreeDelete" if args.len() == 2 => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "TreeDelete".to_string(),
+        args: args.to_vec().into(),
+      };
+      if tree_node(&args[0]).is_none() {
+        crate::emit_message(&format!(
+          "TreeDelete::tree: Tree expected at position 1 in {}.",
+          crate::syntax::expr_to_string(&unevaluated())
+        ));
+        return Some(Ok(unevaluated()));
+      }
+      let Some(path) = tree_pos_to_path(&args[1]) else {
+        return Some(Ok(unevaluated()));
+      };
+      if path.is_empty() {
+        return Some(Ok(unevaluated()));
+      }
+      match tree_delete_at(&args[0], &path) {
+        Some(updated) => return Some(Ok(updated)),
+        None => return Some(Ok(unevaluated())),
+      }
     }
     // TreeLevel[tree, spec]: subtrees at the levels selected by spec, in
     // post-order (descendants before their parent).

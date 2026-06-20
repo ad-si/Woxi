@@ -7110,6 +7110,117 @@ mod batch_unevaluated_wrappers_2 {
       "TreeReplacePart[5, {1} -> 2]"
     );
   }
+  // TreeInsert[tree, child, pos]: insert a child at the given sibling position.
+  #[test]
+  fn tree_insert() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // Insert before the first child.
+    assert_eq!(
+      interpret(&format!("TreeInsert[{t}, Tree[9, None], {{1}}]")).unwrap(),
+      "Tree[1, {Tree[9, None], Tree[2, {Tree[4, None], Tree[5, None]}], \
+       Tree[3, None]}]"
+    );
+    // Insert in the middle.
+    assert_eq!(
+      interpret(&format!("TreeInsert[{t}, Tree[9, None], {{2}}]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], Tree[9, None], \
+       Tree[3, None]}]"
+    );
+    // Append at length + 1.
+    assert_eq!(
+      interpret(&format!("TreeInsert[{t}, Tree[9, None], {{3}}]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], Tree[3, None], \
+       Tree[9, None]}]"
+    );
+    // A negative index counts from the end: {-1} appends. A scalar child
+    // becomes a leaf.
+    assert_eq!(
+      interpret(&format!("TreeInsert[{t}, 9, {{-1}}]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], Tree[3, None], \
+       Tree[9, None]}]"
+    );
+    // A bare integer position is shorthand for a single-element path.
+    assert_eq!(
+      interpret(&format!("TreeInsert[{t}, Tree[9, None], 1]")).unwrap(),
+      "Tree[1, {Tree[9, None], Tree[2, {Tree[4, None], Tree[5, None]}], \
+       Tree[3, None]}]"
+    );
+    // A nested position inserts among a descendant's children.
+    assert_eq!(
+      interpret(&format!("TreeInsert[{t}, Tree[9, None], {{1, 1}}]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[9, None], Tree[4, None], Tree[5, None]}], \
+       Tree[3, None]}]"
+    );
+    // An out-of-range position leaves the expression unevaluated.
+    assert_eq!(
+      interpret(&format!("TreeInsert[{t}, Tree[9, None], {{5}}]")).unwrap(),
+      "TreeInsert[Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], \
+       Tree[3, None]}], Tree[9, None], {5}]"
+    );
+    // Inserting into a leaf is not possible, so the expression is unevaluated.
+    assert_eq!(
+      interpret(&format!("TreeInsert[{t}, Tree[9, None], {{2, 1}}]")).unwrap(),
+      "TreeInsert[Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], \
+       Tree[3, None]}], Tree[9, None], {2, 1}]"
+    );
+    // A non-tree first argument stays unevaluated.
+    assert_eq!(
+      interpret("TreeInsert[5, Tree[9, None], {1}]").unwrap(),
+      "TreeInsert[5, Tree[9, None], {1}]"
+    );
+  }
+  // TreeDelete[tree, pos]: remove the subtree at pos.
+  #[test]
+  fn tree_delete() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // Delete the first child.
+    assert_eq!(
+      interpret(&format!("TreeDelete[{t}, {{1}}]")).unwrap(),
+      "Tree[1, {Tree[3, None]}]"
+    );
+    // Delete the second child, addressed by a bare integer.
+    assert_eq!(
+      interpret(&format!("TreeDelete[{t}, 2]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}]}]"
+    );
+    // A negative index counts from the end.
+    assert_eq!(
+      interpret(&format!("TreeDelete[{t}, {{-1}}]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}]}]"
+    );
+    // A nested position deletes a descendant; the parent keeps a (possibly
+    // empty) children list rather than becoming a leaf.
+    assert_eq!(
+      interpret(&format!("TreeDelete[{t}, {{1, 1}}]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[5, None]}], Tree[3, None]}]"
+    );
+    // Deleting a node's only child yields Tree[data, {}] (not a leaf).
+    assert_eq!(
+      interpret(
+        "TreeLeafQ[TreeChildren[\
+       TreeDelete[Tree[1, {Tree[2, {5}], 3}], {1, 1}]][[1]]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    // The root position {} leaves the expression unevaluated.
+    assert_eq!(
+      interpret(&format!("TreeDelete[{t}, {{}}]")).unwrap(),
+      "TreeDelete[Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], \
+       Tree[3, None]}], {}]"
+    );
+    // An out-of-range position leaves the expression unevaluated.
+    assert_eq!(
+      interpret(&format!("TreeDelete[{t}, {{5}}]")).unwrap(),
+      "TreeDelete[Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], \
+       Tree[3, None]}], {5}]"
+    );
+    // A non-tree first argument stays unevaluated.
+    assert_eq!(
+      interpret("TreeDelete[5, {1}]").unwrap(),
+      "TreeDelete[5, {1}]"
+    );
+  }
   // TreeLevel[tree, spec]: subtrees at the selected levels, in post-order.
   #[test]
   fn tree_level() {
