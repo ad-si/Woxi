@@ -1847,8 +1847,7 @@ fn expand_pattern_rule(data: &Expr, dims: &[usize]) -> Option<Expr> {
       pos[k] = (rem % dims[k]) as i128 + 1;
       rem /= dims[k];
     }
-    let pos_list =
-      Expr::List(pos.iter().map(|&p| Expr::Integer(p)).collect());
+    let pos_list = Expr::List(pos.iter().map(|&p| Expr::Integer(p)).collect());
     let match_q = Expr::FunctionCall {
       name: "MatchQ".to_string(),
       args: vec![pos_list.clone(), lhs.clone()].into(),

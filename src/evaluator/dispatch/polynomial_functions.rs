@@ -576,54 +576,79 @@ pub fn dispatch_polynomial_functions(
         }
       }
     }
-    // FromCoefficientRules[{{exp} -> coeff, ...}, var]
+    // FromCoefficientRules[{{e1, ..., ek} -> coeff, ...}, var-or-vars]
+    // Reconstructs a polynomial from its exponent-vector rules. The variable
+    // specification is either a single symbol (k == 1) or a list of symbols.
     "FromCoefficientRules" if args.len() == 2 => {
-      if let (Expr::List(rules), Expr::Identifier(var)) = (&args[0], &args[1]) {
-        let mut terms: Vec<Expr> = Vec::new();
-        for rule in rules {
-          if let Expr::Rule {
-            pattern,
-            replacement,
-          } = rule
-          {
-            {
-              if let Expr::List(exps) = pattern.as_ref()
-                && exps.len() == 1
-              {
-                let coeff = replacement.as_ref();
-                let exp = &exps[0];
-                let term = match exp {
-                  Expr::Integer(0) => coeff.clone(),
-                  Expr::Integer(1) => Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Times,
-                    left: Box::new(coeff.clone()),
-                    right: Box::new(Expr::Identifier(var.clone())),
-                  },
-                  _ => Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Times,
-                    left: Box::new(coeff.clone()),
-                    right: Box::new(Expr::BinaryOp {
-                      op: crate::syntax::BinaryOperator::Power,
-                      left: Box::new(Expr::Identifier(var.clone())),
-                      right: Box::new(exp.clone()),
-                    }),
-                  },
-                };
-                terms.push(term);
-              }
-            }
-          }
-        }
-        if !terms.is_empty() {
-          let mut result = terms[0].clone();
-          for term in &terms[1..] {
-            result = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
-              left: Box::new(result),
-              right: Box::new(term.clone()),
+      if let Expr::List(rules) = &args[0] {
+        // Collect the variable symbols.
+        let vars: Option<Vec<String>> = match &args[1] {
+          Expr::Identifier(v) => Some(vec![v.clone()]),
+          Expr::List(vs) => vs
+            .iter()
+            .map(|v| match v {
+              Expr::Identifier(s) => Some(s.clone()),
+              _ => None,
+            })
+            .collect(),
+          _ => None,
+        };
+        if let Some(vars) = vars {
+          let mut terms: Vec<Expr> = Vec::new();
+          let mut ok = true;
+          for rule in rules {
+            let Expr::Rule {
+              pattern,
+              replacement,
+            } = rule
+            else {
+              ok = false;
+              break;
             };
+            let Expr::List(exps) = pattern.as_ref() else {
+              ok = false;
+              break;
+            };
+            if exps.len() != vars.len() {
+              ok = false;
+              break;
+            }
+            // term = coeff * v1^e1 * v2^e2 * ... (exponent-0 factors dropped).
+            let mut term = replacement.as_ref().clone();
+            for (var, exp) in vars.iter().zip(exps.iter()) {
+              let factor = match exp {
+                Expr::Integer(0) => continue,
+                Expr::Integer(1) => Expr::Identifier(var.clone()),
+                _ => Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Power,
+                  left: Box::new(Expr::Identifier(var.clone())),
+                  right: Box::new(exp.clone()),
+                },
+              };
+              term = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(term),
+                right: Box::new(factor),
+              };
+            }
+            terms.push(term);
           }
-          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+          if ok {
+            // Empty rule list reconstructs to 0.
+            let mut result = Expr::Integer(0);
+            for (i, term) in terms.into_iter().enumerate() {
+              result = if i == 0 {
+                term
+              } else {
+                Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Plus,
+                  left: Box::new(result),
+                  right: Box::new(term),
+                }
+              };
+            }
+            return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+          }
         }
       }
     }

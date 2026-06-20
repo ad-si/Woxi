@@ -3516,6 +3516,42 @@ mod batch_unevaluated_wrappers_2 {
       "1 + 3*x + 5*x^2"
     );
   }
+  // Multivariate form: the variable spec is a list and each exponent vector
+  // selects powers of the corresponding variable.
+  #[test]
+  fn from_coefficient_rules_multivariate() {
+    assert_eq!(
+      interpret("FromCoefficientRules[{{2, 0} -> 1, {0, 2} -> 1}, {x, y}]")
+        .unwrap(),
+      "x^2 + y^2"
+    );
+    assert_eq!(
+      interpret("FromCoefficientRules[{{1, 1} -> 4}, {x, y}]").unwrap(),
+      "4*x*y"
+    );
+    assert_eq!(
+      interpret("FromCoefficientRules[{{2, 0, 1} -> 3}, {x, y, z}]").unwrap(),
+      "3*x^2*z"
+    );
+    // A constant term (all-zero exponent vector) drops every variable factor.
+    assert_eq!(
+      interpret("FromCoefficientRules[{{0, 0} -> 7}, {x, y}]").unwrap(),
+      "7"
+    );
+    // An empty rule list reconstructs to 0.
+    assert_eq!(
+      interpret("FromCoefficientRules[{}, {x, y}]").unwrap(),
+      "0"
+    );
+    // Round-trips with CoefficientRules.
+    assert_eq!(
+      interpret(
+        "FromCoefficientRules[CoefficientRules[(x + y)^3, {x, y}], {x, y}]"
+      )
+      .unwrap(),
+      "x^3 + 3*x^2*y + 3*x*y^2 + y^3"
+    );
+  }
   // PolynomialExtendedGCD skipped - requires polynomial GCD infrastructure
   #[test]
   fn count_distinct_basic() {
