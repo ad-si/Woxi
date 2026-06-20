@@ -2571,8 +2571,13 @@ fn try_infinite_sum(
     && let Some((coeff, base)) = match_log_geometric(body, var_name)
   {
     use crate::syntax::BinaryOperator;
+    // The Mercator series Sum[base^k/k] converges on the real interval
+    // [-1, 1): base == 1 is the divergent harmonic series, |base| > 1
+    // diverges, but base == -1 converges conditionally to -Log[2]. (A
+    // complex base on the unit circle, e.g. I, also converges and is left
+    // to the formal closed form.)
     if let Some(b) = crate::functions::math_ast::try_eval_to_f64(&base)
-      && !(b.abs() < 1.0)
+      && !(-1.0..1.0).contains(&b)
     {
       return Ok(None);
     }

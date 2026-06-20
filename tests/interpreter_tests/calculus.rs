@@ -9881,6 +9881,58 @@ mod symbolic_sum_constant_factor {
   }
 }
 
+// Closed form of the Mercator series Sum[r^k/k, {k, 1, Infinity}] = -Log[1-r],
+// which converges on the real interval [-1, 1). The boundary base r = -1 is the
+// (conditionally convergent) alternating harmonic series.
+mod infinite_log_series {
+  use super::*;
+
+  #[test]
+  fn alternating_harmonic() {
+    assert_eq!(
+      interpret("Sum[(-1)^n/n, {n, 1, Infinity}]").unwrap(),
+      "-Log[2]"
+    );
+  }
+
+  #[test]
+  fn negative_fractional_base() {
+    assert_eq!(
+      interpret("Sum[(-1/2)^n/n, {n, 1, Infinity}]").unwrap(),
+      "-Log[3/2]"
+    );
+  }
+
+  #[test]
+  fn positive_fractional_base() {
+    assert_eq!(
+      interpret("Sum[(1/2)^n/n, {n, 1, Infinity}]").unwrap(),
+      "Log[2]"
+    );
+  }
+
+  #[test]
+  fn symbolic_base_unchanged() {
+    assert_eq!(
+      interpret("Sum[x^n/n, {n, 1, Infinity}]").unwrap(),
+      "-Log[1 - x]"
+    );
+  }
+
+  // Divergent bases (harmonic r = 1, and |r| > 1) stay unevaluated.
+  #[test]
+  fn divergent_bases_stay_unevaluated() {
+    assert_eq!(
+      interpret("Sum[2^n/n, {n, 1, Infinity}]").unwrap(),
+      "Sum[2^n/n, {n, 1, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Sum[1/n, {n, 1, Infinity}]").unwrap(),
+      "Sum[n^(-1), {n, 1, Infinity}]"
+    );
+  }
+}
+
 mod sum_convergence {
   use super::*;
 
