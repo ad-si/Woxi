@@ -12594,13 +12594,27 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return gaussian_closed_form_integral(&alpha, lo, hi, working_precision);
   }
 
-  // Evaluate the integrand at a point
+  // Evaluate the integrand at a point. A point where the integrand is not
+  // finite (e.g. the removable singularity of Sin[x]/x at x = 0) is replaced
+  // by its limit via a tiny perturbation, so adaptive quadrature does not
+  // abort at such a point.
   let eval_at = |x: f64| -> Option<f64> {
-    let substituted =
-      crate::syntax::substitute_variable(integrand, &var_name, &Expr::Real(x));
-    let evaluated =
-      crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
-    crate::functions::math_ast::try_eval_to_f64(&evaluated)
+    let raw = |xx: f64| -> Option<f64> {
+      let substituted = crate::syntax::substitute_variable(
+        integrand,
+        &var_name,
+        &Expr::Real(xx),
+      );
+      let evaluated =
+        crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
+      crate::functions::math_ast::try_eval_to_f64(&evaluated)
+        .filter(|v| v.is_finite())
+    };
+    if let Some(v) = raw(x) {
+      return Some(v);
+    }
+    let d = x.abs().max(1.0) * 1e-10;
+    raw(x + d).or_else(|| raw(x - d))
   };
 
   let lo_inf = lo.is_infinite() && lo < 0.0;

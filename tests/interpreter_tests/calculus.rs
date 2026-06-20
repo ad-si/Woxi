@@ -3014,6 +3014,14 @@ mod nintegrate {
     assert_approx("NIntegrate[1/x, {x, 1, E}]", 1.0, 1e-10);
   }
 
+  // The integrand has a removable singularity at the lower bound (Sin[0]/0
+  // is 0/0 but the limit is 1); quadrature should use the limit, not abort.
+  #[test]
+  fn nintegrate_removable_singularity_at_endpoint() {
+    // ∫₀¹⁰ sin(x)/x dx ≈ 1.6583475942188...
+    assert_approx("NIntegrate[Sin[x]/x, {x, 0, 10}]", 1.658347594218876, 1e-8);
+  }
+
   // ─── Narrow-Gaussian fast path ────────────────────────────────────
   //
   // Adaptive Simpson can't find the peak of `Exp[-α x²]` once α is
