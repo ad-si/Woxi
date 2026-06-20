@@ -499,6 +499,43 @@ mod date_string {
     );
   }
 
+  // DateString[fmt] with a recognized format name formats the CURRENT date,
+  // i.e. DateString[fmt] == DateString[Now, fmt]. Tested structurally (the
+  // actual date is non-deterministic) plus a consistency check.
+  #[test]
+  fn date_string_single_format_uses_current_date() {
+    assert_eq!(
+      interpret("StringLength[DateString[\"ISODate\"]]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("StringLength[DateString[\"ISODateTime\"]]").unwrap(),
+      "19"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[DateString[\"ISODate\"], RegularExpression[\"\\\\d{4}-\\\\d{2}-\\\\d{2}\"]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Consistent with the explicit current-date form.
+    assert_eq!(
+      interpret(
+        "DateString[\"ISODate\"] == DateString[DateList[], \"ISODate\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DateString[\"Year\"] == DateString[DateList[], \"Year\"]")
+        .unwrap(),
+      "True"
+    );
+    // A non-format string is still returned unchanged.
+    assert_eq!(interpret("DateString[\"hello\"]").unwrap(), "hello");
+  }
+
   #[test]
   fn date_string_date_object_day_granularity_omits_time() {
     // DateObject with "Day" granularity should omit time in default format

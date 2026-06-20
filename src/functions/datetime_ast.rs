@@ -1247,6 +1247,33 @@ fn unevaluated(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
 }
 
 /// DateString[date, format] — format a date as a string
+/// True if `s` is a recognized DateString format name — either a compound
+/// named format ("ISODate", "DateTime", …) or a single format element
+/// ("Year", "DayName", …). Used so `DateString[fmt]` formats the current date.
+fn is_known_date_format(s: &str) -> bool {
+  matches!(
+    s,
+    "ISODateTime"
+      | "ISODate"
+      | "DateTime"
+      | "DateTimeShort"
+      | "Date"
+      | "DateShort"
+      | "Time"
+      | "Year"
+      | "YearShort"
+      | "Month"
+      | "MonthName"
+      | "MonthNameShort"
+      | "Day"
+      | "DayName"
+      | "DayNameShort"
+      | "Hour"
+      | "Minute"
+      | "Second"
+  )
+}
+
 pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty()
     || (args.len() == 1
@@ -1278,10 +1305,19 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return date_string_ast(&[]);
   }
 
-  // DateString["string"] with no format spec returns the string as-is (Wolfram behavior)
+  // DateString[fmt] with a single string argument: if `fmt` is a recognized
+  // date-format name (e.g. "ISODate", "DateTime", "Year"), it formats the
+  // CURRENT date, i.e. DateString[fmt] == DateString[Now, fmt]. Any other
+  // string is returned unchanged (matching wolframscript, e.g.
+  // DateString["hello"] -> "hello").
   if args.len() == 1
     && let Expr::String(s) = &date_arg
   {
+    if is_known_date_format(s) {
+      let abs_time = absolute_time_ast(&[])?;
+      let date_list = date_list_ast(&[abs_time])?;
+      return date_string_ast(&[date_list, args[0].clone()]);
+    }
     return Ok(Expr::String(s.clone()));
   }
 
