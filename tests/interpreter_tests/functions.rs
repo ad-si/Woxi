@@ -1978,6 +1978,37 @@ mod ring_operators {
       "CirclePlus"
     );
   }
+
+  // \[SmallCircle] is a flat infix operator that binds tighter than Dot but
+  // looser than Power and Map.
+  #[test]
+  fn small_circle_operator() {
+    assert_eq!(interpret(r#"a \[SmallCircle] b"#).unwrap(), "a \u{2218} b");
+    assert_eq!(
+      interpret("SmallCircle[a, b, c]").unwrap(),
+      "a \u{2218} b \u{2218} c"
+    );
+    // Flat.
+    assert_eq!(
+      interpret(r#"Length[a \[SmallCircle] b \[SmallCircle] c]"#).unwrap(),
+      "3"
+    );
+    // Binds tighter than Dot, Times and Wedge.
+    assert_eq!(interpret(r#"Head[a \[SmallCircle] b . c]"#).unwrap(), "Dot");
+    assert_eq!(
+      interpret(r#"Head[a \[SmallCircle] b * c]"#).unwrap(),
+      "Times"
+    );
+    // But looser than Power and Map.
+    assert_eq!(
+      interpret(r#"Head[a \[SmallCircle] b ^ c]"#).unwrap(),
+      "SmallCircle"
+    );
+    assert_eq!(
+      interpret(r#"Head[a \[SmallCircle] b /@ c]"#).unwrap(),
+      "SmallCircle"
+    );
+  }
 }
 
 mod wedge {
