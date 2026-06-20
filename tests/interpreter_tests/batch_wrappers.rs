@@ -7105,6 +7105,60 @@ mod batch_unevaluated_wrappers_2 {
     // Non-tree first argument stays unevaluated.
     assert_eq!(interpret("TreeLevel[5, {1}]").unwrap(), "TreeLevel[5, {1}]");
   }
+  // TreeSelect[tree, crit]: pick subtrees (post-order) where crit is True.
+  #[test]
+  fn tree_select() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // Subtrees whose root data is even, in post-order.
+    assert_eq!(
+      interpret(&format!("TreeSelect[{t}, EvenQ @* TreeData]")).unwrap(),
+      "{Tree[4, None], Tree[2, {Tree[4, None], Tree[5, None]}]}"
+    );
+    // Odd-data subtrees include the root.
+    assert_eq!(
+      interpret(&format!("TreeSelect[{t}, OddQ @* TreeData]")).unwrap(),
+      "{Tree[5, None], Tree[3, None], \
+       Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], Tree[3, None]}]}"
+    );
+    // Limit to the first n matches.
+    assert_eq!(
+      interpret(&format!("TreeSelect[{t}, OddQ @* TreeData, 2]")).unwrap(),
+      "{Tree[5, None], Tree[3, None]}"
+    );
+    // n = 0 yields the empty list.
+    assert_eq!(
+      interpret(&format!("TreeSelect[{t}, OddQ @* TreeData, 0]")).unwrap(),
+      "{}"
+    );
+    // Infinity behaves like no limit.
+    assert_eq!(
+      interpret(&format!("TreeSelect[{t}, EvenQ @* TreeData, Infinity]"))
+        .unwrap(),
+      "{Tree[4, None], Tree[2, {Tree[4, None], Tree[5, None]}]}"
+    );
+    // Four-argument form restricts to a level spec, then takes the first n.
+    assert_eq!(
+      interpret(&format!("TreeSelect[{t}, EvenQ @* TreeData, {{2}}, 1]"))
+        .unwrap(),
+      "{Tree[4, None]}"
+    );
+    // Operator form TreeSelect[crit][tree].
+    assert_eq!(
+      interpret(&format!("TreeSelect[EvenQ @* TreeData][{t}]")).unwrap(),
+      "{Tree[4, None], Tree[2, {Tree[4, None], Tree[5, None]}]}"
+    );
+    // A non-integer count leaves the expression unevaluated.
+    assert_eq!(
+      interpret(&format!("TreeSelect[{t}, EvenQ @* TreeData, {{2}}]")).unwrap(),
+      "TreeSelect[Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], \
+       Tree[3, None]}], EvenQ @* TreeData, {2}]"
+    );
+    // Non-tree first argument stays unevaluated.
+    assert_eq!(
+      interpret("TreeSelect[5, EvenQ]").unwrap(),
+      "TreeSelect[5, EvenQ]"
+    );
+  }
 
   // VertexOutComponent
   #[test]

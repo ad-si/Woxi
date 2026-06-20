@@ -2945,6 +2945,77 @@ pub fn dispatch_list_operations(
       tree_level(&args[0], 0, lo, hi, &mut out);
       return Some(Ok(Expr::List(out.into())));
     }
+    // TreeSelect[crit] operator form: kept symbolic so TreeSelect[crit][tree]
+    // can apply it (handled in apply_curried_call).
+    "TreeSelect" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "TreeSelect".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // TreeSelect[tree, crit] picks the subtrees (post-order, root included)
+    // for which crit[subtree] is True. The optional third argument limits the
+    // result to the first n; the four-argument form restricts to a level spec
+    // first. n must be a non-negative integer or Infinity.
+    "TreeSelect" if (2..=4).contains(&args.len()) => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "TreeSelect".to_string(),
+        args: args.to_vec().into(),
+      };
+      if tree_node(&args[0]).is_none() {
+        crate::emit_message(&format!(
+          "TreeSelect::tree: Tree expected at position 1 in {}.",
+          crate::syntax::expr_to_string(&unevaluated())
+        ));
+        return Some(Ok(unevaluated()));
+      }
+      // Determine the level bounds and the count limit per arity.
+      let (bounds, n_arg) = match args.len() {
+        2 => ((0i128, None), None),
+        3 => ((0i128, None), Some(&args[2])),
+        _ => match parse_tree_level_spec(&args[2]) {
+          Some(b) => (b, Some(&args[3])),
+          None => return Some(Ok(unevaluated())),
+        },
+      };
+      // Validate n (non-negative integer or Infinity) if present.
+      let limit: Option<usize> = match n_arg {
+        None => None,
+        Some(Expr::Integer(k)) if *k >= 0 => Some(*k as usize),
+        Some(e) if is_infinity_symbol(e) => None,
+        Some(_) => {
+          let mut rest = args.to_vec();
+          let tree_str = "-Tree-".to_string();
+          rest[0] = Expr::Identifier(tree_str);
+          crate::emit_message(&format!(
+            "TreeSelect::innf: Non-negative integer or Infinity expected at position -1 in {}.",
+            crate::syntax::expr_to_string(&Expr::FunctionCall {
+              name: "TreeSelect".to_string(),
+              args: rest.into(),
+            })
+          ));
+          return Some(Ok(unevaluated()));
+        }
+      };
+      let (lo, hi) = bounds;
+      let mut candidates = Vec::new();
+      tree_level(&args[0], 0, lo, hi, &mut candidates);
+      let mut selected = Vec::new();
+      for sub in candidates {
+        if limit.is_some_and(|n| selected.len() >= n) {
+          break;
+        }
+        match list_helpers_ast::apply_func_ast(&args[1], &sub) {
+          Ok(r) => {
+            if matches!(&r, Expr::Identifier(s) if s == "True") {
+              selected.push(sub);
+            }
+          }
+          Err(e) => return Some(Err(e)),
+        }
+      }
+      return Some(Ok(Expr::List(selected.into())));
+    }
     // TreePosition[tree, patt]: positions of nodes whose data matches patt,
     // in post-order (descendants before parent); the root's position is {}.
     // The optional third argument restricts positions to a level spec.

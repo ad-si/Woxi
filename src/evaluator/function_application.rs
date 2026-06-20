@@ -915,12 +915,14 @@ pub fn apply_curried_call(
       new_args.extend(args.iter().cloned());
       evaluate_function_call_ast(name, &new_args)
     }
-    // TreeReplacePart operator form: TreeReplacePart[rules][tree] ->
-    // TreeReplacePart[tree, rules] (the tree argument comes first).
+    // TreeReplacePart / TreeSelect operator form: T[spec][tree] ->
+    // T[tree, spec] (the tree argument comes first).
     Expr::FunctionCall {
       name,
       args: func_args,
-    } if name == "TreeReplacePart" && func_args.len() == 1 => {
+    } if (name == "TreeReplacePart" || name == "TreeSelect")
+      && func_args.len() == 1 =>
+    {
       let mut new_args = args.to_vec();
       new_args.extend(func_args.iter().cloned());
       evaluate_function_call_ast(name, &new_args)
