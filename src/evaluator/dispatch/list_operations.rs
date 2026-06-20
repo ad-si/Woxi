@@ -1178,8 +1178,14 @@ pub fn dispatch_list_operations(
       }
     }
     "BlockMap" if args.len() == 3 || args.len() == 4 => {
-      // BlockMap[f, list, n] or BlockMap[f, list, n, offset]
-      if let Some(n) = expr_to_i128(&args[2]) {
+      // BlockMap[f, list, n] or BlockMap[f, list, n, offset]. A single-element
+      // block specification {n} is equivalent to the integer n (non-overlapping
+      // blocks of size n), matching wolframscript.
+      let block_size = match &args[2] {
+        Expr::List(spec) if spec.len() == 1 => expr_to_i128(&spec[0]),
+        other => expr_to_i128(other),
+      };
+      if let Some(n) = block_size {
         let d = if args.len() == 4 {
           expr_to_i128(&args[3])
         } else {

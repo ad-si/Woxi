@@ -866,6 +866,29 @@ mod block_map {
       "{g[{a, b, c}], g[{c, d, e}], g[{e, h, i}]}"
     );
   }
+
+  // A single-element block specification {n} is equivalent to the integer n
+  // (non-overlapping blocks), matching wolframscript.
+  #[test]
+  fn block_spec_single_element() {
+    assert_eq!(
+      interpret("BlockMap[f, Range[6], {2}]").unwrap(),
+      "{f[{1, 2}], f[{3, 4}], f[{5, 6}]}"
+    );
+    assert_eq!(
+      interpret("BlockMap[f, Range[6], {3}]").unwrap(),
+      "{f[{1, 2, 3}], f[{4, 5, 6}]}"
+    );
+    // Leftover elements that don't fill a block are dropped.
+    assert_eq!(
+      interpret("BlockMap[f, Range[7], {2}]").unwrap(),
+      "{f[{1, 2}], f[{3, 4}], f[{5, 6}]}"
+    );
+    assert_eq!(
+      interpret("BlockMap[Total, Range[10], {2}]").unwrap(),
+      "{3, 7, 11, 15, 19}"
+    );
+  }
 }
 
 mod operate {
