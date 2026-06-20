@@ -7711,13 +7711,31 @@ pub fn nminimize_ast(
     }
   };
 
+  // A constraint that reduced to literal `False` (e.g. the chained
+  // `5 <= x <= 1` evaluates to False) makes the feasible set empty.
+  let mut flat_constraints: Vec<&Expr> = Vec::new();
+  for c in &constraints {
+    flatten_and_constraints_ref(c, &mut flat_constraints);
+  }
+  if flat_constraints
+    .iter()
+    .any(|c| matches!(c, Expr::Identifier(s) if s == "False"))
+  {
+    return Ok(nminimize_infeasible_result(&constraints, &vars, maximize));
+  }
+
   // A constraint coupling two or more of the optimization variables (e.g.
   // x + y == 1 or x^2 + y^2 <= 1) can't be reduced to per-variable bounds, so
   // the numeric grid sampler below would silently ignore it. Delegate such
   // cases to the symbolic Minimize/Maximize solver (which respects the
   // constraints) and numericize its result. Single-variable box bounds still
   // go through the grid sampler.
-  let has_coupling_constraint = constraints.iter().any(|c| {
+  // Check each *atomic* constraint (the flattened conjuncts), not the whole
+  // `And`: a conjunction like `x >= 5 && x <= 2 && y >= 0` mentions two
+  // variables overall but couples none of them, so it must still go to the
+  // per-variable grid sampler (which detects the empty x-range as infeasible)
+  // rather than the symbolic Minimize path.
+  let has_coupling_constraint = flat_constraints.iter().any(|c| {
     vars
       .iter()
       .filter(|v| crate::functions::polynomial_ast::contains_var(c, v))
@@ -7725,27 +7743,56 @@ pub fn nminimize_ast(
       >= 2
   });
   if has_coupling_constraint {
-    // Route through the full Minimize/Maximize dispatch (not minimize_ast
-    // directly) so specialized symbolic handlers like the linear-objective /
-    // disk-constraint solver are also exercised. Only adopt the symbolic
-    // result when it solved cleanly to a {value, rules} list.
+    // The grid sampler below only understands per-variable box bounds, so a
+    // coupling constraint would be silently ignored. Always run the numeric
+    // penalty-method optimizer, which honours arbitrary constraints.
+    let numeric =
+      nminimize_penalty(&objective, &constraints, &vars, maximize).ok();
+
+    // Also try the full symbolic Minimize/Maximize dispatch (it exercises
+    // specialized closed-form handlers). The symbolic solver is not always
+    // correct for constrained quadratics, so don't trust it blindly: keep
+    // whichever feasible candidate has the better objective value.
     let sym_name = if maximize { "Maximize" } else { "Minimize" };
-    if let Ok(sym) =
+    let symbolic =
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: sym_name.to_string(),
         args: args.to_vec().into(),
       })
-      && matches!(&sym, Expr::List(items) if items.len() == 2)
-    {
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "N".to_string(),
-        args: vec![sym].into(),
+      .ok()
+      .filter(|sym| matches!(sym, Expr::List(items) if items.len() == 2))
+      .and_then(|sym| {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "N".to_string(),
+          args: vec![sym].into(),
+        })
+        .ok()
       });
-    }
+
+    // Symbolic first: when it produces an exact, optimal answer we want to
+    // keep it rather than overwrite it with float noise from the numeric
+    // optimizer (which is only adopted when meaningfully better).
+    let candidates: Vec<Expr> =
+      [symbolic, numeric].into_iter().flatten().collect();
+    return pick_best_optimum(
+      candidates,
+      &objective,
+      &constraints,
+      &vars,
+      maximize,
+    );
   }
 
   // Extract bounds from constraints (e.g. 0 < x < Pi/2)
   let bounds = extract_bounds(&constraints, &vars)?;
+
+  // An empty box (lower bound above upper bound) means the per-variable
+  // constraints are unsatisfiable. Mirror wolframscript's infeasible result
+  // instead of feeding an inverted interval to the sampler (which would
+  // panic in `clamp`).
+  if bounds.iter().any(|&(lo, hi)| lo > hi) {
+    return Ok(nminimize_infeasible_result(&constraints, &vars, maximize));
+  }
 
   // Evaluate expression at a given point
   let eval_at = |expr: &Expr, point: &[f64]| -> Result<f64, InterpreterError> {
@@ -8005,10 +8052,540 @@ pub fn nminimize_ast(
   // Compute final value
   let opt_val = eval_at(&objective, &x)?;
 
+  // Unboundedness probe: if the optimum landed on the artificial default
+  // outer bound (±1e6) of a variable the user left unconstrained on that
+  // side, push the variable much further out. If the objective keeps
+  // improving by a real margin, the problem has no finite optimum.
+  //
+  // Restricted to affine objectives (constant gradient): that's the case
+  // wolframscript reliably flags as unbounded. For nonlinear objectives it
+  // instead returns a large finite boundary value, so don't probe those.
+  let objective_is_affine = grad_exprs.as_ref().is_some_and(|g| {
+    g.iter().all(|gi| {
+      vars
+        .iter()
+        .all(|v| crate::functions::calculus_ast::is_constant_wrt(gi, v))
+    })
+  });
+  for i in 0..n {
+    if !objective_is_affine {
+      break;
+    }
+    let at_hi = bounds[i].1 >= 1e6 - 1.0 && (x[i] - bounds[i].1).abs() < 1.0;
+    let at_lo = bounds[i].0 <= -1e6 + 1.0 && (x[i] - bounds[i].0).abs() < 1.0;
+    if !(at_hi || at_lo) {
+      continue;
+    }
+    let mut probe = x.clone();
+    probe[i] = if at_hi { 1e12 } else { -1e12 };
+    if let Ok(pf) = eval_at(&objective, &probe)
+      && pf.is_finite()
+    {
+      let margin = 1e-3 * (1.0 + opt_val.abs());
+      let improves = if maximize {
+        pf > opt_val + margin
+      } else {
+        pf < opt_val - margin
+      };
+      if improves {
+        return Ok(nminimize_unbounded_result(&vars, maximize));
+      }
+    }
+  }
+
   // Build result: {opt_val, {var -> val, ...}}
   let rules: Vec<Expr> = vars
     .iter()
     .zip(x.iter())
+    .map(|(var, val)| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var.clone())),
+      replacement: Box::new(Expr::Real(*val)),
+    })
+    .collect();
+
+  Ok(Expr::List(
+    vec![Expr::Real(opt_val), Expr::List(rules.into())].into(),
+  ))
+}
+
+/// An atomic comparison split out of a (possibly chained / And-joined)
+/// constraint expression, e.g. `x*y >= 1` or `-3 <= x`.
+struct AtomicComparison {
+  left: Expr,
+  op: crate::syntax::ComparisonOp,
+  right: Expr,
+}
+
+/// Flatten constraint expressions into a list of atomic comparisons so each
+/// one can be scored individually for the penalty function.
+fn collect_atomic_comparisons(constraints: &[Expr]) -> Vec<AtomicComparison> {
+  let mut flat: Vec<&Expr> = Vec::new();
+  for c in constraints {
+    flatten_and_constraints_ref(c, &mut flat);
+  }
+  let mut out = Vec::new();
+  for c in flat {
+    if let Expr::Comparison {
+      operands,
+      operators,
+    } = c
+    {
+      for i in 0..operators.len() {
+        out.push(AtomicComparison {
+          left: operands[i].clone(),
+          op: operators[i],
+          right: operands[i + 1].clone(),
+        });
+      }
+    }
+  }
+  out
+}
+
+/// Build the result wolframscript returns for an infeasible problem:
+/// emits an `NMinimize::nsol` / `NMaximize::nsol` message listing the
+/// constraints and returns `{±Infinity, {v -> Indeterminate, ...}}`.
+fn nminimize_infeasible_result(
+  constraints: &[Expr],
+  vars: &[String],
+  maximize: bool,
+) -> Expr {
+  let func_name = if maximize { "NMaximize" } else { "NMinimize" };
+  // List each constraint as wolframscript does: flatten `&&`, split chained
+  // comparisons into atomics, and render anything else (e.g. `False`) as-is.
+  let mut flat: Vec<&Expr> = Vec::new();
+  for c in constraints {
+    flatten_and_constraints_ref(c, &mut flat);
+  }
+  let mut constraint_strs: Vec<String> = Vec::new();
+  for term in flat {
+    if let Expr::Comparison {
+      operands,
+      operators,
+    } = term
+    {
+      for i in 0..operators.len() {
+        constraint_strs.push(crate::syntax::expr_to_output(
+          &Expr::Comparison {
+            operands: vec![operands[i].clone(), operands[i + 1].clone()],
+            operators: vec![operators[i]],
+          },
+        ));
+      }
+    } else {
+      constraint_strs.push(crate::syntax::expr_to_output(term));
+    }
+  }
+  crate::emit_message(&format!(
+    "{func_name}::nsol: There are no points that satisfy the constraints {{{}}}.",
+    constraint_strs.join(", ")
+  ));
+
+  let inf = if maximize {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::Identifier("Infinity".to_string())),
+    }
+  } else {
+    Expr::Identifier("Infinity".to_string())
+  };
+  let rules: Vec<Expr> = vars
+    .iter()
+    .map(|var| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var.clone())),
+      replacement: Box::new(Expr::Identifier("Indeterminate".to_string())),
+    })
+    .collect();
+  Expr::List(vec![inf, Expr::List(rules.into())].into())
+}
+
+/// Build the result wolframscript returns for an unbounded problem:
+/// emits an `ubnd` message and returns `{∓Infinity, {v -> Indeterminate}}`
+/// (−Infinity when minimizing, +Infinity when maximizing).
+fn nminimize_unbounded_result(vars: &[String], maximize: bool) -> Expr {
+  let func_name = if maximize { "NMaximize" } else { "NMinimize" };
+  crate::emit_message(&format!("{func_name}::ubnd: The problem is unbounded."));
+  let inf = if maximize {
+    Expr::Identifier("Infinity".to_string())
+  } else {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::Identifier("Infinity".to_string())),
+    }
+  };
+  let rules: Vec<Expr> = vars
+    .iter()
+    .map(|var| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var.clone())),
+      replacement: Box::new(Expr::Identifier("Indeterminate".to_string())),
+    })
+    .collect();
+  Expr::List(vec![inf, Expr::List(rules.into())].into())
+}
+
+/// Evaluate an expression numerically with `vars` bound to `point`,
+/// returning NaN on any failure.
+fn eval_expr_at_point(expr: &Expr, vars: &[String], point: &[f64]) -> f64 {
+  let mut e = expr.clone();
+  for (i, var) in vars.iter().enumerate() {
+    e = crate::syntax::substitute_variable(&e, var, &Expr::Real(point[i]));
+  }
+  match crate::evaluator::evaluate_expr_to_expr(&e) {
+    Ok(evaled) => expr_to_f64(&evaled).unwrap_or(f64::NAN),
+    Err(_) => f64::NAN,
+  }
+}
+
+/// Total constraint violation at a point (0 when feasible, +∞ if any
+/// constraint can't be evaluated numerically).
+fn constraint_violation(
+  comparisons: &[AtomicComparison],
+  vars: &[String],
+  point: &[f64],
+) -> f64 {
+  use crate::syntax::ComparisonOp::*;
+  let mut total = 0.0;
+  for c in comparisons {
+    let l = eval_expr_at_point(&c.left, vars, point);
+    let r = eval_expr_at_point(&c.right, vars, point);
+    if !l.is_finite() || !r.is_finite() {
+      return f64::INFINITY;
+    }
+    total += match c.op {
+      Less | LessEqual => (l - r).max(0.0),
+      Greater | GreaterEqual => (r - l).max(0.0),
+      Equal => (l - r).abs(),
+      _ => 0.0,
+    };
+  }
+  total
+}
+
+/// Choose the best feasible result among optimizer candidates. Each candidate
+/// is a `{value, {var -> val, ...}}` list. Prefers feasible candidates, then
+/// the best objective value for the optimization direction.
+fn pick_best_optimum(
+  candidates: Vec<Expr>,
+  objective: &Expr,
+  constraints: &[Expr],
+  vars: &[String],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
+  let comparisons = collect_atomic_comparisons(constraints);
+  let mut best: Option<(Expr, f64, bool)> = None;
+
+  for cand in candidates {
+    // Extract the point from the rule list.
+    let Expr::List(items) = &cand else { continue };
+    if items.len() != 2 {
+      continue;
+    }
+    let Expr::List(rules) = &items[1] else {
+      continue;
+    };
+    let mut point = vec![0.0; vars.len()];
+    let mut ok = true;
+    for (vi, var) in vars.iter().enumerate() {
+      let mut found = None;
+      for r in rules.iter() {
+        let (pat, rep) = match r {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => (pattern.as_ref(), replacement.as_ref()),
+          Expr::FunctionCall { name, args }
+            if name == "Rule" && args.len() == 2 =>
+          {
+            (&args[0], &args[1])
+          }
+          _ => continue,
+        };
+        if matches!(pat, Expr::Identifier(n) if n == var) {
+          found = expr_to_f64(rep).ok();
+        }
+      }
+      match found {
+        Some(v) => point[vi] = v,
+        None => {
+          ok = false;
+          break;
+        }
+      }
+    }
+    if !ok {
+      continue;
+    }
+
+    let obj = eval_expr_at_point(objective, vars, &point);
+    if !obj.is_finite() {
+      continue;
+    }
+    let feasible = constraint_violation(&comparisons, vars, &point) < 1e-6;
+
+    let better = match &best {
+      None => true,
+      Some((_, best_obj, best_feasible)) => match (feasible, *best_feasible) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => {
+          // Require a meaningful improvement so a later candidate's float
+          // noise can't displace an equally-good (often exact) earlier one.
+          let margin = 1e-6 * (1.0 + best_obj.abs());
+          if maximize {
+            obj > *best_obj + margin
+          } else {
+            obj < *best_obj - margin
+          }
+        }
+      },
+    };
+    if better {
+      best = Some((cand, obj, feasible));
+    }
+  }
+
+  // No feasible candidate from any optimizer ⇒ the constraints are
+  // unsatisfiable; mirror wolframscript's infeasible result.
+  match best {
+    Some((c, _, true)) => Ok(c),
+    _ => Ok(nminimize_infeasible_result(constraints, vars, maximize)),
+  }
+}
+
+/// Numeric penalty-method optimizer for problems whose constraints couple
+/// several variables (e.g. `x*y >= 1`, `x^2 + y^2 <= 4`). Uses multi-start
+/// Nelder–Mead on `objective + mu * violation` with penalty continuation.
+fn nminimize_penalty(
+  objective: &Expr,
+  constraints: &[Expr],
+  vars: &[String],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
+  let n = vars.len();
+  let sign = if maximize { -1.0 } else { 1.0 };
+  let comparisons = collect_atomic_comparisons(constraints);
+  let bounds = extract_bounds(constraints, vars)?;
+
+  let eval_num = |expr: &Expr, point: &[f64]| -> f64 {
+    eval_expr_at_point(expr, vars, point)
+  };
+
+  // Total constraint violation at a point (0 when feasible).
+  let violation =
+    |point: &[f64]| -> f64 { constraint_violation(&comparisons, vars, point) };
+
+  let obj_signed = |point: &[f64]| -> f64 {
+    let f = eval_num(objective, point);
+    if f.is_finite() {
+      sign * f
+    } else {
+      f64::INFINITY
+    }
+  };
+
+  // Nelder–Mead simplex minimization of an arbitrary closure.
+  let nelder_mead =
+    |f: &dyn Fn(&[f64]) -> f64, start: &[f64], step: f64| -> Vec<f64> {
+      let mut simplex: Vec<Vec<f64>> = Vec::with_capacity(n + 1);
+      simplex.push(start.to_vec());
+      for i in 0..n {
+        let mut p = start.to_vec();
+        let s = if step.abs() > 1e-12 { step } else { 0.1 };
+        p[i] += if p[i].abs() > 1e-9 {
+          p[i] * 0.05 + s
+        } else {
+          s
+        };
+        simplex.push(p);
+      }
+      let mut fvals: Vec<f64> = simplex.iter().map(|p| f(p)).collect();
+
+      for _ in 0..600 {
+        // Order vertices by value.
+        let mut idx: Vec<usize> = (0..=n).collect();
+        idx.sort_by(|&a, &b| {
+          fvals[a]
+            .partial_cmp(&fvals[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let best = idx[0];
+        let worst = idx[n];
+        let second_worst = idx[n - 1];
+
+        // Convergence: simplex collapsed.
+        let spread = (fvals[worst] - fvals[best]).abs();
+        if spread < 1e-14 {
+          break;
+        }
+
+        // Centroid of all but worst.
+        let mut centroid = vec![0.0; n];
+        for (k, vert) in simplex.iter().enumerate() {
+          if k == worst {
+            continue;
+          }
+          for d in 0..n {
+            centroid[d] += vert[d] / n as f64;
+          }
+        }
+
+        let reflect: Vec<f64> = (0..n)
+          .map(|d| centroid[d] + (centroid[d] - simplex[worst][d]))
+          .collect();
+        let fr = f(&reflect);
+
+        if fr < fvals[best] {
+          // Expand.
+          let expand: Vec<f64> = (0..n)
+            .map(|d| centroid[d] + 2.0 * (centroid[d] - simplex[worst][d]))
+            .collect();
+          let fe = f(&expand);
+          if fe < fr {
+            simplex[worst] = expand;
+            fvals[worst] = fe;
+          } else {
+            simplex[worst] = reflect;
+            fvals[worst] = fr;
+          }
+        } else if fr < fvals[second_worst] {
+          simplex[worst] = reflect;
+          fvals[worst] = fr;
+        } else {
+          // Contract.
+          let contract: Vec<f64> = (0..n)
+            .map(|d| centroid[d] + 0.5 * (simplex[worst][d] - centroid[d]))
+            .collect();
+          let fc = f(&contract);
+          if fc < fvals[worst] {
+            simplex[worst] = contract;
+            fvals[worst] = fc;
+          } else {
+            // Shrink toward best.
+            for k in 0..=n {
+              if k == best {
+                continue;
+              }
+              for d in 0..n {
+                simplex[k][d] =
+                  simplex[best][d] + 0.5 * (simplex[k][d] - simplex[best][d]);
+              }
+              fvals[k] = f(&simplex[k]);
+            }
+          }
+        }
+      }
+
+      // Return current best vertex.
+      let mut best = 0;
+      for k in 1..=n {
+        if fvals[k] < fvals[best] {
+          best = k;
+        }
+      }
+      simplex[best].clone()
+    };
+
+  // Build a set of starting points by sampling a grid over a bounded region.
+  let start_region: Vec<(f64, f64)> = bounds
+    .iter()
+    .map(|&(lo, hi)| {
+      let lo = if lo <= -1e5 { -10.0 } else { lo };
+      let hi = if hi >= 1e5 { 10.0 } else { hi };
+      (lo, hi)
+    })
+    .collect();
+
+  let per_dim = match n {
+    1 => 41,
+    2 => 13,
+    3 => 7,
+    _ => 4,
+  };
+  let mut starts: Vec<Vec<f64>> = vec![vec![]];
+  for (lo, hi) in &start_region {
+    let mut next = Vec::new();
+    for pt in &starts {
+      for j in 0..per_dim {
+        let t = if per_dim == 1 {
+          0.5
+        } else {
+          j as f64 / (per_dim - 1) as f64
+        };
+        let mut np = pt.clone();
+        np.push(lo + t * (hi - lo));
+        next.push(np);
+      }
+    }
+    starts = next;
+  }
+
+  // Rank starts by penalized value (high penalty) and refine the best few.
+  let rank = |p: &[f64]| -> f64 {
+    let o = obj_signed(p);
+    if o.is_finite() {
+      o + 1e6 * violation(p)
+    } else {
+      f64::INFINITY
+    }
+  };
+  starts.sort_by(|a, b| {
+    rank(a)
+      .partial_cmp(&rank(b))
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  starts.truncate(8);
+
+  let mut best_point: Option<Vec<f64>> = None;
+  let mut best_obj = f64::INFINITY;
+  let mut best_viol = f64::INFINITY;
+
+  let mus = [1e2_f64, 1e4, 1e6, 1e8, 1e10];
+  for start in &starts {
+    let mut cur = start.clone();
+    for (k, &mu) in mus.iter().enumerate() {
+      let penalized = |p: &[f64]| -> f64 {
+        let o = obj_signed(p);
+        if !o.is_finite() {
+          return f64::INFINITY;
+        }
+        o + mu * violation(p)
+      };
+      let step = 0.5 / (k as f64 + 1.0);
+      cur = nelder_mead(&penalized, &cur, step);
+    }
+
+    let o = obj_signed(&cur);
+    let v = violation(&cur);
+    if !o.is_finite() {
+      continue;
+    }
+    // Prefer feasible points; among feasible, lowest objective. Among
+    // infeasible only, lowest violation.
+    let feasible = v < 1e-6;
+    let best_feasible = best_viol < 1e-6;
+    let better = match (feasible, best_feasible) {
+      (true, false) => true,
+      (false, true) => false,
+      (true, true) => o < best_obj,
+      (false, false) => v < best_viol || (v == best_viol && o < best_obj),
+    };
+    if best_point.is_none() || better {
+      best_point = Some(cur);
+      best_obj = o;
+      best_viol = v;
+    }
+  }
+
+  let point = best_point.ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "NMinimize: numeric optimization failed".into(),
+    )
+  })?;
+
+  let opt_val = sign * best_obj;
+  let rules: Vec<Expr> = vars
+    .iter()
+    .zip(point.iter())
     .map(|(var, val)| Expr::Rule {
       pattern: Box::new(Expr::Identifier(var.clone())),
       replacement: Box::new(Expr::Real(*val)),
@@ -8050,6 +8627,13 @@ fn flatten_and_constraints_ref<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
     } => {
       flatten_and_constraints_ref(left, out);
       flatten_and_constraints_ref(right, out);
+    }
+    // `a && b && c` is parsed/evaluated as a nested `And[...]` FunctionCall,
+    // so flatten that form too.
+    Expr::FunctionCall { name, args } if name == "And" => {
+      for a in args.iter() {
+        flatten_and_constraints_ref(a, out);
+      }
     }
     _ => out.push(expr),
   }

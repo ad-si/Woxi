@@ -5205,6 +5205,23 @@ mod nmaximize {
       interpret("NMinimize[{2 x^2 + y^2, x + y == 3}, {x, y}]").unwrap();
     assert_eq!(result, "{6., {x -> 1., y -> 2.}}");
   }
+
+  // A multi-variable problem with per-variable box bounds whose ranges are
+  // empty (x in [5, 2]) is infeasible. Each conjunct mentions only one
+  // variable, so it must go through the box sampler (which detects the empty
+  // range) rather than the coupling path — and report NMinimize::nsol with
+  // {Infinity, {x -> Indeterminate, y -> Indeterminate}}, matching
+  // wolframscript.
+  #[test]
+  fn nminimize_infeasible_box_multivariable() {
+    let result =
+      interpret("NMinimize[{x + y, x >= 5 && x <= 2 && y >= 0}, {x, y}]")
+        .unwrap();
+    assert_eq!(
+      result,
+      "{Infinity, {x -> Indeterminate, y -> Indeterminate}}"
+    );
+  }
 }
 
 mod findroot_symbolic_start {

@@ -5228,4 +5228,78 @@ mod high_level_functions_tests {
       }
     }
   }
+
+  mod nminimize_constrained {
+    use super::*;
+
+    /// Parse a `{value, {var -> v, ...}}` result into (value, [v, ...]).
+    fn parse_result(out: &str) -> (f64, Vec<f64>) {
+      // value is the first comma-separated token at depth 1.
+      let inner = out.trim();
+      let inner = inner.strip_prefix('{').unwrap();
+      let inner = inner.strip_suffix('}').unwrap();
+      // Split off the leading value before ", {".
+      let split = inner.find(", {").unwrap();
+      // Woxi prints scientific notation with `*^` (e.g. 1.25*^-8).
+      let to_f64 =
+        |s: &str| -> f64 { s.trim().replace("*^", "e").parse().unwrap() };
+      let value = to_f64(&inner[..split]);
+      let rules = &inner[split + 3..inner.len() - 1];
+      let vals: Vec<f64> = rules
+        .split(", ")
+        .map(|r| to_f64(r.split("-> ").nth(1).unwrap()))
+        .collect();
+      (value, vals)
+    }
+
+    #[test]
+    fn test_xy_product_constraint() {
+      // Minimize x^2 + y^2 subject to x y >= 1 inside a box.
+      // wolframscript: {2., {x -> 1., y -> 1.}} (x=y=-1 is an equally
+      // valid global minimum).
+      let out = interpret(
+        "NMinimize[{x^2 + y^2, x y >= 1 && -3 <= x <= 3 && -3 <= y <= 3}, {x, y}]",
+      )
+      .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value - 2.0).abs() < 1e-4, "value {value}");
+      // |x| ~ |y| ~ 1 and x*y ~ 1.
+      assert!((vals[0].abs() - 1.0).abs() < 1e-3, "x {}", vals[0]);
+      assert!((vals[1].abs() - 1.0).abs() < 1e-3, "y {}", vals[1]);
+      assert!(vals[0] * vals[1] >= 1.0 - 1e-3, "constraint {vals:?}");
+    }
+
+    #[test]
+    fn test_disk_constraint_minimize() {
+      // wolframscript: {-9., {x -> 0., y -> -2.}}
+      let out =
+        interpret("NMinimize[{x^2 - (y - 1)^2, x^2 + y^2 <= 4}, {x, y}]")
+          .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value + 9.0).abs() < 1e-4, "value {value}");
+      assert!(vals[0].abs() < 1e-3, "x {}", vals[0]);
+      assert!((vals[1] + 2.0).abs() < 1e-3, "y {}", vals[1]);
+    }
+
+    #[test]
+    fn test_disk_constraint_maximize() {
+      // wolframscript: {3.5, {x -> ±1.9365, y -> 0.5}}
+      let out =
+        interpret("NMaximize[{x^2 - (y - 1)^2, x^2 + y^2 <= 4}, {x, y}]")
+          .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value - 3.5).abs() < 1e-3, "value {value}");
+      assert!((vals[0].abs() - 1.9365).abs() < 1e-2, "x {}", vals[0]);
+      assert!((vals[1] - 0.5).abs() < 1e-2, "y {}", vals[1]);
+    }
+
+    #[test]
+    fn test_unconstrained_still_works() {
+      // Single-variable case must keep matching wolframscript.
+      let out = interpret("NMinimize[x^4 - 3*x^2 - x, x]").unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value + 3.513_905).abs() < 1e-4, "value {value}");
+      assert!((vals[0] - 1.300_84).abs() < 1e-3, "x {}", vals[0]);
+    }
+  }
 }

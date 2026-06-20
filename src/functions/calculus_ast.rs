@@ -1224,6 +1224,12 @@ pub fn is_constant_wrt(expr: &Expr, var: &str) -> bool {
     Expr::CurriedCall { func, args } => {
       is_constant_wrt(func, var) && args.iter().all(|e| is_constant_wrt(e, var))
     }
+    // A comparison/inequality is constant w.r.t. `var` iff all of its operands
+    // are (e.g. `x >= 5` is constant w.r.t. `y`). Without this it fell to the
+    // catch-all below and was reported as always depending on every variable.
+    Expr::Comparison { operands, .. } => {
+      operands.iter().all(|e| is_constant_wrt(e, var))
+    }
     _ => false,
   }
 }
