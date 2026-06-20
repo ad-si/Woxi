@@ -1126,6 +1126,144 @@ fn tree_fold(func: &Expr, e: &Expr) -> Result<Option<Expr>, InterpreterError> {
   Ok(Some(result))
 }
 
+/// Extract (values, weights) from a canonical
+/// `WeightedData[Automatic, {data, weights}]` object.
+fn weighted_data_parts(e: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "WeightedData"
+    && args.len() == 2
+    && matches!(&args[0], Expr::Identifier(s) if s == "Automatic")
+    && let Expr::List(pair) = &args[1]
+    && pair.len() == 2
+    && let (Expr::List(d), Expr::List(w)) = (&pair[0], &pair[1])
+    && d.len() == w.len()
+    && !d.is_empty()
+  {
+    return Some((d.to_vec(), w.to_vec()));
+  }
+  None
+}
+
+/// Build `Plus[terms...]` and evaluate it.
+fn eval_plus(terms: Vec<Expr>) -> Result<Expr, InterpreterError> {
+  evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+}
+
+/// Mean/Variance/StandardDeviation/Median of a WeightedData object, computed
+/// exactly. The weighted mean is Σwᵢxᵢ/Σwᵢ and the (population) weighted
+/// variance is Σwᵢ(xᵢ−μ)²/Σwᵢ. The weighted median is the smallest value, in
+/// value order, whose cumulative weight reaches half the total.
+fn weighted_data_stat(
+  stat: &str,
+  data: &[Expr],
+  weights: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let total_w = eval_plus(weights.to_vec())?;
+  // Weighted mean μ = Σ(wᵢ xᵢ) / Σwᵢ.
+  let weighted_sum = eval_plus(
+    data
+      .iter()
+      .zip(weights)
+      .map(|(x, w)| Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![w.clone(), x.clone()].into(),
+      })
+      .collect(),
+  )?;
+  let mean = evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Divide".to_string(),
+    args: vec![weighted_sum, total_w.clone()].into(),
+  })?;
+  match stat {
+    "Mean" => Ok(mean),
+    "Variance" | "StandardDeviation" => {
+      // Σ wᵢ (xᵢ − μ)².
+      let sq_sum = eval_plus(
+        data
+          .iter()
+          .zip(weights)
+          .map(|(x, w)| Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              w.clone(),
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Subtract".to_string(),
+                    args: vec![x.clone(), mean.clone()].into(),
+                  },
+                  Expr::Integer(2),
+                ]
+                .into(),
+              },
+            ]
+            .into(),
+          })
+          .collect(),
+      )?;
+      let variance = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![sq_sum, total_w].into(),
+      })?;
+      if stat == "Variance" {
+        Ok(variance)
+      } else {
+        evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![variance].into(),
+        })
+      }
+    }
+    "Median" => {
+      // Sort (value, weight) by numeric value, then take the first value whose
+      // running weight reaches half of the total.
+      let val = |e: &Expr| -> f64 {
+        crate::functions::math_ast::expr_to_f64(e)
+          .or_else(|| {
+            evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "N".to_string(),
+              args: vec![e.clone()].into(),
+            })
+            .ok()
+            .and_then(|n| crate::functions::math_ast::expr_to_f64(&n))
+          })
+          .unwrap_or(f64::INFINITY)
+      };
+      let mut pairs: Vec<(Expr, Expr, f64)> = data
+        .iter()
+        .zip(weights)
+        .map(|(x, w)| (x.clone(), w.clone(), val(x)))
+        .collect();
+      pairs.sort_by(|a, b| {
+        a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal)
+      });
+      let total = pairs
+        .iter()
+        .filter_map(|(_, w, _)| crate::functions::math_ast::expr_to_f64(w))
+        .sum::<f64>();
+      let half = total / 2.0;
+      let mut cum = 0.0;
+      for (x, w, _) in &pairs {
+        cum += crate::functions::math_ast::expr_to_f64(w).unwrap_or(0.0);
+        if cum >= half {
+          return Ok(x.clone());
+        }
+      }
+      Ok(
+        pairs
+          .last()
+          .map(|(x, _, _)| x.clone())
+          .unwrap_or(Expr::Integer(0)),
+      )
+    }
+    _ => unreachable!(),
+  }
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -2906,6 +3044,40 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::delete_duplicates_by_ast(
         &args[0], &args[1],
       ));
+    }
+    // WeightedData[data, weights] canonicalizes to the internal form
+    // WeightedData[Automatic, {data, weights}] (matching wolframscript).
+    "WeightedData" if args.len() == 2 => {
+      // Already canonical: leave as-is.
+      if weighted_data_parts(&Expr::FunctionCall {
+        name: "WeightedData".to_string(),
+        args: args.to_vec().into(),
+      })
+      .is_some()
+      {
+        return None;
+      }
+      if let (Expr::List(d), Expr::List(w)) = (&args[0], &args[1])
+        && d.len() == w.len()
+        && !d.is_empty()
+      {
+        return Some(Ok(Expr::FunctionCall {
+          name: "WeightedData".to_string(),
+          args: vec![
+            Expr::Identifier("Automatic".to_string()),
+            Expr::List(vec![args[0].clone(), args[1].clone()].into()),
+          ]
+          .into(),
+        }));
+      }
+      return None;
+    }
+    // Mean/Variance/StandardDeviation/Median of a WeightedData object.
+    "Mean" | "Variance" | "StandardDeviation" | "Median"
+      if args.len() == 1 && weighted_data_parts(&args[0]).is_some() =>
+    {
+      let (data, weights) = weighted_data_parts(&args[0]).unwrap();
+      return Some(weighted_data_stat(name, &data, &weights));
     }
     "Median" if args.len() == 1 => {
       // Median of an empirical DataDistribution is its 1/2 quantile

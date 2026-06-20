@@ -5397,3 +5397,82 @@ mod quantile_parametric {
     );
   }
 }
+
+// WeightedData[data, weights] and the weighted statistics over it.
+mod weighted_data {
+  use super::*;
+
+  // The constructor canonicalizes to the internal Automatic form.
+  #[test]
+  fn canonical_form() {
+    assert_eq!(
+      interpret("WeightedData[{1, 2, 3}, {1, 1, 2}]").unwrap(),
+      "WeightedData[Automatic, {{1, 2, 3}, {1, 1, 2}}]"
+    );
+  }
+
+  // Weighted mean = Σ(wᵢ xᵢ) / Σwᵢ, exactly.
+  #[test]
+  fn weighted_mean() {
+    assert_eq!(
+      interpret("Mean[WeightedData[{1, 2, 3}, {1, 1, 2}]]").unwrap(),
+      "9/4"
+    );
+  }
+
+  // Weighted (population) variance = Σwᵢ(xᵢ−μ)²/Σwᵢ.
+  #[test]
+  fn weighted_variance() {
+    assert_eq!(
+      interpret("Variance[WeightedData[{1, 2, 3}, {1, 1, 2}]]").unwrap(),
+      "11/16"
+    );
+    assert_eq!(
+      interpret("Variance[WeightedData[{2, 4, 6}, {1, 2, 1}]]").unwrap(),
+      "2"
+    );
+    // Unit weights use the same (biased) normalization, not n−1.
+    assert_eq!(
+      interpret("Variance[WeightedData[{1, 2, 3, 4}, {1, 1, 1, 1}]]").unwrap(),
+      "5/4"
+    );
+  }
+
+  #[test]
+  fn weighted_standard_deviation() {
+    assert_eq!(
+      interpret("StandardDeviation[WeightedData[{1, 2, 3}, {1, 1, 2}]]")
+        .unwrap(),
+      "Sqrt[11]/4"
+    );
+  }
+
+  // Weighted median: the first value, in value order, whose cumulative weight
+  // reaches half the total (no averaging of the two middle elements).
+  #[test]
+  fn weighted_median() {
+    assert_eq!(
+      interpret("Median[WeightedData[{1, 2, 3}, {1, 1, 2}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Median[WeightedData[{1, 2, 3, 4}, {1, 1, 1, 1}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Median[WeightedData[{10, 20, 30}, {1, 1, 1}]]").unwrap(),
+      "20"
+    );
+    assert_eq!(
+      interpret("Median[WeightedData[{1, 2, 3}, {5, 1, 1}]]").unwrap(),
+      "1"
+    );
+  }
+
+  // Plain-list statistics are unaffected by the WeightedData handling.
+  #[test]
+  fn plain_list_unaffected() {
+    assert_eq!(interpret("Mean[{1, 2, 3}]").unwrap(), "2");
+    assert_eq!(interpret("Median[{1, 2, 3, 4}]").unwrap(), "5/2");
+  }
+}

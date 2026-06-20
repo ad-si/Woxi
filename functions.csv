@@ -1470,7 +1470,7 @@ ClearSystemCache,Clear internal system caches,✅,pure,6.0,1489
 LocatorAutoCreate,Option for automatic locator creation,✅,pure,6.0,1490
 Ratios,Returns successive ratios of list elements,✅,pure,7.0,1492
 SolveAlways,Find conditions on parameters for equation to hold for all variable values,✅,pure,1.0,1492
-WeightedData,,🚫,,9.0,1493
+WeightedData,Represents data with associated weights for weighted statistics,✅,pure,9.0,1493
 JacobiZeta,Jacobi zeta function,✅,pure,2.0,1494
 Quartiles,Returns the quartiles of a list (or columnwise for a matrix),✅,pure,6.0,1495
 LegendFunction,Option for legend formatting function,✅,pure,9.0,1499

@@ -2026,6 +2026,7 @@ pub fn evaluate_function_call_ast_inner(
     | "MixtureDistribution"
     | "PermutationGroup"
     | "Threaded"
+    | "WeightedData"
     | "LegendLabel" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
