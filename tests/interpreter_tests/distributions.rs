@@ -3585,3 +3585,80 @@ mod discrete_quantile {
     );
   }
 }
+
+// Closed-form Quantile (inverse CDF) of location-scale distributions with
+// elementary quantile functions, for exact probabilities.
+mod distribution_quantile_closed_forms {
+  use super::*;
+
+  #[test]
+  fn weibull() {
+    assert_eq!(
+      interpret("Quantile[WeibullDistribution[2, 1], 1/2]").unwrap(),
+      "Sqrt[Log[2]]"
+    );
+    // Lists of probabilities thread.
+    assert_eq!(
+      interpret("Quantile[WeibullDistribution[2, 1], {1/4, 3/4}]").unwrap(),
+      "{Sqrt[Log[4/3]], Sqrt[Log[4]]}"
+    );
+    assert_eq!(
+      interpret("Quantile[WeibullDistribution[2, 3], 1]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn pareto() {
+    assert_eq!(
+      interpret("Quantile[ParetoDistribution[1, 2], 1/2]").unwrap(),
+      "Sqrt[2]"
+    );
+    // The lower bound is the minimum k.
+    assert_eq!(
+      interpret("Quantile[ParetoDistribution[1, 2], 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn rayleigh() {
+    assert_eq!(
+      interpret("Quantile[RayleighDistribution[1], 1/2]").unwrap(),
+      "Sqrt[Log[4]]"
+    );
+  }
+
+  #[test]
+  fn laplace() {
+    // Piecewise about q = 1/2.
+    assert_eq!(
+      interpret("Quantile[LaplaceDistribution[0, 1], 1/4]").unwrap(),
+      "-Log[2]"
+    );
+    assert_eq!(
+      interpret("Quantile[LaplaceDistribution[0, 1], 3/4]").unwrap(),
+      "Log[2]"
+    );
+    assert_eq!(
+      interpret("Quantile[LaplaceDistribution[0, 1], 0]").unwrap(),
+      "-Infinity"
+    );
+  }
+
+  #[test]
+  fn logistic() {
+    assert_eq!(
+      interpret("Quantile[LogisticDistribution[0, 1], 1/4]").unwrap(),
+      "-Log[3]"
+    );
+  }
+
+  #[test]
+  fn gumbel() {
+    assert_eq!(
+      interpret("Quantile[GumbelDistribution[0, 1], 1/2]").unwrap(),
+      "Log[Log[2]]"
+    );
+  }
+}

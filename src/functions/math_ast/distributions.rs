@@ -457,6 +457,22 @@ pub fn quantile_distribution_closed_form(
   };
   let is_exact_q = !matches!(q, Expr::Real(_));
 
+  // Builders for the elementary inverse-CDF formulas below.
+  let log = |x: Expr| Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![x].into(),
+  };
+  let sqrt = |x: Expr| Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![x].into(),
+  };
+  let power = |b: Expr, e: Expr| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![b, e].into(),
+  };
+  let neg = |x: Expr| times(int(-1), x);
+  let one_minus_q = || minus(int(1), q.clone());
+
   match dist_name {
     // Empirical DataDistribution: the smallest support value whose
     // cumulative weight reaches q (inclusive)
@@ -522,6 +538,88 @@ pub fn quantile_distribution_closed_form(
         args: vec![times(pi, q_minus_half)].into(),
       };
       eval(plus(a, times(b, tan))).ok()
+    }
+    // Quantile[WeibullDistribution[k, λ], q] = λ (-Log[1 - q])^(1/k)
+    "WeibullDistribution" if dargs.len() == 2 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(int(0));
+        }
+        if q_num == 1.0 {
+          return Some(infinity());
+        }
+      }
+      let (k, lam) = (dargs[0].clone(), dargs[1].clone());
+      eval(times(
+        lam,
+        power(neg(log(one_minus_q())), divide(int(1), k)),
+      ))
+      .ok()
+    }
+    // Quantile[ParetoDistribution[k, α], q] = k (1 - q)^(-1/α)
+    "ParetoDistribution" if dargs.len() == 2 => {
+      if is_exact_q && q_num == 1.0 {
+        return Some(infinity());
+      }
+      let (kmin, alpha) = (dargs[0].clone(), dargs[1].clone());
+      eval(times(kmin, power(one_minus_q(), divide(int(-1), alpha)))).ok()
+    }
+    // Quantile[RayleighDistribution[σ], q] = σ Sqrt[-Log[(1 - q)^2]]
+    "RayleighDistribution" if dargs.len() == 1 => {
+      if is_exact_q && q_num == 1.0 {
+        return Some(infinity());
+      }
+      let sigma = dargs[0].clone();
+      eval(times(sigma, sqrt(neg(log(power(one_minus_q(), int(2))))))).ok()
+    }
+    // Quantile[LaplaceDistribution[μ, β], q]: μ + β Log[2 q] for q ≤ 1/2,
+    // else μ − β Log[2 (1 − q)].
+    "LaplaceDistribution" if dargs.len() == 2 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(neg_infinity());
+        }
+        if q_num == 1.0 {
+          return Some(infinity());
+        }
+      }
+      let (mu, beta) = (dargs[0].clone(), dargs[1].clone());
+      let body = if q_num <= 0.5 {
+        plus(mu, times(beta, log(times(int(2), q.clone()))))
+      } else {
+        minus(mu, times(beta, log(times(int(2), one_minus_q()))))
+      };
+      eval(body).ok()
+    }
+    // Quantile[LogisticDistribution[μ, β], q] = μ − β Log[-1 + 1/q]
+    "LogisticDistribution" if dargs.len() == 2 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(neg_infinity());
+        }
+        if q_num == 1.0 {
+          return Some(infinity());
+        }
+      }
+      let (mu, beta) = (dargs[0].clone(), dargs[1].clone());
+      eval(minus(
+        mu,
+        times(beta, log(plus(int(-1), divide(int(1), q.clone())))),
+      ))
+      .ok()
+    }
+    // Quantile[GumbelDistribution[μ, β], q] = μ + β Log[-Log[1 - q]]
+    "GumbelDistribution" if dargs.len() == 2 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(neg_infinity());
+        }
+        if q_num == 1.0 {
+          return Some(infinity());
+        }
+      }
+      let (mu, beta) = (dargs[0].clone(), dargs[1].clone());
+      eval(plus(mu, times(beta, log(neg(log(one_minus_q())))))).ok()
     }
     // Quantile[UniformDistribution[{a, b}], q] = (1 - q)*a + q*b
     "UniformDistribution" if dargs.len() == 1 => {

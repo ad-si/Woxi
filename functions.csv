@@ -1237,7 +1237,7 @@ MaximalBy,Returns elements that maximize a criterion,✅,pure,10.0,1249
 InverseCDF,Inverse cumulative distribution function (quantile) of a distribution,✅,pure,6.0,1251
 StringTemplate,Creates a template that fills slots from positional or named arguments,✅,pure,10.0,1251
 TimeObject,Represents a time of day with a granularity from a time-of-day list,✅,pure,10.0,1252
-ParetoDistribution,Represents a Pareto distribution,✅,1,6.0,1254
+ParetoDistribution,Represents a Pareto distribution,✅,pure,6.0,1254
 Read,Read an object of a specified type from a stream,✅,effectful,1.0,1254
 EdgeCount,Returns the number of edges in a graph (optionally matching a pattern),✅,pure,8.0,1256
 Transparent,,🚫,,7.0,1256
@@ -1305,7 +1305,7 @@ RealAbs,Returns the absolute value assuming real input,✅,pure,11.1,1318
 Deploy,Deploy display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,1320
 RegionMeasure,Measure of a region's intrinsic dimension (length/area/volume),✅,pure,2.0,1320
 HistogramList,Returns bin edges and counts for histogram data,✅,pure,8.0,1322
-WeibullDistribution,Weibull probability distribution,✅,,6.0,1322
+WeibullDistribution,Weibull probability distribution,✅,pure,6.0,1322
 Front,,🚫,,6.0,1324
 GeoDisk,,🚫,,10.0,1324
 Orderless,Attribute for commutative functions,✅,pure,1.0,1325
@@ -1755,7 +1755,7 @@ DateValue,Extracts a named component or property of a date,✅,pure,10.0,1788
 DensityPlot3D,3D density plot,,unevaluated,10.2,1788
 DynamicModuleValues,,🚫,,6.0,1788
 FRatioDistribution,F-ratio distribution,,unevaluated,6.0,1788
-LaplaceDistribution,Laplace distribution,✅,computation,6.0,1788
+LaplaceDistribution,Laplace distribution,✅,pure,6.0,1788
 ListSurfacePlot3D,3D surface plot from points,,unevaluated,6.0,1788
 GeoRegionValuePlot,Geographic region value plot,,unevaluated,10.0,1789
 MaxExtraConditions,Max extra conditions option,,unevaluated,8.0,1791
@@ -1774,7 +1774,7 @@ ColorSetter,Color setter control,,unevaluated,6.0,1803
 Scrollbars,Scrollbars option,,unevaluated,7.0,1803
 DistanceMatrix,Matrix of pairwise distances between vectors (default EuclideanDistance),✅,pure,10.3,1806
 InverseWaveletTransform,Inverse wavelet transform,,unevaluated,8.0,1806
-RayleighDistribution,Rayleigh distribution,✅,computation,6.0,1806
+RayleighDistribution,Rayleigh distribution,✅,pure,6.0,1806
 SetSharedVariable,Set shared variable,,unevaluated,7.0,1808
 TreeGraph,Tree graph from directed edges with tree layout visualization,✅,pure,8.0,1808
 PadeApproximant,Rational (Pade) approximation from a power series,✅,pure,6.0,1809
@@ -2554,7 +2554,7 @@ ViewProjection,,🚫,,11.2,2605
 ArrayMesh,Create a MeshRegion from a binary 1D or 2D array,✅,pure,10.4,2611
 ForwardBackward,Symbolic value for AnimationDirection option (forward then backward),✅,pure,6.0,2611
 KaryTree,K-ary tree graph,✅,1,8.0,2611
-LogisticDistribution,represents a logistic distribution,✅,Computation,6.0,2611
+LogisticDistribution,represents a logistic distribution,✅,pure,6.0,2611
 MultiplySides,Multiply both sides of an equation by an expression; a symbolic factor is guarded by c != 0 via Piecewise; an equation second argument pairs the sides,✅,none,11.3,2611
 URLShorten,,🚫,,10.0,2611
 DistributionParameterQ,Tests whether the parameters of a distribution are valid,✅,pure,8.0,2617
