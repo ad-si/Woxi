@@ -3902,6 +3902,30 @@ mod cases {
       r#"{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 0, 0, 1, 0, 0, 0}}"#,
     );
   }
+  // DiamondMatrix accepts a list of radii for a rectangular / n-D L1 ball.
+  #[test]
+  fn diamond_matrix_radii_list() {
+    // Wider horizontally than vertically.
+    assert_case(
+      r#"DiamondMatrix[{2, 3}]"#,
+      r#"{{0, 0, 0, 1, 0, 0, 0}, {0, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}, {0, 0, 0, 1, 0, 0, 0}}"#,
+    );
+    // Taller than wide.
+    assert_case(
+      r#"DiamondMatrix[{3, 2}]"#,
+      r#"{{0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {1, 1, 1, 1, 1}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 1, 0, 0}}"#,
+    );
+    // Equal radii reduce to the square diamond.
+    assert_case(
+      r#"DiamondMatrix[{2, 2}]"#,
+      r#"{{0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {1, 1, 1, 1, 1}, {0, 1, 1, 1, 0}, {0, 0, 1, 0, 0}}"#,
+    );
+    // Three radii give a 3D diamond (here the 3D cross).
+    assert_case(
+      r#"DiamondMatrix[{1, 1, 1}]"#,
+      r#"{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}, {{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}}"#,
+    );
+  }
   #[test]
   fn disk_matrix() {
     assert_case(

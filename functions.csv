@@ -2191,7 +2191,7 @@ Nand,Logical NAND,✅,pure,4.1,2233
 TimeSeriesShift,Time series manipulation,🚫,None,10.0,2233
 WaitAll,Async parallel computation,🚫,None,7.0,2233
 ClickPane,UI interaction,🚫,None,6.0,2236
-DiamondMatrix,Creates a diamond-shaped matrix of ones,✅,pure,7.0,2236
+DiamondMatrix,Gives the diamond (L1-ball) structuring element for a scalar radius or list of radii (n-D),✅,pure,7.0,2236
 MaxItems,Display option,🚫,None,10.1,2236
 SSSTriangle,Constructs a triangle from three side lengths,✅,None,10.0,2239
 ThreadingLayer,Machine learning,🚫,None,11.1,2239
