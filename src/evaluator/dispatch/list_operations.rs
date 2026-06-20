@@ -1264,6 +1264,17 @@ fn weighted_data_stat(
   }
 }
 
+/// Can `e` be joined at `level`? It must be a List nested deeply enough that
+/// its parts down to level `level - 1` are themselves Lists (so the level-`level`
+/// parts exist and are joinable).
+fn has_join_depth(e: &Expr, level: usize) -> bool {
+  match e {
+    Expr::List(_) if level <= 1 => true,
+    Expr::List(items) => items.iter().all(|it| has_join_depth(it, level - 1)),
+    _ => false,
+  }
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -3027,10 +3038,41 @@ pub fn dispatch_list_operations(
         && let Expr::Integer(n) = &args[args.len() - 1]
       {
         let level = *n as usize;
-        return Some(list_helpers_ast::join_at_level_ast(
-          &args[..args.len() - 1],
-          level,
-        ));
+        let lists = &args[..args.len() - 1];
+        // For a level >= 2 join every argument must be nested Lists down to
+        // the join level. The first argument that is too shallow triggers
+        // Join::normal1; a later argument whose parts are not Lists triggers
+        // Join::headsd. Both leave the call unevaluated, matching
+        // wolframscript.
+        if level >= 2 {
+          let unevaluated = || Expr::FunctionCall {
+            name: "Join".to_string(),
+            args: args.to_vec().into(),
+          };
+          for (i, a) in lists.iter().enumerate() {
+            if !has_join_depth(a, level) {
+              let tag = if i == 0 {
+                format!(
+                  "Join::normal1: Expression {} at position 1 is expected to \
+                   have nonatomic subexpression at level {}.",
+                  crate::syntax::expr_to_string(a),
+                  level
+                )
+              } else {
+                format!(
+                  "Join::headsd: Expression {} at position {} is expected to \
+                   have head List for all expressions at level {}.",
+                  crate::syntax::expr_to_string(a),
+                  i + 1,
+                  level
+                )
+              };
+              crate::emit_message(&tag);
+              return Some(Ok(unevaluated()));
+            }
+          }
+        }
+        return Some(list_helpers_ast::join_at_level_ast(lists, level));
       }
       return Some(list_helpers_ast::join_ast(args));
     }

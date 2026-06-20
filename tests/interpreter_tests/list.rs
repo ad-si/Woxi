@@ -6669,6 +6669,28 @@ mod join_level_spec {
       "{1, 2, 3, 4, 5, 6}"
     );
   }
+
+  // A level-n join needs every argument nested deep enough. If the first
+  // argument is too shallow (its parts become atomic before the level), the
+  // call stays unevaluated (wolframscript emits Join::normal1).
+  #[test]
+  fn shallow_first_argument_unevaluated() {
+    assert_eq!(
+      interpret("Join[{1}, {2}, {3}, 2]").unwrap(),
+      "Join[{1}, {2}, {3}, 2]"
+    );
+    assert_eq!(interpret("Join[{1}, {2}, 3]").unwrap(), "Join[{1}, {2}, 3]");
+  }
+
+  // If a later argument's parts are not Lists (wolframscript emits
+  // Join::headsd), the call also stays unevaluated.
+  #[test]
+  fn mismatched_later_argument_unevaluated() {
+    assert_eq!(
+      interpret("Join[{{1, 2}}, {3}, 2]").unwrap(),
+      "Join[{{1, 2}}, {3}, 2]"
+    );
+  }
 }
 
 mod join_non_list {
