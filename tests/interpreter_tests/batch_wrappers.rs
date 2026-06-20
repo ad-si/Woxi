@@ -6901,6 +6901,36 @@ mod batch_unevaluated_wrappers_2 {
       "TreeExtract[5, {1}]"
     );
   }
+  // TreePosition[tree, patt]: positions of nodes whose data matches patt,
+  // in post-order (descendants before parent); the root's position is {}.
+  #[test]
+  fn tree_position() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // A literal occurs once, deep in the tree.
+    assert_eq!(
+      interpret(&format!("TreePosition[{t}, 4]")).unwrap(),
+      "{{1, 1}}"
+    );
+    // Every node, listed children-before-parent; the root is {}.
+    assert_eq!(
+      interpret(&format!("TreePosition[{t}, _Integer]")).unwrap(),
+      "{{1, 1}, {1, 2}, {1}, {2}, {}}"
+    );
+    // The root data itself.
+    assert_eq!(interpret(&format!("TreePosition[{t}, 1]")).unwrap(), "{{}}");
+    // PatternTest criterion, post-order.
+    assert_eq!(
+      interpret(&format!("TreePosition[{t}, _?EvenQ]")).unwrap(),
+      "{{1, 1}, {1}}"
+    );
+    // No match yields an empty list.
+    assert_eq!(interpret(&format!("TreePosition[{t}, 99]")).unwrap(), "{}");
+    // Non-tree first argument stays unevaluated.
+    assert_eq!(
+      interpret("TreePosition[5, _Integer]").unwrap(),
+      "TreePosition[5, _Integer]"
+    );
+  }
 
   // VertexOutComponent
   #[test]

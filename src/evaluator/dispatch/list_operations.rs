@@ -561,6 +561,33 @@ fn tree_size(e: &Expr) -> Option<i128> {
   Some(total)
 }
 
+// Collect positions of nodes whose data matches `pattern`, in post-order
+// (descendants before their parent, left to right). The root's position is the
+// empty path. `path` accumulates the current 1-based child indices; each
+// emitted position is an Expr::List of integers. Returns false if `e` is not a
+// tree (so the caller can emit ::tree and stay unevaluated).
+fn tree_position(
+  e: &Expr,
+  pattern: &Expr,
+  path: &mut Vec<Expr>,
+  out: &mut Vec<Expr>,
+) -> bool {
+  let Some((data, children)) = tree_node(e) else {
+    return false;
+  };
+  for (i, child) in children.iter().enumerate() {
+    path.push(Expr::Integer((i + 1) as i128));
+    if !tree_position(child, pattern, path, out) {
+      return false;
+    }
+    path.pop();
+  }
+  if list_helpers_ast::matches_pattern_ast(data, pattern) {
+    out.push(Expr::List(path.clone().into()));
+  }
+  true
+}
+
 // Navigate from `tree` along `path` (1-based child indices) to a subtree.
 // Returns None if any index is out of range or steps into a leaf.
 fn tree_navigate(tree: &Expr, path: &[i128]) -> Option<Expr> {
@@ -2694,6 +2721,26 @@ pub fn dispatch_list_operations(
     "TreeMap" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "TreeMap".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // TreePosition[tree, patt]: positions of nodes whose data matches patt,
+    // in post-order (descendants before parent); the root's position is {}.
+    "TreePosition" if args.len() == 2 => {
+      let mut path = Vec::new();
+      let mut out = Vec::new();
+      if tree_position(&args[0], &args[1], &mut path, &mut out) {
+        return Some(Ok(Expr::List(out.into())));
+      }
+      crate::emit_message(&format!(
+        "TreePosition::tree: Tree expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&Expr::FunctionCall {
+          name: "TreePosition".to_string(),
+          args: args.to_vec().into(),
+        })
+      ));
+      return Some(Ok(Expr::FunctionCall {
+        name: "TreePosition".to_string(),
         args: args.to_vec().into(),
       }));
     }
