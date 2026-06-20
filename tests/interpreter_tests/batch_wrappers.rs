@@ -3532,6 +3532,39 @@ mod batch_unevaluated_wrappers_2 {
       "{file1, file10, file2}"
     );
   }
+  // Symbolic constants and exact forms sort by their numeric value, not by
+  // their textual representation.
+  #[test]
+  fn numerical_sort_symbolic_values() {
+    assert_eq!(
+      interpret("NumericalSort[{Pi, E, 2, Sqrt[2]}]").unwrap(),
+      "{Sqrt[2], 2, E, Pi}"
+    );
+    assert_eq!(
+      interpret("NumericalSort[{Sqrt[10], 3, Pi}]").unwrap(),
+      "{3, Pi, Sqrt[10]}"
+    );
+  }
+  // Rationals and plain numbers sort numerically (including negatives/reals).
+  #[test]
+  fn numerical_sort_rationals_and_reals() {
+    assert_eq!(
+      interpret("NumericalSort[{1/3, 1/2, 1/4}]").unwrap(),
+      "{1/4, 1/3, 1/2}"
+    );
+    assert_eq!(
+      interpret("NumericalSort[{3.5, 1, 2, -1}]").unwrap(),
+      "{-1, 1, 2, 3.5}"
+    );
+  }
+  // Vectors compare component-wise by numeric value.
+  #[test]
+  fn numerical_sort_vectors() {
+    assert_eq!(
+      interpret("NumericalSort[{{2, 1}, {1, 3}, {1, 2}}]").unwrap(),
+      "{{1, 2}, {1, 3}, {2, 1}}"
+    );
+  }
   #[test]
   fn from_coefficient_rules_basic() {
     assert_eq!(

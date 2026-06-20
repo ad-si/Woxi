@@ -377,14 +377,41 @@ pub fn dispatch_string_functions(
     }
     "NumericalSort" if args.len() == 1 => {
       if let Expr::List(ref elems) = args[0] {
+        // The real value of an expression, evaluating constants and exact
+        // forms (Pi, Sqrt[2], 1/3, …) via N; None for non-numeric atoms.
+        fn num_val(e: &Expr) -> Option<f64> {
+          if let Some(v) = crate::functions::math_ast::expr_to_f64(e) {
+            return Some(v);
+          }
+          let n =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "N".to_string(),
+              args: vec![e.clone()].into(),
+            })
+            .ok()?;
+          crate::functions::math_ast::expr_to_f64(&n)
+        }
+        // Compare by numeric value; vectors compare component-wise. Non-numeric
+        // elements (strings, free symbols) fall back to canonical order.
+        fn cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+          use std::cmp::Ordering;
+          if let (Expr::List(la), Expr::List(lb)) = (a, b) {
+            for (x, y) in la.iter().zip(lb.iter()) {
+              let c = cmp(x, y);
+              if c != Ordering::Equal {
+                return c;
+              }
+            }
+            return la.len().cmp(&lb.len());
+          }
+          match (num_val(a), num_val(b)) {
+            (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(Ordering::Equal),
+            _ => crate::syntax::expr_to_string(a)
+              .cmp(&crate::syntax::expr_to_string(b)),
+          }
+        }
         let mut items: Vec<Expr> = elems.to_vec();
-        items.sort_by(|a, b| {
-          // NumericalSort sorts by numerical value for numbers,
-          // and lexicographically for strings (not natural sort).
-          let sa = crate::syntax::expr_to_string(a);
-          let sb = crate::syntax::expr_to_string(b);
-          sa.cmp(&sb)
-        });
+        items.sort_by(cmp);
         return Some(Ok(Expr::List(items.into())));
       }
     }
