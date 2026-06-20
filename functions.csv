@@ -3206,7 +3206,7 @@ URLParse,,,,10.0,3280
 UnitDimensions,Gives the physical base dimensions of a unit as {{dimension exponent} ...},✅,pure,9.0,3280
 WignerSemicircleDistribution,Wigner semicircle distribution (ArcSin CDF),✅,pure,8.0,3280
 AskFunction,,🚫,,10.4,3291
-Backslash,,,,3.0,3291
+Backslash,Symbolic backslash (set difference) operator with Unicode display,✅,pure,3.0,3291
 DeviceClose,,🚫,,10.0,3291
 DoubleLongLeftArrow,,,,3.0,3291
 HermiteDecomposition,Hermite normal form decomposition (unimodular u with u.m == h) for integer matrices,✅,pure,6.0,3291

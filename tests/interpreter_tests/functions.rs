@@ -2043,6 +2043,30 @@ mod ring_operators {
       "Diamond"
     );
   }
+
+  // \[Backslash] is a flat operator between Diamond and Dot.
+  #[test]
+  fn backslash_operator() {
+    assert_eq!(interpret(r#"a \[Backslash] b"#).unwrap(), "a \u{2216} b");
+    assert_eq!(
+      interpret("Backslash[a, b, c]").unwrap(),
+      "a \u{2216} b \u{2216} c"
+    );
+    assert_eq!(
+      interpret(r#"Length[a \[Backslash] b \[Backslash] c]"#).unwrap(),
+      "3"
+    );
+    // Tighter than Diamond, Times and Plus; looser than Dot.
+    assert_eq!(
+      interpret(r#"Head[a \[Backslash] b \[Diamond] c]"#).unwrap(),
+      "Diamond"
+    );
+    assert_eq!(interpret(r#"Head[a \[Backslash] b * c]"#).unwrap(), "Times");
+    assert_eq!(
+      interpret(r#"Head[a \[Backslash] b . c]"#).unwrap(),
+      "Backslash"
+    );
+  }
 }
 
 mod wedge {
