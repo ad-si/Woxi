@@ -561,6 +561,18 @@ fn tree_size(e: &Expr) -> Option<i128> {
   Some(total)
 }
 
+// Count nodes (root + all descendants) whose data matches `pattern`.
+// Returns None if `e` is not a tree.
+fn tree_count(e: &Expr, pattern: &Expr) -> Option<i128> {
+  let (data, children) = tree_node(e)?;
+  let mut total =
+    i128::from(list_helpers_ast::matches_pattern_ast(data, pattern));
+  for c in children {
+    total += tree_count(c, pattern)?;
+  }
+  Some(total)
+}
+
 // TreeFold[f, tree]: a leaf folds to its data; an inner node with data `d`
 // and children `c1..cn` folds to f[d, {fold(c1), ..., fold(cn)}].
 // Returns Ok(None) if `e` is not a tree.
@@ -2614,6 +2626,23 @@ pub fn dispatch_list_operations(
       ));
       return Some(Ok(Expr::FunctionCall {
         name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // TreeCount[tree, pattern]: count nodes whose data matches pattern.
+    "TreeCount" if args.len() == 2 => {
+      if let Some(n) = tree_count(&args[0], &args[1]) {
+        return Some(Ok(Expr::Integer(n)));
+      }
+      crate::emit_message(&format!(
+        "TreeCount::tree: Tree expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&Expr::FunctionCall {
+          name: "TreeCount".to_string(),
+          args: args.to_vec().into(),
+        })
+      ));
+      return Some(Ok(Expr::FunctionCall {
+        name: "TreeCount".to_string(),
         args: args.to_vec().into(),
       }));
     }

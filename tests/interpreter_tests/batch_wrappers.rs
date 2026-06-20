@@ -6814,6 +6814,29 @@ mod batch_unevaluated_wrappers_2 {
     // Non-tree stays unevaluated.
     assert_eq!(interpret("TreeFold[f, 5]").unwrap(), "TreeFold[f, 5]");
   }
+  // TreeCount[tree, patt]: count nodes whose data matches patt (root included).
+  #[test]
+  fn tree_count() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // All five nodes hold integer data.
+    assert_eq!(
+      interpret(&format!("TreeCount[{t}, _Integer]")).unwrap(),
+      "5"
+    );
+    // A literal matches exactly one node.
+    assert_eq!(interpret(&format!("TreeCount[{t}, 3]")).unwrap(), "1");
+    // Matching is against the data, not the subtree, so _Tree finds nothing.
+    assert_eq!(interpret(&format!("TreeCount[{t}, _Tree]")).unwrap(), "0");
+    // Alternatives pattern.
+    assert_eq!(interpret(&format!("TreeCount[{t}, 4 | 5]")).unwrap(), "2");
+    // Blank matches every node.
+    assert_eq!(interpret(&format!("TreeCount[{t}, _]")).unwrap(), "5");
+    // Non-tree stays unevaluated.
+    assert_eq!(
+      interpret("TreeCount[5, _Integer]").unwrap(),
+      "TreeCount[5, _Integer]"
+    );
+  }
 
   // VertexOutComponent
   #[test]
