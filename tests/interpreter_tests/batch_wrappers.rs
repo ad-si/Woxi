@@ -6931,6 +6931,67 @@ mod batch_unevaluated_wrappers_2 {
       "TreePosition[5, _Integer]"
     );
   }
+  // TreeReplacePart[tree, pos -> value]: replace the subtree at pos.
+  #[test]
+  fn tree_replace_part() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // Replace a child subtree with another tree.
+    assert_eq!(
+      interpret(&format!("TreeReplacePart[{t}, {{1}} -> Tree[9, None]]"))
+        .unwrap(),
+      "Tree[1, {Tree[9, None], Tree[3, None]}]"
+    );
+    // A scalar replacement becomes a leaf, dropping the old subtree's children.
+    assert_eq!(
+      interpret(&format!("TreeReplacePart[{t}, {{1}} -> 9]")).unwrap(),
+      "Tree[1, {Tree[9, None], Tree[3, None]}]"
+    );
+    // Replace a deeper leaf.
+    assert_eq!(
+      interpret(&format!("TreeReplacePart[{t}, {{1, 2}} -> Tree[8, None]]"))
+        .unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[8, None]}], Tree[3, None]}]"
+    );
+    // The replacement tree is canonicalized (scalar children become leaves).
+    assert_eq!(
+      interpret(&format!(
+        "TreeReplacePart[{t}, {{2}} -> Tree[7, {{10, 11}}]]"
+      ))
+      .unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], \
+       Tree[7, {Tree[10, None], Tree[11, None]}]}]"
+    );
+    // The root position {} is a no-op.
+    assert_eq!(
+      interpret(&format!("TreeReplacePart[{t}, {{}} -> 99]")).unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], Tree[3, None]}]"
+    );
+    // An out-of-range position leaves the tree unchanged.
+    assert_eq!(
+      interpret(&format!("TreeReplacePart[{t}, {{5}} -> Tree[9, None]]"))
+        .unwrap(),
+      "Tree[1, {Tree[2, {Tree[4, None], Tree[5, None]}], Tree[3, None]}]"
+    );
+    // A list of rules is applied in order.
+    assert_eq!(
+      interpret(&format!(
+        "TreeReplacePart[{t}, {{{{1}} -> Tree[9, None], {{2}} -> 7}}]"
+      ))
+      .unwrap(),
+      "Tree[1, {Tree[9, None], Tree[7, None]}]"
+    );
+    // Operator form TreeReplacePart[rule][tree].
+    assert_eq!(
+      interpret(&format!("TreeReplacePart[{{1}} -> Tree[9, None]][{t}]"))
+        .unwrap(),
+      "Tree[1, {Tree[9, None], Tree[3, None]}]"
+    );
+    // Non-tree first argument stays unevaluated.
+    assert_eq!(
+      interpret("TreeReplacePart[5, {1} -> 2]").unwrap(),
+      "TreeReplacePart[5, {1} -> 2]"
+    );
+  }
 
   // VertexOutComponent
   #[test]

@@ -588,6 +588,71 @@ fn tree_position(
   true
 }
 
+// Replace the subtree at `path` (1-based child indices) with `value`,
+// returning the rebuilt tree. Returns None if `path` runs out of range or
+// descends into a leaf (so the caller leaves the tree unchanged).
+fn tree_set_at(tree: &Expr, path: &[i128], value: &Expr) -> Option<Expr> {
+  if path.is_empty() {
+    return Some(value.clone());
+  }
+  let Expr::FunctionCall { name, args } = tree else {
+    return None;
+  };
+  if name != "Tree" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(children) = &args[1] else {
+    return None; // leaf: cannot descend
+  };
+  let idx = path[0];
+  if idx < 1 || idx as usize > children.len() {
+    return None;
+  }
+  let i = (idx - 1) as usize;
+  let replaced = tree_set_at(&children[i], &path[1..], value)?;
+  let mut new_children: Vec<Expr> = children.to_vec();
+  new_children[i] = replaced;
+  Some(Expr::FunctionCall {
+    name: "Tree".to_string(),
+    args: vec![args[0].clone(), Expr::List(new_children.into())].into(),
+  })
+}
+
+// Canonicalize a TreeReplacePart replacement value: a Tree stays as-is (it has
+// already been canonicalized by evaluation), any other value becomes a leaf.
+fn tree_replacement_value(v: &Expr) -> Expr {
+  if matches!(v, Expr::FunctionCall { name, args }
+    if name == "Tree" && args.len() == 2)
+  {
+    v.clone()
+  } else {
+    Expr::FunctionCall {
+      name: "Tree".to_string(),
+      args: vec![v.clone(), Expr::Identifier("None".to_string())].into(),
+    }
+  }
+}
+
+// Destructure a rule `lhs -> rhs` (or :>) into its two parts.
+fn as_rule(e: &Expr) -> Option<(&Expr, &Expr)> {
+  match e {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some((pattern, replacement)),
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  }
+}
+
 // Navigate from `tree` along `path` (1-based child indices) to a subtree.
 // Returns None if any index is out of range or steps into a leaf.
 fn tree_navigate(tree: &Expr, path: &[i128]) -> Option<Expr> {
@@ -2723,6 +2788,57 @@ pub fn dispatch_list_operations(
         name: "TreeMap".to_string(),
         args: args.to_vec().into(),
       }));
+    }
+    // TreeReplacePart[rules] operator form: kept symbolic so the curried call
+    // TreeReplacePart[rules][tree] can apply it.
+    "TreeReplacePart" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "TreeReplacePart".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // TreeReplacePart[tree, pos -> value] replaces the subtree at pos; a list
+    // of rules applies them in order. A scalar value becomes a leaf. The root
+    // position {} and out-of-range positions are silent no-ops.
+    "TreeReplacePart" if args.len() == 2 => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "TreeReplacePart".to_string(),
+        args: args.to_vec().into(),
+      };
+      if tree_node(&args[0]).is_none() {
+        crate::emit_message(&format!(
+          "TreeReplacePart::tree: Tree expected at position 1 in {}.",
+          crate::syntax::expr_to_string(&unevaluated())
+        ));
+        return Some(Ok(unevaluated()));
+      }
+      // Collect rules: a single rule, or a list of rules.
+      let rules: Vec<&Expr> = match &args[1] {
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|it| as_rule(it).is_some()) =>
+        {
+          items.iter().collect()
+        }
+        single if as_rule(single).is_some() => vec![single],
+        _ => return Some(Ok(unevaluated())),
+      };
+      let mut current = args[0].clone();
+      for rule in rules {
+        let (pos, value) = as_rule(rule).unwrap();
+        let Some(path) = tree_position_path(pos) else {
+          continue; // non-integer position spec: skip
+        };
+        if path.is_empty() {
+          continue; // the root position {} is a no-op
+        }
+        let canon = tree_replacement_value(value);
+        // out-of-range positions leave the tree unchanged
+        if let Some(updated) = tree_set_at(&current, &path, &canon) {
+          current = updated;
+        }
+      }
+      return Some(Ok(current));
     }
     // TreePosition[tree, patt]: positions of nodes whose data matches patt,
     // in post-order (descendants before parent); the root's position is {}.
