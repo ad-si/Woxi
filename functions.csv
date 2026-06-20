@@ -1239,7 +1239,7 @@ StringTemplate,Creates a template that fills slots from positional or named argu
 TimeObject,Represents a time of day with a granularity from a time-of-day list,✅,pure,10.0,1252
 ParetoDistribution,Represents a Pareto distribution,✅,1,6.0,1254
 Read,Read an object of a specified type from a stream,✅,effectful,1.0,1254
-EdgeCount,Returns the number of edges in a graph,✅,1,8.0,1256
+EdgeCount,Returns the number of edges in a graph (optionally matching a pattern),✅,pure,8.0,1256
 Transparent,,🚫,,7.0,1256
 OutputResponse,,🚫,,8.0,1257
 RandomComplex,Gives a pseudorandom complex number in a rectangular region,✅,effectful,6.0,1258

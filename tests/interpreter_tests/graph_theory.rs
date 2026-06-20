@@ -608,6 +608,36 @@ mod edge_count {
       "3"
     );
   }
+
+  // EdgeCount[graph, patt] counts the edges matching the pattern. A blank
+  // matches every edge; a bare head (UndirectedEdge) matches none.
+  #[test]
+  fn pattern_blank_and_bare_head() {
+    assert_eq!(interpret("EdgeCount[CompleteGraph[5], _]").unwrap(), "10");
+    assert_eq!(
+      interpret("EdgeCount[CompleteGraph[5], UndirectedEdge]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("EdgeCount[CompleteGraph[5], _UndirectedEdge]").unwrap(),
+      "10"
+    );
+  }
+
+  // A mixed graph distinguishes directed and undirected edges by pattern.
+  #[test]
+  fn pattern_mixed_graph() {
+    let g = "Graph[{1 -> 2, 2 -> 3, 1 <-> 3}]";
+    assert_eq!(interpret(&format!("EdgeCount[{g}, _]")).unwrap(), "3");
+    assert_eq!(
+      interpret(&format!("EdgeCount[{g}, _DirectedEdge]")).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(&format!("EdgeCount[{g}, _UndirectedEdge]")).unwrap(),
+      "1"
+    );
+  }
 }
 
 mod vertex_degree {

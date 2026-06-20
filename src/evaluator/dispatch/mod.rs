@@ -6574,6 +6574,25 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Integer(edges.len() as i128));
   }
 
+  // EdgeCount[graph, patt] counts the edges matching the pattern `patt`,
+  // i.e. Count[EdgeList[graph], patt]. A bare head like `UndirectedEdge`
+  // matches no edge (use `_UndirectedEdge` or `UndirectedEdge[_, _]`).
+  if name == "EdgeCount"
+    && args.len() == 2
+    && matches!(&args[0], Expr::FunctionCall { name: g, args: ga }
+      if g == "Graph" && ga.len() >= 2)
+  {
+    let edge_list =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "EdgeList".to_string(),
+        args: vec![args[0].clone()].into(),
+      })?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Count".to_string(),
+      args: vec![edge_list, args[1].clone()].into(),
+    });
+  }
+
   // FindMaximumFlow[graph, source, sink] — maximum flow value
   if name == "FindMaximumFlow"
     && args.len() == 3
