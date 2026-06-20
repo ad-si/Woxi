@@ -2276,6 +2276,23 @@ pub fn dispatch_complex_and_special(
     }
 
     // Around[value, uncertainty] — convert integer value to real when uncertainty is real
+    // Around[{v1, v2, …}, u] threads over the list of central values, giving
+    // each the same uncertainty: {Around[v1, u], Around[v2, u], …}.
+    "Around" if args.len() == 2 && matches!(&args[0], Expr::List(_)) => {
+      let Expr::List(values) = &args[0] else {
+        unreachable!();
+      };
+      let results: Result<Vec<Expr>, InterpreterError> = values
+        .iter()
+        .map(|v| {
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Around".to_string(),
+            args: vec![v.clone(), args[1].clone()].into(),
+          })
+        })
+        .collect();
+      return Some(results.map(|r| Expr::List(r.into())));
+    }
     "Around" if args.len() >= 2 => {
       let mut new_args = args.to_vec();
       // Around[x, Scaled[s]] → Around[x, x*s] when both numeric.

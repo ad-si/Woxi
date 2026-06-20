@@ -6549,6 +6549,22 @@ mod batch_inert_symbols_2 {
     assert_eq!(interpret("Around[5, 0.3]").unwrap(), "Around[5., 0.3]");
   }
 
+  // Around[{v1, …}, u] threads over the central values, giving each the same
+  // uncertainty.
+  #[test]
+  fn around_threads_over_values() {
+    assert_eq!(
+      interpret("Around[{1, 2, 3}, 0.1]").unwrap(),
+      "{Around[1., 0.1], Around[2., 0.1], Around[3., 0.1]}"
+    );
+    assert_eq!(
+      interpret("Around[{5.0, 10.0}, 0.5]").unwrap(),
+      "{Around[5., 0.5], Around[10., 0.5]}"
+    );
+    // A zero uncertainty collapses each element to its bare value.
+    assert_eq!(interpret("Around[{1, 2, 3}, 0]").unwrap(), "{1, 2, 3}");
+  }
+
   #[test]
   fn around_scaled() {
     // Around[x, Scaled[s]] becomes Around[x, |x|*s].
