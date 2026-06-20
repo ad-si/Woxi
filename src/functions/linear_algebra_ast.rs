@@ -803,6 +803,19 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A SparseArray argument is traced over its dense form.
+  if let Expr::FunctionCall { name, args: sa } = &args[0]
+    && name == "SparseArray"
+  {
+    let dense = crate::functions::list_helpers_ast::sparse_array_ast(sa)?;
+    if !matches!(&dense, Expr::FunctionCall { name, .. } if name == "SparseArray")
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = dense;
+      return tr_ast(&new_args);
+    }
+  }
+
   // The combining function f (default: Plus) is applied to the whole
   // sequence of diagonal elements at once as f[d1, d2, ..., dn], not
   // pairwise — so Tr[m, List] returns a list of the diagonal.

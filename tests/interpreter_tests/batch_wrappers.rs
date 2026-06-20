@@ -6668,13 +6668,17 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn graph_difference() {
     assert_eq!(
-      interpret("EdgeCount[GraphDifference[CompleteGraph[3], PathGraph[{1, 2, 3}]]]")
-        .unwrap(),
+      interpret(
+        "EdgeCount[GraphDifference[CompleteGraph[3], PathGraph[{1, 2, 3}]]]"
+      )
+      .unwrap(),
       "1"
     );
     assert_eq!(
-      interpret("VertexCount[GraphDifference[CompleteGraph[4], CycleGraph[4]]]")
-        .unwrap(),
+      interpret(
+        "VertexCount[GraphDifference[CompleteGraph[4], CycleGraph[4]]]"
+      )
+      .unwrap(),
       "4"
     );
     assert_eq!(

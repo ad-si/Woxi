@@ -5435,14 +5435,8 @@ pub fn evaluate_function_call_ast_inner(
   if name == "GraphDifference"
     && args.len() == 2
     && let (
-      Expr::FunctionCall {
-        name: n1,
-        args: a1,
-      },
-      Expr::FunctionCall {
-        name: n2,
-        args: a2,
-      },
+      Expr::FunctionCall { name: n1, args: a1 },
+      Expr::FunctionCall { name: n2, args: a2 },
     ) = (&args[0], &args[1])
     && n1 == "Graph"
     && n2 == "Graph"

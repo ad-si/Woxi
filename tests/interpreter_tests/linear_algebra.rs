@@ -3601,6 +3601,18 @@ mod cases {
       r#"a + e + i"#,
     );
   }
+  // Tr of a SparseArray traces its dense form.
+  #[test]
+  fn tr_sparse_array() {
+    assert_case(
+      r#"Tr[SparseArray[{{1, 1} -> 1, {2, 2} -> 5}, {2, 2}]]"#,
+      r#"6"#,
+    );
+    assert_case(
+      r#"Tr[SparseArray[{{1, 1} -> 1}, {2, 2}], List]"#,
+      r#"{1, 0}"#,
+    );
+  }
   #[test]
   fn matrix_q_1() {
     assert_case(r#"MatrixQ[{{1, 3}, {4.0, 3/2}}, NumberQ]"#, r#"True"#);
