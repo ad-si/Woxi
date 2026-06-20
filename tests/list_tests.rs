@@ -2910,4 +2910,82 @@ mod list_tests {
       "{25, 36, 49}"
     );
   }
+
+  #[test]
+  fn test_subset_replace() {
+    // A literal contiguous subset is replaced and the rest left in place.
+    assert_eq!(
+      interpret("SubsetReplace[{1, 2, 3, 4}, {2, 3} -> x]").unwrap(),
+      "{1, x, 4}"
+    );
+    // Every non-overlapping occurrence is replaced.
+    assert_eq!(
+      interpret("SubsetReplace[{1, 2, 3, 1, 2, 3}, {2, 3} -> x]").unwrap(),
+      "{1, x, 1, x}"
+    );
+    // A length-2 pattern consumes pairs left to right; the odd tail remains.
+    assert_eq!(
+      interpret("SubsetReplace[{1, 2, 3, 4, 5}, {a_, b_} :> a + b]").unwrap(),
+      "{3, 7, 5}"
+    );
+    // Subsets are combinations, not just contiguous runs: {1, 3} matches the
+    // non-adjacent positions 1 and 3, leaving 2.
+    assert_eq!(
+      interpret("SubsetReplace[{1, 2, 3}, {1, 3} -> x]").unwrap(),
+      "{x, 2}"
+    );
+    // The replacement is emitted at the smallest position of the matched
+    // subset; matching is over combinations so {1, 1} pairs positions 2 and 4.
+    assert_eq!(
+      interpret("SubsetReplace[{5, 1, 5, 1}, {1, 1} -> 0]").unwrap(),
+      "{5, 0, 5}"
+    );
+    // A longer pattern consumes more positions per match.
+    assert_eq!(
+      interpret("SubsetReplace[{1, 2, 3, 4}, {a_, b_, c_} :> a]").unwrap(),
+      "{1, 4}"
+    );
+    // Conditions on the pattern are honoured.
+    assert_eq!(
+      interpret(
+        "SubsetReplace[{1, 2, 3, 4, 5, 6}, {a_, b_} /; a < b :> a + b]"
+      )
+      .unwrap(),
+      "{3, 7, 11}"
+    );
+    // Rules are tried in the given order: the length-2 rule wins over the
+    // length-1 rule even though it is listed first.
+    assert_eq!(
+      interpret("SubsetReplace[{1, 2}, {{a_, b_} :> 10, {c_} :> 20}]").unwrap(),
+      "{10}"
+    );
+    // Different-length rules combine, each consuming its own positions.
+    assert_eq!(
+      interpret("SubsetReplace[{1, 2, 3, 4}, {{1} -> a, {3, 4} -> b}]")
+        .unwrap(),
+      "{a, 2, b}"
+    );
+    // No matching subset leaves the list unchanged.
+    assert_eq!(
+      interpret("SubsetReplace[{1, 2, 3}, {9, 9} -> x]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // The operator form SubsetReplace[rule][list].
+    assert_eq!(
+      interpret("SubsetReplace[{2, 3} -> x][{1, 2, 3, 4}]").unwrap(),
+      "{1, x, 4}"
+    );
+    // An empty list yields an empty list.
+    assert_eq!(interpret("SubsetReplace[{}, {1, 2} -> x]").unwrap(), "{}");
+    // A scalar (non-list) rule LHS does not apply: the call is unevaluated.
+    assert_eq!(
+      interpret("SubsetReplace[{1, 2, 3, 2}, 2 -> x]").unwrap(),
+      "SubsetReplace[{1, 2, 3, 2}, 2 -> x]"
+    );
+    // A non-list first argument stays unevaluated.
+    assert_eq!(
+      interpret("SubsetReplace[5, {1, 2} -> x]").unwrap(),
+      "SubsetReplace[5, {1, 2} -> x]"
+    );
+  }
 }

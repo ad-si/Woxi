@@ -4633,7 +4633,7 @@ ScrollingOptions,,🚫,,4.0,4809
 SecuredAuthenticationKey,,🚫,,11.2,4809
 SquareIntersection,,,,3.0,4809
 StatusCentrality,,,,9.0,4809
-SubsetReplace,,,,12.1,4809
+SubsetReplace,Replaces every non-overlapping subset matching a pattern in a list,✅,pure,12.1,4809
 SystemsModelLinearity,,🚫,,10.0,4809
 TaskExecute,,🚫,,11.2,4809
 TemplateWith,,,,10.0,4809

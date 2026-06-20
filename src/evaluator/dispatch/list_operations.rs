@@ -5192,6 +5192,138 @@ pub fn dispatch_list_operations(
       }
       return Some(Ok(Expr::List(result.into())));
     }
+    // SubsetReplace[rule] — operator form, kept symbolic so it can later be
+    // applied to a list (handled in function_application as f[rule][list]).
+    "SubsetReplace" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "SubsetReplace".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // SubsetReplace[list, rule] — replace non-overlapping subsets (combinations,
+    // not just contiguous runs) whose element values match a rule's LHS. Rules
+    // are applied in the given order; within a rule, the k-element subsets (k =
+    // the LHS list length) are enumerated in lexicographic order and matched
+    // greedily, consuming their positions. The RHS is emitted at the smallest
+    // position of each matched subset.
+    "SubsetReplace" if args.len() == 2 => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "SubsetReplace".to_string(),
+        args: args.to_vec().into(),
+      };
+      let Expr::List(list) = &args[0] else {
+        crate::emit_message(&format!(
+          "SubsetReplace::list: List expected at position 1 in {}.",
+          crate::syntax::expr_to_string(&unevaluated())
+        ));
+        return Some(Ok(unevaluated()));
+      };
+
+      // Collect the rules: a single rule, or a list of rules.
+      let rule_exprs: Vec<&Expr> = match &args[1] {
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|it| {
+              matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+                || matches!(it, Expr::FunctionCall { name, args }
+                  if (name == "Rule" || name == "RuleDelayed") && args.len() == 2)
+            }) =>
+        {
+          items.iter().collect()
+        }
+        single => vec![single],
+      };
+      let rules: Vec<SeqRule> = rule_exprs
+        .iter()
+        .filter_map(|r| parse_seq_rule(r))
+        .collect();
+      // Every rule must have a list LHS; otherwise leave it unevaluated.
+      if rules.len() != rule_exprs.len() || rules.is_empty() {
+        return Some(Ok(unevaluated()));
+      }
+
+      let n = list.len();
+      let mut consumed = vec![false; n];
+      // Replacement placed at the smallest position of each matched subset.
+      let mut replacement_at: Vec<Option<Expr>> = vec![None; n];
+
+      for rule in &rules {
+        let k = rule.sub.len();
+        // Variable-length and zero-length list patterns are unsupported here;
+        // a fixed k-element subset is required.
+        if k == 0 || k > n || rule.sub.iter().any(has_sequence_pattern) {
+          continue;
+        }
+        let has_pat = rule.sub.iter().any(has_pattern_element);
+        // Enumerate k-combinations of 0..n in lexicographic order.
+        let mut combo: Vec<usize> = (0..k).collect();
+        loop {
+          if !combo.iter().any(|&idx| consumed[idx]) {
+            let values =
+              Expr::List(combo.iter().map(|&idx| list[idx].clone()).collect());
+            let bindings = if has_pat {
+              crate::evaluator::pattern_matching::match_pattern(
+                &values,
+                rule.match_pat,
+              )
+            } else if combo.iter().enumerate().all(|(j, &idx)| {
+              expr_to_string(&list[idx]) == expr_to_string(&rule.sub[j])
+            }) {
+              Some(Vec::new())
+            } else {
+              None
+            };
+            if let Some(bindings) = bindings {
+              let replaced = match rule.replacement {
+                Some(repl) => {
+                  match crate::evaluator::pattern_matching::apply_bindings(
+                    repl, &bindings,
+                  ) {
+                    Ok(r) => {
+                      evaluate_expr_to_expr(&r).unwrap_or(values.clone())
+                    }
+                    Err(_) => values.clone(),
+                  }
+                }
+                None => values.clone(),
+              };
+              replacement_at[combo[0]] = Some(replaced);
+              for &idx in &combo {
+                consumed[idx] = true;
+              }
+            }
+          }
+          // Advance to the next k-combination in lexicographic order; stop
+          // once no position can be incremented (the last combination).
+          let mut advanced = false;
+          let mut i = k;
+          while i > 0 {
+            i -= 1;
+            if combo[i] != i + n - k {
+              combo[i] += 1;
+              for j in i + 1..k {
+                combo[j] = combo[j - 1] + 1;
+              }
+              advanced = true;
+              break;
+            }
+          }
+          if !advanced {
+            break;
+          }
+        }
+      }
+
+      let mut result: Vec<Expr> = Vec::with_capacity(n);
+      for i in 0..n {
+        if let Some(rhs) = &replacement_at[i] {
+          result.push(rhs.clone());
+        } else if !consumed[i] {
+          result.push(list[i].clone());
+        }
+      }
+      return Some(Ok(Expr::List(result.into())));
+    }
     // KeySortBy[assoc, f] — sort association by applying f to keys
     "KeySortBy" if args.len() == 2 => {
       if let Expr::Association(pairs) = &args[0] {

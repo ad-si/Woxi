@@ -583,6 +583,7 @@ pub fn apply_function_to_arg(
           | "Append"
           | "Prepend"
           | "FirstCase"
+          | "SubsetReplace"
       ) && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
@@ -1124,6 +1125,7 @@ pub fn apply_curried_call(
           | "Append"
           | "Prepend"
           | "FirstCase"
+          | "SubsetReplace"
       ) && func_args.len() == 1
         && args.len() == 1
       {
