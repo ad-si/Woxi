@@ -906,11 +906,11 @@ pub fn apply_curried_call(
       new_args.extend(args.iter().cloned());
       evaluate_function_call_ast(name, &new_args)
     }
-    // TreeFold operator form: TreeFold[f][tree] -> TreeFold[f, tree].
+    // TreeFold/TreeMap operator form: T[f][tree] -> T[f, tree].
     Expr::FunctionCall {
       name,
       args: func_args,
-    } if name == "TreeFold" && func_args.len() == 1 => {
+    } if (name == "TreeFold" || name == "TreeMap") && func_args.len() == 1 => {
       let mut new_args = func_args.to_vec();
       new_args.extend(args.iter().cloned());
       evaluate_function_call_ast(name, &new_args)

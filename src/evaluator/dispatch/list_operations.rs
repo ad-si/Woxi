@@ -561,6 +561,36 @@ fn tree_size(e: &Expr) -> Option<i128> {
   Some(total)
 }
 
+// TreeMap[f, tree]: apply `func` to the data of every node, preserving the
+// tree structure (the `None` leaf-marker is kept as-is). Returns Ok(None) if
+// `e` is not a tree.
+fn tree_map(func: &Expr, e: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::FunctionCall { name, args } = e else {
+    return Ok(None);
+  };
+  if name != "Tree" || args.len() != 2 {
+    return Ok(None);
+  }
+  let new_data = list_helpers_ast::apply_func_ast(func, &args[0])?;
+  let new_children = match &args[1] {
+    Expr::List(cs) => {
+      let mut mapped = Vec::with_capacity(cs.len());
+      for c in cs.iter() {
+        match tree_map(func, c)? {
+          Some(x) => mapped.push(x),
+          None => return Ok(None),
+        }
+      }
+      Expr::List(mapped.into())
+    }
+    other => other.clone(), // None (leaf) or other spec kept verbatim
+  };
+  Ok(Some(Expr::FunctionCall {
+    name: "Tree".to_string(),
+    args: vec![new_data, new_children].into(),
+  }))
+}
+
 // Count nodes (root + all descendants) whose data matches `pattern`.
 // Returns None if `e` is not a tree.
 fn tree_count(e: &Expr, pattern: &Expr) -> Option<i128> {
@@ -2629,6 +2659,31 @@ pub fn dispatch_list_operations(
         args: args.to_vec().into(),
       }));
     }
+    // TreeMap[f] operator form: kept symbolic so TreeMap[f][tree] can apply it.
+    "TreeMap" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "TreeMap".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // TreeMap[f, tree]: apply f to the data of every node.
+    "TreeMap" if args.len() == 2 => match tree_map(&args[0], &args[1]) {
+      Ok(Some(v)) => return Some(Ok(v)),
+      Ok(None) => {
+        crate::emit_message(&format!(
+          "TreeMap::tree: Tree expected at position 2 in {}.",
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "TreeMap".to_string(),
+            args: args.to_vec().into(),
+          })
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "TreeMap".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      Err(e) => return Some(Err(e)),
+    },
     // TreeCount[tree, pattern]: count nodes whose data matches pattern.
     "TreeCount" if args.len() == 2 => {
       if let Some(n) = tree_count(&args[0], &args[1]) {

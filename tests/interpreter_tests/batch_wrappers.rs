@@ -6837,6 +6837,32 @@ mod batch_unevaluated_wrappers_2 {
       "TreeCount[5, _Integer]"
     );
   }
+  // TreeMap[f, tree]: apply f to every node's data, preserving structure.
+  #[test]
+  fn tree_map() {
+    // Leaf: f applied to its data, leaf marker preserved.
+    assert_eq!(
+      interpret("TreeMap[f, Tree[x, None]]").unwrap(),
+      "Tree[f[x], None]"
+    );
+    // Inner node with two leaf children.
+    assert_eq!(
+      interpret("TreeMap[f, Tree[1, {2, 3}]]").unwrap(),
+      "Tree[f[1], {Tree[f[2], None], Tree[f[3], None]}]"
+    );
+    // Numeric map over a deeper tree.
+    assert_eq!(
+      interpret("TreeMap[# + 10 &, Tree[1, {Tree[2, {4, 5}], 3}]]").unwrap(),
+      "Tree[11, {Tree[12, {Tree[14, None], Tree[15, None]}], Tree[13, None]}]"
+    );
+    // Operator form TreeMap[f][tree].
+    assert_eq!(
+      interpret("TreeMap[f][Tree[1, {2, 3}]]").unwrap(),
+      "Tree[f[1], {Tree[f[2], None], Tree[f[3], None]}]"
+    );
+    // Non-tree second argument stays unevaluated.
+    assert_eq!(interpret("TreeMap[f, 5]").unwrap(), "TreeMap[f, 5]");
+  }
 
   // VertexOutComponent
   #[test]
