@@ -6663,4 +6663,95 @@ mod negative_half_times_sum_display {
     assert_eq!(interpret("(-3/2)*(a + b)").unwrap(), "(-3*(a + b))/2");
     assert_eq!(interpret("(1/2)*(a + b)").unwrap(), "(a + b)/2");
   }
+
+  // Threaded[...] broadcasts against the trailing axes of the other operand.
+  mod threaded {
+    use super::*;
+
+    // A bare Threaded stays symbolic.
+    #[test]
+    fn bare_is_symbolic() {
+      assert_eq!(
+        interpret("Threaded[{1, 2, 3}]").unwrap(),
+        "Threaded[{1, 2, 3}]"
+      );
+    }
+
+    // A matrix plus a Threaded vector adds the vector to every row.
+    #[test]
+    fn matrix_plus_vector() {
+      assert_eq!(
+        interpret("{{1, 2, 3}, {4, 5, 6}} + Threaded[{10, 20, 30}]").unwrap(),
+        "{{11, 22, 33}, {14, 25, 36}}"
+      );
+    }
+
+    // The same broadcasting applies to multiplication.
+    #[test]
+    fn matrix_times_vector() {
+      assert_eq!(
+        interpret("{{1, 2}, {3, 4}} * Threaded[{10, 100}]").unwrap(),
+        "{{10, 200}, {30, 400}}"
+      );
+    }
+
+    // Subtraction works through the additive path.
+    #[test]
+    fn matrix_minus_vector() {
+      assert_eq!(
+        interpret("{{1, 2, 3}, {4, 5, 6}} - Threaded[{1, 1, 1}]").unwrap(),
+        "{{0, 1, 2}, {3, 4, 5}}"
+      );
+    }
+
+    // A same-rank list combines element-wise and drops the wrapper.
+    #[test]
+    fn vector_same_rank() {
+      assert_eq!(
+        interpret("{1, 2, 3} + Threaded[{10, 20, 30}]").unwrap(),
+        "{11, 22, 33}"
+      );
+    }
+
+    // A scalar keeps the wrapper: Threaded[scalar op inner].
+    #[test]
+    fn scalar_keeps_wrapper() {
+      assert_eq!(
+        interpret("Threaded[{1, 2}] + 5").unwrap(),
+        "Threaded[{6, 7}]"
+      );
+      assert_eq!(
+        interpret("Threaded[{1, 2}] * 3").unwrap(),
+        "Threaded[{3, 6}]"
+      );
+    }
+
+    // Two Threaded operands combine their contents and keep the wrapper.
+    #[test]
+    fn both_threaded() {
+      assert_eq!(
+        interpret("Threaded[{1, 2}] + Threaded[{3, 4}]").unwrap(),
+        "Threaded[{4, 6}]"
+      );
+    }
+
+    // A three-way mix of matrix, Threaded vector, and scalar.
+    #[test]
+    fn three_way_mix() {
+      assert_eq!(
+        interpret("{{1, 2}, {3, 4}} + Threaded[{10, 20}] + 100").unwrap(),
+        "{{111, 122}, {113, 124}}"
+      );
+    }
+
+    // When the non-Threaded operand is shallower than the Threaded content,
+    // WL reports Threaded::thrdts and leaves the expression unevaluated.
+    #[test]
+    fn too_shallow_is_unevaluated() {
+      assert_eq!(
+        interpret("Head[{1, 2} + Threaded[{{10, 20}, {30, 40}}]]").unwrap(),
+        "Plus"
+      );
+    }
+  }
 }

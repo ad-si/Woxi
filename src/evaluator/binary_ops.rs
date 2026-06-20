@@ -7,6 +7,48 @@ pub fn thread_binary_op(
   right: &Expr,
   op: BinaryOperator,
 ) -> Result<Expr, InterpreterError> {
+  // A `Threaded[...]` operand triggers right-aligned broadcasting, which must
+  // take precedence over ordinary list threading (otherwise the list operand
+  // would be split apart before the broadcast could see its shape). Handle the
+  // additive and multiplicative operators by routing to the Threaded-aware
+  // Plus/Times in math_ast; Divide/Power fall through.
+  let is_threaded = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "Threaded" && args.len() == 1)
+  };
+  if is_threaded(left) || is_threaded(right) {
+    use crate::functions::math_ast::ThreadedOp;
+    let routed = match op {
+      BinaryOperator::Plus => {
+        Some(crate::functions::math_ast::try_threaded_op(
+          &[left.clone(), right.clone()],
+          ThreadedOp::Plus,
+        ))
+      }
+      BinaryOperator::Minus => {
+        // a - b = a + (-1)*b; the negation threads into Threaded via Times.
+        let neg = crate::functions::math_ast::times_ast(&[
+          Expr::Integer(-1),
+          right.clone(),
+        ])?;
+        Some(crate::functions::math_ast::try_threaded_op(
+          &[left.clone(), neg],
+          ThreadedOp::Plus,
+        ))
+      }
+      BinaryOperator::Times => {
+        Some(crate::functions::math_ast::try_threaded_op(
+          &[left.clone(), right.clone()],
+          ThreadedOp::Times,
+        ))
+      }
+      _ => None,
+    };
+    if let Some(Some(result)) = routed {
+      return result;
+    }
+  }
+
   // Helper to apply the binary operation to two evaluated expressions
   fn apply_op(
     l: &Expr,

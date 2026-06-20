@@ -601,9 +601,160 @@ fn contains_named_numeric_constant(e: &Expr) -> bool {
 }
 
 /// Plus[args...] - Sum of arguments, with list threading
+/// Which listable operation a `Threaded` broadcast is threading through.
+#[derive(Clone, Copy)]
+pub enum ThreadedOp {
+  Plus,
+  Times,
+}
+
+/// View `e` as the inner expression of a `Threaded[x]` wrapper.
+fn as_threaded(e: &Expr) -> Option<&Expr> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Threaded" && args.len() == 1 =>
+    {
+      Some(&args[0])
+    }
+    _ => None,
+  }
+}
+
+fn make_threaded(inner: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Threaded".to_string(),
+    args: vec![inner].into(),
+  }
+}
+
+/// Array nesting depth: 0 for an atom, 1 + max child depth for a list.
+fn list_rank(e: &Expr) -> usize {
+  match e {
+    Expr::List(items) => 1 + items.iter().map(list_rank).max().unwrap_or(0),
+    _ => 0,
+  }
+}
+
+fn apply_threaded_op(
+  op: ThreadedOp,
+  a: &Expr,
+  b: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match op {
+    ThreadedOp::Plus => plus_ast(&[a.clone(), b.clone()]),
+    ThreadedOp::Times => times_ast(&[a.clone(), b.clone()]),
+  }
+}
+
+/// Broadcast `inner` (the content of a `Threaded[...]`) against the trailing
+/// axes of `plain`. Returns `Ok(None)` when `plain` is shallower than `inner`
+/// (WL's `Threaded::thrdts` "too shallow" error).
+fn broadcast_threaded(
+  plain: &Expr,
+  inner: &Expr,
+  op: ThreadedOp,
+) -> Result<Option<Expr>, InterpreterError> {
+  let dp = list_rank(plain);
+  let di = list_rank(inner);
+  if dp == 0 {
+    // A scalar keeps the wrapper: Threaded[scalar op inner].
+    return Ok(Some(make_threaded(apply_threaded_op(op, plain, inner)?)));
+  }
+  if dp < di {
+    return Ok(None); // too shallow for the requested threading
+  }
+  if dp == di {
+    // Same rank: combine element-wise and drop the wrapper.
+    return Ok(Some(apply_threaded_op(op, plain, inner)?));
+  }
+  // Deeper: map over the outer axis, broadcasting into each sub-array.
+  let Expr::List(items) = plain else {
+    return Ok(None);
+  };
+  let mut out = Vec::with_capacity(items.len());
+  for it in items.iter() {
+    match broadcast_threaded(it, inner, op)? {
+      Some(r) => out.push(r),
+      None => return Ok(None),
+    }
+  }
+  Ok(Some(Expr::List(out.into())))
+}
+
+/// Combine two operands of a `Threaded`-aware operation. Returns `Ok(None)` if
+/// the broadcast is too shallow.
+fn threaded_binary(
+  a: &Expr,
+  b: &Expr,
+  op: ThreadedOp,
+) -> Result<Option<Expr>, InterpreterError> {
+  match (as_threaded(a), as_threaded(b)) {
+    // Two Threaded operands combine their contents and keep the wrapper.
+    (Some(ia), Some(ib)) => {
+      Ok(Some(make_threaded(apply_threaded_op(op, ia, ib)?)))
+    }
+    (Some(ia), None) => broadcast_threaded(b, ia, op),
+    (None, Some(ib)) => broadcast_threaded(a, ib, op),
+    (None, None) => Ok(Some(apply_threaded_op(op, a, b)?)),
+  }
+}
+
+/// Handle a `Plus`/`Times` whose arguments include at least one `Threaded[...]`
+/// wrapper, applying right-aligned (trailing-axis) broadcasting. Returns `None`
+/// when no argument is `Threaded`, so callers fall through to normal threading.
+pub fn try_threaded_op(
+  args: &[Expr],
+  op: ThreadedOp,
+) -> Option<Result<Expr, InterpreterError>> {
+  if !args.iter().any(|a| as_threaded(a).is_some()) {
+    return None;
+  }
+  let mut acc = args[0].clone();
+  for b in &args[1..] {
+    match threaded_binary(&acc, b, op) {
+      Ok(Some(r)) => acc = r,
+      Ok(None) => {
+        // "Too shallow" — emit the message and leave the operation
+        // unevaluated as a left-folded BinaryOp (which is not re-evaluated).
+        let bin_op = match op {
+          ThreadedOp::Plus => crate::syntax::BinaryOperator::Plus,
+          ThreadedOp::Times => crate::syntax::BinaryOperator::Times,
+        };
+        let mut folded = args[0].clone();
+        for a in &args[1..] {
+          folded = Expr::BinaryOp {
+            op: bin_op,
+            left: Box::new(folded),
+            right: Box::new(a.clone()),
+          };
+        }
+        let pos = args
+          .iter()
+          .position(|a| as_threaded(a).is_some())
+          .map(|i| i + 1)
+          .unwrap_or(0);
+        crate::emit_message(&format!(
+          "Threaded::thrdts: The level specified for threading the argument \
+           at position {} in {} is too shallow.",
+          pos,
+          crate::syntax::expr_to_string(&folded)
+        ));
+        return Some(Ok(folded));
+      }
+      Err(e) => return Some(Err(e)),
+    }
+  }
+  Some(Ok(acc))
+}
+
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
+  }
+
+  // Threaded[...] broadcasting takes precedence over ordinary list threading.
+  if let Some(result) = try_threaded_op(args, ThreadedOp::Plus) {
+    return result;
   }
 
   // Handle DateObject subtraction: DateObject[...] - DateObject[...] → Quantity[n, "Days"]
@@ -4418,6 +4569,11 @@ fn try_series_data_times_var_power(
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
+  }
+
+  // Threaded[...] broadcasting takes precedence over ordinary list threading.
+  if let Some(result) = try_threaded_op(args, ThreadedOp::Times) {
+    return result;
   }
 
   // Exact numeric product: when every factor is an Integer, BigInteger, or
