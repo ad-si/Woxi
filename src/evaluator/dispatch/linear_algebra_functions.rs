@@ -211,6 +211,30 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(rows.into())));
       }
     }
+    // ToeplitzMatrix[col, row] — first column `col`, first row `row`. Entry
+    // (i, j) is col[i-j] on/below the diagonal and row[j-i] above it. The
+    // result is len(col) x len(row); the shared corner uses col[0].
+    "ToeplitzMatrix" if args.len() == 2 => {
+      if let (Expr::List(col), Expr::List(row)) = (&args[0], &args[1])
+        && !col.is_empty()
+        && !row.is_empty()
+      {
+        let (h, w) = (col.len(), row.len());
+        let mut rows = Vec::with_capacity(h);
+        for i in 0..h {
+          let mut r = Vec::with_capacity(w);
+          for j in 0..w {
+            r.push(if i >= j {
+              col[i - j].clone()
+            } else {
+              row[j - i].clone()
+            });
+          }
+          rows.push(Expr::List(r.into()));
+        }
+        return Some(Ok(Expr::List(rows.into())));
+      }
+    }
     "ToeplitzMatrix" if args.len() == 1 => {
       if let Expr::List(elems) = &args[0] {
         let n = elems.len();

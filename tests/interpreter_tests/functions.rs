@@ -927,6 +927,25 @@ mod toeplitz_matrix {
       "{{1, 2, 3}, {2, 1, 2}, {3, 2, 1}}"
     );
   }
+
+  // ToeplitzMatrix[col, row]: col is the first column, row the first row.
+  #[test]
+  fn column_and_row() {
+    assert_eq!(
+      interpret("ToeplitzMatrix[{1, 2, 3}, {1, 4, 5}]").unwrap(),
+      "{{1, 4, 5}, {2, 1, 4}, {3, 2, 1}}"
+    );
+    // Different lengths give a rectangular matrix (len(col) x len(row)).
+    assert_eq!(
+      interpret("ToeplitzMatrix[{1, 2, 3, 4}, {1, 5}]").unwrap(),
+      "{{1, 5}, {2, 1}, {3, 2}, {4, 3}}"
+    );
+    // Symbolic entries.
+    assert_eq!(
+      interpret("ToeplitzMatrix[{a, b}, {a, c, d}]").unwrap(),
+      "{{a, c, d}, {b, a, c}}"
+    );
+  }
 }
 
 mod mantissa_exponent {
