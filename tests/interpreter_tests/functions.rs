@@ -2036,6 +2036,41 @@ mod unit_vector {
   fn shorthand_first() {
     assert_eq!(interpret("UnitVector[1]").unwrap(), "{1, 0}");
   }
+
+  // A too-large positive direction emits ::nokun and stays unevaluated.
+  #[test]
+  fn out_of_range_direction() {
+    clear_state();
+    let r = interpret_with_stdout("UnitVector[5, 6]").unwrap();
+    assert_eq!(r.result, "UnitVector[5, 6]");
+    assert!(r.warnings[0].contains(
+      "UnitVector::nokun: There is no unit vector in direction 6 in 5 dimensions."
+    ));
+    // The one-argument form is two-dimensional.
+    clear_state();
+    let r = interpret_with_stdout("UnitVector[3]").unwrap();
+    assert_eq!(r.result, "UnitVector[3]");
+    assert!(r.warnings[0].contains(
+      "UnitVector::nokun: There is no unit vector in direction 3 in 2 dimensions."
+    ));
+  }
+
+  // A non-positive direction emits ::intpm (positive integer expected).
+  #[test]
+  fn non_positive_direction() {
+    clear_state();
+    let r = interpret_with_stdout("UnitVector[5, 0]").unwrap();
+    assert_eq!(r.result, "UnitVector[5, 0]");
+    assert!(r.warnings[0].contains(
+      "UnitVector::intpm: Positive machine-sized integer expected at position 2 in UnitVector[5, 0]."
+    ));
+    clear_state();
+    let r = interpret_with_stdout("UnitVector[0]").unwrap();
+    assert_eq!(r.result, "UnitVector[0]");
+    assert!(r.warnings[0].contains(
+      "UnitVector::intpm: Positive machine-sized integer expected at position 1 in UnitVector[0]."
+    ));
+  }
 }
 
 mod permute {

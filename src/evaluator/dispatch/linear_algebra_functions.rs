@@ -96,19 +96,39 @@ pub fn dispatch_linear_algebra_functions(
       ));
     }
     "UnitVector" if args.len() == 1 || args.len() == 2 => {
-      let (n, k) = if args.len() == 1 {
-        // UnitVector[k] is shorthand for UnitVector[2, k]
-        (2i128, expr_to_i128(&args[0]).unwrap_or(0))
+      // UnitVector[k] is shorthand for UnitVector[2, k].
+      let (n_opt, k_opt) = if args.len() == 1 {
+        (Some(2i128), expr_to_i128(&args[0]))
       } else {
-        (
-          expr_to_i128(&args[0]).unwrap_or(0),
-          expr_to_i128(&args[1]).unwrap_or(0),
-        )
+        (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
       };
-      if n > 0 && k >= 1 && k <= n {
-        let mut vec = vec![Expr::Integer(0); n as usize];
-        vec[(k - 1) as usize] = Expr::Integer(1);
-        return Some(Ok(Expr::List(vec.into())));
+      if let (Some(n), Some(k)) = (n_opt, k_opt)
+        && n > 0
+      {
+        if k >= 1 && k <= n {
+          let mut vec = vec![Expr::Integer(0); n as usize];
+          vec[(k - 1) as usize] = Expr::Integer(1);
+          return Some(Ok(Expr::List(vec.into())));
+        }
+        // Out-of-range direction: a non-positive k is ::intpm (the direction
+        // argument must be a positive integer), while a too-large positive k
+        // is ::nokun. Both stay unevaluated, matching wolframscript.
+        let call = Expr::FunctionCall {
+          name: "UnitVector".to_string(),
+          args: args.to_vec().into(),
+        };
+        if k < 1 {
+          crate::emit_message(&format!(
+            "UnitVector::intpm: Positive machine-sized integer expected at position {} in {}.",
+            args.len(),
+            crate::syntax::expr_to_string(&call)
+          ));
+        } else {
+          crate::emit_message(&format!(
+            "UnitVector::nokun: There is no unit vector in direction {k} in {n} dimensions."
+          ));
+        }
+        return Some(Ok(call));
       }
     }
     // BoxMatrix[r] / BoxMatrix[{r1, …, rn}] — the all-ones "box" structuring
