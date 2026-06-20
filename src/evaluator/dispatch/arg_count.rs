@@ -1033,7 +1033,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ScalingTransform" => Some((1, 2)),
     "ReflectionTransform" => Some((1, 2)),
     "ShearingTransform" => Some((3, 3)),
-    "Scan" => Some((1, 2)),
+    "Scan" => Some((1, 3)),
     "Sec" => Some((1, 1)),
     "SecDegrees" => Some((1, 1)),
     "Sech" => Some((1, 1)),

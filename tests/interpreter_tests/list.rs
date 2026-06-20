@@ -11698,6 +11698,36 @@ mod cases {
   fn scan() {
     assert_case(r#"Scan[Print, {1, 2, 3}]"#, r#"Null"#);
   }
+  // Scan[f, expr, levelspec] visits parts in Level[expr, levelspec] order.
+  #[test]
+  fn scan_levelspec_level2() {
+    assert_case(
+      r#"Reap[Scan[Sow, {1, {2, 3}, 4}, 2]][[2, 1]]"#,
+      r#"{1, 2, 3, {2, 3}, 4}"#,
+    );
+  }
+  #[test]
+  fn scan_levelspec_only_level2() {
+    assert_case(
+      r#"Reap[Scan[Sow, {1, {2, 3}, 4}, {2}]][[2, 1]]"#,
+      r#"{2, 3}"#,
+    );
+  }
+  #[test]
+  fn scan_levelspec_with_zero() {
+    assert_case(
+      r#"Reap[Scan[Sow, {a, {b, c}}, {0, Infinity}]][[2, 1]]"#,
+      r#"{a, b, c, {b, c}, {a, {b, c}}}"#,
+    );
+  }
+  // Return inside the scanned function still short-circuits.
+  #[test]
+  fn scan_levelspec_return() {
+    assert_case(
+      r#"Scan[If[# > 2, Return[#]] &, {1, 2, 3, 4}, {1}]"#,
+      r#"3"#,
+    );
+  }
   #[test]
   fn member_q_6() {
     assert_case(r#"MemberQ[$Packages, "System`"]"#, r#"True"#);

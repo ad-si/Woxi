@@ -802,13 +802,11 @@ mod contains_all {
       "True"
     );
     assert_eq!(
-      interpret("ContainsNone[{1, 2, 3}, {5, 6}, SameTest -> Equal]")
-        .unwrap(),
+      interpret("ContainsNone[{1, 2, 3}, {5, 6}, SameTest -> Equal]").unwrap(),
       "True"
     );
     assert_eq!(
-      interpret("ContainsExactly[{1, 2}, {2, 1}, SameTest -> Equal]")
-        .unwrap(),
+      interpret("ContainsExactly[{1, 2}, {2, 1}, SameTest -> Equal]").unwrap(),
       "True"
     );
     // Asymmetric test confirms the f[a, b] argument order.

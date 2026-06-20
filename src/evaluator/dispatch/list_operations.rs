@@ -2089,6 +2089,11 @@ pub fn dispatch_list_operations(
     "Scan" if args.len() == 2 => {
       return Some(list_helpers_ast::scan_ast(&args[0], &args[1]));
     }
+    "Scan" if args.len() == 3 => {
+      return Some(list_helpers_ast::scan_levelspec_ast(
+        &args[0], &args[1], &args[2],
+      ));
+    }
     "SequenceFold" if args.len() == 3 || args.len() == 4 => {
       return Some(list_helpers_ast::sequence_fold_ast(args));
     }

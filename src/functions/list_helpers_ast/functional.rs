@@ -277,6 +277,35 @@ pub fn scan_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::Identifier("Null".to_string()))
 }
 
+/// Scan[f, expr, levelspec] — apply `func` (for side effects) to each part of
+/// `expr` at the given levels, in the same order as Level[expr, levelspec],
+/// returning Null.
+pub fn scan_levelspec_ast(
+  func: &Expr,
+  expr: &Expr,
+  levelspec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Reuse the Level machinery to enumerate the parts in the correct order.
+  let level_call = Expr::FunctionCall {
+    name: "Level".to_string(),
+    args: vec![expr.clone(), levelspec.clone()].into(),
+  };
+  let parts = crate::evaluator::evaluate_expr_to_expr(&level_call)?;
+  match parts {
+    Expr::List(ref items) => {
+      for item in items.iter() {
+        apply_func_ast(func, item)?;
+      }
+      Ok(Expr::Identifier("Null".to_string()))
+    }
+    // Level could not interpret the spec — keep the call unevaluated.
+    _ => Ok(Expr::FunctionCall {
+      name: "Scan".to_string(),
+      args: vec![func.clone(), expr.clone(), levelspec.clone()].into(),
+    }),
+  }
+}
+
 /// AST-based FoldList: fold showing intermediate values.
 /// FoldList[f, x, {a, b, c}] -> {x, f[x, a], f[f[x, a], b], ...}
 /// Threads through any non-atomic head: FoldList[f, x, g[a,b]]
