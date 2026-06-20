@@ -2465,9 +2465,20 @@ pub fn dispatch_list_operations(
       }
       fn wrap_head_at_depth(expr: &Expr, p: &Expr, depth: i128) -> Expr {
         if depth == 0 {
-          Expr::FunctionCall {
-            name: crate::syntax::expr_to_string(p),
-            args: vec![expr.clone()].into(),
+          // Apply the operator p to the head. A bare symbol becomes the new
+          // head `p[head]`; any other operator (pure function, Composition,
+          // …) is applied as `p[head]` so it can actually reduce.
+          match p {
+            Expr::Identifier(name) | Expr::Constant(name) => {
+              Expr::FunctionCall {
+                name: name.clone(),
+                args: vec![expr.clone()].into(),
+              }
+            }
+            _ => Expr::CurriedCall {
+              func: Box::new(p.clone()),
+              args: vec![expr.clone()],
+            },
           }
         } else {
           match expr {
@@ -2491,7 +2502,10 @@ pub fn dispatch_list_operations(
           }
         }
       }
-      return Some(Ok(wrap_head_at_depth(expr, p, n)));
+      // Evaluate so an applied operator (e.g. a pure function on the head)
+      // reduces: Operate[D[#, x] &, f[x]] -> (D[f, x])[x] -> 0[x].
+      let wrapped = wrap_head_at_depth(expr, p, n);
+      return Some(crate::evaluator::evaluate_expr_to_expr(&wrapped));
     }
     "TakeLargest" if args.len() == 2 => {
       if let Some(n) = count_or_upto(&args[1], &args[0]) {

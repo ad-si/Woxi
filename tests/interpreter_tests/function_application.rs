@@ -1317,6 +1317,13 @@ mod cases {
       r#"p[f[a][b][c]]"#,
     );
   }
+  // When the operator is a pure function (or other applicable head), p[head]
+  // is actually applied: Operate[D[#,x]&, f[x]] = (D[f,x])[x] = 0[x].
+  #[test]
+  fn operate_pure_function() {
+    assert_case(r#"Operate[D[#, x] &, f[x]]"#, r#"0[x]"#);
+    assert_case(r#"Operate[Composition[g, #] &, f[x]]"#, r#"g[f[x]]"#);
+  }
   #[test]
   fn through_1() {
     assert_case(r#"Through[f[g][x]]"#, r#"f[g[x]]"#);
