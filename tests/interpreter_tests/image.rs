@@ -1382,6 +1382,45 @@ mod image_processing {
     );
   }
 
+  // StandardDeviationFilter[list, r]: a moving (sample) standard deviation
+  // over a clipped neighborhood. Exact for exact input.
+  #[test]
+  fn standard_deviation_filter_1d() {
+    clear_state();
+    assert_eq!(
+      interpret("StandardDeviationFilter[{1, 2, 3, 4, 5}, 1]").unwrap(),
+      "{1/Sqrt[2], 1, 1, 1, 1/Sqrt[2]}"
+    );
+    assert_eq!(
+      interpret("StandardDeviationFilter[{1, 5, 2, 8, 3}, 1]").unwrap(),
+      "{2*Sqrt[2], Sqrt[13/3], 3, Sqrt[31/3], 5/Sqrt[2]}"
+    );
+    assert_eq!(
+      interpret("StandardDeviationFilter[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "{1, Sqrt[5/3], Sqrt[5/2], Sqrt[5/3], 1}"
+    );
+    // A constant window has zero deviation.
+    assert_eq!(
+      interpret("StandardDeviationFilter[{4, 4, 4}, 1]").unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
+  // StandardDeviationFilter on a 2D rectangular array uses a square window.
+  #[test]
+  fn standard_deviation_filter_2d() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "StandardDeviationFilter[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1]"
+      )
+      .unwrap(),
+      "{{Sqrt[10/3], Sqrt[7/2], Sqrt[10/3]}, \
+       {Sqrt[15/2], Sqrt[15/2], Sqrt[15/2]}, \
+       {Sqrt[10/3], Sqrt[7/2], Sqrt[10/3]}}"
+    );
+  }
+
   // Regression: Mean of Real elements summing to a whole number must
   // display with a trailing dot, matching wolframscript.
   #[test]

@@ -3814,6 +3814,26 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// wolframscript). Non-integer radii emit MeanFilter::bdrad and the
 /// expression is returned unevaluated.
 pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  aggregating_filter_ast(args, "Mean", "MeanFilter")
+}
+
+/// StandardDeviationFilter[data, r] — like MeanFilter but each window is
+/// summarised by its (sample) StandardDeviation. Results are exact when the
+/// input is exact.
+pub fn standard_deviation_filter_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  aggregating_filter_ast(args, "StandardDeviation", "StandardDeviationFilter")
+}
+
+/// Shared engine for windowed aggregating filters (MeanFilter,
+/// StandardDeviationFilter, …): slide a truncated radius-`r` window over a 1D
+/// list or 2D array and replace each element with `agg` of its window.
+fn aggregating_filter_ast(
+  args: &[Expr],
+  agg: &str,
+  filter_name: &str,
+) -> Result<Expr, InterpreterError> {
   // Parse the radius. Must be an integer (negative is taken as abs).
   let rval = crate::functions::math_ast::try_eval_to_f64(&args[1]);
   let r: Option<usize> = match rval {
@@ -3860,7 +3880,7 @@ pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           let mean =
             crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: "Mean".to_string(),
+              name: agg.to_string(),
               args: vec![Expr::List(window.into())].into(),
             })
             .unwrap_or_else(|_| get(y, x));
@@ -3878,7 +3898,7 @@ pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let hi = if i + r < n { i + r } else { n - 1 };
       let window: Vec<Expr> = elems[lo..=hi].to_vec();
       let mean = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Mean".to_string(),
+        name: agg.to_string(),
         args: vec![Expr::List(window.into())].into(),
       })
       .unwrap_or_else(|_| elems[i].clone());
@@ -3890,17 +3910,17 @@ pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Non-integer radius: emit the bdrad message.
   if r.is_none() && matches!(&args[0], Expr::List(_)) {
     crate::emit_message(&format!(
-      "MeanFilter::bdrad: {} is not a valid neighborhood range specification.",
+      "{filter_name}::bdrad: {} is not a valid neighborhood range specification.",
       crate::syntax::expr_to_string(&args[1])
     ));
   } else if !matches!(&args[0], Expr::Image { .. } | Expr::List(_)) {
     crate::emit_message(&format!(
-      "MeanFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+      "{filter_name}::arg1: The first argument {} should be a rectangular array, image or video.",
       crate::syntax::expr_to_string(&args[0])
     ));
   }
   Ok(Expr::FunctionCall {
-    name: "MeanFilter".to_string(),
+    name: filter_name.to_string(),
     args: args.to_vec().into(),
   })
 }

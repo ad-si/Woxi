@@ -258,6 +258,11 @@ pub fn dispatch_image_functions(
     "MeanFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::mean_filter_ast(args));
     }
+    "StandardDeviationFilter" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::standard_deviation_filter_ast(
+        args,
+      ));
+    }
     "GradientFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::gradient_filter_ast(args));
     }

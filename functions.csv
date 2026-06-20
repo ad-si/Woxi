@@ -3431,7 +3431,7 @@ PermissionsGroup,,🚫,,10.0,3522
 PopupView,,🚫,,6.0,3522
 SetCloudDirectory,,🚫,,10.0,3522
 SkeletonTransform,,🚫,,8.0,3522
-StandardDeviationFilter,,🚫,,7.0,3522
+StandardDeviationFilter,Replaces each element with the sample standard deviation of its radius-r neighborhood (1D list or 2D array),✅,pure,7.0,3522
 TransitiveReductionGraph,,,,10.0,3522
 UtilityFunction,,,,10.0,3522
 BeniniDistribution,,,,8.0,3537
