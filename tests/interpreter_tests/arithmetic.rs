@@ -1801,6 +1801,23 @@ mod composition_flatten {
       "f @* g @* h"
     );
   }
+
+  // Composition binds tighter than prefix application: `f @* g @ x` parses as
+  // `(f @* g) @ x`, i.e. f[g[x]].
+  #[test]
+  fn binds_tighter_than_apply() {
+    clear_state();
+    assert_eq!(interpret("f @* g @ x").unwrap(), "f[g[x]]");
+    assert_eq!(
+      interpret("Identity @* Reverse @ {1, 2, 3}").unwrap(),
+      "{3, 2, 1}"
+    );
+    assert_eq!(
+      interpret("Reverse @* Sort @ {3, 1, 2}").unwrap(),
+      "{3, 2, 1}"
+    );
+    assert_eq!(interpret("Length @* Reverse @ {1, 2, 3, 4}").unwrap(), "4");
+  }
 }
 
 mod rotate_nonlist {

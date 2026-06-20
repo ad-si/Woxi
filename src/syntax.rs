@@ -4825,7 +4825,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Function]" | "\u{F4A1}" => 3,
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 21, // Comparisons
-    "~~" => 24,         // StringExpression (lower than Alternatives)
+    "~~" => 24,          // StringExpression (lower than Alternatives)
     "|" => 27, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 30, // Plus/Minus
     "*" | "/" => 33, // Times/Divide
@@ -4833,12 +4833,14 @@ fn operator_precedence(op: &str) -> u8 {
     "." => 36, // Dot (higher than arithmetic)
     "@@@" | "@@" => 39, // Apply/MapApply
     "/@" => 42, // Map (higher than Apply)
-    "@*" | "/*" => 45, // Composition/RightComposition (binds tighter than Map:
-    // `Length@*f /@ list` parses as `(Length@*f) /@ list`)
     "NEGATE" => 45, // Unary minus (PreMinus): between Times/Dot and Power
     "^" | "^_NEG" => 48, // Power (`^_NEG` is `a^-b` with negated right operand)
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 51, // Tilde infix: a ~f~ b (higher than ^, lower than @)
-    "@" => 54,  // Prefix application
+    "@" => 54, // Prefix application
+    // Composition/RightComposition bind tighter than prefix application (so
+    // `f @* g @ x` parses as `(f @* g) @ x`) and Map (`Length@*f /@ list`
+    // parses as `(Length@*f) /@ list`), but looser than MessageName.
+    "@*" | "/*" => 55,
     "::" => 57, // MessageName (highest — a::b binds tighter than everything)
     _ => 0,
   }
