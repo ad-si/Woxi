@@ -3222,6 +3222,39 @@ fn matrix_form_to_string(arg: &Expr) -> Option<String> {
   }
 }
 
+/// Recursively remove `HoldForm[x]` wrappers, replacing each with its content.
+/// HoldForm is transparent in OutputForm (so `ToString[HoldForm[1 + 1]]` is
+/// `1 + 1` and `ToString[f[HoldForm[a + b]]]` is `f[a + b]`), but it is kept in
+/// InputForm and the bare REPL echo — hence the stripping happens only in
+/// ToString's OutputForm paths, not in the shared formatters. The content is
+/// structurally re-emitted (never re-evaluated), so the held form is preserved.
+fn strip_hold_form(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm" && args.len() == 1 =>
+    {
+      strip_hold_form(&args[0])
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(strip_hold_form).collect::<Vec<_>>().into(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(strip_hold_form).collect::<Vec<_>>().into())
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(strip_hold_form(left)),
+      right: Box::new(strip_hold_form(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(strip_hold_form(operand)),
+    },
+    other => other.clone(),
+  }
+}
+
 pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -3763,11 +3796,12 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "OutputForm" => {
         // Apply user-defined `Format[head[…], OutputForm]` rules
         // bottom-up before rendering, matching wolframscript.
-        let formatted =
-          crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
+        let formatted = strip_hold_form(
+          &crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
             &args[0],
             "OutputForm",
-          );
+          ),
+        );
         let s = crate::syntax::expr_to_output_form_2d(&formatted);
         return Ok(Expr::String(s));
       }
@@ -3877,7 +3911,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Then truncate machine-precision Reals to 6 significant digits — Wolfram's
   // ToString default for `Real` values, which is *not* the same as the REPL
   // /Print display (those keep full f64 precision).
-  let resolved = resolve_form_wrappers(&args[0]);
+  let resolved = strip_hold_form(&resolve_form_wrappers(&args[0]));
   let truncated = truncate_machine_reals_for_to_string(&resolved);
   let s = crate::syntax::expr_to_output(&truncated);
   Ok(Expr::String(s))

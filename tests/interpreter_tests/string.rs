@@ -4064,6 +4064,56 @@ mod c_form {
   }
 }
 
+mod to_string_hold_form {
+  use super::*;
+
+  // HoldForm is transparent in OutputForm: ToString strips it recursively.
+  #[test]
+  fn strips_hold_form_in_output_form() {
+    assert_eq!(interpret("ToString[HoldForm[1 + 1]]").unwrap(), "1 + 1");
+    assert_eq!(interpret("ToString[HoldForm[a + b]]").unwrap(), "a + b");
+    assert_eq!(interpret("ToString[HoldForm[Sin[x]]]").unwrap(), "Sin[x]");
+  }
+
+  #[test]
+  fn strips_hold_form_nested() {
+    assert_eq!(
+      interpret("ToString[f[HoldForm[1 + 1]]]").unwrap(),
+      "f[1 + 1]"
+    );
+    assert_eq!(
+      interpret("ToString[{HoldForm[1 + 1], HoldForm[2 + 2]}]").unwrap(),
+      "{1 + 1, 2 + 2}"
+    );
+    assert_eq!(
+      interpret("ToString[HoldForm[1 + 1] + HoldForm[2 + 2]]").unwrap(),
+      "(1 + 1) + (2 + 2)"
+    );
+  }
+
+  #[test]
+  fn explicit_output_form_strips() {
+    assert_eq!(
+      interpret("ToString[HoldForm[1 + 1], OutputForm]").unwrap(),
+      "1 + 1"
+    );
+  }
+
+  // InputForm and the bare echo keep the HoldForm wrapper.
+  #[test]
+  fn input_form_keeps_hold_form() {
+    assert_eq!(
+      interpret("ToString[HoldForm[1 + 1], InputForm]").unwrap(),
+      "HoldForm[1 + 1]"
+    );
+    assert_eq!(interpret("HoldForm[1 + 1]").unwrap(), "HoldForm[1 + 1]");
+    assert_eq!(
+      interpret("f[HoldForm[1 + 1]]").unwrap(),
+      "f[HoldForm[1 + 1]]"
+    );
+  }
+}
+
 mod to_string_machine_reals {
   use super::*;
 
