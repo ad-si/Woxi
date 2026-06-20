@@ -2997,6 +2997,15 @@ mod eliminate {
     assert_eq!(result, "x - y == 2*b");
   }
 
+  // Solving an equation with a fractional coefficient for the eliminated
+  // variable simplifies the quotient (t = 2*x), instead of leaving a nested
+  // fraction like -(x/-1/2).
+  #[test]
+  fn eliminate_fractional_coefficient() {
+    let result = interpret("Eliminate[{x == t/2, y == t}, t]").unwrap();
+    assert_eq!(result, "y == 2*x");
+  }
+
   #[test]
   fn eliminate_to_constant() {
     // Eliminate y from {x + y == 3, x - y == 1}

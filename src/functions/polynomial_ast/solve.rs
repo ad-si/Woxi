@@ -3256,11 +3256,17 @@ pub fn solve_divide(num: &Expr, den: &Expr) -> Expr {
         }
       }
     }
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(num.clone()),
-      right: Box::new(den.clone()),
-    },
+    // Non-integer denominator (a rational such as -1/2, or a symbolic
+    // expression): evaluate the quotient so it is fully simplified
+    // (e.g. -x / (-1/2) -> 2*x) rather than left as a nested fraction.
+    _ => {
+      let div = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(num.clone()),
+        right: Box::new(den.clone()),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&div).unwrap_or(div)
+    }
   }
 }
 

@@ -6169,10 +6169,7 @@ mod batch_unevaluated_wrappers_2 {
   // edges, including 1-6), not a 5-edge path.
   #[test]
   fn circulant_graph_wraparound() {
-    assert_eq!(
-      interpret("EdgeCount[CirculantGraph[6, {1}]]").unwrap(),
-      "6"
-    );
+    assert_eq!(interpret("EdgeCount[CirculantGraph[6, {1}]]").unwrap(), "6");
     assert_eq!(
       interpret("EdgeCount[CirculantGraph[6, {1, 2}]]").unwrap(),
       "12"
