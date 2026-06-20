@@ -451,6 +451,46 @@ mod date_string {
     );
   }
 
+  // 12-hour clock, AM/PM, Quarter and the leading-zero-free Short variants.
+  #[test]
+  fn date_string_twelve_hour_and_short() {
+    assert_eq!(
+      interpret(
+        "DateString[{2024, 3, 15, 9, 5, 0}, {\"Hour12\", \":\", \"Minute\", \" \", \"AMPM\"}]"
+      )
+      .unwrap(),
+      "09:05 AM"
+    );
+    // Afternoon hours wrap; midnight maps to 12.
+    assert_eq!(
+      interpret(
+        "DateString[{2024, 3, 15, 21, 0, 0}, {\"Hour12\", \" \", \"AMPM\"}]"
+      )
+      .unwrap(),
+      "09 PM"
+    );
+    assert_eq!(
+      interpret(
+        "DateString[{2024, 3, 15, 0, 5, 0}, {\"Hour12\", \" \", \"AMPMLowerCase\"}]"
+      )
+      .unwrap(),
+      "12 am"
+    );
+    // Quarter of the year.
+    assert_eq!(
+      interpret("DateString[{2024, 8, 15}, {\"Quarter\"}]").unwrap(),
+      "3"
+    );
+    // Short variants drop the leading zero.
+    assert_eq!(
+      interpret(
+        "DateString[{2024, 3, 5}, {\"DayShort\", \"/\", \"MonthShort\", \"/\", \"Year\"}]"
+      )
+      .unwrap(),
+      "5/3/2024"
+    );
+  }
+
   #[test]
   fn date_string_fractional_day() {
     assert_eq!(

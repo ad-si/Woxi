@@ -1564,6 +1564,22 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Hour" => result.push_str(&format!("{:02}", h)),
         "Minute" => result.push_str(&format!("{:02}", min)),
         "Second" => result.push_str(&format!("{:02}", sec as i64)),
+        // "Short" variants omit the leading zero.
+        "MonthShort" => result.push_str(&format!("{}", m)),
+        "DayShort" => result.push_str(&format!("{}", d)),
+        "HourShort" => result.push_str(&format!("{}", h)),
+        "MinuteShort" => result.push_str(&format!("{}", min)),
+        "SecondShort" => result.push_str(&format!("{}", sec as i64)),
+        // 12-hour clock: 0 and 12 both map to 12, 13..23 map to 1..11.
+        "Hour12" => {
+          result.push_str(&format!("{:02}", (h + 11).rem_euclid(12) + 1))
+        }
+        "Hour12Short" => {
+          result.push_str(&format!("{}", (h + 11).rem_euclid(12) + 1))
+        }
+        "AMPM" => result.push_str(if h < 12 { "AM" } else { "PM" }),
+        "AMPMLowerCase" => result.push_str(if h < 12 { "am" } else { "pm" }),
+        "Quarter" => result.push_str(&format!("{}", (m - 1) / 3 + 1)),
         _ => result.push_str(s), // literal separator
       }
     }
