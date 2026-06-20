@@ -3872,6 +3872,36 @@ mod dt {
   fn cubic_polynomial() {
     assert_eq!(interpret("Dt[x^3 + 2*x, x]").unwrap(), "2 + 3*x^2");
   }
+
+  // One-argument Dt is the total differential: sum of D[expr, v] * Dt[v] over
+  // the free variables v.
+  #[test]
+  fn total_differential_monomial() {
+    assert_eq!(interpret("Dt[x^2]").unwrap(), "2*x*Dt[x]");
+    assert_eq!(interpret("Dt[x y]").unwrap(), "y*Dt[x] + x*Dt[y]");
+    assert_eq!(
+      interpret("Dt[x y z]").unwrap(),
+      "y*z*Dt[x] + x*z*Dt[y] + x*y*Dt[z]"
+    );
+    assert_eq!(interpret("Dt[a x^2]").unwrap(), "x^2*Dt[a] + 2*a*x*Dt[x]");
+  }
+
+  #[test]
+  fn total_differential_sum_and_quotient() {
+    assert_eq!(interpret("Dt[x + y]").unwrap(), "Dt[x] + Dt[y]");
+    assert_eq!(interpret("Dt[x^2 + y^2]").unwrap(), "2*x*Dt[x] + 2*y*Dt[y]");
+    assert_eq!(interpret("Dt[x/y]").unwrap(), "Dt[x]/y - (x*Dt[y])/y^2");
+    assert_eq!(interpret("Dt[Log[x]]").unwrap(), "Dt[x]/x");
+    assert_eq!(interpret("Dt[E^x]").unwrap(), "E^x*Dt[x]");
+  }
+
+  #[test]
+  fn total_differential_constants_and_bare() {
+    assert_eq!(interpret("Dt[5]").unwrap(), "0");
+    assert_eq!(interpret("Dt[Pi]").unwrap(), "0");
+    assert_eq!(interpret("Dt[x]").unwrap(), "Dt[x]");
+    assert_eq!(interpret("Dt[c]").unwrap(), "Dt[c]");
+  }
 }
 
 mod minimize {

@@ -454,6 +454,11 @@ pub fn dispatch_calculus_functions(
     "D" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::d_ast(args));
     }
+    "Dt" if args.len() == 1 => {
+      return Some(crate::functions::calculus_ast::dt_total_differential_ast(
+        args,
+      ));
+    }
     "Dt" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::dt_ast(args));
     }

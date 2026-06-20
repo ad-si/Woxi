@@ -13228,6 +13228,108 @@ fn is_true_constant(expr: &Expr) -> bool {
   matches!(expr, Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_))
 }
 
+/// Named symbols whose total differential is 0 (they carry the Constant
+/// attribute), so they are not treated as Dt variables.
+const DT_CONSTANT_SYMBOLS: &[&str] = &[
+  "Pi",
+  "E",
+  "Degree",
+  "EulerGamma",
+  "GoldenRatio",
+  "GoldenAngle",
+  "Catalan",
+  "Khinchin",
+  "Glaisher",
+  "I",
+  "Infinity",
+  "ComplexInfinity",
+  "Indeterminate",
+  "True",
+  "False",
+];
+
+/// Collect the free atomic symbols of `expr` (the Dt variables), skipping
+/// numeric/named constants and function heads. `Sin[x]` contributes `x`, not
+/// `Sin`; `a x^2 + Sin[y]` contributes `a`, `x`, `y`.
+fn collect_dt_symbols(expr: &Expr, out: &mut Vec<String>) {
+  match expr {
+    Expr::Identifier(n) => {
+      if !DT_CONSTANT_SYMBOLS.contains(&n.as_str()) && !out.contains(n) {
+        out.push(n.clone());
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args.iter() {
+        collect_dt_symbols(a, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_dt_symbols(left, out);
+      collect_dt_symbols(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => collect_dt_symbols(operand, out),
+    Expr::List(items) => {
+      for i in items.iter() {
+        collect_dt_symbols(i, out);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Dt[expr] — total differential: the sum over each free variable v of
+/// D[expr, v] * Dt[v] (matching wolframscript). A constant gives 0 and a bare
+/// variable stays as the unevaluated Dt[v].
+pub fn dt_total_differential_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let expr = &args[0];
+  // Numeric/named constants: Dt = 0.
+  if is_true_constant(expr) {
+    return Ok(Expr::Integer(0));
+  }
+  let dt_of = |sym: &str| Expr::FunctionCall {
+    name: "Dt".to_string(),
+    args: vec![Expr::Identifier(sym.to_string())].into(),
+  };
+  // A bare variable is the base case: Dt[x] stays unevaluated (Dt[Pi] = 0).
+  if let Expr::Identifier(n) = expr {
+    if DT_CONSTANT_SYMBOLS.contains(&n.as_str()) {
+      return Ok(Expr::Integer(0));
+    }
+    return Ok(dt_of(n));
+  }
+  let mut syms: Vec<String> = Vec::new();
+  collect_dt_symbols(expr, &mut syms);
+  if syms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  let mut sum: Option<Expr> = None;
+  for v in &syms {
+    let partial = differentiate(expr, v)?;
+    if matches!(partial, Expr::Integer(0)) {
+      continue;
+    }
+    let term = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(partial),
+      right: Box::new(dt_of(v)),
+    });
+    sum = Some(match sum {
+      None => term,
+      Some(acc) => Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(acc),
+        right: Box::new(term),
+      },
+    });
+  }
+  Ok(match sum {
+    None => Expr::Integer(0),
+    Some(s) => simplify(s),
+  })
+}
+
 /// Total differentiation: like differentiate but treats all symbols as potentially
 /// dependent on the differentiation variable (returns Dt[y, x] instead of 0).
 fn total_differentiate(

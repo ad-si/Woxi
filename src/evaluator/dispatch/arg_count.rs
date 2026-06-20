@@ -321,7 +321,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Drop" => Some((2, 3)),
     "DSolve" => Some((3, 3)),
     "DSolveValue" => Some((3, 3)),
-    "Dt" => Some((2, 2)),
+    "Dt" => Some((1, 2)),
     "DuplicateFreeQ" => Some((1, 1)),
     "Echo" => Some((1, 3)),
     "EdgeDetect" => Some((1, 3)),

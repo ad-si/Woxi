@@ -470,7 +470,7 @@ CellularAutomaton,Generates a cellular automaton evolution,✅,pure,4.2,472
 Riffle,Inserts an element between each pair of elements,✅,pure,6.0,473
 Characters,Converts a string into a list of single-character strings,✅,pure,1.0,474
 GraphicsComplex,Indexed coordinate graphics container,✅,none,6.0,475
-Dt,Total derivative treating all variables as potentially dependent,✅,pure,1.0,476
+Dt,Total derivative (two-arg) or total differential (one-arg) treating all variables as potentially dependent,✅,pure,1.0,476
 EuclideanDistance,Euclidean distance between two vectors,✅,pure,6.0,477
 Subsets,Returns all subsets of a list,✅,pure,5.1,478
 SoundNote,Represents a musical note for sound generation,✅,pure,6.0,479
