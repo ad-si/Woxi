@@ -126,6 +126,63 @@ mod date_list {
   }
 }
 
+mod date_bounds {
+  use super::*;
+
+  // DateBounds gives the earliest and latest of a list of dates.
+  #[test]
+  fn earliest_and_latest() {
+    assert_eq!(
+      interpret("DateBounds[{{2024, 6, 1}, {2024, 1, 1}, {2024, 3, 15}}]")
+        .unwrap(),
+      "{{2024, 1, 1}, {2024, 6, 1}}"
+    );
+    // Crossing year boundaries.
+    assert_eq!(
+      interpret("DateBounds[{{2024, 1, 1}, {2023, 12, 31}, {2024, 12, 31}}]")
+        .unwrap(),
+      "{{2023, 12, 31}, {2024, 12, 31}}"
+    );
+  }
+
+  // A single date gives equal bounds.
+  #[test]
+  fn single_date() {
+    assert_eq!(
+      interpret("DateBounds[{{2024, 1, 1}}]").unwrap(),
+      "{{2024, 1, 1}, {2024, 1, 1}}"
+    );
+  }
+
+  // Time components participate in the ordering.
+  #[test]
+  fn time_components() {
+    assert_eq!(
+      interpret("DateBounds[{{2024, 1, 1, 12, 0, 0}, {2024, 1, 1, 6, 0, 0}}]")
+        .unwrap(),
+      "{{2024, 1, 1, 6, 0, 0}, {2024, 1, 1, 12, 0, 0}}"
+    );
+  }
+
+  // Each bound keeps its original representation.
+  #[test]
+  fn preserves_date_object_form() {
+    assert_eq!(
+      interpret(
+        "DateBounds[{DateObject[{2024, 1, 1}], DateObject[{2024, 5, 1}]}]"
+      )
+      .unwrap(),
+      "{DateObject[{2024, 1, 1}, Day], DateObject[{2024, 5, 1}, Day]}"
+    );
+  }
+
+  // A non-list or non-date argument stays unevaluated.
+  #[test]
+  fn non_date_unevaluated() {
+    assert_eq!(interpret("DateBounds[5]").unwrap(), "DateBounds[5]");
+  }
+}
+
 mod date_plus {
   use super::*;
 

@@ -4152,7 +4152,7 @@ AudioReverb,,🚫,,11.0,4291
 AugmentedSymmetricPolynomial,,,,8.0,4291
 ControllableDecomposition,,,,8.0,4291
 CreatePermissionsGroup,,🚫,,10.0,4291
-DateBounds,,,,11.0,4291
+DateBounds,Gives the earliest and latest of a list of dates preserving each date's representation,✅,pure,11.0,4291
 DeviceWriteBuffer,,🚫,,10.0,4291
 FindDevices,,,,10.0,4291
 FunctionConvexity,,,,12.2,4291

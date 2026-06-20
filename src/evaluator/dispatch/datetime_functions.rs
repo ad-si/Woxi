@@ -15,6 +15,9 @@ pub fn dispatch_datetime_functions(
     "DatePlus" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_plus_ast(args));
     }
+    "DateBounds" if args.len() == 1 => {
+      return Some(crate::functions::datetime_ast::date_bounds_ast(args));
+    }
     "DayPlus" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::datetime_ast::day_plus_ast(args));
     }

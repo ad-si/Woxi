@@ -773,6 +773,56 @@ fn make_date_list(y: i64, m: i64, d: i64, h: i64, min: i64, sec: f64) -> Expr {
 
 /// DatePlus[date, n] — add n days to a date
 /// DatePlus[date, {{n1, "unit1"}, ...}] — add with units
+/// DateBounds[{date1, date2, …}] — the earliest and latest of the dates,
+/// returned in their original representation (DateObjects stay DateObjects,
+/// date lists stay date lists). Dates are ordered by their padded calendar
+/// components (year, month, day, hour, minute, second).
+pub fn date_bounds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DateBounds".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let Expr::List(items) = &args[0] else {
+    return unevaluated();
+  };
+  if items.is_empty() {
+    return unevaluated();
+  }
+  // Order key: calendar components padded to {y, m=1, d=1, 0, 0, 0}.
+  let key = |e: &Expr| -> Option<[f64; 6]> {
+    let c = extract_date_components(e)?;
+    let mut k = [0.0, 1.0, 1.0, 0.0, 0.0, 0.0];
+    for (i, v) in c.iter().enumerate().take(6) {
+      k[i] = *v;
+    }
+    Some(k)
+  };
+  let keys: Option<Vec<[f64; 6]>> = items.iter().map(key).collect();
+  let Some(keys) = keys else {
+    return unevaluated();
+  };
+  let (mut min_i, mut max_i) = (0usize, 0usize);
+  for i in 1..keys.len() {
+    if keys[i]
+      .partial_cmp(&keys[min_i])
+      .is_some_and(|o| o == std::cmp::Ordering::Less)
+    {
+      min_i = i;
+    }
+    if keys[i]
+      .partial_cmp(&keys[max_i])
+      .is_some_and(|o| o == std::cmp::Ordering::Greater)
+    {
+      max_i = i;
+    }
+  }
+  Ok(Expr::List(
+    vec![items[min_i].clone(), items[max_i].clone()].into(),
+  ))
+}
+
 pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
