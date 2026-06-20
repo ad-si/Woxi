@@ -509,6 +509,58 @@ fn flatten_at_unified(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(flatten_at_apply(subject, &deduped))
 }
 
+// View a canonical tree node `Tree[data, children]` as (data, child subtrees).
+// A leaf is `Tree[data, None]` (no children). Returns None if `e` is not a Tree.
+fn tree_node(e: &Expr) -> Option<(&Expr, Vec<&Expr>)> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Tree"
+    && args.len() == 2
+  {
+    let children = match &args[1] {
+      Expr::List(cs) => cs.iter().collect(),
+      _ => Vec::new(), // None or any other spec → leaf
+    };
+    return Some((&args[0], children));
+  }
+  None
+}
+
+// Number of edges on the longest path from the root to a leaf (leaf → 0).
+fn tree_depth(e: &Expr) -> Option<i128> {
+  let (_data, children) = tree_node(e)?;
+  if children.is_empty() {
+    return Some(0);
+  }
+  let mut max = 0;
+  for c in children {
+    max = max.max(tree_depth(c)?);
+  }
+  Some(1 + max)
+}
+
+// Number of leaf nodes (a leaf counts as 1).
+fn tree_leaf_count(e: &Expr) -> Option<i128> {
+  let (_data, children) = tree_node(e)?;
+  if children.is_empty() {
+    return Some(1);
+  }
+  let mut total = 0;
+  for c in children {
+    total += tree_leaf_count(c)?;
+  }
+  Some(total)
+}
+
+// Total number of nodes in the tree (root + all descendants).
+fn tree_size(e: &Expr) -> Option<i128> {
+  let (_data, children) = tree_node(e)?;
+  let mut total = 1;
+  for c in children {
+    total += tree_size(c)?;
+  }
+  Some(total)
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -2504,6 +2556,29 @@ pub fn dispatch_list_operations(
         } else {
           ta[1].clone()
         }));
+      }
+      crate::emit_message(&format!(
+        "{name}::tree: Tree expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        })
+      ));
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // Structural recursions over a canonical Tree. Each emits ::tree and stays
+    // unevaluated when given a non-tree (matching TreeData/TreeChildren).
+    "TreeDepth" | "TreeLeafCount" | "TreeSize" if args.len() == 1 => {
+      let result = match name {
+        "TreeDepth" => tree_depth(&args[0]),
+        "TreeLeafCount" => tree_leaf_count(&args[0]),
+        _ => tree_size(&args[0]),
+      };
+      if let Some(n) = result {
+        return Some(Ok(Expr::Integer(n)));
       }
       crate::emit_message(&format!(
         "{name}::tree: Tree expected at position 1 in {}.",

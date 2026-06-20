@@ -6747,6 +6747,44 @@ mod batch_unevaluated_wrappers_2 {
     // Children of a leaf is None.
     assert_eq!(interpret("TreeChildren[Tree[x, None]]").unwrap(), "None");
   }
+  // TreeDepth: edges on the longest root-to-leaf path (leaf → 0).
+  #[test]
+  fn tree_depth() {
+    assert_eq!(interpret("TreeDepth[Tree[1, {2, 3}]]").unwrap(), "1");
+    assert_eq!(
+      interpret("TreeDepth[Tree[1, {Tree[2, {4, 5}], 3}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("TreeDepth[Tree[1, {Tree[2, {Tree[4, {6}], 5}], 3}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("TreeDepth[Tree[1, None]]").unwrap(), "0");
+    // Non-tree stays unevaluated.
+    assert_eq!(interpret("TreeDepth[5]").unwrap(), "TreeDepth[5]");
+  }
+  // TreeLeafCount: number of leaf nodes (a bare leaf counts as 1).
+  #[test]
+  fn tree_leaf_count() {
+    assert_eq!(interpret("TreeLeafCount[Tree[1, {2, 3}]]").unwrap(), "2");
+    assert_eq!(
+      interpret("TreeLeafCount[Tree[1, {Tree[2, {4, 5}], 3}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("TreeLeafCount[Tree[1, None]]").unwrap(), "1");
+    assert_eq!(interpret("TreeLeafCount[5]").unwrap(), "TreeLeafCount[5]");
+  }
+  // TreeSize: total number of nodes (root + all descendants).
+  #[test]
+  fn tree_size() {
+    assert_eq!(interpret("TreeSize[Tree[1, None]]").unwrap(), "1");
+    assert_eq!(interpret("TreeSize[Tree[1, {2, 3}]]").unwrap(), "3");
+    assert_eq!(
+      interpret("TreeSize[Tree[1, {Tree[2, {4, 5}], 3}]]").unwrap(),
+      "5"
+    );
+    assert_eq!(interpret("TreeSize[5]").unwrap(), "TreeSize[5]");
+  }
 
   // VertexOutComponent
   #[test]
