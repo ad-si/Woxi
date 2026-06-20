@@ -6459,6 +6459,76 @@ fn try_u_substitution_binary(
     .ok()?;
     return Some(result);
   }
+  // Strategy 3: ∫ c * h'(x) * h(x)^p dx = c * h(x)^(p+1)/(p+1) for a constant
+  // power p ≠ -1, the u = h(x) substitution.  Catches e.g.
+  //   ∫ x (a + b x^2)^p dx = (a + b x^2)^(p+1) / (2 b (p+1)).
+  // Restricted to NON-integer p: integer powers are handled elsewhere and
+  // Wolfram expands positive-integer results into polynomials (so the closed
+  // form here would not match its output).
+  for (composite, other) in [(left, right), (right, left)] {
+    let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } = composite
+    else {
+      continue;
+    };
+    // base must depend on var; exp must be a constant, non-integer power.
+    if is_constant_wrt(base, var)
+      || !is_constant_wrt(exp, var)
+      || matches!(exp.as_ref(), Expr::Integer(_))
+    {
+      continue;
+    }
+    let Ok(h_deriv) = differentiate(base, var) else {
+      continue;
+    };
+    if is_constant_wrt(&h_deriv, var) {
+      continue;
+    }
+    // other = c * h'(x)?
+    let Ok(ratio) = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(other.clone()),
+      right: Box::new(h_deriv),
+    }) else {
+      continue;
+    };
+    if !is_constant_wrt(&ratio, var) {
+      continue;
+    }
+    // p + 1 (guaranteed ≠ 0 since p is not the integer -1)
+    let Ok(p_plus_1) =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: exp.clone(),
+        right: Box::new(Expr::Integer(1)),
+      })
+    else {
+      continue;
+    };
+    if matches!(p_plus_1, Expr::Integer(0)) {
+      continue;
+    }
+    // ratio * base^(p+1) / (p+1)
+    let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(ratio),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: base.clone(),
+          right: Box::new(p_plus_1.clone()),
+        }),
+        right: Box::new(p_plus_1),
+      }),
+    }) else {
+      continue;
+    };
+    return Some(result);
+  }
   None
 }
 

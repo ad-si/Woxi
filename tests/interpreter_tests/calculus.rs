@@ -108,6 +108,72 @@ mod integrate_with_sum {
     assert_eq!(interpret("Integrate[ArcCos[x], {x, -1, 1}]").unwrap(), "Pi");
   }
 
+  // u-substitution power law: ∫ c x (a + b x^2)^p dx =
+  //   c (a + b x^2)^(p+1) / (2 b (p+1)), for non-integer p.
+  // (Integer powers are handled by a separate path; Wolfram expands those.)
+  #[test]
+  fn integrate_x_times_sqrt_quadratic() {
+    assert_eq!(
+      interpret("Integrate[x Sqrt[1 - x^2], x]").unwrap(),
+      "-1/3*(1 - x^2)^(3/2)"
+    );
+    assert_eq!(
+      interpret("Integrate[x Sqrt[a - x^2], x]").unwrap(),
+      "-1/3*(a - x^2)^(3/2)"
+    );
+    assert_eq!(
+      interpret("Integrate[x Sqrt[x^2 - 1], x]").unwrap(),
+      "(-1 + x^2)^(3/2)/3"
+    );
+    assert_eq!(
+      interpret("Integrate[x Sqrt[3 x^2 + 2], x]").unwrap(),
+      "(2 + 3*x^2)^(3/2)/9"
+    );
+    // Leading numeric coefficient on the x factor.
+    assert_eq!(
+      interpret("Integrate[2 x Sqrt[1 - x^2], x]").unwrap(),
+      "(-2*(1 - x^2)^(3/2))/3"
+    );
+  }
+
+  #[test]
+  fn integrate_x_times_negative_half_power() {
+    // ∫ x / Sqrt[1 - x^2] dx = -Sqrt[1 - x^2]
+    assert_eq!(
+      interpret("Integrate[x / Sqrt[1 - x^2], x]").unwrap(),
+      "-Sqrt[1 - x^2]"
+    );
+    // ∫ x (1 - x^2)^(3/2) dx = -(1 - x^2)^(5/2) / 5
+    assert_eq!(
+      interpret("Integrate[x (1 - x^2)^(3/2), x]").unwrap(),
+      "-1/5*(1 - x^2)^(5/2)"
+    );
+  }
+
+  #[test]
+  fn integrate_x_sqrt_quadratic_definite() {
+    // ∫_0^1 x Sqrt[1 - x^2] dx = 1/3
+    assert_eq!(
+      interpret("Integrate[x Sqrt[1 - x^2], {x, 0, 1}]").unwrap(),
+      "1/3"
+    );
+    // ∫_0^1 x / Sqrt[1 - x^2] dx = 1
+    assert_eq!(
+      interpret("Integrate[x / Sqrt[1 - x^2], {x, 0, 1}]").unwrap(),
+      "1"
+    );
+  }
+
+  // The same u = h(x) power law applies when h is trigonometric:
+  // ∫ Sin[x] Cos[x]^(1/2) dx = -2/3 Cos[x]^(3/2)  (u = Cos[x]).
+  #[test]
+  fn integrate_sin_times_sqrt_cos() {
+    assert_eq!(
+      interpret("Integrate[Sin[x] Cos[x]^(1/2), x]").unwrap(),
+      "(-2*Cos[x]^(3/2))/3"
+    );
+  }
+
   #[test]
   fn integrate_arcsin_indefinite() {
     // ∫ ArcSin[x] dx = x ArcSin[x] + Sqrt[1 - x^2]
