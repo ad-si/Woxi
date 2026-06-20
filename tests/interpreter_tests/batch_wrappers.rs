@@ -6992,6 +6992,64 @@ mod batch_unevaluated_wrappers_2 {
       "TreeReplacePart[5, {1} -> 2]"
     );
   }
+  // TreeLevel[tree, spec]: subtrees at the selected levels, in post-order.
+  #[test]
+  fn tree_level() {
+    let t = "Tree[1, {Tree[2, {4, 5}], 3}]";
+    // Exact single levels.
+    assert_eq!(
+      interpret(&format!("TreeData /@ TreeLevel[{t}, {{0}}]")).unwrap(),
+      "{1}"
+    );
+    assert_eq!(
+      interpret(&format!("TreeData /@ TreeLevel[{t}, {{1}}]")).unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret(&format!("TreeData /@ TreeLevel[{t}, {{2}}]")).unwrap(),
+      "{4, 5}"
+    );
+    // A bare positive integer n means levels 1..n; deeper levels come first.
+    assert_eq!(
+      interpret(&format!("TreeData /@ TreeLevel[{t}, 2]")).unwrap(),
+      "{4, 5, 2, 3}"
+    );
+    // Infinity covers all proper subtrees (the root is excluded).
+    assert_eq!(
+      interpret(&format!("TreeData /@ TreeLevel[{t}, Infinity]")).unwrap(),
+      "{4, 5, 2, 3}"
+    );
+    // A range including the root.
+    assert_eq!(
+      interpret(&format!("TreeData /@ TreeLevel[{t}, {{0, 1}}]")).unwrap(),
+      "{2, 3, 1}"
+    );
+    // Negative level {-1} selects the leaves.
+    assert_eq!(
+      interpret(&format!("TreeData /@ TreeLevel[{t}, {{-1}}]")).unwrap(),
+      "{4, 5, 3}"
+    );
+    // Bare negative integer -2 means {1, -2}.
+    assert_eq!(
+      interpret(&format!("TreeData /@ TreeLevel[{t}, -2]")).unwrap(),
+      "{2}"
+    );
+    // Range up to Infinity.
+    assert_eq!(
+      interpret(&format!("TreeData /@ TreeLevel[{t}, {{2, Infinity}}]"))
+        .unwrap(),
+      "{4, 5}"
+    );
+    // Returns full subtree objects, not just data.
+    assert_eq!(
+      interpret(&format!("TreeLevel[{t}, {{1}}]")).unwrap(),
+      "{Tree[2, {Tree[4, None], Tree[5, None]}], Tree[3, None]}"
+    );
+    // A leaf has no proper subtrees at level 1.
+    assert_eq!(interpret("TreeLevel[Tree[9, None], {1}]").unwrap(), "{}");
+    // Non-tree first argument stays unevaluated.
+    assert_eq!(interpret("TreeLevel[5, {1}]").unwrap(), "TreeLevel[5, {1}]");
+  }
 
   // VertexOutComponent
   #[test]

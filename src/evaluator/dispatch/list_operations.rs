@@ -561,6 +561,74 @@ fn tree_size(e: &Expr) -> Option<i128> {
   Some(total)
 }
 
+// Parse a TreeLevel/Level spec into (lo, hi) bounds, where `hi == None` means
+// Infinity. A bare integer n means {1, n}; {n} means {n, n}; {n1, n2} is a
+// range; Infinity means {1, Infinity}. Negative bounds count from the bottom.
+fn parse_tree_level_spec(e: &Expr) -> Option<(i128, Option<i128>)> {
+  let as_bound = |x: &Expr| -> Option<Option<i128>> {
+    match x {
+      Expr::Integer(n) => Some(Some(*n)),
+      _ if is_infinity_symbol(x) => Some(None),
+      _ => None,
+    }
+  };
+  match e {
+    Expr::Integer(n) => Some((1, Some(*n))),
+    _ if is_infinity_symbol(e) => Some((1, None)),
+    Expr::List(items) if items.len() == 1 => {
+      if let Expr::Integer(n) = &items[0] {
+        Some((*n, Some(*n)))
+      } else {
+        None
+      }
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let lo = match &items[0] {
+        Expr::Integer(n) => *n,
+        _ => return None,
+      };
+      let hi = as_bound(&items[1])?;
+      Some((lo, hi))
+    }
+    _ => None,
+  }
+}
+
+// Does a node at top-depth `l` with subtree depth `dpt` (= height + 1) fall
+// within the level bounds (`lo`, `hi`)? Non-negative bounds measure from the
+// root via `l`; negative bounds measure from the leaves via `dpt`.
+fn tree_level_in_spec(l: i128, dpt: i128, lo: i128, hi: Option<i128>) -> bool {
+  let lower_ok = if lo >= 0 { l >= lo } else { dpt <= -lo };
+  let upper_ok = match hi {
+    None => true,
+    Some(h) if h >= 0 => l <= h,
+    Some(h) => dpt >= -h,
+  };
+  lower_ok && upper_ok
+}
+
+// Collect the subtrees whose level falls within (`lo`, `hi`), in post-order
+// (descendants before their parent, left to right). Returns the node's height
+// (0 for a leaf), or None if `e` is not a tree.
+fn tree_level(
+  e: &Expr,
+  depth: i128,
+  lo: i128,
+  hi: Option<i128>,
+  out: &mut Vec<Expr>,
+) -> Option<i128> {
+  let (_data, children) = tree_node(e)?;
+  let mut height = 0;
+  for child in &children {
+    let ch = tree_level(child, depth + 1, lo, hi, out)?;
+    height = height.max(ch + 1);
+  }
+  if tree_level_in_spec(depth, height + 1, lo, hi) {
+    out.push(e.clone());
+  }
+  Some(height)
+}
+
 // Collect positions of nodes whose data matches `pattern`, in post-order
 // (descendants before their parent, left to right). The root's position is the
 // empty path. `path` accumulates the current 1-based child indices; each
@@ -2839,6 +2907,27 @@ pub fn dispatch_list_operations(
         }
       }
       return Some(Ok(current));
+    }
+    // TreeLevel[tree, spec]: subtrees at the levels selected by spec, in
+    // post-order (descendants before their parent).
+    "TreeLevel" if args.len() == 2 => {
+      let unevaluated = || Expr::FunctionCall {
+        name: "TreeLevel".to_string(),
+        args: args.to_vec().into(),
+      };
+      if tree_node(&args[0]).is_none() {
+        crate::emit_message(&format!(
+          "TreeLevel::tree: Tree expected at position 1 in {}.",
+          crate::syntax::expr_to_string(&unevaluated())
+        ));
+        return Some(Ok(unevaluated()));
+      }
+      let Some((lo, hi)) = parse_tree_level_spec(&args[1]) else {
+        return Some(Ok(unevaluated()));
+      };
+      let mut out = Vec::new();
+      tree_level(&args[0], 0, lo, hi, &mut out);
+      return Some(Ok(Expr::List(out.into())));
     }
     // TreePosition[tree, patt]: positions of nodes whose data matches patt,
     // in post-order (descendants before parent); the root's position is {}.
