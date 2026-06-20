@@ -1658,6 +1658,31 @@ mod query {
     );
   }
 
+  // Query[All, op] over an association maps op over the values, keeping the
+  // keys and the association structure.
+  #[test]
+  fn all_over_association_values() {
+    assert_eq!(
+      interpret("Query[All, Total][<|\"x\" -> {1, 2}, \"y\" -> {3, 4}|>]")
+        .unwrap(),
+      "<|x -> 3, y -> 7|>"
+    );
+    assert_eq!(
+      interpret("Query[All, f][<|\"x\" -> 1, \"y\" -> 2|>]").unwrap(),
+      "<|x -> f[1], y -> f[2]|>"
+    );
+    assert_eq!(
+      interpret("Query[All, Mean][<|\"x\" -> {1, 2, 3}, \"y\" -> {4, 5, 6}|>]")
+        .unwrap(),
+      "<|x -> 2, y -> 5|>"
+    );
+    // A single descending operator still collapses the whole association.
+    assert_eq!(
+      interpret("Query[Total][<|\"a\" -> 1, \"b\" -> 2|>]").unwrap(),
+      "3"
+    );
+  }
+
   #[test]
   fn identity_and_missing() {
     assert_eq!(interpret("Query[All][{1, 2, 3}]").unwrap(), "{1, 2, 3}");

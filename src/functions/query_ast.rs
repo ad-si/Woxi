@@ -83,6 +83,15 @@ fn map_rest(rest: &[Expr], data: &Expr) -> Result<Expr, InterpreterError> {
         items.iter().map(|e| apply_query(rest, e)).collect();
       Ok(Expr::List(mapped?.into()))
     }
+    // Association literal `<|k -> v, …|>`: map the rest of the spec over the
+    // values, keeping the keys and the association structure.
+    Expr::Association(pairs) => {
+      let mapped: Result<Vec<(Expr, Expr)>, InterpreterError> = pairs
+        .iter()
+        .map(|(k, v)| Ok((k.clone(), apply_query(rest, v)?)))
+        .collect();
+      Ok(Expr::Association(mapped?))
+    }
     Expr::FunctionCall { name, args } if name == "Association" => {
       let mapped: Result<Vec<Expr>, InterpreterError> = args
         .iter()
