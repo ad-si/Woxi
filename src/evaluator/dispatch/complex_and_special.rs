@@ -5685,6 +5685,46 @@ fn compute_signed_region_distance(
       let inside = call("Min", vec![call("Max", dx), Expr::Integer(0)]);
       binop(BinaryOperator::Plus, outside, inside)
     }
+    // A Line is measure-zero: its signed distance is the ordinary distance.
+    "Line" if args.len() == 1 => {
+      let Expr::List(verts) = &args[0] else {
+        return unevaluated();
+      };
+      match line_nearest_point(verts, point, &pt, n)? {
+        Some(nearest) => euclid(point.clone(), nearest),
+        None => return unevaluated(),
+      }
+    }
+    // Solid 2D Triangle/Polygon: distance to the boundary, negated inside.
+    "Triangle" | "Polygon" if args.len() == 1 && n == 2 => {
+      let Expr::List(vs) = &args[0] else {
+        return unevaluated();
+      };
+      let Some(verts_f) = polygon_verts_f64(vs) else {
+        return unevaluated();
+      };
+      if verts_f.len() < 3 {
+        return unevaluated();
+      }
+      let pf = match (
+        crate::functions::math_ast::try_eval_to_f64(&pt[0]),
+        crate::functions::math_ast::try_eval_to_f64(&pt[1]),
+      ) {
+        (Some(x), Some(y)) => [x, y],
+        _ => return unevaluated(),
+      };
+      let mut closed: Vec<Expr> = vs.iter().cloned().collect();
+      closed.push(vs[0].clone());
+      let Some(nearest) = line_nearest_point(&closed, point, &pt, n)? else {
+        return unevaluated();
+      };
+      let dist = euclid(point.clone(), nearest);
+      if point_in_polygon_2d(&verts_f, pf, 1e-10) {
+        binop(BinaryOperator::Times, Expr::Integer(-1), dist)
+      } else {
+        dist
+      }
+    }
     _ => return unevaluated(),
   };
 

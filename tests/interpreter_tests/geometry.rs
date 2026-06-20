@@ -2224,6 +2224,44 @@ mod signed_region_distance {
       "-1"
     );
   }
+
+  // A Line is measure-zero, so its signed distance equals the ordinary one.
+  #[test]
+  fn line_is_unsigned() {
+    assert_eq!(
+      interpret("SignedRegionDistance[Line[{{0, 0}, {4, 0}}], {2, 5}]")
+        .unwrap(),
+      "5"
+    );
+  }
+
+  // A solid Triangle/Polygon: positive outside, negative inside, zero on the
+  // boundary.
+  #[test]
+  fn triangle_and_polygon() {
+    let t = "Triangle[{{0, 0}, {4, 0}, {0, 3}}]";
+    assert_eq!(
+      interpret(&format!("SignedRegionDistance[{t}, {{5, 5}}]")).unwrap(),
+      "23/5"
+    );
+    assert_eq!(
+      interpret(&format!("SignedRegionDistance[{t}, {{1, 1}}]")).unwrap(),
+      "-1"
+    );
+    // On the boundary.
+    assert_eq!(
+      interpret(&format!("SignedRegionDistance[{t}, {{2, 0}}]")).unwrap(),
+      "0"
+    );
+    // Deep inside a square polygon: distance to the nearest edge, negated.
+    assert_eq!(
+      interpret(
+        "SignedRegionDistance[Polygon[{{0,0},{4,0},{4,4},{0,4}}], {1, 2}]"
+      )
+      .unwrap(),
+      "-1"
+    );
+  }
 }
 
 mod circumsphere {
