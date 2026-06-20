@@ -3368,6 +3368,33 @@ mod cases {
       r#"{{E^4, E^4}, {0, E^4}}"#,
     );
   }
+  // MatrixExp[m, v] computes the action MatrixExp[m].v on a vector.
+  #[test]
+  fn matrix_exp_on_vector() {
+    // Diagonal matrix: each component is scaled by Exp of its eigenvalue.
+    assert_case(r#"MatrixExp[{{1, 0}, {0, 2}}, {3, 5}]"#, r#"{3*E, 5*E^2}"#);
+    assert_case(r#"MatrixExp[{{2, 0}, {0, 3}}, {1, 1}]"#, r#"{E^2, E^3}"#);
+    // A nilpotent matrix gives an exact integer result.
+    assert_case(r#"MatrixExp[{{0, 1}, {0, 0}}, {1, 1}]"#, r#"{2, 1}"#);
+    // The zero matrix acts as the identity.
+    assert_case(r#"MatrixExp[{{0, 0}, {0, 0}}, {2, 3}]"#, r#"{2, 3}"#);
+  }
+  // A non-square first argument emits MatrixExp::matsq and stays unevaluated.
+  #[test]
+  fn matrix_exp_on_vector_nonsquare() {
+    assert_case(
+      r#"MatrixExp[{{1, 2, 3}}, {1, 2}]"#,
+      r#"MatrixExp[{{1, 2, 3}}, {1, 2}]"#,
+    );
+  }
+  // A non-vector second argument emits MatrixExp::vector and stays unevaluated.
+  #[test]
+  fn matrix_exp_on_vector_nonvector() {
+    assert_case(
+      r#"MatrixExp[{{1, 0}, {0, 2}}, {{1, 0}, {0, 1}}]"#,
+      r#"MatrixExp[{{1, 0}, {0, 2}}, {{1, 0}, {0, 1}}]"#,
+    );
+  }
   #[test]
   fn matrix_log_diagonal() {
     assert_case(

@@ -667,6 +667,48 @@ pub fn dispatch_linear_algebra_functions(
         "Exp",
       ));
     }
+    // MatrixExp[m, v] computes MatrixExp[m] . v (the action of the matrix
+    // exponential on the vector v), avoiding forming the full exponential
+    // when only its product with v is wanted. The second argument must be a
+    // nonempty vector (a flat list of scalars).
+    "MatrixExp" if args.len() == 2 => {
+      let is_vector = matches!(&args[1],
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|e| !matches!(e, Expr::List(_))));
+      if !is_vector {
+        crate::emit_message(&format!(
+          "MatrixExp::vector: Argument {} at position 2 is not a nonempty \
+           vector.",
+          crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "MatrixExp".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      let exp = match crate::functions::linear_algebra_ast::matrix_function_ast(
+        std::slice::from_ref(&args[0]),
+        "MatrixExp",
+        "Exp",
+      ) {
+        Ok(e) => e,
+        Err(e) => return Some(Err(e)),
+      };
+      // If the exponential could not be computed it stays a MatrixExp[...]
+      // call; surface the original two-argument form unevaluated.
+      if matches!(&exp, Expr::FunctionCall { name, .. } if name == "MatrixExp")
+      {
+        return Some(Ok(Expr::FunctionCall {
+          name: "MatrixExp".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      return Some(evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Dot".to_string(),
+        args: vec![exp, args[1].clone()].into(),
+      }));
+    }
     "MatrixLog" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::matrix_function_ast(
         args,
