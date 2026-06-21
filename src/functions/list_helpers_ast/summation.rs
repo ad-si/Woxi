@@ -417,6 +417,49 @@ fn body_is_one_minus_one_over_var_quartic(body: &Expr, var_name: &str) -> bool {
   false
 }
 
+/// If `body` is `var + a` — a sum of exactly one bare `var` factor (coefficient
+/// 1) and at least one term free of `var` — return the constant shift `a`.
+/// Higher-degree or scaled var terms (`var^2`, `2 var`) return None.
+fn linear_shift_of_var(body: &Expr, var_name: &str) -> Option<Expr> {
+  use crate::functions::calculus_ast::is_constant_wrt;
+  let terms: Vec<&Expr> = match body {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().collect()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return None,
+  };
+  let mut found_var = false;
+  let mut consts: Vec<Expr> = Vec::new();
+  for t in terms {
+    if matches!(t, Expr::Identifier(n) if n == var_name) {
+      if found_var {
+        return None;
+      }
+      found_var = true;
+    } else if is_constant_wrt(t, var_name) {
+      consts.push(t.clone());
+    } else {
+      return None;
+    }
+  }
+  if !found_var || consts.is_empty() {
+    return None;
+  }
+  Some(if consts.len() == 1 {
+    consts.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: consts.into(),
+    }
+  })
+}
+
 fn body_is_one_plus_one_over_var_squared(body: &Expr, var_name: &str) -> bool {
   use crate::syntax::BinaryOperator;
   let is_var_squared = |e: &Expr| -> bool {
@@ -673,6 +716,65 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   },
                 ]
                 .into(),
+              });
+            }
+          }
+
+          // Body is var + a (a free of var, a != 0):
+          //   Product[k + a, {k, 1, n}] = Pochhammer[1 + a, n].
+          // wolframscript prints this as the Gamma ratio Gamma[1+a+n]/Gamma[1+a]
+          // for a numeric shift (e.g. Gamma[2+n], Gamma[3+n]/2,
+          // (2 Gamma[3/2+n])/Sqrt[Pi]), but keeps Pochhammer for a symbolic
+          // shift.
+          if min_concrete == Some(1)
+            && max_concrete.is_none()
+            && !max_is_infinity
+            && let Some(a) = linear_shift_of_var(body, &var_name)
+          {
+            use crate::syntax::BinaryOperator;
+            let one_plus_a =
+              crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::Integer(1)),
+                right: Box::new(a.clone()),
+              })?;
+            let positive_number = match &one_plus_a {
+              Expr::Integer(p) => *p >= 1,
+              Expr::FunctionCall { name, args }
+                if name == "Rational" && args.len() == 2 =>
+              {
+                matches!((&args[0], &args[1]),
+                  (Expr::Integer(num), Expr::Integer(den))
+                    if *num > 0 && *den > 0)
+              }
+              _ => false,
+            };
+            if positive_number {
+              // Gamma[1 + a + n] / Gamma[1 + a]
+              let gamma = |arg: Expr| Expr::FunctionCall {
+                name: "Gamma".to_string(),
+                args: vec![arg].into(),
+              };
+              let result = Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(gamma(Expr::BinaryOp {
+                  op: BinaryOperator::Plus,
+                  left: Box::new(one_plus_a.clone()),
+                  right: Box::new(max_expr.clone()),
+                })),
+                right: Box::new(gamma(one_plus_a)),
+              };
+              return crate::evaluator::evaluate_expr_to_expr(&result);
+            }
+            // A genuinely symbolic shift keeps the Pochhammer form; a
+            // non-positive numeric shift falls through (unhandled edge).
+            let is_number = matches!(&one_plus_a, Expr::Integer(_))
+              || matches!(&one_plus_a,
+                Expr::FunctionCall { name, .. } if name == "Rational");
+            if !is_number {
+              return Ok(Expr::FunctionCall {
+                name: "Pochhammer".to_string(),
+                args: vec![one_plus_a, max_expr.clone()].into(),
               });
             }
           }

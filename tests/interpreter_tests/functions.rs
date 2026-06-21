@@ -1454,6 +1454,56 @@ mod product_extended {
     // Product[k, {k, 1, 6, 2}] = 1 * 3 * 5 = 15
     assert_eq!(interpret("Product[k, {k, 1, 6, 2}]").unwrap(), "15");
   }
+
+  // Product[k + a, {k, 1, n}] = Pochhammer[1 + a, n]. wolframscript prints the
+  // Gamma ratio Gamma[1+a+n]/Gamma[1+a] for a numeric shift and keeps
+  // Pochhammer for a symbolic shift.
+  #[test]
+  fn linear_shift_integer() {
+    assert_eq!(
+      interpret("Product[k + 1, {k, 1, n}]").unwrap(),
+      "Gamma[2 + n]"
+    );
+    assert_eq!(
+      interpret("Product[k + 2, {k, 1, n}]").unwrap(),
+      "Gamma[3 + n]/2"
+    );
+    assert_eq!(
+      interpret("Product[k + 3, {k, 1, n}]").unwrap(),
+      "Gamma[4 + n]/6"
+    );
+    // Order of the summands does not matter.
+    assert_eq!(
+      interpret("Product[1 + k, {k, 1, n}]").unwrap(),
+      "Gamma[2 + n]"
+    );
+  }
+
+  #[test]
+  fn linear_shift_rational() {
+    assert_eq!(
+      interpret("Product[k + 1/2, {k, 1, n}]").unwrap(),
+      "(2*Gamma[3/2 + n])/Sqrt[Pi]"
+    );
+    assert_eq!(
+      interpret("Product[k + 5/2, {k, 1, n}]").unwrap(),
+      "(8*Gamma[7/2 + n])/(15*Sqrt[Pi])"
+    );
+  }
+
+  #[test]
+  fn linear_shift_symbolic() {
+    assert_eq!(
+      interpret("Product[k + a, {k, 1, n}]").unwrap(),
+      "Pochhammer[1 + a, n]"
+    );
+  }
+
+  // The plain Product[k] factorial form is unchanged.
+  #[test]
+  fn bare_var_factorial() {
+    assert_eq!(interpret("Product[k, {k, 1, n}]").unwrap(), "n!");
+  }
 }
 
 mod real_sign {
