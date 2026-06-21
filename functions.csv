@@ -600,7 +600,7 @@ Nearest,Find the nearest elements in a list to a given value (numbers/vectors by
 RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6.0,603
 IntervalMemberQ,Tests if a point or sub-interval is contained in an interval,✅,pure,3.0,605
 Inactive,Wrapper to prevent evaluation,✅,none,10.0,606
-PowerMod,Computes modular exponentiation a^b mod m,✅,pure,1.0,607
+PowerMod,Computes modular exponentiation a^b mod m (b=1/2 gives the smallest modular square root),✅,pure,1.0,607
 Modulus,Option for modular arithmetic,✅,pure,1.0,608
 Break,Exits a loop,✅,pure,1.0,610
 Dataset,Wraps data with type information for structured data handling,✅,pure,10.0,610

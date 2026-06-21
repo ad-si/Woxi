@@ -3423,6 +3423,12 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PowerMod expects exactly 3 arguments".into(),
     ));
   }
+  // Modular square root: PowerMod[a, 1/2, m] returns the smallest
+  // nonnegative x with x^2 ≡ a (mod m), or an unevaluated result with a
+  // PowerMod::root message when no such x exists.
+  if is_rational_half(&args[1]) {
+    return power_mod_sqrt_ast(args);
+  }
   match (
     expr_to_bigint(&args[0]),
     expr_to_bigint(&args[1]),
@@ -3481,6 +3487,73 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     }),
   }
+}
+
+/// True if `expr` is the rational 1/2 (stored as Rational[1, 2]).
+fn is_rational_half(expr: &Expr) -> bool {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Rational"
+    && args.len() == 2
+  {
+    return expr_to_bigint(&args[0]) == Some(BigInt::from(1))
+      && expr_to_bigint(&args[1]) == Some(BigInt::from(2));
+  }
+  false
+}
+
+/// Largest modulus for which the modular square root is found by exhaustive
+/// search. Beyond this the call is left unevaluated to avoid long scans.
+const MOD_SQRT_BRUTE_LIMIT: u128 = 100_000_000;
+
+/// PowerMod[a, 1/2, m] - smallest nonnegative modular square root of a mod m.
+fn power_mod_sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use num_traits::{ToPrimitive, Zero};
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "PowerMod".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let (Some(a), Some(m)) = (expr_to_bigint(&args[0]), expr_to_bigint(&args[2]))
+  else {
+    return unevaluated();
+  };
+  if m.is_zero() {
+    crate::emit_message(&format!(
+      "PowerMod::divz: The argument 0 in PowerMod[{}, 1/2, 0] should be nonzero.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return unevaluated();
+  }
+  let m_abs = m.magnitude().clone();
+  let Some(m_u) = m_abs.to_u128() else {
+    return unevaluated();
+  };
+  if m_u > MOD_SQRT_BRUTE_LIMIT {
+    return unevaluated();
+  }
+  // Reduce a into [0, m).
+  let a_red = ((&a % &m) + &m) % &m;
+  let a_u = a_red.to_u128().unwrap_or(0);
+  for x in 0..m_u {
+    if mod_mul(x, x, m_u) == a_u {
+      return Ok(Expr::Integer(x as i128));
+    }
+  }
+  crate::emit_message(&format!(
+    "PowerMod::root: The equation x^2 = {} (mod {}) has no integer solutions.",
+    crate::syntax::expr_to_string(&args[0]),
+    crate::syntax::expr_to_string(&args[2])
+  ));
+  unevaluated()
+}
+
+/// (a * b) mod m using BigUint to avoid u128 overflow on large moduli.
+fn mod_mul(a: u128, b: u128, m: u128) -> u128 {
+  use num_bigint::BigUint;
+  use num_traits::ToPrimitive;
+  let prod = BigUint::from(a) * BigUint::from(b) % BigUint::from(m);
+  prod.to_u128().unwrap_or(0)
 }
 
 /// Binary exponentiation: base^exp mod modulus (all unsigned)

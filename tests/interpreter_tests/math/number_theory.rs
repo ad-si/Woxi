@@ -1107,6 +1107,44 @@ mod power_mod {
     // so 2^p ≡ 2 (mod p), meaning PowerMod[2, 2^127-1, 2^127-1] = 2
     assert_eq!(interpret("PowerMod[2, 2^127 - 1, 2^127 - 1]").unwrap(), "2");
   }
+
+  // PowerMod[a, 1/2, m] is the smallest nonnegative modular square root.
+  #[test]
+  fn sqrt_prime_modulus() {
+    assert_eq!(interpret("PowerMod[3, 1/2, 11]").unwrap(), "5");
+    assert_eq!(interpret("PowerMod[2, 1/2, 7]").unwrap(), "3");
+    assert_eq!(interpret("PowerMod[5, 1/2, 11]").unwrap(), "4");
+    assert_eq!(interpret("PowerMod[2, 1/2, 17]").unwrap(), "6");
+  }
+
+  #[test]
+  fn sqrt_composite_modulus() {
+    // 4 distinct roots {2, 5, 16, 19}; the smallest is returned.
+    assert_eq!(interpret("PowerMod[4, 1/2, 21]").unwrap(), "2");
+    assert_eq!(interpret("PowerMod[9, 1/2, 16]").unwrap(), "3");
+    assert_eq!(interpret("PowerMod[1, 1/2, 24]").unwrap(), "1");
+  }
+
+  #[test]
+  fn sqrt_reduces_base_mod_m() {
+    // 16 ≡ 2 (mod 7); -1 ≡ 4 (mod 5).
+    assert_eq!(interpret("PowerMod[16, 1/2, 7]").unwrap(), "3");
+    assert_eq!(interpret("PowerMod[-1, 1/2, 5]").unwrap(), "2");
+  }
+
+  #[test]
+  fn sqrt_base_zero() {
+    assert_eq!(interpret("PowerMod[0, 1/2, 12]").unwrap(), "0");
+  }
+
+  #[test]
+  fn sqrt_no_solution_stays_unevaluated() {
+    // 3 is a quadratic non-residue mod 7.
+    assert_eq!(
+      interpret("PowerMod[3, 1/2, 7]").unwrap(),
+      "PowerMod[3, 1/2, 7]"
+    );
+  }
 }
 
 mod prime_pi {
