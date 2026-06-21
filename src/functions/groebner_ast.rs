@@ -123,6 +123,135 @@ fn reduce(p: &Poly, basis: &[Poly]) -> Option<Poly> {
   }
 }
 
+/// Render a `Poly` (lex order, leading term first) back to an `Expr`, then
+/// evaluate it so the result is canonicalized like wolframscript.
+fn poly_to_expr(p: &Poly, vars: &[String]) -> Expr {
+  use crate::syntax::BinaryOperator;
+  if p.is_empty() {
+    return Expr::Integer(0);
+  }
+  let mut terms: Vec<Expr> = Vec::new();
+  for (key, &(n, d)) in p.iter() {
+    let mono = &key.0;
+    let mut factors: Vec<Expr> = Vec::new();
+    for (j, &e) in mono.iter().enumerate() {
+      if e == 1 {
+        factors.push(Expr::Identifier(vars[j].clone()));
+      } else if e > 1 {
+        factors.push(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Identifier(vars[j].clone())),
+          right: Box::new(Expr::Integer(e as i128)),
+        });
+      }
+    }
+    let coeff = if d == 1 {
+      Expr::Integer(n)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
+      }
+    };
+    let term = if factors.is_empty() {
+      coeff
+    } else {
+      let mono_expr = factors
+        .into_iter()
+        .reduce(|a, b| Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(a),
+          right: Box::new(b),
+        })
+        .unwrap();
+      if n == 1 && d == 1 {
+        mono_expr
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(coeff),
+          right: Box::new(mono_expr),
+        }
+      }
+    };
+    terms.push(term);
+  }
+  let sum = terms
+    .into_iter()
+    .reduce(|a, b| Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(a),
+      right: Box::new(b),
+    })
+    .unwrap();
+  crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
+}
+
+/// PolynomialReduce[poly, {g1, …, gk}, {x1, …, xn}] — multivariate division in
+/// lexicographic order. Returns `{{q1, …, qk}, r}` such that
+/// `poly = q1 g1 + … + qk gk + r`. Returns None (so the caller stays
+/// unevaluated) for non-polynomial input or coefficients that aren't rational
+/// in the given variables (e.g. a divisor free of all the variables).
+pub fn polynomial_reduce_multivar(
+  dividend: &Expr,
+  divisors: &[Expr],
+  vars: &[String],
+) -> Option<Expr> {
+  if vars.is_empty() || vars.len() > 6 {
+    return None;
+  }
+  let expand = |e: &Expr| -> Expr {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![e.clone()].into(),
+    })
+    .unwrap_or_else(|_| e.clone())
+  };
+
+  let mut p = expr_to_poly(&expand(dividend), vars)?;
+  let mut div_polys: Vec<Poly> = Vec::with_capacity(divisors.len());
+  for d in divisors {
+    div_polys.push(expr_to_poly(&expand(d), vars)?);
+  }
+  let k = div_polys.len();
+  let mut quotients: Vec<Poly> = vec![Poly::new(); k];
+  let mut remainder = Poly::new();
+
+  let mut guard = 0usize;
+  while let Some((lm_p, lc_p)) = leading(&p).map(|(m, c)| (m.clone(), c)) {
+    guard += 1;
+    if guard > 100_000 {
+      return None;
+    }
+    let mut reduced = false;
+    for i in 0..k {
+      let Some((lm_i, lc_i)) =
+        leading(&div_polys[i]).map(|(m, c)| (m.clone(), c))
+      else {
+        continue;
+      };
+      if mono_divides(&lm_i, &lm_p) {
+        let factor = f_div(lc_p, lc_i)?;
+        let shift = mono_div(&lm_p, &lm_i);
+        poly_add_term(&mut quotients[i], shift.clone(), factor)?;
+        p = poly_sub_scaled(&p, &div_polys[i], factor, &shift)?;
+        reduced = true;
+        break;
+      }
+    }
+    if !reduced {
+      // The leading term is divisible by no divisor: move it to the remainder.
+      poly_add_term(&mut remainder, lm_p.clone(), lc_p)?;
+      poly_add_term(&mut p, lm_p, f_neg(lc_p)?)?;
+    }
+  }
+
+  let q_exprs: Vec<Expr> =
+    quotients.iter().map(|q| poly_to_expr(q, vars)).collect();
+  let r_expr = poly_to_expr(&remainder, vars);
+  Some(Expr::List(vec![Expr::List(q_exprs.into()), r_expr].into()))
+}
+
 fn s_poly(a: &Poly, b: &Poly) -> Option<Poly> {
   let (lma, lca) = leading(a)?;
   let (lmb, lcb) = leading(b)?;

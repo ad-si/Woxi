@@ -94,6 +94,28 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => items.to_vec(),
     _ => return unevaluated(),
   };
+  // Multivariate form: {x1, x2, …} with two or more variables uses
+  // lexicographic multivariate division (via the Gröbner machinery).
+  if let Expr::List(vs) = &args[2]
+    && vs.len() >= 2
+  {
+    let mut vars = Vec::with_capacity(vs.len());
+    for v in vs {
+      match v {
+        Expr::Identifier(name) => vars.push(name.clone()),
+        _ => return unevaluated(),
+      }
+    }
+    return Ok(
+      crate::functions::groebner_ast::polynomial_reduce_multivar(
+        &args[0], &divisors, &vars,
+      )
+      .unwrap_or_else(|| Expr::FunctionCall {
+        name: "PolynomialReduce".to_string(),
+        args: args.to_vec().into(),
+      }),
+    );
+  }
   let var = match &args[2] {
     Expr::Identifier(v) => v.clone(),
     Expr::List(vs) if vs.len() == 1 => match &vs[0] {

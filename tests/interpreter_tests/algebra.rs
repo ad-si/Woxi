@@ -4242,6 +4242,48 @@ mod polynomial_reduce {
       "{{-1 + x}, 2}"
     );
   }
+
+  // Multivariate division (lexicographic order over the given variables).
+  #[test]
+  fn multivariate_single_divisor() {
+    assert_eq!(
+      interpret("PolynomialReduce[x^2 + y^2, {x - y}, {x, y}]").unwrap(),
+      "{{x + y}, 2*y^2}"
+    );
+    assert_eq!(
+      interpret("PolynomialReduce[x^3 + y^3, {x + y}, {x, y}]").unwrap(),
+      "{{x^2 - x*y + y^2}, 0}"
+    );
+  }
+
+  #[test]
+  fn multivariate_two_divisors() {
+    assert_eq!(
+      interpret("PolynomialReduce[x^2 + y^2, {x + y, x - y}, {x, y}]").unwrap(),
+      "{{x - y, 0}, 2*y^2}"
+    );
+    assert_eq!(
+      interpret("PolynomialReduce[x^2 y^2, {x^2 - y, x y - 1}, {x, y}]")
+        .unwrap(),
+      "{{y^2, 0}, y^3}"
+    );
+  }
+
+  #[test]
+  fn multivariate_rational_coefficient_quotient() {
+    assert_eq!(
+      interpret("PolynomialReduce[2 x^2, {3 x}, {x, y}]").unwrap(),
+      "{{(2*x)/3}, 0}"
+    );
+  }
+
+  #[test]
+  fn multivariate_nonzero_remainder() {
+    assert_eq!(
+      interpret("PolynomialReduce[x^2 y + x y^2, {x y - 1}, {x, y}]").unwrap(),
+      "{{x + y}, x + y}"
+    );
+  }
 }
 
 mod solve_expression_target {
