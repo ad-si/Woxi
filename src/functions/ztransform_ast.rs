@@ -46,6 +46,41 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(divide(num, plus(vec![Expr::Integer(-1), z.clone()])));
   }
 
+  // UnitStep[n] = 1 for n >= 0, so Z{UnitStep[n]} = z/(-1 + z).
+  if matches!(&args[0], Expr::FunctionCall { name, args: fargs }
+    if name == "UnitStep" && fargs.len() == 1
+      && matches!(&fargs[0], Expr::Identifier(v) if *v == n_var))
+  {
+    return Ok(divide(z.clone(), plus(vec![Expr::Integer(-1), z.clone()])));
+  }
+
+  // Sin[a n] and Cos[a n] with a free of n and z:
+  //   Z{Sin[a n]} = (z Sin[a]) / (1 + z^2 - 2 z Cos[a])
+  //   Z{Cos[a n]} = (z (z - Cos[a])) / (1 + z^2 - 2 z Cos[a])
+  if let Expr::FunctionCall { name, args: fargs } = &args[0]
+    && (name == "Sin" || name == "Cos")
+    && fargs.len() == 1
+    && let Some(a) = linear_coeff_in_n(&fargs[0], &n_var)
+    && is_constant_wrt(&a, &z_var)
+  {
+    let cos_a = func("Cos", a.clone());
+    // 1 + z^2 - 2 z Cos[a]
+    let den = plus(vec![
+      Expr::Integer(1),
+      power(z.clone(), 2),
+      times(vec![Expr::Integer(-2), z.clone(), cos_a.clone()]),
+    ]);
+    let num = if name == "Sin" {
+      times(vec![z.clone(), func("Sin", a)])
+    } else {
+      times(vec![
+        z.clone(),
+        plus(vec![z.clone(), times(vec![Expr::Integer(-1), cos_a])]),
+      ])
+    };
+    return Ok(divide(num, den));
+  }
+
   // Decompose the product into c * n^k * a^n (* 1/n!)
   let mut parts = TermParts::default();
   if !collect_factors(&args[0], &n_var, false, &mut parts) {
@@ -401,6 +436,41 @@ fn negate(e: Expr) -> Expr {
     op: crate::syntax::UnaryOperator::Minus,
     operand: Box::new(e),
   }
+}
+
+fn func(name: &str, arg: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![arg].into(),
+  }
+}
+
+/// If `arg` is exactly `a * n` — degree one in `n` with no constant term and
+/// `a` free of `n` — return `a` (a plain `n` gives `a = 1`). Phase-shifted or
+/// higher-degree arguments return None.
+fn linear_coeff_in_n(arg: &Expr, n_var: &str) -> Option<Expr> {
+  if matches!(arg, Expr::Identifier(v) if v == n_var) {
+    return Some(Expr::Integer(1));
+  }
+  let mut n_count = 0;
+  let mut rest: Vec<Expr> = Vec::new();
+  for f in times_factors(arg) {
+    if matches!(&f, Expr::Identifier(v) if v == n_var) {
+      n_count += 1;
+    } else if is_constant_wrt(&f, n_var) {
+      rest.push(f);
+    } else {
+      return None;
+    }
+  }
+  if n_count != 1 {
+    return None;
+  }
+  Some(match rest.len() {
+    0 => Expr::Integer(1),
+    1 => rest.remove(0),
+    _ => times(rest),
+  })
 }
 
 // ─── InverseZTransform ───────────────────────────────────────────────

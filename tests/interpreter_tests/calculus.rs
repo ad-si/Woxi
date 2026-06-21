@@ -9362,11 +9362,53 @@ mod z_transform {
     assert_eq!(interpret("ZTransform[3^n/n!, n, z]").unwrap(), "E^(3/z)");
   }
 
+  // Z{Sin[a n]} = (z Sin[a])/(1 + z^2 - 2 z Cos[a]),
+  // Z{Cos[a n]} = (z (z - Cos[a]))/(1 + z^2 - 2 z Cos[a]).
   #[test]
-  fn unsupported_forms_stay_unevaluated() {
+  fn trig_z_transforms() {
     assert_eq!(
       interpret("ZTransform[Sin[n], n, z]").unwrap(),
-      "ZTransform[Sin[n], n, z]"
+      "(z*Sin[1])/(1 + z^2 - 2*z*Cos[1])"
+    );
+    assert_eq!(
+      interpret("ZTransform[Cos[n], n, z]").unwrap(),
+      "(z*(z - Cos[1]))/(1 + z^2 - 2*z*Cos[1])"
+    );
+    assert_eq!(
+      interpret("ZTransform[Sin[a n], n, z]").unwrap(),
+      "(z*Sin[a])/(1 + z^2 - 2*z*Cos[a])"
+    );
+    assert_eq!(
+      interpret("ZTransform[Cos[a n], n, z]").unwrap(),
+      "(z*(z - Cos[a]))/(1 + z^2 - 2*z*Cos[a])"
+    );
+    // Numeric and fractional coefficients.
+    assert_eq!(
+      interpret("ZTransform[Sin[2 n], n, z]").unwrap(),
+      "(z*Sin[2])/(1 + z^2 - 2*z*Cos[2])"
+    );
+    assert_eq!(
+      interpret("ZTransform[Sin[n/2], n, z]").unwrap(),
+      "(z*Sin[1/2])/(1 + z^2 - 2*z*Cos[1/2])"
+    );
+  }
+
+  // UnitStep[n] = 1 for n >= 0, so its Z-transform is z/(z - 1).
+  #[test]
+  fn unit_step_z_transform() {
+    assert_eq!(
+      interpret("ZTransform[UnitStep[n], n, z]").unwrap(),
+      "z/(-1 + z)"
+    );
+  }
+
+  #[test]
+  fn unsupported_forms_stay_unevaluated() {
+    // Sin[n^2] is not a linear a*n argument, so (like wolframscript) there is
+    // no closed form. (Sin[a*n] IS supported — see trig_z_transforms below.)
+    assert_eq!(
+      interpret("ZTransform[Sin[n^2], n, z]").unwrap(),
+      "ZTransform[Sin[n^2], n, z]"
     );
     assert_eq!(
       interpret("ZTransform[n^2 + n + 1, n, z]").unwrap(),
