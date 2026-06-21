@@ -9975,6 +9975,57 @@ mod infinite_log_series {
   }
 }
 
+// Arithmetico-geometric series Sum[k^p r^k, {k, 1, Infinity}] = PolyLog[-p, r],
+// folded to a number for an exact numeric ratio r with |r| < 1.
+mod infinite_arith_geometric {
+  use super::*;
+
+  #[test]
+  fn first_order() {
+    // k/2^k (division form) and k (1/2)^k (explicit ratio) both = 2.
+    assert_eq!(interpret("Sum[k/2^k, {k, 1, Infinity}]").unwrap(), "2");
+    assert_eq!(interpret("Sum[k (1/2)^k, {k, 1, Infinity}]").unwrap(), "2");
+    assert_eq!(
+      interpret("Sum[k (1/3)^k, {k, 1, Infinity}]").unwrap(),
+      "3/4"
+    );
+  }
+
+  #[test]
+  fn higher_order() {
+    assert_eq!(interpret("Sum[k^2/3^k, {k, 1, Infinity}]").unwrap(), "3/2");
+    assert_eq!(interpret("Sum[k^3/2^k, {k, 1, Infinity}]").unwrap(), "26");
+  }
+
+  #[test]
+  fn negative_ratio() {
+    assert_eq!(
+      interpret("Sum[k (-1/2)^k, {k, 1, Infinity}]").unwrap(),
+      "-2/9"
+    );
+  }
+
+  // The lower bound 0 just adds the (zero) k=0 term.
+  #[test]
+  fn from_zero() {
+    assert_eq!(interpret("Sum[k/2^k, {k, 0, Infinity}]").unwrap(), "2");
+  }
+
+  // A symbolic ratio diverges from wolframscript's display form, and a
+  // divergent ratio (|r| >= 1) has no value — both stay unevaluated.
+  #[test]
+  fn symbolic_and_divergent_unevaluated() {
+    assert_eq!(
+      interpret("Sum[k x^k, {k, 1, Infinity}]").unwrap(),
+      "Sum[k*x^k, {k, 1, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Sum[k 2^k, {k, 1, Infinity}]").unwrap(),
+      "Sum[k*2^k, {k, 1, Infinity}]"
+    );
+  }
+}
+
 mod sum_convergence {
   use super::*;
 

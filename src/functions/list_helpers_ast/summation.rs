@@ -2151,6 +2151,132 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   Some((coeff, base.clone()))
 }
 
+/// Match an arithmetico-geometric body `var^p * r^var`, returning `(p, r)`
+/// where `p >= 1` is the polynomial degree and `r` the geometric ratio.
+/// The ratio factor may appear as `r^var`, `r^(-var)`, or `(r^var)^(-1)`
+/// (the last from a `k/r^k` division). Other factors reject the match.
+/// Used for Sum[k^p r^k, {k, 1, Infinity}] = PolyLog[-p, r].
+fn match_arith_geometric(body: &Expr, var_name: &str) -> Option<(i128, Expr)> {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+
+  fn collect(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        collect(right, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        out.push(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: right.clone(),
+          right: Box::new(Expr::Integer(-1)),
+        });
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          collect(a, out);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  fn as_power(f: &Expr) -> Option<(&Expr, &Expr)> {
+    match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((&args[0], &args[1]))
+      }
+      _ => None,
+    }
+  }
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var_name);
+  let is_neg_var = |e: &Expr| -> bool {
+    matches!(e, Expr::UnaryOp { op: UnaryOperator::Minus, operand }
+      if matches!(operand.as_ref(), Expr::Identifier(n) if n == var_name))
+      || matches!(e, Expr::BinaryOp { op: BinaryOperator::Times, left, right }
+        if matches!(left.as_ref(), Expr::Integer(-1))
+          && matches!(right.as_ref(), Expr::Identifier(n) if n == var_name))
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() == 2
+          && matches!(&args[0], Expr::Integer(-1))
+          && matches!(&args[1], Expr::Identifier(n) if n == var_name))
+  };
+  let recip = |e: &Expr| -> Expr {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(e.clone()),
+      right: Box::new(Expr::Integer(-1)),
+    })
+    .unwrap_or_else(|_| e.clone())
+  };
+  let is_const =
+    |e: &Expr| crate::functions::calculus_ast::is_constant_wrt(e, var_name);
+
+  let mut factors = Vec::new();
+  collect(body, &mut factors);
+
+  let mut p: Option<i128> = None;
+  let mut r: Option<Expr> = None;
+  for f in &factors {
+    if is_var(f) {
+      if p.is_some() {
+        return None;
+      }
+      p = Some(1);
+      continue;
+    }
+    if let Some((base, exp)) = as_power(f) {
+      // var^p  (p a positive integer)
+      if is_var(base)
+        && let Expr::Integer(pp) = exp
+        && *pp >= 1
+        && p.is_none()
+      {
+        p = Some(*pp);
+        continue;
+      }
+      // ratio factor → r
+      let ratio = if is_var(exp) && is_const(base) {
+        Some(base.clone())
+      } else if is_neg_var(exp) && is_const(base) {
+        Some(recip(base))
+      } else if matches!(exp, Expr::Integer(-1))
+        && let Some((inner_base, inner_exp)) = as_power(base)
+        && is_var(inner_exp)
+        && is_const(inner_base)
+      {
+        Some(recip(inner_base))
+      } else {
+        None
+      };
+      if let Some(ratio) = ratio {
+        if r.is_some() {
+          return None;
+        }
+        r = Some(ratio);
+        continue;
+      }
+    }
+    return None;
+  }
+  Some((p?, r?))
+}
+
 /// Match a logarithmic-series body `coeff * base^var / var`, i.e. a geometric
 /// term over the first power of the summation variable. Returns `(coeff, base)`
 /// with `base` the product of all `base^var` factors. Used for the Mercator
@@ -2702,6 +2828,30 @@ fn try_infinite_sum(
       args: vec![Expr::Integer(-1), coeff, log_term].into(),
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
+  }
+
+  // Arithmetico-geometric series Sum[k^p r^k, {k, 1, Infinity}] =
+  // PolyLog[-p, r], for an exact numeric ratio r with |r| < 1 (it folds to a
+  // number). A symbolic ratio is left unevaluated: wolframscript renders its
+  // result with the (-1 + x) denominator that Woxi's PolyLog does not.
+  if min == 1
+    && let Some((p, r)) = match_arith_geometric(body, var_name)
+  {
+    // Canonicalize the ratio (e.g. Divide[1, 3] -> Rational[1, 3]) so the
+    // exact-numeric test below recognizes it.
+    let r = crate::evaluator::evaluate_expr_to_expr(&r)?;
+    let is_exact = matches!(&r, Expr::Integer(_))
+      || matches!(&r, Expr::FunctionCall { name, .. } if name == "Rational");
+    if is_exact
+      && let Some(rf) = crate::functions::math_ast::try_eval_to_f64(&r)
+      && rf.abs() < 1.0
+    {
+      let result = Expr::FunctionCall {
+        name: "PolyLog".to_string(),
+        args: vec![Expr::Integer(-p), r].into(),
+      };
+      return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+    }
   }
 
   // Try Leibniz formula: Sum[(-1)^k / (2k+1), {k, 0, Infinity}] = Pi/4
