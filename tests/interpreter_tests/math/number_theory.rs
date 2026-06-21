@@ -412,6 +412,38 @@ mod integer_exponent {
   fn zero_gives_infinity() {
     assert_eq!(interpret("IntegerExponent[0, 2]").unwrap(), "Infinity");
   }
+
+  // A base that is not an integer greater than 1 emits IntegerExponent::ibase
+  // and stays unevaluated (matching wolframscript).
+  #[test]
+  fn invalid_base_stays_unevaluated() {
+    assert_eq!(
+      interpret("IntegerExponent[12, 1]").unwrap(),
+      "IntegerExponent[12, 1]"
+    );
+    assert_eq!(
+      interpret("IntegerExponent[12, 0]").unwrap(),
+      "IntegerExponent[12, 0]"
+    );
+    assert_eq!(
+      interpret("IntegerExponent[12, -2]").unwrap(),
+      "IntegerExponent[12, -2]"
+    );
+    assert_eq!(
+      interpret("IntegerExponent[12, 3/2]").unwrap(),
+      "IntegerExponent[12, 3/2]"
+    );
+  }
+
+  // The invalid-base check runs before the n == 0 short-circuit, so this is
+  // ibase rather than Infinity.
+  #[test]
+  fn invalid_base_beats_zero() {
+    assert_eq!(
+      interpret("IntegerExponent[0, 1]").unwrap(),
+      "IntegerExponent[0, 1]"
+    );
+  }
 }
 
 mod integer_length {

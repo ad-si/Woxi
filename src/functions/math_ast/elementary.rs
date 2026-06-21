@@ -2494,6 +2494,14 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Emit the IntegerExponent::ibase message for an invalid base `b`.
+fn emit_integer_exponent_ibase(b: &Expr) {
+  crate::emit_message(&format!(
+    "IntegerExponent::ibase: Base {} is not an integer greater than 1.",
+    crate::syntax::format_expr(b, crate::syntax::ExprForm::Output)
+  ));
+}
+
 /// IntegerExponent[n, b] - largest power of b that divides n
 /// IntegerExponent[n] - largest power of 2 that divides n
 pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2521,7 +2529,9 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[1] {
       Expr::Integer(b) => BigInt::from(*b),
       Expr::BigInteger(b) => b.clone(),
+      // A non-integer base is invalid: emit IntegerExponent::ibase.
       _ => {
+        emit_integer_exponent_ibase(&args[1]);
         return Ok(Expr::FunctionCall {
           name: "IntegerExponent".to_string(),
           args: args.to_vec().into(),
@@ -2532,14 +2542,20 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     BigInt::from(10) // default base is 10 in Wolfram
   };
 
-  if n.is_zero() {
-    return Ok(Expr::Identifier("Infinity".to_string()));
-  }
-  if base <= BigInt::from(1) {
+  // The base must be an integer greater than 1. This is validated before the
+  // n == 0 short-circuit, so IntegerExponent[0, 1] emits ibase rather than
+  // returning Infinity (matching wolframscript). Only an explicit base can be
+  // invalid; the default base 10 is always valid.
+  if args.len() == 2 && base <= BigInt::from(1) {
+    emit_integer_exponent_ibase(&args[1]);
     return Ok(Expr::FunctionCall {
       name: "IntegerExponent".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  if n.is_zero() {
+    return Ok(Expr::Identifier("Infinity".to_string()));
   }
 
   let mut count: i128 = 0;
