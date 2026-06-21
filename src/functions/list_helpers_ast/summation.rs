@@ -780,8 +780,11 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
 
           // Body is c^var: Product[c^i, {i, 1, n}] = c^(n*(1+n)/2)
+          // (the closed forms below assume a finite upper limit; an infinite
+          // limit must fall through to stay unevaluated like wolframscript).
           if let Some(1) = min_concrete
             && max_concrete.is_none()
+            && !max_is_infinity
             && let Expr::BinaryOp {
               op: crate::syntax::BinaryOperator::Power,
               left: base,

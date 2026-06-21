@@ -1504,6 +1504,36 @@ mod product_extended {
   fn bare_var_factorial() {
     assert_eq!(interpret("Product[k, {k, 1, n}]").unwrap(), "n!");
   }
+
+  // Product[c^i, {i, 1, n}] = c^(n*(1+n)/2) for a finite upper limit.
+  #[test]
+  fn power_body_finite() {
+    assert_eq!(interpret("Product[r^n, {n, 1, 10}]").unwrap(), "r^55");
+    assert_eq!(
+      interpret("Product[c^i, {i, 1, m}]").unwrap(),
+      "c^((m*(1 + m))/2)"
+    );
+    assert_eq!(interpret("Product[2^n, {n, 1, 5}]").unwrap(), "32768");
+  }
+
+  // An infinite upper limit must not plug Infinity into the finite closed
+  // form (which produced garbage like r^((Infinity*(1 + Infinity))/2));
+  // wolframscript leaves these products unevaluated.
+  #[test]
+  fn power_body_infinite_unevaluated() {
+    assert_eq!(
+      interpret("Product[r^n, {n, 1, Infinity}]").unwrap(),
+      "Product[r^n, {n, 1, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Product[2^n, {n, 1, Infinity}]").unwrap(),
+      "Product[2^n, {n, 1, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Product[n^2, {n, 1, Infinity}]").unwrap(),
+      "Product[n^2, {n, 1, Infinity}]"
+    );
+  }
 }
 
 mod real_sign {
