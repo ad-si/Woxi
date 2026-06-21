@@ -609,7 +609,7 @@ ReleaseHold,Removes Hold wrappers from an expression,✅,pure,2.0,612
 BesselK,Modified Bessel function of the second kind,✅,pure,1.0,613
 ScriptSizeMultipliers,Option for subscript and superscript sizing,✅,none,3.0,614
 Split,Splits list at boundaries where consecutive elements differ,✅,pure,3.0,615
-GCD,Returns the greatest common divisor of integers and rationals,✅,pure,1.0,616
+GCD,Returns the greatest common divisor of integers and rationals (and Gaussian integers),✅,pure,1.0,616
 RegularExpression,Represents a regular expression pattern for string matching,✅,pure,5.1,617
 GeoPosition,Geographic position specification,✅,none,7.0,618
 BaselinePosition,Option for baseline alignment,✅,none,6.0,619
@@ -642,7 +642,7 @@ StandardDeviation,Returns the standard deviation of a list or an association's v
 MaxIterations,Option for maximum iterations,✅,pure,1.0,646
 GroupBy,Groups elements of a list by a criterion,✅,pure,10.0,647
 Nothing,Element that disappears from lists,✅,pure,10.2,648
-Quotient,Returns the integer quotient of division,✅,pure,1.0,649
+Quotient,Returns the integer quotient of division (Gaussian quotient Round[m/n] for complex integers),✅,pure,1.0,649
 FindInstance,finds instances of variables that satisfy constraints,✅,pure,5.0,650
 EntityClass,Represent a class of entities,✅,none,10.0,651
 DefaultLabelStyle,Default style for labels,✅,none,7.0,653

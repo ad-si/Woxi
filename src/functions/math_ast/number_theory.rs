@@ -43,9 +43,103 @@ fn emit_gcd_lcm_exact_message(name: &str, args: &[Expr]) {
   }
 }
 
+/// Round p/d (d > 0) to the nearest integer, breaking ties to even (matching
+/// wolframscript's Round). Used for Gaussian-integer division.
+fn round_half_even_div(p: i128, d: i128) -> i128 {
+  let q = p.div_euclid(d);
+  let r = p.rem_euclid(d); // 0 <= r < d
+  let twice = 2 * r;
+  if twice < d {
+    q
+  } else if twice > d {
+    q + 1
+  } else if q % 2 == 0 {
+    q
+  } else {
+    q + 1
+  }
+}
+
+/// Remainder of the Gaussian division a / b (a, b as (re, im) integer pairs):
+/// r = a - b*Round[a/b], with the quotient rounded component-wise. `b` must be
+/// nonzero.
+fn gaussian_rem(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  let (ar, ai) = a;
+  let (br, bi) = b;
+  let denom = br * br + bi * bi;
+  // a * conj(b) = (ar*br + ai*bi) + (ai*br - ar*bi) i
+  let q_re = round_half_even_div(ar * br + ai * bi, denom);
+  let q_im = round_half_even_div(ai * br - ar * bi, denom);
+  // b*q = (br*q_re - bi*q_im) + (br*q_im + bi*q_re) i
+  (ar - (br * q_re - bi * q_im), ai - (br * q_im + bi * q_re))
+}
+
+/// Normalise a nonzero Gaussian integer to its canonical associate with
+/// Re > 0 and Im >= 0 (multiplying by a unit 1, i, -1, or -i), matching
+/// wolframscript's GCD representative. `(0, 0)` maps to itself.
+fn gaussian_normalize(mut g: (i128, i128)) -> (i128, i128) {
+  if g == (0, 0) {
+    return g;
+  }
+  for _ in 0..4 {
+    let (re, im) = g;
+    if re > 0 && im >= 0 {
+      return g;
+    }
+    g = (-im, re); // multiply by i
+  }
+  g
+}
+
+/// GCD of two Gaussian integers via the Euclidean algorithm over Z[i].
+fn gaussian_gcd(mut a: (i128, i128), mut b: (i128, i128)) -> (i128, i128) {
+  while b != (0, 0) {
+    let r = gaussian_rem(a, b);
+    a = b;
+    b = r;
+  }
+  gaussian_normalize(a)
+}
+
+/// Extract a Gaussian integer (re, im) from an expression, or None if it is not
+/// an exact complex number with integer real and imaginary parts.
+fn expr_to_gaussian_int(expr: &Expr) -> Option<(i128, i128)> {
+  let ((rn, rd), (in_, id)) =
+    crate::functions::math_ast::try_extract_complex_exact(expr)?;
+  if rd == 1 && id == 1 {
+    Some((rn, in_))
+  } else {
+    None
+  }
+}
+
 pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
+  }
+
+  // Gaussian-integer GCD: when at least one argument is a complex (Gaussian)
+  // integer, run the Euclidean algorithm over Z[i] and return the canonical
+  // associate (Re > 0, Im >= 0), e.g. GCD[7 + 3 I, 2] = 1 + I.
+  if let Some(gs) = args
+    .iter()
+    .map(expr_to_gaussian_int)
+    .collect::<Option<Vec<_>>>()
+    && gs.iter().any(|(_, im)| *im != 0)
+  {
+    let mut g = (0i128, 0i128);
+    for &z in &gs {
+      g = gaussian_gcd(g, z);
+    }
+    let (re, im) = g;
+    if im == 0 {
+      return Ok(Expr::Integer(re));
+    }
+    let complex = Expr::FunctionCall {
+      name: "Complex".to_string(),
+      args: vec![Expr::Integer(re), Expr::Integer(im)].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&complex);
   }
 
   // Convert each arg to (numerator, denominator); bail out for non-numeric.

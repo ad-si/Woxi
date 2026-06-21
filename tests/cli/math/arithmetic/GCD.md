@@ -88,3 +88,13 @@ The GCD of 21 and 14 is 7.
 $ wo 'GCD[21, 14]'
 7
 ```
+
+
+### `GCD[7 + 3 I, 2]`
+
+GCD also works over the Gaussian integers, returning the canonical associate.
+
+```scrut
+$ wo 'GCD[7 + 3 I, 2]'
+1 + I
+```

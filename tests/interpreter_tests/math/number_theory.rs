@@ -1586,6 +1586,18 @@ mod gcd {
     assert_eq!(interpret("GCD[x, 5]").unwrap(), "GCD[5, x]");
   }
 
+  // GCD of Gaussian integers via the Euclidean algorithm over Z[i], returning
+  // the canonical associate (Re > 0, Im >= 0).
+  #[test]
+  fn gaussian_integers() {
+    assert_eq!(interpret("GCD[7 + 3 I, 2]").unwrap(), "1 + I");
+    assert_eq!(interpret("GCD[5 + 3 I, 2 - 8 I]").unwrap(), "1 + I");
+    assert_eq!(interpret("GCD[1 + 2 I, 1 - 2 I]").unwrap(), "1");
+    assert_eq!(interpret("GCD[2 + 2 I, 4]").unwrap(), "2 + 2*I");
+    assert_eq!(interpret("GCD[3 + 4 I, 5]").unwrap(), "2 + I");
+    assert_eq!(interpret("GCD[4 + 2 I, 6 + 4 I]").unwrap(), "2");
+  }
+
   #[test]
   fn rationals() {
     // GCD[a/b, c/d] = GCD[a, c] / LCM[b, d]

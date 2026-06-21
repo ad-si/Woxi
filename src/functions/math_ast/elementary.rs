@@ -2386,29 +2386,30 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           Ok(Expr::Integer((a / b).floor() as i128))
         }
-      } else if let (Some((a_re, a_im)), Some((c_re, c_im))) = (
+      } else if let (Some((_, a_im)), Some((c_re, c_im))) = (
         crate::functions::math_ast::try_extract_complex_float(&args[0]),
         crate::functions::math_ast::try_extract_complex_float(&args[1]),
       ) && (a_im != 0.0 || c_im != 0.0)
       {
-        // Gaussian quotient: z/w = (z conj(w)) / |w|^2, then round each
-        // component to nearest integer.
-        let denom = c_re * c_re + c_im * c_im;
-        if denom == 0.0 {
+        if c_re == 0.0 && c_im == 0.0 {
           return Err(InterpreterError::EvaluationError(
             "Quotient: division by zero".into(),
           ));
         }
-        let q_re = ((a_re * c_re + a_im * c_im) / denom).round() as i128;
-        let q_im = ((a_im * c_re - a_re * c_im) / denom).round() as i128;
-        if q_im == 0 {
-          Ok(Expr::Integer(q_re))
-        } else {
-          Ok(Expr::FunctionCall {
-            name: "Complex".to_string(),
-            args: vec![Expr::Integer(q_re), Expr::Integer(q_im)].into(),
-          })
-        }
+        // Gaussian quotient = Round[z/w], rounding the complex quotient
+        // component-wise (round-half-to-even). This matches wolframscript and
+        // the identity Mod[m, n] = m - n*Quotient[m, n]. Building the symbolic
+        // Round and evaluating it also normalises the display to `a + b*I`.
+        let quotient = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(args[0].clone()),
+          right: Box::new(args[1].clone()),
+        };
+        let round_quot = Expr::FunctionCall {
+          name: "Round".to_string(),
+          args: vec![quotient].into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&round_quot)
       } else {
         Ok(Expr::FunctionCall {
           name: "Quotient".to_string(),

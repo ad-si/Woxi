@@ -1463,6 +1463,29 @@ mod exact_value_returns {
     assert_eq!(interpret("QuotientRemainder[23, -7]").unwrap(), "{-4, -5}");
   }
 
+  // Gaussian Quotient = Round[m/n] (component-wise round-half-to-even); the
+  // result displays as `a + b*I`, not a raw Complex[...] literal.
+  #[test]
+  fn quotient_gaussian_integer() {
+    assert_eq!(interpret("Quotient[7 + 3 I, 2]").unwrap(), "4 + 2*I");
+    assert_eq!(interpret("Quotient[1 + I, 2]").unwrap(), "0");
+    assert_eq!(interpret("Quotient[3 + I, 2]").unwrap(), "2");
+    assert_eq!(interpret("Quotient[1 + 6 I, 2 + I]").unwrap(), "2 + 2*I");
+    assert_eq!(interpret("Quotient[5, 2 + I]").unwrap(), "2 - I");
+  }
+
+  #[test]
+  fn quotient_remainder_gaussian() {
+    assert_eq!(
+      interpret("QuotientRemainder[7 + 3 I, 2]").unwrap(),
+      "{4 + 2*I, -1 - I}"
+    );
+    assert_eq!(
+      interpret("QuotientRemainder[1 + I, 2]").unwrap(),
+      "{0, 1 + I}"
+    );
+  }
+
   #[test]
   fn quotient_with_offset_positive() {
     // Quotient[n, m, d] = Floor[(n - d) / m]
