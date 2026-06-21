@@ -895,6 +895,36 @@ mod xor_logical {
   }
 }
 
+mod nand_nor_logical {
+  use super::*;
+
+  // Nand[...] = Not[And[...]]: True is the And identity (absorbed), any False
+  // short-circuits to True, and a lone surviving operand collapses to !x.
+  #[test]
+  fn nand_constants() {
+    clear_state();
+    assert_eq!(interpret("Nand[a, True]").unwrap(), " !a");
+    assert_eq!(interpret("Nand[a, True, True]").unwrap(), " !a");
+    assert_eq!(interpret("Nand[a, b, True]").unwrap(), "Nand[a, b]");
+    assert_eq!(interpret("Nand[a, b, False, c]").unwrap(), "True");
+    assert_eq!(interpret("Nand[True, True, True]").unwrap(), "False");
+    // Idempotent duplicates are NOT removed (Nand is not Orderless/idempotent).
+    assert_eq!(interpret("Nand[a, a, b]").unwrap(), "Nand[a, a, b]");
+  }
+
+  // Nor[...] = Not[Or[...]]: False is the Or identity (absorbed), any True
+  // short-circuits to False, and a lone surviving operand collapses to !x.
+  #[test]
+  fn nor_constants() {
+    clear_state();
+    assert_eq!(interpret("Nor[a, False]").unwrap(), " !a");
+    assert_eq!(interpret("Nor[a, b, False]").unwrap(), "Nor[a, b]");
+    assert_eq!(interpret("Nor[a, b, True, c]").unwrap(), "False");
+    assert_eq!(interpret("Nor[a]").unwrap(), " !a");
+    assert_eq!(interpret("Nor[a, b]").unwrap(), "Nor[a, b]");
+  }
+}
+
 mod boolean_convert_dnf {
   use super::*;
 

@@ -1014,15 +1014,16 @@ pub fn nand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => remaining.push(evaluated),
     }
   }
-  if remaining.is_empty() {
-    // All were True → Nand is False
-    Ok(Expr::Identifier("False".to_string()))
-  } else {
+  match remaining.len() {
+    // All were True → Nand is Not[And[]] = Not[True] = False.
+    0 => Ok(Expr::Identifier("False".to_string())),
+    // A lone surviving operand collapses to its negation: Nand[a, True] -> !a.
+    1 => not_ast(&[remaining.into_iter().next().unwrap()]),
     // Some symbolic: Nand[remaining...]
-    Ok(Expr::FunctionCall {
+    _ => Ok(Expr::FunctionCall {
       name: "Nand".to_string(),
       args: remaining.into(),
-    })
+    }),
   }
 }
 
@@ -1047,15 +1048,16 @@ pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => remaining.push(evaluated),
     }
   }
-  if remaining.is_empty() {
-    // All were False → Nor is True
-    Ok(Expr::Identifier("True".to_string()))
-  } else {
+  match remaining.len() {
+    // All were False → Nor is Not[Or[]] = Not[False] = True.
+    0 => Ok(Expr::Identifier("True".to_string())),
+    // A lone surviving operand collapses to its negation: Nor[a, False] -> !a.
+    1 => not_ast(&[remaining.into_iter().next().unwrap()]),
     // Some symbolic: Nor[remaining...]
-    Ok(Expr::FunctionCall {
+    _ => Ok(Expr::FunctionCall {
       name: "Nor".to_string(),
       args: remaining.into(),
-    })
+    }),
   }
 }
 
