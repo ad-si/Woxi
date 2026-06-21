@@ -612,9 +612,18 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "HypergeometricDistribution"
     ) =>
     {
-      let (mean, _) =
-        super::distributions::distribution_mean_variance_pub(dist_name, dargs)?;
-      crate::evaluator::evaluate_expr_to_expr(&mean)
+      // Invalid parameters (e.g. BenktanderGibratDistribution[1, 2]) emit a
+      // message and leave the call unevaluated, matching wolframscript;
+      // they must not surface as an evaluation error.
+      match super::distributions::distribution_mean_variance_pub(
+        dist_name, dargs,
+      ) {
+        Ok((mean, _)) => crate::evaluator::evaluate_expr_to_expr(&mean),
+        Err(_) => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
     }
     Expr::FunctionCall {
       name: dist_name,
@@ -866,9 +875,17 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "ZipfDistribution"
     ) =>
     {
-      let (_, variance) =
-        super::distributions::distribution_mean_variance_pub(dist_name, dargs)?;
-      crate::evaluator::evaluate_expr_to_expr(&variance)
+      // Invalid parameters emit a message and leave the call unevaluated
+      // (matching wolframscript), never an evaluation error.
+      match super::distributions::distribution_mean_variance_pub(
+        dist_name, dargs,
+      ) {
+        Ok((_, variance)) => crate::evaluator::evaluate_expr_to_expr(&variance),
+        Err(_) => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
     }
     Expr::FunctionCall {
       name: dist_name,

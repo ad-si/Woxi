@@ -3077,6 +3077,20 @@ mod benktander_gibrat_distribution {
       "PDF[BenktanderGibratDistribution[1, 2], x]"
     );
   }
+
+  // Invalid parameters must leave Mean/Variance unevaluated (after the
+  // ::lsseq message), like PDF — not surface as an evaluation error.
+  #[test]
+  fn mean_variance_invalid_params_unevaluated() {
+    assert_eq!(
+      interpret("Mean[BenktanderGibratDistribution[1, 2]]").unwrap(),
+      "Mean[BenktanderGibratDistribution[1, 2]]"
+    );
+    assert_eq!(
+      interpret("Variance[BenktanderGibratDistribution[1, 2]]").unwrap(),
+      "Variance[BenktanderGibratDistribution[1, 2]]"
+    );
+  }
 }
 
 mod gumbel_distribution {
