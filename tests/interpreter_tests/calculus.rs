@@ -4654,6 +4654,23 @@ mod dsolve {
     );
   }
 
+  // Regression: a separable nonlinear ODE whose right-hand side is a PRODUCT
+  // of an x-factor and a nonlinear y-factor (e.g. x*y[x]^2) used to be
+  // misclassified — the x*y^2 term was treated as a y-free forcing term and
+  // "integrated", yielding the bogus circular C[1] + Integrate[x*y[x]^2, x].
+  // It must instead stay unevaluated, like the bare y[x]^2 case.
+  #[test]
+  fn separable_nonlinear_product_stays_unevaluated() {
+    assert_eq!(
+      interpret("DSolve[y'[x] == x y[x]^2, y[x], x]").unwrap(),
+      "DSolve[Derivative[1][y][x] == x*y[x]^2, y[x], x]"
+    );
+    assert_eq!(
+      interpret("DSolve[y'[x] == x^2 y[x]^2, y[x], x]").unwrap(),
+      "DSolve[Derivative[1][y][x] == x^2*y[x]^2, y[x], x]"
+    );
+  }
+
   // Initial conditions pin the constant: the ODE must not be misread as an
   // initial condition (its point is the variable x, not a number).
   #[test]

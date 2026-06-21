@@ -846,9 +846,12 @@ fn classify_product_term(
       }
     };
   } else {
-    // No y factor — forcing term
-    order = -1;
-    coefficient = if factors.len() == 1 {
+    // No recognized linear y factor. The product is only a forcing term if it
+    // is genuinely free of y; otherwise it depends on y nonlinearly (e.g.
+    // x*y[x]^2) and the linear solver cannot handle it — bail out so DSolve
+    // returns unevaluated rather than fabricating a circular
+    // `C[1] + Integrate[x*y[x]^2, x]` "solution". Mirrors classify_single_term.
+    let product = if factors.len() == 1 {
       factors[0].clone()
     } else {
       Expr::FunctionCall {
@@ -856,6 +859,14 @@ fn classify_product_term(
         args: factors.to_vec().into(),
       }
     };
+    if !is_free_of_y(&product, y_name) {
+      return Err(InterpreterError::EvaluationError(format!(
+        "DSolve: cannot classify term involving {}",
+        y_name
+      )));
+    }
+    order = -1;
+    coefficient = product;
   }
 
   let coeff = if negated {
