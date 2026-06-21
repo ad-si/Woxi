@@ -87,6 +87,29 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_numer: 1852,
       to_si_denom: 1,
     },
+    // 1 ly = c (m/s) × Julian year (s) = 299792458 × 31557600 m (exact).
+    "LightYears" => UnitInfo {
+      dimensions: dims(&[(Length, 1)]),
+      to_si_numer: 9460730472580800,
+      to_si_denom: 1,
+    },
+    // IAU 2012 definition.
+    "AstronomicalUnit" => UnitInfo {
+      dimensions: dims(&[(Length, 1)]),
+      to_si_numer: 149597870700,
+      to_si_denom: 1,
+    },
+    "Angstroms" => UnitInfo {
+      dimensions: dims(&[(Length, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 10000000000,
+    },
+    // 1 furlong = 1/8 mile = 201168/1000 m = 25146/125 m.
+    "Furlongs" => UnitInfo {
+      dimensions: dims(&[(Length, 1)]),
+      to_si_numer: 25146,
+      to_si_denom: 125,
+    },
 
     // ── Mass → Kilograms ─────────────────────────────────────────────
     "Kilograms" => UnitInfo {
@@ -851,6 +874,10 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       })
     }
     Expr::Identifier(name) | Expr::String(name) => {
+      // Normalize spelling/case variants (e.g. "Lightyears", "Lightyear") to
+      // the canonical unit name before resolving.
+      let name_canonical = unit_alias(name).to_string();
+      let name = &name_canonical;
       // Try direct unit lookup
       if let Some(info) = get_unit_info(name) {
         return Some(CompoundUnitInfo {
@@ -1308,6 +1335,17 @@ fn units_equal(u1: &Expr, u2: &Expr) -> bool {
   crate::syntax::expr_to_string(u1) == crate::syntax::expr_to_string(u2)
 }
 
+/// Normalize input spelling/case variants to the canonical unit-table key.
+/// (Singular/plural for units that only differ by a trailing "s" — Angstrom,
+/// Furlong — is already handled by normalize_singular_to_plural.)
+fn unit_alias(name: &str) -> &str {
+  match name {
+    "Lightyears" | "Lightyear" | "LightYear" => "LightYears",
+    "AstronomicalUnits" => "AstronomicalUnit",
+    _ => name,
+  }
+}
+
 /// Map unit aliases to their canonical Wolfram names.
 fn canonical_unit_name(name: &str) -> &str {
   match name {
@@ -1374,7 +1412,7 @@ fn normalize_singular_to_plural(name: &str) -> String {
 fn normalize_unit_for_output(mut unit: Expr) -> Expr {
   match &mut unit {
     Expr::String(s) => {
-      let s = s.clone();
+      let s = unit_alias(s).to_string();
       if let Some(compound) = format_expand_compound_unit(&s) {
         compound
       } else if get_unit_info(&s).is_some() {
@@ -1423,7 +1461,7 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
       }
     }
     Expr::Identifier(s) => {
-      let s = s.clone();
+      let s = unit_alias(s).to_string();
       if let Some(compound) = format_expand_compound_unit(&s) {
         return compound;
       }
@@ -1458,7 +1496,7 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
 fn normalize_unit(mut unit: Expr) -> Expr {
   match &mut unit {
     Expr::String(s) => {
-      let s = s.clone();
+      let s = unit_alias(s).to_string();
       // Temperature scales canonicalize to their Wolfram output spelling:
       // "Celsius" -> "DegreesCelsius", "Fahrenheit" -> "DegreesFahrenheit",
       // "Kelvin" -> "Kelvins". Done before the general unit lookup because

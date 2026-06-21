@@ -571,6 +571,58 @@ fn unit_convert_km_to_m() {
   );
 }
 
+// Astronomical / less-common length units, with exact SI definitions.
+#[test]
+fn lightyears_to_meters() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Lightyears\"], \"Meters\"]").unwrap(),
+    "Quantity[9460730472580800, Meters]"
+  );
+}
+
+#[test]
+fn astronomical_unit_to_meters() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"AstronomicalUnit\"], \"Meters\"]")
+      .unwrap(),
+    "Quantity[149597870700, Meters]"
+  );
+}
+
+#[test]
+fn angstroms_to_meters() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Angstroms\"], \"Meters\"]").unwrap(),
+    "Quantity[1/10000000000, Meters]"
+  );
+}
+
+#[test]
+fn furlongs_to_miles() {
+  // 8 furlongs == 1 mile.
+  assert_eq!(
+    interpret("UnitConvert[Quantity[8, \"Furlongs\"], \"Miles\"]").unwrap(),
+    "Quantity[1, Miles]"
+  );
+}
+
+// Input spelling/case variants canonicalize to the Wolfram display name.
+#[test]
+fn new_units_display_canonical_name() {
+  assert_eq!(
+    interpret("Quantity[1, \"Lightyear\"]").unwrap(),
+    "Quantity[1, LightYears]"
+  );
+  assert_eq!(
+    interpret("Quantity[1, \"Angstrom\"]").unwrap(),
+    "Quantity[1, Angstroms]"
+  );
+  assert_eq!(
+    interpret("Quantity[2, \"Furlong\"]").unwrap(),
+    "Quantity[2, Furlongs]"
+  );
+}
+
 // One-argument UnitConvert converts to SI base units. Volume is Length^3, so
 // the SI base of a volume unit is Meters^3 (not Liters).
 #[test]
