@@ -2090,26 +2090,87 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
       other => out.push(other.clone()),
     }
   }
-  // Is `f` exactly `base^var` (var only as the exponent)? Returns the base.
-  fn power_base<'a>(f: &'a Expr, var_name: &str) -> Option<&'a Expr> {
+  // Coefficient `c` if `exp` is exactly `c * var` (c free of var), else None.
+  // Recognizes `var` (c = 1), `2 var`, `var/3`, etc.
+  fn linear_var_coeff(exp: &Expr, var_name: &str) -> Option<Expr> {
+    fn collect_times(e: &Expr, out: &mut Vec<Expr>) {
+      match e {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          right,
+        } => {
+          collect_times(left, out);
+          collect_times(right, out);
+        }
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          for a in args.iter() {
+            collect_times(a, out);
+          }
+        }
+        other => out.push(other.clone()),
+      }
+    }
+    let mut factors = Vec::new();
+    collect_times(exp, &mut factors);
+    let mut var_seen = 0;
+    let mut consts: Vec<Expr> = Vec::new();
+    for f in &factors {
+      if matches!(f, Expr::Identifier(n) if n == var_name) {
+        var_seen += 1;
+      } else if crate::functions::calculus_ast::is_constant_wrt(f, var_name) {
+        consts.push(f.clone());
+      } else {
+        return None;
+      }
+    }
+    if var_seen != 1 {
+      return None;
+    }
+    Some(match consts.len() {
+      0 => Expr::Integer(1),
+      1 => consts.into_iter().next().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: consts.into(),
+      },
+    })
+  }
+  // Returns the effective geometric base of `f` if `f == base^(c*var)` with
+  // `base` free of `var`: the base is `base^c`, evaluated so that e.g.
+  // `2^(2 var)` reduces to base `4` (which the numeric path then handles).
+  let power_base = |f: &Expr| -> Option<Expr> {
     let (base, exp) = match f {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
         left,
         right,
-      } => (left.as_ref(), right.as_ref()),
+      } => (left.as_ref().clone(), right.as_ref().clone()),
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        (&args[0], &args[1])
+        (args[0].clone(), args[1].clone())
       }
       _ => return None,
     };
-    match exp {
-      Expr::Identifier(n) if n == var_name => Some(base),
-      _ => None,
+    let coeff = linear_var_coeff(&exp, var_name)?;
+    if matches!(&coeff, Expr::Integer(1)) {
+      return Some(base);
     }
-  }
+    // Only an integer exponent coefficient (e.g. the 2 in x^(2 var)) keeps the
+    // closed form matching wolframscript; a symbolic coefficient like the k in
+    // a^(k var) yields an equivalent but differently-canonicalized result, so
+    // leave those for the general path.
+    if !matches!(&coeff, Expr::Integer(_) | Expr::BigInteger(_)) {
+      return None;
+    }
+    let eff = Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base),
+      right: Box::new(coeff),
+    };
+    Some(crate::evaluator::evaluate_expr_to_expr(&eff).unwrap_or(eff))
+  };
   let is_plain_number = |e: &Expr| -> bool {
     matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
       || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
@@ -2118,11 +2179,11 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   let mut factors = Vec::new();
   collect(body, &mut factors);
 
-  let mut base: Option<&Expr> = None;
+  let mut base: Option<Expr> = None;
   let mut coeff_factors: Vec<Expr> = Vec::new();
   for f in &factors {
     if base.is_none()
-      && let Some(b) = power_base(f, var_name)
+      && let Some(b) = power_base(f)
     {
       base = Some(b);
       continue;
@@ -2137,8 +2198,8 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   let base = base?;
   // The base must be free of the variable and genuinely symbolic; a numeric
   // base needs the existing convergence-aware handlers instead.
-  if !crate::functions::calculus_ast::is_constant_wrt(base, var_name)
-    || is_plain_number(base)
+  if !crate::functions::calculus_ast::is_constant_wrt(&base, var_name)
+    || is_plain_number(&base)
   {
     return None;
   }
@@ -2151,7 +2212,7 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
       args: coeff_factors.into(),
     },
   };
-  Some((coeff, base.clone()))
+  Some((coeff, base))
 }
 
 /// Match an arithmetico-geometric body `var^p * r^var`, returning `(p, r)`

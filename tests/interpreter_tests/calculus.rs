@@ -10120,6 +10120,42 @@ mod infinite_geometric_from_one {
   }
 }
 
+// Geometric series whose term has an integer-multiple exponent:
+// Sum[x^(c n), {n, 0, Infinity}] = 1/(1 - x^c) (ratio x^c, symbolic base).
+mod infinite_geometric_exponent_multiple {
+  use super::*;
+
+  #[test]
+  fn square_and_cube() {
+    assert_eq!(
+      interpret("Sum[x^(2 n), {n, 0, Infinity}]").unwrap(),
+      "(1 - x^2)^(-1)"
+    );
+    assert_eq!(
+      interpret("Sum[x^(3 n), {n, 0, Infinity}]").unwrap(),
+      "(1 - x^3)^(-1)"
+    );
+  }
+
+  #[test]
+  fn with_coefficient() {
+    assert_eq!(
+      interpret("Sum[3 x^(2 n), {n, 0, Infinity}]").unwrap(),
+      "3/(1 - x^2)"
+    );
+  }
+
+  // A symbolic exponent coefficient (a^(k n)) is canonicalized differently by
+  // wolframscript, so it stays unevaluated rather than diverging in form.
+  #[test]
+  fn symbolic_exponent_coefficient_unevaluated() {
+    assert_eq!(
+      interpret("Sum[a^(k n), {n, 0, Infinity}]").unwrap(),
+      "Sum[a^(k*n), {n, 0, Infinity}]"
+    );
+  }
+}
+
 // Arithmetico-geometric series Sum[k^p r^k, {k, 1, Infinity}] = PolyLog[-p, r],
 // folded to a number for an exact numeric ratio r with |r| < 1.
 mod infinite_arith_geometric {
