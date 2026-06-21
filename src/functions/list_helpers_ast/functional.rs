@@ -352,6 +352,28 @@ pub fn fold_list_ast(
 /// `SequenceFoldList[f, {x1,…,xn}, {a1,…}, k]` instead feeds `f` the last n
 /// history values plus a sliding window of `k - n` a-values (the window
 /// advances by one each step). The default `k` is `n + 1` (window size 1).
+/// SequenceFold / SequenceFoldList require their 2nd (initial values) and 3rd
+/// (sequence) arguments to be lists. A non-list emits `fname::invl` naming the
+/// offending argument and the call stays unevaluated. Returns the unevaluated
+/// form if invalid, else None. The 2nd argument is checked before the 3rd.
+fn sequence_fold_invl(fname: &str, args: &[Expr]) -> Option<Expr> {
+  for idx in [1usize, 2] {
+    if let Some(arg) = args.get(idx)
+      && !matches!(arg, Expr::List(_))
+    {
+      crate::emit_message(&format!(
+        "{fname}::invl: The argument {} is not a list.",
+        crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output)
+      ));
+      return Some(Expr::FunctionCall {
+        name: fname.to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  }
+  None
+}
+
 pub fn sequence_fold_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -361,6 +383,9 @@ pub fn sequence_fold_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if args.len() < 3 || args.len() > 4 {
     return unevaluated();
+  }
+  if let Some(uneval) = sequence_fold_invl("SequenceFoldList", args) {
+    return Ok(uneval);
   }
   let func = &args[0];
   let (Expr::List(x_init), Expr::List(a_items)) = (&args[1], &args[2]) else {
@@ -396,6 +421,13 @@ pub fn sequence_fold_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// AST-based SequenceFold: the last element of the SequenceFoldList history.
 pub fn sequence_fold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Validate under the SequenceFold name first, so the invl message names this
+  // function rather than the internal SequenceFoldList delegate.
+  if (3..=4).contains(&args.len())
+    && let Some(uneval) = sequence_fold_invl("SequenceFold", args)
+  {
+    return Ok(uneval);
+  }
   match sequence_fold_list_ast(args)? {
     Expr::List(ref items) if !items.is_empty() => {
       Ok(items.last().cloned().unwrap())

@@ -5364,6 +5364,24 @@ mod sequence_fold {
       "{0, 1, 2, 5, 10}"
     );
   }
+
+  // A non-list 2nd or 3rd argument emits ::invl (under the calling function's
+  // own name) and stays unevaluated, matching wolframscript.
+  #[test]
+  fn non_list_argument_stays_unevaluated() {
+    assert_eq!(
+      interpret("SequenceFold[f, x, {1, 2, 3}]").unwrap(),
+      "SequenceFold[f, x, {1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret("SequenceFold[f, {x, y}, 5]").unwrap(),
+      "SequenceFold[f, {x, y}, 5]"
+    );
+    assert_eq!(
+      interpret("SequenceFoldList[f, x, {1, 2, 3}]").unwrap(),
+      "SequenceFoldList[f, x, {1, 2, 3}]"
+    );
+  }
 }
 
 mod split_with_test {
