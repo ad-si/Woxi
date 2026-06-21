@@ -39,6 +39,20 @@ fn bool_ident(b: bool) -> Expr {
   Expr::Identifier(if b { "True" } else { "False" }.to_string())
 }
 
+/// True for an argument that is a concrete non-list value Differences must
+/// reject with ::listrp — any NumericQ atom (numbers, I, Pi, Sin[2], …) plus
+/// strings, associations, and the booleans True/False. Lists, bare symbols,
+/// and unknown function heads return false (they are processed or left to
+/// evaluate further).
+fn differences_invalid_atom(e: &Expr) -> bool {
+  match e {
+    Expr::List(_) => false,
+    Expr::String(_) | Expr::Association(_) => true,
+    Expr::Identifier(s) if s == "True" || s == "False" => true,
+    _ => crate::functions::predicate_ast::is_numeric_q_pub(e),
+  }
+}
+
 fn parse_nest_while_m(expr: &Expr) -> Option<list_helpers_ast::NestWhileM> {
   match expr {
     Expr::Identifier(s) if s == "All" => {
@@ -2795,6 +2809,25 @@ pub fn dispatch_list_operations(
     "AnglePath" => {
       return Some(list_helpers_ast::angle_path_ast(args));
     }
+    // A concrete non-list argument (a number, string, association, boolean,
+    // or any NumericQ atom such as Pi or Sin[2]) can never be differenced:
+    // emit Differences::listrp and stay unevaluated, matching wolframscript.
+    // Bare symbols and unknown function heads are left alone (they may still
+    // acquire a list value), so they fall through to the arms below.
+    "Differences"
+      if (1..=3).contains(&args.len())
+        && differences_invalid_atom(&args[0]) =>
+    {
+      let call = Expr::FunctionCall {
+        name: "Differences".to_string(),
+        args: args.to_vec().into(),
+      };
+      crate::emit_message(&format!(
+        "Differences::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
+        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+      ));
+      return Some(Ok(call));
+    }
     "Differences" if args.len() == 1 => {
       return Some(list_helpers_ast::differences_ast(&args[0]));
     }
@@ -2808,6 +2841,24 @@ pub fn dispatch_list_operations(
           .map(|e| expr_to_i128(e).map(|n| n as usize))
           .collect();
         if let Some(spec) = spec {
+          // A multi-level spec deeper than the array emits ::depth, mirroring
+          // wolframscript, rather than recursing into scalar elements.
+          let depth = array_depth(&args[0]);
+          if spec.len() > depth {
+            let call = Expr::FunctionCall {
+              name: "Differences".to_string(),
+              args: args.to_vec().into(),
+            };
+            crate::emit_message(&format!(
+              "Differences::depth: Requested differences {} exceeds the array depth, {}, of the input.",
+              crate::syntax::format_expr(
+                &args[1],
+                crate::syntax::ExprForm::Output
+              ),
+              depth
+            ));
+            return Some(Ok(call));
+          }
           return Some(list_helpers_ast::differences_spec_ast(&args[0], &spec));
         }
       }

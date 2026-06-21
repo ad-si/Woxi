@@ -7735,6 +7735,53 @@ mod join_non_list {
   }
 
   #[test]
+  fn differences_non_list_atom_emits_listrp() {
+    // Concrete non-list arguments (numbers, strings, associations, NumericQ
+    // atoms, booleans) cannot be differenced: stay unevaluated (with the
+    // Differences::listrp message). (wolframscript parity)
+    assert_eq!(interpret("Differences[5]").unwrap(), "Differences[5]");
+    assert_eq!(interpret("Differences[2.5]").unwrap(), "Differences[2.5]");
+    assert_eq!(interpret("Differences[Pi]").unwrap(), "Differences[Pi]");
+    assert_eq!(interpret("Differences[True]").unwrap(), "Differences[True]");
+    assert_eq!(
+      interpret("Differences[Sin[2]]").unwrap(),
+      "Differences[Sin[2]]"
+    );
+    assert_eq!(
+      interpret("Differences[<|a -> 1, b -> 3|>]").unwrap(),
+      "Differences[<|a -> 1, b -> 3|>]"
+    );
+    // The two-argument form reports the whole call.
+    assert_eq!(interpret("Differences[5, 2]").unwrap(), "Differences[5, 2]");
+  }
+
+  #[test]
+  fn differences_bare_symbol_and_unknown_head_stay_quiet() {
+    // A symbol or unknown function head may still become a list, so no
+    // listrp is emitted — the call just stays unevaluated.
+    assert_eq!(interpret("Differences[x]").unwrap(), "Differences[x]");
+    assert_eq!(
+      interpret("Differences[foo[1]]").unwrap(),
+      "Differences[foo[1]]"
+    );
+  }
+
+  #[test]
+  fn differences_spec_deeper_than_array_emits_depth() {
+    // A multi-level spec deeper than the array depth emits Differences::depth
+    // and stays unevaluated instead of recursing into scalar elements.
+    assert_eq!(
+      interpret("Differences[{1, 2, 3}, {1, 1}]").unwrap(),
+      "Differences[{1, 2, 3}, {1, 1}]"
+    );
+    // A spec within the array depth still computes.
+    assert_eq!(
+      interpret("Differences[{{1, 2, 3}, {4, 8, 15}}, {1, 1}]").unwrap(),
+      "{{3, 6}}"
+    );
+  }
+
+  #[test]
   fn clip_three_args() {
     assert_eq!(interpret("Clip[0.5, {0, 1}, {-1, 1}]").unwrap(), "0.5");
     assert_eq!(interpret("Clip[-0.5, {0, 1}, {-1, 1}]").unwrap(), "-1");
