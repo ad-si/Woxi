@@ -5301,5 +5301,50 @@ mod high_level_functions_tests {
       assert!((value + 3.513_905).abs() < 1e-4, "value {value}");
       assert!((vals[0] - 1.300_84).abs() < 1e-3, "x {}", vals[0]);
     }
+
+    #[test]
+    fn test_equality_sphere_three_vars() {
+      // Minimize x+y+z on the unit sphere x^2+y^2+z^2==1. The coupling
+      // equality constraint forces the penalty optimizer; the minimum is
+      // -Sqrt[3] at x=y=z=-1/Sqrt[3]. Regression for a convergence bug that
+      // returned a feasible-but-suboptimal -1.685.
+      let out =
+        interpret("NMinimize[{x + y + z, x^2 + y^2 + z^2 == 1}, {x, y, z}]")
+          .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value + 3.0_f64.sqrt()).abs() < 1e-3, "value {value}");
+      for v in &vals {
+        assert!((v + 1.0 / 3.0_f64.sqrt()).abs() < 1e-2, "var {v}");
+      }
+    }
+
+    #[test]
+    fn test_rosenbrock_box() {
+      // The Rosenbrock function has a curved valley; coordinate-wise descent
+      // stalls partway, so a simplex polish is needed to reach the minimum 0
+      // at (1, 1). Regression for the optimizer stalling at ~3.9e-4.
+      let out = interpret(
+        "NMinimize[{100 (y - x^2)^2 + (1 - x)^2, -2 <= x <= 2 && -2 <= y <= 2}, {x, y}]",
+      )
+      .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!(value.abs() < 1e-6, "value {value}");
+      assert!((vals[0] - 1.0).abs() < 1e-3, "x {}", vals[0]);
+      assert!((vals[1] - 1.0).abs() < 1e-3, "y {}", vals[1]);
+    }
+
+    #[test]
+    fn test_equality_linear_sum() {
+      // wolframscript: {3., {x1 -> 1., x2 -> 1., x3 -> 1.}}
+      let out = interpret(
+        "NMinimize[{x1^2 + x2^2 + x3^2, x1 + x2 + x3 == 3}, {x1, x2, x3}]",
+      )
+      .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value - 3.0).abs() < 1e-3, "value {value}");
+      for v in &vals {
+        assert!((v - 1.0).abs() < 1e-2, "var {v}");
+      }
+    }
   }
 }

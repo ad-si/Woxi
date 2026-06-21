@@ -7794,8 +7794,28 @@ pub fn nminimize_ast(
     return Ok(nminimize_infeasible_result(&constraints, &vars, maximize));
   }
 
-  // Evaluate expression at a given point
+  // Evaluate expression at a given point. The objective and its gradients are
+  // each evaluated thousands of times during sampling and refinement, so the
+  // first time a given expression is seen we compile it into a fast numeric
+  // closure (keyed by its address, which is stable for the borrowed
+  // `objective`/`grads[i]`) and reuse that. Expressions the compiler can't
+  // handle — or points where the compiled form is non-finite (e.g. a fractional
+  // power of a negative base) — fall back to the full AST evaluator.
+  let compiled_cache: std::cell::RefCell<
+    std::collections::HashMap<*const Expr, Option<NumNode>>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
   let eval_at = |expr: &Expr, point: &[f64]| -> Result<f64, InterpreterError> {
+    let key = expr as *const Expr;
+    if !compiled_cache.borrow().contains_key(&key) {
+      let compiled = compile_numeric(expr, &vars);
+      compiled_cache.borrow_mut().insert(key, compiled);
+    }
+    if let Some(node) = compiled_cache.borrow().get(&key).unwrap() {
+      let v = node.eval(point);
+      if v.is_finite() {
+        return Ok(v);
+      }
+    }
     let mut e = expr.clone();
     for (i, var) in vars.iter().enumerate() {
       e = crate::syntax::substitute_variable(&e, var, &Expr::Real(point[i]));
@@ -8049,6 +8069,33 @@ pub fn nminimize_ast(
     }
   }
 
+  // Nelder–Mead polish. Coordinate-wise gradient descent / golden section
+  // stalls in curved valleys (e.g. Rosenbrock), where coordinated multi-
+  // dimensional steps are needed. A simplex polish over the box follows such
+  // valleys to the true optimum. Evaluations are compiled, so this is cheap.
+  if n >= 2 {
+    let sign_p = if maximize { -1.0 } else { 1.0 };
+    let polish_obj = |p: &[f64]| -> f64 {
+      // Reject points outside the box so the simplex respects the bounds.
+      for i in 0..n {
+        if p[i] < bounds[i].0 || p[i] > bounds[i].1 {
+          return f64::INFINITY;
+        }
+      }
+      match eval_at(&objective, p) {
+        Ok(v) if v.is_finite() => sign_p * v,
+        _ => f64::INFINITY,
+      }
+    };
+    let cur = eval_at(&objective, &x)
+      .map(|v| sign_p * v)
+      .unwrap_or(f64::INFINITY);
+    let polished = nelder_mead_min(&polish_obj, &x, 0.05, n);
+    if polish_obj(&polished) < cur {
+      x = polished;
+    }
+  }
+
   // Compute final value
   let opt_val = eval_at(&objective, &x)?;
 
@@ -8106,6 +8153,188 @@ pub fn nminimize_ast(
   Ok(Expr::List(
     vec![Expr::Real(opt_val), Expr::List(rules.into())].into(),
   ))
+}
+
+/// A compiled numeric expression tree over the optimization variables.
+///
+/// Optimizers evaluate the objective and constraints thousands of times per
+/// run. Re-cloning and re-evaluating the full `Expr` AST at every point is
+/// orders of magnitude too slow to afford a thorough search. Compiling the
+/// arithmetic once into this closed enum makes each evaluation a few hundred
+/// floating-point ops, so many restarts / iterations stay cheap. Anything the
+/// compiler doesn't recognise yields `None`, and the caller falls back to the
+/// slow AST path.
+enum NumNode {
+  Const(f64),
+  Var(usize),
+  Neg(Box<NumNode>),
+  Add(Vec<NumNode>),
+  Mul(Vec<NumNode>),
+  Sub(Box<NumNode>, Box<NumNode>),
+  Div(Box<NumNode>, Box<NumNode>),
+  Pow(Box<NumNode>, Box<NumNode>),
+  Unary(fn(f64) -> f64, Box<NumNode>),
+  Binary(fn(f64, f64) -> f64, Box<NumNode>, Box<NumNode>),
+}
+
+impl NumNode {
+  fn eval(&self, point: &[f64]) -> f64 {
+    match self {
+      NumNode::Const(c) => *c,
+      NumNode::Var(i) => point[*i],
+      NumNode::Neg(a) => -a.eval(point),
+      NumNode::Add(xs) => xs.iter().map(|x| x.eval(point)).sum(),
+      NumNode::Mul(xs) => xs.iter().map(|x| x.eval(point)).product(),
+      NumNode::Sub(a, b) => a.eval(point) - b.eval(point),
+      NumNode::Div(a, b) => a.eval(point) / b.eval(point),
+      NumNode::Pow(a, b) => {
+        let base = a.eval(point);
+        let exp = b.eval(point);
+        // Integer exponents via powi keep `(-x)^2` real instead of NaN.
+        if exp.fract() == 0.0 && exp.abs() < 1e9 {
+          base.powi(exp as i32)
+        } else {
+          base.powf(exp)
+        }
+      }
+      NumNode::Unary(f, a) => f(a.eval(point)),
+      NumNode::Binary(f, a, b) => f(a.eval(point), b.eval(point)),
+    }
+  }
+}
+
+/// Compile an `Expr` over `vars` into a fast numeric closure tree, or `None`
+/// if it contains anything not handled here (forcing the slow AST fallback).
+fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
+  let c = |e: &Expr| compile_numeric(e, vars);
+  match expr {
+    Expr::Integer(n) => Some(NumNode::Const(*n as f64)),
+    Expr::BigInteger(n) => Some(NumNode::Const(n.to_string().parse().ok()?)),
+    Expr::Real(r) => Some(NumNode::Const(*r)),
+    Expr::Identifier(name) => vars
+      .iter()
+      .position(|v| v == name)
+      .map(NumNode::Var)
+      .or_else(|| named_constant_value(name).map(NumNode::Const)),
+    Expr::Constant(name) => named_constant_value(name).map(NumNode::Const),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Some(NumNode::Neg(Box::new(c(operand)?))),
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator::*;
+      let l = Box::new(c(left)?);
+      let r = Box::new(c(right)?);
+      match op {
+        Plus => Some(NumNode::Add(vec![*l, *r])),
+        Minus => Some(NumNode::Sub(l, r)),
+        Times => Some(NumNode::Mul(vec![*l, *r])),
+        Divide => Some(NumNode::Div(l, r)),
+        Power => Some(NumNode::Pow(l, r)),
+        _ => None,
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      let unary =
+        |f: fn(f64) -> f64, args: &crate::ExprList| -> Option<NumNode> {
+          if args.len() != 1 {
+            return None;
+          }
+          Some(NumNode::Unary(
+            f,
+            Box::new(compile_numeric(&args[0], vars)?),
+          ))
+        };
+      match name.as_str() {
+        "Plus" => {
+          Some(NumNode::Add(args.iter().map(&c).collect::<Option<_>>()?))
+        }
+        "Times" => {
+          Some(NumNode::Mul(args.iter().map(&c).collect::<Option<_>>()?))
+        }
+        "Subtract" if args.len() == 2 => {
+          Some(NumNode::Sub(Box::new(c(&args[0])?), Box::new(c(&args[1])?)))
+        }
+        "Divide" | "Rational" if args.len() == 2 => {
+          Some(NumNode::Div(Box::new(c(&args[0])?), Box::new(c(&args[1])?)))
+        }
+        "Power" if args.len() == 2 => {
+          Some(NumNode::Pow(Box::new(c(&args[0])?), Box::new(c(&args[1])?)))
+        }
+        "Minus" if args.len() == 1 => {
+          Some(NumNode::Neg(Box::new(c(&args[0])?)))
+        }
+        "Sqrt" => unary(f64::sqrt, args),
+        "Exp" => unary(f64::exp, args),
+        "Sin" => unary(f64::sin, args),
+        "Cos" => unary(f64::cos, args),
+        "Tan" => unary(f64::tan, args),
+        "Cot" => unary(|x| 1.0 / x.tan(), args),
+        "Sec" => unary(|x| 1.0 / x.cos(), args),
+        "Csc" => unary(|x| 1.0 / x.sin(), args),
+        "ArcSin" => unary(f64::asin, args),
+        "ArcCos" => unary(f64::acos, args),
+        "ArcTan" if args.len() == 2 => Some(NumNode::Binary(
+          |y, x| y.atan2(x),
+          Box::new(c(&args[0])?),
+          Box::new(c(&args[1])?),
+        )),
+        "ArcTan" => unary(f64::atan, args),
+        "Sinh" => unary(f64::sinh, args),
+        "Cosh" => unary(f64::cosh, args),
+        "Tanh" => unary(f64::tanh, args),
+        "Abs" => unary(f64::abs, args),
+        "Sign" => unary(f64::signum, args),
+        "Log" if args.len() == 2 => Some(NumNode::Binary(
+          |b, x| x.ln() / b.ln(),
+          Box::new(c(&args[0])?),
+          Box::new(c(&args[1])?),
+        )),
+        "Log" => unary(f64::ln, args),
+        "Log2" => unary(f64::log2, args),
+        "Log10" => unary(f64::log10, args),
+        "Floor" => unary(f64::floor, args),
+        "Ceiling" => unary(f64::ceil, args),
+        "Round" => unary(f64::round, args),
+        "Min" => args
+          .iter()
+          .map(&c)
+          .collect::<Option<Vec<_>>>()
+          .filter(|nodes| !nodes.is_empty())
+          .map(|nodes| fold_binary(nodes, f64::min)),
+        "Max" => args
+          .iter()
+          .map(c)
+          .collect::<Option<Vec<_>>>()
+          .filter(|nodes| !nodes.is_empty())
+          .map(|nodes| fold_binary(nodes, f64::max)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Reduce a non-empty list of nodes with an associative binary float op.
+fn fold_binary(mut nodes: Vec<NumNode>, f: fn(f64, f64) -> f64) -> NumNode {
+  let mut acc = nodes.remove(0);
+  for n in nodes {
+    acc = NumNode::Binary(f, Box::new(acc), Box::new(n));
+  }
+  acc
+}
+
+/// Numeric value of a named mathematical constant, if known.
+fn named_constant_value(name: &str) -> Option<f64> {
+  Some(match name {
+    "Pi" => std::f64::consts::PI,
+    "E" => std::f64::consts::E,
+    "Degree" => std::f64::consts::PI / 180.0,
+    "GoldenRatio" => (1.0 + 5.0_f64.sqrt()) / 2.0,
+    "EulerGamma" => 0.577_215_664_901_532_9,
+    "Catalan" => 0.915_965_594_177_219,
+    _ => return None,
+  })
 }
 
 /// An atomic comparison split out of a (possibly chained / And-joined)
@@ -8354,6 +8583,115 @@ fn pick_best_optimum(
 
 /// Numeric penalty-method optimizer for problems whose constraints couple
 /// several variables (e.g. `x*y >= 1`, `x^2 + y^2 <= 4`). Uses multi-start
+/// Nelder–Mead simplex minimization of an arbitrary `n`-dimensional closure.
+/// Builds an initial simplex of size `step` around `start` and returns the best
+/// vertex found. Used both as the penalty-method inner solver and as a local
+/// polish for the grid-sampler path.
+fn nelder_mead_min(
+  f: &dyn Fn(&[f64]) -> f64,
+  start: &[f64],
+  step: f64,
+  n: usize,
+) -> Vec<f64> {
+  let mut simplex: Vec<Vec<f64>> = Vec::with_capacity(n + 1);
+  simplex.push(start.to_vec());
+  for i in 0..n {
+    let mut p = start.to_vec();
+    let s = if step.abs() > 1e-12 { step } else { 0.1 };
+    p[i] += if p[i].abs() > 1e-9 {
+      p[i] * 0.05 + s
+    } else {
+      s
+    };
+    simplex.push(p);
+  }
+  let mut fvals: Vec<f64> = simplex.iter().map(|p| f(p)).collect();
+
+  for _ in 0..600 {
+    // Order vertices by value.
+    let mut idx: Vec<usize> = (0..=n).collect();
+    idx.sort_by(|&a, &b| {
+      fvals[a]
+        .partial_cmp(&fvals[b])
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let best = idx[0];
+    let worst = idx[n];
+    let second_worst = idx[n - 1];
+
+    // Convergence: simplex collapsed.
+    let spread = (fvals[worst] - fvals[best]).abs();
+    if spread < 1e-14 {
+      break;
+    }
+
+    // Centroid of all but worst.
+    let mut centroid = vec![0.0; n];
+    for (k, vert) in simplex.iter().enumerate() {
+      if k == worst {
+        continue;
+      }
+      for d in 0..n {
+        centroid[d] += vert[d] / n as f64;
+      }
+    }
+
+    let reflect: Vec<f64> = (0..n)
+      .map(|d| centroid[d] + (centroid[d] - simplex[worst][d]))
+      .collect();
+    let fr = f(&reflect);
+
+    if fr < fvals[best] {
+      // Expand.
+      let expand: Vec<f64> = (0..n)
+        .map(|d| centroid[d] + 2.0 * (centroid[d] - simplex[worst][d]))
+        .collect();
+      let fe = f(&expand);
+      if fe < fr {
+        simplex[worst] = expand;
+        fvals[worst] = fe;
+      } else {
+        simplex[worst] = reflect;
+        fvals[worst] = fr;
+      }
+    } else if fr < fvals[second_worst] {
+      simplex[worst] = reflect;
+      fvals[worst] = fr;
+    } else {
+      // Contract.
+      let contract: Vec<f64> = (0..n)
+        .map(|d| centroid[d] + 0.5 * (simplex[worst][d] - centroid[d]))
+        .collect();
+      let fc = f(&contract);
+      if fc < fvals[worst] {
+        simplex[worst] = contract;
+        fvals[worst] = fc;
+      } else {
+        // Shrink toward best.
+        for k in 0..=n {
+          if k == best {
+            continue;
+          }
+          for d in 0..n {
+            simplex[k][d] =
+              simplex[best][d] + 0.5 * (simplex[k][d] - simplex[best][d]);
+          }
+          fvals[k] = f(&simplex[k]);
+        }
+      }
+    }
+  }
+
+  // Return current best vertex.
+  let mut best = 0;
+  for k in 1..=n {
+    if fvals[k] < fvals[best] {
+      best = k;
+    }
+  }
+  simplex[best].clone()
+}
+
 /// Nelder–Mead on `objective + mu * violation` with penalty continuation.
 fn nminimize_penalty(
   objective: &Expr,
@@ -8366,124 +8704,62 @@ fn nminimize_penalty(
   let comparisons = collect_atomic_comparisons(constraints);
   let bounds = extract_bounds(constraints, vars)?;
 
+  // Compile the objective and each constraint side into fast numeric closures
+  // once. The optimizer evaluates these tens of thousands of times; the
+  // compiled form is orders of magnitude faster than re-evaluating the AST and
+  // lets the search run enough restarts to converge. Falls back to the AST
+  // evaluator for anything the compiler can't handle.
+  let obj_compiled = compile_numeric(objective, vars);
+  let cmp_compiled: Vec<Option<(NumNode, NumNode)>> = comparisons
+    .iter()
+    .map(|c| {
+      Some((
+        compile_numeric(&c.left, vars)?,
+        compile_numeric(&c.right, vars)?,
+      ))
+    })
+    .collect();
+
   let eval_num = |expr: &Expr, point: &[f64]| -> f64 {
     eval_expr_at_point(expr, vars, point)
   };
 
   // Total constraint violation at a point (0 when feasible).
-  let violation =
-    |point: &[f64]| -> f64 { constraint_violation(&comparisons, vars, point) };
+  let violation = |point: &[f64]| -> f64 {
+    use crate::syntax::ComparisonOp::*;
+    let mut total = 0.0;
+    for (c, compiled) in comparisons.iter().zip(cmp_compiled.iter()) {
+      let (l, r) = match compiled {
+        Some((lc, rc)) => (lc.eval(point), rc.eval(point)),
+        None => (
+          eval_expr_at_point(&c.left, vars, point),
+          eval_expr_at_point(&c.right, vars, point),
+        ),
+      };
+      if !l.is_finite() || !r.is_finite() {
+        return f64::INFINITY;
+      }
+      total += match c.op {
+        Less | LessEqual => (l - r).max(0.0),
+        Greater | GreaterEqual => (r - l).max(0.0),
+        Equal => (l - r).abs(),
+        _ => 0.0,
+      };
+    }
+    total
+  };
 
   let obj_signed = |point: &[f64]| -> f64 {
-    let f = eval_num(objective, point);
+    let f = match &obj_compiled {
+      Some(node) => node.eval(point),
+      None => eval_num(objective, point),
+    };
     if f.is_finite() {
       sign * f
     } else {
       f64::INFINITY
     }
   };
-
-  // Nelder–Mead simplex minimization of an arbitrary closure.
-  let nelder_mead =
-    |f: &dyn Fn(&[f64]) -> f64, start: &[f64], step: f64| -> Vec<f64> {
-      let mut simplex: Vec<Vec<f64>> = Vec::with_capacity(n + 1);
-      simplex.push(start.to_vec());
-      for i in 0..n {
-        let mut p = start.to_vec();
-        let s = if step.abs() > 1e-12 { step } else { 0.1 };
-        p[i] += if p[i].abs() > 1e-9 {
-          p[i] * 0.05 + s
-        } else {
-          s
-        };
-        simplex.push(p);
-      }
-      let mut fvals: Vec<f64> = simplex.iter().map(|p| f(p)).collect();
-
-      for _ in 0..600 {
-        // Order vertices by value.
-        let mut idx: Vec<usize> = (0..=n).collect();
-        idx.sort_by(|&a, &b| {
-          fvals[a]
-            .partial_cmp(&fvals[b])
-            .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let best = idx[0];
-        let worst = idx[n];
-        let second_worst = idx[n - 1];
-
-        // Convergence: simplex collapsed.
-        let spread = (fvals[worst] - fvals[best]).abs();
-        if spread < 1e-14 {
-          break;
-        }
-
-        // Centroid of all but worst.
-        let mut centroid = vec![0.0; n];
-        for (k, vert) in simplex.iter().enumerate() {
-          if k == worst {
-            continue;
-          }
-          for d in 0..n {
-            centroid[d] += vert[d] / n as f64;
-          }
-        }
-
-        let reflect: Vec<f64> = (0..n)
-          .map(|d| centroid[d] + (centroid[d] - simplex[worst][d]))
-          .collect();
-        let fr = f(&reflect);
-
-        if fr < fvals[best] {
-          // Expand.
-          let expand: Vec<f64> = (0..n)
-            .map(|d| centroid[d] + 2.0 * (centroid[d] - simplex[worst][d]))
-            .collect();
-          let fe = f(&expand);
-          if fe < fr {
-            simplex[worst] = expand;
-            fvals[worst] = fe;
-          } else {
-            simplex[worst] = reflect;
-            fvals[worst] = fr;
-          }
-        } else if fr < fvals[second_worst] {
-          simplex[worst] = reflect;
-          fvals[worst] = fr;
-        } else {
-          // Contract.
-          let contract: Vec<f64> = (0..n)
-            .map(|d| centroid[d] + 0.5 * (simplex[worst][d] - centroid[d]))
-            .collect();
-          let fc = f(&contract);
-          if fc < fvals[worst] {
-            simplex[worst] = contract;
-            fvals[worst] = fc;
-          } else {
-            // Shrink toward best.
-            for k in 0..=n {
-              if k == best {
-                continue;
-              }
-              for d in 0..n {
-                simplex[k][d] =
-                  simplex[best][d] + 0.5 * (simplex[k][d] - simplex[best][d]);
-              }
-              fvals[k] = f(&simplex[k]);
-            }
-          }
-        }
-      }
-
-      // Return current best vertex.
-      let mut best = 0;
-      for k in 1..=n {
-        if fvals[k] < fvals[best] {
-          best = k;
-        }
-      }
-      simplex[best].clone()
-    };
 
   // Build a set of starting points by sampling a grid over a bounded region.
   let start_region: Vec<(f64, f64)> = bounds
@@ -8551,7 +8827,21 @@ fn nminimize_penalty(
         o + mu * violation(p)
       };
       let step = 0.5 / (k as f64 + 1.0);
-      cur = nelder_mead(&penalized, &cur, step);
+      // A single Nelder–Mead pass often stalls with a collapsed simplex that
+      // can't traverse along an active constraint (e.g. moving toward the
+      // balanced point on an equality sphere). Restart from the converged
+      // vertex with a freshly inflated simplex a few times to escape such
+      // stalls; this is cheap and substantially improves convergence for
+      // equality/coupling-constrained problems.
+      let mut prev = f64::INFINITY;
+      for _ in 0..12 {
+        cur = nelder_mead_min(&penalized, &cur, step, n);
+        let fv = penalized(&cur);
+        if (prev - fv).abs() <= 1e-12 * (1.0 + fv.abs()) {
+          break;
+        }
+        prev = fv;
+      }
     }
 
     let o = obj_signed(&cur);
