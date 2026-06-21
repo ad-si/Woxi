@@ -3395,6 +3395,35 @@ mod expand_threading {
     assert_eq!(interpret("Sec[5 Pi/12]").unwrap(), "Sqrt[2]*(1 + Sqrt[3])");
   }
 
+  // ─── Reciprocal trig/hyperbolic products ──────────────────────────
+  // A function times its own reciprocal of the same argument collapses:
+  // Sin[x] Csc[x] -> 1, Sin[x]^2 Csc[x] -> Sin[x], Csc[x]/Sin[x] -> Csc[x]^2.
+  #[test]
+  fn reciprocal_trig_products_collapse() {
+    assert_eq!(interpret("Sin[x] Csc[x]").unwrap(), "1");
+    assert_eq!(interpret("Cos[x] Sec[x]").unwrap(), "1");
+    assert_eq!(interpret("Tan[x] Cot[x]").unwrap(), "1");
+    assert_eq!(interpret("Sinh[x] Csch[x]").unwrap(), "1");
+    assert_eq!(interpret("2 Sin[x] Csc[x]").unwrap(), "2");
+    assert_eq!(interpret("Sin[x]^2 Csc[x]").unwrap(), "Sin[x]");
+    assert_eq!(interpret("Sin[x]^3 Csc[x]^2").unwrap(), "Sin[x]");
+    assert_eq!(interpret("Csc[x]/Sin[x]").unwrap(), "Csc[x]^2");
+    assert_eq!(
+      interpret("Csc[x] Sin[x]^2 Cos[x]").unwrap(),
+      "Cos[x]*Sin[x]"
+    );
+  }
+
+  // Boundaries that must NOT collapse: different arguments, lone reciprocals,
+  // and cross-function quotients (Wolfram's Cos/Sin -> Cot is a separate,
+  // form-divergent canonicalization that Woxi does not perform).
+  #[test]
+  fn reciprocal_trig_non_pairs_unchanged() {
+    assert_eq!(interpret("Sin[x] Csc[y]").unwrap(), "Csc[y]*Sin[x]");
+    assert_eq!(interpret("Csc[x]").unwrap(), "Csc[x]");
+    assert_eq!(interpret("Cos[x]/Sin[x]").unwrap(), "Cos[x]/Sin[x]");
+  }
+
   // ─── Hyperbolic parity ────────────────────────────────────────────
 
   #[test]

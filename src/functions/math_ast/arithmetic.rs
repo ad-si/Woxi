@@ -4226,10 +4226,176 @@ pub fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
   }
 }
 
+/// Reciprocal trig/hyperbolic head → its primary partner (Csc → Sin, …).
+fn reciprocal_trig_primary(head: &str) -> Option<&'static str> {
+  Some(match head {
+    "Csc" => "Sin",
+    "Sec" => "Cos",
+    "Cot" => "Tan",
+    "Csch" => "Sinh",
+    "Sech" => "Cosh",
+    "Coth" => "Tanh",
+    _ => return None,
+  })
+}
+
+/// Primary trig/hyperbolic head → its reciprocal partner (Sin → Csc, …).
+fn primary_trig_reciprocal(head: &str) -> Option<&'static str> {
+  Some(match head {
+    "Sin" => "Csc",
+    "Cos" => "Sec",
+    "Tan" => "Cot",
+    "Sinh" => "Csch",
+    "Cosh" => "Sech",
+    "Tanh" => "Coth",
+    _ => return None,
+  })
+}
+
+/// Primary trig/hyperbolic head → itself as a 'static string.
+fn primary_trig_self(head: &str) -> Option<&'static str> {
+  Some(match head {
+    "Sin" => "Sin",
+    "Cos" => "Cos",
+    "Tan" => "Tan",
+    "Sinh" => "Sinh",
+    "Cosh" => "Cosh",
+    "Tanh" => "Tanh",
+    _ => return None,
+  })
+}
+
+/// Combine a trig/hyperbolic function with its own reciprocal in a product:
+/// Sin[x]^a Csc[x]^b → Sin[x]^(a-b), rendered as Csc[x]^(b-a) when the net
+/// power is a negative integer. This mirrors Wolfram's automatic reduction
+/// (e.g. Sin[x] Csc[x] → 1, Sin[x]^2 Csc[x] → Sin[x], Csc[x]/Sin[x] → Csc[x]^2).
+///
+/// Only a genuine reciprocal PAIR is touched: a family group must hold at
+/// least two factors and at least one reciprocal head. Lone factors
+/// (Csc[x], 1/Sin[x]) and cross-function quotients (Cos[x]/Sin[x] → Cot[x])
+/// are deliberately left as-is — Wolfram's broader trig-power canonicalization
+/// is a separate, form-divergent concern.
+fn combine_reciprocal_trig(
+  args: Vec<Expr>,
+) -> Result<Vec<Expr>, InterpreterError> {
+  struct Grp {
+    primary: &'static str,
+    arg: Expr,
+    key: String,
+    count: usize,
+    exps: Vec<Expr>,
+    has_recip: bool,
+  }
+  let negate_exp = |e: &Expr| -> Expr {
+    match e {
+      Expr::Integer(n) => Expr::Integer(-n),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), e.clone()].into(),
+      },
+    }
+  };
+
+  let mut groups: Vec<Grp> = Vec::new();
+  let mut group_of: Vec<Option<usize>> = vec![None; args.len()];
+  for (i, arg) in args.iter().enumerate() {
+    let (base, exp) = extract_base_exponent(arg);
+    let (head, farg) = match &base {
+      Expr::FunctionCall { name, args: fargs } if fargs.len() == 1 => {
+        (name.as_str(), &fargs[0])
+      }
+      _ => continue,
+    };
+    let (primary, is_recip) = if let Some(p) = reciprocal_trig_primary(head) {
+      (p, true)
+    } else if let Some(p) = primary_trig_self(head) {
+      (p, false)
+    } else {
+      continue;
+    };
+    let signed = if is_recip { negate_exp(&exp) } else { exp };
+    let key = format!("{}|{}", primary, crate::syntax::expr_to_string(farg));
+    if let Some(gi) = groups.iter().position(|g| g.key == key) {
+      groups[gi].count += 1;
+      groups[gi].exps.push(signed);
+      groups[gi].has_recip |= is_recip;
+      group_of[i] = Some(gi);
+    } else {
+      group_of[i] = Some(groups.len());
+      groups.push(Grp {
+        primary,
+        arg: farg.clone(),
+        key,
+        count: 1,
+        exps: vec![signed],
+        has_recip: is_recip,
+      });
+    }
+  }
+
+  // A group qualifies for combining only with ≥2 factors and a reciprocal head.
+  let qualifies: Vec<bool> =
+    groups.iter().map(|g| g.count >= 2 && g.has_recip).collect();
+  if !qualifies.iter().any(|q| *q) {
+    return Ok(args);
+  }
+
+  let mut combined: Vec<Expr> = Vec::new();
+  for (gi, g) in groups.iter().enumerate() {
+    if !qualifies[gi] {
+      continue;
+    }
+    let net = plus_ast(&g.exps)?;
+    match &net {
+      Expr::Integer(0) => {} // Sin[x]^0 = 1, contributes nothing
+      Expr::Integer(n) if *n < 0 => {
+        let recip = primary_trig_reciprocal(g.primary).unwrap();
+        let f = Expr::FunctionCall {
+          name: recip.to_string(),
+          args: vec![g.arg.clone()].into(),
+        };
+        combined.push(if *n == -1 {
+          f
+        } else {
+          power_two(&f, &Expr::Integer(-n))?
+        });
+      }
+      _ => {
+        let f = Expr::FunctionCall {
+          name: g.primary.to_string(),
+          args: vec![g.arg.clone()].into(),
+        };
+        combined.push(if matches!(&net, Expr::Integer(1)) {
+          f
+        } else {
+          power_two(&f, &net)?
+        });
+      }
+    }
+  }
+
+  let mut out: Vec<Expr> = Vec::new();
+  for (i, a) in args.into_iter().enumerate() {
+    let keep = match group_of[i] {
+      Some(gi) => !qualifies[gi],
+      None => true,
+    };
+    if keep {
+      out.push(a);
+    }
+  }
+  out.extend(combined);
+  Ok(out)
+}
+
 /// Combine like bases in a list of symbolic factors: x^a * x^b → x^(a+b)
 pub fn combine_like_bases(
   args: Vec<Expr>,
 ) -> Result<Vec<Expr>, InterpreterError> {
+  if args.len() <= 1 {
+    return Ok(args);
+  }
+  let args = combine_reciprocal_trig(args)?;
   if args.len() <= 1 {
     return Ok(args);
   }
