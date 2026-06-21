@@ -7612,6 +7612,28 @@ mod gamma_incomplete {
     assert_eq!(interpret("Gamma[5]").unwrap(), "24");
   }
 
+  // Limits at infinity: Gamma[Infinity] = Infinity, Gamma[-Infinity] is
+  // Indeterminate, Gamma[ComplexInfinity] = ComplexInfinity. Per wolframscript.
+  #[test]
+  fn gamma_infinite_limits() {
+    assert_eq!(interpret("Gamma[Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("Gamma[-Infinity]").unwrap(), "Indeterminate");
+    assert_eq!(
+      interpret("Gamma[ComplexInfinity]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  // An integer-valued real gives the exact factorial Gamma[n] = (n-1)!
+  // rounded to a machine real, not the float-Lanczos approximation that
+  // drifted (Gamma[5.0] used to give 23.999999999999996). Per wolframscript.
+  #[test]
+  fn gamma_integer_valued_real_is_exact() {
+    assert_eq!(interpret("Gamma[2.0]").unwrap(), "1.");
+    assert_eq!(interpret("Gamma[5.0]").unwrap(), "24.");
+    assert_eq!(interpret("Gamma[1.0]").unwrap(), "1.");
+  }
+
   #[test]
   fn gamma_1_numeric() {
     // Gamma[1, x] = E^(-x); with a machine-Real argument it evaluates numerically.

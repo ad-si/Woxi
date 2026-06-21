@@ -252,6 +252,26 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
     return gamma_incomplete_upper(&args[0], &args[1]);
   }
+
+  // Limits at infinity: Gamma[Infinity] = Infinity; the undirected
+  // Gamma[ComplexInfinity] = ComplexInfinity; Gamma[-Infinity] is
+  // Indeterminate (the poles at the negative integers accumulate there).
+  match &args[0] {
+    Expr::Identifier(s) if s == "Infinity" => {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    Expr::Identifier(s) if s == "ComplexInfinity" => {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    _ => {}
+  }
+
   match expr_to_i128(&args[0]) {
     Some(n) => {
       if n <= 0 {
@@ -274,6 +294,19 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if f <= 0.0 && f.fract() == 0.0 {
         // Poles at non-positive integers
         return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      // An integer-valued real gives the exact factorial Gamma[n] = (n-1)!,
+      // rounded to a machine real: Gamma[5.0] -> 24., not the float-Lanczos
+      // 23.999.... 170! is the largest below the f64 range. Beyond that the
+      // numeric path below handles the overflow.
+      if f.fract() == 0.0 && (1.0..=171.0).contains(&f) {
+        use num_traits::ToPrimitive;
+        let n = f as i128; // Gamma[n] = (n-1)!
+        let mut result = BigInt::from(1);
+        for i in 2..n {
+          result *= i;
+        }
+        return Ok(Expr::Real(result.to_f64().unwrap_or(f64::INFINITY)));
       }
       // For arguments beyond Wolfram's machine-precision overflow band
       // (around 1e14), wolframscript emits General::ovfl and returns
