@@ -321,6 +321,20 @@ mod catalan_number_builtin {
   fn symbolic_unevaluated() {
     assert_eq!(interpret("CatalanNumber[n]").unwrap(), "CatalanNumber[n]");
   }
+
+  // A real index evaluates numerically. An integer-valued real gives the
+  // exact integer rounded to a machine real (not the unevaluated form);
+  // negative integer-valued reals follow the same collapse as exact ones.
+  // Verified against wolframscript.
+  #[test]
+  fn integer_valued_real_index() {
+    assert_eq!(interpret("CatalanNumber[3.0]").unwrap(), "5.");
+    assert_eq!(interpret("CatalanNumber[5.0]").unwrap(), "42.");
+    assert_eq!(interpret("CatalanNumber[0.0]").unwrap(), "1.");
+    assert_eq!(interpret("CatalanNumber[10.0]").unwrap(), "16796.");
+    assert_eq!(interpret("CatalanNumber[-1.0]").unwrap(), "-1.");
+    assert_eq!(interpret("CatalanNumber[-2.0]").unwrap(), "0.");
+  }
 }
 
 mod euler_phi {

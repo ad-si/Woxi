@@ -1445,6 +1445,36 @@ pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "CatalanNumber expects exactly 1 argument".into(),
     ));
   }
+  // A real argument evaluates numerically (wolframscript: CatalanNumber[3.0]
+  // -> 5., CatalanNumber[2.5] -> 3.104...). An integer-valued real yields the
+  // exact integer rounded to a machine real; a non-integer real uses the
+  // analytic continuation CatalanNumber[z] = 4^z Gamma[z+1/2] /
+  // (Sqrt[Pi] Gamma[z+2]).
+  if let Expr::Real(f) = &args[0] {
+    use num_traits::ToPrimitive;
+    if f.fract() == 0.0 {
+      let m = *f as i128;
+      let exact = if m >= 0 {
+        let two_m = num_bigint::BigInt::from(2 * m);
+        let mut c = num_bigint::BigInt::from(1);
+        for i in 0..m {
+          c = c * (&two_m - num_bigint::BigInt::from(i))
+            / num_bigint::BigInt::from(i + 1);
+        }
+        c / num_bigint::BigInt::from(m + 1)
+      } else if m == -1 {
+        num_bigint::BigInt::from(-1)
+      } else {
+        num_bigint::BigInt::from(0)
+      };
+      return Ok(Expr::Real(exact.to_f64().unwrap_or(f64::INFINITY)));
+    }
+    let z = *f;
+    let val = 4.0_f64.powf(z) * super::gamma_fn(z + 0.5)
+      / (std::f64::consts::PI.sqrt() * super::gamma_fn(z + 2.0));
+    return Ok(Expr::Real(val));
+  }
+
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n,
     // Analytic continuation collapses at negative integers: the only
