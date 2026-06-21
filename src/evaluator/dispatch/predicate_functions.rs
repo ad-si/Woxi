@@ -444,10 +444,17 @@ pub fn dispatch_predicate_functions(
           if sum == n_val { "True" } else { "False" }.to_string(),
         )));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "PerfectNumberQ".to_string(),
-        args: args.to_vec().into(),
-      }));
+      // wolframscript reports any non-(positive-integer) argument as not a
+      // perfect number: PerfectNumberQ of a Real, rational, constant, or
+      // symbol is False. A BigInteger is left unevaluated so a genuine large
+      // perfect number is never misreported.
+      if matches!(&args[0], Expr::BigInteger(_)) {
+        return Some(Ok(Expr::FunctionCall {
+          name: "PerfectNumberQ".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      return Some(Ok(Expr::Identifier("False".to_string())));
     }
     "ListQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::list_q_ast(args));

@@ -697,6 +697,18 @@ mod big_integer {
     );
   }
 
+  // wolframscript reports any non-(positive-integer) argument as not a
+  // perfect number, rather than leaving the call unevaluated.
+  #[test]
+  fn perfect_number_q_non_integer_is_false() {
+    assert_eq!(interpret("PerfectNumberQ[6.0]").unwrap(), "False");
+    assert_eq!(interpret("PerfectNumberQ[28.0]").unwrap(), "False");
+    assert_eq!(interpret("PerfectNumberQ[Pi]").unwrap(), "False");
+    assert_eq!(interpret("PerfectNumberQ[3/2]").unwrap(), "False");
+    assert_eq!(interpret("PerfectNumberQ[x]").unwrap(), "False");
+    assert_eq!(interpret("PerfectNumberQ[-6]").unwrap(), "False");
+  }
+
   #[test]
   fn square_free_q_prime() {
     assert_eq!(interpret("SquareFreeQ[7]").unwrap(), "True");
