@@ -848,6 +848,51 @@ mod xor_logical {
     clear_state();
     assert_eq!(interpret("Xor[a, False, b]").unwrap(), "Xor[a, b]");
   }
+
+  // Syntactically-identical operands cancel in pairs: a ⊻ a = False.
+  #[test]
+  fn cancels_duplicate_pairs() {
+    clear_state();
+    assert_eq!(interpret("Xor[a, a]").unwrap(), "False");
+    assert_eq!(interpret("Xor[a, a, a]").unwrap(), "a");
+    assert_eq!(interpret("Xor[a, b, a]").unwrap(), "b");
+    assert_eq!(interpret("Xor[a, b, b]").unwrap(), "a");
+    assert_eq!(interpret("Xor[a, a, b, b]").unwrap(), "False");
+    assert_eq!(interpret("Xor[a, b, c, a]").unwrap(), "Xor[b, c]");
+    assert_eq!(interpret("Xor[a, b, a, b, c]").unwrap(), "c");
+  }
+
+  // Surviving operands are reported in canonical order.
+  #[test]
+  fn orders_operands() {
+    clear_state();
+    assert_eq!(interpret("Xor[b, a]").unwrap(), "Xor[a, b]");
+  }
+
+  // An odd number of True operands negates the result (Not[...]).
+  #[test]
+  fn true_operand_negates() {
+    clear_state();
+    assert_eq!(interpret("Xor[a, True]").unwrap(), " !a");
+    assert_eq!(interpret("Xor[a, False]").unwrap(), "a");
+    assert_eq!(interpret("Xor[a, b, True]").unwrap(), " !Xor[a, b]");
+    assert_eq!(interpret("Xor[a, b, c, True]").unwrap(), " !Xor[a, b, c]");
+  }
+
+  // Xnor is the negation of Xor and keeps the Xnor head for multi-operand
+  // cores while collapsing single operands.
+  #[test]
+  fn xnor_reduction() {
+    clear_state();
+    assert_eq!(interpret("Xnor[a, a]").unwrap(), "True");
+    assert_eq!(interpret("Xnor[a]").unwrap(), " !a");
+    assert_eq!(interpret("Xnor[a, b, b]").unwrap(), " !a");
+    assert_eq!(interpret("Xnor[a, True]").unwrap(), "a");
+    assert_eq!(interpret("Xnor[a, False]").unwrap(), " !a");
+    assert_eq!(interpret("Xnor[b, a]").unwrap(), "Xnor[a, b]");
+    assert_eq!(interpret("Xnor[a, b, True]").unwrap(), " !Xnor[a, b]");
+    assert_eq!(interpret("Xnor[a, b, c, True]").unwrap(), " !Xnor[a, b, c]");
+  }
 }
 
 mod boolean_convert_dnf {

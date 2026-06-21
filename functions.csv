@@ -1183,7 +1183,7 @@ FresnelS,Returns the Fresnel sine integral,✅,pure,3.0,1193
 CometData,,🚫,,10.0,1195
 HighlightImage,,🚫,,9.0,1195
 Subgraph,Induced subgraph on given vertices (keeps the given vertex order),✅,pure,8.0,1197
-Xor,Checks if exactly one condition is true,✅,pure,1.0,1197
+Xor,Logical XOR (true when an odd number of args are true),✅,pure,1.0,1197
 FindClusters,Partitions data into clusters,✅,unevaluated,6.0,1198
 OpenWrite,Opens a file for writing,✅,effectful,1.0,1199
 SmoothHistogram,,🚫,,8.0,1200

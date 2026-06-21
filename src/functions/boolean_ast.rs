@@ -128,6 +128,42 @@ fn negate_comparison_op(
 }
 
 /// Xor[expr1, expr2, ...] - Logical XOR
+/// Reduce a list of Xor/Xnor operands the way wolframscript does:
+/// drop `False`, count `True` parity, cancel syntactically-identical operand
+/// pairs (a ⊻ a = False), and return the surviving operands in canonical
+/// order together with whether an odd number of `True` operands remained.
+fn reduce_xor_operands(
+  args: &[Expr],
+) -> Result<(Vec<Expr>, bool), InterpreterError> {
+  let mut true_count = 0;
+  let mut remaining: Vec<Expr> = Vec::new();
+  for arg in args {
+    let evaluated = evaluate_expr_to_expr(arg)?;
+    match as_bool(&evaluated) {
+      Some(true) => true_count += 1,
+      Some(false) => {} // Skip False (the Xor identity element)
+      None => {
+        // Two syntactically-identical operands cancel: a ⊻ a = False.
+        // Remove the existing partner instead of keeping the duplicate so
+        // an even multiplicity vanishes and an odd one keeps a single copy.
+        let ev_str = crate::syntax::expr_to_string(&evaluated);
+        if let Some(pos) = remaining
+          .iter()
+          .position(|e| crate::syntax::expr_to_string(e) == ev_str)
+        {
+          remaining.remove(pos);
+        } else {
+          remaining.push(evaluated);
+        }
+      }
+    }
+  }
+  // wolframscript reports the surviving operands in canonical order
+  // (Xor[b, a] -> Xor[a, b]).
+  remaining.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
+  Ok((remaining, true_count % 2 == 1))
+}
+
 pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Xor[] = False (empty XOR is the identity element)
   if args.is_empty() {
@@ -138,33 +174,26 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return evaluate_expr_to_expr(&args[0]);
   }
 
-  let mut true_count = 0;
-  let mut remaining = Vec::new();
-  for arg in args {
-    let evaluated = evaluate_expr_to_expr(arg)?;
-    match as_bool(&evaluated) {
-      Some(true) => true_count += 1,
-      Some(false) => {} // Skip False
-      None => remaining.push(evaluated),
-    }
+  let (remaining, odd_true) = reduce_xor_operands(args)?;
+
+  if remaining.is_empty() {
+    return Ok(Expr::Identifier(
+      if odd_true { "True" } else { "False" }.to_string(),
+    ));
   }
-  // If there are symbolic args, combine: known true values flip parity
-  if !remaining.is_empty() {
-    // If odd number of True values, add True to remaining
-    if true_count % 2 == 1 {
-      remaining.insert(0, Expr::Identifier("True".to_string()));
+
+  let core = if remaining.len() == 1 {
+    remaining.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Xor".to_string(),
+      args: remaining.into(),
     }
-    return match remaining.len() {
-      1 => Ok(remaining.into_iter().next().unwrap()),
-      _ => Ok(Expr::FunctionCall {
-        name: "Xor".to_string(),
-        args: remaining.into(),
-      }),
-    };
-  }
-  Ok(Expr::Identifier(
-    if true_count % 2 == 1 { "True" } else { "False" }.to_string(),
-  ))
+  };
+
+  // An odd number of True operands negates the result:
+  //   Xor[a, True] -> Not[a],  Xor[a, b, True] -> Not[Xor[a, b]].
+  if odd_true { not_ast(&[core]) } else { Ok(core) }
 }
 
 pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -172,33 +201,31 @@ pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Identifier("True".to_string()));
   }
-  // Xnor is the negation of Xor (returns True when even number of args are True)
-  let mut true_count = 0;
-  let mut remaining = Vec::new();
-  for arg in args {
-    let evaluated = evaluate_expr_to_expr(arg)?;
-    match as_bool(&evaluated) {
-      Some(true) => true_count += 1,
-      Some(false) => {} // Skip False
-      None => remaining.push(evaluated),
-    }
+  // Xnor is the negation of Xor: reduce the operands the same way, then wrap
+  // them in the Xnor head and apply the extra outer negation.
+  let (remaining, odd_true) = reduce_xor_operands(args)?;
+
+  // No surviving operands: Xnor[] of an even True count is True, odd is False.
+  if remaining.is_empty() {
+    return Ok(Expr::Identifier(
+      if odd_true { "False" } else { "True" }.to_string(),
+    ));
   }
-  if !remaining.is_empty() {
-    // Symbolic case: Xnor[...] stays unevaluated
-    let mut all_args = Vec::new();
-    if true_count % 2 == 1 {
-      all_args.push(Expr::Identifier("True".to_string()));
-    }
-    all_args.extend(remaining);
-    return Ok(Expr::FunctionCall {
-      name: "Xnor".to_string(),
-      args: all_args.into(),
-    });
+
+  // A single operand x: Xnor reduces to x (odd True) or Not[x] (even True),
+  // e.g. Xnor[a] -> !a, Xnor[a, True] -> a.
+  if remaining.len() == 1 {
+    let x = remaining.into_iter().next().unwrap();
+    return if odd_true { Ok(x) } else { not_ast(&[x]) };
   }
-  // All boolean: True when even number of True values
-  Ok(Expr::Identifier(
-    if true_count % 2 == 0 { "True" } else { "False" }.to_string(),
-  ))
+
+  // Two or more operands keep the Xnor head; an odd True count negates it:
+  //   Xnor[a, b] stays Xnor[a, b],  Xnor[a, b, True] -> Not[Xnor[a, b]].
+  let core = Expr::FunctionCall {
+    name: "Xnor".to_string(),
+    args: remaining.into(),
+  };
+  if odd_true { not_ast(&[core]) } else { Ok(core) }
 }
 
 /// SameQ[expr1, expr2] - Tests whether expressions are identical
