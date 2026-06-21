@@ -1987,6 +1987,35 @@ mod cdf {
     );
   }
 
+  // Mean = n*ns/nt; Variance = n*ns*(1 - ns/nt)*(nt - n) / ((nt - 1)*nt).
+  // (The symbolic-parameter variance is value-correct but reorders the two
+  // central factors versus wolframscript, so only the numeric forms are
+  // asserted here.)
+  #[test]
+  fn hypergeometric_mean_variance() {
+    assert_eq!(
+      interpret("Mean[HypergeometricDistribution[5, 10, 20]]").unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("Variance[HypergeometricDistribution[5, 10, 20]]").unwrap(),
+      "75/76"
+    );
+    assert_eq!(
+      interpret("Variance[HypergeometricDistribution[3, 7, 15]]").unwrap(),
+      "16/25"
+    );
+    assert_eq!(
+      interpret("Variance[HypergeometricDistribution[4, 8, 12]]").unwrap(),
+      "64/99"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[HypergeometricDistribution[5, 10, 20]]")
+        .unwrap(),
+      "(5*Sqrt[3/19])/2"
+    );
+  }
+
   #[test]
   fn binormal_pdf_one_arg() {
     // PDF[BinormalDistribution[rho], {x, y}]

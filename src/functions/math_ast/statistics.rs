@@ -822,6 +822,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "StableDistribution"
         | "GammaDistribution"
         | "BetaDistribution"
+        | "HypergeometricDistribution"
         | "StudentTDistribution"
         | "LogNormalDistribution"
         | "ChiSquareDistribution"
