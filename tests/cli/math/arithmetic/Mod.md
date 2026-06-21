@@ -46,3 +46,10 @@ $ wo 'Mod[7.5, 2]'
 $ wo 'Mod[0, 5]'
 0
 ```
+
+For Gaussian integers the remainder uses `m - n*Round[m/n]`.
+
+```scrut
+$ wo 'Mod[7 + 3 I, 2]'
+-1 - I
+```

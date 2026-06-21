@@ -2071,6 +2071,36 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
+  // Gaussian Mod: when at least one operand is genuinely complex, wolframscript
+  // uses Mod[m, n] = m - n*Round[m/n], rounding the complex quotient
+  // component-wise (round-half-to-even). Real operands are handled above, so
+  // this only fires for Gaussian integers/rationals, e.g.
+  // Mod[7 + 3*I, 2] = -1 - I.
+  if let (Some((_, (m_im, _))), Some((_, (n_im, _)))) =
+    (try_extract_complex_exact(m), try_extract_complex_exact(n))
+    && (m_im != 0 || n_im != 0)
+  {
+    let quotient = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(m.clone()),
+      right: Box::new(n.clone()),
+    };
+    let round_quot = Expr::FunctionCall {
+      name: "Round".to_string(),
+      args: vec![quotient].into(),
+    };
+    let result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(m.clone()),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(n.clone()),
+        right: Box::new(round_quot),
+      }),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
   // Float fallback
   if let (Some(a), Some(b)) = (try_eval_to_f64(m), try_eval_to_f64(n)) {
     if b == 0.0 {

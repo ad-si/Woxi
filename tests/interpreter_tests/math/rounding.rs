@@ -644,6 +644,24 @@ mod cases {
       r#"True"#,
     );
   }
+  // Gaussian Mod: Mod[m, n] = m - n*Round[m/n] with the complex quotient
+  // rounded component-wise (round-half-to-even).
+  #[test]
+  fn mod_gaussian_integer() {
+    assert_case(r#"Mod[7 + 3 I, 2]"#, r#"-1 - I"#);
+  }
+  #[test]
+  fn mod_gaussian_complex_modulus() {
+    assert_case(r#"Mod[1 + 6 I, 2 + I]"#, r#"-1"#);
+  }
+  #[test]
+  fn mod_real_by_gaussian() {
+    assert_case(r#"Mod[5, 2 + I]"#, r#"0"#);
+  }
+  #[test]
+  fn mod_gaussian_rational() {
+    assert_case(r#"Mod[7/2 + 3 I, 2]"#, r#"-1/2 - I"#);
+  }
   #[test]
   fn sqrt_6() {
     assert_case(r#"1; Sqrt[2]"#, r#"Sqrt[2]"#);
