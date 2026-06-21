@@ -6295,6 +6295,66 @@ mod div {
   }
 }
 
+mod curl {
+  use super::*;
+
+  // The well-defined low-rank forms: scalar in 2D, vector in 2D (scalar
+  // result), and vector in 3D (vector result).
+  #[test]
+  fn scalar_2d() {
+    assert_eq!(interpret("Curl[x^2, {x, y}]").unwrap(), "{0, 2*x}");
+  }
+
+  #[test]
+  fn vector_2d() {
+    assert_eq!(interpret("Curl[{-y, x}, {x, y}]").unwrap(), "2");
+    assert_eq!(interpret("Curl[{x, y}, {x, y}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn vector_3d() {
+    assert_eq!(
+      interpret("Curl[{x^2 y, y^2 z, z^2 x}, {x, y, z}]").unwrap(),
+      "{-y^2, -z^2, -x^2}"
+    );
+  }
+
+  // A rank-2 tensor in dimension 2 has no curl (rank >= dimension): Curl stays
+  // unevaluated (wolframscript emits Curl::hrank). Previously Woxi treated the
+  // rows as scalars and returned a bogus {0, -1}.
+  #[test]
+  fn rank_too_high_unevaluated() {
+    assert_eq!(
+      interpret("Curl[{{x, y}, {z, w}}, {x, y}]").unwrap(),
+      "Curl[{{x, y}, {z, w}}, {x, y}]"
+    );
+  }
+
+  // A vector whose length differs from the variable count has no curl
+  // (wolframscript emits Curl::ndimv).
+  #[test]
+  fn vector_dimension_mismatch_unevaluated() {
+    assert_eq!(
+      interpret("Curl[{x, y, z}, {x, y}]").unwrap(),
+      "Curl[{x, y, z}, {x, y}]"
+    );
+    assert_eq!(
+      interpret("Curl[{a, b}, {x, y, z}]").unwrap(),
+      "Curl[{a, b}, {x, y, z}]"
+    );
+  }
+
+  // A tensor whose dimensions do not match the space dimension has no curl
+  // (wolframscript emits Curl::ndimt).
+  #[test]
+  fn tensor_dimension_mismatch_unevaluated() {
+    assert_eq!(
+      interpret("Curl[{{x, y}, {z, w}}, {x, y, z}]").unwrap(),
+      "Curl[{{x, y}, {z, w}}, {x, y, z}]"
+    );
+  }
+}
+
 mod dsolve_value {
   use super::*;
 

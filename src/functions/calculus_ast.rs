@@ -13734,6 +13734,23 @@ pub fn laplacian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Curl[{f1, f2}, {x1, x2}] - 2D curl (scalar)
 /// Curl[{f1, f2, f3}, {x1, x2, x3}] - 3D curl (vector)
+/// Rank (nesting depth) and dimensions of a rectangular array expression.
+/// A non-list is rank 0 with no dimensions; dimensions are taken from the
+/// first element at each level.
+fn tensor_shape(expr: &Expr) -> (usize, Vec<usize>) {
+  match expr {
+    Expr::List(items) if !items.is_empty() => {
+      let (sub_rank, sub_dims) = tensor_shape(&items[0]);
+      let mut dims = Vec::with_capacity(sub_dims.len() + 1);
+      dims.push(items.len());
+      dims.extend(sub_dims);
+      (sub_rank + 1, dims)
+    }
+    Expr::List(_) => (1, vec![0]),
+    _ => (0, Vec::new()),
+  }
+}
+
 pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
@@ -13818,6 +13835,55 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // Validate the field's rank and dimensions against the space dimension n,
+  // matching wolframscript. The computed branches below assume a rank-1 vector
+  // field of matching length; other shapes either have no curl (error message)
+  // or use the antisymmetric-tensor form that Woxi does not yet compute (left
+  // unevaluated).
+  let n = vars.len();
+  let (rank, dims) = tensor_shape(&args[0]);
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Curl".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let field_str = crate::syntax::expr_to_string(&args[0]);
+  if rank == 1 {
+    if dims[0] != n {
+      crate::emit_message(&format!(
+        "Curl::ndimv: There is no {}-dimensional curl for the {}-dimensional vector {}.",
+        n, dims[0], field_str
+      ));
+      return unevaluated();
+    }
+    // dims[0] == n: a 2- or 3-vector is computed below; higher-dimensional
+    // vectors give an antisymmetric tensor that is left unevaluated.
+  } else {
+    // rank >= 2
+    if dims.iter().any(|&d| d != n) {
+      let dims_list =
+        Expr::List(dims.iter().map(|&d| Expr::Integer(d as i128)).collect());
+      crate::emit_message(&format!(
+        "Curl::ndimt: {} has dimensions {} and is therefore not a tensor in {}-dimensional space.",
+        field_str,
+        crate::syntax::expr_to_string(&dims_list),
+        n
+      ));
+      return unevaluated();
+    }
+    if rank >= n {
+      crate::emit_message(&format!(
+        "Curl::hrank: Tensor expression {} does not have a curl because its rank, {}, is greater than or equal to the dimension {}.",
+        field_str, rank, n
+      ));
+      return unevaluated();
+    }
+    // rank < n with matching dimensions: a valid higher-rank curl that Woxi
+    // does not yet compute; leave unevaluated rather than return a wrong value.
+    return unevaluated();
+  }
 
   if field.len() == 2 && vars.len() == 2 {
     // 2D curl: dF2/dx1 - dF1/dx2
