@@ -9071,6 +9071,17 @@ abb""#,
       r#"{{Title, path/to.md}}"#,
     );
   }
+
+  #[test]
+  fn string_cases_backreference_scans_positions() {
+    // A back-reference pattern (`a_ ~~ a_`) whose match fails its constraint
+    // at one start must not consume those characters: the doubled run is
+    // found at a later position. Previously greedy iteration skipped "ff".
+    assert_case(r#"StringCases["abcdeff", a_ ~~ a_]"#, r#"{ff}"#);
+    assert_case(r#"StringCases["mississippi", a_ ~~ a_]"#, r#"{ss, ss, pp}"#);
+    assert_case(r#"StringCases["hello", a_ ~~ a_]"#, r#"{ll}"#);
+    assert_case(r#"StringCases["aabbcc", a_ ~~ a_]"#, r#"{aa, bb, cc}"#);
+  }
 }
 
 mod padded_form {

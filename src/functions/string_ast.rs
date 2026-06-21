@@ -2723,20 +2723,33 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|m| Expr::String(m.as_str().to_string()))
         .collect()
     } else {
-      re.captures_iter(&s)
-        .filter(|caps| {
-          constraints.iter().all(|(orig, dup)| {
+      // Non-overlapping match with back-reference constraints. Scan position
+      // by position (like the rules branch above) so that when the match at
+      // one start fails its constraints, the next start is still tried —
+      // `captures_iter` would instead greedily consume those characters and
+      // skip a valid later match (e.g. miss the "ff" in "abcdeff").
+      let mut out: Vec<Expr> = Vec::new();
+      let mut i = 0;
+      while i < s.len() && out.len() < max_count {
+        if let Some(caps) = re.captures_at(&s, i)
+          && let Some(m) = caps.get(0)
+          && m.start() == i
+          && !m.as_str().is_empty()
+          && constraints.iter().all(|(orig, dup)| {
             match (caps.name(orig), caps.name(dup)) {
               (Some(a), Some(b)) => a.as_str() == b.as_str(),
               _ => true,
             }
           })
-        })
-        .take(max_count)
-        .filter_map(|caps| {
-          caps.get(0).map(|m| Expr::String(m.as_str().to_string()))
-        })
-        .collect()
+        {
+          out.push(Expr::String(m.as_str().to_string()));
+          i += m.len();
+        } else {
+          let ch = s[i..].chars().next().unwrap();
+          i += ch.len_utf8();
+        }
+      }
+      out
     };
     return Ok(Expr::List(matches.into()));
   }
