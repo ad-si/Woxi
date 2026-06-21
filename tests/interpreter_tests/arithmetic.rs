@@ -3857,6 +3857,25 @@ mod plus_term_ordering {
     assert_eq!(interpret("Plus[Sqrt[x], x]").unwrap(), "Sqrt[x] + x");
     assert_eq!(interpret("Plus[Sqrt[b], b]").unwrap(), "Sqrt[b] + b");
   }
+
+  // A real-variable term (bare symbol or power) always sorts before an
+  // indexed-variable function call like C[1] or x[3], regardless of head
+  // name. Indexed-vs-indexed still orders by name. Verified against
+  // wolframscript; surfaces in DSolve/RSolve results (`x^2 + C[1]`).
+  #[test]
+  fn real_var_before_indexed_function_call() {
+    assert_eq!(interpret("C[1] + x").unwrap(), "x + C[1]");
+    assert_eq!(interpret("C[1] + x^2").unwrap(), "x^2 + C[1]");
+    assert_eq!(interpret("C[1] + x + x^2").unwrap(), "x + x^2 + C[1]");
+    assert_eq!(interpret("f[1] + x").unwrap(), "x + f[1]");
+    assert_eq!(interpret("2 x + C[1]").unwrap(), "2*x + C[1]");
+    // A bare symbol precedes an indexed call even with the same head/name.
+    assert_eq!(interpret("x[2] + x").unwrap(), "x + x[2]");
+    assert_eq!(interpret("z + a[1]").unwrap(), "z + a[1]");
+    // Indexed-vs-indexed orders by name (unchanged).
+    assert_eq!(interpret("b[1] + a[1]").unwrap(), "a[1] + b[1]");
+    assert_eq!(interpret("C[1] + x[1]").unwrap(), "C[1] + x[1]");
+  }
 }
 
 mod complex_division {

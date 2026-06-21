@@ -2423,6 +2423,18 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 
   match (pairs_a, pairs_b) {
     (Some(mut va), Some(mut vb)) => {
+      // A term built from "real" variables (bare symbols and their powers)
+      // always sorts before an all-indexed term (`C[1]`, `x[3]`), regardless
+      // of head name: wolframscript gives `x + C[1]`, `x^2 + C[1]`,
+      // `y + x[3]`, `x + x[2]`, `z + a[1]`. Indexed-vs-indexed and
+      // real-vs-real fall through to the usual pair comparison.
+      let all_indexed =
+        |v: &[(String, f64)]| v.iter().all(|p| p.0.contains("[0000000000"));
+      match (all_indexed(&va), all_indexed(&vb)) {
+        (true, false) => return std::cmp::Ordering::Greater,
+        (false, true) => return std::cmp::Ordering::Less,
+        _ => {}
+      }
       // Sort each term's pairs by variable name descending
       va.sort_by(|x, y| y.0.cmp(&x.0));
       vb.sort_by(|x, y| y.0.cmp(&x.0));
