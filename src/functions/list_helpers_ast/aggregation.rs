@@ -2258,6 +2258,17 @@ fn wolfram_quantile(sorted: &[f64], p: f64) -> f64 {
   }
 }
 
+/// True when every value is an integer multiple of `dx` (within tolerance).
+/// In that case wolframscript centers the histogram bins on the values (edges
+/// offset by dx/2) so no value lands on a bin boundary.
+fn all_multiples_of(values: &[f64], dx: f64) -> bool {
+  dx > 0.0
+    && values.iter().all(|&v| {
+      let r = v / dx;
+      (r - r.round()).abs() < 1e-9 * (1.0 + r.abs())
+    })
+}
+
 /// HistogramList[data] - returns {bin_edges, counts}
 /// HistogramList[data, {dx}] - explicit bin width
 /// HistogramList[data, {min, max, dx}] - explicit bin specification
@@ -2284,7 +2295,10 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let (min_val, max_val, dx) = if args.len() == 1 {
+  // `force_real_edges` is set when the bins are centered on commensurate data:
+  // wolframscript then reports the edges as reals (e.g. `{0.5, 1.5, 2.5}` and
+  // `{1., 3., 5.}`) even when they are integer-valued.
+  let (min_val, max_val, dx, force_real_edges) = if args.len() == 1 {
     // Auto-binning: Freedman-Diaconis rule with nice number rounding
     let mut sorted = values.clone();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -2305,13 +2319,18 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if v == 0.0 { 1.0 } else { nice_number(v) }
     };
 
-    let lo = (data_min / dx).floor() * dx;
-    let mut hi = (data_max / dx).ceil() * dx;
-    // Ensure data_max is strictly inside the last bin
-    if (data_max - hi).abs() < 1e-12 * dx.max(1.0) {
-      hi += dx;
+    if data_max > data_min && all_multiples_of(&sorted, dx) {
+      // Center bins on the values: edges at value ± dx/2.
+      (data_min - dx / 2.0, data_max + dx / 2.0, dx, true)
+    } else {
+      let lo = (data_min / dx).floor() * dx;
+      let mut hi = (data_max / dx).ceil() * dx;
+      // Ensure data_max is strictly inside the last bin
+      if (data_max - hi).abs() < 1e-12 * dx.max(1.0) {
+        hi += dx;
+      }
+      (lo, hi, dx, false)
     }
-    (lo, hi, dx)
   } else if args.len() == 2 {
     match &args[1] {
       // HistogramList[data, {dx}]
@@ -2327,12 +2346,16 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
         let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let lo = (data_min / dx).floor() * dx;
-        let mut hi = (data_max / dx).ceil() * dx;
-        if (data_max - hi).abs() < 1e-12 * dx.max(1.0) {
-          hi += dx;
+        if data_max > data_min && all_multiples_of(&values, dx) {
+          (data_min - dx / 2.0, data_max + dx / 2.0, dx, true)
+        } else {
+          let lo = (data_min / dx).floor() * dx;
+          let mut hi = (data_max / dx).ceil() * dx;
+          if (data_max - hi).abs() < 1e-12 * dx.max(1.0) {
+            hi += dx;
+          }
+          (lo, hi, dx, false)
         }
-        (lo, hi, dx)
       }
       // HistogramList[data, {min, max, dx}]
       Expr::List(spec) if spec.len() == 3 => {
@@ -2363,7 +2386,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         };
-        (min_v, max_v, dx)
+        (min_v, max_v, dx, false)
       }
       _ => {
         return Ok(Expr::FunctionCall {
@@ -2409,7 +2432,12 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build bin edges list
   let mut edges = Vec::with_capacity(num_bins + 1);
   for i in 0..=num_bins {
-    edges.push(f64_to_expr(min_val + i as f64 * dx));
+    let e = min_val + i as f64 * dx;
+    edges.push(if force_real_edges {
+      Expr::Real(e)
+    } else {
+      f64_to_expr(e)
+    });
   }
 
   Ok(Expr::List(

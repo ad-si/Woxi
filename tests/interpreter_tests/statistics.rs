@@ -1001,6 +1001,47 @@ mod histogram_list {
     assert_eq!(interpret("HistogramList[{}]").unwrap(), "{{}, {}}");
   }
 
+  // When the spread of data are all integer multiples of the bin width,
+  // wolframscript centers the bins on the values (edges offset by dx/2) so no
+  // value lands on a boundary, and reports the edges as reals.
+  #[test]
+  fn auto_binning_centers_on_commensurate_data() {
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3, 3, 3}]").unwrap(),
+      "{{0.5, 1.5, 2.5, 3.5}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{10, 20, 20, 30}]").unwrap(),
+      "{{5., 15., 25., 35.}, {1, 2, 1}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{2, 4, 4, 6}]").unwrap(),
+      "{{1., 3., 5., 7.}, {1, 2, 1}}"
+    );
+  }
+
+  // The same centering applies to an explicit `{dx}` bin-width spec.
+  #[test]
+  fn explicit_width_centers_on_commensurate_data() {
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3, 3, 3}, {1}]").unwrap(),
+      "{{0.5, 1.5, 2.5, 3.5}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{2, 4, 4, 6}, {2}]").unwrap(),
+      "{{1., 3., 5., 7.}, {1, 2, 1}}"
+    );
+  }
+
+  // Non-commensurate data keeps edges at multiples of the bin width.
+  #[test]
+  fn no_centering_for_non_commensurate_data() {
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 3, 4, 5}]").unwrap(),
+      "{{0, 2, 4, 6}, {1, 2, 2}}"
+    );
+  }
+
   #[test]
   fn explicit_bin_width() {
     assert_eq!(
