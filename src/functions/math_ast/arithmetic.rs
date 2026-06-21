@@ -5335,6 +5335,75 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Float complex multiplication: when every factor extracts as a machine
+  // complex number, at least one factor is inexact (Real/BigFloat), and at
+  // least one factor has a nonzero imaginary part, fold into a single machine
+  // complex number. The exact path above handles purely exact complex
+  // products; this covers the inexact case wolframscript also collapses:
+  //   2.*(3 + 4 I) → 6. + 8. I,  Pi*(2. + I) → 6.283… + 3.141…*I.
+  // Symbolic factors (e.g. `x`) make try_extract_complex_float return None, so
+  // `x*(2. + I)` is left untouched; an all-exact product like `Pi*(2 + I)`
+  // lacks an inexact factor and stays symbolic.
+  if args.len() >= 2 {
+    let float_parts: Vec<Option<(f64, f64)>> = args
+      .iter()
+      .map(crate::functions::math_ast::try_extract_complex_float)
+      .collect();
+    if float_parts.iter().all(|c| c.is_some()) {
+      let any_imag = float_parts.iter().any(|c| c.unwrap().1 != 0.0);
+      // Trigger on a machine Real (so the product is genuinely machine
+      // precision), but bail if any factor carries a precision-tagged
+      // BigFloat — collapsing those to f64 would silently drop precision
+      // (e.g. ArcCosh[0``38.] = high-precision Pi/2 * I).
+      fn has_machine_real(e: &Expr) -> bool {
+        match e {
+          Expr::Real(_) => true,
+          Expr::UnaryOp { operand, .. } => has_machine_real(operand),
+          Expr::BinaryOp { left, right, .. } => {
+            has_machine_real(left) || has_machine_real(right)
+          }
+          Expr::FunctionCall { args, .. } => args.iter().any(has_machine_real),
+          _ => false,
+        }
+      }
+      fn has_bigfloat(e: &Expr) -> bool {
+        match e {
+          Expr::BigFloat(_, _) => true,
+          Expr::UnaryOp { operand, .. } => has_bigfloat(operand),
+          Expr::BinaryOp { left, right, .. } => {
+            has_bigfloat(left) || has_bigfloat(right)
+          }
+          Expr::FunctionCall { args, .. } => args.iter().any(has_bigfloat),
+          _ => false,
+        }
+      }
+      let any_machine_real = args.iter().any(has_machine_real);
+      let any_bigfloat = args.iter().any(has_bigfloat);
+      if any_imag && any_machine_real && !any_bigfloat {
+        let (mut re, mut im) = float_parts[0].unwrap();
+        for cp in &float_parts[1..] {
+          let (c, d) = cp.unwrap();
+          let (a, b) = (re, im);
+          re = a * c - b * d;
+          im = a * d + b * c;
+        }
+        // Only collapse when the product has a nonzero real part. A pure
+        // imaginary product (re == 0) is left as the `c*I` monomial so it
+        // still merges inside an enclosing Plus (`2. + Pi I` stays
+        // `2. + 3.14…*I`, not `2. + (0. + 3.14…*I)`). When re != 0 keep both
+        // parts as machine reals, matching wolframscript's `6. + 8.*I` and
+        // `-2. + 0.*I`.
+        if re != 0.0 {
+          return Ok(
+            crate::functions::math_ast::build_complex_float_expr_keep_real(
+              re, im,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   // Check for list threading
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {

@@ -3919,6 +3919,52 @@ mod plus_term_ordering {
   }
 }
 
+// A machine-real scalar times a complex number folds into a single machine
+// complex number (wolframscript collapses the inexact product). Integer
+// coefficients already folded; this covers Real/constant scalars. Verified
+// against wolframscript.
+mod real_scalar_times_complex {
+  use super::*;
+
+  #[test]
+  fn real_scalar_folds() {
+    assert_eq!(interpret("2.*(3 + 4 I)").unwrap(), "6. + 8.*I");
+    assert_eq!(interpret("0.5*(2 + 4 I)").unwrap(), "1. + 2.*I");
+  }
+
+  #[test]
+  fn inexact_constant_numerifies() {
+    assert_eq!(
+      interpret("Pi*(2. + I)").unwrap(),
+      "6.283185307179586 + 3.141592653589793*I"
+    );
+  }
+
+  #[test]
+  fn complex_product_with_real_part() {
+    // A product of two complex numbers that is real keeps the `+ 0.*I`.
+    assert_eq!(interpret("I*(2.*I)").unwrap(), "-2. + 0.*I");
+    assert_eq!(interpret("(1. + I)*(1 - I)").unwrap(), "2. + 0.*I");
+  }
+
+  #[test]
+  fn exact_product_stays_symbolic() {
+    // No inexact factor: the exact form is preserved, not numerified.
+    assert_eq!(interpret("Pi*(2 + I)").unwrap(), "(2 + I)*Pi");
+    // A symbolic factor blocks folding entirely.
+    assert_eq!(interpret("x*(2. + I)").unwrap(), "(2. + 1.*I)*x");
+  }
+
+  #[test]
+  fn cube_root_of_unity_numerifies() {
+    // N of -(-1)^(1/3) must distribute the -1. into the complex value.
+    assert_eq!(
+      interpret("N[-(-1)^(1/3)]").unwrap(),
+      "-0.5000000000000001 - 0.8660254037844386*I"
+    );
+  }
+}
+
 mod complex_division {
   use super::*;
 
