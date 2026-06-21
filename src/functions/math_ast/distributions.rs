@@ -3645,6 +3645,47 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "FRatioDistribution" => {
+      // FRatioDistribution[n, m]: F distribution with n and m degrees of
+      // freedom. Mean and variance exist only for m > 2 and m > 4.
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "FRatioDistribution expects 2 arguments".into(),
+        ));
+      }
+      let n = dargs[0].clone();
+      let m = dargs[1].clone();
+      let indet = || Expr::Identifier("Indeterminate".to_string());
+      // Mean = Piecewise[{{m/(-2 + m), m > 2}}, Indeterminate]
+      let mean = piecewise(
+        vec![(
+          divide(m.clone(), plus(int(-2), m.clone())),
+          comparison(m.clone(), ComparisonOp::Greater, int(2)),
+        )],
+        indet(),
+      );
+      // Var = Piecewise[{{(2 m^2 (-2 + m + n)) /
+      //                   ((-4 + m) (-2 + m)^2 n), m > 4}}, Indeterminate]
+      let var_num = times(
+        times(int(2), power(m.clone(), int(2))),
+        plus(plus(int(-2), m.clone()), n.clone()),
+      );
+      let var_den = times(
+        times(
+          plus(int(-4), m.clone()),
+          power(plus(int(-2), m.clone()), int(2)),
+        ),
+        n,
+      );
+      let var = piecewise(
+        vec![(
+          divide(var_num, var_den),
+          comparison(m, ComparisonOp::Greater, int(4)),
+        )],
+        indet(),
+      );
+      Ok((mean, var))
+    }
     "LogNormalDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(

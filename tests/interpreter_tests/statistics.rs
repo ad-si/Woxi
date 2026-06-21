@@ -4067,6 +4067,55 @@ mod noncentral_f_ratio_distribution {
   }
 }
 
+mod fratio_distribution {
+  use super::*;
+
+  // FRatioDistribution[n, m]: Mean = m/(m-2) (m > 2),
+  // Variance = 2 m^2 (m + n - 2) / ((m - 4)(m - 2)^2 n) (m > 4).
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(interpret("Mean[FRatioDistribution[5, 10]]").unwrap(), "5/4");
+    assert_eq!(interpret("Mean[FRatioDistribution[3, 6]]").unwrap(), "3/2");
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[FRatioDistribution[5, 10]]").unwrap(),
+      "65/48"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[FRatioDistribution[5, 10]]").unwrap(),
+      "Sqrt[65/3]/4"
+    );
+  }
+
+  #[test]
+  fn symbolic_piecewise() {
+    assert_eq!(
+      interpret("Mean[FRatioDistribution[n, m]]").unwrap(),
+      "Piecewise[{{m/(-2 + m), m > 2}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("Variance[FRatioDistribution[n, m]]").unwrap(),
+      "Piecewise[{{(2*m^2*(-2 + m + n))/((-4 + m)*(-2 + m)^2*n), m > 4}}, Indeterminate]"
+    );
+  }
+
+  // Out of the support of the mean/variance: the Piecewise default branch.
+  #[test]
+  fn indeterminate_low_dof() {
+    assert_eq!(
+      interpret("Mean[FRatioDistribution[5, 2]]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Variance[FRatioDistribution[5, 4]]").unwrap(),
+      "Indeterminate"
+    );
+  }
+}
+
 mod johnson_distribution {
   use super::*;
 
