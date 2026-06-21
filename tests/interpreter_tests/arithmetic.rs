@@ -820,6 +820,21 @@ mod big_integer {
     );
   }
 
+  // An integer-valued real index yields the exact factorial rounded to a
+  // machine real, not the float-Gamma approximation (which drifted, e.g.
+  // 120.00000000000021). Verified against wolframscript.
+  #[test]
+  fn factorial_integer_valued_real_is_exact() {
+    assert_eq!(interpret("Factorial[5.0]").unwrap(), "120.");
+    assert_eq!(interpret("Factorial[0.0]").unwrap(), "1.");
+    assert_eq!(interpret("Factorial[1.0]").unwrap(), "1.");
+    assert_eq!(interpret("Factorial[10.0]").unwrap(), "3.6288*^6");
+    assert_eq!(
+      interpret("Factorial[20.0]").unwrap(),
+      "2.43290200817664*^18"
+    );
+  }
+
   // `a! b!` is implicit multiplication of two factorials. Each factor
   // in an ImplicitTimes accepts a trailing `!` / `!!` postfix, matching
   // Wolfram's binding (Factorial > implicit Times > Power).

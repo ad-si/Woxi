@@ -350,6 +350,23 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = kg_inner(n, 1, &mut shift);
     Ok(bigint_to_expr(result << shift))
   } else if let Expr::Real(f) = &args[0] {
+    // An integer-valued real index gives the exact factorial rounded to a
+    // machine real: Factorial[5.0] -> 120., not the float-Gamma
+    // 120.00000000000021. Compute the exact integer factorial, then convert
+    // to f64 so the rounding matches wolframscript's exact-then-round.
+    // (170! is the largest factorial below the f64 range; beyond that
+    // wolframscript switches to arbitrary precision, left to the Gamma path.)
+    if f.fract() == 0.0 && *f >= 0.0 && *f <= 170.0 {
+      use num_traits::ToPrimitive;
+      let n = *f as i128;
+      let exact = if n <= 1 {
+        num_bigint::BigInt::from(1)
+      } else {
+        let mut shift: u64 = 0;
+        kg_inner(n, 1, &mut shift) << shift
+      };
+      return Ok(Expr::Real(exact.to_f64().unwrap_or(f64::INFINITY)));
+    }
     // Factorial[x] = Gamma[x+1] for real numbers
     let result = super::gamma_fn(*f + 1.0);
     if result.is_infinite() {
