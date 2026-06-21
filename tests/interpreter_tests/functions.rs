@@ -1015,6 +1015,15 @@ mod mantissa_exponent {
     assert_eq!(interpret("MantissaExponent[-42.5]").unwrap(), "{-0.425, 2}");
   }
 
+  // Regression: for a negative exponent the mantissa must be scaled by the
+  // EXACT positive power (value * base^|e|) rather than divided by the inexact
+  // fraction base^e, so MantissaExponent[0.0012] -> {0.12, -2}, not
+  // {0.11999999999999998, -2}.
+  #[test]
+  fn negative_exponent_no_float_noise() {
+    assert_eq!(interpret("MantissaExponent[0.0012]").unwrap(), "{0.12, -2}");
+  }
+
   #[test]
   fn real_times_large_integer_power() {
     // Regression: `2.5 * 10^20` used to stay as an unevaluated Times node

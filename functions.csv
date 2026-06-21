@@ -2415,7 +2415,7 @@ Algebraics,,🚫,,4.0,2468
 Beep,,🚫,,6.0,2468
 GaussianIntegers,,🚫,,2.0,2468
 HalfPlane,,🚫,,10.0,2468
-MantissaExponent,Decompose a number into mantissa and exponent,✅,1,2.0,2468
+MantissaExponent,Decompose a number into mantissa and exponent,✅,pure,2.0,2468
 SelectedCells,,🚫,,10.0,2468
 CellID,,🚫,,6.0,2469
 FormulaData,,🚫,,10.0,2473

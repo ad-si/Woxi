@@ -2159,7 +2159,15 @@ pub fn dispatch_math_functions(
         }
       }
       if is_inexact(&args[0]) || (args.len() == 2 && is_inexact(&args[1])) {
-        let m = val_num / base_num.powi(e as i32);
+        // Scale by the EXACT positive power base^|e| (dividing for e >= 0,
+        // multiplying for e < 0) rather than always dividing by base^e: for
+        // e < 0, base^e is an inexact fraction that introduces a spurious last
+        // digit (e.g. MantissaExponent[0.0012] -> 0.12, not 0.11999...).
+        let m = if e >= 0 {
+          val_num / base_num.powi(e as i32)
+        } else {
+          val_num * base_num.powi(-e as i32)
+        };
         return Some(Ok(Expr::List(
           vec![Expr::Real(m), Expr::Integer(e)].into(),
         )));
