@@ -3515,6 +3515,30 @@ mod string_form {
     );
   }
 
+  // The second argument of ToString must be a format symbol, never a number:
+  // wolframscript rejects a numeric format with ToString::fmtval and returns
+  // the call unevaluated instead of silently stringifying the value.
+  #[test]
+  fn to_string_numeric_format_rejected() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("ToString[255, 2]").unwrap();
+    assert_eq!(r.result, "ToString[255, 2]");
+    assert!(
+      r.warnings[0].contains("ToString::fmtval: 2 is not a valid format type."),
+      "got: {:?}",
+      r.warnings
+    );
+    // A real-valued format is likewise invalid.
+    assert_eq!(
+      interpret_with_stdout("ToString[x + y, 1.5]")
+        .unwrap()
+        .result,
+      "ToString[x + y, 1.5]"
+    );
+    // A genuine format symbol still works.
+    assert_eq!(interpret("ToString[255, InputForm]").unwrap(), "255");
+  }
+
   #[test]
   fn to_string_table_form_matrix() {
     assert_eq!(

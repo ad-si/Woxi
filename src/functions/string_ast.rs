@@ -3262,6 +3262,30 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // The optional second argument must be a format symbol (InputForm,
+  // OutputForm, TeXForm, …), never a number. wolframscript rejects e.g.
+  // ToString[255, 2] with ToString::fmtval and returns the call unevaluated,
+  // rather than silently ignoring the bogus format and stringifying the value.
+  if args.len() == 2 {
+    let is_numeric_form = matches!(
+      &args[1],
+      Expr::Integer(_)
+        | Expr::Real(_)
+        | Expr::BigInteger(_)
+        | Expr::BigFloat(_, _)
+    ) || matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Rational");
+    if is_numeric_form {
+      crate::emit_message(&format!(
+        "ToString::fmtval: {} is not a valid format type.",
+        crate::syntax::expr_to_output(&args[1])
+      ));
+      return Ok(Expr::FunctionCall {
+        name: "ToString".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  }
+
   // When the requested form is structural InputForm, display-directive
   // wrappers (TableForm, Column, BaseForm, NumberForm, AccountingForm,
   // DecimalForm, PaddedForm) are NOT rendered to their 2D text form — they
