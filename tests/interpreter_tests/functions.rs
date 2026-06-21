@@ -3335,6 +3335,23 @@ mod array_rules {
     );
   }
 
+  // Normal densifies SparseArrays inside an arithmetic expression and then
+  // evaluates the structural operation over the dense pieces. Regression: a
+  // sum of SparseArrays was densified to `{5, 0, 0} + {0, 3, 0}` but the list
+  // addition was left unevaluated.
+  #[test]
+  fn normal_evaluates_sum_of_sparse_arrays() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{1 -> 5}, 3] + SparseArray[{2 -> 3}, 3]]")
+        .unwrap(),
+      "{5, 3, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[2 SparseArray[{1 -> 5}, 3]]").unwrap(),
+      "{10, 0, 0}"
+    );
+  }
+
   // Canonical form is idempotent under re-normalization.
   #[test]
   fn sparse_array_canonical_idempotent() {

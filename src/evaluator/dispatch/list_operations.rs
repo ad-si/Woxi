@@ -2590,8 +2590,20 @@ pub fn dispatch_list_operations(
       {
         return Some(Ok(Expr::List(assoc_args.clone())));
       }
-      // For other expressions, recursively convert Associations in arguments
-      return Some(Ok(normal_convert_associations(&args[0])));
+      // For other expressions, recursively densify Associations/SparseArrays
+      // in the arguments, then re-evaluate so structural operations over the
+      // densified pieces resolve — e.g. Normal[SparseArray[..] + SparseArray[..]]
+      // densifies each to a list and then evaluates the `{..} + {..}` sum.
+      let converted = normal_convert_associations(&args[0]);
+      // Only re-evaluate when densification actually changed the expression,
+      // to avoid disturbing the plain `Normal[expr]` (no Association/
+      // SparseArray) pass-through.
+      if crate::syntax::expr_to_string(&converted)
+        == crate::syntax::expr_to_string(&args[0])
+      {
+        return Some(Ok(converted));
+      }
+      return Some(Ok(evaluate_expr_to_expr(&converted).unwrap_or(converted)));
     }
     "First" if args.len() == 1 || args.len() == 2 => {
       let default = if args.len() == 2 {
