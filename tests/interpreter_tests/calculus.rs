@@ -6265,6 +6265,34 @@ mod div {
       "Div[{r, 0}, {r, t}, Bogus]"
     );
   }
+
+  // Div contracts the LAST index, so for a rank-2 tensor T the result is the
+  // vector result[[i]] = Sum_j D[T[[i, j]], x_j] (divergence of each row).
+  #[test]
+  fn rank_two_tensor() {
+    assert_eq!(
+      interpret("Div[{{x, y}, {z, w}}, {x, y}]").unwrap(),
+      "{2, 0}"
+    );
+  }
+
+  // A non-square tensor: a 3x2 field over 2 variables yields a length-3 vector.
+  #[test]
+  fn nonsquare_tensor() {
+    assert_eq!(
+      interpret("Div[{{x, y}, {z, w}, {a, b}}, {x, y}]").unwrap(),
+      "{2, 0, 0}"
+    );
+  }
+
+  // Rank-3 tensor: the divergence is taken over the innermost index.
+  #[test]
+  fn rank_three_tensor() {
+    assert_eq!(
+      interpret("Div[{{{x, y}, {z, x}}, {{y, z}, {x, y}}}, {x, y}]").unwrap(),
+      "{{2, 0}, {0, 2}}"
+    );
+  }
 }
 
 mod dsolve_value {

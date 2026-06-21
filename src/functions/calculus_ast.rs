@@ -13593,12 +13593,12 @@ pub fn div_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return unevaluated(),
   };
 
-  if funcs.len() != vars.len() {
-    return unevaluated();
-  }
-
-  // The 3-argument form uses orthogonal-curvilinear scale factors.
+  // The 3-argument form uses orthogonal-curvilinear scale factors. It is
+  // defined for a rank-1 vector field, so the outer length must match.
   if args.len() == 3 {
+    if funcs.len() != vars.len() {
+      return unevaluated();
+    }
     let scales = match coord_scales_from_arg(&args[2], vars) {
       Some(h) => h,
       None => return unevaluated(),
@@ -13613,25 +13613,65 @@ pub fn div_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return divergence_curvilinear(funcs, &var_names, &scales);
   }
 
-  let mut terms = Vec::with_capacity(vars.len());
-  for (f, var) in funcs.iter().zip(vars.iter()) {
-    let var_name = match var {
-      Expr::Identifier(s) => s,
+  // Div contracts the LAST index of the field with the derivative variables.
+  // For a rank-1 vector field f this is the scalar Σ_j ∂f_j/∂x_j; for an
+  // array field it recurses over the outer structure, so a rank-2 tensor T
+  // gives the vector result[[i]] = Σ_j ∂T[[i, j]]/∂x_j.
+  let mut var_names = Vec::with_capacity(vars.len());
+  for var in vars {
+    match var {
+      Expr::Identifier(s) => var_names.push(s.clone()),
       _ => return unevaluated(),
-    };
-    let deriv = differentiate_expr(f, var_name)?;
-    let evald = crate::evaluator::evaluate_expr_to_expr(&deriv)?;
-    terms.push(evald);
+    }
+  }
+  match divergence_field(&args[0], &var_names)? {
+    Some(result) => Ok(result),
+    None => unevaluated(),
+  }
+}
+
+/// Divergence of an array `field` contracting its last index with `var_names`.
+/// Returns `None` when the field shape does not match the variable count.
+fn divergence_field(
+  field: &Expr,
+  var_names: &[String],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::List(items) = field else {
+    return Ok(None);
+  };
+  // Recurse into higher-rank fields: if elements are themselves lists, the last
+  // index is deeper, so map the divergence over the outer structure.
+  if items.iter().any(|e| matches!(e, Expr::List(_))) {
+    if !items.iter().all(|e| matches!(e, Expr::List(_))) {
+      return Ok(None);
+    }
+    let mut rows = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      match divergence_field(item, var_names)? {
+        Some(r) => rows.push(r),
+        None => return Ok(None),
+      }
+    }
+    return Ok(Some(Expr::List(rows.into())));
   }
 
+  // Base case: a rank-1 vector field. Contract Σ_j ∂f_j/∂x_j.
+  if items.len() != var_names.len() {
+    return Ok(None);
+  }
+  let mut terms = Vec::with_capacity(items.len());
+  for (f, var_name) in items.iter().zip(var_names.iter()) {
+    let deriv = differentiate_expr(f, var_name)?;
+    terms.push(crate::evaluator::evaluate_expr_to_expr(&deriv)?);
+  }
   if terms.len() == 1 {
-    return Ok(terms.into_iter().next().unwrap());
+    return Ok(Some(terms.into_iter().next().unwrap()));
   }
   let sum = Expr::FunctionCall {
     name: "Plus".to_string(),
     args: terms.into(),
   };
-  crate::evaluator::evaluate_expr_to_expr(&sum)
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&sum)?))
 }
 
 /// Laplacian[f, {x1, x2, ...}] = Sum of second partial derivatives
