@@ -2019,6 +2019,51 @@ mod piecewise {
     );
   }
 
+  // wolframscript merges consecutive clauses with structurally-equal values,
+  // OR-ing their distinct conditions.
+  #[test]
+  fn merges_consecutive_equal_values() {
+    assert_eq!(
+      interpret("Piecewise[{{a, x > 0}, {a, x <= 0}}]").unwrap(),
+      "Piecewise[{{a, x > 0 || x <= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("Piecewise[{{a, c1}, {a, c2}, {b, c3}}]").unwrap(),
+      "Piecewise[{{a, c1 || c2}, {b, c3}}, 0]"
+    );
+    // Non-adjacent equal values are NOT merged.
+    assert_eq!(
+      interpret("Piecewise[{{a, c1}, {b, c2}, {a, c3}}]").unwrap(),
+      "Piecewise[{{a, c1}, {b, c2}, {a, c3}}, 0]"
+    );
+    // Identical clauses collapse (c1 || c1 -> c1).
+    assert_eq!(
+      interpret("Piecewise[{{a, c1}, {a, c1}}]").unwrap(),
+      "Piecewise[{{a, c1}}, 0]"
+    );
+  }
+
+  // wolframscript drops trailing clauses whose value equals the default.
+  #[test]
+  fn drops_trailing_default_valued_clauses() {
+    assert_eq!(
+      interpret("Piecewise[{{b, c2}, {a, c1}}, a]").unwrap(),
+      "Piecewise[{{b, c2}}, a]"
+    );
+    assert_eq!(
+      interpret("Piecewise[{{a, c1}, {0, c2}}]").unwrap(),
+      "Piecewise[{{a, c1}}, 0]"
+    );
+    // A non-trailing default-valued clause is kept.
+    assert_eq!(
+      interpret("Piecewise[{{a, c1}, {b, c2}}, a]").unwrap(),
+      "Piecewise[{{a, c1}, {b, c2}}, a]"
+    );
+    // Merge then trailing-drop collapses everything to the default.
+    assert_eq!(interpret("Piecewise[{{a, c1}, {a, c2}}, a]").unwrap(), "a");
+    assert_eq!(interpret("Piecewise[{{a, c1}}, a]").unwrap(), "a");
+  }
+
   #[test]
   fn all_false_returns_symbolic_default() {
     assert_eq!(interpret("Piecewise[{{a, False}}, d]").unwrap(), "d");

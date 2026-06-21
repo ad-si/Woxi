@@ -139,9 +139,62 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(default_val);
   }
 
+  // wolframscript merges *consecutive* clauses whose values are structurally
+  // identical, OR-ing their distinct conditions:
+  //   Piecewise[{{a, c1}, {a, c2}}] -> Piecewise[{{a, c1 || c2}}].
+  // Identical clauses collapse to one (c1 || c1 -> c1).
+  let mut merged: Vec<(Expr, Vec<Expr>)> = Vec::new();
+  for pair in &kept {
+    if let Expr::List(items) = pair
+      && items.len() == 2
+    {
+      let val = items[0].clone();
+      let cond = items[1].clone();
+      if let Some((prev_val, conds)) = merged.last_mut()
+        && expr_to_string(prev_val) == expr_to_string(&val)
+      {
+        let cond_str = expr_to_string(&cond);
+        if !conds.iter().any(|c| expr_to_string(c) == cond_str) {
+          conds.push(cond);
+        }
+        continue;
+      }
+      merged.push((val, vec![cond]));
+    }
+  }
+
+  // Rebuild the {value, condition} pairs, OR-combining multi-condition groups.
+  let mut clauses: Vec<Expr> = Vec::with_capacity(merged.len());
+  for (val, conds) in merged {
+    let cond = if conds.len() == 1 {
+      conds.into_iter().next().unwrap()
+    } else {
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Or".to_string(),
+        args: conds.into(),
+      })?
+    };
+    clauses.push(Expr::List(vec![val, cond].into()));
+  }
+
+  // wolframscript drops trailing clauses whose value equals the default
+  // (a clause that only restates the fallback is redundant).
+  let default_str = expr_to_string(&default_val);
+  while let Some(Expr::List(items)) = clauses.last() {
+    if items.len() == 2 && expr_to_string(&items[0]) == default_str {
+      clauses.pop();
+    } else {
+      break;
+    }
+  }
+
+  if clauses.is_empty() {
+    return Ok(default_val);
+  }
+
   Ok(Expr::FunctionCall {
     name: "Piecewise".to_string(),
-    args: vec![Expr::List(kept.into()), default_val].into(),
+    args: vec![Expr::List(clauses.into()), default_val].into(),
   })
 }
 
