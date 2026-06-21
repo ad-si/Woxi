@@ -1803,7 +1803,7 @@ OutputForm,Converts expression to output form,✅,pure,1.0,1833
 RandomPermutation,Random permutation of n points returned as a Cycles object,✅,contextual,8.0,1833
 TooltipDelay,Tooltip delay option,,unevaluated,7.0,1833
 Catalan,Catalan constant approximately 0.9159655,✅,pure,1.0,1836
-FactorialMoment,Computes the r-th factorial moment of data (mean of falling factorials),✅,pure,8.0,1836
+FactorialMoment,Computes the r-th factorial moment of data or a distribution (mean of falling factorials),✅,pure,8.0,1836
 WatershedComponents,Watershed components,,unevaluated,8.0,1836
 LightPurple,Named light color evaluating to RGBColor[0.94 0.88 0.94],✅,pure,6.0,1838
 ViewCenter,View center option,,unevaluated,2.0,1838

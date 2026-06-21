@@ -2131,6 +2131,75 @@ mod factorial_moment {
       "(FactorialPower[1, r] + FactorialPower[2, r] + FactorialPower[3, r])/3"
     );
   }
+
+  // Distribution factorial moments E[X(X-1)...(X-r+1)].
+  #[test]
+  fn poisson() {
+    // The defining property of the Poisson distribution: E[X^(r)] = lambda^r.
+    assert_eq!(
+      interpret("FactorialMoment[PoissonDistribution[m], 2]").unwrap(),
+      "m^2"
+    );
+    assert_eq!(
+      interpret("FactorialMoment[PoissonDistribution[m], 1]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("FactorialMoment[PoissonDistribution[3], 2]").unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret("FactorialMoment[PoissonDistribution[m], 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn bernoulli() {
+    // X in {0,1}, so the falling factorial is 0 for r >= 2.
+    assert_eq!(
+      interpret("FactorialMoment[BernoulliDistribution[p], 1]").unwrap(),
+      "p"
+    );
+    assert_eq!(
+      interpret("FactorialMoment[BernoulliDistribution[p], 2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("FactorialMoment[BernoulliDistribution[p], 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn geometric() {
+    // r! (1/p - 1)^r.
+    assert_eq!(
+      interpret("FactorialMoment[GeometricDistribution[p], 1]").unwrap(),
+      "-1 + p^(-1)"
+    );
+    assert_eq!(
+      interpret("FactorialMoment[GeometricDistribution[p], 2]").unwrap(),
+      "2*(-1 + p^(-1))^2"
+    );
+  }
+
+  #[test]
+  fn binomial() {
+    // Falling factorial n(n-1)...(n-r+1) times p^r.
+    assert_eq!(
+      interpret("FactorialMoment[BinomialDistribution[n, p], 1]").unwrap(),
+      "n*p"
+    );
+    assert_eq!(
+      interpret("FactorialMoment[BinomialDistribution[n, p], 2]").unwrap(),
+      "-((1 - n)*n*p^2)"
+    );
+    assert_eq!(
+      interpret("FactorialMoment[BinomialDistribution[n, p], 3]").unwrap(),
+      "(1 - n)*(2 - n)*n*p^3"
+    );
+  }
 }
 
 mod beta_distribution {

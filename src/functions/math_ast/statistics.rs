@@ -3102,6 +3102,81 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Mean of the falling factorials FactorialPower[x_i, r].
 /// FactorialMoment[{{x1, y1, ...}, ...}, {r1, r2, ...}] — multivariate:
 /// mean of the products of per-coordinate falling factorials.
+/// Closed-form factorial moment E[X(X-1)...(X-r+1)] for the standard discrete
+/// distributions, in wolframscript's printed form. Returns None for orders or
+/// distributions without a clean closed form here.
+fn factorial_moment_of_distribution(
+  name: &str,
+  dargs: &[Expr],
+  r: i128,
+) -> Option<Expr> {
+  let pow = |b: Expr, e: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(b),
+    right: Box::new(e),
+  };
+  let times = |fs: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: fs.into(),
+  };
+  let r_factorial: i128 = (1..=r).product::<i128>().max(1);
+  match (name, dargs) {
+    // Poisson: E[X^(r)] = lambda^r (the defining property).
+    ("PoissonDistribution", [lam]) => Some(pow(lam.clone(), Expr::Integer(r))),
+    // Bernoulli: X in {0,1}, so X(X-1)... = 0 for r >= 2.
+    ("BernoulliDistribution", [p]) => Some(match r {
+      0 => Expr::Integer(1),
+      1 => p.clone(),
+      _ => Expr::Integer(0),
+    }),
+    // Geometric: r! (1/p - 1)^r, printed by Wolfram as r! (-1 + p^(-1))^r.
+    ("GeometricDistribution", [p]) => {
+      let base = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![Expr::Integer(-1), pow(p.clone(), Expr::Integer(-1))].into(),
+      };
+      Some(times(vec![
+        Expr::Integer(r_factorial),
+        pow(base, Expr::Integer(r)),
+      ]))
+    }
+    // Binomial: the falling factorial n(n-1)...(n-r+1) times p^r. Wolfram
+    // prints the falling factorial as the product of (i - n) factors, e.g.
+    // r=2 -> -((1 - n)*n*p^2), r=3 -> (1 - n)*(2 - n)*n*p^3.
+    ("BinomialDistribution", [n, p]) => {
+      if r == 0 {
+        return Some(Expr::Integer(1));
+      }
+      let mut factors: Vec<Expr> = Vec::new();
+      // (1 - n)*(2 - n)*...*((r-1) - n)
+      for i in 1..r {
+        factors.push(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::Integer(i),
+            times(vec![Expr::Integer(-1), n.clone()]),
+          ]
+          .into(),
+        });
+      }
+      factors.push(n.clone());
+      factors.push(pow(p.clone(), Expr::Integer(r)));
+      let product = times(factors);
+      // Each (i - n) flips a sign relative to the falling factorial n(n-1)...,
+      // so (r-1) such factors contribute (-1)^(r-1).
+      Some(if (r - 1).rem_euclid(2) == 1 {
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(product),
+        }
+      } else {
+        product
+      })
+    }
+    _ => None,
+  }
+}
+
 pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| Expr::FunctionCall {
     name: "FactorialMoment".to_string(),
@@ -3109,6 +3184,19 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if args.len() != 2 {
     return Ok(unevaluated(args));
+  }
+
+  // Distribution factorial moment E[X(X-1)...(X-r+1)] for a non-negative
+  // integer order r.
+  if let Expr::FunctionCall {
+    name: dist_name,
+    args: dargs,
+  } = &args[0]
+    && let Expr::Integer(r) = &args[1]
+    && *r >= 0
+    && let Some(result) = factorial_moment_of_distribution(dist_name, dargs, *r)
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
   let items = match &args[0] {
