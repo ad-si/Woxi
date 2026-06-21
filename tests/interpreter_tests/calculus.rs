@@ -2103,6 +2103,31 @@ mod limit {
     assert_eq!(interpret("Limit[(1/x)^x, x -> 0]").unwrap(), "1");
   }
 
+  // Factorial / Gamma diverge to +Infinity, as do Log[n!] and Sqrt[n!].
+  #[test]
+  fn limit_factorial_diverges() {
+    assert_eq!(interpret("Limit[n!, n -> Infinity]").unwrap(), "Infinity");
+    assert_eq!(
+      interpret("Limit[Log[n!], n -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[Gamma[n], n -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[Sqrt[n!], n -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(interpret("Limit[n!!, n -> Infinity]").unwrap(), "Infinity");
+  }
+
+  // The reciprocal still decays to 0.
+  #[test]
+  fn limit_recip_factorial_decays() {
+    assert_eq!(interpret("Limit[1/n!, n -> Infinity]").unwrap(), "0");
+  }
+
   // Product 0 * Infinity at a finite point: the L'Hopital rewrite must use the
   // 0/0 orientation (Log[2-x]/Cot[Pi x/2]) — the Infinity/Infinity orientation
   // differentiates Tan into ever-larger expressions that never resolve. This

@@ -8554,8 +8554,37 @@ fn extract_power(expr: &Expr) -> Option<(Expr, Expr)> {
   }
 }
 
+/// True if `expr` contains a super-polynomially growing function (Factorial,
+/// Gamma, …) applied to a var-dependent argument. Substituting a large probe
+/// value (1e6) into such an expression would materialize an astronomically
+/// large number, so the numeric limit heuristics must skip it and rely on the
+/// structural divergence analysis instead.
+fn contains_explosive_of_var(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (matches!(
+        name.as_str(),
+        "Factorial" | "Factorial2" | "Gamma" | "Hyperfactorial" | "BarnesG"
+      ) && args.iter().any(|a| !is_constant_wrt(a, var)))
+        || args.iter().any(|a| contains_explosive_of_var(a, var))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_explosive_of_var(left, var)
+        || contains_explosive_of_var(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => contains_explosive_of_var(operand, var),
+    Expr::List(items) => {
+      items.iter().any(|a| contains_explosive_of_var(a, var))
+    }
+    _ => false,
+  }
+}
+
 /// Check if an expression approaches 1 when var -> Infinity
 fn eval_at_infinity_is_one(expr: &Expr, var: &str) -> bool {
+  if contains_explosive_of_var(expr, var) {
+    return false;
+  }
   // Substitute a large value and check if close to 1
   let subst =
     crate::syntax::substitute_variable(expr, var, &Expr::Integer(1_000_000));
@@ -8579,6 +8608,9 @@ fn eval_at_infinity_is_one(expr: &Expr, var: &str) -> bool {
 
 /// Check if an expression diverges to infinity when var -> Infinity
 fn eval_at_infinity_diverges(expr: &Expr, var: &str) -> Option<bool> {
+  if contains_explosive_of_var(expr, var) {
+    return None;
+  }
   let subst =
     crate::syntax::substitute_variable(expr, var, &Expr::Integer(1_000_000));
   if let Ok(val) = crate::evaluator::evaluate_expr_to_expr(&subst)
@@ -8798,6 +8830,15 @@ fn diverges_pos_infinity(expr: &Expr, var: &str) -> Option<i32> {
   if let Expr::FunctionCall { name, args } = expr
     && args.len() == 1
     && (name == "Sqrt" || name == "Log")
+  {
+    return (diverges_pos_infinity(&args[0], var) == Some(1)).then_some(1);
+  }
+
+  // n!, n!!, Gamma[n] diverge to +Infinity when their argument does. (This
+  // also lets the Log[g] case above resolve Log[n!] -> Infinity.)
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && (name == "Factorial" || name == "Factorial2" || name == "Gamma")
   {
     return (diverges_pos_infinity(&args[0], var) == Some(1)).then_some(1);
   }
@@ -9541,6 +9582,9 @@ fn is_finite_value(e: &Expr) -> bool {
 
 /// Evaluate an expression numerically at var = n
 fn eval_at_large_n(expr: &Expr, var: &str, n: i128) -> Option<f64> {
+  if contains_explosive_of_var(expr, var) {
+    return None;
+  }
   let subst = crate::syntax::substitute_variable(expr, var, &Expr::Integer(n));
   let val = crate::evaluator::evaluate_expr_to_expr(&subst).ok()?;
   if let Some(f) = crate::functions::math_ast::try_eval_to_f64(&val) {
