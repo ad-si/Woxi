@@ -813,11 +813,26 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ChineseRemainder[{r1,r2,...}, {m1,m2,...}] - Chinese Remainder Theorem
 pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "ChineseRemainder expects exactly 2 arguments".into(),
+      "ChineseRemainder expects 2 or 3 arguments".into(),
     ));
   }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ChineseRemainder".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // The optional third argument shifts the result into [d, d + lcm).
+  let offset = if args.len() == 3 {
+    match expr_to_i128(&args[2]) {
+      Some(d) => Some(d),
+      None => return unevaluated(),
+    }
+  } else {
+    None
+  };
   let remainders = match &args[0] {
     Expr::List(items) => items,
     _ => {
@@ -886,9 +901,9 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mi = m_vals[i];
     let (g, p, _) = extended_gcd(modulus, mi);
     if (ri - result) % g != 0 {
-      return Err(InterpreterError::EvaluationError(
-        "ChineseRemainder: no solution exists".into(),
-      ));
+      // Incompatible congruences: no solution. wolframscript leaves the call
+      // unevaluated rather than erroring.
+      return unevaluated();
     }
     let lcm = modulus / g * mi;
     result =
@@ -896,7 +911,13 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     modulus = lcm;
   }
 
-  Ok(Expr::Integer(result))
+  // The 2-argument form returns the smallest non-negative solution (in
+  // [0, modulus)); the 3-argument form returns the smallest solution >= d
+  // (in [d, d + modulus)).
+  match offset {
+    None => Ok(Expr::Integer(result)),
+    Some(d) => Ok(Expr::Integer(d + (result - d).rem_euclid(modulus))),
+  }
 }
 
 /// DivisorSum[n, form] — applies form to each divisor and sums

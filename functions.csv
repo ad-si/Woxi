@@ -2335,7 +2335,7 @@ PartitionsQ,Number of partitions of n into distinct parts,✅,pure,1.0,2380
 BatesDistribution,probability distribution,🚫,None,8.0,2383
 SetSelectedNotebook,notebook UI,🚫,None,3.0,2383
 WaveletMapIndexed,wavelet processing,🚫,None,8.0,2383
-ChineseRemainder,Solves a system of modular congruences,✅,pure,6.0,2389
+ChineseRemainder,Solves a system of modular congruences (optional third argument gives the smallest solution >= d),✅,pure,6.0,2389
 ContentPadding,UI styling,🚫,None,8.0,2389
 FromSphericalCoordinates,Converts spherical coordinates to Cartesian,✅,None,10.1,2389
 IntervalSlider,UI widget,🚫,None,10.0,2389

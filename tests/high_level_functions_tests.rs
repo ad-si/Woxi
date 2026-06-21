@@ -1100,6 +1100,34 @@ mod high_level_functions_tests {
         "52"
       );
     }
+
+    // The three-argument form returns the smallest solution >= d.
+    #[test]
+    fn test_offset() {
+      assert_eq!(
+        interpret("ChineseRemainder[{1, 2}, {3, 5}, 10]").unwrap(),
+        "22"
+      );
+      assert_eq!(
+        interpret("ChineseRemainder[{1, 2}, {3, 5}, -10]").unwrap(),
+        "-8"
+      );
+      // d already at or below the base solution returns the base solution.
+      assert_eq!(
+        interpret("ChineseRemainder[{2, 3}, {3, 5}, 8]").unwrap(),
+        "8"
+      );
+    }
+
+    // Incompatible congruences have no solution: wolframscript leaves the
+    // call unevaluated (rather than erroring).
+    #[test]
+    fn test_no_solution_unevaluated() {
+      assert_eq!(
+        interpret("ChineseRemainder[{2, 3}, {4, 6}]").unwrap(),
+        "ChineseRemainder[{2, 3}, {4, 6}]"
+      );
+    }
   }
 
   mod divisor_sum_tests {

@@ -157,7 +157,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ChebyshevU" => Some((2, 2)),
     "ChessboardDistance" => Some((2, 2)),
     "ChiDistribution" => Some((1, 1)),
-    "ChineseRemainder" => Some((2, 2)),
+    "ChineseRemainder" => Some((2, 3)),
     "ChiSquareDistribution" => Some((1, 1)),
     "Chop" => Some((1, 2)),
     "CircleThrough" => Some((1, 1)),

@@ -2777,7 +2777,7 @@ pub fn dispatch_math_functions(
     "LucasL" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::lucas_l_ast(args));
     }
-    "ChineseRemainder" if args.len() == 2 => {
+    "ChineseRemainder" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::chinese_remainder_ast(args));
     }
     "DivisorSum" if args.len() == 2 || args.len() == 3 => {
