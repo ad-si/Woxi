@@ -370,7 +370,7 @@ ArcSec,Returns the arc secant,✅,pure,1.0,372
 DeleteDuplicates,Removes duplicate elements from a list (or pairs with duplicate values from an association),✅,pure,7.0,373
 Csc,Returns the cosecant,✅,pure,1.0,374
 DisplayFunction,Option controlling display output,✅,pure,1.0,375
-Product,Computes the product of an expression over a range,✅,pure,1.0,376
+Product,Computes the product of an expression over one or more ranges,✅,pure,1.0,376
 FontWeight,Option for specifying font weight (Bold etc),✅,pure,3.0,377
 Right,Symbol for right alignment,✅,pure,1.0,378
 Most,Returns the list without its last element,✅,pure,5.0,379

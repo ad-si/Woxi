@@ -1464,6 +1464,36 @@ mod product_extended {
     assert_eq!(interpret("Product[k, {k, 1, 6, 2}]").unwrap(), "15");
   }
 
+  // Multi-index Product nests like multi-index Sum: the rightmost iterator is
+  // innermost, so Product[expr, {i,...}, {j,...}] = Product[Product[expr,
+  // {j,...}], {i,...}].
+  #[test]
+  fn multi_index_independent_bounds() {
+    // inner Product[i, {j,1,2}] = i^2; (4!)^2 = 576
+    assert_eq!(
+      interpret("Product[i, {i, 1, 4}, {j, 1, 2}]").unwrap(),
+      "576"
+    );
+    assert_eq!(
+      interpret("Product[i + j, {i, 1, 2}, {j, 1, 2}]").unwrap(),
+      "72"
+    );
+    assert_eq!(
+      interpret("Product[i*j, {i, 1, 3}, {j, 1, 2}]").unwrap(),
+      "288"
+    );
+  }
+
+  // The inner iterator's bound may depend on the outer variable.
+  #[test]
+  fn multi_index_dependent_bound() {
+    // Product[i, {j,1,i}] = i^i; 1^1 * 2^2 * 3^3 = 108
+    assert_eq!(
+      interpret("Product[i, {i, 1, 3}, {j, 1, i}]").unwrap(),
+      "108"
+    );
+  }
+
   // Product[k + a, {k, 1, n}] = Pochhammer[1 + a, n]. wolframscript prints the
   // Gamma ratio Gamma[1+a+n]/Gamma[1+a] for a numeric shift and keeps
   // Pochhammer for a symbolic shift.

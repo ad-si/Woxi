@@ -562,6 +562,22 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(f64_to_expr(product));
   }
 
+  // Multi-dimensional Product: Product[expr, {i,...}, {j,...}, ...] =>
+  // Product[Product[expr, {j,...}], {i,...}] (the rightmost iterator is
+  // innermost), mirroring multi-index Sum.
+  if args.len() > 2 {
+    let body = &args[0];
+    let inner_iter = &args[args.len() - 1];
+    let inner_product = product_ast(&[body.clone(), inner_iter.clone()])?;
+    if args.len() == 3 {
+      return product_ast(&[inner_product, args[1].clone()]);
+    } else {
+      let mut new_args = vec![inner_product];
+      new_args.extend_from_slice(&args[1..args.len() - 1]);
+      return product_ast(&new_args);
+    }
+  }
+
   if args.len() == 2 {
     // Product[expr, {i, min, max}] -> multiply expr for each i
     let body = &args[0];
