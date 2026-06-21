@@ -503,6 +503,20 @@ pub fn all_components_equal(a: &Expr, b: &Expr) -> bool {
   }
 }
 
+/// wolframscript displays an unevaluated comparison in chained operator form
+/// (`a < b`, `a == b == c`) rather than keeping the `Less[a, b]` head. Build
+/// the `Expr::Comparison` node the formatter renders that way; the evaluator's
+/// Comparison arm treats it as a stable fixpoint for symbolic operands.
+fn symbolic_comparison_chain(
+  args: &[Expr],
+  op: crate::syntax::ComparisonOp,
+) -> Expr {
+  Expr::Comparison {
+    operands: args.to_vec(),
+    operators: vec![op; args.len().saturating_sub(1)],
+  }
+}
+
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Equal[] and Equal[x] return True (like wolframscript)
   if args.len() < 2 {
@@ -617,10 +631,10 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Only stay symbolic if at least one arg has free symbols
   if args.iter().any(crate::evaluator::has_free_symbols) {
-    Ok(Expr::FunctionCall {
-      name: "Equal".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(symbolic_comparison_chain(
+      args,
+      crate::syntax::ComparisonOp::Equal,
+    ))
   } else {
     // No free symbols, not identical → False
     Ok(Expr::Identifier("False".to_string()))
@@ -676,10 +690,10 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Only stay symbolic if at least one arg has free symbols
   if has_free {
-    Ok(Expr::FunctionCall {
-      name: "Unequal".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(symbolic_comparison_chain(
+      args,
+      crate::syntax::ComparisonOp::NotEqual,
+    ))
   } else {
     // No free symbols, pairwise different → True
     Ok(Expr::Identifier("True".to_string()))
@@ -758,19 +772,19 @@ pub fn less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let prev = match expr_to_num(a) {
       Some(n) => n,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "Less".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(symbolic_comparison_chain(
+          args,
+          crate::syntax::ComparisonOp::Less,
+        ));
       }
     };
     let curr = match expr_to_num(b) {
       Some(n) => n,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "Less".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(symbolic_comparison_chain(
+          args,
+          crate::syntax::ComparisonOp::Less,
+        ));
       }
     };
     if prev >= curr {
@@ -798,10 +812,10 @@ pub fn greater_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut prev = match expr_to_num(&args[0]) {
     Some(n) => n,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "Greater".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(symbolic_comparison_chain(
+        args,
+        crate::syntax::ComparisonOp::Greater,
+      ));
     }
   };
 
@@ -809,10 +823,10 @@ pub fn greater_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let curr = match expr_to_num(arg) {
       Some(n) => n,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "Greater".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(symbolic_comparison_chain(
+          args,
+          crate::syntax::ComparisonOp::Greater,
+        ));
       }
     };
     if prev <= curr {
@@ -841,10 +855,10 @@ pub fn less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut prev = match expr_to_num(&args[0]) {
     Some(n) => n,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "LessEqual".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(symbolic_comparison_chain(
+        args,
+        crate::syntax::ComparisonOp::LessEqual,
+      ));
     }
   };
 
@@ -852,10 +866,10 @@ pub fn less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let curr = match expr_to_num(arg) {
       Some(n) => n,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "LessEqual".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(symbolic_comparison_chain(
+          args,
+          crate::syntax::ComparisonOp::LessEqual,
+        ));
       }
     };
     if prev > curr {
@@ -884,10 +898,10 @@ pub fn greater_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut prev = match expr_to_num(&args[0]) {
     Some(n) => n,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "GreaterEqual".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(symbolic_comparison_chain(
+        args,
+        crate::syntax::ComparisonOp::GreaterEqual,
+      ));
     }
   };
 
@@ -895,10 +909,10 @@ pub fn greater_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let curr = match expr_to_num(arg) {
       Some(n) => n,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "GreaterEqual".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(symbolic_comparison_chain(
+          args,
+          crate::syntax::ComparisonOp::GreaterEqual,
+        ));
       }
     };
     if prev < curr {

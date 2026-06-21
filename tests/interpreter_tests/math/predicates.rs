@@ -797,6 +797,33 @@ mod list_equality {
   }
 }
 
+// A symbolic comparison entered in function-call form (e.g. Less[a, b]) must
+// render in wolframscript's chained operator form (a < b), the same as the
+// operator-parsed input, not keep the Less[...] head.
+mod symbolic_comparison_function_form {
+  use super::*;
+
+  #[test]
+  fn binary_relations() {
+    assert_eq!(interpret("Less[a, b]").unwrap(), "a < b");
+    assert_eq!(interpret("Less[a, a]").unwrap(), "a < a");
+    assert_eq!(interpret("Greater[a, b]").unwrap(), "a > b");
+    assert_eq!(interpret("LessEqual[a, a]").unwrap(), "a <= a");
+    assert_eq!(interpret("GreaterEqual[x, y]").unwrap(), "x >= y");
+    assert_eq!(interpret("Equal[a, b]").unwrap(), "a == b");
+    assert_eq!(interpret("Unequal[a, b]").unwrap(), "a != b");
+  }
+
+  #[test]
+  fn chained_relations() {
+    assert_eq!(interpret("Less[a, b, c]").unwrap(), "a < b < c");
+    assert_eq!(interpret("Less[1, x, 3]").unwrap(), "1 < x < 3");
+    assert_eq!(interpret("Equal[a, a, b]").unwrap(), "a == a == b");
+    assert_eq!(interpret("Equal[x, x, x, y]").unwrap(), "x == x == x == y");
+    assert_eq!(interpret("Unequal[a, b, a]").unwrap(), "a != b != a");
+  }
+}
+
 mod equal_edge_cases {
   use super::*;
 
