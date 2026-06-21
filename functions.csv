@@ -1067,7 +1067,7 @@ VertexTextureCoordinates,,🚫,,8.0,1076
 BarSpacing,,🚫,,7.0,1077
 WeierstrassP,Weierstrass elliptic function,✅,pure,1.0,1078
 StateSpaceModel,,🚫,,8.0,1079
-LCM,Returns the least common multiple of integers and rationals,✅,pure,1.0,1080
+LCM,Returns the least common multiple of integers and rationals (and Gaussian integers),✅,pure,1.0,1080
 Predict,,🚫,,10.0,1081
 RomanNumeral,Converts an integer to a Roman numeral string,✅,pure,10.2,1082
 FourierTrigSeries,,🚫,,7.0,1085
@@ -1568,7 +1568,7 @@ DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,comp
 MeshCellStyle,Style mesh cells,,unevaluated,10.0,1593
 MovingMap,Apply a function to a sliding window,✅,computation,10.0,1593
 SelectComponents,Select image components,,unevaluated,8.0,1593
-CoprimeQ,Tests whether integers are pairwise coprime (Listable),✅,pure,6.0,1597
+CoprimeQ,Tests whether integers (or Gaussian integers) are pairwise coprime (Listable),✅,pure,6.0,1597
 NotebookPut,Create notebook from expression,,unevaluated,3.0,1597
 PositiveDefiniteMatrixQ,Test if a matrix is positive definite,✅,computation,6.0,1597
 ThreeJSymbol,Wigner 3-j symbol,✅,pure,2.0,1597

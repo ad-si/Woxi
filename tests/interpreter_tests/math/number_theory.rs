@@ -1746,6 +1746,14 @@ mod lcm {
     assert_eq!(interpret("LCM[x, 5]").unwrap(), "LCM[5, x]");
   }
 
+  // LCM of Gaussian integers: (a/gcd)*b over Z[i], canonical associate.
+  #[test]
+  fn gaussian_integers() {
+    assert_eq!(interpret("LCM[2 + 2 I, 4]").unwrap(), "4");
+    assert_eq!(interpret("LCM[1 + I, 1 - I]").unwrap(), "1 + I");
+    assert_eq!(interpret("LCM[1 + 2 I, 2 + I]").unwrap(), "5");
+  }
+
   #[test]
   fn rationals() {
     // LCM[a/b, c/d] = LCM[a, c] / GCD[b, d]
@@ -2133,6 +2141,14 @@ mod coprime_q {
   #[test]
   fn three_not_coprime() {
     assert_eq!(interpret("CoprimeQ[2, 4, 5]").unwrap(), "False");
+  }
+
+  // Gaussian integers are coprime iff their gcd over Z[i] is a unit.
+  #[test]
+  fn gaussian_integers() {
+    assert_eq!(interpret("CoprimeQ[1 + 2 I, 2 + I]").unwrap(), "True");
+    assert_eq!(interpret("CoprimeQ[2 + 2 I, 4]").unwrap(), "False");
+    assert_eq!(interpret("CoprimeQ[1 + I, 1 - I]").unwrap(), "False");
   }
 
   // Single argument tests whether n is a unit (|n| == 1).

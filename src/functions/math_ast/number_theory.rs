@@ -101,6 +101,32 @@ fn gaussian_gcd(mut a: (i128, i128), mut b: (i128, i128)) -> (i128, i128) {
   gaussian_normalize(a)
 }
 
+/// Product of two Gaussian integers.
+fn gaussian_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  let (ar, ai) = a;
+  let (br, bi) = b;
+  (ar * br - ai * bi, ar * bi + ai * br)
+}
+
+/// Exact Gaussian division a / b, assuming b divides a evenly (b nonzero).
+fn gaussian_exact_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  let (ar, ai) = a;
+  let (br, bi) = b;
+  let denom = br * br + bi * bi;
+  // a * conj(b) / denom
+  ((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom)
+}
+
+/// LCM of two Gaussian integers: (a / gcd(a, b)) * b, normalised to the
+/// canonical associate. `(0, 0)` if either operand is zero.
+fn gaussian_lcm(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  if a == (0, 0) || b == (0, 0) {
+    return (0, 0);
+  }
+  let g = gaussian_gcd(a, b);
+  gaussian_normalize(gaussian_mul(gaussian_exact_div(a, g), b))
+}
+
 /// Extract a Gaussian integer (re, im) from an expression, or None if it is not
 /// an exact complex number with integer real and imaginary parts.
 fn expr_to_gaussian_int(expr: &Expr) -> Option<(i128, i128)> {
@@ -286,6 +312,30 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "LCM".to_string(),
       args: vec![].into(),
     });
+  }
+
+  // Gaussian-integer LCM: when at least one argument is a complex (Gaussian)
+  // integer, combine via (a/gcd)*b over Z[i] and return the canonical associate
+  // (Re > 0, Im >= 0), e.g. LCM[1 + I, 1 - I] = 1 + I.
+  if let Some(gs) = args
+    .iter()
+    .map(expr_to_gaussian_int)
+    .collect::<Option<Vec<_>>>()
+    && gs.iter().any(|(_, im)| *im != 0)
+  {
+    let mut g = gs[0];
+    for &z in &gs[1..] {
+      g = gaussian_lcm(g, z);
+    }
+    let (re, im) = gaussian_normalize(g);
+    if im == 0 {
+      return Ok(Expr::Integer(re));
+    }
+    let complex = Expr::FunctionCall {
+      name: "Complex".to_string(),
+      args: vec![Expr::Integer(re), Expr::Integer(im)].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&complex);
   }
 
   let mut fractions: Vec<(BigInt, BigInt)> = Vec::with_capacity(args.len());
@@ -3193,6 +3243,25 @@ pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier(
       if is_unit { "True" } else { "False" }.to_string(),
     ));
+  }
+
+  // Gaussian-integer CoprimeQ: when at least one argument is a complex
+  // (Gaussian) integer, two values are coprime iff their gcd over Z[i] is a
+  // unit (the canonical associate 1). Coprimality is tested pairwise.
+  if let Some(gs) = args
+    .iter()
+    .map(expr_to_gaussian_int)
+    .collect::<Option<Vec<_>>>()
+    && gs.iter().any(|(_, im)| *im != 0)
+  {
+    for i in 0..gs.len() {
+      for j in (i + 1)..gs.len() {
+        if gaussian_gcd(gs[i], gs[j]) != (1, 0) {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+      }
+    }
+    return Ok(Expr::Identifier("True".to_string()));
   }
 
   // Extract all integer values

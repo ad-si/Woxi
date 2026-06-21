@@ -16,3 +16,10 @@ False
 $ wo 'CoprimeQ[14, 15]'
 True
 ```
+
+Gaussian integers are coprime when their gcd over `Z[i]` is a unit.
+
+```scrut
+$ wo 'CoprimeQ[1 + 2 I, 2 + I]'
+True
+```
