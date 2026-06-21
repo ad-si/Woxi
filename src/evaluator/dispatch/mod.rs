@@ -10097,6 +10097,19 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
     _ => return None,
   };
 
+  // Explicit-position form: Blend[{{p1, c1}, {p2, c2}, …}, t] places the
+  // colors at parameter positions p_i and interpolates piecewise-linearly at
+  // t (clamped to [p1, p_last]). Detected when every entry is a {pos, color}
+  // pair; falls through to the uniform form otherwise.
+  if args.len() == 2
+    && colors
+      .iter()
+      .all(|item| matches!(item, Expr::List(pair) if pair.len() == 2))
+    && let Some(result) = evaluate_blend_positioned(colors, &args[1])
+  {
+    return Some(result);
+  }
+
   // Image blend: linearly interpolate matching-shape Images per pixel.
   if colors.iter().all(|c| matches!(c, Expr::Image { .. })) {
     return blend_images(colors, args.get(1));
@@ -10204,6 +10217,119 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
         all_graylevel,
       )
     }
+  }
+}
+
+/// Blend[{{p1, c1}, {p2, c2}, …}, t] — interpolate colors at explicit
+/// parameter positions. Returns None (to fall through) if any entry is not a
+/// numeric-position / color pair. Exact when t and all positions are exact
+/// (rational output); float when any is inexact; endpoints returned unchanged
+/// when t is outside [p1, p_last].
+fn evaluate_blend_positioned(pairs: &[Expr], t_arg: &Expr) -> Option<Expr> {
+  let n = pairs.len();
+  let mut pos_f64: Vec<f64> = Vec::with_capacity(n);
+  let mut rgbs: Vec<[(i128, i128); 3]> = Vec::with_capacity(n);
+  let mut all_graylevel = true;
+  let mut all_pos_exact = true;
+  for item in pairs {
+    let Expr::List(pair) = item else {
+      return None;
+    };
+    if pair.len() != 2 {
+      return None;
+    }
+    pos_f64.push(crate::functions::math_ast::expr_to_f64(&pair[0])?);
+    if matches!(&pair[0], Expr::Real(_)) {
+      all_pos_exact = false;
+    }
+    if !is_graylevel(&pair[1]) {
+      all_graylevel = false;
+    }
+    rgbs.push(extract_rgb_rational(&pair[1])?);
+  }
+
+  let build_exact = |rgb: &[(i128, i128); 3]| -> Expr {
+    if all_graylevel {
+      Expr::FunctionCall {
+        name: "GrayLevel".to_string(),
+        args: vec![rational_to_expr(rgb[0].0, rgb[0].1)].into(),
+      }
+    } else {
+      Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: (0..3)
+          .map(|ch| rational_to_expr(rgb[ch].0, rgb[ch].1))
+          .collect(),
+      }
+    }
+  };
+
+  let t_f64 = crate::functions::math_ast::expr_to_f64(t_arg)?;
+  // Outside the parameter range: clamp to the endpoint color (unchanged).
+  if t_f64 <= pos_f64[0] {
+    return Some(build_exact(&rgbs[0]));
+  }
+  if t_f64 >= pos_f64[n - 1] {
+    return Some(build_exact(&rgbs[n - 1]));
+  }
+  // Locate the segment [p_seg, p_{seg+1}] containing t.
+  let mut seg = 0;
+  for i in 0..n - 1 {
+    if t_f64 >= pos_f64[i] && t_f64 <= pos_f64[i + 1] {
+      seg = i;
+      break;
+    }
+  }
+
+  let t_exact = all_pos_exact && !matches!(t_arg, Expr::Real(_));
+  if t_exact {
+    let (tn, td) = expr_to_rational(t_arg)?;
+    let Expr::List(lo) = &pairs[seg] else {
+      return None;
+    };
+    let Expr::List(hi) = &pairs[seg + 1] else {
+      return None;
+    };
+    let (an, ad) = expr_to_rational(&lo[0])?;
+    let (bn, bd) = expr_to_rational(&hi[0])?;
+    // local_t = (t - p_seg) / (p_{seg+1} - p_seg), as a rational.
+    let num_diff = tn * ad - an * td; // over td*ad
+    let den_diff = td * ad;
+    let num_span = bn * ad - an * bd; // over bd*ad
+    let den_span = bd * ad;
+    if num_span == 0 {
+      return None;
+    }
+    let lt_num = num_diff * den_span;
+    let lt_den = den_diff * num_span;
+    return blend_two_rational(
+      &rgbs[seg],
+      &rgbs[seg + 1],
+      lt_num,
+      lt_den,
+      all_graylevel,
+    );
+  }
+
+  // Inexact: interpolate the two segment colors in f64.
+  let local = (t_f64 - pos_f64[seg]) / (pos_f64[seg + 1] - pos_f64[seg]);
+  let c1 = &rgbs[seg];
+  let c2 = &rgbs[seg + 1];
+  let build_channel = |ch: usize| -> Expr {
+    let v1 = c1[ch].0 as f64 / c1[ch].1 as f64;
+    let v2 = c2[ch].0 as f64 / c2[ch].1 as f64;
+    Expr::Real(v1 * (1.0 - local) + v2 * local)
+  };
+  if all_graylevel {
+    Some(Expr::FunctionCall {
+      name: "GrayLevel".to_string(),
+      args: vec![build_channel(0)].into(),
+    })
+  } else {
+    Some(Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: (0..3).map(build_channel).collect(),
+    })
   }
 }
 
