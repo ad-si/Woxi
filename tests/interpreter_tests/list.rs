@@ -11221,6 +11221,23 @@ mod cases {
       r#"a + b + c + d + e + f"#,
     );
   }
+  // Join[expr, n] — a single expression with a trailing positive-integer level
+  // returns the expression unchanged (joining one thing).
+  #[test]
+  fn join_single_list_with_level() {
+    assert_case(r#"Join[{1, 2}, 3]"#, r#"{1, 2}"#);
+    assert_case(r#"Join[{1, 2}, 1]"#, r#"{1, 2}"#);
+    assert_case(r#"Join[{{1}, {2}}, 2]"#, r#"{{1}, {2}}"#);
+    assert_case(r#"Join[f[1, 2], 2]"#, r#"f[1, 2]"#);
+  }
+  #[test]
+  fn join_single_atom_or_bad_level_stays_unevaluated() {
+    // Atomic first argument, or a non-positive level, leaves Join unevaluated.
+    assert_case(r#"Join[5, 2]"#, r#"Join[5, 2]"#);
+    assert_case(r#"Join[a, 2]"#, r#"Join[a, 2]"#);
+    assert_case(r#"Join[{1, 2}, 0]"#, r#"Join[{1, 2}, 0]"#);
+    assert_case(r#"Join[{1, 2}, -1]"#, r#"Join[{1, 2}, -1]"#);
+  }
   #[test]
   fn pad_left_1() {
     assert_case(r#"PadLeft[{1, 2, 3}, 5]"#, r#"{0, 0, 1, 2, 3}"#);

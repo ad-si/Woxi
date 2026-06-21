@@ -3111,6 +3111,24 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::pad_ast(name, args));
     }
     "Join" => {
+      // Join[expr, n] — a single expression with a trailing positive-integer
+      // level. Joining one expression yields that expression unchanged for any
+      // valid level (no depth requirement), provided it is nonatomic. An atomic
+      // first argument or a non-positive level leaves the call unevaluated.
+      // (wolframscript: Join[{1,2}, 3] -> {1, 2}, Join[5, 2] -> Join[5, 2].)
+      if args.len() == 2
+        && let Expr::Integer(n) = &args[1]
+      {
+        if *n >= 1
+          && matches!(&args[0], Expr::List(_) | Expr::FunctionCall { .. })
+        {
+          return Some(Ok(args[0].clone()));
+        }
+        return Some(Ok(Expr::FunctionCall {
+          name: "Join".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       // Check if last argument is an integer level spec
       if args.len() >= 3
         && let Expr::Integer(n) = &args[args.len() - 1]
