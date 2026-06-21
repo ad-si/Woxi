@@ -7116,6 +7116,15 @@ mod sinc {
   fn sinc_numeric() {
     assert_eq!(interpret("Sinc[1.0]").unwrap(), "0.8414709848078965");
   }
+
+  // Sin is bounded while the denominator diverges, so Sinc[±Infinity] = 0;
+  // an undirected ComplexInfinity gives Indeterminate. Per wolframscript.
+  #[test]
+  fn sinc_infinite_limits() {
+    assert_eq!(interpret("Sinc[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Sinc[-Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Sinc[ComplexInfinity]").unwrap(), "Indeterminate");
+  }
 }
 
 mod reim {

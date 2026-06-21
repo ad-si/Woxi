@@ -1745,6 +1745,31 @@ pub fn dispatch_math_functions(
       if is_zero {
         return Some(Ok(Expr::Integer(1)));
       }
+      // Limits at infinity: Sin is bounded while the denominator diverges, so
+      // Sinc[±Infinity] = 0. An undirected ComplexInfinity is Indeterminate.
+      match &args[0] {
+        Expr::Identifier(s) if s == "Infinity" => {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        Expr::Identifier(s) if s == "ComplexInfinity" => {
+          return Some(Ok(Expr::Identifier("Indeterminate".to_string())));
+        }
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand,
+        } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") =>
+        {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        Expr::FunctionCall { name, args: dargs }
+          if name == "DirectedInfinity" && dargs.len() == 1 =>
+        {
+          if matches!(&dargs[0], Expr::Integer(1) | Expr::Integer(-1)) {
+            return Some(Ok(Expr::Integer(0)));
+          }
+        }
+        _ => {}
+      }
       // For numeric/exact args, compute Sin[x]/x
       let sin_result = crate::functions::math_ast::sin_ast(args);
       match sin_result {
