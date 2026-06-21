@@ -7338,6 +7338,65 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
         }
         Power => {
+          // ∫ Log[x]^n dx = x · Σ_{k=0}^{n} (-1)^(n-k) (n!/k!) Log[x]^k
+          // for integer n ≥ 1 (repeated integration by parts). Building the
+          // expanded form reproduces wolframscript's ordering, e.g.
+          // ∫ Log[x]^2 dx → 2 x - 2 x Log[x] + x Log[x]^2.
+          if let Expr::FunctionCall {
+            name: lname,
+            args: largs,
+          } = left.as_ref()
+            && lname == "Log"
+            && largs.len() == 1
+            && matches!(&largs[0], Expr::Identifier(nm) if nm == var)
+            && let Expr::Integer(n) = right.as_ref()
+            && *n >= 1
+          {
+            let n = *n;
+            let fact = |m: i128| -> i128 { (1..=m).product() };
+            let nf = fact(n);
+            let logx = Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![Expr::Identifier(var.to_string())].into(),
+            };
+            let mut sum: Option<Expr> = None;
+            for k in 0..=n {
+              let mag = nf / fact(k);
+              let coeff = if (n - k) % 2 == 0 { mag } else { -mag };
+              let logpow = match k {
+                0 => Expr::Integer(1),
+                1 => logx.clone(),
+                _ => Expr::BinaryOp {
+                  op: Power,
+                  left: Box::new(logx.clone()),
+                  right: Box::new(Expr::Integer(k)),
+                },
+              };
+              let term = Expr::BinaryOp {
+                op: Times,
+                left: Box::new(Expr::Integer(coeff)),
+                right: Box::new(logpow),
+              };
+              sum = Some(match sum {
+                None => term,
+                Some(s) => Expr::BinaryOp {
+                  op: Plus,
+                  left: Box::new(s),
+                  right: Box::new(term),
+                },
+              });
+            }
+            let prod = Expr::BinaryOp {
+              op: Times,
+              left: Box::new(Expr::Identifier(var.to_string())),
+              right: Box::new(sum.unwrap()),
+            };
+            if let Ok(expanded) =
+              crate::evaluator::evaluate_function_call_ast("Expand", &[prod])
+            {
+              return Some(expanded);
+            }
+          }
           // ∫ 1/(a + b*x)^n dx for n ≥ 2 integer → -(a+b*x)^(1-n)/(b*(n-1))
           // Wolfram keeps this factored, matching wolframscript's
           // `Integrate[1/(1+x)^4, x]` → `-1/(3*(1+x)^3)`. Only applies when

@@ -5066,6 +5066,40 @@ mod integrate_log {
   fn integrate_log_x() {
     assert_eq!(interpret("Integrate[Log[x], x]").unwrap(), "-x + x*Log[x]");
   }
+
+  // ∫ Log[x]^n dx = x Σ (-1)^(n-k) (n!/k!) Log[x]^k.
+  #[test]
+  fn integrate_log_squared() {
+    assert_eq!(
+      interpret("Integrate[Log[x]^2, x]").unwrap(),
+      "2*x - 2*x*Log[x] + x*Log[x]^2"
+    );
+  }
+
+  #[test]
+  fn integrate_log_cubed() {
+    assert_eq!(
+      interpret("Integrate[Log[x]^3, x]").unwrap(),
+      "-6*x + 6*x*Log[x] - 3*x*Log[x]^2 + x*Log[x]^3"
+    );
+  }
+
+  #[test]
+  fn integrate_log_power_other_variable() {
+    assert_eq!(
+      interpret("Integrate[Log[y]^2, y]").unwrap(),
+      "2*y - 2*y*Log[y] + y*Log[y]^2"
+    );
+  }
+
+  // Definite ∫_1^E Log[x]^2 dx = E - 2.
+  #[test]
+  fn integrate_log_squared_definite() {
+    assert_eq!(
+      interpret("Integrate[Log[x]^2, {x, 1, E}]").unwrap(),
+      "-2 + E"
+    );
+  }
 }
 
 mod integrate_by_parts {
