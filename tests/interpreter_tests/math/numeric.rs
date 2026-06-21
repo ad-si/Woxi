@@ -1274,6 +1274,23 @@ mod overflow_safety {
     assert_eq!(interpret("Rationalize[Pi, 0.01]").unwrap(), "22/7");
   }
 
+  // With an explicit zero tolerance, a symbolic value (constant, radical, or
+  // bare symbol) is returned unchanged rather than numericized into a
+  // spurious approximation. Only an actual machine Real is converted.
+  #[test]
+  fn rationalize_symbolic_zero_tolerance_passes_through() {
+    assert_eq!(interpret("Rationalize[Pi, 0]").unwrap(), "Pi");
+    assert_eq!(interpret("Rationalize[E, 0]").unwrap(), "E");
+    assert_eq!(interpret("Rationalize[Sqrt[2], 0]").unwrap(), "Sqrt[2]");
+    assert_eq!(interpret("Rationalize[x, 0]").unwrap(), "x");
+    // A genuine machine Real is still converted to its exact rational.
+    assert_eq!(interpret("Rationalize[2.5, 0]").unwrap(), "5/2");
+    assert_eq!(
+      interpret("Rationalize[3.14159, 0]").unwrap(),
+      "314159/100000"
+    );
+  }
+
   #[test]
   fn rationalize_exact_rational_passes_through() {
     assert_eq!(interpret("Rationalize[1/3]").unwrap(), "1/3");

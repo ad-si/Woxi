@@ -1276,6 +1276,20 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(args[0].clone());
   }
 
+  // With an explicit zero tolerance, Rationalize only converts an actual
+  // machine number (Real/BigFloat) to its exact rational; a symbolic value
+  // (Pi, E, Sqrt[2], a bare symbol) is returned unchanged rather than being
+  // numericized into a spurious approximation. A non-zero tolerance still
+  // numerically approximates such values further down.
+  if args.len() == 2 {
+    let tol_is_zero = matches!(&args[1], Expr::Integer(0))
+      || matches!(&args[1], Expr::Real(t) if *t == 0.0);
+    if tol_is_zero && !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+    {
+      return Ok(args[0].clone());
+    }
+  }
+
   let x = match expr_to_num(&args[0]) {
     Some(x) => x,
     None => {
