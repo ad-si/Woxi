@@ -392,9 +392,9 @@ fn gamma_bigfloat(
   use astro_float::BigFloat;
 
   // Choose `a` from the working precision. astro-float's bit count is
-  // a little above the requested decimal digits, so use ln(10)/ln(2) ≈
-  // 0.301 to convert bits → digits and pad by ~1.6.
-  let approx_digits = (bits as f64 * 0.30103).ceil() as i64;
+  // a little above the requested decimal digits, so use log10(2) ≈ 0.301
+  // to convert bits → digits and pad by ~1.6.
+  let approx_digits = (bits as f64 * std::f64::consts::LOG10_2).ceil() as i64;
   let a_int: i64 = ((approx_digits as f64) * 1.6).ceil() as i64 + 5;
   let a_int = a_int.max(20);
   let a_bf = BigFloat::from_i64(a_int, bits);

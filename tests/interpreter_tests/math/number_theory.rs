@@ -1177,6 +1177,41 @@ mod power_mod {
       "PowerMod[3, 1/2, 7]"
     );
   }
+
+  // PowerMod[a, 1/n, m] for n >= 3: when a is a unit and gcd(n, λ(m)) = 1 the
+  // n-th root is unique and given by a^(n^-1 mod λ(m)), matching wolframscript.
+  #[test]
+  fn nth_root_unique_unit() {
+    assert_eq!(interpret("PowerMod[5, 1/3, 11]").unwrap(), "3");
+    assert_eq!(interpret("PowerMod[2, 1/3, 5]").unwrap(), "3");
+    assert_eq!(interpret("PowerMod[3, 1/3, 5]").unwrap(), "2");
+    assert_eq!(interpret("PowerMod[2, 1/5, 9]").unwrap(), "5");
+    assert_eq!(interpret("PowerMod[10, 1/7, 13]").unwrap(), "10");
+  }
+
+  #[test]
+  fn nth_root_unit_composite_modulus() {
+    // gcd(3, λ(15) = 4) = 1, so the cube root of 8 mod 15 is unique.
+    assert_eq!(interpret("PowerMod[8, 1/3, 15]").unwrap(), "2");
+  }
+
+  // No n-th root exists: wolframscript emits PowerMod::root and returns the
+  // call unevaluated.
+  #[test]
+  fn nth_root_no_solution_stays_unevaluated() {
+    assert_eq!(
+      interpret("PowerMod[2, 1/3, 7]").unwrap(),
+      "PowerMod[2, 1/3, 7]"
+    );
+    assert_eq!(
+      interpret("PowerMod[5, 1/3, 7]").unwrap(),
+      "PowerMod[5, 1/3, 7]"
+    );
+    assert_eq!(
+      interpret("PowerMod[2, 1/5, 11]").unwrap(),
+      "PowerMod[2, 1/5, 11]"
+    );
+  }
 }
 
 mod prime_pi {

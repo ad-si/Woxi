@@ -2943,23 +2943,31 @@ pub fn carmichael_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  Ok(Expr::Integer(carmichael_lambda_u128(n) as i128))
+}
+
+/// Carmichael lambda λ(n): the smallest m with a^m ≡ 1 (mod n) for all a
+/// coprime to n. λ(0) is defined here as 0 and λ(1) as 1.
+pub fn carmichael_lambda_u128(n: u128) -> u128 {
+  if n == 0 {
+    return 0;
+  }
   if n <= 1 {
-    return Ok(Expr::Integer(1));
+    return 1;
   }
 
-  // Factor n into prime powers
+  // Factor n into prime powers, accumulating the LCM of λ(p^k).
   let mut remaining = n;
-  let mut result: u128 = 1; // will accumulate LCM
+  let mut result: u128 = 1;
 
   let mut p: u128 = 2;
   while p * p <= remaining {
-    if remaining % p == 0 {
+    if remaining.is_multiple_of(p) {
       let mut pk: u128 = 1;
-      while remaining % p == 0 {
+      while remaining.is_multiple_of(p) {
         pk *= p;
         remaining /= p;
       }
-      // Compute lambda(p^k)
       let lambda_pk = if p == 2 {
         if pk <= 2 {
           1 // lambda(2) = 1
@@ -2977,12 +2985,11 @@ pub fn carmichael_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     p += 1;
   }
   if remaining > 1 {
-    // remaining is a prime p with exponent 1
-    // lambda(p) = p - 1
+    // remaining is a prime p with exponent 1: lambda(p) = p - 1
     result = lcm_u128(result, remaining - 1);
   }
 
-  Ok(Expr::Integer(result as i128))
+  result
 }
 
 fn lcm_u128(a: u128, b: u128) -> u128 {
@@ -3423,11 +3430,10 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PowerMod expects exactly 3 arguments".into(),
     ));
   }
-  // Modular square root: PowerMod[a, 1/2, m] returns the smallest
-  // nonnegative x with x^2 ≡ a (mod m), or an unevaluated result with a
-  // PowerMod::root message when no such x exists.
-  if is_rational_half(&args[1]) {
-    return power_mod_sqrt_ast(args);
+  // Modular root: PowerMod[a, 1/n, m] returns an x with x^n ≡ a (mod m), or an
+  // unevaluated result with a PowerMod::root message when no such x exists.
+  if let Some(n) = rational_reciprocal_exponent(&args[1]) {
+    return power_mod_root_ast(args, n);
   }
   match (
     expr_to_bigint(&args[0]),
@@ -3489,24 +3495,40 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// True if `expr` is the rational 1/2 (stored as Rational[1, 2]).
-fn is_rational_half(expr: &Expr) -> bool {
+/// If `expr` is a unit fraction 1/n (stored as Rational[1, n]) with n ≥ 2,
+/// return n; otherwise None.
+fn rational_reciprocal_exponent(expr: &Expr) -> Option<u128> {
+  use num_traits::ToPrimitive;
   if let Expr::FunctionCall { name, args } = expr
     && name == "Rational"
     && args.len() == 2
+    && expr_to_bigint(&args[0]) == Some(BigInt::from(1))
   {
-    return expr_to_bigint(&args[0]) == Some(BigInt::from(1))
-      && expr_to_bigint(&args[1]) == Some(BigInt::from(2));
+    let n = expr_to_bigint(&args[1])?.to_u128()?;
+    if n >= 2 {
+      return Some(n);
+    }
   }
-  false
+  None
 }
 
-/// Largest modulus for which the modular square root is found by exhaustive
-/// search. Beyond this the call is left unevaluated to avoid long scans.
+/// Largest modulus for which the modular root is found by exhaustive search.
+/// Beyond this the call is left unevaluated to avoid long scans.
 const MOD_SQRT_BRUTE_LIMIT: u128 = 100_000_000;
 
-/// PowerMod[a, 1/2, m] - smallest nonnegative modular square root of a mod m.
-fn power_mod_sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+/// PowerMod[a, 1/n, m] - a modular n-th root of a modulo m.
+///
+/// wolframscript returns the unique root via x = a^(n^-1 mod λ(m)) when a is a
+/// unit and gcd(n, λ(m)) = 1, and emits a `PowerMod::root` message when no root
+/// exists. When several roots exist and gcd(n, λ(m)) ≠ 1 (n ≥ 3),
+/// wolframscript's specific choice depends on per-prime CRT lifting and is not
+/// reproducible here, so the call is left unevaluated rather than returning a
+/// possibly-wrong root. The n = 2 case returns the smallest root, matching
+/// wolframscript.
+fn power_mod_root_ast(
+  args: &[Expr],
+  n: u128,
+) -> Result<Expr, InterpreterError> {
   use num_traits::{ToPrimitive, Zero};
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -3514,14 +3536,16 @@ fn power_mod_sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     })
   };
+  let exp_str = || crate::syntax::expr_to_string(&args[1]);
   let (Some(a), Some(m)) = (expr_to_bigint(&args[0]), expr_to_bigint(&args[2]))
   else {
     return unevaluated();
   };
   if m.is_zero() {
     crate::emit_message(&format!(
-      "PowerMod::divz: The argument 0 in PowerMod[{}, 1/2, 0] should be nonzero.",
-      crate::syntax::expr_to_string(&args[0])
+      "PowerMod::divz: The argument 0 in PowerMod[{}, {}, 0] should be nonzero.",
+      crate::syntax::expr_to_string(&args[0]),
+      exp_str()
     ));
     return unevaluated();
   }
@@ -3535,25 +3559,44 @@ fn power_mod_sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Reduce a into [0, m).
   let a_red = ((&a % &m) + &m) % &m;
   let a_u = a_red.to_u128().unwrap_or(0);
-  for x in 0..m_u {
-    if mod_mul(x, x, m_u) == a_u {
-      return Ok(Expr::Integer(x as i128));
+
+  // Closed form for a unit with gcd(n, λ(m)) = 1: a^(n^-1 mod λ(m)) mod m is
+  // the unique root and matches wolframscript exactly.
+  if gcd_u128(a_u, m_u) == 1 {
+    let lambda = carmichael_lambda_u128(m_u);
+    if lambda > 0
+      && let Some(n_inv) = mod_inverse((n % lambda) as i128, lambda as i128)
+    {
+      let b = mod_pow_unsigned(a_u, n_inv as u128, m_u);
+      if mod_pow_unsigned(b, n, m_u) == a_u {
+        return Ok(Expr::Integer(b as i128));
+      }
     }
   }
-  crate::emit_message(&format!(
-    "PowerMod::root: The equation x^2 = {} (mod {}) has no integer solutions.",
-    crate::syntax::expr_to_string(&args[0]),
-    crate::syntax::expr_to_string(&args[2])
-  ));
-  unevaluated()
-}
 
-/// (a * b) mod m using BigUint to avoid u128 overflow on large moduli.
-fn mod_mul(a: u128, b: u128, m: u128) -> u128 {
-  use num_bigint::BigUint;
-  use num_traits::ToPrimitive;
-  let prod = BigUint::from(a) * BigUint::from(b) % BigUint::from(m);
-  prod.to_u128().unwrap_or(0)
+  // Otherwise search for the smallest root. For n == 2 this matches
+  // wolframscript; for n ≥ 3 with multiple roots the chosen root may differ,
+  // so only the n == 2 result is returned.
+  let mut smallest: Option<u128> = None;
+  for x in 0..m_u {
+    if mod_pow_unsigned(x, n, m_u) == a_u {
+      smallest = Some(x);
+      break;
+    }
+  }
+  match smallest {
+    Some(x) if n == 2 => Ok(Expr::Integer(x as i128)),
+    Some(_) => unevaluated(),
+    None => {
+      crate::emit_message(&format!(
+        "PowerMod::root: The equation x^{} = {} (mod {}) has no integer solutions.",
+        n,
+        crate::syntax::expr_to_string(&args[0]),
+        crate::syntax::expr_to_string(&args[2])
+      ));
+      unevaluated()
+    }
+  }
 }
 
 /// Binary exponentiation: base^exp mod modulus (all unsigned)
