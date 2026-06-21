@@ -260,6 +260,18 @@ pub fn reduce_expr(
     return reduce_and(left, right, vars, domain);
   }
 
+  // A chained two-sided numeric bound such as `0 < x < 5` (a 3-operand
+  // Comparison) or the mixed-strictness `0 < x <= 10` (an Inequality[...]
+  // FunctionCall) expands to the equivalent conjunction and reduces to the
+  // canonical Inequality[…] form. Restricted to numeric bounds so symbolic
+  // cases like `a < x < b` are left untouched rather than diverging from
+  // wolframscript's parametric result.
+  if vars.len() == 1
+    && let Some(and_expr) = expand_numeric_two_sided_bound(expr, &vars[0])
+  {
+    return reduce_expr(&and_expr, vars, domain);
+  }
+
   // Single constraint
   if vars.len() == 1 {
     return reduce_single_var(expr, &vars[0], domain);
@@ -267,6 +279,95 @@ pub fn reduce_expr(
 
   // Multi-variable: try sequential elimination
   reduce_multi_var(expr, vars, domain)
+}
+
+/// True if `e` is a real number literal (integer, big integer, real, a signed
+/// such, or an exact Rational).
+fn is_real_number_literal(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      args.iter().all(is_real_number_literal)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_real_number_literal(operand),
+    _ => false,
+  }
+}
+
+/// If `expr` is a two-sided chained inequality `lo op1 var op2 hi` with the
+/// single `var` in the middle and `lo`/`hi` real-number literals, return the
+/// equivalent `(lo op1 var) && (var op2 hi)` conjunction; otherwise `None`.
+/// Both the chained-Comparison shape (`0 < x < 5`) and the Inequality[...]
+/// FunctionCall shape (mixed strictness, `0 < x <= 10`) are recognized.
+fn expand_numeric_two_sided_bound(expr: &Expr, var: &str) -> Option<Expr> {
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(s) if s == var);
+  let and = |left: Expr, right: Expr| Expr::BinaryOp {
+    op: BinaryOperator::And,
+    left: Box::new(left),
+    right: Box::new(right),
+  };
+  let is_ineq_op = |op: crate::syntax::ComparisonOp| {
+    use crate::syntax::ComparisonOp::*;
+    matches!(op, Less | LessEqual | Greater | GreaterEqual)
+  };
+
+  match expr {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 3
+      && operators.len() == 2
+      && operators.iter().all(|o| is_ineq_op(*o))
+      && is_var(&operands[1])
+      && is_real_number_literal(&operands[0])
+      && is_real_number_literal(&operands[2]) =>
+    {
+      let left = Expr::Comparison {
+        operands: vec![operands[0].clone(), operands[1].clone()],
+        operators: vec![operators[0]],
+      };
+      let right = Expr::Comparison {
+        operands: vec![operands[1].clone(), operands[2].clone()],
+        operators: vec![operators[1]],
+      };
+      Some(and(left, right))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Inequality" && args.len() == 5 =>
+    {
+      let valid = |e: &Expr| {
+        matches!(e, Expr::Identifier(s)
+          if matches!(s.as_str(), "Less" | "LessEqual" | "Greater" | "GreaterEqual"))
+      };
+      if !(valid(&args[1])
+        && valid(&args[3])
+        && is_var(&args[2])
+        && is_real_number_literal(&args[0])
+        && is_real_number_literal(&args[4]))
+      {
+        return None;
+      }
+      let op_name = |e: &Expr| match e {
+        Expr::Identifier(s) => s.clone(),
+        _ => unreachable!(),
+      };
+      let left = Expr::FunctionCall {
+        name: op_name(&args[1]),
+        args: vec![args[0].clone(), args[2].clone()].into(),
+      };
+      let right = Expr::FunctionCall {
+        name: op_name(&args[3]),
+        args: vec![args[2].clone(), args[4].clone()].into(),
+      };
+      Some(and(left, right))
+    }
+    _ => None,
+  }
 }
 
 /// Reduce a single constraint in one variable.

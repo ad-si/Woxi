@@ -3281,6 +3281,35 @@ mod reduce {
     assert_eq!(interpret("Reduce[False, x]").unwrap(), "False");
   }
 
+  // A chained two-sided numeric bound reduces to the canonical Inequality
+  // form, just like the equivalent And-of-inequalities.
+  #[test]
+  fn reduce_chained_inequality_numeric() {
+    assert_eq!(
+      interpret("Reduce[0 < x < 5, x]").unwrap(),
+      "Inequality[0, Less, x, Less, 5]"
+    );
+    assert_eq!(
+      interpret("Reduce[1 <= x <= 3, x]").unwrap(),
+      "Inequality[1, LessEqual, x, LessEqual, 3]"
+    );
+    // Mixed strictness parses as an Inequality[...] and must also reduce.
+    assert_eq!(
+      interpret("Reduce[0 < x <= 10, x]").unwrap(),
+      "Inequality[0, Less, x, LessEqual, 10]"
+    );
+    assert_eq!(
+      interpret("Reduce[-2 <= x < 7, x]").unwrap(),
+      "Inequality[-2, LessEqual, x, Less, 7]"
+    );
+  }
+
+  #[test]
+  fn reduce_chained_inequality_empty() {
+    // An impossible two-sided bound reduces to False.
+    assert_eq!(interpret("Reduce[5 < x < 1, x]").unwrap(), "False");
+  }
+
   // Reduce[..., Modulus -> n] enumerates solutions in Z/nZ.
   #[test]
   fn reduce_modulus_one_var_quadratic() {
