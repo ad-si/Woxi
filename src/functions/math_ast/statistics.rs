@@ -5452,6 +5452,230 @@ pub fn characteristic_function_ast(
   }
 }
 
+// ─── MomentGeneratingFunction ────────────────────────────────────────
+
+/// MomentGeneratingFunction[dist, t] — E[e^(t X)] for the supported
+/// distribution constructors. Structurally the CharacteristicFunction with
+/// the imaginary unit dropped (MGF(t) = CF(-I t)), but Wolfram canonicalizes
+/// the MGF forms differently, so the templates are built to match its print.
+pub fn moment_generating_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "MomentGeneratingFunction".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let t = args[1].clone();
+
+  let e_sym = || Expr::Identifier("E".to_string());
+  let call = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: fargs.into(),
+  };
+  let neg = |e: Expr| Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(e),
+  };
+  let pow = |b: Expr, e: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(b),
+    right: Box::new(e),
+  };
+  let div = |n: Expr, d: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(n),
+    right: Box::new(d),
+  };
+  // E^t and E^(c*t)
+  let e_t = |factors: Vec<Expr>| {
+    if factors.is_empty() {
+      pow(e_sym(), t.clone())
+    } else {
+      let mut f = factors;
+      f.push(t.clone());
+      pow(e_sym(), call("Times", f))
+    }
+  };
+  // 1 - p, written as Plus[1, Times[-1, p]]
+  let one_minus = |p: &Expr| {
+    call(
+      "Plus",
+      vec![
+        Expr::Integer(1),
+        call("Times", vec![Expr::Integer(-1), p.clone()]),
+      ],
+    )
+  };
+
+  let (dist_name, dargs) = match &args[0] {
+    Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
+    _ => return Ok(unevaluated(args)),
+  };
+
+  fn is_symbolic_param(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(_) => true,
+      Expr::List(items) => {
+        items.iter().all(|i| matches!(i, Expr::Identifier(_)))
+      }
+      _ => false,
+    }
+  }
+  let symbolic =
+    matches!(&t, Expr::Identifier(_)) && dargs.iter().all(is_symbolic_param);
+
+  let template: Option<(Expr, bool)> = match (dist_name, dargs) {
+    // E^(t^2/2)
+    ("NormalDistribution", []) => Some((
+      pow(
+        e_sym(),
+        div(pow(t.clone(), Expr::Integer(2)), Expr::Integer(2)),
+      ),
+      false,
+    )),
+    // E^(m*t + (s^2*t^2)/2)
+    ("NormalDistribution", [m, s]) => Some((
+      pow(
+        e_sym(),
+        call(
+          "Plus",
+          vec![
+            call("Times", vec![m.clone(), t.clone()]),
+            div(
+              call(
+                "Times",
+                vec![
+                  pow(s.clone(), Expr::Integer(2)),
+                  pow(t.clone(), Expr::Integer(2)),
+                ],
+              ),
+              Expr::Integer(2),
+            ),
+          ],
+        ),
+      ),
+      true,
+    )),
+    // a/(a - t)
+    ("ExponentialDistribution", [a]) => Some((
+      div(
+        a.clone(),
+        call(
+          "Plus",
+          vec![a.clone(), call("Times", vec![Expr::Integer(-1), t.clone()])],
+        ),
+      ),
+      false,
+    )),
+    // E^((-1 + E^t)*m)
+    ("PoissonDistribution", [m]) => Some((
+      pow(
+        e_sym(),
+        call(
+          "Times",
+          vec![
+            call("Plus", vec![Expr::Integer(-1), e_t(vec![])]),
+            m.clone(),
+          ],
+        ),
+      ),
+      true,
+    )),
+    // 1 - p + E^t*p
+    ("BernoulliDistribution", [p]) => Some((
+      call(
+        "Plus",
+        vec![
+          Expr::Integer(1),
+          call("Times", vec![Expr::Integer(-1), p.clone()]),
+          call("Times", vec![e_t(vec![]), p.clone()]),
+        ],
+      ),
+      false,
+    )),
+    // (1 + (-1 + E^t)*p)^n
+    ("BinomialDistribution", [n, p]) => Some((
+      pow(
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call(
+              "Times",
+              vec![
+                call("Plus", vec![Expr::Integer(-1), e_t(vec![])]),
+                p.clone(),
+              ],
+            ),
+          ],
+        ),
+        n.clone(),
+      ),
+      true,
+    )),
+    // p/(1 - E^t*(1 - p))
+    ("GeometricDistribution", [p]) => Some((
+      div(
+        p.clone(),
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call("Times", vec![Expr::Integer(-1), e_t(vec![]), one_minus(p)]),
+          ],
+        ),
+      ),
+      true,
+    )),
+    // (1 - b*t)^(-a)
+    ("GammaDistribution", [a, b]) => Some((
+      pow(
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            neg(call("Times", vec![b.clone(), t.clone()])),
+          ],
+        ),
+        neg(a.clone()),
+      ),
+      true,
+    )),
+    // (-1 + E^t)/t
+    ("UniformDistribution", []) => Some((
+      div(
+        call("Plus", vec![Expr::Integer(-1), e_t(vec![])]),
+        t.clone(),
+      ),
+      false,
+    )),
+    // (-E^(a*t) + E^(b*t))/((-a + b)*t)
+    ("UniformDistribution", [Expr::List(bounds)]) if bounds.len() == 2 => {
+      let (a, b) = (bounds[0].clone(), bounds[1].clone());
+      Some((
+        div(
+          call(
+            "Plus",
+            vec![neg(e_t(vec![a.clone()])), e_t(vec![b.clone()])],
+          ),
+          call("Times", vec![call("Plus", vec![neg(a), b]), t.clone()]),
+        ),
+        true,
+      ))
+    }
+    _ => None,
+  };
+
+  match template {
+    Some((expr, raw)) if raw && symbolic => Ok(expr),
+    Some((expr, _)) => crate::evaluator::evaluate_expr_to_expr(&expr),
+    None => Ok(unevaluated(args)),
+  }
+}
+
 // ─── CorrelationFunction ─────────────────────────────────────────────
 
 /// CorrelationFunction[data, k] — the sample autocorrelation at lag k:

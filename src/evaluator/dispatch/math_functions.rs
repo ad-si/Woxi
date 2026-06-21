@@ -776,6 +776,11 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    "MomentGeneratingFunction" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::moment_generating_function_ast(
+        args,
+      ));
+    }
     "Variance" if args.len() == 1 => {
       return Some(crate::functions::math_ast::variance_ast(args));
     }

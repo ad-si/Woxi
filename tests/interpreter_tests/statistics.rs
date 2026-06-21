@@ -5025,6 +5025,96 @@ mod characteristic_function {
   }
 }
 
+mod moment_generating_function {
+  use super::*;
+
+  #[test]
+  fn normal() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[NormalDistribution[], t]").unwrap(),
+      "E^(t^2/2)"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[NormalDistribution[m, s], t]")
+        .unwrap(),
+      "E^(m*t + (s^2*t^2)/2)"
+    );
+  }
+
+  #[test]
+  fn exponential_and_gamma() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[ExponentialDistribution[a], t]")
+        .unwrap(),
+      "a/(a - t)"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[GammaDistribution[a, b], t]")
+        .unwrap(),
+      "(1 - b*t)^(-a)"
+    );
+  }
+
+  #[test]
+  fn poisson_bernoulli_binomial() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[PoissonDistribution[m], t]").unwrap(),
+      "E^((-1 + E^t)*m)"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[BernoulliDistribution[p], t]")
+        .unwrap(),
+      "1 - p + E^t*p"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[BinomialDistribution[n, p], t]")
+        .unwrap(),
+      "(1 + (-1 + E^t)*p)^n"
+    );
+  }
+
+  #[test]
+  fn geometric_and_uniform() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[GeometricDistribution[p], t]")
+        .unwrap(),
+      "p/(1 - E^t*(1 - p))"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[UniformDistribution[], t]").unwrap(),
+      "(-1 + E^t)/t"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[UniformDistribution[{a, b}], t]")
+        .unwrap(),
+      "(-E^(a*t) + E^(b*t))/((-a + b)*t)"
+    );
+  }
+
+  #[test]
+  fn numeric_argument_folds() {
+    // The MGF at t = 0 is always 1.
+    assert_eq!(
+      interpret("MomentGeneratingFunction[NormalDistribution[0, 1], 0]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[ExponentialDistribution[2], t]")
+        .unwrap(),
+      "2/(2 - t)"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[x, t]").unwrap(),
+      "MomentGeneratingFunction[x, t]"
+    );
+  }
+}
+
 mod log_likelihood {
   use super::*;
 

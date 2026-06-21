@@ -146,6 +146,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CenterArray" => Some((1, 3)),
     "CentralMoment" => Some((2, 2)),
     "CharacteristicFunction" => Some((2, 2)),
+    "MomentGeneratingFunction" => Some((2, 2)),
     "CForm" => Some((1, 1)),
     "CharacterCounts" => Some((1, 2)),
     "CharacteristicPolynomial" => Some((2, 2)),
