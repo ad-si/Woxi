@@ -1029,9 +1029,10 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &abs_n,
     )));
   }
+  // Only exact integers can be prime: wolframscript returns False for any
+  // Real argument, even integer-valued ones (PrimeQ[2.0] -> False).
   let n = match &args[0] {
     Expr::Integer(n) => n.abs(),
-    Expr::Real(f) if f.fract() == 0.0 && *f > 0.0 => *f as i128,
     _ => return Ok(bool_expr(false)),
   };
 

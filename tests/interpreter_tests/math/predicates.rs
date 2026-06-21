@@ -1920,6 +1920,22 @@ mod cases {
       r#"True"#,
     );
   }
+
+  // Only exact integers can be prime: wolframscript returns False for any
+  // Real argument, even integer-valued ones like 2.0 or 7.0.
+  #[test]
+  fn prime_q_real_is_false() {
+    assert_case(r#"PrimeQ[2.0]"#, r#"False"#);
+    assert_case(r#"PrimeQ[7.0]"#, r#"False"#);
+    assert_case(r#"PrimeQ[7.5]"#, r#"False"#);
+    assert_case(r#"PrimeQ[Pi]"#, r#"False"#);
+    // Exact integers (including a Rational that reduces to one) are unaffected.
+    assert_case(r#"PrimeQ[7]"#, r#"True"#);
+    assert_case(r#"PrimeQ[3/1]"#, r#"True"#);
+    assert_case(r#"PrimeQ[3/2]"#, r#"False"#);
+    // CompositeQ[7.0] becomes True (7.0 is not prime and exceeds 1).
+    assert_case(r#"CompositeQ[7.0]"#, r#"True"#);
+  }
   #[test]
   fn symbol_literal() {
     assert_case(
