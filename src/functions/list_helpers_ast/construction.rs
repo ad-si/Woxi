@@ -666,25 +666,32 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let any_real =
     matches!(&min_expr, Expr::Real(_)) || matches!(&step_expr, Expr::Real(_));
 
+  // Compute each element as `min + k*step` rather than by repeated addition.
+  // Accumulation compounds the rounding error of an inexact step, so e.g.
+  // Range[10, 11, 0.1] would end at 10.999999999999996; `min + k*step` matches
+  // wolframscript's 11. (The termination tolerance is unchanged.)
   let mut results = Vec::new();
-  let mut val = min;
-  if step > 0.0 {
-    while val <= max + f64::EPSILON {
-      results.push(if any_real {
-        Expr::Real(val)
-      } else {
-        f64_to_expr(val)
-      });
-      val += step;
+  let mut k: i128 = 0;
+  loop {
+    let val = min + (k as f64) * step;
+    let within = if step > 0.0 {
+      val <= max + f64::EPSILON
+    } else {
+      val >= max - f64::EPSILON
+    };
+    if !within {
+      break;
     }
-  } else {
-    while val >= max - f64::EPSILON {
-      results.push(if any_real {
-        Expr::Real(val)
-      } else {
-        f64_to_expr(val)
-      });
-      val += step;
+    results.push(if any_real {
+      Expr::Real(val)
+    } else {
+      f64_to_expr(val)
+    });
+    k += 1;
+    if k > 1_000_000 {
+      return Err(InterpreterError::EvaluationError(
+        "Range: result too large".into(),
+      ));
     }
   }
 

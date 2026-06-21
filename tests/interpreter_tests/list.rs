@@ -6144,6 +6144,27 @@ mod range_real {
     assert_eq!(interpret("Range[1.0, 2.3, .5]").unwrap(), "{1., 1.5, 2.}");
   }
 
+  // Elements are computed as min + k*step, not by repeated addition, so an
+  // inexact step does not compound rounding error. (wolframscript parity)
+  #[test]
+  fn range_float_step_no_accumulated_error() {
+    assert_eq!(
+      interpret("Range[1, 2, 0.3]").unwrap(),
+      "{1., 1.3, 1.6, 1.9}"
+    );
+    // The last element is exactly 11., not 10.999999999999996.
+    assert_eq!(
+      interpret("Range[10, 11, 0.1]").unwrap(),
+      "{10., 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 11.}"
+    );
+    // k*step reproduces wolframscript's per-element rounding exactly.
+    assert_eq!(
+      interpret("Range[0, 1, 0.1]").unwrap(),
+      "{0., 0.1, 0.2, 0.30000000000000004, 0.4, 0.5, 0.6000000000000001, \
+       0.7000000000000001, 0.8, 0.9, 1.}"
+    );
+  }
+
   #[test]
   fn range_symbolic_pi() {
     assert_eq!(
