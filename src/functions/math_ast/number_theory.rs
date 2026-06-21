@@ -1743,17 +1743,10 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Prime".to_string(),
     args: args.to_vec().into(),
   };
-  match expr_to_i128(&args[0]).or_else(|| {
-    if let Expr::Real(f) = &args[0] {
-      if f.fract() == 0.0 {
-        Some(*f as i128)
-      } else {
-        None
-      }
-    } else {
-      None
-    }
-  }) {
+  // Prime requires an exact positive integer index. wolframscript rejects
+  // every Real argument with Prime::intpp, even an integer-valued one like
+  // 3.0, so do NOT coerce Reals to integers here.
+  match expr_to_i128(&args[0]) {
     Some(n) if n >= 1 => {
       Ok(Expr::Integer(crate::nth_prime(n as usize) as i128))
     }

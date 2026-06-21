@@ -3244,6 +3244,14 @@ mod cases {
       r#"{11, 29, 47}"#,
     );
   }
+  // Prime requires an exact positive integer; wolframscript rejects any Real
+  // index (even integer-valued like 3.0), leaving the call unevaluated rather
+  // than computing Prime[3] == 5.
+  #[test]
+  fn prime_real_index_unevaluated() {
+    assert_case(r#"Prime[3.0]"#, r#"Prime[3.]"#);
+    assert_case(r#"Prime[2.5]"#, r#"Prime[2.5]"#);
+  }
   #[test]
   fn prime_pi_1() {
     assert_case(r#"PrimePi[2]"#, r#"1"#);
