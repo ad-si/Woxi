@@ -3006,6 +3006,52 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // Ramp[z]: D[Ramp[z], z] = Piecewise[{{0, z<0}, {1, z>0}}, Indeterminate]
+        // (Ramp is flat below 0, the identity above, with a corner at 0).
+        "Ramp" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let clause = |val: Expr, op: crate::syntax::ComparisonOp| {
+            Expr::List(
+              vec![
+                val,
+                Expr::Comparison {
+                  operands: vec![args[0].clone(), Expr::Integer(0)],
+                  operators: vec![op],
+                },
+              ]
+              .into(),
+            )
+          };
+          let result = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(
+                vec![
+                  clause(Expr::Integer(0), crate::syntax::ComparisonOp::Less),
+                  clause(
+                    Expr::Integer(1),
+                    crate::syntax::ComparisonOp::Greater,
+                  ),
+                ]
+                .into(),
+              ),
+              Expr::Identifier("Indeterminate".to_string()),
+            ]
+            .into(),
+          };
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
         // Erf[z0, z1] = Erf[z1] - Erf[z0]: differentiate the difference so
         // the one-argument rule supplies each term's derivative.
         "Erf" if args.len() == 2 => {

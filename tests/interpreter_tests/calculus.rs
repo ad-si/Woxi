@@ -3591,6 +3591,21 @@ mod erf {
     );
   }
 
+  // Ramp[z] is flat below 0 and the identity above, with a corner at 0, so
+  // D[Ramp[z], z] = Piecewise[{{0, z < 0}, {1, z > 0}}, Indeterminate].
+  // (A composite argument keeps the chain-rule factor; Woxi does not yet
+  // simplify the Piecewise conditions the way wolframscript does, so only the
+  // direct form is asserted here.)
+  #[test]
+  fn d_ramp() {
+    assert_eq!(
+      interpret("D[Ramp[x], x]").unwrap(),
+      "Piecewise[{{0, x < 0}, {1, x > 0}}, Indeterminate]"
+    );
+    // A constant argument differentiates to 0.
+    assert_eq!(interpret("D[Ramp[5], x]").unwrap(), "0");
+  }
+
   // Inverse error functions: D[InverseErf[z]] = (Sqrt[Pi]/2) E^(InverseErf[z]^2).
   #[test]
   fn d_inverse_erf() {
