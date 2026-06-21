@@ -192,3 +192,100 @@ fn run_notebook_notebook_directory_resolves_to_file_dir() {
   );
   assert_eq!(stdout.trim(), expected.trim_end_matches('/'));
 }
+
+/// Pipe a REPL session's input via stdin and capture (stdout, stderr, ok).
+fn run_repl(input: &str) -> (String, String, bool) {
+  use std::io::Write;
+  use std::process::Stdio;
+  let mut child = Command::new(woxi_bin())
+    .arg("repl")
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("failed to spawn woxi");
+  child
+    .stdin
+    .as_mut()
+    .expect("no stdin")
+    .write_all(input.as_bytes())
+    .expect("failed to write stdin");
+  let output = child.wait_with_output().expect("failed to wait");
+  (
+    String::from_utf8_lossy(&output.stdout).into_owned(),
+    String::from_utf8_lossy(&output.stderr).into_owned(),
+    output.status.success(),
+  )
+}
+
+#[test]
+fn repl_evaluates_and_numbers_output() {
+  let (stdout, stderr, ok) = run_repl("1 + 2\n3 * 4\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(stdout, "Out[1]= 3\n\nOut[2]= 12\n\n");
+}
+
+#[test]
+fn repl_persists_state_across_lines() {
+  // Variable bindings and function definitions must survive across inputs
+  // in a single REPL process (unlike `woxi eval`, a fresh process each call).
+  let (stdout, stderr, ok) = run_repl("x = 5\nx^2\nf[n_] := n!\nf[4]\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  // x=5 -> Out[1], x^2 -> Out[2]=25, the := definition is suppressed (Out[3]
+  // is skipped), f[4] -> Out[4]=24.
+  assert_eq!(stdout, "Out[1]= 5\n\nOut[2]= 25\n\nOut[4]= 24\n\n");
+}
+
+#[test]
+fn repl_percent_references_previous_output() {
+  let (stdout, stderr, ok) = run_repl("10 + 5\n% + 1\n% * 2\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(stdout, "Out[1]= 15\n\nOut[2]= 16\n\nOut[3]= 32\n\n");
+}
+
+#[test]
+fn repl_suppresses_output_on_trailing_semicolon() {
+  let (stdout, stderr, ok) = run_repl("a = 7;\na + 1\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  // The trailing semicolon suppresses Out[1]; the line counter still advances.
+  assert_eq!(stdout, "Out[2]= 8\n\n");
+}
+
+#[test]
+fn repl_joins_multiline_bracketed_input() {
+  // An input with unbalanced brackets continues onto the next line until the
+  // brackets close, then evaluates as a single expression.
+  let (stdout, stderr, ok) = run_repl("Sum[i^2,\n  {i, 1, 10}]\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(stdout, "Out[1]= 385\n\n");
+}
+
+#[test]
+fn repl_print_writes_before_suppressed_output() {
+  // Print emits to stdout during evaluation; it returns Null so no Out[] line
+  // is shown for that input.
+  let (stdout, stderr, ok) = run_repl("Print[\"hi\"]\n2 + 2\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(stdout, "hi\nOut[2]= 4\n\n");
+}
+
+#[test]
+fn repl_quit_command_exits() {
+  // Lines after `Quit` are not evaluated.
+  let (stdout, stderr, ok) = run_repl("1 + 1\nQuit\n99\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(stdout, "Out[1]= 2\n\n");
+}
+
+#[test]
+fn repl_reports_errors_without_aborting_session() {
+  // A bad expression prints an error to stderr but the session continues.
+  let (stdout, stderr, ok) = run_repl("1/0\n6 * 7\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(
+    stdout.contains("Out[1]= ComplexInfinity"),
+    "stdout={}",
+    stdout
+  );
+  assert!(stdout.contains("Out[2]= 42"), "stdout={}", stdout);
+}

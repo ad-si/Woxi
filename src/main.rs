@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 mod jupyter;
+mod repl;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -107,6 +108,8 @@ enum Commands {
     #[arg(long)]
     quiet_print: bool,
   },
+  /// Start an interactive REPL session
+  Repl,
   /// Run a Wolfram Language file
   Run {
     /// The path to the Wolfram Language file to execute
@@ -227,6 +230,9 @@ fn main() {
           }
         }
       }
+    }
+    Commands::Repl => {
+      repl::run();
     }
     Commands::Run { file, args } => {
       let absolute_path = if file.is_absolute() {
