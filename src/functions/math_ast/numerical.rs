@@ -719,6 +719,14 @@ fn set_precision_walk(
         operand: Box::new(o),
       })
     }
+    // Symbolic real constants (Pi, E, Degree, GoldenRatio, EulerGamma, …)
+    // numericize to the requested precision, matching N[c, p]:
+    // SetPrecision[Pi, 5] -> 3.1415926535897932385`5.. expr_to_bigfloat
+    // errors for a bare symbol (e.g. x), so those pass through unchanged.
+    Expr::Constant(_) | Expr::Identifier(_) => {
+      leaf_to_bigfloat(expr, precision, bits, max_fraction_digits, rm, cc)
+        .or_else(|_| Ok(expr.clone()))
+    }
     _ => Ok(expr.clone()),
   }
 }

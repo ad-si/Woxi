@@ -6048,6 +6048,23 @@ mod set_precision {
     );
   }
 
+  // A symbolic real constant numericizes to the requested precision (like
+  // N[c, p]) rather than passing through unchanged. A bare symbol still
+  // passes through. Verified against wolframscript.
+  #[test]
+  fn symbolic_constant_numericizes() {
+    assert_eq!(
+      interpret("SetPrecision[Pi, 5]").unwrap(),
+      "3.1415926535897932385`5."
+    );
+    assert_eq!(
+      interpret("SetPrecision[GoldenRatio, 10]").unwrap(),
+      "1.61803398874989484820458683436563811772`10."
+    );
+    // A bare symbol is unaffected.
+    assert_eq!(interpret("SetPrecision[x, 10]").unwrap(), "x");
+  }
+
   #[test]
   fn machine_precision_demotes_numbers() {
     // SetPrecision[a + 2*b + 3*c, MachinePrecision] → a + 2.*b + 3.*c
