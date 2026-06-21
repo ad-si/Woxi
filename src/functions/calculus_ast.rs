@@ -2378,20 +2378,22 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             right: Box::new(f_over_abs),
           }))
         }
-        // Sign derivative: D[Sign[f(x)], x] = Derivative[2][Abs][f(x)] * f'(x)
-        // (Wolfram uses this form instead of 2*DiracDelta[x])
+        // Sign derivative: D[Sign[f(x)], x] = Derivative[1][Sign][f(x)] * f'(x)
+        // (Wolfram keeps the unevaluated Sign' instead of 2*DiracDelta[x])
         "Sign" if args.len() == 1 => {
           let df = differentiate(&args[0], var)?;
           if matches!(df, Expr::Integer(0)) {
             return Ok(Expr::Integer(0));
           }
+          // wolframscript keeps the unevaluated Sign' rather than rewriting
+          // Sign = Abs' and reporting Abs'' (Derivative[2][Abs]).
           let deriv_expr = Expr::CurriedCall {
             func: Box::new(Expr::CurriedCall {
               func: Box::new(Expr::FunctionCall {
                 name: "Derivative".to_string(),
-                args: vec![Expr::Integer(2)].into(),
+                args: vec![Expr::Integer(1)].into(),
               }),
-              args: vec![Expr::Identifier("Abs".to_string())],
+              args: vec![Expr::Identifier("Sign".to_string())],
             }),
             args: args.to_vec(),
           };

@@ -3606,6 +3606,38 @@ mod erf {
     assert_eq!(interpret("D[Ramp[5], x]").unwrap(), "0");
   }
 
+  // wolframscript keeps the derivative of Sign as the unevaluated Sign'
+  // (Derivative[1][Sign]), not the equivalent Abs'' (Derivative[2][Abs]).
+  #[test]
+  fn d_sign() {
+    assert_eq!(
+      interpret("D[Sign[x], x]").unwrap(),
+      "Derivative[1][Sign][x]"
+    );
+    // Sign[2 x] simplifies to Sign[x] (positive scaling), so the result matches.
+    assert_eq!(
+      interpret("D[Sign[2 x], x]").unwrap(),
+      "Derivative[1][Sign][x]"
+    );
+    // Composite argument keeps the chain-rule factor.
+    assert_eq!(
+      interpret("D[Sign[x^2], x]").unwrap(),
+      "2*Sign[x]*Derivative[1][Sign][x]"
+    );
+    // Product rule.
+    assert_eq!(
+      interpret("D[x Sign[x], x]").unwrap(),
+      "x*Derivative[1][Sign][x] + Sign[x]"
+    );
+    // Second derivative differentiates Sign' to Sign''.
+    assert_eq!(
+      interpret("D[Sign[x], {x, 2}]").unwrap(),
+      "Derivative[2][Sign][x]"
+    );
+    // A constant argument differentiates to 0.
+    assert_eq!(interpret("D[Sign[7], x]").unwrap(), "0");
+  }
+
   // Inverse error functions: D[InverseErf[z]] = (Sqrt[Pi]/2) E^(InverseErf[z]^2).
   #[test]
   fn d_inverse_erf() {
