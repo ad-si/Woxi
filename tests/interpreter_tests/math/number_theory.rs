@@ -1340,6 +1340,48 @@ mod next_prime {
     assert_eq!(interpret("PrimeQ[0]").unwrap(), "False");
   }
 
+  // A complex argument is tested for Gaussian primality: a+b*I (both nonzero)
+  // is prime iff a^2+b^2 is a rational prime.
+  #[test]
+  fn prime_q_gaussian_complex() {
+    assert_eq!(interpret("PrimeQ[1 + I]").unwrap(), "True");
+    assert_eq!(interpret("PrimeQ[2 + I]").unwrap(), "True");
+    assert_eq!(interpret("PrimeQ[2 + 3 I]").unwrap(), "True");
+    assert_eq!(interpret("PrimeQ[3 + 3 I]").unwrap(), "False");
+    // The GaussianIntegers option is moot for a genuinely complex argument.
+    assert_eq!(
+      interpret("PrimeQ[1 + I, GaussianIntegers -> False]").unwrap(),
+      "True"
+    );
+  }
+
+  // GaussianIntegers -> True tests Gaussian primality of a real integer: a
+  // rational prime p stays prime in Z[i] iff p % 4 == 3 (so 2 and primes
+  // p % 4 == 1 are composite).
+  #[test]
+  fn prime_q_gaussian_option_on_reals() {
+    assert_eq!(
+      interpret("PrimeQ[2, GaussianIntegers -> True]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PrimeQ[3, GaussianIntegers -> True]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PrimeQ[5, GaussianIntegers -> True]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PrimeQ[7, GaussianIntegers -> True]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PrimeQ[13, GaussianIntegers -> True]").unwrap(),
+      "False"
+    );
+  }
+
   #[test]
   fn two_arg_positive_k() {
     assert_eq!(interpret("NextPrime[10, 2]").unwrap(), "13");

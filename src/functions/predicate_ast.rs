@@ -1012,12 +1012,83 @@ fn is_zero(expr: &Expr) -> bool {
 }
 
 /// PrimeQ[n] - Tests if n is a prime number
+/// True if the Gaussian integer `re + im*I` is a Gaussian prime. A real
+/// associate `p` is prime iff `|p|` is a rational prime with `|p| % 4 == 3`;
+/// otherwise (both parts nonzero) the norm `re^2 + im^2` must be a rational
+/// prime.
+fn is_gaussian_prime(re: i128, im: i128) -> bool {
+  use num_bigint::BigInt;
+  let is_p =
+    |n: i128| crate::functions::math_ast::is_prime_bigint(&BigInt::from(n));
+  if re == 0 && im == 0 {
+    false
+  } else if re == 0 || im == 0 {
+    let p = if re == 0 { im.abs() } else { re.abs() };
+    is_p(p) && p % 4 == 3
+  } else {
+    is_p(re * re + im * im)
+  }
+}
+
 pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "PrimeQ expects exactly 1 argument".into(),
+      "PrimeQ expects 1 or 2 arguments".into(),
     ));
   }
+
+  // Optional `GaussianIntegers -> True` second argument selects the Gaussian
+  // primality test for real integers. (Genuinely complex arguments always use
+  // the Gaussian test, regardless of this option.) The rule may be a
+  // `Rule[...]` FunctionCall or a `BinaryOp` with the Rule operator.
+  let gaussian_opt = args.len() == 2 && {
+    let rule_parts: Option<(&Expr, &Expr)> = match &args[1] {
+      Expr::FunctionCall { name, args: ra }
+        if name == "Rule" && ra.len() == 2 =>
+      {
+        Some((&ra[0], &ra[1]))
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some((pattern.as_ref(), replacement.as_ref())),
+      _ => None,
+    };
+    matches!(rule_parts, Some((lhs, rhs))
+      if matches!(lhs, Expr::Identifier(s) if s == "GaussianIntegers")
+        && matches!(rhs, Expr::Identifier(s) if s == "True"))
+  };
+
+  // A genuinely complex argument is prime iff it is a Gaussian prime; a
+  // non-integer complex value is never prime.
+  if let Some(((rn, rd), (in_, id))) =
+    crate::functions::math_ast::try_extract_complex_exact(&args[0])
+    && in_ != 0
+  {
+    if rd == 1 && id == 1 {
+      return Ok(bool_expr(is_gaussian_prime(rn, in_)));
+    }
+    return Ok(bool_expr(false));
+  }
+
+  // Real integer with `GaussianIntegers -> True`: test Gaussian primality of
+  // the real associate.
+  if gaussian_opt {
+    match &args[0] {
+      Expr::Integer(n) => return Ok(bool_expr(is_gaussian_prime(*n, 0))),
+      Expr::BigInteger(n) => {
+        use num_traits::Signed;
+        let abs_n = n.abs();
+        let is_three_mod_four = (&abs_n % 4u8) == num_bigint::BigInt::from(3);
+        return Ok(bool_expr(
+          is_three_mod_four
+            && crate::functions::math_ast::is_prime_bigint(&abs_n),
+        ));
+      }
+      _ => {}
+    }
+  }
+
   if let Expr::BigInteger(n) = &args[0] {
     use num_traits::Signed;
     let abs_n = if n.is_negative() {

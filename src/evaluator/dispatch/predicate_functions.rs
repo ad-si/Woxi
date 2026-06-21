@@ -584,7 +584,7 @@ pub fn dispatch_predicate_functions(
     {
       return Some(vector_order_ast(name, &args[0]));
     }
-    "PrimeQ" if args.len() == 1 => {
+    "PrimeQ" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::prime_q_ast(args));
     }
     "CompositeQ" if args.len() == 1 => {
