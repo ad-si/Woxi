@@ -1360,6 +1360,19 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return date_string_ast(&[]);
   }
 
+  // A numeric first argument is an absolute time (seconds since 1900-01-01).
+  // Convert it to a date list and re-dispatch, so DateString[3155673600]
+  // yields "Sat 1 Jan 2000 00:00:00" like wolframscript.
+  if matches!(
+    &date_arg,
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+  ) {
+    let date_list = date_list_ast(std::slice::from_ref(&date_arg))?;
+    let mut new_args = vec![date_list];
+    new_args.extend(args[1..].iter().cloned());
+    return date_string_ast(&new_args);
+  }
+
   // DateString[fmt] with a single string argument: if `fmt` is a recognized
   // date-format name (e.g. "ISODate", "DateTime", "Year"), it formats the
   // CURRENT date, i.e. DateString[fmt] == DateString[Now, fmt]. Any other

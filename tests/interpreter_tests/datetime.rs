@@ -440,6 +440,31 @@ mod date_string {
     );
   }
 
+  // A numeric argument is an absolute time (seconds since 1900-01-01).
+  #[test]
+  fn date_string_absolute_time_number() {
+    assert_eq!(
+      interpret("DateString[0]").unwrap(),
+      "Mon 1 Jan 1900 00:00:00"
+    );
+    assert_eq!(
+      interpret("DateString[3155673600]").unwrap(),
+      "Sat 1 Jan 2000 00:00:00"
+    );
+    assert_eq!(
+      interpret("DateString[1.5*^9]").unwrap(),
+      "Tue 15 Jul 1947 02:40:00"
+    );
+  }
+
+  #[test]
+  fn date_string_absolute_time_with_format() {
+    assert_eq!(
+      interpret("DateString[3155673600, \"ISODate\"]").unwrap(),
+      "2000-01-01"
+    );
+  }
+
   #[test]
   fn date_string_day_name_format() {
     assert_eq!(
