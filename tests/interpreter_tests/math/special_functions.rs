@@ -3933,6 +3933,24 @@ mod lerch_phi {
     assert_eq!(interpret("LerchPhi[z, s, a]").unwrap(), "LerchPhi[z, s, a]");
   }
 
+  // LerchPhi[z, s, 1] = PolyLog[s, z]/z: delegating to PolyLog yields
+  // wolframscript's exact closed forms instead of floatifying.
+  #[test]
+  fn lerch_phi_a1_reduces_to_polylog() {
+    // PolyLog[2, 1/2] has a closed form, so LerchPhi[1/2, 2, 1] is exact.
+    assert_eq!(
+      interpret("LerchPhi[1/2, 2, 1]").unwrap(),
+      "2*(Pi^2/12 - Log[2]^2/2)"
+    );
+    // No PolyLog closed form: stays symbolic as a scaled PolyLog.
+    assert_eq!(
+      interpret("LerchPhi[1/3, 2, 1]").unwrap(),
+      "3*PolyLog[2, 1/3]"
+    );
+    // Fully symbolic: PolyLog[s, z]/z.
+    assert_eq!(interpret("LerchPhi[z, s, 1]").unwrap(), "PolyLog[s, z]/z");
+  }
+
   #[test]
   fn lerch_phi_hurwitz_zeta_quarter() {
     // Hurwitz-zeta identity: ζ(2, 1/4) = LerchPhi[1, 2, 1/4] = π² + 8·Catalan.

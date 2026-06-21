@@ -1251,6 +1251,24 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
+  // LerchPhi[z, s, 1] = PolyLog[s, z] / z (for z != 0, which the z = 0 case
+  // above has already handled). Delegating to PolyLog reproduces
+  // wolframscript's exact closed forms — e.g. LerchPhi[1/2, 2, 1] ->
+  // 2 (Pi^2/12 - Log[2]^2/2), LerchPhi[1/3, 2, 1] -> 3 PolyLog[2, 1/3],
+  // LerchPhi[z, s, 1] -> PolyLog[s, z]/z — as well as its numeric values,
+  // instead of always floatifying.
+  if matches!(a, Expr::Integer(1)) {
+    let polylog = crate::evaluator::evaluate_function_call_ast(
+      "PolyLog",
+      &[s.clone(), z.clone()],
+    )?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(polylog),
+      right: Box::new(z.clone()),
+    });
+  }
+
   // z = 1: LerchPhi[1, s, a] == HurwitzZeta[s, a]. Delegate for exact s and a
   // so the result stays exact (e.g. LerchPhi[1, 2, 1] -> Pi^2/6) instead of
   // being floatified, matching wolframscript.
