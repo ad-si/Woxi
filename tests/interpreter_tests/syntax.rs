@@ -7187,6 +7187,19 @@ mod complex_expand {
     );
   }
 
+  // Regression: the Pi/4 result of ComplexExpand[Arg[1 + I]] must render as a
+  // division, not `Pi*1/4`. The final Expand pass leaves the 1/4 rational as a
+  // trailing Times factor, which the formatter now renders as `Pi/4`.
+  #[test]
+  fn arg_of_numeric_complex_renders_as_division() {
+    assert_eq!(interpret("ComplexExpand[Arg[1 + I]]").unwrap(), "Pi/4");
+    assert_eq!(interpret("ComplexExpand[Arg[3 + 3 I]]").unwrap(), "Pi/4");
+    assert_eq!(
+      interpret("ComplexExpand[Arg[-1 - I]]").unwrap(),
+      "(-3*Pi)/4"
+    );
+  }
+
   #[test]
   fn re_im_of_power() {
     assert_eq!(

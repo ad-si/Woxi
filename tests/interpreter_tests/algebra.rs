@@ -286,6 +286,18 @@ mod expand {
     assert_eq!(interpret("Expand[x^2 + 3*x + 2]").unwrap(), "2 + 3*x + x^2");
   }
 
+  // Regression: a positive unit-numerator rational coefficient renders as a
+  // division (`x/4`), not `x*1/4`, even when Expand leaves the rational as the
+  // trailing factor of the Times. `|n| > 1` keeps the `(n*X)/d` form.
+  #[test]
+  fn unit_rational_coefficient_display() {
+    assert_eq!(interpret("Expand[x/4]").unwrap(), "x/4");
+    assert_eq!(interpret("Expand[Pi/4]").unwrap(), "Pi/4");
+    assert_eq!(interpret("Expand[Pi/3]").unwrap(), "Pi/3");
+    assert_eq!(interpret("Expand[2 x/4]").unwrap(), "x/2");
+    assert_eq!(interpret("Expand[3 Pi/4]").unwrap(), "(3*Pi)/4");
+  }
+
   #[test]
   fn constant() {
     assert_eq!(interpret("Expand[5]").unwrap(), "5");

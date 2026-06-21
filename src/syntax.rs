@@ -6256,15 +6256,16 @@ fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
 /// Check if an expression is Power[base, negative_exponent] suitable for moving to denominator
 /// in a Times expression. Handles both FunctionCall and BinaryOp representations.
 fn is_denominator_factor(expr: &Expr) -> bool {
-  // A Rational[n, d] with |n| > 1 and |d| > 1 contributes a denominator
-  // factor `d` and triggers fraction formatting. Wolfram uses
-  // `(n*X)/d` for such terms (e.g. `(-2*Pi)/3`), but keeps `±1/d*X`
-  // when |n| == 1 (e.g. `-1/4*Pi`).
+  // A Rational[n, d] with |d| > 1 contributes a denominator factor `d` and
+  // triggers fraction formatting when n > 0: Wolfram uses `(n*X)/d` for
+  // `|n| > 1` (e.g. `(-2*Pi)/3`) and `X/d` for `n == 1` (e.g. `Pi/4`). A
+  // negative unit numerator is kept as `-1/d*X` (e.g. `-1/4*Pi`), so
+  // `Rational[-1, d]` is NOT treated as a denominator factor here.
   if let Expr::FunctionCall { name, args } = expr
     && name == "Rational"
     && args.len() == 2
     && let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1])
-    && n.abs() > 1
+    && (n.abs() > 1 || *n == 1)
     && d.abs() > 1
   {
     return true;
@@ -6320,6 +6321,16 @@ fn is_denominator_factor(expr: &Expr) -> bool {
 /// For exponent -1, returns just the base (since base^1 = base).
 /// Handles both FunctionCall and BinaryOp representations.
 fn denominator_form(expr: &Expr) -> Expr {
+  // A Rational[n, d] denominator factor contributes its denominator `d`; the
+  // numerator is emitted on the numerator side by the caller (and is 1 for the
+  // `Rational[1, d]` unit case).
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Rational"
+    && args.len() == 2
+    && let Expr::Integer(d) = &args[1]
+  {
+    return Expr::Integer(d.abs());
+  }
   let (base, exponent) = match expr {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       (&args[0], &args[1])
