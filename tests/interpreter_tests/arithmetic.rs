@@ -2285,6 +2285,27 @@ mod logistic_sigmoid {
   fn logistic_sigmoid_zero() {
     assert_eq!(interpret("LogisticSigmoid[0]").unwrap(), "1/2");
   }
+
+  // The ±Infinity limits are 1 and 0. Exact non-zero arguments (integers,
+  // rationals, I, symbols) stay symbolic and are NOT numericized — only Real
+  // (and inexact-complex) inputs evaluate numerically. Per wolframscript.
+  #[test]
+  fn logistic_sigmoid_infinity_and_exact() {
+    assert_eq!(interpret("LogisticSigmoid[Infinity]").unwrap(), "1");
+    assert_eq!(interpret("LogisticSigmoid[-Infinity]").unwrap(), "0");
+    assert_eq!(
+      interpret("LogisticSigmoid[2]").unwrap(),
+      "LogisticSigmoid[2]"
+    );
+    assert_eq!(
+      interpret("LogisticSigmoid[-2]").unwrap(),
+      "LogisticSigmoid[-2]"
+    );
+    assert_eq!(
+      interpret("LogisticSigmoid[I]").unwrap(),
+      "LogisticSigmoid[I]"
+    );
+  }
 }
 
 mod expand_threading {

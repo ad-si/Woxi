@@ -4708,16 +4708,33 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let result = 1.0 / (1.0 + (-f).exp());
       return Ok(Expr::Real(result));
     }
-    Expr::Integer(n) => {
-      let f = *n as f64;
-      let result = 1.0 / (1.0 + (-f).exp());
-      return Ok(Expr::Real(result));
+    // ±Infinity limits: LogisticSigmoid[Infinity] = 1,
+    // LogisticSigmoid[-Infinity] = 0. Exact non-zero integers (and other
+    // exact values like 1/2 or I) stay symbolic, matching wolframscript —
+    // they are NOT numericized.
+    Expr::Identifier(s) if s == "Infinity" => return Ok(Expr::Integer(1)),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
+      return Ok(Expr::Integer(0));
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "DirectedInfinity" && dargs.len() == 1 =>
+    {
+      match &dargs[0] {
+        Expr::Integer(1) => return Ok(Expr::Integer(1)),
+        Expr::Integer(-1) => return Ok(Expr::Integer(0)),
+        _ => {}
+      }
     }
     _ => {}
   }
-  // Complex float input: 1 / (1 + exp(-z)) using complex arithmetic.
-  if let Some((re, im)) =
-    crate::functions::math_ast::try_extract_complex_float(&args[0])
+  // Complex float input: 1 / (1 + exp(-z)) using complex arithmetic. Only
+  // fires for an inexact argument so an exact complex like I stays symbolic.
+  if contains_inexact_real(&args[0])
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(&args[0])
     && im != 0.0
   {
     // exp(-z) = exp(-re) * (cos(-im) + I*sin(-im))
