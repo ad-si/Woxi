@@ -39,12 +39,12 @@ fn bool_ident(b: bool) -> Expr {
   Expr::Identifier(if b { "True" } else { "False" }.to_string())
 }
 
-/// True for an argument that is a concrete non-list value Differences must
-/// reject with ::listrp — any NumericQ atom (numbers, I, Pi, Sin[2], …) plus
-/// strings, associations, and the booleans True/False. Lists, bare symbols,
-/// and unknown function heads return false (they are processed or left to
-/// evaluate further).
-fn differences_invalid_atom(e: &Expr) -> bool {
+/// True for an argument that is a concrete non-list value the list-difference
+/// family (Differences, Ratios) must reject with ::listrp — any NumericQ atom
+/// (numbers, I, Pi, Sin[2], …) plus strings, associations, and the booleans
+/// True/False. Lists, bare symbols, and unknown function heads return false
+/// (they are processed or left to evaluate further).
+fn listrp_invalid_atom(e: &Expr) -> bool {
   match e {
     Expr::List(_) => false,
     Expr::String(_) | Expr::Association(_) => true,
@@ -2815,8 +2815,7 @@ pub fn dispatch_list_operations(
     // Bare symbols and unknown function heads are left alone (they may still
     // acquire a list value), so they fall through to the arms below.
     "Differences"
-      if (1..=3).contains(&args.len())
-        && differences_invalid_atom(&args[0]) =>
+      if (1..=3).contains(&args.len()) && listrp_invalid_atom(&args[0]) =>
     {
       let call = Expr::FunctionCall {
         name: "Differences".to_string(),
@@ -2874,6 +2873,21 @@ pub fn dispatch_list_operations(
           &args[0], n as usize, s as usize,
         ));
       }
+    }
+    // Like Differences, a concrete non-list argument is rejected with
+    // Ratios::listrp; bare symbols / unknown heads fall through.
+    "Ratios"
+      if (1..=2).contains(&args.len()) && listrp_invalid_atom(&args[0]) =>
+    {
+      let call = Expr::FunctionCall {
+        name: "Ratios".to_string(),
+        args: args.to_vec().into(),
+      };
+      crate::emit_message(&format!(
+        "Ratios::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
+        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+      ));
+      return Some(Ok(call));
     }
     "Ratios" if args.len() == 1 || args.len() == 2 => {
       let n = if args.len() == 2 {

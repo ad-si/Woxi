@@ -3805,6 +3805,12 @@ mod cases {
     );
   }
   #[test]
+  fn norm_empty_vector_emits_nvm() {
+    // Norm[{}] has no value: it stays unevaluated (with Norm::nvm) rather
+    // than collapsing to 0. (wolframscript parity)
+    assert_case(r#"Norm[{}]"#, r#"Norm[{}]"#);
+  }
+  #[test]
   fn kronecker_product_1() {
     assert_case(
       r#"a = {{a11, a12}, {a21, a22}}; b = {{b11, b12}, {b21, b22}}; KroneckerProduct[a, b]"#,

@@ -2036,6 +2036,17 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Norm expects 1 or 2 arguments".into(),
     ));
   }
+  // An empty vector has no norm: emit Norm::nvm and stay unevaluated rather
+  // than collapsing to 0. (wolframscript parity)
+  if matches!(&args[0], Expr::List(items) if items.is_empty()) {
+    crate::emit_message(
+      "Norm::nvm: The first Norm argument should be a scalar, vector or matrix.",
+    );
+    return Ok(Expr::FunctionCall {
+      name: "Norm".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   // Determine the norm parameter p
   let p_expr = if args.len() == 2 {
     Some(args[1].clone())

@@ -10351,6 +10351,22 @@ mod ratios_tests {
       "Ratios[f[a, b, c]]"
     );
   }
+
+  #[test]
+  fn ratios_non_list_atom_emits_listrp() {
+    // Concrete non-list arguments (numbers, NumericQ atoms, strings,
+    // associations, booleans) stay unevaluated with Ratios::listrp.
+    assert_eq!(interpret("Ratios[5]").unwrap(), "Ratios[5]");
+    assert_eq!(interpret("Ratios[Pi]").unwrap(), "Ratios[Pi]");
+    assert_eq!(interpret("Ratios[Sin[2]]").unwrap(), "Ratios[Sin[2]]");
+    assert_eq!(
+      interpret("Ratios[<|a -> 2, b -> 4|>]").unwrap(),
+      "Ratios[<|a -> 2, b -> 4|>]"
+    );
+    assert_eq!(interpret("Ratios[5, 2]").unwrap(), "Ratios[5, 2]");
+    // A bare symbol may still become a list, so it stays quiet.
+    assert_eq!(interpret("Ratios[x]").unwrap(), "Ratios[x]");
+  }
 }
 
 mod splice {
