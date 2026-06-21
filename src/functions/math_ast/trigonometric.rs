@@ -4037,6 +4037,23 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => return Ok(Expr::Real(f.asinh())),
+    // ArcSinh is odd and unbounded: ArcSinh[±Infinity] = ±Infinity. An
+    // undirected ComplexInfinity maps to ComplexInfinity.
+    Expr::Identifier(s) if s == "Infinity" => {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    Expr::Identifier(s) if s == "ComplexInfinity" => {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
+      return Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("Infinity".to_string())),
+      });
+    }
     _ => {}
   }
   Ok(Expr::FunctionCall {

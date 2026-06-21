@@ -758,6 +758,20 @@ mod inverse_trig_identities {
   fn tanh_arctanh() {
     assert_eq!(interpret("Tanh[ArcTanh[x]]").unwrap(), "x");
   }
+
+  // ArcSinh is odd and unbounded: ArcSinh[±Infinity] = ±Infinity; an
+  // undirected ComplexInfinity maps to ComplexInfinity. Per wolframscript.
+  #[test]
+  fn arcsinh_infinite_limits() {
+    assert_eq!(interpret("ArcSinh[Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("ArcSinh[-Infinity]").unwrap(), "-Infinity");
+    assert_eq!(
+      interpret("ArcSinh[ComplexInfinity]").unwrap(),
+      "ComplexInfinity"
+    );
+    // A finite exact argument stays symbolic.
+    assert_eq!(interpret("ArcSinh[2]").unwrap(), "ArcSinh[2]");
+  }
 }
 
 mod inverse_function {
