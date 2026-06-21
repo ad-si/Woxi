@@ -772,6 +772,17 @@ mod inverse_trig_identities {
     // A finite exact argument stays symbolic.
     assert_eq!(interpret("ArcSinh[2]").unwrap(), "ArcSinh[2]");
   }
+
+  // ArcCosh grows without bound in magnitude, so every infinite argument
+  // (Infinity, -Infinity, ComplexInfinity) maps to Infinity. Per wolframscript.
+  #[test]
+  fn arccosh_infinite_limits() {
+    assert_eq!(interpret("ArcCosh[Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("ArcCosh[-Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("ArcCosh[ComplexInfinity]").unwrap(), "Infinity");
+    // A finite exact argument stays symbolic.
+    assert_eq!(interpret("ArcCosh[2]").unwrap(), "ArcCosh[2]");
+  }
 }
 
 mod inverse_function {

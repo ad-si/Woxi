@@ -4122,6 +4122,18 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &[pi_half, Expr::Identifier("I".to_string())],
       );
     }
+    // ArcCosh grows without bound in magnitude, so every infinite argument —
+    // Infinity, -Infinity, and the undirected ComplexInfinity — maps to
+    // Infinity (matching wolframscript).
+    Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity" => {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
     _ => {}
   }
   Ok(Expr::FunctionCall {
