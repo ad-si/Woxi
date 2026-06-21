@@ -1475,6 +1475,35 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// SquareFreeQ[n] - Tests if an integer has no repeated prime factors
+/// True when `n` has no repeated prime factor. Zero is not square-free.
+fn is_squarefree_i128(n: i128) -> bool {
+  if n == 0 {
+    return false;
+  }
+  let mut num = n.unsigned_abs();
+  let mut count = 0;
+  while num.is_multiple_of(2) {
+    count += 1;
+    num /= 2;
+    if count > 1 {
+      return false;
+    }
+  }
+  let mut i: u128 = 3;
+  while i * i <= num {
+    count = 0;
+    while num.is_multiple_of(i) {
+      count += 1;
+      num /= i;
+      if count > 1 {
+        return false;
+      }
+    }
+    i += 2;
+  }
+  true
+}
+
 pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1482,36 +1511,23 @@ pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   match &args[0] {
-    Expr::Integer(n) => {
-      let n = *n;
-      if n == 0 {
-        return Ok(bool_expr(false));
+    Expr::Integer(n) => Ok(bool_expr(is_squarefree_i128(*n))),
+    // A rational p/q is square-free when both p and q are square-free
+    // (wolframscript: SquareFreeQ[3/2] -> True, SquareFreeQ[12/5] -> False).
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1]) {
+        Ok(bool_expr(is_squarefree_i128(*p) && is_squarefree_i128(*q)))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "SquareFreeQ".to_string(),
+          args: args.to_vec().into(),
+        })
       }
-      let mut num = n.unsigned_abs();
-      // Check factor of 2
-      let mut count = 0;
-      while num % 2 == 0 {
-        count += 1;
-        num /= 2;
-        if count > 1 {
-          return Ok(bool_expr(false));
-        }
-      }
-      // Check odd factors
-      let mut i: u128 = 3;
-      while i * i <= num {
-        count = 0;
-        while num % i == 0 {
-          count += 1;
-          num /= i;
-          if count > 1 {
-            return Ok(bool_expr(false));
-          }
-        }
-        i += 2;
-      }
-      Ok(bool_expr(true))
     }
+    // An explicit real number is never square-free (SquareFreeQ[5.0] -> False).
+    Expr::Real(_) => Ok(bool_expr(false)),
     Expr::BigInteger(n) => {
       use num_traits::Zero;
       let mut num = if n < &num_bigint::BigInt::from(0) {

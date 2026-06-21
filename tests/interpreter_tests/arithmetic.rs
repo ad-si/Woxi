@@ -724,6 +724,20 @@ mod big_integer {
     assert_eq!(interpret("SquareFreeQ[49]").unwrap(), "False");
   }
 
+  // A rational p/q is square-free when both numerator and denominator are
+  // square-free; an explicit real number is never square-free. Verified
+  // against wolframscript.
+  #[test]
+  fn square_free_q_rational_and_real() {
+    assert_eq!(interpret("SquareFreeQ[3/2]").unwrap(), "True");
+    assert_eq!(interpret("SquareFreeQ[12/5]").unwrap(), "False");
+    assert_eq!(interpret("SquareFreeQ[8/9]").unwrap(), "False");
+    assert_eq!(interpret("SquareFreeQ[18/25]").unwrap(), "False");
+    assert_eq!(interpret("SquareFreeQ[-3/2]").unwrap(), "True");
+    assert_eq!(interpret("SquareFreeQ[5.0]").unwrap(), "False");
+    assert_eq!(interpret("SquareFreeQ[2.5]").unwrap(), "False");
+  }
+
   #[test]
   fn odd_q_big_integer() {
     assert_eq!(interpret("OddQ[2^128 + 1]").unwrap(), "True");
