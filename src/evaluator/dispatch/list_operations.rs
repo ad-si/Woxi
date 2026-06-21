@@ -4686,14 +4686,26 @@ pub fn dispatch_list_operations(
         for elem in elems {
           let applied = apply2(f, &state, elem);
           let result = crate::evaluator::evaluate_expr_to_expr(&applied)
-            .unwrap_or(applied);
+            .unwrap_or_else(|_| applied.clone());
           match &result {
             Expr::List(pair) if pair.len() == 2 => {
               last_emit = pair[0].clone();
               state = pair[1].clone();
             }
-            // f did not return a length-2 list: leave unevaluated.
+            // f did not return a length-2 list: emit FoldPair::pair and
+            // leave unevaluated, matching wolframscript.
             _ => {
+              crate::emit_message(&format!(
+                "FoldPair::pair: Function application {} returned {}; a list of two elements is expected.",
+                crate::syntax::format_expr(
+                  &applied,
+                  crate::syntax::ExprForm::Output
+                ),
+                crate::syntax::format_expr(
+                  &result,
+                  crate::syntax::ExprForm::Output
+                )
+              ));
               return Some(Ok(Expr::FunctionCall {
                 name: "FoldPair".to_string(),
                 args: args.to_vec().into(),

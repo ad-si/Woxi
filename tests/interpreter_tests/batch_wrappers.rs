@@ -3178,6 +3178,20 @@ mod batch_unevaluated_wrappers_2 {
       "FoldPair[{#1, #2} & , x, {}]"
     );
   }
+  // When the step function doesn't return a two-element list, FoldPair emits
+  // FoldPair::pair and stays unevaluated (matching wolframscript) rather than
+  // failing silently.
+  #[test]
+  fn fold_pair_non_pair_result_stays_unevaluated() {
+    assert_eq!(
+      interpret("FoldPair[f, 1, {2, 3}]").unwrap(),
+      "FoldPair[f, 1, {2, 3}]"
+    );
+    assert_eq!(
+      interpret("FoldPair[g, 0, {1, 2, 3}]").unwrap(),
+      "FoldPair[g, 0, {1, 2, 3}]"
+    );
+  }
   #[test]
   fn join_across_basic() {
     assert_eq!(
