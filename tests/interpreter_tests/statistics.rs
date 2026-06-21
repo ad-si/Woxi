@@ -5115,6 +5115,101 @@ mod moment_generating_function {
   }
 }
 
+mod cumulant_generating_function {
+  use super::*;
+
+  // CGF = Log[MGF]. Where the MGF is E^X the CGF is X (Normal, Poisson); where
+  // it is base^exp the CGF is exp*Log[base] (Binomial, Gamma); otherwise Log.
+  #[test]
+  fn normal_and_poisson() {
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[NormalDistribution[], t]").unwrap(),
+      "t^2/2"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[NormalDistribution[m, s], t]")
+        .unwrap(),
+      "m*t + (s^2*t^2)/2"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[PoissonDistribution[lambda], t]")
+        .unwrap(),
+      "(-1 + E^t)*lambda"
+    );
+  }
+
+  #[test]
+  fn log_forms() {
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[ExponentialDistribution[a], t]")
+        .unwrap(),
+      "Log[a/(a - t)]"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[BernoulliDistribution[p], t]")
+        .unwrap(),
+      "Log[1 - p + E^t*p]"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[UniformDistribution[], t]")
+        .unwrap(),
+      "Log[(-1 + E^t)/t]"
+    );
+  }
+
+  #[test]
+  fn power_forms() {
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[BinomialDistribution[n, p], t]")
+        .unwrap(),
+      "n*Log[1 + (-1 + E^t)*p]"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[GammaDistribution[a, b], t]")
+        .unwrap(),
+      "-(a*Log[1 - b*t])"
+    );
+  }
+
+  // Geometric and two-parameter Uniform use Wolfram's own canonical forms.
+  #[test]
+  fn special_forms() {
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[GeometricDistribution[p], t]")
+        .unwrap(),
+      "-t - Log[1 - (1 - E^(-t))/p]"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[UniformDistribution[{a, b}], t]")
+        .unwrap(),
+      "a*t + Log[(-1 + E^((-a + b)*t))/((-a + b)*t)]"
+    );
+  }
+
+  #[test]
+  fn numeric_argument_folds() {
+    // CGF at t = 0 is always 0.
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[NormalDistribution[0, 1], 0]")
+        .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[ExponentialDistribution[2], t]")
+        .unwrap(),
+      "Log[2/(2 - t)]"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[x, t]").unwrap(),
+      "CumulantGeneratingFunction[x, t]"
+    );
+  }
+}
+
 mod log_likelihood {
   use super::*;
 

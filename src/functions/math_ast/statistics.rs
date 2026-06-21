@@ -5676,6 +5676,168 @@ pub fn moment_generating_function_ast(
   }
 }
 
+// ─── CumulantGeneratingFunction ──────────────────────────────────────
+
+/// View `e` as a power, returning (base, exponent) for either the BinaryOp or
+/// FunctionCall spelling of Power.
+fn as_power_pair(e: &Expr) -> Option<(&Expr, &Expr)> {
+  match e {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left, right)),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  }
+}
+
+fn is_e_base(e: &Expr) -> bool {
+  matches!(e, Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+}
+
+/// CumulantGeneratingFunction[dist, t] = Log[MomentGeneratingFunction[...]],
+/// simplified the way Wolfram prints it. For most distributions this is a
+/// structural transform of the MGF:
+///   E^X        → X
+///   base^(-a)  → -(a Log[base])
+///   base^exp   → exp Log[base]
+///   otherwise  → Log[mgf]
+/// Geometric and the two-parameter Uniform are canonicalized differently by
+/// Wolfram, so they get explicit templates.
+pub fn cumulant_generating_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "CumulantGeneratingFunction".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let t = args[1].clone();
+
+  let e_sym = || Expr::Identifier("E".to_string());
+  let call = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: fargs.into(),
+  };
+  let neg = |e: Expr| Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(e),
+  };
+  let pow = |b: Expr, e: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(b),
+    right: Box::new(e),
+  };
+  let div = |n: Expr, d: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(n),
+    right: Box::new(d),
+  };
+  let log = |e: Expr| Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![e].into(),
+  };
+
+  let (dist_name, dargs) = match &args[0] {
+    Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
+    _ => return Ok(unevaluated(args)),
+  };
+
+  fn is_symbolic_param(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(_) => true,
+      Expr::List(items) => {
+        items.iter().all(|i| matches!(i, Expr::Identifier(_)))
+      }
+      _ => false,
+    }
+  }
+  let symbolic =
+    matches!(&t, Expr::Identifier(_)) && dargs.iter().all(is_symbolic_param);
+
+  // Distributions whose CGF is NOT a clean structural transform of the MGF.
+  let special: Option<Expr> = match (dist_name, dargs) {
+    // -t - Log[1 - (1 - E^(-t))/p]
+    ("GeometricDistribution", [p]) => Some(call(
+      "Plus",
+      vec![
+        neg(t.clone()),
+        neg(log(call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            neg(div(
+              call(
+                "Plus",
+                vec![Expr::Integer(1), neg(pow(e_sym(), neg(t.clone())))],
+              ),
+              p.clone(),
+            )),
+          ],
+        ))),
+      ],
+    )),
+    // a*t + Log[(-1 + E^((-a + b)*t))/((-a + b)*t)]
+    ("UniformDistribution", [Expr::List(bounds)]) if bounds.len() == 2 => {
+      let (a, b) = (bounds[0].clone(), bounds[1].clone());
+      let span = || call("Plus", vec![neg(a.clone()), b.clone()]);
+      let span_t = || call("Times", vec![span(), t.clone()]);
+      Some(call(
+        "Plus",
+        vec![
+          call("Times", vec![a.clone(), t.clone()]),
+          log(div(
+            call("Plus", vec![Expr::Integer(-1), pow(e_sym(), span_t())]),
+            span_t(),
+          )),
+        ],
+      ))
+    }
+    _ => None,
+  };
+  if let Some(expr) = special {
+    return if symbolic {
+      Ok(expr)
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(&expr)
+    };
+  }
+
+  // General case: derive from the MGF.
+  let mgf = moment_generating_function_ast(args)?;
+  if matches!(&mgf, Expr::FunctionCall { name, .. }
+    if name == "MomentGeneratingFunction")
+  {
+    return Ok(unevaluated(args));
+  }
+  let cgf = if let Some((base, exp)) = as_power_pair(&mgf) {
+    if is_e_base(base) {
+      exp.clone()
+    } else if let Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } = exp
+    {
+      neg(call("Times", vec![(**operand).clone(), log(base.clone())]))
+    } else {
+      call("Times", vec![exp.clone(), log(base.clone())])
+    }
+  } else {
+    log(mgf)
+  };
+
+  if symbolic {
+    Ok(cgf)
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&cgf)
+  }
+}
+
 // ─── CorrelationFunction ─────────────────────────────────────────────
 
 /// CorrelationFunction[data, k] — the sample autocorrelation at lag k:

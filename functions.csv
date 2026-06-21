@@ -3091,7 +3091,7 @@ GeoBounds,,🚫,,10.0,3162
 LinkReadyQ,,🚫,,3.0,3162
 MoonPosition,,🚫,,10.0,3162
 StartExternalSession,,🚫,,11.2,3162
-CumulantGeneratingFunction,,,,8.0,3176
+CumulantGeneratingFunction,Cumulant-generating function Log[E[e^(tX)]] of a probability distribution,✅,pure,8.0,3176
 DimensionReduction,,🚫,,10.1,3176
 FactorialMomentGeneratingFunction,,,,8.0,3176
 HadamardMatrix,Hadamard matrix of size n,✅,none,9.0,3176
