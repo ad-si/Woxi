@@ -2407,6 +2407,69 @@ mod rsolve {
       "{{a[n] -> n}}"
     );
   }
+
+  // First-order arithmetic progression a[n] == a[n-1] + d (constant step d).
+  // General solution d*n + C[1]; with one initial condition, the specific
+  // value v + d*(n - k0).
+  #[test]
+  fn arithmetic_progression_general() {
+    assert_eq!(
+      interpret("RSolve[a[n] == a[n-1] + 1, a[n], n]").unwrap(),
+      "{{a[n] -> n + C[1]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n] == a[n-1] + 2, a[n], n]").unwrap(),
+      "{{a[n] -> 2*n + C[1]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n] == a[n-1] - 1, a[n], n]").unwrap(),
+      "{{a[n] -> -n + C[1]}}"
+    );
+    // Symbolic step, and the forward-shift spelling a[n+1] == a[n] + 3.
+    assert_eq!(
+      interpret("RSolve[a[n] == a[n-1] + k, a[n], n]").unwrap(),
+      "{{a[n] -> k*n + C[1]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n+1] == a[n] + 3, a[n], n]").unwrap(),
+      "{{a[n] -> 3*n + C[1]}}"
+    );
+  }
+
+  #[test]
+  fn arithmetic_progression_with_initial_condition() {
+    assert_eq!(
+      interpret("RSolve[{a[n] == a[n-1] + 1, a[0] == 0}, a[n], n]").unwrap(),
+      "{{a[n] -> n}}"
+    );
+    assert_eq!(
+      interpret("RSolve[{a[n] == a[n-1] + 2, a[1] == 3}, a[n], n]").unwrap(),
+      "{{a[n] -> 1 + 2*n}}"
+    );
+    assert_eq!(
+      interpret("RSolve[{a[n] == a[n-1] + 5, a[2] == 10}, a[n], n]").unwrap(),
+      "{{a[n] -> 5*n}}"
+    );
+    assert_eq!(
+      interpret("RSolve[{a[n] == a[n-1] + d, a[0] == c}, a[n], n]").unwrap(),
+      "{{a[n] -> c + d*n}}"
+    );
+  }
+
+  // An index-dependent forcing term (a[n-1] + n) or a coefficient other than 1
+  // (3 a[n-1] + 1) is not an arithmetic progression and stays unevaluated,
+  // matching the deeper cases Woxi does not yet close-form.
+  #[test]
+  fn non_arithmetic_forcing_stays_unevaluated() {
+    assert_eq!(
+      interpret("RSolve[a[n] == a[n-1] + n, a[n], n]").unwrap(),
+      "RSolve[a[n] == n + a[-1 + n], a[n], n]"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n] == 3 a[n-1] + 1, a[n], n]").unwrap(),
+      "RSolve[a[n] == 1 + 3*a[-1 + n], a[n], n]"
+    );
+  }
 }
 
 mod full_simplify {

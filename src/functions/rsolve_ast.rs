@@ -93,7 +93,262 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // First-order arithmetic progression a[n] == a[n-1] + d (d free of n).
+  if let Some(solution) = solve_first_order_arithmetic(
+    &rec_lhs,
+    &rec_rhs,
+    &func_name,
+    &var_name,
+    &initial_conditions,
+  ) {
+    return Ok(wrap_rsolve_result(
+      solution,
+      &func_name,
+      &var_name,
+      return_as_func_call,
+    ));
+  }
+
   Ok(unevaluated(args))
+}
+
+/// True if `expr` references `func_name[...]` anywhere.
+fn contains_func(expr: &Expr, func_name: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == func_name || args.iter().any(|a| contains_func(a, func_name))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_func(left, func_name) || contains_func(right, func_name)
+    }
+    Expr::UnaryOp { operand, .. } => contains_func(operand, func_name),
+    Expr::List(items) => items.iter().any(|a| contains_func(a, func_name)),
+    _ => false,
+  }
+}
+
+/// Like `collect_recurrence_terms`, but instead of bailing on a non-`func`
+/// term it collects it (with the running sign) into `forcing`. Returns false
+/// only for structures it cannot decompose (e.g. a non-linear `func` argument
+/// or a symbolic-coefficient `func` term).
+fn collect_terms_with_forcing(
+  expr: &Expr,
+  func_name: &str,
+  var_name: &str,
+  sign: i128,
+  terms: &mut Vec<(i128, i128)>,
+  forcing: &mut Vec<Expr>,
+) -> bool {
+  let push_forcing = |e: &Expr, sign: i128, forcing: &mut Vec<Expr>| -> bool {
+    if contains_func(e, func_name) {
+      return false; // non-linear dependence on func — unsupported
+    }
+    forcing.push(if sign >= 0 {
+      e.clone()
+    } else {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(e.clone()),
+      }
+    });
+    true
+  };
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == func_name && args.len() == 1 =>
+    {
+      match extract_var_offset(&args[0], var_name) {
+        Some(offset) => {
+          terms.push((offset, sign));
+          true
+        }
+        None => false,
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if collect_coeff_times_term(left, right, func_name, var_name, sign, terms)
+      {
+        return true;
+      }
+      push_forcing(expr, sign, forcing)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      if collect_coeff_times_term(
+        &args[0], &args[1], func_name, var_name, sign, terms,
+      ) {
+        return true;
+      }
+      push_forcing(expr, sign, forcing)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().all(|a| {
+        collect_terms_with_forcing(a, func_name, var_name, sign, terms, forcing)
+      })
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      collect_terms_with_forcing(
+        left, func_name, var_name, sign, terms, forcing,
+      ) && collect_terms_with_forcing(
+        right, func_name, var_name, sign, terms, forcing,
+      )
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      collect_terms_with_forcing(
+        left, func_name, var_name, sign, terms, forcing,
+      ) && collect_terms_with_forcing(
+        right, func_name, var_name, -sign, terms, forcing,
+      )
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => collect_terms_with_forcing(
+      operand, func_name, var_name, -sign, terms, forcing,
+    ),
+    Expr::Integer(0) => true,
+    _ => push_forcing(expr, sign, forcing),
+  }
+}
+
+/// First-order recurrence a[n] == a[n-1] + d with a constant increment `d`
+/// (free of the index n). The closed form is the arithmetic progression
+///   no initial condition:  d*n + C[1]
+///   a[k0] == v:            v + d*(n - k0)   (simplified)
+/// Returns None for higher order, a leading coefficient other than ±1, a
+/// non-unit step ratio, an index-dependent forcing term (e.g. a[n-1] + n), or
+/// more than one initial condition.
+fn solve_first_order_arithmetic(
+  lhs: &Expr,
+  rhs: &Expr,
+  func_name: &str,
+  var_name: &str,
+  ics: &[(i128, Expr)],
+) -> Option<Expr> {
+  let mut terms: Vec<(i128, i128)> = Vec::new();
+  let mut forcing: Vec<Expr> = Vec::new();
+  if !collect_terms_with_forcing(
+    lhs,
+    func_name,
+    var_name,
+    1,
+    &mut terms,
+    &mut forcing,
+  ) || !collect_terms_with_forcing(
+    rhs,
+    func_name,
+    var_name,
+    -1,
+    &mut terms,
+    &mut forcing,
+  ) {
+    return None;
+  }
+
+  // Combine func terms by offset.
+  let mut combined: std::collections::HashMap<i128, i128> =
+    std::collections::HashMap::new();
+  for (offset, coeff) in &terms {
+    *combined.entry(*offset).or_insert(0) += coeff;
+  }
+  combined.retain(|_, c| *c != 0);
+  if combined.len() != 2 {
+    return None;
+  }
+  let lo = *combined.keys().min().unwrap();
+  let hi = *combined.keys().max().unwrap();
+  if hi - lo != 1 {
+    return None; // not first order
+  }
+  let c_hi = combined[&hi];
+  let c_lo = combined[&lo];
+  // Arithmetic progression requires the step ratio -c_lo/c_hi to be 1.
+  if c_hi == 0 || c_lo != -c_hi {
+    return None;
+  }
+
+  // increment d = -forcing_total / c_hi, where the equation is
+  // c_hi*a[n+hi] + c_lo*a[n+lo] + forcing_total == 0.
+  let forcing_total = match forcing.len() {
+    0 => Expr::Integer(0),
+    1 => forcing.remove(0),
+    _ => crate::functions::math_ast::plus_ast(&forcing).ok()?,
+  };
+  let d = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(forcing_total),
+    }),
+    right: Box::new(Expr::Integer(c_hi)),
+  })
+  .ok()?;
+  if crate::functions::polynomial_ast::contains_var(&d, var_name) {
+    return None; // index-dependent forcing — not an arithmetic progression
+  }
+
+  let n = Expr::Identifier(var_name.to_string());
+  // d * n
+  let dn = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(d.clone()),
+    right: Box::new(n.clone()),
+  })
+  .ok()?;
+
+  // Build the Plus terms in wolframscript's display order with a raw BinaryOp
+  // (the canonical sorter would reorder, e.g. `C[1] + n` instead of `n + C[1]`).
+  let raw_plus = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  match ics.len() {
+    0 => {
+      // d*n + C[1]
+      let c1 = Expr::FunctionCall {
+        name: "C".to_string(),
+        args: vec![Expr::Integer(1)].into(),
+      };
+      if matches!(&dn, Expr::Integer(0)) {
+        return Some(c1);
+      }
+      Some(raw_plus(dn, c1))
+    }
+    1 => {
+      // a[n] = v + d*(n - k0) = (v - d*k0) + d*n, with the constant first.
+      let (k0, v) = &ics[0];
+      let constant = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(v.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(d),
+          right: Box::new(Expr::Integer(*k0)),
+        }),
+      })
+      .ok()?;
+      if matches!(&dn, Expr::Integer(0)) {
+        return Some(constant);
+      }
+      if matches!(&constant, Expr::Integer(0)) {
+        return Some(dn);
+      }
+      Some(raw_plus(constant, dn))
+    }
+    _ => None, // over-determined: leave to the general solver / unevaluated
+  }
 }
 
 /// Wrap a closed-form `solution` (in `var_name`) as Wolfram's RSolve output.
