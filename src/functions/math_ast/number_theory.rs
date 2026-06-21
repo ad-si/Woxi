@@ -182,8 +182,12 @@ pub fn extended_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Accepts integers and rationals. For rationals,
 /// `LCM[a/b, c/d] = LCM[a, c] / GCD[b, d]`.
 pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // LCM[] stays unevaluated in wolframscript (unlike GCD[], which is 0).
+  // LCM requires at least one argument: wolframscript emits LCM::argm and
+  // returns unevaluated (unlike GCD[], which is the identity 0).
   if args.is_empty() {
+    crate::emit_message(
+      "LCM::argm: LCM called with 0 arguments; 1 or more arguments are expected.",
+    );
     return Ok(Expr::FunctionCall {
       name: "LCM".to_string(),
       args: vec![].into(),

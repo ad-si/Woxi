@@ -1486,6 +1486,21 @@ mod gcd {
   }
 
   #[test]
+  fn lcm_no_args_warns_argm() {
+    use woxi::interpret_with_stdout;
+    // LCM requires at least one argument: wolframscript emits LCM::argm and
+    // returns unevaluated. GCD[] is the identity 0 and warns nothing.
+    let l = interpret_with_stdout("LCM[]").unwrap();
+    assert_eq!(l.result, "LCM[]");
+    assert!(l.warnings[0].contains(
+      "LCM::argm: LCM called with 0 arguments; 1 or more arguments are expected."
+    ));
+    let g = interpret_with_stdout("GCD[]").unwrap();
+    assert_eq!(g.result, "0");
+    assert!(g.warnings.is_empty());
+  }
+
+  #[test]
   fn inexact_argument_warns() {
     use woxi::interpret_with_stdout;
     // A Real argument keeps GCD unevaluated and warns ::exact, naming the
