@@ -1834,6 +1834,70 @@ fn format_bigfloat_as_precision_marker(
 /// Rescale[x, {xmin, xmax}] - rescales x to [0,1]
 /// Rescale[x, {xmin, xmax}, {ymin, ymax}] - rescales x to [ymin,ymax]
 /// Rescale[list] - rescales list elements to [0,1] based on min/max
+/// Recursively collect numeric leaves of a (possibly nested) list for the
+/// 1-argument `Rescale`. Sets `ok = false` on any non-numeric, non-list leaf
+/// and clears `all_int` when a `Real` leaf is seen.
+fn rescale_collect_leaves(
+  expr: &Expr,
+  vals: &mut Vec<f64>,
+  int_vals: &mut Vec<i128>,
+  all_int: &mut bool,
+  ok: &mut bool,
+) {
+  match expr {
+    Expr::List(items) => {
+      for it in items.iter() {
+        rescale_collect_leaves(it, vals, int_vals, all_int, ok);
+      }
+    }
+    Expr::Integer(n) => {
+      vals.push(*n as f64);
+      int_vals.push(*n);
+    }
+    Expr::Real(f) => {
+      vals.push(*f);
+      *all_int = false;
+    }
+    _ => *ok = false,
+  }
+}
+
+/// Rebuild a (possibly nested) list, rescaling each numeric leaf to [0, 1]
+/// using the global `min`/range. Integer data stays exact via `make_rational`;
+/// degenerate (zero-range) data maps every leaf to 0, matching wolframscript.
+fn rescale_rebuild(
+  expr: &Expr,
+  all_int: bool,
+  min_i: i128,
+  range_i: i128,
+  min_f: f64,
+  range_f: f64,
+  degenerate: bool,
+) -> Expr {
+  match expr {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|it| {
+          rescale_rebuild(
+            it, all_int, min_i, range_i, min_f, range_f, degenerate,
+          )
+        })
+        .collect(),
+    ),
+    _ if degenerate => Expr::Integer(0),
+    Expr::Integer(n) if all_int => make_rational(n - min_i, range_i),
+    _ => {
+      let x = match expr {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(f) => *f,
+        _ => 0.0,
+      };
+      num_to_expr((x - min_f) / range_f)
+    }
+  }
+}
+
 pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -1841,57 +1905,49 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Rescale[list] - auto-detect min/max
+  // Rescale[list] - auto-detect the global min/max across all (possibly
+  // nested) elements and rescale each, preserving the list structure.
   if args.len() == 1 {
     if let Expr::List(items) = &args[0] {
       if items.is_empty() {
         return Ok(Expr::List(vec![].into()));
       }
-      // Find min and max
       let mut vals = Vec::new();
-      let mut all_int = true;
       let mut int_vals: Vec<i128> = Vec::new();
-      for item in items {
-        match item {
-          Expr::Integer(n) => {
-            vals.push(*n as f64);
-            int_vals.push(*n);
-          }
-          Expr::Real(f) => {
-            vals.push(*f);
-            all_int = false;
-          }
-          _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Rescale".to_string(),
-              args: args.to_vec().into(),
-            });
-          }
-        }
+      let mut all_int = true;
+      let mut ok = true;
+      rescale_collect_leaves(
+        &args[0],
+        &mut vals,
+        &mut int_vals,
+        &mut all_int,
+        &mut ok,
+      );
+      if !ok || vals.is_empty() {
+        return Ok(Expr::FunctionCall {
+          name: "Rescale".to_string(),
+          args: args.to_vec().into(),
+        });
       }
-      if all_int && !int_vals.is_empty() {
-        let min_val = *int_vals.iter().min().unwrap();
-        let max_val = *int_vals.iter().max().unwrap();
-        if min_val == max_val {
-          return Ok(Expr::List(vec![Expr::Integer(0); items.len()].into()));
-        }
-        let range = max_val - min_val;
-        let result: Vec<Expr> = int_vals
-          .iter()
-          .map(|x| make_rational(x - min_val, range))
-          .collect();
-        return Ok(Expr::List(result.into()));
-      }
-      let min_val = vals.iter().cloned().fold(f64::INFINITY, f64::min);
-      let max_val = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-      if (max_val - min_val).abs() < f64::EPSILON {
-        return Ok(Expr::List(vec![Expr::Integer(0); items.len()].into()));
-      }
-      let result: Vec<Expr> = vals
-        .iter()
-        .map(|x| num_to_expr((x - min_val) / (max_val - min_val)))
-        .collect();
-      return Ok(Expr::List(result.into()));
+      let min_f = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+      let max_f = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let degenerate = (max_f - min_f).abs() < f64::EPSILON;
+      let (min_i, range_i) = if all_int {
+        let mn = *int_vals.iter().min().unwrap();
+        let mx = *int_vals.iter().max().unwrap();
+        (mn, mx - mn)
+      } else {
+        (0, 0)
+      };
+      return Ok(rescale_rebuild(
+        &args[0],
+        all_int,
+        min_i,
+        range_i,
+        min_f,
+        max_f - min_f,
+        degenerate,
+      ));
     }
     // Single non-list value needs {xmin, xmax}
     return Ok(Expr::FunctionCall {

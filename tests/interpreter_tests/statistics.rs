@@ -697,6 +697,37 @@ mod rescale {
     assert_eq!(interpret("Rescale[3, {1, 5}]").unwrap(), "1/2");
   }
 
+  // Rescale[list] uses the GLOBAL min/max across all (possibly nested)
+  // elements and preserves the list structure.
+  #[test]
+  fn rescale_nested_list() {
+    assert_eq!(
+      interpret("Rescale[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{0, 1/3}, {2/3, 1}}"
+    );
+    assert_eq!(
+      interpret("Rescale[{{0, 5}, {10, 15}}]").unwrap(),
+      "{{0, 1/3}, {2/3, 1}}"
+    );
+  }
+
+  #[test]
+  fn rescale_rank_three_list() {
+    assert_eq!(
+      interpret("Rescale[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}]").unwrap(),
+      "{{{0, 1/7}, {2/7, 3/7}}, {{4/7, 5/7}, {6/7, 1}}}"
+    );
+  }
+
+  // Degenerate (zero-range) nested data maps every element to 0.
+  #[test]
+  fn rescale_nested_all_equal() {
+    assert_eq!(
+      interpret("Rescale[{{1, 1}, {1, 1}}]").unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+  }
+
   #[test]
   fn rescale_list_with_range() {
     // Rescale should thread over list first argument
