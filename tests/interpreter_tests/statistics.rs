@@ -312,6 +312,52 @@ mod contraharmonic_mean {
   }
 }
 
+mod absolute_correlation {
+  use super::*;
+
+  // AbsoluteCorrelation[v1, v2] = Mean[v1 * Conjugate[v2]].
+  #[test]
+  fn two_vectors() {
+    assert_eq!(
+      interpret("AbsoluteCorrelation[{1, 2, 3}, {2, 4, 6}]").unwrap(),
+      "28/3"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelation[{1, 2, 3, 4}, {4, 3, 2, 1}]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn single_argument_is_self_correlation() {
+    assert_eq!(interpret("AbsoluteCorrelation[{1, 2, 3}]").unwrap(), "14/3");
+  }
+
+  #[test]
+  fn symbolic_keeps_conjugate() {
+    assert_eq!(
+      interpret("AbsoluteCorrelation[{a, b}, {c, d}]").unwrap(),
+      "(a*Conjugate[c] + b*Conjugate[d])/2"
+    );
+  }
+
+  #[test]
+  fn complex_uses_conjugate_of_second() {
+    assert_eq!(
+      interpret("AbsoluteCorrelation[{3 + 4 I, 1}, {1, 2 I}]").unwrap(),
+      "3/2 + I"
+    );
+  }
+
+  #[test]
+  fn mismatched_lengths_stay_unevaluated() {
+    assert_eq!(
+      interpret("AbsoluteCorrelation[{1, 2}, {3, 4, 5}]").unwrap(),
+      "AbsoluteCorrelation[{1, 2}, {3, 4, 5}]"
+    );
+  }
+}
+
 mod quartile_deviation {
   use super::*;
 

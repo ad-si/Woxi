@@ -1643,6 +1643,55 @@ pub fn contraharmonic_mean_ast(
   evaluate_function_call_ast("Divide", &[numerator, denominator])
 }
 
+/// AbsoluteCorrelation[v1, v2] = Mean[v1 * Conjugate[v2]] — the uncentered
+/// (second-moment) correlation of two equal-length vectors. The single-argument
+/// form is AbsoluteCorrelation[v, v]. Mismatched lengths emit
+/// AbsoluteCorrelation::vctmat. (The matrix form is left unevaluated.)
+pub fn absolute_correlation_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::evaluator::evaluate_function_call_ast;
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "AbsoluteCorrelation".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  // Single-argument form: AbsoluteCorrelation[v] == AbsoluteCorrelation[v, v].
+  if args.len() == 1 {
+    return absolute_correlation_ast(&[args[0].clone(), args[0].clone()]);
+  }
+
+  let (Expr::List(xs), Expr::List(ys)) = (&args[0], &args[1]) else {
+    return unevaluated();
+  };
+  // Only the vector form is handled; matrices fall through unevaluated.
+  if xs.iter().any(|e| matches!(e, Expr::List(_)))
+    || ys.iter().any(|e| matches!(e, Expr::List(_)))
+  {
+    return unevaluated();
+  }
+  if xs.is_empty() || xs.len() != ys.len() {
+    crate::emit_message(
+      "AbsoluteCorrelation::vctmat: The arguments to AbsoluteCorrelation are not a pair of vectors or a pair of matrices of equal length.",
+    );
+    return unevaluated();
+  }
+
+  // Σ x_i * Conjugate[y_i], divided by the length.
+  let n = xs.len();
+  let mut terms = Vec::with_capacity(n);
+  for (x, y) in xs.iter().zip(ys.iter()) {
+    let conj_y = evaluate_function_call_ast("Conjugate", &[y.clone()])?;
+    terms.push(evaluate_function_call_ast("Times", &[x.clone(), conj_y])?);
+  }
+  let total = evaluate_function_call_ast("Plus", &terms)?;
+  evaluate_function_call_ast("Divide", &[total, Expr::Integer(n as i128)])
+}
+
 /// Sample covariance of two equal-length scalar lists, computed symbolically
 /// as `Sum[(x_i - meanx)*Conjugate[y_i - meany]] / (n - 1)`. The Conjugate on
 /// the second argument matches Wolfram's (Hermitian) convention; for real data

@@ -1010,6 +1010,9 @@ pub fn dispatch_math_functions(
     "CovarianceFunction" if args.len() == 3 => {
       return Some(crate::functions::math_ast::covariance_function_ast(args));
     }
+    "AbsoluteCorrelation" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::absolute_correlation_ast(args));
+    }
     "Correlation" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_ast(args));
     }
