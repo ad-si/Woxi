@@ -2769,6 +2769,42 @@ mod clip {
   fn clip_nonnumeric_stays_unevaluated() {
     assert_eq!(interpret("Clip[x]").unwrap(), "Clip[x]");
   }
+
+  #[test]
+  fn clip_infinity_clamps_to_bounds() {
+    // Infinity clamps to the upper bound, -Infinity to the lower bound.
+    assert_eq!(interpret("Clip[Infinity]").unwrap(), "1");
+    assert_eq!(interpret("Clip[-Infinity]").unwrap(), "-1");
+    assert_eq!(interpret("Clip[Infinity, {0, 10}]").unwrap(), "10");
+    assert_eq!(interpret("Clip[-Infinity, {-5, 5}]").unwrap(), "-5");
+    // With out-of-range replacements, the above/below value is used.
+    assert_eq!(
+      interpret("Clip[Infinity, {-5, 5}, {-100, 100}]").unwrap(),
+      "100"
+    );
+    assert_eq!(interpret("Clip[Infinity, {2, 8}, {a, b}]").unwrap(), "b");
+  }
+
+  #[test]
+  fn clip_indeterminate_returns_indeterminate() {
+    assert_eq!(interpret("Clip[Indeterminate]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn clip_complex_infinity_stays_unevaluated() {
+    // Clip::nord — ComplexInfinity has no ordering.
+    assert_eq!(
+      interpret("Clip[ComplexInfinity]").unwrap(),
+      "Clip[ComplexInfinity]"
+    );
+  }
+
+  #[test]
+  fn clip_complex_number_stays_unevaluated() {
+    // Clip::ncompl — a genuine complex number cannot be clipped.
+    assert_eq!(interpret("Clip[I]").unwrap(), "Clip[I]");
+    assert_eq!(interpret("Clip[2 + 3 I]").unwrap(), "Clip[2 + 3*I]");
+  }
 }
 
 mod random_choice {

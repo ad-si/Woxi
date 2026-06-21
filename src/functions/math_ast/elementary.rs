@@ -2417,13 +2417,38 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
   };
 
+  // Special values that don't compare like an ordinary real.
+  match &args[0] {
+    // Clip[Indeterminate] -> Indeterminate.
+    Expr::Identifier(s) | Expr::Constant(s) if s == "Indeterminate" => {
+      return Ok(args[0].clone());
+    }
+    // ComplexInfinity has no definite ordering: emit nord, stay unevaluated.
+    Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
+      crate::emit_message(
+        "Clip::nord: Invalid comparison with ComplexInfinity attempted.",
+      );
+      return unevaluated();
+    }
+    _ => {}
+  }
+  // A genuine complex number can't be clipped: emit ncompl, stay unevaluated.
+  if crate::functions::predicate_ast::is_complex_number(&args[0]) {
+    crate::emit_message(
+      "Clip::ncompl: Symbolic or noncomplex numerical arguments are expected.",
+    );
+    return unevaluated();
+  }
+
   // Numeric value of x, used only to decide the branch. The exact input is
   // preserved in the result, so Clip[1/2] stays 1/2 and Clip[Pi, {0, 10}] stays
-  // Pi rather than being floatified.
-  let x = match crate::functions::math_ast::try_eval_to_f64(&args[0]) {
-    Some(v) => v,
-    None => return unevaluated(),
-  };
+  // Pi rather than being floatified. Infinity / -Infinity resolve to ±inf so
+  // they clamp to the upper / lower bound respectively.
+  let x =
+    match crate::functions::math_ast::try_eval_to_f64_with_infinity(&args[0]) {
+      Some(v) => v,
+      None => return unevaluated(),
+    };
 
   // Bounds: exact expressions plus their numeric values. The default range is
   // {-1, 1}.
