@@ -87,6 +87,17 @@ Or you can run a script:
 woxi run tests/scripts/hello_world.wls
 ```
 
+Or start an interactive REPL, where definitions and `%` / `Out[]` history
+persist across inputs:
+
+```sh
+woxi repl
+# In[1]:= x = 5
+# Out[1]= 5
+# In[2]:= x^2
+# Out[2]= 25
+```
+
 
 ### Jupyter Notebook
 
@@ -116,6 +127,7 @@ Woxi | WolframScript
 --- | ---
 `woxi eval "1 + 2"` | `wolframscript -code "1 + 2"`
 `woxi run script.wls` | `wolframscript script.wls`
+`woxi repl` | `wolframscript` (no arguments)
 
 
 ## Contributing

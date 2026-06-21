@@ -207,6 +207,25 @@ pub fn is_visual_mode() -> bool {
   VISUAL_MODE.with(|v| *v.borrow())
 }
 
+// REPL session flag — set by the `woxi repl` command. Unlike VISUAL_MODE it
+// does not change result rendering (the terminal REPL keeps plain CLI/text
+// output to match wolframscript), but it does enable persistent `%` / `Out[]`
+// history caching across evaluations in the same process.
+thread_local! {
+    static REPL_MODE: RefCell<bool> = const { RefCell::new(false) };
+}
+
+/// Enable or disable REPL session mode (persistent `%` / `Out[]` history).
+pub fn set_repl_mode(enabled: bool) {
+  REPL_MODE.with(|v| *v.borrow_mut() = enabled);
+}
+
+/// Whether output history (`%` / `Out[]`) should persist across evaluations.
+/// True in both visual (notebook) mode and terminal REPL mode.
+fn output_history_enabled() -> bool {
+  VISUAL_MODE.with(|v| *v.borrow()) || REPL_MODE.with(|v| *v.borrow())
+}
+
 // Dark mode flag — when true, SVG output uses a dark color palette
 thread_local! {
     static DARK_MODE: RefCell<bool> = const { RefCell::new(false) };
@@ -1595,11 +1614,12 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         // Generate SVG rendering of the result for playground display
         generate_output_svg(&result_expr);
         // Stash the top-level Expr so `%` / `Out[]` in a subsequent
-        // `interpret_with_stdout` call resolves to this cell's result.
-        // We only do this in visual mode (e.g. woxi-studio) so command-line
-        // semantics (a fresh process per evaluation, where `%` should still
-        // collapse to `Out[0]`) are preserved — matching wolframscript.
-        if VISUAL_MODE.with(|v| *v.borrow()) {
+        // evaluation resolves to this cell's result. We only do this when
+        // output history is enabled — visual mode (e.g. woxi-studio) or the
+        // terminal REPL (`woxi repl`). Plain command-line semantics (a fresh
+        // process per evaluation, where `%` collapses to `Out[0]`) are
+        // preserved — matching wolframscript.
+        if output_history_enabled() {
           set_last_output(result_expr.clone());
         }
         // In visual mode (playground), unwrap StandardForm/InputForm wrappers
