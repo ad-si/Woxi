@@ -1188,6 +1188,39 @@ mod replace_all_top_level {
     assert_eq!(interpret("x^2 /. x -> 3").unwrap(), "9");
   }
 
+  // ReplaceAll is structural and ignores the Hold attribute, so an operator
+  // pattern must match the held BinaryOp form. Previously these stayed
+  // unchanged because the held `a + b` is a BinaryOp the matcher skipped.
+  #[test]
+  fn replace_all_into_held_binary_op() {
+    assert_eq!(
+      interpret("Hold[a + b] /. x_ + y_ -> x*y").unwrap(),
+      "Hold[a*b]"
+    );
+    assert_eq!(
+      interpret("Hold[f[a + b]] /. x_ + y_ -> x*y").unwrap(),
+      "Hold[f[a*b]]"
+    );
+    assert_eq!(
+      interpret("Hold[a*b] /. x_ * y_ -> x + y").unwrap(),
+      "Hold[a + b]"
+    );
+  }
+
+  // A held chain of a Flat operator is matched as the flattened form, so
+  // `x_ + y_` binds x to the first operand and y to the rest.
+  #[test]
+  fn replace_all_into_held_flat_chain() {
+    assert_eq!(
+      interpret("Hold[a + b + c] /. x_ + y_ -> x*y").unwrap(),
+      "Hold[a*(b + c)]"
+    );
+    assert_eq!(
+      interpret("Hold[a*b*c] /. x_ * y_ -> g[x, y]").unwrap(),
+      "Hold[g[a, b*c]]"
+    );
+  }
+
   #[test]
   fn replace_all_descends_into_unary_op() {
     // ReplaceAll must recurse into UnaryOp (negation)

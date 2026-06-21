@@ -319,6 +319,27 @@ pub fn try_ast_pattern_replace(
   })
 }
 
+/// Flatten a chain of same-operator `BinaryOp` nodes (a Flat operator such as
+/// Plus or Times) into its operand list, e.g. `(a + b) + c` → `[a, b, c]`.
+fn collect_flat_binary_operands(
+  expr: &Expr,
+  op: &crate::syntax::BinaryOperator,
+  out: &mut Vec<Expr>,
+) {
+  if let Expr::BinaryOp {
+    op: e_op,
+    left,
+    right,
+  } = expr
+    && e_op == op
+  {
+    collect_flat_binary_operands(left, op, out);
+    collect_flat_binary_operands(right, op, out);
+  } else {
+    out.push(expr.clone());
+  }
+}
+
 fn try_ast_pattern_replace_impl(
   expr: &Expr,
   pattern: &Expr,
@@ -408,6 +429,72 @@ fn try_ast_pattern_replace_impl(
         Ok(Some(Expr::CurriedCall {
           func: Box::new(new_func),
           args: new_args,
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    // Recurse into BinaryOp children. Inside a held expression (e.g.
+    // `Hold[a + b]`) infix operators stay as `BinaryOp` nodes rather than the
+    // normalized `Plus[...]` form, so the structural replacement must descend
+    // here too, otherwise `Hold[a + b] /. x_ + y_ -> x*y` never fires.
+    Expr::BinaryOp { op, left, right } => {
+      // The matcher only handles `Plus[...]`-style FunctionCall values, not the
+      // BinaryOp form a held operator keeps. Try matching the whole node via
+      // its FunctionCall equivalent first (so `Hold[a + b] /. x_ + y_ -> x*y`
+      // matches the `a + b`), then fall back to recursing into the children.
+      // Flat operators (Plus/Times/And/Or) are flattened so a chain like
+      // `a + b + c` matches `x_ + y_` as Plus[a, b, c] (x=a, y=b+c), the same
+      // as the unheld form.
+      let func_name = binary_op_to_func_name(op);
+      if !func_name.is_empty() {
+        let args: Vec<Expr> =
+          if matches!(func_name, "Plus" | "Times" | "And" | "Or") {
+            let mut operands = Vec::new();
+            collect_flat_binary_operands(expr, op, &mut operands);
+            operands
+          } else {
+            vec![(**left).clone(), (**right).clone()]
+          };
+        let as_call = Expr::FunctionCall {
+          name: func_name.to_string(),
+          args: args.into(),
+        };
+        if let Some(result) = try_ast_pattern_replace_single(
+          &as_call,
+          pattern,
+          replacement,
+          condition,
+        )? {
+          return Ok(Some(result));
+        }
+      }
+      let mut any_matched = false;
+      let new_left =
+        match try_ast_pattern_replace(left, pattern, replacement, condition)? {
+          Some(r) => {
+            any_matched = true;
+            r
+          }
+          None => (**left).clone(),
+        };
+      let new_right = match try_ast_pattern_replace(
+        right,
+        pattern,
+        replacement,
+        condition,
+      )? {
+        Some(r) => {
+          any_matched = true;
+          r
+        }
+        None => (**right).clone(),
+      };
+      if any_matched {
+        Ok(Some(Expr::BinaryOp {
+          op: *op,
+          left: Box::new(new_left),
+          right: Box::new(new_right),
         }))
       } else {
         Ok(None)
