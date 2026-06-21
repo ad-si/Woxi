@@ -2510,6 +2510,100 @@ mod symmetric_difference {
   }
 }
 
+mod delete_elements {
+  use super::*;
+
+  #[test]
+  fn removes_all_instances() {
+    assert_eq!(
+      interpret("DeleteElements[{1, 2, 3, 4, 2, 1}, {1, 2}]").unwrap(),
+      "{3, 4}"
+    );
+    assert_eq!(
+      interpret("DeleteElements[{a, b, c, a, b}, {a}]").unwrap(),
+      "{b, c, b}"
+    );
+  }
+
+  #[test]
+  fn missing_element_is_noop() {
+    assert_eq!(
+      interpret("DeleteElements[{1, 2, 3}, {5}]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("DeleteElements[{1, 2, 3}, {}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn samesq_matching_distinguishes_real_and_integer() {
+    // 1. is not SameQ to 1, so it is kept.
+    assert_eq!(
+      interpret("DeleteElements[{1.0, 2, 3}, {1}]").unwrap(),
+      "{1., 2, 3}"
+    );
+  }
+
+  #[test]
+  fn preserves_head() {
+    assert_eq!(
+      interpret("DeleteElements[f[a, b, a, c], {a}]").unwrap(),
+      "f[b, c]"
+    );
+  }
+
+  #[test]
+  fn single_multiplicity() {
+    assert_eq!(
+      interpret("DeleteElements[{5, 5, 5, 1}, 2 -> {5}]").unwrap(),
+      "{5, 1}"
+    );
+    assert_eq!(
+      interpret("DeleteElements[{1, 1, 1, 2, 2, 3}, 2 -> {1, 2}]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn paired_multiplicities() {
+    assert_eq!(
+      interpret("DeleteElements[{1, 1, 1, 2, 2, 3}, {2, 1} -> {1, 2}]")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("DeleteElements[{a, b, c, a, b}, 1 -> {a, b}]").unwrap(),
+      "{c, a, b}"
+    );
+  }
+
+  #[test]
+  fn infinity_multiplicity() {
+    assert_eq!(
+      interpret("DeleteElements[{5, 5, 5, 1}, Infinity -> {5}]").unwrap(),
+      "{1}"
+    );
+  }
+
+  #[test]
+  fn non_list_spec_stays_unevaluated() {
+    assert_eq!(
+      interpret("DeleteElements[{1, 2, 3}, 5]").unwrap(),
+      "DeleteElements[{1, 2, 3}, Infinity -> 5]"
+    );
+  }
+
+  #[test]
+  fn non_positive_multiplicity_stays_unevaluated() {
+    assert_eq!(
+      interpret("DeleteElements[{1, 2, 2, 3}, 0 -> {2}]").unwrap(),
+      "DeleteElements[{1, 2, 2, 3}, 0 -> {2}]"
+    );
+  }
+}
+
 mod count {
   use super::*;
 

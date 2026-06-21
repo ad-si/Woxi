@@ -777,7 +777,7 @@ Erfc,Returns the complementary error function value,✅,pure,2.0,784
 NSum,Numerical approximation of a sum using polynomial extrapolation,✅,pure,1.0,784
 Legended,Wrapper to attach a legend to a graphic,✅,none,7.0,785
 RotateRight,Rotates list elements to the right,✅,pure,1.0,786
-ExportString,Exports an expression to a string in a given format, ✅,pure,4.0,787
+ExportString,Exports an expression to a string in a given format,✅,pure,4.0,787
 Quit,Terminates the kernel session with optional exit code,✅,effectful,1.0,788
 BaseForm,Displays numbers in a specified base with subscript notation,✅,pure,1.0,789
 Complexes,Domain of complex numbers,✅,none,4.0,790
@@ -5521,7 +5521,7 @@ DeclareCompiledComponent,,,,13.2,
 DefaultDiffStyle,,,,14.1,
 DefaultFontProperties,,,,4.0,
 DeleteAdjacentDuplicates,Removes consecutive duplicate elements from a list,✅,pure,13.1,
-DeleteElements,,,,13.1,
+DeleteElements,Removes elements from a list (SameQ matching) with optional multiplicity control via n->{elems},✅,pure,13.1,
 DelimiterAutoMatching,,,,12.3,
 Diff,,,,14.1,
 Diff3,,,,14.1,

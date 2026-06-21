@@ -556,6 +556,140 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// AST-based DeleteElements: multiset difference with multiplicity control.
+///
+/// - `DeleteElements[list, {e1, e2, …}]` removes all instances of each `ei`.
+/// - `DeleteElements[list, n -> {e1, …}]` removes up to `n` instances of each.
+/// - `DeleteElements[list, {n1, …} -> {e1, …}]` removes up to `ni` of each `ei`.
+///
+/// Matching uses SameQ semantics (so `1.` ≠ `1`); order and duplicates of the
+/// surviving elements are preserved, and the head of the first argument is
+/// retained (e.g. `f[a, b, a]`).
+pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use std::collections::HashMap;
+
+  let unevaluated = || Expr::FunctionCall {
+    name: "DeleteElements".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  // Subject must be a List or a general expression with a head.
+  let (items, head): (&[Expr], Option<&str>) = match &args[0] {
+    Expr::List(it) => (it, None),
+    Expr::FunctionCall { name, args: it } => (it, Some(name.as_str())),
+    _ => return Ok(unevaluated()),
+  };
+
+  // Split spec into a multiplicity part and an element-list part.
+  let (mult_expr, elems_expr): (Option<&Expr>, &Expr) = match &args[1] {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => (Some(pattern), replacement),
+    other => (None, other),
+  };
+
+  // The element part must be a list; otherwise emit DeleteElements::invl and
+  // return the canonicalised `Infinity -> arg` form wolframscript produces.
+  let Expr::List(elems) = elems_expr else {
+    crate::emit_message(&format!(
+      "DeleteElements::invl: The argument {} is not a list.",
+      crate::syntax::expr_to_string(elems_expr)
+    ));
+    let rhs = match mult_expr {
+      Some(m) => m.clone(),
+      None => Expr::Identifier("Infinity".to_string()),
+    };
+    return Ok(Expr::FunctionCall {
+      name: "DeleteElements".to_string(),
+      args: vec![
+        args[0].clone(),
+        Expr::Rule {
+          pattern: Box::new(rhs),
+          replacement: Box::new(elems_expr.clone()),
+        },
+      ]
+      .into(),
+    });
+  };
+
+  // Resolve per-element budgets.
+  let is_infinity = |e: &Expr| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity");
+  // A positive machine integer, or None for anything invalid.
+  let pos_int = |e: &Expr| -> Option<usize> {
+    match e {
+      Expr::Integer(n) if *n > 0 => Some(*n as usize),
+      _ => None,
+    }
+  };
+  let ilsmp = |bad: &Expr| {
+    crate::emit_message(&format!(
+      "DeleteElements::ilsmp: Single or list of positive machine-sized integers expected at position 1 of {}.",
+      crate::syntax::expr_to_string(bad)
+    ));
+  };
+
+  let budgets: Vec<usize> = match mult_expr {
+    None => vec![usize::MAX; elems.len()],
+    Some(m) if is_infinity(m) => vec![usize::MAX; elems.len()],
+    Some(Expr::List(ns)) => {
+      let mut out = Vec::with_capacity(ns.len());
+      for n in ns.iter() {
+        match pos_int(n) {
+          Some(v) => out.push(v),
+          None => {
+            ilsmp(n);
+            return Ok(unevaluated());
+          }
+        }
+      }
+      // A multiplicity list pairs with the element list by index.
+      if out.len() != elems.len() {
+        return Ok(unevaluated());
+      }
+      out
+    }
+    Some(m) => match pos_int(m) {
+      Some(v) => vec![v; elems.len()],
+      None => {
+        ilsmp(m);
+        return Ok(unevaluated());
+      }
+    },
+  };
+
+  // Map each element (by SameQ string key) to its remaining removal budget.
+  let mut remaining: HashMap<String, usize> = HashMap::new();
+  for (e, b) in elems.iter().zip(budgets.iter()) {
+    let key = crate::syntax::expr_to_string(e);
+    let slot = remaining.entry(key).or_insert(0);
+    *slot = slot.saturating_add(*b);
+  }
+
+  let result: Vec<Expr> = items
+    .iter()
+    .filter(|item| {
+      let key = crate::syntax::expr_to_string(item);
+      if let Some(b) = remaining.get_mut(&key)
+        && *b > 0
+      {
+        *b -= 1;
+        return false; // delete this instance
+      }
+      true
+    })
+    .cloned()
+    .collect();
+
+  Ok(match head {
+    Some(name) => Expr::FunctionCall {
+      name: name.to_string(),
+      args: result.into(),
+    },
+    None => Expr::List(result.into()),
+  })
+}
+
 /// AST-based DeleteDuplicatesBy: remove duplicates by key function.
 pub fn delete_duplicates_by_ast(
   list: &Expr,

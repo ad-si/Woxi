@@ -1817,6 +1817,9 @@ pub fn dispatch_list_operations(
     "SymmetricDifference" if args.len() >= 2 => {
       return Some(list_helpers_ast::symmetric_difference_ast(args));
     }
+    "DeleteElements" if args.len() == 2 => {
+      return Some(list_helpers_ast::delete_elements_ast(args));
+    }
     "Dimensions" | "TensorDimensions" if args.len() == 1 || args.len() == 2 => {
       return Some(list_helpers_ast::dimensions_ast(args));
     }
