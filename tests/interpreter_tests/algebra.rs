@@ -642,6 +642,69 @@ mod factor {
     assert_eq!(interpret("Factor[x^2 + 1]").unwrap(), "1 + x^2");
   }
 
+  // Regression: non-monic quadratics with rational (non-integer) roots must
+  // factor via the rational-root theorem, ordering factors by leading
+  // coefficient like wolframscript.
+  #[test]
+  fn non_monic_quadratic_rational_roots() {
+    assert_eq!(
+      interpret("Factor[6*x^2 + 11*x + 3]").unwrap(),
+      "(3 + 2*x)*(1 + 3*x)"
+    );
+    assert_eq!(
+      interpret("Factor[4*x^2 - 9]").unwrap(),
+      "(-3 + 2*x)*(3 + 2*x)"
+    );
+    assert_eq!(
+      interpret("Factor[6*x^2 - x - 2]").unwrap(),
+      "(1 + 2*x)*(-2 + 3*x)"
+    );
+    assert_eq!(
+      interpret("Factor[10*x^2 + 11*x + 3]").unwrap(),
+      "(1 + 2*x)*(3 + 5*x)"
+    );
+    assert_eq!(
+      interpret("Factor[12*x^2 + 7*x + 1]").unwrap(),
+      "(1 + 3*x)*(1 + 4*x)"
+    );
+  }
+
+  // Regression: a non-monic cubic that splits into three linear factors.
+  #[test]
+  fn non_monic_cubic_rational_roots() {
+    assert_eq!(
+      interpret("Factor[6*x^3 + 11*x^2 + 6*x + 1]").unwrap(),
+      "(1 + x)*(1 + 2*x)*(1 + 3*x)"
+    );
+  }
+
+  // Regression: numeric content on top of a non-monic factorization.
+  #[test]
+  fn non_monic_with_numeric_content() {
+    assert_eq!(
+      interpret("Factor[12*x^2 + 22*x + 6]").unwrap(),
+      "2*(3 + 2*x)*(1 + 3*x)"
+    );
+  }
+
+  // Regression: a leading minus over a multi-factor product is wrapped by
+  // wolframscript as -((..)*(..)) and -(1 + x)^2, while a single irreducible
+  // factor is returned expanded.
+  #[test]
+  fn negative_leading_sign_factorizations() {
+    assert_eq!(
+      interpret("Factor[-x^2 - 5*x - 6]").unwrap(),
+      "-((2 + x)*(3 + x))"
+    );
+    assert_eq!(interpret("Factor[-(x + 1)^2]").unwrap(), "-(1 + x)^2");
+    assert_eq!(interpret("Factor[-x - 2]").unwrap(), "-2 - x");
+    assert_eq!(interpret("Factor[-x^2 - 1]").unwrap(), "-1 - x^2");
+    assert_eq!(
+      interpret("Factor[-6*x^2 - 11*x - 3]").unwrap(),
+      "-((3 + 2*x)*(1 + 3*x))"
+    );
+  }
+
   #[test]
   fn cubic() {
     assert_eq!(

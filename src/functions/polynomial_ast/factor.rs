@@ -166,22 +166,11 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Factor the monic-ish polynomial
   let factors = factor_integer_poly(&reduced_coeffs, &var);
 
-  if factors.len() <= 1 && overall == 1 {
-    // Couldn't factor further
-    return Ok(expanded);
-  }
-
-  // Build result: overall * factor1 * factor2 * ...
-  let mut result_factors: Vec<Expr> = Vec::new();
-
-  if overall != 1 {
-    result_factors.push(Expr::Integer(overall));
-  }
-
-  if factors.is_empty() {
-    result_factors.push(coeffs_to_expr(&reduced_coeffs, &var));
+  // Build the polynomial factor expressions, grouping identical factors into
+  // powers: (1+x)*(1+x) → (1+x)^2.
+  let poly_factor_exprs: Vec<Expr> = if factors.is_empty() {
+    vec![coeffs_to_expr(&reduced_coeffs, &var)]
   } else {
-    // Group identical factors: (1+x)*(1+x) → (1+x)^2
     let mut grouped: Vec<(Expr, i128)> = Vec::new();
     for f in &factors {
       let key = expr_to_string(f);
@@ -193,23 +182,58 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         grouped.push((f.clone(), 1));
       }
     }
-    for (factor, count) in grouped {
-      if count == 1 {
-        result_factors.push(factor);
-      } else {
-        result_factors.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(factor),
-          right: Box::new(Expr::Integer(count)),
-        });
-      }
-    }
+    grouped
+      .into_iter()
+      .map(|(factor, count)| {
+        if count == 1 {
+          factor
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(factor),
+            right: Box::new(Expr::Integer(count)),
+          }
+        }
+      })
+      .collect()
+  };
+
+  // The polynomial part is genuinely factored only when it splits into more
+  // than one factor (multiple distinct factors or a repeated power).
+  let poly_factored = poly_factor_exprs.len() > 1
+    || matches!(
+      poly_factor_exprs.first(),
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        ..
+      })
+    );
+
+  // When only a unit sign was extracted (overall == ±1) and the polynomial
+  // didn't factor, wolframscript returns the expanded polynomial unchanged.
+  if !poly_factored && (overall == 1 || overall == -1) {
+    return Ok(expanded);
   }
 
-  if result_factors.len() == 1 {
-    return Ok(result_factors.remove(0));
+  let product = build_product(poly_factor_exprs.clone());
+
+  // overall == -1: wolframscript negates the whole factored product,
+  // e.g. -((2 + x)*(3 + x)) and -(1 + x)^2.
+  if overall == -1 {
+    return Ok(Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(product),
+    });
   }
 
+  // overall == 1: just the factored product.
+  if overall == 1 {
+    return Ok(product);
+  }
+
+  // Any other integer content (e.g. 2, -2): flat content * factor1 * factor2.
+  let mut result_factors: Vec<Expr> = vec![Expr::Integer(overall)];
+  result_factors.extend(poly_factor_exprs);
   Ok(build_product(result_factors))
 }
 
@@ -316,7 +340,20 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
         remaining = divide_by_root(&remaining, root);
       }
       None => {
-        // Can't find more integer roots — try polynomial trial division
+        // No integer root. Try a non-integer rational root p/q: factor out the
+        // primitive linear (q*x - p) and divide it out, e.g.
+        // 6x^2+11x+3 -> (2x+3)(3x+1).
+        if let Some((p, q)) = find_rational_root(&remaining) {
+          let linear = vec![-p, q]; // -p + q*x  ==  q*x - p
+          if let Some((quot, rem)) = poly_div(&remaining, &linear)
+            && rem == [0]
+          {
+            factors.push(linear_to_expr(-p, q, var));
+            remaining = quot;
+            continue;
+          }
+        }
+        // Can't find more rational roots — try polynomial trial division
         let sub_factors = try_factor_no_rational_roots(&remaining, var);
         if sub_factors.is_empty() {
           if remaining != [1] {
@@ -330,11 +367,18 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
     }
   }
 
-  // Sort factors by: constant term, then degree, then string representation
+  // Sort factors by: leading coefficient, then constant term, then degree,
+  // then string representation. wolframscript orders non-monic factors by
+  // their leading coefficient first (e.g. (2x+3)(3x+1)); for monic factors
+  // the leading coefficient ties at 1, so the constant-term ordering below
+  // is unchanged.
   factors.sort_by(|a, b| {
+    let la = factor_leading_coeff(a, var);
+    let lb = factor_leading_coeff(b, var);
     let ca = factor_constant_term(a);
     let cb = factor_constant_term(b);
-    ca.cmp(&cb)
+    la.cmp(&lb)
+      .then_with(|| ca.cmp(&cb))
       .then_with(|| factor_degree(a).cmp(&factor_degree(b)))
       .then_with(|| {
         // For same degree, sort by number of terms (fewer terms first)
@@ -406,6 +450,15 @@ pub fn factor_term_count(expr: &Expr) -> usize {
     }
     _ => 1,
   }
+}
+
+/// Leading coefficient (coefficient of the highest power of `var`) of a factor.
+/// Used as the primary sort key so non-monic factors order by leading
+/// coefficient like wolframscript; returns 0 for non-polynomial factors.
+pub fn factor_leading_coeff(expr: &Expr, var: &str) -> i128 {
+  crate::functions::polynomial_ast::simplify::extract_poly_coeffs(expr, var)
+    .and_then(|c| c.last().copied())
+    .unwrap_or(0)
 }
 
 /// Get the first non-constant coefficient of a factor expression for sorting.
@@ -502,6 +555,48 @@ pub fn find_integer_root(coeffs: &[i128]) -> Option<i128> {
         }
         if evaluate_poly(coeffs, -root) == 0 {
           return Some(-root);
+        }
+      }
+    }
+  }
+  None
+}
+
+/// q^deg * poly(p/q) = Σ coeffs[i] * p^i * q^(deg-i). This is 0 exactly when
+/// p/q is a root. Returns None on overflow.
+fn poly_value_scaled(coeffs: &[i128], p: i128, q: i128) -> Option<i128> {
+  let deg = coeffs.len().checked_sub(1)?;
+  let mut total: i128 = 0;
+  for (i, &c) in coeffs.iter().enumerate() {
+    let pi = p.checked_pow(i as u32)?;
+    let qj = q.checked_pow((deg - i) as u32)?;
+    total = total.checked_add(c.checked_mul(pi)?.checked_mul(qj)?)?;
+  }
+  Some(total)
+}
+
+/// Rational-root theorem for a non-integer root p/q (q > 1, gcd(p,q)=1).
+/// Integer roots are handled separately by `find_integer_root`.
+pub fn find_rational_root(coeffs: &[i128]) -> Option<(i128, i128)> {
+  if coeffs.len() < 2 {
+    return None;
+  }
+  let c0 = coeffs[0];
+  let lead = coeffs[coeffs.len() - 1];
+  if c0 == 0 || lead == 0 {
+    return None;
+  }
+  for &q in &integer_divisors(lead.abs()) {
+    if q <= 1 {
+      continue; // q == 1 would be an integer root
+    }
+    for &p in &integer_divisors(c0.abs()) {
+      if gcd_i128(p, q) != 1 {
+        continue;
+      }
+      for pn in [p, -p] {
+        if poly_value_scaled(coeffs, pn, q) == Some(0) {
+          return Some((pn, q));
         }
       }
     }
