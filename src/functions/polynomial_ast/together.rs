@@ -468,6 +468,55 @@ fn make_fraction(num: Expr, den: Expr) -> Expr {
   }
 }
 
+/// wolframscript's Together pulls the numeric content out of a polynomial
+/// result (e.g. 2 + 2 x -> 2 (1 + x)), matching FactorTerms. Applied only to
+/// the fully-cancelled polynomial output of a fraction.
+fn factor_numeric_content(poly: &Expr) -> Expr {
+  crate::evaluator::evaluate_function_call_ast("FactorTerms", &[poly.clone()])
+    .unwrap_or_else(|_| poly.clone())
+}
+
+/// Count the leaf nodes (atoms) of an expression, used to bound work.
+fn leaf_count(e: &Expr) -> usize {
+  match e {
+    Expr::BinaryOp { left, right, .. } => leaf_count(left) + leaf_count(right),
+    Expr::UnaryOp { operand, .. } => leaf_count(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      1 + args.iter().map(leaf_count).sum::<usize>()
+    }
+    _ => 1,
+  }
+}
+
+/// If the fraction `num/den` reduces to a polynomial (denominator divides the
+/// numerator exactly), return that polynomial with its numeric content pulled
+/// out (matching wolframscript's Together); otherwise None.
+///
+/// Guarded to small, few-variable fractions so the polynomial-GCD cancellation
+/// never runs on the large multivariate intermediates that Solve /
+/// InverseFunction route through Together (which would blow up).
+fn try_reduce_to_polynomial(num: &Expr, den: &Expr) -> Option<Expr> {
+  let frac = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(num.clone()),
+    right: Box::new(den.clone()),
+  };
+  if leaf_count(&frac) > 40 {
+    return None;
+  }
+  let mut vars = std::collections::HashSet::new();
+  super::simplify::collect_variables(&frac, &mut vars);
+  if vars.len() > 2 {
+    return None;
+  }
+  let cancelled = cancel_expr(&frac);
+  if matches!(extract_num_den(&cancelled).1, Expr::Integer(1)) {
+    Some(factor_numeric_content(&cancelled))
+  } else {
+    None
+  }
+}
+
 pub fn together_expr(expr: &Expr) -> Expr {
   // First recursively apply Together to sub-expressions so that nested
   // fractions (e.g. `1/(1 + 1/x)` or continued-fraction-like forms) get
@@ -531,6 +580,16 @@ pub fn together_expr(expr: &Expr) -> Expr {
         })
         .unwrap_or(false);
     if !is_foldable_product {
+      // A lone fraction is still GCD-cancelled when it reduces to a polynomial
+      // (Together[(x^2-1)/(x-1)] -> 1 + x). Only commit when a denominator was
+      // present and fully divided out; otherwise keep the form unchanged so
+      // factored/constant denominators are preserved.
+      let (en, ed) = extract_num_den(&expr_rec);
+      if !matches!(&ed, Expr::Integer(1))
+        && let Some(reduced) = try_reduce_to_polynomial(&en, &ed)
+      {
+        return reduced;
+      }
       return expr_rec;
     }
   }
@@ -609,6 +668,16 @@ pub fn together_expr(expr: &Expr) -> Expr {
   } else if matches!(&combined_den, Expr::Integer(1)) {
     combined_num
   } else {
+    // wolframscript's Together cancels the numerator/denominator GCD. When the
+    // fraction reduces to a polynomial (the denominator divides the numerator
+    // exactly), return that polynomial, e.g. Together[(x^2-1)/(x-1)] -> 1 + x.
+    // If a denominator survives, keep the factored form below rather than the
+    // expanded denominator that Cancel produces.
+    if let Some(reduced) =
+      try_reduce_to_polynomial(&combined_num, &combined_den)
+    {
+      return reduced;
+    }
     // Try to cancel common monomial factors between numerator and denominator
     // without re-expanding the denominator (preserves factored form).
     let (mut simplified_num, simplified_den) =

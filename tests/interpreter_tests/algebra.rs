@@ -1196,6 +1196,34 @@ mod together {
       "(2*x)/((-1 + x)*(1 + x))"
     );
   }
+
+  // Together cancels the numerator/denominator GCD when the fraction reduces
+  // to a polynomial.
+  #[test]
+  fn together_cancels_to_polynomial() {
+    assert_eq!(interpret("Together[(x^2 - 1)/(x - 1)]").unwrap(), "1 + x");
+    assert_eq!(
+      interpret("Together[(x^3 - 1)/(x - 1)]").unwrap(),
+      "1 + x + x^2"
+    );
+    assert_eq!(
+      interpret("Together[(x^2 + 2 x + 1)/(x + 1)]").unwrap(),
+      "1 + x"
+    );
+    // Two variables.
+    assert_eq!(interpret("Together[(x^2 - y^2)/(x - y)]").unwrap(), "x + y");
+  }
+
+  // When the reduced polynomial carries numeric content, it is factored out
+  // (FactorTerms behavior), matching wolframscript.
+  #[test]
+  fn together_factors_numeric_content_after_cancel() {
+    assert_eq!(
+      interpret("Together[(6 x^2 - 6)/(3 x - 3)]").unwrap(),
+      "2*(1 + x)"
+    );
+    assert_eq!(interpret("Together[(2 x + 2)/(x + 1)]").unwrap(), "2");
+  }
 }
 
 mod apart {
