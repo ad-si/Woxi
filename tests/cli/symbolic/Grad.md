@@ -7,6 +7,14 @@ $ wo 'Grad[x^2 y, {x, y}]'
 {2*x*y, x^2}
 ```
 
+For a vector field the result is the Jacobian: row `i` is the gradient of the
+`i`-th component.
+
+```scrut
+$ wo 'Grad[{x y, x + y}, {x, y}]'
+{{y, x}, {1, 1}}
+```
+
 A third argument selects an orthogonal coordinate system, applying the
 appropriate scale factors.
 

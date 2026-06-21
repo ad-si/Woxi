@@ -454,7 +454,7 @@ StringTake,Returns a substring of a string,✅,pure,2.0,456
 ImageData,Extracts pixel data from an image as nested lists,✅,pure,7.0,457
 LaplaceTransform,Compute the Laplace transform of an expression,✅,none,4.0,458
 PlotTheme,Option for specifying the visual theme for plots,✅,pure,10.0,459
-Grad,Compute the gradient of a scalar function,✅,none,9.0,461
+Grad,Compute the gradient of a scalar or array field (derivative axis is innermost),✅,pure,9.0,461
 RawBoxes,Wrapper for raw box expressions in typesetting,✅,pure,6.0,461
 PrimeQ,Tests if a number is prime,✅,pure,1.0,462
 Extract,Extracts parts at specified positions,✅,pure,3.0,463

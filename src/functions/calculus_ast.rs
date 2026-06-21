@@ -13454,13 +13454,41 @@ pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     vars.iter().map(|_| Expr::Integer(1)).collect()
   };
 
-  let mut components = Vec::with_capacity(vars.len());
-  for (var, h) in vars.iter().zip(scales) {
-    let var_name = match var {
-      Expr::Identifier(s) => s,
+  // All variables must be plain symbols.
+  let mut var_names = Vec::with_capacity(vars.len());
+  for var in vars.iter() {
+    match var {
+      Expr::Identifier(s) => var_names.push(s.clone()),
       _ => return unevaluated(),
-    };
-    let deriv = differentiate_expr(&args[0], var_name)?;
+    }
+  }
+
+  // Grad appends the derivative index as the LAST axis of the result, so for a
+  // scalar field f the result is the gradient vector {∂f/∂x_j}, and for an
+  // array field f the gradient vector is appended at each leaf — e.g. for a
+  // vector field result[[i, j]] = ∂f_i/∂x_j. Recurse over the field structure
+  // to handle arbitrary tensor rank.
+  grad_field(&args[0], &var_names, &scales)
+}
+
+/// Build the gradient of `field` with respect to `var_names`, applying the
+/// per-variable scale factors. The derivative axis becomes the innermost axis.
+fn grad_field(
+  field: &Expr,
+  var_names: &[String],
+  scales: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if let Expr::List(items) = field {
+    let mut rows = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      rows.push(grad_field(item, var_names, scales)?);
+    }
+    return Ok(Expr::List(rows.into()));
+  }
+
+  let mut components = Vec::with_capacity(var_names.len());
+  for (var_name, h) in var_names.iter().zip(scales) {
+    let deriv = differentiate_expr(field, var_name)?;
     // component = (1/h) ∂f/∂x; the scale factor is 1 for Cartesian axes.
     let comp = if matches!(h, Expr::Integer(1)) {
       deriv
@@ -13471,7 +13499,7 @@ pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           deriv,
           Expr::FunctionCall {
             name: "Power".to_string(),
-            args: vec![h, Expr::Integer(-1)].into(),
+            args: vec![h.clone(), Expr::Integer(-1)].into(),
           },
         ]
         .into(),

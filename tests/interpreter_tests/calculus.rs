@@ -5776,6 +5776,38 @@ mod grad {
       "Grad[r^2, {r, t}, Bogus]"
     );
   }
+
+  // For a vector field the derivative is the LAST index, so the result is the
+  // Jacobian with row i = gradient of f_i: result[[i, j]] = D[f_i, x_j].
+  #[test]
+  fn vector_field_jacobian() {
+    assert_eq!(
+      interpret("Grad[{x y, x + y}, {x, y}]").unwrap(),
+      "{{y, x}, {1, 1}}"
+    );
+    assert_eq!(
+      interpret("Grad[{x^2 y, y^3}, {x, y}]").unwrap(),
+      "{{2*x*y, x^2}, {0, 3*y^2}}"
+    );
+  }
+
+  // A non-square Jacobian: a 2-component field over 3 variables is 2x3.
+  #[test]
+  fn vector_field_nonsquare() {
+    assert_eq!(
+      interpret("Grad[{x y z, x + y}, {x, y, z}]").unwrap(),
+      "{{y*z, x*z, x*y}, {1, 1, 0}}"
+    );
+  }
+
+  // A rank-2 field gains the derivative axis as the innermost dimension.
+  #[test]
+  fn rank_two_field() {
+    assert_eq!(
+      interpret("Grad[{{x y, x}, {y, x^2}}, {x, y}]").unwrap(),
+      "{{{y, x}, {1, 0}}, {{0, 1}, {2*x, 0}}}"
+    );
+  }
 }
 
 mod recurrence_table {
