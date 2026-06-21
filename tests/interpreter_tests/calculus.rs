@@ -9975,6 +9975,45 @@ mod infinite_log_series {
   }
 }
 
+// Geometric series from k = 1: Sum[c r^k, {k, 1, Infinity}] = c r/(1 - r),
+// for a numeric ratio r with |r| < 1.
+mod infinite_geometric_from_one {
+  use super::*;
+
+  #[test]
+  fn rational_ratio() {
+    assert_eq!(interpret("Sum[(1/2)^k, {k, 1, Infinity}]").unwrap(), "1");
+    assert_eq!(interpret("Sum[(1/3)^k, {k, 1, Infinity}]").unwrap(), "1/2");
+    assert_eq!(interpret("Sum[(2/3)^k, {k, 1, Infinity}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn negative_ratio() {
+    assert_eq!(
+      interpret("Sum[(-1/2)^k, {k, 1, Infinity}]").unwrap(),
+      "-1/3"
+    );
+  }
+
+  #[test]
+  fn with_coefficient() {
+    assert_eq!(interpret("Sum[3 (1/2)^k, {k, 1, Infinity}]").unwrap(), "3");
+  }
+
+  // Divergent (|r| >= 1) and symbolic ratios stay unevaluated.
+  #[test]
+  fn divergent_and_symbolic_unevaluated() {
+    assert_eq!(
+      interpret("Sum[(3/2)^k, {k, 1, Infinity}]").unwrap(),
+      "Sum[(3/2)^k, {k, 1, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Sum[x^k, {k, 1, Infinity}]").unwrap(),
+      "Sum[x^k, {k, 1, Infinity}]"
+    );
+  }
+}
+
 // Arithmetico-geometric series Sum[k^p r^k, {k, 1, Infinity}] = PolyLog[-p, r],
 // folded to a number for an exact numeric ratio r with |r| < 1.
 mod infinite_arith_geometric {

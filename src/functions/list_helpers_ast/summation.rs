@@ -2764,6 +2764,40 @@ fn try_infinite_sum(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
   }
 
+  // Geometric series from k = 1: Sum[c r^k, {k, 1, Infinity}] = c r/(1 - r),
+  // for a numeric ratio r with |r| < 1 (it folds to a number). A symbolic
+  // ratio is left to fall through — wolframscript canonicalizes its min >= 1
+  // result to a form Woxi does not match.
+  if min == 1
+    && let Some((coeff, base)) = match_geometric_base(body, var_name)
+    && let Some(bf) = crate::functions::math_ast::try_eval_to_f64(&base)
+    && bf.abs() < 1.0
+  {
+    use crate::syntax::BinaryOperator;
+    let one_minus_base = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(base.clone()),
+      }),
+    };
+    let closed = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        coeff,
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(base),
+          right: Box::new(one_minus_base),
+        },
+      ]
+      .into(),
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
+  }
+
   // Exponential series Sum[c base^var / var!, {var, m, Infinity}]. The base
   // may be numeric or symbolic (the series converges everywhere).
   //   m == 0:                 c E^base
