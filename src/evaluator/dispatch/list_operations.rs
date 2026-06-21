@@ -1358,25 +1358,34 @@ pub fn dispatch_list_operations(
           },
         }
       };
+      // Unevaluated TakeList[...] result, reused by every error path.
+      let unevaluated = Expr::FunctionCall {
+        name: "TakeList".to_string(),
+        args: args.to_vec().into(),
+      };
+      // An overrun (an integer spec demanding more than is left) aborts the
+      // whole call with TakeList::iseqs, referencing the entire spec list and
+      // the original input — matching wolframscript.
+      let iseqs = || {
+        crate::emit_message(&format!(
+          "TakeList::iseqs: Cannot take list {} of sequence specifications at level 1 of {}.",
+          crate::syntax::expr_to_string(&args[1]),
+          crate::syntax::expr_to_string(&args[0])
+        ));
+      };
       // Walk a (start, end) window over `items`, consuming front or back
       // depending on the sign / form of each spec.
       let mut start: usize = 0;
       let mut end: usize = items.len();
       let mut result: Vec<Expr> = Vec::with_capacity(specs.len());
-      for spec in specs.iter() {
+      for (idx, spec) in specs.iter().enumerate() {
         let remaining = end - start;
         match spec {
           Expr::Integer(n) if *n >= 0 => {
             let n = *n as usize;
             if n > remaining {
-              crate::emit_message(&format!(
-                "TakeList::take: Cannot take {} elements from a list of length {}.",
-                n, remaining
-              ));
-              return Some(Ok(Expr::FunctionCall {
-                name: "TakeList".to_string(),
-                args: args.to_vec().into(),
-              }));
+              iseqs();
+              return Some(Ok(unevaluated));
             }
             let chunk: Vec<Expr> = items[start..start + n].to_vec();
             start += n;
@@ -1386,14 +1395,8 @@ pub fn dispatch_list_operations(
             // n < 0: take last |n| of the remaining slice
             let k = (-*n) as usize;
             if k > remaining {
-              crate::emit_message(&format!(
-                "TakeList::take: Cannot take {} elements from a list of length {}.",
-                k, remaining
-              ));
-              return Some(Ok(Expr::FunctionCall {
-                name: "TakeList".to_string(),
-                args: args.to_vec().into(),
-              }));
+              iseqs();
+              return Some(Ok(unevaluated));
             }
             let chunk: Vec<Expr> = items[end - k..end].to_vec();
             end -= k;
@@ -1412,21 +1415,28 @@ pub fn dispatch_list_operations(
               Expr::Integer(n) if *n >= 0 => Some(*n as usize),
               _ => None,
             }) else {
-              return Some(Ok(Expr::FunctionCall {
-                name: "TakeList".to_string(),
-                args: args.to_vec().into(),
-              }));
+              return Some(Ok(unevaluated));
             };
             let take = m.min(remaining);
             let chunk: Vec<Expr> = items[start..start + take].to_vec();
             start += take;
             result.push(wrap(chunk));
           }
+          // List-form specs ({n}, {m, n}, {m, n, s}) are a valid Take grammar
+          // that this window model doesn't implement yet; leave them
+          // unevaluated rather than emit a spurious error.
+          Expr::List(_) => {
+            return Some(Ok(unevaluated));
+          }
+          // Any other atom is not a sequence specification: TakeList::seqs
+          // reports the offending 1-based position, matching wolframscript.
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "TakeList".to_string(),
-              args: args.to_vec().into(),
-            }));
+            crate::emit_message(&format!(
+              "TakeList::seqs: Sequence specification (+n, -n, {{+n}}, {{-n}}, {{m, n}} or {{m, n, s}}) expected at position {} in {}.",
+              idx + 1,
+              crate::syntax::expr_to_string(&args[1])
+            ));
+            return Some(Ok(unevaluated));
           }
         }
       }

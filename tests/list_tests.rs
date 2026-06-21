@@ -1438,6 +1438,44 @@ mod list_tests {
   }
 
   #[test]
+  fn take_list_overrun_emits_iseqs() {
+    // An integer spec demanding more than is left aborts with iseqs,
+    // referencing the whole spec list and original input, and returns
+    // the call unevaluated. (wolframscript parity)
+    assert_eq!(
+      interpret("TakeList[Range[10], {2, 10}]").unwrap(),
+      "TakeList[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, {2, 10}]"
+    );
+    assert_eq!(
+      interpret("TakeList[Range[3], {5}]").unwrap(),
+      "TakeList[{1, 2, 3}, {5}]"
+    );
+    // Negative overrun is also an iseqs case.
+    assert_eq!(
+      interpret("TakeList[Range[3], {-5}]").unwrap(),
+      "TakeList[{1, 2, 3}, {-5}]"
+    );
+    // Overrun is detected before a later malformed spec is reached.
+    assert_eq!(
+      interpret("TakeList[Range[5], {10, x}]").unwrap(),
+      "TakeList[{1, 2, 3, 4, 5}, {10, x}]"
+    );
+  }
+
+  #[test]
+  fn take_list_malformed_spec_stays_unevaluated() {
+    // A non-sequence-spec atom yields seqs and an unevaluated result.
+    assert_eq!(
+      interpret("TakeList[Range[5], {foo}]").unwrap(),
+      "TakeList[{1, 2, 3, 4, 5}, {foo}]"
+    );
+    assert_eq!(
+      interpret("TakeList[Range[5], {x, 10}]").unwrap(),
+      "TakeList[{1, 2, 3, 4, 5}, {x, 10}]"
+    );
+  }
+
+  #[test]
   fn threshold_default() {
     // Threshold[data] uses 10^-10 as the default threshold and replaces
     // elements with |x| <= threshold by zero. The zero substituted in is
