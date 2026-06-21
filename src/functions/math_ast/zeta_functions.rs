@@ -41,6 +41,17 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Limits: as s -> +Infinity the series collapses to its first term, so
+  // Zeta[Infinity] = 1; an undirected ComplexInfinity is Indeterminate.
+  // Zeta[-Infinity] stays unevaluated (matching wolframscript).
+  match &args[0] {
+    Expr::Identifier(s) if s == "Infinity" => return Ok(Expr::Integer(1)),
+    Expr::Identifier(s) if s == "ComplexInfinity" => {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    _ => {}
+  }
+
   match &args[0] {
     Expr::Integer(n) => {
       let n = *n;

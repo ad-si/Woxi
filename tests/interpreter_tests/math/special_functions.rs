@@ -1538,6 +1538,16 @@ mod zeta {
     assert_eq!(interpret("Zeta[0]").unwrap(), "-1/2");
   }
 
+  // As s -> +Infinity the series collapses to its first term, so
+  // Zeta[Infinity] = 1; an undirected ComplexInfinity is Indeterminate.
+  // Zeta[-Infinity] stays unevaluated. Per wolframscript.
+  #[test]
+  fn infinite_limits() {
+    assert_eq!(interpret("Zeta[Infinity]").unwrap(), "1");
+    assert_eq!(interpret("Zeta[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Zeta[-Infinity]").unwrap(), "Zeta[-Infinity]");
+  }
+
   #[test]
   fn positive_even_2() {
     assert_eq!(interpret("Zeta[2]").unwrap(), "Pi^2/6");
