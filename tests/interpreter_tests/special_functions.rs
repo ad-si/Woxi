@@ -2003,6 +2003,32 @@ mod cases {
   fn poly_log_2() {
     assert_case(r#"PolyLog[s, 1]; PolyLog[-7, I] //Chop"#, r#"136"#);
   }
+  // PolyLog with non-positive integer order and an exact numeric argument
+  // folds to a number via the rational closed form (the numeric series
+  // diverges for |z| >= 1, so |z| > 1 used to give Indeterminate).
+  #[test]
+  fn poly_log_negative_order_rational_arg() {
+    assert_case(r#"PolyLog[-1, 1/2]"#, r#"2"#);
+    assert_case(r#"PolyLog[-1, 1/3]"#, r#"3/4"#);
+    assert_case(r#"PolyLog[-2, 1/2]"#, r#"6"#);
+    assert_case(r#"PolyLog[-3, 1/2]"#, r#"26"#);
+  }
+  #[test]
+  fn poly_log_negative_order_integer_arg() {
+    assert_case(r#"PolyLog[-1, 2]"#, r#"2"#);
+    assert_case(r#"PolyLog[-1, 3]"#, r#"3/4"#);
+  }
+  #[test]
+  fn poly_log_zero_order() {
+    assert_case(r#"PolyLog[0, 1/2]"#, r#"1"#);
+    assert_case(r#"PolyLog[0, 2]"#, r#"-2"#);
+  }
+  // Symbolic argument keeps the rational display form.
+  #[test]
+  fn poly_log_negative_order_symbolic() {
+    assert_case(r#"PolyLog[-1, x]"#, r#"x/(1 - x)^2"#);
+    assert_case(r#"PolyLog[0, x]"#, r#"x/(1 - x)"#);
+  }
   #[test]
   fn zeta_1() {
     assert_case(r#"Zeta[2]"#, r#"Pi ^ 2 / 6"#);

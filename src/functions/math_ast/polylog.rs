@@ -187,7 +187,7 @@ pub fn polylog_s0(z_expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => Ok(Expr::Real(f / (1.0 - f))),
     _ => {
       // z/(1-z)
-      Ok(Expr::BinaryOp {
+      let result = Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: Box::new(z_expr.clone()),
         right: Box::new(Expr::BinaryOp {
@@ -195,7 +195,14 @@ pub fn polylog_s0(z_expr: &Expr) -> Result<Expr, InterpreterError> {
           left: Box::new(Expr::Integer(1)),
           right: Box::new(z_expr.clone()),
         }),
-      })
+      };
+      // Fold an exact rational z (PolyLog[0, 1/2] = 1); keep symbolic z.
+      if matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational")
+      {
+        crate::evaluator::evaluate_expr_to_expr(&result)
+      } else {
+        Ok(result)
+      }
     }
   }
 }
@@ -210,14 +217,15 @@ pub fn polylog_negative_s(
     Expr::Integer(1) => {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
-    Expr::Integer(z) => {
-      // Evaluate numerically for integer z != 0, 1
-      let zf = *z as f64;
-      return Ok(Expr::Real(polylog_numeric(-(n as f64), zf)));
-    }
+    // Inexact input → machine number.
     Expr::Real(f) => return Ok(Expr::Real(polylog_numeric(-(n as f64), *f))),
     _ => {}
   }
+  // Exact numeric z (integer or rational) folds via the rational closed form
+  // below — the analytic continuation is valid for any z != 1, unlike the
+  // numeric series which diverges for |z| >= 1.
+  let exact_numeric = matches!(z_expr, Expr::Integer(_))
+    || matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational");
 
   // Compute Eulerian numbers A(n, k) for k = 0..n-1
   let eulerian = eulerian_numbers(n);
@@ -270,11 +278,18 @@ pub fn polylog_negative_s(
     right: Box::new(Expr::Integer((n + 1) as i128)),
   };
 
-  Ok(Expr::BinaryOp {
+  let result = Expr::BinaryOp {
     op: BinaryOperator::Divide,
     left: Box::new(numerator),
     right: Box::new(denominator),
-  })
+  };
+  // Exact numeric z: fold the rational expression to a number (e.g.
+  // PolyLog[-1, 1/2] = 2). Symbolic z keeps the x/(1-x)^... display form.
+  if exact_numeric {
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(result)
+  }
 }
 
 /// Compute Eulerian numbers A(n, k) for k = 0, ..., n-1
