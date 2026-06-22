@@ -896,6 +896,51 @@ mod from_digits {
   fn string_numeric() {
     assert_eq!(interpret(r#"FromDigits["1234"]"#).unwrap(), "1234");
   }
+
+  // FromDigits with a MixedRadix base: each digit is weighted by the running
+  // product of radices consumed from the right (rightmost digit weight 1).
+  #[test]
+  fn mixed_radix_base() {
+    assert_eq!(
+      interpret("FromDigits[{1, 2, 3}, MixedRadix[{10, 10, 10}]]").unwrap(),
+      "123"
+    );
+    assert_eq!(
+      interpret("FromDigits[{1, 2, 3}, MixedRadix[{2, 3}]]").unwrap(),
+      "15"
+    );
+    // Days/hours/minutes/seconds style radix.
+    assert_eq!(
+      interpret("FromDigits[{1, 30, 30}, MixedRadix[{24, 60, 60}]]").unwrap(),
+      "5430"
+    );
+    assert_eq!(
+      interpret("FromDigits[{2, 5, 30}, MixedRadix[{60, 60}]]").unwrap(),
+      "7530"
+    );
+  }
+
+  #[test]
+  fn mixed_radix_fewer_radices_than_digits() {
+    // With k radices only the last k+1 digits carry weight; leading digits drop.
+    assert_eq!(
+      interpret("FromDigits[{1, 2, 3, 4}, MixedRadix[{60, 60}]]").unwrap(),
+      "7384"
+    );
+  }
+
+  #[test]
+  fn mixed_radix_symbolic_digits() {
+    assert_eq!(
+      interpret("FromDigits[{a, b, c}, MixedRadix[{10, 10}]]").unwrap(),
+      "100*a + 10*b + c"
+    );
+  }
+
+  #[test]
+  fn mixed_radix_empty() {
+    assert_eq!(interpret("FromDigits[{}, MixedRadix[{10}]]").unwrap(), "0");
+  }
 }
 
 mod integer_string {

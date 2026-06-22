@@ -2458,6 +2458,69 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(10)
   };
 
+  // MixedRadix base: `FromDigits[{d0, ..., d_{n-1}}, MixedRadix[{r0, ..., r_{m-1}}]]`.
+  // Each digit's weight is the running product of radices consumed from the
+  // right (the last digit has weight 1, the next 1*r_{m-1}, then *r_{m-2}, …).
+  // Leading digits with no radix left to consume drop out (weight 0). Digits
+  // may be symbolic, in which case a Plus expression is returned.
+  if args.len() == 2
+    && let Expr::FunctionCall {
+      name: mr,
+      args: mr_args,
+    } = &args[1]
+    && mr == "MixedRadix"
+    && mr_args.len() == 1
+    && let Expr::List(radices) = &mr_args[0]
+    && let Some(radix_vals) =
+      radices.iter().map(expr_to_i128).collect::<Option<Vec<_>>>()
+  {
+    let digits = match &args[0] {
+      Expr::List(items) => items,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "FromDigits".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    };
+    if digits.is_empty() {
+      return Ok(Expr::Integer(0));
+    }
+    let n = digits.len();
+    let m = radix_vals.len();
+    // Build weights right-to-left; a digit with no remaining radix gets 0.
+    let mut weights = vec![BigInt::from(0); n];
+    weights[n - 1] = BigInt::from(1);
+    let mut cur = BigInt::from(1);
+    for j in 1..n {
+      let ridx = m as isize - j as isize;
+      if ridx < 0 {
+        break;
+      }
+      cur *= BigInt::from(radix_vals[ridx as usize]);
+      weights[n - 1 - j] = cur.clone();
+    }
+    let mut terms: Vec<Expr> = Vec::with_capacity(n);
+    for (i, digit) in digits.iter().enumerate() {
+      if weights[i] == BigInt::from(0) {
+        continue;
+      }
+      if weights[i] == BigInt::from(1) {
+        terms.push(digit.clone());
+      } else {
+        terms.push(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![digit.clone(), bigint_to_expr(weights[i].clone())].into(),
+        });
+      }
+    }
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&sum);
+  }
+
   // Symbolic base path: build an expanded polynomial sum in the base.
   // For `FromDigits[{d0, d1, ..., d_{n-1}}, b]` we produce
   //   d0*b^(n-1) + d1*b^(n-2) + ... + d_{n-2}*b + d_{n-1}.
