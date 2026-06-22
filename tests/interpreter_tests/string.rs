@@ -3619,6 +3619,32 @@ mod string_form {
     );
   }
 
+  // ToString[Grid[matrix]] renders exactly like TableForm (left-aligned columns
+  // padded to the widest cell, three-space separators, blank line between rows).
+  #[test]
+  fn to_string_grid_matrix() {
+    assert_eq!(
+      interpret("ToString[Grid[{{1, 2}, {3, 4}}]]").unwrap(),
+      "1   2\n\n3   4"
+    );
+    assert_eq!(
+      interpret("ToString[Grid[{{1, 22, 3}, {444, 5, 66}}]]").unwrap(),
+      "1     22   3\n\n444   5    66"
+    );
+    assert_eq!(
+      interpret("ToString[Grid[{{a, bb}, {ccc, d}}]]").unwrap(),
+      "a     bb\n\nccc   d"
+    );
+  }
+
+  #[test]
+  fn to_string_grid_single_column() {
+    assert_eq!(
+      interpret("ToString[Grid[{{1}, {2}, {3}}]]").unwrap(),
+      "1\n\n2\n\n3"
+    );
+  }
+
   #[test]
   fn display_indexed_placeholders() {
     // Top-level StringForm renders as the literal wrapper.

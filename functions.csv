@@ -159,7 +159,7 @@ White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163
 Optional,Represents a pattern with an optional default value,✅,pure,1.0,164
 Mesh,Option for mesh lines in plots,✅,pure,1.0,165
 AxesOrigin,Option specifying the origin point for plot axes,✅,none,2.0,166
-Grid,Displays data in a grid layout,✅,pure,6.0,167
+Grid,Displays data in a grid layout; ToString renders the matrix as an aligned text grid (left-aligned columns padded to the widest cell with three-space separators and a blank line between rows) like TableForm,✅,pure,6.0,167
 Cases,Returns elements matching a pattern,✅,pure,1.0,168
 ListLinePlot,Plots data as a line graph,✅,pure,6.0,169
 Graphics3D,Creates a 3D graphics object,✅,pure,1.0,170

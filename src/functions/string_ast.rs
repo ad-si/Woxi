@@ -3388,6 +3388,22 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(rendered));
   }
 
+  // Grid[matrix] — under ToString, wolframscript renders Grid exactly like
+  // TableForm (left-aligned columns padded to the widest cell, three-space
+  // separators, blank line between rows). Only the bare one-argument form is
+  // handled; option arguments (Frame, alignment, ...) fall through.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "Grid"
+    && !is_input_form
+    && inner_args.len() == 1
+    && let Some(rendered) = table_form_to_string(&inner_args[0])
+  {
+    return Ok(Expr::String(rendered));
+  }
+
   // MatrixForm[matrix] — like TableForm but with a single uniform column width
   // (the widest cell anywhere in the matrix) rather than per-column widths.
   if let Expr::FunctionCall {
