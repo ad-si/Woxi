@@ -5437,6 +5437,85 @@ pub fn gaussian_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// BohmanWindow[x] — Bohman window: 0 outside [-1/2, 1/2], otherwise
+/// (1 - 2|x|) Cos[2 Pi |x|] + Sin[2 Pi |x|] / Pi. Exact arguments evaluate the
+/// symbolic form (e.g. BohmanWindow[1/4] -> 1/Pi); Real arguments numericize.
+pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let unevaluated = || Expr::FunctionCall {
+    name: "BohmanWindow".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  let x = &args[0];
+  let xf = match try_eval_to_f64(x) {
+    Some(v) => v,
+    None => return Ok(unevaluated()),
+  };
+  let inexact = window_arg_inexact(x);
+  let ax = xf.abs();
+  if ax > 0.5 {
+    return Ok(if inexact {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+  if inexact {
+    let arg = 2.0 * std::f64::consts::PI * ax;
+    let v = (1.0 - 2.0 * ax) * arg.cos() + arg.sin() / std::f64::consts::PI;
+    return Ok(Expr::Real(v));
+  }
+  // Exact: (1 - 2 Abs[x]) Cos[2 Pi Abs[x]] + Sin[2 Pi Abs[x]] / Pi.
+  let abs_x = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![x.clone()].into(),
+  };
+  let two_pi_absx = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      Expr::Integer(2),
+      Expr::Identifier("Pi".to_string()),
+      abs_x.clone(),
+    ]
+    .into(),
+  };
+  let one_minus_2ax = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::Integer(1),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-2), abs_x].into(),
+      },
+    ]
+    .into(),
+  };
+  let cos = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![two_pi_absx.clone()].into(),
+  };
+  let sin = Expr::FunctionCall {
+    name: "Sin".to_string(),
+    args: vec![two_pi_absx].into(),
+  };
+  let term1 = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![one_minus_2ax, cos].into(),
+  };
+  let term2 = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(sin),
+    right: Box::new(Expr::Identifier("Pi".to_string())),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![term1, term2].into(),
+  })
+}
+
 /// Try to express a float as a simple rational p/q with small denominator.
 fn approximate_rational(val: f64) -> Option<(i128, i128)> {
   if val == 0.0 {

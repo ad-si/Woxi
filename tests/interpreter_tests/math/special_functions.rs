@@ -5953,6 +5953,24 @@ mod window_functions {
     assert!((v - 0.6065306597126334).abs() < 1e-12);
     assert_eq!(interpret("GaussianWindow[0.6]").unwrap(), "0.");
   }
+
+  // BohmanWindow[x] = (1 - 2|x|) Cos[2 Pi |x|] + Sin[2 Pi |x|]/Pi on [-1/2,1/2].
+  // Exact arguments evaluate symbolically (BohmanWindow[1/4] -> 1/Pi).
+  #[test]
+  fn bohman_exact() {
+    assert_eq!(interpret("BohmanWindow[0]").unwrap(), "1");
+    assert_eq!(interpret("BohmanWindow[1/4]").unwrap(), "Pi^(-1)");
+    assert_eq!(interpret("BohmanWindow[-1/4]").unwrap(), "Pi^(-1)");
+    assert_eq!(interpret("BohmanWindow[1/2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn bohman_numeric_and_symbolic() {
+    let v: f64 = interpret("BohmanWindow[0.3]").unwrap().parse().unwrap();
+    assert!((v - 0.1791238937062839).abs() < 1e-12);
+    assert_eq!(interpret("BohmanWindow[0.6]").unwrap(), "0.");
+    assert_eq!(interpret("BohmanWindow[x]").unwrap(), "BohmanWindow[x]");
+  }
 }
 
 mod right_tee {
