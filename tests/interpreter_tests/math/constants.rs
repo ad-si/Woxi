@@ -101,6 +101,18 @@ mod degree_constant {
     assert_eq!(interpret("Tan[135 Degree]").unwrap(), "-1");
   }
 
+  // Cot at the twelfth-angle values (previously left as an unevaluated Cot or
+  // a bare Tan reduction).
+  #[test]
+  fn cot_twelfth_angle_exact() {
+    assert_eq!(interpret("Cot[Pi/12]").unwrap(), "2 + Sqrt[3]");
+    assert_eq!(interpret("Cot[5*Pi/12]").unwrap(), "2 - Sqrt[3]");
+    // Reductions via Cot[Pi - x] = -Cot[x] distribute the sign.
+    assert_eq!(interpret("Cot[7*Pi/12]").unwrap(), "-2 + Sqrt[3]");
+    assert_eq!(interpret("Cot[11*Pi/12]").unwrap(), "-2 - Sqrt[3]");
+    assert_eq!(interpret("Cot[-Pi/12]").unwrap(), "-2 - Sqrt[3]");
+  }
+
   #[test]
   fn tan_complex_infinity() {
     assert_eq!(interpret("Tan[Pi/2]").unwrap(), "ComplexInfinity");

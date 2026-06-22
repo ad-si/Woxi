@@ -788,6 +788,12 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
   let (kr, nr) = (k_ref / g, n / g);
 
   let val = match (kr, nr) {
+    // Cot(Pi/12) = 2 + Sqrt[3]
+    (1, 12) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(make_sqrt(Expr::Integer(3))),
+    },
     // Cot(Pi/6) = Sqrt[3]
     (1, 6) => make_sqrt(Expr::Integer(3)),
     // Cot(Pi/4) = 1
@@ -796,6 +802,12 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
     (1, 3) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
+      right: Box::new(make_sqrt(Expr::Integer(3))),
+    },
+    // Cot(5*Pi/12) = 2 - Sqrt[3]
+    (5, 12) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
     // Cot(Pi/5) = Sqrt[1 + 2/Sqrt[5]]
@@ -853,6 +865,19 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
         op: crate::syntax::BinaryOperator::Plus,
         left: Box::new(negate_expr(*left)),
         right: Box::new(negate_expr(*right)),
+      };
+    }
+    // -(a - b) => (-a) + b: likewise distribute over a difference so the
+    // result keeps the additive form (e.g. -(2 - Sqrt[3]) => -2 + Sqrt[3]).
+    Expr::BinaryOp { op, left, right }
+      if *op == crate::syntax::BinaryOperator::Minus =>
+    {
+      let left = std::mem::replace(left, Box::new(Expr::Integer(0)));
+      let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
+      return Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(negate_expr(*left)),
+        right: Box::new(*right),
       };
     }
     // -(a/b) => Times[-1, a/b] to match Wolfram output style
