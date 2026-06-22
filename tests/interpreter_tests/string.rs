@@ -4026,6 +4026,45 @@ mod base_form {
   }
 }
 
+mod subscript_superscript {
+  use super::*;
+
+  // Under ToString (default OutputForm), Subscript renders the script on the
+  // line below, indented by the width of the base. Matches wolframscript.
+  #[test]
+  fn to_string_subscript() {
+    assert_eq!(interpret("ToString[Subscript[x, 2]]").unwrap(), "x\n 2");
+    assert_eq!(interpret("ToString[Subscript[xy, 2]]").unwrap(), "xy\n  2");
+    assert_eq!(interpret("ToString[Subscript[x, ab]]").unwrap(), "x\n ab");
+  }
+
+  // Superscript renders the script on the line ABOVE the base, indented by the
+  // width of the base.
+  #[test]
+  fn to_string_superscript() {
+    assert_eq!(interpret("ToString[Superscript[x, 2]]").unwrap(), " 2\nx");
+    assert_eq!(
+      interpret("ToString[Superscript[xy, ab]]").unwrap(),
+      "  ab\nxy"
+    );
+  }
+
+  // The 2-arg InputForm target keeps the head literal (re-parseable text).
+  #[test]
+  fn to_string_input_form_literal() {
+    assert_eq!(
+      interpret("ToString[Subscript[a, b], InputForm]").unwrap(),
+      "Subscript[a, b]"
+    );
+  }
+
+  // The bare top-level echo (script mode) stays literal, like wolframscript.
+  #[test]
+  fn bare_echo_literal() {
+    assert_eq!(interpret("Subscript[x, 2]").unwrap(), "Subscript[x, 2]");
+  }
+}
+
 mod c_form {
   use super::*;
 

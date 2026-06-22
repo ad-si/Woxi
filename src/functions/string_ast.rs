@@ -3377,6 +3377,31 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(rendered));
   }
 
+  // Subscript[base, sub] / Superscript[base, sup] — under ToString these
+  // render in 2D OutputForm: the script sits on a separate line, indented by
+  // the width of the base. `ToString[Subscript[x, 2]]` → "x\n 2";
+  // `ToString[Superscript[x, 2]]` → " 2\nx" (script above the base). The
+  // InputForm target keeps the head literal (`"Subscript[x, 2]"`) and falls
+  // through to the generic path below.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && (name == "Subscript" || name == "Superscript")
+    && !is_input_form
+    && inner_args.len() == 2
+  {
+    let base_str = to_string_default_form(&inner_args[0]);
+    let script_str = to_string_default_form(&inner_args[1]);
+    let indent = " ".repeat(base_str.chars().count());
+    let rendered = if name == "Subscript" {
+      format!("{}\n{}{}", base_str, indent, script_str)
+    } else {
+      format!("{}{}\n{}", indent, script_str, base_str)
+    };
+    return Ok(Expr::String(rendered));
+  }
+
   // NumberForm[x, DigitBlock -> n, ...] — group digits into blocks. Detected by
   // the presence of a `DigitBlock` option among the arguments.
   if let Expr::FunctionCall {
