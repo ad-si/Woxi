@@ -7004,6 +7004,29 @@ mod batch_unevaluated_wrappers_2 {
     // Children of a leaf is None.
     assert_eq!(interpret("TreeChildren[Tree[x, None]]").unwrap(), "None");
   }
+  // TreeQ tests whether an expression is a valid Tree object (not whether a
+  // graph is tree-like): only Tree[...] expressions are True.
+  #[test]
+  fn tree_q() {
+    // Valid Tree objects.
+    assert_eq!(interpret("TreeQ[Tree[1, None]]").unwrap(), "True");
+    assert_eq!(interpret("TreeQ[Tree[1, {}]]").unwrap(), "True");
+    assert_eq!(interpret("TreeQ[Tree[1, {2, 3}]]").unwrap(), "True");
+    assert_eq!(
+      interpret("TreeQ[Tree[x, {Tree[y, None]}]]").unwrap(),
+      "True"
+    );
+    // Everything that is not a Tree object is False.
+    assert_eq!(interpret("TreeQ[5]").unwrap(), "False");
+    assert_eq!(interpret("TreeQ[x]").unwrap(), "False");
+    assert_eq!(interpret("TreeQ[{1, 2, 3}]").unwrap(), "False");
+    assert_eq!(interpret("TreeQ[\"abc\"]").unwrap(), "False");
+    assert_eq!(interpret("TreeQ[f[1, 2]]").unwrap(), "False");
+    // A tree-like graph is still not a Tree object.
+    assert_eq!(interpret("TreeQ[PathGraph[{1, 2, 3}]]").unwrap(), "False");
+    // Tree with the wrong arity is not a valid Tree.
+    assert_eq!(interpret("TreeQ[Tree[1]]").unwrap(), "False");
+  }
   // TreeDepth: edges on the longest root-to-leaf path (leaf → 0).
   #[test]
   fn tree_depth() {

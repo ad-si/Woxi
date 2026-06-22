@@ -6107,7 +6107,7 @@ TreeMap,Applies a function to the data of every node of a tree preserving its st
 TreeMapAt,,🚫,,13.0,
 TreeOutline,,,,12.3,
 TreePosition,Gives the positions of tree nodes whose data matches a pattern (with an optional level specification),✅,pure,12.3,
-TreeQ,,,,12.3,
+TreeQ,Tests whether an expression is a valid tree object,✅,pure,12.3,
 TreeReplacePart,Replaces the subtree at a given position (or list of positions) in a tree with a new value,✅,pure,12.3,
 TreeRules,,,,12.3,
 TreeScan,,,,13.0,

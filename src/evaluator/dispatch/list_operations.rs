@@ -3548,6 +3548,33 @@ pub fn dispatch_list_operations(
         args: args.to_vec().into(),
       }));
     }
+    // TreeQ[expr] -> True iff expr is a valid Tree object (head Tree with two
+    // arguments whose second is None or a list of valid Trees), else False.
+    // Any non-Tree expression (number, symbol, list, graph, ...) is False.
+    "TreeQ" if args.len() == 1 => {
+      fn is_valid_tree(e: &Expr) -> bool {
+        if let Expr::FunctionCall { name, args } = e
+          && name == "Tree"
+          && args.len() == 2
+        {
+          match &args[1] {
+            Expr::Identifier(n) if n == "None" => true,
+            Expr::List(children) => children.iter().all(is_valid_tree),
+            _ => false,
+          }
+        } else {
+          false
+        }
+      }
+      return Some(Ok(Expr::Identifier(
+        if is_valid_tree(&args[0]) {
+          "True"
+        } else {
+          "False"
+        }
+        .to_string(),
+      )));
+    }
     // TreeData[Tree[d, _]] -> d ; TreeChildren[Tree[_, c]] -> c.
     "TreeData" | "TreeChildren" if args.len() == 1 => {
       if let Expr::FunctionCall { name: tn, args: ta } = &args[0]
