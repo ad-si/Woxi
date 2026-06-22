@@ -3540,26 +3540,72 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // AccountingForm[x] / AccountingForm[x, n] — like NumberForm but negatives
-  // are shown in parentheses, e.g. -1234.5 -> (1234.5).
+  // are shown in parentheses, e.g. -1234.5 -> (1234.5). A `DigitBlock` option
+  // groups the digits (e.g. AccountingForm[-1234.5, DigitBlock->3] -> (1,234.5));
+  // unlike NumberForm, AccountingForm always renders in full decimal.
   if let Expr::FunctionCall {
     name,
     args: inner_args,
   } = &args[0]
     && name == "AccountingForm"
     && !is_input_form
-    && (inner_args.len() == 1 || inner_args.len() == 2)
+    && !inner_args.is_empty()
   {
-    let n = match inner_args.get(1) {
+    let positional: Vec<&Expr> = inner_args
+      .iter()
+      .filter(|a| !matches!(a, Expr::Rule { .. }))
+      .collect();
+    // Parse DigitBlock / NumberSeparator options.
+    let mut block: Option<usize> = None;
+    let mut int_sep = ",".to_string();
+    let mut frac_sep = " ".to_string();
+    for a in inner_args.iter() {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = a
+        && let Expr::Identifier(opt) = pattern.as_ref()
+      {
+        match opt.as_str() {
+          "DigitBlock" => {
+            if let Expr::Integer(n) = replacement.as_ref()
+              && *n >= 1
+            {
+              block = Some(*n as usize);
+            }
+          }
+          "NumberSeparator" => match replacement.as_ref() {
+            Expr::String(s) => {
+              int_sep = s.clone();
+              frac_sep = s.clone();
+            }
+            Expr::List(items) if items.len() == 2 => {
+              if let Expr::String(s) = &items[0] {
+                int_sep = s.clone();
+              }
+              if let Expr::String(s) = &items[1] {
+                frac_sep = s.clone();
+              }
+            }
+            _ => {}
+          },
+          _ => {}
+        }
+      }
+    }
+    let n = match positional.get(1) {
       None => None,
       Some(Expr::Integer(n)) => Some(*n as i64),
       _ => None,
     };
-    // Reject a non-integer second argument by falling through.
-    if inner_args.len() == 1 || n.is_some() {
-      let (is_neg, magnitude) = match &inner_args[0] {
+    // Reject a non-integer second positional argument by falling through.
+    if let Some(x0) = positional.first()
+      && (positional.len() == 1 || n.is_some())
+    {
+      let (is_neg, magnitude) = match x0 {
         Expr::Integer(i) => (*i < 0, Expr::Integer(i.abs())),
         Expr::Real(f) => (*f < 0.0, Expr::Real(f.abs())),
-        _ => (false, inner_args[0].clone()),
+        _ => (false, (*x0).clone()),
       };
       let mag_str = match n {
         Some(n) => number_form_to_string(&magnitude, n),
@@ -3575,7 +3621,24 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           },
         },
       };
-      if let Some(mag_str) = mag_str {
+      if let Some(mut mag_str) = mag_str {
+        if let Some(block) = block {
+          mag_str = match mag_str.split_once('.') {
+            Some((ip, fp)) => {
+              let grouped_int = group_digits_from_right(ip, block, &int_sep);
+              if fp.is_empty() {
+                format!("{grouped_int}.")
+              } else {
+                format!(
+                  "{}.{}",
+                  grouped_int,
+                  group_digits_from_left(fp, block, &frac_sep)
+                )
+              }
+            }
+            None => group_digits_from_right(&mag_str, block, &int_sep),
+          };
+        }
         return Ok(Expr::String(if is_neg {
           format!("({mag_str})")
         } else {

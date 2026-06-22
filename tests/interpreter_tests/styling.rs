@@ -678,6 +678,32 @@ mod accounting_form {
       "(3.14)"
     );
   }
+  // A DigitBlock option groups the digits (always in full decimal); negatives
+  // keep their parentheses.
+  #[test]
+  fn to_string_digit_block() {
+    assert_eq!(
+      interpret("ToString[AccountingForm[-1234.5, DigitBlock -> 3]]").unwrap(),
+      "(1,234.5)"
+    );
+    assert_eq!(
+      interpret("ToString[AccountingForm[1234567.89, DigitBlock -> 3]]")
+        .unwrap(),
+      "1,234,568."
+    );
+    assert_eq!(
+      interpret("ToString[AccountingForm[-1234567, DigitBlock -> 3]]").unwrap(),
+      "(1,234,567)"
+    );
+    // A custom NumberSeparator overrides the comma.
+    assert_eq!(
+      interpret(
+        "ToString[AccountingForm[1234567.89, DigitBlock -> 3, NumberSeparator -> \".\"]]"
+      )
+      .unwrap(),
+      "1.234.568."
+    );
+  }
 }
 
 mod decimal_form {
