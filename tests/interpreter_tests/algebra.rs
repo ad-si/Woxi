@@ -4537,6 +4537,36 @@ mod solve_with_domain {
       "{{x -> 5, y -> 5}}"
     );
   }
+
+  // Strict `>` excludes the boundary integer (x > 0 means x >= 1), unlike the
+  // non-strict `>= 0` case above which includes 0.
+  #[test]
+  fn integers_bounded_strict_lower() {
+    assert_eq!(
+      interpret("Solve[{x + y == 5, x > 0, y > 0}, {x, y}, Integers]").unwrap(),
+      "{{x -> 1, y -> 4}, {x -> 2, y -> 3}, {x -> 3, y -> 2}, {x -> 4, y -> 1}}"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_strict_lower_shifted() {
+    // x > 2 and y > 2 means both >= 3.
+    assert_eq!(
+      interpret("Solve[{x + y == 10, x > 2, y > 2}, {x, y}, Integers]")
+        .unwrap(),
+      "{{x -> 3, y -> 7}, {x -> 4, y -> 6}, {x -> 5, y -> 5}, {x -> 6, y -> 4}, {x -> 7, y -> 3}}"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_mixed_strict_nonstrict() {
+    // x > 0 (>= 1) but y >= 0 (includes 0).
+    assert_eq!(
+      interpret("Solve[{x + y == 5, x > 0, y >= 0}, {x, y}, Integers]")
+        .unwrap(),
+      "{{x -> 1, y -> 4}, {x -> 2, y -> 3}, {x -> 3, y -> 2}, {x -> 4, y -> 1}, {x -> 5, y -> 0}}"
+    );
+  }
 }
 
 // Solving a periodic (trig) equation over a bounded interval specializes the

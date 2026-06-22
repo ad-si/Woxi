@@ -5636,12 +5636,21 @@ fn try_solve_integer_bounded(
   let constraints = flatten_and_constraints(&raw);
 
   let mut equalities: Vec<(Vec<f64>, f64)> = Vec::new();
-  let mut other_ineqs: Vec<(Vec<f64>, f64, i32)> = Vec::new();
+  let mut other_ineqs: Vec<(Vec<f64>, f64, i32, bool)> = Vec::new();
   let mut lb: Vec<f64> = vec![f64::NEG_INFINITY; vars.len()];
   let mut ub: Vec<f64> = vec![f64::INFINITY; vars.len()];
 
   for con in &constraints {
     let (coeffs, rhs, sense) = minimize_extract_linear_constraint(con, &vars)?;
+    // A strict `>`/`<` excludes the boundary. For integer enumeration that
+    // matters when the boundary is itself an integer (e.g. x > 0 means x >= 1),
+    // so nudge a strict bound by a tiny epsilon: a lower bound up, an upper
+    // bound down. The nudge only crosses an integer when the bound IS that
+    // integer, leaving non-integer bounds unaffected. (Previously strict and
+    // non-strict were treated identically, so Solve[x+y==5 && x>0 && y>0, ...,
+    // Integers] wrongly included x=0 and y=0.)
+    let strict = constraint_is_strict(con);
+    let eps = 1e-9;
     let nonzero: Vec<usize> = coeffs
       .iter()
       .enumerate()
@@ -5654,25 +5663,37 @@ fn try_solve_integer_bounded(
         let i = nonzero[0];
         let bound = rhs / coeffs[i];
         if coeffs[i] > 0.0 {
+          // lower bound
+          let bound = if strict { bound + eps } else { bound };
           if bound > lb[i] {
             lb[i] = bound;
           }
-        } else if bound < ub[i] {
-          ub[i] = bound;
+        } else {
+          // upper bound
+          let bound = if strict { bound - eps } else { bound };
+          if bound < ub[i] {
+            ub[i] = bound;
+          }
         }
       }
       -1 if nonzero.len() == 1 => {
         let i = nonzero[0];
         let bound = rhs / coeffs[i];
         if coeffs[i] > 0.0 {
+          // upper bound
+          let bound = if strict { bound - eps } else { bound };
           if bound < ub[i] {
             ub[i] = bound;
           }
-        } else if bound > lb[i] {
-          lb[i] = bound;
+        } else {
+          // lower bound
+          let bound = if strict { bound + eps } else { bound };
+          if bound > lb[i] {
+            lb[i] = bound;
+          }
         }
       }
-      _ => other_ineqs.push((coeffs, rhs, sense)),
+      _ => other_ineqs.push((coeffs, rhs, sense, strict)),
     }
   }
 
@@ -5731,15 +5752,17 @@ fn try_solve_integer_bounded(
         return false;
       }
     }
-    for (coeffs, rhs, sense) in &other_ineqs {
+    for (coeffs, rhs, sense, strict) in &other_ineqs {
       let sum: f64 = coeffs
         .iter()
         .zip(x.iter())
         .map(|(&c, &xi)| c * xi as f64)
         .sum();
-      let ok = match sense {
-        1 => sum >= *rhs - 1e-6,
-        -1 => sum <= *rhs + 1e-6,
+      let ok = match (sense, strict) {
+        (1, false) => sum >= *rhs - 1e-6,
+        (1, true) => sum > *rhs + 1e-6,
+        (-1, false) => sum <= *rhs + 1e-6,
+        (-1, true) => sum < *rhs - 1e-6,
         _ => true,
       };
       if !ok {
@@ -6511,6 +6534,15 @@ fn minimize_satisfies_constraints(
 
 /// Extract linear constraint coefficients for the form: a*x + b*y + ... >= c.
 /// Returns None if constraint is not linear.
+/// True if `con` is a strict comparison (`<` or `>`), as opposed to `<=`/`>=`
+/// or `==`. Used by integer enumeration to exclude boundary integers.
+fn constraint_is_strict(con: &Expr) -> bool {
+  use crate::syntax::ComparisonOp;
+  matches!(con, Expr::Comparison { operators, .. }
+    if operators.len() == 1
+      && matches!(operators[0], ComparisonOp::Greater | ComparisonOp::Less))
+}
+
 fn minimize_extract_linear_constraint(
   con: &Expr,
   vars: &[String],
