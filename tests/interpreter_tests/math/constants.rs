@@ -271,6 +271,53 @@ mod degree_trig_functions {
   }
 
   #[test]
+  fn circular_at_real_infinity() {
+    // The six circular trig functions oscillate without limit as x → ±∞ along
+    // the real axis, so wolframscript returns the range as an Interval.
+    assert_eq!(interpret("Sin[Infinity]").unwrap(), "Interval[{-1, 1}]");
+    assert_eq!(interpret("Cos[Infinity]").unwrap(), "Interval[{-1, 1}]");
+    assert_eq!(
+      interpret("Tan[Infinity]").unwrap(),
+      "Interval[{-Infinity, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Cot[Infinity]").unwrap(),
+      "Interval[{-Infinity, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Csc[Infinity]").unwrap(),
+      "Interval[{-Infinity, -1}, {1, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Sec[Infinity]").unwrap(),
+      "Interval[{-Infinity, -1}, {1, Infinity}]"
+    );
+  }
+
+  #[test]
+  fn circular_at_negative_infinity() {
+    // Every interval above is symmetric about 0, so -Infinity gives the same.
+    assert_eq!(interpret("Sin[-Infinity]").unwrap(), "Interval[{-1, 1}]");
+    assert_eq!(interpret("Cos[-Infinity]").unwrap(), "Interval[{-1, 1}]");
+    assert_eq!(
+      interpret("Tan[-Infinity]").unwrap(),
+      "Interval[{-Infinity, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Csc[-Infinity]").unwrap(),
+      "Interval[{-Infinity, -1}, {1, Infinity}]"
+    );
+  }
+
+  #[test]
+  fn circular_at_complex_infinity() {
+    // ComplexInfinity stays Indeterminate (no oscillation range).
+    assert_eq!(interpret("Sin[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Cos[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Tan[ComplexInfinity]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
   fn hyperbolic_at_complex_infinity() {
     // All six hyperbolic functions are Indeterminate at ComplexInfinity.
     assert_eq!(interpret("Sinh[ComplexInfinity]").unwrap(), "Indeterminate");

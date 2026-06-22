@@ -1222,6 +1222,10 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(r);
   }
+  // Sin[±Infinity] → Interval[{-1, 1}]
+  if let Some(r) = circular_at_infinity("Sin", &args[0]) {
+    return r;
+  }
   // Sin[-x] → -Sin[x] (odd function)
   if let Some(neg) = try_extract_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Sin", &[neg])?;
@@ -1434,6 +1438,10 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(r);
   }
+  // Cos[±Infinity] → Interval[{-1, 1}]
+  if let Some(r) = circular_at_infinity("Cos", &args[0]) {
+    return r;
+  }
   // Cos[-x] → Cos[x] (even function)
   if let Some(neg) = try_extract_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Cos", &[neg]);
@@ -1615,6 +1623,10 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Tan", &args[0]) {
     return r;
   }
+  // Tan[±Infinity] → Interval[{-Infinity, Infinity}]
+  if let Some(r) = circular_at_infinity("Tan", &args[0]) {
+    return r;
+  }
   // Tan[-x] → -Tan[x] (odd function)
   if let Some(neg) = try_extract_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Tan", &[neg])?;
@@ -1710,6 +1722,10 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Sec", &args[0]) {
     return r;
   }
+  // Sec[±Infinity] → Interval[{-Infinity, -1}, {1, Infinity}]
+  if let Some(r) = circular_at_infinity("Sec", &args[0]) {
+    return r;
+  }
   // Sec[-x] → Sec[x] (even function)
   if let Some(neg) = try_extract_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Sec", &[neg]);
@@ -1749,6 +1765,10 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(r) = imaginary_arg_reduction("Csc", &args[0]) {
+    return r;
+  }
+  // Csc[±Infinity] → Interval[{-Infinity, -1}, {1, Infinity}]
+  if let Some(r) = circular_at_infinity("Csc", &args[0]) {
     return r;
   }
   // Csc[-x] → -Csc[x] (odd function)
@@ -1791,6 +1811,10 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(r) = imaginary_arg_reduction("Cot", &args[0]) {
+    return r;
+  }
+  // Cot[±Infinity] → Interval[{-Infinity, Infinity}]
+  if let Some(r) = circular_at_infinity("Cot", &args[0]) {
     return r;
   }
   // Cot[-x] → -Cot[x] (odd function)
@@ -3790,6 +3814,50 @@ fn hyperbolic_at_infinity(name: &str, arg: &Expr) -> Option<Expr> {
     "ComplexInfinity" => Some(Expr::Identifier("Indeterminate".to_string())),
     _ => None,
   }
+}
+
+/// Special values of the six circular trig functions at real ±Infinity.
+/// As `x → ±∞` along the real axis the value oscillates without limit, so
+/// wolframscript returns the range as an `Interval`:
+///   Sin, Cos → Interval[{-1, 1}]
+///   Tan, Cot → Interval[{-Infinity, Infinity}]
+///   Sec, Csc → Interval[{-Infinity, -1}, {1, Infinity}]
+/// Every result is symmetric about 0, so `Infinity` and `-Infinity`
+/// (`Times[-1, Infinity]`) map to the same interval. `ComplexInfinity` is left
+/// for the caller (it yields Indeterminate).
+fn circular_at_infinity(
+  name: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let is_real_infinity = matches!(arg, Expr::Identifier(id) if id == "Infinity")
+    || matches!(
+      try_extract_negated(arg),
+      Some(Expr::Identifier(ref id)) if id == "Infinity"
+    );
+  if !is_real_infinity {
+    return None;
+  }
+  let inf = || Expr::Identifier("Infinity".to_string());
+  let neg_inf = || Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(Expr::Identifier("Infinity".to_string())),
+  };
+  let span = |lo: Expr, hi: Expr| Expr::List(vec![lo, hi].into());
+  let interval = |spans: Vec<Expr>| Expr::FunctionCall {
+    name: "Interval".to_string(),
+    args: spans.into(),
+  };
+  let result = match name {
+    "Sin" | "Cos" => interval(vec![span(Expr::Integer(-1), Expr::Integer(1))]),
+    "Tan" | "Cot" => interval(vec![span(neg_inf(), inf())]),
+    "Sec" | "Csc" => interval(vec![
+      span(neg_inf(), Expr::Integer(-1)),
+      span(Expr::Integer(1), inf()),
+    ]),
+    _ => return None,
+  };
+  Some(crate::evaluator::evaluate_expr_to_expr(&result))
 }
 
 pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

@@ -693,7 +693,7 @@ Delimiter,Separator element in menus and palettes,✅,none,6.0,698
 VertexColors,Option for specifying vertex colors in graphics,✅,none,6.0,699
 ExpandAll,Expands all products and powers in an expression,✅,pure,1.0,700
 Default,Default value for optional arguments,✅,pure,1.0,701
-Beta,"Euler beta function Beta[a,b]=Gamma[a]Gamma[b]/Gamma[a+b] (exact rational for integer/rational args via the rising factorial) and the incomplete beta Beta[z,a,b]; exact closed form only when both a,b are integers, numeric for inexact args",✅,pure,1.0,702
+Beta,Euler beta function and incomplete beta Beta[z a b]; rational for integer or rational args via the rising factorial; exact closed form only when a and b are both integers; numeric for inexact args,✅,pure,1.0,702
 Csch,Returns the hyperbolic cosecant,✅,pure,1.0,703
 HeavisideTheta,Heaviside step function,✅,pure,6.0,705
 MaxSteps,Option specifying the maximum number of steps,✅,none,2.0,705
