@@ -3786,7 +3786,7 @@ ProcessDirectory,,🚫,,10.0,3889
 ResourceUpdate,,🚫,,11.2,3889
 ResponseForm,,🚫,,10.0,3889
 Subresultants,Principal subresultant coefficients of two polynomials,✅,pure,4.0,3889
-TukeyWindow,,,,9.0,3889
+TukeyWindow,Tukey (tapered-cosine) window function; TukeyWindow[x] or TukeyWindow[x alpha] (default alpha 2/3),✅,pure,9.0,3889
 WaringYuleDistribution,,,,8.0,3889
 AudioPartition,,🚫,,11.0,3916
 AudioPlay,,🚫,,11.2,3916

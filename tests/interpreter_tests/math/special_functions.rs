@@ -5880,6 +5880,44 @@ mod window_functions {
       "0.5045511524271047"
     );
   }
+
+  // TukeyWindow[x, alpha] (default alpha = 2/3): flat 1 for |x| <= (1-alpha)/2,
+  // a raised-cosine taper to 0 at |x| = 1/2, and 0 beyond.
+  #[test]
+  fn tukey_flat_top() {
+    assert_eq!(interpret("TukeyWindow[0]").unwrap(), "1");
+    assert_eq!(interpret("TukeyWindow[1/6]").unwrap(), "1");
+  }
+
+  #[test]
+  fn tukey_edges_zero() {
+    assert_eq!(interpret("TukeyWindow[1/2]").unwrap(), "0");
+    assert_eq!(interpret("TukeyWindow[3/4]").unwrap(), "0");
+  }
+
+  // Exact arguments give symbolic results: the Cos simplifies to radical form.
+  #[test]
+  fn tukey_exact_taper() {
+    assert_eq!(interpret("TukeyWindow[1/4]").unwrap(), "(1 + 1/Sqrt[2])/2");
+    assert_eq!(
+      interpret("TukeyWindow[2/5]").unwrap(),
+      "(1 - Sqrt[5/8 - Sqrt[5]/8])/2"
+    );
+  }
+
+  #[test]
+  fn tukey_numeric() {
+    let v: f64 = interpret("TukeyWindow[0.3]").unwrap().parse().unwrap();
+    assert!((v - 0.6545084971874738).abs() < 1e-12);
+    // The alpha parameter widens the taper.
+    let v2: f64 = interpret("TukeyWindow[0.4, 1/2]").unwrap().parse().unwrap();
+    assert!((v2 - 0.3454915028125262).abs() < 1e-12);
+  }
+
+  #[test]
+  fn tukey_symbolic() {
+    assert_eq!(interpret("TukeyWindow[x]").unwrap(), "TukeyWindow[x]");
+  }
 }
 
 mod right_tee {

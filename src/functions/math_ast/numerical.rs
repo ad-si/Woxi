@@ -5184,6 +5184,110 @@ pub fn window_function_ast(
   Ok(Expr::Real(val))
 }
 
+/// TukeyWindow[x] / TukeyWindow[x, alpha] — Tukey (tapered-cosine) window.
+/// Default alpha = 2/3. The window is 0 outside [-1/2, 1/2], a flat 1 for
+/// |x| <= (1-alpha)/2, and a raised-cosine taper
+/// (1 + Cos[Pi (2|x| - 1 + alpha)/alpha]) / 2 in between. Exact arguments are
+/// evaluated symbolically (so Cos simplifies to wolframscript's radical forms,
+/// e.g. TukeyWindow[1/4] -> (1 + 1/Sqrt[2])/2); Real arguments numericize.
+pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "TukeyWindow".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated());
+  }
+  let x = &args[0];
+  let alpha = args.get(1).cloned().unwrap_or_else(|| make_rational(2, 3));
+
+  let (xf, af) = match (try_eval_to_f64(x), try_eval_to_f64(&alpha)) {
+    (Some(xf), Some(af)) => (xf, af),
+    _ => return Ok(unevaluated()),
+  };
+
+  fn contains_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(_, _) => true,
+      Expr::BinaryOp { left, right, .. } => {
+        contains_real(left) || contains_real(right)
+      }
+      Expr::UnaryOp { operand, .. } => contains_real(operand),
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().any(contains_real)
+      }
+      _ => false,
+    }
+  }
+  let inexact = contains_real(x) || contains_real(&alpha);
+
+  let ax = xf.abs();
+  // Outside the window.
+  if ax > 0.5 {
+    return Ok(if inexact {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+  // Flat top.
+  if ax <= (1.0 - af) / 2.0 {
+    return Ok(if inexact {
+      Expr::Real(1.0)
+    } else {
+      Expr::Integer(1)
+    });
+  }
+  // Raised-cosine taper.
+  if inexact {
+    let theta = (2.0 * ax - 1.0 + af) / af;
+    return Ok(Expr::Real(
+      (1.0 + (std::f64::consts::PI * theta).cos()) / 2.0,
+    ));
+  }
+  // Exact: build (1 + Cos[Pi (2 Abs[x] - 1 + alpha)/alpha]) / 2 and evaluate
+  // symbolically so Cos simplifies (matching wolframscript's radical forms).
+  use crate::syntax::BinaryOperator;
+  let abs_x = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![x.clone()].into(),
+  };
+  let theta_num = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(2), abs_x].into(),
+      },
+      Expr::Integer(-1),
+      alpha.clone(),
+    ]
+    .into(),
+  };
+  let theta = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(theta_num),
+    right: Box::new(alpha),
+  };
+  let cos = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Identifier("Pi".to_string())),
+      right: Box::new(theta),
+    }]
+    .into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Integer(1), cos].into(),
+    }),
+    right: Box::new(Expr::Integer(2)),
+  })
+}
+
 /// Try to express a float as a simple rational p/q with small denominator.
 fn approximate_rational(val: f64) -> Option<(i128, i128)> {
   if val == 0.0 {

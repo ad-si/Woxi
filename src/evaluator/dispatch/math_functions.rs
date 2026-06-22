@@ -548,6 +548,9 @@ pub fn dispatch_math_functions(
     {
       return Some(crate::functions::math_ast::window_function_ast(name, args));
     }
+    "TukeyWindow" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::tukey_window_ast(args));
+    }
     "BandpassFilter" if args.len() >= 2 && args.len() <= 4 => {
       return Some(crate::functions::math_ast::bandpass_filter_ast(args));
     }
