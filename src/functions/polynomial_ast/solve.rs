@@ -296,25 +296,25 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      // Sort conditions by root value in descending order (matching Wolfram)
-      conditions.sort_by(|a, b| {
-        let val_a = if let Expr::Comparison { operands, .. } = a {
-          expr_to_f64(&operands[1]).ok()
-        } else {
-          None
-        };
-        let val_b = if let Expr::Comparison { operands, .. } = b {
-          expr_to_f64(&operands[1]).ok()
-        } else {
-          None
-        };
-        match (val_b, val_a) {
-          (Some(vb), Some(va)) => {
-            vb.partial_cmp(&va).unwrap_or(std::cmp::Ordering::Equal)
-          }
-          _ => std::cmp::Ordering::Equal,
+      // Roots lists the solutions in Solve's order (ascending by value), which
+      // matches wolframscript for general polynomials. The one exception is a
+      // pure quadratic x^2 == c (the two roots sum to zero, e.g. ±3 or ±I):
+      // wolframscript lists the principal `+` root first (3 || -3, I || -I,
+      // Sqrt[2] || -Sqrt[2]), so reverse Solve's `-r, +r` ordering there.
+      if conditions.len() == 2
+        && let (
+          Expr::Comparison { operands: o1, .. },
+          Expr::Comparison { operands: o2, .. },
+        ) = (&conditions[0], &conditions[1])
+      {
+        let sum = crate::evaluator::evaluate_function_call_ast(
+          "Plus",
+          &[o1[1].clone(), o2[1].clone()],
+        );
+        if matches!(sum, Ok(Expr::Integer(0))) {
+          conditions.reverse();
         }
-      });
+      }
 
       if conditions.is_empty() {
         Ok(Expr::Identifier("False".to_string()))

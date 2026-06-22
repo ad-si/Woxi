@@ -3122,6 +3122,56 @@ mod roots {
     let result = interpret("Roots[x^2 - 2*x + 1 == 0, x]").unwrap();
     assert_eq!(result, "x == 1 || x == 1");
   }
+
+  // For a general polynomial (roots that are not negatives of each other),
+  // wolframscript lists the roots in ascending order, matching Solve.
+  #[test]
+  fn roots_general_ascending() {
+    assert_eq!(
+      interpret("Roots[x^2 - 5*x + 6 == 0, x]").unwrap(),
+      "x == 2 || x == 3"
+    );
+    assert_eq!(
+      interpret("Roots[x^2 + x - 6 == 0, x]").unwrap(),
+      "x == -3 || x == 2"
+    );
+    assert_eq!(
+      interpret("Roots[x^3 - 6*x^2 + 11*x - 6 == 0, x]").unwrap(),
+      "x == 1 || x == 2 || x == 3"
+    );
+    assert_eq!(
+      interpret("Roots[x^4 - 5*x^2 + 4 == 0, x]").unwrap(),
+      "x == -2 || x == -1 || x == 1 || x == 2"
+    );
+  }
+
+  // A pure quadratic x^2 == c has roots ±r summing to zero; wolframscript
+  // lists the principal `+` root first (3 || -3, Sqrt[2] || -Sqrt[2], I || -I).
+  #[test]
+  fn roots_pure_quadratic_positive_first() {
+    assert_eq!(
+      interpret("Roots[x^2 - 9 == 0, x]").unwrap(),
+      "x == 3 || x == -3"
+    );
+    assert_eq!(
+      interpret("Roots[x^2 - 2 == 0, x]").unwrap(),
+      "x == Sqrt[2] || x == -Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Roots[x^2 + 1 == 0, x]").unwrap(),
+      "x == I || x == -I"
+    );
+  }
+
+  // Complex conjugate roots from a quadratic with a linear term keep Solve's
+  // order (the `1 - 2 I` branch first).
+  #[test]
+  fn roots_complex_conjugates() {
+    assert_eq!(
+      interpret("Roots[x^2 - 2*x + 5 == 0, x]").unwrap(),
+      "x == 1 - 2*I || x == 1 + 2*I"
+    );
+  }
 }
 
 mod nroots {

@@ -913,7 +913,7 @@ NestWhileList,Returns intermediate results from NestWhile,✅,pure,4.0,920
 MaxCellMeasure,,🚫,,10.0,921
 RuntimeOptions,,🚫,,8.0,922
 StringPosition,Finds all positions of a substring or pattern (overlapping by default; Overlaps and IgnoreCase options),✅,pure,2.0,923
-Roots,Finds roots of polynomial equations as Or conditions,✅,pure,1.0,924
+Roots,Finds roots of polynomial equations as Or conditions; roots are listed in ascending order (matching Solve) except a pure quadratic x^2==c lists the principal + root first,✅,pure,1.0,924
 InputNotebook,Requires external services or GUI infrastructure,🚫,io,3.0,926
 ListAnimate,,🚫,,6.0,926
 RegionUnion,,🚫,,10.0,927
