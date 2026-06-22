@@ -124,8 +124,12 @@ pub fn jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Numeric evaluation
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  // Numeric evaluation only when an argument is inexact (a machine number);
+  // exact arguments stay symbolic, matching wolframscript (N[...] numericizes
+  // via the NumericFunction path, which makes the arguments inexact first).
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (_, _, dn) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(dn));
   }
@@ -181,8 +185,12 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Numeric evaluation
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  // Numeric evaluation only when an argument is inexact (a machine number);
+  // exact arguments stay symbolic, matching wolframscript (N[...] numericizes
+  // via the NumericFunction path, which makes the arguments inexact first).
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (sn, _, _) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(sn));
   }
@@ -234,8 +242,12 @@ pub fn jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Numeric evaluation
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  // Numeric evaluation only when an argument is inexact (a machine number);
+  // exact arguments stay symbolic, matching wolframscript (N[...] numericizes
+  // via the NumericFunction path, which makes the arguments inexact first).
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (_, cn, _) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(cn));
   }
@@ -835,8 +847,12 @@ pub fn jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Numeric evaluation
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  // Numeric evaluation only when an argument is inexact (a machine number);
+  // exact arguments stay symbolic, matching wolframscript (N[...] numericizes
+  // via the NumericFunction path, which makes the arguments inexact first).
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (sn, cn, _) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(sn / cn));
   }
@@ -876,8 +892,12 @@ pub fn jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
-  // Numeric evaluation
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  // Numeric evaluation only when an argument is inexact (a machine number);
+  // exact arguments stay symbolic, matching wolframscript (N[...] numericizes
+  // via the NumericFunction path, which makes the arguments inexact first).
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (_, cn, dn) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(dn / cn));
   }
@@ -917,8 +937,12 @@ pub fn jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
-  // Numeric evaluation
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  // Numeric evaluation only when an argument is inexact (a machine number);
+  // exact arguments stay symbolic, matching wolframscript (N[...] numericizes
+  // via the NumericFunction path, which makes the arguments inexact first).
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (_, cn, dn) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(cn / dn));
   }
@@ -959,7 +983,9 @@ pub fn jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (sn, _, dn) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(sn / dn));
   }
@@ -996,7 +1022,9 @@ pub fn jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (sn, cn, _) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(cn / sn));
   }
@@ -1033,7 +1061,9 @@ pub fn jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (sn, _, dn) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(dn / sn));
   }
@@ -1070,7 +1100,9 @@ pub fn jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (sn, _, _) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(1.0 / sn));
   }
@@ -1108,7 +1140,9 @@ pub fn jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (_, _, dn) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(1.0 / dn));
   }
@@ -1149,7 +1183,9 @@ pub fn jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+  if has_real_arg(u, m)
+    && let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m))
+  {
     let (_, cn, _) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(1.0 / cn));
   }

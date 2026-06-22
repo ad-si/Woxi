@@ -1903,6 +1903,19 @@ mod jacobi_sn {
       interpret("N[JacobiSN[2, 1/3]]").unwrap().parse().unwrap();
     assert!((result - 0.9763095827654809).abs() < 1e-10);
   }
+
+  // Exact (integer/rational) arguments stay symbolic — only N[...] or an
+  // inexact (machine) argument triggers numeric evaluation. Covers the whole
+  // Jacobi family.
+  #[test]
+  fn exact_args_stay_symbolic() {
+    assert_eq!(interpret("JacobiSN[1, 1/2]").unwrap(), "JacobiSN[1, 1/2]");
+    assert_eq!(interpret("JacobiCN[1, 1/2]").unwrap(), "JacobiCN[1, 1/2]");
+    assert_eq!(interpret("JacobiDN[1, 1/2]").unwrap(), "JacobiDN[1, 1/2]");
+    assert_eq!(interpret("JacobiSC[1, 1/2]").unwrap(), "JacobiSC[1, 1/2]");
+    assert_eq!(interpret("JacobiCD[1, 1/2]").unwrap(), "JacobiCD[1, 1/2]");
+    assert_eq!(interpret("JacobiNS[1, 1/2]").unwrap(), "JacobiNS[1, 1/2]");
+  }
 }
 
 mod jacobi_cn {
