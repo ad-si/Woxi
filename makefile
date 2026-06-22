@@ -163,6 +163,7 @@ wasm-build:
 		-d tests/playground/pkg \
 		--target web \
 		--dev \
+		-- \
 		--no-default-features \
 		--features wasm
 
@@ -173,6 +174,7 @@ wasm-build-production:
 		-d tests/playground/pkg \
 		--target web \
 		--release \
+		-- \
 		--no-default-features \
 		--features wasm
 
