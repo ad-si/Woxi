@@ -2037,3 +2037,64 @@ mod day_round {
     );
   }
 }
+
+// NextDate[date, weekday] gives the next occurrence of that weekday strictly
+// after the date.
+mod next_date {
+  use super::*;
+
+  #[test]
+  fn next_weekday_strictly_after() {
+    // 2024-06-22 is a Saturday.
+    assert_eq!(
+      interpret("NextDate[{2024, 6, 22}, Sunday]").unwrap(),
+      "DateObject[{2024, 6, 23}, Day]"
+    );
+    assert_eq!(
+      interpret("NextDate[{2024, 6, 22}, Monday]").unwrap(),
+      "DateObject[{2024, 6, 24}, Day]"
+    );
+  }
+
+  #[test]
+  fn same_weekday_jumps_a_full_week() {
+    // 2024-06-23 is a Sunday; NextDate is strict, so it advances seven days.
+    assert_eq!(
+      interpret("NextDate[{2024, 6, 23}, Sunday]").unwrap(),
+      "DateObject[{2024, 6, 30}, Day]"
+    );
+    assert_eq!(
+      interpret("NextDate[{2024, 6, 22}, Saturday]").unwrap(),
+      "DateObject[{2024, 6, 29}, Day]"
+    );
+  }
+
+  #[test]
+  fn crosses_month_year_and_leap_day() {
+    assert_eq!(
+      interpret("NextDate[{2024, 12, 31}, Friday]").unwrap(),
+      "DateObject[{2025, 1, 3}, Day]"
+    );
+    // 2024-02-28 → the next Thursday is the leap day, Feb 29.
+    assert_eq!(
+      interpret("NextDate[{2024, 2, 28}, Thursday]").unwrap(),
+      "DateObject[{2024, 2, 29}, Day]"
+    );
+    assert_eq!(
+      interpret("NextDate[{2023, 12, 28}, Monday]").unwrap(),
+      "DateObject[{2024, 1, 1}, Day]"
+    );
+  }
+
+  #[test]
+  fn accepts_string_name_and_date_object() {
+    assert_eq!(
+      interpret(r#"NextDate[{2024, 6, 22}, "Sunday"]"#).unwrap(),
+      "DateObject[{2024, 6, 23}, Day]"
+    );
+    assert_eq!(
+      interpret("NextDate[DateObject[{2024, 6, 22}], Sunday]").unwrap(),
+      "DateObject[{2024, 6, 23}, Day]"
+    );
+  }
+}

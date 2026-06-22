@@ -4084,7 +4084,7 @@ ListFitPlot3D,,,,14.0,4204
 ListFormat,,,,10.0,4204
 Listen,,,,8.0,4204
 MeanGraphDistance,Average shortest-path distance (Infinity when disconnected),✅,pure,9.0,4204
-NextDate,,,,11.1,4204
+NextDate,Next occurrence of a given day of the week after a date,✅,pure,11.1,4204
 PacletDirectoryLoad,,🚫,,12.1,4204
 ParallelAxisPlot,,🚫,,12.2,4204
 ShowSelection,,🚫,,4.0,4204
