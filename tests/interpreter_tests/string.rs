@@ -8281,6 +8281,38 @@ abb""#,
     assert_case("ToString[NumberForm[100.0]]", "100.");
     assert_case("ToString[NumberForm[42]]", "42");
   }
+  // A real with decimal exponent >= 6 (|x| >= 10^6) switches to 2D scientific
+  // notation, identical to ScientificForm (compared by equality to avoid
+  // depending on the exact superscript layout). The boundary 999999. stays
+  // fixed.
+  #[test]
+  fn to_string_number_form_large_uses_scientific() {
+    assert_case(
+      "ToString[NumberForm[1234567.]] == ToString[ScientificForm[1234567., 6]]",
+      "True",
+    );
+    assert_case(
+      "ToString[NumberForm[1234567., 3]] == ToString[ScientificForm[1234567., 3]]",
+      "True",
+    );
+    assert_case("ToString[NumberForm[999999.]]", "999999.");
+  }
+  // A real with decimal exponent <= -6 (|x| < 10^-5) switches to scientific;
+  // the boundary 0.00001 (10^-5) stays fixed.
+  #[test]
+  fn to_string_number_form_small_uses_scientific() {
+    assert_case(
+      "ToString[NumberForm[0.000001234]] == ToString[ScientificForm[0.000001234, 6]]",
+      "True",
+    );
+    assert_case("ToString[NumberForm[0.00001]]", "0.00001");
+  }
+  // Integers are shown in full regardless of magnitude (no scientific switch).
+  #[test]
+  fn to_string_number_form_integer_never_scientific() {
+    assert_case("ToString[NumberForm[1234567]]", "1234567");
+    assert_case("ToString[NumberForm[1234567, 3]]", "1234567");
+  }
   // NumberForm[x, {n, f}] shows exactly f digits after the decimal point.
   #[test]
   fn to_string_number_form_fixed_decimals() {

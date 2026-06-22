@@ -2882,6 +2882,34 @@ fn number_form_to_string(x: &Expr, n: i64) -> Option<String> {
   Some(if neg { format!("-{s}") } else { s })
 }
 
+/// Render the `n`-significant-figure form of `NumberForm[x, n]` (and the
+/// single-argument `NumberForm[x]`, where `n = 6`). A real whose decimal
+/// exponent is `>= 6` or `<= -6` (|x| >= 10^6 or |x| < 10^-5) switches to 2D
+/// scientific notation, matching wolframscript's default ExponentFunction;
+/// integers and in-range reals use the fixed-notation renderer.
+fn number_form_render(x: &Expr, n: i64) -> Option<String> {
+  if let Expr::Real(f) = x
+    && *f != 0.0
+    && n >= 1
+  {
+    let ax = f.abs();
+    let m0 = ax.log10().floor() as i64;
+    // Use the exponent of the value rounded to n significant figures, so
+    // e.g. 999999.9 rounding up to 10^6 is detected as out of range.
+    let factor = 10f64.powi((n - 1 - m0) as i32);
+    let rounded = (ax * factor).round() / factor;
+    let m = if rounded == 0.0 {
+      0
+    } else {
+      rounded.log10().floor() as i64
+    };
+    if m >= 6 || m <= -6 {
+      return scientific_form_to_string(x, n);
+    }
+  }
+  number_form_to_string(x, n)
+}
+
 /// Group a digit string into blocks of `block`, counting from the RIGHT (used
 /// for the integer part), joined by `sep`. E.g. ("1234567", 3, ",") -> "1,234,567".
 fn group_digits_from_right(digits: &str, block: usize, sep: &str) -> String {
@@ -3521,7 +3549,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && inner_args.len() == 2
   {
     let rendered = match &inner_args[1] {
-      Expr::Integer(n) => number_form_to_string(&inner_args[0], *n as i64),
+      Expr::Integer(n) => number_form_render(&inner_args[0], *n as i64),
       Expr::List(spec) if spec.len() == 2 => match &spec[1] {
         Expr::Integer(f) => {
           number_form_fixed_to_string(&inner_args[0], *f as i64)
@@ -3546,7 +3574,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "NumberForm"
     && !is_input_form
     && inner_args.len() == 1
-    && let Some(rendered) = number_form_to_string(&inner_args[0], 6)
+    && let Some(rendered) = number_form_render(&inner_args[0], 6)
   {
     return Ok(Expr::String(rendered));
   }
