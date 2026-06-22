@@ -6884,6 +6884,72 @@ mod dirichlet_eta {
   }
 }
 
+// DirichletLambda[s] = (1 - 2^(-s)) Zeta[s], the sum over odd n of 1/n^s.
+mod dirichlet_lambda {
+  use super::*;
+
+  #[test]
+  fn even_two() {
+    assert_eq!(interpret("DirichletLambda[2]").unwrap(), "Pi^2/8");
+  }
+
+  #[test]
+  fn even_four() {
+    assert_eq!(interpret("DirichletLambda[4]").unwrap(), "Pi^4/96");
+  }
+
+  #[test]
+  fn even_six() {
+    assert_eq!(interpret("DirichletLambda[6]").unwrap(), "Pi^6/960");
+  }
+
+  #[test]
+  fn odd_three() {
+    assert_eq!(interpret("DirichletLambda[3]").unwrap(), "(7*Zeta[3])/8");
+  }
+
+  #[test]
+  fn pole_at_one() {
+    assert_eq!(interpret("DirichletLambda[1]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("DirichletLambda[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative_integer() {
+    assert_eq!(interpret("DirichletLambda[-1]").unwrap(), "1/12");
+  }
+
+  // Symbolic and fractional arguments keep the 2^s denominator form, matching
+  // wolframscript's canonical output.
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("DirichletLambda[x]").unwrap(),
+      "((-1 + 2^x)*Zeta[x])/2^x"
+    );
+  }
+
+  #[test]
+  fn at_half() {
+    assert_eq!(
+      interpret("DirichletLambda[1/2]").unwrap(),
+      "((-1 + Sqrt[2])*Zeta[1/2])/Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("N[DirichletLambda[2]]").unwrap(),
+      "1.2337005501361697"
+    );
+  }
+}
+
 mod appell_f1 {
   use super::*;
 

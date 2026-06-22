@@ -1801,3 +1801,41 @@ pub fn dirichlet_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_function_call_ast("Zeta", &[args[0].clone()])?;
   crate::evaluator::evaluate_function_call_ast("Times", &[factor, zeta])
 }
+
+/// DirichletLambda[s] = sum over odd n of 1/n^s = (1 - 2^(-s)) Zeta[s].
+/// (This is the Dirichlet lambda function, also written lambda(s).)
+pub fn dirichlet_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DirichletLambda expects exactly 1 argument".into(),
+    ));
+  }
+
+  // For numeric (Real) input, compute directly.
+  if let Expr::Real(f) = &args[0] {
+    let lambda = (1.0 - 2.0_f64.powf(-f)) * zeta_numeric(*f);
+    return Ok(num_to_expr(lambda));
+  }
+
+  // Otherwise build ((2^s - 1) Zeta[s]) / 2^s. Written with 2^s in the
+  // denominator (rather than the equivalent (1 - 2^(-s)) Zeta[s]) to match
+  // wolframscript's canonical form for symbolic/fractional s, e.g.
+  // DirichletLambda[x] -> ((-1 + 2^x) Zeta[x])/2^x. For integer s the Zeta
+  // closed-forms collapse it to a clean value (DirichletLambda[2] -> Pi^2/8,
+  // DirichletLambda[-1] -> 1/12).
+  let two_pow_s = crate::evaluator::evaluate_function_call_ast(
+    "Power",
+    &[Expr::Integer(2), args[0].clone()],
+  )?;
+  let numer_factor = crate::evaluator::evaluate_function_call_ast(
+    "Subtract",
+    &[two_pow_s.clone(), Expr::Integer(1)],
+  )?;
+  let zeta =
+    crate::evaluator::evaluate_function_call_ast("Zeta", &[args[0].clone()])?;
+  let numer = crate::evaluator::evaluate_function_call_ast(
+    "Times",
+    &[numer_factor, zeta],
+  )?;
+  crate::evaluator::evaluate_function_call_ast("Divide", &[numer, two_pow_s])
+}
