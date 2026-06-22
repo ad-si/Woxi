@@ -835,6 +835,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ComapApply" => Some((1, 2)),
     "ArrayReduce" => Some((3, 3)),
     "FindRepeat" => Some((1, 2)),
+    "FindTransientRepeat" => Some((2, 2)),
     "OperatorApplied" => Some((1, 2)),
     "CurryApplied" => Some((1, 2)),
     "ReverseApplied" => Some((1, 2)),

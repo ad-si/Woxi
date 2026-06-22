@@ -1436,3 +1436,98 @@ pub fn find_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 }
+
+/// Split `strs` into `(transient_len, period)` for FindTransientRepeat: `period`
+/// is the length of the shortest end-cycle that repeats at least `n` whole
+/// times; the choice minimizes the transient length, tie-breaking on the
+/// smallest period. `period == 0` means no cycle repeats `n` times (the whole
+/// sequence is the transient).
+fn transient_repeat_split(strs: &[String], n: i128) -> (usize, usize) {
+  let len = strs.len();
+  let mut best: Option<(usize, usize)> = None; // (transient_len, period)
+  for p in 1..=len {
+    // Count how many whole copies of the final p-length block tile the end.
+    let mut k = 1usize;
+    while (k + 1) * p <= len {
+      let blk = len - (k + 1) * p;
+      let c = len - p;
+      if (0..p).all(|j| strs[blk + j] == strs[c + j]) {
+        k += 1;
+      } else {
+        break;
+      }
+    }
+    if k as i128 >= n {
+      let cand = (len - k * p, p);
+      if best.is_none_or(|b| cand < b) {
+        best = Some(cand);
+      }
+    }
+  }
+  best.unwrap_or((len, 0))
+}
+
+/// FindTransientRepeat[seq, n] splits `seq` into `{transient, repeat}` where the
+/// repeat is the shortest end-cycle occurring at least `n` times. Works on
+/// lists, strings, and associations; both parts keep the input head.
+pub fn find_transient_repeat_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "FindTransientRepeat".to_string(),
+    args: args.to_vec().into(),
+  };
+  // The second argument must be a positive integer.
+  let n: i128 = match expr_to_i128(&args[1]) {
+    Some(n) if n >= 1 => n,
+    _ => {
+      crate::emit_message(&format!(
+        "FindTransientRepeat::intp: Positive integer expected at position 2 in {}.",
+        crate::syntax::expr_to_string(&unevaluated())
+      ));
+      return Ok(unevaluated());
+    }
+  };
+
+  match &args[0] {
+    Expr::List(items) => {
+      let strs: Vec<String> =
+        items.iter().map(crate::syntax::expr_to_string).collect();
+      let (t, p) = transient_repeat_split(&strs, n);
+      Ok(Expr::List(
+        vec![
+          Expr::List(items[..t].to_vec().into()),
+          Expr::List(items[t..t + p].to_vec().into()),
+        ]
+        .into(),
+      ))
+    }
+    Expr::String(s) => {
+      let chars: Vec<char> = s.chars().collect();
+      let strs: Vec<String> = chars.iter().map(|c| c.to_string()).collect();
+      let (t, p) = transient_repeat_split(&strs, n);
+      Ok(Expr::List(
+        vec![
+          Expr::String(chars[..t].iter().collect()),
+          Expr::String(chars[t..t + p].iter().collect()),
+        ]
+        .into(),
+      ))
+    }
+    Expr::Association(pairs) => {
+      let strs: Vec<String> = pairs
+        .iter()
+        .map(|(_, v)| crate::syntax::expr_to_string(v))
+        .collect();
+      let (t, p) = transient_repeat_split(&strs, n);
+      Ok(Expr::List(
+        vec![
+          Expr::Association(pairs[..t].to_vec()),
+          Expr::Association(pairs[t..t + p].to_vec()),
+        ]
+        .into(),
+      ))
+    }
+    _ => Ok(unevaluated()),
+  }
+}

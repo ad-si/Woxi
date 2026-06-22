@@ -3269,7 +3269,7 @@ AlternativeHypothesis,,,,8.0,3353
 ClipPlanesStyle,,🚫,,10.0,3353
 CreateSearchIndex,,🚫,,10.2,3353
 EntityClassList,List entity classes for a type,✅,,10.0,3353
-FindTransientRepeat,,,,10.4,3353
+FindTransientRepeat,Split a sequence into {transient repeat} where repeat is the shortest end-cycle occurring at least n times,✅,pure,10.4,3353
 InverseContinuousWaveletTransform,,🚫,,8.0,3353
 Perimeter,Compute the perimeter of a region,✅,pure,11.1,3353
 PriceGraphDistribution,,,,8.0,3353

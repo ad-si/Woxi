@@ -283,6 +283,83 @@ mod list_tests {
   }
 
   #[test]
+  fn find_transient_repeat() {
+    // {transient, repeat}: the repeat is the shortest end-cycle occurring at
+    // least n times; the transient is the (shortest) leading remainder.
+    assert_eq!(
+      interpret("FindTransientRepeat[{1, 2, 3, 2, 3}, 2]").unwrap(),
+      "{{1}, {2, 3}}"
+    );
+    // Extra repetitions still report a single period.
+    assert_eq!(
+      interpret("FindTransientRepeat[{1, 2, 3, 2, 3, 2, 3}, 2]").unwrap(),
+      "{{1}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("FindTransientRepeat[{0, 1, 2, 3, 1, 2, 3}, 2]").unwrap(),
+      "{{0}, {1, 2, 3}}"
+    );
+    // A longer transient before the cycle.
+    assert_eq!(
+      interpret("FindTransientRepeat[{9, 8, 1, 2, 1, 2, 1, 2}, 3]").unwrap(),
+      "{{9, 8}, {1, 2}}"
+    );
+    // The smallest period wins when several tile the end.
+    assert_eq!(
+      interpret("FindTransientRepeat[{1, 1, 1, 1}, 2]").unwrap(),
+      "{{}, {1}}"
+    );
+    // No transient.
+    assert_eq!(
+      interpret("FindTransientRepeat[{1, 2, 1, 2}, 2]").unwrap(),
+      "{{}, {1, 2}}"
+    );
+    // No cycle repeats n times: the whole list is the transient.
+    assert_eq!(
+      interpret("FindTransientRepeat[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "{{1, 2, 3, 4, 5}, {}}"
+    );
+    assert_eq!(
+      interpret("FindTransientRepeat[{1, 2, 3, 2, 3}, 3]").unwrap(),
+      "{{1, 2, 3, 2, 3}, {}}"
+    );
+    // n = 1: the whole list is one repetition (minimal transient wins).
+    assert_eq!(
+      interpret("FindTransientRepeat[{1, 2, 3, 2, 3}, 1]").unwrap(),
+      "{{}, {1, 2, 3, 2, 3}}"
+    );
+    // Empty list.
+    assert_eq!(interpret("FindTransientRepeat[{}, 2]").unwrap(), "{{}, {}}");
+    // Strings and associations keep the input head in both parts.
+    assert_eq!(
+      interpret("FindTransientRepeat[\"abcbc\", 2]").unwrap(),
+      "{a, bc}"
+    );
+    assert_eq!(
+      interpret("FindTransientRepeat[<|1 -> a, 2 -> b, 3 -> a, 4 -> b|>, 2]")
+        .unwrap(),
+      "{<||>, <|1 -> a, 2 -> b|>}"
+    );
+  }
+
+  #[test]
+  fn find_transient_repeat_messages() {
+    // A non-positive-integer count emits intp and stays unevaluated.
+    assert_eq!(
+      interpret("FindTransientRepeat[{1, 2, 3, 2, 3}, 0]").unwrap(),
+      "FindTransientRepeat[{1, 2, 3, 2, 3}, 0]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FindTransientRepeat::intp: Positive integer expected at position 2 in FindTransientRepeat[{1, 2, 3, 2, 3}, 0]."
+      )),
+      "expected intp message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
   fn array_reduce() {
     // Reduce a matrix over each dimension; f gets the gathered elements.
     assert_eq!(
