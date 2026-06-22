@@ -54,6 +54,9 @@ pub fn dispatch_datetime_functions(
     "NextDate" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::next_date_ast(args));
     }
+    "PreviousDate" if args.len() == 2 => {
+      return Some(crate::functions::datetime_ast::previous_date_ast(args));
+    }
     "DayRound" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::datetime_ast::day_round_ast(args));
     }

@@ -4055,7 +4055,7 @@ KuwaharaFilter,,,,8.0,4173
 MeshCellMarker,,🚫,,10.0,4173
 PersistenceLocation,,🚫,,11.1,4173
 PillaiTraceTest,,,,9.0,4173
-PreviousDate,,,,11.1,4173
+PreviousDate,Previous occurrence of a given day of the week before a date,✅,pure,11.1,4173
 PrivateNotebookOptions,,🚫,,4.0,4173
 RegisterExternalEvaluator,,🚫,,11.2,4173
 SASTriangle,,,,10.0,4173

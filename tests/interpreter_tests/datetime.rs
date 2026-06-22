@@ -2098,3 +2098,60 @@ mod next_date {
     );
   }
 }
+
+// PreviousDate[date, weekday] gives the previous occurrence of that weekday
+// strictly before the date (the mirror of NextDate).
+mod previous_date {
+  use super::*;
+
+  #[test]
+  fn previous_weekday_strictly_before() {
+    // 2024-06-22 is a Saturday.
+    assert_eq!(
+      interpret("PreviousDate[{2024, 6, 22}, Sunday]").unwrap(),
+      "DateObject[{2024, 6, 16}, Day]"
+    );
+    assert_eq!(
+      interpret("PreviousDate[{2024, 6, 22}, Monday]").unwrap(),
+      "DateObject[{2024, 6, 17}, Day]"
+    );
+  }
+
+  #[test]
+  fn same_weekday_jumps_a_full_week_back() {
+    // 2024-06-23 is a Sunday; PreviousDate is strict, so it steps back a week.
+    assert_eq!(
+      interpret("PreviousDate[{2024, 6, 23}, Sunday]").unwrap(),
+      "DateObject[{2024, 6, 16}, Day]"
+    );
+    assert_eq!(
+      interpret("PreviousDate[{2024, 6, 22}, Saturday]").unwrap(),
+      "DateObject[{2024, 6, 15}, Day]"
+    );
+  }
+
+  #[test]
+  fn crosses_year_and_leap_day() {
+    assert_eq!(
+      interpret("PreviousDate[{2024, 1, 1}, Friday]").unwrap(),
+      "DateObject[{2023, 12, 29}, Day]"
+    );
+    // 2024-03-01 → the previous Thursday is the leap day, Feb 29.
+    assert_eq!(
+      interpret("PreviousDate[{2024, 3, 1}, Thursday]").unwrap(),
+      "DateObject[{2024, 2, 29}, Day]"
+    );
+  }
+
+  #[test]
+  fn accepts_string_name_and_date_object() {
+    assert_eq!(
+      interpret(r#"PreviousDate[{2024, 6, 22}, "Sunday"]"#).unwrap(),
+      "DateObject[{2024, 6, 16}, Day]"
+    );
+    assert_eq!(
+      interpret("PreviousDate[DateObject[{2024, 6, 22}], Sunday]").unwrap(),
+      "DateObject[{2024, 6, 16}, Day]"
+    );
+  }
+}

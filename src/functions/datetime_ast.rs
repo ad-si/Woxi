@@ -1978,6 +1978,60 @@ pub fn next_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// PreviousDate[date, weekday] — the previous occurrence of the given weekday
+/// strictly before `date`, returned as a `DateObject[…, Day]`. The mirror of
+/// `NextDate`: only the weekday-name form (symbol or string Monday…Sunday) is
+/// supported; other forms are left unevaluated.
+pub fn previous_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "PreviousDate".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let target_dow = match &args[1] {
+    Expr::Identifier(s) | Expr::String(s) => {
+      match WEEKDAY_NAMES.iter().position(|n| n == s) {
+        Some(i) => i as i64,
+        None => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  let Some(date_list) = resolve_date_to_list(&args[0]) else {
+    return unevaluated();
+  };
+  let Some(comps) = extract_date_components(&date_list) else {
+    return unevaluated();
+  };
+  if comps.len() < 3 {
+    return unevaluated();
+  }
+  let (y, m, d) = (comps[0] as i64, comps[1] as i64, comps[2] as i64);
+  let current_dow = day_of_week(y, m, d);
+  // Strictly before `date`: the offset is in 1..=7 (a same-weekday date jumps a
+  // full week back rather than staying put).
+  let days_back = (current_dow - target_dow + 6).rem_euclid(7) + 1;
+  let (ny, nm, nd) =
+    absolute_days_to_date(date_to_absolute_days(y, m, d) - days_back);
+
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: vec![Expr::List(
+      vec![
+        Expr::Integer(ny as i128),
+        Expr::Integer(nm as i128),
+        Expr::Integer(nd as i128),
+      ]
+      .into(),
+    )]
+    .into(),
+  })
+}
+
 /// Resolve a date expression (date list, date string, DateObject) to a
 /// normalized {year, month, day, hour, min, sec} Expr::List.
 /// Returns None if the expression cannot be interpreted as a date.
