@@ -7668,6 +7668,60 @@ mod gamma_regularized {
       .unwrap();
     assert!((result - 0.7357588823428847).abs() < 1e-10);
   }
+
+  // GammaRegularized[a, z0, z1] = GammaRegularized[a, z0] - GammaRegularized[a, z1]
+  // evaluates numerically as soon as one argument is a machine real.
+  #[test]
+  fn three_arg_numeric_with_real() {
+    let result: f64 = interpret("GammaRegularized[3/2, 0, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.4275932955291202).abs() < 1e-9, "got {result}");
+
+    // A real lower or upper limit both trigger numericization.
+    let result: f64 = interpret("GammaRegularized[2, 0, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.2642411176571153).abs() < 1e-9, "got {result}");
+
+    let result: f64 = interpret("GammaRegularized[2.0, 0, 1]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.2642411176571153).abs() < 1e-9, "got {result}");
+
+    let result: f64 = interpret("GammaRegularized[2.5, 1.0, 3.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.5429261176713311).abs() < 1e-9, "got {result}");
+  }
+
+  #[test]
+  fn three_arg_exact_stays_symbolic() {
+    // All-exact arguments are left unevaluated (matching wolframscript).
+    assert_eq!(
+      interpret("GammaRegularized[2, 0, 1]").unwrap(),
+      "GammaRegularized[2, 0, 1]"
+    );
+    assert_eq!(
+      interpret("GammaRegularized[3, 1, 2]").unwrap(),
+      "GammaRegularized[3, 1, 2]"
+    );
+  }
+
+  // ChiSquareDistribution's CDF is built on the 3-arg GammaRegularized; with a
+  // real argument it now yields a number instead of a held expression.
+  #[test]
+  fn chi_square_cdf_numeric() {
+    let result: f64 = interpret("CDF[ChiSquareDistribution[3], 2.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.4275932955291202).abs() < 1e-9, "got {result}");
+  }
 }
 
 mod beta_regularized {

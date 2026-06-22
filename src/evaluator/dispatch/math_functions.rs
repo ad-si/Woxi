@@ -1333,6 +1333,21 @@ pub fn dispatch_math_functions(
     // elementary a == 1 case (GammaRegularized[1, z] = E^-z). Match that and
     // otherwise leave the 3-arg form unevaluated (rather than emitting ::argrx).
     "GammaRegularized" if args.len() == 3 => {
+      // With an inexact (machine-real) argument, evaluate numerically as the
+      // difference GammaRegularized[a, z0] - GammaRegularized[a, z1]; exact
+      // arguments stay symbolic, matching wolframscript.
+      if args.iter().any(|a| matches!(a, Expr::Real(_))) {
+        let g = |z: &Expr| Expr::FunctionCall {
+          name: "GammaRegularized".to_string(),
+          args: vec![args[0].clone(), z.clone()].into(),
+        };
+        let diff = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(g(&args[1])),
+          right: Box::new(g(&args[2])),
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
+      }
       if matches!(&args[0], Expr::Integer(1)) {
         let exp_neg = |z: &Expr| Expr::FunctionCall {
           name: "Power".to_string(),
