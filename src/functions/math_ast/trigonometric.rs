@@ -3335,6 +3335,43 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .into(),
       });
     }
+    // Twelfth-angle values (inverse of Tan[Pi/12] = 2 - Sqrt[3] and
+    // Tan[5 Pi/12] = 2 + Sqrt[3]). `k_over_12_pi(k)` builds k*Pi/12.
+    let k_over_12_pi = |k: i128| -> Expr {
+      if k == 1 {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::Constant("Pi".to_string())),
+          right: Box::new(Expr::Integer(12)),
+        }
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(k), Expr::Integer(12)].into(),
+            },
+            Expr::Constant("Pi".to_string()),
+          ]
+          .into(),
+        }
+      }
+    };
+    let two_minus = 2.0 - sqrt3;
+    let two_plus = 2.0 + sqrt3;
+    if (val - two_minus).abs() < eps {
+      return Ok(k_over_12_pi(1)); // ArcTan[2 - Sqrt[3]] = Pi/12
+    }
+    if (val + two_minus).abs() < eps {
+      return Ok(k_over_12_pi(-1)); // ArcTan[-(2 - Sqrt[3])] = -Pi/12
+    }
+    if (val - two_plus).abs() < eps {
+      return Ok(k_over_12_pi(5)); // ArcTan[2 + Sqrt[3]] = 5 Pi/12
+    }
+    if (val + two_plus).abs() < eps {
+      return Ok(k_over_12_pi(-5)); // ArcTan[-(2 + Sqrt[3])] = -5 Pi/12
+    }
   }
 
   Ok(Expr::FunctionCall {

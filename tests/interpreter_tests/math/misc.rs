@@ -744,6 +744,18 @@ mod inverse_trig_identities {
     assert_eq!(interpret("ArcTan[-1/Sqrt[3]]").unwrap(), "-1/6*Pi");
   }
 
+  // Twelfth-angle values: inverse of Tan[Pi/12] = 2 - Sqrt[3] and
+  // Tan[5 Pi/12] = 2 + Sqrt[3]. ArcCot picks these up via ArcTan.
+  #[test]
+  fn arctan_twelfth_angle() {
+    assert_eq!(interpret("ArcTan[2 - Sqrt[3]]").unwrap(), "Pi/12");
+    assert_eq!(interpret("ArcTan[2 + Sqrt[3]]").unwrap(), "(5*Pi)/12");
+    assert_eq!(interpret("ArcTan[-(2 - Sqrt[3])]").unwrap(), "-1/12*Pi");
+    assert_eq!(interpret("ArcTan[-(2 + Sqrt[3])]").unwrap(), "(-5*Pi)/12");
+    assert_eq!(interpret("ArcCot[2 - Sqrt[3]]").unwrap(), "(5*Pi)/12");
+    assert_eq!(interpret("ArcCot[2 + Sqrt[3]]").unwrap(), "Pi/12");
+  }
+
   #[test]
   fn sinh_arcsinh() {
     assert_eq!(interpret("Sinh[ArcSinh[x]]").unwrap(), "x");
