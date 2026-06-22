@@ -8313,6 +8313,42 @@ abb""#,
     assert_case("ToString[NumberForm[1234567]]", "1234567");
     assert_case("ToString[NumberForm[1234567, 3]]", "1234567");
   }
+  // NumberForm with DigitBlock: in-range reals are digit-blocked in fixed
+  // notation. The scientific threshold is the same exponent (>= 6 / <= -6) as
+  // the plain form, NOT m >= precision: NumberForm[12345., 4, DigitBlock -> 2]
+  // (exponent 4) stays fixed at "1,23,50." rather than going scientific.
+  #[test]
+  fn to_string_number_form_digit_block_fixed() {
+    assert_case("ToString[NumberForm[1234.5, DigitBlock -> 3]]", "1,234.5");
+    assert_case("ToString[NumberForm[123456., DigitBlock -> 3]]", "123,456.");
+    assert_case(
+      "ToString[NumberForm[12345., 4, DigitBlock -> 2]]",
+      "1,23,50.",
+    );
+  }
+  // Out-of-range reals (|exponent| crosses the threshold) switch to 2D
+  // scientific notation with the mantissa itself digit-blocked, e.g.
+  // NumberForm[1234567., DigitBlock -> 3] -> "1.234 57 × 10^6". Verified by
+  // substring to avoid depending on the exact superscript layout.
+  #[test]
+  fn to_string_number_form_digit_block_scientific() {
+    assert_case(
+      r#"StringContainsQ[ToString[NumberForm[1234567., DigitBlock -> 3]], "1.234 57"]"#,
+      "True",
+    );
+    assert_case(
+      r#"StringContainsQ[ToString[NumberForm[1234567., DigitBlock -> 3]], " × 10"]"#,
+      "True",
+    );
+    assert_case(
+      r#"StringContainsQ[ToString[NumberForm[1234567., 4, DigitBlock -> 2]], "1.23 5"]"#,
+      "True",
+    );
+    assert_case(
+      r#"StringContainsQ[ToString[NumberForm[0.0000001234, DigitBlock -> 3]], "1.234"]"#,
+      "True",
+    );
+  }
   // NumberForm[x, {n, f}] shows exactly f digits after the decimal point.
   #[test]
   fn to_string_number_form_fixed_decimals() {

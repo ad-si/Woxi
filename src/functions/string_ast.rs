@@ -2963,20 +2963,58 @@ fn number_form_digit_block_to_string(
     return None;
   }
   let block = block as usize;
+
+  // A real whose decimal exponent (of the value rounded to `prec` significant
+  // figures) is >= 6 or <= -6 switches to 2D scientific notation, with the
+  // mantissa digit-blocked (e.g. NumberForm[1234567., DigitBlock -> 3] ->
+  // "1.234 57 × 10^6"). This matches the non-DigitBlock NumberForm threshold.
+  if let Expr::Real(f) = x
+    && *f != 0.0
+    && prec >= 1
+  {
+    let ax = f.abs();
+    let m0 = ax.log10().floor() as i64;
+    let factor = 10f64.powi((prec - 1 - m0) as i32);
+    let rounded = (ax * factor).round() / factor;
+    let m = if rounded == 0.0 {
+      0
+    } else {
+      rounded.log10().floor() as i64
+    };
+    if m >= 6 || m <= -6 {
+      let prec_digits = (prec - 1).max(0) as usize;
+      let formatted = format!("{:.*e}", prec_digits, ax);
+      let (mantissa_raw, exp_raw) = formatted.split_once('e')?;
+      let exp: i64 = exp_raw.parse().ok()?;
+      let (int_part, frac_part) = match mantissa_raw.split_once('.') {
+        Some((ip, fp)) => {
+          (ip.to_string(), fp.trim_end_matches('0').to_string())
+        }
+        None => (mantissa_raw.to_string(), String::new()),
+      };
+      let mut mantissa = group_digits_from_right(&int_part, block, int_sep);
+      mantissa.push('.');
+      if !frac_part.is_empty() {
+        mantissa.push_str(&group_digits_from_left(&frac_part, block, frac_sep));
+      }
+      if *f < 0.0 {
+        mantissa = format!("-{mantissa}");
+      }
+      if exp == 0 {
+        return Some(mantissa);
+      }
+      let line2 = format!("{mantissa} \u{00d7} 10");
+      let indent = " ".repeat(line2.chars().count());
+      return Some(format!("{indent}{exp}\n{line2}"));
+    }
+  }
+
   let (neg, int_digits, frac_digits, real_no_frac) = match x {
     Expr::Integer(i) => {
       (*i < 0, i.unsigned_abs().to_string(), String::new(), false)
     }
     Expr::Real(f) => {
       let f = *f;
-      if f != 0.0 {
-        let m = f.abs().log10().floor() as i64;
-        // wolframscript switches to scientific when the integer part is wider
-        // than the displayed precision; that form is not handled here.
-        if m >= prec {
-          return None;
-        }
-      }
       let s = number_form_to_string(&Expr::Real(f.abs()), prec)?;
       match s.split_once('.') {
         Some((ip, fp)) => {
