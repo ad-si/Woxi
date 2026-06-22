@@ -6309,6 +6309,26 @@ mod minimal_polynomial {
     );
   }
 
+  // A pure-imaginary radical I*Sqrt[n] has the irreducible degree-2 minimal
+  // polynomial x^2 + n. Previously the resultant construction returned the
+  // non-minimal perfect power (x^2 + n)^2 because no real numeric value was
+  // available to pick the irreducible factor.
+  #[test]
+  fn imaginary_square_root() {
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[-2], x]").unwrap(),
+      "2 + x^2"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[I*Sqrt[3], x]").unwrap(),
+      "3 + x^2"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[-8], x]").unwrap(),
+      "8 + x^2"
+    );
+  }
+
   #[test]
   fn wrong_arg_count() {
     // Single argument returns unevaluated or error

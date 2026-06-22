@@ -26,6 +26,11 @@ pub fn minimal_polynomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Try to compute the minimal polynomial coefficients
   match compute_minpoly_coeffs(alpha)? {
     Some(coeffs) => {
+      // A minimal polynomial is always square-free. The resultant-based
+      // construction can return a perfect power (e.g. (x^2+2)^2 for the
+      // complex product I*Sqrt[2], where no real numeric value was available
+      // to pick the irreducible factor); reduce it to the square-free part.
+      let coeffs = make_square_free(&coeffs);
       let poly = coeffs_to_expr(&coeffs, &var);
       let simplified = crate::evaluator::evaluate_expr_to_expr(&poly)?;
       Ok(simplified)
@@ -671,6 +676,27 @@ fn poly_sub_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
     result.pop();
   }
   result
+}
+
+/// Reduce a polynomial to its square-free part (remove repeated factors).
+/// A minimal polynomial is always square-free, so this corrects a candidate
+/// like `(x^2+2)^2` to `x^2+2`. For a square-free input, gcd(p, p') is a
+/// constant and the polynomial is returned unchanged.
+fn make_square_free(coeffs: &[i128]) -> Vec<i128> {
+  if coeffs.len() <= 2 {
+    return make_primitive_monic(coeffs);
+  }
+  let deriv = poly_derivative_i128(coeffs);
+  if deriv.iter().all(|&c| c == 0) {
+    return make_primitive_monic(coeffs);
+  }
+  if let Some(g) = poly_gcd(coeffs, &deriv)
+    && g.len() > 1
+    && let Some(q) = poly_exact_divide(coeffs, &g)
+  {
+    return make_primitive_monic(&q);
+  }
+  make_primitive_monic(coeffs)
 }
 
 /// Make polynomial primitive (divide by GCD of coefficients) and monic
