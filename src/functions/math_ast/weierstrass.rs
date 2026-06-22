@@ -21,6 +21,26 @@ fn format_power_infy_2d(base: &str, exp: &str) -> String {
   )
 }
 
+/// True if any of the given expressions contains an inexact (machine) number,
+/// in which case the Weierstrass functions numericize; otherwise they stay
+/// symbolic (matching wolframscript; `N[...]` makes the arguments inexact).
+fn any_inexact(exprs: &[&Expr]) -> bool {
+  fn is_inexact(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(_, _) => true,
+      Expr::BinaryOp { left, right, .. } => {
+        is_inexact(left) || is_inexact(right)
+      }
+      Expr::UnaryOp { operand, .. } => is_inexact(operand),
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().any(is_inexact)
+      }
+      _ => false,
+    }
+  }
+  exprs.iter().any(|e| is_inexact(e))
+}
+
 /// WeierstrassP[u, {g2, g3}] - Weierstrass elliptic function ℘(u; g₂, g₃)
 pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -48,9 +68,11 @@ pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
 
-  // Numeric evaluation
-  if let (Some(u_f), Some(g2_f), Some(g3_f)) =
-    (try_eval_to_f64(u), try_eval_to_f64(g2), try_eval_to_f64(g3))
+  // Numeric evaluation only when an argument is inexact; exact arguments stay
+  // symbolic, matching wolframscript.
+  if any_inexact(&[u, g2, g3])
+    && let (Some(u_f), Some(g2_f), Some(g3_f)) =
+      (try_eval_to_f64(u), try_eval_to_f64(g2), try_eval_to_f64(g3))
   {
     let result = weierstrass_p_numeric(u_f, g2_f, g3_f);
     return Ok(Expr::Real(result));
@@ -92,9 +114,11 @@ pub fn weierstrass_p_prime_ast(
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
 
-  // Numeric evaluation
-  if let (Some(u_f), Some(g2_f), Some(g3_f)) =
-    (try_eval_to_f64(u), try_eval_to_f64(g2), try_eval_to_f64(g3))
+  // Numeric evaluation only when an argument is inexact; exact arguments stay
+  // symbolic, matching wolframscript.
+  if any_inexact(&[u, g2, g3])
+    && let (Some(u_f), Some(g2_f), Some(g3_f)) =
+      (try_eval_to_f64(u), try_eval_to_f64(g2), try_eval_to_f64(g3))
   {
     let result = weierstrass_p_prime_numeric(u_f, g2_f, g3_f);
     return Ok(Expr::Real(result));
@@ -109,11 +133,15 @@ pub fn weierstrass_p_prime_ast(
 
 /// Compute WeierstrassPPrime numerically via central difference of WeierstrassP
 pub fn weierstrass_p_prime_numeric(u: f64, g2: f64, g3: f64) -> f64 {
-  // Use central difference with step size chosen for good accuracy
+  // ℘'(z)² = 4℘³ - g2℘ - g3, so the magnitude follows directly from the
+  // (accurate) value of ℘. A coarse central difference only fixes the sign,
+  // which keeps full precision instead of relying on the difference's value.
+  let p = weierstrass_p_numeric(u, g2, g3);
+  let magnitude = (4.0 * p * p * p - g2 * p - g3).max(0.0).sqrt();
   let h = u.abs().max(1.0) * 1e-6;
-  let p_plus = weierstrass_p_numeric(u + h, g2, g3);
-  let p_minus = weierstrass_p_numeric(u - h, g2, g3);
-  (p_plus - p_minus) / (2.0 * h)
+  let slope =
+    weierstrass_p_numeric(u + h, g2, g3) - weierstrass_p_numeric(u - h, g2, g3);
+  if slope < 0.0 { -magnitude } else { magnitude }
 }
 
 /// Compute WeierstrassP numerically using cubic roots + Jacobi elliptic functions
@@ -209,7 +237,10 @@ pub fn weierstrass_p_laurent(u: f64, g2: f64, g3: f64) -> f64 {
     for j in 1..=(k - 2) {
       sum += c[j] * c[k - 1 - j];
     }
-    c[k] = 3.0 / ((2 * k + 3) as f64 * (k - 1) as f64) * sum;
+    // Laurent recurrence (DLMF 23.9.3, re-indexed for c[k] = coeff of z^(2k)):
+    // c[k] = 3 / ((2k+3)(k-2)) * Σ_{j=1}^{k-2} c[j] c[k-1-j].  The denominator
+    // factor is (k-2), not (k-1): e.g. c[3] = g2²/1200, not g2²/2400.
+    c[k] = 3.0 / ((2 * k + 3) as f64 * (k - 2) as f64) * sum;
   }
 
   let u2 = u * u;

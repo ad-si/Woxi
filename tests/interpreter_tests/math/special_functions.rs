@@ -4185,6 +4185,42 @@ mod weierstrass_p {
       rhs
     );
   }
+
+  // Exact (integer/rational) arguments stay symbolic — only an inexact
+  // argument or N[...] triggers numeric evaluation.
+  #[test]
+  fn exact_args_stay_symbolic() {
+    assert_eq!(
+      interpret("WeierstrassP[1, {1, 1}]").unwrap(),
+      "WeierstrassP[1, {1, 1}]"
+    );
+    // An inexact invariant still numericizes.
+    let v: f64 = interpret("WeierstrassP[1, {1.0, 1}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 1.0871464472148646).abs() < 1e-12);
+  }
+
+  // The Laurent-series recurrence had a wrong denominator factor (k-1 vs k-2),
+  // so c[3] (and higher) were off and the value was only ~8-digit accurate.
+  #[test]
+  fn accurate_value() {
+    let v: f64 = interpret("WeierstrassP[1.0, {1, 1}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(
+      (v - 1.0871464472148646).abs() < 1e-12,
+      "WeierstrassP[1.0, {{1,1}}] = {} (expected 1.0871464472148646)",
+      v
+    );
+    let v2: f64 = interpret("WeierstrassP[0.5, {1, 2}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v2 - 4.016981503916559).abs() < 1e-11);
+  }
 }
 
 mod weierstrass_p_prime {
