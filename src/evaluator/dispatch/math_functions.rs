@@ -1950,7 +1950,13 @@ pub fn dispatch_math_functions(
           &[Expr::Real(two_re), Expr::Real(two_im)],
         ));
       }
-      // Symbolic / real path: 2 * ArcSin[Sqrt[x]]
+      // Symbolic / real path: 2 * ArcSin[Sqrt[x]]. wolframscript only rewrites
+      // to this form when the result is a clean closed form (e.g.
+      // InverseHaversine[1/2] -> Pi/2, [1] -> Pi); otherwise it keeps the
+      // InverseHaversine wrapper. So apply the rewrite but, if the result still
+      // contains an unevaluated ArcSin (the rewrite did not simplify), return
+      // the symbolic InverseHaversine instead. Real (inexact) arguments always
+      // numericize the ArcSin, so they are unaffected.
       let sqrt_expr = make_sqrt(args[0].clone());
       let asin_expr = Expr::FunctionCall {
         name: "ArcSin".to_string(),
@@ -1961,7 +1967,30 @@ pub fn dispatch_math_functions(
         left: Box::new(Expr::Integer(2)),
         right: Box::new(asin_expr),
       };
-      return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
+      let result = match crate::evaluator::evaluate_expr_to_expr(&expr) {
+        Ok(r) => r,
+        Err(e) => return Some(Err(e)),
+      };
+      fn contains_arcsin(e: &Expr) -> bool {
+        match e {
+          Expr::FunctionCall { name, args } => {
+            name == "ArcSin" || args.iter().any(contains_arcsin)
+          }
+          Expr::BinaryOp { left, right, .. } => {
+            contains_arcsin(left) || contains_arcsin(right)
+          }
+          Expr::UnaryOp { operand, .. } => contains_arcsin(operand),
+          Expr::List(items) => items.iter().any(contains_arcsin),
+          _ => false,
+        }
+      }
+      if contains_arcsin(&result) {
+        return Some(Ok(Expr::FunctionCall {
+          name: "InverseHaversine".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      return Some(Ok(result));
     }
     "Exp" if args.len() == 1 => {
       return Some(crate::functions::math_ast::exp_ast(args));

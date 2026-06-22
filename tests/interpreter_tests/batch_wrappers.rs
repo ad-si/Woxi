@@ -2605,6 +2605,25 @@ mod batch_unevaluated_wrappers_2 {
   fn inverse_haversine_one() {
     assert_eq!(interpret("InverseHaversine[1]").unwrap(), "Pi");
   }
+  // InverseHaversine rewrites to 2*ArcSin[Sqrt[z]] only when that yields a
+  // clean closed form; otherwise it stays symbolic (wolframscript keeps the
+  // wrapper rather than emitting a bare ArcSin form).
+  #[test]
+  fn inverse_haversine_clean_closed_forms() {
+    assert_eq!(interpret("InverseHaversine[1/2]").unwrap(), "Pi/2");
+    assert_eq!(interpret("InverseHaversine[3/4]").unwrap(), "(2*Pi)/3");
+  }
+  #[test]
+  fn inverse_haversine_stays_symbolic() {
+    assert_eq!(
+      interpret("InverseHaversine[1/3]").unwrap(),
+      "InverseHaversine[1/3]"
+    );
+    assert_eq!(
+      interpret("InverseHaversine[x]").unwrap(),
+      "InverseHaversine[x]"
+    );
+  }
 
   // ─── Unevaluated batch 11 ─────────────────────────────────────────
   #[test]
