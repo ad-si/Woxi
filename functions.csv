@@ -786,7 +786,7 @@ PopupMenu,Interactive popup menu control,✅,none,6.0,792
 CharacteristicPolynomial,Compute the characteristic polynomial of a matrix,✅,pure,5.0,793
 NMaximize,Numerical global maximization with constraints using sampling and gradient refinement,✅,pure,5.0,794
 IsotopeData,,🚫,,6.0,795
-CharacterRange,Returns a list of characters in a range,✅,pure,3.0,796
+CharacterRange,Returns a list of characters in a range given by single-character strings or by integer character codes (both endpoints must be the same kind),✅,pure,3.0,796
 TensorProduct,Tensor product of arrays,✅,none,9.0,797
 Sinc,Sinc function (Sin[x]/x with Sinc[0]=1),✅,pure,6.0,798
 Minus,Subtracts numbers,✅,pure,1.0,800

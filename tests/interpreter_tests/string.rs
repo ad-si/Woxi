@@ -1138,6 +1138,44 @@ mod character_range {
   fn single_char() {
     assert_eq!(interpret(r#"CharacterRange["m", "m"]"#).unwrap(), "{m}");
   }
+
+  // Integer endpoints are character codes (not stringified): CharacterRange
+  // [97, 99] -> {"a", "b", "c"} (regression: it previously gave {"9"}).
+  #[test]
+  fn integer_codes_ascii() {
+    assert_eq!(interpret("CharacterRange[97, 99]").unwrap(), "{a, b, c}");
+    assert_eq!(
+      interpret("CharacterRange[48, 57]").unwrap(),
+      "{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}"
+    );
+  }
+
+  #[test]
+  fn integer_codes_greek() {
+    assert_eq!(
+      interpret("CharacterRange[945, 949]").unwrap(),
+      "{α, β, γ, δ, ε}"
+    );
+  }
+
+  #[test]
+  fn integer_codes_empty_range() {
+    assert_eq!(interpret("CharacterRange[99, 97]").unwrap(), "{}");
+  }
+
+  // wolframscript requires both endpoints to be the same kind; a mixed
+  // string/integer call is left unevaluated.
+  #[test]
+  fn mixed_types_unevaluated() {
+    assert_eq!(
+      interpret(r#"CharacterRange["a", 99]"#).unwrap(),
+      "CharacterRange[a, 99]"
+    );
+    assert_eq!(
+      interpret(r#"CharacterRange[97, "c"]"#).unwrap(),
+      "CharacterRange[97, c]"
+    );
+  }
 }
 
 mod letter_q {

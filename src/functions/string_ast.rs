@@ -6523,22 +6523,34 @@ pub fn character_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let s1 = expr_to_str(&args[0])?;
-  let s2 = expr_to_str(&args[1])?;
-
-  let c1 = s1.chars().next().ok_or_else(|| {
-    InterpreterError::EvaluationError(
-      "CharacterRange: first argument must be a single character".into(),
-    )
-  })?;
-  let c2 = s2.chars().next().ok_or_else(|| {
-    InterpreterError::EvaluationError(
-      "CharacterRange: second argument must be a single character".into(),
-    )
-  })?;
-
-  let start = c1 as u32;
-  let end = c2 as u32;
+  // Each endpoint is either a character code (non-negative integer) or a
+  // single-character string. CharacterRange[97, 99] -> {"a", "b", "c"};
+  // CharacterRange["a","c"] is the same. (Previously integers were stringified,
+  // so 97 became the digit '9' and CharacterRange[97, 99] wrongly produced
+  // {"9"}.) wolframscript requires BOTH endpoints to be the same kind — a
+  // mixed call like CharacterRange["a", 99] is left unevaluated.
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "CharacterRange".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let a0_int = matches!(&args[0], Expr::Integer(n) if *n >= 0);
+  let a1_int = matches!(&args[1], Expr::Integer(n) if *n >= 0);
+  if a0_int != a1_int {
+    return unevaluated();
+  }
+  let endpoint_code = |e: &Expr| -> Option<u32> {
+    if let Expr::Integer(n) = e {
+      return (*n >= 0).then_some(*n as u32);
+    }
+    expr_to_str(e).ok()?.chars().next().map(|c| c as u32)
+  };
+  let (Some(start), Some(end)) =
+    (endpoint_code(&args[0]), endpoint_code(&args[1]))
+  else {
+    return unevaluated();
+  };
 
   if start > end {
     return Ok(Expr::List(vec![].into()));
