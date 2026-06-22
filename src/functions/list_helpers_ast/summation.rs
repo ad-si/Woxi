@@ -2169,6 +2169,11 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
       }
       _ => return None,
     };
+    // Normalize the (held) exponent: the parser stores a unary minus on a
+    // symbol as `0 - var`, which `linear_var_coeff` cannot read. Evaluating it
+    // (the summation variable stays free) collapses `0 - var` to `-var`, i.e.
+    // `Times[-1, var]`, so `2^(-n)` is recognized like `(1/2)^n`.
+    let exp = crate::evaluator::evaluate_expr_to_expr(&exp).unwrap_or(exp);
     let coeff = linear_var_coeff(&exp, var_name)?;
     if matches!(&coeff, Expr::Integer(1)) {
       return Some(base);
@@ -2187,11 +2192,6 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
     };
     Some(crate::evaluator::evaluate_expr_to_expr(&eff).unwrap_or(eff))
   };
-  let is_plain_number = |e: &Expr| -> bool {
-    matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
-      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
-  };
-
   let mut factors = Vec::new();
   collect(body, &mut factors);
 
@@ -2212,11 +2212,12 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   }
 
   let base = base?;
-  // The base must be free of the variable and genuinely symbolic; a numeric
-  // base needs the existing convergence-aware handlers instead.
-  if !crate::functions::calculus_ast::is_constant_wrt(&base, var_name)
-    || is_plain_number(&base)
-  {
+  // The base must be free of the variable. Both symbolic and numeric bases are
+  // returned; callers apply the convergence guard (|base| < 1) needed for
+  // numeric ratios. (Previously numeric bases were rejected here, but that was
+  // inconsistent — a literal `(1/4)^n` slipped through as `Divide[1,4]` while a
+  // computed `4^(-n)` base evaluated to `Rational[1,4]` and was dropped.)
+  if !crate::functions::calculus_ast::is_constant_wrt(&base, var_name) {
     return None;
   }
 
@@ -2825,6 +2826,11 @@ fn try_infinite_sum(
   // canonicalizes the min >= 1 result to a different (though equivalent) form.
   if min == 0
     && let Some((coeff, base)) = match_geometric_base(body, var_name)
+    // A numeric ratio must satisfy |base| < 1 to converge; a divergent ratio
+    // (e.g. (3/2)^n) is left unevaluated. A symbolic base yields the formal
+    // closed form.
+    && crate::functions::math_ast::try_eval_to_f64(&base)
+      .is_none_or(|bf| bf.abs() < 1.0)
   {
     use crate::syntax::BinaryOperator;
     let one_minus_base = Expr::BinaryOp {

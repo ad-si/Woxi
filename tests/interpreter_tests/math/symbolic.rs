@@ -233,6 +233,42 @@ mod sum {
     );
   }
 
+  // The c^(-n) form (an integer base with a negated exponent) is recognized as
+  // a geometric series with ratio 1/c, like the equivalent (1/c)^n form.
+  #[test]
+  fn infinite_geometric_negative_exponent() {
+    assert_eq!(interpret("Sum[2^(-n), {n, 1, Infinity}]").unwrap(), "1");
+    assert_eq!(interpret("Sum[3^(-n), {n, 1, Infinity}]").unwrap(), "1/2");
+    assert_eq!(interpret("Sum[2^(-n), {n, 0, Infinity}]").unwrap(), "2");
+    // Combined with the lower-bound reduction.
+    assert_eq!(interpret("Sum[2^(-n), {n, 2, Infinity}]").unwrap(), "1/2");
+    // An integer exponent multiple folds into the effective ratio 1/4.
+    assert_eq!(interpret("Sum[2^(-2 n), {n, 1, Infinity}]").unwrap(), "1/3");
+    // A coefficient is carried through.
+    assert_eq!(interpret("Sum[5 2^(-n), {n, 1, Infinity}]").unwrap(), "5");
+  }
+
+  // A geometric series with |ratio| >= 1 diverges and must stay unevaluated
+  // (regression: the min = 0 closed form previously fired without a
+  // convergence check, e.g. Sum[(3/2)^n, {n, 0, Infinity}] wrongly gave -2).
+  #[test]
+  fn divergent_geometric_stays_unevaluated() {
+    assert_eq!(
+      interpret("Sum[(3/2)^n, {n, 0, Infinity}]").unwrap(),
+      "Sum[(3/2)^n, {n, 0, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Sum[2^(2 n), {n, 0, Infinity}]").unwrap(),
+      "Sum[2^(2*n), {n, 0, Infinity}]"
+    );
+  }
+
+  // A convergent geometric series with a negative ratio is still recognized.
+  #[test]
+  fn infinite_geometric_negative_ratio() {
+    assert_eq!(interpret("Sum[(-1/2)^n, {n, 0, Infinity}]").unwrap(), "2/3");
+  }
+
   #[test]
   fn infinite_sum_short_iterator_form() {
     // `{n, max}` is shorthand for `{n, 1, max}`, including when max is Infinity
