@@ -6246,6 +6246,32 @@ mod batch_unevaluated_wrappers_2 {
       "{1, 2, 5, 9, 14}"
     );
   }
+  // Position specs may be single-element lists `{i}` (Extract-style), so
+  // `{{1}, {3}}` selects positions 1 and 3, like `{1, 3}`.
+  #[test]
+  fn subset_map_nested_position_specs() {
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {a, b, c, d}, {{1}, {3}}]").unwrap(),
+      "{c, b, a, d}"
+    );
+  }
+  // When the function does not return a list of the same length as the
+  // extracted sublist, SubsetMap emits `newls` and stays unevaluated.
+  #[test]
+  fn subset_map_newls_message() {
+    assert_eq!(
+      interpret("SubsetMap[f, {1, 2, 3}, {{1}, {3}}]").unwrap(),
+      "SubsetMap[f, {1, 2, 3}, {{1}, {3}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "SubsetMap::newls: The function f does not give a list of the same length when applied to list {1, 3}."
+      )),
+      "expected newls message, got {:?}",
+      msgs
+    );
+  }
 
   // Assert — returns unevaluated (Wolfram default behavior without AssertTools package)
   #[test]

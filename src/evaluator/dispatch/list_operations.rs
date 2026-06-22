@@ -6528,16 +6528,19 @@ pub fn dispatch_list_operations(
     "SubsetMap" if args.len() == 3 => {
       if let Expr::List(items) = &args[1] {
         let f = &args[0];
-        // Resolve the positions from either a list or a Span.
+        // Resolve the positions from either a list or a Span. Each entry of a
+        // position list is a position spec: a bare integer `i` or a
+        // single-element list `{i}` (Extract-style), both meaning position i.
         let pos_indices: Vec<usize> = match &args[2] {
           Expr::List(positions) => positions
             .iter()
-            .filter_map(|p| {
-              if let Expr::Integer(v) = p {
-                Some(*v as usize)
-              } else {
-                None
-              }
+            .filter_map(|p| match p {
+              Expr::Integer(v) => Some(*v as usize),
+              Expr::List(inner) if inner.len() == 1 => match &inner[0] {
+                Expr::Integer(v) => Some(*v as usize),
+                _ => None,
+              },
+              _ => None,
             })
             .collect(),
           Expr::FunctionCall { name, args: sp } if name == "Span" => {
@@ -6549,18 +6552,40 @@ pub fn dispatch_list_operations(
           .iter()
           .filter_map(|&idx| items.get(idx - 1).cloned())
           .collect();
-        // Apply f to the subset
-        let mapped = apply_function_to_arg(f, &Expr::List(subset.into()))
-          .unwrap_or(Expr::List(vec![].into()));
-        // Put results back
-        if let Expr::List(mapped_items) = &mapped {
-          let mut result = items.clone();
-          for (i, &pos) in pos_indices.iter().enumerate() {
-            if pos >= 1 && pos <= result.len() && i < mapped_items.len() {
-              result[pos - 1] = mapped_items[i].clone();
+        // Apply f to the extracted sublist (as a single list argument).
+        let mapped =
+          apply_function_to_arg(f, &Expr::List(subset.clone().into()))
+            .unwrap_or_else(|_| Expr::FunctionCall {
+              name: "SubsetMap".to_string(),
+              args: args.to_vec().into(),
+            });
+        // The result must be a list of the same length as the extracted
+        // sublist; otherwise SubsetMap can't put the elements back and emits
+        // `newls`, leaving the call unevaluated (matching wolframscript).
+        match &mapped {
+          Expr::List(mapped_items) if mapped_items.len() == subset.len() => {
+            let mut result = items.clone();
+            for (i, &pos) in pos_indices.iter().enumerate() {
+              if pos >= 1 && pos <= result.len() {
+                result[pos - 1] = mapped_items[i].clone();
+              }
             }
+            return Some(Ok(Expr::List(result)));
           }
-          return Some(Ok(Expr::List(result)));
+          _ => {
+            crate::emit_message(&format!(
+              "SubsetMap::newls: The function {} does not give a list of the same length when applied to list {}.",
+              crate::syntax::expr_to_message_form(f),
+              crate::syntax::format_expr(
+                &Expr::List(subset.into()),
+                crate::syntax::ExprForm::Output
+              )
+            ));
+            return Some(Ok(Expr::FunctionCall {
+              name: "SubsetMap".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
         }
       }
     }
