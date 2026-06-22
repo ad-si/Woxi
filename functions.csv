@@ -1336,7 +1336,7 @@ CentralMoment,Computes the k-th central moment of a list or distribution,✅,pur
 FaceGrids,Option for Graphics3D specifying grid lines on bounding box faces,✅,pure,2.0,1351
 GeoDistance,,🚫,,7.0,1351
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1.0,1353
-Signature,Signature of a permutation,✅,pure,1.0,1353
+Signature,Sign of the permutation that canonically sorts the parts of any non-atomic expression (0 if any are equal),✅,pure,1.0,1353
 CForm,Format expression as C code,✅,pure,1.0,1354
 Permute,Permute elements of a list,✅,pure,8.0,1355
 Padding,Option specifying padding scheme for array and image operations,✅,pure,7.0,1357

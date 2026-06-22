@@ -2263,31 +2263,53 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::permutations_ast(args));
     }
     "Signature" if args.len() == 1 => {
-      if let Expr::List(items) = &args[0] {
-        // Check for duplicates first
-        let strs: Vec<String> =
-          items.iter().map(crate::syntax::expr_to_string).collect();
-        for i in 0..strs.len() {
-          for j in (i + 1)..strs.len() {
-            if strs[i] == strs[j] {
-              return Some(Ok(Expr::Integer(0)));
+      use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+      // Signature operates on any non-atomic expression: it treats the
+      // level-1 parts (the arguments, regardless of head — `List`, `Cycles`,
+      // `f`, …) as a sequence and returns the sign of the permutation that
+      // canonically sorts them, or 0 if two parts are equal. `Rational`/
+      // `Complex` are atoms despite their FunctionCall head, so they don't
+      // qualify. Ordering uses the canonical Order (numeric, not string — so
+      // `Signature[{10, 2}]` is -1, not the old string-compare 1).
+      let parts: Option<Vec<&Expr>> = match &args[0] {
+        Expr::FunctionCall { name, .. }
+          if name == "Rational" || name == "Complex" =>
+        {
+          None
+        }
+        Expr::List(items) => Some(items.iter().collect()),
+        Expr::FunctionCall { args: a, .. } => Some(a.iter().collect()),
+        _ => None,
+      };
+      if let Some(items) = parts {
+        let mut inversions: u64 = 0;
+        for i in 0..items.len() {
+          for j in (i + 1)..items.len() {
+            match canonical_cmp(items[i], items[j]) {
+              std::cmp::Ordering::Equal => return Some(Ok(Expr::Integer(0))),
+              std::cmp::Ordering::Greater => inversions += 1,
+              std::cmp::Ordering::Less => {}
             }
           }
         }
-        // Count inversions to determine signature
-        let mut inversions = 0;
-        for i in 0..strs.len() {
-          for j in (i + 1)..strs.len() {
-            if strs[i] > strs[j] {
-              inversions += 1;
-            }
-          }
-        }
-        return Some(Ok(Expr::Integer(if inversions % 2 == 0 {
+        return Some(Ok(Expr::Integer(if inversions.is_multiple_of(2) {
           1
         } else {
           -1
         })));
+      }
+      // Atomic argument (Integer, Real, String, Symbol, Rational, …): emit the
+      // Wolfram `normal` message and leave the call unevaluated.
+      let is_atom = crate::functions::predicate_ast::atom_q_ast(
+        std::slice::from_ref(&args[0]),
+      )
+      .map(|r| matches!(r, Expr::Identifier(ref s) if s == "True"))
+      .unwrap_or(false);
+      if is_atom {
+        crate::emit_message(&format!(
+          "Signature::normal: Nonatomic expression expected at position 1 in Signature[{}].",
+          crate::syntax::expr_to_output(&args[0])
+        ));
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Signature".to_string(),

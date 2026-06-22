@@ -1537,6 +1537,46 @@ mod signature {
   fn unevaluated() {
     assert_eq!(interpret("Signature[x]").unwrap(), "Signature[x]");
   }
+
+  // Signature operates on any non-atomic head, not just List: it uses the
+  // level-1 parts as the sequence. A held `Cycles[...]` has a single part, so
+  // its signature is 1 (Signature does NOT interpret it as a permutation).
+  #[test]
+  fn general_head() {
+    assert_eq!(interpret("Signature[f[2, 1]]").unwrap(), "-1");
+    assert_eq!(interpret("Signature[f[3, 1, 2]]").unwrap(), "1");
+    assert_eq!(interpret("Signature[f[b, a]]").unwrap(), "-1");
+    assert_eq!(interpret("Signature[Cycles[{{1, 2, 3}}]]").unwrap(), "1");
+    assert_eq!(interpret("Signature[Cycles[{{1, 2}}]]").unwrap(), "1");
+  }
+
+  // Inversions use the canonical (numeric) Order, not string comparison, so a
+  // multi-digit element sorts by value: {10, 2} needs one swap → -1.
+  #[test]
+  fn numeric_ordering_not_string() {
+    assert_eq!(interpret("Signature[{10, 2}]").unwrap(), "-1");
+    assert_eq!(interpret("Signature[{2, 10, 3}]").unwrap(), "-1");
+  }
+
+  // 1 and 1.0 are distinct under canonical order, so they are not duplicates.
+  #[test]
+  fn int_and_real_not_duplicate() {
+    assert_eq!(interpret("Signature[{1, 1.0}]").unwrap(), "1");
+  }
+
+  // An atomic argument emits Signature::normal and stays unevaluated.
+  #[test]
+  fn atomic_emits_normal() {
+    assert_eq!(interpret("Signature[5]").unwrap(), "Signature[5]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Signature::normal: Nonatomic expression expected at position 1 in Signature[5]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+  }
 }
 
 mod minors {
