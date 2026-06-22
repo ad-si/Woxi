@@ -6598,6 +6598,35 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           })
         }
       }
+      // Ellipsoid[center, {a, b}] (2D) is a filled ellipse: Area = Pi*a*b.
+      // Area is the 2-dimensional measure, so an Ellipsoid of any other
+      // dimension (e.g. a 3D solid) has Undefined area, matching WL.
+      "Ellipsoid"
+        if args.len() == 2
+          && matches!(&args[0], Expr::List(c) if c.len() == 2)
+          && matches!(&args[1], Expr::List(r) if r.len() == 2) =>
+      {
+        let Expr::List(radii) = &args[1] else {
+          unreachable!()
+        };
+        let area = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Constant("Pi".to_string()),
+            radii[0].clone(),
+            radii[1].clone(),
+          ]
+          .into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&area)
+      }
+      "Ellipsoid"
+        if args.len() == 2
+          && matches!((&args[0], &args[1]),
+            (Expr::List(c), Expr::List(r)) if c.len() == r.len() && c.len() != 2) =>
+      {
+        Ok(Expr::Identifier("Undefined".to_string()))
+      }
       // Rectangle[] = 1, Rectangle[{x1,y1}] = 1, Rectangle[{x1,y1}, {x2,y2}] = |x2-x1| * |y2-y1|
       "Rectangle" => {
         if args.is_empty() || args.len() == 1 {

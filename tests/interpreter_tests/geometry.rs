@@ -50,6 +50,39 @@ mod area {
   }
 
   #[test]
+  fn ellipsoid_2d() {
+    assert_eq!(
+      interpret("Area[Ellipsoid[{0, 0}, {2, 3}]]").unwrap(),
+      "6*Pi"
+    );
+  }
+
+  #[test]
+  fn ellipsoid_2d_offset_center() {
+    assert_eq!(
+      interpret("Area[Ellipsoid[{1, 2}, {3, 5}]]").unwrap(),
+      "15*Pi"
+    );
+  }
+
+  #[test]
+  fn ellipsoid_circular() {
+    assert_eq!(
+      interpret("Area[Ellipsoid[{1, 1}, {4, 4}]]").unwrap(),
+      "16*Pi"
+    );
+  }
+
+  #[test]
+  fn ellipsoid_3d_undefined() {
+    // Area is the 2-dimensional measure; a 3D solid has no area.
+    assert_eq!(
+      interpret("Area[Ellipsoid[{0, 0, 0}, {2, 3, 4}]]").unwrap(),
+      "Undefined"
+    );
+  }
+
+  #[test]
   fn symbolic_radius() {
     assert_eq!(interpret("Area[Disk[{0, 0}, r]]").unwrap(), "Pi*r^2");
   }
