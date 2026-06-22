@@ -4530,6 +4530,25 @@ mod batch_unevaluated_wrappers_2 {
   fn parallel_product_basic() {
     assert_eq!(interpret("ParallelProduct[i, {i, 1, 5}]").unwrap(), "120");
   }
+  // Parallelize[expr] returns the same result as the sequential evaluation.
+  #[test]
+  fn parallelize_table() {
+    assert_eq!(
+      interpret("Parallelize[Table[i^2, {i, 5}]]").unwrap(),
+      "{1, 4, 9, 16, 25}"
+    );
+  }
+  #[test]
+  fn parallelize_select() {
+    assert_eq!(
+      interpret("Parallelize[Select[Range[10], PrimeQ]]").unwrap(),
+      "{2, 3, 5, 7}"
+    );
+  }
+  #[test]
+  fn parallelize_scalar() {
+    assert_eq!(interpret("Parallelize[1 + 1]").unwrap(), "2");
+  }
   #[test]
   fn mangoldt_lambda_prime() {
     assert_eq!(interpret("MangoldtLambda[7]").unwrap(), "Log[7]");

@@ -1714,7 +1714,7 @@ WhittakerW,Whittaker W function E^(-z/2) z^(m+1/2) HypergeometricU[m-k+1/2 2m+1 
 GeometricScene,Geometric scene,,unevaluated,12.0,1743
 MaxDetect,Gives a 0/1 mask marking the regional maxima of a numeric list,✅,pure,8.0,1743
 FactorList,List irreducible factors of a polynomial with exponents,✅,pure,1.0,1745
-Parallelize,Parallelize computation,,unevaluated,7.0,1745
+Parallelize,Evaluates an expression and returns the same result as the sequential evaluation (single Woxi kernel),✅,pure,7.0,1745
 BernoulliGraphDistribution,Erdős–Rényi G(n p) random graph distribution (recognised by RandomGraph),✅,pure,8.0,1748
 ClusteringComponents,Clustering components,✅,unevaluated,8.0,1748
 MandelbrotSetPlot,Mandelbrot set plot,,unevaluated,10.0,1748

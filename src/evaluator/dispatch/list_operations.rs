@@ -4364,6 +4364,12 @@ pub fn dispatch_list_operations(
     "TakeWhile" if args.len() == 2 => {
       return Some(list_helpers_ast::take_while_ast(&args[0], &args[1]));
     }
+    // Parallelize[expr] evaluates expr in parallel and returns the same result
+    // as the sequential evaluation. Woxi runs single-threaded, so the argument
+    // (already evaluated by the time it reaches here) is returned unchanged.
+    "Parallelize" if args.len() == 1 => {
+      return Some(Ok(args[0].clone()));
+    }
     "Do" if args.len() == 2 => {
       return Some(list_helpers_ast::do_ast(&args[0], &args[1]));
     }
