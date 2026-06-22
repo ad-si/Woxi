@@ -3827,6 +3827,55 @@ mod batch_unevaluated_wrappers_2 {
       "{{-1, 5}, {-1, 3}}"
     );
   }
+  // CoordinateBoundingBox is the corner form of CoordinateBounds:
+  // {{xmin, ymin, ...}, {xmax, ymax, ...}}.
+  #[test]
+  fn coordinate_bounding_box_basic() {
+    assert_eq!(
+      interpret("CoordinateBoundingBox[{{1, 2}, {3, 4}, {0, 5}}]").unwrap(),
+      "{{0, 2}, {3, 5}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounding_box_scalar_pad() {
+    assert_eq!(
+      interpret("CoordinateBoundingBox[{{1, 2}, {3, 4}, {0, 5}}, 1]").unwrap(),
+      "{{-1, 1}, {4, 6}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounding_box_list_pad() {
+    assert_eq!(
+      interpret("CoordinateBoundingBox[{{1, 2}, {3, 4}, {0, 5}}, {1, 2}]")
+        .unwrap(),
+      "{{-1, 0}, {4, 7}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounding_box_pair_pad() {
+    assert_eq!(
+      interpret(
+        "CoordinateBoundingBox[{{1, 2}, {3, 4}, {0, 5}}, {{1, 2}, {3, 4}}]"
+      )
+      .unwrap(),
+      "{{-1, -1}, {5, 9}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounding_box_3d() {
+    assert_eq!(
+      interpret("CoordinateBoundingBox[{{1, 2, 3}, {4, 5, 6}, {0, 1, 9}}]")
+        .unwrap(),
+      "{{0, 1, 3}, {4, 5, 9}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounding_box_single_point() {
+    assert_eq!(
+      interpret("CoordinateBoundingBox[{{2, 3}}]").unwrap(),
+      "{{2, 3}, {2, 3}}"
+    );
+  }
   #[test]
   fn glaisher_symbolic() {
     assert_eq!(interpret("Glaisher").unwrap(), "Glaisher");

@@ -3692,6 +3692,44 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    "CoordinateBoundingBox" if args.len() == 1 || args.len() == 2 => {
+      // CoordinateBoundingBox[pts, pad...] is the corner form of
+      // CoordinateBounds: {{xmin, ymin, ...}, {xmax, ymax, ...}}, i.e.
+      // Transpose[CoordinateBounds[...]]. Delegating reuses all of
+      // CoordinateBounds' padding handling (scalar / per-dim / pair / Scaled).
+      let bounds = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "CoordinateBounds".to_string(),
+        args: args.to_vec().into(),
+      });
+      if let Ok(Expr::List(per_dim)) = &bounds
+        && !per_dim.is_empty()
+        && per_dim
+          .iter()
+          .all(|d| matches!(d, Expr::List(p) if p.len() == 2))
+      {
+        let mins: Vec<Expr> = per_dim
+          .iter()
+          .map(|d| match d {
+            Expr::List(p) => p[0].clone(),
+            _ => unreachable!(),
+          })
+          .collect();
+        let maxs: Vec<Expr> = per_dim
+          .iter()
+          .map(|d| match d {
+            Expr::List(p) => p[1].clone(),
+            _ => unreachable!(),
+          })
+          .collect();
+        return Some(Ok(Expr::List(
+          vec![Expr::List(mins.into()), Expr::List(maxs.into())].into(),
+        )));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "CoordinateBoundingBox".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "ChessboardDistance" | "ChebyshevDistance" if args.len() == 2 => {
       // ChessboardDistance[{a1,...,an}, {b1,...,bn}] = Max[Abs[a1-b1], ..., Abs[an-bn]]
       if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])

@@ -3647,7 +3647,7 @@ WindowOpacity,,🚫,,6.0,3737
 ApartSquareFree,,,,6.0,3755
 CircularUnitaryMatrixDistribution,,,,10.3,3755
 ColorDetect,,🚫,,12.0,3755
-CoordinateBoundingBox,,,,10.1,3755
+CoordinateBoundingBox,Bounding box corners of a list of points with optional padding,✅,none,10.1,3755
 DateReduction,,,,10.2,3755
 FileNameDepth,Number of path components in a file name,✅,pure,7.0,3755
 FunctionLayer,,🚫,,12.2,3755
