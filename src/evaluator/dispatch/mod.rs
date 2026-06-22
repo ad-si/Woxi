@@ -5312,7 +5312,8 @@ pub fn evaluate_function_call_ast_inner(
     || name == "VertexEccentricity"
     || name == "GraphCenter"
     || name == "GraphPeriphery"
-    || name == "GraphRadius")
+    || name == "GraphRadius"
+    || name == "EccentricityCentrality")
     && (args.len() == 1 || (name == "VertexEccentricity" && args.len() == 2))
   {
     let graph = if name == "VertexEccentricity" && args.len() == 2 {
@@ -5374,6 +5375,15 @@ pub fn evaluate_function_call_ast_inner(
             .map(|(_, v)| v.clone())
             .collect();
           return Ok(Expr::List(periphery.into()));
+        }
+        "EccentricityCentrality" => {
+          // Reciprocal of each vertex's eccentricity, as a machine real
+          // (matching wolframscript), in vertex-list order.
+          let result: Vec<Expr> = eccentricities
+            .iter()
+            .map(|&e| Expr::Real(1.0 / e as f64))
+            .collect();
+          return Ok(Expr::List(result.into()));
         }
         _ => {}
       }

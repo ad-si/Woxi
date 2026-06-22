@@ -4210,7 +4210,7 @@ DeleteChannel,,🚫,,11.0,4356
 DotLayer,,🚫,,11.1,4356
 DoubleVerticalBar,,,,3.0,4356
 DualSystemsModel,,,,8.0,4356
-EccentricityCentrality,,,,9.0,4356
+EccentricityCentrality,Eccentricity centrality of graph vertices,✅,pure,9.0,4356
 EdgeBetweennessCentrality,Machine-real output carries WL's Brandes float accumulation-order noise (7.999999999999999 vs 8.) — not reproducible,🚫,pure,9.0,4356
 EncryptFile,,🚫,,11.1,4356
 ExtendedEntityClass,,🚫,,12.0,4356

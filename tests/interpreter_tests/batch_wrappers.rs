@@ -7699,6 +7699,40 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // EccentricityCentrality: 1 / vertex eccentricity, in vertex-list order.
+  #[test]
+  fn eccentricity_centrality_path3() {
+    // Eccentricities 2, 1, 2 → reciprocals 0.5, 1., 0.5.
+    assert_eq!(
+      interpret("EccentricityCentrality[PathGraph[{1, 2, 3}]]").unwrap(),
+      "{0.5, 1., 0.5}"
+    );
+  }
+  #[test]
+  fn eccentricity_centrality_complete_and_cycle() {
+    assert_eq!(
+      interpret("EccentricityCentrality[CompleteGraph[4]]").unwrap(),
+      "{1., 1., 1., 1.}"
+    );
+    assert_eq!(
+      interpret("EccentricityCentrality[CycleGraph[4]]").unwrap(),
+      "{0.5, 0.5, 0.5, 0.5}"
+    );
+  }
+  #[test]
+  fn eccentricity_centrality_star_and_path5() {
+    // Star center has eccentricity 1, leaves 2.
+    assert_eq!(
+      interpret("EccentricityCentrality[StarGraph[4]]").unwrap(),
+      "{1., 0.5, 0.5, 0.5}"
+    );
+    // Path of 5: eccentricities 4, 3, 2, 3, 4.
+    assert_eq!(
+      interpret("EccentricityCentrality[PathGraph[{1, 2, 3, 4, 5}]]").unwrap(),
+      "{0.25, 0.3333333333333333, 0.5, 0.3333333333333333, 0.25}"
+    );
+  }
+
   // ButterflyGraph
   #[test]
   fn butterfly_graph_basic() {
