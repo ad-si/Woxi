@@ -728,6 +728,58 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
+  // Conditional delimiter: `patt /; test`. Split on each span where the inner
+  // pattern matches and the `/;` test (with captures substituted) is True,
+  // dropping empty pieces like Wolfram's default StringSplit.
+  if let Expr::FunctionCall { name, args: cargs } = &args[1]
+    && name == "Condition"
+    && cargs.len() == 2
+    && let Some((regex_str, _)) = string_pattern_to_regex_with_state(&cargs[0])
+  {
+    let test = &cargs[1];
+    let pat = if ignore_case {
+      format!("(?i){}", regex_str)
+    } else {
+      regex_str
+    };
+    let re = compile_regex(&pat).map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Invalid regular expression: {}",
+        e
+      ))
+    })?;
+    let mut parts: Vec<Expr> = Vec::new();
+    let mut current = String::new();
+    let mut i = 0;
+    while i < s.len() {
+      let mut is_delim = false;
+      if let Some(caps) = re.captures_at(&s, i)
+        && let Some(m) = caps.get(0)
+        && m.start() == i
+        && !m.as_str().is_empty()
+      {
+        let test_sub = substitute_captures(test, &caps);
+        let test_val = crate::evaluator::evaluate_expr_to_expr(&test_sub)?;
+        if matches!(&test_val, Expr::Identifier(t) if t == "True") {
+          if !current.is_empty() {
+            parts.push(Expr::String(std::mem::take(&mut current)));
+          }
+          i += m.len();
+          is_delim = true;
+        }
+      }
+      if !is_delim {
+        let ch = s[i..].chars().next().unwrap();
+        current.push(ch);
+        i += ch.len_utf8();
+      }
+    }
+    if !current.is_empty() {
+      parts.push(Expr::String(current));
+    }
+    return Ok(Expr::List(parts.into()));
+  }
+
   // Check if the delimiter is a RegularExpression or string pattern. Plain
   // string literals (and lists of them) use the literal-delimiter path below;
   // any non-literal delimiter — a bare pattern, or a list that contains one
@@ -1147,9 +1199,13 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
     /// Regex pattern with a delayed replacement expression (RuleDelayed).
     /// Captured named groups are substituted into the expression before evaluation.
+    /// `condition` is the optional `/;` test (`patt /; test`): when present,
+    /// the captured names are substituted into it and it must evaluate to
+    /// `True` for the match to apply.
     RegexDelayed {
       regex: regex::Regex,
       replacement_expr: Expr,
+      condition: Option<Expr>,
     },
   }
 
@@ -1174,6 +1230,40 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
 
+    // Unwrap a `/;` condition on the pattern: `patt /; test` parses to
+    // `Condition[patt, test]`. A conditional pattern must evaluate its test
+    // for each candidate match, so route it through `RegexDelayed` (with the
+    // test attached) regardless of the replacement's shape.
+    if let Expr::FunctionCall { name, args } = pattern_expr
+      && name == "Condition"
+      && args.len() == 2
+    {
+      let inner_pattern = &args[0];
+      let test = &args[1];
+      let regex_str =
+        string_pattern_to_regex(inner_pattern).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "StringReplace: unsupported conditional pattern".into(),
+          )
+        })?;
+      let regex_str = if ignore_case {
+        format!("(?i){}", regex_str)
+      } else {
+        regex_str
+      };
+      let re = compile_regex(&regex_str).map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "StringReplace: invalid pattern regex: {}",
+          e
+        ))
+      })?;
+      return Ok(ReplaceRule::RegexDelayed {
+        regex: re,
+        replacement_expr: replacement_expr.clone(),
+        condition: Some(test.clone()),
+      });
+    }
+
     // For simple string literals, use direct matching. A delayed rule (:>)
     // still has to evaluate its RHS for each match, so compile the escaped
     // literal as a regex and route it through RegexDelayed. With IgnoreCase,
@@ -1192,6 +1282,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(ReplaceRule::RegexDelayed {
           regex: re,
           replacement_expr: replacement_expr.clone(),
+          condition: None,
         });
       }
       let replacement = expr_to_str(replacement_expr)?;
@@ -1240,6 +1331,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(ReplaceRule::RegexDelayed {
           regex: re,
           replacement_expr: replacement_expr.clone(),
+          condition: None,
         });
       }
 
@@ -1249,6 +1341,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(ReplaceRule::RegexDelayed {
           regex: re,
           replacement_expr: replacement_expr.clone(),
+          condition: None,
         });
       }
 
@@ -1396,12 +1489,23 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ReplaceRule::RegexDelayed {
             regex,
             replacement_expr,
+            condition,
           } => {
             if let Some(caps) = regex.captures_at(s, i)
               && let Some(m) = caps.get(0)
               && m.start() == i
               && !m.as_str().is_empty()
             {
+              // A `/;` condition must hold for this match. Substitute the
+              // captured names into it and evaluate; skip the rule otherwise.
+              if let Some(cond) = condition {
+                let cond_sub = substitute_captures(cond, &caps);
+                let cond_val =
+                  crate::evaluator::evaluate_expr_to_expr(&cond_sub)?;
+                if !matches!(&cond_val, Expr::Identifier(t) if t == "True") {
+                  continue;
+                }
+              }
               // Substitute named captures into the replacement expr
               let substituted = substitute_captures(replacement_expr, &caps);
               // Evaluate the substituted expression
@@ -1664,7 +1768,38 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For each match: (start_index_0based, length_in_chars)
   let mut raw_matches: Vec<(usize, usize)> = Vec::new();
 
-  if let Some(pat) = regex_pat.as_ref() {
+  // Bare conditional pattern: `patt /; test`. Match the inner pattern at each
+  // position and keep the span only when the `/;` test (with captures
+  // substituted in) evaluates to True.
+  if let Expr::FunctionCall { name, args: cargs } = &args[1]
+    && name == "Condition"
+    && cargs.len() == 2
+    && let Some((regex_str, _)) = string_pattern_to_regex_with_state(&cargs[0])
+  {
+    let test = &cargs[1];
+    let pat = if ignore_case {
+      format!("(?i){}", regex_str)
+    } else {
+      regex_str
+    };
+    if let Ok(re) = compile_regex(&pat) {
+      for start_char in 0..s_chars.len() {
+        let byte_offset: usize =
+          s_chars[..start_char].iter().map(|c| c.len_utf8()).sum();
+        if let Some(caps) = re.captures_at(&s, byte_offset)
+          && let Some(m) = caps.get(0)
+          && m.start() == byte_offset
+          && !m.as_str().is_empty()
+        {
+          let test_sub = substitute_captures(test, &caps);
+          let test_val = crate::evaluator::evaluate_expr_to_expr(&test_sub)?;
+          if matches!(&test_val, Expr::Identifier(t) if t == "True") {
+            raw_matches.push((start_char, m.as_str().chars().count()));
+          }
+        }
+      }
+    }
+  } else if let Some(pat) = regex_pat.as_ref() {
     // Regex-based matching: find all overlapping matches
     let pat = if ignore_case {
       format!("(?i){}", pat)
@@ -2682,6 +2817,58 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(Expr::List(result.into()));
+  }
+
+  // Bare conditional pattern: `patt /; test`. Match the inner pattern, then
+  // require the `/;` test (with the captured names substituted in) to evaluate
+  // to True before emitting the matched substring.
+  if let Expr::FunctionCall { name, args: cargs } = &args[1]
+    && name == "Condition"
+    && cargs.len() == 2
+    && let Some((regex_str, constraints)) =
+      string_pattern_to_regex_with_state(&cargs[0])
+  {
+    let test = &cargs[1];
+    let re = compile_regex(&with_ci(&regex_str)).map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Invalid string pattern: {}",
+        e
+      ))
+    })?;
+    let mut out: Vec<Expr> = Vec::new();
+    let mut i = 0;
+    while i < s.len() && out.len() < max_count {
+      let mut matched = false;
+      if let Some(caps) = re.captures_at(&s, i)
+        && let Some(m) = caps.get(0)
+        && m.start() == i
+        && !m.as_str().is_empty()
+        && constraints.iter().all(|(orig, dup)| {
+          match (caps.name(orig), caps.name(dup)) {
+            (Some(a), Some(b)) => a.as_str() == b.as_str(),
+            _ => true,
+          }
+        })
+      {
+        let test_sub = substitute_captures(test, &caps);
+        let test_val = crate::evaluator::evaluate_expr_to_expr(&test_sub)?;
+        if matches!(&test_val, Expr::Identifier(t) if t == "True") {
+          out.push(Expr::String(m.as_str().to_string()));
+          if overlaps {
+            let ch = s[i..].chars().next().unwrap();
+            i += ch.len_utf8();
+          } else {
+            i += m.len();
+          }
+          matched = true;
+        }
+      }
+      if !matched {
+        let ch = s[i..].chars().next().unwrap();
+        i += ch.len_utf8();
+      }
+    }
+    return Ok(Expr::List(out.into()));
   }
 
   // Try pattern-based matching first
@@ -6229,6 +6416,17 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
   let overlaps = has_overlaps_option(args);
+
+  // A conditional pattern (`patt /; test`) needs per-match evaluation of the
+  // test; delegate to StringCases (which handles it) and count the matches.
+  if let Expr::FunctionCall { name, .. } = &args[1]
+    && name == "Condition"
+  {
+    let cases = string_cases_ast(args)?;
+    if let Expr::List(items) = &cases {
+      return Ok(Expr::Integer(items.len() as i128));
+    }
+  }
 
   // Try regex-based pattern first (handles RegularExpression, string patterns,
   // lists-of-patterns as alternatives, etc.)

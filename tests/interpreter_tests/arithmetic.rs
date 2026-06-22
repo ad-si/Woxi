@@ -2468,6 +2468,48 @@ mod expand_threading {
   }
 
   #[test]
+  fn string_functions_conditional_patterns() {
+    // A `/;`-conditioned string pattern (`x_ /; test`) must evaluate its test
+    // per candidate match. These all returned no-match before the fix.
+    assert_eq!(
+      interpret(
+        "StringReplace[\"aAbB\", x_ /; LowerCaseQ[x] :> ToUpperCase[x]]"
+      )
+      .unwrap(),
+      "AABB"
+    );
+    assert_eq!(
+      interpret("StringReplace[\"aAbB\", x_ /; LowerCaseQ[x] :> \"_\"]")
+        .unwrap(),
+      "_A_B"
+    );
+    assert_eq!(
+      interpret("StringCases[\"aAbB\", x_ /; LowerCaseQ[x]]").unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret("StringCount[\"aAbB\", x_ /; LowerCaseQ[x]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("StringPosition[\"a1b2c3\", d_ /; DigitQ[d]]").unwrap(),
+      "{{2, 2}, {4, 4}, {6, 6}}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"aXbXc\", x_ /; UpperCaseQ[x]]").unwrap(),
+      "{a, b, c}"
+    );
+    // The conditional limit form still honours the max-replacements count.
+    assert_eq!(
+      interpret(
+        "StringReplace[\"aAbB\", x_ /; LowerCaseQ[x] :> ToUpperCase[x], 1]"
+      )
+      .unwrap(),
+      "AAbB"
+    );
+  }
+
+  #[test]
   fn string_replace_with_limit() {
     assert_eq!(
       interpret("StringReplace[\"xyxyxyyyxxxyyxy\", \"xy\" -> \"A\", 2]")
