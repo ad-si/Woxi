@@ -12288,6 +12288,25 @@ mod cases {
   fn nest_while_1() {
     assert_case(r#"NestWhile[#/2&, 10000, IntegerQ]"#, r#"625 / 2"#);
   }
+  // NestWhile[f, expr, test, m] supplies the m most recent results to `test`,
+  // so f must be applied at least m-1 times to fill the window before the
+  // first test (verified against wolframscript).
+  #[test]
+  fn nest_while_m_fills_window_before_testing() {
+    assert_case(r#"NestWhile[f, x, test, 2]"#, r#"f[x]"#);
+    assert_case(r#"NestWhile[f, x, test, 3]"#, r#"f[f[x]]"#);
+    assert_case(r#"NestWhile[f, x, test, 1]"#, r#"x"#);
+  }
+  #[test]
+  fn nest_while_two_arg_test() {
+    // The 2-arg test sees consecutive results; stops when their sum reaches 10.
+    assert_case(r#"NestWhile[#1 + 1 &, 1, #1 + #2 < 10 &, 2]"#, r#"6"#);
+  }
+  #[test]
+  fn nest_while_list_m_window() {
+    assert_case(r#"NestWhileList[f, x, test, 2]"#, r#"{x, f[x]}"#);
+    assert_case(r#"NestWhileList[f, x, test, 3]"#, r#"{x, f[x], f[f[x]]}"#);
+  }
   #[test]
   fn scan() {
     assert_case(r#"Scan[Print, {1, 2, 3}]"#, r#"Null"#);

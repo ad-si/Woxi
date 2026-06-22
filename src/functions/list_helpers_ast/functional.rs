@@ -548,16 +548,26 @@ fn nest_while_history(
   let max = max_iterations.unwrap_or(10000);
   let mut history = vec![init.clone()];
   for _ in 0..max {
-    let test_args: Vec<Expr> = match m {
-      NestWhileM::Last(n) => {
-        let start = history.len().saturating_sub(n);
-        history[start..].to_vec()
-      }
-      NestWhileM::All => history.clone(),
+    // `NestWhile[f, expr, test, m]` supplies the m most recent results to
+    // `test`, so `f` must be applied at least m-1 times before the first test
+    // can run (e.g. `NestWhile[f, x, test, 2]` -> `f[x]`). While fewer than m
+    // results are available, keep applying `f` without testing.
+    let window_full = match m {
+      NestWhileM::Last(n) => history.len() >= n,
+      NestWhileM::All => true,
     };
-    let test_result = apply_func_to_n_args(test, &test_args)?;
-    if expr_to_bool(&test_result) != Some(true) {
-      break;
+    if window_full {
+      let test_args: Vec<Expr> = match m {
+        NestWhileM::Last(n) => {
+          let start = history.len().saturating_sub(n);
+          history[start..].to_vec()
+        }
+        NestWhileM::All => history.clone(),
+      };
+      let test_result = apply_func_to_n_args(test, &test_args)?;
+      if expr_to_bool(&test_result) != Some(true) {
+        break;
+      }
     }
     let next = apply_func_ast(func, history.last().unwrap())?;
     history.push(next);
