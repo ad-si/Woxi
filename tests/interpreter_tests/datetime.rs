@@ -1621,6 +1621,48 @@ mod unix_time {
   }
 }
 
+mod date_object_property {
+  use super::*;
+
+  #[test]
+  fn property_access_via_subscript() {
+    // DateObject[...]["property"] extracts a component, delegating to
+    // DateValue. Verified against wolframscript.
+    assert_eq!(
+      interpret(r#"DateObject[{2024, 7, 4, 15, 30, 45}]["Day"]"#).unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(r#"DateObject[{2024, 7, 4, 15, 30, 45}]["Year"]"#).unwrap(),
+      "2024"
+    );
+    assert_eq!(
+      interpret(r#"DateObject[{2024, 7, 4, 15, 30, 45}]["Hour"]"#).unwrap(),
+      "15"
+    );
+    assert_eq!(
+      interpret(r#"DateObject[{2024, 7, 4, 15, 30, 45}]["DayName"]"#).unwrap(),
+      "Thursday"
+    );
+    assert_eq!(
+      interpret(r#"DateObject[{2024, 7, 4}]["Week"]"#).unwrap(),
+      "27"
+    );
+    assert_eq!(
+      interpret(r#"DateObject[{2024, 7, 4}]["Quarter"]"#).unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn unknown_property_stays_unevaluated() {
+    assert_eq!(
+      interpret(r#"DateObject[{2024, 7, 4}]["Nonsense"]"#).unwrap(),
+      "DateObject[{2024, 7, 4}, Day][Nonsense]"
+    );
+  }
+}
+
 mod date_value {
   use super::*;
 

@@ -865,6 +865,28 @@ pub fn apply_curried_call(
       // Entity["type", "name"]["property"] — property access on entities
       crate::functions::entity_ast::entity_property_access(func_args, args)
     }
+    // DateObject[...]["property"] — extract a date component (e.g. "Day",
+    // "DayName", "Week"). Delegates to DateValue, which already resolves every
+    // such property; if it cannot, the curried form is kept unevaluated.
+    Expr::FunctionCall { name, .. }
+      if name == "DateObject"
+        && args.len() == 1
+        && matches!(&args[0], Expr::String(_)) =>
+    {
+      let result = evaluate_function_call_ast(
+        "DateValue",
+        &[func.clone(), args[0].clone()],
+      )?;
+      if matches!(&result, Expr::FunctionCall { name, .. } if name == "DateValue")
+      {
+        Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        })
+      } else {
+        Ok(result)
+      }
+    }
     Expr::FunctionCall {
       name,
       args: func_args,
