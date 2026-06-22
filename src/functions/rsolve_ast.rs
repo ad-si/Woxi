@@ -28,13 +28,21 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(unevaluated(args)),
   };
 
-  // Extract equations from the first argument. Accept a single equation
-  // (Comparison or Equal[...]) by wrapping it in a one-element list.
+  // Extract equations from the first argument. Accept a list, a single
+  // equation (Comparison or Equal[...]), or a conjunction joined with `&&`
+  // (e.g. `a[n] == a[n-1] + 1 && a[1] == 1`) by flattening it into a list.
   let equations = match &args[0] {
     Expr::List(eqs) => eqs.clone(),
     Expr::Comparison { .. } => vec![args[0].clone()].into(),
     Expr::FunctionCall { name, .. } if name == "Equal" => {
       vec![args[0].clone()].into()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      ..
+    } => flatten_and(&args[0]).into(),
+    Expr::FunctionCall { name, .. } if name == "And" => {
+      flatten_and(&args[0]).into()
     }
     _ => return Ok(unevaluated(args)),
   };
@@ -391,6 +399,27 @@ fn unevaluated(args: &[Expr]) -> Expr {
   Expr::FunctionCall {
     name: "RSolve".to_string(),
     args: args.to_vec().into(),
+  }
+}
+
+/// Flatten a conjunction (`a && b && c`, whether represented as nested
+/// `BinaryOp::And` or a flattened `And[...]` FunctionCall) into the list of
+/// its conjuncts. Non-And expressions yield a single-element list.
+fn flatten_and(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => {
+      let mut out = flatten_and(left);
+      out.extend(flatten_and(right));
+      out
+    }
+    Expr::FunctionCall { name, args } if name == "And" => {
+      args.iter().flat_map(flatten_and).collect()
+    }
+    _ => vec![expr.clone()],
   }
 }
 

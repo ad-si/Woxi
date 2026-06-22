@@ -2559,6 +2559,33 @@ mod rsolve {
     );
   }
 
+  // Equations may be joined with `&&` instead of a list; the conjunction is
+  // flattened and solved identically, matching wolframscript.
+  #[test]
+  fn conditions_joined_with_and() {
+    assert_eq!(
+      interpret("RSolve[a[n] == a[n-1] + 1 && a[1] == 1, a[n], n]").unwrap(),
+      "{{a[n] -> n}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n] == 2 a[n-1] && a[0] == 1, a[n], n]").unwrap(),
+      "{{a[n] -> 2^n}}"
+    );
+    // Three conjuncts: recurrence plus two initial conditions.
+    assert_eq!(
+      interpret(
+        "RSolve[a[n] == 4 a[n-1] - 4 a[n-2] && a[1] == 2 && a[2] == 8, a[n], n]"
+      )
+      .unwrap(),
+      "{{a[n] -> 2^n*n}}"
+    );
+    // RSolveValue accepts the conjunction form too (it delegates to RSolve).
+    assert_eq!(
+      interpret("RSolveValue[a[n] == 2 a[n-1] && a[0] == 1, a[n], n]").unwrap(),
+      "2^n"
+    );
+  }
+
   // An index-dependent forcing term (a[n-1] + n) or a coefficient other than 1
   // (3 a[n-1] + 1) is not an arithmetic progression and stays unevaluated,
   // matching the deeper cases Woxi does not yet close-form.
