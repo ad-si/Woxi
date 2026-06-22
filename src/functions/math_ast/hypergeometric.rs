@@ -1052,8 +1052,12 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 1F1[a, a, z] = E^z (the (a)_n factors cancel). Use Exp to trigger the
   // numeric-path evaluation when z is real and threading over lists.
+  // A non-positive integer a is excluded: there the series terminates first,
+  // giving a truncated-exponential polynomial (e.g. 1F1[-2, -2, z] =
+  // 1 + z + z^2/2), handled by the terminating-series branch below.
   if crate::syntax::expr_to_string(&args[0])
     == crate::syntax::expr_to_string(&args[1])
+    && !matches!(&args[0], Expr::Integer(n) if *n <= 0)
   {
     let exp_call = Expr::FunctionCall {
       name: "Exp".to_string(),
@@ -1118,6 +1122,72 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Plus",
       &[Expr::Integer(1), product],
     );
+  }
+
+  // Terminating series: 1F1[-n, b, z] for a non-positive integer first
+  // argument `a = -n` is a degree-n polynomial in z,
+  //   Σ_{k=0}^n (a)_k / ((b)_k · k!) · z^k,
+  // valid for any b that is not a non-positive integer in (-n, 0] (which would
+  // make a (b)_k factor vanish). Computed directly term-by-term so it also
+  // works for symbolic b, e.g. 1F1[-1, b, x] = 1 - x/b. (The a == b case is
+  // E^z and was already handled above.)
+  if let Expr::Integer(a_i) = &args[0]
+    && *a_i <= 0
+    && !matches!(&args[1], Expr::Integer(bi) if *bi <= 0 && -*bi < -*a_i)
+  {
+    use num_bigint::BigInt;
+    let neg_n = *a_i;
+    let n = -neg_n;
+    let b = &args[1];
+    let z = &args[2];
+    let mut terms: Vec<Expr> = Vec::new();
+    let mut poch_a = BigInt::from(1); // (a)_0 = 1
+    let mut k_fact = BigInt::from(1); // 0! = 1
+    for k in 0..=n {
+      if k > 0 {
+        poch_a *= neg_n + (k - 1);
+        k_fact *= k;
+      }
+      // term = (a)_k · z^k / (k! · (b)_k). The evaluator reduces the integer
+      // ratio and the (b)_k product (numeric or symbolic).
+      let mut factors: Vec<Expr> = vec![bigint_to_expr(poch_a.clone())];
+      if k > 0 {
+        factors.push(crate::evaluator::evaluate_function_call_ast(
+          "Power",
+          &[bigint_to_expr(k_fact.clone()), Expr::Integer(-1)],
+        )?);
+        let z_pow = if k == 1 {
+          z.clone()
+        } else {
+          crate::evaluator::evaluate_function_call_ast(
+            "Power",
+            &[z.clone(), Expr::Integer(k)],
+          )?
+        };
+        factors.push(z_pow);
+        for j in 0..k {
+          let factor = if j == 0 {
+            b.clone()
+          } else {
+            crate::evaluator::evaluate_function_call_ast(
+              "Plus",
+              &[b.clone(), Expr::Integer(j)],
+            )?
+          };
+          factors.push(crate::evaluator::evaluate_function_call_ast(
+            "Power",
+            &[factor, Expr::Integer(-1)],
+          )?);
+        }
+      }
+      let term = if factors.len() == 1 {
+        factors.into_iter().next().unwrap()
+      } else {
+        crate::evaluator::evaluate_function_call_ast("Times", &factors)?
+      };
+      terms.push(term);
+    }
+    return crate::evaluator::evaluate_function_call_ast("Plus", &terms);
   }
 
   // Closed form for 1F1[positive integer a > b, positive integer b, z]

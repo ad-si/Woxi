@@ -529,6 +529,31 @@ mod hypergeometric_1f1 {
     assert_eq!(interpret("Hypergeometric1F1[a, a, x]").unwrap(), "E^x");
   }
 
+  // A non-positive integer first argument terminates the series, giving a
+  // degree-n polynomial in z — valid for any (compatible) b, including
+  // symbolic. Verified against wolframscript.
+  #[test]
+  fn terminating_polynomial_negative_a() {
+    assert_eq!(interpret("Hypergeometric1F1[-1, 2, x]").unwrap(), "1 - x/2");
+    assert_eq!(
+      interpret("Hypergeometric1F1[-2, 3, x]").unwrap(),
+      "1 - (2*x)/3 + x^2/12"
+    );
+    assert_eq!(
+      interpret("Hypergeometric1F1[-3, 1, x]").unwrap(),
+      "1 - 3*x + (3*x^2)/2 - x^3/6"
+    );
+    // Symbolic lower parameter.
+    assert_eq!(interpret("Hypergeometric1F1[-1, b, x]").unwrap(), "1 - x/b");
+    // Numeric argument gives an exact value.
+    assert_eq!(interpret("Hypergeometric1F1[-3, 2, 2]").unwrap(), "-1/3");
+    // a == b a non-positive integer is a truncated exponential, not E^z.
+    assert_eq!(
+      interpret("Hypergeometric1F1[-2, -2, x]").unwrap(),
+      "1 + x + x^2/2"
+    );
+  }
+
   // Closed-form expansion for `1F1[positive integer a, 1, z]` via the
   // Laguerre/Kummer identity — matches wolframscript.
   #[test]
