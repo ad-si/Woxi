@@ -8270,6 +8270,17 @@ abb""#,
     assert_case("ToString[NumberForm[2, 3]]", "2");
     assert_case("ToString[NumberForm[1234567, 3]]", "1234567");
   }
+  // NumberForm[x] with no precision spec renders like NumberForm[x, 6]
+  // (the machine-precision default of 6 significant figures).
+  #[test]
+  fn to_string_number_form_default_precision() {
+    assert_case("ToString[NumberForm[3.14159]]", "3.14159");
+    assert_case("ToString[NumberForm[12345.678]]", "12345.7");
+    assert_case("ToString[NumberForm[0.0001234]]", "0.0001234");
+    assert_case("ToString[NumberForm[-3.5]]", "-3.5");
+    assert_case("ToString[NumberForm[100.0]]", "100.");
+    assert_case("ToString[NumberForm[42]]", "42");
+  }
   // NumberForm[x, {n, f}] shows exactly f digits after the decimal point.
   #[test]
   fn to_string_number_form_fixed_decimals() {

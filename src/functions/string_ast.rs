@@ -3535,6 +3535,22 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // NumberForm[x] — no precision spec. wolframscript renders this exactly like
+  // NumberForm[x, 6] (the machine-precision display default: 6 significant
+  // figures), e.g. NumberForm[12345.678] -> "12345.7", NumberForm[-3.5] ->
+  // "-3.5", NumberForm[42] -> "42".
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "NumberForm"
+    && !is_input_form
+    && inner_args.len() == 1
+    && let Some(rendered) = number_form_to_string(&inner_args[0], 6)
+  {
+    return Ok(Expr::String(rendered));
+  }
+
   // ScientificForm[x] / ScientificForm[x, n] — scientific (mantissa × 10^exp)
   // rendering. Default 6 significant figures; the exponent is shown as a
   // superscript on the line above. Exponent 0 collapses to just the mantissa.
