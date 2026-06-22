@@ -8030,6 +8030,23 @@ mod discrete_convolve {
       "DiscreteConvolve[f, g, n]"
     );
   }
+
+  #[test]
+  fn divergent_stays_symbolic_no_leak() {
+    // A convolution whose defining sum does not reduce to a closed form must
+    // stay symbolic, not leak the internal `Sum[…, {k$dc, -Infinity,
+    // Infinity}]`. Matches wolframscript, which also leaves these unevaluated.
+    clear_state();
+    assert_eq!(
+      interpret("DiscreteConvolve[1, 1, n, m]").unwrap(),
+      "DiscreteConvolve[1, 1, n, m]"
+    );
+    let r = interpret("DiscreteConvolve[2^n, 3^n, n, m]").unwrap();
+    assert_eq!(r, "DiscreteConvolve[2^n, 3^n, n, m]");
+    // No internal summation variable or raw Sum leaks through.
+    assert!(!r.contains("$k"), "internal sum variable leaked: {r}");
+    assert!(!r.contains("Sum["), "raw Sum leaked: {r}");
+  }
 }
 
 mod list_fourier_sequence_transform {

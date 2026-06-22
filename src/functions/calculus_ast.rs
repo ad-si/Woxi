@@ -14980,8 +14980,9 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // f /. n -> k
   let f_sub = crate::syntax::substitute_variable(f_expr, &n_var, &k_expr);
 
-  // g /. m -> (m - k)  — but the result variable is m (output var),
-  // which is the same as the output. In WL convention, the result is in terms of m.
+  // g /. n -> (m - k). Both f and g are functions of the convolution variable
+  // n; the discrete convolution is Sum_k f[k] g[m-k], so g's n becomes m - k
+  // (NOT m — g is not a function of the output variable).
   let m_minus_k = Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Plus,
     left: Box::new(Expr::Identifier(m_var.clone())),
@@ -14991,7 +14992,7 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       right: Box::new(k_expr.clone()),
     }),
   };
-  let g_sub = crate::syntax::substitute_variable(g_expr, &m_var, &m_minus_k);
+  let g_sub = crate::syntax::substitute_variable(g_expr, &n_var, &m_minus_k);
 
   // Build the product
   let product = Expr::BinaryOp {
@@ -15024,7 +15025,17 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .into(),
   };
 
-  crate::evaluator::evaluate_expr_to_expr(&sum_expr)
+  let result = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
+  // If the infinite sum did not reduce to a closed form it still references
+  // the internal summation variable; in that case keep DiscreteConvolve
+  // symbolic rather than leaking the raw `Sum[…, {k$dc, -Infinity, Infinity}]`.
+  if !is_constant_wrt(&result, k_var) {
+    return Ok(Expr::FunctionCall {
+      name: "DiscreteConvolve".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  Ok(result)
 }
 
 /// FrenetSerretSystem[{f1, f2, ...}, t] - Frenet-Serret system for a parametric curve
