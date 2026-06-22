@@ -7,7 +7,7 @@ use crate::syntax::Expr;
 // `0^-3` renders as:
 //     "                                  -3\n\
 //      Power::infy: Infinite expression 0   encountered."
-fn format_power_infy_2d(base: &str, exp: &str) -> String {
+pub(crate) fn format_power_infy_2d(base: &str, exp: &str) -> String {
   const PREFIX: &str = "Power::infy: Infinite expression ";
   let line1_width = PREFIX.len() + base.len() + exp.len();
   let trailing_spaces = " ".repeat(exp.len() + 1);

@@ -6005,11 +6005,46 @@ pub fn divide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return thread_binary_over_lists(args, divide_two);
   }
 
-  // NOTE: both the `/` operator and the Divide[] head reach this function, so
-  // they cannot be distinguished here. wolframscript reports Power::infy for
-  // `a/0` and Divide::infy for `Divide[a, 0]`; Woxi uses the operator form
-  // (Power::infy, via divide_two) for both since `/` is far more common.
   divide_two(&args[0], &args[1])
+}
+
+/// Evaluate the explicit `Divide[a, b]` head. This differs from the `/`
+/// operator only when dividing a *numeric* numerator by zero: wolframscript
+/// then reports the message tagged `Divide::infy` / `Divide::indet`, keeping
+/// the literal numerator in the rendered fraction (e.g. `Divide[5, 0]` → `5/0`,
+/// `Divide[0, 0]` → indeterminate). A symbolic numerator (`Divide[x, 0]`)
+/// decays to `x*(1/0)` and emits the `Power::infy` form, so it — like the `/`
+/// operator — falls through to the shared `divide_ast` path.
+pub fn divide_head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 2 {
+    let denom_is_zero = matches!(&args[1], Expr::Integer(0))
+      || matches!(&args[1], Expr::Real(z) if *z == 0.0);
+    // Only single-line numbers (Integer / Real) keep the Divide-tagged form;
+    // Rationals would need a stacked-fraction numerator we don't render here.
+    let num_is_single_line_number =
+      matches!(&args[0], Expr::Integer(_) | Expr::Real(_));
+    if denom_is_zero && num_is_single_line_number {
+      let num = expr_to_string(&args[0]);
+      let denom = expr_to_string(&args[1]);
+      let num_is_zero = matches!(&args[0], Expr::Integer(0))
+        || matches!(&args[0], Expr::Real(z) if *z == 0.0);
+      if num_is_zero {
+        crate::emit_message(&format_infy_fraction_2d(
+          "Divide::indet: Indeterminate expression ",
+          &num,
+          &denom,
+        ));
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      }
+      crate::emit_message(&format_infy_fraction_2d(
+        "Divide::infy: Infinite expression ",
+        &num,
+        &denom,
+      ));
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+  }
+  divide_ast(args)
 }
 
 /// Check if an expression represents an infinite quantity
@@ -6023,6 +6058,40 @@ pub fn is_infinity_like(expr: &Expr) -> bool {
     } => matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity"),
     _ => false,
   }
+}
+
+/// Render a `num/denom` "Infinite/Indeterminate expression" warning in
+/// wolframscript's 2D layout, e.g. `Divide[5, 0]` produces:
+///
+/// ```text
+///                                   5
+/// Divide::infy: Infinite expression - encountered.
+///                                   0
+/// ```
+///
+/// `prefix` is the full leading text up to (and including) the trailing space
+/// before the box, e.g. `"Power::infy: Infinite expression "`. The numerator
+/// and denominator are centered within a box whose width is the longer of the
+/// two, and the dash run spans that width.
+pub(crate) fn format_infy_fraction_2d(
+  prefix: &str,
+  num: &str,
+  denom: &str,
+) -> String {
+  let base_lead = prefix.len();
+  let width = num.chars().count().max(denom.chars().count());
+  let dashes = "-".repeat(width);
+  let num_pad = base_lead + (width - num.chars().count()) / 2;
+  let denom_pad = base_lead + (width - denom.chars().count()) / 2;
+  format!(
+    "{}{}\n{}{} encountered.\n{}{}",
+    " ".repeat(num_pad),
+    num,
+    prefix,
+    dashes,
+    " ".repeat(denom_pad),
+    denom,
+  )
 }
 
 /// Result of dividing a value by zero in the shared `/`-operator / Divide path.
@@ -7785,18 +7854,26 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
-  // Special case: 0^(negative) = ComplexInfinity (with warning)
+  // Special case: 0^(negative) = ComplexInfinity (with warning).
+  // wolframscript renders the warning two different ways: `0^-1` (exponent
+  // exactly -1) is the reciprocal `1/0`, shown as a stacked fraction, while
+  // `0^-n` for any other negative exponent is shown as `0` with a superscript
+  // exponent.
   if base_is_zero
     && let Some(e) = expr_to_num(exp)
     && e < 0.0
   {
     let base_str = crate::syntax::expr_to_string(base);
-    let padding = 39 + base_str.len() + 1;
-    crate::emit_message(&format!(
-      "{:>width$}\nPower::infy: Infinite expression - encountered.",
-      1,
-      width = padding
-    ));
+    if e == -1.0 {
+      crate::emit_message(&format_infy_fraction_2d(
+        "Power::infy: Infinite expression ",
+        "1",
+        &base_str,
+      ));
+    } else {
+      let exp_str = crate::syntax::expr_to_string(exp);
+      crate::emit_message(&super::format_power_infy_2d(&base_str, &exp_str));
+    }
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
 

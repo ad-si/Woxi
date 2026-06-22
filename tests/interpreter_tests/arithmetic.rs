@@ -6391,6 +6391,111 @@ mod zero_divisor {
   }
 
   #[test]
+  fn explicit_divide_head_uses_divide_infy_message() {
+    // wolframscript distinguishes the explicit `Divide[]` head from the `/`
+    // operator when a *numeric* numerator is divided by zero: the head reports
+    // `Divide::infy` (and keeps the literal numerator in the 2D fraction),
+    // whereas `/` desugars to `n*(1/0)` and reports `Power::infy` with a `1/0`
+    // box. Verified against wolframscript.
+    let pfx = "Divide::infy: Infinite expression ";
+    let lead = " ".repeat(pfx.len());
+
+    let r = interpret_with_stdout("Divide[5, 0]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    let expected = format!("{lead}5\n{pfx}- encountered.\n{lead}0");
+    assert!(
+      r.warnings.iter().any(|w| *w == expected),
+      "Divide[5,0] message mismatch, got: {:?}",
+      r.warnings
+    );
+
+    // Negative / real numerators widen the dash run to the numerator width.
+    let r = interpret_with_stdout("Divide[-3, 0]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    let expected = format!("{lead}-3\n{pfx}-- encountered.\n{lead}0");
+    assert!(
+      r.warnings.iter().any(|w| *w == expected),
+      "Divide[-3,0] message mismatch, got: {:?}",
+      r.warnings
+    );
+
+    // 0/0 via the head is the indeterminate form with the Divide::indet tag.
+    let r = interpret_with_stdout("Divide[0, 0]").unwrap();
+    assert_eq!(r.result, "Indeterminate");
+    let ipfx = "Divide::indet: Indeterminate expression ";
+    let ilead = " ".repeat(ipfx.len());
+    let expected = format!("{ilead}0\n{ipfx}- encountered.\n{ilead}0");
+    assert!(
+      r.warnings.iter().any(|w| *w == expected),
+      "Divide[0,0] message mismatch, got: {:?}",
+      r.warnings
+    );
+
+    // A symbolic numerator decays to `x*(1/0)` and keeps the Power::infy form.
+    let r = interpret_with_stdout("Divide[x, 0]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("Power::infy: Infinite expression")),
+      "Divide[x,0] should fall through to Power::infy, got: {:?}",
+      r.warnings
+    );
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("Divide::infy")),
+      "Divide[x,0] should not emit Divide::infy, got: {:?}",
+      r.warnings
+    );
+
+    // The `/` operator stays Power::infy even with a numeric numerator.
+    let r = interpret_with_stdout("5/0").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("Power::infy: Infinite expression")),
+      "5/0 operator should emit Power::infy, got: {:?}",
+      r.warnings
+    );
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("Divide::infy")),
+      "5/0 operator should not emit Divide::infy, got: {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
+  fn power_zero_negative_renders_full_box() {
+    // Regression: `Power[0, -1]` previously printed the `1` numerator with a
+    // mis-indented box and dropped the `0` denominator. It must render the full
+    // `1/0` fraction, and `Power[0, -n]` (n != 1) must render `0` with the
+    // exponent as a superscript. Verified against wolframscript.
+    let pfx = "Power::infy: Infinite expression ";
+    let lead = " ".repeat(pfx.len());
+
+    let r = interpret_with_stdout("Power[0, -1]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    let expected = format!("{lead}1\n{pfx}- encountered.\n{lead}0");
+    assert!(
+      r.warnings.iter().any(|w| *w == expected),
+      "Power[0,-1] message mismatch, got: {:?}",
+      r.warnings
+    );
+
+    // 0^-2 → superscript `-2` above the base `0`, a two-line box (no fraction
+    // denominator line).
+    let r = interpret_with_stdout("Power[0, -2]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    let sup_lead = " ".repeat(pfx.len() + 1);
+    let expected = format!("{sup_lead}-2\n{pfx}0   encountered.");
+    assert!(
+      r.warnings.iter().any(|w| *w == expected),
+      "Power[0,-2] superscript box mismatch, got: {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
   fn infinity_indeterminate_forms_emit_message() {
     // Indeterminate forms involving Infinity return Indeterminate AND emit the
     // Infinity::indet message (Woxi previously returned Indeterminate silently).

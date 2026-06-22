@@ -73,7 +73,7 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::subtract_ast(args));
     }
     "Divide" if args.len() == 2 => {
-      return Some(crate::functions::math_ast::divide_ast(args));
+      return Some(crate::functions::math_ast::divide_head_ast(args));
     }
     "Power" => {
       // power_ast handles every arity: Power[] = 1, Power[x] = x, and
