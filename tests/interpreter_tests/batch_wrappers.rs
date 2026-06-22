@@ -8642,6 +8642,25 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   #[test]
+  fn weakly_connected_components_undirected_ascending_order() {
+    // For an undirected graph the component vertices stay in ascending order
+    // (they were being reversed). Matches wolframscript.
+    assert_eq!(
+      interpret("WeaklyConnectedComponents[CycleGraph[3]]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("WeaklyConnectedComponents[CompleteGraph[4]]").unwrap(),
+      "{{1, 2, 3, 4}}"
+    );
+    // Directed graphs keep Wolfram's reversed component order.
+    assert_eq!(
+      interpret("WeaklyConnectedComponents[Graph[{1->2, 3->4}]]").unwrap(),
+      "{{2, 1}, {4, 3}}"
+    );
+  }
+
+  #[test]
   fn gompertz_makeham_distribution_head() {
     assert_eq!(
       interpret("GompertzMakehamDistribution[l, x0]").unwrap(),

@@ -6517,9 +6517,19 @@ pub fn evaluate_function_call_ast_inner(
     }
     components.retain(|c| !c.is_empty());
 
-    // Reverse vertices within each component to match Wolfram's ordering
-    for comp in &mut components {
-      comp.reverse();
+    // Wolfram keeps undirected-graph component vertices in ascending vertex
+    // order (`WeaklyConnectedComponents[CycleGraph[3]]` → `{{1, 2, 3}}`) but
+    // reverses them for directed graphs (`{1 -> 2, 3 -> 4}` → `{{2, 1},
+    // {4, 3}}`). Only reverse when at least one edge is directed.
+    let directed = edges.iter().any(|e| {
+      matches!(e, Expr::Rule { .. })
+        || matches!(e, Expr::FunctionCall { name, .. }
+          if name == "DirectedEdge" || name == "Rule")
+    });
+    if directed {
+      for comp in &mut components {
+        comp.reverse();
+      }
     }
     components.sort_by(|a, b| b.len().cmp(&a.len()));
     return Ok(Expr::List(
