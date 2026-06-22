@@ -1108,6 +1108,40 @@ mod elliptic_theta {
       .unwrap();
     assert!((result - 1.2529300675643478).abs() < 1e-10);
   }
+
+  // Exact (integer/rational) arguments stay symbolic — they are NOT
+  // numericized automatically (only N[...] or an inexact argument does that).
+  #[test]
+  fn exact_args_stay_symbolic() {
+    assert_eq!(
+      interpret("EllipticTheta[3, 0, 1/2]").unwrap(),
+      "EllipticTheta[3, 0, 1/2]"
+    );
+    assert_eq!(
+      interpret("EllipticTheta[2, 0, 1/3]").unwrap(),
+      "EllipticTheta[2, 0, 1/3]"
+    );
+    assert_eq!(
+      interpret("EllipticTheta[1, 5, 1/2]").unwrap(),
+      "EllipticTheta[1, 5, 1/2]"
+    );
+  }
+
+  // An inexact (machine) argument triggers numeric evaluation.
+  #[test]
+  fn inexact_arg_numericizes() {
+    let result: f64 = interpret("EllipticTheta[3, 0, 0.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 2.128936827211877).abs() < 1e-10);
+  }
+
+  // theta1 is odd in z, so theta1(0, q) is exactly 0 for any q.
+  #[test]
+  fn theta1_at_z_zero_exact() {
+    assert_eq!(interpret("EllipticTheta[1, 0, 1/2]").unwrap(), "0");
+  }
 }
 
 mod polylog {

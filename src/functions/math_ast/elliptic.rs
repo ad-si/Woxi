@@ -487,6 +487,9 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let a_val = match &args[0] {
     Expr::Integer(n) if *n >= 1 && *n <= 4 => *n as u32,
+    // N[...] can demote the integer index to a machine Real (e.g. 3.); accept
+    // an integer-valued Real so the numeric path still fires.
+    Expr::Real(f) if f.fract() == 0.0 && *f >= 1.0 && *f <= 4.0 => *f as u32,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "EllipticTheta".to_string(),
@@ -506,13 +509,37 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
-  // Numeric evaluation when both z and q are numeric
   let z = &args[1];
-  if let (Some(z_f), Some(q_f)) = (expr_to_f64(z), expr_to_f64(q)) {
+
+  // theta1 is odd in z, so theta1(0, q) = 0 exactly for any q.
+  if a_val == 1 && is_expr_zero(z) {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Numeric evaluation only when an argument is inexact (a machine number).
+  // Exact arguments (integers/rationals) stay symbolic, matching
+  // wolframscript; `N[...]` forces numericization via the NumericFunction
+  // path (which makes the arguments inexact first).
+  fn is_inexact(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(_, _) => true,
+      Expr::BinaryOp { left, right, .. } => {
+        is_inexact(left) || is_inexact(right)
+      }
+      Expr::UnaryOp { operand, .. } => is_inexact(operand),
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().any(is_inexact)
+      }
+      _ => false,
+    }
+  }
+  if (is_inexact(z) || is_inexact(q))
+    && let (Some(z_f), Some(q_f)) = (expr_to_f64(z), expr_to_f64(q))
+  {
     return Ok(Expr::Real(elliptic_theta_numeric(a_val, z_f, q_f)));
   }
 
-  // Unevaluated
+  // Unevaluated (symbolic)
   Ok(Expr::FunctionCall {
     name: "EllipticTheta".to_string(),
     args: args.to_vec().into(),
