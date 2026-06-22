@@ -1497,21 +1497,39 @@ pub fn evaluate_expr_to_expr_inner(
           && let Expr::Identifier(var_name) = &args[0]
         {
           let rule = evaluate_expr_to_expr(&args[1])?;
-          let (key, val) = match &rule {
-            Expr::Rule {
-              pattern,
-              replacement,
-            } => (pattern.as_ref().clone(), replacement.as_ref().clone()),
-            _ => {
-              // Not a rule — return unevaluated
-              let mut eval_args = vec![args[0].clone()];
-              eval_args.push(rule);
-              return Ok(Expr::FunctionCall {
-                name: "AssociateTo".to_string(),
-                args: eval_args.into(),
-              });
+          // Collect the key→value pairs to add. The second argument may be a
+          // single rule (`a -> b`), an association, or a list of rules and/or
+          // associations (`{k1 -> v1, k2 -> v2}`) — all documented forms.
+          fn collect_pairs(e: &Expr, out: &mut Vec<(Expr, Expr)>) -> bool {
+            match e {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } => {
+                out.push((
+                  pattern.as_ref().clone(),
+                  replacement.as_ref().clone(),
+                ));
+                true
+              }
+              Expr::Association(items) => {
+                out.extend(items.iter().cloned());
+                true
+              }
+              Expr::List(items) => {
+                items.iter().all(|it| collect_pairs(it, out))
+              }
+              _ => false,
             }
-          };
+          }
+          let mut new_pairs: Vec<(Expr, Expr)> = Vec::new();
+          if !collect_pairs(&rule, &mut new_pairs) {
+            // Not a recognized key-value form — return unevaluated.
+            return Ok(Expr::FunctionCall {
+              name: "AssociateTo".to_string(),
+              args: vec![args[0].clone(), rule].into(),
+            });
+          }
           let current = ENV.with(|e| e.borrow().get(var_name).cloned());
           let mut items = match &current {
             Some(StoredValue::Association(pairs)) => pairs
@@ -1531,36 +1549,28 @@ pub fn evaluate_expr_to_expr_inner(
               match crate::syntax::string_to_expr(s) {
                 Ok(Expr::Association(ref items)) => items.clone(),
                 _ => {
-                  let mut eval_args = vec![args[0].clone()];
-                  eval_args.push(Expr::Rule {
-                    pattern: Box::new(key),
-                    replacement: Box::new(val),
-                  });
                   return Ok(Expr::FunctionCall {
                     name: "AssociateTo".to_string(),
-                    args: eval_args.into(),
+                    args: vec![args[0].clone(), rule].into(),
                   });
                 }
               }
             }
             _ => {
-              let mut eval_args = vec![args[0].clone()];
-              eval_args.push(Expr::Rule {
-                pattern: Box::new(key),
-                replacement: Box::new(val),
-              });
               return Ok(Expr::FunctionCall {
                 name: "AssociateTo".to_string(),
-                args: eval_args.into(),
+                args: vec![args[0].clone(), rule].into(),
               });
             }
           };
-          if let Some(pos) = items.iter().position(|(k, _)| {
-            crate::evaluator::pattern_matching::expr_equal(k, &key)
-          }) {
-            items[pos].1 = val;
-          } else {
-            items.push((key, val));
+          for (key, val) in new_pairs {
+            if let Some(pos) = items.iter().position(|(k, _)| {
+              crate::evaluator::pattern_matching::expr_equal(k, &key)
+            }) {
+              items[pos].1 = val;
+            } else {
+              items.push((key, val));
+            }
           }
           let new_val = Expr::Association(items);
           let pairs: Vec<(String, String)> = match &new_val {

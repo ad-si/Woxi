@@ -1,5 +1,59 @@
 use super::*;
 
+mod associate_to {
+  use super::*;
+
+  #[test]
+  fn single_rule() {
+    assert_eq!(
+      interpret("a = <|x -> 1|>; AssociateTo[a, y -> 2]; a").unwrap(),
+      "<|x -> 1, y -> 2|>"
+    );
+  }
+
+  #[test]
+  fn overwrites_existing_key() {
+    assert_eq!(
+      interpret("a = <|x -> 1|>; AssociateTo[a, x -> 5]; a").unwrap(),
+      "<|x -> 5|>"
+    );
+  }
+
+  #[test]
+  fn list_of_rules() {
+    // AssociateTo[a, {k1 -> v1, k2 -> v2}] adds all pairs (documented form).
+    assert_eq!(
+      interpret("a = <|x -> 1|>; AssociateTo[a, {y -> 2, z -> 3}]; a").unwrap(),
+      "<|x -> 1, y -> 2, z -> 3|>"
+    );
+    // Existing keys in the list overwrite.
+    assert_eq!(
+      interpret("a = <|x -> 1, y -> 2|>; AssociateTo[a, {y -> 9, z -> 3}]; a")
+        .unwrap(),
+      "<|x -> 1, y -> 9, z -> 3|>"
+    );
+  }
+
+  #[test]
+  fn association_argument() {
+    // AssociateTo[a, <|...|>] merges another association.
+    assert_eq!(
+      interpret("a = <|x -> 1|>; AssociateTo[a, <|y -> 2, z -> 3|>]; a")
+        .unwrap(),
+      "<|x -> 1, y -> 2, z -> 3|>"
+    );
+  }
+
+  #[test]
+  fn returns_updated_association() {
+    // The return value is the updated association, not just a side effect.
+    assert_eq!(
+      interpret("a = <|x -> 1|>; AssociateTo[a, {y -> 2, z -> 3}]").unwrap(),
+      "<|x -> 1, y -> 2, z -> 3|>"
+    );
+  }
+}
+
 mod association_ast {
   use super::*;
 
