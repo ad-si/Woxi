@@ -745,6 +745,116 @@ fn leaf_to_bigfloat(
   Ok(Expr::BigFloat(decimal, precision))
 }
 
+/// SetAccuracy[expr, accuracy] — set every numeric leaf of `expr` to a fixed
+/// accuracy (absolute uncertainty 10^-accuracy). For a leaf of magnitude |v|
+/// this is a precision of `accuracy + Log10[|v|]`; a zero leaf becomes the
+/// accuracy-form `0``accuracy`. Mirrors SetPrecision but the precision is
+/// computed per leaf from its magnitude.
+pub fn set_accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "SetAccuracy".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  let accuracy = match &args[1] {
+    Expr::Integer(n) => *n as f64,
+    other => match try_eval_to_f64(other) {
+      Some(v) => v,
+      None => return Ok(unevaluated()),
+    },
+  };
+
+  use astro_float::{Consts, RoundingMode};
+  let mut cc = Consts::new().map_err(|e| {
+    InterpreterError::EvaluationError(format!("BigFloat init error: {}", e))
+  })?;
+  set_accuracy_walk(&args[0], accuracy, RoundingMode::ToEven, &mut cc)
+}
+
+/// Walk `expr`, setting every numeric leaf to `accuracy` (see `set_accuracy_ast`).
+fn set_accuracy_walk(
+  expr: &Expr,
+  accuracy: f64,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => {
+      leaf_to_bigfloat_at_accuracy(expr, accuracy, rm, cc)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      leaf_to_bigfloat_at_accuracy(expr, accuracy, rm, cc)
+    }
+    Expr::List(items) => {
+      let mut out = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        out.push(set_accuracy_walk(item, accuracy, rm, cc)?);
+      }
+      Ok(Expr::List(out.into()))
+    }
+    Expr::FunctionCall { name, args } => {
+      let mut out = Vec::with_capacity(args.len());
+      for a in args.iter() {
+        out.push(set_accuracy_walk(a, accuracy, rm, cc)?);
+      }
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: out.into(),
+      })
+    }
+    Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
+      op: *op,
+      left: Box::new(set_accuracy_walk(left, accuracy, rm, cc)?),
+      right: Box::new(set_accuracy_walk(right, accuracy, rm, cc)?),
+    }),
+    Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(set_accuracy_walk(operand, accuracy, rm, cc)?),
+    }),
+    // Symbolic real constants (Pi, E, …) numericize like SetPrecision; bare
+    // symbols pass through unchanged.
+    Expr::Constant(_) | Expr::Identifier(_) => {
+      leaf_to_bigfloat_at_accuracy(expr, accuracy, rm, cc)
+        .or_else(|_| Ok(expr.clone()))
+    }
+    _ => Ok(expr.clone()),
+  }
+}
+
+/// Convert a numeric leaf to a BigFloat at the given absolute `accuracy`.
+fn leaf_to_bigfloat_at_accuracy(
+  expr: &Expr,
+  accuracy: f64,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  let v = try_eval_to_f64(expr).ok_or_else(|| {
+    InterpreterError::EvaluationError("non-numeric leaf".to_string())
+  })?;
+  if v == 0.0 {
+    // Zero has no relative precision; it carries the accuracy directly in the
+    // `0``accuracy` form (stored as BigFloat with digits "0").
+    return Ok(Expr::BigFloat("0".to_string(), accuracy));
+  }
+  let precision = accuracy + v.abs().log10();
+  let prec_usize = precision.floor().max(1.0) as usize;
+  let bits = nominal_bits(prec_usize) + 64;
+  let display_bits = {
+    let b = (precision * std::f64::consts::LOG2_10).ceil() as usize + 36;
+    ((b + 63) & !63).max(64)
+  };
+  let max_fraction_digits =
+    ((display_bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+  leaf_to_bigfloat(expr, precision, bits, Some(max_fraction_digits), rm, cc)
+}
+
 /// SetPrecision[..., MachinePrecision] — walk the tree and demote numeric
 /// leaves to machine-precision Reals; symbolic parts stay as-is.
 fn set_precision_machine(expr: &Expr) -> Result<Expr, InterpreterError> {

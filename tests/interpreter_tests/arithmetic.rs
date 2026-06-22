@@ -6127,6 +6127,56 @@ mod set_precision {
   }
 }
 
+mod set_accuracy {
+  use woxi::interpret;
+
+  // SetAccuracy[x, a] gives x at precision a + Log10[|x|]. An integer power of
+  // ten makes the precision tag exact: 100 -> precision 3 + 2 = 5.
+  #[test]
+  fn integer_power_of_ten() {
+    assert_eq!(interpret("SetAccuracy[100, 3]").unwrap(), "100.`5.");
+  }
+
+  // x = 1 has Log10 = 0, so accuracy and precision coincide.
+  #[test]
+  fn unit_value_precision_equals_accuracy() {
+    assert_eq!(interpret("SetAccuracy[1.0, 20]").unwrap(), "1.`20.");
+  }
+
+  // A machine real keeps its full binary expansion at the derived precision.
+  #[test]
+  fn real_value() {
+    assert_eq!(
+      interpret("SetAccuracy[123.456, 2]").unwrap(),
+      "123.4560000000000030695`4.091512201627772"
+    );
+  }
+
+  // Zero carries the accuracy directly in the `0``a` form.
+  #[test]
+  fn zero_uses_accuracy_form() {
+    assert_eq!(interpret("SetAccuracy[0, 5]").unwrap(), "0``5.");
+  }
+
+  // Maps elementwise; each element's precision reflects its own magnitude.
+  #[test]
+  fn list_maps_elementwise() {
+    assert_eq!(
+      interpret("SetAccuracy[{1, 2, 3}, 4]").unwrap(),
+      "{1.`4., 2.`4.301029995663981, 3.`4.477121254719663}"
+    );
+  }
+
+  // Numeric leaves convert; bare symbols pass through.
+  #[test]
+  fn symbolic_sum_converts_only_numeric_leaves() {
+    assert_eq!(
+      interpret("SetAccuracy[a + 100*b, 3]").unwrap(),
+      "a + 100.`5.*b"
+    );
+  }
+}
+
 mod number_digit_extended {
   use super::*;
 

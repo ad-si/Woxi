@@ -961,7 +961,7 @@ MeshCells,Requires external services or GUI infrastructure,🚫,io,10.0,968
 VertexStyle,,🚫,,8.0,969
 OverHat,Display form with a hat accent,✅,none,6.0,970
 ListLogLogPlot,Plots data with logarithmic x and y axes,✅,pure,6.0,971
-SetAccuracy,,🚫,,2.0,972
+SetAccuracy,Set every numeric leaf of an expression to a fixed accuracy (precision = accuracy + Log10[|x|] per leaf),✅,pure,2.0,972
 LightRed,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6.0,973
 NotebookWrite,Requires external services or GUI infrastructure,🚫,io,3.0,974
 ByteCount,Count bytes used internally to store an expression,✅,pure,1.0,975

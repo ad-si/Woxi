@@ -1545,6 +1545,9 @@ pub fn dispatch_math_functions(
     "SetPrecision" if args.len() == 2 => {
       return Some(crate::functions::math_ast::set_precision_ast(args));
     }
+    "SetAccuracy" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::set_accuracy_ast(args));
+    }
     "RandomInteger" => {
       return Some(crate::functions::math_ast::random_integer_ast(args));
     }
