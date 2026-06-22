@@ -2307,6 +2307,43 @@ mod transformation_function_apply {
       "{-1, 0}"
     );
   }
+
+  // Two-vector form RotationTransform[{u, v}] (2D): rotation taking the
+  // direction of u to the direction of v. Only the directions matter, not
+  // the magnitudes.
+  #[test]
+  fn rotation_two_vectors_quarter_turn() {
+    assert_eq!(
+      interpret("RotationTransform[{{1, 0}, {0, 1}}][{1, 0}]").unwrap(),
+      "{0, 1}"
+    );
+  }
+
+  #[test]
+  fn rotation_two_vectors_diagonal() {
+    assert_eq!(
+      interpret("RotationTransform[{{1, 0}, {1, 1}}][{1, 0}]").unwrap(),
+      "{1/Sqrt[2], 1/Sqrt[2]}"
+    );
+  }
+
+  #[test]
+  fn rotation_two_vectors_ignores_magnitude() {
+    // u = {2,0} (dir {1,0}), v = {0,3} (dir {0,1}) → 90° rotation.
+    assert_eq!(
+      interpret("RotationTransform[{{2, 0}, {0, 3}}][{1, 1}]").unwrap(),
+      "{-1, 1}"
+    );
+  }
+
+  #[test]
+  fn rotation_two_vectors_matrix() {
+    assert_eq!(
+      interpret("TransformationMatrix[RotationTransform[{{1, 0}, {1, 1}}]]")
+        .unwrap(),
+      "{{1/Sqrt[2], -(1/Sqrt[2]), 0}, {1/Sqrt[2], 1/Sqrt[2], 0}, {0, 0, 1}}"
+    );
+  }
 }
 
 // TransformationMatrix extracts the homogeneous matrix from a

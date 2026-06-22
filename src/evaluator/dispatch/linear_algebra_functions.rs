@@ -1194,6 +1194,72 @@ pub fn dispatch_linear_algebra_functions(
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
     "RotationTransform" if args.len() == 1 || args.len() == 2 => {
+      // Two-vector form RotationTransform[{u, v}] (2D): the rotation taking the
+      // direction of u to the direction of v. Build it directly from the
+      // normalized dot/cross products so the angle is never materialized.
+      //   cos = (u.v)/(|u||v|),  sin = (u1 v2 - u2 v1)/(|u||v|)
+      if args.len() == 1
+        && let Expr::List(pair) = &args[0]
+        && pair.len() == 2
+        && let (Expr::List(u), Expr::List(v)) = (&pair[0], &pair[1])
+        && u.len() == 2
+        && v.len() == 2
+      {
+        let times = |a: Expr, b: Expr| Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![a, b].into(),
+        };
+        let plus = |a: Expr, b: Expr| Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![a, b].into(),
+        };
+        let sq = |e: &Expr| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![e.clone(), Expr::Integer(2)].into(),
+        };
+        let sqrt = |e: Expr| Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![e].into(),
+        };
+        let dot = plus(
+          times(u[0].clone(), v[0].clone()),
+          times(u[1].clone(), v[1].clone()),
+        );
+        let cross = plus(
+          times(u[0].clone(), v[1].clone()),
+          times(Expr::Integer(-1), times(u[1].clone(), v[0].clone())),
+        );
+        let nu = sqrt(plus(sq(&u[0]), sq(&u[1])));
+        let nv = sqrt(plus(sq(&v[0]), sq(&v[1])));
+        let denom = times(nu, nv);
+        let cos_t = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(dot),
+          right: Box::new(denom.clone()),
+        };
+        let sin_t = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(cross),
+          right: Box::new(denom),
+        };
+        let neg_sin = times(Expr::Integer(-1), sin_t.clone());
+        let matrix = Expr::List(
+          vec![
+            Expr::List(vec![cos_t.clone(), neg_sin, Expr::Integer(0)].into()),
+            Expr::List(vec![sin_t, cos_t, Expr::Integer(0)].into()),
+            Expr::List(
+              vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)].into(),
+            ),
+          ]
+          .into(),
+        );
+        return Some(crate::evaluator::evaluate_expr_to_expr(
+          &Expr::FunctionCall {
+            name: "TransformationFunction".to_string(),
+            args: vec![matrix].into(),
+          },
+        ));
+      }
       let theta = &args[0];
       let cos_t = Expr::FunctionCall {
         name: "Cos".to_string(),
