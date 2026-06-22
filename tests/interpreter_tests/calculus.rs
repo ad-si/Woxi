@@ -8402,6 +8402,106 @@ mod discrete_shift {
   }
 }
 
+// DiscreteRatio[f, n] = f(n+1)/f(n), the multiplicative analog of
+// DifferenceDelta.
+mod discrete_ratio {
+  use super::*;
+
+  #[test]
+  fn basic_ratio() {
+    assert_eq!(
+      interpret("DiscreteRatio[f[n], n]").unwrap(),
+      "f[1 + n]/f[n]"
+    );
+    assert_eq!(interpret("DiscreteRatio[2^n, n]").unwrap(), "2");
+    assert_eq!(interpret("DiscreteRatio[a^n, n]").unwrap(), "a");
+    assert_eq!(interpret("DiscreteRatio[n^2, n]").unwrap(), "(1 + n)^2/n^2");
+    assert_eq!(interpret("DiscreteRatio[c, n]").unwrap(), "1");
+  }
+
+  #[test]
+  fn cancels_common_factors() {
+    assert_eq!(interpret("DiscreteRatio[n^2 + n, n]").unwrap(), "(2 + n)/n");
+    assert_eq!(interpret("DiscreteRatio[2^n 3^n, n]").unwrap(), "6");
+  }
+
+  #[test]
+  fn higher_order_applies_operator_repeatedly() {
+    assert_eq!(
+      interpret("DiscreteRatio[f[n], {n, 3}]").unwrap(),
+      "(f[1 + n]^3*f[3 + n])/(f[n]*f[2 + n]^3)"
+    );
+    // Order 0 is the identity.
+    assert_eq!(interpret("DiscreteRatio[f[n], {n, 0}]").unwrap(), "f[n]");
+  }
+
+  #[test]
+  fn step_in_three_element_spec() {
+    assert_eq!(
+      interpret("DiscreteRatio[f[n], {n, 1, 2}]").unwrap(),
+      "f[2 + n]/f[n]"
+    );
+    assert_eq!(
+      interpret("DiscreteRatio[f[n], {n, 2, 3}]").unwrap(),
+      "(f[n]*f[6 + n])/f[3 + n]^2"
+    );
+  }
+
+  #[test]
+  fn multiple_variables_compose() {
+    assert_eq!(
+      interpret("DiscreteRatio[f[n, m], n, m]").unwrap(),
+      "(f[n, m]*f[1 + n, 1 + m])/(f[n, 1 + m]*f[1 + n, m])"
+    );
+    assert_eq!(interpret("DiscreteRatio[n m, n, m]").unwrap(), "1");
+  }
+
+  #[test]
+  fn threads_over_lists() {
+    assert_eq!(
+      interpret("DiscreteRatio[{n, n^2}, n]").unwrap(),
+      "{(1 + n)/n, (1 + n)^2/n^2}"
+    );
+  }
+
+  #[test]
+  fn one_argument_is_identity() {
+    assert_eq!(interpret("DiscreteRatio[f[n]]").unwrap(), "f[n]");
+  }
+
+  #[test]
+  fn symbolic_order_stays_unevaluated() {
+    assert_eq!(
+      interpret("DiscreteRatio[f[n], {n, h}]").unwrap(),
+      "DiscreteRatio[f[n], {n, h}]"
+    );
+  }
+
+  #[test]
+  fn bad_specifiers_emit_messages() {
+    // A non-variable specifier is an ivar error.
+    let r = interpret_with_stdout("DiscreteRatio[f[n], n, 2]").unwrap();
+    assert_eq!(r.result, "DiscreteRatio[f[n], n, 2]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("General::ivar: 2 is not a valid variable.")),
+      "expected ivar message, got: {:?}",
+      r.warnings
+    );
+    // A non-integer order is a dvar error.
+    let r = interpret_with_stdout("DiscreteRatio[f[n], {n, 2.5}]").unwrap();
+    assert_eq!(r.result, "DiscreteRatio[f[n], {n, 2.5}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "DiscreteRatio::dvar: Ratio specifier {n, 2.5} does not have the form"
+      )),
+      "expected dvar message, got: {:?}",
+      r.warnings
+    );
+  }
+}
+
 mod difference_quotient {
   use super::*;
 

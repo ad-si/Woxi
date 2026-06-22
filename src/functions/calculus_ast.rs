@@ -15658,6 +15658,107 @@ pub fn discrete_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(result)
 }
 
+/// DiscreteRatio[f, x] — the multiplicative analog of DifferenceDelta: the
+/// ratio operator R[f] = DiscreteShift[f, x] / f (i.e. f(x+1)/f(x)).
+/// DiscreteRatio[f, {x, k}] applies the operator k times, and the optional step
+/// in `{x, k, h}` makes each shift x → x+h. Extra variable arguments compose
+/// the operator in each variable. The result is simplified to match
+/// wolframscript.
+pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DiscreteRatio".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() {
+    return unevaluated();
+  }
+  if args.len() == 1 {
+    return crate::evaluator::evaluate_expr_to_expr(&args[0]);
+  }
+
+  enum SpecResult {
+    Ok(String, usize, Expr),
+    Symbolic,
+    Ivar(Expr),
+    Dvar(Expr),
+  }
+  fn parse_spec(spec: &Expr) -> SpecResult {
+    use crate::functions::math_ast::expr_to_i128;
+    match spec {
+      Expr::Identifier(v) => SpecResult::Ok(v.clone(), 1, Expr::Integer(1)),
+      Expr::List(items)
+        if !items.is_empty() && matches!(&items[0], Expr::Identifier(_)) =>
+      {
+        let Expr::Identifier(v) = &items[0] else {
+          unreachable!()
+        };
+        if items.len() == 1 {
+          return SpecResult::Ok(v.clone(), 1, Expr::Integer(1));
+        }
+        let order = match expr_to_i128(&items[1]) {
+          Some(k) if k >= 0 => k as usize,
+          Some(_) => return SpecResult::Dvar(spec.clone()),
+          None if matches!(&items[1], Expr::Identifier(_)) => {
+            return SpecResult::Symbolic;
+          }
+          None => return SpecResult::Dvar(spec.clone()),
+        };
+        let step = if items.len() >= 3 {
+          items[2].clone()
+        } else {
+          Expr::Integer(1)
+        };
+        SpecResult::Ok(v.clone(), order, step)
+      }
+      _ => SpecResult::Ivar(spec.clone()),
+    }
+  }
+
+  let mut specs: Vec<(String, usize, Expr)> = Vec::new();
+  for spec in &args[1..] {
+    match parse_spec(spec) {
+      SpecResult::Ok(v, o, s) => specs.push((v, o, s)),
+      SpecResult::Symbolic => return unevaluated(),
+      SpecResult::Ivar(sp) => {
+        crate::emit_message(&format!(
+          "General::ivar: {} is not a valid variable.",
+          crate::syntax::expr_to_string(&sp)
+        ));
+        return unevaluated();
+      }
+      SpecResult::Dvar(sp) => {
+        crate::emit_message(&format!(
+          "DiscreteRatio::dvar: Ratio specifier {} does not have the form \
+           {{variable, n}} or {{variable, n, h}}, where n is a non-negative \
+           machine integer.",
+          crate::syntax::expr_to_string(&sp)
+        ));
+        return unevaluated();
+      }
+    }
+  }
+
+  let mut result = args[0].clone();
+  for (var, order, step) in &specs {
+    for _ in 0..*order {
+      // R[g] = DiscreteShift[g, {var, step}] / g.
+      let shift_spec =
+        Expr::List(vec![Expr::Identifier(var.clone()), step.clone()].into());
+      let shifted = discrete_shift_ast(&[result.clone(), shift_spec])?;
+      let ratio = Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![shifted, result.clone()].into(),
+      };
+      result = crate::evaluator::evaluate_expr_to_expr(&ratio)?;
+    }
+  }
+  // Cancel common factors to reach wolframscript's canonical ratio form
+  // (Simplify would over-split e.g. (1+n)/n into 1 + 1/n).
+  crate::evaluator::evaluate_function_call_ast("Cancel", &[result])
+}
+
 /// DifferenceDelta[f, x] = f(x+1) - f(x)
 /// DifferenceDelta[f, {x, n}] = n-th order forward difference with step 1
 /// DifferenceDelta[f, {x, n, h}] = n-th order forward difference with step h

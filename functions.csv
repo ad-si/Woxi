@@ -4604,7 +4604,7 @@ DateSelect,,,,12.2,4809
 DefaultDuplicateCellStyle,,🚫,,3.0,4809
 DeviceExecuteAsynchronous,,🚫,,10.0,4809
 DeviceObject,,🚫,,10.0,4809
-DiscreteRatio,,,,7.0,4809
+DiscreteRatio,Discrete ratio of an expression (f(n+1)/f(n)),✅,pure,7.0,4809
 DispersionEstimatorFunction,,,,7.0,4809
 EncryptedObject,,🚫,,10.1,4809
 EntityGroup,,🚫,,10.3,4809
