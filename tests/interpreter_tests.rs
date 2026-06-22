@@ -297,6 +297,50 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_nested_list_pattern_binding() {
+    // Issue #119 follow-up: nested list patterns bind their inner elements, so
+    // `p[{{a_, b_}, c_}]` binds a, b, c — matching wolframscript.
+    clear_state();
+    interpret("p[{{a_, b_}, c_}] := f[a, b, c]").unwrap();
+    assert_eq!(interpret("p[{{1, 2}, 3}]").unwrap(), "f[1, 2, 3]");
+    // Wrong shape must not match.
+    assert_eq!(interpret("p[{1, 2, 3}]").unwrap(), "p[{1, 2, 3}]");
+    clear_state();
+    interpret("q[{{a_, b_}, {c_, d_}}] := g[a, b, c, d]").unwrap();
+    assert_eq!(interpret("q[{{1, 2}, {3, 4}}]").unwrap(), "g[1, 2, 3, 4]");
+    clear_state();
+  }
+
+  #[test]
+  fn test_list_pattern_downvalues_reconstruction() {
+    // Issue #119 follow-up: DownValues/Definition reconstruct the surface
+    // `{…}` list pattern (with element names, body, and `/;` guard) rather than
+    // leaking the lowered `_lp0_List` / `Part[_lp0, i]` form.
+    clear_state();
+    interpret("g[{a_Integer, b_}] := h[a, b]").unwrap();
+    assert_eq!(
+      interpret("DownValues[g]").unwrap(),
+      "{HoldPattern[g[{a_Integer, b_}]] :> h[a, b]}"
+    );
+    clear_state();
+    interpret("ZZ[{n1_Integer, n2_Integer}] := ZZ[{n2, n1}] /; (n1 > n2)")
+      .unwrap();
+    interpret("ZZ[{n1_Integer, n2_Integer}] := gen[n1, n2]").unwrap();
+    assert_eq!(
+      interpret("DownValues[ZZ]").unwrap(),
+      "{HoldPattern[ZZ[{n1_Integer, n2_Integer}]] :> ZZ[{n2, n1}] /; n1 > n2, \
+       HoldPattern[ZZ[{n1_Integer, n2_Integer}]] :> gen[n1, n2]}"
+    );
+    clear_state();
+    interpret("p[{{a_, b_}, c_}] := f[a, b, c]").unwrap();
+    assert_eq!(
+      interpret("DownValues[p]").unwrap(),
+      "{HoldPattern[p[{{a_, b_}, c_}]] :> f[a, b, c]}"
+    );
+    clear_state();
+  }
+
+  #[test]
   fn test_list_pattern_guard_over_elements() {
     // Issue #119: a body-level `/;` guard that references destructured list
     // elements must be checked against the bound element values, so the

@@ -256,6 +256,14 @@ fn count_specificity_clauses(c: &Expr) -> u32 {
     Expr::FunctionCall { name, args } if name == "And" => {
       args.iter().map(count_specificity_clauses).sum()
     }
+    // A list-element `MatchQ[Part[_lp, i], pat]` guard only adds specificity
+    // when `pat` actually constrains (literal / head / nested); a bare-blank
+    // guard is always True and is emitted purely to preserve the name.
+    Expr::FunctionCall { name, args }
+      if name == "MatchQ" && args.len() == 2 =>
+    {
+      u32::from(element_needs_match_check(&args[1]))
+    }
     Expr::Comparison {
       operators,
       operands,
@@ -1869,17 +1877,11 @@ pub fn set_delayed_ast(
     let mut defaults: Vec<Option<Expr>> = Vec::new();
     let mut heads: Vec<Option<String>> = Vec::new();
     let mut blank_types: Vec<u8> = Vec::new();
-    // We also need to track substitutions for list-pattern destructuring
-    // Each entry: (param_name, element_bindings, trailing_seq_blank).
-    // `trailing_seq_blank` is the blank type of the last element when it is
-    // a sequence pattern (`__` → 2, `___` → 3), and 0 otherwise. When >= 2,
-    // a named trailing element is bound to `Sequence@@Drop[param, idx]`
-    // instead of `Part[param, idx+1]`.
-    let mut body_substitutions: Vec<(
-      String,
-      Vec<(String, Option<String>)>,
-      u8,
-    )> = Vec::new();
+    // List-pattern destructuring substitutions: each leaf pattern variable maps
+    // to the `Part[…]` / `Sequence@@Drop[…]` expression that extracts its value
+    // from the bound list parameter. Nested list patterns contribute deeper
+    // `Part` paths (see `collect_list_pattern_bindings`).
+    let mut body_substitutions: Vec<(String, Expr)> = Vec::new();
     let mut inline_opts_defaults: Option<Vec<Expr>> = None;
 
     for (i, arg) in lhs_args.iter().enumerate() {
@@ -1908,92 +1910,13 @@ pub fn set_delayed_ast(
         // elements) binds the sequence variable to the matching tail.
         Expr::List(patterns) => {
           let param_name = format!("_lp{}", i);
-          // Detect a trailing sequence pattern (BlankSequence or BlankNullSequence).
-          let (trailing_seq, trailing_seq_blank) = patterns
-            .last()
-            .map(|p| {
-              let (_, _, bt) = extract_pattern_info(p);
-              (bt >= 2, bt)
-            })
-            .unwrap_or((false, 0));
-          // Length condition:
-          // - All single-element patterns (`x_`): Length === N.
-          // - Trailing `__` (BlankSequence): Length >= N (since `__` consumes ≥1).
-          // - Trailing `___` (BlankNullSequence): Length >= N-1 (consumes ≥0).
-          let len_cmp = if !trailing_seq {
-            (crate::syntax::ComparisonOp::SameQ, patterns.len() as i128)
-          } else if trailing_seq_blank == 2 {
-            (
-              crate::syntax::ComparisonOp::GreaterEqual,
-              patterns.len() as i128,
-            )
-          } else {
-            (
-              crate::syntax::ComparisonOp::GreaterEqual,
-              (patterns.len() - 1) as i128,
-            )
-          };
-          // Build the rule's match condition for this list argument. It must
-          // check (a) the list length and (b) that each non-sequence element
-          // actually matches its sub-pattern. Without (b), a literal element
-          // like `{0, n2_}` or a head constraint like `{a_Integer, b_}` would
-          // be treated as an unconstrained blank and match anything (the
-          // element_bindings below only record name+head, never enforced).
-          let mut rule_conds: Vec<Expr> = vec![Expr::Comparison {
-            operands: vec![
-              Expr::FunctionCall {
-                name: "Length".to_string(),
-                args: vec![Expr::Identifier(param_name.clone())].into(),
-              },
-              Expr::Integer(len_cmp.1),
-            ],
-            operators: vec![len_cmp.0],
-          }];
-          let last_pat_idx = patterns.len().saturating_sub(1);
-          for (eidx, pat) in patterns.iter().enumerate() {
-            // The trailing sequence element matches the (length-checked) tail;
-            // it has no single Part to test against.
-            if trailing_seq && eidx == last_pat_idx {
-              continue;
-            }
-            if element_needs_match_check(pat) {
-              rule_conds.push(Expr::FunctionCall {
-                name: "MatchQ".to_string(),
-                args: vec![
-                  Expr::FunctionCall {
-                    name: "Part".to_string(),
-                    args: vec![
-                      Expr::Identifier(param_name.clone()),
-                      Expr::Integer((eidx + 1) as i128),
-                    ]
-                    .into(),
-                  },
-                  pat.clone(),
-                ]
-                .into(),
-              });
-            }
-          }
-          let combined_cond = if rule_conds.len() == 1 {
-            rule_conds.pop().unwrap()
-          } else {
-            Expr::FunctionCall {
-              name: "And".to_string(),
-              args: rule_conds.into(),
-            }
-          };
+          // The combined condition checks the list length and that each
+          // constrained element (literal, head-constrained, or nested) matches
+          // its sub-pattern; the bindings extract each leaf variable.
+          let (combined_cond, bindings) =
+            build_list_pattern_match(patterns, &param_name);
           conditions.push(Some(combined_cond));
-          let mut element_bindings = Vec::new();
-          for pat in patterns {
-            let (pat_name, head, _blank_type) = extract_pattern_info(pat);
-            element_bindings.push((pat_name, head));
-          }
-          let trailing_bt = if trailing_seq { trailing_seq_blank } else { 0 };
-          body_substitutions.push((
-            param_name.clone(),
-            element_bindings,
-            trailing_bt,
-          ));
+          body_substitutions.extend(bindings);
           params.push(param_name);
           defaults.push(None);
           heads.push(Some("List".to_string()));
@@ -2087,54 +2010,13 @@ pub fn set_delayed_ast(
               }
             }
             // `Pattern[name, {p1, p2, ...}]` — named list pattern.
-            // Bind `name` to the entire list AND destructure inner elements.
+            // Bind `name` to the entire list (via the param itself) AND
+            // destructure inner elements.
             Expr::List(patterns) => {
-              let inner_patterns: Vec<Expr> = patterns.to_vec();
-              let (trailing_seq, trailing_seq_blank) = inner_patterns
-                .last()
-                .map(|p| {
-                  let (_, _, bt) = extract_pattern_info(p);
-                  (bt >= 2, bt)
-                })
-                .unwrap_or((false, 0));
-              let len_cmp = if !trailing_seq {
-                (
-                  crate::syntax::ComparisonOp::SameQ,
-                  inner_patterns.len() as i128,
-                )
-              } else if trailing_seq_blank == 2 {
-                (
-                  crate::syntax::ComparisonOp::GreaterEqual,
-                  inner_patterns.len() as i128,
-                )
-              } else {
-                (
-                  crate::syntax::ComparisonOp::GreaterEqual,
-                  (inner_patterns.len() - 1) as i128,
-                )
-              };
-              conditions.push(Some(Expr::Comparison {
-                operands: vec![
-                  Expr::FunctionCall {
-                    name: "Length".to_string(),
-                    args: vec![Expr::Identifier(pname.clone())].into(),
-                  },
-                  Expr::Integer(len_cmp.1),
-                ],
-                operators: vec![len_cmp.0],
-              }));
-              let mut element_bindings = Vec::new();
-              for pat in &inner_patterns {
-                let (n, h, _bt) = extract_pattern_info(pat);
-                element_bindings.push((n, h));
-              }
-              let trailing_bt =
-                if trailing_seq { trailing_seq_blank } else { 0 };
-              body_substitutions.push((
-                pname.clone(),
-                element_bindings,
-                trailing_bt,
-              ));
+              let (combined_cond, bindings) =
+                build_list_pattern_match(patterns, &pname);
+              conditions.push(Some(combined_cond));
+              body_substitutions.extend(bindings);
               params.push(pname);
               defaults.push(None);
               heads.push(Some("List".to_string()));
@@ -2229,42 +2111,8 @@ pub fn set_delayed_ast(
     // bound `Part[_lp, i]` values rather than unbound symbols.
     let apply_list_substitutions = |expr: &Expr| -> Expr {
       let mut out = expr.clone();
-      for (param_name, element_bindings, trailing_bt) in &body_substitutions {
-        let last_idx = element_bindings.len().saturating_sub(1);
-        for (idx, (elem_name, _head)) in element_bindings.iter().enumerate() {
-          if elem_name.is_empty() {
-            continue;
-          }
-          let is_trailing_seq = idx == last_idx && *trailing_bt >= 2;
-          let replacement = if is_trailing_seq {
-            Expr::FunctionCall {
-              name: "Apply".to_string(),
-              args: vec![
-                Expr::Identifier("Sequence".to_string()),
-                Expr::FunctionCall {
-                  name: "Drop".to_string(),
-                  args: vec![
-                    Expr::Identifier(param_name.clone()),
-                    Expr::Integer(idx as i128),
-                  ]
-                  .into(),
-                },
-              ]
-              .into(),
-            }
-          } else {
-            Expr::FunctionCall {
-              name: "Part".to_string(),
-              args: vec![
-                Expr::Identifier(param_name.clone()),
-                Expr::Integer((idx + 1) as i128),
-              ]
-              .into(),
-            }
-          };
-          out =
-            crate::syntax::substitute_variable(&out, elem_name, &replacement);
-        }
+      for (name, replacement) in &body_substitutions {
+        out = crate::syntax::substitute_variable(&out, name, replacement);
       }
       out
     };
@@ -2436,6 +2284,416 @@ fn element_needs_match_check(pat: &Expr) -> bool {
     Expr::PatternOptional { head, .. } => head.is_some(),
     _ => true,
   }
+}
+
+/// The `Part[base, idx+1]` / `Sequence@@Drop[base, idx]` expression that
+/// extracts list element `idx` (0-based) from `base`. A trailing
+/// `BlankSequence`/`BlankNullSequence` element binds to the spliced tail.
+fn list_element_accessor(
+  base: &Expr,
+  idx: usize,
+  is_trailing_seq: bool,
+) -> Expr {
+  if is_trailing_seq {
+    Expr::FunctionCall {
+      name: "Apply".to_string(),
+      args: vec![
+        Expr::Identifier("Sequence".to_string()),
+        Expr::FunctionCall {
+          name: "Drop".to_string(),
+          args: vec![base.clone(), Expr::Integer(idx as i128)].into(),
+        },
+      ]
+      .into(),
+    }
+  } else {
+    Expr::FunctionCall {
+      name: "Part".to_string(),
+      args: vec![base.clone(), Expr::Integer((idx + 1) as i128)].into(),
+    }
+  }
+}
+
+/// Recursively collect the variable bindings for a list pattern. `base` is the
+/// expression that yields the current (sub)list — the param identifier at the
+/// top level, a `Part[…]` deeper down. Each leaf named pattern maps to the
+/// accessor expression that extracts its value; a nested list pattern recurses
+/// so `{{a_, b_}, c_}` binds `a`, `b`, `c`. Structural validation is handled
+/// separately by the element `MatchQ` guards, so this only produces bindings.
+fn collect_list_pattern_bindings(
+  patterns: &[Expr],
+  base: &Expr,
+  out: &mut Vec<(String, Expr)>,
+) {
+  let n = patterns.len();
+  for (idx, pat) in patterns.iter().enumerate() {
+    let (_, _, bt) = extract_pattern_info(pat);
+    let is_trailing_seq = idx + 1 == n && bt >= 2;
+    let accessor = list_element_accessor(base, idx, is_trailing_seq);
+    if let Expr::List(inner) = pat
+      && !is_trailing_seq
+    {
+      collect_list_pattern_bindings(inner, &accessor, out);
+      continue;
+    }
+    let (name, _, _) = extract_pattern_info(pat);
+    if !name.is_empty() {
+      out.push((name, accessor));
+    }
+  }
+}
+
+/// Build the dispatch condition and body bindings for a list pattern argument
+/// bound to the parameter `base_name`. The condition verifies the list length
+/// plus a `MatchQ[Part[base, i], …]` guard for every constrained element
+/// (literal, head-constrained, or nested), and the bindings extract each leaf
+/// pattern variable (recursing into nested lists).
+fn build_list_pattern_match(
+  patterns: &[Expr],
+  base_name: &str,
+) -> (Expr, Vec<(String, Expr)>) {
+  let base = Expr::Identifier(base_name.to_string());
+  // Detect a trailing sequence pattern (BlankSequence or BlankNullSequence).
+  let (trailing_seq, trailing_seq_blank) = patterns
+    .last()
+    .map(|p| {
+      let (_, _, bt) = extract_pattern_info(p);
+      (bt >= 2, bt)
+    })
+    .unwrap_or((false, 0));
+  // Length condition:
+  // - All single-element patterns (`x_`): Length === N.
+  // - Trailing `__` (BlankSequence): Length >= N (consumes ≥1).
+  // - Trailing `___` (BlankNullSequence): Length >= N-1 (consumes ≥0).
+  let len_cmp = if !trailing_seq {
+    (crate::syntax::ComparisonOp::SameQ, patterns.len() as i128)
+  } else if trailing_seq_blank == 2 {
+    (
+      crate::syntax::ComparisonOp::GreaterEqual,
+      patterns.len() as i128,
+    )
+  } else {
+    (
+      crate::syntax::ComparisonOp::GreaterEqual,
+      (patterns.len() - 1) as i128,
+    )
+  };
+  let mut rule_conds: Vec<Expr> = vec![Expr::Comparison {
+    operands: vec![
+      Expr::FunctionCall {
+        name: "Length".to_string(),
+        args: vec![base.clone()].into(),
+      },
+      Expr::Integer(len_cmp.1),
+    ],
+    operators: vec![len_cmp.0],
+  }];
+  let last_pat_idx = patterns.len().saturating_sub(1);
+  for (eidx, pat) in patterns.iter().enumerate() {
+    // The trailing sequence element matches the (length-checked) tail; it has
+    // no single Part to test against.
+    if trailing_seq && eidx == last_pat_idx {
+      continue;
+    }
+    // Emit a `MatchQ` guard for every element. For a constrained element
+    // (literal/head/nested) it enforces the match; for a bare blank it is
+    // always True but keeps the element's surface pattern (and name) on record
+    // so `DownValues` can reconstruct the original `{…}` pattern. Specificity
+    // scoring (`count_specificity_clauses`) ignores the always-true ones.
+    rule_conds.push(Expr::FunctionCall {
+      name: "MatchQ".to_string(),
+      args: vec![list_element_accessor(&base, eidx, false), pat.clone()].into(),
+    });
+  }
+  let combined = if rule_conds.len() == 1 {
+    rule_conds.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "And".to_string(),
+      args: rule_conds.into(),
+    }
+  };
+  let mut bindings = Vec::new();
+  collect_list_pattern_bindings(patterns, &base, &mut bindings);
+  (combined, bindings)
+}
+
+/// Replace every subexpression structurally equal to `from` with `to`. Used to
+/// turn the lowered `Part[_lp, i]` element accessors back into their original
+/// names when reconstructing a list-pattern rule for display.
+fn replace_subexpr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
+  if crate::evaluator::pattern_matching::expr_equal(expr, from) {
+    return to.clone();
+  }
+  match expr {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|e| replace_subexpr(e, from, to)).collect())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|e| replace_subexpr(e, from, to))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(replace_subexpr(left, from, to)),
+      right: Box::new(replace_subexpr(right, from, to)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(replace_subexpr(operand, from, to)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands
+        .iter()
+        .map(|e| replace_subexpr(e, from, to))
+        .collect(),
+      operators: operators.clone(),
+    },
+    Expr::Part { expr: e, index } => Expr::Part {
+      expr: Box::new(replace_subexpr(e, from, to)),
+      index: Box::new(replace_subexpr(index, from, to)),
+    },
+    Expr::CompoundExpr(es) => Expr::CompoundExpr(
+      es.iter().map(|e| replace_subexpr(e, from, to)).collect(),
+    ),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(replace_subexpr(pattern, from, to)),
+      replacement: Box::new(replace_subexpr(replacement, from, to)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(replace_subexpr(pattern, from, to)),
+      replacement: Box::new(replace_subexpr(replacement, from, to)),
+    },
+    Expr::Association(items) => Expr::Association(
+      items
+        .iter()
+        .map(|(k, v)| {
+          (replace_subexpr(k, from, to), replace_subexpr(v, from, to))
+        })
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
+/// Map each leaf pattern variable in `pat` to the `Part[…]` accessor `path`
+/// that extracts it, recursing through nested list patterns. Used to undo the
+/// element-accessor substitution when displaying a list-pattern rule.
+fn map_part_names(pat: &Expr, path: &Expr, out: &mut Vec<(Expr, String)>) {
+  let part = |p: &Expr, j: usize| Expr::FunctionCall {
+    name: "Part".to_string(),
+    args: vec![p.clone(), Expr::Integer(j as i128)].into(),
+  };
+  match pat {
+    Expr::Pattern { name, .. }
+    | Expr::PatternTest { name, .. }
+    | Expr::PatternOptional { name, .. }
+      if !name.is_empty() =>
+    {
+      out.push((path.clone(), name.clone()));
+    }
+    Expr::List(inner) => {
+      for (j, ip) in inner.iter().enumerate() {
+        map_part_names(ip, &part(path, j + 1), out);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Reconstruct the surface list pattern (`{p1, p2, …}`), the element-accessor →
+/// name map, and any `/;` guard clauses for a lowered list-pattern parameter
+/// `param` from its stored dispatch condition `cond`.
+fn reconstruct_list_param(
+  param: &str,
+  cond: Option<&Expr>,
+) -> (Expr, Vec<(Expr, String)>, Vec<Expr>) {
+  let fallback = || Expr::Pattern {
+    name: param.to_string(),
+    head: Some("List".to_string()),
+    blank_type: 1,
+  };
+  let Some(cond) = cond else {
+    return (fallback(), vec![], vec![]);
+  };
+  // Flatten nested And[…] into individual clauses.
+  fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "And"
+    {
+      for a in args.iter() {
+        flatten(a, out);
+      }
+    } else {
+      out.push(e);
+    }
+  }
+  let mut clauses = Vec::new();
+  flatten(cond, &mut clauses);
+
+  let mut length: Option<i128> = None;
+  let mut fixed = true;
+  let mut elem_pats: Vec<(usize, Expr)> = Vec::new();
+  let mut guards: Vec<Expr> = Vec::new();
+  for c in clauses {
+    match c {
+      Expr::Comparison {
+        operands,
+        operators,
+      } if matches!(
+        operands.first(),
+        Some(Expr::FunctionCall { name, .. }) if name == "Length"
+      ) =>
+      {
+        if let Some(Expr::Integer(n)) = operands.get(1) {
+          length = Some(*n);
+          fixed = operators
+            .iter()
+            .any(|o| matches!(o, crate::syntax::ComparisonOp::SameQ));
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if name == "MatchQ"
+          && args.len() == 2
+          && matches!(&args[0],
+            Expr::FunctionCall { name: pn, args: pargs }
+              if pn == "Part"
+                && matches!(pargs.first(), Some(Expr::Identifier(id)) if id == param)
+                && matches!(pargs.get(1), Some(Expr::Integer(_)))) =>
+      {
+        if let Expr::FunctionCall { args: pargs, .. } = &args[0]
+          && let Some(Expr::Integer(idx)) = pargs.get(1)
+        {
+          elem_pats.push((*idx as usize, args[1].clone()));
+        }
+      }
+      other => guards.push(other.clone()),
+    }
+  }
+
+  let mut part_names = Vec::new();
+  for (idx, pat) in &elem_pats {
+    let path = Expr::FunctionCall {
+      name: "Part".to_string(),
+      args: vec![
+        Expr::Identifier(param.to_string()),
+        Expr::Integer(*idx as i128),
+      ]
+      .into(),
+    };
+    map_part_names(pat, &path, &mut part_names);
+  }
+
+  // Surface elements: a MatchQ-guarded element uses its recorded sub-pattern;
+  // a gap is an unconstrained blank. A non-fixed length (trailing sequence)
+  // appends one `__`/`___` element whose name is not recoverable.
+  let n_fixed = elem_pats.iter().map(|(i, _)| *i).max().unwrap_or(0);
+  let mut elems: Vec<Expr> = Vec::new();
+  for i in 1..=n_fixed {
+    if let Some((_, p)) = elem_pats.iter().find(|(idx, _)| *idx == i) {
+      elems.push(p.clone());
+    } else {
+      elems.push(Expr::Pattern {
+        name: String::new(),
+        head: None,
+        blank_type: 1,
+      });
+    }
+  }
+  if !fixed {
+    let bt = if length == Some(n_fixed as i128 + 1) {
+      2
+    } else {
+      3
+    };
+    elems.push(Expr::Pattern {
+      name: String::new(),
+      head: None,
+      blank_type: bt,
+    });
+  }
+  (Expr::List(elems.into()), part_names, guards)
+}
+
+/// Rebuild a displayable DownValue (pattern args + body) for a stored rule that
+/// uses one or more lowered list-pattern parameters (`_lp{i}`), turning them
+/// back into surface `{…}` patterns and un-substituting the `Part[_lp, i]`
+/// element accessors in the body/guard. Returns `None` when no list-pattern
+/// parameter is present (the caller keeps its normal reconstruction).
+pub fn reconstruct_list_downvalue(
+  params: &[String],
+  conditions: &[Option<Expr>],
+  heads: &[Option<String>],
+  blank_types: &[u8],
+  body: &Expr,
+) -> Option<(Vec<Expr>, Expr)> {
+  if !params.iter().any(|p| p.starts_with("_lp")) {
+    return None;
+  }
+  let mut display_body = body.clone();
+  let mut guards: Vec<Expr> = Vec::new();
+  let mut pattern_args: Vec<Expr> = Vec::with_capacity(params.len());
+  for (i, p) in params.iter().enumerate() {
+    let cond = conditions.get(i).and_then(|c| c.as_ref());
+    if p.starts_with("_lp") {
+      let (list_pat, part_names, mut g) = reconstruct_list_param(p, cond);
+      for (path, name) in &part_names {
+        let name_expr = Expr::Identifier(name.clone());
+        display_body = replace_subexpr(&display_body, path, &name_expr);
+        for gg in g.iter_mut() {
+          *gg = replace_subexpr(gg, path, &name_expr);
+        }
+      }
+      guards.append(&mut g);
+      pattern_args.push(list_pat);
+    } else if let Some(Expr::Comparison {
+      operands,
+      operators,
+    }) = cond
+      && operators
+        .iter()
+        .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+      && let Some(lit) = operands.get(1)
+    {
+      pattern_args.push(lit.clone());
+    } else {
+      pattern_args.push(Expr::Pattern {
+        name: p.clone(),
+        head: heads.get(i).and_then(|h| h.clone()),
+        blank_type: blank_types.get(i).copied().unwrap_or(1),
+      });
+    }
+  }
+  let final_body = if guards.is_empty() {
+    display_body
+  } else {
+    let guard = if guards.len() == 1 {
+      guards.pop().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: guards.into(),
+      }
+    };
+    Expr::FunctionCall {
+      name: "Condition".to_string(),
+      args: vec![display_body, guard].into(),
+    }
+  };
+  Some((pattern_args, final_body))
 }
 
 /// Extract a pattern name, optional head constraint, and blank type from a pattern expression.

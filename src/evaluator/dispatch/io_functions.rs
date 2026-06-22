@@ -2106,9 +2106,33 @@ pub fn dispatch_io_functions(
         // memoizations (e.g. `f[1] = 42`), which live in MEMO_VALUES.
         let down_values = crate::down_values_with_memo(sym);
         if let Some(overloads) = down_values {
-          for (params, conditions, defaults, heads, _blank_types, body) in
+          for (params, conditions, defaults, heads, blank_types, body) in
             &overloads
           {
+            // List-pattern params (`_lp{i}`) reconstruct to a surface `{…}`
+            // pattern with the original element names, body, and `/;` guard.
+            if let Some((pattern_args, display_body)) =
+              crate::evaluator::assignment::reconstruct_list_downvalue(
+                params,
+                conditions,
+                heads,
+                blank_types,
+                body,
+              )
+            {
+              let params_str = pattern_args
+                .iter()
+                .map(crate::syntax::expr_to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+              sym_lines.push(format!(
+                "{}[{}] := {}",
+                sym,
+                params_str,
+                crate::syntax::expr_to_string(&display_body)
+              ));
+              continue;
+            }
             let params_str = params
               .iter()
               .enumerate()

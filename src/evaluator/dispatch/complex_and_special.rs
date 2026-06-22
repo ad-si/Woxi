@@ -817,11 +817,35 @@ pub fn dispatch_complex_and_special(
           crate::down_values_with_memo(sym)
         };
         if let Some(overloads) = down_values {
-          for (params, conds, _defaults, heads, _blank_types, body) in
+          for (params, conds, _defaults, heads, blank_types, body) in
             overloads.iter().filter(|(params, _, _, heads, _, _)| {
               !upvalue_keys.contains(&(params.clone(), heads.clone()))
             })
           {
+            // List-pattern params reconstruct to a surface `{…}` pattern with
+            // the original element names, body, and `/;` guard.
+            if let Some((pattern_args, display_body)) =
+              crate::evaluator::assignment::reconstruct_list_downvalue(
+                params,
+                conds,
+                heads,
+                blank_types,
+                body,
+              )
+            {
+              let params_str = pattern_args
+                .iter()
+                .map(expr_to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+              lines.push(format!(
+                "{}[{}] := {}",
+                sym,
+                params_str,
+                expr_to_string(&display_body)
+              ));
+              continue;
+            }
             // Check if this is a specific-value definition (SameQ conditions)
             let has_sameq_conds = conds.iter().any(|c| {
               if let Some(Expr::Comparison { operators, .. }) = c {

@@ -1100,29 +1100,44 @@ pub fn dispatch_predicate_functions(
             !upvalue_keys.contains(&(params.clone(), heads.clone()))
           })
           .map(|(params, conds, _defaults, heads, blank_types, body)| {
-            let pattern_args: Vec<Expr> = params
-              .iter()
-              .enumerate()
-              .map(|(i, p)| {
-                // Check if this param has a literal-match condition (SameQ)
-                if let Some(Some(Expr::Comparison {
-                  operands,
-                  operators,
-                })) = conds.get(i)
-                  && operators
-                    .iter()
-                    .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
-                  && let Some(literal_val) = operands.get(1)
-                {
-                  return literal_val.clone();
-                }
-                Expr::Pattern {
-                  name: p.clone(),
-                  head: heads.get(i).and_then(|h| h.clone()),
-                  blank_type: blank_types.get(i).copied().unwrap_or(1),
-                }
-              })
-              .collect();
+            // List-pattern params (`_lp{i}`) are lowered to a single param with
+            // a synthetic condition; reconstruct the surface `{…}` pattern,
+            // un-substitute the `Part[_lp, i]` element accessors in the body,
+            // and re-attach any `/;` guard.
+            let (pattern_args, display_body) =
+              crate::evaluator::assignment::reconstruct_list_downvalue(
+                params,
+                conds,
+                heads,
+                blank_types,
+                body,
+              )
+              .unwrap_or_else(|| {
+                let args: Vec<Expr> = params
+                  .iter()
+                  .enumerate()
+                  .map(|(i, p)| {
+                    // Check if this param has a literal-match condition (SameQ)
+                    if let Some(Some(Expr::Comparison {
+                      operands,
+                      operators,
+                    })) = conds.get(i)
+                      && operators.iter().any(|op| {
+                        matches!(op, crate::syntax::ComparisonOp::SameQ)
+                      })
+                      && let Some(literal_val) = operands.get(1)
+                    {
+                      return literal_val.clone();
+                    }
+                    Expr::Pattern {
+                      name: p.clone(),
+                      head: heads.get(i).and_then(|h| h.clone()),
+                      blank_type: blank_types.get(i).copied().unwrap_or(1),
+                    }
+                  })
+                  .collect();
+                (args, body.clone())
+              });
             Expr::RuleDelayed {
               pattern: Box::new(Expr::FunctionCall {
                 name: "HoldPattern".to_string(),
@@ -1132,7 +1147,7 @@ pub fn dispatch_predicate_functions(
                 }]
                 .into(),
               }),
-              replacement: Box::new(body.clone()),
+              replacement: Box::new(display_body),
             }
           })
           .collect();
