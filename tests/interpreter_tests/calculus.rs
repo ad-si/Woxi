@@ -3545,6 +3545,36 @@ mod erf {
     assert_eq!(interpret("D[LogIntegral[2 x], x]").unwrap(), "2/Log[2*x]");
   }
 
+  // Factorial[z] = Gamma[1 + z], so D[z!, z] = Gamma[1 + z] PolyGamma[0, 1 + z].
+  // The bare product's factor order is the long-standing Times-ordering
+  // divergence (Woxi emits PolyGamma·Gamma, wolframscript Gamma·PolyGamma), so
+  // these assertions use order-independent forms that match wolframscript
+  // exactly: the structural difference (→ 0), and evaluation at integer points.
+  #[test]
+  fn d_factorial() {
+    // Structural correctness, independent of factor ordering.
+    assert_eq!(
+      interpret("Simplify[D[x!, x] - Gamma[1 + x] PolyGamma[0, 1 + x]]")
+        .unwrap(),
+      "0"
+    );
+    // At x = 0: Gamma[1] PolyGamma[0, 1] = -EulerGamma.
+    assert_eq!(interpret("D[x!, x] /. x -> 0").unwrap(), "-EulerGamma");
+    // At x = 3: Gamma[4] PolyGamma[0, 4] = 6 (11/6 - EulerGamma).
+    assert_eq!(
+      interpret("D[x!, x] /. x -> 3").unwrap(),
+      "6*(11/6 - EulerGamma)"
+    );
+    // Chain rule through a constant multiple: D[(2 n)!, n] at n = 0
+    // = 2 Gamma[1] PolyGamma[0, 1] = -2 EulerGamma.
+    assert_eq!(
+      interpret("D[(2 n)!, n] /. n -> 0").unwrap(),
+      "-2*EulerGamma"
+    );
+    // A constant factorial differentiates to 0.
+    assert_eq!(interpret("D[3!, x]").unwrap(), "0");
+  }
+
   // PolyGamma[n, z]:  D[PolyGamma[n, z], z] = PolyGamma[n+1, z].
   // PolyGamma[z] is the digamma PolyGamma[0, z], so its derivative is
   // PolyGamma[1, z].  Differentiating w.r.t. the order n has no elementary

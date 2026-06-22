@@ -2868,6 +2868,40 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // Factorial[z] = Gamma[1 + z], so
+        //   D[z!, z] = Gamma[1 + z] PolyGamma[0, 1 + z] z'.
+        // (wolframscript keeps the Gamma[1 + z] form rather than z! here.)
+        "Factorial" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let one_plus_z = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(args[0].clone()),
+          });
+          let result = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::FunctionCall {
+              name: "Gamma".to_string(),
+              args: vec![one_plus_z.clone()].into(),
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "PolyGamma".to_string(),
+              args: vec![Expr::Integer(0), one_plus_z].into(),
+            }),
+          });
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
         // Gamma[a, z] (upper incomplete), a free of var:
         //   d/dvar Gamma[a, z] = -z^(a-1) E^(-z) z'
         // When a depends on var the derivative needs the ∂/∂a term (a
