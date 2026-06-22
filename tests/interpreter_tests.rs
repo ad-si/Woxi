@@ -208,6 +208,111 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_same_pattern_guarded_rule_not_overwritten() {
+    // Issue #119: redefining an unconditional rule with the SAME base pattern
+    // must NOT delete a previously-defined guarded rule. In Wolfram both are
+    // distinct DownValues, the guard rule keeps its (earlier) position, so a
+    // canonicalizing rule `f[a_,b_] := f[b,a] /; a>b` still fires before the
+    // later general `f[a_,b_] := …`.
+    clear_state();
+    interpret("PP[n1_Integer, n2_Integer] := PP[n2, n1] /; (n1 > n2)").unwrap();
+    interpret("PP[n1_Integer, n2_Integer] := gen[n1, n2]").unwrap();
+    assert_eq!(
+      interpret("DownValues[PP]").unwrap(),
+      "{HoldPattern[PP[n1_Integer, n2_Integer]] :> PP[n2, n1] /; n1 > n2, \
+       HoldPattern[PP[n1_Integer, n2_Integer]] :> gen[n1, n2]}"
+    );
+    // The canonicalizing rule fires first for a descending pair.
+    assert_eq!(interpret("PP[2, 5]").unwrap(), "gen[2, 5]");
+    assert_eq!(interpret("PP[5, 2]").unwrap(), "gen[2, 5]");
+    clear_state();
+  }
+
+  #[test]
+  fn test_bipartite_partitions_canonicalizing_rule() {
+    // Issue #119: full bipartite-partition recursion relying on the
+    // canonicalizing rule to avoid `PP[n, 0]` divide-by-zero (the
+    // `PP[n1_Integer, 0]` base case is intentionally omitted). Matches
+    // wolframscript's `{2, 4, 7}`.
+    clear_state();
+    let program = "PP[n1_Integer, n2_Integer] := PP[n2, n1] /; (n1 > n2)\n\
+      PP[n1_Integer, _] := 0 /; (n1<0)\n\
+      PP[0, n2_Integer] := PartitionsP[n2]\n\
+      PP[n1_Integer, n2_Integer] := PP[n1, n2] = \
+        Sum[k PP[n1 - r j, n2 - r k], {j, 0, n1}, {k, n2}, {r, n2/k}]/n2\n\
+      { PP[1,1], PP[1,2], PP[1,3] }";
+    assert_eq!(interpret(program).unwrap(), "{2, 4, 7}");
+    clear_state();
+  }
+
+  #[test]
+  fn test_list_pattern_literal_element() {
+    // Issue #119: a literal element inside a list pattern must be matched
+    // exactly — `f[{0, n2_}]` must NOT match `f[{1, 5}]`.
+    clear_state();
+    interpret("f[{0, n2_Integer}] := matched0[n2]").unwrap();
+    interpret("f[{n1_Integer, n2_Integer}] := general[n1, n2]").unwrap();
+    assert_eq!(interpret("f[{0, 5}]").unwrap(), "matched0[5]");
+    assert_eq!(interpret("f[{1, 5}]").unwrap(), "general[1, 5]");
+    assert_eq!(interpret("f[{3, 5}]").unwrap(), "general[3, 5]");
+    clear_state();
+  }
+
+  #[test]
+  fn test_list_pattern_head_constraint() {
+    // Issue #119: per-element head constraints inside a list pattern must be
+    // enforced — `g[{n1_Integer, n2_Integer}]` must NOT match a non-integer
+    // element.
+    clear_state();
+    interpret("g[{n1_Integer, n2_Integer}] := bothInt[n1, n2]").unwrap();
+    assert_eq!(interpret("g[{1, 2}]").unwrap(), "bothInt[1, 2]");
+    assert_eq!(interpret("g[{1, \"x\"}]").unwrap(), "g[{1, x}]");
+    assert_eq!(interpret("g[{1.5, 2}]").unwrap(), "g[{1.5, 2}]");
+    clear_state();
+  }
+
+  #[test]
+  fn test_list_pattern_literal_more_specific_than_blank() {
+    // Issue #119: a list rule with a literal element (`{1, x_}`) must take
+    // priority over an all-blank list rule (`{n_, x_}`) regardless of which
+    // is defined first — matching Wolfram's specificity ordering.
+    clear_state();
+    interpret("s[{n_, x_}] := other[n, x]").unwrap();
+    interpret("s[{1, x_}] := one[x]").unwrap();
+    assert_eq!(interpret("s[{1, 9}]").unwrap(), "one[9]");
+    assert_eq!(interpret("s[{2, 9}]").unwrap(), "other[2, 9]");
+    clear_state();
+  }
+
+  #[test]
+  fn test_list_pattern_head_more_specific_than_blank() {
+    // Issue #119: a head-constrained list element (`{n_Integer, x_}`) is more
+    // specific than a bare blank element (`{n_, x_}`), independent of order.
+    clear_state();
+    interpret("g[{n_, x_}] := gen[n, x]").unwrap();
+    interpret("g[{n_Integer, x_}] := hd[n, x]").unwrap();
+    assert_eq!(interpret("g[{1, 9}]").unwrap(), "hd[1, 9]");
+    assert_eq!(interpret("g[{1.5, 9}]").unwrap(), "gen[1.5, 9]");
+    clear_state();
+  }
+
+  #[test]
+  fn test_list_pattern_guard_over_elements() {
+    // Issue #119: a body-level `/;` guard that references destructured list
+    // elements must be checked against the bound element values, so the
+    // list-argument recursion produces the same result as the scalar form.
+    clear_state();
+    let program = "ZZ[{n1_Integer, n2_Integer}] := ZZ[{n2, n1}] /; (n1 > n2)\n\
+      ZZ[{n1_Integer, _}] := 0 /; (n1<0)\n\
+      ZZ[{0, n2_Integer}] := PartitionsP[n2]\n\
+      ZZ[{n1_Integer, n2_Integer}] := ZZ[{n1, n2}] = \
+        Sum[k ZZ[{n1 - r j, n2 - r k}], {j, 0, n1}, {k, n2}, {r, n2/k}]/n2\n\
+      { ZZ[{1,1}], ZZ[{1,2}], ZZ[{1,3}], ZZ[{2,2}], ZZ[{2,3}] }";
+    assert_eq!(interpret(program).unwrap(), "{2, 4, 7, 9, 16}");
+    clear_state();
+  }
+
+  #[test]
   fn test_split_condition_continuation() {
     // /; (Condition) at end of line means the expression continues
     assert_eq!(

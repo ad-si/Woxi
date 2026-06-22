@@ -178,6 +178,31 @@ fn body_has_condition(body: &Expr) -> bool {
   )
 }
 
+/// Whether a stored per-parameter condition marks a genuine literal-argument
+/// definition (e.g. `f[0]`, stored as `param === value`). The synthetic
+/// `Length[_lp] === N` guard emitted for list patterns also uses `SameQ` but
+/// is NOT a literal-argument marker, so it is excluded — otherwise an
+/// all-blank list rule like `f[{a_, b_}]` would be treated as a literal
+/// definition and wrongly jump ahead of more specific overloads.
+fn condition_is_literal_arg(c: &Expr) -> bool {
+  if let Expr::Comparison {
+    operators,
+    operands,
+  } = c
+  {
+    let is_length_check = matches!(
+      operands.first(),
+      Some(Expr::FunctionCall { name, .. }) if name == "Length"
+    );
+    !is_length_check
+      && operators
+        .iter()
+        .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+  } else {
+    false
+  }
+}
+
 /// Compute a specificity score for a pattern rule based on its conditions,
 /// blank types, and head constraints. Lower score = more specific = should be
 /// tried first. Ordering: literal (SameQ) > head-constrained Blank > Blank >
@@ -194,16 +219,8 @@ pub fn pattern_specificity_score(
   conditions: &[Option<Expr>],
   body: &Expr,
 ) -> u32 {
-  // Literal definitions (SameQ conditions) are most specific
-  let is_literal = conditions.iter().any(|c| {
-    if let Some(Expr::Comparison { operators, .. }) = c {
-      operators
-        .iter()
-        .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
-    } else {
-      false
-    }
-  });
+  // Literal-argument definitions (e.g. `f[0]`) are most specific.
+  let is_literal = conditions.iter().flatten().any(condition_is_literal_arg);
   if is_literal {
     return 0;
   }
@@ -211,12 +228,49 @@ pub fn pattern_specificity_score(
   let max_blank = blank_types.iter().copied().max().unwrap_or(1) as u32;
   // Head constraints make a pattern more specific (subtract 1 for each)
   let head_bonus = heads.iter().filter(|h| h.is_some()).count() as u32;
-  // Per-parameter conditions (PatternTest) also add specificity
-  let cond_bonus = conditions.iter().filter(|c| c.is_some()).count() as u32;
-  // A whole-rule `/;` guard adds specificity too
+  // Each stored constraint clause makes the rule more specific. A plain guard
+  // or `PatternTest` slot counts once; a list pattern bundles several real
+  // constraints (per-element `MatchQ[Part[_lp, i], …]` guards + any `/;`
+  // guard) into one `And[…]` slot, so we count the meaningful clauses inside
+  // it — the synthetic `Length[_lp] === N` check does not count. This makes a
+  // `{0, x_}` rule more specific than an all-blank `{a_, b_}` rule regardless
+  // of definition order, matching Wolfram.
+  let cond_bonus: u32 = conditions
+    .iter()
+    .flatten()
+    .map(count_specificity_clauses)
+    .sum();
+  // A whole-rule `/;` guard left on the body (non-list rules) adds specificity.
   let rule_cond_bonus = u32::from(body_has_condition(body));
   // Score: higher blank_type dominates, head/condition constraints reduce score
-  max_blank * 10 - head_bonus - cond_bonus - rule_cond_bonus
+  (max_blank * 10).saturating_sub(head_bonus + cond_bonus + rule_cond_bonus)
+}
+
+/// Count the meaningful constraint clauses inside a stored condition, recursing
+/// through `And[…]`. The synthetic `Length[_lp] === N` length check emitted for
+/// list patterns is structural, not a specificity constraint, so it is
+/// excluded; everything else (element `MatchQ` guards, `/;` guard expressions,
+/// `PatternTest` checks) counts once.
+fn count_specificity_clauses(c: &Expr) -> u32 {
+  match c {
+    Expr::FunctionCall { name, args } if name == "And" => {
+      args.iter().map(count_specificity_clauses).sum()
+    }
+    Expr::Comparison {
+      operators,
+      operands,
+    } if operators
+      .iter()
+      .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+      && matches!(
+        operands.first(),
+        Some(Expr::FunctionCall { name, .. }) if name == "Length"
+      ) =>
+    {
+      0
+    }
+    _ => 1,
+  }
 }
 
 /// Collect all operands for an associative binary operator (Plus, Times, Alternatives),
@@ -1319,15 +1373,8 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 
     // Check if all args are literal (non-pattern) — if so, insert at beginning
     // for priority over general patterns (matching Mathematica specificity ordering)
-    let has_literal_conditions = conditions.iter().any(|c| {
-      if let Some(Expr::Comparison { operators, .. }) = c {
-        operators
-          .iter()
-          .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
-      } else {
-        false
-      }
-    });
+    let has_literal_conditions =
+      conditions.iter().flatten().any(condition_is_literal_arg);
 
     // Pure literal-argument definition `f[lit, …] = value` (every argument is
     // a literal matched by SameQ, no pattern blanks) — the memoization idiom
@@ -1403,15 +1450,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
           .iter()
           .position(|(_, c, _, _, _, _)| {
             // Find the first non-literal (pattern) definition
-            !c.iter().any(|cond| {
-              if let Some(Expr::Comparison { operators, .. }) = cond {
-                operators
-                  .iter()
-                  .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
-              } else {
-                false
-              }
-            })
+            !c.iter().flatten().any(condition_is_literal_arg)
           })
           .unwrap_or(entry.len());
         entry.insert(
@@ -1894,7 +1933,13 @@ pub fn set_delayed_ast(
               (patterns.len() - 1) as i128,
             )
           };
-          conditions.push(Some(Expr::Comparison {
+          // Build the rule's match condition for this list argument. It must
+          // check (a) the list length and (b) that each non-sequence element
+          // actually matches its sub-pattern. Without (b), a literal element
+          // like `{0, n2_}` or a head constraint like `{a_Integer, b_}` would
+          // be treated as an unconstrained blank and match anything (the
+          // element_bindings below only record name+head, never enforced).
+          let mut rule_conds: Vec<Expr> = vec![Expr::Comparison {
             operands: vec![
               Expr::FunctionCall {
                 name: "Length".to_string(),
@@ -1903,7 +1948,41 @@ pub fn set_delayed_ast(
               Expr::Integer(len_cmp.1),
             ],
             operators: vec![len_cmp.0],
-          }));
+          }];
+          let last_pat_idx = patterns.len().saturating_sub(1);
+          for (eidx, pat) in patterns.iter().enumerate() {
+            // The trailing sequence element matches the (length-checked) tail;
+            // it has no single Part to test against.
+            if trailing_seq && eidx == last_pat_idx {
+              continue;
+            }
+            if element_needs_match_check(pat) {
+              rule_conds.push(Expr::FunctionCall {
+                name: "MatchQ".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Part".to_string(),
+                    args: vec![
+                      Expr::Identifier(param_name.clone()),
+                      Expr::Integer((eidx + 1) as i128),
+                    ]
+                    .into(),
+                  },
+                  pat.clone(),
+                ]
+                .into(),
+              });
+            }
+          }
+          let combined_cond = if rule_conds.len() == 1 {
+            rule_conds.pop().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "And".to_string(),
+              args: rule_conds.into(),
+            }
+          };
+          conditions.push(Some(combined_cond));
           let mut element_bindings = Vec::new();
           for pat in patterns {
             let (pat_name, head, _blank_type) = extract_pattern_info(pat);
@@ -2141,54 +2220,59 @@ pub fn set_delayed_ast(
       }
     }
 
-    // Build the body with list-destructuring substitutions. Each element
-    // name is replaced with `Part[param, idx+1]`, except a named trailing
-    // sequence pattern (`y___` or `y__`) which becomes
+    // Apply all list-destructuring substitutions to an expression: each
+    // element name is replaced with `Part[param, idx+1]`, except a named
+    // trailing sequence pattern (`y___` or `y__`) which becomes
     // `Sequence@@Drop[param, idx]` so the body can splice in the tail.
-    let mut final_body = body.clone();
-    for (param_name, element_bindings, trailing_bt) in &body_substitutions {
-      let last_idx = element_bindings.len().saturating_sub(1);
-      for (idx, (elem_name, _head)) in element_bindings.iter().enumerate() {
-        if elem_name.is_empty() {
-          continue;
+    // Used for both the rule body AND any body-level `/;` guard, so a guard
+    // like `… /; n1 > n2` over destructured elements is checked against the
+    // bound `Part[_lp, i]` values rather than unbound symbols.
+    let apply_list_substitutions = |expr: &Expr| -> Expr {
+      let mut out = expr.clone();
+      for (param_name, element_bindings, trailing_bt) in &body_substitutions {
+        let last_idx = element_bindings.len().saturating_sub(1);
+        for (idx, (elem_name, _head)) in element_bindings.iter().enumerate() {
+          if elem_name.is_empty() {
+            continue;
+          }
+          let is_trailing_seq = idx == last_idx && *trailing_bt >= 2;
+          let replacement = if is_trailing_seq {
+            Expr::FunctionCall {
+              name: "Apply".to_string(),
+              args: vec![
+                Expr::Identifier("Sequence".to_string()),
+                Expr::FunctionCall {
+                  name: "Drop".to_string(),
+                  args: vec![
+                    Expr::Identifier(param_name.clone()),
+                    Expr::Integer(idx as i128),
+                  ]
+                  .into(),
+                },
+              ]
+              .into(),
+            }
+          } else {
+            Expr::FunctionCall {
+              name: "Part".to_string(),
+              args: vec![
+                Expr::Identifier(param_name.clone()),
+                Expr::Integer((idx + 1) as i128),
+              ]
+              .into(),
+            }
+          };
+          out =
+            crate::syntax::substitute_variable(&out, elem_name, &replacement);
         }
-        let is_trailing_seq = idx == last_idx && *trailing_bt >= 2;
-        let replacement = if is_trailing_seq {
-          Expr::FunctionCall {
-            name: "Apply".to_string(),
-            args: vec![
-              Expr::Identifier("Sequence".to_string()),
-              Expr::FunctionCall {
-                name: "Drop".to_string(),
-                args: vec![
-                  Expr::Identifier(param_name.clone()),
-                  Expr::Integer(idx as i128),
-                ]
-                .into(),
-              },
-            ]
-            .into(),
-          }
-        } else {
-          Expr::FunctionCall {
-            name: "Part".to_string(),
-            args: vec![
-              Expr::Identifier(param_name.clone()),
-              Expr::Integer((idx + 1) as i128),
-            ]
-            .into(),
-          }
-        };
-        final_body = crate::syntax::substitute_variable(
-          &final_body,
-          elem_name,
-          &replacement,
-        );
       }
-    }
+      out
+    };
+    let final_body = apply_list_substitutions(body);
+    let body_condition_sub = body_condition.map(apply_list_substitutions);
 
     // If there's a body-level condition (from /;), attach it to a condition slot
-    if let Some(body_cond) = body_condition {
+    if let Some(body_cond) = body_condition_sub.as_ref() {
       let mut attached = false;
       for c in conditions.iter_mut() {
         if c.is_none() {
@@ -2224,15 +2308,8 @@ pub fn set_delayed_ast(
 
     // Check if all args are literal (non-pattern) — if so, insert at beginning
     // for priority over general patterns (matching Mathematica specificity ordering)
-    let has_literal_conditions = conditions.iter().any(|c| {
-      if let Some(Expr::Comparison { operators, .. }) = c {
-        operators
-          .iter()
-          .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
-      } else {
-        false
-      }
-    });
+    let has_literal_conditions =
+      conditions.iter().flatten().any(condition_is_literal_arg);
 
     crate::FUNC_DEFS.with(|m| {
       let mut defs = m.borrow_mut();
@@ -2247,15 +2324,7 @@ pub fn set_delayed_ast(
         entry
           .iter()
           .position(|(_, c, _, _, _, _)| {
-            !c.iter().any(|cond| {
-              if let Some(Expr::Comparison { operators, .. }) = cond {
-                operators
-                  .iter()
-                  .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
-              } else {
-                false
-              }
-            })
+            !c.iter().flatten().any(condition_is_literal_arg)
           })
           .unwrap_or(entry.len())
       } else {
@@ -2354,6 +2423,19 @@ pub fn set_delayed_ast(
     name: "SetDelayed".to_string(),
     args: vec![lhs.clone(), body.clone()].into(),
   })
+}
+
+/// Whether a list-pattern element needs an explicit `MatchQ` guard at
+/// dispatch. A bare blank (`x_`, `_`, `x__`, `x___`) with no head constraint
+/// matches anything, so no guard is needed. Anything else — a head-constrained
+/// pattern (`x_Integer`), a literal (`0`, `"s"`), a `PatternTest`, or a nested
+/// structural pattern — must be verified against the actual element.
+fn element_needs_match_check(pat: &Expr) -> bool {
+  match pat {
+    Expr::Pattern { head, .. } => head.is_some(),
+    Expr::PatternOptional { head, .. } => head.is_some(),
+    _ => true,
+  }
 }
 
 /// Extract a pattern name, optional head constraint, and blank type from a pattern expression.

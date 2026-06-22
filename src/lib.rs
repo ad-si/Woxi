@@ -3697,12 +3697,23 @@ fn store_function_definition(
       // same blank_types, AND same head constraints (keep conditional definitions and defs
       // with different blank patterns or different heads,
       // e.g. f[u_] and f[u__] are distinct overloads,
-      // and f[x_Integer] and f[x_String] are distinct overloads)
-      entry.retain(|(p, conds, _, h, bt, _)| {
+      // and f[x_Integer] and f[x_String] are distinct overloads).
+      //
+      // A `/;` guard (`f[x_] := body /; test`) is stored as a `Condition`
+      // wrapper on the BODY, not in the parameter `conds` slots, so it must
+      // be detected via the body too — otherwise a later same-pattern
+      // unconditional rule would wrongly delete the guarded rule. In Wolfram,
+      // `f[a_,b_] := f[b,a] /; a>b` and `f[a_,b_] := …` are distinct
+      // DownValues and both are retained.
+      entry.retain(|(p, conds, _, h, bt, body)| {
         p.len() != arity
           || bt != &blank_types
           || h != &heads
           || conds.iter().any(|c| c.is_some())
+          || matches!(
+            body,
+            syntax::Expr::FunctionCall { name, .. } if name == "Condition"
+          )
       });
     }
     // Add the new definition with parsed AST, conditions, defaults, and head constraints.
