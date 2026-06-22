@@ -3,6 +3,24 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr};
 
+/// True if `e` contains an inexact (machine) number. Elliptic functions
+/// numericize only when an argument is inexact; exact (integer/rational)
+/// arguments stay symbolic, matching wolframscript (`N[...]` makes the
+/// arguments inexact first via the NumericFunction path).
+fn expr_is_inexact(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      expr_is_inexact(left) || expr_is_inexact(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_is_inexact(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(expr_is_inexact)
+    }
+    _ => false,
+  }
+}
+
 /// EllipticK[m] - Complete elliptic integral of the first kind
 pub fn elliptic_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -520,20 +538,7 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Exact arguments (integers/rationals) stay symbolic, matching
   // wolframscript; `N[...]` forces numericization via the NumericFunction
   // path (which makes the arguments inexact first).
-  fn is_inexact(e: &Expr) -> bool {
-    match e {
-      Expr::Real(_) | Expr::BigFloat(_, _) => true,
-      Expr::BinaryOp { left, right, .. } => {
-        is_inexact(left) || is_inexact(right)
-      }
-      Expr::UnaryOp { operand, .. } => is_inexact(operand),
-      Expr::FunctionCall { args, .. } | Expr::List(args) => {
-        args.iter().any(is_inexact)
-      }
-      _ => false,
-    }
-  }
-  if (is_inexact(z) || is_inexact(q))
+  if (expr_is_inexact(z) || expr_is_inexact(q))
     && let (Some(z_f), Some(q_f)) = (expr_to_f64(z), expr_to_f64(q))
   {
     return Ok(Expr::Real(elliptic_theta_numeric(a_val, z_f, q_f)));
@@ -892,6 +897,13 @@ pub fn elliptic_exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     ));
+  }
+  // Only numericize when an argument is inexact; exact arguments stay symbolic.
+  if !(expr_is_inexact(&args[0]) || expr_is_inexact(&args[1])) {
+    return Ok(Expr::FunctionCall {
+      name: "EllipticExp".to_string(),
+      args: args.to_vec().into(),
+    });
   }
   match elliptic_exp_real(u, a, b) {
     Some((x, y)) => Ok(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())),

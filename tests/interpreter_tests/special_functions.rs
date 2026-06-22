@@ -856,6 +856,29 @@ mod elliptic_exp {
       "EllipticExp[u, {a, b}]"
     );
   }
+
+  // Exact (integer/rational) arguments stay symbolic — only an inexact
+  // argument or N[...] triggers numeric evaluation.
+  #[test]
+  fn exact_args_stay_symbolic() {
+    assert_eq!(
+      interpret("EllipticExp[1, {1, 1}]").unwrap(),
+      "EllipticExp[1, {1, 1}]"
+    );
+    // An inexact invariant still numericizes.
+    let result = interpret("EllipticExp[1, {1.0, 1}]").unwrap();
+    let (x, _) = parse_pair(&result);
+    assert_close(x, 0.5749706105873643, "x");
+  }
+
+  // The pole at u = 0 is structural and reported even for exact arguments.
+  #[test]
+  fn pole_at_zero_exact() {
+    assert_eq!(
+      interpret("EllipticExp[0, {1, 1}]").unwrap(),
+      "{ComplexInfinity, ComplexInfinity}"
+    );
+  }
 }
 
 mod elliptic_e_incomplete {
