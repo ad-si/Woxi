@@ -4102,7 +4102,7 @@ ColorDataFunction,,,,6.0,4225
 DiscreteRiccatiSolve,,,,8.0,4225
 EquirippleFilterKernel,,,,9.0,4225
 FormControl,,🚫,,11.0,4225
-GaussianWindow,,,,9.0,4225
+GaussianWindow,Gaussian window function E^(-x^2/(2 sigma^2)) on [-1/2 1/2] (default sigma 3/10),✅,pure,9.0,4225
 ImageCapture,,🚫,,8.0,4225
 MaxDuration,,,,11.2,4225
 MaxMixtureKernels,,,,8.0,4225
@@ -4230,7 +4230,7 @@ NCache,,,,6.0,4356
 NearestTo,Operator form of Nearest that finds the elements nearest to a value,✅,pure,11.3,4356
 NumberFieldIntegralBasis,,,,6.0,4356
 ParentCell,,🚫,,10.0,4356
-ParzenWindow,,,,9.0,4356
+ParzenWindow,de la Vallee Poussin (Parzen) window function; piecewise cubic on [-1/2 1/2],✅,pure,9.0,4356
 PersistentObject,,🚫,,11.1,4356
 StateTransformationLinearize,,,,10.0,4356
 UpperTriangularMatrixQ,True if a matrix is upper triangular,✅,pure,12.0,4356

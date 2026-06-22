@@ -5288,6 +5288,155 @@ pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// True if `e` contains an inexact (machine) number, so a window function
+/// numericizes; exact arguments stay symbolic.
+fn window_arg_inexact(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      window_arg_inexact(left) || window_arg_inexact(right)
+    }
+    Expr::UnaryOp { operand, .. } => window_arg_inexact(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(window_arg_inexact)
+    }
+    _ => false,
+  }
+}
+
+/// ParzenWindow[x] — de la Vallée Poussin window: 0 outside [-1/2, 1/2],
+/// 1 - 24 x^2 + 48 |x|^3 for |x| <= 1/4, and 2 (1 - 2 |x|)^3 for 1/4 < |x| <= 1/2.
+/// Exact arguments give the exact polynomial value (e.g. ParzenWindow[1/3] ->
+/// 2/27); Real arguments numericize.
+pub fn parzen_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let unevaluated = || Expr::FunctionCall {
+    name: "ParzenWindow".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  let x = &args[0];
+  let xf = match try_eval_to_f64(x) {
+    Some(v) => v,
+    None => return Ok(unevaluated()),
+  };
+  let inexact = window_arg_inexact(x);
+  let ax = xf.abs();
+  if ax > 0.5 {
+    return Ok(if inexact {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+  if inexact {
+    let v = if ax <= 0.25 {
+      1.0 - 24.0 * xf * xf + 48.0 * ax * ax * ax
+    } else {
+      let t = 1.0 - 2.0 * ax;
+      2.0 * t * t * t
+    };
+    return Ok(Expr::Real(v));
+  }
+  // Exact polynomial.
+  let abs_x = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![x.clone()].into(),
+  };
+  let pow = |base: Expr, n: i128| Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(base),
+    right: Box::new(Expr::Integer(n)),
+  };
+  let times = |c: i128, e: Expr| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(c), e].into(),
+  };
+  let expr = if ax <= 0.25 {
+    // 1 - 24 x^2 + 48 Abs[x]^3
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Integer(1),
+        times(-24, pow(x.clone(), 2)),
+        times(48, pow(abs_x, 3)),
+      ]
+      .into(),
+    }
+  } else {
+    // 2 (1 - 2 Abs[x])^3
+    times(
+      2,
+      pow(
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![Expr::Integer(1), times(-2, abs_x)].into(),
+        },
+        3,
+      ),
+    )
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
+}
+
+/// GaussianWindow[x] / GaussianWindow[x, sigma] — Gaussian window
+/// E^(-x^2/(2 sigma^2)) on [-1/2, 1/2] (0 outside), default sigma = 3/10.
+/// Exact arguments give E^(rational) (e.g. GaussianWindow[1/4] -> E^(-25/72));
+/// Real arguments numericize.
+pub fn gaussian_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let unevaluated = || Expr::FunctionCall {
+    name: "GaussianWindow".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated());
+  }
+  let x = &args[0];
+  let sigma = args.get(1).cloned().unwrap_or_else(|| make_rational(3, 10));
+  let (xf, sf) = match (try_eval_to_f64(x), try_eval_to_f64(&sigma)) {
+    (Some(xf), Some(sf)) => (xf, sf),
+    _ => return Ok(unevaluated()),
+  };
+  let inexact = window_arg_inexact(x) || window_arg_inexact(&sigma);
+  let ax = xf.abs();
+  if ax > 0.5 {
+    return Ok(if inexact {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+  if inexact {
+    return Ok(Expr::Real((-xf * xf / (2.0 * sf * sf)).exp()));
+  }
+  // Exact: Exp[-x^2 / (2 sigma^2)].
+  let pow = |base: Expr, n: i128| Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(base),
+    right: Box::new(Expr::Integer(n)),
+  };
+  let numer = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(-1), pow(x.clone(), 2)].into(),
+  };
+  let denom = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(2), pow(sigma, 2)].into(),
+  };
+  let arg = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(numer),
+    right: Box::new(denom),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Exp".to_string(),
+    args: vec![arg].into(),
+  })
+}
+
 /// Try to express a float as a simple rational p/q with small denominator.
 fn approximate_rational(val: f64) -> Option<(i128, i128)> {
   if val == 0.0 {

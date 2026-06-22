@@ -5918,6 +5918,41 @@ mod window_functions {
   fn tukey_symbolic() {
     assert_eq!(interpret("TukeyWindow[x]").unwrap(), "TukeyWindow[x]");
   }
+
+  // ParzenWindow: piecewise cubic, exact (rational) for exact arguments.
+  #[test]
+  fn parzen_exact() {
+    assert_eq!(interpret("ParzenWindow[0]").unwrap(), "1");
+    assert_eq!(interpret("ParzenWindow[1/8]").unwrap(), "23/32");
+    assert_eq!(interpret("ParzenWindow[1/4]").unwrap(), "1/4");
+    assert_eq!(interpret("ParzenWindow[1/3]").unwrap(), "2/27");
+    assert_eq!(interpret("ParzenWindow[1/2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn parzen_numeric_and_symbolic() {
+    let v: f64 = interpret("ParzenWindow[0.3]").unwrap().parse().unwrap();
+    assert!((v - 0.128).abs() < 1e-12);
+    assert_eq!(interpret("ParzenWindow[0.6]").unwrap(), "0.");
+    assert_eq!(interpret("ParzenWindow[x]").unwrap(), "ParzenWindow[x]");
+  }
+
+  // GaussianWindow[x, sigma] (default sigma = 3/10): E^(-x^2/(2 sigma^2)),
+  // exact for exact arguments.
+  #[test]
+  fn gaussian_exact() {
+    assert_eq!(interpret("GaussianWindow[0]").unwrap(), "1");
+    assert_eq!(interpret("GaussianWindow[1/4]").unwrap(), "E^(-25/72)");
+    assert_eq!(interpret("GaussianWindow[1/2]").unwrap(), "E^(-25/18)");
+    assert_eq!(interpret("GaussianWindow[1/4, 1/5]").unwrap(), "E^(-25/32)");
+  }
+
+  #[test]
+  fn gaussian_numeric_and_zero() {
+    let v: f64 = interpret("GaussianWindow[0.3]").unwrap().parse().unwrap();
+    assert!((v - 0.6065306597126334).abs() < 1e-12);
+    assert_eq!(interpret("GaussianWindow[0.6]").unwrap(), "0.");
+  }
 }
 
 mod right_tee {
