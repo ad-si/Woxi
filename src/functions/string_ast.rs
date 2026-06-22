@@ -7641,26 +7641,48 @@ pub fn damerau_levenshtein_distance_ast(
   let n = a.len();
   let m = b.len();
 
-  let mut dp = vec![vec![0usize; m + 1]; n + 1];
+  // True (unrestricted) Damerau-Levenshtein distance, matching Wolfram. Unlike
+  // the Optimal String Alignment variant — which forbids editing any substring
+  // more than once and so over-counts cases like "ca" -> "abc" (3 vs 2) — this
+  // uses a last-occurrence table so a transposition can interleave with other
+  // edits. The matrix is offset by +1 so the algorithm's logical index -1 maps
+  // to row/column 0, which holds the "infinity" border (max_dist).
+  let max_dist = n + m;
+  let mut d = vec![vec![0usize; m + 2]; n + 2];
+  d[0][0] = max_dist;
   for i in 0..=n {
-    dp[i][0] = i;
+    d[i + 1][0] = max_dist; // logical d[i][-1]
+    d[i + 1][1] = i; // logical d[i][0]
   }
   for j in 0..=m {
-    dp[0][j] = j;
+    d[0][j + 1] = max_dist; // logical d[-1][j]
+    d[1][j + 1] = j; // logical d[0][j]
   }
+  // Last row (1-based) at which each token last appeared in `a`; 0 = never.
+  let mut last_seen: std::collections::HashMap<String, usize> =
+    std::collections::HashMap::new();
   for i in 1..=n {
+    // Column (1-based) of the last token in `b` matched so far in this row.
+    let mut db = 0usize;
     for j in 1..=m {
-      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
-      let mut val = (dp[i - 1][j] + 1)
-        .min(dp[i][j - 1] + 1)
-        .min(dp[i - 1][j - 1] + cost);
-      if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
-        val = val.min(dp[i - 2][j - 2] + 1);
-      }
-      dp[i][j] = val;
+      let k = *last_seen.get(&b[j - 1]).unwrap_or(&0);
+      let l = db;
+      let cost = if a[i - 1] == b[j - 1] {
+        db = j;
+        0
+      } else {
+        1
+      };
+      // Index mapping: logical d[x][y] is stored at d[x+1][y+1].
+      let transposition = d[k][l] + (i - k - 1) + 1 + (j - l - 1);
+      d[i + 1][j + 1] = (d[i][j] + cost) // substitution
+        .min(d[i + 1][j] + 1) // insertion
+        .min(d[i][j + 1] + 1) // deletion
+        .min(transposition);
     }
+    last_seen.insert(a[i - 1].clone(), i);
   }
-  Ok(Expr::Integer(dp[n][m] as i128))
+  Ok(Expr::Integer(d[n + 1][m + 1] as i128))
 }
 
 /// The (start index in `a`, start index in `b`, length) of the longest

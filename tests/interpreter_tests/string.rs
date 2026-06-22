@@ -6080,6 +6080,18 @@ mod damerau_levenshtein_distance {
       "1"
     );
   }
+
+  // True (unrestricted) Damerau-Levenshtein: a transposition may interleave
+  // with another edit. "ca" -> "abc" is transpose c,a then insert b = 2. The
+  // Optimal String Alignment variant forbids re-editing the swapped pair and
+  // would report 3; Wolfram (and Woxi) use the true distance.
+  #[test]
+  fn transposition_interleaved_with_insertion() {
+    assert_eq!(
+      interpret(r#"DamerauLevenshteinDistance["ca", "abc"]"#).unwrap(),
+      "2"
+    );
+  }
 }
 
 mod sequence_alignment_similarity {
