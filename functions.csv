@@ -5013,7 +5013,7 @@ DatabaseConnect,,🚫,,12.0,5390
 DefaultAxesStyle,,,,7.0,5390
 DefaultFrameStyle,,,,7.0,5390
 DerivativePDETerm,,,,12.2,5390
-DirichletBeta,,,,10.0,5390
+DirichletBeta,Dirichlet beta function,✅,pure,10.0,5390
 DirichletLambda,Dirichlet lambda function (1 - 2^-s) Zeta[s],✅,pure,10.0,5390
 DiscreteTimeModelQ,,,,8.0,5390
 DisplayEndPacket,,🚫,,3.0,5390

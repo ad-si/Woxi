@@ -6981,6 +6981,54 @@ mod dirichlet_eta {
   }
 }
 
+// DirichletBeta[s] = sum over n of (-1)^n/(2n+1)^s.
+mod dirichlet_beta {
+  use super::*;
+
+  #[test]
+  fn odd_positive_integers_have_pi_closed_forms() {
+    assert_eq!(interpret("DirichletBeta[1]").unwrap(), "Pi/4");
+    assert_eq!(interpret("DirichletBeta[3]").unwrap(), "Pi^3/32");
+    assert_eq!(interpret("DirichletBeta[5]").unwrap(), "(5*Pi^5)/1536");
+    assert_eq!(interpret("DirichletBeta[7]").unwrap(), "(61*Pi^7)/184320");
+  }
+
+  #[test]
+  fn beta_two_is_catalan() {
+    assert_eq!(interpret("DirichletBeta[2]").unwrap(), "Catalan");
+  }
+
+  #[test]
+  fn non_positive_integers_use_euler_numbers() {
+    assert_eq!(interpret("DirichletBeta[0]").unwrap(), "1/2");
+    assert_eq!(interpret("DirichletBeta[-1]").unwrap(), "0");
+    assert_eq!(interpret("DirichletBeta[-2]").unwrap(), "-1/2");
+    assert_eq!(interpret("DirichletBeta[-4]").unwrap(), "5/2");
+  }
+
+  #[test]
+  fn even_positive_and_symbolic_use_hurwitz_form() {
+    assert_eq!(
+      interpret("DirichletBeta[4]").unwrap(),
+      "(Zeta[4, 1/4]/16 - Zeta[4, 3/4]/16)/16"
+    );
+    assert_eq!(
+      interpret("DirichletBeta[s]").unwrap(),
+      "(Zeta[s, 1/4]/2^s - Zeta[s, 3/4]/2^s)/2^s"
+    );
+  }
+
+  #[test]
+  fn numeric_arguments() {
+    // β(1) = π/4; the Hurwitz zetas individually diverge there.
+    let b1: f64 = interpret("DirichletBeta[1.0]").unwrap().parse().unwrap();
+    assert!((b1 - std::f64::consts::FRAC_PI_4).abs() < 1e-12, "got {b1}");
+    // β(2) = Catalan ≈ 0.9159655941772190.
+    let b2: f64 = interpret("DirichletBeta[2.0]").unwrap().parse().unwrap();
+    assert!((b2 - 0.9159655941772190).abs() < 1e-12, "got {b2}");
+  }
+}
+
 // DirichletLambda[s] = (1 - 2^(-s)) Zeta[s], the sum over odd n of 1/n^s.
 mod dirichlet_lambda {
   use super::*;

@@ -1839,3 +1839,108 @@ pub fn dirichlet_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   )?;
   crate::evaluator::evaluate_function_call_ast("Divide", &[numer, two_pow_s])
 }
+
+/// DirichletBeta[s] — the Dirichlet beta function β(s) = Σ (-1)^n/(2n+1)^s.
+/// Closed forms: odd positive integers via Euler numbers
+/// (β(2k+1) = (-1)^k E_{2k} π^(2k+1) / (4^(k+1)(2k)!)), non-positive integers
+/// β(n) = EulerE[-n]/2, β(2) = Catalan. Everything else (even positive
+/// integers, fractional and symbolic s) uses the Hurwitz-zeta form
+/// β(s) = (Zeta[s,1/4]/2^s − Zeta[s,3/4]/2^s)/2^s, matching wolframscript.
+pub fn dirichlet_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DirichletBeta expects exactly 1 argument".into(),
+    ));
+  }
+  let s = &args[0];
+
+  // Numeric (Real) argument: β(s) = 4^(-s) (ζ(s,1/4) − ζ(s,3/4)). The Hurwitz
+  // zetas individually diverge at s = 1 (their difference β(1) = π/4 is finite),
+  // so that point is handled directly.
+  if let Expr::Real(f) = s {
+    if *f == 1.0 {
+      return Ok(Expr::Real(std::f64::consts::FRAC_PI_4));
+    }
+    let beta = 4.0_f64.powf(-f)
+      * (hurwitz_zeta_numeric(*f, 0.25) - hurwitz_zeta_numeric(*f, 0.75));
+    return Ok(num_to_expr(beta));
+  }
+
+  // Exact integer argument.
+  if let Some(n) = crate::functions::math_ast::expr_to_i128(s) {
+    // β(n) = EulerE[-n]/2 for n <= 0.
+    if n <= 0 {
+      let euler = crate::evaluator::evaluate_function_call_ast(
+        "EulerE",
+        &[Expr::Integer(-n)],
+      )?;
+      return crate::evaluator::evaluate_function_call_ast(
+        "Divide",
+        &[euler, Expr::Integer(2)],
+      );
+    }
+    // β(2) is Catalan's constant.
+    if n == 2 {
+      return Ok(Expr::Identifier("Catalan".to_string()));
+    }
+    // Odd positive integers: β(2k+1) = (-1)^k E_{2k} π^(2k+1) / (4^(k+1)(2k)!).
+    if n % 2 == 1 {
+      let k = (n - 1) / 2;
+      let sign = if k % 2 == 0 { 1 } else { -1 };
+      let euler = crate::evaluator::evaluate_function_call_ast(
+        "EulerE",
+        &[Expr::Integer(2 * k)],
+      )?;
+      let pi_pow = crate::evaluator::evaluate_function_call_ast(
+        "Power",
+        &[Expr::Identifier("Pi".to_string()), Expr::Integer(n)],
+      )?;
+      let numer = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Integer(sign), euler, pi_pow],
+      )?;
+      let four_pow = crate::evaluator::evaluate_function_call_ast(
+        "Power",
+        &[Expr::Integer(4), Expr::Integer(k + 1)],
+      )?;
+      let fact = crate::evaluator::evaluate_function_call_ast(
+        "Factorial",
+        &[Expr::Integer(2 * k)],
+      )?;
+      let denom = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[four_pow, fact],
+      )?;
+      return crate::evaluator::evaluate_function_call_ast(
+        "Divide",
+        &[numer, denom],
+      );
+    }
+    // Even positive integers (>= 4) fall through to the Hurwitz form.
+  }
+
+  // General form: (Zeta[s,1/4]/2^s − Zeta[s,3/4]/2^s)/2^s.
+  let two_pow_s = crate::evaluator::evaluate_function_call_ast(
+    "Power",
+    &[Expr::Integer(2), s.clone()],
+  )?;
+  let z1 = crate::evaluator::evaluate_function_call_ast(
+    "Zeta",
+    &[s.clone(), make_rational(1, 4)],
+  )?;
+  let z3 = crate::evaluator::evaluate_function_call_ast(
+    "Zeta",
+    &[s.clone(), make_rational(3, 4)],
+  )?;
+  let t1 = crate::evaluator::evaluate_function_call_ast(
+    "Divide",
+    &[z1, two_pow_s.clone()],
+  )?;
+  let t3 = crate::evaluator::evaluate_function_call_ast(
+    "Divide",
+    &[z3, two_pow_s.clone()],
+  )?;
+  let diff =
+    crate::evaluator::evaluate_function_call_ast("Subtract", &[t1, t3])?;
+  crate::evaluator::evaluate_function_call_ast("Divide", &[diff, two_pow_s])
+}

@@ -1231,6 +1231,9 @@ pub fn dispatch_math_functions(
     "DirichletLambda" if args.len() == 1 => {
       return Some(crate::functions::math_ast::dirichlet_lambda_ast(args));
     }
+    "DirichletBeta" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::dirichlet_beta_ast(args));
+    }
     "RiemannSiegelZ" if args.len() == 1 => {
       return Some(crate::functions::math_ast::riemann_siegel_z_ast(args));
     }
