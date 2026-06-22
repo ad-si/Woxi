@@ -7708,6 +7708,68 @@ mod exponential_generating_function {
   }
 }
 
+// Asymptotic[f, x->x0] = leading series term; Asymptotic[f, {x,x0,n}] = series.
+mod asymptotic {
+  use super::*;
+
+  #[test]
+  fn leading_term_at_zero() {
+    assert_eq!(interpret("Asymptotic[Sin[x], x -> 0]").unwrap(), "x");
+    assert_eq!(interpret("Asymptotic[Cos[x], x -> 0]").unwrap(), "1");
+    assert_eq!(interpret("Asymptotic[Exp[x], x -> 0]").unwrap(), "1");
+    assert_eq!(interpret("Asymptotic[Log[1 + x], x -> 0]").unwrap(), "x");
+    assert_eq!(
+      interpret("Asymptotic[Cos[x] - 1, x -> 0]").unwrap(),
+      "-1/2*x^2"
+    );
+  }
+
+  #[test]
+  fn leading_term_of_polynomial() {
+    assert_eq!(interpret("Asymptotic[x^2 + x^3, x -> 0]").unwrap(), "x^2");
+    assert_eq!(interpret("Asymptotic[1 + x^2, x -> 0]").unwrap(), "1");
+    assert_eq!(interpret("Asymptotic[2 + 3 x, x -> 0]").unwrap(), "2");
+    assert_eq!(interpret("Asymptotic[x + x^2 + x^3, x -> 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn removable_singularity_is_quiet() {
+    // Sin[x]/x has a removable singularity at 0; leading term is 1 with no
+    // Power::infy / Infinity::indet messages leaking out.
+    let r = interpret_with_stdout("Asymptotic[Sin[x]/x, x -> 0]").unwrap();
+    assert_eq!(r.result, "1");
+    assert!(
+      r.warnings.is_empty(),
+      "expected no messages, got: {:?}",
+      r.warnings
+    );
+    assert_eq!(interpret("Asymptotic[E^x - 1, x -> 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn nonzero_expansion_point() {
+    assert_eq!(interpret("Asymptotic[Sin[x], x -> 1]").unwrap(), "Sin[1]");
+    assert_eq!(interpret("Asymptotic[1/x, x -> 1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn constant_is_returned() {
+    assert_eq!(interpret("Asymptotic[5, x -> 0]").unwrap(), "5");
+  }
+
+  #[test]
+  fn order_n_list_form_is_series() {
+    assert_eq!(
+      interpret("Asymptotic[Sin[x], {x, 0, 5}]").unwrap(),
+      "x - x^3/6 + x^5/120"
+    );
+    assert_eq!(
+      interpret("Asymptotic[Log[1 + x], {x, 0, 3}]").unwrap(),
+      "x - x^2/2 + x^3/3"
+    );
+  }
+}
+
 mod asymptotic_solve {
   use super::*;
 

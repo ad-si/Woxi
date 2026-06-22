@@ -562,6 +562,9 @@ pub fn dispatch_calculus_functions(
     "AsymptoticSolve" if args.len() == 3 => {
       return Some(crate::functions::calculus_ast::asymptotic_solve_ast(args));
     }
+    "Asymptotic" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::asymptotic_ast(args));
+    }
     "DiscreteConvolve" if args.len() == 4 => {
       return Some(crate::functions::calculus_ast::discrete_convolve_ast(args));
     }

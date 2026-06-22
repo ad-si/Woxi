@@ -14397,6 +14397,143 @@ fn total_differentiate(
   }
 }
 
+/// Asymptotic[f, x -> x0] returns the leading (lowest-order non-zero) term of
+/// the series expansion of f at the finite point x0. Asymptotic[f, {x, x0, n}]
+/// returns the series truncated at order n (Normal[Series[f, {x, x0, n}]]).
+/// Infinite expansion points and other forms are left unevaluated.
+pub fn asymptotic_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Asymptotic".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let f = &args[0];
+
+  match &args[1] {
+    // {x, x0, n} → Normal[Series[f, {x, x0, n}]].
+    Expr::List(items)
+      if items.len() == 3 && matches!(&items[0], Expr::Identifier(_)) =>
+    {
+      let series = crate::evaluator::evaluate_function_call_ast(
+        "Series",
+        &[f.clone(), args[1].clone()],
+      )?;
+      crate::evaluator::evaluate_function_call_ast("Normal", &[series])
+    }
+    // x -> x0 → leading term.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let var = match pattern.as_ref() {
+        Expr::Identifier(name) => name.clone(),
+        _ => return unevaluated(),
+      };
+      let x0 = replacement.as_ref().clone();
+      // Only finite expansion points are handled here.
+      let is_infinite = matches!(&x0, Expr::Identifier(n) if n == "Infinity" || n == "ComplexInfinity")
+        || matches!(&x0, Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand }
+            if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity"));
+      if is_infinite {
+        return unevaluated();
+      }
+      // The leading term is a finite quantity even when the series of f at x0
+      // transiently divides by zero (e.g. Sin[x]/x); discard the messages those
+      // intermediate steps emit, the way wolframscript's Asymptotic does.
+      let snapshot = crate::snapshot_warnings();
+      let mut found: Option<Expr> = None;
+      for &order in &[6i128, 16, 40] {
+        let spec = Expr::List(
+          vec![
+            Expr::Identifier(var.clone()),
+            x0.clone(),
+            Expr::Integer(order),
+          ]
+          .into(),
+        );
+        let series = crate::evaluator::evaluate_function_call_ast(
+          "Series",
+          &[f.clone(), spec],
+        )?;
+        if let Some(term) = leading_series_term(&series, &var, &x0) {
+          found = Some(term);
+          break;
+        }
+        // A non-SeriesData, non-zero result (e.g. a constant) is the answer.
+        if !matches!(&series, Expr::FunctionCall { name, .. } if name == "SeriesData")
+          && !matches!(&series, Expr::Integer(0))
+          && !matches!(&series, Expr::Real(z) if *z == 0.0)
+        {
+          found = Some(series);
+          break;
+        }
+      }
+      crate::restore_warnings(snapshot);
+      match found {
+        Some(term) => crate::evaluator::evaluate_expr_to_expr(&term),
+        None => unevaluated(),
+      }
+    }
+    _ => unevaluated(),
+  }
+}
+
+/// Extract the leading (first non-zero) term `c*(x-x0)^order` from a SeriesData
+/// expression. Returns None when every stored coefficient is zero.
+fn leading_series_term(series: &Expr, var: &str, x0: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = series else {
+    return None;
+  };
+  if name != "SeriesData" || args.len() < 6 {
+    return None;
+  }
+  // SeriesData[var, x0, {coeffs}, nmin, nmax, denom]
+  let coeffs = match &args[2] {
+    Expr::List(c) => c,
+    _ => return None,
+  };
+  let nmin = crate::functions::math_ast::expr_to_i128(&args[3])?;
+  let denom = crate::functions::math_ast::expr_to_i128(&args[5])?;
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(z) if *z == 0.0)
+  };
+  for (i, c) in coeffs.iter().enumerate() {
+    if is_zero(c) {
+      continue;
+    }
+    let order = nmin + i as i128;
+    if order == 0 {
+      return Some(c.clone());
+    }
+    let exp = if denom == 1 {
+      Expr::Integer(order)
+    } else {
+      crate::functions::math_ast::make_rational(order, denom)
+    };
+    let base = if matches!(x0, Expr::Integer(0)) {
+      Expr::Identifier(var.to_string())
+    } else {
+      Expr::FunctionCall {
+        name: "Subtract".to_string(),
+        args: vec![Expr::Identifier(var.to_string()), x0.clone()].into(),
+      }
+    };
+    let pow = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![base, exp].into(),
+    };
+    return Some(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![c.clone(), pow].into(),
+    });
+  }
+  None
+}
+
 /// AsymptoticSolve[eqn, x -> x0, n] — find asymptotic solutions of eqn near x = x0 to order n.
 ///
 /// Uses Series expansion and iterative coefficient solving.
