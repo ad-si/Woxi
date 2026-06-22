@@ -2821,6 +2821,29 @@ mod chebyshev_t {
   }
 
   #[test]
+  fn non_integer_order() {
+    // Non-integer order uses T_n(x) = Cos[n ArcCos[x]]. A half-integer order
+    // rewrites for any x; other orders rewrite only when x is numeric.
+    // Verified against wolframscript.
+    assert_eq!(interpret("ChebyshevT[1/2, 0]").unwrap(), "1/Sqrt[2]");
+    assert_eq!(interpret("ChebyshevT[1/2, 1/2]").unwrap(), "Sqrt[3]/2");
+    assert_eq!(interpret("ChebyshevT[1/2, -1]").unwrap(), "0");
+    assert_eq!(interpret("ChebyshevT[3/2, 0]").unwrap(), "-(1/Sqrt[2])");
+    assert_eq!(interpret("ChebyshevT[1/3, 1/2]").unwrap(), "Cos[Pi/9]");
+    assert_eq!(
+      interpret("ChebyshevT[1/2, 1/3]").unwrap(),
+      "Cos[ArcCos[1/3]/2]"
+    );
+    // Half-integer order rewrites even for symbolic x.
+    assert_eq!(interpret("ChebyshevT[1/2, x]").unwrap(), "Cos[ArcCos[x]/2]");
+    // A non-half-integer order with symbolic x stays unevaluated.
+    assert_eq!(
+      interpret("ChebyshevT[1/3, x]").unwrap(),
+      "ChebyshevT[1/3, x]"
+    );
+  }
+
+  #[test]
   fn at_one() {
     assert_eq!(interpret("ChebyshevT[5, 1]").unwrap(), "1");
   }
@@ -2886,6 +2909,22 @@ mod chebyshev_u {
   #[test]
   fn degree_two() {
     assert_eq!(interpret("ChebyshevU[2, x]").unwrap(), "-1 + 4*x^2");
+  }
+
+  #[test]
+  fn non_integer_order() {
+    // Non-integer order uses U_n(x) = Sin[(n+1) ArcCos[x]]/(Sqrt[1-x] Sqrt[1+x]),
+    // with U_n(1) = n + 1 (removable singularity). Verified against
+    // wolframscript.
+    assert_eq!(interpret("ChebyshevU[1/2, 0]").unwrap(), "1/Sqrt[2]");
+    assert_eq!(interpret("ChebyshevU[1/2, 1/2]").unwrap(), "2/Sqrt[3]");
+    assert_eq!(interpret("ChebyshevU[3/2, 0]").unwrap(), "-(1/Sqrt[2])");
+    assert_eq!(interpret("ChebyshevU[1/2, 1]").unwrap(), "3/2");
+    assert_eq!(interpret("ChebyshevU[1/2, -1]").unwrap(), "ComplexInfinity");
+    assert_eq!(
+      interpret("ChebyshevU[3/2, x]").unwrap(),
+      "Sin[(5*ArcCos[x])/2]/(Sqrt[1 - x]*Sqrt[1 + x])"
+    );
   }
 
   #[test]

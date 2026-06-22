@@ -1909,6 +1909,97 @@ fn chebyshev_general_numeric(
   )
 }
 
+/// Exact (non-numeric) closed form of `ChebyshevT`/`ChebyshevU` for a
+/// non-integer rational order, via the same identities as
+/// [`chebyshev_general_numeric`] but kept symbolic. wolframscript performs this
+/// rewrite for a half-integer order at any `x` (`ChebyshevT[1/2, x]` →
+/// `Cos[ArcCos[x]/2]`), and for any other non-integer order only when `x` is
+/// numeric (`ChebyshevT[1/3, 1/2]` → `Cos[Pi/9]`). The U-form uses the factored
+/// denominator `Sqrt[1-x] Sqrt[1+x]` that wolframscript displays, and
+/// `ChebyshevU[n, 1]` is the removable-singularity value `n + 1`.
+fn chebyshev_general_exact(
+  kind: &str,
+  n_expr: &Expr,
+  x_expr: &Expr,
+) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  // n must be a non-integer rational p/q (q > 1).
+  let q = match n_expr {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(_), Expr::Integer(q)) if *q > 1 => *q,
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  // A half-integer order rewrites for any x; other orders only for numeric x.
+  if q != 2 && !crate::functions::predicate_ast::is_numeric_q_pub(x_expr) {
+    return None;
+  }
+  // ChebyshevU[n, 1] = n + 1 (the Sin/Sqrt form is 0/0 there).
+  if kind == "U" && matches!(x_expr, Expr::Integer(1)) {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(n_expr.clone()),
+      right: Box::new(Expr::Integer(1)),
+    })
+    .ok();
+  }
+  let acos_x = Expr::FunctionCall {
+    name: "ArcCos".to_string(),
+    args: vec![x_expr.clone()].into(),
+  };
+  let order = match kind {
+    "T" => n_expr.clone(),
+    "U" => Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(n_expr.clone()),
+      right: Box::new(Expr::Integer(1)),
+    },
+    _ => return None,
+  };
+  let arg = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(order),
+    right: Box::new(acos_x),
+  };
+  let trig = Expr::FunctionCall {
+    name: if kind == "T" { "Cos" } else { "Sin" }.to_string(),
+    args: vec![arg].into(),
+  };
+  let final_expr = if kind == "T" {
+    trig
+  } else {
+    // Sin[(n+1) ArcCos[x]] / (Sqrt[1 - x] Sqrt[1 + x]).
+    let sqrt = |e: Expr| Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![e].into(),
+    };
+    let denom = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(sqrt(Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(x_expr.clone()),
+      })),
+      right: Box::new(sqrt(Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(x_expr.clone()),
+      })),
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(trig),
+      right: Box::new(denom),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&final_expr).ok()
+}
+
 /// ChebyshevT[n, x] - Chebyshev polynomial of the first kind
 pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -1925,6 +2016,10 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // form T_n(x) = Cos[n * ArcCos[x]] so wolframscript-style numeric
       // results work, e.g. ChebyshevT[1 - I, 0.5].
       if let Some(result) = chebyshev_general_numeric("T", &args[0], &args[1]) {
+        return Ok(result);
+      }
+      // Exact non-integer order: rewrite to Cos[n ArcCos[x]] like wolframscript.
+      if let Some(result) = chebyshev_general_exact("T", &args[0], &args[1]) {
         return Ok(result);
       }
       return Ok(Expr::FunctionCall {
@@ -2154,6 +2249,10 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Complex (or non-integer) order with a numeric x: use the closed
       // form U_n(x) = Sin[(n+1) * ArcCos[x]] / Sqrt[1 - x^2].
       if let Some(result) = chebyshev_general_numeric("U", &args[0], &args[1]) {
+        return Ok(result);
+      }
+      // Exact non-integer order: rewrite to the Sin/Sqrt closed form.
+      if let Some(result) = chebyshev_general_exact("U", &args[0], &args[1]) {
         return Ok(result);
       }
       return Ok(Expr::FunctionCall {
