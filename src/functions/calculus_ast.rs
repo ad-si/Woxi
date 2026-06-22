@@ -15593,6 +15593,71 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
   Some(result)
 }
 
+/// DiscreteShift[f, x] — the discrete shift operator: substitutes x → x+1 in f.
+/// DiscreteShift[f, {x, k}] shifts by k. Additional variable arguments are each
+/// shifted by 1 (`DiscreteShift[f, x, y]`). The substituted result is expanded
+/// only when its top-level head is Plus, matching wolframscript. A specifier
+/// that is not a valid variable emits `General::ivar` and stays unevaluated.
+pub fn discrete_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DiscreteShift".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() {
+    return unevaluated();
+  }
+  // With no variable specifier the shift is the identity.
+  if args.len() == 1 {
+    return crate::evaluator::evaluate_expr_to_expr(&args[0]);
+  }
+
+  // Parse and validate every variable specifier first so a single bad one
+  // leaves the whole expression unevaluated (no partial shifts).
+  let mut specs: Vec<(String, Expr)> = Vec::with_capacity(args.len() - 1);
+  for spec in &args[1..] {
+    match spec {
+      Expr::Identifier(name) => {
+        specs.push((name.clone(), Expr::Integer(1)));
+      }
+      Expr::List(items)
+        if items.len() == 2 && matches!(&items[0], Expr::Identifier(_)) =>
+      {
+        if let Expr::Identifier(name) = &items[0] {
+          specs.push((name.clone(), items[1].clone()));
+        }
+      }
+      _ => {
+        crate::emit_message(&format!(
+          "General::ivar: {} is not a valid variable.",
+          crate::syntax::expr_to_string(spec)
+        ));
+        return unevaluated();
+      }
+    }
+  }
+
+  // Apply each shift x → x + k.
+  let mut result = args[0].clone();
+  for (var, k) in &specs {
+    let shifted = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![k.clone(), Expr::Identifier(var.clone())].into(),
+    };
+    result = crate::syntax::substitute_variable(&result, var, &shifted);
+  }
+  let result = crate::evaluator::evaluate_expr_to_expr(&result)?;
+
+  // wolframscript expands the result only when its top-level head is Plus.
+  let head =
+    crate::evaluator::evaluate_function_call_ast("Head", &[result.clone()])?;
+  if matches!(&head, Expr::Identifier(h) if h == "Plus") {
+    return crate::functions::polynomial_ast::expand_ast(&[result]);
+  }
+  Ok(result)
+}
+
 /// DifferenceDelta[f, x] = f(x+1) - f(x)
 /// DifferenceDelta[f, {x, n}] = n-th order forward difference with step 1
 /// DifferenceDelta[f, {x, n, h}] = n-th order forward difference with step h

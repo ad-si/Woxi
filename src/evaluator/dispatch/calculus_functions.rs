@@ -779,6 +779,9 @@ pub fn dispatch_calculus_functions(
     "DifferenceDelta" if !args.is_empty() => {
       return Some(crate::functions::calculus_ast::difference_delta_ast(args));
     }
+    "DiscreteShift" if !args.is_empty() => {
+      return Some(crate::functions::calculus_ast::discrete_shift_ast(args));
+    }
     "DifferenceQuotient" if !args.is_empty() => {
       return Some(crate::functions::calculus_ast::difference_quotient_ast(
         args,

@@ -3510,7 +3510,7 @@ CloudAccountData,,🚫,,10.0,3612
 CloudConnect,,🚫,,10.0,3612
 CreateNotebook,,🚫,,10.0,3612
 Dialog,,🚫,,2.0,3612
-DiscreteShift,,,,7.0,3612
+DiscreteShift,Discrete shift of an expression (n -> n+1),✅,pure,7.0,3612
 GaugeFaceStyle,,🚫,,9.0,3612
 HilbertCurve,,,,11.1,3612
 KumaraswamyDistribution,,,,8.0,3612

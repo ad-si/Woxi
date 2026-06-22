@@ -8328,6 +8328,80 @@ mod difference_delta {
   }
 }
 
+// DiscreteShift[f, n] substitutes n -> n+1 in f.
+mod discrete_shift {
+  use super::*;
+
+  #[test]
+  fn basic_shift() {
+    assert_eq!(interpret("DiscreteShift[f[n], n]").unwrap(), "f[1 + n]");
+    assert_eq!(interpret("DiscreteShift[n^2, n]").unwrap(), "(1 + n)^2");
+    assert_eq!(interpret("DiscreteShift[2^n, n]").unwrap(), "2^(1 + n)");
+    assert_eq!(interpret("DiscreteShift[Sin[n], n]").unwrap(), "Sin[1 + n]");
+    assert_eq!(interpret("DiscreteShift[c, n]").unwrap(), "c");
+  }
+
+  #[test]
+  fn polynomial_sum_is_expanded() {
+    // A top-level Plus result is expanded; a single power/product is not.
+    assert_eq!(
+      interpret("DiscreteShift[n^2 + 3 n + 1, n]").unwrap(),
+      "5 + 5*n + n^2"
+    );
+    assert_eq!(
+      interpret("DiscreteShift[a n^2 + b n, n]").unwrap(),
+      "a + b + 2*a*n + b*n + a*n^2"
+    );
+    assert_eq!(interpret("DiscreteShift[2 n^2, n]").unwrap(), "2*(1 + n)^2");
+  }
+
+  #[test]
+  fn shift_by_k_via_list() {
+    assert_eq!(
+      interpret("DiscreteShift[f[n], {n, 2}]").unwrap(),
+      "f[2 + n]"
+    );
+    assert_eq!(
+      interpret("DiscreteShift[f[n], {n, -1}]").unwrap(),
+      "f[-1 + n]"
+    );
+  }
+
+  #[test]
+  fn multiple_variables() {
+    assert_eq!(
+      interpret("DiscreteShift[f[n, m], n, m]").unwrap(),
+      "f[1 + n, 1 + m]"
+    );
+  }
+
+  #[test]
+  fn threads_over_lists() {
+    assert_eq!(
+      interpret("DiscreteShift[{n, n^2}, n]").unwrap(),
+      "{1 + n, (1 + n)^2}"
+    );
+  }
+
+  #[test]
+  fn one_argument_is_identity() {
+    assert_eq!(interpret("DiscreteShift[f[n]]").unwrap(), "f[n]");
+  }
+
+  #[test]
+  fn non_variable_specifier_emits_ivar() {
+    let r = interpret_with_stdout("DiscreteShift[f[n], n, 2]").unwrap();
+    assert_eq!(r.result, "DiscreteShift[f[n], n, 2]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("General::ivar: 2 is not a valid variable.")),
+      "expected ivar message, got: {:?}",
+      r.warnings
+    );
+  }
+}
+
 mod difference_quotient {
   use super::*;
 
