@@ -2127,6 +2127,15 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![args[0].clone(), target].into(),
       });
     }
+    // A dimensionless numeric argument (a plain number, Pi, Sqrt[2], 1 + I, …)
+    // is already "converted": it passes through unchanged, matching
+    // wolframscript. `Infinity` and symbolic expressions are not numeric and
+    // stay unevaluated. This is what makes e.g.
+    // `Quantity[1, "Hours"] / Quantity[1, "Minutes"] // UnitConvert` → 60
+    // rather than the spurious `UnitConvert[60]`.
+    if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
+      return Ok(args[0].clone());
+    }
     return Ok(Expr::FunctionCall {
       name: "UnitConvert".to_string(),
       args: args.to_vec().into(),

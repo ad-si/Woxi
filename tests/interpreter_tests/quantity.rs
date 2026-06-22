@@ -637,6 +637,27 @@ fn unit_convert_one_arg_to_si_base() {
   );
 }
 
+#[test]
+fn unit_convert_dimensionless_number_passes_through() {
+  // A dimensionless numeric argument is already converted: it passes through
+  // unchanged (matching wolframscript). This is what makes a ratio of
+  // commensurate quantities reduce to a bare number.
+  assert_eq!(interpret("UnitConvert[60]").unwrap(), "60");
+  assert_eq!(interpret("UnitConvert[3/2]").unwrap(), "3/2");
+  assert_eq!(interpret("UnitConvert[Pi]").unwrap(), "Pi");
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Hours\"]/Quantity[1, \"Minutes\"]]")
+      .unwrap(),
+    "60"
+  );
+  // Symbolic and non-numeric arguments (including Infinity) stay unevaluated.
+  assert_eq!(interpret("UnitConvert[x]").unwrap(), "UnitConvert[x]");
+  assert_eq!(
+    interpret("UnitConvert[Infinity]").unwrap(),
+    "UnitConvert[Infinity]"
+  );
+}
+
 // Derived SI units display their compound base with Wolfram-matching
 // parenthesization: product numerators and product denominators are grouped,
 // so a/(b*c) and (a*b)/c render unambiguously.
