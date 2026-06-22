@@ -151,6 +151,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // Listable + Protected (no NumericFunction)
     "Discriminant" => vec!["Listable", "Protected"],
 
+    // Listable + Protected + ReadProtected (no NumericFunction)
+    "Divisible" => vec!["Listable", "Protected", "ReadProtected"],
+
     // These have ReadProtected too
     "Exp"
     | "AiryAi"

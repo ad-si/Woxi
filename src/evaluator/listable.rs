@@ -90,6 +90,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "RealDigits"
       | "RomanNumeral"
       | "CoprimeQ"
+      | "Divisible"
       | "EulerPhi"
       | "CarmichaelLambda"
       | "MoebiusMu"

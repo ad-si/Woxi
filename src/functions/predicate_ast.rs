@@ -1678,62 +1678,89 @@ pub fn palindrome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Divisible[n, m] - Tests if n is divisible by m
 /// Returns unevaluated if arguments are not exact numbers (non-integer Reals)
 pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use num_bigint::BigInt;
+  use num_traits::Zero;
+
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "Divisible expects exactly 2 arguments".into(),
     ));
   }
 
-  // Check if first argument is a non-exact number (Real with fractional part)
-  let n = match &args[0] {
-    Expr::Integer(n) => num_bigint::BigInt::from(*n),
-    Expr::BigInteger(n) => n.clone(),
-    Expr::Real(f) if f.fract() == 0.0 => num_bigint::BigInt::from(*f as i128),
-    Expr::Real(_) => {
-      // Non-exact number - return unevaluated
-      return Ok(Expr::FunctionCall {
-        name: "Divisible".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Divisible".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+  let unevaluated = || Expr::FunctionCall {
+    name: "Divisible".to_string(),
+    args: args.to_vec().into(),
   };
 
-  // Check if second argument is a non-exact number
-  let m = match &args[1] {
-    Expr::Integer(m) => num_bigint::BigInt::from(*m),
-    Expr::BigInteger(m) => m.clone(),
-    Expr::Real(f) if f.fract() == 0.0 => num_bigint::BigInt::from(*f as i128),
-    Expr::Real(_) => {
-      // Non-exact number - return unevaluated
-      return Ok(Expr::FunctionCall {
-        name: "Divisible".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Divisible".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-  };
-
-  {
-    use num_traits::Zero;
-    if m.is_zero() {
-      return Err(InterpreterError::EvaluationError(
-        "Divisible: divisor cannot be zero".into(),
-      ));
-    }
-
-    Ok(bool_expr((n % m).is_zero()))
+  // Extract an exact rational (numerator, denominator) from an argument.
+  // Returns Ok(Some(...)) for an exact number, Ok(None) for a symbolic value
+  // (stay unevaluated, no message), or Err-signalled `::exact` for a Real.
+  enum Exact {
+    Rational(BigInt, BigInt),
+    NonExact,
+    Symbolic,
   }
+  let classify = |e: &Expr| -> Exact {
+    match e {
+      Expr::Integer(n) => Exact::Rational(BigInt::from(*n), BigInt::from(1)),
+      Expr::BigInteger(n) => Exact::Rational(n.clone(), BigInt::from(1)),
+      Expr::FunctionCall { name, args: ra }
+        if name == "Rational" && ra.len() == 2 =>
+      {
+        match (&ra[0], &ra[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) => {
+            Exact::Rational(BigInt::from(*p), BigInt::from(*q))
+          }
+          _ => Exact::Symbolic,
+        }
+      }
+      // Reals (even integer-valued like 12.) are not exact numbers.
+      Expr::Real(_) | Expr::BigFloat(_, _) => Exact::NonExact,
+      _ => Exact::Symbolic,
+    }
+  };
+
+  let exact_message = |e: &Expr| {
+    crate::emit_message(&format!(
+      "Divisible::exact: Argument {} in {} is not an exact number.",
+      crate::syntax::expr_to_output(e),
+      crate::syntax::expr_to_output(&unevaluated())
+    ));
+  };
+
+  // wolframscript reports the FIRST non-exact argument.
+  let (na, da) = match classify(&args[0]) {
+    Exact::Rational(n, d) => (n, d),
+    Exact::NonExact => {
+      exact_message(&args[0]);
+      return Ok(unevaluated());
+    }
+    Exact::Symbolic => return Ok(unevaluated()),
+  };
+  let (nb, db) = match classify(&args[1]) {
+    Exact::Rational(n, d) => (n, d),
+    Exact::NonExact => {
+      exact_message(&args[1]);
+      return Ok(unevaluated());
+    }
+    Exact::Symbolic => return Ok(unevaluated()),
+  };
+
+  // A zero divisor is invalid. (wolframscript emits Divisible::divz and stays
+  // unevaluated; Woxi surfaces it as an evaluation error — see the existing
+  // `divisible_division_by_zero` test.)
+  if nb.is_zero() {
+    return Err(InterpreterError::EvaluationError(
+      "Divisible: divisor cannot be zero".into(),
+    ));
+  }
+
+  // Divisible[a, b] is True iff a/b is an integer. With a = na/da and
+  // b = nb/db, a/b = (na*db)/(da*nb); it is an integer iff (da*nb) divides
+  // (na*db).
+  let numer = na * &db;
+  let denom = da * &nb;
+  Ok(bool_expr((numer % denom).is_zero()))
 }
 
 /// Check if an expression represents a complex number (has nonzero imaginary part).

@@ -120,6 +120,61 @@ mod divisible {
   fn divisible_division_by_zero() {
     assert!(interpret("Divisible[5, 0]").is_err());
   }
+
+  // Divisible is Listable: it threads over list arguments (and nested lists),
+  // broadcasting a scalar argument.
+  #[test]
+  fn divisible_listable() {
+    assert_eq!(
+      interpret("Divisible[{6, 7, 8}, 2]").unwrap(),
+      "{True, False, True}"
+    );
+    assert_eq!(
+      interpret("Divisible[12, {2, 3, 5}]").unwrap(),
+      "{True, True, False}"
+    );
+    assert_eq!(
+      interpret("Divisible[{6, 12}, {2, 4}]").unwrap(),
+      "{True, True}"
+    );
+    assert_eq!(
+      interpret("Divisible[{{1, 2}, {3, 4}}, 2]").unwrap(),
+      "{{False, True}, {False, True}}"
+    );
+  }
+
+  // Divisible accepts exact rationals: a/b need only be an integer.
+  #[test]
+  fn divisible_rationals() {
+    assert_eq!(interpret("Divisible[3/2, 1/2]").unwrap(), "True");
+    assert_eq!(interpret("Divisible[5/2, 1/2]").unwrap(), "True");
+    assert_eq!(interpret("Divisible[1/3, 1/2]").unwrap(), "False");
+  }
+
+  #[test]
+  fn divisible_attributes() {
+    assert_eq!(
+      interpret("Attributes[Divisible]").unwrap(),
+      "{Listable, Protected, ReadProtected}"
+    );
+  }
+
+  // A non-exact (Real) argument stays unevaluated and emits Divisible::exact.
+  #[test]
+  fn divisible_exact_message() {
+    assert_eq!(
+      interpret("Divisible[12.0, 4]").unwrap(),
+      "Divisible[12., 4]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Divisible::exact: Argument 12. in Divisible[12., 4] is not an exact number."
+      )),
+      "expected exact message, got {:?}",
+      msgs
+    );
+  }
 }
 
 mod fibonacci_builtin {
