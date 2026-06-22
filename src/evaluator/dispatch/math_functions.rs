@@ -10,6 +10,13 @@ use crate::functions::math_ast::make_sqrt;
 /// `InterquartileRange[{{1,10},{2,20},{3,30},{4,40}}]` → `{2, 20}`). Returns
 /// `None` when the single argument is not such a matrix, leaving the
 /// scalar/vector path to handle it.
+/// True for an explicit numeric literal: integer, big integer, machine real, or
+/// an exact `Rational[_, _]`. Symbolic constants (Pi, E, …) are not included.
+fn is_numeric_literal(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+    || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+}
+
 fn columnwise_quartile_stat(
   name: &str,
   args: &[Expr],
@@ -1322,6 +1329,28 @@ pub fn dispatch_math_functions(
     "BetaRegularized" if args.len() == 3 => {
       return Some(crate::functions::math_ast::beta_regularized_ast(args));
     }
+    // Generalized form BetaRegularized[z0, z1, a, b] =
+    // BetaRegularized[z1, a, b] - BetaRegularized[z0, a, b]. wolframscript
+    // evaluates it (exactly or numerically) when every argument is a number,
+    // and otherwise keeps the 4-argument form symbolic.
+    "BetaRegularized" if args.len() == 4 => {
+      if args.iter().all(is_numeric_literal) {
+        let f = |z: &Expr| Expr::FunctionCall {
+          name: "BetaRegularized".to_string(),
+          args: vec![z.clone(), args[2].clone(), args[3].clone()].into(),
+        };
+        let diff = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(f(&args[1])),
+          right: Box::new(f(&args[0])),
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "BetaRegularized".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "MarcumQ" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::math_ast::marcum_q_ast(args));
     }
@@ -1508,6 +1537,27 @@ pub fn dispatch_math_functions(
     }
     "Beta" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::beta_ast(args));
+    }
+    // Generalized incomplete Beta: Beta[z0, z1, a, b] = Beta[z1, a, b] -
+    // Beta[z0, a, b], evaluated when all arguments are numbers (symbolic
+    // otherwise), matching wolframscript.
+    "Beta" if args.len() == 4 => {
+      if args.iter().all(is_numeric_literal) {
+        let f = |z: &Expr| Expr::FunctionCall {
+          name: "Beta".to_string(),
+          args: vec![z.clone(), args[2].clone(), args[3].clone()].into(),
+        };
+        let diff = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(f(&args[1])),
+          right: Box::new(f(&args[0])),
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "Beta".to_string(),
+        args: args.to_vec().into(),
+      }));
     }
     "LogIntegral" if args.len() == 1 => {
       return Some(crate::functions::math_ast::log_integral_ast(args));

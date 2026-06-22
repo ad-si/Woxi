@@ -7790,6 +7790,61 @@ mod beta_regularized {
       .unwrap();
     assert!((result - 0.6875).abs() < 1e-10);
   }
+
+  // BetaRegularized[z0, z1, a, b] = BetaRegularized[z1, a, b] -
+  // BetaRegularized[z0, a, b], evaluated when all arguments are numbers.
+  #[test]
+  fn four_arg_exact() {
+    assert_eq!(
+      interpret("BetaRegularized[1/4, 3/4, 2, 3]").unwrap(),
+      "11/16"
+    );
+    assert_eq!(interpret("BetaRegularized[0, 1, 2, 3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn four_arg_numeric() {
+    let result: f64 = interpret("BetaRegularized[0.3, 0.7, 2, 3]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.5680000000000003).abs() < 1e-9, "got {result}");
+  }
+
+  #[test]
+  fn four_arg_symbolic_stays_unevaluated() {
+    assert_eq!(
+      interpret("BetaRegularized[z0, z1, a, b]").unwrap(),
+      "BetaRegularized[z0, z1, a, b]"
+    );
+  }
+}
+
+// Beta[z0, z1, a, b] is the generalized incomplete Beta = Beta[z1, a, b] -
+// Beta[z0, a, b].
+mod generalized_incomplete_beta {
+  use super::*;
+
+  #[test]
+  fn four_arg_exact() {
+    assert_eq!(interpret("Beta[1/4, 3/4, 2, 3]").unwrap(), "11/192");
+    assert_eq!(interpret("Beta[0, 1, 2, 3]").unwrap(), "1/12");
+  }
+
+  #[test]
+  fn four_arg_numeric() {
+    let result: f64 =
+      interpret("Beta[0.2, 0.8, 2, 3]").unwrap().parse().unwrap();
+    assert!((result - 0.066).abs() < 1e-9, "got {result}");
+  }
+
+  #[test]
+  fn four_arg_symbolic_stays_unevaluated() {
+    assert_eq!(
+      interpret("Beta[z0, z1, a, b]").unwrap(),
+      "Beta[z0, z1, a, b]"
+    );
+  }
 }
 
 mod sinh_integral {
