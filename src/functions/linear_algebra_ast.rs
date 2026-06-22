@@ -6854,7 +6854,56 @@ pub fn matrix_function_ast(
   )?;
   let alpha_m = make("Times", vec![alpha, mat.clone()])?;
   let beta_i = make("Times", vec![beta, identity])?;
-  make("Plus", vec![alpha_m, beta_i])
+  let result = make("Plus", vec![alpha_m, beta_i])?;
+
+  // Pure-imaginary eigenvalues (a zero-trace 2×2 matrix with complex
+  // eigenvalues ±i·b) turn the α·M + β·I assembly into a tangle of complex
+  // exponentials (e.g. (I/E^I + I*E^I)/(2*I)); convert these to the canonical
+  // trig form, matching wolframscript:
+  // MatrixExp[{{0,-1},{1,0}}] = {{Cos[1], -Sin[1]}, {Sin[1], Cos[1]}}.
+  // General complex eigenvalues a±i·b (a ≠ 0) are left as-is: Simplify cannot
+  // reduce E^(a±i·b) to E^a·(Cos b ± i·Sin b), so converting them would only
+  // produce a differently-tangled Cosh/Sinh form.
+  if func == "Exp" && mentions_imaginary_unit(&l1) {
+    let trace = if let Expr::List(rows) = &mat {
+      match (&rows[0], &rows[1]) {
+        (Expr::List(r0), Expr::List(r1)) => {
+          make("Plus", vec![r0[0].clone(), r1[1].clone()]).ok()
+        }
+        _ => None,
+      }
+    } else {
+      None
+    };
+    if matches!(&trace, Some(t) if is_zero(t)) {
+      let trig = make("ExpToTrig", vec![result])?;
+      return make("Simplify", vec![trig]);
+    }
+  }
+  Ok(result)
+}
+
+/// True if the expression structurally contains the imaginary unit — the bare
+/// symbol `I` or a `Complex[_, nonzero]` literal. Used to detect non-real
+/// eigenvalues so MatrixExp can render them in trig form. (Eigenvalues print
+/// `I` as the identifier `I` rather than the `Complex[0, 1]` literal, so a
+/// direct `Im[...]` test does not resolve.)
+fn mentions_imaginary_unit(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(s) | Expr::Constant(s) => s == "I",
+    Expr::FunctionCall { name, args } => {
+      (name == "Complex"
+        && args.len() == 2
+        && !matches!(&args[1], Expr::Integer(0))
+        && !matches!(&args[1], Expr::Real(z) if *z == 0.0))
+        || args.iter().any(mentions_imaginary_unit)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      mentions_imaginary_unit(left) || mentions_imaginary_unit(right)
+    }
+    Expr::UnaryOp { operand, .. } => mentions_imaginary_unit(operand),
+    _ => false,
+  }
 }
 
 /// JordanDecomposition[m] for exact 2×2 matrices: returns {s, j} with

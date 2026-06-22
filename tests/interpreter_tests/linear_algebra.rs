@@ -3399,6 +3399,21 @@ mod cases {
       r#"{{E^4, E^4}, {0, E^4}}"#,
     );
   }
+
+  // A zero-trace real 2x2 matrix has pure-imaginary eigenvalues ±i·b; its
+  // exponential is the rotation matrix in Cos/Sin form, not a tangle of
+  // complex exponentials.
+  #[test]
+  fn matrix_exp_pure_imaginary_eigenvalues() {
+    assert_case(
+      r#"MatrixExp[{{0, -1}, {1, 0}}]"#,
+      r#"{{Cos[1], -Sin[1]}, {Sin[1], Cos[1]}}"#,
+    );
+    assert_case(
+      r#"MatrixExp[{{0, -2}, {2, 0}}]"#,
+      r#"{{Cos[2], -Sin[2]}, {Sin[2], Cos[2]}}"#,
+    );
+  }
   // MatrixExp[m, v] computes the action MatrixExp[m].v on a vector.
   #[test]
   fn matrix_exp_on_vector() {
