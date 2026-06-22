@@ -1415,6 +1415,82 @@ pub fn dispatch_linear_algebra_functions(
         });
       return Some(evaluated);
     }
+    // LinearFractionalTransform[{m, v, w, b}] → the projective transform
+    //   p |-> (m.p + v) / (w.p + b),
+    // represented by the (n+1)x(n+1) augmented matrix
+    //   {{ m , v },
+    //    { w , b }}
+    // whose last row is the homogeneous denominator (so application divides by
+    // w.p + b). LinearFractionalTransform[m] uses a full homogeneous matrix m.
+    "LinearFractionalTransform" if args.len() == 1 => {
+      fn is_matrix(e: &Expr) -> bool {
+        matches!(e, Expr::List(rows)
+          if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_))))
+      }
+      fn is_vector(e: &Expr) -> bool {
+        matches!(e, Expr::List(items)
+          if items.iter().all(|i| !matches!(i, Expr::List(_))))
+      }
+      let unevaluated = || {
+        Some(Ok(Expr::FunctionCall {
+          name: "LinearFractionalTransform".to_string(),
+          args: args.to_vec().into(),
+        }))
+      };
+      match &args[0] {
+        // {m, v, w, b} form.
+        Expr::List(parts)
+          if parts.len() == 4
+            && is_matrix(&parts[0])
+            && is_vector(&parts[1])
+            && is_vector(&parts[2])
+            && !matches!(&parts[3], Expr::List(_)) =>
+        {
+          let (Expr::List(m), Expr::List(v), Expr::List(w)) =
+            (&parts[0], &parts[1], &parts[2])
+          else {
+            unreachable!()
+          };
+          let b = &parts[3];
+          let n = m.len();
+          // Validate dimensions: m is n x n, v and w have length n.
+          let dims_ok =
+            m.iter().all(|r| matches!(r, Expr::List(c) if c.len() == n))
+              && v.len() == n
+              && w.len() == n;
+          if !dims_ok {
+            return unevaluated();
+          }
+          let mut rows = Vec::with_capacity(n + 1);
+          for i in 0..n {
+            let Expr::List(c) = &m[i] else { unreachable!() };
+            let mut row = c.to_vec();
+            row.push(v[i].clone());
+            rows.push(Expr::List(row.into()));
+          }
+          let mut last_row = w.to_vec();
+          last_row.push(b.clone());
+          rows.push(Expr::List(last_row.into()));
+          let matrix = Expr::List(rows.into());
+          return Some(crate::evaluator::evaluate_expr_to_expr(
+            &Expr::FunctionCall {
+              name: "TransformationFunction".to_string(),
+              args: vec![matrix].into(),
+            },
+          ));
+        }
+        // Plain (n+1)x(n+1) homogeneous matrix form.
+        Expr::List(_) if is_matrix(&args[0]) => {
+          return Some(crate::evaluator::evaluate_expr_to_expr(
+            &Expr::FunctionCall {
+              name: "TransformationFunction".to_string(),
+              args: vec![args[0].clone()].into(),
+            },
+          ));
+        }
+        _ => return unevaluated(),
+      }
+    }
     // ScalingTransform[{s1, s2, ...}] or ScalingTransform[{s1, s2, ...}, {c1, c2, ...}]
     "ScalingTransform" if args.len() == 1 || args.len() == 2 => {
       if let Expr::List(scales) = &args[0] {

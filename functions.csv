@@ -3482,7 +3482,7 @@ DataDistribution,,,,8.0,3578
 DoubleRightArrow,,,,3.0,3578
 FeedbackLinearize,,🚫,,10.0,3578
 FunctionInjective,,,,12.2,3578
-LinearFractionalTransform,,,,6.0,3578
+LinearFractionalTransform,Build a TransformationFunction for the projective map x -> (m.x + v)/(w.x + b),✅,none,6.0,3578
 MorletWavelet,,🚫,,8.0,3578
 MovingMedian,Compute moving median of a list,✅,pure,6.0,3578
 StringToByteArray,Convert string to byte array,✅,pure,11.2,3578

@@ -4540,6 +4540,63 @@ mod affine_transform {
   }
 }
 
+// LinearFractionalTransform[{m, v, w, b}] is the projective transform
+// p |-> (m.p + v)/(w.p + b), built as the augmented matrix {{m, v}, {w, b}}.
+mod linear_fractional_transform {
+  use super::*;
+
+  // Affine special case (w = 0, b = 1): denominator is 1, so it reduces to
+  // m.p + v.
+  #[test]
+  fn affine_special_case() {
+    assert_eq!(
+      interpret(
+        "LinearFractionalTransform[{{{1, 2}, {3, 4}}, {1, 1}, {0, 0}, 1}][{1, 1}]"
+      )
+      .unwrap(),
+      "{4, 8}"
+    );
+  }
+
+  // Genuine projective transform: the result is divided by w.p + b.
+  #[test]
+  fn projective_divide() {
+    // m.p = {6, 8}, +v = {7, 9}; w.p + b = 3 + 4 + 2 = 9; {7,9}/9 = {7/9, 1}.
+    assert_eq!(
+      interpret(
+        "LinearFractionalTransform[{{{2, 0}, {0, 2}}, {1, 1}, {1, 1}, 2}][{3, 4}]"
+      )
+      .unwrap(),
+      "{7/9, 1}"
+    );
+  }
+
+  // The augmented homogeneous matrix is {{m, v}, {w, b}}.
+  #[test]
+  fn transformation_matrix() {
+    assert_eq!(
+      interpret(
+        "TransformationMatrix[LinearFractionalTransform[{{{1, 2}, {3, 4}}, {1, 1}, {0, 0}, 1}]]"
+      )
+      .unwrap(),
+      "{{1, 2, 1}, {3, 4, 1}, {0, 0, 1}}"
+    );
+  }
+
+  // A standalone projective TransformationFunction also divides by the
+  // homogeneous coordinate from its last row.
+  #[test]
+  fn transformation_function_projective_divide() {
+    assert_eq!(
+      interpret(
+        "TransformationFunction[{{2, 0, 1}, {0, 2, 1}, {1, 1, 2}}][{3, 4}]"
+      )
+      .unwrap(),
+      "{7/9, 1}"
+    );
+  }
+}
+
 mod orthogonalize {
   use super::*;
 

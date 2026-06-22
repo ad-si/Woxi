@@ -1732,5 +1732,36 @@ fn apply_transformation_function(
     result.push(evaluate_expr_to_expr(&dot)?);
   }
 
+  // Homogeneous coordinate from the last row (rows[n]). For affine
+  // transforms this row is {0, ..., 0, 1}, so h = 1 and the division below is
+  // a no-op. For projective transforms (e.g. LinearFractionalTransform) the
+  // last row is {w1, ..., wn, b}, so h = w.point + b rescales the result.
+  if rows.len() > n
+    && let Expr::List(last) = &rows[n]
+    && last.len() == hom.len()
+  {
+    let h = evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: last
+        .iter()
+        .zip(hom.iter())
+        .map(|(a, b)| Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![a.clone(), b.clone()].into(),
+        })
+        .collect(),
+    })?;
+    // Only rescale when the homogeneous coordinate is not the constant 1.
+    if !matches!(&h, Expr::Integer(1)) {
+      for comp in &mut result {
+        *comp = evaluate_expr_to_expr(&Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(comp.clone()),
+          right: Box::new(h.clone()),
+        })?;
+      }
+    }
+  }
+
   Ok(Expr::List(result.into()))
 }
