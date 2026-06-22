@@ -5257,6 +5257,62 @@ mod high_level_functions_tests {
     }
   }
 
+  mod partitions_p {
+    use super::*;
+
+    #[test]
+    fn test_basic_values() {
+      assert_eq!(interpret("PartitionsP[0]").unwrap(), "1");
+      assert_eq!(interpret("PartitionsP[1]").unwrap(), "1");
+      assert_eq!(interpret("PartitionsP[10]").unwrap(), "42");
+      assert_eq!(interpret("PartitionsP[100]").unwrap(), "190569292");
+    }
+
+    #[test]
+    fn test_large_value_bigint() {
+      // p(200) overflows i64; result must be exact.
+      assert_eq!(interpret("PartitionsP[200]").unwrap(), "3972999029388");
+      assert_eq!(
+        interpret("PartitionsP[1000]").unwrap(),
+        "24061467864032622473692149727991"
+      );
+    }
+
+    #[test]
+    fn test_negative_returns_zero() {
+      assert_eq!(interpret("PartitionsP[-3]").unwrap(), "0");
+      assert_eq!(interpret("PartitionsP[-5]").unwrap(), "0");
+    }
+
+    #[test]
+    fn test_listable() {
+      // PartitionsP has the Listable attribute and threads over lists.
+      assert_eq!(interpret("PartitionsP[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+      assert_eq!(interpret("PartitionsP[{4, 5, 6}]").unwrap(), "{5, 7, 11}");
+      // Nested lists thread recursively.
+      assert_eq!(
+        interpret("PartitionsP[{{1, 2}, {3, 4}}]").unwrap(),
+        "{{1, 2}, {3, 5}}"
+      );
+      assert_eq!(interpret("PartitionsP[{}]").unwrap(), "{}");
+    }
+
+    #[test]
+    fn test_attributes() {
+      assert_eq!(
+        interpret("Attributes[PartitionsP]").unwrap(),
+        "{Listable, Protected}"
+      );
+    }
+
+    #[test]
+    fn test_symbolic_and_real_unevaluated() {
+      // Non-integer numeric and symbolic args stay unevaluated.
+      assert_eq!(interpret("PartitionsP[n]").unwrap(), "PartitionsP[n]");
+      assert_eq!(interpret("PartitionsP[3.5]").unwrap(), "PartitionsP[3.5]");
+    }
+  }
+
   mod nminimize_constrained {
     use super::*;
 

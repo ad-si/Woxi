@@ -196,7 +196,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "StringLength" | "Characters" | "ToUpperCase" | "ToLowerCase"
     | "Boole" | "Positive" | "Negative" | "NonPositive" | "NonNegative"
     | "EvenQ" | "OddQ" | "PrimeQ" | "IntegerQ" | "NumberQ" | "NumericQ"
-    | "AtomQ" | "Clip" | "Cyclotomic" | "PartitionsQ" | "Rescale"
+    | "AtomQ" | "Clip" | "Cyclotomic" | "PartitionsP" | "PartitionsQ"
+    | "Rescale"
     | "Resultant" | "Unitize" | "UnitStep" | "N" | "FactorSquareFree"
     | "PrimePi" | "BitGet" | "BitSet" | "BitClear" | "PowerMod"
     | "JacobiSymbol" | "IntegerExponent" => {

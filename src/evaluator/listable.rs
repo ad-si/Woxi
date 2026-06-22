@@ -190,6 +190,8 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Numerator"
       | "Denominator"
       | "PrimePi"
+      | "PartitionsP"
+      | "PartitionsQ"
       | "BitAnd"
       | "BitOr"
       | "BitXor"
