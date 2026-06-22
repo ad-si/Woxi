@@ -2549,9 +2549,13 @@ pub fn dispatch_list_operations(
         }
 
         let is_zero_center = matches!(x0, Expr::Integer(0));
+        // A series expanded at Infinity is a series in 1/x: the i-th term is
+        // `c_i * x^(-(nmin + i))`. The base is just `x` and the exponents are
+        // negated (handled where `power` is computed below).
+        let is_infinity = matches!(x0, Expr::Identifier(s) if s == "Infinity");
 
-        // Build the base expression: x or (-x0 + x)
-        let base = if is_zero_center {
+        // Build the base expression: x, (-x0 + x), or x (at Infinity).
+        let base = if is_zero_center || is_infinity {
           var.clone()
         } else {
           Expr::BinaryOp {
@@ -2588,7 +2592,8 @@ pub fn dispatch_list_operations(
           } else {
             coeff.clone()
           };
-          let power = nmin + i as i128;
+          let raw_power = nmin + i as i128;
+          let power = if is_infinity { -raw_power } else { raw_power };
           // base^power
           let base_pow = if power == 0 {
             None
@@ -2624,6 +2629,18 @@ pub fn dispatch_list_operations(
 
         if terms.is_empty() {
           return Some(Ok(Expr::Integer(0)));
+        }
+
+        // At Infinity the terms are powers of 1/x; let the evaluator put them
+        // in canonical Plus order (most-negative exponent first, matching
+        // wolframscript). For a finite center the natural low-to-high build
+        // order is already canonical, so keep it to avoid disturbing it.
+        if is_infinity {
+          let plus = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms.into(),
+          };
+          return Some(evaluate_expr_to_expr(&plus));
         }
 
         // Combine terms with Plus, preserving order (low to high power)

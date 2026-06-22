@@ -12144,6 +12144,113 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&args[0]);
   }
 
+  // Series expansion at Infinity: substitute x -> 1/t, simplify, expand at
+  // t = 0, then relabel the resulting SeriesData to base Infinity (a t^k term
+  // at 0 is an x^-k term at Infinity, so the coefficients/exponents carry over
+  // unchanged). Restricted to rational functions of the expansion variable so
+  // that special functions (ExpIntegralEi, Log, …) keep their dedicated
+  // asymptotic handlers further below.
+  fn is_rational_function(expr: &Expr) -> bool {
+    use crate::syntax::{BinaryOperator as B, UnaryOperator as U};
+    match expr {
+      Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::Identifier(_) => true,
+      Expr::BinaryOp { op, left, right } => match op {
+        B::Plus | B::Minus | B::Times | B::Divide => {
+          is_rational_function(left) && is_rational_function(right)
+        }
+        B::Power => {
+          is_rational_function(left)
+            && matches!(right.as_ref(), Expr::Integer(_))
+        }
+        _ => false,
+      },
+      Expr::UnaryOp {
+        op: U::Minus,
+        operand,
+      } => is_rational_function(operand),
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Plus" | "Times" => args.iter().all(is_rational_function),
+        "Power" => {
+          args.len() == 2
+            && is_rational_function(&args[0])
+            && matches!(&args[1], Expr::Integer(_))
+        }
+        "Rational" => true,
+        _ => false,
+      },
+      _ => false,
+    }
+  }
+  if matches!(&x0, Expr::Identifier(s) if s == "Infinity")
+    && is_rational_function(&args[0])
+  {
+    let temp = format!("{}$si", var_name);
+    let recip = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Identifier(temp.clone()), Expr::Integer(-1)].into(),
+    };
+    let substituted =
+      crate::syntax::substitute_variable(&args[0], &var_name, &recip);
+    // Compute the t = 0 expansion of the substituted form quietly: a function
+    // that grows at infinity yields a pole at t = 0, whose intermediate
+    // evaluation can emit spurious `Power::infy` messages even though the final
+    // SeriesData is correct. wolframscript emits no such message here.
+    crate::push_quiet();
+    let inner_result: Result<Expr, InterpreterError> = (|| {
+      // Cancel[Together[…]] clears the nested 1/t fractions and reduces the
+      // result to a single cancelled rational so the t = 0 expansion is clean.
+      let simplified =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Cancel".to_string(),
+          args: vec![Expr::FunctionCall {
+            name: "Together".to_string(),
+            args: vec![substituted].into(),
+          }]
+          .into(),
+        })?;
+      let spec = Expr::List(
+        vec![
+          Expr::Identifier(temp.clone()),
+          Expr::Integer(0),
+          Expr::Integer(order),
+        ]
+        .into(),
+      );
+      let mut inner_args = vec![simplified, spec];
+      inner_args.extend(option_args.clone());
+      series_ast(&inner_args)
+    })();
+    crate::pop_quiet();
+    let inner = inner_result?;
+    if let Expr::FunctionCall {
+      name: sd_name,
+      args: sd,
+    } = &inner
+      && sd_name == "SeriesData"
+      && sd.len() == 6
+      && let Expr::List(coeffs) = &sd[2]
+      && !coeffs.is_empty()
+      && coeffs.iter().all(|c| is_constant_wrt(c, &temp))
+    {
+      let mut new_sd = sd.to_vec();
+      new_sd[0] = Expr::Identifier(var_name.clone());
+      new_sd[1] = Expr::Identifier("Infinity".to_string());
+      return Ok(Expr::FunctionCall {
+        name: "SeriesData".to_string(),
+        args: new_sd.into(),
+      });
+    }
+    // Could not produce a clean expansion — leave the call symbolic instead of
+    // emitting a bogus SeriesData.
+    return Ok(Expr::FunctionCall {
+      name: "Series".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // Series[QFactorial[n, q], {q, 0, k}] — expand the q-factorial directly
   // as the polynomial product (1+q)·(1+q+q²)·…·(1+q+…+q^{n-1}), truncating
   // at each step. The default Series path tries to expand the rational

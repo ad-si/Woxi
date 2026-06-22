@@ -1419,6 +1419,43 @@ mod series {
     );
   }
 
+  #[test]
+  fn series_at_infinity_rational() {
+    // Series[f, {x, Infinity, n}] for rational f: substitute x -> 1/t, expand
+    // at t = 0, relabel to base Infinity. Verified against wolframscript.
+    assert_eq!(
+      interpret("Series[1/(1 + x), {x, Infinity, 3}]").unwrap(),
+      "SeriesData[x, Infinity, {1, -1, 1}, 1, 4, 1]"
+    );
+    assert_eq!(
+      interpret("Series[(x + 1)/(x - 1), {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1, 2, 2}, 0, 3, 1]"
+    );
+    assert_eq!(
+      interpret("Series[1/x, {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1}, 1, 3, 1]"
+    );
+    // A function that grows at infinity gives negative-index terms.
+    assert_eq!(
+      interpret("Series[x^2 + x, {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1, 1}, -2, 3, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_infinity_normal() {
+    // Normal of an Infinity series yields powers of 1/x in canonical order
+    // (most-negative exponent first), matching wolframscript.
+    assert_eq!(
+      interpret("Normal[Series[1/(1 + x), {x, Infinity, 3}]]").unwrap(),
+      "x^(-3) - x^(-2) + x^(-1)"
+    );
+    assert_eq!(
+      interpret("Normal[Series[(x + 1)/(x - 1), {x, Infinity, 2}]]").unwrap(),
+      "1 + 2/x^2 + 2/x"
+    );
+  }
+
   // Regression: Simplify/Expand on a bare SeriesData head with x0 == 0 used
   // to recurse infinitely through `try_series_data_plus` (a single-arg call
   // re-entered the same single-SeriesData lifting branch).
