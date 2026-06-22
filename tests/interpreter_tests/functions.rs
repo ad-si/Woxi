@@ -4312,6 +4312,73 @@ mod byte_array_to_string {
   }
 }
 
+mod boolean_function {
+  use super::*;
+
+  // BooleanFunction[n, k][b1, …, bk] returns bit `v` of `n`, where `v` is the
+  // arguments read as binary (first arg most significant, True = 1).
+  #[test]
+  fn integer_index_application() {
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][True, False]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][True, True]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[1, 2][False, False]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("BooleanFunction[2, 1][True]").unwrap(), "True");
+    assert_eq!(interpret("BooleanFunction[2, 1][False]").unwrap(), "False");
+    assert_eq!(
+      interpret("BooleanFunction[1, 3][False, False, False]").unwrap(),
+      "True"
+    );
+  }
+
+  // Integer 1/0 are accepted as True/False.
+  #[test]
+  fn accepts_one_and_zero() {
+    assert_eq!(interpret("BooleanFunction[7, 2][1, 0]").unwrap(), "True");
+    assert_eq!(interpret("BooleanFunction[7, 2][1, 1]").unwrap(), "False");
+  }
+
+  // `n` beyond 2^(2^k) wraps via its bits; negative `n` is two's-complement
+  // (BooleanFunction[-1, k] is the constant-True function).
+  #[test]
+  fn index_overflow_and_negative() {
+    assert_eq!(
+      interpret("BooleanFunction[16, 2][True, True]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[-1, 2][True, True]").unwrap(),
+      "True"
+    );
+  }
+
+  // Symbolic args, a wrong argument count, or the bare object stay unevaluated
+  // (no spurious "not implemented" warning for the bare form).
+  #[test]
+  fn unevaluated_forms() {
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][a, b]").unwrap(),
+      "BooleanFunction[7, 2][a, b]"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][True]").unwrap(),
+      "BooleanFunction[7, 2][True]"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[7, 2]").unwrap(),
+      "BooleanFunction[7, 2]"
+    );
+  }
+}
+
 mod boolean_satisfiability {
   use super::*;
 

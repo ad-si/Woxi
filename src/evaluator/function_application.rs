@@ -872,6 +872,48 @@ pub fn apply_curried_call(
       // Interpreter["Country"][input] — resolve input to an Entity.
       crate::functions::country_data::apply_interpreter(&func_args[0], args)
     }
+    // BooleanFunction[n, k][b1, …, bk] — the integer-indexed boolean function.
+    // The result is bit `v` of `n`, where `v` is the k arguments read as a
+    // binary number (first argument most significant, True/1 → 1, False/0 → 0).
+    // e.g. BooleanFunction[7, 2][True, False]: v = 10b = 2, (7 >> 2) & 1 = 1 →
+    // True. Negative `n` is two's-complement (BooleanFunction[-1, k] is all
+    // True). Non-boolean args or a wrong count leave the call unevaluated.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "BooleanFunction"
+      && func_args.len() == 2
+      && matches!(&func_args[0], Expr::Integer(_))
+      && matches!(&func_args[1], Expr::Integer(k) if *k >= 0 && *k as usize == args.len()) =>
+    {
+      let Expr::Integer(n) = &func_args[0] else {
+        unreachable!()
+      };
+      let mut v: i128 = 0;
+      let mut ok = true;
+      for a in args {
+        let bit = match a {
+          Expr::Identifier(s) if s == "True" => 1,
+          Expr::Identifier(s) if s == "False" => 0,
+          Expr::Integer(1) => 1,
+          Expr::Integer(0) => 0,
+          _ => {
+            ok = false;
+            break;
+          }
+        };
+        v = (v << 1) | bit;
+      }
+      if ok {
+        return Ok(Expr::Identifier(
+          if (n >> v) & 1 == 1 { "True" } else { "False" }.to_string(),
+        ));
+      }
+      Ok(Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      })
+    }
     // Distribution operator forms: CDF[dist][x] -> CDF[dist, x] (and PDF,
     // Quantile, InverseCDF, SurvivalFunction, HazardFunction). Guarded so the
     // head holds a distribution object (a FunctionCall).

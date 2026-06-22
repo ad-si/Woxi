@@ -9421,6 +9421,10 @@ pub fn evaluate_function_call_ast_inner(
         // unevaluated until applied as NearestTo[x][data] (handled in the
         // curried-call machinery), so it is not "unimplemented".
         | "NearestTo"
+        // BooleanFunction[n, k] is a symbolic boolean-function object that
+        // stays unevaluated until applied as BooleanFunction[n, k][b1, …, bk]
+        // (handled in apply_curried_call), so it is not "unimplemented".
+        | "BooleanFunction"
         // Notation/display wrapper heads stay unevaluated as their canonical
         // form in wolframscript (like Subscript/Superscript/Framed already do):
         // they describe how something is laid out, not a value to compute, so
