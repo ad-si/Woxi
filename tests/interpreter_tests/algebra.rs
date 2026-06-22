@@ -4020,6 +4020,24 @@ mod nsolve {
   }
 
   #[test]
+  fn roots_ordered_by_real_then_imaginary_part() {
+    // Regression: roots must be ordered by ascending real part, then ascending
+    // imaginary part (matching wolframscript) rather than inheriting symbolic
+    // Solve's order. Previously the real cube root sorted first.
+    assert_eq!(
+      interpret("NSolve[x^3 - 2 == 0, x]").unwrap(),
+      "{{x -> -0.6299605249474366 - 1.0911236359717214*I}, \
+       {x -> -0.6299605249474366 + 1.0911236359717214*I}, \
+       {x -> 1.2599210498948732}}"
+    );
+    // Real root between two complex pairs stays correctly placed.
+    assert_eq!(
+      interpret("NSolve[x^4 - 1 == 0, x]").unwrap(),
+      "{{x -> -1.}, {x -> 0. - 1.*I}, {x -> 0. + 1.*I}, {x -> 1.}}"
+    );
+  }
+
+  #[test]
   fn with_user_defined_function() {
     assert_eq!(
       interpret("f[x_] := x^2 + x + 1; NSolve[f[b] - 2 == 0, b]").unwrap(),

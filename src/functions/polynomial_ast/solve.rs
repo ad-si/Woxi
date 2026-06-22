@@ -76,7 +76,47 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
-  nsolve_numerize(&symbolic)
+  let numerized = nsolve_numerize(&symbolic)?;
+  Ok(sort_nsolve_solutions(numerized))
+}
+
+/// wolframscript lists NSolve roots ordered by ascending real part, breaking
+/// ties by ascending imaginary part (the symbolic Solve order they inherit is
+/// not numerically sorted). Only reorder when every solution is a single
+/// numeric `var -> value` rule, so multi-variable systems and any
+/// non-numericised solutions are left untouched.
+fn sort_nsolve_solutions(expr: Expr) -> Expr {
+  let Expr::List(ref items) = expr else {
+    return expr;
+  };
+  let key = |item: &Expr| -> Option<(f64, f64)> {
+    if let Expr::List(rules) = item
+      && rules.len() == 1
+      && let Expr::Rule { replacement, .. } = &rules[0]
+    {
+      if let Some(v) = crate::functions::math_ast::try_eval_to_f64(replacement)
+      {
+        return Some((v, 0.0));
+      }
+      if let Some((re, im)) =
+        crate::functions::math_ast::try_extract_complex_float(replacement)
+      {
+        return Some((re, im));
+      }
+    }
+    None
+  };
+  let mut items_vec: Vec<Expr> = items.iter().cloned().collect();
+  if !items_vec.is_empty() && items_vec.iter().all(|it| key(it).is_some()) {
+    items_vec.sort_by(|a, b| {
+      let (ar, ai) = key(a).unwrap();
+      let (br, bi) = key(b).unwrap();
+      ar.partial_cmp(&br)
+        .unwrap_or(std::cmp::Ordering::Equal)
+        .then(ai.partial_cmp(&bi).unwrap_or(std::cmp::Ordering::Equal))
+    });
+  }
+  Expr::List(items_vec.into())
 }
 
 /// Try to solve a quadratic equation using Kahan's numerically stable formula.
