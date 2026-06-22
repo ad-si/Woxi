@@ -2221,7 +2221,7 @@ pub fn dispatch_math_functions(
     "FromRomanNumeral" if args.len() == 1 => {
       return Some(crate::functions::math_ast::from_roman_numeral_ast(args));
     }
-    "FactorInteger" if args.len() == 1 => {
+    "FactorInteger" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::factor_integer_ast(args));
     }
     "PrimeOmega" if args.len() == 1 => {

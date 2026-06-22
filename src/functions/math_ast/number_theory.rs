@@ -2103,10 +2103,16 @@ pub fn fibonacci_number_bigint(n: u128) -> BigInt {
 
 /// FactorInteger[n] - Returns the prime factorization of n
 pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "FactorInteger expects exactly 1 argument".into(),
+      "FactorInteger expects 1 or 2 arguments".into(),
     ));
+  }
+
+  // FactorInteger[n, k]: partial factorization, pulling out at most k distinct
+  // factors.
+  if args.len() == 2 {
+    return factor_integer_partial(&args[0], &args[1]);
   }
 
   match &args[0] {
@@ -2124,6 +2130,97 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     }),
   }
+}
+
+/// `FactorInteger[n, k]` — partial factorization that pulls out at most `k`
+/// distinct factors. The full factorization is collapsed by keeping the `k - 1`
+/// largest prime powers separate and combining the remaining (smaller) prime
+/// powers into a single composite cofactor, e.g. `FactorInteger[60, 2]` →
+/// `{{5, 1}, {12, 1}}`. `k = 1` returns `{{n, 1}}` (no factoring). When the
+/// number already has `≤ k` distinct primes the full factorization is returned.
+///
+/// Only non-negative `n` is handled: for negative `n` wolframscript's choice of
+/// which prime the sign attaches to is internal to its factoring algorithm and
+/// not reproducible, so that case is left unevaluated.
+fn factor_integer_partial(
+  n_expr: &Expr,
+  k_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "FactorInteger".to_string(),
+      args: vec![n_expr.clone(), k_expr.clone()].into(),
+    })
+  };
+
+  // k must be a positive integer.
+  let k = match k_expr {
+    Expr::Integer(k) if *k >= 1 => *k,
+    _ => return unevaluated(),
+  };
+
+  // n must be a non-negative machine integer.
+  let n = match n_expr {
+    Expr::Integer(n) if *n >= 0 => *n,
+    _ => return unevaluated(),
+  };
+
+  // k == 1 never factors: report the number itself.
+  if k == 1 {
+    return Ok(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(n), Expr::Integer(1)].into())].into(),
+    ));
+  }
+
+  // Fully factor, then extract the (prime, exponent) pairs (sorted ascending by
+  // prime, which `factor_integer_i128` already guarantees).
+  let full = factor_integer_i128(n)?;
+  let pairs: Vec<(i128, i128)> = match &full {
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|it| match it {
+        Expr::List(pv)
+          if pv.len() == 2
+            && matches!(pv[0], Expr::Integer(_))
+            && matches!(pv[1], Expr::Integer(_)) =>
+        {
+          match (&pv[0], &pv[1]) {
+            (Expr::Integer(p), Expr::Integer(e)) => Some((*p, *e)),
+            _ => None,
+          }
+        }
+        _ => None,
+      })
+      .collect(),
+    _ => return unevaluated(),
+  };
+
+  let m = pairs.len() as i128;
+  let result_pairs: Vec<(i128, i128)> = if m <= k {
+    // Already few enough distinct primes — full factorization.
+    pairs
+  } else {
+    // Combine the smallest (m - (k - 1)) prime powers into one cofactor and
+    // keep the (k - 1) largest prime powers separate. The cofactor divides n,
+    // so it cannot overflow i128.
+    let n_combine = (m - (k - 1)) as usize;
+    let mut cofactor: i128 = 1;
+    for &(p, e) in &pairs[..n_combine] {
+      cofactor *= p.pow(e as u32);
+    }
+    let mut out = vec![(cofactor, 1)];
+    out.extend_from_slice(&pairs[n_combine..]);
+    out.sort_by_key(|&(p, _)| p);
+    out
+  };
+
+  Ok(Expr::List(
+    result_pairs
+      .into_iter()
+      .map(|(p, e)| Expr::List(vec![Expr::Integer(p), Expr::Integer(e)].into()))
+      .collect::<Vec<_>>()
+      .into(),
+  ))
 }
 
 /// Factor a rational number p/q: factor numerator and denominator separately,

@@ -389,7 +389,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Factor" => Some((1, 1)),
     "Factorial" => Some((1, 1)),
     "FactorialPower" => Some((2, 3)),
-    "FactorInteger" => Some((1, 1)),
+    "FactorInteger" => Some((1, 2)),
     "FactorList" => Some((1, 1)),
     "FactorSquareFree" => Some((1, 1)),
     "FactorSquareFreeList" => Some((1, 1)),

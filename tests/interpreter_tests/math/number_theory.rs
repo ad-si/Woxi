@@ -18,6 +18,54 @@ mod factor_integer {
     assert_eq!(interpret("FactorInteger[1]").unwrap(), "{{1, 1}}");
   }
 
+  #[test]
+  fn partial_two_arg() {
+    // FactorInteger[n, k]: partial factorization pulling out at most k
+    // distinct factors — keep the k-1 largest prime powers, combine the rest
+    // into one cofactor. Verified against wolframscript.
+    // k = 1 never factors.
+    assert_eq!(interpret("FactorInteger[60, 1]").unwrap(), "{{60, 1}}");
+    // Fewer distinct primes than k → full factorization.
+    assert_eq!(
+      interpret("FactorInteger[60, 3]").unwrap(),
+      "{{2, 2}, {3, 1}, {5, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorInteger[100, 2]").unwrap(),
+      "{{2, 2}, {5, 2}}"
+    );
+    // More distinct primes than k → keep the largest, combine the rest.
+    assert_eq!(
+      interpret("FactorInteger[60, 2]").unwrap(),
+      "{{5, 1}, {12, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorInteger[2*3*5*7, 2]").unwrap(),
+      "{{7, 1}, {30, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorInteger[2*3*5*7, 3]").unwrap(),
+      "{{5, 1}, {6, 1}, {7, 1}}"
+    );
+    // Combined exponents are preserved in the kept factor and the cofactor.
+    assert_eq!(
+      interpret("FactorInteger[2*9*25, 2]").unwrap(),
+      "{{5, 2}, {18, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorInteger[2^3*5*7*11, 3]").unwrap(),
+      "{{7, 1}, {11, 1}, {40, 1}}"
+    );
+    // Edge inputs.
+    assert_eq!(interpret("FactorInteger[1, 2]").unwrap(), "{{1, 1}}");
+    assert_eq!(interpret("FactorInteger[7, 2]").unwrap(), "{{7, 1}}");
+    // k = 0 stays unevaluated like wolframscript.
+    assert_eq!(
+      interpret("FactorInteger[12, 0]").unwrap(),
+      "FactorInteger[12, 0]"
+    );
+  }
+
   // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1) rather
   // than raising an error.
   #[test]
