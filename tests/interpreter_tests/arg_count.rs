@@ -151,4 +151,43 @@ mod singular_argument_tags {
     let msgs = woxi::get_captured_messages_raw();
     assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
   }
+
+  #[test]
+  fn optimization_functions_accept_two_to_four_args() {
+    // Regression: ArgMax/ArgMin/Maximize/Minimize/MaxValue/MinValue accept
+    // between 2 and 4 arguments (f, vars[, dom][, opts]). Previously Woxi
+    // declared a 2-3 range and reported the ::argt/::argtu "2 or 3 arguments"
+    // message; wolframscript uses ::argb/::argbu "between 2 and 4 arguments".
+    for f in [
+      "ArgMax", "ArgMin", "Maximize", "Minimize", "MaxValue", "MinValue",
+    ] {
+      // One argument → argbu (singular form).
+      clear_state();
+      assert_eq!(interpret(&format!("{f}[x]")).unwrap(), format!("{f}[x]"));
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = format!(
+        "{f}::argbu: {f} called with 1 argument; \
+         between 2 and 4 arguments are expected."
+      );
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected argbu message for {f}, got {:?}",
+        msgs
+      );
+
+      // Zero arguments → argb (plural form).
+      clear_state();
+      assert_eq!(interpret(&format!("{f}[]")).unwrap(), format!("{f}[]"));
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = format!(
+        "{f}::argb: {f} called with 0 arguments; \
+         between 2 and 4 arguments are expected."
+      );
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected argb message for {f}, got {:?}",
+        msgs
+      );
+    }
+  }
 }
