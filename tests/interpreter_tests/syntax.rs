@@ -3695,6 +3695,48 @@ mod number_form {
       "{NHoldRest, Protected}"
     );
   }
+
+  // ToString[NumberForm[x, n, NumberPadding -> {p1, p2}]] left-pads the
+  // rendered number (sign and decimal point included) with p1 to n+1 digit
+  // positions.
+  #[test]
+  fn to_string_number_padding() {
+    assert_eq!(
+      interpret(
+        "ToString[NumberForm[1.5, 3, NumberPadding -> {\"0\", \" \"}]]"
+      )
+      .unwrap(),
+      "001.5"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[42, 5, NumberPadding -> {\"0\", \" \"}]]")
+        .unwrap(),
+      "000042"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[NumberForm[12.5, 3, NumberPadding -> {\"0\", \" \"}]]"
+      )
+      .unwrap(),
+      "012.5"
+    );
+    // The sign occupies a pad slot.
+    assert_eq!(
+      interpret(
+        "ToString[NumberForm[-1.5, 3, NumberPadding -> {\"0\", \" \"}]]"
+      )
+      .unwrap(),
+      "0-1.5"
+    );
+    // A non-"0" pad character is honored.
+    assert_eq!(
+      interpret(
+        "ToString[NumberForm[3.14159, 3, NumberPadding -> {\"x\", \"y\"}]]"
+      )
+      .unwrap(),
+      "x3.14"
+    );
+  }
 }
 
 mod percent_form {

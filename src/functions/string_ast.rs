@@ -3468,6 +3468,47 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // NumberForm[x, n, NumberPadding -> {p1, p2}] — pad the rendered number to a
+  // fixed field width. For the integer-precision form the whole rendering
+  // (sign and decimal point included) is left-padded with p1 to a total of
+  // n + 1 digit positions, e.g. NumberForm[1.5, 3, {"0", " "}] -> "001.5",
+  // NumberForm[42, 3, …] -> "0042", NumberForm[-1.5, 3, …] -> "0-1.5".
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "NumberForm"
+    && !is_input_form
+    && let Some(Expr::List(pad)) = inner_args.iter().find_map(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberPadding") => {
+        Some(replacement.as_ref())
+      }
+      _ => None,
+    })
+    && pad.len() == 2
+  {
+    let p1 = match &pad[0] {
+      Expr::String(s) => s.clone(),
+      _ => " ".to_string(),
+    };
+    let positional: Vec<&Expr> = inner_args
+      .iter()
+      .filter(|a| !matches!(a, Expr::Rule { .. }))
+      .collect();
+    if let (Some(x), Some(Expr::Integer(n))) =
+      (positional.first(), positional.get(1))
+      && let Some(rendered) = number_form_to_string(x, *n as i64)
+    {
+      let has_dot = rendered.contains('.');
+      let width = (*n as usize + 1) + usize::from(has_dot);
+      let pad_count = width.saturating_sub(rendered.chars().count());
+      return Ok(Expr::String(format!("{}{}", p1.repeat(pad_count), rendered)));
+    }
+  }
+
   // NumberForm[x, n] — render x to n significant figures.
   // NumberForm[x, {n, f}] — render x with exactly f digits after the decimal
   // point (zero-padded).
