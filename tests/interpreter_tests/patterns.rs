@@ -1874,6 +1874,43 @@ mod replace_list {
       "{{a, b + c}, {b, a + c}}"
     );
   }
+
+  // The Flat-partition enumerator must also fire for RuleDelayed (:>), not
+  // just Rule (->). Previously a `:>` rule fell through to the single
+  // whole-expression match and returned only the first split.
+  #[test]
+  fn flat_plus_rule_delayed() {
+    assert_eq!(
+      interpret("ReplaceList[a + b + c, x_ + y_ :> {x, y}]").unwrap(),
+      "{{a, b + c}, {b, a + c}, {c, a + b}, {a + b, c}, {a + c, b}, {b + c, a}}"
+    );
+    assert_eq!(
+      interpret("ReplaceList[a + b, x_ + y_ :> {x, y}]").unwrap(),
+      "{{a, b}, {b, a}}"
+    );
+  }
+
+  // Times is Flat+Orderless too; an explicit Times[x_, y_] pattern enumerates
+  // all factor splits (both Rule and RuleDelayed).
+  #[test]
+  fn flat_times_explicit_head() {
+    assert_eq!(
+      interpret("ReplaceList[Times[a, b, c], Times[x_, y_] :> {x, y}]")
+        .unwrap(),
+      "{{a, b*c}, {b, a*c}, {c, a*b}, {a*b, c}, {a*c, b}, {b*c, a}}"
+    );
+  }
+
+  #[test]
+  fn flat_plus_four_terms() {
+    assert_eq!(
+      interpret("ReplaceList[a + b + c + d, x_ + y_ :> {x, y}]").unwrap(),
+      "{{a, b + c + d}, {b, a + c + d}, {c, a + b + d}, {d, a + b + c}, \
+       {a + b, c + d}, {a + c, b + d}, {a + d, b + c}, {b + c, a + d}, \
+       {b + d, a + c}, {c + d, a + b}, {a + b + c, d}, {a + b + d, c}, \
+       {a + c + d, b}, {b + c + d, a}}"
+    );
+  }
 }
 
 // Optional-pattern (x_.) matching without a Default[...] rule. Without a

@@ -1670,53 +1670,69 @@ pub fn dispatch_complex_and_special(
       }
       // Flat partition enumerator: e.g. ReplaceList[a+b+c, x_+y_ -> {x,y}]
       // enumerates all Flat partitions of the expression args into
-      // pat_args.len() non-empty groups.
-      if let Expr::FunctionCall {
-        name: expr_head,
-        args: expr_fargs,
-      } = &args[0]
-        && let Expr::Rule {
+      // pat_args.len() non-empty groups. Handles both Rule and RuleDelayed,
+      // and both the FunctionCall and the parsed BinaryOp forms of the
+      // expression / pattern (e.g. `a b c` and `x_ y_` parse as BinaryOp Times,
+      // not FunctionCall Times).
+      let flat_rule = match &args[1] {
+        Expr::Rule {
           pattern,
           replacement,
-        } = &args[1]
-        && let Expr::FunctionCall {
-          name: pat_head,
-          args: pat_fargs,
-        } = pattern.as_ref()
-        && expr_head == pat_head
-        && !pat_fargs.is_empty()
-        && pat_fargs.len() <= expr_fargs.len()
-      {
-        let has_flat = crate::evaluator::listable::is_builtin_flat(expr_head)
-          || crate::FUNC_ATTRS.with(|m| {
-            m.borrow()
-              .get(expr_head.as_str())
-              .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-          });
-        if has_flat {
-          let all_bindings =
-            crate::evaluator::pattern_matching::enumerate_flat_partition_matches(
-              expr_head, pat_fargs, expr_fargs,
-            );
-          if !all_bindings.is_empty() {
-            let mut results: Vec<Expr> = Vec::new();
-            for bindings in all_bindings {
-              let mut rhs = replacement.as_ref().clone();
-              for (name, value) in bindings {
-                rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
-              }
-              let evaluated = match evaluate_expr_to_expr(&rhs) {
-                Ok(r) => r,
-                Err(e) => return Some(Err(e)),
-              };
-              results.push(evaluated);
-              if let Some(n) = max_matches
-                && results.len() as i128 >= n
-              {
-                break;
-              }
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => Some((pattern, replacement)),
+        _ => None,
+      };
+      if let Some((pattern, replacement)) = flat_rule {
+        // Normalize FunctionCall and operator-BinaryOp forms to (head, args).
+        let head_args = |e: &Expr| -> Option<(String, Vec<Expr>)> {
+          match e {
+            Expr::FunctionCall { name, args } => {
+              Some((name.clone(), args.to_vec()))
             }
-            return Some(Ok(Expr::List(results.into())));
+            _ => crate::functions::expr_to_head_args(e),
+          }
+        };
+        if let (Some((expr_head, expr_fargs)), Some((pat_head, pat_fargs))) =
+          (head_args(&args[0]), head_args(pattern))
+          && expr_head == pat_head
+          && !pat_fargs.is_empty()
+          && pat_fargs.len() <= expr_fargs.len()
+        {
+          let has_flat =
+            crate::evaluator::listable::is_builtin_flat(&expr_head)
+              || crate::FUNC_ATTRS.with(|m| {
+                m.borrow()
+                  .get(expr_head.as_str())
+                  .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
+              });
+          if has_flat {
+            let all_bindings =
+              crate::evaluator::pattern_matching::enumerate_flat_partition_matches(
+                &expr_head, &pat_fargs, &expr_fargs,
+              );
+            if !all_bindings.is_empty() {
+              let mut results: Vec<Expr> = Vec::new();
+              for bindings in all_bindings {
+                let mut rhs = replacement.as_ref().clone();
+                for (name, value) in bindings {
+                  rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
+                }
+                let evaluated = match evaluate_expr_to_expr(&rhs) {
+                  Ok(r) => r,
+                  Err(e) => return Some(Err(e)),
+                };
+                results.push(evaluated);
+                if let Some(n) = max_matches
+                  && results.len() as i128 >= n
+                {
+                  break;
+                }
+              }
+              return Some(Ok(Expr::List(results.into())));
+            }
           }
         }
       }
