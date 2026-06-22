@@ -106,6 +106,28 @@ fn compute_minpoly_coeffs(
       ..
     } => handle_times(expr),
 
+    // Divide: a / b = a * b^(-1). Some evaluators (e.g. Cos[Pi/5] →
+    // (1 + Sqrt[5])/4) leave the quotient as a Divide BinaryOp rather than
+    // normalizing it to Times[Rational[…], …]; rewrite it so handle_times
+    // can take the product of the minimal polynomials.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let recip = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new((**right).clone()),
+        right: Box::new(Expr::Integer(-1)),
+      };
+      let product = Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new((**left).clone()),
+        right: Box::new(recip),
+      };
+      compute_minpoly_coeffs(&product)
+    }
+
     // Plus expressions (sums)
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -231,6 +253,35 @@ fn handle_power(
       let numeric_val =
         expr_to_f64(exp).and_then(|ne| expr_to_f64(base).map(|be| be.powf(ne)));
       return Ok(minpoly_of_power(&bp, n, numeric_val));
+    }
+  }
+
+  // Case: algebraic ^ negative integer (-n) → reciprocal of algebraic^n.
+  // (The rational-base case above already handled rational^(negative).)
+  // minpoly(1/β) is the coefficient-reversed (reciprocal) polynomial of
+  // minpoly(β): e.g. Cos[Pi/4] = Sqrt[2]^(-1), minpoly(Sqrt[2]) = x^2-2,
+  // reversed → 2*x^2-1.
+  if let Some(n) = expr_to_i128(exp)
+    && n < 0
+    && -n <= 10
+  {
+    let k = (-n) as usize;
+    let beta_poly = if k == 1 {
+      compute_minpoly_coeffs(base)?
+    } else {
+      match compute_minpoly_coeffs(base)? {
+        Some(bp) => {
+          let nv = expr_to_f64(base).map(|b| b.powi(k as i32));
+          minpoly_of_power(&bp, k as i128, nv)
+        }
+        None => None,
+      }
+    };
+    if let Some(p) = beta_poly
+      && p.first().is_some_and(|&c| c != 0)
+    {
+      let rev: Vec<i128> = p.iter().rev().copied().collect();
+      return Ok(Some(make_primitive_monic(&rev)));
     }
   }
 

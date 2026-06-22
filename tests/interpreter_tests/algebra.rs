@@ -6309,6 +6309,42 @@ mod minimal_polynomial {
     );
   }
 
+  // A quotient that stays a Divide BinaryOp (e.g. Cos[Pi/5] → (1+Sqrt[5])/4)
+  // is rewritten as a product a * b^-1, so its minimal polynomial is found.
+  #[test]
+  fn divide_form() {
+    assert_eq!(
+      interpret("MinimalPolynomial[Cos[Pi/5], x]").unwrap(),
+      "-1 - 2*x + 4*x^2"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[Cos[2*Pi/5], x]").unwrap(),
+      "-1 + 2*x + 4*x^2"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[(3 + Sqrt[2])/7, x]").unwrap(),
+      "1 - 6*x + 7*x^2"
+    );
+  }
+
+  // The reciprocal of an algebraic number (e.g. Cos[Pi/4] = Sqrt[2]^-1) has the
+  // coefficient-reversed minimal polynomial of the base.
+  #[test]
+  fn reciprocal_of_algebraic() {
+    assert_eq!(
+      interpret("MinimalPolynomial[Cos[Pi/4], x]").unwrap(),
+      "-1 + 2*x^2"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[1/2^(1/3), x]").unwrap(),
+      "-1 + 2*x^3"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[1/(1 + Sqrt[2]), x]").unwrap(),
+      "-1 + 2*x + x^2"
+    );
+  }
+
   // A pure-imaginary radical I*Sqrt[n] has the irreducible degree-2 minimal
   // polynomial x^2 + n. Previously the resultant construction returned the
   // non-minimal perfect power (x^2 + n)^2 because no real numeric value was
