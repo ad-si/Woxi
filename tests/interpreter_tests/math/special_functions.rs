@@ -8363,6 +8363,21 @@ mod cases {
     assert_case(r#"ArcSec[1]; ArcSec[-1]"#, r#"Pi"#);
   }
   #[test]
+  fn arc_csc_zero_is_complex_infinity() {
+    // ArcCsc[0] = ArcSin[1/0] = ComplexInfinity (and must not emit a spurious
+    // Power::infy message on the way).
+    assert_case(r#"ArcCsc[0]"#, r#"ComplexInfinity"#);
+  }
+  #[test]
+  fn arc_sec_zero_is_complex_infinity() {
+    assert_case(r#"ArcSec[0]"#, r#"ComplexInfinity"#);
+  }
+  #[test]
+  fn csch_zero_is_complex_infinity() {
+    // Csch[0] = 1/Sinh[0] = ComplexInfinity.
+    assert_case(r#"Csch[0]"#, r#"ComplexInfinity"#);
+  }
+  #[test]
   fn arc_sin_1() {
     assert_case(r#"ArcSin[0]"#, r#"0"#);
   }

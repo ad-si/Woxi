@@ -4111,6 +4111,10 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Csch expects 1 argument".into(),
     ));
   }
+  // Csch[0] = ComplexInfinity (Sinh[0] = 0, so 1/Sinh[0] diverges).
+  if matches!(&args[0], Expr::Integer(0)) {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
   if let Some(r) = imaginary_arg_reduction("Csch", &args[0]) {
     return r;
   }
@@ -4536,6 +4540,10 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   match &args[0] {
+    // ArcCsc[0] = ArcSin[1/0] = ComplexInfinity.
+    Expr::Integer(0) => {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
     Expr::Integer(1) => return Ok(pi_over_n(2)), // Pi/2
     Expr::Integer(-1) => return Ok(negative_pi_over_2()), // -Pi/2
     _ => {}
@@ -4571,6 +4579,10 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   match &args[0] {
+    // ArcSec[0] = ArcCos[1/0] = ComplexInfinity.
+    Expr::Integer(0) => {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
     Expr::Integer(-1) => return Ok(Expr::Identifier("Pi".to_string())),
     _ => {}
