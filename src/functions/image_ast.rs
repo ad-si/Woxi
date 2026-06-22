@@ -4403,8 +4403,11 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let m = match name.as_str() {
           "Hard" => ThreshMethod::Hard,
+          "Firm" => ThreshMethod::Firm,
           "Soft" => ThreshMethod::Soft,
           "PiecewiseGarrote" => ThreshMethod::Garrote,
+          "Hyperbola" => ThreshMethod::Hyperbola,
+          "SmoothGarrote" => ThreshMethod::SmoothGarrote,
           _ => return Ok(unevaluated()),
         };
         (m, spec[1].clone())
@@ -4428,8 +4431,14 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // When the data array contains any inexact value (Real/BigFloat), the whole
   // result is real-valued: every surviving leaf and every introduced zero is
   // converted to a machine Real, matching wolframscript. An all-exact array
-  // (Integers/Rationals) keeps its exact leaves. The threshold's own type does
-  // not affect this — only the data array's does.
+  // (Integers/Rationals) keeps its exact leaves.
+  //
+  // The threshold also influences the result type for every method except bare
+  // "Hard" (which just selects the original leaf and never combines it with the
+  // threshold, so it stays exact). For the others — Firm included — wolframscript
+  // promotes the whole array to machine reals when the threshold is inexact OR
+  // an Integer; only a non-integer Rational threshold (e.g. 3/2) keeps the
+  // result exact. (`4/2` reduces to the Integer 2 before reaching here.)
   fn contains_inexact(e: &Expr) -> bool {
     match e {
       Expr::Real(_) | Expr::BigFloat(_, _) => true,
@@ -4437,7 +4446,9 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => false,
     }
   }
-  let promote_to_real = contains_inexact(&args[0]);
+  let threshold_promotes = !matches!(method, ThreshMethod::Hard)
+    && (contains_inexact(&threshold) || matches!(threshold, Expr::Integer(_)));
+  let promote_to_real = contains_inexact(&args[0]) || threshold_promotes;
   // Walk the array recursively. A non-list, non-numeric leaf triggers
   // the Threshold::nlist message and aborts.
   fn apply(
@@ -4460,13 +4471,15 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(Expr::List(out.into()))
       }
       x if crate::functions::math_ast::try_eval_to_f64(x).is_some() => {
-        let r = threshold_one_method(x, t, method);
         if promote {
-          Some(Expr::Real(
-            crate::functions::math_ast::try_eval_to_f64(&r).unwrap_or(0.0),
-          ))
+          // Machine-real result: compute directly in f64 so the rounding
+          // matches wolframscript's machine arithmetic exactly (a symbolic
+          // reduction back to f64 can drift in the last ULP).
+          let f = threshold_one_method_f64(x, t, method);
+          // Normalize -0.0 → 0.0 so it prints as `0.` like wolframscript.
+          Some(Expr::Real(if f == 0.0 { 0.0 } else { f }))
         } else {
-          Some(r)
+          Some(threshold_one_method(x, t, method))
         }
       }
       _ => None,
@@ -4499,34 +4512,140 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 enum ThreshMethod {
   /// Keep x when |x| > delta, else 0 (the default).
   Hard,
+  /// `Firm[delta]` with a single cutoff is identical to `Hard` (the firm
+  /// transition region only exists with a two-value spec, which Wolfram
+  /// rejects here).
+  Firm,
   /// Sign[x] * Max[|x| - delta, 0].
   Soft,
   /// Non-negative garrote: x - delta^2 / x when |x| > delta, else 0.
   Garrote,
+  /// Garrote hyperbola: Sign[x] * Sqrt[x^2 - delta^2] when |x| > delta, else 0.
+  Hyperbola,
+  /// Smooth garrote: x^3 / (x^2 + delta^2) for all x.
+  SmoothGarrote,
 }
 
-/// Apply a single thresholding method to one numeric leaf. "Soft" and
-/// "PiecewiseGarrote" always yield a machine real; "Hard" preserves the
-/// leaf's exact/inexact kind via `threshold_one`.
+/// Apply a single thresholding method to one numeric leaf. "Hard"/"Firm"
+/// preserve the leaf's exact/inexact kind via `threshold_one`. The remaining
+/// methods build the defining expression and let the evaluator reduce it, so
+/// exact inputs stay exact (e.g. `Threshold[{2}, {"Hyperbola", 3/2}]` →
+/// `Sqrt[7]/2`) and inexact inputs reduce to a machine real — matching
+/// wolframscript. The caller (`apply`) handles real-promotion of the array.
 fn threshold_one_method(x: &Expr, t: &Expr, method: ThreshMethod) -> Expr {
-  match method {
-    ThreshMethod::Hard => threshold_one(x, t),
-    ThreshMethod::Soft => {
-      let xf = crate::functions::math_ast::try_eval_to_f64(x).unwrap_or(0.0);
-      let tf = crate::functions::math_ast::try_eval_to_f64(t).unwrap_or(0.0);
-      let v = xf.signum() * (xf.abs() - tf).max(0.0);
-      Expr::Real(if v == 0.0 { 0.0 } else { v })
+  // Helper constructors for the symbolic forms.
+  fn call(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
     }
+  }
+  let pow = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
+  let abs_x = call("Abs", vec![x.clone()]);
+  let expr = match method {
+    ThreshMethod::Hard | ThreshMethod::Firm => return threshold_one(x, t),
+    // Sign[x] * Max[|x| - t, 0]
+    ThreshMethod::Soft => call(
+      "Times",
+      vec![
+        call("Sign", vec![x.clone()]),
+        call(
+          "Max",
+          vec![
+            call(
+              "Plus",
+              vec![abs_x, call("Times", vec![Expr::Integer(-1), t.clone()])],
+            ),
+            Expr::Integer(0),
+          ],
+        ),
+      ],
+    ),
+    // If[|x| > t, x - t^2/x, 0]
+    ThreshMethod::Garrote => call(
+      "If",
+      vec![
+        call("Greater", vec![abs_x, t.clone()]),
+        call(
+          "Plus",
+          vec![
+            x.clone(),
+            call(
+              "Times",
+              vec![Expr::Integer(-1), pow(t.clone(), 2), pow(x.clone(), -1)],
+            ),
+          ],
+        ),
+        Expr::Integer(0),
+      ],
+    ),
+    // If[|x| > t, Sign[x] * Sqrt[x^2 - t^2], 0]
+    ThreshMethod::Hyperbola => call(
+      "If",
+      vec![
+        call("Greater", vec![abs_x, t.clone()]),
+        call(
+          "Times",
+          vec![
+            call("Sign", vec![x.clone()]),
+            call(
+              "Sqrt",
+              vec![call(
+                "Plus",
+                vec![
+                  pow(x.clone(), 2),
+                  call("Times", vec![Expr::Integer(-1), pow(t.clone(), 2)]),
+                ],
+              )],
+            ),
+          ],
+        ),
+        Expr::Integer(0),
+      ],
+    ),
+    // x^3 / (x^2 + t^2)
+    ThreshMethod::SmoothGarrote => call(
+      "Times",
+      vec![
+        pow(x.clone(), 3),
+        pow(call("Plus", vec![pow(x.clone(), 2), pow(t.clone(), 2)]), -1),
+      ],
+    ),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr)
+}
+
+/// Machine-real version of `threshold_one_method`, used when the result is
+/// promoted to reals. Computing in f64 directly (rather than reducing the
+/// symbolic form back to f64) matches wolframscript's machine arithmetic in
+/// the last ULP.
+fn threshold_one_method_f64(x: &Expr, t: &Expr, method: ThreshMethod) -> f64 {
+  let xf = crate::functions::math_ast::try_eval_to_f64(x).unwrap_or(0.0);
+  let tf = crate::functions::math_ast::try_eval_to_f64(t).unwrap_or(0.0);
+  match method {
+    ThreshMethod::Hard | ThreshMethod::Firm => {
+      if xf.abs() > tf {
+        xf
+      } else {
+        0.0
+      }
+    }
+    ThreshMethod::Soft => xf.signum() * (xf.abs() - tf).max(0.0),
     ThreshMethod::Garrote => {
-      let xf = crate::functions::math_ast::try_eval_to_f64(x).unwrap_or(0.0);
-      let tf = crate::functions::math_ast::try_eval_to_f64(t).unwrap_or(0.0);
-      let v = if xf.abs() > tf {
+      if xf.abs() > tf {
         xf - tf * tf / xf
       } else {
         0.0
-      };
-      Expr::Real(if v == 0.0 { 0.0 } else { v })
+      }
     }
+    ThreshMethod::Hyperbola => {
+      if xf.abs() > tf {
+        xf.signum() * (xf * xf - tf * tf).sqrt()
+      } else {
+        0.0
+      }
+    }
+    ThreshMethod::SmoothGarrote => xf * xf * xf / (xf * xf + tf * tf),
   }
 }
 

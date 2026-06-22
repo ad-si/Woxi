@@ -1592,6 +1592,64 @@ mod list_tests {
   }
 
   #[test]
+  fn threshold_methods_firm_hyperbola_smoothgarrote() {
+    // "Firm" with a single cutoff is identical in value to "Hard" (|x| <= t
+    // → 0, else x), but an inexact threshold promotes the result to Real.
+    assert_eq!(
+      interpret("Threshold[{0.5, 1., 2., 3., -2.5}, {\"Firm\", 1.5}]").unwrap(),
+      "{0., 0., 2., 3., -2.5}"
+    );
+    assert_eq!(
+      interpret("Threshold[{1, 2, 3}, {\"Firm\", 3/2}]").unwrap(),
+      "{0, 2, 3}"
+    );
+    // An inexact threshold makes Firm promote an exact array to reals,
+    // whereas bare "Hard" keeps it exact.
+    assert_eq!(
+      interpret("Threshold[{1, 2, 3}, {\"Firm\", 1.5}]").unwrap(),
+      "{0., 2., 3.}"
+    );
+    assert_eq!(
+      interpret("Threshold[{1, 2, 3}, {\"Hard\", 1.5}]").unwrap(),
+      "{0, 2, 3}"
+    );
+    // "Hyperbola": Sign[x] Sqrt[x^2 - t^2] for |x| > t, else 0. Exact inputs
+    // stay exact/symbolic.
+    assert_eq!(
+      interpret("Threshold[{2}, {\"Hyperbola\", 3/2}]").unwrap(),
+      "{Sqrt[7]/2}"
+    );
+    assert_eq!(
+      interpret("Threshold[{-3., -1., 1., 3.}, {\"Hyperbola\", 1.5}]").unwrap(),
+      "{-2.598076211353316, 0., 0., 2.598076211353316}"
+    );
+    // "SmoothGarrote": x^3 / (x^2 + t^2) for every element.
+    assert_eq!(
+      interpret("Threshold[{1, 2, 3}, {\"SmoothGarrote\", 3/2}]").unwrap(),
+      "{4/13, 32/25, 12/5}"
+    );
+    assert_eq!(
+      interpret("Threshold[{-3., -0.5, 2., 1.}, {\"SmoothGarrote\", 1.}]")
+        .unwrap(),
+      "{-2.7, -0.1, 1.6, 0.5}"
+    );
+  }
+
+  #[test]
+  fn threshold_soft_garrote_exact_inputs() {
+    // Exact data + exact threshold stays exact for the arithmetic methods
+    // (previously these were forced to machine reals).
+    assert_eq!(
+      interpret("Threshold[{1, 2, 3}, {\"Soft\", 3/2}]").unwrap(),
+      "{0, 1/2, 3/2}"
+    );
+    assert_eq!(
+      interpret("Threshold[{1, 2, 3}, {\"PiecewiseGarrote\", 3/2}]").unwrap(),
+      "{0, 7/8, 9/4}"
+    );
+  }
+
+  #[test]
   fn threshold_non_numeric_returns_unevaluated() {
     // A non-numeric element should leave the call unevaluated rather
     // than coerce or silently drop the symbol.
