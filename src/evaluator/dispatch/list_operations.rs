@@ -4796,6 +4796,22 @@ pub fn dispatch_list_operations(
     // {emit, newState}; the result is the *last* emitted value. The 4-argument
     // form FoldPair[f, x, list, g] returns g applied to the final
     // {emit, newState} pair.
+    // FoldPair[f, {a0, a1, ...}] == FoldPair[f, a0, {a1, ...}] (and likewise
+    // for FoldPairList): the first list element seeds the initial state.
+    // wolframscript's rule needs at least two elements (a0 and a1); a
+    // zero- or one-element list leaves the 2-argument form unevaluated.
+    "FoldPair" | "FoldPairList" if args.len() == 2 => {
+      if let Expr::List(ref elems) = args[1]
+        && elems.len() >= 2
+      {
+        let init = elems[0].clone();
+        let rest = Expr::List(elems[1..].to_vec().into());
+        let new_args = vec![args[0].clone(), init, rest];
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          name, &new_args,
+        ));
+      }
+    }
     "FoldPair" if args.len() == 3 || args.len() == 4 => {
       if let Expr::List(ref elems) = args[2] {
         // FoldPair on an empty list stays unevaluated (matching wolframscript).

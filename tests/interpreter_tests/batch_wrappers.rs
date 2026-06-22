@@ -3197,6 +3197,40 @@ mod batch_unevaluated_wrappers_2 {
       "FoldPair[{#1, #2} & , x, {}]"
     );
   }
+  // Two-argument form: FoldPairList[f, {a0, a1, ...}] seeds the state with the
+  // first list element, i.e. FoldPairList[f, a0, {a1, ...}].
+  #[test]
+  fn fold_pair_list_two_arg() {
+    assert_eq!(
+      interpret("FoldPairList[{#1, #2}&, {1, 2, 3}]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("FoldPairList[{#1, #1 + #2}&, {10, 1, 2, 3}]").unwrap(),
+      "{10, 11, 13}"
+    );
+  }
+  #[test]
+  fn fold_pair_two_arg() {
+    assert_eq!(interpret("FoldPair[{#1, #2}&, {1, 2, 3}]").unwrap(), "2");
+  }
+  // The two-argument form needs at least two elements (a0 and a1); a zero- or
+  // one-element list leaves it unevaluated, matching wolframscript.
+  #[test]
+  fn fold_pair_list_two_arg_too_short() {
+    assert_eq!(
+      interpret("FoldPairList[{#1, #2}&, {42}]").unwrap(),
+      "FoldPairList[{#1, #2} & , {42}]"
+    );
+    assert_eq!(
+      interpret("FoldPairList[{#1, #2}&, {}]").unwrap(),
+      "FoldPairList[{#1, #2} & , {}]"
+    );
+    assert_eq!(
+      interpret("FoldPair[{#1, #2}&, {42}]").unwrap(),
+      "FoldPair[{#1, #2} & , {42}]"
+    );
+  }
   // When the step function doesn't return a two-element list, FoldPair emits
   // FoldPair::pair and stays unevaluated (matching wolframscript) rather than
   // failing silently.

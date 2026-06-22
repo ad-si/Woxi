@@ -2222,7 +2222,7 @@ RankedMin,k-th smallest element,✅,pure,8.0,2263
 AssociationQ,Tests if an expression is an association,✅,pure,10.1,2268
 BarcodeRecognize,Image recognition,🚫,None,10.0,2268
 CountsBy,Counts elements grouped by a function,✅,None,10.0,2268
-FoldPairList,Folds a list returning emitted values and new states; optional fourth function is applied to each {emit;newState} pair before output,✅,None,10.2,2268
+FoldPairList,Folds a list returning emitted values and new states; the two-argument form seeds the state with the first list element; optional fourth function is applied to each {emit;newState} pair before output,✅,pure,10.2,2268
 AdjacencyList,Neighbor lists of a vertex or of all vertices (vertex-list order),✅,pure,9.0,2276
 CloudShare,Cloud service,🚫,None,10.2,2276
 EffectiveInterest,Effective annual rate from nominal rate compounded over a period,✅,pure,8.0,2276
@@ -3797,7 +3797,7 @@ CellFrameLabelMargins,,🚫,,4.0,3916
 CloudExpression,,🚫,,10.4,3916
 DynamicImage,,🚫,,10.4,3916
 FisherHypergeometricDistribution,,,,8.0,3916
-FoldPair,Folds a pair-returning function over a list and returns the last emitted value,✅,pure,10.2,3916
+FoldPair,Folds a pair-returning function over a list and returns the last emitted value; the two-argument form seeds the state with the first list element,✅,pure,10.2,3916
 GenerateSymmetricKey,,🚫,,10.1,3916
 GuidedFilter,,,,10.2,3916
 ImageApplyIndexed,,🚫,,10.0,3916
