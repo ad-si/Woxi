@@ -3132,6 +3132,58 @@ mod beta_fn {
     // Beta[1, a, b] = Beta[a, b].
     assert_eq!(interpret("Beta[1, 2, 3]").unwrap(), "1/12");
   }
+
+  // ── Complete Beta with one integer + one rational argument ───────────
+  // Beta[a, n] = (n-1)! / Pochhammer[a, n] is an exact rational for any
+  // rational a; wolframscript evaluates these (regression for a gap where
+  // half-integer/integer and general rational/integer pairs stayed symbolic).
+  #[test]
+  fn complete_half_integer_and_integer() {
+    assert_eq!(interpret("Beta[1/2, 3]").unwrap(), "16/15");
+    assert_eq!(interpret("Beta[3/2, 2]").unwrap(), "4/15");
+    assert_eq!(interpret("Beta[5/2, 2]").unwrap(), "4/35");
+    // Symmetric argument order.
+    assert_eq!(interpret("Beta[3, 1/2]").unwrap(), "16/15");
+  }
+
+  #[test]
+  fn complete_general_rational_and_integer() {
+    assert_eq!(interpret("Beta[1/3, 2]").unwrap(), "9/4");
+    assert_eq!(interpret("Beta[7/3, 2]").unwrap(), "9/70");
+    // Negative rational still telescopes through the rising factorial.
+    assert_eq!(interpret("Beta[-1/2, 2]").unwrap(), "-4");
+  }
+
+  // ── Incomplete Beta: exact non-integer a stays symbolic ──────────────
+  // wolframscript only auto-evaluates Beta[z, a, b] to a closed form when both
+  // a and b are integers. For an exact non-integer a it stays symbolic, even
+  // though the rational closed form exists (e.g. Beta[2, 1/2, 3] = 14 Sqrt[2]/15).
+  #[test]
+  fn incomplete_noninteger_a_stays_symbolic() {
+    assert_eq!(interpret("Beta[2, 1/2, 3]").unwrap(), "Beta[2, 1/2, 3]");
+    assert_eq!(interpret("Beta[2, 1/2, 2]").unwrap(), "Beta[2, 1/2, 2]");
+    assert_eq!(interpret("Beta[1/2, 1/2, 3]").unwrap(), "Beta[1/2, 1/2, 3]");
+  }
+
+  #[test]
+  fn incomplete_integer_a_evaluates() {
+    // Both a and b integers ⇒ exact rational closed form.
+    assert_eq!(interpret("Beta[2, 2, 3]").unwrap(), "2/3");
+    assert_eq!(interpret("Beta[-1, 2, 3]").unwrap(), "17/12");
+  }
+
+  #[test]
+  fn incomplete_inexact_evaluates_numerically() {
+    // Any inexact argument ⇒ a machine-number result, even when a is a
+    // non-integer (previously these stayed symbolic).
+    let r1: f64 = interpret("Beta[2., 0.5, 3.]").unwrap().parse().unwrap();
+    assert!((r1 - 1.3199326582148885).abs() < 1e-12);
+    let r2: f64 = interpret("N[Beta[2, 1/2, 3]]").unwrap().parse().unwrap();
+    assert!((r2 - 1.3199326582148885).abs() < 1e-12);
+    // a real, b a whole-valued real.
+    let r3: f64 = interpret("Beta[0.5, 2, 3.]").unwrap().parse().unwrap();
+    assert!((r3 - 0.057291666666666685).abs() < 1e-12);
+  }
 }
 
 mod log_integral {

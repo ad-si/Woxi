@@ -865,6 +865,34 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Beta[a, n] (or Beta[n, a]) with n a positive integer and a an exact
+  // non-integer rational: Beta[a, b] = Gamma[a] Gamma[b] / Gamma[a+b], which
+  // for an integer second argument telescopes to the rising factorial
+  //   Beta[a, n] = (n-1)! / Pochhammer[a, n].
+  // This yields an exact rational for any rational a (e.g. Beta[1/2, 3] = 16/15,
+  // Beta[7/3, 2] = 9/70) and complements the integer/integer and
+  // half-integer/half-integer branches handled above.
+  {
+    let is_pos_int = |e: &Expr| matches!(e, Expr::Integer(n) if *n > 0);
+    let is_exact_rational = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Rational");
+    for (x, n_arg) in [(&args[0], &args[1]), (&args[1], &args[0])] {
+      if let Expr::Integer(n) = n_arg
+        && is_pos_int(n_arg)
+        && is_exact_rational(x)
+      {
+        let poch = pochhammer_ast(&[x.clone(), Expr::Integer(*n)])?;
+        let fact = crate::evaluator::evaluate_function_call_ast(
+          "Factorial",
+          &[Expr::Integer(*n - 1)],
+        )?;
+        return crate::evaluator::evaluate_function_call_ast(
+          "Divide",
+          &[fact, poch],
+        );
+      }
+    }
+  }
+
   // Try rational args for half-integer cases
   // Beta[p/q, r/s] for half-integers involves Gamma at half-integers
   if let (Some(a_f), Some(b_f)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]))
@@ -1003,19 +1031,24 @@ fn incomplete_beta_ast(
     return Ok(base);
   }
 
-  // Only expand the polynomial closed-form when z and a are numeric and b
-  // is a positive integer. Symbolic z is left unevaluated, matching
-  // wolframscript's HoldFirst-ish behavior.
+  // The polynomial closed-form is only available when z is numeric and b is a
+  // positive whole number (exact integer or a whole-valued machine real, as
+  // arises from N[…]). Symbolic z is left unevaluated, matching wolframscript.
   let z_is_numeric =
     matches!(z, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
       || matches!(z, Expr::FunctionCall { name, .. } if name == "Rational");
-  if let Expr::Integer(b_int) = b
-    && *b_int > 0
+  let b_whole: Option<i128> = match b {
+    Expr::Integer(n) if *n > 0 => Some(*n),
+    Expr::Real(f) if *f > 0.0 && f.fract() == 0.0 => Some(*f as i128),
+    _ => None,
+  };
+
+  if let Some(b_i) = b_whole
     && z_is_numeric
   {
-    let b_i = *b_int;
+    // B(z; a, b) = Σ_{k=0..b-1} C(b-1, k) (-1)^k z^(a+k) / (a+k)
+    // (binomial expansion of (1 - t)^(b-1), integrated term by term).
     let mut term: Vec<Expr> = Vec::new();
-    // Binomial coefficients C(b-1, k) as rationals.
     for k in 0..b_i {
       let coeff = binomial_i128((b_i - 1) as u32, k as u32);
       let sign = if k % 2 == 0 { 1 } else { -1 };
@@ -1041,11 +1074,28 @@ fn incomplete_beta_ast(
       )?;
       term.push(summand);
     }
-    return crate::evaluator::evaluate_function_call_ast("Plus", &term);
+    let closed = crate::evaluator::evaluate_function_call_ast("Plus", &term)?;
+
+    // Any inexact argument ⇒ machine-number result.
+    let any_inexact = contains_inexact_real(z)
+      || contains_inexact_real(a)
+      || contains_inexact_real(b);
+    if any_inexact {
+      return crate::evaluator::evaluate_function_call_ast("N", &[closed]);
+    }
+
+    // Fully exact input: wolframscript only auto-evaluates the incomplete Beta
+    // to a closed form when both a and b are (positive) integers. For a
+    // non-integer exact a (e.g. Beta[2, 1/2, 3]) it stays symbolic, even though
+    // the rational closed form exists. Integer a (including non-positive a,
+    // which yields ComplexInfinity through the pole at a + k = 0) matches WL.
+    if matches!(a, Expr::Integer(_)) {
+      return Ok(closed);
+    }
   }
 
-  // Otherwise leave unevaluated — wolframscript does the same for symbolic z
-  // or non-integer b that doesn't hit our closed-form path.
+  // Otherwise leave unevaluated — matches wolframscript for symbolic z, a
+  // non-whole b, or an exact non-integer a.
   Ok(Expr::FunctionCall {
     name: "Beta".to_string(),
     args: vec![z.clone(), a.clone(), b.clone()].into(),
