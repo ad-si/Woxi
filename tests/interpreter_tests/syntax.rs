@@ -377,6 +377,27 @@ mod implicit_times_with_strings {
       "Quantity[3600000, Joules]"
     );
   }
+
+  // OutputForm (the bare echo) drops string quotes everywhere, including for
+  // string operands of a held Plus/Times. Previously the held BinaryOp render
+  // re-entered via the InputForm path and quoted them (`Hold["a" + "b"]`),
+  // diverging from wolframscript's `Hold[a + b]`.
+  #[test]
+  fn held_string_plus_times_output_form_unquoted() {
+    assert_eq!(interpret(r#"Hold["a" + "b"]"#).unwrap(), "Hold[a + b]");
+    assert_eq!(interpret(r#"Hold["abc" "def"]"#).unwrap(), "Hold[abc*def]");
+    assert_eq!(interpret(r#"Hold[2 "x"]"#).unwrap(), "Hold[2*x]");
+  }
+
+  // Genuine InputForm (via ToString[_, InputForm]) must still quote the string
+  // operands so the text round-trips, matching wolframscript.
+  #[test]
+  fn held_string_plus_input_form_quoted() {
+    assert_eq!(
+      interpret(r#"ToString[Hold["a" + "b"], InputForm]"#).unwrap(),
+      r#"Hold["a" + "b"]"#
+    );
+  }
 }
 
 mod plus_formatting {

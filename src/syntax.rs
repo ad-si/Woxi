@@ -6741,6 +6741,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           return out;
         }
         s.clone() // No quotes for display
+      } else if in_output_form() && !in_true_input_form() {
+        // OutputForm-originated render that re-entered via the InputForm path
+        // (held BinaryOp / operator shorthand). Strings stay unquoted — unless
+        // we are inside genuine InputForm (`expr_to_input_form`), which itself
+        // routes some nodes through `expr_to_output` and must keep quotes.
+        s.clone()
       } else {
         let escaped = escape_string_for_input_form(s);
         format!("\"{}\"", escaped)
@@ -8755,7 +8761,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           return frac;
         }
       }
-      // Fall through to InputForm handling for non-denominator Times
+      // Fall through to InputForm handling for non-denominator Times.
+      // Mark the OutputForm re-entry so direct string factors render unquoted
+      // (`Hold["a" "b"]` → `Hold[a*b]`, matching wolframscript); see the
+      // generic BinaryOp arm below for the rationale.
+      let _out_guard =
+        OutputFormGuard(IN_OUTPUT_FORM.with(|c| c.replace(true)));
       format_expr(expr, ExprForm::Input)
     }
     // BinaryOp::Power with Rational[-1, 2] exponent → 1/Sqrt[base] (OutputForm only)
@@ -8807,7 +8818,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       format!("StringJoin[{}]", rendered.join(", "))
     }
     // All other BinaryOps in OutputForm fall through to InputForm
-    Expr::BinaryOp { .. } if is_output => format_expr(expr, ExprForm::Input),
+    Expr::BinaryOp { .. } if is_output => {
+      // The InputForm path is reused as the 1D renderer for OutputForm
+      // BinaryOps. Mark this re-entry so direct string operands of a held
+      // Plus/Times render unquoted (`Hold["a" + "b"]` → `Hold[a + b]`,
+      // matching wolframscript) while genuine InputForm still quotes. Scoped
+      // to this fallthrough so it can't disturb nested renders that switch to
+      // InputForm deliberately (e.g. Quantity units).
+      let _out_guard =
+        OutputFormGuard(IN_OUTPUT_FORM.with(|c| c.replace(true)));
+      format_expr(expr, ExprForm::Input)
+    }
     // InputForm BinaryOp handling
     Expr::BinaryOp { op, left, right } => {
       // Special case: (-x)/y should display as -(x/y) (Wolfram convention)
@@ -10022,11 +10043,33 @@ thread_local! {
   /// (`(-I)*x`, `(I/2)*x`) only when truly producing InputForm, and keep the
   /// bare OutputForm (`-I*x`, `I/2*x`) for the bare echo.
   static IN_TRUE_INPUT_FORM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
+  /// True while rendering OutputForm. `format_expr` reuses its InputForm path
+  /// as the 1D renderer for OutputForm BinaryOps and operator shorthands (`/@`,
+  /// `@@`, `&`, …), which re-enters `format_expr` with `ExprForm::Input` and so
+  /// loses the original `is_output` context. This flag survives that re-entry so
+  /// string operands of held operators (e.g. `Hold["a" + "b"]`) render without
+  /// quotes in OutputForm — matching wolframscript's `Hold[a + b]` — while
+  /// genuine InputForm (`expr_to_input_form`, bare `expr_to_string`) still quotes.
+  static IN_OUTPUT_FORM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Whether the current render is genuine InputForm (see `IN_TRUE_INPUT_FORM`).
 fn in_true_input_form() -> bool {
   IN_TRUE_INPUT_FORM.with(|c| c.get())
+}
+
+/// Whether the current render originated from OutputForm (see `IN_OUTPUT_FORM`).
+fn in_output_form() -> bool {
+  IN_OUTPUT_FORM.with(|c| c.get())
+}
+
+/// RAII guard that restores the previous `IN_OUTPUT_FORM` value on drop.
+struct OutputFormGuard(bool);
+impl Drop for OutputFormGuard {
+  fn drop(&mut self) {
+    IN_OUTPUT_FORM.with(|c| c.set(self.0));
+  }
 }
 
 /// RAII guard that restores the previous `IN_TRUE_INPUT_FORM` value on drop.
