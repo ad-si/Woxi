@@ -3428,6 +3428,174 @@ pub fn simplify_sqrt_parts(n: i128) -> (i128, i128) {
 /// f is a pure function like `#^2 - 2 &`, and k is a positive integer.
 /// Roots are ordered: real roots first (ascending), then complex roots
 /// (by imaginary part, negative before positive).
+/// Replace `Slot(k)` with a named identifier inside a (pure-function) body.
+fn rs_subst_slot(expr: &Expr, k: usize, name: &str) -> Expr {
+  match expr {
+    Expr::Slot(n) if *n == k => Expr::Identifier(name.to_string()),
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|e| rs_subst_slot(e, k, name)).collect())
+    }
+    Expr::FunctionCall { name: fname, args } => Expr::FunctionCall {
+      name: fname.clone(),
+      args: args.iter().map(|e| rs_subst_slot(e, k, name)).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(rs_subst_slot(left, k, name)),
+      right: Box::new(rs_subst_slot(right, k, name)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(rs_subst_slot(operand, k, name)),
+    },
+    _ => expr.clone(),
+  }
+}
+
+/// `RootSum[f, form]` — the sum of `form[r]` over the roots `r` of the
+/// polynomial equation `f[#] == 0`.
+///
+/// When `f` is a polynomial with exact numeric coefficients and `form` is a
+/// polynomial, the sum is a symmetric function of the roots and equals a
+/// power-sum combination obtained from Newton's identities — an exact rational
+/// that matches wolframscript without finding the roots explicitly (e.g.
+/// `RootSum[#^3 - # - 1 &, #^2 &]` → `2`). Other shapes (symbolic coefficients,
+/// non-polynomial `form`) — for which wolframscript substitutes explicit
+/// radical roots — are left unevaluated.
+pub fn root_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RootSum".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let var = "__rootsum_x__";
+  let var_sym = Expr::Identifier(var.to_string());
+
+  // Apply a pure-function argument `#... &` to the variable and expand.
+  let apply = |f: &Expr| -> Option<Expr> {
+    let body = match f {
+      Expr::Function { body } => body.as_ref().clone(),
+      _ => return None,
+    };
+    let b = crate::syntax::substitute_variable(&body, "#1", &var_sym);
+    let b = rs_subst_slot(&b, 1, var);
+    Some(crate::functions::polynomial_ast::expand_and_combine(&b))
+  };
+  let (Some(poly_f), Some(poly_form)) = (apply(&args[0]), apply(&args[1]))
+  else {
+    return unevaluated();
+  };
+
+  let is_poly = |e: &Expr| -> bool {
+    matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "PolynomialQ",
+        &[e.clone(), var_sym.clone()],
+      ),
+      Ok(Expr::Identifier(ref s)) if s == "True"
+    )
+  };
+  if !is_poly(&poly_f) || !is_poly(&poly_form) {
+    return unevaluated();
+  }
+
+  // Coefficient lists in ascending powers of `var`.
+  let coeff_list = |e: &Expr| -> Option<Vec<Expr>> {
+    match crate::evaluator::evaluate_function_call_ast(
+      "CoefficientList",
+      &[e.clone(), var_sym.clone()],
+    ) {
+      Ok(Expr::List(ref items)) => Some(items.iter().cloned().collect()),
+      _ => None,
+    }
+  };
+  let (Some(cf), Some(cform)) = (coeff_list(&poly_f), coeff_list(&poly_form))
+  else {
+    return unevaluated();
+  };
+
+  let d = cf.len().saturating_sub(1);
+  if d < 1 {
+    return unevaluated();
+  }
+  // Exact numeric coefficients only; symbolic ones make wolframscript expand
+  // the explicit radical roots instead (a form we do not reproduce here).
+  let is_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if !cf.iter().all(&is_number) || !cform.iter().all(&is_number) {
+    return unevaluated();
+  }
+
+  let mul = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[a.clone(), b.clone()],
+    )
+  };
+  let add = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[a.clone(), b.clone()],
+    )
+  };
+  let div = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_function_call_ast(
+      "Divide",
+      &[a.clone(), b.clone()],
+    )
+  };
+
+  // Monic coefficients a_i = cf[i] / cf[d] (a_d = 1).
+  let lead = &cf[d];
+  let mut a = Vec::with_capacity(d + 1);
+  for c in &cf {
+    a.push(div(c, lead)?);
+  }
+  // Elementary symmetric functions e_j = (-1)^j a_{d-j}, j = 1..=d.
+  // e[0] is unused.
+  let mut e = vec![Expr::Integer(0); d + 1];
+  for j in 1..=d {
+    let sign = if j % 2 == 0 { 1 } else { -1 };
+    e[j] = mul(&Expr::Integer(sign), &a[d - j])?;
+  }
+
+  // Power sums p_0..p_m via Newton's identities. p_0 = d (root count).
+  let m = cform.len().saturating_sub(1);
+  let mut p = vec![Expr::Integer(0); m + 1];
+  p[0] = Expr::Integer(d as i128);
+  for k in 1..=m {
+    let mut acc = Expr::Integer(0);
+    let lim = if k <= d { k - 1 } else { d };
+    for i in 1..=lim {
+      let sign = if (i - 1) % 2 == 0 { 1 } else { -1 };
+      let term = mul(&e[i], &p[k - i])?;
+      let term = mul(&Expr::Integer(sign), &term)?;
+      acc = add(&acc, &term)?;
+    }
+    if k <= d {
+      // Special diagonal term (-1)^(k-1) * k * e_k.
+      let sign = if (k - 1) % 2 == 0 { 1 } else { -1 };
+      let term = mul(&Expr::Integer(sign * k as i128), &e[k])?;
+      acc = add(&acc, &term)?;
+    }
+    p[k] = acc;
+  }
+
+  // Sum_{j=0}^m cform[j] * p_j.
+  let mut result = Expr::Integer(0);
+  for j in 0..=m {
+    let term = mul(&cform[j], &p[j])?;
+    result = add(&result, &term)?;
+  }
+  Ok(result)
+}
+
 pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
     return Ok(Expr::FunctionCall {

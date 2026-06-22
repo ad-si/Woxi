@@ -2098,7 +2098,7 @@ PacletInstall,Install Wolfram paclet,🚫,,12.1,2138
 Parallelogram,Parallelogram geometric region,🚫,,10.0,2138
 SectorChart,Creates a sector chart from data,✅,pure,7.0,2138
 InexactNumberQ,Tests if an expression is an inexact real number,✅,pure,4.0,2141
-RootSum,Sum over polynomial roots,✅,,3.0,2141
+RootSum,Sum of form[r] over the roots r of a polynomial; numeric-coefficient polynomial f with polynomial form gives an exact power-sum value via Newton identities; other shapes stay symbolic,✅,pure,3.0,2141
 ServiceExecute,Execute external service,🚫,,10.0,2141
 ArgMin,Exact argument that minimizes an expression (optionally subject to constraints),✅,None,7.0,2144
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2.0,2144

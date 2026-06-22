@@ -6122,6 +6122,48 @@ mod root_sum {
       "RootSum[1 + #1 + #1^2 + #1^3 + #1^4 & , Log[x + #1] & ]"
     );
   }
+
+  // For a polynomial f with numeric coefficients and a polynomial form, the
+  // sum over the roots is a symmetric function obtainable from Newton's power
+  // sums — an exact rational that needs no explicit roots (e.g. it works even
+  // for the unsolvable quintic below).
+  #[test]
+  fn sum_of_roots() {
+    // Sum of the roots of x^2 - 2 is 0 (no x term).
+    assert_eq!(interpret("RootSum[#^2 - 2 &, # &]").unwrap(), "0");
+    assert_eq!(interpret("RootSum[#^3 - 2 &, # &]").unwrap(), "0");
+    assert_eq!(interpret("RootSum[#^4 - 1 &, # &]").unwrap(), "0");
+  }
+
+  #[test]
+  fn sum_of_powers_of_roots() {
+    // Roots 1, 2: sum of squares = 5, sum of cubes = 35.
+    assert_eq!(interpret("RootSum[#^2 - 3 # + 2 &, #^2 &]").unwrap(), "5");
+    assert_eq!(interpret("RootSum[#^2 - 5 # + 6 &, #^3 &]").unwrap(), "35");
+    // Sum of squares of the roots of x^2 - 2 is 2 + 2 = 4.
+    assert_eq!(interpret("RootSum[#^2 - 2 &, #^2 &]").unwrap(), "4");
+  }
+
+  #[test]
+  fn unsolvable_cubic_and_quintic_power_sums() {
+    // x^3 - x - 1 (no closed-form roots): sum of squares = e1^2 - 2 e2 = 2.
+    assert_eq!(interpret("RootSum[#^3 - # - 1 &, #^2 &]").unwrap(), "2");
+    assert_eq!(interpret("RootSum[#^3 + # + 1 &, #^2 &]").unwrap(), "-2");
+    // x^5 - x - 1 (unsolvable by radicals): sum of squares = 0.
+    assert_eq!(interpret("RootSum[#^5 - # - 1 &, #^2 &]").unwrap(), "0");
+  }
+
+  #[test]
+  fn non_monic_and_affine_form() {
+    // 2 x^2 - 8 has roots ±2; sum of squares = 8.
+    assert_eq!(interpret("RootSum[2 #^2 - 8 &, #^2 &]").unwrap(), "8");
+    // form 3 #^2 + 1: 3*(sum of squares) + 1*(root count) = 3*4 + 2 = 14.
+    assert_eq!(interpret("RootSum[#^2 - 2 &, 3 #^2 + 1 &]").unwrap(), "14");
+    // Constant form sums to constant * (number of roots).
+    assert_eq!(interpret("RootSum[#^2 - 2 &, 5 &]").unwrap(), "10");
+    // Linear polynomial: single root 3, squared = 9.
+    assert_eq!(interpret("RootSum[# - 3 &, #^2 &]").unwrap(), "9");
+  }
 }
 
 mod polynomial_mod {

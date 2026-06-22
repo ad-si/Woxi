@@ -155,6 +155,11 @@ pub fn dispatch_polynomial_functions(
     "Root" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::root_ast(args));
     }
+    "RootSum" if args.len() == 2 => {
+      // Evaluates to an exact power-sum value for polynomial f with numeric
+      // coefficients and polynomial form; otherwise returns unevaluated.
+      return Some(crate::functions::polynomial_ast::root_sum_ast(args));
+    }
     "FunctionExpand" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::function_expand_ast(args));
     }
