@@ -354,6 +354,31 @@ mod unary_minus_parsing {
   }
 }
 
+mod implicit_times_with_strings {
+  use super::*;
+
+  // A string literal can be a factor in implicit (juxtaposition)
+  // multiplication. Previously the parser silently dropped the non-string
+  // factor (e.g. `2 "x"` returned just `"x"`), or failed to parse a held form.
+  #[test]
+  fn string_factor_multiplies() {
+    assert_eq!(interpret(r#"2 "x""#).unwrap(), "2*x");
+    assert_eq!(interpret(r#""x" 3"#).unwrap(), "3*x");
+    assert_eq!(interpret(r#"x "y""#).unwrap(), "y*x");
+  }
+
+  // Adjacent string literals (compound units) multiply, so a kilowatt-hour
+  // converts to joules.
+  #[test]
+  fn compound_unit_string_product() {
+    assert_eq!(
+      interpret(r#"UnitConvert[Quantity[1, "Kilowatts" "Hours"], "Joules"]"#)
+        .unwrap(),
+      "Quantity[3600000, Joules]"
+    );
+  }
+}
+
 mod plus_formatting {
   use super::*;
 

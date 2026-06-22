@@ -491,6 +491,7 @@ SimpleTerm = _{
   | Slot
   | OutShortcut
   | List
+  | String
   | "(" ~ (&HasSpanSep ~ SpanExpr | Expression) ~ ")"
 }
 
