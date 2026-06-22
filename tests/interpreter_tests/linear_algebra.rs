@@ -1232,6 +1232,37 @@ mod linear_solve {
     );
   }
 
+  // Rectangular (non-square) systems: a particular solution with the free
+  // (non-pivot) variables set to 0, via the RREF of the augmented matrix.
+  #[test]
+  fn underdetermined_rectangular() {
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2, 3}, {4, 5, 6}}, {1, 2}]").unwrap(),
+      "{-1/3, 2/3, 0}"
+    );
+    assert_eq!(
+      interpret("LinearSolve[{{1, 1, 1}, {1, 2, 3}}, {6, 14}]").unwrap(),
+      "{-2, 8, 0}"
+    );
+  }
+
+  // An overdetermined but consistent system solves; an inconsistent one emits
+  // LinearSolve::nosol and stays unevaluated.
+  #[test]
+  fn overdetermined_rectangular() {
+    assert_eq!(interpret("LinearSolve[{{1}, {2}}, {3, 6}]").unwrap(), "{3}");
+    clear_state();
+    assert_eq!(
+      interpret("LinearSolve[{{1}, {1}}, {1, 2}]").unwrap(),
+      "LinearSolve[{{1}, {1}}, {1, 2}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("LinearSolve::nosol")),
+      "expected LinearSolve::nosol, got {msgs:?}"
+    );
+  }
+
   #[test]
   fn solve_matrix_rhs_2x2() {
     // When b is a matrix, the result must stay in exact rational form,

@@ -3511,6 +3511,54 @@ pub fn levi_civita_tensor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// LinearSolve[m, b] — solves the matrix equation m.x = b for x.
 /// Uses Gaussian elimination with exact rational arithmetic.
+/// Solve a rectangular (non-square) linear system `A x = b` via the reduced
+/// row echelon form of `[A | b]`, returning the particular solution with all
+/// non-pivot (free) variables set to 0 — matching wolframscript. Emits
+/// LinearSolve::nosol and stays unevaluated when the system is inconsistent.
+fn linear_solve_rectangular(
+  matrix: &[Vec<Expr>],
+  b: &[Expr],
+  ncols: usize,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Augment [A | b] and reduce.
+  let aug: Vec<Vec<Expr>> = matrix
+    .iter()
+    .zip(b.iter())
+    .map(|(row, bi)| {
+      let mut r = row.clone();
+      r.push(bi.clone());
+      r
+    })
+    .collect();
+  let rref = row_reduce_impl(&aug);
+
+  let mut solution = vec![Expr::Integer(0); ncols];
+  for row in &rref {
+    // The pivot is the first non-zero column of the row.
+    let lead = (0..=ncols).find(|&j| !is_zero_expr(&row[j]));
+    match lead {
+      Some(j) if j < ncols => {
+        // RREF pivot coefficient is 1, so x_j = (augmented RHS) with the free
+        // variables (which are 0) dropped.
+        solution[j] = row[ncols].clone();
+      }
+      Some(_) => {
+        // Leading entry is in the RHS column: 0 = nonzero → no solution.
+        crate::emit_message(
+          "LinearSolve::nosol: Linear equation encountered that has no solution.",
+        );
+        return Ok(Expr::FunctionCall {
+          name: "LinearSolve".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+      None => {} // all-zero row
+    }
+  }
+  Ok(Expr::List(solution.into()))
+}
+
 pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -3544,10 +3592,28 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "LinearSolve: empty matrix".into(),
     ));
   }
-  if matrix.iter().any(|row| row.len() != n) {
-    return Err(InterpreterError::EvaluationError(
-      "LinearSolve: matrix must be square".into(),
-    ));
+  let ncols = matrix[0].len();
+  if matrix.iter().any(|row| row.len() != ncols) {
+    // Ragged matrix — leave unevaluated.
+    return Ok(Expr::FunctionCall {
+      name: "LinearSolve".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  // Rectangular (non-square) systems: solve via the reduced row echelon form
+  // of the augmented matrix, taking the particular solution with the
+  // non-pivot (free) variables set to 0, matching wolframscript.
+  if ncols != n {
+    if b.len() != n {
+      crate::emit_message(
+        "LinearSolve::lslc: Coefficient matrix and target vector(s) or matrix do not have the same dimensions.",
+      );
+      return Ok(Expr::FunctionCall {
+        name: "LinearSolve".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    return linear_solve_rectangular(&matrix, &b, ncols, args);
   }
   if b.len() != n {
     crate::emit_message(

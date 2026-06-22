@@ -431,7 +431,7 @@ Boole,Converts True to 1 and False to 0,✅,pure,5.1,433
 Outer,Generalized outer product,✅,pure,1.0,434
 InterpolationOrder,Option for specifying the order of interpolation,✅,pure,3.0,435
 FindMinimum,Finds a local minimum of a function numerically,✅,pure,1.0,436
-LinearSolve,Solves a linear system of equations using Gaussian elimination,✅,pure,1.0,437
+LinearSolve,Solves a square or rectangular linear system of equations using Gaussian elimination,✅,pure,1.0,437
 StringLength,Returns the length of a string,✅,pure,1.0,438
 NDSolveValue,Numerically solve a differential equation and return the solution,✅,pure,9.0,439
 DensityPlot,Creates a density plot of a function,✅,pure,1.0,440
