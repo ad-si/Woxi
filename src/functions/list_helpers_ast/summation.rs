@@ -3000,6 +3000,26 @@ fn try_infinite_sum(
     return Ok(Some(result));
   }
 
+  // For min > 1, reduce to the min = 1 series and subtract the head terms,
+  // e.g. Sum[r^n, {n, 2, Infinity}] = Sum[r^n, {n, 1, Infinity}] - r. This only
+  // fires when the min = 1 series itself has a closed form, so it inherits that
+  // form's exactness and stays unevaluated otherwise (no new form divergence).
+  if min > 1 {
+    if let Some(base_sum) = try_infinite_sum(body, var_name, 1)? {
+      let mut acc = base_sum;
+      for k in 1..min {
+        let substituted =
+          crate::syntax::substitute_variable(body, var_name, &Expr::Integer(k));
+        let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+        let neg =
+          crate::functions::math_ast::times_ast(&[Expr::Integer(-1), val])?;
+        acc = crate::functions::math_ast::plus_ast(&[acc, neg])?;
+      }
+      return Ok(Some(acc));
+    }
+    return Ok(None);
+  }
+
   if min != 1 {
     return Ok(None);
   }

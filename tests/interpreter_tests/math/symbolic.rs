@@ -195,6 +195,44 @@ mod sum {
     );
   }
 
+  // Infinite geometric series with a numeric ratio and a lower bound >= 2
+  // reduce to the min = 1 series minus the head terms, giving an exact rational.
+  #[test]
+  fn infinite_geometric_lower_bound_above_one() {
+    assert_eq!(interpret("Sum[(1/3)^n, {n, 2, Infinity}]").unwrap(), "1/6");
+    assert_eq!(interpret("Sum[(1/3)^n, {n, 3, Infinity}]").unwrap(), "1/18");
+    assert_eq!(interpret("Sum[(1/2)^n, {n, 2, Infinity}]").unwrap(), "1/2");
+    assert_eq!(interpret("Sum[(2/3)^n, {n, 2, Infinity}]").unwrap(), "4/3");
+  }
+
+  // The same head-subtraction reduction applies to any series whose min = 1
+  // form is known in closed form, e.g. the Basel-type zeta sums.
+  #[test]
+  fn infinite_zeta_lower_bound_above_one() {
+    assert_eq!(
+      interpret("Sum[1/n^2, {n, 2, Infinity}]").unwrap(),
+      "-1 + Pi^2/6"
+    );
+    assert_eq!(
+      interpret("Sum[1/n^2, {n, 3, Infinity}]").unwrap(),
+      "-5/4 + Pi^2/6"
+    );
+  }
+
+  // Divergent or symbolic series stay unevaluated (the reduction only fires
+  // when the min = 1 series itself has a closed form).
+  #[test]
+  fn infinite_sum_lower_bound_above_one_stays_unevaluated() {
+    assert_eq!(
+      interpret("Sum[1/n, {n, 2, Infinity}]").unwrap(),
+      "Sum[n^(-1), {n, 2, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Sum[x^n, {n, 2, Infinity}]").unwrap(),
+      "Sum[x^n, {n, 2, Infinity}]"
+    );
+  }
+
   #[test]
   fn infinite_sum_short_iterator_form() {
     // `{n, max}` is shorthand for `{n, 1, max}`, including when max is Infinity
