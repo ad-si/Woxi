@@ -3711,11 +3711,12 @@ fn store_function_definition(
       &blank_types,
       &heads,
       &conditions,
+      &body_expr,
     );
     let pos = entry
       .iter()
-      .position(|(_, c, _, h, bt, _)| {
-        crate::evaluator::assignment::pattern_specificity_score(bt, h, c)
+      .position(|(_, c, _, h, bt, b)| {
+        crate::evaluator::assignment::pattern_specificity_score(bt, h, c, b)
           > score
       })
       .unwrap_or(entry.len());

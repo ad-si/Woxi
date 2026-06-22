@@ -169,14 +169,30 @@ fn resolve_func_name(name: &str) -> String {
   })
 }
 
+/// Returns true when a rule body carries a whole-rule `/;` guard, i.e. it is
+/// stored as a `Condition[body, test]` wrapper (`f[...] := body /; test`).
+fn body_has_condition(body: &Expr) -> bool {
+  matches!(
+    body,
+    Expr::FunctionCall { name, args } if name == "Condition" && args.len() == 2
+  )
+}
+
 /// Compute a specificity score for a pattern rule based on its conditions,
 /// blank types, and head constraints. Lower score = more specific = should be
 /// tried first. Ordering: literal (SameQ) > head-constrained Blank > Blank >
 /// BlankSequence > BlankNullSequence.
+///
+/// `body` is the rule's RHS; a whole-rule `/;` guard (stored as a
+/// `Condition[body, test]` wrapper) makes the rule more specific, matching
+/// Wolfram, where a guarded rule like `f[n_Integer, _] := 0 /; n < 0` is tried
+/// before an unguarded but otherwise-more-specific rule like
+/// `f[n_Integer, r_Integer] := …`.
 pub fn pattern_specificity_score(
   blank_types: &[u8],
   heads: &[Option<String>],
   conditions: &[Option<Expr>],
+  body: &Expr,
 ) -> u32 {
   // Literal definitions (SameQ conditions) are most specific
   let is_literal = conditions.iter().any(|c| {
@@ -195,10 +211,12 @@ pub fn pattern_specificity_score(
   let max_blank = blank_types.iter().copied().max().unwrap_or(1) as u32;
   // Head constraints make a pattern more specific (subtract 1 for each)
   let head_bonus = heads.iter().filter(|h| h.is_some()).count() as u32;
-  // Conditions (PatternTest, Condition) also add specificity
+  // Per-parameter conditions (PatternTest) also add specificity
   let cond_bonus = conditions.iter().filter(|c| c.is_some()).count() as u32;
+  // A whole-rule `/;` guard adds specificity too
+  let rule_cond_bonus = u32::from(body_has_condition(body));
   // Score: higher blank_type dominates, head/condition constraints reduce score
-  max_blank * 10 - head_bonus - cond_bonus
+  max_blank * 10 - head_bonus - cond_bonus - rule_cond_bonus
 }
 
 /// Collect all operands for an associative binary operator (Plus, Times, Alternatives),
@@ -1409,12 +1427,16 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         );
       } else {
         // Insert by pattern specificity: Blank < BlankSequence < BlankNullSequence
-        let score =
-          pattern_specificity_score(&blank_types, &heads, &conditions);
+        let score = pattern_specificity_score(
+          &blank_types,
+          &heads,
+          &conditions,
+          &rhs_value,
+        );
         let pos = entry
           .iter()
-          .position(|(_, c, _, h, bt, _)| {
-            pattern_specificity_score(bt, h, c) > score
+          .position(|(_, c, _, h, bt, b)| {
+            pattern_specificity_score(bt, h, c, b) > score
           })
           .unwrap_or(entry.len());
         entry.insert(
@@ -2238,12 +2260,16 @@ pub fn set_delayed_ast(
           .unwrap_or(entry.len())
       } else {
         // Insert by pattern specificity: Blank < BlankSequence < BlankNullSequence
-        let score =
-          pattern_specificity_score(&blank_types, &heads, &conditions);
+        let score = pattern_specificity_score(
+          &blank_types,
+          &heads,
+          &conditions,
+          &final_body,
+        );
         entry
           .iter()
-          .position(|(_, c, _, h, bt, _)| {
-            pattern_specificity_score(bt, h, c) > score
+          .position(|(_, c, _, h, bt, b)| {
+            pattern_specificity_score(bt, h, c, b) > score
           })
           .unwrap_or(entry.len())
       };

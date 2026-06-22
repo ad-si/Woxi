@@ -167,6 +167,47 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_guarded_rule_ordering_partitionsp() {
+    // Issue #118: a `/;`-guarded rule must be tried before an unguarded but
+    // otherwise-more-specific rule (`f[n_Integer, _] /; n<0` before
+    // `f[n_Integer, r_Integer]`). Without this, the recursion never hits the
+    // n<0 base case and either overflows or stays symbolic.
+    clear_state();
+    let program = "Unprotect[PartitionsP]\n\
+      PartitionsP[n_Integer, _] := 0 /; (n<0)\n\
+      PartitionsP[0, 0] := 1\n\
+      PartitionsP[_, 0] := 0\n\
+      PartitionsP[_, r_Integer] := 0 /; (r<0)\n\
+      PartitionsP[n_Integer, 1] := 1 /; (n>0)\n\
+      PartitionsP[n_Integer, 2] := Floor[n/2] /; (n>0)\n\
+      PartitionsP[n_Integer, r_Integer] := PartitionsP[n-r] /; (r >= n/2)\n\
+      PartitionsP[n_Integer, r_Integer] := \
+        PartitionsP[n, r] = PartitionsP[n-1, r-1] + PartitionsP[n-r, r]\n\
+      Table[PartitionsP[10, r], {r, 0, 10}]";
+    assert_eq!(
+      interpret(program).unwrap(),
+      "{0, 1, 5, 8, 9, 7, 5, 3, 2, 1, 1}"
+    );
+    clear_state();
+  }
+
+  #[test]
+  fn test_guarded_rule_downvalue_order() {
+    // The guarded rule keeps its definition-order position ahead of a later
+    // unguarded, otherwise-more-specific rule (issue #118).
+    clear_state();
+    interpret("Unprotect[gg]").unwrap();
+    interpret("gg[n_Integer, _] := aa /; (n < 0)").unwrap();
+    interpret("gg[n_Integer, r_Integer] := bb").unwrap();
+    assert_eq!(
+      interpret("DownValues[gg]").unwrap(),
+      "{HoldPattern[gg[n_Integer, _]] :> aa /; n < 0, \
+       HoldPattern[gg[n_Integer, r_Integer]] :> bb}"
+    );
+    clear_state();
+  }
+
+  #[test]
   fn test_split_condition_continuation() {
     // /; (Condition) at end of line means the expression continues
     assert_eq!(
