@@ -1151,6 +1151,25 @@ mod collect_tests {
   }
 
   #[test]
+  fn collect_constant_after_collect_variable() {
+    // A bare-symbol constant term that sorts after the collect variable must
+    // be placed last, matching wolframscript's canonical order, e.g.
+    // `Collect[x^3 + y + x, x]` → `x + x^3 + y` (not `y + x + x^3`).
+    assert_eq!(interpret("Collect[x^3 + y + x, x]").unwrap(), "x + x^3 + y");
+    assert_eq!(
+      interpret("Collect[x^2 + 2 x^2 + y, x]").unwrap(),
+      "3*x^2 + y"
+    );
+    assert_eq!(
+      interpret("Collect[x^3 + y + x^2, x]").unwrap(),
+      "x^2 + x^3 + y"
+    );
+    // A constant that sorts before the collect variable still leads.
+    assert_eq!(interpret("Collect[z + x + x^2, x]").unwrap(), "x + x^2 + z");
+    assert_eq!(interpret("Collect[x^2 + a, x]").unwrap(), "a + x^2");
+  }
+
+  #[test]
   fn collect_compound_target_function() {
     // Collect accepts a compound target like q[x] as the variable.
     assert_eq!(

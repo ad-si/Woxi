@@ -181,8 +181,9 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sort by power ascending
   power_groups.sort_by_key(|(p, _)| *p);
 
-  // Build result: sum of (combined_coeff * var^power)
-  let mut result_terms = Vec::new();
+  // Build result: sum of (combined_coeff * var^power), tracking each term's
+  // var-power so the constant (power 0) can be placed canonically afterwards.
+  let mut result_terms: Vec<(i128, Expr)> = Vec::new();
   for (power, coeffs) in power_groups {
     // Sum the coefficients
     let combined_coeff = if coeffs.len() == 1 {
@@ -252,7 +253,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     };
-    result_terms.push(term);
+    result_terms.push((power, term));
   }
 
   if result_terms.is_empty() {
@@ -261,9 +262,46 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Head-wrapped coefficients need Wolfram's canonical Plus ordering
     // (descending powers of the collect variable) rather than the ascending
     // "constant first" order used when the coefficient is a bare Plus.
-    Ok(plus_ast_canonical(result_terms))
+    Ok(plus_ast_canonical(
+      result_terms.into_iter().map(|(_, t)| t).collect(),
+    ))
   } else {
-    Ok(build_sum(result_terms))
+    // The var-power terms stay in ascending-power order (Wolfram's order for
+    // pure powers of the collect variable, with each coefficient kept grouped
+    // and coefficient-first, e.g. `(a + c)*x^2`). The constant (power-0) term
+    // is flattened into its individual monomials (so a multi-term constant like
+    // `a*x + c*x` is not parenthesized) and placed either before or after the
+    // var-power terms. Wolfram puts it after only when it sorts strictly after
+    // the collect variable — i.e. it has no purely-numeric addend and every
+    // variable it contains sorts after the collect variable (`x + x^3 + y`).
+    // Otherwise it leads (`e + (c + d)*x + …`, `6 + 3*y + …`).
+    let const_term = result_terms
+      .iter()
+      .position(|(p, _)| *p == 0)
+      .map(|i| result_terms.remove(i).1);
+    let mut x_terms: Vec<Expr> =
+      result_terms.into_iter().map(|(_, t)| t).collect();
+    if let Some(c) = const_term {
+      let mut const_monos = Vec::new();
+      flatten_plus_terms(&c, &mut const_monos);
+      let has_numeric_addend = const_monos.iter().any(|m| {
+        let mut vs = std::collections::HashSet::new();
+        collect_variables(m, &mut vs);
+        vs.is_empty()
+      });
+      let mut const_vars = std::collections::HashSet::new();
+      collect_variables(&c, &mut const_vars);
+      let after = !has_numeric_addend
+        && !const_vars.is_empty()
+        && const_vars.iter().all(|v| v.as_str() > var);
+      if after {
+        x_terms.extend(const_monos);
+      } else {
+        const_monos.extend(x_terms);
+        x_terms = const_monos;
+      }
+    }
+    Ok(build_sum(x_terms))
   }
 }
 
