@@ -60,7 +60,75 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let result = reduce_expr(expr, &vars, domain)?;
+
+  // Over the integers, a bounded two-sided interval is enumerated as the
+  // disjunction of the integers it contains: Reduce[2 < x < 5, x, Integers]
+  // -> x == 3 || x == 4 (matching wolframscript), rather than leaving the
+  // Inequality[...] form.
+  if domain == Some("Integers")
+    && vars.len() == 1
+    && let Some(enumerated) = enumerate_integer_interval(&result, &vars[0])
+  {
+    return Ok(enumerated);
+  }
+
   Ok(result)
+}
+
+/// If `result` is a bounded two-sided interval `Inequality[lo, op1, var, op2,
+/// hi]` with numeric bounds, enumerate the integers it contains as
+/// `var == i1 || var == i2 || ...` (or `False` if empty). Returns `None` for
+/// any other shape, non-numeric bounds, or an enumeration that would be too
+/// large.
+fn enumerate_integer_interval(result: &Expr, var: &str) -> Option<Expr> {
+  use crate::syntax::ComparisonOp;
+  let Expr::FunctionCall { name, args } = result else {
+    return None;
+  };
+  if name != "Inequality" || args.len() != 5 {
+    return None;
+  }
+  if !matches!(&args[2], Expr::Identifier(s) if s == var) {
+    return None;
+  }
+  let lo = crate::functions::math_ast::try_eval_to_f64(&args[0])?;
+  let hi = crate::functions::math_ast::try_eval_to_f64(&args[4])?;
+  let op1 = match &args[1] {
+    Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  let op2 = match &args[3] {
+    Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  // lo op1 x: smallest admissible integer.
+  let lower = match op1 {
+    "Less" => (lo.floor() as i64) + 1,
+    "LessEqual" => lo.ceil() as i64,
+    _ => return None,
+  };
+  // x op2 hi: largest admissible integer.
+  let upper = match op2 {
+    "Less" => (hi.ceil() as i64) - 1,
+    "LessEqual" => hi.floor() as i64,
+    _ => return None,
+  };
+  if upper < lower {
+    return Some(Expr::Identifier("False".to_string()));
+  }
+  if (upper as i128 - lower as i128) > 100_000 {
+    return None;
+  }
+  let terms: Vec<Expr> = (lower..=upper)
+    .map(|i| Expr::Comparison {
+      operands: vec![
+        Expr::Identifier(var.to_string()),
+        Expr::Integer(i as i128),
+      ],
+      operators: vec![ComparisonOp::Equal],
+    })
+    .collect();
+  Some(build_or(terms))
 }
 
 /// Does `e` contain a `ConditionalExpression[...]` subexpression?

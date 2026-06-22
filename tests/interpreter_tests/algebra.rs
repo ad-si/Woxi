@@ -3755,6 +3755,62 @@ mod reduce {
     );
   }
 
+  // Over the integers, a bounded two-sided interval enumerates the contained
+  // integers (respecting strict vs non-strict bounds); without a domain it
+  // stays an Inequality.
+  #[test]
+  fn integers_bounded_interval_strict() {
+    assert_eq!(
+      interpret("Reduce[x > 2 && x < 5, x, Integers]").unwrap(),
+      "x == 3 || x == 4"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_interval_inclusive() {
+    assert_eq!(
+      interpret("Reduce[0 <= x <= 3, x, Integers]").unwrap(),
+      "x == 0 || x == 1 || x == 2 || x == 3"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_interval_mixed_strictness() {
+    assert_eq!(
+      interpret("Reduce[1 < x <= 4, x, Integers]").unwrap(),
+      "x == 2 || x == 3 || x == 4"
+    );
+    assert_eq!(
+      interpret("Reduce[x >= 2 && x < 6, x, Integers]").unwrap(),
+      "x == 2 || x == 3 || x == 4 || x == 5"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_interval_empty() {
+    assert_eq!(
+      interpret("Reduce[2 < x < 3, x, Integers]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_interval_single() {
+    assert_eq!(
+      interpret("Reduce[2 <= x <= 2, x, Integers]").unwrap(),
+      "x == 2"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_interval_no_domain_stays_inequality() {
+    // Without the Integers domain the interval form is retained.
+    assert_eq!(
+      interpret("Reduce[x > 2 && x < 5, x]").unwrap(),
+      "Inequality[2, Less, x, Less, 5]"
+    );
+  }
+
   // ── Reduce InputForm: chained inequalities use Inequality[] head ──
 
   #[test]
