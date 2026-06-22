@@ -7941,8 +7941,9 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
         }
         unevaluated()
       }
-      // Other regions (Disk, Polygon, Triangle, Rectangle) -> Undefined
-      "Disk" | "Polygon" | "Triangle" | "Rectangle" | "Ball" => {
+      // Other filled regions (Disk, Polygon, Triangle, Rectangle, Ball,
+      // Ellipsoid) are not curves, so their arc length is Undefined.
+      "Disk" | "Polygon" | "Triangle" | "Rectangle" | "Ball" | "Ellipsoid" => {
         Ok(Expr::Identifier("Undefined".to_string()))
       }
       _ => unevaluated(),
@@ -7984,6 +7985,57 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
         } else {
           unevaluated()
         }
+      }
+      // Ellipsoid[center, {r1, r2}] (2D) is a filled ellipse; its perimeter is
+      // the ellipse circumference 4*r2*EllipticE[1 - (r1/r2)^2], matching WL's
+      // convention of using the second semi-axis as the reference. A circular
+      // ellipse (r1 == r2) simplifies to 2*Pi*r since EllipticE[0] = Pi/2.
+      "Ellipsoid"
+        if args.len() == 2
+          && matches!(&args[0], Expr::List(c) if c.len() == 2)
+          && matches!(&args[1], Expr::List(r) if r.len() == 2) =>
+      {
+        let Expr::List(radii) = &args[1] else {
+          unreachable!()
+        };
+        let (r1, r2) = (radii[0].clone(), radii[1].clone());
+        // m = 1 - (r1/r2)^2
+        let ratio_sq = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(r1),
+              right: Box::new(r2.clone()),
+            },
+            Expr::Integer(2),
+          ]
+          .into(),
+        };
+        let m = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::Integer(1),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), ratio_sq].into(),
+            },
+          ]
+          .into(),
+        };
+        let perimeter = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(4),
+            r2,
+            Expr::FunctionCall {
+              name: "EllipticE".to_string(),
+              args: vec![m].into(),
+            },
+          ]
+          .into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&perimeter)
       }
       // Circle is a 1D curve, not a 2D region – Perimeter is Undefined
       "Circle" => Ok(Expr::Identifier("Undefined".to_string())),

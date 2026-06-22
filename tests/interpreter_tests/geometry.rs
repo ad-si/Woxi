@@ -258,6 +258,20 @@ mod arc_length {
       "Undefined"
     );
   }
+
+  #[test]
+  fn ellipsoid_undefined() {
+    // A filled ellipse/ellipsoid is not a curve, so its arc length is
+    // Undefined (use Perimeter for the boundary length of a 2D ellipse).
+    assert_eq!(
+      interpret("ArcLength[Ellipsoid[{0, 0}, {2, 3}]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(
+      interpret("ArcLength[Ellipsoid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
+      "Undefined"
+    );
+  }
 }
 
 mod perimeter {
@@ -315,6 +329,40 @@ mod perimeter {
   #[test]
   fn unit_circle() {
     assert_eq!(interpret("Perimeter[Circle[]]").unwrap(), "Undefined");
+  }
+
+  // The perimeter of a 2D Ellipsoid (filled ellipse) is the ellipse
+  // circumference 4*r2*EllipticE[1 - (r1/r2)^2], using the second semi-axis
+  // as the reference (WL's convention).
+  #[test]
+  fn ellipsoid() {
+    assert_eq!(
+      interpret("Perimeter[Ellipsoid[{0, 0}, {2, 3}]]").unwrap(),
+      "12*EllipticE[5/9]"
+    );
+    assert_eq!(
+      interpret("Perimeter[Ellipsoid[{0, 0}, {3, 2}]]").unwrap(),
+      "8*EllipticE[-5/4]"
+    );
+  }
+
+  // A circular Ellipsoid (equal semi-axes) reduces to 2*Pi*r since
+  // EllipticE[0] = Pi/2.
+  #[test]
+  fn ellipsoid_circular() {
+    assert_eq!(
+      interpret("Perimeter[Ellipsoid[{0, 0}, {2, 2}]]").unwrap(),
+      "4*Pi"
+    );
+  }
+
+  // The center does not affect the perimeter.
+  #[test]
+  fn ellipsoid_offset_center() {
+    assert_eq!(
+      interpret("Perimeter[Ellipsoid[{1, 2}, {2, 3}]]").unwrap(),
+      "12*EllipticE[5/9]"
+    );
   }
 }
 
