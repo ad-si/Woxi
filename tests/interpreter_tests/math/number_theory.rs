@@ -2909,12 +2909,70 @@ mod random_prime {
 
   #[test]
   fn no_primes_in_range() {
-    assert!(interpret("RandomPrime[{14, 16}]").is_err());
+    // wolframscript emits RandomPrime::noprime and returns the expression
+    // unevaluated (it does not raise an error).
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("RandomPrime[{14, 16}]").unwrap();
+    assert_eq!(r.result, "RandomPrime[{14, 16}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "RandomPrime::noprime: There are no primes in the specified interval."
+      )),
+      "missing noprime message, got: {:?}",
+      r.warnings
+    );
   }
 
   #[test]
   fn max_less_than_2() {
-    assert!(interpret("RandomPrime[1]").is_err());
+    // 1 is a positive integer but the interval [2, 1] has no primes, so this is
+    // the noprime case (not intp). Returns unevaluated.
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("RandomPrime[1]").unwrap();
+    assert_eq!(r.result, "RandomPrime[1]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "RandomPrime::noprime: There are no primes in the specified interval."
+      )),
+      "missing noprime message, got: {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
+  fn non_positive_integer_bound_is_intp() {
+    // A bound that is not a positive integer emits RandomPrime::intp (naming the
+    // offending value) and returns unevaluated.
+    use woxi::interpret_with_stdout;
+    for (input, bad, unevaluated) in [
+      ("RandomPrime[0]", "0", "RandomPrime[0]"),
+      ("RandomPrime[-3]", "-3", "RandomPrime[-3]"),
+      ("RandomPrime[{0, 1}]", "0", "RandomPrime[{0, 1}]"),
+      ("RandomPrime[{2, 0}]", "0", "RandomPrime[{2, 0}]"),
+      ("RandomPrime[{-5, -1}]", "-5", "RandomPrime[{-5, -1}]"),
+    ] {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, unevaluated, "result for {input}");
+      let expected =
+        format!("RandomPrime::intp: {bad} is not a positive integer.");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&expected)),
+        "missing intp message for {input}, got: {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  #[test]
+  fn ordered_bounds_sample_from_sorted_range() {
+    interpret("SeedRandom[42]").unwrap();
+    // wolframscript orders the bounds, so {5, 2} samples primes from [2, 5].
+    let result: i128 =
+      interpret("RandomPrime[{5, 2}]").unwrap().parse().unwrap();
+    assert!(
+      [2, 3, 5].contains(&result),
+      "expected a prime in [2,5], got {result}"
+    );
   }
 
   #[test]

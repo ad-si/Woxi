@@ -1265,32 +1265,59 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // wolframscript never raises a hard error here: a bound that is not a
+  // positive integer emits `RandomPrime::intp` and an otherwise-valid interval
+  // that contains no primes emits `RandomPrime::noprime`. In both cases it
+  // returns the expression unevaluated.
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RandomPrime".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
   // Parse the range from first argument
   let (min, max) = match &args[0] {
     Expr::Integer(imax) => {
-      if *imax < 2 {
-        return Err(InterpreterError::EvaluationError(
-          "There are no primes in the specified interval.".into(),
+      if *imax < 1 {
+        crate::emit_message(&format!(
+          "RandomPrime::intp: {imax} is not a positive integer."
         ));
+        return unevaluated();
       }
       (2i128, *imax)
     }
+    Expr::Real(_) => {
+      crate::emit_message(&format!(
+        "RandomPrime::intp: {} is not a positive integer.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return unevaluated();
+    }
     Expr::List(items) if items.len() == 2 => {
-      if let (Expr::Integer(imin), Expr::Integer(imax)) = (&items[0], &items[1])
-      {
-        (*imin, *imax)
+      // Both bounds must be positive integers; report the first offender.
+      for it in items.iter() {
+        match it {
+          Expr::Integer(b) if *b >= 1 => {}
+          Expr::Integer(_) | Expr::Real(_) => {
+            crate::emit_message(&format!(
+              "RandomPrime::intp: {} is not a positive integer.",
+              crate::syntax::expr_to_string(it)
+            ));
+            return unevaluated();
+          }
+          // A symbolic bound stays unevaluated (no message), matching WL.
+          _ => return unevaluated(),
+        }
+      }
+      if let (Expr::Integer(a), Expr::Integer(b)) = (&items[0], &items[1]) {
+        // wolframscript orders the bounds, so {5, 2} samples from [2, 5].
+        ((*a).min(*b), (*a).max(*b))
       } else {
-        return Err(InterpreterError::EvaluationError(
-          "RandomPrime: range bounds must be integers".into(),
-        ));
+        return unevaluated();
       }
     }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "RandomPrime".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    _ => return unevaluated(),
   };
 
   // The second arg may be a positive integer (length of a flat list)
@@ -1352,9 +1379,10 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if range_size <= 100_000 {
     let primes = collect_primes_in_range(min, max);
     if primes.is_empty() {
-      return Err(InterpreterError::EvaluationError(
-        "There are no primes in the specified interval.".into(),
-      ));
+      crate::emit_message(
+        "RandomPrime::noprime: There are no primes in the specified interval.",
+      );
+      return unevaluated();
     }
     if dims.is_empty() {
       let idx = crate::with_rng(|rng| rng.gen_range(0..primes.len()));
@@ -1371,9 +1399,10 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Rejection sampling for large ranges
     let start = if min < 2 { 2i128 } else { min };
     if start > max {
-      return Err(InterpreterError::EvaluationError(
-        "There are no primes in the specified interval.".into(),
-      ));
+      crate::emit_message(
+        "RandomPrime::noprime: There are no primes in the specified interval.",
+      );
+      return unevaluated();
     }
     let mut results = Vec::with_capacity(count);
     for _ in 0..count {
