@@ -5143,9 +5143,78 @@ pub fn dispatch_math_functions(
     "QFactorial" if args.len() == 2 => {
       return Some(qfactorial_ast(&args[0], &args[1]));
     }
+    "QGamma" if args.len() == 2 => {
+      return Some(qgamma_ast(&args[0], &args[1]));
+    }
     _ => {}
   }
   None
+}
+
+/// QGamma[z, q] — the q-gamma function. For a positive integer first argument
+/// `n`, `QGamma[n, q] = QFactorial[n-1, q] = ∏_{i=1}^{n-1} [i]_q`. Non-positive
+/// integers are poles (ComplexInfinity). With a numeric `q` the exact value is
+/// returned; with a symbolic `q`, wolframscript only expands the product for
+/// `n <= 3` (e.g. `QGamma[3, q]` → `1 + q`) and otherwise stays unevaluated.
+/// Non-integer first arguments are left unevaluated.
+fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
+  use crate::functions::math_ast::{
+    expr_to_f64, expr_to_i128, expr_to_rational,
+  };
+
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "QGamma".to_string(),
+      args: vec![z_expr.clone(), q_expr.clone()].into(),
+    })
+  };
+
+  let n = match expr_to_i128(z_expr) {
+    Some(n) => n,
+    None => return unevaluated(),
+  };
+  if n <= 0 {
+    // Poles at the non-positive integers.
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+  if n == 1 {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Numeric q: reuse the exact q-factorial of n-1.
+  let q_is_numeric =
+    expr_to_f64(q_expr).is_some() || expr_to_rational(q_expr).is_some();
+  if q_is_numeric {
+    return qfactorial_ast(&Expr::Integer(n - 1), q_expr);
+  }
+
+  // Symbolic q: match wolframscript, which only expands the product for n <= 3.
+  if n > 3 {
+    return unevaluated();
+  }
+  // Build ∏_{i=1}^{n-1} (1 + q + … + q^(i-1)) and evaluate it.
+  let mut factors: Vec<Expr> = Vec::with_capacity((n - 1) as usize);
+  for i in 1..n {
+    let terms: Vec<Expr> = (0..i)
+      .map(|j| match j {
+        0 => Expr::Integer(1),
+        1 => q_expr.clone(),
+        _ => Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![q_expr.clone(), Expr::Integer(j)].into(),
+        },
+      })
+      .collect();
+    factors.push(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    });
+  }
+  let product = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: factors.into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&product)
 }
 
 /// Compute the Cantor staircase (devil's staircase) function.

@@ -2810,7 +2810,7 @@ TransformationClass,,🚫,,10.0,2867
 UndirectedGraphQ,True if all edges are undirected,✅,1,8.0,2867
 WordDefinition,,🚫,,10.3,2867
 LightCyan,Named light color evaluating to RGBColor[0.9 1 1],✅,pure,6.0,2871
-QGamma,,🚫,,7.0,2871
+QGamma,q-analog of the gamma function,✅,pure,7.0,2871
 SiegelTheta,,🚫,,6.0,2871
 VertexEccentricity,Maximum distance from a vertex,✅,1,8.0,2871
 ArcCurvature,Compute the curvature of a parametric curve,✅,pure,10.0,2880

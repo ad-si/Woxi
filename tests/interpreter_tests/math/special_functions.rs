@@ -5206,6 +5206,51 @@ mod q_pochhammer {
   }
 }
 
+mod q_gamma {
+  use super::*;
+
+  // QGamma[n, q] = QFactorial[n-1, q] for a positive integer n.
+  #[test]
+  fn integer_arg_numeric_q() {
+    assert_eq!(interpret("QGamma[1, 1/3]").unwrap(), "1");
+    assert_eq!(interpret("QGamma[2, 1/2]").unwrap(), "1");
+    assert_eq!(interpret("QGamma[4, 1/2]").unwrap(), "21/8");
+    assert_eq!(interpret("QGamma[6, 1/2]").unwrap(), "9765/1024");
+    assert_eq!(interpret("QGamma[2, 3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn real_q_returns_real() {
+    assert_eq!(interpret("QGamma[3, 0.5]").unwrap(), "1.5");
+    assert_eq!(interpret("QGamma[4, 0.5]").unwrap(), "2.625");
+  }
+
+  #[test]
+  fn non_positive_integers_are_poles() {
+    assert_eq!(interpret("QGamma[0, 1/2]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("QGamma[-1, 1/2]").unwrap(), "ComplexInfinity");
+    // Poles hold even for symbolic q.
+    assert_eq!(interpret("QGamma[0, q]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("QGamma[-2, q]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn symbolic_q_expands_only_up_to_three() {
+    // wolframscript expands the product only for n <= 3.
+    assert_eq!(interpret("QGamma[1, q]").unwrap(), "1");
+    assert_eq!(interpret("QGamma[2, q]").unwrap(), "1");
+    assert_eq!(interpret("QGamma[3, q]").unwrap(), "1 + q");
+    assert_eq!(interpret("QGamma[4, q]").unwrap(), "QGamma[4, q]");
+    assert_eq!(interpret("QGamma[5, q]").unwrap(), "QGamma[5, q]");
+  }
+
+  #[test]
+  fn non_integer_first_arg_stays_unevaluated() {
+    assert_eq!(interpret("QGamma[1/2, 1/3]").unwrap(), "QGamma[1/2, 1/3]");
+    assert_eq!(interpret("QGamma[z, q]").unwrap(), "QGamma[z, q]");
+  }
+}
+
 mod spherical_bessel_j {
   use super::*;
 
