@@ -4015,6 +4015,29 @@ mod lerch_phi {
     );
   }
 
+  // Exact arguments with no closed form stay symbolic — they are NOT
+  // numericized automatically (only N[...] or an inexact argument does that).
+  #[test]
+  fn exact_args_stay_symbolic() {
+    assert_eq!(
+      interpret("LerchPhi[1/2, 2, 1/3]").unwrap(),
+      "LerchPhi[1/2, 2, 1/3]"
+    );
+    // N[...] forces the numeric value.
+    let v: f64 = interpret("N[LerchPhi[1/2, 2, 1/3]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 9.34347465937594).abs() < 1e-9);
+  }
+
+  // The z = 0 special case is exact for exact arguments: a^(-s).
+  #[test]
+  fn zero_z_exact() {
+    assert_eq!(interpret("LerchPhi[0, 2, 3]").unwrap(), "1/9");
+    assert_eq!(interpret("LerchPhi[0, 2, 1/3]").unwrap(), "9");
+  }
+
   fn parse_complex(s: &str) -> (f64, f64) {
     // Parse forms like "12.34 + 5.6*I", "12.34 - 5.6*I", "-12.34", etc.
     let s = s.trim();

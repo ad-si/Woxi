@@ -1234,21 +1234,25 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let s = &args[1];
   let a = &args[2];
 
-  // Special case: z = 0 → a^(-s)
+  // Special case: z = 0 → a^(-s). Numericize only when an argument is inexact
+  // (a machine number); exact arguments give the exact power
+  // (e.g. LerchPhi[0, 2, 3] -> 1/9, LerchPhi[0.0, 2, 3] -> 0.1111...).
   if is_expr_zero(z) {
-    if let (Some(af), Some(sf)) = (try_eval_to_f64(a), try_eval_to_f64(s)) {
+    if (contains_float(z) || contains_float(a) || contains_float(s))
+      && let (Some(af), Some(sf)) = (try_eval_to_f64(a), try_eval_to_f64(s))
+    {
       return Ok(Expr::Real(af.powf(-sf)));
     }
-    return crate::evaluator::evaluate_function_call_ast(
-      "Power",
-      &[
-        a.clone(),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), s.clone()].into(),
-        },
-      ],
-    );
+    // Evaluate the full a^(-s) expression so the exponent Times[-1, s] folds
+    // (e.g. 3^(-2) -> 1/9) instead of staying a literal Power.
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(a.clone()),
+      right: Box::new(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), s.clone()].into(),
+      }),
+    });
   }
 
   // LerchPhi[z, s, 1] = PolyLog[s, z] / z (for z != 0, which the z = 0 case
@@ -1305,14 +1309,24 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Numeric evaluation
+  // Numeric evaluation.
+  //   |z| < 1: wolframscript keeps exact arguments symbolic (there is no
+  //     elementary closed form), so numericize only when an argument is
+  //     inexact (or N[...] made it so).
+  //   z == 1: wolframscript returns a HurwitzZeta-type closed form; Woxi
+  //     cannot always produce it (e.g. LerchPhi[1, 2, 1/4] = π² + 8 Catalan),
+  //     so fall back to the numeric value even for exact arguments.
   if let (Some(zf), Some(sf), Some(af)) =
     (try_eval_to_f64(z), try_eval_to_f64(s), try_eval_to_f64(a))
-    && (zf.abs() < 1.0 || ((zf - 1.0).abs() < 1e-16 && sf > 1.0))
   {
-    let result = lerch_phi_numeric(zf, sf, af);
-    if result.is_finite() {
-      return Ok(Expr::Real(result));
+    let inexact = contains_float(z) || contains_float(s) || contains_float(a);
+    let z_is_one = (zf - 1.0).abs() < 1e-16 && sf > 1.0;
+    let in_unit_disc = zf.abs() < 1.0;
+    if z_is_one || (in_unit_disc && inexact) {
+      let result = lerch_phi_numeric(zf, sf, af);
+      if result.is_finite() {
+        return Ok(Expr::Real(result));
+      }
     }
   }
 
@@ -1321,8 +1335,9 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // PV integral plus the iπ·residue at t = ln z. Wolfram's convention
   // for the recurrence uses `|a|^(-s)` (rather than `a^(-s)`) so that
   // both even- and odd-s cases line up with their numerical output.
-  if let (Some(zf), Some(sf), Some(af)) =
-    (try_eval_to_f64(z), try_eval_to_f64(s), try_eval_to_f64(a))
+  if (contains_float(z) || contains_float(s) || contains_float(a))
+    && let (Some(zf), Some(sf), Some(af)) =
+      (try_eval_to_f64(z), try_eval_to_f64(s), try_eval_to_f64(a))
     && zf > 1.0
     && (sf - sf.round()).abs() < 1e-12
     && (1.0..=30.0).contains(&sf)
