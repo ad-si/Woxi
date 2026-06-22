@@ -7038,6 +7038,11 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           Ok(args[0].clone())
         }
       }
+      // Ellipsoid[center, {r1, ...}] — centroid is the center (works for any
+      // dimension since an ellipsoid is symmetric about its center).
+      "Ellipsoid" if args.len() == 2 && matches!(&args[0], Expr::List(_)) => {
+        Ok(args[0].clone())
+      }
       // Rectangle[{x1, y1}, {x2, y2}] — centroid is midpoint
       "Rectangle" => {
         if args.is_empty() {

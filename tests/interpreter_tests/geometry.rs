@@ -471,6 +471,20 @@ mod region_centroid {
     );
   }
 
+  // An ellipsoid is symmetric about its center, so its centroid is the center
+  // (in any dimension).
+  #[test]
+  fn ellipsoid_center() {
+    assert_eq!(
+      interpret("RegionCentroid[Ellipsoid[{1, 2}, {3, 4}]]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Ellipsoid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
   #[test]
   fn unevaluated_unknown() {
     assert_eq!(
