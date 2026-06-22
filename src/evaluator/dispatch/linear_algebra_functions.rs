@@ -645,6 +645,28 @@ pub fn dispatch_linear_algebra_functions(
         }
       }
     }
+    "MatrixMinimalPolynomial" if args.len() == 2 => {
+      // A non-(square matrix) first argument is a matsq error in wolframscript
+      // (returns unevaluated). A square matrix that we cannot reduce — e.g. one
+      // with symbolic entries — simply stays unevaluated without a message.
+      let is_square = matches!(&args[0], Expr::List(rows)
+        if !rows.is_empty()
+          && rows.iter().all(|r| matches!(r, Expr::List(c) if c.len() == rows.len())));
+      if !is_square {
+        crate::emit_message(&format!(
+          "MatrixMinimalPolynomial::matsq: Argument {} at position 1 is not \
+           a nonempty square matrix.",
+          crate::syntax::expr_to_string(&args[0])
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "MatrixMinimalPolynomial".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      if let Some(result) = matrix_minimal_polynomial(&args[0], &args[1]) {
+        return Some(result);
+      }
+    }
     "Projection" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::projection_ast(args));
     }
@@ -3319,6 +3341,112 @@ fn binary_dissimilarity_ast(
   }
 
   Ok(crate::functions::math_ast::make_rational(num, den))
+}
+
+/// `MatrixMinimalPolynomial[A, x]` — the monic polynomial of least degree
+/// `m(x)` such that `m(A)` is the zero matrix. Computed via the Krylov method:
+/// the powers `I, A, A^2, …` are flattened into column vectors and the first
+/// linear dependence among them (found with `NullSpace`) gives the coefficients
+/// of the minimal polynomial. Returns `None` (leaving the head unevaluated)
+/// when the argument is not a square numeric matrix or no dependence is found.
+fn matrix_minimal_polynomial(
+  matrix: &Expr,
+  x: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let rows = match matrix {
+    Expr::List(rows) => rows,
+    _ => return None,
+  };
+  let n = rows.len();
+  if n == 0
+    || !rows
+      .iter()
+      .all(|r| matches!(r, Expr::List(c) if c.len() == n))
+  {
+    return None;
+  }
+
+  // Build the powers A^0 = I, A^1, …, A^n.
+  let identity = crate::functions::linear_algebra_ast::identity_matrix_ast(&[
+    Expr::Integer(n as i128),
+  ])
+  .ok()?;
+  let mut powers: Vec<Expr> = Vec::with_capacity(n + 1);
+  powers.push(identity);
+  for i in 1..=n {
+    let prod = evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: vec![powers[i - 1].clone(), matrix.clone()].into(),
+    })
+    .ok()?;
+    powers.push(prod);
+  }
+
+  // Flatten each power into a length-n^2 vector of entries.
+  let flat: Vec<Vec<Expr>> = powers
+    .iter()
+    .map(|p| match p {
+      Expr::List(prows) => {
+        let mut v = Vec::with_capacity(n * n);
+        for pr in prows.iter() {
+          match pr {
+            Expr::List(pc) => v.extend(pc.iter().cloned()),
+            _ => return None,
+          }
+        }
+        Some(v)
+      }
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let dim = n * n;
+
+  // Find the smallest k where {flat[0], …, flat[k]} are linearly dependent.
+  for k in 1..=n {
+    // Column-stack the first k+1 flattened powers: M is dim×(k+1).
+    let m_rows: Vec<Expr> = (0..dim)
+      .map(|r| Expr::List((0..=k).map(|i| flat[i][r].clone()).collect()))
+      .collect();
+    let m = Expr::List(m_rows.into());
+    let ns = crate::functions::linear_algebra_ast::null_space_ast(&[m]).ok()?;
+    let Expr::List(basis) = &ns else { return None };
+    if let Some(Expr::List(coeffs)) = basis.first()
+      && coeffs.len() == k + 1
+    {
+      // Normalise to monic by dividing through by the leading coefficient.
+      let lead = coeffs[k].clone();
+      let mut terms: Vec<Expr> = Vec::with_capacity(k + 1);
+      for (i, c) in coeffs.iter().enumerate() {
+        let coeff = Expr::FunctionCall {
+          name: "Divide".to_string(),
+          args: vec![c.clone(), lead.clone()].into(),
+        };
+        let term = if i == 0 {
+          coeff
+        } else {
+          let xpow = if i == 1 {
+            x.clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![x.clone(), Expr::Integer(i as i128)].into(),
+            }
+          };
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![coeff, xpow].into(),
+          }
+        };
+        terms.push(term);
+      }
+      let poly = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      };
+      return Some(evaluate_expr_to_expr(&poly));
+    }
+  }
+  None
 }
 
 /// `MatrixPower[m, n]` with a symbolic exponent `n` on a matrix that

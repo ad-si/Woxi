@@ -784,6 +784,7 @@ Complexes,Domain of complex numbers,✅,none,4.0,790
 HypergeometricPFQRegularized,Regularized generalized hypergeometric function,✅,pure,3.0,791
 PopupMenu,Interactive popup menu control,✅,none,6.0,792
 CharacteristicPolynomial,Compute the characteristic polynomial of a matrix,✅,pure,5.0,793
+MatrixMinimalPolynomial,Monic polynomial of least degree that annihilates a matrix,✅,pure,14.3,
 NMaximize,Numerical global maximization with constraints using sampling and gradient refinement,✅,pure,5.0,794
 IsotopeData,,🚫,,6.0,795
 CharacterRange,Returns a list of characters in a range given by single-character strings or by integer character codes (both endpoints must be the same kind),✅,pure,3.0,796

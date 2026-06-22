@@ -152,6 +152,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CForm" => Some((1, 1)),
     "CharacterCounts" => Some((1, 2)),
     "CharacteristicPolynomial" => Some((2, 2)),
+    "MatrixMinimalPolynomial" => Some((2, 2)),
     "CharacterRange" => Some((2, 2)),
     "Characters" => Some((1, 1)),
     "ChebyshevT" => Some((2, 2)),

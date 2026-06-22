@@ -5062,3 +5062,100 @@ mod matsq_messages {
     assert!(msgs.iter().all(|m| !m.contains("::matsq")), "{msgs:?}");
   }
 }
+
+mod matrix_minimal_polynomial {
+  use super::*;
+
+  // The minimal polynomial is the monic polynomial of least degree annihilating
+  // the matrix. Verified against wolframscript.
+  #[test]
+  fn scalar_multiple_of_identity_is_degree_one() {
+    // 2*I has minimal polynomial x - 2 even though its characteristic
+    // polynomial is (x - 2)^2.
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{2, 0}, {0, 2}}, x]").unwrap(),
+      "-2 + x"
+    );
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{5}}, x]").unwrap(),
+      "-5 + x"
+    );
+  }
+
+  #[test]
+  fn defective_and_distinct_eigenvalues() {
+    // Jordan block: minimal polynomial equals the characteristic polynomial.
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{2, 1}, {0, 2}}, x]").unwrap(),
+      "4 - 4*x + x^2"
+    );
+    // Distinct eigenvalues 1, 2.
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{1, 0}, {0, 2}}, x]").unwrap(),
+      "2 - 3*x + x^2"
+    );
+    // Repeated eigenvalue with one Jordan block of size 2 → degree 2, not 3.
+    assert_eq!(
+      interpret(
+        "MatrixMinimalPolynomial[{{1, 1, 0}, {0, 1, 0}, {0, 0, 1}}, x]"
+      )
+      .unwrap(),
+      "1 - 2*x + x^2"
+    );
+  }
+
+  #[test]
+  fn general_and_rational_entries() {
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{1, 2}, {3, 4}}, x]").unwrap(),
+      "-2 - 5*x + x^2"
+    );
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{0, 1}, {-1, 0}}, x]").unwrap(),
+      "1 + x^2"
+    );
+    // Rational matrix entries are handled exactly.
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{1, 1/2}, {0, 1}}, x]").unwrap(),
+      "1 - 2*x + x^2"
+    );
+  }
+
+  #[test]
+  fn variable_other_than_x() {
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{1, 2}, {3, 4}}, y]").unwrap(),
+      "-2 - 5*y + y^2"
+    );
+  }
+
+  #[test]
+  fn non_square_argument_emits_matsq() {
+    // A non-(square matrix) first argument — including a bare symbol — emits the
+    // matsq message and stays unevaluated. (Unlike MatrixPower, a symbol here is
+    // not treated as a potential matrix.)
+    for (input, arg) in [
+      (
+        "MatrixMinimalPolynomial[{{1, 2, 3}, {4, 5, 6}}, x]",
+        "{{1, 2, 3}, {4, 5, 6}}",
+      ),
+      ("MatrixMinimalPolynomial[{1, 2, 3}, x]", "{1, 2, 3}"),
+      ("MatrixMinimalPolynomial[5, x]", "5"),
+      ("MatrixMinimalPolynomial[a, x]", "a"),
+      ("MatrixMinimalPolynomial[{}, x]", "{}"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), input);
+      let expected = format!(
+        "MatrixMinimalPolynomial::matsq: Argument {arg} at position 1 is not \
+         a nonempty square matrix."
+      );
+      assert!(
+        woxi::get_captured_messages_raw()
+          .iter()
+          .any(|m| m.contains(&expected)),
+        "expected {expected:?} for {input}"
+      );
+    }
+  }
+}
