@@ -720,6 +720,65 @@ fn tree_node(e: &Expr) -> Option<(&Expr, Vec<&Expr>)> {
   None
 }
 
+/// Decompose an expression into (head, args) for `ExpressionTree`. Returns
+/// None for atoms (which become leaves). `Rational`/`Complex` are atoms even
+/// though they have a FunctionCall head.
+fn expr_tree_decompose(e: &Expr) -> Option<(Expr, Vec<Expr>)> {
+  match e {
+    Expr::FunctionCall { name, .. }
+      if name == "Rational" || name == "Complex" =>
+    {
+      None
+    }
+    Expr::FunctionCall { name, args } => {
+      Some((Expr::Identifier(name.clone()), args.to_vec()))
+    }
+    Expr::List(items) => {
+      Some((Expr::Identifier("List".to_string()), items.to_vec()))
+    }
+    Expr::CurriedCall { func, args } => Some(((**func).clone(), args.clone())),
+    Expr::BinaryOp { .. }
+    | Expr::UnaryOp { .. }
+    | Expr::Rule { .. }
+    | Expr::RuleDelayed { .. } => {
+      let (h, a) = crate::functions::expr_to_head_args(e)?;
+      Some((Expr::Identifier(h), a))
+    }
+    _ => None,
+  }
+}
+
+/// Build the canonical `Tree[...]` form of `expr` for `ExpressionTree`.
+/// `structure` is one of "Heads" (default), "Subexpressions", "Atoms",
+/// "HeadTrees" (see ExpressionTree docs).
+fn build_expression_tree(e: &Expr, structure: &str) -> Expr {
+  match expr_tree_decompose(e) {
+    None => Expr::FunctionCall {
+      name: "Tree".to_string(),
+      args: vec![e.clone(), Expr::Identifier("None".to_string())].into(),
+    },
+    Some((head, args)) => {
+      let children: Vec<Expr> = args
+        .iter()
+        .map(|a| build_expression_tree(a, structure))
+        .collect();
+      let data = match structure {
+        "Subexpressions" => e.clone(),
+        "Atoms" => Expr::Identifier("Null".to_string()),
+        // A compound head becomes its own tree; an atomic head stays as-is.
+        "HeadTrees" if expr_tree_decompose(&head).is_some() => {
+          build_expression_tree(&head, "HeadTrees")
+        }
+        _ => head, // "Heads", "HeadTrees" with atomic head
+      };
+      Expr::FunctionCall {
+        name: "Tree".to_string(),
+        args: vec![data, Expr::List(children.into())].into(),
+      }
+    }
+  }
+}
+
 // Number of edges on the longest path from the root to a leaf (leaf → 0).
 fn tree_depth(e: &Expr) -> Option<i128> {
   let (_data, children) = tree_node(e)?;
@@ -3512,6 +3571,33 @@ pub fn dispatch_list_operations(
         name: name.to_string(),
         args: args.to_vec().into(),
       }));
+    }
+    // ExpressionTree[expr] builds the canonical Tree form of expr; an optional
+    // second argument selects the node-data structure ("Heads" (default),
+    // "Subexpressions", "Atoms", "HeadTrees").
+    "ExpressionTree" if args.len() == 1 || args.len() == 2 => {
+      let structure = if args.len() == 2 {
+        match &args[1] {
+          Expr::String(s) => s.clone(),
+          _ => String::new(),
+        }
+      } else {
+        "Heads".to_string()
+      };
+      if !matches!(
+        structure.as_str(),
+        "Heads" | "HeadTrees" | "Subexpressions" | "Atoms"
+      ) {
+        crate::emit_message(&format!(
+          "ExpressionTree::struct: {} is not a valid expression structure. Valid structures include \"HeadTrees\", \"Heads\", \"Subexpressions\" and \"Atoms\".",
+          crate::syntax::expr_to_output(&args[1])
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "ExpressionTree".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      return Some(Ok(build_expression_tree(&args[0], &structure)));
     }
     // RootTree[tree] gives the root truncated to level 0; RootTree[tree, n]
     // keeps the tree down to level n (n a non-negative integer or Infinity).

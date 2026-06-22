@@ -7468,6 +7468,77 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("RootTree[5]").unwrap(), "RootTree[5]");
   }
 
+  // ExpressionTree[expr] builds the canonical Tree form: the head of each
+  // compound subexpression is the node data, atoms are Tree[atom, None] leaves.
+  #[test]
+  fn expression_tree_default_heads() {
+    assert_eq!(
+      interpret("ExpressionTree[a + b]").unwrap(),
+      "Tree[Plus, {Tree[a, None], Tree[b, None]}]"
+    );
+    assert_eq!(
+      interpret("ExpressionTree[f[g[x], y]]").unwrap(),
+      "Tree[f, {Tree[g, {Tree[x, None]}], Tree[y, None]}]"
+    );
+    assert_eq!(interpret("ExpressionTree[5]").unwrap(), "Tree[5, None]");
+    assert_eq!(
+      interpret("ExpressionTree[{1, 2, 3}]").unwrap(),
+      "Tree[List, {Tree[1, None], Tree[2, None], Tree[3, None]}]"
+    );
+    assert_eq!(
+      interpret("ExpressionTree[a*b + c]").unwrap(),
+      "Tree[Plus, {Tree[Times, {Tree[a, None], Tree[b, None]}], Tree[c, None]}]"
+    );
+  }
+
+  // The optional structure argument selects the node data.
+  #[test]
+  fn expression_tree_structures() {
+    assert_eq!(
+      interpret("ExpressionTree[a + b, \"Subexpressions\"]").unwrap(),
+      "Tree[a + b, {Tree[a, None], Tree[b, None]}]"
+    );
+    assert_eq!(
+      interpret("ExpressionTree[f[g[x], y], \"Atoms\"]").unwrap(),
+      "Tree[Null, {Tree[Null, {Tree[x, None]}], Tree[y, None]}]"
+    );
+    // HeadTrees turns a compound head into its own subtree.
+    assert_eq!(
+      interpret("ExpressionTree[(a[b])[c], \"HeadTrees\"]").unwrap(),
+      "Tree[Tree[a, {Tree[b, None]}], {Tree[c, None]}]"
+    );
+  }
+
+  // An invalid structure spec emits ExpressionTree::struct and stays unevaluated.
+  #[test]
+  fn expression_tree_invalid_structure() {
+    assert_eq!(
+      interpret("ExpressionTree[a + b, \"Foo\"]").unwrap(),
+      "ExpressionTree[a + b, Foo]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "ExpressionTree::struct: Foo is not a valid expression structure."
+      )),
+      "expected struct message, got {:?}",
+      msgs
+    );
+  }
+
+  // The result round-trips through the existing Tree accessors.
+  #[test]
+  fn expression_tree_roundtrip() {
+    assert_eq!(
+      interpret("TreeData[ExpressionTree[a + b]]").unwrap(),
+      "Plus"
+    );
+    assert_eq!(
+      interpret("TreeLeafCount[ExpressionTree[f[g[x], y]]]").unwrap(),
+      "2"
+    );
+  }
+
   // VertexOutComponent
   #[test]
   fn vertex_out_component_star() {
