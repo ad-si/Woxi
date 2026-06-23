@@ -4430,3 +4430,66 @@ mod graph_disjoint_union {
     );
   }
 }
+
+mod graph_reciprocity {
+  use super::*;
+
+  // GraphReciprocity is the fraction of directed edges that are reciprocated
+  // (the reverse edge is also present); self-loops count as reciprocated.
+  #[test]
+  fn directed_fractions() {
+    assert_eq!(
+      interpret("GraphReciprocity[Graph[{1 -> 2, 2 -> 1}]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("GraphReciprocity[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("GraphReciprocity[Graph[{1 -> 2, 2 -> 1, 2 -> 3}]]").unwrap(),
+      "2/3"
+    );
+    assert_eq!(
+      interpret("GraphReciprocity[Graph[{1 -> 2, 2 -> 1, 3 -> 4, 4 -> 5}]]")
+        .unwrap(),
+      "1/2"
+    );
+  }
+
+  // A self-loop is reciprocated with itself.
+  #[test]
+  fn self_loop_reciprocated() {
+    assert_eq!(
+      interpret("GraphReciprocity[Graph[{1 -> 1, 1 -> 2, 2 -> 1}]]").unwrap(),
+      "1"
+    );
+  }
+
+  // An undirected graph with at least one edge has reciprocity 1.
+  #[test]
+  fn undirected_is_one() {
+    assert_eq!(interpret("GraphReciprocity[CycleGraph[4]]").unwrap(), "1");
+    assert_eq!(
+      interpret("GraphReciprocity[PathGraph[{1, 2, 3}]]").unwrap(),
+      "1"
+    );
+  }
+
+  // Edgeless, mixed, and non-graph inputs stay unevaluated (no result value).
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("Head[GraphReciprocity[Graph[{1, 2, 3}, {}]]]").unwrap(),
+      "GraphReciprocity"
+    );
+    assert_eq!(
+      interpret("Head[GraphReciprocity[Graph[{1 <-> 2, 2 -> 3}]]]").unwrap(),
+      "GraphReciprocity"
+    );
+    assert_eq!(
+      interpret("GraphReciprocity[x]").unwrap(),
+      "GraphReciprocity[x]"
+    );
+  }
+}

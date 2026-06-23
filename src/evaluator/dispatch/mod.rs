@@ -4439,6 +4439,27 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // GraphReciprocity[Graph[verts, edges]] → fraction of directed edges that are
+  // reciprocated. Edgeless, mixed, and multigraphs stay unevaluated (without the
+  // not-yet-implemented note), matching wolframscript.
+  if name == "GraphReciprocity" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(edges) = &gargs[1]
+      && let Some(result) = crate::functions::graph::graph_reciprocity(edges)
+    {
+      return Ok(result);
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // EdgeAdd[Graph[vertices, edges], e | {e1, e2, ...}] →
   //   append the given edge(s) to the graph and add any new endpoint
   //   vertices (in order of first appearance). A directed edge a -> b

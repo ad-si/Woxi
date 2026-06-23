@@ -4614,7 +4614,7 @@ FindEdgeIndependentPaths,,,,10.0,4809
 FindVertexIndependentPaths,,,,10.0,4809
 FourierDCTFilter,,,,9.0,4809
 GainMargins,,,,8.0,4809
-GraphReciprocity,,,,9.0,4809
+GraphReciprocity,Fraction of directed edges that are reciprocated by a reverse edge,✅,pure,9.0,4809
 IncludeHydrogens,,,,12.0,4809
 InternallyBalancedDecomposition,,,,8.0,4809
 KeyFreeQ,,,,10.3,4809

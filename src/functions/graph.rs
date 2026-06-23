@@ -1113,6 +1113,59 @@ pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
   }
 }
 
+/// GraphReciprocity: the fraction of directed edges that are reciprocated (have
+/// a reverse edge); self-loops count as reciprocated. An undirected graph with
+/// at least one edge has reciprocity 1. Returns `None` (leave unevaluated) for
+/// an edgeless graph, a mixed directed/undirected graph, or a multigraph, all
+/// of which wolframscript declines to evaluate.
+pub fn graph_reciprocity(edges: &[Expr]) -> Option<Expr> {
+  use std::collections::HashSet;
+  let parsed: Vec<(Expr, Expr, bool)> =
+    edges.iter().filter_map(edge_endpoints).collect();
+  if parsed.is_empty() || parsed.len() != edges.len() {
+    return None; // no edges, or an unparseable edge
+  }
+  let has_directed = parsed.iter().any(|(_, _, d)| *d);
+  let has_undirected = parsed.iter().any(|(_, _, d)| !*d);
+  if has_directed && has_undirected {
+    return None; // mixed graph
+  }
+  let key = |u: &Expr, v: &Expr, directed: bool| -> (String, String) {
+    let (ku, kv) = (
+      crate::syntax::expr_to_string(u),
+      crate::syntax::expr_to_string(v),
+    );
+    if directed || ku <= kv {
+      (ku, kv)
+    } else {
+      (kv, ku)
+    }
+  };
+  let keys: Vec<(String, String)> =
+    parsed.iter().map(|(u, v, d)| key(u, v, *d)).collect();
+  if keys.iter().collect::<HashSet<_>>().len() != keys.len() {
+    return None; // multigraph
+  }
+  if has_undirected {
+    return Some(Expr::Integer(1));
+  }
+  let dir_set: HashSet<(String, String)> = keys.iter().cloned().collect();
+  let reciprocated = parsed
+    .iter()
+    .filter(|(u, v, _)| {
+      let (ku, kv) = (
+        crate::syntax::expr_to_string(u),
+        crate::syntax::expr_to_string(v),
+      );
+      ku == kv || dir_set.contains(&(kv, ku))
+    })
+    .count();
+  Some(crate::functions::math_ast::make_rational_pub(
+    reciprocated as i128,
+    parsed.len() as i128,
+  ))
+}
+
 /// Build the disjoint union of several graphs: every vertex is relabeled to a
 /// consecutive integer 1..N (the first graph keeps 1..n1, the next is shifted by
 /// n1, and so on), and the edges are relabeled to match while preserving their
