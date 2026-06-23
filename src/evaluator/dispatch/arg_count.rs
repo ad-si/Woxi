@@ -548,6 +548,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "WhittakerM" => Some((3, 3)),
     "WhittakerW" => Some((3, 3)),
     "Identity" => Some((1, 1)),
+    "CompanionMatrix" => Some((1, 2)),
     "IdentityMatrix" => Some((1, 1)),
     "PermutationMatrix" => Some((1, 1)),
     "VandermondeMatrix" => Some((1, 1)),

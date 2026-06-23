@@ -5262,3 +5262,49 @@ mod vandermonde_matrix {
     );
   }
 }
+
+mod companion_matrix {
+  use super::*;
+
+  // CompanionMatrix[{c0,...,c_{n-1}}] is the companion matrix of the monic
+  // polynomial x^n + c_{n-1} x^{n-1} + ... + c0: 1's on the subdiagonal and
+  // -c_i down the last column.
+  #[test]
+  fn coefficient_list() {
+    assert_eq!(
+      interpret("CompanionMatrix[{2, 3, 1}]").unwrap(),
+      "{{0, 0, -2}, {1, 0, -3}, {0, 1, -1}}"
+    );
+    assert_eq!(
+      interpret("CompanionMatrix[{1, 1}]").unwrap(),
+      "{{0, -1}, {1, -1}}"
+    );
+    assert_eq!(
+      interpret("CompanionMatrix[{6, -5, 0, 1}]").unwrap(),
+      "{{0, 0, 0, -6}, {1, 0, 0, 5}, {0, 1, 0, 0}, {0, 0, 1, -1}}"
+    );
+  }
+
+  #[test]
+  fn single_coefficient() {
+    assert_eq!(interpret("CompanionMatrix[{5}]").unwrap(), "{{-5}}");
+  }
+
+  #[test]
+  fn symbolic_coefficients() {
+    assert_eq!(
+      interpret("CompanionMatrix[{a, b, c}]").unwrap(),
+      "{{0, 0, -a}, {1, 0, -b}, {0, 1, -c}}"
+    );
+  }
+
+  // The characteristic polynomial recovers the defining coefficients.
+  #[test]
+  fn characteristic_polynomial() {
+    assert_eq!(
+      interpret("CharacteristicPolynomial[CompanionMatrix[{2, 3, 1}], x]")
+        .unwrap(),
+      "-2 - 3*x - x^2 - x^3"
+    );
+  }
+}

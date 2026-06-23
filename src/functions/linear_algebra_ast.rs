@@ -963,6 +963,43 @@ pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(matrix.into()))
 }
 
+/// CompanionMatrix[{c0, c1, ..., c_{n-1}}] - the n x n companion matrix of the
+/// monic polynomial x^n + c_{n-1} x^{n-1} + ... + c_1 x + c_0: 1's on the
+/// subdiagonal and the negated coefficients (-c_i) down the last column. (Only
+/// the coefficient-list form is supported; the explicit-polynomial form errors
+/// in wolframscript, so it stays unevaluated here too.)
+pub fn companion_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "CompanionMatrix".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let coeffs: Vec<Expr> = match &args[0] {
+    Expr::List(c) if !c.is_empty() => c.iter().cloned().collect(),
+    _ => return unevaluated(),
+  };
+  let n = coeffs.len();
+  let mut matrix = Vec::with_capacity(n);
+  for (i, c) in coeffs.iter().enumerate() {
+    let mut row = vec![Expr::Integer(0); n];
+    if i >= 1 {
+      row[i - 1] = Expr::Integer(1); // subdiagonal
+    }
+    // Last column entry is -c_i.
+    row[n - 1] =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), c.clone()].into(),
+      })?;
+    matrix.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(matrix.into()))
+}
+
 /// VandermondeMatrix[{x1, ..., xn}] - the n x n Vandermonde matrix with entry
 /// (i, j) equal to xi^(j-1). (wolframscript returns a sparse StructuredArray;
 /// Woxi returns the dense matrix, so Normal[...] agrees with wolframscript.)

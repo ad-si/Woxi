@@ -162,6 +162,11 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::vandermonde_matrix_ast(args),
       );
     }
+    "CompanionMatrix" if args.len() == 1 => {
+      return Some(crate::functions::linear_algebra_ast::companion_matrix_ast(
+        args,
+      ));
+    }
     // A list of radii gives the rectangular / n-D diamond; a scalar keeps the
     // existing square-diamond implementation.
     "DiamondMatrix" if args.len() == 1 && matches!(&args[0], Expr::List(_)) => {
