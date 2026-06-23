@@ -1266,6 +1266,109 @@ mod quantile_distribution_extended {
   }
 }
 
+mod gamma_family_quantile {
+  use super::*;
+
+  // Quantile[GammaDistribution[a, b], q] = b InverseGammaRegularized[a, 0, q].
+  #[test]
+  fn gamma_closed_form() {
+    assert_eq!(
+      interpret("Quantile[GammaDistribution[2, 3], 1/2]").unwrap(),
+      "3*InverseGammaRegularized[2, 0, 1/2]"
+    );
+    // Scale b == 1 drops the leading factor.
+    assert_eq!(
+      interpret("Quantile[GammaDistribution[2, 1], 1/2]").unwrap(),
+      "InverseGammaRegularized[2, 0, 1/2]"
+    );
+    // InverseCDF shares the same closed form.
+    assert_eq!(
+      interpret("InverseCDF[GammaDistribution[2, 3], 1/2]").unwrap(),
+      "3*InverseGammaRegularized[2, 0, 1/2]"
+    );
+  }
+
+  #[test]
+  fn gamma_edges() {
+    assert_eq!(
+      interpret("Quantile[GammaDistribution[2, 3], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[GammaDistribution[2, 3], 1]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  // ChiSquareDistribution[v] = GammaDistribution[v/2, 2], quantile is
+  // 2 InverseGammaRegularized[v/2, 0, q].
+  #[test]
+  fn chi_square_closed_form() {
+    assert_eq!(
+      interpret("Quantile[ChiSquareDistribution[4], 1/2]").unwrap(),
+      "2*InverseGammaRegularized[2, 0, 1/2]"
+    );
+    assert_eq!(
+      interpret("InverseCDF[ChiSquareDistribution[3], 1/2]").unwrap(),
+      "2*InverseGammaRegularized[3/2, 0, 1/2]"
+    );
+  }
+
+  // Median[dist] = Quantile[dist, 1/2].
+  #[test]
+  fn gamma_family_median() {
+    assert_eq!(
+      interpret("Median[GammaDistribution[2, 3]]").unwrap(),
+      "3*InverseGammaRegularized[2, 0, 1/2]"
+    );
+    assert_eq!(
+      interpret("Median[ChiSquareDistribution[3]]").unwrap(),
+      "2*InverseGammaRegularized[3/2, 0, 1/2]"
+    );
+  }
+
+  // Beta edges are exact; the interior exact case stays unevaluated (a Root in
+  // wolframscript), but the numeric path evaluates.
+  #[test]
+  fn beta_edges() {
+    assert_eq!(
+      interpret("Quantile[BetaDistribution[2, 3], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[BetaDistribution[2, 3], 1]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn numeric_quantiles() {
+    let g: f64 = interpret("N[Quantile[GammaDistribution[2, 3], 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((g - 5.035040970049984).abs() < 1e-8, "got {g}");
+
+    let c: f64 = interpret("N[InverseCDF[ChiSquareDistribution[3], 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((c - 2.3659738843753386).abs() < 1e-8, "got {c}");
+
+    let b: f64 = interpret("N[Quantile[BetaDistribution[2, 3], 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((b - 0.38572756813238956).abs() < 1e-8, "got {b}");
+
+    let m: f64 = interpret("N[Median[GammaDistribution[2, 3]]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((m - 5.035040970049984).abs() < 1e-8, "got {m}");
+  }
+}
+
 mod polynomial_expectation {
   use super::*;
 

@@ -689,6 +689,62 @@ pub fn quantile_distribution_closed_form(
       let z = crate::functions::math_ast::inverse_erf_f64(2.0 * q_num - 1.0);
       Some(Expr::Real(m_num + s_num * std::f64::consts::SQRT_2 * z))
     }
+    // Quantile[GammaDistribution[a, b], q] = b InverseGammaRegularized[a, 0, q]
+    "GammaDistribution" if dargs.len() == 2 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(int(0));
+        }
+        if q_num == 1.0 {
+          return Some(infinity());
+        }
+      }
+      let (a, b) = (dargs[0].clone(), dargs[1].clone());
+      let igr = Expr::FunctionCall {
+        name: "InverseGammaRegularized".to_string(),
+        args: vec![a, int(0), q.clone()].into(),
+      };
+      eval(times(b, igr)).ok()
+    }
+    // ChiSquareDistribution[v] = GammaDistribution[v/2, 2], so the quantile is
+    // 2 InverseGammaRegularized[v/2, 0, q].
+    "ChiSquareDistribution" if dargs.len() == 1 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(int(0));
+        }
+        if q_num == 1.0 {
+          return Some(infinity());
+        }
+      }
+      let half_v = eval(divide(dargs[0].clone(), int(2))).ok()?;
+      let igr = Expr::FunctionCall {
+        name: "InverseGammaRegularized".to_string(),
+        args: vec![half_v, int(0), q.clone()].into(),
+      };
+      eval(times(int(2), igr)).ok()
+    }
+    // Quantile[BetaDistribution[a, b], q] = InverseBetaRegularized[q, a, b].
+    // For an exact interior q wolframscript returns an algebraic Root object,
+    // which Woxi does not reproduce, so that case is left unevaluated; the
+    // numeric (machine-real q) path evaluates by bisection.
+    "BetaDistribution" if dargs.len() == 2 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(int(0));
+        }
+        if q_num == 1.0 {
+          return Some(int(1));
+        }
+        return None;
+      }
+      let (a, b) = (dargs[0].clone(), dargs[1].clone());
+      eval(Expr::FunctionCall {
+        name: "InverseBetaRegularized".to_string(),
+        args: vec![q.clone(), a, b].into(),
+      })
+      .ok()
+    }
     "BinomialDistribution"
     | "PoissonDistribution"
     | "GeometricDistribution"
