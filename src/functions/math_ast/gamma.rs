@@ -1430,6 +1430,86 @@ fn beta_regularized_numeric(x: f64, a: f64, b: f64) -> f64 {
   prefix * result
 }
 
+/// Numeric inverse of the regularized incomplete beta function: returns z in
+/// [0, 1] such that `beta_regularized_numeric(z, a, b) == s`. Because I_z(a, b)
+/// increases monotonically from 0 (at z = 0) to 1 (at z = 1), the root is found
+/// by bisection.
+pub(crate) fn inverse_beta_regularized_numeric(s: f64, a: f64, b: f64) -> f64 {
+  if s <= 0.0 {
+    return 0.0;
+  }
+  if s >= 1.0 {
+    return 1.0;
+  }
+  let mut lo = 0.0_f64;
+  let mut hi = 1.0_f64;
+  for _ in 0..200 {
+    let mid = 0.5 * (lo + hi);
+    if beta_regularized_numeric(mid, a, b) < s {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  0.5 * (lo + hi)
+}
+
+/// InverseBetaRegularized[s, a, b] - inverse of the regularized incomplete beta
+/// function: returns z with BetaRegularized[z, a, b] == s. Exact non-elementary
+/// inputs stay symbolic (wolframscript returns an algebraic Root object there);
+/// inexact (machine-real) inputs evaluate numerically by bisection.
+pub fn inverse_beta_regularized_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let symbolic = || {
+    Ok(Expr::FunctionCall {
+      name: "InverseBetaRegularized".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 3 {
+    return symbolic();
+  }
+
+  let s = &args[0];
+  let a = &args[1];
+  let b = &args[2];
+  let s_num = expr_to_f64(s);
+  let a_num = expr_to_f64(a);
+  let b_num = expr_to_f64(b);
+
+  // Boundary values for numeric a, b: s == 0 -> 0, s == 1 -> 1.
+  if a_num.is_some() && b_num.is_some() {
+    if matches!(s, Expr::Integer(0)) {
+      return Ok(Expr::Integer(0));
+    }
+    if matches!(s, Expr::Integer(1)) {
+      return Ok(Expr::Integer(1));
+    }
+  }
+
+  // I_z(1, 1) = z, so the inverse is the identity for a numeric s.
+  if matches!(a, Expr::Integer(1))
+    && matches!(b, Expr::Integer(1))
+    && s_num.is_some()
+  {
+    return Ok(s.clone());
+  }
+
+  // Inexact (machine-real) input -> numeric bisection.
+  let inexact = matches!(s, Expr::Real(_))
+    || matches!(a, Expr::Real(_))
+    || matches!(b, Expr::Real(_));
+  if let (true, Some(sv), Some(av), Some(bv)) = (inexact, s_num, a_num, b_num)
+    && av > 0.0
+    && bv > 0.0
+  {
+    return Ok(Expr::Real(inverse_beta_regularized_numeric(sv, av, bv)));
+  }
+
+  symbolic()
+}
+
 /// Compute ln(Beta(a, b)) = ln(Gamma(a)) + ln(Gamma(b)) - ln(Gamma(a+b))
 fn ln_beta(a: f64, b: f64) -> f64 {
   lgamma(a) + lgamma(b) - lgamma(a + b)

@@ -3879,7 +3879,7 @@ GenerateDocument,,🚫,,10.0,4006
 GraphDensity,Edge count relative to the complete graph (2m/n(n-1)),✅,pure,9.0,4006
 GroupStabilizerChain,,,,8.0,4006
 HistogramPointDensity,,🚫,,12.2,4006
-InverseBetaRegularized,,,,3.0,4006
+InverseBetaRegularized,Inverse of the regularized incomplete beta function I_z(a b),✅,pure,3.0,4006
 InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1.0,4006
 ListZTransform,,,,9.0,4006
 MandelbrotSetIterationCount,,,,10.0,4006

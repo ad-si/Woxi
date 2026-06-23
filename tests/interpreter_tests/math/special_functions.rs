@@ -7892,6 +7892,96 @@ mod inverse_gamma_regularized {
   }
 }
 
+mod inverse_beta_regularized {
+  use super::*;
+
+  // Symbolic arguments stay unevaluated. (For exact rational s with general
+  // a, b wolframscript returns an algebraic Root object; Woxi keeps the form
+  // symbolic, but both numericize identically under N.)
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    assert_eq!(
+      interpret("InverseBetaRegularized[s, 2, 3]").unwrap(),
+      "InverseBetaRegularized[s, 2, 3]"
+    );
+    assert_eq!(
+      interpret("InverseBetaRegularized[s, a, b]").unwrap(),
+      "InverseBetaRegularized[s, a, b]"
+    );
+  }
+
+  // Boundary s values (numeric a, b): I_z(a,b) reaches 0 at z = 0 and 1 at z = 1.
+  #[test]
+  fn boundary_values() {
+    assert_eq!(interpret("InverseBetaRegularized[0, 2, 3]").unwrap(), "0");
+    assert_eq!(interpret("InverseBetaRegularized[1, 2, 3]").unwrap(), "1");
+  }
+
+  // I_z(1, 1) = z, so the inverse is the identity on a numeric s (returned
+  // exactly), while a symbolic s stays unevaluated.
+  #[test]
+  fn a_b_one_identity() {
+    assert_eq!(
+      interpret("InverseBetaRegularized[1/2, 1, 1]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("InverseBetaRegularized[1/3, 1, 1]").unwrap(),
+      "1/3"
+    );
+    assert_eq!(
+      interpret("InverseBetaRegularized[0.7, 1, 1]").unwrap(),
+      "0.7"
+    );
+    assert_eq!(
+      interpret("InverseBetaRegularized[s, 1, 1]").unwrap(),
+      "InverseBetaRegularized[s, 1, 1]"
+    );
+  }
+
+  #[test]
+  fn numeric_values() {
+    let result: f64 = interpret("N[InverseBetaRegularized[1/2, 2, 3]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.38572756813238956).abs() < 1e-9, "got {result}");
+
+    let result: f64 = interpret("N[InverseBetaRegularized[1/4, 2, 3]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.2430220837560763).abs() < 1e-9, "got {result}");
+
+    let result: f64 = interpret("N[InverseBetaRegularized[3/10, 5, 2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.6396423096199797).abs() < 1e-9, "got {result}");
+
+    // Direct machine-real input numericizes without an explicit N.
+    let result: f64 = interpret("InverseBetaRegularized[0.8, 1, 2]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.552786404500042).abs() < 1e-9, "got {result}");
+  }
+
+  // Round-trip: InverseBetaRegularized inverts BetaRegularized.
+  #[test]
+  fn round_trip() {
+    let z: f64 = interpret("N[InverseBetaRegularized[3/10, 5, 2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    let s: f64 = interpret(&format!("N[BetaRegularized[{z}, 5, 2]]"))
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((s - 0.3).abs() < 1e-9, "got {s}");
+  }
+}
+
 mod beta_regularized {
   use super::*;
 
