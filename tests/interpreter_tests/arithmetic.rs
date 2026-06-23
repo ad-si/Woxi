@@ -795,6 +795,41 @@ mod big_integer {
     assert_eq!(interpret("DigitSum[123]").unwrap(), "6");
   }
 
+  // DigitSum[n, MixedRadix[{...}]] sums the mixed-radix digits. A radix of 1 is
+  // valid (e.g. MixedRadix[{60, 60, 1}]) and must not be rejected.
+  #[test]
+  fn digit_sum_mixed_radix() {
+    assert_eq!(
+      interpret("DigitSum[123, MixedRadix[{60, 60, 1}]]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("DigitSum[3723, MixedRadix[{60, 60, 1}]]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("DigitSum[3661, MixedRadix[{24, 60, 60}]]").unwrap(),
+      "3"
+    );
+    // The leading place absorbs overflow; sum still matches the digit list.
+    assert_eq!(
+      interpret("DigitSum[100000, MixedRadix[{60, 60, 1}]]").unwrap(),
+      "113"
+    );
+    assert_eq!(
+      interpret("DigitSum[0, MixedRadix[{60, 60, 1}]]").unwrap(),
+      "0"
+    );
+    // Consistent with summing the mixed-radix digits.
+    assert_eq!(
+      interpret(
+        "DigitSum[100000, MixedRadix[{60, 60, 1}]] == Total[IntegerDigits[100000, MixedRadix[{60, 60, 1}]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn nest_with_big_integer() {
     assert_eq!(

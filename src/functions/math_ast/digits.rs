@@ -118,7 +118,9 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: args.to_vec().into(),
         });
       };
-      if bi < 2 {
+      // A MixedRadix specification may legitimately contain a radix of 1
+      // (e.g. MixedRadix[{60, 60, 1}]); only reject non-positive radices.
+      if bi < 1 {
         return Ok(Expr::FunctionCall {
           name: "DigitSum".to_string(),
           args: args.to_vec().into(),
