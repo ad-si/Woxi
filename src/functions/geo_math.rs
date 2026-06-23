@@ -198,6 +198,64 @@ pub fn geo_bounds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("GeoBounds", args))
 }
 
+/// `GeoAntipode[pos]` — the point diametrically opposite `pos`: the latitude
+/// is negated and the longitude shifted by 180°, renormalized into the
+/// `(-180, 180]` range. Exact coordinates are preserved (integer in → integer
+/// out) and a `GeoPosition` wrapper round-trips, matching wolframscript.
+pub fn geo_antipode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 1 {
+    let (coords, wrapped) = match &args[0] {
+      Expr::FunctionCall { name, args: a }
+        if name == "GeoPosition" && a.len() == 1 =>
+      {
+        (&a[0], true)
+      }
+      other => (other, false),
+    };
+    if let Expr::List(items) = coords
+      && items.len() == 2
+      // Only act on numeric coordinates; leave symbolic input unevaluated.
+      && crate::functions::graphics::expr_to_f64(&items[0]).is_some()
+      && crate::functions::graphics::expr_to_f64(&items[1]).is_some()
+    {
+      let new_lat = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Integer(-1), items[0].clone()],
+      )?;
+      let new_lon = antipode_longitude(&items[1])?;
+      let result = Expr::List(vec![new_lat, new_lon].into());
+      return Ok(if wrapped {
+        Expr::FunctionCall {
+          name: "GeoPosition".to_string(),
+          args: vec![result].into(),
+        }
+      } else {
+        result
+      });
+    }
+  }
+  Ok(unevaluated("GeoAntipode", args))
+}
+
+/// Shift a longitude by 180° and renormalize into `(-180, 180]`, keeping the
+/// arithmetic exact. Input longitudes lie in `[-180, 180]`, so the shifted
+/// value lies in `[0, 360]`; subtract a full turn only when it exceeds 180°.
+fn antipode_longitude(lon: &Expr) -> Result<Expr, InterpreterError> {
+  let shifted = crate::evaluator::evaluate_function_call_ast(
+    "Plus",
+    &[lon.clone(), Expr::Integer(180)],
+  )?;
+  if let Some(v) = crate::functions::graphics::expr_to_f64(&shifted)
+    && v > 180.0
+  {
+    return crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[shifted, Expr::Integer(-360)],
+    );
+  }
+  Ok(shifted)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -233,5 +291,26 @@ mod tests {
     let (lat, lon) = destination(40.0, -100.0, 45.0, 100_000.0);
     close(lat, 40.63380067529134);
     close(lon, -99.16417223868879);
+  }
+
+  #[test]
+  fn antipode_negates_lat_and_wraps_lon() {
+    let list = |a: i128, b: i128| {
+      Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+    };
+    let render =
+      |e: Expr| crate::syntax::expr_to_string(&geo_antipode_ast(&[e]).unwrap());
+    // Western longitude shifts east, exact integers preserved.
+    assert_eq!(render(list(40, -100)), "{-40, 80}");
+    // Longitude 0 maps to 180 (the boundary stays positive).
+    assert_eq!(render(list(0, 0)), "{0, 180}");
+    // Eastern longitude wraps past +180 to a negative value.
+    assert_eq!(render(list(40, 100)), "{-40, -80}");
+    // GeoPosition wrapper round-trips.
+    let wrapped = Expr::FunctionCall {
+      name: "GeoPosition".to_string(),
+      args: vec![list(40, -100)].into(),
+    };
+    assert_eq!(render(wrapped), "GeoPosition[{-40, 80}]");
   }
 }

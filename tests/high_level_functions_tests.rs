@@ -5574,6 +5574,28 @@ mod high_level_functions_tests {
       );
     }
 
+    #[test]
+    fn test_geoantipode() {
+      // Latitude negated; longitude shifted 180° into (-180, 180].
+      // Exact integers in -> exact integers out (matching wolframscript).
+      assert_eq!(interpret("GeoAntipode[{40, -100}]").unwrap(), "{-40, 80}");
+      // Longitude 0 maps to +180 (boundary stays positive).
+      assert_eq!(interpret("GeoAntipode[{0, 0}]").unwrap(), "{0, 180}");
+      // Eastern longitude wraps past +180 to a negative value.
+      assert_eq!(interpret("GeoAntipode[{40, 100}]").unwrap(), "{-40, -80}");
+      assert_eq!(interpret("GeoAntipode[{-30, 170}]").unwrap(), "{30, -10}");
+      // Real coordinates round-trip as reals.
+      assert_eq!(
+        interpret("GeoAntipode[{40.5, -100.5}]").unwrap(),
+        "{-40.5, 79.5}"
+      );
+      // GeoPosition wrapper is preserved.
+      assert_eq!(
+        interpret("GeoAntipode[GeoPosition[{40, -100}]]").unwrap(),
+        "GeoPosition[{-40, 80}]"
+      );
+    }
+
     // ── Tier 1 rendering primitives ──────────────────────────────────────
 
     #[test]

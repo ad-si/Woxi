@@ -3608,7 +3608,7 @@ WarpingDistance,Dynamic time warping distance between two numeric sequences,✅,
 DifferentiatorFilter,,,,9.0,3717
 Encode,,,,2.0,3717
 FunctionAnalytic,,,,12.2,3717
-GeoAntipode,,🚫,,11.2,3717
+GeoAntipode,Point diametrically opposite a geo position on the Earth,✅,pure,11.2,3717
 GetEnvironment,Returns rule(s) mapping env variable names to their values,✅,pure,9.0,3717
 GrammarToken,,🚫,,10.0,3717
 ImageForestingComponents,,🚫,,8.0,3717

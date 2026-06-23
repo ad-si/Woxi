@@ -1590,6 +1590,9 @@ pub fn evaluate_function_call_ast_inner(
     "GeoBounds" => {
       return crate::functions::geo_math::geo_bounds_ast(args);
     }
+    "GeoAntipode" => {
+      return crate::functions::geo_math::geo_antipode_ast(args);
+    }
     "GeoNearest" => {
       return crate::functions::geographics::geo_nearest_ast(args);
     }
