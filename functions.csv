@@ -3852,7 +3852,7 @@ CompoundElement,,,,10.1,3972
 ConoverTest,,,,8.0,3972
 DiscreteIndicator,,,,7.0,3972
 DoubleBracketingBar,,,,3.0,3972
-EdgeContract,,,,10.0,3972
+EdgeContract,Contract an edge of a graph merging its two endpoints into one vertex,✅,pure,10.0,3972
 EvaluationElements,,,,8.0,3972
 FindKClique,,,,9.0,3972
 FisherZDistribution,,,,8.0,3972

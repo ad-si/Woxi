@@ -1096,6 +1096,158 @@ fn fc_unwrap_edge(e: &Expr) -> &Expr {
   unwrap_edge_wrappers(e).0
 }
 
+/// Extract an edge's endpoints and directedness from an edge expression
+/// (`u <-> v`, `u -> v`, `UndirectedEdge[u, v]`, `DirectedEdge[u, v]`, possibly
+/// wrapped in `Labeled`). Returns `(u, v, directed)`.
+pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
+  match fc_unwrap_edge(e) {
+    Expr::FunctionCall { name, args } if args.len() == 2 => {
+      let directed = name != "UndirectedEdge" && name != "TwoWayRule";
+      Some((args[0].clone(), args[1].clone(), directed))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some((pattern.as_ref().clone(), replacement.as_ref().clone(), true)),
+    _ => None,
+  }
+}
+
+/// Merge the given vertices of a graph into the first one (`to_contract[0]`),
+/// redirecting edges to that survivor and dropping the resulting self-loops and
+/// duplicate edges, then re-canonicalizing the edge order (smaller endpoint
+/// first, then the larger) the way wolframscript does. Edge direction is
+/// preserved. `gargs` are the arguments of the `Graph[vertices, edges, opts...]`
+/// expression. Returns the new graph, or `None` if any listed vertex is absent
+/// (callers then leave the graph unchanged).
+pub fn contract_vertices_in_graph(
+  gargs: &[Expr],
+  to_contract: &[Expr],
+) -> Option<Expr> {
+  use crate::evaluator::pattern_matching::expr_equal;
+  use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+  if gargs.len() < 2 {
+    return None;
+  }
+  let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1]) else {
+    return None;
+  };
+  let valid = !to_contract.is_empty()
+    && to_contract
+      .iter()
+      .all(|d| vertices.iter().any(|v| expr_equal(v, d)));
+  if !valid {
+    return None;
+  }
+  let survivor = to_contract[0].clone();
+  let remap = |v: &Expr| -> Expr {
+    if to_contract.iter().any(|d| expr_equal(v, d)) {
+      survivor.clone()
+    } else {
+      v.clone()
+    }
+  };
+  let is_directed =
+    |head: &str| head != "UndirectedEdge" && head != "TwoWayRule";
+  // Edge head + endpoints (Labeled-aware).
+  fn edge_parts(e: &Expr) -> Option<(String, Expr, Expr)> {
+    let inner = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Labeled" && args.len() == 2 =>
+      {
+        &args[0]
+      }
+      _ => e,
+    };
+    match inner {
+      Expr::FunctionCall { name, args } if args.len() == 2 => {
+        Some((name.clone(), args[0].clone(), args[1].clone()))
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some((
+        "Rule".to_string(),
+        pattern.as_ref().clone(),
+        replacement.as_ref().clone(),
+      )),
+      _ => None,
+    }
+  }
+
+  let new_vertices: Vec<Expr> = vertices
+    .iter()
+    .filter(|v| {
+      expr_equal(v, &survivor) || !to_contract.iter().any(|d| expr_equal(v, d))
+    })
+    .cloned()
+    .collect();
+
+  let mut new_edges: Vec<Expr> = Vec::new();
+  for e in edges.iter() {
+    let (head, a, b) = match edge_parts(e) {
+      Some(t) => t,
+      None => {
+        new_edges.push(e.clone());
+        continue;
+      }
+    };
+    let directed = is_directed(&head);
+    // Undirected endpoints are stored canonically as (min, max).
+    let (na, nb) = {
+      let (ra, rb) = (remap(&a), remap(&b));
+      if !directed && canonical_cmp(&ra, &rb) == std::cmp::Ordering::Greater {
+        (rb, ra)
+      } else {
+        (ra, rb)
+      }
+    };
+    if expr_equal(&na, &nb) {
+      continue; // self-loop
+    }
+    let dup = new_edges.iter().any(|ex| match edge_parts(ex) {
+      Some((eh, ea, eb)) if is_directed(&eh) == directed => {
+        if directed {
+          expr_equal(&ea, &na) && expr_equal(&eb, &nb)
+        } else {
+          (expr_equal(&ea, &na) && expr_equal(&eb, &nb))
+            || (expr_equal(&ea, &nb) && expr_equal(&eb, &na))
+        }
+      }
+      _ => false,
+    });
+    if dup {
+      continue;
+    }
+    new_edges.push(match e {
+      Expr::Rule { .. } => Expr::Rule {
+        pattern: Box::new(na),
+        replacement: Box::new(nb),
+      },
+      _ => Expr::FunctionCall {
+        name: head.clone(),
+        args: vec![na, nb].into(),
+      },
+    });
+  }
+  // Re-canonicalize the edge order by endpoints.
+  new_edges.sort_by(|e1, e2| match (edge_parts(e1), edge_parts(e2)) {
+    (Some((_, a1, b1)), Some((_, a2, b2))) => {
+      canonical_cmp(&a1, &a2).then_with(|| canonical_cmp(&b1, &b2))
+    }
+    _ => std::cmp::Ordering::Equal,
+  });
+  let mut result_args = vec![
+    Expr::List(new_vertices.into()),
+    Expr::List(new_edges.into()),
+  ];
+  result_args.extend(gargs[2..].iter().cloned());
+  Some(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: result_args.into(),
+  })
+}
+
 /// Parse the FindCycle input (first argument) into a vertex list (in first-
 /// appearance order, matching VertexList) and the raw edge expressions.
 /// Accepts either `Graph[{verts}, {edges}]` or a bare list of edges/rules.

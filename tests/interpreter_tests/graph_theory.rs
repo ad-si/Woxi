@@ -4179,3 +4179,91 @@ mod vertex_contract {
     );
   }
 }
+
+mod edge_contract {
+  use super::*;
+
+  // EdgeContract[g, u <-> v] contracts an existing edge, equivalent to
+  // VertexContract[g, {u, v}] with the first endpoint as survivor.
+  #[test]
+  fn undirected_edge() {
+    assert_eq!(
+      interpret("VertexList[EdgeContract[CompleteGraph[4], 1 <-> 2]]").unwrap(),
+      "{1, 3, 4}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[EdgeContract[CompleteGraph[4], 1 <-> 2]] === \
+         {UndirectedEdge[1, 3], UndirectedEdge[1, 4], UndirectedEdge[3, 4]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // The first endpoint survives; here the 3 merges into 2.
+  #[test]
+  fn survivor_is_first_endpoint() {
+    assert_eq!(
+      interpret("VertexList[EdgeContract[CycleGraph[5], 2 <-> 3]]").unwrap(),
+      "{1, 2, 4, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[EdgeContract[CycleGraph[5], 2 <-> 3]] === \
+         {UndirectedEdge[1, 2], UndirectedEdge[1, 5], \
+          UndirectedEdge[2, 4], UndirectedEdge[4, 5]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // An explicit UndirectedEdge head is accepted just like the <-> form.
+  #[test]
+  fn explicit_undirected_edge_head() {
+    assert_eq!(
+      interpret(
+        "EdgeList[EdgeContract[CompleteGraph[4], UndirectedEdge[1, 2]]] === \
+         {UndirectedEdge[1, 3], UndirectedEdge[1, 4], UndirectedEdge[3, 4]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Directed edges keep their direction.
+  #[test]
+  fn directed_edge() {
+    assert_eq!(
+      interpret(
+        "EdgeList[EdgeContract[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 1 -> 2]] === \
+         {DirectedEdge[1, 3], DirectedEdge[3, 1]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Contracting a non-existent edge leaves the graph unchanged.
+  #[test]
+  fn non_existent_edge_unchanged() {
+    assert_eq!(
+      interpret("EdgeCount[EdgeContract[PathGraph[{1, 2, 3, 4}], 1 <-> 4]]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("EdgeCount[EdgeContract[CompleteGraph[4], 5 <-> 6]]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn non_graph_stays_unevaluated() {
+    assert_eq!(
+      interpret("EdgeContract[x, 1 <-> 2]").unwrap(),
+      "EdgeContract[x, 1 <-> 2]"
+    );
+  }
+}
