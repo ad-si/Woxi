@@ -3830,6 +3830,70 @@ mod reduce {
     );
   }
 
+  // A single one-sided bound over the integers is tightened to the nearest
+  // admissible integer and paired with the domain-membership conjunct, matching
+  // wolframscript: Reduce[x > 2, x, Integers] -> Element[x, Integers] && x >= 3.
+  #[test]
+  fn integers_one_sided_strict_lower() {
+    assert_eq!(
+      interpret("Reduce[x > 2, x, Integers]").unwrap(),
+      "Element[x, Integers] && x >= 3"
+    );
+  }
+
+  #[test]
+  fn integers_one_sided_inclusive_lower() {
+    assert_eq!(
+      interpret("Reduce[x >= 2, x, Integers]").unwrap(),
+      "Element[x, Integers] && x >= 2"
+    );
+  }
+
+  #[test]
+  fn integers_one_sided_strict_upper() {
+    assert_eq!(
+      interpret("Reduce[x < 5, x, Integers]").unwrap(),
+      "Element[x, Integers] && x <= 4"
+    );
+  }
+
+  #[test]
+  fn integers_one_sided_inclusive_upper() {
+    assert_eq!(
+      interpret("Reduce[x <= 5, x, Integers]").unwrap(),
+      "Element[x, Integers] && x <= 5"
+    );
+  }
+
+  #[test]
+  fn integers_one_sided_negative_bound() {
+    assert_eq!(
+      interpret("Reduce[x < -3, x, Integers]").unwrap(),
+      "Element[x, Integers] && x <= -4"
+    );
+  }
+
+  // A non-integer rational bound is rounded inward to the nearest integer; an
+  // integer coefficient on the variable is divided out first.
+  #[test]
+  fn integers_one_sided_rational_bound() {
+    assert_eq!(
+      interpret("Reduce[x > 5/2, x, Integers]").unwrap(),
+      "Element[x, Integers] && x >= 3"
+    );
+    assert_eq!(
+      interpret("Reduce[2 x > 5, x, Integers]").unwrap(),
+      "Element[x, Integers] && x >= 3"
+    );
+  }
+
+  // Without the Integers domain a one-sided bound is left as the bare
+  // comparison.
+  #[test]
+  fn integers_one_sided_no_domain_stays_comparison() {
+    assert_eq!(interpret("Reduce[x > 2, x]").unwrap(), "x > 2");
+  }
+
   // ── Reduce InputForm: chained inequalities use Inequality[] head ──
 
   #[test]

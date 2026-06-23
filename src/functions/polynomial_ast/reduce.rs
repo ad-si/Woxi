@@ -72,7 +72,93 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(enumerated);
   }
 
+  // Over the integers, a single one-sided bound `var op c` is tightened to the
+  // nearest admissible integer and reported with the domain-membership
+  // conjunct: Reduce[x > 2, x, Integers] -> Element[x, Integers] && x >= 3
+  // (matching wolframscript), rather than leaving the bare `x > 2`.
+  if domain == Some("Integers")
+    && vars.len() == 1
+    && let Some(tightened) = tighten_integer_one_sided(&result, &vars[0])
+  {
+    return Ok(tightened);
+  }
+
   Ok(result)
+}
+
+/// Does `e` contain any inexact (Real / BigFloat) literal? Such bounds make
+/// wolframscript emit a `Reduce::ratnz` warning, so they are left alone here.
+fn contains_inexact_literal(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(contains_inexact_literal)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_literal(left) || contains_inexact_literal(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_inexact_literal(operand),
+    _ => false,
+  }
+}
+
+/// If `result` is a single one-sided comparison `var op c` with an exact numeric
+/// bound `c`, tighten it to the nearest admissible integer and pair it with
+/// `Element[var, Integers]`:
+///   var >  c  -> Element[var, Integers] && var >= floor(c) + 1
+///   var >= c  -> Element[var, Integers] && var >= ceil(c)
+///   var <  c  -> Element[var, Integers] && var <= ceil(c) - 1
+///   var <= c  -> Element[var, Integers] && var <= floor(c)
+/// Returns `None` for any other shape, inexact bounds, or `==`/`!=`.
+fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
+  use crate::syntax::ComparisonOp;
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = result
+  else {
+    return None;
+  };
+  if operands.len() != 2 || operators.len() != 1 {
+    return None;
+  }
+  if !matches!(&operands[0], Expr::Identifier(s) if s == var) {
+    return None;
+  }
+  // Only exact bounds: inexact reals warn in wolframscript (Reduce::ratnz).
+  if contains_inexact_literal(&operands[1]) {
+    return None;
+  }
+  let c = crate::functions::math_ast::try_eval_to_f64(&operands[1])?;
+  let (bound, out_op) = match operators[0] {
+    ComparisonOp::Greater => {
+      ((c.floor() as i64) + 1, ComparisonOp::GreaterEqual)
+    }
+    ComparisonOp::GreaterEqual => (c.ceil() as i64, ComparisonOp::GreaterEqual),
+    ComparisonOp::Less => ((c.ceil() as i64) - 1, ComparisonOp::LessEqual),
+    ComparisonOp::LessEqual => (c.floor() as i64, ComparisonOp::LessEqual),
+    _ => return None,
+  };
+  let element = Expr::FunctionCall {
+    name: "Element".to_string(),
+    args: vec![
+      Expr::Identifier(var.to_string()),
+      Expr::Identifier("Integers".to_string()),
+    ]
+    .into(),
+  };
+  let comp = Expr::Comparison {
+    operands: vec![
+      Expr::Identifier(var.to_string()),
+      Expr::Integer(bound as i128),
+    ],
+    operators: vec![out_op],
+  };
+  Some(Expr::BinaryOp {
+    op: BinaryOperator::And,
+    left: Box::new(element),
+    right: Box::new(comp),
+  })
 }
 
 /// If `result` is a bounded two-sided interval `Inequality[lo, op1, var, op2,
