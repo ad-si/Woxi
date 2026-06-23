@@ -287,15 +287,13 @@ pub fn same_q_real_bigfloat(a: &Expr, b: &Expr) -> bool {
     return false;
   };
   let machine_band = |p: f64| -> bool { (15.0..=16.5).contains(&p) };
-  // Two plain Reals — defer to string equality (handled by the caller).
-  if a_machine && b_machine {
-    return false;
-  }
-  // Both operands in the machine band (machine Real or BigFloat tagged
-  // ~15.95): require bit-exact f64 equality, matching wolframscript's
-  // strict treatment of machine-precision values.
-  if machine_band(pa) && machine_band(pb) {
-    return va.to_bits() == vb.to_bits();
+  // Two plain Reals, or both operands in the machine band (machine Real or
+  // BigFloat tagged ~15.95): wolframscript's SameQ considers two
+  // machine-precision reals identical when they differ by at most one unit
+  // in the last place (one ULP). `1.0 === 1.0000000000000002` is True (1
+  // ULP) while `1.0 === 1.0000000000000004` is False (2 ULP).
+  if (a_machine && b_machine) || (machine_band(pa) && machine_band(pb)) {
+    return within_one_ulp(va, vb);
   }
   // Otherwise: round to the lower precision and compare with ½-ULP
   // tolerance at that position.
@@ -310,6 +308,33 @@ pub fn same_q_real_bigfloat(a: &Expr, b: &Expr) -> bool {
   let exponent = scale.log10().floor();
   let tol = 0.5 * 10f64.powf(exponent - p_min + 1.0);
   (va - vb).abs() <= tol
+}
+
+/// Whether two machine-precision reals differ by at most one unit in the
+/// last place (one ULP), matching wolframscript's SameQ on machine reals.
+///
+/// IEEE-754 bit patterns are monotonic within each sign, so adjacent
+/// representable doubles map to adjacent integers. Mapping the raw bits to a
+/// sign-magnitude-ordered key makes the comparison correct across the
+/// exponent boundaries and across zero.
+pub fn within_one_ulp(a: f64, b: f64) -> bool {
+  if a == b {
+    return true;
+  }
+  if !a.is_finite() || !b.is_finite() {
+    return false;
+  }
+  // Map raw bits to a monotonically increasing key spanning negatives and
+  // positives, then compare the integer distance.
+  let key = |f: f64| -> i64 {
+    let bits = f.to_bits() as i64;
+    if bits < 0 {
+      i64::MIN.wrapping_sub(bits)
+    } else {
+      bits
+    }
+  };
+  (key(a) - key(b)).unsigned_abs() <= 1
 }
 
 /// UnsameQ[expr1, expr2] - Tests whether expressions are not identical

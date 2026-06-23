@@ -177,6 +177,25 @@ mod fixed_point {
   }
 
   #[test]
+  fn fixed_point_list_cos_converges_via_sameq() {
+    // FixedPoint's default convergence test is SameQ, which stops once two
+    // consecutive machine reals are within one ULP — not only when they are
+    // bit-identical. wolframscript yields a 91-element list whose last two
+    // entries differ by one ULP.
+    assert_eq!(interpret("Length[FixedPointList[Cos, 1.0]]").unwrap(), "91");
+    assert_eq!(
+      interpret("Take[FixedPointList[Cos, 1.0], -3]").unwrap(),
+      "{0.7390851332151608, 0.7390851332151606, 0.7390851332151607}"
+    );
+    // FixedPoint returns the final iterate, matching the list's last entry.
+    assert_eq!(
+      interpret("FixedPoint[Cos, 1.0] === Last[FixedPointList[Cos, 1.0]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn fixed_point_sqrt2_newton() {
     // Newton's method for sqrt(2): f(x) = (x + 2/x) / 2
     assert_eq!(

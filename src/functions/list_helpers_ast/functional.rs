@@ -86,15 +86,21 @@ pub fn fixed_point_ast(
 
   for _ in 0..max {
     let next = apply_func_ast(func, &current)?;
-    let current_str = crate::syntax::expr_to_string(&current);
-    let next_str = crate::syntax::expr_to_string(&next);
-    if current_str == next_str {
-      return Ok(current);
+    // FixedPoint's default convergence test is SameQ, which treats two
+    // machine reals differing by at most one ULP as identical.
+    if same_q_default(&current, &next) {
+      return Ok(next);
     }
     current = next;
   }
 
   Ok(current)
+}
+
+/// FixedPoint/FixedPointList default comparison: SameQ semantics.
+fn same_q_default(a: &Expr, b: &Expr) -> bool {
+  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+    || crate::functions::boolean_ast::same_q_real_bigfloat(a, b)
 }
 
 /// AST-based Accumulate: cumulative sums.
@@ -452,10 +458,9 @@ pub fn fixed_point_list_ast(
 
   for _ in 0..max {
     let next = apply_func_ast(func, &current)?;
-    let current_str = crate::syntax::expr_to_string(&current);
-    let next_str = crate::syntax::expr_to_string(&next);
+    let converged = same_q_default(&current, &next);
     results.push(next.clone());
-    if current_str == next_str {
+    if converged {
       break;
     }
     current = next;

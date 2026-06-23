@@ -716,6 +716,30 @@ mod same_q_unsame_q {
     // 0.22221 ≠ 0.2222 bit-for-bit, so SameQ is False.
     assert_eq!(interpret(".22221 === .2222").unwrap(), "False");
   }
+
+  #[test]
+  fn same_q_machine_reals_within_one_ulp() {
+    // wolframscript's SameQ treats two machine reals as identical when they
+    // differ by at most one unit in the last place (one ULP).
+    // 1.0000000000000002 is exactly one ULP above 1.0.
+    assert_eq!(interpret("1.0 === 1.0000000000000002").unwrap(), "True");
+    // 1.0000000000000002 (1 ULP) and 1.0000000000000004 (2 ULP) are
+    // adjacent representable doubles → True.
+    assert_eq!(
+      interpret("1.0000000000000002 === 1.0000000000000004").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("SameQ[2.0, 2.0000000000000004]").unwrap(), "True");
+    // 0.1 + 0.2 == 0.30000000000000004, one ULP above 0.3 → True.
+    assert_eq!(interpret("0.1 + 0.2 === 0.3").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_q_machine_reals_two_ulp_is_false() {
+    // Two ULP apart is too far: SameQ is False.
+    assert_eq!(interpret("1.0 === 1.0000000000000004").unwrap(), "False");
+    assert_eq!(interpret("1.0 === 1.0000000000000007").unwrap(), "False");
+  }
 }
 
 mod equivalent_logic {
