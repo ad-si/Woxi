@@ -499,9 +499,9 @@ pub fn apply_function_to_arg(
       {
         return apply_curried_call(func, std::slice::from_ref(arg));
       }
-      // MapAt[f, pos] operator form: the applied expression goes in the
-      // middle
-      if name == "MapAt" && args.len() == 2 {
+      // MapAt[f, pos] / SubsetMap[f, pos] operator form: the applied
+      // expression goes in the middle.
+      if (name == "MapAt" || name == "SubsetMap") && args.len() == 2 {
         let new_args = vec![args[0].clone(), arg.clone(), args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
@@ -1121,7 +1121,10 @@ pub fn apply_curried_call(
     } => {
       // Curried function: f[a][b] becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
-      if name == "MapAt" && func_args.len() == 2 && args.len() == 1 {
+      if (name == "MapAt" || name == "SubsetMap")
+        && func_args.len() == 2
+        && args.len() == 1
+      {
         let new_args =
           vec![func_args[0].clone(), args[0].clone(), func_args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
@@ -1217,8 +1220,11 @@ pub fn apply_curried_call(
           result = vec![intermediate];
         }
         Ok(result.into_iter().next().unwrap())
-      } else if name == "MapAt" && func_args.len() == 2 && args.len() == 1 {
-        // MapAt[f, pos][expr] -> MapAt[f, expr, pos]
+      } else if (name == "MapAt" || name == "SubsetMap")
+        && func_args.len() == 2
+        && args.len() == 1
+      {
+        // MapAt[f, pos][expr] -> MapAt[f, expr, pos] (likewise SubsetMap)
         let new_args =
           vec![func_args[0].clone(), args[0].clone(), func_args[1].clone()];
         evaluate_function_call_ast(name, &new_args)

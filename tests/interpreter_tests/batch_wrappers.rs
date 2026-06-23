@@ -6373,6 +6373,26 @@ mod batch_unevaluated_wrappers_2 {
       "{a, d, c, b, e}"
     );
   }
+  // Operator form SubsetMap[f, pos][list] (the two-argument form is held until
+  // applied to a list).
+  #[test]
+  fn subset_map_operator_form() {
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {2, 4}][{a, b, c, d, e}]").unwrap(),
+      "{a, d, c, b, e}"
+    );
+    // Span positions work in the operator form too.
+    assert_eq!(
+      interpret("SubsetMap[Accumulate, 2 ;; 5][{x1, x2, x3, x4, x5, x6}]")
+        .unwrap(),
+      "{x1, x2, x2 + x3, x2 + x3 + x4, x2 + x3 + x4 + x5, x6}"
+    );
+    // The bare two-argument form stays symbolic until applied.
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {2, 4}]").unwrap(),
+      "SubsetMap[Reverse, {2, 4}]"
+    );
+  }
   // SubsetMap with a Span position specification.
   #[test]
   fn subset_map_span() {
