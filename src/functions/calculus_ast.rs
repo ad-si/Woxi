@@ -568,6 +568,64 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // SeriesData integrand: integrate the truncated power series term-by-term
+  // when the integration variable is the series variable. For a term
+  //   c_k (x - x0)^((nmin+k)/den),
+  // the antiderivative is
+  //   c_k den/(nmin+k+den) (x - x0)^((nmin+k+den)/den),
+  // so nmin and nmax each rise by `den` and each coefficient is scaled by
+  // `den/(nmin+k+den)`. (The constant of integration is dropped, matching
+  // wolframscript.) A term with exponent -1 would integrate to a logarithm,
+  // which has no power-series form, so that case is left unevaluated.
+  if let Expr::FunctionCall { name, args: sd } = &args[0]
+    && name == "SeriesData"
+    && sd.len() == 6
+    && matches!(&sd[0], Expr::Identifier(v) if *v == var_name)
+    && let (
+      Expr::List(coeffs),
+      Expr::Integer(nmin),
+      Expr::Integer(nmax),
+      Expr::Integer(den),
+    ) = (&sd[2], &sd[3], &sd[4], &sd[5])
+  {
+    let (nmin, nmax, den) = (*nmin, *nmax, *den);
+    let has_log = (0..coeffs.len() as i128).any(|k| nmin + k + den == 0);
+    // A malformed series (e.g. from `Series[Sqrt[x], …]`, which Woxi cannot
+    // yet expand) carries non-finite coefficients; don't integrate those.
+    let finite_coeffs = coeffs.iter().all(|c| {
+      !matches!(c,
+        Expr::Identifier(s)
+          if s == "ComplexInfinity" || s == "Infinity" || s == "Indeterminate")
+        && !matches!(c, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
+    });
+    if den > 0 && !has_log && finite_coeffs {
+      let mut new_coeffs: Vec<Expr> = Vec::with_capacity(coeffs.len());
+      for (k, c) in coeffs.iter().enumerate() {
+        let exp_denom = nmin + k as i128 + den;
+        let factor = Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(den), Expr::Integer(exp_denom)].into(),
+        };
+        let term = crate::functions::math_ast::times_ast(&[factor, c.clone()])
+          .unwrap_or(Expr::Integer(0));
+        new_coeffs.push(simplify(term));
+      }
+      let result = Expr::FunctionCall {
+        name: "SeriesData".to_string(),
+        args: vec![
+          sd[0].clone(),
+          sd[1].clone(),
+          Expr::List(new_coeffs.into()),
+          Expr::Integer(nmin + den),
+          Expr::Integer(nmax + den),
+          Expr::Integer(den),
+        ]
+        .into(),
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+  }
+
   // Integrate the expression
   match integrate(&args[0], &var_name) {
     Some(result) => {

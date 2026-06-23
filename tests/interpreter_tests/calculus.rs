@@ -1419,6 +1419,50 @@ mod series {
     );
   }
 
+  // Integrating a SeriesData (w.r.t. the series variable) integrates the
+  // truncated power series term-by-term: nmin/nmax rise by den and each
+  // coefficient c_k is scaled by den/(nmin+k+den). Matches wolframscript.
+  #[test]
+  fn integrate_series_exp() {
+    assert_eq!(
+      interpret("Integrate[Series[Exp[x], {x, 0, 3}], x]").unwrap(),
+      "SeriesData[x, 0, {1, 1/2, 1/6, 1/24}, 1, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn integrate_series_geometric() {
+    assert_eq!(
+      interpret("Integrate[Series[1/(1 - x), {x, 0, 4}], x]").unwrap(),
+      "SeriesData[x, 0, {1, 1/2, 1/3, 1/4, 1/5}, 1, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn integrate_series_sin_shifts_nmin() {
+    // Sin starts at x^1, so the integrated series starts at x^2.
+    assert_eq!(
+      interpret("Integrate[Series[Sin[x], {x, 0, 6}], x]").unwrap(),
+      "SeriesData[x, 0, {1/2, 0, -1/24, 0, 1/720}, 2, 8, 1]"
+    );
+  }
+
+  #[test]
+  fn integrate_series_nonzero_center() {
+    assert_eq!(
+      interpret("Integrate[Series[Exp[x], {x, 1, 3}], x]").unwrap(),
+      "SeriesData[x, 1, {E, E/2, E/6, E/24}, 1, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn integrate_series_then_normal() {
+    assert_eq!(
+      interpret("Normal[Integrate[Series[Exp[x], {x, 0, 4}], x]]").unwrap(),
+      "x + x^2/2 + x^3/6 + x^4/24 + x^5/120"
+    );
+  }
+
   #[test]
   fn series_at_infinity_rational() {
     // Series[f, {x, Infinity, n}] for rational f: substitute x -> 1/t, expand
