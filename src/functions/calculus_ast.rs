@@ -589,7 +589,11 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ) = (&sd[2], &sd[3], &sd[4], &sd[5])
   {
     let (nmin, nmax, den) = (*nmin, *nmax, *den);
-    let has_log = (0..coeffs.len() as i128).any(|k| nmin + k + den == 0);
+    // A term with exponent -1 integrates to a logarithm — but only if its
+    // coefficient is actually non-zero (a zero coefficient there is harmless).
+    let has_log = coeffs.iter().enumerate().any(|(k, c)| {
+      nmin + k as i128 + den == 0 && !matches!(c, Expr::Integer(0))
+    });
     // A malformed series (e.g. from `Series[Sqrt[x], …]`, which Woxi cannot
     // yet expand) carries non-finite coefficients; don't integrate those.
     let finite_coeffs = coeffs.iter().all(|c| {
@@ -602,6 +606,13 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut new_coeffs: Vec<Expr> = Vec::with_capacity(coeffs.len());
       for (k, c) in coeffs.iter().enumerate() {
         let exp_denom = nmin + k as i128 + den;
+        // exp_denom == 0 is the -1-power slot; `has_log` already guaranteed
+        // its coefficient is zero, so the integrated coefficient is just 0
+        // (and `Rational[den, 0]` must be avoided).
+        if exp_denom == 0 {
+          new_coeffs.push(Expr::Integer(0));
+          continue;
+        }
         let factor = Expr::FunctionCall {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(den), Expr::Integer(exp_denom)].into(),
@@ -12132,6 +12143,41 @@ pub fn normalize_series_data(args: &[Expr]) -> Option<Expr> {
   })
 }
 
+/// Flatten an expression into its additive summands, descending through
+/// nested `Plus` (FunctionCall or BinaryOp) and treating `a - b` as
+/// `a + (-1)*b`. A non-additive expression yields a single-element vector.
+fn additive_terms(expr: &Expr) -> Vec<Expr> {
+  use crate::syntax::BinaryOperator as B;
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().flat_map(additive_terms).collect()
+    }
+    Expr::BinaryOp {
+      op: B::Plus,
+      left,
+      right,
+    } => {
+      let mut t = additive_terms(left);
+      t.extend(additive_terms(right));
+      t
+    }
+    Expr::BinaryOp {
+      op: B::Minus,
+      left,
+      right,
+    } => {
+      let mut t = additive_terms(left);
+      let neg = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), (**right).clone()].into(),
+      };
+      t.extend(additive_terms(&neg));
+      t
+    }
+    _ => vec![expr.clone()],
+  }
+}
+
 pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -12200,6 +12246,39 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // SeriesData wrapper or O-term).
   if is_constant_wrt(&args[0], &var_name) {
     return crate::evaluator::evaluate_expr_to_expr(&args[0]);
+  }
+
+  // Laurent sums: the direct coefficient path samples the integrand near x0
+  // and chokes on a summand with a pole there (e.g. `1/x + 1 + x` yields
+  // ComplexInfinity coefficients). Series is linear, so when some summand is
+  // singular at x0, expand each summand on its own and add the results — each
+  // single term (including a bare `1/x`) expands correctly, and SeriesData
+  // addition recombines them. Analytic sums (all summands finite at x0) fall
+  // through to the normal path unchanged.
+  {
+    let terms = additive_terms(&args[0]);
+    if terms.len() >= 2 {
+      let has_pole = terms.iter().any(|t| {
+        let at_x0 = crate::syntax::substitute_variable(t, &var_name, &x0);
+        matches!(
+          crate::evaluator::evaluate_expr_to_expr(&at_x0),
+          Ok(Expr::Identifier(ref s))
+            if s == "ComplexInfinity" || s == "Indeterminate" || s == "Infinity"
+        ) || matches!(
+          crate::evaluator::evaluate_expr_to_expr(&at_x0),
+          Ok(Expr::FunctionCall { ref name, .. }) if name == "DirectedInfinity"
+        )
+      });
+      if has_pole {
+        let mut expanded: Vec<Expr> = Vec::with_capacity(terms.len());
+        for t in &terms {
+          let mut term_args = vec![t.clone(), args[1].clone()];
+          term_args.extend(option_args.clone());
+          expanded.push(series_ast(&term_args)?);
+        }
+        return crate::evaluator::evaluate_function_call_ast("Plus", &expanded);
+      }
+    }
   }
 
   // Series expansion at Infinity: substitute x -> 1/t, simplify, expand at

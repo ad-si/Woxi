@@ -1419,6 +1419,45 @@ mod series {
     );
   }
 
+  // A sum containing a term with a pole at x0 (a Laurent series) is expanded
+  // by linearity — each summand on its own, then added — so it no longer
+  // chokes on the pole. (Series of a single `1/x` already worked.)
+  #[test]
+  fn series_laurent_sum() {
+    assert_eq!(
+      interpret("Series[1/x + 1 + x, {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, 1, 1}, -1, 3, 1]"
+    );
+    assert_eq!(
+      interpret("Series[1/x^2 + x, {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, 0, 1}, -2, 4, 1]"
+    );
+    // Mixing a transcendental analytic part with a pole part.
+    assert_eq!(
+      interpret("Series[Exp[x] + 1/x, {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {1, 1, 1, 1/2, 1/6}, -1, 4, 1]"
+    );
+    // Subtraction (a - b) is handled too.
+    assert_eq!(
+      interpret("Series[1/x - 3 + 2 x, {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {1, -3, 2}, -1, 4, 1]"
+    );
+    // Nonzero expansion center.
+    assert_eq!(
+      interpret("Series[1/(x - 1) + x, {x, 2, 2}]").unwrap(),
+      "SeriesData[x, 2, {3, 0, 1}, 0, 3, 1]"
+    );
+  }
+
+  // A purely analytic sum is unaffected by the linearity path.
+  #[test]
+  fn series_analytic_sum_unchanged() {
+    assert_eq!(
+      interpret("Series[Exp[x] + Sin[x], {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {1, 2, 1/2}, 0, 4, 1]"
+    );
+  }
+
   // Integrating a SeriesData (w.r.t. the series variable) integrates the
   // truncated power series term-by-term: nmin/nmax rise by den and each
   // coefficient c_k is scaled by den/(nmin+k+den). Matches wolframscript.
@@ -1460,6 +1499,27 @@ mod series {
     assert_eq!(
       interpret("Normal[Integrate[Series[Exp[x], {x, 0, 4}], x]]").unwrap(),
       "x + x^2/2 + x^3/6 + x^4/24 + x^5/120"
+    );
+  }
+
+  // Integrating a Laurent SeriesData: negative-power terms integrate fine as
+  // long as no term has exponent -1 (which would produce a logarithm). The
+  // exponent -1 slot is allowed when its coefficient is zero.
+  #[test]
+  fn integrate_series_laurent() {
+    assert_eq!(
+      interpret("Integrate[Series[1/x^2 + x, {x, 0, 3}], x]").unwrap(),
+      "SeriesData[x, 0, {-1, 0, 0, 1/2}, -1, 5, 1]"
+    );
+    assert_eq!(
+      interpret("Integrate[Series[1/x^3, {x, 0, 2}], x]").unwrap(),
+      "SeriesData[x, 0, {-1/2}, -2, 4, 1]"
+    );
+    // A genuine 1/x term integrates to a logarithm, which has no SeriesData
+    // form, so Woxi leaves it unevaluated.
+    assert_eq!(
+      interpret("Integrate[Series[1/x + x, {x, 0, 3}], x]").unwrap(),
+      "Integrate[SeriesData[x, 0, {1, 0, 1}, -1, 4, 1], x]"
     );
   }
 
