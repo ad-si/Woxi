@@ -1668,10 +1668,64 @@ pub fn absolute_correlation_ast(
   let (Expr::List(xs), Expr::List(ys)) = (&args[0], &args[1]) else {
     return unevaluated();
   };
-  // Only the vector form is handled; matrices fall through unevaluated.
+
+  // Matrix form: with two n×p / n×q matrices (rows are observations), the
+  // result is the p×q matrix whose (i, j) entry is the mean over observations
+  // of column_i times Conjugate[column_j], i.e. (Transpose[m1] . Conjugate[m2])
+  // / n. AbsoluteCorrelation[m] uses m2 = m. Reuse Transpose/Dot/Conjugate so
+  // the scalar division threads over the matrix.
+  let xs_is_matrix =
+    !xs.is_empty() && xs.iter().all(|e| matches!(e, Expr::List(_)));
+  let ys_is_matrix =
+    !ys.is_empty() && ys.iter().all(|e| matches!(e, Expr::List(_)));
+  if xs_is_matrix && ys_is_matrix {
+    if xs.len() != ys.len() {
+      crate::emit_message(
+        "AbsoluteCorrelation::vctmat: The arguments to AbsoluteCorrelation are not a pair of vectors or a pair of matrices of equal length.",
+      );
+      return unevaluated();
+    }
+    let n = xs.len();
+    let transpose_m1 =
+      evaluate_function_call_ast("Transpose", &[args[0].clone()])?;
+    let conj_m2 = evaluate_function_call_ast("Conjugate", &[args[1].clone()])?;
+    let dot = evaluate_function_call_ast("Dot", &[transpose_m1, conj_m2])?;
+    // Divide each entry directly by n rather than letting `matrix/n`
+    // canonicalize to Times[matrix, 1/n]: the latter multiplies floats by the
+    // rounded reciprocal and double-rounds, so a float entry would diverge from
+    // wolframscript in the last ULP. A per-entry Divide matches it exactly.
+    let n_expr = Expr::Integer(n as i128);
+    if let Expr::List(rows) = &dot {
+      let mut out_rows = Vec::with_capacity(rows.len());
+      for row in rows.iter() {
+        if let Expr::List(cells) = row {
+          let mut out_cells = Vec::with_capacity(cells.len());
+          for c in cells.iter() {
+            out_cells.push(evaluate_function_call_ast(
+              "Divide",
+              &[c.clone(), n_expr.clone()],
+            )?);
+          }
+          out_rows.push(Expr::List(out_cells.into()));
+        } else {
+          out_rows.push(evaluate_function_call_ast(
+            "Divide",
+            &[row.clone(), n_expr.clone()],
+          )?);
+        }
+      }
+      return Ok(Expr::List(out_rows.into()));
+    }
+    return evaluate_function_call_ast("Divide", &[dot, n_expr]);
+  }
+  // A pure vector pair has no nested lists at all; anything else (one matrix
+  // and one vector, or ragged data) is an invalid argument pair.
   if xs.iter().any(|e| matches!(e, Expr::List(_)))
     || ys.iter().any(|e| matches!(e, Expr::List(_)))
   {
+    crate::emit_message(
+      "AbsoluteCorrelation::vctmat: The arguments to AbsoluteCorrelation are not a pair of vectors or a pair of matrices of equal length.",
+    );
     return unevaluated();
   }
   if xs.is_empty() || xs.len() != ys.len() {

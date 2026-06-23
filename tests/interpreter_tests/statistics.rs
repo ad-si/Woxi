@@ -356,6 +356,52 @@ mod absolute_correlation {
       "AbsoluteCorrelation[{1, 2}, {3, 4, 5}]"
     );
   }
+
+  // Matrix form: AbsoluteCorrelation[m] is the p×p matrix
+  // (Transpose[m] . Conjugate[m]) / n where rows are observations.
+  #[test]
+  fn single_matrix_gives_correlation_matrix() {
+    assert_eq!(
+      interpret("AbsoluteCorrelation[{{1, 2}, {3, 4}, {5, 6}}]").unwrap(),
+      "{{35/3, 44/3}, {44/3, 56/3}}"
+    );
+    // Two observations of three variables → 3×3 matrix.
+    assert_eq!(
+      interpret("AbsoluteCorrelation[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "{{17/2, 11, 27/2}, {11, 29/2, 18}, {27/2, 18, 45/2}}"
+    );
+  }
+
+  // Two-matrix form: (Transpose[m1] . Conjugate[m2]) / n, a p×q matrix.
+  #[test]
+  fn two_matrices_give_cross_correlation_matrix() {
+    assert_eq!(
+      interpret(
+        "AbsoluteCorrelation[{{1, 2}, {3, 4}, {5, 6}}, {{1, 1}, {2, 2}, {3, 3}}]"
+      )
+      .unwrap(),
+      "{{22/3, 22/3}, {28/3, 28/3}}"
+    );
+  }
+
+  // Float entries are divided per-entry, matching wolframscript to the last
+  // ULP (matrix/n would double-round via Times[_, 1/n]).
+  #[test]
+  fn float_matrix_matches_per_entry_division() {
+    assert_eq!(
+      interpret("AbsoluteCorrelation[{{1., 2.}, {3., 4.}, {5., 6.}}]").unwrap(),
+      "{{11.666666666666666, 14.666666666666666}, {14.666666666666666, 18.666666666666668}}"
+    );
+  }
+
+  // A matrix paired with a vector is an invalid argument pair.
+  #[test]
+  fn matrix_vector_mix_stays_unevaluated() {
+    assert_eq!(
+      interpret("AbsoluteCorrelation[{{1, 2}, {3, 4}}, {1, 2}]").unwrap(),
+      "AbsoluteCorrelation[{{1, 2}, {3, 4}}, {1, 2}]"
+    );
+  }
 }
 
 mod quartile_deviation {

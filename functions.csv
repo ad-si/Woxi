@@ -3449,7 +3449,7 @@ PoleZeroMarkers,,,,8.0,3537
 ReverseGraph,,,,8.0,3537
 SemialgebraicComponentInstances,,,,6.0,3537
 SubStar,Subscript star notation,✅,none,6.0,3537
-AbsoluteCorrelation,Uncentered (second-moment) correlation Mean[v1*Conjugate[v2]] of two equal-length vectors,✅,pure,9.0,3566
+AbsoluteCorrelation,Uncentered (second-moment) correlation Mean[v1*Conjugate[v2]] of two vectors or the correlation matrix of a data matrix,✅,pure,9.0,3566
 AnnotationValue,,,,12.1,3566
 AudioDelay,,🚫,,11.0,3566
 BasicRecurrentLayer,,🚫,,11.1,3566
