@@ -1488,6 +1488,68 @@ mod f_ratio_quantile {
   }
 }
 
+mod f_ratio_pdf_cdf {
+  use super::*;
+
+  // PDF[FRatioDistribution[n, m], x] =
+  //   n^(n/2) m^(m/2) x^(n/2-1) / ((m + n x)^((n+m)/2) Beta[n/2, m/2]) for x > 0.
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[FRatioDistribution[3, 5], x]").unwrap(),
+      "Piecewise[{{(1200*Sqrt[15]*Sqrt[x])/(Pi*(5 + 3*x)^4), x > 0}}, 0]"
+    );
+    // Even degrees of freedom give a rational density (no Sqrt, no Pi).
+    assert_eq!(
+      interpret("PDF[FRatioDistribution[2, 4], x]").unwrap(),
+      "Piecewise[{{64/(4 + 2*x)^3, x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[FRatioDistribution[4, 6], x]").unwrap(),
+      "Piecewise[{{(41472*x)/(6 + 4*x)^5, x > 0}}, 0]"
+    );
+    // Half-integer total degrees of freedom keep a half-integer exponent.
+    assert_eq!(
+      interpret("PDF[FRatioDistribution[3, 4], x]").unwrap(),
+      "Piecewise[{{(180*Sqrt[3]*Sqrt[x])/(4 + 3*x)^(7/2), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[FRatioDistribution[1, 1], x]").unwrap(),
+      "Piecewise[{{1/(Pi*Sqrt[x]*(1 + x)), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[FRatioDistribution[3, 5], 1]").unwrap(),
+      "(75*Sqrt[15])/(256*Pi)"
+    );
+    assert_eq!(
+      interpret("PDF[FRatioDistribution[3, 5], 2]").unwrap(),
+      "(1200*Sqrt[30])/(14641*Pi)"
+    );
+    // Outside the support the density is zero.
+    assert_eq!(interpret("PDF[FRatioDistribution[3, 5], 0]").unwrap(), "0");
+    assert_eq!(interpret("PDF[FRatioDistribution[3, 5], -1]").unwrap(), "0");
+  }
+
+  // CDF[FRatioDistribution[n, m], x] =
+  //   BetaRegularized[n x / (n x + m), n/2, m/2] for x > 0.
+  #[test]
+  fn cdf() {
+    assert_eq!(
+      interpret("CDF[FRatioDistribution[3, 5], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[(3*x)/(5 + 3*x), 3/2, 5/2], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[FRatioDistribution[3, 5], 1]").unwrap(),
+      "BetaRegularized[3/8, 3/2, 5/2]"
+    );
+    assert_eq!(interpret("CDF[FRatioDistribution[3, 5], 0]").unwrap(), "0");
+  }
+}
+
 mod polynomial_expectation {
   use super::*;
 

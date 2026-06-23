@@ -1755,7 +1755,7 @@ CatalanNumber,Returns the nth Catalan number,✅,pure,6.0,1788
 DateValue,Extracts a named component or property of a date,✅,pure,10.0,1788
 DensityPlot3D,3D density plot,,unevaluated,10.2,1788
 DynamicModuleValues,,🚫,,6.0,1788
-FRatioDistribution,F-ratio (Fisher-Snedecor) distribution; supports Mean and Variance,✅,pure,6.0,1788
+FRatioDistribution,F-ratio (Fisher-Snedecor) distribution; supports PDF CDF Quantile Mean and Variance,✅,pure,6.0,1788
 LaplaceDistribution,Laplace distribution,✅,pure,6.0,1788
 ListSurfacePlot3D,3D surface plot from points,,unevaluated,6.0,1788
 GeoRegionValuePlot,Geographic region value plot,,unevaluated,10.0,1789

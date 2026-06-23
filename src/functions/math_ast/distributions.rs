@@ -209,6 +209,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "DagumDistribution" => pdf_dagum(dargs, x),
     "HyperbolicDistribution" => pdf_hyperbolic(dargs, x),
     "NoncentralFRatioDistribution" => pdf_noncentral_f(dargs, x),
+    "FRatioDistribution" => pdf_f_ratio(dargs, x),
     "JohnsonDistribution" => pdf_johnson(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
@@ -1703,6 +1704,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "InverseGaussianDistribution" => cdf_inverse_gaussian(dargs, x),
     "StableDistribution" => cdf_stable(dargs, x),
     "StudentTDistribution" => cdf_student_t(dargs, x),
+    "FRatioDistribution" => cdf_f_ratio(dargs, x),
     "JohnsonDistribution" => cdf_johnson(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
@@ -5101,6 +5103,66 @@ fn pdf_chi_square(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// PDF[FRatioDistribution[n, m], x] =
+///   Piecewise[{{n^(n/2) m^(m/2) x^(n/2-1) / ((m + n x)^((n+m)/2) Beta[n/2, m/2]),
+///               x > 0}}, 0].
+/// The evaluator reduces the raw formula to wolframscript's printed form.
+fn pdf_f_ratio(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FRatioDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let m = dargs[1].clone();
+
+  // n^(n/2) * m^(m/2) * x^(n/2 - 1)
+  let numer = times(
+    times(
+      power(n.clone(), divide(n.clone(), int(2))),
+      power(m.clone(), divide(m.clone(), int(2))),
+    ),
+    power(x.clone(), minus(divide(n.clone(), int(2)), int(1))),
+  );
+  // (m + n*x)^((n+m)/2)
+  let denom_power = power(
+    plus(m.clone(), times(n.clone(), x.clone())),
+    divide(plus(n.clone(), m.clone()), int(2)),
+  );
+  // Beta[n/2, m/2]
+  let beta = Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: vec![divide(n, int(2)), divide(m, int(2))].into(),
+  };
+  let pdf_val = divide(numer, times(denom_power, beta));
+
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// CDF[FRatioDistribution[n, m], x] =
+///   Piecewise[{{BetaRegularized[n x / (n x + m), n/2, m/2], x > 0}}, 0].
+fn cdf_f_ratio(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FRatioDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let m = dargs[1].clone();
+
+  // n x / (n x + m)
+  let nx = times(n.clone(), x.clone());
+  let arg = divide(nx.clone(), plus(nx, m.clone()));
+  let reg = Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: vec![arg, divide(n, int(2)), divide(m, int(2))].into(),
+  };
+
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(reg, cond)], int(0)))
 }
 
 /// CDF[ChiSquareDistribution[k], x] = Piecewise[{{GammaRegularized[k/2, 0, x/2], x > 0}}, 0]
