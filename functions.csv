@@ -3117,7 +3117,7 @@ MaxwellDistribution,Maxwell-Boltzmann distribution (radical-canonical PDF and Er
 PERTDistribution,,,,8.0,3191
 PageHeaders,,🚫,,4.0,3191
 PointValuePlot,,🚫,,12.2,3191
-RamanujanTauL,,,,6.0,3191
+RamanujanTauL,L-function of the Ramanujan tau weight-12 cusp form,✅,pure,6.0,3191
 TuranGraph,Generate a Turán graph with n vertices and k partitions,✅,pure,8.0,3191
 VertexAdd,Add vertices to a graph,✅,pure,8.0,3191
 Boxes,,🚫,,6.0,3200
@@ -3377,7 +3377,7 @@ MersennePrimeExponent,Gives the nth Mersenne prime exponent,✅,pure,10.4,3462
 Once,,,,11.0,3462
 PacletSites,,🚫,,12.1,3462
 PageBreakBelow,,🚫,,3.0,3462
-RamanujanTauZ,,,,6.0,3462
+RamanujanTauZ,Hardy Z-function for the Ramanujan tau L-function,✅,pure,6.0,3462
 RegionImage,,🚫,,11.2,3462
 TemporalRegularity,,,,10.0,3462
 BraKet,,,,13.3,3474

@@ -1793,6 +1793,155 @@ fn ramanujan_tau_theta_numeric(t: f64) -> f64 {
   im - t * (2.0 * PI).ln()
 }
 
+/// Complex Gamma via exp of the complex log-Gamma.
+fn cgamma(a: (f64, f64)) -> (f64, f64) {
+  cexp(log_gamma_complex(a.0, a.1))
+}
+
+/// Upper incomplete gamma Gamma(a, x) for complex `a` and real `x > 0`. Uses the
+/// lower-incomplete series (then Gamma(a) - gamma(a,x)) when `x < Re(a) + 1` to
+/// avoid cancellation, and the continued fraction otherwise.
+fn inc_gamma_upper(a: (f64, f64), x: f64) -> (f64, f64) {
+  let xa = cpow((x, 0.0), a); // x^a
+  let efac = (-x).exp();
+  let pref = (xa.0 * efac, xa.1 * efac); // x^a e^{-x}
+  if x < a.0 + 1.0 {
+    // gamma(a,x) = x^a e^{-x} sum_{n>=0} x^n / (a (a+1) ... (a+n))
+    let mut term = cdiv((1.0, 0.0), a);
+    let mut sum = term;
+    for n in 1..2000 {
+      let denom = (a.0 + n as f64, a.1);
+      term = cdiv((term.0 * x, term.1 * x), denom);
+      sum = (sum.0 + term.0, sum.1 + term.1);
+      if term.0.hypot(term.1) < 1e-18 * sum.0.hypot(sum.1) {
+        break;
+      }
+    }
+    let lower = cmul(pref, sum);
+    let g = cgamma(a);
+    (g.0 - lower.0, g.1 - lower.1)
+  } else {
+    // Continued fraction (modified Lentz):
+    // Gamma(a,x) = x^a e^{-x} / (x+1-a - 1(1-a)/(x+3-a - 2(2-a)/(...)))
+    let tiny = 1e-300;
+    let mut b = (x + 1.0 - a.0, -a.1);
+    let mut c = (1.0 / tiny, 0.0);
+    let mut d = cdiv((1.0, 0.0), b);
+    let mut h = d;
+    for i in 1..2000 {
+      let i = i as f64;
+      let an = (-i * (i - a.0), i * a.1); // -i (i - a)
+      b = (b.0 + 2.0, b.1);
+      let andd = cmul(an, d);
+      d = (andd.0 + b.0, andd.1 + b.1);
+      if d.0.hypot(d.1) < tiny {
+        d = (tiny, 0.0);
+      }
+      let anc = cdiv(an, c);
+      c = (b.0 + anc.0, b.1 + anc.1);
+      if c.0.hypot(c.1) < tiny {
+        c = (tiny, 0.0);
+      }
+      d = cdiv((1.0, 0.0), d);
+      let del = cmul(d, c);
+      h = cmul(h, del);
+      if (del.0 - 1.0).hypot(del.1) < 1e-16 {
+        break;
+      }
+    }
+    cmul(pref, h)
+  }
+}
+
+/// RamanujanTauL[s] = L(s, Delta) for the weight-12 cusp form, via the smoothed
+/// approximate functional equation (valid for all s):
+///   L(s) = sum_n tau(n) [ n^{-s} Gamma(s, 2 pi n)
+///                       + (2 pi)^{2s-12} n^{s-12} Gamma(12-s, 2 pi n) ] / Gamma(s)
+fn ramanujan_tau_l_numeric(s: (f64, f64)) -> (f64, f64) {
+  use std::f64::consts::PI;
+  let twopi = 2.0 * PI;
+  let gamma_s = cgamma(s);
+  let s12 = (12.0 - s.0, -s.1);
+  let twopi_pow = cpow((twopi, 0.0), (2.0 * s.0 - 12.0, 2.0 * s.1));
+  let mut sum = (0.0_f64, 0.0_f64);
+  for n in 1..500 {
+    let tau = crate::functions::math_ast::ramanujan_tau_compute(n) as f64;
+    let x = twopi * n as f64;
+    // tau * n^{-s} * Gamma(s, x)
+    let n_neg_s = cpow((n as f64, 0.0), (-s.0, -s.1));
+    let t1 = cmul((tau * n_neg_s.0, tau * n_neg_s.1), inc_gamma_upper(s, x));
+    // tau * (2 pi)^{2s-12} * n^{s-12} * Gamma(12-s, x)
+    let n_pow = cpow((n as f64, 0.0), (s.0 - 12.0, s.1));
+    let t2 = cmul(
+      cmul((tau * twopi_pow.0, tau * twopi_pow.1), n_pow),
+      inc_gamma_upper(s12, x),
+    );
+    let term = (t1.0 + t2.0, t1.1 + t2.1);
+    sum = (sum.0 + term.0, sum.1 + term.1);
+    // Terms decay like e^{-2 pi n}; the transition is near n ~ |s|/(2 pi).
+    if n as f64 > s.1.abs() / twopi + 5.0
+      && term.0.hypot(term.1) < 1e-17 * sum.0.hypot(sum.1).max(1.0)
+    {
+      break;
+    }
+  }
+  cdiv(sum, gamma_s)
+}
+
+/// RamanujanTauZ[t] = e^{i theta(t)} L(6 + i t) — real-valued on the critical
+/// line.
+fn ramanujan_tau_z_numeric(t: f64) -> f64 {
+  let theta = ramanujan_tau_theta_numeric(t);
+  let l = ramanujan_tau_l_numeric((6.0, t));
+  let rot = (theta.cos(), theta.sin());
+  cmul(rot, l).0
+}
+
+/// RamanujanTauZ[t] — numeric for real input, symbolic otherwise.
+pub fn ramanujan_tau_z_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RamanujanTauZ expects exactly 1 argument".into(),
+    ));
+  }
+  if let Expr::Real(t) = &args[0] {
+    return Ok(Expr::Real(ramanujan_tau_z_numeric(*t)));
+  }
+  Ok(Expr::FunctionCall {
+    name: "RamanujanTauZ".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// RamanujanTauL[s] — numeric for real/complex machine input, symbolic for
+/// exact input.
+pub fn ramanujan_tau_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RamanujanTauL expects exactly 1 argument".into(),
+    ));
+  }
+  // Real machine argument.
+  if let Expr::Real(s) = &args[0] {
+    let v = ramanujan_tau_l_numeric((*s, 0.0));
+    return Ok(Expr::Real(v.0));
+  }
+  // Complex machine argument (re + im I with at least one inexact part).
+  if let Some((re, im)) =
+    crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    let v = ramanujan_tau_l_numeric((re, im));
+    return Ok(crate::functions::math_ast::build_complex_float_expr(
+      v.0, v.1,
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "RamanujanTauL".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// RamanujanTauTheta[t] — numeric for real (machine) input, symbolic otherwise.
 pub fn ramanujan_tau_theta_ast(
   args: &[Expr],

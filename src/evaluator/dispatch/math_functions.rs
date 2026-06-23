@@ -1323,6 +1323,12 @@ pub fn dispatch_math_functions(
     "RamanujanTauTheta" if args.len() == 1 => {
       return Some(crate::functions::math_ast::ramanujan_tau_theta_ast(args));
     }
+    "RamanujanTauZ" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::ramanujan_tau_z_ast(args));
+    }
+    "RamanujanTauL" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::ramanujan_tau_l_ast(args));
+    }
     "PowersRepresentations" if args.len() == 3 => {
       return Some(crate::functions::math_ast::powers_representations_ast(
         args,

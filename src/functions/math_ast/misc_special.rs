@@ -2978,7 +2978,7 @@ pub fn ramanujan_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute τ(n) by expanding q * ∏_{k=1}^{n} (1-q^k)^24 as a power series
 /// and extracting the coefficient of q^n.
-fn ramanujan_tau_compute(n: usize) -> i128 {
+pub(crate) fn ramanujan_tau_compute(n: usize) -> i128 {
   // We need coefficients of q * ∏(1-q^k)^24 up to q^n
   // Start with polynomial [1] (constant 1), multiply by (1-q^k)^24
   // for k = 1, 2, ..., n, tracking coefficients up to degree n-1

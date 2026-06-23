@@ -9745,6 +9745,76 @@ mod ramanujan_tau_theta {
   }
 }
 
+mod ramanujan_tau_l {
+  use super::*;
+
+  fn val(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  // L(s, Delta) via the smoothed approximate functional equation.
+  #[test]
+  fn real_argument() {
+    // s = 2 (reflected to L(10) via the functional equation).
+    assert!((val("RamanujanTauL[2.0]") - 0.14637454209126602).abs() < 1e-9);
+    // s = 10, deep in the convergent Dirichlet region.
+    assert!((val("RamanujanTauL[10.0]") - 0.9798090882512205).abs() < 1e-9);
+    // s = 3.5, between the strip and the convergent region.
+    assert!((val("RamanujanTauL[3.5]") - 0.4090683518030643).abs() < 1e-9);
+  }
+
+  // N forces the numeric branch on an exact integer argument.
+  #[test]
+  fn n_of_exact() {
+    assert!((val("N[RamanujanTauL[5]]") - 0.6667091884340036).abs() < 1e-9);
+  }
+
+  // On the critical line s = 6 + i t the L-function is complex.
+  #[test]
+  fn critical_line_complex() {
+    let re = val("Re[N[RamanujanTauL[6 + 2 I]]]");
+    let im = val("Im[N[RamanujanTauL[6 + 2 I]]]");
+    assert!((re - 0.8790164686371028).abs() < 1e-8, "re {re}");
+    assert!((im - 0.19786173432815862).abs() < 1e-8, "im {im}");
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(interpret("RamanujanTauL[s]").unwrap(), "RamanujanTauL[s]");
+    assert_eq!(interpret("RamanujanTauL[2]").unwrap(), "RamanujanTauL[2]");
+  }
+}
+
+mod ramanujan_tau_z {
+  use super::*;
+
+  fn val(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  // Z(t) = e^{i theta(t)} L(6 + i t) is real on the critical line.
+  #[test]
+  fn numeric_values() {
+    assert!((val("RamanujanTauZ[1.0]") - 0.8194349386751951).abs() < 1e-8);
+    assert!((val("RamanujanTauZ[2.0]") - 0.9010101098470454).abs() < 1e-8);
+    assert!((val("RamanujanTauZ[10.0]") - (-0.843434165151841)).abs() < 1e-6);
+  }
+
+  // Z(t) and L(6+it) have the same modulus (rotation by e^{i theta}).
+  #[test]
+  fn modulus_matches_l() {
+    let z = val("RamanujanTauZ[3.0]").abs();
+    let l = val("Abs[N[RamanujanTauL[6 + 3 I]]]");
+    assert!((z - l).abs() < 1e-7, "Z {z} vs |L| {l}");
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(interpret("RamanujanTauZ[t]").unwrap(), "RamanujanTauZ[t]");
+    assert_eq!(interpret("RamanujanTauZ[2]").unwrap(), "RamanujanTauZ[2]");
+  }
+}
+
 mod real_exponent {
   use super::*;
 

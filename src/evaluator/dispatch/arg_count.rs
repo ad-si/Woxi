@@ -904,6 +904,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PerfectNumber" => Some((1, 1)),
     "RamanujanTau" => Some((1, 1)),
     "RamanujanTauTheta" => Some((1, 1)),
+    "RamanujanTauZ" => Some((1, 1)),
+    "RamanujanTauL" => Some((1, 1)),
     "PowersRepresentations" => Some((3, 3)),
     "BarnesG" => Some((1, 1)),
     "Pick" => Some((1, 3)),
