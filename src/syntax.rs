@@ -10073,6 +10073,13 @@ thread_local! {
   /// quotes in OutputForm — matching wolframscript's `Hold[a + b]` — while
   /// genuine InputForm (`expr_to_input_form`, bare `expr_to_string`) still quotes.
   static IN_OUTPUT_FORM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
+  /// True while rendering the inner expression of a `FullForm[…]` wrapper.
+  /// FullForm reuses `expr_to_input_form` to render its argument, but Span must
+  /// stay in head form there (`FullForm[1 ;; 4]` prints `FullForm[Span[1, 4]]`)
+  /// even though genuine InputForm renders it as `1 ;; 4`. This flag lets the
+  /// Span branch fall through to the head-form catch-all inside FullForm.
+  static IN_FULL_FORM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Whether the current render is genuine InputForm (see `IN_TRUE_INPUT_FORM`).
@@ -10083,6 +10090,27 @@ fn in_true_input_form() -> bool {
 /// Whether the current render originated from OutputForm (see `IN_OUTPUT_FORM`).
 fn in_output_form() -> bool {
   IN_OUTPUT_FORM.with(|c| c.get())
+}
+
+/// Whether the current render is the inner of a FullForm wrapper (see
+/// `IN_FULL_FORM`).
+fn in_full_form() -> bool {
+  IN_FULL_FORM.with(|c| c.get())
+}
+
+/// RAII guard that restores the previous `IN_FULL_FORM` value on drop.
+struct FullFormGuard(bool);
+impl Drop for FullFormGuard {
+  fn drop(&mut self) {
+    IN_FULL_FORM.with(|c| c.set(self.0));
+  }
+}
+
+/// Render `expr` as the inner of a FullForm wrapper: like `expr_to_input_form`
+/// but Span keeps its head form (`Span[1, 4]`, not `1 ;; 4`).
+fn full_form_inner(expr: &Expr) -> String {
+  let _guard = FullFormGuard(IN_FULL_FORM.with(|c| c.replace(true)));
+  expr_to_input_form(expr)
 }
 
 /// RAII guard that restores the previous `IN_OUTPUT_FORM` value on drop.
@@ -10199,6 +10227,27 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         input_form_rule_lhs(&args[0]),
         input_form_rule_rhs(&args[1])
       )
+    }
+    // Span[a, b] / Span[a, b, c] render with the `;;` operator, matching
+    // wolframscript; a nested Span argument is parenthesised. Inside a FullForm
+    // wrapper Span keeps its head form, so this branch is skipped there.
+    Expr::FunctionCall { name, args }
+      if name == "Span"
+        && (args.len() == 2 || args.len() == 3)
+        && !in_full_form() =>
+    {
+      args
+        .iter()
+        .map(|a| {
+          let s = expr_to_input_form(a);
+          if matches!(a, Expr::FunctionCall { name: n, .. } if n == "Span") {
+            format!("({})", s)
+          } else {
+            s
+          }
+        })
+        .collect::<Vec<_>>()
+        .join(" ;; ")
     }
     // Pattern[name, body] displays as name:body in InputForm; wrap
     // looser-binding bodies (Condition/Rule/RuleDelayed/ReplaceAll/
@@ -10383,7 +10432,8 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "FullForm" && args.len() == 1 =>
     {
-      format!("FullForm[{}]", expr_to_input_form(&args[0]))
+      // Span keeps its head form inside FullForm (see `full_form_inner`).
+      format!("FullForm[{}]", full_form_inner(&args[0]))
     }
     // BaseForm: InputForm shows BaseForm[n, base] structure (not subscript notation)
     Expr::FunctionCall { name, args }
@@ -12930,6 +12980,10 @@ pub fn top_level_output(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "FullForm" && args.len() == 1 =>
     {
+      // Inside the FullForm wrapper, Span keeps its head form (`Span[1, 4]`,
+      // not `1 ;; 4`); the flag makes `expr_to_input_form` skip the `;;` branch.
+      let _full_form_guard =
+        FullFormGuard(IN_FULL_FORM.with(|c| c.replace(true)));
       // SeriesData has a special box display in Wolfram: even inside a
       // FullForm wrapper, the coefficient List shows with `{}` braces and
       // any Rational coefficients use `n/d` notation. Match this specific

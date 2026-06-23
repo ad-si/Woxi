@@ -4679,7 +4679,7 @@ mod cases {
   }
   #[test]
   fn span_inside_parens_then_span() {
-    // wolframscript: (a;;b);;c -> Span[Span[a, b], c]
+    // wolframscript: (a;;b);;c -> Span[Span[a, b], c] (OutputForm keeps head)
     assert_case(r#"(a;;b);;c"#, r#"Span[Span[a, b], c]"#);
     assert_case(r#"(a;;b)"#, r#"Span[a, b]"#);
   }
