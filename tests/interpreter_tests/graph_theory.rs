@@ -4650,3 +4650,58 @@ mod pagerank_centrality {
     );
   }
 }
+
+mod edge_betweenness_centrality {
+  use super::*;
+
+  // EdgeBetweennessCentrality gives, for each edge (in EdgeList order), the
+  // number of shortest paths over all vertex pairs that traverse it.
+  #[test]
+  fn path_graph() {
+    assert_eq!(
+      interpret("EdgeBetweennessCentrality[PathGraph[{1, 2, 3}]]").unwrap(),
+      "{4., 4.}"
+    );
+    // The middle edge of a longer path carries more paths.
+    assert_eq!(
+      interpret("EdgeBetweennessCentrality[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      "{6., 8., 6.}"
+    );
+  }
+
+  #[test]
+  fn symmetric_graphs() {
+    assert_eq!(
+      interpret("EdgeBetweennessCentrality[CycleGraph[4]]").unwrap(),
+      "{4., 4., 4., 4.}"
+    );
+    assert_eq!(
+      interpret("EdgeBetweennessCentrality[CycleGraph[5]]").unwrap(),
+      "{6., 6., 6., 6., 6.}"
+    );
+    assert_eq!(
+      interpret("EdgeBetweennessCentrality[CompleteGraph[3]]").unwrap(),
+      "{2., 2., 2.}"
+    );
+  }
+
+  #[test]
+  fn star_graph() {
+    assert_eq!(
+      interpret("EdgeBetweennessCentrality[StarGraph[4]]").unwrap(),
+      "{6., 6., 6.}"
+    );
+  }
+
+  // A graph with multiple shortest paths splits the credit by path count.
+  #[test]
+  fn multiple_shortest_paths() {
+    assert_eq!(
+      interpret(
+        "EdgeBetweennessCentrality[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1, 1 <-> 3}]]"
+      )
+      .unwrap(),
+      "{3., 3., 3., 3., 2.}"
+    );
+  }
+}

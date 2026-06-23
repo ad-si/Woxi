@@ -6013,6 +6013,41 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(centralities.into()));
   }
 
+  // EdgeBetweennessCentrality[graph] — betweenness for each edge (in EdgeList
+  // order): the number of shortest paths over all vertex pairs through it.
+  if name == "EdgeBetweennessCentrality"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    let mut idx: std::collections::HashMap<String, usize> =
+      std::collections::HashMap::new();
+    for (i, v) in vertices.iter().enumerate() {
+      idx.insert(expr_to_string(v), i);
+    }
+    let mut edge_pairs: Vec<(usize, usize)> = Vec::new();
+    for e in edges.iter() {
+      if let Some((u, v, _directed)) =
+        crate::functions::graph::edge_endpoints(e)
+        && let (Some(&i), Some(&j)) =
+          (idx.get(&expr_to_string(&u)), idx.get(&expr_to_string(&v)))
+      {
+        edge_pairs.push((i, j));
+      }
+    }
+    let eb =
+      crate::functions::graph::edge_betweenness_centrality(n, &edge_pairs);
+    return Ok(Expr::List(
+      eb.into_iter().map(Expr::Real).collect::<Vec<_>>().into(),
+    ));
+  }
+
   // LocalClusteringCoefficient[graph] — local clustering coefficient for each vertex
   if name == "LocalClusteringCoefficient"
     && args.len() == 1

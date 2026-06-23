@@ -1113,6 +1113,64 @@ pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
   }
 }
 
+/// EdgeBetweennessCentrality: for each edge, the number of shortest paths (over
+/// all ordered vertex pairs) that traverse it, computed by Brandes' algorithm
+/// accumulating dependency onto edges. `edge_pairs` are the (i, j) endpoint
+/// indices of each edge in list order; the returned values follow that order.
+pub fn edge_betweenness_centrality(
+  n: usize,
+  edge_pairs: &[(usize, usize)],
+) -> Vec<f64> {
+  use std::collections::{HashMap, VecDeque};
+  let m = edge_pairs.len();
+  let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
+  let mut edge_idx: HashMap<(usize, usize), usize> = HashMap::new();
+  for (k, &(i, j)) in edge_pairs.iter().enumerate() {
+    adj[i].push(j);
+    if i != j {
+      adj[j].push(i);
+    }
+    let key = if i <= j { (i, j) } else { (j, i) };
+    edge_idx.entry(key).or_insert(k);
+  }
+  let mut eb = vec![0.0_f64; m];
+  for s in 0..n {
+    let mut dist = vec![-1i64; n];
+    let mut sigma = vec![0.0_f64; n];
+    let mut pred: Vec<Vec<usize>> = vec![vec![]; n];
+    let mut stack = Vec::new();
+    let mut queue = VecDeque::new();
+    dist[s] = 0;
+    sigma[s] = 1.0;
+    queue.push_back(s);
+    while let Some(v) = queue.pop_front() {
+      stack.push(v);
+      for &w in &adj[v] {
+        if dist[w] < 0 {
+          dist[w] = dist[v] + 1;
+          queue.push_back(w);
+        }
+        if dist[w] == dist[v] + 1 {
+          sigma[w] += sigma[v];
+          pred[w].push(v);
+        }
+      }
+    }
+    let mut delta = vec![0.0_f64; n];
+    while let Some(w) = stack.pop() {
+      for &v in &pred[w] {
+        let c = (sigma[v] / sigma[w]) * (1.0 + delta[w]);
+        let key = if v <= w { (v, w) } else { (w, v) };
+        if let Some(&k) = edge_idx.get(&key) {
+          eb[k] += c;
+        }
+        delta[v] += c;
+      }
+    }
+  }
+  eb
+}
+
 /// Solve the dense linear system `m x = b` by Gaussian elimination with partial
 /// pivoting. Returns `None` if the system is singular.
 fn solve_linear_f64(mut m: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
