@@ -788,7 +788,7 @@ MatrixMinimalPolynomial,Monic polynomial of least degree that annihilates a matr
 NMaximize,Numerical global maximization with constraints using sampling and gradient refinement,✅,pure,5.0,794
 IsotopeData,,🚫,,6.0,795
 CharacterRange,Returns a list of characters in a range given by single-character strings or by integer character codes (both endpoints must be the same kind),✅,pure,3.0,796
-TensorProduct,Tensor product of arrays,✅,none,9.0,797
+TensorProduct,Tensor product of arrays and symbolic factors,✅,pure,9.0,797
 Sinc,Sinc function (Sin[x]/x with Sinc[0]=1),✅,pure,6.0,798
 Minus,Subtracts numbers,✅,pure,1.0,800
 ReIm,Real and imaginary parts of a complex number,✅,pure,10.1,800

@@ -879,6 +879,96 @@ pub fn outer_ast(
   outer_ast_with_levels(func, lists, &[])
 }
 
+/// TensorProduct[a, b, …]. The head is Flat, so nested TensorProducts are
+/// flattened first. Rank-0 numeric quantities (NumericQ, e.g. `2`, `Pi`,
+/// `Sqrt[2]`) are scalars: they factor out and multiply the rest via `Times`.
+/// Among the remaining factors, maximal runs of explicit arrays contract via
+/// `Outer[Times, …]`; a non-numeric symbolic atom (`a`) cannot be contracted
+/// and is kept as a separate factor, so the result stays a symbolic
+/// `TensorProduct` (rendered with the U+F3DA operator). Matches wolframscript:
+/// `TensorProduct[2, a, {1,2}]` → `2 (a ⊗ {1, 2})`,
+/// `TensorProduct[{1,2}, {a,b}, c]` → `{{a, b}, {2 a, 2 b}} ⊗ c`.
+pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Flatten nested TensorProduct (Flat attribute).
+  let mut flat: Vec<Expr> = Vec::new();
+  for a in args {
+    if let Expr::FunctionCall { name, args: inner } = a
+      && name == "TensorProduct"
+    {
+      flat.extend(inner.iter().cloned());
+    } else {
+      flat.push(a.clone());
+    }
+  }
+  if flat.len() == 1 {
+    return Ok(flat.into_iter().next().unwrap());
+  }
+
+  let times = Expr::Identifier("Times".to_string());
+  let is_scalar = |e: &Expr| -> bool {
+    !matches!(e, Expr::List(_))
+      && crate::functions::predicate_ast::is_numeric_q_pub(e)
+  };
+
+  // Pull scalars out; they distribute over the tensor part via Times.
+  let mut scalars: Vec<Expr> = Vec::new();
+  let mut rest: Vec<Expr> = Vec::new();
+  for a in flat {
+    if is_scalar(&a) {
+      scalars.push(a);
+    } else {
+      rest.push(a);
+    }
+  }
+
+  // Among the non-scalar factors, contract maximal runs of explicit arrays.
+  let mut factors: Vec<Expr> = Vec::new();
+  let mut group: Vec<Expr> = Vec::new();
+  let flush = |group: &mut Vec<Expr>,
+               factors: &mut Vec<Expr>|
+   -> Result<(), InterpreterError> {
+    if group.len() == 1 {
+      factors.push(group[0].clone());
+    } else if group.len() > 1 {
+      factors.push(outer_ast(&times, group)?);
+    }
+    group.clear();
+    Ok(())
+  };
+  for a in &rest {
+    if matches!(a, Expr::List(_)) {
+      group.push(a.clone());
+    } else {
+      flush(&mut group, &mut factors)?;
+      factors.push(a.clone());
+    }
+  }
+  flush(&mut group, &mut factors)?;
+
+  // Assemble the tensor part from the surviving factors.
+  let tensor_part = match factors.len() {
+    0 => None,
+    1 => Some(factors.into_iter().next().unwrap()),
+    _ => Some(Expr::FunctionCall {
+      name: "TensorProduct".to_string(),
+      args: factors.into(),
+    }),
+  };
+
+  // Multiply the scalar product back in (Times distributes over arrays).
+  match (scalars.is_empty(), tensor_part) {
+    (true, Some(tp)) => Ok(tp),
+    (false, Some(tp)) => {
+      let mut prod = scalars;
+      prod.push(tp);
+      crate::evaluator::evaluate_function_call_ast("Times", &prod)
+    }
+    (_, None) => {
+      crate::evaluator::evaluate_function_call_ast("Times", &scalars)
+    }
+  }
+}
+
 pub fn outer_ast_with_levels(
   func: &Expr,
   lists: &[Expr],

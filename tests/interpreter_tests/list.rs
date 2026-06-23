@@ -964,6 +964,60 @@ mod tensor_product {
       "{{{{2*a*x, 2*a*y}, {2*b*x, 2*b*y}}, {{2*c*x, 2*c*y}, {2*d*x, 2*d*y}}}, {{{3*a*x, 3*a*y}, {3*b*x, 3*b*y}}, {{3*c*x, 3*c*y}, {3*d*x, 3*d*y}}}}"
     );
   }
+
+  // Two symbolic atoms can't be contracted, so the product stays a symbolic
+  // TensorProduct, rendered with the U+F3DA operator (matching wolframscript).
+  #[test]
+  fn symbolic_atoms_stay_symbolic() {
+    assert_eq!(interpret("TensorProduct[a, b]").unwrap(), "a \u{F3DA} b");
+    assert_eq!(
+      interpret("TensorProduct[a, b, c]").unwrap(),
+      "a \u{F3DA} b \u{F3DA} c"
+    );
+  }
+
+  // Scalars (rank-0 NumericQ quantities) factor out and multiply via Times.
+  #[test]
+  fn scalars_distribute_via_times() {
+    assert_eq!(interpret("TensorProduct[2, 3]").unwrap(), "6");
+    assert_eq!(interpret("TensorProduct[2, 3, a]").unwrap(), "6*a");
+    // Scalar position is irrelevant; it always factors out.
+    assert_eq!(
+      interpret("TensorProduct[a, 2, b]").unwrap(),
+      "2*a \u{F3DA} b"
+    );
+    assert_eq!(
+      interpret("TensorProduct[Pi, {a, b}]").unwrap(),
+      "{a*Pi, b*Pi}"
+    );
+  }
+
+  // A symbolic atom mixed with arrays keeps the symbolic factor; consecutive
+  // arrays still contract via Outer.
+  #[test]
+  fn mixed_symbol_and_arrays() {
+    assert_eq!(
+      interpret("TensorProduct[a, {1, 2}]").unwrap(),
+      "a \u{F3DA} {1, 2}"
+    );
+    assert_eq!(
+      interpret("TensorProduct[{1, 2}, {a, b}, c]").unwrap(),
+      "{{a, b}, {2*a, 2*b}} \u{F3DA} c"
+    );
+    // A scalar between two arrays factors out, making them adjacent so they
+    // contract via Outer.
+    assert_eq!(
+      interpret("TensorProduct[{1, 2}, 2, {3, 4}]").unwrap(),
+      "{{6, 8}, {12, 16}}"
+    );
+  }
+
+  // A single argument returns itself.
+  #[test]
+  fn single_argument() {
+    assert_eq!(interpret("TensorProduct[a]").unwrap(), "a");
+    assert_eq!(interpret("TensorProduct[{1, 2}]").unwrap(), "{1, 2}");
+  }
 }
 
 mod position_largest_smallest {

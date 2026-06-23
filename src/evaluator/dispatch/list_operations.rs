@@ -4749,10 +4749,8 @@ pub fn dispatch_list_operations(
       }
       return Some(dense);
     }
-    "TensorProduct" if args.len() >= 2 => {
-      // TensorProduct[v1, v2, ...] = Outer[Times, v1, v2, ...]
-      let times = Expr::Identifier("Times".to_string());
-      return Some(list_helpers_ast::outer_ast(&times, args));
+    "TensorProduct" if !args.is_empty() => {
+      return Some(list_helpers_ast::tensor_product_ast(args));
     }
     "Inner" if args.len() == 3 => {
       let plus = Expr::Identifier("Plus".to_string());

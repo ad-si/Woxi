@@ -7435,6 +7435,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{2297} ");
       }
+      // TensorProduct[a, b, ...] displays with the U+F3DA operator (the glyph
+      // wolframscript uses, distinct from CircleTimes' U+2297).
+      if name == "TensorProduct" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{F3DA} ");
+      }
       // CenterDot[a, b, ...] displays as a · b · ...
       if name == "CenterDot" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
