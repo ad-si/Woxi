@@ -969,11 +969,53 @@ function main() {
     "LogLikelihood[ExponentialDistribution[a], {x1, x2}]", // Piecewise result
     "JordanDecomposition[{{1, 1, 0}, {0, 1, 0}, {0, 0, 2}}]",
     "Threshold[{1., -2., 3., 4.}, {\"Firm\", 1, 3}]", // "Firm" shrinkage mode
+    // RSolve: non-arithmetic forcing term / non-unit coefficient recurrences;
+    // Woxi keeps them symbolic, Wolfram returns the closed-form a[n] -> ...
+    "RSolve[a[n] == a[n-1] + n, a[n], n]",
+    "RSolve[a[n] == 3 a[n-1] + 1, a[n], n]",
+    // DSolve: separable nonlinear first-order ODEs (y' = x y^2, y' = x^2 y^2);
+    // kept unevaluated like the existing bare-y^2 skips above.
+    "DSolve[y'[x] == x y[x]^2, y[x], x]",
+    "DSolve[y'[x] == x^2 y[x]^2, y[x], x]",
+    // InverseSurvivalFunction[BetaDistribution[...]]: Wolfram returns a Root
+    // object (Head -> Root); Woxi keeps the call symbolic (Head ->
+    // InverseSurvivalFunction).
+    "Head[InverseSurvivalFunction[BetaDistribution[2, 3], 1/4]]",
+    // BooleanFunction index form: Wolfram renders the applied/bare object via
+    // its internal "BDD" -> {...} encoding; Woxi keeps the BooleanFunction[i, n]
+    // head verbatim.
+    "BooleanFunction[7, 2][a, b]",
+    "BooleanFunction[7, 2][True]",
+    "BooleanFunction[7, 2]",
+    // MinMax[Interval[{a, b}]] with symbolic bounds: Wolfram returns the nested
+    // {{Interval[...]}, {Interval[...]}} form; Woxi keeps it unevaluated.
+    "MinMax[Interval[{a, b}]]",
+    // ArrayFilter with a list-valued radius {1}: Woxi leaves it unevaluated;
+    // Wolfram applies the filter (the {1} radius is a per-level spec).
+    "ArrayFilter[Mean, {1, 2, 3, 4}, {1}]",
+    // Gamma[3, 2.0, 5.0]: last-ULP float difference in the incomplete-gamma
+    // difference (Woxi ...648, Wolfram ...645).
+    "Gamma[3, 2.0, 5.0]",
+    // Sum[k 2^k]: divergent, both stay unevaluated; only the Times factor order
+    // differs (Woxi k*2^k vs Wolfram 2^k*k) — core canonical-ordering gap.
+    "Sum[k 2^k, {k, 1, Infinity}]",
 
     // Canonical Plus/Times ordering differences (mathematically identical):
     "ZTransform[a^n, n, z]", // -(z/(a - z)) vs z/(-a + z)
     "ZTransform[n^2 a^n, n, z]",
     "Log[E^(a + 3 I)]", // a + 3*I vs 3*I + a (numeric-imaginary term first)
+    // Together keeps a complex-conjugate denominator factored
+    // ((a - I*x)*(a + I*x)); Woxi multiplies it out to a^2 + x^2.
+    "Together[3 (1/(a - I x) + 1/(a + I x))]",
+    // Reduce[Cos[x] == 1/2, x]: Woxi wraps each periodic branch in
+    // ConditionalExpression; Wolfram factors out Element[C[1], Integers] && (...).
+    "Reduce[Cos[x] == 1/2, x]",
+    // Cos[x]/Sin[x]: Wolfram canonicalizes to Cot[x]; Woxi keeps the quotient
+    // (a separate, form-divergent trig canonicalization Woxi does not perform).
+    "Cos[x]/Sin[x]",
+    // D[x Sign[x], x]: Plus term ordering — Woxi x*Sign'[x] + Sign[x] vs
+    // Wolfram Sign[x] + x*Sign'[x].
+    "D[x Sign[x], x]",
 
     // PermutationProduct prints with the private-use centred-dot infix glyph
     // (U+F3DE); Woxi keeps the call symbolic with the standard head.
