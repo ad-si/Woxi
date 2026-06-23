@@ -1256,6 +1256,21 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Rationalize threads element-wise over lists (including nested lists),
+  // carrying along the optional tolerance argument. WL does this via built-in
+  // list handling rather than a Listable attribute, so we replicate it here.
+  if let Expr::List(items) = &args[0] {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      let mut sub = vec![item.clone()];
+      if args.len() == 2 {
+        sub.push(args[1].clone());
+      }
+      out.push(rationalize_ast(&sub)?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
+
   // Rationalize leaves exact values (integers, rationals, symbolic
   // constants like Pi, symbolic expressions) alone unless a non-zero
   // tolerance is given. With a tolerance, we numerically evaluate the

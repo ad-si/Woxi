@@ -191,7 +191,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
 
     // Listable + Protected (non-numeric)
-    "Range" | "IntegerDigits" | "RealDigits" | "Rationalize"
+    "Range" | "IntegerDigits" | "RealDigits"
     | "IntegerString" | "ToCharacterCode" | "FromCharacterCode"
     | "StringLength" | "Characters" | "ToUpperCase" | "ToLowerCase"
     | "Boole" | "Positive" | "Negative" | "NonPositive" | "NonNegative"
@@ -622,7 +622,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "FaceGrids"
     | "FaceGridsStyle"
     | "LibraryFunctionLoad"
-    | "BaseStyle" => {
+    | "BaseStyle"
+    | "Rationalize" => {
       vec!["Protected"]
     }
 

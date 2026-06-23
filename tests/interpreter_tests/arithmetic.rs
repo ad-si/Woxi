@@ -4324,6 +4324,58 @@ mod rationalize {
       "0. + 0.333333*I"
     );
   }
+
+  // Rationalize threads element-wise over lists (WL has no Listable
+  // attribute for it but threads via built-in list handling).
+  #[test]
+  fn list_threads() {
+    assert_eq!(
+      interpret("Rationalize[{1.5, 2.7}]").unwrap(),
+      "{3/2, 27/10}"
+    );
+    assert_eq!(
+      interpret("Rationalize[{0.5, 0.25, 0.1}]").unwrap(),
+      "{1/2, 1/4, 1/10}"
+    );
+    // Exact and symbolic elements pass through unchanged.
+    assert_eq!(
+      interpret("Rationalize[{Pi, 0.5, 3}]").unwrap(),
+      "{Pi, 1/2, 3}"
+    );
+  }
+
+  // The tolerance argument is carried into each element.
+  #[test]
+  fn list_with_tolerance() {
+    assert_eq!(
+      interpret("Rationalize[{1.5, 2.7}, 0.1]").unwrap(),
+      "{3/2, 8/3}"
+    );
+  }
+
+  // Nested lists thread recursively.
+  #[test]
+  fn list_nested() {
+    assert_eq!(
+      interpret("Rationalize[{{1.5, 0.5}, {0.25, 0.1}}]").unwrap(),
+      "{{3/2, 1/2}, {1/4, 1/10}}"
+    );
+  }
+
+  // List elements may themselves be complex.
+  #[test]
+  fn list_complex_elements() {
+    assert_eq!(
+      interpret("Rationalize[{2.5 + 3.5 I, 0.1}]").unwrap(),
+      "{5/2 + (7*I)/2, 1/10}"
+    );
+  }
+
+  // Rationalize is not Listable in WL (it threads via built-in handling).
+  #[test]
+  fn not_listable_attribute() {
+    assert_eq!(interpret("Attributes[Rationalize]").unwrap(), "{Protected}");
+  }
 }
 
 mod biginteger_division {
