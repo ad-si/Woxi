@@ -304,6 +304,50 @@ mod round {
     assert_eq!(interpret("Round[2.7, 1]").unwrap(), "3");
     assert_eq!(interpret("Round[2.3, 1]").unwrap(), "2");
   }
+
+  // Round[a + b I, c] rounds the real and imaginary parts componentwise.
+  #[test]
+  fn round_two_args_complex() {
+    // Float step keeps the result a machine real.
+    assert_eq!(interpret("Round[1.2 + 3.8 I, 0.5]").unwrap(), "1. + 4.*I");
+    // Rational step gives an exact result.
+    assert_eq!(interpret("Round[1.2 + 3.8 I, 1/2]").unwrap(), "1 + 4*I");
+    assert_eq!(
+      interpret("Round[2.3 + 4.7 I, 1/10]").unwrap(),
+      "23/10 + (47*I)/10"
+    );
+    // Already a multiple of the step is unchanged.
+    assert_eq!(
+      interpret("Round[5/2 + 7/2 I, 1/2]").unwrap(),
+      "5/2 + (7*I)/2"
+    );
+  }
+}
+
+mod floor_ceiling_two_arg_complex {
+  use super::*;
+
+  // Floor/Ceiling[a + b I, c] act componentwise on the real and imaginary parts.
+  #[test]
+  fn floor_complex() {
+    assert_eq!(interpret("Floor[2.7 + 3.2 I, 0.5]").unwrap(), "2.5 + 3.*I");
+  }
+
+  #[test]
+  fn ceiling_complex() {
+    assert_eq!(
+      interpret("Ceiling[1.1 + 2.9 I, 0.5]").unwrap(),
+      "1.5 + 3.*I"
+    );
+    // Integer step yields integer Gaussian components.
+    assert_eq!(interpret("Ceiling[2.2 + 3.3 I, 1]").unwrap(), "3 + 4*I");
+  }
+
+  // Symbolic-real components (Pi + E I) resolve through the scalar path.
+  #[test]
+  fn symbolic_components() {
+    assert_eq!(interpret("Floor[Pi + E I, 1/2]").unwrap(), "3 + (5*I)/2");
+  }
 }
 
 mod cube_root {

@@ -1629,6 +1629,13 @@ pub fn floor_ceil_two_arg(
   a: &Expr,
   is_floor: bool,
 ) -> Result<Expr, InterpreterError> {
+  // Complex x: apply componentwise to the real and imaginary parts, e.g.
+  // Floor[a + b I, c] = Floor[a, c] + Floor[b, c] I.
+  if let Some((re, im)) = complex_parts_for_rounding(x) {
+    let re_r = floor_ceil_two_arg(&re, a, is_floor)?;
+    let im_r = floor_ceil_two_arg(&im, a, is_floor)?;
+    return build_complex_result(re_r, im_r);
+  }
   // Try rational arithmetic first for exact results
   if let (Some(xn), Some(xd), Some(an), Some(ad)) = (
     expr_numerator(x),
@@ -1763,6 +1770,16 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Round[x, a] - round x to nearest multiple of a
     let eval_a = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
     let eval_x = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+
+    // Complex x with a real step: round the real and imaginary parts
+    // componentwise (Round[a + b I, c] = Round[a, c] + Round[b, c] I).
+    if !is_complex_number(&eval_a)
+      && let Some((re, im)) = complex_parts_for_rounding(&eval_x)
+    {
+      let re_r = round_ast(&[re, eval_a.clone()])?;
+      let im_r = round_ast(&[im, eval_a])?;
+      return build_complex_result(re_r, im_r);
+    }
 
     // Complex step: Round[x, a] = a * Round[x/a]
     if is_complex_number(&eval_a) || is_complex_number(&eval_x) {
@@ -2631,6 +2648,28 @@ fn build_complex_result(re: Expr, im: Expr) -> Result<Expr, InterpreterError> {
       },
     ],
   )
+}
+
+/// Split a complex number into its real and imaginary parts as expressions, for
+/// the two-argument Floor/Ceiling/Round forms. Prefers the symbolic split (to
+/// keep exact rational/symbolic components) and falls back to the machine-float
+/// split. Returns `None` for a purely real argument.
+fn complex_parts_for_rounding(expr: &Expr) -> Option<(Expr, Expr)> {
+  if let Some((re, im)) =
+    crate::evaluator::dispatch::complex_and_special::split_real_imag_symbolic(
+      expr,
+    )
+    && !is_literal_zero(&im)
+  {
+    return Some((re, im));
+  }
+  if let Some((re, im)) =
+    crate::functions::math_ast::try_extract_complex_float(expr)
+    && im != 0.0
+  {
+    return Some((Expr::Real(re), Expr::Real(im)));
+  }
+  None
 }
 
 /// Apply an integer-valued rounding function (Floor/Ceiling/Round/IntegerPart)
