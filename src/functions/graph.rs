@@ -1113,6 +1113,58 @@ pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
   }
 }
 
+/// KatzCentrality: solves (I - alpha A) x = beta * 1 for x, the Katz centrality
+/// vector x_i = alpha Σ_j A_ij x_j + beta. Uses Gaussian elimination with
+/// partial pivoting; returns `None` if the system is singular.
+pub fn katz_centrality(
+  adj: &[Vec<f64>],
+  alpha: f64,
+  beta: f64,
+) -> Option<Vec<f64>> {
+  let n = adj.len();
+  if n == 0 {
+    return Some(vec![]);
+  }
+  // Augmented matrix M = I - alpha A and right-hand side b = beta * 1.
+  let mut m = vec![vec![0.0_f64; n]; n];
+  for (i, row) in m.iter_mut().enumerate() {
+    for (j, mij) in row.iter_mut().enumerate() {
+      *mij = (if i == j { 1.0 } else { 0.0 }) - alpha * adj[i][j];
+    }
+  }
+  let mut b = vec![beta; n];
+  for col in 0..n {
+    let mut piv = col;
+    for r in (col + 1)..n {
+      if m[r][col].abs() > m[piv][col].abs() {
+        piv = r;
+      }
+    }
+    if m[piv][col].abs() < 1e-15 {
+      return None; // singular
+    }
+    m.swap(col, piv);
+    b.swap(col, piv);
+    let d = m[col][col];
+    for r in (col + 1)..n {
+      let f = m[r][col] / d;
+      for c in col..n {
+        m[r][c] -= f * m[col][c];
+      }
+      b[r] -= f * b[col];
+    }
+  }
+  let mut x = vec![0.0_f64; n];
+  for i in (0..n).rev() {
+    let mut s = b[i];
+    for c in (i + 1)..n {
+      s -= m[i][c] * x[c];
+    }
+    x[i] = s / m[i][i];
+  }
+  Some(x)
+}
+
 /// EigenvectorCentrality: the principal (Perron) eigenvector of the adjacency
 /// matrix, made non-negative and normalized so the entries sum to 1. The power
 /// iteration uses a spectral shift `A + c I` (c > max degree) so that the

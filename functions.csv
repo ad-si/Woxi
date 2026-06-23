@@ -3802,7 +3802,7 @@ FoldPair,Folds a pair-returning function over a list and returns the last emitte
 GenerateSymmetricKey,,🚫,,10.1,3916
 GuidedFilter,,,,10.2,3916
 ImageApplyIndexed,,🚫,,10.0,3916
-KatzCentrality,,,,8.0,3916
+KatzCentrality,Katz centrality of graph vertices solving (I - alpha A) x = beta,✅,pure,8.0,3916
 LinearOffsetFunction,,,,7.0,3916
 MarchenkoPasturDistribution,,,,10.3,3916
 MatchingDissimilarity,Matching dissimilarity between binary vectors,✅,pure,6.0,3916

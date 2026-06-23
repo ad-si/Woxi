@@ -4544,3 +4544,51 @@ mod eigenvector_centrality {
     );
   }
 }
+
+mod katz_centrality {
+  use super::*;
+
+  // KatzCentrality[g, alpha] solves (I - alpha A) x = 1 (beta defaults to 1).
+  // For a d-regular graph every entry is 1/(1 - alpha d).
+  #[test]
+  fn regular_graphs() {
+    // CycleGraph[4] and CompleteGraph[3] are both 2-regular: 1/(1-0.2) = 1.25.
+    assert_eq!(
+      interpret("Round[KatzCentrality[CycleGraph[4], 0.1], 10^-6]").unwrap(),
+      "{5/4, 5/4, 5/4, 5/4}"
+    );
+    assert_eq!(
+      interpret("Round[KatzCentrality[CompleteGraph[3], 0.1], 10^-6]").unwrap(),
+      "{5/4, 5/4, 5/4}"
+    );
+    // Exact rational alpha gives the same machine-real result.
+    assert_eq!(
+      interpret("Round[KatzCentrality[CycleGraph[4], 1/10], 10^-6]").unwrap(),
+      "{5/4, 5/4, 5/4, 5/4}"
+    );
+  }
+
+  #[test]
+  fn path_and_star() {
+    assert_eq!(
+      interpret("Round[KatzCentrality[PathGraph[{1, 2, 3}], 0.1], 10^-6]")
+        .unwrap(),
+      "{1122449/1000000, 122449/100000, 1122449/1000000}"
+    );
+    // The star center is more central than the leaves.
+    assert_eq!(
+      interpret("Round[KatzCentrality[StarGraph[4], 0.1], 10^-6]").unwrap(),
+      "{670103/500000, 1134021/1000000, 1134021/1000000, 1134021/1000000}"
+    );
+  }
+
+  // The optional third argument scales the whole result by beta.
+  #[test]
+  fn beta_scales_result() {
+    assert_eq!(
+      interpret("Round[KatzCentrality[CycleGraph[4], 0.1, 0.5], 10^-6]")
+        .unwrap(),
+      "{5/8, 5/8, 5/8, 5/8}"
+    );
+  }
+}
