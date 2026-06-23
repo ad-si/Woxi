@@ -4592,3 +4592,61 @@ mod katz_centrality {
     );
   }
 }
+
+mod pagerank_centrality {
+  use super::*;
+
+  // PageRankCentrality solves (I - alpha P^T) p = (1-alpha)/n 1 with
+  // P = D^-1 A; the result sums to 1. Regular graphs are uniform.
+  #[test]
+  fn regular_graphs_uniform() {
+    assert_eq!(
+      interpret("Round[PageRankCentrality[CycleGraph[4], 0.85], 10^-6]")
+        .unwrap(),
+      "{1/4, 1/4, 1/4, 1/4}"
+    );
+    // 1/3 is not exactly representable, so it rounds to 333333/1000000.
+    assert_eq!(
+      interpret("Round[PageRankCentrality[CompleteGraph[3], 0.85], 10^-6]")
+        .unwrap(),
+      "{333333/1000000, 333333/1000000, 333333/1000000}"
+    );
+  }
+
+  #[test]
+  fn path_and_star() {
+    assert_eq!(
+      interpret("Round[PageRankCentrality[PathGraph[{1, 2, 3}], 0.85], 10^-6]")
+        .unwrap(),
+      "{256757/1000000, 243243/500000, 256757/1000000}"
+    );
+    // The star center is the most central vertex.
+    assert_eq!(
+      interpret("Round[PageRankCentrality[StarGraph[4], 0.85], 10^-6]")
+        .unwrap(),
+      "{47973/100000, 173423/1000000, 173423/1000000, 173423/1000000}"
+    );
+  }
+
+  // The damping factor defaults to 0.85.
+  #[test]
+  fn default_damping() {
+    let with_default =
+      interpret("Round[PageRankCentrality[PathGraph[{1, 2, 3}]], 10^-6]")
+        .unwrap();
+    let explicit =
+      interpret("Round[PageRankCentrality[PathGraph[{1, 2, 3}], 0.85], 10^-6]")
+        .unwrap();
+    assert_eq!(with_default, explicit);
+  }
+
+  // The centralities always sum to 1.
+  #[test]
+  fn sums_to_one() {
+    assert_eq!(
+      interpret("Round[Total[PageRankCentrality[StarGraph[5], 0.85]], 10^-6]")
+        .unwrap(),
+      "1"
+    );
+  }
+}

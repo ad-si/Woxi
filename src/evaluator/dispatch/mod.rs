@@ -5902,6 +5902,55 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // PageRankCentrality[graph] / PageRankCentrality[graph, alpha] — PageRank
+  // with damping factor alpha (default 0.85).
+  if name == "PageRankCentrality"
+    && (args.len() == 1 || args.len() == 2)
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let alpha = if args.len() == 2 {
+      crate::functions::math_ast::expr_to_f64(&args[1]).unwrap_or(0.85)
+    } else {
+      0.85
+    };
+    let n = vertices.len();
+    let mut idx: std::collections::HashMap<String, usize> =
+      std::collections::HashMap::new();
+    for (i, v) in vertices.iter().enumerate() {
+      idx.insert(expr_to_string(v), i);
+    }
+    let mut adj = vec![vec![0.0_f64; n]; n];
+    for e in edges.iter() {
+      if let Some((u, v, _directed)) =
+        crate::functions::graph::edge_endpoints(e)
+        && let (Some(&i), Some(&j)) =
+          (idx.get(&expr_to_string(&u)), idx.get(&expr_to_string(&v)))
+      {
+        adj[i][j] += 1.0;
+        if i != j {
+          adj[j][i] += 1.0;
+        }
+      }
+    }
+    if let Some(centrality) =
+      crate::functions::graph::pagerank_centrality(&adj, alpha)
+    {
+      return Ok(Expr::List(
+        centrality
+          .into_iter()
+          .map(Expr::Real)
+          .collect::<Vec<_>>()
+          .into(),
+      ));
+    }
+  }
+
   // BetweennessCentrality[graph] — betweenness centrality for each vertex
   if name == "BetweennessCentrality"
     && args.len() == 1

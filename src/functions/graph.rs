@@ -1113,6 +1113,68 @@ pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
   }
 }
 
+/// Solve the dense linear system `m x = b` by Gaussian elimination with partial
+/// pivoting. Returns `None` if the system is singular.
+fn solve_linear_f64(mut m: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
+  let n = m.len();
+  for col in 0..n {
+    let mut piv = col;
+    for r in (col + 1)..n {
+      if m[r][col].abs() > m[piv][col].abs() {
+        piv = r;
+      }
+    }
+    if m[piv][col].abs() < 1e-15 {
+      return None;
+    }
+    m.swap(col, piv);
+    b.swap(col, piv);
+    let d = m[col][col];
+    for r in (col + 1)..n {
+      let f = m[r][col] / d;
+      for c in col..n {
+        m[r][c] -= f * m[col][c];
+      }
+      b[r] -= f * b[col];
+    }
+  }
+  let mut x = vec![0.0_f64; n];
+  for i in (0..n).rev() {
+    let mut s = b[i];
+    for c in (i + 1)..n {
+      s -= m[i][c] * x[c];
+    }
+    x[i] = s / m[i][i];
+  }
+  Some(x)
+}
+
+/// PageRankCentrality: solves (I - alpha P^T) p = (1 - alpha)/n * 1, where
+/// P = D^(-1) A is the row-stochastic transition matrix (a zero-out-degree
+/// vertex teleports uniformly). The result sums to 1.
+pub fn pagerank_centrality(adj: &[Vec<f64>], alpha: f64) -> Option<Vec<f64>> {
+  let n = adj.len();
+  if n == 0 {
+    return Some(vec![]);
+  }
+  let outdeg: Vec<f64> =
+    adj.iter().map(|row| row.iter().sum::<f64>()).collect();
+  let mut sys = vec![vec![0.0_f64; n]; n];
+  for i in 0..n {
+    for j in 0..n {
+      let pij = if outdeg[i] > 0.0 {
+        adj[i][j] / outdeg[i]
+      } else {
+        1.0 / n as f64
+      };
+      // (I - alpha P^T)[j][i] = delta_ij - alpha * P[i][j]
+      sys[j][i] = (if i == j { 1.0 } else { 0.0 }) - alpha * pij;
+    }
+  }
+  let b = vec![(1.0 - alpha) / n as f64; n];
+  solve_linear_f64(sys, b)
+}
+
 /// KatzCentrality: solves (I - alpha A) x = beta * 1 for x, the Katz centrality
 /// vector x_i = alpha Σ_j A_ij x_j + beta. Uses Gaussian elimination with
 /// partial pivoting; returns `None` if the system is singular.

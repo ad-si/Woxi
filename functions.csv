@@ -3228,7 +3228,7 @@ AlgebraicNumberNorm,,,,6.0,3306
 LightingAngle,,🚫,,6.0,3306
 LineIntegralConvolutionScale,,,,7.0,3306
 MannWhitneyTest,,,,8.0,3306
-PageRankCentrality,,,,8.0,3306
+PageRankCentrality,PageRank centrality of graph vertices with damping factor alpha,✅,pure,8.0,3306
 PowerModList,List of successive power-mod values,✅,none,6.0,3306
 StreamColorFunctionScaling,,,,7.0,3306
 CentralMomentGeneratingFunction,,,,8.0,3317
