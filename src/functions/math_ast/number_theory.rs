@@ -2109,6 +2109,21 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // FactorInteger[n, GaussianIntegers -> True/False]: factor over the
+  // Gaussian integers. `False` behaves like the ordinary 1-argument form.
+  if args.len() == 2
+    && let Expr::Rule {
+      pattern,
+      replacement,
+    } = &args[1]
+    && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "GaussianIntegers")
+  {
+    return match replacement.as_ref() {
+      Expr::Identifier(s) if s == "True" => factor_integer_gaussian(&args[0]),
+      _ => factor_integer_ast(&args[..1]),
+    };
+  }
+
   // FactorInteger[n, k]: partial factorization, pulling out at most k distinct
   // factors.
   if args.len() == 2 {
@@ -2130,6 +2145,160 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     }),
   }
+}
+
+/// `FactorInteger[n, GaussianIntegers -> True]` — factorization over the
+/// Gaussian integers ℤ[i]. The result is `{{unit, 1}, {prime, exp}, …}` where
+/// the optional leading unit (one of ±1, ±I) is shown only when it is not 1,
+/// and the Gaussian primes are sorted by norm then by real part.
+///
+/// Each rational prime `p` of `|n|` lifts as:
+///   * `p = 2`:        the ramified prime `(1 + I)`, exponent doubled,
+///                     contributing a unit factor `(-I)^e`.
+///   * `p ≡ 1 (mod 4)`: splits into conjugates `(a + b I)` and `(b + a I)`
+///                     where `a² + b² = p`, `0 < a < b`, contributing `(-I)^e`.
+///   * `p ≡ 3 (mod 4)`: inert — the rational prime `p` itself, unit unchanged.
+/// A negative `n` contributes an extra `-1` to the unit.
+fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "FactorInteger".to_string(),
+      args: vec![
+        n_expr.clone(),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("GaussianIntegers".to_string())),
+          replacement: Box::new(Expr::Identifier("True".to_string())),
+        },
+      ]
+      .into(),
+    })
+  };
+
+  let n = match n_expr {
+    Expr::Integer(n) => *n,
+    _ => return unevaluated(),
+  };
+
+  let single = |re: i128, im: i128| -> Result<Expr, InterpreterError> {
+    Ok(Expr::List(
+      vec![Expr::List(
+        vec![gaussian_to_expr(re, im)?, Expr::Integer(1)].into(),
+      )]
+      .into(),
+    ))
+  };
+  // Units and zero are returned as a single {value, 1} entry.
+  if n == 0 || n == 1 || n == -1 {
+    return single(n, 0);
+  }
+
+  let mut num = n.unsigned_abs();
+  // Restrict to the trial-division-friendly range; larger inputs would need
+  // the BigInt path and are left unevaluated.
+  if num > (1u128 << 53) {
+    return unevaluated();
+  }
+
+  // Factor |n| into rational primes (prime, exponent).
+  let mut rational: Vec<(i128, i128)> = Vec::new();
+  let mut c2 = 0i128;
+  while num.is_multiple_of(2) {
+    c2 += 1;
+    num /= 2;
+  }
+  if c2 > 0 {
+    rational.push((2, c2));
+  }
+  let mut i: u128 = 3;
+  while i * i <= num {
+    let mut c = 0i128;
+    while num.is_multiple_of(i) {
+      c += 1;
+      num /= i;
+    }
+    if c > 0 {
+      rational.push((i as i128, c));
+    }
+    i += 2;
+  }
+  if num > 1 {
+    rational.push((num as i128, 1));
+  }
+
+  // Lift each rational prime, accumulating the unit (re, im) ∈ {±1, ±i}.
+  // Multiplication by -i sends (re, im) → (im, -re).
+  let mut unit = (if n < 0 { -1i128 } else { 1i128 }, 0i128);
+  let mut gprimes: Vec<((i128, i128), i128)> = Vec::new();
+  for (p, e) in rational {
+    if p == 2 {
+      gprimes.push(((1, 1), 2 * e));
+      for _ in 0..e {
+        unit = (unit.1, -unit.0);
+      }
+    } else if p % 4 == 1 {
+      let Some((a, b)) = sum_of_two_squares(p) else {
+        return unevaluated();
+      };
+      gprimes.push(((a, b), e));
+      gprimes.push(((b, a), e));
+      for _ in 0..e {
+        unit = (unit.1, -unit.0);
+      }
+    } else {
+      gprimes.push(((p, 0), e));
+    }
+  }
+
+  // Sort by real part, then by imaginary part (wolframscript's order: e.g.
+  // the inert prime 3 sorts between 2 + 3 I and 3 + 2 I).
+  gprimes.sort_by_key(|&((re, im), _)| (re, im));
+
+  let mut factors: Vec<Expr> = Vec::new();
+  if unit != (1, 0) {
+    factors.push(Expr::List(
+      vec![gaussian_to_expr(unit.0, unit.1)?, Expr::Integer(1)].into(),
+    ));
+  }
+  for ((re, im), e) in gprimes {
+    factors.push(Expr::List(
+      vec![gaussian_to_expr(re, im)?, Expr::Integer(e)].into(),
+    ));
+  }
+  Ok(Expr::List(factors.into()))
+}
+
+/// Render a Gaussian integer `re + im·I` as an `Expr` — a bare `Integer` when
+/// `im == 0`, otherwise the evaluated `Complex[re, im]`.
+fn gaussian_to_expr(re: i128, im: i128) -> Result<Expr, InterpreterError> {
+  if im == 0 {
+    return Ok(Expr::Integer(re));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Complex".to_string(),
+    args: vec![Expr::Integer(re), Expr::Integer(im)].into(),
+  })
+}
+
+/// For a prime `p ≡ 1 (mod 4)`, return `(a, b)` with `a² + b² = p` and
+/// `0 < a < b` (unique up to order by Fermat's two-square theorem).
+fn sum_of_two_squares(p: i128) -> Option<(i128, i128)> {
+  let mut a = 1i128;
+  while a * a * 2 < p {
+    let r = p - a * a;
+    // Integer square root of r, robust against f64 rounding.
+    let mut b = (r as f64).sqrt() as i128;
+    while b * b > r {
+      b -= 1;
+    }
+    while (b + 1) * (b + 1) <= r {
+      b += 1;
+    }
+    if b * b == r && b > a {
+      return Some((a, b));
+    }
+    a += 1;
+  }
+  None
 }
 
 /// `FactorInteger[n, k]` — partial factorization that pulls out at most `k`

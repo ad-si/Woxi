@@ -123,6 +123,58 @@ mod factor_integer {
       "{{-1, 1}, {2, 2}, {3, 1}, {5, -1}, {7, -1}}"
     );
   }
+
+  // FactorInteger[n, GaussianIntegers -> True] factors over the Gaussian
+  // integers. The leading unit (±1, ±I) appears only when it is not 1, and
+  // primes are ordered by real part then imaginary part.
+  #[test]
+  fn gaussian() {
+    // 2 ramifies: 2 = -I (1 + I)^2.
+    assert_eq!(
+      interpret("FactorInteger[2, GaussianIntegers -> True]").unwrap(),
+      "{{-I, 1}, {1 + I, 2}}"
+    );
+    // p ≡ 1 (mod 4) splits into conjugate primes.
+    assert_eq!(
+      interpret("FactorInteger[5, GaussianIntegers -> True]").unwrap(),
+      "{{-I, 1}, {1 + 2*I, 1}, {2 + I, 1}}"
+    );
+    // p ≡ 3 (mod 4) is inert (and carries no unit factor).
+    assert_eq!(
+      interpret("FactorInteger[3, GaussianIntegers -> True]").unwrap(),
+      "{{3, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorInteger[7, GaussianIntegers -> True]").unwrap(),
+      "{{7, 1}}"
+    );
+    // Composite: 12 = -1 (1 + I)^4 · 3.
+    assert_eq!(
+      interpret("FactorInteger[12, GaussianIntegers -> True]").unwrap(),
+      "{{-1, 1}, {1 + I, 4}, {3, 1}}"
+    );
+    // Units accumulate to I for 50 = 2 · 5^2.
+    assert_eq!(
+      interpret("FactorInteger[50, GaussianIntegers -> True]").unwrap(),
+      "{{I, 1}, {1 + I, 2}, {1 + 2*I, 2}, {2 + I, 2}}"
+    );
+    // An inert prime sorts by real part among split primes:
+    // 39 = 3 · 13 gives 2 + 3 I, 3, 3 + 2 I.
+    assert_eq!(
+      interpret("FactorInteger[39, GaussianIntegers -> True]").unwrap(),
+      "{{-I, 1}, {2 + 3*I, 1}, {3, 1}, {3 + 2*I, 1}}"
+    );
+    // Negative input contributes -1 to the unit (here cancelling to 1).
+    assert_eq!(
+      interpret("FactorInteger[-12, GaussianIntegers -> True]").unwrap(),
+      "{{1 + I, 4}, {3, 1}}"
+    );
+    // GaussianIntegers -> False behaves like the ordinary factorization.
+    assert_eq!(
+      interpret("FactorInteger[100, GaussianIntegers -> False]").unwrap(),
+      "{{2, 2}, {5, 2}}"
+    );
+  }
 }
 
 mod divisible {
