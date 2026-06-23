@@ -959,7 +959,6 @@ function main() {
     "FourierSinCoefficient[Sin[t], t, n]", // DiscreteDelta result
     "Sum[Binomial[n, k], {k, 1, n}]", // symbolic binomial sums
     "Sum[k Binomial[n, k], {k, 0, n}]",
-    "Sum[k r^k, {k, 0, Infinity}]", // symbolic geometric-type sums
     "Sum[k/k!, {k, 1, Infinity}]",
     "SumConvergence[Sin[n], n]", // n-th-term divergence test
     "HazardFunction[PoissonDistribution[2], x]", // Piecewise result

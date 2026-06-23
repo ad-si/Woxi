@@ -2232,6 +2232,92 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   Some((coeff, base))
 }
 
+/// Match a geometric body `c * base^(q*var)` where the exponent coefficient `q`
+/// is *symbolic* (free of `var`, not a plain integer) and `base` is free of
+/// `var`. Returns `(c, base^q)` — the coefficient and effective geometric
+/// ratio. This is deliberately disjoint from `match_geometric_base` (which
+/// only accepts an integer exponent coefficient), because wolframscript
+/// canonicalizes the symbolic-exponent result differently:
+///   Sum[a^(k n), {n, 0, Inf}]   -> -(-1 + a^k)^(-1)   (this matcher)
+///   Sum[x^(2 n), {n, 0, Inf}]   ->  (1 - x^2)^(-1)    (match_geometric_base)
+fn match_geometric_symbolic_exp(
+  body: &Expr,
+  var_name: &str,
+) -> Option<(Expr, Expr)> {
+  use crate::functions::calculus_ast::is_constant_wrt;
+  use crate::syntax::BinaryOperator;
+
+  let mut factors = Vec::new();
+  collect_times_factors(body, &mut factors);
+
+  let mut eff_base: Option<Expr> = None;
+  let mut coeff_factors: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if eff_base.is_none()
+      && let Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } = f
+      && is_constant_wrt(left, var_name)
+    {
+      // Exponent must be `q * var` with q free of var and not a plain integer.
+      let exp = crate::evaluator::evaluate_expr_to_expr(right)
+        .unwrap_or_else(|_| (**right).clone());
+      let mut exp_factors = Vec::new();
+      collect_times_factors(&exp, &mut exp_factors);
+      let mut var_seen = 0;
+      let mut q_factors: Vec<Expr> = Vec::new();
+      let mut ok = true;
+      for ef in &exp_factors {
+        if matches!(ef, Expr::Identifier(n) if n == var_name) {
+          var_seen += 1;
+        } else if is_constant_wrt(ef, var_name) {
+          q_factors.push(ef.clone());
+        } else {
+          ok = false;
+          break;
+        }
+      }
+      if ok && var_seen == 1 && !q_factors.is_empty() {
+        let q = match q_factors.len() {
+          1 => q_factors.into_iter().next().unwrap(),
+          _ => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: q_factors.into(),
+          },
+        };
+        // Reject a plain-integer q — that is the strict matcher's job.
+        if !matches!(&q, Expr::Integer(_) | Expr::BigInteger(_)) {
+          eff_base = Some(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: left.clone(),
+            right: Box::new(q),
+          });
+          continue;
+        }
+      }
+      return None;
+    }
+    if is_constant_wrt(f, var_name) {
+      coeff_factors.push(f.clone());
+      continue;
+    }
+    return None;
+  }
+
+  let eff_base = eff_base?;
+  let coeff = match coeff_factors.len() {
+    0 => Expr::Integer(1),
+    1 => coeff_factors.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: coeff_factors.into(),
+    },
+  };
+  Some((coeff, eff_base))
+}
+
 /// Match an arithmetico-geometric body `var^p * r^var`, returning `(p, r)`
 /// where `p >= 1` is the polynomial degree and `r` the geometric ratio.
 /// The ratio factor may appear as `r^var`, `r^(-var)`, or `(r^var)^(-1)`
@@ -2850,6 +2936,32 @@ fn try_infinite_sum(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
   }
 
+  // Geometric series with a symbolic exponent coefficient, from var = 0:
+  // Sum[c base^(q var), {var, 0, Infinity}] = -c/(-1 + base^q), where `q` is
+  // symbolic. wolframscript renders this with the negated `-1 + base^q`
+  // denominator (unlike the integer-exponent case handled above which keeps
+  // `1 - base^q`), so the closed form is built as `(-c)/(-1 + base^q)`.
+  if min == 0
+    && let Some((coeff, eff_base)) =
+      match_geometric_symbolic_exp(body, var_name)
+  {
+    use crate::syntax::BinaryOperator;
+    let neg_one_plus_base = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(eff_base),
+    };
+    let closed = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(crate::functions::math_ast::times_ast(&[
+        Expr::Integer(-1),
+        coeff,
+      ])?),
+      right: Box::new(neg_one_plus_base),
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
+  }
+
   // Geometric series from k = 1: Sum[c r^k, {k, 1, Infinity}] = c r/(1 - r),
   // for a numeric ratio r with |r| < 1 (it folds to a number). A symbolic
   // ratio is left to fall through — wolframscript canonicalizes its min >= 1
@@ -2880,6 +2992,45 @@ fn try_infinite_sum(
         },
       ]
       .into(),
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
+  }
+
+  // Geometric series with a *symbolic* ratio from any min >= 1:
+  // Sum[c base^var, {var, m, Infinity}] = -(c base^m)/(-1 + base). The numeric
+  // ratio cases are handled above (folded to a number when |base| < 1, left
+  // unevaluated when divergent); this branch yields the formal closed form for
+  // a symbolic base, matching wolframscript's `(-1 + base)` denominator:
+  //   Sum[x^k, {k, 1, Inf}] -> -(x/(-1 + x))
+  //   Sum[x^n, {n, 2, Inf}] -> -(x^2/(-1 + x))
+  if min >= 1
+    && let Some((coeff, base)) = match_geometric_base(body, var_name)
+    && crate::functions::math_ast::try_eval_to_f64(&base).is_none()
+  {
+    use crate::syntax::BinaryOperator;
+    let base_pow_min = if min == 1 {
+      base.clone()
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base.clone()),
+        right: Box::new(Expr::Integer(min)),
+      }
+    };
+    let numer = crate::functions::math_ast::times_ast(&[
+      Expr::Integer(-1),
+      coeff,
+      base_pow_min,
+    ])?;
+    let denom = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(base),
+    };
+    let closed = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numer),
+      right: Box::new(denom),
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
   }
@@ -2971,6 +3122,32 @@ fn try_infinite_sum(
         args: vec![Expr::Integer(-p), r].into(),
       };
       return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+    }
+    // First-order symbolic case Sum[k r^k, {k, 1, Inf}] = r/(-1 + r)^2.
+    // wolframscript renders the `(-1 + r)^2` denominator (PolyLog[-1, r]
+    // canonicalizes to `r/(1 - r)^2`, equal but differently displayed), so the
+    // form is built directly. Higher orders (p >= 2) diverge in form and are
+    // left unevaluated for a symbolic ratio.
+    if p == 1
+      && !is_exact
+      && crate::functions::math_ast::try_eval_to_f64(&r).is_none()
+    {
+      use crate::syntax::BinaryOperator;
+      let denom = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(r.clone()),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      };
+      let closed = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(r),
+        right: Box::new(denom),
+      };
+      return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
     }
   }
 

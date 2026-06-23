@@ -10614,16 +10614,35 @@ mod infinite_geometric_from_one {
     assert_eq!(interpret("Sum[3 (1/2)^k, {k, 1, Infinity}]").unwrap(), "3");
   }
 
-  // Divergent (|r| >= 1) and symbolic ratios stay unevaluated.
+  // Divergent (|r| >= 1) numeric ratios stay unevaluated.
   #[test]
-  fn divergent_and_symbolic_unevaluated() {
+  fn divergent_unevaluated() {
     assert_eq!(
       interpret("Sum[(3/2)^k, {k, 1, Infinity}]").unwrap(),
       "Sum[(3/2)^k, {k, 1, Infinity}]"
     );
+  }
+
+  // A symbolic ratio yields the formal closed form -(c r^m)/(-1 + r),
+  // matching wolframscript.
+  #[test]
+  fn symbolic_geometric_closed_form() {
     assert_eq!(
       interpret("Sum[x^k, {k, 1, Infinity}]").unwrap(),
-      "Sum[x^k, {k, 1, Infinity}]"
+      "-(x/(-1 + x))"
+    );
+    assert_eq!(
+      interpret("Sum[2 x^k, {k, 1, Infinity}]").unwrap(),
+      "(-2*x)/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Sum[c x^k, {k, 1, Infinity}]").unwrap(),
+      "-((c*x)/(-1 + x))"
+    );
+    // Lower bound > 1 multiplies the numerator by r^m.
+    assert_eq!(
+      interpret("Sum[x^k, {k, 3, Infinity}]").unwrap(),
+      "-(x^3/(-1 + x))"
     );
   }
 }
@@ -10653,13 +10672,13 @@ mod infinite_geometric_exponent_multiple {
     );
   }
 
-  // A symbolic exponent coefficient (a^(k n)) is canonicalized differently by
-  // wolframscript, so it stays unevaluated rather than diverging in form.
+  // A symbolic exponent coefficient (a^(k n)) gives ratio a^k; wolframscript
+  // renders the closed form with the negated `-1 + a^k` denominator.
   #[test]
-  fn symbolic_exponent_coefficient_unevaluated() {
+  fn symbolic_exponent_coefficient() {
     assert_eq!(
       interpret("Sum[a^(k n), {n, 0, Infinity}]").unwrap(),
-      "Sum[a^(k*n), {n, 0, Infinity}]"
+      "-(-1 + a^k)^(-1)"
     );
   }
 }
@@ -10700,13 +10719,13 @@ mod infinite_arith_geometric {
     assert_eq!(interpret("Sum[k/2^k, {k, 0, Infinity}]").unwrap(), "2");
   }
 
-  // A symbolic ratio diverges from wolframscript's display form, and a
-  // divergent ratio (|r| >= 1) has no value — both stay unevaluated.
+  // A first-order symbolic ratio gives r/(-1 + r)^2; a divergent ratio
+  // (|r| >= 1) has no value and stays unevaluated.
   #[test]
-  fn symbolic_and_divergent_unevaluated() {
+  fn symbolic_and_divergent() {
     assert_eq!(
       interpret("Sum[k x^k, {k, 1, Infinity}]").unwrap(),
-      "Sum[k*x^k, {k, 1, Infinity}]"
+      "x/(-1 + x)^2"
     );
     assert_eq!(
       interpret("Sum[k 2^k, {k, 1, Infinity}]").unwrap(),

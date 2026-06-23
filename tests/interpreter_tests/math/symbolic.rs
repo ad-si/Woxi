@@ -219,17 +219,22 @@ mod sum {
     );
   }
 
-  // Divergent or symbolic series stay unevaluated (the reduction only fires
-  // when the min = 1 series itself has a closed form).
+  // A divergent series (harmonic) stays unevaluated.
   #[test]
   fn infinite_sum_lower_bound_above_one_stays_unevaluated() {
     assert_eq!(
       interpret("Sum[1/n, {n, 2, Infinity}]").unwrap(),
       "Sum[n^(-1), {n, 2, Infinity}]"
     );
+  }
+
+  // A symbolic geometric series with lower bound > 1 closes to
+  // -(x^m/(-1 + x)), matching wolframscript.
+  #[test]
+  fn infinite_geometric_symbolic_lower_bound_above_one() {
     assert_eq!(
       interpret("Sum[x^n, {n, 2, Infinity}]").unwrap(),
-      "Sum[x^n, {n, 2, Infinity}]"
+      "-(x^2/(-1 + x))"
     );
   }
 
@@ -380,13 +385,14 @@ mod sum {
     );
   }
 
-  // A non-constant coefficient or a non-`k` exponent must not be treated as a
-  // plain geometric series.
+  // A linear coefficient is an arithmetico-geometric series, not a plain
+  // geometric one: Sum[k r^k, {k, 0, Infinity}] = r/(-1 + r)^2 (the k = 0 term
+  // is zero, so it equals the k = 1 sum), matching wolframscript.
   #[test]
-  fn infinite_sum_geometric_not_misapplied() {
+  fn infinite_sum_arith_geometric_from_zero() {
     assert_eq!(
       interpret("Sum[k r^k, {k, 0, Infinity}]").unwrap(),
-      "Sum[k*r^k, {k, 0, Infinity}]"
+      "r/(-1 + r)^2"
     );
   }
 
