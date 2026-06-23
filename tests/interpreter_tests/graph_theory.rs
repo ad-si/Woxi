@@ -4076,3 +4076,106 @@ mod graph_assortativity {
     );
   }
 }
+
+mod vertex_contract {
+  use super::*;
+
+  // VertexContract merges the listed vertices into the first one, redirecting
+  // edges and dropping the resulting self-loops and duplicate edges.
+  #[test]
+  fn complete_graph_pair() {
+    assert_eq!(
+      interpret("VertexList[VertexContract[CompleteGraph[4], {1, 2}]]")
+        .unwrap(),
+      "{1, 3, 4}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[VertexContract[CompleteGraph[4], {1, 2}]] === \
+         {UndirectedEdge[1, 3], UndirectedEdge[1, 4], UndirectedEdge[3, 4]}"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("VertexCount[VertexContract[CompleteGraph[4], {1, 2}]]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  // The survivor is the first vertex of the list (here 2); the rest are merged.
+  #[test]
+  fn merges_multiple_into_first() {
+    assert_eq!(
+      interpret("VertexList[VertexContract[CompleteGraph[5], {2, 3, 4}]]")
+        .unwrap(),
+      "{1, 2, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[VertexContract[CompleteGraph[5], {2, 3, 4}]] === \
+         {UndirectedEdge[1, 2], UndirectedEdge[1, 5], UndirectedEdge[2, 5]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // The contracted edges are re-canonicalized: 1-3 sorts before 1-5 even though
+  // CycleGraph lists the 1-5 wrap-around edge before the 2-3 edge.
+  #[test]
+  fn re_sorts_edges() {
+    assert_eq!(
+      interpret(
+        "EdgeList[VertexContract[CycleGraph[5], {1, 2}]] === \
+         {UndirectedEdge[1, 3], UndirectedEdge[1, 5], \
+          UndirectedEdge[3, 4], UndirectedEdge[4, 5]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Directed edges keep their direction; only exact-duplicate arcs and
+  // self-loops are removed.
+  #[test]
+  fn directed_preserves_direction() {
+    assert_eq!(
+      interpret(
+        "EdgeList[VertexContract[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], {1, 2}]] \
+         === {DirectedEdge[1, 3], DirectedEdge[3, 1]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Contracting all vertices yields a single isolated vertex.
+  #[test]
+  fn contract_all() {
+    assert_eq!(
+      interpret("VertexCount[VertexContract[CompleteGraph[4], {1, 2, 3, 4}]]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("EdgeCount[VertexContract[CompleteGraph[4], {1, 2, 3, 4}]]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  // A vertex not present leaves the graph unchanged; a non-graph stays symbolic.
+  #[test]
+  fn invalid_and_non_graph() {
+    assert_eq!(
+      interpret("EdgeCount[VertexContract[CompleteGraph[4], {1, 9}]]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("VertexContract[x, {1, 2}]").unwrap(),
+      "VertexContract[x, {1, 2}]"
+    );
+  }
+}

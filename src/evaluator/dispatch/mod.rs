@@ -4339,6 +4339,151 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // VertexContract[Graph[vertices, edges], {v1, v2, ...}] → merge the listed
+  // vertices into the first one (v1). Edges to any merged vertex are redirected
+  // to v1; resulting self-loops and duplicate edges are dropped, while edge
+  // direction is preserved. If any listed vertex is absent, wolframscript
+  // leaves the graph unchanged.
+  if name == "VertexContract" && args.len() == 2 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(vertices) = &gargs[0]
+      && let Expr::List(edges) = &gargs[1]
+    {
+      use crate::evaluator::pattern_matching::expr_equal;
+      let to_contract: Vec<Expr> = match &args[1] {
+        Expr::List(vs) => vs.iter().cloned().collect(),
+        other => vec![other.clone()],
+      };
+      let all_valid = !to_contract.is_empty()
+        && to_contract
+          .iter()
+          .all(|d| vertices.iter().any(|v| expr_equal(v, d)));
+      if !all_valid {
+        return Ok(args[0].clone());
+      }
+      let survivor = to_contract[0].clone();
+      let remap = |v: &Expr| -> Expr {
+        if to_contract.iter().any(|d| expr_equal(v, d)) {
+          survivor.clone()
+        } else {
+          v.clone()
+        }
+      };
+      // Edge endpoints + head (Labeled-aware), like VertexDelete's helper.
+      fn vc_edge(e: &Expr) -> Option<(String, Expr, Expr)> {
+        let inner = match e {
+          Expr::FunctionCall { name, args }
+            if name == "Labeled" && args.len() == 2 =>
+          {
+            &args[0]
+          }
+          _ => e,
+        };
+        match inner {
+          Expr::FunctionCall { name, args } if args.len() == 2 => {
+            Some((name.clone(), args[0].clone(), args[1].clone()))
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Some((
+            "Rule".to_string(),
+            pattern.as_ref().clone(),
+            replacement.as_ref().clone(),
+          )),
+          _ => None,
+        }
+      }
+      let is_directed =
+        |head: &str| head != "UndirectedEdge" && head != "TwoWayRule";
+      use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+
+      let new_vertices: Vec<Expr> = vertices
+        .iter()
+        .filter(|v| {
+          expr_equal(v, &survivor)
+            || !to_contract.iter().any(|d| expr_equal(v, d))
+        })
+        .cloned()
+        .collect();
+
+      let mut new_edges: Vec<Expr> = Vec::new();
+      for e in edges.iter() {
+        let (head, a, b) = match vc_edge(e) {
+          Some(t) => t,
+          None => {
+            new_edges.push(e.clone());
+            continue;
+          }
+        };
+        let directed = is_directed(&head);
+        // Undirected endpoints are stored canonically as (min, max).
+        let (na, nb) = {
+          let (ra, rb) = (remap(&a), remap(&b));
+          if !directed && canonical_cmp(&ra, &rb) == std::cmp::Ordering::Greater
+          {
+            (rb, ra)
+          } else {
+            (ra, rb)
+          }
+        };
+        if expr_equal(&na, &nb) {
+          continue; // self-loop
+        }
+        let dup = new_edges.iter().any(|ex| match vc_edge(ex) {
+          Some((eh, ea, eb)) if is_directed(&eh) == directed => {
+            if directed {
+              expr_equal(&ea, &na) && expr_equal(&eb, &nb)
+            } else {
+              (expr_equal(&ea, &na) && expr_equal(&eb, &nb))
+                || (expr_equal(&ea, &nb) && expr_equal(&eb, &na))
+            }
+          }
+          _ => false,
+        });
+        if dup {
+          continue;
+        }
+        new_edges.push(match e {
+          Expr::Rule { .. } => Expr::Rule {
+            pattern: Box::new(na),
+            replacement: Box::new(nb),
+          },
+          _ => Expr::FunctionCall {
+            name: head.clone(),
+            args: vec![na, nb].into(),
+          },
+        });
+      }
+      // wolframscript re-canonicalizes the contracted graph's edges, ordering
+      // them by their endpoints (smaller endpoint first, then the larger).
+      new_edges.sort_by(|e1, e2| match (vc_edge(e1), vc_edge(e2)) {
+        (Some((_, a1, b1)), Some((_, a2, b2))) => {
+          canonical_cmp(&a1, &a2).then_with(|| canonical_cmp(&b1, &b2))
+        }
+        _ => std::cmp::Ordering::Equal,
+      });
+      let mut result_args = vec![
+        Expr::List(new_vertices.into()),
+        Expr::List(new_edges.into()),
+      ];
+      result_args.extend(gargs[2..].iter().cloned());
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: result_args.into(),
+      });
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // EdgeAdd[Graph[vertices, edges], e | {e1, e2, ...}] →
   //   append the given edge(s) to the graph and add any new endpoint
   //   vertices (in order of first appearance). A directed edge a -> b

@@ -3297,7 +3297,7 @@ HeatTransferPDEComponent,,,,12.2,3378
 Icosahedron,,,,12.0,3378
 ProcessConnection,,🚫,,10.0,3378
 SetPermissions,,🚫,,10.2,3378
-VertexContract,,,,10.0,3378
+VertexContract,Merge a set of vertices of a graph into a single vertex,✅,pure,10.0,3378
 WindowClickSelect,,🚫,,3.0,3378
 CellDynamicExpression,,🚫,,8.0,3389
 CoxIngersollRossProcess,,🚫,,9.0,3389
