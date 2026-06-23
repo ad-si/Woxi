@@ -1766,6 +1766,52 @@ mod multinormal_distribution {
     );
   }
 
+  // At a fully numeric point the PDF must reduce to a closed value rather than
+  // leaving pieces like 0^2 or 1^2 unevaluated in the exponent.
+  #[test]
+  fn pdf_numeric_point_reduces() {
+    // Standard bivariate normal at the origin.
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {0, 0}]"
+      )
+      .unwrap(),
+      "1/(2*Pi)"
+    );
+    // Off the mean.
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {1, 1}]"
+      )
+      .unwrap(),
+      "1/(2*E*Pi)"
+    );
+    // Scaled diagonal variances, evaluated at the mean.
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{1, 2}, {{2, 0}, {0, 3}}], {1, 2}]"
+      )
+      .unwrap(),
+      "1/(2*Sqrt[6]*Pi)"
+    );
+    // Rational point.
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {1/2, 1/2}]"
+      )
+      .unwrap(),
+      "1/(2*E^(1/4)*Pi)"
+    );
+    // Trivariate at the origin.
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}], {0, 0, 0}]"
+      )
+      .unwrap(),
+      "1/(2*Sqrt[2]*Pi^(3/2))"
+    );
+  }
+
   #[test]
   fn statistics() {
     assert_eq!(

@@ -7207,7 +7207,25 @@ pub fn pdf_multinormal(
       },
     }
   };
-  Ok(div2(e_pow, denominator))
+  let result = div2(e_pow, denominator);
+
+  // The form above is built to mirror wolframscript's printed PDF for a
+  // symbolic point ({x, y} → E^((-x^2 - y^2)/2)/(2*Pi)). At a fully numeric
+  // point it still contains unevaluated pieces such as 0^2 or 1^2, so reduce
+  // it to a closed numeric value (e.g. {0, 0} → 1/(2*Pi)) to match WL.
+  let point_is_numeric = vars.iter().all(|v| {
+    matches!(
+      v,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    ) || matches!(v, Expr::FunctionCall { name, .. } if name == "Rational")
+  });
+  if point_is_numeric {
+    return eval(result);
+  }
+  Ok(result)
 }
 
 // ─── EmpiricalDistribution / DataDistribution ────────────────────────
