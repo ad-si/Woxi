@@ -6,6 +6,24 @@ use crate::syntax::Expr;
 /// Discriminant[poly, var] - polynomial discriminant
 /// Disc(p, x) = (-1)^(n(n-1)/2) / a_n * Resultant(p, p', x)
 pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A `Modulus -> p` option reduces the computed discriminant's coefficients
+  // modulo p (the discriminant is a polynomial in the input coefficients).
+  if args.iter().any(|a| extract_modulus_option(a).is_some()) {
+    let mut pos: Vec<Expr> = Vec::new();
+    let mut modulus: Option<i128> = None;
+    for a in args {
+      if let Some(m) = extract_modulus_option(a) {
+        modulus = Some(m);
+      } else {
+        pos.push(a.clone());
+      }
+    }
+    if let Some(p) = modulus {
+      let base = discriminant_ast(&pos)?;
+      return super::resultant::reduce_coeffs_modulus(&base, p);
+    }
+  }
+
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "Discriminant expects 2 arguments".into(),

@@ -172,10 +172,10 @@ pub fn dispatch_polynomial_functions(
     "Eliminate" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::eliminate_ast(args));
     }
-    "Resultant" if args.len() == 3 => {
+    "Resultant" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::polynomial_ast::resultant_ast(args));
     }
-    "Discriminant" if args.len() == 2 => {
+    "Discriminant" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::discriminant_ast(args));
     }
     "Cyclotomic" if args.len() == 2 => {

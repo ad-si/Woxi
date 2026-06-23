@@ -5434,6 +5434,60 @@ mod resultant {
       "{Listable, Protected}"
     );
   }
+
+  // A Modulus option reduces the resultant's coefficients modulo p.
+  #[test]
+  fn modulus_option() {
+    // Res(x^2-1, x-1) = 0, reduced mod 2.
+    assert_eq!(
+      interpret("Resultant[x^2 - 1, x - 1, x, Modulus -> 2]").unwrap(),
+      "0"
+    );
+    // Res(x^2+1, x+1) = 2, mod 5 stays 2.
+    assert_eq!(
+      interpret("Resultant[x^2 + 1, x + 1, x, Modulus -> 5]").unwrap(),
+      "2"
+    );
+    // Symbolic coefficients: Res(x^2+a, x+b) = a + b^2 (mod 3).
+    assert_eq!(
+      interpret("Resultant[x^2 + a, x + b, x, Modulus -> 3]").unwrap(),
+      "a + b^2"
+    );
+    // A leading coefficient divisible by p: Res over Z is 3, reduced to 1.
+    assert_eq!(
+      interpret("Resultant[2x^2 + 1, x + 1, x, Modulus -> 2]").unwrap(),
+      "1"
+    );
+  }
+}
+
+mod discriminant {
+  use super::*;
+
+  // The Modulus option reduces the discriminant's coefficients modulo p.
+  #[test]
+  fn modulus_option() {
+    // Disc(x^2+b x+c) = b^2 - 4c == b^2 over GF(2).
+    assert_eq!(
+      interpret("Discriminant[x^2 + b x + c, x, Modulus -> 2]").unwrap(),
+      "b^2"
+    );
+    // Disc(x^3+p x+q) = -4 p^3 - 27 q^2 == 2 p^3 over GF(3).
+    assert_eq!(
+      interpret("Discriminant[x^3 + p x + q, x, Modulus -> 3]").unwrap(),
+      "2*p^3"
+    );
+    // Disc(a x^2+b x+c) = b^2 - 4 a c == b^2 + 2 a c over GF(3).
+    assert_eq!(
+      interpret("Discriminant[a x^2 + b x + c, x, Modulus -> 3]").unwrap(),
+      "b^2 + 2*a*c"
+    );
+    // The unmodulated discriminant is unchanged.
+    assert_eq!(
+      interpret("Discriminant[x^2 + b x + c, x]").unwrap(),
+      "b^2 - 4*c"
+    );
+  }
 }
 
 mod factor_square_free {

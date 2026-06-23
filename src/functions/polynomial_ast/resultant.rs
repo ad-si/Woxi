@@ -10,6 +10,25 @@ use crate::syntax::{BinaryOperator, Expr};
 /// The resultant is the determinant of the Sylvester matrix built from
 /// the coefficients of the two polynomials.
 pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A `Modulus -> p` option reduces the (symbolically computed) resultant's
+  // coefficients modulo p: the resultant is a polynomial in the input
+  // coefficients, so reduction commutes with its computation.
+  if args.iter().any(|a| extract_modulus_option(a).is_some()) {
+    let mut pos: Vec<Expr> = Vec::new();
+    let mut modulus: Option<i128> = None;
+    for a in args {
+      if let Some(m) = extract_modulus_option(a) {
+        modulus = Some(m);
+      } else {
+        pos.push(a.clone());
+      }
+    }
+    if let Some(p) = modulus {
+      let base = resultant_ast(&pos)?;
+      return reduce_coeffs_modulus(&base, p);
+    }
+  }
+
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "Resultant expects exactly 3 arguments".into(),
@@ -131,6 +150,19 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Simplify the result
   let simplified = crate::evaluator::evaluate_expr_to_expr(&det)?;
   Ok(simplified)
+}
+
+/// Reduce all integer coefficients of `expr` modulo `p` (via PolynomialMod),
+/// the action of a `Modulus -> p` option on a polynomial result.
+pub(super) fn reduce_coeffs_modulus(
+  expr: &Expr,
+  p: i128,
+) -> Result<Expr, InterpreterError> {
+  let reduced = Expr::FunctionCall {
+    name: "PolynomialMod".to_string(),
+    args: vec![expr.clone(), Expr::Integer(p)].into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&reduced)
 }
 
 /// Subresultants[poly1, poly2, var] - The principal subresultant
