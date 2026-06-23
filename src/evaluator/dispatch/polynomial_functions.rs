@@ -12,17 +12,17 @@ pub fn dispatch_polynomial_functions(
     "Distribute" if !args.is_empty() && args.len() <= 3 => {
       return Some(distribute_ast(args));
     }
-    "PolynomialRemainder" if args.len() == 3 => {
+    "PolynomialRemainder" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::polynomial_ast::polynomial_remainder_ast(
         args,
       ));
     }
-    "PolynomialQuotient" if args.len() == 3 => {
+    "PolynomialQuotient" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::polynomial_ast::polynomial_quotient_ast(
         args,
       ));
     }
-    "PolynomialQuotientRemainder" if args.len() == 3 => {
+    "PolynomialQuotientRemainder" if args.len() == 3 || args.len() == 4 => {
       return Some(
         crate::functions::polynomial_ast::polynomial_quotient_remainder_ast(
           args,

@@ -69,7 +69,7 @@ pub fn polynomial_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Extract `Modulus -> n` (n > 1) from an option argument, in either the
 /// `Expr::Rule` or `Rule[...]` form.
-fn extract_modulus_option(opt: &Expr) -> Option<i128> {
+pub(super) fn extract_modulus_option(opt: &Expr) -> Option<i128> {
   if let Expr::Rule {
     pattern,
     replacement,
@@ -108,7 +108,7 @@ fn polynomial_gcd_mod(
 }
 
 /// Coefficient vector (low-to-high, reduced mod p) of a univariate polynomial.
-fn poly_to_coeffs_mod(
+pub(super) fn poly_to_coeffs_mod(
   poly: &Expr,
   var: &str,
   p: i128,
@@ -133,13 +133,13 @@ fn poly_to_coeffs_mod(
   Ok(coeffs)
 }
 
-fn mod_norm(a: i128, p: i128) -> i128 {
+pub(super) fn mod_norm(a: i128, p: i128) -> i128 {
   ((a % p) + p) % p
 }
 
 /// Modular inverse of `a` mod `p` via the extended Euclidean algorithm
 /// (assumes gcd(a, p) = 1, which holds for p prime and a not a multiple of p).
-fn mod_inv(a: i128, p: i128) -> i128 {
+pub(super) fn mod_inv(a: i128, p: i128) -> i128 {
   let (mut old_r, mut r) = (mod_norm(a, p), p);
   let (mut old_s, mut s) = (1i128, 0i128);
   while r != 0 {
@@ -155,37 +155,54 @@ fn mod_inv(a: i128, p: i128) -> i128 {
 }
 
 /// Drop high-degree zero coefficients, keeping at least `[0]`.
-fn trim_high(c: &mut Vec<i128>) {
+pub(super) fn trim_high(c: &mut Vec<i128>) {
   while c.len() > 1 && *c.last().unwrap() == 0 {
     c.pop();
   }
 }
 
-fn is_zero_poly(c: &[i128]) -> bool {
+pub(super) fn is_zero_poly(c: &[i128]) -> bool {
   c.iter().all(|&x| x == 0)
+}
+
+/// Polynomial division `a = q*b + r` over GF(p), returning `(quotient,
+/// remainder)`, coefficients low-to-high. A zero divisor yields `(0, a)`.
+pub(super) fn poly_divmod_mod(
+  a: &[i128],
+  b: &[i128],
+  p: i128,
+) -> (Vec<i128>, Vec<i128>) {
+  let mut r: Vec<i128> = a.iter().map(|&x| mod_norm(x, p)).collect();
+  let mut b: Vec<i128> = b.iter().map(|&x| mod_norm(x, p)).collect();
+  trim_high(&mut r);
+  trim_high(&mut b);
+  if is_zero_poly(&b) {
+    return (vec![0], r);
+  }
+  let db = b.len();
+  let inv = mod_inv(b[db - 1], p);
+  let mut q = vec![0i128; if r.len() >= db { r.len() - db + 1 } else { 1 }];
+  loop {
+    trim_high(&mut r);
+    if r.len() < db || is_zero_poly(&r) {
+      break;
+    }
+    let dr = r.len();
+    let factor = mod_norm(r[dr - 1] * inv, p);
+    let shift = dr - db;
+    q[shift] = mod_norm(q[shift] + factor, p);
+    for i in 0..db {
+      r[shift + i] = mod_norm(r[shift + i] - factor * b[i], p);
+    }
+  }
+  trim_high(&mut q);
+  trim_high(&mut r);
+  (q, r)
 }
 
 /// Polynomial remainder `a mod b` over GF(p), coefficients low-to-high.
 fn poly_rem_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
-  let mut a: Vec<i128> = a.iter().map(|&x| mod_norm(x, p)).collect();
-  let mut b: Vec<i128> = b.iter().map(|&x| mod_norm(x, p)).collect();
-  trim_high(&mut a);
-  trim_high(&mut b);
-  let db = b.len();
-  let inv = mod_inv(b[db - 1], p);
-  loop {
-    trim_high(&mut a);
-    if a.len() < db || is_zero_poly(&a) {
-      break;
-    }
-    let da = a.len();
-    let factor = mod_norm(a[da - 1] * inv, p);
-    let shift = da - db;
-    for i in 0..db {
-      a[shift + i] = mod_norm(a[shift + i] - factor * b[i], p);
-    }
-  }
-  a
+  poly_divmod_mod(a, b, p).1
 }
 
 /// GCD of two coefficient vectors over GF(p), returned monic.
@@ -211,7 +228,7 @@ fn poly_gcd_coeffs_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
 }
 
 /// Rebuild a polynomial Sum c_i var^i from a coefficient vector (mod p).
-fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
+pub(super) fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
   let mut terms: Vec<Expr> = Vec::new();
   for (i, &c) in coeffs.iter().enumerate() {
     let c = mod_norm(c, p);

@@ -4393,6 +4393,44 @@ mod polynomial_remainder {
     assert_eq!(q, "2 + x^2");
     assert_eq!(r, "-2 + x");
   }
+
+  // The Modulus option performs the division over the field GF(p).
+  #[test]
+  fn modulus_option() {
+    // Over GF(2), (x^2-1)/(x-1) = x+1 exactly.
+    assert_eq!(
+      interpret("PolynomialQuotient[x^2 - 1, x - 1, x, Modulus -> 2]").unwrap(),
+      "1 + x"
+    );
+    assert_eq!(
+      interpret("PolynomialRemainder[x^2 + 1, x + 1, x, Modulus -> 2]")
+        .unwrap(),
+      "0"
+    );
+    // (x^3+1)/(x+1) = x^2 - x + 1 == x^2 + x + 1 over GF(2).
+    assert_eq!(
+      interpret("PolynomialQuotient[x^3 + 1, x + 1, x, Modulus -> 2]").unwrap(),
+      "1 + x + x^2"
+    );
+    // A nonzero modular remainder.
+    assert_eq!(
+      interpret("PolynomialRemainder[x^3 + x + 1, x^2 + 1, x, Modulus -> 2]")
+        .unwrap(),
+      "1"
+    );
+    // Over GF(5): (x^2+3x+2)/(x+1) = x+2.
+    assert_eq!(
+      interpret("PolynomialQuotient[x^2 + 3x + 2, x + 1, x, Modulus -> 5]")
+        .unwrap(),
+      "2 + x"
+    );
+    // PolynomialQuotientRemainder returns the {quotient, remainder} pair.
+    assert_eq!(
+      interpret("PolynomialQuotientRemainder[x^2 - 1, x - 1, x, Modulus -> 2]")
+        .unwrap(),
+      "{1 + x, 0}"
+    );
+  }
 }
 
 mod polynomial_lcm {

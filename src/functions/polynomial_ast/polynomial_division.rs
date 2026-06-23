@@ -3,16 +3,46 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, expr_to_string};
 
+/// Split `[p, q, x]` or `[p, q, x, Modulus -> n]` into the three positional
+/// arguments and an optional modulus.
+fn split_modulus(args: &[Expr]) -> (Vec<Expr>, Option<i128>) {
+  let mut positional = Vec::new();
+  let mut modulus = None;
+  for a in args {
+    if let Some(m) = extract_modulus_option(a) {
+      modulus = Some(m);
+    } else {
+      positional.push(a.clone());
+    }
+  }
+  (positional, modulus)
+}
+
+/// Modular polynomial division `p / q` over GF(p) returning (quotient,
+/// remainder) as polynomial expressions in `var`.
+fn poly_divmod_mod_exprs(
+  p_poly: &Expr,
+  q_poly: &Expr,
+  var: &str,
+  m: i128,
+) -> Result<(Expr, Expr), InterpreterError> {
+  let pc = poly_to_coeffs_mod(p_poly, var, m)?;
+  let qc = poly_to_coeffs_mod(q_poly, var, m)?;
+  let (quot, rem) = poly_divmod_mod(&pc, &qc, m);
+  Ok((coeffs_to_poly(&quot, var, m), coeffs_to_poly(&rem, var, m)))
+}
+
 /// PolynomialRemainder[p, q, x] - remainder of polynomial division
 pub fn polynomial_remainder_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 3 {
+  let (pos, modulus) = split_modulus(args);
+  if pos.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "PolynomialRemainder expects 3 arguments".into(),
     ));
   }
-  let var = match &args[2] {
+  let var = match &pos[2] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
       return Ok(Expr::FunctionCall {
@@ -21,8 +51,11 @@ pub fn polynomial_remainder_ast(
       });
     }
   };
+  if let Some(m) = modulus {
+    return Ok(poly_divmod_mod_exprs(&pos[0], &pos[1], var, m)?.1);
+  }
 
-  let (_, remainder) = poly_divide_symbolic(&args[0], &args[1], var)?;
+  let (_, remainder) = poly_divide_symbolic(&pos[0], &pos[1], var)?;
   crate::evaluator::evaluate_expr_to_expr(&remainder)
 }
 
@@ -30,12 +63,13 @@ pub fn polynomial_remainder_ast(
 pub fn polynomial_quotient_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 3 {
+  let (pos, modulus) = split_modulus(args);
+  if pos.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "PolynomialQuotient expects 3 arguments".into(),
     ));
   }
-  let var = match &args[2] {
+  let var = match &pos[2] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
       return Ok(Expr::FunctionCall {
@@ -44,8 +78,11 @@ pub fn polynomial_quotient_ast(
       });
     }
   };
+  if let Some(m) = modulus {
+    return Ok(poly_divmod_mod_exprs(&pos[0], &pos[1], var, m)?.0);
+  }
 
-  let (quotient, _) = poly_divide_symbolic(&args[0], &args[1], var)?;
+  let (quotient, _) = poly_divide_symbolic(&pos[0], &pos[1], var)?;
   crate::evaluator::evaluate_expr_to_expr(&quotient)
 }
 
@@ -53,12 +90,13 @@ pub fn polynomial_quotient_ast(
 pub fn polynomial_quotient_remainder_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 3 {
+  let (pos, modulus) = split_modulus(args);
+  if pos.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "PolynomialQuotientRemainder expects 3 arguments".into(),
     ));
   }
-  let var = match &args[2] {
+  let var = match &pos[2] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
       return Ok(Expr::FunctionCall {
@@ -67,8 +105,12 @@ pub fn polynomial_quotient_remainder_ast(
       });
     }
   };
+  if let Some(m) = modulus {
+    let (q, r) = poly_divmod_mod_exprs(&pos[0], &pos[1], var, m)?;
+    return Ok(Expr::List(vec![q, r].into()));
+  }
 
-  let (quotient, remainder) = poly_divide_symbolic(&args[0], &args[1], var)?;
+  let (quotient, remainder) = poly_divide_symbolic(&pos[0], &pos[1], var)?;
   let q = crate::evaluator::evaluate_expr_to_expr(&quotient)?;
   let r = crate::evaluator::evaluate_expr_to_expr(&remainder)?;
   Ok(Expr::List(vec![q, r].into()))
