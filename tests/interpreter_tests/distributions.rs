@@ -1369,6 +1369,75 @@ mod gamma_family_quantile {
   }
 }
 
+mod student_t_quantile {
+  use super::*;
+
+  // Quantile[StudentTDistribution[nu], q] =
+  //   Sqrt[nu (1/InverseBetaRegularized[2(1-q), nu/2, 1/2] - 1)] for q > 1/2.
+  #[test]
+  fn closed_form_upper() {
+    assert_eq!(
+      interpret("Quantile[StudentTDistribution[5], 3/4]").unwrap(),
+      "Sqrt[5*(-1 + InverseBetaRegularized[1/2, 5/2, 1/2]^(-1))]"
+    );
+    assert_eq!(
+      interpret("Quantile[StudentTDistribution[3], 9/10]").unwrap(),
+      "Sqrt[3*(-1 + InverseBetaRegularized[1/5, 3/2, 1/2]^(-1))]"
+    );
+    // InverseCDF shares the closed form.
+    assert_eq!(
+      interpret("InverseCDF[StudentTDistribution[5], 3/4]").unwrap(),
+      "Sqrt[5*(-1 + InverseBetaRegularized[1/2, 5/2, 1/2]^(-1))]"
+    );
+  }
+
+  // Below the median the result is negated (the distribution is symmetric).
+  #[test]
+  fn closed_form_lower() {
+    assert_eq!(
+      interpret("Quantile[StudentTDistribution[5], 1/4]").unwrap(),
+      "-Sqrt[5*(-1 + InverseBetaRegularized[1/2, 5/2, 1/2]^(-1))]"
+    );
+  }
+
+  #[test]
+  fn median_and_edges() {
+    assert_eq!(
+      interpret("Quantile[StudentTDistribution[5], 1/2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[StudentTDistribution[5], 0]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("Quantile[StudentTDistribution[5], 1]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn numeric_values() {
+    let u: f64 = interpret("N[Quantile[StudentTDistribution[5], 3/4]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((u - 0.7266868438004223).abs() < 1e-8, "got {u}");
+
+    let l: f64 = interpret("N[Quantile[StudentTDistribution[5], 1/4]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((l + 0.7266868438004223).abs() < 1e-8, "got {l}");
+
+    let h: f64 = interpret("N[Quantile[StudentTDistribution[3], 9/10]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((h - 1.6377443536962104).abs() < 1e-8, "got {h}");
+  }
+}
+
 mod polynomial_expectation {
   use super::*;
 

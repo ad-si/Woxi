@@ -745,6 +745,43 @@ pub fn quantile_distribution_closed_form(
       })
       .ok()
     }
+    // Quantile[StudentTDistribution[nu], q]. For q > 1/2 this is
+    // Sqrt[nu (1/InverseBetaRegularized[2(1-q), nu/2, 1/2] - 1)], with the sign
+    // flipped below the median and 0 at it. Only numeric nu is handled:
+    // wolframscript keeps the radical joined (Sqrt[nu (...)]) there, whereas a
+    // symbolic nu splits it into Sqrt[nu] Sqrt[...]. (The location/scale form
+    // StudentTDistribution[mu, sigma, nu] is not yet a recognized distribution
+    // in Woxi, so it is intentionally not handled here.)
+    "StudentTDistribution" if dargs.len() == 1 => {
+      let nu = dargs[0].clone();
+      crate::functions::math_ast::expr_to_num(&nu)?;
+
+      if is_exact_q && q_num == 0.0 {
+        return Some(neg_infinity());
+      }
+      if is_exact_q && q_num == 1.0 {
+        return Some(infinity());
+      }
+      if q_num == 0.5 {
+        return Some(int(0));
+      }
+      let s = if q_num > 0.5 {
+        eval(times(int(2), one_minus_q())).ok()?
+      } else {
+        eval(times(int(2), q.clone())).ok()?
+      };
+      let ibr = Expr::FunctionCall {
+        name: "InverseBetaRegularized".to_string(),
+        args: vec![
+          s,
+          divide(nu.clone(), int(2)),
+          crate::functions::math_ast::make_rational_pub(1, 2),
+        ]
+        .into(),
+      };
+      let radical = sqrt(times(nu, plus(int(-1), power(ibr, int(-1)))));
+      eval(if q_num < 0.5 { neg(radical) } else { radical }).ok()
+    }
     "BinomialDistribution"
     | "PoissonDistribution"
     | "GeometricDistribution"
