@@ -1494,6 +1494,36 @@ mod series {
     );
   }
 
+  // A sum containing a fractional-power term is expanded by linearity, so
+  // mixed-denominator summands recombine (SeriesData addition handles the
+  // common denominator).
+  #[test]
+  fn series_fractional_sum() {
+    assert_eq!(
+      interpret("Series[x^(1/2) + x, {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, 1}, 1, 5, 2]"
+    );
+    assert_eq!(
+      interpret("Series[Sqrt[x] + x^2, {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, 0, 1}, 1, 5, 2]"
+    );
+    // Different fractional denominators combine via their lcm (2 and 3 -> 6).
+    assert_eq!(
+      interpret("Series[x^(1/3) + x^(1/2), {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {1, 1}, 2, 8, 6]"
+    );
+    // An integer constant/term mixes with the fractional part.
+    assert_eq!(
+      interpret("Series[1 + Sqrt[x] + x, {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, 1, 1}, 0, 5, 2]"
+    );
+    // A fractional term plus a pole term.
+    assert_eq!(
+      interpret("Series[Sqrt[x] + 1/x, {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, 0, 1}, -2, 5, 2]"
+    );
+  }
+
   // Integrating a fractional-power SeriesData works via the den != 1 path.
   #[test]
   fn integrate_series_fractional() {

@@ -12381,18 +12381,26 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let terms = additive_terms(&args[0]);
     if terms.len() >= 2 {
-      let has_pole = terms.iter().any(|t| {
+      let x0_is_zero = matches!(&x0, Expr::Integer(0));
+      let needs_split = terms.iter().any(|t| {
         let at_x0 = crate::syntax::substitute_variable(t, &var_name, &x0);
-        matches!(
+        // A pole at x0: the direct coefficient sampling chokes on it.
+        let has_pole = matches!(
           crate::evaluator::evaluate_expr_to_expr(&at_x0),
           Ok(Expr::Identifier(ref s))
             if s == "ComplexInfinity" || s == "Indeterminate" || s == "Infinity"
         ) || matches!(
           crate::evaluator::evaluate_expr_to_expr(&at_x0),
           Ok(Expr::FunctionCall { ref name, .. }) if name == "DirectedInfinity"
-        )
+        );
+        // A fractional leading power (about 0) needs the Puiseux path, which
+        // only applies to a single term — so split the sum and expand each.
+        // Mixed-denominator SeriesData add correctly.
+        let is_fractional =
+          x0_is_zero && leading_fractional_power(t, &var_name).is_some();
+        has_pole || is_fractional
       });
-      if has_pole {
+      if needs_split {
         let mut expanded: Vec<Expr> = Vec::with_capacity(terms.len());
         for t in &terms {
           let mut term_args = vec![t.clone(), args[1].clone()];
