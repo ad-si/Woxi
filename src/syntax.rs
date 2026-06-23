@@ -9201,6 +9201,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           ))
         || (matches!(op, BinaryOperator::Power)
           && matches!(left.as_ref(), Expr::Integer(n) if *n < 0))
+        // A Power base that prints with a leading minus (e.g. -I, a Complex
+        // such as Complex[0, -1]) must be parenthesized: `-I^k` reparses as
+        // `-(I^k)` rather than `(-I)^k`.
+        || (matches!(op, BinaryOperator::Power) && left_str.starts_with('-'))
         // Power with a Rational base must wrap the base in parens, since
         // Rational prints as `p/q` and unparenthesized `p/q^e` parses
         // as `p/(q^e)` rather than `(p/q)^e`.

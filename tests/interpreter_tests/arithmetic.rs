@@ -3808,6 +3808,20 @@ mod unary_minus_after_operator {
   }
 
   #[test]
+  fn negative_imaginary_base_power_parens() {
+    // A -I base must be parenthesized: `-I^k` reparses as `-(I^k)`, a
+    // different (wrong) value. wolframscript keeps (-I)^k.
+    assert_eq!(interpret("(-I)^k").unwrap(), "(-I)^k");
+    assert_eq!(interpret("(-I)^I").unwrap(), "(-I)^I");
+    assert_eq!(interpret("(-I)^n").unwrap(), "(-I)^n");
+    // Integer exponents still fold to a concrete value.
+    assert_eq!(interpret("(-I)^2").unwrap(), "-1");
+    assert_eq!(interpret("(-I)^3").unwrap(), "I");
+    // A non-unit imaginary coefficient was already parenthesized.
+    assert_eq!(interpret("(-2 I)^k").unwrap(), "(-2*I)^k");
+  }
+
+  #[test]
   fn rational_exponent_parens() {
     // (-1)^(1/3) should have parens around the Rational exponent
     assert_eq!(interpret("Power[-1, 1/3]").unwrap(), "(-1)^(1/3)");
