@@ -676,6 +676,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LegendreQ" => Some((2, 3)),
     "Length" => Some((1, 1)),
     "LengthWhile" => Some((2, 2)),
+    "HurwitzLerchPhi" => Some((3, 3)),
     "LerchPhi" => Some((3, 3)),
     "Less" => Some((2, usize::MAX)),
     "LessEqual" => Some((2, usize::MAX)),

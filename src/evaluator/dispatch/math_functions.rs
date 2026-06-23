@@ -1307,6 +1307,9 @@ pub fn dispatch_math_functions(
     "LerchPhi" if args.len() == 3 => {
       return Some(crate::functions::math_ast::lerch_phi_ast(args));
     }
+    "HurwitzLerchPhi" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::hurwitz_lerch_phi_ast(args));
+    }
     "ExpIntegralEi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::exp_integral_ei_ast(args));
     }

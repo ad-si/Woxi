@@ -4099,6 +4099,68 @@ mod nproduct {
   }
 }
 
+mod hurwitz_lerch_phi {
+  use super::*;
+
+  // HurwitzLerchPhi coincides with LerchPhi except at non-positive integer a.
+  #[test]
+  fn closed_form_matches_lerch_phi() {
+    assert_eq!(
+      interpret("HurwitzLerchPhi[1/2, 2, 1]").unwrap(),
+      "2*(Pi^2/12 - Log[2]^2/2)"
+    );
+    // z = 0 gives a^(-s).
+    assert_eq!(interpret("HurwitzLerchPhi[0, 2, 3]").unwrap(), "1/9");
+  }
+
+  // At a non-positive integer a the singular k = -a term diverges.
+  #[test]
+  fn non_positive_integer_a_is_complex_infinity() {
+    assert_eq!(
+      interpret("HurwitzLerchPhi[1/2, 2, 0]").unwrap(),
+      "ComplexInfinity"
+    );
+    assert_eq!(
+      interpret("HurwitzLerchPhi[1/2, 2, -1]").unwrap(),
+      "ComplexInfinity"
+    );
+    assert_eq!(
+      interpret("HurwitzLerchPhi[1/2, 2, -2]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
+  fn numeric_values() {
+    let v: f64 = interpret("N[HurwitzLerchPhi[1/2, 2, 1]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 1.1644810529300247).abs() < 1e-9, "got {v}");
+
+    let v: f64 = interpret("N[HurwitzLerchPhi[1/3, 3, 2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 0.13945075039356025).abs() < 1e-9, "got {v}");
+
+    let v: f64 = interpret("N[HurwitzLerchPhi[1/2, 2, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 4.27714550058095).abs() < 1e-9, "got {v}");
+  }
+
+  // Fully symbolic arguments stay unevaluated under the HurwitzLerchPhi head.
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    assert_eq!(
+      interpret("HurwitzLerchPhi[z, s, a]").unwrap(),
+      "HurwitzLerchPhi[z, s, a]"
+    );
+  }
+}
+
 mod lerch_phi {
   use super::*;
 

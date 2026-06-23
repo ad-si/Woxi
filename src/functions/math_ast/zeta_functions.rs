@@ -1355,6 +1355,35 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// HurwitzLerchPhi[z, s, a] - the Hurwitz-Lerch transcendent
+/// Sum_{k=0}^inf z^k / (k + a)^s. It coincides with LerchPhi everywhere except
+/// at a non-positive integer `a`, where the singular k = -a term is included
+/// and the value is ComplexInfinity (LerchPhi instead omits that term).
+pub fn hurwitz_lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let symbolic = || {
+    Ok(Expr::FunctionCall {
+      name: "HurwitzLerchPhi".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 3 {
+    return symbolic();
+  }
+  // A non-positive integer third argument makes the k = -a term diverge.
+  if let Expr::Integer(a) = &args[2]
+    && *a <= 0
+  {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+  // Otherwise delegate to LerchPhi; keep the HurwitzLerchPhi head when LerchPhi
+  // itself stays unevaluated.
+  let result = lerch_phi_ast(args)?;
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "LerchPhi") {
+    return symbolic();
+  }
+  Ok(result)
+}
+
 /// Build a `Plus[Real, Times[Real, I]]` for downstream formatting.
 fn complex_real(re: f64, im: f64) -> Expr {
   if im == 0.0 {
