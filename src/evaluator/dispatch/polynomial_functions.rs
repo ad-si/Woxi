@@ -49,7 +49,7 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
-    "PolynomialExtendedGCD" if args.len() == 3 => {
+    "PolynomialExtendedGCD" if args.len() == 3 || args.len() == 4 => {
       return Some(
         crate::functions::polynomial_ast::polynomial_extended_gcd_ast(args),
       );

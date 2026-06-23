@@ -205,6 +205,74 @@ fn poly_rem_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
   poly_divmod_mod(a, b, p).1
 }
 
+/// Product of two coefficient vectors over GF(p) (polynomial multiplication).
+pub(super) fn poly_mul_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
+  if is_zero_poly(a) || is_zero_poly(b) {
+    return vec![0];
+  }
+  let mut res = vec![0i128; a.len() + b.len() - 1];
+  for (i, &ai) in a.iter().enumerate() {
+    for (j, &bj) in b.iter().enumerate() {
+      res[i + j] = mod_norm(res[i + j] + ai * bj, p);
+    }
+  }
+  trim_high(&mut res);
+  res
+}
+
+/// Difference `a - b` of two coefficient vectors over GF(p).
+pub(super) fn poly_sub_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
+  let n = a.len().max(b.len());
+  let mut res = vec![0i128; n];
+  for (i, ri) in res.iter_mut().enumerate() {
+    let ai = if i < a.len() { a[i] } else { 0 };
+    let bi = if i < b.len() { b[i] } else { 0 };
+    *ri = mod_norm(ai - bi, p);
+  }
+  trim_high(&mut res);
+  res
+}
+
+/// Extended Euclidean algorithm over GF(p): returns `(g, s, t)` (coefficient
+/// vectors) with `s*a + t*b == g` and `g` monic.
+pub(super) fn poly_extended_gcd_mod(
+  a: &[i128],
+  b: &[i128],
+  p: i128,
+) -> (Vec<i128>, Vec<i128>, Vec<i128>) {
+  let mut old_r: Vec<i128> = a.iter().map(|&x| mod_norm(x, p)).collect();
+  let mut r: Vec<i128> = b.iter().map(|&x| mod_norm(x, p)).collect();
+  trim_high(&mut old_r);
+  trim_high(&mut r);
+  let mut old_s = vec![1i128];
+  let mut s = vec![0i128];
+  let mut old_t = vec![0i128];
+  let mut t = vec![1i128];
+  while !is_zero_poly(&r) {
+    let (quot, rem) = poly_divmod_mod(&old_r, &r, p);
+    let new_s = poly_sub_mod(&old_s, &poly_mul_mod(&quot, &s, p), p);
+    let new_t = poly_sub_mod(&old_t, &poly_mul_mod(&quot, &t, p), p);
+    old_r = r;
+    r = rem;
+    old_s = s;
+    s = new_s;
+    old_t = t;
+    t = new_t;
+  }
+  // Normalize so the GCD is monic, scaling s and t by the same inverse.
+  trim_high(&mut old_r);
+  if !is_zero_poly(&old_r) {
+    let inv = mod_inv(*old_r.last().unwrap(), p);
+    let scale = |v: &[i128]| -> Vec<i128> {
+      v.iter().map(|&x| mod_norm(x * inv, p)).collect()
+    };
+    old_r = scale(&old_r);
+    old_s = scale(&old_s);
+    old_t = scale(&old_t);
+  }
+  (old_r, old_s, old_t)
+}
+
 /// GCD of two coefficient vectors over GF(p), returned monic.
 fn poly_gcd_coeffs_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
   let mut a: Vec<i128> = a.iter().map(|&x| mod_norm(x, p)).collect();

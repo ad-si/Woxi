@@ -916,7 +916,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PolarPlot" => Some((2, usize::MAX)),
     "PolyGamma" => Some((1, 2)),
     "PolyLog" => Some((2, 2)),
-    "PolynomialExtendedGCD" => Some((3, 3)),
+    "PolynomialExtendedGCD" => Some((3, 4)),
     "PolynomialGCD" => Some((2, usize::MAX)),
     "PolynomialLCM" => Some((2, usize::MAX)),
     "PolynomialMod" => Some((2, 2)),

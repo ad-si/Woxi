@@ -4491,6 +4491,46 @@ mod polynomial_lcm {
   }
 }
 
+mod polynomial_extended_gcd {
+  use super::*;
+
+  // PolynomialExtendedGCD[p, q, x] returns {g, {s, t}} with s*p + t*q == g.
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("PolynomialExtendedGCD[x^2 - 1, x^3 - 1, x]").unwrap(),
+      "{-1 + x, {-x, 1}}"
+    );
+  }
+
+  // With a Modulus the extended GCD is computed over the field GF(p), with a
+  // monic GCD; s*p + t*q == g (mod p).
+  #[test]
+  fn modulus_option() {
+    assert_eq!(
+      interpret("PolynomialExtendedGCD[x^2 - 1, x - 1, x, Modulus -> 2]")
+        .unwrap(),
+      "{1 + x, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("PolynomialExtendedGCD[x^3 + x, x^2 + 1, x, Modulus -> 2]")
+        .unwrap(),
+      "{1 + x^2, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("PolynomialExtendedGCD[x^2 + 1, x + 2, x, Modulus -> 5]")
+        .unwrap(),
+      "{2 + x, {0, 1}}"
+    );
+    // Nontrivial Bezout coefficients over GF(3).
+    assert_eq!(
+      interpret("PolynomialExtendedGCD[x^4 - 1, x^2 + x, x, Modulus -> 3]")
+        .unwrap(),
+      "{1 + x, {2, 1 + 2*x + x^2}}"
+    );
+  }
+}
+
 mod polynomial_reduce {
   use super::*;
 

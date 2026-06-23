@@ -11,13 +11,23 @@ use crate::syntax::{Expr, expr_to_string};
 pub fn polynomial_extended_gcd_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 3 {
+  // Separate an optional `Modulus -> n` from the positional arguments.
+  let mut pos: Vec<Expr> = Vec::new();
+  let mut modulus: Option<i128> = None;
+  for a in args {
+    if let Some(m) = extract_modulus_option(a) {
+      modulus = Some(m);
+    } else {
+      pos.push(a.clone());
+    }
+  }
+  if pos.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "PolynomialExtendedGCD expects 3 arguments".into(),
     ));
   }
 
-  let var = match &args[2] {
+  let var = match &pos[2] {
     Expr::Identifier(name) => name.clone(),
     _ => {
       return Ok(Expr::FunctionCall {
@@ -27,8 +37,24 @@ pub fn polynomial_extended_gcd_ast(
     }
   };
 
-  let p = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
-  let q = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
+  let p = crate::evaluator::evaluate_expr_to_expr(&pos[0])?;
+  let q = crate::evaluator::evaluate_expr_to_expr(&pos[1])?;
+
+  // Modular extended GCD over GF(m).
+  if let Some(m) = modulus {
+    let pc = poly_to_coeffs_mod(&p, &var, m)?;
+    let qc = poly_to_coeffs_mod(&q, &var, m)?;
+    let (g, s, t) = poly_extended_gcd_mod(&pc, &qc, m);
+    return Ok(Expr::List(
+      vec![
+        coeffs_to_poly(&g, &var, m),
+        Expr::List(
+          vec![coeffs_to_poly(&s, &var, m), coeffs_to_poly(&t, &var, m)].into(),
+        ),
+      ]
+      .into(),
+    ));
+  }
 
   // Both arguments constant in `var`: over a field they are units, so the GCD
   // is 1 with `s = 1/p`, `t = 0` (matching wolframscript's choice).
