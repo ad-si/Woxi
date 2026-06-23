@@ -1550,6 +1550,63 @@ mod f_ratio_pdf_cdf {
   }
 }
 
+mod waring_yule_distribution {
+  use super::*;
+
+  // PDF[WaringYuleDistribution[a, b], k] =
+  //   a Pochhammer[b, k] / Pochhammer[a + b, 1 + k] for k >= 0.
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[a, b], k]").unwrap(),
+      "Piecewise[{{(a*Pochhammer[b, k])/Pochhammer[a + b, 1 + k], k >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[3, 2], k]").unwrap(),
+      "Piecewise[{{(3*Pochhammer[2, k])/Pochhammer[5, 1 + k], k >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[3, 2], 0]").unwrap(),
+      "3/5"
+    );
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[3, 2], 1]").unwrap(),
+      "1/5"
+    );
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[3, 2], 2]").unwrap(),
+      "3/35"
+    );
+    // Different parameters.
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[4, 3], 1]").unwrap(),
+      "3/14"
+    );
+  }
+
+  // CDF[WaringYuleDistribution[a, b], k] =
+  //   1 - Pochhammer[b, 1 + Floor[k]] / Pochhammer[a + b, 1 + Floor[k]] for k >= 0.
+  #[test]
+  fn cdf() {
+    assert_eq!(
+      interpret("CDF[WaringYuleDistribution[3, 2], k]").unwrap(),
+      "Piecewise[{{1 - Pochhammer[2, 1 + Floor[k]]/Pochhammer[5, 1 + Floor[k]], k >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[WaringYuleDistribution[3, 2], 0]").unwrap(),
+      "3/5"
+    );
+    assert_eq!(
+      interpret("CDF[WaringYuleDistribution[3, 2], 2]").unwrap(),
+      "31/35"
+    );
+  }
+}
+
 mod polynomial_expectation {
   use super::*;
 

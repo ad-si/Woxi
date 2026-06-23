@@ -1236,6 +1236,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BenktanderGibratDistribution" => Some((2, 2)),
     "GumbelDistribution" => Some((0, 2)),
     "ZipfDistribution" => Some((1, 2)),
+    "WaringYuleDistribution" => Some((2, 2)),
     "Query" => Some((1, 16)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),

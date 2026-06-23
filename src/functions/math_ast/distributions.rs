@@ -210,6 +210,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "HyperbolicDistribution" => pdf_hyperbolic(dargs, x),
     "NoncentralFRatioDistribution" => pdf_noncentral_f(dargs, x),
     "FRatioDistribution" => pdf_f_ratio(dargs, x),
+    "WaringYuleDistribution" => pdf_waring_yule(dargs, x),
     "JohnsonDistribution" => pdf_johnson(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
@@ -1705,6 +1706,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "StableDistribution" => cdf_stable(dargs, x),
     "StudentTDistribution" => cdf_student_t(dargs, x),
     "FRatioDistribution" => cdf_f_ratio(dargs, x),
+    "WaringYuleDistribution" => cdf_waring_yule(dargs, x),
     "JohnsonDistribution" => cdf_johnson(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
@@ -5163,6 +5165,59 @@ fn cdf_f_ratio(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(reg, cond)], int(0)))
+}
+
+/// PDF[WaringYuleDistribution[a, b], k] =
+///   Piecewise[{{a Pochhammer[b, k] / Pochhammer[a + b, 1 + k], k >= 0}}, 0].
+fn pdf_waring_yule(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "WaringYuleDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  let poch = |first: Expr, second: Expr| Expr::FunctionCall {
+    name: "Pochhammer".to_string(),
+    args: vec![first, second].into(),
+  };
+  // a * Pochhammer[b, k] / Pochhammer[a + b, 1 + k]
+  let numer = times(a.clone(), poch(b.clone(), x.clone()));
+  let denom = poch(plus(a, b), plus(int(1), x.clone()));
+  let pmf = divide(numer, denom);
+
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(pmf, cond)], int(0)))
+}
+
+/// CDF[WaringYuleDistribution[a, b], k] =
+///   Piecewise[{{1 - Pochhammer[b, 1 + Floor[k]] / Pochhammer[a + b, 1 + Floor[k]],
+///               k >= 0}}, 0].
+fn cdf_waring_yule(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "WaringYuleDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  let floor_k = Expr::FunctionCall {
+    name: "Floor".to_string(),
+    args: vec![x.clone()].into(),
+  };
+  let idx = plus(int(1), floor_k);
+  let poch = |first: Expr, second: Expr| Expr::FunctionCall {
+    name: "Pochhammer".to_string(),
+    args: vec![first, second].into(),
+  };
+  // 1 - Pochhammer[b, 1 + Floor[k]] / Pochhammer[a + b, 1 + Floor[k]]
+  let ratio = divide(poch(b.clone(), idx.clone()), poch(plus(a, b), idx));
+  let cdf = minus(int(1), ratio);
+
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(cdf, cond)], int(0)))
 }
 
 /// CDF[ChiSquareDistribution[k], x] = Piecewise[{{GammaRegularized[k/2, 0, x/2], x > 0}}, 0]

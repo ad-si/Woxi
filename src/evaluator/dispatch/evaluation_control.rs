@@ -249,6 +249,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "WaringYuleDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "WaringYuleDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "Query" if !args.is_empty() => {
       return Some(Ok(Expr::FunctionCall {
         name: "Query".to_string(),
