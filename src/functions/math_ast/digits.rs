@@ -2756,6 +2756,23 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // IntegerLength[n, MixedRadix[{...}]] is the number of mixed-radix digits,
+  // i.e. Length[IntegerDigits[n, MixedRadix[{...}]]]. Delegate to IntegerDigits
+  // so the leading-zero stripping and radix handling stay in one place.
+  if args.len() == 2
+    && matches!(&args[1], Expr::FunctionCall { name, .. } if name == "MixedRadix")
+  {
+    let digits = integer_digits_ast(&[args[0].clone(), args[1].clone()])?;
+    if let Expr::List(items) = &digits {
+      return Ok(Expr::Integer(items.len() as i128));
+    }
+    // IntegerDigits left it unevaluated (e.g. bad radix) — mirror that.
+    return Ok(Expr::FunctionCall {
+      name: "IntegerLength".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   let base_i128 = if args.len() == 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,

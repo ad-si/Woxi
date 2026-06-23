@@ -568,6 +568,45 @@ mod integer_length {
     assert_eq!(interpret("IntegerLength[12345, 2]").unwrap(), "14");
   }
 
+  // IntegerLength[n, MixedRadix[{...}]] is the number of mixed-radix digits,
+  // i.e. the length of IntegerDigits with the same base.
+  #[test]
+  fn integer_length_mixed_radix() {
+    assert_eq!(
+      interpret("IntegerLength[3723, MixedRadix[{60, 60, 1}]]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("IntegerLength[65, MixedRadix[{60, 60, 1}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("IntegerLength[3661, MixedRadix[{24, 60, 60}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("IntegerLength[100, MixedRadix[{7, 24, 60, 60}]]").unwrap(),
+      "2"
+    );
+    // Zero is a single digit; a negative subject uses its absolute value.
+    assert_eq!(
+      interpret("IntegerLength[0, MixedRadix[{60, 60, 1}]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("IntegerLength[-65, MixedRadix[{60, 60, 1}]]").unwrap(),
+      "3"
+    );
+    // Equals the length of the corresponding IntegerDigits list.
+    assert_eq!(
+      interpret(
+        "IntegerLength[100000, MixedRadix[{60, 60, 1}]] == Length[IntegerDigits[100000, MixedRadix[{60, 60, 1}]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn integer_length_big_integer() {
     assert_eq!(interpret("IntegerLength[10^10000]").unwrap(), "10001");
