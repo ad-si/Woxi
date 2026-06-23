@@ -8101,6 +8101,77 @@ pub fn longest_common_subsequence_positions_ast(
   Ok(Expr::List(vec![span(start1), span(start2)].into()))
 }
 
+/// LongestCommonSequence[s1, s2] — the longest *noncontiguous* common
+/// subsequence (classic LCS dynamic programming), distinct from Wolfram's
+/// contiguous LongestCommonSubsequence. Strings yield the matching characters
+/// as a string; lists yield the matching sublist of elements. Returns an empty
+/// string/list when there is no common element.
+pub fn longest_common_sequence_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LongestCommonSequence expects exactly 2 arguments".into(),
+    ));
+  }
+
+  // List inputs compare whole elements and return the matching sublist.
+  if let (Expr::List(l1), Expr::List(l2)) = (&args[0], &args[1]) {
+    let t1: Vec<String> =
+      l1.iter().map(crate::syntax::expr_to_output).collect();
+    let t2: Vec<String> =
+      l2.iter().map(crate::syntax::expr_to_output).collect();
+    let sub: Vec<Expr> = lcs_indices(&t1, &t2)
+      .iter()
+      .map(|&i| l1[i].clone())
+      .collect();
+    return Ok(Expr::List(sub.into()));
+  }
+
+  let s1 = expr_to_str(&args[0])?;
+  let s2 = expr_to_str(&args[1])?;
+  let chars1: Vec<char> = s1.chars().collect();
+  let chars2: Vec<char> = s2.chars().collect();
+  let t1: Vec<String> = chars1.iter().map(|c| c.to_string()).collect();
+  let t2: Vec<String> = chars2.iter().map(|c| c.to_string()).collect();
+  let result: String =
+    lcs_indices(&t1, &t2).iter().map(|&i| chars1[i]).collect();
+  Ok(Expr::String(result))
+}
+
+/// Indices into the first sequence forming the longest common subsequence with
+/// the second. Backtracking prefers moving up (decreasing the first index) on
+/// ties, matching Wolfram's choice among equal-length results.
+fn lcs_indices(t1: &[String], t2: &[String]) -> Vec<usize> {
+  let m = t1.len();
+  let n = t2.len();
+  let mut l = vec![vec![0usize; n + 1]; m + 1];
+  for i in 1..=m {
+    for j in 1..=n {
+      l[i][j] = if t1[i - 1] == t2[j - 1] {
+        l[i - 1][j - 1] + 1
+      } else {
+        l[i - 1][j].max(l[i][j - 1])
+      };
+    }
+  }
+  let mut idx = Vec::new();
+  let (mut i, mut j) = (m, n);
+  while i > 0 && j > 0 {
+    if t1[i - 1] == t2[j - 1] {
+      idx.push(i - 1);
+      i -= 1;
+      j -= 1;
+    } else if l[i - 1][j] >= l[i][j - 1] {
+      i -= 1;
+    } else {
+      j -= 1;
+    }
+  }
+  idx.reverse();
+  idx
+}
+
 /// SequenceAlignment[s1, s2] — aligns two strings using Needleman-Wunsch
 /// Returns a list of matching segments and {diff1, diff2} pairs.
 pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

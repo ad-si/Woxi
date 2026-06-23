@@ -3515,7 +3515,7 @@ GaugeFaceStyle,,🚫,,9.0,3612
 HilbertCurve,,,,11.1,3612
 KumaraswamyDistribution,,,,8.0,3612
 LogLogisticDistribution,,,,8.0,3612
-LongestCommonSequence,,,,7.0,3612
+LongestCommonSequence,Returns the longest noncontiguous subsequence common to two strings or lists,✅,pure,7.0,3612
 NevilleThetaD,,,,3.0,3612
 NevilleThetaN,,,,3.0,3612
 SatisfiabilityCount,Number of satisfying assignments of a Boolean expression,✅,pure,7.0,3612

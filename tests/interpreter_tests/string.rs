@@ -5408,6 +5408,76 @@ mod longest_common_subsequence_tests {
   }
 }
 
+mod longest_common_sequence_tests {
+  use woxi::interpret;
+
+  // LongestCommonSequence finds the longest *noncontiguous* common
+  // subsequence (classic LCS), unlike contiguous LongestCommonSubsequence.
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret(r#"LongestCommonSequence["abcde", "ace"]"#).unwrap(),
+      "ace"
+    );
+    assert_eq!(
+      interpret(r#"LongestCommonSequence["banana", "atana"]"#).unwrap(),
+      "aana"
+    );
+  }
+
+  #[test]
+  fn no_common_and_empty() {
+    assert_eq!(
+      interpret(r#"LongestCommonSequence["abc", "xyz"]"#).unwrap(),
+      ""
+    );
+    assert_eq!(
+      interpret(r#"LongestCommonSequence["", "abc"]"#).unwrap(),
+      ""
+    );
+  }
+
+  // Tie-breaking matches Wolfram: on a mismatch the backtrack prefers moving
+  // up (decreasing the first-argument index). The swapped arguments below
+  // therefore yield different equal-length results.
+  #[test]
+  fn tie_breaking_matches_wolfram() {
+    assert_eq!(
+      interpret(r#"LongestCommonSequence["GAC", "AGCAT"]"#).unwrap(),
+      "GA"
+    );
+    assert_eq!(
+      interpret(r#"LongestCommonSequence["AGCAT", "GAC"]"#).unwrap(),
+      "AC"
+    );
+    assert_eq!(
+      interpret(r#"LongestCommonSequence["abcbdab", "bdcaba"]"#).unwrap(),
+      "bcba"
+    );
+    assert_eq!(
+      interpret(r#"LongestCommonSequence["XMJYAUZ", "MZJAWXU"]"#).unwrap(),
+      "MJAU"
+    );
+  }
+
+  // List inputs compare whole elements and return the matching sublist.
+  #[test]
+  fn lists_return_sublist() {
+    assert_eq!(
+      interpret("LongestCommonSequence[{1, 2, 3, 4, 5}, {2, 4, 6}]").unwrap(),
+      "{2, 4}"
+    );
+    assert_eq!(
+      interpret("LongestCommonSequence[{1, 2, 1, 2}, {2, 1, 2}]").unwrap(),
+      "{2, 1, 2}"
+    );
+    assert_eq!(
+      interpret("LongestCommonSequence[{1, 2, 3, 1}, {3, 1, 2, 1}]").unwrap(),
+      "{1, 2, 1}"
+    );
+  }
+}
+
 mod longest_ordered_sequence_tests {
   use woxi::interpret;
 
