@@ -2330,7 +2330,7 @@ ToPolarCoordinates,Converts Cartesian coordinates to polar,✅,None,10.1,2374
 BubbleSizes,chart option,🚫,None,7.0,2380
 CountRoots,Count the real roots of a univariate polynomial with multiplicity over the reals or a closed interval,✅,pure,6.0,2380
 DoubleLongLeftRightArrow,symbol notation,🚫,None,3.0,2380
-InverseGammaRegularized,special function,🚫,None,3.0,2380
+InverseGammaRegularized,Inverse of the regularized upper incomplete gamma function Q(a z),✅,pure,3.0,2380
 MultivariateTDistribution,probability distribution,🚫,None,8.0,2380
 PartitionsQ,Number of partitions of n into distinct parts,✅,pure,1.0,2380
 BatesDistribution,probability distribution,🚫,None,8.0,2383

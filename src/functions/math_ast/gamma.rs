@@ -1789,6 +1789,115 @@ pub(crate) fn gamma_regularized_numeric(a: f64, z: f64) -> f64 {
   }
 }
 
+/// Numeric inverse of the upper regularized incomplete gamma function:
+/// returns z such that `gamma_regularized_numeric(a, z) == q`. Because Q(a, z)
+/// decreases monotonically from 1 (at z = 0) to 0 (as z -> Infinity), the root
+/// is found by bracketing then bisection.
+pub(crate) fn inverse_gamma_regularized_numeric(a: f64, q: f64) -> f64 {
+  if q <= 0.0 {
+    return f64::INFINITY;
+  }
+  if q >= 1.0 {
+    return 0.0;
+  }
+  let mut lo = 0.0_f64;
+  let mut hi = (a + 1.0).max(1.0);
+  let mut guard = 0;
+  while gamma_regularized_numeric(a, hi) > q && guard < 100 {
+    hi *= 2.0;
+    guard += 1;
+  }
+  for _ in 0..200 {
+    let mid = 0.5 * (lo + hi);
+    if gamma_regularized_numeric(a, mid) > q {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  0.5 * (lo + hi)
+}
+
+/// InverseGammaRegularized[a, q] - inverse of the upper regularized incomplete
+/// gamma function: returns z with GammaRegularized[a, z] == q. The 3-arg form
+/// InverseGammaRegularized[a, z0, q] inverts GammaRegularized[a, z0, z]; for
+/// z0 == 0 this reduces to InverseGammaRegularized[a, 1 - q]. Exact inputs stay
+/// symbolic (matching wolframscript); inexact (machine-real) inputs evaluate
+/// numerically by bisection.
+pub fn inverse_gamma_regularized_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let symbolic = || {
+    Ok(Expr::FunctionCall {
+      name: "InverseGammaRegularized".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // 3-arg form InverseGammaRegularized[a, z0, q] solves
+  // GammaRegularized[a, z0, z] = Q(a, z0) - Q(a, z) == q for z, i.e.
+  // Q(a, z) = Q(a, z0) - q. Exact arguments stay symbolic (matching
+  // wolframscript, which keeps even InverseGammaRegularized[2, 0, 1/2] in the
+  // 3-arg form); inexact arguments evaluate numerically.
+  if args.len() == 3 {
+    let inexact = args.iter().any(|a| matches!(a, Expr::Real(_)));
+    if let (true, Some(av), Some(z0v), Some(qv)) = (
+      inexact,
+      expr_to_f64(&args[0]),
+      expr_to_f64(&args[1]),
+      expr_to_f64(&args[2]),
+    ) && av > 0.0
+    {
+      let target = gamma_regularized_numeric(av, z0v) - qv;
+      return Ok(Expr::Real(inverse_gamma_regularized_numeric(av, target)));
+    }
+    return symbolic();
+  }
+  if args.len() != 2 {
+    return symbolic();
+  }
+
+  let a = &args[0];
+  let q = &args[1];
+  let a_num = expr_to_f64(a);
+  let q_num = expr_to_f64(q);
+
+  // Boundary values for positive numeric a: q == 0 -> Infinity, q == 1 -> 0.
+  if let (Some(av), Some(qv)) = (a_num, q_num)
+    && av > 0.0
+  {
+    if qv == 0.0 {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    if qv == 1.0 {
+      return Ok(Expr::Integer(0));
+    }
+  }
+
+  // Elementary closed form for a == 1: z = -Log[q].
+  if matches!(a, Expr::Integer(1)) {
+    let neg_log = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![q.clone()].into(),
+      }),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&neg_log);
+  }
+
+  // Inexact (machine-real) input -> numeric bisection.
+  let inexact = matches!(a, Expr::Real(_)) || matches!(q, Expr::Real(_));
+  if let (true, Some(av), Some(qv)) = (inexact, a_num, q_num)
+    && av > 0.0
+  {
+    return Ok(Expr::Real(inverse_gamma_regularized_numeric(av, qv)));
+  }
+
+  symbolic()
+}
+
 /// BarnesG[z] - Barnes G-function.
 /// For positive integers n: G(n) = product of factorials = prod_{k=0}^{n-2} k!
 /// G(1) = 1, G(n+1) = Gamma(n) * G(n)

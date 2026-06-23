@@ -357,6 +357,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Erfc" => Some((1, 1)),
     "Erfi" => Some((1, 1)),
     "InverseErf" => Some((1, 1)),
+    "InverseGammaRegularized" => Some((2, 3)),
     "InverseErfc" => Some((1, 1)),
     "EuclideanDistance" => Some((2, 2)),
     "DistanceMatrix" => Some((1, 2)),

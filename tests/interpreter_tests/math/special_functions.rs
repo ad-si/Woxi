@@ -7788,6 +7788,110 @@ mod gamma_regularized {
   }
 }
 
+mod inverse_gamma_regularized {
+  use super::*;
+
+  // Exact (non-machine) arguments stay symbolic, matching wolframscript.
+  #[test]
+  fn exact_stays_symbolic() {
+    assert_eq!(
+      interpret("InverseGammaRegularized[2, 1/2]").unwrap(),
+      "InverseGammaRegularized[2, 1/2]"
+    );
+    assert_eq!(
+      interpret("InverseGammaRegularized[a, q]").unwrap(),
+      "InverseGammaRegularized[a, q]"
+    );
+  }
+
+  // Boundary q values: GammaRegularized[a, z] == q with q = 0 -> Infinity (the
+  // upper tail only vanishes as z -> Infinity), q = 1 -> 0.
+  #[test]
+  fn boundary_values() {
+    assert_eq!(
+      interpret("InverseGammaRegularized[2, 0]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(interpret("InverseGammaRegularized[2, 1]").unwrap(), "0");
+    // A symbolic first argument keeps the boundary form unevaluated.
+    assert_eq!(
+      interpret("InverseGammaRegularized[a, 0]").unwrap(),
+      "InverseGammaRegularized[a, 0]"
+    );
+  }
+
+  // For a == 1, GammaRegularized[1, z] = E^-z, so the inverse is -Log[q].
+  #[test]
+  fn a_one_closed_form() {
+    assert_eq!(
+      interpret("InverseGammaRegularized[1, 1/2]").unwrap(),
+      "Log[2]"
+    );
+  }
+
+  #[test]
+  fn numeric_two_arg() {
+    let result: f64 = interpret("N[InverseGammaRegularized[2, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.6783469900166612).abs() < 1e-9, "got {result}");
+
+    let result: f64 = interpret("N[InverseGammaRegularized[3, 1/4]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 3.9204020602925636).abs() < 1e-9, "got {result}");
+
+    let result: f64 = interpret("N[InverseGammaRegularized[1/2, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.22746821155978642).abs() < 1e-9, "got {result}");
+  }
+
+  // GammaRegularized[1, z] = E^-z, so the a == 1 inverse numericizes to -Log[q].
+  #[test]
+  fn numeric_a_one() {
+    let result: f64 = interpret("N[InverseGammaRegularized[1, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.6931471805599453).abs() < 1e-9, "got {result}");
+  }
+
+  // The 3-arg form with z0 == 0 inverts the lower regularized gamma and equals
+  // InverseGammaRegularized[a, 1 - q].
+  #[test]
+  fn three_arg_lower_inverse() {
+    let result: f64 = interpret("N[InverseGammaRegularized[2, 0, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.6783469900166612).abs() < 1e-9, "got {result}");
+
+    let result: f64 = interpret("N[InverseGammaRegularized[3/2, 0, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.1829869421876693).abs() < 1e-9, "got {result}");
+  }
+
+  // Round-trip: InverseGammaRegularized inverts GammaRegularized.
+  #[test]
+  fn round_trip() {
+    let z: f64 = interpret("N[InverseGammaRegularized[3, 1/4]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    let q: f64 = interpret(&format!("N[GammaRegularized[3, {z}]]"))
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((q - 0.25).abs() < 1e-9, "got {q}");
+  }
+}
+
 mod beta_regularized {
   use super::*;
 

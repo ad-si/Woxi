@@ -1357,6 +1357,11 @@ pub fn dispatch_math_functions(
     "GammaRegularized" if args.len() == 2 => {
       return Some(crate::functions::math_ast::gamma_regularized_ast(args));
     }
+    "InverseGammaRegularized" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::math_ast::inverse_gamma_regularized_ast(
+        args,
+      ));
+    }
     // Generalized form GammaRegularized[a, z0, z1] = GammaRegularized[a, z0] -
     // GammaRegularized[a, z1]. wolframscript keeps this symbolic except for the
     // elementary a == 1 case (GammaRegularized[1, z] = E^-z). Match that and
