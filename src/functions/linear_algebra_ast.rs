@@ -963,6 +963,43 @@ pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(matrix.into()))
 }
 
+/// VandermondeMatrix[{x1, ..., xn}] - the n x n Vandermonde matrix with entry
+/// (i, j) equal to xi^(j-1). (wolframscript returns a sparse StructuredArray;
+/// Woxi returns the dense matrix, so Normal[...] agrees with wolframscript.)
+pub fn vandermonde_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "VandermondeMatrix".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let points: Vec<Expr> = match &args[0] {
+    Expr::List(p) if !p.is_empty() => p.iter().cloned().collect(),
+    _ => return unevaluated(),
+  };
+  let n = points.len();
+  let mut matrix = Vec::with_capacity(n);
+  for x in &points {
+    let mut row = Vec::with_capacity(n);
+    for j in 0..n {
+      let entry = match j {
+        0 => Expr::Integer(1),
+        1 => x.clone(),
+        _ => crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![x.clone(), Expr::Integer(j as i128)].into(),
+        })?,
+      };
+      row.push(entry);
+    }
+    matrix.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(matrix.into()))
+}
+
 /// DiagonalMatrix[list] - diagonal matrix from a list
 pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {

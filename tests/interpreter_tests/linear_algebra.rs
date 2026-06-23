@@ -5212,3 +5212,53 @@ mod permutation_matrix {
     );
   }
 }
+
+mod vandermonde_matrix {
+  use super::*;
+
+  // VandermondeMatrix[{x1,...,xn}] has entry (i, j) equal to xi^(j-1). Woxi
+  // returns the dense matrix (wolframscript returns a StructuredArray whose
+  // Normal agrees).
+  #[test]
+  fn symbolic_points() {
+    assert_eq!(
+      interpret("Normal[VandermondeMatrix[{a, b, c}]]").unwrap(),
+      "{{1, a, a^2}, {1, b, b^2}, {1, c, c^2}}"
+    );
+    assert_eq!(
+      interpret("Normal[VandermondeMatrix[{x, y}]]").unwrap(),
+      "{{1, x}, {1, y}}"
+    );
+  }
+
+  #[test]
+  fn numeric_points() {
+    assert_eq!(
+      interpret("Normal[VandermondeMatrix[{2, 3, 5}]]").unwrap(),
+      "{{1, 2, 4}, {1, 3, 9}, {1, 5, 25}}"
+    );
+    assert_eq!(
+      interpret("Normal[VandermondeMatrix[{1, 2, 3, 4}]]").unwrap(),
+      "{{1, 1, 1, 1}, {1, 2, 4, 8}, {1, 3, 9, 27}, {1, 4, 16, 64}}"
+    );
+  }
+
+  #[test]
+  fn single_point() {
+    assert_eq!(
+      interpret("Normal[VandermondeMatrix[{7}]]").unwrap(),
+      "{{1}}"
+    );
+  }
+
+  // The determinant follows the Vandermonde product formula
+  // Prod_{i<j} (xj - xi); here (3-2)(5-2)(5-3) = 6.
+  #[test]
+  fn determinant() {
+    assert_eq!(interpret("Det[VandermondeMatrix[{2, 3, 5}]]").unwrap(), "6");
+    assert_eq!(
+      interpret("Det[VandermondeMatrix[{1, 2, 4, 8}]]").unwrap(),
+      "1008"
+    );
+  }
+}
