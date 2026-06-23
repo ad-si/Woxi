@@ -875,8 +875,8 @@ mod xor_logical {
     clear_state();
     assert_eq!(interpret("Xor[a, True]").unwrap(), " !a");
     assert_eq!(interpret("Xor[a, False]").unwrap(), "a");
-    assert_eq!(interpret("Xor[a, b, True]").unwrap(), " !Xor[a, b]");
-    assert_eq!(interpret("Xor[a, b, c, True]").unwrap(), " !Xor[a, b, c]");
+    assert_eq!(interpret("Xor[a, b, True]").unwrap(), " !(Xor[a, b])");
+    assert_eq!(interpret("Xor[a, b, c, True]").unwrap(), " !(Xor[a, b, c])");
   }
 
   // Xnor is the negation of Xor and keeps the Xnor head for multi-operand
@@ -890,8 +890,11 @@ mod xor_logical {
     assert_eq!(interpret("Xnor[a, True]").unwrap(), "a");
     assert_eq!(interpret("Xnor[a, False]").unwrap(), " !a");
     assert_eq!(interpret("Xnor[b, a]").unwrap(), "Xnor[a, b]");
-    assert_eq!(interpret("Xnor[a, b, True]").unwrap(), " !Xnor[a, b]");
-    assert_eq!(interpret("Xnor[a, b, c, True]").unwrap(), " !Xnor[a, b, c]");
+    assert_eq!(interpret("Xnor[a, b, True]").unwrap(), " !(Xnor[a, b])");
+    assert_eq!(
+      interpret("Xnor[a, b, c, True]").unwrap(),
+      " !(Xnor[a, b, c])"
+    );
   }
 }
 

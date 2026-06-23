@@ -9355,7 +9355,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     Expr::UnaryOp { op, operand } => {
       let inner = format_expr(operand, ExprForm::Input);
       if matches!(op, UnaryOperator::Not) {
-        // Not: Wolfram formats as " !expr" (leading space) or " !(expr)"
+        // Not: Wolfram formats as " !expr" (leading space) or " !(expr)".
+        // The logical operators And/Or/Xor/Xnor/Nand/Nor have an operator
+        // form whose precedence is below Not, so wolframscript parenthesises
+        // them: `!(Xor[a, b])`, `!(a && b)`, etc.
         let needs_parens = matches!(
           operand.as_ref(),
           Expr::BinaryOp {
@@ -9364,7 +9367,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           }
         ) || matches!(
           operand.as_ref(),
-          Expr::FunctionCall { name, .. } if name == "And" || name == "Or"
+          Expr::FunctionCall { name, .. }
+            if matches!(name.as_str(),
+              "And" | "Or" | "Xor" | "Xnor" | "Nand" | "Nor")
         );
         if needs_parens {
           format!(" !({})", inner)
