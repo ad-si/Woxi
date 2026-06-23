@@ -713,6 +713,70 @@ mod hypergeometric_u {
   }
 }
 
+mod carlson_integrals {
+  use super::*;
+
+  fn num(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  // Exact (integer/rational) arguments stay symbolic, matching wolframscript.
+  #[test]
+  fn exact_stays_symbolic() {
+    assert_eq!(interpret("CarlsonRC[1, 2]").unwrap(), "CarlsonRC[1, 2]");
+    assert_eq!(
+      interpret("CarlsonRF[1, 2, 3]").unwrap(),
+      "CarlsonRF[1, 2, 3]"
+    );
+    assert_eq!(
+      interpret("CarlsonRJ[1, 2, 3, 4]").unwrap(),
+      "CarlsonRJ[1, 2, 3, 4]"
+    );
+  }
+
+  // R_C(x, y) — degenerate integral. R_C(1, 2) = Pi/4, R_C(2, 2) = 1/Sqrt[2].
+  #[test]
+  fn rc_values() {
+    assert!((num("N[CarlsonRC[1, 2]]") - 0.7853981633974483).abs() < 1e-9);
+    assert!((num("N[CarlsonRC[1, 4]]") - 0.6045997880780727).abs() < 1e-9);
+    assert!((num("N[CarlsonRC[2, 2]]") - 0.7071067811865475).abs() < 1e-9);
+  }
+
+  // R_F(x, y, z) — first kind. R_F(1, 1, 1) = 1.
+  #[test]
+  fn rf_values() {
+    assert!((num("N[CarlsonRF[1, 2, 3]]") - 0.7269459354689082).abs() < 1e-9);
+    assert!((num("N[CarlsonRF[1, 1, 1]]") - 1.0).abs() < 1e-9);
+    // A direct machine-real argument numericizes without an explicit N.
+    assert!((num("CarlsonRF[1.0, 2, 3]") - 0.7269459354689082).abs() < 1e-9);
+  }
+
+  #[test]
+  fn rd_value() {
+    assert!((num("N[CarlsonRD[1, 2, 3]]") - 0.29046028102899024).abs() < 1e-9);
+  }
+
+  #[test]
+  fn rj_value() {
+    assert!(
+      (num("N[CarlsonRJ[1, 2, 3, 4]]") - 0.23984809974956603).abs() < 1e-9
+    );
+  }
+
+  #[test]
+  fn rg_value() {
+    assert!((num("N[CarlsonRG[1, 2, 3]]") - 1.4018470999908947).abs() < 1e-9);
+  }
+
+  // R_D(x, y, z) = R_J(x, y, z, z): consistency between the two kernels.
+  #[test]
+  fn rd_rj_consistency() {
+    let rd = num("N[CarlsonRD[1, 2, 3]]");
+    let rj = num("N[CarlsonRJ[1, 2, 3, 3]]");
+    assert!((rd - rj).abs() < 1e-9, "RD {rd} vs RJ {rj}");
+  }
+}
+
 mod elliptic_k {
   use super::*;
 

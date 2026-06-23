@@ -5,6 +5,7 @@
 mod airy;
 mod arithmetic;
 mod bessel;
+mod carlson;
 pub mod complex;
 mod digits;
 mod distributions;
@@ -30,6 +31,7 @@ mod zeta_functions;
 pub use airy::*;
 pub use arithmetic::*;
 pub use bessel::*;
+pub use carlson::*;
 pub use complex::*;
 pub use digits::*;
 pub use distributions::*;

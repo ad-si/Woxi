@@ -1228,6 +1228,21 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    "CarlsonRC" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::carlson_rc_ast(args));
+    }
+    "CarlsonRF" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::carlson_rf_ast(args));
+    }
+    "CarlsonRD" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::carlson_rd_ast(args));
+    }
+    "CarlsonRJ" if args.len() == 4 => {
+      return Some(crate::functions::math_ast::carlson_rj_ast(args));
+    }
+    "CarlsonRG" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::carlson_rg_ast(args));
+    }
     "DedekindEta" if args.len() == 1 => {
       return Some(crate::functions::math_ast::dedekind_eta_ast(args));
     }
