@@ -911,6 +911,58 @@ pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(matrix.into()))
 }
 
+/// PermutationMatrix[perm] - the permutation matrix of a permutation, given as
+/// a permutation list (perm[i] = image of i) or a Cycles object. The result is
+/// the n x n matrix with a 1 at (i, perm[i]) and 0 elsewhere. (wolframscript
+/// returns a sparse StructuredArray here; Woxi returns the dense matrix, like
+/// AdjacencyMatrix, so Normal[...] agrees with wolframscript.)
+pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "PermutationMatrix".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  // Accept a permutation list directly, or convert a Cycles object via
+  // PermutationList.
+  let perm_list = match &args[0] {
+    Expr::List(items) => items.iter().cloned().collect::<Vec<_>>(),
+    cycles @ Expr::FunctionCall { name, .. } if name == "Cycles" => {
+      let converted =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "PermutationList".to_string(),
+          args: vec![cycles.clone()].into(),
+        })?;
+      match &converted {
+        Expr::List(items) => items.iter().cloned().collect(),
+        _ => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  // Every entry must be an integer in 1..=n forming a permutation.
+  let n = perm_list.len();
+  let mut perm = Vec::with_capacity(n);
+  for e in &perm_list {
+    match e {
+      Expr::Integer(k) if *k >= 1 && (*k as usize) <= n => {
+        perm.push(*k as usize)
+      }
+      _ => return unevaluated(),
+    }
+  }
+  let mut matrix = Vec::with_capacity(n);
+  for &p in &perm {
+    let mut row = vec![Expr::Integer(0); n];
+    row[p - 1] = Expr::Integer(1);
+    matrix.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(matrix.into()))
+}
+
 /// DiagonalMatrix[list] - diagonal matrix from a list
 pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {

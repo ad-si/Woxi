@@ -5159,3 +5159,56 @@ mod matrix_minimal_polynomial {
     }
   }
 }
+
+mod permutation_matrix {
+  use super::*;
+
+  // PermutationMatrix[perm] has a 1 at (i, perm[i]). Woxi returns the dense
+  // matrix (wolframscript returns a sparse StructuredArray whose Normal agrees).
+  #[test]
+  fn permutation_list() {
+    assert_eq!(
+      interpret("Normal[PermutationMatrix[{2, 3, 1}]]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[PermutationMatrix[{3, 1, 2}]]").unwrap(),
+      "{{0, 0, 1}, {1, 0, 0}, {0, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[PermutationMatrix[{2, 1}]]").unwrap(),
+      "{{0, 1}, {1, 0}}"
+    );
+  }
+
+  // The identity permutation gives the identity matrix.
+  #[test]
+  fn identity_permutation() {
+    assert_eq!(
+      interpret("Normal[PermutationMatrix[{1, 2, 3}]]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
+
+  // A Cycles object is accepted and converted via PermutationList.
+  #[test]
+  fn cycles_input() {
+    assert_eq!(
+      interpret("Normal[PermutationMatrix[Cycles[{{1, 2, 3}}]]]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[PermutationMatrix[Cycles[{{1, 2}}]]]").unwrap(),
+      "{{0, 1}, {1, 0}}"
+    );
+  }
+
+  // Multiplying by the matrix permutes coordinates: P . {a,b,c} reorders.
+  #[test]
+  fn permutes_vector() {
+    assert_eq!(
+      interpret("PermutationMatrix[{2, 3, 1}] . {a, b, c}").unwrap(),
+      "{b, c, a}"
+    );
+  }
+}

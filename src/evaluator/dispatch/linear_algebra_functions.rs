@@ -152,6 +152,11 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "PermutationMatrix" if args.len() == 1 => {
+      return Some(
+        crate::functions::linear_algebra_ast::permutation_matrix_ast(args),
+      );
+    }
     // A list of radii gives the rectangular / n-D diamond; a scalar keeps the
     // existing square-diamond implementation.
     "DiamondMatrix" if args.len() == 1 && matches!(&args[0], Expr::List(_)) => {
