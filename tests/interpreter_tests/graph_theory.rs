@@ -4493,3 +4493,54 @@ mod graph_reciprocity {
     );
   }
 }
+
+mod eigenvector_centrality {
+  use super::*;
+
+  // EigenvectorCentrality is the principal eigenvector of the adjacency matrix,
+  // normalized so the entries sum to 1.
+  #[test]
+  fn regular_graphs_uniform() {
+    // A regular graph has a uniform principal eigenvector.
+    assert_eq!(
+      interpret("Round[EigenvectorCentrality[CycleGraph[4]], 10^-6]").unwrap(),
+      "{1/4, 1/4, 1/4, 1/4}"
+    );
+    assert_eq!(
+      interpret("Round[EigenvectorCentrality[CompleteGraph[4]], 10^-6]")
+        .unwrap(),
+      "{1/4, 1/4, 1/4, 1/4}"
+    );
+  }
+
+  // Path: eigenvector proportional to {1, Sqrt[2], 1}, normalized to sum 1.
+  #[test]
+  fn path_graph() {
+    assert_eq!(
+      interpret("Round[EigenvectorCentrality[PathGraph[{1, 2, 3}]], 10^-6]")
+        .unwrap(),
+      "{292893/1000000, 207107/500000, 292893/1000000}"
+    );
+  }
+
+  // Star: the center is the most central vertex.
+  #[test]
+  fn star_graph() {
+    assert_eq!(
+      interpret("Round[EigenvectorCentrality[StarGraph[4]], 10^-6]").unwrap(),
+      "{14641/40000, 8453/40000, 8453/40000, 8453/40000}"
+    );
+  }
+
+  // The centralities always sum to 1.
+  #[test]
+  fn sums_to_one() {
+    assert_eq!(
+      interpret(
+        "Round[Total[EigenvectorCentrality[PathGraph[{1, 2, 3, 4, 5}]]], 10^-6]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+}

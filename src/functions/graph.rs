@@ -1113,6 +1113,63 @@ pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
   }
 }
 
+/// EigenvectorCentrality: the principal (Perron) eigenvector of the adjacency
+/// matrix, made non-negative and normalized so the entries sum to 1. The power
+/// iteration uses a spectral shift `A + c I` (c > max degree) so that the
+/// dominant eigenvalue is unique even for bipartite graphs (whose adjacency
+/// spectrum is symmetric about 0 and would otherwise make plain power iteration
+/// oscillate).
+pub fn eigenvector_centrality(adj: &[Vec<f64>]) -> Vec<f64> {
+  let n = adj.len();
+  if n == 0 {
+    return vec![];
+  }
+  if n == 1 {
+    return vec![1.0];
+  }
+  let maxdeg = adj
+    .iter()
+    .map(|row| row.iter().sum::<f64>())
+    .fold(0.0_f64, f64::max);
+  let c = maxdeg + 1.0;
+  let mut v = vec![1.0 / n as f64; n];
+  for _ in 0..100_000 {
+    let mut w = vec![0.0_f64; n];
+    for (i, wi) in w.iter_mut().enumerate() {
+      let mut s = c * v[i];
+      for (j, vj) in v.iter().enumerate() {
+        s += adj[i][j] * vj;
+      }
+      *wi = s;
+    }
+    let norm = w.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if norm == 0.0 {
+      break;
+    }
+    for x in w.iter_mut() {
+      *x /= norm;
+    }
+    let diff: f64 = v.iter().zip(&w).map(|(a, b)| (a - b).abs()).sum();
+    v = w;
+    if diff < 1e-14 {
+      break;
+    }
+  }
+  // Perron eigenvector is single-signed; orient it non-negative.
+  if v.iter().sum::<f64>() < 0.0 {
+    for x in v.iter_mut() {
+      *x = -*x;
+    }
+  }
+  let sum: f64 = v.iter().sum();
+  if sum != 0.0 {
+    for x in v.iter_mut() {
+      *x /= sum;
+    }
+  }
+  v
+}
+
 /// GraphReciprocity: the fraction of directed edges that are reciprocated (have
 /// a reverse edge); self-loops count as reciprocated. An undirected graph with
 /// at least one edge has reciprocity 1. Returns `None` (leave unevaluated) for

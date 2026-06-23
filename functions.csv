@@ -3131,7 +3131,7 @@ StringPadRight,Pads a string on the right to a specified length; a bare list of 
 CellLabelAutoDelete,,🚫,,3.0,3215
 CloudDirectory,,🚫,,10.0,3215
 ConnectedMeshComponents,,🚫,,10.0,3215
-EigenvectorCentrality,,,,8.0,3215
+EigenvectorCentrality,Eigenvector centrality of graph vertices from the principal adjacency eigenvector,✅,pure,8.0,3215
 GreaterEqualThan,Operator form of GreaterEqual,✅,none,10.3,3215
 HalfSpace,,,,10.2,3215
 NegativeMultinomialDistribution,,,,8.0,3215

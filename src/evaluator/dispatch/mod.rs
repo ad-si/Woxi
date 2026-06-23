@@ -5808,6 +5808,50 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(centralities.into()));
   }
 
+  // EigenvectorCentrality[graph] — principal eigenvector of the (undirected)
+  // adjacency matrix, normalized so the entries sum to 1.
+  if name == "EigenvectorCentrality"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    if n == 0 {
+      return Ok(Expr::List(vec![].into()));
+    }
+    let mut idx: std::collections::HashMap<String, usize> =
+      std::collections::HashMap::new();
+    for (i, v) in vertices.iter().enumerate() {
+      idx.insert(expr_to_string(v), i);
+    }
+    let mut adj = vec![vec![0.0_f64; n]; n];
+    for e in edges.iter() {
+      if let Some((u, v, _directed)) =
+        crate::functions::graph::edge_endpoints(e)
+        && let (Some(&i), Some(&j)) =
+          (idx.get(&expr_to_string(&u)), idx.get(&expr_to_string(&v)))
+      {
+        adj[i][j] += 1.0;
+        if i != j {
+          adj[j][i] += 1.0;
+        }
+      }
+    }
+    let centrality = crate::functions::graph::eigenvector_centrality(&adj);
+    return Ok(Expr::List(
+      centrality
+        .into_iter()
+        .map(Expr::Real)
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
+
   // BetweennessCentrality[graph] — betweenness centrality for each vertex
   if name == "BetweennessCentrality"
     && args.len() == 1
