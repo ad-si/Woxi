@@ -4340,3 +4340,93 @@ mod isomorphic_graph_q {
     assert_eq!(interpret("IsomorphicGraphQ[x, y]").unwrap(), "False");
   }
 }
+
+mod graph_disjoint_union {
+  use super::*;
+
+  // GraphDisjointUnion relabels all vertices to consecutive integers 1..N, the
+  // second graph shifted past the first, with edges relabeled to match.
+  #[test]
+  fn two_graphs() {
+    assert_eq!(
+      interpret(
+        "VertexList[GraphDisjointUnion[CycleGraph[3], PathGraph[{1, 2}]]]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[GraphDisjointUnion[CycleGraph[3], PathGraph[{1, 2}]]] === \
+         {UndirectedEdge[1, 2], UndirectedEdge[1, 3], \
+          UndirectedEdge[2, 3], UndirectedEdge[4, 5]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Relabeling is positional, independent of the original vertex names.
+  #[test]
+  fn relabels_positionally() {
+    assert_eq!(
+      interpret(
+        "EdgeList[GraphDisjointUnion[PathGraph[{5, 6, 7}], PathGraph[{8, 9}]]] \
+         === {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[4, 5]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // More than two graphs accumulate offsets.
+  #[test]
+  fn three_graphs() {
+    assert_eq!(
+      interpret(
+        "VertexList[GraphDisjointUnion[CycleGraph[3], CycleGraph[3], \
+          PathGraph[{1, 2}]]]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7, 8}"
+    );
+    assert_eq!(
+      interpret("EdgeCount[GraphDisjointUnion[CycleGraph[3], CycleGraph[3]]]")
+        .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(
+        "VertexCount[GraphDisjointUnion[CycleGraph[3], CycleGraph[3]]]"
+      )
+      .unwrap(),
+      "6"
+    );
+  }
+
+  // Directed edges keep their direction after relabeling.
+  #[test]
+  fn directed_graphs() {
+    assert_eq!(
+      interpret(
+        "EdgeList[GraphDisjointUnion[Graph[{1 -> 2, 2 -> 3}], Graph[{1 -> 2}]]] \
+         === {DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[4, 5]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A single graph is relabeled to 1..n; a non-graph argument stays symbolic.
+  #[test]
+  fn single_and_non_graph() {
+    assert_eq!(
+      interpret("VertexCount[GraphDisjointUnion[CycleGraph[3]]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("GraphDisjointUnion[x, CycleGraph[3]] // Head").unwrap(),
+      "GraphDisjointUnion"
+    );
+  }
+}

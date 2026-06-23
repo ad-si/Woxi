@@ -4410,6 +4410,35 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // GraphDisjointUnion[g1, g2, ...] → disjoint union with vertices relabeled to
+  // consecutive integers 1..N (each graph shifted by the running vertex count).
+  if name == "GraphDisjointUnion" && !args.is_empty() {
+    let mut parsed: Vec<(&[Expr], &[Expr])> = Vec::new();
+    let mut ok = true;
+    for a in args {
+      if let Expr::FunctionCall {
+        name: gname,
+        args: gargs,
+      } = a
+        && gname == "Graph"
+        && gargs.len() >= 2
+        && let (Expr::List(v), Expr::List(e)) = (&gargs[0], &gargs[1])
+      {
+        parsed.push((&v[..], &e[..]));
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if ok && !parsed.is_empty() {
+      return Ok(crate::functions::graph::graph_disjoint_union(&parsed));
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // EdgeAdd[Graph[vertices, edges], e | {e1, e2, ...}] →
   //   append the given edge(s) to the graph and add any new endpoint
   //   vertices (in order of first appearance). A directed edge a -> b

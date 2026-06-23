@@ -3398,7 +3398,7 @@ BipartiteGraphQ,Tests whether a graph is bipartite (2-colorable),✅,pure,8.0,34
 CreateArchive,,,,8.0,3491
 DifferentialRoot,,,,7.0,3491
 FailureAction,,,,10.0,3491
-GraphDisjointUnion,,,,8.0,3491
+GraphDisjointUnion,Disjoint union of graphs with vertices relabeled to consecutive integers,✅,pure,8.0,3491
 KagiChart,,🚫,,8.0,3491
 LessEqualThan,Operator form of LessEqual,✅,none,10.3,3491
 MorphologicalBranchPoints,,🚫,,8.0,3491

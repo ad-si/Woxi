@@ -1113,6 +1113,64 @@ pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
   }
 }
 
+/// Build the disjoint union of several graphs: every vertex is relabeled to a
+/// consecutive integer 1..N (the first graph keeps 1..n1, the next is shifted by
+/// n1, and so on), and the edges are relabeled to match while preserving their
+/// direction. `graphs` is a slice of (vertices, edges) pairs.
+pub fn graph_disjoint_union(graphs: &[(&[Expr], &[Expr])]) -> Expr {
+  use std::collections::HashMap;
+  let mut new_vertices: Vec<Expr> = Vec::new();
+  let mut new_edges: Vec<Expr> = Vec::new();
+  let mut offset = 0usize;
+  for (verts, edges) in graphs {
+    let mut label: HashMap<String, i128> = HashMap::new();
+    for (j, v) in verts.iter().enumerate() {
+      let new_id = (offset + j + 1) as i128;
+      label.insert(crate::syntax::expr_to_string(v), new_id);
+      new_vertices.push(Expr::Integer(new_id));
+    }
+    for e in edges.iter() {
+      match edge_endpoints(e) {
+        Some((u, v, directed)) => {
+          match (
+            label.get(&crate::syntax::expr_to_string(&u)),
+            label.get(&crate::syntax::expr_to_string(&v)),
+          ) {
+            (Some(&nu), Some(&nv)) => {
+              // Undirected endpoints are stored canonically as (min, max).
+              let (a, b) = if !directed && nu > nv {
+                (nv, nu)
+              } else {
+                (nu, nv)
+              };
+              new_edges.push(Expr::FunctionCall {
+                name: if directed {
+                  "DirectedEdge"
+                } else {
+                  "UndirectedEdge"
+                }
+                .to_string(),
+                args: vec![Expr::Integer(a), Expr::Integer(b)].into(),
+              });
+            }
+            _ => new_edges.push(e.clone()),
+          }
+        }
+        None => new_edges.push(e.clone()),
+      }
+    }
+    offset += verts.len();
+  }
+  Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![
+      Expr::List(new_vertices.into()),
+      Expr::List(new_edges.into()),
+    ]
+    .into(),
+  }
+}
+
 /// Merge the given vertices of a graph into the first one (`to_contract[0]`),
 /// redirecting edges to that survivor and dropping the resulting self-loops and
 /// duplicate edges, then re-canonicalizing the edge order (smaller endpoint
