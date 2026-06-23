@@ -1745,6 +1745,30 @@ mod polygamma {
     );
   }
 
+  // Odd n at a half-integer has a closed pi-power form (via the
+  // polygamma-Hurwitz relation PolyGamma[n, z] = (-1)^(n+1) n! Zeta[n+1, z]).
+  #[test]
+  fn polygamma_odd_n_half_integer() {
+    assert_eq!(interpret("PolyGamma[1, 1/2]").unwrap(), "Pi^2/2");
+    assert_eq!(interpret("PolyGamma[1, 3/2]").unwrap(), "-4 + Pi^2/2");
+    assert_eq!(interpret("PolyGamma[1, 5/2]").unwrap(), "-40/9 + Pi^2/2");
+    assert_eq!(
+      interpret("PolyGamma[1, 7/2]").unwrap(),
+      "-1036/225 + Pi^2/2"
+    );
+    assert_eq!(interpret("PolyGamma[3, 1/2]").unwrap(), "Pi^4");
+    // n! is kept un-distributed, matching wolframscript.
+    assert_eq!(interpret("PolyGamma[3, 3/2]").unwrap(), "6*(-16 + Pi^4/6)");
+  }
+
+  // Even n at a half-integer involves an odd Zeta value (no closed form), so
+  // it stays unevaluated like wolframscript.
+  #[test]
+  fn polygamma_even_n_half_integer_unevaluated() {
+    assert_eq!(interpret("PolyGamma[2, 1/2]").unwrap(), "PolyGamma[2, 1/2]");
+    assert_eq!(interpret("PolyGamma[2, 3/2]").unwrap(), "PolyGamma[2, 3/2]");
+  }
+
   #[test]
   fn pole_at_zero() {
     assert_eq!(interpret("PolyGamma[0, 0]").unwrap(), "ComplexInfinity");
@@ -1965,6 +1989,24 @@ mod hurwitz_zeta {
   #[test]
   fn half_odd() {
     assert_eq!(interpret("Zeta[3, 1/2]").unwrap(), "7*Zeta[3]");
+  }
+
+  // A half-integer second argument > 1 reduces to the 1/2 case via the
+  // recurrence Zeta[s, a] = Zeta[s, a-1] - (a-1)^(-s).
+  #[test]
+  fn half_integer_above_one_reduces() {
+    assert_eq!(interpret("Zeta[2, 3/2]").unwrap(), "-4 + Pi^2/2");
+    assert_eq!(interpret("Zeta[2, 5/2]").unwrap(), "-40/9 + Pi^2/2");
+    assert_eq!(interpret("Zeta[4, 3/2]").unwrap(), "-16 + Pi^4/6");
+    // Odd s keeps the symbolic Zeta value.
+    assert_eq!(interpret("Zeta[3, 5/2]").unwrap(), "-224/27 + 7*Zeta[3]");
+  }
+
+  // A non-special fractional part (1/3) has no closed form, so it stays
+  // unevaluated even when reduced from above 1.
+  #[test]
+  fn non_special_fraction_unevaluated() {
+    assert_eq!(interpret("Zeta[2, 1/3]").unwrap(), "Zeta[2, 1/3]");
   }
 
   #[test]

@@ -226,6 +226,51 @@ fn hurwitz_zeta_ast(
     _ => None,
   };
 
+  // General rational a = p/q > 1 (non-integer): reduce to the fractional
+  // representative r in (0, 1] via the recurrence Zeta[s, a] = Zeta[s, a-1]
+  // - (a-1)^(-s). E.g. Zeta[s, 3/2] -> Zeta[s, 1/2] - (1/2)^(-s), and
+  // Zeta[s, 1/2] has a closed form, so the whole expression evaluates. For
+  // other fractional parts (1/3, 2/3, ...) the reduced base stays symbolic,
+  // matching wolframscript. Works for every s (the reduced base handles s).
+  if let Some((p, q)) = a_rational
+    && q >= 2
+    && p > q
+  {
+    let m = (p - 1) / q; // integer steps down to r in (0, 1]
+    let r_p = p - m * q; // reduced numerator, 1 <= r_p < q
+    let reduced_a = make_rational(r_p, q);
+    let base = hurwitz_zeta_ast(
+      s_expr,
+      &reduced_a,
+      &[s_expr.clone(), reduced_a.clone()],
+    )?;
+    let neg_s = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(s_expr.clone()),
+    };
+    // base - sum_{j=0}^{m-1} ((r_p + j*q)/q)^(-s)
+    let mut terms = vec![base];
+    for j in 0..m {
+      let term_a = make_rational(r_p + j * q, q);
+      let pow = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(term_a),
+        right: Box::new(neg_s.clone()),
+      };
+      terms.push(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(pow),
+      });
+    }
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&sum);
+  }
+
   match s_expr {
     Expr::Integer(s) => {
       let s = *s;
@@ -985,6 +1030,33 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
     Expr::Real(f) => Ok(Expr::Real(polygamma_numeric(n, *f))),
+    // Half-integer z (Rational[odd, 2]) with odd n >= 1: use the
+    // polygamma-Hurwitz relation PolyGamma[n, z] = (-1)^(n+1) n! Zeta[n+1, z].
+    // For odd n, n+1 is even so Zeta[n+1, half-integer] reduces to a closed
+    // pi-power form; (-1)^(n+1) = 1. Even n gives an odd Zeta value (no closed
+    // form), so leave those unevaluated like wolframscript.
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational"
+        && rargs.len() == 2
+        && matches!(&rargs[1], Expr::Integer(2))
+        && matches!(&rargs[0], Expr::Integer(p) if p % 2 != 0)
+        && n >= 1
+        && n % 2 == 1 =>
+    {
+      let hz = hurwitz_zeta_public_ast(&[
+        Expr::Integer((n + 1) as i128),
+        z_expr.clone(),
+      ])?;
+      // n! (the sign factor is +1 for odd n). Keep the product un-distributed
+      // so e.g. PolyGamma[3, 3/2] prints 6*(-16 + Pi^4/6) like wolframscript.
+      let factorial: i128 = (1..=n as i128).product();
+      let product = Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(factorial)),
+        right: Box::new(hz),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&product)
+    }
     _ => {
       // Symbolic: return unevaluated in 2-arg form
       Ok(Expr::FunctionCall {
