@@ -353,6 +353,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CarlsonRD" => Some((3, 3)),
     "CarlsonRJ" => Some((4, 4)),
     "CarlsonRG" => Some((3, 3)),
+    "CarlsonRE" => Some((2, 2)),
     "EllipticPi" => Some((2, 3)),
     "EllipticTheta" => Some((3, 3)),
     "EllipticThetaPrime" => Some((3, 3)),

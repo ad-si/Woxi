@@ -775,6 +775,23 @@ mod carlson_integrals {
     let rj = num("N[CarlsonRJ[1, 2, 3, 3]]");
     assert!((rd - rj).abs() < 1e-9, "RD {rd} vs RJ {rj}");
   }
+
+  // R_E(x, y) is the complete integral (4/Pi) R_G(0, x, y); R_E(1, 1) = 1.
+  #[test]
+  fn re_values() {
+    assert_eq!(interpret("CarlsonRE[1, 2]").unwrap(), "CarlsonRE[1, 2]");
+    assert!((num("N[CarlsonRE[1, 1]]") - 1.0).abs() < 1e-9);
+    assert!((num("N[CarlsonRE[1, 2]]") - 1.2160067234249798).abs() < 1e-9);
+    assert!((num("N[CarlsonRE[2, 3]]") - 1.5771482616833925).abs() < 1e-9);
+  }
+
+  // R_E(x, y) == (4/Pi) R_G(0, x, y): consistency with the R_G kernel.
+  #[test]
+  fn re_rg_consistency() {
+    let re = num("N[CarlsonRE[2, 5]]");
+    let rg = num("N[(4/Pi) CarlsonRG[0, 2, 5]]");
+    assert!((re - rg).abs() < 1e-9, "RE {re} vs (4/Pi)RG {rg}");
+  }
 }
 
 mod elliptic_k {

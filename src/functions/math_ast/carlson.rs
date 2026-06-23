@@ -256,3 +256,10 @@ pub fn carlson_rj_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn carlson_rg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   carlson_ast("CarlsonRG", args, 3, |v| Some(carlson_rg(v[0], v[1], v[2])))
 }
+
+pub fn carlson_re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // CarlsonRE[x, y] is the complete integral (4/Pi) R_G(0, x, y).
+  carlson_ast("CarlsonRE", args, 2, |v| {
+    Some(4.0 / std::f64::consts::PI * carlson_rg(0.0, v[0], v[1]))
+  })
+}

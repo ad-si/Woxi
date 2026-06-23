@@ -1243,6 +1243,9 @@ pub fn dispatch_math_functions(
     "CarlsonRG" if args.len() == 3 => {
       return Some(crate::functions::math_ast::carlson_rg_ast(args));
     }
+    "CarlsonRE" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::carlson_re_ast(args));
+    }
     "DedekindEta" if args.len() == 1 => {
       return Some(crate::functions::math_ast::dedekind_eta_ast(args));
     }
