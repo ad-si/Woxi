@@ -61,6 +61,72 @@ mod string_join_arg_errors {
   }
 }
 
+mod string_replace_arg_errors {
+  use super::*;
+
+  #[test]
+  fn non_string_subject_symbol_returns_unevaluated() {
+    // Matches wolframscript: StringReplace[xyz, "a" -> "x"] emits
+    // StringReplace::strse and returns the call unevaluated. Previously Woxi
+    // coerced the symbol to its name and produced "xyz".
+    assert_eq!(
+      interpret(r#"StringReplace[xyz, "a" -> "x"]"#).unwrap(),
+      "StringReplace[xyz, a -> x]"
+    );
+  }
+
+  #[test]
+  fn non_string_subject_integer_returns_unevaluated() {
+    assert_eq!(
+      interpret(r#"StringReplace[123, "1" -> "x"]"#).unwrap(),
+      "StringReplace[123, 1 -> x]"
+    );
+  }
+
+  #[test]
+  fn list_with_non_string_returns_unevaluated() {
+    // A list whose elements are not all strings is rejected as a whole.
+    assert_eq!(
+      interpret(r#"StringReplace[{1, 2}, "1" -> "x"]"#).unwrap(),
+      "StringReplace[{1, 2}, 1 -> x]"
+    );
+    assert_eq!(
+      interpret(r#"StringReplace[{"a", 2}, "a" -> "x"]"#).unwrap(),
+      "StringReplace[{a, 2}, a -> x]"
+    );
+  }
+
+  #[test]
+  fn strse_message_emitted() {
+    let _ = interpret(r#"StringReplace[xyz, "a" -> "x"]"#).unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringReplace::strse: A string or list of strings is expected at \
+         position 1 in StringReplace[xyz, a -> x]."
+      )),
+      "expected StringReplace::strse message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn plain_string_still_works() {
+    assert_eq!(
+      interpret(r#"StringReplace["abc", "a" -> "x"]"#).unwrap(),
+      "xbc"
+    );
+  }
+
+  #[test]
+  fn list_of_strings_threads() {
+    assert_eq!(
+      interpret(r#"StringReplace[{"a", "b"}, "a" -> "x"]"#).unwrap(),
+      "{x, b}"
+    );
+  }
+}
+
 mod string_join_with_list {
   use super::*;
 

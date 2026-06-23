@@ -127,7 +127,9 @@ fn string_take_drop_message(fname: &str, from: i128, to: i128, s: &str) {
   ));
 }
 
-fn string_take_drop_strse(fname: &str, args: &[Expr]) {
+/// Emit the `<fname>::strse: A string or list of strings is expected at
+/// position 1 in <call>.` message, rendering the call in OutputForm.
+fn emit_strse(fname: &str, args: &[Expr]) {
   crate::emit_message(&format!(
     "{}::strse: A string or list of strings is expected at position 1 in {}.",
     fname,
@@ -139,6 +141,16 @@ fn string_take_drop_strse(fname: &str, args: &[Expr]) {
       crate::syntax::ExprForm::Output
     )
   ));
+}
+
+/// Is `e` a valid string subject: a string, or a list whose elements are all
+/// strings? (An empty list counts as valid.)
+fn is_string_subject(e: &Expr) -> bool {
+  match e {
+    Expr::String(_) => true,
+    Expr::List(items) => items.iter().all(|i| matches!(i, Expr::String(_))),
+    _ => false,
+  }
 }
 
 /// Shared StringTake/StringDrop engine, mirroring the Take/Drop position
@@ -164,7 +176,7 @@ fn string_take_drop(
     return Ok(Expr::List(results?.into()));
   }
   let Expr::String(s) = &args[0] else {
-    string_take_drop_strse(fname, args);
+    emit_strse(fname, args);
     return Ok(unevaluated());
   };
   let chars: Vec<char> = s.chars().collect();
@@ -1169,6 +1181,18 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   });
   let ignore_case = has_ignore_case_option(args);
+
+  // The subject (position 1) must be a string or a list of strings. A
+  // non-string — or a list containing a non-string — makes wolframscript emit
+  // StringReplace::strse and return the call unevaluated, rather than coercing
+  // the argument to its textual form (e.g. `StringReplace[xyz, "a" -> "x"]`).
+  if !is_string_subject(&args[0]) {
+    emit_strse("StringReplace", args);
+    return Ok(Expr::FunctionCall {
+      name: "StringReplace".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
 
   // Handle list of strings as first arg
   if let Expr::List(strings) = &args[0] {
