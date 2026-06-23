@@ -2,9 +2,6 @@
 # yarn lockfile v1
 
 
-"@discoveryjs/json-ext@^0.5.0":
-  version "0.5.7"
-
 "@isaacs/cliui@^8.0.2":
   version "8.0.2"
   dependencies:
@@ -39,6 +36,30 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
+"@jupyter/builder@^1.0.0":
+  version "1.0.2"
+  resolved "https://registry.npmjs.org/@jupyter/builder/-/builder-1.0.2.tgz"
+  integrity sha512-LQzwIKStiGooZJPrPPhsdwukAdDZXNJm4O7WIHWQDw36vSM1yCqkIloP8Z/PF0vaGQcB2l9RgBbvekAsfwz6qg==
+  dependencies:
+    "@jupyterlab/core-meta" "4.6.0-beta.0"
+    "@module-federation/runtime-tools" "^2.0.0"
+    "@rspack/core" "^2.0.2"
+    ajv "^8.12.0"
+    commander "^9.4.1"
+    css-loader "^6.7.1"
+    duplicate-package-checker-webpack-plugin "^3.0.0"
+    fs-extra "^10.1.0"
+    glob "~7.1.6"
+    license-webpack-plugin "^4.0.2"
+    mini-svg-data-uri "^1.4.4"
+    path-browserify "^1.0.0"
+    process "^0.11.10"
+    source-map-loader "~1.0.2"
+    style-loader "~3.3.1"
+    supports-color "^7.2.0"
+    webpack-merge "^5.8.0"
+    worker-loader "^3.0.2"
+
 "@jupyter/ydoc@^3.0.4", "@jupyter/ydoc@^3.1.0":
   version "3.4.0"
   dependencies:
@@ -49,40 +70,10 @@
     y-protocols "^1.0.5"
     yjs "^13.5.40"
 
-"@jupyterlab/builder@^4.0.0":
-  version "4.5.4"
-  dependencies:
-    "@lumino/algorithm" "^2.0.4"
-    "@lumino/application" "^2.4.8"
-    "@lumino/commands" "^2.3.3"
-    "@lumino/coreutils" "^2.2.2"
-    "@lumino/disposable" "^2.1.5"
-    "@lumino/domutils" "^2.0.4"
-    "@lumino/dragdrop" "^2.1.8"
-    "@lumino/messaging" "^2.0.4"
-    "@lumino/properties" "^2.0.4"
-    "@lumino/signaling" "^2.1.5"
-    "@lumino/virtualdom" "^2.0.4"
-    "@lumino/widgets" "^2.7.5"
-    ajv "^8.12.0"
-    commander "^9.4.1"
-    css-loader "^6.7.1"
-    duplicate-package-checker-webpack-plugin "^3.0.0"
-    fs-extra "^10.1.0"
-    glob "~7.1.6"
-    license-webpack-plugin "^2.3.14"
-    mini-css-extract-plugin "^2.7.0"
-    mini-svg-data-uri "^1.4.4"
-    path-browserify "^1.0.0"
-    process "^0.11.10"
-    source-map-loader "~1.0.2"
-    style-loader "~3.3.1"
-    supports-color "^7.2.0"
-    terser-webpack-plugin "^5.3.7"
-    webpack "^5.76.1"
-    webpack-cli "^5.0.1"
-    webpack-merge "^5.8.0"
-    worker-loader "^3.0.2"
+"@jupyterlab/core-meta@4.6.0-beta.0":
+  version "4.6.0-beta.0"
+  resolved "https://registry.npmjs.org/@jupyterlab/core-meta/-/core-meta-4.6.0-beta.0.tgz"
+  integrity sha512-nBh8lQcOevET1ycLMSnAAbdpvLiFeAm5SRo8nCVXtZyd1hLyYRlkjKCOvFJDNFd46c0YiXCfvk2aXJ8gNWJ5YQ==
 
 "@jupyterlab/coreutils@^6.0.0", "@jupyterlab/coreutils@^6.3.8", "@jupyterlab/coreutils@^6.5.4":
   version "6.5.4"
@@ -276,7 +267,7 @@
 "@lumino/algorithm@^2.0.2", "@lumino/algorithm@^2.0.4":
   version "2.0.4"
 
-"@lumino/application@^2.4.1", "@lumino/application@^2.4.8":
+"@lumino/application@^2.4.1":
   version "2.4.8"
   dependencies:
     "@lumino/commands" "^2.3.3"
@@ -363,6 +354,93 @@
     "@lumino/signaling" "^2.1.5"
     "@lumino/virtualdom" "^2.0.4"
 
+"@module-federation/error-codes@0.22.0":
+  version "0.22.0"
+  resolved "https://registry.npmjs.org/@module-federation/error-codes/-/error-codes-0.22.0.tgz"
+  integrity sha512-xF9SjnEy7vTdx+xekjPCV5cIHOGCkdn3pIxo9vU7gEZMIw0SvAEdsy6Uh17xaCpm8V0FWvR0SZoK9Ik6jGOaug==
+
+"@module-federation/error-codes@2.6.0":
+  version "2.6.0"
+  resolved "https://registry.npmjs.org/@module-federation/error-codes/-/error-codes-2.6.0.tgz"
+  integrity sha512-J9opjWJJZ1JI/9EvNZF8Ps1VMHS9EsH/i0UjCkQQxFVYZxSDBX1CFunvc7awac4cY//LqJUfqBbfoQPhCfKKKw==
+
+"@module-federation/runtime-core@0.22.0":
+  version "0.22.0"
+  resolved "https://registry.npmjs.org/@module-federation/runtime-core/-/runtime-core-0.22.0.tgz"
+  integrity sha512-GR1TcD6/s7zqItfhC87zAp30PqzvceoeDGYTgF3Vx2TXvsfDrhP6Qw9T4vudDQL3uJRne6t7CzdT29YyVxlgIA==
+  dependencies:
+    "@module-federation/error-codes" "0.22.0"
+    "@module-federation/sdk" "0.22.0"
+
+"@module-federation/runtime-core@2.6.0":
+  version "2.6.0"
+  resolved "https://registry.npmjs.org/@module-federation/runtime-core/-/runtime-core-2.6.0.tgz"
+  integrity sha512-9sL7Yj3H3COZI9JpK/J4hmJUBkIJdmowkj6phHuFiy5Hm5bHiE5U+9WBbR9KqTdyNhAVSL9FeprBW5/Io6i59A==
+  dependencies:
+    "@module-federation/error-codes" "2.6.0"
+    "@module-federation/sdk" "2.6.0"
+
+"@module-federation/runtime-tools@^0.24.1 || ^2.0.0", "@module-federation/runtime-tools@^2.0.0":
+  version "2.6.0"
+  resolved "https://registry.npmjs.org/@module-federation/runtime-tools/-/runtime-tools-2.6.0.tgz"
+  integrity sha512-LfvihAhAWWNWlAL9zM+UDVDSSuLE2ZU0ATJ6dcbJuLstYbHYfUqq2e6IyU8TKLPXIib0VAWqPrT44TPam1VJ7g==
+  dependencies:
+    "@module-federation/runtime" "2.6.0"
+    "@module-federation/webpack-bundler-runtime" "2.6.0"
+
+"@module-federation/runtime-tools@0.22.0":
+  version "0.22.0"
+  resolved "https://registry.npmjs.org/@module-federation/runtime-tools/-/runtime-tools-0.22.0.tgz"
+  integrity sha512-4ScUJ/aUfEernb+4PbLdhM/c60VHl698Gn1gY21m9vyC1Ucn69fPCA1y2EwcCB7IItseRMoNhdcWQnzt/OPCNA==
+  dependencies:
+    "@module-federation/runtime" "0.22.0"
+    "@module-federation/webpack-bundler-runtime" "0.22.0"
+
+"@module-federation/runtime@0.22.0":
+  version "0.22.0"
+  resolved "https://registry.npmjs.org/@module-federation/runtime/-/runtime-0.22.0.tgz"
+  integrity sha512-38g5iPju2tPC3KHMPxRKmy4k4onNp6ypFPS1eKGsNLUkXgHsPMBFqAjDw96iEcjri91BrahG4XcdyKi97xZzlA==
+  dependencies:
+    "@module-federation/error-codes" "0.22.0"
+    "@module-federation/runtime-core" "0.22.0"
+    "@module-federation/sdk" "0.22.0"
+
+"@module-federation/runtime@2.6.0":
+  version "2.6.0"
+  resolved "https://registry.npmjs.org/@module-federation/runtime/-/runtime-2.6.0.tgz"
+  integrity sha512-Y8KgL70RDxD8cCtGWGlGkt+TSDleIjdGmS27gnllibQAIgG/vHhPD11r8kd92x44k4dqtMIntzreOphGICl92g==
+  dependencies:
+    "@module-federation/error-codes" "2.6.0"
+    "@module-federation/runtime-core" "2.6.0"
+    "@module-federation/sdk" "2.6.0"
+
+"@module-federation/sdk@0.22.0":
+  version "0.22.0"
+  resolved "https://registry.npmjs.org/@module-federation/sdk/-/sdk-0.22.0.tgz"
+  integrity sha512-x4aFNBKn2KVQRuNVC5A7SnrSCSqyfIWmm1DvubjbO9iKFe7ith5niw8dqSFBekYBg2Fwy+eMg4sEFNVvCAdo6g==
+
+"@module-federation/sdk@2.6.0":
+  version "2.6.0"
+  resolved "https://registry.npmjs.org/@module-federation/sdk/-/sdk-2.6.0.tgz"
+  integrity sha512-Z3HT1uDciMrvz2at3sw6TJbAK9Fl7RmoC/8iqO35HDtQMQJ1qSsMIAjnsiCpAC0D4nAm6PIqgSqPWRO/WYgo0Q==
+
+"@module-federation/webpack-bundler-runtime@0.22.0":
+  version "0.22.0"
+  resolved "https://registry.npmjs.org/@module-federation/webpack-bundler-runtime/-/webpack-bundler-runtime-0.22.0.tgz"
+  integrity sha512-aM8gCqXu+/4wBmJtVeMeeMN5guw3chf+2i6HajKtQv7SJfxV/f4IyNQJUeUQu9HfiAZHjqtMV5Lvq/Lvh8LdyA==
+  dependencies:
+    "@module-federation/runtime" "0.22.0"
+    "@module-federation/sdk" "0.22.0"
+
+"@module-federation/webpack-bundler-runtime@2.6.0":
+  version "2.6.0"
+  resolved "https://registry.npmjs.org/@module-federation/webpack-bundler-runtime/-/webpack-bundler-runtime-2.6.0.tgz"
+  integrity sha512-JjuWOU3ktwDjBWhM4WCoeiErcUxcB5YwUnVjyTMfNJHC3+DMhG4m6ziCl5EJrCv+KaEQdcvXmxLliNZidBZGQg==
+  dependencies:
+    "@module-federation/error-codes" "2.6.0"
+    "@module-federation/runtime" "2.6.0"
+    "@module-federation/sdk" "2.6.0"
+
 "@pkgjs/parseargs@^0.11.0":
   version "0.11.0"
 
@@ -374,6 +452,69 @@
     lodash "^4.17.21"
     lodash-es "^4.17.21"
     react-is "^18.2.0"
+
+"@rspack/binding-darwin-arm64@1.7.12":
+  version "1.7.12"
+  resolved "https://registry.npmjs.org/@rspack/binding-darwin-arm64/-/binding-darwin-arm64-1.7.12.tgz"
+  integrity sha512-rbFprJaJiqrmfy8SHth8EsoRS0wg4bXcucwj9NiMzpGFq14Opw8c04iQ6H9BECYzgmN0PKZ9rh41LdVvhdZe4A==
+
+"@rspack/binding-darwin-arm64@2.0.8":
+  version "2.0.8"
+  resolved "https://registry.npmjs.org/@rspack/binding-darwin-arm64/-/binding-darwin-arm64-2.0.8.tgz"
+  integrity sha512-vCgbgH7B7qom+uID+RCZsTCOYFb9wC4/4+1U6rMfytrXGVJ72eNQs2tbdjOl0lb18CT3N/n+VkWynUiLk84GwA==
+
+"@rspack/binding@1.7.12":
+  version "1.7.12"
+  resolved "https://registry.npmjs.org/@rspack/binding/-/binding-1.7.12.tgz"
+  integrity sha512-f4HHuLbvuld8Ba4iB/4ibse5XrKxFrgmM3S4P2AOKnPlekAFlBjmltCuaTL/W2ggYvILaVY+YcFXrEH1rrKeQA==
+  optionalDependencies:
+    "@rspack/binding-darwin-arm64" "1.7.12"
+    "@rspack/binding-darwin-x64" "1.7.12"
+    "@rspack/binding-linux-arm64-gnu" "1.7.12"
+    "@rspack/binding-linux-arm64-musl" "1.7.12"
+    "@rspack/binding-linux-x64-gnu" "1.7.12"
+    "@rspack/binding-linux-x64-musl" "1.7.12"
+    "@rspack/binding-wasm32-wasi" "1.7.12"
+    "@rspack/binding-win32-arm64-msvc" "1.7.12"
+    "@rspack/binding-win32-ia32-msvc" "1.7.12"
+    "@rspack/binding-win32-x64-msvc" "1.7.12"
+
+"@rspack/binding@2.0.8":
+  version "2.0.8"
+  resolved "https://registry.npmjs.org/@rspack/binding/-/binding-2.0.8.tgz"
+  integrity sha512-3uZ+y8aQxq33ty2srMxg2Nu0XuBI6vVrG50rkDaXqwWqOohfgGUSfFuQK7EnSUNy4aFUQlCG6NHialQHJov0wg==
+  optionalDependencies:
+    "@rspack/binding-darwin-arm64" "2.0.8"
+    "@rspack/binding-darwin-x64" "2.0.8"
+    "@rspack/binding-linux-arm64-gnu" "2.0.8"
+    "@rspack/binding-linux-arm64-musl" "2.0.8"
+    "@rspack/binding-linux-x64-gnu" "2.0.8"
+    "@rspack/binding-linux-x64-musl" "2.0.8"
+    "@rspack/binding-wasm32-wasi" "2.0.8"
+    "@rspack/binding-win32-arm64-msvc" "2.0.8"
+    "@rspack/binding-win32-ia32-msvc" "2.0.8"
+    "@rspack/binding-win32-x64-msvc" "2.0.8"
+
+"@rspack/core@^2.0.2":
+  version "2.0.8"
+  resolved "https://registry.npmjs.org/@rspack/core/-/core-2.0.8.tgz"
+  integrity sha512-+NLGJf8gZxihDmMFzjlly3toc2SMjeDmuvz0/Cai9AMdV4F+Pqcnt2BA9V4e3SY2jmhJQtPwgyyLtR1RiJO77g==
+  dependencies:
+    "@rspack/binding" "2.0.8"
+
+"@rspack/core@0.x || 1.x":
+  version "1.7.12"
+  resolved "https://registry.npmjs.org/@rspack/core/-/core-1.7.12.tgz"
+  integrity sha512-6CwFIHlhRmXfZoMj3v9MZ1SMTPBn+cHVXeMIeaGp5sufqinKsISbsqHu6ZMJu2wDSmZLdmQJX6zLxkhcAUlhkQ==
+  dependencies:
+    "@module-federation/runtime-tools" "0.22.0"
+    "@rspack/binding" "1.7.12"
+    "@rspack/lite-tapable" "1.1.0"
+
+"@rspack/lite-tapable@1.1.0":
+  version "1.1.0"
+  resolved "https://registry.npmjs.org/@rspack/lite-tapable/-/lite-tapable-1.1.0.tgz"
+  integrity sha512-E2B0JhYFmVAwdDiG14+DW0Di4Ze4Jg10Pc4/lILUrd5DRCaklduz2OvJ5HYQ6G+hd+WTzqQb3QnDNfK4yvAFYw==
 
 "@types/emscripten@^1.39.6":
   version "1.41.5"
@@ -400,16 +541,6 @@
   version "25.2.3"
   dependencies:
     undici-types "~7.16.0"
-
-"@types/source-list-map@*":
-  version "0.1.6"
-
-"@types/webpack-sources@^0.1.5":
-  version "0.1.12"
-  dependencies:
-    "@types/node" "*"
-    "@types/source-list-map" "*"
-    source-map "^0.6.1"
 
 "@webassemblyjs/ast@^1.14.1", "@webassemblyjs/ast@1.14.1":
   version "1.14.1"
@@ -501,15 +632,6 @@
   dependencies:
     "@webassemblyjs/ast" "1.14.1"
     "@xtuc/long" "4.2.2"
-
-"@webpack-cli/configtest@^2.1.1":
-  version "2.1.1"
-
-"@webpack-cli/info@^2.0.2":
-  version "2.0.2"
-
-"@webpack-cli/serve@^2.0.5":
-  version "2.0.5"
 
 "@xtuc/ieee754@^1.2.0":
   version "1.2.0"
@@ -647,14 +769,8 @@ color-name@~1.1.4:
 color-name@1.1.3:
   version "1.1.3"
 
-colorette@^2.0.14:
-  version "2.0.20"
-
 comlink@^4.3.1:
   version "4.4.2"
-
-commander@^10.0.1:
-  version "10.0.1"
 
 commander@^2.20.0:
   version "2.20.3"
@@ -680,7 +796,7 @@ compute-lcm@^1.1.2:
 concat-map@0.0.1:
   version "0.0.1"
 
-cross-spawn@^7.0.3, cross-spawn@^7.0.6:
+cross-spawn@^7.0.6:
   version "7.0.6"
   dependencies:
     path-key "^3.1.0"
@@ -738,9 +854,6 @@ enhanced-resolve@^5.19.0:
     graceful-fs "^4.2.4"
     tapable "^2.3.0"
 
-envinfo@^7.7.3:
-  version "7.21.0"
-
 es-module-lexer@^2.0.0:
   version "2.0.0"
 
@@ -779,17 +892,8 @@ fast-json-stable-stringify@^2.0.0:
 fast-uri@^3.0.1:
   version "3.1.0"
 
-fastest-levenshtein@^1.0.12:
-  version "1.0.16"
-
 find-root@^1.0.0:
   version "1.1.0"
-
-find-up@^4.0.0:
-  version "4.1.0"
-  dependencies:
-    locate-path "^5.0.0"
-    path-exists "^4.0.0"
 
 flat@^5.0.2:
   version "5.0.2"
@@ -809,9 +913,6 @@ fs-extra@^10.1.0:
 
 fs.realpath@^1.0.0:
   version "1.0.0"
-
-function-bind@^1.1.2:
-  version "1.1.2"
 
 glob-to-regexp@^0.4.1:
   version "0.4.1"
@@ -845,11 +946,6 @@ has-flag@^3.0.0:
 has-flag@^4.0.0:
   version "4.0.0"
 
-hasown@^2.0.2:
-  version "2.0.2"
-  dependencies:
-    function-bind "^1.1.2"
-
 iconv-lite@^0.6.2:
   version "0.6.3"
   dependencies:
@@ -861,12 +957,6 @@ icss-utils@^5.0.0, icss-utils@^5.1.0:
 immediate@~3.0.5:
   version "3.0.6"
 
-import-local@^3.0.2:
-  version "3.2.0"
-  dependencies:
-    pkg-dir "^4.2.0"
-    resolve-cwd "^3.0.0"
-
 inflight@^1.0.4:
   version "1.0.6"
   dependencies:
@@ -875,14 +965,6 @@ inflight@^1.0.4:
 
 inherits@2:
   version "2.0.4"
-
-interpret@^3.1.1:
-  version "3.1.1"
-
-is-core-module@^2.16.1:
-  version "2.16.1"
-  dependencies:
-    hasown "^2.0.2"
 
 is-fullwidth-code-point@^3.0.0:
   version "3.0.0"
@@ -957,11 +1039,12 @@ lib0@^0.2.85, lib0@^0.2.99:
   dependencies:
     isomorphic.js "^0.2.4"
 
-license-webpack-plugin@^2.3.14:
-  version "2.3.21"
+license-webpack-plugin@^4.0.2:
+  version "4.0.2"
+  resolved "https://registry.npmjs.org/license-webpack-plugin/-/license-webpack-plugin-4.0.2.tgz"
+  integrity sha512-771TFWFD70G1wLTC4oU2Cw4qvtmNrIw+wRvBtn+okgHl7slJVi7zfNcdmqDL72BojM30VNJ2UHylr1o77U37Jw==
   dependencies:
-    "@types/webpack-sources" "^0.1.5"
-    webpack-sources "^1.2.0"
+    webpack-sources "^3.0.0"
 
 lie@3.1.1:
   version "3.1.1"
@@ -988,11 +1071,6 @@ localforage@^1.9.0, localforage@>=1.4.0:
   dependencies:
     lie "3.1.1"
 
-locate-path@^5.0.0:
-  version "5.0.0"
-  dependencies:
-    p-locate "^4.1.0"
-
 lodash-es@^4.17.21:
   version "4.17.23"
 
@@ -1015,12 +1093,6 @@ mime-types@^2.1.27:
 
 mime@^3.0.0:
   version "3.0.0"
-
-mini-css-extract-plugin@^2.7.0:
-  version "2.10.0"
-  dependencies:
-    schema-utils "^4.0.0"
-    tapable "^2.2.1"
 
 mini-svg-data-uri@^1.4.4:
   version "1.4.4"
@@ -1058,36 +1130,17 @@ once@^1.3.0:
   dependencies:
     wrappy "1"
 
-p-limit@^2.2.0:
-  version "2.3.0"
-  dependencies:
-    p-try "^2.0.0"
-
-p-locate@^4.1.0:
-  version "4.1.0"
-  dependencies:
-    p-limit "^2.2.0"
-
-p-try@^2.0.0:
-  version "2.2.0"
-
 package-json-from-dist@^1.0.0:
   version "1.0.1"
 
 path-browserify@^1.0.0:
   version "1.0.1"
 
-path-exists@^4.0.0:
-  version "4.0.0"
-
 path-is-absolute@^1.0.0:
   version "1.0.1"
 
 path-key@^3.1.0:
   version "3.1.1"
-
-path-parse@^1.0.7:
-  version "1.0.7"
 
 path-scurry@^1.11.1:
   version "1.11.1"
@@ -1097,11 +1150,6 @@ path-scurry@^1.11.1:
 
 picocolors@^1.1.1:
   version "1.1.1"
-
-pkg-dir@^4.2.0:
-  version "4.2.0"
-  dependencies:
-    find-up "^4.0.0"
 
 postcss-modules-extract-imports@^3.1.0:
   version "3.1.0"
@@ -1161,31 +1209,11 @@ react-is@^18.2.0:
   resolved "https://registry.npmjs.org/react/-/react-19.2.4.tgz"
   integrity sha512-9nfp2hYpCwOjAN+8TZFGhtWEwgvWHXqESH8qT89AT/lWklpLON22Lc8pEtnpsZz7VmawabSU0gCjnj8aC0euHQ==
 
-rechoir@^0.8.0:
-  version "0.8.0"
-  dependencies:
-    resolve "^1.20.0"
-
 require-from-string@^2.0.2:
   version "2.0.2"
 
 requires-port@^1.0.0:
   version "1.0.0"
-
-resolve-cwd@^3.0.0:
-  version "3.0.0"
-  dependencies:
-    resolve-from "^5.0.0"
-
-resolve-from@^5.0.0:
-  version "5.0.0"
-
-resolve@^1.20.0:
-  version "1.22.11"
-  dependencies:
-    is-core-module "^2.16.1"
-    path-parse "^1.0.7"
-    supports-preserve-symlinks-flag "^1.0.0"
 
 rimraf@^5.0.0:
   version "5.0.10"
@@ -1212,7 +1240,7 @@ schema-utils@^3.0.0:
     ajv "^6.12.5"
     ajv-keywords "^3.5.2"
 
-schema-utils@^4.0.0, schema-utils@^4.3.0, schema-utils@^4.3.3:
+schema-utils@^4.3.0, schema-utils@^4.3.3:
   version "4.3.3"
   dependencies:
     "@types/json-schema" "^7.0.9"
@@ -1247,9 +1275,6 @@ shebang-regex@^3.0.0:
 signal-exit@^4.0.1:
   version "4.1.0"
 
-source-list-map@^2.0.0:
-  version "2.0.1"
-
 source-map-js@^1.2.1:
   version "1.2.1"
 
@@ -1268,7 +1293,7 @@ source-map-support@~0.5.20:
     buffer-from "^1.0.0"
     source-map "^0.6.0"
 
-source-map@^0.6.0, source-map@^0.6.1, source-map@~0.6.1:
+source-map@^0.6.0, source-map@^0.6.1:
   version "0.6.1"
 
 "string-width-cjs@npm:string-width@^4.2.0":
@@ -1317,6 +1342,8 @@ supports-color@^5.3.0:
 
 supports-color@^7.2.0:
   version "7.2.0"
+  resolved "https://registry.npmjs.org/supports-color/-/supports-color-7.2.0.tgz"
+  integrity sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==
   dependencies:
     has-flag "^4.0.0"
 
@@ -1325,13 +1352,10 @@ supports-color@^8.0.0:
   dependencies:
     has-flag "^4.0.0"
 
-supports-preserve-symlinks-flag@^1.0.0:
-  version "1.0.0"
-
-tapable@^2.2.1, tapable@^2.3.0:
+tapable@^2.3.0:
   version "2.3.0"
 
-terser-webpack-plugin@^5.3.16, terser-webpack-plugin@^5.3.7:
+terser-webpack-plugin@^5.3.16:
   version "5.3.16"
   dependencies:
     "@jridgewell/trace-mapping" "^0.3.25"
@@ -1353,7 +1377,7 @@ tr46@^2.1.0:
   dependencies:
     punycode "^2.1.1"
 
-tslib@^2.3.1:
+tslib@^2.3.1, tslib@^2.4.0:
   version "2.8.1"
 
 typescript@~5.3.0:
@@ -1414,40 +1438,22 @@ watchpack@^2.5.1:
 webidl-conversions@^6.1.0:
   version "6.1.0"
 
-webpack-cli@^5.0.1, webpack-cli@5.x.x:
-  version "5.1.4"
-  dependencies:
-    "@discoveryjs/json-ext" "^0.5.0"
-    "@webpack-cli/configtest" "^2.1.1"
-    "@webpack-cli/info" "^2.0.2"
-    "@webpack-cli/serve" "^2.0.5"
-    colorette "^2.0.14"
-    commander "^10.0.1"
-    cross-spawn "^7.0.3"
-    envinfo "^7.7.3"
-    fastest-levenshtein "^1.0.12"
-    import-local "^3.0.2"
-    interpret "^3.1.1"
-    rechoir "^0.8.0"
-    webpack-merge "^5.7.3"
-
-webpack-merge@^5.7.3, webpack-merge@^5.8.0:
+webpack-merge@^5.8.0:
   version "5.10.0"
   dependencies:
     clone-deep "^4.0.1"
     flat "^5.0.2"
     wildcard "^2.0.0"
 
-webpack-sources@^1.2.0:
-  version "1.4.3"
-  dependencies:
-    source-list-map "^2.0.0"
-    source-map "~0.6.1"
+webpack-sources@^3.0.0:
+  version "3.5.0"
+  resolved "https://registry.npmjs.org/webpack-sources/-/webpack-sources-3.5.0.tgz"
+  integrity sha512-HPuy+uuoTCaaoEoI1LQ3JN9+vrPBvEesnnX1jADHy728cHSMlq4wUc4afYqahq2B1mhQVZxCXOkNTnXltr+2vQ==
 
 webpack-sources@^3.3.3:
   version "3.3.3"
 
-"webpack@^4.0.0 || ^5.0.0", webpack@^5.0.0, webpack@^5.1.0, webpack@^5.76.1, webpack@5.x.x:
+"webpack@^4.0.0 || ^5.0.0", webpack@^5.0.0, webpack@^5.1.0:
   version "5.105.1"
   dependencies:
     "@types/eslint-scope" "^3.7.7"

@@ -183,7 +183,7 @@ wasm-build-production:
 jupyterlite-kernel-build:
 	cd jupyterlite-woxi-kernel && npm install && npx tsc
 	cd jupyterlite-woxi-kernel && \
-		uvx --python 3.12 --from jupyter-core --with jupyterlab jupyter labextension build .
+		uvx --python 3.12 --from jupyter-builder jupyter-builder build .
 
 
 .PHONY: jupyterlite-build
@@ -191,9 +191,10 @@ jupyterlite-build: wasm-build jupyterlite-kernel-build
 	rm -f .jupyterlite.doit.db
 	uvx \
 		--python 3.12 \
-		--no-cache \
+		--from jupyter-core \
 		--with jupyterlite-core \
 		--with jupyterlab \
+		--with libarchive-c \
 		--with ./jupyterlite-woxi-kernel \
 		jupyter lite build --output-dir tests/jupyterlite
 	cp -r tests/playground/pkg tests/jupyterlite/wasm
