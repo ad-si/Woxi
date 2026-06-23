@@ -90,15 +90,58 @@ pub fn geo_direction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("GeoDirection", args))
 }
 
-/// `GeoDestination[p, {dist_m, azimuth_deg}]` — the geodesic destination point.
+/// Resolve a distance/angle argument that may be a plain number or a
+/// `Quantity`. A plain number passes through unchanged (distances are taken
+/// in meters, bearings in degrees, matching wolframscript). A `Quantity` is
+/// converted to `target_unit` and its magnitude returned — so
+/// `Quantity[100, "Kilometers"]` and `Quantity[100, "Miles"]` both resolve to
+/// the right number of meters, and `Quantity[90, "AngularDegrees"]` resolves
+/// to 90.
+fn magnitude_in_unit(expr: &Expr, target_unit: &str) -> Option<f64> {
+  if let Some(v) = crate::functions::graphics::expr_to_f64(expr) {
+    return Some(v);
+  }
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Quantity" || args.len() != 2 {
+    return None;
+  }
+  // Already in the requested unit — `UnitConvert` to the same unit is a
+  // no-op that stays unevaluated, so read the magnitude directly. The unit
+  // may be stored as a String (`"AngularDegrees"`) or a symbol.
+  let unit_name = match &args[1] {
+    Expr::String(s) => s.clone(),
+    other => crate::syntax::expr_to_string(other),
+  };
+  if unit_name == target_unit {
+    return crate::functions::graphics::expr_to_f64(&args[0]);
+  }
+  let converted = crate::functions::quantity_ast::unit_convert_ast(&[
+    expr.clone(),
+    Expr::String(target_unit.to_string()),
+  ])
+  .ok()?;
+  if let Expr::FunctionCall { name, args } = &converted
+    && name == "Quantity"
+    && args.len() == 2
+  {
+    return crate::functions::graphics::expr_to_f64(&args[0]);
+  }
+  None
+}
+
+/// `GeoDestination[p, {dist, azimuth}]` — the geodesic destination point.
+/// `dist` may be a plain number (meters) or a length `Quantity`; `azimuth`
+/// may be a plain number (degrees) or an `"AngularDegrees"` `Quantity`.
 pub fn geo_destination_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2
     && let Some((lat, lon)) = position_to_latlon(&args[0])
     && let Expr::List(spec) = &args[1]
     && spec.len() == 2
     && let (Some(dist_m), Some(az)) = (
-      crate::functions::graphics::expr_to_f64(&spec[0]),
-      crate::functions::graphics::expr_to_f64(&spec[1]),
+      magnitude_in_unit(&spec[0], "Meters"),
+      magnitude_in_unit(&spec[1], "AngularDegrees"),
     )
   {
     let (lat2, lon2) = destination(lat, lon, az, dist_m);

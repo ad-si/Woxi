@@ -5506,6 +5506,43 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_geodestination_accepts_quantity_distance_and_azimuth() {
+      // A length Quantity for the distance resolves to meters: 100 km is
+      // identical to a bare 100000, and Miles convert too. An
+      // "AngularDegrees" Quantity for the bearing resolves to plain degrees.
+      // (wolframscript accepts all of these forms.)
+      let bare = interpret("GeoDestination[{40, -100}, {100000, 45}]").unwrap();
+      assert_eq!(
+        interpret(
+          "GeoDestination[{40, -100}, {Quantity[100, \"Kilometers\"], 45}]"
+        )
+        .unwrap(),
+        bare
+      );
+      assert_eq!(
+        interpret(
+          "GeoDestination[{40, -100}, {Quantity[100, \"Kilometers\"], Quantity[45, \"AngularDegrees\"]}]"
+        )
+        .unwrap(),
+        bare
+      );
+      // GeoPosition wrapper with a Quantity distance resolves the same way.
+      assert_eq!(
+        interpret(
+          "GeoDestination[GeoPosition[{40, -100}], {Quantity[100, \"Kilometers\"], 45}]"
+        )
+        .unwrap(),
+        bare
+      );
+      // A Miles distance must NOT match the kilometer result.
+      assert_ne!(
+        interpret("GeoDestination[{40, -100}, {Quantity[100, \"Miles\"], 45}]")
+          .unwrap(),
+        bare
+      );
+    }
+
+    #[test]
     fn test_geolength_of_path() {
       assert_eq!(
         interpret("GeoLength[GeoPath[{{40, -100}, {34, -118}}]]").unwrap(),
