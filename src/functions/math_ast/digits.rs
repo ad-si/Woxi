@@ -1569,6 +1569,64 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
 
+  // MixedRadix base: `IntegerDigits[n, MixedRadix[{r0, ..., r_{m-1}}]]` gives the
+  // digits of n in the mixed-radix number system. The least-significant digit is
+  // `n mod r_{m-1}`, the next `n mod r_{m-2}`, …, and an implicit leading place
+  // holds whatever remains. Leading zeros are stripped (a single 0 is kept for
+  // n == 0). A negative subject uses its absolute value, like the integer-base
+  // form. The inverse of `FromDigits[_, MixedRadix[_]]`.
+  if args.len() >= 2
+    && let Expr::FunctionCall {
+      name: mr,
+      args: mr_args,
+    } = &args[1]
+    && mr == "MixedRadix"
+    && mr_args.len() == 1
+    && let Expr::List(radices) = &mr_args[0]
+  {
+    let radix_vals = match radices
+      .iter()
+      .map(expr_to_bigint)
+      .collect::<Option<Vec<_>>>()
+    {
+      Some(v) if v.iter().all(|r| *r >= BigInt::from(1)) => v,
+      _ => return Ok(unevaluated()),
+    };
+    let mut num = match expr_to_bigint(&args[0]) {
+      Some(n) => n.abs(),
+      None => return Ok(unevaluated()),
+    };
+    // Divide by each radix from least to most significant, then take the
+    // remaining value as the leading digit (an unbounded leading place).
+    let mut digits_lsf: Vec<BigInt> = Vec::with_capacity(radix_vals.len() + 1);
+    for r in radix_vals.iter().rev() {
+      digits_lsf.push(&num % r);
+      num /= r;
+    }
+    digits_lsf.push(num);
+    let mut digits: Vec<Expr> =
+      digits_lsf.into_iter().rev().map(bigint_to_expr).collect();
+    // Strip leading zeros, keeping at least one digit.
+    while digits.len() > 1 && matches!(&digits[0], Expr::Integer(0)) {
+      digits.remove(0);
+    }
+    // Optional length: pad with zeros on the left or keep the last `len` digits.
+    if args.len() == 3
+      && let Some(len) = expr_to_i128(&args[2])
+      && len >= 0
+    {
+      let len = len as usize;
+      if digits.len() < len {
+        let mut padded = vec![Expr::Integer(0); len - digits.len()];
+        padded.append(&mut digits);
+        digits = padded;
+      } else if digits.len() > len {
+        digits = digits[digits.len() - len..].to_vec();
+      }
+    }
+    return Ok(Expr::List(digits.into()));
+  }
+
   // Position 2: an explicit base below 2 (or a non-integer number)
   // emits ::ibase; symbolic bases stay silently unevaluated.
   if args.len() >= 2 {

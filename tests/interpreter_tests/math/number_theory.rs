@@ -3459,6 +3459,62 @@ mod cases {
     );
   }
   #[test]
+  fn integer_digits_mixed_radix() {
+    // IntegerDigits[n, MixedRadix[{...}]] — the inverse of FromDigits with a
+    // MixedRadix base. Leading zeros are stripped.
+    assert_case(
+      r#"IntegerDigits[3723, MixedRadix[{60, 60, 1}]]"#,
+      r#"{1, 2, 3, 0}"#,
+    );
+    assert_case(
+      r#"IntegerDigits[65, MixedRadix[{60, 60, 1}]]"#,
+      r#"{1, 5, 0}"#,
+    );
+    assert_case(
+      r#"IntegerDigits[3661, MixedRadix[{24, 60, 60}]]"#,
+      r#"{1, 1, 1}"#,
+    );
+    assert_case(
+      r#"IntegerDigits[100, MixedRadix[{7, 24, 60, 60}]]"#,
+      r#"{1, 40}"#,
+    );
+  }
+  #[test]
+  fn integer_digits_mixed_radix_overflow_and_zero() {
+    // The implicit leading place absorbs whatever exceeds the radix range.
+    assert_case(
+      r#"IntegerDigits[100000, MixedRadix[{60, 60, 1}]]"#,
+      r#"{27, 46, 40, 0}"#,
+    );
+    // Zero stays a single-digit list.
+    assert_case(r#"IntegerDigits[0, MixedRadix[{60, 60, 1}]]"#, r#"{0}"#);
+    // A negative subject uses its absolute value.
+    assert_case(
+      r#"IntegerDigits[-65, MixedRadix[{60, 60, 1}]]"#,
+      r#"{1, 5, 0}"#,
+    );
+  }
+  #[test]
+  fn integer_digits_mixed_radix_length() {
+    // The optional length pads with leading zeros or keeps the last n digits.
+    assert_case(
+      r#"IntegerDigits[3723, MixedRadix[{60, 60, 1}], 6]"#,
+      r#"{0, 0, 1, 2, 3, 0}"#,
+    );
+    assert_case(
+      r#"IntegerDigits[3723, MixedRadix[{60, 60, 1}], 2]"#,
+      r#"{3, 0}"#,
+    );
+  }
+  #[test]
+  fn integer_digits_mixed_radix_roundtrips_fromdigits() {
+    // IntegerDigits and FromDigits are inverse over a MixedRadix base.
+    assert_case(
+      r#"FromDigits[IntegerDigits[100000, MixedRadix[{60, 60, 1}]], MixedRadix[{60, 60, 1}]]"#,
+      r#"100000"#,
+    );
+  }
+  #[test]
   fn integer_reverse_1() {
     assert_case(r#"IntegerReverse[1234]"#, r#"4321"#);
   }
