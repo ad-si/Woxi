@@ -58,6 +58,7 @@ SVG images.
 - [`DiscretePlot`](plotting/DiscretePlot.md)
 - [`DiscretePlot3D`](plotting/DiscretePlot3D.md)
 - [`FrameRate`](plotting/FrameRate.md)
+- [`GeoGraphics`](plotting/GeoGraphics.md)
 - [`GraphicsColumn`](plotting/GraphicsColumn.md)
 - [`GraphicsGrid`](plotting/GraphicsGrid.md)
 - [`GraphicsRow`](plotting/GraphicsRow.md)

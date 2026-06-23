@@ -53,6 +53,7 @@ nav = [
       ] },
       { "Manipulation" = [
         "strings/manipulation.md",
+        { "InsertLinebreaks" = "strings/manipulation/InsertLinebreaks.md" },
         { "Capitalize" = "strings/manipulation/Capitalize.md" },
         { "Decapitalize" = "strings/manipulation/Decapitalize.md" },
         { "RemoveDiacritics" = "strings/manipulation/RemoveDiacritics.md" },
@@ -94,6 +95,9 @@ nav = [
       ] },
       { "Conversion & Encoding" = [
         "strings/conversion.md",
+        { "AccountingForm" = "strings/conversion/AccountingForm.md" },
+        { "DecimalForm" = "strings/conversion/DecimalForm.md" },
+        { "WordFrequency" = "strings/conversion/WordFrequency.md" },
         { "Alphabet" = "strings/conversion/Alphabet.md" },
         { "AlphabeticSort" = "strings/conversion/AlphabeticSort.md" },
         { "CharacterCounts" = "strings/conversion/CharacterCounts.md" },
@@ -342,6 +346,7 @@ nav = [
       ] },
       { "Number Theory & Combinatorics" = [
         "math/number_theory.md",
+        { "FrobeniusSolve" = "math/number_theory/FrobeniusSolve.md" },
         { "AlternatingFactorial" = "math/number_theory/AlternatingFactorial.md" },
         { "BernoulliB" = "math/number_theory/BernoulliB.md" },
         { "Binomial" = "math/number_theory/Binomial.md" },
@@ -552,6 +557,10 @@ nav = [
       ] },
       { "Linear Algebra" = [
         "math/linear_algebra.md",
+        { "EulerMatrix" = "math/linear_algebra/EulerMatrix.md" },
+        { "ReflectionTransform" = "math/linear_algebra/ReflectionTransform.md" },
+        { "ShearingTransform" = "math/linear_algebra/ShearingTransform.md" },
+        { "TransformationMatrix" = "math/linear_algebra/TransformationMatrix.md" },
         { "Adjugate" = "math/linear_algebra/Adjugate.md" },
         { "AntihermitianMatrixQ" = "math/linear_algebra/AntihermitianMatrixQ.md" },
         { "AntisymmetricMatrixQ" = "math/linear_algebra/AntisymmetricMatrixQ.md" },
@@ -559,6 +568,7 @@ nav = [
         { "Cartesian" = "math/linear_algebra/Cartesian.md" },
         { "CellularAutomaton" = "math/linear_algebra/CellularAutomaton.md" },
         { "CharacteristicPolynomial" = "math/linear_algebra/CharacteristicPolynomial.md" },
+        { "CholeskyDecomposition" = "math/linear_algebra/CholeskyDecomposition.md" },
         { "ConjugateTranspose" = "math/linear_algebra/ConjugateTranspose.md" },
         { "Coordinates" = "math/linear_algebra/Coordinates.md" },
         { "CoordinatesFromCartesian" = "math/linear_algebra/CoordinatesFromCartesian.md" },
@@ -643,6 +653,7 @@ nav = [
       ] },
       { "Polynomials" = [
         "math/polynomials.md",
+        { "PolynomialExtendedGCD" = "math/polynomials/PolynomialExtendedGCD.md" },
         { "Coefficient" = "math/polynomials/Coefficient.md" },
         { "CoefficientList" = "math/polynomials/CoefficientList.md" },
         { "Discriminant" = "math/polynomials/Discriminant.md" },
@@ -668,6 +679,13 @@ nav = [
       ] },
       { "Math Utilities" = [
         "math/utility.md",
+        { "CovarianceFunction" = "math/utility/CovarianceFunction.md" },
+        { "Entropy" = "math/utility/Entropy.md" },
+        { "RegionDistance" = "math/utility/RegionDistance.md" },
+        { "RegionMember" = "math/utility/RegionMember.md" },
+        { "RegionNearest" = "math/utility/RegionNearest.md" },
+        { "SignedRegionDistance" = "math/utility/SignedRegionDistance.md" },
+        { "SymmetricGroup" = "math/utility/SymmetricGroup.md" },
         { "Activate" = "math/utility/Activate.md" },
         { "AlphabeticOrder" = "math/utility/AlphabeticOrder.md" },
         { "ArcLength" = "math/utility/ArcLength.md" },
@@ -694,6 +712,7 @@ nav = [
         { "CorrelationDistance" = "math/utility/CorrelationDistance.md" },
         { "Covariance" = "math/utility/Covariance.md" },
         { "CubeRoot" = "math/utility/CubeRoot.md" },
+        { "Cumulant" = "math/utility/Cumulant.md" },
         { "DiceDissimilarity" = "math/utility/DiceDissimilarity.md" },
         { "DiracDelta" = "math/utility/DiracDelta.md" },
         { "DMSList" = "math/utility/DMSList.md" },
@@ -852,6 +871,9 @@ nav = [
     ] },
     { "List Operations" = [
       "list_operations.md",
+      { "Orthogonalize" = "list_operations/Orthogonalize.md" },
+      { "PermutationProduct" = "list_operations/PermutationProduct.md" },
+      { "SequenceSplit" = "list_operations/SequenceSplit.md" },
       { "AllMatch" = "list_operations/AllMatch.md" },
       { "AllSameBy" = "list_operations/AllSameBy.md" },
       { "AnglePath" = "list_operations/AnglePath.md" },
@@ -922,6 +944,7 @@ nav = [
       ] },
       { "Transforming" = [
         "list/transform.md",
+        { "DeleteMissing" = "list/transform/DeleteMissing.md" },
         { "Apply" = "list/transform/Apply.md" },
         { "ArrayFlatten" = "list/transform/ArrayFlatten.md" },
         { "ArrayPad" = "list/transform/ArrayPad.md" },
@@ -957,6 +980,9 @@ nav = [
       ] },
       { "Sorting & Ordering" = [
         "list/sort_order.md",
+        { "LexicographicSort" = "list/sort_order/LexicographicSort.md" },
+        { "PositionLargest" = "list/sort_order/PositionLargest.md" },
+        { "PositionSmallest" = "list/sort_order/PositionSmallest.md" },
         { "FindPermutation" = "list/sort_order/FindPermutation.md" },
         { "InversePermutation" = "list/sort_order/InversePermutation.md" },
         { "MaximalBy" = "list/sort_order/MaximalBy.md" },
@@ -1042,6 +1068,9 @@ nav = [
     ] },
     { "Functions" = [
       "functions.md",
+      { "BinormalDistribution" = "functions/BinormalDistribution.md" },
+      { "CurryApplied" = "functions/CurryApplied.md" },
+      { "HypergeometricDistribution" = "functions/HypergeometricDistribution.md" },
       { "AddTo" = "functions/AddTo.md" },
       { "Apply" = "functions/Apply.md" },
       { "ArcSinDistribution" = "functions/ArcSinDistribution.md" },
@@ -1153,6 +1182,9 @@ nav = [
     ] },
     { "Expressions" = [
       "expressions.md",
+      { "BaseForm" = "expressions/BaseForm.md" },
+      { "Column" = "expressions/Column.md" },
+      { "WeaklyConnectedGraphQ" = "expressions/WeaklyConnectedGraphQ.md" },
       { "Hyperlink" = "expressions/Hyperlink.md" },
       { "Assuming" = "expressions/Assuming.md" },
       { "BlankNullSequence" = "expressions/BlankNullSequence.md" },
@@ -1267,6 +1299,11 @@ nav = [
     ] },
     { "Symbolic" = [
       "symbolic.md",
+      { "ComposeSeries" = "symbolic/ComposeSeries.md" },
+      { "InverseSeries" = "symbolic/InverseSeries.md" },
+      { "PadeApproximant" = "symbolic/PadeApproximant.md" },
+      { "PolynomialReduce" = "symbolic/PolynomialReduce.md" },
+      { "Residue" = "symbolic/Residue.md" },
       { "ArcCurvature" = "symbolic/ArcCurvature.md" },
       { "AsymptoticIntegrate" = "symbolic/AsymptoticIntegrate.md" },
       { "AsymptoticSolve" = "symbolic/AsymptoticSolve.md" },
@@ -1368,6 +1405,7 @@ nav = [
   ] },
   { "Plotting" = [
     "plotting.md",
+    { "GeoGraphics" = "plotting/GeoGraphics.md" },
     { "ArrayPlot" = "plotting/ArrayPlot.md" },
     { "BarChart" = "plotting/BarChart.md" },
     { "BarChart3D" = "plotting/BarChart3D.md" },
@@ -1472,6 +1510,7 @@ nav = [
   ] },
   { "Dates & Time" = [
     "dates.md",
+    { "DateValue" = "dates/DateValue.md" },
     { "Pause" = "dates/Pause.md" },
     { "AbsoluteTime" = "dates/AbsoluteTime.md" },
     { "AbsoluteTiming" = "dates/AbsoluteTiming.md" },

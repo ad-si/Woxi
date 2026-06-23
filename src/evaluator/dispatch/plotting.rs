@@ -117,6 +117,9 @@ pub fn dispatch_plotting(
       // Rendering to SVG happens at the output stage via render_graphics_fc_if_needed.
       None
     }
+    "GeoGraphics" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::geographics::geographics_ast(args)
+    })),
     "Show" if !args.is_empty() => {
       Some(crate::functions::graphics::show_ast(args))
     }

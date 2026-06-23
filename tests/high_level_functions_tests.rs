@@ -5431,4 +5431,222 @@ mod high_level_functions_tests {
       }
     }
   }
+
+  mod geographics_tests {
+    use super::*;
+
+    #[test]
+    fn test_geographics_returns_graphics() {
+      // Like Plot/Graphics, GeoGraphics echoes -Graphics- in CLI output.
+      assert_eq!(
+        interpret(
+          "GeoGraphics[{Red, PointSize[Large], \
+           GeoMarker[GeoPosition[{-26.2041, 28.0473}]]}]"
+        )
+        .unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn test_geomarker_alone_stays_symbolic() {
+      // GeoMarker on its own is an inert primitive (no "unimplemented" warning).
+      assert_eq!(
+        interpret("GeoMarker[GeoPosition[{-26.2041, 28.0473}]]").unwrap(),
+        "GeoMarker[GeoPosition[{-26.2041, 28.0473}]]"
+      );
+    }
+
+    #[test]
+    fn test_geographics_svg_has_map_and_marker() {
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, PointSize[Large], \
+         GeoMarker[GeoPosition[{-26.2041, 28.0473}]]}], \"SVG\"]",
+      )
+      .unwrap();
+      // Ocean background present.
+      assert!(
+        svg.contains("rgb(214,232,245)"),
+        "ocean missing: {}",
+        &svg[..200]
+      );
+      // The 1:110m countries blob contributes hundreds of land paths.
+      let land_paths = svg.matches("rgb(245,242,233)").count();
+      assert!(
+        land_paths > 100,
+        "expected many country paths, got {land_paths}"
+      );
+      // Red marker pin rendered.
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "red pin missing");
+    }
+
+    /// Regression: the teardrop pin's bulb arc must sweep *over the top* of the
+    /// circle. A wrong sweep flag (`0 1 1`) made SVG pick the opposite arc,
+    /// rendering two "horns" and a downward dart instead of a round bulb.
+    #[test]
+    fn test_geographics_pin_bulb_arc_over_top() {
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         GeoMarker[GeoPosition[{-26.2041, 28.0473}]]}], \"SVG\"]",
+      )
+      .unwrap();
+      // Isolate the red pin path.
+      let pin = svg
+        .split("fill=\"rgb(255,0,0)\"")
+        .next()
+        .and_then(|s| s.rfind("M ").map(|i| s[i..].to_string()))
+        .expect("red pin path missing");
+      // Major arc (large-arc-flag 1) with sweep-flag 0 → bulb over the tip.
+      assert!(
+        pin.contains(" 0 1 0 "),
+        "pin arc has wrong flags (expected '0 1 0'): {pin}"
+      );
+      // The white hole sits at the bulb center, above the tip (smaller y).
+      let (_tx, ty) = red_pin_tip(&svg);
+      let hole = svg
+        .rsplit("<circle")
+        .find(|c| c.contains("fill=\"white\""))
+        .expect("white hole missing");
+      let cy: f64 = hole
+        .split("cy=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .expect("hole cy missing");
+      assert!(cy < ty, "bulb center {cy} should be above tip {ty}");
+    }
+
+    /// Parse the pin tip `(x, y)` from the `M <x> <y>` that starts the red
+    /// marker path.
+    fn red_pin_tip(svg: &str) -> (f64, f64) {
+      let pin = svg
+        .split("fill=\"rgb(255,0,0)\"")
+        .next()
+        .and_then(|s| s.rfind("M ").map(|i| s[i..].to_string()))
+        .unwrap_or_default();
+      let nums: Vec<f64> = pin
+        .trim_start_matches("M ")
+        .split_whitespace()
+        .take(2)
+        .map(|t| t.parse().unwrap())
+        .collect();
+      (nums[0], nums[1])
+    }
+
+    #[test]
+    fn test_geographics_autozoom_single_centered() {
+      // A single marker auto-zooms to a square regional view with the marker
+      // at the image center (default width 360 → 360x360).
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         GeoMarker[GeoPosition[{-26.2041, 28.0473}]]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("width=\"360\""), "{}", &svg[..120]);
+      assert!(svg.contains("height=\"360\""), "{}", &svg[..120]);
+      let (x, y) = red_pin_tip(&svg);
+      assert!((x - 180.0).abs() < 1.0, "pin x not centered: {x}");
+      assert!((y - 180.0).abs() < 1.0, "pin y not centered: {y}");
+    }
+
+    #[test]
+    fn test_geographics_world_projection() {
+      // GeoRange -> "World" forces the whole-globe equirectangular 2:1 view;
+      // Johannesburg then projects to x≈208, y≈116 at 360x180.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         GeoMarker[GeoPosition[{-26.2041, 28.0473}]]}, GeoRange -> \"World\"], \
+         \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("width=\"360\""), "{}", &svg[..120]);
+      assert!(svg.contains("height=\"180\""), "{}", &svg[..120]);
+      let (x, y) = red_pin_tip(&svg);
+      assert!((x - 208.0).abs() < 1.0, "pin x off: {x}");
+      assert!((y - 116.2).abs() < 1.0, "pin y off: {y}");
+    }
+
+    #[test]
+    fn test_geographics_autozoom_multi_fits_all() {
+      // Three European markers (Paris, London, Berlin) auto-zoom to a regional
+      // view; every pin tip must land inside the image bounds.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         GeoMarker[GeoPosition[{48.8566, 2.3522}]], \
+         GeoMarker[GeoPosition[{51.5074, -0.1278}]], \
+         GeoMarker[GeoPosition[{52.52, 13.405}]]}], \"SVG\"]",
+      )
+      .unwrap();
+      let pins = svg.matches("fill=\"rgb(255,0,0)\"").count();
+      assert_eq!(pins, 3, "expected 3 pins, got {pins}");
+      // Not a whole-world view (zoomed in): far-away land would be clipped.
+      assert!(
+        !svg.contains("height=\"180\""),
+        "should not be 2:1 world view"
+      );
+      // Every pin tip is within the image.
+      let height: f64 = svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap()
+        .parse()
+        .unwrap();
+      for chunk in svg.split("<path d=\"M ").skip(1) {
+        if !chunk.contains("fill=\"rgb(255,0,0)\"") {
+          continue;
+        }
+        let nums: Vec<f64> = chunk
+          .split_whitespace()
+          .take(2)
+          .map(|t| t.parse().unwrap())
+          .collect();
+        assert!(
+          nums[0] >= 0.0 && nums[0] <= 360.0,
+          "pin x out of bounds: {}",
+          nums[0]
+        );
+        assert!(
+          nums[1] >= 0.0 && nums[1] <= height,
+          "pin y out of bounds: {}",
+          nums[1]
+        );
+      }
+    }
+
+    #[test]
+    fn test_geographics_imagesize() {
+      // ImageSize sets the map width; with GeoRange -> "World" the height is
+      // half the width (2:1 equirectangular).
+      let svg = interpret(
+        "ExportString[GeoGraphics[{GeoMarker[GeoPosition[{0, 0}]]}, \
+         ImageSize -> 600, GeoRange -> \"World\"], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("width=\"600\""),
+        "width not honored: {}",
+        &svg[..120]
+      );
+      assert!(
+        svg.contains("height=\"300\""),
+        "height not honored: {}",
+        &svg[..120]
+      );
+    }
+
+    #[test]
+    fn test_geographics_bare_latlon_and_point() {
+      // Bare {lat, lon} positions and Point primitives also render.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Blue, Point[{48.8566, 2.3522}]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("<circle"),
+        "point not rendered: missing circle"
+      );
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "blue point missing");
+    }
+  }
 }

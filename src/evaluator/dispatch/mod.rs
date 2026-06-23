@@ -9786,6 +9786,10 @@ pub fn evaluate_function_call_ast_inner(
         | "Highlighted"
         | "Mouseover"
         | "Magnify"
+        // GeoMarker[pos] is an inert geographic primitive consumed by
+        // GeoGraphics (rendered there as a map pin); it stays symbolic on its
+        // own, matching wolframscript, so it is not "unimplemented".
+        | "GeoMarker"
         // Ket/Bra are Dirac bra-ket notation objects; they stay symbolic until
         // consumed by the quantum framework, so they are not "unimplemented".
         | "Ket"

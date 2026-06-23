@@ -731,7 +731,7 @@ ToBoxes,Converts an expression to its box form representation for typesetting,�
 CompilationTarget,Option for compilation target,✅,none,8.0,738
 Quantile,Compute quantiles of a dataset or distribution (accepts an association by value),✅,pure,5.0,739
 Scan,Applies a function to each element for side effects,✅,pure,1.0,740
-GeoGraphics,Creates geographic maps and visualizations,🚫,io,10.0,741
+GeoGraphics,Creates geographic maps and visualizations,✅,pure,10.0,741
 Annotation,Attach an annotation to an expression,✅,none,6.0,742
 Short,Short output format,✅,pure,1.0,743
 SphericalPlot3D,3D plot in spherical coordinates,✅,pure,6.0,744
@@ -1726,7 +1726,7 @@ DoubleRightTee,Inert operator displayed with the ⊨ symbol,✅,pure,3.0,1752
 Matrices,Matrix domain,,unevaluated,9.0,1753
 JoinedCurve,Joined curve primitive,,unevaluated,8.0,1754
 DefaultButton,Default button control,,unevaluated,6.0,1760
-GeoMarker,Geographic marker,,unevaluated,10.0,1760
+GeoMarker,Geographic marker primitive for GeoGraphics,✅,pure,10.0,1760
 MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4.0,1760
 RunProcess,Run external process,,unevaluated,10.0,1760
 StartingStepSize,Starting step size option,,unevaluated,4.0,1760
