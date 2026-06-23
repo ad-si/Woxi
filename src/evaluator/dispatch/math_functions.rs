@@ -1178,6 +1178,12 @@ pub fn dispatch_math_functions(
     "AiryBi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::airy_bi_ast(args));
     }
+    "ScorerHi" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::scorer_hi_ast(args));
+    }
+    "ScorerGi" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::scorer_gi_ast(args));
+    }
     "AiryBiPrime" if args.len() == 1 => {
       return Some(crate::functions::math_ast::airy_bi_prime_ast(args));
     }

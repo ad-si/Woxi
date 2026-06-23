@@ -4506,7 +4506,7 @@ PartProtection,,,,10.4,4660
 RadialityCentrality,,,,9.0,4660
 RemoteConnect,,🚫,,11.3,4660
 RightTriangle,,,,3.0,4660
-ScorerHi,,,,10.0,4660
+ScorerHi,Scorer inhomogeneous Airy function Hi solving y'' - x y = 1/Pi,✅,pure,10.0,4660
 ShowCursorTracker,,🚫,,4.0,4660
 SubsetCases,Finds non-overlapping subsets matching a pattern,✅,pure,12.1,4660
 TraceDialog,,🚫,,2.0,4660
@@ -4695,7 +4695,7 @@ ProcessInformation,,🚫,,10.0,4881
 PulsarData,,🚫,,10.0,4881
 RadialGradientFilling,,,,12.2,4881
 RawData,,🚫,,8.0,4881
-ScorerGi,,,,10.0,4881
+ScorerGi,Scorer inhomogeneous Airy function Gi solving y'' - x y = -1/Pi,✅,pure,10.0,4881
 ScorerGiPrime,,,,10.0,4881
 ScorerHiPrime,,,,10.0,4881
 ShowSpecialCharacters,,,,3.0,4881

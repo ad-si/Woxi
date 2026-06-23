@@ -17,6 +17,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "AiryAiPrime" => Some((1, 1)),
     "AiryAiZero" => Some((1, 1)),
     "AiryBi" => Some((1, 1)),
+    "ScorerGi" => Some((1, 1)),
+    "ScorerHi" => Some((1, 1)),
     "AiryBiPrime" => Some((1, 1)),
     "AiryBiZero" => Some((1, 1)),
     "AllMatch" => Some((1, 3)),

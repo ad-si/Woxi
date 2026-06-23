@@ -713,6 +713,51 @@ mod hypergeometric_u {
   }
 }
 
+mod scorer_functions {
+  use super::*;
+
+  fn num(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  // Exact (non-zero) arguments stay symbolic; the value at 0 has a closed form.
+  #[test]
+  fn exact_forms() {
+    assert_eq!(interpret("ScorerGi[1]").unwrap(), "ScorerGi[1]");
+    assert_eq!(
+      interpret("ScorerGi[0]").unwrap(),
+      "1/(3*3^(1/6)*Gamma[2/3])"
+    );
+    assert_eq!(
+      interpret("ScorerHi[0]").unwrap(),
+      "2/(3*3^(1/6)*Gamma[2/3])"
+    );
+  }
+
+  #[test]
+  fn hi_values() {
+    assert!((num("N[ScorerHi[0]]") - 0.40995108496400046).abs() < 1e-9);
+    assert!((num("N[ScorerHi[1]]") - 0.9722051551424336).abs() < 1e-9);
+    assert!((num("N[ScorerHi[2]]") - 3.129141434324205).abs() < 1e-9);
+    assert!((num("N[ScorerHi[-1]]") - 0.22066960679295983).abs() < 1e-9);
+  }
+
+  #[test]
+  fn gi_values() {
+    assert!((num("N[ScorerGi[0]]") - 0.20497554248200023).abs() < 1e-9);
+    assert!((num("N[ScorerGi[1]]") - 0.2352184398104379).abs() < 1e-9);
+    assert!((num("N[ScorerGi[-1]]") - (-0.11667221729601539)).abs() < 1e-9);
+  }
+
+  // Gi(x) + Hi(x) = Bi(x) (DLMF 9.12.3).
+  #[test]
+  fn gi_plus_hi_is_airy_bi() {
+    let sum = num("N[ScorerGi[2] + ScorerHi[2]]");
+    let bi = num("N[AiryBi[2]]");
+    assert!((sum - bi).abs() < 1e-9, "Gi+Hi {sum} vs Bi {bi}");
+  }
+}
+
 mod carlson_integrals {
   use super::*;
 

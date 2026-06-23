@@ -614,3 +614,100 @@ pub fn airy_bi_zero_n_eval(n: i128) -> Option<Expr> {
     None
   }
 }
+
+/// Scorer function Hi(x) = (1/Pi) integral_0^inf exp(x t - t^3/3) dt, computed
+/// by Simpson's rule on a truncated interval (the t^3 term makes the integrand
+/// decay super-exponentially, so a finite upper limit captures the full value).
+pub fn scorer_hi(x: f64) -> f64 {
+  let f = |t: f64| (x * t - t * t * t / 3.0).exp();
+  // The integrand peaks near t = sqrt(x) (for x > 0) with log-height peak_exp;
+  // extend the upper limit until the exponent has dropped ~50 below the peak.
+  let peak_exp = if x > 0.0 {
+    2.0 / 3.0 * x.powf(1.5)
+  } else {
+    0.0
+  };
+  let target = peak_exp - 50.0;
+  let mut t_hi = 4.0_f64.max((3.0 * (peak_exp + 50.0)).cbrt());
+  while x * t_hi - t_hi * t_hi * t_hi / 3.0 > target {
+    t_hi += 1.0;
+  }
+  let n = 8000usize; // even number of Simpson panels
+  let h = t_hi / n as f64;
+  let mut sum = f(0.0) + f(t_hi);
+  for i in 1..n {
+    let t = i as f64 * h;
+    sum += if i % 2 == 1 { 4.0 } else { 2.0 } * f(t);
+  }
+  (sum * h / 3.0) / std::f64::consts::PI
+}
+
+/// Build the exact value at 0: `numer / (3 * 3^(1/6) * Gamma[2/3])`, the shared
+/// closed form of ScorerGi[0] (numer = 1) and ScorerHi[0] (numer = 2).
+fn scorer_value_at_zero(numer: i128) -> Result<Expr, InterpreterError> {
+  let rational = |a: i128, b: i128| Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(a), Expr::Integer(b)].into(),
+  };
+  let three_sixth = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![Expr::Integer(3), rational(1, 6)].into(),
+  };
+  let gamma = Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![rational(2, 3)].into(),
+  };
+  let denom = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(3), three_sixth, gamma].into(),
+  };
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(Expr::Integer(numer)),
+    right: Box::new(denom),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// ScorerHi[x] — inhomogeneous Airy function solving y'' - x y = 1/Pi.
+pub fn scorer_hi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ScorerHi expects exactly 1 argument".into(),
+    ));
+  }
+  if matches!(&args[0], Expr::Integer(0)) {
+    return scorer_value_at_zero(2);
+  }
+  if let Some(x) = expr_to_f64(&args[0])
+    && matches!(&args[0], Expr::Real(_))
+  {
+    return Ok(Expr::Real(scorer_hi(x)));
+  }
+  Ok(Expr::FunctionCall {
+    name: "ScorerHi".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// ScorerGi[x] — inhomogeneous Airy function solving y'' - x y = -1/Pi.
+/// Gi(x) = Bi(x) - Hi(x) (DLMF 9.12.3).
+pub fn scorer_gi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ScorerGi expects exactly 1 argument".into(),
+    ));
+  }
+  if matches!(&args[0], Expr::Integer(0)) {
+    return scorer_value_at_zero(1);
+  }
+  if let Some(x) = expr_to_f64(&args[0])
+    && matches!(&args[0], Expr::Real(_))
+  {
+    return Ok(Expr::Real(airy_bi(x) - scorer_hi(x)));
+  }
+  Ok(Expr::FunctionCall {
+    name: "ScorerGi".to_string(),
+    args: args.to_vec().into(),
+  })
+}
