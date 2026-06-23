@@ -12215,15 +12215,18 @@ fn gcd_i128(a: i128, b: i128) -> i128 {
   if b == 0 { a } else { gcd_i128(b, a % b) }
 }
 
-/// If `f` has a leading non-integer rational power of `var` (so that its
-/// expansion about 0 is a genuine Puiseux series), return the reduced exponent
-/// `(p, q)` with `q > 1` together with the analytic cofactor `g = f / var^(p/q)`.
-/// Handles `var^(p/q)` directly and products such as `Sqrt[x] Exp[x]`. The
-/// power exponents must be explicit integers or `Rational`s; anything symbolic
-/// (or a purely integer total exponent) returns `None`.
+/// If `f` has a leading non-integer rational power of the shift `(var - x0)`
+/// (so that its expansion about `x0` is a genuine Puiseux series), return the
+/// reduced exponent `(p, q)` with `q > 1` together with the analytic cofactor
+/// `g = f / (var - x0)^(p/q)`. Handles `(var - x0)^(p/q)` directly and products
+/// such as `Sqrt[x] Exp[x]`. The power exponents must be explicit integers or
+/// `Rational`s; anything symbolic (or a purely integer total exponent) returns
+/// `None`. `Sqrt[x]` expanded about a point where it is analytic (e.g. x0 = 1)
+/// has no `(var - x0)` power factor and so returns `None`.
 fn leading_fractional_power(
   f: &Expr,
   var: &str,
+  x0: &Expr,
 ) -> Option<((i128, i128), Expr)> {
   let pow_exp = |e: &Expr| -> Option<(i128, i128)> {
     match e {
@@ -12239,16 +12242,40 @@ fn leading_fractional_power(
       _ => None,
     }
   };
-  // Exponent contributed by a single factor that is a power of `var`.
+  // Whether `e` is the shift base `(var - x0)`: the bare variable when x0 == 0,
+  // otherwise any expression that simplifies to `var - x0`.
+  let is_base = |e: &Expr| -> bool {
+    if matches!(x0, Expr::Integer(0)) {
+      return matches!(e, Expr::Identifier(s) if s == var);
+    }
+    let diff = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        e.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), Expr::Identifier(var.to_string())]
+            .into(),
+        },
+        x0.clone(),
+      ]
+      .into(),
+    };
+    matches!(
+      crate::evaluator::evaluate_expr_to_expr(&diff),
+      Ok(Expr::Integer(0))
+    )
+  };
+  // Exponent contributed by a single factor that is a power of `(var - x0)`.
   let factor_exp = |fac: &Expr| -> Option<Option<(i128, i128)>> {
     // Outer Option: Some(None) = factor is part of g; Some(Some(r)) = power of
-    // var with exponent r; None = unrepresentable (bail).
+    // the base with exponent r; None = unrepresentable (bail).
+    if is_base(fac) {
+      return Some(Some((1, 1)));
+    }
     match fac {
-      Expr::Identifier(s) if s == var => Some(Some((1, 1))),
       Expr::FunctionCall { name, args }
-        if name == "Power"
-          && args.len() == 2
-          && matches!(&args[0], Expr::Identifier(s) if s == var) =>
+        if name == "Power" && args.len() == 2 && is_base(&args[0]) =>
       {
         pow_exp(&args[1]).map(Some)
       }
@@ -12256,13 +12283,9 @@ fn leading_fractional_power(
         op: crate::syntax::BinaryOperator::Power,
         left,
         right,
-      } if matches!(left.as_ref(), Expr::Identifier(s) if s == var) => {
-        pow_exp(right).map(Some)
-      }
-      // A factor not headed by a var-power is part of the cofactor g, unless
-      // it secretly depends on var via a fractional power buried inside, which
-      // the analytic-g expansion would then mishandle — but such factors
-      // (e.g. Exp[x], 1 + x, Sqrt[1 + x]) are analytic at 0, so keep them in g.
+      } if is_base(left) => pow_exp(right).map(Some),
+      // A factor that is not a power of the base is part of the cofactor g
+      // (e.g. Exp[x], 1 + x, Sqrt[1 + x] — all analytic at x0).
       _ => Some(None),
     }
   };
@@ -12381,7 +12404,6 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let terms = additive_terms(&args[0]);
     if terms.len() >= 2 {
-      let x0_is_zero = matches!(&x0, Expr::Integer(0));
       let needs_split = terms.iter().any(|t| {
         let at_x0 = crate::syntax::substitute_variable(t, &var_name, &x0);
         // A pole at x0: the direct coefficient sampling chokes on it.
@@ -12393,11 +12415,11 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::evaluator::evaluate_expr_to_expr(&at_x0),
           Ok(Expr::FunctionCall { ref name, .. }) if name == "DirectedInfinity"
         );
-        // A fractional leading power (about 0) needs the Puiseux path, which
-        // only applies to a single term — so split the sum and expand each.
+        // A fractional leading power of (x - x0) needs the Puiseux path, which
+        // applies to a single term — so split the sum and expand each.
         // Mixed-denominator SeriesData add correctly.
         let is_fractional =
-          x0_is_zero && leading_fractional_power(t, &var_name).is_some();
+          leading_fractional_power(t, &var_name, &x0).is_some();
         has_pole || is_fractional
       });
       if needs_split {
@@ -12412,13 +12434,12 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Puiseux (fractional-power) expansion about 0. The direct path assumes
-  // integer powers and evaluates 0^(p/q); instead, factor f = x^(p/q) g(x)
-  // with g analytic, expand g normally, and shift exponents by p/q. The result
-  // is a SeriesData with den = q whose coefficients are g's coefficients
-  // interleaved with q-1 zeros (consecutive numerators step by q).
-  if matches!(&x0, Expr::Integer(0))
-    && let Some(((p, q), g)) = leading_fractional_power(&args[0], &var_name)
+  // Puiseux (fractional-power) expansion about x0. The direct path assumes
+  // integer powers and evaluates 0^(p/q); instead, factor f = (x-x0)^(p/q) g(x)
+  // with g analytic at x0, expand g normally about x0, and shift exponents by
+  // p/q. The result is a SeriesData with den = q whose coefficients are g's
+  // coefficients interleaved with q-1 zeros (consecutive numerators step by q).
+  if let Some(((p, q), g)) = leading_fractional_power(&args[0], &var_name, &x0)
   {
     // Expand g to enough integer orders M so that p/q + M reaches `order`.
     // M = max(0, floor(order - p/q)) = max(0, floor((order*q - p)/q)).
@@ -12429,7 +12450,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(
         vec![
           Expr::Identifier(var_name.clone()),
-          Expr::Integer(0),
+          x0.clone(),
           Expr::Integer(m),
         ]
         .into(),
@@ -12479,7 +12500,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "SeriesData".to_string(),
       args: vec![
         Expr::Identifier(var_name.clone()),
-        Expr::Integer(0),
+        x0.clone(),
         Expr::List(coeffs.into()),
         Expr::Integer(p),
         Expr::Integer(nmax),

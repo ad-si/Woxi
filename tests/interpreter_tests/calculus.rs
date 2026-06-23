@@ -1524,6 +1524,36 @@ mod series {
     );
   }
 
+  // Puiseux expansion about a nonzero center: a fractional power of (x - x0).
+  // (Sqrt[x] about x0 = 1 is analytic and uses the ordinary path; the genuine
+  // fractional case is a power of the shift (x - 1).)
+  #[test]
+  fn series_fractional_nonzero_center() {
+    assert_eq!(
+      interpret("Series[Sqrt[x - 1], {x, 1, 3}]").unwrap(),
+      "SeriesData[x, 1, {1}, 1, 7, 2]"
+    );
+    assert_eq!(
+      interpret("Series[(x - 2)^(1/2), {x, 2, 2}]").unwrap(),
+      "SeriesData[x, 2, {1}, 1, 5, 2]"
+    );
+    // Product with an analytic cofactor about the same center.
+    assert_eq!(
+      interpret("Series[Sqrt[x - 1] Exp[x], {x, 1, 2}]").unwrap(),
+      "SeriesData[x, 1, {E, 0, E}, 1, 5, 2]"
+    );
+    // Negative fractional power of the shift.
+    assert_eq!(
+      interpret("Series[1/Sqrt[x - 1], {x, 1, 2}]").unwrap(),
+      "SeriesData[x, 1, {1}, -1, 5, 2]"
+    );
+    // A fractional sum about a nonzero center.
+    assert_eq!(
+      interpret("Series[Sqrt[x - 1] + (x - 1)^2, {x, 1, 2}]").unwrap(),
+      "SeriesData[x, 1, {1, 0, 0, 1}, 1, 5, 2]"
+    );
+  }
+
   // Integrating a fractional-power SeriesData works via the den != 1 path.
   #[test]
   fn integrate_series_fractional() {
