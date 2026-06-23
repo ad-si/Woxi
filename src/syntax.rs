@@ -10037,9 +10037,21 @@ fn escape_string_for_input_form(s: &str) -> String {
 /// keep its parentheses).
 fn input_form_rule_lhs(e: &Expr) -> String {
   match e {
-    Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+    // A nested rule keeps its parens (`->` is right-associative) and a pure
+    // function is parenthesised because `&` binds looser than `->`/`:>`
+    // (`(#1 & ) -> x`), matching wolframscript.
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::Function { .. } => {
       format!("({})", expr_to_input_form(e))
     }
+    _ => expr_to_input_form(e),
+  }
+}
+
+/// Parenthesize a rule's RHS when it is a pure function, since `&` binds
+/// looser than `->`/`:>` (`x -> (#1 & )`), matching wolframscript.
+fn input_form_rule_rhs(e: &Expr) -> String {
+  match e {
+    Expr::Function { .. } => format!("({})", expr_to_input_form(e)),
     _ => expr_to_input_form(e),
   }
 }
@@ -10129,7 +10141,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       format!(
         "{} -> {}",
         input_form_rule_lhs(pattern),
-        expr_to_input_form(replacement)
+        input_form_rule_rhs(replacement)
       )
     }
     Expr::RuleDelayed {
@@ -10138,7 +10150,8 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     } => {
       // Parenthesize RHS if it's an assignment (Set/SetDelayed/Up*), so
       // that e.g. `Initialization :> (d[t_] := ...)` renders with the
-      // parentheses required to disambiguate operator precedence.
+      // parentheses required to disambiguate operator precedence. A pure
+      // function on the RHS is also parenthesised (`&` binds looser than `:>`).
       let rhs_str = expr_to_input_form(replacement);
       let rhs_final = match replacement.as_ref() {
         Expr::FunctionCall { name: n, args: a }
@@ -10149,6 +10162,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         {
           format!("({})", rhs_str)
         }
+        Expr::Function { .. } => format!("({})", rhs_str),
         _ => rhs_str,
       };
       format!("{} :> {}", input_form_rule_lhs(pattern), rhs_final)
@@ -10166,9 +10180,10 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         {
           format!("({})", rhs_str)
         }
+        Expr::Function { .. } => format!("({})", rhs_str),
         _ => rhs_str,
       };
-      format!("{} :> {}", expr_to_input_form(&args[0]), rhs_final)
+      format!("{} :> {}", input_form_rule_lhs(&args[0]), rhs_final)
     }
     // Equivalent renders in functional form in InputForm: `Equivalent[a, b]`
     // (the infix `⧦` glyph is OutputForm-only), matching wolframscript.
@@ -10181,8 +10196,8 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
       format!(
         "{} -> {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
+        input_form_rule_lhs(&args[0]),
+        input_form_rule_rhs(&args[1])
       )
     }
     // Pattern[name, body] displays as name:body in InputForm; wrap
