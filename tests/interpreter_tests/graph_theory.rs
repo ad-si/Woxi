@@ -4267,3 +4267,76 @@ mod edge_contract {
     );
   }
 }
+
+mod isomorphic_graph_q {
+  use super::*;
+
+  // IsomorphicGraphQ is True exactly when a structure-preserving vertex
+  // bijection exists, regardless of vertex labels.
+  #[test]
+  fn isomorphic_true() {
+    assert_eq!(
+      interpret("IsomorphicGraphQ[CycleGraph[4], CycleGraph[4]]").unwrap(),
+      "True"
+    );
+    // A triangle is a triangle whether built as K3 or C3.
+    assert_eq!(
+      interpret("IsomorphicGraphQ[CompleteGraph[3], CycleGraph[3]]").unwrap(),
+      "True"
+    );
+    // Different vertex labels, same structure.
+    assert_eq!(
+      interpret("IsomorphicGraphQ[PathGraph[{1, 2, 3}], PathGraph[{4, 5, 6}]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_isomorphic_false() {
+    // Same vertex/edge counts but different structure.
+    assert_eq!(
+      interpret("IsomorphicGraphQ[CycleGraph[4], PathGraph[{1, 2, 3, 4}]]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("IsomorphicGraphQ[CompleteGraph[4], CycleGraph[4]]").unwrap(),
+      "False"
+    );
+    // Different vertex counts.
+    assert_eq!(
+      interpret("IsomorphicGraphQ[CycleGraph[3], CycleGraph[4]]").unwrap(),
+      "False"
+    );
+  }
+
+  // Directedness is respected.
+  #[test]
+  fn directed_graphs() {
+    assert_eq!(
+      interpret(
+        "IsomorphicGraphQ[Graph[{1 -> 2, 2 -> 3}], Graph[{4 -> 5, 5 -> 6}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "IsomorphicGraphQ[Graph[{1 -> 2, 2 -> 3}], Graph[{1 -> 2, 3 -> 2}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  // A non-graph argument makes the predicate False (not unevaluated).
+  #[test]
+  fn non_graph_is_false() {
+    assert_eq!(
+      interpret("IsomorphicGraphQ[x, CycleGraph[3]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("IsomorphicGraphQ[x, y]").unwrap(), "False");
+  }
+}

@@ -1896,7 +1896,7 @@ SignedRegionDistance,Signed distance from a point to a region (negative inside);
 TakeLargest,Takes the n largest elements from a list; supports the operator form TakeLargest[n][list],✅,pure,10.1,1926
 GeodesyData,,🚫,,7.0,1930
 InputAliases,Notebook interface option for input alias definitions,🚫,,4.0,1930
-IsomorphicGraphQ,Test whether two graphs are isomorphic (requires graph isomorphism algorithm),🚫,,8.0,1930
+IsomorphicGraphQ,Test whether two graphs are isomorphic,✅,pure,8.0,1930
 Resampling,Signal processing option for resampling methods,🚫,,8.0,1930
 DumpSave,Serialization of definitions to a binary file,🚫,,3.0,1932
 RecordLists,Data import option for structuring records as lists,🚫,,2.0,1932

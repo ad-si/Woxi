@@ -7024,6 +7024,37 @@ pub fn evaluate_function_call_ast_inner(
     return find_graph_isomorphism_impl(verts1, edges1, verts2, edges2, args);
   }
 
+  // IsomorphicGraphQ[g1, g2] — True iff a graph isomorphism exists, i.e. when
+  // FindGraphIsomorphism returns a non-empty mapping.
+  if name == "IsomorphicGraphQ"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: gname1,
+      args: gargs1,
+    } = &args[0]
+    && gname1 == "Graph"
+    && gargs1.len() >= 2
+    && let (Expr::List(verts1), Expr::List(edges1)) = (&gargs1[0], &gargs1[1])
+    && let Expr::FunctionCall {
+      name: gname2,
+      args: gargs2,
+    } = &args[1]
+    && gname2 == "Graph"
+    && gargs2.len() >= 2
+    && let (Expr::List(verts2), Expr::List(edges2)) = (&gargs2[0], &gargs2[1])
+  {
+    let iso =
+      find_graph_isomorphism_impl(verts1, edges1, verts2, edges2, args)?;
+    let found = matches!(&iso, Expr::List(maps) if !maps.is_empty());
+    return Ok(Expr::Identifier(
+      if found { "True" } else { "False" }.into(),
+    ));
+  }
+  // Any non-graph argument makes IsomorphicGraphQ False (matching wolframscript).
+  if name == "IsomorphicGraphQ" && args.len() == 2 {
+    return Ok(Expr::Identifier("False".into()));
+  }
+
   // FindSpanningTree[Graph[verts, edges]] — minimum spanning tree (Kruskal's)
   if name == "FindSpanningTree"
     && args.len() == 1
