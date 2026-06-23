@@ -3898,3 +3898,118 @@ mod distribution_quantile_closed_forms {
     );
   }
 }
+
+mod inverse_survival_function {
+  use super::*;
+
+  // InverseSurvivalFunction[dist, q] is the x with SurvivalFunction == q,
+  // i.e. InverseCDF[dist, 1 - q]. The gamma/normal family uses the native
+  // survival parametrization.
+  #[test]
+  fn normal_native_form() {
+    assert_eq!(
+      interpret("InverseSurvivalFunction[NormalDistribution[0, 1], 1/4]")
+        .unwrap(),
+      "Sqrt[2]*InverseErfc[1/2]"
+    );
+    assert_eq!(
+      interpret("InverseSurvivalFunction[NormalDistribution[m, s], 1/4]")
+        .unwrap(),
+      "m + Sqrt[2]*s*InverseErfc[1/2]"
+    );
+    // The median survival point is the mean.
+    assert_eq!(
+      interpret("InverseSurvivalFunction[NormalDistribution[0, 1], 1/2]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn normal_boundaries() {
+    assert_eq!(
+      interpret("InverseSurvivalFunction[NormalDistribution[0, 1], 0]")
+        .unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("InverseSurvivalFunction[NormalDistribution[0, 1], 1]")
+        .unwrap(),
+      "-Infinity"
+    );
+  }
+
+  // GammaDistribution uses the 2-arg upper InverseGammaRegularized directly.
+  #[test]
+  fn gamma_family_native_form() {
+    assert_eq!(
+      interpret("InverseSurvivalFunction[GammaDistribution[2, 3], 1/4]")
+        .unwrap(),
+      "3*InverseGammaRegularized[2, 1/4]"
+    );
+    assert_eq!(
+      interpret("InverseSurvivalFunction[GammaDistribution[2, 3], 0]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("InverseSurvivalFunction[GammaDistribution[2, 3], 1]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("InverseSurvivalFunction[ChiSquareDistribution[3], 1/4]")
+        .unwrap(),
+      "2*InverseGammaRegularized[3/2, 1/4]"
+    );
+  }
+
+  // Distributions whose survival inverse equals InverseCDF[dist, 1 - q] in form.
+  #[test]
+  fn elementary_delegation() {
+    assert_eq!(
+      interpret("InverseSurvivalFunction[ExponentialDistribution[2], 1/4]")
+        .unwrap(),
+      "Log[4]/2"
+    );
+    assert_eq!(
+      interpret("InverseSurvivalFunction[WeibullDistribution[2, 3], 1/4]")
+        .unwrap(),
+      "3*Sqrt[Log[4]]"
+    );
+    assert_eq!(
+      interpret("InverseSurvivalFunction[CauchyDistribution[0, 1], 1/4]")
+        .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn numeric_values() {
+    let g: f64 =
+      interpret("N[InverseSurvivalFunction[GammaDistribution[2, 3], 1/4]]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((g - 8.077903586669088).abs() < 1e-8, "got {g}");
+
+    let n: f64 =
+      interpret("N[InverseSurvivalFunction[NormalDistribution[0, 1], 1/4]]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((n - 0.6744897501960817).abs() < 1e-8, "got {n}");
+  }
+
+  // An unsupported distribution or non-distribution stays unevaluated.
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("Head[InverseSurvivalFunction[BetaDistribution[2, 3], 1/4]]")
+        .unwrap(),
+      "InverseSurvivalFunction"
+    );
+    assert_eq!(
+      interpret("InverseSurvivalFunction[x, 1/4]").unwrap(),
+      "InverseSurvivalFunction[x, 1/4]"
+    );
+  }
+}

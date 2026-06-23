@@ -823,6 +823,124 @@ pub fn quantile_distribution_closed_form(
   }
 }
 
+/// InverseSurvivalFunction[dist, q] — the value x with SurvivalFunction == q,
+/// i.e. InverseCDF[dist, 1 - q]. For most distributions wolframscript's form
+/// agrees with InverseCDF at 1 - q (so we delegate); the gamma/normal family is
+/// expressed natively in the survival parametrization (upper InverseErfc /
+/// InverseGammaRegularized). Returns `None` (unevaluated) for everything else.
+pub fn inverse_survival_closed_form(
+  dist_name: &str,
+  dargs: &[Expr],
+  q: &Expr,
+) -> Option<Expr> {
+  let q_num = crate::functions::math_ast::expr_to_num(q)?;
+  if !(0.0..=1.0).contains(&q_num) {
+    return None;
+  }
+  let is_exact_q = !matches!(q, Expr::Real(_));
+  let infinity = || Expr::Identifier("Infinity".to_string());
+  let neg_infinity = || Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(infinity()),
+  };
+
+  match dist_name {
+    // InverseSurvivalFunction[NormalDistribution[m, s], q]
+    //   = m + Sqrt[2] s InverseErfc[2 q]
+    "NormalDistribution" if dargs.is_empty() || dargs.len() == 2 => {
+      let (m, s) = if dargs.is_empty() {
+        (int(0), int(1))
+      } else {
+        (dargs[0].clone(), dargs[1].clone())
+      };
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(infinity());
+        }
+        if q_num == 1.0 {
+          return Some(neg_infinity());
+        }
+        // InverseErfc[1] = 0, so the median survival point is exactly m.
+        if let Some((1, 2)) = crate::functions::math_ast::expr_to_rational(q) {
+          return eval(m).ok();
+        }
+      }
+      let two_q = eval(times(int(2), q.clone())).ok()?;
+      let inverse_erfc = Expr::FunctionCall {
+        name: "InverseErfc".to_string(),
+        args: vec![two_q].into(),
+      };
+      let sqrt2 = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![int(2)].into(),
+      };
+      let factors: Vec<Expr> = match &s {
+        Expr::Integer(1) => vec![sqrt2, inverse_erfc],
+        _ => vec![sqrt2, s.clone(), inverse_erfc],
+      };
+      let term = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      };
+      Some(match &m {
+        Expr::Integer(0) => term,
+        _ => Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![m.clone(), term].into(),
+        },
+      })
+    }
+    // InverseSurvivalFunction[GammaDistribution[a, b], q]
+    //   = b InverseGammaRegularized[a, q]
+    "GammaDistribution" if dargs.len() == 2 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(infinity());
+        }
+        if q_num == 1.0 {
+          return Some(int(0));
+        }
+      }
+      let igr = Expr::FunctionCall {
+        name: "InverseGammaRegularized".to_string(),
+        args: vec![dargs[0].clone(), q.clone()].into(),
+      };
+      eval(times(dargs[1].clone(), igr)).ok()
+    }
+    // ChiSquareDistribution[v] = GammaDistribution[v/2, 2]
+    "ChiSquareDistribution" if dargs.len() == 1 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(infinity());
+        }
+        if q_num == 1.0 {
+          return Some(int(0));
+        }
+      }
+      let igr = Expr::FunctionCall {
+        name: "InverseGammaRegularized".to_string(),
+        args: vec![divide(dargs[0].clone(), int(2)), q.clone()].into(),
+      };
+      eval(times(int(2), igr)).ok()
+    }
+    // Distributions whose survival inverse shares the InverseCDF[dist, 1 - q]
+    // form (verified against wolframscript): delegate to the quantile.
+    "ExponentialDistribution"
+    | "UniformDistribution"
+    | "CauchyDistribution"
+    | "LogisticDistribution"
+    | "WeibullDistribution"
+    | "ParetoDistribution"
+    | "GumbelDistribution"
+    | "LaplaceDistribution"
+    | "RayleighDistribution" => {
+      let one_minus_q = eval(minus(int(1), q.clone())).ok()?;
+      quantile_distribution_closed_form(dist_name, dargs, &one_minus_q)
+    }
+    _ => None,
+  }
+}
+
 /// The integer support `(min, max)` of a discrete distribution; `max` is `None`
 /// for unbounded support.
 fn discrete_support(

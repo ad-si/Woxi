@@ -1768,6 +1768,23 @@ pub fn dispatch_math_functions(
         args: args.to_vec().into(),
       }));
     }
+    "InverseSurvivalFunction" if args.len() == 2 => {
+      if let Expr::FunctionCall {
+        name: dist_name,
+        args: dargs,
+      } = &args[0]
+        && let Some(result) =
+          crate::functions::math_ast::inverse_survival_closed_form(
+            dist_name, dargs, &args[1],
+          )
+      {
+        return Some(Ok(result));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "InverseSurvivalFunction".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "Probability" if args.len() == 2 || args.len() == 3 => {
       // The optional third argument is `Assumptions -> …`, which we
       // currently ignore — pass through only the event and distribution.
