@@ -2171,7 +2171,7 @@ ShearingTransform,Represent a shear transformation by an angle along a direction
 ComplexContourPlot,Visualization,🚫,None,12.1,2210
 GreenFunction,Differential equation Green's function,🚫,None,10.4,2210
 ContinuedFractionK,Evaluates a generalized continued fraction,✅,pure,7.0,2212
-InverseEllipticNomeQ,Elliptic function,🚫,None,3.0,2212
+InverseEllipticNomeQ,Inverse of the elliptic nome giving the parameter m for a nome q,✅,pure,3.0,2212
 DoubleLongRightArrow,Symbol notation,🚫,None,3.0,2214
 VectorMarkers,Visualization option,🚫,None,11.3,2214
 FindFaces,Image processing,🚫,None,9.0,2217

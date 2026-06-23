@@ -347,6 +347,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "EllipticF" => Some((2, 2)),
     "EllipticK" => Some((1, 1)),
     "EllipticNomeQ" => Some((1, 1)),
+    "InverseEllipticNomeQ" => Some((1, 1)),
     "EllipticPi" => Some((2, 3)),
     "EllipticTheta" => Some((3, 3)),
     "EllipticThetaPrime" => Some((3, 3)),

@@ -157,6 +157,68 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Numeric inverse of the elliptic nome: the parameter m in [0, 1] with
+/// EllipticNomeQ[m] == q. The nome q(m) = exp(-Pi K(1-m)/K(m)) increases
+/// monotonically from 0 (m = 0) to 1 (m = 1), so the root is found by bisection.
+pub fn inverse_elliptic_nome_q_numeric(q: f64) -> f64 {
+  if q <= 0.0 {
+    return 0.0;
+  }
+  if q >= 1.0 {
+    return 1.0;
+  }
+  let nome = |m: f64| -> f64 {
+    if m <= 0.0 {
+      return 0.0;
+    }
+    if m >= 1.0 {
+      return 1.0;
+    }
+    (-std::f64::consts::PI * elliptic_k(1.0 - m) / elliptic_k(m)).exp()
+  };
+  let mut lo = 0.0_f64;
+  let mut hi = 1.0_f64;
+  for _ in 0..200 {
+    let mid = 0.5 * (lo + hi);
+    if nome(mid) < q {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  0.5 * (lo + hi)
+}
+
+/// InverseEllipticNomeQ[q] - inverse elliptic nome: the parameter m with
+/// EllipticNomeQ[m] == q. Exact (integer/rational) arguments stay symbolic
+/// except the elementary q = 0 -> 0 and q = 1 -> 1; inexact (machine-real)
+/// arguments evaluate numerically by bisection.
+pub fn inverse_elliptic_nome_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseEllipticNomeQ expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    Expr::Integer(1) => Ok(Expr::Integer(1)),
+    Expr::Real(f) => Ok(Expr::Real(inverse_elliptic_nome_q_numeric(*f))),
+    other => {
+      if expr_is_inexact(other)
+        && let Some(q) = crate::functions::math_ast::expr_to_f64(other)
+      {
+        return Ok(Expr::Real(inverse_elliptic_nome_q_numeric(q)));
+      }
+      Ok(Expr::FunctionCall {
+        name: "InverseEllipticNomeQ".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+  }
+}
+
 /// EllipticE[m] - Complete elliptic integral of the second kind
 pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {

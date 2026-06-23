@@ -1223,6 +1223,11 @@ pub fn dispatch_math_functions(
     "EllipticNomeQ" if args.len() == 1 => {
       return Some(crate::functions::math_ast::elliptic_nome_q_ast(args));
     }
+    "InverseEllipticNomeQ" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::inverse_elliptic_nome_q_ast(
+        args,
+      ));
+    }
     "DedekindEta" if args.len() == 1 => {
       return Some(crate::functions::math_ast::dedekind_eta_ast(args));
     }

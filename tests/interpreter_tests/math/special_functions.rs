@@ -976,6 +976,73 @@ mod elliptic_nome_q {
   }
 }
 
+mod inverse_elliptic_nome_q {
+  use super::*;
+
+  // InverseEllipticNomeQ[q] inverts EllipticNomeQ: it returns the parameter m
+  // with EllipticNomeQ[m] == q. Exact rationals stay symbolic.
+  #[test]
+  fn exact_stays_symbolic() {
+    assert_eq!(
+      interpret("InverseEllipticNomeQ[1/2]").unwrap(),
+      "InverseEllipticNomeQ[1/2]"
+    );
+    assert_eq!(
+      interpret("InverseEllipticNomeQ[q]").unwrap(),
+      "InverseEllipticNomeQ[q]"
+    );
+  }
+
+  // Elementary boundaries: q = 0 -> m = 0, q = 1 -> m = 1.
+  #[test]
+  fn boundaries() {
+    assert_eq!(interpret("InverseEllipticNomeQ[0]").unwrap(), "0");
+    assert_eq!(interpret("InverseEllipticNomeQ[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn numeric_values() {
+    let m: f64 = interpret("N[InverseEllipticNomeQ[1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((m - 0.9999895221373106).abs() < 1e-9, "got {m}");
+
+    let m: f64 = interpret("N[InverseEllipticNomeQ[1/4]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((m - 0.987135606911965).abs() < 1e-9, "got {m}");
+
+    let m: f64 = interpret("N[InverseEllipticNomeQ[1/3]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((m - 0.9979950089217557).abs() < 1e-9, "got {m}");
+
+    // A direct machine-real argument numericizes without an explicit N.
+    let m: f64 = interpret("InverseEllipticNomeQ[0.04321391826377226]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((m - 0.5).abs() < 1e-9, "got {m}");
+  }
+
+  // Round-trip: InverseEllipticNomeQ inverts EllipticNomeQ.
+  #[test]
+  fn round_trip() {
+    let m: f64 = interpret("N[InverseEllipticNomeQ[1/4]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    let q: f64 = interpret(&format!("N[EllipticNomeQ[{m}]]"))
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((q - 0.25).abs() < 1e-9, "got {q}");
+  }
+}
+
 mod dedekind_eta {
   use super::*;
 
