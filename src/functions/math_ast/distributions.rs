@@ -782,6 +782,36 @@ pub fn quantile_distribution_closed_form(
       let radical = sqrt(times(nu, plus(int(-1), power(ibr, int(-1)))));
       eval(if q_num < 0.5 { neg(radical) } else { radical }).ok()
     }
+    // Quantile[FRatioDistribution[n, m], q] =
+    //   (m/n) (1/InverseBetaRegularized[1, -q, m/2, n/2] - 1).
+    // The generalized 4-arg InverseBetaRegularized[1, -q, m/2, n/2] equals the
+    // 3-arg InverseBetaRegularized[1 - q, m/2, n/2]; wolframscript prints the
+    // 4-arg form. Only numeric n, m are handled: a symbolic m would reorder the
+    // (Plus)*m product relative to wolframscript's m*(Plus) ordering.
+    "FRatioDistribution" if dargs.len() == 2 => {
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(int(0));
+        }
+        if q_num == 1.0 {
+          return Some(infinity());
+        }
+      }
+      let (n, m) = (dargs[0].clone(), dargs[1].clone());
+      crate::functions::math_ast::expr_to_num(&n)?;
+      crate::functions::math_ast::expr_to_num(&m)?;
+      let ibr = Expr::FunctionCall {
+        name: "InverseBetaRegularized".to_string(),
+        args: vec![
+          int(1),
+          eval(neg(q.clone())).ok()?,
+          divide(m.clone(), int(2)),
+          divide(n.clone(), int(2)),
+        ]
+        .into(),
+      };
+      eval(divide(times(m, plus(int(-1), power(ibr, int(-1)))), n)).ok()
+    }
     "BinomialDistribution"
     | "PoissonDistribution"
     | "GeometricDistribution"

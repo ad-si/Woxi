@@ -1362,7 +1362,7 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
-    "InverseBetaRegularized" if args.len() == 3 => {
+    "InverseBetaRegularized" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::math_ast::inverse_beta_regularized_ast(
         args,
       ));

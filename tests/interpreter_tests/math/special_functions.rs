@@ -7980,6 +7980,31 @@ mod inverse_beta_regularized {
       .unwrap();
     assert!((s - 0.3).abs() < 1e-9, "got {s}");
   }
+
+  // Generalized 4-arg InverseBetaRegularized[z0, s, a, b] solves
+  // I_z(a,b) - I_z0(a,b) == s. Exact input stays symbolic.
+  #[test]
+  fn four_arg_symbolic() {
+    assert_eq!(
+      interpret("InverseBetaRegularized[1, -1/2, 5/2, 3/2]").unwrap(),
+      "InverseBetaRegularized[1, -1/2, 5/2, 3/2]"
+    );
+  }
+
+  // For z0 == 1 the 4-arg form reduces to the 3-arg InverseBetaRegularized[1+s].
+  #[test]
+  fn four_arg_numeric_reduces_to_three_arg() {
+    let four: f64 = interpret("N[InverseBetaRegularized[1, -1/2, 5/2, 3/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    let three: f64 = interpret("N[InverseBetaRegularized[1/2, 5/2, 3/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((four - 0.6475477201228692).abs() < 1e-9, "got {four}");
+    assert!((four - three).abs() < 1e-9, "{four} vs {three}");
+  }
 }
 
 mod beta_regularized {

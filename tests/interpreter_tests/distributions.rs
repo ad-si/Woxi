@@ -1438,6 +1438,56 @@ mod student_t_quantile {
   }
 }
 
+mod f_ratio_quantile {
+  use super::*;
+
+  // Quantile[FRatioDistribution[n, m], q] =
+  //   (m/n) (1/InverseBetaRegularized[1, -q, m/2, n/2] - 1).
+  #[test]
+  fn closed_form() {
+    assert_eq!(
+      interpret("Quantile[FRatioDistribution[3, 5], 1/2]").unwrap(),
+      "(5*(-1 + InverseBetaRegularized[1, -1/2, 5/2, 3/2]^(-1)))/3"
+    );
+    assert_eq!(
+      interpret("Quantile[FRatioDistribution[3, 5], 1/4]").unwrap(),
+      "(5*(-1 + InverseBetaRegularized[1, -1/4, 5/2, 3/2]^(-1)))/3"
+    );
+    // InverseCDF shares the closed form.
+    assert_eq!(
+      interpret("InverseCDF[FRatioDistribution[3, 5], 1/2]").unwrap(),
+      "(5*(-1 + InverseBetaRegularized[1, -1/2, 5/2, 3/2]^(-1)))/3"
+    );
+  }
+
+  #[test]
+  fn edges() {
+    assert_eq!(
+      interpret("Quantile[FRatioDistribution[3, 5], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[FRatioDistribution[3, 5], 1]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn numeric_values() {
+    let h: f64 = interpret("N[Quantile[FRatioDistribution[3, 5], 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((h - 0.9071462198190188).abs() < 1e-8, "got {h}");
+
+    let l: f64 = interpret("N[Quantile[FRatioDistribution[3, 5], 1/4]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((l - 0.41502457605411).abs() < 1e-8, "got {l}");
+  }
+}
+
 mod polynomial_expectation {
   use super::*;
 

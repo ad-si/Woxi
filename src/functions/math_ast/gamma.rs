@@ -1467,6 +1467,27 @@ pub fn inverse_beta_regularized_ast(
       args: args.to_vec().into(),
     })
   };
+
+  // Generalized 4-arg form InverseBetaRegularized[z0, s, a, b] solves
+  // BetaRegularized[z0, z, a, b] = I_z(a, b) - I_z0(a, b) == s for z, i.e.
+  // I_z(a, b) = s + I_z0(a, b). Exact arguments stay symbolic (matching
+  // wolframscript); inexact arguments evaluate numerically.
+  if args.len() == 4 {
+    let inexact = args.iter().any(|e| matches!(e, Expr::Real(_)));
+    if let (true, Some(z0), Some(sv), Some(av), Some(bv)) = (
+      inexact,
+      expr_to_f64(&args[0]),
+      expr_to_f64(&args[1]),
+      expr_to_f64(&args[2]),
+      expr_to_f64(&args[3]),
+    ) && av > 0.0
+      && bv > 0.0
+    {
+      let target = sv + beta_regularized_numeric(z0, av, bv);
+      return Ok(Expr::Real(inverse_beta_regularized_numeric(target, av, bv)));
+    }
+    return symbolic();
+  }
   if args.len() != 3 {
     return symbolic();
   }
