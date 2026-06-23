@@ -1449,6 +1449,60 @@ mod series {
     );
   }
 
+  // Puiseux (fractional-power) expansion: f = x^(p/q) g(x) expands with den = q,
+  // the cofactor g's coefficients interleaved with q-1 zeros. nmax follows the
+  // rule max(order*q, nmin) + 1.
+  #[test]
+  fn series_fractional_power() {
+    assert_eq!(
+      interpret("Series[Sqrt[x], {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {1}, 1, 7, 2]"
+    );
+    assert_eq!(
+      interpret("Series[x^(3/2), {x, 0, 4}]").unwrap(),
+      "SeriesData[x, 0, {1}, 3, 9, 2]"
+    );
+    // Cube-root power gives den = 3.
+    assert_eq!(
+      interpret("Series[x^(1/3), {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1}, 1, 7, 3]"
+    );
+    // Analytic cofactor (Exp) interleaves with a zero at the integer power.
+    assert_eq!(
+      interpret("Series[Sqrt[x] Exp[x], {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, 1}, 1, 5, 2]"
+    );
+    // A Sqrt cofactor is itself analytic at 0.
+    assert_eq!(
+      interpret("Series[Sqrt[x] Sqrt[1 + x], {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, 1/2}, 1, 5, 2]"
+    );
+    // Negative fractional power (leading exponent below zero).
+    assert_eq!(
+      interpret("Series[1/Sqrt[x], {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1}, -1, 5, 2]"
+    );
+    // Order 0 still emits the leading fractional term.
+    assert_eq!(
+      interpret("Series[Sqrt[x], {x, 0, 0}]").unwrap(),
+      "SeriesData[x, 0, {1}, 1, 2, 2]"
+    );
+    // A constant multiple keeps the coefficient.
+    assert_eq!(
+      interpret("Series[2 Sqrt[x], {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {2}, 1, 5, 2]"
+    );
+  }
+
+  // Integrating a fractional-power SeriesData works via the den != 1 path.
+  #[test]
+  fn integrate_series_fractional() {
+    assert_eq!(
+      interpret("Integrate[Series[Sqrt[x], {x, 0, 3}], x]").unwrap(),
+      "SeriesData[x, 0, {2/3}, 3, 9, 2]"
+    );
+  }
+
   // A purely analytic sum is unaffected by the linearity path.
   #[test]
   fn series_analytic_sum_unchanged() {

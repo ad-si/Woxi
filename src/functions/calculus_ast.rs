@@ -12178,6 +12178,129 @@ fn additive_terms(expr: &Expr) -> Vec<Expr> {
   }
 }
 
+/// Flatten an expression into its multiplicative factors, descending through
+/// nested `Times` (FunctionCall or BinaryOp). A non-product yields a
+/// single-element vector.
+fn multiplicative_factors(expr: &Expr) -> Vec<Expr> {
+  use crate::syntax::BinaryOperator as B;
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().flat_map(multiplicative_factors).collect()
+    }
+    Expr::BinaryOp {
+      op: B::Times,
+      left,
+      right,
+    } => {
+      let mut f = multiplicative_factors(left);
+      f.extend(multiplicative_factors(right));
+      f
+    }
+    _ => vec![expr.clone()],
+  }
+}
+
+/// Reduce a fraction `(num, den)` (den > 0) to lowest terms with positive den.
+fn reduce_frac(num: i128, den: i128) -> (i128, i128) {
+  let g = gcd_i128(num.abs(), den.abs()).max(1);
+  let (mut n, mut d) = (num / g, den / g);
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  (n, d)
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  if b == 0 { a } else { gcd_i128(b, a % b) }
+}
+
+/// If `f` has a leading non-integer rational power of `var` (so that its
+/// expansion about 0 is a genuine Puiseux series), return the reduced exponent
+/// `(p, q)` with `q > 1` together with the analytic cofactor `g = f / var^(p/q)`.
+/// Handles `var^(p/q)` directly and products such as `Sqrt[x] Exp[x]`. The
+/// power exponents must be explicit integers or `Rational`s; anything symbolic
+/// (or a purely integer total exponent) returns `None`.
+fn leading_fractional_power(
+  f: &Expr,
+  var: &str,
+) -> Option<((i128, i128), Expr)> {
+  let pow_exp = |e: &Expr| -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(k) => Some((*k, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => Some((*p, *q)),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  // Exponent contributed by a single factor that is a power of `var`.
+  let factor_exp = |fac: &Expr| -> Option<Option<(i128, i128)>> {
+    // Outer Option: Some(None) = factor is part of g; Some(Some(r)) = power of
+    // var with exponent r; None = unrepresentable (bail).
+    match fac {
+      Expr::Identifier(s) if s == var => Some(Some((1, 1))),
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Identifier(s) if s == var) =>
+      {
+        pow_exp(&args[1]).map(Some)
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(left.as_ref(), Expr::Identifier(s) if s == var) => {
+        pow_exp(right).map(Some)
+      }
+      // A factor not headed by a var-power is part of the cofactor g, unless
+      // it secretly depends on var via a fractional power buried inside, which
+      // the analytic-g expansion would then mishandle — but such factors
+      // (e.g. Exp[x], 1 + x, Sqrt[1 + x]) are analytic at 0, so keep them in g.
+      _ => Some(None),
+    }
+  };
+
+  let factors = multiplicative_factors(f);
+  let mut num = 0i128;
+  let mut den = 1i128;
+  let mut g_factors: Vec<Expr> = Vec::new();
+  for fac in &factors {
+    match factor_exp(fac)? {
+      Some((p, q)) => {
+        // num/den += p/q
+        num = num * q + p * den;
+        den *= q;
+        let (rn, rd) = reduce_frac(num, den);
+        num = rn;
+        den = rd;
+      }
+      None => g_factors.push(fac.clone()),
+    }
+  }
+  let (p, q) = reduce_frac(num, den);
+  if q <= 1 {
+    return None; // integer total exponent — not a Puiseux case.
+  }
+  let g = if g_factors.is_empty() {
+    Expr::Integer(1)
+  } else if g_factors.len() == 1 {
+    g_factors.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: g_factors.into(),
+    }
+  };
+  Some(((p, q), g))
+}
+
 pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -12279,6 +12402,83 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return crate::evaluator::evaluate_function_call_ast("Plus", &expanded);
       }
     }
+  }
+
+  // Puiseux (fractional-power) expansion about 0. The direct path assumes
+  // integer powers and evaluates 0^(p/q); instead, factor f = x^(p/q) g(x)
+  // with g analytic, expand g normally, and shift exponents by p/q. The result
+  // is a SeriesData with den = q whose coefficients are g's coefficients
+  // interleaved with q-1 zeros (consecutive numerators step by q).
+  if matches!(&x0, Expr::Integer(0))
+    && let Some(((p, q), g)) = leading_fractional_power(&args[0], &var_name)
+  {
+    // Expand g to enough integer orders M so that p/q + M reaches `order`.
+    // M = max(0, floor(order - p/q)) = max(0, floor((order*q - p)/q)).
+    let m = (((order * q - p) as f64) / q as f64).floor() as i128;
+    let m = m.max(0);
+    let g_series = series_ast(&[
+      g,
+      Expr::List(
+        vec![
+          Expr::Identifier(var_name.clone()),
+          Expr::Integer(0),
+          Expr::Integer(m),
+        ]
+        .into(),
+      ),
+    ])?;
+    // Map integer power k -> coefficient g_k (default 0).
+    let g_coeff = |k: i128| -> Expr {
+      match &g_series {
+        Expr::FunctionCall { name, args: sd }
+          if name == "SeriesData" && sd.len() == 6 =>
+        {
+          if let (Expr::List(cs), Some(gnmin)) =
+            (&sd[2], crate::functions::math_ast::expr_to_i128(&sd[3]))
+          {
+            let idx = k - gnmin;
+            if idx >= 0 && (idx as usize) < cs.len() {
+              return cs[idx as usize].clone();
+            }
+          }
+          Expr::Integer(0)
+        }
+        // g analytic and free of var (e.g. g == 1): only the k=0 coefficient.
+        other => {
+          if k == 0 {
+            other.clone()
+          } else {
+            Expr::Integer(0)
+          }
+        }
+      }
+    };
+    // Build coefficients at consecutive numerators p, p+1, ..., p + m*q.
+    let mut coeffs: Vec<Expr> = Vec::with_capacity((m * q + 1) as usize);
+    for j in 0..=(m * q) {
+      coeffs.push(if j % q == 0 {
+        g_coeff(j / q)
+      } else {
+        Expr::Integer(0)
+      });
+    }
+    // Trim trailing zero coefficients (nmax still records the O-term).
+    while coeffs.len() > 1 && matches!(coeffs.last(), Some(Expr::Integer(0))) {
+      coeffs.pop();
+    }
+    let nmax = (order * q).max(p) + 1;
+    return Ok(Expr::FunctionCall {
+      name: "SeriesData".to_string(),
+      args: vec![
+        Expr::Identifier(var_name.clone()),
+        Expr::Integer(0),
+        Expr::List(coeffs.into()),
+        Expr::Integer(p),
+        Expr::Integer(nmax),
+        Expr::Integer(q),
+      ]
+      .into(),
+    });
   }
 
   // Series expansion at Infinity: substitute x -> 1/t, simplify, expand at
