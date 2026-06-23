@@ -1919,6 +1919,38 @@ mod covariance {
       "Covariance[{{a, b}, {c, d}}]"
     );
   }
+
+  // Two-matrix cross-covariance: the (i, j) entry is the covariance of column i
+  // of the first matrix with column j of the second. Result is p×q.
+  #[test]
+  fn covariance_two_matrices() {
+    assert_eq!(
+      interpret(
+        "Covariance[{{1, 2}, {3, 4}, {5, 6}}, {{1, 1}, {2, 2}, {3, 3}}]"
+      )
+      .unwrap(),
+      "{{2, 2}, {2, 2}}"
+    );
+    // Asymmetric: 3 variables on the left, 2 on the right → 3×2.
+    assert_eq!(
+      interpret(
+        "Covariance[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}, {{1, 0}, {0, 1}, {1, 1}}]"
+      )
+      .unwrap(),
+      "{{0, 3/2}, {0, 3/2}, {1/6, 5/3}}"
+    );
+  }
+
+  #[test]
+  fn covariance_two_matrices_real() {
+    assert_eq!(
+      interpret(
+        "Covariance[{{1., 2.}, {3., 4.}, {5., 7.}}, {{2., 1.}, {4., 3.}, {6., 8.}}]"
+      )
+      .unwrap(),
+      "{{4., 7.}, {5., 9.}}"
+    );
+  }
 }
 
 mod correlation {

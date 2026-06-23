@@ -1960,6 +1960,38 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return unevaluated();
   }
+
+  // Two-matrix cross-covariance: with two n×p / n×q data matrices (rows are
+  // observations) the result is the p×q matrix whose (i, j) entry is the sample
+  // covariance of column i of m1 with column j of m2.
+  if let (Expr::List(m1), Expr::List(m2)) = (&args[0], &args[1])
+    && m1.len() == m2.len()
+    && m1.len() >= 2
+    && m1.iter().all(|r| matches!(r, Expr::List(_)))
+    && m2.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let (Some(cols1), Some(cols2)) = (transpose_rows(m1), transpose_rows(m2))
+    else {
+      return unevaluated();
+    };
+    // Only the numeric form is closed-formed here; the symbolic form has the
+    // same Times-ordering divergence noted for the single-matrix case.
+    if !cols1.iter().all(|c| all_numeric_scalars(c))
+      || !cols2.iter().all(|c| all_numeric_scalars(c))
+    {
+      return unevaluated();
+    }
+    let mut matrix_rows = Vec::with_capacity(cols1.len());
+    for ci in &cols1 {
+      let mut row = Vec::with_capacity(cols2.len());
+      for cj in &cols2 {
+        row.push(covariance_pair(ci, cj)?);
+      }
+      matrix_rows.push(Expr::List(row.into()));
+    }
+    return Ok(Expr::List(matrix_rows.into()));
+  }
+
   let (xs, ys) = match (&args[0], &args[1]) {
     (Expr::List(xs), Expr::List(ys))
       if xs.len() == ys.len()
