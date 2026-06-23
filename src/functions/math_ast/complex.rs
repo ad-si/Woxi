@@ -1290,6 +1290,43 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Complex argument: rationalize the real and imaginary parts. Following
+  // wolframscript, if either part has no exact rational (within the tolerance)
+  // both parts stay as machine reals (all-or-nothing).
+  if let Some((re, im)) =
+    crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    let rat = |v: f64| -> Result<Expr, InterpreterError> {
+      let mut a = vec![Expr::Real(v)];
+      if args.len() == 2 {
+        a.push(args[1].clone());
+      }
+      rationalize_ast(&a)
+    };
+    let re_r = rat(re)?;
+    let im_r = rat(im)?;
+    let is_exact = |e: &Expr| {
+      matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+        || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+    };
+    let (re_c, im_c) = if is_exact(&re_r) && is_exact(&im_r) {
+      (re_r, im_r)
+    } else {
+      (Expr::Real(re), Expr::Real(im))
+    };
+    return crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[
+        re_c,
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![im_c, Expr::Identifier("I".to_string())].into(),
+        },
+      ],
+    );
+  }
+
   let x = match expr_to_num(&args[0]) {
     Some(x) => x,
     None => {

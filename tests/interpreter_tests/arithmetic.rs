@@ -4286,6 +4286,44 @@ mod rationalize {
   fn integer_input() {
     assert_eq!(interpret("Rationalize[5]").unwrap(), "5");
   }
+
+  // Rationalize acts on the real and imaginary parts of a complex number.
+  #[test]
+  fn complex() {
+    assert_eq!(
+      interpret("Rationalize[2.5 + 3.5 I]").unwrap(),
+      "5/2 + (7*I)/2"
+    );
+    assert_eq!(interpret("Rationalize[0.1 + 0.2 I]").unwrap(), "1/10 + I/5");
+    assert_eq!(
+      interpret("Rationalize[1.5 - 2.5 I]").unwrap(),
+      "3/2 - (5*I)/2"
+    );
+    // A Gaussian integer is already exact.
+    assert_eq!(interpret("Rationalize[3 + 4 I]").unwrap(), "3 + 4*I");
+  }
+
+  // The tolerance form applies to each component.
+  #[test]
+  fn complex_with_tolerance() {
+    assert_eq!(
+      interpret("Rationalize[2.5 + 3.5 I, 0.01]").unwrap(),
+      "5/2 + (7*I)/2"
+    );
+  }
+
+  // All-or-nothing: if either part has no nearby rational, both stay real.
+  #[test]
+  fn complex_all_or_nothing() {
+    assert_eq!(
+      interpret("Rationalize[Pi + 0.5 I]").unwrap(),
+      "3.141592653589793 + 0.5*I"
+    );
+    assert_eq!(
+      interpret("Rationalize[0.333333 I]").unwrap(),
+      "0. + 0.333333*I"
+    );
+  }
 }
 
 mod biginteger_division {
