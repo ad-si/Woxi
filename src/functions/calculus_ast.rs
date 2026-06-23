@@ -12728,7 +12728,18 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // power-series long division of numerator by denominator.
   {
     let probe = crate::syntax::substitute_variable(&args[0], &var_name, &x0);
-    if let Ok(val) = crate::evaluator::evaluate_expr_to_expr(&probe)
+    // Evaluate the probe quietly: substituting x0 into a removable singularity
+    // (e.g. Sin[x]/x → 0/0) intentionally produces ComplexInfinity/Indeterminate
+    // here, which would otherwise emit spurious `Power::infy`/`Infinity::indet`
+    // messages even though we recover the correct series below. wolframscript
+    // emits no such message for these expansions. Snapshot/restore the message
+    // buffers around the probe (push_quiet only silences printing, not capture).
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let probe_val = crate::evaluator::evaluate_expr_to_expr(&probe);
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    if let Ok(val) = probe_val
       && is_singular_series_value(&val)
       && let Some((num, den)) = split_for_series(&args[0])
       && let Some(series) =

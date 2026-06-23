@@ -1524,6 +1524,57 @@ mod series {
     );
   }
 
+  // Removable-singularity quotients (Sin[x]/x, etc.) expand via power-series
+  // long division. The internal probe at x0 hits a 0/0, which must be evaluated
+  // quietly so no spurious Power::infy / Infinity::indet messages leak out.
+  // wolframscript emits no such message.
+  #[test]
+  fn series_removable_singularity_no_warnings() {
+    clear_state();
+    let result = interpret_with_stdout("Series[Sin[x]/x, {x, 0, 4}]").unwrap();
+    assert_eq!(
+      result.result,
+      "SeriesData[x, 0, {1, 0, -1/6, 0, 1/120}, 0, 5, 1]"
+    );
+    assert!(
+      result.warnings.is_empty(),
+      "Expected no warnings but got: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn series_one_minus_cos_over_x2() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Series[(1 - Cos[x])/x^2, {x, 0, 4}]").unwrap();
+    assert_eq!(
+      result.result,
+      "SeriesData[x, 0, {1/2, 0, -1/24, 0, 1/720}, 0, 5, 1]"
+    );
+    assert!(
+      result.warnings.is_empty(),
+      "Expected no warnings but got: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn series_exp_minus_one_over_x() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Series[(Exp[x] - 1)/x, {x, 0, 3}]").unwrap();
+    assert_eq!(
+      result.result,
+      "SeriesData[x, 0, {1, 1/2, 1/6, 1/24}, 0, 4, 1]"
+    );
+    assert!(
+      result.warnings.is_empty(),
+      "Expected no warnings but got: {:?}",
+      result.warnings
+    );
+  }
+
   #[test]
   fn series_cos_no_leading_zero() {
     assert_eq!(
