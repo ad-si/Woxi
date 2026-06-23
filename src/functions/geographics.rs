@@ -50,19 +50,24 @@ fn read_i16(buf: &[u8], i: &mut usize) -> i16 {
   v
 }
 
-fn decode_polygons(buf: &[u8]) -> Vec<Polygon> {
-  let mut i = 0usize;
-  let num_polys = read_u32(buf, &mut i) as usize;
+/// One country: its Natural Earth `NAME` and its polygons.
+pub struct Country {
+  pub name: String,
+  pub polygons: Vec<Polygon>,
+}
+
+fn read_polygons(buf: &[u8], i: &mut usize) -> Vec<Polygon> {
+  let num_polys = read_u16(buf, i) as usize;
   let mut polys = Vec::with_capacity(num_polys);
   for _ in 0..num_polys {
-    let num_rings = read_u16(buf, &mut i) as usize;
+    let num_rings = read_u16(buf, i) as usize;
     let mut rings = Vec::with_capacity(num_rings);
     for _ in 0..num_rings {
-      let n = read_u16(buf, &mut i) as usize;
+      let n = read_u16(buf, i) as usize;
       let mut ring = Vec::with_capacity(n);
       for _ in 0..n {
-        let lon = read_i16(buf, &mut i) as f32 / 100.0;
-        let lat = read_i16(buf, &mut i) as f32 / 100.0;
+        let lon = read_i16(buf, i) as f32 / 100.0;
+        let lat = read_i16(buf, i) as f32 / 100.0;
         ring.push((lon, lat));
       }
       rings.push(ring);
@@ -72,9 +77,57 @@ fn decode_polygons(buf: &[u8]) -> Vec<Polygon> {
   polys
 }
 
-fn world_polygons() -> &'static Vec<Polygon> {
-  static CACHE: OnceLock<Vec<Polygon>> = OnceLock::new();
-  CACHE.get_or_init(|| decode_polygons(COUNTRIES_BIN))
+fn decode_countries(buf: &[u8]) -> Vec<Country> {
+  let mut i = 0usize;
+  let num = read_u32(buf, &mut i) as usize;
+  let mut countries = Vec::with_capacity(num);
+  for _ in 0..num {
+    let name_len = read_u16(buf, &mut i) as usize;
+    let name = String::from_utf8_lossy(&buf[i..i + name_len]).into_owned();
+    i += name_len;
+    let polygons = read_polygons(buf, &mut i);
+    countries.push(Country { name, polygons });
+  }
+  countries
+}
+
+/// All countries with their names and geometry (decoded once).
+pub fn world_countries() -> &'static Vec<Country> {
+  static CACHE: OnceLock<Vec<Country>> = OnceLock::new();
+  CACHE.get_or_init(|| decode_countries(COUNTRIES_BIN))
+}
+
+/// Every polygon on the map, flattened in country order (for the basemap).
+fn world_polygons() -> impl Iterator<Item = &'static Polygon> {
+  world_countries().iter().flat_map(|c| c.polygons.iter())
+}
+
+/// Natural Earth uses abbreviated names for a few countries; map them to a form
+/// that `country_data`'s resolver recognizes so they can still be looked up.
+fn fixup_ne_name(ne: &str) -> &str {
+  match ne {
+    "Dem. Rep. Congo" => "Democratic Republic of the Congo",
+    "Central African Rep." => "Central African Republic",
+    "Dominican Rep." => "Dominican Republic",
+    "Eq. Guinea" => "Equatorial Guinea",
+    "S. Sudan" => "South Sudan",
+    "Bosnia and Herz." => "Bosnia and Herzegovina",
+    "Solomon Is." => "Solomon Islands",
+    "W. Sahara" => "Western Sahara",
+    other => other,
+  }
+}
+
+/// Find the polygons of the country whose name resolves (via `country_data`) to
+/// the same canonical country as `query`. Returns `None` for unknown names or
+/// non-sovereign territories not in the knowledge base.
+pub fn country_polygons(query: &str) -> Option<&'static [Polygon]> {
+  let canon = crate::functions::country_data::canonical_name(query)?;
+  world_countries().iter().find_map(|c| {
+    let ne_canon =
+      crate::functions::country_data::canonical_name(fixup_ne_name(&c.name))?;
+    (ne_canon == canon).then_some(c.polygons.as_slice())
+  })
 }
 
 // ── Cartographic colors (light "Default"-style basemap) ───────────────────
@@ -87,7 +140,7 @@ const BORDER_STROKE: &str = "rgb(176,169,159)";
 
 /// Extract `(lat, lon)` from `GeoPosition[{lat, lon[, h]}]` or a bare
 /// `{lat, lon[, h]}` list.
-fn position_to_latlon(expr: &Expr) -> Option<(f64, f64)> {
+pub fn position_to_latlon(expr: &Expr) -> Option<(f64, f64)> {
   let coords = match expr {
     Expr::FunctionCall { name, args }
       if name == "GeoPosition" && args.len() == 1 =>
@@ -108,7 +161,7 @@ fn position_to_latlon(expr: &Expr) -> Option<(f64, f64)> {
 
 /// Extract one or more positions from a `GeoMarker`/`Point` argument, which may
 /// be a single position or a list of positions.
-fn positions_from_arg(expr: &Expr) -> Vec<(f64, f64)> {
+pub fn positions_from_arg(expr: &Expr) -> Vec<(f64, f64)> {
   // Single position forms first.
   if let Some(p) = position_to_latlon(expr) {
     return vec![p];
@@ -145,26 +198,58 @@ const MIN_HALFSPAN_LAT: f64 = 5.0;
 /// regional context.
 const SINGLE_HALFSPAN_LAT: f64 = 12.0;
 
-/// Equidistant-cylindrical projection with a standard parallel at the view
-/// center latitude (longitudes are scaled by `cos(lat_c)` so the map is not
-/// horizontally distorted around the center). For a whole-world view the center
-/// latitude is 0, so this reduces to plain equirectangular.
+/// The map projection (the `GeoProjection` option).
+#[derive(Clone, Copy, PartialEq)]
+enum Projection {
+  /// Equidistant cylindrical with a standard parallel at the view center
+  /// (longitudes scaled by `cos(lat_c)`); the Woxi default.
+  EquidistantCylindrical,
+  /// Web/spherical Mercator — conformal, the Wolfram default.
+  Mercator,
+}
+
+fn parse_projection(expr: &Expr) -> Option<Projection> {
+  let s = match expr {
+    Expr::String(s) | Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  match s {
+    "Mercator" => Some(Projection::Mercator),
+    "Equirectangular" | "EquidistantCylindrical" => {
+      Some(Projection::EquidistantCylindrical)
+    }
+    _ => None,
+  }
+}
+
+/// Mercator northing for a latitude (degrees), clamped away from the poles.
+fn mercator_y(lat_deg: f64) -> f64 {
+  let lat = lat_deg.clamp(-85.05, 85.05).to_radians();
+  (std::f64::consts::FRAC_PI_4 + lat / 2.0).tan().ln()
+}
+
+/// A projection ready to map (lon, lat) degrees to SVG pixel coordinates. The
+/// projection-specific parameters are baked in by [`build_view`].
 struct GeoView {
   w: f64,
   h: f64,
-  lon_c: f64,
-  lat_c: f64,
-  /// cos(standard parallel) — the longitude scale factor.
-  k: f64,
-  /// Pixels per projected degree (uniform in x and y).
-  scale: f64,
+  projection: Projection,
+  /// Top-left reference: minimum longitude and the projected y at the top edge.
+  ref_lon: f64,
+  ref_y: f64,
+  /// Pixels per projected x-unit and y-unit (degrees, or radians for Mercator).
+  sx: f64,
+  sy: f64,
 }
 
 impl GeoView {
   /// Project (lon, lat) in degrees to SVG pixel coordinates.
   fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
-    let px = self.w / 2.0 + (lon - self.lon_c) * self.k * self.scale;
-    let py = self.h / 2.0 - (lat - self.lat_c) * self.scale;
+    let px = (lon - self.ref_lon) * self.sx;
+    let py = match self.projection {
+      Projection::EquidistantCylindrical => (self.ref_y - lat) * self.sy,
+      Projection::Mercator => (self.ref_y - mercator_y(lat)) * self.sy,
+    };
     (px, py)
   }
 }
@@ -275,21 +360,39 @@ fn build_view(
   positions: &[(f64, f64)],
   width: f64,
   range: &GeoRange,
+  projection: Projection,
 ) -> GeoView {
   let (lon_c, lat_c, half_lon, half_lat) = compute_window(positions, range);
-  let k = lon_scale(lat_c);
-  // Projected half-spans (degrees).
-  let hx = (half_lon * k).max(1e-6);
-  let hy = half_lat.max(1e-6);
-  let height = (width * hy / hx).round().max(1.0);
-  let scale = width / (2.0 * hx);
+  let half_lon = half_lon.max(1e-6);
+  let half_lat = half_lat.max(1e-6);
+  let lon_span = 2.0 * half_lon;
+  let ref_lon = lon_c - half_lon;
+  // Longitude always maps linearly across the full width.
+  let sx = width / lon_span;
+  let (sy, ref_y, height) = match projection {
+    Projection::EquidistantCylindrical => {
+      // Latitude is undistorted; cos(lat_c) sets the vertical scale so a
+      // degree of longitude near the center matches a degree of latitude.
+      let k = lon_scale(lat_c);
+      let sy = sx / k;
+      (sy, lat_c + half_lat, 2.0 * half_lat * sy)
+    }
+    Projection::Mercator => {
+      // Conformal: equal pixels-per-radian in x and y.
+      let sy = sx * 180.0 / std::f64::consts::PI;
+      let y_top = mercator_y(lat_c + half_lat);
+      let y_bot = mercator_y(lat_c - half_lat);
+      (sy, y_top, (y_top - y_bot) * sy)
+    }
+  };
   GeoView {
     w: width,
-    h: height,
-    lon_c,
-    lat_c,
-    k,
-    scale,
+    h: height.round().max(1.0),
+    projection,
+    ref_lon,
+    ref_y,
+    sx,
+    sy,
   }
 }
 
@@ -323,6 +426,180 @@ fn render_dot(svg: &mut String, px: f64, py: f64, color: &Color, radius: f64) {
   svg.push_str(&format!(
     "<circle cx=\"{px:.1}\" cy=\"{py:.1}\" r=\"{radius:.1}\" fill=\"{}\"/>\n",
     color.to_svg_rgb()
+  ));
+}
+
+/// Inverse Gudermannian: latitude (degrees) for a Mercator northing.
+fn inverse_mercator_y(y: f64) -> f64 {
+  y.sinh().atan().to_degrees()
+}
+
+impl GeoView {
+  /// Geographic bounds `(lat_min, lat_max, lon_min, lon_max)` of the view.
+  fn bounds(&self) -> (f64, f64, f64, f64) {
+    let lon_min = self.ref_lon;
+    let lon_max = self.ref_lon + self.w / self.sx;
+    let (lat_top, lat_bot) = match self.projection {
+      Projection::EquidistantCylindrical => {
+        (self.ref_y, self.ref_y - self.h / self.sy)
+      }
+      Projection::Mercator => (
+        inverse_mercator_y(self.ref_y),
+        inverse_mercator_y(self.ref_y - self.h / self.sy),
+      ),
+    };
+    (lat_bot, lat_top, lon_min, lon_max)
+  }
+}
+
+/// A "nice" grid spacing (degrees) giving roughly 4–10 lines across `span`.
+fn nice_grid_step(span: f64) -> f64 {
+  const STEPS: [f64; 9] = [1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 90.0];
+  let target = span / 6.0;
+  *STEPS
+    .iter()
+    .find(|&&s| s >= target)
+    .unwrap_or(STEPS.last().unwrap())
+}
+
+const GRID_STROKE: &str = "rgb(170,190,205)";
+
+/// Draw latitude/longitude graticule lines clipped to the view. Both supported
+/// projections are cylindrical, so grid lines are straight.
+fn render_graticule(svg: &mut String, proj: &GeoView) {
+  let (lat_min, lat_max, lon_min, lon_max) = proj.bounds();
+  let lat_step = nice_grid_step(lat_max - lat_min);
+  let lon_step = nice_grid_step(lon_max - lon_min);
+  let line = |svg: &mut String, x1: f64, y1: f64, x2: f64, y2: f64| {
+    svg.push_str(&format!(
+      "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" \
+       stroke=\"{GRID_STROKE}\" stroke-width=\"0.5\"/>\n"
+    ));
+  };
+  // Parallels (constant latitude).
+  let mut lat = (lat_min / lat_step).ceil() * lat_step;
+  while lat <= lat_max + 1e-9 {
+    let (_, y) = proj.project(lon_min, lat);
+    let (x2, _) = proj.project(lon_max, lat);
+    line(svg, 0.0, y, x2, y);
+    lat += lat_step;
+  }
+  // Meridians (constant longitude).
+  let mut lon = (lon_min / lon_step).ceil() * lon_step;
+  while lon <= lon_max + 1e-9 {
+    let (x, _) = proj.project(lon, lat_max);
+    let (_, y2) = proj.project(lon, lat_min);
+    line(svg, x, 0.0, x, y2);
+    lon += lon_step;
+  }
+}
+
+/// The country name of an `Entity["Country", name]` (or `None`).
+fn entity_country_name(expr: &Expr) -> Option<&str> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Entity"
+    && args.len() == 2
+    && let (Expr::String(kind), Expr::String(country)) = (&args[0], &args[1])
+    && kind == "Country"
+  {
+    return Some(country);
+  }
+  None
+}
+
+/// Bounding box `(lat_min, lat_max, lon_min, lon_max)` of a country's polygons.
+fn polygons_bbox(polys: &[Polygon]) -> Option<(f64, f64, f64, f64)> {
+  let mut b: Option<(f64, f64, f64, f64)> = None;
+  for ring in polys.iter().flatten() {
+    for &(lon, lat) in ring {
+      let (lon, lat) = (lon as f64, lat as f64);
+      b = Some(match b {
+        None => (lat, lat, lon, lon),
+        Some((la0, la1, lo0, lo1)) => {
+          (la0.min(lat), la1.max(lat), lo0.min(lon), lo1.max(lon))
+        }
+      });
+    }
+  }
+  b
+}
+
+/// Fill a country's polygons (even-odd handles enclaves/holes) with `color`.
+fn render_country(
+  svg: &mut String,
+  polys: &[Polygon],
+  proj: &GeoView,
+  color: &Color,
+) {
+  let mut d = String::new();
+  for ring in polys.iter().flatten() {
+    for (k, (lon, lat)) in ring.iter().enumerate() {
+      let (x, y) = proj.project(*lon as f64, *lat as f64);
+      d.push_str(&format!(
+        "{} {x:.1} {y:.1} ",
+        if k == 0 { "M" } else { "L" }
+      ));
+    }
+    d.push_str("Z ");
+  }
+  if d.is_empty() {
+    return;
+  }
+  let c = color.to_svg_rgb();
+  svg.push_str(&format!(
+    "<path d=\"{d}\" fill=\"{c}\" fill-rule=\"evenodd\" fill-opacity=\"0.65\" \
+     stroke=\"{c}\" stroke-width=\"0.6\"/>\n"
+  ));
+}
+
+/// Sample a geodesic circle of radius `radius_m` meters around `(lat, lon)` as
+/// a closed list of boundary points, used by `GeoCircle` / `GeoDisk`.
+fn geo_circle_points(
+  lat: f64,
+  lon: f64,
+  radius_m: f64,
+  segments: usize,
+) -> Vec<(f64, f64)> {
+  (0..segments)
+    .map(|i| {
+      let az = 360.0 * i as f64 / segments as f64;
+      crate::functions::geo_math::destination(lat, lon, az, radius_m)
+    })
+    .collect()
+}
+
+/// Append an SVG polyline/polygon path for a sequence of projected positions.
+fn render_geo_path(
+  svg: &mut String,
+  pts: &[(f64, f64)],
+  proj: &GeoView,
+  color: &Color,
+  closed: bool,
+  filled: bool,
+) {
+  if pts.len() < 2 {
+    return;
+  }
+  let mut d = String::new();
+  for (i, (lat, lon)) in pts.iter().enumerate() {
+    let (x, y) = proj.project(*lon, *lat);
+    d.push_str(&format!(
+      "{} {x:.1} {y:.1} ",
+      if i == 0 { "M" } else { "L" }
+    ));
+  }
+  if closed {
+    d.push('Z');
+  }
+  let stroke = color.to_svg_rgb();
+  let (fill, fill_op) = if filled {
+    (stroke.clone(), " fill-opacity=\"0.3\"")
+  } else {
+    ("none".to_string(), "")
+  };
+  svg.push_str(&format!(
+    "<path d=\"{d}\" fill=\"{fill}\"{fill_op} stroke=\"{stroke}\" \
+     stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n"
   ));
 }
 
@@ -384,13 +661,56 @@ fn collect_positions(expr: &Expr, out: &mut Vec<(f64, f64)>) {
           collect_positions(a, out);
         }
       }
-      "GeoMarker" | "Point" if !args.is_empty() => {
+      "GeoMarker" | "Point" | "GeoPath" | "GeoPolygon" if !args.is_empty() => {
         out.extend(positions_from_arg(&args[0]));
+      }
+      "GeoCircle" | "GeoDisk" if !args.is_empty() => {
+        // Frame the circle's center plus a radius ring so it fits in view.
+        if let Some((lat, lon)) = position_to_latlon(&args[0]) {
+          let radius_m =
+            args.get(1).and_then(radius_to_meters).unwrap_or(100_000.0);
+          out.extend(geo_circle_points(lat, lon, radius_m, 16));
+        }
+      }
+      "Entity" => {
+        // Frame a country to its bounding box.
+        if let Some(name) = entity_country_name(expr)
+          && let Some(polys) = country_polygons(name)
+          && let Some((la0, la1, lo0, lo1)) = polygons_bbox(polys)
+        {
+          out.push((la0, lo0));
+          out.push((la1, lo1));
+        }
       }
       _ => {}
     },
     _ => {}
   }
+}
+
+/// Interpret a `GeoCircle`/`GeoDisk` radius argument as meters. Accepts a bare
+/// number (meters) or `Quantity[r, unit]` for length units.
+fn radius_to_meters(expr: &Expr) -> Option<f64> {
+  if let Some(m) = expr_to_f64(expr) {
+    return Some(m);
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Quantity"
+    && args.len() == 2
+    && let Some(v) = expr_to_f64(&args[0])
+    && let Expr::String(unit) = &args[1]
+  {
+    let factor = match unit.as_str() {
+      "Meters" | "Meter" => 1.0,
+      "Kilometers" | "Kilometer" => 1000.0,
+      "Miles" | "Mile" => 1609.344,
+      "Feet" | "Foot" => 0.3048,
+      "NauticalMiles" | "NauticalMile" => 1852.0,
+      _ => return None,
+    };
+    return Some(v * factor);
+  }
+  None
 }
 
 /// Walk the content list, tracking color/PointSize directives and emitting SVG
@@ -423,6 +743,37 @@ fn render_content(
           render_pin(svg, px, py, &style.color, scale);
         }
       }
+      "GeoPath" if !args.is_empty() => {
+        let pts = positions_from_arg(&args[0]);
+        render_geo_path(svg, &pts, proj, &style.color, false, false);
+      }
+      "GeoPolygon" if !args.is_empty() => {
+        let pts = positions_from_arg(&args[0]);
+        render_geo_path(svg, &pts, proj, &style.color, true, true);
+      }
+      "GeoCircle" if !args.is_empty() => {
+        if let Some((lat, lon)) = position_to_latlon(&args[0]) {
+          let radius_m =
+            args.get(1).and_then(radius_to_meters).unwrap_or(100_000.0);
+          let pts = geo_circle_points(lat, lon, radius_m, 96);
+          render_geo_path(svg, &pts, proj, &style.color, true, false);
+        }
+      }
+      "GeoDisk" if !args.is_empty() => {
+        if let Some((lat, lon)) = position_to_latlon(&args[0]) {
+          let radius_m =
+            args.get(1).and_then(radius_to_meters).unwrap_or(100_000.0);
+          let pts = geo_circle_points(lat, lon, radius_m, 96);
+          render_geo_path(svg, &pts, proj, &style.color, true, true);
+        }
+      }
+      "Entity" => {
+        if let Some(name) = entity_country_name(expr)
+          && let Some(polys) = country_polygons(name)
+        {
+          render_country(svg, polys, proj, &style.color);
+        }
+      }
       "Point" if !args.is_empty() => {
         let radius = point_radius(&style.point_size, proj.w);
         for (lat, lon) in positions_from_arg(&args[0]) {
@@ -446,6 +797,163 @@ fn render_content(
   }
 }
 
+// ── GeoNearest (point-in-country) ─────────────────────────────────────────
+
+/// Ray-casting point-in-polygon over every ring of a country (even-odd rule, so
+/// enclaves and holes are handled). `x = lon`, `y = lat`.
+fn point_in_country(lat: f64, lon: f64, polys: &[Polygon]) -> bool {
+  let mut inside = false;
+  for ring in polys.iter().flatten() {
+    let n = ring.len();
+    if n < 3 {
+      continue;
+    }
+    let mut j = n - 1;
+    for i in 0..n {
+      let (xi, yi) = (ring[i].0 as f64, ring[i].1 as f64);
+      let (xj, yj) = (ring[j].0 as f64, ring[j].1 as f64);
+      if (yi > lat) != (yj > lat)
+        && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi
+      {
+        inside = !inside;
+      }
+      j = i;
+    }
+  }
+  inside
+}
+
+/// The canonical `Entity["Country", …]` for a Natural Earth country record,
+/// falling back to the raw Natural Earth name for non-sovereign territories.
+fn country_entity(c: &Country) -> Expr {
+  let name =
+    crate::functions::country_data::canonical_name(fixup_ne_name(&c.name))
+      .unwrap_or(c.name.as_str());
+  Expr::FunctionCall {
+    name: "Entity".to_string(),
+    args: vec![
+      Expr::String("Country".to_string()),
+      Expr::String(name.to_string()),
+    ]
+    .into(),
+  }
+}
+
+/// `GeoNearest["Country", pos]` — the country containing `pos` (or, for a point
+/// in the ocean, the one whose border is nearest). Returns a one-element list,
+/// matching the Wolfram Language.
+pub fn geo_nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() >= 2
+    && let Expr::String(kind) = &args[0]
+    && kind == "Country"
+    && let Some((lat, lon)) = position_to_latlon(&args[1])
+  {
+    // First, containment.
+    let hit = world_countries()
+      .iter()
+      .find(|c| point_in_country(lat, lon, &c.polygons));
+    // Otherwise, the country with the nearest boundary vertex.
+    let chosen = hit.or_else(|| {
+      world_countries().iter().min_by(|a, b| {
+        nearest_vertex_dist2(lat, lon, &a.polygons)
+          .partial_cmp(&nearest_vertex_dist2(lat, lon, &b.polygons))
+          .unwrap_or(std::cmp::Ordering::Equal)
+      })
+    });
+    if let Some(c) = chosen {
+      return Ok(Expr::List(vec![country_entity(c)].into()));
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "GeoNearest".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// Squared distance (in degrees) from `(lat, lon)` to the nearest boundary
+/// vertex of a country — a cheap proxy for ranking ocean points.
+fn nearest_vertex_dist2(lat: f64, lon: f64, polys: &[Polygon]) -> f64 {
+  polys
+    .iter()
+    .flatten()
+    .flatten()
+    .map(|&(plon, plat)| {
+      let (dlon, dlat) = (plon as f64 - lon, plat as f64 - lat);
+      dlon * dlon + dlat * dlat
+    })
+    .fold(f64::INFINITY, f64::min)
+}
+
+// ── GeoRegionValuePlot (choropleth) ───────────────────────────────────────
+
+/// `GeoRegionValuePlot[{Entity[…] -> value, …}, opts]` — a choropleth shading
+/// each country by its value. Returns bare `Graphics` (the Wolfram Language
+/// additionally wraps the result in `Legended`).
+/// Choropleth color scale `t in [0,1]` → `(r, g, b)`: light cream → deep blue,
+/// like the default `GeoRegionValuePlot` scale. Shared by the country fills and
+/// the legend bar so they agree.
+fn choropleth_color(t: f64) -> (f64, f64, f64) {
+  let t = t.clamp(0.0, 1.0);
+  (0.95 - 0.80 * t, 0.92 - 0.62 * t, 0.85 - 0.30 * t)
+}
+
+/// A continuous color-scale legend drawn to the right of the map.
+struct Legend {
+  lo: f64,
+  hi: f64,
+}
+
+pub fn geo_region_value_plot_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let content = if args.is_empty() {
+    Expr::List(vec![].into())
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&args[0])?
+  };
+  let Expr::List(rules) = &content else {
+    return Ok(Expr::FunctionCall {
+      name: "GeoRegionValuePlot".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  // Collect (entity, value) pairs.
+  let mut pairs: Vec<(Expr, f64)> = Vec::new();
+  for r in rules.iter() {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = r
+      && entity_country_name(pattern).is_some()
+      && let Some(v) = expr_to_f64(replacement)
+    {
+      pairs.push(((**pattern).clone(), v));
+    }
+  }
+  if pairs.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "GeoRegionValuePlot".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  let lo = pairs.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+  let hi = pairs.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+  // Build a content list of (color directive, entity) shading by value.
+  let mut items: Vec<Expr> = Vec::with_capacity(pairs.len() * 2);
+  for (entity, v) in &pairs {
+    let t = if hi > lo { (v - lo) / (hi - lo) } else { 0.5 };
+    let (r, g, b) = choropleth_color(t);
+    items.push(Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+    });
+    items.push(entity.clone());
+  }
+  // Render the shaded map with a color-scale legend on the right.
+  let content = Expr::List(items.into());
+  geographics_impl(&content, &args[1..], Some(Legend { lo, hi }))
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────
 
 /// `GeoGraphics[content, opts…]` → a rendered world map as `Expr::Graphics`.
@@ -455,11 +963,22 @@ pub fn geographics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     crate::evaluator::evaluate_expr_to_expr(&args[0])?
   };
+  geographics_impl(&content, &args[1..], None)
+}
 
-  // Options: ImageSize (width) and GeoRange.
+/// Render already-evaluated `content` with the given option arguments, plus an
+/// optional color-scale legend (used by `GeoRegionValuePlot`).
+fn geographics_impl(
+  content: &Expr,
+  opt_args: &[Expr],
+  legend: Option<Legend>,
+) -> Result<Expr, InterpreterError> {
+  // Options: ImageSize (width), GeoRange, GeoProjection, GeoGridLines.
   let mut width = 360.0_f64;
   let mut range = GeoRange::Auto;
-  for raw in &args[1..] {
+  let mut projection = Projection::EquidistantCylindrical;
+  let mut gridlines = false;
+  for raw in opt_args {
     let opt = crate::evaluator::evaluate_expr_to_expr(raw)
       .unwrap_or_else(|_| raw.clone());
     if let Expr::Rule {
@@ -487,6 +1006,18 @@ pub fn geographics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             range = r;
           }
         }
+        "GeoProjection" => {
+          if let Some(p) = parse_projection(replacement) {
+            projection = p;
+          }
+        }
+        "GeoGridLines" => {
+          // Automatic/True turns the graticule on; None/False leaves it off.
+          gridlines = matches!(
+            replacement.as_ref(),
+            Expr::Identifier(s) if s == "Automatic" || s == "True"
+          );
+        }
         _ => {}
       }
     }
@@ -495,16 +1026,32 @@ pub fn geographics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Auto-zoom: fit the view to the data positions (or the whole globe when
   // there are none). The image height follows the data aspect ratio.
   let mut positions = Vec::new();
-  collect_positions(&content, &mut positions);
-  let proj = build_view(&positions, width, &range);
+  collect_positions(content, &mut positions);
+  let proj = build_view(&positions, width, &range, projection);
   let height = proj.h;
+
+  // Reserve a strip on the right for the color-scale legend when present.
+  const LEGEND_WIDTH: f64 = 78.0;
+  let canvas_w = if legend.is_some() {
+    width + LEGEND_WIDTH
+  } else {
+    width
+  };
 
   let mut svg = String::with_capacity(64 * 1024);
   svg.push_str(&format!(
-    "<svg width=\"{width:.0}\" height=\"{height:.0}\" \
-     viewBox=\"0 0 {width:.0} {height:.0}\" \
+    "<svg width=\"{canvas_w:.0}\" height=\"{height:.0}\" \
+     viewBox=\"0 0 {canvas_w:.0} {height:.0}\" \
      preserveAspectRatio=\"xMidYMid meet\" \
      xmlns=\"http://www.w3.org/2000/svg\">\n"
+  ));
+
+  // Clip all map drawing to the map box so nothing (overflowing coastlines,
+  // primitives, country fills) spills into the margin or the legend strip.
+  svg.push_str(&format!(
+    "<defs><clipPath id=\"geomap\"><rect x=\"0\" y=\"0\" \
+     width=\"{width:.0}\" height=\"{height:.0}\"/></clipPath></defs>\n\
+     <g clip-path=\"url(#geomap)\">\n"
   ));
 
   // Ocean background.
@@ -532,7 +1079,22 @@ pub fn geographics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Map frame.
+  // Optional graticule (latitude/longitude grid lines).
+  if gridlines {
+    render_graticule(&mut svg, &proj);
+  }
+
+  // Foreground primitives (markers, points).
+  let mut style = GeoStyle {
+    color: Color::new(0.85, 0.18, 0.16),
+    point_size: None,
+  };
+  render_content(content, &mut style, &proj, &mut svg);
+
+  // End of clipped map content.
+  svg.push_str("</g>\n");
+
+  // Map frame, drawn on top of (and exactly around) the clipped map box.
   svg.push_str(&format!(
     "<rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" fill=\"none\" \
      stroke=\"rgb(150,150,150)\" stroke-width=\"1\"/>\n",
@@ -540,14 +1102,68 @@ pub fn geographics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     height - 1.0
   ));
 
-  // Foreground primitives (markers, points).
-  let mut style = GeoStyle {
-    color: Color::new(0.85, 0.18, 0.16),
-    point_size: None,
-  };
-  render_content(&content, &mut style, &proj, &mut svg);
+  // Color-scale legend (GeoRegionValuePlot).
+  if let Some(leg) = legend {
+    render_legend(&mut svg, &leg, width, height);
+  }
 
   svg.push_str("</svg>");
 
   Ok(crate::graphics_result(svg))
+}
+
+/// Draw a vertical color-scale legend bar (high at top, low at bottom) in the
+/// strip to the right of the map at `x = map_width`.
+fn render_legend(svg: &mut String, leg: &Legend, map_width: f64, height: f64) {
+  let bar_x = map_width + 14.0;
+  let bar_w = 16.0;
+  let top = 18.0_f64.min(height * 0.12);
+  let bot = (height - 18.0).max(top + 1.0);
+  let bar_h = bot - top;
+  // Gradient fill, sampled as horizontal slices (no <defs> needed).
+  let slices = 64;
+  for i in 0..slices {
+    // t = 1 at the top slice, 0 at the bottom.
+    let t = 1.0 - (i as f64 + 0.5) / slices as f64;
+    let (r, g, b) = choropleth_color(t);
+    let (rr, gg, bb) = (
+      (r * 255.0).round() as u8,
+      (g * 255.0).round() as u8,
+      (b * 255.0).round() as u8,
+    );
+    let y = top + bar_h * i as f64 / slices as f64;
+    let sh = bar_h / slices as f64 + 0.6;
+    svg.push_str(&format!(
+      "<rect x=\"{bar_x:.1}\" y=\"{y:.2}\" width=\"{bar_w:.1}\" \
+       height=\"{sh:.2}\" fill=\"rgb({rr},{gg},{bb})\"/>\n"
+    ));
+  }
+  // Border around the bar.
+  svg.push_str(&format!(
+    "<rect x=\"{bar_x:.1}\" y=\"{top:.1}\" width=\"{bar_w:.1}\" \
+     height=\"{bar_h:.1}\" fill=\"none\" stroke=\"rgb(120,120,120)\" \
+     stroke-width=\"0.6\"/>\n"
+  ));
+  // Tick labels at min, midpoint and max.
+  let label_x = bar_x + bar_w + 5.0;
+  for (frac, value) in
+    [(0.0, leg.hi), (0.5, (leg.lo + leg.hi) / 2.0), (1.0, leg.lo)]
+  {
+    let y = top + bar_h * frac + 3.5;
+    svg.push_str(&format!(
+      "<text x=\"{label_x:.1}\" y=\"{y:.1}\" font-family=\"sans-serif\" \
+       font-size=\"11\" fill=\"rgb(60,60,60)\">{}</text>\n",
+      format_legend_value(value)
+    ));
+  }
+}
+
+/// Format a legend tick value compactly (drop a redundant trailing `.0`).
+fn format_legend_value(v: f64) -> String {
+  if v.fract() == 0.0 && v.abs() < 1e15 {
+    format!("{}", v as i64)
+  } else {
+    let s = format!("{v:.2}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+  }
 }

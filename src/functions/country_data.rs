@@ -250,6 +250,13 @@ fn normalize(name: &str) -> String {
   out.trim_end().to_string()
 }
 
+/// Resolve a free-form country name (canonical or alias) to its canonical
+/// display name, or `None` if the country is unknown. Used to key geographic
+/// geometry to the knowledge base.
+pub fn canonical_name(name: &str) -> Option<&'static str> {
+  lookup(name).map(|c| c.canonical)
+}
+
 /// Resolve a free-form country name to its dataset entry.
 fn lookup(name: &str) -> Option<&'static Country> {
   let key = normalize(name);

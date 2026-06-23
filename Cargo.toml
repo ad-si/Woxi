@@ -43,6 +43,7 @@ jupyter-protocol = { version = "1.2", optional = true }
 astro-float = { git = "https://github.com/stencillogic/astro-float", rev = "f92380e025deb8e1743ed93c6d5bf0783ac28717" }
 base64 = "0.22"
 flate2 = "1.0"
+geographiclib-rs = "0.2"
 num-bigint = "0.4.6"
 num-prime = "0.4"
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series", "area_series"] }

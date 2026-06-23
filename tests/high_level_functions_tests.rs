@@ -5457,6 +5457,238 @@ mod high_level_functions_tests {
       );
     }
 
+    // ── Numeric geodesy ──────────────────────────────────────────────────
+    // Geographiclib (GRS80, matching WL's ITRF00 model) agrees with WL to
+    // ~12 significant figures; the displayed last few digits diverge because
+    // WL uses its own geodesic. These assert Woxi's deterministic output.
+
+    #[test]
+    fn test_geodistance_kilometers() {
+      assert_eq!(
+        interpret("GeoDistance[{40, -100}, {34, -118}]").unwrap(),
+        "Quantity[1731.0149683233299, Kilometers]"
+      );
+      // GeoPosition wrappers resolve identically to bare {lat, lon}.
+      assert_eq!(
+        interpret(
+          "GeoDistance[GeoPosition[{40, -100}], GeoPosition[{34, -118}]]"
+        )
+        .unwrap(),
+        "Quantity[1731.0149683233299, Kilometers]"
+      );
+      // Coincident points are exactly zero.
+      assert_eq!(
+        interpret("GeoDistance[{40, -100}, {40, -100}]").unwrap(),
+        "Quantity[0., Kilometers]"
+      );
+    }
+
+    #[test]
+    fn test_geodirection_angulardegrees() {
+      // Due east along the equator is exactly 90 degrees.
+      assert_eq!(
+        interpret("GeoDirection[{0, 0}, {0, 10}]").unwrap(),
+        "Quantity[90., AngularDegrees]"
+      );
+      assert_eq!(
+        interpret("GeoDirection[{40, -100}, {34, -118}]").unwrap(),
+        "Quantity[-106.93807421415235, AngularDegrees]"
+      );
+    }
+
+    #[test]
+    fn test_geodestination_returns_geoposition() {
+      // GeoDestination[pos, {distance_meters, azimuth_degrees}].
+      assert_eq!(
+        interpret("GeoDestination[{40, -100}, {100000, 45}]").unwrap(),
+        "GeoPosition[{40.63380067529133, -99.1641722386888}]"
+      );
+    }
+
+    #[test]
+    fn test_geolength_of_path() {
+      assert_eq!(
+        interpret("GeoLength[GeoPath[{{40, -100}, {34, -118}}]]").unwrap(),
+        "Quantity[1731.0149683233299, Kilometers]"
+      );
+      // A bare list of positions works too; multi-segment sums each leg.
+      assert_eq!(
+        interpret("GeoLength[GeoPath[{{0, 0}, {0, 10}, {0, 20}}]]").unwrap(),
+        interpret("GeoLength[GeoPath[{{0, 0}, {0, 20}}]]").unwrap()
+      );
+    }
+
+    #[test]
+    fn test_geobounds() {
+      assert_eq!(
+        interpret(
+          "GeoBounds[{GeoPosition[{40, -100}], GeoPosition[{34, -118}]}]"
+        )
+        .unwrap(),
+        "{{34., 40.}, {-118., -100.}}"
+      );
+    }
+
+    #[test]
+    fn test_geopath_stays_symbolic() {
+      assert_eq!(
+        interpret("GeoPath[{{1, 2}, {3, 4}}]").unwrap(),
+        "GeoPath[{{1, 2}, {3, 4}}]"
+      );
+    }
+
+    // ── Tier 1 rendering primitives ──────────────────────────────────────
+
+    #[test]
+    fn test_geo_primitives_render_graphics() {
+      for prim in [
+        "GeoPath[{{40, -100}, {34, -118}}]",
+        "GeoPolygon[{{40, -100}, {45, -90}, {35, -95}}]",
+        "GeoCircle[{40, -100}, Quantity[500, \"Kilometers\"]]",
+        "GeoDisk[{40, -100}, Quantity[300, \"Kilometers\"]]",
+      ] {
+        assert_eq!(
+          interpret(&format!("Head[GeoGraphics[{prim}]]")).unwrap(),
+          "Graphics",
+          "{prim} should render as Graphics"
+        );
+      }
+    }
+
+    #[test]
+    fn test_geogridlines_emits_lines() {
+      let plain =
+        interpret("ExportString[GeoGraphics[Point[{40, -100}]], \"SVG\"]")
+          .unwrap();
+      assert!(!plain.contains("<line"), "no graticule by default");
+      let grid = interpret(
+        "ExportString[GeoGraphics[Point[{40, -100}], \
+         GeoGridLines -> Automatic], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(grid.contains("<line"), "GeoGridLines should add lines");
+    }
+
+    #[test]
+    fn test_geoprojection_mercator_changes_height() {
+      // The whole world is 2:1 in equirectangular but ~1:1 in web Mercator.
+      let equi = interpret(
+        "ExportString[GeoGraphics[Point[{0, 0}], GeoRange -> \"World\", \
+         ImageSize -> 360], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        equi.contains("height=\"180\""),
+        "equirectangular world is 2:1"
+      );
+      let merc = interpret(
+        "ExportString[GeoGraphics[Point[{0, 0}], GeoRange -> \"World\", \
+         GeoProjection -> \"Mercator\", ImageSize -> 360], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        !merc.contains("height=\"180\""),
+        "Mercator world is taller than 2:1"
+      );
+    }
+
+    #[test]
+    fn test_geocircle_disk_fill_differs() {
+      // GeoDisk is filled (fill-opacity); GeoCircle is an unfilled outline.
+      let disk = interpret(
+        "ExportString[GeoGraphics[GeoDisk[{40, -100}, \
+         Quantity[300, \"Kilometers\"]]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(disk.contains("fill-opacity"), "GeoDisk should be filled");
+    }
+
+    // ── Tier 2: named countries ──────────────────────────────────────────
+
+    #[test]
+    fn test_geonearest_containment() {
+      // Points inside countries resolve to the canonical country entity.
+      assert_eq!(
+        interpret("GeoNearest[\"Country\", GeoPosition[{48.85, 2.35}]]")
+          .unwrap(),
+        "{Entity[Country, France]}"
+      );
+      assert_eq!(
+        interpret("GeoNearest[\"Country\", GeoPosition[{40, -100}]]").unwrap(),
+        "{Entity[Country, United States]}"
+      );
+      assert_eq!(
+        interpret("GeoNearest[\"Country\", GeoPosition[{35.7, 139.7}]]")
+          .unwrap(),
+        "{Entity[Country, Japan]}"
+      );
+    }
+
+    #[test]
+    fn test_geonearest_abbreviated_name_fixup() {
+      // Natural Earth's "Dem. Rep. Congo" resolves to the canonical name.
+      assert_eq!(
+        interpret("GeoNearest[\"Country\", GeoPosition[{-2, 23}]]").unwrap(),
+        "{Entity[Country, Democratic Republic of the Congo]}"
+      );
+    }
+
+    #[test]
+    fn test_geographics_entity_highlight() {
+      // A named country renders as a highlighted region over the basemap.
+      assert_eq!(
+        interpret("Head[GeoGraphics[Entity[\"Country\", \"France\"]]]")
+          .unwrap(),
+        "Graphics"
+      );
+      let svg = interpret(
+        "ExportString[GeoGraphics[Entity[\"Country\", \"France\"]], \"SVG\"]",
+      )
+      .unwrap();
+      // The highlight uses a semi-transparent even-odd fill.
+      assert!(
+        svg.contains("fill-rule=\"evenodd\" fill-opacity=\"0.65\""),
+        "country highlight fill missing"
+      );
+    }
+
+    #[test]
+    fn test_georegionvalueplot_renders() {
+      assert_eq!(
+        interpret(
+          "Head[GeoRegionValuePlot[{Entity[\"Country\", \"France\"] -> 10, \
+           Entity[\"Country\", \"Germany\"] -> 20}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+    }
+
+    #[test]
+    fn test_georegionvalueplot_has_legend() {
+      // The choropleth carries a color-scale legend with min/max tick labels.
+      let svg = interpret(
+        "ExportString[GeoRegionValuePlot[{Entity[\"Country\", \"France\"] -> 5, \
+         Entity[\"Country\", \"Germany\"] -> 20}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("<text"), "legend tick labels missing");
+      assert!(svg.contains(">20<"), "legend max label missing");
+      assert!(svg.contains(">5<"), "legend min label missing");
+      // The canvas is widened to hold the legend strip (default map width 360).
+      assert!(
+        svg.contains("width=\"438\""),
+        "canvas not widened for legend"
+      );
+      // Map content is clipped to the map box so nothing draws behind the
+      // legend strip.
+      assert!(
+        svg.contains("clipPath id=\"geomap\"")
+          && svg.contains("clip-path=\"url(#geomap)\""),
+        "map content is not clipped to the map box"
+      );
+    }
+
     #[test]
     fn test_geographics_svg_has_map_and_marker() {
       let svg = interpret(

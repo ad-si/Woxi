@@ -1575,6 +1575,24 @@ pub fn evaluate_function_call_ast_inner(
     "CountryData" => {
       return crate::functions::country_data::country_data_ast(args);
     }
+    "GeoDistance" => {
+      return crate::functions::geo_math::geo_distance_ast(args);
+    }
+    "GeoDirection" => {
+      return crate::functions::geo_math::geo_direction_ast(args);
+    }
+    "GeoDestination" => {
+      return crate::functions::geo_math::geo_destination_ast(args);
+    }
+    "GeoLength" => {
+      return crate::functions::geo_math::geo_length_ast(args);
+    }
+    "GeoBounds" => {
+      return crate::functions::geo_math::geo_bounds_ast(args);
+    }
+    "GeoNearest" => {
+      return crate::functions::geographics::geo_nearest_ast(args);
+    }
     // Interpreter["Country"] stays symbolic until applied to an input via the
     // curried form Interpreter["Country"][name] (see apply_curried_call).
     // Returning here avoids the "not yet implemented" warning.
@@ -9786,10 +9804,14 @@ pub fn evaluate_function_call_ast_inner(
         | "Highlighted"
         | "Mouseover"
         | "Magnify"
-        // GeoMarker[pos] is an inert geographic primitive consumed by
-        // GeoGraphics (rendered there as a map pin); it stays symbolic on its
-        // own, matching wolframscript, so it is not "unimplemented".
+        // Geographic primitives consumed by GeoGraphics (rendered there);
+        // they stay symbolic on their own, matching wolframscript, so they
+        // are not "unimplemented".
         | "GeoMarker"
+        | "GeoPath"
+        | "GeoPolygon"
+        | "GeoCircle"
+        | "GeoDisk"
         // Ket/Bra are Dirac bra-ket notation objects; they stay symbolic until
         // consumed by the quantum framework, so they are not "unimplemented".
         | "Ket"

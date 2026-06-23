@@ -1265,7 +1265,7 @@ OpenRead,Opens a file for reading,✅,effectful,1.0,1278
 StreamScale,,🚫,,7.0,1278
 GammaRegularized,Regularized upper incomplete gamma function Q(a z),✅,pure,2.0,1279
 FrontEndTokenExecute,,🚫,,4.0,1280
-GeoNearest,,🚫,,10.0,1281
+GeoNearest,Nearest country containing or closest to a geo position,✅,pure,10.0,1281
 GenerateConditions,Option for generating conditions in results,✅,1,3.0,1282
 SingularValueDecomposition,Computes the singular value decomposition of a matrix,✅,None,5.0,1283
 CloudGet,,🚫,,10.0,1284
@@ -1308,13 +1308,13 @@ RegionMeasure,Measure of a region's intrinsic dimension (length/area/volume),✅
 HistogramList,Returns bin edges and counts for histogram data,✅,pure,8.0,1322
 WeibullDistribution,Weibull probability distribution,✅,pure,6.0,1322
 Front,,🚫,,6.0,1324
-GeoDisk,,🚫,,10.0,1324
+GeoDisk,Filled geodesic disk primitive for GeoGraphics,✅,pure,10.0,1324
 Orderless,Attribute for commutative functions,✅,pure,1.0,1325
 JuliaSetPlot,,🚫,,10.0,1326
 ListStepPlot,Plots data as a step function,✅,pure,10.2,1327
 Larger,,✅,,6.0,1328
 AngleBracket,Symbolic representation of angle brackets,✅,,3.0,1329
-GeoPath,,🚫,,10.0,1330
+GeoPath,Geographic path primitive for GeoGraphics,✅,pure,10.0,1330
 MixtureDistribution,,✅,,8.0,1331
 RemoveBackground,,🚫,,10.0,1332
 Hash,Computes a hash of a string using MD2/MD5/SHA/SHA256/SHA384/SHA512/CRC32/Adler32,✅,pure,1.0,1333
@@ -1335,7 +1335,7 @@ SampleRate,,🚫,,2.0,1347
 LegendLayout,,🚫,,9.0,1348
 CentralMoment,Computes the k-th central moment of a list or distribution,✅,pure,6.0,1349
 FaceGrids,Option for Graphics3D specifying grid lines on bounding box faces,✅,pure,2.0,1351
-GeoDistance,,🚫,,7.0,1351
+GeoDistance,Geodesic distance between two geo positions as a Quantity,✅,pure,7.0,1351
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1.0,1353
 Signature,Sign of the permutation that canonically sorts the parts of any non-atomic expression (0 if any are equal),✅,pure,1.0,1353
 CForm,Format expression as C code,✅,pure,1.0,1354
@@ -1758,7 +1758,7 @@ DynamicModuleValues,,🚫,,6.0,1788
 FRatioDistribution,F-ratio (Fisher-Snedecor) distribution; supports PDF CDF Quantile Mean and Variance,✅,pure,6.0,1788
 LaplaceDistribution,Laplace distribution,✅,pure,6.0,1788
 ListSurfacePlot3D,3D surface plot from points,,unevaluated,6.0,1788
-GeoRegionValuePlot,Geographic region value plot,,unevaluated,10.0,1789
+GeoRegionValuePlot,Choropleth shading countries by value,✅,pure,10.0,1789
 MaxExtraConditions,Max extra conditions option,,unevaluated,8.0,1791
 TimeSeriesModelFit,Time series model fit,,unevaluated,10.0,1791
 Find,Finds a file on the search path,🚧,effectful,2.0,1793
@@ -2272,7 +2272,7 @@ GraphHighlight,graph visualization,🚫,None,8.0,2317
 MissingQ,Test whether an expression is a Missing value,✅,1,10.2,2317
 PlanckRadiationLaw,physics formula (external data),🚫,None,10.0,2317
 Raster3D,3D graphics primitive,🚫,None,9.0,2317
-GeoGridLines,geographic visualization,🚫,None,10.0,2320
+GeoGridLines,Graticule option for GeoGraphics,✅,pure,10.0,2320
 NArgMax,numeric optimization,✅,None,7.0,2320
 PrimePowerQ,Tests if a number is a prime power,✅,pure,6.0,2320
 ControllerLinking,dynamic interaction,🚫,None,6.0,2321
@@ -2316,7 +2316,7 @@ SyntaxQ,Test if a string is valid Wolfram Language syntax,✅,1,2.0,2360
 SurfaceArea,geometric computation,🚫,None,12.0,2361
 CloudPut,cloud storage,🚫,None,10.0,2367
 ExponentialMovingAverage,Computes exponential moving average of a list,✅,None,6.0,2367
-GeoDirection,geographic computation,🚫,None,7.0,2367
+GeoDirection,Initial bearing from one geo position to another,✅,pure,7.0,2367
 MeanDeviation,Mean absolute deviation from the mean,✅,1,6.0,2367
 RegionEmbeddingDimension,Dimension of the space a region is embedded in,✅,pure,10.0,2367
 TriangulateMesh,mesh generation,🚫,None,10.0,2367
@@ -2368,7 +2368,7 @@ AutoAction,UI interaction,🚫,None,6.0,2421
 ByteOrdering,binary data option,🚫,None,5.2,2421
 ChartElements,chart customization,🚫,None,7.0,2421
 DeleteObject,cloud/object deletion,🚫,None,11.2,2421
-GeoDestination,geographic computation,🚫,None,7.0,2421
+GeoDestination,Geodesic destination point given distance and azimuth,✅,pure,7.0,2421
 LaplacianGaussianFilter,image filtering,🚫,None,7.0,2421
 Restricted,domain restriction,🚫,None,10.0,2421
 ScheduledTask,task scheduling,🚫,None,10.0,2421
@@ -2751,7 +2751,7 @@ ParallelCombine,,🚫,,7.0,2807
 RandomEntity,,🚫,,10.2,2807
 TreeGraphQ,True if graph is a tree,✅,1,8.0,2807
 FindHamiltonianPath,,🚫,,10.2,2812
-GeoCircle,,🚫,,10.0,2812
+GeoCircle,Geodesic circle primitive for GeoGraphics,✅,pure,10.0,2812
 HyperbolicDistribution,Hyperbolic distribution with parameters for shape and location,✅,pure,8.0,2812
 ImageKeypoints,,🚫,,8.0,2812
 SectorSpacing,Option for pie chart sector spacing,✅,pure,7.0,2812
@@ -2885,7 +2885,7 @@ WebExecute,,🚫,,12.0,2944
 AcyclicGraphQ,True if graph has no cycles,✅,1,8.0,2952
 BandpassFilter,Apply a bandpass filter to data,✅,pure,9.0,2952
 Colon,Inert operator displayed with ratio symbol,✅,pure,3.0,2952
-GeoLength,,🚫,,10.4,2952
+GeoLength,Total geodesic length of a GeoPath,✅,pure,10.4,2952
 HypercubeGraph,N-dimensional hypercube graph,✅,1,8.0,2952
 MinDetect,Gives a 0/1 mask marking the regional minima of a numeric list,✅,pure,8.0,2952
 PlanarGraph,Create a planar graph from edges,✅,pure,10.4,2952
@@ -3088,7 +3088,7 @@ ContinuousMarkovProcess,,🚫,,9.0,3162
 DeconvolutionLayer,,🚫,,11.0,3162
 ExtentMarkers,,,,8.0,3162
 FindList,,,,2.0,3162
-GeoBounds,,🚫,,10.0,3162
+GeoBounds,Latitude and longitude bounds of geo positions,✅,pure,10.0,3162
 LinkReadyQ,,🚫,,3.0,3162
 MoonPosition,,🚫,,10.0,3162
 StartExternalSession,,🚫,,11.2,3162
@@ -4853,7 +4853,7 @@ DialogSymbols,,🚫,,2.0,5079
 EdgeTags,,,,12.1,5079
 EqualTilde,,,,3.0,5079
 EstimatedPointProcess,,🚫,,12.2,5079
-GeoPolygon,,🚫,,12.2,5079
+GeoPolygon,Geographic polygon primitive for GeoGraphics,✅,pure,12.2,5079
 HigmanSimsGroupHS,,,,8.0,5079
 ImageAccumulate,,🚫,,9.0,5079
 JankoGroupJ1,,,,8.0,5079
