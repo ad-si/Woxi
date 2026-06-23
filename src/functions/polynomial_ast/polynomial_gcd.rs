@@ -11,9 +11,27 @@ pub fn polynomial_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Detect variables from all expressions
-  let mut all_vars = std::collections::HashSet::new();
+  // Separate an optional `Modulus -> p` option from the polynomial arguments
+  // (otherwise it is mistaken for a polynomial/variable, e.g. `Modulus` sorts
+  // before `x` and the GCD is computed in the wrong variable).
+  let mut polys: Vec<Expr> = Vec::new();
+  let mut modulus: Option<i128> = None;
   for arg in args {
+    if let Some(m) = extract_modulus_option(arg) {
+      modulus = Some(m);
+    } else {
+      polys.push(arg.clone());
+    }
+  }
+  if polys.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "PolynomialGCD expects at least 2 polynomial arguments".into(),
+    ));
+  }
+
+  // Detect variables from the polynomial expressions only
+  let mut all_vars = std::collections::HashSet::new();
+  for arg in &polys {
     collect_variables(arg, &mut all_vars);
   }
 
@@ -24,7 +42,7 @@ pub fn polynomial_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if all_vars.is_empty() {
     // All arguments are numeric - compute integer GCD
-    return integer_gcd_multi(args);
+    return integer_gcd_multi(&polys);
   }
 
   // Sort variables alphabetically for deterministic behavior
@@ -34,14 +52,210 @@ pub fn polynomial_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For multivariate polynomials, use the first variable and recurse
   let var = &var_list[0];
 
+  // With a modulus, compute the GCD over the field GF(p).
+  if let Some(p) = modulus {
+    return polynomial_gcd_mod(&polys, var, p);
+  }
+
   // Fold pairwise GCD
-  let mut result = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
-  for arg in &args[1..] {
+  let mut result = crate::evaluator::evaluate_expr_to_expr(&polys[0])?;
+  for arg in &polys[1..] {
     let arg_eval = crate::evaluator::evaluate_expr_to_expr(arg)?;
     result = poly_gcd_pair(&result, &arg_eval, var)?;
   }
 
   crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// Extract `Modulus -> n` (n > 1) from an option argument, in either the
+/// `Expr::Rule` or `Rule[...]` form.
+fn extract_modulus_option(opt: &Expr) -> Option<i128> {
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+    && let Expr::Identifier(s) = pattern.as_ref()
+    && s == "Modulus"
+  {
+    return crate::functions::math_ast::expr_to_i128(replacement)
+      .filter(|&m| m > 1);
+  }
+  if let Expr::FunctionCall { name, args } = opt
+    && (name == "Rule" || name == "RuleDelayed")
+    && args.len() == 2
+    && let Expr::Identifier(s) = &args[0]
+    && s == "Modulus"
+  {
+    return crate::functions::math_ast::expr_to_i128(&args[1])
+      .filter(|&m| m > 1);
+  }
+  None
+}
+
+/// PolynomialGCD over GF(p): fold the pairwise modular GCD of the coefficient
+/// vectors and rebuild the resulting (monic) polynomial.
+fn polynomial_gcd_mod(
+  polys: &[Expr],
+  var: &str,
+  p: i128,
+) -> Result<Expr, InterpreterError> {
+  let mut acc = poly_to_coeffs_mod(&polys[0], var, p)?;
+  for poly in &polys[1..] {
+    let b = poly_to_coeffs_mod(poly, var, p)?;
+    acc = poly_gcd_coeffs_mod(&acc, &b, p);
+  }
+  Ok(coeffs_to_poly(&acc, var, p))
+}
+
+/// Coefficient vector (low-to-high, reduced mod p) of a univariate polynomial.
+fn poly_to_coeffs_mod(
+  poly: &Expr,
+  var: &str,
+  p: i128,
+) -> Result<Vec<i128>, InterpreterError> {
+  let expanded = expand_and_combine(poly);
+  let deg = max_power_int(&expanded, var).unwrap_or(0);
+  let mut coeffs = Vec::with_capacity((deg + 1) as usize);
+  for i in 0..=deg {
+    let c = coefficient_ast(&[
+      poly.clone(),
+      Expr::Identifier(var.to_string()),
+      Expr::Integer(i),
+    ])?;
+    let c = crate::evaluator::evaluate_expr_to_expr(&c)?;
+    let ci = crate::functions::math_ast::expr_to_i128(&c).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "PolynomialGCD modulus form requires integer coefficients".into(),
+      )
+    })?;
+    coeffs.push(mod_norm(ci, p));
+  }
+  Ok(coeffs)
+}
+
+fn mod_norm(a: i128, p: i128) -> i128 {
+  ((a % p) + p) % p
+}
+
+/// Modular inverse of `a` mod `p` via the extended Euclidean algorithm
+/// (assumes gcd(a, p) = 1, which holds for p prime and a not a multiple of p).
+fn mod_inv(a: i128, p: i128) -> i128 {
+  let (mut old_r, mut r) = (mod_norm(a, p), p);
+  let (mut old_s, mut s) = (1i128, 0i128);
+  while r != 0 {
+    let q = old_r / r;
+    let tr = old_r - q * r;
+    old_r = r;
+    r = tr;
+    let ts = old_s - q * s;
+    old_s = s;
+    s = ts;
+  }
+  mod_norm(old_s, p)
+}
+
+/// Drop high-degree zero coefficients, keeping at least `[0]`.
+fn trim_high(c: &mut Vec<i128>) {
+  while c.len() > 1 && *c.last().unwrap() == 0 {
+    c.pop();
+  }
+}
+
+fn is_zero_poly(c: &[i128]) -> bool {
+  c.iter().all(|&x| x == 0)
+}
+
+/// Polynomial remainder `a mod b` over GF(p), coefficients low-to-high.
+fn poly_rem_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
+  let mut a: Vec<i128> = a.iter().map(|&x| mod_norm(x, p)).collect();
+  let mut b: Vec<i128> = b.iter().map(|&x| mod_norm(x, p)).collect();
+  trim_high(&mut a);
+  trim_high(&mut b);
+  let db = b.len();
+  let inv = mod_inv(b[db - 1], p);
+  loop {
+    trim_high(&mut a);
+    if a.len() < db || is_zero_poly(&a) {
+      break;
+    }
+    let da = a.len();
+    let factor = mod_norm(a[da - 1] * inv, p);
+    let shift = da - db;
+    for i in 0..db {
+      a[shift + i] = mod_norm(a[shift + i] - factor * b[i], p);
+    }
+  }
+  a
+}
+
+/// GCD of two coefficient vectors over GF(p), returned monic.
+fn poly_gcd_coeffs_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
+  let mut a: Vec<i128> = a.iter().map(|&x| mod_norm(x, p)).collect();
+  let mut b: Vec<i128> = b.iter().map(|&x| mod_norm(x, p)).collect();
+  trim_high(&mut a);
+  trim_high(&mut b);
+  while !is_zero_poly(&b) {
+    let r = poly_rem_mod(&a, &b, p);
+    a = b;
+    b = r;
+    trim_high(&mut b);
+  }
+  trim_high(&mut a);
+  if !is_zero_poly(&a) {
+    let inv = mod_inv(*a.last().unwrap(), p);
+    for x in a.iter_mut() {
+      *x = mod_norm(*x * inv, p);
+    }
+  }
+  a
+}
+
+/// Rebuild a polynomial Sum c_i var^i from a coefficient vector (mod p).
+fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
+  let mut terms: Vec<Expr> = Vec::new();
+  for (i, &c) in coeffs.iter().enumerate() {
+    let c = mod_norm(c, p);
+    if c == 0 {
+      continue;
+    }
+    let term = if i == 0 {
+      Expr::Integer(c)
+    } else {
+      let pow = if i == 1 {
+        Expr::Identifier(var.to_string())
+      } else {
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            Expr::Identifier(var.to_string()),
+            Expr::Integer(i as i128),
+          ]
+          .into(),
+        }
+      };
+      if c == 1 {
+        pow
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(c), pow].into(),
+        }
+      }
+    };
+    terms.push(term);
+  }
+  if terms.is_empty() {
+    return Expr::Integer(0);
+  }
+  let expr = if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr)
 }
 
 /// Compute GCD of two polynomials using the Euclidean algorithm

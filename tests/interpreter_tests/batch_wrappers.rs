@@ -1131,6 +1131,49 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("PolynomialGCD[x + 1, x + 2]").unwrap(), "1");
   }
   #[test]
+  fn polynomial_gcd_modulus() {
+    // Over GF(2), x^2-1 = (x+1)^2 and x-1 = x+1, so the GCD is x+1.
+    assert_eq!(
+      interpret("PolynomialGCD[x^2 - 1, x - 1, Modulus -> 2]").unwrap(),
+      "1 + x"
+    );
+    // x^3+x = x(x^2+1) and x^2+1 = (x+1)^2 over GF(2); GCD x^2+1.
+    assert_eq!(
+      interpret("PolynomialGCD[x^3 + x, x^2 + 1, Modulus -> 2]").unwrap(),
+      "1 + x^2"
+    );
+    // Over GF(3), x^4-1 and x^2-1 share x^2-1 == x^2+2.
+    assert_eq!(
+      interpret("PolynomialGCD[x^4 - 1, x^2 - 1, Modulus -> 3]").unwrap(),
+      "2 + x^2"
+    );
+    // The result is monic: 2x^2+2 has its leading coefficient normalized.
+    assert_eq!(
+      interpret("PolynomialGCD[2x^2 + 2, x + 1, Modulus -> 5]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("PolynomialGCD[x^3 - 1, x^2 - 1, Modulus -> 7]").unwrap(),
+      "6 + x"
+    );
+    // Coprime over GF(2) gives 1.
+    assert_eq!(
+      interpret("PolynomialGCD[x^2 + 1, x, Modulus -> 2]").unwrap(),
+      "1"
+    );
+    // The modulus folds across three or more polynomials.
+    assert_eq!(
+      interpret("PolynomialGCD[x^2 - 1, x^3 - 1, x^4 - 1, Modulus -> 2]")
+        .unwrap(),
+      "1 + x"
+    );
+    // Without a modulus the ordinary integer-content GCD is unaffected.
+    assert_eq!(
+      interpret("PolynomialGCD[x^2 - 1, x - 1]").unwrap(),
+      "-1 + x"
+    );
+  }
+  #[test]
   fn system_dialog_input() {
     assert_eq!(
       interpret("SystemDialogInput[x]").unwrap(),
