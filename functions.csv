@@ -3994,7 +3994,7 @@ InverseTransformedRegion,,,,10.0,4104
 JaccardDissimilarity,Jaccard dissimilarity between binary vectors,✅,pure,6.0,4104
 LogBarnesG,Logarithm of the Barnes G-function (exact for integers),✅,pure,7.0,4104
 ParallelArray,Serial version of Array that constructs an array by applying a function to index tuples,✅,pure,7.0,4104
-RamanujanTauTheta,,,,6.0,4104
+RamanujanTauTheta,Riemann-Siegel style theta function for the Ramanujan tau L-function,✅,pure,6.0,4104
 ShiftRegisterSequence,,,,11.0,4104
 UnateQ,,,,9.0,4104
 AttachCell,,,,12.2,4138

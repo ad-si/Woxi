@@ -9692,6 +9692,59 @@ mod riemann_siegel_theta {
   }
 }
 
+mod ramanujan_tau_theta {
+  use super::*;
+
+  fn val(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  // RamanujanTauTheta[t] = Im(logGamma(6 + i t)) - t log(2 Pi).
+  #[test]
+  fn numeric_values() {
+    assert!(
+      (val("RamanujanTauTheta[1.0]") - (-0.12634683710523698)).abs() < 1e-9
+    );
+    assert!(
+      (val("RamanujanTauTheta[2.0]") - (-0.22140434565662526)).abs() < 1e-9
+    );
+    assert!((val("RamanujanTauTheta[9.22]") - 1.4037204336632279).abs() < 1e-8);
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("RamanujanTauTheta[0.0]").unwrap(), "0.");
+  }
+
+  // theta is an odd function: theta(-t) = -theta(t).
+  #[test]
+  fn odd_function() {
+    let a = val("RamanujanTauTheta[2.0]");
+    let b = val("RamanujanTauTheta[-2.0]");
+    assert!((a + b).abs() < 1e-9);
+  }
+
+  // N forces a Real argument, so the numeric branch fires.
+  #[test]
+  fn n_of_exact() {
+    assert!(
+      (val("N[RamanujanTauTheta[5]]") - (-0.09796566631115056)).abs() < 1e-9
+    );
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(
+      interpret("RamanujanTauTheta[t]").unwrap(),
+      "RamanujanTauTheta[t]"
+    );
+    assert_eq!(
+      interpret("RamanujanTauTheta[2]").unwrap(),
+      "RamanujanTauTheta[2]"
+    );
+  }
+}
+
 mod real_exponent {
   use super::*;
 

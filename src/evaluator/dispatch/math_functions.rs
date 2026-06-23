@@ -1320,6 +1320,9 @@ pub fn dispatch_math_functions(
     "RamanujanTau" if args.len() == 1 => {
       return Some(crate::functions::math_ast::ramanujan_tau_ast(args));
     }
+    "RamanujanTauTheta" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::ramanujan_tau_theta_ast(args));
+    }
     "PowersRepresentations" if args.len() == 3 => {
       return Some(crate::functions::math_ast::powers_representations_ast(
         args,

@@ -1784,6 +1784,35 @@ pub fn riemann_siegel_theta_ast(
   })
 }
 
+/// RamanujanTauTheta[t] — the Riemann-Siegel-style theta function for the
+/// weight-12 Ramanujan tau L-function: arg of its gamma factor on the critical
+/// line, theta(t) = Im(logGamma(6 + i t)) - t log(2 Pi).
+fn ramanujan_tau_theta_numeric(t: f64) -> f64 {
+  use std::f64::consts::PI;
+  let (_re, im) = log_gamma_complex(6.0, t);
+  im - t * (2.0 * PI).ln()
+}
+
+/// RamanujanTauTheta[t] — numeric for real (machine) input, symbolic otherwise.
+pub fn ramanujan_tau_theta_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RamanujanTauTheta expects exactly 1 argument".into(),
+    ));
+  }
+  if let Expr::Real(t) = &args[0] {
+    let v = ramanujan_tau_theta_numeric(*t);
+    let v = if v == 0.0 { 0.0 } else { v };
+    return Ok(Expr::Real(v));
+  }
+  Ok(Expr::FunctionCall {
+    name: "RamanujanTauTheta".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// DirichletEta[s] — the Dirichlet eta function: (1 - 2^(1-s)) * Zeta[s]
 pub fn dirichlet_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
