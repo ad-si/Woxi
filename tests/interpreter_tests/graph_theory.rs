@@ -2264,6 +2264,44 @@ mod find_shortest_path {
       "{}"
     );
   }
+
+  #[test]
+  fn ties_favour_lower_numbered_vertices() {
+    // Two equal-length paths exist around the cycle; wolframscript returns
+    // the lexicographically smallest one (favouring lower vertices).
+    assert_eq!(
+      interpret("FindShortestPath[CycleGraph[6], 1, 4]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("FindShortestPath[CycleGraph[8], 1, 5]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+    // From 2 the smallest neighbour is 1, so the path wraps the low side.
+    assert_eq!(
+      interpret("FindShortestPath[CycleGraph[6], 2, 5]").unwrap(),
+      "{2, 1, 6, 5}"
+    );
+    // Grid graph: the lexicographically smallest geodesic from corner 1.
+    assert_eq!(
+      interpret("FindShortestPath[GridGraph[{3, 3}], 1, 9]").unwrap(),
+      "{1, 2, 3, 6, 9}"
+    );
+  }
+
+  #[test]
+  fn weight_beats_vertex_order() {
+    // The cheaper two-hop route wins even though the direct edge has a
+    // lower-numbered next vertex.
+    assert_eq!(
+      interpret(
+        "FindShortestPath[Graph[{1 -> 2, 2 -> 3, 1 -> 3}, \
+         EdgeWeight -> {1, 1, 5}], 1, 3]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
 }
 
 mod transitive_closure_graph {

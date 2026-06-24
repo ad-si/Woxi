@@ -2051,57 +2051,110 @@ pub fn find_shortest_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![].into()));
   }
 
-  // Dijkstra with a binary min-heap (costs are non-negative).
+  // Dijkstra (binary min-heap, non-negative costs) returning the shortest
+  // distance from `src` to every reachable node over the given adjacency.
   use std::collections::BinaryHeap;
-  let mut dist: HashMap<String, f64> = HashMap::new();
-  let mut prev: HashMap<String, String> = HashMap::new();
-  let mut heap: BinaryHeap<(
-    std::cmp::Reverse<ordered_f64::OrderedF64>,
-    String,
-  )> = BinaryHeap::new();
-  dist.insert(start.clone(), 0.0);
-  heap.push((
-    std::cmp::Reverse(ordered_f64::OrderedF64(0.0)),
-    start.clone(),
-  ));
-  while let Some((std::cmp::Reverse(ordered_f64::OrderedF64(d)), u)) =
-    heap.pop()
-  {
-    if d > *dist.get(&u).unwrap_or(&f64::INFINITY) {
-      continue;
-    }
-    if u == goal {
-      break;
-    }
-    if let Some(neighbors) = adj.get(&u) {
-      for (v, w) in neighbors {
-        let nd = d + w;
-        if nd < *dist.get(v).unwrap_or(&f64::INFINITY) {
-          dist.insert(v.clone(), nd);
-          prev.insert(v.clone(), u.clone());
-          heap
-            .push((std::cmp::Reverse(ordered_f64::OrderedF64(nd)), v.clone()));
+  let dijkstra = |adj: &HashMap<String, Vec<(String, f64)>>,
+                  src: &str|
+   -> HashMap<String, f64> {
+    let mut dist: HashMap<String, f64> = HashMap::new();
+    let mut heap: BinaryHeap<(
+      std::cmp::Reverse<ordered_f64::OrderedF64>,
+      String,
+    )> = BinaryHeap::new();
+    dist.insert(src.to_string(), 0.0);
+    heap.push((
+      std::cmp::Reverse(ordered_f64::OrderedF64(0.0)),
+      src.to_string(),
+    ));
+    while let Some((std::cmp::Reverse(ordered_f64::OrderedF64(d)), u)) =
+      heap.pop()
+    {
+      if d > *dist.get(&u).unwrap_or(&f64::INFINITY) {
+        continue;
+      }
+      if let Some(neighbors) = adj.get(&u) {
+        for (v, w) in neighbors {
+          let nd = d + w;
+          if nd < *dist.get(v).unwrap_or(&f64::INFINITY) {
+            dist.insert(v.clone(), nd);
+            heap.push((
+              std::cmp::Reverse(ordered_f64::OrderedF64(nd)),
+              v.clone(),
+            ));
+          }
         }
       }
     }
-  }
+    dist
+  };
 
-  if !dist.contains_key(&goal) {
+  // Reverse adjacency so the distance *to* the goal can be computed; for
+  // undirected edges (added both ways above) this equals the forward graph.
+  let mut radj: HashMap<String, Vec<(String, f64)>> = HashMap::new();
+  for (u, neighbors) in &adj {
+    for (v, w) in neighbors {
+      radj.entry(v.clone()).or_default().push((u.clone(), *w));
+    }
+  }
+  let dist_to_goal = dijkstra(&radj, &goal);
+  if !dist_to_goal.contains_key(&start) {
     return Ok(Expr::List(vec![].into()));
   }
-  // Reconstruct the path goal → start, then reverse.
-  let mut path_keys = vec![goal.clone()];
-  let mut cur = goal;
-  while cur != start {
-    match prev.get(&cur) {
-      Some(p) => {
-        path_keys.push(p.clone());
-        cur = p.clone();
+
+  // Canonical vertex order for tie-breaking: numeric when both keys are
+  // numbers (so 2 < 10), otherwise lexicographic on the string form. This
+  // reproduces wolframscript, which returns the lexicographically smallest
+  // shortest path (the one favouring lower-numbered vertices).
+  let vcmp = |a: &str, b: &str| -> std::cmp::Ordering {
+    match (a.parse::<i128>(), b.parse::<i128>()) {
+      (Ok(x), Ok(y)) => x.cmp(&y),
+      _ => match (a.parse::<f64>(), b.parse::<f64>()) {
+        (Ok(x), Ok(y)) => {
+          x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal)
+        }
+        _ => a.cmp(b),
+      },
+    }
+  };
+
+  // Greedily walk from start to goal: at each node step to the smallest
+  // neighbour that keeps us on a shortest path (w + dist_to_goal[v] equals
+  // the node's own distance to the goal).
+  let eps = 1e-9;
+  let mut path_keys = vec![start.clone()];
+  let mut cur = start.clone();
+  while cur != goal {
+    let dg_cur = match dist_to_goal.get(&cur) {
+      Some(d) => *d,
+      None => return Ok(Expr::List(vec![].into())),
+    };
+    let mut best: Option<&String> = None;
+    if let Some(neighbors) = adj.get(&cur) {
+      for (v, w) in neighbors {
+        if let Some(&dgv) = dist_to_goal.get(v)
+          && (w + dgv - dg_cur).abs() < eps
+        {
+          best = match best {
+            Some(b) if vcmp(b, v) != std::cmp::Ordering::Greater => Some(b),
+            _ => Some(v),
+          };
+        }
+      }
+    }
+    match best {
+      Some(v) => {
+        let v = v.clone();
+        path_keys.push(v.clone());
+        cur = v;
       }
       None => return Ok(Expr::List(vec![].into())),
     }
+    // Safety against zero-weight cycles: a simple path can't exceed |V|.
+    if path_keys.len() > vexpr.len() {
+      return Ok(Expr::List(vec![].into()));
+    }
   }
-  path_keys.reverse();
   let path: Vec<Expr> = path_keys.iter().map(|k| vexpr[k].clone()).collect();
   Ok(Expr::List(path.into()))
 }
