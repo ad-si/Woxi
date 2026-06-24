@@ -14,12 +14,12 @@ together with color directives (`Red`, `RGBColor[...]`, …) and `PointSize`.
 A position is `GeoPosition[{lat, lon}]`, a bare `{lat, lon}` pair (latitude
 first), or a geographic `Entity[…]` (see below).
 
-Like `Graphics`, the result is a `Graphics` object that renders as an SVG
-image in the playground, Jupyter, or Woxi Studio.
+The result is a `GeoGraphics` object (its own head, as in the Wolfram Language)
+that renders as an SVG image in the playground, Jupyter, or Woxi Studio.
 
 ```scrut
 $ wo 'Head[GeoGraphics[{Red, PointSize[Large], GeoMarker[GeoPosition[{-26.2041, 28.0473}]]}]]'
-Graphics
+GeoGraphics
 ```
 
 `GeoMarker` on its own stays symbolic until placed inside `GeoGraphics`:
@@ -32,16 +32,16 @@ GeoMarker[GeoPosition[{-26.2041, 28.0473}]]
 ### Drawing primitives
 
 Besides `GeoMarker` and `Point`, `GeoGraphics` draws connecting paths, filled
-regions and geodesic circles. Each renders as part of the `Graphics` image:
+regions and geodesic circles. Each renders as part of the `GeoGraphics` image:
 
 ```scrut
 $ wo 'Head[GeoGraphics[GeoPath[{{40, -100}, {34, -118}, {47, -122}}]]]'
-Graphics
+GeoGraphics
 ```
 
 ```scrut
 $ wo 'Head[GeoGraphics[{Red, GeoDisk[{40, -100}, Quantity[500, "Kilometers"]]}]]'
-Graphics
+GeoGraphics
 ```
 
 On their own (outside `GeoGraphics`) these primitives stay symbolic:
@@ -55,7 +55,7 @@ A named country is highlighted over the basemap:
 
 ```scrut
 $ wo 'Head[GeoGraphics[Entity["Country", "France"]]]'
-Graphics
+GeoGraphics
 ```
 
 ### Geographic entities
@@ -69,7 +69,7 @@ finest available placement):
 
 ```scrut
 $ wo 'Head[GeoGraphics[{Red, GeoMarker[Entity["City", {"Munich", "Bavaria", "Germany"}]]}, GeoRange -> Quantity[50, "Kilometers"]]]'
-Graphics
+GeoGraphics
 ```
 
 ### Options
@@ -95,9 +95,11 @@ $ wo 'GeoDirection[{0, 0}, {0, 10}]'
 Quantity[90., AngularDegrees]
 ```
 
+<!-- `GeoBounds` returns reals; the Wolfram geodesic adds sub-ULP noise to the
+     longitudes (e.g. -99.99999999999999), so round to compare cleanly. -->
 ```scrut
-$ wo 'GeoBounds[{GeoPosition[{40, -100}], GeoPosition[{34, -118}]}]'
-{{34., 40.}, {-118., -100.}}
+$ wo 'Round[GeoBounds[{GeoPosition[{40, -100}], GeoPosition[{34, -118}]}]]'
+{{34, 40}, {-118, -100}}
 ```
 
 `GeoNearest["Country", pos]` returns the country containing a position:

@@ -362,10 +362,14 @@ pub enum Expr {
   /// Graphics output: holds SVG string, displays as -Graphics- (or -Graphics3D- if is_3d).
   /// `source` optionally carries the raw plot series data so that
   /// `Show` can merge multiple pre-rendered plots by re-rendering via plotters.
+  /// `head` overrides the symbolic head reported by `Head` (e.g. `GeoGraphics`),
+  /// which otherwise defaults to `Graphics`/`Graphics3D`; the rendered SVG and
+  /// the `-Graphics-` placeholder are unaffected.
   Graphics {
     svg: String,
     is_3d: bool,
     source: Option<Box<PlotSource>>,
+    head: Option<String>,
   },
 }
 
@@ -970,11 +974,17 @@ impl Clone for Expr {
           image_type: *image_type,
         };
       }
-      Self::Graphics { svg, is_3d, source } => {
+      Self::Graphics {
+        svg,
+        is_3d,
+        source,
+        head,
+      } => {
         return Self::Graphics {
           svg: svg.clone(),
           is_3d: *is_3d,
           source: source.clone(),
+          head: head.clone(),
         };
       }
       _ => {} // fall through to iterative clone
@@ -1050,13 +1060,17 @@ impl Clone for Expr {
             data: data.clone(),
             image_type: *image_type,
           }),
-          Self::Graphics { svg, is_3d, source } => {
-            results.push(Self::Graphics {
-              svg: svg.clone(),
-              is_3d: *is_3d,
-              source: source.clone(),
-            })
-          }
+          Self::Graphics {
+            svg,
+            is_3d,
+            source,
+            head,
+          } => results.push(Self::Graphics {
+            svg: svg.clone(),
+            is_3d: *is_3d,
+            source: source.clone(),
+            head: head.clone(),
+          }),
 
           // Vec<Expr> children
           Self::List(children) => {

@@ -1090,7 +1090,22 @@ pub fn geographics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     crate::evaluator::evaluate_expr_to_expr(&args[0])?
   };
-  geographics_impl(&content, &args[1..], None)
+  // `GeoGraphics` keeps its own symbolic head (so `Head` reports `GeoGraphics`,
+  // matching wolframscript) while still rendering as an ordinary SVG image.
+  let result = geographics_impl(&content, &args[1..], None)?;
+  if let Expr::Graphics {
+    svg, is_3d, source, ..
+  } = &result
+  {
+    Ok(Expr::Graphics {
+      svg: svg.clone(),
+      is_3d: *is_3d,
+      source: source.clone(),
+      head: Some("GeoGraphics".to_string()),
+    })
+  } else {
+    Ok(result)
+  }
 }
 
 /// Render already-evaluated `content` with the given option arguments, plus an

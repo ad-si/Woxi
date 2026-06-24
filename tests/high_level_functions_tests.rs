@@ -5473,14 +5473,25 @@ mod high_level_functions_tests {
 
     #[test]
     fn test_geographics_returns_graphics() {
-      // Like Plot/Graphics, GeoGraphics echoes -Graphics- in CLI output.
+      // GeoGraphics renders as an SVG image and echoes the -Graphics-
+      // placeholder in CLI output, but keeps its own head (see
+      // test_geographics_head_is_geographics), matching wolframscript.
+      let expr = "GeoGraphics[{Red, PointSize[Large], \
+                  GeoMarker[GeoPosition[{-26.2041, 28.0473}]]}]";
+      assert_eq!(interpret(expr).unwrap(), "-Graphics-");
+    }
+
+    #[test]
+    fn test_geographics_head_is_geographics() {
+      // Unlike Plot/Graphics, wolframscript keeps GeoGraphics as its own head
+      // rather than reducing it to a Graphics object.
       assert_eq!(
         interpret(
-          "GeoGraphics[{Red, PointSize[Large], \
-           GeoMarker[GeoPosition[{-26.2041, 28.0473}]]}]"
+          "Head[GeoGraphics[{Red, PointSize[Large], \
+           GeoMarker[GeoPosition[{-26.2041, 28.0473}]]}]]"
         )
         .unwrap(),
-        "-Graphics-"
+        "GeoGraphics"
       );
     }
 
@@ -5656,8 +5667,8 @@ mod high_level_functions_tests {
       ] {
         assert_eq!(
           interpret(&format!("Head[GeoGraphics[{prim}]]")).unwrap(),
-          "Graphics",
-          "{prim} should render as Graphics"
+          "GeoGraphics",
+          "{prim} should render with head GeoGraphics"
         );
       }
     }
@@ -5746,7 +5757,7 @@ mod high_level_functions_tests {
       assert_eq!(
         interpret("Head[GeoGraphics[Entity[\"Country\", \"France\"]]]")
           .unwrap(),
-        "Graphics"
+        "GeoGraphics"
       );
       let svg = interpret(
         "ExportString[GeoGraphics[Entity[\"Country\", \"France\"]], \"SVG\"]",

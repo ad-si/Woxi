@@ -736,6 +736,19 @@ pub fn graphics_result(svg: String) -> syntax::Expr {
     svg,
     is_3d: false,
     source: None,
+    head: None,
+  }
+}
+
+/// Like `graphics_result` but reports `head` (e.g. `GeoGraphics`) from `Head`
+/// instead of the default `Graphics`. The SVG renders identically.
+pub fn graphics_result_with_head(svg: String, head: &str) -> syntax::Expr {
+  capture_graphics(&svg);
+  syntax::Expr::Graphics {
+    svg,
+    is_3d: false,
+    source: None,
+    head: Some(head.to_string()),
   }
 }
 
@@ -751,6 +764,7 @@ pub fn graphics_result_with_source(
     svg,
     is_3d: false,
     source: Some(Box::new(source)),
+    head: None,
   }
 }
 
@@ -761,6 +775,7 @@ pub fn graphics3d_result(svg: String) -> syntax::Expr {
     svg,
     is_3d: true,
     source: None,
+    head: None,
   }
 }
 
@@ -2299,6 +2314,7 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
           svg,
           is_3d: false,
           source: None,
+          head: None,
         }
       } else {
         expr
