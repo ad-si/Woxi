@@ -1728,6 +1728,12 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Sec", &args[0]) {
     return r;
   }
+  // Sec[Interval[...]] — range over each span, accounting for poles and extrema.
+  if let Some(r) =
+    crate::functions::interval_ast::sec_csc_interval("Sec", &args[0])
+  {
+    return Ok(r);
+  }
   // Sec[±Infinity] → Interval[{-Infinity, -1}, {1, Infinity}]
   if let Some(r) = circular_at_infinity("Sec", &args[0]) {
     return r;
@@ -1772,6 +1778,12 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(r) = imaginary_arg_reduction("Csc", &args[0]) {
     return r;
+  }
+  // Csc[Interval[...]] — range over each span, accounting for poles and extrema.
+  if let Some(r) =
+    crate::functions::interval_ast::sec_csc_interval("Csc", &args[0])
+  {
+    return Ok(r);
   }
   // Csc[±Infinity] → Interval[{-Infinity, -1}, {1, Infinity}]
   if let Some(r) = circular_at_infinity("Csc", &args[0]) {

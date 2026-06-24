@@ -670,6 +670,54 @@ fn cot_interval() {
   );
 }
 
+// Sec/Csc over an interval account for both poles and extrema (minima of +1,
+// maxima of -1 between poles).
+#[test]
+fn sec_interval() {
+  // U-branch reaching its minimum 1 (span contains 0).
+  assert_eq!(
+    interpret("Sec[Interval[{0, 1}]]").unwrap(),
+    "Interval[{1, Sec[1]}]"
+  );
+  assert_eq!(
+    interpret("Sec[Interval[{-1, 1}]]").unwrap(),
+    "Interval[{1, Sec[1]}]"
+  );
+  // ∩-branch reaching its maximum -1 (span contains Pi).
+  assert_eq!(
+    interpret("Sec[Interval[{2, 4}]]").unwrap(),
+    "Interval[{Sec[2], -1}]"
+  );
+  // Crossing one pole (Pi/2): the branch splits to ±Infinity.
+  assert_eq!(
+    interpret("Sec[Interval[{0, 2}]]").unwrap(),
+    "Interval[{-Infinity, Sec[2]}, {1, Infinity}]"
+  );
+  // Spanning a full U and a full ∩ branch.
+  assert_eq!(
+    interpret("Sec[Interval[{0, Pi}]]").unwrap(),
+    "Interval[{-Infinity, -1}, {1, Infinity}]"
+  );
+}
+
+#[test]
+fn csc_interval() {
+  assert_eq!(
+    interpret("Csc[Interval[{1, 2}]]").unwrap(),
+    "Interval[{1, Csc[1]}]"
+  );
+  // Pole at 0 inside.
+  assert_eq!(
+    interpret("Csc[Interval[{-1, 1}]]").unwrap(),
+    "Interval[{-Infinity, -Csc[1]}, {Csc[1], Infinity}]"
+  );
+  // Endpoint lands on a pole (Csc[0] is infinite) and several poles are crossed.
+  assert_eq!(
+    interpret("Csc[Interval[{0, 7}]]").unwrap(),
+    "Interval[{-Infinity, -1}, {1, Infinity}]"
+  );
+}
+
 #[test]
 fn inverse_trig_interval_increasing() {
   assert_eq!(

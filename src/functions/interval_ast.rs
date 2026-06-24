@@ -241,6 +241,120 @@ pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
   .ok()
 }
 
+/// `Sec[Interval[...]]` / `Csc[Interval[...]]` — the range over each span.
+/// These have poles (`Pi/2 + k Pi` for Sec, `k Pi` for Csc) AND extrema, so a
+/// pole-free piece is not monotonic: each branch carries a single extremum of
+/// value `+1` (a minimum, on "U" branches) or `-1` (a maximum, on "∩" branches).
+/// Split at the poles; on each piece collect the finite endpoint images, the
+/// branch extremum value when it lies strictly inside, and ±Infinity for a
+/// pole-adjacent side. Returns `None` unless every endpoint and finite image is
+/// real-numeric.
+pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
+  use std::f64::consts::{FRAC_PI_2, PI};
+  // (pole offset, extremum offset): poles at pole_off + k*Pi, extrema (values
+  // ±1) at ext_off + k*Pi with value (-1)^k.
+  let (pole_off, ext_off) = match head {
+    "Sec" => (FRAC_PI_2, 0.0),
+    "Csc" => (0.0, FRAC_PI_2),
+    _ => return None,
+  };
+  let inf = || Expr::Identifier("Infinity".to_string());
+  let neg_inf = || Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(Expr::Identifier("Infinity".to_string())),
+  };
+  let fold_min =
+    |v: &[Expr]| v.iter().cloned().reduce(|a, b| numeric_min(&a, &b));
+  let fold_max =
+    |v: &[Expr]| v.iter().cloned().reduce(|a, b| numeric_max(&a, &b));
+
+  let spans = is_interval(expr)?;
+  let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
+  for (a, b) in spans {
+    let af = expr_to_f64(a)?;
+    let bf = expr_to_f64(b)?;
+    let eps = 1e-9;
+    // Boundary marker for an original endpoint: `None` if the endpoint is
+    // itself a pole (image ±Infinity), else its finite image (required real).
+    let mk_bound = |pos: f64, e: &Expr| -> Option<(f64, Option<Expr>)> {
+      let k = ((pos - pole_off) / PI).round();
+      if (pos - (pole_off + k * PI)).abs() < eps {
+        return Some((pos, None)); // endpoint lands on a pole
+      }
+      let fe = crate::evaluator::evaluate_function_call_ast(head, &[e.clone()])
+        .ok()?;
+      expr_to_f64(&fe)?;
+      Some((pos, Some(fe)))
+    };
+    // Boundaries: original endpoints plus the poles strictly inside.
+    let mut bnds: Vec<(f64, Option<Expr>)> =
+      vec![mk_bound(af, a)?, mk_bound(bf, b)?];
+    let k_lo = ((af - pole_off) / PI + eps).floor() as i64 + 1;
+    let k_hi = ((bf - pole_off) / PI - eps).ceil() as i64 - 1;
+    for k in k_lo..=k_hi {
+      bnds.push((pole_off + k as f64 * PI, None));
+    }
+    bnds.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(Ordering::Equal));
+    // Each consecutive pair is one continuous piece on a single branch.
+    for w in bnds.windows(2) {
+      let (cp, fc) = (&w[0].0, &w[0].1);
+      let (dp, fd) = (&w[1].0, &w[1].1);
+      let left_pole = fc.is_none();
+      let right_pole = fd.is_none();
+      // The branch's extremum: nearest lattice point to the piece midpoint.
+      let mid = (cp + dp) / 2.0;
+      let kk = ((mid - ext_off) / PI).round() as i64;
+      let e_pos = ext_off + kk as f64 * PI;
+      let v = if kk.rem_euclid(2) == 0 { 1 } else { -1 };
+      let e_inside = *cp < e_pos - eps && e_pos < *dp - eps;
+      if v == 1 {
+        // U branch (minimum +1): finite below, +Infinity toward a pole.
+        let mut lows = Vec::new();
+        if e_inside {
+          lows.push(Expr::Integer(1));
+        }
+        if let Some(f) = fc {
+          lows.push(f.clone());
+        }
+        if let Some(f) = fd {
+          lows.push(f.clone());
+        }
+        let lo = fold_min(&lows)?;
+        let hi = if left_pole || right_pole {
+          inf()
+        } else {
+          numeric_max(fc.as_ref().unwrap(), fd.as_ref().unwrap())
+        };
+        out.push((lo, hi));
+      } else {
+        // ∩ branch (maximum -1): finite above, -Infinity toward a pole.
+        let mut highs = Vec::new();
+        if e_inside {
+          highs.push(Expr::Integer(-1));
+        }
+        if let Some(f) = fc {
+          highs.push(f.clone());
+        }
+        if let Some(f) = fd {
+          highs.push(f.clone());
+        }
+        let hi = fold_max(&highs)?;
+        let lo = if left_pole || right_pole {
+          neg_inf()
+        } else {
+          numeric_min(fc.as_ref().unwrap(), fd.as_ref().unwrap())
+        };
+        out.push((lo, hi));
+      }
+    }
+  }
+  crate::evaluator::evaluate_expr_to_expr(&make_interval(normalize_intervals(
+    out,
+  )))
+  .ok()
+}
+
 /// Compare two numeric expressions. Returns None if not comparable.
 fn compare_numeric(a: &Expr, b: &Expr) -> Option<Ordering> {
   let fa = expr_to_f64(a)?;
