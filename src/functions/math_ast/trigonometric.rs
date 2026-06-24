@@ -3922,6 +3922,11 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Cosh", &args[0]) {
     return r;
   }
+  // Cosh[Interval[...]] — U-shaped (even, minimum Cosh[0] = 1 at the origin),
+  // so a span containing 0 bottoms out at 1; otherwise it is monotonic.
+  if let Some(r) = crate::functions::interval_ast::cosh_interval(&args[0]) {
+    return Ok(r);
+  }
   // Cosh[ArcCosh[x]] = x
   if let Expr::FunctionCall { name, args: ia } = &args[0]
     && name == "ArcCosh"

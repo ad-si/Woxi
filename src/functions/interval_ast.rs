@@ -140,6 +140,42 @@ pub fn abs_interval(expr: &Expr) -> Option<Expr> {
   Some(make_interval(normalize_intervals(out)))
 }
 
+/// `Cosh[Interval[...]]` — the range of `Cosh` over each span. `Cosh` is even
+/// with a minimum value of `1` at `x = 0`, so a span containing `0` runs from
+/// `1` to `max(Cosh[a], Cosh[b])`; a span on one side of `0` is monotonic, so
+/// it runs between the endpoint images. Returns `None` unless every endpoint
+/// is numeric.
+pub fn cosh_interval(expr: &Expr) -> Option<Expr> {
+  let spans = is_interval(expr)?;
+  let zero = Expr::Integer(0);
+  let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
+  for (a, b) in spans {
+    expr_to_f64(a)?;
+    expr_to_f64(b)?;
+    let ca = crate::evaluator::evaluate_function_call_ast("Cosh", &[a.clone()])
+      .ok()?;
+    let cb = crate::evaluator::evaluate_function_call_ast("Cosh", &[b.clone()])
+      .ok()?;
+    expr_to_f64(&ca)?;
+    expr_to_f64(&cb)?;
+    let contains_zero = matches!(
+      compare_numeric(a, &zero),
+      Some(Ordering::Less | Ordering::Equal)
+    ) && matches!(
+      compare_numeric(b, &zero),
+      Some(Ordering::Greater | Ordering::Equal)
+    );
+    let lo = if contains_zero {
+      Expr::Integer(1)
+    } else {
+      numeric_min(&ca, &cb)
+    };
+    let hi = numeric_max(&ca, &cb);
+    out.push((lo, hi));
+  }
+  Some(make_interval(normalize_intervals(out)))
+}
+
 /// Compare two numeric expressions. Returns None if not comparable.
 fn compare_numeric(a: &Expr, b: &Expr) -> Option<Ordering> {
   let fa = expr_to_f64(a)?;

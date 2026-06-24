@@ -599,6 +599,30 @@ fn hyperbolic_interval() {
   );
 }
 
+// Cosh is even with minimum Cosh[0] = 1, so a span containing 0 bottoms out at
+// 1; a span on one side of 0 is monotonic.
+#[test]
+fn cosh_interval() {
+  // Spans containing 0 reach the minimum value 1.
+  assert_eq!(
+    interpret("Cosh[Interval[{-1, 1}]]").unwrap(),
+    "Interval[{1, Cosh[1]}]"
+  );
+  assert_eq!(
+    interpret("Cosh[Interval[{-2, 1}]]").unwrap(),
+    "Interval[{1, Cosh[2]}]"
+  );
+  // Spans entirely on one side are monotonic.
+  assert_eq!(
+    interpret("Cosh[Interval[{1, 2}]]").unwrap(),
+    "Interval[{Cosh[1], Cosh[2]}]"
+  );
+  assert_eq!(
+    interpret("Cosh[Interval[{-2, -1}]]").unwrap(),
+    "Interval[{Cosh[1], Cosh[2]}]"
+  );
+}
+
 #[test]
 fn inverse_trig_interval_increasing() {
   assert_eq!(
