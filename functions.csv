@@ -3759,7 +3759,7 @@ KVertexConnectedComponents,,,,10.0,3862
 PermutationListQ,True if list is a valid permutation,✅,1,8.0,3862
 QPolyGamma,,,,7.0,3862
 RightTeeArrow,,,,3.0,3862
-SkellamDistribution,,,,8.0,3862
+SkellamDistribution,Skellam distribution of the difference of two Poisson variables,✅,pure,8.0,3862
 SocketListen,,🚫,,11.2,3862
 SpecificityGoal,,🚫,,10.1,3862
 TemplateIf,,,,10.0,3862

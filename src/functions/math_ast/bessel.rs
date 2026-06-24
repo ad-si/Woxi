@@ -640,6 +640,13 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
+  // Integer-order symmetry: BesselI[-n, z] = BesselI[n, z] for integer n.
+  if let Expr::Integer(n) = n_expr
+    && *n < 0
+  {
+    return bessel_i_ast(&[Expr::Integer(-*n), z_expr.clone()]);
+  }
+
   // Numeric evaluation
   let n_val = expr_to_f64(n_expr);
   let z_val = expr_to_f64(z_expr);

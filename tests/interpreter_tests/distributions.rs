@@ -4259,3 +4259,99 @@ mod erlang_distribution {
     );
   }
 }
+
+// SkellamDistribution[a, b] is the difference of two Poisson variables:
+// Mean = a-b, Variance = a+b. The bare head stays unevaluated.
+mod skellam_distribution {
+  use super::*;
+
+  #[test]
+  fn head_stays_unevaluated() {
+    assert_eq!(
+      interpret("SkellamDistribution[1, 2]").unwrap(),
+      "SkellamDistribution[1, 2]"
+    );
+  }
+
+  #[test]
+  fn mean_variance_sd() {
+    assert_eq!(
+      interpret("Mean[SkellamDistribution[a, b]]").unwrap(),
+      "a - b"
+    );
+    assert_eq!(
+      interpret("Variance[SkellamDistribution[a, b]]").unwrap(),
+      "a + b"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[SkellamDistribution[a, b]]").unwrap(),
+      "Sqrt[a + b]"
+    );
+    assert_eq!(interpret("Mean[SkellamDistribution[1, 2]]").unwrap(), "-1");
+    assert_eq!(
+      interpret("Variance[SkellamDistribution[1, 2]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn skewness_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[SkellamDistribution[a, b]]").unwrap(),
+      "(a - b)/(a + b)^(3/2)"
+    );
+    assert_eq!(
+      interpret("Kurtosis[SkellamDistribution[a, b]]").unwrap(),
+      "3 + (a + b)^(-1)"
+    );
+    assert_eq!(
+      interpret("Kurtosis[SkellamDistribution[1, 2]]").unwrap(),
+      "10/3"
+    );
+  }
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[SkellamDistribution[a, b], 2]").unwrap(),
+      "a + b"
+    );
+    assert_eq!(
+      interpret("CentralMoment[SkellamDistribution[a, b], 3]").unwrap(),
+      "a - b"
+    );
+    assert_eq!(
+      interpret("CentralMoment[SkellamDistribution[a, b], 4]").unwrap(),
+      "a + b + 3*(a + b)^2"
+    );
+  }
+
+  #[test]
+  fn pdf() {
+    assert_eq!(
+      interpret("PDF[SkellamDistribution[a, b], k]").unwrap(),
+      "(a/b)^(k/2)*E^(-a - b)*BesselI[k, 2*Sqrt[a*b]]"
+    );
+    assert_eq!(
+      interpret("PDF[SkellamDistribution[1, 2], 0]").unwrap(),
+      "BesselI[0, 2*Sqrt[2]]/E^3"
+    );
+    // Negative k uses the integer-order symmetry BesselI[-1, z] = BesselI[1, z].
+    assert_eq!(
+      interpret("PDF[SkellamDistribution[2, 3], -1]").unwrap(),
+      "(Sqrt[3/2]*BesselI[1, 2*Sqrt[6]])/E^5"
+    );
+  }
+
+  #[test]
+  fn cdf() {
+    assert_eq!(
+      interpret("CDF[SkellamDistribution[a, b], k]").unwrap(),
+      "1 - MarcumQ[-Floor[k], Sqrt[2]*Sqrt[a], Sqrt[2]*Sqrt[b]]"
+    );
+    assert_eq!(
+      interpret("CDF[SkellamDistribution[1, 2], 0]").unwrap(),
+      "1 - MarcumQ[0, Sqrt[2], 2]"
+    );
+  }
+}

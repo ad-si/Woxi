@@ -195,6 +195,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ZipfDistribution" => pdf_zipf(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
+    "SkellamDistribution" => pdf_skellam(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
     "BinomialDistribution" => pdf_binomial(dargs, x),
     "HypergeometricDistribution" => pdf_hypergeometric(dargs, x),
@@ -1377,6 +1378,57 @@ fn plus(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Plus, a, b)
 }
 
+fn unary_fn(name: &str, arg: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![arg].into(),
+  }
+}
+
+/// PDF[SkellamDistribution[a, b], k] =
+///   (a/b)^(k/2) * E^(-a-b) * BesselI[k, 2 Sqrt[a b]]   (for all integers k).
+fn pdf_skellam(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "SkellamDistribution expects 2 arguments".into(),
+    ));
+  }
+  let (a, b) = (dargs[0].clone(), dargs[1].clone());
+  let ratio_pow =
+    power(divide(a.clone(), b.clone()), divide(x.clone(), int(2)));
+  let exp_part = power(
+    e(),
+    plus(times(int(-1), a.clone()), times(int(-1), b.clone())),
+  );
+  let bessel = Expr::FunctionCall {
+    name: "BesselI".to_string(),
+    args: vec![x, times(int(2), unary_fn("Sqrt", times(a, b)))].into(),
+  };
+  eval(times(times(ratio_pow, exp_part), bessel))
+}
+
+/// CDF[SkellamDistribution[a, b], k] =
+///   1 - MarcumQ[-Floor[k], Sqrt[2] Sqrt[a], Sqrt[2] Sqrt[b]].
+fn cdf_skellam(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "SkellamDistribution expects 2 arguments".into(),
+    ));
+  }
+  let (a, b) = (dargs[0].clone(), dargs[1].clone());
+  let sqrt2 = unary_fn("Sqrt", int(2));
+  let marcum = Expr::FunctionCall {
+    name: "MarcumQ".to_string(),
+    args: vec![
+      times(int(-1), unary_fn("Floor", x)),
+      times(sqrt2.clone(), unary_fn("Sqrt", a)),
+      times(sqrt2, unary_fn("Sqrt", b)),
+    ]
+    .into(),
+  };
+  eval(minus(int(1), marcum))
+}
+
 /// PDF[BernoulliDistribution[p], k] = Piecewise[{{1-p, k==0}, {p, k==1}}, 0]
 fn pdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   if dargs.len() != 1 {
@@ -1710,6 +1762,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "UniformDistribution" => cdf_uniform(dargs, x),
     "ExponentialDistribution" => cdf_exponential(dargs, x),
     "PoissonDistribution" => cdf_poisson(dargs, x),
+    "SkellamDistribution" => cdf_skellam(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
     "BinomialDistribution" => cdf_binomial(dargs, x),
     "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
@@ -3828,6 +3881,16 @@ fn distribution_mean_variance(
       // Mean = p, Var = p(1-p)
       let var = times(p.clone(), minus(int(1), p.clone()));
       Ok((p, var))
+    }
+    "SkellamDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "SkellamDistribution expects 2 arguments".into(),
+        ));
+      }
+      // X = Poisson(a) - Poisson(b): Mean = a - b, Var = a + b.
+      let (a, b) = (dargs[0].clone(), dargs[1].clone());
+      Ok((minus(a.clone(), b.clone()), plus(a, b)))
     }
     "BinomialDistribution" => {
       if dargs.len() != 2 {

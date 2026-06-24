@@ -561,6 +561,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "ExponentialDistribution"
         | "PoissonDistribution"
         | "BernoulliDistribution"
+        | "SkellamDistribution"
         | "BinomialDistribution"
         | "StableDistribution"
         | "GammaDistribution"
@@ -829,6 +830,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "ExponentialDistribution"
         | "PoissonDistribution"
         | "BernoulliDistribution"
+        | "SkellamDistribution"
         | "BinomialDistribution"
         | "StableDistribution"
         | "GammaDistribution"
@@ -1167,6 +1169,7 @@ fn is_distribution_arg(expr: &Expr) -> bool {
       | "ExponentialDistribution"
       | "PoissonDistribution"
       | "BernoulliDistribution"
+      | "SkellamDistribution"
       | "GammaDistribution"
       | "ErlangDistribution"
       | "BetaDistribution"
@@ -2481,6 +2484,102 @@ fn distribution_raw_moment(
 /// `central` selects between the raw moment E[x^n] and the central moment
 /// E[(x - mean)^n]; the latter is assembled from raw moments by the binomial
 /// theorem so the result stays exact. Returns None when unsupported.
+/// Parameters `(a, b)` of a `SkellamDistribution[a, b]`, or None.
+fn skellam_params(dist: &Expr) -> Option<(Expr, Expr)> {
+  if let Expr::FunctionCall { name, args } = dist
+    && name == "SkellamDistribution"
+    && args.len() == 2
+  {
+    Some((args[0].clone(), args[1].clone()))
+  } else {
+    None
+  }
+}
+
+fn fact_i128(n: i128) -> i128 {
+  (1..=n).product::<i128>().max(1)
+}
+
+/// Integer partitions of `n` into parts >= 2 (each part non-increasing).
+fn partitions_min2(n: usize) -> Vec<Vec<usize>> {
+  fn rec(
+    n: usize,
+    max: usize,
+    cur: &mut Vec<usize>,
+    out: &mut Vec<Vec<usize>>,
+  ) {
+    if n == 0 {
+      out.push(cur.clone());
+      return;
+    }
+    for part in (2..=max.min(n)).rev() {
+      cur.push(part);
+      rec(n - part, part, cur, out);
+      cur.pop();
+    }
+  }
+  let mut out = Vec::new();
+  rec(n, n, &mut Vec::new(), &mut out);
+  out
+}
+
+/// n-th central moment of `SkellamDistribution[a, b]` from its cumulants
+/// `κ_j = a + (-1)^j b`: `μ_n = Σ_{λ ⊢ n, parts≥2} coef(λ) · Π_i κ_{λ_i}`,
+/// where `coef(λ) = n!/(Π_i λ_i! · Π_v m_v!)` (the number of set partitions of
+/// [n] with block sizes λ). Matches wolframscript's compact form.
+fn skellam_central_moment(a: &Expr, b: &Expr, n: i128) -> Expr {
+  if n == 0 {
+    return Expr::Integer(1);
+  }
+  let kappa = |j: usize| -> Expr {
+    if j.is_multiple_of(2) {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(a.clone()),
+        right: Box::new(b.clone()),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(a.clone()),
+        right: Box::new(b.clone()),
+      }
+    }
+  };
+  let mut terms: Vec<Expr> = Vec::new();
+  for lambda in partitions_min2(n as usize) {
+    // coef = n! / (Π part! · Π mult!)
+    let mut denom = 1i128;
+    for &p in &lambda {
+      denom *= fact_i128(p as i128);
+    }
+    let mut counts: std::collections::HashMap<usize, i128> =
+      std::collections::HashMap::new();
+    for &p in &lambda {
+      *counts.entry(p).or_insert(0) += 1;
+    }
+    for &m in counts.values() {
+      denom *= fact_i128(m);
+    }
+    let coef = fact_i128(n) / denom;
+    let mut factors = vec![Expr::Integer(coef)];
+    for &p in &lambda {
+      factors.push(kappa(p));
+    }
+    terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    });
+  }
+  if terms.is_empty() {
+    return Expr::Integer(0);
+  }
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  }
+}
+
 fn distribution_moment(
   dist: &Expr,
   n_expr: &Expr,
@@ -2494,6 +2593,14 @@ fn distribution_moment(
 
   if !central {
     return distribution_raw_moment(dist, n, &var);
+  }
+
+  // Skellam central moments have a clean cumulant-based closed form for all n
+  // (the generic Expectation-of-PDF path only closes for small n).
+  if let Some((a, b)) = skellam_params(dist) {
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(
+      &skellam_central_moment(&a, &b, n),
+    )?));
   }
 
   let mean = mean_ast(&[dist.clone()])?;
@@ -2752,6 +2859,25 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     });
   }
+  // Skellam: Kurtosis = 3 + 1/(a+b). Built directly because the generic
+  // moment-ratio Expand mangles the multi-parameter denominator.
+  if let Some((a, b)) = skellam_params(&args[0]) {
+    let a_plus_b = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(a),
+      right: Box::new(b),
+    };
+    let result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(3)),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(a_plus_b),
+      }),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
   let m4 = central_moment_ast(&[args[0].clone(), Expr::Integer(4)])?;
   let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
   // Compute m4 / m2^2 symbolically
@@ -2790,6 +2916,32 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Skewness".to_string(),
       args: args.to_vec().into(),
     });
+  }
+  // Skellam: Skewness = (a-b)/(a+b)^(3/2). Built directly so the compact form
+  // is preserved (the generic moment-ratio Expand would distribute it).
+  if let Some((a, b)) = skellam_params(&args[0]) {
+    let result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(a.clone()),
+        right: Box::new(b.clone()),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(a),
+          right: Box::new(b),
+        }),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::Integer(3)),
+          right: Box::new(Expr::Integer(2)),
+        }),
+      }),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result);
   }
   let m3 = central_moment_ast(&[args[0].clone(), Expr::Integer(3)])?;
   let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
