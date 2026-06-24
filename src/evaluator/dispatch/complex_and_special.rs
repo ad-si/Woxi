@@ -3437,31 +3437,51 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
       _ => None,
     }
   };
-  let (mantissa, exp) = match name {
-    "ScientificForm" if args.len() == 1 || args.len() == 2 => {
-      string_ast::scientific_form_parts(&args[0], precision(args.get(1))?)?
-    }
-    "EngineeringForm" if args.len() == 1 || args.len() == 2 => {
-      string_ast::engineering_form_parts(&args[0], precision(args.get(1))?)?
-    }
-    "NumberForm" if args.len() == 1 => {
-      string_ast::number_form_parts(&args[0], 6)?
-    }
-    "NumberForm" if args.len() == 2 => match &args[1] {
-      Expr::Integer(n) => string_ast::number_form_parts(&args[0], *n as i64)?,
-      Expr::List(spec) if spec.len() == 2 => match &spec[1] {
-        Expr::Integer(f) => {
-          string_ast::number_form_fixed_parts(&args[0], *f as i64)?
-        }
+  // Decompose a single numeric value into its (mantissa, exponent) parts for
+  // the requested form. Shared by the scalar and list (threaded) paths.
+  let parts_for = |val: &Expr| -> Option<(String, Option<i64>)> {
+    Some(match name {
+      "ScientificForm" if args.len() == 1 || args.len() == 2 => {
+        string_ast::scientific_form_parts(val, precision(args.get(1))?)?
+      }
+      "EngineeringForm" if args.len() == 1 || args.len() == 2 => {
+        string_ast::engineering_form_parts(val, precision(args.get(1))?)?
+      }
+      "NumberForm" if args.len() == 1 => string_ast::number_form_parts(val, 6)?,
+      "NumberForm" if args.len() == 2 => match &args[1] {
+        Expr::Integer(n) => string_ast::number_form_parts(val, *n as i64)?,
+        Expr::List(spec) if spec.len() == 2 => match &spec[1] {
+          Expr::Integer(f) => {
+            string_ast::number_form_fixed_parts(val, *f as i64)?
+          }
+          _ => return None,
+        },
         _ => return None,
       },
       _ => return None,
-    },
-    _ => return None,
+    })
   };
+  // These forms are Listable in wolframscript: a list argument is rendered as a
+  // braced, comma-separated row of per-element display boxes, all wrapped in a
+  // single `TagBox[..., Head]`.
+  let first = args.first()?;
+  if let Expr::List(items) = first {
+    let inner_boxes: Option<Vec<Expr>> = items
+      .iter()
+      .map(|v| {
+        let (mantissa, exp) = parts_for(v)?;
+        Some(number_display_inner_box(
+          scientific_value_box(&mantissa, exp),
+          v,
+        ))
+      })
+      .collect();
+    return Some(wrap_list_number_display_box(inner_boxes?, name));
+  }
+  let (mantissa, exp) = parts_for(first)?;
   Some(wrap_number_display_box(
     scientific_value_box(&mantissa, exp),
-    &args[0],
+    first,
     name,
   ))
 }
@@ -3494,12 +3514,12 @@ fn scientific_value_box(mantissa: &str, exp: Option<i64>) -> Expr {
   }
 }
 
-/// Wrap an inner display box with wolframscript's
-/// `TagBox[InterpretationBox[StyleBox[inner, ShowStringCharacters -> False],
-/// value, AutoDelete -> True], head]`. The interpretation/tag/style layers are
-/// rendering pass-throughs for the SVG layout engine; they preserve the link to
-/// the original numeric `value` and the form head for `MakeBoxes`.
-fn wrap_number_display_box(inner: Expr, value: &Expr, head: &str) -> Expr {
+/// Per-value display box (no `TagBox` head wrapper):
+/// `InterpretationBox[StyleBox[inner, ShowStringCharacters -> False], value,
+/// AutoDelete -> True]`. The interpretation/style layers are rendering
+/// pass-throughs for the SVG layout engine; they preserve the link to the
+/// original numeric `value`.
+fn number_display_inner_box(inner: Expr, value: &Expr) -> Expr {
   let rule = |k: &str, v: &str| Expr::Rule {
     pattern: Box::new(Expr::Identifier(k.to_string())),
     replacement: Box::new(Expr::Identifier(v.to_string())),
@@ -3508,13 +3528,55 @@ fn wrap_number_display_box(inner: Expr, value: &Expr, head: &str) -> Expr {
     name: "StyleBox".to_string(),
     args: vec![inner, rule("ShowStringCharacters", "False")].into(),
   };
-  let interpretation = Expr::FunctionCall {
+  Expr::FunctionCall {
     name: "InterpretationBox".to_string(),
     args: vec![style, value.clone(), rule("AutoDelete", "True")].into(),
+  }
+}
+
+/// Wrap a scalar inner display box with wolframscript's
+/// `TagBox[InterpretationBox[StyleBox[inner, ShowStringCharacters -> False],
+/// value, AutoDelete -> True], head]`, preserving the form head for `MakeBoxes`.
+fn wrap_number_display_box(inner: Expr, value: &Expr, head: &str) -> Expr {
+  Expr::FunctionCall {
+    name: "TagBox".to_string(),
+    args: vec![
+      number_display_inner_box(inner, value),
+      Expr::Identifier(head.to_string()),
+    ]
+    .into(),
+  }
+}
+
+/// Wrap the per-element display boxes of a list argument with wolframscript's
+/// `TagBox[RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}], head]`.
+fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
+  let mut row = Vec::with_capacity(elems.len().saturating_mul(2));
+  for (i, elem) in elems.into_iter().enumerate() {
+    if i > 0 {
+      row.push(Expr::String(",".to_string()));
+    }
+    row.push(elem);
+  }
+  let inner_row = Expr::FunctionCall {
+    name: "RowBox".to_string(),
+    args: vec![Expr::List(row.into())].into(),
+  };
+  let braced = Expr::FunctionCall {
+    name: "RowBox".to_string(),
+    args: vec![Expr::List(
+      vec![
+        Expr::String("{".to_string()),
+        inner_row,
+        Expr::String("}".to_string()),
+      ]
+      .into(),
+    )]
+    .into(),
   };
   Expr::FunctionCall {
     name: "TagBox".to_string(),
-    args: vec![interpretation, Expr::Identifier(head.to_string())].into(),
+    args: vec![braced, Expr::Identifier(head.to_string())].into(),
   }
 }
 

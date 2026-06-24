@@ -3336,6 +3336,68 @@ fn sci_parts_to_2d_string(mantissa: &str, exp: Option<i64>) -> String {
   }
 }
 
+/// Horizontally concatenate multi-line text blocks, bottom-aligned: their last
+/// lines share a baseline and shorter blocks are padded with blank lines on top.
+/// Each block's lines are right-padded to the block's own max width so columns
+/// stay aligned (e.g. an exponent sitting above its mantissa).
+fn hcat_2d_blocks(blocks: &[String]) -> String {
+  let split: Vec<Vec<&str>> =
+    blocks.iter().map(|b| b.lines().collect()).collect();
+  let height = split.iter().map(|l| l.len()).max().unwrap_or(0);
+  let widths: Vec<usize> = split
+    .iter()
+    .map(|lines| lines.iter().map(|l| l.chars().count()).max().unwrap_or(0))
+    .collect();
+  let mut out_lines: Vec<String> = Vec::with_capacity(height);
+  for row in 0..height {
+    let mut line = String::new();
+    for (bi, lines) in split.iter().enumerate() {
+      let top_pad = height - lines.len();
+      let cell = if row >= top_pad {
+        lines[row - top_pad]
+      } else {
+        ""
+      };
+      line.push_str(cell);
+      line
+        .push_str(&" ".repeat(widths[bi].saturating_sub(cell.chars().count())));
+    }
+    out_lines.push(line.trim_end().to_string());
+  }
+  out_lines.join("\n")
+}
+
+/// Build the 2D text rendering of a list of already-rendered (possibly
+/// multi-line) element strings: `{elem, elem, ...}` with the braces and commas
+/// on the baseline, matching wolframscript's `ScientificForm[{...}]` output.
+fn list_form_2d_string(elems: &[String]) -> String {
+  let mut blocks: Vec<String> = Vec::with_capacity(elems.len() * 2 + 2);
+  blocks.push("{".to_string());
+  for (i, e) in elems.iter().enumerate() {
+    if i > 0 {
+      blocks.push(", ".to_string());
+    }
+    blocks.push(e.clone());
+  }
+  blocks.push("}".to_string());
+  hcat_2d_blocks(&blocks)
+}
+
+/// Apply a single-value 2D form renderer to an argument, threading over a list
+/// (these display forms are Listable). Returns `None` if any element is one the
+/// renderer leaves unhandled.
+fn render_form_threaded<F>(arg: &Expr, render: F) -> Option<String>
+where
+  F: Fn(&Expr) -> Option<String>,
+{
+  if let Expr::List(items) = arg {
+    let parts: Option<Vec<String>> = items.iter().map(&render).collect();
+    Some(list_form_2d_string(&parts?))
+  } else {
+    render(arg)
+  }
+}
+
 /// Render `EngineeringForm[x]` / `EngineeringForm[x, n]` to a string: like
 /// `ScientificForm` but the exponent is forced to a multiple of 3, so the
 /// mantissa lies in `[1, 1000)` (e.g. `12.3457 × 10` over `3`). Default `n` is 6
@@ -3872,11 +3934,13 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && inner_args.len() == 2
   {
     let rendered = match &inner_args[1] {
-      Expr::Integer(n) => number_form_render(&inner_args[0], *n as i64),
+      Expr::Integer(n) => render_form_threaded(&inner_args[0], |x| {
+        number_form_render(x, *n as i64)
+      }),
       Expr::List(spec) if spec.len() == 2 => match &spec[1] {
-        Expr::Integer(f) => {
-          number_form_fixed_to_string(&inner_args[0], *f as i64)
-        }
+        Expr::Integer(f) => render_form_threaded(&inner_args[0], |x| {
+          number_form_fixed_to_string(x, *f as i64)
+        }),
         _ => None,
       },
       _ => None,
@@ -3897,7 +3961,8 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "NumberForm"
     && !is_input_form
     && inner_args.len() == 1
-    && let Some(rendered) = number_form_render(&inner_args[0], 6)
+    && let Some(rendered) =
+      render_form_threaded(&inner_args[0], |x| number_form_render(x, 6))
   {
     return Ok(Expr::String(rendered));
   }
@@ -3919,7 +3984,9 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(n) = n
-      && let Some(rendered) = scientific_form_to_string(&inner_args[0], n)
+      && let Some(rendered) = render_form_threaded(&inner_args[0], |x| {
+        scientific_form_to_string(x, n)
+      })
     {
       return Ok(Expr::String(rendered));
     }
@@ -3941,7 +4008,9 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(n) = n
-      && let Some(rendered) = engineering_form_to_string(&inner_args[0], n)
+      && let Some(rendered) = render_form_threaded(&inner_args[0], |x| {
+        engineering_form_to_string(x, n)
+      })
     {
       return Ok(Expr::String(rendered));
     }

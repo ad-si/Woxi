@@ -1589,4 +1589,44 @@ mod box_representation_tests {
       "form should render graphically, not as literal box text: {svg}"
     );
   }
+
+  #[test]
+  fn scientific_form_list_renders_braced_2d_row() {
+    // A list argument threads element-wise: each element is drawn in 2D
+    // scientific notation inside a braced, comma-separated row — not as a
+    // literal `ScientificForm[{…}]` function call.
+    let expr = Expr::FunctionCall {
+      name: "ScientificForm".to_string(),
+      args: vec![Expr::List(
+        vec![
+          Expr::Real(123450000.0),
+          Expr::Real(0.00012345),
+          Expr::Real(123.45),
+        ]
+        .into(),
+      )]
+      .into(),
+    };
+    let svg = layout_to_svg(
+      &layout_box(&expr_to_box_form(&expr), 14.0),
+      "currentColor",
+    );
+    // Braces, the per-element mantissa, and the three exponents are all drawn.
+    assert!(
+      svg.contains(">{<") && svg.contains(">}<"),
+      "braces missing: {svg}"
+    );
+    assert!(svg.contains(">1.2345<"), "mantissa missing: {svg}");
+    assert!(svg.contains(">8<"), "exponent 8 missing: {svg}");
+    assert!(svg.contains(">-4<"), "exponent -4 missing: {svg}");
+    assert!(svg.contains(">2<"), "exponent 2 missing: {svg}");
+    assert!(
+      svg.contains("font-size=\"9.8\""),
+      "exponents should use the smaller superscript font: {svg}"
+    );
+    assert!(
+      !svg.contains("ScientificForm") && !svg.contains("InterpretationBox"),
+      "list form should render graphically, not as literal box text: {svg}"
+    );
+  }
 }

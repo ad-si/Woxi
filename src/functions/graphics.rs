@@ -3273,17 +3273,42 @@ impl BoxLayout {
   /// Create a layout for a simple text atom.
   fn text(s: &str, font_size: f64) -> Self {
     let ch = font_size * 0.6; // approximate monospace char width
-    let w = s.chars().count() as f64 * ch;
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
     let height = ascent + descent;
+    // The multiplication separator " × " reserves a full monospace space on
+    // each side of the small sign, which reads as too wide. Render it in a
+    // tighter slot (~half a space per side) with the sign centered, without
+    // changing the underlying box string (which must stay " × " to match
+    // wolframscript's MakeBoxes/ToString output).
+    if s == " \u{00d7} " {
+      let w = ch * 1.8;
+      // Nudge the sign slightly right of the slot's geometric center: the ×
+      // glyph sits a touch left within its advance box, so a perfectly
+      // centered anchor leaves the right gap looking larger than the left.
+      let cx = w / 2.0 + ch * 0.1;
+      let escaped = svg_escape("\u{00d7}");
+      return BoxLayout {
+        width: w,
+        height,
+        baseline: ascent,
+        elements: format!(
+          "<text x=\"{cx:.2}\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\" text-anchor=\"middle\">{escaped}</text>"
+        ),
+      };
+    }
+    let w = s.chars().count() as f64 * ch;
     let escaped = svg_escape(s);
     BoxLayout {
       width: w,
       height,
       baseline: ascent,
+      // `xml:space="preserve"` keeps leading/trailing spaces from collapsing,
+      // so separator atoms like " × " (space, sign, space) stay centered in
+      // their allocated width rather than the glyph sticking to the previous
+      // token. The width above already counts those spaces.
       elements: format!(
-        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\">{escaped}</text>"
+        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\" xml:space=\"preserve\">{escaped}</text>"
       ),
     }
   }
@@ -3335,6 +3360,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut elements = String::new();
         let mut x = 0.0_f64;
         for (i, child) in children.iter().enumerate() {
+          // A small space before a bare comma so it does not crowd the
+          // preceding token (e.g. the trailing digit of a list element).
+          if i > 0 && matches!(&items[i], Expr::String(s) if s == ",") {
+            x += ch * 0.35;
+          }
           let dy = max_baseline - child.baseline;
           elements.push_str(&child.translate(x, dy));
           x += child.width;

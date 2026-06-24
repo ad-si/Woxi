@@ -5090,6 +5090,62 @@ mod make_boxes {
        False], 3.14159, AutoDelete -> True], NumberForm]"
     );
   }
+
+  #[test]
+  fn make_boxes_scientific_form_list() {
+    // A list argument threads element-wise: each element gets its own
+    // InterpretationBox/StyleBox display box, all collected into a braced,
+    // comma-separated RowBox under a single TagBox (matches wolframscript).
+    let x = "\u{00d7}";
+    let elem = |m: &str, e: i64, v: &str| {
+      format!(
+        "InterpretationBox[StyleBox[RowBox[{{{m},  {x} , \
+         SuperscriptBox[10, {e}]}}], ShowStringCharacters -> False], {v}, \
+         AutoDelete -> True]"
+      )
+    };
+    assert_eq!(
+      interpret("MakeBoxes[ScientificForm[{1.2*^8, 123.45}]]").unwrap(),
+      format!(
+        "TagBox[RowBox[{{{{, RowBox[{{{}, ,, {}}}], }}}}], ScientificForm]",
+        elem("1.2", 8, "1.2*^8"),
+        elem("1.2345", 2, "123.45")
+      )
+    );
+  }
+
+  // ToString of a list argument renders the braced 2D row, with the exponents
+  // raised above their mantissas on the line above — exactly as wolframscript.
+  #[test]
+  fn to_string_scientific_form_list() {
+    assert_eq!(
+      interpret("ToString[ScientificForm[{123450000.0, 0.00012345, 123.45}]]")
+        .unwrap(),
+      "            8             -4             2\n\
+       {1.2345 \u{00d7} 10 , 1.2345 \u{00d7} 10  , 1.2345 \u{00d7} 10 }"
+    );
+  }
+
+  #[test]
+  fn to_string_engineering_form_list() {
+    // The third element has exponent 0 and collapses to a plain number.
+    assert_eq!(
+      interpret("ToString[EngineeringForm[{123450000.0, 0.00012345, 123.45}]]")
+        .unwrap(),
+      "            6             -6\n\
+       {123.45 \u{00d7} 10 , 123.45 \u{00d7} 10  , 123.45}"
+    );
+  }
+
+  #[test]
+  fn to_string_number_form_list() {
+    // Only the >= 10^6 element switches to scientific; the others stay plain.
+    assert_eq!(
+      interpret("ToString[NumberForm[{123450000.0, 0.00012345, 123.45}]]")
+        .unwrap(),
+      "            8\n{1.2345 \u{00d7} 10 , 0.00012345, 123.45}"
+    );
+  }
 }
 
 mod raw_boxes {
