@@ -5476,10 +5476,17 @@ mod high_level_functions_tests {
         .unwrap(),
         "Quantity[1731.0149683233299, Kilometers]"
       );
-      // Coincident points are exactly zero.
+      // Coincident points are exactly zero. WL reports sub-kilometer
+      // distances in meters, so zero comes back as "Meters".
       assert_eq!(
         interpret("GeoDistance[{40, -100}, {40, -100}]").unwrap(),
-        "Quantity[0., Kilometers]"
+        "Quantity[0., Meters]"
+      );
+      // Sub-kilometer distances stay in meters too (magnitude has
+      // platform-dependent ULP noise, so assert only the chosen unit).
+      assert_eq!(
+        interpret("QuantityUnit[GeoDistance[{0, 0}, {0, 0.005}]]").unwrap(),
+        "Meters"
       );
     }
 

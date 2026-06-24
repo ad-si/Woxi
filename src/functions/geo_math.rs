@@ -50,6 +50,17 @@ fn quantity(magnitude: f64, unit: &str) -> Expr {
   }
 }
 
+/// Wrap a geodesic distance (in meters) as a `Quantity`, picking the unit the
+/// Wolfram Language uses: distances under 1000 m stay in `"Meters"`, longer
+/// ones switch to `"Kilometers"`.
+fn distance_quantity(m: f64) -> Expr {
+  if m.abs() < 1000.0 {
+    quantity(m, "Meters")
+  } else {
+    quantity(m / 1000.0, "Kilometers")
+  }
+}
+
 fn geo_position(lat: f64, lon: f64) -> Expr {
   Expr::FunctionCall {
     name: "GeoPosition".to_string(),
@@ -72,8 +83,8 @@ pub fn geo_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let (Some((lat1, lon1)), Some((lat2, lon2))) =
       (position_to_latlon(&args[0]), position_to_latlon(&args[1]))
   {
-    let km = distance_m(lat1, lon1, lat2, lon2) / 1000.0;
-    return Ok(quantity(km, "Kilometers"));
+    let m = distance_m(lat1, lon1, lat2, lon2);
+    return Ok(distance_quantity(m));
   }
   Ok(unevaluated("GeoDistance", args))
 }
@@ -171,7 +182,7 @@ pub fn geo_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for w in pts.windows(2) {
         m += distance_m(w[0].0, w[0].1, w[1].0, w[1].1);
       }
-      return Ok(quantity(m / 1000.0, "Kilometers"));
+      return Ok(distance_quantity(m));
     }
   }
   Ok(unevaluated("GeoLength", args))
