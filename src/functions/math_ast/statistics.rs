@@ -615,6 +615,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "GumbelDistribution"
         | "ZipfDistribution"
         | "BirnbaumSaundersDistribution"
+        | "LevyDistribution"
         // Mean only: the symbolic Variance form factors as
         // (1 - ns/nt)*(-n + nt), but Woxi's Times canonicalization orders
         // those two factors the other way, diverging from wolframscript.
@@ -891,6 +892,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "GumbelDistribution"
         | "ZipfDistribution"
         | "BirnbaumSaundersDistribution"
+        | "LevyDistribution"
     ) =>
     {
       // Invalid parameters emit a message and leave the call unevaluated

@@ -187,6 +187,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "TriangularDistribution" => pdf_triangular(dargs, x),
     "MaxwellDistribution" => pdf_maxwell(dargs, x),
     "BirnbaumSaundersDistribution" => pdf_birnbaum_saunders(dargs, x),
+    "LevyDistribution" => pdf_levy(dargs, x),
     "WignerSemicircleDistribution" => pdf_wigner_semicircle(dargs, x),
     "SechDistribution" => pdf_sech(dargs, x),
     "MoyalDistribution" => pdf_moyal(dargs, x),
@@ -1748,6 +1749,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "TriangularDistribution" => cdf_triangular(dargs, x),
     "MaxwellDistribution" => cdf_maxwell(dargs, x),
     "BirnbaumSaundersDistribution" => cdf_birnbaum_saunders(dargs, x),
+    "LevyDistribution" => cdf_levy(dargs, x),
     "WignerSemicircleDistribution" => cdf_wigner_semicircle(dargs, x),
     "SechDistribution" => cdf_sech(dargs, x),
     "MoyalDistribution" => cdf_moyal(dargs, x),
@@ -4599,6 +4601,16 @@ fn distribution_mean_variance(
       // Var = (2 - Pi/2) * s^2
       let var = times(minus(int(2), divide(pi(), int(2))), power(s, int(2)));
       Ok((mean, var))
+    }
+    "LevyDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "LevyDistribution expects 2 arguments".into(),
+        ));
+      }
+      // Heavy-tailed: both Mean and Variance diverge.
+      let infinity = Expr::Identifier("Infinity".to_string());
+      Ok((infinity.clone(), infinity))
     }
     "BirnbaumSaundersDistribution" => {
       if dargs.len() != 2 {
@@ -11277,6 +11289,103 @@ pub fn cdf_birnbaum_saunders(
   }
   let piece = body(&x)?;
   let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// PDF[LevyDistribution[m, s], x] =
+/// Piecewise[{{(s/(-m + x))^(3/2)/(E^(s/(2 (-m + x))) Sqrt[2 Pi] s),
+/// -m + x > 0}}, 0].
+pub fn pdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "LevyDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let m = dargs[0].clone();
+  let s = dargs[1].clone();
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let shift = |at: &Expr| plus(times(int(-1), m.clone()), at.clone());
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let sh = shift(at);
+    let num = power(divide(s.clone(), sh.clone()), divide(int(3), int(2)));
+    let denom = times(
+      times(
+        power(e(), divide(s.clone(), times(int(2), sh))),
+        call("Sqrt", vec![times(int(2), pi())]),
+      ),
+      s.clone(),
+    );
+    eval(divide(num, denom))
+  };
+  // Decide the support only when both location and point are numeric.
+  if let (Some(mv), Some(xv)) = (ms_numeric(&m), ms_numeric(&x)) {
+    if xv <= mv {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = body(&x)?;
+  let cond = comparison(shift(&x), ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// CDF[LevyDistribution[m, s], x] =
+/// Piecewise[{{Erfc[Sqrt[s/(-m + x)]/Sqrt[2]], -m + x > 0}}, 0].
+pub fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "LevyDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let m = dargs[0].clone();
+  let s = dargs[1].clone();
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let shift = |at: &Expr| plus(times(int(-1), m.clone()), at.clone());
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let erfc_arg = divide(
+      call("Sqrt", vec![divide(s.clone(), shift(at))]),
+      call("Sqrt", vec![int(2)]),
+    );
+    eval(call("Erfc", vec![erfc_arg]))
+  };
+  if let (Some(mv), Some(xv)) = (ms_numeric(&m), ms_numeric(&x)) {
+    if xv <= mv {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = body(&x)?;
+  let cond = comparison(shift(&x), ComparisonOp::Greater, int(0));
   Ok(piecewise(vec![(piece, cond)], int(0)))
 }
 

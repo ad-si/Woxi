@@ -4765,3 +4765,68 @@ mod birnbaum_saunders_distribution {
     );
   }
 }
+
+mod levy_distribution {
+  use super::*;
+
+  #[test]
+  fn mean_variance_sd_diverge() {
+    // Heavy-tailed: all three moments are infinite.
+    assert_eq!(
+      interpret("Mean[LevyDistribution[m, s]]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Variance[LevyDistribution[m, s]]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[LevyDistribution[m, s]]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[LevyDistribution[m, s], x]").unwrap(),
+      "Piecewise[{{(s/(-m + x))^(3/2)/(E^(s/(2*(-m + x)))*Sqrt[2*Pi]*s), \
+       -m + x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[LevyDistribution[0, 1], 1]").unwrap(),
+      "1/Sqrt[2*E*Pi]"
+    );
+    assert_eq!(
+      interpret("PDF[LevyDistribution[0, 1], 3]").unwrap(),
+      "1/(3*E^(1/6)*Sqrt[6*Pi])"
+    );
+    assert_eq!(
+      interpret("PDF[LevyDistribution[1, 2], 3]").unwrap(),
+      "1/(2*Sqrt[2*E*Pi])"
+    );
+    // Below the location parameter the density is 0.
+    assert_eq!(interpret("PDF[LevyDistribution[1, 1], 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[LevyDistribution[m, s], x]").unwrap(),
+      "Piecewise[{{Erfc[Sqrt[s/(-m + x)]/Sqrt[2]], -m + x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_numeric() {
+    assert_eq!(
+      interpret("CDF[LevyDistribution[0, 1], 2]").unwrap(),
+      "Erfc[1/2]"
+    );
+    assert_eq!(interpret("CDF[LevyDistribution[1, 1], 0]").unwrap(), "0");
+  }
+}
