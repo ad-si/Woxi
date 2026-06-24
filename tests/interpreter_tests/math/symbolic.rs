@@ -1159,4 +1159,59 @@ mod cases {
     // Finite case still uses the standard numeric path.
     assert_case(r#"Product[1 - 1/i^4, {i, 2, 5}]"#, r#"221/240"#);
   }
+
+  // Infinite products of rational functions that split over the integers.
+  // The convergent ones use the Gamma-ratio closed form
+  // ∏_j Γ(n0-s_j) / ∏_i Γ(n0-r_i).
+  #[test]
+  fn product_rational_telescoping_one_minus_recip_square() {
+    assert_case(r#"Product[1 - 1/n^2, {n, 2, Infinity}]"#, r#"1/2"#);
+    assert_case(r#"Product[1 - 1/n^2, {n, 3, Infinity}]"#, r#"2/3"#);
+  }
+
+  #[test]
+  fn product_rational_telescoping_reciprocal() {
+    assert_case(r#"Product[n^2/(n^2 - 1), {n, 2, Infinity}]"#, r#"2"#);
+    assert_case(r#"Product[1/(1 - 1/n^2), {n, 2, Infinity}]"#, r#"2"#);
+  }
+
+  #[test]
+  fn product_rational_telescoping_shifted_factors() {
+    assert_case(
+      r#"Product[((n + 2)(n - 2))/((n + 1)(n - 1)), {n, 3, Infinity}]"#,
+      r#"1/4"#,
+    );
+  }
+
+  // Σ(numerator roots) > Σ(denominator roots) → the product converges to 0.
+  #[test]
+  fn product_rational_converges_to_zero() {
+    assert_case(r#"Product[(n - 1)/n, {n, 2, Infinity}]"#, r#"0"#);
+    assert_case(r#"Product[(n + 1)/(n + 2), {n, 1, Infinity}]"#, r#"0"#);
+  }
+
+  // Σ(numerator roots) < Σ(denominator roots) → divergent, left unevaluated.
+  #[test]
+  fn product_rational_divergent_unevaluated() {
+    assert_case(
+      r#"Product[(2 + n)/(1 + n), {n, 1, Infinity}]"#,
+      r#"Product[(2 + n)/(1 + n), {n, 1, Infinity}]"#,
+    );
+  }
+
+  // Constant body over an infinite range.
+  #[test]
+  fn product_constant_infinite() {
+    assert_case(r#"Product[1, {k, 1, Infinity}]"#, r#"1"#);
+    assert_case(r#"Product[1/2, {k, 1, Infinity}]"#, r#"0"#);
+    assert_case(r#"Product[0, {k, 1, Infinity}]"#, r#"0"#);
+  }
+
+  #[test]
+  fn product_constant_infinite_divergent() {
+    assert_case(
+      r#"Product[2, {k, 1, Infinity}]"#,
+      r#"Product[2, {k, 1, Infinity}]"#,
+    );
+  }
 }

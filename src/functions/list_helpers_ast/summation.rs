@@ -498,6 +498,250 @@ fn rational_telescoping_product(
   Ok(Some(eval(&result)?))
 }
 
+/// An explicit real number (Integer, Rational, or Real) as f64; None for
+/// symbolic values (including constants like Pi).
+fn explicit_real(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(r) => Some(*r),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
+          Some(*p as f64 / *q as f64)
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+fn i128_gcd(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = a % b;
+    a = b;
+    b = t;
+  }
+  a
+}
+
+/// A CoefficientList entry as an exact `(num, den)` rational, or None.
+fn coeff_to_ratio(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => Some((*p, *q)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Integer-cleared coefficient list of `poly` in `var` (ascending powers, the
+/// leading entry nonzero), or None when `poly` is not a polynomial with
+/// rational coefficients.
+fn integer_coefficient_list(poly: &Expr, var_name: &str) -> Option<Vec<i128>> {
+  let list = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "CoefficientList".to_string(),
+    args: vec![poly.clone(), Expr::Identifier(var_name.to_string())].into(),
+  })
+  .ok()?;
+  let Expr::List(ref items) = list else {
+    return None;
+  };
+  let ratios: Vec<(i128, i128)> =
+    items.iter().map(coeff_to_ratio).collect::<Option<_>>()?;
+  let mut lcm: i128 = 1;
+  for &(_, d) in &ratios {
+    let g = i128_gcd(lcm, d);
+    lcm = (lcm / g).checked_mul(d.abs())?;
+  }
+  let mut out = Vec::with_capacity(ratios.len());
+  for &(n, d) in &ratios {
+    out.push(n.checked_mul(lcm / d)?);
+  }
+  while out.len() > 1 && *out.last().unwrap() == 0 {
+    out.pop();
+  }
+  Some(out)
+}
+
+/// Horner evaluation of an ascending integer polynomial at integer `x`,
+/// overflow-checked.
+fn horner_i128(coeffs: &[i128], x: i128) -> Option<i128> {
+  let mut acc: i128 = 0;
+  for &c in coeffs.iter().rev() {
+    acc = acc.checked_mul(x)?.checked_add(c)?;
+  }
+  Some(acc)
+}
+
+/// Synthetic division of an ascending integer polynomial by `(var - r)`,
+/// returning the ascending integer quotient (assumes `r` is an exact root).
+fn deflate_i128(coeffs: &[i128], r: i128) -> Option<Vec<i128>> {
+  let desc: Vec<i128> = coeffs.iter().rev().cloned().collect();
+  let n = desc.len();
+  let mut quot = vec![0i128; n - 1];
+  let mut carry = desc[0];
+  quot[0] = carry;
+  for i in 1..n - 1 {
+    carry = desc[i].checked_add(carry.checked_mul(r)?)?;
+    quot[i] = carry;
+  }
+  quot.reverse();
+  Some(quot)
+}
+
+/// Integer roots of an ascending integer polynomial with multiplicity, if it
+/// fully splits over the integers; otherwise None (non-integer/irrational root
+/// present, or the constant term is too large for the divisor search).
+fn integer_roots_with_mult(mut c: Vec<i128>) -> Option<Vec<i128>> {
+  const MAX_A0: i128 = 100_000;
+  let mut roots = Vec::new();
+  while c.len() > 1 && c[0] == 0 {
+    roots.push(0);
+    c.remove(0);
+  }
+  while c.len() > 1 {
+    let a0 = c[0].abs();
+    if a0 == 0 {
+      roots.push(0);
+      c.remove(0);
+      continue;
+    }
+    if a0 > MAX_A0 {
+      return None;
+    }
+    let mut found = None;
+    'outer: for d in 1..=a0 {
+      if a0 % d == 0 {
+        for cand in [d, -d] {
+          if horner_i128(&c, cand)? == 0 {
+            found = Some(cand);
+            break 'outer;
+          }
+        }
+      }
+    }
+    let r = found?;
+    c = deflate_i128(&c, r)?;
+    roots.push(r);
+  }
+  Some(roots)
+}
+
+/// Closed form for `Product[R(var), {var, n0, Infinity}]` where `R` is a
+/// rational function whose numerator and denominator both factor over the
+/// integers into linear factors. With equal degree and equal leading
+/// coefficient, let `{r_i}` be the numerator roots and `{s_j}` the denominator
+/// roots:
+///   * `Σr_i = Σs_j` → converges to `∏_j Γ(n0 - s_j) / ∏_i Γ(n0 - r_i)`
+///   * `Σr_i > Σs_j` → `0`
+///   * `Σr_i < Σs_j` → diverges (emits `Product::div`, left unevaluated)
+/// Returns None when the body is not such a rational function. Rational
+/// (non-integer) roots — e.g. `Product[1 - 1/(4 n^2), …] = 2/Pi` — are left
+/// unevaluated.
+fn infinite_integer_root_product(
+  body: &Expr,
+  var_name: &str,
+  n0: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  if n0 < 1 {
+    return Ok(None);
+  }
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let call1 = |name: &str, arg: Expr| Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![arg].into(),
+  };
+  let together = eval(&call1("Together", body.clone()))?;
+  let num = eval(&call1("Numerator", together.clone()))?;
+  let den = eval(&call1("Denominator", together))?;
+  let (Some(cn), Some(cd)) = (
+    integer_coefficient_list(&num, var_name),
+    integer_coefficient_list(&den, var_name),
+  ) else {
+    return Ok(None);
+  };
+  // Both must genuinely depend on var and share the same degree.
+  if cn.len() <= 1 || cd.len() != cn.len() {
+    return Ok(None);
+  }
+  // Convergence to a finite nonzero value needs R(n) → 1, i.e. equal leading
+  // coefficients of the original (un-cleared) numerator and denominator.
+  let deg = Expr::Integer((cn.len() - 1) as i128);
+  let coeff = |p: &Expr| {
+    eval(&Expr::FunctionCall {
+      name: "Coefficient".to_string(),
+      args: vec![
+        p.clone(),
+        Expr::Identifier(var_name.to_string()),
+        deg.clone(),
+      ]
+      .into(),
+    })
+  };
+  let lead_diff = eval(&Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(coeff(&num)?),
+    right: Box::new(coeff(&den)?),
+  })?;
+  if !matches!(lead_diff, Expr::Integer(0)) {
+    return Ok(None);
+  }
+  let (Some(rnum), Some(rden)) =
+    (integer_roots_with_mult(cn), integer_roots_with_mult(cd))
+  else {
+    return Ok(None);
+  };
+  let sum_r: i128 = rnum.iter().sum();
+  let sum_s: i128 = rden.iter().sum();
+  use std::cmp::Ordering;
+  match sum_r.cmp(&sum_s) {
+    Ordering::Greater => Ok(Some(Expr::Integer(0))),
+    Ordering::Less => {
+      crate::emit_message("Product::div: Product does not converge.");
+      Ok(None)
+    }
+    Ordering::Equal => {
+      // A numerator root ≥ n0 zeroes a factor → the whole product is 0.
+      if rnum.iter().any(|&r| r >= n0) {
+        return Ok(Some(Expr::Integer(0)));
+      }
+      // A denominator root ≥ n0 is a pole → leave unevaluated.
+      if rden.iter().any(|&s| s >= n0) {
+        return Ok(None);
+      }
+      let gamma = |k: i128| Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: vec![Expr::Integer(n0 - k)].into(),
+      };
+      let num_factors: Vec<Expr> = rden.iter().map(|&s| gamma(s)).collect();
+      let den_factors: Vec<Expr> = rnum.iter().map(|&r| gamma(r)).collect();
+      let result = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: num_factors.into(),
+        }),
+        right: Box::new(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: den_factors.into(),
+        }),
+      };
+      Ok(Some(eval(&result)?))
+    }
+  }
+}
+
 fn linear_shift_of_var(body: &Expr, var_name: &str) -> Option<Expr> {
   use crate::functions::calculus_ast::is_constant_wrt;
   let terms: Vec<&Expr> = match body {
@@ -1092,6 +1336,40 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 right: Box::new(Expr::Constant("Pi".to_string())),
               }),
             });
+          }
+
+          // Constant body over an infinite range: convergence depends on the
+          // value. Π c = 1 for c==1, 0 for a positive c<1 (and c==0), and
+          // diverges for |c|>1. A negative c in [-1,0) and any symbolic value
+          // are left unevaluated, matching wolframscript.
+          if matches!(max_expr, Expr::Identifier(s) if s == "Infinity")
+            && !crate::functions::polynomial_ast::contains_var(body, &var_name)
+            && let Some(c) =
+              explicit_real(&crate::evaluator::evaluate_expr_to_expr(body)?)
+          {
+            if c == 1.0 {
+              return Ok(Expr::Integer(1));
+            }
+            if (0.0..1.0).contains(&c) {
+              return Ok(Expr::Integer(0));
+            }
+            if !(-1.0..=1.0).contains(&c) {
+              crate::emit_message("Product::div: Product does not converge.");
+              return Ok(Expr::FunctionCall {
+                name: "Product".to_string(),
+                args: args.to_vec().into(),
+              });
+            }
+          }
+
+          // Infinite product of a rational function that splits over the
+          // integers: Product[(n-1)(n+1)/n^2, {n, 2, Infinity}] = 1/2, etc.
+          if let Some(n0) = min_concrete
+            && matches!(max_expr, Expr::Identifier(s) if s == "Infinity")
+            && let Some(result) =
+              infinite_integer_root_product(body, &var_name, n0)?
+          {
+            return Ok(result);
           }
 
           // For other symbolic cases, return unevaluated
