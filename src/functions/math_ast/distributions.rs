@@ -4508,9 +4508,10 @@ fn distribution_mean_variance(
       };
       // Mean = (imin + imax) / 2
       let mean = divide(plus(imin.clone(), imax.clone()), int(2));
-      // Variance = ((imax - imin) * (imax - imin + 2)) / 12
-      let diff = minus(imax, imin);
-      let var = divide(times(diff.clone(), plus(diff, int(2))), int(12));
+      // Variance = ((imax - imin + 1)^2 - 1) / 12, i.e. (n^2 - 1)/12 for the
+      // n = imax - imin + 1 equally-likely values (wolframscript's form).
+      let n = plus(int(1), minus(imax, imin));
+      let var = divide(minus(power(n, int(2)), int(1)), int(12));
       Ok((mean, var))
     }
     "NegativeBinomialDistribution" => {

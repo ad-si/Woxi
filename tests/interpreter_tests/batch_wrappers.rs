@@ -501,6 +501,15 @@ mod batch_unevaluated_wrappers_2 {
       "33/4"
     );
   }
+  // Symbolic variance is (n^2 - 1)/12 for n = imax - imin + 1 equally-likely
+  // values, matching wolframscript's ((1 - a + b)^2 - 1)/12 form.
+  #[test]
+  fn discrete_uniform_distribution_variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[DiscreteUniformDistribution[{a, b}]]").unwrap(),
+      "(-1 + (1 - a + b)^2)/12"
+    );
+  }
 
   // ─── PositiveDefiniteMatrixQ ───────────────────────────────────────
   #[test]
