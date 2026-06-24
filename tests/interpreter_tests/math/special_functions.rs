@@ -9156,6 +9156,22 @@ mod cases {
       r#"0.881373587019543"#,
     );
   }
+  // ArcSinh is odd: ArcSinh[-x] -> -ArcSinh[x] for negative integers,
+  // rationals, and negated symbolic arguments.
+  #[test]
+  fn arc_sinh_odd_reflection() {
+    assert_case(r#"ArcSinh[-1]"#, r#"-ArcSinh[1]"#);
+    assert_case(r#"ArcSinh[-2]"#, r#"-ArcSinh[2]"#);
+    assert_case(r#"ArcSinh[-1/2]"#, r#"-ArcSinh[1/2]"#);
+    assert_case(r#"ArcSinh[-x]"#, r#"-ArcSinh[x]"#);
+  }
+  // ArcTanh is odd too (reals stay on the numeric path).
+  #[test]
+  fn arc_tanh_odd_reflection() {
+    assert_case(r#"ArcTanh[-1/2]"#, r#"-ArcTanh[1/2]"#);
+    assert_case(r#"ArcTanh[-2]"#, r#"-ArcTanh[2]"#);
+    assert_case(r#"ArcTanh[-x]"#, r#"-ArcTanh[x]"#);
+  }
   #[test]
   fn arc_tanh_1() {
     assert_case(r#"ArcTanh[0]"#, r#"0"#);

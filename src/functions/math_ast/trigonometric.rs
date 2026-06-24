@@ -4235,6 +4235,13 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
+  // Odd function: ArcSinh[-x] → -ArcSinh[x] (negative integers, rationals, and
+  // negated symbolic arguments; reals are handled numerically above).
+  if let Some(neg) = try_extract_negated(&args[0]) {
+    let inner =
+      crate::evaluator::evaluate_function_call_ast("ArcSinh", &[neg])?;
+    return Ok(negate_expr(inner));
+  }
   Ok(Expr::FunctionCall {
     name: "ArcSinh".to_string(),
     args: args.to_vec().into(),
@@ -4395,6 +4402,15 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     });
+  }
+  // Odd function: ArcTanh[-x] → -ArcTanh[x] (negative integers/rationals and
+  // negated symbolic arguments; reals are handled numerically above).
+  if !matches!(&args[0], Expr::Real(_))
+    && let Some(neg) = try_extract_negated(&args[0])
+  {
+    let inner =
+      crate::evaluator::evaluate_function_call_ast("ArcTanh", &[neg])?;
+    return Ok(negate_expr(inner));
   }
   Ok(Expr::FunctionCall {
     name: "ArcTanh".to_string(),
