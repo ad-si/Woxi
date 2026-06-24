@@ -628,7 +628,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
 
     // NonThreadable + Protected
-    "MatrixPower" | "MatrixExp" => vec!["NonThreadable", "Protected"],
+    "MatrixPower" | "MatrixExp" | "MatrixFunction" => {
+      vec!["NonThreadable", "Protected"]
+    }
 
     // NHoldAll + Protected + ReadProtected
     "InverseFunction" => vec!["NHoldAll", "Protected", "ReadProtected"],

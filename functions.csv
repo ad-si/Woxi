@@ -2092,7 +2092,7 @@ TrackingFunction,Tracking callback option,🚫,,10.0,2129
 MathieuCharacteristicB,Mathieu characteristic value,🚫,,3.0,2131
 PowerRange,Generate a list of values by successive multiplication,✅,1,10.0,2131
 ParentDirectory,Parent directory path,✅,none,2.0,2132
-MatrixFunction,Apply function to matrix,🚫,,9.0,2134
+MatrixFunction,Apply a scalar function to a square matrix via its eigenvalues,✅,pure,9.0,2134
 QuantityUnit,Returns the unit of a quantity,✅,pure,9.0,2134
 Delayed,Delayed evaluation wrapper,🚫,,10.0,2138
 PacletInstall,Install Wolfram paclet,🚫,,12.1,2138

@@ -3518,6 +3518,63 @@ mod cases {
       r#"MatrixExp[{{1, 0}, {0, 2}}, {{1, 0}, {0, 1}}]"#,
     );
   }
+  // MatrixFunction[f, m] applies a named scalar function to the matrix.
+  #[test]
+  fn matrix_function_diagonal() {
+    assert_case(
+      r#"MatrixFunction[Sqrt, {{2, 0}, {0, 8}}]"#,
+      r#"{{Sqrt[2], 0}, {0, 2*Sqrt[2]}}"#,
+    );
+    assert_case(
+      r#"MatrixFunction[Exp, {{1, 0}, {0, 2}}]"#,
+      r#"{{E, 0}, {0, E^2}}"#,
+    );
+    assert_case(
+      r#"MatrixFunction[Sin, {{0, 0}, {0, Pi/2}}]"#,
+      r#"{{0, 0}, {0, 1}}"#,
+    );
+    assert_case(
+      r#"MatrixFunction[Log, {{1, 0}, {0, E}}]"#,
+      r#"{{0, 0}, {0, 1}}"#,
+    );
+  }
+  // A 2x2 with distinct eigenvalues uses the Sylvester formula; an integer
+  // result matches wolframscript exactly.
+  #[test]
+  fn matrix_function_sylvester_integer() {
+    assert_case(
+      r#"MatrixFunction[Sqrt, {{5, 4}, {4, 5}}]"#,
+      r#"{{2, 1}, {1, 2}}"#,
+    );
+  }
+  // A defective (repeated-eigenvalue) matrix with Exp uses the Jordan form.
+  #[test]
+  fn matrix_function_nilpotent_exp() {
+    assert_case(
+      r#"MatrixFunction[Exp, {{0, 1}, {0, 0}}]"#,
+      r#"{{1, 1}, {0, 1}}"#,
+    );
+  }
+  // A pure function applied to a diagonal matrix.
+  #[test]
+  fn matrix_function_pure_diagonal() {
+    assert_case(
+      r#"MatrixFunction[#^2 &, {{1, 0}, {0, 2}}]"#,
+      r#"{{1, 0}, {0, 4}}"#,
+    );
+    assert_case(
+      r#"MatrixFunction[1/# &, {{2, 0}, {0, 4}}]"#,
+      r#"{{1/2, 0}, {0, 1/4}}"#,
+    );
+  }
+  // A non-square argument emits MatrixFunction::matsq and stays unevaluated.
+  #[test]
+  fn matrix_function_nonsquare() {
+    assert_case(
+      r#"MatrixFunction[Exp, {{1, 2}, {3}}]"#,
+      r#"MatrixFunction[Exp, {{1, 2}, {3}}]"#,
+    );
+  }
   #[test]
   fn matrix_log_diagonal() {
     assert_case(

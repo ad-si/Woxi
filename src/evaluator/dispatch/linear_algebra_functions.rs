@@ -704,6 +704,74 @@ pub fn dispatch_linear_algebra_functions(
         "Exp",
       ));
     }
+    // MatrixFunction[f, m] applies the named scalar function f to the matrix m
+    // (via its eigenvalues). Reuses the MatrixExp machinery: clean for diagonal
+    // matrices, Sylvester form for a 2x2 with distinct eigenvalues. A pure
+    // function or a shape it cannot handle is left unevaluated.
+    "MatrixFunction" if args.len() == 2 => {
+      let uneval = || {
+        Some(Ok(Expr::FunctionCall {
+          name: "MatrixFunction".to_string(),
+          args: args.to_vec().into(),
+        }))
+      };
+      if let Expr::Identifier(fname) = &args[0] {
+        let result = crate::functions::linear_algebra_ast::matrix_function_ast(
+          std::slice::from_ref(&args[1]),
+          "MatrixFunction",
+          fname,
+        );
+        // matrix_function_ast bails by echoing a 1-arg MatrixFunction[m];
+        // restore the proper 2-arg unevaluated form in that case.
+        return Some(match result {
+          Ok(Expr::FunctionCall { ref name, .. })
+            if name == "MatrixFunction" =>
+          {
+            Ok(Expr::FunctionCall {
+              name: "MatrixFunction".to_string(),
+              args: args.to_vec().into(),
+            })
+          }
+          other => other,
+        });
+      }
+      // A pure function (or other non-name): handle a diagonal matrix by
+      // applying it to each diagonal entry (the only form-safe general case).
+      let is_zero = |e: &Expr| {
+        matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(z) if *z == 0.0)
+      };
+      if let Expr::List(rows) = &args[1] {
+        let n = rows.len();
+        let is_diag = n > 0
+          && rows.iter().enumerate().all(|(i, r)| {
+            matches!(r, Expr::List(cs)
+              if cs.len() == n
+                && cs.iter().enumerate().all(|(j, c)| i == j || is_zero(c)))
+          });
+        if is_diag {
+          let mut new_rows: Vec<Expr> = Vec::with_capacity(n);
+          for (i, r) in rows.iter().enumerate() {
+            let Expr::List(cs) = r else { unreachable!() };
+            let mut new_cs: Vec<Expr> = Vec::with_capacity(n);
+            for (j, c) in cs.iter().enumerate() {
+              if i == j {
+                match crate::evaluator::function_application::apply_function_to_arg(
+                  &args[0], c,
+                ) {
+                  Ok(v) => new_cs.push(v),
+                  Err(e) => return Some(Err(e)),
+                }
+              } else {
+                new_cs.push(c.clone());
+              }
+            }
+            new_rows.push(Expr::List(new_cs.into()));
+          }
+          return Some(Ok(Expr::List(new_rows.into())));
+        }
+      }
+      return uneval();
+    }
     // MatrixExp[m, v] computes MatrixExp[m] . v (the action of the matrix
     // exponential on the vector v), avoiding forming the full exponential
     // when only its product with v is wanted. The second argument must be a
