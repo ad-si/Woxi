@@ -2906,6 +2906,13 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("InverseErfc[0.0]").unwrap(), "Infinity");
     assert_eq!(interpret("InverseErfc[2]").unwrap(), "-Infinity");
     assert_eq!(interpret("InverseErfc[2.0]").unwrap(), "-Infinity");
+    // Reflection for an exact rational z in (1, 2): InverseErfc[z] =
+    // -InverseErfc[2 - z], keeping the argument in (0, 1).
+    assert_eq!(interpret("InverseErfc[3/2]").unwrap(), "-InverseErfc[1/2]");
+    assert_eq!(interpret("InverseErfc[7/4]").unwrap(), "-InverseErfc[1/4]");
+    assert_eq!(interpret("InverseErfc[5/4]").unwrap(), "-InverseErfc[3/4]");
+    // z in (0, 1) is left as-is.
+    assert_eq!(interpret("InverseErfc[1/2]").unwrap(), "InverseErfc[1/2]");
   }
   #[test]
   fn smooth_density_histogram() {

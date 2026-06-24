@@ -1254,6 +1254,25 @@ mod quantile_distribution_extended {
       interpret("Quantile[NormalDistribution[m, s], 1/4]").unwrap(),
       "m - Sqrt[2]*s*InverseErfc[1/2]"
     );
+    // Upper quantile (q > 1/2): InverseErfc[2q] reflects so the result uses
+    // +InverseErfc[2-2q] rather than the unreduced InverseErfc[2q].
+    assert_eq!(
+      interpret("Quantile[NormalDistribution[0, 1], 3/4]").unwrap(),
+      "Sqrt[2]*InverseErfc[1/2]"
+    );
+    assert_eq!(
+      interpret("Quantile[NormalDistribution[m, s], 3/4]").unwrap(),
+      "m + Sqrt[2]*s*InverseErfc[1/2]"
+    );
+    assert_eq!(
+      interpret("Quartiles[NormalDistribution[0, 1]]").unwrap(),
+      "{-(Sqrt[2]*InverseErfc[1/2]), 0, Sqrt[2]*InverseErfc[1/2]}"
+    );
+    assert_eq!(
+      interpret("InverseSurvivalFunction[NormalDistribution[0, 1], 3/4]")
+        .unwrap(),
+      "-(Sqrt[2]*InverseErfc[1/2])"
+    );
   }
 
   #[test]

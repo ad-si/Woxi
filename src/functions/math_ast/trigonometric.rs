@@ -2337,6 +2337,24 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       op: crate::syntax::UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }),
+    // Reflection for an exact rational z with 1 < z < 2:
+    // InverseErfc[z] = -InverseErfc[2 - z]  (keeps the argument in (0, 1)).
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational"
+        && rargs.len() == 2
+        && matches!((&rargs[0], &rargs[1]),
+          (Expr::Integer(p), Expr::Integer(q))
+            if *q > 0 && *p > *q && *p < 2 * *q) =>
+    {
+      let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1]) else {
+        unreachable!()
+      };
+      let inner = inverse_erfc_ast(&[make_rational(2 * q - p, *q)])?;
+      Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(inner),
+      })
+    }
     // Numeric evaluation for Real arguments
     Expr::Real(f) => {
       if *f > 0.0 && *f < 2.0 {

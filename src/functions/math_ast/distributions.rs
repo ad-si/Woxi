@@ -676,8 +676,9 @@ pub fn quantile_distribution_closed_form(
         if let Some((1, 2)) = crate::functions::math_ast::expr_to_rational(q) {
           return eval(m).ok();
         }
-        // m - Sqrt[2]*s*InverseErfc[2q], kept raw so the factor order
-        // matches wolframscript (InverseErfc stays symbolic in Woxi)
+        // m - Sqrt[2]*s*InverseErfc[2q]. Evaluating the result reflects
+        // InverseErfc[2q] for q > 1/2 (2q > 1 → -InverseErfc[2-2q]) and folds
+        // the sign, matching wolframscript while preserving the factor order.
         let two_q = eval(times(int(2), q.clone())).ok()?;
         let inverse_erfc = Expr::FunctionCall {
           name: "InverseErfc".to_string(),
@@ -698,13 +699,14 @@ pub fn quantile_distribution_closed_form(
             args: factors.into(),
           }),
         };
-        return Some(match &m {
+        let result = match &m {
           Expr::Integer(0) => term,
           _ => Expr::FunctionCall {
             name: "Plus".to_string(),
             args: vec![m.clone(), term].into(),
           },
-        });
+        };
+        return eval(result).ok();
       }
       // Machine-precision q: numeric inverse CDF (requires numeric m, s)
       let m_num = crate::functions::math_ast::expr_to_num(&m)?;
@@ -905,13 +907,16 @@ pub fn inverse_survival_closed_form(
         name: "Times".to_string(),
         args: factors.into(),
       };
-      Some(match &m {
+      // Evaluate so InverseErfc[2q] reflects for q > 1/2 (matching the Quantile
+      // path), e.g. Sqrt[2] InverseErfc[3/2] -> -(Sqrt[2] InverseErfc[1/2]).
+      let result = match &m {
         Expr::Integer(0) => term,
         _ => Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![m.clone(), term].into(),
         },
-      })
+      };
+      eval(result).ok()
     }
     // InverseSurvivalFunction[GammaDistribution[a, b], q]
     //   = b InverseGammaRegularized[a, q]
