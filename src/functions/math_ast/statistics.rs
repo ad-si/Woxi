@@ -1150,7 +1150,9 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if is_distribution_arg(&args[0])
         && let Some(result) = try_sqrt_extract_denom_factors(&var)?
       {
-        return Ok(result);
+        // Evaluate so a residual radical coefficient folds, e.g.
+        // (b-a)*1/(2 Sqrt[6]) -> (b-a)/(2 Sqrt[6]).
+        return crate::evaluator::evaluate_expr_to_expr(&result);
       }
       sqrt_ast(&[var.clone()])
     }

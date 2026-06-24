@@ -3017,6 +3017,30 @@ mod triangular_distribution {
       "(a^2 - a*b + b^2 - a*c - b*c + c^2)/18"
     );
   }
+
+  // The symmetric 2-argument form TriangularDistribution[{a, b}] (mode at the
+  // midpoint) must collapse to the simple symmetric moments, not the
+  // unsimplified 3-parameter formula with c = (a+b)/2 substituted.
+  #[test]
+  fn symmetric_two_arg_moments() {
+    assert_eq!(
+      interpret("Mean[TriangularDistribution[{a, b}]]").unwrap(),
+      "(a + b)/2"
+    );
+    assert_eq!(
+      interpret("Variance[TriangularDistribution[{a, b}]]").unwrap(),
+      "(-a + b)^2/24"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[TriangularDistribution[{a, b}]]").unwrap(),
+      "(-a + b)/(2*Sqrt[6])"
+    );
+    // Numeric symmetric form.
+    assert_eq!(
+      interpret("Variance[TriangularDistribution[{0, 6}]]").unwrap(),
+      "3/2"
+    );
+  }
 }
 
 mod maxwell_distribution {

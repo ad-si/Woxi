@@ -10582,21 +10582,31 @@ pub fn triangular_mean_variance(
       "TriangularDistribution expects {min, max} and an optional mode".into(),
     ));
   };
-  let mean = eval(divide(plus(plus(a.clone(), b.clone()), c.clone()), int(3)))?;
-  let var = eval(divide(
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        power(a.clone(), int(2)),
-        times(int(-1), times(a.clone(), b.clone())),
-        power(b.clone(), int(2)),
-        times(int(-1), times(a.clone(), c.clone())),
-        times(int(-1), times(b.clone(), c.clone())),
-        power(c, int(2)),
-      ]
-      .into(),
-    },
-    int(18),
+  // The general (3-parameter) formulas; Simplify collapses the symmetric
+  // 2-argument form TriangularDistribution[{a, b}] (mode c = (a+b)/2) to
+  // wolframscript's Mean (a+b)/2 and Variance (b-a)^2/24, while leaving the
+  // genuine 3-parameter forms unchanged.
+  let mean = eval(unary_fn(
+    "Simplify",
+    divide(plus(plus(a.clone(), b.clone()), c.clone()), int(3)),
+  ))?;
+  let var = eval(unary_fn(
+    "Simplify",
+    divide(
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          power(a.clone(), int(2)),
+          times(int(-1), times(a.clone(), b.clone())),
+          power(b.clone(), int(2)),
+          times(int(-1), times(a.clone(), c.clone())),
+          times(int(-1), times(b.clone(), c.clone())),
+          power(c, int(2)),
+        ]
+        .into(),
+      },
+      int(18),
+    ),
   ))?;
   Ok((mean, var))
 }
