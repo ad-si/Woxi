@@ -2771,6 +2771,42 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_accounting_form_reqsigz_warning() {
+      // Requesting fewer significant figures than the number has integer
+      // digits pads the trailing digits with zeros and warns, matching
+      // wolframscript (`AccountingForm[1234.5678, 3]` -> `1230.`).
+      woxi::clear_state();
+      assert_eq!(
+        interpret("ToString[AccountingForm[1234.5678, 3]]").unwrap(),
+        "1230."
+      );
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(
+          "AccountingForm::reqsigz: Requested number precision is lower \
+           than number of digits shown; padding with zeros."
+        )),
+        "expected reqsigz warning, got {msgs:?}"
+      );
+    }
+
+    #[test]
+    fn test_accounting_form_no_reqsigz_when_precision_sufficient() {
+      // When the requested precision is at least the integer-digit count, no
+      // warning fires (4 figures for the 4-digit 1234.5678 -> `1235.`).
+      woxi::clear_state();
+      assert_eq!(
+        interpret("ToString[AccountingForm[1234.5678, 4]]").unwrap(),
+        "1235."
+      );
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        !msgs.iter().any(|m| m.contains("reqsigz")),
+        "did not expect reqsigz warning, got {msgs:?}"
+      );
+    }
+
+    #[test]
     fn test_column_form_renders_stacked() {
       // ColumnForm is the legacy display directive: it stacks elements one per
       // line. Unlike Column, it renders at top level and under every form

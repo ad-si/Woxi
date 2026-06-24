@@ -13,9 +13,13 @@ $ wo 'ToString[AccountingForm[-1234.5]]'
 (1234.5)
 ```
 
-A second argument gives the number of significant figures.
+A second argument gives the number of significant figures. Requesting fewer
+figures than the number has integer digits pads the trailing digits with zeros
+and emits the `reqsigz` warning.
 
-```scrut
+```scrut {output_stream: combined}
 $ wo 'ToString[AccountingForm[1234.5678, 3]]'
+
+AccountingForm::reqsigz: Requested number precision is lower than number of digits shown; padding with zeros.
 1230.
 ```

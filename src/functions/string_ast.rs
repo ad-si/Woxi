@@ -3485,6 +3485,22 @@ fn number_form_fixed_to_string(x: &Expr, f: i64) -> Option<String> {
 /// notation, keeping the full integer part and rounding the fraction to machine
 /// precision (~6 significant figures). `1234567.89 -> 1234568.`, `0.0001 ->
 /// 0.0001`.
+/// Number of digits to the left of the decimal point in the magnitude of a
+/// real or integer value (always at least 1, so e.g. `0.5` counts as one).
+/// Returns `None` for non-numeric expressions.
+fn integer_digit_count(magnitude: &Expr) -> Option<i64> {
+  let f = match magnitude {
+    Expr::Integer(i) => i.unsigned_abs() as f64,
+    Expr::Real(f) => f.abs(),
+    _ => return None,
+  };
+  if f < 1.0 {
+    Some(1)
+  } else {
+    Some(f.log10().floor() as i64 + 1)
+  }
+}
+
 fn decimal_form_default(f: f64) -> String {
   if f == 0.0 {
     return "0.".to_string();
@@ -4084,6 +4100,19 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Real(f) => (*f < 0.0, Expr::Real(f.abs())),
         _ => (false, (*x0).clone()),
       };
+      // When the requested number of significant figures is lower than the
+      // count of digits to the left of the decimal point, the trailing
+      // integer digits are padded with zeros (e.g. 1234.5678 -> 1230. at
+      // n = 3). wolframscript warns about this with `<Head>::reqsigz`.
+      if let Some(n) = n
+        && let Some(int_digits) = integer_digit_count(&magnitude)
+        && n < int_digits
+      {
+        crate::emit_message(
+          "AccountingForm::reqsigz: Requested number precision is lower \
+           than number of digits shown; padding with zeros.",
+        );
+      }
       let mag_str = match n {
         Some(n) => number_form_to_string(&magnitude, n),
         // AccountingForm never uses scientific notation, so a large/small
