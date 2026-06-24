@@ -195,6 +195,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ZipfDistribution" => pdf_zipf(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
+    "LogGammaDistribution" => pdf_loggamma(dargs, x),
     "SkellamDistribution" => pdf_skellam(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
     "BinomialDistribution" => pdf_binomial(dargs, x),
@@ -1776,6 +1777,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BetaDistribution" => cdf_beta(dargs, x),
     "KumaraswamyDistribution" => cdf_kumaraswamy(dargs, x),
     "ExpGammaDistribution" => cdf_expgamma(dargs, x),
+    "LogGammaDistribution" => cdf_loggamma(dargs, x),
     "LogNormalDistribution" => cdf_lognormal(dargs, x),
     "ChiSquareDistribution" => cdf_chi_square(dargs, x),
     "ParetoDistribution" => cdf_pareto(dargs, x),
@@ -3814,6 +3816,43 @@ fn distribution_mean_variance(
       let var = times(power(t, int(2)), polygamma(1));
       Ok((mean, var))
     }
+    "LogGammaDistribution" => {
+      if dargs.len() != 3 {
+        return Err(InterpreterError::EvaluationError(
+          "LogGammaDistribution expects 3 arguments".into(),
+        ));
+      }
+      let (a, b, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+      let inf = || Expr::Identifier("Infinity".to_string());
+      // Mean = Piecewise[{{-1 + (1-b)^(-a) + m, b < 1}}, Infinity]
+      let mean_val = plus(
+        plus(
+          int(-1),
+          power(minus(int(1), b.clone()), times(int(-1), a.clone())),
+        ),
+        m,
+      );
+      let mean = piecewise(
+        vec![(mean_val, comparison(b.clone(), ComparisonOp::Less, int(1)))],
+        inf(),
+      );
+      // Var = Piecewise[{{(1-2b)^(-a) - (1-b)^(-2a), b < 1/2}}, Infinity]
+      let var_val = minus(
+        power(
+          minus(int(1), times(int(2), b.clone())),
+          times(int(-1), a.clone()),
+        ),
+        power(minus(int(1), b.clone()), times(int(-2), a)),
+      );
+      let var = piecewise(
+        vec![(
+          var_val,
+          comparison(b, ComparisonOp::Less, divide(int(1), int(2))),
+        )],
+        inf(),
+      );
+      Ok((mean, var))
+    }
     "KumaraswamyDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
@@ -5187,6 +5226,48 @@ fn cdf_kumaraswamy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   );
   let cond2 = comparison(x, ComparisonOp::GreaterEqual, int(1));
   eval(piecewise(vec![(value, cond1), (int(1), cond2)], int(0)))
+}
+
+/// PDF[LogGammaDistribution[a, b, m], x] =
+///   Piecewise[{{Log[1-m+x]^(a-1) / (b^a (1-m+x)^((1+b)/b) Gamma[a]), x >= m}}, 0].
+fn pdf_loggamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "LogGammaDistribution expects 3 arguments".into(),
+    ));
+  }
+  let (a, b, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  // 1 - m + x
+  let shifted = plus(plus(int(1), times(int(-1), m.clone())), x.clone());
+  let num = power(unary_fn("Log", shifted.clone()), minus(a.clone(), int(1)));
+  let den = times(
+    power(b.clone(), a.clone()),
+    times(
+      power(shifted, divide(plus(int(1), b.clone()), b)),
+      unary_fn("Gamma", a),
+    ),
+  );
+  let value = divide(num, den);
+  let cond = comparison(x, ComparisonOp::GreaterEqual, m);
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[LogGammaDistribution[a, b, m], x] =
+///   Piecewise[{{GammaRegularized[a, 0, Log[1-m+x]/b], x >= m}}, 0].
+fn cdf_loggamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "LogGammaDistribution expects 3 arguments".into(),
+    ));
+  }
+  let (a, b, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let shifted = plus(plus(int(1), times(int(-1), m.clone())), x.clone());
+  let reg = Expr::FunctionCall {
+    name: "GammaRegularized".to_string(),
+    args: vec![a, int(0), divide(unary_fn("Log", shifted), b)].into(),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, m);
+  eval(piecewise(vec![(reg, cond)], int(0)))
 }
 
 /// CDF[ExpGammaDistribution[k, t, m], x] = GammaRegularized[k, 0, E^((x-m)/t)].

@@ -4650,3 +4650,53 @@ mod exp_gamma_distribution {
     );
   }
 }
+
+// LogGammaDistribution[a, b, m] — Mean/Variance are Piecewise (finite for
+// small enough b); PDF/CDF use Log[1 - m + x].
+mod log_gamma_distribution {
+  use super::*;
+
+  #[test]
+  fn mean_variance_sd() {
+    assert_eq!(
+      interpret("Mean[LogGammaDistribution[a, b, m]]").unwrap(),
+      "Piecewise[{{-1 + (1 - b)^(-a) + m, b < 1}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("Variance[LogGammaDistribution[a, b, m]]").unwrap(),
+      "Piecewise[{{(1 - 2*b)^(-a) - (1 - b)^(-2*a), b < 1/2}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[LogGammaDistribution[a, b, m]]").unwrap(),
+      "Piecewise[{{Sqrt[(1 - 2*b)^(-a) - (1 - b)^(-2*a)], b < 1/2}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("Mean[LogGammaDistribution[2, 1/3, 1]]").unwrap(),
+      "9/4"
+    );
+    assert_eq!(
+      interpret("Variance[LogGammaDistribution[2, 1/4, 0]]").unwrap(),
+      "68/81"
+    );
+  }
+
+  #[test]
+  fn pdf_and_cdf() {
+    assert_eq!(
+      interpret("PDF[LogGammaDistribution[a, b, m], x]").unwrap(),
+      "Piecewise[{{Log[1 - m + x]^(-1 + a)/(b^a*(1 - m + x)^((1 + b)/b)*Gamma[a]), x >= m}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[LogGammaDistribution[a, b, m], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[a, 0, Log[1 - m + x]/b], x >= m}}, 0]"
+    );
+  }
+
+  #[test]
+  fn head_stays_unevaluated() {
+    assert_eq!(
+      interpret("LogGammaDistribution[a, b, m]").unwrap(),
+      "LogGammaDistribution[a, b, m]"
+    );
+  }
+}

@@ -3575,7 +3575,7 @@ InitialSeeding,,,,12.0,3678
 JarqueBeraALMTest,,,,8.0,3678
 JuliaSetPoints,,,,10.0,3678
 ListSliceVectorPlot3D,,🚫,,10.2,3678
-LogGammaDistribution,,,,8.0,3678
+LogGammaDistribution,Log-gamma distribution with shape scale and location parameters,✅,pure,8.0,3678
 LoopFreeGraphQ,Tests whether a graph has no self-loops,✅,pure,8.0,3678
 MomentConvert,,,,8.0,3678
 PoissonConsulDistribution,,,,8.0,3678
