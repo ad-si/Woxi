@@ -4605,7 +4605,13 @@ pub fn combine_like_bases(
   for (pi, ni) in &pairs {
     let (base_p, exp_p) = extract_base_exponent(&combined[*pi]);
     let (base_n, _) = extract_base_exponent(&combined[*ni]);
-    let ratio = divide_two(&base_p, &base_n)?;
+    // Normalise the radicand: divide_two leaves a base like 2/Pi over 5 as the
+    // unreduced (2*Pi^(-1))/5, so re-evaluate it to the canonical 2/(5*Pi)
+    // before wrapping it back up — matching wolframscript's Sqrt[2/(5*Pi)].
+    // The bases are positive numerics/constants here, so this never recurses
+    // back into a Sqrt-product.
+    let ratio =
+      crate::evaluator::evaluate_expr_to_expr(&divide_two(&base_p, &base_n)?)?;
     pos_replacements.insert(*pi, power_two(&ratio, &exp_p)?);
     neg_indices.insert(*ni);
   }

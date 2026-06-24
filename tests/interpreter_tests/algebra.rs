@@ -9305,6 +9305,19 @@ mod sqrt_ratio_combination {
     assert_eq!(interpret("Sqrt[2]/Sqrt[3*Pi]").unwrap(), "Sqrt[2/(3*Pi)]");
   }
 
+  // The merged radicand must be canonicalised: Sqrt[2/Pi]/Sqrt[5] has a
+  // numerator base of 2/Pi, and dividing it by 5 must reduce to 2/(5*Pi)
+  // rather than leaving the unreduced (2*Pi^(-1))/5 inside the Sqrt.
+  #[test]
+  fn reciprocal_radicand_is_normalized() {
+    assert_eq!(interpret("Sqrt[2/Pi]/Sqrt[5]").unwrap(), "Sqrt[2/(5*Pi)]");
+    assert_eq!(interpret("Sqrt[2/Pi]/Sqrt[3]").unwrap(), "Sqrt[2/(3*Pi)]");
+    assert_eq!(
+      interpret("2*Sqrt[2/Pi]*1/Sqrt[1 + 2^2]").unwrap(),
+      "2*Sqrt[2/(5*Pi)]"
+    );
+  }
+
   #[test]
   fn integer_over_integer_unchanged() {
     assert_eq!(interpret("Sqrt[3]/Sqrt[5]").unwrap(), "Sqrt[3/5]");
