@@ -1775,6 +1775,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
     "KumaraswamyDistribution" => cdf_kumaraswamy(dargs, x),
+    "ExpGammaDistribution" => cdf_expgamma(dargs, x),
     "LogNormalDistribution" => cdf_lognormal(dargs, x),
     "ChiSquareDistribution" => cdf_chi_square(dargs, x),
     "ParetoDistribution" => cdf_pareto(dargs, x),
@@ -3797,6 +3798,22 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "ExpGammaDistribution" => {
+      if dargs.len() != 3 {
+        return Err(InterpreterError::EvaluationError(
+          "ExpGammaDistribution expects 3 arguments".into(),
+        ));
+      }
+      let (k, t, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+      let polygamma = |n: i128| Expr::FunctionCall {
+        name: "PolyGamma".to_string(),
+        args: vec![int(n), k.clone()].into(),
+      };
+      // Mean = m + t PolyGamma[0, k]; Variance = t^2 PolyGamma[1, k].
+      let mean = plus(m, times(t.clone(), polygamma(0)));
+      let var = times(power(t, int(2)), polygamma(1));
+      Ok((mean, var))
+    }
     "KumaraswamyDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
@@ -5170,6 +5187,21 @@ fn cdf_kumaraswamy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   );
   let cond2 = comparison(x, ComparisonOp::GreaterEqual, int(1));
   eval(piecewise(vec![(value, cond1), (int(1), cond2)], int(0)))
+}
+
+/// CDF[ExpGammaDistribution[k, t, m], x] = GammaRegularized[k, 0, E^((x-m)/t)].
+fn cdf_expgamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "ExpGammaDistribution expects 3 arguments".into(),
+    ));
+  }
+  let (k, t, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let arg = power(e(), divide(minus(x, m), t));
+  eval(Expr::FunctionCall {
+    name: "GammaRegularized".to_string(),
+    args: vec![k, int(0), arg].into(),
+  })
 }
 
 /// CDF[BetaDistribution[a, b], x] = Piecewise[{{BetaRegularized[x, a, b], 0 < x < 1}, {1, x >= 1}}, 0]

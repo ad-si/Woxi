@@ -4605,3 +4605,48 @@ mod kumaraswamy_distribution {
     );
   }
 }
+
+// ExpGammaDistribution[k, t, m] — the distribution of m + t Log[GammaVariate].
+mod exp_gamma_distribution {
+  use super::*;
+
+  #[test]
+  fn mean_variance_sd() {
+    assert_eq!(
+      interpret("Mean[ExpGammaDistribution[k, t, m]]").unwrap(),
+      "m + t*PolyGamma[0, k]"
+    );
+    assert_eq!(
+      interpret("Variance[ExpGammaDistribution[k, t, m]]").unwrap(),
+      "t^2*PolyGamma[1, k]"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[ExpGammaDistribution[k, t, m]]").unwrap(),
+      "Sqrt[t^2*PolyGamma[1, k]]"
+    );
+    assert_eq!(
+      interpret("Mean[ExpGammaDistribution[2, 3, 1]]").unwrap(),
+      "1 + 3*(1 - EulerGamma)"
+    );
+    assert_eq!(
+      interpret("Variance[ExpGammaDistribution[2, 1, 0]]").unwrap(),
+      "-1 + Pi^2/6"
+    );
+  }
+
+  #[test]
+  fn cdf() {
+    assert_eq!(
+      interpret("CDF[ExpGammaDistribution[k, t, m], x]").unwrap(),
+      "GammaRegularized[k, 0, E^((-m + x)/t)]"
+    );
+  }
+
+  #[test]
+  fn head_stays_unevaluated() {
+    assert_eq!(
+      interpret("ExpGammaDistribution[k, t, m]").unwrap(),
+      "ExpGammaDistribution[k, t, m]"
+    );
+  }
+}
