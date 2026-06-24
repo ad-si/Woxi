@@ -1018,6 +1018,34 @@ mod tensor_product {
     assert_eq!(interpret("TensorProduct[a]").unwrap(), "a");
     assert_eq!(interpret("TensorProduct[{1, 2}]").unwrap(), "{1, 2}");
   }
+
+  // InputForm and FullForm keep the U+F3DA operator form (matching
+  // wolframscript), not the head form `TensorProduct[...]`. Operands that
+  // bind looser than the product are parenthesised.
+  #[test]
+  fn input_form_keeps_operator() {
+    assert_eq!(
+      interpret("ToString[TensorProduct[a, b], InputForm]").unwrap(),
+      "a \u{F3DA} b"
+    );
+    assert_eq!(
+      interpret("ToString[TensorProduct[a, b, c], InputForm]").unwrap(),
+      "a \u{F3DA} b \u{F3DA} c"
+    );
+    assert_eq!(
+      interpret("FullForm[TensorProduct[a, b]]").unwrap(),
+      "FullForm[a \u{F3DA} b]"
+    );
+    // Plus operand is parenthesised in both OutputForm and InputForm.
+    assert_eq!(
+      interpret("TensorProduct[a + b, c]").unwrap(),
+      "(a + b) \u{F3DA} c"
+    );
+    assert_eq!(
+      interpret("ToString[TensorProduct[a + b, c], InputForm]").unwrap(),
+      "(a + b) \u{F3DA} c"
+    );
+  }
 }
 
 mod position_largest_smallest {

@@ -7436,9 +7436,21 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return parts.join(" \u{2297} ");
       }
       // TensorProduct[a, b, ...] displays with the U+F3DA operator (the glyph
-      // wolframscript uses, distinct from CircleTimes' U+2297).
+      // wolframscript uses, distinct from CircleTimes' U+2297). Operands that
+      // bind looser than the product (Plus, Times, …) are parenthesised:
+      // TensorProduct[a + b, c] → (a + b) ⊗ c.
       if name == "TensorProduct" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| {
+            let s = fmt(a);
+            if ring_operand_needs_parens(a) {
+              format!("({})", s)
+            } else {
+              s
+            }
+          })
+          .collect();
         return parts.join(" \u{F3DA} ");
       }
       // CenterDot[a, b, ...] displays as a · b · ...
@@ -10135,6 +10147,34 @@ impl Drop for TrueInputFormGuard {
   }
 }
 
+/// True when `e` binds looser than the symbolic ring products
+/// (TensorProduct/CircleTimes, precedence 36) and so must be parenthesised when
+/// used as an operand, matching wolframscript (`TensorProduct[a + b, c]` →
+/// `(a + b) ⊗ c`). Tighter-binding operands (Power, Dot, …) stay bare.
+fn ring_operand_needs_parens(e: &Expr) -> bool {
+  match e {
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::And
+        | BinaryOperator::Or
+        | BinaryOperator::StringJoin
+        | BinaryOperator::Alternatives
+    ),
+    Expr::Comparison { .. } => true,
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+    Expr::FunctionCall { name, args }
+      if args.len() >= 2 && matches!(name.as_str(), "Plus" | "Times") =>
+    {
+      true
+    }
+    _ => false,
+  }
+}
+
 /// Render Expr in InputForm - like expr_to_output but strings are quoted.
 pub fn expr_to_input_form(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
@@ -10226,6 +10266,26 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       format!("Equivalent[{}]", parts.join(", "))
+    }
+    // TensorProduct[a, b, ...] renders with the U+F3DA operator in InputForm
+    // (and inside FullForm), matching wolframscript: `a ⊗ b`, `(a + b) ⊗ c`.
+    // wolframscript keeps the operator form even under FullForm, so this is
+    // not guarded by `in_full_form()`.
+    Expr::FunctionCall { name, args }
+      if name == "TensorProduct" && args.len() >= 2 =>
+    {
+      args
+        .iter()
+        .map(|a| {
+          let s = expr_to_input_form(a);
+          if ring_operand_needs_parens(a) {
+            format!("({})", s)
+          } else {
+            s
+          }
+        })
+        .collect::<Vec<_>>()
+        .join(" \u{F3DA} ")
     }
     Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
       format!(
