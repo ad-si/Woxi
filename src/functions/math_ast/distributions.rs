@@ -89,6 +89,17 @@ fn eval(expr: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
+/// `ErlangDistribution[k, λ]` is identical to `GammaDistribution[k, 1/λ]`
+/// (Erlang parameterises by rate, Gamma by scale). Return the equivalent
+/// Gamma parameters `{k, 1/λ}` so every distribution property reuses the Gamma
+/// machinery and matches wolframscript.
+pub fn erlang_gamma_dargs(
+  dargs: &[Expr],
+) -> Result<Vec<Expr>, InterpreterError> {
+  let inv_lambda = eval(divide(Expr::Integer(1), dargs[1].clone()))?;
+  Ok(vec![dargs[0].clone(), inv_lambda])
+}
+
 /// PDF[dist, x] - Probability density function
 /// PDF[dist] - Pure function form (returns unevaluated for now)
 pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -119,6 +130,15 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "PDF".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
+  if dist_name == "ErlangDistribution" && dargs.len() == 2 {
+    let gamma = Expr::FunctionCall {
+      name: "GammaDistribution".to_string(),
+      args: erlang_gamma_dargs(dargs)?.into(),
+    };
+    return pdf_ast(&[gamma, args[1].clone()]);
   }
 
   // Thread a univariate PDF over a list of points (discrete PDFs otherwise leak
@@ -1628,6 +1648,15 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "CDF".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
+  if dist_name == "ErlangDistribution" && dargs.len() == 2 {
+    let gamma = Expr::FunctionCall {
+      name: "GammaDistribution".to_string(),
+      args: erlang_gamma_dargs(dargs)?.into(),
+    };
+    return cdf_ast(&[gamma, args[1].clone()]);
   }
 
   // For a univariate distribution, a list of values means "evaluate the CDF at
@@ -3537,6 +3566,10 @@ fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "ErlangDistribution" if dargs.len() == 2 => distribution_mean_variance(
+      "GammaDistribution",
+      &erlang_gamma_dargs(dargs)?,
+    ),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(

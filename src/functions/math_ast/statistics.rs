@@ -564,6 +564,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "BinomialDistribution"
         | "StableDistribution"
         | "GammaDistribution"
+        | "ErlangDistribution"
         | "BetaDistribution"
         | "StudentTDistribution"
         | "LogNormalDistribution"
@@ -831,6 +832,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "BinomialDistribution"
         | "StableDistribution"
         | "GammaDistribution"
+        | "ErlangDistribution"
         | "BetaDistribution"
         | "HypergeometricDistribution"
         | "StudentTDistribution"
@@ -1166,6 +1168,7 @@ fn is_distribution_arg(expr: &Expr) -> bool {
       | "PoissonDistribution"
       | "BernoulliDistribution"
       | "GammaDistribution"
+      | "ErlangDistribution"
       | "BetaDistribution"
       | "StudentTDistribution"
       | "LogNormalDistribution"
@@ -2977,6 +2980,19 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Quantile expects 2 or 3 arguments".into(),
     ));
+  }
+  // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "ErlangDistribution"
+    && dargs.len() == 2
+  {
+    let gamma = Expr::FunctionCall {
+      name: "GammaDistribution".to_string(),
+      args: super::distributions::erlang_gamma_dargs(dargs)?.into(),
+    };
+    let mut new_args = args.to_vec();
+    new_args[0] = gamma;
+    return quantile_ast(&new_args);
   }
   // Quantile[dist, {p1, p2, ...}] for a distribution head threads over the
   // probability list (the second argument of Quantile is always a scalar

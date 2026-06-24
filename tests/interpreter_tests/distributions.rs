@@ -4178,3 +4178,84 @@ mod inverse_survival_function {
     );
   }
 }
+
+// ErlangDistribution[k, λ] is identical to GammaDistribution[k, 1/λ]
+// (Erlang parameterises by rate, Gamma by scale). Every property reuses the
+// Gamma machinery; the bare head stays unevaluated like wolframscript.
+mod erlang_distribution {
+  use super::*;
+
+  #[test]
+  fn head_stays_unevaluated() {
+    assert_eq!(
+      interpret("ErlangDistribution[3, 2]").unwrap(),
+      "ErlangDistribution[3, 2]"
+    );
+  }
+
+  #[test]
+  fn mean() {
+    assert_eq!(interpret("Mean[ErlangDistribution[3, 2]]").unwrap(), "3/2");
+    assert_eq!(interpret("Mean[ErlangDistribution[k, l]]").unwrap(), "k/l");
+  }
+
+  #[test]
+  fn variance() {
+    assert_eq!(
+      interpret("Variance[ErlangDistribution[3, 2]]").unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("Variance[ErlangDistribution[k, l]]").unwrap(),
+      "k/l^2"
+    );
+  }
+
+  #[test]
+  fn standard_deviation() {
+    assert_eq!(
+      interpret("StandardDeviation[ErlangDistribution[3, 2]]").unwrap(),
+      "Sqrt[3]/2"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[ErlangDistribution[k, lambda]]").unwrap(),
+      "Sqrt[k]/lambda"
+    );
+  }
+
+  #[test]
+  fn pdf() {
+    assert_eq!(
+      interpret("PDF[ErlangDistribution[2, 1], x]").unwrap(),
+      "Piecewise[{{x/E^x, x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[ErlangDistribution[3, 2], 1]").unwrap(),
+      "4/E^2"
+    );
+  }
+
+  #[test]
+  fn cdf() {
+    assert_eq!(
+      interpret("CDF[ErlangDistribution[2, 1], 1]").unwrap(),
+      "GammaRegularized[2, 0, 1]"
+    );
+    assert_eq!(
+      interpret("CDF[ErlangDistribution[3, 2], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[3, 0, 2*x], x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn quantile() {
+    assert_eq!(
+      interpret("Quantile[ErlangDistribution[2, 1], 1/2]").unwrap(),
+      "InverseGammaRegularized[2, 0, 1/2]"
+    );
+    assert_eq!(
+      interpret("Quantile[ErlangDistribution[3, 2], 1/3]").unwrap(),
+      "InverseGammaRegularized[3, 0, 1/3]/2"
+    );
+  }
+}
