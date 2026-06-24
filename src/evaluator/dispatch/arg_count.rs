@@ -1175,7 +1175,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StringTrim" => Some((1, 2)),
     "StruveH" => Some((2, 2)),
     "StruveL" => Some((2, 2)),
-    "StudentTDistribution" => Some((1, 1)),
+    "StudentTDistribution" => Some((1, 3)),
     "Subgraph" => Some((2, 2)),
     "Subdivide" => Some((1, 3)),
     "Subfactorial" => Some((1, 1)),

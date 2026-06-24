@@ -2552,6 +2552,64 @@ mod student_t_distribution {
       "Piecewise[{{nu/(-2 + nu), nu > 2}}, Indeterminate]"
     );
   }
+
+  // PDF / StandardDeviation of the 1-argument form now match wolframscript's
+  // canonical (nu/(nu+x^2))^((1+nu)/2) and threaded-Sqrt Piecewise forms.
+  #[test]
+  fn pdf_and_sd_canonical_form() {
+    assert_eq!(
+      interpret("PDF[StudentTDistribution[v], x]").unwrap(),
+      "(v/(v + x^2))^((1 + v)/2)/(Sqrt[v]*Beta[v/2, 1/2])"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[StudentTDistribution[v]]").unwrap(),
+      "Piecewise[{{Sqrt[v/(-2 + v)], v > 2}}, Indeterminate]"
+    );
+  }
+
+  // The 3-argument StudentTDistribution[m, s, v] is the location-scale form.
+  #[test]
+  fn three_argument_location_scale() {
+    assert_eq!(
+      interpret("Mean[StudentTDistribution[m, s, v]]").unwrap(),
+      "Piecewise[{{m, v > 1}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("Variance[StudentTDistribution[m, s, v]]").unwrap(),
+      "Piecewise[{{(s^2*v)/(-2 + v), v > 2}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[StudentTDistribution[m, s, v]]").unwrap(),
+      "Piecewise[{{s*Sqrt[v/(-2 + v)], v > 2}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("PDF[StudentTDistribution[m, s, v], x]").unwrap(),
+      "(v/(v + (-m + x)^2/s^2))^((1 + v)/2)/(s*Sqrt[v]*Beta[v/2, 1/2])"
+    );
+    assert_eq!(
+      interpret("CDF[StudentTDistribution[m, s, v], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[(s^2*v)/(s^2*v + (-m + x)^2), v/2, 1/2]/2, x <= m}}, (1 + BetaRegularized[(-m + x)^2/(s^2*v + (-m + x)^2), 1/2, v/2])/2]"
+    );
+    // Numeric forms.
+    assert_eq!(
+      interpret("Mean[StudentTDistribution[3, 2, 5]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Variance[StudentTDistribution[3, 2, 5]]").unwrap(),
+      "20/3"
+    );
+  }
+
+  // StandardDeviation of a distribution with a Piecewise variance threads the
+  // square root into each branch (Pareto here; also StudentT/FRatio).
+  #[test]
+  fn standard_deviation_threads_piecewise() {
+    assert_eq!(
+      interpret("StandardDeviation[ParetoDistribution[k, a]]").unwrap(),
+      "Piecewise[{{(Sqrt[a/(-2 + a)]*k)/(-1 + a), a > 2}}, Indeterminate]"
+    );
+  }
 }
 
 mod lognormal_distribution {

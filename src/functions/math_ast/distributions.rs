@@ -3998,26 +3998,34 @@ fn distribution_mean_variance(
       Ok((mean, var))
     }
     "StudentTDistribution" => {
-      if dargs.len() != 1 {
-        return Err(InterpreterError::EvaluationError(
-          "StudentTDistribution expects 1 argument".into(),
-        ));
-      }
-      let nu = dargs[0].clone();
-      // Mean = Piecewise[{{0, nu > 1}}, Indeterminate]
+      // Standard StudentTDistribution[nu] (mean 0, scale 1) or the
+      // location-scale StudentTDistribution[m, s, nu].
+      let (m, s, nu) = match dargs.len() {
+        1 => (int(0), int(1), dargs[0].clone()),
+        3 => (dargs[0].clone(), dargs[1].clone(), dargs[2].clone()),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "StudentTDistribution expects 1 or 3 arguments".into(),
+          ));
+        }
+      };
+      // Mean = Piecewise[{{m, nu > 1}}, Indeterminate]
       let mean = piecewise(
-        vec![(
-          int(0),
-          comparison(nu.clone(), ComparisonOp::Greater, int(1)),
-        )],
+        vec![(m, comparison(nu.clone(), ComparisonOp::Greater, int(1)))],
         Expr::Identifier("Indeterminate".to_string()),
       );
-      // Var = Piecewise[{{nu/(-2+nu), nu > 2}}, Indeterminate]
+      // Var = Piecewise[{{s^2 nu/(nu-2), nu > 2}}, Indeterminate];
+      // for the 1-arg form s == 1, giving nu/(nu-2).
+      let var_value = if matches!(s, Expr::Integer(1)) {
+        divide(nu.clone(), plus(int(-2), nu.clone()))
+      } else {
+        divide(
+          times(power(s, int(2)), nu.clone()),
+          plus(int(-2), nu.clone()),
+        )
+      };
       let var = piecewise(
-        vec![(
-          divide(nu.clone(), plus(int(-2), nu.clone())),
-          comparison(nu, ComparisonOp::Greater, int(2)),
-        )],
+        vec![(var_value, comparison(nu, ComparisonOp::Greater, int(2)))],
         Expr::Identifier("Indeterminate".to_string()),
       );
       Ok((mean, var))
@@ -5094,61 +5102,85 @@ fn cdf_beta(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 ///   {{BetaRegularized[nu/(nu + x^2), nu/2, 1/2]/2, x <= 0}},
 ///   (1 + BetaRegularized[x^2/(nu + x^2), 1/2, nu/2])/2]
 fn cdf_student_t(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
-  if dargs.len() != 1 {
-    return Err(InterpreterError::EvaluationError(
-      "StudentTDistribution expects 1 argument".into(),
-    ));
-  }
-  let nu = dargs[0].clone();
+  // Standard: numerator nu, x^2, threshold 0. Location-scale (3-arg, [m,s,nu]):
+  // numerator s^2 nu, (x-m)^2, threshold m.
+  let (nu, num_lead, x_sq, threshold) = match dargs.len() {
+    1 => {
+      let nu = dargs[0].clone();
+      (nu.clone(), nu, power(x.clone(), int(2)), int(0))
+    }
+    3 => {
+      let (m, s, nu) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+      let s2nu = times(power(s, int(2)), nu.clone());
+      (nu, s2nu, power(minus(x.clone(), m.clone()), int(2)), m)
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "StudentTDistribution expects 1 or 3 arguments".into(),
+      ));
+    }
+  };
   let half = divide(int(1), int(2));
-  let nu_over_2 = divide(nu.clone(), int(2));
-  let x_sq = power(x.clone(), int(2));
-  let nu_plus_x_sq = plus(nu.clone(), x_sq.clone());
-  // Left branch: BetaRegularized[nu/(nu + x^2), nu/2, 1/2] / 2
-  let left_arg = divide(nu, nu_plus_x_sq.clone());
+  let nu_over_2 = divide(nu, int(2));
+  let denom = plus(num_lead.clone(), x_sq.clone());
+  // Left branch: BetaRegularized[num_lead/denom, nu/2, 1/2] / 2
+  let left_arg = divide(num_lead, denom.clone());
   let left_beta = Expr::FunctionCall {
     name: "BetaRegularized".to_string(),
     args: vec![left_arg, nu_over_2.clone(), half.clone()].into(),
   };
   let left_value = divide(left_beta, int(2));
-  // Right branch: (1 + BetaRegularized[x^2/(nu + x^2), 1/2, nu/2]) / 2
-  let right_arg = divide(x_sq, nu_plus_x_sq);
+  // Right branch: (1 + BetaRegularized[x_sq/denom, 1/2, nu/2]) / 2
+  let right_arg = divide(x_sq, denom);
   let right_beta = Expr::FunctionCall {
     name: "BetaRegularized".to_string(),
     args: vec![right_arg, half, nu_over_2].into(),
   };
   let right_value = divide(plus(int(1), right_beta), int(2));
-  let cond = comparison(x, ComparisonOp::LessEqual, int(0));
+  let cond = comparison(x, ComparisonOp::LessEqual, threshold);
   eval(piecewise(vec![(left_value, cond)], right_value))
 }
 
 /// PDF[StudentTDistribution[nu], x] = (1 + x^2/nu)^(-(1+nu)/2) / (Sqrt[nu] * Beta[nu/2, 1/2])
 fn pdf_student_t(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
-  if dargs.len() != 1 {
-    return Err(InterpreterError::EvaluationError(
-      "StudentTDistribution expects 1 argument".into(),
-    ));
-  }
-  let nu = dargs[0].clone();
+  pdf_student_t_impl(dargs, x)
+}
 
-  // (1 + x^2/nu)^(-(1+nu)/2)
-  let inner = plus(int(1), divide(power(x, int(2)), nu.clone()));
-  let exponent = divide(
-    Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
-      operand: Box::new(plus(int(1), nu.clone())),
-    },
-    int(2),
-  );
+/// PDF[StudentTDistribution[nu], x] = (nu/(nu+x^2))^((1+nu)/2) / (Sqrt[nu] Beta[nu/2, 1/2]);
+/// PDF[StudentTDistribution[m, s, nu], x] uses (x-m)^2/s^2 and an extra factor s.
+fn pdf_student_t_impl(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let (loc_scale, nu) = match dargs.len() {
+    1 => (None, dargs[0].clone()),
+    3 => (Some((dargs[0].clone(), dargs[1].clone())), dargs[2].clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "StudentTDistribution expects 1 or 3 arguments".into(),
+      ));
+    }
+  };
+  // x_term = x^2 (standard) or (x-m)^2/s^2 (location-scale).
+  let x_term = match &loc_scale {
+    Some((m, s)) => {
+      divide(power(minus(x, m.clone()), int(2)), power(s.clone(), int(2)))
+    }
+    None => power(x, int(2)),
+  };
+  // (nu/(nu + x_term))^((1+nu)/2)
+  let inner = divide(nu.clone(), plus(nu.clone(), x_term));
+  let exponent = divide(plus(int(1), nu.clone()), int(2));
   let numerator = power(inner, exponent);
-  // Sqrt[nu] * Beta[nu/2, 1/2]
-  let denominator = times(
-    sqrt(nu.clone()),
-    Expr::FunctionCall {
-      name: "Beta".to_string(),
-      args: vec![divide(nu, int(2)), divide(int(1), int(2))].into(),
-    },
-  );
+  let beta = Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: vec![divide(nu.clone(), int(2)), divide(int(1), int(2))].into(),
+  };
+  // Denominator: [s *] Sqrt[nu] * Beta[nu/2, 1/2].
+  let denominator = match &loc_scale {
+    Some((_, s)) => times(s.clone(), times(sqrt(nu.clone()), beta)),
+    None => times(sqrt(nu), beta),
+  };
   eval(divide(numerator, denominator))
 }
 

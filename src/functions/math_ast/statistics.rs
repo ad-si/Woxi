@@ -1143,13 +1143,18 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     | Expr::Identifier(_)
     | Expr::FunctionCall { .. }
     | Expr::BinaryOp { .. } => {
+      let is_dist = is_distribution_arg(&args[0]);
+      // A Piecewise variance (StudentT/Pareto/FRatio, ...) takes the square
+      // root branch-by-branch: Sqrt[Piecewise[{{v, c}}, d]] threads into
+      // Piecewise[{{Sqrt[v], c}}, Sqrt[d]], matching wolframscript.
+      if let Some(threaded) = thread_sqrt_into_piecewise(&var, is_dist)? {
+        return Ok(threaded);
+      }
       // For distribution arguments, extract even negative power factors from
       // the variance. Distribution parameters are always positive, so
       // Sqrt[a * p^(-2)] = Sqrt[a] / p (no Abs needed).
       // E.g. Variance = n*(1-p)/p^2 → SD = Sqrt[n*(1-p)] / p
-      if is_distribution_arg(&args[0])
-        && let Some(result) = try_sqrt_extract_denom_factors(&var)?
-      {
+      if is_dist && let Some(result) = try_sqrt_extract_denom_factors(&var)? {
         // Evaluate so a residual radical coefficient folds, e.g.
         // (b-a)*1/(2 Sqrt[6]) -> (b-a)/(2 Sqrt[6]).
         return crate::evaluator::evaluate_expr_to_expr(&result);
@@ -1224,6 +1229,55 @@ fn is_distribution_arg(expr: &Expr) -> bool {
 /// variances (whose parameters are positive), `Sqrt[x^2] = x` with no `Abs`.
 /// E.g. `Sqrt[n*(1-p)*p^(-2)] → Sqrt[n*(1-p)]/p` and `Sqrt[sigma^2] → sigma`.
 /// Returns None if there are no extractable factors.
+/// Square root of a single (distribution) value: extract even-power factors
+/// when `is_dist`, otherwise plain Sqrt.
+fn sqrt_of_value(v: &Expr, is_dist: bool) -> Result<Expr, InterpreterError> {
+  if is_dist && let Some(r) = try_sqrt_extract_denom_factors(v)? {
+    return crate::evaluator::evaluate_expr_to_expr(&r);
+  }
+  sqrt_ast(&[v.clone()])
+}
+
+/// If `var` is a `Piecewise[{{v1, c1}, ...}, default]`, return the StandardDeviation
+/// as `Piecewise[{{Sqrt[v1], c1}, ...}, Sqrt[default]]` (square root threaded
+/// into every branch). Returns None for any other shape.
+fn thread_sqrt_into_piecewise(
+  var: &Expr,
+  is_dist: bool,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::FunctionCall { name, args } = var else {
+    return Ok(None);
+  };
+  if name != "Piecewise" || args.is_empty() {
+    return Ok(None);
+  }
+  let Expr::List(pairs) = &args[0] else {
+    return Ok(None);
+  };
+  let mut new_pairs: Vec<Expr> = Vec::with_capacity(pairs.len());
+  for pair in pairs.iter() {
+    let Expr::List(vc) = pair else {
+      return Ok(None);
+    };
+    if vc.len() != 2 {
+      return Ok(None);
+    }
+    let new_val = sqrt_of_value(&vc[0], is_dist)?;
+    new_pairs.push(Expr::List(vec![new_val, vc[1].clone()].into()));
+  }
+  let default = if args.len() >= 2 {
+    args[1].clone()
+  } else {
+    Expr::Integer(0)
+  };
+  let new_default = sqrt_of_value(&default, is_dist)?;
+  let result = Expr::FunctionCall {
+    name: "Piecewise".to_string(),
+    args: vec![Expr::List(new_pairs.into()), new_default].into(),
+  };
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
+}
+
 fn try_sqrt_extract_denom_factors(
   var: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
