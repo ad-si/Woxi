@@ -8098,11 +8098,30 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       reduced.dedup();
       let all_same_reduced_exp = reduced.len() == 1;
       if !has_outside && radical_factors.len() > 1 && all_same_reduced_exp {
-        // No simplification possible, keep original form
+        // Every radical prime shares one reduced exponent rn/rd, so the radical
+        // part is ∏ p_i^(rn/rd) = (∏ p_i)^(rn/rd). When the combined base equals
+        // the original (e.g. squarefree `6^(1/3)` → `2^(1/3)*3^(1/3)` →
+        // `6^(1/3)`), keep the original to avoid an infinite simplification
+        // loop. When the original base was a perfect power its primes collapse
+        // to a smaller base (e.g. `100 = 2^2*5^2` → `10`), which IS a real
+        // simplification: `100^(1/3)` → `10^(2/3)`, `100^(1/4)` → `Sqrt[10]`.
+        let combined_base: i128 =
+          radical_factors.iter().map(|(p, _)| *p).product();
+        if combined_base == *b {
+          return Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(base.clone()),
+            right: Box::new(exp.clone()),
+          });
+        }
+        let (rn, rd) = reduced[0];
+        if rn == 1 && rd == 2 {
+          return Ok(make_sqrt(Expr::Integer(combined_base)));
+        }
         return Ok(Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Power,
-          left: Box::new(base.clone()),
-          right: Box::new(exp.clone()),
+          left: Box::new(Expr::Integer(combined_base)),
+          right: Box::new(make_rational(rn, rd)),
         });
       }
 

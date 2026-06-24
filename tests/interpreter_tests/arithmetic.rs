@@ -439,6 +439,56 @@ mod arithmetic {
       assert_eq!(interpret("E^2 + 3 E").unwrap(), "3*E + E^2");
     }
   }
+
+  // `n^(p/q)` for a perfect-power base reduces to its primitive base: the
+  // primes of n collapse to a smaller base sharing one fractional exponent.
+  mod radical_perfect_power_base {
+    use super::*;
+
+    #[test]
+    fn cube_root_of_square() {
+      // 100 = 10^2, so 100^(1/3) = 10^(2/3).
+      assert_eq!(interpret("100^(1/3)").unwrap(), "10^(2/3)");
+      assert_eq!(interpret("36^(1/3)").unwrap(), "6^(2/3)");
+    }
+
+    #[test]
+    fn fourth_root_collapses_to_sqrt() {
+      // 100^(1/4) = (10^2)^(1/4) = 10^(1/2).
+      assert_eq!(interpret("100^(1/4)").unwrap(), "Sqrt[10]");
+    }
+
+    #[test]
+    fn fourth_root_of_cube_power() {
+      // 1000 = 10^3, so 1000^(1/4) = 10^(3/4).
+      assert_eq!(interpret("1000^(1/4)").unwrap(), "10^(3/4)");
+      assert_eq!(interpret("216^(1/4)").unwrap(), "6^(3/4)");
+    }
+
+    // Squarefree bases have no perfect-power reduction and stay as written
+    // (the simplifier must not loop here).
+    #[test]
+    fn squarefree_base_unchanged() {
+      assert_eq!(interpret("6^(1/3)").unwrap(), "6^(1/3)");
+      assert_eq!(interpret("6^(2/3)").unwrap(), "6^(2/3)");
+      assert_eq!(interpret("10^(2/3)").unwrap(), "10^(2/3)");
+    }
+
+    // Extraction still composes with the reduction.
+    #[test]
+    fn extraction_then_combine() {
+      // 1000000 = 10^6, 1000000^(1/4) = 10^(3/2) = 10*Sqrt[10].
+      assert_eq!(interpret("1000000^(1/4)").unwrap(), "10*Sqrt[10]");
+      // 72 = 8*9, 72^(1/3) = 2*9^(1/3) = 2*3^(2/3).
+      assert_eq!(interpret("72^(1/3)").unwrap(), "2*3^(2/3)");
+    }
+
+    // The motivating case: the p-norm.
+    #[test]
+    fn norm_p3() {
+      assert_eq!(interpret("Norm[{1, 2, 3, 4}, 3]").unwrap(), "10^(2/3)");
+    }
+  }
 }
 
 mod real_number_formatting {
