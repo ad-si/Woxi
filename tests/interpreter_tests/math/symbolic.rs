@@ -447,6 +447,37 @@ mod sum {
     );
   }
 
+  // The Mercator series written with the base in the denominator: 1/(b^k k) and
+  // b^(-k)/k must be recognised as base 1/b, e.g. Sum[1/(2^k k)] = Log[2].
+  #[test]
+  fn infinite_sum_logarithmic_reciprocal_base() {
+    assert_eq!(
+      interpret("Sum[1/(2^k k), {k, 1, Infinity}]").unwrap(),
+      "Log[2]"
+    );
+    assert_eq!(
+      interpret("Sum[1/(k 2^k), {k, 1, Infinity}]").unwrap(),
+      "Log[2]"
+    );
+    assert_eq!(
+      interpret("Sum[2^(-k)/k, {k, 1, Infinity}]").unwrap(),
+      "Log[2]"
+    );
+    assert_eq!(
+      interpret("Sum[1/(3^k k), {k, 1, Infinity}]").unwrap(),
+      "Log[3/2]"
+    );
+    assert_eq!(
+      interpret("Sum[1/(5^k k), {k, 1, Infinity}]").unwrap(),
+      "Log[5/4]"
+    );
+    // A constant coefficient is preserved: 3 * Log[2].
+    assert_eq!(
+      interpret("Sum[3/(2^k k), {k, 1, Infinity}]").unwrap(),
+      "3*Log[2]"
+    );
+  }
+
   // Exponential series Sum[base^k/k!, {k, 0, Infinity}] = E^base.
   #[test]
   fn infinite_sum_exponential() {

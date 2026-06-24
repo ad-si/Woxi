@@ -2818,12 +2818,125 @@ fn match_arith_geometric(body: &Expr, var_name: &str) -> Option<(i128, Expr)> {
   Some((p?, r?))
 }
 
+/// Whether `e` is a multiplicative product (either AST shape).
+fn is_times_expr(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      ..
+    }
+  ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Times")
+}
+
+/// If `exp` is `c * var` for a constant `c` (and `var` appears exactly once),
+/// return `c`; otherwise None. `var` alone gives `1`.
+fn linear_coeff_of_var(exp: &Expr, var_name: &str) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  fn collect_times(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        collect_times(left, out);
+        collect_times(right, out);
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          collect_times(a, out);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut factors = Vec::new();
+  collect_times(exp, &mut factors);
+  let mut var_seen = 0;
+  let mut consts: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if matches!(f, Expr::Identifier(n) if n == var_name) {
+      var_seen += 1;
+    } else if crate::functions::calculus_ast::is_constant_wrt(f, var_name) {
+      consts.push(f.clone());
+    } else {
+      return None;
+    }
+  }
+  if var_seen != 1 {
+    return None;
+  }
+  Some(match consts.len() {
+    0 => Expr::Integer(1),
+    1 => consts.remove(0),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: consts.into(),
+    },
+  })
+}
+
 /// Match a logarithmic-series body `coeff * base^var / var`, i.e. a geometric
 /// term over the first power of the summation variable. Returns `(coeff, base)`
 /// with `base` the product of all `base^var` factors. Used for the Mercator
-/// series Sum[base^k/k, {k,1,Infinity}] = -Log[1 - base].
+/// series Sum[base^k/k, {k,1,Infinity}] = -Log[1 - base]. Reciprocal forms such
+/// as `1/(2^n n)` and `2^(-n)/n` are normalised to base `1/2`.
 fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   use crate::syntax::BinaryOperator;
+  // Push 1/e as multiplicative factors, distributing over products and folding
+  // one level of power so 1/(2^n n) yields [2^(-n), n^(-1)].
+  fn recip(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        recip(left, out);
+        recip(right, out);
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          recip(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => out.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: left.clone(),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: right.clone(),
+        }),
+      }),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        out.push(Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            args[0].clone(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Integer(-1)),
+              right: Box::new(args[1].clone()),
+            },
+          ]
+          .into(),
+        })
+      }
+      other => out.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(other.clone()),
+        right: Box::new(Expr::Integer(-1)),
+      }),
+    }
+  }
   fn collect(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::BinaryOp {
@@ -2834,22 +2947,28 @@ fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
         collect(left, out);
         collect(right, out);
       }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          collect(a, out);
+        }
+      }
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left,
         right,
       } => {
         collect(left, out);
-        out.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: right.clone(),
-          right: Box::new(Expr::Integer(-1)),
-        });
+        recip(right, out);
       }
-      Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
-          collect(a, out);
-        }
+      // (a*b)^(-1) → distribute as 1/a * 1/b.
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(-1))
+        && is_times_expr(left) =>
+      {
+        recip(left, out);
       }
       other => out.push(other.clone()),
     }
@@ -2868,10 +2987,25 @@ fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
       }
       _ => return None,
     };
-    match &exp {
-      Expr::Identifier(n) if n == var_name => Some(base),
-      _ => None,
+    // Evaluate the (held) exponent so `0 - n` and `-1 * n` both read as a linear
+    // multiple of the variable; the effective base for `base^(c var)` is
+    // `base^c`, e.g. `2^(-n)` → `1/2`.
+    let exp = crate::evaluator::evaluate_expr_to_expr(&exp).unwrap_or(exp);
+    let coeff = linear_coeff_of_var(&exp, var_name)?;
+    if matches!(coeff, Expr::Integer(1)) {
+      return Some(base);
     }
+    // Only an integer exponent coefficient keeps the closed form matching
+    // wolframscript; leave a symbolic coefficient for the general path.
+    if !matches!(coeff, Expr::Integer(_) | Expr::BigInteger(_)) {
+      return None;
+    }
+    let eff = Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base),
+      right: Box::new(coeff),
+    };
+    Some(crate::evaluator::evaluate_expr_to_expr(&eff).unwrap_or(eff))
   }
   let is_recip_var = |f: &Expr| -> bool {
     let (base, exp) = match f {
