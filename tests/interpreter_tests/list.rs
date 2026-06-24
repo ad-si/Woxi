@@ -13404,6 +13404,43 @@ mod pad_left_right_specs_and_messages {
     assert_eq!(interpret("PadLeft[f[a, b]]").unwrap(), "PadLeft[f[a, b]]");
   }
 
+  // `Automatic` as the length spec pads to the minimal enclosing rectangular
+  // shape (the ragged-max at every level), using the optional padding value.
+  #[test]
+  fn automatic_length_spec() {
+    assert_eq!(
+      interpret("PadRight[{{1}, {2, 3}}, Automatic]").unwrap(),
+      "{{1, 0}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{{1}, {2, 3}}, Automatic]").unwrap(),
+      "{{0, 1}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{1, 2, 3}, {4}, {5, 6}}, Automatic]").unwrap(),
+      "{{1, 2, 3}, {4, 0, 0}, {5, 6, 0}}"
+    );
+    // Optional padding value.
+    assert_eq!(
+      interpret("PadRight[{{1}, {2, 3}}, Automatic, x]").unwrap(),
+      "{{1, x}, {2, 3}}"
+    );
+    // Already-rectangular and flat inputs are unchanged.
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3, 4}}, Automatic]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{1, 2, 3}, Automatic]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // Deeper nesting fills recursively.
+    assert_eq!(
+      interpret("PadRight[{{{1}, {2, 3}}, {{4, 5, 6}}}, Automatic]").unwrap(),
+      "{{{1, 0, 0}, {2, 3, 0}}, {{4, 5, 6}, {0, 0, 0}}}"
+    );
+  }
+
   #[test]
   fn multidim_cyclic_padding_aligns_per_row() {
     // Regression: a cyclic padding list used to be inserted verbatim

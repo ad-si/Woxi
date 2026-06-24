@@ -1854,6 +1854,21 @@ pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
     return pad_level(subject, &dims, &[], &Expr::Integer(0), is_left);
   }
 
+  // `Automatic` length spec: pad each sublist to the minimal enclosing
+  // rectangular shape (the ragged-max at every level), like the one-argument
+  // form, but using the optional padding value. `PadRight[{{1},{2,3}}, Automatic]`
+  // → `{{1, 0}, {2, 3}}`.
+  if matches!(&args[1], Expr::Identifier(s) if s == "Automatic")
+    && args.len() <= 3
+  {
+    if !matches!(subject, Expr::List(_)) {
+      return Ok(original());
+    }
+    let pad = args.get(2).cloned().unwrap_or(Expr::Integer(0));
+    let dims = ragged_dims(subject);
+    return pad_level(subject, &dims, &[], &pad, is_left);
+  }
+
   // Length specification: a machine integer or a list of them.
   let (spec, spec_is_list): (Vec<i128>, bool) = match &args[1] {
     Expr::List(items) => {
