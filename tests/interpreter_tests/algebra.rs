@@ -9272,3 +9272,66 @@ mod log_power_exact {
     assert_eq!(interpret("N[Log[Sqrt[2]]]").unwrap(), "0.34657359027997264");
   }
 }
+
+// Sqrt[a]/Sqrt[b] = Sqrt[a/b] for positive numeric/constant radicands, matching
+// wolframscript. Free symbols stay split; a non-radical numerator stays as-is.
+mod sqrt_ratio_combination {
+  use super::*;
+
+  #[test]
+  fn integer_over_constant() {
+    assert_eq!(interpret("Sqrt[2]/Sqrt[Pi]").unwrap(), "Sqrt[2/Pi]");
+    assert_eq!(interpret("Sqrt[2]/Sqrt[E]").unwrap(), "Sqrt[2/E]");
+  }
+
+  #[test]
+  fn constant_over_integer() {
+    assert_eq!(interpret("Sqrt[Pi]/Sqrt[2]").unwrap(), "Sqrt[Pi/2]");
+  }
+
+  #[test]
+  fn constant_over_constant() {
+    assert_eq!(interpret("Sqrt[Pi]/Sqrt[E]").unwrap(), "Sqrt[Pi/E]");
+  }
+
+  #[test]
+  fn with_outer_coefficient() {
+    assert_eq!(interpret("2*Sqrt[2]/Sqrt[Pi]").unwrap(), "2*Sqrt[2/Pi]");
+  }
+
+  #[test]
+  fn product_radicands() {
+    assert_eq!(interpret("Sqrt[2*Pi]/Sqrt[3]").unwrap(), "Sqrt[(2*Pi)/3]");
+    assert_eq!(interpret("Sqrt[2]/Sqrt[3*Pi]").unwrap(), "Sqrt[2/(3*Pi)]");
+  }
+
+  #[test]
+  fn integer_over_integer_unchanged() {
+    assert_eq!(interpret("Sqrt[3]/Sqrt[5]").unwrap(), "Sqrt[3/5]");
+    assert_eq!(interpret("Sqrt[6]/Sqrt[2]").unwrap(), "Sqrt[3]");
+  }
+
+  #[test]
+  fn free_symbols_stay_split() {
+    assert_eq!(interpret("Sqrt[x]/Sqrt[y]").unwrap(), "Sqrt[x]/Sqrt[y]");
+    assert_eq!(interpret("Sqrt[2]/Sqrt[a]").unwrap(), "Sqrt[2]/Sqrt[a]");
+  }
+
+  #[test]
+  fn non_radical_numerator_stays() {
+    // Numerator 2 is not a square root, so wolframscript keeps 2/Sqrt[Pi].
+    assert_eq!(interpret("2/Sqrt[Pi]").unwrap(), "2/Sqrt[Pi]");
+  }
+
+  #[test]
+  fn besselj_half_integer() {
+    assert_eq!(
+      interpret("BesselJ[1/2, x]").unwrap(),
+      "(Sqrt[2/Pi]*Sin[x])/Sqrt[x]"
+    );
+    assert_eq!(
+      interpret("BesselJ[-1/2, x]").unwrap(),
+      "(Sqrt[2/Pi]*Cos[x])/Sqrt[x]"
+    );
+  }
+}

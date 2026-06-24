@@ -4517,16 +4517,50 @@ pub fn combine_like_bases(
   // and rational e — merging into Power[a/b, e]. E.g. Sqrt[2]/Sqrt[6] →
   // Sqrt[2/6] = Sqrt[1/3] = 1/Sqrt[3]. Avoids leaving the expression in
   // the unsimplified Times[Sqrt[a], Power[Sqrt[b], -1]] form.
+  // A base for which Sqrt[a]/Sqrt[b] = Sqrt[a/b] holds: positive integers,
+  // positive rationals, the standard positive real constants (Pi, E, …), and
+  // positive products/powers of those. wolframscript combines
+  // Sqrt[2]/Sqrt[Pi] → Sqrt[2/Pi] and Sqrt[Pi]/Sqrt[2] → Sqrt[Pi/2], so the
+  // constants must be admitted here (not just plain numbers). Free symbols are
+  // excluded, leaving Sqrt[x]/Sqrt[y] split like wolframscript.
+  fn is_pos_real_const(name: &str) -> bool {
+    matches!(
+      name,
+      "Pi"
+        | "E"
+        | "EulerGamma"
+        | "GoldenRatio"
+        | "Catalan"
+        | "Degree"
+        | "Glaisher"
+        | "Khinchin"
+    )
+  }
   fn is_pos_numeric(e: &Expr) -> bool {
-    matches!(e, Expr::Integer(n) if *n > 0)
-      || matches!(
-        e,
-        Expr::FunctionCall { name, args }
-          if name == "Rational"
-            && args.len() == 2
-            && matches!(&args[0], Expr::Integer(n) if *n > 0)
-            && matches!(&args[1], Expr::Integer(d) if *d > 0)
-      )
+    match e {
+      Expr::Integer(n) => *n > 0,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        matches!(&args[0], Expr::Integer(n) if *n > 0)
+          && matches!(&args[1], Expr::Integer(d) if *d > 0)
+      }
+      Expr::Constant(c) | Expr::Identifier(c) => is_pos_real_const(c),
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().all(is_pos_numeric)
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => is_pos_numeric(left) && is_pos_numeric(right),
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        ..
+      } => is_pos_numeric(left),
+      _ => false,
+    }
   }
   // First scan for pairs (i positive, j negative) and mark consumed.
   let mut consumed = vec![false; combined.len()];

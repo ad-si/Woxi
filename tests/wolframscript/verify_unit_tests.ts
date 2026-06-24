@@ -704,10 +704,6 @@ function main() {
     // HoldAll attribute is added automatically. Woxi matches the post-mention
     // state, so the fresh-kernel comparison differs.
     "Attributes[Plot3D]",
-    // BesselJ[±1/2, x]: Woxi uses Sqrt[2]/Sqrt[Pi], Wolfram uses Sqrt[2/Pi].
-    // Mathematically identical; different surface algebraic form.
-    "BesselJ[1/2, x]",
-    "BesselJ[-1/2, x]",
     // LegendreP[2, 1, x]: factor ordering in Times differs. Woxi emits
     // -3*Sqrt[1-x^2]*x while Wolfram emits -3*x*Sqrt[1-x^2]. Same value.
     "LegendreP[2, 1, x]",
