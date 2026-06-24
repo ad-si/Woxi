@@ -176,6 +176,99 @@ pub fn cosh_interval(expr: &Expr) -> Option<Expr> {
   Some(make_interval(normalize_intervals(out)))
 }
 
+/// `Sech[Interval[...]]` — the range of `Sech` over each span. `Sech` is even
+/// and positive with a maximum value of `1` at `x = 0` (no poles), so a span
+/// containing `0` runs from `min(Sech[a], Sech[b])` up to `1`; a span on one
+/// side of `0` is monotonic. Returns `None` unless every endpoint is numeric.
+pub fn sech_interval(expr: &Expr) -> Option<Expr> {
+  let spans = is_interval(expr)?;
+  let zero = Expr::Integer(0);
+  let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
+  for (a, b) in spans {
+    expr_to_f64(a)?;
+    expr_to_f64(b)?;
+    let sa = crate::evaluator::evaluate_function_call_ast("Sech", &[a.clone()])
+      .ok()?;
+    let sb = crate::evaluator::evaluate_function_call_ast("Sech", &[b.clone()])
+      .ok()?;
+    expr_to_f64(&sa)?;
+    expr_to_f64(&sb)?;
+    let contains_zero = matches!(
+      compare_numeric(a, &zero),
+      Some(Ordering::Less | Ordering::Equal)
+    ) && matches!(
+      compare_numeric(b, &zero),
+      Some(Ordering::Greater | Ordering::Equal)
+    );
+    let hi = if contains_zero {
+      Expr::Integer(1)
+    } else {
+      numeric_max(&sa, &sb)
+    };
+    let lo = numeric_min(&sa, &sb);
+    out.push((lo, hi));
+  }
+  Some(make_interval(normalize_intervals(out)))
+}
+
+/// `Coth[Interval[...]]` / `Csch[Interval[...]]` — the range over each span.
+/// Both have a single pole at `x = 0` and are strictly decreasing on each side
+/// of it, running to `-Infinity` as `x → 0⁻` and from `+Infinity` as `x → 0⁺`.
+/// A span on one side of 0 is monotonic; a span straddling 0 splits into two
+/// unbounded pieces. Returns `None` unless every (finite) endpoint is numeric.
+pub fn coth_csch_interval(head: &str, expr: &Expr) -> Option<Expr> {
+  if head != "Coth" && head != "Csch" {
+    return None;
+  }
+  let inf = || Expr::Identifier("Infinity".to_string());
+  let neg_inf = || Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(Expr::Identifier("Infinity".to_string())),
+  };
+  let eps = 1e-9;
+  let spans = is_interval(expr)?;
+  let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
+  for (a, b) in spans {
+    let af = expr_to_f64(a)?;
+    let bf = expr_to_f64(b)?;
+    let a_zero = af.abs() < eps;
+    let b_zero = bf.abs() < eps;
+    // Endpoint images for the finite (non-zero) endpoints; require numeric.
+    let fa = if a_zero {
+      None
+    } else {
+      let v = crate::evaluator::evaluate_function_call_ast(head, &[a.clone()])
+        .ok()?;
+      expr_to_f64(&v)?;
+      Some(v)
+    };
+    let fb = if b_zero {
+      None
+    } else {
+      let v = crate::evaluator::evaluate_function_call_ast(head, &[b.clone()])
+        .ok()?;
+      expr_to_f64(&v)?;
+      Some(v)
+    };
+    if af < -eps && bf > eps {
+      // 0 strictly inside: split into the two unbounded branches.
+      out.push((neg_inf(), fa.unwrap()));
+      out.push((fb.unwrap(), inf()));
+    } else if a_zero {
+      out.push((fb.unwrap(), inf())); // piece (0, b]
+    } else if b_zero {
+      out.push((neg_inf(), fa.unwrap())); // piece [a, 0)
+    } else {
+      out.push((fa.unwrap(), fb.unwrap())); // monotonic; normalize sorts
+    }
+  }
+  crate::evaluator::evaluate_expr_to_expr(&make_interval(normalize_intervals(
+    out,
+  )))
+  .ok()
+}
+
 /// Count the poles `offset + k*period` (integer `k`) strictly inside `(af, bf)`.
 fn count_poles_in(offset: f64, period: f64, af: f64, bf: f64) -> i64 {
   let eps = 1e-9;

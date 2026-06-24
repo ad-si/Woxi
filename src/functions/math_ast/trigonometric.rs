@@ -4050,6 +4050,12 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Coth", &args[0]) {
     return r;
   }
+  // Coth[Interval[...]] — range over each span (single pole at 0, decreasing).
+  if let Some(r) =
+    crate::functions::interval_ast::coth_csch_interval("Coth", &args[0])
+  {
+    return Ok(r);
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -4101,6 +4107,10 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Sech", &args[0]) {
     return r;
   }
+  // Sech[Interval[...]] — even, max 1 at 0, no poles.
+  if let Some(r) = crate::functions::interval_ast::sech_interval(&args[0]) {
+    return Ok(r);
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -4146,6 +4156,12 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(r) = imaginary_arg_reduction("Csch", &args[0]) {
     return r;
+  }
+  // Csch[Interval[...]] — range over each span (single pole at 0, decreasing).
+  if let Some(r) =
+    crate::functions::interval_ast::coth_csch_interval("Csch", &args[0])
+  {
+    return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
@@ -4231,6 +4247,13 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcCosh expects 1 argument".into(),
     ));
+  }
+  // ArcCosh is monotonic increasing on [1, ∞): map over interval spans.
+  // (Out-of-domain endpoints give complex images and leave it unevaluated.)
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("ArcCosh", &args[0])
+  {
+    return Ok(r);
   }
   match &args[0] {
     Expr::Integer(0) => {

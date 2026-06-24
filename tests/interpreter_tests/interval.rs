@@ -718,6 +718,57 @@ fn csc_interval() {
   );
 }
 
+// Hyperbolic interval support: ArcCosh (monotonic), Sech (∩-shape, max 1 at 0),
+// and Coth/Csch (single pole at 0, decreasing on each side).
+#[test]
+fn arccosh_interval() {
+  assert_eq!(
+    interpret("ArcCosh[Interval[{2, 3}]]").unwrap(),
+    "Interval[{ArcCosh[2], ArcCosh[3]}]"
+  );
+}
+
+#[test]
+fn sech_interval() {
+  // Span containing 0 reaches the maximum 1.
+  assert_eq!(
+    interpret("Sech[Interval[{-1, 1}]]").unwrap(),
+    "Interval[{Sech[1], 1}]"
+  );
+  // One-sided spans are monotonic.
+  assert_eq!(
+    interpret("Sech[Interval[{1, 2}]]").unwrap(),
+    "Interval[{Sech[2], Sech[1]}]"
+  );
+}
+
+#[test]
+fn coth_csch_interval() {
+  // No pole: monotonic decreasing (endpoints sort).
+  assert_eq!(
+    interpret("Coth[Interval[{1, 2}]]").unwrap(),
+    "Interval[{Coth[2], Coth[1]}]"
+  );
+  assert_eq!(
+    interpret("Csch[Interval[{1, 2}]]").unwrap(),
+    "Interval[{Csch[2], Csch[1]}]"
+  );
+  // Straddling the pole at 0 splits into two unbounded pieces.
+  assert_eq!(
+    interpret("Coth[Interval[{-1, 2}]]").unwrap(),
+    "Interval[{-Infinity, -Coth[1]}, {Coth[2], Infinity}]"
+  );
+  assert_eq!(
+    interpret("Csch[Interval[{-1, 1}]]").unwrap(),
+    "Interval[{-Infinity, -Csch[1]}, {Csch[1], Infinity}]"
+  );
+  // Endpoint exactly at the pole.
+  assert_eq!(
+    interpret("Coth[Interval[{0, 2}]]").unwrap(),
+    "Interval[{Coth[2], Infinity}]"
+  );
+}
+
 #[test]
 fn inverse_trig_interval_increasing() {
   assert_eq!(
