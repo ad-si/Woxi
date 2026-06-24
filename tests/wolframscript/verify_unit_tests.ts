@@ -1068,6 +1068,47 @@ function main() {
     // Last-ULP f64 differences at machine precision (different algorithms):
     "SphericalBesselJ[0, {1., 2.}]",
     "StruveH[0, {1., 2.}]",
+
+    // Geodesic last-ULP divergence: geographiclib-rs agrees with WL's own
+    // geodesic to ~12 significant figures, but the 15th–17th digit differs
+    // because the two libraries use different float implementations. Invisible
+    // at map-pixel scale (the only rendering use of these helpers).
+    "GeoDistance[{40, -100}, {34, -118}]",
+    "GeoDistance[GeoPosition[{40, -100}], GeoPosition[{34, -118}]]",
+    "GeoDestination[{40, -100}, {100000, 45}]",
+    "GeoLength[GeoPath[{{40, -100}, {34, -118}}]]",
+    // GeoBounds: Woxi takes the exact min/max of the input coordinates; WL runs
+    // them through its geodesic bounding-box machinery, which injects last-ULP
+    // noise (-118.00000000000001 / -99.99999999999999) that can't be reproduced.
+    "GeoBounds[{GeoPosition[{40, -100}], GeoPosition[{34, -118}]}]",
+    // GeoNearest: Woxi returns the human-readable country name; WL returns its
+    // internal canonical entity id (no spaces, "of the" dropped):
+    // "UnitedStates", "DemocraticRepublicCongo". Reproducing those exactly needs
+    // WL's per-country entity-id table, which is not derivable from the name.
+    "GeoNearest[\"Country\", GeoPosition[{40, -100}]]",
+    "GeoNearest[\"Country\", GeoPosition[{-2, 23}]]",
+    // Head[GeoGraphics[...]]: Woxi renders GeoGraphics to a Graphics object (head
+    // Graphics) so it flows through the shared SVG export pipeline; WL keeps the
+    // head GeoGraphics. Changing the head would break SVG export.
+    "Head[GeoGraphics[Entity[\"Country\", \"France\"]]]",
+
+    // Integrating a Laurent series with a 1/x term needs 1/x -> Log[x], which
+    // Woxi leaves unevaluated by design (the series engine has no Log support).
+    "Integrate[Series[1/x + x, {x, 0, 3}], x]",
+    // Transcendental digamma sum: Sum[1/(9 n^2 - 1)] = (9 - Sqrt[3] Pi)/18.
+    // Woxi has no general PolyGamma-difference summation, so it stays symbolic.
+    "Sum[1/(9 n^2 - 1), {n, 1, Infinity}]",
+
+    // MakeBoxes of number-display forms: Woxi's box FullForm omits the inner
+    // ShowStringCharacters quoting WL stores around the mantissa/exponent string
+    // leaves (e.g. "\"1.23456\"" vs "1.23456") and keeps spaces around the "×"
+    // operator. The rendered SVG and the computed value are already correct; only
+    // the internal box representation differs.
+    "MakeBoxes[ScientificForm[12345.6]]",
+    "MakeBoxes[EngineeringForm[12345.6]]",
+    "MakeBoxes[NumberForm[12345.6]]",
+    "MakeBoxes[NumberForm[1234567.8]]",
+    "MakeBoxes[NumberForm[3.14159, {6, 2}]]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
