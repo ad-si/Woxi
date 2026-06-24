@@ -2163,6 +2163,14 @@ pub fn interpolation_ast(
     ));
   }
 
+  // ListInterpolation of a rectangular numeric matrix is a 2-D grid (values on
+  // the integer grid 1..rows × 1..cols), not a list of {x, y} points.
+  if head == "ListInterpolation"
+    && let Some(grid) = as_2d_scalar_grid(data_list)
+  {
+    return build_2d_list_interpolation(grid, interp_order, head);
+  }
+
   // Determine format: list of values or list of {x, y} pairs
   let mut points: Vec<(f64, f64)> = Vec::new();
 
@@ -2261,6 +2269,129 @@ pub fn interpolation_ast(
   Ok(interp_func)
 }
 
+/// A rectangular numeric matrix (≥2 rows, ≥2 columns, all rows the same length,
+/// every entry a number). Returns the original entries (preserving Integer /
+/// Real types) alongside their `f64` values. Returns `None` for ragged matrices,
+/// 1-D lists, or any non-numeric entry — so 1-D `ListInterpolation` and
+/// `Interpolation` of `{x, y}` pairs keep the existing path.
+type Grid = (Vec<Vec<Expr>>, Vec<Vec<f64>>);
+fn as_2d_scalar_grid(rows: &[Expr]) -> Option<Grid> {
+  if rows.len() < 2 {
+    return None;
+  }
+  let mut exprs: Vec<Vec<Expr>> = Vec::with_capacity(rows.len());
+  let mut vals: Vec<Vec<f64>> = Vec::with_capacity(rows.len());
+  let mut width: Option<usize> = None;
+  for row in rows {
+    let Expr::List(cells) = row else {
+      return None;
+    };
+    if cells.len() < 2 || *width.get_or_insert(cells.len()) != cells.len() {
+      return None;
+    }
+    let mut row_e = Vec::with_capacity(cells.len());
+    let mut row_v = Vec::with_capacity(cells.len());
+    for c in cells.iter() {
+      let ce = crate::evaluator::evaluate_expr_to_expr(c).unwrap_or(c.clone());
+      let v = match &ce {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(f) => *f,
+        _ => return None,
+      };
+      row_e.push(ce);
+      row_v.push(v);
+    }
+    exprs.push(row_e);
+    vals.push(row_v);
+  }
+  Some((exprs, vals))
+}
+
+/// Build the `InterpolatingFunction` for a 2-D grid. Stored form is
+/// `InterpolatingFunction[{{1, nr}, {1, nc}}, gridExprs, {orderR, orderC}]`;
+/// the `{orderR, orderC}` list (rather than an integer) marks it as 2-D for the
+/// evaluator. Orders are clamped per dimension to `min(requested, dim - 1, 3)`.
+fn build_2d_list_interpolation(
+  grid: Grid,
+  interp_order: i128,
+  head: &str,
+) -> Result<Expr, InterpreterError> {
+  let (exprs, _vals) = &grid;
+  let nr = exprs.len();
+  let nc = exprs[0].len();
+  let want = interp_order.max(1).min(3) as usize;
+  let order_r = want.min(nr - 1);
+  let order_c = want.min(nc - 1);
+  if order_r < want || order_c < want {
+    crate::emit_message(&format!(
+      "{head}::inhr: Requested order is too high; order has been reduced to {{{order_r}, {order_c}}}."
+    ));
+  }
+  let domain = Expr::List(
+    vec![
+      Expr::List(vec![Expr::Integer(1), Expr::Integer(nr as i128)].into()),
+      Expr::List(vec![Expr::Integer(1), Expr::Integer(nc as i128)].into()),
+    ]
+    .into(),
+  );
+  let grid_expr = Expr::List(
+    exprs
+      .iter()
+      .map(|row| Expr::List(row.clone().into()))
+      .collect(),
+  );
+  let orders = Expr::List(
+    vec![
+      Expr::Integer(order_r as i128),
+      Expr::Integer(order_c as i128),
+    ]
+    .into(),
+  );
+  Ok(Expr::FunctionCall {
+    name: "InterpolatingFunction".to_string(),
+    args: vec![domain, grid_expr, orders].into(),
+  })
+}
+
+/// 1-D local Lagrange interpolation of `values` (sampled at positions
+/// `1..=values.len()`) at `coord`, using `order + 1` nearest samples. Mirrors
+/// the point-selection of `lagrange_interpolate` so 2-D results match the 1-D
+/// engine (and wolframscript).
+fn interp_1d_f64(values: &[f64], coord: f64, order: usize) -> f64 {
+  let n = values.len();
+  let coord = coord.max(1.0).min(n as f64);
+  // Interval index: largest i with (i+1) <= coord.
+  let mut idx = (coord.floor() as usize).saturating_sub(1);
+  if idx >= n - 1 {
+    idx = n - 2;
+  }
+  let needed = (order + 1).min(n);
+  // Order 1 uses the bracketing interval [idx, idx+1] (linear interpolation
+  // within the cell), matching the 1-D engine; higher orders center the
+  // (order+1)-point stencil around that interval.
+  let start = if needed <= 2 {
+    idx.min(n - needed)
+  } else if idx + 1 >= needed {
+    (idx + 1).saturating_sub(needed).min(n - needed)
+  } else {
+    0
+  };
+  let mut acc = 0.0;
+  for i in 0..needed {
+    let xi = (start + i + 1) as f64;
+    let yi = values[start + i];
+    let mut term = yi;
+    for j in 0..needed {
+      if j != i {
+        let xj = (start + j + 1) as f64;
+        term *= (coord - xj) / (xi - xj);
+      }
+    }
+    acc += term;
+  }
+  acc
+}
+
 // ─── InterpolatingFunction evaluation ──────────────────────────────────
 
 /// InterpolatingFunction returns machine-precision reals for interpolated values.
@@ -2331,6 +2462,16 @@ pub fn evaluate_interpolating_function(
   func_args: &[Expr],
   call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // 2-D grid form: InterpolatingFunction[{{1,nr},{1,nc}}, grid, {orderR, orderC}].
+  // The `{orderR, orderC}` list marks it as 2-D.
+  if func_args.len() == 3
+    && let Expr::List(orders) = &func_args[2]
+    && orders.len() == 2
+    && let Expr::List(grid_rows) = &func_args[1]
+  {
+    return evaluate_interpolating_function_2d(grid_rows, orders, call_args);
+  }
+
   if (func_args.len() != 2 && func_args.len() != 3) || call_args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "InterpolatingFunction expects domain and data, called with one argument"
@@ -2437,6 +2578,130 @@ pub fn evaluate_interpolating_function(
       lagrange_interpolate(data_points, x_clamped, n, idx, eff_order)?;
     Ok(real_or_integer(y_val))
   }
+}
+
+/// Evaluate a 2-D grid InterpolatingFunction at `[x, y]` via tensor-product
+/// local Lagrange interpolation: interpolate each row along the column
+/// direction at `y`, then interpolate those values along the row direction at
+/// `x`. Exact integer grid points return the stored entry (preserving type).
+fn evaluate_interpolating_function_2d(
+  grid_rows: &[Expr],
+  orders: &[Expr],
+  call_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let nr = grid_rows.len();
+  let order_r = match &orders[0] {
+    Expr::Integer(n) => *n as usize,
+    _ => 1,
+  };
+  let order_c = match &orders[1] {
+    Expr::Integer(n) => *n as usize,
+    _ => 1,
+  };
+
+  // Materialize the grid as f64 values and as original expressions.
+  let mut vals: Vec<Vec<f64>> = Vec::with_capacity(nr);
+  let mut exprs: Vec<Vec<Expr>> = Vec::with_capacity(nr);
+  for row in grid_rows {
+    let Expr::List(cells) = row else {
+      return Err(InterpreterError::EvaluationError(
+        "InterpolatingFunction: invalid 2-D grid".into(),
+      ));
+    };
+    let mut rv = Vec::with_capacity(cells.len());
+    let mut re = Vec::with_capacity(cells.len());
+    for c in cells.iter() {
+      rv.push(match c {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(f) => *f,
+        _ => 0.0,
+      });
+      re.push(c.clone());
+    }
+    vals.push(rv);
+    exprs.push(re);
+  }
+  let nc = vals[0].len();
+
+  let domain2d = || {
+    Expr::List(
+      vec![
+        Expr::List(vec![Expr::Integer(1), Expr::Integer(nr as i128)].into()),
+        Expr::List(vec![Expr::Integer(1), Expr::Integer(nc as i128)].into()),
+      ]
+      .into(),
+    )
+  };
+  let unevaluated = || Expr::CurriedCall {
+    func: Box::new(Expr::FunctionCall {
+      name: "InterpolatingFunction".to_string(),
+      args: vec![
+        domain2d(),
+        Expr::List(grid_rows.to_vec().into()),
+        Expr::List(orders.to_vec().into()),
+      ]
+      .into(),
+    }),
+    args: call_args.to_vec(),
+  };
+
+  // Property access (e.g. ["Domain"]) — return the rectangular domain.
+  if call_args.len() == 1
+    && let Expr::String(prop) = &call_args[0]
+    && prop == "Domain"
+  {
+    return Ok(domain2d());
+  }
+  // Other properties: leave unevaluated.
+
+  if call_args.len() != 2 {
+    return Ok(unevaluated());
+  }
+
+  let coord = |e: &Expr| -> Option<f64> {
+    match crate::evaluator::evaluate_expr_to_expr(e).ok()? {
+      Expr::Integer(n) => Some(n as f64),
+      Expr::Real(f) => Some(f),
+      _ => None,
+    }
+  };
+  let (Some(x), Some(y)) = (coord(&call_args[0]), coord(&call_args[1])) else {
+    // Non-numeric coordinate: stay symbolic.
+    return Ok(unevaluated());
+  };
+
+  // Exact grid point: return the stored entry, but only keep its (Integer)
+  // type when both coordinates were given as integers — a real coordinate
+  // forces a real result (matching wolframscript: `[1, 3]` → 9, `[1., 3.]` → 9.).
+  let int_coords = call_args.iter().all(|a| {
+    matches!(
+      crate::evaluator::evaluate_expr_to_expr(a),
+      Ok(Expr::Integer(_))
+    )
+  });
+  let xi = x.round();
+  let yi = y.round();
+  if (x - xi).abs() < 1e-12
+    && (y - yi).abs() < 1e-12
+    && xi >= 1.0
+    && xi <= nr as f64
+    && yi >= 1.0
+    && yi <= nc as f64
+  {
+    let entry = &exprs[xi as usize - 1][yi as usize - 1];
+    if int_coords {
+      return Ok(entry.clone());
+    }
+    return Ok(Expr::Real(vals[xi as usize - 1][yi as usize - 1]));
+  }
+
+  // Interpolate each row along columns at y, then along rows at x.
+  let col_interp: Vec<f64> = vals
+    .iter()
+    .map(|row| interp_1d_f64(row, y, order_c))
+    .collect();
+  let result = interp_1d_f64(&col_interp, x, order_r);
+  Ok(Expr::Real(result))
 }
 
 /// Find the interval index for x_val using binary search.

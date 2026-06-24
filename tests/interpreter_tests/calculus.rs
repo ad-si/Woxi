@@ -7449,6 +7449,73 @@ mod list_interpolation {
       "expected Interpolation::innd, got {msgs:?}"
     );
   }
+
+  // A numeric matrix is a 2-D grid (values on the integer grid), evaluated by
+  // tensor-product Lagrange interpolation.
+  #[test]
+  fn grid_bilinear() {
+    // Order 1 = bilinear interpolation within a cell.
+    assert_eq!(
+      interpret(
+        "ListInterpolation[{{1, 4, 9}, {16, 25, 36}, {49, 64, 81}}, InterpolationOrder -> 1][1.5, 2.5]"
+      )
+      .unwrap(),
+      "18.5"
+    );
+  }
+
+  #[test]
+  fn grid_simple_cell() {
+    assert_eq!(
+      interpret("ListInterpolation[{{1, 2, 3}, {4, 5, 6}}][1.5, 2]").unwrap(),
+      "3.5"
+    );
+  }
+
+  #[test]
+  fn grid_default_order() {
+    // Default order reduces per dimension to {2, 2} for a 3x3 grid.
+    assert_eq!(
+      interpret(
+        "ListInterpolation[{{1, 4, 9}, {16, 25, 36}, {49, 64, 81}}][1.5, 2.5]"
+      )
+      .unwrap(),
+      "16."
+    );
+  }
+
+  #[test]
+  fn grid_exact_point_integer_coords_keep_type() {
+    // Integer coordinates at a grid point return the stored entry's type.
+    assert_eq!(
+      interpret(
+        "ListInterpolation[{{1, 4, 9}, {16, 25, 36}, {49, 64, 81}}][1, 3]"
+      )
+      .unwrap(),
+      "9"
+    );
+    // Real coordinates force a real result.
+    assert_eq!(
+      interpret(
+        "ListInterpolation[{{1, 4, 9}, {16, 25, 36}, {49, 64, 81}}, InterpolationOrder -> 1][1., 3.]"
+      )
+      .unwrap(),
+      "9."
+    );
+  }
+
+  #[test]
+  fn grid_order_reduction_message() {
+    woxi::clear_state();
+    interpret("ListInterpolation[{{1, 2, 3}, {4, 5, 6}}][1.5, 2.5]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "ListInterpolation::inhr: Requested order is too high; order has been reduced to {1, 2}."
+      )),
+      "expected 2-D inhr {{1, 2}}, got {msgs:?}"
+    );
+  }
 }
 
 mod trig_expand {
