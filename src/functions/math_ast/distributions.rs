@@ -3905,6 +3905,29 @@ fn distribution_mean_variance(
       let var = divide(times(plus(int(1), p), t), power(one_minus_p, int(2)));
       Ok((mean, var))
     }
+    "ChiDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "ChiDistribution expects 1 argument".into(),
+        ));
+      }
+      // Mean = Sqrt[2] Gamma[(1+k)/2] / Gamma[k/2];
+      // Var  = k - 2 Gamma[(1+k)/2]^2 / Gamma[k/2]^2.
+      // Simplify re-combines the Sqrt ratios that arise from evaluating the
+      // half-integer Gammas (e.g. Sqrt[Pi]/Sqrt[2] -> Sqrt[Pi/2]).
+      let k = dargs[0].clone();
+      let g_kp1 = unary_fn("Gamma", divide(plus(int(1), k.clone()), int(2)));
+      let g_k = unary_fn("Gamma", divide(k.clone(), int(2)));
+      let mean_raw =
+        divide(times(unary_fn("Sqrt", int(2)), g_kp1.clone()), g_k.clone());
+      let mean = eval(unary_fn("Simplify", mean_raw))?;
+      let var_raw = minus(
+        k,
+        divide(times(int(2), power(g_kp1, int(2))), power(g_k, int(2))),
+      );
+      let var = eval(unary_fn("Simplify", var_raw))?;
+      Ok((mean, var))
+    }
     "BinomialDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(

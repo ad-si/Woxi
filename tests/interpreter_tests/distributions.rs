@@ -4414,3 +4414,64 @@ mod polya_aeppli_distribution {
     );
   }
 }
+
+// ChiDistribution[k]: Mean = Sqrt[2] Gamma[(1+k)/2]/Gamma[k/2],
+// Variance = k - 2 Gamma[(1+k)/2]^2/Gamma[k/2]^2. The half-integer Gammas are
+// re-combined via Simplify so the Sqrt forms match wolframscript.
+mod chi_distribution {
+  use super::*;
+
+  #[test]
+  fn mean_symbolic_and_numeric() {
+    assert_eq!(
+      interpret("Mean[ChiDistribution[k]]").unwrap(),
+      "(Sqrt[2]*Gamma[(1 + k)/2])/Gamma[k/2]"
+    );
+    assert_eq!(interpret("Mean[ChiDistribution[1]]").unwrap(), "Sqrt[2/Pi]");
+    assert_eq!(interpret("Mean[ChiDistribution[2]]").unwrap(), "Sqrt[Pi/2]");
+    assert_eq!(
+      interpret("Mean[ChiDistribution[3]]").unwrap(),
+      "2*Sqrt[2/Pi]"
+    );
+    assert_eq!(
+      interpret("Mean[ChiDistribution[4]]").unwrap(),
+      "(3*Sqrt[Pi/2])/2"
+    );
+  }
+
+  #[test]
+  fn variance_and_standard_deviation() {
+    assert_eq!(
+      interpret("Variance[ChiDistribution[k]]").unwrap(),
+      "k - (2*Gamma[(1 + k)/2]^2)/Gamma[k/2]^2"
+    );
+    assert_eq!(
+      interpret("Variance[ChiDistribution[3]]").unwrap(),
+      "3 - 8/Pi"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[ChiDistribution[3]]").unwrap(),
+      "Sqrt[3 - 8/Pi]"
+    );
+  }
+
+  #[test]
+  fn pdf_and_cdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[ChiDistribution[k], x]").unwrap(),
+      "Piecewise[{{(2^(1 - k/2)*x^(-1 + k))/(E^(x^2/2)*Gamma[k/2]), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[ChiDistribution[k], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[k/2, 0, x^2/2], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[ChiDistribution[2], x]").unwrap(),
+      "Piecewise[{{x/E^(x^2/2), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[ChiDistribution[2], 1]").unwrap(),
+      "1 - 1/Sqrt[E]"
+    );
+  }
+}
