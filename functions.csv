@@ -1404,7 +1404,7 @@ VertexLabelStyle,Style for vertex labels in graphs,🚫,pure,8.0,1419
 JoinForm,Graphics join form directive,🚫,pure,7.0,1420
 Accuracy,Returns the number of accurate decimal digits,✅,pure,1.0,1422
 TransformationFunctions,Functions for Simplify transformations,🚫,pure,4.0,1422
-Tetrahedron,3D tetrahedron primitive,🚫,pure,10.0,1424
+Tetrahedron,Symbolic tetrahedron geometric region; stays unevaluated and is consumed by region functions (Volume/RegionMeasure/RegionCentroid/…),✅,unevaluated,10.0,1424
 ArcLength,Arc length of a geometric region or of a parameterized curve,✅,pure,10.0,1426
 SetAlphaChannel,Set image alpha channel,🚫,io,8.0,1426
 CreateDialog,Create a dialog window,🚫,io,6.0,1427

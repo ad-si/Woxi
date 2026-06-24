@@ -5893,8 +5893,20 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
         return or_unevaluated(compute_area(expr));
       }
       // 3-dimensional solids: volume.
-      "Cuboid" | "Cylinder" | "Cone" => {
+      "Cuboid" | "Cylinder" | "Cone" | "Parallelepiped" => {
         return or_unevaluated(compute_volume(expr));
+      }
+      // A simplex's measure is in its intrinsic dimension: for n vertices in
+      // (n-1)-space it is |Det[edges]| / (n-1)! (triangle area, tetrahedron
+      // volume, ...).
+      "Tetrahedron" | "Simplex" => {
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && let Some(edges) = simplex_edges(pts)
+        {
+          return det_measure(edges, factorial_small(pts.len() - 1));
+        }
+        return unevaluated();
       }
       // 1-dimensional curves: arc length.
       "Circle" | "Line" => {
@@ -6280,6 +6292,82 @@ fn points_bounds(points: &[Expr]) -> Option<Expr> {
   Some(Expr::List(bounds.into()))
 }
 
+/// Elementwise `v - base` as a coordinate-vector `List`.
+fn coord_vec_sub(v: &[Expr], base: &[Expr]) -> Expr {
+  Expr::List(
+    v.iter()
+      .zip(base.iter())
+      .map(|(a, b)| Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          a.clone(),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), b.clone()].into(),
+          },
+        ]
+        .into(),
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
+/// `Abs[Det[rows]] / divisor`, evaluated.
+fn det_measure(
+  rows: Vec<Expr>,
+  divisor: i128,
+) -> Result<Expr, InterpreterError> {
+  let det = Expr::FunctionCall {
+    name: "Det".to_string(),
+    args: vec![Expr::List(rows.into())].into(),
+  };
+  let abs = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![det].into(),
+  };
+  let vol = if divisor == 1 {
+    abs
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(abs),
+      right: Box::new(Expr::Integer(divisor)),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&vol)
+}
+
+/// If `pts` are `n` coordinate vectors each of length `n-1` (a full-dimensional
+/// simplex in its own space), return the `n-1` edge vectors from the first
+/// vertex; otherwise None.
+fn simplex_edges(pts: &[Expr]) -> Option<Vec<Expr>> {
+  let n = pts.len();
+  if n < 2 {
+    return None;
+  }
+  let coords: Vec<Vec<Expr>> = pts
+    .iter()
+    .map(|p| match p {
+      Expr::List(c) if c.len() == n - 1 => {
+        Some(c.iter().cloned().collect::<Vec<_>>())
+      }
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  Some(
+    coords[1..]
+      .iter()
+      .map(|v| coord_vec_sub(v, &coords[0]))
+      .collect(),
+  )
+}
+
+/// `n!` as an `i128` for small `n`.
+fn factorial_small(n: usize) -> i128 {
+  (1..=n as i128).product::<i128>().max(1)
+}
+
 fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Cylinder[]/Cylinder[{p1, p2}]/Cylinder[{p1, p2}, r]:
   //   Volume = Pi * r^2 * Sqrt[Sum_i (p2_i - p1_i)^2].
@@ -6561,6 +6649,28 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
         };
         return crate::evaluator::evaluate_expr_to_expr(&vol);
       }
+      // Tetrahedron[{p1, p2, p3, p4}] / Simplex of 4 points in 3-space:
+      //   Volume = |Det[{p2-p1, p3-p1, p4-p1}]| / 6.
+      "Tetrahedron" | "Simplex" if args.len() == 1 => {
+        if let Expr::List(pts) = &args[0]
+          && pts.len() == 4
+          && let Some(edges) = simplex_edges(pts)
+        {
+          return det_measure(edges, factorial_small(3));
+        }
+      }
+      // Parallelepiped[p, {v1, v2, v3}] — Volume = |Det[{v1, v2, v3}]|.
+      "Parallelepiped" if args.len() == 2 => {
+        if let Expr::List(vs) = &args[1]
+          && vs.len() == 3
+          && vs
+            .iter()
+            .all(|v| matches!(v, Expr::List(c) if c.len() == 3))
+        {
+          let rows = vs.iter().cloned().collect();
+          return det_measure(rows, 1);
+        }
+      }
       // A Sphere is a 2-D surface and the following are regions of dimension
       // < 3, so their 3-volume is Undefined.
       "Sphere" | "Disk" | "Rectangle" | "Triangle" | "Polygon"
@@ -6818,6 +6928,25 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Circle has no area (it's 1D)
       "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
+      // A Tetrahedron is a 3-D solid, so its 2-area is Undefined.
+      "Tetrahedron" => Ok(Expr::Identifier("Undefined".to_string())),
+      // Simplex[{p0, p1, p2}] in the plane — the triangle area |Det[edges]|/2.
+      // A higher-dimensional simplex has Undefined 2-area.
+      "Simplex" if args.len() == 1 => {
+        if let Expr::List(pts) = &args[0]
+          && pts.len() == 3
+          && let Some(edges) = simplex_edges(pts)
+        {
+          det_measure(edges, 2)
+        } else if matches!(&args[0], Expr::List(pts) if pts.len() != 3) {
+          Ok(Expr::Identifier("Undefined".to_string()))
+        } else {
+          Ok(Expr::FunctionCall {
+            name: "Area".to_string(),
+            args: vec![expr.clone()].into(),
+          })
+        }
+      }
       // Sphere[] / Sphere[p] / Sphere[p, r] — 4 Pi r^2 surface area for
       // a 3-D sphere. p (a 3-element list) is discarded since the
       // surface area is translation-invariant.
@@ -7163,6 +7292,21 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           && pts.len() == 3
         {
           return compute_triangle_centroid(pts);
+        }
+        unevaluated()
+      }
+      // Tetrahedron / Simplex — the centroid is the mean of the vertices.
+      "Tetrahedron" | "Simplex" => {
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() >= 2
+          && pts.iter().all(|p| matches!(p, Expr::List(_)))
+        {
+          let mean = Expr::FunctionCall {
+            name: "Mean".to_string(),
+            args: vec![args[0].clone()].into(),
+          };
+          return crate::evaluator::evaluate_expr_to_expr(&mean);
         }
         unevaluated()
       }

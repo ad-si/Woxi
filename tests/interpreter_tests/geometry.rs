@@ -750,6 +750,74 @@ mod region_measure {
     assert_eq!(interpret("RegionMeasure[Cone[]]").unwrap(), "(2*Pi)/3");
   }
 
+  // Volume of a tetrahedron / 3-simplex / parallelepiped via the determinant.
+  #[test]
+  fn tetrahedron_simplex_parallelepiped_volume() {
+    assert_eq!(
+      interpret("Volume[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]")
+        .unwrap(),
+      "1/6"
+    );
+    assert_eq!(
+      interpret("Volume[Tetrahedron[{{1,1,1},{2,3,1},{4,1,2},{1,2,5}}]]")
+        .unwrap(),
+      "25/6"
+    );
+    assert_eq!(
+      interpret("Volume[Simplex[{{0,0,0},{2,0,0},{0,3,0},{0,0,6}}]]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("Volume[Parallelepiped[{0,0,0},{{1,0,0},{0,2,0},{0,0,3}}]]")
+        .unwrap(),
+      "6"
+    );
+  }
+
+  // The same shapes via RegionMeasure (intrinsic dimension); a 2-simplex
+  // and Area give the triangle area.
+  #[test]
+  fn simplex_region_measure_and_area() {
+    assert_eq!(
+      interpret(
+        "RegionMeasure[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]"
+      )
+      .unwrap(),
+      "1/6"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[Simplex[{{0,0},{2,0},{0,2}}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Area[Simplex[{{0,0},{2,0},{0,2}}]]").unwrap(),
+      "2"
+    );
+    // A tetrahedron is a 3-D solid, so its 2-area is Undefined.
+    assert_eq!(
+      interpret("Area[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]")
+        .unwrap(),
+      "Undefined"
+    );
+  }
+
+  // Centroid of a tetrahedron / simplex is the mean of its vertices.
+  #[test]
+  fn tetrahedron_simplex_centroid() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]"
+      )
+      .unwrap(),
+      "{1/4, 1/4, 1/4}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Simplex[{{0,0,0},{3,0,0},{0,3,0},{0,0,3}}]]")
+        .unwrap(),
+      "{3/4, 3/4, 3/4}"
+    );
+  }
+
   // An n-ball's measure is its closed-form volume Pi^(n/2) r^n / Gamma[n/2+1];
   // the dimension is the length of the center vector (default 3D).
   #[test]
