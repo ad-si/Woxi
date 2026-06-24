@@ -420,6 +420,84 @@ fn body_is_one_minus_one_over_var_quartic(body: &Expr, var_name: &str) -> bool {
 /// If `body` is `var + a` — a sum of exactly one bare `var` factor (coefficient
 /// 1) and at least one term free of `var` — return the constant shift `a`.
 /// Higher-degree or scaled var terms (`var^2`, `2 var`) return None.
+/// The integer shift `a` if `expr` is the monic linear polynomial `var + a`
+/// (`var` alone gives `0`). Non-monic (`2 var`), non-integer or non-linear
+/// expressions give `None`.
+fn monic_int_shift(expr: &Expr, var_name: &str) -> Option<i128> {
+  if matches!(expr, Expr::Identifier(n) if n == var_name) {
+    return Some(0);
+  }
+  match linear_shift_of_var(expr, var_name)? {
+    Expr::Integer(v) => Some(v),
+    _ => None,
+  }
+}
+
+/// Closed form for `Product[(var + a)/(var + b), {var, 1, n}]` with
+/// non-negative integer shifts `a, b`, where `n = max_expr`. Returns `None`
+/// (leaving the product symbolic) when the body is not such a ratio.
+fn rational_telescoping_product(
+  body: &Expr,
+  var_name: &str,
+  max_expr: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let call = |name: &str, arg: Expr| Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![arg].into(),
+  };
+  let together = eval(&call("Together", body.clone()))?;
+  let num = eval(&call("Numerator", together.clone()))?;
+  let den = eval(&call("Denominator", together))?;
+  let (Some(a), Some(b)) = (
+    monic_int_shift(&num, var_name),
+    monic_int_shift(&den, var_name),
+  ) else {
+    return Ok(None);
+  };
+  if a < 0 || b < 0 {
+    return Ok(None);
+  }
+  if a == b {
+    return Ok(Some(Expr::Integer(1)));
+  }
+  // Build Π_{j=lo+1}^{hi} (n + j) and the constant Π_{j=lo+1}^{hi} j.
+  let (lo, hi) = (a.min(b), a.max(b));
+  let mut factors: Vec<Expr> = Vec::new();
+  let mut konst: i128 = 1;
+  for j in (lo + 1)..=hi {
+    factors.push(Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(max_expr.clone()),
+      right: Box::new(Expr::Integer(j)),
+    });
+    konst = match konst.checked_mul(j) {
+      Some(v) => v,
+      None => return Ok(None), // overflow — leave symbolic
+    };
+  }
+  let prod = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: factors.into(),
+  };
+  // a > b: (Π (n+j)) / konst ; a < b: konst / (Π (n+j)).
+  let result = if a > b {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(prod),
+      right: Box::new(Expr::Integer(konst)),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(konst)),
+      right: Box::new(prod),
+    }
+  };
+  Ok(Some(eval(&result)?))
+}
+
 fn linear_shift_of_var(body: &Expr, var_name: &str) -> Option<Expr> {
   use crate::functions::calculus_ast::is_constant_wrt;
   let terms: Vec<&Expr> = match body {
@@ -793,6 +871,24 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: vec![one_plus_a, max_expr.clone()].into(),
               });
             }
+          }
+
+          // Rational telescoping product:
+          //   Product[(k + a)/(k + b), {k, 1, n}]
+          // with non-negative integer shifts a, b telescopes to a finite
+          // product of linear factors in n. Together the body, split into
+          // numerator/denominator, and require each to be a monic linear
+          // polynomial `var + integer`. For a > b the result is
+          //   Π_{j=b+1}^{a} (n + j) / Π_{j=b+1}^{a} j ;
+          // for a < b it is the reciprocal. (`var + a` alone, with a constant
+          // denominator, is handled by the linear-shift case above.)
+          if min_concrete == Some(1)
+            && max_concrete.is_none()
+            && !max_is_infinity
+            && let Some(result) =
+              rational_telescoping_product(body, &var_name, max_expr)?
+          {
+            return Ok(result);
           }
 
           // Body is c^var: Product[c^i, {i, 1, n}] = c^(n*(1+n)/2)

@@ -54,6 +54,31 @@ mod symbolic_product {
     );
   }
 
+  // Telescoping rational products Product[(k+a)/(k+b), {k, 1, n}] with
+  // non-negative integer shifts collapse to a finite product of linear factors
+  // in n (matching wolframscript).
+  #[test]
+  fn product_rational_telescoping() {
+    assert_eq!(interpret("Product[1 + 1/k, {k, 1, n}]").unwrap(), "1 + n");
+    assert_eq!(interpret("Product[(k + 1)/k, {k, 1, n}]").unwrap(), "1 + n");
+    assert_eq!(
+      interpret("Product[k/(k + 1), {k, 1, n}]").unwrap(),
+      "(1 + n)^(-1)"
+    );
+    assert_eq!(
+      interpret("Product[(k + 2)/k, {k, 1, n}]").unwrap(),
+      "((1 + n)*(2 + n))/2"
+    );
+    assert_eq!(
+      interpret("Product[(k + 1)/(k + 2), {k, 1, n}]").unwrap(),
+      "2/(2 + n)"
+    );
+    assert_eq!(
+      interpret("Product[(k + 3)/(k + 1), {k, 1, n}]").unwrap(),
+      "((2 + n)*(3 + n))/6"
+    );
+  }
+
   #[test]
   fn factorial_formatting() {
     // Factorial[n] should display as n!
