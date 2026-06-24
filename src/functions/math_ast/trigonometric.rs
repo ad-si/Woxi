@@ -1623,6 +1623,12 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Tan", &args[0]) {
     return r;
   }
+  // Tan[Interval[...]] — range over each span, accounting for poles.
+  if let Some(r) =
+    crate::functions::interval_ast::tan_cot_interval("Tan", &args[0])
+  {
+    return Ok(r);
+  }
   // Tan[±Infinity] → Interval[{-Infinity, Infinity}]
   if let Some(r) = circular_at_infinity("Tan", &args[0]) {
     return r;
@@ -1812,6 +1818,12 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(r) = imaginary_arg_reduction("Cot", &args[0]) {
     return r;
+  }
+  // Cot[Interval[...]] — range over each span, accounting for poles.
+  if let Some(r) =
+    crate::functions::interval_ast::tan_cot_interval("Cot", &args[0])
+  {
+    return Ok(r);
   }
   // Cot[±Infinity] → Interval[{-Infinity, Infinity}]
   if let Some(r) = circular_at_infinity("Cot", &args[0]) {

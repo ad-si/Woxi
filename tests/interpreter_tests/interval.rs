@@ -623,6 +623,53 @@ fn cosh_interval() {
   );
 }
 
+// Tan/Cot over an interval account for their poles (Pi/2 + k Pi and k Pi).
+#[test]
+fn tan_interval() {
+  // No pole inside: monotonic increasing.
+  assert_eq!(
+    interpret("Tan[Interval[{0, 1}]]").unwrap(),
+    "Interval[{0, Tan[1]}]"
+  );
+  assert_eq!(
+    interpret("Tan[Interval[{-1, 1}]]").unwrap(),
+    "Interval[{-Tan[1], Tan[1]}]"
+  );
+  // One pole inside (Pi/2): the branch splits to ±Infinity on each side.
+  assert_eq!(
+    interpret("Tan[Interval[{0, 2}]]").unwrap(),
+    "Interval[{-Infinity, Tan[2]}, {0, Infinity}]"
+  );
+  // One pole but the two pieces meet -> all reals.
+  assert_eq!(
+    interpret("Tan[Interval[{0, Pi}]]").unwrap(),
+    "Interval[{-Infinity, Infinity}]"
+  );
+  // Two or more poles -> all reals.
+  assert_eq!(
+    interpret("Tan[Interval[{0, 5}]]").unwrap(),
+    "Interval[{-Infinity, Infinity}]"
+  );
+}
+
+#[test]
+fn cot_interval() {
+  // No pole inside: monotonic decreasing (endpoints sort).
+  assert_eq!(
+    interpret("Cot[Interval[{1, 2}]]").unwrap(),
+    "Interval[{Cot[2], Cot[1]}]"
+  );
+  assert_eq!(
+    interpret("Cot[Interval[{Pi/6, Pi/3}]]").unwrap(),
+    "Interval[{1/Sqrt[3], Sqrt[3]}]"
+  );
+  // One pole inside (0): splits to ±Infinity.
+  assert_eq!(
+    interpret("Cot[Interval[{-1, 1}]]").unwrap(),
+    "Interval[{-Infinity, -Cot[1]}, {Cot[1], Infinity}]"
+  );
+}
+
 #[test]
 fn inverse_trig_interval_increasing() {
   assert_eq!(

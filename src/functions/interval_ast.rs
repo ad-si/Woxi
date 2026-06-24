@@ -176,6 +176,71 @@ pub fn cosh_interval(expr: &Expr) -> Option<Expr> {
   Some(make_interval(normalize_intervals(out)))
 }
 
+/// Count the poles `offset + k*period` (integer `k`) strictly inside `(af, bf)`.
+fn count_poles_in(offset: f64, period: f64, af: f64, bf: f64) -> i64 {
+  let eps = 1e-9;
+  let lo_k = (af - offset) / period;
+  let hi_k = (bf - offset) / period;
+  let first = (lo_k + eps).floor() as i64 + 1; // smallest k strictly > lo_k
+  let last = (hi_k - eps).ceil() as i64 - 1; // largest k strictly < hi_k
+  (last - first + 1).max(0)
+}
+
+/// `Tan[Interval[...]]` / `Cot[Interval[...]]` — the range over each span,
+/// accounting for the poles at `Pi/2 + k Pi` (Tan) or `k Pi` (Cot). Both are
+/// strictly monotonic between consecutive poles (Tan increasing, Cot
+/// decreasing). For a span with no pole inside the result is the endpoint
+/// images; with one pole the branch runs out to ±Infinity on each side of the
+/// pole (the two pieces merge to all reals when they meet); with two or more
+/// poles the function already covers all reals. Returns `None` unless every
+/// endpoint and its image is real-numeric.
+pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
+  let (offset, increasing) = match head {
+    "Tan" => (std::f64::consts::FRAC_PI_2, true),
+    "Cot" => (0.0, false),
+    _ => return None,
+  };
+  let period = std::f64::consts::PI;
+  let inf = || Expr::Identifier("Infinity".to_string());
+  let neg_inf = || Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(Expr::Identifier("Infinity".to_string())),
+  };
+
+  let spans = is_interval(expr)?;
+  let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
+  for (a, b) in spans {
+    let af = expr_to_f64(a)?;
+    let bf = expr_to_f64(b)?;
+    let fa =
+      crate::evaluator::evaluate_function_call_ast(head, &[a.clone()]).ok()?;
+    let fb =
+      crate::evaluator::evaluate_function_call_ast(head, &[b.clone()]).ok()?;
+    expr_to_f64(&fa)?;
+    expr_to_f64(&fb)?;
+    match count_poles_in(offset, period, af, bf) {
+      0 => out.push((fa, fb)), // monotonic; normalize sorts the endpoints
+      1 => {
+        // One pole: the lower branch runs to +Infinity (Tan) / the upper to
+        // +Infinity (Cot), the other side coming from -Infinity.
+        if increasing {
+          out.push((fa, inf()));
+          out.push((neg_inf(), fb));
+        } else {
+          out.push((neg_inf(), fa));
+          out.push((fb, inf()));
+        }
+      }
+      _ => out.push((neg_inf(), inf())), // ≥2 poles: all reals
+    }
+  }
+  crate::evaluator::evaluate_expr_to_expr(&make_interval(normalize_intervals(
+    out,
+  )))
+  .ok()
+}
+
 /// Compare two numeric expressions. Returns None if not comparable.
 fn compare_numeric(a: &Expr, b: &Expr) -> Option<Ordering> {
   let fa = expr_to_f64(a)?;
