@@ -1347,7 +1347,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "VertexInDegree" => Some((1, 2)),
     "VertexOutDegree" => Some((1, 2)),
     "WeberE" => Some((2, 2)),
-    "WeibullDistribution" => Some((2, 2)),
+    "WeibullDistribution" => Some((2, 3)),
     "WeierstrassP" => Some((2, 2)),
     "WeierstrassPPrime" => Some((2, 2)),
     // Which accepts any even count (Which[] -> Null); an odd count is reported

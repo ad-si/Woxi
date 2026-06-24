@@ -4134,21 +4134,26 @@ fn distribution_mean_variance(
       Ok((mean, var))
     }
     "WeibullDistribution" => {
-      if dargs.len() != 2 {
+      if dargs.len() != 2 && dargs.len() != 3 {
         return Err(InterpreterError::EvaluationError(
-          "WeibullDistribution expects 2 arguments".into(),
+          "WeibullDistribution expects 2 or 3 arguments".into(),
         ));
       }
       let a = dargs[0].clone();
       let b = dargs[1].clone();
-      // Mean = b * Gamma[1 + 1/a]
-      let mean = times(
+      // Mean = b * Gamma[1 + 1/a]; the 3-argument form adds the location m.
+      let base_mean = times(
         b.clone(),
         Expr::FunctionCall {
           name: "Gamma".to_string(),
           args: vec![plus(int(1), divide(int(1), a.clone()))].into(),
         },
       );
+      let mean = if dargs.len() == 3 {
+        plus(dargs[2].clone(), base_mean)
+      } else {
+        base_mean
+      };
       // Var = b^2 * (Gamma[1 + 2/a] - Gamma[1 + 1/a]^2)
       let var = times(
         power(b, int(2)),
@@ -5412,35 +5417,55 @@ fn cdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// PDF[WeibullDistribution[a, b], x] = Piecewise[{{a*(x/b)^(a-1) / (b * E^((x/b)^a)), x > 0}}, 0]
 fn pdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
-  if dargs.len() != 2 {
+  if dargs.len() != 2 && dargs.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "WeibullDistribution expects 2 arguments".into(),
+      "WeibullDistribution expects 2 or 3 arguments".into(),
     ));
   }
   let a = dargs[0].clone();
   let b = dargs[1].clone();
+  // The 3-argument form shifts the support by the location m: the body uses
+  // (x - m) and the condition becomes x > m (rather than x > 0).
+  let (xv, cond) = if dargs.len() == 3 {
+    let m = dargs[2].clone();
+    (
+      minus(x.clone(), m.clone()),
+      comparison(x, ComparisonOp::Greater, m),
+    )
+  } else {
+    (x.clone(), comparison(x, ComparisonOp::Greater, int(0)))
+  };
 
-  // a * (x/b)^(a-1) / (b * E^((x/b)^a))
-  let xb = divide(x.clone(), b.clone());
+  // a * (xv/b)^(a-1) / (b * E^((xv/b)^a))
+  let xb = divide(xv, b.clone());
   let numerator = times(a.clone(), power(xb.clone(), minus(a.clone(), int(1))));
   let denom = times(b, power(e(), power(xb, a)));
   let pdf_val = divide(numerator, denom);
 
-  let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(pdf_val, cond)], int(0)))
 }
 
 /// CDF[WeibullDistribution[a, b], x] = Piecewise[{{1 - E^(-(x/b)^a), x > 0}}, 0]
 fn cdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
-  if dargs.len() != 2 {
+  if dargs.len() != 2 && dargs.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "WeibullDistribution expects 2 arguments".into(),
+      "WeibullDistribution expects 2 or 3 arguments".into(),
     ));
   }
   let a = dargs[0].clone();
   let b = dargs[1].clone();
+  // The 3-argument form shifts the support by the location m.
+  let (xv, cond) = if dargs.len() == 3 {
+    let m = dargs[2].clone();
+    (
+      minus(x.clone(), m.clone()),
+      comparison(x, ComparisonOp::Greater, m),
+    )
+  } else {
+    (x.clone(), comparison(x, ComparisonOp::Greater, int(0)))
+  };
 
-  let xb = divide(x.clone(), b);
+  let xb = divide(xv, b);
   let cdf_val = minus(
     int(1),
     power(
@@ -5452,7 +5477,6 @@ fn cdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     ),
   );
 
-  let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(cdf_val, cond)], int(0)))
 }
 

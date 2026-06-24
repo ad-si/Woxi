@@ -2808,6 +2808,37 @@ mod weibull_distribution {
   fn pdf_at_zero() {
     assert_eq!(interpret("PDF[WeibullDistribution[2, 3], 0]").unwrap(), "0");
   }
+
+  // The 3-argument WeibullDistribution[a, b, m] is the location-shifted form:
+  // Mean = m + b Gamma[1 + 1/a], and PDF/CDF use (x - m) with support x > m.
+  #[test]
+  fn three_argument_location_shifted() {
+    assert_eq!(
+      interpret("Mean[WeibullDistribution[a, b, m]]").unwrap(),
+      "m + b*Gamma[1 + a^(-1)]"
+    );
+    assert_eq!(
+      interpret("Mean[WeibullDistribution[2, 3, 1]]").unwrap(),
+      "1 + (3*Sqrt[Pi])/2"
+    );
+    assert_eq!(
+      interpret("PDF[WeibullDistribution[a, b, m], x]").unwrap(),
+      "Piecewise[{{(a*((-m + x)/b)^(-1 + a))/(b*E^((-m + x)/b)^a), x > m}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[WeibullDistribution[a, b, m], x]").unwrap(),
+      "Piecewise[{{1 - E^(-((-m + x)/b)^a), x > m}}, 0]"
+    );
+    // Variance is location-independent; numeric form matches.
+    assert_eq!(
+      interpret("Variance[WeibullDistribution[2, 3, 1]]").unwrap(),
+      "9*(1 - Pi/4)"
+    );
+    assert_eq!(
+      interpret("CDF[WeibullDistribution[2, 3, 1], 4]").unwrap(),
+      "1 - E^(-1)"
+    );
+  }
 }
 
 mod multinomial_distribution {
