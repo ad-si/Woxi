@@ -3238,7 +3238,7 @@ IncidenceGraph,,,,8.0,3317
 InflationAdjust,,🚫,,10.0,3317
 InputAutoReplacements,,🚫,,4.0,3317
 MatrixNormalDistribution,,,,10.3,3317
-PolyaAeppliDistribution,,,,8.0,3317
+PolyaAeppliDistribution,Polya-Aeppli geometric-Poisson distribution moment properties,✅,pure,8.0,3317
 SignTest,,,,8.0,3317
 TriangleConstruct,,,,12.0,3317
 BitGet,Bit k of an integer (two's complement for negatives),✅,pure,6.0,3326

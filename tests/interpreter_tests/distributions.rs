@@ -4355,3 +4355,62 @@ mod skellam_distribution {
     );
   }
 }
+
+// PolyaAeppliDistribution[t, p] (geometric-Poisson): Mean = t/(1-p),
+// Variance = (1+p) t/(1-p)^2. Moment properties match wolframscript; PDF/CDF
+// (Hypergeometric1F1 / factor-order forms) are left unevaluated.
+mod polya_aeppli_distribution {
+  use super::*;
+
+  #[test]
+  fn head_stays_unevaluated() {
+    assert_eq!(
+      interpret("PolyaAeppliDistribution[2, 1/2]").unwrap(),
+      "PolyaAeppliDistribution[2, 1/2]"
+    );
+  }
+
+  #[test]
+  fn mean_variance_sd() {
+    assert_eq!(
+      interpret("Mean[PolyaAeppliDistribution[t, p]]").unwrap(),
+      "t/(1 - p)"
+    );
+    assert_eq!(
+      interpret("Variance[PolyaAeppliDistribution[t, p]]").unwrap(),
+      "((1 + p)*t)/(1 - p)^2"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[PolyaAeppliDistribution[t, p]]").unwrap(),
+      "Sqrt[(1 + p)*t]/(1 - p)"
+    );
+    assert_eq!(
+      interpret("Mean[PolyaAeppliDistribution[2, 1/2]]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Variance[PolyaAeppliDistribution[2, 1/2]]").unwrap(),
+      "12"
+    );
+  }
+
+  #[test]
+  fn skewness_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[PolyaAeppliDistribution[t, p]]").unwrap(),
+      "(1 + 4*p + p^2)/((1 + p)*Sqrt[(1 + p)*t])"
+    );
+    assert_eq!(
+      interpret("Kurtosis[PolyaAeppliDistribution[t, p]]").unwrap(),
+      "3 + (1 + 10*p + p^2)/((1 + p)*t)"
+    );
+    assert_eq!(
+      interpret("Skewness[PolyaAeppliDistribution[2, 1/2]]").unwrap(),
+      "13/(6*Sqrt[3])"
+    );
+    assert_eq!(
+      interpret("Kurtosis[PolyaAeppliDistribution[2, 1/2]]").unwrap(),
+      "61/12"
+    );
+  }
+}

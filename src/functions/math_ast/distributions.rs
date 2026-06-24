@@ -3892,6 +3892,19 @@ fn distribution_mean_variance(
       let (a, b) = (dargs[0].clone(), dargs[1].clone());
       Ok((minus(a.clone(), b.clone()), plus(a, b)))
     }
+    "PolyaAeppliDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "PolyaAeppliDistribution expects 2 arguments".into(),
+        ));
+      }
+      // Geometric-Poisson: Mean = t/(1-p), Var = (1+p) t / (1-p)^2.
+      let (t, p) = (dargs[0].clone(), dargs[1].clone());
+      let one_minus_p = minus(int(1), p.clone());
+      let mean = divide(t.clone(), one_minus_p.clone());
+      let var = divide(times(plus(int(1), p), t), power(one_minus_p, int(2)));
+      Ok((mean, var))
+    }
     "BinomialDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
