@@ -5490,9 +5490,14 @@ mod high_level_functions_tests {
         interpret("GeoDirection[{0, 0}, {0, 10}]").unwrap(),
         "Quantity[90., AngularDegrees]"
       );
+      // Round to 9 decimals: the raw 17th significant digit is platform-dependent
+      // ULP noise in the geographiclib float math (e.g. ...235 vs ...232 on Linux).
       assert_eq!(
-        interpret("GeoDirection[{40, -100}, {34, -118}]").unwrap(),
-        "Quantity[-106.93807421415235, AngularDegrees]"
+        interpret(
+          "N[Round[QuantityMagnitude[GeoDirection[{40, -100}, {34, -118}]], 10^-9]]"
+        )
+        .unwrap(),
+        "-106.938074214"
       );
     }
 
