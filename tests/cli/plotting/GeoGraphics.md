@@ -11,8 +11,8 @@ Supported primitives inside the content list:
 - `Point[pos]` — a filled dot at `pos`
 
 together with color directives (`Red`, `RGBColor[...]`, …) and `PointSize`.
-A position is `GeoPosition[{lat, lon}]` or a bare `{lat, lon}` pair
-(latitude first).
+A position is `GeoPosition[{lat, lon}]`, a bare `{lat, lon}` pair (latitude
+first), or a geographic `Entity[…]` (see below).
 
 Like `Graphics`, the result is a `Graphics` object that renders as an SVG
 image in the playground, Jupyter, or Woxi Studio.
@@ -58,13 +58,28 @@ $ wo 'Head[GeoGraphics[Entity["Country", "France"]]]'
 Graphics
 ```
 
+### Geographic entities
+
+A position may be given as an `Entity[…]`, resolved to coordinates through the
+[keshvar](https://crates.io/crates/keshvar) gazetteer. `Entity["Country", name]`
+resolves to the country's center, and `Entity["City", {city, region, country}]`
+to the center of its administrative subdivision (the gazetteer has no
+city-level coordinates, so the `region` — e.g. a state or province — gives the
+finest available placement):
+
+```scrut
+$ wo 'Head[GeoGraphics[{Red, GeoMarker[Entity["City", {"Munich", "Bavaria", "Germany"}]]}, GeoRange -> Quantity[50, "Kilometers"]]]'
+Graphics
+```
+
 ### Options
 
 - **`ImageSize`** — map width in pixels (the height follows the data aspect
   ratio).
 - **`GeoRange`** — `"World"` for the whole globe, `All`/`Automatic` to fit the
-  data (the default), or an explicit `{{latmin, latmax}, {lonmin, lonmax}}`
-  window.
+  data (the default), a length `Quantity` (e.g. `Quantity[50, "Kilometers"]`)
+  for a disk of that radius around the data, or an explicit
+  `{{latmin, latmax}, {lonmin, lonmax}}` window.
 - **`GeoProjection`** — `"Equirectangular"` (the default) or `"Mercator"`.
 - **`GeoGridLines`** — `Automatic` draws a latitude/longitude graticule;
   `None` (the default) omits it.

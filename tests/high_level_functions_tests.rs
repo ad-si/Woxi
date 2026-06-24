@@ -5841,6 +5841,67 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_geomarker_city_entity_resolves_via_keshvar() {
+      // Entity["City", {city, region, country}] is resolved through the keshvar
+      // gazetteer. It has no city coordinates, so Munich resolves to the center
+      // of its administrative subdivision (Bavaria); the red pin must render.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         GeoMarker[Entity[\"City\", {\"Munich\", \"Bavaria\", \"Germany\"}]]}], \
+         \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("rgb(214,232,245)"), "ocean missing");
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "red pin missing");
+    }
+
+    #[test]
+    fn test_geomarker_city_entity_centered_with_radius_range() {
+      // The requested example: GeoRange -> Quantity[50, "Kilometers"] frames a
+      // 50 km disk around the Munich marker, so the pin sits at the center of
+      // the (square 360x360) image.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         GeoMarker[Entity[\"City\", {\"Munich\", \"Bavaria\", \"Germany\"}]]}, \
+         GeoRange -> Quantity[50, \"Kilometers\"]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("width=\"360\""), "{}", &svg[..120]);
+      assert!(svg.contains("height=\"360\""), "{}", &svg[..120]);
+      let (x, y) = red_pin_tip(&svg);
+      assert!((x - 180.0).abs() < 1.0, "pin x not centered: {x}");
+      assert!((y - 180.0).abs() < 1.0, "pin y not centered: {y}");
+    }
+
+    #[test]
+    fn test_geomarker_country_entity_resolves_to_center() {
+      // Entity["Country", name] inside a GeoMarker resolves to the country's
+      // center (no subdivision given).
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Blue, \
+         GeoMarker[Entity[\"Country\", \"France\"]]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "blue pin missing");
+    }
+
+    #[test]
+    fn test_georange_quantity_radius_smaller_than_full_country() {
+      // A 50 km radius range zooms in much tighter than the auto-fit view, so
+      // the longitude span (image width / sx) is well under a degree.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, GeoMarker[GeoPosition[{48.14, 11.58}]]}, \
+         GeoRange -> Quantity[50, \"Kilometers\"]], \"SVG\"]",
+      )
+      .unwrap();
+      // 50 km ~ 0.45 deg of latitude, so a 360 px image spans < 1.5 deg of
+      // longitude; the Munich marker and a point 1 deg east must be far apart.
+      let (x0, _) = red_pin_tip(&svg);
+      assert!((x0 - 180.0).abs() < 1.0, "center pin off: {x0}");
+      assert!(svg.contains("height=\"360\""), "expected square 50km view");
+    }
+
+    #[test]
     fn test_geographics_world_projection() {
       // GeoRange -> "World" forces the whole-globe equirectangular 2:1 view;
       // Johannesburg then projects to x≈208, y≈116 at 360x180.

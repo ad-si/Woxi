@@ -138,9 +138,107 @@ const BORDER_STROKE: &str = "rgb(176,169,159)";
 
 // ── Position extraction ───────────────────────────────────────────────────
 
-/// Extract `(lat, lon)` from `GeoPosition[{lat, lon[, h]}]` or a bare
-/// `{lat, lon[, h]}` list.
+/// Look up a country in the keshvar gazetteer. `find_by_name` matches the
+/// (English/translated) name case-sensitively against a lowercased table, so we
+/// lowercase the query first.
+///
+/// The search materializes every country's data (including subdivisions) in a
+/// single frame, which overruns a small thread stack, so we run it behind
+/// `stacker::maybe_grow` to borrow a large temporary stack when needed.
+fn keshvar_country(name: &str) -> Option<keshvar::Country> {
+  let lower = name.to_lowercase();
+  stacker::maybe_grow(4 * 1024 * 1024, 16 * 1024 * 1024, || {
+    keshvar::find_by_name(&lower).ok()
+  })
+}
+
+/// The geographic center `(lat, lon)` of a country.
+fn country_centroid(name: &str) -> Option<(f64, f64)> {
+  let g = keshvar_country(name)?.geo();
+  Some((g.latitude(), g.longitude()))
+}
+
+/// The center `(lat, lon)` of a `country`'s administrative subdivision named
+/// `region`, matched case-insensitively against the subdivision's local name,
+/// any of its translated names, or its ISO 3166-2 code (so `"Bavaria"`,
+/// `"Bayern"`, and `"BY"` all find the same German state).
+fn subdivision_centroid_in(
+  country: &keshvar::Country,
+  region: &str,
+) -> Option<(f64, f64)> {
+  for (code, s) in country.subdivisions().iter() {
+    let hit = code.eq_ignore_ascii_case(region)
+      || s.name().eq_ignore_ascii_case(region)
+      || s
+        .translations()
+        .values()
+        .any(|t| t.eq_ignore_ascii_case(region));
+    if hit
+      && let Some(g) = s.geo()
+      && let (Some(lat), Some(lon)) = (g.latitude(), g.longitude())
+    {
+      return Some((lat, lon));
+    }
+  }
+  None
+}
+
+/// Resolve a geographic `Entity[…]` specification to a `(lat, lon)` using the
+/// keshvar gazetteer.
+///
+///   * `Entity["Country", "Germany"]`            → the country's center
+///   * `Entity["City", {city, region, country}]` → the subdivision's center
+///   * `Entity["AdministrativeDivision", {region, country}]` → ditto
+///
+/// keshvar has no city-level coordinates, so a city falls back to the center of
+/// its administrative subdivision (the `region`), and that in turn falls back to
+/// the country's center if the region can't be matched.
+fn entity_to_latlon(expr: &Expr) -> Option<(f64, f64)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Entity" || args.len() != 2 {
+    return None;
+  }
+  let Expr::String(kind) = &args[0] else {
+    return None;
+  };
+  match kind.as_str() {
+    "Country" => match &args[1] {
+      Expr::String(name) => country_centroid(name),
+      _ => None,
+    },
+    "City" | "AdministrativeDivision" => {
+      let Expr::List(parts) = &args[1] else {
+        return None;
+      };
+      let strs: Vec<&str> = parts
+        .iter()
+        .filter_map(|p| match p {
+          Expr::String(s) => Some(s.as_str()),
+          _ => None,
+        })
+        .collect();
+      // The country is the last element; the region (if any) is the one before.
+      let country = keshvar_country(strs.last()?)?;
+      let region = strs.len().checked_sub(2).map(|i| strs[i]);
+      region
+        .and_then(|r| subdivision_centroid_in(&country, r))
+        .or_else(|| {
+          let g = country.geo();
+          Some((g.latitude(), g.longitude()))
+        })
+    }
+    _ => None,
+  }
+}
+
+/// Extract `(lat, lon)` from a geographic `Entity[…]`, `GeoPosition[{lat, lon[,
+/// h]}]`, or a bare `{lat, lon[, h]}` list.
 pub fn position_to_latlon(expr: &Expr) -> Option<(f64, f64)> {
+  if let Some(p) = entity_to_latlon(expr) {
+    return Some(p);
+  }
   let coords = match expr {
     Expr::FunctionCall { name, args }
       if name == "GeoPosition" && args.len() == 1 =>
@@ -260,6 +358,8 @@ enum GeoRange {
   Auto,
   /// The whole globe.
   World,
+  /// A disk of the given radius (meters) around the data center.
+  Radius(f64),
   /// An explicit `{{latmin, latmax}, {lonmin, lonmax}}` window.
   Explicit {
     lat0: f64,
@@ -276,6 +376,10 @@ fn parse_geo_range(expr: &Expr) -> Option<GeoRange> {
       "All" | "Automatic" => Some(GeoRange::Auto),
       _ => None,
     },
+    // GeoRange -> Quantity[r, unit]: a disk of radius r around the data.
+    Expr::FunctionCall { name, .. } if name == "Quantity" => {
+      radius_to_meters(expr).map(GeoRange::Radius)
+    }
     Expr::List(items) if items.len() == 2 => {
       if let (Expr::List(la), Expr::List(lo)) = (&items[0], &items[1])
         && la.len() == 2
@@ -306,8 +410,31 @@ fn compute_window(
   positions: &[(f64, f64)],
   range: &GeoRange,
 ) -> (f64, f64, f64, f64) {
+  /// Meters per degree of latitude (mean, spherical Earth).
+  const M_PER_DEG_LAT: f64 = 111_320.0;
   match range {
     GeoRange::World => (0.0, 0.0, 180.0, 90.0),
+    GeoRange::Radius(meters) => {
+      if positions.is_empty() {
+        return (0.0, 0.0, 180.0, 90.0);
+      }
+      // Center on the data's bounding-box center, then span ±radius each way.
+      let lat_min = positions.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+      let lat_max = positions
+        .iter()
+        .map(|p| p.0)
+        .fold(f64::NEG_INFINITY, f64::max);
+      let lon_min = positions.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+      let lon_max = positions
+        .iter()
+        .map(|p| p.1)
+        .fold(f64::NEG_INFINITY, f64::max);
+      let lat_c = (lat_min + lat_max) / 2.0;
+      let lon_c = (lon_min + lon_max) / 2.0;
+      let half_lat = meters / M_PER_DEG_LAT;
+      let half_lon = half_lat / lon_scale(lat_c);
+      (lon_c, lat_c, half_lon, half_lat)
+    }
     GeoRange::Explicit {
       lat0,
       lat1,
@@ -1155,6 +1282,71 @@ fn render_legend(svg: &mut String, leg: &Legend, map_width: f64, height: f64) {
        font-size=\"11\" fill=\"rgb(60,60,60)\">{}</text>\n",
       format_legend_value(value)
     ));
+  }
+}
+
+#[cfg(test)]
+mod entity_resolution_tests {
+  use super::*;
+
+  fn city(parts: &[&str]) -> Expr {
+    Expr::FunctionCall {
+      name: "Entity".into(),
+      args: vec![
+        Expr::String("City".into()),
+        Expr::List(
+          parts
+            .iter()
+            .map(|p| Expr::String((*p).into()))
+            .collect::<Vec<_>>()
+            .into(),
+        ),
+      ]
+      .into(),
+    }
+  }
+
+  #[test]
+  fn city_entity_resolves_to_subdivision_centroid() {
+    // keshvar has no city coordinates, so Munich resolves to the center of its
+    // administrative subdivision, Bavaria (Bayern, DE-BY).
+    let (lat, lon) =
+      entity_to_latlon(&city(&["Munich", "Bavaria", "Germany"])).unwrap();
+    assert!((lat - 48.7904472).abs() < 1e-3, "lat {lat}");
+    assert!((lon - 11.4978895).abs() < 1e-3, "lon {lon}");
+  }
+
+  #[test]
+  fn region_matches_name_translation_and_code() {
+    // The English name, the local name and the ISO 3166-2 code all match.
+    let de = keshvar_country("Germany").unwrap();
+    let by = subdivision_centroid_in(&de, "Bavaria").unwrap();
+    assert_eq!(subdivision_centroid_in(&de, "Bayern"), Some(by));
+    assert_eq!(subdivision_centroid_in(&de, "by"), Some(by));
+  }
+
+  #[test]
+  fn unknown_region_falls_back_to_country_centroid() {
+    // A city whose region can't be matched still resolves to the country center.
+    let (lat, lon) =
+      entity_to_latlon(&city(&["Nowhere", "Atlantis", "Germany"])).unwrap();
+    assert!((lat - 51.165691).abs() < 1e-3, "lat {lat}");
+    assert!((lon - 10.451526).abs() < 1e-3, "lon {lon}");
+  }
+
+  #[test]
+  fn country_entity_resolves_to_country_centroid() {
+    let e = Expr::FunctionCall {
+      name: "Entity".into(),
+      args: vec![
+        Expr::String("Country".into()),
+        Expr::String("France".into()),
+      ]
+      .into(),
+    };
+    let (lat, lon) = entity_to_latlon(&e).unwrap();
+    assert!((lat - 46.227638).abs() < 1e-2, "lat {lat}");
+    assert!((lon - 2.213749).abs() < 1e-2, "lon {lon}");
   }
 }
 

@@ -76,6 +76,9 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Most lists stay backed by Vec<Expr> (cheap, contiguous slices). Lists
 # that hit `push_front` upgrade to imbl::Vector for O(log N) prepends.
 imbl = "5"
+# Country / subdivision gazetteer (names, translations, geo coordinates) used
+# to resolve geographic Entity[…] specifications to positions.
+keshvar = { version = "0.7", features = ["subdivisions", "geo", "translations", "search-translations"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.resvg]
 version = "0.47"
