@@ -203,6 +203,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "InverseGammaDistribution" => pdf_inverse_gamma(dargs, x),
     "GammaDistribution" => pdf_gamma(dargs, x),
     "BetaDistribution" => pdf_beta(dargs, x),
+    "KumaraswamyDistribution" => pdf_kumaraswamy(dargs, x),
     "StudentTDistribution" => pdf_student_t(dargs, x),
     "LogNormalDistribution" => pdf_lognormal(dargs, x),
     "ChiSquareDistribution" => pdf_chi_square(dargs, x),
@@ -1773,6 +1774,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
+    "KumaraswamyDistribution" => cdf_kumaraswamy(dargs, x),
     "LogNormalDistribution" => cdf_lognormal(dargs, x),
     "ChiSquareDistribution" => cdf_chi_square(dargs, x),
     "ParetoDistribution" => cdf_pareto(dargs, x),
@@ -3795,6 +3797,25 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "KumaraswamyDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "KumaraswamyDistribution expects 2 arguments".into(),
+        ));
+      }
+      let (a, b) = (dargs[0].clone(), dargs[1].clone());
+      let beta = |y: Expr| Expr::FunctionCall {
+        name: "Beta".to_string(),
+        args: vec![b.clone(), y].into(),
+      };
+      // Mean = b Beta[b, 1 + 1/a]; raw 2nd moment = b Beta[b, 1 + 2/a].
+      let mean =
+        times(b.clone(), beta(plus(int(1), divide(int(1), a.clone()))));
+      let raw2 = times(b.clone(), beta(plus(int(1), divide(int(2), a))));
+      // Variance = E[x^2] - Mean^2.
+      let var = eval(minus(raw2, power(mean.clone(), int(2))))?;
+      Ok((mean, var))
+    }
     "BetaNegativeBinomialDistribution" => {
       if dargs.len() != 3 {
         return Err(InterpreterError::EvaluationError(
@@ -5108,6 +5129,47 @@ fn pdf_beta(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond =
     comparison3(int(0), ComparisonOp::Less, x, ComparisonOp::Less, int(1));
   eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// PDF[KumaraswamyDistribution[a, b], x] =
+///   Piecewise[{{a b x^(a-1) (1 - x^a)^(b-1), 0 < x < 1}}, 0].
+fn pdf_kumaraswamy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "KumaraswamyDistribution expects 2 arguments".into(),
+    ));
+  }
+  let (a, b) = (dargs[0].clone(), dargs[1].clone());
+  let x_pow = power(x.clone(), minus(a.clone(), int(1)));
+  let one_minus = power(
+    minus(int(1), power(x.clone(), a.clone())),
+    minus(b.clone(), int(1)),
+  );
+  let value = times(times(a, b), times(x_pow, one_minus));
+  let cond =
+    comparison3(int(0), ComparisonOp::Less, x, ComparisonOp::Less, int(1));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[KumaraswamyDistribution[a, b], x] =
+///   Piecewise[{{1 - (1 - x^a)^b, 0 < x < 1}, {1, x >= 1}}, 0].
+fn cdf_kumaraswamy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "KumaraswamyDistribution expects 2 arguments".into(),
+    ));
+  }
+  let (a, b) = (dargs[0].clone(), dargs[1].clone());
+  let value = minus(int(1), power(minus(int(1), power(x.clone(), a)), b));
+  let cond1 = comparison3(
+    int(0),
+    ComparisonOp::Less,
+    x.clone(),
+    ComparisonOp::Less,
+    int(1),
+  );
+  let cond2 = comparison(x, ComparisonOp::GreaterEqual, int(1));
+  eval(piecewise(vec![(value, cond1), (int(1), cond2)], int(0)))
 }
 
 /// CDF[BetaDistribution[a, b], x] = Piecewise[{{BetaRegularized[x, a, b], 0 < x < 1}, {1, x >= 1}}, 0]

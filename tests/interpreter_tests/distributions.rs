@@ -4556,3 +4556,52 @@ mod beta_negative_binomial_distribution {
     );
   }
 }
+
+// KumaraswamyDistribution[a, b] — a continuous distribution on (0, 1).
+mod kumaraswamy_distribution {
+  use super::*;
+
+  #[test]
+  fn mean_variance() {
+    assert_eq!(
+      interpret("Mean[KumaraswamyDistribution[a, b]]").unwrap(),
+      "b*Beta[b, 1 + a^(-1)]"
+    );
+    assert_eq!(
+      interpret("Variance[KumaraswamyDistribution[a, b]]").unwrap(),
+      "-(b^2*Beta[b, 1 + a^(-1)]^2) + b*Beta[b, 1 + 2/a]"
+    );
+    assert_eq!(
+      interpret("Mean[KumaraswamyDistribution[2, 3]]").unwrap(),
+      "16/35"
+    );
+    assert_eq!(
+      interpret("Variance[KumaraswamyDistribution[2, 3]]").unwrap(),
+      "201/4900"
+    );
+  }
+
+  #[test]
+  fn pdf_and_cdf() {
+    assert_eq!(
+      interpret("PDF[KumaraswamyDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{a*b*x^(-1 + a)*(1 - x^a)^(-1 + b), 0 < x < 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[KumaraswamyDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{1 - (1 - x^a)^b, 0 < x < 1}, {1, x >= 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[KumaraswamyDistribution[2, 3], 1/2]").unwrap(),
+      "37/64"
+    );
+  }
+
+  #[test]
+  fn head_stays_unevaluated() {
+    assert_eq!(
+      interpret("KumaraswamyDistribution[a, b]").unwrap(),
+      "KumaraswamyDistribution[a, b]"
+    );
+  }
+}

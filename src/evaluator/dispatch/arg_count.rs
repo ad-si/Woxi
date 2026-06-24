@@ -104,6 +104,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Beta" => Some((2, 4)),
     "BetaRegularized" => Some((3, 4)),
     "BetaDistribution" => Some((2, 2)),
+    "KumaraswamyDistribution" => Some((2, 2)),
     "Between" => Some((1, 2)),
     "Binarize" => Some((1, 2)),
     "BinaryDistance" => Some((2, 2)),
