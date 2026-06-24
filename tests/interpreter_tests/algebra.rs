@@ -386,6 +386,25 @@ mod simplify {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
 
+  // Simplify must keep the canonical radical form for a numeric base:
+  // `2*Sqrt[2]` (= 2^1 * 2^(1/2)) stays factored rather than merging into the
+  // less-standard `2^(3/2)`. Symbolic bases still merge (`x*Sqrt[x]`).
+  #[test]
+  fn keeps_numeric_radical_factored() {
+    assert_eq!(interpret("Simplify[2*Sqrt[2]]").unwrap(), "2*Sqrt[2]");
+    assert_eq!(interpret("Simplify[3*Sqrt[3]]").unwrap(), "3*Sqrt[3]");
+    assert_eq!(interpret("Simplify[5*5^(1/2)]").unwrap(), "5*Sqrt[5]");
+    assert_eq!(interpret("Simplify[2*2^(1/3)]").unwrap(), "2*2^(1/3)");
+    // A bare radical power extracts its integer factor.
+    assert_eq!(interpret("Simplify[2^(3/2)]").unwrap(), "2*Sqrt[2]");
+    assert_eq!(interpret("Simplify[Sqrt[8]]").unwrap(), "2*Sqrt[2]");
+  }
+
+  #[test]
+  fn symbolic_radical_still_merges() {
+    assert_eq!(interpret("Simplify[x*Sqrt[x]]").unwrap(), "x^(3/2)");
+  }
+
   #[test]
   fn combine_like_terms_implicit_coefficient() {
     // `x + 2 x` should collapse to `3*x` without needing Simplify.

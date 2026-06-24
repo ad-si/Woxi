@@ -5715,6 +5715,19 @@ pub fn simplify_product(a: &Expr, b: &Expr) -> Expr {
       left: Box::new(exp_a),
       right: Box::new(exp_b),
     });
+    // For a numeric (integer) base, merging into a single power must not hide
+    // the canonical radical form: `2 * Sqrt[2]` is `2^1 * 2^(1/2)`, and
+    // wolframscript keeps `2*Sqrt[2]` rather than `2^(3/2)`. Route the merged
+    // power through the power evaluator, which extracts integer factors back
+    // out (`2^(3/2)` → `2*Sqrt[2]`). Symbolic bases keep `x^(3/2)`.
+    if matches!(&base_a, Expr::Integer(_))
+      && let Ok(p) = crate::functions::math_ast::power_ast(&[
+        base_a.clone(),
+        new_exp.clone(),
+      ])
+    {
+      return p;
+    }
     return simplify(Expr::BinaryOp {
       op: BinaryOperator::Power,
       left: Box::new(base_a),
