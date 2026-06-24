@@ -1236,6 +1236,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MaxwellDistribution" => Some((1, 1)),
     "BirnbaumSaundersDistribution" => Some((2, 2)),
     "LevyDistribution" => Some((2, 2)),
+    "LindleyDistribution" => Some((1, 1)),
     "WignerSemicircleDistribution" => Some((1, 2)),
     "SechDistribution" => Some((0, 2)),
     "MoyalDistribution" => Some((0, 2)),

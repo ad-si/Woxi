@@ -4830,3 +4830,57 @@ mod levy_distribution {
     assert_eq!(interpret("CDF[LevyDistribution[1, 1], 0]").unwrap(), "0");
   }
 }
+
+mod lindley_distribution {
+  use super::*;
+
+  #[test]
+  fn mean_variance_sd() {
+    assert_eq!(
+      interpret("Mean[LindleyDistribution[d]]").unwrap(),
+      "(2 + d)/(d*(1 + d))"
+    );
+    assert_eq!(
+      interpret("Variance[LindleyDistribution[d]]").unwrap(),
+      "2/d^2 - (1 + d)^(-2)"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[LindleyDistribution[d]]").unwrap(),
+      "Sqrt[2/d^2 - (1 + d)^(-2)]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[LindleyDistribution[d], x]").unwrap(),
+      "Piecewise[{{(d^2*(1 + x))/((1 + d)*E^(d*x)), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[LindleyDistribution[2], 1]").unwrap(),
+      "8/(3*E^2)"
+    );
+    assert_eq!(interpret("PDF[LindleyDistribution[1], 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[LindleyDistribution[d], x]").unwrap(),
+      "Piecewise[{{1 - (1 + d + d*x)/((1 + d)*E^(d*x)), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_numeric() {
+    assert_eq!(
+      interpret("CDF[LindleyDistribution[2], 1]").unwrap(),
+      "1 - 5/(3*E^2)"
+    );
+    assert_eq!(interpret("CDF[LindleyDistribution[1], 0]").unwrap(), "0");
+  }
+}

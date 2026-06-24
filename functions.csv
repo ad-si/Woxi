@@ -3781,7 +3781,7 @@ FourierDCTMatrix,,,,9.0,3889
 HandlerFunctionsKeys,,🚫,,11.0,3889
 HostLookup,,🚫,,10.3,3889
 ImageCooccurrence,,🚫,,8.0,3889
-LindleyDistribution,,,,8.0,3889
+LindleyDistribution,Lindley distribution (Mean Variance and exponential PDF/CDF on positive reals),✅,pure,8.0,3889
 MardiaKurtosisTest,,,,8.0,3889
 ProcessDirectory,,🚫,,10.0,3889
 ResourceUpdate,,🚫,,11.2,3889

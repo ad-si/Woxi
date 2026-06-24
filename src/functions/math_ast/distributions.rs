@@ -188,6 +188,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MaxwellDistribution" => pdf_maxwell(dargs, x),
     "BirnbaumSaundersDistribution" => pdf_birnbaum_saunders(dargs, x),
     "LevyDistribution" => pdf_levy(dargs, x),
+    "LindleyDistribution" => pdf_lindley(dargs, x),
     "WignerSemicircleDistribution" => pdf_wigner_semicircle(dargs, x),
     "SechDistribution" => pdf_sech(dargs, x),
     "MoyalDistribution" => pdf_moyal(dargs, x),
@@ -1750,6 +1751,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MaxwellDistribution" => cdf_maxwell(dargs, x),
     "BirnbaumSaundersDistribution" => cdf_birnbaum_saunders(dargs, x),
     "LevyDistribution" => cdf_levy(dargs, x),
+    "LindleyDistribution" => cdf_lindley(dargs, x),
     "WignerSemicircleDistribution" => cdf_wigner_semicircle(dargs, x),
     "SechDistribution" => cdf_sech(dargs, x),
     "MoyalDistribution" => cdf_moyal(dargs, x),
@@ -4611,6 +4613,25 @@ fn distribution_mean_variance(
       // Heavy-tailed: both Mean and Variance diverge.
       let infinity = Expr::Identifier("Infinity".to_string());
       Ok((infinity.clone(), infinity))
+    }
+    "LindleyDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "LindleyDistribution expects 1 argument".into(),
+        ));
+      }
+      let d = dargs[0].clone();
+      // Mean = (2 + d) / (d (1 + d))
+      let mean = divide(
+        plus(int(2), d.clone()),
+        times(d.clone(), plus(int(1), d.clone())),
+      );
+      // Variance = 2/d^2 - (1 + d)^(-2)
+      let var = minus(
+        divide(int(2), power(d.clone(), int(2))),
+        power(plus(int(1), d), int(-2)),
+      );
+      Ok((mean, var))
     }
     "BirnbaumSaundersDistribution" => {
       if dargs.len() != 2 {
@@ -11386,6 +11407,87 @@ pub fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let piece = body(&x)?;
   let cond = comparison(shift(&x), ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// PDF[LindleyDistribution[d], x] =
+/// Piecewise[{{(d^2 (1 + x))/((1 + d) E^(d x)), x > 0}}, 0].
+pub fn pdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "LindleyDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 1 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let d = dargs[0].clone();
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let num = times(power(d.clone(), int(2)), plus(int(1), at.clone()));
+    let denom = times(
+      plus(int(1), d.clone()),
+      power(e(), times(d.clone(), at.clone())),
+    );
+    eval(divide(num, denom))
+  };
+  if ms_numeric(&x).is_some() {
+    if ms_numeric(&x).is_some_and(|v| v <= 0.0) {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = body(&x)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// CDF[LindleyDistribution[d], x] =
+/// Piecewise[{{1 - (1 + d + d x)/((1 + d) E^(d x)), x > 0}}, 0].
+pub fn cdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "LindleyDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 1 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let d = dargs[0].clone();
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    // 1 - (1 + d + d x)/((1 + d) E^(d x))
+    let num = plus(plus(int(1), d.clone()), times(d.clone(), at.clone()));
+    let denom = times(
+      plus(int(1), d.clone()),
+      power(e(), times(d.clone(), at.clone())),
+    );
+    eval(minus(int(1), divide(num, denom)))
+  };
+  if ms_numeric(&x).is_some() {
+    if ms_numeric(&x).is_some_and(|v| v <= 0.0) {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = body(&x)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
   Ok(piecewise(vec![(piece, cond)], int(0)))
 }
 
