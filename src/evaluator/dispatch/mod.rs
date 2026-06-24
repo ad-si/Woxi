@@ -6670,28 +6670,48 @@ pub fn evaluate_function_call_ast_inner(
       && gargs.len() >= 2
       && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     {
-      // Check if graph is directed or undirected
+      // Check if graph is directed or undirected. A Rule-form edge (a -> b)
+      // is a directed edge in wolframscript, just like DirectedEdge[a, b];
+      // only an explicit vertex list leaves edges in Rule form, so this must
+      // be recognised or such graphs misroute to the undirected branch.
       let is_directed = edges.iter().any(|e| {
-            matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
-          });
+        matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
+          || matches!(e, Expr::Rule { .. })
+      });
 
       let comp_list = if is_directed {
-        // Strongly connected components via petgraph's Kosaraju SCC
+        // Strongly connected components. Kosaraju gives the correct *within*-
+        // component vertex order (matching wolframscript), while Tarjan visits
+        // nodes in index order and returns components in reverse topological
+        // order (sink component first) — wolframscript's *inter*-component
+        // order. Combine them: take Kosaraju's components, then reorder them
+        // to follow Tarjan's ordering. Never sort by size.
         let (pg_digraph, _) =
           crate::functions::graph::build_digraph(vertices, edges);
-        let scc = petgraph::algo::kosaraju_scc(&pg_digraph);
-        let mut components: Vec<Vec<Expr>> = scc
+        let kosaraju = petgraph::algo::kosaraju_scc(&pg_digraph);
+        let tarjan = petgraph::algo::tarjan_scc(&pg_digraph);
+        // Rank each node by the position of its component in Tarjan's output.
+        let mut tarjan_rank: std::collections::HashMap<usize, usize> =
+          std::collections::HashMap::new();
+        for (rank, comp) in tarjan.iter().enumerate() {
+          for ni in comp {
+            tarjan_rank.insert(ni.index(), rank);
+          }
+        }
+        let mut components: Vec<(usize, Vec<Expr>)> = kosaraju
           .into_iter()
           .map(|comp| {
-            comp
+            let rank =
+              comp.first().map(|ni| tarjan_rank[&ni.index()]).unwrap_or(0);
+            let verts = comp
               .into_iter()
               .map(|ni| vertices[ni.index()].clone())
-              .collect()
+              .collect();
+            (rank, verts)
           })
           .collect();
-        // Sort components by size (largest first)
-        components.sort_by(|a, b| b.len().cmp(&a.len()));
-        components
+        components.sort_by_key(|(rank, _)| *rank);
+        components.into_iter().map(|(_, verts)| verts).collect()
       } else {
         // Undirected: use petgraph connected_components
         let (pg_graph, _) = build_undirected_graph(vertices, edges);

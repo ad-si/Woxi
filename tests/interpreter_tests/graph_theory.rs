@@ -68,6 +68,47 @@ mod connected_components {
       "ConnectedComponents[foo]"
     );
   }
+
+  // wolframscript lists strongly connected components in reverse topological
+  // order (a sink component first), not sorted by size.
+  #[test]
+  fn scc_reverse_topological_order() {
+    assert_eq!(
+      interpret("ConnectedComponents[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "{{3}, {2}, {1}}"
+    );
+    assert_eq!(
+      interpret("ConnectedComponents[Graph[{1 -> 2, 3 -> 4}]]").unwrap(),
+      "{{2}, {1}, {4}, {3}}"
+    );
+    assert_eq!(
+      interpret("ConnectedComponents[Graph[{1 -> 2, 3 -> 2, 4 -> 5}]]")
+        .unwrap(),
+      "{{2}, {1}, {3}, {5}, {4}}"
+    );
+    // A cyclic component keeps its natural vertex order and comes before the
+    // upstream singleton.
+    assert_eq!(
+      interpret("ConnectedComponents[Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 2}]]")
+        .unwrap(),
+      "{{2, 3, 4}, {1}}"
+    );
+  }
+
+  // Rule-form edges (a -> b) are directed even when the Graph is given with an
+  // explicit vertex list; the SCC of a 2-cycle must still be detected.
+  #[test]
+  fn explicit_vertices_rule_edges_are_directed() {
+    assert_eq!(
+      interpret("ConnectedComponents[Graph[{1, 2, 3}, {1 -> 2, 2 -> 1}]]")
+        .unwrap(),
+      "{{1, 2}, {3}}"
+    );
+    assert_eq!(
+      interpret("ConnectedComponents[Graph[{1, 2, 3}, {1 -> 2}]]").unwrap(),
+      "{{2}, {1}, {3}}"
+    );
+  }
 }
 
 mod connected_graph_q {
