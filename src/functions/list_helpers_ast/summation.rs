@@ -3410,6 +3410,184 @@ fn try_telescoping_rational_sum(
   Ok(Some(crate::functions::math_ast::make_rational(n, d)))
 }
 
+/// Evaluate an ascending polynomial (rational coefficients) at a rational point.
+fn tr_poly_eval_rat(coeffs: &[(i128, i128)], x: (i128, i128)) -> (i128, i128) {
+  let mut acc = (0i128, 1i128);
+  for c in coeffs.iter().rev() {
+    acc = tr_add(tr_mul(acc, x), *c);
+  }
+  acc
+}
+
+/// Evaluate the derivative of an ascending polynomial at a rational point.
+fn tr_poly_deriv_eval_rat(
+  coeffs: &[(i128, i128)],
+  x: (i128, i128),
+) -> (i128, i128) {
+  let deriv: Vec<(i128, i128)> = coeffs
+    .iter()
+    .enumerate()
+    .skip(1)
+    .map(|(k, c)| tr_mul(*c, (k as i128, 1)))
+    .collect();
+  tr_poly_eval_rat(&deriv, x)
+}
+
+/// Sum of a convergent rational summand with simple RATIONAL poles whose
+/// residues cancel within each fractional class, telescoping to an exact
+/// rational, e.g. `Sum[1/(4 n^2 - 1), {n, 1, Infinity}] = 1/2`. Generalises
+/// `try_telescoping_rational_sum` (integer poles) via the residue/digamma
+/// identity `Sum[P/Q] = -sum_r residue_r * PolyGamma[0, min - r]`, with
+/// `PolyGamma[0, q0 + m] = PolyGamma[0, q0] + sum_{j<m} 1/(q0 + j)`. The
+/// transcendental `PolyGamma[0, q0]` terms cancel only when the residues in each
+/// fractional class `q0` sum to zero; otherwise the value is transcendental
+/// (e.g. `Sum[1/(9 n^2 - 1)]` involves Pi) and is left unevaluated.
+fn try_rational_pole_telescoping_sum(
+  body: &Expr,
+  var_name: &str,
+  min: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  use std::collections::{HashMap, HashSet};
+  let trim = |mut v: Vec<(i128, i128)>| {
+    while v.len() > 1 && v.last() == Some(&(0, 1)) {
+      v.pop();
+    }
+    v
+  };
+  let mut num = tr_coeff_list(body, var_name, "Numerator")
+    .map(&trim)
+    .unwrap_or_default();
+  let mut den = tr_coeff_list(body, var_name, "Denominator")
+    .map(&trim)
+    .unwrap_or_default();
+  if num.is_empty() {
+    let recip = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![body.clone(), Expr::Integer(-1)].into(),
+    };
+    if let Some(q) = tr_coeff_list(&recip, var_name, "Together").map(&trim)
+      && q.len() > 1
+    {
+      num = vec![(1, 1)];
+      den = q;
+    }
+  }
+  if num.is_empty() || den.is_empty() {
+    return Ok(None);
+  }
+  let deg_num = num.len() - 1;
+  let deg_den = den.len() - 1;
+  // Need a genuine rational function that decays at least like 1/n^2.
+  if deg_den < deg_num + 2 || deg_den == 0 {
+    return Ok(None);
+  }
+
+  // Integer-clear the denominator for the rational-root search.
+  let lcm_den = den.iter().fold(1i128, |acc, &(_, d)| {
+    let g = tr_gcd(acc, d);
+    acc / g * d
+  });
+  let mut int_coeffs: Vec<i128> =
+    den.iter().map(|&(n, d)| n * (lcm_den / d)).collect();
+  let mut roots: Vec<(i128, i128)> = Vec::new();
+  // Factor out n (root 0); a repeated zero root is not handled here.
+  let mut zero_mult = 0;
+  while int_coeffs.len() > 1 && int_coeffs[0] == 0 {
+    zero_mult += 1;
+    int_coeffs.remove(0);
+  }
+  if zero_mult > 1 {
+    return Ok(None);
+  }
+  if zero_mult == 1 {
+    roots.push((0, 1));
+  }
+  // Rational root theorem on the reduced (nonzero constant term) polynomial.
+  if int_coeffs.len() > 1 {
+    const LIMIT: i128 = 100_000;
+    let c0 = int_coeffs[0].abs();
+    let cd = int_coeffs[int_coeffs.len() - 1].abs();
+    if c0 == 0 || c0 > LIMIT || cd > LIMIT {
+      return Ok(None);
+    }
+    let divisors =
+      |m: i128| -> Vec<i128> { (1..=m).filter(|d| m % d == 0).collect() };
+    let rat: Vec<(i128, i128)> = int_coeffs.iter().map(|&c| (c, 1)).collect();
+    let mut seen: HashSet<(i128, i128)> = HashSet::new();
+    for p in divisors(c0) {
+      for q in divisors(cd) {
+        for sgn in [1i128, -1] {
+          let r = tr_reduce(sgn * p, q);
+          if !seen.insert(r) {
+            continue;
+          }
+          if tr_poly_eval_rat(&rat, r) == (0, 1) {
+            roots.push(r);
+          }
+        }
+      }
+    }
+  }
+  // Q must split completely into distinct rational linear factors.
+  if roots.len() != deg_den {
+    return Ok(None);
+  }
+  // Every pole must lie strictly below the integer summation start, so q = min-r
+  // is positive and no integer pole falls in [min, Infinity).
+  for &r in &roots {
+    if r.0 >= min * r.1 {
+      return Ok(None);
+    }
+  }
+
+  let mut total = (0i128, 1i128);
+  let mut residue_sum = (0i128, 1i128);
+  let mut class_residue: HashMap<(i128, i128), (i128, i128)> = HashMap::new();
+  for &r in &roots {
+    let pr = tr_poly_eval_rat(&num, r);
+    let dpr = tr_poly_deriv_eval_rat(&den, r);
+    if dpr.0 == 0 {
+      return Ok(None);
+    }
+    let c = tr_mul(pr, (dpr.1, dpr.0)); // residue = P(r)/Q'(r)
+    residue_sum = tr_add(residue_sum, c);
+    // q = min - r, decomposed as q0 + m with q0 in (0, 1], m >= 0.
+    let q = tr_add((min, 1), (-r.0, r.1));
+    if q.0 <= 0 {
+      return Ok(None);
+    }
+    let floor = q.0.div_euclid(q.1);
+    let frac = tr_reduce(q.0 - floor * q.1, q.1);
+    let (q0, m) = if frac.0 == 0 {
+      ((1, 1), floor - 1)
+    } else {
+      (frac, floor)
+    };
+    if m > 100_000 {
+      return Ok(None); // guard against overflow in the harmonic accumulation
+    }
+    let e = class_residue.entry(q0).or_insert((0, 1));
+    *e = tr_add(*e, c);
+    // inner = sum_{j=0}^{m-1} 1/(q0 + j)
+    let mut inner = (0i128, 1i128);
+    for j in 0..m {
+      let denom = tr_add(q0, (j, 1));
+      inner = tr_add(inner, (denom.1, denom.0));
+    }
+    total = tr_add(total, tr_mul((-c.0, c.1), inner));
+  }
+  // Convergence (sum of residues zero) and a rational value (each fractional
+  // class cancels, so the transcendental PolyGamma[0, q0] terms drop out).
+  if residue_sum.0 != 0 {
+    return Ok(None);
+  }
+  if class_residue.values().any(|v| v.0 != 0) {
+    return Ok(None);
+  }
+  let (n, d) = tr_reduce(total.0, total.1);
+  Ok(Some(crate::functions::math_ast::make_rational(n, d)))
+}
+
 fn try_infinite_sum(
   body: &Expr,
   var_name: &str,
@@ -3688,6 +3866,13 @@ fn try_infinite_sum(
   // exact rational, e.g. Sum[1/(n(n+1)), {n, 1, Infinity}] = 1. Handled for
   // any finite lower bound >= 1.
   if let Some(result) = try_telescoping_rational_sum(body, var_name, min)? {
+    return Ok(Some(result));
+  }
+
+  // Same idea, but for simple rational poles whose residues cancel within each
+  // fractional class, e.g. Sum[1/(4 n^2 - 1), {n, 1, Infinity}] = 1/2.
+  if let Some(result) = try_rational_pole_telescoping_sum(body, var_name, min)?
+  {
     return Ok(Some(result));
   }
 

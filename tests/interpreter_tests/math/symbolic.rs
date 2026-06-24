@@ -220,6 +220,53 @@ mod sum {
     );
   }
 
+  // Simple RATIONAL poles whose residues cancel within each fractional class
+  // also telescope to an exact rational, e.g. 1/(4n^2-1) = 1/((2n-1)(2n+1)).
+  #[test]
+  fn infinite_sum_telescoping_rational_poles() {
+    assert_eq!(
+      interpret("Sum[1/(4 n^2 - 1), {n, 1, Infinity}]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Sum[1/((2 n - 1) (2 n + 1)), {n, 1, Infinity}]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Sum[1/((3 n - 1) (3 n + 2)), {n, 1, Infinity}]").unwrap(),
+      "1/6"
+    );
+    assert_eq!(
+      interpret("Sum[1/((4 n - 1) (4 n + 3)), {n, 1, Infinity}]").unwrap(),
+      "1/12"
+    );
+    assert_eq!(
+      interpret("Sum[1/((2 n + 1) (2 n + 3)), {n, 1, Infinity}]").unwrap(),
+      "1/6"
+    );
+    // A numerator coefficient is carried through.
+    assert_eq!(
+      interpret("Sum[2/(4 n^2 - 1), {n, 1, Infinity}]").unwrap(),
+      "1"
+    );
+    // A non-unit lower bound works.
+    assert_eq!(
+      interpret("Sum[1/((2 n - 1) (2 n + 1)), {n, 2, Infinity}]").unwrap(),
+      "1/6"
+    );
+  }
+
+  // When the residues do NOT cancel within each fractional class the value is
+  // transcendental (Pi / Log), which Woxi does not produce, so it stays
+  // unevaluated rather than returning a wrong rational.
+  #[test]
+  fn infinite_sum_rational_poles_transcendental_unevaluated() {
+    assert_eq!(
+      interpret("Sum[1/(9 n^2 - 1), {n, 1, Infinity}]").unwrap(),
+      "Sum[(9*n^2 - 1)^(-1), {n, 1, Infinity}]"
+    );
+  }
+
   // Infinite geometric series with a numeric ratio and a lower bound >= 2
   // reduce to the min = 1 series minus the head terms, giving an exact rational.
   #[test]
