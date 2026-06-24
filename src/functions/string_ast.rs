@@ -3099,6 +3099,20 @@ fn number_form_to_string(x: &Expr, n: i64) -> Option<String> {
 /// scientific notation, matching wolframscript's default ExponentFunction;
 /// integers and in-range reals use the fixed-notation renderer.
 fn number_form_render(x: &Expr, n: i64) -> Option<String> {
+  let (mantissa, exp) = number_form_parts(x, n)?;
+  Some(sci_parts_to_2d_string(&mantissa, exp))
+}
+
+/// Decompose `NumberForm[x, n]` (and single-argument `NumberForm[x]`, where
+/// `n = 6`) into a mantissa string and optional base-10 exponent. A real whose
+/// decimal exponent (of the value rounded to `n` significant figures) is `>= 6`
+/// or `<= -6` switches to scientific notation (matching wolframscript's default
+/// ExponentFunction) and yields a `Some(exp)`; integers and in-range reals
+/// render in fixed notation with a `None` exponent.
+pub(crate) fn number_form_parts(
+  x: &Expr,
+  n: i64,
+) -> Option<(String, Option<i64>)> {
   if let Expr::Real(f) = x
     && *f != 0.0
     && n >= 1
@@ -3115,10 +3129,20 @@ fn number_form_render(x: &Expr, n: i64) -> Option<String> {
       rounded.log10().floor() as i64
     };
     if m >= 6 || m <= -6 {
-      return scientific_form_to_string(x, n);
+      return scientific_form_parts(x, n);
     }
   }
-  number_form_to_string(x, n)
+  Some((number_form_to_string(x, n)?, None))
+}
+
+/// Render `NumberForm[x, {n, f}]` as a `(mantissa, exponent)` pair. The fixed
+/// `f`-decimal-places renderer never produces a `× 10^e` factor, so the
+/// exponent is always `None`.
+pub(crate) fn number_form_fixed_parts(
+  x: &Expr,
+  f: i64,
+) -> Option<(String, Option<i64>)> {
+  Some((number_form_fixed_to_string(x, f)?, None))
 }
 
 /// Group a digit string into blocks of `block`, counting from the RIGHT (used
@@ -3257,9 +3281,22 @@ fn number_form_digit_block_to_string(
 /// figures. An exponent of 0 collapses to just the mantissa (`5.`). An integer
 /// `x` is shown unchanged.
 fn scientific_form_to_string(x: &Expr, n: i64) -> Option<String> {
+  let (mantissa, exp) = scientific_form_parts(x, n)?;
+  Some(sci_parts_to_2d_string(&mantissa, exp))
+}
+
+/// Decompose `ScientificForm[x]` / `ScientificForm[x, n]` into its mantissa
+/// string and (optional) base-10 exponent. The exponent is `None` when the
+/// value renders without a `× 10^e` factor (integer argument, or an exponent of
+/// zero). This drives both the `ToString` 2D text renderer and the box-form
+/// renderer used by the Playground/Studio SVG output.
+pub(crate) fn scientific_form_parts(
+  x: &Expr,
+  n: i64,
+) -> Option<(String, Option<i64>)> {
   // Integer argument: shown unchanged, ignoring the precision.
   if let Expr::Integer(i) = x {
-    return Some(i.to_string());
+    return Some((i.to_string(), None));
   }
   let v = match x {
     Expr::Real(f) => *f,
@@ -3280,11 +3317,23 @@ fn scientific_form_to_string(x: &Expr, n: i64) -> Option<String> {
     None => format!("{mantissa_raw}."),
   };
   if exp == 0 {
-    return Some(mantissa);
+    return Some((mantissa, None));
   }
-  let line2 = format!("{mantissa} \u{00d7} 10");
-  let indent = " ".repeat(line2.chars().count());
-  Some(format!("{indent}{exp}\n{line2}"))
+  Some((mantissa, Some(exp)))
+}
+
+/// Render a `(mantissa, exponent)` decomposition as the 2D text form used under
+/// `ToString`: the exponent sits as a superscript on the line above the
+/// `mantissa × 10` line. A `None` exponent collapses to just the mantissa.
+fn sci_parts_to_2d_string(mantissa: &str, exp: Option<i64>) -> String {
+  match exp {
+    None => mantissa.to_string(),
+    Some(e) => {
+      let line2 = format!("{mantissa} \u{00d7} 10");
+      let indent = " ".repeat(line2.chars().count());
+      format!("{indent}{e}\n{line2}")
+    }
+  }
 }
 
 /// Render `EngineeringForm[x]` / `EngineeringForm[x, n]` to a string: like
@@ -3293,9 +3342,20 @@ fn scientific_form_to_string(x: &Expr, n: i64) -> Option<String> {
 /// significant figures. An exponent of 0 collapses to just the mantissa. An
 /// integer `x` is shown unchanged.
 fn engineering_form_to_string(x: &Expr, n: i64) -> Option<String> {
+  let (mantissa, exp) = engineering_form_parts(x, n)?;
+  Some(sci_parts_to_2d_string(&mantissa, exp))
+}
+
+/// Decompose `EngineeringForm[x]` / `EngineeringForm[x, n]` into its mantissa
+/// string and (optional) base-10 exponent — like [`scientific_form_parts`] but
+/// the exponent is forced to a multiple of 3 (mantissa in `[1, 1000)`).
+pub(crate) fn engineering_form_parts(
+  x: &Expr,
+  n: i64,
+) -> Option<(String, Option<i64>)> {
   // Integer argument: shown unchanged, ignoring the precision.
   if let Expr::Integer(i) = x {
-    return Some(i.to_string());
+    return Some((i.to_string(), None));
   }
   let v = match x {
     Expr::Real(f) => *f,
@@ -3331,11 +3391,9 @@ fn engineering_form_to_string(x: &Expr, n: i64) -> Option<String> {
     mantissa
   };
   if eng_exp == 0 {
-    return Some(mantissa);
+    return Some((mantissa, None));
   }
-  let line2 = format!("{mantissa} \u{00d7} 10");
-  let indent = " ".repeat(line2.chars().count());
-  Some(format!("{indent}{eng_exp}\n{line2}"))
+  Some((mantissa, Some(eng_exp)))
 }
 
 /// Render `NumberForm[x, {n, f}]`: a real `x` shown with exactly `f` digits

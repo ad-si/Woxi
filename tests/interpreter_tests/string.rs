@@ -5034,6 +5034,62 @@ mod make_boxes {
       "SubsuperscriptBox[a, b, c]"
     );
   }
+
+  // Number-display forms render as 2D `mantissa × 10^exp` boxes (the form that
+  // the Playground/Studio SVG output draws), wrapped exactly like
+  // wolframscript's TagBox/InterpretationBox/StyleBox layers — not as a literal
+  // `ScientificForm[…]` function call.
+  #[test]
+  fn make_boxes_scientific_form() {
+    assert_eq!(
+      interpret("MakeBoxes[ScientificForm[12345.6]]").unwrap(),
+      "TagBox[InterpretationBox[StyleBox[RowBox[{1.23456,  \u{00d7} , \
+       SuperscriptBox[10, 4]}], ShowStringCharacters -> False], 12345.6, \
+       AutoDelete -> True], ScientificForm]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_engineering_form() {
+    // Exponent forced to a multiple of 3, mantissa in [1, 1000).
+    assert_eq!(
+      interpret("MakeBoxes[EngineeringForm[12345.6]]").unwrap(),
+      "TagBox[InterpretationBox[StyleBox[RowBox[{12.3456,  \u{00d7} , \
+       SuperscriptBox[10, 3]}], ShowStringCharacters -> False], 12345.6, \
+       AutoDelete -> True], EngineeringForm]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_number_form_in_range() {
+    // An in-range real renders as a plain string (no × 10^exp factor).
+    assert_eq!(
+      interpret("MakeBoxes[NumberForm[12345.6]]").unwrap(),
+      "TagBox[InterpretationBox[StyleBox[12345.6, ShowStringCharacters -> \
+       False], 12345.6, AutoDelete -> True], NumberForm]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_number_form_scientific_threshold() {
+    // |x| >= 10^6 switches NumberForm to 2D scientific notation.
+    assert_eq!(
+      interpret("MakeBoxes[NumberForm[1234567.8]]").unwrap(),
+      "TagBox[InterpretationBox[StyleBox[RowBox[{1.23457,  \u{00d7} , \
+       SuperscriptBox[10, 6]}], ShowStringCharacters -> False], \
+       1.2345678*^6, AutoDelete -> True], NumberForm]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_number_form_fixed_decimals() {
+    // NumberForm[x, {n, f}] pads to exactly f decimal places, no exponent.
+    assert_eq!(
+      interpret("MakeBoxes[NumberForm[3.14159, {6, 2}]]").unwrap(),
+      "TagBox[InterpretationBox[StyleBox[3.14, ShowStringCharacters -> \
+       False], 3.14159, AutoDelete -> True], NumberForm]"
+    );
+  }
 }
 
 mod raw_boxes {

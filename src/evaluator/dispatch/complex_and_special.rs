@@ -3421,6 +3421,103 @@ fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
   }
 }
 
+/// Box form of a `ScientificForm`/`EngineeringForm`/`NumberForm` call, matching
+/// wolframscript's
+/// `TagBox[InterpretationBox[StyleBox[<inner>, ShowStringCharacters -> False],
+/// <value>, AutoDelete -> True], <Head>]`. Returns `None` for heads/arguments
+/// these forms leave symbolic, so the caller renders the literal function call.
+fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
+  use crate::functions::string_ast;
+  // Default precision (n) for a missing second argument is 6 significant
+  // figures; an explicit integer second argument overrides it.
+  let precision = |arg: Option<&Expr>| -> Option<i64> {
+    match arg {
+      None => Some(6),
+      Some(Expr::Integer(n)) => Some(*n as i64),
+      _ => None,
+    }
+  };
+  let (mantissa, exp) = match name {
+    "ScientificForm" if args.len() == 1 || args.len() == 2 => {
+      string_ast::scientific_form_parts(&args[0], precision(args.get(1))?)?
+    }
+    "EngineeringForm" if args.len() == 1 || args.len() == 2 => {
+      string_ast::engineering_form_parts(&args[0], precision(args.get(1))?)?
+    }
+    "NumberForm" if args.len() == 1 => {
+      string_ast::number_form_parts(&args[0], 6)?
+    }
+    "NumberForm" if args.len() == 2 => match &args[1] {
+      Expr::Integer(n) => string_ast::number_form_parts(&args[0], *n as i64)?,
+      Expr::List(spec) if spec.len() == 2 => match &spec[1] {
+        Expr::Integer(f) => {
+          string_ast::number_form_fixed_parts(&args[0], *f as i64)?
+        }
+        _ => return None,
+      },
+      _ => return None,
+    },
+    _ => return None,
+  };
+  Some(wrap_number_display_box(
+    scientific_value_box(&mantissa, exp),
+    &args[0],
+    name,
+  ))
+}
+
+/// Inner box for a decomposed number-display form: `String(mantissa)` when there
+/// is no `× 10^e` factor, otherwise
+/// `RowBox[{mantissa, " × ", SuperscriptBox["10", exp]}]`.
+fn scientific_value_box(mantissa: &str, exp: Option<i64>) -> Expr {
+  match exp {
+    None => Expr::String(mantissa.to_string()),
+    Some(e) => Expr::FunctionCall {
+      name: "RowBox".to_string(),
+      args: vec![Expr::List(
+        vec![
+          Expr::String(mantissa.to_string()),
+          Expr::String(" \u{00d7} ".to_string()),
+          Expr::FunctionCall {
+            name: "SuperscriptBox".to_string(),
+            args: vec![
+              Expr::String("10".to_string()),
+              Expr::String(e.to_string()),
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      )]
+      .into(),
+    },
+  }
+}
+
+/// Wrap an inner display box with wolframscript's
+/// `TagBox[InterpretationBox[StyleBox[inner, ShowStringCharacters -> False],
+/// value, AutoDelete -> True], head]`. The interpretation/tag/style layers are
+/// rendering pass-throughs for the SVG layout engine; they preserve the link to
+/// the original numeric `value` and the form head for `MakeBoxes`.
+fn wrap_number_display_box(inner: Expr, value: &Expr, head: &str) -> Expr {
+  let rule = |k: &str, v: &str| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(k.to_string())),
+    replacement: Box::new(Expr::Identifier(v.to_string())),
+  };
+  let style = Expr::FunctionCall {
+    name: "StyleBox".to_string(),
+    args: vec![inner, rule("ShowStringCharacters", "False")].into(),
+  };
+  let interpretation = Expr::FunctionCall {
+    name: "InterpretationBox".to_string(),
+    args: vec![style, value.clone(), rule("AutoDelete", "True")].into(),
+  };
+  Expr::FunctionCall {
+    name: "TagBox".to_string(),
+    args: vec![interpretation, Expr::Identifier(head.to_string())].into(),
+  }
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // MakeBoxes has HoldAllComplete, so a postfix `expr // f` arg is
   // delivered as `Expr::Postfix { expr, func }` rather than being
@@ -3437,6 +3534,16 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       args: vec![(**inner).clone()].into(),
     };
     return expr_to_box_form(&normalised);
+  }
+  // Number-display forms (ScientificForm/EngineeringForm/NumberForm) render as
+  // 2D `mantissa × 10^exp` (or plain) notation rather than as a literal
+  // function call. This is what the Playground/Studio SVG output and
+  // `MakeBoxes` both consume. Falls through to the generic rendering for
+  // arguments these forms leave symbolic.
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(boxed) = number_display_form_box(name, args)
+  {
+    return boxed;
   }
   match expr {
     // wolframscript: positive integers render as a single String

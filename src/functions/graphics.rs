@@ -3581,7 +3581,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
 
       // TagBox, InterpretationBox — delegate to content
       "TagBox" if args.len() == 2 => layout_box(&args[0], font_size),
-      "InterpretationBox" if args.len() == 2 => layout_box(&args[0], font_size),
+      // InterpretationBox[boxes, expr, opts...] — render the boxes; the
+      // interpretation expression and any trailing options (e.g.
+      // `AutoDelete -> True`) are display pass-throughs.
+      "InterpretationBox" if args.len() >= 2 => layout_box(&args[0], font_size),
 
       // StyleBox — apply FontSize, FontColor, and Background from options
       "StyleBox" if !args.is_empty() => {
@@ -4747,7 +4750,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       "TagBox" if args.len() == 2 => boxes_to_svg(&args[0]),
 
       // InterpretationBox[display, interpretation] → render display part only
-      "InterpretationBox" if args.len() == 2 => boxes_to_svg(&args[0]),
+      "InterpretationBox" if args.len() >= 2 => boxes_to_svg(&args[0]),
 
       // StyleBox[content, ...] → render content with style attributes
       "StyleBox" if !args.is_empty() => {
@@ -4907,7 +4910,7 @@ pub fn estimate_box_display_width(expr: &Expr) -> f64 {
         estimate_box_display_width(&args[0]) + 2.0
       }
       "TagBox" if args.len() == 2 => estimate_box_display_width(&args[0]),
-      "InterpretationBox" if args.len() == 2 => {
+      "InterpretationBox" if args.len() >= 2 => {
         estimate_box_display_width(&args[0])
       }
       _ => {

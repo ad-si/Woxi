@@ -1505,4 +1505,88 @@ mod box_representation_tests {
       "expected XML-escaped href: got '{svg}'"
     );
   }
+
+  // ── Number-display forms (ScientificForm / EngineeringForm / NumberForm) ──
+  //
+  // These render in the Playground/Studio as 2D `mantissa × 10^exp` notation
+  // rather than as a literal `ScientificForm[…]` function call. The exponent
+  // must appear as a raised superscript (smaller font, higher up) and none of
+  // the box-wrapper head names may leak into the drawn text.
+
+  fn render_form_svg(name: &str, value: f64) -> String {
+    let expr = Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![Expr::Real(value)].into(),
+    };
+    let boxes = expr_to_box_form(&expr);
+    let layout = layout_box(&boxes, 14.0);
+    layout_to_svg(&layout, "currentColor")
+  }
+
+  #[test]
+  fn scientific_form_renders_2d_superscript() {
+    let svg = render_form_svg("ScientificForm", 12345.6);
+    // Mantissa, the × separator, the base 10, and the exponent all appear.
+    assert!(svg.contains(">1.23456<"), "mantissa missing: {svg}");
+    assert!(svg.contains(">10<"), "base 10 missing: {svg}");
+    assert!(svg.contains(">4<"), "exponent missing: {svg}");
+    // The exponent is rendered at a smaller font than the body (superscript).
+    assert!(
+      svg.contains("font-size=\"9.8\""),
+      "exponent should use the smaller superscript font: {svg}"
+    );
+    // No box-wrapper machinery leaks into the rendered text.
+    assert!(
+      !svg.contains("ScientificForm") && !svg.contains("InterpretationBox"),
+      "form should render graphically, not as literal box text: {svg}"
+    );
+  }
+
+  #[test]
+  fn engineering_form_renders_2d_superscript() {
+    let svg = render_form_svg("EngineeringForm", 12345.6);
+    // Exponent forced to a multiple of 3 → mantissa 12.3456, exponent 3.
+    assert!(svg.contains(">12.3456<"), "mantissa missing: {svg}");
+    assert!(svg.contains(">3<"), "engineering exponent missing: {svg}");
+    assert!(
+      svg.contains("font-size=\"9.8\""),
+      "exponent should use the smaller superscript font: {svg}"
+    );
+    assert!(
+      !svg.contains("EngineeringForm") && !svg.contains("InterpretationBox"),
+      "form should render graphically, not as literal box text: {svg}"
+    );
+  }
+
+  #[test]
+  fn number_form_above_threshold_renders_scientific() {
+    // |x| >= 10^6 switches NumberForm to 2D scientific notation.
+    let svg = render_form_svg("NumberForm", 1234567.8);
+    assert!(svg.contains(">1.23457<"), "mantissa missing: {svg}");
+    assert!(svg.contains(">6<"), "exponent missing: {svg}");
+    assert!(
+      svg.contains("font-size=\"9.8\""),
+      "exponent should use the smaller superscript font: {svg}"
+    );
+    assert!(
+      !svg.contains("NumberForm") && !svg.contains("InterpretationBox"),
+      "form should render graphically, not as literal box text: {svg}"
+    );
+  }
+
+  #[test]
+  fn number_form_in_range_renders_plain_number() {
+    // An in-range real renders as a plain number, with no × 10^exp factor and
+    // no superscript font.
+    let svg = render_form_svg("NumberForm", 12345.6);
+    assert!(svg.contains(">12345.6<"), "plain number missing: {svg}");
+    assert!(
+      !svg.contains("font-size=\"9.8\""),
+      "in-range NumberForm should have no superscript: {svg}"
+    );
+    assert!(
+      !svg.contains("NumberForm") && !svg.contains("InterpretationBox"),
+      "form should render graphically, not as literal box text: {svg}"
+    );
+  }
 }
