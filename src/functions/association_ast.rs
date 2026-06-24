@@ -240,7 +240,9 @@ pub fn key_drop_from_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let key_str = crate::syntax::expr_to_string(&args[1]);
-  let key_cmp = key_str.trim_matches('"');
+  // Compare keys structurally: a string key ("a") must NOT match a symbol
+  // key (a), matching wolframscript (and Woxi's part-access path).
+  let key_cmp = key_str.as_str();
 
   match &args[0] {
     Expr::Association(items) => {
@@ -248,7 +250,7 @@ pub fn key_drop_from_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .filter(|(k, _)| {
           let k_str = crate::syntax::expr_to_string(k);
-          let k_cmp = k_str.trim_matches('"');
+          let k_cmp = k_str.as_str();
           k_cmp != key_cmp
         })
         .cloned()
@@ -286,13 +288,15 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let key_str = crate::syntax::expr_to_string(&args[1]);
-  let key_cmp = key_str.trim_matches('"');
+  // Compare keys structurally: a string key ("a") must NOT match a symbol
+  // key (a), matching wolframscript (and Woxi's part-access path).
+  let key_cmp = key_str.as_str();
 
   match &args[0] {
     Expr::Association(items) => {
       for (k, _) in items {
         let k_str = crate::syntax::expr_to_string(k);
-        let k_cmp = k_str.trim_matches('"');
+        let k_cmp = k_str.as_str();
         if k_cmp == key_cmp {
           return Ok(Expr::Identifier("True".to_string()));
         }
@@ -306,7 +310,7 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for item in items.iter() {
         if let Some(k) = extract_rule_key(item) {
           let k_str = crate::syntax::expr_to_string(&k);
-          if k_str.trim_matches('"') == key_cmp {
+          if k_str.as_str() == key_cmp {
             return Ok(Expr::Identifier("True".to_string()));
           }
         }
@@ -353,13 +357,15 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let key_str = crate::syntax::expr_to_string(&args[1]);
-  let key_cmp = key_str.trim_matches('"');
+  // Compare keys structurally: a string key ("a") must NOT match a symbol
+  // key (a), matching wolframscript (and Woxi's part-access path).
+  let key_cmp = key_str.as_str();
 
   match &args[0] {
     Expr::Association(items) => {
       for (k, v) in items {
         let k_str = crate::syntax::expr_to_string(k);
-        let k_cmp = k_str.trim_matches('"');
+        let k_cmp = k_str.as_str();
         if k_cmp == key_cmp {
           return Ok(v.clone());
         }
@@ -482,11 +488,13 @@ pub fn associate_to_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Update or add the key
   let key_str = crate::syntax::expr_to_string(&key);
-  let key_cmp = key_str.trim_matches('"');
+  // Compare keys structurally: a string key ("a") must NOT match a symbol
+  // key (a), matching wolframscript (and Woxi's part-access path).
+  let key_cmp = key_str.as_str();
   let mut found = false;
   for (k, v) in &mut items {
     let k_str = crate::syntax::expr_to_string(k);
-    let k_cmp = k_str.trim_matches('"');
+    let k_cmp = k_str.as_str();
     if k_cmp == key_cmp {
       *v = val.clone();
       found = true;
@@ -846,19 +854,12 @@ pub fn key_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Keys compare structurally (a string key "a" must not match a symbol a).
   let keep_keys: Vec<String> = match &args[1] {
-    Expr::List(items) => items
-      .iter()
-      .map(|k| {
-        let s = crate::syntax::expr_to_string(k);
-        s.trim_matches('"').to_string()
-      })
-      .collect(),
-    other => vec![
-      crate::syntax::expr_to_string(other)
-        .trim_matches('"')
-        .to_string(),
-    ],
+    Expr::List(items) => {
+      items.iter().map(crate::syntax::expr_to_string).collect()
+    }
+    other => vec![crate::syntax::expr_to_string(other)],
   };
 
   match &args[0] {
@@ -867,7 +868,7 @@ pub fn key_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for desired_key in &keep_keys {
         for (k, v) in items {
           let k_str = crate::syntax::expr_to_string(k);
-          let k_cmp = k_str.trim_matches('"');
+          let k_cmp = k_str.as_str();
           if k_cmp == desired_key {
             result.push((k.clone(), v.clone()));
             break;
@@ -894,19 +895,12 @@ pub fn key_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Keys compare structurally (a string key "a" must not match a symbol a).
   let drop_keys: Vec<String> = match &args[1] {
-    Expr::List(items) => items
-      .iter()
-      .map(|k| {
-        let s = crate::syntax::expr_to_string(k);
-        s.trim_matches('"').to_string()
-      })
-      .collect(),
-    other => vec![
-      crate::syntax::expr_to_string(other)
-        .trim_matches('"')
-        .to_string(),
-    ],
+    Expr::List(items) => {
+      items.iter().map(crate::syntax::expr_to_string).collect()
+    }
+    other => vec![crate::syntax::expr_to_string(other)],
   };
 
   match &args[0] {
@@ -915,7 +909,7 @@ pub fn key_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .filter(|(k, _)| {
           let k_str = crate::syntax::expr_to_string(k);
-          let k_cmp = k_str.trim_matches('"');
+          let k_cmp = k_str.as_str();
           !drop_keys.iter().any(|dk| dk == k_cmp)
         })
         .cloned()

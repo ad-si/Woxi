@@ -159,6 +159,40 @@ mod association_ast {
     );
   }
 
+  // A string key ("a") and a symbol key (a) are distinct: key functions must
+  // compare keys structurally, not by their quote-stripped text.
+  #[test]
+  fn string_key_distinct_from_symbol_key() {
+    // KeyExistsQ
+    assert_eq!(interpret("KeyExistsQ[<|a -> 1|>, \"a\"]").unwrap(), "False");
+    assert_eq!(interpret("KeyExistsQ[<|\"a\" -> 1|>, a]").unwrap(), "False");
+    // Lookup returns Missing for the mismatched key kind.
+    assert_eq!(
+      interpret("Lookup[<|a -> 1|>, \"a\"]").unwrap(),
+      "Missing[KeyAbsent, a]"
+    );
+    assert_eq!(
+      interpret("Lookup[{<|a -> 1|>, <|a -> 2|>}, \"a\"]").unwrap(),
+      "{Missing[KeyAbsent, a], Missing[KeyAbsent, a]}"
+    );
+    // Matching key kinds still resolve.
+    assert_eq!(interpret("Lookup[<|a -> 1|>, a]").unwrap(), "1");
+    assert_eq!(interpret("Lookup[<|\"a\" -> 1|>, \"a\"]").unwrap(), "1");
+    // KeyTake / KeyDrop respect the distinction.
+    assert_eq!(
+      interpret("KeyTake[<|a -> 1, b -> 2|>, {\"a\"}]").unwrap(),
+      "<||>"
+    );
+    assert_eq!(
+      interpret("KeyDrop[<|a -> 1, b -> 2|>, \"a\"]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+    assert_eq!(
+      interpret("KeyDrop[<|a -> 1, b -> 2|>, a]").unwrap(),
+      "<|b -> 2|>"
+    );
+  }
+
   #[test]
   fn key_drop_from() {
     assert_eq!(
