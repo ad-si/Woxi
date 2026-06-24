@@ -4518,3 +4518,41 @@ mod chi_distribution {
     );
   }
 }
+
+// BetaNegativeBinomialDistribution[a, b, n]: Mean and Variance are Piecewise
+// (finite only for a > 1 / a > 2, else Infinity).
+mod beta_negative_binomial_distribution {
+  use super::*;
+
+  #[test]
+  fn mean() {
+    assert_eq!(
+      interpret("Mean[BetaNegativeBinomialDistribution[a, b, n]]").unwrap(),
+      "Piecewise[{{(b*n)/(-1 + a), a > 1}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("Mean[BetaNegativeBinomialDistribution[3, 2, 5]]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn variance() {
+    assert_eq!(
+      interpret("Variance[BetaNegativeBinomialDistribution[a, b, n]]").unwrap(),
+      "Piecewise[{{(b*(-1 + a + b)*n*(-1 + a + n))/((-2 + a)*(-1 + a)^2), a > 2}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("Variance[BetaNegativeBinomialDistribution[5, 2, 3]]").unwrap(),
+      "21/4"
+    );
+  }
+
+  #[test]
+  fn head_stays_unevaluated() {
+    assert_eq!(
+      interpret("BetaNegativeBinomialDistribution[a, b, n]").unwrap(),
+      "BetaNegativeBinomialDistribution[a, b, n]"
+    );
+  }
+}

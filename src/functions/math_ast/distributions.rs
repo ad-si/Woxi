@@ -3795,6 +3795,37 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "BetaNegativeBinomialDistribution" => {
+      if dargs.len() != 3 {
+        return Err(InterpreterError::EvaluationError(
+          "BetaNegativeBinomialDistribution expects 3 arguments".into(),
+        ));
+      }
+      let (a, b, n) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+      let inf = || Expr::Identifier("Infinity".to_string());
+      let a_minus_1 = plus(int(-1), a.clone());
+      // Mean = Piecewise[{{b n/(a-1), a > 1}}, Infinity]
+      let mean_val = divide(times(b.clone(), n.clone()), a_minus_1.clone());
+      let mean = piecewise(
+        vec![(
+          mean_val,
+          comparison(a.clone(), ComparisonOp::Greater, int(1)),
+        )],
+        inf(),
+      );
+      // Var = Piecewise[{{b(a+b-1)n(a+n-1)/((a-2)(a-1)^2), a > 2}}, Infinity]
+      let num = times(
+        times(b.clone(), plus(plus(int(-1), a.clone()), b)),
+        times(n.clone(), plus(plus(int(-1), a.clone()), n)),
+      );
+      let den = times(plus(int(-2), a.clone()), power(a_minus_1, int(2)));
+      let var_val = divide(num, den);
+      let var = piecewise(
+        vec![(var_val, comparison(a, ComparisonOp::Greater, int(2)))],
+        inf(),
+      );
+      Ok((mean, var))
+    }
     "UniformSumDistribution" => {
       // Mean = n(a+b)/2, Var = n(b-a)^2/12 (default range {0, 1})
       let (n, a, b) = match dargs {
