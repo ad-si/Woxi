@@ -154,8 +154,16 @@ install-macos-app:
 	@echo "Installed $(APP_BUNDLE)"
 
 
-.PHONY: wasm-build
-wasm-build:
+# Inputs that, when changed, require the playground WASM bundle to be rebuilt.
+# Mirrors the CI cache key in publish-book.yml (src/**, Cargo.{toml,lock}) plus
+# build.rs, which also feeds the wasm32 compile.
+WASM_PKG  := tests/playground/pkg/woxi_bg.wasm
+WASM_SRCS := $(shell find src -type f) build.rs Cargo.toml Cargo.lock
+
+# Real file target: only recompiles when a source input is newer than the
+# bundle. wasm-pack regenerates pkg/ on every run, so the output ends up newer
+# than the `touch src/lib.rs` below and the target stays up-to-date afterwards.
+$(WASM_PKG): $(WASM_SRCS)
 	# Invalidate cargo's fingerprint to force recompilation of the woxi crate.
 	# Without this, cargo's wasm32 release cache can go stale and skip rebuilding.
 	touch src/lib.rs
@@ -166,6 +174,11 @@ wasm-build:
 		-- \
 		--no-default-features \
 		--features wasm
+
+# Convenience alias: `make wasm-build` (and dependents) delegate to the real
+# file target, so the build is skipped when the bundle is already current.
+.PHONY: wasm-build
+wasm-build: $(WASM_PKG)
 
 
 .PHONY: wasm-build-production
