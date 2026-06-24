@@ -1180,6 +1180,37 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_f64 = try_eval_to_f64(n_expr);
   let z_f64 = try_eval_to_f64(z_expr);
 
+  // For a non-negative integer order with a real argument, evaluate the exact
+  // elementary closed form rather than routing through the half-integer Bessel
+  // series (which loses several ULPs even for n = 0). Spherical Bessel
+  // functions of the first kind satisfy
+  //   j_0(z) = Sin[z]/z,  j_1(z) = Sin[z]/z^2 - Cos[z]/z,
+  //   j_{k+1}(z) = (2k+1)/z * j_k(z) - j_{k-1}(z),
+  // so the upward recurrence reproduces wolframscript's value to machine
+  // precision in the well-conditioned regime.
+  if has_real
+    && let (Some(n_val), Some(z_val)) = (n_f64, z_f64)
+    && n_val >= 0.0
+    && n_val.fract() == 0.0
+    && z_val != 0.0
+  {
+    let s = z_val.sin();
+    let c = z_val.cos();
+    let result = if n_val == 0.0 {
+      s / z_val
+    } else {
+      let mut j_prev = s / z_val; // j_0
+      let mut j_curr = s / (z_val * z_val) - c / z_val; // j_1
+      for k in 1..(n_val as u32) {
+        let j_next = (2 * k + 1) as f64 / z_val * j_curr - j_prev;
+        j_prev = j_curr;
+        j_curr = j_next;
+      }
+      j_curr
+    };
+    return Ok(Expr::Real(result));
+  }
+
   if has_real && let (Some(n_val), Some(z_val)) = (n_f64, z_f64) {
     let bessel_result =
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {

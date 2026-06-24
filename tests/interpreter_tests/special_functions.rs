@@ -604,6 +604,57 @@ mod elliptic_theta_prime {
   }
 }
 
+mod spherical_bessel_j {
+  use super::*;
+
+  // Non-negative integer orders with a real argument use the elementary
+  // Sin/Cos closed form (j_0 = Sin[z]/z, j_1 = Sin[z]/z^2 - Cos[z]/z, then
+  // upward recurrence), matching wolframscript to machine precision.
+
+  #[test]
+  fn order0_matches_sinc() {
+    assert_eq!(
+      interpret("SphericalBesselJ[0, 1.]").unwrap(),
+      "0.8414709848078965"
+    );
+  }
+
+  #[test]
+  fn order0_threads_over_list() {
+    assert_eq!(
+      interpret("SphericalBesselJ[0, {1., 2.}]").unwrap(),
+      "{0.8414709848078965, 0.45464871341284085}"
+    );
+  }
+
+  #[test]
+  fn order1_closed_form() {
+    assert_eq!(
+      interpret("SphericalBesselJ[1, 1.]").unwrap(),
+      "0.30116867893975674"
+    );
+  }
+
+  #[test]
+  fn order2_recurrence() {
+    assert_eq!(
+      interpret("SphericalBesselJ[2, 3.]").unwrap(),
+      "0.2986374970757335"
+    );
+  }
+
+  #[test]
+  fn exact_special_values() {
+    // z = 0 stays exact; non-numeric arguments stay symbolic.
+    assert_eq!(interpret("SphericalBesselJ[0, 0]").unwrap(), "1");
+    assert_eq!(interpret("SphericalBesselJ[2, 0]").unwrap(), "0");
+    assert_eq!(
+      interpret("SphericalBesselJ[1, x]").unwrap(),
+      "SphericalBesselJ[1, x]"
+    );
+  }
+}
+
 mod bessel_j_zero {
   use super::*;
 
@@ -4030,7 +4081,7 @@ mod special_function_listability {
   fn spherical_and_struve_thread() {
     assert_eq!(
       interpret("SphericalBesselJ[0, {1., 2.}]").unwrap(),
-      "{0.8414709848078961, 0.4546487134128405}"
+      "{0.8414709848078965, 0.45464871341284085}"
     );
     assert_eq!(
       interpret("StruveH[0, {1., 2.}]").unwrap(),
