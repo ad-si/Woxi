@@ -27,6 +27,7 @@ mod reduce;
 mod resultant;
 mod simplify;
 pub mod solve;
+mod symmetric_reduction;
 mod to_radicals;
 pub mod together;
 
@@ -55,5 +56,6 @@ pub use reduce::*;
 pub use resultant::*;
 pub use simplify::*;
 pub use solve::*;
+pub use symmetric_reduction::*;
 pub use to_radicals::*;
 pub use together::{together_ast, together_expr};

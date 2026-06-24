@@ -3795,6 +3795,64 @@ mod batch_unevaluated_wrappers_2 {
       "a*b*c"
     );
   }
+  // SymmetricReduction[f, vars, {s..}] writes the symmetric part of f in the
+  // elementary symmetric variables s_k and returns {symmetric_part, remainder}.
+  #[test]
+  fn symmetric_reduction_three_arg() {
+    assert_eq!(
+      interpret("SymmetricReduction[x^2 + y^2, {x, y}, {s1, s2}]").unwrap(),
+      "{s1^2 - 2*s2, 0}"
+    );
+    assert_eq!(
+      interpret("SymmetricReduction[x^3 + y^3, {x, y}, {s1, s2}]").unwrap(),
+      "{s1^3 - 3*s1*s2, 0}"
+    );
+    assert_eq!(
+      interpret("SymmetricReduction[x^2 y + x y^2, {x, y}, {s1, s2}]").unwrap(),
+      "{s1*s2, 0}"
+    );
+    assert_eq!(
+      interpret("SymmetricReduction[x + y + z, {x, y, z}, {s1, s2, s3}]")
+        .unwrap(),
+      "{s1, 0}"
+    );
+  }
+  // A non-symmetric input leaves a remainder; f == symmetric_part + remainder.
+  #[test]
+  fn symmetric_reduction_remainder() {
+    assert_eq!(
+      interpret("SymmetricReduction[x^2 + y, {x, y}, {s1, s2}]").unwrap(),
+      "{s1^2 - 2*s2, y - y^2}"
+    );
+  }
+  // A symbolic coefficient and custom symmetric-variable names are carried.
+  #[test]
+  fn symmetric_reduction_symbolic_coeff_and_names() {
+    assert_eq!(
+      interpret("SymmetricReduction[a x^2 + a y^2, {x, y}, {s1, s2}]").unwrap(),
+      "{a*s1^2 - 2*a*s2, 0}"
+    );
+    assert_eq!(
+      interpret("SymmetricReduction[x^3 + y^3, {x, y}, {u, v}]").unwrap(),
+      "{u^3 - 3*u*v, 0}"
+    );
+  }
+  // Two-argument form substitutes the elementary symmetric polynomials back.
+  #[test]
+  fn symmetric_reduction_two_arg() {
+    assert_eq!(
+      interpret("SymmetricReduction[x^2 + y^2, {x, y}]").unwrap(),
+      "{-2*x*y + (x + y)^2, 0}"
+    );
+    assert_eq!(
+      interpret("SymmetricReduction[x^2 y + x y^2, {x, y}]").unwrap(),
+      "{x*y*(x + y), 0}"
+    );
+    assert_eq!(
+      interpret("SymmetricReduction[x^2 + y^2 + z^2, {x, y, z}]").unwrap(),
+      "{(x + y + z)^2 - 2*(x*y + x*z + y*z), 0}"
+    );
+  }
   #[test]
   fn adjugate_2x2() {
     assert_eq!(

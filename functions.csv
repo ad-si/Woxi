@@ -2072,7 +2072,7 @@ TensorReduce,Reduce tensor expressions,🚫,,9.0,2108
 TextJustification,Text justification option,🚫,,3.0,2108
 MaxStepFraction,ODE solver step size option,🚫,,4.0,2112
 NotebookEvaluate,Evaluate notebook programmatically,🚫,,8.0,2112
-SymmetricReduction,Symmetric polynomial reduction,🚫,,6.0,2112
+SymmetricReduction,Reduce a polynomial into symmetric part and remainder over elementary symmetric polynomials,✅,none,6.0,2112
 SymmetrizedArray,Array with symmetry constraints,🚫,,9.0,2112
 ActionMenu,Dropdown action menu (stays symbolic in script mode),✅,unevaluated,6.0,2116
 BitShiftLeft,Shifts integer bits to the left,✅,pure,6.0,2116

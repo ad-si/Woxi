@@ -35,6 +35,11 @@ pub fn dispatch_polynomial_functions(
     "Subresultants" if args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::subresultants_ast(args));
     }
+    "SymmetricReduction" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::polynomial_ast::symmetric_reduction_ast(
+        args,
+      ));
+    }
     "TrigFactor" if args.len() == 1 => {
       return Some(crate::functions::trig_factor_ast::trig_factor_ast(args));
     }
