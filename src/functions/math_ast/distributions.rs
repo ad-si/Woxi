@@ -186,6 +186,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MaxStableDistribution" => pdf_max_stable(dargs, x),
     "TriangularDistribution" => pdf_triangular(dargs, x),
     "MaxwellDistribution" => pdf_maxwell(dargs, x),
+    "BirnbaumSaundersDistribution" => pdf_birnbaum_saunders(dargs, x),
     "WignerSemicircleDistribution" => pdf_wigner_semicircle(dargs, x),
     "SechDistribution" => pdf_sech(dargs, x),
     "MoyalDistribution" => pdf_moyal(dargs, x),
@@ -1746,6 +1747,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MaxStableDistribution" => cdf_max_stable(dargs, x),
     "TriangularDistribution" => cdf_triangular(dargs, x),
     "MaxwellDistribution" => cdf_maxwell(dargs, x),
+    "BirnbaumSaundersDistribution" => cdf_birnbaum_saunders(dargs, x),
     "WignerSemicircleDistribution" => cdf_wigner_semicircle(dargs, x),
     "SechDistribution" => cdf_sech(dargs, x),
     "MoyalDistribution" => cdf_moyal(dargs, x),
@@ -4596,6 +4598,29 @@ fn distribution_mean_variance(
       let mean = times(sqrt(divide(pi(), int(2))), s.clone());
       // Var = (2 - Pi/2) * s^2
       let var = times(minus(int(2), divide(pi(), int(2))), power(s, int(2)));
+      Ok((mean, var))
+    }
+    "BirnbaumSaundersDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "BirnbaumSaundersDistribution expects 2 arguments".into(),
+        ));
+      }
+      let a = dargs[0].clone();
+      let l = dargs[1].clone();
+      // Mean = (2 + a^2) / (2 l)
+      let mean = divide(
+        plus(int(2), power(a.clone(), int(2))),
+        times(int(2), l.clone()),
+      );
+      // Variance = (a^2 (4 + 5 a^2)) / (4 l^2)
+      let var = divide(
+        times(
+          power(a.clone(), int(2)),
+          plus(int(4), times(int(5), power(a.clone(), int(2)))),
+        ),
+        times(int(4), power(l, int(2))),
+      );
       Ok((mean, var))
     }
     "DiscreteUniformDistribution" => {
@@ -11127,6 +11152,119 @@ pub fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         ),
       ],
     ))
+  };
+  if ms_numeric(&x).is_some() {
+    if ms_numeric(&x).is_some_and(|v| v <= 0.0) {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = body(&x)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// PDF[BirnbaumSaundersDistribution[a, l], x] =
+/// Piecewise[{{(1 + l x)/(2 a E^((-1 + l x)^2/(2 a^2 l x)) Sqrt[2 Pi]
+/// Sqrt[l x^3]), x > 0}}, 0].
+pub fn pdf_birnbaum_saunders(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BirnbaumSaundersDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let a = dargs[0].clone();
+  let l = dargs[1].clone();
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    // exponent (-1 + l at)^2 / (2 a^2 l at)
+    let exponent = divide(
+      power(plus(int(-1), times(l.clone(), at.clone())), int(2)),
+      times(
+        times(int(2), power(a.clone(), int(2))),
+        times(l.clone(), at.clone()),
+      ),
+    );
+    let denom = times(
+      times(int(2), a.clone()),
+      times(
+        times(
+          power(e(), exponent),
+          call("Sqrt", vec![times(int(2), pi())]),
+        ),
+        call("Sqrt", vec![times(l.clone(), power(at.clone(), int(3)))]),
+      ),
+    );
+    eval(divide(plus(int(1), times(l.clone(), at.clone())), denom))
+  };
+  if ms_numeric(&x).is_some() {
+    if ms_numeric(&x).is_some_and(|v| v <= 0.0) {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = body(&x)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// CDF[BirnbaumSaundersDistribution[a, l], x] =
+/// Piecewise[{{(1 + Erf[(-1 + l x)/(Sqrt[2] a Sqrt[l x])])/2, x > 0}}, 0].
+pub fn cdf_birnbaum_saunders(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BirnbaumSaundersDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let a = dargs[0].clone();
+  let l = dargs[1].clone();
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    // Erf[(-1 + l at)/(Sqrt[2] a Sqrt[l at])]
+    let erf_arg = divide(
+      plus(int(-1), times(l.clone(), at.clone())),
+      times(
+        times(call("Sqrt", vec![int(2)]), a.clone()),
+        call("Sqrt", vec![times(l.clone(), at.clone())]),
+      ),
+    );
+    eval(divide(plus(int(1), call("Erf", vec![erf_arg])), int(2)))
   };
   if ms_numeric(&x).is_some() {
     if ms_numeric(&x).is_some_and(|v| v <= 0.0) {

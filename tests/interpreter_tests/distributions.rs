@@ -4700,3 +4700,68 @@ mod log_gamma_distribution {
     );
   }
 }
+
+mod birnbaum_saunders_distribution {
+  use super::*;
+
+  #[test]
+  fn mean() {
+    assert_eq!(
+      interpret("Mean[BirnbaumSaundersDistribution[a, l]]").unwrap(),
+      "(2 + a^2)/(2*l)"
+    );
+  }
+
+  #[test]
+  fn variance() {
+    assert_eq!(
+      interpret("Variance[BirnbaumSaundersDistribution[a, l]]").unwrap(),
+      "(a^2*(4 + 5*a^2))/(4*l^2)"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[BirnbaumSaundersDistribution[a, l], x]").unwrap(),
+      "Piecewise[{{(1 + l*x)/(2*a*E^((-1 + l*x)^2/(2*a^2*l*x))*Sqrt[2*Pi]\
+       *Sqrt[l*x^3]), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[BirnbaumSaundersDistribution[1/2, 2], 1]").unwrap(),
+      "3/(2*E*Sqrt[Pi])"
+    );
+    assert_eq!(
+      interpret("PDF[BirnbaumSaundersDistribution[1, 1], 1]").unwrap(),
+      "1/Sqrt[2*Pi]"
+    );
+    assert_eq!(
+      interpret("PDF[BirnbaumSaundersDistribution[1, 1], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[BirnbaumSaundersDistribution[a, l], x]").unwrap(),
+      "Piecewise[{{(1 + Erf[(-1 + l*x)/(Sqrt[2]*a*Sqrt[l*x])])/2, x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_numeric() {
+    assert_eq!(
+      interpret("CDF[BirnbaumSaundersDistribution[1/2, 2], 1]").unwrap(),
+      "(1 + Erf[1])/2"
+    );
+    assert_eq!(
+      interpret("CDF[BirnbaumSaundersDistribution[1, 1], -1]").unwrap(),
+      "0"
+    );
+  }
+}
