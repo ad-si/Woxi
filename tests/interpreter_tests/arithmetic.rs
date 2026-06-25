@@ -2378,6 +2378,36 @@ mod round_with_step {
   }
 }
 
+// Rounding a real whose magnitude exceeds the i128 range must produce an exact
+// BigInteger (the float's exact integer value), not saturate to i128::MAX.
+mod round_large_reals {
+  use super::*;
+
+  const TEN_POW_40: &str = "10000000000000000303786028427003666890752";
+
+  #[test]
+  fn round_one_arg() {
+    assert_eq!(interpret("Round[10.0^40]").unwrap(), TEN_POW_40);
+    assert_eq!(
+      interpret("Round[-1.0*^40]").unwrap(),
+      "-10000000000000000303786028427003666890752"
+    );
+  }
+
+  #[test]
+  fn round_integer_step() {
+    assert_eq!(interpret("Round[10.0^40, 1]").unwrap(), TEN_POW_40);
+    assert_eq!(interpret("Round[1.0*^40, 2]").unwrap(), TEN_POW_40);
+  }
+
+  #[test]
+  fn floor_ceiling_integer_part() {
+    assert_eq!(interpret("Floor[10.0^40]").unwrap(), TEN_POW_40);
+    assert_eq!(interpret("Ceiling[10.0^40]").unwrap(), TEN_POW_40);
+    assert_eq!(interpret("IntegerPart[10.0^40]").unwrap(), TEN_POW_40);
+  }
+}
+
 mod logistic_sigmoid {
   use super::*;
 

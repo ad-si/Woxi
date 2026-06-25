@@ -1751,6 +1751,23 @@ fn bankers_round(n: f64) -> f64 {
 }
 
 /// Round[x] - Round to nearest integer using banker's rounding (round half to even)
+/// Convert an integer-valued `f64` to an `Integer`, falling back to an exact
+/// `BigInteger` when the magnitude exceeds the `i128` range (a plain `as i128`
+/// cast would saturate to `i128::MAX`). `{:.0}` renders the float's exact
+/// integer value without scientific notation.
+pub(crate) fn f64_to_int_expr(v: f64) -> Expr {
+  if v.abs() < i128::MAX as f64 {
+    Expr::Integer(v as i128)
+  } else if v.is_finite() {
+    match format!("{v:.0}").parse::<num_bigint::BigInt>() {
+      Ok(b) => Expr::BigInteger(b),
+      Err(_) => Expr::Real(v),
+    }
+  } else {
+    Expr::Real(v)
+  }
+}
+
 pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1818,10 +1835,22 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if a_val == 0.0 {
         return Ok(eval_x);
       }
-      let n = bankers_round(x_val / a_val) as i128;
-      // If a is not a plain number, return n * a symbolically
+      let quotient_f = bankers_round(x_val / a_val);
       let a_is_real = matches!(&eval_a, Expr::Real(_));
       let a_is_int = matches!(&eval_a, Expr::Integer(_));
+      // Big quotient: build the result without the saturating `as i128` cast.
+      if quotient_f.is_finite() && quotient_f.abs() >= i128::MAX as f64 {
+        let rounded = quotient_f * a_val;
+        if a_is_int
+          && rounded.fract() == 0.0
+          && let Ok(b) = format!("{rounded:.0}").parse::<num_bigint::BigInt>()
+        {
+          return Ok(Expr::BigInteger(b));
+        }
+        return Ok(Expr::Real(rounded));
+      }
+      let n = quotient_f as i128;
+      // If a is not a plain number, return n * a symbolically
       if !a_is_real && !a_is_int {
         // Symbolic: return n * a
         return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
@@ -1890,8 +1919,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
-    let rounded = bankers_round(n);
-    Ok(Expr::Integer(rounded as i128))
+    Ok(f64_to_int_expr(bankers_round(n)))
   } else if let Some(r) = try_symbolic_complex_rounding(&args[0], round_ast) {
     Ok(r)
   } else {
@@ -2724,7 +2752,7 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(n) => Ok(Expr::Integer(*n)),
-    Expr::Real(f) => Ok(Expr::Integer(f.trunc() as i128)),
+    Expr::Real(f) => Ok(f64_to_int_expr(f.trunc())),
     Expr::FunctionCall { name, args: rargs }
       if name == "Rational" && rargs.len() == 2 =>
     {
@@ -2741,7 +2769,7 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {
       if let Some(f) = try_eval_to_f64(&args[0]) {
-        Ok(Expr::Integer(f.trunc() as i128))
+        Ok(f64_to_int_expr(f.trunc()))
       } else if let Some(r) =
         try_symbolic_complex_rounding(&args[0], integer_part_ast)
       {
