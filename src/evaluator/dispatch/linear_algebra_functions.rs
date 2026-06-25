@@ -1411,6 +1411,22 @@ pub fn dispatch_linear_algebra_functions(
           },
         ));
       }
+      // Three-dimensional axis form RotationTransform[theta, {x, y, z}]:
+      // rotation by theta about the axis through the origin (Rodrigues'
+      // formula). Only handled for a numeric axis — a symbolic axis yields an
+      // intractable closed form in wolframscript, so it is left unevaluated.
+      if args.len() == 2
+        && let Expr::List(axis) = &args[1]
+        && axis.len() == 3
+      {
+        if let Some(result) = rotation_transform_3d_axis(&args[0], axis) {
+          return Some(result);
+        }
+        return Some(Ok(Expr::FunctionCall {
+          name: "RotationTransform".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       let theta = &args[0];
       let cos_t = Expr::FunctionCall {
         name: "Cos".to_string(),
@@ -3976,4 +3992,82 @@ pub fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let r12 = crate::functions::linear_algebra_ast::dot_ast(&[r1, r2])?;
   let r123 = crate::functions::linear_algebra_ast::dot_ast(&[r12, r3])?;
   evaluate_expr_to_expr(&r123)
+}
+
+/// RotationTransform[theta, {x, y, z}] for a numeric 3D axis.
+///
+/// Builds the 4×4 homogeneous TransformationFunction whose top-left 3×3 block
+/// is the rotation by `theta` about the axis through the origin, via
+/// Rodrigues' formula
+///   R = cos(θ) I + (1 - cos(θ)) u uᵀ + sin(θ) [u]ₓ
+/// with u the normalized axis. Each entry is run through `Together` so the
+/// radical form matches wolframscript (e.g. `1/3 - 1/Sqrt[3]` → `(1 -
+/// Sqrt[3])/3`). Returns `None` for a non-numeric axis so the caller can leave
+/// the expression unevaluated.
+fn rotation_transform_3d_axis(
+  theta: &Expr,
+  axis: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if axis
+    .iter()
+    .any(crate::evaluator::core_eval::has_free_symbols)
+  {
+    return None;
+  }
+  let int = Expr::Integer;
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
+  let plus = |xs: Vec<Expr>| call("Plus", xs);
+  let neg = |e: Expr| times(int(-1), e);
+  let sq = |e: &Expr| call("Power", vec![e.clone(), int(2)]);
+
+  // Normalized axis u_i = axis_i / Sqrt[sum axis_i^2].
+  let norm = call("Sqrt", vec![plus(axis.iter().map(sq).collect())]);
+  let u: Vec<Expr> = axis
+    .iter()
+    .map(|a| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(a.clone()),
+      right: Box::new(norm.clone()),
+    })
+    .collect();
+
+  let cos = call("Cos", vec![theta.clone()]);
+  let sin = call("Sin", vec![theta.clone()]);
+  let one_minus_cos = plus(vec![int(1), neg(cos.clone())]);
+
+  // Skew-symmetric cross-product matrix [u]ₓ entries.
+  let cross = |i: usize, j: usize| match (i, j) {
+    (0, 1) => neg(u[2].clone()),
+    (0, 2) => u[1].clone(),
+    (1, 0) => u[2].clone(),
+    (1, 2) => neg(u[0].clone()),
+    (2, 0) => neg(u[1].clone()),
+    (2, 1) => u[0].clone(),
+    _ => int(0),
+  };
+
+  let mut rows = Vec::with_capacity(4);
+  for i in 0..3 {
+    let mut row = Vec::with_capacity(4);
+    for j in 0..3 {
+      let diag = if i == j { cos.clone() } else { int(0) };
+      let outer =
+        times(one_minus_cos.clone(), times(u[i].clone(), u[j].clone()));
+      let cr = times(sin.clone(), cross(i, j));
+      let entry = plus(vec![diag, outer, cr]);
+      row.push(call("Together", vec![entry]));
+    }
+    row.push(int(0));
+    rows.push(Expr::List(row.into()));
+  }
+  rows.push(Expr::List(vec![int(0), int(0), int(0), int(1)].into()));
+
+  Some(evaluate_expr_to_expr(&call(
+    "TransformationFunction",
+    vec![Expr::List(rows.into())],
+  )))
 }

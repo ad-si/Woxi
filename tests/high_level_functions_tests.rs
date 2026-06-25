@@ -6272,4 +6272,97 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod rotation_transform_3d_tests {
+    use super::*;
+
+    #[test]
+    fn test_z_axis_quarter_turn() {
+      assert_eq!(
+        interpret("TransformationMatrix[RotationTransform[Pi/2,{0,0,1}]]")
+          .unwrap(),
+        "{{0, -1, 0, 0}, {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_x_axis_quarter_turn() {
+      assert_eq!(
+        interpret("TransformationMatrix[RotationTransform[Pi/2,{1,0,0}]]")
+          .unwrap(),
+        "{{1, 0, 0, 0}, {0, 0, -1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_symbolic_angle() {
+      assert_eq!(
+        interpret("TransformationMatrix[RotationTransform[t,{0,0,1}]]")
+          .unwrap(),
+        "{{Cos[t], -Sin[t], 0, 0}, {Sin[t], Cos[t], 0, 0}, \
+         {0, 0, 1, 0}, {0, 0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_axis_normalized_when_not_unit() {
+      // {0,0,2} normalizes to the same rotation as {0,0,1}.
+      assert_eq!(
+        interpret("TransformationMatrix[RotationTransform[Pi/2,{0,0,2}]]")
+          .unwrap(),
+        "{{0, -1, 0, 0}, {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_diagonal_axis_radical_form() {
+      // Rotation about {1,1,1} yields the exact (1 ± Sqrt[3])/3 entries.
+      assert_eq!(
+        interpret("TransformationMatrix[RotationTransform[Pi/2,{1,1,1}]]")
+          .unwrap(),
+        "{{1/3, (1 - Sqrt[3])/3, (1 + Sqrt[3])/3, 0}, \
+         {(1 + Sqrt[3])/3, 1/3, (1 - Sqrt[3])/3, 0}, \
+         {(1 - Sqrt[3])/3, (1 + Sqrt[3])/3, 1/3, 0}, {0, 0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_apply_to_vector() {
+      assert_eq!(
+        interpret("RotationTransform[Pi/2,{0,0,1}][{1,0,0}]").unwrap(),
+        "{0, 1, 0}"
+      );
+    }
+
+    #[test]
+    fn test_apply_to_vector_radical() {
+      assert_eq!(
+        interpret("RotationTransform[Pi/2,{1,1,1}][{1,0,0}]").unwrap(),
+        "{1/3, (1 + Sqrt[3])/3, (1 - Sqrt[3])/3}"
+      );
+    }
+
+    #[test]
+    fn test_symbolic_axis_unevaluated() {
+      // A symbolic axis is intractable in wolframscript; leave unevaluated.
+      assert_eq!(
+        interpret("RotationTransform[Pi/2,{a,b,c}]").unwrap(),
+        "RotationTransform[Pi/2, {a, b, c}]"
+      );
+    }
+
+    #[test]
+    fn test_geometric_transformation_3d_pair() {
+      // The TransformationFunction normalizes to the {matrix, translation}
+      // affine pair (combines with GeometricTransformation handling).
+      assert_eq!(
+        interpret(
+          "GeometricTransformation[Point[{1,1,1}],RotationTransform[Pi,{0,0,1}]]"
+        )
+        .unwrap(),
+        "GeometricTransformation[Point[{1, 1, 1}], \
+         {{{-1, 0, 0}, {0, -1, 0}, {0, 0, 1}}, {0, 0, 0}}]"
+      );
+    }
+  }
 }
