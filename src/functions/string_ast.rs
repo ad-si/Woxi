@@ -5486,6 +5486,34 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       expr_to_tex(&args[1]),
       expr_to_tex(&args[0])
     ),
+    // Matrix/linear-algebra notation. Transpose/Inverse parenthesize a
+    // compound base; Det uses determinant bars (like Abs).
+    "Transpose" if args.len() == 1 => {
+      format!("{}^T", tex_atom_or_paren(&args[0]))
+    }
+    "Inverse" if args.len() == 1 => {
+      format!("{}^{{-1}}", tex_atom_or_paren(&args[0]))
+    }
+    "Det" if args.len() == 1 => format!("| {}|", expr_to_tex(&args[0])),
+    "Arg" if args.len() == 1 => format!("\\arg ({})", expr_to_tex(&args[0])),
+    // Norm[v, p] -> \| v\| _p (the 1-arg form is handled above).
+    "Norm" if args.len() == 2 => {
+      format!("\\| {}\\| _{}", expr_to_tex(&args[0]), tex_sub(&args[1]))
+    }
+    // Stirling numbers: S_n^{(k)} and \mathcal{S}_n^{(k)}.
+    "StirlingS1" if args.len() == 2 => {
+      format!("S_{}^{{({})}}", tex_sub(&args[0]), expr_to_tex(&args[1]))
+    }
+    "StirlingS2" if args.len() == 2 => format!(
+      "\\mathcal{{S}}_{}^{{({})}}",
+      tex_sub(&args[0]),
+      expr_to_tex(&args[1])
+    ),
+    // Multinomial[a, b, c, ...] -> (a+b+c;a,b,c) (>=3 args; 2 folds to Binomial).
+    "Multinomial" if args.len() >= 3 => {
+      let parts: Vec<String> = args.iter().map(expr_to_tex).collect();
+      format!("({};{})", parts.join("+"), parts.join(","))
+    }
     // Integral/error special functions with conventional abbreviations.
     "Erfi" if args.len() == 1 => {
       format!("\\text{{erfi}}({})", expr_to_tex(&args[0]))

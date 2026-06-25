@@ -4225,6 +4225,52 @@ mod tex_form {
     );
   }
 
+  // Matrix notation, Stirling numbers and Multinomial render with their
+  // conventional LaTeX notation.
+  #[test]
+  fn matrix_stirling_multinomial() {
+    // Transpose/Inverse use superscripts and parenthesize compound bases.
+    assert_eq!(interpret("ToString[Transpose[m], TeXForm]").unwrap(), "m^T");
+    assert_eq!(
+      interpret("ToString[Transpose[a + b], TeXForm]").unwrap(),
+      "(a+b)^T"
+    );
+    assert_eq!(
+      interpret("ToString[Inverse[m], TeXForm]").unwrap(),
+      "m^{-1}"
+    );
+    // Det uses determinant bars (like Abs).
+    assert_eq!(interpret("ToString[Det[m], TeXForm]").unwrap(), "| m|");
+    assert_eq!(
+      interpret("ToString[Det[a + b], TeXForm]").unwrap(),
+      "| a+b|"
+    );
+    assert_eq!(interpret("ToString[Arg[z], TeXForm]").unwrap(), "\\arg (z)");
+    // 2-arg Norm subscripts the order.
+    assert_eq!(
+      interpret("ToString[Norm[v, p], TeXForm]").unwrap(),
+      "\\| v\\| _p"
+    );
+    // Stirling numbers of the first and second kind.
+    assert_eq!(
+      interpret("ToString[StirlingS1[n, k], TeXForm]").unwrap(),
+      "S_n^{(k)}"
+    );
+    assert_eq!(
+      interpret("ToString[StirlingS1[n + 1, k], TeXForm]").unwrap(),
+      "S_{n+1}^{(k)}"
+    );
+    assert_eq!(
+      interpret("ToString[StirlingS2[n, k], TeXForm]").unwrap(),
+      "\\mathcal{S}_n^{(k)}"
+    );
+    // Multinomial of three or more arguments.
+    assert_eq!(
+      interpret("ToString[Multinomial[a, b, c], TeXForm]").unwrap(),
+      "(a+b+c;a,b,c)"
+    );
+  }
+
   // Accent functions, Airy/Elliptic/PolyLog and Bernoulli/Euler render with
   // their conventional LaTeX notation.
   #[test]
