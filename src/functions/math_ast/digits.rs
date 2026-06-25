@@ -3031,6 +3031,56 @@ fn integer_name_cardinal(n: i128) -> Option<String> {
   })
 }
 
+/// The fully-spelled-out "Words" form of an integer name. Unlike the default
+/// cardinal form (which uses digit groups for values >= 1000, e.g.
+/// `1 million 234 thousand 567`), this spells every group in words and joins
+/// the non-zero groups with ", ":
+/// `IntegerName[1234567, "Words"]` =
+///   "one million, two hundred thirty‐four thousand, five hundred sixty‐seven".
+fn integer_name_words(n: i128) -> Option<String> {
+  let negative = n < 0;
+  let abs_n = n.unsigned_abs();
+  if abs_n == 0 {
+    return Some("zero".to_string());
+  }
+
+  // Break into groups of three digits, low to high.
+  let mut groups: Vec<(u64, usize)> = Vec::new();
+  let mut remaining = abs_n;
+  let mut scale_idx = 0;
+  while remaining > 0 {
+    let group = (remaining % 1000) as u64;
+    if group > 0 {
+      groups.push((group, scale_idx));
+    }
+    remaining /= 1000;
+    scale_idx += 1;
+  }
+  groups.reverse();
+
+  let mut parts = Vec::with_capacity(groups.len());
+  for &(group, sidx) in &groups {
+    let words = spell_below_1000(group);
+    if sidx == 0 {
+      parts.push(words);
+    } else {
+      let scale = if sidx < SCALES.len() {
+        SCALES[sidx]
+      } else {
+        return None;
+      };
+      parts.push(format!("{} {}", words, scale));
+    }
+  }
+
+  let result = parts.join(", ");
+  Some(if negative {
+    format!("negative {}", result)
+  } else {
+    result
+  })
+}
+
 pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -3065,12 +3115,20 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => return unevaluated(),
   };
 
-  // IntegerName[n, "Ordinal"] gives the ordinal name; the default (and
-  // "Words") is the cardinal name.
-  let ordinal =
-    args.len() == 2 && matches!(&args[1], Expr::String(s) if s == "Ordinal");
-  if ordinal {
-    return Ok(Expr::String(cardinal_to_ordinal(&cardinal)));
+  // IntegerName[n, "Ordinal"] gives the ordinal name. IntegerName[n, "Words"]
+  // spells out every group (vs. the default's digit groups for n >= 1000).
+  if let Some(Expr::String(form)) = args.get(1) {
+    match form.as_str() {
+      "Ordinal" => {
+        return Ok(Expr::String(cardinal_to_ordinal(&cardinal)));
+      }
+      "Words" => {
+        if let Some(words) = integer_name_words(n) {
+          return Ok(Expr::String(words));
+        }
+      }
+      _ => {}
+    }
   }
   Ok(Expr::String(cardinal))
 }

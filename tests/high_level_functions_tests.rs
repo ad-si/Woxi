@@ -6573,4 +6573,64 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod integer_name_words_tests {
+    use super::*;
+
+    #[test]
+    fn test_words_spells_out_large_numbers() {
+      // The "Words" form spells every group (vs. the default's digit groups
+      // for n >= 1000), joining non-zero groups with ", ".
+      assert_eq!(
+        interpret("IntegerName[1234567, \"Words\"]").unwrap(),
+        "one million, two hundred thirty\u{2010}four thousand, \
+         five hundred sixty\u{2010}seven"
+      );
+      assert_eq!(
+        interpret("IntegerName[1234, \"Words\"]").unwrap(),
+        "one thousand, two hundred thirty\u{2010}four"
+      );
+      assert_eq!(
+        interpret("IntegerName[1000, \"Words\"]").unwrap(),
+        "one thousand"
+      );
+      assert_eq!(
+        interpret("IntegerName[2000000, \"Words\"]").unwrap(),
+        "two million"
+      );
+      assert_eq!(
+        interpret("IntegerName[1000000000, \"Words\"]").unwrap(),
+        "one billion"
+      );
+      // Zero groups are skipped, but the comma still separates the rest.
+      assert_eq!(
+        interpret("IntegerName[1000005, \"Words\"]").unwrap(),
+        "one million, five"
+      );
+      assert_eq!(
+        interpret("IntegerName[-1234, \"Words\"]").unwrap(),
+        "negative one thousand, two hundred thirty\u{2010}four"
+      );
+    }
+
+    #[test]
+    fn test_words_small_numbers_and_other_forms_unchanged() {
+      // Small numbers match the default; "Words" of them is identical.
+      assert_eq!(
+        interpret("IntegerName[42, \"Words\"]").unwrap(),
+        "forty\u{2010}two"
+      );
+      assert_eq!(interpret("IntegerName[0, \"Words\"]").unwrap(), "zero");
+      // The default form keeps digit groups for large numbers.
+      assert_eq!(
+        interpret("IntegerName[1234567]").unwrap(),
+        "1 million 234 thousand 567"
+      );
+      // Ordinal form is unaffected.
+      assert_eq!(
+        interpret("IntegerName[123, \"Ordinal\"]").unwrap(),
+        "one hundred twenty-third"
+      );
+    }
+  }
 }
