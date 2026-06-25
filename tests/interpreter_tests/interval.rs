@@ -926,3 +926,64 @@ fn min_max_interval() {
     "MinMax[Interval[{a, b}]]"
   );
 }
+
+// ─── Comparisons ─────────────────────────────────────────────────────────────
+
+#[test]
+fn interval_order_comparisons() {
+  // Determinable when the ranges are disjoint.
+  assert_eq!(
+    interpret("Interval[{2, 3}] < Interval[{4, 5}]").unwrap(),
+    "True"
+  );
+  assert_eq!(
+    interpret("Interval[{4, 5}] < Interval[{2, 3}]").unwrap(),
+    "False"
+  );
+  assert_eq!(
+    interpret("Interval[{2, 3}] > Interval[{4, 5}]").unwrap(),
+    "False"
+  );
+  assert_eq!(
+    interpret("Interval[{2, 3}] <= Interval[{3, 5}]").unwrap(),
+    "True"
+  );
+  // A scalar counts as a degenerate interval.
+  assert_eq!(interpret("Interval[{2, 3}] < 4").unwrap(), "True");
+  assert_eq!(interpret("3 < Interval[{4, 5}]").unwrap(), "True");
+}
+
+#[test]
+fn interval_comparisons_stay_unevaluated_when_overlapping() {
+  assert_eq!(
+    interpret("Interval[{2, 5}] < Interval[{4, 7}]").unwrap(),
+    "Interval[{2, 5}] < Interval[{4, 7}]"
+  );
+  // Touching at an endpoint is not strictly less.
+  assert_eq!(
+    interpret("Interval[{1, 2}] < Interval[{2, 3}]").unwrap(),
+    "Interval[{1, 2}] < Interval[{2, 3}]"
+  );
+  assert_eq!(
+    interpret("Interval[{2, 3}] < 2.5").unwrap(),
+    "Interval[{2, 3}] < 2.5"
+  );
+}
+
+#[test]
+fn interval_equality() {
+  // Disjoint intervals are unequal.
+  assert_eq!(
+    interpret("Interval[{2, 3}] == Interval[{4, 5}]").unwrap(),
+    "False"
+  );
+  assert_eq!(
+    interpret("Interval[{2, 3}] != Interval[{4, 5}]").unwrap(),
+    "True"
+  );
+  // Identical intervals are equal (structural fallback).
+  assert_eq!(
+    interpret("Interval[{2, 3}] == Interval[{2, 3}]").unwrap(),
+    "True"
+  );
+}

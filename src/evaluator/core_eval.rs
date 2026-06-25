@@ -2418,6 +2418,20 @@ pub fn evaluate_expr_to_expr_inner(
         let right = &values[i + 1];
         let op = &operators[i];
 
+        // Interval comparisons: Interval[{a,b}] < Interval[{c,d}], a scalar
+        // counting as the degenerate interval {s,s}. A determinable result is
+        // used directly; an indeterminate (overlapping) one falls through to
+        // the normal logic, which leaves the comparison unevaluated.
+        if (crate::functions::interval_ast::is_interval(left).is_some()
+          || crate::functions::interval_ast::is_interval(right).is_some())
+          && let Some(b) = interval_compare(op, left, right)
+        {
+          if !b {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+          continue;
+        }
+
         let result = match op {
           ComparisonOp::SameQ => {
             // SameQ tests structural identity, not numeric equality.
@@ -3205,6 +3219,87 @@ fn unwrap_evaluate_in_body(body: &Expr) -> Result<Expr, InterpreterError> {
 ///   - Otherwise (Equal/SameQ mixed with one direction of inequalities,
 ///     or only Less-direction / only Greater-direction ops) → keep as a
 ///     single chain.  These print either as `a == b == c` or `Inequality[…]`.
+/// Numeric range [lo, hi] of an expression for interval comparison: an
+/// `Interval[{a,b}, …]` collapses to its overall min/max, and a scalar number
+/// `s` becomes the degenerate range [s, s]. Returns None if any bound is not a
+/// finite real (e.g. a symbol).
+fn interval_numeric_bounds(expr: &Expr) -> Option<(f64, f64)> {
+  use crate::functions::math_ast::try_eval_to_f64_with_infinity as to_f64;
+  if let Some(subs) = crate::functions::interval_ast::is_interval(expr) {
+    if subs.is_empty() {
+      return None;
+    }
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    for (l, h) in &subs {
+      lo = lo.min(to_f64(l)?);
+      hi = hi.max(to_f64(h)?);
+    }
+    Some((lo, hi))
+  } else {
+    let v = to_f64(expr)?;
+    Some((v, v))
+  }
+}
+
+/// Compare two values when at least one is an Interval, following Wolfram:
+/// `X < Y` is True when X lies entirely below Y, False when entirely at/above,
+/// and indeterminate (None) when the ranges overlap. `==`/`!=` resolve only for
+/// disjoint ranges. None lets the caller leave the comparison unevaluated.
+fn interval_compare(
+  op: &ComparisonOp,
+  left: &Expr,
+  right: &Expr,
+) -> Option<bool> {
+  use ComparisonOp::*;
+  let (xlo, xhi) = interval_numeric_bounds(left)?;
+  let (ylo, yhi) = interval_numeric_bounds(right)?;
+  let disjoint = xhi < ylo || yhi < xlo;
+  match op {
+    Less => {
+      if xhi < ylo {
+        Some(true)
+      } else if xlo >= yhi {
+        Some(false)
+      } else {
+        None
+      }
+    }
+    LessEqual => {
+      if xhi <= ylo {
+        Some(true)
+      } else if xlo > yhi {
+        Some(false)
+      } else {
+        None
+      }
+    }
+    Greater => {
+      if xlo > yhi {
+        Some(true)
+      } else if xhi <= ylo {
+        Some(false)
+      } else {
+        None
+      }
+    }
+    GreaterEqual => {
+      if xlo >= yhi {
+        Some(true)
+      } else if xhi < ylo {
+        Some(false)
+      } else {
+        None
+      }
+    }
+    // Equal/Unequal resolve only when the ranges cannot overlap; identical
+    // intervals are still caught by the structural string-equality fallback.
+    Equal if disjoint => Some(false),
+    NotEqual if disjoint => Some(true),
+    _ => None,
+  }
+}
+
 fn all_same_comparison_family(ops: &[ComparisonOp]) -> bool {
   use ComparisonOp::*;
   let mixed = ops.iter().skip(1).any(|op| op != &ops[0]);
