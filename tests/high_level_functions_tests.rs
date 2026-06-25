@@ -6365,4 +6365,78 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod rotation_matrix_3d_tests {
+    use super::*;
+
+    #[test]
+    fn test_diagonal_axis_normalized() {
+      // Regression: the axis must be normalized. The un-normalized {1,1,1}
+      // would (wrongly) give {{1,0,2},{2,1,0},{0,2,1}}.
+      assert_eq!(
+        interpret("RotationMatrix[Pi/2,{1,1,1}]").unwrap(),
+        "{{1/3, (1 - Sqrt[3])/3, (1 + Sqrt[3])/3}, \
+         {(1 + Sqrt[3])/3, 1/3, (1 - Sqrt[3])/3}, \
+         {(1 - Sqrt[3])/3, (1 + Sqrt[3])/3, 1/3}}"
+      );
+    }
+
+    #[test]
+    fn test_unit_z_axis() {
+      assert_eq!(
+        interpret("RotationMatrix[Pi/2,{0,0,1}]").unwrap(),
+        "{{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_nonunit_z_axis_normalized() {
+      // {0,0,2} must give the same matrix as the unit z axis.
+      assert_eq!(
+        interpret("RotationMatrix[Pi/2,{0,0,2}]").unwrap(),
+        "{{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_nonunit_x_axis_normalized() {
+      assert_eq!(
+        interpret("RotationMatrix[Pi/2,{2,0,0}]").unwrap(),
+        "{{1, 0, 0}, {0, 0, -1}, {0, 1, 0}}"
+      );
+    }
+
+    #[test]
+    fn test_symbolic_angle() {
+      assert_eq!(
+        interpret("RotationMatrix[t,{0,0,1}]").unwrap(),
+        "{{Cos[t], -Sin[t], 0}, {Sin[t], Cos[t], 0}, {0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_apply_to_vector() {
+      assert_eq!(
+        interpret("RotationMatrix[Pi/2,{1,1,1}].{1,0,0}").unwrap(),
+        "{1/3, (1 + Sqrt[3])/3, (1 - Sqrt[3])/3}"
+      );
+    }
+
+    #[test]
+    fn test_symbolic_axis_unevaluated() {
+      assert_eq!(
+        interpret("RotationMatrix[Pi/2,{a,b,c}]").unwrap(),
+        "RotationMatrix[Pi/2, {a, b, c}]"
+      );
+    }
+
+    #[test]
+    fn test_2d_unchanged() {
+      // The 2D single-argument form is unaffected.
+      assert_eq!(
+        interpret("RotationMatrix[Pi/3]").unwrap(),
+        "{{1/2, -1/2*Sqrt[3]}, {Sqrt[3]/2, 1/2}}"
+      );
+    }
+  }
 }
