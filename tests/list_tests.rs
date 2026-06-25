@@ -680,6 +680,42 @@ mod list_tests {
   }
 
   #[test]
+  fn directed_infinity_structured_pattern() {
+    // DirectedInfinity[d_] destructures the infinity symbols into their
+    // direction: Infinity -> 1, -Infinity -> -1, ComplexInfinity -> {}.
+    assert_eq!(
+      interpret("Infinity /. DirectedInfinity[d_] :> d").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("-Infinity /. DirectedInfinity[d_] :> d").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("ComplexInfinity /. DirectedInfinity[d___] :> {d}").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("MatchQ[Infinity, DirectedInfinity[_]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Cases[{Infinity, -Infinity, 3}, DirectedInfinity[d_] :> d]")
+        .unwrap(),
+      "{1, -1}"
+    );
+    // Nested and explicit DirectedInfinity forms still work.
+    assert_eq!(
+      interpret("f[Infinity] /. f[DirectedInfinity[d_]] :> d").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("MatchQ[DirectedInfinity[I], DirectedInfinity[_]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn depth_descends_into_operator_forms() {
     // Power (x^2 / Sqrt[x]) and other operator/special forms are stored as
     // BinaryOp/Comparison/Rule etc.; Depth must descend into their canonical

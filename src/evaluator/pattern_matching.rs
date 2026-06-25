@@ -2926,6 +2926,17 @@ fn match_pattern_impl(
   {
     return match_pattern_impl(expr, &args[0]);
   }
+  // A `DirectedInfinity[…]` pattern should match the symbol forms Infinity,
+  // -Infinity and ComplexInfinity by canonicalizing the subject to its
+  // DirectedInfinity[direction] representation, so `Infinity /.
+  // DirectedInfinity[d_] :> d` binds d = 1.
+  if let Expr::FunctionCall { name, .. } = pattern
+    && name == "DirectedInfinity"
+    && !matches!(expr, Expr::FunctionCall { name: en, .. } if en == "DirectedInfinity")
+    && let Some(canon) = directed_infinity_canonical(expr)
+  {
+    return match_pattern_impl(&canon, pattern);
+  }
   // Rule/RuleDelayed have dedicated AST variants; canonicalize both sides
   // to FunctionCall form so structural patterns like `_ -> _` match rule
   // expressions.
@@ -3659,6 +3670,50 @@ fn match_pattern_impl(
 }
 
 /// Get the head of an expression (for pattern matching with head constraints)
+/// Canonical `DirectedInfinity[direction]` form of a directed-infinity symbol:
+/// Infinity → DirectedInfinity[1], -Infinity → DirectedInfinity[-1],
+/// ComplexInfinity → DirectedInfinity[]. Returns None for anything else (and
+/// for an already-explicit DirectedInfinity[…], which needs no rewriting).
+fn directed_infinity_canonical(expr: &Expr) -> Option<Expr> {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  let is_inf = |e: &Expr| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity");
+  let di = |dir: Vec<Expr>| Expr::FunctionCall {
+    name: "DirectedInfinity".to_string(),
+    args: dir.into(),
+  };
+  match expr {
+    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
+      Some(di(vec![Expr::Integer(1)]))
+    }
+    Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
+      Some(di(vec![]))
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } if is_inf(operand) => Some(di(vec![Expr::Integer(-1)])),
+    // -Infinity = Times[-1, Infinity] (FunctionCall or BinaryOp form).
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.iter().any(is_inf)
+        && args.iter().any(|a| matches!(a, Expr::Integer(-1))) =>
+    {
+      Some(di(vec![Expr::Integer(-1)]))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if (is_inf(left) || is_inf(right))
+      && (matches!(left.as_ref(), Expr::Integer(-1))
+        || matches!(right.as_ref(), Expr::Integer(-1))) =>
+    {
+      Some(di(vec![Expr::Integer(-1)]))
+    }
+    _ => None,
+  }
+}
+
 pub fn get_expr_head(expr: &Expr) -> String {
   use crate::syntax::{BinaryOperator, UnaryOperator};
   // Check for complex numbers before general matching,
