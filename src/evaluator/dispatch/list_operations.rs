@@ -4667,6 +4667,12 @@ pub fn dispatch_list_operations(
     "Identity" if args.len() == 1 => {
       return Some(list_helpers_ast::identity_ast(&args[0]));
     }
+    // Once[expr] / Once[expr, loc] evaluates expr once and returns the result.
+    // Woxi is stateless per evaluation, so caching is a no-op: just unwrap the
+    // (already-evaluated) argument.
+    "Once" if args.len() == 1 || args.len() == 2 => {
+      return Some(Ok(args[0].clone()));
+    }
     // Composition[] -> Identity
     "Composition" if args.is_empty() => {
       return Some(Ok(Expr::Identifier("Identity".to_string())));

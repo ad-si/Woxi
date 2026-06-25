@@ -2603,3 +2603,21 @@ mod arithmetic_head_application {
     assert_eq!(interpret("Head[(f + g) @ x]").unwrap(), "f + g");
   }
 }
+
+// Once[expr] evaluates expr and returns the result (no surviving wrapper).
+mod once_wrapper {
+  use super::*;
+
+  #[test]
+  fn unwraps_to_value() {
+    assert_eq!(interpret("Once[1 + 1]").unwrap(), "2");
+    assert_eq!(interpret("Head[Once[1 + 1]]").unwrap(), "Integer");
+    assert_eq!(interpret("Once[Range[3]]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn two_argument_form() {
+    // Once[expr, loc] caches at a location; the returned value is the same.
+    assert_eq!(interpret("Once[5 + 5, \"KernelSession\"]").unwrap(), "10");
+  }
+}
