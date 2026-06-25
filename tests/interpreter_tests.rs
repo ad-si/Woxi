@@ -246,6 +246,66 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_guarded_rule_three_arg_incomparable_order() {
+    // Issue #121: a `/;`-guarded rule and a structurally-more-specific
+    // unguarded rule are INCOMPARABLE and must fire in definition order, even
+    // when the unguarded rule has more head constraints. The guard rule was
+    // entered first, so it must win for the overlapping `(-1, 3, 2)` case.
+    clear_state();
+    interpret("g3[a_Integer, _, _] := neg /; (a < 0)").unwrap();
+    interpret("g3[a_Integer, b_Integer, c_Integer] := three").unwrap();
+    assert_eq!(interpret("g3[-1, 3, 2]").unwrap(), "neg");
+    assert_eq!(interpret("g3[1, 3, 2]").unwrap(), "three");
+    // Reversed definition order: the unguarded rule is entered first and wins,
+    // since the two rules are incomparable (entry order is preserved).
+    clear_state();
+    interpret("h3[a_Integer, b_Integer, c_Integer] := three").unwrap();
+    interpret("h3[a_Integer, _, _] := neg /; (a < 0)").unwrap();
+    assert_eq!(interpret("h3[-1, 3, 2]").unwrap(), "three");
+    assert_eq!(interpret("h3[1, 3, 2]").unwrap(), "three");
+    clear_state();
+  }
+
+  #[test]
+  fn test_bipartite_partitions_three_arg_recursion() {
+    // Issue #121: the three-index bipartite-partition recursion relies on the
+    // `BiPartitionsP[n1_Integer, _, _] := 0 /; n1<0` guard firing before the
+    // unguarded memoizing rule. A wrong order made `BiPartitionsP[-1, 3, 2]`
+    // evaluate to 1, inflating the total. Matches wolframscript exactly.
+    clear_state();
+    let program = "Unprotect[PartitionsP]\n\
+      PartitionsP[n_Integer, _] := 0 /; (n < 0)\n\
+      PartitionsP[0, 0] := 1\n\
+      PartitionsP[_, 0] := 0\n\
+      PartitionsP[_, r_Integer] := 0 /; (r < 0)\n\
+      PartitionsP[n_Integer, 1] := 1 /; (n > 0)\n\
+      PartitionsP[n_Integer, 2] := Floor[n/2] /; (n > 0)\n\
+      PartitionsP[n_Integer, r_Integer] := PartitionsP[n-r] /; (r >= n/2)\n\
+      PartitionsP[n_Integer, r_Integer] := \
+        PartitionsP[n, r] = PartitionsP[n-1, r-1] + PartitionsP[n-r, r]\n\
+      BiPartitionsP[n1_Integer, n2_Integer, r_Integer] := \
+        BiPartitionsP[n2, n1, r] /; (n1 > n2)\n\
+      BiPartitionsP[n1_Integer, _, _] := 0 /; (n1 < 0)\n\
+      BiPartitionsP[0, n2_Integer, r_Integer] := PartitionsP[n2, r]\n\
+      BiPartitionsP[0, 0, 0] := 1\n\
+      BiPartitionsP[_, _, 0] := 0\n\
+      BiPartitionsP[0, 0, _] := 0\n\
+      BiPartitionsP[_, _, 1] := 1\n\
+      BiPartitionsP[n1_Integer, n2_Integer, r_Integer] := \
+        0 /; ((r < 0) || (r > n1+n2))\n\
+      BiPartitionsP[n1_Integer, n2_Integer, r_Integer] := \
+        BiPartitionsP[n1, n2, r] = BiPartitionsP[n1-1, n2, r-1] + \
+        BiPartitionsP[n1-r, n2, r] + \
+        Sum[BiPartitionsP[n1-i, n2-j, i] PartitionsP[j, r-i], \
+          {i, Min[r-1, n1]}, {j, r-i, Min[n2, n1+n2-2i]}]\n\
+      { BiPartitionsP[-1, 3, 2], \
+        Table[BiPartitionsP[2, 3, r], {r, 0, 5}], \
+        Sum[BiPartitionsP[2, 3, r], {r, 0, 5}] }";
+    assert_eq!(interpret(program).unwrap(), "{0, {0, 1, 5, 6, 3, 1}, 16}");
+    clear_state();
+  }
+
+  #[test]
   fn test_list_pattern_literal_element() {
     // Issue #119: a literal element inside a list pattern must be matched
     // exactly — `f[{0, n2_}]` must NOT match `f[{1, 5}]`.

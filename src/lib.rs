@@ -3761,18 +3761,26 @@ fn store_function_definition(
       });
     }
     // Add the new definition with parsed AST, conditions, defaults, and head constraints.
-    // Insert by pattern specificity: Blank < BlankSequence < BlankNullSequence
-    let score = crate::evaluator::assignment::pattern_specificity_score(
-      &blank_types,
-      &heads,
-      &conditions,
-      &body_expr,
-    );
+    // Insert by the rule partial order: place the new rule before the first
+    // existing rule it strictly dominates (is more specific than). Rules it does
+    // not dominate — including incomparable ones, such as a guarded but
+    // structurally looser rule vs an unguarded tighter one — keep definition
+    // order, matching Wolfram.
     let pos = entry
       .iter()
-      .position(|(_, c, _, h, bt, b)| {
-        crate::evaluator::assignment::pattern_specificity_score(bt, h, c, b)
-          > score
+      .position(|(p, c, _, h, bt, b)| {
+        crate::evaluator::assignment::rule_dominates(
+          &params,
+          &heads,
+          &blank_types,
+          &conditions,
+          &body_expr,
+          p,
+          h,
+          bt,
+          c,
+          b,
+        )
       })
       .unwrap_or(entry.len());
     entry.insert(

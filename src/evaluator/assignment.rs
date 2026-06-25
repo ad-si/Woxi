@@ -246,6 +246,127 @@ pub fn pattern_specificity_score(
   (max_blank * 10).saturating_sub(head_bonus + cond_bonus + rule_cond_bonus)
 }
 
+/// Split a rule's stored arrays into its argument positions (head + blank type)
+/// and its guard expressions, for partial-order comparison. Appended guard-only
+/// slots (empty param name, line ~2149) contribute a guard but not a position;
+/// a real position whose condition slot holds a `/;` guard contributes both a
+/// position and a guard. `__StructuralPattern__` markers are structural, not
+/// guards. A whole-rule `Condition[body, test]` wrapper also contributes a guard.
+fn rule_positions_and_guards(
+  params: &[String],
+  heads: &[Option<String>],
+  blank_types: &[u8],
+  conditions: &[Option<Expr>],
+  body: &Expr,
+) -> (Vec<(Option<String>, u8)>, Vec<Expr>) {
+  let mut positions = Vec::new();
+  let mut guards = Vec::new();
+  for i in 0..heads.len() {
+    let cond = conditions.get(i).and_then(|c| c.as_ref());
+    let is_guard_slot = params.get(i).map(|p| p.is_empty()).unwrap_or(false);
+    if is_guard_slot {
+      if let Some(c) = cond {
+        guards.push(c.clone());
+      }
+      continue;
+    }
+    positions.push((heads[i].clone(), blank_types[i]));
+    if let Some(c) = cond {
+      let is_structural_marker = matches!(
+        c,
+        Expr::FunctionCall { name, .. } if name == "__StructuralPattern__"
+      );
+      if !is_structural_marker {
+        guards.push(c.clone());
+      }
+    }
+  }
+  if let Expr::FunctionCall { name, args } = body
+    && name == "Condition"
+    && args.len() == 2
+  {
+    guards.push(args[1].clone());
+  }
+  (positions, guards)
+}
+
+/// Partial order on rules: returns true when rule `a`'s match set is a strict
+/// subset of rule `b`'s, i.e. `a` is strictly more specific and must be tried
+/// before `b`. Returns false when the two rules are incomparable (neither match
+/// set contains the other), in which case the caller preserves definition
+/// order — matching Wolfram, where e.g. `f[n_Integer, _] := 0 /; n < 0` and
+/// `f[n_Integer, r_Integer] := …` are incomparable (a guarded but structurally
+/// looser rule vs an unguarded but structurally tighter one) and fire in the
+/// order they were entered.
+pub fn rule_dominates(
+  a_params: &[String],
+  a_heads: &[Option<String>],
+  a_bt: &[u8],
+  a_conds: &[Option<Expr>],
+  a_body: &Expr,
+  b_params: &[String],
+  b_heads: &[Option<String>],
+  b_bt: &[u8],
+  b_conds: &[Option<Expr>],
+  b_body: &Expr,
+) -> bool {
+  // List-destructuring patterns (`f[{a_, b_}]`) encode their element
+  // constraints as opaque `MatchQ`/`Length` conditions on a single `_lp` param,
+  // which the position/guard split below cannot compare. Fall back to the
+  // linear specificity score for them (`score(a) < score(b)` ⇔ `a` is more
+  // specific), preserving the established list-pattern ordering.
+  let is_list_pattern =
+    |params: &[String]| params.iter().any(|p| p.starts_with("_lp"));
+  if is_list_pattern(a_params) || is_list_pattern(b_params) {
+    return pattern_specificity_score(a_bt, a_heads, a_conds, a_body)
+      < pattern_specificity_score(b_bt, b_heads, b_conds, b_body);
+  }
+  let (a_pos, a_guards) =
+    rule_positions_and_guards(a_params, a_heads, a_bt, a_conds, a_body);
+  let (b_pos, b_guards) =
+    rule_positions_and_guards(b_params, b_heads, b_bt, b_conds, b_body);
+  // Different arities never match the same expression — incomparable.
+  if a_pos.len() != b_pos.len() {
+    return false;
+  }
+  let mut strictly_tighter = false;
+  for ((ah, abt), (bh, bbt)) in a_pos.iter().zip(b_pos.iter()) {
+    // Head: if `b` constrains the head, `a` must constrain it identically;
+    // otherwise `a` could match a head `b` rejects → not a subset.
+    match (ah, bh) {
+      (_, None) => {
+        if ah.is_some() {
+          strictly_tighter = true;
+        }
+      }
+      (Some(a), Some(b)) if a == b => {}
+      _ => return false,
+    }
+    // Blank type: a looser blank (larger type) on `a` breaks the subset.
+    if abt > bbt {
+      return false;
+    }
+    if abt < bbt {
+      strictly_tighter = true;
+    }
+  }
+  // Every guard of `b` must also guard `a`, else `a` accepts inputs `b` rejects.
+  // Compare guards by their string form (Expr has no PartialEq).
+  let a_guard_strs: Vec<String> =
+    a_guards.iter().map(crate::syntax::expr_to_string).collect();
+  let b_guard_strs: Vec<String> =
+    b_guards.iter().map(crate::syntax::expr_to_string).collect();
+  for g in &b_guard_strs {
+    if !a_guard_strs.contains(g) {
+      return false;
+    }
+  }
+  let a_has_extra_guard =
+    a_guard_strs.iter().any(|g| !b_guard_strs.contains(g));
+  // Strict subset only: identical rules don't dominate, so order is preserved.
+  strictly_tighter || a_has_extra_guard
+}
+
 /// Count the meaningful constraint clauses inside a stored condition, recursing
 /// through `And[…]`. The synthetic `Length[_lp] === N` length check emitted for
 /// list patterns is structural, not a specificity constraint, so it is
@@ -1473,17 +1594,25 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
           ),
         );
       } else {
-        // Insert by pattern specificity: Blank < BlankSequence < BlankNullSequence
-        let score = pattern_specificity_score(
-          &blank_types,
-          &heads,
-          &conditions,
-          &rhs_value,
-        );
+        // Insert by the rule partial order: place the new rule before the first
+        // existing rule it strictly dominates (is more specific than). Rules it
+        // does not dominate — including incomparable ones — keep definition
+        // order, matching Wolfram.
         let pos = entry
           .iter()
-          .position(|(_, c, _, h, bt, b)| {
-            pattern_specificity_score(bt, h, c, b) > score
+          .position(|(p, c, _, h, bt, b)| {
+            rule_dominates(
+              &params,
+              &heads,
+              &blank_types,
+              &conditions,
+              &rhs_value,
+              p,
+              h,
+              bt,
+              c,
+              b,
+            )
           })
           .unwrap_or(entry.len());
         entry.insert(
@@ -2176,17 +2305,25 @@ pub fn set_delayed_ast(
           })
           .unwrap_or(entry.len())
       } else {
-        // Insert by pattern specificity: Blank < BlankSequence < BlankNullSequence
-        let score = pattern_specificity_score(
-          &blank_types,
-          &heads,
-          &conditions,
-          &final_body,
-        );
+        // Insert by the rule partial order: place the new rule before the first
+        // existing rule it strictly dominates (is more specific than). Rules it
+        // does not dominate — including incomparable ones — keep definition
+        // order, matching Wolfram.
         entry
           .iter()
-          .position(|(_, c, _, h, bt, b)| {
-            pattern_specificity_score(bt, h, c, b) > score
+          .position(|(p, c, _, h, bt, b)| {
+            rule_dominates(
+              &params,
+              &heads,
+              &blank_types,
+              &conditions,
+              &final_body,
+              p,
+              h,
+              bt,
+              c,
+              b,
+            )
           })
           .unwrap_or(entry.len())
       };
