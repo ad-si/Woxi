@@ -787,8 +787,20 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
 /// first `n` matches in scan order.
 /// Wolfram-style depth of an expression: atoms have depth 1, composites
 /// 1 + the maximum child depth (used for negative level specifications).
+/// Rational and Complex numbers are atomic for Level / Depth / Cases /
+/// Position purposes (matching Wolfram's AtomQ), even though Woxi stores a
+/// rational as a `Rational[n, d]` call and a complex as a Plus-Times tree.
+/// They must therefore not be descended into when enumerating levels.
+fn is_atomic_number(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
+    || crate::functions::predicate_ast::is_complex_number(expr)
+}
+
 fn position_depth(expr: &Expr) -> i64 {
   use crate::functions::expr_form::{ExprForm, decompose_expr};
+  if is_atomic_number(expr) {
+    return 1;
+  }
   match expr {
     Expr::Association(pairs) => {
       1 + pairs
@@ -840,6 +852,8 @@ fn position_visit(
     Keyed(Vec<(Expr, Expr)>),
   }
   let (head, kids): (Option<Expr>, Kids) = match expr {
+    // Rational / Complex are atoms: do not descend into their parts.
+    _ if is_atomic_number(expr) => (None, Kids::None),
     Expr::Association(pairs) => (
       Some(Expr::Identifier("Association".to_string())),
       Kids::Keyed(pairs.clone()),
@@ -924,6 +938,8 @@ fn cases_visit(
   use crate::functions::expr_form::{ExprForm, decompose_expr};
 
   let (head, kids): (Option<Expr>, Vec<Expr>) = match expr {
+    // Rational / Complex are atoms: do not descend into their parts.
+    _ if is_atomic_number(expr) => (None, Vec::new()),
     Expr::Association(pairs) => (
       Some(Expr::Identifier("Association".to_string())),
       pairs.iter().map(|(_, v)| v.clone()).collect(),

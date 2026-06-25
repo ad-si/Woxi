@@ -514,6 +514,39 @@ mod list_tests {
   }
 
   #[test]
+  fn level_treats_rational_and_complex_as_atoms() {
+    // Regression: Level must not descend into a Rational's {num, den} or a
+    // Complex's structure.
+    assert_eq!(interpret("Level[1/2, {-1}]").unwrap(), "{1/2}");
+    assert_eq!(interpret("Level[1/2, {1}]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Level[3 + x/2, Infinity]").unwrap(),
+      "{3, 1/2, x, x/2}"
+    );
+    assert_eq!(interpret("Level[1 + 2 I, {-1}]").unwrap(), "{1 + 2*I}");
+    assert_eq!(interpret("Level[{1/2, 1/3}, {-1}]").unwrap(), "{1/2, 1/3}");
+    assert_eq!(interpret("Level[f[1/2, a], {-1}]").unwrap(), "{1/2, a}");
+  }
+
+  #[test]
+  fn depth_treats_rational_as_atom() {
+    assert_eq!(interpret("Depth[1/2]").unwrap(), "1");
+    assert_eq!(interpret("Depth[1 + 2 I]").unwrap(), "1");
+    assert_eq!(interpret("Depth[3 + x/2]").unwrap(), "3");
+  }
+
+  #[test]
+  fn cases_position_count_skip_rational_internals() {
+    // A leveled pattern search must not match a Rational's numerator/denom.
+    assert_eq!(
+      interpret("Cases[{1/2, 3, 5/4}, _Integer, {-1}]").unwrap(),
+      "{3}"
+    );
+    assert_eq!(interpret("Position[1/2, 1]").unwrap(), "{}");
+    assert_eq!(interpret("Count[{1/2, 3/4}, _Integer, {-1}]").unwrap(), "0");
+  }
+
+  #[test]
   fn inner() {
     assert_eq!(
       interpret("Inner[Times, {1, 2, 3}, {4, 5, 6}, Plus]").unwrap(),
