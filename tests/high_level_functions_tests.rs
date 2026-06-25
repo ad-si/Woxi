@@ -1795,6 +1795,23 @@ mod high_level_functions_tests {
     }
   }
 
+  mod get_tests {
+    use woxi::interpret_with_stdout;
+
+    // `Get` on a missing file returns `$Failed` and, like wolframscript,
+    // prints the `Get::noopen` message to stdout (with a leading blank line)
+    // so it is captured by `interpret_with_stdout` (snapshots/playground/Jupyter).
+    #[test]
+    fn test_get_missing_file_message_to_stdout() {
+      let result = interpret_with_stdout(r#"Get["does_not_exist.m"]"#).unwrap();
+      assert_eq!(result.result, "$Failed");
+      assert_eq!(
+        result.stdout,
+        "\nGet::noopen: Cannot open does_not_exist.m.\n"
+      );
+    }
+  }
+
   mod format_tests {
     use super::*;
 

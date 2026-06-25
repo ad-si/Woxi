@@ -267,7 +267,10 @@ pub fn dispatch_io_functions(
       let content = match std::fs::read_to_string(&filename) {
         Ok(c) => c,
         Err(_) => {
-          crate::emit_message(&format!(
+          // wolframscript prints this message to stdout (verified with
+          // `wolframscript -file`), so mirror it into the captured buffer to
+          // keep snapshot/playground/Jupyter output byte-for-byte consistent.
+          crate::emit_message_to_stdout(&format!(
             "Get::noopen: Cannot open {}.",
             filename
           ));

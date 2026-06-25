@@ -2,4 +2,6 @@
 source: tests/script_snapshot_tests.rs
 expression: stdout
 ---
+
+Get::noopen: Cannot open scriptedmain.ma.
 Test: The meaning of life is 42
