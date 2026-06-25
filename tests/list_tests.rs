@@ -495,6 +495,25 @@ mod list_tests {
   }
 
   #[test]
+  fn outer_rational_and_complex_are_atoms() {
+    // Regression: Rational/Complex must be treated as atoms, not descended
+    // into as if {num, den} / {re, im} were a sub-level.
+    assert_eq!(interpret("Outer[Times, {1/2}, {1/3}]").unwrap(), "{{1/6}}");
+    assert_eq!(
+      interpret("Outer[Times, {2/3, -2/3, 1/3}, {1/3, 2/3, 2/3}]").unwrap(),
+      "{{2/9, 4/9, 4/9}, {-2/9, -4/9, -4/9}, {1/9, 2/9, 2/9}}"
+    );
+    assert_eq!(
+      interpret("Outer[Plus, {1/2, 1/4}, {1/3}]").unwrap(),
+      "{{5/6}, {7/12}}"
+    );
+    assert_eq!(
+      interpret("Outer[Times, {1 + I, 2}, {1}]").unwrap(),
+      "{{1 + I}, {2}}"
+    );
+  }
+
+  #[test]
   fn inner() {
     assert_eq!(
       interpret("Inner[Times, {1, 2, 3}, {4, 5, 6}, Plus]").unwrap(),

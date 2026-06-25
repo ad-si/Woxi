@@ -6439,4 +6439,88 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod rotation_matrix_plane_tests {
+    use super::*;
+
+    #[test]
+    fn test_two_vector_basis() {
+      // RotationMatrix[{u, v}] rotates the direction of u to v.
+      assert_eq!(
+        interpret("RotationMatrix[{{1,0,0},{0,1,0}}]").unwrap(),
+        "{{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}"
+      );
+      assert_eq!(
+        interpret("RotationMatrix[{{1,0,0},{0,0,1}}]").unwrap(),
+        "{{0, 0, -1}, {0, 1, 0}, {1, 0, 0}}"
+      );
+    }
+
+    #[test]
+    fn test_two_vector_rational() {
+      // Clean rational result (orthogonal vectors of equal norm).
+      assert_eq!(
+        interpret("RotationMatrix[{{1,2,2},{2,-2,1}}]").unwrap(),
+        "{{4/9, 8/9, -1/9}, {-4/9, 1/9, -8/9}, {-7/9, 4/9, 4/9}}"
+      );
+    }
+
+    #[test]
+    fn test_two_vector_radical() {
+      assert_eq!(
+        interpret("RotationMatrix[{{1,0,0},{1,1,0}}]").unwrap(),
+        "{{1/Sqrt[2], -(1/Sqrt[2]), 0}, {1/Sqrt[2], 1/Sqrt[2], 0}, {0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_plane_form_orthonormal() {
+      assert_eq!(
+        interpret("RotationMatrix[Pi/2,{{1,0,0},{0,1,0}}]").unwrap(),
+        "{{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_plane_form_radical_angle() {
+      assert_eq!(
+        interpret("RotationMatrix[Pi/3,{{1,0,0},{0,1,0}}]").unwrap(),
+        "{{1/2, -1/2*Sqrt[3], 0}, {Sqrt[3]/2, 1/2, 0}, {0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_plane_form_orthonormalizes() {
+      // The second vector is orthogonalized against the first, so {1,1,0}
+      // gives the same plane as {0,1,0}.
+      assert_eq!(
+        interpret("RotationMatrix[Pi/2,{{1,0,0},{1,1,0}}]").unwrap(),
+        "{{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_plane_form_non_axis_aligned() {
+      assert_eq!(
+        interpret("RotationMatrix[Pi/2,{{0,0,1},{0,1,0}}]").unwrap(),
+        "{{1, 0, 0}, {0, 0, 1}, {0, -1, 0}}"
+      );
+    }
+
+    #[test]
+    fn test_plane_form_symbolic_angle() {
+      assert_eq!(
+        interpret("RotationMatrix[t,{{1,0,0},{0,1,0}}]").unwrap(),
+        "{{Cos[t], -Sin[t], 0}, {Sin[t], Cos[t], 0}, {0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_2d_two_vector_unchanged() {
+      assert_eq!(
+        interpret("RotationMatrix[{{1,0},{0,1}}]").unwrap(),
+        "{{0, -1}, {1, 0}}"
+      );
+    }
+  }
 }

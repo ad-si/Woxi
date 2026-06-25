@@ -1009,7 +1009,19 @@ pub fn dispatch_linear_algebra_functions(
         );
         return Some(evaluate_expr_to_expr(&mat));
       }
-      // A higher-dimensional vector pair: not implemented, stay unevaluated.
+      // Higher-dimensional two-vector form RotationMatrix[{u, v}]: the
+      // rotation taking the direction of u to v, i.e. the plane rotation by
+      // VectorAngle[u, v] in the plane they span.
+      if let (Expr::List(uu), Expr::List(vv)) = (&pair[0], &pair[1])
+        && uu.len() >= 2
+        && uu.len() == vv.len()
+      {
+        let theta = Expr::FunctionCall {
+          name: "VectorAngle".to_string(),
+          args: vec![pair[0].clone(), pair[1].clone()].into(),
+        };
+        return Some(rotation_matrix_plane(&theta, &pair[0], &pair[1]));
+      }
       return Some(Ok(Expr::FunctionCall {
         name: "RotationMatrix".to_string(),
         args: args.to_vec().into(),
@@ -1038,6 +1050,27 @@ pub fn dispatch_linear_algebra_functions(
         .into(),
       );
       return Some(evaluate_expr_to_expr(&mat));
+    }
+    "RotationMatrix"
+      if args.len() == 2
+        && matches!(&args[1], Expr::List(p)
+          if p.len() == 2 && p.iter().all(|e| matches!(e, Expr::List(_)))) =>
+    {
+      // Plane form RotationMatrix[theta, {u, v}]: rotation by theta in the
+      // plane spanned by the orthonormalized vectors u and v.
+      let Expr::List(pair) = &args[1] else {
+        unreachable!()
+      };
+      if let (Expr::List(uu), Expr::List(vv)) = (&pair[0], &pair[1])
+        && uu.len() >= 2
+        && uu.len() == vv.len()
+      {
+        return Some(rotation_matrix_plane(&args[0], &pair[0], &pair[1]));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "RotationMatrix".to_string(),
+        args: args.to_vec().into(),
+      }));
     }
     "RotationMatrix" if args.len() == 2 => {
       // 3D rotation matrix about a numeric axis by angle theta. Reuse the
@@ -4015,4 +4048,56 @@ fn rotation_transform_3d_axis(
     "TransformationFunction",
     vec![Expr::List(rows.into())],
   )))
+}
+
+/// Rotation matrix by `theta` in the plane spanned by vectors `u` and `v`.
+///
+/// Builds an orthonormal frame e1 = u/|u|, e2 = (v - (v·e1) e1)/|…| and
+///   R = I + sin(θ)(e2 e1ᵀ - e1 e2ᵀ) + (cos(θ) - 1)(e1 e1ᵀ + e2 e2ᵀ),
+/// which rotates by θ within that plane and fixes its orthogonal complement.
+/// Matches wolframscript for RotationMatrix[θ, {u, v}]; with θ =
+/// VectorAngle[u, v] it also gives the two-vector form RotationMatrix[{u, v}].
+fn rotation_matrix_plane(
+  theta: &Expr,
+  u: &Expr,
+  v: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let n = match u {
+    Expr::List(items) => items.len(),
+    _ => return Ok(Expr::Integer(0)),
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  // Orthonormal frame {e1, e2} spanning the rotation plane.
+  let e1 = evaluate_expr_to_expr(&call("Normalize", vec![u.clone()]))?;
+  let vdot = evaluate_expr_to_expr(&call("Dot", vec![v.clone(), e1.clone()]))?;
+  let proj = call("Times", vec![vdot, e1.clone()]);
+  let w = evaluate_expr_to_expr(&call("Subtract", vec![v.clone(), proj]))?;
+  let e2 = evaluate_expr_to_expr(&call("Normalize", vec![w]))?;
+
+  let outer = |a: &Expr, b: &Expr| {
+    call(
+      "Outer",
+      vec![Expr::Identifier("Times".to_string()), a.clone(), b.clone()],
+    )
+  };
+  let sin = call("Sin", vec![theta.clone()]);
+  let cos_m1 = call(
+    "Plus",
+    vec![call("Cos", vec![theta.clone()]), Expr::Integer(-1)],
+  );
+  let anti = call("Subtract", vec![outer(&e2, &e1), outer(&e1, &e2)]);
+  let sym = call("Plus", vec![outer(&e1, &e1), outer(&e2, &e2)]);
+  let id = call("IdentityMatrix", vec![Expr::Integer(n as i128)]);
+  let r = call(
+    "Plus",
+    vec![
+      id,
+      call("Times", vec![sin, anti]),
+      call("Times", vec![cos_m1, sym]),
+    ],
+  );
+  evaluate_expr_to_expr(&r)
 }

@@ -1058,8 +1058,12 @@ fn outer_impl(
   accumulated: &[Expr],
   head: &str,
 ) -> Result<Expr, InterpreterError> {
-  if let Some(items) = expr_items(current) {
+  if expr_head_name(current).as_deref() == Some(head)
+    && let Some(items) = expr_items(current)
+  {
     // Thread through child elements, wrapping the result in the common head.
+    // Only descend into sub-expressions sharing the common head: a Rational,
+    // Complex, or other non-matching FunctionCall is an atom, not a level.
     let mut results = Vec::new();
     for item in items {
       results.push(outer_impl(func, item, remaining, accumulated, head)?);
@@ -1116,6 +1120,7 @@ fn outer_descend(
   depth_remaining: usize,
 ) -> Result<Expr, InterpreterError> {
   if depth_remaining > 0
+    && expr_head_name(current).as_deref() == Some(head)
     && let Some(items) = expr_items(current)
   {
     let mut results = Vec::new();
