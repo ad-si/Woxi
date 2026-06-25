@@ -1820,6 +1820,15 @@ pub fn is_complex_number(expr: &Expr) -> bool {
   false
 }
 
+/// Rational and Complex numbers are atomic (AtomQ → True): their internal
+/// numerator/denominator (a `Rational[n, d]` call) and real/imaginary
+/// structure (a Plus-Times tree) must not be traversed by structural
+/// operations like Map, Apply, Scan, Level, Cases, or Position.
+pub fn is_atomic_number(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
+    || is_complex_number(expr)
+}
+
 /// Check whether the expression contains any actual Real/BigFloat node.
 fn contains_real_literal(expr: &Expr) -> bool {
   match expr {

@@ -262,6 +262,8 @@ pub fn scan_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
         apply_func_ast(func, item)?;
       }
     }
+    // Rational / Complex are atoms — no parts to scan over.
+    _ if crate::functions::predicate_ast::is_atomic_number(list) => {}
     _ => {
       // For any compound expression, decompose into head + children,
       // and apply func to each child for side effects.
@@ -583,6 +585,10 @@ fn nest_while_history(
 /// Extract the children of any expression in Wolfram canonical form.
 /// Returns None for atomic expressions (Integer, Real, String, Symbol).
 fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
+  // Rational and Complex are atoms: Apply on them returns them unchanged.
+  if crate::functions::predicate_ast::is_atomic_number(expr) {
+    return None;
+  }
   match expr {
     Expr::List(items) => Some(items.to_vec()),
     Expr::FunctionCall { args, .. } => Some(args.to_vec()),

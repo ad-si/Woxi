@@ -229,6 +229,33 @@ mod list_tests {
   }
 
   #[test]
+  fn apply_map_scan_treat_rational_complex_as_atoms() {
+    // Rational / Complex are atoms: Apply leaves them unchanged rather than
+    // splatting their internal {num, den} / {re, im} as arguments.
+    assert_eq!(interpret("Apply[f, 1/2]").unwrap(), "1/2");
+    assert_eq!(interpret("Apply[f, 1 + 2 I]").unwrap(), "1 + 2*I");
+    // A list head is still replaced.
+    assert_eq!(interpret("Apply[Plus, {1/2, 3/4}]").unwrap(), "5/4");
+
+    // Map at level 1 over an atom returns it unchanged; level {-1} maps the
+    // atom itself, and a Rational inside a sum is mapped as a whole.
+    assert_eq!(interpret("Map[f, 1/2]").unwrap(), "1/2");
+    assert_eq!(interpret("Map[f, 1/2, {-1}]").unwrap(), "f[1/2]");
+    assert_eq!(
+      interpret("Map[f, 3 + x/2, {-1}]").unwrap(),
+      "f[3] + f[1/2]*f[x]"
+    );
+
+    // Scan has no parts to visit over an atom, so nothing is sown.
+    assert_eq!(interpret("Reap[Scan[Sow, 1/2]]").unwrap(), "{Null, {}}");
+    // The 1/2 inside x/2 is part of the atomic Rational, not sown separately.
+    assert_eq!(
+      interpret("Reap[Scan[Sow, 3 + x/2]]").unwrap(),
+      "{Null, {{3, x/2}}}"
+    );
+  }
+
+  #[test]
   fn find_repeat() {
     // Finds the shortest tiling sub-sequence; a partial final rep is allowed.
     assert_eq!(

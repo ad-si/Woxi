@@ -46,6 +46,10 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::Association(results?))
     }
+    // Rational / Complex are atoms: Map at level 1 returns them unchanged.
+    _ if crate::functions::predicate_ast::is_atomic_number(list) => {
+      Ok(list.clone())
+    }
     _ => {
       // For any compound expression, decompose into head + children,
       // apply func to each child, and reconstruct.
@@ -156,6 +160,10 @@ pub fn map_with_level_ast(
 /// Compute the Wolfram-style depth of an expression.
 /// Atoms have depth 1, compound expressions have depth 1 + max child depth.
 fn expr_depth(expr: &Expr) -> i64 {
+  // Rational / Complex are atoms (depth 1); never descend into their parts.
+  if crate::functions::predicate_ast::is_atomic_number(expr) {
+    return 1;
+  }
   match expr {
     Expr::List(items) => {
       if items.is_empty() {
@@ -185,12 +193,17 @@ fn map_at_depth_negative(
   min_level: i64,
   max_level: i64,
 ) -> Result<Expr, InterpreterError> {
-  let children = match expr {
-    Expr::List(items) => Some((items.as_slice(), None::<&str>)),
-    Expr::FunctionCall { name, args } => {
-      Some((args.as_slice(), Some(name.as_str())))
+  // Rational / Complex are atoms: do not descend into their parts.
+  let children = if crate::functions::predicate_ast::is_atomic_number(expr) {
+    None
+  } else {
+    match expr {
+      Expr::List(items) => Some((items.as_slice(), None::<&str>)),
+      Expr::FunctionCall { name, args } => {
+        Some((args.as_slice(), Some(name.as_str())))
+      }
+      _ => None,
     }
-    _ => None,
   };
 
   let neg_level = -(expr_depth(expr));
@@ -258,6 +271,10 @@ fn map_at_depth(
     map_at_depth(func, child, current_depth + 1, min_level, max_level)
   };
   let result = match expr {
+    // Rational / Complex are atoms: do not descend into their parts.
+    _ if crate::functions::predicate_ast::is_atomic_number(expr) => {
+      expr.clone()
+    }
     Expr::List(items) => {
       let mapped: Result<Vec<Expr>, _> = items.iter().map(recurse).collect();
       Expr::List(mapped?.into())
