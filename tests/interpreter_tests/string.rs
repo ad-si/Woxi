@@ -4042,6 +4042,108 @@ mod tex_form {
     );
   }
 
+  // Powers of trig/hyperbolic/log functions move the exponent onto the
+  // function name (Sin[x]^2 -> \sin ^2(x)); inverse trig keeps a trailing ^2.
+  #[test]
+  fn powers_of_elementary_functions() {
+    assert_eq!(
+      interpret("ToString[Sin[x]^2, TeXForm]").unwrap(),
+      "\\sin ^2(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Sin[x]^10, TeXForm]").unwrap(),
+      "\\sin ^{10}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Cot[x]^2, TeXForm]").unwrap(),
+      "\\cot ^2(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Sech[x]^2, TeXForm]").unwrap(),
+      "\\text{sech}^2(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Log[x]^2, TeXForm]").unwrap(),
+      "\\log ^2(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Cosh[x]^2, TeXForm]").unwrap(),
+      "\\cosh ^2(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Sin[2 x]^2, TeXForm]").unwrap(),
+      "\\sin ^2(2 x)"
+    );
+    assert_eq!(
+      interpret("ToString[Tan[x]^(a + b), TeXForm]").unwrap(),
+      "\\tan ^{a+b}(x)"
+    );
+    // Inverse trig is NOT merged: the exponent trails the whole expression.
+    assert_eq!(
+      interpret("ToString[ArcSin[x]^2, TeXForm]").unwrap(),
+      "\\sin ^{-1}(x)^2"
+    );
+  }
+
+  // A negative rational pulls the minus sign outside the fraction.
+  #[test]
+  fn negative_rational_fraction() {
+    assert_eq!(
+      interpret("ToString[-3/4, TeXForm]").unwrap(),
+      "-\\frac{3}{4}"
+    );
+    assert_eq!(
+      interpret("ToString[3/(-4), TeXForm]").unwrap(),
+      "-\\frac{3}{4}"
+    );
+  }
+
+  // Max/Min/GCD/LCM/Mod/Norm/Factorial2/KroneckerDelta TeX notation.
+  #[test]
+  fn misc_function_notation() {
+    assert_eq!(
+      interpret("ToString[Max[a, b, c], TeXForm]").unwrap(),
+      "\\max (a,b,c)"
+    );
+    assert_eq!(
+      interpret("ToString[Min[a, b], TeXForm]").unwrap(),
+      "\\min (a,b)"
+    );
+    assert_eq!(
+      interpret("ToString[GCD[a, b], TeXForm]").unwrap(),
+      "\\gcd (a,b)"
+    );
+    assert_eq!(
+      interpret("ToString[LCM[a, b], TeXForm]").unwrap(),
+      "\\text{lcm}(a,b)"
+    );
+    assert_eq!(
+      interpret("ToString[Mod[a, b], TeXForm]").unwrap(),
+      "(a \\bmod b)"
+    );
+    assert_eq!(
+      interpret("ToString[Mod[a + b, c], TeXForm]").unwrap(),
+      "((a+b) \\bmod c)"
+    );
+    assert_eq!(interpret("ToString[Norm[v], TeXForm]").unwrap(), "\\| v\\|");
+    assert_eq!(
+      interpret("ToString[Factorial2[n], TeXForm]").unwrap(),
+      "n\\text{!!}"
+    );
+    assert_eq!(
+      interpret("ToString[Factorial2[a + b], TeXForm]").unwrap(),
+      "(a+b)\\text{!!}"
+    );
+    assert_eq!(
+      interpret("ToString[KroneckerDelta[i, j], TeXForm]").unwrap(),
+      "\\delta _{i,j}"
+    );
+    assert_eq!(
+      interpret("ToString[KroneckerDelta[i, j, k], TeXForm]").unwrap(),
+      "\\delta _{i,j,k}"
+    );
+  }
+
   // Element[x, dom] renders as set membership with blackboard-bold sets.
   #[test]
   fn element_set_membership() {

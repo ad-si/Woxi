@@ -5106,6 +5106,40 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
     return format!("\\frac{{1}}{{{}}}", tex_denom_factor(base, -n));
   }
 
+  // Powers of trig/hyperbolic/log functions move the exponent onto the
+  // function name: Sin[x]^2 -> \sin ^2(x), Sech[x]^2 -> \text{sech}^2(x).
+  // (Inverse trig like ArcSin is excluded — it keeps the trailing ^2.)
+  if let Expr::FunctionCall { name, args } = base
+    && args.len() == 1
+  {
+    let exp_tex = expr_to_tex(exp);
+    let exp_grp = if exp_tex.chars().count() == 1 {
+      exp_tex
+    } else {
+      format!("{{{}}}", exp_tex)
+    };
+    let arg = expr_to_tex(&args[0]);
+    if matches!(
+      name.as_str(),
+      "Sin"
+        | "Cos"
+        | "Tan"
+        | "Cot"
+        | "Sec"
+        | "Csc"
+        | "Sinh"
+        | "Cosh"
+        | "Tanh"
+        | "Coth"
+        | "Log"
+    ) {
+      return format!("\\{} ^{}({})", name.to_lowercase(), exp_grp, arg);
+    }
+    if matches!(name.as_str(), "Sech" | "Csch") {
+      return format!("\\text{{{}}}^{}({})", name.to_lowercase(), exp_grp, arg);
+    }
+  }
+
   let base_tex = tex_base_with_parens(base);
   let exp_tex = expr_to_tex(exp);
 
@@ -5181,6 +5215,30 @@ fn tex_logic_operand(
   inner
 }
 
+/// Render an operand atomically, wrapping compound expressions (sums,
+/// products, …) in parentheses. Atoms and genuine function calls render
+/// bare; arithmetic-operator heads (Plus/Times/…) are parenthesized.
+fn tex_atom_or_paren(expr: &Expr) -> String {
+  let inner = expr_to_tex(expr);
+  let atomic = match expr {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::Identifier(_)
+    | Expr::Constant(_)
+    | Expr::String(_) => true,
+    Expr::FunctionCall { name, .. } => !matches!(
+      name.as_str(),
+      "Plus" | "Times" | "Subtract" | "Divide" | "Power"
+    ),
+    _ => false,
+  };
+  if atomic {
+    inner
+  } else {
+    format!("({})", inner)
+  }
+}
+
 /// Map a domain symbol to its blackboard-bold TeX set, for Element[_, dom].
 fn tex_set_domain(expr: &Expr) -> Option<&'static str> {
   if let Expr::Identifier(d) = expr {
@@ -5236,6 +5294,40 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       };
       format!("{}\\in {}", lhs, dom)
     }
+    // Max/Min/GCD use LaTeX operator names; LCM is plain text.
+    "Max" if !args.is_empty() => format!(
+      "\\max ({})",
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+    ),
+    "Min" if !args.is_empty() => format!(
+      "\\min ({})",
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+    ),
+    "GCD" if !args.is_empty() => format!(
+      "\\gcd ({})",
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+    ),
+    "LCM" if !args.is_empty() => format!(
+      "\\text{{lcm}}({})",
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+    ),
+    // Mod[a, b] -> (a \bmod b), parenthesizing compound operands.
+    "Mod" if args.len() == 2 => format!(
+      "({} \\bmod {})",
+      tex_atom_or_paren(&args[0]),
+      tex_atom_or_paren(&args[1])
+    ),
+    // Norm[v] -> \| v\| (vector bars).
+    "Norm" if args.len() == 1 => format!("\\| {}\\|", expr_to_tex(&args[0])),
+    // Factorial2[n] -> n!! (typeset as \text{!!}).
+    "Factorial2" if args.len() == 1 => {
+      format!("{}\\text{{!!}}", tex_atom_or_paren(&args[0]))
+    }
+    // KroneckerDelta[i, j, ...] -> \delta _{i,j,...}.
+    "KroneckerDelta" if !args.is_empty() => format!(
+      "\\delta _{{{}}}",
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+    ),
     // Trig functions
     "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" if args.len() == 1 => {
       let fn_tex = format!("\\{}", name.to_lowercase());
@@ -5314,19 +5406,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // Conjugate: postfix star, parenthesizing compound arguments.
     "Conjugate" if args.len() == 1 => {
-      let inner = expr_to_tex(&args[0]);
-      if matches!(
-        &args[0],
-        Expr::Integer(_)
-          | Expr::Real(_)
-          | Expr::Identifier(_)
-          | Expr::Constant(_)
-          | Expr::String(_)
-      ) {
-        format!("{}^*", inner)
-      } else {
-        format!("({})^*", inner)
-      }
+      format!("{}^*", tex_atom_or_paren(&args[0]))
     }
     // Log
     "Log" if args.len() == 1 => {
@@ -5349,11 +5429,14 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // Rational
     "Rational" if args.len() == 2 => {
-      format!(
-        "\\frac{{{}}}{{{}}}",
-        expr_to_tex(&args[0]),
-        expr_to_tex(&args[1])
-      )
+      // Pull a leading minus out of the fraction: -3/4 -> -\frac{3}{4}.
+      let num = expr_to_tex(&args[0]);
+      let den = expr_to_tex(&args[1]);
+      if let Some(rest) = num.strip_prefix('-') {
+        format!("-\\frac{{{}}}{{{}}}", rest, den)
+      } else {
+        format!("\\frac{{{}}}{{{}}}", num, den)
+      }
     }
     // Plus (n-ary) — use Wolfram canonical order but move pure numeric
     // constants to the end (matching Wolfram's TeXForm convention),
