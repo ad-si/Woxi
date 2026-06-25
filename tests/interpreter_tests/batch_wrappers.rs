@@ -7785,6 +7785,37 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // TreeExpression reconstructs the expression a tree represents — the inverse
+  // of ExpressionTree.
+  #[test]
+  fn tree_expression_reconstructs() {
+    assert_eq!(
+      interpret("TreeExpression[Tree[Plus, {Tree[a, None], Tree[b, None]}]]")
+        .unwrap(),
+      "a + b"
+    );
+    // A leaf gives its data.
+    assert_eq!(interpret("TreeExpression[Tree[5, None]]").unwrap(), "5");
+    // Round-trips through ExpressionTree.
+    assert_eq!(
+      interpret("TreeExpression[ExpressionTree[a + b c]]").unwrap(),
+      "a + b*c"
+    );
+    assert_eq!(
+      interpret("TreeExpression[ExpressionTree[f[x, g[y]]]]").unwrap(),
+      "f[x, g[y]]"
+    );
+    assert_eq!(
+      interpret("TreeExpression[ExpressionTree[{1, 2, 3}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // A non-tree argument stays unevaluated.
+    assert_eq!(
+      interpret("TreeExpression[notATree]").unwrap(),
+      "TreeExpression[notATree]"
+    );
+  }
+
   // The optional structure argument selects the node data.
   #[test]
   fn expression_tree_structures() {

@@ -779,6 +779,37 @@ fn build_expression_tree(e: &Expr, structure: &str) -> Expr {
   }
 }
 
+/// Inverse of `ExpressionTree`: reconstruct the expression a `Tree` represents.
+/// A leaf `Tree[data, None]` gives `data`; an internal node `Tree[head,
+/// {children}]` gives `head[TreeExpression[child], …]`, evaluated. A `head`
+/// that is itself a tree (the "HeadTrees" structure) is reconstructed too.
+fn tree_to_expression(e: &Expr) -> Option<Expr> {
+  let (data, children) = tree_node(e)?;
+  if children.is_empty() {
+    return Some(data.clone());
+  }
+  let child_exprs: Vec<Expr> = children
+    .iter()
+    .map(|c| tree_to_expression(c))
+    .collect::<Option<_>>()?;
+  let head = if tree_node(data).is_some() {
+    tree_to_expression(data)?
+  } else {
+    data.clone()
+  };
+  let call = match &head {
+    Expr::Identifier(name) => Expr::FunctionCall {
+      name: name.clone(),
+      args: child_exprs.into(),
+    },
+    _ => Expr::CurriedCall {
+      func: Box::new(head),
+      args: child_exprs,
+    },
+  };
+  crate::evaluator::evaluate_expr_to_expr(&call).ok()
+}
+
 // Number of edges on the longest path from the root to a leaf (leaf → 0).
 fn tree_depth(e: &Expr) -> Option<i128> {
   let (_data, children) = tree_node(e)?;
@@ -3642,6 +3673,16 @@ pub fn dispatch_list_operations(
         }));
       }
       return Some(Ok(build_expression_tree(&args[0], &structure)));
+    }
+    // TreeExpression[tree] reconstructs the expression that the tree
+    // represents — the inverse of ExpressionTree.
+    "TreeExpression" if args.len() == 1 => {
+      return Some(Ok(tree_to_expression(&args[0]).unwrap_or_else(|| {
+        Expr::FunctionCall {
+          name: "TreeExpression".to_string(),
+          args: args.to_vec().into(),
+        }
+      })));
     }
     // RootTree[tree] gives the root truncated to level 0; RootTree[tree, n]
     // keeps the tree down to level n (n a non-negative integer or Infinity).
