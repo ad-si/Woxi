@@ -810,6 +810,24 @@ fn tree_to_expression(e: &Expr) -> Option<Expr> {
   crate::evaluator::evaluate_expr_to_expr(&call).ok()
 }
 
+/// `TreeRules[tree]`: a leaf `Tree[x, None]` becomes `x`, and an inner node
+/// `Tree[x, {children}]` becomes `x -> {tree_rules(child), …}`. So
+/// `Tree[1, {Tree[2, None], Tree[3, {Tree[4, None]}]}]` → `1 -> {2, 3 -> {4}}`.
+fn tree_rules(e: &Expr) -> Option<Expr> {
+  let (data, children) = tree_node(e)?;
+  if children.is_empty() {
+    return Some(data.clone());
+  }
+  let child_rules: Vec<Expr> = children
+    .iter()
+    .map(|c| tree_rules(c))
+    .collect::<Option<_>>()?;
+  Some(Expr::Rule {
+    pattern: Box::new(data.clone()),
+    replacement: Box::new(Expr::List(child_rules.into())),
+  })
+}
+
 // Number of edges on the longest path from the root to a leaf (leaf → 0).
 fn tree_depth(e: &Expr) -> Option<i128> {
   let (_data, children) = tree_node(e)?;
@@ -3680,6 +3698,15 @@ pub fn dispatch_list_operations(
       return Some(Ok(tree_to_expression(&args[0]).unwrap_or_else(|| {
         Expr::FunctionCall {
           name: "TreeExpression".to_string(),
+          args: args.to_vec().into(),
+        }
+      })));
+    }
+    // TreeRules[tree] gives the nested-rule representation of a tree.
+    "TreeRules" if args.len() == 1 => {
+      return Some(Ok(tree_rules(&args[0]).unwrap_or_else(|| {
+        Expr::FunctionCall {
+          name: "TreeRules".to_string(),
           args: args.to_vec().into(),
         }
       })));

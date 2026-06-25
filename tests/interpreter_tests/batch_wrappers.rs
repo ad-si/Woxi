@@ -7816,6 +7816,43 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // TreeRules gives the nested-rule representation: a leaf becomes its data,
+  // an inner node becomes data -> {rules of children}.
+  #[test]
+  fn tree_rules_nested() {
+    assert_eq!(
+      interpret("TreeRules[Tree[1, {Tree[2, None]}]]").unwrap(),
+      "1 -> {2}"
+    );
+    assert_eq!(
+      interpret(
+        "TreeRules[Tree[1, {Tree[2, None], Tree[3, {Tree[4, None]}]}]]"
+      )
+      .unwrap(),
+      "1 -> {2, 3 -> {4}}"
+    );
+    // A root leaf is just its data.
+    assert_eq!(interpret("TreeRules[Tree[5, None]]").unwrap(), "5");
+    // Deeper nesting.
+    assert_eq!(
+      interpret(
+        "TreeRules[Tree[1, {Tree[2, {Tree[3, None], Tree[4, None]}]}]]"
+      )
+      .unwrap(),
+      "1 -> {2 -> {3, 4}}"
+    );
+    // Composes with ExpressionTree.
+    assert_eq!(
+      interpret("TreeRules[ExpressionTree[a + b c]]").unwrap(),
+      "Plus -> {a, Times -> {b, c}}"
+    );
+    // A non-tree argument stays unevaluated.
+    assert_eq!(
+      interpret("TreeRules[notATree]").unwrap(),
+      "TreeRules[notATree]"
+    );
+  }
+
   // The optional structure argument selects the node data.
   #[test]
   fn expression_tree_structures() {
