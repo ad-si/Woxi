@@ -5640,6 +5640,22 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       };
       args.iter().map(expr_to_tex).collect::<Vec<_>>().join(sep)
     }
+    // Binary-only relation operators (the n-ary forms fall through to the
+    // bracket fallback, matching wolframscript). Only the operators with a
+    // working evaluated/OutputForm representation are handled here.
+    "CircleMinus" | "Backslash" | "LeftArrow" if args.len() == 2 => {
+      let sep = match name {
+        "CircleMinus" => "\\ominus ",
+        "Backslash" => "\\backslash ",
+        _ => "\\leftarrow ", // LeftArrow
+      };
+      format!("{}{}{}", expr_to_tex(&args[0]), sep, expr_to_tex(&args[1]))
+    }
+    // AngleBracket[a, b, ...] -> \langle a,b,...\rangle.
+    "AngleBracket" if !args.is_empty() => format!(
+      "\\langle {}\\rangle",
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+    ),
     // UnitStep -> \theta (x); Sinc -> \text{sinc}(x).
     "UnitStep" if !args.is_empty() => format!(
       "\\theta ({})",

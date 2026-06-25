@@ -4171,6 +4171,32 @@ mod tex_form {
     );
   }
 
+  // Binary relation operators render infix; AngleBracket wraps its arguments
+  // in angle brackets. (Only operators with a working evaluated form.)
+  #[test]
+  fn relation_operators() {
+    assert_eq!(
+      interpret("ToString[AngleBracket[a, b], TeXForm]").unwrap(),
+      "\\langle a,b\\rangle"
+    );
+    assert_eq!(
+      interpret("ToString[AngleBracket[a], TeXForm]").unwrap(),
+      "\\langle a\\rangle"
+    );
+    assert_eq!(
+      interpret("ToString[CircleMinus[a, b], TeXForm]").unwrap(),
+      "a\\ominus b"
+    );
+    assert_eq!(
+      interpret("ToString[Backslash[a, b], TeXForm]").unwrap(),
+      "a\\backslash b"
+    );
+    assert_eq!(
+      interpret("ToString[LeftArrow[a, b], TeXForm]").unwrap(),
+      "a\\leftarrow b"
+    );
+  }
+
   // Circle/wedge/tilde operators render infix; UnitStep and Sinc get their
   // dedicated LaTeX notation.
   #[test]
