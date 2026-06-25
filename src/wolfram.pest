@@ -40,10 +40,17 @@ IntegerScientific = @{ ("-")? ~ ASCII_DIGIT+ ~ "*^" ~ ("-")? ~ ASCII_DIGIT+ }
 // guards prevent `0..` and `0...` from being consumed as `0. ...` — those
 // must fall through so the Repeated/RepeatedNull suffix handlers can see
 // them as `Integer 0` followed by `..` or `...`.
-Real = @{
-    ("-")?
-    ~ ((ASCII_DIGIT+ ~ "." ~ !"." ~ ASCII_DIGIT*) | ("." ~ !"." ~ ASCII_DIGIT+))
+// The body of a real literal (no sign): a decimal/scientific mantissa.
+RealBody = _{
+    ((ASCII_DIGIT+ ~ "." ~ !"." ~ ASCII_DIGIT*) | ("." ~ !"." ~ ASCII_DIGIT+))
     ~ ("*^" ~ ("-")? ~ ASCII_DIGIT+)?
+}
+// Like the Integer rule, do NOT consume a leading `-` when the literal is
+// immediately followed by `^`: `-10.0^2` must parse as `-(10.0^2) = -100.`
+// (Wolfram precedence), with the `-` released to LeadingMinus.
+Real = @{
+    ("-" ~ !(RealBody ~ "^"))?
+    ~ RealBody
 }
 UnsignedInteger = @{ ASCII_DIGIT+ }
 UnsignedIntegerScientific = @{ ASCII_DIGIT+ ~ "*^" ~ ("-")? ~ ASCII_DIGIT+ }
@@ -330,7 +337,7 @@ AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 // chars are `digits ^`, treat the `-` as a LeadingMinus regardless of
 // the immediately-following digit — the Integer rule has a matching
 // lookahead to release `digits ^` from its `(-)?` prefix.
-LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(ASCII_DIGIT+ ~ "^")) }
+LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(RealBody ~ "^") | &(ASCII_DIGIT+ ~ "^")) }
 // LeadingPlus marks a leading "+" in an expression: +x, +f[x], +(a+b), etc.
 // Only matches when NOT followed by a digit or "+" (so +3 parses as positive Integer,
 // ++ would be Increment). Semantically +expr is just expr.

@@ -302,6 +302,24 @@ mod unary_minus_parsing {
     assert_eq!(interpret("(-x^2)").unwrap(), "-x^2");
   }
 
+  // A leading minus on a real (or scientific) literal followed by `^` binds
+  // looser than the power, exactly like the integer case: -10.0^2 = -(10.0^2).
+  // The minus must not be absorbed into the literal as (-10.0)^2.
+  #[test]
+  fn negative_real_literal_power() {
+    assert_eq!(interpret("-10.0^2").unwrap(), "-100.");
+    assert_eq!(interpret("-2.5^2").unwrap(), "-6.25");
+    assert_eq!(interpret("-3.0^3").unwrap(), "-27.");
+    assert_eq!(interpret("-0.5^2").unwrap(), "-0.25");
+    // Scientific-notation literals behave the same.
+    assert_eq!(interpret("-1.5*^3^2").unwrap(), "-2.25*^6");
+    // Matches the long-standing integer behaviour.
+    assert_eq!(interpret("-10^2").unwrap(), "-100");
+    // A negative real literal NOT before `^` is still a signed literal.
+    assert_eq!(interpret("-10.0").unwrap(), "-10.");
+    assert_eq!(interpret("{-1.5, -2.5}").unwrap(), "{-1.5, -2.5}");
+  }
+
   #[test]
   fn negative_expr_plus_constant() {
     assert_eq!(interpret("(-x + 3)").unwrap(), "3 - x");
