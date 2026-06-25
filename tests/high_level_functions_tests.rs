@@ -6147,4 +6147,59 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod mean_degree_connectivity_tests {
+    use super::*;
+
+    #[test]
+    fn test_regular_cycle() {
+      // 2-regular: only degree-2 vertices, all neighbors degree 2.
+      assert_eq!(
+        interpret("MeanDegreeConnectivity[CycleGraph[5]]").unwrap(),
+        "{0, 0, 2}"
+      );
+    }
+
+    #[test]
+    fn test_path_mixed_degrees() {
+      // Endpoints (deg 1) neighbor a deg-2 vertex; interior (deg 2)
+      // neighbors average to 3/2.
+      assert_eq!(
+        interpret("MeanDegreeConnectivity[PathGraph[Range[4]]]").unwrap(),
+        "{0, 2, 3/2}"
+      );
+    }
+
+    #[test]
+    fn test_star() {
+      assert_eq!(
+        interpret("MeanDegreeConnectivity[StarGraph[4]]").unwrap(),
+        "{0, 3, 0, 1}"
+      );
+    }
+
+    #[test]
+    fn test_complete() {
+      assert_eq!(
+        interpret("MeanDegreeConnectivity[CompleteGraph[4]]").unwrap(),
+        "{0, 0, 0, 3}"
+      );
+    }
+
+    #[test]
+    fn test_edgeless() {
+      assert_eq!(
+        interpret("MeanDegreeConnectivity[Graph[{1,2,3},{}]]").unwrap(),
+        "{0}"
+      );
+    }
+
+    #[test]
+    fn test_isolated_vertex_present() {
+      assert_eq!(
+        interpret("MeanDegreeConnectivity[Graph[{1,2,3},{1<->2}]]").unwrap(),
+        "{0, 1}"
+      );
+    }
+  }
 }

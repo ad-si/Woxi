@@ -4745,7 +4745,7 @@ JankoGroupJ2,,,,8.0,4947
 MannedSpaceMissionData,,🚫,,10.0,4947
 MassTransferValue,,,,12.2,4947
 MathieuGroupM23,,,,8.0,4947
-MeanDegreeConnectivity,,,,9.0,4947
+MeanDegreeConnectivity,Mean neighbor degree of vertices indexed by degree,✅,pure,9.0,4947
 MoleculeProperty,,🚫,,12.0,4947
 MoleculeQ,,🚫,,12.0,4947
 OutputPorts,,,,12.2,4947

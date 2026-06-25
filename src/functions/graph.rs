@@ -4310,6 +4310,37 @@ pub fn graph_metric_ast(
         args: vec![make_rational(num, den), make_rational(1, n as i128)].into(),
       })
     }
+    "MeanDegreeConnectivity" => {
+      if n == 0 {
+        return Ok(unevaluated());
+      }
+      // Degree of every vertex in the underlying simple graph.
+      let deg: Vec<i128> = adj.iter().map(|nb| nb.len() as i128).collect();
+      let max_deg = deg.iter().copied().max().unwrap_or(0);
+      // Result is indexed by degree k = 0..maxDeg; entry k is the mean degree
+      // of the neighbors of all degree-k vertices: the sum of neighbor
+      // degrees over those vertices divided by the sum of their degrees
+      // (0 when there are no degree-k vertices).
+      let mut result = Vec::with_capacity((max_deg + 1) as usize);
+      for k in 0..=max_deg {
+        let mut num: i128 = 0;
+        let mut den: i128 = 0;
+        for v in 0..n {
+          if deg[v] == k {
+            den += deg[v];
+            for &w in &adj[v] {
+              num += deg[w];
+            }
+          }
+        }
+        if den == 0 {
+          result.push(Expr::Integer(0));
+        } else {
+          result.push(evaluated(make_rational(num, den))?);
+        }
+      }
+      Ok(Expr::List(result.into()))
+    }
     "MeanGraphDistance" => {
       if n <= 1 {
         return Ok(unevaluated());

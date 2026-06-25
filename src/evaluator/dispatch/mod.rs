@@ -5401,6 +5401,7 @@ pub fn evaluate_function_call_ast_inner(
       | "MeanClusteringCoefficient"
       | "GraphDensity"
       | "MeanGraphDistance"
+      | "MeanDegreeConnectivity"
   ) && args.len() == 1
   {
     return crate::functions::graph::graph_metric_ast(name, args);
