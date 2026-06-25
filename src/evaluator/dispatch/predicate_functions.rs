@@ -567,16 +567,16 @@ pub fn dispatch_predicate_functions(
       )));
     }
     "Positive" if args.len() == 1 => {
-      return Some(crate::functions::predicate_ast::positive_q_ast(args));
+      return Some(crate::functions::predicate_ast::positive_ast(args));
     }
     "Negative" if args.len() == 1 => {
-      return Some(crate::functions::predicate_ast::negative_q_ast(args));
+      return Some(crate::functions::predicate_ast::negative_ast(args));
     }
     "NonPositive" if args.len() == 1 => {
-      return Some(crate::functions::predicate_ast::non_positive_q_ast(args));
+      return Some(crate::functions::predicate_ast::non_positive_ast(args));
     }
     "NonNegative" if args.len() == 1 => {
-      return Some(crate::functions::predicate_ast::non_negative_q_ast(args));
+      return Some(crate::functions::predicate_ast::non_negative_ast(args));
     }
     "VectorGreater" | "VectorGreaterEqual" | "VectorLess"
     | "VectorLessEqual"
