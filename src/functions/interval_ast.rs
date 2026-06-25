@@ -861,28 +861,35 @@ pub fn try_interval_divide(
     return None;
   }
 
-  // Convert b to reciprocal interval, then multiply
+  // Convert b to reciprocal interval, then multiply. A span containing zero
+  // reciprocates to one or two unbounded pieces (matching wolframscript):
+  //   1/[lo, hi] with lo < 0 < hi  -> [-Inf, 1/lo] ∪ [1/hi, Inf]
+  //   1/[0, hi]  (hi > 0)          -> [1/hi, Inf]
+  //   1/[lo, 0]  (lo < 0)          -> [-Inf, 1/lo]
+  // A same-sign span reciprocates as usual (and reverses orientation).
   let recip_spans = if let Some(spans) = &b_int {
+    let pos_inf = Expr::Identifier("Infinity".to_string());
+    let neg_inf = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), pos_inf.clone()].into(),
+    };
+    let recip_one = |x: &Expr| eval_binop(&Expr::Integer(1), x, "Divide").ok();
     let mut recip = Vec::new();
     for (lo, hi) in spans {
-      // Check if interval spans zero — undefined
       let lo_f = expr_to_f64(lo)?;
       let hi_f = expr_to_f64(hi)?;
-      if lo_f <= 0.0 && hi_f >= 0.0 && !(lo_f == 0.0 && hi_f == 0.0) {
-        // Interval contains zero — can't compute reciprocal cleanly
-        // For now, return unevaluated if it fully spans zero
-        if lo_f < 0.0 && hi_f > 0.0 {
-          return None;
-        }
-      }
-      match (
-        eval_binop(&Expr::Integer(1), lo, "Divide"),
-        eval_binop(&Expr::Integer(1), hi, "Divide"),
-      ) {
-        (Ok(r_lo), Ok(r_hi)) => {
-          recip.push(sort_endpoints(r_lo, r_hi));
-        }
-        _ => return None,
+      if lo_f == 0.0 && hi_f == 0.0 {
+        // 1/{0, 0} is undefined; leave unevaluated.
+        return None;
+      } else if lo_f == 0.0 {
+        recip.push((recip_one(hi)?, pos_inf.clone()));
+      } else if hi_f == 0.0 {
+        recip.push((neg_inf.clone(), recip_one(lo)?));
+      } else if lo_f < 0.0 && hi_f > 0.0 {
+        recip.push((neg_inf.clone(), recip_one(lo)?));
+        recip.push((recip_one(hi)?, pos_inf.clone()));
+      } else {
+        recip.push(sort_endpoints(recip_one(lo)?, recip_one(hi)?));
       }
     }
     recip

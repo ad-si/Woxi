@@ -143,6 +143,38 @@ fn interval_reciprocal() {
   );
 }
 
+#[test]
+fn interval_reciprocal_spanning_zero() {
+  // An interval straddling zero reciprocates to two unbounded pieces.
+  assert_eq!(
+    interpret("1/Interval[{-2, 3}]").unwrap(),
+    "Interval[{-Infinity, -1/2}, {1/3, Infinity}]"
+  );
+  assert_eq!(
+    interpret("Interval[{-2, 3}]^(-1)").unwrap(),
+    "Interval[{-Infinity, -1/2}, {1/3, Infinity}]"
+  );
+  // A numerator scales each piece.
+  assert_eq!(
+    interpret("2/Interval[{-2, 3}]").unwrap(),
+    "Interval[{-Infinity, -1}, {2/3, Infinity}]"
+  );
+  // Touching zero on one endpoint gives a single unbounded piece.
+  assert_eq!(
+    interpret("1/Interval[{0, 3}]").unwrap(),
+    "Interval[{1/3, Infinity}]"
+  );
+  assert_eq!(
+    interpret("1/Interval[{-3, 0}]").unwrap(),
+    "Interval[{-Infinity, -1/3}]"
+  );
+  // Same-sign intervals are unaffected.
+  assert_eq!(
+    interpret("1/Interval[{-4, -2}]").unwrap(),
+    "Interval[{-1/2, -1/4}]"
+  );
+}
+
 // ─── Arithmetic: Power ──────────────────────────────────────────────────────
 
 #[test]
