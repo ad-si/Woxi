@@ -351,11 +351,20 @@ fn try_ast_pattern_replace_impl(
     return Ok(None);
   }
 
-  // First try matching the entire expression (top-level match)
+  // First try matching the entire expression (top-level match). This still
+  // lets a structured pattern like `Rational[a_, b_]` match the whole atom.
   if let Some(result) =
     try_ast_pattern_replace_single(expr, pattern, replacement, condition)?
   {
     return Ok(Some(result));
+  }
+
+  // Rational and Complex are atoms: their numerator/denominator and
+  // real/imaginary parts are not subexpressions, so once the whole atom fails
+  // to match we must not recurse into them (e.g. `1/2 /. x_Integer -> z`
+  // stays `1/2`, not `z/z`).
+  if crate::functions::predicate_ast::is_atomic_number(expr) {
+    return Ok(None);
   }
 
   // If top-level didn't match, recurse into sub-expressions
@@ -1025,6 +1034,11 @@ fn replace_at_depth(
   // First recurse into children, tracking the maximum child Depth so we can
   // compute Depth[expr] for negative-level matching.
   let (recursed, max_child_depth) = match expr {
+    // Rational / Complex are atoms (Depth 1): do not recurse into their
+    // parts. The rule can still match the whole atom at this node's level.
+    _ if crate::functions::predicate_ast::is_atomic_number(expr) => {
+      (expr.clone(), 0)
+    }
     Expr::List(items) => {
       let mut mapped = Vec::with_capacity(items.len());
       let mut max_depth: i64 = 0;
@@ -3894,6 +3908,12 @@ fn apply_replace_all_multi_ast_impl(
     if let Some(result) = try_flat_replace_all(expr, pattern, replacement)? {
       return Ok(result);
     }
+  }
+
+  // Rational and Complex are atoms: their internal parts are not
+  // subexpressions, so once no rule matched the whole atom, leave it as is.
+  if crate::functions::predicate_ast::is_atomic_number(expr) {
+    return Ok(expr.clone());
   }
 
   // No rule matched the whole expression — recurse into sub-expressions

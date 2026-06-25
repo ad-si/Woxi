@@ -256,6 +256,36 @@ mod list_tests {
   }
 
   #[test]
+  fn replace_treats_rational_complex_as_atoms() {
+    // ReplaceAll must not descend into a Rational's {num, den} or a complex
+    // number's tree: 1/2 /. x_Integer -> z stays 1/2 (not z/z).
+    assert_eq!(interpret("1/2 /. x_Integer -> z").unwrap(), "1/2");
+    assert_eq!(interpret("{1/2, 3} /. x_Integer -> z").unwrap(), "{1/2, z}");
+    assert_eq!(interpret("3 + x/2 /. n_Integer -> z").unwrap(), "x/2 + z");
+    assert_eq!(interpret("1 + 2 I /. x_Integer -> z").unwrap(), "1 + 2*I");
+    // The whole atom can still be matched by a structured pattern.
+    assert_eq!(interpret("1/2 /. Rational[a_, b_] -> a + b").unwrap(), "3");
+    assert_eq!(
+      interpret("1 + 2 I /. Complex[a_, b_] -> a + b").unwrap(),
+      "3"
+    );
+    // Leveled Replace likewise treats them as atoms.
+    assert_eq!(
+      interpret("Replace[1/2, x_Integer -> z, Infinity]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Replace[{1/2}, x_Integer -> z, {-1}]").unwrap(),
+      "{1/2}"
+    );
+    // Ordinary integers are still replaced at the leaf level.
+    assert_eq!(
+      interpret("Replace[{1, 2}, n_Integer -> z, {-1}]").unwrap(),
+      "{z, z}"
+    );
+  }
+
+  #[test]
   fn find_repeat() {
     // Finds the shortest tiling sub-sequence; a partial final rep is allowed.
     assert_eq!(
