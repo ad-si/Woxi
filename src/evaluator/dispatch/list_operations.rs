@@ -1798,9 +1798,6 @@ pub fn dispatch_list_operations(
       };
       return Some(list_helpers_ast::fold_ast(&args[0], &init, &rest));
     }
-    "CountBy" if args.len() == 2 => {
-      return Some(list_helpers_ast::count_by_ast(&args[0], &args[1]));
-    }
     "GroupBy" if args.len() == 2 || args.len() == 3 => {
       // GroupBy needs a list (incl. list of rules) or an association as its
       // first argument; anything else emits ::list1 and stays unevaluated
