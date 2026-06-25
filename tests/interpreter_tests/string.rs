@@ -4225,6 +4225,75 @@ mod tex_form {
     );
   }
 
+  // Subscripted families and integral/error special functions render with
+  // their conventional LaTeX abbreviations.
+  #[test]
+  fn subscripted_and_integral_functions() {
+    // Surd / CubeRoot -> radical with explicit index.
+    assert_eq!(
+      interpret("ToString[Surd[x, 3], TeXForm]").unwrap(),
+      "\\sqrt[3]{x}"
+    );
+    assert_eq!(
+      interpret("ToString[CubeRoot[x], TeXForm]").unwrap(),
+      "\\sqrt[3]{x}"
+    );
+    // Subscripted families, optionally applied.
+    assert_eq!(interpret("ToString[Fibonacci[n], TeXForm]").unwrap(), "F_n");
+    assert_eq!(
+      interpret("ToString[Fibonacci[n, x], TeXForm]").unwrap(),
+      "F_n(x)"
+    );
+    assert_eq!(interpret("ToString[LucasL[n], TeXForm]").unwrap(), "L_n");
+    assert_eq!(
+      interpret("ToString[SphericalBesselJ[1, x], TeXForm]").unwrap(),
+      "j_1(x)"
+    );
+    assert_eq!(
+      interpret("ToString[SphericalBesselY[1, x], TeXForm]").unwrap(),
+      "y_1(x)"
+    );
+    assert_eq!(
+      interpret("ToString[ExpIntegralE[2, x], TeXForm]").unwrap(),
+      "E_2(x)"
+    );
+    assert_eq!(
+      interpret("ToString[HarmonicNumber[n], TeXForm]").unwrap(),
+      "H_n"
+    );
+    assert_eq!(
+      interpret("ToString[HarmonicNumber[n, 2], TeXForm]").unwrap(),
+      "H_n^{(2)}"
+    );
+    assert_eq!(
+      interpret("ToString[Pochhammer[a, n + 1], TeXForm]").unwrap(),
+      "(a)_{n+1}"
+    );
+    // Integral/error functions with conventional abbreviations.
+    assert_eq!(
+      interpret("ToString[Erfi[x], TeXForm]").unwrap(),
+      "\\text{erfi}(x)"
+    );
+    assert_eq!(interpret("ToString[FresnelC[x], TeXForm]").unwrap(), "C(x)");
+    assert_eq!(interpret("ToString[FresnelS[x], TeXForm]").unwrap(), "S(x)");
+    assert_eq!(
+      interpret("ToString[ExpIntegralEi[x], TeXForm]").unwrap(),
+      "\\text{Ei}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[LogIntegral[x], TeXForm]").unwrap(),
+      "\\text{li}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[SinIntegral[x], TeXForm]").unwrap(),
+      "\\text{Si}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[CosIntegral[x], TeXForm]").unwrap(),
+      "\\text{Ci}(x)"
+    );
+  }
+
   // Bessel/Legendre/PolyGamma and Dirac/Heaviside/vector products render with
   // their dedicated LaTeX notation.
   #[test]

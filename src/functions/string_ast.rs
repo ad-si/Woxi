@@ -5445,6 +5445,64 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     "LegendreP" if args.len() == 2 => {
       format!("P_{}({})", tex_sub(&args[0]), expr_to_tex(&args[1]))
     }
+    // Subscripted families: index in a subscript, optional applied argument.
+    // Fibonacci[n] -> F_n, Fibonacci[n, x] -> F_n(x); SphericalBesselJ[n, x]
+    // -> j_n(x); ExpIntegralE[n, x] -> E_n(x).
+    "Fibonacci" | "LucasL" | "SphericalBesselJ" | "SphericalBesselY"
+    | "ExpIntegralE"
+      if (1..=2).contains(&args.len()) =>
+    {
+      let letter = match name {
+        "Fibonacci" => "F",
+        "LucasL" => "L",
+        "SphericalBesselJ" => "j",
+        "SphericalBesselY" => "y",
+        _ => "E",
+      };
+      if args.len() == 1 {
+        format!("{}_{}", letter, tex_sub(&args[0]))
+      } else {
+        format!(
+          "{}_{}({})",
+          letter,
+          tex_sub(&args[0]),
+          expr_to_tex(&args[1])
+        )
+      }
+    }
+    // HarmonicNumber[n] -> H_n; HarmonicNumber[n, r] -> H_n^{(r)}.
+    "HarmonicNumber" if args.len() == 1 => format!("H_{}", tex_sub(&args[0])),
+    "HarmonicNumber" if args.len() == 2 => {
+      format!("H_{}^{{({})}}", tex_sub(&args[0]), expr_to_tex(&args[1]))
+    }
+    // Pochhammer[a, n] -> (a)_n.
+    "Pochhammer" if args.len() == 2 => {
+      format!("({})_{}", expr_to_tex(&args[0]), tex_sub(&args[1]))
+    }
+    // Surd[x, n] -> \sqrt[n]{x} (also covers CubeRoot, which folds to Surd).
+    "Surd" if args.len() == 2 => format!(
+      "\\sqrt[{}]{{{}}}",
+      expr_to_tex(&args[1]),
+      expr_to_tex(&args[0])
+    ),
+    // Integral/error special functions with conventional abbreviations.
+    "Erfi" if args.len() == 1 => {
+      format!("\\text{{erfi}}({})", expr_to_tex(&args[0]))
+    }
+    "FresnelC" if args.len() == 1 => format!("C({})", expr_to_tex(&args[0])),
+    "FresnelS" if args.len() == 1 => format!("S({})", expr_to_tex(&args[0])),
+    "ExpIntegralEi" if args.len() == 1 => {
+      format!("\\text{{Ei}}({})", expr_to_tex(&args[0]))
+    }
+    "LogIntegral" if args.len() == 1 => {
+      format!("\\text{{li}}({})", expr_to_tex(&args[0]))
+    }
+    "SinIntegral" if args.len() == 1 => {
+      format!("\\text{{Si}}({})", expr_to_tex(&args[0]))
+    }
+    "CosIntegral" if args.len() == 1 => {
+      format!("\\text{{Ci}}({})", expr_to_tex(&args[0]))
+    }
     // PolyGamma[n, x] -> \psi ^{(n)}(x).
     "PolyGamma" if args.len() == 2 => format!(
       "\\psi ^{{({})}}({})",
