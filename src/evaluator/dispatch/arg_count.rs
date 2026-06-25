@@ -1343,6 +1343,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "TimeValue" => Some((3, 3)),
     "Variance" => Some((1, 1)),
     "VectorAngle" => Some((2, 2)),
+    "DihedralAngle" => Some((2, 2)),
     "Volume" => Some((1, 1)),
     "VectorGreater" => Some((1, 2)),
     "VectorGreaterEqual" => Some((1, 2)),

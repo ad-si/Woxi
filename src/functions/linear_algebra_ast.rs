@@ -4547,6 +4547,69 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   evaluate_expr_to_expr(&result)
 }
 
+// ─── DihedralAngle ──────────────────────────────────────────────────────
+
+/// DihedralAngle[{p1, p2}, {v1, v2}] — the dihedral angle along the edge
+/// directed from p1 to p2, between the half-planes that contain the
+/// directions v1 and v2.
+///
+/// It is the angle between the components of v1 and v2 perpendicular to the
+/// edge direction e = p2 - p1, i.e. VectorAngle[v1 - Proj_e[v1], v2 - Proj_e[v2]].
+/// Only defined for 3D vectors — Wolfram leaves all other dimensions
+/// unevaluated.
+pub fn dihedral_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DihedralAngle".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  // Each argument must be a pair {a, b}.
+  let pair = |e: &Expr| -> Option<(Expr, Expr)> {
+    match e {
+      Expr::List(items) if items.len() == 2 => {
+        Some((items[0].clone(), items[1].clone()))
+      }
+      _ => None,
+    }
+  };
+  let (p1, p2) = match pair(&args[0]) {
+    Some(x) => x,
+    None => return unevaluated(),
+  };
+  let (v1, v2) = match pair(&args[1]) {
+    Some(x) => x,
+    None => return unevaluated(),
+  };
+  // All four entries must be length-3 vectors.
+  let is_vec3 = |e: &Expr| matches!(e, Expr::List(items) if items.len() == 3);
+  if ![&p1, &p2, &v1, &v2].iter().all(|e| is_vec3(e)) {
+    return unevaluated();
+  }
+  // Edge direction e = p2 - p1.
+  let edge = evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![p2.clone(), p1.clone()].into(),
+  })?;
+  // Component of v perpendicular to the edge: v - Projection[v, e].
+  let perp = |v: &Expr| -> Result<Expr, InterpreterError> {
+    let proj = Expr::FunctionCall {
+      name: "Projection".to_string(),
+      args: vec![v.clone(), edge.clone()].into(),
+    };
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Subtract".to_string(),
+      args: vec![v.clone(), proj].into(),
+    })
+  };
+  let v1p = perp(&v1)?;
+  let v2p = perp(&v2)?;
+  vector_angle_ast(&[v1p, v2p])
+}
+
 // ─── UpperTriangularize / LowerTriangularize ───────────────────────────
 
 /// UpperTriangularize[m] or UpperTriangularize[m, k]

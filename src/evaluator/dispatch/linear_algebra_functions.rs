@@ -582,6 +582,11 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "DihedralAngle" if args.len() == 2 => {
+      return Some(crate::functions::linear_algebra_ast::dihedral_angle_ast(
+        args,
+      ));
+    }
     "CoordinateTransform" if args.len() == 2 => {
       return Some(
         crate::functions::linear_algebra_ast::coordinate_transform_ast(args),

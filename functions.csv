@@ -5196,7 +5196,7 @@ CompilerOptions,,🚫,,12.0,5486
 ConfidenceRange,,,,9.0,5486
 CopyFunction,,,,12.2,5486
 DiggleGrattonPointProcess,,🚫,,12.2,5486
-DihedralAngle,,,,12.0,5486
+DihedralAngle,Dihedral angle along an edge between two half-planes,✅,pure,12.0,5486
 DoubleLeftTee,Inert operator displayed with the ⫤ symbol,✅,pure,3.0,5486
 DownTee,,,,3.0,5486
 EmptySpaceF,,,,12.2,5486

@@ -6077,4 +6077,74 @@ mod high_level_functions_tests {
       assert!(svg.contains("fill=\"rgb(0,0,255)\""), "blue point missing");
     }
   }
+
+  mod dihedral_angle_tests {
+    use super::*;
+
+    #[test]
+    fn test_orthogonal_half_planes() {
+      // Edge along z; directions along x and y are perpendicular.
+      assert_eq!(
+        interpret("DihedralAngle[{{0,0,0},{0,0,1}},{{1,0,0},{0,1,0}}]")
+          .unwrap(),
+        "Pi/2"
+      );
+    }
+
+    #[test]
+    fn test_pi_over_four() {
+      assert_eq!(
+        interpret("DihedralAngle[{{0,0,0},{1,0,0}},{{0,1,0},{0,1,1}}]")
+          .unwrap(),
+        "Pi/4"
+      );
+    }
+
+    #[test]
+    fn test_exact_arccos_and_nonzero_base_point() {
+      // Edge not through the origin; directions yield an exact ArcCos form.
+      assert_eq!(
+        interpret("DihedralAngle[{{1,1,0},{1,1,2}},{{2,1,0},{1,2,1}}]")
+          .unwrap(),
+        "ArcCos[4/5]"
+      );
+    }
+
+    #[test]
+    fn test_opposite_directions_give_pi() {
+      assert_eq!(
+        interpret("DihedralAngle[{{0,0,0},{1,0,0}},{{0,1,0},{0,-1,0}}]")
+          .unwrap(),
+        "Pi"
+      );
+    }
+
+    #[test]
+    fn test_numeric() {
+      assert_eq!(
+        interpret("N[DihedralAngle[{{1,1,0},{1,1,2}},{{2,1,0},{1,2,1}}]]")
+          .unwrap(),
+        "0.6435011087932843"
+      );
+    }
+
+    #[test]
+    fn test_2d_unevaluated() {
+      // DihedralAngle is only defined for 3D vectors in Wolfram.
+      assert_eq!(
+        interpret("DihedralAngle[{{0,0},{1,0}},{{0,1},{1,1}}]").unwrap(),
+        "DihedralAngle[{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}]"
+      );
+    }
+
+    #[test]
+    fn test_4d_unevaluated() {
+      assert_eq!(
+        interpret("DihedralAngle[{{0,0,0,0},{1,0,0,0}},{{0,1,0,0},{0,0,1,0}}]")
+          .unwrap(),
+        "DihedralAngle[{{0, 0, 0, 0}, {1, 0, 0, 0}}, \
+         {{0, 1, 0, 0}, {0, 0, 1, 0}}]"
+      );
+    }
+  }
 }
