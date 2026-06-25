@@ -5476,6 +5476,32 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       .map(expr_to_tex)
       .collect::<Vec<_>>()
       .join("\\cdot "),
+    // Other binary infix operators with dedicated LaTeX symbols.
+    "CircleTimes" | "CirclePlus" | "CircleDot" | "Wedge" | "Vee"
+    | "SmallCircle" | "Diamond" | "Tilde" | "Proportional"
+      if args.len() >= 2 =>
+    {
+      let sep = match name {
+        "CircleTimes" => "\\otimes ",
+        "CirclePlus" => "\\oplus ",
+        "CircleDot" => "\\odot ",
+        "Wedge" => "\\wedge ",
+        "Vee" => "\\vee ",
+        "SmallCircle" => "\\circ ",
+        "Diamond" => "\\diamond ",
+        "Tilde" => "\\sim ",
+        _ => "\\propto ",
+      };
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(sep)
+    }
+    // UnitStep -> \theta (x); Sinc -> \text{sinc}(x).
+    "UnitStep" if !args.is_empty() => format!(
+      "\\theta ({})",
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+    ),
+    "Sinc" if args.len() == 1 => {
+      format!("\\text{{sinc}}({})", expr_to_tex(&args[0]))
+    }
     // KroneckerDelta[i, j, ...] -> \delta _{i,j,...}.
     "KroneckerDelta" if !args.is_empty() => format!(
       "\\delta _{{{}}}",

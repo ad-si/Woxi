@@ -4171,6 +4171,60 @@ mod tex_form {
     );
   }
 
+  // Circle/wedge/tilde operators render infix; UnitStep and Sinc get their
+  // dedicated LaTeX notation.
+  #[test]
+  fn infix_operators_and_unitstep() {
+    assert_eq!(
+      interpret("ToString[UnitStep[x], TeXForm]").unwrap(),
+      "\\theta (x)"
+    );
+    assert_eq!(
+      interpret("ToString[UnitStep[x, y], TeXForm]").unwrap(),
+      "\\theta (x,y)"
+    );
+    assert_eq!(
+      interpret("ToString[Sinc[x], TeXForm]").unwrap(),
+      "\\text{sinc}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[CircleTimes[a, b, c], TeXForm]").unwrap(),
+      "a\\otimes b\\otimes c"
+    );
+    assert_eq!(
+      interpret("ToString[CirclePlus[a, b], TeXForm]").unwrap(),
+      "a\\oplus b"
+    );
+    assert_eq!(
+      interpret("ToString[CircleDot[a, b], TeXForm]").unwrap(),
+      "a\\odot b"
+    );
+    assert_eq!(
+      interpret("ToString[Wedge[a, b, c], TeXForm]").unwrap(),
+      "a\\wedge b\\wedge c"
+    );
+    assert_eq!(
+      interpret("ToString[Vee[a, b], TeXForm]").unwrap(),
+      "a\\vee b"
+    );
+    assert_eq!(
+      interpret("ToString[SmallCircle[a, b], TeXForm]").unwrap(),
+      "a\\circ b"
+    );
+    assert_eq!(
+      interpret("ToString[Diamond[a, b], TeXForm]").unwrap(),
+      "a\\diamond b"
+    );
+    assert_eq!(
+      interpret("ToString[Tilde[a, b], TeXForm]").unwrap(),
+      "a\\sim b"
+    );
+    assert_eq!(
+      interpret("ToString[Proportional[a, b], TeXForm]").unwrap(),
+      "a\\propto b"
+    );
+  }
+
   // Bessel/Legendre/PolyGamma and Dirac/Heaviside/vector products render with
   // their dedicated LaTeX notation.
   #[test]

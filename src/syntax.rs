@@ -7523,6 +7523,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{22C1} ");
       }
+      // Tilde[a, b, ...] displays as a ∼ b ∼ ...
+      if name == "Tilde" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{223C} ");
+      }
       // Del[f] displays as ∇f
       if name == "Del" && args.len() == 1 {
         return format!("\u{2207}{}", fmt(&args[0]));

@@ -1984,6 +1984,16 @@ mod circle_times {
       "a \u{2297} b \u{2297} c"
     );
   }
+
+  // Tilde displays as the ∼ (U+223C) infix operator, like its siblings.
+  #[test]
+  fn tilde_operator() {
+    assert_eq!(interpret("Tilde[a, b]").unwrap(), "a \u{223C} b");
+    assert_eq!(
+      interpret("Tilde[a, b, c]").unwrap(),
+      "a \u{223C} b \u{223C} c"
+    );
+  }
 }
 
 mod circle_dot {
