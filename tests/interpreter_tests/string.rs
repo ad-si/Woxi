@@ -4625,6 +4625,76 @@ mod c_form {
     // CForm wraps, Exp[x] evaluates to E^x
     assert_eq!(interpret("CForm[Exp[x]]").unwrap(), "CForm[E^x]");
   }
+
+  // ToString[expr, CForm] splits products into numerator/denominator with
+  // correct grouping (a/(b c) keeps the denominator together) and renders
+  // exact rationals as machine-precision decimals.
+  #[test]
+  fn division_grouping() {
+    assert_eq!(interpret("ToString[a/b, CForm]").unwrap(), "a/b");
+    assert_eq!(
+      interpret("ToString[x^2/y^2, CForm]").unwrap(),
+      "Power(x,2)/Power(y,2)"
+    );
+    assert_eq!(interpret("ToString[3 x/y, CForm]").unwrap(), "(3*x)/y");
+    // The denominator stays grouped: x/(y*z), NOT the wrong x/y*z.
+    assert_eq!(interpret("ToString[x/(y z), CForm]").unwrap(), "x/(y*z)");
+    assert_eq!(interpret("ToString[1/(x y), CForm]").unwrap(), "1/(x*y)");
+    assert_eq!(interpret("ToString[x/y^2, CForm]").unwrap(), "x/Power(y,2)");
+  }
+
+  #[test]
+  fn rational_decimals_and_signs() {
+    // Exact rationals become decimals.
+    assert_eq!(interpret("ToString[1/2, CForm]").unwrap(), "0.5");
+    assert_eq!(interpret("ToString[x/2, CForm]").unwrap(), "x/2.");
+    assert_eq!(interpret("ToString[(3 x)/4, CForm]").unwrap(), "(3*x)/4.");
+    assert_eq!(interpret("ToString[2/(3 x), CForm]").unwrap(), "2/(3.*x)");
+    // A leading -1 coefficient becomes a unary minus over the rest.
+    assert_eq!(interpret("ToString[-a/b, CForm]").unwrap(), "-(a/b)");
+    assert_eq!(interpret("ToString[-a b, CForm]").unwrap(), "-(a*b)");
+    assert_eq!(interpret("ToString[-2 a, CForm]").unwrap(), "-2*a");
+    assert_eq!(interpret("ToString[-1/x, CForm]").unwrap(), "-(1/x)");
+  }
+}
+
+mod fortran_form_division {
+  use super::*;
+
+  // FortranForm shares the numerator/denominator splitting with CForm but
+  // renders powers with ** and keeps the denominator grouped.
+  #[test]
+  fn division_grouping() {
+    assert_eq!(interpret("ToString[a/b, FortranForm]").unwrap(), "a/b");
+    assert_eq!(
+      interpret("ToString[x^2/y^2, FortranForm]").unwrap(),
+      "x**2/y**2"
+    );
+    assert_eq!(
+      interpret("ToString[3 x/y, FortranForm]").unwrap(),
+      "(3*x)/y"
+    );
+    assert_eq!(
+      interpret("ToString[x/(y z), FortranForm]").unwrap(),
+      "x/(y*z)"
+    );
+    assert_eq!(
+      interpret("ToString[1/(x y), FortranForm]").unwrap(),
+      "1/(x*y)"
+    );
+    assert_eq!(interpret("ToString[x/y^2, FortranForm]").unwrap(), "x/y**2");
+  }
+
+  #[test]
+  fn rationals_and_signs() {
+    assert_eq!(interpret("ToString[1/2, FortranForm]").unwrap(), "0.5");
+    assert_eq!(interpret("ToString[x/2, FortranForm]").unwrap(), "x/2.");
+    assert_eq!(
+      interpret("ToString[2/(3 x), FortranForm]").unwrap(),
+      "2/(3.*x)"
+    );
+    assert_eq!(interpret("ToString[-a/b, FortranForm]").unwrap(), "-(a/b)");
+  }
 }
 
 mod to_string_hold_form {

@@ -9889,6 +9889,133 @@ fn read_list_record(
 }
 
 /// Convert an expression to C language format
+/// Flatten a (possibly nested) Times tree — represented either as
+/// FunctionCall{Times} or chained BinaryOp::Times — into a flat factor list.
+fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args.iter() {
+        flatten_times(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_times(left, out);
+      flatten_times(right, out);
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+/// Render a single Times factor for C/Fortran output, parenthesizing
+/// additive (Plus/Minus) factors so the surrounding product stays correct.
+fn c_like_factor(expr: &Expr, fortran: bool) -> String {
+  let s = if fortran {
+    expr_to_fortran(expr)
+  } else {
+    expr_to_c(expr)
+  };
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    )
+  {
+    format!("({})", s)
+  } else {
+    s
+  }
+}
+
+/// Render a Times expression as a C/Fortran fraction with correct
+/// numerator/denominator grouping. Factors with a negative integer power and
+/// the denominator of a Rational coefficient move below the division bar;
+/// a leading -1 coefficient becomes a unary minus. `fortran` selects backend.
+fn c_like_times(args: &[Expr], fortran: bool) -> String {
+  let render = |e: &Expr| {
+    if fortran {
+      expr_to_fortran(e)
+    } else {
+      expr_to_c(e)
+    }
+  };
+  // A leading -1 coefficient renders as a unary minus over the rest.
+  let (neg, factors): (bool, &[Expr]) =
+    if args.len() > 1 && matches!(&args[0], Expr::Integer(-1)) {
+      (true, &args[1..])
+    } else {
+      (false, args)
+    };
+
+  let mut num: Vec<String> = Vec::new();
+  let mut den: Vec<String> = Vec::new();
+  for a in factors {
+    // Negative integer power -> denominator factor with positive exponent
+    // (as_neg_int_power already returns the positive exponent).
+    if let Some((base, e)) = as_neg_int_power(a) {
+      if e == 1 {
+        den.push(c_like_factor(base, fortran));
+      } else {
+        let pos = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![base.clone(), Expr::Integer(e)].into(),
+        };
+        den.push(render(&pos));
+      }
+      continue;
+    }
+    // Rational coefficient p/q -> p above (unless 1), q. below the bar.
+    if let Expr::FunctionCall { name, args: ra } = a
+      && name == "Rational"
+      && ra.len() == 2
+      && let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1])
+    {
+      if *p != 1 {
+        num.push(p.to_string());
+      }
+      den.push(format!("{}.", q));
+      continue;
+    }
+    num.push(c_like_factor(a, fortran));
+  }
+
+  let group = |v: &[String]| -> String {
+    if v.len() > 1 {
+      format!("({})", v.join("*"))
+    } else {
+      v.join("*")
+    }
+  };
+  let compound = !den.is_empty() || num.len() > 1;
+  let body = if den.is_empty() {
+    if num.is_empty() {
+      "1".to_string()
+    } else {
+      num.join("*")
+    }
+  } else {
+    let num_s = if num.is_empty() {
+      "1".to_string()
+    } else {
+      group(&num)
+    };
+    format!("{}/{}", num_s, group(&den))
+  };
+  if neg && compound {
+    format!("-({})", body)
+  } else if neg {
+    format!("-{}", body)
+  } else {
+    body
+  }
+}
+
 pub fn expr_to_c(expr: &Expr) -> String {
   match expr {
     Expr::Integer(n) => n.to_string(),
@@ -9911,33 +10038,9 @@ pub fn expr_to_c(expr: &Expr) -> String {
         parts.join(" + ")
       }
       "Times" => {
-        let parts: Vec<String> = args
-          .iter()
-          .map(|a| {
-            let s = expr_to_c(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
-              || matches!(
-                a,
-                Expr::BinaryOp {
-                  op: BinaryOperator::Plus,
-                  ..
-                }
-              )
-              || matches!(
-                a,
-                Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  ..
-                }
-              )
-            {
-              format!("({})", s)
-            } else {
-              s
-            }
-          })
-          .collect();
-        parts.join("*")
+        let mut factors = Vec::new();
+        flatten_times(expr, &mut factors);
+        c_like_times(&factors, false)
       }
       "Power" if args.len() == 2 => {
         if matches!(&args[1], Expr::Integer(-1)) {
@@ -9950,7 +10053,17 @@ pub fn expr_to_c(expr: &Expr) -> String {
         }
       }
       "Rational" if args.len() == 2 => {
-        format!("{}./{}", expr_to_c(&args[0]), c_paren(&args[1]))
+        // CForm evaluates exact rationals to machine-precision decimals.
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          let s = format!("{}", *n as f64 / *d as f64);
+          if s.contains('.') || s.contains('e') || s.contains('E') {
+            s
+          } else {
+            format!("{}.", s)
+          }
+        } else {
+          format!("{}/{}", expr_to_c(&args[0]), c_paren(&args[1]))
+        }
       }
       _ => format!("{}({})", name, c_args(args)),
     },
@@ -9960,7 +10073,11 @@ pub fn expr_to_c(expr: &Expr) -> String {
       match op {
         BinaryOperator::Plus => format!("{} + {}", l, r),
         BinaryOperator::Minus => format!("{} - {}", l, r),
-        BinaryOperator::Times => format!("{}*{}", l, r),
+        BinaryOperator::Times => {
+          let mut factors = Vec::new();
+          flatten_times(expr, &mut factors);
+          c_like_times(&factors, false)
+        }
         BinaryOperator::Divide => format!("{}/{}", l, r),
         BinaryOperator::Power => {
           if matches!(right.as_ref(), Expr::Integer(-1)) {
@@ -10036,45 +10153,9 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
         parts.join(" + ")
       }
       "Times" => {
-        // Handle Times[-1, x] as -x
-        if args.len() == 2 && matches!(&args[0], Expr::Integer(-1)) {
-          return format!("-{}", fortran_paren(&args[1]));
-        }
-        // Handle fraction form: Times[..., Power[den, -1]]
-        let (num, den) =
-          crate::functions::polynomial_ast::together::extract_num_den(expr);
-        if !matches!(&den, Expr::Integer(1)) {
-          let num_str = expr_to_fortran(&num);
-          let den_str = expr_to_fortran(&den);
-          return format!("{}/{}", num_str, den_str);
-        }
-        let parts: Vec<String> = args
-          .iter()
-          .map(|a| {
-            let s = expr_to_fortran(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
-              || matches!(
-                a,
-                Expr::BinaryOp {
-                  op: BinaryOperator::Plus,
-                  ..
-                }
-              )
-              || matches!(
-                a,
-                Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  ..
-                }
-              )
-            {
-              format!("({})", s)
-            } else {
-              s
-            }
-          })
-          .collect();
-        parts.join("*")
+        let mut factors = Vec::new();
+        flatten_times(expr, &mut factors);
+        c_like_times(&factors, true)
       }
       "Power" if args.len() == 2 => {
         if matches!(&args[1], Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(1)) && matches!(&ra[1], Expr::Integer(2)))
@@ -10113,7 +10194,11 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
       match op {
         BinaryOperator::Plus => format!("{} + {}", l, r),
         BinaryOperator::Minus => format!("{} - {}", l, r),
-        BinaryOperator::Times => format!("{}*{}", l, r),
+        BinaryOperator::Times => {
+          let mut factors = Vec::new();
+          flatten_times(expr, &mut factors);
+          c_like_times(&factors, true)
+        }
         BinaryOperator::Divide => format!("{}/{}", l, r),
         BinaryOperator::Power => format!("{}**{}", l, r),
         _ => format!("{}({})", format!("{:?}", op), format!("{},{}", l, r)),
