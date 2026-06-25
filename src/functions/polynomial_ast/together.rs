@@ -590,6 +590,14 @@ pub fn together_expr(expr: &Expr) -> Expr {
       {
         return reduced;
       }
+      // A lone fraction over a bare polynomial denominator may still share a
+      // polynomial factor (e.g. (x^2+x)/(x^2-1) -> x/(x-1)); cancel the GCD.
+      if is_plus_polynomial(&ed) && single_variable_fraction(&en, &ed) {
+        let cancelled = super::cancel::cancel_expr(&expr_rec);
+        if expr_to_string(&cancelled) != expr_to_string(&expr_rec) {
+          return cancelled;
+        }
+      }
       return expr_rec;
     }
   }
@@ -691,6 +699,25 @@ pub fn together_expr(expr: &Expr) -> Expr {
     if denominator_has_power_factor(&simplified_den) {
       simplified_num = factor_common_monomial_from_terms(&simplified_num);
     }
+    // A single (unfactored) polynomial denominator may still share a polynomial
+    // factor with the numerator — e.g. (x^2+x)/(x^2-1) reduces to x/(x-1).
+    // Monomial cancellation above misses this, so fall back to the full GCD
+    // cancellation (Cancel) when the denominator is a bare Plus polynomial.
+    // Factored (Times/Power) denominators are left to the logic above so their
+    // form is preserved, matching wolframscript.
+    if is_plus_polynomial(&simplified_den)
+      && single_variable_fraction(&simplified_num, &simplified_den)
+    {
+      let frac = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(simplified_num.clone()),
+        right: Box::new(simplified_den.clone()),
+      };
+      let cancelled = super::cancel::cancel_expr(&frac);
+      if expr_to_string(&cancelled) != expr_to_string(&frac) {
+        return cancelled;
+      }
+    }
     if matches!(&simplified_den, Expr::Integer(1)) {
       simplified_num
     } else {
@@ -701,6 +728,30 @@ pub fn together_expr(expr: &Expr) -> Expr {
       }
     }
   }
+}
+
+/// True when `num`/`den` together involve exactly one symbolic variable, the
+/// only case the univariate GCD cancellation in `cancel_expr` can reduce.
+/// Restricting to this keeps the fallback cheap (multivariate / Slot-bearing
+/// rationals — e.g. a Möbius inverse `(-b+#1 d)/(a-#1 c)` — are skipped).
+fn single_variable_fraction(num: &Expr, den: &Expr) -> bool {
+  let mut vars = std::collections::HashSet::new();
+  super::simplify::collect_variables(num, &mut vars);
+  super::simplify::collect_variables(den, &mut vars);
+  vars.len() == 1
+}
+
+/// Returns `true` when `expr` is a bare additive polynomial (a Plus / Minus),
+/// as opposed to a factored product or power denominator.
+fn is_plus_polynomial(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    )
 }
 
 /// Returns `true` when `den` is a Power[base, n] with n ≥ 2 or a Times/Divide

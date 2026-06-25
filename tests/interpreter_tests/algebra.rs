@@ -1275,6 +1275,35 @@ mod together {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
   }
 
+  // Together cancels a common polynomial factor between numerator and a bare
+  // (unfactored) polynomial denominator, like wolframscript: (x^2+x)/(x^2-1)
+  // shares (x+1), reducing to x/(x-1).
+  #[test]
+  fn together_cancels_polynomial_gcd() {
+    assert_eq!(
+      interpret("Together[(x^2 + x)/(x^2 - 1)]").unwrap(),
+      "x/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Together[x^2/(x^2 - 1) + x/(x^2 - 1)]").unwrap(),
+      "x/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Together[(x^2 - 4)/(x^2 - x - 2)]").unwrap(),
+      "(2 + x)/(1 + x)"
+    );
+    // No common factor: the fraction is left combined but uncancelled.
+    assert_eq!(
+      interpret("Together[(2 x)/(x^2 - 1)]").unwrap(),
+      "(2*x)/(-1 + x^2)"
+    );
+    // Factored denominators keep their factored form (no spurious expansion).
+    assert_eq!(
+      interpret("Together[1/(x - 1) + 1/(x + 1)]").unwrap(),
+      "(2*x)/((-1 + x)*(1 + x))"
+    );
+  }
+
   #[test]
   fn together_symbolic_fractions() {
     assert_eq!(
