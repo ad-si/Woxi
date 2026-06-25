@@ -1179,7 +1179,14 @@ script_test!(
 );
 script_test!(script_hilbert_curve, "hilbert_curve.wls");
 script_test!(script_honeycombs, "honeycombs.wls");
-script_test!(script_https, "https.wls");
+// `https.wls` (Import["https://sourceforge.net", "HTML"]) is intentionally
+// not snapshot-tested. Woxi leaves the HTML import unevaluated, producing
+// empty stdout, whereas under WOXI_USE_WOLFRAM wolframscript actually fetches
+// the URL over the network and prints a download progress bar
+// ("Connecting…", "Downloading… (82.9 KB of 119 KB) […]") to stdout. That
+// output is both network-dependent and non-deterministic (byte counts and
+// elapsed times vary per run), so the two snapshot-validation engines (Woxi
+// vs WOXI_USE_WOLFRAM) can never agree on a single stable snapshot.
 script_test!(
   script_https_client_authenticated,
   "https_client-authenticated.wls"
