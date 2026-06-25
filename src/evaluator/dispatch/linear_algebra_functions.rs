@@ -1301,6 +1301,47 @@ pub fn dispatch_linear_algebra_functions(
         args: args.to_vec().into(),
       }));
     }
+    // GeometricTransformation[g, t]: when t is a TransformationFunction,
+    // Wolfram normalizes it to the affine pair {linearMatrix, translation},
+    // dropping the homogeneous row and column. Plain matrices and explicit
+    // {m, v} pairs are left untouched, so the head only ever rewrites its
+    // second argument.
+    "GeometricTransformation" if args.len() == 2 => {
+      let mut transform = args[1].clone();
+      if let Expr::FunctionCall {
+        name: tf_name,
+        args: tf_args,
+      } = &args[1]
+        && tf_name == "TransformationFunction"
+        && tf_args.len() == 1
+        && let Expr::List(rows) = &tf_args[0]
+      {
+        let size = rows.len();
+        if size >= 2
+          && rows
+            .iter()
+            .all(|r| matches!(r, Expr::List(c) if c.len() == size))
+        {
+          let n = size - 1;
+          let mut linear = Vec::with_capacity(n);
+          let mut translation = Vec::with_capacity(n);
+          for r in rows.iter().take(n) {
+            if let Expr::List(c) = r {
+              linear.push(Expr::List(c[..n].to_vec().into()));
+              translation.push(c[n].clone());
+            }
+          }
+          transform = Expr::List(
+            vec![Expr::List(linear.into()), Expr::List(translation.into())]
+              .into(),
+          );
+        }
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "GeometricTransformation".to_string(),
+        args: vec![args[0].clone(), transform].into(),
+      }));
+    }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
     "RotationTransform" if args.len() == 1 || args.len() == 2 => {

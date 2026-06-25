@@ -6202,4 +6202,74 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod geometric_transformation_tests {
+    use super::*;
+
+    #[test]
+    fn test_rotation_function_to_affine_pair() {
+      // A TransformationFunction normalizes to {linearMatrix, translation}.
+      assert_eq!(
+        interpret(
+          "GeometricTransformation[Point[{1,1}],RotationTransform[Pi]]"
+        )
+        .unwrap(),
+        "GeometricTransformation[Point[{1, 1}], {{{-1, 0}, {0, -1}}, {0, 0}}]"
+      );
+    }
+
+    #[test]
+    fn test_translation_function() {
+      assert_eq!(
+        interpret(
+          "GeometricTransformation[Point[{1,1}],TranslationTransform[{3,4}]]"
+        )
+        .unwrap(),
+        "GeometricTransformation[Point[{1, 1}], {{{1, 0}, {0, 1}}, {3, 4}}]"
+      );
+    }
+
+    #[test]
+    fn test_scaling_function() {
+      assert_eq!(
+        interpret(
+          "GeometricTransformation[Point[{1,1}],ScalingTransform[{2,3}]]"
+        )
+        .unwrap(),
+        "GeometricTransformation[Point[{1, 1}], {{{2, 0}, {0, 3}}, {0, 0}}]"
+      );
+    }
+
+    #[test]
+    fn test_affine_function() {
+      assert_eq!(
+        interpret(
+          "GeometricTransformation[{Point[{1,1}]},AffineTransform[{{1,2},{3,4}}]]"
+        )
+        .unwrap(),
+        "GeometricTransformation[{Point[{1, 1}]}, {{{1, 2}, {3, 4}}, {0, 0}}]"
+      );
+    }
+
+    #[test]
+    fn test_plain_matrix_unchanged() {
+      // A bare matrix is not a TransformationFunction and is left as-is.
+      assert_eq!(
+        interpret("GeometricTransformation[Point[{1,1}],{{2,0},{0,2}}]")
+          .unwrap(),
+        "GeometricTransformation[Point[{1, 1}], {{2, 0}, {0, 2}}]"
+      );
+    }
+
+    #[test]
+    fn test_explicit_affine_pair_unchanged() {
+      assert_eq!(
+        interpret(
+          "GeometricTransformation[Point[{1,1}],{{{2,0},{0,2}},{5,6}}]"
+        )
+        .unwrap(),
+        "GeometricTransformation[Point[{1, 1}], {{{2, 0}, {0, 2}}, {5, 6}}]"
+      );
+    }
+  }
 }
