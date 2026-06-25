@@ -6632,5 +6632,32 @@ mod high_level_functions_tests {
         "one hundred twenty-third"
       );
     }
+
+    #[test]
+    fn test_list_qualifier_selects_form() {
+      // The qualifier may be a list {language, form} or {form}.
+      assert_eq!(
+        interpret("IntegerName[15, {\"English\", \"Ordinal\"}]").unwrap(),
+        "fifteenth"
+      );
+      assert_eq!(
+        interpret("IntegerName[42, {\"Ordinal\"}]").unwrap(),
+        "forty-second"
+      );
+      assert_eq!(
+        interpret("IntegerName[1234, {\"English\", \"Words\"}]").unwrap(),
+        "one thousand, two hundred thirty\u{2010}four"
+      );
+      // A bare language list keeps the default cardinal name.
+      assert_eq!(
+        interpret("IntegerName[15, {\"English\"}]").unwrap(),
+        "fifteen"
+      );
+      // A language Woxi cannot spell leaves the expression unevaluated.
+      assert_eq!(
+        interpret("IntegerName[15, {\"German\", \"Ordinal\"}]").unwrap(),
+        "IntegerName[15, {German, Ordinal}]"
+      );
+    }
   }
 }

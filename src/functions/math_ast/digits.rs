@@ -3115,19 +3115,42 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => return unevaluated(),
   };
 
-  // IntegerName[n, "Ordinal"] gives the ordinal name. IntegerName[n, "Words"]
-  // spells out every group (vs. the default's digit groups for n >= 1000).
-  if let Some(Expr::String(form)) = args.get(1) {
-    match form.as_str() {
-      "Ordinal" => {
-        return Ok(Expr::String(cardinal_to_ordinal(&cardinal)));
-      }
-      "Words" => {
-        if let Some(words) = integer_name_words(n) {
-          return Ok(Expr::String(words));
+  // The qualifier may be a plain string ("Ordinal"/"Words") or a list such as
+  // {"English", "Ordinal"} / {"Ordinal"} / {"English", "Words"}. Collect the
+  // string tokens and pick out the requested form; an unrecognized token
+  // (e.g. a non-English language Woxi cannot spell) leaves it unevaluated.
+  if let Some(qualifier) = args.get(1) {
+    let tokens: Vec<&str> = match qualifier {
+      Expr::String(s) => vec![s.as_str()],
+      Expr::List(items) => {
+        let mut t = Vec::with_capacity(items.len());
+        for it in items.iter() {
+          match it {
+            Expr::String(s) => t.push(s.as_str()),
+            _ => return unevaluated(),
+          }
         }
+        t
       }
-      _ => {}
+      _ => return unevaluated(),
+    };
+    let mut want_ordinal = false;
+    let mut want_words = false;
+    for tok in &tokens {
+      match *tok {
+        "Ordinal" => want_ordinal = true,
+        "Words" => want_words = true,
+        // English is the only language Woxi can spell; "Cardinal" is the
+        // default. Anything else (e.g. "German") is unsupported.
+        "English" | "Cardinal" => {}
+        _ => return unevaluated(),
+      }
+    }
+    if want_ordinal {
+      return Ok(Expr::String(cardinal_to_ordinal(&cardinal)));
+    }
+    if want_words && let Some(words) = integer_name_words(n) {
+      return Ok(Expr::String(words));
     }
   }
   Ok(Expr::String(cardinal))
