@@ -593,6 +593,27 @@ mod list_tests {
   }
 
   #[test]
+  fn depth_descends_into_operator_forms() {
+    // Power (x^2 / Sqrt[x]) and other operator/special forms are stored as
+    // BinaryOp/Comparison/Rule etc.; Depth must descend into their canonical
+    // FullForm just like Level does.
+    assert_eq!(interpret("Depth[x^2]").unwrap(), "2");
+    assert_eq!(interpret("Depth[Sqrt[x]]").unwrap(), "2");
+    assert_eq!(interpret("Depth[2^x^y]").unwrap(), "3");
+    assert_eq!(interpret("Depth[a == b]").unwrap(), "2");
+    assert_eq!(interpret("Depth[a -> b]").unwrap(), "2");
+    assert_eq!(interpret("Depth[!a]").unwrap(), "2");
+    assert_eq!(interpret("Depth[#]").unwrap(), "2");
+    assert_eq!(interpret("Depth[#1 + #2]").unwrap(), "3");
+    assert_eq!(interpret("Depth[Infinity]").unwrap(), "2");
+    // Atoms (including Rational/Complex/constants) stay depth 1.
+    assert_eq!(interpret("Depth[Pi]").unwrap(), "1");
+    assert_eq!(interpret("Depth[x]").unwrap(), "1");
+    // Plain nesting is unchanged.
+    assert_eq!(interpret("Depth[f[g[h[x]]]]").unwrap(), "4");
+  }
+
+  #[test]
   fn cases_position_count_skip_rational_internals() {
     // A leveled pattern search must not match a Rational's numerator/denom.
     assert_eq!(

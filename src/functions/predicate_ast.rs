@@ -2042,7 +2042,19 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .max()
           .unwrap_or(0)
       }
-      _ => 1,
+      // Operator and special forms (Power/Sqrt `x^2`, Comparison `a == b`,
+      // Rule `a -> b`, Not `!a`, Slot `#`, DirectedInfinity, …) are decomposed
+      // to their canonical FullForm so Depth descends into them and matches
+      // Level and wolframscript. Plain atoms decompose to `Atom` → depth 1.
+      _ => {
+        use crate::functions::expr_form::{ExprForm, decompose_expr};
+        match decompose_expr(expr) {
+          ExprForm::Atom(_) => 1,
+          ExprForm::Composite { children, .. } => {
+            1 + children.iter().map(calc_depth).max().unwrap_or(0)
+          }
+        }
+      }
     }
   }
 
