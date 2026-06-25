@@ -324,6 +324,12 @@ fn is_non_integer_rational(e: &Expr) -> bool {
 
 /// Check if an expression is a member of a given domain
 pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
+  // Infinity, -Infinity and ComplexInfinity are DirectedInfinity objects, not
+  // members of any number domain (Reals, Integers, Complexes, …). Without this
+  // guard Infinity matches the real/complex constant arms below.
+  if crate::functions::predicate_ast::is_directed_infinity(expr) {
+    return Some(false);
+  }
   match domain {
     "Integers" => match expr {
       Expr::Integer(_) | Expr::BigInteger(_) => Some(true),
