@@ -3829,6 +3829,38 @@ mod tex_form {
     assert_eq!(interpret("ToString[3/4, TeXForm]").unwrap(), "\\frac{3}{4}");
   }
 
+  // A Plus factor inside a product must be parenthesized.
+  #[test]
+  fn product_with_plus_factor() {
+    assert_eq!(
+      interpret("ToString[a (b + c), TeXForm]").unwrap(),
+      "a (b+c)"
+    );
+    assert_eq!(
+      interpret("ToString[2 (x + 1), TeXForm]").unwrap(),
+      "2 (x+1)"
+    );
+    assert_eq!(
+      interpret("ToString[(a + b) (c + d), TeXForm]").unwrap(),
+      "(a+b) (c+d)"
+    );
+    assert_eq!(
+      interpret("ToString[x (y + z) w, TeXForm]").unwrap(),
+      "w x (y+z)"
+    );
+    assert_eq!(
+      interpret("ToString[Sum[i, {i, 1, n}], TeXForm]").unwrap(),
+      "\\frac{1}{2} n (n+1)"
+    );
+    // A lone fraction numerator is grouped by its brace, so it keeps no parens.
+    assert_eq!(
+      interpret("ToString[(a + b)/c, TeXForm]").unwrap(),
+      "\\frac{a+b}{c}"
+    );
+    // A plain product without a Plus factor is unchanged.
+    assert_eq!(interpret("ToString[a b c, TeXForm]").unwrap(), "a b c");
+  }
+
   #[test]
   fn sin() {
     assert_eq!(interpret("ToString[Sin[x], TeXForm]").unwrap(), "\\sin (x)");

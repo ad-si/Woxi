@@ -5000,15 +5000,42 @@ fn tex_times_nary(args: &[Expr]) -> String {
   };
 
   // Partition into numerator factors and denominator factors
-  let mut numer: Vec<String> = Vec::new();
+  let mut numer_args: Vec<&Expr> = Vec::new();
   let mut denom: Vec<String> = Vec::new();
   for arg in factors {
     if let Some((base, pos_exp)) = as_neg_int_power(arg) {
       denom.push(tex_denom_factor(base, pos_exp));
     } else {
-      numer.push(expr_to_tex(arg));
+      numer_args.push(arg);
     }
   }
+
+  // A `Plus`/`Minus` factor in a multi-factor product needs parentheses, e.g.
+  // `a (b+c)`. A lone numerator factor (the whole numerator of a fraction, or
+  // a single product term) is already grouped by its brace, so it must not.
+  let multi = numer_args.len() > 1;
+  let tex_needs_product_parens = |arg: &Expr| -> bool {
+    use crate::syntax::BinaryOperator::{Minus, Plus};
+    matches!(
+      arg,
+      Expr::BinaryOp {
+        op: Plus | Minus,
+        ..
+      }
+    ) || matches!(arg, Expr::FunctionCall { name, args }
+        if name == "Plus" && args.len() >= 2)
+  };
+  let numer: Vec<String> = numer_args
+    .iter()
+    .map(|arg| {
+      let tex = expr_to_tex(arg);
+      if multi && tex_needs_product_parens(arg) {
+        format!("({})", tex)
+      } else {
+        tex
+      }
+    })
+    .collect();
 
   let sign = if negate { "-" } else { "" };
 
