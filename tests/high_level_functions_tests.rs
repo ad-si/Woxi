@@ -3780,6 +3780,34 @@ mod high_level_functions_tests {
         "True"
       );
     }
+
+    #[test]
+    fn test_member_q_rational_complex_atoms() {
+      // A Rational / Complex has no members: its parts are not searched.
+      assert_eq!(interpret("MemberQ[1/2, 1]").unwrap(), "False");
+      assert_eq!(interpret("MemberQ[1 + 2 I, 2]").unwrap(), "False");
+      // The whole atom is still a level-1 member of a containing list.
+      assert_eq!(interpret("MemberQ[{1/2, 3}, 1/2]").unwrap(), "True");
+    }
+
+    #[test]
+    fn test_free_q_rational_complex_atoms() {
+      // Internal numerator/denominator and real/imaginary parts are not
+      // free-standing subexpressions.
+      assert_eq!(interpret("FreeQ[1/2, 2]").unwrap(), "True");
+      assert_eq!(interpret("FreeQ[1/2, 1]").unwrap(), "True");
+      assert_eq!(interpret("FreeQ[3 + x/2, 2]").unwrap(), "True");
+      assert_eq!(interpret("FreeQ[1 + 2 I, 2]").unwrap(), "True");
+      assert_eq!(interpret("FreeQ[x + 2 I, 2]").unwrap(), "True");
+      // The head symbol and the whole atom still match.
+      assert_eq!(interpret("FreeQ[1/2, Rational]").unwrap(), "False");
+      assert_eq!(interpret("FreeQ[1 + 2 I, Complex]").unwrap(), "False");
+      assert_eq!(interpret("FreeQ[1/2, 1/2]").unwrap(), "False");
+      assert_eq!(interpret("FreeQ[{1/2, 3}, 3]").unwrap(), "False");
+      // Ordinary searches are unaffected.
+      assert_eq!(interpret("FreeQ[x^2 + 1, x]").unwrap(), "False");
+      assert_eq!(interpret("FreeQ[Sin[y], x]").unwrap(), "True");
+    }
   }
 
   mod operator_form_tests {

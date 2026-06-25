@@ -1251,7 +1251,10 @@ pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return true;
     }
-    if current_level < level_spec.1 {
+    // Rational and Complex are atoms: do not descend into their parts.
+    let is_atom_number = matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
+      || is_complex_number(expr);
+    if current_level < level_spec.1 && !is_atom_number {
       match expr {
         Expr::List(items) => {
           for item in items {
@@ -1410,6 +1413,32 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     } else if crate::syntax::expr_to_string(expr) == form_str {
       return true;
+    }
+    // Rational and Complex are atoms: their internal parts (numerator/
+    // denominator, real/imaginary) are not free-standing subexpressions, so
+    // FreeQ does not descend into them. Only the head symbol can still match
+    // (Head[1/2] = Rational, Head[a + b I] = Complex).
+    let atom_head = if matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
+    {
+      Some("Rational")
+    } else if is_complex_number(expr) {
+      Some("Complex")
+    } else {
+      None
+    };
+    if let Some(h) = atom_head {
+      if is_form_symbol(form, h) {
+        return true;
+      }
+      if use_pattern {
+        let head_expr = Expr::Identifier(h.to_string());
+        if crate::functions::list_helpers_ast::matches_pattern_ast(
+          &head_expr, form,
+        ) {
+          return true;
+        }
+      }
+      return false;
     }
     match expr {
       Expr::List(items) => {
