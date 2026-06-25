@@ -267,6 +267,27 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_nested_pattern_more_specific_than_blank_either_order() {
+    // A nested structural pattern (`f[g[x_]]`) is more specific than a bare
+    // blank (`f[x_]`) and must fire first regardless of definition order. The
+    // partial-order insertion falls back to the specificity score for
+    // structural patterns, so this keeps working in both orders.
+    clear_state();
+    interpret("f7[g[x_]] := ng[x]").unwrap();
+    interpret("f7[x_] := gen[x]").unwrap();
+    assert_eq!(interpret("f7[g[5]]").unwrap(), "ng[5]");
+    assert_eq!(interpret("f7[5]").unwrap(), "gen[5]");
+    clear_state();
+    // Reversed: the general rule is entered first, but the structural pattern
+    // still wins for `f8[g[5]]`.
+    interpret("f8[x_] := gen[x]").unwrap();
+    interpret("f8[g[x_]] := ng[x]").unwrap();
+    assert_eq!(interpret("f8[g[5]]").unwrap(), "ng[5]");
+    assert_eq!(interpret("f8[5]").unwrap(), "gen[5]");
+    clear_state();
+  }
+
+  #[test]
   fn test_bipartite_partitions_three_arg_recursion() {
     // Issue #121: the three-index bipartite-partition recursion relies on the
     // `BiPartitionsP[n1_Integer, _, _] := 0 /; n1<0` guard firing before the

@@ -310,14 +310,25 @@ pub fn rule_dominates(
   b_conds: &[Option<Expr>],
   b_body: &Expr,
 ) -> bool {
-  // List-destructuring patterns (`f[{a_, b_}]`) encode their element
-  // constraints as opaque `MatchQ`/`Length` conditions on a single `_lp` param,
-  // which the position/guard split below cannot compare. Fall back to the
-  // linear specificity score for them (`score(a) < score(b)` ⇔ `a` is more
-  // specific), preserving the established list-pattern ordering.
-  let is_list_pattern =
-    |params: &[String]| params.iter().any(|p| p.starts_with("_lp"));
-  if is_list_pattern(a_params) || is_list_pattern(b_params) {
+  // Some patterns encode their constraints as opaque conditions the
+  // position/guard split below cannot compare structurally:
+  //   * list-destructuring patterns (`f[{a_, b_}]`) → `MatchQ`/`Length`
+  //     conditions on a single `_lp` param;
+  //   * nested structural patterns (`f[g[x_]]`) → a `__StructuralPattern__`
+  //     marker condition on a `__sp` param.
+  // For those, fall back to the linear specificity score (`score(a) < score(b)`
+  // ⇔ `a` is more specific), preserving their established ordering.
+  let needs_score_fallback = |params: &[String], conds: &[Option<Expr>]| {
+    params
+      .iter()
+      .any(|p| p.starts_with("_lp") || p.starts_with("__sp"))
+      || conds.iter().flatten().any(|c| {
+        matches!(c, Expr::FunctionCall { name, .. } if name == "__StructuralPattern__")
+      })
+  };
+  if needs_score_fallback(a_params, a_conds)
+    || needs_score_fallback(b_params, b_conds)
+  {
     return pattern_specificity_score(a_bt, a_heads, a_conds, a_body)
       < pattern_specificity_score(b_bt, b_heads, b_conds, b_body);
   }
