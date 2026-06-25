@@ -288,6 +288,57 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_exact_arity_more_specific_than_optional_arg() {
+    // `f[x_]` (exact arity 1) is more specific than `f[x_, y_:0]` (which can
+    // default `y`), so a single-arg call fires `f[x_]` regardless of definition
+    // order; a two-arg call still falls to the optional rule. Matches WL.
+    clear_state();
+    interpret("f1[x_, y_:0] := opt[x, y]").unwrap();
+    interpret("f1[x_] := one[x]").unwrap();
+    assert_eq!(interpret("f1[5]").unwrap(), "one[5]");
+    assert_eq!(interpret("f1[5, 6]").unwrap(), "opt[5, 6]");
+    clear_state();
+    // Reversed definition order yields the same dispatch.
+    interpret("f2[x_] := one[x]").unwrap();
+    interpret("f2[x_, y_:0] := opt[x, y]").unwrap();
+    assert_eq!(interpret("f2[5]").unwrap(), "one[5]");
+    assert_eq!(interpret("f2[5, 6]").unwrap(), "opt[5, 6]");
+    clear_state();
+  }
+
+  #[test]
+  fn test_optional_arg_overload_kept_distinct() {
+    // `f[x_, y_]` and `f[x_, y_:0]` are distinct DownValues — defining the
+    // optional-arg rule must NOT delete the exact-arity rule. For a two-arg call
+    // the exact rule wins; for a one-arg call only the optional rule applies.
+    clear_state();
+    interpret("q1[x_, y_] := req2[x, y]").unwrap();
+    interpret("q1[x_, y_:0] := opt[x, y]").unwrap();
+    assert_eq!(interpret("q1[5]").unwrap(), "opt[5, 0]");
+    assert_eq!(interpret("q1[5, 6]").unwrap(), "req2[5, 6]");
+    clear_state();
+    // Redefining the SAME optional-arg pattern still replaces it.
+    interpret("q4[x_, y_:0] := a[x, y]").unwrap();
+    interpret("q4[x_, y_:0] := b[x, y]").unwrap();
+    assert_eq!(interpret("q4[3]").unwrap(), "b[3, 0]");
+    assert_eq!(interpret("q4[3, 4]").unwrap(), "b[3, 4]");
+    clear_state();
+  }
+
+  #[test]
+  fn test_nested_pattern_inner_head_specificity() {
+    // Among nested structural patterns, a tighter inner pattern wins: `g[x_Integer]`
+    // is more specific than `g[x_]` and fires for an integer argument, while a
+    // non-integer falls to the looser rule. Matches wolframscript.
+    clear_state();
+    interpret("f12[g[x_]] := a[x]").unwrap();
+    interpret("f12[g[x_Integer]] := b[x]").unwrap();
+    assert_eq!(interpret("f12[g[5]]").unwrap(), "b[5]");
+    assert_eq!(interpret("f12[g[1.5]]").unwrap(), "a[1.5]");
+    clear_state();
+  }
+
+  #[test]
   fn test_bipartite_partitions_three_arg_recursion() {
     // Issue #121: the three-index bipartite-partition recursion relies on the
     // `BiPartitionsP[n1_Integer, _, _] := 0 /; n1<0` guard firing before the

@@ -257,8 +257,9 @@ fn rule_positions_and_guards(
   heads: &[Option<String>],
   blank_types: &[u8],
   conditions: &[Option<Expr>],
+  defaults: &[Option<Expr>],
   body: &Expr,
-) -> (Vec<(Option<String>, u8)>, Vec<Expr>) {
+) -> (Vec<(Option<String>, u8, bool)>, Vec<Expr>) {
   let mut positions = Vec::new();
   let mut guards = Vec::new();
   for i in 0..heads.len() {
@@ -270,7 +271,8 @@ fn rule_positions_and_guards(
       }
       continue;
     }
-    positions.push((heads[i].clone(), blank_types[i]));
+    let is_optional = defaults.get(i).map(|d| d.is_some()).unwrap_or(false);
+    positions.push((heads[i].clone(), blank_types[i], is_optional));
     if let Some(c) = cond {
       let is_structural_marker = matches!(
         c,
@@ -298,16 +300,19 @@ fn rule_positions_and_guards(
 /// `f[n_Integer, r_Integer] := …` are incomparable (a guarded but structurally
 /// looser rule vs an unguarded but structurally tighter one) and fire in the
 /// order they were entered.
+#[allow(clippy::too_many_arguments)]
 pub fn rule_dominates(
   a_params: &[String],
   a_heads: &[Option<String>],
   a_bt: &[u8],
   a_conds: &[Option<Expr>],
+  a_defaults: &[Option<Expr>],
   a_body: &Expr,
   b_params: &[String],
   b_heads: &[Option<String>],
   b_bt: &[u8],
   b_conds: &[Option<Expr>],
+  b_defaults: &[Option<Expr>],
   b_body: &Expr,
 ) -> bool {
   // Some patterns encode their constraints as opaque conditions the
@@ -332,16 +337,27 @@ pub fn rule_dominates(
     return pattern_specificity_score(a_bt, a_heads, a_conds, a_body)
       < pattern_specificity_score(b_bt, b_heads, b_conds, b_body);
   }
-  let (a_pos, a_guards) =
-    rule_positions_and_guards(a_params, a_heads, a_bt, a_conds, a_body);
-  let (b_pos, b_guards) =
-    rule_positions_and_guards(b_params, b_heads, b_bt, b_conds, b_body);
-  // Different arities never match the same expression — incomparable.
-  if a_pos.len() != b_pos.len() {
+  let (a_pos, a_guards) = rule_positions_and_guards(
+    a_params, a_heads, a_bt, a_conds, a_defaults, a_body,
+  );
+  let (b_pos, b_guards) = rule_positions_and_guards(
+    b_params, b_heads, b_bt, b_conds, b_defaults, b_body,
+  );
+  // Optional (defaulted) trailing positions let a rule match a range of
+  // arities: `[required, total]`. `a`'s match set is a subset of `b`'s only if
+  // every arity `a` accepts, `b` also accepts — i.e. `b` requires no more than
+  // `a` (`b_req <= a_req`) and tolerates at least as many (`a_tot <= b_tot`).
+  // A bare `f[x_]` (1..1) is then strictly more specific than `f[x_, y_:0]`
+  // (1..2), so it is tried first — matching Wolfram.
+  let a_req = a_pos.iter().filter(|(_, _, opt)| !opt).count();
+  let b_req = b_pos.iter().filter(|(_, _, opt)| !opt).count();
+  let (a_tot, b_tot) = (a_pos.len(), b_pos.len());
+  if b_req > a_req || a_tot > b_tot {
     return false;
   }
-  let mut strictly_tighter = false;
-  for ((ah, abt), (bh, bbt)) in a_pos.iter().zip(b_pos.iter()) {
+  // `b` matches a strictly wider arity range ⇒ `a` is strictly more specific.
+  let mut strictly_tighter = b_req < a_req || a_tot < b_tot;
+  for ((ah, abt, _), (bh, bbt, _)) in a_pos.iter().zip(b_pos.iter()) {
     // Head: if `b` constrains the head, `a` must constrain it identically;
     // otherwise `a` could match a head `b` rejects → not a subset.
     match (ah, bh) {
@@ -409,6 +425,46 @@ fn count_specificity_clauses(c: &Expr) -> u32 {
     {
       0
     }
+    // A nested structural pattern (`f[g[x_]]`) is stored as
+    // `__StructuralPattern__[param, patternAST]`. Score it by how constrained
+    // the pattern AST is, so a tighter inner pattern (`g[x_Integer]`) outranks a
+    // looser one (`g[x_]`). Never drop below 1, the historical flat count, so a
+    // structural pattern stays more specific than a bare blank.
+    Expr::FunctionCall { name, args }
+      if name == "__StructuralPattern__" && args.len() == 2 =>
+    {
+      count_pattern_specificity(&args[1]).max(1)
+    }
+    _ => 1,
+  }
+}
+
+/// Count the constraining features of a (structural) pattern AST: each fixed
+/// head symbol, each head-typed / tested pattern node, and each literal atom
+/// makes the pattern more specific. Used to rank nested structural patterns
+/// (`g[x_]` vs `g[x_Integer]`) against each other.
+fn count_pattern_specificity(pat: &Expr) -> u32 {
+  match pat {
+    // A bare blank constrains nothing; a head-typed blank constrains the head.
+    Expr::Pattern { head, .. } | Expr::PatternOptional { head, .. } => {
+      u32::from(head.is_some())
+    }
+    // `x_?test` carries a test (and possibly a head).
+    Expr::PatternTest { head, .. } => 1 + u32::from(head.is_some()),
+    // A fixed head symbol (`g[…]`) is itself a constraint; recurse into args.
+    Expr::FunctionCall { args, .. } => {
+      1 + args.iter().map(count_pattern_specificity).sum::<u32>()
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      1 + count_pattern_specificity(left) + count_pattern_specificity(right)
+    }
+    Expr::UnaryOp { operand, .. } => 1 + count_pattern_specificity(operand),
+    Expr::List(items) => {
+      1 + items.iter().map(count_pattern_specificity).sum::<u32>()
+    }
+    // A bare blank (`_`, `__`, `___`, or a pattern placeholder) constrains
+    // nothing; a concrete literal or symbol is maximally specific at that slot.
+    Expr::Identifier(s) => u32::from(!s.starts_with('_')),
     _ => 1,
   }
 }
@@ -1611,17 +1667,19 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // order, matching Wolfram.
         let pos = entry
           .iter()
-          .position(|(p, c, _, h, bt, b)| {
+          .position(|(p, c, d, h, bt, b)| {
             rule_dominates(
               &params,
               &heads,
               &blank_types,
               &conditions,
+              &defaults,
               &rhs_value,
               p,
               h,
               bt,
               c,
+              d,
               b,
             )
           })
@@ -2322,17 +2380,19 @@ pub fn set_delayed_ast(
         // order, matching Wolfram.
         entry
           .iter()
-          .position(|(p, c, _, h, bt, b)| {
+          .position(|(p, c, d, h, bt, b)| {
             rule_dominates(
               &params,
               &heads,
               &blank_types,
               &conditions,
+              &defaults,
               &final_body,
               p,
               h,
               bt,
               c,
+              d,
               b,
             )
           })

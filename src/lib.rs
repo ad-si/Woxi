@@ -3749,10 +3749,16 @@ fn store_function_definition(
       // unconditional rule would wrongly delete the guarded rule. In Wolfram,
       // `f[a_,b_] := f[b,a] /; a>b` and `f[a_,b_] := …` are distinct
       // DownValues and both are retained.
-      entry.retain(|(p, conds, _, h, bt, body)| {
+      entry.retain(|(p, conds, d, h, bt, body)| {
         p.len() != arity
           || bt != &blank_types
           || h != &heads
+          // Optional (defaulted) positions distinguish overloads: `f[x_, y_]`
+          // and `f[x_, y_:0]` are separate DownValues, so keep an existing rule
+          // whose optional-arg pattern differs from the new one's.
+          || d.iter()
+            .map(|x| x.is_some())
+            .ne(defaults.iter().map(|x| x.is_some()))
           || conds.iter().any(|c| c.is_some())
           || matches!(
             body,
@@ -3768,17 +3774,19 @@ fn store_function_definition(
     // order, matching Wolfram.
     let pos = entry
       .iter()
-      .position(|(p, c, _, h, bt, b)| {
+      .position(|(p, c, d, h, bt, b)| {
         crate::evaluator::assignment::rule_dominates(
           &params,
           &heads,
           &blank_types,
           &conditions,
+          &defaults,
           &body_expr,
           p,
           h,
           bt,
           c,
+          d,
           b,
         )
       })
