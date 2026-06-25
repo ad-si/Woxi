@@ -4782,7 +4782,7 @@ pub fn expr_to_tex(expr: &Expr) -> String {
     Expr::UnaryOp {
       op: UnaryOperator::Not,
       operand,
-    } => format!("\\lnot {}", expr_to_tex(operand)),
+    } => format!("\\neg {}", tex_logic_operand(operand, "Not", 40)),
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left,
@@ -4821,12 +4821,20 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       op: BinaryOperator::And,
       left,
       right,
-    } => format!("{} \\land {}", expr_to_tex(left), expr_to_tex(right)),
+    } => format!(
+      "{}\\land {}",
+      tex_logic_operand(left, "And", 20),
+      tex_logic_operand(right, "And", 20)
+    ),
     Expr::BinaryOp {
       op: BinaryOperator::Or,
       left,
       right,
-    } => format!("{} \\lor {}", expr_to_tex(left), expr_to_tex(right)),
+    } => format!(
+      "{}\\lor {}",
+      tex_logic_operand(left, "Or", 20),
+      tex_logic_operand(right, "Or", 20)
+    ),
     Expr::BinaryOp {
       op: BinaryOperator::StringJoin,
       left,
@@ -5125,9 +5133,109 @@ fn tex_base_with_parens(base: &Expr) -> String {
   }
 }
 
+/// Classify a logical operator for TeX parenthesization, returning
+/// `(kind, precedence)` for And/Or/Xor/Implies/Not (higher binds tighter).
+fn tex_logic_op(expr: &Expr) -> Option<(&'static str, u8)> {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "And" if args.len() >= 2 => Some(("And", 20)),
+      "Or" if args.len() >= 2 => Some(("Or", 20)),
+      "Xor" if args.len() >= 2 => Some(("Xor", 20)),
+      "Implies" if args.len() == 2 => Some(("Implies", 10)),
+      "Not" if args.len() == 1 => Some(("Not", 40)),
+      _ => None,
+    },
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      ..
+    } => Some(("Not", 40)),
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      ..
+    } => Some(("And", 20)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      ..
+    } => Some(("Or", 20)),
+    _ => None,
+  }
+}
+
+/// Render a logical operand, parenthesizing it per Wolfram's TeXForm rules:
+/// a child of strictly lower precedence is wrapped, as is an equal-precedence
+/// child of a different kind (mixing And/Or/Xor) or any Implies under Implies.
+fn tex_logic_operand(
+  child: &Expr,
+  parent_kind: &str,
+  parent_prec: u8,
+) -> String {
+  let inner = expr_to_tex(child);
+  if let Some((ck, cp)) = tex_logic_op(child) {
+    let paren = cp < parent_prec
+      || (cp == parent_prec && (ck != parent_kind || parent_kind == "Implies"));
+    if paren {
+      return format!("({})", inner);
+    }
+  }
+  inner
+}
+
+/// Map a domain symbol to its blackboard-bold TeX set, for Element[_, dom].
+fn tex_set_domain(expr: &Expr) -> Option<&'static str> {
+  if let Expr::Identifier(d) = expr {
+    return match d.as_str() {
+      "Reals" => Some("\\mathbb{R}"),
+      "Integers" => Some("\\mathbb{Z}"),
+      "Complexes" => Some("\\mathbb{C}"),
+      "Rationals" => Some("\\mathbb{Q}"),
+      "Primes" => Some("\\mathbb{P}"),
+      _ => None,
+    };
+  }
+  None
+}
+
 /// Handle function calls in TeX
 fn tex_function_call(name: &str, args: &[Expr]) -> String {
   match name {
+    // Logical operators (infix) with precedence-aware parenthesization.
+    "And" if args.len() >= 2 => args
+      .iter()
+      .map(|a| tex_logic_operand(a, "And", 20))
+      .collect::<Vec<_>>()
+      .join("\\land "),
+    "Or" if args.len() >= 2 => args
+      .iter()
+      .map(|a| tex_logic_operand(a, "Or", 20))
+      .collect::<Vec<_>>()
+      .join("\\lor "),
+    "Xor" if args.len() >= 2 => args
+      .iter()
+      .map(|a| tex_logic_operand(a, "Xor", 20))
+      .collect::<Vec<_>>()
+      .join("\\veebar "),
+    "Implies" if args.len() == 2 => format!(
+      "{}\\Rightarrow {}",
+      tex_logic_operand(&args[0], "Implies", 10),
+      tex_logic_operand(&args[1], "Implies", 10)
+    ),
+    // Set membership: Element[x, Reals] -> x\in \mathbb{R}.
+    "Element" if args.len() == 2 && tex_set_domain(&args[1]).is_some() => {
+      let dom = tex_set_domain(&args[1]).unwrap();
+      let lhs = if matches!(
+        &args[0],
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Alternatives,
+          ..
+        }
+      ) {
+        format!("({})", expr_to_tex(&args[0]))
+      } else {
+        expr_to_tex(&args[0])
+      };
+      format!("{}\\in {}", lhs, dom)
+    }
     // Trig functions
     "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" if args.len() == 1 => {
       let fn_tex = format!("\\{}", name.to_lowercase());

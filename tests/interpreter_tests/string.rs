@@ -3980,6 +3980,93 @@ mod tex_form {
     );
   }
 
+  // Logical operators render infix with precedence-aware parenthesization,
+  // matching Wolfram: And/Or/Xor at one tier (mixing forces parens), Implies
+  // lowest, Not highest.
+  #[test]
+  fn logical_operators() {
+    assert_eq!(interpret("ToString[a && b, TeXForm]").unwrap(), "a\\land b");
+    assert_eq!(interpret("ToString[a || b, TeXForm]").unwrap(), "a\\lor b");
+    assert_eq!(
+      interpret("ToString[a && b && c, TeXForm]").unwrap(),
+      "a\\land b\\land c"
+    );
+    // Mixing And inside Or (and vice versa) is parenthesized.
+    assert_eq!(
+      interpret("ToString[a || b && c, TeXForm]").unwrap(),
+      "a\\lor (b\\land c)"
+    );
+    assert_eq!(
+      interpret("ToString[(a || b) && c, TeXForm]").unwrap(),
+      "(a\\lor b)\\land c"
+    );
+    assert_eq!(
+      interpret("ToString[(a && b) || (c && d), TeXForm]").unwrap(),
+      "(a\\land b)\\lor (c\\land d)"
+    );
+    // Xor sits at the And/Or tier.
+    assert_eq!(
+      interpret("ToString[Xor[a, b, c], TeXForm]").unwrap(),
+      "a\\veebar b\\veebar c"
+    );
+    assert_eq!(
+      interpret("ToString[a && Xor[b, c], TeXForm]").unwrap(),
+      "a\\land (b\\veebar c)"
+    );
+    // Implies is the lowest-precedence binary operator; nested Implies wraps.
+    assert_eq!(
+      interpret("ToString[Implies[a, b], TeXForm]").unwrap(),
+      "a\\Rightarrow b"
+    );
+    assert_eq!(
+      interpret("ToString[Implies[a, b && c], TeXForm]").unwrap(),
+      "a\\Rightarrow b\\land c"
+    );
+    assert_eq!(
+      interpret("ToString[Implies[Implies[a, b], c], TeXForm]").unwrap(),
+      "(a\\Rightarrow b)\\Rightarrow c"
+    );
+    assert_eq!(
+      interpret("ToString[Implies[a, Implies[b, c]], TeXForm]").unwrap(),
+      "a\\Rightarrow (b\\Rightarrow c)"
+    );
+    // Not is highest precedence; compound operands are parenthesized.
+    assert_eq!(interpret("ToString[Not[a], TeXForm]").unwrap(), "\\neg a");
+    assert_eq!(
+      interpret("ToString[Not[a || b], TeXForm]").unwrap(),
+      "\\neg (a\\lor b)"
+    );
+    assert_eq!(
+      interpret("ToString[a && Not[b], TeXForm]").unwrap(),
+      "a\\land \\neg b"
+    );
+  }
+
+  // Element[x, dom] renders as set membership with blackboard-bold sets.
+  #[test]
+  fn element_set_membership() {
+    assert_eq!(
+      interpret("ToString[Element[x, Reals], TeXForm]").unwrap(),
+      "x\\in \\mathbb{R}"
+    );
+    assert_eq!(
+      interpret("ToString[Element[x, Integers], TeXForm]").unwrap(),
+      "x\\in \\mathbb{Z}"
+    );
+    assert_eq!(
+      interpret("ToString[Element[x, Complexes], TeXForm]").unwrap(),
+      "x\\in \\mathbb{C}"
+    );
+    assert_eq!(
+      interpret("ToString[Element[x, Rationals], TeXForm]").unwrap(),
+      "x\\in \\mathbb{Q}"
+    );
+    assert_eq!(
+      interpret("ToString[Element[x, Primes], TeXForm]").unwrap(),
+      "x\\in \\mathbb{P}"
+    );
+  }
+
   #[test]
   fn sin() {
     assert_eq!(interpret("ToString[Sin[x], TeXForm]").unwrap(), "\\sin (x)");
