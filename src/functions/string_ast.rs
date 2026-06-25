@@ -3733,6 +3733,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "TableForm"
     && !is_input_form
+    && !is_tex_form
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -3749,6 +3750,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Grid"
     && !is_input_form
+    && !is_tex_form
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -3763,6 +3765,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "MatrixForm"
     && !is_input_form
+    && !is_tex_form
     && inner_args.len() == 1
     && let Some(rendered) = matrix_form_to_string(&inner_args[0])
   {
@@ -5188,6 +5191,33 @@ fn tex_base_with_parens(base: &Expr) -> String {
   }
 }
 
+/// Render a matrix (list of equal-length row lists) as a LaTeX `array`
+/// environment. Returns `None` when the argument is not a list of row lists.
+fn tex_array(expr: &Expr) -> Option<String> {
+  let Expr::List(rows) = expr else {
+    return None;
+  };
+  let mut ncols = 1;
+  let mut lines = Vec::with_capacity(rows.len());
+  for (i, row) in rows.iter().enumerate() {
+    let Expr::List(cols) = row else {
+      return None;
+    };
+    if i == 0 {
+      ncols = cols.len();
+    }
+    let cells: Vec<String> = cols.iter().map(expr_to_tex).collect();
+    lines.push(format!(" {} \\\\", cells.join(" & ")));
+  }
+  let col_spec: String =
+    std::iter::repeat_n("c", ncols).collect::<Vec<_>>().join("");
+  Some(format!(
+    "\\begin{{array}}{{{}}}\n{}\n\\end{{array}}",
+    col_spec,
+    lines.join("\n")
+  ))
+}
+
 /// Render a derivative `Derivative[orders…][f]` (optionally applied to
 /// `applied` arguments) in TeX. Single orders 1 and 2 use prime marks, higher
 /// or multiple orders use the `f^{(n)}` / `f^{(n1,n2)}` superscript notation.
@@ -5642,30 +5672,45 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         expr_to_tex(&args[1])
       )
     }
-    // MatrixForm
-    "MatrixForm" if args.len() == 1 => {
-      if let Expr::List(rows) = &args[0] {
-        let mut lines = Vec::new();
-        for row in rows {
-          if let Expr::List(cols) = row {
-            let cells: Vec<String> = cols.iter().map(expr_to_tex).collect();
-            lines.push(format!(" {} \\\\", cells.join(" & ")));
+    // MatrixForm — a parenthesized LaTeX array.
+    "MatrixForm" if args.len() == 1 => match tex_array(&args[0]) {
+      Some(arr) => format!("\\left(\n{}\n\\right)", arr),
+      None => format!("\\text{{MatrixForm}}({})", expr_to_tex(&args[0])),
+    },
+    // TableForm/Grid — a bare LaTeX array (no surrounding parentheses).
+    "TableForm" | "Grid" if args.len() == 1 => match tex_array(&args[0]) {
+      Some(arr) => arr,
+      None => format!("\\text{{{}}}({})", name, expr_to_tex(&args[0])),
+    },
+    // Piecewise[{{v1, c1}, …}, default] -> a LaTeX cases environment.
+    "Piecewise" if !args.is_empty() => {
+      if let Expr::List(cases) = &args[0] {
+        let mut rows: Vec<String> = Vec::new();
+        let mut closed = false;
+        for case in cases.iter() {
+          if let Expr::List(pair) = case
+            && pair.len() == 2
+          {
+            let cond = expr_to_tex(&pair[1]);
+            closed = cond == "\\text{True}";
+            rows.push(format!(" {} & {}", expr_to_tex(&pair[0]), cond));
           }
         }
-        let ncols = if let Some(Expr::List(first_row)) = rows.first() {
-          first_row.len()
-        } else {
-          1
-        };
-        let col_spec: String =
-          std::iter::repeat_n("c", ncols).collect::<Vec<_>>().join("");
-        format!(
-          "\\left(\n\\begin{{array}}{{{}}}\n{}\\end{{array}}\n\\right)",
-          col_spec,
-          lines.join("\n") + "\n"
-        )
+        // Wolfram always shows the catch-all; append the default (2nd arg, or
+        // 0) with a True condition unless an explicit True case already closed.
+        if !closed {
+          let def = args
+            .get(1)
+            .map(expr_to_tex)
+            .unwrap_or_else(|| "0".to_string());
+          rows.push(format!(" {} & \\text{{True}}", def));
+        }
+        format!("\\begin{{cases}}\n{}\n\\end{{cases}}", rows.join(" \\\\\n"))
       } else {
-        format!("\\text{{MatrixForm}}({})", expr_to_tex(&args[0]))
+        format!(
+          "\\text{{Piecewise}}({})",
+          args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+        )
       }
     }
     // Complex

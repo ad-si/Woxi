@@ -4144,6 +4144,53 @@ mod tex_form {
     );
   }
 
+  // MatrixForm/TableForm/Grid render as LaTeX array environments; only
+  // MatrixForm wraps the array in \left( \right).
+  #[test]
+  fn matrix_and_table_forms() {
+    assert_eq!(
+      interpret("ToString[MatrixForm[{{1, 2}, {3, 4}}], TeXForm]").unwrap(),
+      "\\left(\n\\begin{array}{cc}\n 1 & 2 \\\\\n 3 & 4 \\\\\n\\end{array}\n\\right)"
+    );
+    assert_eq!(
+      interpret("ToString[TableForm[{{1, 2}, {3, 4}}], TeXForm]").unwrap(),
+      "\\begin{array}{cc}\n 1 & 2 \\\\\n 3 & 4 \\\\\n\\end{array}"
+    );
+    assert_eq!(
+      interpret("ToString[Grid[{{1, 2}, {3, 4}}], TeXForm]").unwrap(),
+      "\\begin{array}{cc}\n 1 & 2 \\\\\n 3 & 4 \\\\\n\\end{array}"
+    );
+    // The plain-text 2D form is unaffected by the TeX path.
+    assert_eq!(
+      interpret("ToString[MatrixForm[{{1, 2}, {3, 4}}]]").unwrap(),
+      "1   2\n\n3   4"
+    );
+  }
+
+  // Piecewise renders as a LaTeX cases environment; Wolfram always shows the
+  // catch-all row (the default value, or 0, with a True condition).
+  #[test]
+  fn piecewise() {
+    assert_eq!(
+      interpret("ToString[Piecewise[{{x, x > 0}, {-x, True}}], TeXForm]")
+        .unwrap(),
+      "\\begin{cases}\n x & x>0 \\\\\n -x & \\text{True}\n\\end{cases}"
+    );
+    // A Piecewise without an explicit True case gets a 0 default row.
+    assert_eq!(
+      interpret("ToString[Piecewise[{{1, x > 0}}], TeXForm]").unwrap(),
+      "\\begin{cases}\n 1 & x>0 \\\\\n 0 & \\text{True}\n\\end{cases}"
+    );
+    // Three cases with a chained-inequality condition.
+    assert_eq!(
+      interpret(
+        "ToString[Piecewise[{{x^2, x < 0}, {x, 0 <= x < 1}, {1, True}}], TeXForm]"
+      )
+      .unwrap(),
+      "\\begin{cases}\n x^2 & x<0 \\\\\n x & 0\\leq x<1 \\\\\n 1 & \\text{True}\n\\end{cases}"
+    );
+  }
+
   // Derivatives render with prime marks (orders 1, 2) or a parenthesized
   // superscript (order >= 3, or multiple orders for partial derivatives).
   #[test]
