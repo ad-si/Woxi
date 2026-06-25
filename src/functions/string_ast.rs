@@ -5449,7 +5449,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     // Fibonacci[n] -> F_n, Fibonacci[n, x] -> F_n(x); SphericalBesselJ[n, x]
     // -> j_n(x); ExpIntegralE[n, x] -> E_n(x).
     "Fibonacci" | "LucasL" | "SphericalBesselJ" | "SphericalBesselY"
-    | "ExpIntegralE"
+    | "ExpIntegralE" | "BernoulliB" | "EulerE"
       if (1..=2).contains(&args.len()) =>
     {
       let letter = match name {
@@ -5457,6 +5457,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         "LucasL" => "L",
         "SphericalBesselJ" => "j",
         "SphericalBesselY" => "y",
+        "BernoulliB" => "B",
         _ => "E",
       };
       if args.len() == 1 {
@@ -5502,6 +5503,65 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     "CosIntegral" if args.len() == 1 => {
       format!("\\text{{Ci}}({})", expr_to_tex(&args[0]))
+    }
+    "Gudermannian" if args.len() == 1 => {
+      format!("\\text{{gd}}({})", expr_to_tex(&args[0]))
+    }
+    "Haversine" if args.len() == 1 => {
+      format!("\\text{{hav}}({})", expr_to_tex(&args[0]))
+    }
+    "AiryAi" if args.len() == 1 => {
+      format!("\\text{{Ai}}({})", expr_to_tex(&args[0]))
+    }
+    "AiryBi" if args.len() == 1 => {
+      format!("\\text{{Bi}}({})", expr_to_tex(&args[0]))
+    }
+    "AiryAiPrime" if args.len() == 1 => {
+      format!("\\text{{Ai}}'({})", expr_to_tex(&args[0]))
+    }
+    "AiryBiPrime" if args.len() == 1 => {
+      format!("\\text{{Bi}}'({})", expr_to_tex(&args[0]))
+    }
+    "InverseErf" if args.len() == 1 => {
+      format!("\\text{{erf}}^{{-1}}({})", expr_to_tex(&args[0]))
+    }
+    "InverseErfc" if args.len() == 1 => {
+      format!("\\text{{erfc}}^{{-1}}({})", expr_to_tex(&args[0]))
+    }
+    // Single-letter special functions: EllipticK/E -> K(m)/E(m),
+    // ProductLog -> W(x), HypergeometricU -> U(a,b,x), LerchPhi -> \Phi (...).
+    "EllipticK" if args.len() == 1 => format!("K({})", expr_to_tex(&args[0])),
+    "EllipticE" if args.len() == 1 => format!("E({})", expr_to_tex(&args[0])),
+    "ProductLog" if args.len() == 1 => {
+      format!("W({})", expr_to_tex(&args[0]))
+    }
+    "HypergeometricU" if args.len() == 3 => format!(
+      "U({},{},{})",
+      expr_to_tex(&args[0]),
+      expr_to_tex(&args[1]),
+      expr_to_tex(&args[2])
+    ),
+    "LerchPhi" if args.len() == 3 => format!(
+      "\\Phi ({},{},{})",
+      expr_to_tex(&args[0]),
+      expr_to_tex(&args[1]),
+      expr_to_tex(&args[2])
+    ),
+    // PolyLog[s, x] -> \text{Li}_s(x).
+    "PolyLog" if args.len() == 2 => format!(
+      "\\text{{Li}}_{}({})",
+      tex_sub(&args[0]),
+      expr_to_tex(&args[1])
+    ),
+    // Accent functions: OverHat -> \hat{x}, etc.
+    "OverHat" | "OverTilde" | "OverDot" | "UnderBar" if args.len() == 1 => {
+      let acc = match name {
+        "OverHat" => "hat",
+        "OverTilde" => "tilde",
+        "OverDot" => "dot",
+        _ => "underline",
+      };
+      format!("\\{}{{{}}}", acc, expr_to_tex(&args[0]))
     }
     // PolyGamma[n, x] -> \psi ^{(n)}(x).
     "PolyGamma" if args.len() == 2 => format!(

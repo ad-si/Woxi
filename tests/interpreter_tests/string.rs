@@ -4225,6 +4225,87 @@ mod tex_form {
     );
   }
 
+  // Accent functions, Airy/Elliptic/PolyLog and Bernoulli/Euler render with
+  // their conventional LaTeX notation.
+  #[test]
+  fn accents_and_more_special_functions() {
+    // Accent wrappers.
+    assert_eq!(
+      interpret("ToString[UnderBar[x], TeXForm]").unwrap(),
+      "\\underline{x}"
+    );
+    assert_eq!(
+      interpret("ToString[OverHat[x], TeXForm]").unwrap(),
+      "\\hat{x}"
+    );
+    assert_eq!(
+      interpret("ToString[OverTilde[x], TeXForm]").unwrap(),
+      "\\tilde{x}"
+    );
+    assert_eq!(
+      interpret("ToString[OverDot[x], TeXForm]").unwrap(),
+      "\\dot{x}"
+    );
+    // Airy functions and their derivatives.
+    assert_eq!(
+      interpret("ToString[AiryAi[x], TeXForm]").unwrap(),
+      "\\text{Ai}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[AiryAiPrime[x], TeXForm]").unwrap(),
+      "\\text{Ai}'(x)"
+    );
+    // Polylogarithm with the order in a subscript.
+    assert_eq!(
+      interpret("ToString[PolyLog[2, x], TeXForm]").unwrap(),
+      "\\text{Li}_2(x)"
+    );
+    // Single-letter functions.
+    assert_eq!(
+      interpret("ToString[EllipticK[m], TeXForm]").unwrap(),
+      "K(m)"
+    );
+    assert_eq!(
+      interpret("ToString[EllipticE[m], TeXForm]").unwrap(),
+      "E(m)"
+    );
+    assert_eq!(
+      interpret("ToString[ProductLog[x], TeXForm]").unwrap(),
+      "W(x)"
+    );
+    assert_eq!(
+      interpret("ToString[HypergeometricU[a, b, x], TeXForm]").unwrap(),
+      "U(a,b,x)"
+    );
+    assert_eq!(
+      interpret("ToString[LerchPhi[z, s, a], TeXForm]").unwrap(),
+      "\\Phi (z,s,a)"
+    );
+    // Inverse error functions.
+    assert_eq!(
+      interpret("ToString[InverseErf[x], TeXForm]").unwrap(),
+      "\\text{erf}^{-1}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Gudermannian[x], TeXForm]").unwrap(),
+      "\\text{gd}(x)"
+    );
+    // Bernoulli/Euler numbers and polynomials.
+    assert_eq!(
+      interpret("ToString[BernoulliB[n], TeXForm]").unwrap(),
+      "B_n"
+    );
+    assert_eq!(
+      interpret("ToString[BernoulliB[n, x], TeXForm]").unwrap(),
+      "B_n(x)"
+    );
+    assert_eq!(interpret("ToString[EulerE[n], TeXForm]").unwrap(), "E_n");
+    assert_eq!(
+      interpret("ToString[EulerE[n, x], TeXForm]").unwrap(),
+      "E_n(x)"
+    );
+  }
+
   // Subscripted families and integral/error special functions render with
   // their conventional LaTeX abbreviations.
   #[test]
