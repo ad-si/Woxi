@@ -4144,6 +4144,49 @@ mod tex_form {
     );
   }
 
+  // Derivatives render with prime marks (orders 1, 2) or a parenthesized
+  // superscript (order >= 3, or multiple orders for partial derivatives).
+  #[test]
+  fn derivatives() {
+    // The common D[...] form curries into Derivative[1][f][x].
+    assert_eq!(interpret("ToString[D[f[x], x], TeXForm]").unwrap(), "f'(x)");
+    assert_eq!(
+      interpret("ToString[D[f[x], {x, 2}], TeXForm]").unwrap(),
+      "f''(x)"
+    );
+    // Literal Derivative forms, with and without applied arguments.
+    assert_eq!(
+      interpret("ToString[Derivative[1][f], TeXForm]").unwrap(),
+      "f'"
+    );
+    assert_eq!(
+      interpret("ToString[Derivative[2][f][x], TeXForm]").unwrap(),
+      "f''(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Derivative[2][f], TeXForm]").unwrap(),
+      "f''"
+    );
+    // Order >= 3 switches to the superscript notation.
+    assert_eq!(
+      interpret("ToString[Derivative[3][f][x], TeXForm]").unwrap(),
+      "f^{(3)}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Derivative[4][f], TeXForm]").unwrap(),
+      "f^{(4)}"
+    );
+    // Partial derivatives use a multi-index superscript.
+    assert_eq!(
+      interpret("ToString[Derivative[1, 0][g][x, y], TeXForm]").unwrap(),
+      "g^{(1,0)}(x,y)"
+    );
+    assert_eq!(
+      interpret("ToString[Derivative[1, 1][g][x, y], TeXForm]").unwrap(),
+      "g^{(1,1)}(x,y)"
+    );
+  }
+
   // Element[x, dom] renders as set membership with blackboard-bold sets.
   #[test]
   fn element_set_membership() {

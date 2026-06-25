@@ -4880,6 +4880,27 @@ pub fn expr_to_tex(expr: &Expr) -> String {
     } => {
       format!("{} \\to {}", expr_to_tex(pattern), expr_to_tex(replacement))
     }
+    Expr::CurriedCall { func, args } => {
+      // Derivative[orders…][f]  -> f', f'', f^{(n)}, …
+      if let Expr::FunctionCall { name, args: orders } = func.as_ref()
+        && name == "Derivative"
+        && args.len() == 1
+      {
+        return tex_derivative(orders, &args[0], None);
+      }
+      // Derivative[orders…][f][x…]  -> f'(x), f''(x), f^{(n)}(x), …
+      if let Expr::CurriedCall {
+        func: inner_func,
+        args: inner_args,
+      } = func.as_ref()
+        && let Expr::FunctionCall { name, args: orders } = inner_func.as_ref()
+        && name == "Derivative"
+        && inner_args.len() == 1
+      {
+        return tex_derivative(orders, &inner_args[0], Some(args));
+      }
+      crate::syntax::expr_to_output(expr)
+    }
     _ => crate::syntax::expr_to_output(expr),
   }
 }
@@ -5167,6 +5188,32 @@ fn tex_base_with_parens(base: &Expr) -> String {
   }
 }
 
+/// Render a derivative `Derivative[orders…][f]` (optionally applied to
+/// `applied` arguments) in TeX. Single orders 1 and 2 use prime marks, higher
+/// or multiple orders use the `f^{(n)}` / `f^{(n1,n2)}` superscript notation.
+fn tex_derivative(
+  orders: &[Expr],
+  f: &Expr,
+  applied: Option<&[Expr]>,
+) -> String {
+  let suffix = if orders.len() == 1 {
+    match &orders[0] {
+      Expr::Integer(1) => "'".to_string(),
+      Expr::Integer(2) => "''".to_string(),
+      other => format!("^{{({})}}", expr_to_tex(other)),
+    }
+  } else {
+    let os: Vec<String> = orders.iter().map(expr_to_tex).collect();
+    format!("^{{({})}}", os.join(","))
+  };
+  let mut s = format!("{}{}", expr_to_tex(f), suffix);
+  if let Some(a) = applied {
+    let args_tex: Vec<String> = a.iter().map(expr_to_tex).collect();
+    s.push_str(&format!("({})", args_tex.join(",")));
+  }
+  s
+}
+
 /// Classify a logical operator for TeX parenthesization, returning
 /// `(kind, precedence)` for And/Or/Xor/Implies/Not (higher binds tighter).
 fn tex_logic_op(expr: &Expr) -> Option<(&'static str, u8)> {
@@ -5328,6 +5375,19 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       "\\delta _{{{}}}",
       args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
     ),
+    // Single-order Derivative[order, f, applied…] (the parser flattens
+    // Derivative[n][f][x] into this form). The bare Derivative[n, m, …]
+    // operator keeps an integer second argument and falls through.
+    "Derivative"
+      if args.len() >= 2 && !matches!(&args[1], Expr::Integer(_)) =>
+    {
+      let applied = if args.len() > 2 {
+        Some(&args[2..])
+      } else {
+        None
+      };
+      tex_derivative(&args[0..1], &args[1], applied)
+    }
     // Trig functions
     "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" if args.len() == 1 => {
       let fn_tex = format!("\\{}", name.to_lowercase());
