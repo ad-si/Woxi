@@ -154,50 +154,6 @@ pub fn any_match_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_to_expr(false))
 }
 
-/// AST-based CountBy: count elements by the value of a function.
-/// CountBy[{a, b, c}, f] -> association of f[x] -> count
-pub fn count_by_ast(
-  list: &Expr,
-  func: &Expr,
-) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "CountBy".to_string(),
-        args: vec![list.clone(), func.clone()].into(),
-      });
-    }
-  };
-
-  use std::collections::HashMap;
-  let mut counts: HashMap<String, i128> = HashMap::new();
-  let mut order: Vec<String> = Vec::new();
-
-  for item in items {
-    let key = apply_func_ast(func, item)?;
-    let key_str = crate::syntax::expr_to_string(&key);
-    if let Some(count) = counts.get_mut(&key_str) {
-      *count += 1;
-    } else {
-      order.push(key_str.clone());
-      counts.insert(key_str, 1);
-    }
-  }
-
-  // Build association preserving order
-  let pairs: Vec<(Expr, Expr)> = order
-    .into_iter()
-    .map(|k| {
-      let count = counts[&k];
-      let key_expr = crate::syntax::string_to_expr(&k).unwrap_or(Expr::Raw(k));
-      (key_expr, Expr::Integer(count))
-    })
-    .collect();
-
-  Ok(Expr::Association(pairs))
-}
-
 /// AST-based GroupBy: group elements by the value of a function.
 /// GroupBy[{a, b, c}, f] -> association of f[x] -> {elements with that f value}
 pub fn group_by_ast(
