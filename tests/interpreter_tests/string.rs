@@ -4144,6 +4144,88 @@ mod tex_form {
     );
   }
 
+  // Factorial parenthesizes additive/multiplicative arguments but not powers
+  // (which bind tighter than the postfix operator).
+  #[test]
+  fn factorial_argument_grouping() {
+    assert_eq!(interpret("ToString[Factorial[n], TeXForm]").unwrap(), "n!");
+    assert_eq!(
+      interpret("ToString[Factorial[n + 1], TeXForm]").unwrap(),
+      "(n+1)!"
+    );
+    assert_eq!(
+      interpret("ToString[Factorial[2 x], TeXForm]").unwrap(),
+      "(2 x)!"
+    );
+    assert_eq!(
+      interpret("ToString[Factorial[x^2], TeXForm]").unwrap(),
+      "x^2!"
+    );
+    assert_eq!(
+      interpret("ToString[Factorial2[n + 1], TeXForm]").unwrap(),
+      "(n+1)\\text{!!}"
+    );
+    assert_eq!(
+      interpret("ToString[Factorial2[x^2], TeXForm]").unwrap(),
+      "x^2\\text{!!}"
+    );
+  }
+
+  // Bessel/Legendre/PolyGamma and Dirac/Heaviside/vector products render with
+  // their dedicated LaTeX notation.
+  #[test]
+  fn special_function_notation() {
+    assert_eq!(
+      interpret("ToString[BesselJ[0, x], TeXForm]").unwrap(),
+      "J_0(x)"
+    );
+    assert_eq!(
+      interpret("ToString[BesselJ[10, x], TeXForm]").unwrap(),
+      "J_{10}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[BesselY[1, x], TeXForm]").unwrap(),
+      "Y_1(x)"
+    );
+    assert_eq!(
+      interpret("ToString[BesselI[0, x], TeXForm]").unwrap(),
+      "I_0(x)"
+    );
+    assert_eq!(
+      interpret("ToString[BesselK[1, x], TeXForm]").unwrap(),
+      "K_1(x)"
+    );
+    assert_eq!(
+      interpret("ToString[LegendreP[n, x], TeXForm]").unwrap(),
+      "P_n(x)"
+    );
+    assert_eq!(
+      interpret("ToString[PolyGamma[2, x], TeXForm]").unwrap(),
+      "\\psi ^{(2)}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[DiracDelta[x], TeXForm]").unwrap(),
+      "\\delta (x)"
+    );
+    assert_eq!(
+      interpret("ToString[HeavisideTheta[x], TeXForm]").unwrap(),
+      "\\theta (x)"
+    );
+    assert_eq!(
+      interpret("ToString[OverBar[x], TeXForm]").unwrap(),
+      "\\bar{x}"
+    );
+    assert_eq!(
+      interpret("ToString[Cross[a, b, c], TeXForm]").unwrap(),
+      "a\\times b\\times c"
+    );
+    assert_eq!(interpret("ToString[Dot[a, b], TeXForm]").unwrap(), "a.b");
+    assert_eq!(
+      interpret("ToString[CenterDot[a, b], TeXForm]").unwrap(),
+      "a\\cdot b"
+    );
+  }
+
   // MatrixForm/TableForm/Grid render as LaTeX array environments; only
   // MatrixForm wraps the array in \left( \right).
   #[test]

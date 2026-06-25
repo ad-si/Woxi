@@ -5316,6 +5316,38 @@ fn tex_atom_or_paren(expr: &Expr) -> String {
   }
 }
 
+/// Render an operand for a postfix operator (factorial), parenthesizing
+/// additive/multiplicative compounds but NOT powers (which bind tighter than
+/// the operator): (n+1)! and (2 x)! but x^2!.
+fn tex_postfix_arg(expr: &Expr) -> String {
+  let inner = expr_to_tex(expr);
+  let needs = match expr {
+    Expr::BinaryOp {
+      op:
+        BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide,
+      ..
+    } => true,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Plus" | "Times" | "Subtract" | "Divide")
+    }
+    _ => false,
+  };
+  if needs { format!("({})", inner) } else { inner }
+}
+
+/// Render a subscript index, wrapping it in braces only when multi-character.
+fn tex_sub(expr: &Expr) -> String {
+  let s = expr_to_tex(expr);
+  if s.chars().count() == 1 {
+    s
+  } else {
+    format!("{{{}}}", s)
+  }
+}
+
 /// Map a domain symbol to its blackboard-bold TeX set, for Element[_, dom].
 fn tex_set_domain(expr: &Expr) -> Option<&'static str> {
   if let Expr::Identifier(d) = expr {
@@ -5398,8 +5430,52 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     "Norm" if args.len() == 1 => format!("\\| {}\\|", expr_to_tex(&args[0])),
     // Factorial2[n] -> n!! (typeset as \text{!!}).
     "Factorial2" if args.len() == 1 => {
-      format!("{}\\text{{!!}}", tex_atom_or_paren(&args[0]))
+      format!("{}\\text{{!!}}", tex_postfix_arg(&args[0]))
     }
+    // Bessel functions -> J_n(x), Y_n(x), I_n(x), K_n(x).
+    "BesselJ" | "BesselY" | "BesselI" | "BesselK" if args.len() == 2 => {
+      format!(
+        "{}_{}({})",
+        &name[6..7],
+        tex_sub(&args[0]),
+        expr_to_tex(&args[1])
+      )
+    }
+    // LegendreP[n, x] -> P_n(x).
+    "LegendreP" if args.len() == 2 => {
+      format!("P_{}({})", tex_sub(&args[0]), expr_to_tex(&args[1]))
+    }
+    // PolyGamma[n, x] -> \psi ^{(n)}(x).
+    "PolyGamma" if args.len() == 2 => format!(
+      "\\psi ^{{({})}}({})",
+      expr_to_tex(&args[0]),
+      expr_to_tex(&args[1])
+    ),
+    // DiracDelta / HeavisideTheta -> \delta (x) / \theta (x).
+    "DiracDelta" if args.len() == 1 => {
+      format!("\\delta ({})", expr_to_tex(&args[0]))
+    }
+    "HeavisideTheta" if args.len() == 1 => {
+      format!("\\theta ({})", expr_to_tex(&args[0]))
+    }
+    // OverBar[x] -> \bar{x}.
+    "OverBar" if args.len() == 1 => {
+      format!("\\bar{{{}}}", expr_to_tex(&args[0]))
+    }
+    // Vector products: Cross -> a\times b, Dot -> a.b, CenterDot -> a\cdot b.
+    "Cross" if args.len() >= 2 => args
+      .iter()
+      .map(expr_to_tex)
+      .collect::<Vec<_>>()
+      .join("\\times "),
+    "Dot" if args.len() >= 2 => {
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(".")
+    }
+    "CenterDot" if args.len() >= 2 => args
+      .iter()
+      .map(expr_to_tex)
+      .collect::<Vec<_>>()
+      .join("\\cdot "),
     // KroneckerDelta[i, j, ...] -> \delta _{i,j,...}.
     "KroneckerDelta" if !args.is_empty() => format!(
       "\\delta _{{{}}}",
@@ -5577,7 +5653,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // Factorial
     "Factorial" if args.len() == 1 => {
-      format!("{}!", expr_to_tex(&args[0]))
+      format!("{}!", tex_postfix_arg(&args[0]))
     }
     // Sum
     "Sum" if args.len() == 2 => {
