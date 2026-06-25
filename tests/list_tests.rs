@@ -650,6 +650,36 @@ mod list_tests {
   }
 
   #[test]
+  fn pattern_head_of_directed_infinity() {
+    // Infinity objects match _DirectedInfinity and not _Symbol.
+    assert_eq!(
+      interpret("MatchQ[Infinity, _DirectedInfinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[-Infinity, _DirectedInfinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[ComplexInfinity, _DirectedInfinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("MatchQ[Infinity, _Symbol]").unwrap(), "False");
+    // Cases filters accordingly.
+    assert_eq!(
+      interpret("Cases[{Infinity, x, 3}, _Symbol]").unwrap(),
+      "{x}"
+    );
+    assert_eq!(
+      interpret("Cases[{Infinity, 3, x}, _DirectedInfinity]").unwrap(),
+      "{Infinity}"
+    );
+    // Ordinary head-constrained blanks are unaffected.
+    assert_eq!(interpret("MatchQ[y, _Symbol]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[3, _Integer]").unwrap(), "True");
+  }
+
+  #[test]
   fn depth_descends_into_operator_forms() {
     // Power (x^2 / Sqrt[x]) and other operator/special forms are stored as
     // BinaryOp/Comparison/Rule etc.; Depth must descend into their canonical

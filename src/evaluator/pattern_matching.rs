@@ -3666,6 +3666,11 @@ pub fn get_expr_head(expr: &Expr) -> String {
   if crate::functions::predicate_ast::is_complex_number(expr) {
     return "Complex".to_string();
   }
+  // Infinity, -Infinity and ComplexInfinity are DirectedInfinity[…] objects,
+  // so `_DirectedInfinity` matches them and `_Symbol` does not.
+  if crate::functions::predicate_ast::is_directed_infinity(expr) {
+    return "DirectedInfinity".to_string();
+  }
   match expr {
     Expr::Integer(_) | Expr::BigInteger(_) => "Integer".to_string(),
     Expr::Real(_) | Expr::BigFloat(_, _) => "Real".to_string(),
