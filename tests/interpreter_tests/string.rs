@@ -2796,6 +2796,36 @@ mod hash {
   fn adler32_integer() {
     assert_eq!(interpret(r#"Hash["abc", "Adler32"]"#).unwrap(), "38600999");
   }
+
+  // The third argument selects the output format of the digest.
+  #[test]
+  fn hash_output_formats() {
+    // Base64Encoding gives a base64 string of the raw digest bytes.
+    assert_eq!(
+      interpret(r#"Hash["test", "SHA256", "Base64Encoding"]"#).unwrap(),
+      "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
+    );
+    assert_eq!(
+      interpret(r#"Hash["test", "MD5", "Base64Encoding"]"#).unwrap(),
+      "CY9rzUYh03PK3k6DJie09g=="
+    );
+    assert_eq!(
+      interpret(r#"Hash["test", "CRC32", "Base64Encoding"]"#).unwrap(),
+      "2H9+DA=="
+    );
+    // DecimalString is the integer zero-padded to the digest's fixed width
+    // (39 decimal digits for a 128-bit MD5 digest).
+    assert_eq!(
+      interpret(r#"Hash["test", "MD5", "DecimalString"]"#).unwrap(),
+      "012707736894140473154801792860916528374"
+    );
+    // ByteArray wraps the raw digest bytes.
+    assert_eq!(
+      interpret(r#"Normal[Hash["test", "MD5", "ByteArray"]]"#).unwrap(),
+      "{9, 143, 107, 205, 70, 33, 211, 115, 202, 222, 78, 131, 38, 39, 180, \
+       246}"
+    );
+  }
 }
 
 mod string_riffle_extended {

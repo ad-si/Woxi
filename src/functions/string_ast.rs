@@ -9198,8 +9198,39 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Raw digest bytes, recovered from the hex string.
+  let bytes: Vec<u8> = (0..hex_string.len())
+    .step_by(2)
+    .filter_map(|i| u8::from_str_radix(&hex_string[i..i + 2], 16).ok())
+    .collect();
+
   match format.as_str() {
     "HexString" => Ok(Expr::String(hex_string)),
+    "Base64Encoding" => {
+      use base64::Engine;
+      let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+      Ok(Expr::String(b64))
+    }
+    // A Woxi ByteArray stores its bytes as an internal base64 string.
+    "ByteArray" => {
+      use base64::Engine;
+      let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+      Ok(Expr::FunctionCall {
+        name: "ByteArray".to_string(),
+        args: vec![Expr::String(b64)].into(),
+      })
+    }
+    // The integer, zero-padded to the fixed width of the digest size — the
+    // number of decimal digits of 256^nbytes (matching wolframscript).
+    "DecimalString" => {
+      let n = num_bigint::BigInt::parse_bytes(hex_string.as_bytes(), 16)
+        .unwrap_or_default();
+      let width = num_bigint::BigInt::from(256u32)
+        .pow(bytes.len() as u32)
+        .to_string()
+        .len();
+      Ok(Expr::String(format!("{:0>width$}", n, width = width)))
+    }
     "Integer" | _ => {
       // Convert hex to big integer
       let n = num_bigint::BigInt::parse_bytes(hex_string.as_bytes(), 16)
