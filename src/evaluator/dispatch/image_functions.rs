@@ -62,7 +62,8 @@ fn import_json(
 #[cfg(not(target_arch = "wasm32"))]
 fn import_netpbm(path: &str) -> Result<Expr, InterpreterError> {
   if !std::path::Path::new(path).exists() {
-    emit_to_stdout(&format!(
+    // wolframscript prints Import::nffil to stdout for a missing file.
+    crate::emit_message_to_stdout(&format!(
       "Import::nffil: File {} not found during Import.",
       path
     ));
@@ -80,26 +81,16 @@ fn import_netpbm(path: &str) -> Result<Expr, InterpreterError> {
     && matches!(bytes[1], b'1'..=b'7')
     && matches!(bytes[2], b' ' | b'\t' | b'\n' | b'\r');
   if !valid_magic {
-    emit_to_stdout("Import::fmterr: Cannot import data as PPM format.");
+    // wolframscript prints Import::fmterr to stdout for a malformed file.
+    crate::emit_message_to_stdout(
+      "Import::fmterr: Cannot import data as PPM format.",
+    );
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
   // Magic looks plausible but Woxi doesn't yet parse Netpbm pixel data.
   // Return $Failed silently — matches wolframscript on a valid file when
   // parsing succeeds (no message; wolframscript returns `Image[…]`).
   Ok(Expr::Identifier("$Failed".to_string()))
-}
-
-/// Emit a Wolfram-style message and also append it to `CAPTURED_STDOUT`
-/// so that `interpret_with_stdout` (used by the snapshot tests and the
-/// playground) sees the same byte stream wolframscript writes to stdout
-/// in script mode. The format — leading blank line, then `Head::tag: …` —
-/// mirrors wolframscript's exactly.
-#[cfg(not(target_arch = "wasm32"))]
-fn emit_to_stdout(msg: &str) {
-  crate::emit_message(msg);
-  crate::capture_stdout_raw("\n");
-  crate::capture_stdout_raw(msg);
-  crate::capture_stdout_raw("\n");
 }
 
 /// Convert a parsed JSON value to a Woxi expression, matching

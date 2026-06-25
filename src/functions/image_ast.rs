@@ -3796,7 +3796,8 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let valid = matches!(&args[0], Expr::Image { .. } | Expr::List(_));
   if !valid {
-    crate::emit_message(&format!(
+    // wolframscript prints MedianFilter::arg1 to stdout for a non-array arg.
+    crate::emit_message_to_stdout(&format!(
       "MedianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
       crate::syntax::expr_to_string(&args[0])
     ));

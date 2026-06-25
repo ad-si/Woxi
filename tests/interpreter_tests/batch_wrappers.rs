@@ -4999,6 +4999,19 @@ mod batch_unevaluated_wrappers_2 {
       "{{4, 4, 4}, {9/2, 5, 11/2}, {11/2, 13/2, 13/2}}"
     );
   }
+  // A non-array, non-image first argument leaves the call unevaluated and
+  // emits MedianFilter::arg1. wolframscript writes this message to stdout, so
+  // it is mirrored into the captured stdout stream (leading blank line, then
+  // the message) for byte-for-byte parity, not just stderr.
+  #[test]
+  fn median_filter_arg1_message_to_stdout() {
+    let out = interpret_with_stdout("MedianFilter[img, n]").unwrap();
+    assert_eq!(out.result, "MedianFilter[img, n]");
+    assert_eq!(
+      out.stdout,
+      "\nMedianFilter::arg1: The first argument img should be a rectangular array, image or video.\n"
+    );
+  }
   #[test]
   fn gradient_filter_basic_radius_1() {
     // 1-D GradientFilter[list, 1]: |central difference| with edge replication.

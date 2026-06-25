@@ -3,3 +3,5 @@ source: tests/script_snapshot_tests.rs
 expression: stdout
 ---
 
+MedianFilter::arg1: The first argument img should be a rectangular array, image or video.
+

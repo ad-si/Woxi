@@ -686,6 +686,15 @@ fn format_stack_trace() -> Option<String> {
 /// Suppressed when inside Quiet[]. Tracked in CAPTURED_MESSAGES for Check[] interaction.
 /// When messages_to_stdout is enabled, prints to stdout (matching wolframscript).
 /// Includes a stack trace showing the chain of function calls.
+///
+/// This writes to the process stream only (stdout when `messages_to_stdout`
+/// is enabled — the CLI `eval`/`run`/REPL paths — stderr otherwise). It does
+/// NOT touch the `CAPTURED_STDOUT` buffer that `interpret_with_stdout`
+/// returns: most messages are diagnostics, and Woxi still emits some that
+/// wolframscript does not, so mirroring them all into captured stdout would
+/// pollute snapshots with Woxi-only output. Use [`emit_message_to_stdout`]
+/// only at the specific sites whose message provably matches wolframscript's
+/// stdout (e.g. Import/MedianFilter argument errors).
 pub fn emit_message(msg: &str) {
   // Some messages start with right-aligned context lines (e.g. Power::indet
   // prints the exponent above the base) followed by `\n` and then the actual
@@ -713,6 +722,25 @@ pub fn emit_message(msg: &str) {
       }
     }
   }
+}
+
+/// Like [`emit_message`], but also mirrors the message — with wolframscript's
+/// leading-blank-line format — into `CAPTURED_STDOUT`, the buffer that
+/// `interpret_with_stdout` returns to the snapshot tests, playground, and
+/// Jupyter kernel. wolframscript writes messages to stdout, so this keeps
+/// those library consumers byte-for-byte consistent with it.
+///
+/// Use this ONLY where Woxi's message provably matches wolframscript's
+/// stdout for the same input; for the general diagnostic case use
+/// [`emit_message`] (see its note). Respects `Quiet[]`/`Off[]`.
+pub fn emit_message_to_stdout(msg: &str) {
+  emit_message(msg);
+  if message_is_off(msg) || is_quiet() {
+    return;
+  }
+  capture_stdout_raw("\n");
+  capture_stdout_raw(msg);
+  capture_stdout_raw("\n");
 }
 
 /// Clears the captured graphics buffer
