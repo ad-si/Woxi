@@ -522,6 +522,11 @@ pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "AtomQ expects exactly 1 argument".into(),
     ));
   }
+  // Infinity, -Infinity and ComplexInfinity are DirectedInfinity[…] objects,
+  // not atoms, even though Infinity/ComplexInfinity are stored as symbols.
+  if is_directed_infinity(&args[0]) {
+    return Ok(bool_expr(false));
+  }
   let is_atom = if is_complex_number(&args[0]) {
     true
   } else {

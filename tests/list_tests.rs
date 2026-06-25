@@ -616,6 +616,21 @@ mod list_tests {
   }
 
   #[test]
+  fn atom_q_of_directed_infinity() {
+    // Infinity objects are DirectedInfinity[…], hence not atoms.
+    assert_eq!(interpret("AtomQ[Infinity]").unwrap(), "False");
+    assert_eq!(interpret("AtomQ[-Infinity]").unwrap(), "False");
+    assert_eq!(interpret("AtomQ[ComplexInfinity]").unwrap(), "False");
+    assert_eq!(interpret("AtomQ[DirectedInfinity[I]]").unwrap(), "False");
+    // Ordinary atoms (symbols, numbers, Rational/Complex) stay atomic.
+    assert_eq!(interpret("AtomQ[Pi]").unwrap(), "True");
+    assert_eq!(interpret("AtomQ[x]").unwrap(), "True");
+    assert_eq!(interpret("AtomQ[1/2]").unwrap(), "True");
+    assert_eq!(interpret("AtomQ[2 + 3 I]").unwrap(), "True");
+    assert_eq!(interpret("AtomQ[a + b]").unwrap(), "False");
+  }
+
+  #[test]
   fn depth_descends_into_operator_forms() {
     // Power (x^2 / Sqrt[x]) and other operator/special forms are stored as
     // BinaryOp/Comparison/Rule etc.; Depth must descend into their canonical
