@@ -4030,6 +4030,31 @@ mod erf {
     );
   }
 
+  // The generic chain rule for an unknown function with a list-valued argument
+  // must give a single Derivative[…][f][…] (with a structurally-matching list
+  // of zero indices for the constant list argument), not a malformed list of
+  // repeated terms.
+  #[test]
+  fn d_unknown_function_with_list_argument() {
+    assert_eq!(
+      interpret("D[f[x, {1, 2, 3}], x]").unwrap(),
+      "Derivative[1, {0, 0, 0}][f][x, {1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret("D[g[{1, 2}, x], x]").unwrap(),
+      "Derivative[{0, 0}, 1][g][{1, 2}, x]"
+    );
+    assert_eq!(
+      interpret("D[f[x, {a, b}], x]").unwrap(),
+      "Derivative[1, {0, 0}][f][x, {a, b}]"
+    );
+    // Scalar-only arguments are unaffected.
+    assert_eq!(
+      interpret("D[f[x, y], x]").unwrap(),
+      "Derivative[1, 0][f][x, y]"
+    );
+  }
+
   // Inverse error functions: D[InverseErf[z]] = (Sqrt[Pi]/2) E^(InverseErf[z]^2).
   #[test]
   fn d_inverse_erf() {

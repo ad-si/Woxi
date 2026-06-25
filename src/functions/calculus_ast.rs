@@ -3498,10 +3498,32 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             dargs.push(differentiate(arg, var)?);
           }
 
+          // The derivative index for an argument that is itself a list is a
+          // (structurally matching) list of zeros, mirroring Wolfram:
+          // D[f[x, {1, 2, 3}], x] = Derivative[1, {0, 0, 0}][f][x, {1, 2, 3}].
+          fn structured_zero(arg: &Expr) -> Expr {
+            match arg {
+              Expr::List(items) => Expr::List(
+                items.iter().map(structured_zero).collect::<Vec<_>>().into(),
+              ),
+              _ => Expr::Integer(0),
+            }
+          }
+          // An argument that does not depend on `var` has an all-zero
+          // derivative (a scalar 0 or a list of zeros) and contributes nothing.
+          fn is_all_zero(e: &Expr) -> bool {
+            match e {
+              Expr::Integer(0) => true,
+              Expr::Real(f) => *f == 0.0,
+              Expr::List(items) => items.iter().all(is_all_zero),
+              _ => false,
+            }
+          }
+
           // Build chain rule sum
           let mut terms: Vec<Expr> = Vec::new();
           for i in 0..n {
-            if matches!(&dargs[i], Expr::Integer(0)) {
+            if is_all_zero(&dargs[i]) {
               continue;
             }
 
@@ -3511,7 +3533,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 if j == i {
                   Expr::Integer(1)
                 } else {
-                  Expr::Integer(0)
+                  structured_zero(&args[j])
                 }
               })
               .collect();
@@ -3532,6 +3554,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 .zip(deriv_indices.iter())
                 .map(|(a, b)| match (a, b) {
                   (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x + y),
+                  // A structured-zero (list) index adds nothing: keep `a`.
+                  _ if is_all_zero(b) => a.clone(),
                   _ => Expr::BinaryOp {
                     op: crate::syntax::BinaryOperator::Plus,
                     left: Box::new(a.clone()),
