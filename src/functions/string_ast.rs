@@ -3720,6 +3720,10 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // InputForm branch further down handles this via expr_to_input_form.
   let is_input_form = args.len() == 2
     && matches!(&args[1], Expr::Identifier(f) if f == "InputForm");
+  // TeXForm must not take the 2D-OutputForm intercepts below (e.g. Subscript):
+  // it is rendered by the dedicated TeX path further down.
+  let is_tex_form = args.len() == 2
+    && matches!(&args[1], Expr::Identifier(f) if f == "TeXForm");
 
   // TableForm[matrix] — render as an aligned text grid (left-aligned columns
   // padded to the widest cell, three-space separators, blank line between rows).
@@ -3818,6 +3822,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && (name == "Subscript" || name == "Superscript")
     && !is_input_form
+    && !is_tex_form
     && inner_args.len() == 2
   {
     let base_str = to_string_default_form(&inner_args[0]);
@@ -5382,6 +5387,21 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         format!("^{{{}}}", sup)
       };
       format!("{}{}{}", base, sub_part, sup_part)
+    }
+    // Floor[x] -> \lfloor x\rfloor, Ceiling[x] -> \lceil x\rceil.
+    "Floor" if args.len() == 1 => {
+      format!("\\lfloor {}\\rfloor", expr_to_tex(&args[0]))
+    }
+    "Ceiling" if args.len() == 1 => {
+      format!("\\lceil {}\\rceil", expr_to_tex(&args[0]))
+    }
+    // Binomial[n, k] -> \binom{n}{k}.
+    "Binomial" if args.len() == 2 => {
+      format!(
+        "\\binom{{{}}}{{{}}}",
+        expr_to_tex(&args[0]),
+        expr_to_tex(&args[1])
+      )
     }
     // Default: render as function name with parenthesized args. Single-letter
     // names render bare (matches wolframscript: f[x] -> f(x)); multi-letter

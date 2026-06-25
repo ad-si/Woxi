@@ -3861,6 +3861,34 @@ mod tex_form {
     assert_eq!(interpret("ToString[a b c, TeXForm]").unwrap(), "a b c");
   }
 
+  // Floor/Ceiling/Binomial/Subscript use their TeX-specific notation.
+  #[test]
+  fn floor_ceiling_binomial_subscript() {
+    assert_eq!(
+      interpret("ToString[Floor[x], TeXForm]").unwrap(),
+      "\\lfloor x\\rfloor"
+    );
+    assert_eq!(
+      interpret("ToString[Ceiling[x], TeXForm]").unwrap(),
+      "\\lceil x\\rceil"
+    );
+    assert_eq!(
+      interpret("ToString[Binomial[n, k], TeXForm]").unwrap(),
+      "\\binom{n}{k}"
+    );
+    // Subscript renders as x_1 in TeXForm (not the 2D OutputForm layout).
+    assert_eq!(
+      interpret("ToString[Subscript[x, 1], TeXForm]").unwrap(),
+      "x_1"
+    );
+    assert_eq!(
+      interpret("ToString[Subscript[x, 12], TeXForm]").unwrap(),
+      "x_{12}"
+    );
+    // The default (non-TeX) Subscript still renders the 2D layout.
+    assert_eq!(interpret("ToString[Subscript[x, 1]]").unwrap(), "x\n 1");
+  }
+
   #[test]
   fn sin() {
     assert_eq!(interpret("ToString[Sin[x], TeXForm]").unwrap(), "\\sin (x)");
