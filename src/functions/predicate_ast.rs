@@ -1820,6 +1820,34 @@ pub fn is_complex_number(expr: &Expr) -> bool {
   false
 }
 
+/// Whether `expr` is a directed-infinity object: `Infinity`, `-Infinity`
+/// (stored as `Times[-1, Infinity]`), `ComplexInfinity`, or an explicit
+/// `DirectedInfinity[…]`. In Wolfram all of these have Head `DirectedInfinity`.
+pub fn is_directed_infinity(expr: &Expr) -> bool {
+  let is_inf_sym = |e: &Expr| {
+    matches!(e, Expr::Identifier(s) | Expr::Constant(s)
+      if s == "Infinity" || s == "ComplexInfinity")
+  };
+  match expr {
+    _ if is_inf_sym(expr) => true,
+    Expr::FunctionCall { name, .. } if name == "DirectedInfinity" => true,
+    // -Infinity = Times[-1, Infinity] (FunctionCall or BinaryOp form).
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().any(is_inf_sym)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => is_inf_sym(left) || is_inf_sym(right),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_inf_sym(operand),
+    _ => false,
+  }
+}
+
 /// Rational and Complex numbers are atomic (AtomQ → True): their internal
 /// numerator/denominator (a `Rational[n, d]` call) and real/imaginary
 /// structure (a Plus-Times tree) must not be traversed by structural
@@ -1854,6 +1882,11 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Check for complex number patterns before the general match
   if is_complex_number(&args[0]) {
     return Ok(Expr::Identifier("Complex".to_string()));
+  }
+  // Infinity, -Infinity and ComplexInfinity are DirectedInfinity[…] objects,
+  // not symbols/products, so their Head is DirectedInfinity.
+  if is_directed_infinity(&args[0]) {
+    return Ok(Expr::Identifier("DirectedInfinity".to_string()));
   }
   let head = match &args[0] {
     Expr::Integer(_) | Expr::BigInteger(_) => "Integer",

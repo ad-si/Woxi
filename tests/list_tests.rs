@@ -593,6 +593,29 @@ mod list_tests {
   }
 
   #[test]
+  fn head_of_directed_infinity() {
+    // Infinity, -Infinity and ComplexInfinity are DirectedInfinity[…] objects.
+    assert_eq!(interpret("Head[Infinity]").unwrap(), "DirectedInfinity");
+    assert_eq!(interpret("Head[-Infinity]").unwrap(), "DirectedInfinity");
+    assert_eq!(
+      interpret("Head[ComplexInfinity]").unwrap(),
+      "DirectedInfinity"
+    );
+    assert_eq!(
+      interpret("Head[DirectedInfinity[-1]]").unwrap(),
+      "DirectedInfinity"
+    );
+    assert_eq!(
+      interpret("Head[DirectedInfinity[I]]").unwrap(),
+      "DirectedInfinity"
+    );
+    // Ordinary symbols, numbers and products are unaffected.
+    assert_eq!(interpret("Head[Pi]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[x]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[a b]").unwrap(), "Times");
+  }
+
+  #[test]
   fn depth_descends_into_operator_forms() {
     // Power (x^2 / Sqrt[x]) and other operator/special forms are stored as
     // BinaryOp/Comparison/Rule etc.; Depth must descend into their canonical
