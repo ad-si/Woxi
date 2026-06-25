@@ -496,11 +496,12 @@ script_test!(script_day_of_the_week, "day_of_the_week.wls");
 script_test!(script_deconvolution_1d, "deconvolution_1d.wls");
 script_test!(script_department_numbers, "department_numbers.wls");
 // `detect_division_by_zero.wls` (Check[2/0, Print["division by 0"], Power::infy])
-// is intentionally not snapshot-tested: wolframscript prints the `Power::infy`
-// message to stdout in script mode (so it would land in the snapshot), whereas
-// Woxi's script mode routes diagnostic messages to stderr. The computational
-// behaviour matches (Check returns Print[...] which writes "division by 0");
-// the divergence is purely in message I/O routing.
+// is intentionally not snapshot-tested. The CLI (`woxi run`) does match
+// wolframscript here — both print `Power::infy` to stdout — but this snapshot
+// harness drives the library path (`interpret_with_stdout`), which only mirrors
+// into captured stdout the specific messages routed via `emit_message_to_stdout`.
+// `Power::infy` is a broadly-emitted diagnostic still on the plain `emit_message`
+// (stderr) path, so it can't be captured here without rerouting it everywhere.
 script_test!(
   script_determine_if_only_one_instance_is_running,
   "determine_if_only_one_instance_is_running.wls"

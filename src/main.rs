@@ -235,6 +235,10 @@ fn main() {
       repl::run();
     }
     Commands::Run { file, args } => {
+      // `wolframscript -file` writes messages (e.g. `Get::noopen`,
+      // `Power::infy`) to stdout, so match it: route diagnostics there too.
+      woxi::set_messages_to_stdout(true);
+
       let absolute_path = if file.is_absolute() {
         file.clone()
       } else {
@@ -264,6 +268,10 @@ fn main() {
     }
     //  shebang / direct script execution  ---------------------------------
     Commands::Script(args) => {
+      // Shebang scripts run like `wolframscript -file`; send messages to
+      // stdout to match it (see the `Run` arm above).
+      woxi::set_messages_to_stdout(true);
+
       if args.is_empty() {
         eprintln!("Error: no script file supplied");
         return;

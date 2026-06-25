@@ -132,6 +132,24 @@ fn run_file(path: &std::path::Path) -> (String, String, bool) {
 }
 
 #[test]
+fn run_routes_messages_to_stdout_like_wolframscript() {
+  // `wolframscript -file` writes evaluation messages (e.g. `Get::noopen`,
+  // with a leading blank line) to stdout, not stderr. `woxi run` must match
+  // so its captured output is byte-for-byte identical.
+  let script = "Get[\"missing_file.m\"]\nPrint[\"done\"]\n";
+  let path = std::env::temp_dir().join("woxi_cli_run_message.wls");
+  std::fs::write(&path, script).expect("write temp script");
+  let (stdout, stderr, ok) = run_file(&path);
+  let _ = std::fs::remove_file(&path);
+  assert!(ok, "woxi run failed: stderr={}", stderr);
+  assert_eq!(
+    stdout, "\nGet::noopen: Cannot open missing_file.m.\ndone\n",
+    "message must go to stdout (matching wolframscript -file)"
+  );
+  assert_eq!(stderr, "", "no message should leak to stderr");
+}
+
+#[test]
 fn run_notebook_hello_world() {
   // `woxi run` should accept a real `.nb` notebook file, evaluate its
   // Input cells, and print their results (skipping Output cells).
