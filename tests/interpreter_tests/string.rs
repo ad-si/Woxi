@@ -3889,6 +3889,97 @@ mod tex_form {
     assert_eq!(interpret("ToString[Subscript[x, 1]]").unwrap(), "x\n 1");
   }
 
+  // Hyperbolic and remaining inverse trig functions render with their
+  // LaTeX command names (sech/csch use \text since they are not primitives).
+  #[test]
+  fn hyperbolic_and_inverse_trig() {
+    assert_eq!(
+      interpret("ToString[Sinh[x], TeXForm]").unwrap(),
+      "\\sinh (x)"
+    );
+    assert_eq!(
+      interpret("ToString[Cosh[x], TeXForm]").unwrap(),
+      "\\cosh (x)"
+    );
+    assert_eq!(
+      interpret("ToString[Tanh[x], TeXForm]").unwrap(),
+      "\\tanh (x)"
+    );
+    assert_eq!(
+      interpret("ToString[Coth[x], TeXForm]").unwrap(),
+      "\\coth (x)"
+    );
+    assert_eq!(
+      interpret("ToString[Sech[x], TeXForm]").unwrap(),
+      "\\text{sech}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Csch[x], TeXForm]").unwrap(),
+      "\\text{csch}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[ArcSinh[x], TeXForm]").unwrap(),
+      "\\sinh ^{-1}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[ArcCosh[x], TeXForm]").unwrap(),
+      "\\cosh ^{-1}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[ArcSech[x], TeXForm]").unwrap(),
+      "\\text{sech}^{-1}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[ArcCot[x], TeXForm]").unwrap(),
+      "\\cot ^{-1}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[ArcSec[x], TeXForm]").unwrap(),
+      "\\sec ^{-1}(x)"
+    );
+  }
+
+  // Special functions with dedicated LaTeX notation.
+  #[test]
+  fn special_functions() {
+    assert_eq!(
+      interpret("ToString[Sign[x], TeXForm]").unwrap(),
+      "\\text{sgn}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Gamma[x], TeXForm]").unwrap(),
+      "\\Gamma (x)"
+    );
+    assert_eq!(
+      interpret("ToString[Gamma[a, b], TeXForm]").unwrap(),
+      "\\Gamma (a,b)"
+    );
+    assert_eq!(
+      interpret("ToString[Zeta[s], TeXForm]").unwrap(),
+      "\\zeta (s)"
+    );
+    assert_eq!(interpret("ToString[Re[z], TeXForm]").unwrap(), "\\Re(z)");
+    assert_eq!(interpret("ToString[Im[z], TeXForm]").unwrap(), "\\Im(z)");
+    assert_eq!(
+      interpret("ToString[Erf[x], TeXForm]").unwrap(),
+      "\\text{erf}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Erfc[x], TeXForm]").unwrap(),
+      "\\text{erfc}(x)"
+    );
+    assert_eq!(
+      interpret("ToString[Beta[a, b], TeXForm]").unwrap(),
+      "B(a,b)"
+    );
+    // Conjugate: postfix star, parenthesizing compound arguments.
+    assert_eq!(interpret("ToString[Conjugate[z], TeXForm]").unwrap(), "z^*");
+    assert_eq!(
+      interpret("ToString[Conjugate[a b], TeXForm]").unwrap(),
+      "(a b)^*"
+    );
+  }
+
   #[test]
   fn sin() {
     assert_eq!(interpret("ToString[Sin[x], TeXForm]").unwrap(), "\\sin (x)");

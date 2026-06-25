@@ -5143,6 +5143,83 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     "ArcTan" if args.len() == 1 => {
       format!("\\tan ^{{-1}}({})", expr_to_tex(&args[0]))
     }
+    // Remaining inverse trig (the primitives have a LaTeX command name).
+    "ArcCot" | "ArcSec" | "ArcCsc" if args.len() == 1 => {
+      format!(
+        "\\{} ^{{-1}}({})",
+        name[3..].to_lowercase(),
+        expr_to_tex(&args[0])
+      )
+    }
+    // Hyperbolic functions: sinh/cosh/tanh/coth are LaTeX primitives,
+    // sech/csch are rendered with \text{}.
+    "Sinh" | "Cosh" | "Tanh" | "Coth" if args.len() == 1 => {
+      format!("\\{} ({})", name.to_lowercase(), expr_to_tex(&args[0]))
+    }
+    "Sech" | "Csch" if args.len() == 1 => {
+      format!(
+        "\\text{{{}}}({})",
+        name.to_lowercase(),
+        expr_to_tex(&args[0])
+      )
+    }
+    // Inverse hyperbolic functions.
+    "ArcSinh" | "ArcCosh" | "ArcTanh" | "ArcCoth" if args.len() == 1 => {
+      format!(
+        "\\{} ^{{-1}}({})",
+        name[3..].to_lowercase(),
+        expr_to_tex(&args[0])
+      )
+    }
+    "ArcSech" | "ArcCsch" if args.len() == 1 => {
+      format!(
+        "\\text{{{}}}^{{-1}}({})",
+        name[3..].to_lowercase(),
+        expr_to_tex(&args[0])
+      )
+    }
+    // Special functions with dedicated LaTeX notation.
+    "Sign" if args.len() == 1 => {
+      format!("\\text{{sgn}}({})", expr_to_tex(&args[0]))
+    }
+    "Gamma" if !args.is_empty() => {
+      let inner: Vec<String> = args.iter().map(expr_to_tex).collect();
+      format!("\\Gamma ({})", inner.join(","))
+    }
+    "Zeta" if args.len() == 1 => {
+      format!("\\zeta ({})", expr_to_tex(&args[0]))
+    }
+    "Re" if args.len() == 1 => {
+      format!("\\Re({})", expr_to_tex(&args[0]))
+    }
+    "Im" if args.len() == 1 => {
+      format!("\\Im({})", expr_to_tex(&args[0]))
+    }
+    "Erf" if args.len() == 1 => {
+      format!("\\text{{erf}}({})", expr_to_tex(&args[0]))
+    }
+    "Erfc" if args.len() == 1 => {
+      format!("\\text{{erfc}}({})", expr_to_tex(&args[0]))
+    }
+    "Beta" if args.len() == 2 => {
+      format!("B({},{})", expr_to_tex(&args[0]), expr_to_tex(&args[1]))
+    }
+    // Conjugate: postfix star, parenthesizing compound arguments.
+    "Conjugate" if args.len() == 1 => {
+      let inner = expr_to_tex(&args[0]);
+      if matches!(
+        &args[0],
+        Expr::Integer(_)
+          | Expr::Real(_)
+          | Expr::Identifier(_)
+          | Expr::Constant(_)
+          | Expr::String(_)
+      ) {
+        format!("{}^*", inner)
+      } else {
+        format!("({})^*", inner)
+      }
+    }
     // Log
     "Log" if args.len() == 1 => {
       format!("\\log ({})", expr_to_tex(&args[0]))
