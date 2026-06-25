@@ -2408,20 +2408,34 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }),
           }))
         }
-        // Handle Abs[f(x)]: d/dx[|f|] = f'*Sign[f] (for real f ≠ 0)
+        // Abs[f(x)]: Abs is non-analytic, so wolframscript keeps the derivative
+        // as the unevaluated Abs' (Derivative[1][Abs][f]) times the chain-rule
+        // factor f', rather than rewriting it to Sign[f]. (Limits over the
+        // reals rewrite Abs' back to Sign internally — see abs_deriv_to_sign.)
         "Abs" if args.len() == 1 => {
           let df = differentiate(&args[0], var)?;
           if matches!(df, Expr::Integer(0)) {
             return Ok(Expr::Integer(0));
           }
-          Ok(simplify(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
-            left: Box::new(df),
-            right: Box::new(Expr::FunctionCall {
-              name: "Sign".to_string(),
-              args: args.clone(),
+          let deriv_expr = Expr::CurriedCall {
+            func: Box::new(Expr::CurriedCall {
+              func: Box::new(Expr::FunctionCall {
+                name: "Derivative".to_string(),
+                args: vec![Expr::Integer(1)].into(),
+              }),
+              args: vec![Expr::Identifier("Abs".to_string())],
             }),
-          }))
+            args: args.to_vec(),
+          };
+          if matches!(df, Expr::Integer(1)) {
+            Ok(deriv_expr)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(df),
+              right: Box::new(deriv_expr),
+            }))
+          }
         }
         // RealAbs[f(x)]: d/dx[RealAbs[f]] = f'(x) * f / RealAbs[f]
         // (matching wolframscript's preferred form, which avoids Sign).
@@ -10568,6 +10582,53 @@ fn limit_power_form(
 
 /// Limit[expr, x -> x0] - Compute the limit of expr as x approaches x0
 /// Limit[expr, x -> x0, Direction -> "FromAbove"] - One-sided limit
+/// Rewrite `Derivative[1][Abs][g]` to `Sign[g]` throughout an expression. Used
+/// only inside the limit machinery: `D[Abs[x], x]` keeps the unevaluated `Abs'`
+/// to match wolframscript, but over the reals `Abs'[g] = Sign[g]`, which the
+/// L'Hôpital step needs to resolve quotients like `Abs[x]/x`.
+fn abs_deriv_to_sign(expr: &Expr) -> Expr {
+  // Detect Derivative[1][Abs][g] == CurriedCall{ CurriedCall{ Derivative[1],
+  // [Abs] }, [g] }.
+  if let Expr::CurriedCall { func, args } = expr
+    && args.len() == 1
+    && let Expr::CurriedCall {
+      func: inner_func,
+      args: inner_args,
+    } = func.as_ref()
+    && inner_args.len() == 1
+    && matches!(&inner_args[0], Expr::Identifier(s) if s == "Abs")
+    && let Expr::FunctionCall { name, args: order } = inner_func.as_ref()
+    && name == "Derivative"
+    && order.len() == 1
+    && matches!(&order[0], Expr::Integer(1))
+  {
+    return Expr::FunctionCall {
+      name: "Sign".to_string(),
+      args: vec![abs_deriv_to_sign(&args[0])].into(),
+    };
+  }
+  match expr {
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(abs_deriv_to_sign(left)),
+      right: Box::new(abs_deriv_to_sign(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(abs_deriv_to_sign(operand)),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(abs_deriv_to_sign)
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    other => other.clone(),
+  }
+}
+
 pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -10781,10 +10842,13 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         differentiate(&numerator, &var_name),
         differentiate(&denominator, &var_name),
       ) {
+        // Limits run over the reals, where Abs'[g] = Sign[g]. D keeps the
+        // unevaluated Derivative[1][Abs][g] (matching wolframscript), so rewrite
+        // it here before recursing, otherwise Abs[x]/x-style quotients stall.
         let new_expr = Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
-          left: Box::new(simplify(df)),
-          right: Box::new(simplify(dg)),
+          left: Box::new(abs_deriv_to_sign(&simplify(df))),
+          right: Box::new(abs_deriv_to_sign(&simplify(dg))),
         };
         // Bail out of L'Hôpital if the derivative ratio has blown up: some
         // forms (e.g. Tan-based products) differentiate into ever-larger

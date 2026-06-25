@@ -3999,6 +3999,37 @@ mod erf {
     assert_eq!(interpret("D[Sign[7], x]").unwrap(), "0");
   }
 
+  // wolframscript keeps the derivative of Abs as the unevaluated Abs'
+  // (Derivative[1][Abs]) because Abs is non-analytic, rather than Sign[x].
+  #[test]
+  fn d_abs() {
+    assert_eq!(interpret("D[Abs[x], x]").unwrap(), "Derivative[1][Abs][x]");
+    // Composite argument keeps the chain-rule factor (with positive scaling
+    // 3x simplified to x, mirroring D[Abs[3 x], x] = 3 Abs'[x]).
+    assert_eq!(
+      interpret("D[Abs[3 x], x]").unwrap(),
+      "3*Derivative[1][Abs][x]"
+    );
+    // Product rule.
+    assert_eq!(
+      interpret("D[x Abs[x], x]").unwrap(),
+      "Abs[x] + x*Derivative[1][Abs][x]"
+    );
+    // Second derivative differentiates Abs' to Abs''.
+    assert_eq!(
+      interpret("D[Abs[x], {x, 2}]").unwrap(),
+      "Derivative[2][Abs][x]"
+    );
+    // A constant argument differentiates to 0.
+    assert_eq!(interpret("D[Abs[7], x]").unwrap(), "0");
+    // Limits over the reals still resolve Abs'/Sign internally (regression):
+    // Abs[x]/x -> -1 from below, +1 from above.
+    assert_eq!(
+      interpret("Limit[Abs[x]/x, x -> 0, Direction -> \"FromBelow\"]").unwrap(),
+      "-1"
+    );
+  }
+
   // Inverse error functions: D[InverseErf[z]] = (Sqrt[Pi]/2) E^(InverseErf[z]^2).
   #[test]
   fn d_inverse_erf() {
