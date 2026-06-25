@@ -157,29 +157,69 @@ pub fn map_with_level_ast(
   }
 }
 
+/// Canonical (head, children) for Map's level traversal.
+///
+/// Returns `None` for atoms — including Rational/Complex (which are atomic)
+/// and Associations (whose keys are not child elements, handled separately).
+/// Everything else is decomposed to its FullForm so operator and special
+/// forms (`x^2` = Power[x, 2], `a == b` = Equal[a, b], `a -> b` = Rule[a, b],
+/// `!a` = Not[a], …) are descended into, just like Level and Depth.
+fn map_decompose(expr: &Expr) -> Option<(String, Vec<Expr>)> {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
+  if crate::functions::predicate_ast::is_atomic_number(expr)
+    || matches!(expr, Expr::Association(_))
+  {
+    return None;
+  }
+  match decompose_expr(expr) {
+    ExprForm::Atom(_) => None,
+    ExprForm::Composite { head, children } => Some((head, children)),
+  }
+}
+
+/// Rebuild a mapped composite from its canonical head and new children.
+fn rewrap(head: &str, children: Vec<Expr>) -> Expr {
+  use crate::syntax::ComparisonOp;
+  // Relational heads must be rebuilt as `Expr::Comparison` so they render
+  // infix (`f[a] == f[b]`), not as `Equal[f[a], f[b]]`.
+  let cmp_op = match head {
+    "Equal" => Some(ComparisonOp::Equal),
+    "Unequal" => Some(ComparisonOp::NotEqual),
+    "Less" => Some(ComparisonOp::Less),
+    "LessEqual" => Some(ComparisonOp::LessEqual),
+    "Greater" => Some(ComparisonOp::Greater),
+    "GreaterEqual" => Some(ComparisonOp::GreaterEqual),
+    "SameQ" => Some(ComparisonOp::SameQ),
+    "UnsameQ" => Some(ComparisonOp::UnsameQ),
+    _ => None,
+  };
+  if let Some(op) = cmp_op
+    && children.len() >= 2
+  {
+    let operators = vec![op; children.len() - 1];
+    return Expr::Comparison {
+      operands: children,
+      operators,
+    };
+  }
+  if head == "List" {
+    Expr::List(children.into())
+  } else {
+    Expr::FunctionCall {
+      name: head.to_string(),
+      args: children.into(),
+    }
+  }
+}
+
 /// Compute the Wolfram-style depth of an expression.
 /// Atoms have depth 1, compound expressions have depth 1 + max child depth.
 fn expr_depth(expr: &Expr) -> i64 {
-  // Rational / Complex are atoms (depth 1); never descend into their parts.
-  if crate::functions::predicate_ast::is_atomic_number(expr) {
-    return 1;
-  }
-  match expr {
-    Expr::List(items) => {
-      if items.is_empty() {
-        1
-      } else {
-        1 + items.iter().map(expr_depth).max().unwrap_or(0)
-      }
+  match map_decompose(expr) {
+    None => 1,
+    Some((_, children)) => {
+      1 + children.iter().map(expr_depth).max().unwrap_or(0)
     }
-    Expr::FunctionCall { args, .. } => {
-      if args.is_empty() {
-        1
-      } else {
-        1 + args.iter().map(expr_depth).max().unwrap_or(0)
-      }
-    }
-    _ => 1,
   }
 }
 
@@ -193,23 +233,12 @@ fn map_at_depth_negative(
   min_level: i64,
   max_level: i64,
 ) -> Result<Expr, InterpreterError> {
-  // Rational / Complex are atoms: do not descend into their parts.
-  let children = if crate::functions::predicate_ast::is_atomic_number(expr) {
-    None
-  } else {
-    match expr {
-      Expr::List(items) => Some((items.as_slice(), None::<&str>)),
-      Expr::FunctionCall { name, args } => {
-        Some((args.as_slice(), Some(name.as_str())))
-      }
-      _ => None,
-    }
-  };
-
   let neg_level = -(expr_depth(expr));
 
-  let result = if let Some((items, head_name)) = children {
-    let mapped: Result<Vec<Expr>, _> = items
+  // Atoms (incl. Rational/Complex) and Associations are not descended into;
+  // operator/special forms are decomposed to their canonical FullForm.
+  let result = if let Some((head, kids)) = map_decompose(expr) {
+    let mapped: Result<Vec<Expr>, _> = kids
       .iter()
       .map(|item| {
         map_at_depth_negative(
@@ -221,14 +250,7 @@ fn map_at_depth_negative(
         )
       })
       .collect();
-    let mapped = mapped?;
-    match head_name {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: mapped.into(),
-      },
-      None => Expr::List(mapped.into()),
-    }
+    rewrap(&head, mapped?)
   } else {
     expr.clone()
   };
@@ -328,7 +350,16 @@ fn map_at_depth(
         .collect();
       Expr::Association(mapped?)
     }
-    _ => expr.clone(),
+    // Operator and special forms (Power/Sqrt, Comparison, Not, …) are
+    // decomposed to their FullForm so Map descends into them.
+    _ => match map_decompose(expr) {
+      None => expr.clone(),
+      Some((head, children)) => {
+        let mapped: Result<Vec<Expr>, _> =
+          children.iter().map(recurse).collect();
+        rewrap(&head, mapped?)
+      }
+    },
   };
 
   // Apply f at this depth if in range

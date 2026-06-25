@@ -4068,6 +4068,28 @@ mod high_level_functions_tests {
         "<|a -> 1, b :> Q[F[p -> 3], F[q -> 4]]|>"
       );
     }
+
+    #[test]
+    fn test_map_at_level_descends_into_operator_forms() {
+      // Power (x^2 / Sqrt[x]) and other operator/special forms are stored as
+      // BinaryOp/Comparison/Rule etc.; leveled Map must descend into their
+      // canonical FullForm, like Level and Depth.
+      assert_eq!(interpret("Map[f, x^2, {-1}]").unwrap(), "f[x]^f[2]");
+      assert_eq!(interpret("Map[f, Sqrt[x], {-1}]").unwrap(), "f[x]^f[1/2]");
+      assert_eq!(interpret("Map[f, 2^x^y, {-1}]").unwrap(), "f[2]^f[x]^f[y]");
+      assert_eq!(interpret("Map[f, x^2, 2]").unwrap(), "f[x]^f[2]");
+      assert_eq!(
+        interpret("Map[f, x^2 + y^3, {2}]").unwrap(),
+        "f[x]^f[2] + f[y]^f[3]"
+      );
+      // Comparison and Rule heads render infix after mapping.
+      assert_eq!(interpret("Map[f, a == b, {-1}]").unwrap(), "f[a] == f[b]");
+      assert_eq!(interpret("Map[f, a < b, {-1}]").unwrap(), "f[a] < f[b]");
+      assert_eq!(interpret("Map[f, a -> b, {-1}]").unwrap(), "f[a] -> f[b]");
+      // Plain lists/calls and atoms are unaffected.
+      assert_eq!(interpret("Map[f, {a, b}, {-1}]").unwrap(), "{f[a], f[b]}");
+      assert_eq!(interpret("Map[f, 1/2, {-1}]").unwrap(), "f[1/2]");
+    }
   }
 
   mod pdf_export_tests {
