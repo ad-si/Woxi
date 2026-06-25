@@ -1390,6 +1390,39 @@ mod export_string {
   }
 
   #[test]
+  fn export_string_json_compact() {
+    clear_state();
+    // "Compact" -> True emits the value with no extra whitespace.
+    assert_eq!(
+      interpret("ExportString[{1, 2, 3}, \"JSON\", \"Compact\" -> True]")
+        .unwrap(),
+      "[1,2,3]"
+    );
+    assert_eq!(
+      interpret(
+        "ExportString[<|\"a\" -> 1, \"b\" -> 2|>, \"JSON\", \"Compact\" -> True]"
+      )
+      .unwrap(),
+      "{\"a\":1,\"b\":2}"
+    );
+    // Nesting stays compact throughout.
+    assert_eq!(
+      interpret(
+        "ExportString[<|\"x\" -> {1, 2}, \"y\" -> \"hi\"|>, \"JSON\", \
+         \"Compact\" -> True]"
+      )
+      .unwrap(),
+      "{\"x\":[1,2],\"y\":\"hi\"}"
+    );
+    // "Compact" -> False keeps the pretty-printed default.
+    assert_eq!(
+      interpret("ExportString[{1, 2, 3}, \"JSON\", \"Compact\" -> False]")
+        .unwrap(),
+      "[\n\t1,\n\t2,\n\t3\n]"
+    );
+  }
+
+  #[test]
   fn export_string_json_scalars() {
     clear_state();
     assert_eq!(interpret("ExportString[5, \"JSON\"]").unwrap(), "5");

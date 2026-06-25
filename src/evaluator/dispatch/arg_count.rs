@@ -393,7 +393,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ExponentialGeneratingFunction" => Some((3, 3)),
     "ExponentialMovingAverage" => Some((2, 2)),
     "Export" => Some((2, usize::MAX)),
-    "ExportString" => Some((2, 2)),
+    "ExportString" => Some((2, 3)),
     "ExpToTrig" => Some((1, 1)),
     "ExtendedGCD" => Some((2, usize::MAX)),
     "Extract" => Some((1, 3)),

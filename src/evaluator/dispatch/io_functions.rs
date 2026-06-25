@@ -565,8 +565,13 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::String(filename)));
     }
-    "ExportString" if args.len() == 2 => {
-      // ExportString[expr, "format"] - return string representation
+    "ExportString" if args.len() == 2 || args.len() == 3 => {
+      // ExportString[expr, "format"] - return string representation.
+      // An optional third argument carries format options; for JSON the
+      // "Compact" -> True option emits the value with no extra whitespace.
+      let compact = matches!(args.get(2), Some(Expr::Rule { pattern, replacement })
+        if matches!(pattern.as_ref(), Expr::String(s) if s == "Compact")
+          && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True"));
       let format_str = match &args[1] {
         Expr::String(s) => s.clone(),
         _ => {
@@ -616,7 +621,7 @@ pub fn dispatch_io_functions(
         ))));
       }
       if (format_str == "JSON" || format_str == "RawJSON")
-        && let Some(json) = export_string_json(&args[0], 0)
+        && let Some(json) = export_string_json(&args[0], 0, compact)
       {
         return Some(Ok(Expr::String(json)));
       }
@@ -2730,7 +2735,11 @@ fn csv_cell(expr: &Expr, quote_strings: bool) -> String {
 /// containers inline as `[]` / `{}`). `indent` is the tab depth of the value's
 /// opening bracket. Returns `None` for any value JSON cannot represent, so the
 /// caller leaves `ExportString` unevaluated.
-fn export_string_json(expr: &Expr, indent: usize) -> Option<String> {
+fn export_string_json(
+  expr: &Expr,
+  indent: usize,
+  compact: bool,
+) -> Option<String> {
   // Format a Real as JSON: a finite decimal with at least one fractional
   // digit (3.0 -> "3.0", not Wolfram's bare "3.").
   fn real_json(f: f64) -> Option<String> {
@@ -2772,22 +2781,22 @@ fn export_string_json(expr: &Expr, indent: usize) -> Option<String> {
       if items.is_empty() {
         return Some("[]".to_string());
       }
-      let inner = "\t".repeat(indent + 1);
       let mut parts = Vec::with_capacity(items.len());
       for it in items.iter() {
-        parts.push(format!("{}{}", inner, export_string_json(it, indent + 1)?));
+        parts.push(export_string_json(it, indent + 1, compact)?);
       }
-      Some(format!(
-        "[\n{}\n{}]",
-        parts.join(",\n"),
-        "\t".repeat(indent)
-      ))
+      if compact {
+        return Some(format!("[{}]", parts.join(",")));
+      }
+      let inner = "\t".repeat(indent + 1);
+      let body: Vec<String> =
+        parts.iter().map(|p| format!("{}{}", inner, p)).collect();
+      Some(format!("[\n{}\n{}]", body.join(",\n"), "\t".repeat(indent)))
     }
     Expr::Association(pairs) => {
       if pairs.is_empty() {
         return Some("{}".to_string());
       }
-      let inner = "\t".repeat(indent + 1);
       let mut parts = Vec::with_capacity(pairs.len());
       for (k, v) in pairs.iter() {
         let key = match k {
@@ -2795,15 +2804,20 @@ fn export_string_json(expr: &Expr, indent: usize) -> Option<String> {
           other => crate::syntax::expr_to_string(other),
         };
         parts.push(format!(
-          "{}\"{}\":{}",
-          inner,
+          "\"{}\":{}",
           escape(&key),
-          export_string_json(v, indent + 1)?
+          export_string_json(v, indent + 1, compact)?
         ));
       }
+      if compact {
+        return Some(format!("{{{}}}", parts.join(",")));
+      }
+      let inner = "\t".repeat(indent + 1);
+      let body: Vec<String> =
+        parts.iter().map(|p| format!("{}{}", inner, p)).collect();
       Some(format!(
         "{{\n{}\n{}}}",
-        parts.join(",\n"),
+        body.join(",\n"),
         "\t".repeat(indent)
       ))
     }
