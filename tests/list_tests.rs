@@ -593,6 +593,46 @@ mod list_tests {
   }
 
   #[test]
+  fn conjugate_does_not_distribute_over_bare_symbol_sums() {
+    // A fully-symbolic sum stays grouped under one Conjugate (Wolfram does not
+    // auto-distribute Conjugate over Plus without a simplifiable term).
+    assert_eq!(interpret("Conjugate[a + b]").unwrap(), "Conjugate[a + b]");
+    assert_eq!(
+      interpret("Conjugate[a + b + c]").unwrap(),
+      "Conjugate[a + b + c]"
+    );
+    assert_eq!(
+      interpret("Conjugate[a b + c]").unwrap(),
+      "Conjugate[a*b + c]"
+    );
+    // Terms with a numeric coefficient or a pure-number term DO distribute,
+    // and the remaining bare terms are grouped.
+    assert_eq!(
+      interpret("Conjugate[a - b]").unwrap(),
+      "Conjugate[a] - Conjugate[b]"
+    );
+    assert_eq!(
+      interpret("Conjugate[2 a + 3 b]").unwrap(),
+      "2*Conjugate[a] + 3*Conjugate[b]"
+    );
+    assert_eq!(interpret("Conjugate[a + 5]").unwrap(), "5 + Conjugate[a]");
+    assert_eq!(
+      interpret("Conjugate[2 a + b + c]").unwrap(),
+      "2*Conjugate[a] + Conjugate[b + c]"
+    );
+    assert_eq!(
+      interpret("Conjugate[a b + 2 c]").unwrap(),
+      "Conjugate[a*b] + 2*Conjugate[c]"
+    );
+    assert_eq!(
+      interpret("Conjugate[a^2 + b]").unwrap(),
+      "Conjugate[a]^2 + Conjugate[b]"
+    );
+    // Purely numeric arguments still conjugate fully.
+    assert_eq!(interpret("Conjugate[2 + 3 I]").unwrap(), "2 - 3*I");
+  }
+
+  #[test]
   fn head_of_directed_infinity() {
     // Infinity, -Infinity and ComplexInfinity are DirectedInfinity[…] objects.
     assert_eq!(interpret("Head[Infinity]").unwrap(), "DirectedInfinity");

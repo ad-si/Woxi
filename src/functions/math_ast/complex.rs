@@ -553,6 +553,43 @@ fn contains_machine_real(expr: &Expr) -> bool {
   }
 }
 
+/// Flatten a Plus/Minus expression into its summands, rewriting `a - b` into
+/// `a + (-1)*b`. Returns None for non-additive expressions.
+fn collect_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
+      Some(args.to_vec())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut t =
+        collect_plus_terms(left).unwrap_or_else(|| vec![(**left).clone()]);
+      t.extend(
+        collect_plus_terms(right).unwrap_or_else(|| vec![(**right).clone()]),
+      );
+      Some(t)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let mut t =
+        collect_plus_terms(left).unwrap_or_else(|| vec![(**left).clone()]);
+      t.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), (**right).clone()].into(),
+      });
+      Some(t)
+    }
+    _ => None,
+  }
+}
+
 pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Real-valued expressions are their own conjugate. `is_real_valued` covers
   // exact reals/constants plus any NumericQ expression that evaluates to a
@@ -615,33 +652,45 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     return times_ast(&[Expr::Integer(-1), Expr::Identifier("I".to_string())]);
   }
 
-  // Distribute over Plus (both FunctionCall and BinaryOp forms)
-  if let Expr::FunctionCall { name, args } = expr
-    && name == "Plus"
-    && !args.is_empty()
-  {
-    let conj_args: Vec<Expr> =
-      args.iter().map(conjugate_one).collect::<Result<_, _>>()?;
-    return plus_ast(&conj_args);
-  }
-  if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
-    left,
-    right,
-  } = expr
-  {
-    return plus_ast(&[conjugate_one(left)?, conjugate_one(right)?]);
-  }
-  if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Minus,
-    left,
-    right,
-  } = expr
-  {
-    let conj_left = conjugate_one(left)?;
-    let neg_conj_right =
-      times_ast(&[Expr::Integer(-1), conjugate_one(right)?])?;
-    return plus_ast(&[conj_left, neg_conj_right]);
+  // Distribute over Plus, but keep purely-symbolic ("bare") terms grouped
+  // under a single Conjugate. Wolfram only distributes when at least one term
+  // simplifies under conjugation (a number, or a term with a numeric
+  // coefficient / I / integer power), and leaves the remaining bare terms
+  // wrapped together:
+  //   Conjugate[a + b]        -> Conjugate[a + b]   (no term simplifies)
+  //   Conjugate[a + b + 2 I]  -> -2 I + Conjugate[a + b]
+  //   Conjugate[2 a + b + c]  -> 2 Conjugate[a] + Conjugate[b + c]
+  if let Some(terms) = collect_plus_terms(expr) {
+    let conj_wrap = |t: &Expr| Expr::FunctionCall {
+      name: "Conjugate".to_string(),
+      args: vec![t.clone()].into(),
+    };
+    let mut simplified: Vec<Expr> = Vec::new();
+    let mut bare: Vec<Expr> = Vec::new();
+    for t in &terms {
+      let c = conjugate_one(t)?;
+      if crate::syntax::expr_to_string(&c)
+        == crate::syntax::expr_to_string(&conj_wrap(t))
+      {
+        bare.push(t.clone());
+      } else {
+        simplified.push(c);
+      }
+    }
+    // No term simplifies: leave Conjugate[sum] unevaluated.
+    if simplified.is_empty() {
+      return Ok(conj_wrap(expr));
+    }
+    let mut result = simplified;
+    if !bare.is_empty() {
+      let bare_sum = if bare.len() == 1 {
+        bare.into_iter().next().unwrap()
+      } else {
+        plus_ast(&bare)?
+      };
+      result.push(conj_wrap(&bare_sum));
+    }
+    return plus_ast(&result);
   }
 
   // Distribute over Times: factor out known-real and I factors
