@@ -725,6 +725,25 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::String(s) => {
+      // The ISO parser also handles an optional time part
+      // ("2022-11-23 14:30:00"); fall back to the date-only parser for other
+      // numeric layouts (DD/MM/YYYY, …).
+      if let Some(comps) = parse_iso_date_components(s) {
+        let get = |i: usize, default: i64| -> i64 {
+          match comps.get(i) {
+            Some(Expr::Integer(n)) => *n as i64,
+            _ => default,
+          }
+        };
+        return Ok(make_date_list(
+          get(0, 1900),
+          get(1, 1),
+          get(2, 1),
+          get(3, 0),
+          get(4, 0),
+          get(5, 0) as f64,
+        ));
+      }
       if let Some((y, m, d)) = parse_date_string(s) {
         Ok(make_date_list(y, m, d, 0, 0, 0.0))
       } else {

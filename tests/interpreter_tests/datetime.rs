@@ -57,6 +57,32 @@ mod date_list {
     assert_eq!(interpret("DateList[0]").unwrap(), "{1900, 1, 1, 0, 0, 0.}");
   }
 
+  // An ISO date string with a time part is parsed (date-only still works).
+  #[test]
+  fn date_list_iso_datetime_string() {
+    assert_eq!(
+      interpret("DateList[\"2022-11-23 14:30:00\"]").unwrap(),
+      "{2022, 11, 23, 14, 30, 0.}"
+    );
+    assert_eq!(
+      interpret("DateList[\"2022-11-23T14:30:00\"]").unwrap(),
+      "{2022, 11, 23, 14, 30, 0.}"
+    );
+    assert_eq!(
+      interpret("DateList[\"2024-02-29 09:15:45\"]").unwrap(),
+      "{2024, 2, 29, 9, 15, 45.}"
+    );
+    assert_eq!(
+      interpret("DateList[\"2022-11-23 14:30\"]").unwrap(),
+      "{2022, 11, 23, 14, 30, 0.}"
+    );
+    // Date-only string is unchanged.
+    assert_eq!(
+      interpret("DateList[\"2022-11-23\"]").unwrap(),
+      "{2022, 11, 23, 0, 0, 0.}"
+    );
+  }
+
   #[test]
   fn date_list_year_2000() {
     assert_eq!(
