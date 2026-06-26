@@ -5829,6 +5829,25 @@ mod refine {
     assert_eq!(interpret("Refine[Sqrt[x^2], x > 0]").unwrap(), "x");
   }
 
+  // Max/Min collapse when the assumption orders their arguments.
+  #[test]
+  fn max_min_ordered() {
+    assert_eq!(interpret("Refine[Max[a, b], a > b]").unwrap(), "a");
+    assert_eq!(interpret("Refine[Max[a, b], a < b]").unwrap(), "b");
+    assert_eq!(interpret("Refine[Max[a, b], a >= b]").unwrap(), "a");
+    assert_eq!(interpret("Refine[Min[a, b], a < b]").unwrap(), "a");
+    assert_eq!(interpret("Refine[Min[a, b], a > b]").unwrap(), "b");
+    // Reversed assumption order is handled symmetrically.
+    assert_eq!(interpret("Refine[Max[a, b], b < a]").unwrap(), "a");
+    // Simplify accepts assumptions the same way.
+    assert_eq!(interpret("Simplify[Max[a, b], a > b]").unwrap(), "a");
+    // x > 0 orders Max[x, 0] (which canonicalises to Max[0, x]).
+    assert_eq!(interpret("Refine[Max[x, 0], x > 0]").unwrap(), "x");
+    assert_eq!(interpret("Refine[Min[x, 0], x > 0]").unwrap(), "0");
+    // No ordering known -> unchanged.
+    assert_eq!(interpret("Refine[Max[a, b], a == b]").unwrap(), "Max[a, b]");
+  }
+
   #[test]
   fn sqrt_y_squared_positive() {
     assert_eq!(interpret("Refine[Sqrt[y^2], y > 0]").unwrap(), "y");

@@ -676,6 +676,42 @@ fn get_lower_bound(var_name: &str, assumption: &Expr) -> Option<Expr> {
 }
 
 /// Recursively apply Refine simplification rules.
+/// Determine the assumed ordering between two expressions from a binary
+/// comparison in the assumptions: `Some(1)` when `a >= b` is known, `Some(-1)`
+/// when `a <= b` is known, `None` otherwise. Used to collapse Max/Min.
+fn compare_operands(a: &Expr, b: &Expr, info: &AssumptionInfo) -> Option<i32> {
+  use crate::syntax::ComparisonOp::{Greater, GreaterEqual, Less, LessEqual};
+  let a_s = expr_to_string(a);
+  let b_s = expr_to_string(b);
+  for asm in &info.raw_assumptions {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = asm
+    else {
+      continue;
+    };
+    if operands.len() != 2 || operators.len() != 1 {
+      continue;
+    }
+    let l = expr_to_string(&operands[0]);
+    let r = expr_to_string(&operands[1]);
+    let geq = matches!(operators[0], Greater | GreaterEqual);
+    let leq = matches!(operators[0], Less | LessEqual);
+    if !geq && !leq {
+      continue;
+    }
+    // L op R with {L, R} == {a, b}: translate into the a-vs-b ordering.
+    if l == a_s && r == b_s {
+      return Some(if geq { 1 } else { -1 });
+    }
+    if l == b_s && r == a_s {
+      return Some(if geq { -1 } else { 1 });
+    }
+  }
+  None
+}
+
 fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
   match expr {
     // Comparisons: check if they can be resolved under assumptions
@@ -694,6 +730,34 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         );
       }
       expr.clone()
+    }
+
+    // Max[a, b] / Min[a, b] collapse when the assumption orders the arguments:
+    // Refine[Max[a, b], a > b] -> a, Refine[Min[a, b], a < b] -> a, etc.
+    Expr::FunctionCall { name, args }
+      if (name == "Max" || name == "Min") && args.len() == 2 =>
+    {
+      // ordering: Some(1) if a >= b, Some(-1) if a <= b, None if unknown.
+      match compare_operands(&args[0], &args[1], info) {
+        Some(ord) => {
+          // For Max the larger argument wins; for Min the smaller.
+          let pick_first =
+            (name == "Max" && ord >= 0) || (name == "Min" && ord <= 0);
+          refine_expr(
+            if pick_first { &args[0] } else { &args[1] },
+            info,
+            assumption,
+          )
+        }
+        None => Expr::FunctionCall {
+          name: name.clone(),
+          args: args
+            .iter()
+            .map(|x| refine_expr(x, info, assumption))
+            .collect::<Vec<_>>()
+            .into(),
+        },
+      }
     }
 
     // (-1)^k → 1 (k even) or -1 (k odd) when k ∈ Integers with known parity.
