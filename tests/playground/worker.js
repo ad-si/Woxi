@@ -1,4 +1,18 @@
 let wasm = null
+// Bumped on every (re)load so the dynamic glue import specifier is unique.
+// Each distinct specifier yields a fresh module namespace with its own `wasm`
+// binding — the only way to get a brand-new instance, since `module.default()`
+// short-circuits once its cached `wasm` is set.
+let loadCount = 0
+// Message forwarded by the Rust panic hook for the in-flight evaluation. Read
+// after a trap to report a real cause instead of a bare "unreachable".
+let lastPanic = null
+
+// The Rust panic hook calls this just before the `unreachable` trap, letting
+// us surface the panic message and know the instance must be reinstantiated.
+globalThis.__woxi_report_panic = function (msg) {
+  lastPanic = msg
+}
 
 // Provide __woxi_fetch_url to the WASM module so Import["https://..."] works.
 // Called from Rust via wasm_bindgen extern.  Returns base64-encoded bytes.
@@ -28,11 +42,7 @@ globalThis.__woxi_fetch_url = function (url) {
 
 async function initWasm() {
   try {
-    const module = await import("./pkg/woxi.js")
-    const wasmUrl = new URL("./pkg/woxi_bg.wasm", self.location.href)
-    wasmUrl.searchParams.set("v", Date.now())
-    await module.default(wasmUrl)
-    wasm = module
+    wasm = await loadWasm()
     postMessage({ type: "init", success: true })
   }
   catch (error) {
@@ -42,6 +52,33 @@ async function initWasm() {
       message: error.message,
     })
   }
+}
+
+// Import the glue with a unique query so a fresh `wasm` instance is created,
+// then instantiate it. Used for both the initial load and post-crash recovery.
+async function loadWasm() {
+  const module = await import("./pkg/woxi.js?reload=" + (loadCount++))
+  const wasmUrl = new URL("./pkg/woxi_bg.wasm", self.location.href)
+  wasmUrl.searchParams.set("v", Date.now())
+  await module.default(wasmUrl)
+  return module
+}
+
+// Reinstantiate the module after a trap. The previous instance is
+// unrecoverable: a trap (e.g. a Rust panic compiled to `unreachable`) leaves
+// its globals corrupted, so every later call re-traps. Returns a description
+// of what crashed.
+async function recoverWasm(fallback) {
+  const cause = lastPanic || fallback
+  lastPanic = null
+  wasm = null
+  try {
+    wasm = await loadWasm()
+  }
+  catch (error) {
+    return cause + "\n(failed to restart the Woxi kernel: " + error.message + ")"
+  }
+  return cause
 }
 
 self.onmessage = async function (e) {
@@ -73,6 +110,7 @@ self.onmessage = async function (e) {
     }
 
     try {
+      lastPanic = null
       // Stream output one statement at a time so Print/Pause/Print
       // sequences appear progressively rather than batched.
       const stmts = JSON.parse(wasm.split_statements(code))
@@ -83,10 +121,17 @@ self.onmessage = async function (e) {
       postMessage({ type: "result_done", success: true })
     }
     catch (error) {
+      // A thrown exception here is a WASM trap (handled WL errors come back as
+      // strings). Reinstantiate so the next cell works, and report the cause.
+      const cause = await recoverWasm(error.message)
       postMessage({
         type: "result_done",
         success: false,
-        message: "Error: " + error.message,
+        message:
+          "Error: the Woxi kernel hit an internal error and was " +
+          "automatically restarted. All definitions have been cleared — " +
+          "re-run earlier cells to continue.\nCause: " + cause,
+        restarted: true,
       })
     }
   }
@@ -105,6 +150,7 @@ self.onmessage = async function (e) {
       return
     }
     try {
+      lastPanic = null
       const body = e.data.body
       const bindings = JSON.stringify(e.data.bindings || {})
       const result = wasm.evaluate_manipulate(body, bindings)
@@ -116,11 +162,14 @@ self.onmessage = async function (e) {
       })
     }
     catch (error) {
+      const cause = await recoverWasm(error.message)
       postMessage({
         type: "manipulate_result",
         requestId: e.data.requestId,
         success: false,
-        message: "Error: " + error.message,
+        message: "Error: the Woxi kernel restarted after an internal error. " +
+          "Cause: " + cause,
+        restarted: true,
       })
     }
   }

@@ -8,6 +8,13 @@ use crate::{clear_state, interpret, interpret_with_stdout};
 extern "C" {
   #[wasm_bindgen(js_name = "__woxi_fetch_url", catch)]
   fn woxi_fetch_url(url: &str) -> Result<String, JsValue>;
+
+  // Host-provided panic reporter. The panic hook calls this *before* the
+  // resulting `unreachable` trap fires, so the host can capture a meaningful
+  // message and auto-restart the instance. `catch` makes the call a no-op
+  // when the host hasn't installed `globalThis.__woxi_report_panic`.
+  #[wasm_bindgen(js_name = "__woxi_report_panic", catch)]
+  fn report_panic(msg: &str) -> Result<(), JsValue>;
 }
 
 /// Download a URL and decode the image bytes (WASM).
@@ -77,7 +84,17 @@ pub fn csv_import_from_url_wasm(
 
 #[wasm_bindgen(start)]
 pub fn init() {
-  console_error_panic_hook::set_once();
+  // Install a panic hook that both logs the full panic (with a JS stack) to
+  // the developer console and forwards the message to the host. A Rust panic
+  // in WASM compiles to the `unreachable` trap: it aborts the current call
+  // and leaves the module's mutable globals (notably the shadow-stack
+  // pointer) in a half-updated state, so every subsequent call into the same
+  // instance re-traps with a bare "unreachable". The host uses the forwarded
+  // message to show a real error and reinstantiate a fresh instance.
+  std::panic::set_hook(Box::new(|info| {
+    console_error_panic_hook::hook(info);
+    let _ = report_panic(&info.to_string());
+  }));
 }
 
 /// Synchronously block the current (worker) thread for `secs` seconds.
