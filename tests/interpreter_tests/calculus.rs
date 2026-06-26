@@ -11168,6 +11168,30 @@ mod infinite_log_series {
     );
   }
 
+  // Sum[Fibonacci[k], {k, a, n}] = Fibonacci[n+2] - Fibonacci[a+1].
+  #[test]
+  fn fibonacci_partial_sum() {
+    assert_eq!(
+      interpret("Sum[Fibonacci[k], {k, 1, n}]").unwrap(),
+      "-1 + Fibonacci[2 + n]"
+    );
+    assert_eq!(
+      interpret("Sum[Fibonacci[k], {k, 0, n}]").unwrap(),
+      "-1 + Fibonacci[2 + n]"
+    );
+    assert_eq!(
+      interpret("Sum[Fibonacci[k], {k, 2, n}]").unwrap(),
+      "-2 + Fibonacci[2 + n]"
+    );
+    // Constant-factor linearity composes with the identity.
+    assert_eq!(
+      interpret("Sum[2 Fibonacci[k], {k, 1, n}]").unwrap(),
+      "2*(-1 + Fibonacci[2 + n])"
+    );
+    // A concrete upper bound folds to the integer value (Fib[12] - 1 = 143).
+    assert_eq!(interpret("Sum[Fibonacci[k], {k, 1, 10}]").unwrap(), "143");
+  }
+
   #[test]
   fn negative_fractional_base() {
     assert_eq!(

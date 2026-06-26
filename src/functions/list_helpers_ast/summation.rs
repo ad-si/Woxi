@@ -2038,6 +2038,34 @@ fn try_symbolic_sum(
     }
   }
 
+  // Sum[Fibonacci[k], {k, a, n}] = Fibonacci[n + 2] - Fibonacci[a + 1]
+  // (telescoping from Fibonacci[k] = Fibonacci[k+2] - Fibonacci[k+1]). Valid for
+  // any lower bound; a = 1 or 0 gives the familiar Fibonacci[n+2] - 1.
+  if let Expr::FunctionCall { name, args } = body
+    && name == "Fibonacci"
+    && args.len() == 1
+    && matches!(&args[0], Expr::Identifier(v) if v == var_name)
+  {
+    let fib = |arg: Expr| Expr::FunctionCall {
+      name: "Fibonacci".to_string(),
+      args: vec![arg].into(),
+    };
+    let result = Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(fib(Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(max_expr.clone()),
+        right: Box::new(Expr::Integer(2)),
+      })),
+      right: Box::new(fib(Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(min_expr.clone()),
+        right: Box::new(Expr::Integer(1)),
+      })),
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   // Binomial theorem: Sum[c Binomial[N, k] r^k, {k, 0, N}] = c (1 + r)^N.
   if let Some(0) = min_concrete
     && let Some(result) = try_binomial_theorem_sum(body, var_name, max_expr)
