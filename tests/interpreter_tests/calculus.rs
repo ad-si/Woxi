@@ -294,6 +294,33 @@ mod integrate_with_sum {
     );
   }
 
+  // ∫ tan²/cot²/tanh²/coth² — wolframscript keeps the linear term as
+  // ArcTan[Tan[u]] / ArcTanh[Tanh[u]] rather than simplifying it back to x.
+  #[test]
+  fn integrate_tangent_squared_family() {
+    assert_eq!(
+      interpret("Integrate[Tan[x]^2, x]").unwrap(),
+      "-ArcTan[Tan[x]] + Tan[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Cot[x]^2, x]").unwrap(),
+      "-ArcTan[Tan[x]] - Cot[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Tanh[x]^2, x]").unwrap(),
+      "ArcTanh[Tanh[x]] - Tanh[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Coth[x]^2, x]").unwrap(),
+      "ArcTanh[Tanh[x]] - Coth[x]"
+    );
+    // Linear argument carries the 1/a factor.
+    assert_eq!(
+      interpret("Integrate[Tan[3 x]^2, x]").unwrap(),
+      "-1/3*ArcTan[Tan[3*x]] + Tan[3*x]/3"
+    );
+  }
+
   #[test]
   fn integrate_sin_squared_definite() {
     // ∫_0^Pi sin²(x) dx = Pi/2

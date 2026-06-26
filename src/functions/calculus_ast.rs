@@ -4721,6 +4721,46 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
       };
       return Some(make_neg_divided(coth_expr, coeff));
     }
+    // ∫ Tan[a*x]^2 dx  = -ArcTan[Tan[a*x]]/a  + Tan[a*x]/a
+    // ∫ Cot[a*x]^2 dx  = -ArcTan[Tan[a*x]]/a  - Cot[a*x]/a
+    // ∫ Tanh[a*x]^2 dx =  ArcTanh[Tanh[a*x]]/a - Tanh[a*x]/a
+    // ∫ Coth[a*x]^2 dx =  ArcTanh[Tanh[a*x]]/a - Coth[a*x]/a
+    // wolframscript keeps the linear ("x") term as ArcTan[Tan[u]] /
+    // ArcTanh[Tanh[u]] for these (it does not simplify them back to `x`).
+    if matches!(name.as_str(), "Tan" | "Cot" | "Tanh" | "Coth") {
+      let coeff = try_match_linear_arg(&args[0], var)?;
+      let u = args[0].clone();
+      let call = |f: &str, a: Expr| Expr::FunctionCall {
+        name: f.to_string(),
+        args: vec![a].into(),
+      };
+      let hyperbolic = matches!(name.as_str(), "Tanh" | "Coth");
+      let (inv, inner) = if hyperbolic {
+        ("ArcTanh", "Tanh")
+      } else {
+        ("ArcTan", "Tan")
+      };
+      let x_inner = call(inv, call(inner, u.clone()));
+      // x-term: hyperbolic +, circular -.
+      let x_term = if hyperbolic {
+        make_divided(x_inner, coeff.clone())
+      } else {
+        make_neg_divided(x_inner, coeff.clone())
+      };
+      let direct = call(name.as_str(), u);
+      // direct term: Tan +, Cot/Tanh/Coth -.
+      let direct_term = if name == "Tan" {
+        make_divided(direct, coeff)
+      } else {
+        make_neg_divided(direct, coeff)
+      };
+      return Some(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(x_term),
+        right: Box::new(direct_term),
+      });
+    }
+
     // ∫ Sinh[a*x]^2 dx = Sinh[2*a*x]/(4*a) - x/2
     // ∫ Cosh[a*x]^2 dx = Sinh[2*a*x]/(4*a) + x/2
     if name == "Sinh" || name == "Cosh" {
