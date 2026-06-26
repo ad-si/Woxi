@@ -3827,7 +3827,7 @@ GaborMatrix,,,,9.0,3947
 GrammarApply,,🚫,,10.0,3947
 GroupElementToWord,,,,9.0,3947
 GroupPageBreakWithin,,,,3.0,3947
-HexadecimalCharacter,,,,7.0,3947
+HexadecimalCharacter,Represents a hexadecimal digit character [0-9a-fA-F] in string patterns,✅,pure,7.0,3947
 HjorthDistribution,,,,11.1,3947
 HoeffdingDTest,,,,9.0,3947
 ImageFormattingWidth,,🚫,,10.0,3947
