@@ -2518,6 +2518,44 @@ mod limit {
       interpret("Limit[(E^x + 1)/(E^x - 1), x -> -Infinity]").unwrap(),
       "-1"
     );
+    // General bases c^x: the larger base dominates (and the giant exact
+    // integer 3^1000000 is avoided so this no longer hangs).
+    assert_eq!(
+      interpret("Limit[(3^x + 2^x)/3^x, x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("Limit[2^x/3^x, x -> Infinity]").unwrap(), "0");
+    assert_eq!(
+      interpret("Limit[3^x/2^x, x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  // Rational-function limits at infinity whose value is a non-integer rational
+  // (the ratio of leading coefficients) are now recognised.
+  #[test]
+  fn limit_rational_function_at_infinity() {
+    assert_eq!(
+      interpret("Limit[(x^2 + 1)/(2 x^2 - 3), x -> Infinity]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Limit[(3 x + 1)/(2 x - 5), x -> Infinity]").unwrap(),
+      "3/2"
+    );
+    assert_eq!(
+      interpret("Limit[(5 x^2 - x)/(3 x^2 + 2), x -> Infinity]").unwrap(),
+      "5/3"
+    );
+    assert_eq!(
+      interpret("Limit[(2 x^3)/(3 x^3 + x), x -> Infinity]").unwrap(),
+      "2/3"
+    );
+    // An irrational limit must not be mis-rounded to a rational.
+    assert_eq!(
+      interpret("Limit[ArcTan[x], x -> Infinity]").unwrap(),
+      "Pi/2"
+    );
   }
 
   #[test]

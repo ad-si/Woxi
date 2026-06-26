@@ -9613,6 +9613,22 @@ fn limit_at_infinity(
       if (f2 - rounded).abs() < 1e-4 {
         return Ok(Expr::Integer(rounded as i128));
       }
+      // Check for a simple rational p/q — the ratio-of-leading-coefficients
+      // limit of a rational function (e.g. (x^2+1)/(2x^2-3) -> 1/2). The probe
+      // points are a decade apart (n, 10n), so for the typical ~1/n
+      // convergence a Richardson step `f2 + (f2-f1)/9` removes the leading
+      // error term, sharpening the estimate. The tight tolerance keeps
+      // irrational limits (Pi/2, Log[2], …) from matching.
+      let l_ext = f2 + (f2 - f1) / 9.0;
+      for q in 2..=36i128 {
+        let pf = l_ext * q as f64;
+        let p = pf.round();
+        if (pf - p).abs() < 1e-6 {
+          return Ok(crate::functions::math_ast::make_rational_pub(
+            p as i128, q,
+          ));
+        }
+      }
       // Check for known constants
       if (f2 - std::f64::consts::E).abs() < 1e-3 {
         return Ok(Expr::Constant("E".to_string()));
@@ -9698,8 +9714,18 @@ fn limit_at_infinity(
 /// to a var-dependent power.
 fn contains_exponential_of_var(expr: &Expr, var: &str) -> bool {
   use crate::syntax::BinaryOperator;
+  // A growing exponential: E (or any numeric base > 1) raised to a
+  // var-dependent power. Bases <= 1 decay and are handled by the ordinary
+  // numeric probe.
   let is_e_pow = |base: &Expr, exp: &Expr| {
-    matches!(base, Expr::Constant(c) if c == "E") && !is_constant_wrt(exp, var)
+    if is_constant_wrt(exp, var) {
+      return false;
+    }
+    matches!(base, Expr::Constant(c) if c == "E")
+      || matches!(
+        crate::functions::math_ast::try_eval_to_f64(base),
+        Some(b) if b > 1.0
+      )
   };
   match expr {
     Expr::FunctionCall { name, args } => {
@@ -9720,6 +9746,29 @@ fn contains_exponential_of_var(expr: &Expr, var: &str) -> bool {
         || contains_exponential_of_var(right, var)
     }
     Expr::UnaryOp { operand, .. } => contains_exponential_of_var(operand, var),
+    _ => false,
+  }
+}
+
+/// True when `expr` contains a Power whose exponent depends on `var` (c^x,
+/// x^x, …) — the case whose exact integer value explodes at large probes.
+fn contains_var_power(expr: &Expr, var: &str) -> bool {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (name == "Power" && args.len() == 2 && !is_constant_wrt(&args[1], var))
+        || (name == "Exp" && !is_constant_wrt(&args[0], var))
+        || args.iter().any(|a| contains_var_power(a, var))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      right,
+      ..
+    } if !is_constant_wrt(right, var) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_var_power(left, var) || contains_var_power(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => contains_var_power(operand, var),
     _ => false,
   }
 }
@@ -9753,14 +9802,17 @@ fn exp_growth_limit_at_infinity(
       }
     });
   }
+  // Approaching zero — both probes tiny and shrinking (the relative-agreement
+  // gate below would otherwise reject these, since the values differ by orders
+  // of magnitude even though both -> 0).
+  if f1.abs() < 1e-6 && f2.abs() < f1.abs() {
+    return Some(Expr::Integer(0));
+  }
   // Require tight agreement between the two probes before committing.
   let diff = (f1 - f2).abs();
   let scale = f1.abs().max(f2.abs()).max(1e-12);
   if diff / scale > 1e-6 {
     return None;
-  }
-  if f2.abs() < 1e-9 {
-    return Some(Expr::Integer(0));
   }
   let rounded = f2.round();
   if (f2 - rounded).abs() < 1e-9 {
@@ -9817,7 +9869,18 @@ fn eval_at_large_n(expr: &Expr, var: &str, n: i128) -> Option<f64> {
   if contains_explosive_of_var(expr, var) {
     return None;
   }
-  let subst = crate::syntax::substitute_variable(expr, var, &Expr::Integer(n));
+  // At very large probe points, an expression with a variable exponent (c^x,
+  // x^x) would otherwise require building astronomically large *exact*
+  // integers (e.g. 3^1000000 has ~477k digits), which hangs. Substitute a
+  // float there so the arithmetic stays in f64 — overflowing to Infinity
+  // instantly — rather than computing the giant BigInteger. Moderate probes
+  // (used by the exponential-limit fallback) keep exact integer substitution.
+  let point = if n.abs() > 10_000 && contains_var_power(expr, var) {
+    Expr::Real(n as f64)
+  } else {
+    Expr::Integer(n)
+  };
+  let subst = crate::syntax::substitute_variable(expr, var, &point);
   let val = crate::evaluator::evaluate_expr_to_expr(&subst).ok()?;
   if let Some(f) = crate::functions::math_ast::try_eval_to_f64(&val) {
     return Some(f);
