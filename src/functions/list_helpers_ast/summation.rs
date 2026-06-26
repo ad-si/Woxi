@@ -3787,6 +3787,25 @@ fn try_infinite_sum(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
   }
 
+  // Alternating p-series Sum[(-1)^(n+c)/n^s, {n, 1, Infinity}] = sign *
+  // DirichletEta[s] (sign = -(-1)^c). Covers the cases the Mercator block above
+  // misses — the (-1)^(n+1) sign convention and s >= 2 (e.g. Pi^2/12).
+  if min == 1
+    && let Some((sign, s)) = match_alternating_reciprocal_power(body, var_name)
+    && s >= 1
+  {
+    let eta = Expr::FunctionCall {
+      name: "DirichletEta".to_string(),
+      args: vec![Expr::Integer(s as i128)].into(),
+    };
+    let result = if sign < 0 {
+      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), eta])?
+    } else {
+      eta
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   // Arithmetico-geometric series Sum[k^p r^k, {k, 1, Infinity}] =
   // PolyLog[-p, r], for an exact numeric ratio r with |r| < 1 (it folds to a
   // number). A symbolic ratio is left unevaluated: wolframscript renders its
@@ -3945,6 +3964,130 @@ fn try_infinite_sum(
 
 /// Match the pattern `1/var^s` in the body expression.
 /// Returns Some(s) if the body is equivalent to var^(-s) with s a positive integer.
+/// Decompose `expr` into multiplicative numerator and denominator factors,
+/// flattening nested Times and turning Divide into a denominator factor.
+fn collect_factors(
+  expr: &Expr,
+  num: &mut Vec<Expr>,
+  den: &mut Vec<Expr>,
+  invert: bool,
+) {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      collect_factors(left, num, den, invert);
+      collect_factors(right, num, den, invert);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args.iter() {
+        collect_factors(a, num, den, invert);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      collect_factors(left, num, den, invert);
+      collect_factors(right, num, den, !invert);
+    }
+    _ => {
+      if invert {
+        den.push(expr.clone());
+      } else {
+        num.push(expr.clone());
+      }
+    }
+  }
+}
+
+/// If `e` is an integer-linear function of `var` (`coeff*var + const`), return
+/// `(coeff, const)`. Determined by evaluating at var = 0, 1, 2.
+fn linear_in_var(e: &Expr, var: &str) -> Option<(i128, i128)> {
+  let at = |v: i128| -> Option<i128> {
+    let s = crate::syntax::substitute_variable(e, var, &Expr::Integer(v));
+    match crate::evaluator::evaluate_expr_to_expr(&s).ok()? {
+      Expr::Integer(n) => Some(n),
+      _ => None,
+    }
+  };
+  let (e0, e1, e2) = (at(0)?, at(1)?, at(2)?);
+  let coeff = e1 - e0;
+  if e2 - e1 != coeff {
+    return None;
+  }
+  Some((coeff, e0))
+}
+
+/// Match an alternating reciprocal-power summand `(-1)^(c*var+d) / var^s`
+/// (with `c` odd, so the sign genuinely alternates). The infinite sum is
+/// `sign * DirichletEta[s]` where `sign = -(-1)^d` — i.e. `(-1)^n/n^s` sums to
+/// `-eta(s)` and `(-1)^(n+1)/n^s` to `+eta(s)`. Returns `(sign, s)`.
+fn match_alternating_reciprocal_power(
+  body: &Expr,
+  var_name: &str,
+) -> Option<(i32, i64)> {
+  use crate::syntax::BinaryOperator;
+  let mut num: Vec<Expr> = Vec::new();
+  let mut den: Vec<Expr> = Vec::new();
+  collect_factors(body, &mut num, &mut den, false);
+
+  // Find and remove a (-1)^(linear) factor in the numerator.
+  let mut sign: Option<i32> = None;
+  let mut rest_num: Vec<Expr> = Vec::new();
+  for f in num {
+    if sign.is_none()
+      && let Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } = &f
+      && matches!(left.as_ref(), Expr::Integer(-1))
+      && let Some((coeff, c)) = linear_in_var(right, var_name)
+      && coeff % 2 != 0
+    {
+      sign = Some(if c.rem_euclid(2) == 0 { -1 } else { 1 });
+    } else {
+      rest_num.push(f);
+    }
+  }
+  let sign = sign?;
+
+  // The remaining factors must form 1/var^s.
+  let one = Expr::Integer(1);
+  let numerator = match rest_num.len() {
+    0 => one.clone(),
+    1 => rest_num.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: rest_num.into(),
+    },
+  };
+  let remaining = if den.is_empty() {
+    numerator
+  } else {
+    let denominator = if den.len() == 1 {
+      den.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: den.into(),
+      }
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(denominator),
+    }
+  };
+  let s = match_reciprocal_power(&remaining, var_name)?;
+  Some((sign, s))
+}
+
 fn match_reciprocal_power(body: &Expr, var_name: &str) -> Option<i64> {
   use crate::syntax::BinaryOperator;
 

@@ -11063,6 +11063,40 @@ mod infinite_log_series {
     );
   }
 
+  // Alternating p-series Sum[(-1)^(n+c)/n^s, {n, 1, Infinity}] = +/-DirichletEta[s].
+  // Covers the (-1)^(n+1) sign convention and s >= 2 that the Mercator log
+  // series above does not.
+  #[test]
+  fn alternating_p_series_dirichlet_eta() {
+    // s = 1: +/- Log[2].
+    assert_eq!(
+      interpret("Sum[(-1)^(n+1)/n, {n, 1, Infinity}]").unwrap(),
+      "Log[2]"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^(n-1)/n, {n, 1, Infinity}]").unwrap(),
+      "Log[2]"
+    );
+    // s = 2: +/- Pi^2/12.
+    assert_eq!(
+      interpret("Sum[(-1)^(n+1)/n^2, {n, 1, Infinity}]").unwrap(),
+      "Pi^2/12"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n/n^2, {n, 1, Infinity}]").unwrap(),
+      "-1/12*Pi^2"
+    );
+    // s = 3: (3/4) Zeta[3]; s = 4: 7 Pi^4/720.
+    assert_eq!(
+      interpret("Sum[(-1)^(n+1)/n^3, {n, 1, Infinity}]").unwrap(),
+      "(3*Zeta[3])/4"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n/n^4, {n, 1, Infinity}]").unwrap(),
+      "(-7*Pi^4)/720"
+    );
+  }
+
   #[test]
   fn negative_fractional_base() {
     assert_eq!(
