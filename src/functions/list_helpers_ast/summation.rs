@@ -3865,6 +3865,33 @@ fn try_infinite_sum(
     }));
   }
 
+  // Sums over the odd positive integers 1, 3, 5, …:
+  //   Sum[1/(2n-1)^s, {n, 1, Inf}]          = DirichletLambda[s]   (s >= 2)
+  //   Sum[(-1)^(n+1)/(2n-1)^s, {n, 1, Inf}] = DirichletBeta[s]     (s >= 1)
+  // (and the (2n+1), {n, 0, …} spellings). The lambda/beta closed forms match
+  // wolframscript (Pi^2/8, Pi/4, Pi^3/32, …). Non-alternating s == 1 is the
+  // divergent Sum[1/(2n-1)] and is excluded.
+  if let Some((alternating, sign, s)) =
+    match_odd_reciprocal(body, var_name, min)
+    && (alternating && s >= 1 || !alternating && s >= 2)
+  {
+    let func = if alternating {
+      "DirichletBeta"
+    } else {
+      "DirichletLambda"
+    };
+    let call = Expr::FunctionCall {
+      name: func.to_string(),
+      args: vec![Expr::Integer(s as i128)].into(),
+    };
+    let result = if sign < 0 {
+      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), call])?
+    } else {
+      call
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   // For min < 1, compute initial terms and delegate to min=1 case:
   // Sum[f(n), {n, min, Infinity}] = f(min) + f(min+1) + ... + f(0) + Sum[f(n), {n, 1, Infinity}]
   if min < 1 {
@@ -4086,6 +4113,131 @@ fn match_alternating_reciprocal_power(
   };
   let s = match_reciprocal_power(&remaining, var_name)?;
   Some((sign, s))
+}
+
+/// Like `match_reciprocal_power` but for an arbitrary (var-dependent) base:
+/// recognises `1/base^s` written as `Power[base, -s]`, `Divide[1, Power[base,
+/// s]]`, `Divide[1, base]`, or `Power[Power[base, s], -1]`. Returns `(base, s)`.
+fn match_reciprocal_power_general(
+  expr: &Expr,
+  var_name: &str,
+) -> Option<(Expr, i64)> {
+  use crate::syntax::BinaryOperator;
+  let has_var =
+    |e: &Expr| crate::functions::polynomial_ast::contains_var(e, var_name);
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let e = get_integer(right)?;
+      if e < 0 && has_var(left) {
+        if e == -1
+          && let Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: l2,
+            right: r2,
+          } = left.as_ref()
+          && let Some(s) = get_integer(r2)
+          && s > 0
+          && has_var(l2)
+        {
+          return Some(((**l2).clone(), s as i64));
+        }
+        return Some(((**left).clone(), (-e) as i64));
+      }
+      None
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } if is_one(left) => {
+      if let Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: base,
+        right: exp,
+      } = right.as_ref()
+        && let Some(s) = get_integer(exp)
+        && s > 0
+        && has_var(base)
+      {
+        return Some(((**base).clone(), s as i64));
+      }
+      has_var(right).then(|| ((**right).clone(), 1))
+    }
+    _ => None,
+  }
+}
+
+/// Match a summand over the odd positive integers: `[(-1)^(c*n+e)] /
+/// (2n+b)^s`, where `2*min+b == 1` so the base runs through 1, 3, 5, …. Returns
+/// `(alternating, sign, s)` — `Sum[1/(2n+b)^s] = DirichletLambda[s]` and
+/// `Sum[(-1)^(…)/(2n+b)^s] = sign * DirichletBeta[s]` (sign = (-1)^(e-min)).
+fn match_odd_reciprocal(
+  body: &Expr,
+  var_name: &str,
+  min: i128,
+) -> Option<(bool, i32, i64)> {
+  use crate::syntax::BinaryOperator;
+  let mut num: Vec<Expr> = Vec::new();
+  let mut den: Vec<Expr> = Vec::new();
+  collect_factors(body, &mut num, &mut den, false);
+
+  let mut alternating = false;
+  let mut sign = 1i32;
+  let mut rest_num: Vec<Expr> = Vec::new();
+  for f in num {
+    if !alternating
+      && let Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } = &f
+      && matches!(left.as_ref(), Expr::Integer(-1))
+      && let Some((coeff, e)) = linear_in_var(right, var_name)
+      && coeff % 2 != 0
+    {
+      alternating = true;
+      sign = if (e - min).rem_euclid(2) == 0 { 1 } else { -1 };
+    } else {
+      rest_num.push(f);
+    }
+  }
+
+  let numerator = match rest_num.len() {
+    0 => Expr::Integer(1),
+    1 => rest_num.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: rest_num.into(),
+    },
+  };
+  let remaining = if den.is_empty() {
+    numerator
+  } else {
+    let denominator = if den.len() == 1 {
+      den.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: den.into(),
+      }
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(denominator),
+    }
+  };
+
+  let (base, s) = match_reciprocal_power_general(&remaining, var_name)?;
+  let (c, b) = linear_in_var(&base, var_name)?;
+  if c != 2 || 2 * min + b != 1 {
+    return None;
+  }
+  Some((alternating, sign, s))
 }
 
 fn match_reciprocal_power(body: &Expr, var_name: &str) -> Option<i64> {

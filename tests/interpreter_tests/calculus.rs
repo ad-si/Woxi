@@ -11097,6 +11097,45 @@ mod infinite_log_series {
     );
   }
 
+  // Sums over the odd positive integers: Sum[1/(2n-1)^s] = DirichletLambda[s]
+  // and Sum[(-1)^(n+1)/(2n-1)^s] = DirichletBeta[s]. (Previously the shifted
+  // Leibniz Sum[(-1)^(n+1)/(2n-1)] hung.)
+  #[test]
+  fn odd_integer_reciprocal_sums() {
+    // Dirichlet beta (alternating): Pi/4, Catalan, Pi^3/32.
+    assert_eq!(
+      interpret("Sum[(-1)^(n+1)/(2 n - 1), {n, 1, Infinity}]").unwrap(),
+      "Pi/4"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^(n+1)/(2 n - 1)^2, {n, 1, Infinity}]").unwrap(),
+      "Catalan"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^(n+1)/(2 n - 1)^3, {n, 1, Infinity}]").unwrap(),
+      "Pi^3/32"
+    );
+    // Dirichlet lambda (non-alternating, s >= 2): Pi^2/8, Pi^4/96.
+    assert_eq!(
+      interpret("Sum[1/(2 n - 1)^2, {n, 1, Infinity}]").unwrap(),
+      "Pi^2/8"
+    );
+    assert_eq!(
+      interpret("Sum[1/(2 n - 1)^4, {n, 1, Infinity}]").unwrap(),
+      "Pi^4/96"
+    );
+    // The (2n+1), {n, 0, …} spelling of the same odd integers.
+    assert_eq!(
+      interpret("Sum[1/(2 n + 1)^2, {n, 0, Infinity}]").unwrap(),
+      "Pi^2/8"
+    );
+    // The divergent harmonic-over-odds (s = 1, non-alternating) is left alone.
+    assert_eq!(
+      interpret("Sum[1/(2 n - 1), {n, 1, Infinity}]").unwrap(),
+      "Sum[(2*n - 1)^(-1), {n, 1, Infinity}]"
+    );
+  }
+
   #[test]
   fn negative_fractional_base() {
     assert_eq!(
