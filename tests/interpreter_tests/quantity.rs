@@ -571,6 +571,46 @@ fn unit_convert_km_to_m() {
   );
 }
 
+// Information units (Bytes / Bits): decimal prefixes are powers of 1000,
+// binary prefixes (Kibi-, …) powers of 1024, and a Byte is 8 Bits. The SI base
+// is the Bit (matching wolframscript), so a bare UnitConvert lands on Bits.
+#[test]
+fn information_units() {
+  // Previously Bytes and Kilobytes were treated as incompatible.
+  assert_eq!(
+    interpret("Quantity[1, \"Bytes\"] + Quantity[1, \"Kilobytes\"]").unwrap(),
+    "Quantity[1001, Bytes]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Kilobytes\"], \"Bytes\"]").unwrap(),
+    "Quantity[1000, Bytes]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Megabytes\"], \"Bytes\"]").unwrap(),
+    "Quantity[1000000, Bytes]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Kibibytes\"], \"Bytes\"]").unwrap(),
+    "Quantity[1024, Bytes]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Bits\"], \"Bytes\"]").unwrap(),
+    "Quantity[1/8, Bytes]"
+  );
+  // Bare UnitConvert lands on the SI base, Bits (1 Byte = 8 Bits).
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Bytes\"]]").unwrap(),
+    "Quantity[8, Bits]"
+  );
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Bytes\"], Quantity[1, \"Kilobytes\"]]"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
 // Astronomical / less-common length units, with exact SI definitions.
 #[test]
 fn lightyears_to_meters() {

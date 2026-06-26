@@ -12,6 +12,7 @@ enum Dimension {
   Time,
   ElectricCurrent,
   AmountOfSubstance,
+  Information,
 }
 
 /// Conversion factor to SI base unit as a rational (numerator, denominator).
@@ -547,6 +548,65 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       dimensions: dims(&[(Length, 1), (Time, -1)]),
       to_si_numer: 1852,
       to_si_denom: 3600,
+    },
+
+    // ── Information → Bits (SI base, matching wolframscript) ─────────
+    // A Byte is 8 Bits; decimal (SI) prefixes are powers of 1000, binary
+    // prefixes (Kibi-, …) powers of 1024 — both expressed in Bits here.
+    "Bits" | "Bit" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Bytes" | "Byte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8,
+      to_si_denom: 1,
+    },
+    "Kilobytes" | "Kilobyte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8_000,
+      to_si_denom: 1,
+    },
+    "Megabytes" | "Megabyte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8_000_000,
+      to_si_denom: 1,
+    },
+    "Gigabytes" | "Gigabyte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8_000_000_000,
+      to_si_denom: 1,
+    },
+    "Terabytes" | "Terabyte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8_000_000_000_000,
+      to_si_denom: 1,
+    },
+    "Petabytes" | "Petabyte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8_000_000_000_000_000,
+      to_si_denom: 1,
+    },
+    "Kibibytes" | "Kibibyte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8_192,
+      to_si_denom: 1,
+    },
+    "Mebibytes" | "Mebibyte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8_388_608,
+      to_si_denom: 1,
+    },
+    "Gibibytes" | "Gibibyte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8_589_934_592,
+      to_si_denom: 1,
+    },
+    "Tebibytes" | "Tebibyte" => UnitInfo {
+      dimensions: dims(&[(Information, 1)]),
+      to_si_numer: 8_796_093_022_208,
+      to_si_denom: 1,
     },
 
     _ => return None,
@@ -1949,6 +2009,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
       Time => "Seconds",
       ElectricCurrent => "Amperes",
       AmountOfSubstance => "Moles",
+      Information => "Bits",
     }
   };
   // Collect positive and negative exponents
@@ -2251,6 +2312,7 @@ pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Dimension::Time => ("TimeUnit", 1),
       Dimension::ElectricCurrent => ("ElectricCurrentUnit", 1),
       Dimension::AmountOfSubstance => ("AmountUnit", 1),
+      Dimension::Information => ("InformationUnit", 1),
     };
     *acc.entry(name).or_insert(0) += exp * factor;
   }
