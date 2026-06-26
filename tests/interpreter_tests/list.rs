@@ -1086,6 +1086,24 @@ mod ordering {
     assert_eq!(interpret("Ordering[{3, 1, 2}]").unwrap(), "{2, 3, 1}");
   }
 
+  // Ordering of an association ranks its values, returning positional indices.
+  #[test]
+  fn association() {
+    assert_eq!(
+      interpret("Ordering[<|\"a\" -> 3, \"b\" -> 1, \"c\" -> 2|>]").unwrap(),
+      "{2, 3, 1}"
+    );
+    assert_eq!(
+      interpret("Ordering[<|\"a\" -> 3, \"b\" -> 1, \"c\" -> 2|>, 2]").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret("Ordering[<|\"a\" -> 3, \"b\" -> 1, \"c\" -> 2|>, -1]")
+        .unwrap(),
+      "{1}"
+    );
+  }
+
   #[test]
   fn with_limit() {
     assert_eq!(interpret("Ordering[{3, 1, 2}, 2]").unwrap(), "{2, 3}");

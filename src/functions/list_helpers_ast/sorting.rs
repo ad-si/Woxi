@@ -479,8 +479,15 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Ordering works on any nonatomic expression; atoms emit ::normal.
+  // An association is ordered by its values (the result is positional indices,
+  // not keys): Ordering[<|a->3, b->1, c->2|>] -> {2, 3, 1}.
+  let assoc_values: Vec<Expr>;
   let items: &[Expr] = match &args[0] {
     Expr::List(items) => items.as_slice(),
+    Expr::Association(pairs) => {
+      assoc_values = pairs.iter().map(|(_, v)| v.clone()).collect();
+      &assoc_values
+    }
     Expr::FunctionCall { args: fc_args, .. } => fc_args.as_slice(),
     _ => {
       crate::emit_message(&format!(
