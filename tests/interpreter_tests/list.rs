@@ -5607,6 +5607,31 @@ mod ranked {
       "2"
     );
   }
+
+  // RankedMax/RankedMin of an association rank its values.
+  #[test]
+  fn ranked_max_min_association() {
+    assert_eq!(
+      interpret("RankedMax[<|\"a\" -> 1, \"b\" -> 5, \"c\" -> 3|>, 1]")
+        .unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("RankedMax[<|\"a\" -> 1, \"b\" -> 5, \"c\" -> 3|>, 2]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("RankedMin[<|\"a\" -> 1, \"b\" -> 5, \"c\" -> 3|>, 1]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("RankedMin[<|\"a\" -> 1, \"b\" -> 5, \"c\" -> 3|>, 2]")
+        .unwrap(),
+      "3"
+    );
+  }
 }
 
 mod quantile {

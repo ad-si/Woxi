@@ -97,8 +97,15 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::min_ast(args));
     }
     "RankedMax" if args.len() == 2 => {
-      if let Expr::List(items) = &args[0] {
-        let mut sorted = items.clone();
+      // Lists rank their elements; associations rank their values.
+      let items: Option<Vec<Expr>> = match &args[0] {
+        Expr::List(items) => Some(items.to_vec()),
+        Expr::Association(pairs) => {
+          Some(pairs.iter().map(|(_, v)| v.clone()).collect())
+        }
+        _ => None,
+      };
+      if let Some(mut sorted) = items {
         // Ascending sort; positive k picks from the high end, negative k
         // from the low end. `RankedMax[list, -n]` = n-th smallest.
         sorted.sort_by(|a, b| {
@@ -120,8 +127,15 @@ pub fn dispatch_math_functions(
       }));
     }
     "RankedMin" if args.len() == 2 => {
-      if let Expr::List(items) = &args[0] {
-        let mut sorted = items.clone();
+      // Lists rank their elements; associations rank their values.
+      let items: Option<Vec<Expr>> = match &args[0] {
+        Expr::List(items) => Some(items.to_vec()),
+        Expr::Association(pairs) => {
+          Some(pairs.iter().map(|(_, v)| v.clone()).collect())
+        }
+        _ => None,
+      };
+      if let Some(mut sorted) = items {
         // Ascending sort; positive k picks from the low end, negative k
         // from the high end. `RankedMin[list, -n]` = n-th largest.
         sorted.sort_by(|a, b| {
