@@ -571,6 +571,38 @@ fn unit_convert_km_to_m() {
   );
 }
 
+// More time / mass / length units with exact SI definitions. Note Decade and
+// Century use the Gregorian year, not the 365-day "Years" unit, and Month is a
+// 365-day year / 12.
+#[test]
+fn more_si_units() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Fortnights\"], \"Days\"]").unwrap(),
+    "Quantity[14, Days]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Months\"], \"Seconds\"]").unwrap(),
+    "Quantity[2628000, Seconds]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Decades\"], \"Years\"]").unwrap(),
+    "Quantity[146097/14600, Years]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Chains\"], \"Feet\"]").unwrap(),
+    "Quantity[66, Feet]"
+  );
+  // A stone is 14 pounds.
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Stones\"], \"Pounds\"]").unwrap(),
+    "Quantity[14, Pounds]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Slugs\"], \"Kilograms\"]").unwrap(),
+    "Quantity[8896443230521/609600000000, Kilograms]"
+  );
+}
+
 // Information units (Bytes / Bits): decimal prefixes are powers of 1000,
 // binary prefixes (Kibi-, …) powers of 1024, and a Byte is 8 Bits. The SI base
 // is the Bit (matching wolframscript), so a bare UnitConvert lands on Bits.

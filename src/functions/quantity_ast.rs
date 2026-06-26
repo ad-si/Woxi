@@ -575,6 +575,48 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_numer: 31_536_000,
       to_si_denom: 1,
     },
+    // 1 fortnight = 14 days = 1209600 s.
+    "Fortnights" | "Fortnight" => UnitInfo {
+      dimensions: dims(&[(Time, 1)]),
+      to_si_numer: 1_209_600,
+      to_si_denom: 1,
+    },
+    // wolframscript's month is exactly a 365-day year / 12 = 2628000 s.
+    "Months" | "Month" => UnitInfo {
+      dimensions: dims(&[(Time, 1)]),
+      to_si_numer: 2_628_000,
+      to_si_denom: 1,
+    },
+    // Decade / century use the Gregorian year (365.2425 days), not the 365-day
+    // "Years" unit: 1 decade = 10·365.2425·86400 = 315569520 s.
+    "Decades" | "Decade" => UnitInfo {
+      dimensions: dims(&[(Time, 1)]),
+      to_si_numer: 315_569_520,
+      to_si_denom: 1,
+    },
+    "Centuries" | "Century" => UnitInfo {
+      dimensions: dims(&[(Time, 1)]),
+      to_si_numer: 3_155_695_200,
+      to_si_denom: 1,
+    },
+    // 1 chain = 66 ft = 66·381/1250 = 12573/625 m.
+    "Chains" | "Chain" => UnitInfo {
+      dimensions: dims(&[(Length, 1)]),
+      to_si_numer: 12_573,
+      to_si_denom: 625,
+    },
+    // 1 stone = 14 lb = 6.35029318 kg.
+    "Stones" | "Stone" => UnitInfo {
+      dimensions: dims(&[(Mass, 1)]),
+      to_si_numer: 317_514_659,
+      to_si_denom: 50_000_000,
+    },
+    // 1 slug = 14.5939029372... kg (1 lbf·s²/ft).
+    "Slugs" | "Slug" => UnitInfo {
+      dimensions: dims(&[(Mass, 1)]),
+      to_si_numer: 8_896_443_230_521,
+      to_si_denom: 609_600_000_000,
+    },
 
     // ── Information → Bits (SI base, matching wolframscript) ─────────
     // A Byte is 8 Bits; decimal (SI) prefixes are powers of 1000, binary
