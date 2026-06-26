@@ -1528,6 +1528,57 @@ mod apart {
     );
   }
 
+  // Irreducible quadratic factors: constant numerators over the linear
+  // factors and linear numerators `B x + C` over the quadratics, matching
+  // wolframscript's canonical output exactly.
+  #[test]
+  fn apart_irreducible_quadratic_factors() {
+    // Two distinct quadratics; numerators collapse to constants by symmetry.
+    assert_eq!(
+      interpret("Apart[1/((x^2 + 1)(x^2 + 4))]").unwrap(),
+      "1/(3*(1 + x^2)) - 1/(3*(4 + x^2))"
+    );
+    // Coefficient 1 renders with the `^(-1)` reciprocal form.
+    assert_eq!(
+      interpret("Apart[1/((x^2 + 1)(x^2 + 2))]").unwrap(),
+      "(1 + x^2)^(-1) - (2 + x^2)^(-1)"
+    );
+    // Linear numerator over the quadratic factor; linear factor term first.
+    assert_eq!(
+      interpret("Apart[1/((x + 1)(x^2 + 1))]").unwrap(),
+      "1/(2*(1 + x)) + (1 - x)/(2*(1 + x^2))"
+    );
+    assert_eq!(
+      interpret("Apart[(x + 1)/((x^2 + 1)(x - 1))]").unwrap(),
+      "(-1 + x)^(-1) - x/(1 + x^2)"
+    );
+    // Numerator with an x term over each quadratic.
+    assert_eq!(
+      interpret("Apart[x/((x^2 + 1)(x^2 + 4))]").unwrap(),
+      "x/(3*(1 + x^2)) - x/(3*(4 + x^2))"
+    );
+    // Quadratic with a middle term, plus a linear factor.
+    assert_eq!(
+      interpret("Apart[(2 x + 1)/((x^2 + x + 1)(x - 5))]").unwrap(),
+      "11/(31*(-5 + x)) + (-4 - 11*x)/(31*(1 + x + x^2))"
+    );
+    // The quartic factors into two conjugate quadratics automatically.
+    assert_eq!(
+      interpret("Apart[1/(x^4 + x^2 + 1)]").unwrap(),
+      "(1 - x)/(2*(1 - x + x^2)) + (1 + x)/(2*(1 + x + x^2))"
+    );
+    // Repeated quadratic factor times a linear factor (powers k = 1, 2).
+    assert_eq!(
+      interpret("Apart[1/((x^2 + 1)^2 (x - 1))]").unwrap(),
+      "1/(4*(-1 + x)) + (-1 - x)/(2*(1 + x^2)^2) + (-1 - x)/(4*(1 + x^2))"
+    );
+    // Mixed linear + quadratic.
+    assert_eq!(
+      interpret("Apart[1/(x (x^2 + 1))]").unwrap(),
+      "x^(-1) - x/(1 + x^2)"
+    );
+  }
+
   #[test]
   fn apart_squared_factor_with_simple_factor() {
     assert_eq!(

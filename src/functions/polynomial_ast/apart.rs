@@ -152,6 +152,19 @@ pub fn apart_proper_fraction(
     None => return Ok(expr.clone()),
   };
 
+  // General decomposition when the denominator has an irreducible quadratic (or
+  // higher-degree) factor — the residue formulas below only cover integer
+  // linear roots. apart_general returns None for the all-linear case so the
+  // existing (well-tested) linear path stays in effect there.
+  {
+    let num_expanded = expand_and_combine(&num);
+    if let Some(nc) = extract_poly_coeffs(&num_expanded, var)
+      && let Some(result) = apart_general(&nc, &den_coeffs, var)
+    {
+      return Ok(result);
+    }
+  }
+
   // Factor the denominator
   let gcd_coeff = den_coeffs
     .iter()
@@ -320,6 +333,246 @@ pub fn apart_proper_fraction(
   } else {
     Ok(build_sum(result_terms))
   }
+}
+
+/// Multiply two ascending-coefficient integer polynomials.
+fn poly_mul_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
+  if a.is_empty() || b.is_empty() {
+    return vec![];
+  }
+  let mut out = vec![0i128; a.len() + b.len() - 1];
+  for (i, &ai) in a.iter().enumerate() {
+    for (j, &bj) in b.iter().enumerate() {
+      out[i + j] += ai * bj;
+    }
+  }
+  out
+}
+
+fn lcm_i128(a: i128, b: i128) -> i128 {
+  if a == 0 || b == 0 {
+    return 0;
+  }
+  (a / gcd_i128(a.abs(), b.abs())) * b
+}
+
+/// Solve the square rational system `mat * x = rhs` by Gauss–Jordan
+/// elimination. `mat` is row-major `n x n`. Returns None if singular.
+fn solve_rat_system(
+  mut mat: Vec<Vec<Rat>>,
+  mut rhs: Vec<Rat>,
+) -> Option<Vec<Rat>> {
+  let n = rhs.len();
+  for col in 0..n {
+    let piv = (col..n).find(|&r| !mat[r][col].is_zero())?;
+    mat.swap(col, piv);
+    rhs.swap(col, piv);
+    let pivot = mat[col][col];
+    for r in 0..n {
+      if r == col || mat[r][col].is_zero() {
+        continue;
+      }
+      let factor = mat[r][col].div(pivot);
+      for c in col..n {
+        let v = mat[col][c].mul(factor);
+        mat[r][c] = mat[r][c].sub(v);
+      }
+      let v = rhs[col].mul(factor);
+      rhs[r] = rhs[r].sub(v);
+    }
+  }
+  let mut sol = vec![Rat::int(0); n];
+  for i in 0..n {
+    if mat[i][i].is_zero() {
+      return None;
+    }
+    sol[i] = rhs[i].div(mat[i][i]);
+  }
+  Some(sol)
+}
+
+/// Build one partial-fraction term `numerator / (L * factor^k)` with integer
+/// numerator coefficients (rational denominators cleared, content reduced
+/// against L), in the natural shape the evaluator renders like wolframscript.
+fn build_apart_term(
+  pnum: &[Rat],
+  factor: &[i128],
+  k: usize,
+  var: &str,
+) -> Expr {
+  let mut l: i128 = 1;
+  for r in pnum {
+    l = lcm_i128(l, r.d);
+  }
+  let mut inum: Vec<i128> = pnum.iter().map(|r| r.n * (l / r.d)).collect();
+  let mut g = l.abs();
+  for &c in &inum {
+    g = gcd_i128(g, c.abs());
+  }
+  if g > 1 {
+    for c in inum.iter_mut() {
+      *c /= g;
+    }
+    l /= g;
+  }
+  let num_expr = coeffs_to_expr(&inum, var);
+  let factor_expr = coeffs_to_expr(factor, var);
+  let factor_pow = if k == 1 {
+    factor_expr
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(factor_expr),
+      right: Box::new(Expr::Integer(k as i128)),
+    }
+  };
+  let denom = if l == 1 {
+    factor_pow
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(l)),
+      right: Box::new(factor_pow),
+    }
+  };
+  Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(num_expr),
+    right: Box::new(denom),
+  }
+}
+
+/// Partial-fraction decomposition for a proper fraction whose denominator has
+/// at least one irreducible quadratic (or higher-degree) factor over the
+/// integers — the linear-residue path above only covers integer linear roots.
+/// Factors the denominator, sets up the standard ansatz (constant numerators
+/// over linear factors, linear numerators `B x + C` over quadratic factors,
+/// and the analogous higher-degree forms, repeated per factor multiplicity),
+/// then solves the rational linear system by matching coefficients. Each term
+/// is built in the natural `numerator / (scale * factor^k)` shape so the
+/// evaluator's own rendering reproduces wolframscript's canonical output.
+///
+/// Returns None (deferring to the linear path) when every factor is linear,
+/// when fewer than two factor instances are present, or when factoring / the
+/// linear solve does not cleanly succeed.
+fn apart_general(
+  num_coeffs: &[i128],
+  den_coeffs: &[i128],
+  var: &str,
+) -> Option<Expr> {
+  let factor_exprs = factor_integer_poly(den_coeffs, var);
+  let mut factors: Vec<Vec<i128>> = Vec::new();
+  for f in &factor_exprs {
+    if let Expr::Integer(_) = f {
+      continue; // constant content — folded into the overall scale below
+    }
+    let c = extract_poly_coeffs(f, var)?;
+    if c.len() >= 2 {
+      factors.push(c);
+    }
+  }
+  // Two-or-more factor instances, at least one non-linear; otherwise the linear
+  // residue path handles it (or the fraction is already irreducible).
+  if factors.len() < 2 || !factors.iter().any(|c| c.len() >= 3) {
+    return None;
+  }
+
+  let mut prod_nc = vec![1i128];
+  for f in &factors {
+    prod_nc = poly_mul_i128(&prod_nc, f);
+  }
+  let scale = poly_exact_divide(den_coeffs, &prod_nc)?;
+  if scale.len() != 1 || scale[0] == 0 {
+    return None;
+  }
+  let scale = scale[0];
+
+  // Distinct factors with multiplicity, preserving factor_integer_poly's order
+  // (wolframscript's factor order).
+  let mut groups: Vec<(Vec<i128>, usize)> = Vec::new();
+  for f in &factors {
+    if let Some(grp) = groups.iter_mut().find(|(c, _)| c == f) {
+      grp.1 += 1;
+    } else {
+      groups.push((f.clone(), 1));
+    }
+  }
+
+  let deg_d = prod_nc.len() - 1; // number of unknowns
+  let mut basis: Vec<Vec<Rat>> = Vec::new();
+  let mut meta: Vec<(usize, usize, usize)> = Vec::new(); // (group, k, t)
+  for (gi, (f, e)) in groups.iter().enumerate() {
+    let dfi = f.len() - 1;
+    for k in 1..=*e {
+      let mut fk = vec![1i128];
+      for _ in 0..k {
+        fk = poly_mul_i128(&fk, f);
+      }
+      let base = poly_exact_divide(&prod_nc, &fk)?;
+      for t in 0..dfi {
+        let mut col = vec![Rat::int(0); deg_d];
+        for (i, &c) in base.iter().enumerate() {
+          let idx = i + t;
+          if idx >= deg_d {
+            return None;
+          }
+          col[idx] = Rat::int(c);
+        }
+        basis.push(col);
+        meta.push((gi, k, t));
+      }
+    }
+  }
+  if basis.len() != deg_d {
+    return None;
+  }
+
+  let mut rhs = vec![Rat::int(0); deg_d];
+  for (i, &c) in num_coeffs.iter().enumerate() {
+    if i >= deg_d {
+      return None; // not a proper fraction
+    }
+    rhs[i] = Rat::new(c, scale);
+  }
+  let mat: Vec<Vec<Rat>> = (0..deg_d)
+    .map(|r| basis.iter().map(|col| col[r]).collect())
+    .collect();
+  let sol = solve_rat_system(mat, rhs)?;
+
+  // Regroup solved coefficients into numerator polynomials P_{group,k}(x).
+  let mut term_nums: Vec<((usize, usize), Vec<Rat>)> = Vec::new();
+  for (u, &(gi, k, t)) in meta.iter().enumerate() {
+    let dfi = groups[gi].0.len() - 1;
+    if let Some((_, v)) = term_nums
+      .iter_mut()
+      .find(|((g, kk), _)| *g == gi && *kk == k)
+    {
+      v[t] = sol[u];
+    } else {
+      let mut v = vec![Rat::int(0); dfi];
+      v[t] = sol[u];
+      term_nums.push(((gi, k), v));
+    }
+  }
+
+  // Emit terms in factor order, ascending power k.
+  let mut terms: Vec<Expr> = Vec::new();
+  for (gi, (f, _e)) in groups.iter().enumerate() {
+    let mut ks: Vec<&((usize, usize), Vec<Rat>)> =
+      term_nums.iter().filter(|((g, _), _)| *g == gi).collect();
+    ks.sort_by_key(|((_, k), _)| *k);
+    for ((_, k), pnum) in ks {
+      if pnum.iter().all(|r| r.is_zero()) {
+        continue;
+      }
+      terms.push(build_apart_term(pnum, f, *k, var));
+    }
+  }
+  if terms.is_empty() {
+    return None;
+  }
+  let sum = build_sum(terms);
+  Some(crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum))
 }
 
 /// A reduced rational number with a positive denominator. Used for the
