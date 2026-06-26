@@ -6099,6 +6099,37 @@ mod laplace_transform {
     );
   }
 
+  // s-shifting theorem: L[E^(c t) g(t), t, s] = (L[g])(s - c).
+  #[test]
+  fn s_shift_exponential_times_trig() {
+    assert_eq!(
+      interpret("LaplaceTransform[E^(-a t) Cos[b t], t, s]").unwrap(),
+      "(a + s)/(b^2 + (a + s)^2)"
+    );
+    assert_eq!(
+      interpret("LaplaceTransform[E^(-a t) Sin[b t], t, s]").unwrap(),
+      "b/(b^2 + (a + s)^2)"
+    );
+    // Exponential times a power of t.
+    assert_eq!(
+      interpret("LaplaceTransform[E^(2 t) t, t, s]").unwrap(),
+      "(-2 + s)^(-2)"
+    );
+    assert_eq!(
+      interpret("LaplaceTransform[E^(-t) t^2, t, s]").unwrap(),
+      "2/(1 + s)^3"
+    );
+    // The shift threads through linearity and a leading constant.
+    assert_eq!(
+      interpret("LaplaceTransform[E^(-t) (t + Sin[t]), t, s]").unwrap(),
+      "(1 + s)^(-2) + (1 + (1 + s)^2)^(-1)"
+    );
+    assert_eq!(
+      interpret("LaplaceTransform[3 E^(-t) Cos[t], t, s]").unwrap(),
+      "(3*(1 + s))/(1 + (1 + s)^2)"
+    );
+  }
+
   #[test]
   fn constant_multiple() {
     assert_eq!(interpret("LaplaceTransform[5*t, t, s]").unwrap(), "5/s^2");

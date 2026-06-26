@@ -1222,6 +1222,65 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       });
     }
 
+    // s-shifting theorem: L[E^(c t) g(t), t, s] = (L[g, t, s])(s - c). Because
+    // every base transform here is a function of the passed spectral variable,
+    // we simply recurse with `s` replaced by `s - c`. Only applied when there is
+    // a genuine non-exponential t-dependent factor left (otherwise the bare
+    // E^(c t) rule plus ordinary linearity already handle it).
+    if fname == "Times" && fargs.len() >= 2 {
+      let mut exp_coeffs: Vec<Expr> = Vec::new();
+      let mut rest: Vec<Expr> = Vec::new();
+      for arg in &fargs {
+        if let Some(c) = extract_exp_coeff(arg, t) {
+          exp_coeffs.push(c);
+        } else {
+          rest.push((*arg).clone());
+        }
+      }
+      // Cosh/Sinh produce a difference-of-squares denominator `s^2 - a^2`;
+      // after the shift wolframscript canonicalises those inconsistently
+      // (factoring the Cosh case, expanding the Sinh case), so decline the
+      // shift there and leave the call unevaluated rather than emit a
+      // form-divergent result.
+      let touches_hyperbolic =
+        rest.iter().any(|a| contains_head(a, t, &["Cosh", "Sinh"]));
+      if !exp_coeffs.is_empty()
+        && !touches_hyperbolic
+        && rest.iter().any(|a| depends_on(a, t))
+      {
+        let c_sum = if exp_coeffs.len() == 1 {
+          exp_coeffs.remove(0)
+        } else {
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: exp_coeffs.into(),
+          }
+        };
+        let s_shifted = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            s.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), c_sum].into(),
+            },
+          ]
+          .into(),
+        };
+        let g = if rest.len() == 1 {
+          rest.remove(0)
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: rest.into(),
+          }
+        };
+        if let Some(res) = laplace_transform_inner(&g, t, &s_shifted) {
+          return Some(res);
+        }
+      }
+    }
+
     // Linearity: L[c * f(t), t, s] = c * L[f(t), t, s] where c doesn't depend on t
     if fname == "Times" && fargs.len() >= 2 {
       let mut constants = Vec::new();
@@ -1253,6 +1312,54 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
     }
   }
 
+  None
+}
+
+/// True when `expr` contains a call to one of `heads` whose argument depends on
+/// `t` (used to detect Cosh/Sinh subexpressions before applying the s-shift).
+fn contains_head(expr: &Expr, t: &str, heads: &[&str]) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (heads.contains(&name.as_str()) && args.iter().any(|a| depends_on(a, t)))
+        || args.iter().any(|a| contains_head(a, t, heads))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_head(left, t, heads) || contains_head(right, t, heads)
+    }
+    Expr::UnaryOp { operand, .. } => contains_head(operand, t, heads),
+    Expr::List(items) => items.iter().any(|a| contains_head(a, t, heads)),
+    _ => false,
+  }
+}
+
+/// Extract the coefficient `c` when `factor` is `E^(c t)` for some `c` that is
+/// constant in `t` (i.e. the exponent is linear in `t`). Handles both the
+/// direct `Power[E, c t]` form and the reciprocal `Power[Power[E, a t], -1]`
+/// form (yielding `c = -a`). Returns None for any other factor.
+fn extract_exp_coeff(factor: &Expr, t: &str) -> Option<Expr> {
+  let (fname, fargs) = as_func_args(factor)?;
+  if fname != "Power" || fargs.len() != 2 {
+    return None;
+  }
+  let is_e = |e: &Expr| {
+    matches!(e, Expr::Identifier(b) if b == "E")
+      || matches!(e, Expr::Constant(b) if b == "E")
+  };
+  if is_e(fargs[0]) {
+    return extract_linear_coeff(fargs[1], t);
+  }
+  // Reciprocal form: Power[Power[E, a t], -1] == E^(-a t).
+  if matches!(fargs[1], Expr::Integer(-1))
+    && let Some(("Power", inner)) = as_func_args(fargs[0])
+    && inner.len() == 2
+    && is_e(inner[0])
+  {
+    let a = extract_linear_coeff(inner[1], t)?;
+    return Some(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), a].into(),
+    });
+  }
   None
 }
 
