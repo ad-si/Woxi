@@ -2965,6 +2965,9 @@ pub fn dispatch_list_operations(
     "AnglePath" => {
       return Some(list_helpers_ast::angle_path_ast(args));
     }
+    "FindPeaks" if args.len() == 1 => {
+      return Some(list_helpers_ast::find_peaks_ast(&args[0]));
+    }
     // A concrete non-list argument (a number, string, association, boolean,
     // or any NumericQ atom such as Pi or Sin[2]) can never be differenced:
     // emit Differences::listrp and stay unevaluated, matching wolframscript.

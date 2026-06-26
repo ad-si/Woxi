@@ -106,6 +106,73 @@ fn same_q_default(a: &Expr, b: &Expr) -> bool {
 /// AST-based Accumulate: cumulative sums.
 /// Threads through any non-atomic head, preserving it (e.g. Accumulate[g[1,2,3]]
 /// returns g[1, 3, 6]).
+/// FindPeaks[list] — the local maxima of a numeric list.
+///
+/// Each maximal run of equal values that strictly exceeds its real neighbors
+/// (with the list boundaries acting as -Infinity) and does not span the whole
+/// list is a peak. It is reported as `{position, value}`, where `position` is
+/// the mean of the run's 1-based indices (so a flat plateau yields a
+/// half-integer center, matching wolframscript: FindPeaks[{1,3,3,1}] ->
+/// {{5/2, 3}}). A list with no interior boundary (e.g. `{5}` or `{3,3,3}`)
+/// has no peaks.
+pub fn find_peaks_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "FindPeaks".to_string(),
+    args: vec![list.clone()].into(),
+  };
+  // Anything that is not a consistent list of real values emits FindPeaks::arg
+  // and stays unevaluated, matching wolframscript.
+  let bail = || {
+    crate::emit_message(&format!(
+      "FindPeaks::arg: The argument {} at position 1 is not a consistent list of real values.",
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+    ));
+    Ok(unevaluated())
+  };
+  let items: &[Expr] = match list {
+    Expr::List(items) => items.as_slice(),
+    _ => return bail(),
+  };
+  // Every element must be a real numeric value.
+  let mut vals: Vec<f64> = Vec::with_capacity(items.len());
+  for it in items {
+    match crate::functions::math_ast::try_eval_to_f64(it) {
+      Some(v) => vals.push(v),
+      None => return bail(),
+    }
+  }
+
+  let n = vals.len();
+  let mut peaks: Vec<Expr> = Vec::new();
+  let mut i = 0usize;
+  while i < n {
+    // Extend a maximal run of equal values [i..=j] (0-based).
+    let mut j = i;
+    while j + 1 < n && vals[j + 1] == vals[i] {
+      j += 1;
+    }
+    let v = vals[i];
+    let left_ok = i == 0 || vals[i - 1] < v;
+    let right_ok = j + 1 == n || vals[j + 1] < v;
+    let spans_whole_list = i == 0 && j + 1 == n;
+    if left_ok && right_ok && !spans_whole_list {
+      // Center = mean of the 1-based positions (i+1 .. j+1).
+      let pos_sum = (i + 1 + j + 1) as i128;
+      let pos = if pos_sum % 2 == 0 {
+        Expr::Integer(pos_sum / 2)
+      } else {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Divide".to_string(),
+          args: vec![Expr::Integer(pos_sum), Expr::Integer(2)].into(),
+        })?
+      };
+      peaks.push(Expr::List(vec![pos, items[i].clone()].into()));
+    }
+    i = j + 1;
+  }
+  Ok(Expr::List(peaks.into()))
+}
+
 pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   // Determine the head to wrap the result in and the items to accumulate over.
   let (items, head): (&[Expr], Option<String>) = match list {

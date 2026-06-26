@@ -1078,6 +1078,73 @@ mod position_largest_smallest {
   }
 }
 
+mod find_peaks {
+  use super::*;
+
+  #[test]
+  fn local_maxima_with_positions() {
+    // Each peak is {position, value}. Boundary elements that exceed their one
+    // real neighbor count (the boundary acts as -Infinity).
+    assert_eq!(
+      interpret("FindPeaks[{1, 3, 2, 5, 1, 4}]").unwrap(),
+      "{{2, 3}, {4, 5}, {6, 4}}"
+    );
+    assert_eq!(
+      interpret("FindPeaks[{0, 5, 0, 3, 0, 8, 0}]").unwrap(),
+      "{{2, 5}, {4, 3}, {6, 8}}"
+    );
+    // Monotonic data: only the last (or first) element peaks.
+    assert_eq!(interpret("FindPeaks[{1, 2, 3}]").unwrap(), "{{3, 3}}");
+    assert_eq!(interpret("FindPeaks[{5, 3, 1}]").unwrap(), "{{1, 5}}");
+    // Every isolated local maximum, including the boundary ones.
+    assert_eq!(
+      interpret("FindPeaks[{2, 1, 2, 1, 2}]").unwrap(),
+      "{{1, 2}, {3, 2}, {5, 2}}"
+    );
+  }
+
+  #[test]
+  fn plateaus_report_center_position() {
+    // A flat plateau peak is reported at the mean of its positions, so a
+    // two-wide plateau yields a half-integer center.
+    assert_eq!(interpret("FindPeaks[{1, 3, 3, 1}]").unwrap(), "{{5/2, 3}}");
+    assert_eq!(interpret("FindPeaks[{1, 3, 3, 3, 1}]").unwrap(), "{{3, 3}}");
+    assert_eq!(
+      interpret("FindPeaks[{1, 2, 3, 3, 3, 2, 5}]").unwrap(),
+      "{{4, 3}, {7, 5}}"
+    );
+  }
+
+  #[test]
+  fn degenerate_and_real_inputs() {
+    // No interior boundary → no peaks.
+    assert_eq!(interpret("FindPeaks[{}]").unwrap(), "{}");
+    assert_eq!(interpret("FindPeaks[{5}]").unwrap(), "{}");
+    assert_eq!(interpret("FindPeaks[{3, 3, 3}]").unwrap(), "{}");
+    // Real values preserve their machine-precision form.
+    assert_eq!(
+      interpret("FindPeaks[{1.5, 3.2, 2.1}]").unwrap(),
+      "{{2, 3.2}}"
+    );
+  }
+
+  #[test]
+  fn non_numeric_list_emits_message() {
+    use woxi::interpret_with_stdout;
+    // A list with non-real elements emits FindPeaks::arg and stays
+    // unevaluated, matching wolframscript.
+    let r = interpret_with_stdout("FindPeaks[{1, a, 2}]").unwrap();
+    assert_eq!(r.result, "FindPeaks[{1, a, 2}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "FindPeaks::arg: The argument {1, a, 2} at position 1 is not a consistent list of real values."
+      )),
+      "expected FindPeaks::arg message, got {:?}",
+      r.warnings
+    );
+  }
+}
+
 mod ordering {
   use super::*;
 
