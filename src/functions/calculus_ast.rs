@@ -7132,25 +7132,115 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
       Ok(v) => v,
       Err(_) => continue,
     };
-    if !is_constant_wrt(&ratio_val, var)
-      || matches!(&ratio_val, Expr::Integer(0))
-    {
+    if matches!(&ratio_val, Expr::Integer(0)) {
       continue;
     }
     let log_g = Expr::FunctionCall {
       name: "Log".to_string(),
       args: vec![g].into(),
     };
-    return Some(if matches!(&ratio_val, Expr::Integer(1)) {
-      log_g
-    } else {
-      Expr::FunctionCall {
+    // n = -1: integrand = c·g'/g → c·Log[g].
+    if is_constant_wrt(&ratio_val, var) {
+      return Some(if matches!(&ratio_val, Expr::Integer(1)) {
+        log_g
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![ratio_val, log_g].into(),
+        }
+      });
+    }
+    // General power: integrand = c·Log[g]^n·g'/g (n ≠ -1) →
+    // c·Log[g]^(n+1)/(n+1). Here ratio_val = c·Log[g]^n.
+    if let Some((coeff, n)) =
+      match_const_times_log_power(&ratio_val, &log_g, var)
+      && n != -1
+    {
+      let new_exp = n + 1;
+      let log_pow = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![log_g, Expr::Integer(new_exp)].into(),
+      };
+      let result = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![ratio_val, log_g].into(),
+        args: vec![
+          coeff,
+          log_pow,
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(new_exp)].into(),
+          },
+        ]
+        .into(),
+      };
+      if let Ok(v) = crate::evaluator::evaluate_expr_to_expr(&result) {
+        return Some(v);
       }
-    });
+    }
   }
   None
+}
+
+/// Match `c · Log[g]^n` (with `Log[g]` given as `log_g`): a constant `c` times a
+/// single integer power of `log_g`. Returns `(c, n)`. Used to integrate
+/// `Log[g]^n · g'/g` via the power rule `Log[g]^(n+1)/(n+1)`.
+fn match_const_times_log_power(
+  ratio: &Expr,
+  log_g: &Expr,
+  var: &str,
+) -> Option<(Expr, i128)> {
+  use crate::syntax::expr_to_string;
+  let log_g_str = expr_to_string(log_g);
+  let as_log_power = |e: &Expr| -> Option<i128> {
+    if expr_to_string(e) == log_g_str {
+      return Some(1);
+    }
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Power"
+      && args.len() == 2
+      && expr_to_string(&args[0]) == log_g_str
+      && let Expr::Integer(k) = &args[1]
+    {
+      return Some(*k);
+    }
+    if let Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } = e
+      && expr_to_string(left) == log_g_str
+      && let Expr::Integer(k) = right.as_ref()
+    {
+      return Some(*k);
+    }
+    None
+  };
+  let factors =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(ratio);
+  let mut n: Option<i128> = None;
+  let mut consts: Vec<Expr> = Vec::new();
+  for f in factors {
+    if let Some(k) = as_log_power(&f) {
+      if n.is_some() {
+        return None; // more than one Log[g] power factor
+      }
+      n = Some(k);
+    } else if is_constant_wrt(&f, var) {
+      consts.push(f);
+    } else {
+      return None; // a var-dependent factor that isn't a power of Log[g]
+    }
+  }
+  let n = n?;
+  let coeff = match consts.len() {
+    0 => Expr::Integer(1),
+    1 => consts.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: consts.into(),
+    },
+  };
+  Some((coeff, n))
 }
 
 /// Exact integer square root, or None when `n` is not a perfect square.

@@ -322,6 +322,33 @@ mod integrate_with_sum {
   }
 
   #[test]
+  fn integrate_log_power_over_x() {
+    // ∫ Log[x]^n/x dx = Log[x]^(n+1)/(n+1) via u = Log[x].
+    assert_eq!(interpret("Integrate[Log[x]^2/x, x]").unwrap(), "Log[x]^3/3");
+    assert_eq!(interpret("Integrate[Log[x]^3/x, x]").unwrap(), "Log[x]^4/4");
+    // Negative powers.
+    assert_eq!(
+      interpret("Integrate[1/(x Log[x]^2), x]").unwrap(),
+      "-Log[x]^(-1)"
+    );
+    assert_eq!(
+      interpret("Integrate[1/(x Log[x]^3), x]").unwrap(),
+      "-1/2*1/Log[x]^2"
+    );
+    // Constant coefficient is carried through.
+    assert_eq!(
+      interpret("Integrate[5 Log[x]^2/x, x]").unwrap(),
+      "(5*Log[x]^3)/3"
+    );
+    // n = 1 and n = -1 keep their existing closed forms.
+    assert_eq!(interpret("Integrate[Log[x]/x, x]").unwrap(), "Log[x]^2/2");
+    assert_eq!(
+      interpret("Integrate[1/(x Log[x]), x]").unwrap(),
+      "Log[Log[x]]"
+    );
+  }
+
+  #[test]
   fn integrate_sin_squared_definite() {
     // ∫_0^Pi sin²(x) dx = Pi/2
     assert_eq!(
