@@ -1510,6 +1510,30 @@ mod exact_value_returns {
   }
 
   #[test]
+  fn variance_symbolic_list() {
+    // Symbolic Variance[list] == Covariance[list, list], using the
+    // Conjugate-based deviation product. wolframscript factors the n == 2 case
+    // and leaves n >= 3 expanded — Woxi must match both forms exactly.
+    assert_eq!(
+      interpret("Variance[{a, b}]").unwrap(),
+      "((a - b)*(Conjugate[a] - Conjugate[b]))/2"
+    );
+    assert_eq!(
+      interpret("Variance[{a, b, c}]").unwrap(),
+      "((2*a - b - c)*Conjugate[a] + (-a + 2*b - c)*Conjugate[b] + \
+       (-a - b + 2*c)*Conjugate[c])/6"
+    );
+    // Mixed symbolic/numeric entries keep the factored n == 2 shape.
+    assert_eq!(
+      interpret("Variance[{x, 2}]").unwrap(),
+      "((-2 + x)*(-2 + Conjugate[x]))/2"
+    );
+    // Numeric paths are unaffected by the symbolic delegation.
+    assert_eq!(interpret("Variance[{1, 2, 3, 4, 5}]").unwrap(), "5/2");
+    assert_eq!(interpret("Variance[{2 + I, 3 - I}]").unwrap(), "5/2");
+  }
+
+  #[test]
   fn quantile_association() {
     assert_eq!(
       interpret("Quantile[<|a -> 1, b -> 2, c -> 3, d -> 4|>, 1/2]").unwrap(),

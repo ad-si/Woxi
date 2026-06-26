@@ -999,53 +999,14 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
       "Variance: need at least 2 elements".into(),
     ));
   }
-  // Compute mean symbolically
-  let mean = mean_ast(&[Expr::List(items.to_vec().into())])?;
-  // Compute Sum[Abs[xi - mean]^2] / (n-1)
-  let mut sum_sq_terms = Vec::new();
-  for item in items {
-    // (xi - mean)
-    let diff = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        item.clone(),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), mean.clone()].into(),
-        },
-      ]
-      .into(),
-    };
-    // Abs[xi - mean]^2
-    let abs_sq = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Abs".to_string(),
-          args: vec![diff].into(),
-        },
-        Expr::Integer(2),
-      ]
-      .into(),
-    };
-    sum_sq_terms.push(abs_sq);
-  }
-  let sum_sq = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: sum_sq_terms.into(),
-  };
-  let result = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
-      sum_sq,
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![Expr::Integer((n - 1) as i128), Expr::Integer(-1)].into(),
-      },
-    ]
-    .into(),
-  };
-  crate::evaluator::evaluate_expr_to_expr(&result)
+  // Variance[list] == Covariance[list, list], so reuse the symbolic covariance
+  // closed form. It uses the Conjugate-based deviation product and matches
+  // wolframscript's canonical output exactly — the factored
+  // `((a - b)*(Conjugate[a] - Conjugate[b]))/2` for n == 2 and the expanded
+  // `sum_i (n*x_i - sum x)*Conjugate[x_i] / (n*(n-1))` for n >= 3. (The earlier
+  // `Sum[Abs[xi - mean]^2]/(n-1)` form was value-correct but left unsimplified
+  // and used Abs[]^2 instead of z*Conjugate[z], diverging from wolframscript.)
+  symbolic_covariance(items, items)
 }
 
 /// Variance of columns in a list-of-lists (matrix)
