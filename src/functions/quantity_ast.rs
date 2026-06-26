@@ -550,6 +550,32 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_denom: 3600,
     },
 
+    // ── Misc. mass / force / power / time units (exact SI factors) ──
+    // 1 carat = 0.2 g = 1/5000 kg.
+    "Carats" | "Carat" => UnitInfo {
+      dimensions: dims(&[(Mass, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 5000,
+    },
+    // 1 lbf = 0.45359237 kg * 9.80665 m/s^2 = 4.4482216152605 N.
+    "PoundsForce" | "PoundForce" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 1), (Time, -2)]),
+      to_si_numer: 8_896_443_230_521,
+      to_si_denom: 2_000_000_000_000,
+    },
+    // 1 mechanical horsepower = 745.69987158227022 W.
+    "Horsepower" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -3)]),
+      to_si_numer: 37_284_993_579_113_511,
+      to_si_denom: 50_000_000_000_000,
+    },
+    // wolframscript's year is exactly 365 days = 31536000 s.
+    "Years" | "Year" => UnitInfo {
+      dimensions: dims(&[(Time, 1)]),
+      to_si_numer: 31_536_000,
+      to_si_denom: 1,
+    },
+
     // ── Information → Bits (SI base, matching wolframscript) ─────────
     // A Byte is 8 Bits; decimal (SI) prefixes are powers of 1000, binary
     // prefixes (Kibi-, …) powers of 1024 — both expressed in Bits here.

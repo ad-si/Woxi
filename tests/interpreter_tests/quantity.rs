@@ -611,6 +611,39 @@ fn information_units() {
   );
 }
 
+// Additional mass / force / power / time units with exact SI definitions.
+#[test]
+fn misc_si_units() {
+  // 1 carat = 0.2 g.
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Carats\"], \"Grams\"]").unwrap(),
+    "Quantity[1/5, Grams]"
+  );
+  // 1 lbf = 4.4482216152605 N (exact rational).
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"PoundsForce\"], \"Newtons\"]")
+      .unwrap(),
+    "Quantity[8896443230521/2000000000000, Newtons]"
+  );
+  // 1 mechanical horsepower = 745.69987158227022 W.
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Horsepower\"], \"Watts\"]").unwrap(),
+    "Quantity[37284993579113511/50000000000000, Watts]"
+  );
+  // wolframscript's year is exactly 365 days.
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Years\"], \"Days\"]").unwrap(),
+    "Quantity[365, Days]"
+  );
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Horsepower\"], Quantity[1, \"Watts\"]]"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
 // Astronomical / less-common length units, with exact SI definitions.
 #[test]
 fn lightyears_to_meters() {
