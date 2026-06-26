@@ -723,6 +723,34 @@ mod definite_integrals {
     assert_eq!(interpret("Integrate[5, {x, 0, 3}]").unwrap(), "15");
   }
 
+  // An `Assumptions -> cond` option (and other option rules) must be treated as
+  // an option, not as an extra integration variable. Previously the option was
+  // swallowed by the multivariate path, yielding a nested `Integrate[Integrate[
+  // …, Assumptions -> …], …]`. The Assumptions option is honoured via the same
+  // mechanism as `Assuming[…]`.
+  #[test]
+  fn definite_integral_with_assumptions_option() {
+    assert_eq!(
+      interpret("Integrate[x^2, {x, 0, b}, Assumptions -> b > 0]").unwrap(),
+      "b^3/3"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[x], {x, 0, t}, Assumptions -> t > 0]").unwrap(),
+      "Sin[t]"
+    );
+    // An irrelevant assumption is simply stripped — no nested Integrate.
+    assert_eq!(
+      interpret("Integrate[x^2, {x, 0, 1}, Assumptions -> x > 0]").unwrap(),
+      "1/3"
+    );
+    // A non-Assumptions option is accepted and ignored.
+    assert_eq!(
+      interpret("Integrate[x, {x, 0, 1}, GenerateConditions -> False]")
+        .unwrap(),
+      "1/2"
+    );
+  }
+
   #[test]
   fn definite_integral_reciprocal_square() {
     // ∫_1^2 1/x^2 dx = 1/2

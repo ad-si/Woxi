@@ -380,6 +380,43 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Separate trailing option rules (`Assumptions -> …`, `GenerateConditions ->
+  // …`, etc.) from the integration specs so they are not mistaken for extra
+  // integration variables by the multivariate path below. An `Assumptions`
+  // option is honoured by evaluating the integral under the Assuming mechanism
+  // (which sets `$Assumptions`, consulted by the definite-integral and limit
+  // paths); any other option is accepted and ignored.
+  {
+    let mut assumption: Option<Expr> = None;
+    let mut had_option = false;
+    let mut effective: Vec<Expr> = vec![args[0].clone()];
+    for arg in &args[1..] {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = arg
+      {
+        had_option = true;
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Assumptions")
+        {
+          assumption = Some(replacement.as_ref().clone());
+        }
+        continue;
+      }
+      effective.push(arg.clone());
+    }
+    if had_option {
+      let inner = Expr::FunctionCall {
+        name: "Integrate".to_string(),
+        args: effective.into(),
+      };
+      return match assumption {
+        Some(cond) => crate::evaluator::assuming_ast(&[cond, inner]),
+        None => crate::evaluator::evaluate_expr_to_expr(&inner),
+      };
+    }
+  }
+
   // Multi-variable integration: Integrate[f, spec1, spec2, ..., specN]
   // = Integrate[Integrate[f, spec2, ..., specN], spec1]
   // i.e., innermost integration variable is listed last
