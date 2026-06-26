@@ -835,6 +835,70 @@ mod definite_integrals {
   }
 
   #[test]
+  fn dirac_delta_sifting() {
+    // ∫ g(x) DiracDelta[x - x0] dx = g(x0) when x0 is inside the bounds.
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x - 2] x^2, {x, 0, 5}]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x] Exp[x], {x, -1, 1}]").unwrap(),
+      "1"
+    );
+    // No weight factor → just 1.
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x - 3], {x, 0, 5}]").unwrap(),
+      "1"
+    );
+    // Infinite bounds.
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x] Cos[x], {x, -Infinity, Infinity}]")
+        .unwrap(),
+      "1"
+    );
+    // Negative shift inside the interval.
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x + 1] x^2, {x, -3, 3}]").unwrap(),
+      "1"
+    );
+    // Rational root with a transcendental weight.
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x - 1/2] Sin[Pi x], {x, 0, 1}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn dirac_delta_scaled_argument_and_outside() {
+    // DiracDelta[c x + d] scales by 1/|c|: DiracDelta[2x-4] = DiracDelta[x-2]/2.
+    assert_eq!(
+      interpret("Integrate[DiracDelta[2 x - 4] x, {x, 0, 5}]").unwrap(),
+      "1"
+    );
+    // Root strictly outside the bounds → integral is 0.
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x - 2] x^2, {x, 0, 1}]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn dirac_delta_unevaluated_edge_cases() {
+    // Symbolic shift, boundary root, and nonlinear arguments are left
+    // unevaluated (Wolfram returns ConditionalExpression / HeavisideTheta /
+    // multi-root forms there, which Woxi does not reproduce).
+    assert_eq!(
+      interpret("Integrate[f[x] DiracDelta[x - a], {x, -Infinity, Infinity}]")
+        .unwrap(),
+      "Integrate[DiracDelta[-a + x]*f[x], {x, -Infinity, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x - 5] x, {x, 0, 5}]").unwrap(),
+      "Integrate[x*DiracDelta[-5 + x], {x, 0, 5}]"
+    );
+  }
+
+  #[test]
   fn divergent_integral_returns_unevaluated() {
     // Improper integrals that diverge at an infinite bound stay unevaluated,
     // matching wolframscript's Integrate::idiv behaviour. Regression for

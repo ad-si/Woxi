@@ -792,6 +792,133 @@ fn is_negative_infinity(expr: &Expr) -> bool {
   }
 }
 
+/// Numeric value of an integration bound, mapping ±Infinity to ±f64::INFINITY.
+fn bound_to_f64(e: &Expr) -> Option<f64> {
+  if is_infinity(e) {
+    return Some(f64::INFINITY);
+  }
+  if is_negative_infinity(e) {
+    return Some(f64::NEG_INFINITY);
+  }
+  crate::functions::math_ast::try_eval_to_f64(e)
+}
+
+/// Evaluate `∫ g(x) DiracDelta[c x + d] dx` over `(lo, hi)` via the sifting
+/// property. Returns `None` (leave the integral unevaluated) unless the delta
+/// argument is linear in `var` with a constant nonzero coefficient and a root
+/// strictly inside or strictly outside the bounds.
+fn try_dirac_delta_integral(
+  integrand: &Expr,
+  var: &str,
+  lo: &Expr,
+  hi: &Expr,
+) -> Option<Expr> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let at = |e: &Expr, v: Expr| crate::syntax::substitute_variable(e, var, &v);
+
+  // Split the integrand into the (single) DiracDelta factor and the rest.
+  let factors = flatten_times_factors(integrand);
+  let mut delta_arg: Option<Expr> = None;
+  let mut others: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if let Expr::FunctionCall { name, args } = f
+      && name == "DiracDelta"
+      && args.len() == 1
+    {
+      if delta_arg.is_some() {
+        return None; // more than one DiracDelta — not handled
+      }
+      delta_arg = Some(args[0].clone());
+      continue;
+    }
+    others.push(f.clone());
+  }
+  let arg = delta_arg?;
+
+  // The argument must be linear in var: d = arg(0), c = arg(1) - arg(0).
+  let d = eval(at(&arg, Expr::Integer(0)))?;
+  let c_plus_d = eval(at(&arg, Expr::Integer(1)))?;
+  let c = eval(Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![c_plus_d, d.clone()].into(),
+  })?;
+  // c must be a constant, nonzero number.
+  let c_f = crate::functions::math_ast::try_eval_to_f64(&c)?;
+  if c_f == 0.0 {
+    return None;
+  }
+  // Confirm linearity: arg(2) - (2 c + d) must vanish.
+  let arg_at_2 = eval(at(&arg, Expr::Integer(2)))?;
+  let linearity_residual = eval(Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![
+      arg_at_2,
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(2), c.clone()].into(),
+          },
+          d.clone(),
+        ]
+        .into(),
+      },
+    ]
+    .into(),
+  })?;
+  if !matches!(linearity_residual, Expr::Integer(0)) {
+    return None; // nonlinear delta argument
+  }
+
+  // Root x0 = -d / c.
+  let root = eval(Expr::FunctionCall {
+    name: "Divide".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), d].into(),
+      },
+      c.clone(),
+    ]
+    .into(),
+  })?;
+  let root_f = crate::functions::math_ast::try_eval_to_f64(&root)?;
+  let lo_f = bound_to_f64(lo)?;
+  let hi_f = bound_to_f64(hi)?;
+
+  if root_f > lo_f && root_f < hi_f {
+    // Inside the open interval: g(x0) / |c|.
+    let g = if others.is_empty() {
+      Expr::Integer(1)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: others.into(),
+      }
+    };
+    let g_at_root = eval(at(&g, root))?;
+    let result = eval(Expr::FunctionCall {
+      name: "Divide".to_string(),
+      args: vec![
+        g_at_root,
+        Expr::FunctionCall {
+          name: "Abs".to_string(),
+          args: vec![c].into(),
+        },
+      ]
+      .into(),
+    })?;
+    Some(result)
+  } else if root_f < lo_f || root_f > hi_f {
+    // Strictly outside: the delta never fires.
+    Some(Expr::Integer(0))
+  } else {
+    // Boundary root — leave unevaluated (Wolfram uses HeavisideTheta there).
+    None
+  }
+}
+
 /// Try to evaluate a definite integral using known closed-form results
 fn try_definite_integral(
   integrand: &Expr,
@@ -799,6 +926,16 @@ fn try_definite_integral(
   lo: &Expr,
   hi: &Expr,
 ) -> Option<Expr> {
+  // DiracDelta sifting property:
+  //   ∫_lo^hi g(x) DiracDelta[c x + d] dx = g(x0)/|c|  when lo < x0 < hi,
+  // and 0 when x0 is strictly outside [lo, hi], where x0 = -d/c is the root
+  // of the (linear) delta argument. Boundary roots (x0 == lo or x0 == hi) and
+  // symbolic roots are left unevaluated (Wolfram returns HeavisideTheta /
+  // ConditionalExpression forms there).
+  if let Some(result) = try_dirac_delta_integral(integrand, var, lo, hi) {
+    return Some(result);
+  }
+
   // Gaussian integral: ∫_{-∞}^{∞} E^(-a*x^2) dx = Sqrt[Pi/a]
   if is_negative_infinity(lo)
     && is_infinity(hi)
