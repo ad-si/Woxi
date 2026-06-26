@@ -3744,6 +3744,20 @@ mod batch_unevaluated_wrappers_2 {
       "3"
     );
   }
+  // CountDistinct of an association counts its distinct values.
+  #[test]
+  fn count_distinct_association() {
+    assert_eq!(
+      interpret("CountDistinct[<|\"a\" -> 1, \"b\" -> 2, \"c\" -> 2|>]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("CountDistinct[<|1 -> x, 2 -> y, 3 -> x|>]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("CountDistinct[<||>]").unwrap(), "0");
+  }
   #[test]
   fn count_distinct_by() {
     // Count distinct values of f applied to each element.

@@ -5107,7 +5107,15 @@ pub fn dispatch_list_operations(
     }
     // CountDistinct[list] — count unique elements
     "CountDistinct" if args.len() == 1 => {
-      if let Expr::List(ref elems) = args[0] {
+      // Lists count distinct elements; associations count distinct values.
+      let elems: Option<Vec<&Expr>> = match &args[0] {
+        Expr::List(elems) => Some(elems.iter().collect()),
+        Expr::Association(pairs) => {
+          Some(pairs.iter().map(|(_, v)| v).collect())
+        }
+        _ => None,
+      };
+      if let Some(elems) = elems {
         let mut seen = std::collections::HashSet::new();
         for e in elems {
           seen.insert(expr_to_string(e));
