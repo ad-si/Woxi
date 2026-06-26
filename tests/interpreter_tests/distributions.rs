@@ -730,6 +730,49 @@ mod probability_distribution {
     );
   }
 
+  // E[Boole[cond]] = Probability[cond], computed exactly rather than via the
+  // (inaccurate) numerical integration fallback — E[Boole[x > 0]] over a
+  // standard normal used to return 0.4976... instead of 1/2.
+  #[test]
+  fn expectation_boole_is_probability() {
+    assert_eq!(
+      interpret(
+        "Expectation[Boole[x > 0], x \\[Distributed] NormalDistribution[0, 1]]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[Boole[x < 0], x \\[Distributed] NormalDistribution[0, 1]]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[Boole[x > 2], x \\[Distributed] ExponentialDistribution[1]]"
+      )
+      .unwrap(),
+      "E^(-2)"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[Boole[1 < x < 3], x \\[Distributed] UniformDistribution[{0, 4}]]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+    // Discrete: E[Boole[x == 2]] = PDF[Poisson[3], 2] = 9/(2 E^3).
+    assert_eq!(
+      interpret(
+        "Expectation[Boole[x == 2], x \\[Distributed] PoissonDistribution[3]]"
+      )
+      .unwrap(),
+      "9/(2*E^3)"
+    );
+  }
+
   #[test]
   fn expectation_multivariate() {
     // E[x, {x,y} ~ PD[(10-x*y^2)/64, {x,2,10}, {y,0,1}]] = 52/9.

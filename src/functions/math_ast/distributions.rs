@@ -3101,6 +3101,20 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
+  // E[Boole[cond]] = Probability[cond, dist] — exact, rather than the numerical
+  // integration below (which both loses precision and misses the clean closed
+  // form, e.g. E[Boole[x > 0]] over a standard normal is exactly 1/2).
+  if let Expr::FunctionCall { name, args: bargs } = expr
+    && name == "Boole"
+    && bargs.len() == 1
+  {
+    let prob = Expr::FunctionCall {
+      name: "Probability".to_string(),
+      args: vec![bargs[0].clone(), dist_spec.clone()].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&prob);
+  }
+
   // For more complex expressions, use numerical integration
   expectation_numerical(expr, &var_name, dist_name, dargs)
 }
