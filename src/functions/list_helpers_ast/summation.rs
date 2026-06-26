@@ -440,6 +440,7 @@ fn rational_telescoping_product(
   body: &Expr,
   var_name: &str,
   max_expr: &Expr,
+  k0: i128,
 ) -> Result<Option<Expr>, InterpreterError> {
   use crate::syntax::BinaryOperator;
   let eval = crate::evaluator::evaluate_expr_to_expr;
@@ -456,14 +457,19 @@ fn rational_telescoping_product(
   ) else {
     return Ok(None);
   };
-  if a < 0 || b < 0 {
-    return Ok(None);
-  }
   if a == b {
     return Ok(Some(Expr::Integer(1)));
   }
-  // Build Π_{j=lo+1}^{hi} (n + j) and the constant Π_{j=lo+1}^{hi} j.
+  // The factors (k + j) range over j ∈ (lo, hi]; the smallest factor value in
+  // the product is k0 + lo + 1 (at k = k0, j = lo + 1). Require every factor to
+  // stay positive over [k0, n] so nothing vanishes (and no division by zero);
+  // i.e. k0 + lo + 1 ≥ 1. For the classic k0 = 1 case this reduces to the old
+  // `a, b ≥ 0` guard.
   let (lo, hi) = (a.min(b), a.max(b));
+  if k0 + lo + 1 < 1 {
+    return Ok(None);
+  }
+  // Build Π_{j=lo+1}^{hi} (n + j) and the constant Π_{j=lo+1}^{hi} (k0 + j - 1).
   let mut factors: Vec<Expr> = Vec::new();
   let mut konst: i128 = 1;
   for j in (lo + 1)..=hi {
@@ -472,7 +478,7 @@ fn rational_telescoping_product(
       left: Box::new(max_expr.clone()),
       right: Box::new(Expr::Integer(j)),
     });
-    konst = match konst.checked_mul(j) {
+    konst = match konst.checked_mul(k0 + j - 1) {
       Some(v) => v,
       None => return Ok(None), // overflow — leave symbolic
     };
@@ -1118,19 +1124,19 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
 
           // Rational telescoping product:
-          //   Product[(k + a)/(k + b), {k, 1, n}]
-          // with non-negative integer shifts a, b telescopes to a finite
-          // product of linear factors in n. Together the body, split into
-          // numerator/denominator, and require each to be a monic linear
-          // polynomial `var + integer`. For a > b the result is
-          //   Π_{j=b+1}^{a} (n + j) / Π_{j=b+1}^{a} j ;
+          //   Product[(k + a)/(k + b), {k, k0, n}]
+          // with integer shifts a, b telescopes to a finite product of linear
+          // factors in n. Together the body, split into numerator/denominator,
+          // and require each to be a monic linear polynomial `var + integer`.
+          // For a > b the result is
+          //   Π_{j=b+1}^{a} (n + j) / Π_{j=b+1}^{a} (k0 + j - 1) ;
           // for a < b it is the reciprocal. (`var + a` alone, with a constant
           // denominator, is handled by the linear-shift case above.)
-          if min_concrete == Some(1)
+          if let Some(k0) = min_concrete
             && max_concrete.is_none()
             && !max_is_infinity
             && let Some(result) =
-              rational_telescoping_product(body, &var_name, max_expr)?
+              rational_telescoping_product(body, &var_name, max_expr, k0)?
           {
             return Ok(result);
           }

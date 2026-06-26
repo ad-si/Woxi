@@ -79,6 +79,34 @@ mod symbolic_product {
     );
   }
 
+  // Telescoping rational products also work for a lower bound other than 1,
+  // including factors with negative integer shifts (e.g. k - 1) as long as no
+  // factor vanishes over the range. Verified against wolframscript.
+  #[test]
+  fn product_rational_telescoping_lower_bound_not_one() {
+    assert_eq!(
+      interpret("Product[(k + 1)/k, {k, 2, n}]").unwrap(),
+      "(1 + n)/2"
+    );
+    assert_eq!(
+      interpret("Product[k/(k + 1), {k, 2, n}]").unwrap(),
+      "2/(1 + n)"
+    );
+    assert_eq!(
+      interpret("Product[(k + 2)/k, {k, 2, n}]").unwrap(),
+      "((1 + n)*(2 + n))/6"
+    );
+    assert_eq!(
+      interpret("Product[(k + 1)/(k - 1), {k, 2, n}]").unwrap(),
+      "(n*(1 + n))/2"
+    );
+    assert_eq!(interpret("Product[k/(k - 1), {k, 2, n}]").unwrap(), "n");
+    assert_eq!(
+      interpret("Product[(k + 1)/k, {k, 3, n}]").unwrap(),
+      "(1 + n)/3"
+    );
+  }
+
   #[test]
   fn factorial_formatting() {
     // Factorial[n] should display as n!
