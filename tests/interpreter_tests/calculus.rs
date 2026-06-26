@@ -771,6 +771,70 @@ mod definite_integrals {
   }
 
   #[test]
+  fn gaussian_moment_full_range() {
+    // ∫_{-∞}^{∞} x^(2m) E^(-x^2) dx = (2m-1)!! Sqrt[Pi] / 2^m
+    assert_eq!(
+      interpret("Integrate[x^2 Exp[-x^2], {x, -Infinity, Infinity}]").unwrap(),
+      "Sqrt[Pi]/2"
+    );
+    assert_eq!(
+      interpret("Integrate[x^4 Exp[-x^2], {x, -Infinity, Infinity}]").unwrap(),
+      "(3*Sqrt[Pi])/4"
+    );
+    assert_eq!(
+      interpret("Integrate[x^6 Exp[-x^2], {x, -Infinity, Infinity}]").unwrap(),
+      "(15*Sqrt[Pi])/8"
+    );
+    // Odd powers integrate to zero by symmetry.
+    assert_eq!(
+      interpret("Integrate[x^3 Exp[-x^2], {x, -Infinity, Infinity}]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn gaussian_moment_with_coefficient_and_constant() {
+    // Coefficient a in the exponent: ∫_{-∞}^{∞} x^2 E^(-2 x^2) dx = Sqrt[Pi/2]/4
+    assert_eq!(
+      interpret("Integrate[x^2 Exp[-2 x^2], {x, -Infinity, Infinity}]")
+        .unwrap(),
+      "Sqrt[Pi/2]/4"
+    );
+    // A constant factor multiplies through.
+    assert_eq!(
+      interpret("Integrate[3 x^2 Exp[-x^2], {x, -Infinity, Infinity}]")
+        .unwrap(),
+      "(3*Sqrt[Pi])/2"
+    );
+  }
+
+  #[test]
+  fn gaussian_moment_half_range() {
+    // ∫_0^{∞} x^(2m) E^(-x^2) dx is half the full-range even moment.
+    assert_eq!(
+      interpret("Integrate[x^2 Exp[-x^2], {x, 0, Infinity}]").unwrap(),
+      "Sqrt[Pi]/4"
+    );
+    assert_eq!(
+      interpret("Integrate[x^4 Exp[-x^2], {x, 0, Infinity}]").unwrap(),
+      "(3*Sqrt[Pi])/8"
+    );
+    // Odd powers over (0, ∞): ∫_0^∞ x^(2k+1) E^(-a x^2) dx = k!/(2 a^(k+1)).
+    assert_eq!(
+      interpret("Integrate[x Exp[-x^2], {x, 0, Infinity}]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Integrate[x^3 Exp[-x^2], {x, 0, Infinity}]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Integrate[x^3 Exp[-2 x^2], {x, 0, Infinity}]").unwrap(),
+      "1/8"
+    );
+  }
+
+  #[test]
   fn divergent_integral_returns_unevaluated() {
     // Improper integrals that diverge at an infinite bound stay unevaluated,
     // matching wolframscript's Integrate::idiv behaviour. Regression for

@@ -818,6 +818,20 @@ fn try_definite_integral(
     );
   }
 
+  // Gaussian moment: ∫ c * x^n * E^(-a*x^2) dx over (-∞,∞) or (0,∞).
+  {
+    let full_range = is_negative_infinity(lo) && is_infinity(hi);
+    let half_range = matches!(lo, Expr::Integer(0)) && is_infinity(hi);
+    if (full_range || half_range)
+      && let Some((n, coeff, consts)) = match_gaussian_moment(integrand, var)
+    {
+      let result = gaussian_moment_result(n, &coeff, &consts, full_range);
+      return Some(
+        crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
+      );
+    }
+  }
+
   // Half-Gaussian: ∫_0^{∞} E^(-a*x^2) dx = Sqrt[Pi/a]/2
   if matches!(lo, Expr::Integer(0))
     && is_infinity(hi)
@@ -1054,6 +1068,158 @@ fn match_gaussian(expr: &Expr, var: &str) -> Option<Expr> {
 
   // Match -a*x^2 or -(x^2) forms in the exponent
   match_neg_a_x_squared(exponent, var)
+}
+
+/// Flatten a (possibly nested) product into its individual factors. A
+/// non-product expression yields a single-element list.
+fn flatten_times_factors(expr: &Expr) -> Vec<Expr> {
+  fn rec(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        rec(left, out);
+        rec(right, out);
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          rec(a, out);
+        }
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  let mut out = Vec::new();
+  rec(expr, &mut out);
+  out
+}
+
+/// Match `var` or `var^k` (k a non-negative integer) and return the exponent.
+fn match_var_power(expr: &Expr, var: &str) -> Option<i128> {
+  if matches!(expr, Expr::Identifier(n) if n == var) {
+    return Some(1);
+  }
+  let (base, exp) = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  if matches!(base, Expr::Identifier(n) if n == var)
+    && let Expr::Integer(k) = exp
+    && *k >= 0
+  {
+    return Some(*k);
+  }
+  None
+}
+
+/// Match an integrand of the form `c * var^n * E^(-a*var^2)` (factors in any
+/// order). Returns `(n, a, consts)` where `n >= 0` is the total power of
+/// `var`, `a` the positive Gaussian coefficient, and `consts` the var-free
+/// factors. Requires at least two factors so a bare Gaussian is left to the
+/// dedicated handler.
+fn match_gaussian_moment(
+  expr: &Expr,
+  var: &str,
+) -> Option<(i128, Expr, Vec<Expr>)> {
+  let factors = flatten_times_factors(expr);
+  if factors.len() < 2 {
+    return None;
+  }
+  let mut coeff_a: Option<Expr> = None;
+  let mut power: i128 = 0;
+  let mut consts: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if let Some(a) = match_gaussian(f, var) {
+      if coeff_a.is_some() {
+        return None; // more than one Gaussian factor
+      }
+      coeff_a = Some(a);
+    } else if let Some(n) = match_var_power(f, var) {
+      power = power.checked_add(n)?;
+    } else if !contains_var(f, var) {
+      consts.push(f.clone());
+    } else {
+      return None; // unrecognized var-dependent factor
+    }
+  }
+  coeff_a.map(|a| (power, a, consts))
+}
+
+/// Build the closed form of `∫ c * x^n * E^(-a*x^2) dx` over `(-∞,∞)` (when
+/// `full_range`) or `(0,∞)`.
+///
+/// * Even `n = 2m`: `(2m-1)!! / (2a)^m * Sqrt[Pi/a]`, halved over `(0,∞)`.
+/// * Odd `n = 2k+1`: `0` over `(-∞,∞)`, and `k! / (2 a^(k+1))` over `(0,∞)`.
+///
+/// `consts` are the var-free factors multiplied back in.
+fn gaussian_moment_result(
+  n: i128,
+  coeff: &Expr,
+  consts: &[Expr],
+  full_range: bool,
+) -> Expr {
+  use crate::syntax::BinaryOperator;
+  let pow = |base: Expr, exp: i128| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![base, Expr::Integer(exp)].into(),
+  };
+  let half = || Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+  };
+  let sqrt_pi_over_a = || match coeff {
+    Expr::Integer(1) => make_sqrt(Expr::Constant("Pi".to_string())),
+    _ => make_sqrt(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::Constant("Pi".to_string())),
+      right: Box::new(coeff.clone()),
+    }),
+  };
+
+  let mut factors: Vec<Expr> = Vec::new();
+  if n % 2 == 0 {
+    let m = n / 2;
+    factors.push(Expr::FunctionCall {
+      name: "Factorial2".to_string(),
+      args: vec![Expr::Integer(2 * m - 1)].into(),
+    });
+    // (2 a)^(-m)
+    factors.push(pow(
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(2), coeff.clone()].into(),
+      },
+      -m,
+    ));
+    factors.push(sqrt_pi_over_a());
+    if !full_range {
+      factors.push(half());
+    }
+  } else if full_range {
+    return Expr::Integer(0);
+  } else {
+    let k = (n - 1) / 2;
+    factors.push(Expr::FunctionCall {
+      name: "Factorial".to_string(),
+      args: vec![Expr::Integer(k)].into(),
+    });
+    factors.push(pow(coeff.clone(), -(k + 1)));
+    factors.push(half());
+  }
+  factors.extend(consts.iter().cloned());
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: factors.into(),
+  }
 }
 
 /// Match an exponent expression as -a*x^2 and return 'a'.
