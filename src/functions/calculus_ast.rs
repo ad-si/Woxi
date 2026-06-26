@@ -4721,6 +4721,45 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
       };
       return Some(make_neg_divided(coth_expr, coeff));
     }
+    // ∫ Sinh[a*x]^2 dx = Sinh[2*a*x]/(4*a) - x/2
+    // ∫ Cosh[a*x]^2 dx = Sinh[2*a*x]/(4*a) + x/2
+    if name == "Sinh" || name == "Cosh" {
+      let coeff = try_match_linear_arg(&args[0], var)?;
+      let double_arg = simplify(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(args[0].clone()),
+      });
+      let sinh_double = Expr::FunctionCall {
+        name: "Sinh".to_string(),
+        args: vec![double_arg].into(),
+      };
+      let four_a = simplify(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(4)),
+        right: Box::new(coeff),
+      });
+      let sinh_term = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(sinh_double),
+        right: Box::new(four_a),
+      };
+      let x_half = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Identifier(var.to_string())),
+        right: Box::new(Expr::Integer(2)),
+      };
+      return Some(Expr::BinaryOp {
+        op: if name == "Cosh" {
+          crate::syntax::BinaryOperator::Plus
+        } else {
+          crate::syntax::BinaryOperator::Minus
+        },
+        left: Box::new(sinh_term),
+        right: Box::new(x_half),
+      });
+    }
+
     if !is_sin && !is_cos {
       return None;
     }

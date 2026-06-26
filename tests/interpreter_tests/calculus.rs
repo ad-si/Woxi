@@ -270,6 +270,30 @@ mod integrate_with_sum {
     );
   }
 
+  // ∫ sinh²(a x) dx = sinh(2 a x)/(4 a) - x/2;
+  // ∫ cosh²(a x) dx = sinh(2 a x)/(4 a) + x/2.
+  #[test]
+  fn integrate_hyperbolic_squared() {
+    assert_eq!(
+      interpret("Integrate[Sinh[x]^2, x]").unwrap(),
+      "-1/2*x + Sinh[2*x]/4"
+    );
+    assert_eq!(
+      interpret("Integrate[Cosh[x]^2, x]").unwrap(),
+      "x/2 + Sinh[2*x]/4"
+    );
+    // Linear argument carries the 1/a factor.
+    assert_eq!(
+      interpret("Integrate[Cosh[3 x]^2, x]").unwrap(),
+      "x/2 + Sinh[6*x]/12"
+    );
+    // Symbolic coefficient.
+    assert_eq!(
+      interpret("Integrate[Sinh[a x]^2, x]").unwrap(),
+      "-1/2*x + Sinh[2*a*x]/(4*a)"
+    );
+  }
+
   #[test]
   fn integrate_sin_squared_definite() {
     // ∫_0^Pi sin²(x) dx = Pi/2
