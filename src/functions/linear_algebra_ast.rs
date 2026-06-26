@@ -1858,6 +1858,15 @@ fn sort_eigenvalues(eigenvalues: &mut [Expr]) {
   });
 }
 
+/// True when `e` evaluates (under N) to a real number — i.e. not a complex
+/// value and not a symbolic expression with free variables.
+fn is_real_numeric_value(e: &Expr) -> bool {
+  matches!(
+    crate::functions::math_ast::n_ast(&[e.clone()]),
+    Ok(Expr::Real(_) | Expr::Integer(_))
+  )
+}
+
 /// Get a numeric sort key for an eigenvalue expression.
 /// For integer: the value itself.
 /// For expressions involving Sqrt: approximate numerically.
@@ -2199,7 +2208,15 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let lm = crate::evaluator::evaluate_expr_to_expr(&lambda_minus)?;
     let lp = crate::evaluator::evaluate_expr_to_expr(&lambda_plus)?;
-    return Ok(Expr::List(vec![lm, lp].into()));
+    let mut result = vec![lm, lp];
+    // When both eigenvalues are real numbers (a complex Hermitian matrix whose
+    // diagonal differs, e.g. {{4, I}, {-I, 1}}), order them like wolframscript
+    // — decreasing magnitude. Symbolic matrices and genuinely complex
+    // eigenvalues keep the closed `minus, plus` branch order.
+    if result.iter().all(is_real_numeric_value) {
+      sort_eigenvalues(&mut result);
+    }
+    return Ok(Expr::List(result.into()));
   }
 
   // Float-valued n×n matrix (n ≥ 3): compute eigenvalues numerically

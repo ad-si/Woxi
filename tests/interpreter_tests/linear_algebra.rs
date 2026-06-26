@@ -701,6 +701,32 @@ mod eigenvalues {
     );
   }
 
+  // Complex Hermitian matrices with a *distinct* diagonal go through the generic
+  // 2×2 path; their real eigenvalues must also be ordered like wolframscript
+  // (decreasing magnitude), not left in the closed minus/plus branch order.
+  #[test]
+  fn eigenvalues_2x2_complex_hermitian_distinct_diagonal() {
+    assert_eq!(
+      interpret("Eigenvalues[{{2, 2 I}, {-2 I, 5}}]").unwrap(),
+      "{6, 1}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{4, I}, {-I, 1}}]").unwrap(),
+      "{(5 + Sqrt[13])/2, (5 - Sqrt[13])/2}"
+    );
+    // Genuinely complex eigenvalues keep the closed minus/plus order.
+    assert_eq!(
+      interpret("Eigenvalues[{{1, 2}, {-2, 1}}]").unwrap(),
+      "{1 + 2*I, 1 - 2*I}"
+    );
+    // Fully symbolic matrices are unchanged.
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b}, {c, d}}]").unwrap(),
+      "{(a + d - Sqrt[a^2 + 4*b*c - 2*a*d + d^2])/2, \
+       (a + d + Sqrt[a^2 + 4*b*c - 2*a*d + d^2])/2}"
+    );
+  }
+
   // Symbolic triangular/diagonal matrices: the eigenvalues are the diagonal
   // entries in matrix order (not the unsimplified quadratic formula).
   #[test]
