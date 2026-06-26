@@ -362,6 +362,10 @@ mod composition_edge_cases {
 }
 
 mod constant_function {
+  // ConstantFunction is NOT a Wolfram Language built-in; it is an ordinary
+  // undefined symbol. These tests guard that an undefined composite head stays
+  // a curried call (matching wolframscript) rather than flattening or wrongly
+  // evaluating.
   use super::*;
 
   #[test]

@@ -236,7 +236,6 @@ Piecewise,Represents a piecewise function,✅,pure,5.1,239
 Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
 Left,Symbol for left alignment,✅,pure,1.0,241
 ConstantArray,Creates an array of repeated elements,✅,pure,6.0,242
-ConstantFunction,Represents a pure function that always returns a fixed value,✅,pure,11.2,0
 Epilog,Option specifying graphics primitives drawn after the main plot,✅,none,2.0,243
 MemberQ,Checks if a list contains a value,✅,pure,1.0,244
 NormalDistribution,Represents a normal (Gaussian) probability distribution,✅,pure,6.0,245
@@ -5559,7 +5558,6 @@ ElectrostaticPDEComponent,,,,14.0,
 EmbeddedSQLEntityClass,,,,12.2,
 EmbeddedSQLExpression,,,,12.2,
 EndDialogPacket,,🚫,,3.0,
-English,,,,,
 EntityStores,Lists all currently registered entity stores,✅,pure,11.3,
 EntityType,,🚫,,13.3,
 EstimatedPointNormals,,,,13.1,
@@ -5777,7 +5775,6 @@ MaxRoots,,,,14.0,
 MenuPacket,,🚫,,3.0,
 MinDate,,,,12.1,
 MinPointSeparation,,,,13.0,
-MinimumTimeIncrement[tseries],,,,10.0,
 Missing,Represents missing data or keys,✅,pure,6.0,
 MissingValueSynthesis,,🚫,,12.3,
 MixedFractionParts,Returns the integer and fractional parts of a number,✅,pure,12.0,

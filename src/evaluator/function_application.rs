@@ -589,14 +589,6 @@ pub fn apply_function_to_arg(
         // Operator form: prepend the argument instead of appending
         let new_args = vec![arg.clone(), args[0].clone()];
         evaluate_function_call_ast(name, &new_args)
-      } else if name == "ConstantFunction" {
-        // ConstantFunction is not a built-in in wolframscript's Global
-        // context, so f[c][x] should remain as the curried unevaluated form
-        // ConstantFunction[c][x], not flatten into ConstantFunction[c, x].
-        Ok(Expr::CurriedCall {
-          func: Box::new(func.clone()),
-          args: vec![arg.clone()],
-        })
       } else {
         // A composite head h[…] applied to an argument is a curried call
         // h[…][arg] (e.g. `g[a] /@ {1, 2}` → {g[a][1], g[a][2]}), not the
