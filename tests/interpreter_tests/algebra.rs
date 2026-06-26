@@ -4416,6 +4416,25 @@ mod nsolve {
       "{{x -> 0.5}}"
     );
   }
+
+  #[test]
+  fn cube_roots_of_unity_fully_numericized() {
+    // Regression: Solve returns the complex roots of x^3 == 1 as radical
+    // forms (1, -(-1)^(1/3), (-1)^(2/3)). NSolve previously left the
+    // Times[-1, Power[-1, 1/3]] root symbolic; every root must numericize.
+    // No symbolic Power may leak into the result.
+    assert_eq!(
+      interpret("FreeQ[NSolve[x^3 == 1, x], Power]").unwrap(),
+      "True"
+    );
+    // Rounding away the last-digit float noise exposes the exact structure
+    // and ordering (ascending real part, then imaginary), matching
+    // wolframscript.
+    assert_eq!(
+      interpret("Round[x /. NSolve[x^3 == 1, x], 1/1000]").unwrap(),
+      "{-1/2 - (433*I)/500, -1/2 + (433*I)/500, 1}"
+    );
+  }
 }
 
 mod find_root {

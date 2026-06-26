@@ -246,6 +246,103 @@ fn try_nsolve_quadratic(
   }
 }
 
+/// Principal-branch complex power: (a+bi)^(c+di) = exp((c+di) * Log[a+bi]).
+fn complex_pow(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
+  let abs_z = (a * a + b * b).sqrt();
+  if abs_z == 0.0 {
+    return (0.0, 0.0);
+  }
+  let ln_abs = abs_z.ln();
+  let arg_z = b.atan2(a);
+  let re_exp = c * ln_abs - d * arg_z;
+  let im_exp = d * ln_abs + c * arg_z;
+  let mag = re_exp.exp();
+  (mag * im_exp.cos(), mag * im_exp.sin())
+}
+
+/// Numerically evaluate an exact algebraic expression to a complex `(re, im)`.
+/// Extends `try_extract_complex_float` with a `Power` rule (principal branch),
+/// so radical roots such as `-(-1)^(1/3)` — which Solve returns as
+/// `Times[-1, Power[-1, 1/3]]` — fully numericize instead of leaking a
+/// symbolic `Power` into NSolve's output.
+fn eval_complex_full(expr: &Expr) -> Option<(f64, f64)> {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  // Reuse the existing extractor for everything but Power.
+  if let Some(v) = crate::functions::math_ast::try_extract_complex_float(expr) {
+    return Some(v);
+  }
+  let pow_parts = |base: &Expr, exp: &Expr| -> Option<(f64, f64)> {
+    let (a, b) = eval_complex_full(base)?;
+    let (c, d) = eval_complex_full(exp)?;
+    Some(complex_pow(a, b, c, d))
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      pow_parts(&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => pow_parts(left, right),
+    // Re-handle products/sums/negation here too, since a Power factor would
+    // have made try_extract_complex_float bail on the whole expression.
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      let mut res = eval_complex_full(&args[0])?;
+      for arg in &args[1..] {
+        let (c, d) = eval_complex_full(arg)?;
+        res = (res.0 * c - res.1 * d, res.0 * d + res.1 * c);
+      }
+      Some(res)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
+      let mut res = (0.0, 0.0);
+      for arg in args.iter() {
+        let (c, d) = eval_complex_full(arg)?;
+        res = (res.0 + c, res.1 + d);
+      }
+      Some(res)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let (a, b) = eval_complex_full(left)?;
+      let (c, d) = eval_complex_full(right)?;
+      Some((a * c - b * d, a * d + b * c))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let (a, b) = eval_complex_full(left)?;
+      let (c, d) = eval_complex_full(right)?;
+      Some((a + c, b + d))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let (a, b) = eval_complex_full(left)?;
+      let (c, d) = eval_complex_full(right)?;
+      Some((a - c, b - d))
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (a, b) = eval_complex_full(operand)?;
+      Some((-a, -b))
+    }
+    _ => None,
+  }
+}
+
 /// Recursively convert a Solve result to numerical form.
 /// Handles nested lists and rules, converting replacement values to floats.
 fn nsolve_numerize(expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -267,10 +364,9 @@ fn nsolve_numerize(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(v) = crate::functions::math_ast::try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
       }
-      // Try complex (handles I, -I, a + b*I, etc.)
-      if let Some((re, im)) =
-        crate::functions::math_ast::try_extract_complex_float(expr)
-      {
+      // Try complex (handles I, -I, a + b*I, and radical Power roots like
+      // -(-1)^(1/3) that Solve returns as Times[-1, Power[-1, 1/3]]).
+      if let Some((re, im)) = eval_complex_full(expr) {
         if im == 0.0 {
           return Ok(Expr::Real(re));
         }
