@@ -76,7 +76,7 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  let mut expanded = expand_and_combine(&args[0]);
+  let mut expanded = fold_term_numerics(&expand_and_combine(&args[0]));
   if trig {
     // Apply trig expansion: Sin[a+b] → Sin[a]Cos[b] + Cos[a]Sin[b], etc.
     expanded = crate::functions::math_ast::trig_expand_ast(&[expanded])
@@ -955,6 +955,82 @@ pub fn multiply_terms(a: &Expr, b: &Expr) -> Expr {
 
 /// Combine multiplicative factors, merging like bases into powers.
 /// [x, x, y] → x^2 * y
+/// True for an exact/inexact numeric scalar (Integer, BigInteger, Real, or a
+/// literal Rational).
+fn is_numeric_scalar(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(args[0], Expr::Integer(_) | Expr::BigInteger(_))
+        && matches!(args[1], Expr::Integer(_) | Expr::BigInteger(_))
+    }
+    _ => false,
+  }
+}
+
+/// Post-process an expanded result: inside each additive term, fold all
+/// numeric scalar factors (Integer/Real/Rational) into one coefficient, so a
+/// value-correct-but-unnormalized monomial like `Times[-2, 15/4, x]` becomes
+/// `-15/2 x`. Only terms with two or more numeric factors are rewritten;
+/// every other term is returned byte-identical, so the canonical forms that
+/// existing Expand output relies on are preserved. This runs ONLY on Expand's
+/// own output, leaving the shared `combine_product_factors` (used by Simplify)
+/// untouched.
+fn fold_term_numerics(expr: &Expr) -> Expr {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(fold_term_numerics(left)),
+      right: Box::new(fold_term_numerics(right)),
+    },
+    Expr::FunctionCall { name, args } if name == "Plus" => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: args
+        .iter()
+        .map(fold_term_numerics)
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => negate_term(&fold_term_numerics(operand)),
+    _ if is_product(expr) => {
+      let factors = collect_multiplicative_factors(expr);
+      if factors.iter().filter(|f| is_numeric_scalar(f)).count() < 2 {
+        return expr.clone();
+      }
+      let mut coeff = Expr::Integer(1);
+      let mut rest: Vec<Expr> = Vec::new();
+      for f in &factors {
+        if is_numeric_scalar(f) {
+          coeff = crate::evaluator::evaluate_function_call_ast(
+            "Times",
+            &[coeff.clone(), f.clone()],
+          )
+          .unwrap_or_else(|_| multiply_exprs(&coeff, f));
+        } else {
+          rest.push(f.clone());
+        }
+      }
+      let mut out: Vec<Expr> = Vec::new();
+      if !matches!(coeff, Expr::Integer(1)) {
+        out.push(coeff);
+      }
+      out.extend(rest);
+      build_product(out)
+    }
+    _ => expr.clone(),
+  }
+}
+
 pub fn combine_product_factors(factors: Vec<Expr>) -> Expr {
   // Group factors by base, sum exponents
   let mut base_exps: Vec<(String, Expr, Expr)> = Vec::new(); // (sort_key, base, exponent)

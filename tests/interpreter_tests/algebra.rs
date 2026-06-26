@@ -6695,6 +6695,36 @@ mod expand_fraction_power {
   fn expand_product_power_three() {
     assert_eq!(interpret("Expand[(3*x)^3]").unwrap(), "27*x^3");
   }
+
+  #[test]
+  fn expand_rational_coefficient_folds_term_numerics() {
+    // Regression: a rational leading coefficient times a binomial power left
+    // each cross-term with an uncombined numeric product (e.g. 15*2 instead
+    // of 30). The per-term numeric fold now matches wolframscript.
+    assert_eq!(
+      interpret("Expand[15 (-1 + x)^2 / 4]").unwrap(),
+      "15/4 - (15*x)/2 + (15*x^2)/4"
+    );
+    assert_eq!(
+      interpret("Expand[15 (-1 + x)^2 / 2]").unwrap(),
+      "15/2 - 15*x + (15*x^2)/2"
+    );
+    // A single foldable cross term collapses cleanly.
+    assert_eq!(interpret("Expand[(x/2 + 1)^2]").unwrap(), "1 + x + x^2/4");
+    assert_eq!(
+      interpret("Expand[6 (x + 1/2)^2]").unwrap(),
+      "3/2 + 6*x + 6*x^2"
+    );
+    // Integer-coefficient and multivariate expansions are unchanged.
+    assert_eq!(
+      interpret("Expand[15 (-1 + x)^2]").unwrap(),
+      "15 - 30*x + 15*x^2"
+    );
+    assert_eq!(
+      interpret("Expand[(a + b + c)^2]").unwrap(),
+      "a^2 + 2*a*b + b^2 + 2*a*c + 2*b*c + c^2"
+    );
+  }
 }
 
 mod root {
