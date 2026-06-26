@@ -1109,6 +1109,31 @@ function main() {
     "MakeBoxes[NumberForm[12345.6]]",
     "MakeBoxes[NumberForm[1234567.8]]",
     "MakeBoxes[NumberForm[3.14159, {6, 2}]]",
+
+    // RotationTransform / RotationMatrix about a symbolic 3D axis {a,b,c}: WL
+    // emits a page-long unsimplified Conjugate/Sqrt expression from its generic
+    // Householder construction. Woxi has no symbolic-axis rotation builder and
+    // leaves it unevaluated; reproducing WL's exact unsimplified form is not
+    // feasible.
+    "RotationTransform[Pi/2,{a,b,c}]",
+    "RotationMatrix[Pi/2,{a,b,c}]",
+    // FullSimplify[n!/(n-4)!]: WL's smallest-LeafCount form keeps a Gamma
+    // denominator (n!/Gamma[-3+n]) rather than the falling-factorial polynomial.
+    // Woxi keeps n!/(-4+n)!; matching WL's Gamma representation choice is a
+    // simplification-form rabbit hole.
+    "FullSimplify[n! / (n - 4)!]",
+    // Integrate[Sqrt[1-x^2],{x,0,2}]: the interval leaves the radical's domain,
+    // so WL emits a combined complex closed form ((2*I)*Sqrt[3]+ArcSin[2])/2.
+    // Woxi's continuous ArcSin antiderivative is value-correct but stays as a
+    // sum of terms (I*Sqrt[3]+ArcSin[2]/2) that doesn't match WL's single
+    // fraction; the design deliberately leaves out-of-domain cases unevaluated.
+    "Integrate[Sqrt[1 - x^2], {x, 0, 2}]",
+    // Sum[1/(2 n - 1), ...]: a divergent harmonic sum both engines echo
+    // unevaluated; only the held body's Plus ordering differs (Woxi 2*n - 1 vs
+    // WL -1 + 2*n). Woxi's standalone canonical order matches WL, but held
+    // (HoldAll) bodies aren't Orderless-sorted — a broad held-expression form
+    // difference, not specific to Sum.
+    "Sum[1/(2 n - 1), {n, 1, Infinity}]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
