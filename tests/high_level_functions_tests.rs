@@ -6670,10 +6670,59 @@ mod high_level_functions_tests {
         interpret("IntegerName[-5, {\"German\", \"Ordinal\"}]").unwrap(),
         "minus fünfte"
       );
-      // German millions are not supported; the call stays unevaluated.
+      // German long-scale names (Million/Milliarde/Billion/Billiarde). The
+      // multiplier "1" agrees with the feminine noun as "eine"; the noun is
+      // singular only for a multiplier of exactly 1.
       assert_eq!(
         interpret("IntegerName[1000000, \"German\"]").unwrap(),
-        "IntegerName[1000000, German]"
+        "eine Million"
+      );
+      assert_eq!(
+        interpret("IntegerName[2000000, \"German\"]").unwrap(),
+        "zwei Millionen"
+      );
+      assert_eq!(
+        interpret("IntegerName[101000000, \"German\"]").unwrap(),
+        "ein\u{00AD}hundert\u{00AD}eine Millionen"
+      );
+      assert_eq!(
+        interpret("IntegerName[1234567, \"German\"]").unwrap(),
+        "eine Million zwei\u{00AD}hundert\u{00AD}vier\u{00AD}und\u{00AD}dreißig\u{00AD}\
+         tausend\u{00AD}fünf\u{00AD}hundert\u{00AD}sieben\u{00AD}und\u{00AD}sechzig"
+      );
+      assert_eq!(
+        interpret("IntegerName[1000000000, \"German\"]").unwrap(),
+        "eine Milliarde"
+      );
+      assert_eq!(
+        interpret("IntegerName[2002000000, \"German\"]").unwrap(),
+        "zwei Milliarden zwei Millionen"
+      );
+      assert_eq!(
+        interpret("IntegerName[1000000000000, \"German\"]").unwrap(),
+        "eine Billion"
+      );
+      assert_eq!(
+        interpret("IntegerName[1000000000000000, \"German\"]").unwrap(),
+        "eine Billiarde"
+      );
+      assert_eq!(
+        interpret("IntegerName[-1000000, \"German\"]").unwrap(),
+        "minus eine Million"
+      );
+      // Ordinal long-scale: the "-ste" suffix attaches to the last morpheme.
+      assert_eq!(
+        interpret("IntegerName[1000000, {\"German\", \"Ordinal\"}]").unwrap(),
+        "eine Millionste"
+      );
+      assert_eq!(
+        interpret("IntegerName[2000000, {\"German\", \"Ordinal\"}]").unwrap(),
+        "zwei Millionenste"
+      );
+      // At or beyond 10^18 wolframscript cannot spell German; stays unevaluated.
+      assert_eq!(
+        interpret("IntegerName[1000000000000000000, \"German\"]").unwrap(),
+        "IntegerName[1000000000000000000, German]"
       );
     }
   }

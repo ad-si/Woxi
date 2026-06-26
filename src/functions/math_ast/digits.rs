@@ -3210,24 +3210,114 @@ fn german_ordinal_suffix(word: &str) -> String {
   }
 }
 
+/// German long-scale group word (singular, plural) for the 3-digit group at
+/// index 2..=5 (10^6, 10^9, 10^12, 10^15). German uses the long scale, so the
+/// scale name alternates -illion / -illiarde every group. Index >= 6 (>=10^18)
+/// is beyond the range wolframscript spells.
+fn german_scale_word(group_idx: usize) -> Option<(&'static str, &'static str)> {
+  match group_idx {
+    2 => Some(("Million", "Millionen")),
+    3 => Some(("Milliarde", "Milliarden")),
+    4 => Some(("Billion", "Billionen")),
+    5 => Some(("Billiarde", "Billiarden")),
+    _ => None,
+  }
+}
+
+/// True for the German long-scale nouns, which take the "-ste" ordinal suffix.
+fn is_german_scale_word(w: &str) -> bool {
+  matches!(
+    w,
+    "Million"
+      | "Millionen"
+      | "Milliarde"
+      | "Milliarden"
+      | "Billion"
+      | "Billionen"
+      | "Billiarde"
+      | "Billiarden"
+  )
+}
+
+/// Spell the multiplier 1..=999 of a (feminine) long-scale noun, soft-hyphen
+/// joined. A trailing standalone "eins" becomes feminine "eine" to agree with
+/// the noun, e.g. 1 -> "eine", 101 -> "ein­hundert­eine".
+fn german_scale_count(g: u16) -> String {
+  let mut morphemes = Vec::new();
+  german_group(g, true, &mut morphemes);
+  if let Some(last) = morphemes.last_mut()
+    && last == "eins"
+  {
+    *last = "eine".to_string();
+  }
+  morphemes.join("\u{00AD}")
+}
+
+/// Spell `n` in [10^6, 10^18) using the German long scale. Scale groups read
+/// "<multiplier> <ScaleNoun>" (singular noun only when the multiplier is 1) and
+/// are space-joined; the sub-million remainder is appended as one soft-hyphen
+/// joined token. Ordinal suffixes the last morpheme of the last token.
+fn german_millions(n: u64, ordinal: bool) -> Option<String> {
+  let mut groups = [0u16; 6];
+  let mut rem = n;
+  for slot in &mut groups {
+    *slot = (rem % 1000) as u16;
+    rem /= 1000;
+  }
+  let mut tokens: Vec<String> = Vec::new();
+  for idx in (2..=5).rev() {
+    let g = groups[idx];
+    if g == 0 {
+      continue;
+    }
+    let (sing, plur) = german_scale_word(idx)?;
+    let scale = if g == 1 { sing } else { plur };
+    tokens.push(format!("{} {}", german_scale_count(g), scale));
+  }
+  let below = (groups[1] as u32) * 1000 + groups[0] as u32;
+  if below > 0 {
+    tokens.push(german_cardinal_morphemes(below)?.join("\u{00AD}"));
+  }
+  let mut out = tokens.join(" ");
+  if ordinal {
+    // The ordinal suffix attaches to the last morpheme, which is delimited by a
+    // space or soft-hyphen; long-scale nouns take "-ste", others the usual form.
+    let split = out
+      .rfind([' ', '\u{00AD}'])
+      .map(|i| i + out[i..].chars().next().unwrap().len_utf8())
+      .unwrap_or(0);
+    let last = out[split..].to_string();
+    let suffixed = if is_german_scale_word(&last) {
+      format!("{}ste", last)
+    } else {
+      german_ordinal_suffix(&last)
+    };
+    out.truncate(split);
+    out.push_str(&suffixed);
+  }
+  Some(out)
+}
+
 /// Spell `n` in German as a cardinal or ordinal. Morphemes are joined by the
 /// soft-hyphen U+00AD like wolframscript; negatives get a "minus " prefix.
-/// Returns None for |n| >= 1_000_000 (millions use irregular gendered forms).
+/// Returns None for |n| >= 10^18, which is beyond wolframscript's German range.
 fn integer_name_german(n: i128, ordinal: bool) -> Option<String> {
   let negative = n < 0;
   let abs = n.unsigned_abs();
-  if abs >= 1_000_000 {
+  if abs >= 1_000_000_000_000_000_000 {
     return None;
   }
   let body = if abs == 0 {
     if ordinal { "nullte" } else { "null" }.to_string()
-  } else {
+  } else if abs < 1_000_000 {
     let mut morphemes = german_cardinal_morphemes(abs as u32)?;
     if ordinal {
       let last = morphemes.len() - 1;
       morphemes[last] = german_ordinal_suffix(&morphemes[last]);
     }
     morphemes.join("\u{00AD}")
+  } else {
+    german_millions(abs as u64, ordinal)?
   };
   Some(if negative {
     format!("minus {}", body)
@@ -3310,7 +3400,17 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return match integer_name_german(n, want_ordinal) {
         Some(s) => Ok(Expr::String(s)),
-        None => unevaluated(),
+        None => {
+          // wolframscript spells German only below 10^18; larger values warn.
+          if n.unsigned_abs() >= 1_000_000_000_000_000_000 {
+            crate::emit_message(&format!(
+              "IntegerName::outrange: Number {} is too large for the \
+               algorithms available for German.",
+              n
+            ));
+          }
+          unevaluated()
+        }
       };
     }
     if want_ordinal {
