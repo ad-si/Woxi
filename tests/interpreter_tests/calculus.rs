@@ -938,6 +938,86 @@ mod definite_integrals {
       "E^x*(2 - 2*x + x^2)"
     );
   }
+
+  // ∫ Sqrt[a - x^2] / Sqrt[a + x^2] over an interval. Uses the continuous
+  // ArcSin/ArcSinh antiderivative so the closed form is exact. Verified
+  // against `wolframscript -code 'InputForm[Integrate[…]]'`.
+
+  #[test]
+  fn definite_sqrt_unit_semicircle() {
+    // ∫_{-1}^{1} Sqrt[1 - x^2] dx = Pi/2 (area of the unit semicircle).
+    assert_eq!(
+      interpret("Integrate[Sqrt[1 - x^2], {x, -1, 1}]").unwrap(),
+      "Pi/2"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_unit_quarter_circle() {
+    // ∫_0^1 Sqrt[1 - x^2] dx = Pi/4.
+    assert_eq!(
+      interpret("Integrate[Sqrt[1 - x^2], {x, 0, 1}]").unwrap(),
+      "Pi/4"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_radius_two_semicircle() {
+    // ∫_{-2}^{2} Sqrt[4 - x^2] dx = 2*Pi (semicircle of radius 2).
+    assert_eq!(
+      interpret("Integrate[Sqrt[4 - x^2], {x, -2, 2}]").unwrap(),
+      "2*Pi"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_radius_two_quarter_circle() {
+    // ∫_0^2 Sqrt[4 - x^2] dx = Pi (quarter circle of radius 2).
+    assert_eq!(
+      interpret("Integrate[Sqrt[4 - x^2], {x, 0, 2}]").unwrap(),
+      "Pi"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_radius_three_quarter_circle() {
+    // ∫_0^3 Sqrt[9 - x^2] dx = (9*Pi)/4.
+    assert_eq!(
+      interpret("Integrate[Sqrt[9 - x^2], {x, 0, 3}]").unwrap(),
+      "(9*Pi)/4"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_partial_interval() {
+    // ∫_{-1/2}^{1/2} Sqrt[1 - x^2] dx = Sqrt[3]/4 + Pi/6.
+    assert_eq!(
+      interpret("Integrate[Sqrt[1 - x^2], {x, -1/2, 1/2}]").unwrap(),
+      "Sqrt[3]/4 + Pi/6"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_non_monic_half_ellipse() {
+    // Non-monic radicand: ∫_{-1/2}^{1/2} Sqrt[1 - 4 x^2] dx = Pi/4
+    // (substitution u = 2x maps it to a unit quarter circle).
+    assert_eq!(
+      interpret("Integrate[Sqrt[1 - 4*x^2], {x, -1/2, 1/2}]").unwrap(),
+      "Pi/4"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_out_of_domain_unevaluated() {
+    // The radicand 1 - x^2 is negative for |x| > 1, so over [0, 2] the
+    // integrand is not real-valued throughout. Rather than emit an
+    // analytic-continuation form that diverges from wolframscript, the
+    // Sqrt-quadratic rule bails and the integral stays unevaluated.
+    assert_eq!(
+      interpret("Integrate[Sqrt[1 - x^2], {x, 0, 2}]").unwrap(),
+      "Integrate[Sqrt[1 - x^2], {x, 0, 2}]"
+    );
+  }
 }
 
 mod integrate_reciprocal_powers {

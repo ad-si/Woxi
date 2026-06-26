@@ -517,6 +517,15 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(result);
     }
 
+    // ∫_lo^hi Sqrt[a + b*x^2] dx for a monic quadratic radicand (b = ±1,
+    // positive constant a): use the continuous ArcSin/ArcSinh antiderivative
+    // so the closed form is exact (e.g. the semicircle area Pi/2).
+    if let Some(result) =
+      try_definite_sqrt_quadratic(&args[0], &var_name, lo, hi)
+    {
+      return Ok(result);
+    }
+
     // Fall back: compute indefinite integral and evaluate at bounds
     if let Some(antideriv) = integrate(&args[0], &var_name) {
       let antideriv = simplify(antideriv);
@@ -5392,6 +5401,164 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
       args: vec![arg].into(),
     };
     Some(make_divided(arcsinh, sqrt_b))
+  }
+}
+
+/// Build a *continuous* antiderivative of `Sqrt[a + b*x^2]` for a positive
+/// numeric constant term `a` and any non-zero numeric quadratic coefficient
+/// `b` (with no linear term):
+///   b < 0:  (x*Sqrt[a + b*x^2])/2 + (a*ArcSin[x*Sqrt[-b/a]])/(2*Sqrt[-b])
+///   b > 0:  (x*Sqrt[a + b*x^2])/2 + (a*ArcSinh[x*Sqrt[b/a]])/(2*Sqrt[b])
+/// Unlike wolframscript's displayed indefinite forms (which use ArcTan/ArcTanh
+/// and have a removable singularity at the radical's zeros), the ArcSin/ArcSinh
+/// forms are continuous, so substituting the integration bounds yields exact
+/// closed forms. Returns the antiderivative expression `F(var)`.
+fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
+  use crate::syntax::BinaryOperator::*;
+  let base_eval = crate::evaluator::evaluate_expr_to_expr(base)
+    .unwrap_or_else(|_| base.clone());
+  let var_expr = Expr::Identifier(var.to_string());
+  let coeff_result = crate::functions::polynomial_ast::coefficient_list_ast(&[
+    base_eval, var_expr,
+  ])
+  .ok()?;
+  let coeffs = match &coeff_result {
+    Expr::List(items) => items,
+    _ => return None,
+  };
+  // Need exactly a degree-2 polynomial: a + (linear)*x + b*x^2.
+  if coeffs.len() != 3 {
+    return None;
+  }
+  // Linear coefficient must be zero.
+  let c1_val = crate::functions::math_ast::try_eval_to_f64(&coeffs[1])?;
+  if c1_val.abs() > 1e-15 {
+    return None;
+  }
+  // The x^2 coefficient `b` must be a non-zero numeric constant.
+  let b = &coeffs[2];
+  let b_val = crate::functions::math_ast::try_eval_to_f64(b)?;
+  if b_val.abs() < 1e-15 {
+    return None;
+  }
+  let b_neg = b_val < 0.0;
+  let a = &coeffs[0]; // constant term
+  // The constant term must be a positive numeric constant so the ArcSin/ArcSinh
+  // form is real-valued and the square roots are well defined.
+  let a_val = crate::functions::math_ast::try_eval_to_f64(a)?;
+  if a_val <= 0.0 {
+    return None;
+  }
+
+  let sqrt_base = make_sqrt(base.clone());
+  let x = Expr::Identifier(var.to_string());
+  // First term: (x*Sqrt[base])/2.
+  let first = Expr::BinaryOp {
+    op: Divide,
+    left: Box::new(Expr::BinaryOp {
+      op: Times,
+      left: Box::new(x.clone()),
+      right: Box::new(sqrt_base),
+    }),
+    right: Box::new(Expr::Integer(2)),
+  };
+  // |b| for the b < 0 branch (ArcSin needs the positive coefficient).
+  let abs_b = if b_neg {
+    simplify(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(b.clone()),
+    })
+  } else {
+    b.clone()
+  };
+  // arc_arg = x * Sqrt[|b|/a]
+  let ratio = simplify(Expr::BinaryOp {
+    op: Divide,
+    left: Box::new(abs_b.clone()),
+    right: Box::new(a.clone()),
+  });
+  let arc_arg = simplify(Expr::BinaryOp {
+    op: Times,
+    left: Box::new(x),
+    right: Box::new(make_sqrt(ratio)),
+  });
+  let arc = Expr::FunctionCall {
+    name: (if b_neg { "ArcSin" } else { "ArcSinh" }).to_string(),
+    args: vec![arc_arg].into(),
+  };
+  // Second term: (a*arc) / (2*Sqrt[|b|]).
+  let denom = simplify(Expr::BinaryOp {
+    op: Times,
+    left: Box::new(Expr::Integer(2)),
+    right: Box::new(make_sqrt(abs_b)),
+  });
+  let second = make_divided(
+    Expr::BinaryOp {
+      op: Times,
+      left: Box::new(a.clone()),
+      right: Box::new(arc),
+    },
+    denom,
+  );
+  Some(Expr::BinaryOp {
+    op: Plus,
+    left: Box::new(first),
+    right: Box::new(second),
+  })
+}
+
+/// Definite integral of `Sqrt[a + b*x^2]` over `[lo, hi]` for a monic quadratic
+/// radicand with positive numeric constant `a`. Uses the continuous ArcSin /
+/// ArcSinh antiderivative so the result is an exact closed form (e.g.
+/// `Integrate[Sqrt[1 - x^2], {x, -1, 1}]` → `Pi/2`,
+/// `Integrate[Sqrt[4 - x^2], {x, -2, 2}]` → `2*Pi`).
+fn try_definite_sqrt_quadratic(
+  integrand: &Expr,
+  var: &str,
+  lo: &Expr,
+  hi: &Expr,
+) -> Option<Expr> {
+  let base = crate::functions::math_ast::is_sqrt(integrand)?.clone();
+  let antideriv = sqrt_quadratic_antiderivative(&base, var)?;
+  let antideriv =
+    crate::evaluator::evaluate_expr_to_expr(&antideriv).unwrap_or(antideriv);
+  let sub_hi = crate::syntax::substitute_variable(&antideriv, var, hi);
+  let at_hi = crate::evaluator::evaluate_expr_to_expr(&sub_hi).ok()?;
+  let sub_lo = crate::syntax::substitute_variable(&antideriv, var, lo);
+  let at_lo = crate::evaluator::evaluate_expr_to_expr(&sub_lo).ok()?;
+  if is_nonfinite_result(&at_hi) || is_nonfinite_result(&at_lo) {
+    return None;
+  }
+  let diff = simplify(Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(at_hi),
+    right: Box::new(at_lo),
+  });
+  let result = crate::evaluator::evaluate_expr_to_expr(&diff).unwrap_or(diff);
+  // A complex result means the radicand goes negative somewhere on [lo, hi]
+  // (the integrand isn't real over the whole interval). Bail so the general
+  // machinery (or an unevaluated result) handles that case rather than
+  // emitting an analytic-continuation form that diverges from wolframscript.
+  if expr_contains_imaginary(&result) {
+    return None;
+  }
+  Some(result)
+}
+
+/// True if `expr` structurally contains the imaginary unit `I` or a `Complex`
+/// head (used to reject out-of-domain Sqrt-quadratic definite integrals).
+fn expr_contains_imaginary(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(s) | Expr::Constant(s) => s == "I",
+    Expr::FunctionCall { name, args } => {
+      name == "Complex" || args.iter().any(expr_contains_imaginary)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_imaginary(left) || expr_contains_imaginary(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_imaginary(operand),
+    Expr::List(items) => items.iter().any(expr_contains_imaginary),
+    _ => false,
   }
 }
 

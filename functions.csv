@@ -49,7 +49,7 @@ And,Checks if all conditions are true,✅,pure,1.0,50
 Dot,Computes the dot product or matrix multiplication,✅,pure,1.0,51
 Exp,Returns the exponential function e^x,✅,pure,1.0,52
 MatrixForm,Displays a matrix or list in a two-dimensional grid format,✅,pure,1.0,53
-Integrate,Computes the indefinite integral of an expression,✅,pure,1.0,54
+Integrate,Computes the definite or indefinite integral of an expression,✅,pure,1.0,54
 Print,Outputs a string to the console,✅,effectful,1.0,55
 LessEqual,Checks if one value is less than or equal to another,✅,pure,1.0,57
 Log,Returns the natural logarithm of a number,✅,pure,1.0,58
