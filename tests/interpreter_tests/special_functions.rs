@@ -2707,6 +2707,37 @@ mod cases {
       r#"0.45002283874718263"#,
     );
   }
+  // With an exact integer / symbolic argument, the one-argument Kelvin
+  // functions normalize to the two-argument order-0 form and stay symbolic,
+  // matching wolframscript (e.g. KelvinBer[2] -> KelvinBer[0, 2]).
+  #[test]
+  fn kelvin_ber_one_arg_normalizes_to_order_zero() {
+    assert_case(r#"KelvinBer[2]"#, r#"KelvinBer[0, 2]"#);
+    assert_case(r#"KelvinBer[x]"#, r#"KelvinBer[0, x]"#);
+  }
+  #[test]
+  fn kelvin_bei_one_arg_normalizes_to_order_zero() {
+    assert_case(r#"KelvinBei[2]"#, r#"KelvinBei[0, 2]"#);
+    assert_case(r#"KelvinBei[x]"#, r#"KelvinBei[0, x]"#);
+  }
+  #[test]
+  fn kelvin_ker_one_arg_normalizes_to_order_zero() {
+    assert_case(r#"KelvinKer[3]"#, r#"KelvinKer[0, 3]"#);
+    assert_case(r#"KelvinKer[x]"#, r#"KelvinKer[0, x]"#);
+  }
+  #[test]
+  fn kelvin_kei_one_arg_normalizes_to_order_zero() {
+    assert_case(r#"KelvinKei[3]"#, r#"KelvinKei[0, 3]"#);
+    assert_case(r#"KelvinKei[x]"#, r#"KelvinKei[0, x]"#);
+  }
+  // Exact-argument two-argument Kelvin calls stay symbolic (no premature
+  // numericization), matching wolframscript.
+  #[test]
+  fn kelvin_two_arg_exact_stays_symbolic() {
+    assert_case(r#"KelvinBer[1, 2]"#, r#"KelvinBer[1, 2]"#);
+    assert_case(r#"KelvinBer[0, 2]"#, r#"KelvinBer[0, 2]"#);
+    assert_case(r#"KelvinBei[2, 5]"#, r#"KelvinBei[2, 5]"#);
+  }
   #[test]
   fn spherical_bessel_j() {
     assert_case(r#"SphericalBesselJ[1, 5.2]"#, r#"-0.12277149950007797"#);

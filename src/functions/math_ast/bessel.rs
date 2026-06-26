@@ -1566,7 +1566,11 @@ pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Real(f) if *f > 0.0 => Some(*f),
       _ => None,
     };
-    if let (Some(nu), Some(x)) = (nu, x) {
+    // Only numericize when an argument is inexact (a Real). With exact integer
+    // / symbolic arguments wolframscript keeps the symbolic two-argument form.
+    let any_real =
+      matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
+    if any_real && let (Some(nu), Some(x)) = (nu, x) {
       let (ber, _) = ber_bei_nu_series(nu, x);
       return Ok(Expr::Real(ber));
     }
@@ -1587,9 +1591,10 @@ pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (rr, ri) = ber_series_complex(re, im);
     return Ok(build_complex_float_expr(rr, ri));
   }
+  // KelvinBer[z] = KelvinBer[0, z] for exact/symbolic z (matches wolframscript).
   Ok(Expr::FunctionCall {
     name: "KelvinBer".to_string(),
-    args: args.to_vec().into(),
+    args: vec![Expr::Integer(0), args[0].clone()].into(),
   })
 }
 
@@ -1611,7 +1616,11 @@ pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Real(f) if *f > 0.0 => Some(*f),
       _ => None,
     };
-    if let (Some(nu), Some(x)) = (nu, x) {
+    // Only numericize when an argument is inexact (a Real). With exact integer
+    // / symbolic arguments wolframscript keeps the symbolic two-argument form.
+    let any_real =
+      matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
+    if any_real && let (Some(nu), Some(x)) = (nu, x) {
       let (_, bei) = ber_bei_nu_series(nu, x);
       return Ok(Expr::Real(bei));
     }
@@ -1632,9 +1641,10 @@ pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (rr, ri) = bei_series_complex(re, im);
     return Ok(build_complex_float_expr(rr, ri));
   }
+  // KelvinBei[z] = KelvinBei[0, z] for exact/symbolic z (matches wolframscript).
   Ok(Expr::FunctionCall {
     name: "KelvinBei".to_string(),
-    args: args.to_vec().into(),
+    args: vec![Expr::Integer(0), args[0].clone()].into(),
   })
 }
 
@@ -1848,7 +1858,12 @@ pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Real(f) if *f > 0.0 => Some(*f),
       _ => None,
     };
-    if let (Some(nu), Some(x)) = (nu, x)
+    // Only numericize when an argument is inexact (a Real). With exact integer
+    // / symbolic arguments wolframscript keeps the symbolic two-argument form.
+    let any_real =
+      matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
+    if any_real
+      && let (Some(nu), Some(x)) = (nu, x)
       && let Some((ker, _)) = ker_kei_nu_series(nu, x)
     {
       return Ok(Expr::Real(ker));
@@ -1870,9 +1885,10 @@ pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (rr, ri) = ker_series_complex(re, im);
     return Ok(build_complex_float_expr(rr, ri));
   }
+  // KelvinKer[z] = KelvinKer[0, z] for exact/symbolic z (matches wolframscript).
   Ok(Expr::FunctionCall {
     name: "KelvinKer".to_string(),
-    args: args.to_vec().into(),
+    args: vec![Expr::Integer(0), args[0].clone()].into(),
   })
 }
 
@@ -1894,7 +1910,12 @@ pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Real(f) if *f > 0.0 => Some(*f),
       _ => None,
     };
-    if let (Some(nu), Some(x)) = (nu, x)
+    // Only numericize when an argument is inexact (a Real). With exact integer
+    // / symbolic arguments wolframscript keeps the symbolic two-argument form.
+    let any_real =
+      matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
+    if any_real
+      && let (Some(nu), Some(x)) = (nu, x)
       && let Some((_, kei)) = ker_kei_nu_series(nu, x)
     {
       return Ok(Expr::Real(kei));
@@ -1916,8 +1937,9 @@ pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (rr, ri) = kei_series_complex(re, im);
     return Ok(build_complex_float_expr(rr, ri));
   }
+  // KelvinKei[z] = KelvinKei[0, z] for exact/symbolic z (matches wolframscript).
   Ok(Expr::FunctionCall {
     name: "KelvinKei".to_string(),
-    args: args.to_vec().into(),
+    args: vec![Expr::Integer(0), args[0].clone()].into(),
   })
 }
