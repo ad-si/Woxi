@@ -54,6 +54,69 @@ fn is_inexact_number(expr: &Expr) -> bool {
   contains_real(expr) && try_extract_complex_float(expr).is_some()
 }
 
+/// RootOfUnityQ[z]: True iff `z` is exactly a root of unity, i.e. `z^n == 1`
+/// for some positive integer `n`. Inexact (machine-precision) inputs such as
+/// `1.0` and non-numeric inputs such as `x` are always False, matching
+/// wolframscript — only exact algebraic numbers on the unit circle qualify.
+///
+/// A candidate order is located numerically on the unit circle and then
+/// confirmed exactly with `PossibleZeroQ[z^n - 1]`, so unit-modulus numbers
+/// whose argument is an irrational multiple of `2 Pi` (e.g. `3/5 + 4/5 I`)
+/// correctly return False.
+fn root_of_unity_q(z: &Expr) -> bool {
+  use crate::functions::math_ast::try_extract_complex_float;
+  // Inexact inputs are never roots of unity.
+  if contains_real(z) {
+    return false;
+  }
+  // Numeric complex value via N[z]; non-numeric inputs (symbols) → False.
+  let n_call = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![z.clone()].into(),
+  };
+  let num = match evaluate_expr_to_expr(&n_call) {
+    Ok(v) => v,
+    Err(_) => return false,
+  };
+  let (re, im) = match try_extract_complex_float(&num) {
+    Some(v) => v,
+    None => return false,
+  };
+  // Roots of unity lie on the unit circle.
+  let mag2 = re * re + im * im;
+  if (mag2 - 1.0).abs() > 1e-9 {
+    return false;
+  }
+  // Search for a candidate order n with z^n ≈ 1 (tight tolerance so an
+  // irrational angle never matches within the bound), then verify exactly.
+  const MAX_ORDER: usize = 10000;
+  let (mut pr, mut pi) = (1.0_f64, 0.0_f64);
+  for n in 1..=MAX_ORDER {
+    let nr = pr * re - pi * im;
+    let ni = pr * im + pi * re;
+    pr = nr;
+    pi = ni;
+    if (pr - 1.0).abs() < 1e-9 && pi.abs() < 1e-9 {
+      // Candidate order n found; confirm exactly with PossibleZeroQ[z^n - 1].
+      let zn = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![z.clone(), Expr::Integer(n as i128)].into(),
+      };
+      let diff = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![zn, Expr::Integer(-1)].into(),
+      };
+      if let Ok(result) = crate::functions::predicate_ast::possible_zero_q_ast(
+        std::slice::from_ref(&diff),
+      ) && matches!(&result, Expr::Identifier(s) if s == "True")
+      {
+        return true;
+      }
+    }
+  }
+  false
+}
+
 /// Mirror of the same-family rule in core_eval's Comparison handler, but
 /// for Inequality's string operator names. Returns true iff the chain
 /// should be split into pairwise `&&`.
@@ -266,6 +329,12 @@ pub fn dispatch_predicate_functions(
     // algebraic number whose minimal polynomial over the rationals is monic
     // (leading coefficient ±1). MinimalPolynomial returns the primitive
     // integer polynomial, so the test reduces to a unit leading coefficient.
+    "RootOfUnityQ" if args.len() == 1 => {
+      let b = root_of_unity_q(&args[0]);
+      return Some(Ok(Expr::Identifier(
+        if b { "True" } else { "False" }.to_string(),
+      )));
+    }
     "AlgebraicIntegerQ" if args.len() == 1 => {
       let false_result = || Some(Ok(Expr::Identifier("False".to_string())));
       // Inexact (machine-number) inputs are never algebraic integers.

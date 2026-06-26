@@ -3836,7 +3836,7 @@ MinColorDistance,,,,10.0,3947
 PerfectNumber,Gives the nth perfect number,✅,pure,10.4,3947
 PermutationSupport,Elements moved by a permutation,✅,1,8.0,3947
 RepairMesh,,,,11.0,3947
-RootOfUnityQ,,,,6.0,3947
+RootOfUnityQ,Tests whether a number is exactly a root of unity,✅,pure,6.0,3947
 SystemsModelOrder,,🚫,,8.0,3947
 TemplateExpression,,,,10.0,3947
 TimeSeriesInvertibility,,🚫,,9.0,3947

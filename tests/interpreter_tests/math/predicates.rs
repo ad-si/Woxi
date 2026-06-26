@@ -1590,6 +1590,47 @@ mod cases {
     );
   }
   #[test]
+  fn root_of_unity_q_true_cases() {
+    // Exact roots of unity of various orders.
+    assert_case(r#"RootOfUnityQ[1]"#, r#"True"#);
+    assert_case(r#"RootOfUnityQ[-1]"#, r#"True"#);
+    assert_case(r#"RootOfUnityQ[I]"#, r#"True"#);
+    assert_case(r#"RootOfUnityQ[-I]"#, r#"True"#);
+    assert_case(r#"RootOfUnityQ[(-1)^(1/3)]"#, r#"True"#);
+    assert_case(r#"RootOfUnityQ[(-1)^(2/7)]"#, r#"True"#);
+    assert_case(r#"RootOfUnityQ[E^(2 Pi I/5)]"#, r#"True"#);
+    assert_case(r#"RootOfUnityQ[Exp[Pi I/4]]"#, r#"True"#);
+    // 8th root written as an exact algebraic number on the unit circle.
+    assert_case(r#"RootOfUnityQ[Sqrt[2]/2 + I Sqrt[2]/2]"#, r#"True"#);
+    // Primitive cube root -1/2 + Sqrt[3]/2 I.
+    assert_case(r#"RootOfUnityQ[-1/2 + Sqrt[3]/2 I]"#, r#"True"#);
+  }
+
+  #[test]
+  fn root_of_unity_q_false_cases() {
+    // Off the unit circle.
+    assert_case(r#"RootOfUnityQ[0]"#, r#"False"#);
+    assert_case(r#"RootOfUnityQ[2]"#, r#"False"#);
+    assert_case(r#"RootOfUnityQ[1/2]"#, r#"False"#);
+    assert_case(r#"RootOfUnityQ[1 + I]"#, r#"False"#);
+    assert_case(r#"RootOfUnityQ[Pi]"#, r#"False"#);
+    // On the unit circle but with an irrational multiple of 2 Pi argument,
+    // so not a root of unity.
+    assert_case(r#"RootOfUnityQ[3/5 + 4/5 I]"#, r#"False"#);
+    assert_case(r#"RootOfUnityQ[E^(I)]"#, r#"False"#);
+    // Inexact and non-numeric inputs are always False.
+    assert_case(r#"RootOfUnityQ[1.0]"#, r#"False"#);
+    assert_case(r#"RootOfUnityQ[x]"#, r#"False"#);
+  }
+
+  #[test]
+  fn root_of_unity_q_wrong_arity_stays_unevaluated() {
+    // Wrong arity echoes unevaluated (with a RootOfUnityQ::argx message),
+    // matching wolframscript.
+    assert_case(r#"RootOfUnityQ[a, b]"#, r#"RootOfUnityQ[a, b]"#);
+  }
+
+  #[test]
   fn equivalent_1() {
     assert_case(r#"Equivalent[True, True, False]"#, r#"False"#);
   }

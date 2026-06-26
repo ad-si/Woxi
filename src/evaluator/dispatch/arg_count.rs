@@ -952,6 +952,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PrimePi" => Some((1, 1)),
     "PrimePowerQ" => Some((1, 1)),
     "PrimeQ" => Some((1, 2)),
+    "RootOfUnityQ" => Some((1, 1)),
     "PrimeZetaP" => Some((1, 1)),
     "PrimitiveRoot" => Some((1, 2)),
     "PrimitiveRootList" => Some((1, 1)),
