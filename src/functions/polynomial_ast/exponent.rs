@@ -120,6 +120,22 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Exponent expects 2 or 3 arguments".into(),
     ));
   }
+
+  // SeriesData input: reduce via `Normal` first so the polynomial path can
+  // measure its degree (Exponent[Series[Exp[x],{x,0,5}],x] -> 5), matching
+  // wolframscript.
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "SeriesData"
+  {
+    let normalized = crate::evaluator::evaluate_function_call_ast(
+      "Normal",
+      &[args[0].clone()],
+    )?;
+    let mut new_args = args.to_vec();
+    new_args[0] = normalized;
+    return exponent_ast(&new_args);
+  }
+
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
     _ => {

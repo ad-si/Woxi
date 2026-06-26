@@ -73,6 +73,29 @@ mod exponent {
     assert_eq!(interpret("Exponent[x^2 + 3*x + 2, x]").unwrap(), "2");
   }
 
+  // Exponent reduces a SeriesData to its polynomial first, so it reports the
+  // series truncation degree (and Min reports the lowest order).
+  #[test]
+  fn from_series_data() {
+    assert_eq!(
+      interpret("Exponent[Series[Exp[x], {x, 0, 5}], x]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Exponent[Series[Sin[x], {x, 0, 7}], x]").unwrap(),
+      "7"
+    );
+    // Sin starts at x^1, so Min gives 1.
+    assert_eq!(
+      interpret("Exponent[Series[Sin[x], {x, 0, 7}], x, Min]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Exponent[SeriesData[x, 0, {1, 2, 3}, 0, 3, 1], x]").unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn constant_exponent() {
     assert_eq!(interpret("Exponent[5, x]").unwrap(), "0");
