@@ -7312,6 +7312,23 @@ mod function_expand {
     assert_eq!(interpret("FunctionExpand[Sinc[x]]").unwrap(), "Sin[x]/x");
   }
 
+  // LogisticSigmoid[x] -> 1/(1 + E^(-x)).
+  #[test]
+  fn logistic_sigmoid() {
+    assert_eq!(
+      interpret("FunctionExpand[LogisticSigmoid[x]]").unwrap(),
+      "(1 + E^(-x))^(-1)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[LogisticSigmoid[2 x]]").unwrap(),
+      "(1 + E^(-2*x))^(-1)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[LogisticSigmoid[a + b]]").unwrap(),
+      "(1 + E^(-a - b))^(-1)"
+    );
+  }
+
   #[test]
   fn chebyshev_t() {
     assert_eq!(

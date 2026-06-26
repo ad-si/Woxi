@@ -200,6 +200,15 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       args[0].clone(),
     )),
 
+    // LogisticSigmoid[x] → 1/(1 + E^(-x)), i.e. (1 + E^(-x))^(-1).
+    "LogisticSigmoid" if args.len() == 1 => Some(mk_power(
+      mk_plus(
+        mk_int(1),
+        mk_power(mk_id("E"), mk_times(mk_int(-1), args[0].clone())),
+      ),
+      mk_int(-1),
+    )),
+
     // ChebyshevT[n, x] → Cos[n * ArcCos[x]]
     "ChebyshevT" if args.len() == 2 => Some(mk_call(
       "Cos",
