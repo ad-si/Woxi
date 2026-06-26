@@ -3081,6 +3081,161 @@ fn integer_name_words(n: i128) -> Option<String> {
   })
 }
 
+/// German word for the units digit 1-9. `eins_ok` chooses the standalone
+/// "eins" over the compound stem "ein" (used before "und"/"hundert"/"tausend").
+fn german_unit(d: u8, eins_ok: bool) -> &'static str {
+  match d {
+    1 => {
+      if eins_ok {
+        "eins"
+      } else {
+        "ein"
+      }
+    }
+    2 => "zwei",
+    3 => "drei",
+    4 => "vier",
+    5 => "fünf",
+    6 => "sechs",
+    7 => "sieben",
+    8 => "acht",
+    9 => "neun",
+    _ => "",
+  }
+}
+
+/// German word for 10-19 (each an atomic morpheme).
+fn german_teen(r: u8) -> &'static str {
+  match r {
+    10 => "zehn",
+    11 => "elf",
+    12 => "zwölf",
+    13 => "dreizehn",
+    14 => "vierzehn",
+    15 => "fünfzehn",
+    16 => "sechzehn",
+    17 => "siebzehn",
+    18 => "achtzehn",
+    19 => "neunzehn",
+    _ => "",
+  }
+}
+
+/// German word for a multiple of ten 20-90 (atomic morpheme).
+fn german_ten(t: u8) -> &'static str {
+  match t {
+    20 => "zwanzig",
+    30 => "dreißig",
+    40 => "vierzig",
+    50 => "fünfzig",
+    60 => "sechzig",
+    70 => "siebzig",
+    80 => "achtzig",
+    90 => "neunzig",
+    _ => "",
+  }
+}
+
+/// Push the morphemes for 1..=99 onto `out`. `eins_ok` lets a trailing
+/// standalone 1 spell as "eins" (otherwise "ein").
+fn german_below_100(r: u8, eins_ok: bool, out: &mut Vec<String>) {
+  if r == 0 {
+    return;
+  }
+  if r <= 9 {
+    out.push(german_unit(r, eins_ok).to_string());
+  } else if r <= 19 {
+    out.push(german_teen(r).to_string());
+  } else if r.is_multiple_of(10) {
+    out.push(german_ten(r).to_string());
+  } else {
+    // e.g. 21 → ein­und­zwanzig (unit before "und" is always "ein").
+    let u = r % 10;
+    out.push(german_unit(u, false).to_string());
+    out.push("und".to_string());
+    out.push(german_ten(r - u).to_string());
+  }
+}
+
+/// Push the morphemes for a 1..=999 group onto `out`.
+fn german_group(g: u16, eins_ok: bool, out: &mut Vec<String>) {
+  let h = (g / 100) as u8;
+  let r = (g % 100) as u8;
+  if h > 0 {
+    out.push(german_unit(h, false).to_string());
+    out.push("hundert".to_string());
+  }
+  german_below_100(r, eins_ok, out);
+}
+
+/// German cardinal morphemes for 0 < n < 1_000_000.
+fn german_cardinal_morphemes(n: u32) -> Option<Vec<String>> {
+  if n == 0 || n >= 1_000_000 {
+    return None;
+  }
+  let mut out = Vec::new();
+  let th = (n / 1000) as u16;
+  let un = (n % 1000) as u16;
+  if th > 0 {
+    german_group(th, false, &mut out);
+    out.push("tausend".to_string());
+  }
+  if un > 0 {
+    german_group(un, true, &mut out);
+  }
+  Some(out)
+}
+
+/// Transform the final cardinal morpheme into its ordinal form. Units 1, 3, 7,
+/// 8 are irregular (erste/dritte/siebte/achte); 1-19 take "-te", multiples of
+/// ten and hundert/tausend take "-ste".
+fn german_ordinal_suffix(word: &str) -> String {
+  match word {
+    "eins" | "ein" => "erste".to_string(),
+    "zwei" => "zweite".to_string(),
+    "drei" => "dritte".to_string(),
+    "vier" => "vierte".to_string(),
+    "fünf" => "fünfte".to_string(),
+    "sechs" => "sechste".to_string(),
+    "sieben" => "siebte".to_string(),
+    "acht" => "achte".to_string(),
+    "neun" => "neunte".to_string(),
+    "zehn" => "zehnte".to_string(),
+    "elf" => "elfte".to_string(),
+    "zwölf" => "zwölfte".to_string(),
+    "zwanzig" | "dreißig" | "vierzig" | "fünfzig" | "sechzig" | "siebzig"
+    | "achtzig" | "neunzig" | "hundert" | "tausend" => format!("{}ste", word),
+    // Teens (dreizehn..neunzehn).
+    _ => format!("{}te", word),
+  }
+}
+
+/// Spell `n` in German as a cardinal or ordinal. Morphemes are joined by the
+/// soft-hyphen U+00AD like wolframscript; negatives get a "minus " prefix.
+/// Returns None for |n| >= 1_000_000 (millions use irregular gendered forms).
+fn integer_name_german(n: i128, ordinal: bool) -> Option<String> {
+  let negative = n < 0;
+  let abs = n.unsigned_abs();
+  if abs >= 1_000_000 {
+    return None;
+  }
+  let body = if abs == 0 {
+    if ordinal { "nullte" } else { "null" }.to_string()
+  } else {
+    let mut morphemes = german_cardinal_morphemes(abs as u32)?;
+    if ordinal {
+      let last = morphemes.len() - 1;
+      morphemes[last] = german_ordinal_suffix(&morphemes[last]);
+    }
+    morphemes.join("\u{00AD}")
+  };
+  Some(if negative {
+    format!("minus {}", body)
+  } else {
+    body
+  })
+}
+
 pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -3136,15 +3291,27 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let mut want_ordinal = false;
     let mut want_words = false;
+    let mut german = false;
     for tok in &tokens {
       match *tok {
         "Ordinal" => want_ordinal = true,
         "Words" => want_words = true,
-        // English is the only language Woxi can spell; "Cardinal" is the
-        // default. Anything else (e.g. "German") is unsupported.
+        "German" => german = true,
+        // English and German are the spellable languages; "Cardinal" is the
+        // default. Anything else is unsupported.
         "English" | "Cardinal" => {}
         _ => return unevaluated(),
       }
+    }
+    if german {
+      // German "Words" form is not supported; only cardinal and ordinal.
+      if want_words {
+        return unevaluated();
+      }
+      return match integer_name_german(n, want_ordinal) {
+        Some(s) => Ok(Expr::String(s)),
+        None => unevaluated(),
+      };
     }
     if want_ordinal {
       return Ok(Expr::String(cardinal_to_ordinal(&cardinal)));

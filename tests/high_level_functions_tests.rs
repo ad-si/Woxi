@@ -6653,10 +6653,27 @@ mod high_level_functions_tests {
         interpret("IntegerName[15, {\"English\"}]").unwrap(),
         "fifteen"
       );
-      // A language Woxi cannot spell leaves the expression unevaluated.
+      // German cardinal and ordinal names (morphemes joined by U+00AD).
       assert_eq!(
         interpret("IntegerName[15, {\"German\", \"Ordinal\"}]").unwrap(),
-        "IntegerName[15, {German, Ordinal}]"
+        "fünfzehnte"
+      );
+      assert_eq!(
+        interpret("IntegerName[21, \"German\"]").unwrap(),
+        "ein\u{00AD}und\u{00AD}zwanzig"
+      );
+      assert_eq!(
+        interpret("IntegerName[1234, {\"German\", \"Ordinal\"}]").unwrap(),
+        "ein\u{00AD}tausend\u{00AD}zwei\u{00AD}hundert\u{00AD}vier\u{00AD}und\u{00AD}dreißigste"
+      );
+      assert_eq!(
+        interpret("IntegerName[-5, {\"German\", \"Ordinal\"}]").unwrap(),
+        "minus fünfte"
+      );
+      // German millions are not supported; the call stays unevaluated.
+      assert_eq!(
+        interpret("IntegerName[1000000, \"German\"]").unwrap(),
+        "IntegerName[1000000, German]"
       );
     }
   }

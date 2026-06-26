@@ -10042,13 +10042,8 @@ fn escape_string_for_input_form(s: &str) -> String {
           i += 2;
           continue;
         }
-        // Literal backslash (\\) — keep as \\
-        '\\' => {
-          escaped.push_str("\\\\");
-          i += 2;
-          continue;
-        }
-        // Any other \X — escape the backslash
+        // Any other backslash (including a run of backslashes) — escape each
+        // one individually, so `\\` becomes `\\\\` like wolframscript.
         _ => {
           escaped.push_str("\\\\");
         }
@@ -10779,6 +10774,10 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Vee" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{22C1} ")
+    }
+    Expr::FunctionCall { name, args } if name == "Tilde" && args.len() >= 2 => {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{223C} ")
     }
     Expr::FunctionCall { name, args } if name == "Del" && args.len() == 1 => {
       format!("\u{2207}{}", expr_to_input_form(&args[0]))

@@ -1993,6 +1993,11 @@ mod circle_times {
       interpret("Tilde[a, b, c]").unwrap(),
       "a \u{223C} b \u{223C} c"
     );
+    // InputForm renders the same infix operator (not the function call).
+    assert_eq!(
+      interpret("ToString[Tilde[a, b], InputForm]").unwrap(),
+      "a \u{223C} b"
+    );
   }
 }
 

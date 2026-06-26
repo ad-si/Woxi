@@ -1498,7 +1498,7 @@ TotalLayer,Neural network total layer,✅,pure,11.0,1518
 ParameterMixtureDistribution,Mixture distribution with parameterized components,✅,pure,8.0,1519
 SyntaxInformation,Syntax information for a symbol,✅,pure,6.0,1520
 Failure,Symbolic failure object,✅,pure,10.0,1522
-IntegerName,"Returns the English name of an integer; IntegerName[n;""Ordinal""] gives the ordinal name; IntegerName[n;""Words""] spells out every group fully",✅,pure,10.0,1522
+IntegerName,"Returns the English or German name of an integer; IntegerName[n;""Ordinal""] gives the ordinal name; IntegerName[n;""Words""] spells out every group fully",✅,pure,10.0,1522
 LetterNumber,Get the position of a letter in the English alphabet,✅,pure,10.1,1524
 TimeValue,Time value of money computation,✅,pure,8.0,1524
 DedekindEta,Dedekind eta modular function,✅,pure,3.0,1525
