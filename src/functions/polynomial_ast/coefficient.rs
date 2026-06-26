@@ -39,6 +39,21 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // SeriesData input: reduce via `Normal` first so the ordinary polynomial
+  // path can extract the coefficient (Coefficient[Series[Exp[x],{x,0,5}],x,3]
+  // -> 1/6), matching wolframscript.
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "SeriesData"
+  {
+    let normalized = crate::evaluator::evaluate_function_call_ast(
+      "Normal",
+      &[args[0].clone()],
+    )?;
+    let mut new_args = args.to_vec();
+    new_args[0] = normalized;
+    return coefficient_ast(&new_args);
+  }
+
   // Monomial form: Coefficient[expr, x^n] → Coefficient[expr, x, n].
   // Only rewrite when no explicit exponent was passed as the 3rd arg.
   if args.len() == 2

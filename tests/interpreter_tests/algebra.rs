@@ -142,6 +142,36 @@ mod coefficient {
     assert_eq!(interpret("Coefficient[x^2 + 3*x + 2, x, 0]").unwrap(), "2");
   }
 
+  // Coefficient extracts from a SeriesData by reducing it to its polynomial
+  // first (Normal): the x^k coefficient, or 0 past the truncation order.
+  #[test]
+  fn from_series_data() {
+    assert_eq!(
+      interpret("Coefficient[Series[Exp[x], {x, 0, 5}], x, 3]").unwrap(),
+      "1/6"
+    );
+    assert_eq!(
+      interpret("Coefficient[Series[Sin[x], {x, 0, 7}], x, 5]").unwrap(),
+      "1/120"
+    );
+    assert_eq!(
+      interpret("Coefficient[Series[1/(1 - x), {x, 0, 5}], x, 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "Coefficient[SeriesData[x, 0, {1, 1, 1/2, 1/6}, 0, 4, 1], x, 2]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+    // Past the truncation order the coefficient is 0.
+    assert_eq!(
+      interpret("Coefficient[Series[Exp[x], {x, 0, 5}], x, 10]").unwrap(),
+      "0"
+    );
+  }
+
   #[test]
   fn default_power_is_one() {
     assert_eq!(interpret("Coefficient[x^2 + 3*x + 2, x]").unwrap(), "3");
