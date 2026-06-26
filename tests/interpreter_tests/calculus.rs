@@ -2462,6 +2462,47 @@ mod limit {
     assert_eq!(interpret("Limit[1/n!, n -> Infinity]").unwrap(), "0");
   }
 
+  // HarmonicNumber[n] at +Infinity is replaced by its asymptotic expansion
+  // (Log[n] + EulerGamma + 1/(2n) - 1/(12 n^2) + …) so the limit resolves
+  // symbolically. This also prevents a hang: the numeric fallback would
+  // otherwise sum HarmonicNumber at a probe of n = 10^6 (astronomically slow).
+  #[test]
+  fn limit_harmonic_number_asymptotic() {
+    // H_n - Log[n] -> EulerGamma.
+    assert_eq!(
+      interpret("Limit[HarmonicNumber[n] - Log[n], n -> Infinity]").unwrap(),
+      "EulerGamma"
+    );
+    // The 1/(2n) term gives n (H_n - Log[n] - EulerGamma) -> 1/2.
+    assert_eq!(
+      interpret(
+        "Limit[n (HarmonicNumber[n] - Log[n] - EulerGamma), n -> Infinity]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+    // The -1/(12 n^2) term gives the next order -> -1/12.
+    assert_eq!(
+      interpret(
+        "Limit[n^2 (HarmonicNumber[n] - Log[n] - EulerGamma - 1/(2 n)), \
+         n -> Infinity]"
+      )
+      .unwrap(),
+      "-1/12"
+    );
+    // H_n itself still diverges, and its reciprocal decays.
+    assert_eq!(
+      interpret("Limit[HarmonicNumber[n], n -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[1/HarmonicNumber[n], n -> Infinity]").unwrap(),
+      "0"
+    );
+    // The exact value at a finite integer is unaffected.
+    assert_eq!(interpret("HarmonicNumber[10]").unwrap(), "7381/2520");
+  }
+
   // Product 0 * Infinity at a finite point: the L'Hopital rewrite must use the
   // 0/0 orientation (Log[2-x]/Cot[Pi x/2]) — the Infinity/Infinity orientation
   // differentiates Tan into ever-larger expressions that never resolve. This

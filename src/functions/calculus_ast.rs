@@ -8758,6 +8758,142 @@ fn contains_explosive_of_var(expr: &Expr, var: &str) -> bool {
   }
 }
 
+/// True if `expr` contains a `HarmonicNumber[…]` whose argument depends on
+/// `var`. Used both to skip such expressions during cheap probes and to drive
+/// the asymptotic rewrite below.
+fn contains_harmonic_of_var(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (name.as_str() == "HarmonicNumber"
+        && args.iter().any(|a| !is_constant_wrt(a, var)))
+        || args.iter().any(|a| contains_harmonic_of_var(a, var))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_harmonic_of_var(left, var)
+        || contains_harmonic_of_var(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => contains_harmonic_of_var(operand, var),
+    Expr::List(items) => items.iter().any(|a| contains_harmonic_of_var(a, var)),
+    _ => false,
+  }
+}
+
+/// True when the argument `g` of a `HarmonicNumber[g]` tends to +Infinity as
+/// `var -> +Infinity` (so its asymptotic expansion is valid). Confirmed with a
+/// cheap two-point probe — `g` is a plain expression here (no HarmonicNumber /
+/// Factorial of `var`, which are excluded), so probing it is safe and fast.
+fn harmonic_arg_tends_to_pos_inf(g: &Expr, var: &str) -> bool {
+  if is_constant_wrt(g, var)
+    || contains_explosive_of_var(g, var)
+    || contains_harmonic_of_var(g, var)
+  {
+    return false;
+  }
+  let probe = |v: i128| -> Option<f64> {
+    let s = crate::syntax::substitute_variable(g, var, &Expr::Integer(v));
+    crate::evaluator::evaluate_expr_to_expr(&s)
+      .ok()
+      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(&e))
+  };
+  matches!((probe(1000), probe(1_000_000)), (Some(a), Some(b)) if b > a && b > 1000.0)
+}
+
+/// The asymptotic expansion of `HarmonicNumber[g]` for large `g`:
+///   Log[g] + EulerGamma + 1/(2 g) - 1/(12 g^2) + 1/(120 g^4).
+/// Enough Euler–Maclaurin terms to resolve the common `n`-, `n^2`-scaled
+/// limits exactly (matching wolframscript).
+fn harmonic_asymptotic(g: &Expr) -> Expr {
+  let pow = |e: i128| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![g.clone(), Expr::Integer(e)].into(),
+  };
+  let rat = |n: i128, d: i128| Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
+  };
+  let term = |n: i128, d: i128, p: i128| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![rat(n, d), pow(p)].into(),
+  };
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![g.clone()].into(),
+      },
+      Expr::Identifier("EulerGamma".to_string()),
+      term(1, 2, -1),
+      term(-1, 12, -2),
+      term(1, 120, -4),
+    ]
+    .into(),
+  }
+}
+
+/// Replace every `HarmonicNumber[g]` (1-arg, `g -> +Infinity`) in `expr` by its
+/// asymptotic expansion so a limit at +Infinity resolves symbolically — and,
+/// crucially, so the numeric fallback never substitutes a huge probe into
+/// `HarmonicNumber`, whose exact rational value is astronomically expensive to
+/// compute (a hang). Returns Some(rewritten) iff a replacement was made.
+fn rewrite_harmonic_asymptotic(expr: &Expr, var: &str) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name.as_str() == "HarmonicNumber"
+        && args.len() == 1
+        && harmonic_arg_tends_to_pos_inf(&args[0], var) =>
+    {
+      Some(harmonic_asymptotic(&args[0]))
+    }
+    Expr::FunctionCall { name, args } => {
+      let mut changed = false;
+      let new_args: Vec<Expr> = args
+        .iter()
+        .map(|a| match rewrite_harmonic_asymptotic(a, var) {
+          Some(n) => {
+            changed = true;
+            n
+          }
+          None => a.clone(),
+        })
+        .collect();
+      changed.then(|| Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      })
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let nl = rewrite_harmonic_asymptotic(left, var);
+      let nr = rewrite_harmonic_asymptotic(right, var);
+      (nl.is_some() || nr.is_some()).then(|| Expr::BinaryOp {
+        op: *op,
+        left: Box::new(nl.unwrap_or_else(|| (**left).clone())),
+        right: Box::new(nr.unwrap_or_else(|| (**right).clone())),
+      })
+    }
+    Expr::UnaryOp { op, operand } => rewrite_harmonic_asymptotic(operand, var)
+      .map(|n| Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(n),
+      }),
+    Expr::List(items) => {
+      let mut changed = false;
+      let new: Vec<Expr> = items
+        .iter()
+        .map(|a| match rewrite_harmonic_asymptotic(a, var) {
+          Some(n) => {
+            changed = true;
+            n
+          }
+          None => a.clone(),
+        })
+        .collect();
+      changed.then(|| Expr::List(new.into()))
+    }
+    _ => None,
+  }
+}
+
 /// Check if an expression approaches 1 when var -> Infinity
 fn eval_at_infinity_is_one(expr: &Expr, var: &str) -> bool {
   if contains_explosive_of_var(expr, var) {
@@ -10904,6 +11040,18 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle limits at Infinity
   if is_infinity(&point) || is_negative_infinity(&point) {
+    // Replace HarmonicNumber[g] (g -> +Infinity) by its asymptotic expansion so
+    // the limit resolves symbolically instead of the numeric fallback summing
+    // HarmonicNumber at a huge probe value (astronomically slow — a hang).
+    if is_infinity(&point)
+      && let Some(rewritten) = rewrite_harmonic_asymptotic(&args[0], &var_name)
+    {
+      // Evaluate first so cancelling Log terms (e.g. Log[n] - Log[n]) collapse
+      // before the limit is taken.
+      let collapsed = crate::evaluator::evaluate_expr_to_expr(&rewritten)
+        .unwrap_or(rewritten);
+      return limit_ast(&[collapsed, args[1].clone()]);
+    }
     return limit_at_infinity(&args[0], &var_name, &point);
   }
 
