@@ -2547,15 +2547,23 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: squared_terms.into(),
               }
             };
-            let norm_expr = make_sqrt(sum_of_squares);
+            // Evaluate the norm so numeric entries collapse the Abs-of-square
+            // sum (e.g. Normalize[{1, I}] -> {1/Sqrt[2], I/Sqrt[2]} rather than
+            // leaving Sqrt[Abs[1]^2 + Abs[I]^2]); a fully symbolic vector keeps
+            // the Abs form unchanged.
+            let norm_expr = crate::evaluator::evaluate_expr_to_expr(
+              &make_sqrt(sum_of_squares),
+            )?;
             let result: Vec<Expr> = items
               .iter()
-              .map(|e| Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
-                left: Box::new(e.clone()),
-                right: Box::new(norm_expr.clone()),
+              .map(|e| {
+                crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Divide,
+                  left: Box::new(e.clone()),
+                  right: Box::new(norm_expr.clone()),
+                })
               })
-              .collect();
+              .collect::<Result<Vec<_>, _>>()?;
             return Ok(Expr::List(result.into()));
           }
         }

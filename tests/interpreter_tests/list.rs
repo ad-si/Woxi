@@ -8370,6 +8370,26 @@ mod join_non_list {
     assert_eq!(interpret("Normalize[1 + I]").unwrap(), "(1 + I)/Sqrt[2]");
   }
 
+  // A vector with complex (non-Integer/Real) entries evaluates its
+  // Abs-of-squares norm instead of leaving Sqrt[Abs[1]^2 + Abs[I]^2].
+  #[test]
+  fn normalize_vector_complex_entries() {
+    assert_eq!(
+      interpret("Normalize[{1, I}]").unwrap(),
+      "{1/Sqrt[2], I/Sqrt[2]}"
+    );
+    assert_eq!(interpret("Normalize[{3, 4 I}]").unwrap(), "{3/5, (4*I)/5}");
+    assert_eq!(
+      interpret("Normalize[{1 + I, 1 - I}]").unwrap(),
+      "{1/2 + I/2, 1/2 - I/2}"
+    );
+    // A fully symbolic vector keeps the Abs form.
+    assert_eq!(
+      interpret("Normalize[{a, b}]").unwrap(),
+      "{a/Sqrt[Abs[a]^2 + Abs[b]^2], b/Sqrt[Abs[a]^2 + Abs[b]^2]}"
+    );
+  }
+
   #[test]
   fn normalize_with_norm_function() {
     assert_eq!(interpret("Normalize[{3, 4}, Norm]").unwrap(), "{3/5, 4/5}");
