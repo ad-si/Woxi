@@ -2119,8 +2119,19 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // discriminant formula here would print `Sqrt[-Sin[t]^2]` instead of
   // `I*Sin[t]`. Detecting the pattern lets us hand back the closed form.
   if n == 2
-    && let Some(eigs) = symbolic_rotation_eigenvalues(&matrix)
+    && let Some(mut eigs) = symbolic_rotation_eigenvalues(&matrix)
   {
+    // When an imaginary off-diagonal makes the eigenvalues real (a Hermitian
+    // matrix), order them like wolframscript — decreasing magnitude, ascending
+    // tiebreak (e.g. {{0, I}, {-I, 0}} → {-1, 1}, {{1, -I}, {I, 1}} → {2, 0}).
+    // Genuinely symbolic / complex pairs keep the `a - I*b, a + I*b` order.
+    let is_real_num = |e: &Expr| {
+      matches!(e, Expr::Integer(_) | Expr::Real(_))
+        || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+    };
+    if eigs.iter().all(is_real_num) {
+      sort_eigenvalues(&mut eigs);
+    }
     return Ok(Expr::List(eigs.into()));
   }
 
@@ -2291,8 +2302,21 @@ fn symbolic_rotation_eigenvalues(matrix: &[Vec<Expr>]) -> Option<Vec<Expr>> {
     return None;
   }
   // Build `a - I*b` and `a + I*b`, then evaluate so e.g. `Cos[t] - I*Sin[t]`
-  // surfaces in canonical form.
-  let i = Expr::Constant("I".to_string());
+  // surfaces in canonical form. Evaluate `I*b` on its own first: when b is
+  // itself imaginary (e.g. b = I), `Times[I, I]` collapses to a single
+  // `Power[I, 2]` that a later combined Plus-evaluation leaves unreduced — but
+  // reduced standalone it becomes -1, so the eigenvalues come out as plain
+  // numbers (e.g. Eigenvalues[{{2, I}, {-I, 2}}] = {3, 1}, not {2 - I^2, …}).
+  // Use the imaginary unit as a `Complex[0, 1]` literal, not the bare symbol
+  // `Constant["I"]`: matrix entries are stored as `Complex[…]`, and
+  // `Times[Constant["I"], Complex[0, 1]]` mixes the two spellings and collapses
+  // to an unreduced `Power[I, 2]`, whereas `Complex × Complex` does proper
+  // complex arithmetic (e.g. I*I -> -1). So Eigenvalues[{{2, I}, {-I, 2}}]
+  // = {3, 1}, not {2 - I^2, 2 + I^2}.
+  let i = Expr::FunctionCall {
+    name: "Complex".to_string(),
+    args: vec![Expr::Integer(0), Expr::Integer(1)].into(),
+  };
   let i_b = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![i, b.clone()].into(),

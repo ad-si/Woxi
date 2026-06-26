@@ -670,6 +670,37 @@ mod eigenvalues {
     );
   }
 
+  // Complex (Hermitian) rotation-pattern matrices [[a, b], [-b, a]] with an
+  // imaginary off-diagonal: the imaginary unit must reduce (previously the
+  // results kept unevaluated `I^2`/double negatives, e.g. {2 - I^2, 2 + I^2}),
+  // and the real eigenvalues are ordered like wolframscript.
+  #[test]
+  fn eigenvalues_2x2_complex_hermitian() {
+    assert_eq!(interpret("Eigenvalues[PauliMatrix[2]]").unwrap(), "{-1, 1}");
+    assert_eq!(
+      interpret("Eigenvalues[{{0, I}, {-I, 0}}]").unwrap(),
+      "{-1, 1}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{2, I}, {-I, 2}}]").unwrap(),
+      "{3, 1}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{1, -I}, {I, 1}}]").unwrap(),
+      "{2, 0}"
+    );
+    // A purely real rotation keeps its imaginary eigenvalues in a-I*b order.
+    assert_eq!(
+      interpret("Eigenvalues[{{0, -2}, {2, 0}}]").unwrap(),
+      "{2*I, -2*I}"
+    );
+    // Genuinely symbolic off-diagonal is left in the closed a ± I*b form.
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b}, {-b, a}}]").unwrap(),
+      "{a - I*b, a + I*b}"
+    );
+  }
+
   // Symbolic triangular/diagonal matrices: the eigenvalues are the diagonal
   // entries in matrix order (not the unsimplified quadratic formula).
   #[test]
