@@ -2066,6 +2066,69 @@ fn try_symbolic_sum(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
 
+  // Sum[Fibonacci[k]^2, {k, a, n}] = Fibonacci[n] Fibonacci[n+1]
+  //                                  - Fibonacci[a-1] Fibonacci[a].
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left,
+    right,
+  } = body
+    && matches!(right.as_ref(), Expr::Integer(2))
+    && let Expr::FunctionCall { name, args } = left.as_ref()
+    && name == "Fibonacci"
+    && args.len() == 1
+    && matches!(&args[0], Expr::Identifier(v) if v == var_name)
+  {
+    let fib = |arg: Expr| Expr::FunctionCall {
+      name: "Fibonacci".to_string(),
+      args: vec![arg].into(),
+    };
+    let shift = |e: &Expr, d: i128| Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(e.clone()),
+      right: Box::new(Expr::Integer(d)),
+    };
+    let prod = |a: Expr, b: Expr| Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(a),
+      right: Box::new(b),
+    };
+    let result = Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(prod(fib(max_expr.clone()), fib(shift(max_expr, 1)))),
+      right: Box::new(prod(fib(shift(min_expr, -1)), fib(min_expr.clone()))),
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
+  // Vandermonde: Sum[Binomial[N, k]^2, {k, 0, N}] = Binomial[2 N, N]. Requires
+  // the full range (min == 0, upper bound == the binomial's first argument).
+  if let Some(0) = min_concrete
+    && let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } = body
+    && matches!(right.as_ref(), Expr::Integer(2))
+    && let Expr::FunctionCall { name, args } = left.as_ref()
+    && name == "Binomial"
+    && args.len() == 2
+    && matches!(&args[1], Expr::Identifier(v) if v == var_name)
+    && crate::syntax::expr_to_string(&args[0])
+      == crate::syntax::expr_to_string(max_expr)
+  {
+    let two_n = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(max_expr.clone()),
+    };
+    let result = Expr::FunctionCall {
+      name: "Binomial".to_string(),
+      args: vec![two_n, max_expr.clone()].into(),
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   // Binomial theorem: Sum[c Binomial[N, k] r^k, {k, 0, N}] = c (1 + r)^N.
   if let Some(0) = min_concrete
     && let Some(result) = try_binomial_theorem_sum(body, var_name, max_expr)

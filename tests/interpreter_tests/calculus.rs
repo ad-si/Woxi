@@ -11192,6 +11192,40 @@ mod infinite_log_series {
     assert_eq!(interpret("Sum[Fibonacci[k], {k, 1, 10}]").unwrap(), "143");
   }
 
+  // Sum[Fibonacci[k]^2, {k, a, n}] = Fibonacci[n] Fibonacci[n+1]
+  //                                  - Fibonacci[a-1] Fibonacci[a].
+  #[test]
+  fn fibonacci_square_partial_sum() {
+    assert_eq!(
+      interpret("Sum[Fibonacci[k]^2, {k, 1, n}]").unwrap(),
+      "Fibonacci[n]*Fibonacci[1 + n]"
+    );
+    assert_eq!(
+      interpret("Sum[Fibonacci[k]^2, {k, 2, n}]").unwrap(),
+      "-1 + Fibonacci[n]*Fibonacci[1 + n]"
+    );
+    // Fib[6] Fib[7] = 8*13 = 104.
+    assert_eq!(interpret("Sum[Fibonacci[k]^2, {k, 1, 6}]").unwrap(), "104");
+  }
+
+  // Vandermonde: Sum[Binomial[N, k]^2, {k, 0, N}] = Binomial[2 N, N].
+  #[test]
+  fn binomial_square_sum_vandermonde() {
+    assert_eq!(
+      interpret("Sum[Binomial[n, k]^2, {k, 0, n}]").unwrap(),
+      "Binomial[2*n, n]"
+    );
+    assert_eq!(
+      interpret("Sum[Binomial[m, k]^2, {k, 0, m}]").unwrap(),
+      "Binomial[2*m, m]"
+    );
+    // Binomial[10, 5] = 252.
+    assert_eq!(
+      interpret("Sum[Binomial[5, k]^2, {k, 0, 5}]").unwrap(),
+      "252"
+    );
+  }
+
   #[test]
   fn negative_fractional_base() {
     assert_eq!(
