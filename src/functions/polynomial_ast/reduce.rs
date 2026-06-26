@@ -729,6 +729,12 @@ pub fn reduce_not_equal(
   var: &str,
   domain: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
+  // `Abs[f] != c` over the reals: the punctured line `f < -c || -c < f < c
+  // || f > c` (or `f != 0` at c == 0, all reals for c < 0).
+  if let Some(result) = try_reduce_abs_not_equal(lhs, rhs, var, domain) {
+    return result;
+  }
+
   // For simple cases, just return the inequality
   let poly = Expr::BinaryOp {
     op: BinaryOperator::Minus,
@@ -878,6 +884,13 @@ pub fn reduce_inequality(
     return Ok(result);
   }
 
+  // `Abs[f] op c` over the reals splits into a two-interval / two-sided
+  // condition (`-c < f < c`, `f < -c || f > c`, …) that the existing
+  // polynomial machinery then solves on the bare argument `f`.
+  if let Some(result) = try_reduce_abs_inequality(lhs, rhs, op, var, domain) {
+    return result;
+  }
+
   // Move everything to one side: lhs - rhs op 0
   let poly = Expr::BinaryOp {
     op: BinaryOperator::Minus,
@@ -918,6 +931,226 @@ pub fn reduce_inequality(
       })
     }
   }
+}
+
+/// Extract the single argument of `Abs[arg]`.
+fn extract_abs(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1 => {
+      Some(args[0].clone())
+    }
+    _ => None,
+  }
+}
+
+/// Recognise `Abs[inner]` or `const * Abs[inner]` (the form `Abs[2 x]` takes
+/// after evaluation pulls the factor out: `2 Abs[x]`). Returns `(coeff, inner)`.
+fn extract_abs_term(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
+  if let Some(inner) = extract_abs(expr) {
+    return Some((Expr::Integer(1), inner));
+  }
+  let factors = collect_multiplicative_factors(expr);
+  if factors.len() < 2 {
+    return None;
+  }
+  let mut inner = None;
+  let mut consts: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if let Some(a) = extract_abs(f) {
+      if inner.is_some() {
+        return None; // a product of two Abs terms — not handled
+      }
+      inner = Some(a);
+    } else if is_constant_wrt(f, var) {
+      consts.push(f.clone());
+    } else {
+      return None;
+    }
+  }
+  let inner = inner?;
+  let coeff = match consts.len() {
+    0 => Expr::Integer(1),
+    1 => consts.into_iter().next().unwrap(),
+    _ => simplify(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: consts.into(),
+    }),
+  };
+  Some((coeff, inner))
+}
+
+/// Reduce `Abs[f] op c` over the reals. Returns `None` when the pattern does
+/// not apply (non-real domain, no `Abs`, symbolic bound, …) so the caller
+/// falls through to the generic polynomial path.
+fn try_reduce_abs_inequality(
+  lhs: &Expr,
+  rhs: &Expr,
+  op: CompOp,
+  var: &str,
+  domain: Option<&str>,
+) -> Option<Result<Expr, InterpreterError>> {
+  // Only the real domain has the simple two-interval solution; over the
+  // default complex domain `Abs[z] < c` describes a 2-D disk.
+  if domain != Some("Reals") {
+    return None;
+  }
+  // Normalise to `coeff*Abs[inner] op bound`; flip if `Abs` is on the right.
+  let (coeff, inner, bound, op) =
+    match (extract_abs_term(lhs, var), extract_abs_term(rhs, var)) {
+      (Some((coeff, inner)), None) => (coeff, inner, rhs.clone(), op),
+      (None, Some((coeff, inner))) => (coeff, inner, lhs.clone(), flip_op(op)),
+      _ => return None,
+    };
+  // The bound must be a constant number and the argument must involve `var`.
+  if !is_constant_wrt(&bound, var) || is_constant_wrt(&inner, var) {
+    return None;
+  }
+  // Divide through by the (constant) coefficient, flipping the operator when
+  // the coefficient is negative: `c*Abs[f] op b` ⇒ `Abs[f] op' b/c`.
+  let coeff_val = expr_to_number(&coeff)?;
+  if coeff_val == 0.0 {
+    return None;
+  }
+  let op = if coeff_val < 0.0 { flip_op(op) } else { op };
+  // Evaluate (not just simplify) so `6/2` collapses to `3` and `5/2` to the
+  // exact Rational — `expr_to_number` only reads literal number forms.
+  let c = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(bound),
+    right: Box::new(coeff),
+  })
+  .ok()?;
+  let neg_c = negate_expr(&c);
+  let cval = expr_to_number(&c)?;
+  let zero = Expr::Integer(0);
+  let truth =
+    |b: bool| Expr::Identifier(if b { "True" } else { "False" }.to_string());
+  let and = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::And,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let or = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Or,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+
+  let rewritten: Expr = match op {
+    CompOp::Less => {
+      // |f| < c : empty when c <= 0, else -c < f < c.
+      if cval <= 0.0 {
+        return Some(Ok(truth(false)));
+      }
+      and(
+        make_comparison(&inner, &neg_c, CompOp::Greater),
+        make_comparison(&inner, &c, CompOp::Less),
+      )
+    }
+    CompOp::LessEqual => {
+      // |f| <= c : empty for c < 0, the point f == 0 for c == 0, else band.
+      if cval < 0.0 {
+        return Some(Ok(truth(false)));
+      }
+      if cval == 0.0 {
+        make_comparison(&inner, &zero, CompOp::Equal)
+      } else {
+        and(
+          make_comparison(&inner, &neg_c, CompOp::GreaterEqual),
+          make_comparison(&inner, &c, CompOp::LessEqual),
+        )
+      }
+    }
+    CompOp::Greater => {
+      // |f| > c : all reals for c < 0, else two open rays. At c == 0 this is
+      // `f < 0 || f > 0` (Wolfram does not collapse it to `f != 0`).
+      if cval < 0.0 {
+        return Some(Ok(truth(true)));
+      }
+      or(
+        make_comparison(&inner, &neg_c, CompOp::Less),
+        make_comparison(&inner, &c, CompOp::Greater),
+      )
+    }
+    CompOp::GreaterEqual => {
+      // |f| >= c : all reals when c <= 0, else two closed rays.
+      if cval <= 0.0 {
+        return Some(Ok(truth(true)));
+      }
+      or(
+        make_comparison(&inner, &neg_c, CompOp::LessEqual),
+        make_comparison(&inner, &c, CompOp::GreaterEqual),
+      )
+    }
+    CompOp::Equal | CompOp::NotEqual => return None,
+  };
+  Some(reduce_expr(&rewritten, &[var.to_string()], domain))
+}
+
+/// Reduce `Abs[f] != c` over the reals (the punctured-line counterpart of
+/// `try_reduce_abs_inequality`). Returns `None` when the pattern does not
+/// apply.
+fn try_reduce_abs_not_equal(
+  lhs: &Expr,
+  rhs: &Expr,
+  var: &str,
+  domain: Option<&str>,
+) -> Option<Result<Expr, InterpreterError>> {
+  if domain != Some("Reals") {
+    return None;
+  }
+  let (coeff, inner, bound) =
+    match (extract_abs_term(lhs, var), extract_abs_term(rhs, var)) {
+      (Some((coeff, inner)), None) => (coeff, inner, rhs.clone()),
+      (None, Some((coeff, inner))) => (coeff, inner, lhs.clone()),
+      _ => return None,
+    };
+  if !is_constant_wrt(&bound, var) || is_constant_wrt(&inner, var) {
+    return None;
+  }
+  let coeff_val = expr_to_number(&coeff)?;
+  if coeff_val == 0.0 {
+    return None;
+  }
+  let c = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(bound),
+    right: Box::new(coeff),
+  })
+  .ok()?;
+  let cval = expr_to_number(&c)?;
+
+  // |f| != c is vacuously true when c < 0 (Abs is never negative).
+  if cval < 0.0 {
+    return Some(Ok(Expr::Identifier("True".to_string())));
+  }
+  // |f| != 0 is the two open rays `f < 0 || f > 0` (Wolfram keeps it split
+  // rather than folding back to `f != 0`).
+  if cval == 0.0 {
+    let rays = Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left: Box::new(make_comparison(&inner, &c, CompOp::Less)),
+      right: Box::new(make_comparison(&inner, &c, CompOp::Greater)),
+    };
+    return Some(reduce_expr(&rays, &[var.to_string()], domain));
+  }
+  // c > 0: f < -c || (-c < f < c) || f > c.
+  let neg_c = negate_expr(&c);
+  let band = Expr::BinaryOp {
+    op: BinaryOperator::And,
+    left: Box::new(make_comparison(&inner, &neg_c, CompOp::Greater)),
+    right: Box::new(make_comparison(&inner, &c, CompOp::Less)),
+  };
+  let rewritten = Expr::BinaryOp {
+    op: BinaryOperator::Or,
+    left: Box::new(Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left: Box::new(make_comparison(&inner, &neg_c, CompOp::Less)),
+      right: Box::new(band),
+    }),
+    right: Box::new(make_comparison(&inner, &c, CompOp::Greater)),
+  };
+  Some(reduce_expr(&rewritten, &[var.to_string()], domain))
 }
 
 /// Evaluate a constant inequality (no variable present).

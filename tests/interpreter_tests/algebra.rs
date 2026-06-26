@@ -3718,6 +3718,78 @@ mod reduce {
     assert_eq!(interpret("Reduce[5 < x < 1, x]").unwrap(), "False");
   }
 
+  // Reduce[Abs[f] op c, x, Reals] splits the absolute value into the
+  // corresponding real intervals (previously these returned False/garbage).
+  #[test]
+  fn reduce_abs_inequality_reals() {
+    assert_eq!(
+      interpret("Reduce[Abs[x] < 3, x, Reals]").unwrap(),
+      "Inequality[-3, Less, x, Less, 3]"
+    );
+    assert_eq!(
+      interpret("Reduce[Abs[x] <= 3, x, Reals]").unwrap(),
+      "Inequality[-3, LessEqual, x, LessEqual, 3]"
+    );
+    assert_eq!(
+      interpret("Reduce[Abs[x] > 2, x, Reals]").unwrap(),
+      "x < -2 || x > 2"
+    );
+    assert_eq!(
+      interpret("Reduce[Abs[x] >= 2, x, Reals]").unwrap(),
+      "x <= -2 || x >= 2"
+    );
+    // Shifted argument: -1 < x < 3.
+    assert_eq!(
+      interpret("Reduce[Abs[x - 1] < 2, x, Reals]").unwrap(),
+      "Inequality[-1, Less, x, Less, 3]"
+    );
+    // A constant coefficient (Abs[2 x] evaluates to 2 Abs[x]) divides through.
+    assert_eq!(
+      interpret("Reduce[Abs[2 x] < 6, x, Reals]").unwrap(),
+      "Inequality[-3, Less, x, Less, 3]"
+    );
+    // The bound flips with a negative coefficient.
+    assert_eq!(
+      interpret("Reduce[-2 Abs[x] > -6, x, Reals]").unwrap(),
+      "Inequality[-3, Less, x, Less, 3]"
+    );
+    // Quadratic argument is solved on the bare polynomial.
+    assert_eq!(
+      interpret("Reduce[Abs[x^2 - 1] < 3, x, Reals]").unwrap(),
+      "Inequality[-2, Less, x, Less, 2]"
+    );
+  }
+
+  #[test]
+  fn reduce_abs_inequality_boundary_reals() {
+    // c <= 0 boundaries.
+    assert_eq!(interpret("Reduce[Abs[x] < 0, x, Reals]").unwrap(), "False");
+    assert_eq!(
+      interpret("Reduce[Abs[x] <= 0, x, Reals]").unwrap(),
+      "x == 0"
+    );
+    assert_eq!(
+      interpret("Reduce[Abs[x] > 0, x, Reals]").unwrap(),
+      "x < 0 || x > 0"
+    );
+    assert_eq!(interpret("Reduce[Abs[x] >= 0, x, Reals]").unwrap(), "True");
+    assert_eq!(interpret("Reduce[Abs[x] > -1, x, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn reduce_abs_not_equal_reals() {
+    assert_eq!(
+      interpret("Reduce[Abs[x] != 2, x, Reals]").unwrap(),
+      "x < -2 || Inequality[-2, Less, x, Less, 2] || x > 2"
+    );
+    assert_eq!(
+      interpret("Reduce[Abs[x] != 0, x, Reals]").unwrap(),
+      "x < 0 || x > 0"
+    );
+    // c < 0: every real satisfies it.
+    assert_eq!(interpret("Reduce[Abs[x] != -1, x, Reals]").unwrap(), "True");
+  }
+
   // Reduce[..., Modulus -> n] enumerates solutions in Z/nZ.
   #[test]
   fn reduce_modulus_one_var_quadratic() {
