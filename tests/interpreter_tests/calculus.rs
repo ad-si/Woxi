@@ -11136,6 +11136,38 @@ mod infinite_log_series {
     );
   }
 
+  // Sum[1/(a n)^s, {n, 1, Infinity}] = Zeta[s]/a^s for a pure multiple a*n of
+  // the index (a numeric or symbolic, s >= 2).
+  #[test]
+  fn scaled_reciprocal_power_sums() {
+    assert_eq!(
+      interpret("Sum[1/(2 n)^2, {n, 1, Infinity}]").unwrap(),
+      "Pi^2/24"
+    );
+    assert_eq!(
+      interpret("Sum[1/(2 n)^4, {n, 1, Infinity}]").unwrap(),
+      "Pi^4/1440"
+    );
+    assert_eq!(
+      interpret("Sum[1/(3 n)^2, {n, 1, Infinity}]").unwrap(),
+      "Pi^2/54"
+    );
+    assert_eq!(
+      interpret("Sum[1/(2 n)^3, {n, 1, Infinity}]").unwrap(),
+      "Zeta[3]/8"
+    );
+    // A symbolic coefficient is carried through.
+    assert_eq!(
+      interpret("Sum[1/(a n)^2, {n, 1, Infinity}]").unwrap(),
+      "Pi^2/(6*a^2)"
+    );
+    // The divergent s = 1 case is left unevaluated.
+    assert_eq!(
+      interpret("Sum[1/(2 n), {n, 1, Infinity}]").unwrap(),
+      "Sum[1/(2*n), {n, 1, Infinity}]"
+    );
+  }
+
   #[test]
   fn negative_fractional_base() {
     assert_eq!(

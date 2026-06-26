@@ -3892,6 +3892,27 @@ fn try_infinite_sum(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
 
+  // Reciprocal power of a pure multiple of the index:
+  //   Sum[1/(a n)^s, {n, 1, Inf}] = Zeta[s] / a^s  (s >= 2)
+  // e.g. Sum[1/(2n)^2] = Pi^2/24, Sum[1/(a n)^2] = Pi^2/(6 a^2). The pure-`n`
+  // base (a == 1) is left to the plain Zeta[s] p-series handler below.
+  if min == 1
+    && let Some((a, s)) = match_scaled_reciprocal_power(body, var_name)
+    && s >= 2
+  {
+    let zeta = Expr::FunctionCall {
+      name: "Zeta".to_string(),
+      args: vec![Expr::Integer(s as i128)].into(),
+    };
+    let a_pow = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(a),
+      right: Box::new(Expr::Integer(-(s as i128))),
+    };
+    let result = crate::functions::math_ast::times_ast(&[zeta, a_pow])?;
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   // For min < 1, compute initial terms and delegate to min=1 case:
   // Sum[f(n), {n, min, Infinity}] = f(min) + f(min+1) + ... + f(0) + Sum[f(n), {n, 1, Infinity}]
   if min < 1 {
@@ -4169,6 +4190,61 @@ fn match_reciprocal_power_general(
     }
     _ => None,
   }
+}
+
+/// Match `1/(a*n)^s` — a reciprocal power whose base is a pure (offset-free)
+/// multiple `a*n` of the index, with `a` constant w.r.t. `n` and `a != 1`.
+/// Returns `(a, s)`; the sum is then `Zeta[s]/a^s`.
+fn match_scaled_reciprocal_power(
+  body: &Expr,
+  var_name: &str,
+) -> Option<(Expr, i64)> {
+  use crate::syntax::BinaryOperator;
+  let mut num: Vec<Expr> = Vec::new();
+  let mut den: Vec<Expr> = Vec::new();
+  collect_factors(body, &mut num, &mut den, false);
+  let numerator = match num.len() {
+    0 => Expr::Integer(1),
+    1 => num.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: num.into(),
+    },
+  };
+  let remaining = if den.is_empty() {
+    numerator
+  } else {
+    let denominator = if den.len() == 1 {
+      den.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: den.into(),
+      }
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(denominator),
+    }
+  };
+  let (base, s) = match_reciprocal_power_general(&remaining, var_name)?;
+  if !crate::functions::polynomial_ast::contains_var(&base, var_name) {
+    return None;
+  }
+  // a = base / n must be constant w.r.t. n (so base == a*n with no offset).
+  let ratio = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(base),
+    right: Box::new(Expr::Identifier(var_name.to_string())),
+  };
+  let a = crate::evaluator::evaluate_expr_to_expr(&ratio).ok()?;
+  if crate::functions::polynomial_ast::contains_var(&a, var_name)
+    || matches!(a, Expr::Integer(1))
+  {
+    return None;
+  }
+  Some((a, s))
 }
 
 /// Match a summand over the odd positive integers: `[(-1)^(c*n+e)] /
