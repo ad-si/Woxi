@@ -231,7 +231,7 @@ Orange,Named color evaluating to RGBColor[1 0.5 0],✅,pure,5.1,234
 RightArrow,Typesetting arrow symbol,🚫,none,3.0,235
 Interval,Represents a closed real interval with auto-merged sub-intervals,✅,pure,3.0,236
 Offset,Represents a position offset by a specified number of printers points,✅,pure,3.0,237
-ReplaceRepeated,Applies replacement rules repeatedly until fixed point,✅,pure,1.0,238
+ReplaceRepeated,Applies replacement rules repeatedly until fixed point or the MaxIterations bound,✅,pure,1.0,238
 Piecewise,Represents a piecewise function,✅,pure,5.1,239
 Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
 Left,Symbol for left alignment,✅,pure,1.0,241

@@ -1034,7 +1034,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ReplaceList" => Some((2, 3)),
     "ReplaceAll" => Some((2, 2)),
     "ReplacePart" => Some((1, 2)),
-    "ReplaceRepeated" => Some((2, 2)),
+    "ReplaceRepeated" => Some((2, 3)),
     "Rescale" => Some((1, 3)),
     "Rest" => Some((1, 1)),
     "Resultant" => Some((3, 4)),

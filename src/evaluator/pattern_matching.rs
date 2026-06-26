@@ -2144,21 +2144,52 @@ pub fn apply_replace_all_ast(
   string_to_expr(&result)
 }
 
+/// Default maximum number of ReplaceRepeated scans, matching wolframscript's
+/// `MaxIterations` default of 65536.
+pub const REPLACE_REPEATED_DEFAULT_MAX: usize = 65536;
+
 /// Apply ReplaceRepeated operation on AST (expr //. rules)
 /// Applies ReplaceAll repeatedly until the expression stops changing.
 pub fn apply_replace_repeated_ast(
   expr: &Expr,
   rules: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let max_iterations = 65536;
+  apply_replace_repeated_ast_with_max(expr, rules, REPLACE_REPEATED_DEFAULT_MAX)
+}
+
+/// Apply ReplaceRepeated with an explicit `MaxIterations` bound. Applies
+/// ReplaceAll repeatedly until the expression stops changing or the bound is
+/// reached. When the bound is exhausted while the expression is still
+/// changing, emits the `ReplaceRepeated::rrlim` message (matching
+/// wolframscript) and returns the partially reduced result.
+pub fn apply_replace_repeated_ast_with_max(
+  expr: &Expr,
+  rules: &Expr,
+  max_iterations: usize,
+) -> Result<Expr, InterpreterError> {
   let mut current = expr.clone();
+  let mut converged = false;
   for _ in 0..max_iterations {
     let next = apply_replace_all_ast(&current, rules)?;
     if expr_equal(&next, &current) {
+      converged = true;
       break;
     }
     // Re-evaluate after substitution so e.g. 3^2 becomes 9
     current = evaluate_expr_to_expr(&next)?;
+  }
+  if !converged {
+    // The iteration budget was exhausted (or was zero). Emit the rrlim
+    // message only when another scan would still change the result, so a
+    // result that is already a fixed point at the boundary stays quiet.
+    let next = apply_replace_all_ast(&current, rules)?;
+    if !expr_equal(&next, &current) {
+      crate::emit_message(&format!(
+        "ReplaceRepeated::rrlim: Exiting after {} scanned {} times.",
+        expr_to_string(expr),
+        max_iterations
+      ));
+    }
   }
   Ok(current)
 }

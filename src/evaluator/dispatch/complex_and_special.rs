@@ -1541,7 +1541,7 @@ pub fn dispatch_complex_and_special(
           .and_then(|r| evaluate_expr_to_expr(&r)),
       );
     }
-    "ReplaceRepeated" if args.len() == 2 => {
+    "ReplaceRepeated" if args.len() == 2 || args.len() == 3 => {
       let rules = if let Expr::FunctionCall { name: dn, args: da } = &args[1] {
         if dn == "Dispatch" && da.len() == 1 {
           &da[0]
@@ -1551,7 +1551,19 @@ pub fn dispatch_complex_and_special(
       } else {
         &args[1]
       };
-      return Some(apply_replace_repeated_ast(&args[0], rules));
+      // Optional third argument: MaxIterations -> n (default 65536).
+      let max_iterations = if args.len() == 3 {
+        extract_max_iterations(&args[2])?
+      } else {
+        crate::evaluator::pattern_matching::REPLACE_REPEATED_DEFAULT_MAX
+      };
+      return Some(
+        crate::evaluator::pattern_matching::apply_replace_repeated_ast_with_max(
+          &args[0],
+          rules,
+          max_iterations,
+        ),
+      );
     }
     "Replace" if args.len() == 2 => {
       return Some(
@@ -2480,6 +2492,42 @@ pub fn dispatch_complex_and_special(
 /// pattern matcher; any other expression compares structurally against the
 /// tag. Keeps the behaviour consistent with Wolfram's `Reap[expr, form]`,
 /// where `form` is a symbol or a pattern like `_Symbol`, `_Integer`, etc.
+/// Parse a `MaxIterations -> n` option argument into an iteration count.
+/// Accepts a non-negative integer (clamped to >= 0) or `Infinity`, which maps
+/// to the default safety cap. Returns `None` for any other shape.
+fn extract_max_iterations(opt: &Expr) -> Option<usize> {
+  let (lhs, rhs) = match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref()),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref()),
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  match lhs {
+    Expr::Identifier(s) if s == "MaxIterations" => {}
+    _ => return None,
+  }
+  match rhs {
+    Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+    Expr::Constant(c) if c == "Infinity" => {
+      Some(crate::evaluator::pattern_matching::REPLACE_REPEATED_DEFAULT_MAX)
+    }
+    Expr::Identifier(s) if s == "Infinity" => {
+      Some(crate::evaluator::pattern_matching::REPLACE_REPEATED_DEFAULT_MAX)
+    }
+    _ => None,
+  }
+}
+
 fn tag_matches_pattern(tag: &Expr, patt: &Expr) -> bool {
   if crate::evaluator::pattern_matching::contains_pattern(patt) {
     crate::evaluator::pattern_matching::match_pattern(tag, patt).is_some()

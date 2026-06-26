@@ -679,6 +679,74 @@ mod expression_level_anonymous_function {
   }
 
   #[test]
+  fn replace_repeated_max_iterations_option() {
+    use woxi::interpret_with_stdout;
+    // ReplaceRepeated accepts a MaxIterations -> n option (a third argument):
+    // it applies the rule at most n times and, when it stops because the
+    // bound was hit while the result is still changing, emits the
+    // ReplaceRepeated::rrlim message (matching wolframscript).
+    let r = interpret_with_stdout(
+      "ReplaceRepeated[x, x :> x + 1, MaxIterations -> 3]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "3 + x");
+    assert!(
+      r.warnings.iter().any(|w| w
+        .contains("ReplaceRepeated::rrlim: Exiting after x scanned 3 times.")),
+      "expected rrlim message, got {:?}",
+      r.warnings
+    );
+
+    // MaxIterations -> 0 performs no rewriting but still reports the limit
+    // (because one scan would change the result).
+    let r0 = interpret_with_stdout(
+      "ReplaceRepeated[x, x :> x + 1, MaxIterations -> 0]",
+    )
+    .unwrap();
+    assert_eq!(r0.result, "x");
+    assert!(r0.warnings.iter().any(|w| w.contains("scanned 0 times.")));
+
+    // MaxIterations -> 1 performs exactly one scan.
+    assert_eq!(
+      interpret("ReplaceRepeated[x, x :> x + 1, MaxIterations -> 1]").unwrap(),
+      "1 + x"
+    );
+  }
+
+  #[test]
+  fn replace_repeated_max_iterations_converges_quietly() {
+    use woxi::interpret_with_stdout;
+    // When the rewrite reaches a fixed point within the bound, there is no
+    // rrlim message.
+    let r = interpret_with_stdout(
+      "ReplaceRepeated[f[f[f[x]]], f[y_] -> y, MaxIterations -> 10]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "x");
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("rrlim")),
+      "unexpected rrlim message: {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
+  fn replace_repeated_default_limit_reports_rrlim() {
+    use woxi::interpret_with_stdout;
+    // A non-terminating rewrite hits the default MaxIterations of 65536 and
+    // reports it, matching wolframscript's `x //. x :> x + 1`.
+    let r = interpret_with_stdout("x //. x :> x + 1").unwrap();
+    assert_eq!(r.result, "65536 + x");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("scanned 65536 times.")),
+      "expected default-limit rrlim message, got {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
   fn postfix_application_body() {
     // body // func & — body contains postfix application
     assert_eq!(
