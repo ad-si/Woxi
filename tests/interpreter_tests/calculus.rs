@@ -2487,6 +2487,39 @@ mod limit {
     );
   }
 
+  // Limits of expressions that are rational in E^x (and Sinh/Cosh) at
+  // infinity: the standard large-x probe overflows E^x, so a moderate-point
+  // probe recovers the finite value.
+  #[test]
+  fn limit_exponential_ratio_at_infinity() {
+    assert_eq!(
+      interpret("Limit[(1 + Sinh[x])/Exp[x], x -> Infinity]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Limit[Sinh[x]/Exp[x], x -> Infinity]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Limit[E^x/(E^x + 1), x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[(2 E^x + 3)/(E^x + 1), x -> Infinity]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Limit[Sinh[x]/Cosh[x], x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("Limit[1/(E^x + 1), x -> Infinity]").unwrap(), "0");
+    // Negative infinity: E^x -> 0.
+    assert_eq!(
+      interpret("Limit[(E^x + 1)/(E^x - 1), x -> -Infinity]").unwrap(),
+      "-1"
+    );
+  }
+
   #[test]
   fn limit_sqrt_at_infinity() {
     assert_eq!(

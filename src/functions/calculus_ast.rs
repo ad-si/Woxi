@@ -9672,6 +9672,13 @@ fn limit_at_infinity(
     }
   }
 
+  // Expressions with exponential growth in `var` (Exp/Sinh/Cosh/Tanh, E^x):
+  // the 1e6 probe above overflows E^x, so probe at moderate points where the
+  // exponentials stay in f64 range and the decaying part is negligible.
+  if let Some(v) = exp_growth_limit_at_infinity(expr, var_name, point) {
+    return Ok(v);
+  }
+
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "Limit".to_string(),
@@ -9684,6 +9691,90 @@ fn limit_at_infinity(
     ]
     .into(),
   })
+}
+
+/// True when `expr` contains an exponential-growth subterm in `var`: Exp / Sinh
+/// / Cosh / Tanh / Coth / Sech / Csch with a var-dependent argument, or E raised
+/// to a var-dependent power.
+fn contains_exponential_of_var(expr: &Expr, var: &str) -> bool {
+  use crate::syntax::BinaryOperator;
+  let is_e_pow = |base: &Expr, exp: &Expr| {
+    matches!(base, Expr::Constant(c) if c == "E") && !is_constant_wrt(exp, var)
+  };
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (matches!(
+        name.as_str(),
+        "Exp" | "Sinh" | "Cosh" | "Tanh" | "Coth" | "Sech" | "Csch"
+      ) && args.iter().any(|a| !is_constant_wrt(a, var)))
+        || (name == "Power" && args.len() == 2 && is_e_pow(&args[0], &args[1]))
+        || args.iter().any(|a| contains_exponential_of_var(a, var))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if is_e_pow(left, right) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_exponential_of_var(left, var)
+        || contains_exponential_of_var(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => contains_exponential_of_var(operand, var),
+    _ => false,
+  }
+}
+
+/// For x -> ±Infinity limits of expressions with exponential growth in `var`,
+/// probe two moderate points (E^180 ≈ 1e78 stays within f64 range while
+/// E^-90 ≈ 1e-39 makes decaying terms negligible) and recognise a clean
+/// integer / simple-rational / zero / divergent limit.
+fn exp_growth_limit_at_infinity(
+  expr: &Expr,
+  var: &str,
+  point: &Expr,
+) -> Option<Expr> {
+  if !contains_exponential_of_var(expr, var) {
+    return None;
+  }
+  let sign: i128 = if is_negative_infinity(point) { -1 } else { 1 };
+  let f1 = eval_at_large_n(expr, var, sign * 90)?;
+  let f2 = eval_at_large_n(expr, var, sign * 180)?;
+  if !f1.is_finite() || !f2.is_finite() {
+    return None;
+  }
+  // Divergence to ±Infinity.
+  if f1.abs() > 1e5 && f2.abs() > f1.abs() {
+    return Some(if f2 > 0.0 {
+      Expr::Identifier("Infinity".to_string())
+    } else {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("Infinity".to_string())),
+      }
+    });
+  }
+  // Require tight agreement between the two probes before committing.
+  let diff = (f1 - f2).abs();
+  let scale = f1.abs().max(f2.abs()).max(1e-12);
+  if diff / scale > 1e-6 {
+    return None;
+  }
+  if f2.abs() < 1e-9 {
+    return Some(Expr::Integer(0));
+  }
+  let rounded = f2.round();
+  if (f2 - rounded).abs() < 1e-9 {
+    return Some(Expr::Integer(rounded as i128));
+  }
+  // Recognise a simple rational p/q (smallest denominator wins).
+  for q in 2..=36i128 {
+    let pf = f2 * q as f64;
+    let p = pf.round();
+    if (pf - p).abs() < 1e-7 {
+      return Some(crate::functions::math_ast::make_rational_pub(p as i128, q));
+    }
+  }
+  None
 }
 
 /// True when `e` is a finite value: a number, or a constant expression (e.g.
