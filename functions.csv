@@ -4235,7 +4235,7 @@ PersistentObject,,🚫,,11.1,4356
 StateTransformationLinearize,,,,10.0,4356
 UpperTriangularMatrixQ,True if a matrix is upper triangular,✅,pure,12.0,4356
 WeierstrassHalfPeriods,,,,3.0,4356
-BesselYZero,,,,6.0,4387
+BesselYZero,Compute zeros of the Bessel function Y_n using bisection and Newton method,✅,pure,6.0,4387
 BlockchainAddressData,,🚫,,12.0,4387
 BohmanWindow,Bohman window function (1-2|x|)Cos[2Pi|x|]+Sin[2Pi|x|]/Pi on [-1/2 1/2],✅,pure,9.0,4387
 CapitalDifferentialD,,,,3.0,4387
@@ -5692,7 +5692,7 @@ IncludeRelatedTables,,,,12.0,
 IncludeSingularSolutions,,,,13.1,
 IncludedContexts,,,,12.3,
 IndependentUnitDimension,,,,11.3,
-Indeterminate,,,,1.0,
+Indeterminate,Represents a numerical result of unknown magnitude,✅,pure,1.0,
 InertEvaluate,,,,13.1,
 InertExpression,,,,13.1,
 InfiniteFuture,,,,12.1,
