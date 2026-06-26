@@ -2773,6 +2773,33 @@ mod full_simplify {
     );
   }
 
+  // Factorial ratios reduce like Gamma ratios (n! = Gamma[n+1]): n!/(n-k)! ->
+  // rising-factorial product for small k.
+  #[test]
+  fn factorial_ratio_rising_factorial() {
+    assert_eq!(interpret("FullSimplify[n! / (n - 1)!]").unwrap(), "n");
+    assert_eq!(
+      interpret("FullSimplify[n! / (n - 2)!]").unwrap(),
+      "(-1 + n)*n"
+    );
+    assert_eq!(interpret("FullSimplify[(n + 1)! / n!]").unwrap(), "1 + n");
+    assert_eq!(
+      interpret("FullSimplify[(n + 2)! / n!]").unwrap(),
+      "(1 + n)*(2 + n)"
+    );
+    // k = 3 with an all-binomial product (longer than the ratio) still
+    // reduces, matching wolframscript.
+    assert_eq!(
+      interpret("FullSimplify[(n + 3)! / n!]").unwrap(),
+      "(1 + n)*(2 + n)*(3 + n)"
+    );
+    // k = 4: left unevaluated.
+    assert_eq!(
+      interpret("FullSimplify[n! / (n - 4)!]").unwrap(),
+      "n!/(-4 + n)!"
+    );
+  }
+
   // z Gamma[z] -> Gamma[z+1] (the Gamma recurrence), but only when the result
   // is no more complex than the input (matching wolframscript's LeafCount
   // comparison).

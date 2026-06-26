@@ -4604,12 +4604,13 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
   // product b (b+1) … (b+k-1). Offered as a candidate so the leaf-count
   // comparison keeps it only when it is no longer than the Gamma ratio —
   // matching wolframscript, which reduces k ≤ 3 but leaves Gamma[n+4]/Gamma[n].
+  // wolframscript always reduces a k <= 3 Gamma / factorial ratio to its
+  // rising-factorial product, even when that product has a larger LeafCount
+  // (e.g. (n+3)!/n! -> (1+n)(2+n)(3+n)). Since `gamma_ratio_product` only fires
+  // for k <= 3 ratios, commit it unconditionally rather than gating on length.
   if let Some(prod) = gamma_ratio_product(expr) {
-    let c = leaf_count(&prod);
-    if c <= best_complexity {
-      best = prod;
-      best_complexity = c;
-    }
+    best_complexity = leaf_count(&prod);
+    best = prod;
   }
 
   // z * Gamma[z] -> Gamma[z+1] (e.g. FullSimplify[x Gamma[x]] -> Gamma[1+x]).
@@ -4687,15 +4688,25 @@ fn gamma_factor_absorb(expr: &Expr) -> Option<Expr> {
 /// Extract `(a, b)` from `Gamma[a] / Gamma[b]` in either the BinaryOp::Divide
 /// or the canonical `Times[Gamma[a], Power[Gamma[b], -1]]` form.
 fn extract_gamma_ratio(expr: &Expr) -> Option<(Expr, Expr)> {
+  // The "Gamma argument" of `Gamma[a]` is `a`; a factorial `m!` is `Gamma[m+1]`
+  // so its effective Gamma argument is `m+1`. This lets the rising-factorial
+  // reduction handle factorial ratios too (n!/(n-1)! -> n).
   let gamma_arg = |e: &Expr| -> Option<Expr> {
     if let Expr::FunctionCall { name, args } = e
-      && name == "Gamma"
       && args.len() == 1
     {
-      Some(args[0].clone())
-    } else {
-      None
+      if name == "Gamma" {
+        return Some(args[0].clone());
+      }
+      if name == "Factorial" {
+        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![args[0].clone(), Expr::Integer(1)].into(),
+        })
+        .ok();
+      }
     }
+    None
   };
   let recip_gamma_arg = |e: &Expr| -> Option<Expr> {
     let (base, exp) = match e {
@@ -4754,8 +4765,10 @@ fn gamma_ratio_product(expr: &Expr) -> Option<Expr> {
     .into(),
   })
   .ok()?;
+  // wolframscript reduces the rising-factorial product only for k <= 3 and
+  // leaves larger ratios (e.g. Gamma[n+4]/Gamma[n]) unevaluated.
   let k = match diff {
-    Expr::Integer(k) if (1..=16).contains(&k) => k,
+    Expr::Integer(k) if (1..=3).contains(&k) => k,
     _ => return None,
   };
   let mut factors = Vec::with_capacity(k as usize);
