@@ -209,7 +209,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ContourPlot" => Some((3, usize::MAX)),
     "ContourPlot3D" => Some((4, usize::MAX)),
     "Convergents" => Some((1, 2)),
-    "Convolve" => Some((4, 4)),
+    "Convolve" => Some((4, usize::MAX)),
     "CoordinateBounds" => Some((1, 2)),
     "CoordinateBoundingBox" => Some((1, 2)),
     "CoordinateTransform" => Some((2, 2)),

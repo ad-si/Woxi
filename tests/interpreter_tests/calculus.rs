@@ -10944,6 +10944,32 @@ mod convolve {
   }
 
   #[test]
+  fn arity_is_four_or_more() {
+    use woxi::interpret_with_stdout;
+    // Convolve takes 4 or more arguments. Fewer than 4 emits the `argm`
+    // (minimum-count) message — not `argrx` — and stays unevaluated,
+    // matching wolframscript.
+    let r = interpret_with_stdout("Convolve[a, b, c]").unwrap();
+    assert_eq!(r.result, "Convolve[a, b, c]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "Convolve::argm: Convolve called with 3 arguments; 4 or more arguments are expected."
+      )),
+      "expected argm message, got {:?}",
+      r.warnings
+    );
+    // More than four arguments is a valid arity and stays unevaluated with
+    // no message when it cannot be computed symbolically.
+    let r5 = interpret_with_stdout("Convolve[a, b, c, d, e]").unwrap();
+    assert_eq!(r5.result, "Convolve[a, b, c, d, e]");
+    assert!(
+      !r5.warnings.iter().any(|w| w.contains("Convolve::")),
+      "five arguments should not warn, got {:?}",
+      r5.warnings
+    );
+  }
+
+  #[test]
   fn unit_functions() {
     assert_eq!(
       interpret("Convolve[UnitBox[x], UnitBox[x], x, y]").unwrap(),
