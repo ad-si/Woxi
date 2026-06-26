@@ -1837,7 +1837,7 @@ InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1.0,1865
 ButtonFunction,Button function option,,unevaluated,3.0,1866
 SystemOptions,System options,,unevaluated,6.0,1867
 FrobeniusSolve,Returns non-negative integer solutions to a Frobenius equation,✅,pure,6.0,1869
-Sunday,Day of the week symbol,🚫,unevaluated,9.0,1869
+Sunday,Day of the week symbol,✅,unevaluated,9.0,1869
 PrintTemporary,Print temporary expression,,unevaluated,6.0,1870
 Constants,Option for Simplify specifying which symbols are constants,✅,pure,1.0,1873
 GeneratedParameters,Generated parameters option,,unevaluated,5.0,1873
@@ -1875,7 +1875,7 @@ SymmetricGroup,Symbolic symmetric group S_n of degree n; stays unevaluated and i
 InverseErf,Inverse error function,✅,pure,3.0,1906
 SmoothDensityHistogram,Smooth density histogram,,unevaluated,8.0,1907
 NetExtract,Extract net components,,unevaluated,11.0,1908
-Friday,Day of the week symbol,🚫,unevaluated,9.0,1910
+Friday,Day of the week symbol,✅,unevaluated,9.0,1910
 HankelH1,Hankel function of the first kind,✅,pure,6.0,1910
 CloudImport,Import from cloud,,unevaluated,10.0,1912
 Temporary,Temporary option,,unevaluated,2.0,1912
@@ -1913,7 +1913,7 @@ UnitTriangle,Unit triangle function (1-|x| for |x| <= 1),✅,pure,7.0,1944
 MessageDialog,GUI dialog for displaying messages,🚫,,6.0,1946
 SquaredEuclideanDistance,Squared Euclidean distance between two vectors,✅,pure,6.0,1946
 ColorSlider,Color slider control element (stays symbolic in script mode),✅,unevaluated,6.0,1949
-Saturday,Day of the week symbol,🚫,unevaluated,9.0,1949
+Saturday,Day of the week symbol,✅,unevaluated,9.0,1949
 TemplateApply,Applies arguments to a string template with backtick slots,✅,pure,10.0,1949
 ImageReflect,Reflects an image horizontally or vertically,✅,pure,7.0,1951
 URLBuild,Builds a URL from components and query parameters,✅,pure,10.0,1951
@@ -1933,7 +1933,7 @@ Evaluatable,Option for Cell specifying if it should be evaluated,🚫,,3.0,1967
 LinkWrite,Write an expression to a WSTP connection,🚫,,3.0,1967
 URLRead,Send HTTP request and read response,🚫,,11.0,1967
 BitOr,Returns the bitwise OR of integers,✅,pure,4.0,1968
-Monday,Day of the week symbol,🚫,unevaluated,9.0,1970
+Monday,Day of the week symbol,✅,unevaluated,9.0,1970
 Nor,Logical NOR,✅,pure,4.1,1970
 CellChangeTimes,Notebook cell option for tracking changes,🚫,,6.0,1975
 MeshCellCount,Count mesh cells in a region,🚫,,10.0,1975
@@ -2006,9 +2006,9 @@ FlattenLayer,Neural network flatten layer,🚫,,11.0,2042
 VertexInDegree,Number of incoming edges per vertex of a graph or edge list,✅,none,8.0,2042
 NotebookEventActions,Actions for notebook events,🚫,,6.0,2045
 RescalingTransform,Affine TransformationFunction mapping a bounding box to the unit cube or a target box,✅,pure,6.0,2045
-Wednesday,Day of the week symbol,🚫,unevaluated,9.0,2045
+Wednesday,Day of the week symbol,✅,unevaluated,9.0,2045
 PieChart3D,3D pie chart,✅,pure,7.0,2048
-Tuesday,Day of the week symbol,🚫,unevaluated,9.0,2048
+Tuesday,Day of the week symbol,✅,unevaluated,9.0,2048
 WindowElements,Window UI elements option,🚫,,3.0,2048
 InputString,Symbol specifying input string type for Input,✅,pure,1.0,2051
 LinkRead,Read from WSTP link,🚫,,3.0,2051
@@ -2051,7 +2051,7 @@ Symmetric,Symmetric tensor symmetry,🚫,,9.0,2087
 AbortProtect,Evaluates its argument and returns the result (abort protection during the body),✅,pure,2.0,2089
 ConnectedGraphQ,Test whether a graph is connected (strongly connected for directed graphs),✅,pure,8.0,2089
 PowerSpectralDensity,Power spectral density of signal,🚫,,9.0,2091
-Thursday,Day of the week symbol,🚫,unevaluated,9.0,2091
+Thursday,Day of the week symbol,✅,unevaluated,9.0,2091
 GeoEntities,Geographic entities lookup,🚫,,10.0,2094
 HeavisidePi,Rectangular pulse function: 1 for |x| < 1/2,✅,1,7.0,2094
 MomentGeneratingFunction,Moment-generating function E[e^(tX)] of a probability distribution,✅,pure,8.0,2094
