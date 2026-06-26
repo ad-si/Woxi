@@ -3931,6 +3931,33 @@ mod erf {
     );
   }
 
+  // Numeric Erf[a, b] uses the complementary identity Erfc[a] - Erfc[b] for
+  // same-signed arguments, avoiding the catastrophic cancellation of the naive
+  // Erf[b] - Erf[a] (both near +/-1 for large |a|, |b|). Compared via an
+  // integer projection so the result matches wolframscript to full precision
+  // (the naive form lost ~4 digits: Round[10^14 Erf[2.,3.]] was 465564448402).
+  #[test]
+  fn erf_two_arg_numeric_precision() {
+    assert_eq!(
+      interpret("Round[10^14 Erf[2., 3.]]").unwrap(),
+      "465564448405"
+    );
+    assert_eq!(
+      interpret("Round[10^15 Erf[3., 4.]]").unwrap(),
+      "22075079741"
+    );
+    // Negative same-signed arguments use the mirrored identity.
+    assert_eq!(
+      interpret("Round[10^14 Erf[-3., -2.]]").unwrap(),
+      "465564448405"
+    );
+    // Straddling zero keeps the direct Erf form (no cancellation there).
+    assert_eq!(
+      interpret("Round[10^14 Erf[0.1, 0.2]]").unwrap(),
+      "11023967319219"
+    );
+  }
+
   // Wolfram keeps the generalized two-argument Erf symbolic instead of
   // rewriting it to a difference of one-argument Erfs.
   #[test]

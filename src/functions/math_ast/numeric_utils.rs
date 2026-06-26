@@ -91,6 +91,17 @@ pub fn erfc_cf(x: f64) -> f64 {
   (-x * x).exp() / (f * std::f64::consts::PI.sqrt())
 }
 
+/// Complementary error function erfc(x) = 1 - erf(x), accurate for all x >= 0.
+/// For x >= 1 the continued fraction (erfc_cf) is used directly — there
+/// `1 - erf(x)` would lose precision to cancellation since erf(x) is near 1.
+pub fn erfc_f64(x: f64) -> f64 {
+  if x >= 1.0 {
+    erfc_cf(x)
+  } else {
+    1.0 - erf_f64(x)
+  }
+}
+
 /// Compute the inverse error function using a rational approximation
 /// followed by Newton-Raphson refinement.
 /// Uses the approach from J.M. Blair, "Rational Chebyshev approximations

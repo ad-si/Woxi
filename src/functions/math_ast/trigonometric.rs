@@ -1941,9 +1941,21 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(Expr::Integer(0));
     }
-    // Numeric: both are machine reals
+    // Numeric: both are machine reals. Use the exact identity
+    // Erf[b] - Erf[a] = Erfc[a] - Erfc[b]; when both arguments are large and
+    // same-signed, Erf is near +/-1 there, so the direct difference loses
+    // precision to cancellation — the complementary form avoids it.
     if let (Expr::Real(f0), Expr::Real(f1)) = (&args[0], &args[1]) {
-      return Ok(Expr::Real(erf_f64(*f1) - erf_f64(*f0)));
+      let (a, b) = (*f0, *f1);
+      let result = if a >= 0.0 && b >= 0.0 {
+        erfc_f64(a) - erfc_f64(b)
+      } else if a <= 0.0 && b <= 0.0 {
+        // Erf[b] - Erf[a] = Erf[-a] - Erf[-b] = Erfc[-b] - Erfc[-a].
+        erfc_f64(-b) - erfc_f64(-a)
+      } else {
+        erf_f64(b) - erf_f64(a)
+      };
+      return Ok(Expr::Real(result));
     }
     // Otherwise keep the symbolic two-argument form.
     return Ok(Expr::FunctionCall {
