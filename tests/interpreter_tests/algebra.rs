@@ -2773,6 +2773,36 @@ mod full_simplify {
     );
   }
 
+  // z Gamma[z] -> Gamma[z+1] (the Gamma recurrence), but only when the result
+  // is no more complex than the input (matching wolframscript's LeafCount
+  // comparison).
+  #[test]
+  fn gamma_factor_absorption() {
+    assert_eq!(
+      interpret("FullSimplify[x Gamma[x]]").unwrap(),
+      "Gamma[1 + x]"
+    );
+    assert_eq!(
+      interpret("FullSimplify[n Gamma[n]]").unwrap(),
+      "Gamma[1 + n]"
+    );
+    assert_eq!(
+      interpret("FullSimplify[(x + 1) Gamma[x + 1]]").unwrap(),
+      "Gamma[2 + x]"
+    );
+    assert_eq!(
+      interpret("FullSimplify[Sin[x] Gamma[Sin[x]]]").unwrap(),
+      "Gamma[1 + Sin[x]]"
+    );
+    // A numeric coefficient makes the absorbed form longer, so it is kept.
+    assert_eq!(
+      interpret("FullSimplify[2 x Gamma[x]]").unwrap(),
+      "2*x*Gamma[x]"
+    );
+    // No matching factor: unchanged.
+    assert_eq!(interpret("FullSimplify[x Gamma[y]]").unwrap(), "x*Gamma[y]");
+  }
+
   #[test]
   fn gamma_ratio_not_reduced() {
     // k = 4: the product is longer than the ratio, so the ratio is kept.

@@ -4612,8 +4612,76 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
+  // z * Gamma[z] -> Gamma[z+1] (e.g. FullSimplify[x Gamma[x]] -> Gamma[1+x]).
+  if let Some(absorbed) = gamma_factor_absorb(expr) {
+    let c = leaf_count(&absorbed);
+    if c <= best_complexity {
+      best = absorbed;
+      best_complexity = c;
+    }
+  }
+
   let _ = best_complexity; // suppress unused warning
   best
+}
+
+/// A product containing both a factor `z` and `Gamma[z]` collapses via the
+/// identity `z Gamma[z] = Gamma[z+1]`; other factors are preserved (so
+/// `2 x Gamma[x]` → `2 Gamma[x+1]`).
+fn gamma_factor_absorb(expr: &Expr) -> Option<Expr> {
+  let factors = collect_times_factors(expr);
+  if factors.len() < 2 {
+    return None;
+  }
+  let gamma_arg = |e: &Expr| -> Option<Expr> {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Gamma"
+      && args.len() == 1
+    {
+      Some(args[0].clone())
+    } else {
+      None
+    }
+  };
+  for gi in 0..factors.len() {
+    let Some(arg) = gamma_arg(&factors[gi]) else {
+      continue;
+    };
+    let arg_key = crate::syntax::expr_to_string(&arg);
+    let Some(fi) = (0..factors.len()).find(|&fi| {
+      fi != gi && crate::syntax::expr_to_string(&factors[fi]) == arg_key
+    }) else {
+      continue;
+    };
+    // Gamma[arg + 1].
+    let arg_plus =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![arg.clone(), Expr::Integer(1)].into(),
+      })
+      .ok()?;
+    let new_gamma = Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: vec![arg_plus].into(),
+    };
+    let mut rest: Vec<Expr> = factors
+      .iter()
+      .enumerate()
+      .filter(|(k, _)| *k != gi && *k != fi)
+      .map(|(_, f)| f.clone())
+      .collect();
+    rest.push(new_gamma);
+    let product = if rest.len() == 1 {
+      rest.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: rest.into(),
+      }
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&product).ok();
+  }
+  None
 }
 
 /// Extract `(a, b)` from `Gamma[a] / Gamma[b]` in either the BinaryOp::Divide
