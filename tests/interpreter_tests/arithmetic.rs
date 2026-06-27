@@ -2275,6 +2275,55 @@ mod sqrt_power {
   }
 
   #[test]
+  fn times_large_integer_rational_symbolic_cancels() {
+    // Regression: the >2^53 ("needs BigInt") branch of times_ast folded only
+    // Integer/BigInteger factors and pushed a Rational coefficient into the
+    // symbolic args, so `large_int * (1/large_int) * sym` stayed unreduced as
+    // `(N*sym)/N`. It now folds the rational into a BigInt fraction and cancels.
+    assert_eq!(
+      interpret("Times[15000000000000000, Rational[1, 10000000000000000], x]")
+        .unwrap(),
+      "(3*x)/2"
+    );
+    assert_eq!(interpret("10^20*x/10^20").unwrap(), "x");
+    assert_eq!(
+      interpret("Times[10^18, Rational[2, 3], x, y]").unwrap(),
+      "(2000000000000000000*x*y)/3"
+    );
+    // BigInt × Real coefficient still collapses to a single Real.
+    assert_eq!(interpret("2.5*10^20").unwrap(), "2.5*^20");
+  }
+
+  #[test]
+  fn sqrt_rational_numerator_exceeding_u64() {
+    // Regression: Sqrt of a Rational whose numerator fit i128 but exceeded u64
+    // truncated via `as u64`, giving a garbage radicand. The u64 fast path is
+    // now guarded so such inputs take the BigInt extraction path.
+    assert_eq!(
+      interpret("Sqrt[7*10^30/3]").unwrap(),
+      "1000000000000000*Sqrt[7/3]"
+    );
+    assert_eq!(
+      interpret("Sqrt[7*10^40/3]").unwrap(),
+      "100000000000000000000*Sqrt[7/3]"
+    );
+  }
+
+  #[test]
+  fn sqrt_absorb_coefficient_no_overflow_panic() {
+    // Regression: the `(1/d)*Sqrt[p/q]` absorption optimization computed `d*d`
+    // unchecked, panicking with "attempt to multiply with overflow" for a large
+    // denominator. It now uses checked arithmetic and skips on overflow.
+    assert_eq!(
+      interpret("150000000000000000000*(100000000000000000000*Sqrt[7/3])^(-1)")
+        .unwrap(),
+      "(3*Sqrt[3/7])/2"
+    );
+    // Small absorption case is unchanged.
+    assert_eq!(interpret("(1/3)*Sqrt[15/11]").unwrap(), "Sqrt[5/33]");
+  }
+
+  #[test]
   fn sqrt_squared() {
     assert_eq!(interpret("Sqrt[a]^2").unwrap(), "a");
   }

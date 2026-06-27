@@ -2338,9 +2338,13 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  // Require all elements to be numeric; otherwise leave unevaluated.
-  let all_numeric = xs.iter().all(|x| expr_to_num(x).is_some())
-    && ys.iter().all(|y| expr_to_num(y).is_some());
+  // Require all elements to be numeric; otherwise leave unevaluated. A
+  // BigInteger (an integer past i128, e.g. 10^40) is numeric even though
+  // expr_to_num declines it — the exact covariance path below is BigInt-aware,
+  // so admit it here rather than falling through to the unevaluated form.
+  let is_numeric =
+    |e: &Expr| expr_to_num(e).is_some() || matches!(e, Expr::BigInteger(_));
+  let all_numeric = xs.iter().all(&is_numeric) && ys.iter().all(&is_numeric);
   if !all_numeric {
     // Symbolic two-element vectors collapse to a clean closed form:
     //   r = (v0-v1)(Conj(w0)-Conj(w1)) /

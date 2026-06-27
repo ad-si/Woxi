@@ -915,9 +915,14 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, args: rargs }
       if name == "Rational" && rargs.len() == 2 =>
     {
+      // Only the u64 fast path here; a numerator/denominator that fits i128 but
+      // exceeds u64 (e.g. 7*10^30) would truncate on `as u64`, so it falls
+      // through to the BigInt path below.
       if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
         && *n >= 0
         && *d > 0
+        && *n <= u64::MAX as i128
+        && *d <= u64::MAX as i128
       {
         // Extract perfect square factors from numerator and denominator
         let extract_square_factor = |val: u64| -> (u64, u64) {

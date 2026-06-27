@@ -2022,6 +2022,32 @@ mod correlation {
   }
 
   #[test]
+  fn correlation_large_integer_lists() {
+    // Regression: Correlation of large-integer lists overflowed/failed to
+    // cancel. Two independent bugs were involved:
+    //   1. Sqrt of a Rational whose numerator exceeded u64 truncated via
+    //      `as u64` (gave garbage radicands).
+    //   2. The large-integer (>2^53) branch of times_ast folded only
+    //      Integer/BigInteger factors, leaving a Rational coefficient
+    //      uncancelled (e.g. `(15*10^15 Sqrt[3/7])/10^16`).
+    // Correlation is scale-invariant, so all of these equal the {1,2,4}/{1,2,3}
+    // value `(3 Sqrt[3/7])/2`, matching wolframscript.
+    for k in ["15", "20", "25", "40"] {
+      let expr =
+        format!("Correlation[{{10^{k}, 2*10^{k}, 3*10^{k}}}, {{1, 2, 4}}]");
+      assert_eq!(
+        interpret(&expr).unwrap(),
+        "(3*Sqrt[3/7])/2",
+        "failed at k={k}"
+      );
+    }
+    assert_eq!(
+      interpret("Correlation[{10^20, 2*10^20, 4*10^20}, {1, 2, 3}]").unwrap(),
+      "(3*Sqrt[3/7])/2"
+    );
+  }
+
+  #[test]
   fn correlation_symbolic_two_vectors_audit_case() {
     // Audit case: two symbolic 2-vectors.
     assert_eq!(

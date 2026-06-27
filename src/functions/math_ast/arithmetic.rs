@@ -5471,42 +5471,132 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if has_bigint {
     use num_bigint::BigInt;
     use num_traits::ToPrimitive;
-    let mut big_product = BigInt::from(1);
+    // Track the numeric coefficient as an exact BigInt fraction so that a
+    // Rational factor's denominator cancels against a large integer (e.g.
+    // `Times[3*10^16, Rational[1, 10^16], x]` → `(3*x)/2`, not the unreduced
+    // `(3*10^16 x)/10^16`). Folding Rationals here was previously skipped —
+    // they fell through to `symbolic_args`, leaving the fraction unreduced.
+    let mut big_numer = BigInt::from(1);
+    let mut big_denom = BigInt::from(1);
     let mut all_int = true;
     let mut real_product: f64 = 1.0;
     let mut has_real = false;
     let mut symbolic_args: Vec<Expr> = Vec::new();
 
+    // Pull (p, q) out of a Rational[p, q] whose parts are Integer/BigInteger.
+    let rational_parts = |e: &Expr| -> Option<(BigInt, BigInt)> {
+      if let Expr::FunctionCall { name, args: ra } = e
+        && name == "Rational"
+        && ra.len() == 2
+      {
+        let to_big = |x: &Expr| -> Option<BigInt> {
+          match x {
+            Expr::Integer(v) => Some(BigInt::from(*v)),
+            Expr::BigInteger(v) => Some(v.clone()),
+            _ => None,
+          }
+        };
+        if let (Some(p), Some(q)) = (to_big(&ra[0]), to_big(&ra[1])) {
+          return Some((p, q));
+        }
+      }
+      None
+    };
+
     for arg in args {
       match arg {
-        Expr::Integer(n) => big_product *= BigInt::from(*n),
-        Expr::BigInteger(n) => big_product *= n,
+        Expr::Integer(n) => big_numer *= BigInt::from(*n),
+        Expr::BigInteger(n) => big_numer *= n,
         Expr::Real(f) => {
           real_product *= *f;
           has_real = true;
           all_int = false;
         }
-        _ => {
+        // Power[Integer|BigInteger base, Integer exponent] folds into the exact
+        // coefficient fraction — a negative exponent (a reciprocal such as
+        // `(10^40)^(-1)`) is otherwise left symbolic and never cancels against a
+        // large integer numerator (the BigInteger analogue of the Rational case).
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: base,
+          right: exp,
+        } if matches!(
+          base.as_ref(),
+          Expr::Integer(_) | Expr::BigInteger(_)
+        ) && matches!(exp.as_ref(), Expr::Integer(_)) =>
+        {
+          let base_big = match base.as_ref() {
+            Expr::Integer(v) => BigInt::from(*v),
+            Expr::BigInteger(v) => v.clone(),
+            _ => unreachable!(),
+          };
+          let e = match exp.as_ref() {
+            Expr::Integer(v) => *v,
+            _ => unreachable!(),
+          };
+          if e >= 0 {
+            big_numer *= base_big.pow(e as u32);
+          } else {
+            big_denom *= base_big.pow((-e) as u32);
+          }
           all_int = false;
-          symbolic_args.push(arg.clone());
+        }
+        _ => {
+          if let Some((p, q)) = rational_parts(arg) {
+            big_numer *= p;
+            big_denom *= q;
+            all_int = false;
+          } else {
+            all_int = false;
+            symbolic_args.push(arg.clone());
+          }
         }
       }
     }
 
-    if all_int {
-      return Ok(bigint_to_expr(big_product));
+    // Reduce the fraction by gcd and fix the sign onto the numerator.
+    {
+      let g = bigint_gcd(&big_numer, &big_denom);
+      if g != BigInt::from(0) {
+        big_numer /= &g;
+        big_denom /= &g;
+      }
+      if big_denom < BigInt::from(0) {
+        big_numer = -big_numer;
+        big_denom = -big_denom;
+      }
+    }
+    let coeff_is_int = big_denom == BigInt::from(1);
+
+    if all_int && coeff_is_int {
+      return Ok(bigint_to_expr(big_numer));
     }
 
     // 0 * anything = 0
-    if big_product == BigInt::from(0) {
+    if big_numer == BigInt::from(0) {
       return Ok(Expr::Integer(0));
     }
 
-    // If any Real factor is present, collapse BigInt × Real to a single Real
-    // (matches wolframscript: 2.5 * 10^20 → 2.5*^20, a single Real).
+    // Build the exact coefficient expression (Integer or reduced Rational).
+    let coeff_expr = if coeff_is_int {
+      bigint_to_expr(big_numer.clone())
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![
+          bigint_to_expr(big_numer.clone()),
+          bigint_to_expr(big_denom.clone()),
+        ]
+        .into(),
+      }
+    };
+
+    // If any Real factor is present, collapse the exact coefficient × Real to a
+    // single Real (matches wolframscript: 2.5 * 10^20 → 2.5*^20).
     if has_real {
-      let big_f = big_product.to_f64().unwrap_or(f64::INFINITY);
-      let numeric = Expr::Real(big_f * real_product);
+      let coeff_f = big_numer.to_f64().unwrap_or(f64::INFINITY)
+        / big_denom.to_f64().unwrap_or(f64::INFINITY);
+      let numeric = Expr::Real(coeff_f * real_product);
       if symbolic_args.is_empty() {
         return Ok(numeric);
       }
@@ -5520,11 +5610,15 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
 
+    if symbolic_args.is_empty() {
+      return Ok(coeff_expr);
+    }
+
     symbolic_args = combine_like_bases(symbolic_args)?;
     sort_symbolic_factors(&mut symbolic_args);
     let mut final_args: Vec<Expr> = Vec::new();
-    if big_product != BigInt::from(1) {
-      final_args.push(bigint_to_expr(big_product));
+    if !(coeff_is_int && big_numer == BigInt::from(1)) {
+      final_args.push(coeff_expr);
     }
     final_args.extend(symbolic_args);
     if final_args.len() == 1 {
@@ -5987,8 +6081,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let (Expr::Integer(sp), Expr::Integer(sq)) = (&sargs[0], &sargs[1])
     && *sp > 0
     && *sq > 0
-    && gcd(*sp, cd * cd) > 1
-    && let Some(new_sq) = sq.checked_mul(*cd).and_then(|v| v.checked_mul(*cd))
+    // Guard cd*cd against i128 overflow for a large denominator (e.g. d=10^20);
+    // on overflow this absorption optimization is simply skipped.
+    && let Some(cd_sq) = cd.checked_mul(*cd)
+    && gcd(*sp, cd_sq) > 1
+    && let Some(new_sq) = sq.checked_mul(cd_sq)
   {
     let absorbed = sqrt_ast(&[make_rational(*sp, new_sq)])?;
     if *cn < 0 {
