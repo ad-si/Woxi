@@ -2423,6 +2423,29 @@ mod cases {
     );
   }
 
+  // Regression: with a monomial argument like `2 x`, the orthogonal polynomials
+  // returned their substituted form un-evaluated (e.g. `12 - 48*(2*x)^2 + ...`)
+  // instead of distributing `(2 x)^k` to `2^k x^k` like wolframscript. They now
+  // evaluate the substituted polynomial — distributing monomial arguments while
+  // keeping sum arguments such as `1 + x` factored — and reduce the
+  // polynomial-over-factorial fraction (Laguerre) to lowest terms.
+  #[test]
+  fn orthogonal_polynomials_monomial_argument() {
+    assert_case("ChebyshevT[4, 2 x]", "1 - 32*x^2 + 128*x^4");
+    assert_case("ChebyshevU[3, 2 x]", "-8*x + 64*x^3");
+    assert_case("HermiteH[4, 2 x]", "12 - 192*x^2 + 256*x^4");
+    assert_case("LegendreP[4, 2 x]", "(3 - 120*x^2 + 560*x^4)/8");
+    assert_case("GegenbauerC[4, 1, 2 x]", "1 - 48*x^2 + 256*x^4");
+    // Laguerre's poly/n! fraction is reduced to lowest terms after distributing.
+    assert_case("LaguerreL[3, 2 x]", "(3 - 18*x + 18*x^2 - 4*x^3)/3");
+    assert_case(
+      "LaguerreL[4, 3 x]",
+      "(8 - 96*x + 216*x^2 - 144*x^3 + 27*x^4)/8",
+    );
+    // A sum argument stays factored, matching wolframscript.
+    assert_case("HermiteH[4, x + 1]", "12 - 48*(1 + x)^2 + 16*(1 + x)^4");
+  }
+
   #[test]
   fn jacobi_p_1() {
     assert_case(r#"JacobiP[1, a, b, z]"#, r#"(a - b + (2 + a + b)*z)/2"#);

@@ -19,6 +19,148 @@ fn binomial_big(top: i128, bot: i128) -> num_bigint::BigInt {
   result
 }
 
+/// Visit every additive term of a polynomial expression, flattening nested and
+/// n-ary `Plus`. Anything that is not a `Plus` is a single term.
+fn for_each_plus_term(e: &Expr, f: &mut impl FnMut(&Expr)) {
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      for_each_plus_term(left, f);
+      for_each_plus_term(right, f);
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for a in args.iter() {
+        for_each_plus_term(a, f);
+      }
+    }
+    _ => f(e),
+  }
+}
+
+/// The integer coefficient of a single monomial term, or `None` if the term has
+/// a non-integer (e.g. Rational) numeric coefficient — in which case the caller
+/// declines to reduce. A bare power/symbol has coefficient 1.
+fn integer_coeff_of_term(t: &Expr) -> Option<num_bigint::BigInt> {
+  use num_bigint::BigInt;
+  match t {
+    Expr::Integer(c) => Some(BigInt::from(*c)),
+    Expr::BigInteger(c) => Some(c.clone()),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => integer_coeff_of_term(operand).map(|c| -c),
+    Expr::FunctionCall { name, .. } if name == "Rational" => None,
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => match (left.as_ref(), right.as_ref()) {
+      (Expr::Integer(c), _) | (_, Expr::Integer(c)) => Some(BigInt::from(*c)),
+      (Expr::BigInteger(c), _) | (_, Expr::BigInteger(c)) => Some(c.clone()),
+      // A Rational numeric factor means the term is not integer-content; bail.
+      (Expr::FunctionCall { name, .. }, _)
+      | (_, Expr::FunctionCall { name, .. })
+        if name == "Rational" =>
+      {
+        None
+      }
+      _ => Some(BigInt::from(1)),
+    },
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args.iter() {
+        match a {
+          Expr::Integer(c) => return Some(BigInt::from(*c)),
+          Expr::BigInteger(c) => return Some(c.clone()),
+          Expr::FunctionCall { name, .. } if name == "Rational" => return None,
+          _ => {}
+        }
+      }
+      Some(BigInt::from(1))
+    }
+    _ => Some(BigInt::from(1)),
+  }
+}
+
+/// If `expr` is `poly / Integer(d)`, reduce by the gcd of the polynomial's
+/// integer content and `d`, matching wolframscript's canonical `poly / n!`
+/// form. E.g. LaguerreL[3, 2 x] builds (6 - 36 x + 36 x^2 - 8 x^3)/6 after
+/// distributing the monomial argument; this reduces it to the wolframscript
+/// form (3 - 18 x + 18 x^2 - 4 x^3)/3. A no-op for non-fraction results or when
+/// any term carries a non-integer coefficient.
+fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
+  use num_bigint::BigInt;
+  use num_traits::Signed;
+  // Extract (polynomial, integer denominator d) from either the `poly / d`
+  // (BinaryOp Divide) form or the post-evaluation `(1/d) * poly` form
+  // (Times of a Rational[1, d] coefficient and a Plus). Returns None otherwise.
+  let parts: Option<(Expr, i128)> = match &expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => match right.as_ref() {
+      Expr::Integer(d) if *d != 0 => Some(((**left).clone(), *d)),
+      _ => None,
+    },
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      let rat_denom = |e: &Expr| -> Option<i128> {
+        if let Expr::FunctionCall { name, args } = e
+          && name == "Rational"
+          && args.len() == 2
+          && let (Expr::Integer(1), Expr::Integer(d)) = (&args[0], &args[1])
+          && *d != 0
+        {
+          Some(*d)
+        } else {
+          None
+        }
+      };
+      if let Some(d) = rat_denom(&args[0]) {
+        Some((args[1].clone(), d))
+      } else {
+        rat_denom(&args[1]).map(|d| (args[0].clone(), d))
+      }
+    }
+    _ => None,
+  };
+  let Some((poly, d)) = parts else {
+    return Ok(expr);
+  };
+  let mut content = BigInt::from(0);
+  let mut bail = false;
+  for_each_plus_term(&poly, &mut |t| match integer_coeff_of_term(t) {
+    Some(c) => content = bigint_gcd(content.clone(), c.abs()),
+    None => bail = true,
+  });
+  if bail {
+    return Ok(expr);
+  }
+  let g = bigint_gcd(content, BigInt::from(d).abs());
+  if g <= BigInt::from(1) {
+    return Ok(expr);
+  }
+  // reduced numerator = Expand[(1/g) * numerator]
+  let scaled = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(make_rational_expr(BigInt::from(1), g.clone())),
+    right: Box::new(poly),
+  };
+  let reduced_num =
+    crate::evaluator::evaluate_function_call_ast("Expand", &[scaled])?;
+  let new_d = BigInt::from(d) / &g;
+  if new_d == BigInt::from(1) {
+    return Ok(reduced_num);
+  }
+  Ok(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(reduced_num),
+    right: Box::new(bigint_to_expr(new_d)),
+  })
+}
+
 /// True for an exact numeric value (no free symbols), so the Jacobi series can
 /// be collapsed to a closed number rather than kept in the `(x-1)` form.
 fn jacobi_x_is_exact_numeric(x: &Expr) -> bool {
@@ -362,7 +504,11 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       // Symbolic: build the polynomial expression
       if let Some(expr) = legendre_polynomial_symbolic(n, &args[1]) {
-        Ok(expr)
+        // Evaluate so a monomial argument like `2 x` distributes `(2 x)^k`
+        // to `2^k x^k` (matching wolframscript); sum arguments stay factored.
+        // Then reduce the polynomial-over-factorial fraction to lowest terms.
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
+        reduce_poly_over_integer(evaluated)
       } else {
         Ok(Expr::FunctionCall {
           name: "LegendreP".to_string(),
@@ -2068,7 +2214,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       // Symbolic: build the polynomial expression
       if let Some(expr) = chebyshev_t_polynomial_symbolic(n, &args[1]) {
-        Ok(expr)
+        crate::evaluator::evaluate_expr_to_expr(&expr)
       } else {
         Ok(Expr::FunctionCall {
           name: "ChebyshevT".to_string(),
@@ -2341,7 +2487,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => Ok(Expr::Real(chebyshev_u_eval_f64(n, *f))),
     _ => {
       if let Some(expr) = chebyshev_u_polynomial_symbolic(n, &args[1]) {
-        Ok(expr)
+        crate::evaluator::evaluate_expr_to_expr(&expr)
       } else {
         Ok(Expr::FunctionCall {
           name: "ChebyshevU".to_string(),
@@ -2685,7 +2831,11 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       // Symbolic: build polynomial
       if let Some(expr) = gegenbauer_polynomial_symbolic(n, lam, &args[2]) {
-        Ok(expr)
+        // Evaluate so a monomial argument like `2 x` distributes `(2 x)^k`
+        // to `2^k x^k` (matching wolframscript); sum arguments stay factored.
+        // Then reduce the polynomial-over-factorial fraction to lowest terms.
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
+        reduce_poly_over_integer(evaluated)
       } else {
         Ok(Expr::FunctionCall {
           name: "GegenbauerC".to_string(),
@@ -3138,7 +3288,11 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => Ok(Expr::Real(laguerre_eval_f64(n, *f))),
     _ => {
       if let Some(expr) = laguerre_polynomial_symbolic(n, &args[1]) {
-        Ok(expr)
+        // Evaluate so a monomial argument like `2 x` distributes `(2 x)^k`
+        // to `2^k x^k` (matching wolframscript); sum arguments stay factored.
+        // Then reduce the polynomial-over-factorial fraction to lowest terms.
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
+        reduce_poly_over_integer(evaluated)
       } else {
         Ok(Expr::FunctionCall {
           name: "LaguerreL".to_string(),
@@ -3582,7 +3736,10 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &[expr],
           );
         }
-        Ok(expr)
+        // Evaluate (not Expand) the substituted polynomial: a monomial argument
+        // like `2 x` distributes `(2 x)^k` to `2^k x^k` (matching wolframscript),
+        // while a sum argument like `1 + x` keeps `(1 + x)^k` factored.
+        crate::evaluator::evaluate_expr_to_expr(&expr)
       } else {
         Ok(Expr::FunctionCall {
           name: "HermiteH".to_string(),
