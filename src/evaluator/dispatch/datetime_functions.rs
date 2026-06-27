@@ -216,7 +216,7 @@ pub fn dispatch_datetime_functions(
       return Some(result);
     }
     "UnixTime" if args.is_empty() => {
-      use std::time::{SystemTime, UNIX_EPOCH};
+      use web_time::{SystemTime, UNIX_EPOCH};
       let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

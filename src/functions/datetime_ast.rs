@@ -558,7 +558,7 @@ fn month_name_short(month: i64) -> &'static str {
 pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     // Current time
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use web_time::{SystemTime, UNIX_EPOCH};
     let unix_secs = SystemTime::now()
       .duration_since(UNIX_EPOCH)
       .unwrap_or_default()
@@ -2609,17 +2609,12 @@ pub fn julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if args.is_empty() {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-      use std::time::{SystemTime, UNIX_EPOCH};
-      let unix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0);
-      return Ok(Expr::Real(2440587.5 + unix / 86400.0));
-    }
-    #[cfg(target_arch = "wasm32")]
-    return Ok(unevaluated(args));
+    use web_time::{SystemTime, UNIX_EPOCH};
+    let unix = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .map(|d| d.as_secs_f64())
+      .unwrap_or(0.0);
+    return Ok(Expr::Real(2440587.5 + unix / 86400.0));
   }
   if args.len() != 1 {
     return Ok(unevaluated(args));

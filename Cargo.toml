@@ -65,6 +65,10 @@ wasm-bindgen = { version = "0.2", optional = true }
 zeromq = { version = "0.5.0-pre", features = ["tokio-runtime"], default-features = false, optional = true }
 regex = "1.12.3"
 unicode-normalization = "0.1"
+# Drop-in replacement for std::time::{Instant, SystemTime} that works on
+# wasm32-unknown-unknown (uses Performance.now()/Date.now()) instead of
+# panicking. Re-exports std on native targets.
+web-time = "1.1"
 sha2 = "0.10"
 md-5 = "0.10"
 sha1 = "0.10"

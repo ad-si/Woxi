@@ -4191,6 +4191,29 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_absolute_timing_simple_expression() {
+      // Regression for issue #128: `AbsoluteTiming[1 + 1]` panicked in the
+      // WASM playground because `std::time::Instant::now()` aborts on
+      // wasm32-unknown-unknown. The result must be `{<time>, 2}`.
+      let result = interpret("AbsoluteTiming[1 + 1]").unwrap();
+      assert!(result.starts_with('{') && result.ends_with('}'));
+      assert!(result.ends_with(", 2}"));
+      let inner = &result[1..result.len() - 1];
+      let comma = inner.find(',').unwrap();
+      let elapsed: f64 = inner[..comma].trim().parse().unwrap();
+      assert!(
+        elapsed >= 0.0,
+        "elapsed time must be non-negative, got {elapsed}"
+      );
+    }
+
+    #[test]
+    fn test_timing_simple_expression() {
+      let result = interpret("Timing[1 + 1]").unwrap();
+      assert!(result.starts_with('{') && result.ends_with(", 2}"));
+    }
+
+    #[test]
     fn test_pause_negative_stays_unevaluated() {
       // wolframscript rejects negative durations with Pause::numnm and
       // leaves the call unevaluated.

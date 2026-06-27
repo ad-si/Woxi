@@ -374,7 +374,7 @@ pub fn evaluate_expr_to_expr_early_dispatch(
       return Ok(Some(evaluate_rule_delayed_ast(args)?));
     }
     "AbsoluteTiming" | "Timing" if args.len() == 1 => {
-      let start = std::time::Instant::now();
+      let start = web_time::Instant::now();
       let result = evaluate_expr_to_expr(&args[0])?;
       let elapsed = start.elapsed().as_secs_f64();
       return Ok(Some(Expr::List(vec![Expr::Real(elapsed), result].into())));
@@ -382,9 +382,9 @@ pub fn evaluate_expr_to_expr_early_dispatch(
     "RepeatedTiming" if args.len() == 1 => {
       let mut times = Vec::new();
       let mut last_result = Expr::Identifier("Null".to_string());
-      let overall_start = std::time::Instant::now();
+      let overall_start = web_time::Instant::now();
       for _ in 0..100 {
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         last_result = evaluate_expr_to_expr(&args[0])?;
         times.push(start.elapsed().as_secs_f64());
         if times.len() >= 3 && overall_start.elapsed().as_secs_f64() > 0.5 {

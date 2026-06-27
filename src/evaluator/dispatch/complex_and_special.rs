@@ -509,7 +509,7 @@ pub fn dispatch_complex_and_special(
         Expr::Integer(n) => Some(*n as f64),
         _ => None,
       };
-      let start = std::time::Instant::now();
+      let start = web_time::Instant::now();
       let result = crate::evaluator::evaluate_expr_to_expr(&args[0]);
       let elapsed = start.elapsed().as_secs_f64();
       let mut overshot = matches!(limit_secs, Some(limit) if elapsed > limit);

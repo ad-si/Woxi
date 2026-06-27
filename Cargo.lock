@@ -6740,6 +6740,7 @@ dependencies = [
  "unicode-normalization",
  "uuid",
  "wasm-bindgen",
+ "web-time",
  "zeromq",
 ]
 

@@ -281,8 +281,8 @@ pub fn clear_last_output() {
 }
 
 // Session start time for SessionTime[]
-static SESSION_START: std::sync::LazyLock<std::time::Instant> =
-  std::sync::LazyLock::new(std::time::Instant::now);
+static SESSION_START: std::sync::LazyLock<web_time::Instant> =
+  std::sync::LazyLock::new(web_time::Instant::now);
 
 /// Returns the elapsed time in seconds since the session started.
 pub fn session_time() -> f64 {
