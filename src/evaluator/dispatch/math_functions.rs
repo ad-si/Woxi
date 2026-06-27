@@ -1240,6 +1240,9 @@ pub fn dispatch_math_functions(
     "JacobiZeta" if args.len() == 2 => {
       return Some(crate::functions::math_ast::jacobi_zeta_ast(args));
     }
+    "JacobiEpsilon" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::jacobi_epsilon_ast(args));
+    }
     "EllipticNomeQ" if args.len() == 1 => {
       return Some(crate::functions::math_ast::elliptic_nome_q_ast(args));
     }

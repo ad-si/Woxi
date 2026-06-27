@@ -651,6 +651,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "JacobiSN" => Some((2, 2)),
     "JacobiSymbol" => Some((2, 2)),
     "JacobiZeta" => Some((2, 2)),
+    "JacobiEpsilon" => Some((2, 2)),
     "JoinAcross" => Some((3, 3)),
     "KeyDrop" => Some((1, 2)),
     "KeyDropFrom" => Some((2, 2)),

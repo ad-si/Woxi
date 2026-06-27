@@ -82,6 +82,15 @@ pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
+  // JacobiAmplitude[u, 1] = Gudermannian[u]. (Real arguments are numericized by
+  // the path below; this covers the exact-integer m == 1 case symbolically.)
+  if matches!(m, Expr::Integer(1)) {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Gudermannian".to_string(),
+      args: vec![u.clone()].into(),
+    });
+  }
+
   // Numeric evaluation
   if let (Some(u_f), Some(m_f)) = (try_eval_to_f64(u), try_eval_to_f64(m))
     && (matches!(u, Expr::Real(_)) || matches!(m, Expr::Real(_)))
@@ -92,6 +101,62 @@ pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiAmplitude".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// JacobiEpsilon[u, m] - the Jacobi epsilon function, the integral of dn^2,
+/// equal to EllipticE[JacobiAmplitude[u, m], m]. Special cases match
+/// wolframscript: JacobiEpsilon[0, m] = 0, JacobiEpsilon[u, 0] = u and
+/// JacobiEpsilon[u, 1] = Tanh[u]; other exact/symbolic arguments stay symbolic.
+pub fn jacobi_epsilon_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiEpsilon expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let u = &args[0];
+  let m = &args[1];
+
+  // JacobiEpsilon[0, m] = 0
+  if is_expr_zero(u) {
+    if has_real_arg(u, m) {
+      return Ok(Expr::Real(0.0));
+    }
+    return Ok(Expr::Integer(0));
+  }
+
+  // JacobiEpsilon[u, 0] = u (the integrand dn^2 collapses to 1).
+  if let Some(result) =
+    crate::functions::math_ast::elliptic::elliptic_param_zero_reduces_to_first(
+      u, m,
+    )
+  {
+    return Ok(result);
+  }
+
+  // JacobiEpsilon[u, 1] = Tanh[u].
+  if matches!(m, Expr::Integer(1)) {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Tanh".to_string(),
+      args: vec![u.clone()].into(),
+    });
+  }
+
+  // Numeric: JacobiEpsilon[u, m] = EllipticE[JacobiAmplitude[u, m], m].
+  if let (Some(u_f), Some(m_f)) = (try_eval_to_f64(u), try_eval_to_f64(m))
+    && (matches!(u, Expr::Real(_)) || matches!(m, Expr::Real(_)))
+  {
+    let (sn, cn, _) = jacobi_elliptic(u_f, m_f);
+    let am = sn.atan2(cn);
+    return Ok(Expr::Real(
+      crate::functions::math_ast::elliptic::elliptic_e_incomplete(am, m_f),
+    ));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "JacobiEpsilon".to_string(),
     args: args.to_vec().into(),
   })
 }

@@ -2404,6 +2404,23 @@ mod cases {
     assert_case("EllipticF[2, 0.]", "2.");
     assert_case("JacobiAmplitude[2, 0.]", "2.");
   }
+
+  // At modulus m == 1 the Jacobi amplitude is the Gudermannian, and the Jacobi
+  // epsilon function is Tanh. JacobiEpsilon also reduces at m == 0 (to its first
+  // argument) and at phi == 0 (to 0).
+  #[test]
+  fn jacobi_modulus_one() {
+    assert_case("JacobiAmplitude[u, 1]", "Gudermannian[u]");
+    assert_case("JacobiAmplitude[x + y, 1]", "Gudermannian[x + y]");
+    assert_case("JacobiEpsilon[phi, 1]", "Tanh[phi]");
+    assert_case("JacobiEpsilon[phi, 0]", "phi");
+    assert_case("JacobiEpsilon[u + v, 0]", "u + v");
+    assert_case("JacobiEpsilon[0, m]", "0");
+    // A general modulus stays unevaluated (not the not-implemented message).
+    assert_case("JacobiEpsilon[phi, m]", "JacobiEpsilon[phi, m]");
+    // m == 1 with a Real first argument folds through Tanh exactly.
+    assert_case("JacobiEpsilon[2.0, 1]", "0.9640275800758169");
+  }
   #[test]
   fn elliptic_k_1() {
     assert_case(r#"EllipticK[0.5]"#, r#"1.8540746773013717"#);

@@ -4574,7 +4574,7 @@ GroupActionBase,,,,8.0,4747
 HTTPErrorResponse,,🚫,,10.3,4747
 ImageSaliencyFilter,,🚫,,10.0,4747
 InputPorts,,,,12.2,4747
-JacobiEpsilon,,,,12.2,4747
+JacobiEpsilon,Jacobi epsilon function EllipticE[JacobiAmplitude[u m] m]; reduces to u at m=0 and Tanh[u] at m=1,✅,pure,12.2,4747
 LameS,,,,12.2,4747
 LongestCommonSequencePositions,,,,10.2,4747
 NotificationFunction,,🚫,,10.1,4747
