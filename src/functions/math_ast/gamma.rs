@@ -40,8 +40,41 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if let Some(n) = expr_to_i128(&args[1]) {
     // n is a concrete integer, a is symbolic → expand symbolically
     let a_expr = &args[0];
-    if n > 0 && n <= 20 {
-      // Pochhammer[a, n] = a * (a+1) * ... * (a+n-1)
+    // Exact rational base p/q with a concrete integer n: compute the rising
+    // (or falling) factorial as an exact BigInt rational, with no degree cap.
+    // Pochhammer[p/q, n] = ∏_{i=0}^{n-1} (p + i q) / q^n. The symbolic path
+    // below caps at |n| <= 20, which left e.g. Pochhammer[1/2, 30] unevaluated.
+    if let (Expr::FunctionCall { name, args: ra }, _) = (a_expr, ())
+      && name == "Rational"
+      && ra.len() == 2
+      && let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1])
+    {
+      let p = BigInt::from(*p);
+      let q = BigInt::from(*q);
+      if n > 0 {
+        let mut num = BigInt::from(1);
+        let mut den = BigInt::from(1);
+        for i in 0..n {
+          num *= &p + BigInt::from(i) * &q;
+          den *= &q;
+        }
+        return Ok(make_rational_expr(num, den));
+      } else {
+        // Pochhammer[a, -k] = 1/∏_{i=1}^{k} (a - i); a - i = (p - i q)/q.
+        let abs_n = -n;
+        let mut num = BigInt::from(1);
+        let mut den = BigInt::from(1);
+        for i in 1..=abs_n {
+          num *= &p - BigInt::from(i) * &q;
+          den *= &q;
+        }
+        // result = 1 / (num/den) = den/num
+        return Ok(make_rational_expr(den, num));
+      }
+    }
+    if n > 0 {
+      // Pochhammer[a, n] = a * (a+1) * ... * (a+n-1). Expanded for any concrete
+      // positive n (wolframscript expands the full product, with no small cap).
       let factors: Vec<Expr> = (0..n)
         .map(|i| {
           if i == 0 {
@@ -64,7 +97,7 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
         .unwrap();
       crate::evaluator::evaluate_expr_to_expr(&product)
-    } else if (-20..0).contains(&n) {
+    } else if n < 0 {
       // Pochhammer[a, -n] = 1/((a-1)(a-2)...(a-n))
       let abs_n = (-n) as usize;
       let factors: Vec<Expr> = (1..=abs_n)
@@ -804,6 +837,16 @@ pub fn gamma_fn(x: f64) -> f64 {
 /// Beta[a, b] = Gamma[a] * Gamma[b] / Gamma[a + b]
 /// Beta[z, a, b] - incomplete Beta function
 /// Beta[z, a, b] = integral_0^z t^(a-1) (1 - t)^(b-1) dt
+/// Exact factorial as a BigInt, so Beta of larger integer arguments does not
+/// overflow i128 (e.g. Beta[20, 20] needs 39! ≈ 2×10^46).
+fn factorial_big(n: usize) -> BigInt {
+  let mut result = BigInt::from(1);
+  for i in 2..=n {
+    result *= i as u64;
+  }
+  result
+}
+
 pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 3 {
     return incomplete_beta_ast(&args[0], &args[1], &args[2]);
@@ -823,13 +866,9 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let a_u = (*a - 1) as usize;
     let b_u = (*b - 1) as usize;
     let ab_u = (*a + *b - 1) as usize;
-    if let (Some(a_fact), Some(b_fact), Some(ab_fact)) = (
-      factorial_i128(a_u),
-      factorial_i128(b_u),
-      factorial_i128(ab_u),
-    ) {
-      return Ok(make_rational(a_fact * b_fact, ab_fact));
-    }
+    let num = factorial_big(a_u) * factorial_big(b_u);
+    let den = factorial_big(ab_u);
+    return Ok(make_rational_expr(num, den));
   }
 
   // Integer arguments with at least one non-positive: resolve via the Gamma
@@ -850,18 +889,12 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // the positive argument and m = -neg (the magnitude of the other one).
       let (pos, neg) = if a > 0 { (a, b) } else { (b, a) };
       let m = -neg;
-      if let (Some(p_fact), Some(rem_fact), Some(m_fact)) = (
-        factorial_i128((pos - 1) as usize),
-        factorial_i128((m - pos) as usize),
-        factorial_i128(m as usize),
-      ) {
-        let signed = if pos % 2 == 0 {
-          p_fact * rem_fact
-        } else {
-          -(p_fact * rem_fact)
-        };
-        return Ok(make_rational(signed, m_fact));
+      let mut num =
+        factorial_big((pos - 1) as usize) * factorial_big((m - pos) as usize);
+      if pos % 2 != 0 {
+        num = -num;
       }
+      return Ok(make_rational_expr(num, factorial_big(m as usize)));
     }
   }
 
@@ -931,59 +964,38 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // So Gamma product has π, and if sum is integer, Γ(sum) is (sum-1)!
           // Beta = Γ(a)Γ(b) / (sum-1)!
           let sum_int = (sum2 / 2) as usize;
-          if let Some(sum_fact) = factorial_i128(sum_int - 1) {
+          {
+            let sum_fact = factorial_big(sum_int - 1);
             // Compute Γ(a) * Γ(b) / (sum-1)! where a, b are half-integers
             // Γ(k/2) for odd k: Γ((2m+1)/2) = (2m)! π^{1/2} / (4^m m!)
-            // For even k: Γ(k/2) = ((k/2)-1)!
-            let gamma_a = gamma_half_integer_parts(a2);
-            let gamma_b = gamma_half_integer_parts(b2);
+            // For even k: Γ(k/2) = ((k/2)-1)!. BigInt throughout so large
+            // half-integers (e.g. Beta[21/2, 21/2]) don't overflow i128.
+            let gamma_a = gamma_half_integer_parts_big(a2);
+            let gamma_b = gamma_half_integer_parts_big(b2);
             if let (
               Some((a_num, a_den, a_pi_pow)),
               Some((b_num, b_den, b_pi_pow)),
             ) = (gamma_a, gamma_b)
             {
               let total_pi_pow = a_pi_pow + b_pi_pow; // each half-integer contributes 1/2
-              let num =
-                a_num.checked_mul(b_num).unwrap_or_else(|| a_num * b_num);
-              let den = a_den
-                .checked_mul(b_den)
-                .and_then(|v| v.checked_mul(sum_fact))
-                .unwrap_or(1);
-              let g = gcd(num.abs(), den.abs());
-              let (num, den) = if g > 0 {
-                (num / g, den / g)
-              } else {
-                (num, den)
-              };
+              let num = a_num * b_num;
+              let den = a_den * b_den * sum_fact;
+              let coeff = make_rational_expr(num, den);
 
               if total_pi_pow == 0 {
-                return Ok(make_rational(num, den));
+                return Ok(coeff);
               } else if total_pi_pow == 2 {
-                // Two sqrt(Pi) factors = Pi
-                // Result is (num/den) * Pi
-                if den == 1 {
-                  if num == 1 {
-                    return Ok(Expr::Identifier("Pi".to_string()));
-                  }
-                  return Ok(Expr::BinaryOp {
-                    op: BinaryOperator::Times,
-                    left: Box::new(Expr::Integer(num)),
-                    right: Box::new(Expr::Identifier("Pi".to_string())),
-                  });
+                // Two sqrt(Pi) factors = Pi → result is (num/den) * Pi.
+                if matches!(&coeff, Expr::Integer(1)) {
+                  return Ok(Expr::Identifier("Pi".to_string()));
                 }
-                return Ok(Expr::BinaryOp {
-                  op: BinaryOperator::Divide,
-                  left: Box::new(if num == 1 {
-                    Expr::Identifier("Pi".to_string())
-                  } else {
-                    Expr::BinaryOp {
-                      op: BinaryOperator::Times,
-                      left: Box::new(Expr::Integer(num)),
-                      right: Box::new(Expr::Identifier("Pi".to_string())),
-                    }
-                  }),
-                  right: Box::new(Expr::Integer(den)),
-                });
+                return crate::evaluator::evaluate_expr_to_expr(
+                  &Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(coeff),
+                    right: Box::new(Expr::Identifier("Pi".to_string())),
+                  },
+                );
               }
             }
           }
@@ -1239,6 +1251,25 @@ pub fn gamma_half_integer_parts(k2: i128) -> Option<(i128, i128, i128)> {
     let two_m_fact = factorial_i128(2 * m)?;
     let m_fact = factorial_i128(m)?;
     let four_m = 4i128.checked_pow(m as u32)?;
+    Some((two_m_fact, four_m * m_fact, 1))
+  }
+}
+
+/// BigInt version of [`gamma_half_integer_parts`] for `k2 > 0`, so half-integer
+/// Beta arguments do not overflow i128 (e.g. Beta[21/2, 21/2]). Returns
+/// `(numerator, denominator, pi_power)` where Gamma(k2/2) = (num/den) * pi^(pi_power/2).
+fn gamma_half_integer_parts_big(k2: i128) -> Option<(BigInt, BigInt, i128)> {
+  if k2 <= 0 {
+    return None;
+  }
+  if k2 % 2 == 0 {
+    let m = (k2 / 2) as usize;
+    Some((factorial_big(m - 1), BigInt::from(1), 0))
+  } else {
+    let m = ((k2 - 1) / 2) as usize;
+    let two_m_fact = factorial_big(2 * m);
+    let m_fact = factorial_big(m);
+    let four_m = BigInt::from(4).pow(m as u32);
     Some((two_m_fact, four_m * m_fact, 1))
   }
 }

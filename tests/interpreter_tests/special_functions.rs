@@ -2797,6 +2797,59 @@ mod cases {
     assert_case("Beta[5, 2]", "1/30");
     assert_case("Beta[a, b]", "Beta[a, b]");
   }
+
+  #[test]
+  fn beta_large_integer_args_no_overflow() {
+    // Regression: integer-integer Beta computed (m-1)!(n-1)!/(m+n-1)! in i128
+    // and silently returned the unevaluated form once a factorial overflowed
+    // (Beta[20, 20] needs 39! ≈ 2×10^46). Now uses BigInt throughout.
+    assert_case("Beta[20, 20]", "1/1378465288200");
+    assert_case("Beta[100, 2]", "1/10100");
+    assert_case("Beta[50, 50]", "1/2522283613639104833370312431400");
+    // The cancelling-pole branch (one non-positive argument) is BigInt too.
+    assert_case("Beta[-30, 5]", "-1/712530");
+  }
+
+  #[test]
+  fn beta_half_integer_args_no_overflow() {
+    // Regression: the half-integer branch (Gamma((2m+1)/2) = (2m)! Sqrt[Pi] /
+    // (4^m m!)) used i128 with a fake `checked_mul(...).unwrap_or_else(|| a*b)`
+    // that panicked/overflowed, so Beta[21/2, 21/2] gave a garbage integer.
+    assert_case("Beta[3/2, 3/2]", "Pi/8");
+    assert_case("Beta[21/2, 21/2]", "(46189*Pi)/274877906944");
+    assert_case(
+      "Beta[51/2, 51/2]",
+      "(15801325804719*Pi)/158456325028528675187087900672",
+    );
+  }
+
+  #[test]
+  fn pochhammer_rational_base_no_overflow() {
+    // Regression: Pochhammer[p/q, n] for a concrete integer n > 20 fell through
+    // to the symbolic `n <= 20` cap and stayed unevaluated; smaller n overflowed
+    // i128. Now computed as an exact BigInt rational for any n. This also fixed
+    // Beta[1/2, 30] (which telescopes through Pochhammer).
+    assert_case(
+      "Pochhammer[1/2, 30]",
+      "29215606371473169285018060091249259296875/1073741824",
+    );
+    assert_case("Pochhammer[1/2, 10]", "654729075/1024");
+    // Negative n: 1 / ((a-1)(a-2)...(a-k)).
+    assert_case("Pochhammer[3/2, -3]", "8/3");
+    assert_case("Beta[1/2, 30]", "36028797018963968/110873045217057585");
+  }
+
+  #[test]
+  fn pochhammer_symbolic_base_uncapped() {
+    // Regression: symbolic Pochhammer[a, n] expanded only for |n| <= 20 and
+    // returned unevaluated beyond that; wolframscript expands the full product.
+    assert_case(
+      "Pochhammer[a, 22]",
+      "a*(1 + a)*(2 + a)*(3 + a)*(4 + a)*(5 + a)*(6 + a)*(7 + a)*(8 + a)*\
+       (9 + a)*(10 + a)*(11 + a)*(12 + a)*(13 + a)*(14 + a)*(15 + a)*\
+       (16 + a)*(17 + a)*(18 + a)*(19 + a)*(20 + a)*(21 + a)",
+    );
+  }
   #[test]
   fn times() {
     assert_case(r#"Beta[2, 3]; 12* Beta[1., 2, 3]"#, r#"1."#);
