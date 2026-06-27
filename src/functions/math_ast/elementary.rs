@@ -1606,11 +1606,25 @@ fn infinity_passthrough(arg: &Expr) -> Option<Expr> {
   None
 }
 
+/// True if `e` is already integer-valued because it is a single-argument
+/// Floor/Ceiling/Round/IntegerPart. An outer Floor/Ceiling/Round/IntegerPart is
+/// then idempotent, matching wolframscript (Floor[Floor[x]] -> Floor[x],
+/// Floor[Ceiling[x]] -> Ceiling[x], ...). The two-argument forms (e.g.
+/// Floor[x, 2]) are not integer-valued, so they are excluded.
+fn is_integer_valued_rounding(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+    if args.len() == 1
+    && matches!(name.as_str(), "Floor" | "Ceiling" | "Round" | "IntegerPart"))
+}
+
 pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "Floor expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 1 && is_integer_valued_rounding(&args[0]) {
+    return Ok(args[0].clone());
   }
   if let Some(inf) = infinity_passthrough(&args[0]) {
     return Ok(inf);
@@ -1681,6 +1695,9 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Ceiling expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 1 && is_integer_valued_rounding(&args[0]) {
+    return Ok(args[0].clone());
   }
   if let Some(inf) = infinity_passthrough(&args[0]) {
     return Ok(inf);
@@ -1891,6 +1908,9 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Round expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 1 && is_integer_valued_rounding(&args[0]) {
+    return Ok(args[0].clone());
   }
   if let Some(inf) = infinity_passthrough(&args[0]) {
     return Ok(inf);
@@ -2852,6 +2872,9 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "IntegerPart expects exactly 1 argument".into(),
     ));
+  }
+  if is_integer_valued_rounding(&args[0]) {
+    return Ok(args[0].clone());
   }
   if let Some(inf) = infinity_passthrough(&args[0]) {
     return Ok(inf);

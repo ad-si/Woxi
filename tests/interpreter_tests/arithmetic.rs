@@ -2530,6 +2530,33 @@ mod round_large_reals {
     assert_eq!(interpret("Ceiling[10.0^40]").unwrap(), TEN_POW_40);
     assert_eq!(interpret("IntegerPart[10.0^40]").unwrap(), TEN_POW_40);
   }
+
+  // Floor/Ceiling/Round/IntegerPart applied to an already-integer-valued
+  // argument (one of the same four, single-arg) is idempotent and returns the
+  // inner expression, matching wolframscript.
+  #[test]
+  fn nested_rounding_idempotent() {
+    assert_eq!(interpret("Floor[Floor[x]]").unwrap(), "Floor[x]");
+    assert_eq!(interpret("Ceiling[Ceiling[x]]").unwrap(), "Ceiling[x]");
+    assert_eq!(interpret("Round[Round[x]]").unwrap(), "Round[x]");
+    assert_eq!(
+      interpret("IntegerPart[IntegerPart[x]]").unwrap(),
+      "IntegerPart[x]"
+    );
+    assert_eq!(interpret("Floor[Ceiling[x]]").unwrap(), "Ceiling[x]");
+    assert_eq!(interpret("Ceiling[Floor[x]]").unwrap(), "Floor[x]");
+    assert_eq!(interpret("Round[Floor[x]]").unwrap(), "Floor[x]");
+    assert_eq!(interpret("Floor[Round[x]]").unwrap(), "Round[x]");
+    assert_eq!(
+      interpret("Floor[IntegerPart[x]]").unwrap(),
+      "IntegerPart[x]"
+    );
+    // The two-argument inner form is not integer-valued, so it stays nested.
+    assert_eq!(
+      interpret("Floor[Floor[x, 2]]").unwrap(),
+      "Floor[Floor[x, 2]]"
+    );
+  }
 }
 
 mod logistic_sigmoid {
