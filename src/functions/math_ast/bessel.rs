@@ -244,13 +244,11 @@ fn half_int_bessel_polynomial(
 ) -> Result<Expr, InterpreterError> {
   let mut prev = trig_call(trig_neg, z_expr); // P_{-1}
   let mut curr = trig_call(trig_pos, z_expr); // P_{1}
-  if m == 1 {
-    return Ok(curr);
-  }
-  if m == -1 {
-    return Ok(prev);
-  }
-  if m > 1 {
+  let raw = if m == 1 {
+    curr
+  } else if m == -1 {
+    prev
+  } else if m > 1 {
     let mut m_cur: i128 = 1;
     while m_cur < m {
       let next =
@@ -259,7 +257,7 @@ fn half_int_bessel_polynomial(
       curr = next;
       m_cur += 2;
     }
-    Ok(curr)
+    curr
   } else {
     let mut a = prev; // P_{-1}
     let mut b = curr; // P_{1}
@@ -270,7 +268,18 @@ fn half_int_bessel_polynomial(
       a = next;
       m_cur -= 2;
     }
-    Ok(a)
+    a
+  };
+  // For the J family (BesselJ and BesselY) wolframscript prints the polynomial
+  // fully expanded, so distribute the nested `(k/z) * P_k` factors produced by
+  // the recurrence into separate monomials, e.g. (3 (-Cos[z] + Sin[z]/z))/z ->
+  // (-3 Cos[z])/z + (3 Sin[z])/z^2 (matching BesselJ[5/2, z]). The I family
+  // keeps trig coefficients collected and is wrapped separately, so leave it.
+  // For |m| <= 3 the polynomial is already flat and Expand is a no-op anyway.
+  if matches!(sign, BesselSign::J) {
+    crate::evaluator::evaluate_function_call_ast("Expand", &[raw])
+  } else {
+    Ok(raw)
   }
 }
 
@@ -809,7 +818,9 @@ fn bessel_k_polynomial(
     curr = next;
     m_cur += 2;
   }
-  Ok(curr)
+  // Expand so the nested `(k/z) * P_k` factors distribute into separate
+  // monomials, matching wolframscript's BesselK[5/2, z] = ... (1 + 3/z^2 + 3/z).
+  crate::evaluator::evaluate_function_call_ast("Expand", &[curr])
 }
 
 /// Wrap K-polynomial: Sqrt[Pi/2] * P / (E^z * Sqrt[z]).

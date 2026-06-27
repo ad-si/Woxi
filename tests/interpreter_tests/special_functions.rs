@@ -3045,6 +3045,35 @@ mod cases {
       r#"(Sqrt[2/Pi]*Sin[z])/Sqrt[z]"#,
     );
   }
+  // Half-integer orders >= 5/2: the recurrence builds nested `(k/z) P_k`
+  // factors; wolframscript prints them fully expanded for the J, Y and K
+  // families (the I family keeps trig coefficients collected, handled
+  // separately). Regression for the missing Expand.
+  #[test]
+  fn bessel_half_integer_expanded() {
+    assert_case(
+      "BesselJ[5/2, z]",
+      "(Sqrt[2/Pi]*((-3*Cos[z])/z - Sin[z] + (3*Sin[z])/z^2))/Sqrt[z]",
+    );
+    assert_case(
+      "BesselJ[7/2, z]",
+      "(Sqrt[2/Pi]*(Cos[z] - (15*Cos[z])/z^2 + (15*Sin[z])/z^3 - \
+       (6*Sin[z])/z))/Sqrt[z]",
+    );
+    assert_case(
+      "BesselY[5/2, z]",
+      "(Sqrt[2/Pi]*(Cos[z] - (3*Cos[z])/z^2 - (3*Sin[z])/z))/Sqrt[z]",
+    );
+    assert_case(
+      "BesselK[5/2, z]",
+      "(Sqrt[Pi/2]*(1 + 3/z^2 + 3/z))/(E^z*Sqrt[z])",
+    );
+    assert_case(
+      "BesselK[7/2, z]",
+      "(Sqrt[Pi/2]*(1 + 15/z^3 + 15/z^2 + 6/z))/(E^z*Sqrt[z])",
+    );
+  }
+
   #[test]
   fn head_1() {
     assert_case(r#"z=.;Head[BesselJ[3/2, z]]"#, r#"Times"#);
