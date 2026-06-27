@@ -2244,6 +2244,37 @@ mod sqrt_power {
   }
 
   #[test]
+  fn sqrt_partial_square_factor_of_bigint() {
+    // Regression: Sqrt of a large/BigInteger non-square pulled out no perfect
+    // square factor (stayed Sqrt[10^41] etc.). It now extracts it, matching
+    // wolframscript. This also fixes Norm of large-integer vectors.
+    assert_eq!(
+      interpret("Sqrt[10^41]").unwrap(),
+      "100000000000000000000*Sqrt[10]"
+    );
+    assert_eq!(
+      interpret("Sqrt[8*10^40]").unwrap(),
+      "200000000000000000000*Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Sqrt[12*10^30]").unwrap(),
+      "2000000000000000*Sqrt[3]"
+    );
+    assert_eq!(
+      interpret("Norm[{10^20, 10^20, 10^20}]").unwrap(),
+      "100000000000000000000*Sqrt[3]"
+    );
+    // Skewness of a large-integer list is now value-correct (its central
+    // moment m2^(3/2) = Sqrt[2744*10^90/729] now extracts its square factor),
+    // rather than the garbage integer it used to give.
+    let skew = interpret("N[Skewness[{10^15, 2*10^15, 4*10^15}]]").unwrap();
+    assert!(
+      skew.starts_with("0.38180177"),
+      "skewness should be ~0.3818, got {skew}"
+    );
+  }
+
+  #[test]
   fn sqrt_squared() {
     assert_eq!(interpret("Sqrt[a]^2").unwrap(), "a");
   }

@@ -748,6 +748,52 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Extract the largest easily-found perfect-square factor from a non-negative
+/// BigInt: returns `(outside, inside)` with `n == outside^2 * inside`, so
+/// `Sqrt[n] = outside * Sqrt[inside]`. Square factors from primes below a
+/// bound are pulled out by trial division; a leftover whole-square cofactor
+/// (e.g. a large prime squared) is caught by a final `isqrt` check. A cofactor
+/// that is square-free over the bound but not itself a perfect square stays
+/// in `inside` (matching wolframscript, which also can't factor large semiprimes
+/// cheaply).
+fn extract_square_factor_big(
+  n: &num_bigint::BigInt,
+) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  use num_bigint::BigInt;
+  let zero = BigInt::from(0);
+  let one = BigInt::from(1);
+  let mut outside = BigInt::from(1);
+  let mut inside = n.clone();
+  const BOUND: u64 = 100_000;
+  let mut factor: u64 = 2;
+  while factor <= BOUND {
+    let fbig = BigInt::from(factor);
+    if &fbig * &fbig > inside {
+      break;
+    }
+    let mut count: u64 = 0;
+    while &inside % &fbig == zero {
+      inside /= &fbig;
+      count += 1;
+    }
+    if count >= 2 {
+      outside *= fbig.pow((count / 2) as u32);
+    }
+    if count % 2 == 1 {
+      inside *= &fbig;
+    }
+    factor += 1;
+  }
+  if inside > one {
+    let r = inside.sqrt();
+    if &r * &r == inside {
+      outside *= &r;
+      inside = BigInt::from(1);
+    }
+  }
+  (outside, inside)
+}
+
 /// Sqrt[x] - Square root
 pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -832,16 +878,36 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .into(),
           });
         }
+      } else {
+        // Larger than u64: extract square factors in BigInt.
+        let (outside, inside) = extract_square_factor_big(&bn);
+        if outside > num_bigint::BigInt::from(1) {
+          let sqrt_part =
+            make_sqrt(crate::functions::math_ast::bigint_to_expr(inside));
+          return times_ast(&[
+            crate::functions::math_ast::bigint_to_expr(outside),
+            sqrt_part,
+          ]);
+        }
       }
       // Not a perfect square, return symbolic
       Ok(make_sqrt(args[0].clone()))
     }
-    // Sqrt of a BigInteger: extract an exact perfect square; otherwise stay
-    // symbolic (partial extraction would need BigInt factorization).
+    // Sqrt of a BigInteger: extract the largest perfect-square factor, e.g.
+    // Sqrt[10^41] -> 10^20 Sqrt[10].
     Expr::BigInteger(n) if *n >= num_bigint::BigInt::from(0) => {
       let r = n.sqrt();
       if &r * &r == *n {
         return Ok(crate::functions::math_ast::bigint_to_expr(r));
+      }
+      let (outside, inside) = extract_square_factor_big(n);
+      if outside > num_bigint::BigInt::from(1) {
+        let sqrt_part =
+          make_sqrt(crate::functions::math_ast::bigint_to_expr(inside));
+        return times_ast(&[
+          crate::functions::math_ast::bigint_to_expr(outside),
+          sqrt_part,
+        ]);
       }
       Ok(make_sqrt(args[0].clone()))
     }
@@ -903,6 +969,41 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let coeff = make_rational(n_out as i128, d_out as i128);
           return times_ast(&[coeff, sqrt_part]);
         }
+      }
+      // BigInt fallback for rational arguments whose numerator/denominator is a
+      // BigInteger or exceeds u64 (e.g. Sqrt[2744*10^90/729] = 14*10^45/27 *
+      // Sqrt[14], reached via Skewness/Correlation of large-integer lists).
+      let to_big = |e: &Expr| -> Option<num_bigint::BigInt> {
+        match e {
+          Expr::Integer(v) if *v >= 0 => Some(num_bigint::BigInt::from(*v)),
+          Expr::BigInteger(v) if *v >= num_bigint::BigInt::from(0) => {
+            Some(v.clone())
+          }
+          _ => None,
+        }
+      };
+      if let (Some(nb), Some(db)) = (to_big(&rargs[0]), to_big(&rargs[1]))
+        && db > num_bigint::BigInt::from(0)
+      {
+        use crate::functions::math_ast::{bigint_to_expr, make_rational_expr};
+        let one = num_bigint::BigInt::from(1);
+        let (n_out, n_in) = extract_square_factor_big(&nb);
+        let (d_out, d_in) = extract_square_factor_big(&db);
+        let coeff = make_rational_expr(n_out.clone(), d_out.clone());
+        if n_in == one && d_in == one {
+          return Ok(coeff);
+        }
+        let radicand = if d_in == one {
+          make_sqrt(bigint_to_expr(n_in))
+        } else if n_in == one {
+          power_ast(&[bigint_to_expr(d_in), make_rational(-1, 2)])?
+        } else {
+          make_sqrt(make_rational_expr(n_in, d_in))
+        };
+        if matches!(&coeff, Expr::Integer(1)) {
+          return Ok(radicand);
+        }
+        return times_ast(&[coeff, radicand]);
       }
       Ok(make_sqrt(args[0].clone()))
     }
