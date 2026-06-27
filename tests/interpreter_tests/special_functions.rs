@@ -2381,6 +2381,48 @@ mod cases {
       r#"77.52908373697521"#,
     );
   }
+  // Regression: the integer-x numeric paths of the orthogonal polynomials
+  // evaluated their recurrences (and Jacobi its coefficients) in i128 with
+  // `checked_mul(...).unwrap_or(0)` or unchecked multiplies, so for moderate
+  // degree and argument they silently returned 0/garbage or panicked with
+  // "attempt to multiply with overflow". All now compute exactly in BigInt.
+  #[test]
+  fn orthogonal_polynomials_large_args_no_overflow() {
+    assert_case(
+      "ChebyshevT[20, 100]",
+      "5240259116990468658995000691115520659998000001",
+    );
+    assert_case(
+      "ChebyshevU[20, 100]",
+      "10480780266589396254412500487570176791997800001",
+    );
+    // The 2-arg GegenbauerC[n, x] = (2/n) ChebyshevT[n, x].
+    assert_case(
+      "GegenbauerC[20, 100]",
+      "5240259116990468658995000691115520659998000001/10",
+    );
+    assert_case(
+      "HermiteH[20, 100]",
+      "10386525545117654945103262993862148955882572800",
+    );
+    assert_case(
+      "LegendreP[20, 100]",
+      "344448466755375665405932303356912676063833503146189/262144",
+    );
+    assert_case(
+      "LaguerreL[30, 100]",
+      "-24339078904665759996115322117737572853879/50592967951238834121",
+    );
+    assert_case(
+      "GegenbauerC[20, 3, 100]",
+      "2421164795934101825330339943310068552071828400066",
+    );
+    assert_case(
+      "JacobiP[30, 1, 1, 10]",
+      "419741193494208093397229315014798334452635362305/1073741824",
+    );
+  }
+
   #[test]
   fn jacobi_p_1() {
     assert_case(r#"JacobiP[1, a, b, z]"#, r#"(a - b + (2 + a + b)*z)/2"#);

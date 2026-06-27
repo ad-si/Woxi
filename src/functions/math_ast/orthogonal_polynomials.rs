@@ -4,12 +4,15 @@ use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr};
 
 /// Binomial coefficient C(top, bot) for small non-negative integer arguments.
-fn binomial_i128(top: i128, bot: i128) -> i128 {
+/// BigInt binomial C(top, bot) (0 outside 0 <= bot <= top), used by the Jacobi
+/// polynomial coefficients which overflow i128 around n = 30.
+fn binomial_big(top: i128, bot: i128) -> num_bigint::BigInt {
+  use num_bigint::BigInt;
   if bot < 0 || bot > top {
-    return 0;
+    return BigInt::from(0);
   }
   let bot = bot.min(top - bot);
-  let mut result: i128 = 1;
+  let mut result = BigInt::from(1);
   for i in 0..bot {
     result = result * (top - i) / (i + 1);
   }
@@ -75,7 +78,7 @@ fn jacobi_p_integer_ab(
     return crate::functions::math_ast::times_ast(&[half, numer]);
   }
 
-  use crate::functions::math_ast::{gcd, make_rational_pub};
+  use num_bigint::BigInt;
   let ni = n as i128;
   // (x - 1) as Plus[-1, x] so it prints as `(-1 + x)`.
   let x_minus_1 = Expr::BinaryOp {
@@ -84,33 +87,30 @@ fn jacobi_p_integer_ab(
     right: Box::new(x.clone()),
   };
 
+  // Coefficients are BigInt: binomial(n+a, n-k) and the rising factorial
+  // (n+a+b+1)_k overflow i128 around n = 30 (JacobiP[30, 1, 1, 10] panicked).
   let mut terms: Vec<Expr> = Vec::new();
   for k in 0..=ni {
-    let binom = binomial_i128(ni + a, ni - k);
+    let binom = binomial_big(ni + a, ni - k);
     // (n+a+b+1)_k = prod_{i=0}^{k-1} (n+a+b+1+i)
-    let mut poch: i128 = 1;
+    let mut poch = BigInt::from(1);
     for i in 0..k {
-      poch *= ni + a + b + 1 + i;
+      poch *= BigInt::from(ni + a + b + 1 + i);
     }
     // 2^k * k!
-    let mut denom: i128 = 1;
+    let mut denom = BigInt::from(1);
     for _ in 0..k {
       denom *= 2;
     }
     for i in 1..=k {
-      denom *= i;
+      denom *= BigInt::from(i);
     }
     let num = binom * poch;
-    if num == 0 {
+    if num == BigInt::from(0) {
       continue;
     }
-    let g = gcd(num.abs(), denom.abs()).max(1);
-    let (cn, cd) = (num / g, denom / g);
-    let coeff = if cd == 1 {
-      Expr::Integer(cn)
-    } else {
-      make_rational_pub(cn, cd)
-    };
+    let coeff = make_rational_expr(num, denom);
+    let coeff_is_one = matches!(&coeff, Expr::Integer(1));
     let term = if k == 0 {
       coeff
     } else {
@@ -123,7 +123,7 @@ fn jacobi_p_integer_ab(
           right: Box::new(Expr::Integer(k)),
         }
       };
-      if cn == 1 && cd == 1 {
+      if coeff_is_one {
         power
       } else {
         Expr::BinaryOp {
@@ -331,8 +331,11 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[1] {
     Expr::Integer(x) => {
       // Evaluate at integer x using recurrence with rationals
-      let (num, den) = legendre_eval_rational(n, (*x, 1));
-      Ok(make_rational(num, den))
+      let (num, den) = legendre_eval_rational(
+        n,
+        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
+      );
+      Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
       name,
@@ -340,8 +343,11 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
       {
-        let (num, den) = legendre_eval_rational(n, (*p, *q));
-        Ok(make_rational(num, den))
+        let (num, den) = legendre_eval_rational(
+          n,
+          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
+        );
+        Ok(make_rational_expr(num, den))
       } else {
         Ok(Expr::FunctionCall {
           name: "LegendreP".to_string(),
@@ -543,39 +549,42 @@ fn associated_legendre_p_ast(
 }
 
 /// Evaluate P_n(p/q) as a rational number using the recurrence
-pub fn legendre_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
+pub fn legendre_eval_rational(
+  n: usize,
+  x: (num_bigint::BigInt, num_bigint::BigInt),
+) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  // BigInt throughout: the former i128 recurrence multiplied unchecked and
+  // panicked / produced wrong values for moderate n and x (LegendreP[20, 100]).
+  use num_bigint::BigInt;
   let (xn, xd) = x;
   if n == 0 {
-    return (1, 1);
+    return (BigInt::from(1), BigInt::from(1));
   }
   if n == 1 {
     return (xn, xd);
   }
 
-  let mut prev_n: i128 = 1; // P_0 = 1/1
-  let mut prev_d: i128 = 1;
-  let mut curr_n: i128 = xn; // P_1 = x
-  let mut curr_d: i128 = xd;
+  let mut prev_n = BigInt::from(1); // P_0 = 1/1
+  let mut prev_d = BigInt::from(1);
+  let mut curr_n = xn.clone(); // P_1 = x
+  let mut curr_d = xd.clone();
 
   for m in 1..n {
     // P_{m+1} = ((2m+1)*x*P_m - m*P_{m-1}) / (m+1)
-    let m_i = m as i128;
+    let m_i = BigInt::from(m);
 
-    // (2m+1)*x*P_m = (2m+1) * xn/xd * curr_n/curr_d
-    let term1_n = (2 * m_i + 1) * xn * curr_n;
-    let term1_d = xd * curr_d;
+    let term1_n = (BigInt::from(2) * &m_i + BigInt::from(1)) * &xn * &curr_n;
+    let term1_d = &xd * &curr_d;
 
-    // m*P_{m-1} = m * prev_n/prev_d
-    let term2_n = m_i * prev_n;
-    let term2_d = prev_d;
+    let term2_n = &m_i * &prev_n;
+    let term2_d = prev_d.clone();
 
-    // (term1 - term2) / (m+1)
-    let diff_n = term1_n * term2_d - term2_n * term1_d;
-    let diff_d = term1_d * term2_d * (m_i + 1);
+    let diff_n = &term1_n * &term2_d - &term2_n * &term1_d;
+    let diff_d = &term1_d * &term2_d * (&m_i + BigInt::from(1));
 
-    let g = gcd(diff_n.abs(), diff_d.abs());
-    let next_n = diff_n / g;
-    let next_d = diff_d / g;
+    let g = bigint_gcd(diff_n.clone(), diff_d.clone());
+    let next_n = &diff_n / &g;
+    let next_d = &diff_d / &g;
 
     prev_n = curr_n;
     prev_d = curr_d;
@@ -2031,8 +2040,11 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[1] {
     Expr::Integer(x) => {
-      let (num, den) = chebyshev_t_eval_rational(n, (*x, 1));
-      Ok(make_rational(num, den))
+      let (num, den) = chebyshev_t_eval_rational_big(
+        n,
+        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
+      );
+      Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
       name,
@@ -2040,8 +2052,11 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
       {
-        let (num, den) = chebyshev_t_eval_rational(n, (*p, *q));
-        Ok(make_rational(num, den))
+        let (num, den) = chebyshev_t_eval_rational_big(
+          n,
+          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
+        );
+        Ok(make_rational_expr(num, den))
       } else {
         Ok(Expr::FunctionCall {
           name: "ChebyshevT".to_string(),
@@ -2098,6 +2113,41 @@ pub fn chebyshev_t_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
     tm1 = t;
     t = if g > 0 {
       (new_n / g, new_d / g)
+    } else {
+      (new_n, new_d)
+    };
+  }
+  t
+}
+
+/// BigInt version of [`chebyshev_t_eval_rational`]: the i128 recurrence silently
+/// substituted 0 on overflow (`checked_mul(...).unwrap_or(0)`), corrupting e.g.
+/// ChebyshevT[20, 100] (whose value ≈ 5×10^45 exceeds i128). This computes the
+/// exact rational T_n(p/q) with no overflow.
+pub fn chebyshev_t_eval_rational_big(
+  n: usize,
+  x: (num_bigint::BigInt, num_bigint::BigInt),
+) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  use num_bigint::BigInt;
+  let (xn, xd) = x;
+  if n == 0 {
+    return (BigInt::from(1), BigInt::from(1));
+  }
+  if n == 1 {
+    return (xn, xd);
+  }
+  let mut tm1 = (BigInt::from(1), BigInt::from(1)); // T_0
+  let mut t = (xn.clone(), xd.clone()); // T_1
+  for _ in 2..=n {
+    // T_k = 2x * T_{k-1} - T_{k-2}
+    let a_n = BigInt::from(2) * &xn * &t.0;
+    let a_d = &xd * &t.1;
+    let new_n = &a_n * &tm1.1 - &tm1.0 * &a_d;
+    let new_d = &a_d * &tm1.1;
+    let g = bigint_gcd(new_n.clone(), new_d.clone());
+    tm1 = t;
+    t = if g != BigInt::from(0) {
+      (&new_n / &g, &new_d / &g)
     } else {
       (new_n, new_d)
     };
@@ -2264,8 +2314,11 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[1] {
     Expr::Integer(x) => {
-      let (num, den) = chebyshev_u_eval_rational(n, (*x, 1));
-      Ok(make_rational(num, den))
+      let (num, den) = chebyshev_u_eval_rational_big(
+        n,
+        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
+      );
+      Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
       name,
@@ -2273,8 +2326,11 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
       {
-        let (num, den) = chebyshev_u_eval_rational(n, (*p, *q));
-        Ok(make_rational(num, den))
+        let (num, den) = chebyshev_u_eval_rational_big(
+          n,
+          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
+        );
+        Ok(make_rational_expr(num, den))
       } else {
         Ok(Expr::FunctionCall {
           name: "ChebyshevU".to_string(),
@@ -2328,6 +2384,39 @@ pub fn chebyshev_u_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
     um1 = u;
     u = if g > 0 {
       (new_n / g, new_d / g)
+    } else {
+      (new_n, new_d)
+    };
+  }
+  u
+}
+
+/// BigInt version of [`chebyshev_u_eval_rational`] (see
+/// [`chebyshev_t_eval_rational_big`] — same i128 overflow-to-0 corruption).
+pub fn chebyshev_u_eval_rational_big(
+  n: usize,
+  x: (num_bigint::BigInt, num_bigint::BigInt),
+) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  use num_bigint::BigInt;
+  let (xn, xd) = x;
+  if n == 0 {
+    return (BigInt::from(1), BigInt::from(1));
+  }
+  if n == 1 {
+    return (BigInt::from(2) * &xn, xd);
+  }
+  let mut um1 = (BigInt::from(1), BigInt::from(1)); // U_0
+  let mut u = (BigInt::from(2) * &xn, xd.clone()); // U_1
+  for _ in 2..=n {
+    // U_k = 2x * U_{k-1} - U_{k-2}
+    let a_n = BigInt::from(2) * &xn * &u.0;
+    let a_d = &xd * &u.1;
+    let new_n = &a_n * &um1.1 - &um1.0 * &a_d;
+    let new_d = &a_d * &um1.1;
+    let g = bigint_gcd(new_n.clone(), new_d.clone());
+    um1 = u;
+    u = if g != BigInt::from(0) {
+      (&new_n / &g, &new_d / &g)
     } else {
       (new_n, new_d)
     };
@@ -2554,11 +2643,21 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let lam = lambda.unwrap();
+  let lam_big = || {
+    (
+      num_bigint::BigInt::from(lam.0),
+      num_bigint::BigInt::from(lam.1),
+    )
+  };
 
   match &args[2] {
     Expr::Integer(x) => {
-      let (num, den) = gegenbauer_eval_rational(n, lam, (*x, 1));
-      Ok(make_rational(num, den))
+      let (num, den) = gegenbauer_eval_rational(
+        n,
+        lam_big(),
+        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
+      );
+      Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
       name,
@@ -2566,8 +2665,12 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
       {
-        let (num, den) = gegenbauer_eval_rational(n, lam, (*p, *q));
-        Ok(make_rational(num, den))
+        let (num, den) = gegenbauer_eval_rational(
+          n,
+          lam_big(),
+          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
+        );
+        Ok(make_rational_expr(num, den))
       } else {
         Ok(Expr::FunctionCall {
           name: "GegenbauerC".to_string(),
@@ -2597,21 +2700,21 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// C_0^λ = 1, C_1^λ = 2λx, C_{k+1}^λ = (2(k+λ)x C_k^λ - (k+2λ-1) C_{k-1}^λ) / (k+1)
 pub fn gegenbauer_eval_rational(
   n: usize,
-  lam: (i128, i128),
-  x: (i128, i128),
-) -> (i128, i128) {
+  lam: (num_bigint::BigInt, num_bigint::BigInt),
+  x: (num_bigint::BigInt, num_bigint::BigInt),
+) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  // BigInt throughout: the former i128 recurrence substituted 0 on overflow,
+  // corrupting GegenbauerC[20, 3, 100] (value ≈ 2.4×10^39).
+  use num_bigint::BigInt;
   if n == 0 {
-    return (1, 1);
+    return (BigInt::from(1), BigInt::from(1));
   }
   // C_1 = 2λx = (2*lam_n*x_n, lam_d*x_d)
-  let c1_n = 2i128
-    .checked_mul(lam.0)
-    .and_then(|v| v.checked_mul(x.0))
-    .unwrap_or(0);
-  let c1_d = lam.1.checked_mul(x.1).unwrap_or(1);
-  let g = gcd(c1_n.abs(), c1_d.abs());
-  let c1 = if g > 0 {
-    (c1_n / g, c1_d / g)
+  let c1_n = BigInt::from(2) * &lam.0 * &x.0;
+  let c1_d = &lam.1 * &x.1;
+  let g = bigint_gcd(c1_n.clone(), c1_d.clone());
+  let c1 = if g != BigInt::from(0) {
+    (&c1_n / &g, &c1_d / &g)
   } else {
     (c1_n, c1_d)
   };
@@ -2619,56 +2722,39 @@ pub fn gegenbauer_eval_rational(
     return c1;
   }
 
-  let mut cm1 = (1i128, 1i128);
+  let mut cm1 = (BigInt::from(1), BigInt::from(1));
   let mut c = c1;
 
   for k in 1..n {
-    let kk = k as i128;
+    let kk = BigInt::from(k);
     // coeff_a = 2(k + λ) = 2*(k*lam_d + lam_n)/lam_d
-    let k_plus_lam_n = kk
-      .checked_mul(lam.1)
-      .and_then(|v| v.checked_add(lam.0))
-      .unwrap_or(0);
-    let k_plus_lam_d = lam.1;
+    let k_plus_lam_n = &kk * &lam.1 + &lam.0;
+    let k_plus_lam_d = &lam.1;
     // 2*(k+λ)*x * C_k: numerator = 2 * k_plus_lam_n * x_n * c_n
-    let a_n = 2i128
-      .checked_mul(k_plus_lam_n)
-      .and_then(|v| v.checked_mul(x.0))
-      .and_then(|v| v.checked_mul(c.0))
-      .unwrap_or(0);
-    let a_d = k_plus_lam_d
-      .checked_mul(x.1)
-      .and_then(|v| v.checked_mul(c.1))
-      .unwrap_or(1);
+    let a_n = BigInt::from(2) * &k_plus_lam_n * &x.0 * &c.0;
+    let a_d = k_plus_lam_d * &x.1 * &c.1;
 
     // coeff_b = (k + 2λ - 1) = (k*lam_d + 2*lam_n - lam_d)/lam_d
-    let b_n = kk
-      .checked_mul(lam.1)
-      .and_then(|v| v.checked_add(2i128.checked_mul(lam.0)?))
-      .and_then(|v| v.checked_sub(lam.1))
-      .unwrap_or(0);
-    let b_d = lam.1;
+    let b_n = &kk * &lam.1 + BigInt::from(2) * &lam.0 - &lam.1;
+    let b_d = &lam.1;
 
     // b * C_{k-1}: b_n * cm1_n / (b_d * cm1_d)
-    let sub_n = b_n.checked_mul(cm1.0).unwrap_or(0);
-    let sub_d = b_d.checked_mul(cm1.1).unwrap_or(1);
+    let sub_n = &b_n * &cm1.0;
+    let sub_d = b_d * &cm1.1;
 
     // (a - sub) / (k+1)
     // a/a_d - sub/sub_d = (a*sub_d - sub*a_d) / (a_d * sub_d)
-    let diff_n = a_n
-      .checked_mul(sub_d)
-      .and_then(|v| v.checked_sub(sub_n.checked_mul(a_d)?))
-      .unwrap_or(0);
-    let diff_d = a_d.checked_mul(sub_d).unwrap_or(1);
+    let diff_n = &a_n * &sub_d - &sub_n * &a_d;
+    let diff_d = &a_d * &sub_d;
 
     // Divide by (k+1)
     let new_n = diff_n;
-    let new_d = diff_d.checked_mul(kk + 1).unwrap_or(1);
+    let new_d = diff_d * (&kk + BigInt::from(1));
 
-    let g = gcd(new_n.abs(), new_d.abs());
+    let g = bigint_gcd(new_n.clone(), new_d.clone());
     cm1 = c;
-    c = if g > 0 {
-      (new_n / g, new_d / g)
+    c = if g != BigInt::from(0) {
+      (&new_n / &g, &new_d / &g)
     } else {
       (new_n, new_d)
     };
@@ -3025,8 +3111,11 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[1] {
     Expr::Integer(x) => {
-      let (num, den) = laguerre_eval_rational(n, (*x, 1));
-      Ok(make_rational(num, den))
+      let (num, den) = laguerre_eval_rational(
+        n,
+        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
+      );
+      Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
       name,
@@ -3034,8 +3123,11 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
       {
-        let (num, den) = laguerre_eval_rational(n, (*p, *q));
-        Ok(make_rational(num, den))
+        let (num, den) = laguerre_eval_rational(
+          n,
+          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
+        );
+        Ok(make_rational_expr(num, den))
       } else {
         Ok(Expr::FunctionCall {
           name: "LaguerreL".to_string(),
@@ -3255,47 +3347,44 @@ fn generalized_laguerre_f64(n: usize, a: f64, x: f64) -> f64 {
   l
 }
 
-/// Evaluate L_n(p/q) using recurrence
-pub fn laguerre_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
+/// Evaluate L_n(p/q) using recurrence. BigInt throughout: the i128 version
+/// silently substituted 0 on overflow (`checked_mul(...).unwrap_or(0)`), so
+/// LaguerreL[30, 100] returned 0 instead of ≈ -2.4×10^38.
+pub fn laguerre_eval_rational(
+  n: usize,
+  x: (num_bigint::BigInt, num_bigint::BigInt),
+) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  use num_bigint::BigInt;
   let (xn, xd) = x;
   if n == 0 {
-    return (1, 1);
+    return (BigInt::from(1), BigInt::from(1));
   }
   if n == 1 {
-    return (xd - xn, xd);
+    return (&xd - &xn, xd);
   }
 
-  let mut lm1 = (1i128, 1i128);
-  let mut l = (xd - xn, xd);
+  let mut lm1 = (BigInt::from(1), BigInt::from(1));
+  let mut l = (&xd - &xn, xd.clone());
 
   for k in 1..n {
-    let kf = k as i128;
+    let kf = BigInt::from(k);
     // L_{k+1} = ((2k+1-x)*L_k - k*L_{k-1}) / (k+1)
-    let coeff_n = (2 * kf + 1)
-      .checked_mul(xd)
-      .and_then(|v| v.checked_sub(xn))
-      .unwrap_or(0);
-    let coeff_d = xd;
+    let coeff_n = (BigInt::from(2) * &kf + BigInt::from(1)) * &xd - &xn;
+    let coeff_d = &xd;
 
-    let a_n = coeff_n.checked_mul(l.0).unwrap_or(0);
-    let a_d = coeff_d.checked_mul(l.1).unwrap_or(1);
+    let a_n = &coeff_n * &l.0;
+    let a_d = coeff_d * &l.1;
 
-    let b_n = kf.checked_mul(lm1.0).unwrap_or(0);
-    let b_d = lm1.1;
+    let b_n = &kf * &lm1.0;
+    let b_d = &lm1.1;
 
-    let sub_n = a_n
-      .checked_mul(b_d)
-      .and_then(|v| v.checked_sub(b_n.checked_mul(a_d)?))
-      .unwrap_or(0);
-    let sub_d = a_d
-      .checked_mul(b_d)
-      .and_then(|v| v.checked_mul(kf + 1))
-      .unwrap_or(1);
+    let sub_n = &a_n * b_d - &b_n * &a_d;
+    let sub_d = &a_d * b_d * (&kf + BigInt::from(1));
 
-    let g = gcd(sub_n.abs(), sub_d.abs());
+    let g = bigint_gcd(sub_n.clone(), sub_d.clone());
     lm1 = l;
-    l = if g > 0 {
-      (sub_n / g, sub_d / g)
+    l = if g != BigInt::from(0) {
+      (&sub_n / &g, &sub_d / &g)
     } else {
       (sub_n, sub_d)
     };
@@ -3476,9 +3565,9 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[1] {
     Expr::Integer(x) => {
-      // Evaluate using recurrence with exact arithmetic
-      let result = hermite_eval_i128(n, *x);
-      Ok(Expr::Integer(result))
+      // Evaluate using recurrence with exact (BigInt) arithmetic
+      let result = hermite_eval_big(n, &num_bigint::BigInt::from(*x));
+      Ok(bigint_to_expr(result))
     }
     Expr::Real(f) => Ok(Expr::Real(hermite_eval_f64(n, *f))),
     _ => {
@@ -3532,17 +3621,24 @@ fn is_fully_numeric_arg(e: &Expr) -> bool {
 }
 
 /// Evaluate H_n(x) for integer x using exact i128 arithmetic
-pub fn hermite_eval_i128(n: usize, x: i128) -> i128 {
+/// Evaluate H_n(x) at an integer x exactly. Uses BigInt: the i128 version
+/// panicked with "attempt to multiply with overflow" for moderate n and x
+/// (e.g. HermiteH[20, 100] ≈ 10^39).
+pub fn hermite_eval_big(
+  n: usize,
+  x: &num_bigint::BigInt,
+) -> num_bigint::BigInt {
+  use num_bigint::BigInt;
   if n == 0 {
-    return 1;
+    return BigInt::from(1);
   }
   if n == 1 {
-    return 2 * x;
+    return BigInt::from(2) * x;
   }
-  let mut hm1: i128 = 1;
-  let mut h: i128 = 2 * x;
+  let mut hm1 = BigInt::from(1);
+  let mut h = BigInt::from(2) * x;
   for k in 1..n {
-    let hnew = 2 * x * h - 2 * (k as i128) * hm1;
+    let hnew = BigInt::from(2) * x * &h - BigInt::from(2 * k as i128) * &hm1;
     hm1 = h;
     h = hnew;
   }
