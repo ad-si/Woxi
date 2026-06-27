@@ -2496,6 +2496,37 @@ mod expand_threading {
   }
 
   #[test]
+  fn binomial_large_result_uses_bigint() {
+    // Regression: small arguments can still produce a result far beyond i128
+    // (Binomial[1000, 500] has 300 digits). It must not overflow/panic.
+    assert_eq!(
+      interpret("IntegerLength[Binomial[1000, 500]]").unwrap(),
+      "300"
+    );
+    assert_eq!(interpret("Binomial[50, 25]").unwrap(), "126410606437752");
+    // Exact 300-digit value matching wolframscript.
+    assert_eq!(
+      interpret("Binomial[1000, 500]").unwrap(),
+      "270288240945436569515614693625975275496152008446548287007392875\
+106625428705522193898612483924502370165362606085021546104802209750\
+050679917549894219699518475423665484263751733356162464079737887344\
+364574161119497604571044985756287880514600994219426752366915856603\
+136862602484428109296905863799821216320"
+    );
+  }
+
+  #[test]
+  fn multinomial_large_result_uses_bigint() {
+    // Multinomial accumulates products of binomials; a large case must also
+    // use BigInt rather than overflowing i128.
+    assert_eq!(interpret("Multinomial[2, 3, 4]").unwrap(), "1260");
+    assert_eq!(
+      interpret("IntegerLength[Multinomial[100, 100, 100]]").unwrap(),
+      "141"
+    );
+  }
+
+  #[test]
   fn string_repeat_max_length() {
     assert_eq!(
       interpret("StringRepeat[\"abc\", 10, 7]").unwrap(),

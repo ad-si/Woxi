@@ -3603,7 +3603,9 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
-    (Some(n), Some(k)) => Ok(Expr::Integer(binomial_coeff(n, k))),
+    (Some(n), Some(k)) => Ok(crate::functions::math_ast::bigint_to_expr(
+      binomial_coeff_big(n, k),
+    )),
     (None, Some(k)) if k >= 0 => {
       // Generalized binomial for non-integer n with non-negative integer k:
       // Binomial[n, k] = n*(n-1)*...*(n-k+1) / k!
@@ -3701,6 +3703,40 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Compute a binomial coefficient as an arbitrary-precision BigInt, so large
+/// results (e.g. Binomial[1000, 500], 300 digits) don't overflow i128. The
+/// generalized negative-argument identities match `binomial_coeff`.
+pub fn binomial_coeff_big(n: i128, k: i128) -> BigInt {
+  if k < 0 {
+    if n >= 0 {
+      return BigInt::from(0);
+    }
+    let negate = (n + k) % 2 != 0;
+    let r = binomial_coeff_big(-k - 1, -n - 1);
+    return if negate { -r } else { r };
+  }
+  if k == 0 {
+    return BigInt::from(1);
+  }
+  if n >= 0 {
+    if k > n {
+      return BigInt::from(0);
+    }
+    // Use the smaller of k and n-k for efficiency.
+    let k = k.min(n - k);
+    let mut result = BigInt::from(1);
+    for i in 0..k {
+      result = result * BigInt::from(n - i) / BigInt::from(i + 1);
+    }
+    result
+  } else {
+    // Generalized: Binomial[-n, k] = (-1)^k * Binomial[n+k-1, k].
+    let negate = k % 2 != 0;
+    let r = binomial_coeff_big(-n + k - 1, k);
+    if negate { -r } else { r }
+  }
+}
+
 /// Compute binomial coefficient for arbitrary integers (generalized)
 pub fn binomial_coeff(n: i128, k: i128) -> i128 {
   if k < 0 {
@@ -3773,13 +3809,14 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   if let Some(ints) = int_vals {
+    // Accumulate in BigInt so large multinomials don't overflow i128.
     let mut total: i128 = 0;
-    let mut result: i128 = 1;
+    let mut result = BigInt::from(1);
     for &n in &ints {
       total += n;
-      result *= binomial_coeff(total, n);
+      result *= binomial_coeff_big(total, n);
     }
-    return Ok(Expr::Integer(result));
+    return Ok(crate::functions::math_ast::bigint_to_expr(result));
   }
 
   use crate::functions::math_ast::expr_to_rational;
