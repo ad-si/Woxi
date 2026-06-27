@@ -1649,6 +1649,12 @@ pub fn dispatch_math_functions(
     "QPochhammer" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::math_ast::q_pochhammer_ast(args));
     }
+    "CoulombF" => {
+      return Some(crate::functions::math_ast::coulomb_f_ast(args));
+    }
+    "CoulombG" => {
+      return Some(crate::functions::math_ast::coulomb_g_ast(args));
+    }
     "SphericalBesselJ" if args.len() == 2 => {
       return Some(crate::functions::math_ast::spherical_bessel_j_ast(args));
     }

@@ -655,6 +655,52 @@ mod spherical_bessel_j {
   }
 }
 
+// CoulombF[L, eta, z] / CoulombG[L, eta, z] reduce to spherical Bessel functions
+// at eta == 0 (and to Sin/Cos at L == 0); nonzero eta stays unevaluated.
+mod coulomb_wave {
+  use super::*;
+
+  #[test]
+  fn coulomb_f_eta_zero() {
+    assert_eq!(interpret("CoulombF[0, 0, z]").unwrap(), "Sin[z]");
+    assert_eq!(
+      interpret("CoulombF[1, 0, z]").unwrap(),
+      "z*SphericalBesselJ[1, z]"
+    );
+    assert_eq!(
+      interpret("CoulombF[2, 0, z]").unwrap(),
+      "z*SphericalBesselJ[2, z]"
+    );
+    // Symbolic order and symbolic argument.
+    assert_eq!(
+      interpret("CoulombF[L, 0, z]").unwrap(),
+      "z*SphericalBesselJ[L, z]"
+    );
+    assert_eq!(interpret("CoulombF[0, 0, x + y]").unwrap(), "Sin[x + y]");
+  }
+
+  #[test]
+  fn coulomb_g_eta_zero() {
+    assert_eq!(interpret("CoulombG[0, 0, z]").unwrap(), "Cos[z]");
+    assert_eq!(
+      interpret("CoulombG[1, 0, z]").unwrap(),
+      "-(z*SphericalBesselY[1, z])"
+    );
+    assert_eq!(
+      interpret("CoulombG[L, 0, z]").unwrap(),
+      "-(z*SphericalBesselY[L, z])"
+    );
+  }
+
+  // Nonzero eta (the genuine Coulomb regime) stays unevaluated, like
+  // wolframscript — not the generic "not implemented" message.
+  #[test]
+  fn nonzero_eta_unevaluated() {
+    assert_eq!(interpret("CoulombF[1, 1, z]").unwrap(), "CoulombF[1, 1, z]");
+    assert_eq!(interpret("CoulombG[2, 3, z]").unwrap(), "CoulombG[2, 3, z]");
+  }
+}
+
 mod bessel_j_zero {
   use super::*;
 

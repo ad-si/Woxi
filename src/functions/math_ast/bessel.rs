@@ -1163,6 +1163,78 @@ pub fn bessel_y1(z: f64) -> f64 {
 
 /// SphericalBesselJ[n, z] — spherical Bessel function of the first kind.
 /// SphericalBesselJ[n, z] = Sqrt[Pi/(2z)] * BesselJ[n + 1/2, z]
+/// CoulombF[L, eta, z] and CoulombG[L, eta, z]. For eta == 0 the Coulomb wave
+/// functions reduce to spherical Bessel functions, matching wolframscript:
+///   CoulombF[L, 0, z] = z SphericalBesselJ[L, z]   (= Sin[z] at L == 0)
+///   CoulombG[L, 0, z] = -z SphericalBesselY[L, z]  (= Cos[z] at L == 0)
+/// Nonzero eta (the genuine Coulomb regime) is left unevaluated, as wolframscript
+/// keeps it symbolic.
+pub fn coulomb_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  coulomb_wave_reduce(args, true)
+}
+
+pub fn coulomb_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  coulomb_wave_reduce(args, false)
+}
+
+fn coulomb_wave_reduce(
+  args: &[Expr],
+  is_f: bool,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::Expr::*;
+  let name = if is_f { "CoulombF" } else { "CoulombG" };
+  let uneval = || {
+    Ok(FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 3 {
+    return uneval();
+  }
+  let (l, eta, z) = (&args[0], &args[1], &args[2]);
+  // The reduction only applies at eta == 0.
+  let eta_zero =
+    matches!(eta, Integer(0)) || matches!(eta, Real(f) if *f == 0.0);
+  if !eta_zero {
+    return uneval();
+  }
+  // L == 0: the spherical Bessel functions collapse to Sin/Cos.
+  if matches!(l, Integer(0)) {
+    let fname = if is_f { "Sin" } else { "Cos" };
+    return crate::evaluator::evaluate_expr_to_expr(&FunctionCall {
+      name: fname.to_string(),
+      args: vec![z.clone()].into(),
+    });
+  }
+  // General order: z * SphericalBesselJ[L, z], or -(z SphericalBesselY[L, z]).
+  let sph = if is_f {
+    "SphericalBesselJ"
+  } else {
+    "SphericalBesselY"
+  };
+  let z_times_sph = FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      z.clone(),
+      FunctionCall {
+        name: sph.to_string(),
+        args: vec![l.clone(), z.clone()].into(),
+      },
+    ]
+    .into(),
+  };
+  let result = if is_f {
+    z_times_sph
+  } else {
+    FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Integer(-1), z_times_sph].into(),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
 pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
