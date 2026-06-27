@@ -96,6 +96,23 @@ mod variance {
   }
 
   #[test]
+  fn variance_large_integers_no_overflow() {
+    // Regression: the exact integer path squared values in i128, so large
+    // entries (whose squares exceed i128) panicked with "multiply with
+    // overflow". It now computes in BigInt. Variance of {a, 2a, 3a} is a^2.
+    assert_eq!(
+      interpret("Variance[{10^20, 2*10^20, 3*10^20}]").unwrap(),
+      "10000000000000000000000000000000000000000"
+    );
+    // StandardDeviation = Sqrt[Variance]; a BigInteger variance must take the
+    // square root rather than echoing unevaluated.
+    assert_eq!(
+      interpret("StandardDeviation[{10^20, 2*10^20, 3*10^20}]").unwrap(),
+      "100000000000000000000"
+    );
+  }
+
+  #[test]
   fn variance_reals() {
     let result = interpret("Variance[{1.0, 2.0, 3.0}]").unwrap();
     // Should be 1 or close to it

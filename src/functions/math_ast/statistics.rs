@@ -770,13 +770,15 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![args[0].clone()].into(),
         });
       }
-      // Try all-integer exact path
+      // Try all-integer exact path (Integer and BigInteger). Computed in
+      // BigInt so the squared deviations don't overflow i128.
       let mut all_int = true;
-      let mut int_vals: Vec<i128> = Vec::new();
+      let mut int_vals: Vec<num_bigint::BigInt> = Vec::new();
       let mut has_real = false;
       for item in items {
         match item {
-          Expr::Integer(n) => int_vals.push(*n),
+          Expr::Integer(n) => int_vals.push(num_bigint::BigInt::from(*n)),
+          Expr::BigInteger(n) => int_vals.push(n.clone()),
           Expr::Real(_) => {
             all_int = false;
             has_real = true;
@@ -791,12 +793,15 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if all_int && !int_vals.is_empty() {
         // Exact: Variance = Sum[(xi - mean)^2] / (n-1)
         // = (n * Sum[xi^2] - (Sum[xi])^2) / (n * (n-1))
-        let n = int_vals.len() as i128;
-        let sum: i128 = int_vals.iter().sum();
-        let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
-        let numer = n * sum_sq - sum * sum;
-        let denom = n * (n - 1);
-        return Ok(make_rational(numer, denom));
+        use num_bigint::BigInt;
+        let n = BigInt::from(int_vals.len() as i128);
+        let sum: BigInt = int_vals.iter().sum();
+        let sum_sq: BigInt = int_vals.iter().map(|x| x * x).sum();
+        let numer = &n * &sum_sq - &sum * &sum;
+        let denom = &n * (&n - BigInt::from(1));
+        return Ok(crate::functions::math_ast::make_rational_expr(
+          numer, denom,
+        ));
       }
       if has_real || !all_int {
         // Try float path first
@@ -1114,6 +1119,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(results.into()))
     }
     Expr::Integer(_)
+    | Expr::BigInteger(_)
     | Expr::Real(_)
     | Expr::Identifier(_)
     | Expr::FunctionCall { .. }
