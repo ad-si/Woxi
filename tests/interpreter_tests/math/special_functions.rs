@@ -7984,6 +7984,35 @@ mod gamma_regularized {
     );
   }
 
+  // GammaRegularized[0, z] = Gamma[0, z]/Gamma[0] = 0 for any z.
+  #[test]
+  fn order_zero() {
+    assert_eq!(interpret("GammaRegularized[0, z]").unwrap(), "0");
+    assert_eq!(interpret("GammaRegularized[0, 2]").unwrap(), "0");
+    assert_eq!(interpret("GammaRegularized[0, 0]").unwrap(), "0");
+    assert_eq!(interpret("GammaRegularized[0, x + 1]").unwrap(), "0");
+  }
+
+  // BetaRegularized closed forms when one shape parameter is 1.
+  #[test]
+  fn beta_regularized_unit_parameter() {
+    assert_eq!(interpret("BetaRegularized[z, 1, 1]").unwrap(), "z");
+    assert_eq!(
+      interpret("BetaRegularized[z, 1, 2]").unwrap(),
+      "1 - (1 - z)^2"
+    );
+    assert_eq!(interpret("BetaRegularized[z, 2, 1]").unwrap(), "z^2");
+    assert_eq!(
+      interpret("BetaRegularized[z, 1, b]").unwrap(),
+      "1 - (1 - z)^b"
+    );
+    // Symbolic a keeps the -0^a term, matching wolframscript.
+    assert_eq!(interpret("BetaRegularized[z, a, 1]").unwrap(), "-0^a + z^a");
+    // Concrete arguments evaluate fully.
+    assert_eq!(interpret("BetaRegularized[1/2, 1, 2]").unwrap(), "3/4");
+    assert_eq!(interpret("BetaRegularized[1/2, 3, 1]").unwrap(), "1/8");
+  }
+
   #[test]
   fn numeric_exp_one() {
     // GammaRegularized[1, 1] = e^{-1}

@@ -1297,6 +1297,45 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
+  // Elementary closed forms when one shape parameter is 1 (matching
+  // wolframscript), valid for any b / a, including symbolic ones:
+  //   I_z(1, b) = 1 - (1 - z)^b
+  //   I_z(a, 1) = z^a - 0^a   (= z^a for a > 0; stays -0^a + z^a for symbolic a)
+  // A machine-Real z is left to the numeric path below.
+  if !matches!(z_expr, Expr::Real(_)) {
+    let times = |a: Expr, b: Expr| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![a, b].into(),
+    };
+    let power = |a: Expr, b: Expr| Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![a, b].into(),
+    };
+    let plus = |a: Expr, b: Expr| Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![a, b].into(),
+    };
+    // a == 1 takes precedence (so a == b == 1 reduces to z).
+    if matches!(a_expr, Expr::Integer(1)) {
+      // 1 - (1 - z)^b
+      let one_minus_z =
+        plus(Expr::Integer(1), times(Expr::Integer(-1), z_expr.clone()));
+      let result = plus(
+        Expr::Integer(1),
+        times(Expr::Integer(-1), power(one_minus_z, b_expr.clone())),
+      );
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    if matches!(b_expr, Expr::Integer(1)) {
+      // z^a - 0^a
+      let result = plus(
+        power(z_expr.clone(), a_expr.clone()),
+        times(Expr::Integer(-1), power(Expr::Integer(0), a_expr.clone())),
+      );
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+  }
+
   // Numeric evaluation when all arguments are numeric and at least one is Real
   let z_val = expr_to_f64(z_expr);
   let a_val = expr_to_f64(a_expr);
@@ -1611,6 +1650,12 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let a_expr = &args[0];
   let z_expr = &args[1];
+
+  // GammaRegularized[0, z] = Gamma[0, z]/Gamma[0] = 0 for any z (Gamma[0] is
+  // ComplexInfinity), matching wolframscript — including z == 0.
+  if matches!(a_expr, Expr::Integer(0)) {
+    return Ok(Expr::Integer(0));
+  }
 
   // GammaRegularized[a, 0] = 1
   if is_expr_zero(z_expr) && is_positive_numeric(a_expr) {
