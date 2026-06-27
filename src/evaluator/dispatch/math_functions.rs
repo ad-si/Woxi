@@ -1655,6 +1655,12 @@ pub fn dispatch_math_functions(
     "CoulombG" => {
       return Some(crate::functions::math_ast::coulomb_g_ast(args));
     }
+    "CoulombH1" => {
+      return Some(crate::functions::math_ast::coulomb_h1_ast(args));
+    }
+    "CoulombH2" => {
+      return Some(crate::functions::math_ast::coulomb_h2_ast(args));
+    }
     "SphericalBesselJ" if args.len() == 2 => {
       return Some(crate::functions::math_ast::spherical_bessel_j_ast(args));
     }

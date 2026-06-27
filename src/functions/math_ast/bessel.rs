@@ -1163,26 +1163,51 @@ pub fn bessel_y1(z: f64) -> f64 {
 
 /// SphericalBesselJ[n, z] — spherical Bessel function of the first kind.
 /// SphericalBesselJ[n, z] = Sqrt[Pi/(2z)] * BesselJ[n + 1/2, z]
-/// CoulombF[L, eta, z] and CoulombG[L, eta, z]. For eta == 0 the Coulomb wave
-/// functions reduce to spherical Bessel functions, matching wolframscript:
-///   CoulombF[L, 0, z] = z SphericalBesselJ[L, z]   (= Sin[z] at L == 0)
-///   CoulombG[L, 0, z] = -z SphericalBesselY[L, z]  (= Cos[z] at L == 0)
+/// The four Coulomb wave functions, distinguished only by which spherical
+/// function they reduce to at eta == 0 and the leading coefficient.
+#[derive(Clone, Copy)]
+enum CoulombKind {
+  F,
+  G,
+  H1,
+  H2,
+}
+
+/// CoulombF/G/H1/H2[L, eta, z]. At eta == 0 the Coulomb wave functions reduce
+/// to spherical Bessel/Hankel functions, matching wolframscript:
+///   CoulombF[L, 0, z]  =  z SphericalBesselJ[L, z]      (= Sin[z]    at L == 0)
+///   CoulombG[L, 0, z]  = -z SphericalBesselY[L, z]      (= Cos[z]    at L == 0)
+///   CoulombH1[L, 0, z] = I z SphericalHankelH1[L, z]    (= E^(I z)   at L == 0)
+///   CoulombH2[L, 0, z] = -I z SphericalHankelH2[L, z]   (= E^(-I z)  at L == 0)
 /// Nonzero eta (the genuine Coulomb regime) is left unevaluated, as wolframscript
 /// keeps it symbolic.
 pub fn coulomb_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  coulomb_wave_reduce(args, true)
+  coulomb_wave_reduce(args, CoulombKind::F)
 }
 
 pub fn coulomb_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  coulomb_wave_reduce(args, false)
+  coulomb_wave_reduce(args, CoulombKind::G)
+}
+
+pub fn coulomb_h1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  coulomb_wave_reduce(args, CoulombKind::H1)
+}
+
+pub fn coulomb_h2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  coulomb_wave_reduce(args, CoulombKind::H2)
 }
 
 fn coulomb_wave_reduce(
   args: &[Expr],
-  is_f: bool,
+  kind: CoulombKind,
 ) -> Result<Expr, InterpreterError> {
   use crate::syntax::Expr::*;
-  let name = if is_f { "CoulombF" } else { "CoulombG" };
+  let name = match kind {
+    CoulombKind::F => "CoulombF",
+    CoulombKind::G => "CoulombG",
+    CoulombKind::H1 => "CoulombH1",
+    CoulombKind::H2 => "CoulombH2",
+  };
   let uneval = || {
     Ok(FunctionCall {
       name: name.to_string(),
@@ -1199,38 +1224,61 @@ fn coulomb_wave_reduce(
   if !eta_zero {
     return uneval();
   }
-  // L == 0: the spherical Bessel functions collapse to Sin/Cos.
+  let i_unit = || Identifier("I".to_string());
+  // L == 0: the spherical functions collapse to elementary form.
   if matches!(l, Integer(0)) {
-    let fname = if is_f { "Sin" } else { "Cos" };
-    return crate::evaluator::evaluate_expr_to_expr(&FunctionCall {
-      name: fname.to_string(),
-      args: vec![z.clone()].into(),
-    });
-  }
-  // General order: z * SphericalBesselJ[L, z], or -(z SphericalBesselY[L, z]).
-  let sph = if is_f {
-    "SphericalBesselJ"
-  } else {
-    "SphericalBesselY"
-  };
-  let z_times_sph = FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
-      z.clone(),
-      FunctionCall {
-        name: sph.to_string(),
-        args: vec![l.clone(), z.clone()].into(),
+    let elem = match kind {
+      CoulombKind::F => FunctionCall {
+        name: "Sin".to_string(),
+        args: vec![z.clone()].into(),
       },
-    ]
-    .into(),
+      CoulombKind::G => FunctionCall {
+        name: "Cos".to_string(),
+        args: vec![z.clone()].into(),
+      },
+      // E^(I z) and E^(-I z).
+      CoulombKind::H1 => FunctionCall {
+        name: "Exp".to_string(),
+        args: vec![FunctionCall {
+          name: "Times".to_string(),
+          args: vec![i_unit(), z.clone()].into(),
+        }]
+        .into(),
+      },
+      CoulombKind::H2 => FunctionCall {
+        name: "Exp".to_string(),
+        args: vec![FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Integer(-1), i_unit(), z.clone()].into(),
+        }]
+        .into(),
+      },
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&elem);
+  }
+  // General order: (coefficient) * z * SphericalXxx[L, z].
+  let sph_name = match kind {
+    CoulombKind::F => "SphericalBesselJ",
+    CoulombKind::G => "SphericalBesselY",
+    CoulombKind::H1 => "SphericalHankelH1",
+    CoulombKind::H2 => "SphericalHankelH2",
   };
-  let result = if is_f {
-    z_times_sph
-  } else {
-    FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Integer(-1), z_times_sph].into(),
-    }
+  let sph = FunctionCall {
+    name: sph_name.to_string(),
+    args: vec![l.clone(), z.clone()].into(),
+  };
+  // Leading factors before z: F -> none, G -> -1, H1 -> I, H2 -> -I.
+  let mut factors: Vec<Expr> = match kind {
+    CoulombKind::F => vec![],
+    CoulombKind::G => vec![Integer(-1)],
+    CoulombKind::H1 => vec![i_unit()],
+    CoulombKind::H2 => vec![Integer(-1), i_unit()],
+  };
+  factors.push(z.clone());
+  factors.push(sph);
+  let result = FunctionCall {
+    name: "Times".to_string(),
+    args: factors.into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
 }

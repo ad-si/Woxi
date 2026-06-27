@@ -692,12 +692,44 @@ mod coulomb_wave {
     );
   }
 
+  // The Hankel-type Coulomb waves reduce to spherical Hankel functions, and to
+  // E^(+-I z) at order 0.
+  #[test]
+  fn coulomb_h1_h2_eta_zero() {
+    assert_eq!(interpret("CoulombH1[0, 0, z]").unwrap(), "E^(I*z)");
+    assert_eq!(interpret("CoulombH2[0, 0, z]").unwrap(), "E^(-I*z)");
+    assert_eq!(
+      interpret("CoulombH1[1, 0, z]").unwrap(),
+      "I*z*SphericalHankelH1[1, z]"
+    );
+    assert_eq!(
+      interpret("CoulombH2[1, 0, z]").unwrap(),
+      "-I*z*SphericalHankelH2[1, z]"
+    );
+    assert_eq!(
+      interpret("CoulombH1[L, 0, z]").unwrap(),
+      "I*z*SphericalHankelH1[L, z]"
+    );
+    assert_eq!(
+      interpret("CoulombH1[0, 0, x + y]").unwrap(),
+      "E^(I*(x + y))"
+    );
+  }
+
   // Nonzero eta (the genuine Coulomb regime) stays unevaluated, like
   // wolframscript — not the generic "not implemented" message.
   #[test]
   fn nonzero_eta_unevaluated() {
     assert_eq!(interpret("CoulombF[1, 1, z]").unwrap(), "CoulombF[1, 1, z]");
     assert_eq!(interpret("CoulombG[2, 3, z]").unwrap(), "CoulombG[2, 3, z]");
+    assert_eq!(
+      interpret("CoulombH1[1, 1, z]").unwrap(),
+      "CoulombH1[1, 1, z]"
+    );
+    assert_eq!(
+      interpret("CoulombH2[1, 2, z]").unwrap(),
+      "CoulombH2[1, 2, z]"
+    );
   }
 }
 
