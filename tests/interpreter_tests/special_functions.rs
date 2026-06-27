@@ -2833,6 +2833,26 @@ mod cases {
   fn struve_l() {
     assert_case(r#"StruveL[1.5, 3.5]"#, r#"4.41126360920434"#);
   }
+  // Order +-1/2: elementary closed form built in wolframscript's exact
+  // expression structure, so a symbolic argument renders identically and a
+  // machine-Real argument evaluates to the same float.
+  #[test]
+  fn struve_half_integer_closed_form() {
+    assert_case(
+      "StruveH[1/2, z]",
+      "Sqrt[2*Pi]/(Pi*Sqrt[z]) - (Sqrt[2/Pi]*Cos[z])/Sqrt[z]",
+    );
+    assert_case("StruveH[-1/2, z]", "(Sqrt[2/Pi]*Sin[z])/Sqrt[z]");
+    assert_case(
+      "StruveL[1/2, z]",
+      "-(Sqrt[2*Pi]/(Pi*Sqrt[z])) + (Sqrt[2/Pi]*Cosh[z])/Sqrt[z]",
+    );
+    assert_case("StruveL[-1/2, z]", "(Sqrt[2/Pi]*Sinh[z])/Sqrt[z]");
+    // A machine-Real argument folds to the same float as wolframscript.
+    assert_case("StruveH[1/2, 2.0]", "0.7989752939540048");
+    assert_case("StruveH[-1/2, 3.0]", "0.06500818287737578");
+    assert_case("StruveL[-1/2, 3.0]", "4.614822903407601");
+  }
   #[test]
   fn weber_e() {
     assert_case(r#"WeberE[1.5, 3.5]"#, r#"-0.3972562592100308"#);

@@ -980,6 +980,86 @@ fn meijer_g_numerical_residue(
 /// StruveH[n, z] — Struve function H_n(z).
 ///
 /// Series: H_n(z) = sum_{m=0}^{inf} (-1)^m / (Gamma(m + 3/2) * Gamma(m + n + 3/2)) * (z/2)^(2m+n+1)
+/// Concrete real value of a Struve order/argument — Integer, Real, or an exact
+/// Rational such as a half-integer order `1/2`. Symbolic values give None. The
+/// Rational arm is what lets e.g. `StruveH[1/2, 2.0]` evaluate numerically.
+fn struve_arg_to_f64(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+        Some(*p as f64 / *q as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Elementary closed form of StruveH/StruveL at order +-1/2, matching
+/// wolframscript's exact expression structure (so a symbolic argument renders
+/// identically and a machine-Real argument evaluates to the same float):
+///   StruveH[ 1/2, z] = Sqrt[2 Pi]/(Pi Sqrt[z]) - Sqrt[2/Pi] Cos[z]/Sqrt[z]
+///   StruveH[-1/2, z] = Sqrt[2/Pi] Sin[z]/Sqrt[z]
+///   StruveL[ 1/2, z] = -Sqrt[2 Pi]/(Pi Sqrt[z]) + Sqrt[2/Pi] Cosh[z]/Sqrt[z]
+///   StruveL[-1/2, z] = Sqrt[2/Pi] Sinh[z]/Sqrt[z]
+fn struve_half_integer_closed_form(
+  is_l: bool,
+  order_positive: bool,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator as B;
+  let bin = |op, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let call = |name: &str, e: Expr| Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![e].into(),
+  };
+  let pi = || Expr::Constant("Pi".to_string());
+  let sqrt = |e: Expr| call("Sqrt", e);
+  let sqrt_z = sqrt(z.clone());
+  // Sqrt[2/Pi]
+  let sqrt_2_over_pi = sqrt(bin(B::Divide, Expr::Integer(2), pi()));
+
+  let expr = if order_positive {
+    // Sqrt[2/Pi] {Cos|Cosh}[z] / Sqrt[z]
+    let trig = if is_l { "Cosh" } else { "Cos" };
+    let term_b = bin(
+      B::Divide,
+      bin(B::Times, sqrt_2_over_pi, call(trig, z.clone())),
+      sqrt_z.clone(),
+    );
+    // Sqrt[2 Pi] / (Pi Sqrt[z])
+    let term_a = bin(
+      B::Divide,
+      sqrt(bin(B::Times, Expr::Integer(2), pi())),
+      bin(B::Times, pi(), sqrt_z),
+    );
+    if is_l {
+      // -term_a + term_b
+      bin(B::Plus, bin(B::Times, Expr::Integer(-1), term_a), term_b)
+    } else {
+      bin(B::Minus, term_a, term_b)
+    }
+  } else {
+    // Sqrt[2/Pi] {Sin|Sinh}[z] / Sqrt[z]
+    let trig = if is_l { "Sinh" } else { "Sin" };
+    bin(
+      B::Divide,
+      bin(B::Times, sqrt_2_over_pi, call(trig, z.clone())),
+      sqrt_z,
+    )
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
+}
+
 pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1007,6 +1087,17 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && *n >= 0
   {
     return Ok(Expr::Integer(0));
+  }
+
+  // Half-integer order +-1/2: elementary closed form (Sin/Cos over Sqrt[z]).
+  match struve_arg_to_f64(n_expr) {
+    Some(v) if v == 0.5 => {
+      return struve_half_integer_closed_form(false, true, z_expr);
+    }
+    Some(v) if v == -0.5 => {
+      return struve_half_integer_closed_form(false, false, z_expr);
+    }
+    _ => {}
   }
 
   // Numeric evaluation when both args are numeric and at least one is Real
@@ -1095,6 +1186,17 @@ pub fn struve_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && *n >= 0
   {
     return Ok(Expr::Integer(0));
+  }
+
+  // Half-integer order +-1/2: elementary closed form (Sinh/Cosh over Sqrt[z]).
+  match struve_arg_to_f64(n_expr) {
+    Some(v) if v == 0.5 => {
+      return struve_half_integer_closed_form(true, true, z_expr);
+    }
+    Some(v) if v == -0.5 => {
+      return struve_half_integer_closed_form(true, false, z_expr);
+    }
+    _ => {}
   }
 
   // Numeric evaluation when both args are numeric and at least one is Real
