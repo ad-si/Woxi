@@ -2482,3 +2482,85 @@ mod circumsphere {
     );
   }
 }
+
+// BoundingRegion[pts] — the smallest axis-aligned box: Rectangle for 2D points,
+// Cuboid for 1D or >=3D. Min/Max are exact and stay symbolic when needed.
+mod bounding_region {
+  use super::*;
+
+  #[test]
+  fn points_2d_rectangle() {
+    assert_eq!(
+      interpret("BoundingRegion[{{0, 0}, {1, 1}}]").unwrap(),
+      "Rectangle[{0, 0}, {1, 1}]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[{{0, 0}, {2, 3}, {1, -1}}]").unwrap(),
+      "Rectangle[{0, -1}, {2, 3}]"
+    );
+  }
+
+  #[test]
+  fn points_3d_and_4d_cuboid() {
+    assert_eq!(
+      interpret("BoundingRegion[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "Cuboid[{1, 2, 3}, {4, 5, 6}]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[{{1, 2, 3, 4}, {5, 6, 7, 8}}]").unwrap(),
+      "Cuboid[{1, 2, 3, 4}, {5, 6, 7, 8}]"
+    );
+  }
+
+  // 1D points give a Cuboid (not a Rectangle), matching wolframscript.
+  #[test]
+  fn points_1d_cuboid() {
+    assert_eq!(
+      interpret("BoundingRegion[{{1}, {5}, {3}}]").unwrap(),
+      "Cuboid[{1}, {5}]"
+    );
+  }
+
+  #[test]
+  fn rational_and_real_preserved() {
+    assert_eq!(
+      interpret("BoundingRegion[{{1/2, 3}, {2, 1/4}}]").unwrap(),
+      "Rectangle[{1/2, 1/4}, {2, 3}]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[{{1.5, 2.5}, {3.5, 0.5}}]").unwrap(),
+      "Rectangle[{1.5, 0.5}, {3.5, 2.5}]"
+    );
+  }
+
+  // A single point gives a degenerate box with min == max.
+  #[test]
+  fn single_point() {
+    assert_eq!(
+      interpret("BoundingRegion[{{0, 0}}]").unwrap(),
+      "Rectangle[{0, 0}, {0, 0}]"
+    );
+  }
+
+  // Symbolic coordinates stay as Min[…]/Max[…].
+  #[test]
+  fn symbolic_coordinates() {
+    assert_eq!(
+      interpret("BoundingRegion[{{a, b}, {c, d}}]").unwrap(),
+      "Rectangle[{Min[a, c], Min[b, d]}, {Max[a, c], Max[b, d]}]"
+    );
+  }
+
+  // Structurally-invalid input stays unevaluated (with a regl message).
+  #[test]
+  fn malformed_unevaluated() {
+    assert_eq!(
+      interpret("BoundingRegion[{1, 2, 3}]").unwrap(),
+      "BoundingRegion[{1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[{{1, 2}, {3, 4, 5}}]").unwrap(),
+      "BoundingRegion[{{1, 2}, {3, 4, 5}}]"
+    );
+  }
+}

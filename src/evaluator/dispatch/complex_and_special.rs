@@ -2018,6 +2018,12 @@ pub fn dispatch_complex_and_special(
     "Circumsphere" if args.len() == 1 => {
       return Some(compute_circumsphere(&args[0]));
     }
+    // BoundingRegion[pts] — smallest axis-aligned bounding box of a point list:
+    // Rectangle for 2D points, Cuboid for 1D or >=3D. Named-method and region
+    // forms are left unevaluated.
+    "BoundingRegion" if args.len() == 1 => {
+      return Some(compute_bounding_region(&args[0]));
+    }
     "RegionWithin" if args.len() == 2 => {
       return Some(region_within(&args[0], &args[1], args));
     }
@@ -9136,6 +9142,68 @@ fn solve_rational_system(
 /// center and a (possibly radical) radius; otherwise a machine-float result.
 /// Wrong point counts or degenerate (collinear/coplanar) inputs stay
 /// unevaluated, matching wolframscript.
+/// BoundingRegion[{pt, ...}] — the smallest axis-aligned box containing the
+/// points. wolframscript returns Rectangle[{mins}, {maxs}] for 2D points and
+/// Cuboid[{mins}, {maxs}] for 1D or >=3D points. The min/max are exact (Min/Max
+/// preserve integers and rationals). Malformed or non-numeric input, and the
+/// two-argument (named-method) form, are left unevaluated.
+fn compute_bounding_region(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let uneval = || {
+    Ok(Expr::FunctionCall {
+      name: "BoundingRegion".to_string(),
+      args: vec![expr.clone()].into(),
+    })
+  };
+  // wolframscript emits this when the argument is neither a region nor a
+  // structurally-valid list of equal-length coordinate vectors.
+  let regl = || {
+    crate::emit_message(&format!(
+      "BoundingRegion::regl: The argument {} should be a region or a list of points.",
+      crate::syntax::expr_to_string(expr)
+    ));
+    uneval()
+  };
+
+  let Expr::List(points) = expr else {
+    return regl();
+  };
+  if points.is_empty() {
+    return regl();
+  }
+  // Every point must be a coordinate list of the same dimension d.
+  let coords: Vec<&[Expr]> = points
+    .iter()
+    .filter_map(|p| match p {
+      Expr::List(c) => Some(c.as_slice()),
+      _ => None,
+    })
+    .collect();
+  if coords.len() != points.len() {
+    return regl();
+  }
+  let d = coords[0].len();
+  if d == 0 || coords.iter().any(|c| c.len() != d) {
+    return regl();
+  }
+
+  // Min/Max per coordinate; symbolic coordinates stay as Min[…]/Max[…],
+  // matching wolframscript.
+  let mut mins = Vec::with_capacity(d);
+  let mut maxs = Vec::with_capacity(d);
+  for j in 0..d {
+    let col: Vec<Expr> = coords.iter().map(|c| c[j].clone()).collect();
+    mins.push(crate::functions::math_ast::min_ast(&col)?);
+    maxs.push(crate::functions::math_ast::max_ast(&col)?);
+  }
+
+  // 2D points give a Rectangle; 1D and >=3D give a Cuboid.
+  let head = if d == 2 { "Rectangle" } else { "Cuboid" };
+  Ok(Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![Expr::List(mins.into()), Expr::List(maxs.into())].into(),
+  })
+}
+
 fn compute_circumsphere(expr: &Expr) -> Result<Expr, InterpreterError> {
   let uneval = || {
     Ok(Expr::FunctionCall {

@@ -2237,7 +2237,7 @@ GeoProjectionData,,🚫,,7.0,2282
 KeyExistsQ,Checks if a key exists in an association,✅,pure,10.0,2282
 ReadString,Read file contents as a string,✅,None,10.0,2282
 WriteLine,File I O,🚫,None,10.0,2282
-BoundingRegion,Geometric region,🚫,None,10.4,2286
+BoundingRegion,Smallest axis-aligned bounding box of a point list (Rectangle in 2D; Cuboid in 1D or higher),✅,pure,10.4,2286
 CellDingbat,Notebook UI,🚫,None,3.0,2286
 DistributionParameterAssumptions,Probability distribution,🚫,None,8.0,2286
 WheelGraph,Wheel graph with a hub vertex joined to a cycle of rim vertices,✅,pure,8.0,2286
