@@ -626,6 +626,15 @@ pub fn dispatch_linear_algebra_functions(
             .all(|r| matches!(r, Expr::List(cols) if cols.len() == n))
         {
           let x = &args[1];
+          // Fast O(n^3) Faddeev–LeVerrier path for exact integer matrices,
+          // avoiding the O(n!) cofactor expansion of the symbolic Det[A - x I].
+          if let Some(result) =
+            crate::functions::linear_algebra_ast::characteristic_polynomial_int(
+              rows, x,
+            )
+          {
+            return Some(result);
+          }
           // Build A - x*I
           let mut new_rows = Vec::with_capacity(n);
           for (i, row) in rows.iter().enumerate() {

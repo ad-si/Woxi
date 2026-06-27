@@ -1819,6 +1819,106 @@ fn char_poly_coefficients(a: &[Vec<i128>]) -> Vec<i128> {
   coeffs
 }
 
+/// BigInt Faddeev–LeVerrier: ascending coefficients of the monic
+/// characteristic polynomial det(x I - A). O(n^3), exact for any size.
+fn char_poly_coefficients_big(
+  a: &[Vec<num_bigint::BigInt>],
+) -> Vec<num_bigint::BigInt> {
+  use num_bigint::BigInt;
+  let n = a.len();
+  let mut coeffs = vec![BigInt::from(0); n + 1];
+  coeffs[n] = BigInt::from(1);
+  let mut m = a.to_vec();
+  for k in 1..=n {
+    let trace: BigInt = (0..n).map(|i| m[i][i].clone()).sum();
+    // Tr(M_k) is always divisible by k in Faddeev–LeVerrier.
+    coeffs[n - k] = (-&trace) / BigInt::from(k as i128);
+    if k < n {
+      let c = coeffs[n - k].clone();
+      let mut temp = m.clone();
+      for (i, row) in temp.iter_mut().enumerate().take(n) {
+        row[i] += &c;
+      }
+      // new_m = A * temp
+      let mut new_m = vec![vec![BigInt::from(0); n]; n];
+      for i in 0..n {
+        for j in 0..n {
+          let mut s = BigInt::from(0);
+          for p in 0..n {
+            s += &a[i][p] * &temp[p][j];
+          }
+          new_m[i][j] = s;
+        }
+      }
+      m = new_m;
+    }
+  }
+  coeffs
+}
+
+/// CharacteristicPolynomial[A, x] for an exact integer matrix, computed via
+/// Faddeev–LeVerrier so it doesn't fall back to the O(n!) symbolic Det of
+/// `A - x I`. det(A - x I) = (-1)^n det(x I - A). Returns `None` when any
+/// entry is not an integer.
+pub fn characteristic_polynomial_int(
+  rows: &[Expr],
+  var: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  use num_bigint::BigInt;
+  let n = rows.len();
+  let mut a: Vec<Vec<BigInt>> = Vec::with_capacity(n);
+  for r in rows {
+    let Expr::List(cols) = r else {
+      return None;
+    };
+    let mut row = Vec::with_capacity(n);
+    for e in cols.iter() {
+      match e {
+        Expr::Integer(v) => row.push(BigInt::from(*v)),
+        Expr::BigInteger(v) => row.push(v.clone()),
+        _ => return None,
+      }
+    }
+    a.push(row);
+  }
+  let coeffs = char_poly_coefficients_big(&a);
+  let negate = n % 2 == 1; // det(A - xI) = (-1)^n det(xI - A)
+  let zero = BigInt::from(0);
+  let mut terms: Vec<Expr> = Vec::new();
+  for (i, c) in coeffs.iter().enumerate() {
+    if c == &zero {
+      continue;
+    }
+    let coeff = if negate { -c.clone() } else { c.clone() };
+    let coeff_expr = crate::functions::math_ast::bigint_to_expr(coeff);
+    let term = if i == 0 {
+      coeff_expr
+    } else {
+      let pow = if i == 1 {
+        var.clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![var.clone(), Expr::Integer(i as i128)].into(),
+        }
+      };
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coeff_expr, pow].into(),
+      }
+    };
+    terms.push(term);
+  }
+  if terms.is_empty() {
+    return Some(Ok(Expr::Integer(0)));
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  Some(crate::evaluator::evaluate_expr_to_expr(&sum))
+}
+
 /// Get all divisors of |n| (including 1 and |n|). Returns empty if n == 0.
 fn divisors(n: i128) -> Vec<i128> {
   if n == 0 {

@@ -7468,6 +7468,27 @@ mod characteristic_polynomial {
       "6 - 5*x + x^2"
     );
   }
+
+  #[test]
+  fn large_integer_matrix_is_fast() {
+    // Regression: CharacteristicPolynomial built the symbolic Det[A - x I],
+    // which used O(n!) cofactor expansion and hung for n >= ~13. The
+    // Faddeev-LeVerrier path computes it in O(n^3). Matches wolframscript;
+    // {i + j} has rank 2 so only the top three coefficients are nonzero.
+    assert_eq!(
+      interpret("CharacteristicPolynomial[Table[i + j, {i, 15}, {j, 15}], x]")
+        .unwrap(),
+      "4200*x^13 + 240*x^14 - x^15"
+    );
+    // Odd order flips the overall sign (det[A - xI] = (-1)^n det[xI - A]).
+    assert_eq!(
+      interpret(
+        "CharacteristicPolynomial[{{2, 1, 0}, {1, 2, 1}, {0, 1, 2}}, x]"
+      )
+      .unwrap(),
+      "4 - 10*x + 6*x^2 - x^3"
+    );
+  }
 }
 
 mod boolean_minimize {
