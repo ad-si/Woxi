@@ -933,5 +933,6 @@ mod interpreter_tests {
   mod styling;
   mod syntax;
   mod tabular;
+  mod timeseries;
   mod turing_machine;
 }

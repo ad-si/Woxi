@@ -58,7 +58,7 @@ fn is_leap_year(year: i64) -> bool {
   (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
-fn days_in_month(year: i64, month: i64) -> i64 {
+pub(crate) fn days_in_month(year: i64, month: i64) -> i64 {
   match month {
     1 => 31,
     2 => {
@@ -132,7 +132,7 @@ pub fn day_count_weekday_ast(
 }
 
 /// Convert a date {y,m,d} to absolute days since 1900-01-01 (day 0)
-fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
+pub(crate) fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
   let mut total_days: i64 = 0;
 
   if year >= 1900 {
@@ -154,7 +154,7 @@ fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
 }
 
 /// Convert absolute days since 1900-01-01 to {year, month, day}
-fn absolute_days_to_date(mut days: i64) -> (i64, i64, i64) {
+pub(crate) fn absolute_days_to_date(mut days: i64) -> (i64, i64, i64) {
   let mut year: i64 = 1900;
 
   if days >= 0 {
@@ -479,7 +479,7 @@ fn parse_date_with_format(
 }
 
 /// Day of week for a given date (0=Monday, 1=Tuesday, ..., 6=Sunday)
-fn day_of_week(year: i64, month: i64, day: i64) -> i64 {
+pub(crate) fn day_of_week(year: i64, month: i64, day: i64) -> i64 {
   // Zeller's / Tomohiko Sakamoto's algorithm
   let t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
   let mut y = year;

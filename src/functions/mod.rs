@@ -46,11 +46,13 @@ pub mod scoping;
 pub mod string_ast;
 pub mod sum_convergence_ast;
 pub mod tabular_ast;
+pub mod timeseries_ast;
 pub mod tree_form;
 pub mod trig_factor_ast;
 pub mod turing_machine_ast;
 pub mod txt_ast;
 pub mod voronoi;
+pub mod wl_serialize;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod xlsx_ast;
 pub mod ztransform_ast;

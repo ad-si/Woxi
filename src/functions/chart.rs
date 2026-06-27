@@ -231,6 +231,43 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
   expr_to_label(e).map(ChartLabel::plain)
 }
 
+/// Locate a `Placed[labels, position, ...]` spec inside a `ChartLabels` value.
+/// `ChartLabels` may be the `Placed[...]` directly, or a list in which one
+/// element is a `Placed[...]` (e.g. `{values, Placed[days, Center, fn]}`),
+/// in which case the `Placed` element carries the category labels.
+fn find_placed_spec(e: &Expr) -> Option<&Expr> {
+  match e {
+    Expr::FunctionCall { name, .. } if name == "Placed" => Some(e),
+    Expr::List(items) => items.iter().find(
+      |it| matches!(it, Expr::FunctionCall { name, .. } if name == "Placed"),
+    ),
+    _ => None,
+  }
+}
+
+/// Recursively search an expression for a `Rotate[_, angle]` and return the
+/// angle in radians. Used to pull the rotation out of a `Placed` styling
+/// function such as `Style[Rotate[#, Pi/2], 16, Bold] &`.
+fn find_rotate_angle(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      if name == "Rotate"
+        && args.len() >= 2
+        && let Some(a) = try_eval_to_f64(
+          &evaluate_expr_to_expr(&args[1]).unwrap_or_else(|_| args[1].clone()),
+        )
+      {
+        return Some(a);
+      }
+      args.iter().find_map(find_rotate_angle)
+    }
+    Expr::Function { body } => find_rotate_angle(body),
+    Expr::NamedFunction { body, .. } => find_rotate_angle(body),
+    Expr::List(items) => items.iter().find_map(find_rotate_angle),
+    _ => None,
+  }
+}
+
 // Control points of Wolfram's named `ColorData` gradient color schemes,
 // evenly spaced over [0, 1]. Sampling one with a linear `Blend`
 // reproduces `ChartStyle -> "<name>"` exactly (each was verified against
@@ -505,15 +542,16 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
         }
         "ChartLabels" => {
-          // Placed[{labels...}, position] — check raw expr first to avoid
-          // evaluating Placed[] as an unknown function
+          // ChartLabels can be `Placed[labels, position]`,
+          // `Placed[labels, position, styleFn]`, or a list containing such a
+          // `Placed[...]` (e.g. `{values, Placed[days, Center, fn]}`). Check
+          // the raw expr first to avoid evaluating `Placed[]` as an unknown
+          // function, and pull a rotation out of the styling function so
+          // vertical labels (`Rotate[#, Pi/2]`) render rotated.
           let raw = replacement.as_ref();
-          if let Expr::FunctionCall { name, args } = raw
-            && name == "Placed"
-            && args.len() == 2
-          {
-            let pos_name = match &args[1] {
-              Expr::Identifier(s) => s.as_str(),
+          if let Some(Expr::FunctionCall { args, .. }) = find_placed_spec(raw) {
+            let pos_name = match args.get(1) {
+              Some(Expr::Identifier(s)) => s.as_str(),
               _ => "",
             };
             opts.chart_label_position = match pos_name {
@@ -522,11 +560,20 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               // Below, Bottom, Right, Left, and any other value → default (Below)
               _ => LabelPosition::Below,
             };
-            let labels_val =
-              evaluate_expr_to_expr(&args[0]).unwrap_or(args[0].clone());
-            if let Expr::List(items) = &labels_val {
+            // A styling function (3rd argument) may rotate the labels.
+            let rotation =
+              args.get(2).and_then(find_rotate_angle).unwrap_or(0.0);
+            let labels_val = args
+              .first()
+              .map(|l| evaluate_expr_to_expr(l).unwrap_or_else(|_| l.clone()));
+            if let Some(Expr::List(items)) = &labels_val {
               for item in items {
-                if let Some(cl) = expr_to_chart_label(item) {
+                if let Some(mut cl) = expr_to_chart_label(item) {
+                  // Labels carry their own rotation only if written as
+                  // `Rotate[...]`; otherwise inherit the Placed styling.
+                  if cl.rotation.abs() < 1e-9 {
+                    cl.rotation = rotation;
+                  }
                   opts.chart_labels.push(cl);
                 }
               }
@@ -729,6 +776,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &opts.chart_legends,
     opts.plot_range_x,
     opts.plot_range_y,
+    &bar_labels,
   )?;
   Ok(crate::graphics_result(svg))
 }
@@ -753,6 +801,12 @@ fn apply_labeling_function(func: &Expr, value: f64) -> Option<String> {
   };
   match inner {
     Expr::String(s) => Some(s.clone()),
+    // Bar values are carried as f64, so integer data arrives as e.g. `10904.0`.
+    // wolframscript labels it `10904` (no trailing dot), so render an
+    // integer-valued real as an integer.
+    Expr::Real(r) if (r - r.round()).abs() < 1e-10 && r.abs() < 9.0e15 => {
+      Some(format!("{}", *r as i64))
+    }
     // Charts typeset labels in OutputForm: machine-real noise like
     // `0.47000000000000003` must render as `0.47`, matching wolframscript.
     _ => Some(crate::functions::string_ast::to_string_default_form(inner)),

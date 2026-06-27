@@ -33,6 +33,7 @@ mod predicate_functions;
 mod quantity_functions;
 mod string_functions;
 mod structural;
+mod timeseries_functions;
 
 pub use association_functions::*;
 pub use attributes::*;
@@ -1470,6 +1471,11 @@ pub fn evaluate_function_call_ast_inner(
   }
   if let Some(result) =
     evaluation_control::dispatch_evaluation_control(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    timeseries_functions::dispatch_timeseries_functions(name, args)
   {
     return result;
   }

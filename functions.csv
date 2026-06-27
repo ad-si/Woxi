@@ -996,7 +996,7 @@ ToUpperCase,Converts a string to uppercase,✅,pure,2.0,1005
 ViewAngle,,🚫,,6.0,1005
 ChartLegends,Specifies legend labels for chart elements,✅,pure,7.0,1006
 SystemOpen,Requires external services or GUI infrastructure,🚫,io,7.0,1007
-TemporalData,,🚫,,9.0,1008
+TemporalData,Represents temporal data and builds a time series from values and a date specification,✅,pure,9.0,1008
 Parallelization,,🚫,,8.0,1009
 Dispatch,Optimized rule dispatch for pattern matching,✅,none,2.0,1010
 TranslationTransform,Creates an affine translation transformation,✅,none,6.0,1011
@@ -1025,7 +1025,7 @@ Colorize,Colorize a label matrix or image,✅,,8.0,1035
 NumberPadding,,🚫,,2.0,1035
 NonNegative,Tests if a number is non-negative,✅,pure,1.0,1036
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7.0,1038
-TimeSeries,,🚫,,10.0,1038
+TimeSeries,Represents a time series of values paired with time stamps,✅,pure,10.0,1038
 VectorPoints,,🚫,,7.0,1039
 NextPrime,Returns the smallest prime greater than n (Listable),✅,pure,6.0,1040
 PreDecrement,Decrements a variable by 1 and returns the new value,✅,stateful,1.0,1041
@@ -1584,6 +1584,7 @@ JacobiSymbol,Compute the Jacobi symbol for quadratic residue testing,✅,pure,1.
 MaxTrainingRounds,Max training iterations,,unevaluated,11.0,1607
 Slider2D,,🚫,,6.0,1608
 Compress,Compresses an expression to a string,✅,pure,6.0,1611
+CompressedData,Holds a compressed expression and evaluates to the original on use,✅,pure,9.0,1612
 PolarAxes,Polar axes option,,unevaluated,7.0,1611
 PolynomialGCD,Greatest common divisor of polynomials,✅,pure,2.0,1611
 ARProcess,Autoregressive process,,unevaluated,9.0,1614
@@ -2397,7 +2398,7 @@ Infix,Symbol for infix display formatting,✅,pure,1.0,2449
 MoleculePlot3D,,🚫,,12.0,2449
 PreserveImageOptions,,🚫,,6.0,2449
 ReverseSort,Sorts a list in reverse order (on an association sorts pairs descending by value),✅,pure,11.1,2449
-TimeSeriesResample,,🚫,,10.0,2449
+TimeSeriesResample,Resamples a time series including selecting points on a given weekday,✅,pure,10.0,2449
 Antisymmetric,represents the symmetry of a tensor that is antisymmetric in the specified slots,✅,none,9.0,2452
 EventSeries,,🚫,,10.0,2452
 UnderscriptBox,a low-level typesetting box representing an expression with an underscript,✅,none,3.0,2452

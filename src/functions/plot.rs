@@ -2254,6 +2254,7 @@ pub(crate) fn generate_bar_svg(
   chart_legends: &[String],
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
+  bar_labels: &[String],
 ) -> Result<String, InterpreterError> {
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -2294,18 +2295,30 @@ pub(crate) fn generate_bar_svg(
     axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
 
+  let has_value_labels = bar_labels.iter().any(|s| !s.is_empty());
   let top_margin = if has_plot_label { 35 * s } else { 10 * s };
   let has_rotated_labels = chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
-  let label_extra = if has_rotated_labels {
-    50.0 * sf // more space for angled labels
-  } else if has_chart_labels {
-    24.0 * sf
-  } else {
-    0.0
-  };
-  let bottom_extra =
-    label_extra + if has_x_axis_label { 24.0 * sf } else { 0.0 };
-  let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
+  // Only content drawn below the axis consumes bottom margin. Chart labels do
+  // so only when positioned Below; Center/Above labels sit on the bars and
+  // need no reservation, so the plot fills the canvas instead of leaving a
+  // large empty strip.
+  let labels_below =
+    has_chart_labels && matches!(chart_label_position, LabelPosition::Below);
+  let mut bottom_extra = 0.0_f64;
+  if labels_below {
+    bottom_extra += if has_rotated_labels {
+      50.0 * sf
+    } else {
+      24.0 * sf
+    };
+  }
+  if has_value_labels {
+    bottom_extra += 30.0 * sf;
+  }
+  if has_x_axis_label {
+    bottom_extra += 24.0 * sf;
+  }
+  let x_label_area = 12 * RESOLUTION_SCALE + bottom_extra as u32;
   let y_label_area = 65 * RESOLUTION_SCALE;
 
   let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
@@ -2361,7 +2374,9 @@ pub(crate) fn generate_bar_svg(
         }
       })
       .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-      .label_style(("sans-serif", sf * 18.0).into_font().color(&dark_gray))
+      // Tick labels are typeset smaller than in-chart labels, matching
+      // wolframscript's proportionally small default axis ticks.
+      .label_style(("sans-serif", sf * 13.0).into_font().color(&dark_gray))
       .set_tick_mark_size(LabelAreaPosition::Left, tick)
       .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
       .draw()
@@ -2466,15 +2481,15 @@ pub(crate) fn generate_bar_svg(
   if let Some(insert_pos) = buf.rfind("</svg>") {
     let mut labels_svg = String::new();
 
+    // Bars live on the categorical x-axis 0..n, which may be a subset of the
+    // displayed x-range when PlotRange extends the axis beyond the data. Map
+    // slot centers through the same linear transform used by the cartesian
+    // chart above so labels line up with their bars.
+    let x_span = x_max - x_min;
+    let map_x_val = |v: f64| -> f64 { plot_x0 + (v - x_min) / x_span * plot_w };
+
     // ChartLabels: position based on chart_label_position
     if has_chart_labels {
-      // Bars live on the categorical x-axis 0..n, which may be a subset of
-      // the displayed x-range when PlotRange extends the axis beyond the
-      // data. Map slot centers through the same linear transform used by
-      // the cartesian chart above so labels line up with their bars.
-      let x_span = x_max - x_min;
-      let map_x_val =
-        |v: f64| -> f64 { plot_x0 + (v - x_min) / x_span * plot_w };
       let y_span = y_max - y_min;
       let map_y_val =
         |v: f64| -> f64 { plot_y0 + (y_max - v) / y_span * plot_h };
@@ -2483,34 +2498,47 @@ pub(crate) fn generate_bar_svg(
         // For Above/Center positioning, use the max value in the group
         let group_max =
           groups[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        // Mathematica Rotate is counterclockwise-positive; SVG is clockwise-positive
+        let svg_rotation_deg = -label.rotation.to_degrees();
+        let is_rotated = svg_rotation_deg.abs() > 0.01;
         let (ly, fill) = match chart_label_position {
           LabelPosition::Above => {
             let bar_top = map_y_val(group_max);
             (bar_top - font_size * 0.5, title_default_fill)
           }
           LabelPosition::Center => {
+            // wolframscript draws centered labels in the default (dark) text
+            // color, not white; `title_default_fill` is near-black in light
+            // mode and light in dark mode for readability on the bars.
             let bar_top = map_y_val(group_max);
             let bar_center = (bar_top + axis_y) / 2.0 + font_size * 0.4;
-            (bar_center, "white")
+            (bar_center, title_default_fill)
           }
-          LabelPosition::Below => (axis_y + font_size * 1.5, label_fill),
+          LabelPosition::Below => {
+            if is_rotated {
+              // With text-anchor=middle and rotation, the left half of the
+              // text swings upward. Offset the pivot down so the highest point
+              // (pivot_y - half_width * sin(angle)) stays below the axis.
+              let char_width_estimate = font_size * 0.6;
+              let half_text_w =
+                label.text.len() as f64 * char_width_estimate / 2.0;
+              let sin_a = svg_rotation_deg.to_radians().sin().abs();
+              let offset = half_text_w * sin_a + font_size * 0.5;
+              (axis_y + offset, label_fill)
+            } else {
+              (axis_y + font_size * 1.5, label_fill)
+            }
+          }
         };
-        // Mathematica Rotate is counterclockwise-positive; SVG is clockwise-positive
-        let svg_rotation_deg = -label.rotation.to_degrees();
-        let is_rotated = svg_rotation_deg.abs() > 0.01;
         if is_rotated {
-          // With text-anchor=middle and rotation, the left half of the text
-          // swings upward. Offset the pivot down so the highest point
-          // (pivot_y - half_width * sin(angle)) stays below the axis.
-          let char_width_estimate = font_size * 0.6;
-          let half_text_w = label.text.len() as f64 * char_width_estimate / 2.0;
-          let sin_a = svg_rotation_deg.to_radians().sin().abs();
-          let offset = half_text_w * sin_a + font_size * 0.5;
-          let ay = axis_y + offset;
+          // `dominant-baseline=central` centers the glyphs on `y` (not the
+          // baseline); with `text-anchor=middle` the text is centered on the
+          // pivot in both axes, so rotating about (cx, ly) keeps it centered on
+          // the bar horizontally instead of hanging to one side of the baseline.
           labels_svg.push_str(&format!(
-            "<text x=\"{cx:.1}\" y=\"{ay:.1}\" text-anchor=\"middle\" \
+            "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" dominant-baseline=\"central\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-             fill=\"{fill}\" transform=\"rotate({svg_rotation_deg:.1},{cx:.1},{ay:.1})\">{}</text>\n",
+             fill=\"{fill}\" transform=\"rotate({svg_rotation_deg:.1},{cx:.1},{ly:.1})\">{}</text>\n",
             html_escape(&label.text)
           ));
         } else {
@@ -2519,6 +2547,48 @@ pub(crate) fn generate_bar_svg(
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{fill}\">{}</text>\n",
             html_escape(&label.text)
+          ));
+        }
+      }
+    }
+
+    // Value labels from `LabelingFunction` (e.g. `Placed[#, Below] &`): one
+    // per bar, drawn just below the bar's base at the axis. `bar_labels` is a
+    // flat list across all groups/bars, aligned with the bar draw order.
+    if has_value_labels {
+      let gap = 0.1;
+      let bar_w = (1.0 - 2.0 * gap) / k as f64;
+      // Shrink the font so the widest label fits within one bar's
+      // center-to-center spacing (`1.0` chart unit between groups, `bar_w`
+      // between bars in a group), preventing adjacent labels from overlapping.
+      let spacing_chart = if k > 1 { bar_w } else { 1.0 };
+      let spacing_px = (map_x_val(spacing_chart) - map_x_val(0.0)).abs();
+      let max_len = bar_labels
+        .iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.chars().count())
+        .max()
+        .unwrap_or(1)
+        .max(1);
+      let fit_font = (spacing_px * 0.9 / (max_len as f64 * 0.6))
+        .min(font_size)
+        .max(font_size * 0.35);
+      let mut flat = 0usize;
+      for (gi, group) in groups.iter().enumerate() {
+        let group_x0 = gi as f64 + gap;
+        for bi in 0..group.len() {
+          let text = bar_labels.get(flat).cloned().unwrap_or_default();
+          flat += 1;
+          if text.is_empty() {
+            continue;
+          }
+          let cx = map_x_val(group_x0 + (bi as f64 + 0.5) * bar_w);
+          let ly = axis_y + fit_font * 1.3;
+          labels_svg.push_str(&format!(
+            "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
+             font-family=\"sans-serif\" font-size=\"{fit_font:.0}\" \
+             fill=\"{label_fill}\">{}</text>\n",
+            html_escape(&text)
           ));
         }
       }

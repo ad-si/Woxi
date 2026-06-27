@@ -4,78 +4,78 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {\"Anna\
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,350 749,1269 "/>
-<text x="670" y="1269" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,350 749,1549 "/>
+<text x="670" y="1549" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 0
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1269 749,1269 "/>
-<text x="670" y="1200" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1549 749,1549 "/>
+<text x="670" y="1459" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1200 749,1200 "/>
-<text x="670" y="1130" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1459 749,1459 "/>
+<text x="670" y="1368" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1130 749,1130 "/>
-<text x="670" y="1061" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1368 749,1368 "/>
+<text x="670" y="1277" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1061 749,1061 "/>
-<text x="670" y="991" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1277 749,1277 "/>
+<text x="670" y="1186" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,991 749,991 "/>
-<text x="670" y="921" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1186 749,1186 "/>
+<text x="670" y="1095" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 10
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,921 749,921 "/>
-<text x="670" y="852" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1095 749,1095 "/>
+<text x="670" y="1004" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,852 749,852 "/>
-<text x="670" y="782" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1004 749,1004 "/>
+<text x="670" y="914" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,782 749,782 "/>
-<text x="670" y="713" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,914 749,914 "/>
+<text x="670" y="823" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,713 749,713 "/>
-<text x="670" y="643" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,823 749,823 "/>
+<text x="670" y="732" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,643 749,643 "/>
-<text x="670" y="573" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,732 749,732 "/>
+<text x="670" y="641" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 20
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,573 749,573 "/>
-<text x="670" y="504" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,641 749,641 "/>
+<text x="670" y="550" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,504 749,504 "/>
-<text x="670" y="434" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,550 749,550 "/>
+<text x="670" y="459" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,434 749,434 "/>
-<text x="670" y="364" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,459 749,459 "/>
+<text x="670" y="369" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,364 749,364 "/>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1270 3499,1270 "/>
-<rect x="804" y="1095" width="440" height="174" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>5</title></rect>
-<rect x="1354" y="956" width="440" height="313" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>9</title></rect>
-<rect x="1904" y="434" width="440" height="835" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>24</title></rect>
-<rect x="2454" y="852" width="440" height="417" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>12</title></rect>
-<rect x="3004" y="887" width="440" height="382" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>11</title></rect>
-<line x1="710.0" y1="1270.0" x2="680.0" y2="1270.0" stroke="#666" stroke-width="10"/>
-<line x1="710.0" y1="921.5" x2="680.0" y2="921.5" stroke="#666" stroke-width="10"/>
-<line x1="710.0" y1="573.0" x2="680.0" y2="573.0" stroke="#666" stroke-width="10"/>
-<text x="1025.0" y="1540.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Anna</text>
-<text x="1575.0" y="1540.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Ben</text>
-<text x="2125.0" y="1540.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Carl</text>
-<text x="2675.0" y="1540.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Marc</text>
-<text x="3225.0" y="1540.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Sven</text>
-<text x="2125.0" y="1774.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Person</text>
-<text x="244.0" y="810.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666" transform="rotate(-90,244.0,810.0)">Fruits</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,369 749,369 "/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1550 3499,1550 "/>
+<rect x="804" y="1322" width="440" height="227" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>5</title></rect>
+<rect x="1354" y="1141" width="440" height="408" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>9</title></rect>
+<rect x="1904" y="459" width="440" height="1090" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>24</title></rect>
+<rect x="2454" y="1004" width="440" height="545" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>12</title></rect>
+<rect x="3004" y="1050" width="440" height="499" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>11</title></rect>
+<line x1="710.0" y1="1550.0" x2="680.0" y2="1550.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1095.5" x2="680.0" y2="1095.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="640.9" x2="680.0" y2="640.9" stroke="#666" stroke-width="10"/>
+<text x="1025.0" y="1820.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Anna</text>
+<text x="1575.0" y="1820.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Ben</text>
+<text x="2125.0" y="1820.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Carl</text>
+<text x="2675.0" y="1820.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Marc</text>
+<text x="3225.0" y="1820.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Sven</text>
+<text x="2125.0" y="2054.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Person</text>
+<text x="244.0" y="950.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666" transform="rotate(-90,244.0,950.0)">Fruits</text>
 <text x="2125.0" y="240.0" text-anchor="middle" font-family="sans-serif" font-size="220" fill="#333">Fruit Consumption</text>
 </svg>

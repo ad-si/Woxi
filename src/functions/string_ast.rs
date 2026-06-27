@@ -9958,6 +9958,67 @@ pub fn compress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::String(format!("1:eJx{}", encoded)))
 }
 
+/// Inflate a `"1:..."` compressed string to raw bytes, accepting both
+/// wolframscript's standard layout (`"1:"` + base64 of the zlib stream) and
+/// woxi's own legacy layout (`"1:eJx"` + base64 of the zlib stream). The
+/// standard layout is tried first; on failure the legacy `eJx` literal is
+/// stripped and the remainder retried.
+fn inflate_compressed(s: &str) -> Result<Vec<u8>, InterpreterError> {
+  use base64::Engine;
+  use flate2::read::ZlibDecoder;
+  use std::io::Read;
+
+  // Compressed strings may be line-wrapped and carry leading/trailing
+  // whitespace (e.g. inside a multi-line `CompressedData["..."]`); strip all
+  // whitespace before locating the prefix and base64-decoding.
+  let cleaned: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+  let body = cleaned.strip_prefix("1:").ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "Uncompress: invalid compressed data".to_string(),
+    )
+  })?;
+
+  let try_inflate = |b64: &str| -> Option<Vec<u8>> {
+    let decoded = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+    let mut out = Vec::new();
+    ZlibDecoder::new(&decoded[..]).read_to_end(&mut out).ok()?;
+    Some(out)
+  };
+
+  if let Some(bytes) = try_inflate(body) {
+    return Ok(bytes);
+  }
+  if let Some(rest) = body.strip_prefix("eJx")
+    && let Some(bytes) = try_inflate(rest)
+  {
+    return Ok(bytes);
+  }
+  Err(InterpreterError::EvaluationError(
+    "Uncompress: invalid compressed data".to_string(),
+  ))
+}
+
+/// Turn a `"1:..."` compressed string into the original expression. Handles
+/// wolframscript's binary `!boR` serialization (packed arrays, nested
+/// expressions) as well as woxi's text serialization.
+pub fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
+  let bytes = inflate_compressed(s)?;
+
+  if let Some(expr) = crate::functions::wl_serialize::deserialize(&bytes) {
+    return Ok(expr);
+  }
+
+  let text = String::from_utf8(bytes).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "Uncompress decode failed: {}",
+      e
+    ))
+  })?;
+  crate::syntax::string_to_expr(&text).map_err(|e| {
+    InterpreterError::EvaluationError(format!("Uncompress parse failed: {}", e))
+  })
+}
+
 /// Uncompress[str] — decompresses a string produced by Compress
 pub fn uncompress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -9976,42 +10037,26 @@ pub fn uncompress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+  decompress_to_expr(&s)
+}
 
-  // Strip the version prefix "1:eJx"
-  let data = if let Some(rest) = s.strip_prefix("1:eJx") {
-    rest
-  } else {
-    return Err(InterpreterError::EvaluationError(
-      "Uncompress: invalid compressed data".to_string(),
-    ));
-  };
-
-  use base64::Engine;
-  let decoded = base64::engine::general_purpose::STANDARD
-    .decode(data)
-    .map_err(|e| {
-      InterpreterError::EvaluationError(format!(
-        "Uncompress decode failed: {}",
-        e
-      ))
-    })?;
-
-  use flate2::read::ZlibDecoder;
-  use std::io::Read;
-
-  let mut decoder = ZlibDecoder::new(&decoded[..]);
-  let mut decompressed = String::new();
-  decoder.read_to_string(&mut decompressed).map_err(|e| {
-    InterpreterError::EvaluationError(format!(
-      "Uncompress decompress failed: {}",
-      e
-    ))
-  })?;
-
-  // Parse the decompressed string back into an expression
-  crate::syntax::string_to_expr(&decompressed).map_err(|e| {
-    InterpreterError::EvaluationError(format!("Uncompress parse failed: {}", e))
-  })
+/// CompressedData[str] — inert form holding a compressed expression; evaluates
+/// to the original expression (like `Uncompress`).
+pub fn compressed_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "CompressedData".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  match &evaluated {
+    Expr::String(s) => decompress_to_expr(s),
+    _ => Ok(Expr::FunctionCall {
+      name: "CompressedData".to_string(),
+      args: vec![evaluated].into(),
+    }),
+  }
 }
 
 /// Extract text content for ReadList from the first argument.
