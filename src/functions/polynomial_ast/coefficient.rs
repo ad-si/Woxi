@@ -606,9 +606,11 @@ pub fn extract_coefficient_of_power(
 /// E.g. 3*x^2 → (2, 3); a*x → (1, a); 5 → (0, 5); x → (1, 1)
 pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
   match term {
-    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) | Expr::String(_) => {
-      (0, term.clone())
-    }
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::Constant(_)
+    | Expr::String(_) => (0, term.clone()),
     Expr::Identifier(name) => {
       if name == var {
         (1, Expr::Integer(1))
@@ -705,13 +707,47 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
   }
 }
 
+/// BigInteger-aware fallback when an i128 product overflows (e.g. the binomial
+/// coefficients of `Expand[(1 + x)^200]` exceed i128).
+fn times_via_ast(a: &Expr, b: &Expr) -> Expr {
+  crate::functions::math_ast::times_ast(&[a.clone(), b.clone()]).unwrap_or_else(
+    |_| Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(a.clone()),
+      right: Box::new(b.clone()),
+    },
+  )
+}
+
+/// BigInteger-aware fallback when an i128 sum overflows.
+fn plus_via_ast(a: &Expr, b: &Expr) -> Expr {
+  crate::functions::math_ast::plus_ast(&[a.clone(), b.clone()]).unwrap_or_else(
+    |_| Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(a.clone()),
+      right: Box::new(b.clone()),
+    },
+  )
+}
+
+/// True for an integer scalar (machine or BigInteger).
+fn is_int_scalar(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+}
+
 /// Multiply two expressions, simplifying trivial cases.
 pub fn multiply_exprs(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
     (Expr::Integer(1), _) => b.clone(),
     (_, Expr::Integer(1)) => a.clone(),
     (Expr::Integer(0), _) | (_, Expr::Integer(0)) => Expr::Integer(0),
-    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x * y),
+    // Promote to BigInteger on overflow instead of panicking.
+    (Expr::Integer(x), Expr::Integer(y)) => match x.checked_mul(*y) {
+      Some(p) => Expr::Integer(p),
+      None => times_via_ast(a, b),
+    },
+    // Any other pair of integers (involving BigInteger) multiplies exactly.
+    _ if is_int_scalar(a) && is_int_scalar(b) => times_via_ast(a, b),
     _ => Expr::BinaryOp {
       op: BinaryOperator::Times,
       left: Box::new(a.clone()),
@@ -725,7 +761,13 @@ pub fn add_exprs(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
     (Expr::Integer(0), _) => b.clone(),
     (_, Expr::Integer(0)) => a.clone(),
-    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x + y),
+    // Promote to BigInteger on overflow instead of panicking.
+    (Expr::Integer(x), Expr::Integer(y)) => match x.checked_add(*y) {
+      Some(s) => Expr::Integer(s),
+      None => plus_via_ast(a, b),
+    },
+    // Any other pair of integers (involving BigInteger) adds exactly.
+    _ if is_int_scalar(a) && is_int_scalar(b) => plus_via_ast(a, b),
     _ => Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left: Box::new(a.clone()),

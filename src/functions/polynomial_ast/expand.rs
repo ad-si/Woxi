@@ -1038,7 +1038,7 @@ pub fn combine_product_factors(factors: Vec<Expr>) -> Expr {
 
   for f in &factors {
     match f {
-      Expr::Integer(_) | Expr::Real(_) => {
+      Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
         numeric_coeff = multiply_exprs(&numeric_coeff, f);
       }
       _ => {
@@ -1270,7 +1270,9 @@ fn sort_var_factors_canonical(factors: &mut [Expr]) {
 ///      5 → (5, "", [])
 pub(super) fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
   match term {
-    Expr::Integer(_) | Expr::Real(_) => (term.clone(), String::new(), vec![]),
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
+      (term.clone(), String::new(), vec![])
+    }
     Expr::Identifier(_) => {
       (Expr::Integer(1), expr_to_string(term), vec![term.clone()])
     }
@@ -1294,7 +1296,7 @@ pub(super) fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
 
       for f in &factors {
         match f {
-          Expr::Integer(_) | Expr::Real(_) => {
+          Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
             numeric_coeff = multiply_exprs(&numeric_coeff, f);
           }
           Expr::UnaryOp {
@@ -1303,7 +1305,7 @@ pub(super) fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
           } => {
             numeric_coeff = negate_term(&numeric_coeff);
             match operand.as_ref() {
-              Expr::Integer(_) | Expr::Real(_) => {
+              Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
                 numeric_coeff = multiply_exprs(&numeric_coeff, operand);
               }
               _ => var_factors.push(*operand.clone()),
@@ -1333,7 +1335,7 @@ pub(super) fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
 
       for f in args {
         match f {
-          Expr::Integer(_) | Expr::Real(_) => {
+          Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
             numeric_coeff = multiply_exprs(&numeric_coeff, f);
           }
           _ => var_factors.push(f.clone()),

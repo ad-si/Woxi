@@ -222,6 +222,25 @@ mod coefficient {
   }
 
   #[test]
+  fn bigint_coefficient_extraction() {
+    // Regression: Coefficient returned 0 (or a mis-attributed power) when the
+    // coefficient exceeded i128, because term_var_power_and_coeff did not
+    // recognize BigInteger as a constant factor.
+    assert_eq!(
+      interpret(
+        "Coefficient[88888888888888888888888888888888888888888 x^3 + 5 x^2, x, 3]"
+      )
+      .unwrap(),
+      "88888888888888888888888888888888888888888"
+    );
+    // The central binomial coefficient of (1 + x)^200 is a 60-digit BigInteger.
+    assert_eq!(
+      interpret("Coefficient[Expand[(1 + x)^200], x, 100]").unwrap(),
+      interpret("Binomial[200, 100]").unwrap()
+    );
+  }
+
+  #[test]
   fn monomial_second_argument() {
     // Coefficient[expr, x^n] should mean "coefficient of x^n" — the
     // same result as Coefficient[expr, x, n].
@@ -6694,6 +6713,27 @@ mod expand_fraction_power {
   #[test]
   fn expand_product_power_three() {
     assert_eq!(interpret("Expand[(3*x)^3]").unwrap(), "27*x^3");
+  }
+
+  #[test]
+  fn expand_high_power_bigint_coefficients() {
+    // Regression: Expand[(1 + x)^200] panicked with i128 overflow once the
+    // binomial coefficients exceeded i128 (~p >= 132), then produced
+    // uncombined/wrong terms. It must promote to BigInteger and stay exact.
+    // 201 distinct powers, and the result equals the binomial sum.
+    assert_eq!(interpret("Length[Expand[(1 + x)^200]]").unwrap(), "201");
+    assert_eq!(
+      interpret(
+        "Expand[(1 + x)^200] - Sum[Binomial[200, k] x^k, {k, 0, 200}] // Expand"
+      )
+      .unwrap(),
+      "0"
+    );
+    // Small integer cases are unchanged.
+    assert_eq!(
+      interpret("Expand[(1 + x)^4]").unwrap(),
+      "1 + 4*x + 6*x^2 + 4*x^3 + x^4"
+    );
   }
 
   #[test]
