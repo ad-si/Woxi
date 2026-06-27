@@ -1029,63 +1029,61 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Better: B(n) = -1/(n+1) * sum_{k=0}^{n-1} C(n+1, k) * B(k)
   // We'll compute all Bernoulli numbers up to n
 
-  // Represent as (numerator, denominator)
-  let mut b: Vec<(i128, i128)> = Vec::with_capacity(n + 1);
-  b.push((1, 1)); // B(0) = 1
-  if n >= 1 {
-    b.push((-1, 2)); // B(1) = -1/2
-  }
-
-  fn rat_gcd(a: i128, b: i128) -> i128 {
-    let (mut a, mut b) = (a.abs(), b.abs());
-    while b != 0 {
-      let t = b;
-      b = a % b;
+  // Represent each Bernoulli number as a reduced (numerator, denominator)
+  // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
+  // i128.
+  use num_bigint::BigInt;
+  fn bgcd(a: &BigInt, b: &BigInt) -> BigInt {
+    let (mut a, mut b) = (a.clone().abs(), b.clone().abs());
+    while b != BigInt::from(0) {
+      let t = b.clone();
+      b = &a % &b;
       a = t;
     }
     a
   }
-
-  fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-    let num = a.0 * b.1 + b.0 * a.1;
-    let den = a.1 * b.1;
-    let g = rat_gcd(num, den);
-    if den < 0 {
-      (-num / g, -den / g)
-    } else {
-      (num / g, den / g)
+  fn reduce(num: BigInt, den: BigInt) -> (BigInt, BigInt) {
+    let mut g = bgcd(&num, &den);
+    if g == BigInt::from(0) {
+      g = BigInt::from(1);
     }
+    let (mut num, mut den) = (num / &g, den / &g);
+    if den < BigInt::from(0) {
+      num = -num;
+      den = -den;
+    }
+    (num, den)
+  }
+  fn rat_add(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
+    reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
+  }
+  fn rat_mul(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
+    reduce(&a.0 * &b.0, &a.1 * &b.1)
   }
 
-  fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-    let num = a.0 * b.0;
-    let den = a.1 * b.1;
-    let g = rat_gcd(num, den);
-    if den < 0 {
-      (-num / g, -den / g)
-    } else {
-      (num / g, den / g)
-    }
+  let mut b: Vec<(BigInt, BigInt)> = Vec::with_capacity(n + 1);
+  b.push((BigInt::from(1), BigInt::from(1))); // B(0) = 1
+  if n >= 1 {
+    b.push((BigInt::from(-1), BigInt::from(2))); // B(1) = -1/2
   }
 
   for m in 2..=n {
-    if m % 2 != 0 && m > 1 {
-      b.push((0, 1));
+    if m % 2 != 0 {
+      b.push((BigInt::from(0), BigInt::from(1)));
       continue;
     }
     // B(m) = -1/(m+1) * sum_{k=0}^{m-1} C(m+1, k) * B(k)
-    let mut sum: (i128, i128) = (0, 1);
-    let mut binom: i128 = 1; // C(m+1, k) starting at k=0
+    let mut sum = (BigInt::from(0), BigInt::from(1));
     for k in 0..m {
-      sum = rat_add(sum, rat_mul((binom, 1), b[k]));
-      binom = binom * (m as i128 + 1 - k as i128) / (k as i128 + 1);
+      let binom = binomial_coeff_big((m + 1) as i128, k as i128);
+      sum = rat_add(&sum, &rat_mul(&(binom, BigInt::from(1)), &b[k]));
     }
-    let result = rat_mul((-1, m as i128 + 1), sum);
-    b.push(result);
+    let neg_inv = (BigInt::from(-1), BigInt::from(m as i128 + 1));
+    b.push(rat_mul(&neg_inv, &sum));
   }
 
-  let (num, den) = b[n];
-  Ok(make_rational(num, den))
+  let (num, den) = b[n].clone();
+  Ok(make_rational_expr(num, den))
 }
 
 /// Compute the nth Bernoulli polynomial B_n(z) = sum_{k=0}^{n} C(n,k) * B_k * z^(n-k)
@@ -1461,45 +1459,51 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if n == 0 {
       return Ok(Expr::Integer(1));
     }
-    // Compute using the Bell triangle (first column of each row)
-    let mut row = vec![1i128];
+    // Compute using the Bell triangle (first column of each row), in BigInt
+    // so large Bell numbers (e.g. BellB[50], 48 digits) don't overflow i128.
+    let mut row = vec![num_bigint::BigInt::from(1)];
     for _ in 1..=n {
-      let mut new_row = vec![*row.last().unwrap()];
+      let mut new_row = vec![row.last().unwrap().clone()];
       for j in 1..=row.len() {
-        let val = new_row[j - 1] + row[j - 1];
+        let val = &new_row[j - 1] + &row[j - 1];
         new_row.push(val);
       }
       row = new_row;
     }
-    Ok(Expr::Integer(row[0]))
+    Ok(crate::functions::math_ast::bigint_to_expr(row[0].clone()))
   } else {
     // Bell polynomial B_n(x) = sum_{k=0}^{n} S(n,k) * x^k
     // where S(n,k) is the Stirling number of the second kind
     if n == 0 {
       return Ok(Expr::Integer(1));
     }
-    // Compute Stirling numbers of the second kind for all k
-    let mut stirling = vec![vec![0i128; n + 1]; n + 1];
-    stirling[0][0] = 1;
+    // Compute Stirling numbers of the second kind for all k, in BigInt so
+    // large coefficients (e.g. BellB[50, x]) don't overflow i128.
+    let zero = num_bigint::BigInt::from(0);
+    let one = num_bigint::BigInt::from(1);
+    let mut stirling = vec![vec![zero.clone(); n + 1]; n + 1];
+    stirling[0][0] = one.clone();
     for i in 1..=n {
       for k in 1..=i {
-        stirling[i][k] =
-          k as i128 * stirling[i - 1][k] + stirling[i - 1][k - 1];
+        stirling[i][k] = num_bigint::BigInt::from(k as i128)
+          * &stirling[i - 1][k]
+          + &stirling[i - 1][k - 1];
       }
     }
     // Build polynomial: sum_{k=0}^{n} S(n,k) * x^k
     let x = &args[1];
     let mut terms = Vec::new();
     for k in 0..=n {
-      let s = stirling[n][k];
-      if s == 0 {
+      let s = stirling[n][k].clone();
+      if s == zero {
         continue;
       }
-      let coeff = Expr::Integer(s);
+      let is_one = s == one;
+      let coeff = crate::functions::math_ast::bigint_to_expr(s);
       let term = if k == 0 {
         coeff
       } else if k == 1 {
-        if s == 1 {
+        if is_one {
           x.clone()
         } else {
           Expr::BinaryOp {
@@ -1514,7 +1518,7 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           left: Box::new(x.clone()),
           right: Box::new(Expr::Integer(k as i128)),
         };
-        if s == 1 {
+        if is_one {
           power
         } else {
           Expr::BinaryOp {
@@ -1656,13 +1660,10 @@ pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // C(2n, n) / (n + 1)
-  let mut result: i128 = 1;
-  for i in 0..n {
-    result = result * (2 * n - i) / (i + 1);
-  }
-  result /= n + 1;
-  Ok(Expr::Integer(result))
+  // CatalanNumber[n] = Binomial[2n, n] / (n + 1), in BigInt so large results
+  // (e.g. CatalanNumber[100], 57 digits) don't overflow i128.
+  let result = binomial_coeff_big(2 * n, n) / num_bigint::BigInt::from(n + 1);
+  Ok(crate::functions::math_ast::bigint_to_expr(result))
 }
 
 /// StirlingS1[n, k] - Stirling number of the first kind (signed)

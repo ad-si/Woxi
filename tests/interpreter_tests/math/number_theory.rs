@@ -454,6 +454,20 @@ mod catalan_number_builtin {
     assert_eq!(interpret("CatalanNumber[10]").unwrap(), "16796");
   }
 
+  #[test]
+  fn large_result_uses_bigint_no_overflow() {
+    // Regression: CatalanNumber[100] (57 digits) used to panic with i128
+    // overflow. Exact value matches wolframscript.
+    assert_eq!(
+      interpret("CatalanNumber[100]").unwrap(),
+      "896519947090131496687170070074100632420837521538745909320"
+    );
+    assert_eq!(
+      interpret("IntegerLength[CatalanNumber[200]]").unwrap(),
+      "117"
+    );
+  }
+
   // The analytic continuation collapses at negative integers:
   // CatalanNumber[-1] = -1 and CatalanNumber[-n] = 0 for n >= 2.
   #[test]
@@ -2800,6 +2814,47 @@ mod bell_b {
   #[test]
   fn bell_1() {
     assert_eq!(interpret("BellB[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn bell_large_no_overflow() {
+    // Regression: BellB[50] (48 digits) used to panic with i128 overflow in
+    // the Bell triangle. Exact value matches wolframscript.
+    assert_eq!(
+      interpret("BellB[50]").unwrap(),
+      "185724268771078270438257767181908917499221852770"
+    );
+    // The Bell polynomial path (BellB[n, x]) also accumulated Stirling
+    // numbers in i128; evaluating at 1 recovers the Bell number.
+    assert_eq!(
+      interpret("BellB[50, 1]").unwrap(),
+      "185724268771078270438257767181908917499221852770"
+    );
+  }
+}
+
+mod bernoulli_b {
+  use super::*;
+
+  #[test]
+  fn small_values() {
+    assert_eq!(interpret("BernoulliB[0]").unwrap(), "1");
+    assert_eq!(interpret("BernoulliB[1]").unwrap(), "-1/2");
+    assert_eq!(interpret("BernoulliB[2]").unwrap(), "1/6");
+    assert_eq!(interpret("BernoulliB[6]").unwrap(), "1/42");
+    assert_eq!(interpret("BernoulliB[10]").unwrap(), "5/66");
+    assert_eq!(interpret("BernoulliB[3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn large_no_overflow() {
+    // Regression: BernoulliB[60] has a huge numerator and used to panic with
+    // i128 overflow in the rational recurrence. Exact value matches
+    // wolframscript.
+    assert_eq!(
+      interpret("BernoulliB[60]").unwrap(),
+      "-1215233140483755572040304994079820246041491/56786730"
+    );
   }
 }
 
