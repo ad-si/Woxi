@@ -593,6 +593,53 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::functions::expand_and_combine(&det))
 }
 
+/// True for an exact rational scalar (Integer, BigInteger, or literal
+/// Rational) — the entries the fast Bareiss path handles exactly.
+fn is_exact_rational_entry(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+    || matches!(e, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
+}
+
+/// Bareiss fraction-free Gaussian elimination — an O(n^3) exact determinant
+/// for integer/rational matrices. Every division is exact (the running
+/// quotient is always the previous pivot), so the result stays exact while
+/// avoiding the O(n!) blow-up of cofactor expansion.
+fn determinant_bareiss(matrix: &[Vec<Expr>]) -> Expr {
+  let n = matrix.len();
+  let mut a: Vec<Vec<Expr>> = matrix.to_vec();
+  let mut prev = Expr::Integer(1);
+  let mut sign: i32 = 1;
+  for k in 0..n - 1 {
+    if is_zero_expr(&a[k][k]) {
+      // Pivot is zero: swap in a row below with a nonzero entry in column k.
+      let swap_row = (k + 1..n).find(|&i| !is_zero_expr(&a[i][k]));
+      match swap_row {
+        Some(i) => {
+          a.swap(k, i);
+          sign = -sign;
+        }
+        None => return Expr::Integer(0), // singular
+      }
+    }
+    let pivot = a[k][k].clone();
+    for i in k + 1..n {
+      for j in k + 1..n {
+        let num =
+          eval_sub(&eval_mul(&a[i][j], &pivot), &eval_mul(&a[i][k], &a[k][j]));
+        a[i][j] = eval_divide(&num, &prev);
+      }
+    }
+    prev = pivot;
+  }
+  let det = a[n - 1][n - 1].clone();
+  if sign < 0 {
+    eval_sub(&Expr::Integer(0), &det)
+  } else {
+    det
+  }
+}
+
 /// Compute determinant recursively via cofactor expansion
 fn determinant(matrix: &[Vec<Expr>]) -> Expr {
   let n = matrix.len();
@@ -607,6 +654,14 @@ fn determinant(matrix: &[Vec<Expr>]) -> Expr {
       &eval_mul(&matrix[0][0], &matrix[1][1]),
       &eval_mul(&matrix[0][1], &matrix[1][0]),
     );
+  }
+  // Fast O(n^3) path for exact integer/rational matrices, where cofactor
+  // expansion's O(n!) cost makes even a 20x20 determinant hang.
+  if matrix
+    .iter()
+    .all(|row| row.iter().all(is_exact_rational_entry))
+  {
+    return determinant_bareiss(matrix);
   }
   let mut det = Expr::Integer(0);
   for j in 0..n {

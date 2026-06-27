@@ -150,6 +150,28 @@ mod det {
   fn det_unevaluated() {
     assert_eq!(interpret("Det[x]").unwrap(), "Det[x]");
   }
+
+  #[test]
+  fn det_large_integer_matrix_is_fast_and_exact() {
+    // Regression: cofactor expansion is O(n!), so a 20x20 integer determinant
+    // used to hang. The fraction-free Bareiss path computes it instantly.
+    // {i + j} has rank 2, so its determinant is 0 for n >= 3.
+    assert_eq!(
+      interpret("Det[Table[i + j, {i, 20}, {j, 20}]]").unwrap(),
+      "0"
+    );
+    // A non-singular larger matrix gives the exact value.
+    assert_eq!(
+      interpret("Det[Table[If[i == j, 2, 1], {i, 10}, {j, 10}]]").unwrap(),
+      "11"
+    );
+    assert_eq!(interpret("Det[IdentityMatrix[25]]").unwrap(), "1");
+    // Exact rational entries stay exact via fraction-free elimination.
+    assert_eq!(
+      interpret("Det[HilbertMatrix[5]]").unwrap(),
+      "1/266716800000"
+    );
+  }
 }
 
 mod permanent {
