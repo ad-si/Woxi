@@ -721,6 +721,29 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // E_0(z) = E^(-z)/z — an exact elementary closed form, matching
+  // wolframscript (e.g. ExpIntegralE[0, 1/2] = 2/Sqrt[E]). Symbolic and exact
+  // arguments are handled here; a machine-Real argument folds to the same value
+  // the numeric path below would give.
+  if matches!(n_expr, Expr::Integer(0)) {
+    use crate::syntax::BinaryOperator;
+    let exp_neg_z = Expr::FunctionCall {
+      name: "Exp".to_string(),
+      args: vec![Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(z_expr.clone()),
+      }]
+      .into(),
+    };
+    let result = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(exp_neg_z),
+      right: Box::new(z_expr.clone()),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
   // Numeric evaluation
   let n_val = expr_to_f64(n_expr);
   let z_val = expr_to_f64(z_expr);

@@ -2292,6 +2292,14 @@ mod cases {
   fn exp_integral_e() {
     assert_case(r#"ExpIntegralE[2.0, 2.0]"#, r#"0.03753426182049044"#);
   }
+  // E_0(z) = E^(-z)/z is an exact elementary closed form for any argument.
+  #[test]
+  fn exp_integral_e_order_zero() {
+    assert_case("ExpIntegralE[0, z]", "1/(E^z*z)");
+    assert_case("ExpIntegralE[0, 2]", "1/(2*E^2)");
+    assert_case("ExpIntegralE[0, 1/2]", "2/Sqrt[E]");
+    assert_case("ExpIntegralE[0, x + y]", "E^(-x - y)/(x + y)");
+  }
   #[test]
   fn exp_integral_ei() {
     assert_case(r#"ExpIntegralEi[2.0]"#, r#"4.95423435600189"#);
