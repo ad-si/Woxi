@@ -8126,6 +8126,26 @@ mod inverse_gamma_regularized {
     );
   }
 
+  // The a == 1 closed form only fires for a concrete q; a free symbol stays
+  // unevaluated, matching wolframscript (it does not auto-reduce to -Log[q]).
+  #[test]
+  fn a_one_symbolic_q_stays_unevaluated() {
+    assert_eq!(
+      interpret("InverseGammaRegularized[1, z]").unwrap(),
+      "InverseGammaRegularized[1, z]"
+    );
+    assert_eq!(
+      interpret("InverseGammaRegularized[1, q + 1]").unwrap(),
+      "InverseGammaRegularized[1, 1 + q]"
+    );
+    // Concrete arguments still reduce / hit their boundary values.
+    assert_eq!(
+      interpret("InverseGammaRegularized[1, 0]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(interpret("InverseGammaRegularized[1, 1]").unwrap(), "0");
+  }
+
   #[test]
   fn numeric_two_arg() {
     let result: f64 = interpret("N[InverseGammaRegularized[2, 1/2]]")

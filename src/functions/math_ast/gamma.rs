@@ -2006,8 +2006,14 @@ pub fn inverse_gamma_regularized_ast(
     }
   }
 
-  // Elementary closed form for a == 1: z = -Log[q].
-  if matches!(a, Expr::Integer(1)) {
+  // Elementary closed form for a == 1: z = -Log[q]. wolframscript applies it
+  // when q is a concrete number (e.g. InverseGammaRegularized[1, 1/2] = Log[2],
+  // and the machine-Real case), but keeps InverseGammaRegularized[1, q]
+  // unevaluated for a free symbol q.
+  let q_is_number =
+    matches!(q, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+      || matches!(q, Expr::FunctionCall { name, .. } if name == "Rational");
+  if matches!(a, Expr::Integer(1)) && q_is_number {
     let neg_log = Expr::BinaryOp {
       op: BinaryOperator::Times,
       left: Box::new(Expr::Integer(-1)),
