@@ -2531,7 +2531,7 @@ HermitianMatrixQ,Test whether a matrix is Hermitian,✅,none,6.0,2587
 IntervalMarkers,option for interval markers in plots,✅,Symbolic,12.0,2587
 SetSharedFunction,,🚫,,7.0,2587
 TimeSeriesMap,,🚫,,10.0,2587
-WeberE,Weber function E_nu(z) via numerical quadrature,✅,pure,7.0,2587
+WeberE,Weber function E_nu(z); exact closed form (polynomial over Pi minus StruveH) for integer order; numerical quadrature otherwise,✅,pure,7.0,2587
 WignerD,Wigner D-matrix elements for rotation group representations,✅,pure,8.0,2587
 ByteArray,Creates a byte array from a list of unsigned byte values or a Base64-encoded string,✅,pure,10.1,2591
 FrenetSerretSystem,Compute the Frenet-Serret system (curvatures and orthonormal frame) for a parametric curve,✅,pure,10.0,2591

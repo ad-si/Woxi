@@ -1552,6 +1552,18 @@ pub fn weber_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&sym_form);
   }
 
+  // Integer order with an exact (non-Real) argument: closed form
+  //   WeberE[n, z] = (1/Pi) Sum_{k=0}^{floor((n-1)/2)}
+  //                    Gamma[k+1/2] (z/2)^(n-2k-1) / Gamma[n-k+1/2]
+  //                  - StruveH[n, z]    (for n >= 0),
+  // with the reflection WeberE[-n, z] = (-1)^n WeberE[n, z]. The Struve term is
+  // kept symbolic (matching wolframscript, e.g. WeberE[2, 3] = 2/Pi - StruveH[2, 3]).
+  if let Expr::Integer(n) = nu_expr
+    && !matches!(z_expr, Expr::Real(_))
+  {
+    return weber_e_integer_closed_form(*n, z_expr);
+  }
+
   // Numeric evaluation when both args are numeric and at least one is Real
   let is_numeric_eval = nu_val.is_some()
     && z_val.is_some()
@@ -1569,6 +1581,74 @@ pub fn weber_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "WeberE".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// WeberE[n, z] for an integer order n and exact argument z, as the finite
+/// polynomial-in-z over Pi minus StruveH[|n|, z]. See [`weber_e_ast`].
+fn weber_e_integer_closed_form(
+  n: i128,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let m = n.unsigned_abs() as i128; // |n|
+  let fact = |k: i128| -> BigInt {
+    let mut r = BigInt::from(1);
+    let mut i = 2i128;
+    while i <= k {
+      r *= i;
+      i += 1;
+    }
+    r
+  };
+  let pi = Expr::Constant("Pi".to_string());
+  let pi_inv = Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(pi),
+    right: Box::new(Expr::Integer(-1)),
+  };
+
+  // Polynomial terms: c_k * z^(m-2k-1) / Pi with
+  //   c_k = (2k)! (m-k)! 2^(m-2k+1) / [ (2(m-k))! k! ].
+  let mut terms: Vec<Expr> = Vec::new();
+  if m >= 1 {
+    let kmax = (m - 1) / 2;
+    for k in 0..=kmax {
+      let raw_num =
+        fact(2 * k) * fact(m - k) * BigInt::from(2).pow((m - 2 * k + 1) as u32);
+      let raw_den = fact(2 * (m - k)) * fact(k);
+      let coeff = make_rational_expr(raw_num, raw_den);
+      let p = m - 2 * k - 1;
+      let mut factors = vec![coeff];
+      if p > 0 {
+        // power_ast so an exact argument simplifies (e.g. 3^1 -> 3), letting
+        // times_ast fold it into the coefficient (WeberE[2, 3] -> 2/Pi - ...).
+        factors.push(crate::functions::math_ast::power_ast(&[
+          z.clone(),
+          Expr::Integer(p),
+        ])?);
+      }
+      factors.push(pi_inv.clone());
+      terms.push(crate::functions::math_ast::times_ast(&factors)?);
+    }
+  }
+
+  // - StruveH[|n|, z]
+  let struve = Expr::FunctionCall {
+    name: "StruveH".to_string(),
+    args: vec![Expr::Integer(m), z.clone()].into(),
+  };
+  terms.push(crate::functions::math_ast::times_ast(&[
+    Expr::Integer(-1),
+    struve,
+  ])?);
+
+  let mut result = crate::functions::math_ast::plus_ast(&terms)?;
+  // Reflection: WeberE[-n, z] = (-1)^n WeberE[n, z]; only an odd |n| flips sign.
+  if n < 0 && m % 2 == 1 {
+    result =
+      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), result])?;
+  }
+  Ok(result)
 }
 
 /// AngerJ[ν, 0] closed form: Sin[ν*Pi] / (ν*Pi).

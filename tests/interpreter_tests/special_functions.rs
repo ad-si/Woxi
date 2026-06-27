@@ -2837,6 +2837,27 @@ mod cases {
   fn weber_e() {
     assert_case(r#"WeberE[1.5, 3.5]"#, r#"-0.3972562592100308"#);
   }
+  // Integer order: the finite polynomial-in-z over Pi minus StruveH[|n|, z],
+  // with the reflection WeberE[-n, z] = (-1)^n WeberE[n, z]. The Struve term
+  // stays symbolic, matching wolframscript.
+  #[test]
+  fn weber_e_integer_order() {
+    assert_case("WeberE[0, z]", "-StruveH[0, z]");
+    assert_case("WeberE[1, z]", "2/Pi - StruveH[1, z]");
+    assert_case("WeberE[2, z]", "(2*z)/(3*Pi) - StruveH[2, z]");
+    assert_case("WeberE[3, z]", "2/(3*Pi) + (2*z^2)/(15*Pi) - StruveH[3, z]");
+    assert_case(
+      "WeberE[5, z]",
+      "2/(5*Pi) + (2*z^2)/(105*Pi) + (2*z^4)/(945*Pi) - StruveH[5, z]",
+    );
+    // Reflection: odd |n| flips sign, even |n| is unchanged.
+    assert_case("WeberE[-1, z]", "-2/Pi + StruveH[1, z]");
+    assert_case("WeberE[-2, z]", "(2*z)/(3*Pi) - StruveH[2, z]");
+    // Exact (non-Real) argument folds into the coefficient.
+    assert_case("WeberE[2, 3]", "2/Pi - StruveH[2, 3]");
+    assert_case("WeberE[3, 2]", "6/(5*Pi) - StruveH[3, 2]");
+    assert_case("WeberE[1, 1/2]", "2/Pi - StruveH[1, 1/2]");
+  }
   #[test]
   fn beta() {
     assert_case(r#"Beta[2, 3]"#, r#"1 / 12"#);
