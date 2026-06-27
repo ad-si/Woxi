@@ -803,34 +803,46 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     // Perfect squares: Sqrt[0]=0, Sqrt[1]=1, Sqrt[4]=2, etc.
     Expr::Integer(n) if *n >= 0 => {
-      let root = (*n as f64).sqrt();
-      if root.fract() == 0.0 && root.abs() < i128::MAX as f64 {
-        return Ok(Expr::Integer(root as i128));
+      // Exact perfect square via BigInt (f64 sqrt is imprecise near i128 max).
+      let bn = num_bigint::BigInt::from(*n);
+      let r = bn.sqrt();
+      if &r * &r == bn {
+        return Ok(crate::functions::math_ast::bigint_to_expr(r));
       }
-      // Simplify: extract largest perfect square factor
-      // e.g., Sqrt[12] = 2*Sqrt[3]
-      let n_val = *n as u64;
-      let mut outside = 1u64;
-      let mut inside = n_val;
-      let mut factor = 2u64;
-      while factor * factor <= inside {
-        while inside.is_multiple_of(factor * factor) {
-          outside *= factor;
-          inside /= factor * factor;
+      // Partial extraction (e.g. Sqrt[12] = 2*Sqrt[3]) runs in u64, so only
+      // when n fits u64 — casting a larger i128 to u64 would truncate.
+      if *n <= u64::MAX as i128 {
+        let mut outside = 1u64;
+        let mut inside = *n as u64;
+        let mut factor = 2u64;
+        while factor * factor <= inside {
+          while inside.is_multiple_of(factor * factor) {
+            outside *= factor;
+            inside /= factor * factor;
+          }
+          factor += 1;
         }
-        factor += 1;
-      }
-      if outside > 1 && inside > 1 {
-        return Ok(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Expr::Integer(outside as i128),
-            make_sqrt(Expr::Integer(inside as i128)),
-          ]
-          .into(),
-        });
+        if outside > 1 && inside > 1 {
+          return Ok(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(outside as i128),
+              make_sqrt(Expr::Integer(inside as i128)),
+            ]
+            .into(),
+          });
+        }
       }
       // Not a perfect square, return symbolic
+      Ok(make_sqrt(args[0].clone()))
+    }
+    // Sqrt of a BigInteger: extract an exact perfect square; otherwise stay
+    // symbolic (partial extraction would need BigInt factorization).
+    Expr::BigInteger(n) if *n >= num_bigint::BigInt::from(0) => {
+      let r = n.sqrt();
+      if &r * &r == *n {
+        return Ok(crate::functions::math_ast::bigint_to_expr(r));
+      }
       Ok(make_sqrt(args[0].clone()))
     }
     // Sqrt[Rational[a, b]] — simplify by extracting perfect square factors

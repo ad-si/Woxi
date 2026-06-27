@@ -8029,6 +8029,38 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Perfect rational root for an integer/BigInteger base, handling bases
+  // beyond i128: with gcd(numer, denom) == 1, b^(numer/denom) is an integer
+  // iff b is a perfect denom-th power r^denom, giving r^numer. Covers e.g.
+  // (10^60)^(1/2) = 10^30 and GeometricMean[{10^20, 10^20, 10^20}] = 10^20.
+  if let Expr::FunctionCall { name, args: rargs } = exp
+    && name == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(numer), Expr::Integer(denom)) = (&rargs[0], &rargs[1])
+    && *numer > 0
+    && *denom > 0
+    && *denom <= u32::MAX as i128
+    && *numer <= u32::MAX as i128
+  {
+    // b >= 0 so 0^(p/q) = 0 and 1^(p/q) = 1 are also simplified (nth_root(0)
+    // = 0 and nth_root(1) = 1 are perfect powers of themselves).
+    let bb_opt: Option<num_bigint::BigInt> = match base {
+      Expr::Integer(b) if *b >= 0 => Some(num_bigint::BigInt::from(*b)),
+      Expr::BigInteger(b) if *b >= num_bigint::BigInt::from(0) => {
+        Some(b.clone())
+      }
+      _ => None,
+    };
+    if let Some(bb) = bb_opt {
+      let r = bb.nth_root(*denom as u32);
+      if r.pow(*denom as u32) == bb {
+        return Ok(crate::functions::math_ast::bigint_to_expr(
+          r.pow(*numer as u32),
+        ));
+      }
+    }
+  }
+
   // Special case: Integer^Rational — keep symbolic unless result is exact integer
   if let Expr::Integer(b) = base
     && let Expr::FunctionCall { name, args: rargs } = exp
@@ -8036,11 +8068,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && rargs.len() == 2
     && let (Expr::Integer(numer), Expr::Integer(denom)) = (&rargs[0], &rargs[1])
   {
-    // Try to compute exact integer root
-    let result = (*b as f64).powf(*numer as f64 / *denom as f64);
-    if result.fract() == 0.0 && result.is_finite() {
-      return Ok(Expr::Integer(result as i128));
-    }
+    // (Exact perfect-power roots are handled by the unified BigInt block
+    // above, before reaching here.)
     // (-1)^(p/q) → simplify via simplify_neg1_rational_power
     if *b == -1 {
       return simplify_neg1_rational_power(*numer, *denom);
@@ -8075,7 +8104,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // n = p1^k1 * p2^k2 * ...
     // n^(p/q) = product of p_i^(k_i*p/q)
     // Each p_i^(k_i*p/q) = p_i^floor_i * p_i^(rem_i/q)
-    if *numer > 0 && *denom > 0 && *b > 0 {
+    // The partial-extraction factorization below works in u64, so only run it
+    // when the base fits in u64 (perfect powers of larger bases are already
+    // handled exactly above). Casting a larger i128 to u64 truncates and
+    // corrupts the factorization (e.g. 2^90 as u64 == 0).
+    if *numer > 0 && *denom > 0 && *b > 0 && *b <= u64::MAX as i128 {
       let d = *denom as u64;
       let n = *numer as u64;
       let mut outside: i128 = 1;

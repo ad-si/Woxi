@@ -145,6 +145,17 @@ mod geometric_mean {
   }
 
   #[test]
+  fn geometric_mean_large_perfect_power() {
+    // Regression: the product (10^20)^3 = 10^60 exceeds i128, and the cube
+    // root was left unevaluated / mis-extracted (the i128->u64 perfect-root
+    // factorization truncated). It must equal 10^20.
+    assert_eq!(
+      interpret("GeometricMean[{10^20, 10^20, 10^20}]").unwrap(),
+      "100000000000000000000"
+    );
+  }
+
+  #[test]
   fn geometric_mean_real_element_keeps_real() {
     // A Real element makes the result inexact even when it is a whole number
     // (regression: Woxi returned Integer 6 instead of Real 6.).

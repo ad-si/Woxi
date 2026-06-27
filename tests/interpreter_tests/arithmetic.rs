@@ -2224,6 +2224,26 @@ mod sqrt_power {
   use super::*;
 
   #[test]
+  fn perfect_root_of_large_integer() {
+    // Regression: the perfect-root extraction cast the i128 base to u64 (and
+    // used imprecise f64), so roots of large bases were 1 / garbage.
+    // (2^90 as u64 == 0 made (2^90)^(1/3) return 1.)
+    assert_eq!(interpret("(2^90)^(1/3)").unwrap(), "1073741824");
+    assert_eq!(interpret("(10^30)^(1/3)").unwrap(), "10000000000");
+    // BigInteger base (beyond i128).
+    assert_eq!(
+      interpret("(10^60)^(1/2)").unwrap(),
+      "1000000000000000000000000000000"
+    );
+    assert_eq!(interpret("Sqrt[10^40]").unwrap(), "100000000000000000000");
+    // Edge cases and non-perfect roots are unaffected.
+    assert_eq!(interpret("0^(1/3)").unwrap(), "0");
+    assert_eq!(interpret("1^(1/5)").unwrap(), "1");
+    assert_eq!(interpret("100^(1/3)").unwrap(), "10^(2/3)");
+    assert_eq!(interpret("Sqrt[12]").unwrap(), "2*Sqrt[3]");
+  }
+
+  #[test]
   fn sqrt_squared() {
     assert_eq!(interpret("Sqrt[a]^2").unwrap(), "a");
   }
