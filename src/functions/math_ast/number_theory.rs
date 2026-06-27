@@ -1850,6 +1850,43 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
+  // HarmonicNumber[n, -j] with a negative integer order is the power sum
+  // Sum[k^j, {k, 1, n}] (Faulhaber), a polynomial in n. wolframscript renders
+  // it expanded. Only handle a symbolic first argument here; concrete
+  // non-negative integers are summed exactly below.
+  if args.len() == 2
+    && expr_to_num(&args[0]).is_none()
+    && let Some(r) = expr_to_i128(&args[1])
+    && r < 0
+  {
+    let j = -r;
+    let k = Expr::Identifier("k".to_string());
+    let summand = if j == 1 {
+      k.clone()
+    } else {
+      // Build the BinaryOp Power form (k^j), which Sum's closed-form path
+      // recognises; FunctionCall Power[k, j] would be left unevaluated.
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(k.clone()),
+        right: Box::new(Expr::Integer(j)),
+      }
+    };
+    let sum = Expr::FunctionCall {
+      name: "Sum".to_string(),
+      args: vec![
+        summand,
+        Expr::List(vec![k, Expr::Integer(1), args[0].clone()].into()),
+      ]
+      .into(),
+    };
+    let expanded = Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![sum].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&expanded);
+  }
+
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n,
     Some(_) => {

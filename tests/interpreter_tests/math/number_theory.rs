@@ -746,6 +746,26 @@ mod harmonic_number {
     assert_eq!(interpret("HarmonicNumber[0, -1]").unwrap(), "0");
   }
 
+  // A symbolic first argument with a negative integer order is the expanded
+  // Faulhaber power-sum polynomial, matching wolframscript.
+  #[test]
+  fn negative_order_symbolic() {
+    assert_eq!(interpret("HarmonicNumber[n, -1]").unwrap(), "n/2 + n^2/2");
+    assert_eq!(
+      interpret("HarmonicNumber[n, -2]").unwrap(),
+      "n/6 + n^2/2 + n^3/3"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[n, -3]").unwrap(),
+      "n^2/4 + n^3/2 + n^4/4"
+    );
+    // A compound argument is substituted and expanded.
+    assert_eq!(
+      interpret("HarmonicNumber[m + 1, -2]").unwrap(),
+      "1 + (13*m)/6 + (3*m^2)/2 + m^3/3"
+    );
+  }
+
   // The limiting value of the (generalized) harmonic series at Infinity.
   #[test]
   fn at_infinity() {
