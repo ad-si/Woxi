@@ -2745,8 +2745,8 @@ pub(crate) fn generate_horizontal_bar_svg(
   let axis_stroke =
     format!("rgb({},{},{})", axis_gray.0, axis_gray.1, axis_gray.2);
 
-  let font_size = sf * 18.0;
-  let title_font_size = sf * 22.0;
+  let font_size = sf * 14.0;
+  let title_font_size = sf * 16.0;
   let char_w = font_size * 0.55;
 
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
@@ -2758,7 +2758,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   };
 
   // Margins.
-  let top_margin = if has_plot_label { 44.0 * sf } else { 16.0 * sf };
+  let top_margin = if has_plot_label { 38.0 * sf } else { 16.0 * sf };
   let bottom_area = 44.0 * sf
     + if !x_axis_label.is_empty() {
       26.0 * sf
@@ -2981,7 +2981,8 @@ pub(crate) fn generate_horizontal_bar_svg(
     && !sl.text.is_empty()
   {
     let cx = plot_x0 + plot_w / 2.0;
-    let ty = top_margin - title_font_size * 0.4;
+    // Place the title near the top so a clear gap remains above the bars.
+    let ty = title_font_size * 1.2;
     let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
     let fill = sl
       .color
