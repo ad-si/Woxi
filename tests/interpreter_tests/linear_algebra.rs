@@ -211,6 +211,22 @@ mod permanent {
       "Permanent[{{1, 2, 3}, {4, 5, 6}}]"
     );
   }
+
+  #[test]
+  fn large_numeric_matrix_uses_ryser() {
+    // Regression: the O(n!) permutation sum hung for n >= 12. Ryser's
+    // O(2^n n^2) formula computes it instantly. Exact values match
+    // wolframscript.
+    assert_eq!(
+      interpret("Permanent[Table[i + j, {i, 12}, {j, 12}]]").unwrap(),
+      "4158410247782904833280"
+    );
+    // Exact rational entries stay exact.
+    assert_eq!(
+      interpret("Permanent[HilbertMatrix[4]]").unwrap(),
+      "32547/224000"
+    );
+  }
 }
 
 mod inverse {

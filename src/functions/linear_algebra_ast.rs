@@ -713,6 +713,20 @@ pub fn permanent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return matsq();
   }
 
+  // Fast O(2^n * n^2) Ryser path for exact integer/rational matrices, where
+  // the O(n!) permutation sum below hangs (n=11 already takes ~10s). Capped
+  // at n < 63 so the subset bitmask fits in u64 (larger permanents are
+  // infeasible by any method).
+  if n < 63
+    && matrix
+      .iter()
+      .all(|row| row.iter().all(is_exact_rational_entry))
+  {
+    return Ok(crate::functions::expand_and_combine(&permanent_ryser(
+      &matrix,
+    )));
+  }
+
   // Sum over all column permutations of the product of selected entries.
   fn accumulate(
     matrix: &[Vec<Expr>],
@@ -740,6 +754,37 @@ pub fn permanent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut total = Expr::Integer(0);
   accumulate(&matrix, &mut used, 0, &Expr::Integer(1), &mut total);
   Ok(crate::functions::expand_and_combine(&total))
+}
+
+/// Ryser's formula for the permanent, O(2^n * n^2):
+///   perm(A) = sum over column subsets S of (-1)^(n-|S|) * prod_i (sum_{j in S} a_ij)
+/// (the outer (-1)^n is folded into the per-subset sign). Exact for
+/// integer/rational entries.
+fn permanent_ryser(matrix: &[Vec<Expr>]) -> Expr {
+  let n = matrix.len();
+  let mut total = Expr::Integer(0);
+  for s in 1u64..(1u64 << n) {
+    let popcount = s.count_ones() as usize;
+    let mut prod = Expr::Integer(1);
+    for row in matrix.iter() {
+      let mut rowsum = Expr::Integer(0);
+      for (j, entry) in row.iter().enumerate() {
+        if s & (1u64 << j) != 0 {
+          rowsum = eval_add(&rowsum, entry);
+        }
+      }
+      prod = eval_mul(&prod, &rowsum);
+      if is_zero_expr(&prod) {
+        break;
+      }
+    }
+    if (n - popcount).is_multiple_of(2) {
+      total = eval_add(&total, &prod);
+    } else {
+      total = eval_sub(&total, &prod);
+    }
+  }
+  total
 }
 
 /// Inverse[matrix] - matrix inverse (integer matrices → rational entries)
