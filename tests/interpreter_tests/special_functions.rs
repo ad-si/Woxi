@@ -2420,6 +2420,15 @@ mod cases {
   fn elliptic_pi_2() {
     assert_case(r#"EllipticPi[0.4, 0.6]; EllipticPi[0, 0]"#, r#"Pi / 2"#);
   }
+  // A zero characteristic drops out: EllipticPi[0, phi, m] = EllipticF[phi, m],
+  // which in turn reduces to phi at m == 0.
+  #[test]
+  fn elliptic_pi_zero_characteristic() {
+    assert_case("EllipticPi[0, phi, m]", "EllipticF[phi, m]");
+    assert_case("EllipticPi[0, 2, 1/2]", "EllipticF[2, 1/2]");
+    assert_case("EllipticPi[0, x + y, m]", "EllipticF[x + y, m]");
+    assert_case("EllipticPi[0, phi, 0]", "phi");
+  }
   #[test]
   fn chebyshev_t_1() {
     assert_case(

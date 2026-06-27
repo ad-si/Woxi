@@ -538,6 +538,12 @@ pub fn elliptic_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(0));
     }
 
+    // EllipticPi[0, phi, m] = EllipticF[phi, m] (the characteristic drops out).
+    // EllipticF then handles the further m == 0 reduction to phi.
+    if is_expr_zero(n_expr) {
+      return elliptic_f_ast(&[phi_expr.clone(), m_expr.clone()]);
+    }
+
     let n_val = try_eval_to_f64(n_expr);
     let phi_val = try_eval_to_f64(phi_expr);
     let m_val = try_eval_to_f64(m_expr);
