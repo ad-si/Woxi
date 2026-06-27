@@ -73,6 +73,15 @@ pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // JacobiAmplitude[u, 0] = u (the modulus vanishes, so am collapses to u).
+  if let Some(result) =
+    crate::functions::math_ast::elliptic::elliptic_param_zero_reduces_to_first(
+      u, m,
+    )
+  {
+    return Ok(result);
+  }
+
   // Numeric evaluation
   if let (Some(u_f), Some(m_f)) = (try_eval_to_f64(u), try_eval_to_f64(m))
     && (matches!(u, Expr::Real(_)) || matches!(m, Expr::Real(_)))

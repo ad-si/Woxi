@@ -240,6 +240,12 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(0));
     }
 
+    // EllipticE[phi, 0] = phi (the integrand collapses to 1).
+    if let Some(result) = elliptic_param_zero_reduces_to_first(phi_expr, m_expr)
+    {
+      return Ok(result);
+    }
+
     // Numeric evaluation
     let phi_val = expr_to_f64(phi_expr);
     let m_val = expr_to_f64(m_expr);
@@ -415,6 +421,11 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // EllipticF[phi, 0] = phi (the integrand collapses to 1).
+  if let Some(result) = elliptic_param_zero_reduces_to_first(phi_expr, m_expr) {
+    return Ok(result);
+  }
+
   // Numeric evaluation
   let phi_val = expr_to_f64(phi_expr);
   let m_val = expr_to_f64(m_expr);
@@ -432,6 +443,24 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "EllipticF".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// At parameter m == 0, EllipticF[phi, 0] = EllipticE[phi, 0] = phi and
+/// JacobiAmplitude[u, 0] = u. Returns the first argument (made Real when any
+/// argument is inexact, matching wolframscript), or None when m is not zero.
+pub(crate) fn elliptic_param_zero_reduces_to_first(
+  first: &Expr,
+  m_expr: &Expr,
+) -> Option<Expr> {
+  if !is_expr_zero(m_expr) {
+    return None;
+  }
+  let inexact =
+    matches!(first, Expr::Real(_)) || matches!(m_expr, Expr::Real(_));
+  if inexact && let Some(v) = expr_to_f64(first) {
+    return Some(Expr::Real(v));
+  }
+  Some(first.clone())
 }
 
 /// Compute incomplete elliptic integral F(phi, m) via Gauss-Legendre quadrature

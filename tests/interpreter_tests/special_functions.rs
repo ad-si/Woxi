@@ -2391,6 +2391,19 @@ mod cases {
   fn elliptic_f_2() {
     assert_case(r#"EllipticF[0.3, 0.8]; EllipticF[0, 0.8]"#, r#"0."#);
   }
+  // At parameter m == 0 the integrand collapses to 1, so EllipticF[phi, 0] =
+  // EllipticE[phi, 0] = phi and JacobiAmplitude[u, 0] = u, for any first
+  // argument; a Real argument makes the result Real (matching wolframscript).
+  #[test]
+  fn elliptic_parameter_zero() {
+    assert_case("EllipticF[phi, 0]", "phi");
+    assert_case("EllipticF[x + y, 0]", "x + y");
+    assert_case("EllipticE[phi, 0]", "phi");
+    assert_case("EllipticE[Pi/2, 0]", "Pi/2");
+    assert_case("JacobiAmplitude[u, 0]", "u");
+    assert_case("EllipticF[2, 0.]", "2.");
+    assert_case("JacobiAmplitude[2, 0.]", "2.");
+  }
   #[test]
   fn elliptic_k_1() {
     assert_case(r#"EllipticK[0.5]"#, r#"1.8540746773013717"#);
