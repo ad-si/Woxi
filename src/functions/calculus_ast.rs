@@ -1627,9 +1627,12 @@ fn match_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
 /// Check if expression is constant with respect to a variable
 pub fn is_constant_wrt(expr: &Expr, var: &str) -> bool {
   match expr {
-    Expr::Integer(_) | Expr::Real(_) | Expr::String(_) | Expr::Constant(_) => {
-      true
-    }
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::String(_)
+    | Expr::Constant(_) => true,
     Expr::Identifier(name) => name != var,
     Expr::List(items) => items.iter().all(|e| is_constant_wrt(e, var)),
     Expr::BinaryOp { left, right, .. } => {

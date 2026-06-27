@@ -73,6 +73,25 @@ mod exponent {
     assert_eq!(interpret("Exponent[x^2 + 3*x + 2, x]").unwrap(), "2");
   }
 
+  #[test]
+  fn bigint_coefficient_is_constant() {
+    // Regression: is_constant_wrt did not recognize BigInteger, so a term with
+    // a coefficient beyond i128 was treated as variable-dependent. Exponent
+    // returned the coefficient (or stayed unevaluated) instead of the degree.
+    assert_eq!(
+      interpret(
+        "Exponent[100000000000000000000000000000000000000000 x^2 + 5 x + 7, x]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Exponent[100000000000000000000000000000000000000000, x]")
+        .unwrap(),
+      "0"
+    );
+  }
+
   // Exponent reduces a SeriesData to its polynomial first, so it reports the
   // series truncation degree (and Min reports the lowest order).
   #[test]
@@ -7989,6 +8008,21 @@ mod cases {
     assert_case(
       r#"CoefficientList[(x + 3)^5, x]"#,
       r#"{243, 405, 270, 90, 15, 1}"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_bigint_coefficient() {
+    // Regression: a coefficient beyond i128 made max_power/is_constant_wrt
+    // treat the term as variable-dependent, so CoefficientList stayed
+    // unevaluated. It must list the BigInteger coefficient.
+    assert_case(
+      r#"CoefficientList[100000000000000000000000000000000000000000 x^2 + 5 x + 7, x]"#,
+      r#"{7, 5, 100000000000000000000000000000000000000000}"#,
+    );
+    // The leading coefficient of (2 x + 3)^60 is 2^60.
+    assert_case(
+      r#"Last[CoefficientList[(2 x + 3)^60, x]]"#,
+      r#"1152921504606846976"#,
     );
   }
   #[test]

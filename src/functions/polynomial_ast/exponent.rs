@@ -316,9 +316,11 @@ fn build_max_expr(mut exprs: Vec<Expr>) -> Expr {
 /// Find the maximum power of `var` in `expr`.  Returns None for non-polynomial forms.
 pub fn max_power(expr: &Expr, var: &str) -> Option<Rat> {
   match expr {
-    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) | Expr::String(_) => {
-      Some(Rat::zero())
-    }
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::Constant(_)
+    | Expr::String(_) => Some(Rat::zero()),
     Expr::Identifier(name) => {
       if name == var {
         Some(Rat::from_int(1))
@@ -415,9 +417,11 @@ pub fn max_power(expr: &Expr, var: &str) -> Option<Rat> {
 fn collect_powers(expr: &Expr, var: &str) -> Option<Vec<Rat>> {
   match expr {
     // A constant term has power 0
-    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) | Expr::String(_) => {
-      Some(vec![Rat::zero()])
-    }
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::Constant(_)
+    | Expr::String(_) => Some(vec![Rat::zero()]),
     Expr::Identifier(name) => {
       if name == var {
         Some(vec![Rat::from_int(1)])
@@ -515,9 +519,11 @@ fn collect_powers(expr: &Expr, var: &str) -> Option<Vec<Rat>> {
 /// Find the minimum power of `var` in `expr`.
 pub fn min_power(expr: &Expr, var: &str) -> Option<Rat> {
   match expr {
-    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) | Expr::String(_) => {
-      Some(Rat::zero())
-    }
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::Constant(_)
+    | Expr::String(_) => Some(Rat::zero()),
     Expr::Identifier(name) => {
       if name == var {
         Some(Rat::from_int(1))
