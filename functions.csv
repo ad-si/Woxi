@@ -1311,7 +1311,7 @@ GeoDisk,Filled geodesic disk primitive for GeoGraphics,✅,pure,10.0,1324
 Orderless,Attribute for commutative functions,✅,pure,1.0,1325
 JuliaSetPlot,,🚫,,10.0,1326
 ListStepPlot,Plots data as a step function,✅,pure,10.2,1327
-Larger,,✅,,6.0,1328
+Larger,Font size directive for making text larger,✅,none,6.0,1328
 AngleBracket,Symbolic representation of angle brackets,✅,,3.0,1329
 GeoPath,Geographic path primitive for GeoGraphics,✅,pure,10.0,1330
 MixtureDistribution,,✅,,8.0,1331
