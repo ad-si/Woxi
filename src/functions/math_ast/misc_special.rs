@@ -1000,64 +1000,102 @@ fn struve_arg_to_f64(e: &Expr) -> Option<f64> {
   }
 }
 
-/// Elementary closed form of StruveH/StruveL at order +-1/2, matching
+/// Elementary closed form of StruveH/StruveL at half-integer order, matching
 /// wolframscript's exact expression structure (so a symbolic argument renders
-/// identically and a machine-Real argument evaluates to the same float):
+/// identically and a machine-Real argument evaluates to the same float). The
+/// order is given as `two_nu` = 2*nu in {-3, -1, 1, 3}, e.g.
 ///   StruveH[ 1/2, z] = Sqrt[2 Pi]/(Pi Sqrt[z]) - Sqrt[2/Pi] Cos[z]/Sqrt[z]
 ///   StruveH[-1/2, z] = Sqrt[2/Pi] Sin[z]/Sqrt[z]
-///   StruveL[ 1/2, z] = -Sqrt[2 Pi]/(Pi Sqrt[z]) + Sqrt[2/Pi] Cosh[z]/Sqrt[z]
-///   StruveL[-1/2, z] = Sqrt[2/Pi] Sinh[z]/Sqrt[z]
+///   StruveH[ 3/2, z] = (Sqrt[2 Pi]/z^(3/2) + Sqrt[Pi/2] Sqrt[z])/Pi
+///                      + Sqrt[2/Pi] (-(Cos[z]/z) - Sin[z])/Sqrt[z]
+///   StruveH[-3/2, z] = -(Sqrt[2/Pi] (-Cos[z] + Sin[z]/z)/Sqrt[z])
+/// (and the StruveL analogues with Cos/Sin -> Cosh/Sinh and the appropriate
+/// signs). Returns None for orders this routine does not cover.
 fn struve_half_integer_closed_form(
   is_l: bool,
-  order_positive: bool,
+  two_nu: i64,
   z: &Expr,
-) -> Result<Expr, InterpreterError> {
+) -> Option<Result<Expr, InterpreterError>> {
   use crate::syntax::BinaryOperator as B;
   let bin = |op, a: Expr, b: Expr| Expr::BinaryOp {
     op,
     left: Box::new(a),
     right: Box::new(b),
   };
-  let call = |name: &str, e: Expr| Expr::FunctionCall {
+  let call1 = |name: &str, e: Expr| Expr::FunctionCall {
     name: name.to_string(),
     args: vec![e].into(),
   };
+  let i = Expr::Integer;
+  let plus = |a, b| bin(B::Plus, a, b);
+  let minus = |a, b| bin(B::Minus, a, b);
+  let times = |a, b| bin(B::Times, a, b);
+  let div = |a, b| bin(B::Divide, a, b);
+  let neg = |a| bin(B::Times, i(-1), a);
   let pi = || Expr::Constant("Pi".to_string());
-  let sqrt = |e: Expr| call("Sqrt", e);
-  let sqrt_z = sqrt(z.clone());
-  // Sqrt[2/Pi]
-  let sqrt_2_over_pi = sqrt(bin(B::Divide, Expr::Integer(2), pi()));
+  let sqrt = |e: Expr| call1("Sqrt", e);
+  let z = || z.clone();
+  let sqrt_z = || sqrt(z());
+  let sqrt_2pi = || sqrt(times(i(2), pi())); // Sqrt[2 Pi]
+  let sqrt_2_over_pi = || sqrt(div(i(2), pi())); // Sqrt[2/Pi]
+  let sqrt_pi_over_2 = || sqrt(div(pi(), i(2))); // Sqrt[Pi/2]
+  // c(z), s(z): Cos/Sin for H, Cosh/Sinh for L.
+  let cz = || call1(if is_l { "Cosh" } else { "Cos" }, z());
+  let sz = || call1(if is_l { "Sinh" } else { "Sin" }, z());
+  // z^(3/2)
+  let z_32 = || bin(B::Power, z(), make_rational(3, 2));
 
-  let expr = if order_positive {
-    // Sqrt[2/Pi] {Cos|Cosh}[z] / Sqrt[z]
-    let trig = if is_l { "Cosh" } else { "Cos" };
-    let term_b = bin(
-      B::Divide,
-      bin(B::Times, sqrt_2_over_pi, call(trig, z.clone())),
-      sqrt_z.clone(),
-    );
-    // Sqrt[2 Pi] / (Pi Sqrt[z])
-    let term_a = bin(
-      B::Divide,
-      sqrt(bin(B::Times, Expr::Integer(2), pi())),
-      bin(B::Times, pi(), sqrt_z),
-    );
-    if is_l {
-      // -term_a + term_b
-      bin(B::Plus, bin(B::Times, Expr::Integer(-1), term_a), term_b)
-    } else {
-      bin(B::Minus, term_a, term_b)
+  let expr = match two_nu {
+    1 => {
+      // +-Sqrt[2 Pi]/(Pi Sqrt[z]) -/+ Sqrt[2/Pi] c[z]/Sqrt[z]
+      let a = div(sqrt_2pi(), times(pi(), sqrt_z()));
+      let b = div(times(sqrt_2_over_pi(), cz()), sqrt_z());
+      if is_l { plus(neg(a), b) } else { minus(a, b) }
     }
-  } else {
-    // Sqrt[2/Pi] {Sin|Sinh}[z] / Sqrt[z]
-    let trig = if is_l { "Sinh" } else { "Sin" };
-    bin(
-      B::Divide,
-      bin(B::Times, sqrt_2_over_pi, call(trig, z.clone())),
-      sqrt_z,
-    )
+    -1 => {
+      // Sqrt[2/Pi] s[z]/Sqrt[z]
+      div(times(sqrt_2_over_pi(), sz()), sqrt_z())
+    }
+    3 if !is_l => {
+      // (Sqrt[2 Pi]/z^(3/2) + Sqrt[Pi/2] Sqrt[z])/Pi
+      //   + Sqrt[2/Pi] (-(Cos[z]/z) - Sin[z])/Sqrt[z]
+      let a = div(
+        plus(div(sqrt_2pi(), z_32()), times(sqrt_pi_over_2(), sqrt_z())),
+        pi(),
+      );
+      let inner = minus(neg(div(cz(), z())), sz());
+      let b = div(times(sqrt_2_over_pi(), inner), sqrt_z());
+      plus(a, b)
+    }
+    3 => {
+      // L: -((-(Sqrt[2 Pi]/z^(3/2)) + Sqrt[Pi/2] Sqrt[z])/Pi)
+      //      + ((-2 Cosh[z])/z + 2 Sinh[z])/(Sqrt[2 Pi] Sqrt[z])
+      let a = neg(div(
+        plus(
+          neg(div(sqrt_2pi(), z_32())),
+          times(sqrt_pi_over_2(), sqrt_z()),
+        ),
+        pi(),
+      ));
+      let b = div(
+        plus(div(times(i(-2), cz()), z()), times(i(2), sz())),
+        times(sqrt_2pi(), sqrt_z()),
+      );
+      plus(a, b)
+    }
+    -3 if !is_l => {
+      // -((Sqrt[2/Pi] (-Cos[z] + Sin[z]/z))/Sqrt[z])
+      let inner = plus(neg(cz()), div(sz(), z()));
+      neg(div(times(sqrt_2_over_pi(), inner), sqrt_z()))
+    }
+    -3 => {
+      // (2 Cosh[z] - (2 Sinh[z])/z)/(Sqrt[2 Pi] Sqrt[z])
+      let num = minus(times(i(2), cz()), div(times(i(2), sz()), z()));
+      div(num, times(sqrt_2pi(), sqrt_z()))
+    }
+    _ => return None,
   };
-  crate::evaluator::evaluate_expr_to_expr(&expr)
+  Some(crate::evaluator::evaluate_expr_to_expr(&expr))
 }
 
 pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1089,15 +1127,18 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
-  // Half-integer order +-1/2: elementary closed form (Sin/Cos over Sqrt[z]).
-  match struve_arg_to_f64(n_expr) {
-    Some(v) if v == 0.5 => {
-      return struve_half_integer_closed_form(false, true, z_expr);
+  // Half-integer order +-1/2, +-3/2: elementary closed form.
+  if let Some(order) = struve_arg_to_f64(n_expr) {
+    let two = order * 2.0;
+    if (two - two.round()).abs() < 1e-9 {
+      let two_nu = two.round() as i64;
+      if two_nu % 2 != 0
+        && let Some(result) =
+          struve_half_integer_closed_form(false, two_nu, z_expr)
+      {
+        return result;
+      }
     }
-    Some(v) if v == -0.5 => {
-      return struve_half_integer_closed_form(false, false, z_expr);
-    }
-    _ => {}
   }
 
   // Numeric evaluation when both args are numeric and at least one is Real
@@ -1188,15 +1229,18 @@ pub fn struve_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
-  // Half-integer order +-1/2: elementary closed form (Sinh/Cosh over Sqrt[z]).
-  match struve_arg_to_f64(n_expr) {
-    Some(v) if v == 0.5 => {
-      return struve_half_integer_closed_form(true, true, z_expr);
+  // Half-integer order +-1/2, +-3/2: elementary closed form.
+  if let Some(order) = struve_arg_to_f64(n_expr) {
+    let two = order * 2.0;
+    if (two - two.round()).abs() < 1e-9 {
+      let two_nu = two.round() as i64;
+      if two_nu % 2 != 0
+        && let Some(result) =
+          struve_half_integer_closed_form(true, two_nu, z_expr)
+      {
+        return result;
+      }
     }
-    Some(v) if v == -0.5 => {
-      return struve_half_integer_closed_form(true, false, z_expr);
-    }
-    _ => {}
   }
 
   // Numeric evaluation when both args are numeric and at least one is Real

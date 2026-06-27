@@ -1342,7 +1342,7 @@ Permute,Permute elements of a list,✅,pure,8.0,1355
 Padding,Option specifying padding scheme for array and image operations,✅,pure,7.0,1357
 UnitVector,Generate a unit vector with a 1 at a specified position,✅,pure,6.0,1357
 DeleteFile,Delete a file from the filesystem,✅,effectful,2.0,1359
-StruveH,Struve function H_n(z); elementary closed form at order +-1/2; numeric for inexact args,✅,pure,4.0,1360
+StruveH,Struve function H_n(z); elementary closed form at order +-1/2 and +-3/2; numeric for inexact args,✅,pure,4.0,1360
 EllipticPi,Elliptic integral of the third kind,✅,pure,1.0,1362
 LibraryFunctionLoad,Load a compiled library function for use in the Wolfram Language,✅,io,8.0,1362
 Hypergeometric0F1Regularized,Regularized confluent hypergeometric limit function,✅,pure,3.0,1363
@@ -1416,7 +1416,7 @@ CharacterEncoding,Character encoding specification,🚫,io,3.0,1434
 InfinitePlane,Infinite plane geometric region,🚫,pure,10.0,1434
 ProgressIndicator,Dynamic progress indicator,🚫,io,6.0,1435
 Square,Square geometric primitive,🚫,pure,3.0,1437
-StruveL,Modified Struve function L_n(z); elementary closed form at order +-1/2; numeric for inexact args,✅,pure,4.0,1437
+StruveL,Modified Struve function L_n(z); elementary closed form at order +-1/2 and +-3/2; numeric for inexact args,✅,pure,4.0,1437
 DecimalForm,Display a number in decimal notation without scientific notation; ToString renders it (optional second arg gives significant figures),✅,pure,11.2,1438
 GeneratingFunction,Compute generating function of a sequence,✅,pure,7.0,1440
 Proportional,Symbolic proportional relation,✅,pure,3.0,1440

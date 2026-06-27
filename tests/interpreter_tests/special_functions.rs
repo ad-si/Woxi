@@ -2853,6 +2853,30 @@ mod cases {
     assert_case("StruveH[-1/2, 3.0]", "0.06500818287737578");
     assert_case("StruveL[-1/2, 3.0]", "4.614822903407601");
   }
+
+  // Order +-3/2: the next pair of half-integer closed forms, again built in
+  // wolframscript's exact structure (Sqrt[Pi/2], z^(3/2), grouped numerators).
+  #[test]
+  fn struve_three_halves_closed_form() {
+    assert_case(
+      "StruveH[3/2, z]",
+      "(Sqrt[2*Pi]/z^(3/2) + Sqrt[Pi/2]*Sqrt[z])/Pi + \
+       (Sqrt[2/Pi]*(-(Cos[z]/z) - Sin[z]))/Sqrt[z]",
+    );
+    assert_case(
+      "StruveH[-3/2, z]",
+      "-((Sqrt[2/Pi]*(-Cos[z] + Sin[z]/z))/Sqrt[z])",
+    );
+    assert_case(
+      "StruveL[3/2, z]",
+      "-((-(Sqrt[2*Pi]/z^(3/2)) + Sqrt[Pi/2]*Sqrt[z])/Pi) + \
+       ((-2*Cosh[z])/z + 2*Sinh[z])/(Sqrt[2*Pi]*Sqrt[z])",
+    );
+    assert_case(
+      "StruveL[-3/2, z]",
+      "(2*Cosh[z] - (2*Sinh[z])/z)/(Sqrt[2*Pi]*Sqrt[z])",
+    );
+  }
   #[test]
   fn weber_e() {
     assert_case(r#"WeberE[1.5, 3.5]"#, r#"-0.3972562592100308"#);
