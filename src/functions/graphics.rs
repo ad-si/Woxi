@@ -2014,46 +2014,129 @@ fn render_frame(svg: &mut String, bb: &BBox, svg_w: f64, svg_h: f64) {
   }
 }
 
-/// Draw grid lines spanning the plot at the automatic tick positions, styled by
-/// `GridLinesStyle` (color / dashing). Vertical lines sit at the x ticks,
-/// horizontal lines at the y ticks.
+/// A single explicit grid-line position with an optional per-line style
+/// override (`{pos, style}` form).
+struct GridLine {
+  pos: f64,
+  style: Option<StyleState>,
+}
+
+/// Per-axis grid-line specification (one side of `GridLines -> {x, y}`).
+enum GridSpec {
+  /// No grid lines on this axis.
+  None,
+  /// Automatic tick positions.
+  Automatic,
+  /// Explicit positions (each with an optional style).
+  Explicit(Vec<GridLine>),
+}
+
+impl GridSpec {
+  fn is_active(&self) -> bool {
+    !matches!(self, GridSpec::None)
+  }
+}
+
+/// Parse one side of `GridLines -> {xspec, yspec}` (`Automatic`, `None`, or a
+/// list of positions; a position may be `{pos, style}` for a per-line style).
+fn parse_grid_spec(expr: &Expr) -> GridSpec {
+  match expr {
+    Expr::Identifier(s) if s == "None" => GridSpec::None,
+    Expr::Identifier(s) if s == "Automatic" || s == "All" => {
+      GridSpec::Automatic
+    }
+    Expr::List(entries) => {
+      GridSpec::Explicit(entries.iter().filter_map(parse_grid_line).collect())
+    }
+    // A bare number → a single grid line.
+    _ => match expr_to_f64(expr) {
+      Some(p) => GridSpec::Explicit(vec![GridLine {
+        pos: p,
+        style: None,
+      }]),
+      Option::None => GridSpec::None,
+    },
+  }
+}
+
+/// Parse one explicit grid-line entry: a bare position or `{pos, style}`.
+fn parse_grid_line(entry: &Expr) -> Option<GridLine> {
+  if let Expr::List(pair) = entry
+    && !pair.is_empty()
+  {
+    let pos = expr_to_f64(&pair[0])?;
+    let style = pair.get(1).map(|s| {
+      let mut st = StyleState::default();
+      apply_directive(s, &mut st);
+      st
+    });
+    return Some(GridLine { pos, style });
+  }
+  expr_to_f64(entry).map(|pos| GridLine { pos, style: None })
+}
+
+/// Resolve a `GridSpec` to the list of (position, style) pairs to draw, using
+/// the automatic tick positions and `default_style` where appropriate.
+fn grid_positions<'a>(
+  spec: &'a GridSpec,
+  ticks: &[f64],
+  default_style: &'a StyleState,
+) -> Vec<(f64, &'a StyleState)> {
+  match spec {
+    GridSpec::None => Vec::new(),
+    GridSpec::Automatic => ticks.iter().map(|&p| (p, default_style)).collect(),
+    GridSpec::Explicit(lines) => lines
+      .iter()
+      .map(|l| (l.pos, l.style.as_ref().unwrap_or(default_style)))
+      .collect(),
+  }
+}
+
+/// Draw grid lines spanning the plot. Vertical lines sit at the `grid_x`
+/// positions, horizontal lines at the `grid_y` positions; `Automatic` uses the
+/// tick positions. `default_style` (from `GridLinesStyle`) applies to lines
+/// without a per-line override.
+#[allow(clippy::too_many_arguments)]
 fn render_grid_lines(
   svg: &mut String,
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
-  style: &StyleState,
+  grid_x: &GridSpec,
+  grid_y: &GridSpec,
+  default_style: &StyleState,
 ) {
-  let color = style.effective_color();
-  let dash = dash_attr(&style.dashing, bb, svg_w);
-  let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
   let x_ticks = generate_ticks(bb.x_min, bb.x_max, 6);
   let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
 
-  for &t_val in &x_ticks {
-    let x = coord_x(t_val, bb, svg_w);
+  for (pos, style) in grid_positions(grid_x, &x_ticks, default_style) {
+    let x = coord_x(pos, bb, svg_w);
     if !x.is_finite() {
       continue;
     }
+    let color = style.effective_color();
     svg.push_str(&format!(
       "<line x1=\"{x:.2}\" y1=\"0\" x2=\"{x:.2}\" y2=\"{svg_h:.2}\" \
-       stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
+       stroke=\"{}\" stroke-width=\"{:.2}\"{}{}/>\n",
       color.to_svg_rgb(),
+      thickness_px(style.thickness, bb, svg_w).max(0.5),
       color.opacity_attr(),
-      dash,
+      dash_attr(&style.dashing, bb, svg_w),
     ));
   }
-  for &t_val in &y_ticks {
-    let y = coord_y(t_val, bb, svg_h);
+  for (pos, style) in grid_positions(grid_y, &y_ticks, default_style) {
+    let y = coord_y(pos, bb, svg_h);
     if !y.is_finite() {
       continue;
     }
+    let color = style.effective_color();
     svg.push_str(&format!(
       "<line x1=\"0\" y1=\"{y:.2}\" x2=\"{svg_w:.2}\" y2=\"{y:.2}\" \
-       stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
+       stroke=\"{}\" stroke-width=\"{:.2}\"{}{}/>\n",
       color.to_svg_rgb(),
+      thickness_px(style.thickness, bb, svg_w).max(0.5),
       color.opacity_attr(),
-      dash,
+      dash_attr(&style.dashing, bb, svg_w),
     ));
   }
 }
@@ -2990,7 +3073,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut background: Option<Color> = None;
   let mut axes = (false, false);
   let mut frame = false;
-  let mut grid_lines = false;
+  let mut grid_x = GridSpec::None;
+  let mut grid_y = GridSpec::None;
   let mut grid_style: Option<StyleState> = None;
   // When true, skip uniform scaling so x and y axes scale independently
   // (needed for plots where data aspect ≠ image aspect).
@@ -3051,14 +3135,20 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(s)
             if s == "Automatic" || s == "True" || s == "All" =>
           {
-            grid_lines = true;
+            grid_x = GridSpec::Automatic;
+            grid_y = GridSpec::Automatic;
           }
           Expr::Identifier(s) if s == "None" || s == "False" => {
-            grid_lines = false;
+            grid_x = GridSpec::None;
+            grid_y = GridSpec::None;
           }
-          // Explicit {xvals, yvals} lists also enable grid lines (drawn at the
-          // automatic tick positions for now).
-          Expr::List(_) => grid_lines = true,
+          // {xspec, yspec}: each side is Automatic, None, or an explicit list
+          // of positions (a position may be `{pos, style}` for a per-line
+          // style).
+          Expr::List(items) if items.len() == 2 => {
+            grid_x = parse_grid_spec(&items[0]);
+            grid_y = parse_grid_spec(&items[1]);
+          }
           _ => {}
         },
         "GridLinesStyle" => {
@@ -3230,12 +3320,20 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Grid lines render behind the axes and primitives.
-  if grid_lines {
-    let style = grid_style.clone().unwrap_or_else(|| StyleState {
+  if grid_x.is_active() || grid_y.is_active() {
+    let default_style = grid_style.clone().unwrap_or_else(|| StyleState {
       color: Color::gray(0.8),
       ..StyleState::default()
     });
-    render_grid_lines(&mut svg, &bb, svg_w, svg_h, &style);
+    render_grid_lines(
+      &mut svg,
+      &bb,
+      svg_w,
+      svg_h,
+      &grid_x,
+      &grid_y,
+      &default_style,
+    );
   }
 
   render_axes(&mut svg, axes, &bb, svg_w, svg_h);

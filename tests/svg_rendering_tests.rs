@@ -1909,6 +1909,53 @@ mod box_representation_tests {
   }
 
   #[test]
+  fn graphics_grid_lines_explicit_positions() {
+    // GridLines -> {xvals, yvals} draws lines at the specified coordinates.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[Circle[], Frame -> True,
+        GridLines -> {{0, 0.5}, {-0.5}}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    // Full-span grid lines: vertical lines run y=0..360, horizontals x=0..360
+    // (frame ticks only span ~5px, so they don't match).
+    let verticals = svg
+      .lines()
+      .filter(|l| l.contains("y1=\"0\"") && l.contains("y2=\"360.00\""))
+      .count();
+    let horizontals = svg
+      .lines()
+      .filter(|l| l.contains("x1=\"0\"") && l.contains("x2=\"360.00\""))
+      .count();
+    assert_eq!(verticals, 2, "expected 2 vertical grid lines: {svg}");
+    assert_eq!(horizontals, 1, "expected 1 horizontal grid line: {svg}");
+    // x=0 maps to the horizontal center (180 of 360).
+    assert!(
+      svg.contains("<line x1=\"180.00\" y1=\"0\" x2=\"180.00\" y2=\"360.00\""),
+      "vertical grid line at x=0 missing: {svg}"
+    );
+  }
+
+  #[test]
+  fn graphics_grid_lines_per_line_style() {
+    // A {pos, style} entry overrides the style for just that line.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[Circle[], Frame -> True,
+        GridLines -> {{{0.5, Directive[Red, Dashed]}}, Automatic}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    // The single x line is red + dashed; the y lines use the default gray.
+    assert!(
+      svg.contains("stroke=\"rgb(255,0,0)\"")
+        && svg.contains("stroke-dasharray="),
+      "per-line red dashed style not applied: {svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"rgb(204,204,204)\""),
+      "automatic y grid lines should use the default gray: {svg}"
+    );
+  }
+
+  #[test]
   fn graphics_grid_lines_default_solid_gray() {
     // Without GridLinesStyle, Graphics grid lines are solid light gray.
     let svg = woxi::interpret(
