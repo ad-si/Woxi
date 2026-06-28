@@ -1455,22 +1455,18 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if args.len() == 1 {
-    // Bell number B_n via the Bell triangle
+    // Bell number B_n
     if n == 0 {
       return Ok(Expr::Integer(1));
     }
-    // Compute using the Bell triangle (first column of each row), in BigInt
-    // so large Bell numbers (e.g. BellB[50], 48 digits) don't overflow i128.
-    let mut row = vec![num_bigint::BigInt::from(1)];
-    for _ in 1..=n {
-      let mut new_row = vec![row.last().unwrap().clone()];
-      for j in 1..=row.len() {
-        let val = &new_row[j - 1] + &row[j - 1];
-        new_row.push(val);
-      }
-      row = new_row;
-    }
-    Ok(crate::functions::math_ast::bigint_to_expr(row[0].clone()))
+    // Compute using B[n] = Sum[Binomial[n-1, k] B[k], {k, 0, n-1}]
+    let mut bell = vec![BigInt::from(0); n + 1];
+    bell[0] = BigInt::from(1);
+    for i in 1..=n
+        for k in 0..=i-1
+            bell[i] = &bell[i] + binomial_coeff_big((i - 1) as i128, k as i128) * &bell[k];
+
+    Ok(crate::functions::math_ast::bigint_to_expr(bell[n].clone()))
   } else {
     // Bell polynomial B_n(x) = sum_{k=0}^{n} S(n,k) * x^k
     // where S(n,k) is the Stirling number of the second kind
