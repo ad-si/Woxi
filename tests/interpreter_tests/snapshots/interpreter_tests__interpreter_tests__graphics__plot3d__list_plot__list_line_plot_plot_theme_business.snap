@@ -4,11 +4,6 @@ expression: "export_svg(r#\"ListLinePlot[{1, 2, 3, 2, 1}, PlotTheme -> \"Busines
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="0.5" stroke="rgb(102,102,102)" stroke-width="10" stroke-dasharray="13.8,27.5" points="750.0,1688.9 3500.0,1688.9"/>
-<polyline fill="none" opacity="0.5" stroke="rgb(102,102,102)" stroke-width="10" stroke-dasharray="13.8,27.5" points="750.0,1306.9 3500.0,1306.9"/>
-<polyline fill="none" opacity="0.5" stroke="rgb(102,102,102)" stroke-width="10" stroke-dasharray="13.8,27.5" points="750.0,925.0 3500.0,925.0"/>
-<polyline fill="none" opacity="0.5" stroke="rgb(102,102,102)" stroke-width="10" stroke-dasharray="13.8,27.5" points="750.0,543.1 3500.0,543.1"/>
-<polyline fill="none" opacity="0.5" stroke="rgb(102,102,102)" stroke-width="10" stroke-dasharray="13.8,27.5" points="750.0,161.1 3500.0,161.1"/>
 <polyline fill="none" opacity="1" stroke="#FFFFFF" stroke-width="0" points="749,100 749,1749 "/>
 <text x="670" y="1688" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 1
@@ -171,6 +166,11 @@ expression: "export_svg(r#\"ListLinePlot[{1, 2, 3, 2, 1}, PlotTheme -> \"Busines
 
 </text>
 <polyline fill="none" opacity="1" stroke="#FFFFFF" stroke-width="0" points="3269,1750 3269,1790 "/>
+<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,1688 3499,1688 "/>
+<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,1307 3499,1307 "/>
+<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,925 3499,925 "/>
+<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,543 3499,543 "/>
+<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,162 3499,162 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1749 3499,1749 3499,100 750,100 750,1749 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1688 1488,925 2124,162 2760,925 3397,1688 "/>
 </svg>

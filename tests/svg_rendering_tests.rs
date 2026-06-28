@@ -1859,21 +1859,28 @@ mod box_representation_tests {
   }
 
   #[test]
-  fn grid_lines_are_single_dasharray_polylines() {
-    // Each grid line must be ONE dashed polyline, not one tiny <polyline> per
-    // dash (which previously produced hundreds of elements).
+  fn grid_lines_are_solid_single_polylines() {
+    // Each grid line must be ONE solid polyline (WL grid lines are solid by
+    // default), not one tiny <polyline> per dash.
     let svg = woxi::interpret(
       r#"ExportString[ListLinePlot[{{1,2,3,4}}, GridLines -> Automatic], "SVG"]"#,
     )
     .expect("interpret should succeed");
-    let grid_lines = svg.matches("opacity=\"0.5\"").count();
+    let grid_lines: Vec<&str> = svg
+      .lines()
+      .filter(|l| l.contains("opacity=\"0.5\"") && l.contains("<polyline"))
+      .collect();
     assert!(
-      (1..=30).contains(&grid_lines),
-      "expected a handful of consolidated grid polylines, found {grid_lines}"
+      (1..=30).contains(&grid_lines.len()),
+      "expected a handful of consolidated grid polylines, found {}",
+      grid_lines.len()
     );
-    // Grid lines are dashed and render behind the data series (plotters draws
-    // the joined series line as stroke="#5E81B5").
-    assert!(svg.contains("stroke-dasharray="), "grid not dashed: {svg}");
+    // Grid lines must be solid (no dash) and render behind the data series
+    // (plotters draws the joined series line as stroke="#5E81B5").
+    assert!(
+      grid_lines.iter().all(|l| !l.contains("stroke-dasharray")),
+      "grid lines should be solid by default: {svg}"
+    );
     assert!(
       svg.find("opacity=\"0.5\"") < svg.find("#5E81B5"),
       "grid lines should render behind the data series: {svg}"
