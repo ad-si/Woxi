@@ -1153,24 +1153,31 @@ pub(crate) fn generate_svg_with_filling(
   generate_svg_with_options(all_points, x_range, y_range, opts)
 }
 
-/// A dashed series deferred for post-render emission as a single
-/// `<polyline stroke-dasharray>` (instead of one `<polyline>` per dash).
+/// A dashed line (data series or grid line) deferred for post-render emission
+/// as a single `<polyline stroke-dasharray>` instead of one `<polyline>` per
+/// dash — which plotters' backend would otherwise produce.
 struct DashedOverlay {
   color: (u8, u8, u8),
   stroke_w: u32,
-  /// Fractional dash pattern (fractions of the plotting-area width).
+  /// Stroke opacity (1.0 = opaque; grid lines use 0.5).
+  opacity: f64,
+  /// Round line caps (so a zero-length dash renders as a dot); butt otherwise.
+  round_cap: bool,
+  /// Scale the dash pattern by the plot height instead of width — for
+  /// vertical lines (e.g. x grid lines), whose dashes run along y.
+  vertical: bool,
+  /// Fractional dash pattern (fractions of the relevant plotting-area extent).
   dashes: Vec<f64>,
   /// Polyline vertices in data space.
   points: Vec<(f64, f64)>,
 }
 
-/// Emit collected dashed series as single `<polyline stroke-dasharray>`
+/// Render collected dashed lines as single `<polyline stroke-dasharray>`
 /// elements, mapping data coordinates to render-space pixels with the same
-/// linear transform used for axis labels/ticks. The dash lengths use the
-/// plotting-area width so they match the legend swatches exactly.
+/// linear transform used for axis labels/ticks. Dash lengths use the
+/// plotting-area extent so series dashes match the legend swatches exactly.
 #[allow(clippy::too_many_arguments)]
-fn inject_dashed_overlays(
-  buf: &mut String,
+fn render_dash_overlays(
   overlays: &[DashedOverlay],
   plot_x0: f64,
   plot_y0: f64,
@@ -1180,11 +1187,11 @@ fn inject_dashed_overlays(
   x_max: f64,
   y_min: f64,
   y_max: f64,
-) {
+) -> String {
   let xr = x_max - x_min;
   let yr = y_max - y_min;
   if xr.abs() < 1e-12 || yr.abs() < 1e-12 {
-    return;
+    return String::new();
   }
   let mut svg = String::new();
   for ov in overlays {
@@ -1200,27 +1207,37 @@ fn inject_dashed_overlays(
         format!("{px:.1},{py:.1}")
       })
       .collect();
+    let scale = if ov.vertical { plot_h } else { plot_w };
     let dash: Vec<String> = ov
       .dashes
       .iter()
-      .map(|d| format!("{:.1}", (d * plot_w).max(0.5)))
+      .map(|d| format!("{:.1}", (d * scale).max(0.5)))
       .collect();
     let (r, g, b) = ov.color;
+    let opacity = if ov.opacity < 1.0 {
+      format!(" opacity=\"{:.1}\"", ov.opacity)
+    } else {
+      String::new()
+    };
+    let cap = if ov.round_cap {
+      " stroke-linecap=\"round\""
+    } else {
+      ""
+    };
     svg.push_str(&format!(
-      "<polyline fill=\"none\" stroke=\"rgb({},{},{})\" \
-       stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"round\" \
-       points=\"{}\"/>\n",
+      "<polyline fill=\"none\"{} stroke=\"rgb({},{},{})\" \
+       stroke-width=\"{}\" stroke-dasharray=\"{}\"{} points=\"{}\"/>\n",
+      opacity,
       r,
       g,
       b,
       ov.stroke_w,
       dash.join(","),
+      cap,
       pts.join(" ")
     ));
   }
-  if let Some(pos) = buf.rfind("</svg>") {
-    buf.insert_str(pos, &svg);
-  }
+  svg
 }
 
 /// Core SVG generation for 2D line plots with full option support.
@@ -1305,11 +1322,12 @@ fn generate_svg_with_options(
   let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
     plot_theme();
 
-  // Dashed series are collected here and emitted after the plot is drawn as a
-  // single `<polyline stroke-dasharray>` each (rather than one element per
-  // dash). Skipped for log axes, which keep the per-dash fallback because the
-  // coordinate transform is non-linear.
+  // Dashed series and dashed grid lines are collected here and emitted after
+  // the plot is drawn as a single `<polyline stroke-dasharray>` each (rather
+  // than one element per dash). Series go on top; grid lines go behind the
+  // plot content. Series are skipped for log axes (non-linear transform).
   let mut dashed_overlays: Vec<DashedOverlay> = Vec::new();
+  let mut grid_overlays: Vec<DashedOverlay> = Vec::new();
 
   let mut buf = String::new();
   {
@@ -1424,35 +1442,27 @@ fn generate_svg_with_options(
           .draw()
           .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-        // Draw horizontal grid lines (dashed) when grid_lines_y is enabled
-        // (only for linear y-axis; log axis grid not yet supported)
+        // Collect dashed grid lines for post-render emission as a single
+        // dasharray polyline each (drawn behind the plot content). Dash
+        // pattern: 0.5% dash, 1% gap of the line's extent. Linear axes only —
+        // log axis grid not yet supported.
         if opts.grid_lines_y && !log_y {
-          let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
           let grid_step = nice_step(y_max - y_min, 5);
           let mut gy = (y_min / grid_step).ceil() * grid_step;
           while gy <= y_max {
-            let dash_len = (x_max - x_min) * 0.005;
-            let gap_len = dash_len * 2.0;
-            let mut dx = x_min;
-            while dx < x_max {
-              let end = (dx + dash_len).min(x_max);
-              chart
-                .draw_series(std::iter::once(PathElement::new(
-                  vec![(dx, gy), (end, gy)],
-                  grid_color.stroke_width(RESOLUTION_SCALE),
-                )))
-                .map_err(|e| {
-                  InterpreterError::EvaluationError(format!("Plot: {e}"))
-                })?;
-              dx += dash_len + gap_len;
-            }
+            grid_overlays.push(DashedOverlay {
+              color: (0x66, 0x66, 0x66),
+              stroke_w: RESOLUTION_SCALE,
+              opacity: 0.5,
+              round_cap: false,
+              vertical: false,
+              dashes: vec![0.005, 0.010],
+              points: vec![(x_min, gy), (x_max, gy)],
+            });
             gy += grid_step;
           }
         }
-
-        // Draw vertical grid lines (dashed) when grid_lines_x is enabled
         if opts.grid_lines_x && !log_x {
-          let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
           let grid_step = if date_axis {
             nice_date_step(x_max - x_min)
           } else {
@@ -1460,21 +1470,15 @@ fn generate_svg_with_options(
           };
           let mut gx = (x_min / grid_step).ceil() * grid_step;
           while gx <= x_max {
-            let dash_len = (y_max - y_min) * 0.005;
-            let gap_len = dash_len * 2.0;
-            let mut dy = y_min;
-            while dy < y_max {
-              let end = (dy + dash_len).min(y_max);
-              chart
-                .draw_series(std::iter::once(PathElement::new(
-                  vec![(gx, dy), (gx, end)],
-                  grid_color.stroke_width(RESOLUTION_SCALE),
-                )))
-                .map_err(|e| {
-                  InterpreterError::EvaluationError(format!("Plot: {e}"))
-                })?;
-              dy += dash_len + gap_len;
-            }
+            grid_overlays.push(DashedOverlay {
+              color: (0x66, 0x66, 0x66),
+              stroke_w: RESOLUTION_SCALE,
+              opacity: 0.5,
+              round_cap: false,
+              vertical: true,
+              dashes: vec![0.005, 0.010],
+              points: vec![(gx, y_min), (gx, y_max)],
+            });
             gx += grid_step;
           }
         }
@@ -1572,6 +1576,9 @@ fn generate_svg_with_options(
                   dashed_overlays.push(DashedOverlay {
                     color: (r, g, b),
                     stroke_w,
+                    opacity: 1.0,
+                    round_cap: true,
+                    vertical: false,
                     dashes: dash_pattern.clone(),
                     points: segment.clone(),
                   });
@@ -1668,8 +1675,10 @@ fn generate_svg_with_options(
     full_width,
   );
 
-  // Emit deferred dashed series as single stroke-dasharray polylines.
-  if !dashed_overlays.is_empty() {
+  // Emit deferred dashed lines as single stroke-dasharray polylines. Grid
+  // lines go behind the plot content (right after the background rect); dashed
+  // series go on top (just before </svg>).
+  if !dashed_overlays.is_empty() || !grid_overlays.is_empty() {
     let plot_x0 = margin_left as f64 + y_label_area as f64;
     let plot_y0 = top_margin as f64;
     let plot_w = render_width as f64
@@ -1680,18 +1689,47 @@ fn generate_svg_with_options(
       - top_margin as f64
       - margin_bottom as f64
       - x_label_area as f64;
-    inject_dashed_overlays(
-      &mut buf,
-      &dashed_overlays,
-      plot_x0,
-      plot_y0,
-      plot_w,
-      plot_h,
-      x_min,
-      x_max,
-      y_min,
-      y_max,
-    );
+    if !grid_overlays.is_empty() {
+      let grid_svg = render_dash_overlays(
+        &grid_overlays,
+        plot_x0,
+        plot_y0,
+        plot_w,
+        plot_h,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+      );
+      // Insert just after the opening background <rect ... /> so the grid
+      // renders behind the axes, series and labels.
+      if let Some(rect_start) = buf.find("<rect")
+        && let Some(rel) = buf[rect_start..].find("/>")
+      {
+        let mut at = rect_start + rel + 2;
+        // Start on its own line (plotters writes a newline after the rect).
+        if buf[at..].starts_with('\n') {
+          at += 1;
+        }
+        buf.insert_str(at, &grid_svg);
+      }
+    }
+    if !dashed_overlays.is_empty() {
+      let series_svg = render_dash_overlays(
+        &dashed_overlays,
+        plot_x0,
+        plot_y0,
+        plot_w,
+        plot_h,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+      );
+      if let Some(pos) = buf.rfind("</svg>") {
+        buf.insert_str(pos, &series_svg);
+      }
+    }
   }
 
   // Extend labeled (major) ticks so they appear slightly longer than the

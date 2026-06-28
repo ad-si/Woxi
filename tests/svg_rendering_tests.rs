@@ -1859,6 +1859,28 @@ mod box_representation_tests {
   }
 
   #[test]
+  fn grid_lines_are_single_dasharray_polylines() {
+    // Each grid line must be ONE dashed polyline, not one tiny <polyline> per
+    // dash (which previously produced hundreds of elements).
+    let svg = woxi::interpret(
+      r#"ExportString[ListLinePlot[{{1,2,3,4}}, GridLines -> Automatic], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    let grid_lines = svg.matches("opacity=\"0.5\"").count();
+    assert!(
+      (1..=30).contains(&grid_lines),
+      "expected a handful of consolidated grid polylines, found {grid_lines}"
+    );
+    // Grid lines are dashed and render behind the data series (plotters draws
+    // the joined series line as stroke="#5E81B5").
+    assert!(svg.contains("stroke-dasharray="), "grid not dashed: {svg}");
+    assert!(
+      svg.find("opacity=\"0.5\"") < svg.find("#5E81B5"),
+      "grid lines should render behind the data series: {svg}"
+    );
+  }
+
+  #[test]
   fn frame_true_draws_thin_four_sided_border() {
     // Frame -> True draws a single closed rectangle (5 points) at 1px
     // (stroke-width = RESOLUTION_SCALE = 10 in viewBox units).
