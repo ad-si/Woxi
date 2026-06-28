@@ -240,9 +240,17 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "GridLines" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          let (gx, gy) = crate::functions::plot::parse_grid_lines(&val);
-          opts.grid_lines_x = gx;
-          opts.grid_lines_y = gy;
+          let (sx, sy) = crate::functions::plot::parse_grid_lines_spec(&val);
+          crate::functions::plot::apply_grid_side(
+            sx,
+            &mut opts.grid_lines_x,
+            &mut opts.grid_x_lines,
+          );
+          crate::functions::plot::apply_grid_side(
+            sy,
+            &mut opts.grid_lines_y,
+            &mut opts.grid_y_lines,
+          );
         }
         _ => {}
       }

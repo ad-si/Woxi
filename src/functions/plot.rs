@@ -988,6 +988,24 @@ pub(crate) struct SeriesStyle {
   pub dashing: Option<Vec<f64>>,
 }
 
+/// A single explicit grid line: a position on its axis plus an optional
+/// per-line style override (color, thickness, dashing).
+#[derive(Clone, Debug)]
+pub(crate) struct GridLine {
+  pub pos: f64,
+  pub style: SeriesStyle,
+}
+
+/// One side (x or y) of a `GridLines` specification.
+pub(crate) enum GridSide {
+  /// No grid lines on this axis.
+  None,
+  /// Evenly spaced automatic grid lines (default gray, solid).
+  Automatic,
+  /// Explicit grid lines at the given positions/styles.
+  Explicit(Vec<GridLine>),
+}
+
 /// Position for plot legends
 #[derive(Clone, Copy, PartialEq, Default)]
 pub(crate) enum LegendPosition {
@@ -1017,10 +1035,15 @@ pub(crate) struct PlotOptions {
   pub plot_legends: Vec<String>,
   /// Position of the legend (Right, Top, Bottom)
   pub legend_position: LegendPosition,
-  /// Show horizontal grid lines (dashed)
+  /// Show evenly spaced horizontal grid lines (automatic).
   pub grid_lines_y: bool,
-  /// Show vertical grid lines (dashed)
+  /// Show evenly spaced vertical grid lines (automatic).
   pub grid_lines_x: bool,
+  /// Explicit vertical grid lines (positions + per-line style). When
+  /// non-empty, these replace the automatic `grid_lines_x` lines.
+  pub grid_x_lines: Vec<GridLine>,
+  /// Explicit horizontal grid lines. Replace automatic `grid_lines_y` lines.
+  pub grid_y_lines: Vec<GridLine>,
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
   /// Label on the top frame edge (FrameLabel 4-element form: top of {bottom,top})
@@ -1055,6 +1078,8 @@ impl Default for PlotOptions {
       legend_position: LegendPosition::default(),
       grid_lines_y: false,
       grid_lines_x: false,
+      grid_x_lines: Vec::new(),
+      grid_y_lines: Vec::new(),
       frame: false,
       frame_label_top: None,
       frame_label_right: None,
@@ -1219,6 +1244,31 @@ fn render_dash_overlays(
     ));
   }
   svg
+}
+
+/// Default color for an unstyled dashed grid line. Approximates the flat-gray
+/// look of the solid grid lines (`rgb(102,102,102)` at 50% opacity over a white
+/// background), since dash overlays carry no opacity.
+const DEFAULT_GRID_DASH_RGB: (u8, u8, u8) = (179, 179, 179);
+
+/// Resolve a grid line's style into rendering properties:
+/// `(optional rgb, stroke width in render units, optional dash fractions)`.
+/// A `None` rgb means "use the default gray grid color".
+fn grid_line_props(
+  style: &SeriesStyle,
+) -> (Option<(u8, u8, u8)>, u32, Option<Vec<f64>>) {
+  let rgb = style.color.as_ref().map(|c| {
+    (
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  });
+  let stroke_w = match style.thickness {
+    Some(t) => ((t * RESOLUTION_SCALE as f64).round() as u32).max(1),
+    None => RESOLUTION_SCALE,
+  };
+  (rgb, stroke_w, style.dashing.clone())
 }
 
 /// Core SVG generation for 2D line plots with full option support.
@@ -1422,43 +1472,116 @@ fn generate_svg_with_options(
           .draw()
           .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-        // Draw grid lines (solid, thin, light gray) when enabled. Each line is
-        // a single polyline drawn before the series, so it sits behind the
-        // data. Linear axes only — log axis grid not yet supported. (WL grid
-        // lines are solid by default; dashing needs an explicit GridLinesStyle.)
+        // Draw grid lines before the series so they sit behind the data.
+        // Explicit positions (with optional per-line color/thickness/dashing)
+        // take precedence over the evenly spaced automatic lines. Solid lines
+        // go through plotters; dashed lines are deferred to single
+        // stroke-dasharray overlays (which render on top). Linear axes only —
+        // log axis grid not yet supported. (WL grid lines are solid by
+        // default; dashing needs an explicit style.)
         let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
-        if opts.grid_lines_y && !log_y {
+
+        // Horizontal (y) grid lines.
+        let y_grid: Vec<(f64, SeriesStyle)> = if !opts.grid_y_lines.is_empty() {
+          opts
+            .grid_y_lines
+            .iter()
+            .map(|g| (g.pos, g.style.clone()))
+            .collect()
+        } else if opts.grid_lines_y {
           let grid_step = nice_step(y_max - y_min, 5);
+          let mut v = Vec::new();
           let mut gy = (y_min / grid_step).ceil() * grid_step;
           while gy <= y_max {
-            chart
-              .draw_series(std::iter::once(PathElement::new(
-                vec![(x_min, gy), (x_max, gy)],
-                grid_color.stroke_width(RESOLUTION_SCALE),
-              )))
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
+            v.push((gy, SeriesStyle::default()));
             gy += grid_step;
           }
+          v
+        } else {
+          Vec::new()
+        };
+        if !log_y {
+          let tol = (y_max - y_min).abs() * 1e-9;
+          for (gy, style) in &y_grid {
+            if *gy < y_min - tol || *gy > y_max + tol {
+              continue;
+            }
+            let (rgb, stroke_w, dash) = grid_line_props(style);
+            if let Some(dashes) = dash {
+              dashed_overlays.push(DashedOverlay {
+                color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+                stroke_w,
+                dashes,
+                points: vec![(x_min, *gy), (x_max, *gy)],
+              });
+            } else {
+              let shape = match rgb {
+                Some((r, g, b)) => RGBColor(r, g, b).stroke_width(stroke_w),
+                None => grid_color.stroke_width(stroke_w),
+              };
+              chart
+                .draw_series(std::iter::once(PathElement::new(
+                  vec![(x_min, *gy), (x_max, *gy)],
+                  shape,
+                )))
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!("Plot: {e}"))
+                })?;
+            }
+          }
         }
-        if opts.grid_lines_x && !log_x {
+
+        // Vertical (x) grid lines.
+        let x_grid: Vec<(f64, SeriesStyle)> = if !opts.grid_x_lines.is_empty() {
+          opts
+            .grid_x_lines
+            .iter()
+            .map(|g| (g.pos, g.style.clone()))
+            .collect()
+        } else if opts.grid_lines_x {
           let grid_step = if date_axis {
             nice_date_step(x_max - x_min)
           } else {
             nice_step(x_max - x_min, 5)
           };
+          let mut v = Vec::new();
           let mut gx = (x_min / grid_step).ceil() * grid_step;
           while gx <= x_max {
-            chart
-              .draw_series(std::iter::once(PathElement::new(
-                vec![(gx, y_min), (gx, y_max)],
-                grid_color.stroke_width(RESOLUTION_SCALE),
-              )))
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
+            v.push((gx, SeriesStyle::default()));
             gx += grid_step;
+          }
+          v
+        } else {
+          Vec::new()
+        };
+        if !log_x {
+          let tol = (x_max - x_min).abs() * 1e-9;
+          for (gx, style) in &x_grid {
+            if *gx < x_min - tol || *gx > x_max + tol {
+              continue;
+            }
+            let (rgb, stroke_w, dash) = grid_line_props(style);
+            if let Some(dashes) = dash {
+              dashed_overlays.push(DashedOverlay {
+                color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+                stroke_w,
+                dashes,
+                points: vec![(*gx, y_min), (*gx, y_max)],
+              });
+            } else {
+              let shape = match rgb {
+                Some((r, g, b)) => RGBColor(r, g, b).stroke_width(stroke_w),
+                None => grid_color.stroke_width(stroke_w),
+              };
+              chart
+                .draw_series(std::iter::once(PathElement::new(
+                  vec![(*gx, y_min), (*gx, y_max)],
+                  shape,
+                )))
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!("Plot: {e}"))
+                })?;
+            }
           }
         }
 
@@ -4819,17 +4942,89 @@ pub(crate) fn apply_plot_theme(opts: &mut PlotOptions, theme: &str) {
   }
 }
 
-/// Parse GridLines option value into (show_x, show_y).
-pub(crate) fn parse_grid_lines(expr: &Expr) -> (bool, bool) {
+/// Parse a `GridLines` option value into per-axis (x, y) specifications.
+///
+/// Supported forms:
+/// - `Automatic` / `All` / `True` → automatic lines on both axes
+/// - `None` / `False` → no grid lines
+/// - `{xspec, yspec}` → independent specs per axis, where each spec is
+///   `Automatic`, `None`, or a list of entries. Each entry is a bare position
+///   or a `{position, directive}` pair (e.g. `{Pi, Dashed}`, `{1, Orange}`).
+pub(crate) fn parse_grid_lines_spec(expr: &Expr) -> (GridSide, GridSide) {
   match expr {
-    Expr::Identifier(s) if s == "Automatic" || s == "All" => (true, true),
-    Expr::Identifier(s) if s == "None" || s == "False" => (false, false),
     Expr::List(items) if items.len() == 2 => {
-      let x = !matches!(&items[0], Expr::Identifier(s) if s == "None");
-      let y = !matches!(&items[1], Expr::Identifier(s) if s == "None");
-      (x, y)
+      (parse_grid_side(&items[0]), parse_grid_side(&items[1]))
     }
-    _ => (false, false),
+    Expr::Identifier(s) if s == "None" || s == "False" => {
+      (GridSide::None, GridSide::None)
+    }
+    Expr::Identifier(s) if s == "Automatic" || s == "All" || s == "True" => {
+      (GridSide::Automatic, GridSide::Automatic)
+    }
+    _ => (GridSide::None, GridSide::None),
+  }
+}
+
+/// Parse one axis side of a `GridLines` spec.
+fn parse_grid_side(expr: &Expr) -> GridSide {
+  match expr {
+    Expr::Identifier(s) if s == "None" || s == "False" => GridSide::None,
+    Expr::Identifier(s) if s == "Automatic" || s == "All" || s == "True" => {
+      GridSide::Automatic
+    }
+    Expr::List(items) => GridSide::Explicit(
+      items.iter().filter_map(parse_grid_line_entry).collect(),
+    ),
+    other => match try_eval_to_f64(other) {
+      Some(pos) => GridSide::Explicit(vec![GridLine {
+        pos,
+        style: SeriesStyle::default(),
+      }]),
+      None => GridSide::None,
+    },
+  }
+}
+
+/// Parse a single grid-line entry: a bare position, or a `{position, directive}`
+/// pair where the directive styles just that line.
+fn parse_grid_line_entry(entry: &Expr) -> Option<GridLine> {
+  match entry {
+    Expr::Identifier(s) if s == "None" => None,
+    Expr::List(pair) if pair.len() == 2 => {
+      let pos = try_eval_to_f64(&pair[0])?;
+      let mut style = SeriesStyle::default();
+      apply_style_directive(&pair[1], &mut style);
+      Some(GridLine { pos, style })
+    }
+    other => {
+      let pos = try_eval_to_f64(other)?;
+      Some(GridLine {
+        pos,
+        style: SeriesStyle::default(),
+      })
+    }
+  }
+}
+
+/// Apply a parsed `GridSide` to the matching PlotOptions fields.
+pub(crate) fn apply_grid_side(
+  side: GridSide,
+  auto_flag: &mut bool,
+  explicit: &mut Vec<GridLine>,
+) {
+  match side {
+    GridSide::None => {
+      *auto_flag = false;
+      explicit.clear();
+    }
+    GridSide::Automatic => {
+      *auto_flag = true;
+      explicit.clear();
+    }
+    GridSide::Explicit(v) => {
+      *auto_flag = false;
+      *explicit = v;
+    }
   }
 }
 
@@ -5067,9 +5262,17 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "GridLines" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          let (gx, gy) = parse_grid_lines(&val);
-          plot_opts.grid_lines_x = gx;
-          plot_opts.grid_lines_y = gy;
+          let (sx, sy) = parse_grid_lines_spec(&val);
+          apply_grid_side(
+            sx,
+            &mut plot_opts.grid_lines_x,
+            &mut plot_opts.grid_x_lines,
+          );
+          apply_grid_side(
+            sy,
+            &mut plot_opts.grid_lines_y,
+            &mut plot_opts.grid_y_lines,
+          );
         }
         "PlotRange" => {
           let (rx, ry) = parse_plot_range(replacement);
@@ -5387,9 +5590,17 @@ fn log_scale_plot_ast(
         "GridLines" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          let (gx, gy) = parse_grid_lines(&val);
-          plot_opts.grid_lines_x = gx;
-          plot_opts.grid_lines_y = gy;
+          let (sx, sy) = parse_grid_lines_spec(&val);
+          apply_grid_side(
+            sx,
+            &mut plot_opts.grid_lines_x,
+            &mut plot_opts.grid_x_lines,
+          );
+          apply_grid_side(
+            sy,
+            &mut plot_opts.grid_lines_y,
+            &mut plot_opts.grid_y_lines,
+          );
         }
         "PlotRange" => {
           let (_rx, ry) = parse_plot_range(replacement);

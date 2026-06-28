@@ -1975,6 +1975,57 @@ mod box_representation_tests {
   }
 
   #[test]
+  fn plot_grid_lines_styled_per_line() {
+    // Plot must honor per-line GridLines styles: dashed, thick, and colored
+    // lines at explicit positions on each axis.
+    let svg = woxi::interpret(
+      r#"ExportString[Plot[Cos[x], {x, 0, 10}, GridLines -> {
+        {{Pi, Dashed}, {2 Pi, Thick}},
+        {{-1, Orange}, -.5, .5, {1, Orange}}
+      }], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    // x = Pi → a single dashed grid line.
+    assert_eq!(
+      svg.matches("stroke-dasharray=").count(),
+      1,
+      "expected exactly one dashed grid line at x=Pi: {svg}"
+    );
+    // x = 2 Pi → a Thick (stroke-width 20 = 2px) grid line.
+    assert!(
+      svg.contains("stroke-width=\"20\""),
+      "expected a thick grid line at x=2 Pi: {svg}"
+    );
+    // y = -1 and y = 1 → two Orange (#FF8000) grid lines. plotters emits
+    // colors as uppercase hex.
+    assert_eq!(
+      svg.to_uppercase().matches("#FF8000").count(),
+      2,
+      "expected two orange grid lines at y=-1 and y=1: {svg}"
+    );
+  }
+
+  #[test]
+  fn plot_grid_lines_explicit_positions_one_axis() {
+    // `{xspec, Automatic}` draws explicit x lines and automatic y lines.
+    let svg = woxi::interpret(
+      r#"ExportString[Plot[Cos[x], {x, 0, 10},
+        GridLines -> {{2, 4, 6, 8}, None}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    // Four vertical default-gray solid grid lines, no horizontal ones.
+    let verticals = svg
+      .lines()
+      .filter(|l| {
+        l.contains("opacity=\"0.5\"")
+          && l.contains("<polyline")
+          && !l.contains("stroke-dasharray")
+      })
+      .count();
+    assert_eq!(verticals, 4, "expected 4 explicit x grid lines: {svg}");
+  }
+
+  #[test]
   fn frame_true_draws_thin_four_sided_border() {
     // Frame -> True draws a single closed rectangle (5 points) at 1px
     // (stroke-width = RESOLUTION_SCALE = 10 in viewBox units).
