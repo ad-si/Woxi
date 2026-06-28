@@ -530,19 +530,63 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Extract coefficient for each power from 0 to degree. Use `normalized`
-  // (rather than the raw `args[0]`) so SeriesData inputs see the expanded
-  // polynomial form instead of the opaque SeriesData head.
-  let mut coeffs = Vec::new();
-  for power in 0..=degree {
-    let coeff = coefficient_ast(&[
-      normalized.clone(),
-      args[1].clone(),
-      Expr::Integer(power),
-    ])?;
-    let simplified = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
-    coeffs.push(simplified);
+  // When `var` is absent the whole (unexpanded) expression is the sole
+  // coefficient of var^0 — expanding would needlessly change the user's
+  // canonical form (matches `coefficient_ast`'s var^0 fast path and
+  // wolframscript, e.g. CoefficientList[(x + y)^3, z] -> {(x + y)^3}).
+  if !expr_contains_identifier(&normalized, var) {
+    return Ok(Expr::List(vec![normalized].into()));
   }
+
+  // A negative max power (only negative-exponent terms, e.g. `1/x^2`) has no
+  // non-negative coefficients — matching the old `0..=degree` empty range.
+  if degree < 0 {
+    return Ok(Expr::List(Vec::new().into()));
+  }
+
+  // Extract every coefficient in a single pass over the already-expanded
+  // polynomial. Calling `coefficient_ast` once per power would re-expand the
+  // input each time (O(degree) re-expansions), making high powers such as
+  // `(2 x + 3)^60` quadratically slow on top of the cubic expansion cost.
+  let mut by_power: Vec<Vec<Expr>> = vec![Vec::new(); (degree + 1) as usize];
+  let mut fallback = false;
+  for term in collect_additive_terms(&expanded) {
+    let (p, c) = term_var_power_and_coeff(&term, var);
+    if p < 0 || p > degree {
+      // Sentinel power (non-integer/complex exponent) or an unexpected
+      // power: defer to the per-power extraction which handles these.
+      fallback = true;
+      break;
+    }
+    by_power[p as usize].push(c);
+  }
+
+  let coeffs: Vec<Expr> = if fallback {
+    // Use `normalized` (rather than the raw `args[0]`) so SeriesData inputs
+    // see the expanded polynomial form instead of the opaque SeriesData head.
+    let mut coeffs = Vec::with_capacity((degree + 1) as usize);
+    for power in 0..=degree {
+      let coeff = coefficient_ast(&[
+        normalized.clone(),
+        args[1].clone(),
+        Expr::Integer(power),
+      ])?;
+      coeffs.push(crate::evaluator::evaluate_expr_to_expr(&coeff)?);
+    }
+    coeffs
+  } else {
+    let mut coeffs = Vec::with_capacity((degree + 1) as usize);
+    for bucket in by_power {
+      let summed = if bucket.is_empty() {
+        Expr::Integer(0)
+      } else {
+        crate::functions::math_ast::plus_ast(&bucket)
+          .unwrap_or(Expr::Integer(0))
+      };
+      coeffs.push(crate::evaluator::evaluate_expr_to_expr(&summed)?);
+    }
+    coeffs
+  };
 
   Ok(Expr::List(coeffs.into()))
 }
