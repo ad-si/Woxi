@@ -18,9 +18,18 @@ pub fn dispatch_timeseries_functions(
     "TimeSeriesResample" => {
       Some(timeseries_ast::time_series_resample_ast(args))
     }
+    // `Length` of a TimeSeries reports the arity of the underlying
+    // `TemporalData` object, which is always 4 (`TemporalData[tag, dataspec,
+    // bool, version]`) — independent of the number of data points.
+    "Length"
+      if args.len() == 1
+        && timeseries_ast::time_series_pairs(&args[0]).is_some() =>
+    {
+      Some(Ok(Expr::Integer(4)))
+    }
     // Descriptive statistics over a TimeSeries operate on its value path.
     "Mean" | "Total" | "Min" | "Max" | "Median" | "Variance"
-    | "StandardDeviation" | "Commonest" | "Length"
+    | "StandardDeviation" | "Commonest"
       if args.len() == 1 =>
     {
       let values = timeseries_ast::time_series_values(&args[0])?;

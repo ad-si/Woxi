@@ -222,10 +222,16 @@ mod time_series {
   }
 
   #[test]
-  fn length_counts_points() {
+  fn length_is_temporal_data_arity() {
+    // A TimeSeries materializes as a 4-argument TemporalData object in WL, so
+    // its Length is always 4 — not the number of data points.
     assert_eq!(
       interpret("Length[TimeSeries[{{1, 10}, {2, 20}}]]").unwrap(),
-      "2"
+      "4"
+    );
+    assert_eq!(
+      interpret("Length[TimeSeries[{{1, 10}, {2, 20}, {3, 30}}]]").unwrap(),
+      "4"
     );
   }
 
