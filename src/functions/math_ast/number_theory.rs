@@ -1463,9 +1463,10 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut bell = vec![BigInt::from(0); n + 1];
     bell[0] = BigInt::from(1);
     for i in 1..=n {
-        for k in 0..=i-1 {
-            bell[i] = &bell[i] + binomial_coeff_big((i - 1) as i128, k as i128) * &bell[k];
-        }
+      for k in 0..=i - 1 {
+        bell[i] =
+          &bell[i] + binomial_coeff_big((i - 1) as i128, k as i128) * &bell[k];
+      }
     }
 
     Ok(crate::functions::math_ast::bigint_to_expr(bell[n].clone()))
