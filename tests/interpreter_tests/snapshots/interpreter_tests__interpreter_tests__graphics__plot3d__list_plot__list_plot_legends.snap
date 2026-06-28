@@ -2,7 +2,7 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"Series A\", \"Series B\"}]\"#)"
 ---
-<svg width="475" height="225" viewBox="0 0 4752 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="458" height="225" viewBox="0 0 4576 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,1749 "/>
 <text x="670" y="1688" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -182,8 +182,8 @@ expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"S
 <line x1="710.0" y1="925.0" x2="680.0" y2="925.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="543.1" x2="680.0" y2="543.1" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="161.1" x2="680.0" y2="161.1" stroke="#666" stroke-width="10"/>
-<line x1="3650.0" y1="981.0" x2="3850.0" y2="981.0" stroke="rgb(94,129,181)" stroke-width="15"/>
-<text x="3910.0" y="1044.0" font-family="sans-serif" font-size="180" fill="#666">Series A</text>
-<line x1="3650.0" y1="1269.0" x2="3850.0" y2="1269.0" stroke="rgb(224,147,44)" stroke-width="15"/>
-<text x="3910.0" y="1332.0" font-family="sans-serif" font-size="180" fill="#666">Series B</text>
+<line x1="3650.0" y1="1013.0" x2="3850.0" y2="1013.0" stroke="rgb(94,129,181)" stroke-width="15"/>
+<text x="3910.0" y="1062.0" font-family="sans-serif" font-size="140" fill="#666">Series A</text>
+<line x1="3650.0" y1="1237.0" x2="3850.0" y2="1237.0" stroke="rgb(224,147,44)" stroke-width="15"/>
+<text x="3910.0" y="1286.0" font-family="sans-serif" font-size="140" fill="#666">Series B</text>
 </svg>

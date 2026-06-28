@@ -1,7 +1,8 @@
 use woxi::evaluator::dispatch::complex_and_special::expr_to_box_form;
 use woxi::functions::graphics::{
-  box_has_fraction, boxes_to_svg, estimate_box_display_width,
-  estimate_display_width, expr_to_svg_markup, layout_box, layout_to_svg,
+  box_has_fraction, box_string_to_svg, box_string_visible_len, boxes_to_svg,
+  estimate_box_display_width, estimate_display_width, expr_to_svg_markup,
+  layout_box, layout_to_svg,
 };
 use woxi::syntax::{BinaryOperator, Expr};
 
@@ -1627,6 +1628,264 @@ mod box_representation_tests {
     assert!(
       !svg.contains("ScientificForm") && !svg.contains("InterpretationBox"),
       "list form should render graphically, not as literal box text: {svg}"
+    );
+  }
+
+  // ── Inline box-notation strings (PlotLegends / label formatting) ──
+
+  // The Wolfram front-end emits subscripts/superscripts in label strings as
+  // "linear syntax" box notation: `\!\(\*SubscriptBox[\(base\),\(sub\)]\)`.
+  // After string-literal parsing these escapes become private-use marker
+  // codepoints, so the tests below feed the marker form a label string would
+  // actually contain at render time (via `interpret`-produced SVG) as well as
+  // the literal-escape form fed directly to `box_string_to_svg`.
+
+  #[test]
+  fn box_string_subscript_renders_tspan() {
+    let svg = box_string_to_svg("C\\!\\(\\*SubscriptBox[\\(\\),\\(2\\)]\\)=9");
+    assert_eq!(
+      svg,
+      "C<tspan baseline-shift=\"sub\" font-size=\"70%\">2</tspan>=9"
+    );
+  }
+
+  #[test]
+  fn box_string_superscript_renders_tspan() {
+    let svg =
+      box_string_to_svg("GeV\\!\\(\\*SuperscriptBox[\\(\\),\\(-3\\)]\\)");
+    assert_eq!(
+      svg,
+      "GeV<tspan baseline-shift=\"super\" font-size=\"70%\">-3</tspan>"
+    );
+  }
+
+  #[test]
+  fn box_string_sqrtbox_renders_radical() {
+    let svg = box_string_to_svg("v=\\!\\(\\*SqrtBox[\\(s\\)]\\)");
+    assert_eq!(
+      svg,
+      "v=\u{221A}<tspan text-decoration=\"overline\">s</tspan>"
+    );
+  }
+
+  #[test]
+  fn box_string_subsuperscript_trims_arg_whitespace() {
+    // Whitespace after commas in the linear syntax is insignificant.
+    let svg = box_string_to_svg(
+      "x\\!\\(\\*SubsuperscriptBox[\\(\\), \\(i\\), \\(2\\)]\\)",
+    );
+    assert_eq!(
+      svg,
+      "x<tspan baseline-shift=\"sub\" font-size=\"70%\">i</tspan>\
+       <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"
+    );
+  }
+
+  #[test]
+  fn box_string_plain_text_is_html_escaped() {
+    // A label without any box notation is a safe drop-in for svg_escape.
+    assert_eq!(box_string_to_svg("a < b & c"), "a &lt; b &amp; c");
+  }
+
+  #[test]
+  fn box_string_visible_len_ignores_box_scaffolding() {
+    // Visible length counts "C", "2", "=9.78 GeV", "-3" = 13 chars — not the
+    // dozens of bytes of `\!\(\*SubscriptBox…\)` scaffolding.
+    let label = "C\\!\\(\\*SubscriptBox[\\(\\),\\(2\\)]\\)=9.78 GeV\
+                 \\!\\(\\*SuperscriptBox[\\(\\),\\(-3\\)]\\)";
+    assert_eq!(box_string_visible_len(label), "C2=9.78 GeV-3".len());
+  }
+
+  #[test]
+  fn list_line_plot_legend_renders_formatted_box_notation() {
+    // End-to-end: the formatting survives string-literal parsing (which turns
+    // the escapes into private-use markers) and reaches the legend renderer.
+    let code = r#"ExportString[ListLinePlot[{{1,2,3}},
+      PlotLegends -> {"C\!\(\*SubscriptBox[\(\),\(2\)]\)=9.78 GeV\!\(\*SuperscriptBox[\(\),\(-3\)]\)"}],
+      "SVG"]"#;
+    let svg = woxi::interpret(code).expect("interpret should succeed");
+    assert!(
+      svg
+        .contains("C<tspan baseline-shift=\"sub\" font-size=\"70%\">2</tspan>"),
+      "subscript not rendered in legend: {svg}"
+    );
+    assert!(
+      svg.contains(
+        "GeV<tspan baseline-shift=\"super\" font-size=\"70%\">-3</tspan>"
+      ),
+      "superscript not rendered in legend: {svg}"
+    );
+    // The raw box scaffolding must not leak into the output text.
+    assert!(
+      !svg.contains("SubscriptBox") && !svg.contains("SuperscriptBox"),
+      "raw box head leaked into SVG: {svg}"
+    );
+  }
+
+  #[test]
+  fn list_line_plot_renders_plot_label() {
+    let svg = woxi::interpret(
+      r#"ExportString[ListLinePlot[{{1,2,3}}, PlotLabel -> "MyTitle"], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(
+      svg.contains(">MyTitle</text>"),
+      "PlotLabel not rendered: {svg}"
+    );
+  }
+
+  #[test]
+  fn list_line_plot_renders_frame_label() {
+    let svg = woxi::interpret(
+      r#"ExportString[ListLinePlot[{{1,2,3}},
+        Frame -> True, FrameLabel -> {"XAxis", "YAxis"}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(svg.contains(">XAxis</text>"), "x FrameLabel missing: {svg}");
+    assert!(svg.contains(">YAxis</text>"), "y FrameLabel missing: {svg}");
+    // The y label is rotated on the left frame edge.
+    assert!(
+      svg.contains("rotate(-90"),
+      "y label should be rotated: {svg}"
+    );
+  }
+
+  #[test]
+  fn list_line_plot_frame_label_renders_box_notation() {
+    // FrameLabel with a SqrtBox renders as a radical, not raw box text.
+    let svg = woxi::interpret(
+      r#"ExportString[ListLinePlot[{{1,2,3}},
+        Frame -> True, FrameLabel -> {"\!\(\*SqrtBox[\(s\)]\) [GeV]", "y"}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(
+      svg.contains("\u{221A}<tspan text-decoration=\"overline\">s</tspan>"),
+      "SqrtBox not rendered in FrameLabel: {svg}"
+    );
+    assert!(!svg.contains("SqrtBox"), "raw SqrtBox leaked: {svg}");
+  }
+
+  #[test]
+  fn list_line_plot_frame_label_four_element_form() {
+    // `{{left, right}, {bottom, top}}` labels all four frame edges.
+    let svg = woxi::interpret(
+      r#"ExportString[ListLinePlot[{{1,2,3}}, Frame -> True,
+        FrameLabel -> {{"Lft", "Rgt"}, {"Btm", "Top"}}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(svg.contains(">Btm</text>"), "bottom label missing: {svg}");
+    assert!(svg.contains(">Top</text>"), "top label missing: {svg}");
+    // Left is rotated -90, right is rotated +90.
+    assert!(
+      svg.contains("rotate(-90") && svg.contains(">Lft</text>"),
+      "left label missing/not rotated: {svg}"
+    );
+    assert!(
+      svg.contains("rotate(90") && svg.contains(">Rgt</text>"),
+      "right label missing/not rotated: {svg}"
+    );
+  }
+
+  #[test]
+  fn list_line_plot_four_element_frame_label_coexists_with_plot_label() {
+    // A top FrameLabel and a PlotLabel must both appear (stacked, not
+    // overwriting each other).
+    let svg = woxi::interpret(
+      r#"ExportString[ListLinePlot[{{1,2,3}}, Frame -> True,
+        FrameLabel -> {{"l", "r"}, {"b", "TopEdge"}},
+        PlotLabel -> "TheTitle"], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(
+      svg.contains(">TopEdge</text>"),
+      "top frame label missing: {svg}"
+    );
+    assert!(
+      svg.contains(">TheTitle</text>"),
+      "plot label missing: {svg}"
+    );
+  }
+
+  #[test]
+  fn dashed_legend_swatch_matches_chart_dash_scale() {
+    // The legend swatch's stroke-dasharray must use the same scale as the
+    // on-chart dashed line (a fraction `d` of the plotting-area width), not the
+    // old swatch-relative scale. For a default-size plot the plotting area is
+    // 3600 - 100 - 100 - 650 = 2750 viewBox units, so a `Dashed` pattern
+    // (d = 0.01) yields "27.5,27.5" — not the previous "100.0,100.0".
+    let svg = woxi::interpret(
+      r#"ExportString[ListLinePlot[{{1,2,3},{3,2,1}},
+        PlotStyle -> {Black, Dashed}, PlotLegends -> {"A", "B"}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(
+      svg.contains("stroke-dasharray=\"27.5,27.5\""),
+      "legend dash scale should match the chart (27.5,27.5): {svg}"
+    );
+    assert!(
+      !svg.contains("stroke-dasharray=\"100.0,100.0\""),
+      "legend still using the old swatch-relative dash scale: {svg}"
+    );
+  }
+
+  #[test]
+  fn dashed_line_is_a_single_dasharray_polyline() {
+    // A dashed series must render as ONE <polyline stroke-dasharray> spanning
+    // all data points — not one tiny <polyline> per dash segment.
+    let svg = woxi::interpret(
+      r#"ExportString[ListLinePlot[{{1,2,3,4,5,6}}, Joined -> True,
+        PlotStyle -> Dashed], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    let dash_polylines = svg.matches("stroke-dasharray=").count();
+    assert_eq!(
+      dash_polylines, 1,
+      "dashed series should be a single dasharray polyline, found {dash_polylines}: {svg}"
+    );
+    // That single polyline must carry the whole data path (>= 6 vertices).
+    let line = svg
+      .lines()
+      .find(|l| l.contains("stroke-dasharray="))
+      .unwrap();
+    let pts = line
+      .split("points=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .unwrap_or("");
+    assert!(
+      pts.split_whitespace().count() >= 6,
+      "dashed polyline should span all data points: {pts:?}"
+    );
+  }
+
+  #[test]
+  fn frame_true_draws_thin_four_sided_border() {
+    // Frame -> True draws a single closed rectangle (5 points) at 1px
+    // (stroke-width = RESOLUTION_SCALE = 10 in viewBox units).
+    let svg = woxi::interpret(
+      r#"ExportString[ListLinePlot[{{1,2,3}}, Frame -> True], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    // Find the thick frame polyline and confirm it is a closed 5-point rect.
+    let frame = svg
+      .lines()
+      .find(|l| l.contains("stroke-width=\"10\"") && l.contains("points="))
+      .unwrap_or_else(|| panic!("no frame polyline at stroke-width 10: {svg}"));
+    let pts = frame
+      .split("points=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .unwrap_or("");
+    let coords: Vec<&str> = pts.split_whitespace().collect();
+    assert_eq!(
+      coords.len(),
+      5,
+      "frame should be a closed 4-sided rectangle (5 points): {pts:?}"
+    );
+    assert_eq!(
+      coords.first(),
+      coords.last(),
+      "frame rectangle should be closed: {pts:?}"
     );
   }
 }

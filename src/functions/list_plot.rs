@@ -186,6 +186,47 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             parse_plot_legends(replacement);
           opts.plot_legends = labels;
         }
+        "PlotLabel" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Some(sl) = crate::functions::chart::parse_styled_label(&val) {
+            opts.plot_label = Some(sl);
+          }
+        }
+        // AxesLabel is always the 2-element `{x, y}` (bottom, left) form.
+        "AxesLabel" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Expr::List(items) = &val
+            && items.len() >= 2
+          {
+            let x = crate::functions::chart::expr_to_label(&items[0])
+              .unwrap_or_default();
+            let y = crate::functions::chart::expr_to_label(&items[1])
+              .unwrap_or_default();
+            opts.axes_label = Some((x, y));
+          }
+        }
+        // FrameLabel supports both `{bottom, left}` and the nested
+        // `{{left, right}, {bottom, top}}` form. Bottom/left reuse the
+        // axes-label render path; top/right get their own frame edges.
+        "FrameLabel" => {
+          let fl = crate::functions::plot::parse_frame_label(replacement);
+          opts.axes_label = Some((fl.bottom, fl.left));
+          if !fl.top.is_empty() {
+            opts.frame_label_top = Some(fl.top);
+          }
+          if !fl.right.is_empty() {
+            opts.frame_label_right = Some(fl.right);
+          }
+        }
+        "Frame" => {
+          if matches!(replacement.as_ref(),
+            Expr::Identifier(v) if v == "True" || v == "All")
+          {
+            opts.frame = true;
+          }
+        }
         "Mesh" => {
           if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "All") {
             opts.mesh = Mesh::All;

@@ -395,6 +395,28 @@ pub(crate) fn nice_step(range: f64, target_labels: usize) -> f64 {
   nice * mag
 }
 
+/// Widest major y-axis tick label, in characters. Used to position the rotated
+/// y-axis/frame label just left of the tick column instead of at the far edge
+/// of the (fixed-width) gutter — so narrow ticks (e.g. single digits) don't
+/// leave a large gap.
+pub(crate) fn max_y_tick_label_chars(y_min: f64, y_max: f64) -> usize {
+  let step = nice_step(y_max - y_min, 5);
+  if step <= 0.0 || !step.is_finite() {
+    return 3;
+  }
+  let mut max_len = 1usize;
+  let mut v = (y_min / step).ceil() * step;
+  let mut guard = 0;
+  while v <= y_max + step * 1e-9 && guard < 1000 {
+    if is_major_tick(v, step) {
+      max_len = max_len.max(format_tick(v).chars().count());
+    }
+    v += step;
+    guard += 1;
+  }
+  max_len
+}
+
 /// Check whether a tick value falls on a major tick grid.
 pub(crate) fn is_major_tick(v: f64, step: f64) -> bool {
   if step == 0.0 {
@@ -1001,6 +1023,10 @@ pub(crate) struct PlotOptions {
   pub grid_lines_x: bool,
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
+  /// Label on the top frame edge (FrameLabel 4-element form: top of {bottom,top})
+  pub frame_label_top: Option<String>,
+  /// Label on the right frame edge (FrameLabel 4-element form: right of {left,right})
+  pub frame_label_right: Option<String>,
   /// Format x-axis labels as dates (AbsoluteTime seconds since 1900-01-01)
   pub date_axis: bool,
   /// Whether x-axis is logarithmic (data is in log10 space)
@@ -1030,6 +1056,8 @@ impl Default for PlotOptions {
       grid_lines_y: false,
       grid_lines_x: false,
       frame: false,
+      frame_label_top: None,
+      frame_label_right: None,
       date_axis: false,
       callout_labels: Vec::new(),
       log_x: false,
@@ -1125,6 +1153,76 @@ pub(crate) fn generate_svg_with_filling(
   generate_svg_with_options(all_points, x_range, y_range, opts)
 }
 
+/// A dashed series deferred for post-render emission as a single
+/// `<polyline stroke-dasharray>` (instead of one `<polyline>` per dash).
+struct DashedOverlay {
+  color: (u8, u8, u8),
+  stroke_w: u32,
+  /// Fractional dash pattern (fractions of the plotting-area width).
+  dashes: Vec<f64>,
+  /// Polyline vertices in data space.
+  points: Vec<(f64, f64)>,
+}
+
+/// Emit collected dashed series as single `<polyline stroke-dasharray>`
+/// elements, mapping data coordinates to render-space pixels with the same
+/// linear transform used for axis labels/ticks. The dash lengths use the
+/// plotting-area width so they match the legend swatches exactly.
+#[allow(clippy::too_many_arguments)]
+fn inject_dashed_overlays(
+  buf: &mut String,
+  overlays: &[DashedOverlay],
+  plot_x0: f64,
+  plot_y0: f64,
+  plot_w: f64,
+  plot_h: f64,
+  x_min: f64,
+  x_max: f64,
+  y_min: f64,
+  y_max: f64,
+) {
+  let xr = x_max - x_min;
+  let yr = y_max - y_min;
+  if xr.abs() < 1e-12 || yr.abs() < 1e-12 {
+    return;
+  }
+  let mut svg = String::new();
+  for ov in overlays {
+    if ov.points.len() < 2 {
+      continue;
+    }
+    let pts: Vec<String> = ov
+      .points
+      .iter()
+      .map(|&(x, y)| {
+        let px = plot_x0 + (x - x_min) / xr * plot_w;
+        let py = plot_y0 + (y_max - y) / yr * plot_h;
+        format!("{px:.1},{py:.1}")
+      })
+      .collect();
+    let dash: Vec<String> = ov
+      .dashes
+      .iter()
+      .map(|d| format!("{:.1}", (d * plot_w).max(0.5)))
+      .collect();
+    let (r, g, b) = ov.color;
+    svg.push_str(&format!(
+      "<polyline fill=\"none\" stroke=\"rgb({},{},{})\" \
+       stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"round\" \
+       points=\"{}\"/>\n",
+      r,
+      g,
+      b,
+      ov.stroke_w,
+      dash.join(","),
+      pts.join(" ")
+    ));
+  }
+  if let Some(pos) = buf.rfind("</svg>") {
+    buf.insert_str(pos, &svg);
+  }
+}
+
 /// Core SVG generation for 2D line plots with full option support.
 fn generate_svg_with_options(
   all_points: &[Vec<(f64, f64)>],
@@ -1155,8 +1253,17 @@ fn generate_svg_with_options(
     opts.axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
   let has_y_axis_label =
     opts.axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
+  let has_top_label =
+    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty());
+  let has_right_label = opts
+    .frame_label_right
+    .as_ref()
+    .is_some_and(|t| !t.is_empty());
 
-  let top_margin = if has_plot_label { 35 * s } else { 10 * s };
+  // Reserve top room for a PlotLabel and/or a top FrameLabel (they stack).
+  let top_margin = 10 * s
+    + if has_plot_label { 25 * s } else { 0 }
+    + if has_top_label { 25 * s } else { 0 };
 
   // Label areas and margins computed per-axis.
   // Setting a label area to 0 suppresses that axis line in plotters.
@@ -1184,7 +1291,11 @@ fn generate_svg_with_options(
   } else {
     5 * s as u32
   };
-  let margin_right: u32 = 10 * s as u32;
+  let margin_right: u32 = if has_right_label {
+    40 * s as u32
+  } else {
+    10 * s as u32
+  };
   let margin_bottom: u32 = if show_x_axis {
     10 * s as u32
   } else {
@@ -1193,6 +1304,12 @@ fn generate_svg_with_options(
 
   let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
     plot_theme();
+
+  // Dashed series are collected here and emitted after the plot is drawn as a
+  // single `<polyline stroke-dasharray>` each (rather than one element per
+  // dash). Skipped for log axes, which keep the per-dash fallback because the
+  // coordinate transform is non-linear.
+  let mut dashed_overlays: Vec<DashedOverlay> = Vec::new();
 
   let mut buf = String::new();
   {
@@ -1298,7 +1415,7 @@ fn generate_svg_with_options(
           })
           .axis_style(axis_style)
           .label_style(
-            ("sans-serif", sf * 18.0)
+            ("sans-serif", sf * 13.0)
               .into_font()
               .color(&dark_gray),
           )
@@ -1362,12 +1479,18 @@ fn generate_svg_with_options(
           }
         }
 
-        // Draw frame (bottom border only) when frame mode is enabled
+        // Draw a full frame (all four borders) when frame mode is enabled
         if opts.frame {
-          let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE * 2);
+          let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE);
           chart
             .draw_series(std::iter::once(PathElement::new(
-              vec![(x_min, y_min), (x_max, y_min)],
+              vec![
+                (x_min, y_min),
+                (x_max, y_min),
+                (x_max, y_max),
+                (x_min, y_max),
+                (x_min, y_min),
+              ],
               frame_style,
             )))
             .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
@@ -1428,16 +1551,32 @@ fn generate_svg_with_options(
           }
 
           if let Some(ref dash_pattern) = dashing {
-            // Draw dashed/dotted lines
-            for segment in &segments {
-              draw_dashed_line(
-                &mut chart,
-                segment,
-                color,
-                stroke_w,
-                dash_pattern,
-                x_max - x_min,
-              )?;
+            if opts.log_x || opts.log_y {
+              // Log axes use a non-linear transform; keep the per-dash
+              // fallback that lets plotters map each segment.
+              for segment in &segments {
+                draw_dashed_line(
+                  &mut chart,
+                  segment,
+                  color,
+                  stroke_w,
+                  dash_pattern,
+                  x_max - x_min,
+                )?;
+              }
+            } else {
+              // Defer to a single <polyline stroke-dasharray> per segment,
+              // emitted after the plot is drawn.
+              for segment in &segments {
+                if segment.len() >= 2 {
+                  dashed_overlays.push(DashedOverlay {
+                    color: (r, g, b),
+                    stroke_w,
+                    dashes: dash_pattern.clone(),
+                    points: segment.clone(),
+                  });
+                }
+              }
             }
           } else {
             for segment in &segments {
@@ -1529,6 +1668,32 @@ fn generate_svg_with_options(
     full_width,
   );
 
+  // Emit deferred dashed series as single stroke-dasharray polylines.
+  if !dashed_overlays.is_empty() {
+    let plot_x0 = margin_left as f64 + y_label_area as f64;
+    let plot_y0 = top_margin as f64;
+    let plot_w = render_width as f64
+      - margin_left as f64
+      - margin_right as f64
+      - y_label_area as f64;
+    let plot_h = render_height as f64
+      - top_margin as f64
+      - margin_bottom as f64
+      - x_label_area as f64;
+    inject_dashed_overlays(
+      &mut buf,
+      &dashed_overlays,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+    );
+  }
+
   // Extend labeled (major) ticks so they appear slightly longer than the
   // unlabeled minor ticks drawn by plotters. Only applies when ticks are
   // enabled, a visible axis style is used, and the axis uses linear
@@ -1574,7 +1739,12 @@ fn generate_svg_with_options(
   }
 
   // Inject label SVG elements before </svg>
-  if has_plot_label || has_x_axis_label || has_y_axis_label {
+  if has_plot_label
+    || has_x_axis_label
+    || has_y_axis_label
+    || has_top_label
+    || has_right_label
+  {
     let margin_left_f = margin_left as f64;
     let margin_right_f = margin_right as f64;
     let margin_bottom_f = margin_bottom as f64;
@@ -1587,8 +1757,8 @@ fn generate_svg_with_options(
     let plot_h =
       render_height as f64 - margin_top - margin_bottom_f - x_label_area as f64;
     let axis_y = margin_top + plot_h;
-    let font_size = sf * 18.0;
-    let title_font_size = sf * 22.0;
+    let font_size = sf * 14.0;
+    let title_font_size = sf * 17.0;
 
     if let Some(insert_pos) = buf.rfind("</svg>") {
       let mut labels_svg = String::new();
@@ -1597,32 +1767,73 @@ fn generate_svg_with_options(
       if let Some((x_label, y_label)) = &opts.axes_label {
         if !x_label.is_empty() {
           let cx = plot_x0 + plot_w / 2.0;
-          let base_y = axis_y + font_size * 1.5;
+          // Sit clearly below the x tick labels (which occupy ~one tick-font
+          // height below the axis) rather than crowding the frame.
+          let base_y = axis_y + sf * 13.0 + font_size * 1.4;
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{label_fill}\">{}</text>\n",
-            html_escape(x_label)
+            crate::functions::graphics::box_string_to_svg(x_label)
           ));
         }
         if !y_label.is_empty() {
           let cy = margin_top + plot_h / 2.0;
-          let lx = margin_left_f + font_size * 0.8;
+          // Place the rotated label just left of the y tick-label column
+          // (which right-aligns near the axis) instead of at the far gutter
+          // edge — adapting to the actual tick width.
+          let tick_w =
+            max_y_tick_label_chars(y_min, y_max) as f64 * sf * 13.0 * 0.6;
+          let tick_left = plot_x0 - 8.0 * sf - tick_w;
+          let lx = (tick_left - font_size * 0.5 - sf * 5.0)
+            .max(margin_left_f + font_size * 0.5);
           labels_svg.push_str(&format!(
             "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-            html_escape(y_label)
+            crate::functions::graphics::box_string_to_svg(y_label)
           ));
         }
       }
 
-      // PlotLabel
+      // Top FrameLabel (sits just above the plot's top edge)
+      if let Some(top_label) = &opts.frame_label_top
+        && !top_label.is_empty()
+      {
+        let cx = plot_x0 + plot_w / 2.0;
+        let ty = margin_top - font_size * 0.6;
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             fill=\"{label_fill}\">{}</text>\n",
+          crate::functions::graphics::box_string_to_svg(top_label)
+        ));
+      }
+
+      // Right FrameLabel (rotated +90 on the right frame edge)
+      if let Some(right_label) = &opts.frame_label_right
+        && !right_label.is_empty()
+      {
+        let cy = margin_top + plot_h / 2.0;
+        let rx = plot_x0 + plot_w + font_size * 1.4;
+        labels_svg.push_str(&format!(
+          "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             fill=\"{label_fill}\" transform=\"rotate(90,{rx:.1},{cy:.1})\">{}</text>\n",
+          crate::functions::graphics::box_string_to_svg(right_label)
+        ));
+      }
+
+      // PlotLabel — shifted above the top FrameLabel when both are present.
       if let Some(sl) = &opts.plot_label
         && !sl.text.is_empty()
       {
         let cx = plot_x0 + plot_w / 2.0;
-        let ty = margin_top - title_font_size * 0.5;
+        let ty = if has_top_label {
+          margin_top - title_font_size * 0.5 - font_size * 1.2
+        } else {
+          margin_top - title_font_size * 0.5
+        };
         let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
         let fill = sl
           .color
@@ -1640,7 +1851,7 @@ fn generate_svg_with_options(
           "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
              fill=\"{fill}\"{style_attrs}>{}</text>\n",
-          html_escape(&sl.text)
+          crate::functions::graphics::box_string_to_svg(&sl.text)
         ));
       }
 
@@ -3507,6 +3718,32 @@ fn html_escape(s: &str) -> String {
     .replace('"', "&quot;")
 }
 
+/// Width (in viewBox units) of the plotting area, mirroring the margins used
+/// by `generate_svg_with_options`. Used to scale dashed legend swatches so the
+/// dash pattern matches the on-chart line (which dashes at `d * plot_w`).
+fn legend_plot_area_width(vb_w: f64, opts: &PlotOptions) -> f64 {
+  let sf = RESOLUTION_SCALE as f64;
+  let show_y_axis = opts.axes.1;
+  let y_label_area = if !show_y_axis {
+    0.0
+  } else if !opts.ticks {
+    5.0 * sf
+  } else {
+    65.0 * sf
+  };
+  let margin_left = if show_y_axis { 10.0 * sf } else { 5.0 * sf };
+  let has_right_label = opts
+    .frame_label_right
+    .as_ref()
+    .is_some_and(|t| !t.is_empty());
+  let margin_right = if has_right_label {
+    40.0 * sf
+  } else {
+    10.0 * sf
+  };
+  (vb_w - margin_left - margin_right - y_label_area).max(vb_w * 0.5)
+}
+
 /// Inject a legend into an SVG plot. Depending on `legend_position`, the legend
 /// is placed on the right (default), top, or bottom of the plot.
 pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
@@ -3518,7 +3755,7 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
   let (_bg_color, _dark_gray, _light_gray, label_fill, _title_fill) =
     plot_theme();
 
-  let font_size = sf * 18.0;
+  let font_size = sf * 14.0;
   let line_height = font_size * 1.6;
   let swatch_len = sf * 20.0;
   let swatch_gap = sf * 6.0;
@@ -3538,6 +3775,11 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
     return;
   };
 
+  // The on-chart dashed lines are drawn with a dash length of `d * plot_w`
+  // (a fraction of the plotting-area width — see `draw_dashed_line`). Scale the
+  // legend swatch's stroke-dasharray by the same width so the two match.
+  let dash_scale = legend_plot_area_width(vb_w, opts);
+
   match opts.legend_position {
     LegendPosition::Top | LegendPosition::Bottom => {
       // Horizontal legend: all entries in one row
@@ -3547,7 +3789,13 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
       let entry_widths: Vec<f64> = opts
         .plot_legends
         .iter()
-        .map(|s| swatch_len + swatch_gap + s.len() as f64 * font_size * 0.55)
+        .map(|s| {
+          swatch_len
+            + swatch_gap
+            + crate::functions::graphics::box_string_visible_len(s) as f64
+              * font_size
+              * 0.55
+        })
         .collect();
       let entry_spacing = legend_padding;
 
@@ -3610,7 +3858,7 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
           if let Some(ref pattern) = dashing {
             let dash_vals: Vec<String> = pattern
               .iter()
-              .map(|d| format!("{:.1}", (d * swatch_len / 0.02).max(0.5)))
+              .map(|d| format!("{:.1}", (d * dash_scale).max(0.5)))
               .collect();
             dash_attr =
               format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
@@ -3638,7 +3886,7 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{label_fill}\">{}</text>\n",
-            html_escape(label),
+            crate::functions::graphics::box_string_to_svg(label),
           ));
 
           cursor_x += entry_widths[i] + entry_spacing;
@@ -3652,7 +3900,11 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
       let max_text_width = opts
         .plot_legends
         .iter()
-        .map(|s| s.len() as f64 * font_size * 0.55)
+        .map(|s| {
+          crate::functions::graphics::box_string_visible_len(s) as f64
+            * font_size
+            * 0.55
+        })
         .fold(0.0_f64, f64::max);
       let legend_width =
         swatch_len + swatch_gap + max_text_width + legend_padding;
@@ -3712,7 +3964,7 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
           if let Some(ref pattern) = dashing {
             let dash_vals: Vec<String> = pattern
               .iter()
-              .map(|d| format!("{:.1}", (d * swatch_len / 0.02).max(0.5)))
+              .map(|d| format!("{:.1}", (d * dash_scale).max(0.5)))
               .collect();
             dash_attr =
               format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
@@ -3737,7 +3989,7 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{label_fill}\">{}</text>\n",
-            html_escape(label),
+            crate::functions::graphics::box_string_to_svg(label),
           ));
         }
 
@@ -4653,6 +4905,64 @@ pub(crate) fn parse_plot_range(
   }
 
   (None, None)
+}
+
+/// Parsed `FrameLabel` edges. Empty strings mean "no label on that edge".
+#[derive(Default)]
+pub(crate) struct FrameLabels {
+  pub bottom: String,
+  pub left: String,
+  pub top: String,
+  pub right: String,
+}
+
+/// Convert a single FrameLabel entry to a label string. `None` (the symbol)
+/// and unrenderable expressions become an empty string.
+fn frame_label_entry(e: &Expr) -> String {
+  if matches!(e, Expr::Identifier(s) if s == "None") {
+    return String::new();
+  }
+  crate::functions::chart::expr_to_label(e).unwrap_or_default()
+}
+
+/// Parse a `FrameLabel` option value, supporting both forms:
+///   `{bottom, left}` and `{{left, right}, {bottom, top}}`.
+/// A bare label applies to the bottom edge.
+pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let mut out = FrameLabels::default();
+  match &val {
+    Expr::List(items) => {
+      // 4-element nested form: both entries are themselves lists.
+      if items.len() == 2
+        && let (Expr::List(lr), Expr::List(bt)) = (&items[0], &items[1])
+      {
+        if let Some(e) = lr.first() {
+          out.left = frame_label_entry(e);
+        }
+        if let Some(e) = lr.get(1) {
+          out.right = frame_label_entry(e);
+        }
+        if let Some(e) = bt.first() {
+          out.bottom = frame_label_entry(e);
+        }
+        if let Some(e) = bt.get(1) {
+          out.top = frame_label_entry(e);
+        }
+        return out;
+      }
+      // 2-element form `{bottom, left}`.
+      if let Some(e) = items.first() {
+        out.bottom = frame_label_entry(e);
+      }
+      if let Some(e) = items.get(1) {
+        out.left = frame_label_entry(e);
+      }
+    }
+    // A bare label labels the bottom edge.
+    _ => out.bottom = frame_label_entry(&val),
+  }
+  out
 }
 
 /// Parse PlotLegends option value into a list of legend strings.

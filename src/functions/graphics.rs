@@ -4867,6 +4867,270 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Inline box-notation strings (Wolfram "linear syntax") → SVG
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Label strings such as PlotLegends/FrameLabel entries can embed Wolfram
+// "linear syntax" box notation, e.g.
+//   "C\!\(\*SubscriptBox[\(\),\(2\)]\)=9.78 GeV\!\(\*SuperscriptBox[\(\),\(-3\)]\)"
+// where `\!\(...\)` wraps a displayed box and `\*Head[\(..\),\(..\)]` is the
+// explicit box function form. After string-literal parsing these escapes are
+// stored either as the literal two-character sequences (`\(`, `\*`, …) or as
+// the private-use marker codepoints. `box_string_to_svg` resolves both into
+// SVG `<text>` content with proper sub/superscript/sqrt `<tspan>`s.
+
+/// Normalize private-use box marker codepoints back to their literal
+/// escape-sequence form (`\!`, `\(`, `\*`, `\)`) so a single parser handles
+/// both representations.
+fn normalize_box_markers(s: &str) -> String {
+  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match c {
+      _ if c == BOX_START => out.push_str("\\!"),
+      _ if c == BOX_OPEN => out.push_str("\\("),
+      _ if c == BOX_SEP => out.push_str("\\*"),
+      _ if c == BOX_CLOSE => out.push_str("\\)"),
+      _ => out.push(c),
+    }
+  }
+  out
+}
+
+/// Find the index of the backslash of the `\)` that matches the `\(` whose
+/// content starts at `start` (depth already 1). Returns `None` if unbalanced.
+fn find_box_group_close(cs: &[char], start: usize) -> Option<usize> {
+  let mut depth = 1usize;
+  let mut j = start;
+  while j < cs.len() {
+    if cs[j] == '\\' && j + 1 < cs.len() {
+      match cs[j + 1] {
+        '(' => {
+          depth += 1;
+          j += 2;
+          continue;
+        }
+        ')' => {
+          depth -= 1;
+          if depth == 0 {
+            return Some(j);
+          }
+          j += 2;
+          continue;
+        }
+        _ => {
+          j += 1;
+          continue;
+        }
+      }
+    }
+    j += 1;
+  }
+  None
+}
+
+/// Trim leading/trailing whitespace from a char slice. The whitespace
+/// *between* box arguments (e.g. after a comma, before `\(`) is syntactic and
+/// must not become rendered text; whitespace inside a `\(...\)` group is kept
+/// because it lives within the group's own slice.
+fn trim_char_slice(cs: &[char]) -> &[char] {
+  let mut start = 0;
+  let mut end = cs.len();
+  while start < end && cs[start].is_whitespace() {
+    start += 1;
+  }
+  while end > start && cs[end - 1].is_whitespace() {
+    end -= 1;
+  }
+  &cs[start..end]
+}
+
+/// Parse a `\*Head[\(arg\),\(arg\),…]` explicit box, with `cs[pos..]` pointing
+/// just past the `\*`. Returns the resulting box Expr and the index past the
+/// consumed tokens.
+fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
+  // Read the head name (letters/digits/`$`).
+  let mut i = pos;
+  let name_start = i;
+  while i < cs.len() && (cs[i].is_alphanumeric() || cs[i] == '$') {
+    i += 1;
+  }
+  let name: String = cs[name_start..i].iter().collect();
+  if i >= cs.len() || cs[i] != '[' {
+    // Bare box symbol (no bracketed args) — render as an atom.
+    return (Expr::Identifier(name), i);
+  }
+  // Parse bracketed, comma-separated args. Commas inside nested `\(...\)`
+  // groups or `[...]` brackets do not split.
+  i += 1; // consume '['
+  let mut args: Vec<Expr> = Vec::new();
+  let mut arg_start = i;
+  let mut gdepth = 0usize; // `\(` group depth
+  let mut bdepth = 0usize; // `[` bracket depth
+  while i < cs.len() {
+    let c = cs[i];
+    if c == '\\' && i + 1 < cs.len() && cs[i + 1] == '(' {
+      gdepth += 1;
+      i += 2;
+      continue;
+    }
+    if c == '\\' && i + 1 < cs.len() && cs[i + 1] == ')' {
+      gdepth = gdepth.saturating_sub(1);
+      i += 2;
+      continue;
+    }
+    if gdepth > 0 {
+      i += 1;
+      continue;
+    }
+    match c {
+      '[' => {
+        bdepth += 1;
+        i += 1;
+      }
+      ']' if bdepth == 0 => {
+        // End of the argument list.
+        if !(args.is_empty() && arg_start == i) {
+          args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..i])));
+        }
+        i += 1; // consume ']'
+        return (
+          Expr::FunctionCall {
+            name,
+            args: args.into(),
+          },
+          i,
+        );
+      }
+      ']' => {
+        bdepth -= 1;
+        i += 1;
+      }
+      ',' if bdepth == 0 => {
+        args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..i])));
+        i += 1;
+        arg_start = i;
+      }
+      _ => i += 1,
+    }
+  }
+  // Unbalanced — consume what we have.
+  if arg_start < cs.len() {
+    args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..])));
+  }
+  (
+    Expr::FunctionCall {
+      name,
+      args: args.into(),
+    },
+    cs.len(),
+  )
+}
+
+/// Parse a sequence of box-notation units (plain runs, `\(...\)` groups and
+/// `\*Head[...]` explicit boxes) into a list of box Exprs.
+fn parse_box_units(cs: &[char]) -> Vec<Expr> {
+  let mut res: Vec<Expr> = Vec::new();
+  let mut plain = String::new();
+  let mut i = 0;
+  while i < cs.len() {
+    if cs[i] == '\\' && i + 1 < cs.len() {
+      match cs[i + 1] {
+        '*' => {
+          if !plain.is_empty() {
+            res.push(Expr::String(std::mem::take(&mut plain)));
+          }
+          let (e, ni) = parse_explicit_box(cs, i + 2);
+          res.push(e);
+          i = ni;
+          continue;
+        }
+        '(' => {
+          if !plain.is_empty() {
+            res.push(Expr::String(std::mem::take(&mut plain)));
+          }
+          match find_box_group_close(cs, i + 2) {
+            Some(close) => {
+              res.push(parse_box_to_expr(&cs[i + 2..close]));
+              i = close + 2;
+            }
+            None => i += 1,
+          }
+          continue;
+        }
+        // Lone `\!` interpret marker (the following `\(` is handled next
+        // iteration) and a stray `\)` — skip the two-char marker.
+        '!' | ')' => {
+          i += 2;
+          continue;
+        }
+        _ => {}
+      }
+    }
+    plain.push(cs[i]);
+    i += 1;
+  }
+  if !plain.is_empty() {
+    res.push(Expr::String(plain));
+  }
+  res
+}
+
+/// Parse box-notation content into a single box Expr (wrapping multiple units
+/// in a `RowBox`).
+fn parse_box_to_expr(cs: &[char]) -> Expr {
+  let mut units = parse_box_units(cs);
+  match units.len() {
+    0 => Expr::String(String::new()),
+    1 => units.pop().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "RowBox".to_string(),
+      args: vec![Expr::List(units.into())].into(),
+    },
+  }
+}
+
+/// Render a label string that may contain inline Wolfram box notation into
+/// SVG `<text>` content. Plain strings (no box notation) are simply
+/// SVG-escaped, so this is a safe drop-in for `svg_escape`.
+pub fn box_string_to_svg(s: &str) -> String {
+  let norm = normalize_box_markers(s);
+  let cs: Vec<char> = norm.chars().collect();
+  parse_box_units(&cs).iter().map(boxes_to_svg).collect()
+}
+
+/// Plain-text projection of a box-notation Expr, used for layout width
+/// estimation (sub/superscripts contribute their content length).
+fn box_expr_to_plain(e: &Expr) -> String {
+  match e {
+    Expr::String(s) | Expr::Identifier(s) => s.clone(),
+    Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
+    Expr::List(items) => items.iter().map(box_expr_to_plain).collect(),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "SqrtBox" | "RadicalBox" => format!(
+        "\u{221A}{}",
+        args.first().map(box_expr_to_plain).unwrap_or_default()
+      ),
+      _ => args.iter().map(box_expr_to_plain).collect(),
+    },
+    _ => String::new(),
+  }
+}
+
+/// Number of visible characters a box-notation label occupies, ignoring the
+/// box markup itself. Used to size legends/labels instead of the raw byte
+/// length (which over-counts the `\!\(\*…\)` scaffolding).
+pub fn box_string_visible_len(s: &str) -> usize {
+  let norm = normalize_box_markers(s);
+  let cs: Vec<char> = norm.chars().collect();
+  parse_box_units(&cs)
+    .iter()
+    .map(|u| box_expr_to_plain(u).chars().count())
+    .sum()
+}
+
 /// Estimate the display width of a box-form expression in character units.
 /// Assemble box markup into a complete SVG string.
 /// Handles fraction markers by splitting text around nested `<svg>` elements
