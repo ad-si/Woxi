@@ -2014,6 +2014,50 @@ fn render_frame(svg: &mut String, bb: &BBox, svg_w: f64, svg_h: f64) {
   }
 }
 
+/// Draw grid lines spanning the plot at the automatic tick positions, styled by
+/// `GridLinesStyle` (color / dashing). Vertical lines sit at the x ticks,
+/// horizontal lines at the y ticks.
+fn render_grid_lines(
+  svg: &mut String,
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+  style: &StyleState,
+) {
+  let color = style.effective_color();
+  let dash = dash_attr(&style.dashing, bb, svg_w);
+  let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
+  let x_ticks = generate_ticks(bb.x_min, bb.x_max, 6);
+  let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
+
+  for &t_val in &x_ticks {
+    let x = coord_x(t_val, bb, svg_w);
+    if !x.is_finite() {
+      continue;
+    }
+    svg.push_str(&format!(
+      "<line x1=\"{x:.2}\" y1=\"0\" x2=\"{x:.2}\" y2=\"{svg_h:.2}\" \
+       stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
+      color.to_svg_rgb(),
+      color.opacity_attr(),
+      dash,
+    ));
+  }
+  for &t_val in &y_ticks {
+    let y = coord_y(t_val, bb, svg_h);
+    if !y.is_finite() {
+      continue;
+    }
+    svg.push_str(&format!(
+      "<line x1=\"0\" y1=\"{y:.2}\" x2=\"{svg_w:.2}\" y2=\"{y:.2}\" \
+       stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
+      color.to_svg_rgb(),
+      color.opacity_attr(),
+      dash,
+    ));
+  }
+}
+
 /// Truncate a BigFloat digit string to `prec` significant digits for graphical display.
 /// E.g. digits="0.84147098480789650665" with prec=3 → "0.841"
 fn truncate_bigfloat_digits(digits: &str, prec: usize) -> String {
@@ -2946,6 +2990,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut background: Option<Color> = None;
   let mut axes = (false, false);
   let mut frame = false;
+  let mut grid_lines = false;
+  let mut grid_style: Option<StyleState> = None;
   // When true, skip uniform scaling so x and y axes scale independently
   // (needed for plots where data aspect ≠ image aspect).
   let mut aspect_ratio_full = false;
@@ -3000,6 +3046,25 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             frame = true;
           }
+        }
+        "GridLines" => match replacement.as_ref() {
+          Expr::Identifier(s)
+            if s == "Automatic" || s == "True" || s == "All" =>
+          {
+            grid_lines = true;
+          }
+          Expr::Identifier(s) if s == "None" || s == "False" => {
+            grid_lines = false;
+          }
+          // Explicit {xvals, yvals} lists also enable grid lines (drawn at the
+          // automatic tick positions for now).
+          Expr::List(_) => grid_lines = true,
+          _ => {}
+        },
+        "GridLinesStyle" => {
+          let mut st = StyleState::default();
+          apply_directive(replacement.as_ref(), &mut st);
+          grid_style = Some(st);
         }
         "AspectRatio" => {
           // AspectRatio -> Full: skip uniform scaling (used by plots)
@@ -3162,6 +3227,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<rect width=\"{}\" height=\"{}\" fill=\"transparent\" stroke=\"none\"><title>{}</title></rect>\n",
       svg_width, svg_height, title_text
     ));
+  }
+
+  // Grid lines render behind the axes and primitives.
+  if grid_lines {
+    let style = grid_style.clone().unwrap_or_else(|| StyleState {
+      color: Color::gray(0.8),
+      ..StyleState::default()
+    });
+    render_grid_lines(&mut svg, &bb, svg_w, svg_h, &style);
   }
 
   render_axes(&mut svg, axes, &bb, svg_w, svg_h);

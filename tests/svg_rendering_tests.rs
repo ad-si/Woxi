@@ -1888,6 +1888,46 @@ mod box_representation_tests {
   }
 
   #[test]
+  fn graphics_grid_lines_render_with_style() {
+    // Graphics[..., GridLines -> Automatic, GridLinesStyle -> ...] must draw
+    // grid lines (it previously ignored both options).
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[Circle[], Frame -> True, GridLines -> Automatic,
+        GridLinesStyle -> Directive[Orange, Dashed]], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    // Orange dashed grid lines spanning the plot, behind the circle.
+    assert!(
+      svg.contains("stroke=\"rgb(255,128,0)\"")
+        && svg.contains("stroke-dasharray="),
+      "grid lines not styled orange/dashed: {svg}"
+    );
+    assert!(
+      svg.find("rgb(255,128,0)") < svg.find("<ellipse"),
+      "grid lines should render behind the circle: {svg}"
+    );
+  }
+
+  #[test]
+  fn graphics_grid_lines_default_solid_gray() {
+    // Without GridLinesStyle, Graphics grid lines are solid light gray.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[Circle[], Frame -> True,
+        GridLines -> Automatic], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    let grid: Vec<&str> = svg
+      .lines()
+      .filter(|l| l.contains("stroke=\"rgb(204,204,204)\""))
+      .collect();
+    assert!(!grid.is_empty(), "expected light-gray grid lines: {svg}");
+    assert!(
+      grid.iter().all(|l| !l.contains("stroke-dasharray")),
+      "default grid lines should be solid: {svg}"
+    );
+  }
+
+  #[test]
   fn frame_true_draws_thin_four_sided_border() {
     // Frame -> True draws a single closed rectangle (5 points) at 1px
     // (stroke-width = RESOLUTION_SCALE = 10 in viewBox units).
