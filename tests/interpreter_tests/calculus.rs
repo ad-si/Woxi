@@ -883,18 +883,25 @@ mod definite_integrals {
   }
 
   #[test]
-  fn dirac_delta_unevaluated_edge_cases() {
-    // Symbolic shift, boundary root, and nonlinear arguments are left
-    // unevaluated (Wolfram returns ConditionalExpression / HeavisideTheta /
-    // multi-root forms there, which Woxi does not reproduce).
+  fn dirac_delta_symbolic_and_boundary_roots() {
+    // Symbolic root over the whole real line → ConditionalExpression.
     assert_eq!(
       interpret("Integrate[f[x] DiracDelta[x - a], {x, -Infinity, Infinity}]")
         .unwrap(),
-      "Integrate[DiracDelta[-a + x]*f[x], {x, -Infinity, Infinity}]"
+      "ConditionalExpression[f[a], Element[a, Reals]]"
     );
+    // Root landing on a boundary → g(x0) * HeavisideTheta[0].
     assert_eq!(
       interpret("Integrate[DiracDelta[x - 5] x, {x, 0, 5}]").unwrap(),
-      "Integrate[x*DiracDelta[-5 + x], {x, 0, 5}]"
+      "5*HeavisideTheta[0]"
+    );
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x] (x + 1), {x, 0, 5}]").unwrap(),
+      "HeavisideTheta[0]"
+    );
+    assert_eq!(
+      interpret("Integrate[DiracDelta[x - 5] (x + 1), {x, 0, 5}]").unwrap(),
+      "6*HeavisideTheta[0]"
     );
   }
 

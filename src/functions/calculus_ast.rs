@@ -804,9 +804,11 @@ fn bound_to_f64(e: &Expr) -> Option<f64> {
 }
 
 /// Evaluate `∫ g(x) DiracDelta[c x + d] dx` over `(lo, hi)` via the sifting
-/// property. Returns `None` (leave the integral unevaluated) unless the delta
-/// argument is linear in `var` with a constant nonzero coefficient and a root
-/// strictly inside or strictly outside the bounds.
+/// property. Requires the delta argument to be linear in `var` with a constant
+/// nonzero coefficient. Handles a root strictly inside (→ `g(x0)/|c|`), outside
+/// (→ `0`), on a boundary (→ `g(x0)/|c| * HeavisideTheta[0]`), and a symbolic
+/// root over the whole real line (→ `ConditionalExpression[g(x0)/|c|, x0 ∈
+/// Reals]`). Symbolic roots with finite bounds are left unevaluated.
 fn try_dirac_delta_integral(
   integrand: &Expr,
   var: &str,
@@ -883,39 +885,74 @@ fn try_dirac_delta_integral(
     ]
     .into(),
   })?;
-  let root_f = crate::functions::math_ast::try_eval_to_f64(&root)?;
-  let lo_f = bound_to_f64(lo)?;
-  let hi_f = bound_to_f64(hi)?;
-
-  if root_f > lo_f && root_f < hi_f {
-    // Inside the open interval: g(x0) / |c|.
-    let g = if others.is_empty() {
-      Expr::Integer(1)
-    } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: others.into(),
-      }
-    };
-    let g_at_root = eval(at(&g, root))?;
-    let result = eval(Expr::FunctionCall {
-      name: "Divide".to_string(),
-      args: vec![
-        g_at_root,
-        Expr::FunctionCall {
-          name: "Abs".to_string(),
-          args: vec![c].into(),
-        },
-      ]
-      .into(),
-    })?;
-    Some(result)
-  } else if root_f < lo_f || root_f > hi_f {
-    // Strictly outside: the delta never fires.
-    Some(Expr::Integer(0))
+  // g(x): the product of the non-delta factors.
+  let g = if others.is_empty() {
+    Expr::Integer(1)
   } else {
-    // Boundary root — leave unevaluated (Wolfram uses HeavisideTheta there).
-    None
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: others.into(),
+    }
+  };
+  // Sifted value g(x0)/|c|. Defined symbolically so it also works when the
+  // root is symbolic.
+  let g_at_root = eval(at(&g, root.clone()))?;
+  let sifted = eval(Expr::FunctionCall {
+    name: "Divide".to_string(),
+    args: vec![
+      g_at_root,
+      Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![c].into(),
+      },
+    ]
+    .into(),
+  })?;
+
+  match crate::functions::math_ast::try_eval_to_f64(&root) {
+    // Numeric root: position it relative to the (numeric) bounds.
+    Some(root_f) => {
+      let lo_f = bound_to_f64(lo)?;
+      let hi_f = bound_to_f64(hi)?;
+      if root_f > lo_f && root_f < hi_f {
+        // Strictly inside the interval.
+        Some(sifted)
+      } else if root_f < lo_f || root_f > hi_f {
+        // Strictly outside: the delta never fires.
+        Some(Expr::Integer(0))
+      } else {
+        // Root exactly on a boundary: g(x0)/|c| * HeavisideTheta[0].
+        eval(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            sifted,
+            Expr::FunctionCall {
+              name: "HeavisideTheta".to_string(),
+              args: vec![Expr::Integer(0)].into(),
+            },
+          ]
+          .into(),
+        })
+      }
+    }
+    // Symbolic root over the whole real line: the delta always fires for a
+    // real root → ConditionalExpression[g(x0)/|c|, x0 ∈ Reals].
+    None if is_negative_infinity(lo) && is_infinity(hi) => {
+      Some(Expr::FunctionCall {
+        name: "ConditionalExpression".to_string(),
+        args: vec![
+          sifted,
+          Expr::FunctionCall {
+            name: "Element".to_string(),
+            args: vec![root, Expr::Identifier("Reals".to_string())].into(),
+          },
+        ]
+        .into(),
+      })
+    }
+    // Symbolic root with finite bounds: position is undetermined — leave it
+    // unevaluated (Wolfram returns a Piecewise/HeavisideTheta form).
+    None => None,
   }
 }
 
@@ -928,10 +965,10 @@ fn try_definite_integral(
 ) -> Option<Expr> {
   // DiracDelta sifting property:
   //   ∫_lo^hi g(x) DiracDelta[c x + d] dx = g(x0)/|c|  when lo < x0 < hi,
-  // and 0 when x0 is strictly outside [lo, hi], where x0 = -d/c is the root
-  // of the (linear) delta argument. Boundary roots (x0 == lo or x0 == hi) and
-  // symbolic roots are left unevaluated (Wolfram returns HeavisideTheta /
-  // ConditionalExpression forms there).
+  // 0 when x0 is strictly outside [lo, hi], g(x0)/|c| * HeavisideTheta[0] when
+  // x0 lands on a boundary, and ConditionalExpression[g(x0)/|c|, x0 ∈ Reals]
+  // for a symbolic root over (-∞, ∞), where x0 = -d/c is the root of the
+  // (linear) delta argument.
   if let Some(result) = try_dirac_delta_integral(integrand, var, lo, hi) {
     return Some(result);
   }
