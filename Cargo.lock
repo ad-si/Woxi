@@ -6748,6 +6748,7 @@ dependencies = [
 name = "woxi-studio"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "dark-light",
  "iced",
  "objc2 0.6.4",

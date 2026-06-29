@@ -8,6 +8,7 @@ repository = "https://github.com/ad-si/Woxi"
 
 [dependencies]
 woxi = { path = ".." }
+base64 = "0.22"
 iced = { version = "0.14", features = ["tokio", "svg", "image", "advanced"] }
 resvg = "0.45"
 tiny-skia = "0.11"

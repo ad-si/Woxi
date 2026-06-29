@@ -113,6 +113,9 @@ struct CellEditor {
   graphics_handle: Option<svg::Handle>,
   /// Pre-rasterized image of the SVG (avoids resvg parse on scroll).
   graphics_image: Option<(iced::widget::image::Handle, u32, u32)>,
+  /// Synthesized audio (base64-encoded WAV) from Play/Sound, if any. When
+  /// present the cell renders a "Play sound" button.
+  sound: Option<String>,
   /// Warning messages from evaluation (e.g. unimplemented functions).
   warnings: Vec<String>,
   /// Undo stack: previous text snapshots.
@@ -185,6 +188,9 @@ enum Message {
   // Evaluation
   EvaluateCell(usize),
   EvaluateAll,
+
+  /// Play the synthesized audio (from Play[…] / Sound[…]) of the given cell.
+  PlaySound(usize),
 
   // Settings
   ThemeChanged(ThemeChoice),
@@ -409,6 +415,7 @@ impl WoxiStudio {
             graphics_svg: None,
             graphics_handle: None,
             graphics_image: None,
+            sound: None,
             warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -474,6 +481,7 @@ impl WoxiStudio {
                 graphics_svg: None,
                 graphics_handle: None,
                 graphics_image: None,
+                sound: None,
                 warnings: Vec::new(),
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
@@ -498,6 +506,7 @@ impl WoxiStudio {
                 graphics_svg: None,
                 graphics_handle: None,
                 graphics_image: None,
+                sound: None,
                 warnings: Vec::new(),
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
@@ -1240,6 +1249,7 @@ impl WoxiStudio {
             self.cell_editors[idx].graphics_svg = None;
             self.cell_editors[idx].graphics_handle = None;
             self.cell_editors[idx].graphics_image = None;
+            self.cell_editors[idx].sound = None;
             self.cell_editors[idx].hyperlinks.clear();
             self.cell_editors[idx].warnings.clear();
             self.cell_editors[idx].output_stale = false;
@@ -1514,6 +1524,7 @@ impl WoxiStudio {
             graphics_svg: None,
             graphics_handle: None,
             graphics_image: None,
+            sound: None,
             warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -1543,6 +1554,7 @@ impl WoxiStudio {
             graphics_svg: None,
             graphics_handle: None,
             graphics_image: None,
+            sound: None,
             warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -1623,6 +1635,18 @@ impl WoxiStudio {
               &self.fontdb,
             );
             self.status = format!("Evaluated cell {} successfully", idx + 1);
+          }
+        }
+        Task::none()
+      }
+
+      Message::PlaySound(idx) => {
+        if let Some(editor) = self.cell_editors.get(idx)
+          && let Some(wav_b64) = editor.sound.clone()
+        {
+          match play_wav_base64(&wav_b64) {
+            Ok(()) => self.status = String::from("Playing sound…"),
+            Err(e) => self.status = format!("Could not play sound: {e}"),
           }
         }
         Task::none()
@@ -2583,6 +2607,11 @@ impl WoxiStudio {
           output_col.push(render_manipulate_widget(idx, state, stale));
       }
 
+      // Play-sound button (Play[…] / Sound[…] results)
+      if editor.sound.is_some() {
+        output_col = output_col.push(render_play_sound_button(idx));
+      }
+
       // Hyperlink buttons (clickable, blue, opens URL on press)
       for (label, uri) in &editor.hyperlinks {
         output_col = output_col.push(render_hyperlink(label, uri, stale));
@@ -2665,6 +2694,11 @@ impl WoxiStudio {
       if let Some(ref state) = editor.manipulate_state {
         content_col =
           content_col.push(render_manipulate_widget(idx, state, stale));
+      }
+
+      // Play-sound button (Play[…] / Sound[…] results)
+      if editor.sound.is_some() {
+        content_col = content_col.push(render_play_sound_button(idx));
       }
 
       // Hyperlink buttons
@@ -3149,6 +3183,16 @@ fn render_hyperlink<'a>(
     .into()
 }
 
+/// Render the "▶ Play sound" button shown for cells whose result is a
+/// playable sound (Play[…] / Sound[…]).
+fn render_play_sound_button<'a>(idx: usize) -> Element<'a, Message> {
+  let label = text("▶ Play sound").size(13).font(Font::MONOSPACE);
+  button(label)
+    .on_press(Message::PlaySound(idx))
+    .padding([2, 8])
+    .into()
+}
+
 /// Style the hyperlink button: borderless, transparent background,
 /// subtle hover/press tint that doesn't overpower the link color.
 fn hyperlink_button_style(status: button::Status, alpha: f32) -> button::Style {
@@ -3230,6 +3274,43 @@ fn rasterize_svg(
 /// Evaluate all statements in a cell and collect their results.
 /// When a cell contains multiple newline-separated expressions,
 /// each expression's output is included (matching Mathematica behavior).
+/// Decode a base64 WAV and play it through the operating system's audio
+/// player. The bytes are written to a temp file and a platform-appropriate
+/// player is spawned (non-blocking). Returns an error string on failure.
+fn play_wav_base64(wav_base64: &str) -> Result<(), String> {
+  use base64::Engine;
+  let bytes = base64::engine::general_purpose::STANDARD
+    .decode(wav_base64)
+    .map_err(|e| e.to_string())?;
+
+  let mut path = std::env::temp_dir();
+  path.push("woxi-studio-sound.wav");
+  std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+
+  #[cfg(target_os = "macos")]
+  let result = std::process::Command::new("afplay").arg(&path).spawn();
+
+  #[cfg(target_os = "windows")]
+  let result = std::process::Command::new("powershell")
+    .args([
+      "-NoProfile",
+      "-Command",
+      &format!(
+        "(New-Object Media.SoundPlayer '{}').PlaySync()",
+        path.display()
+      ),
+    ])
+    .spawn();
+
+  #[cfg(all(unix, not(target_os = "macos")))]
+  let result = std::process::Command::new("paplay")
+    .arg(&path)
+    .spawn()
+    .or_else(|_| std::process::Command::new("aplay").arg(&path).spawn());
+
+  result.map(|_| ()).map_err(|e| e.to_string())
+}
+
 fn evaluate_cell_statements(
   editor: &mut CellEditor,
   code: &str,
@@ -3241,6 +3322,7 @@ fn evaluate_cell_statements(
   let mut outputs: Vec<String> = Vec::new();
   let mut all_stdout = String::new();
   let mut last_graphics: Option<String> = None;
+  let mut last_sound: Option<String> = None;
   let mut all_warnings: Vec<String> = Vec::new();
   let mut had_error = false;
   // Track a Manipulate that appears as the final statement's result, so
@@ -3288,6 +3370,12 @@ fn evaluate_cell_statements(
           }
         }
 
+        if let Some(wav) = result.sound {
+          if result.result != "\0" {
+            last_sound = Some(wav);
+          }
+        }
+
         if result.result != "\0" {
           outputs.push(result.result);
         }
@@ -3310,7 +3398,8 @@ fn evaluate_cell_statements(
       let display = s
         .replace("-Graphics-", "")
         .replace("-Graphics3D-", "")
-        .replace("-Image-", "");
+        .replace("-Image-", "")
+        .replace("-Sound-", "");
       let display = display.trim();
       if display.is_empty() {
         text_editor::Content::new()
@@ -3329,6 +3418,7 @@ fn evaluate_cell_statements(
     Some(s) => text_editor::Content::with_text(s),
     None => text_editor::Content::new(),
   };
+  editor.sound = last_sound;
   editor.graphics_svg = last_graphics;
   editor.graphics_handle = editor
     .graphics_svg

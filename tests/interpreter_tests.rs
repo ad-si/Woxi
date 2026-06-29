@@ -625,6 +625,43 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_play_synthesizes_audio_in_visual_mode() {
+    // In visual mode (playground / woxi-studio), Play[f, {t, …}] synthesizes a
+    // playable WAV exposed via the `sound` channel instead of the -Sound- echo.
+    clear_state();
+    let r = interpret_with_stdout("Play[Sin[440*2*Pi*t], {t, 0, 1}]").unwrap();
+    let wav_b64 = r.sound.expect("Play should produce synthesized audio");
+    // Decoded bytes start with the RIFF/WAVE magic.
+    let bytes = base64::engine::Engine::decode(
+      &base64::engine::general_purpose::STANDARD,
+      &wav_b64,
+    )
+    .expect("sound should be valid base64");
+    assert_eq!(&bytes[0..4], b"RIFF", "WAV should start with RIFF magic");
+    assert_eq!(&bytes[8..12], b"WAVE", "WAV should declare WAVE format");
+    // 1 second at 8000 Hz, 16-bit mono => 44-byte header + 8000*2 data bytes.
+    assert_eq!(bytes.len(), 44 + 8000 * 2);
+  }
+
+  #[test]
+  fn test_sound_list_of_plays_synthesizes_audio_in_visual_mode() {
+    // Sound[{Play[…], Play[…]}] concatenates its segments into one WAV.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Sound[{Play[Sin[1000*t], {t, 0, 0.2}], Play[Sin[500*t], {t, 0, 0.5}]}]",
+    )
+    .unwrap();
+    let wav_b64 = r.sound.expect("Sound should produce synthesized audio");
+    let bytes = base64::engine::Engine::decode(
+      &base64::engine::general_purpose::STANDARD,
+      &wav_b64,
+    )
+    .expect("sound should be valid base64");
+    // 0.2s + 0.5s = 0.7s at 8000 Hz, 16-bit mono.
+    assert_eq!(bytes.len(), 44 + (8000 * 7 / 10) * 2);
+  }
+
+  #[test]
   fn test_comment_then_expression() {
     // Comment followed by expression should evaluate the expression
     clear_state();

@@ -43,6 +43,7 @@ pub mod query_ast;
 pub mod resolve_ast;
 pub mod rsolve_ast;
 pub mod scoping;
+pub mod sound;
 pub mod string_ast;
 pub mod sum_convergence_ast;
 pub mod tabular_ast;
