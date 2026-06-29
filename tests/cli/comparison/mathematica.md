@@ -332,7 +332,6 @@ Woxi does **not** support.
 
 ### Version 2.0 (1991)
 
-- `Play` and sound generation from functions
 - `MathLink` protocol for external C / Fortran programs
 
 ### Version 1.0 (1988)
