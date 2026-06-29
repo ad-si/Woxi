@@ -119,6 +119,8 @@ pub struct InterpretResult {
   pub result: String,
   pub graphics: Option<String>,
   pub output_svg: Option<String>,
+  /// Synthesized audio (base64-encoded WAV) from Play/Sound, if any.
+  pub sound: Option<String>,
   pub warnings: Vec<String>,
 }
 
@@ -252,6 +254,12 @@ thread_local! {
 // Captured SVG rendering of the text output (always generated, with superscripts etc.)
 thread_local! {
     static CAPTURED_OUTPUT_SVG: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+// Captured synthesized audio (base64-encoded WAV) from Play/Sound. The visual
+// hosts turn this into a playable audio control.
+thread_local! {
+    static CAPTURED_SOUND: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 // Most-recent evaluated expression for `%` / `Out[]` shortcuts. Set by
@@ -853,6 +861,25 @@ fn capture_output_svg(svg: &str) {
 /// Gets the captured output SVG
 pub fn get_captured_output_svg() -> Option<String> {
   CAPTURED_OUTPUT_SVG.with(|buffer| buffer.borrow().clone())
+}
+
+/// Clears the captured audio buffer
+fn clear_captured_sound() {
+  CAPTURED_SOUND.with(|buffer| {
+    *buffer.borrow_mut() = None;
+  });
+}
+
+/// Stores synthesized audio as a base64-encoded WAV (from Play/Sound).
+pub fn capture_sound(wav_base64: &str) {
+  CAPTURED_SOUND.with(|buffer| {
+    *buffer.borrow_mut() = Some(wav_base64.to_string());
+  });
+}
+
+/// Gets the captured audio (base64-encoded WAV), if any.
+pub fn get_captured_sound() -> Option<String> {
+  CAPTURED_SOUND.with(|buffer| buffer.borrow().clone())
 }
 
 /// Set a system variable (like $ScriptCommandLine) in the environment
@@ -1610,6 +1637,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         // from VoronoiMesh, or Graphics that stayed symbolic for Show merging).
         // Must run before other render passes that expect Expr::Graphics.
         let result_expr = render_graphics_fc_if_needed(result_expr);
+        // If the result is a Sound built from Play[...] segments, synthesize a
+        // playable WAV and embed it as an <audio> element (visual hosts only —
+        // CLI mode keeps the Sound[...] expression, which renders as -Sound-).
+        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          render_sound_if_needed(result_expr)
+        } else {
+          result_expr
+        };
         // If the result is a Grid expression, render it as SVG (visual mode
         // only — CLI mode keeps Grid[...] symbolic to match wolframscript).
         let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
@@ -1892,6 +1927,21 @@ fn render_color_if_needed(mut expr: syntax::Expr) -> syntax::Expr {
       .map(render_color_if_needed)
       .collect();
     return syntax::Expr::List(new_items.into());
+  }
+  expr
+}
+
+/// If `expr` is a `Sound` containing one or more `Play[f, {t, …}]` segments,
+/// synthesize a WAV, capture it as an `<audio>` element, and return the
+/// `-Sound-` identifier. Sounds with no samplable `Play` segment are left
+/// unchanged (they still render textually as `-Sound-`).
+fn render_sound_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if let syntax::Expr::FunctionCall { ref name, .. } = expr
+    && name == "Sound"
+    && let Some(wav_base64) = functions::sound::sound_to_wav_base64(&expr)
+  {
+    capture_sound(&wav_base64);
+    return syntax::Expr::Identifier("-Sound-".to_string());
   }
   expr
 }
@@ -3378,6 +3428,7 @@ pub fn interpret_with_stdout(
   clear_captured_graphicsbox();
   clear_captured_warnings();
   clear_captured_output_svg();
+  clear_captured_sound();
 
   // Enable visual mode for display wrapper rendering (e.g. TableForm → Grid SVG)
   VISUAL_MODE.with(|v| *v.borrow_mut() = true);
@@ -3398,6 +3449,7 @@ pub fn interpret_with_stdout(
   let stdout = get_captured_stdout();
   let graphics = get_captured_graphics();
   let output_svg = get_captured_output_svg();
+  let sound = get_captured_sound();
   let warnings = get_captured_warnings();
 
   // When `Information[…]` (or the `?sym` / `?Plot*` shortcuts) captured a
@@ -3422,6 +3474,7 @@ pub fn interpret_with_stdout(
     result,
     graphics,
     output_svg,
+    sound,
     warnings,
   })
 }

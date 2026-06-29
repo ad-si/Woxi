@@ -142,6 +142,13 @@ pub fn get_graphicsbox() -> String {
   crate::get_captured_graphicsbox().unwrap_or_default()
 }
 
+/// Return the synthesized audio (base64-encoded WAV) from the last
+/// `evaluate()` call, if any. Returns an empty string when there is no sound.
+#[wasm_bindgen]
+pub fn get_sound() -> String {
+  crate::get_captured_sound().unwrap_or_default()
+}
+
 /// Return warnings from the last `evaluate()` call as newline-separated text.
 /// Returns an empty string when there are no warnings.
 #[wasm_bindgen]
@@ -230,6 +237,16 @@ fn evaluate_statement_items(stmt: &str) -> Vec<String> {
         return items;
       }
 
+      // Synthesized audio (Play[…] / Sound[…]) — emit a dedicated "sound"
+      // item carrying the base64 WAV so the frontend can render an <audio>
+      // player. The textual "-Sound-" echo is suppressed in favor of it.
+      if let Some(ref wav_b64) = result.sound
+        && result.result != "\0"
+      {
+        items.push(json_sound_item(wav_b64));
+        return items;
+      }
+
       // Main result
       if let Some(ref svg) = result.graphics {
         // Only display graphics if output wasn't suppressed by trailing semicolon
@@ -289,6 +306,7 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
       result: String::new(),
       graphics: None,
       output_svg: None,
+      sound: None,
       warnings: vec![],
     },
   };
@@ -376,6 +394,15 @@ fn json_output_item(kind: &str, content: &str, svg: Option<&str>) -> String {
   } else {
     format!(r#"{{"type":"{}","text":"{}"}}"#, kind, escaped_content)
   }
+}
+
+/// Build a "sound" output item carrying a base64-encoded WAV. The frontend
+/// turns the `audio` field into an `<audio controls>` data URI.
+fn json_sound_item(wav_base64: &str) -> String {
+  format!(
+    r#"{{"type":"sound","audio":"{}"}}"#,
+    json_escape(wav_base64)
+  )
 }
 
 /// Escape a string for safe inclusion in JSON.

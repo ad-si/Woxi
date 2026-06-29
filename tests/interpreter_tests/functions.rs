@@ -3100,6 +3100,39 @@ mod sound {
   }
 }
 
+mod play {
+  use super::*;
+
+  // Play[f, {t, tmin, tmax}] builds a sound object. Like Sound, it renders
+  // as -Sound- in the REPL regardless of the amplitude function it wraps.
+  #[test]
+  fn renders_as_minus_sound_minus() {
+    // Play a "middle A" sine wave for 1 second.
+    assert_eq!(
+      interpret("Play[Sin[440*2*Pi*t], {t, 0, 1}]").unwrap(),
+      "-Sound-"
+    );
+  }
+
+  #[test]
+  fn head_is_sound() {
+    // Play evaluates to a Sound object, so its Head is Sound (not Play).
+    assert_eq!(interpret("Head[Play[Sin[t], {t, 0, 1}]]").unwrap(), "Sound");
+  }
+
+  #[test]
+  fn symbolic_amplitude_renders_as_sound() {
+    // The amplitude function may be any expression of the time variable.
+    assert_eq!(interpret("Play[t^2, {t, 0, 2}]").unwrap(), "-Sound-");
+  }
+
+  #[test]
+  fn incomplete_args_stay_symbolic() {
+    // Without a proper {t, tmin, tmax} iterator there is nothing to build.
+    assert_eq!(interpret("Play[Sin[t]]").unwrap(), "Play[Sin[t]]");
+  }
+}
+
 mod sound_volume {
   use super::*;
 

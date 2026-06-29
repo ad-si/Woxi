@@ -581,8 +581,9 @@ function main() {
                             // (e.g. {{5, 0, 536870912, -29}, 63}).
     /\bCloudExport\[/,      // Cloud-dependent: Wolfram uploads to wolframcloud.com and
                             // returns a CloudObject URL; Woxi keeps the call symbolic.
-    /\bSound\[\{Play\[/,    // Wolfram compiles Play[] into a SampledSoundFunction with a
-                            // CompiledFunction body; Woxi keeps Play[] as an inert wrapper.
+    /\bPlay\[/,            // Wolfram compiles Play[] into a Sound[SampledSoundFunction[...]]
+                            // with a CompiledFunction body; Woxi wraps the inert Play[] in a
+                            // Sound object that renders as -Sound-, so the printed forms differ.
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.

@@ -239,6 +239,14 @@ function appendOutputItem(outputsEl, item) {
     div.className = "output-box graphics-box"
     div.innerHTML = item.svg
     outputsEl.appendChild(div)
+  } else if (item.type === "sound") {
+    const div = document.createElement("div")
+    div.className = "output-box sound-box"
+    const audio = document.createElement("audio")
+    audio.controls = true
+    audio.src = "data:audio/wav;base64," + item.audio
+    div.appendChild(audio)
+    outputsEl.appendChild(div)
   } else if (item.type === "text") {
     if (item.svg) {
       const div = document.createElement("div")

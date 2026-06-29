@@ -9772,6 +9772,27 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // Play[f, {t, tmin, tmax}] builds a sound object whose amplitude is given by
+  // the function f of the time variable t (in seconds) over [tmin, tmax].
+  // wolframscript compiles f into a SampledSoundFunction; Woxi cannot sample
+  // audio, so it wraps the inert Play expression in a Sound object. That makes
+  // the result render as -Sound- and report Head -> Sound, matching the REPL.
+  // The wrapped argument keeps the head `Play` (already evaluated, so it stays
+  // inert inside Sound), which avoids re-dispatching into an endless loop.
+  if name == "Play"
+    && args.len() == 2
+    && matches!(&args[1], Expr::List(items) if items.len() == 3)
+  {
+    return Ok(Expr::FunctionCall {
+      name: "Sound".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Play".to_string(),
+        args: args.to_vec().into(),
+      }]
+      .into(),
+    });
+  }
+
   // Check if the function is a known but unimplemented Wolfram Language function.
   // Some symbolic CAS objects (Root, RootSum, …) intentionally stay
   // unevaluated as their canonical form, so flagging them as
