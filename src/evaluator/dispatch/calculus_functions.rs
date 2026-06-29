@@ -3943,28 +3943,12 @@ fn compute_eulerian_numbers(k: usize) -> Vec<i128> {
     let mut val: i128 = 0;
     for i in 0..=j {
       let sign = if i % 2 == 0 { 1i128 } else { -1 };
-      let binom = binomial_coeff(k as i128 + 1, i as i128);
+      let binom = crate::functions::binomial_coeff(k as i128 + 1, i as i128);
       let base = (j + 1 - i) as i128;
       let power = base.pow(k as u32);
       val += sign * binom * power;
     }
     result.push(val);
-  }
-  result
-}
-
-/// Compute binomial coefficient C(n, k)
-fn binomial_coeff(n: i128, k: i128) -> i128 {
-  if k < 0 || k > n {
-    return 0;
-  }
-  if k == 0 || k == n {
-    return 1;
-  }
-  let k = k.min(n - k);
-  let mut result: i128 = 1;
-  for i in 0..k {
-    result = result * (n - i) / (i + 1);
   }
   result
 }

@@ -4574,7 +4574,7 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
     //            = sum_{j=0}^{k} C(k,j) * (-1)^j * (-Cos[f]^(n+2j+1) / ((n+2j+1)*a))
     let mut terms: Vec<Expr> = Vec::new();
     for j in 0..=k {
-      let binom = binomial_coeff(k, j);
+      let binom = crate::functions::binomial_coeff(k as i128, j as i128);
       let sign = if j % 2 == 0 { 1i128 } else { -1 };
       let new_cos_power = cos_power + 2 * j;
       let new_power = new_cos_power + 1;
@@ -4623,7 +4623,7 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
     };
     let mut terms: Vec<Expr> = Vec::new();
     for j in 0..=k {
-      let binom = binomial_coeff(k, j);
+      let binom = crate::functions::binomial_coeff(k as i128, j as i128);
       let sign = if j % 2 == 0 { 1i128 } else { -1 };
       let new_sin_power = sin_power + 2 * j;
       let new_power = new_sin_power + 1;
@@ -4663,23 +4663,6 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
 
   // Both even: use double-angle reduction (not yet implemented)
   None
-}
-
-/// Compute binomial coefficient C(n, k)
-fn binomial_coeff(n: i64, k: i64) -> i128 {
-  if k < 0 || k > n {
-    return 0;
-  }
-  if k == 0 || k == n {
-    return 1;
-  }
-  let k = k.min(n - k) as i128;
-  let n = n as i128;
-  let mut result: i128 = 1;
-  for i in 0..k {
-    result = result * (n - i) / (i + 1);
-  }
-  result
 }
 
 /// Build the antiderivative of Exp[-a*x^2]:
@@ -5205,20 +5188,6 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
-/// Compute binomial coefficient C(n, k). The caller (`try_integrate_trig_power`)
-/// already declines very large `n` so the i128 mul never overflows.
-fn binomial(n: i128, k: i128) -> i128 {
-  if k < 0 || k > n {
-    return 0;
-  }
-  let k = k.min(n - k); // optimization: C(n,k) = C(n,n-k)
-  let mut result: i128 = 1;
-  for i in 0..k {
-    result = result * (n - i) / (i + 1);
-  }
-  result
-}
-
 /// Try to integrate Sin[a*x]^n or Cos[a*x]^n for positive integer n ≥ 3
 /// using Chebyshev expansion (multiple angle formula).
 ///
@@ -5269,7 +5238,7 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
     // For cos: integral of C(n,k)*cos((n-2k)*x) → coeff = C(n,k)/k, trig = Sin[(n-2k)*x]
     for k in 0..=m {
       let freq = n - 2 * k; // always positive since k ≤ m and n=2m+1
-      let binom = binomial(n, k);
+      let binom = crate::functions::binomial_coeff(n, k);
 
       // Build the trig argument: freq * a * x
       let freq_arg = if matches!(&coeff, Expr::Integer(1)) {
@@ -5335,7 +5304,7 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
   } else {
     // Even power: n = 2m
     // Constant term: C(n,m) / 4^m * x
-    let binom_mid = binomial(n, m);
+    let binom_mid = crate::functions::binomial_coeff(n, m);
     let power_4m = 1i128 << (2 * m); // 4^m
     let g = gcd_i64(binom_mid, power_4m);
     let const_num = binom_mid / g;
@@ -5384,7 +5353,7 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
     // Oscillating terms
     for k in 0..m {
       let freq = n - 2 * k;
-      let binom = binomial(n, k);
+      let binom = crate::functions::binomial_coeff(n, k);
       let sign = if is_sin {
         if (m - k) % 2 == 0 { 1i128 } else { -1i128 }
       } else {

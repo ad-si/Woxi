@@ -3,22 +3,6 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr};
 
-/// Binomial coefficient C(top, bot) for small non-negative integer arguments.
-/// BigInt binomial C(top, bot) (0 outside 0 <= bot <= top), used by the Jacobi
-/// polynomial coefficients which overflow i128 around n = 30.
-fn binomial_big(top: i128, bot: i128) -> num_bigint::BigInt {
-  use num_bigint::BigInt;
-  if bot < 0 || bot > top {
-    return BigInt::from(0);
-  }
-  let bot = bot.min(top - bot);
-  let mut result = BigInt::from(1);
-  for i in 0..bot {
-    result = result * (top - i) / (i + 1);
-  }
-  result
-}
-
 /// Visit every additive term of a polynomial expression, flattening nested and
 /// n-ary `Plus`. Anything that is not a `Plus` is a single term.
 fn for_each_plus_term(e: &Expr, f: &mut impl FnMut(&Expr)) {
@@ -233,7 +217,7 @@ fn jacobi_p_integer_ab(
   // (n+a+b+1)_k overflow i128 around n = 30 (JacobiP[30, 1, 1, 10] panicked).
   let mut terms: Vec<Expr> = Vec::new();
   for k in 0..=ni {
-    let binom = binomial_big(ni + a, ni - k);
+    let binom = crate::functions::binomial_coeff_big(ni + a, ni - k);
     // (n+a+b+1)_k = prod_{i=0}^{k-1} (n+a+b+1+i)
     let mut poch = BigInt::from(1);
     for i in 0..k {

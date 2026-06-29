@@ -5433,7 +5433,8 @@ fn expand_sin_multiple(n: usize, x: &Expr) -> Expr {
 
   for k in 0..=(n - 1) / 2 {
     let sign = if k % 2 == 0 { 1i128 } else { -1 };
-    let binom = binomial(n as i128, (2 * k + 1) as i128);
+    let binom =
+      crate::functions::binomial_coeff(n as i128, (2 * k + 1) as i128);
     let coeff = sign * binom;
     let cos_pow = n - 2 * k - 1;
     let sin_pow = 2 * k + 1;
@@ -5460,7 +5461,7 @@ fn expand_cos_multiple(n: usize, x: &Expr) -> Expr {
 
   for k in 0..=n / 2 {
     let sign = if k % 2 == 0 { 1i128 } else { -1 };
-    let binom = binomial(n as i128, (2 * k) as i128);
+    let binom = crate::functions::binomial_coeff(n as i128, (2 * k) as i128);
     let coeff = sign * binom;
     let cos_pow = n - 2 * k;
     let sin_pow = 2 * k;
@@ -5517,7 +5518,8 @@ fn expand_sinh_multiple(n: usize, x: &Expr) -> Expr {
   // Sinh[n*x] = Sum_{k} C(n, 2k+1) * cosh(x)^(n-2k-1) * sinh(x)^(2k+1)
   // (same as sin but without (-1)^k)
   for k in 0..=(n - 1) / 2 {
-    let binom = binomial(n as i128, (2 * k + 1) as i128);
+    let binom =
+      crate::functions::binomial_coeff(n as i128, (2 * k + 1) as i128);
     let cosh_pow = n - 2 * k - 1;
     let sinh_pow = 2 * k + 1;
 
@@ -5543,7 +5545,7 @@ fn expand_cosh_multiple(n: usize, x: &Expr) -> Expr {
   // Cosh[n*x] = Sum_{k} C(n, 2k) * cosh(x)^(n-2k) * sinh(x)^(2k)
   // (same as cos but without (-1)^k)
   for k in 0..=n / 2 {
-    let binom = binomial(n as i128, (2 * k) as i128);
+    let binom = crate::functions::binomial_coeff(n as i128, (2 * k) as i128);
     let cosh_pow = n - 2 * k;
     let sinh_pow = 2 * k;
 
@@ -5633,19 +5635,6 @@ fn build_sum(terms: &[Expr]) -> Expr {
     name: "Plus".to_string(),
     args: terms.to_vec().into(),
   }
-}
-
-/// Compute binomial coefficient C(n, k).
-fn binomial(n: i128, k: i128) -> i128 {
-  if k < 0 || k > n {
-    return 0;
-  }
-  let k = k.min(n - k);
-  let mut result = 1i128;
-  for i in 0..k {
-    result = result * (n - i) / (i + 1);
-  }
-  result
 }
 
 // ─── TrigReduce ─────────────────────────────────────────────────────────
@@ -5911,13 +5900,13 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
     // Even power
     let half_n = nu / 2;
     // Constant term: C(n, n/2)
-    let const_binom = binomial(n, half_n as i128);
+    let const_binom = crate::functions::binomial_coeff(n, half_n as i128);
     num_terms.push((const_binom, None));
 
     // Sum terms
     for k in 0..half_n {
       let m = n - 2 * k as i128;
-      let binom_val = binomial(n, k as i128);
+      let binom_val = crate::functions::binomial_coeff(n, k as i128);
       let coeff = 2 * binom_val;
       let sign = if is_cos {
         1
@@ -5939,7 +5928,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
     let trig_fn = if is_cos { "Cos" } else { "Sin" };
     for k in 0..=half_n {
       let m = n - 2 * k as i128;
-      let binom_val = binomial(n, k as i128);
+      let binom_val = crate::functions::binomial_coeff(n, k as i128);
       let coeff = 2 * binom_val;
       let sign = if is_cos {
         1

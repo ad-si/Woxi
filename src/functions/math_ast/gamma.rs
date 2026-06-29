@@ -1062,7 +1062,7 @@ fn incomplete_beta_ast(
     // (binomial expansion of (1 - t)^(b-1), integrated term by term).
     let mut term: Vec<Expr> = Vec::new();
     for k in 0..b_i {
-      let coeff = binomial_i128((b_i - 1) as u32, k as u32);
+      let coeff = crate::functions::binomial_coeff(b_i - 1, k);
       let sign = if k % 2 == 0 { 1 } else { -1 };
       // (a + k)
       let denom = crate::evaluator::evaluate_function_call_ast(
@@ -1112,20 +1112,6 @@ fn incomplete_beta_ast(
     name: "Beta".to_string(),
     args: vec![z.clone(), a.clone(), b.clone()].into(),
   })
-}
-
-/// C(n, k) via i128, clamped into range.
-fn binomial_i128(n: u32, k: u32) -> i128 {
-  if k > n {
-    return 0;
-  }
-  let k = k.min(n - k);
-  let mut result: i128 = 1;
-  for i in 0..k {
-    result *= n as i128 - i as i128;
-    result /= (i + 1) as i128;
-  }
-  result
 }
 
 /// Stirling's series for log(gamma(z)) when z is large and positive.
@@ -1361,13 +1347,6 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       || matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational"))
   {
     let n = *a + *b - 1;
-    let binom = |n: i128, k: i128| -> i128 {
-      let mut c = 1i128;
-      for i in 0..k {
-        c = c * (n - i) / (i + 1);
-      }
-      c
-    };
     let one_minus_z = Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
@@ -1383,7 +1362,7 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|j| Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
-          Expr::Integer(binom(n, j)),
+          Expr::Integer(crate::functions::binomial_coeff(n, j)),
           Expr::FunctionCall {
             name: "Power".to_string(),
             args: vec![z_expr.clone(), Expr::Integer(j)].into(),

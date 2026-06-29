@@ -7007,19 +7007,6 @@ pub fn try_trig_polynomial_simplify(expr: &Expr) -> Option<Expr> {
   best
 }
 
-/// Compute binomial coefficient C(n, k).
-fn binom(n: i128, k: i128) -> i128 {
-  if k < 0 || k > n {
-    return 0;
-  }
-  let k = k.min(n - k);
-  let mut result = 1i128;
-  for i in 0..k {
-    result = result * (n - i) / (i + 1);
-  }
-  result
-}
-
 fn integer_gcd(mut a: i128, mut b: i128) -> i128 {
   a = a.abs();
   b = b.abs();
@@ -7058,7 +7045,7 @@ fn try_trig_sub_and_reduce(
 
     for j in 0..=sub_half {
       let sign = if j % 2 == 0 { 1i128 } else { -1 };
-      let binom_val = binom(sub_half, j);
+      let binom_val = crate::functions::binomial_coeff(sub_half, j);
       let power = 2 * j + keep_pow;
       let contrib = coeff * sign * binom_val;
       *cos_poly.entry(power).or_insert(0) += contrib;
@@ -7116,13 +7103,13 @@ fn try_trig_sub_and_reduce(
       let scale = common_denom / this_denom;
 
       // Constant contribution: C(n, n/2) * scale
-      let const_binom = binom(n, half_n);
+      let const_binom = crate::functions::binomial_coeff(n, half_n);
       *angle_coeffs.entry(0).or_insert(0) += coeff * const_binom * scale;
 
       // Cos[(n-2k)*arg] contributions
       for k in 0..half_n {
         let angle_mult = n - 2 * k;
-        let binom_val = binom(n, k);
+        let binom_val = crate::functions::binomial_coeff(n, k);
         *angle_coeffs.entry(angle_mult).or_insert(0) +=
           coeff * 2 * binom_val * scale;
       }
