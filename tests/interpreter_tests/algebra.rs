@@ -9198,6 +9198,73 @@ mod resolve {
       "c > 0"
     );
   }
+
+  // Multiple bound variables, additively separable polynomial conditions.
+  #[test]
+  fn exists_multivar() {
+    // The unit disc is non-empty.
+    assert_eq!(
+      interpret("Resolve[Exists[{x, y}, x^2 + y^2 < 1]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Resolve[Exists[{x, y}, x^2 + y^2 < 1], Reals]").unwrap(),
+      "True"
+    );
+    // x^2 + y^2 >= 0, so it can never be < -1.
+    assert_eq!(
+      interpret("Resolve[Exists[{x, y}, x^2 + y^2 < -1]]").unwrap(),
+      "False"
+    );
+    // Over the reals the sum of squares can't equal -1 ...
+    assert_eq!(
+      interpret("Resolve[Exists[{x, y}, x^2 + y^2 == -1], Reals]").unwrap(),
+      "False"
+    );
+    // ... but over the (default) complexes it can.
+    assert_eq!(
+      interpret("Resolve[Exists[{x, y}, x^2 + y^2 == -1]]").unwrap(),
+      "True"
+    );
+    // An odd power makes the range all of R.
+    assert_eq!(
+      interpret("Resolve[Exists[{x, y}, x^2 - y^2 == 5], Reals]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Resolve[Exists[{x, y, z}, x^2 + y^2 + z^2 < 1], Reals]")
+        .unwrap(),
+      "True"
+    );
+    // Single-element variable lists behave like the scalar form.
+    assert_eq!(interpret("Resolve[Exists[{x}, x^2 < 1]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn forall_multivar() {
+    assert_eq!(
+      interpret("Resolve[ForAll[{x, y}, x^2 + y^2 >= 0], Reals]").unwrap(),
+      "True"
+    );
+    // x = y = 0 violates the strict inequality.
+    assert_eq!(
+      interpret("Resolve[ForAll[{x, y}, x^2 + y^2 > 0], Reals]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Resolve[ForAll[{x, y}, x^2 + y^2 + 1 > 0], Reals]").unwrap(),
+      "True"
+    );
+    // x^2 - y^2 ranges over all reals, so it is not always positive.
+    assert_eq!(
+      interpret("Resolve[ForAll[{x, y}, x^2 - y^2 > 0], Reals]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Resolve[ForAll[{x, y}, x^2 + y^2 != -1], Reals]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod trig_factor {
