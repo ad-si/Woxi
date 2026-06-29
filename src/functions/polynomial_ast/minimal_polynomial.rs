@@ -442,7 +442,7 @@ fn minpoly_of_sum(
 
   for k in 0..=deg_a {
     for j in 0..=k {
-      let binom = binomial(k as u64, j as u64) as i128;
+      let binom = crate::functions::binomial_coeff(k as i128, j as i128);
       let sign = if j % 2 == 0 { 1i128 } else { -1i128 };
       let x_power = k - j;
       // Add pa[k] * binom * sign to coefficient of x^(x_power) in p_xy_coeffs[j]
@@ -992,22 +992,6 @@ fn collect_times_factors(expr: &Expr) -> Vec<Expr> {
     Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
     _ => vec![expr.clone()],
   }
-}
-
-/// Binomial coefficient
-fn binomial(n: u64, k: u64) -> u64 {
-  if k > n {
-    return 0;
-  }
-  if k == 0 || k == n {
-    return 1;
-  }
-  let k = k.min(n - k);
-  let mut result = 1u64;
-  for i in 0..k {
-    result = result * (n - i) / (i + 1);
-  }
-  result
 }
 
 /// GCD of absolute values

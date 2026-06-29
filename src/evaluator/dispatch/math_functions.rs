@@ -6647,7 +6647,7 @@ fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
   let mut real_terms: Vec<Expr> = Vec::new();
   let mut imag_terms: Vec<Expr> = Vec::new();
   for k in 0..=n {
-    let coef = (binomial_coeff(n as u128, k as u128)) as i128;
+    let coef = crate::functions::binomial_coeff(n, k);
     // i^k cycles: 0→+real, 1→+imag, 2→-real, 3→-imag.
     let phase = k.rem_euclid(4);
     let sign: i128 = match phase {
@@ -6715,18 +6715,6 @@ fn sum_terms(terms: Vec<Expr>) -> Expr {
     name: "Plus".to_string(),
     args: terms.into(),
   })
-}
-
-fn binomial_coeff(n: u128, k: u128) -> u128 {
-  if k > n {
-    return 0;
-  }
-  let k = k.min(n - k);
-  let mut result: u128 = 1;
-  for i in 0..k {
-    result = result * (n - i) / (i + 1);
-  }
-  result
 }
 
 /// Returns true when the base of a Power can be treated as a positive

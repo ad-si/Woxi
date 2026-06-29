@@ -1346,13 +1346,6 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       acc
     }
-    fn binom_bi(n: i128, k: i128) -> BigInt {
-      let mut acc = BigInt::from(1);
-      for i in 0..k {
-        acc *= n - i;
-      }
-      acc / fact_bi(k)
-    }
     // Compute P_n, Q_n for n = a-1..=b-2 using BigInt recurrence.
     let max_n = (b - 2) as usize;
     let mut p_vec: Vec<BigInt> = Vec::with_capacity(max_n + 1);
@@ -1379,7 +1372,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let n_idx = (a - 1 + k) as usize;
       let scale_pow = (max_pow - 1 - n_idx as i128) as u32;
       let scale = z.pow(scale_pow);
-      let bin = binom_bi(b - a - 1, k);
+      let bin = crate::functions::binomial_coeff_big(b - a - 1, k);
       let sign: i128 = if k.rem_euclid(2) == 0 { 1 } else { -1 };
       let coeff = BigInt::from(sign) * &bin;
       e_num += &coeff * &scale * &p_vec[n_idx];
@@ -1798,18 +1791,9 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let b = &args[1];
     let z = &args[2];
     let mut terms: Vec<Expr> = Vec::with_capacity(n + 1);
-    // Local binomial helper (small n, fits in i128).
-    fn cnk(n: usize, k: usize) -> i128 {
-      let k = k.min(n - k);
-      let mut acc: i128 = 1;
-      for i in 0..k {
-        acc = acc * (n - i) as i128 / (i + 1) as i128;
-      }
-      acc
-    }
     for k in 0..=n {
       let coeff_sign: i128 = if (n + k).is_multiple_of(2) { 1 } else { -1 };
-      let binom = cnk(n, k);
+      let binom = crate::functions::binomial_coeff(n as i128, k as i128);
       // (b+k)_(n-k): product b+k, b+k+1, …, b+n-1.
       let mut rising_factors: Vec<Expr> = Vec::new();
       for j in k..n {

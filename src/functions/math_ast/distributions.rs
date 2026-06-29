@@ -7425,13 +7425,6 @@ fn distribution_raw_moment(
         };
       }
       // Numeric parameters: exact binomial sum over central moments
-      let binom = |n: i128, j: i128| -> i128 {
-        let mut r = 1i128;
-        for i in 0..j {
-          r = r * (n - i) / (i + 1);
-        }
-        r
-      };
       let double_fact = |n: i128| -> i128 {
         let mut r = 1i128;
         let mut i = n;
@@ -7451,7 +7444,7 @@ fn distribution_raw_moment(
       };
       let mut terms: Vec<Expr> = Vec::new();
       for j in (0..=k).step_by(2) {
-        let c = binom(k, j) * double_fact(j - 1);
+        let c = crate::functions::binomial_coeff(k, j) * double_fact(j - 1);
         let mut factors = vec![int(c)];
         factors.extend(pow_term(&m, k - j));
         factors.extend(pow_term(&s, j));
@@ -8175,14 +8168,6 @@ fn uniform_sum_n(dargs: &[Expr]) -> Option<i128> {
   }
 }
 
-fn binom(n: i128, k: i128) -> i128 {
-  let mut c = 1i128;
-  for i in 0..k {
-    c = c * (n - i) / (i + 1);
-  }
-  c
-}
-
 fn fact(n: i128) -> i128 {
   (2..=n).product::<i128>().max(1)
 }
@@ -8233,9 +8218,9 @@ fn inclusion_exclusion_piece(
   let mut terms: Vec<Expr> = Vec::new();
   for k in (1..=j).rev() {
     let coeff = if k % 2 == 0 {
-      binom(n, k)
+      crate::functions::binomial_coeff(n, k)
     } else {
-      -binom(n, k)
+      -crate::functions::binomial_coeff(n, k)
     };
     terms.push(Expr::FunctionCall {
       name: "Times".to_string(),
@@ -8270,10 +8255,10 @@ fn cdf_expanded_coeffs(n: i128, j: i128) -> Vec<(i128, i128)> {
   let mut coeffs = vec![0i128; (n + 1) as usize];
   for k in 0..=j {
     let sign = if k % 2 == 0 { 1 } else { -1 };
-    let c_nk = binom(n, k) * sign;
+    let c_nk = crate::functions::binomial_coeff(n, k) * sign;
     // (x - k)^n = sum_i C(n,i) x^i (-k)^(n-i)
     for i in 0..=n {
-      let mut term = c_nk * binom(n, i);
+      let mut term = c_nk * crate::functions::binomial_coeff(n, i);
       for _ in 0..(n - i) {
         term *= -k;
       }

@@ -2673,7 +2673,7 @@ fn distribution_moment(
       Some(r) => r,
       None => return Ok(None),
     };
-    let binom = Expr::Integer(binomial_i128(n, k));
+    let binom = Expr::Integer(crate::functions::binomial_coeff(n, k));
     // (-mean)^(n-k); guard the n==k case to avoid 0^0 when mean == 0.
     let neg_mean_pow = if n - k == 0 {
       Expr::Integer(1)
@@ -2882,7 +2882,8 @@ fn cumulant_from_raw_moments(
   for nn in 1..=r {
     let mut acc = mu[nn].clone();
     for m in 1..nn {
-      let binom = binomial_i128((nn - 1) as i128, (m - 1) as i128);
+      let binom =
+        crate::functions::binomial_coeff((nn - 1) as i128, (m - 1) as i128);
       let term = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![Expr::Integer(binom), k[m].clone(), mu[nn - m].clone()]
@@ -2898,19 +2899,6 @@ fn cumulant_from_raw_moments(
     k.push(acc);
   }
   Ok(k[r].clone())
-}
-
-/// Binomial coefficient C(n, kk) for small non-negative arguments.
-fn binomial_i128(n: i128, kk: i128) -> i128 {
-  if kk < 0 || kk > n {
-    return 0;
-  }
-  let kk = kk.min(n - kk);
-  let mut result: i128 = 1;
-  for i in 0..kk {
-    result = result * (n - i) / (i + 1);
-  }
-  result
 }
 
 /// Kurtosis[list] - CentralMoment[list, 4] / CentralMoment[list, 2]^2
