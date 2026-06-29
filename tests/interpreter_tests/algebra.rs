@@ -6784,6 +6784,28 @@ mod expand_fraction_power {
       "a^2 + 2*a*b + b^2 + 2*a*c + 2*b*c + c^2"
     );
   }
+
+  #[test]
+  fn expand_rational_coefficient_inputform_subtracts() {
+    // Regression: a Plus term with a negative Rational/Real coefficient
+    // (`Times[Rational[-15, 2], x]`) rendered in InputForm as an addition of a
+    // negative coefficient (`+ (-15*x)/2`) instead of a subtraction. The
+    // BinaryOp::Times branch of the Plus InputForm renderer only pulled the
+    // sign out for negative Integer coefficients; now it handles negative
+    // Rational and Real coefficients too, matching wolframscript.
+    assert_eq!(
+      interpret("ToString[Expand[15 (-1 + x)^2 / 4], InputForm]").unwrap(),
+      "15/4 - (15*x)/2 + (15*x^2)/4"
+    );
+    assert_eq!(
+      interpret("ToString[3/4 + (-1/2) x, InputForm]").unwrap(),
+      "3/4 - x/2"
+    );
+    assert_eq!(
+      interpret("ToString[Expand[1.5 (x - 1)], InputForm]").unwrap(),
+      "-1.5 + 1.5*x"
+    );
+  }
 }
 
 mod root {

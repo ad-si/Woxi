@@ -10190,6 +10190,30 @@ fn ring_operand_needs_parens(e: &Expr) -> bool {
 }
 
 /// Render Expr in InputForm - like expr_to_output but strings are quoted.
+/// If `e` is a negative numeric coefficient (negative Real, or Rational with a
+/// negative numerator), return its positive counterpart; otherwise None.
+/// Used by the Plus InputForm renderer to turn `+ (-c)*x` into `- c*x`.
+fn negate_neg_numeric_coeff(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      if let Expr::Integer(n) = &args[0] {
+        Some(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-n), args[1].clone()].into(),
+        })
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
 pub fn expr_to_input_form(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
   match expr {
@@ -11015,6 +11039,19 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
               result.push_str(" + ");
               result.push_str(&expr_to_input_form(arg));
             }
+          } else if let Some(pos_left) = negate_neg_numeric_coeff(left.as_ref())
+          {
+            // Negative Real / Rational coefficient: pull the sign out so the
+            // term renders as a subtraction (`- (15*x)/2`) instead of an
+            // addition of a negative coefficient (`+ (-15*x)/2`), matching
+            // wolframscript's InputForm.
+            result.push_str(" - ");
+            let pos = Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(pos_left),
+              right: right.clone(),
+            };
+            result.push_str(&expr_to_input_form(&pos));
           } else {
             result.push_str(" + ");
             result.push_str(&expr_to_input_form(arg));
