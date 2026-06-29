@@ -4,9 +4,31 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, NUM_SAMPLES, PlotOptions,
   adjust_y_range_for_filling, evaluate_at_point, generate_svg_with_filling,
-  parse_filling, parse_image_size,
+  parse_filling, parse_image_size, substitute_var,
 };
 use crate::syntax::Expr;
+
+/// A single parametric curve, sampled either component-wise (`{fx, fy}` where
+/// both components are explicit expressions) or as a whole expression that
+/// only yields a coordinate pair once the parameter is numeric (e.g.
+/// `BSplineFunction[…][t]` or any `f[t]` returning `{x, y}`).
+enum CurveSrc<'a> {
+  Pair(&'a Expr, &'a Expr),
+  Whole(&'a Expr),
+}
+
+/// Sample a whole-expression curve at parameter `t`, expecting the evaluated
+/// body to be a two-element coordinate list.
+fn sample_whole_pair(body: &Expr, var: &str, t: f64) -> Option<(f64, f64)> {
+  let substituted = substitute_var(body, var, &Expr::Real(t));
+  let result = evaluate_expr_to_expr(&substituted).ok()?;
+  if let Expr::List(items) = &result
+    && items.len() == 2
+  {
+    return Some((try_eval_to_f64(&items[0])?, try_eval_to_f64(&items[1])?));
+  }
+  None
+}
 
 /// ParametricPlot[{fx[t], fy[t]}, {t, tmin, tmax}]
 pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -56,7 +78,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // arbitrarily many curves work (regression for mathics doc-044
   // `ParametricPlot[{{Sin[u], Cos[u]}, {0.6 Sin[u], 0.6 Cos[u]},
   // {0.2 Sin[u], 0.2 Cos[u]}}, {u, 0, 2 Pi}, …]`).
-  let curves: Vec<(&Expr, &Expr)> = match body {
+  let curves: Vec<CurveSrc> = match body {
     Expr::List(items) if !items.is_empty() => {
       // If every item is a 2-element list, treat as multi-curve.
       let all_pairs = items
@@ -70,7 +92,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if let Expr::List(pair) = item
               && pair.len() == 2
             {
-              return Some((&pair[0], &pair[1]));
+              return Some(CurveSrc::Pair(&pair[0], &pair[1]));
             }
             None
           })
@@ -86,14 +108,14 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if let Expr::List(pair) = item
                 && pair.len() == 2
               {
-                return Some((&pair[0], &pair[1]));
+                return Some(CurveSrc::Pair(&pair[0], &pair[1]));
               }
               None
             })
             .collect()
         } else {
           // Single curve: {fx, fy}
-          vec![(&items[0], &items[1])]
+          vec![CurveSrc::Pair(&items[0], &items[1])]
         }
       } else {
         return Err(InterpreterError::EvaluationError(
@@ -101,28 +123,30 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
     }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ParametricPlot: first argument must be {fx, fy}".into(),
-      ));
-    }
+    // A non-list body (e.g. `f[t]` or `BSplineFunction[…][t]`) is a curve
+    // whose coordinate pair only materialises once `t` is numeric; sample
+    // the whole expression instead of decomposing it into components.
+    _ => vec![CurveSrc::Whole(body)],
   };
 
   let step = (t_max - t_min) / (NUM_SAMPLES - 1) as f64;
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(curves.len());
 
-  for (fx, fy) in &curves {
+  for curve in &curves {
     let mut points = Vec::with_capacity(NUM_SAMPLES);
     for i in 0..NUM_SAMPLES {
       let t = t_min + i as f64 * step;
-      if let (Some(x), Some(y)) = (
-        evaluate_at_point(fx, &var_name, t),
-        evaluate_at_point(fy, &var_name, t),
-      ) {
-        points.push((x, y));
-      } else {
-        points.push((f64::NAN, f64::NAN));
-      }
+      let pt = match curve {
+        CurveSrc::Pair(fx, fy) => match (
+          evaluate_at_point(fx, &var_name, t),
+          evaluate_at_point(fy, &var_name, t),
+        ) {
+          (Some(x), Some(y)) => Some((x, y)),
+          _ => None,
+        },
+        CurveSrc::Whole(b) => sample_whole_pair(b, &var_name, t),
+      };
+      points.push(pt.unwrap_or((f64::NAN, f64::NAN)));
     }
     all_points.push(points);
   }
