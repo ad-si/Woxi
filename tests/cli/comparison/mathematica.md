@@ -307,7 +307,6 @@ Woxi does **not** support.
 
 ### Version 7.0 (2008)
 
-- Spline functions: `BSplineFunction`, `BezierFunction`
 - Built-in curated data (genomic, weather, astronomical, chemical)
 - Delay differential equations in `NDSolve`
 - Automatic charting superfunctions and computational typesetting
