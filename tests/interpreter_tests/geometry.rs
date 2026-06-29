@@ -1163,6 +1163,111 @@ mod bezier_function {
   }
 }
 
+mod bspline_function {
+  use super::*;
+
+  #[test]
+  fn curve_interior_quarter() {
+    assert_eq!(
+      interpret("BSplineFunction[{{1,1},{2,3},{3,-1},{4,1},{5,0}}][0.25]")
+        .unwrap(),
+      "{2.1875, 1.6875}"
+    );
+  }
+
+  #[test]
+  fn curve_interior_three_quarter() {
+    assert_eq!(
+      interpret("BSplineFunction[{{1,1},{2,3},{3,-1},{4,1},{5,0}}][0.75]")
+        .unwrap(),
+      "{3.8125, 0.4375}"
+    );
+  }
+
+  #[test]
+  fn curve_midpoint_rational_parameter() {
+    assert_eq!(
+      interpret("BSplineFunction[{{1,1},{2,3},{3,-1},{4,1},{5,0}}][1/2]")
+        .unwrap(),
+      "{3., 0.5}"
+    );
+  }
+
+  #[test]
+  fn curve_endpoints_are_clamped() {
+    // Clamped knot vector ⇒ the curve interpolates its first/last control point.
+    assert_eq!(
+      interpret("BSplineFunction[{{1,1},{2,3},{3,-1},{4,1},{5,0}}][0]")
+        .unwrap(),
+      "{1., 1.}"
+    );
+    assert_eq!(
+      interpret("BSplineFunction[{{1,1},{2,3},{3,-1},{4,1},{5,0}}][1]")
+        .unwrap(),
+      "{5., 0.}"
+    );
+  }
+
+  #[test]
+  fn quadratic_three_points() {
+    // n = 3 control points ⇒ degree 2 (a quadratic Bézier on a clamped knot
+    // vector with no interior knots).
+    assert_eq!(
+      interpret("BSplineFunction[{{0,0},{1,1},{2,0}}][0.25]").unwrap(),
+      "{0.5, 0.375}"
+    );
+  }
+
+  #[test]
+  fn one_dimensional_points() {
+    assert_eq!(
+      interpret("BSplineFunction[{{0},{1},{4},{9}}][0.5]").unwrap(),
+      "{3.}"
+    );
+  }
+
+  #[test]
+  fn saved_binding() {
+    assert_eq!(
+      interpret(
+        "f = BSplineFunction[{{1,1},{2,3},{3,-1},{4,1},{5,0}}]; f[0.25]"
+      )
+      .unwrap(),
+      "{2.1875, 1.6875}"
+    );
+  }
+
+  #[test]
+  fn surface_tensor_product() {
+    // A bilinear B-spline surface (2×2 control net, degree {1, 1}).
+    assert_eq!(
+      interpret(
+        "BSplineFunction[{{{0,0,0},{1,0,1}},{{0,1,1},{1,1,0}}}][0.25,0.75]"
+      )
+      .unwrap(),
+      "{0.75, 0.25, 0.625}"
+    );
+  }
+
+  #[test]
+  fn unevaluated_curve_structured_form() {
+    // wolframscript expands `BSplineFunction[points]` into its structured
+    // 9-arg form.
+    assert_eq!(
+      interpret("BSplineFunction[{{1,1},{2,3},{3,-1},{4,1},{5,0}}]").unwrap(),
+      "BSplineFunction[1, {{0., 1.}}, {3}, {False}, \
+{{{1., 1.}, {2., 3.}, {3., -1.}, {4., 1.}, {5., 0.}}, Automatic}, \
+{{0., 0., 0., 0., 0.5, 1., 1., 1., 1.}}, {0}, MachinePrecision, Unevaluated]"
+    );
+  }
+
+  #[test]
+  fn unevaluated_symbolic_argument() {
+    let result = interpret("BSplineFunction[{{0,0},{1,1},{2,0}}][t]").unwrap();
+    assert!(result.contains("BSplineFunction"));
+  }
+}
+
 mod region_bounds {
   use super::*;
 

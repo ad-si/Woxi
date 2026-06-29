@@ -1048,6 +1048,14 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "BSplineFunction" && func_args.len() == 9 => {
+      // BSplineFunction[dim, ranges, degrees, closed, {net, Automatic},
+      // knots, ...][params] — evaluate the spline at the given parameters.
+      evaluate_bspline_function(func_args, args)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "TransformationFunction" && func_args.len() == 1 => {
       // TransformationFunction[matrix][{x, y, ...}] — apply affine transformation
       apply_transformation_function(&func_args[0], args)
@@ -1671,6 +1679,178 @@ fn evaluate_bezier_function(
   }
 
   Ok(Expr::List(work[0].iter().map(|&v| Expr::Real(v)).collect()))
+}
+
+/// Knot span index `k` with `knots[k] <= u < knots[k+1]` (clamped at the
+/// right end), for `n+1` control points of degree `p`. Standard binary
+/// search from The NURBS Book.
+fn bspline_find_span(n: usize, p: usize, u: f64, knots: &[f64]) -> usize {
+  if u >= knots[n + 1] {
+    return n;
+  }
+  if u <= knots[p] {
+    return p;
+  }
+  let (mut low, mut high) = (p, n + 1);
+  let mut mid = (low + high) / 2;
+  while u < knots[mid] || u >= knots[mid + 1] {
+    if u < knots[mid] {
+      high = mid;
+    } else {
+      low = mid;
+    }
+    mid = (low + high) / 2;
+  }
+  mid
+}
+
+/// Evaluate a B-spline of degree `p` with the given `knots` and `ctrl` points
+/// at parameter `u`, using de Boor's algorithm.
+fn de_boor(p: usize, knots: &[f64], ctrl: &[Vec<f64>], u: f64) -> Vec<f64> {
+  let n = ctrl.len() - 1;
+  let dim = ctrl[0].len();
+  let span = bspline_find_span(n, p, u, knots);
+  let mut d: Vec<Vec<f64>> =
+    (0..=p).map(|j| ctrl[span - p + j].clone()).collect();
+  for r in 1..=p {
+    for j in (r..=p).rev() {
+      let i = j + span - p;
+      let denom = knots[i + 1 + p - r] - knots[i];
+      let alpha = if denom.abs() < 1e-12 {
+        0.0
+      } else {
+        (u - knots[i]) / denom
+      };
+      for c in 0..dim {
+        d[j][c] = (1.0 - alpha) * d[j - 1][c] + alpha * d[j][c];
+      }
+    }
+  }
+  d[p].clone()
+}
+
+/// Extract a numeric coordinate vector from a list expression.
+fn bspline_point_coords(e: &Expr) -> Option<Vec<f64>> {
+  match e {
+    Expr::List(coords) => coords
+      .iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect(),
+    _ => None,
+  }
+}
+
+/// Evaluate the structured `BSplineFunction[...]` object at the supplied
+/// parameters (one per spline dimension). Curves take a single parameter and
+/// surfaces take two; the control points are evaluated via (tensor-product)
+/// de Boor. Non-numeric parameters leave the application unevaluated.
+fn evaluate_bspline_function(
+  func_args: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // When the spline can't be sampled (symbolic parameters, malformed form),
+  // echo the object applied to its parameters: `BSplineFunction[...][params]`.
+  let unevaluated = || Expr::CurriedCall {
+    func: Box::new(Expr::FunctionCall {
+      name: "BSplineFunction".to_string(),
+      args: func_args.to_vec().into(),
+    }),
+    args: args.to_vec(),
+  };
+
+  let dim = match &func_args[0] {
+    Expr::Integer(d) => *d as usize,
+    _ => return Ok(unevaluated()),
+  };
+  if args.len() != dim {
+    return Ok(unevaluated());
+  }
+
+  // Parameters must be numeric to sample the spline.
+  let params: Option<Vec<f64>> = args
+    .iter()
+    .map(crate::functions::math_ast::try_eval_to_f64)
+    .collect();
+  let params = match params {
+    Some(p) => p,
+    None => return Ok(unevaluated()),
+  };
+
+  // Degrees, control net and knot vectors from the structured form.
+  let degrees: Vec<usize> = match &func_args[2] {
+    Expr::List(ds) => ds
+      .iter()
+      .filter_map(|d| match d {
+        Expr::Integer(n) => Some(*n as usize),
+        _ => None,
+      })
+      .collect(),
+    _ => return Ok(unevaluated()),
+  };
+  let net = match &func_args[4] {
+    Expr::List(slot) if !slot.is_empty() => &slot[0],
+    _ => return Ok(unevaluated()),
+  };
+  let knot_sets: Vec<Vec<f64>> = match &func_args[5] {
+    Expr::List(ks) => ks
+      .iter()
+      .map(|k| match k {
+        Expr::List(vs) => vs
+          .iter()
+          .map(crate::functions::math_ast::try_eval_to_f64)
+          .collect::<Option<Vec<f64>>>(),
+        _ => None,
+      })
+      .collect::<Option<Vec<_>>>()
+      .unwrap_or_default(),
+    _ => return Ok(unevaluated()),
+  };
+
+  if degrees.len() != dim || knot_sets.len() != dim {
+    return Ok(unevaluated());
+  }
+
+  let result = match dim {
+    1 => {
+      let ctrl: Option<Vec<Vec<f64>>> = match net {
+        Expr::List(pts) => pts.iter().map(bspline_point_coords).collect(),
+        _ => None,
+      };
+      let ctrl = match ctrl {
+        Some(c) if !c.is_empty() => c,
+        _ => return Ok(unevaluated()),
+      };
+      de_boor(degrees[0], &knot_sets[0], &ctrl, params[0])
+    }
+    2 => {
+      // Tensor-product surface: collapse the v-direction per row, then the
+      // u-direction across the resulting points.
+      let rows: Option<Vec<Vec<Vec<f64>>>> = match net {
+        Expr::List(rows) => rows
+          .iter()
+          .map(|row| match row {
+            Expr::List(pts) => {
+              pts.iter().map(bspline_point_coords).collect::<Option<_>>()
+            }
+            _ => None,
+          })
+          .collect(),
+        _ => None,
+      };
+      let rows = match rows {
+        Some(r) if !r.is_empty() && r.iter().all(|row| !row.is_empty()) => r,
+        _ => return Ok(unevaluated()),
+      };
+      let collapsed: Vec<Vec<f64>> = rows
+        .iter()
+        .map(|row| de_boor(degrees[1], &knot_sets[1], row, params[1]))
+        .collect();
+      de_boor(degrees[0], &knot_sets[0], &collapsed, params[0])
+    }
+    _ => return Ok(unevaluated()),
+  };
+
+  Ok(Expr::List(result.into_iter().map(Expr::Real).collect()))
 }
 
 /// Apply TransformationFunction[matrix] to a point vector.

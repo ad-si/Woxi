@@ -645,6 +645,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Raster"
     | "InterpolatingFunction"
     | "BezierFunction"
+    | "BSplineFunction"
     | "Information"
     | "Reals"
     | "Thick"

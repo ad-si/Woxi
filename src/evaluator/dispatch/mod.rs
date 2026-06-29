@@ -1933,6 +1933,21 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // BSplineFunction[{p1, p2, ...}] (curve) or BSplineFunction[array]
+  // (surface / higher-dimensional manifold) → wolframscript's structured form
+  // BSplineFunction[dim, ranges, degrees, closed, {points, Automatic}, knots,
+  // {0,...}, MachinePrecision, Unevaluated].
+  // Already-structured (9-arg) calls and `BSplineFunction[pts][t]` (handled at
+  // function-application time) fall through unchanged.
+  if name == "BSplineFunction"
+    && args.len() == 1
+    && let Expr::List(top) = &args[0]
+    && !top.is_empty()
+    && let Some(structured) = build_bspline_function(top)
+  {
+    return Ok(structured);
+  }
+
   // RGBColor["#rrggbb"] parses a CSS-style hex string into channel values.
   // Accepts `#` followed by exactly 3 (shorthand), 6 (RGB), or 8 (RGBA) hex
   // digits, case-insensitively; anything else is left symbolic.
@@ -11947,5 +11962,147 @@ fn builtin_message_text(sym: &Expr, tag: &Expr) -> Option<&'static str> {
       Some("`1` called with 1 argument; `2` arguments are expected.")
     }
     _ => None,
+  }
+}
+
+// ─── BSplineFunction construction ──────────────────────────────────────
+// Helpers that expand `BSplineFunction[points]` (a curve) or
+// `BSplineFunction[array]` (a surface) into wolframscript's structured 9-arg
+// representation. Evaluation of the resulting object lives in
+// `function_application.rs`.
+
+/// Is `e` a single control point, i.e. a list whose entries are all numbers?
+fn bspline_is_point(e: &Expr) -> bool {
+  matches!(e, Expr::List(coords)
+    if !coords.is_empty()
+      && coords
+        .iter()
+        .all(|c| crate::functions::math_ast::try_eval_to_f64(c).is_some()))
+}
+
+/// Convert a control point to a list of `Real` coordinates (for display).
+fn bspline_point_to_real(e: &Expr) -> Expr {
+  match e {
+    Expr::List(coords) => Expr::List(
+      coords
+        .iter()
+        .map(|c| {
+          crate::functions::math_ast::try_eval_to_f64(c)
+            .map(Expr::Real)
+            .unwrap_or_else(|| c.clone())
+        })
+        .collect(),
+    ),
+    _ => e.clone(),
+  }
+}
+
+/// Clamped, uniform knot vector for `n` control points of degree `p`:
+/// `p + 1` leading zeros, evenly-spaced interior knots, `p + 1` trailing ones.
+pub fn bspline_clamped_knots(n: usize, p: usize) -> Vec<f64> {
+  let mut knots = vec![0.0; p + 1];
+  let segments = n - p; // interior knots = segments - 1
+  for i in 1..segments {
+    knots.push(i as f64 / segments as f64);
+  }
+  knots.extend(std::iter::repeat_n(1.0, p + 1));
+  knots
+}
+
+fn bspline_real_list(values: &[f64]) -> Expr {
+  Expr::List(values.iter().map(|&v| Expr::Real(v)).collect())
+}
+
+/// Build the structured form for `BSplineFunction[top]`, detecting whether
+/// `top` is a list of control points (curve) or a grid of points (surface).
+/// Returns `None` if `top` is neither, so the caller leaves the call symbolic.
+fn build_bspline_function(top: &[Expr]) -> Option<Expr> {
+  // Curve: every element is a control point.
+  if top.iter().all(bspline_is_point) {
+    let n = top.len();
+    let p = std::cmp::min(3, n - 1);
+    let knots = bspline_clamped_knots(n, p);
+    let points: Expr =
+      Expr::List(top.iter().map(bspline_point_to_real).collect());
+    return Some(bspline_structured(1, &[p], &[points], &[knots]));
+  }
+
+  // Surface: every element is a row of control points, all rows equal length.
+  if top.iter().all(|row| {
+    matches!(row, Expr::List(pts)
+    if !pts.is_empty() && pts.iter().all(bspline_is_point))
+  }) {
+    let rows: Vec<&[Expr]> = top
+      .iter()
+      .filter_map(|row| match row {
+        Expr::List(pts) => Some(pts.as_slice()),
+        _ => None,
+      })
+      .collect();
+    let n_u = rows.len();
+    let n_v = rows[0].len();
+    if rows.iter().any(|r| r.len() != n_v) {
+      return None;
+    }
+    let p_u = std::cmp::min(3, n_u - 1);
+    let p_v = std::cmp::min(3, n_v - 1);
+    let grid: Expr = Expr::List(
+      rows
+        .iter()
+        .map(|r| Expr::List(r.iter().map(bspline_point_to_real).collect()))
+        .collect(),
+    );
+    return Some(bspline_structured(
+      2,
+      &[p_u, p_v],
+      &[grid],
+      &[
+        bspline_clamped_knots(n_u, p_u),
+        bspline_clamped_knots(n_v, p_v),
+      ],
+    ));
+  }
+
+  None
+}
+
+/// Assemble the 9-argument structured `BSplineFunction[...]` expression.
+fn bspline_structured(
+  dim: usize,
+  degrees: &[usize],
+  net: &[Expr],
+  knots: &[Vec<f64>],
+) -> Expr {
+  let ranges: Expr = Expr::List(
+    (0..dim)
+      .map(|_| Expr::List(vec![Expr::Real(0.0), Expr::Real(1.0)].into()))
+      .collect(),
+  );
+  let degree_list: Expr =
+    Expr::List(degrees.iter().map(|&d| Expr::Integer(d as i128)).collect());
+  let closed: Expr = Expr::List(
+    (0..dim)
+      .map(|_| Expr::Identifier("False".to_string()))
+      .collect(),
+  );
+  let mut net_slot: Vec<Expr> = net.to_vec();
+  net_slot.push(Expr::Identifier("Automatic".to_string()));
+  let knot_lists: Expr =
+    Expr::List(knots.iter().map(|k| bspline_real_list(k)).collect());
+  let zeros: Expr = Expr::List((0..dim).map(|_| Expr::Integer(0)).collect());
+  Expr::FunctionCall {
+    name: "BSplineFunction".to_string(),
+    args: vec![
+      Expr::Integer(dim as i128),
+      ranges,
+      degree_list,
+      closed,
+      Expr::List(net_slot.into()),
+      knot_lists,
+      zeros,
+      Expr::Identifier("MachinePrecision".to_string()),
+      Expr::String("Unevaluated".to_string()),
+    ]
+    .into(),
   }
 }
