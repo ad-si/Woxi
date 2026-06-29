@@ -8476,7 +8476,7 @@ pub fn nminimize_ast(
     }
   }
 
-  // Build result: {opt_val, {var -> val, ...}}
+  // Build the numeric result: {opt_val, {var -> val, ...}}
   let rules: Vec<Expr> = vars
     .iter()
     .zip(x.iter())
@@ -8485,10 +8485,36 @@ pub fn nminimize_ast(
       replacement: Box::new(Expr::Real(*val)),
     })
     .collect();
+  let numeric =
+    Expr::List(vec![Expr::Real(opt_val), Expr::List(rules.into())].into());
 
-  Ok(Expr::List(
-    vec![Expr::Real(opt_val), Expr::List(rules.into())].into(),
-  ))
+  // The local optimizer converges only to within tolerance, so an exact
+  // optimum like `(x-1)^2` at x->1 comes back as float noise
+  // (`2.1*^-25` at `x->0.9999999999995`). wolframscript reports the clean
+  // `{0., {x -> 1.}}`. Consult the symbolic Minimize/Maximize solver, which
+  // closes such cases exactly, and numericize its answer. `pick_best_optimum`
+  // keeps the symbolic candidate when it's at least as good (it's listed
+  // first and a later candidate must improve by a real margin to displace it),
+  // so the exact result wins over the numeric noise while genuinely better
+  // numeric optima are still preferred.
+  let sym_name = if maximize { "Maximize" } else { "Minimize" };
+  let symbolic = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: sym_name.to_string(),
+    args: args.to_vec().into(),
+  })
+  .ok()
+  .filter(|sym| matches!(sym, Expr::List(items) if items.len() == 2))
+  .and_then(|sym| {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![sym].into(),
+    })
+    .ok()
+  });
+
+  let candidates: Vec<Expr> =
+    [symbolic, Some(numeric)].into_iter().flatten().collect();
+  pick_best_optimum(candidates, &objective, &constraints, &vars, maximize)
 }
 
 /// A compiled numeric expression tree over the optimization variables.

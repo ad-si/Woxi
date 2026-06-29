@@ -5513,6 +5513,34 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_exact_optimum_no_float_noise() {
+      // An objective with an exact optimum (here (x-1)^2 minimized to 0 at
+      // x->1) must report the clean value, not the local optimizer's
+      // tolerance-level float noise. wolframscript: {0., {x -> 1.}}.
+      // Regression for `{2.1*^-25, {x -> 0.9999999999995413}}`.
+      assert_eq!(
+        interpret("NMinimize[(x - 1)^2, x]").unwrap(),
+        "{0., {x -> 1.}}"
+      );
+      // Same for NMaximize. wolframscript: {0., {x -> 1.}}.
+      assert_eq!(
+        interpret("NMaximize[-(x - 1)^2, x]").unwrap(),
+        "{0., {x -> 1.}}"
+      );
+      // Multivariate exact optimum. wolframscript: {0., {x -> 0., y -> 0.}}.
+      assert_eq!(
+        interpret("NMinimize[x^2 + y^2, {x, y}]").unwrap(),
+        "{0., {x -> 0., y -> 0.}}"
+      );
+      // A nonzero exact optimum at a shifted location.
+      // wolframscript: {2., {x -> 3.}}.
+      assert_eq!(
+        interpret("NMinimize[(x - 3)^2 + 2, x]").unwrap(),
+        "{2., {x -> 3.}}"
+      );
+    }
+
+    #[test]
     fn test_equality_sphere_three_vars() {
       // Minimize x+y+z on the unit sphere x^2+y^2+z^2==1. The coupling
       // equality constraint forces the penalty optimizer; the minimum is
