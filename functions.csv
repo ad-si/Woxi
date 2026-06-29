@@ -830,7 +830,7 @@ ResourceData,,🚫,,11.0,836
 Subdivide,Divides a range into equal parts,✅,pure,10.1,837
 FindSequenceFunction,Finds a formula for an integer sequence using polynomials exponentials and factorials,✅,pure,7.0,839
 ListDensityPlot,Creates a density plot from a list of values or {x y z} triples,✅,pure,1.0,839
-Play,Requires external services or GUI infrastructure,🚫,io,2.0,840
+Play,Creates a sound object whose amplitude is given by a function of time,✅,None,2.0,840
 DiscretizeRegion,Requires external services or GUI infrastructure,🚫,io,10.0,841
 ImageMargins,Option for margins around an image,✅,none,3.0,842
 ContourLabels,Option for labeling contour lines,✅,none,6.0,843
