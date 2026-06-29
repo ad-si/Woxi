@@ -2702,10 +2702,68 @@ fn generate_output_svg(expr: &syntax::Expr) {
   } else {
     evaluator::dispatch::complex_and_special::expr_to_box_form(expr)
   };
+  // The box form of a machine/arbitrary-precision Real carries a trailing
+  // backtick precision marker (e.g. `2.``), matching wolframscript's textual
+  // `MakeBoxes` output. In a typeset display — which the Playground/Studio
+  // SVG emulates — that marker is suppressed, so strip it before layout.
+  let boxes = strip_number_precision_markers(&boxes);
   let layout = functions::graphics::layout_box(&boxes, 14.0);
   let text_fill = functions::graphics::theme().text_primary;
   let svg = functions::graphics::layout_to_svg(&layout, text_fill);
   capture_output_svg(&svg);
+}
+
+/// Strip the trailing precision-marker backtick from numeric box-String
+/// leaves so the typeset SVG display shows `2.` instead of `` 2.` ``.
+/// Recurses through the box tree (RowBox/SuperscriptBox/… → List args).
+fn strip_number_precision_markers(expr: &syntax::Expr) -> syntax::Expr {
+  use syntax::Expr;
+  match expr {
+    Expr::String(s) => Expr::String(
+      strip_number_precision_marker(s).unwrap_or_else(|| s.clone()),
+    ),
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(strip_number_precision_markers)
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(strip_number_precision_markers)
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    other => other.clone(),
+  }
+}
+
+/// Remove a Wolfram number precision marker (`` ` `` plus any following
+/// precision digits) from a numeric string leaf. Returns `None` when the
+/// string is not a number with such a marker, so symbol context names like
+/// `` Global` `` (which start with a letter) are left untouched.
+fn strip_number_precision_marker(s: &str) -> Option<String> {
+  // Numeric leaves start with a digit (negatives are wrapped in a RowBox
+  // with a separate "-" token, so the magnitude leaf is unsigned).
+  if !s.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+    return None;
+  }
+  let tick = s.find('`')?;
+  // The backtick must immediately follow a digit or decimal point.
+  let prev = s[..tick].chars().next_back()?;
+  if !(prev.is_ascii_digit() || prev == '.') {
+    return None;
+  }
+  let rest = &s[tick + 1..];
+  // Skip the precision specification (digits and dots) after the backtick;
+  // anything else (e.g. a `*^exp` scientific suffix) is kept.
+  let suffix_start = rest
+    .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+    .unwrap_or(rest.len());
+  Some(format!("{}{}", &s[..tick], &rest[suffix_start..]))
 }
 
 /// Expand Wolfram character escape sequences to UTF-8 characters:

@@ -625,6 +625,25 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_real_output_svg_has_no_precision_backtick() {
+    // Regression: the playground/Studio SVG for results containing machine
+    // Reals (e.g. `NMinimize[(x-1)^2, x]` → `{0., {x -> 1.}}`) must not show
+    // the box-form precision marker backtick (`0.``/`1.``). The typeset
+    // display suppresses it.
+    clear_state();
+    let r = interpret_with_stdout("NMinimize[(x - 1)^2, x]").unwrap();
+    let svg = r
+      .output_svg
+      .expect("expected output SVG for real-valued result");
+    assert!(
+      !svg.contains('`'),
+      "Real result SVG must not contain a precision-marker backtick:\n{svg}"
+    );
+    // The numeric values themselves are still present.
+    assert!(svg.contains("0.") && svg.contains("1."), "SVG: {svg}");
+  }
+
+  #[test]
   fn test_play_synthesizes_audio_in_visual_mode() {
     // In visual mode (playground / woxi-studio), Play[f, {t, …}] synthesizes a
     // playable WAV exposed via the `sound` channel instead of the -Sound- echo.
