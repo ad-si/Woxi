@@ -1329,6 +1329,50 @@ mod box_representation_tests {
   }
 
   #[test]
+  fn rule_arrow_renders_as_unicode_not_private_use() {
+    // Regression: `x -> 0.5` rendered in the playground/Studio SVG used the
+    // Wolfram FrontEnd private-use codepoint U+F522, which has no glyph in
+    // normal fonts and showed as a missing-glyph box. It must render as the
+    // public Unicode arrow `→` (U+2192) instead.
+    let inner = Expr::Rule {
+      pattern: Box::new(Expr::Identifier("x".to_string())),
+      replacement: Box::new(Expr::Real(0.5)),
+    };
+    let boxes = expr_to_box_form(&inner);
+    let layout = layout_box(&boxes, 14.0);
+    let svg = layout_to_svg(&layout, "currentColor");
+    assert!(
+      svg.contains('\u{2192}'),
+      "Rule should render with Unicode → (U+2192): got '{svg}'"
+    );
+    assert!(
+      !svg.contains('\u{f522}'),
+      "Rule SVG must not contain private-use U+F522: got '{svg}'"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_arrow_renders_as_unicode_not_private_use() {
+    // Same regression as `rule_arrow_renders_as_unicode_not_private_use`, for
+    // RuleDelayed (U+F51F → U+29F4 `⧴`).
+    let inner = Expr::RuleDelayed {
+      pattern: Box::new(Expr::Identifier("x".to_string())),
+      replacement: Box::new(Expr::Integer(1)),
+    };
+    let boxes = expr_to_box_form(&inner);
+    let layout = layout_box(&boxes, 14.0);
+    let svg = layout_to_svg(&layout, "currentColor");
+    assert!(
+      svg.contains('\u{29f4}'),
+      "RuleDelayed should render with Unicode ⧴ (U+29F4): got '{svg}'"
+    );
+    assert!(
+      !svg.contains('\u{f51f}'),
+      "RuleDelayed SVG must not contain private-use U+F51F: got '{svg}'"
+    );
+  }
+
+  #[test]
   fn style_box_font_size_renders_larger() {
     // StyleBox["big", Rule[FontSize, 24]]
     let inner = Expr::FunctionCall {

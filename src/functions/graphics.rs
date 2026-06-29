@@ -3469,6 +3469,22 @@ impl BoxLayout {
         ),
       };
     }
+    // Map Wolfram private-use operator glyphs to standard Unicode. The box
+    // form emits `\[Rule]` / `\[RuleDelayed]` as their FrontEnd private-use
+    // codepoints (U+F522 / U+F51F), which only have glyphs in Mathematica's
+    // bundled fonts — in a normal monospace font they render as a
+    // missing-glyph box (▢). Substitute the public Unicode arrows so the
+    // SVG output displays correctly everywhere. Each maps one char to one
+    // char, so the width estimate below is unaffected.
+    let mapped: String = s
+      .chars()
+      .map(|c| match c {
+        '\u{f522}' => '\u{2192}', // \[Rule] → →
+        '\u{f51f}' => '\u{29f4}', // \[RuleDelayed] → ⧴
+        other => other,
+      })
+      .collect();
+    let s = mapped.as_str();
     let w = s.chars().count() as f64 * ch;
     let escaped = svg_escape(s);
     BoxLayout {
