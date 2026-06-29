@@ -62,6 +62,15 @@ test-shebang: install-cli
 .PHONY: test-scripts-wolframscript
 test-scripts-wolframscript:
 	@echo "Testing scripts with wolframscript against snapshots …"
+	@# The first calendar computation in a fresh wolframscript install lazily
+	@# initializes the CalendarData subsystem (paclet/index fetch), a one-time
+	@# cost that can stall far past nextest's per-test timeout. Several script
+	@# snapshots use DayRange/DatePlus, so whichever runs first would otherwise
+	@# eat that cold start and time out (e.g. find_the_last_sunday_of_each_month
+	@# hit the 900s ceiling here). Pay it once, outside any timed test, so the
+	@# subsequent `wolframscript -file` runs all init from the warm on-disk cache.
+	@echo "Warming wolframscript CalendarData subsystem (one-time lazy init) …"
+	@wolframscript -code 'DayRange[{2000,1,1},{2000,1,1},Sunday];' >/dev/null 2>&1 || true
 	WOXI_USE_WOLFRAM=true cargo nextest run \
 		--profile slow --run-ignored all script_ --test-threads=1
 	@echo "All wolframscript script tests passed."
