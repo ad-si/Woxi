@@ -82,6 +82,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 imbl = "5"
 # Country / subdivision gazetteer (names, translations, geo coordinates) used
 # to resolve geographic Entity[…] specifications to positions.
+
 keshvar = { version = "0.7", features = ["subdivisions", "geo", "translations", "search-translations"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.resvg]
