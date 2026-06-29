@@ -3,8 +3,8 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, NUM_SAMPLES, PlotOptions,
-  adjust_y_range_for_filling, evaluate_at_point, generate_svg_with_filling,
-  parse_filling, parse_image_size, substitute_var,
+  adjust_y_range_for_filling, build_plot_source, evaluate_at_point,
+  generate_svg_with_filling, parse_filling, parse_image_size, substitute_var,
 };
 use crate::syntax::Expr;
 
@@ -169,7 +169,18 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg =
     generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?;
 
-  Ok(crate::graphics_result(svg))
+  // Attach the sampled curves as a PlotSource so `Show` can merge this plot
+  // with other graphics (re-rendering the curves as Line primitives).
+  let source = build_plot_source(
+    &all_points,
+    &[],
+    x_range,
+    y_range,
+    (plot_opts.svg_width, plot_opts.svg_height),
+    false,
+    plot_opts.filling,
+  );
+  Ok(crate::graphics_result_with_source(svg, source))
 }
 
 /// PolarPlot[r[theta], {theta, tmin, tmax}]
@@ -253,7 +264,18 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg =
     generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?;
 
-  Ok(crate::graphics_result(svg))
+  // Attach the sampled curves as a PlotSource so `Show` can merge this plot
+  // with other graphics (re-rendering the curves as Line primitives).
+  let source = build_plot_source(
+    &all_points,
+    &[],
+    x_range,
+    y_range,
+    (plot_opts.svg_width, plot_opts.svg_height),
+    false,
+    plot_opts.filling,
+  );
+  Ok(crate::graphics_result_with_source(svg, source))
 }
 
 fn parse_iterator(
