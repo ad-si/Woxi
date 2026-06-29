@@ -27,6 +27,20 @@ pub fn dispatch_timeseries_functions(
     {
       Some(Ok(Expr::Integer(4)))
     }
+    // `Values[ts]` is the value path; `Normal[ts]` is the explicit
+    // `{{date, value}, …}` list with each stamp as an `Instant` DateObject.
+    "Values"
+      if args.len() == 1
+        && timeseries_ast::time_series_pairs(&args[0]).is_some() =>
+    {
+      Some(Ok(timeseries_ast::time_series_values_output(&args[0])?))
+    }
+    "Normal"
+      if args.len() == 1
+        && timeseries_ast::time_series_pairs(&args[0]).is_some() =>
+    {
+      Some(Ok(timeseries_ast::time_series_normal(&args[0])?))
+    }
     // Descriptive statistics over a TimeSeries operate on its value path.
     "Mean" | "Total" | "Min" | "Max" | "Median" | "Variance"
     | "StandardDeviation" | "Commonest"

@@ -2177,6 +2177,16 @@ fn date_expr_to_absolute_time(expr: &Expr) -> Option<f64> {
 /// Multiple datasets are supported: DateListPlot[{data1, data2, ...}].
 pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
+  // A TimeSeries plots as its {date, value} path.
+  let data = match crate::functions::timeseries_ast::time_series_pairs(&data) {
+    Some(pairs) => Expr::List(
+      pairs
+        .into_iter()
+        .map(|(d, v)| Expr::List(vec![d, v].into()))
+        .collect(),
+    ),
+    None => data,
+  };
   let items = match &data {
     Expr::List(items) => items,
     _ => {

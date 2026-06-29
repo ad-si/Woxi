@@ -9,7 +9,7 @@
 
 use crate::InterpreterError;
 use crate::functions::datetime_ast::{
-  date_to_absolute_seconds, day_of_week, days_in_month,
+  date_to_absolute_seconds, day_of_week, days_in_month, extract_date_components,
 };
 use crate::syntax::Expr;
 
@@ -274,13 +274,75 @@ pub fn time_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(time_series(pairs))
     }
-    [Expr::List(values), Expr::List(times)] => {
-      let pairs = times
+    // `TimeSeries[values, tspec]` and `TimeSeries[values, tspec, keys]`. A
+    // trailing list of string keys names the components of each (vector) value,
+    // turning that value into an `<|key -> component, …|>` association (WL 15).
+    [Expr::List(values), Expr::List(times), rest @ ..] => {
+      let keys = component_keys(rest);
+      let values: Vec<Expr> = values
         .iter()
-        .zip(values.iter())
-        .map(|(t, v)| Expr::List(vec![t.clone(), v.clone()].into()))
+        .map(|v| match &keys {
+          Some(k) => apply_keys(v, k),
+          None => v.clone(),
+        })
         .collect();
-      Ok(time_series(pairs))
+      let times: Vec<&Expr> = times.iter().collect();
+
+      // Explicit time stamps, one per value → direct pairing.
+      if times.len() == values.len() {
+        let pairs = times
+          .iter()
+          .zip(values.iter())
+          .map(|(t, v)| Expr::List(vec![(*t).clone(), v.clone()].into()))
+          .collect();
+        return Ok(time_series(pairs));
+      }
+
+      // A single starting specification → auto-generate the time stamps.
+      if times.len() == 1 {
+        match times[0] {
+          // `{{t1, t2, …}}` — one path's explicit times wrapped in a list.
+          Expr::List(inner) => {
+            let pairs = inner
+              .iter()
+              .zip(values.iter())
+              .map(|(t, v)| Expr::List(vec![t.clone(), v.clone()].into()))
+              .collect();
+            return Ok(time_series(pairs));
+          }
+          // `{DateObject[…]}` — daily-spaced dates from the start date.
+          Expr::FunctionCall { name, .. } if name == "DateObject" => {
+            if let Some(c) = extract_date_components(times[0]) {
+              let dates =
+                generate_dates(pad_components(&c), 1.0, "Day", values.len());
+              let pairs = dates
+                .into_iter()
+                .zip(values.iter())
+                .map(|(d, v)| Expr::List(vec![d, v.clone()].into()))
+                .collect();
+              return Ok(time_series(pairs));
+            }
+          }
+          // `{n}` — numeric start, advancing by 1: n, n+1, n+2, …
+          _ if as_f64(times[0]).is_some() => {
+            let start = as_f64(times[0]).unwrap();
+            let pairs = values
+              .iter()
+              .enumerate()
+              .map(|(i, v)| {
+                Expr::List(
+                  vec![real_or_int(start + i as f64), v.clone()].into(),
+                )
+              })
+              .collect();
+            return Ok(time_series(pairs));
+          }
+          _ => {}
+        }
+      }
+
+      // Unsupported spec → leave the constructor unevaluated.
+      Ok(echo())
     }
     _ => Ok(echo()),
   }
@@ -343,6 +405,262 @@ pub fn time_series_values(expr: &Expr) -> Option<Expr> {
   Some(Expr::List(
     pairs.into_iter().map(|(_, v)| v).collect::<Vec<_>>().into(),
   ))
+}
+
+/// A trailing constructor argument that is a non-empty list of string keys names
+/// the components of each vector value (WL 15). Anything else (options, etc.) is
+/// not treated as component keys.
+fn component_keys(rest: &[Expr]) -> Option<Vec<String>> {
+  let Expr::List(items) = rest.first()? else {
+    return None;
+  };
+  let keys: Option<Vec<String>> = items
+    .iter()
+    .map(|e| match e {
+      Expr::String(s) => Some(s.clone()),
+      _ => None,
+    })
+    .collect();
+  keys.filter(|k| !k.is_empty())
+}
+
+/// Turn a vector `value` into an `<|key -> component, …|>` association when its
+/// length matches `keys`; otherwise leave the value untouched.
+fn apply_keys(value: &Expr, keys: &[String]) -> Expr {
+  match value {
+    Expr::List(items) if items.len() == keys.len() => Expr::Association(
+      keys
+        .iter()
+        .cloned()
+        .zip(items.iter().cloned())
+        .map(|(k, v)| (Expr::String(k), v))
+        .collect(),
+    ),
+    _ => value.clone(),
+  }
+}
+
+/// `Values[ts]` — the value path. A component-keyed series (whose values are
+/// associations) materializes as a `Tabular`, matching WL 15; otherwise the
+/// plain list of values is returned.
+pub fn time_series_values_output(expr: &Expr) -> Option<Expr> {
+  let pairs = time_series_pairs(expr)?;
+  let values: Vec<Expr> = pairs.into_iter().map(|(_, v)| v).collect();
+  if !values.is_empty()
+    && values.iter().all(|v| matches!(v, Expr::Association(_)))
+  {
+    return Some(crate::functions::tabular_ast::tabular_ast(&[Expr::List(
+      values.into(),
+    )]));
+  }
+  Some(Expr::List(values.into()))
+}
+
+/// Pad a component vector to `{y, m, d, h, min, sec}`, defaulting month/day to 1
+/// and the time fields to 0.
+fn pad_components(c: &[f64]) -> [f64; 6] {
+  let mut out = [0.0, 1.0, 1.0, 0.0, 0.0, 0.0];
+  for (i, slot) in out.iter_mut().enumerate() {
+    if let Some(v) = c.get(i) {
+      *slot = *v;
+    }
+  }
+  out
+}
+
+/// Render a time value as an `Integer` when whole, otherwise a `Real`.
+fn real_or_int(t: f64) -> Expr {
+  if t.fract() == 0.0 && t.abs() < 9.007e15 {
+    Expr::Integer(t as i128)
+  } else {
+    Expr::Real(t)
+  }
+}
+
+/// Convert a time stamp (a plain number, a date list, or a `DateObject`) to a
+/// scalar time: numeric stamps pass through; dates become AbsoluteTime seconds.
+fn to_time(e: &Expr) -> Option<f64> {
+  if let Some(n) = as_f64(e) {
+    return Some(n);
+  }
+  let c = pad_components(&extract_date_components(e)?);
+  Some(date_to_absolute_seconds(
+    c[0] as i64,
+    c[1] as i64,
+    c[2] as i64,
+    c[3] as i64,
+    c[4] as i64,
+    c[5],
+  ))
+}
+
+/// Convert a stored time stamp to the `DateObject[{y,m,d,h,min,sec}, Instant,
+/// Gregorian, 0.]` form that `Normal`, `FirstDate`, and `LastDate` expose. The
+/// component list is padded to six fields with integer zeros, preserving the
+/// original element types — so a `{…, 0, 0, 0.}` date list keeps its Real
+/// seconds while a `DateObject[{y, m, d}, Day]` pads with integer zeros, exactly
+/// as WL does. Returns `None` for a non-date (numeric) stamp.
+fn instant_date_object(date: &Expr) -> Option<Expr> {
+  let mut comps: Vec<Expr> = match date {
+    Expr::FunctionCall { name, args } if name == "DateObject" => {
+      match args.first()? {
+        Expr::List(items) => items.iter().cloned().collect(),
+        _ => return None,
+      }
+    }
+    Expr::List(items) => items.iter().cloned().collect(),
+    _ => return None,
+  };
+  // Must be a numeric date list, not e.g. a value vector like {0.1, "cat"}.
+  if comps.is_empty() || !comps.iter().all(|c| as_f64(c).is_some()) {
+    return None;
+  }
+  while comps.len() < 6 {
+    comps.push(Expr::Integer(0));
+  }
+  Some(Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: vec![
+      Expr::List(comps.into()),
+      Expr::Identifier("Instant".to_string()),
+      Expr::Identifier("Gregorian".to_string()),
+      Expr::Real(0.0),
+    ]
+    .into(),
+  })
+}
+
+/// `Normal[ts]` — the explicit `{{date, value}, …}` list, with each date stamp
+/// surfaced as an `Instant`-granularity `DateObject`. A non-date (numeric) stamp
+/// is left unchanged.
+pub fn time_series_normal(ts: &Expr) -> Option<Expr> {
+  let pairs = time_series_pairs(ts)?;
+  Some(Expr::List(
+    pairs
+      .into_iter()
+      .map(|(date, value)| {
+        let d = instant_date_object(&date).unwrap_or(date);
+        Expr::List(vec![d, value].into())
+      })
+      .collect(),
+  ))
+}
+
+/// Apply a `TimeSeries` to an argument: `ts["property"]` returns a path
+/// component, and `ts[t]` (a date or number) returns the value at time `t`,
+/// linearly interpolating between — and extrapolating beyond — the data points.
+pub fn apply_time_series(
+  ts: &Expr,
+  arg: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::CurriedCall {
+      func: Box::new(ts.clone()),
+      args: vec![arg.clone()],
+    })
+  };
+  let Some(pairs) = time_series_pairs(ts) else {
+    return unevaluated();
+  };
+  if pairs.is_empty() {
+    return unevaluated();
+  }
+
+  // Numeric times paired with the stored value expressions, kept in input
+  // order (which the constructors already produce ascending).
+  let mut points: Vec<(f64, &Expr)> = Vec::with_capacity(pairs.len());
+  for (date, value) in &pairs {
+    match to_time(date) {
+      Some(t) => points.push((t, value)),
+      None => return unevaluated(),
+    }
+  }
+
+  // Property access: ts["Path"], ts["Values"], ts["Times"], ts["FirstDate"], …
+  if let Expr::String(prop) = arg {
+    return apply_property(&pairs, &points, prop).map_or_else(unevaluated, Ok);
+  }
+
+  // Value lookup at a time stamp.
+  let Some(q) = to_time(arg) else {
+    return unevaluated();
+  };
+
+  // Exact hit returns the stored value expression unchanged.
+  for (t, v) in &points {
+    if (*t - q).abs() < 1e-6 {
+      return Ok((*v).clone());
+    }
+  }
+
+  // Linear interpolation / extrapolation needs the numeric values.
+  let ys: Vec<f64> = match points.iter().map(|(_, v)| as_f64(v)).collect() {
+    Some(ys) => ys,
+    None => return unevaluated(),
+  };
+  if points.len() == 1 {
+    return Ok(Expr::Real(ys[0]));
+  }
+  let lerp = |i: usize, j: usize| {
+    let (t0, t1) = (points[i].0, points[j].0);
+    ys[i] + (ys[j] - ys[i]) * (q - t0) / (t1 - t0)
+  };
+  let last = points.len() - 1;
+  let y = if q < points[0].0 {
+    lerp(0, 1) // extrapolate below the first point
+  } else if q > points[last].0 {
+    lerp(last - 1, last) // extrapolate above the last point
+  } else {
+    let seg = points
+      .windows(2)
+      .position(|w| q <= w[1].0)
+      .unwrap_or(last - 1);
+    lerp(seg, seg + 1)
+  };
+  Ok(Expr::Real(y))
+}
+
+/// Resolve a string property access on a `TimeSeries`.
+fn apply_property(
+  pairs: &[(Expr, Expr)],
+  points: &[(f64, &Expr)],
+  prop: &str,
+) -> Option<Expr> {
+  let date_object = |date: &Expr| instant_date_object(date);
+  // Numeric stamps echo verbatim; date stamps surface as AbsoluteTime Reals.
+  let time_stamp = |date: &Expr, t: f64| match date {
+    Expr::Integer(_) | Expr::Real(_) => date.clone(),
+    _ => Expr::Real(t),
+  };
+  match prop {
+    "Values" => {
+      Some(Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect()))
+    }
+    // A numeric time stamp is reported verbatim; a date stamp becomes its
+    // AbsoluteTime (a Real), matching how WL exposes the time axis.
+    "Path" => Some(Expr::List(
+      pairs
+        .iter()
+        .zip(points)
+        .map(|((date, v), (t, _))| {
+          Expr::List(vec![time_stamp(date, *t), v.clone()].into())
+        })
+        .collect(),
+    )),
+    "Times" => Some(Expr::List(
+      pairs
+        .iter()
+        .zip(points)
+        .map(|((date, _), (t, _))| time_stamp(date, *t))
+        .collect(),
+    )),
+    "FirstDate" | "MinDate" => date_object(&pairs.first()?.0),
+    "LastDate" | "MaxDate" => date_object(&pairs.last()?.0),
+    "FirstValue" => Some(pairs.first()?.1.clone()),
+    "LastValue" => Some(pairs.last()?.1.clone()),
+    "PathLength" => Some(Expr::Integer(pairs.len() as i128)),
+    _ => None,
+  }
 }
 
 #[cfg(test)]

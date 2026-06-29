@@ -242,4 +242,178 @@ mod time_series {
       "25"
     );
   }
+
+  // A single numeric start advances the time stamps by 1: 5, 6, 7, 8.
+  #[test]
+  fn numeric_start_advances_by_one() {
+    assert_eq!(
+      interpret("TimeSeries[{10, 20, 30, 40}, {5}][\"Path\"]").unwrap(),
+      "{{5, 10}, {6, 20}, {7, 30}, {8, 40}}"
+    );
+  }
+}
+
+// `TimeSeries[values, {DateObject[…]}]` — a single start date spaces the values
+// one day apart, and the series can then be sampled, queried, and plotted.
+mod date_start {
+  use super::*;
+
+  const TS: &str =
+    "ts = TimeSeries[{23.1, 24.4, 21.8, 25.5}, {DateObject[{2025, 9, 1}]}];";
+
+  #[test]
+  fn assigns_daily_dates_to_all_values() {
+    // All four values are retained (the start date is not consumed as data).
+    assert_eq!(interpret(&format!("{TS} Length[ts]")).unwrap(), "4");
+    assert_eq!(
+      interpret(&format!("{TS} ts[\"Values\"]")).unwrap(),
+      "{23.1, 24.4, 21.8, 25.5}"
+    );
+    assert_eq!(interpret(&format!("{TS} Mean[ts]")).unwrap(), "23.7");
+  }
+
+  #[test]
+  fn lookup_at_data_point_is_exact() {
+    // 2025-09-03 is the third daily stamp → 21.8 exactly.
+    assert_eq!(
+      interpret(&format!("{TS} ts[DateObject[{{2025, 9, 3}}]]")).unwrap(),
+      "21.8"
+    );
+  }
+
+  #[test]
+  fn lookup_extrapolates_past_the_last_point() {
+    // 2025-09-10 is six days past the last point; extrapolate the final
+    // segment (slope 3.7/day): 25.5 + 6*3.7 = 47.7.
+    assert_eq!(
+      interpret(&format!("{TS} ts[DateObject[{{2025, 9, 10}}]]")).unwrap(),
+      "47.699999999999996"
+    );
+  }
+
+  #[test]
+  fn times_are_absolute_seconds() {
+    assert_eq!(
+      interpret(&format!("{TS} ts[\"Times\"]")).unwrap(),
+      "{3.9656736*^9, 3.96576*^9, 3.9658464*^9, 3.9659328*^9}"
+    );
+  }
+
+  #[test]
+  fn first_date_is_a_date_object() {
+    assert_eq!(
+      interpret(&format!("{TS} ts[\"FirstDate\"]")).unwrap(),
+      "DateObject[{2025, 9, 1, 0, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn date_list_plot_renders_graphics() {
+    assert_eq!(
+      interpret(&format!("{TS} DateListPlot[ts]")).unwrap(),
+      "-Graphics-"
+    );
+  }
+}
+
+// Vector-valued series with explicit date stamps: each value is a list (mixed
+// numeric/string), the times are given as `{{date1, date2, …}}`, and Values /
+// Normal / point lookup expose the path.
+mod vector_valued {
+  use super::*;
+
+  const TS: &str = "ts = TimeSeries[\
+    {{.1, \"cat\"}, {.2, \"dog\"}, {.3, \"fox\"}}, \
+    {{DateObject[{2025, 1, 1}], DateObject[{2025, 1, 2}], \
+      DateObject[{2025, 1, 3}]}}];";
+
+  #[test]
+  fn lookup_returns_the_vector_value() {
+    assert_eq!(
+      interpret(&format!("{TS} ts[DateObject[{{2025, 1, 2}}]]")).unwrap(),
+      "{0.2, dog}"
+    );
+  }
+
+  // `Today` resolves to a DateObject that exactly matches the middle stamp,
+  // independent of the actual calendar date.
+  #[test]
+  fn lookup_by_today_symbol() {
+    let ts = "ts = TimeSeries[{{.1, \"cat\"}, {.2, \"dog\"}, {.3, \"fox\"}}, \
+      {{Yesterday, Today, Tomorrow}}];";
+    assert_eq!(interpret(&format!("{ts} ts[Today]")).unwrap(), "{0.2, dog}");
+  }
+
+  #[test]
+  fn values_returns_the_value_path() {
+    assert_eq!(
+      interpret(&format!("{TS} Values[ts]")).unwrap(),
+      "{{0.1, cat}, {0.2, dog}, {0.3, fox}}"
+    );
+  }
+
+  // A trailing list of string keys (the third positional argument) names the
+  // components of each vector value (WL 15): each value becomes a keyed
+  // association, the point lookup returns that association, and Values
+  // materializes as a Tabular.
+  const KEYED: &str = "ts = TimeSeries[\
+    {{.1, \"cat\"}, {.2, \"dog\"}, {.3, \"fox\"}}, \
+    {{DateObject[{2025, 1, 1}], DateObject[{2025, 1, 2}], \
+      DateObject[{2025, 1, 3}]}}, {\"a\", \"b\"}];";
+
+  #[test]
+  fn keyed_lookup_returns_association() {
+    assert_eq!(
+      interpret(&format!("{KEYED} ts[DateObject[{{2025, 1, 2}}]]")).unwrap(),
+      "<|a -> 0.2, b -> dog|>"
+    );
+  }
+
+  #[test]
+  fn keyed_values_is_a_tabular() {
+    assert_eq!(
+      interpret(&format!("{KEYED} Head[Values[ts]]")).unwrap(),
+      "Tabular"
+    );
+  }
+
+  #[test]
+  fn keyed_normal_pairs_dates_with_associations() {
+    assert_eq!(
+      interpret(&format!("{KEYED} Normal[ts]")).unwrap(),
+      "{{DateObject[{2025, 1, 1, 0, 0, 0}, Instant, Gregorian, 0.], \
+        <|a -> 0.1, b -> cat|>}, \
+       {DateObject[{2025, 1, 2, 0, 0, 0}, Instant, Gregorian, 0.], \
+        <|a -> 0.2, b -> dog|>}, \
+       {DateObject[{2025, 1, 3, 0, 0, 0}, Instant, Gregorian, 0.], \
+        <|a -> 0.3, b -> fox|>}}"
+    );
+  }
+
+  // Normal surfaces each stamp as an Instant DateObject. A `DateObject[{y,m,d}]`
+  // source pads the time fields with integer zeros (matching WL).
+  #[test]
+  fn normal_pairs_instant_dates_with_values() {
+    assert_eq!(
+      interpret(&format!("{TS} Normal[ts]")).unwrap(),
+      "{{DateObject[{2025, 1, 1, 0, 0, 0}, Instant, Gregorian, 0.], \
+        {0.1, cat}}, \
+       {DateObject[{2025, 1, 2, 0, 0, 0}, Instant, Gregorian, 0.], \
+        {0.2, dog}}, \
+       {DateObject[{2025, 1, 3, 0, 0, 0}, Instant, Gregorian, 0.], \
+        {0.3, fox}}}"
+    );
+  }
+
+  // A daily date-list series stores `0.`-seconds dates; Normal preserves the
+  // Real zero (vs. the integer zeros above), as WL does.
+  #[test]
+  fn normal_preserves_real_seconds_of_generated_dates() {
+    assert_eq!(
+      interpret("Normal[TimeSeries[{23.1, 24.4}, {DateObject[{2025, 9, 1}]}]]")
+        .unwrap(),
+      "{{DateObject[{2025, 9, 1, 0, 0, 0.}, Instant, Gregorian, 0.], 23.1}, \
+       {DateObject[{2025, 9, 2, 0, 0, 0.}, Instant, Gregorian, 0.], 24.4}}"
+    );
+  }
 }
