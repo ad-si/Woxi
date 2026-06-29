@@ -5771,22 +5771,12 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       merged_primitives.push(Expr::List(series_prims.into()));
 
-      // Merge range as PlotRange option
-      let range_rule = Expr::Rule {
-        pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
-        replacement: Box::new(Expr::List(
-          vec![
-            Expr::List(
-              vec![Expr::Real(ps.x_range.0), Expr::Real(ps.x_range.1)].into(),
-            ),
-            Expr::List(
-              vec![Expr::Real(ps.y_range.0), Expr::Real(ps.y_range.1)].into(),
-            ),
-          ]
-          .into(),
-        )),
-      };
-      merge_option(&mut merged_options, &range_rule);
+      // Deliberately do NOT force a PlotRange from the plot source here: the
+      // series are emitted as real Line/Point primitives, so the renderer's
+      // automatic range already covers the curve. Forcing the source's tight
+      // range would crop any other Graphics primitives that extend beyond it
+      // (e.g. a control polygon), whereas Wolfram shows the union of all
+      // primitives. Leaving PlotRange unset yields that union.
 
       // Enable axes
       let axes_rule = Expr::Rule {
