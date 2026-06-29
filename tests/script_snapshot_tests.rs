@@ -1230,10 +1230,12 @@ script_test!(
   "pascal_matrix_generation.wls"
 );
 script_test!(script_record_sound, "record_sound.wls");
-script_test!(
-  script_retrieve_and_search_chat_history,
-  "retrieve_and_search_chat_history.wls"
-);
+// `retrieve_and_search_chat_history.wls` is intentionally not snapshot-tested.
+// It fetches live chat logs from tclers.tk over the network and selects entries
+// within the last 10 days of `Now`. Both inputs are non-deterministic: the
+// remote log content changes continuously and the 10-day window slides with the
+// current date, so the matching lines (and whether any match at all) differ from
+// run to run. No single stable snapshot can validate it.
 script_test!(script_roman_numerals_decode, "roman_numerals_decode.wls");
 script_test!(script_send_email, "send_email.wls");
 script_test!(
