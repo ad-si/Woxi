@@ -1110,7 +1110,7 @@ pub fn dispatch_io_functions(
         }
       };
       if !std::path::Path::new(&filename).exists() {
-        crate::emit_message(&format!(
+        crate::emit_message_to_stdout(&format!(
           "OpenRead::noopen: Cannot open {}.",
           filename
         ));
@@ -1569,7 +1569,7 @@ pub fn dispatch_io_functions(
         _ => {
           // Anything else is a type error — match wolframscript's message.
           let arg_str = crate::syntax::expr_to_string(&args[0]);
-          crate::emit_message(&format!(
+          crate::emit_message_to_stdout(&format!(
             "Close::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
             arg_str
           ));
