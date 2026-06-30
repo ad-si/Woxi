@@ -20,6 +20,25 @@ fn parse_list_data(
   arg: &Expr,
 ) -> Result<Vec<Vec<(f64, f64)>>, InterpreterError> {
   let data = evaluate_expr_to_expr(arg)?;
+
+  // A TimeSeries / multi-path TemporalData becomes one (x, y) series per path.
+  if let Some(paths) = crate::functions::timeseries_ast::temporal_paths(&data) {
+    let series = paths
+      .into_iter()
+      .map(|path| {
+        path
+          .into_iter()
+          .filter_map(|(t, v)| {
+            let te = evaluate_expr_to_expr(&t).unwrap_or(t);
+            let ve = evaluate_expr_to_expr(&v).unwrap_or(v);
+            Some((try_eval_to_f64(&te)?, try_eval_to_f64(&ve)?))
+          })
+          .collect()
+      })
+      .collect();
+    return Ok(series);
+  }
+
   let items = match &data {
     Expr::List(items) => items,
     _ => {

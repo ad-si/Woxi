@@ -185,7 +185,12 @@ pub fn dispatch_plotting(
       // `ListLinePlot[list]` prints the message and leaves the
       // expression symbolic.
       match crate::evaluator::evaluate_expr_to_expr(&args[0]) {
-        Ok(evaluated) if !matches!(evaluated, Expr::List(_)) => {
+        // A TimeSeries / TemporalData is a valid (non-List) data source.
+        Ok(evaluated)
+          if !matches!(evaluated, Expr::List(_))
+            && crate::functions::timeseries_ast::temporal_paths(&evaluated)
+              .is_none() =>
+        {
           crate::emit_message(&format!(
             "ListLinePlot::lpn: {} is not a list of numbers or pairs of numbers.",
             crate::syntax::expr_to_string(&evaluated)

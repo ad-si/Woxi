@@ -202,6 +202,84 @@ mod labeling_function {
   }
 }
 
+// The user-facing constructor `TemporalData[values, {times}]`: a flat scalar
+// path normalizes to a TimeSeries, while a list of paths stays a multi-path
+// TemporalData. Both feed ListLinePlot / ListPlot, one line per path.
+mod temporal_data_constructor {
+  use super::*;
+
+  const S: &str = "s = {2, 1, 6, 5, 7, 4}; t = {1, 2, 5, 10, 12, 15};";
+  const MULTI: &str = "s1 = {2, 1, 6, 5, 7, 4}; s2 = {4, 7, 5, 6, 1, 2}; \
+    t = {1, 2, 5, 10, 12, 15};";
+
+  #[test]
+  fn single_path_normalizes_to_time_series() {
+    assert_eq!(
+      interpret(&format!("{S} TemporalData[s, {{t}}]")).unwrap(),
+      "TimeSeries[{{1, 2}, {2, 1}, {5, 6}, {10, 5}, {12, 7}, {15, 4}}]"
+    );
+  }
+
+  #[test]
+  fn single_path_stats_use_value_path() {
+    assert_eq!(
+      interpret(&format!("{S} Mean[TemporalData[s, {{t}}]]")).unwrap(),
+      "25/6"
+    );
+    assert_eq!(
+      interpret(&format!("{S} TemporalData[s, {{t}}][\"Values\"]")).unwrap(),
+      "{2, 1, 6, 5, 7, 4}"
+    );
+  }
+
+  #[test]
+  fn single_path_list_line_plot_renders_graphics() {
+    assert_eq!(
+      interpret(&format!("{S} ListLinePlot[TemporalData[s, {{t}}]]")).unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret(&format!("{S} ListPlot[TemporalData[s, {{t}}]]")).unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn multi_path_stays_temporal_data() {
+    assert_eq!(
+      interpret(&format!("{MULTI} TemporalData[{{s1, s2}}, {{t}}]")).unwrap(),
+      "TemporalData[{{2, 1, 6, 5, 7, 4}, {4, 7, 5, 6, 1, 2}}, \
+       {{1, 2, 5, 10, 12, 15}}]"
+    );
+  }
+
+  #[test]
+  fn multi_path_list_line_plot_renders_graphics() {
+    assert_eq!(
+      interpret(&format!(
+        "{MULTI} ListLinePlot[TemporalData[{{s1, s2}}, {{t}}]]"
+      ))
+      .unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  // Each path is drawn against the shared time axis (its own line in a distinct
+  // ColorData[97] palette color), not the 1,2,3,… index axis.
+  #[test]
+  fn multi_path_plot_draws_one_line_per_path() {
+    let svg = interpret(&format!(
+      "{MULTI} ExportString[ListLinePlot[TemporalData[{{s1, s2}}, {{t}}]], \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(svg.contains("#5E81B5"), "first path uses the default blue");
+    assert!(
+      svg.contains("#E0932C"),
+      "second path uses the default orange"
+    );
+  }
+}
+
 mod time_series {
   use super::*;
 

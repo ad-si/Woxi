@@ -230,6 +230,12 @@ pub fn time_series_pairs(expr: &Expr) -> Option<Vec<(Expr, Expr)>> {
 
 /// `TemporalData[TimeSeries, {values, {spec}, ...}, ...]` →
 /// canonical `TimeSeries[{{date, value}, ...}]`.
+///
+/// Also handles the user-facing constructor `TemporalData[values, {times}]`: a
+/// flat list of scalar values is a single path and normalizes to a canonical
+/// `TimeSeries`, while a list of value paths (a list of lists) is a multi-path
+/// object that stays inert in the canonical `TemporalData[{p1, …}, {{t…}}]` form
+/// — its paths are recovered by [`temporal_paths`] for plotting and queries.
 pub fn temporal_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let (Some(Expr::Identifier(tag)), Some(Expr::List(fields))) =
     (args.first(), args.get(1))
@@ -240,10 +246,66 @@ pub fn temporal_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(time_series(pairs));
     }
   }
+
+  // Constructor form `TemporalData[values, times, …]`.
+  if let [Expr::List(values), Expr::List(_times), ..] = args {
+    let is_multi_path =
+      !values.is_empty() && values.iter().all(|v| matches!(v, Expr::List(_)));
+    if is_multi_path {
+      return Ok(Expr::FunctionCall {
+        name: "TemporalData".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    // Single scalar path → reuse the TimeSeries constructor.
+    return time_series_ast(args);
+  }
+
   Ok(Expr::FunctionCall {
     name: "TemporalData".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// All value paths of a temporal object as `(time, value)` pair lists. A
+/// `TimeSeries` (or single-path object) yields one path; a multi-path
+/// `TemporalData[{p1, …}, {{t…}}]` yields one path per component, each sharing
+/// the common time axis. Returns `None` for non-temporal expressions.
+pub fn temporal_paths(expr: &Expr) -> Option<Vec<Vec<(Expr, Expr)>>> {
+  if let Some(pairs) = time_series_pairs(expr) {
+    return Some(vec![pairs]);
+  }
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "TemporalData" {
+    return None;
+  }
+  let paths = match args.first()? {
+    Expr::List(p) => p,
+    _ => return None,
+  };
+  // Times are wrapped as `{{t1, …}}`; unwrap the singleton path-list, otherwise
+  // take the stamps directly.
+  let times: Vec<Expr> = match args.get(1)? {
+    Expr::List(items) => match (items.len(), items.iter().next()) {
+      (1, Some(Expr::List(inner))) => inner.iter().cloned().collect(),
+      _ => items.iter().cloned().collect(),
+    },
+    _ => return None,
+  };
+  let mut out = Vec::with_capacity(paths.len());
+  for p in paths.iter() {
+    let Expr::List(vals) = p else { return None };
+    out.push(
+      times
+        .iter()
+        .cloned()
+        .zip(vals.iter().cloned())
+        .collect::<Vec<_>>(),
+    );
+  }
+  Some(out)
 }
 
 /// `TimeSeries[values]` / `TimeSeries[values, dates]` constructor. A list of
