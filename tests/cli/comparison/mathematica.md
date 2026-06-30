@@ -283,7 +283,6 @@ Woxi does **not** support.
 ### Version 10.0 (2014)
 
 - Machine learning: `Classify`, `Predict`
-- Time series: `TimeSeries`, `TemporalData`
 - Finite-element method for PDEs (`NDSolve` `"FiniteElement"`)
 - File / HTML templating: `FileTemplate`, `XMLTemplate`
 
