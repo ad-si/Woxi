@@ -6184,3 +6184,20 @@ WindingCount,,,,12.0,
 WithLock,,,,12.3,
 Inequality,Chained inequality with per-step comparison operators,✅,pure,1.0,
 Discard,Removes the elements of a list for which a criterion is True (complement of Select),✅,pure,13.1,5591
+MusicNote,Represents a musical note,✅,pure,15.0,5592
+MusicRest,Represents a musical rest (silence),✅,pure,15.0,5593
+MusicChord,Represents a musical chord,✅,pure,15.0,5594
+MusicDuration,Specification for note or rest duration,✅,pure,15.0,5595
+MusicPitch,Specification for note pitch (MIDI integers canonicalize to named pitches),✅,pure,15.0,5596
+MusicInterval,Represents the interval between two pitches,✅,pure,15.0,5597
+MusicKeySignature,Key signature for a measure or score,✅,pure,15.0,5598
+MusicTimeSignature,Time signature for a measure or score,✅,pure,15.0,5599
+MusicScale,Represents a musical scale,✅,pure,15.0,5600
+MusicTempo,Musical tempo to be used during playback,✅,pure,15.0,5601
+MusicObjectQ,Checks whether an expression is a music object,✅,pure,15.0,5602
+MusicMeasure,Represents a musical measure,✅,pure,15.0,5603
+MusicVoice,Represents a musical voice,✅,pure,15.0,5604
+MusicScore,Represents a musical score,✅,pure,15.0,5605
+MusicMeasurements,Compute properties of a music object,🚫,pure,15.0,5606
+MusicTransform,Transform a music object,🚫,pure,15.0,5607
+MusicPlot,Visualize a music object,🚫,pure,15.0,5608

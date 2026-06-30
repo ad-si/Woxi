@@ -27,6 +27,7 @@ mod io_functions;
 mod linear_algebra_functions;
 mod list_operations;
 mod math_functions;
+mod music_functions;
 mod plotting;
 mod polynomial_functions;
 mod predicate_functions;
@@ -1503,6 +1504,9 @@ pub fn evaluate_function_call_ast_inner(
   if let Some(result) =
     predicate_functions::dispatch_predicate_functions(name, args)
   {
+    return result;
+  }
+  if let Some(result) = music_functions::dispatch_music_functions(name, args) {
     return result;
   }
   if let Some(result) =

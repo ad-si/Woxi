@@ -31,6 +31,7 @@ pub mod list_helpers_ast;
 pub mod list_plot;
 pub mod math_ast;
 pub mod memory;
+pub mod music_ast;
 pub mod number_line_plot;
 pub mod ode_ast;
 pub mod parametric_plot;

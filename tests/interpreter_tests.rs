@@ -978,6 +978,7 @@ mod interpreter_tests {
   mod list;
   mod machine_specific;
   mod math;
+  mod music;
   mod patterns;
   mod property;
   mod quantity;
