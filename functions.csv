@@ -3389,7 +3389,7 @@ LogRankTest,,,,9.0,3474
 LogSeriesDistribution,,,,6.0,3474
 LongestOrderedSequence,Finds the longest ordered (non-decreasing by default) subsequence of a list using an optional ordering predicate,✅,pure,10.2,3474
 SpokenString,,🚫,,7.0,3474
-TemplateObject,,,,10.0,3474
+TemplateObject,Symbolic template object produced by StringTemplate or FileTemplate,✅,pure,10.0,3474
 VoigtDistribution,,,,9.0,3474
 AddSides,Add an expression to both sides of an equation; an equation second argument pairs the sides,✅,none,11.3,3491
 AlgebraicNumberTrace,,,,6.0,3491
@@ -4071,7 +4071,7 @@ ControllabilityGramian,,,,8.0,4204
 CreateManagedLibraryExpression,,🚫,,10.0,4204
 DiceDissimilarity,Dice dissimilarity between binary vectors,✅,pure,6.0,4204
 DualPolyhedron,,,,12.0,4204
-FileTemplate,,,,10.0,4204
+FileTemplate,Reads a template file from disk and yields a TemplateObject,✅,effectful,10.0,4204
 FractionalGaussianNoiseProcess,,🚫,,10.0,4204
 GeoHemisphereBoundary,,🚫,,10.1,4204
 GeoStylingImageFunction,,🚫,,10.0,4204

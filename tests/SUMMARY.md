@@ -1468,6 +1468,7 @@
   - [`FileNameJoin`](file_system/FileNameJoin.md)
   - [`FileNameSplit`](file_system/FileNameSplit.md)
   - [`FileNames`](file_system/FileNames.md)
+  - [`FileTemplate`](file_system/FileTemplate.md)
   - [`Find`](file_system/Find.md)
   - [`FindFile`](file_system/FindFile.md)
   - [`Get`](file_system/Get.md)

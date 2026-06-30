@@ -4410,6 +4410,118 @@ mod high_level_functions_tests {
     }
   }
 
+  mod file_template_tests {
+    use std::io::Write;
+    use woxi::{interpret, interpret_with_stdout};
+
+    fn write_tmp(name: &str, contents: &str) -> std::path::PathBuf {
+      let path = std::env::temp_dir().join(format!(
+        "woxi_filetemplate_{}_{}",
+        std::process::id(),
+        name
+      ));
+      let mut f = std::fs::File::create(&path).unwrap();
+      f.write_all(contents.as_bytes()).unwrap();
+      path
+    }
+
+    #[test]
+    fn test_file_template_renders_as_template_object() {
+      // FileTemplate reads the file and produces a TemplateObject whose
+      // rendered form matches wolframscript exactly.
+      let path = write_tmp("object.txt", "Hello `name`, welcome to `place`!");
+      let code = format!(r#"FileTemplate["{}"]"#, path.to_string_lossy());
+      assert_eq!(
+        interpret(&code).unwrap(),
+        "TemplateObject[{Hello , TemplateSlot[name], , welcome to , \
+         TemplateSlot[place], !}, CombinerFunction -> StringJoin, \
+         InsertionFunction -> TextString, MetaInformation -> <||>]"
+      );
+      let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_file_template_head_is_template_object() {
+      let path = write_tmp("head.txt", "x = `x`");
+      let code = format!(r#"Head[FileTemplate["{}"]]"#, path.to_string_lossy());
+      assert_eq!(interpret(&code).unwrap(), "TemplateObject");
+      let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_file_template_numbered_slots() {
+      let path = write_tmp("numbered.txt", "a `1` b `2`");
+      let code = format!(r#"FileTemplate["{}"]"#, path.to_string_lossy());
+      assert_eq!(
+        interpret(&code).unwrap(),
+        "TemplateObject[{a , TemplateSlot[1],  b , TemplateSlot[2]}, \
+         CombinerFunction -> StringJoin, InsertionFunction -> TextString, \
+         MetaInformation -> <||>]"
+      );
+      let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_file_template_no_slots() {
+      let path = write_tmp("plain.txt", "plain text");
+      let code = format!(r#"FileTemplate["{}"]"#, path.to_string_lossy());
+      assert_eq!(
+        interpret(&code).unwrap(),
+        "TemplateObject[{plain text}, CombinerFunction -> StringJoin, \
+         InsertionFunction -> TextString, MetaInformation -> <||>]"
+      );
+      let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_template_apply_on_file_template_association() {
+      let path = write_tmp("apply.txt", "Hello `name`, welcome to `place`!");
+      let code = format!(
+        r#"TemplateApply[FileTemplate["{}"], <|"name" -> "Bob", "place" -> "Earth"|>]"#,
+        path.to_string_lossy()
+      );
+      assert_eq!(interpret(&code).unwrap(), "Hello Bob, welcome to Earth!");
+      let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_template_apply_on_file_template_numbered_list() {
+      let path = write_tmp("applynum.txt", "a `1` b `2`");
+      let code = format!(
+        r#"TemplateApply[FileTemplate["{}"], {{"X", "Y"}}]"#,
+        path.to_string_lossy()
+      );
+      assert_eq!(interpret(&code).unwrap(), "a X b Y");
+      let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_file_template_with_file_wrapper() {
+      let path = write_tmp("wrapper.txt", "v = `v`");
+      let code =
+        format!(r#"Head[FileTemplate[File["{}"]]]"#, path.to_string_lossy());
+      assert_eq!(interpret(&code).unwrap(), "TemplateObject");
+      let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_file_template_missing_file_fails() {
+      let path = std::env::temp_dir().join(format!(
+        "woxi_filetemplate_missing_{}.txt",
+        std::process::id()
+      ));
+      let _ = std::fs::remove_file(&path);
+      let code = format!(r#"FileTemplate["{}"]"#, path.to_string_lossy());
+      let r = interpret_with_stdout(&code).unwrap();
+      assert_eq!(r.result, "$Failed");
+      assert!(
+        r.stdout.contains("StringTemplate::fnfnd:"),
+        "stdout was: {:?}",
+        r.stdout
+      );
+    }
+  }
+
   mod cholesky_decomposition_tests {
     use super::*;
 

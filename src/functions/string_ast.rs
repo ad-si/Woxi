@@ -10663,6 +10663,156 @@ fn fortran_args(args: &[Expr]) -> String {
     .join(",")
 }
 
+/// Parse a template string into the `TemplateObject` parts list: a list of
+/// alternating literal `String` segments and `TemplateSlot[key]` expressions.
+/// A `` `name` `` slot becomes `TemplateSlot[name]` (a symbol), a `` `1` ``
+/// slot becomes `TemplateSlot[1]` (an integer), and an empty `` `` `` slot
+/// becomes the next positional `TemplateSlot[n]`. An unterminated backtick is
+/// kept as a literal character, matching wolframscript.
+pub fn parse_template_parts(template: &str) -> Vec<Expr> {
+  let mut parts: Vec<Expr> = Vec::new();
+  let mut literal = String::new();
+  let mut positional: i128 = 1;
+  let mut chars = template.chars().peekable();
+  while let Some(ch) = chars.next() {
+    if ch == '`' {
+      // Read the slot key up to the next backtick.
+      let mut key = String::new();
+      let mut closed = false;
+      for c in chars.by_ref() {
+        if c == '`' {
+          closed = true;
+          break;
+        }
+        key.push(c);
+      }
+      if !closed {
+        // Unterminated slot: keep the backtick and key as literal text.
+        literal.push('`');
+        literal.push_str(&key);
+        continue;
+      }
+      if !literal.is_empty() {
+        parts.push(Expr::String(std::mem::take(&mut literal)));
+      }
+      let key_expr = if key.is_empty() {
+        let k = positional;
+        positional += 1;
+        Expr::Integer(k)
+      } else if let Ok(n) = key.parse::<i128>() {
+        Expr::Integer(n)
+      } else {
+        Expr::Identifier(key)
+      };
+      parts.push(Expr::FunctionCall {
+        name: "TemplateSlot".to_string(),
+        args: vec![key_expr].into(),
+      });
+    } else {
+      literal.push(ch);
+    }
+  }
+  if !literal.is_empty() {
+    parts.push(Expr::String(literal));
+  }
+  parts
+}
+
+/// Build a `TemplateObject` expression from a template string. The optional
+/// `bound_args` association is inserted as the second element (used by the
+/// two-argument `FileTemplate[src, args]` / `StringTemplate[src, args]` forms).
+/// The result renders identically to wolframscript, e.g.
+/// `TemplateObject[{Hello , TemplateSlot[name]}, CombinerFunction -> StringJoin,
+/// InsertionFunction -> TextString, MetaInformation -> <||>]`.
+pub fn build_template_object(template: &str, bound_args: Option<Expr>) -> Expr {
+  let parts = Expr::List(parse_template_parts(template).into());
+  let mut object_args: Vec<Expr> = vec![parts];
+  if let Some(assoc) = bound_args {
+    object_args.push(assoc);
+  }
+  let option = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  object_args.push(option(
+    "CombinerFunction",
+    Expr::Identifier("StringJoin".to_string()),
+  ));
+  object_args.push(option(
+    "InsertionFunction",
+    Expr::Identifier("TextString".to_string()),
+  ));
+  object_args.push(option("MetaInformation", Expr::Association(Vec::new())));
+  Expr::FunctionCall {
+    name: "TemplateObject".to_string(),
+    args: object_args.into(),
+  }
+}
+
+/// Apply a `TemplateObject[{parts...}, ...]` to arguments, filling each
+/// `TemplateSlot[key]` from a list (by 1-indexed position) or an association
+/// (by key name). Returns the combined string.
+pub fn template_object_apply(
+  parts: &[Expr],
+  args: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Look up a slot value: integer key -> positional list/assoc index,
+  // symbol/string key -> association key.
+  let lookup = |key: &Expr| -> Option<String> {
+    let render = |e: &Expr| -> String {
+      match e {
+        Expr::String(s) => s.clone(),
+        other => crate::syntax::expr_to_string(other),
+      }
+    };
+    match args {
+      Expr::List(items) => match key {
+        Expr::Integer(n) if *n >= 1 && (*n as usize) <= items.len() => {
+          Some(render(&items[(*n as usize) - 1]))
+        }
+        _ => None,
+      },
+      Expr::Association(pairs) => {
+        let key_str = match key {
+          Expr::String(s) => s.clone(),
+          Expr::Identifier(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        pairs.iter().find_map(|(k, v)| {
+          let k_str = match k {
+            Expr::String(s) => s.clone(),
+            Expr::Identifier(s) => s.clone(),
+            other => crate::syntax::expr_to_string(other),
+          };
+          if k_str == key_str {
+            Some(render(v))
+          } else {
+            None
+          }
+        })
+      }
+      _ => None,
+    }
+  };
+
+  let mut result = String::new();
+  for part in parts {
+    match part {
+      Expr::String(s) => result.push_str(s),
+      Expr::FunctionCall {
+        name,
+        args: slot_args,
+      } if name == "TemplateSlot" && slot_args.len() == 1 => {
+        if let Some(value) = lookup(&slot_args[0]) {
+          result.push_str(&value);
+        }
+      }
+      other => result.push_str(&crate::syntax::expr_to_string(other)),
+    }
+  }
+  Ok(Expr::String(result))
+}
+
 /// TemplateApply[template, args] - Apply arguments to a string template.
 /// Replaces `n` with the nth argument (1-indexed) from a list,
 /// or `key` with the value from an association.
@@ -10676,6 +10826,17 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let template = match &args[0] {
     Expr::String(s) => s.clone(),
+    // TemplateObject[{parts...}, ...] — produced by StringTemplate/FileTemplate.
+    // Fill each TemplateSlot directly from the parts list.
+    Expr::FunctionCall {
+      name,
+      args: object_args,
+    } if name == "TemplateObject" && !object_args.is_empty() => {
+      if let Expr::List(parts) = &object_args[0] {
+        return template_object_apply(parts, &args[1]);
+      }
+      return Ok(args[0].clone());
+    }
     // Non-string template: if second arg is a list, apply like TemplateApply[expr, {args}]
     other => {
       // For non-string first arg, return as-is (like wolframscript returns 42 for TemplateApply[42, {1}])

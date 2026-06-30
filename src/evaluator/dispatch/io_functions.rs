@@ -251,6 +251,59 @@ pub fn dispatch_io_functions(
       };
       return Some(Ok(Expr::String(content)));
     }
+    // FileTemplate[src] / FileTemplate[src, args] — read a template file from
+    // disk and produce a TemplateObject (the same object StringTemplate would
+    // build from the file's contents). `src` may be a path string or a
+    // File["path"] wrapper.
+    #[cfg(not(target_arch = "wasm32"))]
+    "FileTemplate" if args.len() == 1 || args.len() == 2 => {
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        Expr::FunctionCall { name, args: inner }
+          if name == "File"
+            && inner.len() == 1
+            && matches!(&inner[0], Expr::String(_)) =>
+        {
+          match &inner[0] {
+            Expr::String(s) => s.clone(),
+            _ => unreachable!(),
+          }
+        }
+        // URL[…] / CloudObject[…] and other specifications are left
+        // unevaluated (network access is out of scope).
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "FileTemplate".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      };
+      // Resolve relative paths against the virtual working directory.
+      let requested = std::path::Path::new(&filename);
+      let resolved = if requested.is_absolute() {
+        requested.to_path_buf()
+      } else {
+        std::path::PathBuf::from(virtual_current_dir()).join(requested)
+      };
+      let content = match std::fs::read_to_string(&resolved) {
+        Ok(c) => c,
+        Err(_) => {
+          crate::emit_message_to_stdout(&format!(
+            "StringTemplate::fnfnd: File \"{}\" not found.",
+            filename
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        }
+      };
+      let bound_args = if args.len() == 2 {
+        Some(args[1].clone())
+      } else {
+        None
+      };
+      return Some(Ok(crate::functions::string_ast::build_template_object(
+        &content, bound_args,
+      )));
+    }
     // Get[file] — read and evaluate a file, returning the last result
     #[cfg(not(target_arch = "wasm32"))]
     "Get" if args.len() == 1 => {
