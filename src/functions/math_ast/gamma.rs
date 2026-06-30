@@ -1220,30 +1220,10 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
-/// Returns (numerator, denominator, pi_power) where result = (num/den) * Pi^(pi_power/2)
-/// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power)
-pub fn gamma_half_integer_parts(k2: i128) -> Option<(i128, i128, i128)> {
-  if k2 <= 0 {
-    return None;
-  }
-  if k2 % 2 == 0 {
-    // k2 = 2m, so Gamma(m) = (m-1)!
-    let m = (k2 / 2) as usize;
-    let fact = factorial_i128(m - 1)?;
-    Some((fact, 1, 0))
-  } else {
-    // k2 = 2m+1, so Gamma(m + 1/2) = (2m)! * sqrt(pi) / (4^m * m!)
-    let m = ((k2 - 1) / 2) as usize;
-    let two_m_fact = factorial_i128(2 * m)?;
-    let m_fact = factorial_i128(m)?;
-    let four_m = 4i128.checked_pow(m as u32)?;
-    Some((two_m_fact, four_m * m_fact, 1))
-  }
-}
-
-/// BigInt version of [`gamma_half_integer_parts`] for `k2 > 0`, so half-integer
-/// Beta arguments do not overflow i128 (e.g. Beta[21/2, 21/2]). Returns
-/// `(numerator, denominator, pi_power)` where Gamma(k2/2) = (num/den) * pi^(pi_power/2).
+/// Returns (num, den, pi_power) where result = (num/den) * Pi^(pi_power/2)
+/// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power).
+/// Use BigInt so half-integer Beta arguments do not overflow i128 
+/// (e.g. Beta[21/2, 21/2]).
 fn gamma_half_integer_parts_big(k2: i128) -> Option<(BigInt, BigInt, i128)> {
   if k2 <= 0 {
     return None;
