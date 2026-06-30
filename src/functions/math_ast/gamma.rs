@@ -1222,7 +1222,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
 /// Returns (num, den, pi_power) where result = (num/den) * Pi^(pi_power/2)
 /// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power).
-/// Use BigInt so half-integer Beta arguments do not overflow i128 
+/// Use BigInt so half-integer Beta arguments do not overflow i128
 /// (e.g. Beta[21/2, 21/2]).
 fn gamma_half_integer_parts_big(k2: i128) -> Option<(BigInt, BigInt, i128)> {
   if k2 <= 0 {
