@@ -10663,34 +10663,203 @@ fn fortran_args(args: &[Expr]) -> String {
     .join(",")
 }
 
+/// Rebuild an expression tree, applying `f` to every node. When `f` returns
+/// `Some(replacement)` the node (and its subtree) is replaced; otherwise the
+/// node is rebuilt with its children transformed. Mirrors the variant coverage
+/// of `substitute_slot_zero_with_self` so slot-bearing template expressions are
+/// fully rewritten.
+fn map_expr_tree(expr: &Expr, f: &dyn Fn(&Expr) -> Option<Expr>) -> Expr {
+  if let Some(replacement) = f(expr) {
+    return replacement;
+  }
+  let go = |e: &Expr| map_expr_tree(e, f);
+  match expr {
+    Expr::List(items) => Expr::List(items.iter().map(go).collect()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(go).collect(),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(go(func)),
+      args: args.iter().map(go).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(go(left)),
+      right: Box::new(go(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(go(operand)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands.iter().map(go).collect(),
+      operators: operators.clone(),
+    },
+    Expr::CompoundExpr(items) => {
+      Expr::CompoundExpr(items.iter().map(go).collect())
+    }
+    Expr::Association(items) => {
+      Expr::Association(items.iter().map(|(k, v)| (go(k), go(v))).collect())
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(go(pattern)),
+      replacement: Box::new(go(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(go(pattern)),
+      replacement: Box::new(go(replacement)),
+    },
+    Expr::PrefixApply { func, arg } => Expr::PrefixApply {
+      func: Box::new(go(func)),
+      arg: Box::new(go(arg)),
+    },
+    Expr::Postfix { expr: e, func } => Expr::Postfix {
+      expr: Box::new(go(e)),
+      func: Box::new(go(func)),
+    },
+    Expr::Map { func, list } => Expr::Map {
+      func: Box::new(go(func)),
+      list: Box::new(go(list)),
+    },
+    Expr::Apply { func, list } => Expr::Apply {
+      func: Box::new(go(func)),
+      list: Box::new(go(list)),
+    },
+    Expr::MapApply { func, list } => Expr::MapApply {
+      func: Box::new(go(func)),
+      list: Box::new(go(list)),
+    },
+    Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
+      expr: Box::new(go(e)),
+      rules: Box::new(go(rules)),
+    },
+    Expr::ReplaceRepeated { expr: e, rules } => Expr::ReplaceRepeated {
+      expr: Box::new(go(e)),
+      rules: Box::new(go(rules)),
+    },
+    Expr::Part { expr: e, index } => Expr::Part {
+      expr: Box::new(go(e)),
+      index: Box::new(go(index)),
+    },
+    other => other.clone(),
+  }
+}
+
+/// Convert anonymous-function slots into `TemplateSlot` markers inside an
+/// embedded `<* … *>` expression: `#`/`#1` → `TemplateSlot[1]` and the named
+/// `#key` (parsed as `Slot["key"]`) → `TemplateSlot[key]`.
+fn slots_to_template_slots(expr: &Expr) -> Expr {
+  map_expr_tree(expr, &|e| match e {
+    Expr::Slot(n) => Some(Expr::FunctionCall {
+      name: "TemplateSlot".to_string(),
+      args: vec![Expr::Integer(*n as i128)].into(),
+    }),
+    Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
+      let key = match &args[0] {
+        Expr::String(s) => Expr::Identifier(s.clone()),
+        Expr::Integer(n) => Expr::Integer(*n),
+        other => other.clone(),
+      };
+      Some(Expr::FunctionCall {
+        name: "TemplateSlot".to_string(),
+        args: vec![key].into(),
+      })
+    }
+    _ => None,
+  })
+}
+
+/// Parse the body of an embedded `<* … *>` template expression into an `Expr`
+/// with its slots converted to `TemplateSlot` markers. Returns `None` if the
+/// body is empty or fails to parse.
+fn parse_template_expression(body: &str) -> Option<Expr> {
+  let body = body.trim();
+  if body.is_empty() {
+    return None;
+  }
+  let pairs = crate::parse(body).ok()?;
+  for program in pairs {
+    for node in program.into_inner() {
+      if matches!(node.as_rule(), crate::Rule::Expression) {
+        return Some(slots_to_template_slots(&crate::syntax::pair_to_expr(
+          node,
+        )));
+      }
+    }
+  }
+  None
+}
+
 /// Parse a template string into the `TemplateObject` parts list: a list of
-/// alternating literal `String` segments and `TemplateSlot[key]` expressions.
-/// A `` `name` `` slot becomes `TemplateSlot[name]` (a symbol), a `` `1` ``
-/// slot becomes `TemplateSlot[1]` (an integer), and an empty `` `` `` slot
-/// becomes the next positional `TemplateSlot[n]`. An unterminated backtick is
-/// kept as a literal character, matching wolframscript.
+/// literal `String` segments, `TemplateSlot[key]` markers, and
+/// `TemplateExpression[expr]` nodes. A `` `name` `` slot becomes
+/// `TemplateSlot[name]` (a symbol), a `` `1` `` slot becomes `TemplateSlot[1]`
+/// (an integer), and an empty `` `` `` slot becomes the next positional
+/// `TemplateSlot[n]`. A `<* expr *>` section becomes `TemplateExpression[expr]`
+/// with `#`/`#key` slot references rewritten to `TemplateSlot`. An unterminated
+/// backtick is kept as a literal character, matching wolframscript.
 pub fn parse_template_parts(template: &str) -> Vec<Expr> {
+  let chars: Vec<char> = template.chars().collect();
   let mut parts: Vec<Expr> = Vec::new();
   let mut literal = String::new();
   let mut positional: i128 = 1;
-  let mut chars = template.chars().peekable();
-  while let Some(ch) = chars.next() {
-    if ch == '`' {
+  let mut i = 0;
+  while i < chars.len() {
+    // Embedded expression: <* … *>
+    if chars[i] == '<' && chars.get(i + 1) == Some(&'*') {
+      let mut end = None;
+      let mut j = i + 2;
+      while j + 1 < chars.len() {
+        if chars[j] == '*' && chars[j + 1] == '>' {
+          end = Some(j);
+          break;
+        }
+        j += 1;
+      }
+      if let Some(end) = end {
+        let body: String = chars[i + 2..end].iter().collect();
+        if let Some(expr) = parse_template_expression(&body) {
+          if !literal.is_empty() {
+            parts.push(Expr::String(std::mem::take(&mut literal)));
+          }
+          parts.push(Expr::FunctionCall {
+            name: "TemplateExpression".to_string(),
+            args: vec![expr].into(),
+          });
+        }
+        i = end + 2;
+        continue;
+      }
+      // No closing `*>`: fall through and treat `<` as a literal character.
+    }
+    if chars[i] == '`' {
       // Read the slot key up to the next backtick.
       let mut key = String::new();
+      let mut j = i + 1;
       let mut closed = false;
-      for c in chars.by_ref() {
-        if c == '`' {
+      while j < chars.len() {
+        if chars[j] == '`' {
           closed = true;
           break;
         }
-        key.push(c);
+        key.push(chars[j]);
+        j += 1;
       }
       if !closed {
         // Unterminated slot: keep the backtick and key as literal text.
         literal.push('`');
         literal.push_str(&key);
-        continue;
+        break;
       }
       if !literal.is_empty() {
         parts.push(Expr::String(std::mem::take(&mut literal)));
@@ -10708,9 +10877,11 @@ pub fn parse_template_parts(template: &str) -> Vec<Expr> {
         name: "TemplateSlot".to_string(),
         args: vec![key_expr].into(),
       });
-    } else {
-      literal.push(ch);
+      i = j + 1;
+      continue;
     }
+    literal.push(chars[i]);
+    i += 1;
   }
   if !literal.is_empty() {
     parts.push(Expr::String(literal));
@@ -10720,11 +10891,17 @@ pub fn parse_template_parts(template: &str) -> Vec<Expr> {
 
 /// Build a `TemplateObject` expression from a template string. The optional
 /// `bound_args` association is inserted as the second element (used by the
-/// two-argument `FileTemplate[src, args]` / `StringTemplate[src, args]` forms).
-/// The result renders identically to wolframscript, e.g.
+/// two-argument `FileTemplate[src, args]` / `XMLTemplate[src, args]` forms).
+/// `insertion_function` selects the slot renderer (`TextString` for plain
+/// string templates, `HTMLFragment` for XML templates). The result renders
+/// identically to wolframscript, e.g.
 /// `TemplateObject[{Hello , TemplateSlot[name]}, CombinerFunction -> StringJoin,
 /// InsertionFunction -> TextString, MetaInformation -> <||>]`.
-pub fn build_template_object(template: &str, bound_args: Option<Expr>) -> Expr {
+pub fn build_template_object(
+  template: &str,
+  bound_args: Option<Expr>,
+  insertion_function: &str,
+) -> Expr {
   let parts = Expr::List(parse_template_parts(template).into());
   let mut object_args: Vec<Expr> = vec![parts];
   if let Some(assoc) = bound_args {
@@ -10740,7 +10917,7 @@ pub fn build_template_object(template: &str, bound_args: Option<Expr>) -> Expr {
   ));
   object_args.push(option(
     "InsertionFunction",
-    Expr::Identifier("TextString".to_string()),
+    Expr::Identifier(insertion_function.to_string()),
   ));
   object_args.push(option("MetaInformation", Expr::Association(Vec::new())));
   Expr::FunctionCall {
@@ -10749,49 +10926,75 @@ pub fn build_template_object(template: &str, bound_args: Option<Expr>) -> Expr {
   }
 }
 
-/// Apply a `TemplateObject[{parts...}, ...]` to arguments, filling each
-/// `TemplateSlot[key]` from a list (by 1-indexed position) or an association
-/// (by key name). Returns the combined string.
-pub fn template_object_apply(
-  parts: &[Expr],
-  args: &Expr,
-) -> Result<Expr, InterpreterError> {
-  // Look up a slot value: integer key -> positional list/assoc index,
-  // symbol/string key -> association key.
-  let lookup = |key: &Expr| -> Option<String> {
-    let render = |e: &Expr| -> String {
-      match e {
-        Expr::String(s) => s.clone(),
-        other => crate::syntax::expr_to_string(other),
+/// Look up the bound value for a `TemplateSlot[key]`: an integer key indexes a
+/// positional list (1-based); a symbol/string key selects an association entry.
+/// Returns the raw value `Expr` (used directly inside `TemplateExpression`).
+fn template_slot_value(key: &Expr, args: &Expr) -> Option<Expr> {
+  match args {
+    Expr::List(items) => match key {
+      Expr::Integer(n) if *n >= 1 && (*n as usize) <= items.len() => {
+        Some(items[(*n as usize) - 1].clone())
       }
-    };
-    match args {
-      Expr::List(items) => match key {
-        Expr::Integer(n) if *n >= 1 && (*n as usize) <= items.len() => {
-          Some(render(&items[(*n as usize) - 1]))
-        }
-        _ => None,
-      },
-      Expr::Association(pairs) => {
-        let key_str = match key {
+      _ => None,
+    },
+    Expr::Association(pairs) => {
+      let key_str = match key {
+        Expr::String(s) => s.clone(),
+        Expr::Identifier(s) => s.clone(),
+        other => crate::syntax::expr_to_string(other),
+      };
+      pairs.iter().find_map(|(k, v)| {
+        let k_str = match k {
           Expr::String(s) => s.clone(),
           Expr::Identifier(s) => s.clone(),
           other => crate::syntax::expr_to_string(other),
         };
-        pairs.iter().find_map(|(k, v)| {
-          let k_str = match k {
-            Expr::String(s) => s.clone(),
-            Expr::Identifier(s) => s.clone(),
-            other => crate::syntax::expr_to_string(other),
-          };
-          if k_str == key_str {
-            Some(render(v))
-          } else {
-            None
+        (k_str == key_str).then(|| v.clone())
+      })
+    }
+    Expr::FunctionCall { name, args: pairs } if name == "Association" => {
+      let key_str = match key {
+        Expr::String(s) => s.clone(),
+        Expr::Identifier(s) => s.clone(),
+        other => crate::syntax::expr_to_string(other),
+      };
+      pairs.iter().find_map(|rule| {
+        let (k, v) = match rule {
+          Expr::Rule {
+            pattern,
+            replacement,
           }
-        })
-      }
-      _ => None,
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => (pattern.as_ref(), replacement.as_ref()),
+          _ => return None,
+        };
+        let k_str = match k {
+          Expr::String(s) => s.clone(),
+          Expr::Identifier(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        (k_str == key_str).then(|| v.clone())
+      })
+    }
+    _ => None,
+  }
+}
+
+/// Apply a `TemplateObject[{parts...}, ...]` to arguments. Each
+/// `TemplateSlot[key]` is filled from a list (by 1-indexed position) or an
+/// association (by key name); each `TemplateExpression[expr]` has its slots
+/// substituted, is evaluated, and the result rendered. Returns the combined
+/// string.
+pub fn template_object_apply(
+  parts: &[Expr],
+  args: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let render = |e: &Expr| -> String {
+    match e {
+      Expr::String(s) => s.clone(),
+      other => crate::syntax::expr_to_string(other),
     }
   };
 
@@ -10803,9 +11006,26 @@ pub fn template_object_apply(
         name,
         args: slot_args,
       } if name == "TemplateSlot" && slot_args.len() == 1 => {
-        if let Some(value) = lookup(&slot_args[0]) {
-          result.push_str(&value);
+        if let Some(value) = template_slot_value(&slot_args[0], args) {
+          result.push_str(&render(&value));
         }
+      }
+      Expr::FunctionCall {
+        name,
+        args: expr_args,
+      } if name == "TemplateExpression" && expr_args.len() == 1 => {
+        // Substitute TemplateSlot markers with their bound values, then
+        // evaluate the resulting expression and render it.
+        let substituted = map_expr_tree(&expr_args[0], &|e| match e {
+          Expr::FunctionCall { name, args: a }
+            if name == "TemplateSlot" && a.len() == 1 =>
+          {
+            template_slot_value(&a[0], args)
+          }
+          _ => None,
+        });
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+        result.push_str(&render(&evaluated));
       }
       other => result.push_str(&crate::syntax::expr_to_string(other)),
     }

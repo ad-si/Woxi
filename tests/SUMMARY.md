@@ -1503,6 +1503,7 @@
   - [`URLFetch`](file_system/URLFetch.md)
   - [`Write`](file_system/Write.md)
   - [`WriteString`](file_system/WriteString.md)
+  - [`XMLTemplate`](file_system/XMLTemplate.md)
 - [Scripting](scripting.md)
 - [Jupyter](jupyter.md)
 - [Studio](studio.md)

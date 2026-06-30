@@ -278,13 +278,12 @@ Woxi does **not** support.
 - Differential operators: `DEigenvalues`, `GreenFunction`, `MellinTransform`
 - `Channel` publish-subscribe framework; cryptography; `HTTPRequest`
 - Visualization: `TimelinePlot`, `Dendrogram`, `GeoHistogram`, `AudioPlot`
-- Text: `TextWords`, `TextSentences`, `TextCases`, `Transliterate`
+- Text: `TextCases`, `Transliterate`
 
 ### Version 10.0 (2014)
 
 - Machine learning: `Classify`, `Predict`
 - Finite-element method for PDEs (`NDSolve` `"FiniteElement"`)
-- File / HTML templating: `FileTemplate`, `XMLTemplate`
 
 ### Version 9.0 (2012)
 

@@ -301,7 +301,63 @@ pub fn dispatch_io_functions(
         None
       };
       return Some(Ok(crate::functions::string_ast::build_template_object(
-        &content, bound_args,
+        &content,
+        bound_args,
+        "TextString",
+      )));
+    }
+    // XMLTemplate[src] / XMLTemplate[src, args] — like StringTemplate but with
+    // InsertionFunction -> HTMLFragment. `src` may be a literal template string
+    // or a File["path"] wrapper that is read from disk. The template string may
+    // embed `<* expr *>` sections in addition to `` `slot` `` markers.
+    "XMLTemplate" if args.len() == 1 || args.len() == 2 => {
+      let content = match &args[0] {
+        Expr::String(s) => s.clone(),
+        #[cfg(not(target_arch = "wasm32"))]
+        Expr::FunctionCall { name, args: inner }
+          if name == "File"
+            && inner.len() == 1
+            && matches!(&inner[0], Expr::String(_)) =>
+        {
+          let filename = match &inner[0] {
+            Expr::String(s) => s.clone(),
+            _ => unreachable!(),
+          };
+          let requested = std::path::Path::new(&filename);
+          let resolved = if requested.is_absolute() {
+            requested.to_path_buf()
+          } else {
+            std::path::PathBuf::from(virtual_current_dir()).join(requested)
+          };
+          match std::fs::read_to_string(&resolved) {
+            Ok(c) => c,
+            Err(_) => {
+              crate::emit_message_to_stdout(&format!(
+                "XMLTemplate::fnfnd: File \"{}\" not found.",
+                filename
+              ));
+              return Some(Ok(Expr::Identifier("$Failed".to_string())));
+            }
+          }
+        }
+        // URL[…] / CloudObject[…] and other specifications are left
+        // unevaluated (network access is out of scope).
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "XMLTemplate".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      };
+      let bound_args = if args.len() == 2 {
+        Some(args[1].clone())
+      } else {
+        None
+      };
+      return Some(Ok(crate::functions::string_ast::build_template_object(
+        &content,
+        bound_args,
+        "HTMLFragment",
       )));
     }
     // Get[file] — read and evaluate a file, returning the last result

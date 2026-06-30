@@ -9822,11 +9822,13 @@ pub fn evaluate_function_call_ast_inner(
         | "Image3D"
         | "CenteredInterval"
         | "BernoulliGraphDistribution"
-        // TemplateObject/TemplateSlot are symbolic template objects produced by
-        // StringTemplate/FileTemplate. They stay unevaluated as their canonical
-        // form (consumed by TemplateApply), so they are not "unimplemented".
+        // TemplateObject/TemplateSlot/TemplateExpression are symbolic template
+        // objects produced by StringTemplate/FileTemplate/XMLTemplate. They stay
+        // unevaluated as their canonical form (consumed by TemplateApply), so
+        // they are not "unimplemented".
         | "TemplateObject"
         | "TemplateSlot"
+        | "TemplateExpression"
         // SymmetricGroup[n] is a symbolic group object whose canonical form
         // stays unevaluated (matching wolframscript). It is consumed by
         // GroupOrder/GroupGenerators/etc., so it is not "unimplemented".

@@ -2524,7 +2524,7 @@ DateInterval,Creates an interval between two dates with normalized date list rep
 DeleteBorderComponents,,🚫,,8.0,2578
 EqualTo,Operator form of Equal,✅,none,10.3,2578
 SubstitutionSystem,applies substitution rules iteratively to generate sequences,✅,Computation,10.2,2578
-XMLTemplate,Symbolic wrapper for XML templates that returns unevaluated,✅,pure,10.0,2578
+XMLTemplate,Reads an XML template string or file and yields a TemplateObject,✅,effectful,10.0,2578
 BorderDimensions,,🚫,,8.0,2587
 CensoredDistribution,Represents a censored distribution with specified bounds and underlying distribution,✅,pure,8.0,2587
 FromDMS,Convert degrees-minutes-seconds to decimal degrees,✅,none,7.0,2587
@@ -3839,7 +3839,7 @@ PermutationSupport,Elements moved by a permutation,✅,1,8.0,3947
 RepairMesh,,,,11.0,3947
 RootOfUnityQ,Tests whether a number is exactly a root of unity,✅,pure,6.0,3947
 SystemsModelOrder,,🚫,,8.0,3947
-TemplateExpression,,,,10.0,3947
+TemplateExpression,Embedded expression inside a TemplateObject evaluated at TemplateApply time,✅,pure,10.0,3947
 TimeSeriesInvertibility,,🚫,,9.0,3947
 TimeZoneOffset,,,,10.3,3947
 TsallisQExponentialDistribution,,,,9.0,3947

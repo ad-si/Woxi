@@ -4522,6 +4522,101 @@ mod high_level_functions_tests {
     }
   }
 
+  mod xml_template_tests {
+    use std::io::Write;
+    use woxi::{interpret, interpret_with_stdout};
+
+    #[test]
+    fn test_xml_template_renders_with_html_fragment() {
+      // XMLTemplate uses InsertionFunction -> HTMLFragment (vs TextString).
+      assert_eq!(
+        interpret(r#"XMLTemplate["Hi `name`"]"#).unwrap(),
+        "TemplateObject[{Hi , TemplateSlot[name]}, CombinerFunction -> \
+         StringJoin, InsertionFunction -> HTMLFragment, MetaInformation -> <||>]"
+      );
+    }
+
+    #[test]
+    fn test_xml_template_head_is_template_object() {
+      assert_eq!(
+        interpret(r#"Head[XMLTemplate["Hi `a`"]]"#).unwrap(),
+        "TemplateObject"
+      );
+    }
+
+    #[test]
+    fn test_xml_template_expression_renders() {
+      // `<* expr *>` becomes TemplateExpression, with `#a` -> TemplateSlot[a].
+      assert_eq!(
+        interpret(r#"XMLTemplate["Range of `a`: <* Range[#a] *>."]"#).unwrap(),
+        "TemplateObject[{Range of , TemplateSlot[a], : , \
+         TemplateExpression[Range[TemplateSlot[a]]], .}, CombinerFunction -> \
+         StringJoin, InsertionFunction -> HTMLFragment, MetaInformation -> <||>]"
+      );
+    }
+
+    #[test]
+    fn test_xml_template_apply_slot_and_expression() {
+      // The documentation example: a slot plus an embedded expression.
+      assert_eq!(
+        interpret(
+          r#"TemplateApply[XMLTemplate["Range of `a`: <* Range[#a] *>."], Association["a" -> 5]]"#
+        )
+        .unwrap(),
+        "Range of 5: {1, 2, 3, 4, 5}."
+      );
+    }
+
+    #[test]
+    fn test_xml_template_apply_numbered_expression() {
+      // Numbered slot references `#1`, `#2` inside an expression.
+      assert_eq!(
+        interpret(r#"TemplateApply[XMLTemplate["<* #1 + #2 *>"], {3, 4}]"#)
+          .unwrap(),
+        "7"
+      );
+    }
+
+    #[test]
+    fn test_xml_template_two_arg_binds_args() {
+      assert_eq!(
+        interpret(r#"XMLTemplate["Hi `a`", <|"a" -> 1|>]"#).unwrap(),
+        "TemplateObject[{Hi , TemplateSlot[a]}, <|a -> 1|>, CombinerFunction \
+         -> StringJoin, InsertionFunction -> HTMLFragment, MetaInformation -> \
+         <||>]"
+      );
+    }
+
+    #[test]
+    fn test_xml_template_from_file() {
+      let path = std::env::temp_dir()
+        .join(format!("woxi_xmltemplate_{}.xml", std::process::id()));
+      let mut f = std::fs::File::create(&path).unwrap();
+      f.write_all(b"Hello `name`").unwrap();
+      let code =
+        format!(r#"Head[XMLTemplate[File["{}"]]]"#, path.to_string_lossy());
+      assert_eq!(interpret(&code).unwrap(), "TemplateObject");
+      let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_xml_template_missing_file_fails() {
+      let path = std::env::temp_dir().join(format!(
+        "woxi_xmltemplate_missing_{}.xml",
+        std::process::id()
+      ));
+      let _ = std::fs::remove_file(&path);
+      let code = format!(r#"XMLTemplate[File["{}"]]"#, path.to_string_lossy());
+      let r = interpret_with_stdout(&code).unwrap();
+      assert_eq!(r.result, "$Failed");
+      assert!(
+        r.stdout.contains("XMLTemplate::fnfnd:"),
+        "stdout was: {:?}",
+        r.stdout
+      );
+    }
+  }
+
   mod cholesky_decomposition_tests {
     use super::*;
 
