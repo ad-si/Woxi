@@ -130,7 +130,7 @@ fn magnitude_as_f64(expr: &Expr) -> Option<f64> {
 /// Resolve any documented `MusicPitch` input form to its canonical pitch-name
 /// string, e.g. `Integer(55) -> "G3"`. Returns `None` when the specification
 /// is not a recognized pitch form.
-fn resolve_pitch_name(spec: &Expr) -> Option<String> {
+pub fn resolve_pitch_name(spec: &Expr) -> Option<String> {
   match spec {
     // MIDI note number (middle C = 60).
     Expr::Integer(midi) => Some(midi_to_pitch_name(*midi)),

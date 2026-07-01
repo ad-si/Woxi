@@ -87,3 +87,22 @@ MusicChord[{MusicPitch[C], MusicPitch[E], MusicPitch[G]}]
 $ wo 'Head[MusicNote[MusicPitch["C4"]]]'
 MusicNote
 ```
+
+
+## Rendering as notation
+
+In the visual hosts — the [Woxi Playground](https://woxi.dev) and Woxi Studio —
+music objects (`MusicNote`, `MusicChord`, `MusicScale`, `MusicMeasure`,
+`MusicVoice`, `MusicScore`, …) are drawn on a treble staff the way Mathematica
+displays them, with note heads, stems, flags, accidentals, ledger lines, rests
+and barlines. On the command line they stay symbolic (as shown above).
+
+`MusicPlot` renders a music object explicitly and, like `Plot`, yields a
+graphic:
+
+```scrut
+$ wo 'Head[MusicPlot[MusicScale["Major", MusicPitch["C4"]]]]'
+Graphics
+```
+
+The same notation SVG is produced by `ExportString[obj, "SVG"]`.

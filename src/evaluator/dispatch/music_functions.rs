@@ -17,6 +17,13 @@ pub fn dispatch_music_functions(
       Some(Ok(crate::functions::music_ast::music_object_q(args)))
     }
     "MusicPitch" => crate::functions::music_ast::music_pitch(args).map(Ok),
+    // MusicPlot[obj] draws the object as staff notation, returning a Graphics
+    // (which renders as the SVG in visual hosts and as `-Graphics-` in the CLI,
+    // just like Plot). Non-renderable arguments are left symbolic.
+    "MusicPlot" if args.len() == 1 => {
+      crate::functions::music_render::music_to_svg(&args[0])
+        .map(|svg| Ok(crate::graphics_result(svg)))
+    }
     _ => None,
   }
 }

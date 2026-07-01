@@ -6200,4 +6200,4 @@ MusicVoice,Represents a musical voice,✅,pure,15.0,5604
 MusicScore,Represents a musical score,✅,pure,15.0,5605
 MusicMeasurements,Compute properties of a music object,🚫,pure,15.0,5606
 MusicTransform,Transform a music object,🚫,pure,15.0,5607
-MusicPlot,Visualize a music object,🚫,pure,15.0,5608
+MusicPlot,Visualize a music object as staff notation,✅,effectful,15.0,5608

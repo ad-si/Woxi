@@ -107,6 +107,47 @@ fn music_pitch_head_is_music_pitch() {
   assert_eq!(interpret("Head[MusicPitch[60]]").unwrap(), "MusicPitch");
 }
 
+// ─── Staff-notation rendering ────────────────────────────────────────────────
+
+#[test]
+fn export_music_note_to_svg() {
+  // ExportString[obj, "SVG"] renders the object as musical-staff notation.
+  let svg =
+    interpret("ExportString[MusicNote[MusicPitch[\"C4\"]], \"SVG\"]").unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(svg.contains("<ellipse")); // a note head
+  assert!(svg.contains("<line")); // staff lines
+}
+
+#[test]
+fn export_music_chord_renders_three_heads() {
+  let svg = interpret(
+    "ExportString[MusicChord[{MusicPitch[\"C4\"], MusicPitch[\"E4\"], \
+     MusicPitch[\"G4\"]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert_eq!(svg.matches("<ellipse").count(), 3);
+}
+
+#[test]
+fn music_plot_returns_graphics() {
+  // MusicPlot draws the object; in the CLI a Graphics prints as -Graphics-.
+  assert_eq!(
+    interpret("MusicPlot[MusicScale[\"Major\", MusicPitch[\"C4\"]]]").unwrap(),
+    "-Graphics-"
+  );
+}
+
+#[test]
+fn bare_music_object_stays_symbolic_in_cli() {
+  // Without ExportString/MusicPlot the CLI keeps the canonical symbolic form
+  // (only the visual hosts auto-render it).
+  assert_eq!(
+    interpret("MusicNote[MusicPitch[\"C4\"]]").unwrap(),
+    "MusicNote[MusicPitch[C4]]"
+  );
+}
+
 // ─── Symbolic music objects ──────────────────────────────────────────────────
 
 #[test]
