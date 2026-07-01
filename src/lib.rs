@@ -1645,6 +1645,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         } else {
           result_expr
         };
+        // Render ComputationalMusic objects (MusicNote, MusicChord, …) as
+        // musical-staff SVGs (visual mode only — CLI keeps them symbolic).
+        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          render_music_if_needed(result_expr)
+        } else {
+          result_expr
+        };
         // If the result is a Grid expression, render it as SVG (visual mode
         // only — CLI mode keeps Grid[...] symbolic to match wolframscript).
         let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
@@ -1942,6 +1949,21 @@ fn render_sound_if_needed(expr: syntax::Expr) -> syntax::Expr {
   {
     capture_sound(&wav_base64);
     return syntax::Expr::Identifier("-Sound-".to_string());
+  }
+  expr
+}
+
+/// If `expr` is a ComputationalMusic object (MusicNote, MusicChord,
+/// MusicScale, MusicScore, …), render it as a musical-staff SVG the way
+/// Mathematica displays it, capture it as graphics, and return `-Graphics-`.
+/// Music objects that carry no notation (a bare `MusicDuration`, `MusicTempo`,
+/// …) are left symbolic. Visual hosts only — the CLI keeps the symbolic form.
+fn render_music_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if let syntax::Expr::FunctionCall { ref name, .. } = expr
+    && functions::music_ast::MUSIC_OBJECT_HEADS.contains(&name.as_str())
+    && let Some(svg) = functions::music_render::music_to_svg(&expr)
+  {
+    return graphics_result(svg);
   }
   expr
 }

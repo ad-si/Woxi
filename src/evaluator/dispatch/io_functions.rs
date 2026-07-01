@@ -3093,6 +3093,14 @@ pub(crate) fn is_rasterizable_frame(expr: &Expr) -> bool {
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   match expr {
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
+    // ComputationalMusic objects render as musical-staff notation.
+    Expr::FunctionCall { name, .. }
+      if crate::functions::music_ast::MUSIC_OBJECT_HEADS
+        .contains(&name.as_str())
+        && crate::functions::music_render::music_to_svg(expr).is_some() =>
+    {
+      crate::functions::music_render::music_to_svg(expr).unwrap_or_default()
+    }
     Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
       crate::get_captured_graphics().unwrap_or_default()
     }
