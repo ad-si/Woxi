@@ -71,6 +71,7 @@ struct Head {
 }
 
 /// A drawable element laid out left to right on the staff.
+#[derive(Clone)]
 enum Glyph {
   /// A note or (with several heads) a chord.
   Note {
@@ -473,8 +474,26 @@ fn collect(
         // A voice/score prints its meter at the start (4/4 unless specified).
         let value = container_time_signature(args).or(*ts).unwrap_or((4, 4));
         show_time_signature(out, ts, value);
-        for arg in args {
-          collect(arg, out, ts);
+        // A resolved voice/score carries its children under an association key
+        // (a voice's `"MeasureList"`, a score's `"VoiceList"`); the unresolved
+        // list form carries them as its arguments.
+        if let Some(Expr::Association(pairs)) = args.first() {
+          let key = if name == "MusicVoice" {
+            "MeasureList"
+          } else {
+            "VoiceList"
+          };
+          if let Some(Expr::List(items)) = pairs.iter().find_map(|(k, v)| {
+            matches!(k, Expr::String(s) if s == key).then_some(v)
+          }) {
+            for it in items.iter() {
+              collect(it, out, ts);
+            }
+          }
+        } else {
+          for arg in args {
+            collect(arg, out, ts);
+          }
         }
         true
       }
@@ -938,13 +957,28 @@ fn draw_treble_clef(cv: &mut Canvas, x: f64) {
 /// Render a computational-music object to a standalone SVG, or `None` when the
 /// expression is not a music object that carries notation.
 pub fn music_to_svg(expr: &Expr) -> Option<String> {
+  // A MusicScore is a system of simultaneous voices — overlay them on a single
+  // shared staff (a note from each voice stacked at the same rhythmic position),
+  // rather than drawing each voice on a staff of its own.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "MusicScore"
+  {
+    return music_score_to_svg(args);
+  }
+
   let mut glyphs = Vec::new();
   let mut ts = None;
   let container = collect(expr, &mut glyphs, &mut ts);
   if glyphs.is_empty() {
     return None;
   }
+  Some(render_staff(&glyphs, container))
+}
 
+/// Lay a stream of glyphs out on a single treble staff and return a
+/// self-contained SVG. `container` closes the staff with a final barline (as a
+/// whole measure/voice/score does).
+fn render_staff(glyphs: &[Glyph], container: bool) -> String {
   let stroke = theme().text_primary;
   let scale = music_font::scale_for_gap(GAP);
   let mut cv = Canvas::new(stroke, scale);
@@ -966,7 +1000,7 @@ pub fn music_to_svg(expr: &Expr) -> Option<String> {
   const PAD: f64 = 4.0;
   let mut cursor = first_note_x;
   let mut right_edge = clef_right;
-  for g in &glyphs {
+  for g in glyphs {
     match g {
       Glyph::Note { heads, dur } => {
         let left = cv.note_left_extent(heads, *dur);
@@ -1030,14 +1064,95 @@ pub fn music_to_svg(expr: &Expr) -> Option<String> {
   let width = (cv.maxx.max(staff_x_end) - minx) + pad;
   let height = (cv.maxy - miny) + pad;
 
-  Some(format!(
+  format!(
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w:.0}\" \
      height=\"{h:.0}\" viewBox=\"{minx:.2} {miny:.2} {width:.2} {height:.2}\">\
      {staff}{body}</svg>",
     w = width,
     h = height,
     body = cv.out,
-  ))
+  )
+}
+
+/// Render a `MusicScore[{voice, …}]` as a single shared staff on which the
+/// voices are overlaid: the voices sound simultaneously, so a note from each
+/// voice at the same rhythmic position is drawn as one stacked chord. The
+/// voices are the score's single list argument (or its direct arguments), or
+/// the `"VoiceList"` of a resolved score. Returns `None` when the score is
+/// empty or any voice is not drawable, so the caller falls back to the text
+/// form.
+fn music_score_to_svg(args: &[Expr]) -> Option<String> {
+  let voices = score_voices(args)?;
+  if voices.is_empty() {
+    return None;
+  }
+
+  // Collect each voice's own glyph stream; they share meter/rhythm, so the
+  // streams line up position by position.
+  let streams: Vec<Vec<Glyph>> = voices
+    .iter()
+    .map(|v| {
+      let mut glyphs = Vec::new();
+      let mut ts = None;
+      collect(v, &mut glyphs, &mut ts);
+      glyphs
+    })
+    .collect();
+  if streams.iter().all(|s| s.is_empty()) {
+    return None;
+  }
+  Some(render_staff(&merge_voice_glyphs(&streams), true))
+}
+
+/// The voices of a `MusicScore` — its single list argument, its direct
+/// arguments, or the `"VoiceList"` of a resolved `MusicScore[<|…|>]`.
+fn score_voices(args: &[Expr]) -> Option<Vec<Expr>> {
+  match args.first() {
+    Some(Expr::Association(pairs)) => {
+      pairs.iter().find_map(|(k, v)| match (k, v) {
+        (Expr::String(s), Expr::List(items)) if s == "VoiceList" => {
+          Some(items.to_vec())
+        }
+        _ => None,
+      })
+    }
+    Some(Expr::List(items)) if args.len() == 1 => Some(items.to_vec()),
+    _ => Some(args.to_vec()),
+  }
+}
+
+/// Overlay several voices' glyph streams into one, stacking simultaneous notes
+/// into chords. The streams are walked in lock-step (the voices share the same
+/// meter and rhythm); at each position the note heads of every voice are merged
+/// onto the leading voice's glyph, so two melodic lines print as one staff of
+/// intervals/chords. Non-note glyphs (time signatures, barlines) are taken from
+/// the leading voice.
+fn merge_voice_glyphs(streams: &[Vec<Glyph>]) -> Vec<Glyph> {
+  let Some(lead_idx) = (0..streams.len()).max_by_key(|&i| streams[i].len())
+  else {
+    return Vec::new();
+  };
+  streams[lead_idx]
+    .iter()
+    .enumerate()
+    .map(|(i, g)| match g {
+      Glyph::Note { heads, dur } => {
+        let mut heads = heads.clone();
+        for (j, other) in streams.iter().enumerate() {
+          if j == lead_idx {
+            continue;
+          }
+          if let Some(Glyph::Note { heads: h2, .. }) = other.get(i) {
+            heads.extend(h2.iter().copied());
+          }
+        }
+        heads.sort_by_key(|h| h.dn);
+        heads.dedup_by_key(|h| (h.dn, h.accidental));
+        Glyph::Note { heads, dur: *dur }
+      }
+      other => other.clone(),
+    })
+    .collect()
 }
 
 /// Extract a numeric attribute (e.g. `width`, `height`) from the opening tag

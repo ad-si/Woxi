@@ -685,6 +685,72 @@ fn music_measure_overfull_compound_meter() {
   )));
 }
 
+// ─── Voice / score resolution ────────────────────────────────────────────────
+
+/// A bare `MusicMeasure[{…}]` (no meter) resolves against common time, tagging
+/// the generated default signature with `BeatLength -> 1`; a lone note fills
+/// the whole four-beat bar.
+#[test]
+fn music_measure_defaults_to_common_time() {
+  assert_eq!(
+    interpret("MusicMeasure[{MusicNote[\"C\"]}]").unwrap(),
+    "MusicMeasure[<|NoteList -> {MusicNote[<|Pitch -> \
+     MusicPitch[<|Accidental -> 0, Key -> C|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 4|>]|>]}, \
+     TimeSignature -> \
+     MusicTimeSignature[<|Numerator -> 4, Denominator -> 4, BeatLength -> 1|>]|>]"
+  );
+}
+
+/// A `MusicVoice` of measures resolves to `<|MeasureList, TimeSignature|>`, its
+/// signature taken from the first measure.
+#[test]
+fn music_voice_resolves_to_measure_list() {
+  assert_eq!(
+    interpret(
+      "MusicVoice[{MusicMeasure[{MusicNote[\"C\"], MusicNote[\"E\"], \
+       MusicNote[\"D\"]}, MusicTimeSignature[3, 4]]}]"
+    )
+    .unwrap(),
+    "MusicVoice[<|MeasureList -> {MusicMeasure[<|NoteList -> {\
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> C|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>], \
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>], \
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> D|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>]}, \
+     TimeSignature -> MusicTimeSignature[<|Numerator -> 3, Denominator -> 4|>]|>]}, \
+     TimeSignature -> MusicTimeSignature[<|Numerator -> 3, Denominator -> 4|>]|>]"
+  );
+}
+
+/// A `MusicScore` resolves to `<|VoiceList, TimeSignature|>`, keeping each
+/// resolved voice.
+#[test]
+fn music_score_resolves_to_voice_list() {
+  let out = interpret("MusicScore[{MusicVoice[{MusicNote[\"C\"]}]}]").unwrap();
+  assert!(
+    out.starts_with("MusicScore[<|VoiceList -> {MusicVoice[<|MeasureList")
+  );
+  assert!(out.ends_with(
+    "TimeSignature -> \
+     MusicTimeSignature[<|Numerator -> 4, Denominator -> 4, BeatLength -> 1|>]|>]"
+  ));
+}
+
+/// Empty containers resolve to their key-only association forms.
+#[test]
+fn music_empty_containers_resolve() {
+  assert_eq!(
+    interpret("MusicVoice[]").unwrap(),
+    "MusicVoice[<|MeasureList -> {}|>]"
+  );
+  assert_eq!(
+    interpret("MusicScore[]").unwrap(),
+    "MusicScore[<|VoiceList -> {}|>]"
+  );
+}
+
 // ─── Transposition by MusicInterval ──────────────────────────────────────────
 
 /// Adding a `MusicInterval` to a `MusicNote` transposes its pitch. A
@@ -703,4 +769,47 @@ fn music_note_plus_interval_transposes() {
     "MusicNote[<|Pitch -> \
      MusicPitch[<|Accidental -> -1, Key -> E, MIDINumber -> 63|>]|>]"
   );
+}
+
+/// Adding an interval to a whole `MusicVoice` transposes every pitch it
+/// contains (the voice resolves to its measure/note association, the pitches
+/// shifted up a fourth: C→F, E→A).
+#[test]
+fn music_voice_plus_interval_transposes_every_pitch() {
+  assert_eq!(
+    interpret(
+      "MusicVoice[{MusicNote[\"C\"], MusicNote[\"E\"]}] + MusicInterval[5]"
+    )
+    .unwrap(),
+    "MusicVoice[<|MeasureList -> {MusicMeasure[<|NoteList -> {\
+     MusicNote[<|Pitch -> \
+     MusicPitch[<|Accidental -> 0, Key -> F, MIDINumber -> 65|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>], \
+     MusicNote[<|Pitch -> \
+     MusicPitch[<|Accidental -> 0, Key -> A, MIDINumber -> 69|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 3|>]|>]}, \
+     TimeSignature -> \
+     MusicTimeSignature[<|Numerator -> 4, Denominator -> 4, BeatLength -> 1|>]\
+     |>]}, TimeSignature -> \
+     MusicTimeSignature[<|Numerator -> 4, Denominator -> 4, BeatLength -> 1|>]|>]"
+  );
+}
+
+// ─── MusicScore rendering ────────────────────────────────────────────────────
+
+/// A `MusicScore` overlays its voices on one shared staff: the voices sound
+/// simultaneously, so a note from each at the same position stacks into a
+/// chord. Here a voice and its transposition up a fourth print as three
+/// two-note chords on a single staff.
+#[test]
+fn music_score_overlays_voices_on_one_staff() {
+  let svg = interpret(
+    "voice = MusicVoice[{MusicNote[\"E\"], MusicNote[\"C\"], MusicNote[\"D\"]}]; \
+     ExportString[MusicScore[{voice, voice + MusicInterval[5]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  // One shared staff (one clef), with both voices' heads: 3 positions × 2 = 6.
+  assert_eq!(svg.matches("class=\"clef\"").count(), 1);
+  assert_eq!(svg.matches("class=\"notehead\"").count(), 6);
 }

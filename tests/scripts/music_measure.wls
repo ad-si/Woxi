@@ -15,3 +15,10 @@ Print[MusicMeasure[
   {MusicNote["E"], MusicNote["C"]},
   MusicTimeSignature[6, 8]
 ]]
+
+(* A MusicVoice packs its measures into a MeasureList association, taking its
+   time signature from the first measure. *)
+Print[MusicVoice[{MusicMeasure[{MusicNote["C"], MusicNote["E"]}]}]]
+
+(* A MusicScore packs its voices into a VoiceList association. *)
+Print[MusicScore[{MusicVoice[{MusicNote["C"]}]}]]

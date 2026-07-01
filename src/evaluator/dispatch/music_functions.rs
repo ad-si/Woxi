@@ -36,10 +36,17 @@ pub fn dispatch_music_functions(
     "MusicRest" if args.len() <= 1 => {
       crate::functions::music_ast::music_rest(args).map(Ok)
     }
-    // MusicMeasure[{events…}, MusicTimeSignature[…]] resolves its rhythm against
-    // the meter; the plain single-argument forms stay symbolic for rendering.
-    "MusicMeasure" if args.len() == 2 => {
+    // MusicMeasure[{events…}[, MusicTimeSignature[…]]] resolves its rhythm
+    // against the meter (defaulting to common time); MusicVoice/MusicScore pack
+    // their measures/voices into the WL 15 association forms.
+    "MusicMeasure" if args.len() <= 2 => {
       crate::functions::music_ast::music_measure(args).map(Ok)
+    }
+    "MusicVoice" if args.len() <= 1 => {
+      crate::functions::music_ast::music_voice(args).map(Ok)
+    }
+    "MusicScore" if args.len() <= 1 => {
+      crate::functions::music_ast::music_score(args).map(Ok)
     }
     // MusicPlot[obj] draws the object as staff notation, returning a Graphics
     // (which renders as the SVG in visual hosts and as `-Graphics-` in the CLI,

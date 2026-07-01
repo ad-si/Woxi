@@ -321,6 +321,20 @@ MusicMeasure::measdur: The total duration of beats 4 exceeds the allowed number 
 MusicMeasure[{MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>]|>], MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> C|>], Duration -> MusicDuration[<|Duration -> 1/2|>]|>], MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> D|>]|>]}, MusicTimeSignature[<|Numerator -> 3, Denominator -> 4|>]]
 ```
 
+A `MusicVoice` packs its measures into a `"MeasureList"`, and a `MusicScore` its
+voices into a `"VoiceList"`; each takes its time signature from the first child.
+Empty containers resolve to their key-only forms.
+
+```scrut
+$ wo 'MusicVoice[{MusicMeasure[{MusicNote["C"], MusicNote["E"]}, MusicTimeSignature[2, 4]]}]'
+MusicVoice[<|MeasureList -> {MusicMeasure[<|NoteList -> {MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> C|>], Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>], MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>], Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>]}, TimeSignature -> MusicTimeSignature[<|Numerator -> 2, Denominator -> 4|>]|>]}, TimeSignature -> MusicTimeSignature[<|Numerator -> 2, Denominator -> 4|>]|>]
+```
+
+```scrut
+$ wo 'MusicScore[]'
+MusicScore[<|VoiceList -> {}|>]
+```
+
 
 ## Exporting to MIDI
 

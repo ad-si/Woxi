@@ -69,9 +69,83 @@ fn element_midi(expr: &Expr) -> Option<i128> {
   }
 }
 
-/// The note list of one voice, given as `MusicVoice[{…}]`, a bare `List`, or a
-/// `MusicMeasure[{…}]`. Durations follow the 4/4 measure-fill convention.
+/// Look up a string key in an association's `(key, value)` pairs.
+fn assoc_get<'a>(pairs: &'a [(Expr, Expr)], key: &str) -> Option<&'a Expr> {
+  pairs.iter().find_map(|(k, v)| match k {
+    Expr::String(s) if s == key => Some(v),
+    _ => None,
+  })
+}
+
+/// The integer beat count carried by a resolved note/rest's annotated duration
+/// (`MusicDuration[<|… "Beats" -> n|>]`), or `None` if absent.
+fn note_beats(expr: &Expr) -> Option<i64> {
+  let Expr::FunctionCall { args, .. } = expr else {
+    return None;
+  };
+  let Expr::Association(pairs) = args.first()? else {
+    return None;
+  };
+  let Expr::FunctionCall { args: dargs, .. } = assoc_get(pairs, "Duration")?
+  else {
+    return None;
+  };
+  let Expr::Association(dpairs) = dargs.first()? else {
+    return None;
+  };
+  match assoc_get(dpairs, "Beats")? {
+    Expr::Integer(n) => Some(*n as i64),
+    _ => None,
+  }
+}
+
+/// The notes of a resolved measure `MusicMeasure[<|"NoteList" -> {…}|>]`, each
+/// timed by its annotated beat count.
+fn measure_notes(measure: &Expr) -> Vec<Note> {
+  let Expr::FunctionCall { args, .. } = measure else {
+    return Vec::new();
+  };
+  let Some(Expr::Association(pairs)) = args.first() else {
+    return Vec::new();
+  };
+  let Some(Expr::List(items)) = assoc_get(pairs, "NoteList") else {
+    return Vec::new();
+  };
+  items
+    .iter()
+    .filter_map(|it| {
+      let midi = element_midi(it)?.clamp(0, 127) as u8;
+      let beats = note_beats(it).unwrap_or(1).max(1);
+      Some(Note {
+        midi,
+        ticks: beats * TICKS_PER_BEAT,
+      })
+    })
+    .collect()
+}
+
+/// The note list of one voice: a resolved `MusicVoice[<|"MeasureList" -> …|>]`
+/// or `MusicMeasure[<|"NoteList" -> …|>]` (timed by each note's `"Beats"`), or
+/// the unresolved `MusicVoice[{…}]`/`MusicMeasure[{…}]`/bare `List` (timed by
+/// the 4/4 measure-fill convention).
 fn voice_notes(expr: &Expr) -> Option<Vec<Note>> {
+  // Resolved forms carry beat-annotated notes under an association key.
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(Expr::Association(pairs)) = args.first()
+  {
+    let notes: Vec<Note> = match name.as_str() {
+      "MusicVoice" => match assoc_get(pairs, "MeasureList") {
+        Some(Expr::List(measures)) => {
+          measures.iter().flat_map(measure_notes).collect()
+        }
+        _ => return None,
+      },
+      "MusicMeasure" => measure_notes(expr),
+      _ => return None,
+    };
+    return (!notes.is_empty()).then_some(notes);
+  }
+
   let items: Vec<Expr> = match expr {
     Expr::List(items) => items.to_vec(),
     Expr::FunctionCall { name, args }
@@ -154,10 +228,17 @@ pub fn music_to_midi(expr: &Expr) -> Option<Vec<u8>> {
   // Gather the voices: a score's elements, or the object itself as one voice.
   let voices: Vec<Vec<Note>> = match expr {
     Expr::FunctionCall { name, args } if name == "MusicScore" => {
-      match args.first()? {
-        Expr::List(items) => items.iter().filter_map(voice_notes).collect(),
+      // A resolved score lists its voices under `"VoiceList"`; the unresolved
+      // form lists them as its single list argument.
+      let items = match args.first()? {
+        Expr::Association(pairs) => match assoc_get(pairs, "VoiceList")? {
+          Expr::List(items) => items,
+          _ => return None,
+        },
+        Expr::List(items) => items,
         _ => return None,
-      }
+      };
+      items.iter().filter_map(voice_notes).collect()
     }
     _ => voice_notes(expr).into_iter().collect(),
   };

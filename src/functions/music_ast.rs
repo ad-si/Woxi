@@ -237,6 +237,15 @@ pub fn music_pitch(args: &[Expr]) -> Option<Expr> {
   if matches!(spec, Expr::String(_)) {
     return None;
   }
+  // A canonical pitch *association* (`<|"Accidental" -> …, "Key" -> …, …|>`,
+  // as carried by a resolved note/measure) is already the canonical object.
+  // Leaving it untouched keeps it idempotent under re-evaluation, so a stored
+  // note's pitch stays in association form instead of collapsing to a name.
+  if let Expr::Association(pairs) = spec
+    && assoc_get(pairs, "Key").is_some()
+  {
+    return None;
+  }
   let name = resolve_pitch_name(spec)?;
   Some(Expr::FunctionCall {
     name: "MusicPitch".to_string(),
@@ -1621,22 +1630,26 @@ fn explicit_duration(pairs: &[(Expr, Expr)]) -> Option<Option<Ratio>> {
   }
 }
 
-/// Parse a canonical measure event (`MusicNote[<|…|>]` or `MusicRest[<|…|>]`).
+/// Parse a measure event: a canonical `MusicNote[<|…|>]`/`MusicRest[<|…|>]`, or
+/// a bare pitch specification (a name string, `MusicPitch`, MIDI integer, …),
+/// which is taken as a default (one-beat) note.
 fn parse_measure_event(expr: &Expr) -> Option<MeasureEvent> {
-  let Expr::FunctionCall { name, args } = expr else {
-    return None;
-  };
-  let Expr::Association(pairs) = args.first()? else {
-    return None;
-  };
-  match name.as_str() {
-    "MusicNote" => {
-      let pitch = assoc_get(pairs, "Pitch")?.clone();
-      Some(MeasureEvent::Note(pitch, explicit_duration(pairs)?))
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(Expr::Association(pairs)) = args.first()
+  {
+    match name.as_str() {
+      "MusicNote" => {
+        let pitch = assoc_get(pairs, "Pitch")?.clone();
+        return Some(MeasureEvent::Note(pitch, explicit_duration(pairs)?));
+      }
+      "MusicRest" => {
+        return Some(MeasureEvent::Rest(explicit_duration(pairs)?));
+      }
+      _ => return None,
     }
-    "MusicRest" => Some(MeasureEvent::Rest(explicit_duration(pairs)?)),
-    _ => None,
   }
+  // A bare pitch (e.g. `"C"`, `MusicPitch["C4"]`) is a default note.
+  resolve_pitch_object(expr).map(|pitch| MeasureEvent::Note(pitch, None))
 }
 
 /// Build the beat-annotated `MusicDuration[<|…|>]` for a measure event. The
@@ -1701,9 +1714,18 @@ fn annotate_event(
 /// resolvable list of notes/rests with a canonical time signature is left
 /// symbolic (`None`).
 pub fn music_measure(args: &[Expr]) -> Option<Expr> {
-  let [Expr::List(events_raw), timesig] = args else {
-    return None;
-  };
+  // A measure with no explicit meter defaults to common time; one with a meter
+  // resolves against it. An empty `MusicMeasure[]`/`MusicMeasure[{}]` fills with
+  // a whole-measure rest.
+  let (events_raw, timesig, ts_defaulted): (crate::ExprList, Expr, bool) =
+    match args {
+      [] => (vec![].into(), default_time_signature(), true),
+      [Expr::List(events)] => (events.clone(), default_time_signature(), true),
+      [Expr::List(events), ts] => (events.clone(), ts.clone(), false),
+      _ => return None,
+    };
+  let events_raw = &events_raw;
+  let timesig = &timesig;
   let (numer, denom) = time_signature_parts(timesig)?;
 
   // Simple vs. compound meter fixes the beat unit and the beats per measure.
@@ -1723,8 +1745,36 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
     .iter()
     .map(parse_measure_event)
     .collect::<Option<_>>()?;
+  // An empty measure is filled with a single whole-measure rest. WL orders this
+  // generated rest's duration keys `Beats`-then-`BeatDuration` (the reverse of a
+  // note's) and gives it no stored `Duration`; a defaulted meter is reported as
+  // the empty `MusicTimeSignature[<||>]`.
   if events.is_empty() {
-    return None;
+    let fill_rest = music_assoc(
+      "MusicRest",
+      vec![(
+        "Duration",
+        music_assoc(
+          "MusicDuration",
+          vec![
+            ("Beats", ratio_expr(capacity)),
+            ("BeatDuration", ratio_expr(beat_duration)),
+          ],
+        ),
+      )],
+    );
+    let reported_ts = if ts_defaulted {
+      music_assoc("MusicTimeSignature", vec![])
+    } else {
+      timesig.clone()
+    };
+    return Some(music_assoc(
+      "MusicMeasure",
+      vec![
+        ("NoteList", Expr::List(vec![fill_rest].into())),
+        ("TimeSignature", reported_ts),
+      ],
+    ));
   }
 
   // Nominal beats: an explicit duration measures `duration / beatDuration`
@@ -1779,6 +1829,113 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
     vec![
       ("NoteList", Expr::List(note_list.into())),
       ("TimeSignature", timesig.clone()),
+    ],
+  ))
+}
+
+/// The auto-generated default meter (common time) for a measure/voice/score
+/// with no explicit time signature. The Wolfram Language tags this generated
+/// signature with a `BeatLength -> 1` marker that an explicitly-given meter
+/// does not carry.
+fn default_time_signature() -> Expr {
+  music_assoc(
+    "MusicTimeSignature",
+    vec![
+      ("Numerator", Expr::Integer(4)),
+      ("Denominator", Expr::Integer(4)),
+      ("BeatLength", Expr::Integer(1)),
+    ],
+  )
+}
+
+/// Whether `expr` is a resolved measure `MusicMeasure[<|…|>]`.
+fn is_resolved_measure(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if name == "MusicMeasure"
+      && matches!(args.first(), Some(Expr::Association(_))))
+}
+
+/// Whether `expr` is a resolved voice `MusicVoice[<|…|>]`.
+fn is_resolved_voice(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if name == "MusicVoice"
+      && matches!(args.first(), Some(Expr::Association(_))))
+}
+
+/// The `"TimeSignature"` entry of a resolved measure/voice association.
+fn resolved_time_signature(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { args, .. } = expr else {
+    return None;
+  };
+  let Expr::Association(pairs) = args.first()? else {
+    return None;
+  };
+  assoc_get(pairs, "TimeSignature").cloned()
+}
+
+/// `MusicVoice[{measures…}]` / `MusicVoice[{notes…}]` — resolve to the
+/// association form `MusicVoice[<|"MeasureList" -> {…}, "TimeSignature" -> …|>]`.
+/// A voice of measures keeps each already-resolved measure; a voice of loose
+/// notes wraps them into a single default-meter measure. The voice's
+/// `"TimeSignature"` is that of its first measure. An empty voice resolves to
+/// `MusicVoice[<|"MeasureList" -> {}|>]`. Mixed measure/note content (which the
+/// Wolfram Language rejects) is left symbolic (`None`).
+pub fn music_voice(args: &[Expr]) -> Option<Expr> {
+  let items: crate::ExprList = match args {
+    [] => vec![].into(),
+    [Expr::List(items)] => items.clone(),
+    _ => return None,
+  };
+  if items.is_empty() {
+    return Some(music_assoc(
+      "MusicVoice",
+      vec![("MeasureList", Expr::List(vec![].into()))],
+    ));
+  }
+  let measures: Vec<Expr> = if items.iter().all(is_resolved_measure) {
+    items.to_vec()
+  } else if items.iter().any(is_resolved_measure) {
+    return None; // mixed measures and loose events
+  } else {
+    // All loose events: pack them into one default-meter measure.
+    vec![music_measure(&[Expr::List(items.clone())])?]
+  };
+  let time_signature = resolved_time_signature(measures.first()?)?;
+  Some(music_assoc(
+    "MusicVoice",
+    vec![
+      ("MeasureList", Expr::List(measures.into())),
+      ("TimeSignature", time_signature),
+    ],
+  ))
+}
+
+/// `MusicScore[{voices…}]` — resolve to the association form
+/// `MusicScore[<|"VoiceList" -> {…}, "TimeSignature" -> …|>]`, keeping each
+/// already-resolved voice and taking its `"TimeSignature"` from the first
+/// voice. An empty score resolves to `MusicScore[<|"VoiceList" -> {}|>]`. Any
+/// non-voice element leaves the score symbolic (`None`).
+pub fn music_score(args: &[Expr]) -> Option<Expr> {
+  let items: crate::ExprList = match args {
+    [] => vec![].into(),
+    [Expr::List(items)] => items.clone(),
+    _ => return None,
+  };
+  if items.is_empty() {
+    return Some(music_assoc(
+      "MusicScore",
+      vec![("VoiceList", Expr::List(vec![].into()))],
+    ));
+  }
+  if !items.iter().all(is_resolved_voice) {
+    return None;
+  }
+  let time_signature = resolved_time_signature(items.first()?)?;
+  Some(music_assoc(
+    "MusicScore",
+    vec![
+      ("VoiceList", Expr::List(items.clone())),
+      ("TimeSignature", time_signature),
     ],
   ))
 }
