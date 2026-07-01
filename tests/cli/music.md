@@ -226,4 +226,48 @@ $ wo 'Head[MusicPlot[MusicScale["Major", MusicPitch["C4"]]]]'
 Graphics
 ```
 
-The same notation SVG is produced by `ExportString[obj, "SVG"]`.
+The same notation SVG is produced by `ExportString[obj, "SVG"]`. A chord built
+from transposed pitches — here a stack of minor thirds above C — draws as one
+staff with all its note heads and (double) accidentals.
+
+```scrut
+$ wo 'StringTake[ExportString[MusicChord[NestList[# + MusicInterval["MinorThird"] &, MusicPitch["C"], 4]], "SVG"], 4]'
+<svg
+```
+
+Transposing that chord by a further interval still renders as a chord.
+
+```scrut
+$ wo 'StringTake[ExportString[MusicChord[NestList[# + MusicInterval["MinorThird"] &, MusicPitch["C"], 4]] + MusicInterval[5], "SVG"], 4]'
+<svg
+```
+
+`MusicPlot` of a `MusicMeasure` draws its pitches as quarter notes on the staff.
+
+```scrut
+$ wo 'Head[MusicPlot[MusicMeasure[{"C", "G", "A", "C"}]]]'
+Graphics
+```
+
+```scrut
+$ wo 'StringTake[ExportString[MusicPlot[MusicMeasure[{"C", "G", "A", "C"}]], "SVG"], 4]'
+<svg
+```
+
+A `MusicMeasure`, `MusicVoice` or `MusicScore` prints its time signature on the
+staff — the default 4/4 here draws two digit glyphs (numerator and denominator).
+
+```scrut
+$ wo 'StringCount[ExportString[MusicMeasure[{"C", "G", "A", "C"}], "SVG"], "timesig"]'
+2
+```
+
+The meter is re-printed only when it changes, so a voice that switches from 4/4
+to 3/4 mid-stream shows two time signatures (four digit glyphs).
+
+```scrut
+$ wo 'StringCount[ExportString[MusicVoice[{"C", "D", "E", "F", MusicTimeSignature[3, 4], "G"}], "SVG"], "timesig"]'
+4
+```
+
+

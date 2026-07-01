@@ -38,6 +38,8 @@ pub mod glyph {
   pub const FLAT: char = '\u{E260}';
   pub const NATURAL: char = '\u{E261}';
   pub const SHARP: char = '\u{E262}';
+  pub const DOUBLE_SHARP: char = '\u{E263}';
+  pub const DOUBLE_FLAT: char = '\u{E264}';
   pub const REST_WHOLE: char = '\u{E4E3}';
   pub const REST_HALF: char = '\u{E4E4}';
   pub const REST_QUARTER: char = '\u{E4E5}';
@@ -47,6 +49,14 @@ pub mod glyph {
   pub const FLAG_8TH_DOWN: char = '\u{E241}';
   pub const FLAG_16TH_UP: char = '\u{E242}';
   pub const FLAG_16TH_DOWN: char = '\u{E243}';
+
+  /// SMuFL time-signature digit `timeSig0` (U+E080); digit `d` is `E080 + d`.
+  pub const TIME_SIG_0: char = '\u{E080}';
+
+  /// The `timeSig0`…`timeSig9` glyph for a single decimal digit `0..=9`.
+  pub fn time_sig_digit(d: u8) -> char {
+    char::from_u32(TIME_SIG_0 as u32 + d.min(9) as u32).unwrap_or(TIME_SIG_0)
+  }
 }
 
 /// The font-unit → user-unit scale for a staff with `gap` user units between
@@ -174,6 +184,8 @@ mod tests {
       glyph::FLAT,
       glyph::NATURAL,
       glyph::SHARP,
+      glyph::DOUBLE_SHARP,
+      glyph::DOUBLE_FLAT,
       glyph::REST_WHOLE,
       glyph::REST_HALF,
       glyph::REST_QUARTER,
@@ -183,6 +195,9 @@ mod tests {
       glyph::FLAG_8TH_DOWN,
       glyph::FLAG_16TH_UP,
       glyph::FLAG_16TH_DOWN,
+      glyph::time_sig_digit(0),
+      glyph::time_sig_digit(4),
+      glyph::time_sig_digit(9),
     ] {
       assert!(
         glyph_bbox(ch).is_some(),

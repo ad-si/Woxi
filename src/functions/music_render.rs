@@ -80,7 +80,55 @@ enum Glyph {
   Rest {
     dur: Dur,
   },
+  /// A time signature drawn as stacked numerator/denominator digits.
+  TimeSig {
+    num: u32,
+    den: u32,
+  },
   Barline,
+}
+
+/// The `(numerator, denominator)` of a `MusicTimeSignature`, given either as
+/// `MusicTimeSignature[n, d]` or the canonical
+/// `MusicTimeSignature[<|"Numerator" -> n, "Denominator" -> d|>]`. Returns
+/// `None` for anything that is not a time signature.
+fn time_signature_of(expr: &Expr) -> Option<(u32, u32)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "MusicTimeSignature" {
+    return None;
+  }
+  match args.as_ref() {
+    [Expr::Integer(n), Expr::Integer(d)] if *n > 0 && *d > 0 => {
+      Some((*n as u32, *d as u32))
+    }
+    [Expr::Association(pairs)] => {
+      let get = |key: &str| {
+        pairs.iter().find_map(|(k, v)| match (k, v) {
+          (Expr::String(s), Expr::Integer(n)) if s == key && *n > 0 => {
+            Some(*n as u32)
+          }
+          _ => None,
+        })
+      };
+      Some((get("Numerator")?, get("Denominator")?))
+    }
+    _ => None,
+  }
+}
+
+/// The time signature carried by a container's arguments — an explicit
+/// `MusicTimeSignature[…]` argument, or the `"TimeSignature"` entry of a
+/// canonical `<|…|>` association. Returns `None` when none is specified.
+fn container_time_signature(args: &[Expr]) -> Option<(u32, u32)> {
+  args.iter().find_map(|a| match a {
+    Expr::Association(pairs) => pairs.iter().find_map(|(k, v)| match k {
+      Expr::String(s) if s == "TimeSignature" => time_signature_of(v),
+      _ => None,
+    }),
+    other => time_signature_of(other),
+  })
 }
 
 // ── Parsing music objects into glyphs ────────────────────────────────────────
@@ -112,7 +160,12 @@ fn diatonic_number(name: &str) -> Option<(i32, i32)> {
     }
     idx += 1;
   }
-  let octave: i32 = name.get(idx..)?.parse().ok()?;
+  // An octaveless name such as "C" or "Eb" defaults to octave 4, the Wolfram
+  // Language default register for `MusicPitch`.
+  let octave: i32 = match name.get(idx..) {
+    Some("") | None => 4,
+    Some(rest) => rest.parse().ok()?,
+  };
   Some((octave * 7 + letter_index, accidental))
 }
 
@@ -246,14 +299,36 @@ fn scale_heads(args: &[Expr]) -> Vec<Head> {
     .collect()
 }
 
+/// Emit a time-signature glyph if it differs from the currently-shown one,
+/// updating `ts`. This is what makes a `MusicMeasure`/`MusicVoice`/`MusicScore`
+/// print its meter at the start, and re-print it whenever the meter changes.
+fn show_time_signature(
+  out: &mut Vec<Glyph>,
+  ts: &mut Option<(u32, u32)>,
+  value: (u32, u32),
+) {
+  if *ts != Some(value) {
+    out.push(Glyph::TimeSig {
+      num: value.0,
+      den: value.1,
+    });
+    *ts = Some(value);
+  }
+}
+
 /// Collect the drawable glyphs of a music object in reading order. Returns
 /// `true` when `expr` was a container whose contents are conventionally closed
-/// by a final barline.
-fn collect(expr: &Expr, out: &mut Vec<Glyph>) -> bool {
+/// by a final barline. `ts` carries the time signature currently drawn on the
+/// staff so meters are shown once and re-shown only on a change.
+fn collect(
+  expr: &Expr,
+  out: &mut Vec<Glyph>,
+  ts: &mut Option<(u32, u32)>,
+) -> bool {
   match expr {
     Expr::List(items) => {
       for it in items.iter() {
-        collect(it, out);
+        collect(it, out, ts);
       }
       false
     }
@@ -309,12 +384,22 @@ fn collect(expr: &Expr, out: &mut Vec<Glyph>) -> bool {
               }
             }
           }
-          // Canonical named-chord association: `MusicChord["GMajor"]` →
-          // `MusicChord[<|"Name" -> …, "Root" -> MusicPitch[…]|>]`. Spell the
-          // stacked-thirds tones and render them as a single chord.
+          // Canonical chord association. Either an explicit
+          // `<|"PitchList" -> {MusicPitch[…], …}|>` (produced by a pitch-list
+          // chord or its transposition) or a named chord `MusicChord["GMajor"]`
+          // → `<|"Name" -> …, "Root" -> MusicPitch[…]|>`, whose stacked-thirds
+          // tones are spelled out. Either way the tones render as one chord.
           Expr::Association(pairs) => {
-            if let Some(tones) = crate::functions::music_ast::chord_tones(pairs)
-            {
+            let tones = pairs
+              .iter()
+              .find_map(|(k, v)| match (k, v) {
+                (Expr::String(s), Expr::List(items)) if s == "PitchList" => {
+                  Some(items.to_vec())
+                }
+                _ => None,
+              })
+              .or_else(|| crate::functions::music_ast::chord_tones(pairs));
+            if let Some(tones) = tones {
               for t in &tones {
                 if let Some(h) = pitch_head(t) {
                   heads.push(h);
@@ -340,21 +425,49 @@ fn collect(expr: &Expr, out: &mut Vec<Glyph>) -> bool {
         }
         true
       }
+      // A time signature carried in the note stream (or as a container
+      // argument) prints on the staff when it first appears or changes.
+      "MusicTimeSignature" => {
+        if let Some(value) = time_signature_of(expr) {
+          show_time_signature(out, ts, value);
+        }
+        false
+      }
       "MusicMeasure" => {
+        // Each measure carries its own meter — its explicit `MusicTimeSignature`
+        // or the 4/4 default — so a run of measures reprints the meter whenever
+        // it differs from the previous one (e.g. 4/4, 3/4, back to 4/4), rather
+        // than inheriting and sticking at the last change.
+        let value = container_time_signature(args).unwrap_or((4, 4));
+        show_time_signature(out, ts, value);
         for arg in args {
-          collect(arg, out);
+          collect(arg, out, ts);
         }
         out.push(Glyph::Barline);
         true
       }
       "MusicVoice" | "MusicScore" => {
+        // A voice/score prints its meter at the start (4/4 unless specified).
+        let value = container_time_signature(args).or(*ts).unwrap_or((4, 4));
+        show_time_signature(out, ts, value);
         for arg in args {
-          collect(arg, out);
+          collect(arg, out, ts);
         }
         true
       }
       _ => false,
     },
+    // A bare pitch-name string inside a measure/voice — as in
+    // `MusicMeasure[{"C", "G", "A", "C"}]` — is a quarter note on that pitch.
+    Expr::String(_) => {
+      if let Some(h) = pitch_head(expr) {
+        out.push(Glyph::Note {
+          heads: vec![h],
+          dur: Dur::Quarter,
+        });
+      }
+      false
+    }
     _ => false,
   }
 }
@@ -445,49 +558,119 @@ impl Canvas {
       .unwrap_or(6.0)
   }
 
+  /// Total ink width (user units) of a run of digit glyphs laid out adjacently
+  /// with a small gap between them.
+  fn digits_width(&self, digits: &[char]) -> f64 {
+    const DIGIT_GAP: f64 = 1.0;
+    let mut w = 0.0;
+    for (i, &c) in digits.iter().enumerate() {
+      if let Some(bb) = music_font::glyph_bbox(c) {
+        w += (bb.x_max - bb.x_min) * self.scale;
+        if i + 1 < digits.len() {
+          w += DIGIT_GAP;
+        }
+      }
+    }
+    w
+  }
+
+  /// Half the width of a stacked time signature (the wider of its two rows).
+  fn time_signature_half_width(&self, num: u32, den: u32) -> f64 {
+    self
+      .digits_width(&time_sig_digits(num))
+      .max(self.digits_width(&time_sig_digits(den)))
+      / 2.0
+  }
+
+  /// Draw a run of digits with the group horizontally centred on `cx` and each
+  /// glyph's bounding box vertically centred on `cy`.
+  fn draw_digits_centered(&mut self, cx: f64, cy: f64, digits: &[char]) {
+    const DIGIT_GAP: f64 = 1.0;
+    let mut left = cx - self.digits_width(digits) / 2.0;
+    for &c in digits {
+      let Some(bb) = music_font::glyph_bbox(c) else {
+        continue;
+      };
+      // Left ink edge at `left`; bounding box vertically centred on `cy`.
+      let ox = left - bb.x_min * self.scale;
+      let oy = cy + (bb.y_min + bb.y_max) / 2.0 * self.scale;
+      self.glyph_at(c, ox, oy, "timesig");
+      left += (bb.x_max - bb.x_min) * self.scale + DIGIT_GAP;
+    }
+  }
+
   /// How far left of a note/chord's head centre its ink reaches, including any
   /// accidentals (mirrors the column staggering in [`draw_note`]).
   fn note_left_extent(&self, heads: &[Head], dur: Dur) -> f64 {
     let hw = self.notehead_half_width(dur);
-    let mut reach = hw;
-    let mut column = 0usize;
-    let mut prev_dn: Option<i32> = None;
-    for h in heads.iter().rev() {
-      if h.accidental == 0 {
-        continue;
+    // A down-stem second is displaced a head-width to the left; accidentals then
+    // sit left of that displaced head.
+    let leftmost = second_offsets(heads, stem_up(heads), hw)
+      .iter()
+      .cloned()
+      .fold(0.0, f64::min);
+    let acc_base = -leftmost + hw;
+    let mut reach = hw - leftmost;
+    // Mirror the column packing in `draw_note`: the leftmost accidental sits in
+    // the furthest column, one uniform slot per column beyond the base gap.
+    let (columns, slot) = accidental_columns(heads, self.scale);
+    for (i, h) in heads.iter().enumerate() {
+      if let Some(col) = columns[i] {
+        let w = accidental_width(h.accidental, self.scale);
+        reach = reach.max(acc_base + 3.0 + col as f64 * slot + w);
       }
-      if prev_dn.is_some_and(|p| (p - h.dn).abs() <= 2) {
-        column += 1;
-      } else {
-        column = 0;
-      }
-      let ch = if h.accidental > 0 {
-        glyph::SHARP
-      } else {
-        glyph::FLAT
-      };
-      if let Some(bb) = music_font::glyph_bbox(ch) {
-        let w = (bb.x_max - bb.x_min) * self.scale;
-        reach = reach.max(hw + 3.0 + column as f64 * (w + 2.0) + w);
-      }
-      prev_dn = Some(h.dn);
     }
     reach
   }
 
   /// How far right of a note/chord's head centre its ink reaches, including an
-  /// up-stem flag.
+  /// up-stem flag and any second displaced to the right of the stem.
   fn note_right_extent(&self, heads: &[Head], dur: Dur) -> f64 {
     let hw = self.notehead_half_width(dur);
+    let rightmost = second_offsets(heads, stem_up(heads), hw)
+      .iter()
+      .cloned()
+      .fold(0.0, f64::max);
+    let mut reach = hw + rightmost;
     if dur.has_stem()
       && stem_up(heads)
       && let Some(fc) = flag_glyph(dur, true)
       && let Some(bb) = music_font::glyph_bbox(fc)
     {
-      return (hw - 0.7 + bb.x_max * self.scale).max(hw);
+      reach = reach.max(hw - 0.7 + bb.x_max * self.scale);
     }
-    hw
+    reach
   }
+}
+
+/// Horizontal notehead displacements (in user units, one per entry of `heads`
+/// in the given order) that place notes a *second* apart on opposite sides of
+/// the stem so their heads do not overlap. Displaced heads move a full
+/// head-width across the stem — to the right for up-stems, to the left for
+/// down-stems — and a run of clustered seconds alternates sides.
+fn second_offsets(heads: &[Head], up: bool, hw: f64) -> Vec<f64> {
+  // Read the cluster from the stem's starting note: bottom-up for up-stems,
+  // top-down for down-stems.
+  let mut order: Vec<usize> = (0..heads.len()).collect();
+  order.sort_by_key(|&i| heads[i].dn);
+  if !up {
+    order.reverse();
+  }
+  let step = if up { 2.0 * hw } else { -2.0 * hw };
+  let mut offsets = vec![0.0; heads.len()];
+  let mut prev_dn: Option<i32> = None;
+  let mut prev_displaced = false;
+  for &i in &order {
+    let dn = heads[i].dn;
+    if prev_dn.is_some_and(|p| (p - dn).abs() == 1) && !prev_displaced {
+      offsets[i] = step;
+      prev_displaced = true;
+    } else {
+      prev_displaced = false;
+    }
+    prev_dn = Some(dn);
+  }
+  offsets
 }
 
 /// The Leland notehead glyph for a rhythmic value.
@@ -499,29 +682,93 @@ fn notehead_glyph(dur: Dur) -> char {
   }
 }
 
+/// The Leland accidental glyph for a signed accidental count: single or double
+/// sharp for positive, single or double flat for negative, `None` for natural.
+fn accidental_glyph(accidental: i32) -> Option<char> {
+  Some(match accidental {
+    n if n >= 2 => glyph::DOUBLE_SHARP,
+    1 => glyph::SHARP,
+    -1 => glyph::FLAT,
+    n if n <= -2 => glyph::DOUBLE_FLAT,
+    _ => return None,
+  })
+}
+
+/// Vertical half-height (user units) of an accidental glyph, used to decide
+/// whether two accidentals in the same column would overlap.
+fn accidental_half_height(accidental: i32, scale: f64) -> f64 {
+  accidental_glyph(accidental)
+    .and_then(music_font::glyph_bbox)
+    .map(|bb| (bb.y_max - bb.y_min) * scale / 2.0)
+    .unwrap_or(STEP)
+}
+
+/// Full width (user units) of an accidental glyph.
+fn accidental_width(accidental: i32, scale: f64) -> f64 {
+  accidental_glyph(accidental)
+    .and_then(music_font::glyph_bbox)
+    .map(|bb| (bb.x_max - bb.x_min) * scale)
+    .unwrap_or(0.0)
+}
+
+/// Stack a chord's accidentals into columns to the left of the note heads so
+/// none overlap. Returns, for each head, the column its accidental occupies
+/// (`None` for naturals; `0` is the column nearest the heads) together with the
+/// uniform column pitch. Following standard engraving, the accidentals are
+/// placed top to bottom, each in the closest column whose previous (higher)
+/// accidental clears it vertically — so a stack of thirds alternates between two
+/// columns rather than marching ever further left.
+fn accidental_columns(heads: &[Head], scale: f64) -> (Vec<Option<usize>>, f64) {
+  let mut order: Vec<usize> = (0..heads.len())
+    .filter(|&i| heads[i].accidental != 0)
+    .collect();
+  order.sort_by_key(|&i| std::cmp::Reverse(heads[i].dn));
+
+  let mut columns = vec![None; heads.len()];
+  // The lowest occupied edge (largest y) in each column so far.
+  let mut column_bottom: Vec<f64> = Vec::new();
+  let mut max_width = 0.0f64;
+  for i in order {
+    let acc = heads[i].accidental;
+    let hh = accidental_half_height(acc, scale);
+    max_width = max_width.max(accidental_width(acc, scale));
+    let cy = dn_y(heads[i].dn);
+    let top = cy - hh;
+    // The first column whose last (higher) accidental clears this one's top.
+    let col = column_bottom
+      .iter()
+      .position(|&bottom| bottom <= top - 1.0)
+      .unwrap_or(column_bottom.len());
+    if col == column_bottom.len() {
+      column_bottom.push(cy + hh);
+    } else {
+      column_bottom[col] = cy + hh;
+    }
+    columns[i] = Some(col);
+  }
+  (columns, max_width + 3.0)
+}
+
 /// Draw a Leland sharp or flat glyph to the left of a note head, its right edge
-/// a small gap left of `head_left` and vertically centred on `cy`. `column`
-/// shifts stacked chord accidentals further left so their signs do not collide.
+/// a small gap left of `head_left` and vertically centred on `cy`. `column` and
+/// `slot` place stacked chord accidentals in uniform-width columns so their
+/// signs do not collide horizontally regardless of glyph width.
 fn draw_accidental(
   cv: &mut Canvas,
   head_left: f64,
   cy: f64,
   accidental: i32,
   column: usize,
+  slot: f64,
 ) {
-  let ch = if accidental > 0 {
-    glyph::SHARP
-  } else if accidental < 0 {
-    glyph::FLAT
-  } else {
+  let Some(ch) = accidental_glyph(accidental) else {
     return;
   };
   let Some(bb) = music_font::glyph_bbox(ch) else {
     return;
   };
-  let width = (bb.x_max - bb.x_min) * cv.scale;
   // Where this accidental's right edge should sit.
-  let right = head_left - 3.0 - column as f64 * (width + 2.0);
+  let right = head_left - 3.0 - column as f64 * slot;
   // Place the origin so the glyph's own right extent lands on `right`.
   let ox = right - bb.x_max * cv.scale;
   cv.glyph_at(ch, ox, cy, "accidental");
@@ -554,30 +801,31 @@ fn draw_ledger_lines(cv: &mut Canvas, cx: f64, dn: i32, head_half_width: f64) {
 fn draw_note(cv: &mut Canvas, x: f64, heads: &[Head], dur: Dur) {
   let nh = notehead_glyph(dur);
   let hw = cv.notehead_half_width(dur);
+  let up = stem_up(heads);
+  // Displace notes a second apart to the opposite side of the stem so their
+  // heads do not overlap.
+  let offsets = second_offsets(heads, up, hw);
+  // Accidentals sit in a column to the left of the whole cluster, so anchor
+  // them at the leftmost head edge (a down-stem second can reach further left).
+  let leftmost = offsets.iter().cloned().fold(0.0, f64::min);
+  let acc_anchor = x + leftmost - hw;
   // Ledger lines behind the heads.
-  for h in heads {
-    draw_ledger_lines(cv, x, h.dn, hw);
+  for (i, h) in heads.iter().enumerate() {
+    draw_ledger_lines(cv, x + offsets[i], h.dn, hw);
   }
-  // Heads (top-down), each with any accidental staggered into columns so
-  // adjacent signs do not overlap.
-  let mut column = 0usize;
-  let mut prev_dn: Option<i32> = None;
-  for h in heads.iter().rev() {
-    cv.glyph_centered(nh, x, dn_y(h.dn), "notehead");
-    if h.accidental != 0 {
-      if prev_dn.is_some_and(|p| (p - h.dn).abs() <= 2) {
-        column += 1;
-      } else {
-        column = 0;
-      }
-      draw_accidental(cv, x - hw, dn_y(h.dn), h.accidental, column);
-      prev_dn = Some(h.dn);
+  // Pack the accidentals into non-overlapping columns to the left of the heads.
+  let (columns, slot) = accidental_columns(heads, cv.scale);
+  // Heads (top-down), each accidental placed in its assigned column.
+  for i in (0..heads.len()).rev() {
+    let h = &heads[i];
+    cv.glyph_centered(nh, x + offsets[i], dn_y(h.dn), "notehead");
+    if let Some(col) = columns[i] {
+      draw_accidental(cv, acc_anchor, dn_y(h.dn), h.accidental, col, slot);
     }
   }
   if !dur.has_stem() {
     return;
   }
-  let up = stem_up(heads);
   let top_dn = heads.iter().map(|h| h.dn).max().unwrap();
   let bottom_dn = heads.iter().map(|h| h.dn).min().unwrap();
   // The stem attaches at the right edge of the head (up) or the left edge
@@ -639,6 +887,23 @@ fn rest_glyph(dur: Dur) -> char {
   }
 }
 
+/// The `timeSig0`…`timeSig9` glyphs spelling a (positive) number's decimal
+/// digits, left to right.
+fn time_sig_digits(n: u32) -> Vec<char> {
+  n.to_string()
+    .bytes()
+    .map(|b| music_font::glyph::time_sig_digit(b - b'0'))
+    .collect()
+}
+
+/// Draw a stacked time signature centred horizontally on `cx`: the numerator on
+/// the upper half of the staff (the fourth line) and the denominator on the
+/// lower half (the second line), matching standard notation.
+fn draw_time_signature(cv: &mut Canvas, cx: f64, num: u32, den: u32) {
+  cv.draw_digits_centered(cx, dn_y(BOTTOM_LINE_DN + 6), &time_sig_digits(num));
+  cv.draw_digits_centered(cx, dn_y(BOTTOM_LINE_DN + 2), &time_sig_digits(den));
+}
+
 /// Draw the treble (G) clef with its left edge at `x`. Leland's `gClef` is
 /// registered so its origin sits on the G4 staff line, which is exactly where
 /// the clef's curl must centre.
@@ -651,7 +916,8 @@ fn draw_treble_clef(cv: &mut Canvas, x: f64) {
 /// expression is not a music object that carries notation.
 pub fn music_to_svg(expr: &Expr) -> Option<String> {
   let mut glyphs = Vec::new();
-  let container = collect(expr, &mut glyphs);
+  let mut ts = None;
+  let container = collect(expr, &mut glyphs, &mut ts);
   if glyphs.is_empty() {
     return None;
   }
@@ -692,6 +958,13 @@ pub fn music_to_svg(expr: &Expr) -> Option<String> {
         draw_rest(&mut cv, center, *dur);
         right_edge = center + hw;
         cursor = center + ADVANCE;
+      }
+      Glyph::TimeSig { num, den } => {
+        let hw = cv.time_signature_half_width(*num, *den);
+        let center = (right_edge + PAD + hw).max(clef_right + 8.0 + hw);
+        draw_time_signature(&mut cv, center, *num, *den);
+        right_edge = center + hw;
+        cursor = (center + hw + 18.0).max(cursor);
       }
       Glyph::Barline => {
         let bx = (right_edge + PAD).max(cursor - ADVANCE / 2.0);
@@ -911,13 +1184,122 @@ mod tests {
   }
 
   #[test]
+  fn pitch_list_association_renders_multiple_heads() {
+    // A transposed pitch-list chord is returned as the canonical
+    // `MusicChord[<|"PitchList" -> {MusicPitch[…], …}|>]`; it must still render
+    // every tone (the playground draws it as one chord).
+    let chord = crate::functions::plus_ast(&[
+      Expr::FunctionCall {
+        name: "MusicChord".to_string(),
+        args: vec![Expr::List(vec![note("C4"), note("E4"), note("G4")].into())]
+          .into(),
+      },
+      Expr::FunctionCall {
+        name: "MusicInterval".to_string(),
+        args: vec![Expr::Integer(5)].into(),
+      },
+    ])
+    .expect("chord + interval should evaluate");
+    assert!(matches!(
+      &chord,
+      Expr::FunctionCall { name, args }
+        if name == "MusicChord" && matches!(args.first(), Some(Expr::Association(_)))
+    ));
+    let svg = music_to_svg(&chord).expect("a pitch-list chord should render");
+    assert_eq!(svg.matches("class=\"notehead\"").count(), 3);
+  }
+
+  #[test]
+  fn seconds_are_displaced_to_alternating_sides() {
+    let hw = 6.0;
+    // A cluster of stacked seconds (C, D, E) alternates sides so no two adjacent
+    // heads share a column.
+    let cluster = [
+      Head {
+        dn: 28,
+        accidental: 0,
+      }, // C4
+      Head {
+        dn: 29,
+        accidental: 0,
+      }, // D4
+      Head {
+        dn: 30,
+        accidental: 0,
+      }, // E4
+    ];
+    // Up-stem: the bottom head is on the normal (left) side, the second above it
+    // is displaced right, the third returns to the normal side.
+    let up = second_offsets(&cluster, true, hw);
+    assert_eq!(up, vec![0.0, 2.0 * hw, 0.0]);
+    // Down-stem: read top-down, displaced heads move left instead.
+    let down = second_offsets(&cluster, false, hw);
+    assert_eq!(down, vec![0.0, -2.0 * hw, 0.0]);
+    // Thirds never collide, so nothing is displaced.
+    let thirds = [
+      Head {
+        dn: 28,
+        accidental: 0,
+      },
+      Head {
+        dn: 30,
+        accidental: 0,
+      },
+      Head {
+        dn: 32,
+        accidental: 0,
+      },
+    ];
+    assert_eq!(second_offsets(&thirds, true, hw), vec![0.0, 0.0, 0.0]);
+  }
+
+  #[test]
+  fn stacked_accidentals_alternate_between_two_columns() {
+    // The C-minor-third stack C,Eb,Gb,Bbb,Dbb has four (double) flats a third
+    // apart. They must pack into two alternating columns, not one overlapping
+    // pile or an ever-widening staircase.
+    let heads = [
+      Head {
+        dn: 28,
+        accidental: 0,
+      }, // C4 (natural, no accidental)
+      Head {
+        dn: 30,
+        accidental: -1,
+      }, // Eb4
+      Head {
+        dn: 32,
+        accidental: -1,
+      }, // Gb4
+      Head {
+        dn: 34,
+        accidental: -2,
+      }, // Bbb4
+      Head {
+        dn: 36,
+        accidental: -2,
+      }, // Dbb5
+    ];
+    let (columns, _slot) = accidental_columns(&heads, 0.02);
+    assert_eq!(columns[0], None); // the natural C has no accidental
+    // Top-down (Dbb, Bbb, Gb, Eb) alternate col 0,1,0,1.
+    assert_eq!(columns[4], Some(0)); // Dbb (top)
+    assert_eq!(columns[3], Some(1)); // Bbb
+    assert_eq!(columns[2], Some(0)); // Gb
+    assert_eq!(columns[1], Some(1)); // Eb (bottom)
+    // Only two columns are ever used.
+    let max_col = columns.iter().flatten().copied().max().unwrap();
+    assert_eq!(max_col, 1);
+  }
+
+  #[test]
   fn scale_expands_to_eight_notes() {
     let scale = Expr::FunctionCall {
       name: "MusicScale".to_string(),
       args: vec![Expr::String("Major".to_string()), note("C4")].into(),
     };
     let mut glyphs = Vec::new();
-    collect(&scale, &mut glyphs);
+    collect(&scale, &mut glyphs, &mut None);
     let notes = glyphs
       .iter()
       .filter(|g| matches!(g, Glyph::Note { .. }))
@@ -952,9 +1334,94 @@ mod tests {
         .into(),
     };
     let mut glyphs = Vec::new();
-    assert!(collect(&measure, &mut glyphs));
-    // Two notes then a closing barline.
-    assert!(matches!(glyphs.first(), Some(Glyph::Note { .. })));
+    assert!(collect(&measure, &mut glyphs, &mut None));
+    // A time signature, the two notes, then a closing barline.
+    assert!(matches!(
+      glyphs.first(),
+      Some(Glyph::TimeSig { num: 4, den: 4 })
+    ));
+    assert!(
+      glyphs
+        .iter()
+        .filter(|g| matches!(g, Glyph::Note { .. }))
+        .count()
+        == 2
+    );
     assert!(matches!(glyphs.last(), Some(Glyph::Barline)));
+  }
+
+  #[test]
+  fn voice_shows_meter_and_reprints_on_change() {
+    // A voice prints 4/4 at the start, then a new time signature when the meter
+    // changes mid-stream, but not a repeated identical one.
+    let voice = Expr::FunctionCall {
+      name: "MusicVoice".to_string(),
+      args: vec![Expr::List(
+        vec![
+          Expr::String("C".to_string()),
+          Expr::FunctionCall {
+            name: "MusicTimeSignature".to_string(),
+            args: vec![Expr::Integer(3), Expr::Integer(4)].into(),
+          },
+          Expr::String("D".to_string()),
+          Expr::FunctionCall {
+            name: "MusicTimeSignature".to_string(),
+            args: vec![Expr::Integer(3), Expr::Integer(4)].into(),
+          },
+          Expr::String("E".to_string()),
+        ]
+        .into(),
+      )]
+      .into(),
+    };
+    let mut glyphs = Vec::new();
+    collect(&voice, &mut glyphs, &mut None);
+    let sigs: Vec<(u32, u32)> = glyphs
+      .iter()
+      .filter_map(|g| match g {
+        Glyph::TimeSig { num, den } => Some((*num, *den)),
+        _ => None,
+      })
+      .collect();
+    // 4/4 default at the start, then 3/4 once — the repeated 3/4 is suppressed.
+    assert_eq!(sigs, vec![(4, 4), (3, 4)]);
+  }
+
+  #[test]
+  fn measures_reprint_meter_returning_to_the_default() {
+    // A voice of measures 4/4, 3/4, 4/4 must reprint the meter at every change,
+    // including the return to 4/4 — a measure without its own time signature is
+    // 4/4, not an inheritance of the previous 3/4.
+    let measure = |ts: Option<(i128, i128)>| {
+      let mut args =
+        vec![Expr::List(vec![music_note("C4"), music_note("D4")].into())];
+      if let Some((n, d)) = ts {
+        args.push(Expr::FunctionCall {
+          name: "MusicTimeSignature".to_string(),
+          args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
+        });
+      }
+      Expr::FunctionCall {
+        name: "MusicMeasure".to_string(),
+        args: args.into(),
+      }
+    };
+    let voice = Expr::FunctionCall {
+      name: "MusicVoice".to_string(),
+      args: vec![Expr::List(
+        vec![measure(None), measure(Some((3, 4))), measure(None)].into(),
+      )]
+      .into(),
+    };
+    let mut glyphs = Vec::new();
+    collect(&voice, &mut glyphs, &mut None);
+    let sigs: Vec<(u32, u32)> = glyphs
+      .iter()
+      .filter_map(|g| match g {
+        Glyph::TimeSig { num, den } => Some((*num, *den)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(sigs, vec![(4, 4), (3, 4), (4, 4)]);
   }
 }
