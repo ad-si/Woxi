@@ -271,3 +271,13 @@ $ wo 'StringCount[ExportString[MusicVoice[{"C", "D", "E", "F", MusicTimeSignatur
 ```
 
 
+## Exporting to MIDI
+
+`Export[…, obj]` to a `.mid` file writes a Standard MIDI File. A `MusicScore`
+becomes one track per `MusicVoice`; each voice's pitches fill a 4/4 measure, so
+three notes play as quarter, quarter, half at 120 BPM.
+
+```scrut
+$ wo 'Export["score.mid", MusicScore[{MusicVoice[{"A", "G", "E"}], MusicVoice[{"F", "E", "C"}]}]]; FileByteCount["score.mid"]'
+130
+```

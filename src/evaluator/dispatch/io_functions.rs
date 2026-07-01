@@ -650,6 +650,19 @@ pub fn dispatch_io_functions(
           Err(e) => return Some(Err(e)),
         }
       }
+      // MIDI export of a computational-music object (MusicScore / MusicVoice / …).
+      if (fmt == "MID" || fmt == "MIDI")
+        && let Some(bytes) =
+          crate::functions::music_midi::music_to_midi(&args[1])
+      {
+        if let Err(e) = std::fs::write(&filename, &bytes).map_err(|e| {
+          InterpreterError::EvaluationError(format!("Export: {e}"))
+        }) {
+          return Some(Err(e));
+        }
+        return Some(Ok(Expr::String(filename)));
+      }
+
       // The second argument has already been evaluated, which triggers
       // capture_graphics() for Plot expressions.  Grab the SVG.
       let content = match &args[1] {
