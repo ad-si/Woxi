@@ -300,12 +300,29 @@ fn collect(expr: &Expr, out: &mut Vec<Glyph>) -> bool {
       }
       "MusicChord" if !args.is_empty() => {
         let mut heads = Vec::new();
-        if let Expr::List(items) = &args[0] {
-          for it in items.iter() {
-            if let Some(h) = pitch_head(it) {
-              heads.push(h);
+        match &args[0] {
+          // Explicit pitch list: `MusicChord[{"C4", "E4", "G4"}]`.
+          Expr::List(items) => {
+            for it in items.iter() {
+              if let Some(h) = pitch_head(it) {
+                heads.push(h);
+              }
             }
           }
+          // Canonical named-chord association: `MusicChord["GMajor"]` →
+          // `MusicChord[<|"Name" -> …, "Root" -> MusicPitch[…]|>]`. Spell the
+          // stacked-thirds tones and render them as a single chord.
+          Expr::Association(pairs) => {
+            if let Some(tones) = crate::functions::music_ast::chord_tones(pairs)
+            {
+              for t in &tones {
+                if let Some(h) = pitch_head(t) {
+                  heads.push(h);
+                }
+              }
+            }
+          }
+          _ => {}
         }
         if !heads.is_empty() {
           heads.sort_by_key(|h| h.dn);
@@ -872,6 +889,25 @@ mod tests {
     };
     let svg = music_to_svg(&chord).unwrap();
     assert_eq!(svg.matches("class=\"notehead\"").count(), 3);
+  }
+
+  #[test]
+  fn named_chord_association_renders_multiple_heads() {
+    // `MusicChord["GMajor"]` canonicalizes to the association form
+    // `MusicChord[<|"Name" -> "Major", "Root" -> MusicPitch[…]|>]`; it must
+    // still spell its stacked-thirds tones (G/B/D) and render on a staff.
+    let chord = crate::functions::music_ast::music_chord(&[Expr::String(
+      "GMajor".to_string(),
+    )])
+    .expect("GMajor should canonicalize");
+    assert!(matches!(
+      &chord,
+      Expr::FunctionCall { name, args }
+        if name == "MusicChord" && matches!(args.first(), Some(Expr::Association(_)))
+    ));
+    let svg = music_to_svg(&chord).expect("a named chord should render");
+    assert_eq!(svg.matches("class=\"notehead\"").count(), 3);
+    assert!(svg.contains("class=\"clef\"")); // treble clef
   }
 
   #[test]

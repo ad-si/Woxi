@@ -730,7 +730,7 @@ fn letter_natural_midi(letter_idx: usize, octave: i128) -> i128 {
 /// Spell out the pitch objects of a canonical chord association's tones. Each
 /// tone stacks thirds from the root, spelled on the correct staff letter so the
 /// accidentals come out right (`GMajor` → G4, B4, D5).
-fn chord_tones(pairs: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
+pub fn chord_tones(pairs: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
   let quality = match assoc_get(pairs, "Name")? {
     Expr::String(s) => s.as_str(),
     _ => return None,
