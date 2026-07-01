@@ -90,6 +90,22 @@ $ wo 'MusicPitch["C#"] == MusicPitch["Db"]'
 True
 ```
 
+Adding a `MusicInterval` transposes a pitch, spelling the result from the
+interval's diatonic step: a minor third above C is Eb (not D#).
+
+```scrut
+$ wo 'MusicPitch["C"] + MusicInterval["MinorThird"]'
+MusicPitch[<|Accidental -> -1, Key -> E, MIDINumber -> 63|>]
+```
+
+A bare-semitone interval such as `MusicInterval[7]` transposes by that many
+semitones, spelled the simplest way (7 semitones above C is G).
+
+```scrut
+$ wo 'MusicPitch["C"] + MusicInterval[7]'
+MusicPitch[<|Accidental -> 0, Key -> G, MIDINumber -> 67|>]
+```
+
 
 ## Notes and chords
 
@@ -173,6 +189,24 @@ HalfDiminishedSeventh
 ```scrut
 $ wo 'MusicChord["C7"]["PitchList"]'
 {MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], MusicPitch[<|Accidental -> -1, Octave -> 4, Key -> B|>]}
+```
+
+Adding a `MusicInterval` to an explicit-pitch chord transposes every tone by the
+interval, so a C-major triad up a perfect fourth becomes an F-major triad. The
+transposed chord is returned in the canonical `<|"PitchList" -> …|>` form, and a
+bare-semitone interval spells each tone straight from its MIDI number.
+
+```scrut
+$ wo 'MusicChord[{MusicPitch["C4"], MusicPitch["E4"], MusicPitch["G4"]}] + MusicInterval[5]'
+MusicChord[<|PitchList -> {MusicPitch[<|Accidental -> 0, Key -> F, MIDINumber -> 65|>], MusicPitch[<|Accidental -> 0, Key -> A, MIDINumber -> 69|>], MusicPitch[<|Accidental -> 0, Key -> C, MIDINumber -> 72|>]}|>]
+```
+
+A minor-third stack transposed by a bare semitone interval spells its tones from
+MIDI (G#, not the enharmonic Ab), matching Wolfram's `InputForm`.
+
+```scrut
+$ wo 'InputForm[MusicChord[NestList[# + MusicInterval["MinorThird"] &, MusicPitch["C"], 4]] + MusicInterval[5]]'
+InputForm[MusicChord[<|PitchList -> {MusicPitch[<|Accidental -> 0, Key -> F, MIDINumber -> 65|>], MusicPitch[<|Accidental -> 1, Key -> G, MIDINumber -> 68|>], MusicPitch[<|Accidental -> 0, Key -> B, MIDINumber -> 71|>], MusicPitch[<|Accidental -> 0, Key -> D, MIDINumber -> 74|>], MusicPitch[<|Accidental -> 0, Key -> F, MIDINumber -> 77|>]}|>]]
 ```
 
 

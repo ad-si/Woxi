@@ -780,8 +780,18 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Handle MusicChord transposition (WL 15): `MusicChord[{…}] + MusicInterval[…]`
+  // shifts every chord tone by the interval span. Checked before the pitch sum
+  // since a chord summand is not itself a pitch.
+  if let Some(result) =
+    crate::functions::music_ast::try_music_chord_plus_interval(args)
+  {
+    return Ok(result);
+  }
+
   // Handle MusicPitch arithmetic (WL 15): adding/subtracting pitch objects
-  // combines them along the diatonic-position and MIDI-number axes.
+  // combines them along the diatonic-position and MIDI-number axes; adding a
+  // MusicInterval transposes the pitch.
   if let Some(result) = crate::functions::music_ast::try_music_pitch_plus(args)
   {
     return Ok(result);
