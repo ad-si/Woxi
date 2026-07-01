@@ -787,6 +787,24 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
+  // Handle MusicDuration arithmetic (WL 15): a sum of (scaled) durations
+  // combines their rhythmic values, e.g. `3 MusicDuration[1/2] + MusicDuration[1/4]`
+  // → `MusicDuration[<|"Duration" -> 7/4|>]`.
+  if let Some(products) =
+    crate::functions::music_ast::music_duration_plus_terms(args)
+  {
+    // Evaluate each `Times[coeff, value]` product before summing, then add the
+    // resulting rhythmic values exactly.
+    let values: Result<Vec<Expr>, _> = products
+      .iter()
+      .map(crate::evaluator::evaluate_expr_to_expr)
+      .collect();
+    let total = crate::evaluator::evaluate_function_call_ast("Plus", &values?)?;
+    return Ok(crate::functions::music_ast::music_duration_from_value(
+      total,
+    ));
+  }
+
   // Around (uncertain-value) error propagation.
   if let Some(result) = try_around_plus(args) {
     return Ok(result);

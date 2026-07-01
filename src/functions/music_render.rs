@@ -135,8 +135,23 @@ fn pitch_head(spec: &Expr) -> Option<Head> {
 }
 
 /// Parse a duration specification — `MusicDuration["Quarter"]`, the bare name
-/// `"Half"`, etc. — defaulting to a quarter note.
+/// `"Half"`, the canonical `MusicDuration[<|"Duration" -> 1/2|>]` association,
+/// or a bare rhythmic value — defaulting to a quarter note.
 fn parse_duration(spec: &Expr) -> Dur {
+  // The canonical association form (or a bare number) carries a rhythmic value.
+  if let Some(value) = duration_value_f64(spec) {
+    return if value >= 1.0 {
+      Dur::Whole
+    } else if value >= 0.5 {
+      Dur::Half
+    } else if value >= 0.25 {
+      Dur::Quarter
+    } else if value >= 0.125 {
+      Dur::Eighth
+    } else {
+      Dur::Sixteenth
+    };
+  }
   let name = match spec {
     Expr::String(s) => Some(s.as_str()),
     Expr::FunctionCall { name, args }
@@ -155,6 +170,42 @@ fn parse_duration(spec: &Expr) -> Dur {
     Some("Eighth") => Dur::Eighth,
     Some("Sixteenth") => Dur::Sixteenth,
     _ => Dur::Quarter,
+  }
+}
+
+/// The numeric rhythmic value of a duration given as a bare number or a
+/// canonical `MusicDuration[<|"Duration" -> value|>]` association.
+fn duration_value_f64(spec: &Expr) -> Option<f64> {
+  fn value_of(expr: &Expr) -> Option<f64> {
+    match expr {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(f) => Some(*f),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+            Some(*n as f64 / *d as f64)
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  match spec {
+    Expr::FunctionCall { name, args }
+      if name == "MusicDuration" && args.len() == 1 =>
+    {
+      match &args[0] {
+        Expr::Association(pairs) => pairs.iter().find_map(|(k, v)| match k {
+          Expr::String(s) if s == "Duration" => value_of(v),
+          _ => None,
+        }),
+        other => value_of(other),
+      }
+    }
+    _ => None,
   }
 }
 
@@ -223,6 +274,26 @@ fn collect(expr: &Expr, out: &mut Vec<Glyph>) -> bool {
             heads: vec![h],
             dur: Dur::Quarter,
           });
+        }
+        false
+      }
+      // Canonical association form: MusicNote[<|"Pitch" -> …, "Duration" -> …|>].
+      "MusicNote" if matches!(args.first(), Some(Expr::Association(_))) => {
+        if let Some(Expr::Association(pairs)) = args.first() {
+          let get = |key: &str| {
+            pairs.iter().find_map(|(k, v)| match k {
+              Expr::String(s) if s == key => Some(v),
+              _ => None,
+            })
+          };
+          if let Some(h) = get("Pitch").and_then(pitch_head) {
+            let dur =
+              get("Duration").map(parse_duration).unwrap_or(Dur::Quarter);
+            out.push(Glyph::Note {
+              heads: vec![h],
+              dur,
+            });
+          }
         }
         false
       }

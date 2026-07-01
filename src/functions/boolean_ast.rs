@@ -548,6 +548,24 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("True".to_string()));
   }
 
+  // Enharmonic MusicPitch equality (WL 15): two `MusicPitch` objects are equal
+  // when they denote the same sounding pitch, so `MusicPitch["C#"]` equals
+  // `MusicPitch["Db"]`. Compares by MIDI number across every form.
+  if args.iter().all(
+    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "MusicPitch"),
+  ) {
+    let midis: Option<Vec<i128>> = args
+      .iter()
+      .map(crate::functions::music_ast::music_pitch_midi)
+      .collect();
+    if let Some(midis) = midis {
+      let all_equal = midis.iter().all(|m| *m == midis[0]);
+      return Ok(Expr::Identifier(
+        if all_equal { "True" } else { "False" }.to_string(),
+      ));
+    }
+  }
+
   use crate::functions::math_ast::try_eval_to_f64;
 
   let first_str = crate::syntax::expr_to_string(&args[0]);

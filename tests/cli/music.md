@@ -83,6 +83,13 @@ $ wo 'MusicPitch["Bb"] + MusicPitch["A#"] - MusicPitch["C"]'
 MusicPitch[<|Accidental -> 1, Key -> G, MIDINumber -> 80|>]
 ```
 
+Enharmonic spellings denote the same pitch, so they compare equal.
+
+```scrut
+$ wo 'MusicPitch["C#"] == MusicPitch["Db"]'
+True
+```
+
 
 ## Notes and chords
 
@@ -96,6 +103,49 @@ MusicChord[{MusicPitch[C], MusicPitch[E], MusicPitch[G]}]
 ```scrut
 $ wo 'Head[MusicNote[MusicPitch["C4"]]]'
 MusicNote
+```
+
+`MusicNote[pitch, duration]` canonicalizes to an association exposing its
+`"Pitch"` and `"Duration"`.
+
+```scrut
+$ wo 'MusicNote["A#", 1/2]'
+MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 1, Key -> A|>], Duration -> MusicDuration[<|Duration -> 1/2|>]|>]
+```
+
+```scrut
+$ wo 'MusicNote["A#", 1/2]["Pitch"]'
+MusicPitch[<|Accidental -> 1, Key -> A|>]
+```
+
+```scrut
+$ wo 'MusicNote["A#", 1/2]["Duration"]'
+MusicDuration[<|Duration -> 1/2|>]
+```
+
+Durations add up, scaled by any leading coefficient.
+
+```scrut
+$ wo '3 MusicDuration[<|"Duration" -> 1/2|>] + MusicDuration[1/4]'
+MusicDuration[<|Duration -> 7/4|>]
+```
+
+A named chord canonicalizes to its `"Name"` and `"Root"`, and can report its
+constituent pitches and the intervals between them.
+
+```scrut
+$ wo 'MusicChord["GMajor"]'
+MusicChord[<|Name -> Major, Root -> MusicPitch[<|Key -> G, Accidental -> 0|>]|>]
+```
+
+```scrut
+$ wo 'MusicChord["GMajor"]["PitchList"]'
+{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> B|>], MusicPitch[<|Accidental -> 0, Octave -> 5, Key -> D|>]}
+```
+
+```scrut
+$ wo 'MusicChord["GMajor"]["IntervalList"]'
+{MusicInterval[<|Semitones -> 4, Name -> MajorThird, CompoundOctaves -> 0|>], MusicInterval[<|Semitones -> 3, Name -> MinorThird, CompoundOctaves -> 0|>]}
 ```
 
 

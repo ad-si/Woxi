@@ -193,14 +193,145 @@ fn bare_music_object_stays_symbolic_in_cli() {
 
 #[test]
 fn music_objects_stay_symbolic() {
-  // Constructors round-trip as canonical symbolic objects (like Sound/SoundNote).
+  // A single-pitch note (no duration) round-trips as a canonical symbolic
+  // object, and a chord given by an explicit pitch list stays symbolic.
   assert_eq!(
-    interpret("MusicNote[MusicPitch[\"C4\"], MusicDuration[\"Half\"]]")
-      .unwrap(),
-    "MusicNote[MusicPitch[C4], MusicDuration[Half]]"
+    interpret("MusicNote[MusicPitch[\"C4\"]]").unwrap(),
+    "MusicNote[MusicPitch[C4]]"
   );
   assert_eq!(
     interpret("Head[MusicChord[{MusicPitch[\"C\"]}]]").unwrap(),
     "MusicChord"
   );
+}
+
+// ─── MusicNote canonicalization (WL 15) ──────────────────────────────────────
+
+#[test]
+fn music_note_canonicalizes_pitch_and_duration() {
+  // MusicNote[pitch, duration] canonicalizes to the association form exposing
+  // its Pitch and Duration; an octaveless name omits "Octave".
+  assert_eq!(
+    interpret("MusicNote[\"A#\", 1/2]").unwrap(),
+    "MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 1, Key -> A|>], \
+     Duration -> MusicDuration[<|Duration -> 1/2|>]|>]"
+  );
+}
+
+#[test]
+fn music_note_from_pitch_and_duration_objects() {
+  // Pitch/duration given as objects resolve the same way; a named duration maps
+  // to its rhythmic value and an explicit octave is kept.
+  assert_eq!(
+    interpret("MusicNote[MusicPitch[\"C4\"], MusicDuration[\"Half\"]]")
+      .unwrap(),
+    "MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
+     Duration -> MusicDuration[<|Duration -> 1/2|>]|>]"
+  );
+}
+
+#[test]
+fn music_note_property_access() {
+  assert_eq!(
+    interpret("MusicNote[\"A#\", 1/2][\"Pitch\"]").unwrap(),
+    "MusicPitch[<|Accidental -> 1, Key -> A|>]"
+  );
+  assert_eq!(
+    interpret("MusicNote[\"A#\", 1/2][\"Duration\"]").unwrap(),
+    "MusicDuration[<|Duration -> 1/2|>]"
+  );
+}
+
+// ─── MusicDuration (WL 15) ───────────────────────────────────────────────────
+
+#[test]
+fn music_duration_canonicalizes_number() {
+  assert_eq!(
+    interpret("MusicDuration[1/4]").unwrap(),
+    "MusicDuration[<|Duration -> 1/4|>]"
+  );
+}
+
+#[test]
+fn music_duration_arithmetic() {
+  // Durations add (scaled by any leading coefficient): 3·(1/2) + 1/4 = 7/4.
+  assert_eq!(
+    interpret("3 MusicDuration[<|\"Duration\" -> 1/2|>] + MusicDuration[1/4]")
+      .unwrap(),
+    "MusicDuration[<|Duration -> 7/4|>]"
+  );
+  // Subtraction works too: 1 - 1/4 = 3/4.
+  assert_eq!(
+    interpret("MusicDuration[1] - MusicDuration[1/4]").unwrap(),
+    "MusicDuration[<|Duration -> 3/4|>]"
+  );
+}
+
+// ─── Enharmonic MusicPitch equality (WL 15) ──────────────────────────────────
+
+#[test]
+fn music_pitch_enharmonic_equality() {
+  // Enharmonic spellings denote the same pitch.
+  assert_eq!(
+    interpret("MusicPitch[\"C#\"] == MusicPitch[\"Db\"]").unwrap(),
+    "True"
+  );
+  // Different pitches are not equal.
+  assert_eq!(
+    interpret("MusicPitch[\"C4\"] == MusicPitch[\"D4\"]").unwrap(),
+    "False"
+  );
+  // Unequal is the negation.
+  assert_eq!(
+    interpret("MusicPitch[\"C#\"] != MusicPitch[\"Db\"]").unwrap(),
+    "False"
+  );
+}
+
+// ─── MusicChord canonicalization + properties (WL 15) ─────────────────────────
+
+#[test]
+fn music_chord_canonicalizes_named_chord() {
+  assert_eq!(
+    interpret("MusicChord[\"GMajor\"]").unwrap(),
+    "MusicChord[<|Name -> Major, \
+     Root -> MusicPitch[<|Key -> G, Accidental -> 0|>]|>]"
+  );
+}
+
+#[test]
+fn music_chord_pitch_list() {
+  // G major triad, spelled on the correct staff letters: G4, B4, D5.
+  assert_eq!(
+    interpret("MusicChord[\"GMajor\"][\"PitchList\"]").unwrap(),
+    "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> B|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 5, Key -> D|>]}"
+  );
+}
+
+#[test]
+fn music_chord_interval_list() {
+  // Successive intervals of a major triad: a major third then a minor third.
+  assert_eq!(
+    interpret("MusicChord[\"GMajor\"][\"IntervalList\"]").unwrap(),
+    "{MusicInterval[<|Semitones -> 4, Name -> MajorThird, CompoundOctaves -> 0|>], \
+     MusicInterval[<|Semitones -> 3, Name -> MinorThird, CompoundOctaves -> 0|>]}"
+  );
+}
+
+#[test]
+fn music_chord_minor_spelling() {
+  // F minor triad spells the third as a flat A (Ab), not G#.
+  assert_eq!(
+    interpret("MusicChord[\"FMinor\"][\"PitchList\"]").unwrap(),
+    "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> F|>], \
+     MusicPitch[<|Accidental -> -1, Octave -> 4, Key -> A|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 5, Key -> C|>]}"
+  );
+}
+
+#[test]
+fn music_chord_unknown_quality_stays_symbolic() {
+  assert_eq!(interpret("MusicChord[\"Xyz\"]").unwrap(), "MusicChord[Xyz]");
 }

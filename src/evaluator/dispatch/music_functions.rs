@@ -17,6 +17,18 @@ pub fn dispatch_music_functions(
       Some(Ok(crate::functions::music_ast::music_object_q(args)))
     }
     "MusicPitch" => crate::functions::music_ast::music_pitch(args).map(Ok),
+    // MusicNote[pitch, duration] / MusicDuration[number] / MusicChord[name]
+    // canonicalize to their WL 15 association forms; other arities/argument
+    // shapes are left as canonical symbolic expressions.
+    "MusicNote" if args.len() == 2 => {
+      crate::functions::music_ast::music_note(args).map(Ok)
+    }
+    "MusicDuration" if args.len() == 1 => {
+      crate::functions::music_ast::music_duration(args).map(Ok)
+    }
+    "MusicChord" if args.len() == 1 => {
+      crate::functions::music_ast::music_chord(args).map(Ok)
+    }
     // MusicPlot[obj] draws the object as staff notation, returning a Graphics
     // (which renders as the SVG in visual hosts and as `-Graphics-` in the CLI,
     // just like Plot). Non-renderable arguments are left symbolic.

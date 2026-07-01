@@ -2432,6 +2432,28 @@ pub fn evaluate_expr_to_expr_inner(
           continue;
         }
 
+        // Enharmonic MusicPitch (in)equality (WL 15): two `MusicPitch` objects
+        // compare by their sounding MIDI pitch, so `MusicPitch["C#"]` equals
+        // `MusicPitch["Db"]`.
+        if matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual)
+          && matches!(left, Expr::FunctionCall { name, .. } if name == "MusicPitch")
+          && matches!(right, Expr::FunctionCall { name, .. } if name == "MusicPitch")
+          && let (Some(lm), Some(rm)) = (
+            crate::functions::music_ast::music_pitch_midi(left),
+            crate::functions::music_ast::music_pitch_midi(right),
+          )
+        {
+          let ok = if matches!(op, ComparisonOp::Equal) {
+            lm == rm
+          } else {
+            lm != rm
+          };
+          if !ok {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+          continue;
+        }
+
         let result = match op {
           ComparisonOp::SameQ => {
             // SameQ tests structural identity, not numeric equality.

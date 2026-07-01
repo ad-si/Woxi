@@ -1126,6 +1126,13 @@ pub fn apply_curried_call(
       name,
       args: func_args,
     } => {
+      // Property access on a canonical music object, e.g.
+      // MusicNote[<|…|>]["Pitch"] or MusicChord[<|…|>]["PitchList"].
+      if let Some(result) = crate::functions::music_ast::music_property_access(
+        name, func_args, args,
+      ) {
+        return Ok(result);
+      }
       // Curried function: f[a][b] becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       if (name == "MapAt" || name == "SubsetMap")

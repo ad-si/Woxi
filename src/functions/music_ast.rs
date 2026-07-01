@@ -160,6 +160,44 @@ pub fn resolve_pitch_name(spec: &Expr) -> Option<String> {
       "MusicNote" | "MusicPitch" => resolve_pitch_name(args.first()?),
       _ => None,
     },
+    // The canonical `MusicPitch` association form,
+    // `<|"Accidental" -> a, ["Octave" -> o,] "Key" -> k[, "MIDINumber" -> n]|>`.
+    Expr::Association(pairs) => {
+      let key = match assoc_get(pairs, "Key")? {
+        Expr::String(s) => s.as_bytes().first()?.to_ascii_uppercase() as char,
+        _ => return None,
+      };
+      let accidental = match assoc_get(pairs, "Accidental") {
+        Some(Expr::Integer(n)) => *n,
+        None => 0,
+        _ => return None,
+      };
+      // Prefer an explicit octave; otherwise recover it from a MIDINumber, and
+      // fall back to WL's default register (octave 4).
+      let octave = match assoc_get(pairs, "Octave") {
+        Some(Expr::Integer(n)) => *n,
+        _ => match assoc_get(pairs, "MIDINumber") {
+          Some(Expr::Integer(m)) => {
+            let base = DIATONIC_BASE_SEMITONE
+              [letter_diatonic_index(key as u8)? as usize];
+            (m - base - accidental).div_euclid(12) - 1
+          }
+          _ => 4,
+        },
+      };
+      let mut name = key.to_string();
+      match accidental.cmp(&0) {
+        std::cmp::Ordering::Greater => {
+          name.push_str(&"#".repeat(accidental as usize))
+        }
+        std::cmp::Ordering::Less => {
+          name.push_str(&"b".repeat((-accidental) as usize))
+        }
+        std::cmp::Ordering::Equal => {}
+      }
+      name.push_str(&octave.to_string());
+      Some(name)
+    }
     _ => None,
   }
 }
@@ -426,6 +464,515 @@ pub fn try_music_pitch_plus(args: &[Expr]) -> Option<Expr> {
     return None;
   }
   Some(axes_to_music_pitch(total.0, total.1))
+}
+
+/// MIDI note number of a `MusicPitch` object in any of its forms. Octaveless
+/// names default to octave 4, so `MusicPitch["C#"]` and `MusicPitch["Db"]` both
+/// resolve to MIDI 61 — which is what makes them compare equal.
+pub fn music_pitch_midi(expr: &Expr) -> Option<i128> {
+  // The staff-position decoder handles named and MIDINumber-association forms;
+  // fall back through the name resolver for the `Octave`-keyed association form
+  // produced by chord spelling (which carries no explicit MIDINumber).
+  if let Some((_position, midi)) = music_pitch_axes(expr) {
+    return Some(midi);
+  }
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "MusicPitch" {
+    return None;
+  }
+  pitch_name_to_midi(&resolve_pitch_name(args.first()?)?)
+}
+
+// ---------------------------------------------------------------------------
+// MusicNote / MusicDuration / MusicChord canonicalization (WL 15)
+// ---------------------------------------------------------------------------
+//
+// Following the WL 15 reference pages, `MusicNote[pitch, duration]`,
+// `MusicDuration[number]` and `MusicChord["<root><quality>"]` canonicalize to
+// association-valued objects that expose their parts by name, e.g.
+//
+// ```text
+// MusicNote["A#", 1/2]
+//   MusicNote[<|"Pitch"    -> MusicPitch[<|"Accidental" -> 1, "Key" -> "A"|>],
+//               "Duration" -> MusicDuration[<|"Duration" -> 1/2|>]|>]
+// MusicChord["GMajor"]
+//   MusicChord[<|"Name" -> "Major",
+//                "Root" -> MusicPitch[<|"Key" -> "G", "Accidental" -> 0|>]|>]
+// ```
+
+/// A small `Rational[n, d]` builder (Woxi stores rationals as `Rational[n, d]`).
+fn rational(n: i128, d: i128) -> Expr {
+  Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
+  }
+}
+
+/// A `MusicPitch[<|…|>]` / `MusicDuration[<|…|>]` / … object wrapping a
+/// key-ordered association.
+fn music_assoc(head: &str, pairs: Vec<(&str, Expr)>) -> Expr {
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![Expr::Association(
+      pairs
+        .into_iter()
+        .map(|(k, v)| (Expr::String(k.to_string()), v))
+        .collect(),
+    )]
+    .into(),
+  }
+}
+
+/// Look up a string key in an association's `(key, value)` pairs.
+fn assoc_get<'a>(pairs: &'a [(Expr, Expr)], key: &str) -> Option<&'a Expr> {
+  pairs.iter().find_map(|(k, v)| match k {
+    Expr::String(s) if s == key => Some(v),
+    _ => None,
+  })
+}
+
+/// Parse a pitch name such as `"A#"`, `"C4"`, `"Db5"`, `"G-1"` into its
+/// `(key letter, accidental, octave-if-present)` components. Unlike
+/// [`parse_pitch_parts`], the octave is `None` when the name carries no octave
+/// digit, so `MusicNote["A#", …]` can omit `"Octave"` from its pitch.
+fn parse_pitch_spelled(name: &str) -> Option<(char, i128, Option<i128>)> {
+  let bytes = name.as_bytes();
+  let letter = bytes.first()?.to_ascii_uppercase();
+  if !(b'A'..=b'G').contains(&letter) {
+    return None;
+  }
+  let mut idx = 1;
+  let mut accidental = 0i128;
+  while let Some(&c) = bytes.get(idx) {
+    match c {
+      b'#' => accidental += 1,
+      b'b' => accidental -= 1,
+      _ => break,
+    }
+    idx += 1;
+  }
+  let octave = if idx >= name.len() {
+    None
+  } else {
+    Some(name.get(idx..)?.parse().ok()?)
+  };
+  Some((letter as char, accidental, octave))
+}
+
+/// The canonical `MusicPitch` association for a note/chord tone, keyed in the
+/// order `Accidental, [Octave,] Key` (the layout WL uses for note pitches and
+/// chord `"PitchList"` entries). `"Octave"` is included only when known.
+fn pitch_object(letter: char, accidental: i128, octave: Option<i128>) -> Expr {
+  let mut pairs = vec![("Accidental", Expr::Integer(accidental))];
+  if let Some(o) = octave {
+    pairs.push(("Octave", Expr::Integer(o)));
+  }
+  pairs.push(("Key", Expr::String(letter.to_string())));
+  music_assoc("MusicPitch", pairs)
+}
+
+/// Resolve a pitch specification (name string, `MusicPitch`, MIDI integer, …)
+/// to the canonical note-pitch object, preserving whether an octave was given.
+fn resolve_pitch_object(spec: &Expr) -> Option<Expr> {
+  let name = resolve_pitch_name(spec)?;
+  let (letter, accidental, octave) = parse_pitch_spelled(&name)?;
+  Some(pitch_object(letter, accidental, octave))
+}
+
+/// The rhythmic value of one of the named note durations, or `None` for an
+/// unknown name.
+fn named_duration_value(name: &str) -> Option<Expr> {
+  let denom = match name {
+    "Whole" => return Some(Expr::Integer(1)),
+    "Half" => 2,
+    "Quarter" => 4,
+    "Eighth" => 8,
+    "Sixteenth" => 16,
+    "ThirtySecond" => 32,
+    "SixtyFourth" => 64,
+    _ => return None,
+  };
+  Some(rational(1, denom))
+}
+
+/// Extract the rhythmic value from any duration specification: a bare number,
+/// a named duration string, or a `MusicDuration[…]` object (association, bare
+/// number or name).
+fn resolve_duration_value(spec: &Expr) -> Option<Expr> {
+  match spec {
+    Expr::Integer(_) | Expr::Real(_) => Some(spec.clone()),
+    Expr::FunctionCall { name, .. } if name == "Rational" => Some(spec.clone()),
+    Expr::String(s) => named_duration_value(s),
+    Expr::FunctionCall { name, args } if name == "MusicDuration" => {
+      match args.first()? {
+        Expr::Association(pairs) => assoc_get(pairs, "Duration").cloned(),
+        other => resolve_duration_value(other),
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `MusicDuration[spec]` — canonicalize a numeric duration to the association
+/// form `MusicDuration[<|"Duration" -> value|>]`. Named durations and the
+/// already-canonical association form are left untouched (`None`).
+pub fn music_duration(args: &[Expr]) -> Option<Expr> {
+  let [spec] = args else {
+    return None;
+  };
+  let value = match spec {
+    Expr::Integer(_) | Expr::Real(_) => spec.clone(),
+    Expr::FunctionCall { name, .. } if name == "Rational" => spec.clone(),
+    _ => return None,
+  };
+  Some(music_assoc("MusicDuration", vec![("Duration", value)]))
+}
+
+/// `MusicNote[pitch, duration]` — canonicalize to the association form
+/// `MusicNote[<|"Pitch" -> MusicPitch[…], "Duration" -> MusicDuration[…]|>]`.
+/// Returns `None` (leaving the note symbolic) when either part is not a
+/// recognized specification.
+pub fn music_note(args: &[Expr]) -> Option<Expr> {
+  let [pitch_spec, duration_spec] = args else {
+    return None;
+  };
+  let pitch = resolve_pitch_object(pitch_spec)?;
+  let duration_value = resolve_duration_value(duration_spec)?;
+  let duration =
+    music_assoc("MusicDuration", vec![("Duration", duration_value)]);
+  Some(music_assoc(
+    "MusicNote",
+    vec![("Pitch", pitch), ("Duration", duration)],
+  ))
+}
+
+/// The stacked-thirds `(semitone, diatonic-step)` offsets from the root for
+/// each recognized chord quality, or `None` for an unknown quality.
+fn chord_quality_offsets(name: &str) -> Option<&'static [(i128, i128)]> {
+  Some(match name {
+    "Major" => &[(0, 0), (4, 2), (7, 4)],
+    "Minor" => &[(0, 0), (3, 2), (7, 4)],
+    "Diminished" => &[(0, 0), (3, 2), (6, 4)],
+    "Augmented" => &[(0, 0), (4, 2), (8, 4)],
+    "MajorSeventh" => &[(0, 0), (4, 2), (7, 4), (11, 6)],
+    "MinorSeventh" => &[(0, 0), (3, 2), (7, 4), (10, 6)],
+    "DominantSeventh" => &[(0, 0), (4, 2), (7, 4), (10, 6)],
+    _ => return None,
+  })
+}
+
+/// Split a chord name such as `"GMajor"`, `"F#Minor"`, `"BbMajorSeventh"` into
+/// its `(root letter, root accidental, quality)` components. The root is the
+/// leading note letter plus any `#`/`b` accidentals; the remainder is the
+/// quality name.
+fn parse_chord_name(name: &str) -> Option<(char, i128, &str)> {
+  let bytes = name.as_bytes();
+  let letter = bytes.first()?.to_ascii_uppercase();
+  if !(b'A'..=b'G').contains(&letter) {
+    return None;
+  }
+  let mut idx = 1;
+  let mut accidental = 0i128;
+  while let Some(&c) = bytes.get(idx) {
+    match c {
+      b'#' => accidental += 1,
+      b'b' => accidental -= 1,
+      _ => break,
+    }
+    idx += 1;
+  }
+  Some((letter as char, accidental, name.get(idx..)?))
+}
+
+/// `MusicChord["<root><quality>"]` — canonicalize a named chord to the
+/// association form `MusicChord[<|"Name" -> quality, "Root" -> MusicPitch[…]|>]`.
+/// A chord given by an explicit pitch list is left symbolic.
+pub fn music_chord(args: &[Expr]) -> Option<Expr> {
+  let [Expr::String(spec)] = args else {
+    return None;
+  };
+  let (letter, accidental, quality) = parse_chord_name(spec)?;
+  // Only recognized qualities canonicalize; anything else stays symbolic.
+  chord_quality_offsets(quality)?;
+  // The chord's Root pitch is keyed in the order `Key, Accidental`.
+  let root = music_assoc(
+    "MusicPitch",
+    vec![
+      ("Key", Expr::String(letter.to_string())),
+      ("Accidental", Expr::Integer(accidental)),
+    ],
+  );
+  Some(music_assoc(
+    "MusicChord",
+    vec![("Name", Expr::String(quality.to_string())), ("Root", root)],
+  ))
+}
+
+/// Base MIDI number of a note letter in a given octave (natural, no accidental).
+fn letter_natural_midi(letter_idx: usize, octave: i128) -> i128 {
+  (octave + 1) * 12 + DIATONIC_BASE_SEMITONE[letter_idx]
+}
+
+/// Spell out the pitch objects of a canonical chord association's tones. Each
+/// tone stacks thirds from the root, spelled on the correct staff letter so the
+/// accidentals come out right (`GMajor` → G4, B4, D5).
+fn chord_tones(pairs: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
+  let quality = match assoc_get(pairs, "Name")? {
+    Expr::String(s) => s.as_str(),
+    _ => return None,
+  };
+  let offsets = chord_quality_offsets(quality)?;
+  let root = assoc_get(pairs, "Root")?;
+  let Expr::FunctionCall { name, args } = root else {
+    return None;
+  };
+  if name != "MusicPitch" {
+    return None;
+  }
+  let Expr::Association(root_pairs) = args.first()? else {
+    return None;
+  };
+  let root_letter = match assoc_get(root_pairs, "Key")? {
+    Expr::String(s) => s.as_bytes().first()?.to_ascii_uppercase(),
+    _ => return None,
+  };
+  let root_accidental = match assoc_get(root_pairs, "Accidental") {
+    Some(Expr::Integer(n)) => *n,
+    None => 0,
+    _ => return None,
+  };
+  let root_octave = match assoc_get(root_pairs, "Octave") {
+    Some(Expr::Integer(n)) => *n,
+    _ => 4, // WL's default register for a chord root
+  };
+  let root_idx = letter_diatonic_index(root_letter)?;
+  let root_midi =
+    letter_natural_midi(root_idx as usize, root_octave) + root_accidental;
+
+  offsets
+    .iter()
+    .map(|(semitone, step)| {
+      let letter_pos = root_idx + step;
+      let octave_delta = letter_pos.div_euclid(7);
+      let letter_idx = letter_pos.rem_euclid(7) as usize;
+      let octave = root_octave + octave_delta;
+      let target_midi = root_midi + semitone;
+      let accidental = target_midi - letter_natural_midi(letter_idx, octave);
+      let letter = DIATONIC_LETTERS[letter_idx].chars().next()?;
+      Some(pitch_object(letter, accidental, Some(octave)))
+    })
+    .collect()
+}
+
+/// Diatonic interval name for a simple (within-octave) semitone distance.
+fn interval_name(simple_semitones: i128) -> &'static str {
+  match simple_semitones {
+    0 => "PerfectUnison",
+    1 => "MinorSecond",
+    2 => "MajorSecond",
+    3 => "MinorThird",
+    4 => "MajorThird",
+    5 => "PerfectFourth",
+    6 => "Tritone",
+    7 => "PerfectFifth",
+    8 => "MinorSixth",
+    9 => "MajorSixth",
+    10 => "MinorSeventh",
+    11 => "MajorSeventh",
+    _ => "PerfectOctave",
+  }
+}
+
+/// The `MusicInterval[<|…|>]` objects between successive chord tones.
+fn chord_intervals(pairs: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
+  let tones = chord_tones(pairs)?;
+  let midis: Option<Vec<i128>> = tones.iter().map(music_pitch_midi).collect();
+  let midis = midis?;
+  Some(
+    midis
+      .windows(2)
+      .map(|w| {
+        let distance = w[1] - w[0];
+        let compound = distance.div_euclid(12);
+        let simple = distance - compound * 12;
+        music_assoc(
+          "MusicInterval",
+          vec![
+            ("Semitones", Expr::Integer(simple)),
+            ("Name", Expr::String(interval_name(simple).to_string())),
+            ("CompoundOctaves", Expr::Integer(compound)),
+          ],
+        )
+      })
+      .collect(),
+  )
+}
+
+/// Property access on a canonical music object, e.g. `MusicNote[<|…|>]["Pitch"]`
+/// or `MusicChord[<|…|>]["PitchList"]`. Direct association keys are returned as
+/// stored; chords additionally compute `"PitchList"` and `"IntervalList"`.
+/// Returns `None` when the access is not a recognized music-object lookup.
+pub fn music_property_access(
+  head: &str,
+  obj_args: &[Expr],
+  prop_args: &[Expr],
+) -> Option<Expr> {
+  if !MUSIC_OBJECT_HEADS.contains(&head) {
+    return None;
+  }
+  let [Expr::Association(pairs)] = obj_args else {
+    return None;
+  };
+  let [Expr::String(key)] = prop_args else {
+    return None;
+  };
+  // Stored keys (Pitch, Duration, Name, Root, …) take precedence.
+  if let Some(value) = assoc_get(pairs, key) {
+    return Some(value.clone());
+  }
+  if head == "MusicChord" {
+    match key.as_str() {
+      "PitchList" => return chord_tones(pairs).map(|t| Expr::List(t.into())),
+      "IntervalList" => {
+        return chord_intervals(pairs).map(|t| Expr::List(t.into()));
+      }
+      _ => {}
+    }
+  }
+  None
+}
+
+/// Interpret one summand of a duration sum as `(coefficient, value)`, where the
+/// value is the summand's `MusicDuration` rhythmic value and the coefficient is
+/// whatever it is multiplied by. Returns `None` when the term is not a (scaled)
+/// `MusicDuration`.
+fn music_duration_summand(term: &Expr) -> Option<(Expr, Expr)> {
+  match term {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (coeff, value) = music_duration_summand(operand)?;
+      Some((
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(coeff),
+        },
+        value,
+      ))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut coeff: Vec<Expr> = Vec::new();
+      let mut value = None;
+      for arg in args.iter() {
+        if is_music_duration(arg) {
+          if value.is_some() {
+            return None;
+          }
+          value = Some(duration_value_of(arg)?);
+        } else {
+          coeff.push(arg.clone());
+        }
+      }
+      Some((times_of(coeff), value?))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let (l_dur, r_dur) = (is_music_duration(left), is_music_duration(right));
+      match (l_dur, r_dur) {
+        (false, true) => Some(((**left).clone(), duration_value_of(right)?)),
+        (true, false) => Some(((**right).clone(), duration_value_of(left)?)),
+        _ => None,
+      }
+    }
+    _ if is_music_duration(term) => {
+      Some((Expr::Integer(1), duration_value_of(term)?))
+    }
+    _ => None,
+  }
+}
+
+/// Whether an expression is a `MusicDuration[…]` object.
+fn is_music_duration(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "MusicDuration")
+}
+
+/// The rhythmic value carried by a `MusicDuration[…]` object.
+fn duration_value_of(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "MusicDuration" => {
+      match args.first()? {
+        Expr::Association(pairs) => assoc_get(pairs, "Duration").cloned(),
+        other => resolve_duration_value(other),
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Fold a list of factors into a single `Times[…]` (or the lone factor / `1`).
+fn times_of(mut factors: Vec<Expr>) -> Expr {
+  match factors.len() {
+    0 => Expr::Integer(1),
+    1 => factors.pop().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    },
+  }
+}
+
+/// Decompose a `Plus[…]` over `MusicDuration` objects into the per-summand
+/// `Times[coeff, value]` products. Returns `None` when any summand is not a
+/// (scaled) `MusicDuration`, so ordinary `Plus` handling proceeds. The caller
+/// evaluates the products and wraps the total in a `MusicDuration`.
+pub fn music_duration_plus_terms(args: &[Expr]) -> Option<Vec<Expr>> {
+  let mut flat: Vec<Expr> = Vec::new();
+  let mut stack: Vec<Expr> = args.iter().rev().cloned().collect();
+  while let Some(term) = stack.pop() {
+    match term {
+      Expr::FunctionCall {
+        ref name,
+        args: ref inner,
+      } if name == "Plus" => {
+        for i in inner.iter().rev() {
+          stack.push(i.clone());
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        ref left,
+        ref right,
+      } => {
+        stack.push((**right).clone());
+        stack.push((**left).clone());
+      }
+      other => flat.push(other),
+    }
+  }
+  // A lone duration is not arithmetic; leave it for the normal path.
+  if flat.len() < 2 {
+    return None;
+  }
+  let mut products = Vec::with_capacity(flat.len());
+  for term in &flat {
+    let (coeff, value) = music_duration_summand(term)?;
+    products.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![coeff, value].into(),
+    });
+  }
+  Some(products)
+}
+
+/// Wrap a computed total rhythmic value in the canonical duration object.
+pub fn music_duration_from_value(value: Expr) -> Expr {
+  music_assoc("MusicDuration", vec![("Duration", value)])
 }
 
 #[cfg(test)]
