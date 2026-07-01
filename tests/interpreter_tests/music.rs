@@ -172,6 +172,22 @@ fn export_music_chord_renders_three_heads() {
 }
 
 #[test]
+fn named_chord_list_renders_one_staff_per_chord() {
+  // A list of named chords renders like a list of notes: each element gets its
+  // own staff. Three major triads → three clefs (staves) and nine note heads,
+  // with no symbolic `MusicChord[...]` text leaking into the drawing.
+  let svg = interpret(
+    "ExportString[{MusicChord[\"G\"], MusicChord[\"E\"], MusicChord[\"F\"]}, \
+     \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert_eq!(svg.matches("class=\"clef\"").count(), 3);
+  assert_eq!(svg.matches("class=\"notehead\"").count(), 9);
+  assert!(!svg.contains("MusicChord"), "symbolic chord leaked: {svg}");
+}
+
+#[test]
 fn bare_pitch_is_not_staff_notation() {
   // A `MusicPitch` carries no rhythmic value, so it is not drawn on a staff —
   // unlike a `MusicChord`, which is a musical event. The pitch's SVG therefore
@@ -349,4 +365,137 @@ fn music_chord_minor_spelling() {
 #[test]
 fn music_chord_unknown_quality_stays_symbolic() {
   assert_eq!(interpret("MusicChord[\"Xyz\"]").unwrap(), "MusicChord[Xyz]");
+}
+
+// ─── MusicChord notation aliases ──────────────────────────────────────────────
+
+/// A bare root, the spelled-out quality, and the space-separated form all
+/// resolve to the same canonical major chord.
+#[test]
+fn music_chord_bare_root_and_spaced_forms_are_major() {
+  let expected = "MusicChord[<|Name -> Major, \
+     Root -> MusicPitch[<|Key -> G, Accidental -> 0|>]|>]";
+  assert_eq!(interpret("MusicChord[\"G\"]").unwrap(), expected);
+  assert_eq!(interpret("MusicChord[\"GMajor\"]").unwrap(), expected);
+  assert_eq!(interpret("MusicChord[\"G Major\"]").unwrap(), expected);
+  assert_eq!(interpret("MusicChord[\"GM\"]").unwrap(), expected);
+  assert_eq!(interpret("MusicChord[\"Gmaj\"]").unwrap(), expected);
+}
+
+/// The short symbols map to the same canonical names as the long ones.
+#[test]
+fn music_chord_short_symbols_resolve() {
+  let cases = [
+    ("Cm", "Minor"),
+    ("C-", "Minor"),
+    ("Cmin", "Minor"),
+    ("Caug", "Augmented"),
+    ("C+", "Augmented"),
+    ("Cdim", "Diminished"),
+    ("Co", "Diminished"),
+    ("C7", "DominantSeventh"),
+    ("Cmaj7", "MajorSeventh"),
+    ("CM7", "MajorSeventh"),
+    ("Cm7", "MinorSeventh"),
+    ("Cdim7", "DiminishedSeventh"),
+    ("Cm7b5", "HalfDiminishedSeventh"),
+    ("CmM7", "MinorMajorSeventh"),
+    ("Caug7", "AugmentedSeventh"),
+    ("C6", "Sixth"),
+    ("Cm6", "MinorSixth"),
+    ("C9", "DominantNinth"),
+    ("CM9", "MajorNinth"),
+    ("Cm9", "MinorNinth"),
+    ("Csus2", "SuspendedSecond"),
+    ("Csus4", "SuspendedFourth"),
+    ("Csus", "SuspendedFourth"),
+  ];
+  for (input, name) in cases {
+    assert_eq!(
+      interpret(&format!("MusicChord[\"{input}\"][\"PitchList\"]")).is_ok(),
+      true,
+      "{input} should have a pitch list"
+    );
+    assert_eq!(
+      interpret(&format!("MusicChord[\"{input}\"][\"Name\"]")).unwrap(),
+      name,
+      "quality of {input}"
+    );
+  }
+}
+
+/// Case matters where it must: `m` is minor, `M` is major.
+#[test]
+fn music_chord_case_distinguishes_major_from_minor() {
+  assert_eq!(interpret("MusicChord[\"CM\"][\"Name\"]").unwrap(), "Major");
+  assert_eq!(interpret("MusicChord[\"Cm\"][\"Name\"]").unwrap(), "Minor");
+  assert_eq!(
+    interpret("MusicChord[\"CM7\"][\"Name\"]").unwrap(),
+    "MajorSeventh"
+  );
+  assert_eq!(
+    interpret("MusicChord[\"Cm7\"][\"Name\"]").unwrap(),
+    "MinorSeventh"
+  );
+}
+
+/// Sharp/flat roots parse (both ASCII and Unicode accidentals), including a
+/// double flat, and combine with a quality suffix.
+#[test]
+fn music_chord_accidental_roots() {
+  assert_eq!(
+    interpret("MusicChord[\"Bbm7\"]").unwrap(),
+    "MusicChord[<|Name -> MinorSeventh, \
+     Root -> MusicPitch[<|Key -> B, Accidental -> -1|>]|>]"
+  );
+  assert_eq!(
+    interpret("MusicChord[\"F#m\"]").unwrap(),
+    "MusicChord[<|Name -> Minor, \
+     Root -> MusicPitch[<|Key -> F, Accidental -> 1|>]|>]"
+  );
+  assert_eq!(
+    interpret("MusicChord[\"F\u{266F}Major\"]").unwrap(),
+    "MusicChord[<|Name -> Major, \
+     Root -> MusicPitch[<|Key -> F, Accidental -> 1|>]|>]"
+  );
+  assert_eq!(
+    interpret("MusicChord[\"Cbb\"][\"Root\"]").unwrap(),
+    "MusicPitch[<|Key -> C, Accidental -> -2|>]"
+  );
+}
+
+/// A dominant seventh spells a diminished-quality top: C7 → C E G Bb.
+#[test]
+fn music_chord_dominant_seventh_spelling() {
+  assert_eq!(
+    interpret("MusicChord[\"C7\"][\"PitchList\"]").unwrap(),
+    "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], \
+     MusicPitch[<|Accidental -> -1, Octave -> 4, Key -> B|>]}"
+  );
+}
+
+/// A suspended-fourth triad replaces the third with the fourth: C F G.
+#[test]
+fn music_chord_suspended_fourth_spelling() {
+  assert_eq!(
+    interpret("MusicChord[\"Csus4\"][\"PitchList\"]").unwrap(),
+    "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> F|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>]}"
+  );
+}
+
+/// A dominant ninth stacks the ninth an octave up: C E G Bb D5.
+#[test]
+fn music_chord_dominant_ninth_spelling() {
+  assert_eq!(
+    interpret("MusicChord[\"C9\"][\"PitchList\"]").unwrap(),
+    "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], \
+     MusicPitch[<|Accidental -> -1, Octave -> 4, Key -> B|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 5, Key -> D|>]}"
+  );
 }

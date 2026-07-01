@@ -668,34 +668,103 @@ fn chord_quality_offsets(name: &str) -> Option<&'static [(i128, i128)]> {
     "Minor" => &[(0, 0), (3, 2), (7, 4)],
     "Diminished" => &[(0, 0), (3, 2), (6, 4)],
     "Augmented" => &[(0, 0), (4, 2), (8, 4)],
+    "SuspendedSecond" => &[(0, 0), (2, 1), (7, 4)],
+    "SuspendedFourth" => &[(0, 0), (5, 3), (7, 4)],
+    "Sixth" => &[(0, 0), (4, 2), (7, 4), (9, 5)],
+    "MinorSixth" => &[(0, 0), (3, 2), (7, 4), (9, 5)],
     "MajorSeventh" => &[(0, 0), (4, 2), (7, 4), (11, 6)],
     "MinorSeventh" => &[(0, 0), (3, 2), (7, 4), (10, 6)],
     "DominantSeventh" => &[(0, 0), (4, 2), (7, 4), (10, 6)],
+    "DiminishedSeventh" => &[(0, 0), (3, 2), (6, 4), (9, 6)],
+    "HalfDiminishedSeventh" => &[(0, 0), (3, 2), (6, 4), (10, 6)],
+    "MinorMajorSeventh" => &[(0, 0), (3, 2), (7, 4), (11, 6)],
+    "AugmentedSeventh" => &[(0, 0), (4, 2), (8, 4), (10, 6)],
+    "DominantNinth" => &[(0, 0), (4, 2), (7, 4), (10, 6), (14, 8)],
+    "MajorNinth" => &[(0, 0), (4, 2), (7, 4), (11, 6), (14, 8)],
+    "MinorNinth" => &[(0, 0), (3, 2), (7, 4), (10, 6), (14, 8)],
     _ => return None,
   })
 }
 
-/// Split a chord name such as `"GMajor"`, `"F#Minor"`, `"BbMajorSeventh"` into
-/// its `(root letter, root accidental, quality)` components. The root is the
-/// leading note letter plus any `#`/`b` accidentals; the remainder is the
-/// quality name.
+/// Normalize a written chord-quality suffix (everything after the root, e.g.
+/// `"m7"`, `"maj7"`, `"dim"`, `"sus4"`, or the empty string for a bare triad)
+/// to its canonical quality name. Matching is case-sensitive where it must be
+/// (`"m"` is minor, `"M"` is major) and accepts the common jazz/pop symbols in
+/// addition to the spelled-out names. A leading separator space (as in
+/// `"G Major"`) is ignored. Returns `None` for an unrecognized suffix.
+fn normalize_chord_quality(quality: &str) -> Option<&'static str> {
+  Some(match quality.trim() {
+    "" | "M" | "maj" | "Maj" | "major" | "Major" | "Ma" | "ma" | "Δ" => {
+      "Major"
+    }
+    "m" | "min" | "Min" | "mi" | "Mi" | "minor" | "Minor" | "-" | "−" => {
+      "Minor"
+    }
+    "aug" | "Aug" | "augmented" | "Augmented" | "+" | "Maug" | "M#5"
+    | "M+5" | "M♯5" => "Augmented",
+    "dim" | "Dim" | "diminished" | "Diminished" | "o" | "O" | "°" | "mb5"
+    | "m♭5" | "mo5" => "Diminished",
+    "sus2" | "Sus2" | "SuspendedSecond" => "SuspendedSecond",
+    "sus" | "Sus" | "sus4" | "Sus4" | "SuspendedFourth" => "SuspendedFourth",
+    "6" | "M6" | "maj6" | "add6" | "Sixth" => "Sixth",
+    "m6" | "min6" | "-6" | "−6" | "MinorSixth" => "MinorSixth",
+    "M7" | "maj7" | "Maj7" | "Ma7" | "major7" | "MajorSeventh" | "Δ7"
+    | "MΔ7" => "MajorSeventh",
+    "m7" | "min7" | "Min7" | "mi7" | "-7" | "−7" | "minor7"
+    | "MinorSeventh" => "MinorSeventh",
+    "7" | "dom7" | "Dom7" | "dominant7" | "Mm7" | "DominantSeventh" => {
+      "DominantSeventh"
+    }
+    "dim7" | "Dim7" | "o7" | "O7" | "°7" | "DiminishedSeventh" => {
+      "DiminishedSeventh"
+    }
+    "m7b5"
+    | "m7♭5"
+    | "m7-5"
+    | "min7dim5"
+    | "ø"
+    | "ø7"
+    | "Ø"
+    | "Ø7"
+    | "HalfDiminishedSeventh" => "HalfDiminishedSeventh",
+    "mM7" | "mmaj7" | "minmaj7" | "-M7" | "−M7" | "m#7" | "mΔ7" | "-Δ7"
+    | "MinorMajorSeventh" => "MinorMajorSeventh",
+    "aug7" | "Aug7" | "+7" | "7#5" | "7+5" | "7♯5" | "AugmentedSeventh" => {
+      "AugmentedSeventh"
+    }
+    "9" | "dom9" | "Dom9" | "DominantNinth" => "DominantNinth",
+    "M9" | "maj9" | "Maj9" | "major9" | "Δ9" | "MajorNinth" => "MajorNinth",
+    "m9" | "min9" | "-9" | "−9" | "minor9" | "MinorNinth" => "MinorNinth",
+    _ => return None,
+  })
+}
+
+/// Split a chord name such as `"GMajor"`, `"F#Minor"`, `"BbMajorSeventh"`,
+/// `"Cm7"`, or `"G Major"` into its `(root letter, root accidental, quality)`
+/// components. The root is the leading note letter plus any run of accidentals
+/// (`#`/`♯` sharp, `b`/`♭` flat); the remainder is the quality suffix. A double
+/// accidental like `"F##"` or `"Cbb"` is supported.
 fn parse_chord_name(name: &str) -> Option<(char, i128, &str)> {
-  let bytes = name.as_bytes();
-  let letter = bytes.first()?.to_ascii_uppercase();
-  if !(b'A'..=b'G').contains(&letter) {
+  let mut iter = name.char_indices().peekable();
+  let letter = iter.next()?.1.to_ascii_uppercase();
+  if !('A'..='G').contains(&letter) {
     return None;
   }
-  let mut idx = 1;
   let mut accidental = 0i128;
-  while let Some(&c) = bytes.get(idx) {
+  let mut rest = name.len();
+  while let Some(&(i, c)) = iter.peek() {
     match c {
-      b'#' => accidental += 1,
-      b'b' => accidental -= 1,
-      _ => break,
+      '#' | '♯' => accidental += 1,
+      'b' | '♭' => accidental -= 1,
+      _ => {
+        rest = i;
+        break;
+      }
     }
-    idx += 1;
+    iter.next();
+    rest = iter.peek().map_or(name.len(), |&(j, _)| j);
   }
-  Some((letter as char, accidental, name.get(idx..)?))
+  Some((letter, accidental, &name[rest..]))
 }
 
 /// `MusicChord["<root><quality>"]` — canonicalize a named chord to the
@@ -706,8 +775,9 @@ pub fn music_chord(args: &[Expr]) -> Option<Expr> {
     return None;
   };
   let (letter, accidental, quality) = parse_chord_name(spec)?;
-  // Only recognized qualities canonicalize; anything else stays symbolic.
-  chord_quality_offsets(quality)?;
+  // Resolve the written suffix to a canonical quality; anything unrecognized
+  // stays symbolic.
+  let quality = normalize_chord_quality(quality)?;
   // The chord's Root pitch is keyed in the order `Key, Accidental`.
   let root = music_assoc(
     "MusicPitch",

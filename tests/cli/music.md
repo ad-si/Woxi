@@ -148,6 +148,33 @@ $ wo 'MusicChord["GMajor"]["IntervalList"]'
 {MusicInterval[<|Semitones -> 4, Name -> MajorThird, CompoundOctaves -> 0|>], MusicInterval[<|Semitones -> 3, Name -> MinorThird, CompoundOctaves -> 0|>]}
 ```
 
+The name accepts the common jazz/pop chord symbols too. A bare root is a major
+triad, and a space between the root and the quality is optional, so `"G"`,
+`"GMajor"`, and `"G Major"` are the same chord.
+
+```scrut
+$ wo 'MusicChord["G"] === MusicChord["GMajor"] === MusicChord["G Major"]'
+True
+```
+
+Short symbols such as `m`, `dim`, `+`, `7`, `maj7`, `m7b5`, and `sus4` resolve
+to their canonical qualities; casing distinguishes `m` (minor) from `M` (major).
+
+```scrut
+$ wo 'MusicChord["Cm7"]["Name"]'
+MinorSeventh
+```
+
+```scrut
+$ wo 'MusicChord["Cm7b5"]["Name"]'
+HalfDiminishedSeventh
+```
+
+```scrut
+$ wo 'MusicChord["C7"]["PitchList"]'
+{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], MusicPitch[<|Accidental -> -1, Octave -> 4, Key -> B|>]}
+```
+
 
 ## Rendering as notation
 
