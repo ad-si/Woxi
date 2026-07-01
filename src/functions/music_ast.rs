@@ -47,6 +47,18 @@ pub const MUSIC_OBJECT_HEADS: &[&str] = &[
   "MusicScore",
 ];
 
+/// `True` when `expr` is a non-empty `List` whose every element is a music
+/// object (a head in [`MUSIC_OBJECT_HEADS`]). Such a list is a sequence of
+/// musical events and is drawn as a single staff rather than as a bracketed
+/// expression dump.
+pub fn is_music_object_list(expr: &Expr) -> bool {
+  matches!(expr, Expr::List(items)
+    if !items.is_empty()
+      && items.iter().all(|it| matches!(it,
+        Expr::FunctionCall { name, .. }
+          if MUSIC_OBJECT_HEADS.contains(&name.as_str()))))
+}
+
 /// `MusicObjectQ[expr]` — `True` when `expr` is a music object, i.e. an
 /// expression whose head is one of [`MUSIC_OBJECT_HEADS`]; `False` otherwise.
 pub fn music_object_q(args: &[Expr]) -> Expr {

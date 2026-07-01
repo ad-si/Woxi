@@ -727,6 +727,87 @@ pub fn music_to_svg(expr: &Expr) -> Option<String> {
   ))
 }
 
+/// Extract a numeric attribute (e.g. `width`, `height`) from the opening tag
+/// of an SVG string produced by [`music_to_svg`].
+fn svg_attr(svg: &str, attr: &str) -> Option<f64> {
+  let key = format!("{attr}=\"");
+  let start = svg.find(&key)? + key.len();
+  let rest = &svg[start..];
+  let end = rest.find('"')?;
+  rest[..end].parse().ok()
+}
+
+/// Turn each `<svg …>…</svg>` produced by [`music_to_svg`] into a nested SVG
+/// element positioned at `(x, y)` by injecting the coordinates into its
+/// opening tag. The inner `width`/`height`/`viewBox` keep it at natural size.
+fn nest_svg_at(svg: &str, x: f64, y: f64) -> String {
+  svg.replacen("<svg ", &format!("<svg x=\"{x:.2}\" y=\"{y:.2}\" "), 1)
+}
+
+/// Render a plain list of music events (each a [`MUSIC_OBJECT_HEADS`] object)
+/// as `{ <staff>, <staff>, … }` — every element drawn as its own staff,
+/// laid out horizontally with brace and comma separators, matching how the
+/// bracketed list would otherwise appear as text.
+///
+/// Returns `None` unless `expr` is a non-empty music-object list whose elements
+/// all render to a staff.
+pub fn music_list_to_svg(expr: &Expr) -> Option<String> {
+  let items = match expr {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return None,
+  };
+
+  // Render every element to its own staff first; bail if any element is not
+  // drawable so the caller can fall back to the text form.
+  let staves: Vec<String> =
+    items.iter().map(music_to_svg).collect::<Option<_>>()?;
+
+  let stroke = theme().text_primary;
+  const FONT: f64 = 14.0;
+  const CHAR_W: f64 = FONT * 0.62; // monospace advance for `{`, `,`, `}`
+  const SEP_GAP: f64 = 4.0; // padding around separators
+
+  // Overall height is the tallest staff; separators are centred within it.
+  let height = staves
+    .iter()
+    .filter_map(|s| svg_attr(s, "height"))
+    .fold(0.0_f64, f64::max)
+    .max(FONT);
+  let mid_y = height / 2.0;
+  let text_baseline = mid_y + FONT * 0.35;
+
+  let mut body = String::new();
+  let mut x = 0.0_f64;
+
+  let text = |body: &mut String, x: &mut f64, s: &str| {
+    body.push_str(&format!(
+      "<text x=\"{x:.2}\" y=\"{text_baseline:.2}\" font-family=\"monospace\" \
+       font-size=\"{FONT:.1}\" fill=\"{stroke}\" stroke=\"none\">{s}</text>"
+    ));
+    *x += CHAR_W;
+  };
+
+  text(&mut body, &mut x, "{");
+  x += SEP_GAP;
+  for (i, staff) in staves.iter().enumerate() {
+    if i > 0 {
+      text(&mut body, &mut x, ",");
+      x += SEP_GAP;
+    }
+    let w = svg_attr(staff, "width").unwrap_or(0.0);
+    let h = svg_attr(staff, "height").unwrap_or(height);
+    body.push_str(&nest_svg_at(staff, x, mid_y - h / 2.0));
+    x += w + SEP_GAP;
+  }
+  text(&mut body, &mut x, "}");
+
+  let width = x;
+  Some(format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.0}\" \
+     height=\"{height:.0}\" viewBox=\"0 0 {width:.2} {height:.2}\">{body}</svg>"
+  ))
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -806,6 +887,25 @@ mod tests {
       .filter(|g| matches!(g, Glyph::Note { .. }))
       .count();
     assert_eq!(notes, 8);
+  }
+
+  #[test]
+  fn plain_list_of_notes_renders_one_staff_per_element() {
+    // A bare list of music events keeps its list shape `{ <staff>, … }`: one
+    // nested staff (its own clef) per element, joined by brace/comma text.
+    let list = Expr::List(
+      vec![music_note("C4"), music_note("G4"), music_note("F4")].into(),
+    );
+    assert!(crate::functions::music_ast::is_music_object_list(&list));
+    let svg = music_list_to_svg(&list).expect("a note list should render");
+    // Three separate staves: three clefs, three noteheads, three nested SVGs.
+    assert_eq!(svg.matches("class=\"clef\"").count(), 3);
+    assert_eq!(svg.matches("class=\"notehead\"").count(), 3);
+    assert_eq!(svg.matches("<svg").count(), 4); // 1 outer + 3 nested
+    // Brace and comma separators keep the list structure visible.
+    assert!(svg.contains(">{</text>"));
+    assert!(svg.contains(">}</text>"));
+    assert_eq!(svg.matches(">,</text>").count(), 2);
   }
 
   #[test]

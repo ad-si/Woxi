@@ -1959,9 +1959,17 @@ fn render_sound_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// Music objects that carry no notation (a bare `MusicDuration`, `MusicTempo`,
 /// …) are left symbolic. Visual hosts only — the CLI keeps the symbolic form.
 fn render_music_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  // A single music object draws one staff.
   if let syntax::Expr::FunctionCall { ref name, .. } = expr
     && functions::music_ast::MUSIC_OBJECT_HEADS.contains(&name.as_str())
     && let Some(svg) = functions::music_render::music_to_svg(&expr)
+  {
+    return graphics_result(svg);
+  }
+  // A plain list of music events (e.g. {MusicNote[…], MusicNote[…]}) keeps its
+  // list structure: `{ <staff>, <staff>, … }`, one staff per element.
+  if functions::music_ast::is_music_object_list(&expr)
+    && let Some(svg) = functions::music_render::music_list_to_svg(&expr)
   {
     return graphics_result(svg);
   }

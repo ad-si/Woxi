@@ -3101,6 +3101,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       crate::functions::music_render::music_to_svg(expr).unwrap_or_default()
     }
+    // A plain list of music events (e.g. {MusicNote[…], MusicNote[…]}) keeps
+    // its list structure: `{ <staff>, <staff>, … }`, each element drawn as its
+    // own staff rather than a bracketed expression dump.
+    _ if crate::functions::music_ast::is_music_object_list(expr) => {
+      if let Some(svg) = crate::functions::music_render::music_list_to_svg(expr)
+      {
+        svg
+      } else {
+        expr_text_svg(expr)
+      }
+    }
     Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
       crate::get_captured_graphics().unwrap_or_default()
     }
