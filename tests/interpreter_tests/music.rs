@@ -684,3 +684,23 @@ fn music_measure_overfull_compound_meter() {
      allowed number of beats per measure 2."
   )));
 }
+
+// ─── Transposition by MusicInterval ──────────────────────────────────────────
+
+/// Adding a `MusicInterval` to a `MusicNote` transposes its pitch. A
+/// bare-semitone interval spells the result straight from the MIDI number
+/// (C + 5 semitones = F); a named interval keeps the diatonic step
+/// (C + a minor third = Eb, not D#).
+#[test]
+fn music_note_plus_interval_transposes() {
+  assert_eq!(
+    interpret("MusicNote[\"C\"] + MusicInterval[5]").unwrap(),
+    "MusicNote[<|Pitch -> \
+     MusicPitch[<|Accidental -> 0, Key -> F, MIDINumber -> 65|>]|>]"
+  );
+  assert_eq!(
+    interpret("MusicNote[\"C\"] + MusicInterval[\"MinorThird\"]").unwrap(),
+    "MusicNote[<|Pitch -> \
+     MusicPitch[<|Accidental -> -1, Key -> E, MIDINumber -> 63|>]|>]"
+  );
+}

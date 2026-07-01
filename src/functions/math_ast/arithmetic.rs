@@ -789,6 +789,15 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
+  // Handle music container/event transposition (WL 15): adding a MusicInterval
+  // to a MusicNote/MusicMeasure/MusicVoice/MusicScore/MusicScale shifts every
+  // pitch it contains by the interval span.
+  if let Some(result) =
+    crate::functions::music_ast::try_music_container_plus_interval(args)
+  {
+    return Ok(result);
+  }
+
   // Handle MusicPitch arithmetic (WL 15): adding/subtracting pitch objects
   // combines them along the diatonic-position and MIDI-number axes; adding a
   // MusicInterval transposes the pitch.

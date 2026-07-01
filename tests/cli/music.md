@@ -139,6 +139,20 @@ $ wo 'MusicNote["A#", 1/2]["Duration"]'
 MusicDuration[<|Duration -> 1/2|>]
 ```
 
+Adding a `MusicInterval` transposes a note's pitch. A bare-semitone interval
+spells the result straight from the MIDI number (C up five semitones is F); a
+named interval keeps the diatonic step (C up a minor third is Eb, not D#).
+
+```scrut
+$ wo 'MusicNote["C"] + MusicInterval[5]'
+MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> F, MIDINumber -> 65|>]|>]
+```
+
+```scrut
+$ wo 'MusicNote["C"] + MusicInterval["MinorThird"]'
+MusicNote[<|Pitch -> MusicPitch[<|Accidental -> -1, Key -> E, MIDINumber -> 63|>]|>]
+```
+
 Durations add up, scaled by any leading coefficient.
 
 ```scrut

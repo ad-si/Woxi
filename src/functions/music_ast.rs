@@ -731,6 +731,102 @@ pub fn try_music_chord_plus_interval(args: &[Expr]) -> Option<Expr> {
   })
 }
 
+/// Heads of the computational-music containers/events whose pitches are
+/// transposed as a whole when a `MusicInterval` is added — `MusicNote`,
+/// `MusicRest`, `MusicMeasure`, `MusicVoice`, `MusicScore`, `MusicScale`.
+/// (`MusicChord`/`MusicPitch` summands have their own transposition paths.)
+fn is_transposable_container(term: &Expr) -> bool {
+  matches!(term, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(),
+      "MusicNote" | "MusicRest" | "MusicMeasure" | "MusicVoice"
+        | "MusicScore" | "MusicScale"))
+}
+
+/// Transpose every `MusicPitch` nested anywhere in `expr` by the interval
+/// `span` (a `(diatonic-position, MIDI)` shift), leaving all other structure —
+/// durations, time signatures, container heads — intact. A `chromatic` span
+/// (a bare-semitone interval, which fixes no diatonic step) spells each result
+/// straight from its MIDI number; a diatonic span keeps the staff position so
+/// the letter spelling follows the interval.
+fn transpose_music(expr: &Expr, span: (i128, i128), chromatic: bool) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "MusicPitch" => {
+      match resolve_pitch_name(expr).and_then(|n| parse_pitch_parts(&n)) {
+        Some((diatonic, accidental, octave)) => {
+          let (position, midi) = parts_to_axes(diatonic, accidental, octave);
+          if chromatic {
+            midi_to_music_pitch(midi + span.1)
+          } else {
+            axes_to_music_pitch(position + span.0, midi + span.1)
+          }
+        }
+        None => expr.clone(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| transpose_music(a, span, chromatic))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| transpose_music(a, span, chromatic))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::Association(pairs) => Expr::Association(
+      pairs
+        .iter()
+        .map(|(k, v)| (k.clone(), transpose_music(v, span, chromatic)))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
+/// `container + MusicInterval[…] + …` — transpose every pitch inside a music
+/// container/event (`MusicNote`, `MusicMeasure`, `MusicVoice`, `MusicScore`,
+/// `MusicScale`) by the summed interval span, so e.g. `voice + MusicInterval[5]`
+/// shifts the whole voice up a perfect fourth. Returns `None` unless exactly one
+/// summand is such a container and every other summand is a `MusicInterval`, so
+/// any other sum is left symbolic.
+pub fn try_music_container_plus_interval(args: &[Expr]) -> Option<Expr> {
+  let flat = flatten_plus(args);
+  let mut container: Option<&Expr> = None;
+  let mut span = (0i128, 0i128);
+  let mut interval_count = 0;
+  let mut chromatic = false;
+  for term in &flat {
+    if is_transposable_container(term) {
+      if container.is_some() {
+        return None; // two containers: not interval transposition
+      }
+      container = Some(term);
+      continue;
+    }
+    // Every other summand must be a (possibly scaled/negated) interval.
+    let (coeff, axes, is_pitch) = music_summand_axes(term)?;
+    if is_pitch {
+      return None;
+    }
+    span.0 += coeff * axes.0;
+    span.1 += coeff * axes.1;
+    interval_count += 1;
+    if is_chromatic_interval(term) {
+      chromatic = true;
+    }
+  }
+  let container = container?;
+  if interval_count == 0 {
+    return None;
+  }
+  Some(transpose_music(container, span, chromatic))
+}
+
 /// MIDI note number of a `MusicPitch` object in any of its forms. Octaveless
 /// names default to octave 4, so `MusicPitch["C#"]` and `MusicPitch["Db"]` both
 /// resolve to MIDI 61 — which is what makes them compare equal.
