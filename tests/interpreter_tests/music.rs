@@ -596,6 +596,45 @@ fn music_measure_compound_meter_beat_unit() {
   );
 }
 
+/// A measure resolved to its `<|NoteList, TimeSignature|>` association still
+/// draws all of its notes on the staff, not just the meter. Regression: the
+/// staff renderer previously only understood the unresolved list form, so a
+/// `MusicMeasure[{…}, MusicTimeSignature[…]]` rendered its 3/4 glyph with no
+/// note heads.
+#[test]
+fn music_measure_with_time_signature_renders_notes() {
+  let svg = interpret(
+    "ExportString[MusicMeasure[{MusicNote[\"E\"], MusicNote[\"C\"], \
+     MusicNote[\"D\"]}, MusicTimeSignature[3, 4]], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert_eq!(svg.matches("class=\"notehead\"").count(), 3);
+  assert_eq!(svg.matches("class=\"timesig\"").count(), 2);
+}
+
+/// A voice of mixed measures (a bare list measure in 4/4, then a
+/// time-signatured measure in 3/4, then 4/4 again) draws every note and
+/// reprints the meter on each change.
+#[test]
+fn music_voice_renders_mixed_measures() {
+  let svg = interpret(
+    "ExportString[MusicVoice[{\
+     MusicMeasure[{MusicNote[\"E\"], MusicNote[\"C\"], MusicNote[\"D\"], \
+     MusicNote[\"G3\"]}], \
+     MusicMeasure[{MusicNote[\"E\"], MusicNote[\"C\"], MusicNote[\"D\"]}, \
+     MusicTimeSignature[3, 4]], \
+     MusicMeasure[{MusicNote[\"E\"], MusicNote[\"C\"], MusicNote[\"D\"], \
+     MusicNote[\"G3\"]}]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  // 4 + 3 + 4 note heads across the three measures.
+  assert_eq!(svg.matches("class=\"notehead\"").count(), 11);
+  // Meter reprinted on 4/4 → 3/4 → 4/4: three signatures, six digit glyphs.
+  assert_eq!(svg.matches("class=\"timesig\"").count(), 6);
+}
+
 /// An overfull measure warns with `MusicMeasure::measdur` and returns its
 /// non-associated form (a half note is two quarter beats, so E + C + D is four
 /// beats in a three-beat measure). Regression for the reported example. The

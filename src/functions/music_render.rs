@@ -241,10 +241,19 @@ fn duration_value_f64(spec: &Expr) -> Option<f64> {
       if name == "MusicDuration" && args.len() == 1 =>
     {
       match &args[0] {
-        Expr::Association(pairs) => pairs.iter().find_map(|(k, v)| match k {
-          Expr::String(s) if s == "Duration" => value_of(v),
-          _ => None,
-        }),
+        Expr::Association(pairs) => {
+          let get = |key: &str| {
+            pairs.iter().find_map(|(k, v)| match k {
+              Expr::String(s) if s == key => value_of(v),
+              _ => None,
+            })
+          };
+          // A plain `<|Duration -> v|>` carries the value directly; the
+          // beat-annotated form a measure produces (`<|BeatDuration -> bd,
+          // Beats -> n[, Duration -> v]|>`) may omit `Duration` for a default
+          // or stretched note, in which case the sounding value is bd·n.
+          get("Duration").or_else(|| Some(get("BeatDuration")? * get("Beats")?))
+        }
         other => value_of(other),
       }
     }
@@ -440,8 +449,22 @@ fn collect(
         // than inheriting and sticking at the last change.
         let value = container_time_signature(args).unwrap_or((4, 4));
         show_time_signature(out, ts, value);
-        for arg in args {
-          collect(arg, out, ts);
+        // A resolved measure is the association form
+        // `MusicMeasure[<|NoteList -> {…}, TimeSignature -> …|>]`; its notes live
+        // under `"NoteList"`. The unresolved forms — a plain event list, or a
+        // list plus a `MusicTimeSignature` — carry their events as arguments.
+        if let Some(Expr::Association(pairs)) = args.first() {
+          if let Some(Expr::List(items)) = pairs.iter().find_map(|(k, v)| {
+            matches!(k, Expr::String(s) if s == "NoteList").then_some(v)
+          }) {
+            for it in items.iter() {
+              collect(it, out, ts);
+            }
+          }
+        } else {
+          for arg in args {
+            collect(arg, out, ts);
+          }
         }
         out.push(Glyph::Barline);
         true
