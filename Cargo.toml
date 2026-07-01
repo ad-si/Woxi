@@ -43,6 +43,10 @@ jupyter-protocol = { version = "1.2", optional = true }
 astro-float = { git = "https://github.com/stencillogic/astro-float", rev = "f92380e025deb8e1743ed93c6d5bf0783ac28717" }
 base64 = "0.22"
 flate2 = "1.0"
+# Pure-Rust OpenType parser (wasm-compatible), used to extract Leland (SMuFL)
+# music-glyph outlines as self-contained SVG paths. Matches the version resvg
+# already pulls in so no duplicate copy is linked.
+ttf-parser = "0.25"
 geographiclib-rs = "0.2"
 num-bigint = "0.4.6"
 num-prime = "0.4"

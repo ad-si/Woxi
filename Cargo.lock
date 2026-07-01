@@ -6737,6 +6737,7 @@ dependencies = [
  "svg2pdf",
  "thiserror 1.0.69",
  "tokio",
+ "ttf-parser",
  "unicode-normalization",
  "uuid",
  "wasm-bindgen",

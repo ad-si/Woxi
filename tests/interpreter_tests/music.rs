@@ -156,7 +156,8 @@ fn export_music_note_to_svg() {
   let svg =
     interpret("ExportString[MusicNote[MusicPitch[\"C4\"]], \"SVG\"]").unwrap();
   assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
-  assert!(svg.contains("<ellipse")); // a note head
+  assert!(svg.contains("class=\"notehead\"")); // a Leland note head
+  assert!(svg.contains("class=\"clef\"")); // the Leland treble clef
   assert!(svg.contains("<line")); // staff lines
 }
 
@@ -167,7 +168,21 @@ fn export_music_chord_renders_three_heads() {
      MusicPitch[\"G4\"]}], \"SVG\"]",
   )
   .unwrap();
-  assert_eq!(svg.matches("<ellipse").count(), 3);
+  assert_eq!(svg.matches("class=\"notehead\"").count(), 3);
+}
+
+#[test]
+fn bare_pitch_is_not_staff_notation() {
+  // A `MusicPitch` carries no rhythmic value, so it is not drawn on a staff —
+  // unlike a `MusicChord`, which is a musical event. The pitch's SVG therefore
+  // has no staff glyphs (clef/note head), while the chord's does.
+  let pitch = interpret("ExportString[MusicPitch[\"C4\"], \"SVG\"]").unwrap();
+  assert!(!pitch.contains("class=\"notehead\""), "got: {pitch}");
+  assert!(!pitch.contains("class=\"clef\""), "got: {pitch}");
+  let chord =
+    interpret("ExportString[MusicChord[{MusicPitch[\"C4\"]}], \"SVG\"]")
+      .unwrap();
+  assert!(chord.contains("class=\"clef\""), "got: {chord}");
 }
 
 #[test]

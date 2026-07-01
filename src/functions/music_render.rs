@@ -5,15 +5,19 @@
 //! CLI still prints `MusicNote[MusicPitch[C4], …]`); only the visual hosts —
 //! the Woxi Playground and Woxi Studio — turn them into notation. A single
 //! entry point, [`music_to_svg`], produces a self-contained SVG that renders
-//! identically in a browser and in Studio's `resvg` rasterizer, so all the
-//! notation (staff, treble clef, note heads, stems, flags, accidentals,
-//! ledger lines, rests and barlines) is drawn geometrically rather than with
-//! musical Unicode glyphs, which the bundled fonts do not carry.
+//! identically in a browser and in Studio's `resvg` rasterizer.
+//!
+//! The proper musical symbols — treble clef, note heads, accidentals, rests
+//! and flags — are the glyphs of MuseScore's [Leland](https://github.com/MuseScoreFonts/Leland)
+//! SMuFL font, extracted as SVG `<path>`s by [`crate::functions::music_font`]
+//! so no font need be embedded or shaped by the host. The staff lines, stems,
+//! ledger lines and barlines are engraving rules, drawn directly as `<line>`s.
 
 use crate::functions::graphics::theme;
 use crate::functions::music_ast::{
   midi_to_pitch_name, pitch_name_to_midi, resolve_pitch_name,
 };
+use crate::functions::music_font::{self, glyph};
 use crate::syntax::Expr;
 
 // ── Staff geometry (internal user-space coordinates) ─────────────────────────
@@ -31,8 +35,6 @@ const BOTTOM_LINE_DN: i32 = 30;
 const ADVANCE: f64 = 30.0;
 /// `x` of the left edge of the staff.
 const STAFF_X0: f64 = 6.0;
-/// `x` of the first note head, leaving room for the clef.
-const FIRST_NOTE_X: f64 = 46.0;
 /// Stem length, in whole gaps.
 const STEM_LEN: f64 = 3.0 * GAP;
 
@@ -54,21 +56,9 @@ enum Dur {
 }
 
 impl Dur {
-  /// Whether the note head is filled (`true`) or open (`false`).
-  fn filled(self) -> bool {
-    matches!(self, Dur::Quarter | Dur::Eighth | Dur::Sixteenth)
-  }
   /// Whether the note carries a stem (everything but a whole note).
   fn has_stem(self) -> bool {
     self != Dur::Whole
-  }
-  /// Number of flags on the stem (eighth = 1, sixteenth = 2).
-  fn flags(self) -> u32 {
-    match self {
-      Dur::Eighth => 1,
-      Dur::Sixteenth => 2,
-      _ => 0,
-    }
   }
 }
 
@@ -268,15 +258,11 @@ fn collect(expr: &Expr, out: &mut Vec<Glyph>) -> bool {
       false
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
-      "MusicPitch" => {
-        if let Some(h) = pitch_head(expr) {
-          out.push(Glyph::Note {
-            heads: vec![h],
-            dur: Dur::Quarter,
-          });
-        }
-        false
-      }
+      // A bare `MusicPitch` is only a pitch — it carries no rhythmic value, so
+      // it is not staff notation and is left symbolic (a pitch inside a
+      // `MusicNote`/`MusicChord` is handled by those arms below). `MusicChord`,
+      // by contrast, is a musical event and does render.
+      "MusicPitch" => false,
       // Canonical association form: MusicNote[<|"Pitch" -> …, "Duration" -> …|>].
       "MusicNote" if matches!(args.first(), Some(Expr::Association(_))) => {
         if let Some(Expr::Association(pairs)) = args.first() {
@@ -358,11 +344,13 @@ fn collect(expr: &Expr, out: &mut Vec<Glyph>) -> bool {
 
 // ── SVG drawing ──────────────────────────────────────────────────────────────
 
-/// Accumulates SVG path/shape fragments while tracking the drawn bounding box
-/// so the final `viewBox` can be fitted with padding.
+/// Accumulates SVG fragments while tracking the drawn bounding box so the final
+/// `viewBox` can be fitted with padding.
 struct Canvas {
   out: String,
   stroke: String,
+  /// Font-unit → user-unit scale for placing Leland glyphs.
+  scale: f64,
   minx: f64,
   miny: f64,
   maxx: f64,
@@ -370,10 +358,11 @@ struct Canvas {
 }
 
 impl Canvas {
-  fn new(stroke: &str) -> Self {
+  fn new(stroke: &str, scale: f64) -> Self {
     Canvas {
       out: String::new(),
       stroke: stroke.to_string(),
+      scale,
       minx: f64::INFINITY,
       miny: f64::INFINITY,
       maxx: f64::NEG_INFINITY,
@@ -398,107 +387,133 @@ impl Canvas {
     self.bound(x1.max(x2) + w, y1.max(y2) + w);
   }
 
-  /// A note head: an ellipse tilted like an engraved note, filled or open.
-  fn note_head(&mut self, cx: f64, cy: f64, filled: bool) {
-    let (rx, ry) = (6.3, 4.6);
-    let fill = if filled {
-      format!("fill=\"{}\"", self.stroke)
-    } else {
-      format!(
-        "fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"",
-        self.stroke
-      )
+  /// Draw the Leland glyph `ch` so its origin `(0, 0)` lands at `(ox, oy)`,
+  /// tagging the emitted `<path>` with `class` so hosts (and tests) can
+  /// recognise it.
+  fn glyph_at(&mut self, ch: char, ox: f64, oy: f64, class: &str) {
+    let Some(d) = music_font::glyph_path_d(ch, self.scale, ox, oy) else {
+      return;
     };
     self.out.push_str(&format!(
-      "<ellipse cx=\"{cx:.2}\" cy=\"{cy:.2}\" rx=\"{rx}\" ry=\"{ry}\" \
-       transform=\"rotate(-22 {cx:.2} {cy:.2})\" {fill}/>"
-    ));
-    self.bound(cx - rx - 1.0, cy - ry - 1.0);
-    self.bound(cx + rx + 1.0, cy + ry + 1.0);
-  }
-
-  /// A small filled disc (clef terminal, augmentation/rest dots).
-  fn dot(&mut self, cx: f64, cy: f64, r: f64) {
-    self.out.push_str(&format!(
-      "<circle cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{r}\" fill=\"{}\"/>",
+      "<path class=\"{class}\" d=\"{d}\" fill=\"{}\"/>",
       self.stroke
     ));
-    self.bound(cx - r, cy - r);
-    self.bound(cx + r, cy + r);
+    if let Some(bb) = music_font::glyph_bbox(ch) {
+      self.bound(ox + bb.x_min * self.scale, oy - bb.y_max * self.scale);
+      self.bound(ox + bb.x_max * self.scale, oy - bb.y_min * self.scale);
+    }
   }
 
-  fn filled_rect(&mut self, x: f64, y: f64, w: f64, h: f64) {
-    self.out.push_str(&format!(
-      "<rect x=\"{x:.2}\" y=\"{y:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" \
-       fill=\"{}\"/>",
-      self.stroke
-    ));
-    self.bound(x, y);
-    self.bound(x + w, y + h);
+  /// Draw a glyph horizontally centred on `cx`, with its vertical origin (the
+  /// SMuFL staff reference) at `cy`.
+  fn glyph_centered(&mut self, ch: char, cx: f64, cy: f64, class: &str) {
+    let cxoff = music_font::glyph_bbox(ch)
+      .map(|bb| bb.center_x(self.scale))
+      .unwrap_or(0.0);
+    self.glyph_at(ch, cx - cxoff, cy, class);
   }
 
-  fn path(&mut self, d: &str, filled: bool, w: f64) {
-    let style = if filled {
-      format!("fill=\"{}\"", self.stroke)
-    } else {
-      format!(
-        "fill=\"none\" stroke=\"{}\" stroke-width=\"{w}\"",
-        self.stroke
-      )
-    };
-    self.out.push_str(&format!(
-      "<path d=\"{d}\" {style} stroke-linejoin=\"round\"/>"
-    ));
+  /// Half the width of the notehead glyph used for `dur`, in user units — the
+  /// horizontal offset from a head's centre to where its stem attaches.
+  fn notehead_half_width(&self, dur: Dur) -> f64 {
+    music_font::glyph_bbox(notehead_glyph(dur))
+      .map(|bb| bb.half_width(self.scale))
+      .unwrap_or(6.0)
+  }
+
+  /// Half the width of an arbitrary glyph, in user units.
+  fn glyph_half_width(&self, ch: char) -> f64 {
+    music_font::glyph_bbox(ch)
+      .map(|bb| bb.half_width(self.scale))
+      .unwrap_or(6.0)
+  }
+
+  /// How far left of a note/chord's head centre its ink reaches, including any
+  /// accidentals (mirrors the column staggering in [`draw_note`]).
+  fn note_left_extent(&self, heads: &[Head], dur: Dur) -> f64 {
+    let hw = self.notehead_half_width(dur);
+    let mut reach = hw;
+    let mut column = 0usize;
+    let mut prev_dn: Option<i32> = None;
+    for h in heads.iter().rev() {
+      if h.accidental == 0 {
+        continue;
+      }
+      if prev_dn.is_some_and(|p| (p - h.dn).abs() <= 2) {
+        column += 1;
+      } else {
+        column = 0;
+      }
+      let ch = if h.accidental > 0 {
+        glyph::SHARP
+      } else {
+        glyph::FLAT
+      };
+      if let Some(bb) = music_font::glyph_bbox(ch) {
+        let w = (bb.x_max - bb.x_min) * self.scale;
+        reach = reach.max(hw + 3.0 + column as f64 * (w + 2.0) + w);
+      }
+      prev_dn = Some(h.dn);
+    }
+    reach
+  }
+
+  /// How far right of a note/chord's head centre its ink reaches, including an
+  /// up-stem flag.
+  fn note_right_extent(&self, heads: &[Head], dur: Dur) -> f64 {
+    let hw = self.notehead_half_width(dur);
+    if dur.has_stem()
+      && stem_up(heads)
+      && let Some(fc) = flag_glyph(dur, true)
+      && let Some(bb) = music_font::glyph_bbox(fc)
+    {
+      return (hw - 0.7 + bb.x_max * self.scale).max(hw);
+    }
+    hw
   }
 }
 
-/// Draw a sharp or flat sign to the left of a note head centred at `(cx, cy)`.
-/// `column` shifts the sign further left so stacked chord accidentals do not
-/// collide.
+/// The Leland notehead glyph for a rhythmic value.
+fn notehead_glyph(dur: Dur) -> char {
+  match dur {
+    Dur::Whole => glyph::NOTEHEAD_WHOLE,
+    Dur::Half => glyph::NOTEHEAD_HALF,
+    _ => glyph::NOTEHEAD_BLACK,
+  }
+}
+
+/// Draw a Leland sharp or flat glyph to the left of a note head, its right edge
+/// a small gap left of `head_left` and vertically centred on `cy`. `column`
+/// shifts stacked chord accidentals further left so their signs do not collide.
 fn draw_accidental(
   cv: &mut Canvas,
-  cx: f64,
+  head_left: f64,
   cy: f64,
   accidental: i32,
   column: usize,
 ) {
-  let x = cx - 12.0 - column as f64 * 9.0;
-  match accidental {
-    a if a > 0 => {
-      // Sharp: two vertical strokes crossed by two slightly rising bars.
-      cv.line(x - 1.5, cy - 6.0, x - 1.5, cy + 5.0, 1.1);
-      cv.line(x + 1.8, cy - 5.0, x + 1.8, cy + 6.0, 1.1);
-      cv.line(x - 4.0, cy - 1.6, x + 4.0, cy - 2.8, 1.6);
-      cv.line(x - 4.0, cy + 2.4, x + 4.0, cy + 1.2, 1.6);
-    }
-    a if a < 0 => {
-      // Flat: a vertical stem with a small bowl on its lower right.
-      cv.line(x - 1.5, cy - 8.0, x - 1.5, cy + 4.5, 1.1);
-      cv.path(
-        &format!(
-          "M {:.2} {:.2} Q {:.2} {:.2} {:.2} {:.2} Q {:.2} {:.2} {:.2} {:.2}",
-          x - 1.5,
-          cy - 1.5,
-          x + 4.5,
-          cy - 3.0,
-          x + 3.0,
-          cy + 2.0,
-          x + 1.5,
-          cy + 4.2,
-          x - 1.5,
-          cy + 4.5,
-        ),
-        false,
-        1.1,
-      );
-    }
-    _ => {}
-  }
+  let ch = if accidental > 0 {
+    glyph::SHARP
+  } else if accidental < 0 {
+    glyph::FLAT
+  } else {
+    return;
+  };
+  let Some(bb) = music_font::glyph_bbox(ch) else {
+    return;
+  };
+  let width = (bb.x_max - bb.x_min) * cv.scale;
+  // Where this accidental's right edge should sit.
+  let right = head_left - 3.0 - column as f64 * (width + 2.0);
+  // Place the origin so the glyph's own right extent lands on `right`.
+  let ox = right - bb.x_max * cv.scale;
+  cv.glyph_at(ch, ox, cy, "accidental");
 }
 
-/// Draw ledger lines through a head at diatonic position `dn` centred at `cx`.
-fn draw_ledger_lines(cv: &mut Canvas, cx: f64, dn: i32) {
-  let half = 8.5;
+/// Draw ledger lines through a head at diatonic position `dn` centred at `cx`,
+/// extending `head_half_width` plus a small overhang either side of the head.
+fn draw_ledger_lines(cv: &mut Canvas, cx: f64, dn: i32, head_half_width: f64) {
+  let half = head_half_width + 2.5;
   if dn <= BOTTOM_LINE_DN - 2 {
     let mut e = BOTTOM_LINE_DN - 2; // first ledger below the staff (C4 = 28)
     while e >= dn {
@@ -520,170 +535,99 @@ fn draw_ledger_lines(cv: &mut Canvas, cx: f64, dn: i32) {
 
 /// Draw a note or chord centred at `x`.
 fn draw_note(cv: &mut Canvas, x: f64, heads: &[Head], dur: Dur) {
-  // Ledger lines and heads.
+  let nh = notehead_glyph(dur);
+  let hw = cv.notehead_half_width(dur);
+  // Ledger lines behind the heads.
   for h in heads {
-    draw_ledger_lines(cv, x, h.dn);
+    draw_ledger_lines(cv, x, h.dn, hw);
   }
-  // Stagger accidentals of adjacent heads into separate columns so their
-  // signs do not overlap (top head nearest the note, lower heads further left).
+  // Heads (top-down), each with any accidental staggered into columns so
+  // adjacent signs do not overlap.
   let mut column = 0usize;
   let mut prev_dn: Option<i32> = None;
   for h in heads.iter().rev() {
-    cv.note_head(x, dn_y(h.dn), dur.filled());
+    cv.glyph_centered(nh, x, dn_y(h.dn), "notehead");
     if h.accidental != 0 {
       if prev_dn.is_some_and(|p| (p - h.dn).abs() <= 2) {
         column += 1;
       } else {
         column = 0;
       }
-      draw_accidental(cv, x, dn_y(h.dn), h.accidental, column);
+      draw_accidental(cv, x - hw, dn_y(h.dn), h.accidental, column);
       prev_dn = Some(h.dn);
     }
   }
   if !dur.has_stem() {
     return;
   }
-  // Stem direction from the middle head: notes on the upper half stem down.
+  let up = stem_up(heads);
   let top_dn = heads.iter().map(|h| h.dn).max().unwrap();
   let bottom_dn = heads.iter().map(|h| h.dn).min().unwrap();
-  let mid = BOTTOM_LINE_DN + 4; // middle staff line, B4 = 34
-  let stem_up = (top_dn + bottom_dn) as f64 / 2.0 < mid as f64;
-  let (sx, y_near, y_far) = if stem_up {
-    let sx = x + 5.7;
-    (sx, dn_y(bottom_dn), dn_y(top_dn) - STEM_LEN)
+  // The stem attaches at the right edge of the head (up) or the left edge
+  // (down), just inside the notehead so it meets the outline cleanly.
+  let (sx, y_near, y_far) = if up {
+    (x + hw - 0.7, dn_y(bottom_dn), dn_y(top_dn) - STEM_LEN)
   } else {
-    let sx = x - 5.7;
-    (sx, dn_y(top_dn), dn_y(bottom_dn) + STEM_LEN)
+    (x - hw + 0.7, dn_y(top_dn), dn_y(bottom_dn) + STEM_LEN)
   };
-  cv.line(sx, y_near, sx, y_far, 1.4);
-  // Flags for eighth / sixteenth notes.
-  let flags = dur.flags();
-  for i in 0..flags {
-    let fy = y_far + i as f64 * 7.0;
-    if stem_up {
-      cv.path(
-        &format!(
-          "M {sx:.2} {fy:.2} C {:.2} {:.2} {:.2} {:.2} {:.2} {:.2}",
-          sx + 9.0,
-          fy + 3.0,
-          sx + 9.0,
-          fy + 10.0,
-          sx + 2.0,
-          fy + 14.0,
-        ),
-        false,
-        1.6,
-      );
-    } else {
-      cv.path(
-        &format!(
-          "M {sx:.2} {fy:.2} C {:.2} {:.2} {:.2} {:.2} {:.2} {:.2}",
-          sx + 9.0,
-          fy - 3.0,
-          sx + 9.0,
-          fy - 10.0,
-          sx + 2.0,
-          fy - 14.0,
-        ),
-        false,
-        1.6,
-      );
-    }
+  cv.line(sx, y_near, sx, y_far, 1.3);
+  // A flag glyph for eighth / sixteenth notes, hung at the stem tip. Leland's
+  // 16th-note flag glyph already carries both flags.
+  if let Some(fc) = flag_glyph(dur, up) {
+    cv.glyph_at(fc, sx, y_far, "flag");
   }
 }
 
-/// Draw a rest centred at `x`.
+/// Whether a note or chord's stem points up: notes centred on the lower half of
+/// the staff stem up, the rest stem down.
+fn stem_up(heads: &[Head]) -> bool {
+  let top = heads.iter().map(|h| h.dn).max().unwrap();
+  let bottom = heads.iter().map(|h| h.dn).min().unwrap();
+  let mid = BOTTOM_LINE_DN + 4; // middle staff line, B4 = 34
+  (top + bottom) as f64 / 2.0 < mid as f64
+}
+
+/// The Leland flag glyph for an eighth / sixteenth note, or `None` otherwise.
+fn flag_glyph(dur: Dur, up: bool) -> Option<char> {
+  Some(match (dur, up) {
+    (Dur::Eighth, true) => glyph::FLAG_8TH_UP,
+    (Dur::Eighth, false) => glyph::FLAG_8TH_DOWN,
+    (Dur::Sixteenth, true) => glyph::FLAG_16TH_UP,
+    (Dur::Sixteenth, false) => glyph::FLAG_16TH_DOWN,
+    _ => return None,
+  })
+}
+
+/// Draw a rest centred at `x`. The whole rest hangs from the fourth staff line
+/// (D5) and the half rest sits on the middle line; the shorter rests are
+/// registered on the middle line, matching SMuFL's glyph origins.
 fn draw_rest(cv: &mut Canvas, x: f64, dur: Dur) {
-  let mid = dn_y(BOTTOM_LINE_DN + 4); // middle line, B4
+  // The whole rest hangs from the fourth line (D5); the others are registered
+  // on the middle line.
+  let oy = match dur {
+    Dur::Whole => dn_y(BOTTOM_LINE_DN + 6),
+    _ => dn_y(BOTTOM_LINE_DN + 4),
+  };
+  cv.glyph_centered(rest_glyph(dur), x, oy, "rest");
+}
+
+/// The Leland rest glyph for a rhythmic value.
+fn rest_glyph(dur: Dur) -> char {
   match dur {
-    Dur::Whole => {
-      // A filled block hanging below the second line from the top (D5).
-      cv.filled_rect(x - 5.5, dn_y(BOTTOM_LINE_DN + 6) - 5.0, 11.0, 5.0);
-    }
-    Dur::Half => {
-      // A filled block sitting on the middle line.
-      cv.filled_rect(x - 5.5, mid, 11.0, 5.0);
-    }
-    _ => {
-      // Quarter (and shorter): a stylized zig-zag rest.
-      cv.path(
-        &format!(
-          "M {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2} \
-           Q {:.2} {:.2} {:.2} {:.2}",
-          x - 3.5,
-          mid - 10.0,
-          x + 2.5,
-          mid - 3.0,
-          x - 3.0,
-          mid + 2.5,
-          x + 3.5,
-          mid + 9.0,
-          x - 3.5,
-          mid + 4.0,
-          x - 1.0,
-          mid + 12.0,
-        ),
-        false,
-        1.8,
-      );
-      if dur == Dur::Eighth || dur == Dur::Sixteenth {
-        // A small dot to hint at the shorter value.
-        cv.dot(x + 4.0, mid - 8.0, 1.8);
-      }
-    }
+    Dur::Whole => glyph::REST_WHOLE,
+    Dur::Half => glyph::REST_HALF,
+    Dur::Quarter => glyph::REST_QUARTER,
+    Dur::Eighth => glyph::REST_8TH,
+    Dur::Sixteenth => glyph::REST_16TH,
   }
 }
 
-/// Draw the treble (G) clef, its curl wrapped around the G4 line at `x`.
+/// Draw the treble (G) clef with its left edge at `x`. Leland's `gClef` is
+/// registered so its origin sits on the G4 staff line, which is exactly where
+/// the clef's curl must centre.
 fn draw_treble_clef(cv: &mut Canvas, x: f64) {
   let g = dn_y(BOTTOM_LINE_DN + 2); // G4 line
-  // A stylized G-clef: a tall spine, an upper hook, the big belly spiralling
-  // in to the G line, and a tail with a terminal dot below the staff.
-  let d = format!(
-    "M {x0:.2} {tail:.2} \
-     C {c1x:.2} {c1y:.2} {c2x:.2} {c2y:.2} {topx:.2} {topy:.2} \
-     C {c3x:.2} {c3y:.2} {c4x:.2} {c4y:.2} {rightx:.2} {righty:.2} \
-     C {c5x:.2} {c5y:.2} {c6x:.2} {c6y:.2} {gx:.2} {gy:.2} \
-     C {c7x:.2} {c7y:.2} {c8x:.2} {c8y:.2} {leftx:.2} {lefty:.2} \
-     C {c9x:.2} {c9y:.2} {c10x:.2} {c10y:.2} {cx:.2} {cy:.2}",
-    x0 = x - 1.0,
-    tail = g + 30.0,
-    c1x = x - 10.0,
-    c1y = g + 20.0,
-    c2x = x - 9.0,
-    c2y = g + 2.0,
-    topx = x + 1.0,
-    topy = g - 34.0,
-    c3x = x + 9.0,
-    c3y = g - 20.0,
-    c4x = x + 9.0,
-    c4y = g - 6.0,
-    rightx = x + 8.0,
-    righty = g + 2.0,
-    c5x = x + 7.0,
-    c5y = g + 12.0,
-    c6x = x - 8.0,
-    c6y = g + 12.0,
-    gx = x - 8.0,
-    gy = g,
-    c7x = x - 8.0,
-    c7y = g - 8.0,
-    c8x = x + 3.0,
-    c8y = g - 8.0,
-    leftx = x + 3.0,
-    lefty = g,
-    c9x = x + 3.0,
-    c9y = g + 5.0,
-    c10x = x - 1.0,
-    c10y = g + 5.0,
-    cx = x - 1.5,
-    cy = g + 3.0,
-  );
-  cv.path(&d, false, 2.0);
-  // Terminal dot on the clef's tail.
-  cv.dot(x - 4.0, g + 32.0, 2.6);
-  cv.bound(x - 11.0, g - 36.0);
-  cv.bound(x + 10.0, g + 36.0);
+  cv.glyph_at(glyph::G_CLEF, x, g, "clef");
 }
 
 /// Render a computational-music object to a standalone SVG, or `None` when the
@@ -696,29 +640,51 @@ pub fn music_to_svg(expr: &Expr) -> Option<String> {
   }
 
   let stroke = theme().text_primary;
-  let mut cv = Canvas::new(stroke);
+  let scale = music_font::scale_for_gap(GAP);
+  let mut cv = Canvas::new(stroke, scale);
 
-  // Lay the glyphs out left to right, remembering where the staff must extend.
-  let mut x = FIRST_NOTE_X;
+  // The clef sits at the left; `right_edge` tracks the rightmost inked point so
+  // each following glyph can be nudged clear of whatever precedes it.
+  let clef_x = STAFF_X0 + 4.0;
+  draw_treble_clef(&mut cv, clef_x);
+  let clef_right = clef_x
+    + music_font::glyph_bbox(glyph::G_CLEF)
+      .map(|bb| bb.x_max * scale)
+      .unwrap_or(28.0);
+  let first_note_x = clef_right + 14.0;
+
+  // Lay the glyphs out left to right. `cursor` is the preferred centre of the
+  // next note (a steady rhythmic advance); `right_edge` is the rightmost ink so
+  // far. A note whose left extent (its accidentals) would collide with the
+  // previous ink is pushed right just enough to clear it, `PAD` apart.
+  const PAD: f64 = 4.0;
+  let mut cursor = first_note_x;
+  let mut right_edge = clef_right;
   for g in &glyphs {
     match g {
       Glyph::Note { heads, dur } => {
-        draw_note(&mut cv, x, heads, *dur);
-        x += ADVANCE;
+        let left = cv.note_left_extent(heads, *dur);
+        let center = cursor.max(right_edge + PAD + left);
+        draw_note(&mut cv, center, heads, *dur);
+        right_edge = center + cv.note_right_extent(heads, *dur);
+        cursor = center + ADVANCE;
       }
       Glyph::Rest { dur } => {
-        draw_rest(&mut cv, x, *dur);
-        x += ADVANCE;
+        let hw = cv.glyph_half_width(rest_glyph(*dur));
+        let center = cursor.max(right_edge + PAD + hw);
+        draw_rest(&mut cv, center, *dur);
+        right_edge = center + hw;
+        cursor = center + ADVANCE;
       }
       Glyph::Barline => {
-        let bx = x - ADVANCE / 2.0;
+        let bx = (right_edge + PAD).max(cursor - ADVANCE / 2.0);
         cv.line(bx, dn_y(BOTTOM_LINE_DN + 8), bx, dn_y(BOTTOM_LINE_DN), 1.3);
-        x += ADVANCE * 0.5;
+        right_edge = bx;
+        cursor = bx + ADVANCE * 0.5;
       }
     }
   }
-  let staff_x_end = x - ADVANCE + FIRST_NOTE_X - STAFF_X0;
-  let staff_x_end = staff_x_end.max(FIRST_NOTE_X + 8.0);
+  let staff_x_end = (right_edge + 12.0).max(first_note_x + 8.0);
 
   // The five staff lines (drawn first, conceptually behind the glyphs — SVG
   // paint order does not matter here since strokes are opaque and thin).
@@ -744,8 +710,6 @@ pub fn music_to_svg(expr: &Expr) -> Option<String> {
     ));
   }
 
-  draw_treble_clef(&mut cv, STAFF_X0 + 20.0);
-
   // Fit the viewBox around everything with a small margin.
   let pad = 6.0;
   let minx = cv.minx.min(STAFF_X0) - pad;
@@ -767,6 +731,7 @@ pub fn music_to_svg(expr: &Expr) -> Option<String> {
 mod tests {
   use super::*;
 
+  /// A bare `MusicPitch` (pitch only, no rhythmic value).
   fn note(name: &str) -> Expr {
     Expr::FunctionCall {
       name: "MusicPitch".to_string(),
@@ -774,11 +739,23 @@ mod tests {
     }
   }
 
+  /// A `MusicNote` wrapping a pitch — a rhythmic event that does render.
+  fn music_note(name: &str) -> Expr {
+    Expr::FunctionCall {
+      name: "MusicNote".to_string(),
+      args: vec![note(name)].into(),
+    }
+  }
+
   #[test]
-  fn renders_a_single_pitch() {
-    let svg = music_to_svg(&note("C4")).expect("pitch should render");
+  fn bare_pitch_does_not_render() {
+    // A `MusicPitch` has no length, so it is not staff notation and stays
+    // symbolic; a `MusicNote` built from the same pitch does render.
+    assert!(music_to_svg(&note("C4")).is_none());
+    let svg = music_to_svg(&music_note("C4")).expect("a note should render");
     assert!(svg.starts_with("<svg"));
-    assert!(svg.contains("<ellipse")); // a note head
+    assert!(svg.contains("class=\"notehead\"")); // a Leland note head
+    assert!(svg.contains("class=\"clef\"")); // the Leland treble clef
     assert!(svg.contains("<line")); // staff lines
   }
 
@@ -813,7 +790,7 @@ mod tests {
         .into(),
     };
     let svg = music_to_svg(&chord).unwrap();
-    assert_eq!(svg.matches("<ellipse").count(), 3);
+    assert_eq!(svg.matches("class=\"notehead\"").count(), 3);
   }
 
   #[test]
@@ -835,10 +812,13 @@ mod tests {
   fn measure_appends_a_barline() {
     let measure = Expr::FunctionCall {
       name: "MusicMeasure".to_string(),
-      args: vec![Expr::List(vec![note("C4"), note("D4")].into())].into(),
+      args: vec![Expr::List(vec![music_note("C4"), music_note("D4")].into())]
+        .into(),
     };
     let mut glyphs = Vec::new();
     assert!(collect(&measure, &mut glyphs));
+    // Two notes then a closing barline.
+    assert!(matches!(glyphs.first(), Some(Glyph::Note { .. })));
     assert!(matches!(glyphs.last(), Some(Glyph::Barline)));
   }
 }
