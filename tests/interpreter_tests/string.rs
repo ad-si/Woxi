@@ -5594,6 +5594,33 @@ mod to_boxes {
       "Graphics3DBox"
     );
   }
+
+  // Regression tests for issue #135: additive factors in a product must
+  // keep their parentheses in box form so typeset (SVG) output stays
+  // readable — `(-4+n) (-5+n)`, not `-4+n -5+n`.
+  #[test]
+  fn product_of_sums_keeps_parens() {
+    assert_eq!(
+      interpret("ToBoxes[n(n+1)]").unwrap(),
+      "RowBox[{n,  , RowBox[{(, RowBox[{1, +, n}], )}]}]"
+    );
+    // A fraction whose denominator is a product of sums parenthesizes
+    // every factor (Pochhammer[n, -2] = 1/((-2+n)(-1+n))).
+    assert_eq!(
+      interpret("ToBoxes[Pochhammer[n, -2]]").unwrap(),
+      "FractionBox[1, RowBox[{RowBox[{(, RowBox[{RowBox[{-, 2}], +, n}], \
+       )}],  , RowBox[{(, RowBox[{RowBox[{-, 1}], +, n}], )}]}]]"
+    );
+  }
+
+  #[test]
+  fn fraction_numerator_sum_unparenthesized() {
+    // 1/n(n+1) evaluates to (1+n)/n; the numerator needs no parens.
+    assert_eq!(
+      interpret("ToBoxes[1/n(n+1)]").unwrap(),
+      "FractionBox[RowBox[{1, +, n}], n]"
+    );
+  }
 }
 
 mod make_boxes {
