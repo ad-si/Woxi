@@ -65,6 +65,44 @@ fn music_pitch_string_stays_symbolic() {
 }
 
 #[test]
+fn music_pitch_canonicalizes_frequency() {
+  // A4 is 440 Hz; 200 Hz is the nearest to G3 (per the MusicPitch docs).
+  assert_eq!(
+    interpret("MusicPitch[Quantity[440, \"Hertz\"]]").unwrap(),
+    "MusicPitch[A4]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[Quantity[200, \"Hertz\"]]").unwrap(),
+    "MusicPitch[G3]"
+  );
+}
+
+#[test]
+fn music_pitch_canonicalizes_soundnote() {
+  // SoundNote numbers pitches relative to middle C (0 -> C4).
+  assert_eq!(
+    interpret("MusicPitch[SoundNote[0]]").unwrap(),
+    "MusicPitch[C4]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[SoundNote[-5]]").unwrap(),
+    "MusicPitch[G3]"
+  );
+}
+
+#[test]
+fn music_pitch_extracts_note_pitch() {
+  assert_eq!(
+    interpret("MusicPitch[MusicNote[\"G3\"]]").unwrap(),
+    "MusicPitch[G3]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[MusicNote[MusicPitch[55]]]").unwrap(),
+    "MusicPitch[G3]"
+  );
+}
+
+#[test]
 fn music_pitch_head_is_music_pitch() {
   assert_eq!(interpret("Head[MusicPitch[60]]").unwrap(), "MusicPitch");
 }

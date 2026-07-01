@@ -52,6 +52,27 @@ $ wo 'MusicPitch[69]'
 MusicPitch[A4]
 ```
 
+A frequency is canonicalized to the nearest named pitch (A4 is tuned to
+440 Hz).
+
+```scrut
+$ wo 'MusicPitch[Quantity[440, "Hertz"]]'
+MusicPitch[A4]
+```
+
+The pitch of a `SoundNote` (numbered relative to middle C) or of a
+`MusicNote` can also be used as a pitch specification.
+
+```scrut
+$ wo 'MusicPitch[SoundNote[0]]'
+MusicPitch[C4]
+```
+
+```scrut
+$ wo 'MusicPitch[MusicNote["G3"]]'
+MusicPitch[G3]
+```
+
 
 ## Notes and chords
 
