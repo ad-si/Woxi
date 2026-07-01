@@ -1419,6 +1419,46 @@ mod box_representation_tests {
     );
   }
 
+  #[test]
+  fn text_atom_width_matches_monospace_advance() {
+    // Regression: the per-character width estimate for typeset text atoms must
+    // match the advance of the monospace font the hosts actually render with
+    // (Atkinson Hyperlegible Mono, 632/1000 em). With the old 0.6 estimate the
+    // atom was measured narrower than it draws, so a following atom — e.g. the
+    // `[` after a function name like `MusicPitch` — overlapped the name.
+    let font_size = 14.0;
+    let name = "MusicPitch";
+    let layout = layout_box(&Expr::Identifier(name.to_string()), font_size);
+    let expected = name.chars().count() as f64 * font_size * 0.632;
+    assert!(
+      (layout.width - expected).abs() < 0.01,
+      "text atom width {} should equal {} (0.632 em/char)",
+      layout.width,
+      expected
+    );
+
+    // In a RowBox the opening `[` must sit clear of the name, not on top of it:
+    // its glyph's left edge must be at least the name's true rendered width.
+    let row = Expr::FunctionCall {
+      name: "RowBox".to_string(),
+      args: vec![Expr::List(
+        vec![
+          Expr::String(name.to_string()),
+          Expr::String("[".to_string()),
+        ]
+        .into(),
+      )]
+      .into(),
+    };
+    let row_layout = layout_box(&row, font_size);
+    assert!(
+      row_layout.width >= expected + font_size * 0.632 - 0.01,
+      "RowBox width {} must fit the name plus a full `[` advance ({})",
+      row_layout.width,
+      expected + font_size * 0.632
+    );
+  }
+
   // ── Hyperlink rendering ──
 
   #[test]

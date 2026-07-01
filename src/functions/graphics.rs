@@ -3441,10 +3441,18 @@ pub struct BoxLayout {
   pub elements: String,
 }
 
+/// Character advance of the monospace font used to display typeset text in the
+/// visual hosts, as a fraction of the font size. The Playground/Studio map the
+/// SVG `<text font-family="monospace">` we emit onto Atkinson Hyperlegible Mono
+/// (see the host CSS), whose glyphs advance 632/1000 em. The per-atom width
+/// estimate must match this, or successive atoms (e.g. a function name and its
+/// opening `[`) overlap.
+const MONO_ADVANCE: f64 = 0.632;
+
 impl BoxLayout {
   /// Create a layout for a simple text atom.
   fn text(s: &str, font_size: f64) -> Self {
-    let ch = font_size * 0.6; // approximate monospace char width
+    let ch = font_size * MONO_ADVANCE; // monospace char advance
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
     let height = ascent + descent;
@@ -3513,7 +3521,7 @@ impl BoxLayout {
 /// Recursively lay out a box expression into a `BoxLayout`.
 /// This is the main bottom-up tree renderer for the box language.
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
-  let ch = font_size * 0.6;
+  let ch = font_size * MONO_ADVANCE;
 
   match expr {
     Expr::String(s) => BoxLayout::text(s, font_size),
