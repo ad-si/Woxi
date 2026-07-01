@@ -23,7 +23,7 @@
 //! all give `MusicPitch["G3"]`. The conversions use the standard convention
 //! where middle C is MIDI 60 / C4 and A4 (MIDI 69) is 440 Hz.
 
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// Heads that the Wolfram Language classifies as music objects — the "Music
 /// Events", "Music Properties", and "Music Containers" of the
@@ -184,6 +184,248 @@ pub fn music_pitch(args: &[Expr]) -> Option<Expr> {
     name: "MusicPitch".to_string(),
     args: vec![Expr::String(name)].into(),
   })
+}
+
+// ---------------------------------------------------------------------------
+// MusicPitch arithmetic
+// ---------------------------------------------------------------------------
+//
+// Wolfram Language 15 lets `MusicPitch` objects be added and subtracted, e.g.
+//
+// ```text
+// MusicPitch["Bb"] + MusicPitch["A#"] - MusicPitch["C"]
+// (* MusicPitch[<|"Accidental" -> 1, "Key" -> "G", "MIDINumber" -> 80|>] *)
+// ```
+//
+// A pitch is combined along two independent linear axes: its *diatonic staff
+// position* (which letter, in which register) and its *MIDI number* (the actual
+// sounding semitone). Both axes are summed with the summands' signs, then the
+// result is decoded back into a (Key letter, Accidental, MIDINumber) triple.
+// Summing the diatonic position — rather than re-spelling the final MIDI number
+// — is what makes `Bb + A# - C` land on the *letter* `G` (B + A - C = 6 + 5 - 0
+// = 11 ≡ G, one octave up) instead of an enharmonic `Ab`.
+//
+// Octaveless names such as `"C"` or `"Bb"` default to octave 4, the Wolfram
+// Language default register for `MusicPitch`.
+
+/// Diatonic scale-degree letters indexed `0..=6` (`C` … `B`).
+const DIATONIC_LETTERS: [&str; 7] = ["C", "D", "E", "F", "G", "A", "B"];
+
+/// Semitone of the natural note for each diatonic letter index `0..=6`.
+const DIATONIC_BASE_SEMITONE: [i128; 7] = [0, 2, 4, 5, 7, 9, 11];
+
+/// Diatonic scale-degree index (`C=0 … B=6`) of a note letter, or `None` for a
+/// byte that is not a note letter.
+fn letter_diatonic_index(letter: u8) -> Option<i128> {
+  Some(match letter.to_ascii_uppercase() {
+    b'C' => 0,
+    b'D' => 1,
+    b'E' => 2,
+    b'F' => 3,
+    b'G' => 4,
+    b'A' => 5,
+    b'B' => 6,
+    _ => return None,
+  })
+}
+
+/// Parse a pitch name such as `"Bb"`, `"A#"`, `"C"`, `"G3"`, `"C#4"` into its
+/// `(diatonic index, accidental, octave)` components. A missing octave defaults
+/// to 4. Returns `None` for anything that is not a pitch name.
+fn parse_pitch_parts(name: &str) -> Option<(i128, i128, i128)> {
+  let bytes = name.as_bytes();
+  let diatonic = letter_diatonic_index(*bytes.first()?)?;
+  let mut idx = 1;
+  let mut accidental = 0i128;
+  while let Some(&c) = bytes.get(idx) {
+    match c {
+      b'#' => accidental += 1,
+      b'b' => accidental -= 1,
+      _ => break,
+    }
+    idx += 1;
+  }
+  let octave = if idx >= name.len() {
+    4
+  } else {
+    name.get(idx..)?.parse().ok()?
+  };
+  Some((diatonic, accidental, octave))
+}
+
+/// Combine `(diatonic index, accidental, octave)` into the two linear axes used
+/// for pitch arithmetic: the absolute diatonic staff position and the MIDI
+/// number.
+fn parts_to_axes(
+  diatonic: i128,
+  accidental: i128,
+  octave: i128,
+) -> (i128, i128) {
+  let position = octave * 7 + diatonic;
+  let midi =
+    (octave + 1) * 12 + DIATONIC_BASE_SEMITONE[diatonic as usize] + accidental;
+  (position, midi)
+}
+
+/// Resolve a single `MusicPitch[...]` object to its `(diatonic position, MIDI
+/// number)` axes. Handles the named form (`MusicPitch["Bb"]`), the canonical
+/// association form produced by pitch arithmetic, and a bare MIDI integer.
+fn music_pitch_axes(expr: &Expr) -> Option<(i128, i128)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "MusicPitch" || args.len() != 1 {
+    return None;
+  }
+  match &args[0] {
+    Expr::String(name) => {
+      let (diatonic, accidental, octave) = parse_pitch_parts(name)?;
+      Some(parts_to_axes(diatonic, accidental, octave))
+    }
+    // A bare MIDI number would already have been canonicalized to a name by
+    // `music_pitch`, but resolve it directly for robustness.
+    Expr::Integer(midi) => {
+      let (diatonic, accidental, octave) =
+        parse_pitch_parts(&midi_to_pitch_name(*midi))?;
+      Some(parts_to_axes(diatonic, accidental, octave))
+    }
+    // The canonical `<|"Accidental" -> a, "Key" -> k, "MIDINumber" -> n|>`
+    // association: recover the octave from the MIDI number so the staff
+    // position is exact.
+    Expr::Association(pairs) => {
+      let lookup = |key: &str| {
+        pairs.iter().find_map(|(k, v)| match k {
+          Expr::String(s) if s == key => Some(v),
+          _ => None,
+        })
+      };
+      let key = match lookup("Key")? {
+        Expr::String(s) => s,
+        _ => return None,
+      };
+      let diatonic = letter_diatonic_index(*key.as_bytes().first()?)?;
+      let midi = match lookup("MIDINumber")? {
+        Expr::Integer(n) => *n,
+        _ => return None,
+      };
+      let accidental = match lookup("Accidental")? {
+        Expr::Integer(n) => *n,
+        _ => return None,
+      };
+      let base = DIATONIC_BASE_SEMITONE[diatonic as usize];
+      let octave = (midi - base - accidental).div_euclid(12) - 1;
+      Some((octave * 7 + diatonic, midi))
+    }
+    _ => None,
+  }
+}
+
+/// Interpret one summand of a pitch sum as `(coefficient, (diatonic, MIDI))`.
+/// Bare pitches carry coefficient `+1`; `-MusicPitch[…]` and `k MusicPitch[…]`
+/// (integer `k`, from subtraction / scaling) carry the matching coefficient.
+fn music_pitch_summand(term: &Expr) -> Option<(i128, (i128, i128))> {
+  match term {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (coeff, axes) = music_pitch_summand(operand)?;
+      Some((-coeff, axes))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut coeff = 1i128;
+      let mut axes = None;
+      for arg in args.iter() {
+        if let Expr::Integer(k) = arg {
+          coeff *= *k;
+        } else if axes.is_none() {
+          axes = Some(music_pitch_axes(arg)?);
+        } else {
+          return None;
+        }
+      }
+      Some((coeff, axes?))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => match (left.as_ref(), right.as_ref()) {
+      (Expr::Integer(k), other) | (other, Expr::Integer(k)) => {
+        Some((*k, music_pitch_axes(other)?))
+      }
+      _ => None,
+    },
+    _ => Some((1, music_pitch_axes(term)?)),
+  }
+}
+
+/// Decode a summed `(diatonic position, MIDI number)` back into the canonical
+/// `MusicPitch[<|"Accidental" -> …, "Key" -> …, "MIDINumber" -> …|>]` object.
+fn axes_to_music_pitch(position: i128, midi: i128) -> Expr {
+  let octave = position.div_euclid(7);
+  let letter_idx = position.rem_euclid(7) as usize;
+  let natural_midi = (octave + 1) * 12 + DIATONIC_BASE_SEMITONE[letter_idx];
+  let accidental = midi - natural_midi;
+  // Keys are alphabetical (Accidental, Key, MIDINumber), matching Wolfram.
+  Expr::FunctionCall {
+    name: "MusicPitch".to_string(),
+    args: vec![Expr::Association(vec![
+      (Expr::String("Accidental".into()), Expr::Integer(accidental)),
+      (
+        Expr::String("Key".into()),
+        Expr::String(DIATONIC_LETTERS[letter_idx].to_string()),
+      ),
+      (Expr::String("MIDINumber".into()), Expr::Integer(midi)),
+    ])]
+    .into(),
+  }
+}
+
+/// `Plus[…]` over `MusicPitch` objects. Returns the combined pitch when *every*
+/// summand is a (possibly negated or integer-scaled) `MusicPitch`, and `None`
+/// otherwise so ordinary `Plus` evaluation proceeds unchanged (a sum that mixes
+/// a pitch with a non-pitch is left symbolic, as in Wolfram).
+pub fn try_music_pitch_plus(args: &[Expr]) -> Option<Expr> {
+  // Flatten nested `Plus` so a chain such as `a + b - c` — parsed as nested
+  // binary operations — is treated as one sum.
+  let mut flat: Vec<Expr> = Vec::new();
+  let mut stack: Vec<Expr> = args.iter().rev().cloned().collect();
+  while let Some(term) = stack.pop() {
+    match term {
+      Expr::FunctionCall {
+        ref name,
+        args: ref inner,
+      } if name == "Plus" => {
+        for i in inner.iter().rev() {
+          stack.push(i.clone());
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        ref left,
+        ref right,
+      } => {
+        stack.push((**right).clone());
+        stack.push((**left).clone());
+      }
+      other => flat.push(other),
+    }
+  }
+
+  let mut total = (0i128, 0i128);
+  let mut count = 0;
+  for term in &flat {
+    let (coeff, (position, midi)) = music_pitch_summand(term)?;
+    total.0 += coeff * position;
+    total.1 += coeff * midi;
+    count += 1;
+  }
+  // A lone pitch is not arithmetic; leave it for the normal path.
+  if count < 2 {
+    return None;
+  }
+  Some(axes_to_music_pitch(total.0, total.1))
 }
 
 #[cfg(test)]
@@ -379,5 +621,102 @@ mod tests {
     );
     // Nested MusicPitch resolves through to the underlying pitch.
     expect_music_pitch(func("MusicPitch", vec![Expr::Integer(60)]), "C4");
+  }
+
+  fn named_pitch(name: &str) -> Expr {
+    func("MusicPitch", vec![Expr::String(name.into())])
+  }
+
+  /// Assert that `try_music_pitch_plus` produced the canonical association form
+  /// with the given accidental, key and MIDI number.
+  fn expect_pitch_sum(result: Option<Expr>, acc: i128, key: &str, midi: i128) {
+    match &result {
+      Some(Expr::FunctionCall { name, args }) if name == "MusicPitch" => {
+        match &args[..] {
+          [Expr::Association(pairs)] => {
+            let get = |k: &str| {
+              pairs.iter().find_map(|(pk, pv)| match pk {
+                Expr::String(s) if s == k => Some(pv),
+                _ => None,
+              })
+            };
+            assert!(
+              matches!(get("Accidental"), Some(Expr::Integer(n)) if *n == acc),
+              "accidental mismatch in {result:?}",
+            );
+            assert!(
+              matches!(get("Key"), Some(Expr::String(s)) if s == key),
+              "key mismatch in {result:?}",
+            );
+            assert!(
+              matches!(get("MIDINumber"), Some(Expr::Integer(n)) if *n == midi),
+              "MIDI mismatch in {result:?}",
+            );
+          }
+          other => panic!("expected an association arg, got {other:?}"),
+        }
+      }
+      other => panic!("expected MusicPitch[<|…|>], got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn music_pitch_plus_matches_documented_example() {
+    // MusicPitch["Bb"] + MusicPitch["A#"] - MusicPitch["C"]
+    //   == MusicPitch[<|"Accidental" -> 1, "Key" -> "G", "MIDINumber" -> 80|>]
+    let result = try_music_pitch_plus(&[
+      named_pitch("Bb"),
+      named_pitch("A#"),
+      func("Times", vec![Expr::Integer(-1), named_pitch("C")]),
+    ]);
+    expect_pitch_sum(result, 1, "G", 80);
+  }
+
+  #[test]
+  fn music_pitch_plus_is_associative_via_association_form() {
+    // The intermediate `Bb + A#` decodes back exactly, so subtracting `C`
+    // afterwards gives the same answer as summing all three at once.
+    let partial =
+      try_music_pitch_plus(&[named_pitch("Bb"), named_pitch("A#")]).unwrap();
+    let result = try_music_pitch_plus(&[
+      partial,
+      func("Times", vec![Expr::Integer(-1), named_pitch("C")]),
+    ]);
+    expect_pitch_sum(result, 1, "G", 80);
+  }
+
+  #[test]
+  fn music_pitch_plus_unary_minus_subtraction() {
+    // A - A + A == A, exercising the UnaryOp::Minus summand path.
+    let result = try_music_pitch_plus(&[
+      named_pitch("A4"),
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(named_pitch("A4")),
+      },
+      named_pitch("A4"),
+    ]);
+    expect_pitch_sum(result, 0, "A", 69);
+  }
+
+  #[test]
+  fn music_pitch_plus_octaveless_names_default_to_octave_4() {
+    // C + C climbs one octave along the diatonic axis (C4 -> C5-ish MIDI 120).
+    expect_pitch_sum(
+      try_music_pitch_plus(&[named_pitch("C"), named_pitch("C")]),
+      12,
+      "C",
+      120,
+    );
+  }
+
+  #[test]
+  fn music_pitch_plus_rejects_non_pitch_and_lone_terms() {
+    // A sum mixing a pitch with a non-pitch is not pitch arithmetic.
+    assert!(
+      try_music_pitch_plus(&[named_pitch("C"), Expr::Integer(5)]).is_none()
+    );
+    // A single pitch is not arithmetic and is left for the normal path.
+    assert!(try_music_pitch_plus(&[named_pitch("Bb")]).is_none());
   }
 }

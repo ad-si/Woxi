@@ -107,6 +107,47 @@ fn music_pitch_head_is_music_pitch() {
   assert_eq!(interpret("Head[MusicPitch[60]]").unwrap(), "MusicPitch");
 }
 
+// ─── Pitch arithmetic ────────────────────────────────────────────────────────
+
+#[test]
+fn music_pitch_arithmetic_documented_example() {
+  // Adding/subtracting pitches combines them along the diatonic-position and
+  // MIDI-number axes; octaveless names default to octave 4.
+  assert_eq!(
+    interpret("MusicPitch[\"Bb\"] + MusicPitch[\"A#\"] - MusicPitch[\"C\"]")
+      .unwrap(),
+    "MusicPitch[<|Accidental -> 1, Key -> G, MIDINumber -> 80|>]"
+  );
+}
+
+#[test]
+fn music_pitch_arithmetic_octave_climb() {
+  // C4 + C4 rises one diatonic octave.
+  assert_eq!(
+    interpret("MusicPitch[\"C\"] + MusicPitch[\"C\"]").unwrap(),
+    "MusicPitch[<|Accidental -> 12, Key -> C, MIDINumber -> 120|>]"
+  );
+}
+
+#[test]
+fn music_pitch_arithmetic_cancels() {
+  // A - A + A == A (round-trips through the canonical association form).
+  assert_eq!(
+    interpret("MusicPitch[\"A4\"] - MusicPitch[\"A4\"] + MusicPitch[\"A4\"]")
+      .unwrap(),
+    "MusicPitch[<|Accidental -> 0, Key -> A, MIDINumber -> 69|>]"
+  );
+}
+
+#[test]
+fn music_pitch_mixed_sum_stays_symbolic() {
+  // A pitch plus a plain number is not pitch arithmetic; it stays symbolic.
+  assert_eq!(
+    interpret("MusicPitch[\"C\"] + 5").unwrap(),
+    "5 + MusicPitch[C]"
+  );
+}
+
 // ─── Staff-notation rendering ────────────────────────────────────────────────
 
 #[test]

@@ -780,6 +780,13 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Handle MusicPitch arithmetic (WL 15): adding/subtracting pitch objects
+  // combines them along the diatonic-position and MIDI-number axes.
+  if let Some(result) = crate::functions::music_ast::try_music_pitch_plus(args)
+  {
+    return Ok(result);
+  }
+
   // Around (uncertain-value) error propagation.
   if let Some(result) = try_around_plus(args) {
     return Ok(result);

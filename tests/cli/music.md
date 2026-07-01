@@ -73,6 +73,16 @@ $ wo 'MusicPitch[MusicNote["G3"]]'
 MusicPitch[G3]
 ```
 
+Pitches can be added and subtracted. Both the diatonic staff position (which
+letter, in which register) and the MIDI number are combined, then the result is
+returned as a `<|"Accidental" -> …, "Key" -> …, "MIDINumber" -> …|>` association.
+Names without an octave default to octave 4.
+
+```scrut
+$ wo 'MusicPitch["Bb"] + MusicPitch["A#"] - MusicPitch["C"]'
+MusicPitch[<|Accidental -> 1, Key -> G, MIDINumber -> 80|>]
+```
+
 
 ## Notes and chords
 
