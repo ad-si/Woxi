@@ -355,6 +355,9 @@ button {
   padding: 0.4rem 0.6rem;
   border: 2px solid var(--output-border);
   border-radius: 4px;
+  /* Keep natural height when the outputs column overflows — otherwise flexbox
+   * shrinks each box to fit the viewport, squashing/clipping tall outputs. */
+  flex-shrink: 0;
 }
 
 pre.output-box {
