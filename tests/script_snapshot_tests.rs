@@ -285,6 +285,7 @@ script_test!(script_factors_of_an_integer, "factors_of_an_integer.wls");
 script_test!(script_arrays, "arrays.wls");
 script_test!(script_map_range, "map_range.wls");
 script_test!(script_multisplit, "multisplit.wls");
+script_test!(script_music_measure, "music_measure.wls");
 script_test!(script_flatten_a_list, "flatten_a_list.wls");
 script_test!(script_tokenize_a_string, "tokenize_a_string.wls");
 script_test!(script_repeat, "repeat.wls");

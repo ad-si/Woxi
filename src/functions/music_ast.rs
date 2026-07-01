@@ -167,9 +167,17 @@ pub fn resolve_pitch_name(spec: &Expr) -> Option<String> {
         Expr::String(s) => Some(s.clone()),
         _ => None,
       },
-      // MusicPitch[MusicNote[pitch, ...]] / MusicPitch[MusicPitch[...]] — take
-      // the pitch of the note, which uses MIDI/pitch-name conventions.
-      "MusicNote" | "MusicPitch" => resolve_pitch_name(args.first()?),
+      // MusicPitch[MusicNote[pitch, ...]] — take the pitch of the note. A
+      // canonical note carries its pitch under the `"Pitch"` key; a raw
+      // `MusicNote[spec, …]` carries it as the first argument.
+      "MusicNote" => match args.first()? {
+        Expr::Association(pairs) => {
+          resolve_pitch_name(assoc_get(pairs, "Pitch")?)
+        }
+        other => resolve_pitch_name(other),
+      },
+      // MusicPitch[MusicPitch[...]] — resolve through to the inner pitch.
+      "MusicPitch" => resolve_pitch_name(args.first()?),
       _ => None,
     },
     // The canonical `MusicPitch` association form,
@@ -830,12 +838,50 @@ fn pitch_object(letter: char, accidental: i128, octave: Option<i128>) -> Expr {
   music_assoc("MusicPitch", pairs)
 }
 
+/// The spelled name of a pitch — its key letter followed by an accidental
+/// glyph, `♯` (sharp) or `♭` (flat), repeated for double accidentals. The
+/// octave is not part of the name (`"C#4"` is named `"C♯"`).
+fn pitch_spelled_name(letter: char, accidental: i128) -> String {
+  let mut name = letter.to_string();
+  match accidental.cmp(&0) {
+    std::cmp::Ordering::Greater => {
+      name.push_str(&"♯".repeat(accidental as usize))
+    }
+    std::cmp::Ordering::Less => {
+      name.push_str(&"♭".repeat((-accidental) as usize))
+    }
+    std::cmp::Ordering::Equal => {}
+  }
+  name
+}
+
+/// The canonical `MusicPitch` association for a note's pitch, keyed
+/// `Accidental, [Octave,] Key[, Name]`. When an octave is known the object also
+/// carries its spelled `"Name"`, matching the Wolfram Language (`MusicNote["C4"]`
+/// → `<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>`); an octaveless
+/// name stays `<|Accidental -> a, Key -> k|>`.
+fn note_pitch_object(
+  letter: char,
+  accidental: i128,
+  octave: Option<i128>,
+) -> Expr {
+  let mut pairs = vec![("Accidental", Expr::Integer(accidental))];
+  if let Some(o) = octave {
+    pairs.push(("Octave", Expr::Integer(o)));
+  }
+  pairs.push(("Key", Expr::String(letter.to_string())));
+  if octave.is_some() {
+    pairs.push(("Name", Expr::String(pitch_spelled_name(letter, accidental))));
+  }
+  music_assoc("MusicPitch", pairs)
+}
+
 /// Resolve a pitch specification (name string, `MusicPitch`, MIDI integer, …)
 /// to the canonical note-pitch object, preserving whether an octave was given.
 fn resolve_pitch_object(spec: &Expr) -> Option<Expr> {
   let name = resolve_pitch_name(spec)?;
   let (letter, accidental, octave) = parse_pitch_spelled(&name)?;
-  Some(pitch_object(letter, accidental, octave))
+  Some(note_pitch_object(letter, accidental, octave))
 }
 
 /// The rhythmic value of one of the named note durations, or `None` for an
@@ -887,22 +933,29 @@ pub fn music_duration(args: &[Expr]) -> Option<Expr> {
   Some(music_assoc("MusicDuration", vec![("Duration", value)]))
 }
 
-/// `MusicNote[pitch, duration]` — canonicalize to the association form
-/// `MusicNote[<|"Pitch" -> MusicPitch[…], "Duration" -> MusicDuration[…]|>]`.
-/// Returns `None` (leaving the note symbolic) when either part is not a
-/// recognized specification.
+/// `MusicNote[pitch]` / `MusicNote[pitch, duration]` — canonicalize to the
+/// association form. A note given only a pitch becomes
+/// `MusicNote[<|"Pitch" -> MusicPitch[…]|>]`; a note with an explicit duration
+/// adds `"Duration" -> MusicDuration[…]`. Returns `None` (leaving the note
+/// symbolic) when a part is not a recognized specification.
 pub fn music_note(args: &[Expr]) -> Option<Expr> {
-  let [pitch_spec, duration_spec] = args else {
-    return None;
-  };
-  let pitch = resolve_pitch_object(pitch_spec)?;
-  let duration_value = resolve_duration_value(duration_spec)?;
-  let duration =
-    music_assoc("MusicDuration", vec![("Duration", duration_value)]);
-  Some(music_assoc(
-    "MusicNote",
-    vec![("Pitch", pitch), ("Duration", duration)],
-  ))
+  match args {
+    [pitch_spec] => {
+      let pitch = resolve_pitch_object(pitch_spec)?;
+      Some(music_assoc("MusicNote", vec![("Pitch", pitch)]))
+    }
+    [pitch_spec, duration_spec] => {
+      let pitch = resolve_pitch_object(pitch_spec)?;
+      let duration_value = resolve_duration_value(duration_spec)?;
+      let duration =
+        music_assoc("MusicDuration", vec![("Duration", duration_value)]);
+      Some(music_assoc(
+        "MusicNote",
+        vec![("Pitch", pitch), ("Duration", duration)],
+      ))
+    }
+    _ => None,
+  }
 }
 
 /// The stacked-thirds `(semitone, diatonic-step)` offsets from the root for
@@ -1300,6 +1353,348 @@ pub fn music_duration_plus_terms(args: &[Expr]) -> Option<Vec<Expr>> {
 /// Wrap a computed total rhythmic value in the canonical duration object.
 pub fn music_duration_from_value(value: Expr) -> Expr {
   music_assoc("MusicDuration", vec![("Duration", value)])
+}
+
+// ---------------------------------------------------------------------------
+// MusicTimeSignature / MusicRest / MusicMeasure (WL 15)
+// ---------------------------------------------------------------------------
+
+/// `MusicTimeSignature[n, d]` — canonicalize to the association form
+/// `MusicTimeSignature[<|"Numerator" -> n, "Denominator" -> d|>]`. Non-integer
+/// or already-canonical arguments are left untouched (`None`).
+pub fn music_time_signature(args: &[Expr]) -> Option<Expr> {
+  let [Expr::Integer(n), Expr::Integer(d)] = args else {
+    return None;
+  };
+  Some(music_assoc(
+    "MusicTimeSignature",
+    vec![
+      ("Numerator", Expr::Integer(*n)),
+      ("Denominator", Expr::Integer(*d)),
+    ],
+  ))
+}
+
+/// `MusicRest[]` / `MusicRest[duration]` — canonicalize to the association form.
+/// A bare rest becomes `MusicRest[<||>]`; a rest with a duration becomes
+/// `MusicRest[<|"Duration" -> MusicDuration[…]|>]`. Returns `None` when the
+/// duration is not a recognized specification.
+pub fn music_rest(args: &[Expr]) -> Option<Expr> {
+  match args {
+    [] => Some(music_assoc("MusicRest", vec![])),
+    [spec] => {
+      let value = resolve_duration_value(spec)?;
+      let duration = music_assoc("MusicDuration", vec![("Duration", value)]);
+      Some(music_assoc("MusicRest", vec![("Duration", duration)]))
+    }
+    _ => None,
+  }
+}
+
+/// Greatest common divisor of two non-negative integers.
+fn gcd(a: i128, b: i128) -> i128 {
+  if b == 0 { a } else { gcd(b, a % b) }
+}
+
+/// Reduce `n/d` to lowest terms with a positive denominator, returning an
+/// `Integer` when the denominator is 1 and a `Rational[n, d]` otherwise.
+fn rational_reduced(mut n: i128, mut d: i128) -> Expr {
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  let g = gcd(n.abs(), d).max(1);
+  n /= g;
+  d /= g;
+  if d == 1 {
+    Expr::Integer(n)
+  } else {
+    rational(n, d)
+  }
+}
+
+/// A rational number as a reduced `(numerator, denominator)` pair with a
+/// positive denominator.
+type Ratio = (i128, i128);
+
+/// Reduce a `(numerator, denominator)` pair.
+fn reduce(n: i128, d: i128) -> Ratio {
+  let (n, d) = if d < 0 { (-n, -d) } else { (n, d) };
+  let g = gcd(n.abs(), d).max(1);
+  (n / g, d / g)
+}
+
+fn ratio_mul((an, ad): Ratio, (bn, bd): Ratio) -> Ratio {
+  reduce(an * bn, ad * bd)
+}
+
+fn ratio_add((an, ad): Ratio, (bn, bd): Ratio) -> Ratio {
+  reduce(an * bd + bn * ad, ad * bd)
+}
+
+fn ratio_sub((an, ad): Ratio, (bn, bd): Ratio) -> Ratio {
+  reduce(an * bd - bn * ad, ad * bd)
+}
+
+fn ratio_cmp((an, ad): Ratio, (bn, bd): Ratio) -> std::cmp::Ordering {
+  (an * bd).cmp(&(bn * ad))
+}
+
+/// Render a `Ratio` as the `Expr` the Wolfram Language prints for it.
+fn ratio_expr((n, d): Ratio) -> Expr {
+  rational_reduced(n, d)
+}
+
+/// Parse a bare rhythmic value (`Integer` or `Rational`) into a `Ratio`.
+fn duration_ratio(expr: &Expr) -> Option<Ratio> {
+  match expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      match &args[..] {
+        [Expr::Integer(n), Expr::Integer(d)] if *d != 0 => Some(reduce(*n, *d)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// The rhythmic value of a `MusicDuration[…]` object as a `Ratio`.
+fn music_duration_ratio(expr: &Expr) -> Option<Ratio> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "MusicDuration" => {
+      match args.first()? {
+        Expr::Association(pairs) => {
+          duration_ratio(assoc_get(pairs, "Duration")?)
+        }
+        other => duration_ratio(other),
+      }
+    }
+    _ => None,
+  }
+}
+
+/// The `(numerator, denominator)` of a canonical `MusicTimeSignature[<|…|>]`.
+fn time_signature_parts(expr: &Expr) -> Option<(i128, i128)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "MusicTimeSignature" {
+    return None;
+  }
+  let Expr::Association(pairs) = args.first()? else {
+    return None;
+  };
+  let numer = match assoc_get(pairs, "Numerator")? {
+    Expr::Integer(n) => *n,
+    _ => return None,
+  };
+  let denom = match assoc_get(pairs, "Denominator")? {
+    Expr::Integer(d) if *d > 0 => *d,
+    _ => return None,
+  };
+  Some((numer, denom))
+}
+
+/// One event of a measure: a note (with its pitch object) or a rest, together
+/// with its explicit rhythmic value if one was given (`None` for the default
+/// one-beat duration).
+enum MeasureEvent {
+  Note(Expr, Option<Ratio>),
+  Rest(Option<Ratio>),
+}
+
+impl MeasureEvent {
+  /// Whether the event carries an explicit (rigid) duration. Default events are
+  /// elastic: a trailing default note stretches to fill the measure.
+  fn is_explicit(&self) -> bool {
+    matches!(
+      self,
+      MeasureEvent::Note(_, Some(_)) | MeasureEvent::Rest(Some(_))
+    )
+  }
+}
+
+/// Extract an explicit rhythmic value from a canonical note/rest association,
+/// distinguishing "no duration key" (`Some(None)` — a default event) from a
+/// present-but-unparsable duration (`None` — bail out).
+fn explicit_duration(pairs: &[(Expr, Expr)]) -> Option<Option<Ratio>> {
+  match assoc_get(pairs, "Duration") {
+    None => Some(None),
+    Some(dur) => music_duration_ratio(dur).map(Some),
+  }
+}
+
+/// Parse a canonical measure event (`MusicNote[<|…|>]` or `MusicRest[<|…|>]`).
+fn parse_measure_event(expr: &Expr) -> Option<MeasureEvent> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let Expr::Association(pairs) = args.first()? else {
+    return None;
+  };
+  match name.as_str() {
+    "MusicNote" => {
+      let pitch = assoc_get(pairs, "Pitch")?.clone();
+      Some(MeasureEvent::Note(pitch, explicit_duration(pairs)?))
+    }
+    "MusicRest" => Some(MeasureEvent::Rest(explicit_duration(pairs)?)),
+    _ => None,
+  }
+}
+
+/// Build the beat-annotated `MusicDuration[<|…|>]` for a measure event. The
+/// stored `"Duration"` key is kept only for events that were given an explicit
+/// value; every event gains `"BeatDuration"` and `"Beats"`.
+fn beat_annotated_duration(
+  explicit: Option<Ratio>,
+  beat_duration: Ratio,
+  beats: Ratio,
+) -> Expr {
+  let mut pairs = Vec::new();
+  if let Some(value) = explicit {
+    pairs.push(("Duration", ratio_expr(value)));
+  }
+  pairs.push(("BeatDuration", ratio_expr(beat_duration)));
+  pairs.push(("Beats", ratio_expr(beats)));
+  music_assoc("MusicDuration", pairs)
+}
+
+/// Rebuild a measure event as its beat-annotated canonical object.
+fn annotate_event(
+  event: &MeasureEvent,
+  beat_duration: Ratio,
+  beats: Ratio,
+) -> Expr {
+  match event {
+    MeasureEvent::Note(pitch, explicit) => music_assoc(
+      "MusicNote",
+      vec![
+        ("Pitch", pitch.clone()),
+        (
+          "Duration",
+          beat_annotated_duration(*explicit, beat_duration, beats),
+        ),
+      ],
+    ),
+    MeasureEvent::Rest(explicit) => music_assoc(
+      "MusicRest",
+      vec![(
+        "Duration",
+        beat_annotated_duration(*explicit, beat_duration, beats),
+      )],
+    ),
+  }
+}
+
+/// `MusicMeasure[{events…}, MusicTimeSignature[n, d]]` — resolve the measure's
+/// rhythm against its meter.
+///
+/// The beat unit follows the meter: a *compound* meter (numerator divisible by
+/// three, with numerator ≥ 6 or denominator ≥ 8, e.g. 6/8, 9/8, 6/4, 3/8)
+/// beats in dotted values (`BeatDuration = 3/d`, `numerator/3` beats per
+/// measure); every other (*simple*) meter beats in `1/d` with `numerator`
+/// beats per measure. A default note or rest occupies one beat.
+///
+/// When the events' total beats exceed the measure, the `MusicMeasure::measdur`
+/// warning is emitted and the expression is returned in its non-associated
+/// form. Otherwise the measure is packed into
+/// `MusicMeasure[<|"NoteList" -> {…}, "TimeSignature" -> …|>]`, each event
+/// annotated with its `BeatDuration`/`Beats`, the final event stretched (or a
+/// padding rest appended) to fill the measure exactly. Anything that is not a
+/// resolvable list of notes/rests with a canonical time signature is left
+/// symbolic (`None`).
+pub fn music_measure(args: &[Expr]) -> Option<Expr> {
+  let [Expr::List(events_raw), timesig] = args else {
+    return None;
+  };
+  let (numer, denom) = time_signature_parts(timesig)?;
+
+  // Simple vs. compound meter fixes the beat unit and the beats per measure.
+  let compound = numer % 3 == 0 && (numer >= 6 || denom >= 8);
+  let beat_duration: Ratio = if compound {
+    reduce(3, denom)
+  } else {
+    reduce(1, denom)
+  };
+  let capacity: Ratio = if compound {
+    reduce(numer, 3)
+  } else {
+    (numer, 1)
+  };
+
+  let events: Vec<MeasureEvent> = events_raw
+    .iter()
+    .map(parse_measure_event)
+    .collect::<Option<_>>()?;
+  if events.is_empty() {
+    return None;
+  }
+
+  // Nominal beats: an explicit duration measures `duration / beatDuration`
+  // beats; a default event is one beat.
+  let nominal: Vec<Ratio> = events
+    .iter()
+    .map(|e| match e {
+      MeasureEvent::Note(_, Some(v)) | MeasureEvent::Rest(Some(v)) => {
+        ratio_mul(*v, (beat_duration.1, beat_duration.0))
+      }
+      _ => (1, 1),
+    })
+    .collect();
+  let total = nominal.iter().fold((0, 1), |acc, &b| ratio_add(acc, b));
+
+  // Overfull: warn and return the non-associated form unchanged.
+  if ratio_cmp(total, capacity) == std::cmp::Ordering::Greater {
+    crate::emit_message_to_stdout(&format!(
+      "MusicMeasure::measdur: The total duration of beats {} exceeds the \
+       allowed number of beats per measure {}.",
+      format_ratio(total),
+      capacity.0,
+    ));
+    return Some(Expr::FunctionCall {
+      name: "MusicMeasure".to_string(),
+      args: vec![Expr::List(events_raw.clone()), timesig.clone()].into(),
+    });
+  }
+
+  // Fill the measure to exactly `capacity` beats.
+  let deficit = ratio_sub(capacity, total);
+  let last = events.len() - 1;
+  let last_is_elastic = !events[last].is_explicit();
+
+  let mut note_list: Vec<Expr> = Vec::with_capacity(events.len() + 1);
+  for (i, event) in events.iter().enumerate() {
+    let beats = if i == last && last_is_elastic {
+      ratio_add(nominal[i], deficit)
+    } else {
+      nominal[i]
+    };
+    note_list.push(annotate_event(event, beat_duration, beats));
+  }
+  // A rigid final event cannot stretch, so pad the remainder with a rest.
+  if deficit != (0, 1) && !last_is_elastic {
+    let pad = MeasureEvent::Rest(Some(ratio_mul(deficit, beat_duration)));
+    note_list.push(annotate_event(&pad, beat_duration, deficit));
+  }
+
+  Some(music_assoc(
+    "MusicMeasure",
+    vec![
+      ("NoteList", Expr::List(note_list.into())),
+      ("TimeSignature", timesig.clone()),
+    ],
+  ))
+}
+
+/// Render a beat count the way the Wolfram Language prints it in the
+/// `MusicMeasure::measdur` message (an integer, or `n/d` for a fraction).
+fn format_ratio((n, d): Ratio) -> String {
+  if d == 1 {
+    n.to_string()
+  } else {
+    format!("{}/{}", n, d)
+  }
 }
 
 #[cfg(test)]

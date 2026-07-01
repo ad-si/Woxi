@@ -1,0 +1,8 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+MusicTimeSignature[<|Numerator -> 3, Denominator -> 4|>]
+MusicRest[<|Duration -> MusicDuration[<|Duration -> 1/2|>]|>]
+MusicMeasure[<|NoteList -> {MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>], Duration -> MusicDuration[<|Duration -> 1/2, BeatDuration -> 1/4, Beats -> 2|>]|>], MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> D|>], Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 2|>]|>]}, TimeSignature -> MusicTimeSignature[<|Numerator -> 4, Denominator -> 4|>]|>]
+MusicMeasure[<|NoteList -> {MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>], Duration -> MusicDuration[<|BeatDuration -> 3/8, Beats -> 1|>]|>], MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> C|>], Duration -> MusicDuration[<|BeatDuration -> 3/8, Beats -> 1|>]|>]}, TimeSignature -> MusicTimeSignature[<|Numerator -> 6, Denominator -> 8|>]|>]

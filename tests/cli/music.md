@@ -271,6 +271,43 @@ $ wo 'StringCount[ExportString[MusicVoice[{"C", "D", "E", "F", MusicTimeSignatur
 ```
 
 
+## Measures and time signatures
+
+`MusicTimeSignature[n, d]` canonicalizes to its `Numerator`/`Denominator`
+association, and a `MusicRest` to its own association form.
+
+```scrut
+$ wo 'MusicTimeSignature[3, 4]'
+MusicTimeSignature[<|Numerator -> 3, Denominator -> 4|>]
+```
+
+```scrut
+$ wo 'MusicRest[1/2]'
+MusicRest[<|Duration -> MusicDuration[<|Duration -> 1/2|>]|>]
+```
+
+`MusicMeasure[{events…}, MusicTimeSignature[…]]` resolves the events' rhythm
+against the meter, annotating each with its `BeatDuration` and `Beats` and
+stretching the final note to fill the bar (an explicit half note is two quarter
+beats; the trailing default note grows to fill the remaining two beats of 4/4).
+
+```scrut
+$ wo 'MusicMeasure[{MusicNote["E", 1/2], MusicNote["D"]}, MusicTimeSignature[4, 4]]'
+MusicMeasure[<|NoteList -> {MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>], Duration -> MusicDuration[<|Duration -> 1/2, BeatDuration -> 1/4, Beats -> 2|>]|>], MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> D|>], Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 2|>]|>]}, TimeSignature -> MusicTimeSignature[<|Numerator -> 4, Denominator -> 4|>]|>]
+```
+
+When the events overflow the measure — a half note is two beats, so E + C + D
+totals four beats in a three-beat 3/4 bar — `MusicMeasure::measdur` warns and
+the expression is returned unresolved.
+
+```scrut {output_stream: combined}
+$ wo 'MusicMeasure[{MusicNote["E"], MusicNote["C", 1/2], MusicNote["D"]}, MusicTimeSignature[3, 4]]'
+
+MusicMeasure::measdur: The total duration of beats 4 exceeds the allowed number of beats per measure 3.
+MusicMeasure[{MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>]|>], MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> C|>], Duration -> MusicDuration[<|Duration -> 1/2|>]|>], MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> D|>]|>]}, MusicTimeSignature[<|Numerator -> 3, Denominator -> 4|>]]
+```
+
+
 ## Exporting to MIDI
 
 `Export[…, obj]` to a `.mid` file writes a Standard MIDI File. A `MusicScore`

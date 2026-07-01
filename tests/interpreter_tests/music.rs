@@ -212,11 +212,14 @@ fn music_plot_returns_graphics() {
 
 #[test]
 fn bare_music_object_stays_symbolic_in_cli() {
-  // Without ExportString/MusicPlot the CLI keeps the canonical symbolic form
-  // (only the visual hosts auto-render it).
+  // Without ExportString/MusicPlot the CLI keeps the canonical (textual) form
+  // rather than auto-rendering it as a staff — that only happens in visual
+  // hosts. A single-argument note canonicalizes to its association, carrying
+  // the pitch's spelled `Name` when it has an octave.
   assert_eq!(
     interpret("MusicNote[MusicPitch[\"C4\"]]").unwrap(),
-    "MusicNote[MusicPitch[C4]]"
+    "MusicNote[<|Pitch -> \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>]|>]"
   );
 }
 
@@ -224,11 +227,12 @@ fn bare_music_object_stays_symbolic_in_cli() {
 
 #[test]
 fn music_objects_stay_symbolic() {
-  // A single-pitch note (no duration) round-trips as a canonical symbolic
-  // object, and a chord given by an explicit pitch list stays symbolic.
+  // A single-pitch note canonicalizes to its association form; a chord given by
+  // an explicit pitch list stays symbolic.
   assert_eq!(
     interpret("MusicNote[MusicPitch[\"C4\"]]").unwrap(),
-    "MusicNote[MusicPitch[C4]]"
+    "MusicNote[<|Pitch -> \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>]|>]"
   );
   assert_eq!(
     interpret("Head[MusicChord[{MusicPitch[\"C\"]}]]").unwrap(),
@@ -252,11 +256,13 @@ fn music_note_canonicalizes_pitch_and_duration() {
 #[test]
 fn music_note_from_pitch_and_duration_objects() {
   // Pitch/duration given as objects resolve the same way; a named duration maps
-  // to its rhythmic value and an explicit octave is kept.
+  // to its rhythmic value, and an explicit octave keeps the pitch's `Octave`
+  // and spelled `Name`.
   assert_eq!(
     interpret("MusicNote[MusicPitch[\"C4\"], MusicDuration[\"Half\"]]")
       .unwrap(),
-    "MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
+    "MusicNote[<|Pitch -> \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>], \
      Duration -> MusicDuration[<|Duration -> 1/2|>]|>]"
   );
 }
@@ -498,4 +504,144 @@ fn music_chord_dominant_ninth_spelling() {
      MusicPitch[<|Accidental -> -1, Octave -> 4, Key -> B|>], \
      MusicPitch[<|Accidental -> 0, Octave -> 5, Key -> D|>]}"
   );
+}
+
+// ─── MusicTimeSignature / MusicRest ──────────────────────────────────────────
+
+/// `MusicTimeSignature[n, d]` canonicalizes to its Numerator/Denominator
+/// association.
+#[test]
+fn music_time_signature_canonicalizes() {
+  assert_eq!(
+    interpret("MusicTimeSignature[3, 4]").unwrap(),
+    "MusicTimeSignature[<|Numerator -> 3, Denominator -> 4|>]"
+  );
+}
+
+/// `MusicNote[pitch]` with no duration keeps only its `Pitch`.
+#[test]
+fn music_note_single_argument_canonicalizes() {
+  assert_eq!(
+    interpret("MusicNote[\"E\"]").unwrap(),
+    "MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>]|>]"
+  );
+}
+
+/// `MusicRest[duration]` wraps its duration; a bare `MusicRest[]` is an empty
+/// association.
+#[test]
+fn music_rest_canonicalizes() {
+  assert_eq!(
+    interpret("MusicRest[1/2]").unwrap(),
+    "MusicRest[<|Duration -> MusicDuration[<|Duration -> 1/2|>]|>]"
+  );
+  assert_eq!(interpret("MusicRest[]").unwrap(), "MusicRest[<||>]");
+}
+
+// ─── MusicMeasure ────────────────────────────────────────────────────────────
+
+/// A measure whose beats fit packs into `<|NoteList, TimeSignature|>`, each
+/// event annotated with its `BeatDuration`/`Beats`; the final default note is
+/// stretched to fill the measure exactly (E, C fill one beat, D fills two).
+#[test]
+fn music_measure_fills_with_trailing_note() {
+  assert_eq!(
+    interpret(
+      "MusicMeasure[{MusicNote[\"E\"], MusicNote[\"C\"], MusicNote[\"D\"]}, \
+       MusicTimeSignature[4, 4]]"
+    )
+    .unwrap(),
+    "MusicMeasure[<|NoteList -> {\
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>], \
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> C|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>], \
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> D|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 2|>]|>]}, \
+     TimeSignature -> MusicTimeSignature[<|Numerator -> 4, Denominator -> 4|>]|>]"
+  );
+}
+
+/// An explicit trailing duration is rigid, so a padding rest fills the
+/// remainder rather than the note stretching.
+#[test]
+fn music_measure_pads_rigid_tail_with_rest() {
+  assert_eq!(
+    interpret(
+      "MusicMeasure[{MusicNote[\"E\"], MusicNote[\"D\", 1/4]}, \
+       MusicTimeSignature[4, 4]]"
+    )
+    .unwrap(),
+    "MusicMeasure[<|NoteList -> {\
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>], \
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> D|>], \
+     Duration -> MusicDuration[<|Duration -> 1/4, BeatDuration -> 1/4, Beats -> 1|>]|>], \
+     MusicRest[<|Duration -> MusicDuration[<|Duration -> 1/2, BeatDuration -> 1/4, Beats -> 2|>]|>]}, \
+     TimeSignature -> MusicTimeSignature[<|Numerator -> 4, Denominator -> 4|>]|>]"
+  );
+}
+
+/// A compound meter (6/8) beats in dotted quarters: two beats per measure, so
+/// an explicit half note plus a default note also packs cleanly.
+#[test]
+fn music_measure_compound_meter_beat_unit() {
+  assert_eq!(
+    interpret("MusicMeasure[{MusicNote[\"E\"]}, MusicTimeSignature[9, 8]]")
+      .unwrap(),
+    "MusicMeasure[<|NoteList -> {\
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 3/8, Beats -> 3|>]|>]}, \
+     TimeSignature -> MusicTimeSignature[<|Numerator -> 9, Denominator -> 8|>]|>]"
+  );
+}
+
+/// An overfull measure warns with `MusicMeasure::measdur` and returns its
+/// non-associated form (a half note is two quarter beats, so E + C + D is four
+/// beats in a three-beat measure). Regression for the reported example. The
+/// textual (script-mode) result comes from `interpret`; `interpret_with_stdout`
+/// runs in visual mode, where the measure auto-renders as a staff graphic.
+#[test]
+fn music_measure_overfull_warns() {
+  clear_state();
+  assert_eq!(
+    interpret(
+      "MusicMeasure[{MusicNote[\"E\"], MusicNote[\"C\", 1/2], \
+       MusicNote[\"D\"]}, MusicTimeSignature[3, 4]]"
+    )
+    .unwrap(),
+    "MusicMeasure[{\
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> E|>]|>], \
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> C|>], \
+     Duration -> MusicDuration[<|Duration -> 1/2|>]|>], \
+     MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 0, Key -> D|>]|>]}, \
+     MusicTimeSignature[<|Numerator -> 3, Denominator -> 4|>]]"
+  );
+
+  clear_state();
+  let result = interpret_with_stdout(
+    "MusicMeasure[{MusicNote[\"E\"], MusicNote[\"C\", 1/2], MusicNote[\"D\"]}, \
+     MusicTimeSignature[3, 4]]",
+  )
+  .unwrap();
+  assert!(result.warnings.iter().any(|w| w.contains(
+    "MusicMeasure::measdur: The total duration of beats 4 exceeds the \
+     allowed number of beats per measure 3."
+  )));
+}
+
+/// The overfull warning uses the compound-meter beat count: three default
+/// notes are three beats in a two-beat 6/8 measure.
+#[test]
+fn music_measure_overfull_compound_meter() {
+  clear_state();
+  let result = interpret_with_stdout(
+    "MusicMeasure[{MusicNote[\"E\"], MusicNote[\"C\"], MusicNote[\"D\"]}, \
+     MusicTimeSignature[6, 8]]",
+  )
+  .unwrap();
+  assert!(result.warnings.iter().any(|w| w.contains(
+    "MusicMeasure::measdur: The total duration of beats 3 exceeds the \
+     allowed number of beats per measure 2."
+  )));
 }

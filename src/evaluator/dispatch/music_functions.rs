@@ -17,10 +17,11 @@ pub fn dispatch_music_functions(
       Some(Ok(crate::functions::music_ast::music_object_q(args)))
     }
     "MusicPitch" => crate::functions::music_ast::music_pitch(args).map(Ok),
-    // MusicNote[pitch, duration] / MusicDuration[number] / MusicChord[name]
-    // canonicalize to their WL 15 association forms; other arities/argument
-    // shapes are left as canonical symbolic expressions.
-    "MusicNote" if args.len() == 2 => {
+    // MusicNote[pitch[, duration]] / MusicDuration[number] / MusicChord[name] /
+    // MusicTimeSignature[n, d] / MusicRest[[duration]] canonicalize to their
+    // WL 15 association forms; other arities/argument shapes are left as
+    // canonical symbolic expressions.
+    "MusicNote" if args.len() == 1 || args.len() == 2 => {
       crate::functions::music_ast::music_note(args).map(Ok)
     }
     "MusicDuration" if args.len() == 1 => {
@@ -28,6 +29,17 @@ pub fn dispatch_music_functions(
     }
     "MusicChord" if args.len() == 1 => {
       crate::functions::music_ast::music_chord(args).map(Ok)
+    }
+    "MusicTimeSignature" if args.len() == 2 => {
+      crate::functions::music_ast::music_time_signature(args).map(Ok)
+    }
+    "MusicRest" if args.len() <= 1 => {
+      crate::functions::music_ast::music_rest(args).map(Ok)
+    }
+    // MusicMeasure[{events…}, MusicTimeSignature[…]] resolves its rhythm against
+    // the meter; the plain single-argument forms stay symbolic for rendering.
+    "MusicMeasure" if args.len() == 2 => {
+      crate::functions::music_ast::music_measure(args).map(Ok)
     }
     // MusicPlot[obj] draws the object as staff notation, returning a Graphics
     // (which renders as the SVG in visual hosts and as `-Graphics-` in the CLI,
