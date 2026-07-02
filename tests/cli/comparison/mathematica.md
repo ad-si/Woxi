@@ -308,8 +308,8 @@ Woxi does **not** support.
 - `Channel` publish-subscribe framework
 - Cryptography
 - `HTTPRequest`
-- Visualization: `TimelinePlot`, `Dendrogram`, `GeoHistogram`, `AudioPlot`
-- Text: `TextCases`
+- Visualization: `Dendrogram`, `GeoHistogram`
+- Text: `TextCases`, `Transliterate`
 
 ### Version 10.0 (2014)
 

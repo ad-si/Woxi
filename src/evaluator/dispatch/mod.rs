@@ -9894,6 +9894,10 @@ pub fn evaluate_function_call_ast_inner(
         // consumed by the quantum framework, so they are not "unimplemented".
         | "Ket"
         | "Bra"
+        // Audio[data, …] is a symbolic audio object constructor. It stays
+        // unevaluated as its canonical form and is consumed by AudioPlot,
+        // so it is not "unimplemented".
+        | "Audio"
         // Quiz/assessment objects. AssessmentFunction[spec] and
         // QuestionObject[q, assess] are symbolic constructor objects that stay
         // unevaluated until applied to a candidate answer (handled in
