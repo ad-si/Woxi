@@ -3010,3 +3010,113 @@ pub fn mid_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     out_gran.as_deref().unwrap_or("Instant"),
   ))
 }
+
+// ── Notebook-style DateObject panel ─────────────────────────────────────
+
+/// Render `DateObject[…]` as the framed date panel Wolfram notebooks show:
+/// a small calendar icon followed by the formatted date text and — for
+/// instants carrying an explicit numeric time zone — a muted `GMT±h`
+/// suffix. Returns `None` when the date cannot be formatted (symbolic
+/// components), so those stay symbolic.
+pub fn date_object_panel_svg(expr: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "DateObject" {
+    return None;
+  }
+  let text = match date_string_ast(std::slice::from_ref(expr)) {
+    Ok(Expr::String(ref s)) => s.clone(),
+    _ => return None,
+  };
+
+  // Time-zone suffix, shown only when the date has a time of day and an
+  // explicit numeric zone (like the notebook's `… 16:37:38 GMT+0`).
+  let tz_label = match (args.first(), args.last()) {
+    (Some(Expr::List(comps)), Some(tz)) if args.len() >= 2 && comps.len() >= 4 =>
+    {
+      crate::functions::math_ast::try_eval_to_f64(tz).map(|z| {
+        if z == z.trunc() {
+          format!("GMT{}{}", if z < 0.0 { "-" } else { "+" }, z.abs() as i64)
+        } else {
+          format!("GMT{}{}", if z < 0.0 { "-" } else { "+" }, z.abs())
+        }
+      })
+    }
+    _ => None,
+  };
+
+  let theme = crate::functions::graphics::theme();
+  let font_size = 14.0;
+  let char_w = 8.4; // approximate monospace char width at font-size 14
+  let tz_font_size = 11.0;
+  let tz_char_w = char_w * tz_font_size / font_size;
+  let pad_x = 10.0;
+  let icon_w = 14.0;
+  let gap = 7.0;
+  let height = 30.0;
+
+  let text_w = text.chars().count() as f64 * char_w;
+  let tz_w = tz_label
+    .as_ref()
+    .map(|t| 5.0 + t.chars().count() as f64 * tz_char_w)
+    .unwrap_or(0.0);
+  let width = (2.0 * pad_x + icon_w + gap + text_w + tz_w).ceil();
+
+  let mut svg = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" \
+     viewBox=\"0 0 {w} {h}\">",
+    w = width,
+    h = height,
+  );
+  // Panel frame
+  svg.push_str(&format!(
+    "<rect x=\"0.5\" y=\"0.5\" width=\"{}\" height=\"{}\" rx=\"4\" \
+     fill=\"{}\" stroke=\"{}\"/>",
+    width - 1.0,
+    height - 1.0,
+    theme.table_header_bg,
+    theme.framed_border,
+  ));
+  // Calendar icon: body, header separator, and two binder rings
+  let ix = pad_x;
+  let iy = (height - 14.0) / 2.0;
+  svg.push_str(&format!(
+    "<g stroke=\"{c}\" stroke-width=\"1.2\" fill=\"none\">\
+     <rect x=\"{bx:.1}\" y=\"{by:.1}\" width=\"13\" height=\"11.5\" rx=\"1.5\"/>\
+     <line x1=\"{bx:.1}\" y1=\"{hy:.1}\" x2=\"{bx2:.1}\" y2=\"{hy:.1}\"/>\
+     <line x1=\"{r1:.1}\" y1=\"{ry:.1}\" x2=\"{r1:.1}\" y2=\"{ry2:.1}\"/>\
+     <line x1=\"{r2:.1}\" y1=\"{ry:.1}\" x2=\"{r2:.1}\" y2=\"{ry2:.1}\"/>\
+     </g>",
+    c = theme.text_secondary,
+    bx = ix + 0.5,
+    by = iy + 2.5,
+    bx2 = ix + 13.5,
+    hy = iy + 5.5,
+    r1 = ix + 4.0,
+    r2 = ix + 10.0,
+    ry = iy + 0.5,
+    ry2 = iy + 4.0,
+  ));
+  // Date text (dates contain no XML-special characters)
+  let tx = pad_x + icon_w + gap;
+  svg.push_str(&format!(
+    "<text x=\"{tx:.1}\" y=\"{ty:.1}\" font-family=\"monospace\" \
+     font-size=\"{font_size}\" fill=\"{}\" xml:space=\"preserve\">{}</text>",
+    theme.text_primary,
+    text,
+    ty = height / 2.0 + font_size * 0.35,
+  ));
+  if let Some(tz) = tz_label {
+    svg.push_str(&format!(
+      "<text x=\"{x:.1}\" y=\"{ty:.1}\" font-family=\"monospace\" \
+       font-size=\"{tz_font_size}\" fill=\"{}\">{}</text>",
+      theme.text_muted,
+      tz,
+      x = tx + text_w + 5.0,
+      ty = height / 2.0 + font_size * 0.35,
+    ));
+  }
+  svg.push_str("</svg>");
+  Some(svg)
+}

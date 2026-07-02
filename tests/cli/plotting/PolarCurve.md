@@ -4,7 +4,8 @@ Graphics primitive representing the polar curve with radius `r` as a
 function of the angle `t` over the range `t0` to `t1`:
 `PolarCurve[r, {t, t0, t1}]`.
 
-On its own it stays symbolic:
+In the CLI it stays symbolic on its own (graphical front ends like the
+playground and Woxi Studio render it as a graphic, like Wolfram notebooks):
 
 ```scrut
 $ wo 'PolarCurve[1 + Cos[t], {t, 0, 2 Pi}]'

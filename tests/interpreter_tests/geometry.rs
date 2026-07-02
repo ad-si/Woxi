@@ -3285,6 +3285,66 @@ mod region {
     assert!(svg.contains("ellipse"), "Got: {svg}");
   }
 
+  // Region[Style[reg, directives…]] renders the region with the given
+  // directives overriding the default region color.
+  #[test]
+  fn styled_regions_render() {
+    for reg in [
+      "Style[Disk[], Green]",
+      "Style[Disk[], Red, Opacity[0.5]]",
+      "Style[Circle[], Orange]",
+      "Style[Rectangle[], Purple]",
+      "Style[Triangle[], Brown]",
+    ] {
+      assert_eq!(
+        interpret(&format!("Region[{reg}]")).unwrap(),
+        "-Graphics-",
+        "Region[{reg}]"
+      );
+    }
+    assert_eq!(
+      interpret("Region[Style[Ball[], Yellow]]").unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  #[test]
+  fn styled_region_applies_color() {
+    let svg =
+      interpret("ExportString[Region[Style[Disk[], Green]], \"SVG\"]")
+        .unwrap();
+    assert!(
+      svg.contains("rgb(0,255,0)"),
+      "Style color should override the default region color, got: {svg}"
+    );
+  }
+
+  // Opacity alone keeps the default region fill color.
+  #[test]
+  fn styled_region_without_color_keeps_default() {
+    let svg =
+      interpret("ExportString[Region[Style[Disk[], Opacity[0.5]]], \"SVG\"]")
+        .unwrap();
+    assert!(
+      svg.contains("opacity"),
+      "Opacity directive should apply, got: {svg}"
+    );
+    assert!(
+      svg.contains("rgb(160,213,234)"),
+      "Default region color should remain, got: {svg}"
+    );
+  }
+
+  // A Style wrapping an undrawable region stays unevaluated (Style is
+  // display-stripped in the textual echo, like elsewhere).
+  #[test]
+  fn styled_invalid_region_unevaluated() {
+    assert_eq!(
+      interpret("Region[Style[Disk[{a, b}], Green]]").unwrap(),
+      "Region[Disk[{a, b}]]"
+    );
+  }
+
   // The SVG must be captured for graphical front ends (playground,
   // JupyterLite, Woxi Studio all read InterpretResult::graphics).
   #[test]

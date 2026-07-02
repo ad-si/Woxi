@@ -1660,6 +1660,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         // from VoronoiMesh, or Graphics that stayed symbolic for Show merging).
         // Must run before other render passes that expect Expr::Graphics.
         let result_expr = render_graphics_fc_if_needed(result_expr);
+        // Curve objects (PolarCurve, FilledPolarCurve) display as rendered
+        // graphics in visual hosts (playground, studio), like in Wolfram
+        // notebooks. The CLI keeps the symbolic echo to match wolframscript.
+        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          render_polar_curve_if_needed(result_expr)
+        } else {
+          result_expr
+        };
         // If the result is a Sound built from Play[...] segments, synthesize a
         // playable WAV and embed it as an <audio> element (visual hosts only —
         // CLI mode keeps the Sound[...] expression, which renders as -Sound-).
@@ -1680,6 +1688,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         // musical-staff SVGs (visual mode only — CLI keeps them symbolic).
         let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
           render_music_if_needed(result_expr)
+        } else {
+          result_expr
+        };
+        // Render DateObject results (e.g. from RandomDate, Now) as the
+        // framed date panel Wolfram notebooks show (visual mode only —
+        // CLI keeps the symbolic form to match wolframscript).
+        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          render_date_object_if_needed(result_expr)
         } else {
           result_expr
         };
@@ -2026,6 +2042,20 @@ fn render_music_if_needed(expr: syntax::Expr) -> syntax::Expr {
     && let Some(svg) = functions::music_render::music_list_to_svg(&expr)
   {
     return graphics_result(svg);
+  }
+  expr
+}
+
+/// If `expr` is a `DateObject[…]` (e.g. from RandomDate or Now), render it
+/// as the framed date panel Wolfram notebooks show. Visual hosts only —
+/// the CLI keeps the symbolic form. Dates with symbolic components stay
+/// symbolic.
+fn render_date_object_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if let syntax::Expr::FunctionCall { ref name, .. } = expr
+    && name == "DateObject"
+    && let Some(svg) = functions::datetime_ast::date_object_panel_svg(&expr)
+  {
+    return graphics_result_with_head(svg, "DateObject");
   }
   expr
 }
@@ -2455,6 +2485,23 @@ fn render_treeform_if_needed(expr: syntax::Expr) -> syntax::Expr {
         Ok(result) => result,
         Err(_) => expr,
       }
+    }
+    _ => expr,
+  }
+}
+
+/// If `expr` is a top-level `PolarCurve[…]` or `FilledPolarCurve[…]` call,
+/// render it as a Graphics SVG (visual mode only — the CLI keeps the
+/// symbolic form to match wolframscript). Invalid curve arguments stay
+/// symbolic.
+fn render_polar_curve_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if (name == "PolarCurve" || name == "FilledPolarCurve")
+        && !args.is_empty() =>
+    {
+      functions::graphics::polar_curve_to_graphics(name, args)
+        .unwrap_or(expr)
     }
     _ => expr,
   }

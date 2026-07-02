@@ -1759,25 +1759,29 @@ fn parse_bezier(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
 /// false) or the region it encloses (`filled` = true, used for
 /// FilledPolarCurve). The radius expression is sampled numerically over
 /// the angle range and converted to Cartesian coordinates.
+/// FilledPolarCurve[r, t] (bare variable, no range) fills the region
+/// enclosed over the full period {t, 0, 2 Pi}.
 fn parse_polar_curve(
   args: &[Expr],
   style: &StyleState,
   prims: &mut Vec<Primitive>,
   filled: bool,
 ) {
-  let Expr::List(iter) = &args[1] else {
-    return;
-  };
-  if iter.len() != 3 {
-    return;
-  }
-  let Expr::Identifier(var) = &iter[0] else {
-    return;
-  };
-  let (Some(t_min), Some(t_max)) =
-    (expr_to_f64(&iter[1]), expr_to_f64(&iter[2]))
-  else {
-    return;
+  let (var, t_min, t_max) = match &args[1] {
+    Expr::List(iter) if iter.len() == 3 => {
+      let Expr::Identifier(var) = &iter[0] else {
+        return;
+      };
+      let (Some(t_min), Some(t_max)) =
+        (expr_to_f64(&iter[1]), expr_to_f64(&iter[2]))
+      else {
+        return;
+      };
+      (var, t_min, t_max)
+    }
+    // FilledPolarCurve[r, t] spans the full period 0…2π.
+    Expr::Identifier(var) if filled => (var, 0.0, 2.0 * std::f64::consts::PI),
+    _ => return,
   };
   if !t_min.is_finite() || !t_max.is_finite() || t_min == t_max {
     return;
@@ -1807,6 +1811,44 @@ fn parse_polar_curve(
       segments: vec![points],
       style: style.clone(),
     });
+  }
+}
+
+/// Render a top-level `PolarCurve[…]` / `FilledPolarCurve[…]` call as a
+/// Graphics expression. Visual hosts (playground, studio, jupyter) display
+/// curve objects graphically like Wolfram notebooks; the CLI keeps the
+/// symbolic echo. Returns `None` when the arguments don't describe a
+/// renderable curve (symbolic bounds etc.), so those stay symbolic.
+pub fn polar_curve_to_graphics(name: &str, args: &[Expr]) -> Option<Expr> {
+  let expr = Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  // Check that the arguments actually parse into a drawable primitive
+  // before rendering — otherwise an invalid call would show up as an
+  // empty graphic instead of its symbolic form.
+  let mut style = StyleState::default();
+  let mut prims = Vec::new();
+  let mut errors = Vec::new();
+  collect_primitives(&expr, &mut style, &mut prims, &mut errors);
+  if prims.is_empty() {
+    return None;
+  }
+  let rendered = graphics_ast(std::slice::from_ref(&expr)).ok()?;
+  if let Expr::Graphics {
+    svg, is_3d, source, ..
+  } = &rendered
+  {
+    // Report the curve head (like Region does) while rendering
+    // identically to the wrapping Graphics.
+    Some(Expr::Graphics {
+      svg: svg.clone(),
+      is_3d: *is_3d,
+      source: source.clone(),
+      head: Some(name.to_string()),
+    })
+  } else {
+    None
   }
 }
 

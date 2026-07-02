@@ -2441,3 +2441,69 @@ mod mid_date {
     );
   }
 }
+
+// DateObject results display as a framed date panel in visual hosts
+// (playground, studio — anything driven by interpret_with_stdout), like
+// Wolfram notebooks. The CLI keeps the symbolic echo.
+mod date_object_panel {
+  use super::*;
+
+  #[test]
+  fn date_object_renders_panel_in_visual_mode() {
+    let result =
+      woxi::interpret_with_stdout("DateObject[{2026, 7, 2}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.expect("no captured graphics");
+    assert!(svg.starts_with("<svg"), "Got: {svg}");
+    assert!(svg.contains("Thu 2 Jul 2026"), "Got: {svg}");
+  }
+
+  #[test]
+  fn instant_panel_shows_time_and_zone() {
+    let result = woxi::interpret_with_stdout(
+      "DateObject[{2026, 7, 2, 16, 37, 38.83}, Instant, Gregorian, 0.]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.expect("no captured graphics");
+    assert!(svg.contains("Thu 2 Jul 2026 16:37:38"), "Got: {svg}");
+    assert!(svg.contains("GMT+0"), "Got: {svg}");
+  }
+
+  #[test]
+  fn random_date_renders_panel_in_visual_mode() {
+    let result = woxi::interpret_with_stdout("RandomDate[]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.expect("no captured graphics");
+    assert!(svg.starts_with("<svg"), "Got: {svg}");
+  }
+
+  // ExportString renders the panel, not the typeset symbolic text.
+  #[test]
+  fn export_string_svg() {
+    let svg =
+      interpret("ExportString[DateObject[{2026, 7, 2}], \"SVG\"]").unwrap();
+    assert!(svg.starts_with("<svg"), "Got: {svg}");
+    assert!(svg.contains("Thu 2 Jul 2026"), "Got: {svg}");
+  }
+
+  // The CLI (plain interpret) keeps the symbolic form, matching
+  // wolframscript.
+  #[test]
+  fn stays_symbolic_in_cli_mode() {
+    assert_eq!(
+      interpret("DateObject[{2026, 7, 2}]").unwrap(),
+      "DateObject[{2026, 7, 2}, Day]"
+    );
+  }
+
+  // Symbolic components cannot be formatted — keep the textual echo
+  // even in visual mode.
+  #[test]
+  fn symbolic_date_stays_text_in_visual_mode() {
+    let result =
+      woxi::interpret_with_stdout("DateObject[{y, 7, 2}]").unwrap();
+    assert_eq!(result.result, "DateObject[{y, 7, 2}, Day]");
+    assert!(result.graphics.is_none());
+  }
+}
