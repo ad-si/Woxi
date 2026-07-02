@@ -1242,6 +1242,12 @@ pub fn apply_curried_call(
         let new_args =
           vec![func_args[0].clone(), args[0].clone(), func_args[1].clone()];
         evaluate_function_call_ast(name, &new_args)
+      } else if name == "ReplaceAt" && func_args.len() == 2 && args.len() == 1 {
+        // ReplaceAt[rules, pos][expr] -> ReplaceAt[expr, rules, pos]. Unlike
+        // MapAt, ReplaceAt takes the subject as its FIRST argument.
+        let new_args =
+          vec![args[0].clone(), func_args[0].clone(), func_args[1].clone()];
+        evaluate_function_call_ast(name, &new_args)
       } else if name == "Key" && func_args.len() == 1 && args.len() == 1 {
         // Key[k][assoc] — extract value for key k from association
         let key = &func_args[0];
