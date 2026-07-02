@@ -947,6 +947,28 @@ mod interpreter_tests {
     }
   }
 
+  #[test]
+  fn graphics_directives_stay_symbolic_without_warning() {
+    // Graphics style directives describe how something is drawn rather than a
+    // value to compute, so wolframscript leaves them unevaluated as their
+    // canonical form. They must NOT emit a spurious "not yet implemented"
+    // warning (like Glow/EdgeForm/Opacity already behave).
+    let cases = [
+      ("DropShadowing[True]", "DropShadowing[True]"),
+      ("DropShadowing[False]", "DropShadowing[False]"),
+      ("DropShadowing[]", "DropShadowing[]"),
+    ];
+    for (input, expected) in cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, expected, "result mismatch for {input}");
+      assert!(
+        !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+        "unexpected 'not yet implemented' warning for {input}: {:?}",
+        r.warnings
+      );
+    }
+  }
+
   mod case_helpers;
 
   mod algebra;
