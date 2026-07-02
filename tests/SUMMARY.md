@@ -44,6 +44,7 @@
       - [`StringTakeDrop`](strings/manipulation/StringTakeDrop.md)
       - [`ToLowerCase`](strings/manipulation/ToLowerCase.md)
       - [`ToUpperCase`](strings/manipulation/ToUpperCase.md)
+      - [`Transliterate`](strings/manipulation/Transliterate.md)
     - [Matching & Searching](strings/matching.md)
       - [`DamerauLevenshteinDistance`](strings/matching/DamerauLevenshteinDistance.md)
       - [`DictionaryWordQ`](strings/matching/DictionaryWordQ.md)

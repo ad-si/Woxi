@@ -309,7 +309,7 @@ Woxi does **not** support.
 - Cryptography
 - `HTTPRequest`
 - Visualization: `TimelinePlot`, `Dendrogram`, `GeoHistogram`, `AudioPlot`
-- Text: `TextCases`, `Transliterate`
+- Text: `TextCases`
 
 ### Version 10.0 (2014)
 
