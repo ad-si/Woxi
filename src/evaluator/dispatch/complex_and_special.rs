@@ -2333,6 +2333,73 @@ pub fn dispatch_complex_and_special(
       }
     }
 
+    // Around[dist] — an approximate number from a distribution:
+    // Around[N[Mean[dist]], N[StandardDeviation[dist]]].
+    // Around[Interval[{a, b}]] treats the interval as a uniform distribution:
+    // Around[(a+b)/2, (b-a)/(2 Sqrt[3])].
+    "Around" if args.len() == 1 => {
+      let unevaluated = || {
+        Some(Ok(Expr::FunctionCall {
+          name: "Around".to_string(),
+          args: args.to_vec().into(),
+        }))
+      };
+      return match &args[0] {
+        Expr::FunctionCall {
+          name: iname,
+          args: iargs,
+        } if iname == "Interval" && iargs.len() == 1 => {
+          if let Expr::List(bounds) = &iargs[0]
+            && bounds.len() == 2
+            && let (Some(a), Some(b)) = (
+              crate::functions::math_ast::try_eval_to_f64(&bounds[0]),
+              crate::functions::math_ast::try_eval_to_f64(&bounds[1]),
+            )
+          {
+            let value = (a + b) / 2.0;
+            let uncertainty = (b - a).abs() / (2.0 * 3f64.sqrt());
+            if uncertainty == 0.0 {
+              return Some(Ok(Expr::Real(value)));
+            }
+            return Some(Ok(Expr::FunctionCall {
+              name: "Around".to_string(),
+              args: vec![Expr::Real(value), Expr::Real(uncertainty)].into(),
+            }));
+          }
+          unevaluated()
+        }
+        Expr::FunctionCall { name: dname, .. }
+          if dname.ends_with("Distribution") =>
+        {
+          let numeric_of = |stat: &str| -> Option<f64> {
+            let expr = Expr::FunctionCall {
+              name: "N".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: stat.to_string(),
+                args: vec![args[0].clone()].into(),
+              }]
+              .into(),
+            };
+            let value = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+            crate::functions::math_ast::try_eval_to_f64(&value)
+          };
+          if let (Some(mean), Some(sd)) =
+            (numeric_of("Mean"), numeric_of("StandardDeviation"))
+          {
+            if sd == 0.0 {
+              return Some(Ok(Expr::Real(mean)));
+            }
+            return Some(Ok(Expr::FunctionCall {
+              name: "Around".to_string(),
+              args: vec![Expr::Real(mean), Expr::Real(sd)].into(),
+            }));
+          }
+          unevaluated()
+        }
+        _ => unevaluated(),
+      };
+    }
+
     // Around[value, uncertainty] — convert integer value to real when uncertainty is real
     // Around[{v1, v2, …}, u] threads over the list of central values, giving
     // each the same uncertainty: {Around[v1, u], Around[v2, u], …}.
@@ -2375,22 +2442,52 @@ pub fn dispatch_complex_and_special(
         }
       }
       // A zero uncertainty collapses to the bare value (Around[5, 0] -> 5,
-      // Around[5., 0.] -> 5.), matching wolframscript.
+      // Around[5., 0.] -> 5.), matching wolframscript. The asymmetric
+      // Around[x, {0, 0}] collapses the same way.
+      fn is_zero_num(e: &Expr) -> bool {
+        matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(z) if *z == 0.0)
+      }
       let zero_uncertainty = new_args.len() == 2
         && match &new_args[1] {
-          Expr::Integer(0) => true,
-          Expr::Real(z) => *z == 0.0,
-          _ => false,
+          Expr::List(items) => {
+            items.len() == 2 && items.iter().all(is_zero_num)
+          }
+          other => is_zero_num(other),
         };
       if zero_uncertainty {
         return Some(Ok(new_args[0].clone()));
       }
       // Around stores its central value and uncertainty as machine reals, so
-      // integer arguments are promoted to Real: Around[5, 1] -> Around[5., 1.]
-      // (matching wolframscript). Symbolic arguments are left untouched.
+      // exact arguments are promoted to Real: Around[5, 1] -> Around[5., 1.],
+      // Around[3/4, 1/8] -> Around[0.75, 0.125] (matching wolframscript). The
+      // components of an asymmetric {δ₋, δ₊} uncertainty are promoted the same
+      // way. Symbolic arguments are left untouched.
+      fn promote_to_real(a: &mut Expr) {
+        match a {
+          Expr::Integer(n) => *a = Expr::Real(*n as f64),
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1])
+              && *d != 0
+            {
+              *a = Expr::Real(*n as f64 / *d as f64);
+            }
+          }
+          _ => {}
+        }
+      }
       for a in new_args.iter_mut() {
-        if let Expr::Integer(n) = a {
-          *a = Expr::Real(*n as f64);
+        if let Expr::List(items) = a {
+          if items.len() == 2 {
+            let mut promoted = items.to_vec();
+            for item in promoted.iter_mut() {
+              promote_to_real(item);
+            }
+            *a = Expr::List(promoted.into());
+          }
+        } else {
+          promote_to_real(a);
         }
       }
       return Some(Ok(Expr::FunctionCall {

@@ -70,7 +70,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ArgMax" => Some((2, 4)),
     "ArgMin" => Some((2, 4)),
     "ArithmeticGeometricMean" => Some((2, 2)),
-    "Around" => Some((2, usize::MAX)),
+    "Around" => Some((1, usize::MAX)),
     "Array" => Some((2, 4)),
     "ArrayComponents" => Some((1, 3)),
     "ArrayDepth" => Some((1, 1)),

@@ -8692,18 +8692,45 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Check if an expression contains any `Expr::Real` (float) value.
-/// (value, uncertainty) of an `Around[v, d]` with numeric components.
-fn as_around(e: &Expr) -> Option<(f64, f64)> {
-  if let Expr::FunctionCall { name, args } = e
-    && name == "Around"
-    && args.len() == 2
-    && let (Some(v), Some(d)) =
-      (around_literal(&args[0]), around_literal(&args[1]))
-  {
-    Some((v, d))
-  } else {
-    None
+/// Numeric payload of an `Around`: the central value together with the
+/// downward/upward uncertainties. A symmetric `Around[v, d]` has
+/// `minus == plus`; the asymmetric `Around[v, {δ₋, δ₊}]` form sets `asym` so
+/// propagated results stay in list form.
+struct AroundNum {
+  value: f64,
+  minus: f64,
+  plus: f64,
+  asym: bool,
+}
+
+fn as_around(e: &Expr) -> Option<AroundNum> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Around" || args.len() != 2 {
+    return None;
+  }
+  let value = around_literal(&args[0])?;
+  match &args[1] {
+    Expr::List(items) if items.len() == 2 => {
+      let minus = around_literal(&items[0])?;
+      let plus = around_literal(&items[1])?;
+      Some(AroundNum {
+        value,
+        minus,
+        plus,
+        asym: true,
+      })
+    }
+    d => {
+      let d = around_literal(d)?;
+      Some(AroundNum {
+        value,
+        minus: d,
+        plus: d,
+        asym: false,
+      })
+    }
   }
 }
 
@@ -8739,6 +8766,37 @@ fn make_around(value: f64, uncertainty: f64) -> Expr {
   }
 }
 
+/// Assemble a propagated result: list-form uncertainty iff any input was
+/// asymmetric, and a vanishing uncertainty collapses to the bare value.
+fn make_around_general(value: f64, minus: f64, plus: f64, asym: bool) -> Expr {
+  if !asym {
+    return make_around(value, minus);
+  }
+  if minus == 0.0 && plus == 0.0 {
+    return Expr::Real(value);
+  }
+  Expr::FunctionCall {
+    name: "Around".to_string(),
+    args: vec![
+      Expr::Real(value),
+      Expr::List(vec![Expr::Real(minus), Expr::Real(plus)].into()),
+    ]
+    .into(),
+  }
+}
+
+/// Contribution of one argument to the (minus, plus) sides of a result,
+/// through the partial derivative `c`: a positive coefficient keeps the
+/// sides aligned, a negative one swaps them (the value's downward excursion
+/// pushes the result upward).
+fn side_contributions(c: f64, a: &AroundNum) -> (f64, f64) {
+  if c >= 0.0 {
+    (c * a.minus, c * a.plus)
+  } else {
+    (-c * a.plus, -c * a.minus)
+  }
+}
+
 /// Around[a, δa] + Around[b, δb] + c = Around[a+b+c, Sqrt[δa²+δb²]] —
 /// first-order error propagation treating each Around as independent. Returns
 /// None unless at least one argument is an Around and every other argument is a
@@ -8748,18 +8806,27 @@ pub fn try_around_plus(args: &[Expr]) -> Option<Expr> {
     return None;
   }
   let mut value = 0.0;
-  let mut var = 0.0;
+  let mut var_minus = 0.0;
+  let mut var_plus = 0.0;
+  let mut asym = false;
   for a in args {
-    if let Some((v, d)) = as_around(a) {
-      value += v;
-      var += d * d;
+    if let Some(ar) = as_around(a) {
+      value += ar.value;
+      var_minus += ar.minus * ar.minus;
+      var_plus += ar.plus * ar.plus;
+      asym |= ar.asym;
     } else if let Some(c) = around_literal(a) {
       value += c;
     } else {
       return None;
     }
   }
-  Some(make_around(value, var.sqrt()))
+  Some(make_around_general(
+    value,
+    var_minus.sqrt(),
+    var_plus.sqrt(),
+    asym,
+  ))
 }
 
 /// Product of Around values and literal scalars, with the absolute partial
@@ -8772,35 +8839,47 @@ pub fn try_around_times(args: &[Expr]) -> Option<Expr> {
     return None;
   }
   let mut value = 1.0;
-  let mut arounds: Vec<(f64, f64)> = Vec::new();
+  let mut arounds: Vec<AroundNum> = Vec::new();
+  let mut asym = false;
   for a in args {
-    if let Some((v, d)) = as_around(a) {
-      if v == 0.0 {
+    if let Some(ar) = as_around(a) {
+      if ar.value == 0.0 {
         return None; // partial (Π/a_i) undefined at 0
       }
-      value *= v;
-      arounds.push((v, d));
+      value *= ar.value;
+      asym |= ar.asym;
+      arounds.push(ar);
     } else if let Some(c) = around_literal(a) {
       value *= c;
     } else {
       return None;
     }
   }
-  let mut var = 0.0;
-  for (v, d) in arounds {
-    let partial = (value / v) * d;
-    var += partial * partial;
+  let mut var_minus = 0.0;
+  let mut var_plus = 0.0;
+  for ar in &arounds {
+    let (m, p) = side_contributions(value / ar.value, ar);
+    var_minus += m * m;
+    var_plus += p * p;
   }
-  Some(make_around(value, var.sqrt()))
+  Some(make_around_general(
+    value,
+    var_minus.sqrt(),
+    var_plus.sqrt(),
+    asym,
+  ))
 }
 
 /// Around[a, δ]^n = Around[a^n, |n·a^(n-1)|·δ] for a literal exponent n.
 pub fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
-  let (a, d) = as_around(base)?;
+  let ar = as_around(base)?;
   let n = around_literal(exp)?;
-  let value = a.powf(n);
-  let uncertainty = (n * a.powf(n - 1.0)).abs() * d;
-  Some(make_around(value, uncertainty))
+  let value = ar.value.powf(n);
+  let (m, p) = side_contributions(n * ar.value.powf(n - 1.0), &ar);
+  if !value.is_finite() || !m.is_finite() || !p.is_finite() {
+    return None;
+  }
+  Some(make_around_general(value, m, p, ar.asym))
 }
 
 /// (f(a), f'(a)) for an elementary unary function, used to propagate an
@@ -8838,12 +8917,13 @@ pub fn try_around_unary(
   if args.len() != 1 {
     return None;
   }
-  let (a, d) = as_around(&args[0])?;
-  let (fa, fpa) = around_func_and_deriv(name, a)?;
+  let ar = as_around(&args[0])?;
+  let (fa, fpa) = around_func_and_deriv(name, ar.value)?;
   if !fa.is_finite() || !fpa.is_finite() {
     return None;
   }
-  Some(Ok(make_around(fa, fpa.abs() * d)))
+  let (m, p) = side_contributions(fpa, &ar);
+  Some(Ok(make_around_general(fa, m, p, ar.asym)))
 }
 
 fn contains_real(expr: &Expr) -> bool {
