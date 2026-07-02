@@ -2500,8 +2500,7 @@ fn render_polar_curve_if_needed(expr: syntax::Expr) -> syntax::Expr {
       if (name == "PolarCurve" || name == "FilledPolarCurve")
         && !args.is_empty() =>
     {
-      functions::graphics::polar_curve_to_graphics(name, args)
-        .unwrap_or(expr)
+      functions::graphics::polar_curve_to_graphics(name, args).unwrap_or(expr)
     }
     _ => expr,
   }

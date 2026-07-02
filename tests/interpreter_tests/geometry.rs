@@ -3311,8 +3311,7 @@ mod region {
   #[test]
   fn styled_region_applies_color() {
     let svg =
-      interpret("ExportString[Region[Style[Disk[], Green]], \"SVG\"]")
-        .unwrap();
+      interpret("ExportString[Region[Style[Disk[], Green]], \"SVG\"]").unwrap();
     assert!(
       svg.contains("rgb(0,255,0)"),
       "Style color should override the default region color, got: {svg}"

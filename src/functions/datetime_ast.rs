@@ -3033,7 +3033,8 @@ pub fn date_object_panel_svg(expr: &Expr) -> Option<String> {
   // Time-zone suffix, shown only when the date has a time of day and an
   // explicit numeric zone (like the notebook's `… 16:37:38 GMT+0`).
   let tz_label = match (args.first(), args.last()) {
-    (Some(Expr::List(comps)), Some(tz)) if args.len() >= 2 && comps.len() >= 4 =>
+    (Some(Expr::List(comps)), Some(tz))
+      if args.len() >= 2 && comps.len() >= 4 =>
     {
       crate::functions::math_ast::try_eval_to_f64(tz).map(|z| {
         if z == z.trunc() {

@@ -2501,8 +2501,7 @@ mod date_object_panel {
   // even in visual mode.
   #[test]
   fn symbolic_date_stays_text_in_visual_mode() {
-    let result =
-      woxi::interpret_with_stdout("DateObject[{y, 7, 2}]").unwrap();
+    let result = woxi::interpret_with_stdout("DateObject[{y, 7, 2}]").unwrap();
     assert_eq!(result.result, "DateObject[{y, 7, 2}, Day]");
     assert!(result.graphics.is_none());
   }
