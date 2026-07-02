@@ -12,7 +12,7 @@ env:
 jobs:
   # Fast correctness suite — mirrors `make test`. The ~24 heavy script
   # snapshots are `#[ignore]`d (see `slow_script_test!`) and run in the
-  # `test-slow` job below instead.
+  # nightly workflow (nightly.yml) instead.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -22,16 +22,3 @@ jobs:
     - uses: taiki-e/install-action@nextest
     - name: Run tests
       run: make test
-
-  # Correctness of the heavy `#[ignore]`d scripts — mirrors `make
-  # test-slow`. Runs in parallel with the fast suite so it never blocks
-  # quick feedback. Performance of these is tracked by the benchmarks.
-  test-slow:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: Swatinem/rust-cache@v2
-    - uses: taiki-e/install-action@nextest
-    - name: Run slow script tests
-      run: make test-slow
