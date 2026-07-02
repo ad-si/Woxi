@@ -3137,7 +3137,10 @@ mod http_request {
   #[test]
   fn two_argument_form_stays_canonical() {
     assert_eq!(
-      interpret(r#"HTTPRequest["https://example.com", <|"Method" -> "POST"|>]"#).unwrap(),
+      interpret(
+        r#"HTTPRequest["https://example.com", <|"Method" -> "POST"|>]"#
+      )
+      .unwrap(),
       "HTTPRequest[https://example.com, <|Method -> POST|>]"
     );
   }

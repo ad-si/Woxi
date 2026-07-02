@@ -59,10 +59,11 @@ pub fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
     _ => return None,
   };
   // The association may carry the URL itself (`<|"URL" -> "…"|>`).
-  let base_url = url.or_else(|| match assoc.and_then(|a| assoc_get(a, "URL")) {
-    Some(Expr::String(u)) => Some(u.as_str()),
-    _ => None,
-  });
+  let base_url =
+    url.or_else(|| match assoc.and_then(|a| assoc_get(a, "URL")) {
+      Some(Expr::String(u)) => Some(u.as_str()),
+      _ => None,
+    });
   let mut parts = base_url.map(parse_url).unwrap_or_default();
   if let Some(pairs) = assoc {
     apply_assoc_overrides(&mut parts, pairs);
@@ -303,15 +304,15 @@ fn build_url(parts: &UrlParts) -> String {
     url.push_str(scheme);
     url.push_str("://");
   }
-  if parts.domain.is_some() {
-    if let Some(user) = &parts.user {
-      url.push_str(user);
-      if let Some(password) = &parts.password {
-        url.push(':');
-        url.push_str(password);
-      }
-      url.push('@');
+  if parts.domain.is_some()
+    && let Some(user) = &parts.user
+  {
+    url.push_str(user);
+    if let Some(password) = &parts.password {
+      url.push(':');
+      url.push_str(password);
     }
+    url.push('@');
   }
   if let Some(domain) = &parts.domain {
     url.push_str(domain);
