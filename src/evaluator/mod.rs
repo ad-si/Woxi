@@ -125,7 +125,7 @@ mod attributes;
 mod binary_ops;
 mod core_eval;
 pub mod dispatch;
-mod function_application;
+pub(crate) mod function_application;
 mod listable;
 mod part_extraction;
 mod pattern_functions;

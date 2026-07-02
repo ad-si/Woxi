@@ -1220,4 +1220,5 @@ mod interpreter_tests {
   mod tabular;
   mod timeseries;
   mod turing_machine;
+  mod wavelets;
 }

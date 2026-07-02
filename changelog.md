@@ -1,5 +1,25 @@
 # Changelog
 
+# Unreleased
+
+- Implement the wavelet analysis functions: the wavelet families
+    (`HaarWavelet`, `DaubechiesWavelet`, `SymletWavelet`, `CoifletWavelet`,
+    `BattleLemarieWavelet`, `BiorthogonalSplineWavelet`,
+    `ReverseBiorthogonalSplineWavelet`, `CDFWavelet`, `MeyerWavelet`,
+    `ShannonWavelet`, `MexicanHatWavelet`, `MorletWavelet`, `GaborWavelet`,
+    `DGaussianWavelet`, `PaulWavelet`), `WaveletFilterCoefficients`,
+    the transforms (`DiscreteWaveletTransform`, `StationaryWaveletTransform`,
+    `DiscreteWaveletPacketTransform`, `StationaryWaveletPacketTransform`,
+    `LiftingWaveletTransform`, `InverseWaveletTransform`,
+    `ContinuousWaveletTransform`, `InverseContinuousWaveletTransform`),
+    the data objects (`DiscreteWaveletData`, `ContinuousWaveletData`,
+    `LiftingFilterData`) with coefficient and property access,
+    coefficient manipulation (`WaveletThreshold`, `WaveletMapIndexed`,
+    `WaveletBestBasis`), the scaling/wavelet functions
+    (`WaveletPhi`, `WaveletPsi`), and the wavelet plots
+    (`WaveletListPlot`, `WaveletMatrixPlot`, `WaveletImagePlot`,
+    `WaveletScalogram`)
+
 # 2025-05-08 - 0.1.0
 
 - Render top-level `PolarCurve[…]` and `FilledPolarCurve[…]` as graphics in
