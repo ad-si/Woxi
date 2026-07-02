@@ -1694,6 +1694,75 @@ mod cases {
       r#"<|"a" -> 1, "b" -> 2, "c" -> f[3], "d" -> 4|>"#,
     );
   }
+  // ReplaceAt[expr, rules, pos] applies `rules` to the parts of expr at the
+  // given position(s), using the same position spec as Position/MapAt.
+  #[test]
+  fn replace_at_single_position() {
+    assert_case(r#"ReplaceAt[{a, a, a, a}, a -> xx, 2]"#, r#"{a, xx, a, a}"#);
+  }
+  #[test]
+  fn replace_at_multiple_positions() {
+    assert_case(
+      r#"ReplaceAt[{a, a, a, a}, a -> xx, {{1}, {4}}]"#,
+      r#"{xx, a, a, xx}"#,
+    );
+  }
+  #[test]
+  fn replace_at_nested_position() {
+    assert_case(
+      r#"ReplaceAt[{{a, a}, {a, a}}, a -> xx, {2, 1}]"#,
+      r#"{{a, a}, {xx, a}}"#,
+    );
+  }
+  #[test]
+  fn replace_at_operator_form() {
+    assert_case(r#"ReplaceAt[a -> xx, 2][{a, a, a, a}]"#, r#"{a, xx, a, a}"#);
+  }
+  #[test]
+  fn replace_at_delayed_rule() {
+    assert_case(
+      r#"ReplaceAt[{1, 2, 3, 4}, x_ :> 2x - 1, {{2}, {4}}]"#,
+      r#"{1, 3, 3, 7}"#,
+    );
+  }
+  #[test]
+  fn replace_at_rule_list() {
+    assert_case(
+      r#"ReplaceAt[{a, b, c, d}, {a -> xx, _ -> yy}, {{1}, {2}, {4}}]"#,
+      r#"{xx, yy, c, yy}"#,
+    );
+  }
+  // Positions address non-list heads by their FullForm parts, exactly like
+  // MapAt: Plus[x, y, z] has part 2 = y.
+  #[test]
+  fn replace_at_symbolic_sum() {
+    assert_case(r#"ReplaceAt[x + y + z, a_ -> a^2, {2}]"#, r#"x + y^2 + z"#);
+  }
+  #[test]
+  fn replace_at_function_head() {
+    assert_case(r#"ReplaceAt[f[a, b, c], b -> x, 2]"#, r#"f[a, x, c]"#);
+  }
+  #[test]
+  fn replace_at_negative_index() {
+    assert_case(
+      r#"ReplaceAt[{a, b, c, d}, x_ -> xx, -1]"#,
+      r#"{a, b, c, xx}"#,
+    );
+  }
+  // An unmatched rule leaves the targeted part unchanged (Replace semantics).
+  #[test]
+  fn replace_at_no_match() {
+    assert_case(r#"ReplaceAt[{a, b, c}, q -> z, 2]"#, r#"{a, b, c}"#);
+  }
+  // An out-of-range position leaves the expression unevaluated under its own
+  // head (not the MapAt delegate it is built on).
+  #[test]
+  fn replace_at_invalid_position() {
+    assert_case(
+      r#"ReplaceAt[{1, 2, 3}, x_ -> x^2, 5]"#,
+      r#"ReplaceAt[{1, 2, 3}, x_ -> x^2, 5]"#,
+    );
+  }
   #[test]
   fn map_indexed_1() {
     assert_case(

@@ -1416,6 +1416,37 @@ pub fn dispatch_list_operations(
     "MapAt" if args.len() == 3 => {
       return Some(list_helpers_ast::map_at_ast(&args[0], &args[1], &args[2]));
     }
+    // ReplaceAt[expr, rules, pos] — apply `rules` to the parts of expr at
+    // position pos, using the same position specification as Position/MapAt.
+    // It is exactly MapAt[Replace[#, rules] &, expr, pos]: each targeted part
+    // is transformed by the first matching rule (unmatched parts are left
+    // unchanged). The 2-argument operator form ReplaceAt[rules, pos] is left
+    // unevaluated here and resolved when applied to an expression.
+    "ReplaceAt" if args.len() == 3 => {
+      let replace_fn = Expr::Function {
+        body: Box::new(Expr::FunctionCall {
+          name: "Replace".to_string(),
+          args: vec![Expr::Slot(1), args[1].clone()].into(),
+        }),
+      };
+      let result = list_helpers_ast::map_at_ast_named(
+        "ReplaceAt",
+        &replace_fn,
+        &args[0],
+        &args[2],
+      );
+      // On an invalid position MapAt returns itself unevaluated; surface the
+      // original ReplaceAt call instead of leaking the delegate's head.
+      return Some(result.map(|r| match &r {
+        Expr::FunctionCall { name, .. } if name == "MapAt" => {
+          Expr::FunctionCall {
+            name: "ReplaceAt".to_string(),
+            args: args.to_vec().into(),
+          }
+        }
+        _ => r,
+      }));
+    }
     "SelectFirst" if args.len() >= 2 && args.len() <= 3 => {
       return Some(list_helpers_ast::select_first_ast(args));
     }
