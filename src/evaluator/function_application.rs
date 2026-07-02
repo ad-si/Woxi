@@ -901,20 +901,23 @@ pub fn apply_curried_call(
         Ok(result)
       }
     }
-    // HTTPRequest[…]["property"] — property access on the symbolic HTTP
-    // request object (e.g. "Method", "URL", "Domain"). Properties Woxi does
-    // not resolve keep the curried form unevaluated.
+    // HTTPRequest[…][prop] — property access on the symbolic HTTP request
+    // object: a property string ("Method", "URL", …), the Method symbol, or
+    // a list of those (yielding an association). Unknown properties emit
+    // HTTPRequest::notprop and keep the curried form unevaluated.
     Expr::FunctionCall {
       name,
       args: func_args,
     } if name == "HTTPRequest"
       && args.len() == 1
-      && matches!(&args[0], Expr::String(_)) =>
+      && matches!(
+        &args[0],
+        Expr::String(_) | Expr::Identifier(_) | Expr::List(_)
+      ) =>
     {
-      let Expr::String(prop) = &args[0] else {
-        unreachable!()
-      };
-      match crate::functions::http_ast::http_request_property(func_args, prop) {
+      match crate::functions::http_ast::http_request_extract(
+        func_args, &args[0],
+      ) {
         Some(result) => Ok(result),
         None => Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),

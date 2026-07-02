@@ -6842,6 +6842,34 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if is_output && name == "FortranForm" && args.len() == 1 {
         return format!("FortranForm[{}]", fmt(&args[0]));
       }
+      // Special case: URLRead's connection Failure. wolframscript renders
+      // the failure object through its URLRead::iurl message template
+      // ("Could not connect to `1`.") with the URL wrapped in the display
+      // boxes the FE would use; script mode prints those boxes literally.
+      if is_output
+        && name == "Failure"
+        && args.len() == 2
+        && let Expr::Association(pairs) = &args[1]
+        && pairs.iter().any(|(k, v)| {
+          matches!(k, Expr::String(s) if s == "MessageTemplate")
+            && matches!(v, Expr::RuleDelayed { replacement, .. }
+              if matches!(&**replacement, Expr::FunctionCall { name, args }
+                if name == "MessageName"
+                  && matches!(&args[..],
+                    [Expr::Identifier(s), Expr::String(t)]
+                      if s == "URLRead" && t == "iurl")))
+        })
+        && let Some(Expr::String(url)) = pairs.iter().find_map(|(k, v)| match k
+        {
+          Expr::String(s) if s == "URL" => Some(v),
+          _ => None,
+        })
+      {
+        return format!(
+          "Could not connect to DisplayForm[TagBox[\"{}\", Short[#1, 3] & ]].",
+          url
+        );
+      }
       // Special case: ByteArray
       if name == "ByteArray" && args.len() == 1 && is_output {
         // OutputForm: ByteArray[<n>]

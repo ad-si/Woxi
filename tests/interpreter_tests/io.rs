@@ -3170,12 +3170,20 @@ mod http_request {
         "https://user:pass@www.example.com:8080/path/to/file.html?a=1&b=2#frag",
       ),
       ("Scheme", "https"),
-      ("UserName", "user"),
+      ("User", "user:pass"),
+      ("Username", "user"),
       ("Password", "pass"),
       ("Domain", "www.example.com"),
+      ("AbsoluteDomain", "https://user:pass@www.example.com:8080"),
+      (
+        "AbsolutePath",
+        "https://user:pass@www.example.com:8080/path/to/file.html",
+      ),
       ("Port", "8080"),
-      ("Path", "/path/to/file.html"),
+      ("Path", "{, path, to, file.html}"),
+      ("PathString", "/path/to/file.html"),
       ("Query", "{a -> 1, b -> 2}"),
+      ("QueryString", "a=1&b=2"),
       ("Fragment", "frag"),
     ] {
       assert_eq!(
@@ -3191,13 +3199,24 @@ mod http_request {
     let req = r#"req = HTTPRequest["https://example.com"];"#;
     for (prop, expected) in [
       ("Method", "GET"),
-      ("Headers", "{}"),
+      ("Headers", "{user-agent -> Wolfram HTTPClient 15.}"),
+      ("UserAgent", "Wolfram HTTPClient 15."),
       ("Body", ""),
+      ("BodyBytes", "{}"),
+      ("BodyByteArray", "ByteArray[<0>]"),
+      ("ContentType", "None"),
+      ("Cookies", "Automatic"),
+      ("FormRules", "None"),
       ("Query", "{}"),
-      ("Path", ""),
+      ("QueryString", "None"),
+      ("Path", "{}"),
+      ("PathString", ""),
+      ("AbsoluteDomain", "https://example.com"),
+      ("AbsolutePath", "https://example.com"),
       ("Port", "None"),
       ("Fragment", "None"),
-      ("UserName", "None"),
+      ("User", "None"),
+      ("Username", "None"),
     ] {
       assert_eq!(
         interpret(&format!(r#"{req} req["{prop}"]"#)).unwrap(),
@@ -3205,6 +3224,98 @@ mod http_request {
         "property {prop}"
       );
     }
+  }
+
+  #[test]
+  fn property_list_yields_association() {
+    assert_eq!(
+      interpret(
+        r#"req = HTTPRequest["https://www.wikipedia.org/"]; req[{"Scheme", "Domain", Method}]"#
+      )
+      .unwrap(),
+      "<|Scheme -> https, Domain -> www.wikipedia.org, Method -> GET|>"
+    );
+  }
+
+  #[test]
+  fn method_symbol_property() {
+    assert_eq!(
+      interpret(r#"HTTPRequest["https://www.wikipedia.org/"][Method]"#)
+        .unwrap(),
+      "GET"
+    );
+  }
+
+  #[test]
+  fn method_symbol_association_key() {
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["https://example.com", <|Method -> "POST"|>]["Method"]"#
+      )
+      .unwrap(),
+      "POST"
+    );
+  }
+
+  #[test]
+  fn unknown_property_in_list_maps_to_failed() {
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["https://www.wikipedia.org/"][{"Scheme", "Bogus"}]"#
+      )
+      .unwrap(),
+      "<|Scheme -> https, Bogus -> $Failed|>"
+    );
+  }
+
+  #[test]
+  fn properties_property_lists_all() {
+    assert_eq!(
+      interpret(r#"HTTPRequest["https://example.com"]["Properties"]"#).unwrap(),
+      "{AbsoluteDomain, AbsolutePath, Body, BodyByteArray, BodyBytes, \
+       ContentType, Cookies, Domain, FormRules, Fragment, Headers, Password, \
+       Path, PathString, Port, Query, QueryString, Scheme, URL, User, \
+       UserAgent, Username, Method}"
+    );
+  }
+
+  #[test]
+  fn explicit_body_sets_default_content_type() {
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["https://example.com", <|"Body" -> ""|>]["ContentType"]"#
+      )
+      .unwrap(),
+      "text/plain;charset=utf-8"
+    );
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["https://example.com", <|"Body" -> "n=3"|>][{"ContentType", "BodyBytes", "BodyByteArray"}]"#
+      )
+      .unwrap(),
+      "<|ContentType -> text/plain;charset=utf-8, BodyBytes -> {110, 61, 51}, BodyByteArray -> ByteArray[<3>]|>"
+    );
+  }
+
+  #[test]
+  fn content_type_and_user_agent_from_headers() {
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["http://x.com/", <|"Headers" -> <|"X-Foo" -> "1", "Content-Type" -> "application/json"|>, Method -> "POST"|>][{"Headers", "UserAgent", "ContentType", "Method"}]"#
+      )
+      .unwrap(),
+      "<|Headers -> {x-foo -> 1, content-type -> application/json, \
+       user-agent -> Wolfram HTTPClient 15.}, \
+       UserAgent -> Wolfram HTTPClient 15., \
+       ContentType -> application/json, Method -> POST|>"
+    );
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["http://x.com/", <|"Headers" -> <|"User-Agent" -> "MyBot/1.0"|>|>][{"Headers", "UserAgent"}]"#
+      )
+      .unwrap(),
+      "<|Headers -> {user-agent -> MyBot/1.0}, UserAgent -> MyBot/1.0|>"
+    );
   }
 
   #[test]
@@ -3220,20 +3331,17 @@ mod http_request {
 
   #[test]
   fn headers_from_association_normalize_to_rule_list() {
-    assert_eq!(
-      interpret(
-        r#"HTTPRequest["https://example.com", <|"Headers" -> <|"Accept" -> "text/html"|>|>]["Headers"]"#
-      )
-      .unwrap(),
-      "{Accept -> text/html}"
-    );
-    assert_eq!(
-      interpret(
-        r#"HTTPRequest["https://example.com", <|"Headers" -> {"Accept" -> "text/html"}|>]["Headers"]"#
-      )
-      .unwrap(),
-      "{Accept -> text/html}"
-    );
+    // Header names are lowercased and wolframscript's default user agent
+    // is appended when none is given.
+    for code in [
+      r#"HTTPRequest["https://example.com", <|"Headers" -> <|"Accept" -> "text/html"|>|>]["Headers"]"#,
+      r#"HTTPRequest["https://example.com", <|"Headers" -> {"Accept" -> "text/html"}|>]["Headers"]"#,
+    ] {
+      assert_eq!(
+        interpret(code).unwrap(),
+        "{accept -> text/html, user-agent -> Wolfram HTTPClient 15.}"
+      );
+    }
   }
 
   #[test]
@@ -3265,8 +3373,12 @@ mod http_request {
       "None"
     );
     assert_eq!(
-      interpret(r#"HTTPRequest["example.com/x"]["Path"]"#).unwrap(),
-      "example.com/x"
+      interpret(
+        r#"HTTPRequest["example.com/x"][{"Path", "PathString", "AbsoluteDomain", "AbsolutePath"}]"#
+      )
+      .unwrap(),
+      "<|Path -> {example.com, x}, PathString -> example.com/x, \
+       AbsoluteDomain -> , AbsolutePath -> example.com/x|>"
     );
   }
 
@@ -3275,6 +3387,195 @@ mod http_request {
     assert_eq!(
       interpret(r#"HTTPRequest["https://example.com"]["Frobnicate"]"#).unwrap(),
       "HTTPRequest[https://example.com, <||>][Frobnicate]"
+    );
+  }
+}
+
+mod url_read {
+  use super::*;
+  use std::io::{Read, Write};
+
+  /// A minimal single-threaded HTTP server for exercising URLRead without
+  /// external network access. Serves `connections` sequential connections;
+  /// each request is answered by `respond(head, body)` where `head` is the
+  /// raw request head (request line + headers).
+  fn serve(
+    connections: usize,
+    respond: impl Fn(&str, &[u8]) -> Vec<u8> + Send + 'static,
+  ) -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+      for _ in 0..connections {
+        let Ok((mut stream, _)) = listener.accept() else {
+          return;
+        };
+        let mut data = Vec::new();
+        let mut buf = [0u8; 4096];
+        let (head_end, body_len) = loop {
+          let Ok(n) = stream.read(&mut buf) else { return };
+          if n == 0 {
+            return;
+          }
+          data.extend_from_slice(&buf[..n]);
+          if let Some(pos) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+            let head = String::from_utf8_lossy(&data[..pos]).into_owned();
+            let len = head
+              .lines()
+              .find_map(|l| {
+                let (name, value) = l.split_once(':')?;
+                name
+                  .eq_ignore_ascii_case("content-length")
+                  .then(|| value.trim().parse::<usize>().ok())?
+              })
+              .unwrap_or(0);
+            break (pos + 4, len);
+          }
+        };
+        while data.len() < head_end + body_len {
+          let Ok(n) = stream.read(&mut buf) else { return };
+          if n == 0 {
+            break;
+          }
+          data.extend_from_slice(&buf[..n]);
+        }
+        let head = String::from_utf8_lossy(&data[..head_end]).into_owned();
+        let body = data[head_end..].to_vec();
+        let response = respond(&head, &body);
+        let _ = stream.write_all(&response);
+      }
+    });
+    port
+  }
+
+  #[test]
+  fn get_returns_http_response_object() {
+    let port = serve(1, |_, _| {
+      b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nX-Test: Yes\r\n\
+        Content-Length: 5\r\nConnection: close\r\n\r\nhello"
+        .to_vec()
+    });
+    assert_eq!(
+      interpret(&format!(
+        r#"URLRead[HTTPRequest["http://127.0.0.1:{port}/"]]"#
+      ))
+      .unwrap(),
+      "HTTPResponse[ByteArray[<5>], <|Headers -> \
+       {{Content-Type, text/plain}, {X-Test, Yes}, {Content-Length, 5}, \
+       {Connection, close}}, StatusCode -> 200, Cookies -> {}|>, \
+       CharacterEncoding -> Automatic]"
+    );
+  }
+
+  #[test]
+  fn plain_url_string_is_accepted() {
+    let port = serve(1, |_, _| {
+      b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".to_vec()
+    });
+    assert_eq!(
+      interpret(&format!(r#"URLRead["http://127.0.0.1:{port}/"]"#)).unwrap(),
+      "HTTPResponse[ByteArray[<0>], <|Headers -> {{Connection, close}}, \
+       StatusCode -> 204, Cookies -> {}|>, CharacterEncoding -> Automatic]"
+    );
+  }
+
+  #[test]
+  fn redirects_are_followed() {
+    let port = serve(2, |head, _| {
+      let path = head
+        .lines()
+        .next()
+        .and_then(|l| l.split(' ').nth(1))
+        .unwrap_or("");
+      if path == "/" {
+        b"HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 0\r\n\
+          Connection: close\r\n\r\n"
+          .to_vec()
+      } else {
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+          .to_vec()
+      }
+    });
+    assert_eq!(
+      interpret(&format!(
+        r#"URLRead[HTTPRequest["http://127.0.0.1:{port}/"]]"#
+      ))
+      .unwrap(),
+      "HTTPResponse[ByteArray[<2>], <|Headers -> {{Content-Length, 2}, \
+       {Connection, close}}, StatusCode -> 200, Cookies -> {}|>, \
+       CharacterEncoding -> Automatic]"
+    );
+  }
+
+  #[test]
+  fn method_body_and_headers_are_sent() {
+    let port = serve(1, |head, body| {
+      let method = head
+        .lines()
+        .next()
+        .and_then(|l| l.split(' ').next())
+        .unwrap_or("");
+      let body = String::from_utf8_lossy(body).into_owned();
+      format!(
+        "HTTP/1.1 200 OK\r\nX-Method: {method}\r\nX-Body: {body}\r\n\
+         Content-Length: 0\r\nConnection: close\r\n\r\n"
+      )
+      .into_bytes()
+    });
+    assert_eq!(
+      interpret(&format!(
+        r#"URLRead[HTTPRequest["http://127.0.0.1:{port}/", <|"Method" -> "POST", "Body" -> "n=3"|>]]"#
+      ))
+      .unwrap(),
+      "HTTPResponse[ByteArray[<0>], <|Headers -> {{X-Method, POST}, \
+       {X-Body, n=3}, {Content-Length, 0}, {Connection, close}}, \
+       StatusCode -> 200, Cookies -> {}|>, CharacterEncoding -> Automatic]"
+    );
+  }
+
+  #[test]
+  fn default_user_agent_is_sent() {
+    // The server echoes the received User-Agent back so the test can
+    // observe what was actually sent on the wire.
+    let port = serve(1, |head, _| {
+      let ua = head
+        .lines()
+        .find_map(|l| {
+          let (name, value) = l.split_once(':')?;
+          name
+            .eq_ignore_ascii_case("user-agent")
+            .then(|| value.trim().to_string())
+        })
+        .unwrap_or_default();
+      format!(
+        "HTTP/1.1 200 OK\r\nX-UA: {ua}\r\nContent-Length: 0\r\n\
+         Connection: close\r\n\r\n"
+      )
+      .into_bytes()
+    });
+    assert_eq!(
+      interpret(&format!(
+        r#"URLRead[HTTPRequest["http://127.0.0.1:{port}/"]]"#
+      ))
+      .unwrap(),
+      "HTTPResponse[ByteArray[<0>], <|Headers -> \
+       {{X-UA, Wolfram HTTPClient 15.}, {Content-Length, 0}, \
+       {Connection, close}}, StatusCode -> 200, Cookies -> {}|>, \
+       CharacterEncoding -> Automatic]"
+    );
+  }
+
+  #[test]
+  fn connection_failure_returns_failure_object() {
+    // Reserved-TLD host: name resolution fails deterministically, matching
+    // wolframscript's URLRead::invhttp + Failure["ConnectionFailure", …].
+    assert_eq!(
+      interpret(
+        r#"URLRead[HTTPRequest["http://nonexistent-woxi-test.invalid/"]]"#
+      )
+      .unwrap(),
+      "Could not connect to DisplayForm[TagBox[\
+       \"http://nonexistent-woxi-test.invalid/\", Short[#1, 3] & ]]."
     );
   }
 }

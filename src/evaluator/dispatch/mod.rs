@@ -9880,6 +9880,10 @@ pub fn evaluate_function_call_ast_inner(
         // unevaluated (matching wolframscript). It is consumed by
         // HTTPRequest/URLBuild-style functions, so it is not "unimplemented".
         | "URL"
+        // HTTPResponse[body, meta, …] is the symbolic response object
+        // produced by URLRead; it stays unevaluated as its canonical form,
+        // so it is not "unimplemented".
+        | "HTTPResponse"
         // KeyValuePattern[…] is a symbolic pattern object whose canonical form
         // stays unevaluated (matching wolframscript). It is consumed by the
         // pattern matcher (MatchQ/Cases/Replace/…), so it is not "unimplemented".

@@ -74,6 +74,12 @@ pub fn dispatch_io_functions(
     "HTTPRequest" if !args.is_empty() => {
       return Some(crate::functions::http_ast::http_request_ast(args));
     }
+    // URLRead[req] / URLRead[url] — send the HTTP request through curl and
+    // return the HTTPResponse object (or Failure["ConnectionFailure", …]).
+    #[cfg(not(target_arch = "wasm32"))]
+    "URLRead" if args.len() == 1 => {
+      return Some(crate::functions::http_ast::url_read_ast(&args[0]));
+    }
     // URLFetch[url] / URLFetch[url, params] — minimal stub.
     // Returns $Failed for URLs that lack a host (e.g. "https://"), matching
     // wolframscript's behavior. Network fetches are out of scope for the
