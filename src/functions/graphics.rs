@@ -5915,7 +5915,7 @@ fn merge_plot_ranges(a: &Expr, b: &Expr) -> Option<Expr> {
 
 /// Implementation of Show[g1, g2, ..., opts...].
 /// Convert MeshRegion vertex/polygon data to Graphics primitives (Polygon with coordinates).
-fn mesh_region_to_graphics_prims(
+pub(crate) fn mesh_region_to_graphics_prims(
   vertices_expr: &Expr,
   primitives_expr: &Expr,
 ) -> Option<Vec<Expr>> {

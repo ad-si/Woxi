@@ -50,6 +50,7 @@ pub mod polynomial_ast;
 pub mod predicate_ast;
 pub mod quantity_ast;
 pub mod query_ast;
+pub mod region;
 pub mod resolve_ast;
 pub mod rsolve_ast;
 pub mod scoping;
