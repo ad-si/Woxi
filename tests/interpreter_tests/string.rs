@@ -2603,7 +2603,7 @@ mod transliterate {
   fn greek_to_ascii() {
     assert_eq!(
       interpret(r#"Transliterate["Αλφαβητικός"]"#).unwrap(),
-      "Alfavitikos"
+      "Alphabetikos"
     );
   }
 
@@ -2614,7 +2614,8 @@ mod transliterate {
       interpret(r#"Transliterate["ΘΑΛΑΣΣΑ"]"#).unwrap(),
       "THALASSA"
     );
-    assert_eq!(interpret(r#"Transliterate["Ψάπφω"]"#).unwrap(), "Psapfo");
+    assert_eq!(interpret(r#"Transliterate["Ψάπφω"]"#).unwrap(), "Psappho");
+    assert_eq!(interpret(r#"Transliterate["Χάος"]"#).unwrap(), "Chaos");
   }
 
   #[test]
@@ -2627,13 +2628,47 @@ mod transliterate {
       interpret(r#"Transliterate["μπουζούκι"]"#).unwrap(),
       "mpouzouki"
     );
+    assert_eq!(interpret(r#"Transliterate["άγγελος"]"#).unwrap(), "angelos");
+    assert_eq!(interpret(r#"Transliterate["ΑΥΤΟΣ"]"#).unwrap(), "AUTOS");
+    // η is not part of the u-diphthong set (unlike ISO 843)
+    assert_eq!(interpret(r#"Transliterate["ηυ"]"#).unwrap(), "ey");
+    // Dialytika does not break the diphthong
+    assert_eq!(interpret(r#"Transliterate["αϋ"]"#).unwrap(), "au");
+    // An accent on the preceding vowel blocks the diphthong,
+    // an accent on υ itself does not
+    assert_eq!(interpret(r#"Transliterate["άυ"]"#).unwrap(), "ay");
+    assert_eq!(interpret(r#"Transliterate["ού"]"#).unwrap(), "ou");
   }
 
   #[test]
   fn polytonic_greek() {
     assert_eq!(
       interpret("Transliterate[\"\u{1F08}ριστοτέλης\"]").unwrap(),
-      "Aristotelis"
+      "Aristoteles"
+    );
+  }
+
+  #[test]
+  fn greek_rough_breathing() {
+    // ἁγιος: rough breathing on a vowel adds a leading h
+    assert_eq!(
+      interpret("Transliterate[\"\u{1F01}γιος\"]").unwrap(),
+      "hagios"
+    );
+    // Ἁγιος: uppercase rough breathing capitalizes the h
+    assert_eq!(
+      interpret("Transliterate[\"\u{1F09}γιος\"]").unwrap(),
+      "Hagios"
+    );
+    // ὑπέρ → hyper
+    assert_eq!(
+      interpret("Transliterate[\"\u{1F51}πέρ\"]").unwrap(),
+      "hyper"
+    );
+    // Ῥώμη: rough breathing on rho puts the h after the r
+    assert_eq!(
+      interpret("Transliterate[\"\u{1FEC}ώμη\"]").unwrap(),
+      "Rhome"
     );
   }
 
