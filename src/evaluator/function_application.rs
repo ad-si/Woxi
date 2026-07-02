@@ -922,6 +922,28 @@ pub fn apply_curried_call(
         }),
       }
     }
+    // Molecule[…]["property"] — property access on a molecule object
+    // (e.g. "AtomCount", "MolecularFormula"). Unsupported properties and
+    // invalid molecules keep the curried form unevaluated.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "Molecule"
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!()
+      };
+      match crate::functions::molecule_ast::molecule_property(func_args, prop)
+      {
+        Some(result) => Ok(result),
+        None => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // TimeSeries[…][t] — value lookup at time `t` (a date or number) or, for a
     // string argument, a path-property accessor (e.g. ts["Values"], ts["Path"]).
     Expr::FunctionCall { name, .. }

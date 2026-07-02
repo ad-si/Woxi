@@ -1558,6 +1558,26 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::element_data::element_data_ast(args);
   }
 
+  // Chemistry: molecules and their properties
+  match name {
+    "Molecule" => {
+      return crate::functions::molecule_ast::molecule_ast(args);
+    }
+    "MoleculeQ" => {
+      return crate::functions::molecule_ast::molecule_q_ast(args);
+    }
+    "AtomList" => {
+      return crate::functions::molecule_ast::atom_list_ast(args);
+    }
+    "BondList" => {
+      return crate::functions::molecule_ast::bond_list_ast(args);
+    }
+    "MoleculeValue" => {
+      return crate::functions::molecule_ast::molecule_value_ast(args);
+    }
+    _ => {}
+  }
+
   // Entity store functions
   match name {
     "EntityStore" => {
@@ -2031,6 +2051,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Offset"
     | "RowBox"
     | "Bond"
+    | "Atom"
     | "Colon"
     | "Cap"
     | "Cup"
