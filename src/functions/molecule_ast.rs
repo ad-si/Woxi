@@ -266,8 +266,7 @@ impl<'a> SmilesParser<'a> {
   fn ring_closure(&mut self, number: u32) -> Option<()> {
     let cur = self.prev?;
     let here = self.pending.take();
-    if let Some(open_pos) =
-      self.rings.iter().position(|(n, _, _)| *n == number)
+    if let Some(open_pos) = self.rings.iter().position(|(n, _, _)| *n == number)
     {
       let (_, open_atom, open_bond) = self.rings.remove(open_pos);
       if open_atom == cur {
@@ -315,9 +314,10 @@ impl<'a> SmilesParser<'a> {
       (sym, false)
     } else if first.is_ascii_lowercase() {
       // aromatic symbols allowed in brackets: b, c, n, o, p, s, se, as, te, si
-      let two = self.bytes.get(self.pos..self.pos + 2).map(|w| {
-        std::str::from_utf8(w).unwrap_or_default().to_string()
-      });
+      let two = self
+        .bytes
+        .get(self.pos..self.pos + 2)
+        .map(|w| std::str::from_utf8(w).unwrap_or_default().to_string());
       match two.as_deref() {
         Some("se") | Some("as") | Some("te") | Some("si") => {
           self.pos += 2;
@@ -632,8 +632,22 @@ fn graph_to_expr(graph: &MolGraph) -> Expr {
   Expr::FunctionCall {
     name: "Molecule".to_string(),
     args: vec![
-      Expr::List(graph.atoms.iter().map(atom_to_expr).collect::<Vec<_>>().into()),
-      Expr::List(graph.bonds.iter().map(bond_to_expr).collect::<Vec<_>>().into()),
+      Expr::List(
+        graph
+          .atoms
+          .iter()
+          .map(atom_to_expr)
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      Expr::List(
+        graph
+          .bonds
+          .iter()
+          .map(bond_to_expr)
+          .collect::<Vec<_>>()
+          .into(),
+      ),
     ]
     .into(),
   }
@@ -650,9 +664,7 @@ fn atom_from_expr(expr: &Expr) -> Option<AtomData> {
         None
       }
     }
-    Expr::Integer(z) => {
-      abbreviation_for_atomic_number(*z).map(AtomData::plain)
-    }
+    Expr::Integer(z) => abbreviation_for_atomic_number(*z).map(AtomData::plain),
     Expr::FunctionCall { name, args } if name == "Atom" && !args.is_empty() => {
       let Expr::String(sym) = &args[0] else {
         return None;
@@ -851,7 +863,9 @@ pub fn molecule_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("MoleculeQ", args));
   }
   let valid = graph_from_molecule_expr(&args[0]).is_some();
-  Ok(Expr::Identifier(if valid { "True" } else { "False" }.to_string()))
+  Ok(Expr::Identifier(
+    if valid { "True" } else { "False" }.to_string(),
+  ))
 }
 
 /// AtomList[mol] — the list of atoms.
@@ -887,9 +901,7 @@ pub fn molecule_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let results: Option<Vec<Expr>> = props
           .iter()
           .map(|p| match p {
-            Expr::String(prop) => {
-              molecule_property_from_expr(&args[0], prop)
-            }
+            Expr::String(prop) => molecule_property_from_expr(&args[0], prop),
             _ => None,
           })
           .collect();
@@ -937,10 +949,20 @@ pub fn molecule_property(mol_args: &[Expr], prop: &str) -> Option<Expr> {
     "AtomCount" => Some(Expr::Integer(graph.atoms.len() as i128)),
     "BondCount" => Some(Expr::Integer(graph.bonds.len() as i128)),
     "AtomList" => Some(Expr::List(
-      graph.atoms.iter().map(atom_to_expr).collect::<Vec<_>>().into(),
+      graph
+        .atoms
+        .iter()
+        .map(atom_to_expr)
+        .collect::<Vec<_>>()
+        .into(),
     )),
     "BondList" => Some(Expr::List(
-      graph.bonds.iter().map(bond_to_expr).collect::<Vec<_>>().into(),
+      graph
+        .bonds
+        .iter()
+        .map(bond_to_expr)
+        .collect::<Vec<_>>()
+        .into(),
     )),
     "MolecularFormula" => Some(Expr::String(molecular_formula(&graph))),
     "NetCharge" => Some(Expr::Integer(

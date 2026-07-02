@@ -138,10 +138,8 @@ mod molecule_tests {
     clear_state();
     // pyrrole: the [nH] nitrogen carries exactly one hydrogen
     assert_eq!(
-      interpret(
-        r#"MoleculeValue[Molecule["c1cc[nH]c1"], "MolecularFormula"]"#
-      )
-      .unwrap(),
+      interpret(r#"MoleculeValue[Molecule["c1cc[nH]c1"], "MolecularFormula"]"#)
+        .unwrap(),
       "C4H5N"
     );
   }
@@ -290,8 +288,7 @@ mod molecule_tests {
       "False"
     );
     assert_eq!(
-      interpret(r#"MoleculeQ[Molecule[{Atom["O"]}, {Bond[{1, 2}]}]]"#)
-        .unwrap(),
+      interpret(r#"MoleculeQ[Molecule[{Atom["O"]}, {Bond[{1, 2}]}]]"#).unwrap(),
       "False"
     );
   }
@@ -328,8 +325,7 @@ mod molecule_tests {
   fn molecule_value_atom_count() {
     clear_state();
     assert_eq!(
-      interpret(r#"MoleculeValue[Molecule["ethanol"], "AtomCount"]"#)
-        .unwrap(),
+      interpret(r#"MoleculeValue[Molecule["ethanol"], "AtomCount"]"#).unwrap(),
       "9"
     );
   }
@@ -381,10 +377,7 @@ mod molecule_tests {
   #[test]
   fn molecule_subvalue_property_access() {
     clear_state();
-    assert_eq!(
-      interpret(r#"Molecule["water"]["AtomCount"]"#).unwrap(),
-      "3"
-    );
+    assert_eq!(interpret(r#"Molecule["water"]["AtomCount"]"#).unwrap(), "3");
     assert_eq!(
       interpret(r#"Molecule["benzene"]["MolecularFormula"]"#).unwrap(),
       "C6H6"

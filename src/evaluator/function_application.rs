@@ -935,8 +935,7 @@ pub fn apply_curried_call(
       let Expr::String(prop) = &args[0] else {
         unreachable!()
       };
-      match crate::functions::molecule_ast::molecule_property(func_args, prop)
-      {
+      match crate::functions::molecule_ast::molecule_property(func_args, prop) {
         Some(result) => Ok(result),
         None => Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
