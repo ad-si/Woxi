@@ -503,6 +503,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GeneratingFunction" => Some((3, 3)),
     "GeometricDistribution" => Some((1, 1)),
     "GeometricMean" => Some((1, 1)),
+    "GeometricTest" => Some((2, usize::MAX)),
     "Get" => Some((1, 1)),
     "GompertzMakehamDistribution" => Some((2, 2)),
     "Grad" => Some((2, 3)),

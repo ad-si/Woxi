@@ -19,6 +19,7 @@ pub mod field_plot;
 pub mod function_range_ast;
 pub mod geo_math;
 pub mod geographics;
+pub mod geometric_test_ast;
 pub mod graph;
 pub mod graphics;
 pub mod graphicsbox;
