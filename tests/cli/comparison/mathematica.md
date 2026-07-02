@@ -215,7 +215,6 @@ Woxi does **not** support.
 
 - Multivariate transcendental equation solving
 - Symbolic PDE solutions
-- Tree family: `Tree`, `TreeMap`, `TreeFold`
 - Data structures: `ByteTrie`, `KDTree`, `ImmutableVector`
 - `GeometricTest`
 - Region dilation/erosion
