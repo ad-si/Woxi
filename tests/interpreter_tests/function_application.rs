@@ -1716,10 +1716,7 @@ mod cases {
   }
   #[test]
   fn replace_at_operator_form() {
-    assert_case(
-      r#"ReplaceAt[a -> xx, 2][{a, a, a, a}]"#,
-      r#"{a, xx, a, a}"#,
-    );
+    assert_case(r#"ReplaceAt[a -> xx, 2][{a, a, a, a}]"#, r#"{a, xx, a, a}"#);
   }
   #[test]
   fn replace_at_delayed_rule() {
@@ -1747,7 +1744,10 @@ mod cases {
   }
   #[test]
   fn replace_at_negative_index() {
-    assert_case(r#"ReplaceAt[{a, b, c, d}, x_ -> xx, -1]"#, r#"{a, b, c, xx}"#);
+    assert_case(
+      r#"ReplaceAt[{a, b, c, d}, x_ -> xx, -1]"#,
+      r#"{a, b, c, xx}"#,
+    );
   }
   // An unmatched rule leaves the targeted part unchanged (Replace semantics).
   #[test]

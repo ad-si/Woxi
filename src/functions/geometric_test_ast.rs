@@ -11,8 +11,8 @@
 //! expression is left unevaluated (matching how the interpreter treats
 //! unsupported cases elsewhere).
 
-use crate::syntax::Expr;
 use crate::InterpreterError;
+use crate::syntax::Expr;
 
 /// Absolute tolerance for orientation / sign tests (exact-zero comparisons on
 /// well-conditioned inputs).
@@ -140,10 +140,7 @@ fn collinear(pts: &[Pt]) -> bool {
     return true;
   }
   let p0 = pts[0];
-  let dir = pts[1..]
-    .iter()
-    .map(|&p| sub(p, p0))
-    .find(|d| mag(*d) > EPS);
+  let dir = pts[1..].iter().map(|&p| sub(p, p0)).find(|d| mag(*d) > EPS);
   match dir {
     Some(d) => pts.iter().all(|&p| {
       let v = sub(p, p0);
@@ -191,7 +188,7 @@ fn line_intersection(l1: (Pt, Pt), l2: (Pt, Pt)) -> Option<Pt> {
     return None;
   }
   let t = cross(sub(l2.0, l1.0), l2.1) / denom;
-  Some((l1.0 .0 + t * l1.1 .0, l1.0 .1 + t * l1.1 .1))
+  Some((l1.0.0 + t * l1.1.0, l1.0.1 + t * l1.1.1))
 }
 
 fn point_on_line(q: Pt, l: (Pt, Pt)) -> bool {
@@ -223,13 +220,13 @@ fn all_horizontal(lines: &[(Pt, Pt)]) -> bool {
   !lines.is_empty()
     && lines
       .iter()
-      .all(|l| mag(l.1) > EPS && l.1 .1.abs() <= REL * mag(l.1))
+      .all(|l| mag(l.1) > EPS && l.1.1.abs() <= REL * mag(l.1))
 }
 fn all_vertical(lines: &[(Pt, Pt)]) -> bool {
   !lines.is_empty()
     && lines
       .iter()
-      .all(|l| mag(l.1) > EPS && l.1 .0.abs() <= REL * mag(l.1))
+      .all(|l| mag(l.1) > EPS && l.1.0.abs() <= REL * mag(l.1))
 }
 
 fn convex(pts: &[Pt]) -> bool {
@@ -371,7 +368,8 @@ fn simple(pts: &[Pt]) -> bool {
 /// Sorted edge lengths of a polygon (used for triangle congruence/similarity).
 fn sorted_sides(pts: &[Pt]) -> Vec<f64> {
   let n = pts.len();
-  let mut s: Vec<f64> = (0..n).map(|i| dist(pts[i], pts[(i + 1) % n])).collect();
+  let mut s: Vec<f64> =
+    (0..n).map(|i| dist(pts[i], pts[(i + 1) % n])).collect();
   s.sort_by(|a, b| a.partial_cmp(b).unwrap());
   s
 }
@@ -413,34 +411,38 @@ fn test_property(obj: &Expr, prop: &str) -> Option<bool> {
   match prop {
     "Collinear" => extract_points(obj).map(|p| collinear(&p)),
     "Distinct" => extract_points(obj).map(|p| all_distinct(&p)),
-    "Parallel" => {
-      extract_lines(obj).filter(|l| l.len() >= 2).map(|l| all_parallel(&l))
-    }
+    "Parallel" => extract_lines(obj)
+      .filter(|l| l.len() >= 2)
+      .map(|l| all_parallel(&l)),
     "Perpendicular" => extract_lines(obj)
       .filter(|l| l.len() >= 2)
       .map(|l| all_perpendicular(&l)),
-    "Concurrent" => {
-      extract_lines(obj).filter(|l| l.len() >= 2).map(|l| concurrent(&l))
-    }
+    "Concurrent" => extract_lines(obj)
+      .filter(|l| l.len() >= 2)
+      .map(|l| concurrent(&l)),
     "Horizontal" => extract_lines(obj).map(|l| all_horizontal(&l)),
     "Vertical" => extract_lines(obj).map(|l| all_vertical(&l)),
-    "Convex" => extract_points(obj).filter(|p| p.len() >= 3).map(|p| convex(&p)),
-    "Equilateral" => {
-      extract_points(obj).filter(|p| p.len() >= 3).map(|p| equilateral(&p))
-    }
-    "Equiangular" => {
-      extract_points(obj).filter(|p| p.len() >= 3).map(|p| equiangular(&p))
-    }
+    "Convex" => extract_points(obj)
+      .filter(|p| p.len() >= 3)
+      .map(|p| convex(&p)),
+    "Equilateral" => extract_points(obj)
+      .filter(|p| p.len() >= 3)
+      .map(|p| equilateral(&p)),
+    "Equiangular" => extract_points(obj)
+      .filter(|p| p.len() >= 3)
+      .map(|p| equiangular(&p)),
     "Regular" => extract_points(obj)
       .filter(|p| p.len() >= 3)
       .map(|p| equilateral(&p) && equiangular(&p)),
-    "Rectangle" => {
-      extract_points(obj).filter(|p| p.len() == 4).map(|p| rectangle(&p))
-    }
-    "Parallelogram" => {
-      extract_points(obj).filter(|p| p.len() == 4).map(|p| parallelogram(&p))
-    }
-    "Simple" => extract_points(obj).filter(|p| p.len() >= 3).map(|p| simple(&p)),
+    "Rectangle" => extract_points(obj)
+      .filter(|p| p.len() == 4)
+      .map(|p| rectangle(&p)),
+    "Parallelogram" => extract_points(obj)
+      .filter(|p| p.len() == 4)
+      .map(|p| parallelogram(&p)),
+    "Simple" => extract_points(obj)
+      .filter(|p| p.len() >= 3)
+      .map(|p| simple(&p)),
     "Clockwise" => extract_points(obj)
       .filter(|p| p.len() >= 3)
       .map(|p| signed_area2(&p) < -EPS),
@@ -454,9 +456,7 @@ fn test_property(obj: &Expr, prop: &str) -> Option<bool> {
 }
 
 /// `GeometricTest[objs, prop1, prop2, ...]`.
-pub fn geometric_test(
-  args: &[Expr],
-) -> Option<Result<Expr, InterpreterError>> {
+pub fn geometric_test(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   if args.len() < 2 {
     return None;
   }
