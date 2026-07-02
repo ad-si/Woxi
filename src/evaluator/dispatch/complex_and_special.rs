@@ -2401,7 +2401,7 @@ pub fn dispatch_complex_and_special(
 
     // Symbolic operators with no built-in meaning -- just return as-is with evaluated args
     "Therefore" | "Because" | "TableForm" | "MatrixForm" | "Row" | "Grid"
-    | "TextGrid" | "Column" | "Framed" => {
+    | "TextGrid" | "Column" | "Framed" | "Highlighted" => {
       return Some(Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec().into(),

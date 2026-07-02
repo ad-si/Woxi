@@ -43,6 +43,7 @@ Output is always in [FullForm].
 - [`Grid`](expressions/Grid.md)
 - [`HalfPlane`](expressions/HalfPlane.md)
 - [`Head`](expressions/Head.md)
+- [`Highlighted`](expressions/Highlighted.md)
 - [`Hold`](expressions/Hold.md)
 - [`Hyperlink`](expressions/Hyperlink.md)
 - [`InfiniteLine`](expressions/InfiniteLine.md)
