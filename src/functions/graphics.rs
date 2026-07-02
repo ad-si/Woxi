@@ -25,7 +25,7 @@ fn dash_size_to_f64(expr: &Expr) -> Option<f64> {
 
 // ── Color ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Color {
   pub(crate) r: f64,
   pub(crate) g: f64,
@@ -221,6 +221,7 @@ struct StyleState {
   dashing: Option<Vec<f64>>, // dash lengths in coordinate-space fractions
   edge_form: Option<EdgeForm>,
   halo: Option<Halo>, // Haloing[...] contrasting outline behind primitives
+  drop_shadow: Option<DropShadow>, // DropShadowing[...] shadow behind primitives
   font_size: f64,
   font_weight: String,
   font_style: String,
@@ -242,6 +243,132 @@ struct Halo {
   radius: f64, // extra pixel radius beyond the primitive
 }
 
+/// `DropShadowing[…]` directive: renders primitives with a drop shadow.
+/// Offsets are stored in Wolfram graphics orientation (y up, in display
+/// px); the SVG emission flips the y sign. `radius` is the blur radius;
+/// the SVG Gaussian `stdDeviation` is radius/2.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DropShadow {
+  pub(crate) dx: f64,
+  pub(crate) dy: f64,
+  pub(crate) radius: f64,
+  pub(crate) color: Color,
+}
+
+/// Format a shadow parameter without trailing zeros (2 → "2", 1.5 → "1.5").
+fn fmt_shadow_num(x: f64) -> String {
+  let x = if x == 0.0 { 0.0 } else { x }; // normalize -0
+  let s = format!("{:.2}", x);
+  s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+impl DropShadow {
+  /// Deterministic SVG filter id derived from the shadow parameters, so
+  /// identical shadows share one `<defs>` entry without threading an id
+  /// map through the render pipeline.
+  pub(crate) fn filter_id(&self) -> String {
+    fn enc(x: f64) -> String {
+      format!("{:.2}", x).replace('-', "m").replace('.', "p")
+    }
+    format!(
+      "ds_{}_{}_{}_{:02x}{:02x}{:02x}{:02x}",
+      enc(self.dx),
+      enc(self.dy),
+      enc(self.radius),
+      (self.color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (self.color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (self.color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (self.color.a.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  }
+
+  /// `<filter>` definition for this shadow. `scale` converts display px
+  /// to the target SVG's user units (1.0 for Graphics, RESOLUTION_SCALE
+  /// for the plotters-based Plot backend). The generous filter region
+  /// keeps large offsets/blurs from being clipped.
+  pub(crate) fn filter_def(&self, scale: f64) -> String {
+    format!(
+      "<filter id=\"{}\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">\
+       <feDropShadow dx=\"{}\" dy=\"{}\" stdDeviation=\"{}\" \
+       flood-color=\"{}\" flood-opacity=\"{}\"/></filter>",
+      self.filter_id(),
+      fmt_shadow_num(self.dx * scale),
+      fmt_shadow_num(-self.dy * scale),
+      fmt_shadow_num(self.radius / 2.0 * scale),
+      self.color.to_svg_rgb(),
+      fmt_shadow_num(self.color.a.clamp(0.0, 1.0)),
+    )
+  }
+}
+
+/// Parse the arguments of a `DropShadowing[…]` directive into a
+/// `DropShadow`, using the same positional slot logic as
+/// `drop_shadowing_ast` (offset 2-list, radius number, color) and the
+/// same defaults ({-3, -3}, 2, foreground at opacity 1/3). Returns
+/// `None` for `DropShadowing[…, None]` (shadow disabled) and for
+/// argument lists that don't fit the pattern.
+pub(crate) fn parse_drop_shadowing(args: &[Expr]) -> Option<DropShadow> {
+  let (mut offset, mut radius, mut color) = (None, None, None);
+  for arg in args {
+    let as_offset = |e: &Expr| -> Option<(f64, f64)> {
+      if let Expr::List(items) = e
+        && items.len() == 2
+        && let Some(x) = expr_to_f64(&items[0])
+        && let Some(y) = expr_to_f64(&items[1])
+      {
+        return Some((x, y));
+      }
+      None
+    };
+    if offset.is_none()
+      && radius.is_none()
+      && color.is_none()
+      && let Some(o) = as_offset(arg)
+    {
+      offset = Some(o);
+    } else if radius.is_none()
+      && color.is_none()
+      && !matches!(arg, Expr::List(_) | Expr::FunctionCall { .. })
+      && let Some(r) = expr_to_f64(arg)
+    {
+      radius = Some(r);
+    } else if color.is_none() {
+      if matches!(arg, Expr::Identifier(s) if s == "None") {
+        return None; // shadow explicitly disabled
+      }
+      color = Some(parse_shadow_color(arg)?);
+    } else {
+      return None;
+    }
+  }
+  let (dx, dy) = offset.unwrap_or((-3.0, -3.0));
+  Some(DropShadow {
+    dx,
+    dy,
+    radius: radius.unwrap_or(2.0),
+    color: color.unwrap_or(BLACK.with_alpha(1.0 / 3.0)),
+  })
+}
+
+/// Parse a shadow color spec: a plain color, or `Opacity[a]` /
+/// `Opacity[a, color]` (the canonical default uses
+/// `Opacity[1/3, ThemeColor[Foreground]]`, whose inner ThemeColor falls
+/// back to the foreground black).
+fn parse_shadow_color(expr: &Expr) -> Option<Color> {
+  if let Some(c) = parse_color(expr) {
+    return Some(c);
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Opacity"
+    && !args.is_empty()
+    && let Some(a) = expr_to_f64(&args[0])
+  {
+    let base = args.get(1).and_then(parse_color).unwrap_or(BLACK);
+    return Some(base.with_alpha(a.clamp(0.0, 1.0)));
+  }
+  None
+}
+
 impl Default for StyleState {
   fn default() -> Self {
     Self {
@@ -252,6 +379,7 @@ impl Default for StyleState {
       dashing: None,
       edge_form: None,
       halo: None,
+      drop_shadow: None,
       font_size: 14.0,
       font_weight: "normal".to_string(),
       font_style: "normal".to_string(),
@@ -406,6 +534,27 @@ enum Primitive {
     x_max: f64,
     y_max: f64,
   },
+}
+
+impl Primitive {
+  /// The style captured when the primitive was collected (None for
+  /// Raster, which carries no style).
+  fn style(&self) -> Option<&StyleState> {
+    match self {
+      Primitive::PointSingle { style, .. }
+      | Primitive::PointMulti { style, .. }
+      | Primitive::Line { style, .. }
+      | Primitive::CircleArc { style, .. }
+      | Primitive::Disk { style, .. }
+      | Primitive::DiskSector { style, .. }
+      | Primitive::RectPrim { style, .. }
+      | Primitive::PolygonPrim { style, .. }
+      | Primitive::ArrowPrim { style, .. }
+      | Primitive::TextPrim { style, .. }
+      | Primitive::BezierCurvePrim { style, .. } => Some(style),
+      Primitive::RasterPrim { .. } => None,
+    }
+  }
 }
 
 // ── Parsing helpers ──────────────────────────────────────────────────────
@@ -762,6 +911,12 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         for a in args {
           apply_directive(a, style);
         }
+        true
+      }
+      "DropShadowing" => {
+        // DropShadowing[offset, radius, color]; DropShadowing[…, None]
+        // (or an unparseable spec) disables the shadow.
+        style.drop_shadow = parse_drop_shadowing(args);
         true
       }
       // Darker/Lighter/RGBColor/Hue already handled by parse_color above
@@ -3340,6 +3495,27 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Drop-shadow filter definitions (one per distinct shadow in use)
+  let shadow_defs: Vec<&DropShadow> = {
+    let mut seen: Vec<&DropShadow> = Vec::new();
+    for prim in &primitives {
+      if let Some(ds) = prim.style().and_then(|s| s.drop_shadow.as_ref())
+        && !seen.contains(&ds)
+      {
+        seen.push(ds);
+      }
+    }
+    seen
+  };
+  if !shadow_defs.is_empty() {
+    svg.push_str("<defs>\n");
+    for ds in &shadow_defs {
+      svg.push_str(&ds.filter_def(1.0));
+      svg.push('\n');
+    }
+    svg.push_str("</defs>\n");
+  }
+
   // Background (covers the full SVG including margins)
   if let Some(bg) = background {
     svg.push_str(&format!(
@@ -3397,9 +3573,18 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   render_axes(&mut svg, axes, &bb, svg_w, svg_h);
 
-  // Render primitives
+  // Render primitives. A primitive with a drop shadow is wrapped in a
+  // <g> that applies the shadow filter, so each primitive casts its own
+  // shadow (overlapping shadows stack, giving the depth effect).
   for prim in &primitives {
+    let shadow = prim.style().and_then(|s| s.drop_shadow.as_ref());
+    if let Some(ds) = shadow {
+      svg.push_str(&format!("<g filter=\"url(#{})\">\n", ds.filter_id()));
+    }
     render_primitive(prim, &bb, svg_w, svg_h, &mut svg);
+    if shadow.is_some() {
+      svg.push_str("</g>\n");
+    }
   }
 
   if frame {
