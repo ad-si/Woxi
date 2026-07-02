@@ -1453,6 +1453,7 @@
   - [`QuantityUnit`](quantity/QuantityUnit.md)
   - [`UnitConvert`](quantity/UnitConvert.md)
 - [File System & I/O](file_system.md)
+  - [`HTTPRequest`](file_system/HTTPRequest.md)
   - [`AbsoluteFileName`](file_system/AbsoluteFileName.md)
   - [`AnimationRate`](file_system/AnimationRate.md)
   - [`BinaryRead`](file_system/BinaryRead.md)

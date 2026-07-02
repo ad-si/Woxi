@@ -9844,6 +9844,10 @@ pub fn evaluate_function_call_ast_inner(
         // CyclicGroup[n] is likewise a symbolic group object consumed by
         // GroupOrder/GroupGenerators/GroupElements.
         | "CyclicGroup"
+        // URL["…"] is a symbolic URL wrapper whose canonical form stays
+        // unevaluated (matching wolframscript). It is consumed by
+        // HTTPRequest/URLBuild-style functions, so it is not "unimplemented".
+        | "URL"
         // KeyValuePattern[…] is a symbolic pattern object whose canonical form
         // stays unevaluated (matching wolframscript). It is consumed by the
         // pattern matcher (MatchQ/Cases/Replace/…), so it is not "unimplemented".
