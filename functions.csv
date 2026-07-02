@@ -1739,7 +1739,7 @@ Application,Application wrapper,,unevaluated,12.2,1766
 FindFile,Find file,✅,unevaluated,7.0,1766
 DistanceTransform,Distance transform,,unevaluated,7.0,1768
 DialogInput,Dialog input,,unevaluated,6.0,1770
-TimelinePlot,Timeline plot,,unevaluated,10.1,1770
+TimelinePlot,Plots dates and date intervals as events on a horizontal timeline,✅,pure,10.1,1770
 PassEventsDown,Pass events down option,,unevaluated,6.0,1771
 AssociateTo,Adds one or more key-value pairs to an association variable in-place,✅,stateful,10.0,1776
 CircleDot,Symbolic circle dot operator with Unicode display,✅,pure,3.0,1776

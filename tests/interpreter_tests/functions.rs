@@ -3536,6 +3536,20 @@ mod date_interval {
   fn invalid_arg() {
     assert_eq!(interpret("DateInterval[0]").unwrap(), "DateInterval[0]");
   }
+
+  // Regression: re-evaluating the canonical form must be a fixed point and
+  // not emit DateInterval::argx.
+  #[test]
+  fn canonical_form_is_fixed_point() {
+    assert_eq!(
+      interpret(
+        "DateInterval[{{{2020, 1, 1, 0, 0, 0.}, {2020, 12, 31, 0, 0, 0.}}}, \
+         \"Day\", \"Gregorian\", None]"
+      )
+      .unwrap(),
+      "DateInterval[{{{2020, 1, 1, 0, 0, 0.}, {2020, 12, 31, 0, 0, 0.}}}, Day, Gregorian, None]"
+    );
+  }
 }
 
 mod xml_template {

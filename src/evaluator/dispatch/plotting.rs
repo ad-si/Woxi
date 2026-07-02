@@ -513,6 +513,9 @@ pub fn dispatch_plotting(
     "NumberLinePlot" if !args.is_empty() => Some(
       crate::functions::number_line_plot::number_line_plot_ast(args),
     ),
+    "TimelinePlot" if !args.is_empty() => {
+      Some(crate::functions::timeline_plot::timeline_plot_ast(args))
+    }
     "WordCloud" if !args.is_empty() => {
       Some(crate::functions::chart::word_cloud_ast(args))
     }

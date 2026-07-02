@@ -2039,8 +2039,7 @@ pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => items,
     _ => {
       return Err(InterpreterError::EvaluationError(
-        "BubbleHistogram: first argument must be a list of {x, y} pairs"
-          .into(),
+        "BubbleHistogram: first argument must be a list of {x, y} pairs".into(),
       ));
     }
   };

@@ -85,6 +85,7 @@ SVG images.
 - [`SphericalPlot3D`](plotting/SphericalPlot3D.md)
 - [`StreamDensityPlot`](plotting/StreamDensityPlot.md)
 - [`StreamPlot`](plotting/StreamPlot.md)
+- [`TimelinePlot`](plotting/TimelinePlot.md)
 - [`TreeForm`](plotting/TreeForm.md)
 - [`TreeGraph`](plotting/TreeGraph.md)
 - [`VectorPlot`](plotting/VectorPlot.md)

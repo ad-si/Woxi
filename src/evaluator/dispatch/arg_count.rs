@@ -252,7 +252,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Cyclotomic" => Some((2, 2)),
     "D" => Some((2, usize::MAX)),
     "DateDifference" => Some((2, usize::MAX)),
-    "DateInterval" => Some((1, 1)),
+    "DateInterval" => Some((1, 4)),
     "DatePlus" => Some((2, 2)),
     "DateRange" => Some((2, 3)),
     "TimeObject" => Some((0, usize::MAX)),
