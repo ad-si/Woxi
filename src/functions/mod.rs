@@ -51,6 +51,7 @@ pub mod sound;
 pub mod string_ast;
 pub mod sum_convergence_ast;
 pub mod tabular_ast;
+pub mod timeline_plot;
 pub mod timeseries_ast;
 pub mod tree_form;
 pub mod trig_factor_ast;
