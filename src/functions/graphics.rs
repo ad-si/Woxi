@@ -220,6 +220,7 @@ struct StyleState {
   point_size: f64, // fraction of plot width, default ~0.012
   dashing: Option<Vec<f64>>, // dash lengths in coordinate-space fractions
   edge_form: Option<EdgeForm>,
+  halo: Option<Halo>, // Haloing[...] contrasting outline behind primitives
   font_size: f64,
   font_weight: String,
   font_style: String,
@@ -232,6 +233,15 @@ struct EdgeForm {
   thickness: Option<f64>,
 }
 
+/// `Haloing[…]` directive: draws a contrasting outline (halo) behind a
+/// primitive so it stays visible against any background.  The halo is a
+/// wider stroke of `color` extending `radius` pixels beyond the primitive.
+#[derive(Debug, Clone)]
+struct Halo {
+  color: Color,
+  radius: f64, // extra pixel radius beyond the primitive
+}
+
 impl Default for StyleState {
   fn default() -> Self {
     Self {
@@ -241,6 +251,7 @@ impl Default for StyleState {
       point_size: 0.012,
       dashing: None,
       edge_form: None,
+      halo: None,
       font_size: 14.0,
       font_weight: "normal".to_string(),
       font_style: "normal".to_string(),
@@ -725,6 +736,25 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         // FaceForm[color] sets fill color
         if let Some(c) = parse_color(&args[0]) {
           style.color = c;
+        }
+        true
+      }
+      "Haloing" => {
+        // Haloing[]           → white halo, default radius
+        // Haloing[color]      → colored halo, default radius
+        // Haloing[color, r]   → colored halo of pixel radius r
+        // Haloing[None]       → disable haloing
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == "None")
+        {
+          style.halo = None;
+        } else {
+          let color = args
+            .first()
+            .and_then(parse_color)
+            .unwrap_or(Color::new(1.0, 1.0, 1.0));
+          let radius = args.get(1).and_then(expr_to_f64).unwrap_or(2.0);
+          style.halo = Some(Halo { color, radius });
         }
         true
       }
@@ -2299,6 +2329,14 @@ fn render_primitive(
       let cy = coord_y(*y, bb, svg_h);
       let r = style.point_size * svg_w * 0.5;
       let color = style.effective_color();
+      if let Some(ref halo) = style.halo {
+        out.push_str(&format!(
+          "<circle cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{:.2}\" fill=\"{}\"{}/>\n",
+          r + halo.radius,
+          halo.color.to_svg_rgb(),
+          halo.color.opacity_attr(),
+        ));
+      }
       out.push_str(&format!(
         "<circle cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{r:.2}\" fill=\"{}\"{}/>\n",
         color.to_svg_rgb(),
@@ -2311,6 +2349,14 @@ fn render_primitive(
       for &(x, y) in points {
         let cx = coord_x(x, bb, svg_w);
         let cy = coord_y(y, bb, svg_h);
+        if let Some(ref halo) = style.halo {
+          out.push_str(&format!(
+            "<circle cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{:.2}\" fill=\"{}\"{}/>\n",
+            r + halo.radius,
+            halo.color.to_svg_rgb(),
+            halo.color.opacity_attr(),
+          ));
+        }
         out.push_str(&format!(
           "<circle cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{r:.2}\" fill=\"{}\"{}/>\n",
           color.to_svg_rgb(),
@@ -2329,6 +2375,16 @@ fn render_primitive(
             format!("{:.2},{:.2}", coord_x(x, bb, svg_w), coord_y(y, bb, svg_h))
           })
           .collect();
+        // Draw the halo (contrasting outline) behind the line first.
+        if let Some(ref halo) = style.halo {
+          let hw = sw + 2.0 * halo.radius;
+          out.push_str(&format!(
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{hw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"{}/>\n",
+            pts.join(" "),
+            halo.color.to_svg_rgb(),
+            halo.color.opacity_attr(),
+          ));
+        }
         out.push_str(&format!(
           "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
           pts.join(" "),
