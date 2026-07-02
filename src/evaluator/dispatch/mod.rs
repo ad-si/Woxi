@@ -9930,6 +9930,11 @@ pub fn evaluate_function_call_ast_inner(
         // consumed by the quantum framework, so they are not "unimplemented".
         | "Ket"
         | "Bra"
+        // SwatchLegend[colors, labels, …] is a symbolic legend description
+        // consumed by Legended (e.g. produced by PeriodicTablePlot["Phase"]);
+        // it stays unevaluated as its canonical form, so it is not
+        // "unimplemented".
+        | "SwatchLegend"
         // Audio[data, …] is a symbolic audio object constructor. It stays
         // unevaluated as its canonical form and is consumed by AudioPlot,
         // so it is not "unimplemented".

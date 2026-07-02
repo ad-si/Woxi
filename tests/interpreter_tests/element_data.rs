@@ -45,6 +45,40 @@ mod element_data_tests {
   }
 
   #[test]
+  fn element_data_phase() {
+    clear_state();
+    // Gas / liquid / solid at STP, and Missing for the synthetics (Z >= 100).
+    assert_eq!(
+      interpret(
+        r#"{ElementData["Oxygen", "Phase"], ElementData["Bromine", "Phase"],
+            ElementData["Mercury", "Phase"], ElementData["Iron", "Phase"],
+            ElementData["Fermium", "Phase"], ElementData["Oganesson", "Phase"]}"#
+      )
+      .unwrap(),
+      "{Entity[MatterPhase, Gas], Entity[MatterPhase, Liquid], \
+       Entity[MatterPhase, Liquid], Entity[MatterPhase, Solid], \
+       Missing[NotAvailable], Missing[NotAvailable]}"
+    );
+  }
+
+  #[test]
+  fn element_data_phase_counts() {
+    clear_state();
+    // 11 gases, 2 liquids, 86 solids, 19 not available (Z = 100..118),
+    // matching wolframscript's ElementData[All, "Phase"].
+    assert_eq!(
+      interpret(
+        r#"phases = Map[ElementData[#, "Phase"] &, Range[118]];
+           Map[Count[phases, #] &,
+             {Entity["MatterPhase", "Gas"], Entity["MatterPhase", "Liquid"],
+              Entity["MatterPhase", "Solid"], Missing["NotAvailable"]}]"#
+      )
+      .unwrap(),
+      "{11, 2, 86, 19}"
+    );
+  }
+
+  #[test]
   fn element_data_atomic_number() {
     clear_state();
     assert_eq!(
@@ -394,7 +428,7 @@ mod element_data_tests {
   fn element_data_properties_full_list() {
     assert_eq!(
       interpret(r#"ElementData["Properties"]"#).unwrap(),
-      "{Abbreviation, AbsoluteBoilingPoint, AbsoluteMeltingPoint, AtomicNumber, AtomicRadius, AtomicWeight, Block, BoilingPoint, BrinellHardness, BulkModulus, CovalentRadius, CrustAbundance, Density, DiscoveryYear, ElectroNegativity, ElectronAffinity, ElectronConfiguration, ElectronConfigurationString, ElectronShellConfiguration, FusionHeat, Group, IonizationEnergies, LiquidDensity, MeltingPoint, MohsHardness, Name, Period, PoissonRatio, Series, ShearModulus, SpecificHeat, StandardName, ThermalConductivity, VanDerWaalsRadius, VaporizationHeat, VickersHardness, YoungModulus}"
+      "{Abbreviation, AbsoluteBoilingPoint, AbsoluteMeltingPoint, AtomicNumber, AtomicRadius, AtomicWeight, Block, BoilingPoint, BrinellHardness, BulkModulus, CovalentRadius, CrustAbundance, Density, DiscoveryYear, ElectroNegativity, ElectronAffinity, ElectronConfiguration, ElectronConfigurationString, ElectronShellConfiguration, FusionHeat, Group, IonizationEnergies, LiquidDensity, MeltingPoint, MohsHardness, Name, Period, Phase, PoissonRatio, Series, ShearModulus, SpecificHeat, StandardName, ThermalConductivity, VanDerWaalsRadius, VaporizationHeat, VickersHardness, YoungModulus}"
     );
   }
 }

@@ -212,6 +212,23 @@ pub fn evaluate_statement(stmt: &str) -> String {
   format!("[{}]", items.join(","))
 }
 
+/// Residual text of a graphics-carrying result once the graphics
+/// placeholders are stripped. A result that is one `Legended[-Graphics-, …]`
+/// wrapper (e.g. `PeriodicTablePlot["Phase"]`) displays entirely as its SVG
+/// — the legend is baked into the rendered graphic — so it leaves no
+/// residual text.
+fn residual_text(result: &str) -> String {
+  if result.starts_with("Legended[-Graphics") && result.ends_with(']') {
+    return String::new();
+  }
+  result
+    .replace("-Graphics-", "")
+    .replace("-Graphics3D-", "")
+    .replace("-Image-", "")
+    .trim()
+    .to_string()
+}
+
 /// Build the JSON output items produced by a single statement.
 fn evaluate_statement_items(stmt: &str) -> Vec<String> {
   let mut items = Vec::new();
@@ -255,14 +272,9 @@ fn evaluate_statement_items(stmt: &str) -> Vec<String> {
         if result.result != "\0" {
           items.push(json_output_item("graphics", svg, None));
           // Check for non-graphics text mixed in
-          let cleaned = result
-            .result
-            .replace("-Graphics-", "")
-            .replace("-Graphics3D-", "")
-            .replace("-Image-", "");
-          let cleaned = cleaned.trim();
+          let cleaned = residual_text(&result.result);
           if !cleaned.is_empty() && cleaned != "\0" {
-            items.push(json_output_item("text", cleaned, None));
+            items.push(json_output_item("text", &cleaned, None));
           }
         }
       } else if result.result != "\0" {
@@ -320,14 +332,9 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
   if let Some(ref svg) = initial.graphics {
     initial_parts.push(format!(r#""svg":"{}""#, json_escape(svg)));
   }
-  let cleaned_text = initial
-    .result
-    .replace("-Graphics-", "")
-    .replace("-Graphics3D-", "")
-    .replace("-Image-", "");
-  let cleaned_text = cleaned_text.trim();
+  let cleaned_text = residual_text(&initial.result);
   if !cleaned_text.is_empty() && initial.graphics.is_none() {
-    initial_parts.push(format!(r#""text":"{}""#, json_escape(cleaned_text)));
+    initial_parts.push(format!(r#""text":"{}""#, json_escape(&cleaned_text)));
     if let Some(ref output_svg) = initial.output_svg {
       initial_parts.push(format!(r#""textSvg":"{}""#, json_escape(output_svg)));
     }
@@ -367,14 +374,9 @@ pub fn evaluate_manipulate(body: &str, bindings_json: &str) -> String {
   if let Some(ref svg) = result.graphics {
     parts.push(format!(r#""svg":"{}""#, json_escape(svg)));
   }
-  let cleaned_text = result
-    .result
-    .replace("-Graphics-", "")
-    .replace("-Graphics3D-", "")
-    .replace("-Image-", "");
-  let cleaned_text = cleaned_text.trim();
+  let cleaned_text = residual_text(&result.result);
   if !cleaned_text.is_empty() && result.graphics.is_none() {
-    parts.push(format!(r#""text":"{}""#, json_escape(cleaned_text)));
+    parts.push(format!(r#""text":"{}""#, json_escape(&cleaned_text)));
     if let Some(ref output_svg) = result.output_svg {
       parts.push(format!(r#""textSvg":"{}""#, json_escape(output_svg)));
     }

@@ -2251,6 +2251,18 @@ pub fn resolve_atomic_number(identifier: &Expr) -> Option<i128> {
   find_element(identifier).map(|e| e.atomic_number)
 }
 
+/// Phase of an element at standard temperature and pressure: `"Gas"`,
+/// `"Liquid"`, or `"Solid"`. `None` where the Wolfram Language reports
+/// `Missing["NotAvailable"]` (the synthetic elements Z >= 100).
+pub fn element_phase(z: i128) -> Option<&'static str> {
+  match z {
+    1 | 2 | 7 | 8 | 9 | 10 | 17 | 18 | 36 | 54 | 86 => Some("Gas"),
+    35 | 80 => Some("Liquid"),
+    3..=99 => Some("Solid"),
+    _ => None,
+  }
+}
+
 /// Exact-match check that `sym` is a chemical element abbreviation
 /// ("C", "Cl", …). Case-sensitive: molecule atom symbols must use the
 /// canonical capitalization.
@@ -2397,6 +2409,17 @@ fn get_property(elem: &Element, property: &str) -> Expr {
       Expr::List(shells.into())
     }
     "ElectronConfigurationString" => format_electron_configuration_row(elem),
+    "Phase" => match element_phase(elem.atomic_number) {
+      Some(phase) => Expr::FunctionCall {
+        name: "Entity".to_string(),
+        args: vec![
+          Expr::String("MatterPhase".to_string()),
+          Expr::String(phase.to_string()),
+        ]
+        .into(),
+      },
+      None => missing_not_available(),
+    },
     // Properties we recognise by name but don't yet have tabulated data for —
     // mirror Mathematica's behaviour of returning Missing[NotAvailable] so
     // callers can distinguish "unknown datum" from "unrecognised property".
@@ -2662,6 +2685,7 @@ static SUPPORTED_PROPERTIES: &[&str] = &[
   "MohsHardness",
   "Name",
   "Period",
+  "Phase",
   "PoissonRatio",
   "Series",
   "ShearModulus",

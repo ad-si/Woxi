@@ -3113,6 +3113,13 @@ pub(crate) fn is_rasterizable_frame(expr: &Expr) -> bool {
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   match expr {
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
+    // Legended[graphics, legend]: the wrapped graphics carry the legend
+    // baked into their SVG (e.g. PeriodicTablePlot["Phase"]).
+    Expr::FunctionCall { name, args }
+      if name == "Legended" && !args.is_empty() =>
+    {
+      expr_to_svg(&args[0])
+    }
     // ComputationalMusic objects render as musical-staff notation.
     Expr::FunctionCall { name, .. }
       if crate::functions::music_ast::MUSIC_OBJECT_HEADS

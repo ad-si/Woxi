@@ -1,7 +1,7 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::element_data::{
-  ElementLayout, elements_layout, resolve_atomic_number,
+  ElementLayout, element_phase, elements_layout, resolve_atomic_number,
 };
 use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
 use crate::syntax::Expr;
@@ -75,6 +75,29 @@ fn block_color(block: &str, dark: bool) -> &'static str {
   }
 }
 
+/// Tile colours for the `"Phase"` property plot: (gas, solid, liquid,
+/// missing). The light palette matches wolframscript's legend swatches.
+fn phase_palette(
+  dark: bool,
+) -> (&'static str, &'static str, &'static str, &'static str) {
+  if dark {
+    ("#3b5a7a", "#7a5f3b", "#4a7a3b", "#2a2a2a")
+  } else {
+    ("#7ebbdd", "#f6c06d", "#a2cc79", "#e6e6e6")
+  }
+}
+
+/// Colour for an element tile in the `"Phase"` plot.
+fn phase_color(phase: Option<&str>, dark: bool) -> &'static str {
+  let (gas, solid, liquid, missing) = phase_palette(dark);
+  match phase {
+    Some("Gas") => gas,
+    Some("Liquid") => liquid,
+    Some("Solid") => solid,
+    _ => missing,
+  }
+}
+
 /// Theme-dependent colours: (background, faded tile, text, faded text, border).
 fn theme_colors(
   dark: bool,
@@ -119,6 +142,79 @@ fn push_series_marker(body: &mut String, row: f64, count: usize, color: &str) {
   }
 }
 
+/// Draw the phase legend under the table: a "phase at STP" title pill
+/// above a centred row of colour swatches labelled gas / solid / liquid /
+/// — (phase not available).
+fn push_phase_legend(body: &mut String, vb_w: f64, dark: bool) {
+  let (gas, solid, liquid, missing) = phase_palette(dark);
+  let (_, _, text, _, border) = theme_colors(dark);
+  let pill_bg = if dark { "#333333" } else { "#ececec" };
+
+  // Title pill, centred.
+  let (pill_w, pill_h) = (300.0, 60.0);
+  let cx = vb_w / 2.0;
+  let pill_y = 9.85 * CELL;
+  body.push_str(&format!(
+    "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
+     rx=\"12\" fill=\"{}\"/>\n",
+    cx - pill_w / 2.0,
+    pill_y,
+    pill_w,
+    pill_h,
+    pill_bg,
+  ));
+  body.push_str(&format!(
+    "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+     font-family=\"sans-serif\" font-size=\"36\" fill=\"{}\">phase at \
+     STP</text>\n",
+    cx,
+    pill_y + 42.0,
+    text,
+  ));
+
+  // Swatch row, laid out as one centred group.
+  let entries: [(&str, &str); 4] = [
+    (gas, "gas"),
+    (solid, "solid"),
+    (liquid, "liquid"),
+    (missing, "\u{2014}"),
+  ];
+  const SWATCH: f64 = 44.0; // swatch side length
+  const GAP: f64 = 14.0; // between a swatch and its label
+  const SPACING: f64 = 60.0; // between entries
+  const CHAR_W: f64 = 21.0; // approximate glyph width at font-size 40
+  let label_w = |label: &str| {
+    if label == "\u{2014}" {
+      40.0 // the em dash is a full em wide
+    } else {
+      label.chars().count() as f64 * CHAR_W
+    }
+  };
+  let total: f64 = entries
+    .iter()
+    .map(|(_, l)| SWATCH + GAP + label_w(l))
+    .sum::<f64>()
+    + SPACING * (entries.len() - 1) as f64;
+  let mut x = (vb_w - total) / 2.0;
+  let row_y = 10.7 * CELL;
+  for (color, label) in entries {
+    body.push_str(&format!(
+      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
+       rx=\"6\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.5\"/>\n",
+      x, row_y, SWATCH, SWATCH, color, border,
+    ));
+    body.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" \
+       font-size=\"40\" fill=\"{}\">{}</text>\n",
+      x + SWATCH + GAP,
+      row_y + SWATCH / 2.0 + 14.0,
+      text,
+      label,
+    ));
+    x += SWATCH + GAP + label_w(label) + SPACING;
+  }
+}
+
 /// Escape the small set of characters that matter inside SVG text nodes.
 fn escape_xml(s: &str) -> String {
   s.replace('&', "&amp;")
@@ -132,6 +228,9 @@ enum HighlightSpec {
   Full,
   /// Highlight exactly these atomic numbers and fade the rest.
   Highlight(std::collections::HashSet<i128>),
+  /// Color each tile by the element's phase at STP and attach a
+  /// `SwatchLegend` (the `"Phase"` property specification).
+  Phase,
   /// Not a form Woxi renders; echo the call unevaluated (any diagnostic
   /// message has already been emitted).
   Unevaluated,
@@ -180,6 +279,9 @@ fn parse_highlights(first: Option<&Expr>) -> HighlightSpec {
       }
       match other {
         Expr::String(s) => {
+          if s == "Phase" {
+            return HighlightSpec::Phase;
+          }
           if resolve_atomic_number(other).is_some() {
             crate::emit_message_to_stdout(&format!(
               "PeriodicTablePlot::elmntav: \"{}\" is not an available \
@@ -189,8 +291,18 @@ fn parse_highlights(first: Option<&Expr>) -> HighlightSpec {
           }
           HighlightSpec::Unevaluated
         }
-        // An unresolvable entity, or property coloring via EntityProperty:
-        // leave unevaluated without a (wrong) message.
+        // EntityProperty["Element", "Phase"] is the entity form of the
+        // "Phase" property specification.
+        Expr::FunctionCall { name, args }
+          if name == "EntityProperty"
+            && args.len() == 2
+            && matches!(&args[0], Expr::String(s) if s == "Element")
+            && matches!(&args[1], Expr::String(s) if s == "Phase") =>
+        {
+          HighlightSpec::Phase
+        }
+        // An unresolvable entity, or property coloring Woxi does not
+        // implement: leave unevaluated without a (wrong) message.
         Expr::FunctionCall { name, .. }
           if name == "Entity" || name == "EntityProperty" =>
         {
@@ -237,9 +349,14 @@ pub fn periodic_table_plot_ast(
   let spec = spec_idx.map(|i| {
     evaluate_expr_to_expr(&args[i]).unwrap_or_else(|_| args[i].clone())
   });
+  let mut phase_mode = false;
   let highlights = match parse_highlights(spec.as_ref()) {
     HighlightSpec::Full => None,
     HighlightSpec::Highlight(set) => Some(set),
+    HighlightSpec::Phase => {
+      phase_mode = true;
+      None
+    }
     HighlightSpec::Unevaluated => {
       // Echo the call with the evaluated specification, as wolframscript
       // does (e.g. PeriodicTablePlot[1 + 5] echoes PeriodicTablePlot[6]).
@@ -259,8 +376,9 @@ pub fn periodic_table_plot_ast(
 
   // Overall grid extent: 18 columns plus the group 2/3 gutter wide; the
   // actinide row sits at row 8.6, so the drawing reaches 9.6 rows tall.
+  // The phase legend adds 1.8 rows below the table.
   let vb_w = 18.0 * CELL + GUTTER;
-  let vb_h = 9.6 * CELL;
+  let vb_h = if phase_mode { 11.4 * CELL } else { 9.6 * CELL };
   let svg_height = (svg_width as f64 * vb_h / vb_w).round().max(1.0) as u32;
 
   let mut body = String::new();
@@ -277,7 +395,13 @@ pub fn periodic_table_plot_ast(
       .as_ref()
       .is_none_or(|h| h.contains(&elem.atomic_number));
 
-    let (fill, num_fill, sym_fill) = if highlighted {
+    let (fill, num_fill, sym_fill) = if phase_mode {
+      (
+        phase_color(element_phase(elem.atomic_number), dark),
+        text,
+        text,
+      )
+    } else if highlighted {
       (block_color(elem.block, dark), text, text)
     } else {
       (faded_tile, faded_text, faded_text)
@@ -323,6 +447,10 @@ pub fn periodic_table_plot_ast(
   push_series_marker(&mut body, 7.6, 1, text);
   push_series_marker(&mut body, 8.6, 2, text);
 
+  if phase_mode {
+    push_phase_legend(&mut body, vb_w, dark);
+  }
+
   let width_attr = if full_width {
     "width=\"100%\"".to_string()
   } else {
@@ -334,5 +462,78 @@ pub fn periodic_table_plot_ast(
     width_attr, vb_w, vb_h, body
   );
 
-  Ok(crate::graphics_result(svg))
+  let graphics = crate::graphics_result(svg);
+  if phase_mode {
+    return Ok(phase_legended(graphics));
+  }
+  Ok(graphics)
+}
+
+/// Wrap the phase-coloured table in `Legended[…, Placed[SwatchLegend[…],
+/// Below]]`, the expression wolframscript returns for
+/// `PeriodicTablePlot["Phase"]` (the swatch colours are wolframscript's
+/// exact values).
+fn phase_legended(graphics: Expr) -> Expr {
+  fn call(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    }
+  }
+  let rgb = |r: f64, g: f64, b: f64| {
+    call(
+      "RGBColor",
+      vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+    )
+  };
+  let colors = Expr::List(
+    vec![
+      rgb(0.493332, 0.733333, 0.866667),
+      rgb(0.96666, 0.7513329, 0.4283329),
+      rgb(0.636667, 0.799999, 0.473333),
+      call("GrayLevel", vec![Expr::Real(0.9)]),
+    ]
+    .into(),
+  );
+  let labels = Expr::List(
+    vec![
+      Expr::String("gas".to_string()),
+      Expr::String("solid".to_string()),
+      Expr::String("liquid".to_string()),
+      call("Missing", vec![Expr::String("NotAvailable".to_string())]),
+    ]
+    .into(),
+  );
+  let rule = |lhs: &str, rhs: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(lhs.to_string())),
+    replacement: Box::new(rhs),
+  };
+  let legend = call(
+    "SwatchLegend",
+    vec![
+      colors,
+      labels,
+      rule("LegendLayout", Expr::Identifier("Row".to_string())),
+      rule(
+        "LegendLabel",
+        call(
+          "EntityProperty",
+          vec![
+            Expr::String("Element".to_string()),
+            Expr::String("Phase".to_string()),
+          ],
+        ),
+      ),
+    ],
+  );
+  call(
+    "Legended",
+    vec![
+      graphics,
+      call(
+        "Placed",
+        vec![legend, Expr::Identifier("Below".to_string())],
+      ),
+    ],
+  )
 }

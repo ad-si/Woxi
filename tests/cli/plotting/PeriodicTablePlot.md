@@ -32,6 +32,16 @@ $ wo 'Head[PeriodicTablePlot[{ElementData["Fe"], ElementData[8]}]]'
 Graphics
 ```
 
+The `"Phase"` property (equivalently
+`EntityProperty["Element", "Phase"]`) colors each element by its phase at
+standard temperature and pressure and attaches a swatch legend below the
+table.
+
+```scrut
+$ wo 'PeriodicTablePlot["Phase"]'
+Legended[-Graphics-, Placed[SwatchLegend[{RGBColor[0.493332, 0.733333, 0.866667], RGBColor[0.96666, 0.7513329, 0.4283329], RGBColor[0.636667, 0.799999, 0.473333], GrayLevel[0.9]}, {gas, solid, liquid, Missing[NotAvailable]}, LegendLayout -> Row, LegendLabel -> EntityProperty[Element, Phase]], Below]]
+```
+
 ### Options
 
 - **`ImageSize`** — overall width in pixels (or `{width, height}`, or a
