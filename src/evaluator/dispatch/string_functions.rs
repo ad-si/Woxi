@@ -322,6 +322,13 @@ pub fn dispatch_string_functions(
     "RemoveDiacritics" if args.len() == 1 => {
       return Some(crate::functions::string_ast::remove_diacritics_ast(args));
     }
+    // The 2-argument target-script forms are not implemented yet; they
+    // fall through and stay unevaluated.
+    "Transliterate" if args.len() == 1 => {
+      return Some(crate::functions::transliterate_ast::transliterate_ast(
+        args,
+      ));
+    }
     "StringRotateLeft" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::string_rotate_left_ast(args));
     }

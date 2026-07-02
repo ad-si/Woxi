@@ -621,3 +621,177 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   )?;
   Ok(crate::graphics_result(svg))
 }
+
+/// Sample rate wolframscript assumes for `Audio[{samples…}]` built from raw
+/// sample data (Hz).
+const AUDIO_SAMPLE_RATE: f64 = 44100.0;
+
+/// Cap on rendered points per channel. Longer audio is reduced to a min/max
+/// envelope per bucket so the SVG stays small while the waveform shape is
+/// preserved (wolframscript likewise draws an envelope for long audio).
+const AUDIO_MAX_POINTS: usize = 2000;
+
+/// Extract the sample rate from an `Audio[data, opts…]` argument list
+/// (`SampleRate -> r`), falling back to the 44100 Hz default.
+fn audio_sample_rate(args: &[Expr]) -> f64 {
+  for opt in args.iter().skip(1) {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SampleRate")
+    {
+      let val =
+        evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+      if let Some(r) = try_eval_to_f64(&val)
+        && r > 0.0
+      {
+        return r;
+      }
+    }
+  }
+  AUDIO_SAMPLE_RATE
+}
+
+/// Turn one audio-like object into per-channel (time, amplitude) series:
+/// `Audio[{s1, s2, …}]` (one channel), `Audio[{{ch1…}, {ch2…}}]` (one series
+/// per channel), or a `Sound`/`Play` expression sampled via the synthesizer.
+/// Returns `None` when the expression is not a samplable audio object.
+fn audio_channels(expr: &Expr) -> Option<Vec<Vec<(f64, f64)>>> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Audio" && !args.is_empty() =>
+    {
+      let data = evaluate_expr_to_expr(&args[0]).unwrap_or(args[0].clone());
+      let Expr::List(items) = &data else {
+        return None;
+      };
+      let rate = audio_sample_rate(args);
+      let channels: Vec<Vec<Expr>> = if !items.is_empty()
+        && items.iter().all(|i| matches!(i, Expr::List(_)))
+      {
+        items
+          .iter()
+          .map(|i| match i {
+            Expr::List(l) => l.to_vec(),
+            _ => unreachable!(),
+          })
+          .collect()
+      } else {
+        vec![items.to_vec()]
+      };
+      let mut out = Vec::with_capacity(channels.len());
+      for channel in channels {
+        let mut points = Vec::with_capacity(channel.len());
+        for (i, sample) in channel.iter().enumerate() {
+          let val =
+            evaluate_expr_to_expr(sample).unwrap_or_else(|_| sample.clone());
+          let y = try_eval_to_f64(&val)?;
+          points.push((i as f64 / rate, y));
+        }
+        out.push(points);
+      }
+      Some(out)
+    }
+    Expr::FunctionCall { name, .. } if name == "Sound" || name == "Play" => {
+      let (samples, rate) = crate::functions::sound::sound_to_samples(expr)?;
+      Some(vec![
+        samples
+          .iter()
+          .enumerate()
+          .map(|(i, &y)| (i as f64 / rate as f64, y))
+          .collect(),
+      ])
+    }
+    _ => None,
+  }
+}
+
+/// Collect the channel series of an audio object or of a list of audio
+/// objects (`AudioPlot[{audio1, audio2}]` overlays them as separate series).
+fn collect_audio_series(expr: &Expr) -> Option<Vec<Vec<(f64, f64)>>> {
+  if let Some(channels) = audio_channels(expr) {
+    return Some(channels);
+  }
+  if let Expr::List(items) = expr
+    && !items.is_empty()
+  {
+    let mut out = Vec::new();
+    for item in items.iter() {
+      out.extend(audio_channels(item)?);
+    }
+    return Some(out);
+  }
+  None
+}
+
+/// Reduce a long sample series to a min/max envelope: each bucket contributes
+/// its extreme points in chronological order, preserving the waveform shape
+/// with a bounded point count.
+fn envelope_downsample(
+  points: Vec<(f64, f64)>,
+  max_points: usize,
+) -> Vec<(f64, f64)> {
+  if points.len() <= max_points {
+    return points;
+  }
+  let buckets = max_points / 2;
+  let n = points.len();
+  let mut out = Vec::with_capacity(buckets * 2);
+  for b in 0..buckets {
+    let start = b * n / buckets;
+    let end = (((b + 1) * n / buckets).max(start + 1)).min(n);
+    let slice = &points[start..end];
+    let mut lo = slice[0];
+    let mut hi = slice[0];
+    for &p in slice {
+      if p.1 < lo.1 {
+        lo = p;
+      }
+      if p.1 > hi.1 {
+        hi = p;
+      }
+    }
+    let (first, second) = if lo.0 <= hi.0 { (lo, hi) } else { (hi, lo) };
+    out.push(first);
+    if second != first {
+      out.push(second);
+    }
+  }
+  out
+}
+
+/// AudioPlot[audio] — plot the waveform of an `Audio` or `Sound` object (or
+/// a list of them) as amplitude over time in seconds. Non-audio arguments
+/// leave the expression unevaluated, matching wolframscript.
+pub fn audio_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data =
+    evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+  let Some(all_series) = collect_audio_series(&data) else {
+    return Ok(Expr::FunctionCall {
+      name: "AudioPlot".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  let all_series: Vec<Vec<(f64, f64)>> = all_series
+    .into_iter()
+    .map(|s| envelope_downsample(s, AUDIO_MAX_POINTS))
+    .collect();
+
+  let mut parsed = parse_plot_options(args);
+  // AudioPlot fills the waveform to the zero axis unless Filling is given.
+  let has_filling_opt = args[1..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Filling"))
+  });
+  if !has_filling_opt {
+    parsed.opts.filling = crate::functions::plot::Filling::Axis;
+  }
+
+  let (x_range, y_range) = compute_ranges(&all_series);
+  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let svg =
+    generate_svg_with_filling(&all_series, x_range, y_range, &parsed.opts)?;
+  Ok(crate::graphics_result(svg))
+}

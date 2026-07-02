@@ -504,6 +504,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GeneratingFunction" => Some((3, 3)),
     "GeometricDistribution" => Some((1, 1)),
     "GeometricMean" => Some((1, 1)),
+    "GeometricTest" => Some((2, usize::MAX)),
     "Get" => Some((1, 1)),
     "GompertzMakehamDistribution" => Some((2, 2)),
     "Grad" => Some((2, 3)),
@@ -1033,10 +1034,13 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RelationGraph" => Some((2, usize::MAX)),
     "ReleaseHold" => Some((1, 1)),
     "RemoveDiacritics" => Some((1, 1)),
+    "Transliterate" => Some((1, 2)),
     // 1-arg form is the unapplied operator form Replace[rules][expr].
     "Replace" => Some((1, 4)),
     "ReplaceList" => Some((2, 3)),
     "ReplaceAll" => Some((2, 2)),
+    // 2-arg form is the operator form ReplaceAt[rules, pos][expr].
+    "ReplaceAt" => Some((2, 3)),
     "ReplacePart" => Some((1, 2)),
     "ReplaceRepeated" => Some((2, 3)),
     "Rescale" => Some((1, 3)),

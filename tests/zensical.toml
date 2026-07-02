@@ -75,6 +75,7 @@ nav = [
         { "StringTakeDrop" = "strings/manipulation/StringTakeDrop.md" },
         { "ToLowerCase" = "strings/manipulation/ToLowerCase.md" },
         { "ToUpperCase" = "strings/manipulation/ToUpperCase.md" },
+        { "Transliterate" = "strings/manipulation/Transliterate.md" },
       ] },
       { "Matching & Searching" = [
         "strings/matching.md",
@@ -1031,6 +1032,7 @@ nav = [
       ] },
       { "Set Operations" = [
         "list/sets.md",
+        { "UniqueElements" = "list/sets/UniqueElements.md" },
         { "Complement" = "list/sets/Complement.md" },
         { "ContainsAll" = "list/sets/ContainsAll.md" },
         { "ContainsAny" = "list/sets/ContainsAny.md" },
@@ -1186,6 +1188,8 @@ nav = [
     ] },
     { "Expressions" = [
       "expressions.md",
+      { "Haloing" = "expressions/Haloing.md" },
+      { "Highlighted" = "expressions/Highlighted.md" },
       { "BaseForm" = "expressions/BaseForm.md" },
       { "Column" = "expressions/Column.md" },
       { "WeaklyConnectedGraphQ" = "expressions/WeaklyConnectedGraphQ.md" },
@@ -1295,6 +1299,7 @@ nav = [
     ] },
     { "Replacement Rules" = [
       "replacement_rules.md",
+      { "ReplaceAt" = "replacement_rules/ReplaceAt.md" },
       { "Replace" = "replacement_rules/Replace.md" },
       { "ReplaceAll" = "replacement_rules/ReplaceAll.md" },
       { "ReplaceRepeated" = "replacement_rules/ReplaceRepeated.md" },
@@ -1409,6 +1414,7 @@ nav = [
   ] },
   { "Plotting" = [
     "plotting.md",
+    { "TimelinePlot" = "plotting/TimelinePlot.md" },
     { "GeoGraphics" = "plotting/GeoGraphics.md" },
     { "ArrayPlot" = "plotting/ArrayPlot.md" },
     { "BarChart" = "plotting/BarChart.md" },
@@ -1463,7 +1469,6 @@ nav = [
     { "SphericalPlot3D" = "plotting/SphericalPlot3D.md" },
     { "StreamDensityPlot" = "plotting/StreamDensityPlot.md" },
     { "StreamPlot" = "plotting/StreamPlot.md" },
-    { "TimelinePlot" = "plotting/TimelinePlot.md" },
     { "TreeForm" = "plotting/TreeForm.md" },
     { "TreeGraph" = "plotting/TreeGraph.md" },
     { "VectorPlot" = "plotting/VectorPlot.md" },

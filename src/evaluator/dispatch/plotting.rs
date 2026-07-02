@@ -205,6 +205,9 @@ pub fn dispatch_plotting(
         })),
       }
     }
+    "AudioPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::audio_plot_ast(args)
+    })),
     "ListLogPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::list_log_plot_ast(args)
     })),

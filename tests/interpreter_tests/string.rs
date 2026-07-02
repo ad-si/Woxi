@@ -2596,6 +2596,128 @@ mod remove_diacritics {
   }
 }
 
+mod transliterate {
+  use super::*;
+
+  #[test]
+  fn greek_to_ascii() {
+    assert_eq!(
+      interpret(r#"Transliterate["Αλφαβητικός"]"#).unwrap(),
+      "Alfavitikos"
+    );
+  }
+
+  #[test]
+  fn greek_digraphs_and_casing() {
+    assert_eq!(interpret(r#"Transliterate["Θεός"]"#).unwrap(), "Theos");
+    assert_eq!(
+      interpret(r#"Transliterate["ΘΑΛΑΣΣΑ"]"#).unwrap(),
+      "THALASSA"
+    );
+    assert_eq!(interpret(r#"Transliterate["Ψάπφω"]"#).unwrap(), "Psapfo");
+  }
+
+  #[test]
+  fn greek_gamma_nasal_and_diphthongs() {
+    assert_eq!(
+      interpret(r#"Transliterate["Ευαγγέλιο"]"#).unwrap(),
+      "Euangelio"
+    );
+    assert_eq!(
+      interpret(r#"Transliterate["μπουζούκι"]"#).unwrap(),
+      "mpouzouki"
+    );
+  }
+
+  #[test]
+  fn polytonic_greek() {
+    assert_eq!(
+      interpret("Transliterate[\"\u{1F08}ριστοτέλης\"]").unwrap(),
+      "Aristotelis"
+    );
+  }
+
+  #[test]
+  fn cyrillic_to_ascii() {
+    assert_eq!(
+      interpret(r#"Transliterate["алгоритм"]"#).unwrap(),
+      "algoritm"
+    );
+    assert_eq!(interpret(r#"Transliterate["Москва"]"#).unwrap(), "Moskva");
+    assert_eq!(interpret(r#"Transliterate["жизнь"]"#).unwrap(), "zizn'");
+  }
+
+  #[test]
+  fn hiragana_to_ascii() {
+    assert_eq!(
+      interpret(r#"Transliterate["しんばし"]"#).unwrap(),
+      "shinbashi"
+    );
+    assert_eq!(
+      interpret(r#"Transliterate["こんにちは"]"#).unwrap(),
+      "konnichiha"
+    );
+  }
+
+  #[test]
+  fn kana_gemination_and_moraic_n() {
+    assert_eq!(interpret(r#"Transliterate["きっぷ"]"#).unwrap(), "kippu");
+    assert_eq!(interpret(r#"Transliterate["まっちゃ"]"#).unwrap(), "matcha");
+    assert_eq!(
+      interpret(r#"Transliterate["しんいち"]"#).unwrap(),
+      "shin'ichi"
+    );
+  }
+
+  #[test]
+  fn katakana_with_prolonged_sound_mark() {
+    assert_eq!(interpret(r#"Transliterate["シャワー"]"#).unwrap(), "shawa");
+  }
+
+  #[test]
+  fn hangul_to_ascii() {
+    assert_eq!(
+      interpret(r#"Transliterate["안녕하세요"]"#).unwrap(),
+      "annyeonghaseyo"
+    );
+  }
+
+  #[test]
+  fn latin_folding() {
+    assert_eq!(
+      interpret("Transliterate[\"caf\u{00e9} r\u{00e9}sum\u{00e9}\"]").unwrap(),
+      "cafe resume"
+    );
+    assert_eq!(
+      interpret("Transliterate[\"stra\u{00df}e \u{00d8}rsted\"]").unwrap(),
+      "strasse Orsted"
+    );
+  }
+
+  #[test]
+  fn ascii_passes_through() {
+    assert_eq!(interpret(r#"Transliterate["hello"]"#).unwrap(), "hello");
+    assert_eq!(interpret(r#"Transliterate[""]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn maps_over_string_lists() {
+    assert_eq!(
+      interpret(r#"Transliterate[{"Ελλάδα", "Москва"}]"#).unwrap(),
+      "{Ellada, Moskva}"
+    );
+  }
+
+  #[test]
+  fn unsupported_forms_stay_unevaluated() {
+    assert_eq!(
+      interpret(r#"Transliterate["tadaima", "Hiragana"]"#).unwrap(),
+      "Transliterate[tadaima, Hiragana]"
+    );
+    assert_eq!(interpret("Transliterate[5]").unwrap(), "Transliterate[5]");
+  }
+}
+
 mod string_rotate_left {
   use super::*;
 
