@@ -3847,7 +3847,7 @@ pub struct BoxLayout {
 /// (see the host CSS), whose glyphs advance 632/1000 em. The per-atom width
 /// estimate must match this, or successive atoms (e.g. a function name and its
 /// opening `[`) overlap.
-const MONO_ADVANCE: f64 = 0.632;
+pub(crate) const MONO_ADVANCE: f64 = 0.632;
 
 impl BoxLayout {
   /// Create a layout for a simple text atom.

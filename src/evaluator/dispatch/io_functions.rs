@@ -3329,6 +3329,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       boxes_to_text_svg(&box_args[0])
     }
+    // QuestionObject[…] — render as a question panel (prompt, answer
+    // choices / input field, Submit button).
+    Expr::FunctionCall { name: qo_name, .. } if qo_name == "QuestionObject" => {
+      crate::functions::assessment_render::question_object_to_svg(expr)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
     other => expr_text_svg(other),
   }
 }

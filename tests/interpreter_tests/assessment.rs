@@ -216,3 +216,93 @@ fn question_object_property_chain() {
     "True"
   );
 }
+
+// ─── Graphical (SVG) rendering ──────────────────────────────────────────────
+
+#[test]
+fn question_object_svg_multiple_choice_panel() {
+  // A rule-list answer key renders as a question panel with one radio
+  // button per choice and a Submit button.
+  let svg = interpret(
+    r#"ExportString[QuestionObject["How many career home runs did Hank Aaron hit?", AssessmentFunction[{714 -> False, 755 -> True, 868 -> False}]], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(svg.contains("How many career home runs did Hank Aaron hit?"));
+  for choice in ["714", "755", "868"] {
+    assert!(
+      svg.contains(&format!(">{choice}</text>")),
+      "missing choice {choice}: {svg}"
+    );
+  }
+  assert_eq!(svg.matches("<circle").count(), 3, "one radio per choice");
+  assert!(
+    svg.contains(">Submit</text>"),
+    "missing Submit button: {svg}"
+  );
+  // The panel must not be the typeset expression dump.
+  assert!(
+    !svg.contains("QuestionObject"),
+    "raw expression leaked: {svg}"
+  );
+  assert!(!svg.contains("AssessmentFunction"));
+}
+
+#[test]
+fn question_object_svg_bare_spec_choices() {
+  // The assessment may be a bare answer-key list without the
+  // AssessmentFunction wrapper.
+  let svg = interpret(
+    r#"ExportString[QuestionObject["Pick a primary color.", {"Red", "Blue"}], "SVG"]"#,
+  )
+  .unwrap();
+  assert_eq!(svg.matches("<circle").count(), 2);
+  assert!(svg.contains(">Red</text>"), "got: {svg}");
+  assert!(svg.contains(">Blue</text>"), "got: {svg}");
+}
+
+#[test]
+fn question_object_svg_input_field_for_non_list_spec() {
+  // A non-list answer key has no explicit choices: the answer area is a
+  // free-form input field (no radio buttons).
+  let svg = interpret(
+    r#"ExportString[QuestionObject["What is 2+2?", AssessmentFunction[4]], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.contains("What is 2+2?"), "got: {svg}");
+  assert!(!svg.contains("<circle"), "no radio buttons expected: {svg}");
+  assert!(svg.contains(">Submit</text>"), "got: {svg}");
+  // Two rects besides the frame: the input field and the Submit button.
+  assert_eq!(svg.matches("<rect").count(), 3, "got: {svg}");
+}
+
+#[test]
+fn question_object_svg_wraps_long_question() {
+  let svg = interpret(
+    r#"ExportString[QuestionObject["Which of the following statements about the career of the baseball player Henry Louis Aaron is accurate and correct?", AssessmentFunction[{1 -> True}]], "SVG"]"#,
+  )
+  .unwrap();
+  // The 122-character question must wrap onto multiple text lines.
+  let question_lines = svg
+    .lines()
+    .filter(|l| {
+      l.contains("<text") && !l.contains("Submit") && !l.contains(">1</text>")
+    })
+    .count();
+  assert!(question_lines >= 2, "expected wrapped question, got: {svg}");
+}
+
+#[test]
+fn question_object_playground_output_is_panel_svg() {
+  // In the playground the bare QuestionObject result is displayed as the
+  // question panel, not as typeset expression text.
+  clear_state();
+  interpret(
+    r#"QuestionObject["Is a whale a mammal?", AssessmentFunction[{True}]]"#,
+  )
+  .unwrap();
+  let svg = woxi::get_captured_output_svg().expect("output SVG captured");
+  assert!(svg.contains("Is a whale a mammal?"), "got: {svg}");
+  assert!(svg.contains(">Submit</text>"), "got: {svg}");
+  assert!(!svg.contains("QuestionObject"), "got: {svg}");
+}

@@ -2741,6 +2741,13 @@ fn generate_output_svg(expr: &syntax::Expr) {
   {
     return;
   }
+  // QuestionObject renders as a question panel (prompt, answer choices,
+  // Submit button) rather than as typeset expression text.
+  if let Some(svg) = functions::assessment_render::question_object_to_svg(expr)
+  {
+    capture_output_svg(&svg);
+    return;
+  }
   // Skip SVG for InputForm results — display as plain text
   if matches!(expr, syntax::Expr::FunctionCall { name, args } if name == "InputForm" && args.len() == 1)
   {
