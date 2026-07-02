@@ -48,10 +48,29 @@ mod machine_specific {
       .expect("HOME (or USERPROFILE) must be set in the test environment")
   }
 
+  /// Login name of the current user, mirroring `$UserName` in
+  /// `src/evaluator/listable.rs`: USER / USERNAME env vars first, then the
+  /// account name of the effective uid.
   fn host_user() -> String {
     std::env::var("USER")
       .or_else(|_| std::env::var("USERNAME"))
-      .expect("USER (or USERNAME) must be set in the test environment")
+      .ok()
+      .or_else(|| {
+        #[cfg(unix)]
+        unsafe {
+          let pw = libc::getpwuid(libc::geteuid());
+          if pw.is_null() {
+            return None;
+          }
+          std::ffi::CStr::from_ptr((*pw).pw_name)
+            .to_str()
+            .ok()
+            .map(str::to_string)
+        }
+        #[cfg(not(unix))]
+        None
+      })
+      .expect("could not determine the current user name")
   }
 
   /// Short hostname, stripped of trailing `.local` / `.lan` etc, to

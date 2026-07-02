@@ -4675,6 +4675,53 @@ mod random_date {
   }
 }
 
+mod random_time {
+  use super::*;
+
+  #[test]
+  fn no_args_is_time_object() {
+    // RandomTime[] returns a TimeObject with structure
+    //   TimeObject[{h, m, s}, Instant].
+    assert_eq!(interpret("Head[RandomTime[]]").unwrap(), "TimeObject");
+  }
+
+  #[test]
+  fn no_args_has_instant_granularity() {
+    assert_eq!(interpret("RandomTime[][[2]]").unwrap(), "Instant");
+  }
+
+  #[test]
+  fn no_args_components_in_valid_ranges() {
+    // Hours in [0, 24), minutes in [0, 60), seconds in [0, 60).
+    assert_eq!(
+      interpret(
+        "AllTrue[Table[RandomTime[][[1]], 20], \
+         0 <= #[[1]] < 24 && 0 <= #[[2]] < 60 && 0 <= #[[3]] < 60 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn n_arg_returns_list_of_n() {
+    assert_eq!(interpret("Length[RandomTime[5]]").unwrap(), "5");
+  }
+
+  #[test]
+  fn n_arg_all_time_objects() {
+    assert_eq!(
+      interpret("AllTrue[RandomTime[10], Head[#] == TimeObject &]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn n_zero_returns_empty_list() {
+    assert_eq!(interpret("RandomTime[0]").unwrap(), "{}");
+  }
+}
+
 mod random_color {
   use super::*;
 

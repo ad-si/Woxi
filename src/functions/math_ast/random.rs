@@ -549,6 +549,60 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// `RandomTime[]` returns a single `TimeObject` at a random instant of the
+/// day (uniform over the full 24 hours). `RandomTime[n]` returns a list of
+/// `n` such TimeObjects.
+pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use rand::Rng;
+
+  fn one_time() -> Expr {
+    // Pick a random instant of the day with microsecond resolution (the same
+    // precision RandomDate uses for its seconds field).
+    let total: f64 = crate::with_rng(|rng| rng.gen_range(0.0..86400.0));
+    let total_micros = (total * 1e6) as i64;
+    let h = total_micros / 3_600_000_000;
+    let m = (total_micros % 3_600_000_000) / 60_000_000;
+    let s = (total_micros % 60_000_000) as f64 / 1e6;
+    Expr::FunctionCall {
+      name: "TimeObject".to_string(),
+      args: vec![
+        Expr::List(
+          vec![
+            Expr::Integer(h as i128),
+            Expr::Integer(m as i128),
+            Expr::Real(s),
+          ]
+          .into(),
+        ),
+        Expr::Identifier("Instant".to_string()),
+      ]
+      .into(),
+    }
+  }
+
+  match args.len() {
+    0 => Ok(one_time()),
+    1 => match &args[0] {
+      Expr::Integer(n) if *n >= 0 => {
+        let count = *n as usize;
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+          out.push(one_time());
+        }
+        Ok(Expr::List(out.into()))
+      }
+      _ => Ok(Expr::FunctionCall {
+        name: "RandomTime".to_string(),
+        args: args.to_vec().into(),
+      }),
+    },
+    _ => Ok(Expr::FunctionCall {
+      name: "RandomTime".to_string(),
+      args: args.to_vec().into(),
+    }),
+  }
+}
+
 /// Random[] or Random[Real] / Random[Integer] / Random[Complex],
 /// optionally followed by a range argument. This is the legacy wrapper
 /// around RandomReal / RandomInteger / RandomComplex.

@@ -1729,6 +1729,9 @@ pub fn dispatch_math_functions(
     "RandomDate" if args.len() <= 1 => {
       return Some(crate::functions::math_ast::random_date_ast(args));
     }
+    "RandomTime" if args.len() <= 1 => {
+      return Some(crate::functions::math_ast::random_time_ast(args));
+    }
     "Random" => {
       return Some(crate::functions::math_ast::random_ast(args));
     }
