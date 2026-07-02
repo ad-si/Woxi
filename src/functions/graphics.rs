@@ -720,10 +720,10 @@ fn system_color_pair(name: &str) -> Option<(&'static str, &'static str)> {
     "WindowText" | "MenuText" | "DialogText" | "ButtonText" | "StatusText"
     | "TooltipText" | "TabButtonText" | "DefaultButtonText"
     | "CancelButtonText" => ("#333333", "#e0e0e0"),
-    "PressedButtonText" | "PressedCancelButtonText"
-    | "PressedDefaultButtonText" | "TabButtonTextPressed" => {
-      ("#000000", "#ffffff")
-    }
+    "PressedButtonText"
+    | "PressedCancelButtonText"
+    | "PressedDefaultButtonText"
+    | "TabButtonTextPressed" => ("#000000", "#ffffff"),
     "TabButtonTextHover" => ("#111111", "#f5f5f5"),
     "DialogTextDisabled" | "TabButtonTextDisabled" => ("#999999", "#6e6e6e"),
     _ => return None,
@@ -885,7 +885,7 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
           // LightDarkSwitched[Automatic, dark]: derive the light variant
           dark
             .filter(|d| !is_auto(d))
-            .and_then(|d| parse_color(d))
+            .and_then(parse_color)
             .map(auto_light_dark_variant)
         }
       }

@@ -2239,7 +2239,10 @@ mod light_dark_theme_colors {
   fn light_dark_switched_stays_symbolic() {
     let out = woxi::interpret("LightDarkSwitched[Red, Blue]")
       .expect("interpret should succeed");
-    assert_eq!(out, "LightDarkSwitched[RGBColor[1, 0, 0], RGBColor[0, 0, 1]]");
+    assert_eq!(
+      out,
+      "LightDarkSwitched[RGBColor[1, 0, 0], RGBColor[0, 0, 1]]"
+    );
   }
 
   #[test]
@@ -2310,10 +2313,7 @@ mod light_dark_theme_colors {
   #[test]
   fn theme_color_resolves_per_mode_in_graphics() {
     woxi::set_dark_mode(false);
-    assert_eq!(
-      graphics_fill(r#"ThemeColor["Accent1"]"#),
-      "rgb(94,129,181)"
-    );
+    assert_eq!(graphics_fill(r#"ThemeColor["Accent1"]"#), "rgb(94,129,181)");
     woxi::set_dark_mode(true);
     assert_eq!(
       graphics_fill(r#"ThemeColor["Accent1"]"#),
@@ -2342,10 +2342,7 @@ mod light_dark_theme_colors {
     // An unrecognized name can't be resolved, so the disk keeps the
     // default black fill instead of picking up a bogus color.
     woxi::set_dark_mode(false);
-    assert_eq!(
-      graphics_fill(r#"ThemeColor["NoSuchName"]"#),
-      "rgb(0,0,0)"
-    );
+    assert_eq!(graphics_fill(r#"ThemeColor["NoSuchName"]"#), "rgb(0,0,0)");
   }
 
   #[test]
