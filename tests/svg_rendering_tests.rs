@@ -2216,3 +2216,148 @@ mod box_representation_tests {
     assert_eq!(out, "Haloing[RGBColor[1, 0, 0]]");
   }
 }
+
+// ── LightDarkSwitched / ThemeColor / SystemColor ──
+//
+// All three stay symbolic in kernel evaluation (matching wolframscript) and
+// are resolved to concrete colors by Woxi's renderer based on the current
+// light/dark mode. Each test sets the mode explicitly: the flag is
+// thread-local and every #[test] runs on its own thread, so tests can't
+// interfere with each other.
+mod light_dark_theme_colors {
+  fn graphics_fill(code: &str) -> String {
+    let svg = woxi::interpret(&format!(
+      r#"ExportString[Graphics[{{{code}, Disk[]}}], "SVG"]"#
+    ))
+    .expect("interpret should succeed");
+    let start = svg.find("fill=\"").expect("disk should have a fill") + 6;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].to_string()
+  }
+
+  #[test]
+  fn light_dark_switched_stays_symbolic() {
+    let out = woxi::interpret("LightDarkSwitched[Red, Blue]")
+      .expect("interpret should succeed");
+    assert_eq!(out, "LightDarkSwitched[RGBColor[1, 0, 0], RGBColor[0, 0, 1]]");
+  }
+
+  #[test]
+  fn system_color_stays_symbolic() {
+    let out = woxi::interpret(r#"SystemColor["Window"]"#)
+      .expect("interpret should succeed");
+    assert_eq!(out, "SystemColor[Window]");
+  }
+
+  #[test]
+  fn theme_color_stays_symbolic() {
+    let out = woxi::interpret(r#"ThemeColor["Accent1"]"#)
+      .expect("interpret should succeed");
+    assert_eq!(out, "ThemeColor[Accent1]");
+  }
+
+  #[test]
+  fn color_q_is_false_for_switched_colors() {
+    for code in [
+      "ColorQ[LightDarkSwitched[Red, Blue]]",
+      r#"ColorQ[SystemColor["Window"]]"#,
+      r#"ColorQ[ThemeColor["Accent1"]]"#,
+    ] {
+      let out = woxi::interpret(code).expect("interpret should succeed");
+      assert_eq!(out, "False", "{code}");
+    }
+  }
+
+  #[test]
+  fn light_dark_switched_picks_light_variant_in_light_mode() {
+    woxi::set_dark_mode(false);
+    assert_eq!(
+      graphics_fill("LightDarkSwitched[Red, Blue]"),
+      "rgb(255,0,0)"
+    );
+  }
+
+  #[test]
+  fn light_dark_switched_picks_dark_variant_in_dark_mode() {
+    woxi::set_dark_mode(true);
+    assert_eq!(
+      graphics_fill("LightDarkSwitched[Red, Blue]"),
+      "rgb(0,0,255)"
+    );
+  }
+
+  #[test]
+  fn light_dark_switched_derives_automatic_dark_variant() {
+    // The automatic variant flips HSL lightness: white becomes black.
+    woxi::set_dark_mode(true);
+    assert_eq!(graphics_fill("LightDarkSwitched[White]"), "rgb(0,0,0)");
+    // Navy (lightness 0.25) flips to a light blue (lightness 0.75).
+    assert_eq!(
+      graphics_fill("LightDarkSwitched[RGBColor[0, 0, 0.5], Automatic]"),
+      "rgb(128,128,255)"
+    );
+  }
+
+  #[test]
+  fn light_dark_switched_derives_automatic_light_variant() {
+    woxi::set_dark_mode(false);
+    assert_eq!(
+      graphics_fill("LightDarkSwitched[Automatic, White]"),
+      "rgb(0,0,0)"
+    );
+  }
+
+  #[test]
+  fn theme_color_resolves_per_mode_in_graphics() {
+    woxi::set_dark_mode(false);
+    assert_eq!(
+      graphics_fill(r#"ThemeColor["Accent1"]"#),
+      "rgb(94,129,181)"
+    );
+    woxi::set_dark_mode(true);
+    assert_eq!(
+      graphics_fill(r#"ThemeColor["Accent1"]"#),
+      "rgb(122,155,201)"
+    );
+    woxi::set_dark_mode(false);
+  }
+
+  #[test]
+  fn system_color_resolves_per_mode_in_graphics() {
+    woxi::set_dark_mode(false);
+    assert_eq!(
+      graphics_fill(r#"SystemColor["Highlight"]"#),
+      "rgb(56,117,215)"
+    );
+    woxi::set_dark_mode(true);
+    assert_eq!(
+      graphics_fill(r#"SystemColor["Highlight"]"#),
+      "rgb(77,141,224)"
+    );
+    woxi::set_dark_mode(false);
+  }
+
+  #[test]
+  fn unknown_theme_color_name_is_ignored_as_directive() {
+    // An unrecognized name can't be resolved, so the disk keeps the
+    // default black fill instead of picking up a bogus color.
+    woxi::set_dark_mode(false);
+    assert_eq!(
+      graphics_fill(r#"ThemeColor["NoSuchName"]"#),
+      "rgb(0,0,0)"
+    );
+  }
+
+  #[test]
+  fn switched_colors_work_in_edge_form() {
+    woxi::set_dark_mode(false);
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{EdgeForm[LightDarkSwitched[Red, Blue]], Disk[]}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(
+      svg.contains("stroke=\"rgb(255,0,0)\""),
+      "EdgeForm should resolve the switched color: {svg}"
+    );
+  }
+}
