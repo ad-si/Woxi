@@ -649,11 +649,12 @@ mod interpreter_tests {
     // playable WAV exposed via the `sound` channel instead of the -Sound- echo.
     clear_state();
     let r = interpret_with_stdout("Play[Sin[440*2*Pi*t], {t, 0, 1}]").unwrap();
-    let wav_b64 = r.sound.expect("Play should produce synthesized audio");
+    let audio = r.sound.expect("Play should produce synthesized audio");
+    assert_eq!(audio.mime, "audio/wav");
     // Decoded bytes start with the RIFF/WAVE magic.
     let bytes = base64::engine::Engine::decode(
       &base64::engine::general_purpose::STANDARD,
-      &wav_b64,
+      &audio.base64,
     )
     .expect("sound should be valid base64");
     assert_eq!(&bytes[0..4], b"RIFF", "WAV should start with RIFF magic");
@@ -670,14 +671,139 @@ mod interpreter_tests {
       "Sound[{Play[Sin[1000*t], {t, 0, 0.2}], Play[Sin[500*t], {t, 0, 0.5}]}]",
     )
     .unwrap();
-    let wav_b64 = r.sound.expect("Sound should produce synthesized audio");
+    let audio = r.sound.expect("Sound should produce synthesized audio");
     let bytes = base64::engine::Engine::decode(
       &base64::engine::general_purpose::STANDARD,
-      &wav_b64,
+      &audio.base64,
     )
     .expect("sound should be valid base64");
     // 0.2s + 0.5s = 0.7s at 8000 Hz, 16-bit mono.
     assert_eq!(bytes.len(), 44 + (8000 * 7 / 10) * 2);
+  }
+
+  /// Decode the base64 WAV payload of a captured audio output.
+  fn decode_wav_bytes(audio: &woxi::AudioOutput) -> Vec<u8> {
+    assert_eq!(audio.mime, "audio/wav");
+    base64::engine::Engine::decode(
+      &base64::engine::general_purpose::STANDARD,
+      &audio.base64,
+    )
+    .expect("sound should be valid base64")
+  }
+
+  #[test]
+  fn test_audio_from_samples_renders_player_in_visual_mode() {
+    // In visual mode (playground / woxi-studio), Audio[{samples…}] is encoded
+    // as a WAV and exposed via the `sound` channel so the hosts render a
+    // graphical audio player. The CLI keeps the symbolic Audio[…] form.
+    clear_state();
+    let r = interpret_with_stdout("Audio[{0, 0.5, -0.5, 1}]").unwrap();
+    assert_eq!(r.result, "-Audio-");
+    let audio = r.sound.expect("Audio should produce playable audio");
+    assert_eq!(audio.label, None);
+    let bytes = decode_wav_bytes(&audio);
+    assert_eq!(&bytes[0..4], b"RIFF");
+    assert_eq!(&bytes[8..12], b"WAVE");
+    // Default sample rate for sample-data Audio is 44100 Hz.
+    assert_eq!(u32::from_le_bytes(bytes[24..28].try_into().unwrap()), 44100);
+    // 4 samples, 16-bit mono.
+    assert_eq!(bytes.len(), 44 + 4 * 2);
+  }
+
+  #[test]
+  fn test_audio_sample_rate_option_sets_wav_rate() {
+    clear_state();
+    let r =
+      interpret_with_stdout("Audio[{0, 1, 0}, SampleRate -> 8000]").unwrap();
+    let audio = r.sound.expect("Audio should produce playable audio");
+    let bytes = decode_wav_bytes(&audio);
+    assert_eq!(u32::from_le_bytes(bytes[24..28].try_into().unwrap()), 8000);
+  }
+
+  #[test]
+  fn test_audio_multichannel_samples_encode_interleaved_wav() {
+    clear_state();
+    let r = interpret_with_stdout("Audio[{{0, 1, 0}, {1, 0, 1}}]").unwrap();
+    let audio = r.sound.expect("Audio should produce playable audio");
+    let bytes = decode_wav_bytes(&audio);
+    // Channel count lives in bytes 22..24 of the fmt chunk.
+    assert_eq!(u16::from_le_bytes(bytes[22..24].try_into().unwrap()), 2);
+    // 3 frames × 2 channels × 16-bit.
+    assert_eq!(bytes.len(), 44 + 3 * 2 * 2);
+  }
+
+  #[test]
+  fn test_audio_file_renders_player_in_visual_mode() {
+    // Audio[File["path"]] embeds the file's bytes so visual hosts render a
+    // graphical audio player that can actually play the file.
+    clear_state();
+    let wav = interpret_with_stdout("Audio[{0, 1, 0}]")
+      .unwrap()
+      .sound
+      .unwrap();
+    let bytes = decode_wav_bytes(&wav);
+    let path = std::env::temp_dir().join("woxi_test_audio_file.wav");
+    std::fs::write(&path, &bytes).unwrap();
+
+    clear_state();
+    let r =
+      interpret_with_stdout(&format!("Audio[File[\"{}\"]]", path.display()))
+        .unwrap();
+    assert_eq!(r.result, "-Audio-");
+    let audio = r.sound.expect("file-backed Audio should produce audio");
+    assert_eq!(audio.mime, "audio/wav");
+    assert_eq!(audio.label.as_deref(), Some("woxi_test_audio_file.wav"));
+    // The player carries the file's bytes verbatim.
+    assert_eq!(decode_wav_bytes(&audio), bytes);
+    std::fs::remove_file(&path).ok();
+  }
+
+  #[test]
+  fn test_audio_file_path_string_renders_player_in_visual_mode() {
+    // A bare string with an audio extension works like File["path"].
+    clear_state();
+    let wav = interpret_with_stdout("Audio[{0, 1, 0}]")
+      .unwrap()
+      .sound
+      .unwrap();
+    let bytes = decode_wav_bytes(&wav);
+    let path = std::env::temp_dir().join("woxi_test_audio_str.wav");
+    std::fs::write(&path, &bytes).unwrap();
+
+    clear_state();
+    let r =
+      interpret_with_stdout(&format!("Audio[\"{}\"]", path.display())).unwrap();
+    assert_eq!(r.result, "-Audio-");
+    let audio = r.sound.expect("file-backed Audio should produce audio");
+    assert_eq!(audio.label.as_deref(), Some("woxi_test_audio_str.wav"));
+    assert_eq!(decode_wav_bytes(&audio), bytes);
+    std::fs::remove_file(&path).ok();
+  }
+
+  #[test]
+  fn test_audio_missing_file_still_renders_player_chrome() {
+    // A file-backed Audio whose file cannot be read (missing here; any local
+    // path in the browser playground) still renders the player chrome: the
+    // audio output is captured with an empty payload and the file's name.
+    clear_state();
+    let r =
+      interpret_with_stdout("Audio[File[\"/nonexistent/jazz_no1.flac\"]]")
+        .unwrap();
+    assert_eq!(r.result, "-Audio-");
+    let audio = r.sound.expect("file-backed Audio should produce audio");
+    assert_eq!(audio.base64, "");
+    assert_eq!(audio.mime, "audio/flac");
+    assert_eq!(audio.label.as_deref(), Some("jazz_no1.flac"));
+  }
+
+  #[test]
+  fn test_audio_symbolic_data_keeps_text_echo_in_visual_mode() {
+    // Audio with non-numeric data cannot become a player and keeps its
+    // symbolic echo even in visual mode.
+    clear_state();
+    let r = interpret_with_stdout("Audio[{a, b}]").unwrap();
+    assert_eq!(r.result, "Audio[{a, b}]");
+    assert!(r.sound.is_none());
   }
 
   #[test]

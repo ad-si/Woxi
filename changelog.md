@@ -2,6 +2,8 @@
 
 # 2025-05-08 - 0.1.0
 
+- Render `Audio[…]` objects (file-backed via `File[…]`/path strings, or from
+    sample data) as a graphical audio player in the playground and Woxi Studio
 - Add support for `HTTPRequest` objects including property extraction
 - Add support for `QuestionObject`, `AssessmentFunction`, and `AssessmentResultObject`
 - Implement `DateString` and `Now`

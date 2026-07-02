@@ -112,6 +112,20 @@ pub enum InterpreterError {
   GotoSignal(Box<syntax::Expr>),
 }
 
+/// A playable audio output captured during evaluation. Visual hosts (the
+/// Woxi Playground and Woxi Studio) render it as a graphical audio player.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioOutput {
+  /// Base64-encoded audio data. Empty when the data is unavailable (e.g. a
+  /// file-backed `Audio` whose file cannot be read, as in the browser
+  /// playground) — hosts still render the player chrome, it just cannot play.
+  pub base64: String,
+  /// MIME type of the encoded data (e.g. "audio/wav", "audio/flac").
+  pub mime: String,
+  /// Display label — the file name for file-backed `Audio` objects.
+  pub label: Option<String>,
+}
+
 /// Extended result type that includes both stdout and the result
 #[derive(Debug, Clone)]
 pub struct InterpretResult {
@@ -119,8 +133,8 @@ pub struct InterpretResult {
   pub result: String,
   pub graphics: Option<String>,
   pub output_svg: Option<String>,
-  /// Synthesized audio (base64-encoded WAV) from Play/Sound, if any.
-  pub sound: Option<String>,
+  /// Playable audio (synthesized from Play/Sound, or an Audio object), if any.
+  pub sound: Option<AudioOutput>,
   pub warnings: Vec<String>,
 }
 
@@ -256,10 +270,10 @@ thread_local! {
     static CAPTURED_OUTPUT_SVG: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
-// Captured synthesized audio (base64-encoded WAV) from Play/Sound. The visual
-// hosts turn this into a playable audio control.
+// Captured playable audio (from Play/Sound synthesis or an Audio object).
+// The visual hosts turn this into a graphical audio player.
 thread_local! {
-    static CAPTURED_SOUND: RefCell<Option<String>> = const { RefCell::new(None) };
+    static CAPTURED_SOUND: RefCell<Option<AudioOutput>> = const { RefCell::new(None) };
 }
 
 // Most-recent evaluated expression for `%` / `Out[]` shortcuts. Set by
@@ -872,13 +886,22 @@ fn clear_captured_sound() {
 
 /// Stores synthesized audio as a base64-encoded WAV (from Play/Sound).
 pub fn capture_sound(wav_base64: &str) {
-  CAPTURED_SOUND.with(|buffer| {
-    *buffer.borrow_mut() = Some(wav_base64.to_string());
+  capture_audio(AudioOutput {
+    base64: wav_base64.to_string(),
+    mime: "audio/wav".to_string(),
+    label: None,
   });
 }
 
-/// Gets the captured audio (base64-encoded WAV), if any.
-pub fn get_captured_sound() -> Option<String> {
+/// Stores playable audio (e.g. from a file-backed Audio object).
+pub fn capture_audio(audio: AudioOutput) {
+  CAPTURED_SOUND.with(|buffer| {
+    *buffer.borrow_mut() = Some(audio);
+  });
+}
+
+/// Gets the captured playable audio, if any.
+pub fn get_captured_sound() -> Option<AudioOutput> {
   CAPTURED_SOUND.with(|buffer| buffer.borrow().clone())
 }
 
@@ -1645,6 +1668,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         } else {
           result_expr
         };
+        // If the result is an Audio object (file-backed or from sample data),
+        // capture it as playable audio so the visual hosts render a graphical
+        // audio player (CLI mode keeps the symbolic Audio[...] expression).
+        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          render_audio_if_needed(result_expr)
+        } else {
+          result_expr
+        };
         // Render ComputationalMusic objects (MusicNote, MusicChord, …) as
         // musical-staff SVGs (visual mode only — CLI keeps them symbolic).
         let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
@@ -1940,6 +1971,23 @@ fn render_color_if_needed(mut expr: syntax::Expr) -> syntax::Expr {
       .map(render_color_if_needed)
       .collect();
     return syntax::Expr::List(new_items.into());
+  }
+  expr
+}
+
+/// If `expr` is an `Audio[…]` object — file-backed (`Audio[File["path"]]` /
+/// `Audio["path.flac"]`) or built from raw sample data — capture it as
+/// playable audio so visual hosts (the Woxi Playground and Woxi Studio)
+/// render a graphical audio player, and return the `-Audio-` placeholder.
+/// Audio objects that cannot be turned into a player (e.g. symbolic data)
+/// are left unchanged. Visual hosts only — the CLI keeps the symbolic form.
+fn render_audio_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if let syntax::Expr::FunctionCall { ref name, .. } = expr
+    && name == "Audio"
+    && let Some(audio) = functions::sound::audio_to_output(&expr)
+  {
+    capture_audio(audio);
+    return syntax::Expr::Identifier("-Audio-".to_string());
   }
   expr
 }
