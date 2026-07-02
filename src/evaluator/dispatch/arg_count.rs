@@ -1028,6 +1028,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RegionDistance" => Some((1, 2)),
     "RegionNearest" => Some((1, 2)),
     "SignedRegionDistance" => Some((1, 2)),
+    "FindShortestCurve" => Some((3, 3)),
+    "ShortestCurveDistance" => Some((3, 3)),
     "RegionPlot" => Some((3, usize::MAX)),
     "RegionWithin" => Some((2, 2)),
     "RegularExpression" => Some((1, 1)),

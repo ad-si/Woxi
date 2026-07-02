@@ -619,6 +619,8 @@
       - [`TrigReduce`](math/algebraic/TrigReduce.md)
       - [`TrigToExp`](math/algebraic/TrigToExp.md)
     - [Math Utilities](math/utility.md)
+      - [`FindShortestCurve`](math/utility/FindShortestCurve.md)
+      - [`ShortestCurveDistance`](math/utility/ShortestCurveDistance.md)
       - [`CovarianceFunction`](math/utility/CovarianceFunction.md)
       - [`Entropy`](math/utility/Entropy.md)
       - [`RegionDistance`](math/utility/RegionDistance.md)
