@@ -993,7 +993,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RandomImage" => Some((0, 2)),
     "RandomPermutation" => Some((1, 2)),
     "RandomSample" => Some((1, 2)),
-    "RandomTime" => Some((0, 1)),
+    "RandomTime" => Some((0, 2)),
     "RandomVariate" => Some((1, 2)),
     "Range" => Some((1, 3)),
     "RankedMax" => Some((2, 2)),

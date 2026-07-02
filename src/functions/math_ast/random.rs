@@ -543,23 +543,169 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 #[cfg(target_arch = "wasm32")]
 pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  Ok(Expr::FunctionCall {
-    name: "RandomDate".to_string(),
-    args: args.to_vec().into(),
-  })
+  use rand::Rng;
+
+  fn one_date() -> Expr {
+    let now = js_sys::Date::new_0();
+    let year = now.get_full_year();
+    let year_start = js_sys::Date::new_with_year_month_day(year, 0, 1);
+    let next_year_start = js_sys::Date::new_with_year_month_day(year + 1, 0, 1);
+    let span = (next_year_start.get_time() - year_start.get_time()).max(1.0);
+    let offset_ms = crate::with_rng(|rng| rng.gen_range(0.0..span));
+    let total_micros = (offset_ms * 1000.0) as i64;
+    let chosen = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(
+      year_start.get_time() + (total_micros / 1000) as f64,
+    ));
+    // Local midnight is on a whole-second boundary, so the chosen instant's
+    // sub-second part is exactly the offset's microsecond remainder.
+    let seconds =
+      chosen.get_seconds() as f64 + (total_micros % 1_000_000) as f64 / 1e6;
+    let tz_offset_hours = -(chosen.get_timezone_offset() / 60.0);
+    Expr::FunctionCall {
+      name: "DateObject".to_string(),
+      args: vec![
+        Expr::List(
+          vec![
+            Expr::Integer(chosen.get_full_year() as i128),
+            Expr::Integer((chosen.get_month() + 1) as i128),
+            Expr::Integer(chosen.get_date() as i128),
+            Expr::Integer(chosen.get_hours() as i128),
+            Expr::Integer(chosen.get_minutes() as i128),
+            Expr::Real(seconds),
+          ]
+          .into(),
+        ),
+        Expr::String("Instant".to_string()),
+        Expr::String("Gregorian".to_string()),
+        Expr::Real(tz_offset_hours),
+      ]
+      .into(),
+    }
+  }
+
+  match args.len() {
+    0 => Ok(one_date()),
+    1 => match &args[0] {
+      Expr::Integer(n) if *n >= 0 => {
+        let count = *n as usize;
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+          out.push(one_date());
+        }
+        Ok(Expr::List(out.into()))
+      }
+      _ => Ok(Expr::FunctionCall {
+        name: "RandomDate".to_string(),
+        args: args.to_vec().into(),
+      }),
+    },
+    _ => Ok(Expr::FunctionCall {
+      name: "RandomDate".to_string(),
+      args: args.to_vec().into(),
+    }),
+  }
+}
+
+/// Current local time of day in seconds since midnight (with sub-second
+/// precision), used as the anchor for `RandomTime[Quantity[…]]`.
+#[cfg(not(target_arch = "wasm32"))]
+fn now_time_of_day_seconds() -> f64 {
+  use chrono::{Local, Timelike};
+  let now = Local::now();
+  now.num_seconds_from_midnight() as f64 + now.nanosecond() as f64 / 1e9
+}
+
+#[cfg(target_arch = "wasm32")]
+fn now_time_of_day_seconds() -> f64 {
+  let now = js_sys::Date::new_0();
+  now.get_hours() as f64 * 3600.0
+    + now.get_minutes() as f64 * 60.0
+    + now.get_seconds() as f64
+    + now.get_milliseconds() as f64 / 1000.0
+}
+
+/// Signed span in seconds of a `Quantity[v, unit]` time quantity.
+fn quantity_span_seconds(expr: &Expr) -> Option<f64> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Quantity" || args.len() != 2 {
+    return None;
+  }
+  let value = crate::functions::math_ast::try_eval_to_f64(&args[0])?;
+  let unit = match &args[1] {
+    Expr::String(s) => s.as_str(),
+    Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  let factor = match unit {
+    "Millisecond" | "Milliseconds" => 0.001,
+    "Second" | "Seconds" => 1.0,
+    "Minute" | "Minutes" => 60.0,
+    "Hour" | "Hours" => 3600.0,
+    "Day" | "Days" => 86400.0,
+    "Week" | "Weeks" => 7.0 * 86400.0,
+    _ => return None,
+  };
+  Some(value * factor)
+}
+
+/// The `[start, end)` span in seconds-since-midnight covered by a
+/// `TimeObject[{…}, granularity]`. A whole-hour or whole-minute TimeObject
+/// covers its full granularity unit; an Instant has a zero-width span.
+fn time_object_span(expr: &Expr) -> Option<(f64, f64)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "TimeObject" || args.is_empty() || args.len() > 2 {
+    return None;
+  }
+  let Expr::List(comps) = &args[0] else {
+    return None;
+  };
+  if comps.is_empty() || comps.len() > 3 {
+    return None;
+  }
+  let mut secs = [0.0f64; 3];
+  for (i, c) in comps.iter().enumerate() {
+    secs[i] = crate::functions::math_ast::try_eval_to_f64(c)?;
+  }
+  let start = (secs[0] * 3600.0 + secs[1] * 60.0 + secs[2]).rem_euclid(86400.0);
+  let granularity = match args.get(1) {
+    Some(Expr::Identifier(s)) | Some(Expr::String(s)) => s.as_str(),
+    Some(_) => return None,
+    None => match comps.len() {
+      1 => "Hour",
+      2 => "Minute",
+      _ => "Instant",
+    },
+  };
+  let width = match granularity {
+    "Hour" => 3600.0,
+    "Minute" => 60.0,
+    "Second" => 1.0,
+    "Instant" => 0.0,
+    _ => return None,
+  };
+  Some((start, start + width))
 }
 
 /// `RandomTime[]` returns a single `TimeObject` at a random instant of the
-/// day (uniform over the full 24 hours). `RandomTime[n]` returns a list of
-/// `n` such TimeObjects.
+/// day (uniform over the full 24 hours). Other supported forms:
+///   * `RandomTime[n]` — list of `n` such TimeObjects
+///   * `RandomTime[Quantity[q, unit]]` — instant within `q` of the current
+///     time (before it for negative `q`)
+///   * `RandomTime[t]` — instant within the span of TimeObject `t`
+///   * `RandomTime[{t1, t2}]` — instant between `t1` and `t2` (covering the
+///     end TimeObject's full granularity span, like wolframscript)
+///   * `RandomTime[spec, n]` — list of `n` draws from any spec above
 pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
 
-  fn one_time() -> Expr {
-    // Pick a random instant of the day with microsecond resolution (the same
-    // precision RandomDate uses for its seconds field).
-    let total: f64 = crate::with_rng(|rng| rng.gen_range(0.0..86400.0));
-    let total_micros = (total * 1e6) as i64;
+  fn build_time(total: f64) -> Expr {
+    // Round to microsecond resolution (the same precision RandomDate uses
+    // for its seconds field).
+    let total_micros = (total.rem_euclid(86400.0) * 1e6) as i64;
     let h = total_micros / 3_600_000_000;
     let m = (total_micros % 3_600_000_000) / 60_000_000;
     let s = (total_micros % 60_000_000) as f64 / 1e6;
@@ -580,26 +726,76 @@ pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  match args.len() {
-    0 => Ok(one_time()),
-    1 => match &args[0] {
-      Expr::Integer(n) if *n >= 0 => {
-        let count = *n as usize;
-        let mut out = Vec::with_capacity(count);
-        for _ in 0..count {
-          out.push(one_time());
-        }
-        Ok(Expr::List(out.into()))
-      }
-      _ => Ok(Expr::FunctionCall {
-        name: "RandomTime".to_string(),
-        args: args.to_vec().into(),
-      }),
-    },
-    _ => Ok(Expr::FunctionCall {
+  fn sample(lo: f64, hi: f64) -> Expr {
+    if hi > lo {
+      build_time(crate::with_rng(|rng| rng.gen_range(lo..hi)))
+    } else {
+      build_time(lo)
+    }
+  }
+
+  // The `[lo, hi)` sampling interval described by a spec argument, or None
+  // when the spec isn't one of the supported forms.
+  fn spec_interval(spec: &Expr) -> Option<(f64, f64)> {
+    if let Some(span) = quantity_span_seconds(spec) {
+      // A time quantity anchors at the current time: within the next `span`
+      // seconds, or the previous ones for a negative quantity.
+      let now = now_time_of_day_seconds();
+      return Some(if span >= 0.0 {
+        (now, now + span)
+      } else {
+        (now + span, now)
+      });
+    }
+    if let Some((start, end)) = time_object_span(spec) {
+      return Some((start, end));
+    }
+    if let Expr::List(items) = spec
+      && items.len() == 2
+      && let Some((s1, _)) = time_object_span(&items[0])
+      && let Some((s2, e2)) = time_object_span(&items[1])
+    {
+      // In-order bounds cover both spans; reversed bounds cover the times
+      // between the two spans (matching wolframscript).
+      return Some(if s1 <= s2 { (s1, e2) } else { (e2, s1) });
+    }
+    None
+  }
+
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
       name: "RandomTime".to_string(),
       args: args.to_vec().into(),
-    }),
+    })
+  };
+
+  // Split the arguments into an optional spec and an optional count.
+  let (interval, count): (Option<(f64, f64)>, Option<i128>) = match args {
+    [] => (None, None),
+    [Expr::Integer(n)] => (None, Some(*n)),
+    [spec] => match spec_interval(spec) {
+      Some(iv) => (Some(iv), None),
+      None => return unevaluated(),
+    },
+    [spec, Expr::Integer(n)] => match spec_interval(spec) {
+      Some(iv) => (Some(iv), Some(*n)),
+      None => return unevaluated(),
+    },
+    _ => return unevaluated(),
+  };
+
+  let (lo, hi) = interval.unwrap_or((0.0, 86400.0));
+  match count {
+    None => Ok(sample(lo, hi)),
+    Some(n) if n >= 0 => {
+      let count = n as usize;
+      let mut out = Vec::with_capacity(count);
+      for _ in 0..count {
+        out.push(sample(lo, hi));
+      }
+      Ok(Expr::List(out.into()))
+    }
+    Some(_) => unevaluated(),
   }
 }
 

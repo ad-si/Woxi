@@ -4720,6 +4720,109 @@ mod random_time {
   fn n_zero_returns_empty_list() {
     assert_eq!(interpret("RandomTime[0]").unwrap(), "{}");
   }
+
+  #[test]
+  fn quantity_span_stays_near_now() {
+    // RandomTime[Quantity[q, unit]] gives an instant within q of the current
+    // time. Compare against Now's time of day with a wrap-tolerant check.
+    assert_eq!(
+      interpret(
+        "now = Now[[1, 4]]*3600 + Now[[1, 5]]*60 + Now[[1, 6]]; \
+         t = RandomTime[Quantity[3, \"Hours\"]][[1]]; \
+         secs = t[[1]]*3600 + t[[2]]*60 + t[[3]]; \
+         diff = Mod[secs - now, 86400]; 0 <= diff <= 3*3600 + 5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn negative_quantity_span_is_before_now() {
+    assert_eq!(
+      interpret(
+        "now = Now[[1, 4]]*3600 + Now[[1, 5]]*60 + Now[[1, 6]]; \
+         t = RandomTime[Quantity[-2, \"Minutes\"]][[1]]; \
+         secs = t[[1]]*3600 + t[[2]]*60 + t[[3]]; \
+         diff = Mod[now - secs, 86400]; 0 <= diff <= 2*60 + 5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn time_object_range_covers_end_span() {
+    // The range covers the end TimeObject's full granularity span, so hours
+    // run over [6, 16) here (like wolframscript).
+    assert_eq!(
+      interpret(
+        "AllTrue[Table[RandomTime[{TimeObject[{6}, \"Hour\"], \
+         TimeObject[{15}, \"Hour\"]}][[1, 1]], 50], 6 <= # <= 15 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn reversed_time_object_range_covers_gap() {
+    // Reversed bounds sample the times between the two spans: {23h, 1h}
+    // gives instants in [2:00, 23:00) (like wolframscript).
+    assert_eq!(
+      interpret(
+        "AllTrue[Table[RandomTime[{TimeObject[{23}, \"Hour\"], \
+         TimeObject[{1}, \"Hour\"]}][[1, 1]], 50], 2 <= # <= 22 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn single_time_object_samples_its_span() {
+    assert_eq!(
+      interpret("RandomTime[TimeObject[{3}, \"Hour\"]][[1, 1]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn minute_granularity_time_object_samples_its_minute() {
+    assert_eq!(
+      interpret("RandomTime[TimeObject[{6, 30}]][[1, 1 ;; 2]]").unwrap(),
+      "{6, 30}"
+    );
+  }
+
+  #[test]
+  fn spec_with_count_returns_list() {
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomTime[TimeObject[{3}, \"Hour\"], 5], \
+         Head[#] == TimeObject && #[[1, 1]] == 3 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Length[RandomTime[TimeObject[{3}, \"Hour\"], 5]]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn quantity_spec_with_count_returns_list() {
+    assert_eq!(
+      interpret("Length[RandomTime[Quantity[3, \"Hours\"], 2]]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn unsupported_spec_stays_unevaluated() {
+    assert_eq!(interpret("RandomTime[\"foo\"]").unwrap(), "RandomTime[foo]");
+  }
 }
 
 mod random_color {
