@@ -370,6 +370,77 @@ pub fn dispatch_linear_algebra_functions(
         }
       }
     }
+    // ScalingMatrix[{s1, …, sn}] → DiagonalMatrix of the scale factors.
+    "ScalingMatrix" if args.len() == 1 => {
+      if let Expr::List(_) = &args[0] {
+        return Some(crate::evaluator::evaluate_expr_to_expr(
+          &Expr::FunctionCall {
+            name: "DiagonalMatrix".to_string(),
+            args: vec![args[0].clone()].into(),
+          },
+        ));
+      }
+    }
+    // ScalingMatrix[s, v] → matrix scaling by factor s along direction v:
+    // entry[i, j] = δ_ij + (s − 1) v_i v_j / (v · v). Together-combines each
+    // entry so the symbolic form matches wolframscript.
+    "ScalingMatrix" if args.len() == 2 => {
+      if let Expr::List(v) = &args[1] {
+        let n = v.len();
+        if n > 0 {
+          let s = &args[0];
+          let dot_vv = Expr::FunctionCall {
+            name: "Dot".to_string(),
+            args: vec![args[1].clone(), args[1].clone()].into(),
+          };
+          let s_minus_1 = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(s.clone()),
+            right: Box::new(Expr::Integer(1)),
+          };
+          let mut rows = Vec::with_capacity(n);
+          for i in 0..n {
+            let mut row = Vec::with_capacity(n);
+            for j in 0..n {
+              let delta = if i == j {
+                Expr::Integer(1)
+              } else {
+                Expr::Integer(0)
+              };
+              let vi_vj = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(v[i].clone()),
+                right: Box::new(v[j].clone()),
+              };
+              let numer = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(s_minus_1.clone()),
+                right: Box::new(vi_vj),
+              };
+              let frac = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(numer),
+                right: Box::new(dot_vv.clone()),
+              };
+              let sum = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(delta),
+                right: Box::new(frac),
+              };
+              // Together so e.g. 1 + (s − 1)/2 renders as (1 + s)/2.
+              row.push(Expr::FunctionCall {
+                name: "Together".to_string(),
+                args: vec![sum].into(),
+              });
+            }
+            rows.push(Expr::List(row.into()));
+          }
+          return Some(crate::evaluator::evaluate_expr_to_expr(&Expr::List(
+            rows.into(),
+          )));
+        }
+      }
+    }
     "LeviCivitaTensor" if args.len() == 1 => {
       return Some(
         crate::functions::linear_algebra_ast::levi_civita_tensor_sparse_ast(

@@ -1105,6 +1105,57 @@ mod reverse_extended {
     );
   }
 
+  // ScalingMatrix[s, v] scales by factor s along the direction of v:
+  // entry[i, j] = δ_ij + (s - 1) v_i v_j / (v . v).
+  #[test]
+  fn scaling_matrix_axis() {
+    assert_eq!(
+      interpret("ScalingMatrix[2, {1, 0}]").unwrap(),
+      "{{2, 0}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn scaling_matrix_diagonal_direction() {
+    assert_eq!(
+      interpret("ScalingMatrix[2, {1, 1}]").unwrap(),
+      "{{3/2, 1/2}, {1/2, 3/2}}"
+    );
+  }
+
+  #[test]
+  fn scaling_matrix_non_unit_direction() {
+    assert_eq!(
+      interpret("ScalingMatrix[2, {3, 4}]").unwrap(),
+      "{{34/25, 12/25}, {12/25, 41/25}}"
+    );
+  }
+
+  #[test]
+  fn scaling_matrix_symbolic_factor() {
+    assert_eq!(
+      interpret("ScalingMatrix[s, {1, 1}]").unwrap(),
+      "{{(1 + s)/2, (-1 + s)/2}, {(-1 + s)/2, (1 + s)/2}}"
+    );
+  }
+
+  #[test]
+  fn scaling_matrix_3d() {
+    assert_eq!(
+      interpret("ScalingMatrix[3, {1, 1, 0}]").unwrap(),
+      "{{2, 1, 0}, {1, 2, 0}, {0, 0, 1}}"
+    );
+  }
+
+  // The list form is a diagonal matrix of the per-axis scale factors.
+  #[test]
+  fn scaling_matrix_list_form() {
+    assert_eq!(
+      interpret("ScalingMatrix[{2, 3, 4}]").unwrap(),
+      "{{2, 0, 0}, {0, 3, 0}, {0, 0, 4}}"
+    );
+  }
+
   #[test]
   fn reverse_function_call() {
     assert_eq!(interpret("Reverse[x[a, b, c]]").unwrap(), "x[c, b, a]");
