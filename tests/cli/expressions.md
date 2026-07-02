@@ -42,6 +42,7 @@ Output is always in [FullForm].
 - [`GrayLevel`](expressions/GrayLevel.md)
 - [`Grid`](expressions/Grid.md)
 - [`HalfPlane`](expressions/HalfPlane.md)
+- [`Haloing`](expressions/Haloing.md)
 - [`Head`](expressions/Head.md)
 - [`Hold`](expressions/Hold.md)
 - [`Hyperlink`](expressions/Hyperlink.md)
