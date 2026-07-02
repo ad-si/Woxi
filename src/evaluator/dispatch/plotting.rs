@@ -534,6 +534,11 @@ pub fn dispatch_plotting(
     "TernaryListPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::ternary_list_plot::ternary_list_plot_ast(args)
     })),
+    // Not quiet_plot: the elmntav/inpt argument messages must reach the
+    // user, exactly as they do in wolframscript.
+    "PeriodicTablePlot" => {
+      Some(crate::functions::periodic_table_plot::periodic_table_plot_ast(args))
+    }
     "WordCloud" if !args.is_empty() => {
       Some(crate::functions::chart::word_cloud_ast(args))
     }
