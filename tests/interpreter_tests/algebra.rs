@@ -6028,6 +6028,49 @@ mod refine {
     assert_eq!(interpret("Refine[Max[a, b], a == b]").unwrap(), "Max[a, b]");
   }
 
+  // A finite factor with a known sign collapses `factor * Infinity` to the
+  // correctly-signed infinity (matching wolframscript).
+  #[test]
+  fn signed_factor_times_infinity() {
+    assert_eq!(interpret("Refine[a*Infinity, a > 0]").unwrap(), "Infinity");
+    assert_eq!(interpret("Refine[a*Infinity, a < 0]").unwrap(), "-Infinity");
+    assert_eq!(
+      interpret("Refine[a*(-Infinity), a > 0]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("Refine[a*(-Infinity), a < 0]").unwrap(),
+      "Infinity"
+    );
+    // A strict lower bound above zero is also positive.
+    assert_eq!(interpret("Refine[a*Infinity, a > 5]").unwrap(), "Infinity");
+    // A positive numeric coefficient does not change the sign.
+    assert_eq!(
+      interpret("Refine[2 a*Infinity, a > 0]").unwrap(),
+      "Infinity"
+    );
+    // Product of two positive factors stays positive.
+    assert_eq!(
+      interpret("Refine[a b*Infinity, a > 0 && b > 0]").unwrap(),
+      "Infinity"
+    );
+    // Simplify accepts the assumption the same way.
+    assert_eq!(
+      interpret("Simplify[a*Infinity, a > 0]").unwrap(),
+      "Infinity"
+    );
+    // Assuming propagates the assumption to an inner Simplify.
+    assert_eq!(
+      interpret("Assuming[x > 0, Simplify[x*Infinity]]").unwrap(),
+      "Infinity"
+    );
+    // `a >= 0` is not decidable (0 * Infinity is Indeterminate): unchanged.
+    assert_eq!(
+      interpret("Refine[a*Infinity, a >= 0]").unwrap(),
+      "a*Infinity"
+    );
+  }
+
   #[test]
   fn sqrt_y_squared_positive() {
     assert_eq!(interpret("Refine[Sqrt[y^2], y > 0]").unwrap(), "y");

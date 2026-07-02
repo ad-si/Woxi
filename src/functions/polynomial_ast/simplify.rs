@@ -1255,6 +1255,10 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         .iter()
         .map(|a| refine_expr(a, info, assumption))
         .collect();
+      // c * Infinity with a definite-sign finite part → ±Infinity.
+      if let Some(result) = try_resolve_infinity_product(&refined, info) {
+        return result;
+      }
       // Try pairwise combining of same-exponent powers with positive bases
       if refined.len() == 2
         && let Some(result) =
@@ -1301,6 +1305,12 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
     } => {
       let l = refine_expr(left, info, assumption);
       let r = refine_expr(right, info, assumption);
+      // c * Infinity with a definite-sign finite part → ±Infinity.
+      if let Some(result) =
+        try_resolve_infinity_product(&[l.clone(), r.clone()], info)
+      {
+        return result;
+      }
       // a^p * b^p with a > 0 && b > 0 → (a*b)^p
       if let Some(result) = try_combine_power_product(&l, &r, info) {
         return result;
@@ -1765,6 +1775,80 @@ fn is_known_negative_expr(expr: &Expr, info: &AssumptionInfo) -> bool {
     }
     _ => false,
   }
+}
+
+/// The direction of an infinite factor: `Infinity` → `Some(1)`,
+/// `-Infinity` (either `DirectedInfinity[-1]` or `Times[-1, Infinity]`) →
+/// `Some(-1)`. `None` for any finite expression.
+fn infinity_direction(expr: &Expr) -> Option<i64> {
+  match expr {
+    Expr::Identifier(n) if n == "Infinity" => Some(1),
+    Expr::FunctionCall { name, args }
+      if name == "DirectedInfinity" && args.len() == 1 =>
+    {
+      match &args[0] {
+        Expr::Integer(1) => Some(1),
+        Expr::Integer(-1) => Some(-1),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Build the signed real infinity: `sign >= 0` → `Infinity`, else
+/// `DirectedInfinity[-1]` (which renders as `-Infinity`).
+fn signed_infinity(sign: i64) -> Expr {
+  if sign >= 0 {
+    Expr::Identifier("Infinity".to_string())
+  } else {
+    // `Times[-1, Infinity]` renders as `-Infinity` (matching wolframscript);
+    // `DirectedInfinity[-1]` would print in its unevaluated head form here.
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())]
+        .into(),
+    }
+  }
+}
+
+/// When a product contains a single (real) infinite factor and every other
+/// factor has a definite sign under the assumptions, collapse it to the
+/// correctly-signed infinity: `a Infinity` with `a > 0` → `Infinity`,
+/// with `a < 0` → `-Infinity`. Returns `None` when the sign of any finite
+/// factor is not decidable (e.g. `a >= 0`, which permits the indeterminate
+/// `0 * Infinity`), or when more than one infinite factor is present.
+fn try_resolve_infinity_product(
+  factors: &[Expr],
+  info: &AssumptionInfo,
+) -> Option<Expr> {
+  let mut inf_idx: Option<usize> = None;
+  let mut sign: i64 = 1;
+  for (i, f) in factors.iter().enumerate() {
+    if let Some(dir) = infinity_direction(f) {
+      if inf_idx.is_some() {
+        return None; // more than one infinite factor: leave it alone
+      }
+      inf_idx = Some(i);
+      sign *= dir;
+    }
+  }
+  let inf_idx = inf_idx?;
+
+  // Combine the signs of all the finite factors; bail if any is undecided.
+  for (i, f) in factors.iter().enumerate() {
+    if i == inf_idx {
+      continue;
+    }
+    if is_known_positive(f, info) {
+      // sign unchanged
+    } else if is_known_negative_expr(f, info) {
+      sign = -sign;
+    } else {
+      return None;
+    }
+  }
+  Some(signed_infinity(sign))
 }
 
 /// Check if an expression is known to be non-positive (<= 0).
