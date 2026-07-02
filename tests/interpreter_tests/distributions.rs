@@ -730,6 +730,47 @@ mod probability_distribution {
     );
   }
 
+  // Expectation over a data list is the empirical (sample) mean of the
+  // expression with the variable replaced by each data point.
+  #[test]
+  fn expectation_data_list() {
+    // Plain mean of the data.
+    assert_eq!(
+      interpret("Expectation[x, x \\[Distributed] {1, 2, 3}]").unwrap(),
+      "2"
+    );
+    // Mean of a transformed value.
+    assert_eq!(
+      interpret("Expectation[x^2, x \\[Distributed] {1, 2, 3, 4}]").unwrap(),
+      "15/2"
+    );
+    // Linear expression.
+    assert_eq!(
+      interpret("Expectation[2 x + 1, x \\[Distributed] {1, 2, 3}]").unwrap(),
+      "5"
+    );
+    // A non-polynomial expression.
+    assert_eq!(
+      interpret("Expectation[Sin[x], x \\[Distributed] {0, Pi/2}]").unwrap(),
+      "1/2"
+    );
+    // Real-valued data.
+    assert_eq!(
+      interpret("Expectation[x, x \\[Distributed] {1.5, 2.5, 3.5}]").unwrap(),
+      "2.5"
+    );
+    // Free symbols other than the distribution variable are kept.
+    assert_eq!(
+      interpret("Expectation[x^2 + y, x \\[Distributed] {1, 2, 3}]").unwrap(),
+      "(14 + 3*y)/3"
+    );
+    // Single-element data list.
+    assert_eq!(
+      interpret("Expectation[x, x \\[Distributed] {5}]").unwrap(),
+      "5"
+    );
+  }
+
   // E[Boole[cond]] = Probability[cond], computed exactly rather than via the
   // (inaccurate) numerical integration fallback — E[Boole[x > 0]] over a
   // standard normal used to return 0.4976... instead of 1/2.

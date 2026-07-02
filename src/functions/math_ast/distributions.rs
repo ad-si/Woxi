@@ -2993,6 +2993,34 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Empirical (data-list) distribution:
+  //   Expectation[expr, x \[Distributed] {d1, …, dn}]
+  // is the sample mean of `expr` with `x` replaced by each data point.
+  if let Expr::List(data) = dist
+    && vars.len() == 1
+    && !data.is_empty()
+  {
+    let var = &vars[0];
+    let substituted: Vec<Expr> = data
+      .iter()
+      .map(|d| Expr::FunctionCall {
+        name: "ReplaceAll".to_string(),
+        args: vec![
+          expr.clone(),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier(var.clone())),
+            replacement: Box::new(d.clone()),
+          },
+        ]
+        .into(),
+      })
+      .collect();
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Mean".to_string(),
+      args: vec![Expr::List(substituted.into())].into(),
+    });
+  }
+
   // Get distribution name and parameters
   let (dist_name, dargs) = match dist {
     Expr::FunctionCall { name, args: da } => (name.as_str(), da.as_slice()),
