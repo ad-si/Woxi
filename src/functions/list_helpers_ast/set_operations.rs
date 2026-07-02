@@ -856,6 +856,122 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result.into()))
 }
 
+/// AST-based UniqueElements: for a list of lists, give the elements that are
+/// unique to each list (i.e. appear in that list but in none of the others).
+///
+/// `UniqueElements[{l1, l2, …}]` returns `{u1, u2, …}` where `ui` holds the
+/// elements of `li` that do not appear in any `lj` (`j != i`). Within each
+/// `ui`, elements keep their first-appearance order and duplicates are removed
+/// (multiplicity is not preserved). Each list's own head is preserved.
+///
+/// `UniqueElements[lists, test]` uses `test[a, b]` to decide whether two
+/// elements are equivalent, replacing the default SameQ comparison.
+pub fn unique_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "UniqueElements".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  // The sole subject is a list of lists.
+  let Expr::List(lists) = &args[0] else {
+    return Ok(unevaluated());
+  };
+  let test = args.get(1);
+
+  // Extract the elements and preserved head of each inner list. The inner
+  // lists need not have `List` as their head.
+  let mut slices: Vec<(&[Expr], Option<&str>)> = Vec::with_capacity(lists.len());
+  for l in lists.iter() {
+    match l {
+      Expr::List(items) => slices.push((items.as_slice(), None)),
+      Expr::FunctionCall { name, args: a } => {
+        slices.push((a.as_slice(), Some(name.as_str())))
+      }
+      _ => return Ok(unevaluated()),
+    }
+  }
+
+  let wrap = |items: Vec<Expr>, head: Option<&str>| -> Expr {
+    match head {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: items.into(),
+      },
+      None => Expr::List(items.into()),
+    }
+  };
+
+  match test {
+    None => {
+      use std::collections::HashSet;
+      // Precompute the set of keys present in each list.
+      let key_sets: Vec<HashSet<String>> = slices
+        .iter()
+        .map(|(items, _)| {
+          items.iter().map(crate::syntax::expr_to_string).collect()
+        })
+        .collect();
+
+      let mut result = Vec::with_capacity(slices.len());
+      for (i, (items, head)) in slices.iter().enumerate() {
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut unique = Vec::new();
+        for item in *items {
+          let key = crate::syntax::expr_to_string(item);
+          let in_other = key_sets
+            .iter()
+            .enumerate()
+            .any(|(j, ks)| j != i && ks.contains(&key));
+          if !in_other && seen.insert(key) {
+            unique.push(item.clone());
+          }
+        }
+        result.push(wrap(unique, *head));
+      }
+      Ok(Expr::List(result.into()))
+    }
+    Some(test_fn) => {
+      let mut result = Vec::with_capacity(slices.len());
+      for (i, (items, head)) in slices.iter().enumerate() {
+        let mut unique: Vec<Expr> = Vec::new();
+        for item in *items {
+          // Skip if equivalent to any element of another list.
+          let mut in_other = false;
+          'others: for (j, (other, _)) in slices.iter().enumerate() {
+            if j == i {
+              continue;
+            }
+            for o in *other {
+              let r = apply_func_to_two_args(test_fn, item, o)?;
+              if matches!(r, Expr::Identifier(ref s) if s == "True") {
+                in_other = true;
+                break 'others;
+              }
+            }
+          }
+          if in_other {
+            continue;
+          }
+          // Skip if equivalent to an already-kept element (dedup within ui).
+          let mut dup = false;
+          for kept in &unique {
+            let r = apply_func_to_two_args(test_fn, item, kept)?;
+            if matches!(r, Expr::Identifier(ref s) if s == "True") {
+              dup = true;
+              break;
+            }
+          }
+          if !dup {
+            unique.push(item.clone());
+          }
+        }
+        result.push(wrap(unique, *head));
+      }
+      Ok(Expr::List(result.into()))
+    }
+  }
+}
+
 /// AST-based SymmetricDifference: elements in an odd number of the input lists.
 /// Result is sorted and deduplicated.
 pub fn symmetric_difference_ast(

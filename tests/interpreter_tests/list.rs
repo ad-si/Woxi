@@ -2771,6 +2771,82 @@ mod delete_elements {
   }
 }
 
+mod unique_elements {
+  use super::*;
+
+  #[test]
+  fn two_lists() {
+    // Elements unique to each list; multiplicity is not preserved and the
+    // first-appearance order within each list is kept.
+    assert_eq!(
+      interpret("UniqueElements[{{1, 2, 2, b, b, a}, {4, 3, 2, 1}}]").unwrap(),
+      "{{b, a}, {4, 3}}"
+    );
+  }
+
+  #[test]
+  fn simple_split() {
+    assert_eq!(
+      interpret("UniqueElements[{{1, 2, 3, 4, 5}, {3, 4, 5, 6, 7}}]").unwrap(),
+      "{{1, 2}, {6, 7}}"
+    );
+  }
+
+  #[test]
+  fn three_lists_with_empty_result() {
+    assert_eq!(
+      interpret("UniqueElements[{{1, 2, 3, 4}, {2, 3, 4, 5}, {3, 4, 5, 6}}]")
+        .unwrap(),
+      "{{1}, {}, {6}}"
+    );
+  }
+
+  #[test]
+  fn duplicates_removed_within_output() {
+    assert_eq!(
+      interpret("UniqueElements[{{1, 1, 2, 3}, {3, 4, 4, 5}}]").unwrap(),
+      "{{1, 2}, {4, 5}}"
+    );
+  }
+
+  #[test]
+  fn identical_lists_give_empty() {
+    assert_eq!(
+      interpret("UniqueElements[{{1, 2, 3}, {1, 2, 3}}]").unwrap(),
+      "{{}, {}}"
+    );
+  }
+
+  #[test]
+  fn preserves_inner_head() {
+    assert_eq!(
+      interpret("UniqueElements[{f[1, 2, 3], f[2, 3, 4]}]").unwrap(),
+      "{f[1], f[4]}"
+    );
+  }
+
+  #[test]
+  fn custom_test_makes_elements_equivalent() {
+    // Two elements count as equivalent when they are congruent mod 3.
+    // In {1, 2}: 1 (mod 1) matches 4 (mod 1) in the other list, so only 2
+    // (mod 2) is unique. In {4, 6}: 4 (mod 1) matches 1, so only 6 (mod 0)
+    // is unique.
+    assert_eq!(
+      interpret("UniqueElements[{{1, 2}, {4, 6}}, Mod[#1, 3] == Mod[#2, 3] &]")
+        .unwrap(),
+      "{{2}, {6}}"
+    );
+  }
+
+  #[test]
+  fn non_list_argument_stays_unevaluated() {
+    assert_eq!(
+      interpret("UniqueElements[5]").unwrap(),
+      "UniqueElements[5]"
+    );
+  }
+}
+
 mod count {
   use super::*;
 
