@@ -952,6 +952,7 @@ mod interpreter_tests {
   mod algebra;
   mod arg_count;
   mod arithmetic;
+  mod assessment;
   mod association;
   mod attributes;
   mod batch_wrappers;

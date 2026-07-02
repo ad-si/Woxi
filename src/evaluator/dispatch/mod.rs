@@ -9893,6 +9893,14 @@ pub fn evaluate_function_call_ast_inner(
         // consumed by the quantum framework, so they are not "unimplemented".
         | "Ket"
         | "Bra"
+        // Quiz/assessment objects. AssessmentFunction[spec] and
+        // QuestionObject[q, assess] are symbolic constructor objects that stay
+        // unevaluated until applied to a candidate answer (handled in
+        // apply_curried_call), and AssessmentResultObject[<|…|>] is the graded
+        // result they produce, so none of these are "unimplemented".
+        | "AssessmentFunction"
+        | "QuestionObject"
+        | "AssessmentResultObject"
         // More notation/display wrapper heads. Like Subscript/Framed, these
         // describe layout rather than a value to compute, so wolframscript
         // leaves them unevaluated as their canonical form.

@@ -3566,7 +3566,7 @@ SpectrogramArray,,🚫,,9.0,3656
 TravelDirections,,🚫,,10.3,3656
 AirPressureData,,🚫,,10.0,3678
 AroundReplace,,,,12.0,3678
-AssessmentFunction,,🚫,,12.2,3678
+AssessmentFunction,Symbolic assessment object; AssessmentFunction[spec][answer] grades the answer against the answer key and returns an AssessmentResultObject,✅,pure,12.2,3678
 DEigenvalues,,,,10.3,3678
 DeviceReadBuffer,,🚫,,10.0,3678
 DirichletWindow,Compute DirichletWindow value,✅,pure,9.0,3678
@@ -5369,7 +5369,7 @@ ArcSinDegrees,Compute inverse sine returning degrees,✅,pure,14.1,
 ArcTanDegrees,Compute inverse tangent returning degrees,✅,pure,14.1,
 ArrayDot,,,,14.1,
 ArraySymbol,,,,14.1,
-AssessmentResultObject,,🚫,,12.2,
+AssessmentResultObject,Graded result of an assessment; supports property access such as result[Score] and result[AnswerCorrect],✅,pure,12.2,
 AstroAngularSeparation,,🚫,,13.2,
 AstroBackground,,🚫,,13.2,
 AstroCenter,,🚫,,13.2,
@@ -5874,7 +5874,7 @@ PropagateAborts,,,,13.2,
 PublisherID,,🚫,,11.2,
 QuestionGenerator,,🚫,,13.1,
 QuestionInterface,,🚫,,13.0,
-QuestionObject,,🚫,,12.3,
+QuestionObject,Pairs a prompt with an assessment; QuestionObject[q assess][answer] grades the answer through the embedded assessment,✅,pure,12.3,
 QuestionSelector,,🚫,,13.1,
 QuietEcho,,,,12.2,
 RFixedPoints,,,,14.1,
