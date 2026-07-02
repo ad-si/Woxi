@@ -123,6 +123,9 @@ pub fn dispatch_plotting(
     "GeoRegionValuePlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::geographics::geo_region_value_plot_ast(args)
     })),
+    "GeoHistogram" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::geographics::geo_histogram_ast(args)
+    })),
     "Show" if !args.is_empty() => {
       Some(crate::functions::graphics::show_ast(args))
     }

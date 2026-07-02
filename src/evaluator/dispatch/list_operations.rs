@@ -1250,7 +1250,7 @@ fn tree_fold(func: &Expr, e: &Expr) -> Result<Option<Expr>, InterpreterError> {
 
 /// Extract (values, weights) from a canonical
 /// `WeightedData[Automatic, {data, weights}]` object.
-fn weighted_data_parts(e: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
+pub(crate) fn weighted_data_parts(e: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
   if let Expr::FunctionCall { name, args } = e
     && name == "WeightedData"
     && args.len() == 2

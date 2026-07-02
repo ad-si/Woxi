@@ -1328,6 +1328,7 @@
   - [`DiscretePlot`](plotting/DiscretePlot.md)
   - [`DiscretePlot3D`](plotting/DiscretePlot3D.md)
   - [`FrameRate`](plotting/FrameRate.md)
+  - [`GeoHistogram`](plotting/GeoHistogram.md)
   - [`Graphics`](plotting/Graphics.md)
   - [`Graphics3D`](plotting/Graphics3D.md)
   - [`GraphicsColumn`](plotting/GraphicsColumn.md)

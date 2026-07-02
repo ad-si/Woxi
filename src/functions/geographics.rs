@@ -287,6 +287,9 @@ pub fn positions_from_arg(expr: &Expr) -> Vec<(f64, f64)> {
 
 // ── Projection / view window ──────────────────────────────────────────────
 
+/// Meters per degree of latitude (mean, spherical Earth).
+const M_PER_DEG_LAT: f64 = 111_320.0;
+
 /// Padding added on each side of the data bounding box (fraction of span).
 const RANGE_PADDING: f64 = 0.15;
 /// Minimum half-span (in latitude degrees) when fitting two or more points,
@@ -410,8 +413,6 @@ fn compute_window(
   positions: &[(f64, f64)],
   range: &GeoRange,
 ) -> (f64, f64, f64, f64) {
-  /// Meters per degree of latitude (mean, spherical Earth).
-  const M_PER_DEG_LAT: f64 = 111_320.0;
   match range {
     GeoRange::World => (0.0, 0.0, 180.0, 90.0),
     GeoRange::Radius(meters) => {
@@ -730,6 +731,33 @@ fn render_geo_path(
   ));
 }
 
+/// Append a filled `GeoHistogram` bin tile: a closed polygon in the bin's
+/// density color with a thin white seam between adjacent tiles.
+fn render_histogram_bin(
+  svg: &mut String,
+  pts: &[(f64, f64)],
+  proj: &GeoView,
+  color: &Color,
+) {
+  if pts.len() < 3 {
+    return;
+  }
+  let mut d = String::new();
+  for (i, (lat, lon)) in pts.iter().enumerate() {
+    let (x, y) = proj.project(*lon, *lat);
+    d.push_str(&format!(
+      "{} {x:.1} {y:.1} ",
+      if i == 0 { "M" } else { "L" }
+    ));
+  }
+  d.push('Z');
+  svg.push_str(&format!(
+    "<path d=\"{d}\" fill=\"{}\" fill-opacity=\"0.7\" stroke=\"white\" \
+     stroke-width=\"0.5\"/>\n",
+    color.to_svg_rgb()
+  ));
+}
+
 // ── PointSize handling ────────────────────────────────────────────────────
 
 /// Pixel radius for a dot given the current `PointSize` directive and image
@@ -788,7 +816,13 @@ fn collect_positions(expr: &Expr, out: &mut Vec<(f64, f64)>) {
           collect_positions(a, out);
         }
       }
-      "GeoMarker" | "Point" | "GeoPath" | "GeoPolygon" if !args.is_empty() => {
+      "GeoMarker"
+      | "Point"
+      | "GeoPath"
+      | "GeoPolygon"
+      | "Woxi`GeoHistogramBin"
+        if !args.is_empty() =>
+      {
         out.extend(positions_from_arg(&args[0]));
       }
       "GeoCircle" | "GeoDisk" if !args.is_empty() => {
@@ -877,6 +911,12 @@ fn render_content(
       "GeoPolygon" if !args.is_empty() => {
         let pts = positions_from_arg(&args[0]);
         render_geo_path(svg, &pts, proj, &style.color, true, true);
+      }
+      // Internal primitive emitted by GeoHistogram (the backtick keeps it out
+      // of user code): a density bin filled with the current color.
+      "Woxi`GeoHistogramBin" if !args.is_empty() => {
+        let pts = positions_from_arg(&args[0]);
+        render_histogram_bin(svg, &pts, proj, &style.color);
       }
       "GeoCircle" if !args.is_empty() => {
         if let Some((lat, lon)) = position_to_latlon(&args[0]) {
@@ -1028,6 +1068,9 @@ fn choropleth_color(t: f64) -> (f64, f64, f64) {
 struct Legend {
   lo: f64,
   hi: f64,
+  /// Color scale mapping `t in [0,1]` to `(r, g, b)`; must be the same scale
+  /// used to shade the map so the legend and the fills agree.
+  color: fn(f64) -> (f64, f64, f64),
 }
 
 pub fn geo_region_value_plot_ast(
@@ -1078,7 +1121,443 @@ pub fn geo_region_value_plot_ast(
   }
   // Render the shaded map with a color-scale legend on the right.
   let content = Expr::List(items.into());
-  geographics_impl(&content, &args[1..], Some(Legend { lo, hi }))
+  geographics_impl(
+    &content,
+    &args[1..],
+    Some(Legend {
+      lo,
+      hi,
+      color: choropleth_color,
+    }),
+  )
+}
+
+// ── GeoHistogram (geographic density histogram) ───────────────────────────
+
+/// √3.
+const SQRT3: f64 = 1.732_050_807_568_877_2;
+
+/// Histogram bin color scale `t in [0,1]` → `(r, g, b)`: pale yellow for the
+/// sparsest bins to deep red for the densest (darker = denser, following the
+/// Wolfram default).
+fn heat_color(t: f64) -> (f64, f64, f64) {
+  let t = t.clamp(0.0, 1.0);
+  (0.98 - 0.43 * t, 0.93 - 0.83 * t, 0.60 - 0.47 * t)
+}
+
+/// Tile shape used to bin locations (part of the `bspec` argument).
+#[derive(Clone, Copy, PartialEq)]
+enum BinShape {
+  Hexagon,
+  Rectangle,
+  Triangle,
+}
+
+/// Tile size: a target number of tiles across the data extent, or an explicit
+/// tile extent in degrees of latitude (hexagons/triangles use the width as
+/// their diameter/side).
+enum BinSize {
+  Across(f64),
+  Degrees(f64, f64),
+}
+
+/// How each bin's value is computed from its accumulated weight (`hspec`).
+/// With equal-size bins and max-normalized colors, all four shade identically;
+/// they differ in the absolute values shown on a `PlotLegends` bar.
+#[derive(Clone, Copy, PartialEq)]
+enum HeightSpec {
+  Count,
+  Probability,
+  Intensity,
+  Pdf,
+}
+
+fn parse_bin_shape(s: &str) -> Option<BinShape> {
+  match s {
+    "Hexagon" => Some(BinShape::Hexagon),
+    "Rectangle" => Some(BinShape::Rectangle),
+    "Triangle" => Some(BinShape::Triangle),
+    _ => None,
+  }
+}
+
+/// A `Quantity` length as degrees of latitude (`None` for anything else).
+fn quantity_to_deg(expr: &Expr) -> Option<f64> {
+  if let Expr::FunctionCall { name, .. } = expr
+    && name == "Quantity"
+  {
+    return radius_to_meters(expr).map(|m| m / M_PER_DEG_LAT);
+  }
+  None
+}
+
+/// Parse a `bspec` argument. Returns `(shape, size)` with `None` components
+/// meaning "keep the default", or `None` if the expression is not a bin spec.
+///
+///   * `Automatic`                       — defaults
+///   * `n` (positive number)             — about `n` tiles across the data
+///   * `"Hexagon" | "Rectangle" | "Triangle"` — tile shape, automatic size
+///   * `Quantity[d, unit]`               — tiles of diameter `d`
+///   * `{Quantity[w, u], Quantity[h, u]}` — rectangle tiles of width × height
+///   * `{shape, n}` / `{shape, Quantity[…]}` — shape with explicit size
+fn parse_bin_spec(expr: &Expr) -> Option<(Option<BinShape>, Option<BinSize>)> {
+  match expr {
+    Expr::Identifier(s) if s == "Automatic" => Some((None, None)),
+    Expr::String(s) | Expr::Identifier(s) => {
+      parse_bin_shape(s).map(|sh| (Some(sh), None))
+    }
+    Expr::Integer(_) | Expr::Real(_) => {
+      let n = expr_to_f64(expr)?;
+      (n > 0.0).then_some((None, Some(BinSize::Across(n))))
+    }
+    Expr::FunctionCall { name, .. } if name == "Quantity" => {
+      let d = quantity_to_deg(expr)?;
+      Some((None, Some(BinSize::Degrees(d, d))))
+    }
+    Expr::List(items) if items.len() == 2 => {
+      if let (Some(w), Some(h)) =
+        (quantity_to_deg(&items[0]), quantity_to_deg(&items[1]))
+      {
+        return Some((None, Some(BinSize::Degrees(w, h))));
+      }
+      let shape = match &items[0] {
+        Expr::String(s) | Expr::Identifier(s) => parse_bin_shape(s)?,
+        _ => return None,
+      };
+      let size = if let Some(d) = quantity_to_deg(&items[1]) {
+        BinSize::Degrees(d, d)
+      } else {
+        let n = expr_to_f64(&items[1])?;
+        if n <= 0.0 {
+          return None;
+        }
+        BinSize::Across(n)
+      };
+      Some((Some(shape), Some(size)))
+    }
+    _ => None,
+  }
+}
+
+fn parse_height_spec(expr: &Expr) -> Option<HeightSpec> {
+  let (Expr::String(s) | Expr::Identifier(s)) = expr else {
+    return None;
+  };
+  match s.as_str() {
+    "Count" => Some(HeightSpec::Count),
+    "Probability" => Some(HeightSpec::Probability),
+    "Intensity" => Some(HeightSpec::Intensity),
+    "PDF" => Some(HeightSpec::Pdf),
+    _ => None,
+  }
+}
+
+/// Extract the locations and per-location weights from the data argument: a
+/// list of positions (unit weights), an association `pos -> weight`, or
+/// `WeightedData[positions, weights]`.
+fn histogram_locations(expr: &Expr) -> (Vec<(f64, f64)>, Vec<f64>) {
+  match expr {
+    Expr::Association(pairs) => {
+      let mut pts = Vec::new();
+      let mut wts = Vec::new();
+      for (k, v) in pairs {
+        if let (Some(p), Some(w)) = (position_to_latlon(k), expr_to_f64(v)) {
+          pts.push(p);
+          wts.push(w);
+        }
+      }
+      (pts, wts)
+    }
+    // Canonical WeightedData[Automatic, {data, weights}] object (the 2-arg
+    // constructor form evaluates to this before we see it).
+    Expr::FunctionCall { name, .. } if name == "WeightedData" => {
+      let mut pts = Vec::new();
+      let mut wts = Vec::new();
+      if let Some((data, weights)) =
+        crate::evaluator::dispatch::list_operations::weighted_data_parts(expr)
+      {
+        for (d, w) in data.iter().zip(&weights) {
+          if let (Some(p), Some(w)) = (position_to_latlon(d), expr_to_f64(w)) {
+            pts.push(p);
+            wts.push(w);
+          }
+        }
+      }
+      (pts, wts)
+    }
+    other => {
+      let pts = positions_from_arg(other);
+      let n = pts.len();
+      (pts, vec![1.0; n])
+    }
+  }
+}
+
+/// Round fractional axial hex coordinates to the nearest hex (cube rounding).
+fn hex_round(qf: f64, rf: f64) -> (i64, i64) {
+  let sf = -qf - rf;
+  let mut q = qf.round();
+  let mut r = rf.round();
+  let s = sf.round();
+  let (dq, dr, ds) = ((q - qf).abs(), (r - rf).abs(), (s - sf).abs());
+  if dq > dr && dq > ds {
+    q = -r - s;
+  } else if dr > ds {
+    r = -q - s;
+  }
+  (q as i64, r as i64)
+}
+
+/// Bin locations into tiles of the given shape and size. Returns each
+/// non-empty bin as its boundary ring (`(lat, lon)` vertices) plus its
+/// accumulated weight, in a deterministic (grid-index) order.
+///
+/// Binning happens in "map units" (`x = lon·cos(lat_c)`, `y = lat`) so tiles
+/// are roughly isotropic on the ground, matching the "equal visual size"
+/// tiles of the Wolfram Language.
+fn compute_geo_bins(
+  pts: &[(f64, f64)],
+  wts: &[f64],
+  shape: BinShape,
+  size: &BinSize,
+) -> Vec<(Vec<(f64, f64)>, f64)> {
+  use std::collections::HashMap;
+  let lat_min = pts.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+  let lat_max = pts.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+  let lon_min = pts.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+  let lon_max = pts.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+  let lat_c = (lat_min + lat_max) / 2.0;
+  let k = lon_scale(lat_c);
+  let x0 = lon_min * k;
+  let y0 = lat_min;
+  // Tile extent in map degrees. `Across(n)` targets n tiles across the wider
+  // side of the data extent; coincident points get a 1° tile for context.
+  let (w, h) = match size {
+    BinSize::Degrees(w, h) => (*w, *h),
+    BinSize::Across(n) => {
+      let span = ((lon_max - lon_min) * k).max(lat_max - lat_min);
+      let w = if span > 0.0 { span / n } else { 1.0 };
+      (w, w)
+    }
+  };
+  let (w, h) = (w.max(1e-9), h.max(1e-9));
+
+  let mut acc: HashMap<(i64, i64), f64> = HashMap::new();
+  for (p, wt) in pts.iter().zip(wts) {
+    let px = p.1 * k - x0;
+    let py = p.0 - y0;
+    let key = match shape {
+      BinShape::Rectangle => ((px / w).floor() as i64, (py / h).floor() as i64),
+      BinShape::Hexagon => {
+        // Flat-top hexagons, center-to-vertex radius s = w/2.
+        let s = w / 2.0;
+        hex_round(2.0 / 3.0 * px / s, (-px / 3.0 + SQRT3 / 3.0 * py) / s)
+      }
+      BinShape::Triangle => {
+        // Equilateral triangles of side w in rows of height w·√3/2; each row
+        // is shifted half a side, and triangles alternate up/down. At height
+        // `fv` within its row, the up-triangle `m` spans
+        // `[m + fv/2, m + 1 - fv/2]` (in row-shifted side units), so a point
+        // is in an up triangle exactly when both diagonals `wc ∓ fv/2` fall
+        // in the same unit cell. Down triangles get the odd x-keys.
+        let th = w * SQRT3 / 2.0;
+        let row = (py / th).floor();
+        let fv = py / th - row;
+        let wc = px / w - row * 0.5;
+        let ia = (wc - fv / 2.0).floor() as i64;
+        let ib = (wc + fv / 2.0).floor() as i64;
+        (if ia == ib { 2 * ia } else { 2 * ia + 1 }, row as i64)
+      }
+    };
+    *acc.entry(key).or_default() += wt;
+  }
+
+  // Deterministic output order (HashMap iteration order is random).
+  let mut bins: Vec<((i64, i64), f64)> = acc.into_iter().collect();
+  bins.sort_by_key(|(key, _)| *key);
+
+  bins
+    .into_iter()
+    .map(|((ix, iy), v)| {
+      let ring: Vec<(f64, f64)> = match shape {
+        BinShape::Rectangle => {
+          let (xa, ya) = (x0 + ix as f64 * w, y0 + iy as f64 * h);
+          vec![
+            (ya, xa / k),
+            (ya, (xa + w) / k),
+            (ya + h, (xa + w) / k),
+            (ya + h, xa / k),
+          ]
+        }
+        BinShape::Hexagon => {
+          let s = w / 2.0;
+          let cx = x0 + s * 1.5 * ix as f64;
+          let cy = y0 + s * SQRT3 * (iy as f64 + ix as f64 / 2.0);
+          (0..6)
+            .map(|i| {
+              let a = std::f64::consts::PI / 3.0 * i as f64;
+              (cy + s * a.sin(), (cx + s * a.cos()) / k)
+            })
+            .collect()
+        }
+        BinShape::Triangle => {
+          let th = w * SQRT3 / 2.0;
+          let (m, r) = ((ix.div_euclid(2)) as f64, iy as f64);
+          let bx = |mm: f64, rr: f64| (x0 + (mm + rr * 0.5) * w) / k;
+          let by = |rr: f64| y0 + rr * th;
+          if ix.rem_euclid(2) == 0 {
+            // Up: base on the row's bottom edge, apex centered above.
+            vec![
+              (by(r), bx(m, r)),
+              (by(r), bx(m + 1.0, r)),
+              (by(r + 1.0), bx(m, r + 1.0)),
+            ]
+          } else {
+            // Down: base on the row's top edge, apex centered below.
+            vec![
+              (by(r), bx(m + 1.0, r)),
+              (by(r + 1.0), bx(m + 1.0, r + 1.0)),
+              (by(r + 1.0), bx(m, r + 1.0)),
+            ]
+          }
+        }
+      };
+      (ring, v)
+    })
+    .collect()
+}
+
+/// Signed polygon area (shoelace) of a `(lat, lon)` ring, in square degrees —
+/// used by the `"Intensity"`/`"PDF"` height specs.
+fn ring_area_deg2(ring: &[(f64, f64)]) -> f64 {
+  let n = ring.len();
+  let mut a = 0.0;
+  for i in 0..n {
+    let (y1, x1) = ring[i];
+    let (y2, x2) = ring[(i + 1) % n];
+    a += x1 * y2 - x2 * y1;
+  }
+  (a / 2.0).abs()
+}
+
+/// `GeoHistogram[locs, bspec?, hspec?, opts…]` — a geographic density
+/// histogram: locations are binned into hexagonal (the default), rectangular
+/// or triangular tiles of equal visual size, and each non-empty tile is
+/// shaded by its value (darker = denser). Weights come from an association
+/// `pos -> w` or `WeightedData[locs, wts]`. Returns a `GeoGraphics` object;
+/// `PlotLegends -> Automatic` adds a color-scale legend.
+pub fn geo_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "GeoHistogram".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() {
+    return unevaluated();
+  }
+  let data = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  let (pts, wts) = histogram_locations(&data);
+  if pts.is_empty() {
+    return unevaluated();
+  }
+
+  // Positional arguments (bin spec, then height spec); Rules are options.
+  let mut shape = BinShape::Hexagon;
+  let mut size = BinSize::Across(12.0);
+  let mut hspec = HeightSpec::Count;
+  let mut legend = false;
+  let mut opts: Vec<Expr> = Vec::new();
+  for raw in &args[1..] {
+    let arg = crate::evaluator::evaluate_expr_to_expr(raw)
+      .unwrap_or_else(|_| raw.clone());
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = &arg
+    {
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLegends") {
+        // PlotLegends -> None keeps the default (no legend); anything else
+        // (Automatic, Placed[…], …) turns the color-scale bar on.
+        legend =
+          !matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None");
+      } else {
+        opts.push(arg.clone());
+      }
+    } else if let Some((sh, sz)) = parse_bin_spec(&arg) {
+      if let Some(sh) = sh {
+        shape = sh;
+      }
+      if let Some(sz) = sz {
+        size = sz;
+      }
+    } else if let Some(hs) = parse_height_spec(&arg) {
+      hspec = hs;
+    }
+  }
+
+  let bins = compute_geo_bins(&pts, &wts, shape, &size);
+  let total: f64 = bins.iter().map(|b| b.1).sum();
+  let value = |ring: &[(f64, f64)], v: f64| match hspec {
+    HeightSpec::Count => v,
+    HeightSpec::Probability => {
+      if total > 0.0 {
+        v / total
+      } else {
+        0.0
+      }
+    }
+    HeightSpec::Intensity => v / ring_area_deg2(ring).max(1e-12),
+    HeightSpec::Pdf => v / (total.max(1e-12) * ring_area_deg2(ring).max(1e-12)),
+  };
+  let values: Vec<f64> = bins.iter().map(|(ring, v)| value(ring, *v)).collect();
+  let vmax = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+
+  // Shade each bin by its (max-normalized) value.
+  let mut items: Vec<Expr> = Vec::with_capacity(bins.len() * 2);
+  for ((ring, _), v) in bins.iter().zip(&values) {
+    let t = if vmax > 0.0 { v / vmax } else { 1.0 };
+    let (r, g, b) = heat_color(t);
+    items.push(Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+    });
+    items.push(Expr::FunctionCall {
+      name: "Woxi`GeoHistogramBin".to_string(),
+      args: vec![Expr::List(
+        ring
+          .iter()
+          .map(|(lat, lon)| {
+            Expr::List(vec![Expr::Real(*lat), Expr::Real(*lon)].into())
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )]
+      .into(),
+    });
+  }
+  let content = Expr::List(items.into());
+  let legend = legend.then_some(Legend {
+    lo: 0.0,
+    hi: vmax,
+    color: heat_color,
+  });
+  let result = geographics_impl(&content, &opts, legend)?;
+  // Keep the GeoGraphics head (`Head` reports GeoGraphics, as in the Wolfram
+  // Language) while rendering as an ordinary SVG image.
+  if let Expr::Graphics {
+    svg, is_3d, source, ..
+  } = &result
+  {
+    Ok(Expr::Graphics {
+      svg: svg.clone(),
+      is_3d: *is_3d,
+      source: source.clone(),
+      head: Some("GeoGraphics".to_string()),
+    })
+  } else {
+    Ok(result)
+  }
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────
@@ -1267,7 +1746,7 @@ fn render_legend(svg: &mut String, leg: &Legend, map_width: f64, height: f64) {
   for i in 0..slices {
     // t = 1 at the top slice, 0 at the bottom.
     let t = 1.0 - (i as f64 + 0.5) / slices as f64;
-    let (r, g, b) = choropleth_color(t);
+    let (r, g, b) = (leg.color)(t);
     let (rr, gg, bb) = (
       (r * 255.0).round() as u8,
       (g * 255.0).round() as u8,
