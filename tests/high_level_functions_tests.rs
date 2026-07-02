@@ -6984,4 +6984,328 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod geometric_test_tests {
+    use super::*;
+
+    // --- Point relations --------------------------------------------------
+
+    #[test]
+    fn collinear_points() {
+      assert_eq!(
+        interpret("GeometricTest[{{2, 3}, {4, 6}, {-2, -3}}, \"Collinear\"]")
+          .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[{{0, 0}, {1, 0}, {2, 0}, {3, 0}}, \"Collinear\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn non_collinear_points() {
+      assert_eq!(
+        interpret("GeometricTest[{{0, 0}, {1, 1}, {2, 3}}, \"Collinear\"]")
+          .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn distinct_points() {
+      assert_eq!(
+        interpret("GeometricTest[{{0, 0}, {1, 1}, {2, 3}}, \"Distinct\"]")
+          .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("GeometricTest[{{0, 0}, {1, 1}, {0, 0}}, \"Distinct\"]")
+          .unwrap(),
+        "False"
+      );
+    }
+
+    // --- Line relations ---------------------------------------------------
+
+    #[test]
+    fn parallel_lines() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 1}}], \
+           InfiniteLine[{{0, 1}, {1, 2}}]}, \"Parallel\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 1}}], \
+           InfiniteLine[{{0, 0}, {1, -1}}]}, \"Parallel\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn perpendicular_lines() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 1}}], \
+           InfiniteLine[{{0, 0}, {1, -1}}]}, \"Perpendicular\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 0}}], \
+           InfiniteLine[{{0, 0}, {1, 1}}]}, \"Perpendicular\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn concurrent_lines() {
+      // Three lines through the common point (1, 1).
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 1}}], \
+           InfiniteLine[{{0, 2}, {1, 1}}], \
+           InfiniteLine[{{2, 0}, {1, 1}}]}, \"Concurrent\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      // Two parallel lines are never concurrent.
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 0}}], \
+           InfiniteLine[{{0, 1}, {1, 1}}]}, \"Concurrent\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn horizontal_and_vertical_lines() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[InfiniteLine[{{0, 0}, {1, 0}}], \"Horizontal\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[InfiniteLine[{{0, 0}, {1, 0}}], \"Vertical\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[InfiniteLine[{{0, 0}, {0, 1}}], \"Vertical\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    // --- Polygon predicates ----------------------------------------------
+
+    #[test]
+    fn convex_polygon() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {5, 1}, {4, 4}, {-2, 0}}], \"Convex\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      // Self-intersecting vertex order is not convex.
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {2, 0}, {0, 2}, {2, 2}}], \"Convex\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn equilateral_and_regular_triangle() {
+      let eq = "Triangle[{{0, 0}, {2, 0}, {1, 1.7320508075688772}}]";
+      assert_eq!(
+        interpret(&format!("GeometricTest[{eq}, \"Equilateral\"]")).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(&format!("GeometricTest[{eq}, \"Regular\"]")).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[Triangle[{{0, 0}, {1, 0}, {0, 1}}], \"Equilateral\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn square_is_regular_rectangle() {
+      let sq = "Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}]";
+      assert_eq!(
+        interpret(&format!("GeometricTest[{sq}, \"Regular\"]")).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(&format!("GeometricTest[{sq}, \"Rectangle\"]")).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(&format!("GeometricTest[{sq}, \"Equiangular\"]")).unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn parallelogram_and_rectangle() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {3, 0}, {4, 2}, {1, 2}}], \
+           \"Parallelogram\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      // A slanted parallelogram is not a rectangle.
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {3, 0}, {4, 2}, {1, 2}}], \
+           \"Rectangle\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn orientation() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}], \
+           \"Counterclockwise\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {0, 2}, {2, 2}, {2, 0}}], \
+           \"Clockwise\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn simple_polygon() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}], \"Simple\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {2, 2}, {2, 0}, {0, 2}}], \"Simple\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    // --- Object relations -------------------------------------------------
+
+    #[test]
+    fn congruent_triangles() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[{Triangle[{{0, 0}, {3, 0}, {0, 4}}], \
+           Triangle[{{1, 1}, {1, 5}, {4, 1}}]}, \"Congruent\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[{Triangle[{{0, 0}, {3, 0}, {0, 4}}], \
+           Triangle[{{0, 0}, {6, 0}, {0, 8}}]}, \"Congruent\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn similar_triangles() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[{Triangle[{{0, 0}, {3, 0}, {0, 4}}], \
+           Triangle[{{0, 0}, {6, 0}, {0, 8}}]}, \"Similar\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    // --- Multiple properties and fallbacks --------------------------------
+
+    #[test]
+    fn multiple_properties_are_anded() {
+      let sq = "Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}]";
+      assert_eq!(
+        interpret(&format!("GeometricTest[{sq}, \"Convex\", \"Rectangle\"]"))
+          .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "GeometricTest[{sq}, \"Convex\", \"Equilateral\", \"Rectangle\"]"
+        ))
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn symbolic_input_stays_unevaluated() {
+      // Symbolic coordinates yield algebraic conditions in Wolfram; here the
+      // call is simply left unevaluated.
+      assert_eq!(
+        interpret("GeometricTest[{{a, b}, {c, d}, {e, f}}, \"Collinear\"]")
+          .unwrap(),
+        "GeometricTest[{{a, b}, {c, d}, {e, f}}, Collinear]"
+      );
+    }
+
+    #[test]
+    fn unknown_property_stays_unevaluated() {
+      assert_eq!(
+        interpret("GeometricTest[{{0, 0}, {1, 1}}, \"Bogus\"]").unwrap(),
+        "GeometricTest[{{0, 0}, {1, 1}}, Bogus]"
+      );
+    }
+  }
 }

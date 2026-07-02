@@ -2139,4 +2139,80 @@ mod box_representation_tests {
       "frame rectangle should be closed: {pts:?}"
     );
   }
+
+  // ── Haloing ──
+
+  #[test]
+  fn haloing_draws_white_halo_behind_line() {
+    // Haloing[] wraps the line in a wider white outline drawn *before*
+    // (behind) the line itself.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Haloing[], Blue, Line[{{0,0},{1,1},{2,0}}]}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    // The default halo is white.
+    let halo_at = svg
+      .find("stroke=\"rgb(255,255,255)\"")
+      .expect("expected a white halo polyline");
+    let line_at = svg
+      .find("stroke=\"rgb(0,0,255)\"")
+      .expect("expected the blue line polyline");
+    assert!(
+      halo_at < line_at,
+      "halo must be drawn behind (before) the line: {svg}"
+    );
+    // The halo stroke must be wider than the line stroke.
+    let width_of = |needle: &str| -> f64 {
+      let seg = &svg[svg.find(needle).unwrap()..];
+      seg
+        .split("stroke-width=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap()
+    };
+    assert!(
+      width_of("stroke=\"rgb(255,255,255)\"")
+        > width_of("stroke=\"rgb(0,0,255)\""),
+      "halo stroke should be wider than the line: {svg}"
+    );
+  }
+
+  #[test]
+  fn haloing_accepts_color_and_radius() {
+    // Haloing[Yellow, 4] gives a yellow halo of pixel radius 4 behind points.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Haloing[Yellow, 4], Red, PointSize[0.05], Point[{0,0}]}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(
+      svg.contains("fill=\"rgb(255,255,0)\""),
+      "expected a yellow halo circle: {svg}"
+    );
+    // The halo circle (drawn first) must precede the red point.
+    let halo_at = svg.find("fill=\"rgb(255,255,0)\"").unwrap();
+    let point_at = svg.find("fill=\"rgb(255,0,0)\"").unwrap();
+    assert!(halo_at < point_at, "halo must be behind the point: {svg}");
+  }
+
+  #[test]
+  fn haloing_none_disables_the_halo() {
+    // A subsequent Haloing[None] clears any active halo directive.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Haloing[], Haloing[None], Blue, Line[{{0,0},{1,1}}]}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(
+      !svg.contains("stroke=\"rgb(255,255,255)\""),
+      "Haloing[None] should remove the halo: {svg}"
+    );
+  }
+
+  #[test]
+  fn haloing_stays_symbolic_as_a_directive() {
+    // Outside a Graphics context, Haloing is an inert directive symbol.
+    let out =
+      woxi::interpret("Haloing[Red]").expect("interpret should succeed");
+    assert_eq!(out, "Haloing[RGBColor[1, 0, 0]]");
+  }
 }

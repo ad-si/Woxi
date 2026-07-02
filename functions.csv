@@ -1768,7 +1768,7 @@ FileBaseName,Returns the base name of a file (without directory and extension),�
 SequencePosition,Finds positions of subsequences matching a pattern in a list (overlapping by default; supports a count limit and the Overlaps option),✅,pure,10.1,1796
 ColorCombine,Combine color channels,,unevaluated,7.0,1800
 CoordinatesToolOptions,Coordinates tool options,,unevaluated,7.0,1800
-Highlighted,Highlighted display wrapper (stays symbolic),✅,unevaluated,10.4,1800
+Highlighted,Display wrapper that draws a colored background behind its argument,✅,pure,10.4,1800
 TextGrid,Displays data in a text grid layout,✅,pure,10.3,1800
 NumericFunction,Numeric function attribute,,unevaluated,3.0,1801
 ColorSetter,Color setter control,,unevaluated,6.0,1803
@@ -2537,7 +2537,7 @@ WignerD,Wigner D-matrix elements for rotation group representations,✅,pure,8.0
 ByteArray,Creates a byte array from a list of unsigned byte values or a Base64-encoded string,✅,pure,10.1,2591
 FrenetSerretSystem,Compute the Frenet-Serret system (curvatures and orthonormal frame) for a parametric curve,✅,pure,10.0,2591
 NumericalSort,Sorts a list by the numeric value of its elements,✅,pure,11.1,2591
-Transliterate,,🚫,,10.3,2591
+Transliterate,Transliterate text in other writing scripts to plain Latin/ASCII characters,✅,pure,10.3,2591
 AnyOrder,grammar pattern for any order,✅,Symbolic,10.1,2596
 ConstantImage,Create a constant image filled with a specified color or gray level,✅,pure,10.0,2596
 Decrypt,,🚫,,10.1,2596
@@ -5646,7 +5646,7 @@ GeodesicPolyhedron,,,,13.1,
 GeometricOptimization,,,,12.1,
 GeometricSolveValues,,,,14.0,
 GeometricStylingRules,,,,13.1,
-GeometricTest,,,,12.3,
+GeometricTest,Tests whether geometric objects satisfy a named property or relation such as Collinear Parallel Perpendicular Convex Regular Congruent or Similar,✅,pure,12.3,
 GouraudShading,,,,13.1,
 GradientFittedMesh,,,,13.0,
 GraphJoin,,,,13.1,
@@ -5657,7 +5657,7 @@ GraphSum,,,,13.1,
 GraphTree,,,,12.3,
 GraphTriangleCount,,,,14.1,
 GridVideo,,,,13.0,
-Haloing,,,,13.3,
+Haloing,Graphics directive drawing a contrasting outline (halo) behind primitives,✅,pure,13.3,
 HeaderAlignment,,,,12.1,
 HeaderBackground,,,,12.1,
 HeaderDisplayFunction,,,,12.1,
@@ -5921,7 +5921,7 @@ RemoteProviderSettings,,🚫,,12.2,
 RemovalConditions,,,,12.2,
 RemoveChannelSubscribers,,🚫,,12.0,
 RemoveVideoStream,,🚫,,12.1,
-ReplaceAt,,,,13.1,
+ReplaceAt,Applies transformation rules to the parts of an expression at specified positions,✅,pure,13.1,
 ResidueSum,,,,13.1,
 ResolveContextAliases,,,,13.0,
 ResourceSystemBase,,🚫,,12.1,

@@ -2021,6 +2021,9 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &filtered_labels,
     opts.plot_range_x,
     opts.plot_range_y,
+    None,
+    None,
+    None,
   )?;
   Ok(crate::graphics_result(svg))
 }
@@ -2032,7 +2035,13 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// An optional second argument controls the binning, mirroring `Histogram`:
 ///   - `n`    — use `n` equal-width bins along each axis
 ///   - `{dx}` — use bins of width `dx` along each axis
-/// When omitted, the bin count is chosen per axis with Sturges' rule.
+/// When omitted, each axis is binned like `HistogramList` (Freedman-Diaconis
+/// width rounded to a nice number, edges aligned to multiples of the width,
+/// bins centered on commensurate data).
+///
+/// Each bubble is colored by its bin count via Wolfram's
+/// "WL12DefaultVectorGradient" and drawn without an edge, matching
+/// wolframscript.
 pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let items = match &data {
@@ -2090,40 +2099,30 @@ pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Determine bin edges for one axis from its values and the binning request.
-  // Returns `(d_min, bin_width, num_bins)`.
+  // Returns `(min_edge, bin_width, num_bins)`. The width and auto cases use
+  // HistogramList's Wolfram-compatible placement (Freedman-Diaconis width,
+  // dx-aligned edges, bins centered on commensurate data).
   let axis_bins = |vals: &[f64]| -> (f64, f64, usize) {
-    let d_min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
-    let d_max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let range = d_max - d_min;
-    match &bin_req {
-      Some(BinReq::Width(dx)) => {
-        let num_bins = if range.abs() < f64::EPSILON {
-          1
-        } else {
-          (range / dx).ceil() as usize
-        }
-        .max(1);
-        (d_min, *dx, num_bins)
-      }
-      Some(BinReq::Count(n)) => {
-        let bw = if range.abs() < f64::EPSILON {
-          1.0
-        } else {
-          range / *n as f64
-        };
-        (d_min, bw, *n)
-      }
-      None => {
-        let num_bins =
-          ((1.0 + (vals.len() as f64).log2()).ceil() as usize).max(1);
-        let bw = if range.abs() < f64::EPSILON {
-          1.0
-        } else {
-          range / num_bins as f64
-        };
-        (d_min, bw, num_bins)
-      }
+    if let Some(BinReq::Count(n)) = &bin_req {
+      let d_min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+      let d_max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let range = d_max - d_min;
+      let bw = if range.abs() < f64::EPSILON {
+        1.0
+      } else {
+        range / *n as f64
+      };
+      return (d_min, bw, *n);
     }
+    let width = match &bin_req {
+      Some(BinReq::Width(dx)) => Some(*dx),
+      _ => None,
+    };
+    let (min_edge, max_edge, dx, _) =
+      crate::functions::list_helpers_ast::wl_bin_spec(vals, width);
+    let num_bins =
+      (((max_edge - min_edge) / dx + 1e-9).floor() as usize).max(1);
+    (min_edge, dx, num_bins)
   };
 
   let xs: Vec<f64> = points.iter().map(|p| p.0).collect();
@@ -2153,6 +2152,39 @@ pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Wolfram colors each bubble by its bin count with the
+  // "WL12DefaultVectorGradient" blend, normalized from the smallest to the
+  // largest count (all-equal counts collapse to the gradient start). The
+  // gradient always applies — wolframscript ignores even an explicit
+  // ChartStyle here.
+  let c_min = bubbles.iter().map(|b| b.2).fold(f64::INFINITY, f64::min);
+  let c_max = bubbles
+    .iter()
+    .map(|b| b.2)
+    .fold(f64::NEG_INFINITY, f64::max);
+  let colors: Vec<(u8, u8, u8)> = bubbles
+    .iter()
+    .map(|b| {
+      let t = if c_max > c_min {
+        (b.2 - c_min) / (c_max - c_min)
+      } else {
+        0.0
+      };
+      crate::functions::plot::wl_default_vector_gradient(t)
+    })
+    .collect();
+
+  // PlotLegends -> Automatic adds a count-gradient bar legend (Wolfram's
+  // BarLegend) right of the plot.
+  let wants_legend = args[1..].iter().any(|opt| {
+    matches!(
+      opt,
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLegends")
+          && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "Automatic")
+    )
+  });
+
   let mut opts = parse_chart_options(args);
   // Match BubbleChart's square plot area unless the caller set ImageSize.
   let user_set_image_size = args[1..].iter().any(|opt| {
@@ -2164,6 +2196,11 @@ pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
   if !user_set_image_size {
     opts.svg_height = opts.svg_width.saturating_sub(25);
+    if wants_legend {
+      // The legend strip widens the image rather than shrinking the plot,
+      // exactly like wolframscript (360 → 413 pt at the default size).
+      opts.svg_width += 53;
+    }
   }
 
   let groups = vec![bubbles];
@@ -2182,6 +2219,15 @@ pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &[],
     opts.plot_range_x,
     opts.plot_range_y,
+    // Bins are x_bw × y_bw rectangles — cap bubble radii so bubbles in
+    // adjacent bins never overlap.
+    Some((x_bw, y_bw)),
+    Some(&colors),
+    if wants_legend {
+      Some((c_min, c_max))
+    } else {
+      None
+    },
   )?;
   Ok(crate::graphics_result(svg))
 }

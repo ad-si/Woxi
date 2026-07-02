@@ -3361,6 +3361,77 @@ pub(crate) fn generate_horizontal_bar_svg(
   Ok(svg)
 }
 
+/// Wolfram's `"WL12DefaultVectorGradient"` color scheme — the gradient
+/// BubbleHistogram uses to color bubbles by bin count. Four LAB control
+/// points (from `ColorData["WL12DefaultVectorGradient", "BlendArgument"]`)
+/// are interpolated linearly in LAB space (WL `Blend` semantics), then
+/// converted D50-LAB → sRGB with out-of-gamut channels clipped. Matches
+/// wolframscript's rendered colors to well within 8-bit quantization.
+pub(crate) fn wl_default_vector_gradient(t: f64) -> (u8, u8, u8) {
+  // LABColor stores L in [0, 1] and a/b divided by 100.
+  const LAB_STOPS: [(f64, f64, f64); 4] = [
+    (
+      0.188_667_522_250_113_1,
+      0.522_596_101_276_680_9,
+      -0.857_210_761_912_256_8,
+    ),
+    (
+      0.402_329_034_265_632_8,
+      0.522_214_589_645_690_3,
+      -0.346_571_396_721_582_05,
+    ),
+    (
+      0.644_456_290_545_989,
+      0.537_992_026_017_925,
+      0.732_111_567_127_367_9,
+    ),
+    (
+      0.816_796_918_973_305_3,
+      0.145_001_147_401_695_45,
+      0.828_253_206_343_699_9,
+    ),
+  ];
+  let pos = t.clamp(0.0, 1.0) * (LAB_STOPS.len() - 1) as f64;
+  let i = (pos.floor() as usize).min(LAB_STOPS.len() - 2);
+  let f = pos - i as f64;
+  let lerp = |a: f64, b: f64| a + (b - a) * f;
+  let l = lerp(LAB_STOPS[i].0, LAB_STOPS[i + 1].0) * 100.0;
+  let a = lerp(LAB_STOPS[i].1, LAB_STOPS[i + 1].1) * 100.0;
+  let b = lerp(LAB_STOPS[i].2, LAB_STOPS[i + 1].2) * 100.0;
+
+  // CIELAB → XYZ, D50 reference white.
+  let fy = (l + 16.0) / 116.0;
+  let fx = fy + a / 500.0;
+  let fz = fy - b / 200.0;
+  let f_inv = |c: f64| {
+    let c3 = c * c * c;
+    if c3 > 216.0 / 24389.0 {
+      c3
+    } else {
+      (116.0 * c - 16.0) / (24389.0 / 27.0)
+    }
+  };
+  let (x, y, z) = (f_inv(fx) * 0.9642, f_inv(fy), f_inv(fz) * 0.8249);
+
+  // XYZ (D50) → linear sRGB (Bradford-adapted ICC matrix), then gamma
+  // encoding; channel clipping reproduces WL's gamut handling.
+  const M: [[f64; 3]; 3] = [
+    [3.133_856_1, -1.616_866_7, -0.490_614_6],
+    [-0.978_768_4, 1.916_141_5, 0.033_454_0],
+    [0.071_945_3, -0.228_991_4, 1.405_242_7],
+  ];
+  let encode = |row: &[f64; 3]| -> u8 {
+    let v = (row[0] * x + row[1] * y + row[2] * z).clamp(0.0, 1.0);
+    let v = if v <= 0.003_130_8 {
+      12.92 * v
+    } else {
+      1.055 * v.powf(1.0 / 2.4) - 0.055
+    };
+    (v.clamp(0.0, 1.0) * 255.0).round() as u8
+  };
+  (encode(&M[0]), encode(&M[1]), encode(&M[2]))
+}
+
 /// Generate SVG for a BubbleChart — a scatter plot with variable-radius
 /// circles drawn over labeled x/y axes. Each input triple is `(x, y, z)`
 /// where `z` drives the bubble area (matching Mathematica's convention).
@@ -3377,6 +3448,19 @@ pub(crate) fn generate_bubble_chart_svg(
   chart_labels: &[crate::functions::chart::ChartLabel],
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
+  // Data-space bin widths `(dx, dy)` when the bubbles sit on a regular grid
+  // (BubbleHistogram). Caps the bubble radius so bubbles in adjacent bins
+  // can at most touch, never overlap. `None` for free-form BubbleChart data.
+  bin_size: Option<(f64, f64)>,
+  // Per-bubble fill colors, indexed by flat position across all groups.
+  // When set, the bubbles are drawn without the black edge — matching
+  // wolframscript's BubbleHistogram, whose count-gradient bubbles have no
+  // border (unlike BubbleChart's).
+  bubble_colors: Option<&[(u8, u8, u8)]>,
+  // `(min_count, max_count)` when a count-gradient bar legend should be
+  // drawn right of the plot (BubbleHistogram's `PlotLegends -> Automatic`,
+  // Wolfram's `BarLegend`).
+  count_legend: Option<(f64, f64)>,
 ) -> Result<String, InterpreterError> {
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -3401,12 +3485,10 @@ pub(crate) fn generate_bubble_chart_svg(
     let max_label_len =
       chart_legends.iter().map(|l| l.len()).max().unwrap_or(0);
     (sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0) as u32
-  };
-
-  // Max bubble radius in render-space pixels. 20 display pixels matches the
-  // previous (axis-less) implementation and stays readable without occluding
-  // neighbors at the default image size.
-  let max_bubble_radius = 20.0 * sf;
+  }
+  // The count-gradient bar legend occupies a 53-display-pixel strip right
+  // of the plot — the widening wolframscript applies (360 → 413 pt).
+  + if count_legend.is_some() { 53 * s as u32 } else { 0 };
 
   // Plot-area dimensions in render-space pixels — must stay in sync with the
   // `ChartBuilder` margins below so that pixel-aware range padding (computed
@@ -3465,16 +3547,62 @@ pub(crate) fn generate_bubble_chart_svg(
       (min_0 - extra, max_0 + extra)
     };
 
-  // Extra visual gap beyond the radius so bubbles don't visually kiss the
-  // frame line.
-  let bubble_pad_px = max_bubble_radius + 4.0 * sf;
-
   let xs: Vec<f64> =
     groups.iter().flat_map(|g| g.iter().map(|t| t.0)).collect();
   let ys: Vec<f64> =
     groups.iter().flat_map(|g| g.iter().map(|t| t.1)).collect();
   let (x_min_raw, x_max_raw) = raw_range(&xs);
   let (y_min_raw, y_max_raw) = raw_range(&ys);
+
+  // Max bubble radius in render-space pixels. 20 display pixels matches the
+  // previous (axis-less) implementation and stays readable without occluding
+  // neighbors at the default image size. For binned data (`bin_size`), the
+  // radius is additionally capped at half the pixel distance between
+  // adjacent bin centers so bubbles never overlap.
+  let max_bubble_radius = {
+    let default_r = 20.0 * sf;
+    // Half the border stroke width, so even the outlines of two touching
+    // max-size bubbles stay disjoint.
+    let margin = 0.5 * sf;
+    let cap_axis = |bin: f64,
+                    raw_span: f64,
+                    plot_px: f64,
+                    explicit_span: Option<f64>|
+     -> f64 {
+      match explicit_span {
+        // Explicit PlotRange: the data-to-pixel scale is fixed, adjacent
+        // bin centers are `bin / span * plot_px` pixels apart.
+        Some(span) => bin * plot_px / span.max(f64::EPSILON) / 2.0 - margin,
+        // Auto range: the span is later padded by `radius + 4 px` per side
+        // (see `pad_for_bubbles`), so the bin's final pixel size is
+        // `bin * (plot_px - 2 * (r + 4 sf)) / raw_span`. Solving
+        // `2 * (r + margin) <= that` for `r`:
+        None => {
+          (bin * (plot_px - 8.0 * sf) - 2.0 * margin * raw_span)
+            / (2.0 * (raw_span + bin))
+        }
+      }
+    };
+    match bin_size {
+      None => default_r,
+      Some((bx, by)) => {
+        let span_of = |range: Option<(f64, f64)>| {
+          range.map(|(lo, hi)| if hi <= lo { 1.0 } else { hi - lo })
+        };
+        let cap_x =
+          cap_axis(bx, x_max_raw - x_min_raw, plot_w_px, span_of(plot_range_x));
+        let cap_y =
+          cap_axis(by, y_max_raw - y_min_raw, plot_h_px, span_of(plot_range_y));
+        // Keep at least one display pixel so dense binnings stay visible.
+        default_r.min(cap_x).min(cap_y).max(sf)
+      }
+    }
+  };
+
+  // Extra visual gap beyond the radius so bubbles don't visually kiss the
+  // frame line.
+  let bubble_pad_px = max_bubble_radius + 4.0 * sf;
+
   let (x_min_auto, x_max_auto) =
     pad_for_bubbles(x_min_raw, x_max_raw, plot_w_px, bubble_pad_px);
   let (y_min_auto, y_max_auto) =
@@ -3573,7 +3701,10 @@ pub(crate) fn generate_bubble_chart_svg(
 
     // Draw the bubbles with pixel-space radii so they look the same
     // regardless of the data range. Colors are assigned per group so that
-    // multi-dataset BubbleChart input visually distinguishes the datasets.
+    // multi-dataset BubbleChart input visually distinguishes the datasets —
+    // unless explicit per-bubble colors were supplied (BubbleHistogram's
+    // count gradient), which take precedence.
+    let mut flat_idx = 0usize;
     for (gi, group) in groups.iter().enumerate() {
       let (cr, cg, cb) = if !chart_style.is_empty() {
         let c = &chart_style[gi % chart_style.len()];
@@ -3585,19 +3716,25 @@ pub(crate) fn generate_bubble_chart_svg(
       } else {
         PLOT_COLORS[gi % PLOT_COLORS.len()]
       };
-      let fill = RGBColor(cr, cg, cb);
+      let group_fill = RGBColor(cr, cg, cb);
       // Semi-transparent black so the underlying bubble color bleeds
       // through the border, tinting it slightly toward the fill.
       let border = RGBColor(0, 0, 0).mix(0.4).stroke_width(RESOLUTION_SCALE);
       for &(x, y, z) in group {
+        let fill = bubble_colors
+          .and_then(|cs| cs.get(flat_idx))
+          .map(|&(r, g, b)| RGBColor(r, g, b))
+          .unwrap_or(group_fill);
+        flat_idx += 1;
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
           continue;
         }
         // Area-proportional: radius ∝ sqrt(z / z_max) * max_radius.
         let radius = if z_max > 0.0 {
-          ((z.abs() / z_max).sqrt() * max_bubble_radius).max(2.0 * sf)
+          ((z.abs() / z_max).sqrt() * max_bubble_radius)
+            .max((2.0 * sf).min(max_bubble_radius))
         } else {
-          5.0 * sf
+          (5.0 * sf).min(max_bubble_radius)
         };
         chart
           .draw_series(std::iter::once(Circle::new(
@@ -3608,15 +3745,17 @@ pub(crate) fn generate_bubble_chart_svg(
           .map_err(|e| {
             InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
           })?;
-        chart
-          .draw_series(std::iter::once(Circle::new(
-            (x, y),
-            radius as i32,
-            border,
-          )))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
-          })?;
+        if bubble_colors.is_none() {
+          chart
+            .draw_series(std::iter::once(Circle::new(
+              (x, y),
+              radius as i32,
+              border,
+            )))
+            .map_err(|e| {
+              InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+            })?;
+        }
       }
     }
 
@@ -3769,6 +3908,63 @@ pub(crate) fn generate_bubble_chart_svg(
           ly + swatch_size / 2.0,
           html_escape(label)
         ));
+      }
+    }
+
+    // Count-gradient bar legend (BubbleHistogram's PlotLegends ->
+    // Automatic): a vertical WL12DefaultVectorGradient bar right of the
+    // plot, smallest count at the bottom, labels at nice count steps —
+    // Wolfram's BarLegend. Layout proportions match the wolframscript
+    // rendering (bar ≈ 13 pt wide, ≈ 5/8 of the plot height, vertically
+    // centered).
+    if let Some((c_lo, c_hi)) = count_legend {
+      let bar_w = 13.0 * sf;
+      let bar_h = plot_h * 0.625;
+      let bar_x = plot_x0 + plot_w + 27.0 * sf;
+      let bar_y = plot_y0 + (plot_h - bar_h) / 2.0;
+      let slices = 64usize;
+      let slice_h = bar_h / slices as f64;
+      for i in 0..slices {
+        // t = 1 at the top slice, 0 at the bottom.
+        let t = 1.0 - (i as f64 + 0.5) / slices as f64;
+        let (r, g, b) = wl_default_vector_gradient(t);
+        labels_svg.push_str(&format!(
+          "<rect x=\"{bar_x:.1}\" y=\"{:.1}\" width=\"{bar_w:.1}\" \
+           height=\"{:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
+          bar_y + slice_h * i as f64,
+          slice_h + 0.6 * sf
+        ));
+      }
+      labels_svg.push_str(&format!(
+        "<rect x=\"{bar_x:.1}\" y=\"{bar_y:.1}\" width=\"{bar_w:.1}\" \
+         height=\"{bar_h:.1}\" fill=\"none\" stroke=\"rgb(110,110,110)\" \
+         stroke-width=\"{:.1}\"/>\n",
+        0.8 * sf
+      ));
+      let legend_font = sf * 16.0;
+      let label_x = bar_x + bar_w + 6.0 * sf;
+      let label_at = |labels_svg: &mut String, value: f64, frac: f64| {
+        labels_svg.push_str(&format!(
+          "<text x=\"{label_x:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" \
+           font-size=\"{legend_font:.0}\" fill=\"{label_fill}\" \
+           dominant-baseline=\"central\">{}</text>\n",
+          bar_y + bar_h * (1.0 - frac),
+          format_tick(value)
+        ));
+      };
+      if c_hi > c_lo {
+        // Six target labels reproduces wolframscript's BarLegend ticks
+        // (step 2 for counts 1..12, step 5 for 1..25).
+        let step = nice_step(c_hi - c_lo, 6);
+        let mut v = (c_lo / step).ceil() * step;
+        while v <= c_hi + 1e-9 {
+          label_at(&mut labels_svg, v, (v - c_lo) / (c_hi - c_lo));
+          v += step;
+        }
+      } else {
+        // Degenerate range (all bins hold the same count): label the bar
+        // once at its center.
+        label_at(&mut labels_svg, c_lo, 0.5);
       }
     }
 

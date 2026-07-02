@@ -1672,7 +1672,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           let result_expr = render_column_if_needed(result_expr);
           let result_expr = render_row_if_needed(result_expr);
           let result_expr = render_treeform_if_needed(result_expr);
-          render_framed_if_needed(result_expr)
+          let result_expr = render_framed_if_needed(result_expr);
+          render_highlighted_if_needed(result_expr)
         } else {
           result_expr
         };
@@ -2271,7 +2272,8 @@ fn render_inline_display_wrapper(expr: syntax::Expr) -> syntax::Expr {
   let expr = render_column_if_needed(expr);
   let expr = render_row_if_needed(expr);
   let expr = render_treeform_if_needed(expr);
-  render_framed_if_needed(expr)
+  let expr = render_framed_if_needed(expr);
+  render_highlighted_if_needed(expr)
 }
 
 /// If `expr` is `Column[{…}]`, render it as an SVG column and return `-Graphics-`.
@@ -2351,6 +2353,41 @@ fn contains_framed(expr: &syntax::Expr) -> bool {
   match expr {
     syntax::Expr::FunctionCall { name, .. } if name == "Framed" => true,
     syntax::Expr::List(items) => items.iter().any(contains_framed),
+    _ => false,
+  }
+}
+
+/// If `expr` is a `Highlighted[expr]` (or `Highlighted[expr, color]`) call,
+/// render it as an SVG box with a colored background and return `-Graphics-`.
+/// If the expression is a list containing any `Highlighted` elements, render
+/// the whole list as a Row-like layout so all elements appear together.
+fn render_highlighted_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Highlighted" && !args.is_empty() =>
+    {
+      if let Some(svg) = functions::graphics::highlighted_to_svg(args) {
+        graphics_result(svg)
+      } else {
+        expr
+      }
+    }
+    syntax::Expr::List(items) if items.iter().any(contains_highlighted) => {
+      if let Some(svg) = functions::graphics::row_with_framed_to_svg(items) {
+        graphics_result(svg)
+      } else {
+        expr
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// Check if an expression is or contains a Highlighted call.
+fn contains_highlighted(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::FunctionCall { name, .. } if name == "Highlighted" => true,
+    syntax::Expr::List(items) => items.iter().any(contains_highlighted),
     _ => false,
   }
 }
