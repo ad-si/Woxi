@@ -1436,6 +1436,7 @@
   - [`TIF`](images/TIF.md)
   - [`TIFF`](images/TIFF.md)
 - [Dates & Time](dates.md)
+  - [`MidDate`](dates/MidDate.md)
   - [`DateValue`](dates/DateValue.md)
   - [`Pause`](dates/Pause.md)
   - [`AbsoluteTime`](dates/AbsoluteTime.md)
