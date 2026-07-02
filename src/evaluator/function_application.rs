@@ -857,6 +857,28 @@ pub fn apply_curried_call(
       // Entity["type", "name"]["property"] — property access on entities
       crate::functions::entity_ast::entity_property_access(func_args, args)
     }
+    // Around[x, δ]["Value"] / ["Uncertainty"] — property extraction on an
+    // uncertain value. Unknown properties keep the curried form unevaluated.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "Around"
+      && func_args.len() == 2
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!();
+      };
+      match prop.as_str() {
+        "Value" => Ok(func_args[0].clone()),
+        "Uncertainty" => Ok(func_args[1].clone()),
+        _ => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // DateObject[...]["property"] — extract a date component (e.g. "Day",
     // "DayName", "Week"). Delegates to DateValue, which already resolves every
     // such property; if it cannot, the curried form is kept unevaluated.

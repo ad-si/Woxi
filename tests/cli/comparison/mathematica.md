@@ -90,7 +90,6 @@ Woxi does **not** support.
 - `ModelFit` superfunction with `ExponentialModel`, `PowerModel`,
     `LogModel`, `PolynomialModel`, `PeriodicModel`, `DecisionTreeModel`
 - Big-data `Tabular` enhancements, `TabularSummary`
-- `Around` data type
 - Exception handling: `ThrowException`, `CatchExceptions`,
     `RegisterExceptionType`
 - Lazy sequences via `IncrementalObject` and incremental
