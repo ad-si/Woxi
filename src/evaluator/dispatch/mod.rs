@@ -25,7 +25,7 @@ mod image_functions;
 mod interval_functions;
 mod io_functions;
 mod linear_algebra_functions;
-mod list_operations;
+pub(crate) mod list_operations;
 mod math_functions;
 mod music_functions;
 mod plotting;

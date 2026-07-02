@@ -2997,7 +2997,7 @@ ZTest,One-sample z-test p-value (known or estimated variance),✅,pure,8.0,3059
 BioSequence,,🚫,,12.2,3070
 CorrelationDistance,1 minus Pearson correlation between vectors,✅,none,6.0,3070
 FoldWhileList,Fold while condition holds returning intermediate results,✅,1,12.2,3070
-GeoHistogram,,🚫,,11.0,3070
+GeoHistogram,Geographic density histogram shading hexagonal or rectangular or triangular map tiles by count,✅,pure,11.0,3070
 LaplacianFilter,,🚫,,7.0,3070
 Links,,🚫,,3.0,3070
 Postfix,Symbol for postfix display formatting,✅,pure,1.0,3070

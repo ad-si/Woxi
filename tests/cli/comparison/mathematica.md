@@ -308,7 +308,6 @@ Woxi does **not** support.
 - `Channel` publish-subscribe framework
 - Cryptography
 - `HTTPRequest`
-- Visualization: `GeoHistogram`, `AudioPlot`
 - Text: `TextCases`, `Transliterate`
 
 ### Version 10.0 (2014)
