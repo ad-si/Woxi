@@ -3328,6 +3328,24 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       }
     }
     Expr::FunctionCall {
+      name: pc_name,
+      args: pc_args,
+    } if (pc_name == "PolarCurve" || pc_name == "FilledPolarCurve")
+      && !pc_args.is_empty() =>
+    {
+      if let Some(Expr::Graphics { ref svg, .. }) =
+        crate::functions::graphics::polar_curve_to_graphics(pc_name, pc_args)
+      {
+        svg.clone()
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    Expr::FunctionCall { name: do_name, .. } if do_name == "DateObject" => {
+      crate::functions::datetime_ast::date_object_panel_svg(expr)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    Expr::FunctionCall {
       name: mr_name,
       args: mr_args,
     } if mr_name == "MeshRegion" && mr_args.len() == 2 => {

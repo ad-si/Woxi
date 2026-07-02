@@ -2,6 +2,12 @@
 
 # 2025-05-08 - 0.1.0
 
+- Render top-level `PolarCurve[…]` and `FilledPolarCurve[…]` as graphics in
+    the playground and Woxi Studio (the CLI keeps the symbolic echo), and
+    support the `FilledPolarCurve[r, θ]` bare-variable form
+- Render `Region[Style[reg, directives…]]` with the style directives applied
+- Render `DateObject[…]` results (e.g. from `RandomDate` or `Now`) as a
+    framed date panel in the playground and Woxi Studio
 - Implement `WikidataData` and `ExternalIdentifier`,
     including `Import` of SVG files and `URL[…]` sources
 - Render `Audio[…]` objects (file-backed via `File[…]`/path strings, or from

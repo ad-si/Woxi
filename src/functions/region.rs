@@ -72,6 +72,15 @@ fn region_primitives(reg: &Expr) -> Option<(Vec<Expr>, bool)> {
   let curve_3d = |prim: Expr| Some((vec![curve_color(), prim], true));
 
   match name.as_str() {
+    // Style[reg, directives…] renders the wrapped region with the given
+    // directives (colors, opacity, …) overriding the default region color.
+    "Style" if !args.is_empty() => {
+      let (mut prims, is_3d) = region_primitives(&args[0])?;
+      let prim = prims.pop()?;
+      prims.extend(args[1..].iter().cloned());
+      prims.push(prim);
+      Some((prims, is_3d))
+    }
     // ── Point sets (0D) and curves (1D) ────────────────────────────────
     "Point" if args.len() == 1 => match coords_dim(&args[0])? {
       2 => curve_2d(reg.clone()),
