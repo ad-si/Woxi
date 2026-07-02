@@ -15,6 +15,37 @@ fn import_extension(path: &str) -> String {
   cleaned.rsplit('.').next().unwrap_or("").to_lowercase()
 }
 
+/// Resolve `Import`'s first argument to a path string: a plain string or a
+/// `URL["…"]` wrapper (which wolframscript accepts interchangeably).
+fn import_path_spec(expr: &Expr) -> Option<String> {
+  match expr {
+    Expr::String(s) => Some(s.clone()),
+    Expr::FunctionCall { name, args } if name == "URL" && args.len() == 1 => {
+      match &args[0] {
+        Expr::String(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Import an SVG file (local or URL) as a `Graphics` expression, matching
+/// wolframscript's vector import (which prints as `-Graphics-` in the CLI
+/// and renders as the SVG itself in visual hosts).
+#[cfg(not(target_arch = "wasm32"))]
+fn import_svg(path: &str, is_url: bool) -> Result<Expr, InterpreterError> {
+  if !is_url && !std::path::Path::new(path).exists() {
+    crate::emit_message(&format!(
+      "Import::nffil: File {} not found during Import.",
+      path
+    ));
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
+  let svg = import_read_text(path, is_url)?;
+  Ok(crate::graphics_result(svg))
+}
+
 /// Read the textual contents of a path that is either a local file or an
 /// `http(s)://` URL. Used by formats (JSON/RawJSON) that parse text.
 #[cfg(not(target_arch = "wasm32"))]
@@ -403,9 +434,9 @@ pub fn dispatch_image_functions(
       return Some(crate::functions::image_ast::rasterize_ast(args));
     }
     "Import" if args.len() == 1 => {
-      let path = match &args[0] {
-        Expr::String(s) => s.clone(),
-        _ => {
+      let path = match import_path_spec(&args[0]) {
+        Some(p) => p,
+        None => {
           return Some(Ok(Expr::FunctionCall {
             name: "Import".to_string(),
             args: args.to_vec().into(),
@@ -414,6 +445,19 @@ pub fn dispatch_image_functions(
       };
       let is_url = path.starts_with("http://") || path.starts_with("https://");
       let ext = import_extension(&path);
+
+      if ext == "svg" {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          return Some(import_svg(&path, is_url));
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          return Some(Err(InterpreterError::EvaluationError(
+            "Import: SVG import is not available in the browser".into(),
+          )));
+        }
+      }
 
       if ext == "json" {
         #[cfg(not(target_arch = "wasm32"))]
@@ -522,9 +566,9 @@ pub fn dispatch_image_functions(
       }
     }
     "Import" if args.len() == 2 => {
-      let path = match &args[0] {
-        Expr::String(p) => p.clone(),
-        _ => {
+      let path = match import_path_spec(&args[0]) {
+        Some(p) => p,
+        None => {
           return Some(Ok(Expr::FunctionCall {
             name: "Import".to_string(),
             args: args.to_vec().into(),

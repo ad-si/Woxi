@@ -3900,7 +3900,7 @@ UniverseModelData,,🚫,,10.4,4006
 VarianceEquivalenceTest,,,,8.0,4006
 WaitNext,,🚫,,7.0,4006
 WalleniusHypergeometricDistribution,,,,8.0,4006
-WikidataData,,🚫,,12.1,4006
+WikidataData,Retrieves the values of Wikidata properties for Wikidata items from the wikidata.org API,✅,effectful,12.1,4006
 WordOrientation,,,,10.1,4006
 AnimatedImage,,🚫,,12.2,4027
 BioSequenceTranslate,,🚫,,12.2,4027
@@ -4528,7 +4528,7 @@ Confirm,,🚫,,12.2,4707
 DescriptorStateSpace,,,,9.0,4707
 DimensionReducerFunction,,🚫,,10.1,4707
 EmbeddedService,,🚫,,10.0,4707
-ExternalIdentifier,,🚫,,12.1,4707
+ExternalIdentifier,Symbolic wrapper for an identifier in an external system (stays symbolic),✅,unevaluated,12.1,4707
 FeatureNearest,,🚫,,11.1,4707
 FunctionSign,,,,12.2,4707
 GeodesicOpening,,🚫,,9.0,4707

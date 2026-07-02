@@ -1605,6 +1605,12 @@ pub fn evaluate_function_call_ast_inner(
     "CountryData" => {
       return crate::functions::country_data::country_data_ast(args);
     }
+    "ExternalIdentifier" => {
+      return crate::functions::wikidata_ast::external_identifier_ast(args);
+    }
+    "WikidataData" => {
+      return crate::functions::wikidata_ast::wikidata_data_ast(args);
+    }
     "GeoDistance" => {
       return crate::functions::geo_math::geo_distance_ast(args);
     }

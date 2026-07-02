@@ -67,6 +67,7 @@ pub mod trig_factor_ast;
 pub mod turing_machine_ast;
 pub mod txt_ast;
 pub mod voronoi;
+pub mod wikidata_ast;
 pub mod wl_serialize;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod xlsx_ast;
