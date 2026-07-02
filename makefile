@@ -2,6 +2,12 @@
 # .bin/ contains wolframscript and wo wrappers for Docker environments.
 export PATH := $(CURDIR)/.bin:$(HOME)/.cargo/bin:$(PATH)
 
+ifeq ($(OS),Windows_NT)
+DEV_NULL = NUL:
+else
+DEV_NULL = /dev/null
+endif
+
 .PHONY: help
 help: makefile
 	@tail -n +4 makefile | grep ".PHONY"
@@ -110,9 +116,9 @@ test-docker:
 
 .PHONY: format
 format:
-	cargo clippy --fix --allow-dirty > /dev/null 2>&1
+	cargo clippy --fix --allow-dirty > $(DEV_NULL) 2>&1
 	cargo fmt
-	# nix fmt
+#	nix fmt
 
 
 .PHONY: install-cli
