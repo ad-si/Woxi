@@ -352,14 +352,14 @@ fn single_filter_result(
         filters
           .dual_lo_exact
           .as_ref()
-          .map(|e| filters::highpass_from_exact(e)),
+          .map(filters::highpass_from_exact),
       ),
       "DualHighpass" => (
         filters::highpass_from(&filters.primal_lo),
         filters
           .primal_lo_exact
           .as_ref()
-          .map(|e| filters::highpass_from_exact(e)),
+          .map(filters::highpass_from_exact),
       ),
       _ => {
         crate::emit_message(&format!(

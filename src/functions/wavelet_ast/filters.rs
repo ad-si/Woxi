@@ -62,7 +62,7 @@ pub fn highpass_from_exact(lo: &ExactFilter) -> ExactFilter {
       (k, e)
     })
     .collect();
-  g.sort_by(|a, b| a.0.cmp(&b.0));
+  g.sort_by_key(|a| a.0);
   g
 }
 

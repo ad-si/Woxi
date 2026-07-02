@@ -1257,8 +1257,7 @@ fn parse_tspec(tspec: &Expr) -> Option<ThresholdFun> {
         return None;
       }
       let delta_spec = items.get(1).cloned();
-      let extra: Vec<f64> =
-        items.iter().skip(2).filter_map(|e| num(e)).collect();
+      let extra: Vec<f64> = items.iter().skip(2).filter_map(num).collect();
       Some(ThresholdFun {
         kind: kind.clone(),
         delta_spec,
