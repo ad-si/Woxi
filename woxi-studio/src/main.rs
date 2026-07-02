@@ -96,6 +96,30 @@ struct WoxiStudio {
   dragging_cell: Option<usize>,
   /// Drop target index (the cell index before which the dragged cell will be inserted).
   drop_target: Option<usize>,
+  /// In-progress audio playback, if any. Tracks the external player
+  /// process so it can be paused/resumed and so the play button of the
+  /// owning cell can show a pause icon while audio is playing.
+  playback: Option<Playback>,
+}
+
+/// A running (or paused) external audio-player process tied to a cell.
+struct Playback {
+  /// Index of the cell whose audio is playing.
+  cell: usize,
+  /// The spawned player process (afplay / powershell / paplay …).
+  child: std::process::Child,
+  /// Whether playback is currently paused (process is SIGSTOP'd).
+  paused: bool,
+}
+
+impl Drop for Playback {
+  /// Kill the player when playback state is discarded so audio stops and
+  /// no (possibly SIGSTOP'd) process outlives the app. Both calls are
+  /// no-ops if the process already exited and was reaped.
+  fn drop(&mut self) {
+    let _ = self.child.kill();
+    let _ = self.child.wait();
+  }
 }
 
 /// Editor state for a single cell.
@@ -190,8 +214,12 @@ enum Message {
   EvaluateCell(usize),
   EvaluateAll,
 
-  /// Play the synthesized audio (from Play[…] / Sound[…]) of the given cell.
+  /// Toggle playback of the given cell's audio (from Play[…] / Sound[…] /
+  /// Audio[…]): start playing, pause, or resume.
   PlaySound(usize),
+  /// Periodic poll of the external audio player so the pause button
+  /// reverts to a play button when playback finishes on its own.
+  PlaybackTick,
 
   // Settings
   ThemeChanged(ThemeChoice),
@@ -391,9 +419,24 @@ impl WoxiStudio {
         hovered_gutter: None,
         dragging_cell: None,
         drop_target: None,
+        playback: None,
       },
       task,
     )
+  }
+
+  /// Kill any in-progress external audio player and clear playback state
+  /// (Playback's Drop impl kills the process).
+  fn stop_playback(&mut self) {
+    self.playback = None;
+  }
+
+  /// Whether the given cell's audio is currently playing (not paused).
+  fn is_playing(&self, idx: usize) -> bool {
+    self
+      .playback
+      .as_ref()
+      .is_some_and(|p| p.cell == idx && !p.paused)
   }
 
   /// Build editor state from a notebook.
@@ -659,6 +702,7 @@ impl WoxiStudio {
         match result {
           Ok((path, contents)) => match notebook::parse_notebook(&contents) {
             Ok(nb) => {
+              self.stop_playback();
               self.cell_editors = Self::editors_from_notebook(&nb);
               self.notebook = nb;
               self.status = format!("Opened: {}", path.display());
@@ -1317,12 +1361,22 @@ impl WoxiStudio {
           if src != dst && dst <= self.cell_editors.len() {
             let cell = self.cell_editors.remove(src);
             let insert_at = if dst > src { dst - 1 } else { dst };
-            self
-              .cell_editors
-              .insert(insert_at.min(self.cell_editors.len()), cell);
-            self.focused_cell =
-              Some(insert_at.min(self.cell_editors.len() - 1));
+            let insert_at = insert_at.min(self.cell_editors.len());
+            self.cell_editors.insert(insert_at, cell);
+            self.focused_cell = Some(insert_at);
             self.is_dirty = true;
+            if let Some(p) = &mut self.playback {
+              if p.cell == src {
+                p.cell = insert_at;
+              } else {
+                if p.cell > src {
+                  p.cell -= 1;
+                }
+                if p.cell >= insert_at {
+                  p.cell += 1;
+                }
+              }
+            }
           }
         }
         self.dragging_cell = None;
@@ -1540,6 +1594,11 @@ impl WoxiStudio {
         self.focused_cell = Some(insert_at);
         self.focused_divider = None;
         self.is_dirty = true;
+        if let Some(p) = &mut self.playback
+          && p.cell >= insert_at
+        {
+          p.cell += 1;
+        }
         focus(iced::widget::Id::from(format!("cell-{insert_at}")))
       }
 
@@ -1570,6 +1629,11 @@ impl WoxiStudio {
         self.focused_cell = Some(insert_at);
         self.focused_divider = None;
         self.is_dirty = true;
+        if let Some(p) = &mut self.playback
+          && p.cell >= insert_at
+        {
+          p.cell += 1;
+        }
         focus(iced::widget::Id::from(format!("cell-{insert_at}")))
       }
 
@@ -1582,6 +1646,11 @@ impl WoxiStudio {
               *focused = self.cell_editors.len() - 1;
             }
           }
+          match self.playback.as_mut() {
+            Some(p) if p.cell == idx => self.stop_playback(),
+            Some(p) if p.cell > idx => p.cell -= 1,
+            _ => {}
+          }
         }
         Task::none()
       }
@@ -1591,6 +1660,13 @@ impl WoxiStudio {
           self.cell_editors.swap(idx, idx - 1);
           self.focused_cell = Some(idx - 1);
           self.is_dirty = true;
+          if let Some(p) = &mut self.playback {
+            if p.cell == idx {
+              p.cell = idx - 1;
+            } else if p.cell == idx - 1 {
+              p.cell = idx;
+            }
+          }
         }
         Task::none()
       }
@@ -1600,6 +1676,13 @@ impl WoxiStudio {
           self.cell_editors.swap(idx, idx + 1);
           self.focused_cell = Some(idx + 1);
           self.is_dirty = true;
+          if let Some(p) = &mut self.playback {
+            if p.cell == idx {
+              p.cell = idx + 1;
+            } else if p.cell == idx + 1 {
+              p.cell = idx;
+            }
+          }
         }
         Task::none()
       }
@@ -1613,6 +1696,11 @@ impl WoxiStudio {
         {
           let code = self.cell_editors[idx].content.text().trim().to_string();
           if !code.is_empty() {
+            // The cell's audio output is about to be replaced — stop any
+            // playback of the old audio.
+            if self.playback.as_ref().is_some_and(|p| p.cell == idx) {
+              self.stop_playback();
+            }
             // Clear state and silently re-evaluate all preceding cells
             // so their side effects (variable assignments, function
             // definitions, etc.) are available in the current cell.
@@ -1642,18 +1730,72 @@ impl WoxiStudio {
       }
 
       Message::PlaySound(idx) => {
+        // If this cell's audio is already playing (or paused), toggle
+        // pause/resume instead of starting playback again.
+        let toggling = self.playback.as_mut().is_some_and(|p| {
+          p.cell == idx && matches!(p.child.try_wait(), Ok(None))
+        });
+        if toggling {
+          #[cfg(unix)]
+          {
+            let playback = self.playback.as_mut().unwrap();
+            let signal = if playback.paused { "-CONT" } else { "-STOP" };
+            match signal_playback(&playback.child, signal) {
+              Ok(()) => {
+                playback.paused = !playback.paused;
+                self.status = if playback.paused {
+                  String::from("Sound paused")
+                } else {
+                  String::from("Playing sound…")
+                };
+              }
+              Err(e) => self.status = format!("Could not pause sound: {e}"),
+            }
+          }
+          #[cfg(not(unix))]
+          {
+            // No way to pause an external player here without extra
+            // dependencies — stop instead; play restarts from the top.
+            self.stop_playback();
+            self.status = String::from("Sound stopped");
+          }
+          return Task::none();
+        }
+
+        self.stop_playback();
         if let Some(editor) = self.cell_editors.get(idx)
           && let Some(audio) = editor.sound.clone()
         {
           match play_audio(&audio) {
-            Ok(()) => self.status = String::from("Playing sound…"),
+            Ok(child) => {
+              self.playback = Some(Playback {
+                cell: idx,
+                child,
+                paused: false,
+              });
+              self.status = String::from("Playing sound…");
+            }
             Err(e) => self.status = format!("Could not play sound: {e}"),
           }
         }
         Task::none()
       }
 
+      Message::PlaybackTick => {
+        // Revert the pause button to a play button once the external
+        // player exits (playback finished on its own or was killed).
+        if self
+          .playback
+          .as_mut()
+          .is_some_and(|p| !matches!(p.child.try_wait(), Ok(None)))
+        {
+          self.playback = None;
+        }
+        Task::none()
+      }
+
       Message::EvaluateAll => {
+        self.stop_playback();
         woxi::clear_state();
         for idx in 0..self.cell_editors.len() {
           if matches!(
@@ -1819,16 +1961,22 @@ impl WoxiStudio {
     // because on_key_press only fires for Status::Ignored events,
     // which means it never fires when a text_editor has focus.
     let events = iced::event::listen_with(handle_event);
+    let mut subs = vec![events];
+    // While audio is playing, poll the player process so the pause
+    // button reverts to a play button when playback finishes. A paused
+    // (SIGSTOP'd) process cannot exit, so no polling is needed then.
+    if self.playback.as_ref().is_some_and(|p| !p.paused) {
+      subs.push(
+        iced::time::every(std::time::Duration::from_millis(200))
+          .map(|_| Message::PlaybackTick),
+      );
+    }
     #[cfg(target_os = "macos")]
-    {
-      let poll = iced::time::every(std::time::Duration::from_millis(150))
-        .map(|_| Message::PollPendingOpens);
-      Subscription::batch([events, poll])
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-      events
-    }
+    subs.push(
+      iced::time::every(std::time::Duration::from_millis(150))
+        .map(|_| Message::PollPendingOpens),
+    );
+    Subscription::batch(subs)
   }
 
   fn view(&self) -> Element<'_, Message> {
@@ -2610,7 +2758,11 @@ impl WoxiStudio {
 
       // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
       if let Some(ref audio) = editor.sound {
-        output_col = output_col.push(render_audio_player(idx, audio));
+        output_col = output_col.push(render_audio_player(
+          idx,
+          audio,
+          self.is_playing(idx),
+        ));
       }
 
       // Hyperlink buttons (clickable, blue, opens URL on press)
@@ -2699,7 +2851,11 @@ impl WoxiStudio {
 
       // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
       if let Some(ref audio) = editor.sound {
-        content_col = content_col.push(render_audio_player(idx, audio));
+        content_col = content_col.push(render_audio_player(
+          idx,
+          audio,
+          self.is_playing(idx),
+        ));
       }
 
       // Hyperlink buttons
@@ -3185,13 +3341,17 @@ fn render_hyperlink<'a>(
 }
 
 /// Render the graphical audio player shown for cells whose result is
-/// playable audio (Play[…] / Sound[…] / Audio[…]): a play button next to
-/// the audio's label (the source file name for file-backed Audio objects).
+/// playable audio (Play[…] / Sound[…] / Audio[…]): a play/pause toggle
+/// button next to the audio's label (the source file name for file-backed
+/// Audio objects). While the cell's audio is playing the button shows a
+/// pause icon; pressing it pauses playback and reverts it to a play icon.
 fn render_audio_player<'a>(
   idx: usize,
   audio: &woxi::AudioOutput,
+  is_playing: bool,
 ) -> Element<'a, Message> {
-  let play = button(text("▶").size(14))
+  let icon = if is_playing { "⏸" } else { "▶" };
+  let play = button(text(icon).size(14))
     .on_press(Message::PlaySound(idx))
     .padding([4, 10]);
   let label = audio.label.clone().unwrap_or_else(|| String::from("Sound"));
@@ -3327,10 +3487,33 @@ fn audio_file_extension(mime: &str) -> &'static str {
   }
 }
 
+/// Send a signal (e.g. "-STOP" to pause, "-CONT" to resume) to the audio
+/// player process via the standard `kill` utility, avoiding any extra
+/// dependencies.
+#[cfg(unix)]
+fn signal_playback(
+  child: &std::process::Child,
+  signal: &str,
+) -> Result<(), String> {
+  let status = std::process::Command::new("kill")
+    .arg(signal)
+    .arg(child.id().to_string())
+    .status()
+    .map_err(|e| e.to_string())?;
+  if status.success() {
+    Ok(())
+  } else {
+    Err(format!("kill {signal} exited with {status}"))
+  }
+}
+
 /// Decode base64 audio and play it through the operating system's audio
 /// player. The bytes are written to a temp file and a platform-appropriate
-/// player is spawned (non-blocking). Returns an error string on failure.
-fn play_audio(audio: &woxi::AudioOutput) -> Result<(), String> {
+/// player is spawned (non-blocking). Returns the player process handle so
+/// playback can be paused, resumed, or stopped; an error string on failure.
+fn play_audio(
+  audio: &woxi::AudioOutput,
+) -> Result<std::process::Child, String> {
   use base64::Engine;
   if audio.base64.is_empty() {
     return Err(match &audio.label {
@@ -3379,7 +3562,7 @@ fn play_audio(audio: &woxi::AudioOutput) -> Result<(), String> {
     .or_else(|_| std::process::Command::new("aplay").arg(&path).spawn())
     .or_else(|_| std::process::Command::new("xdg-open").arg(&path).spawn());
 
-  result.map(|_| ()).map_err(|e| e.to_string())
+  result.map_err(|e| e.to_string())
 }
 
 /// Evaluate all statements in a cell and collect their results.
