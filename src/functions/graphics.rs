@@ -8266,6 +8266,7 @@ fn is_graphics_producing_head(name: &str) -> bool {
       | "VectorPlot3D"
       | "NumberLinePlot"
       | "TimelinePlot"
+      | "Dendrogram"
       | "ComplexPlot"
       | "ComplexPlot3D"
       | "ComplexListPlot"
