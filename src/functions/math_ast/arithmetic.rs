@@ -747,6 +747,67 @@ pub fn try_threaded_op(
   Some(Ok(acc))
 }
 
+/// Numeric literal usable as a Complex[re, im] component.
+fn is_numeric_literal_part(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { name, args } => {
+      name == "Rational"
+        && args.len() == 2
+        && matches!(args[0], Expr::Integer(_) | Expr::BigInteger(_))
+        && matches!(args[1], Expr::Integer(_) | Expr::BigInteger(_))
+    }
+    _ => false,
+  }
+}
+
+/// Split a numeric-complex `re - im*I` summand (the BinaryOp Minus shape
+/// built by `build_complex_float_expr` for complex Times/Power results) into
+/// `(re, (-im)*I)` so plus_ast can fold it with other complex terms. Symbolic
+/// differences return None and keep their opaque shape.
+fn split_numeric_complex_minus(e: &Expr) -> Option<(Expr, Expr)> {
+  let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left,
+    right,
+  } = e
+  else {
+    return None;
+  };
+  // Only numeric complex literals; the negation below keeps exact components
+  // exact (no float coercion happens).
+  try_extract_complex_float(e)?;
+  let is_i = |x: &Expr| matches!(x, Expr::Identifier(s) if s == "I");
+  let neg_imag = match right.as_ref() {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: coeff,
+      right: i,
+    } if is_i(i) => {
+      let neg_coeff = match coeff.as_ref() {
+        Expr::Real(f) => Expr::Real(-f),
+        Expr::Integer(n) => Expr::Integer(-n),
+        _ => return None,
+      };
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(neg_coeff),
+        right: i.clone(),
+      }
+    }
+    i if is_i(i) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(Expr::Identifier("I".to_string())),
+    },
+    _ => return None,
+  };
+  Some(((**left).clone(), neg_imag))
+}
+
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
@@ -855,7 +916,32 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         stack.push((**right).clone());
         stack.push((**left).clone());
       }
-      other => flat_args.push(other),
+      // Split a numeric `Complex[re, im]` summand (as produced by complex
+      // Times/Power results) into `re + im*I` so the ordinary
+      // real/imaginary-term combining below folds it with other terms;
+      // otherwise `(1.5 + 2.5 I) + Complex[2., -3.75]` stays uncombined.
+      Expr::FunctionCall {
+        ref name,
+        args: ref cargs,
+      } if name == "Complex"
+        && cargs.len() == 2
+        && cargs.iter().all(is_numeric_literal_part) =>
+      {
+        flat_args.push(cargs[0].clone());
+        stack.push(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(cargs[1].clone()),
+          right: Box::new(Expr::Identifier("I".to_string())),
+        });
+      }
+      other => {
+        if let Some((re, imag)) = split_numeric_complex_minus(&other) {
+          flat_args.push(re);
+          flat_args.push(imag);
+        } else {
+          flat_args.push(other);
+        }
+      }
     }
   }
 

@@ -716,6 +716,44 @@ mod integer_reverse {
   }
 }
 
+// Complex Times/Power results (internally Complex[re, im]) must fold with
+// other summands in Plus. Regression: `(1.5 + 2.5 I) + Complex[2., -3.75]`
+// and Plus over complex-valued products stayed uncombined.
+mod complex_plus_folding {
+  use super::*;
+
+  #[test]
+  fn complex_heads_fold_in_plus() {
+    assert_eq!(
+      interpret("Plus[Complex[1.5, 2.5], Complex[2., -3.75]]").unwrap(),
+      "3.5 - 1.25*I"
+    );
+    assert_eq!(
+      interpret("Complex[1, 2] + Complex[3, 4]").unwrap(),
+      "4 + 6*I"
+    );
+    assert_eq!(
+      interpret("Plus[(1.5 + 2.5*I)^1, Times[-1, (1.5 + 2.5*I)^2, 2^(-1)]]")
+        .unwrap(),
+      "3.5 - 1.25*I"
+    );
+    assert_eq!(
+      interpret("Plus[1.5, Times[-1, (1.5 + 2.5*I)^2, 2^(-1)]]").unwrap(),
+      "3.5 - 3.75*I"
+    );
+  }
+
+  #[test]
+  fn complex_display_forms_unchanged() {
+    assert_eq!(interpret("Complex[2., -3.75]").unwrap(), "2. - 3.75*I");
+    assert_eq!(interpret("Complex[0., 1.]").unwrap(), "0. + 1.*I");
+    assert_eq!(interpret("Complex[1, -2]").unwrap(), "1 - 2*I");
+    assert_eq!(interpret("Complex[0, 5]").unwrap(), "5*I");
+    // The integral real part keeps its Real head, matching wolframscript.
+    assert_eq!(interpret("(1.5 + 2.5*I)^2").unwrap(), "-4. + 7.5*I");
+  }
+}
+
 mod harmonic_number {
   use super::*;
 

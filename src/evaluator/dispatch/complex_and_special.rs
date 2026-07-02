@@ -131,24 +131,33 @@ pub fn dispatch_complex_and_special(
             right: Box::new(Expr::Identifier("I".to_string())),
           }));
         }
-        // General case without I in imag: a + b*I (or a - |b|*I if b < 0)
-        // Check if imag is negative to format as subtraction
-        let (is_neg, abs_imag) = match imag {
-          Expr::Real(f) if *f < 0.0 => (true, Expr::Real(-f)),
-          Expr::Integer(n) if *n < 0 => (true, Expr::Integer(-n)),
-          _ => (false, imag.clone()),
+        // General case without I in imag. For concrete numeric components,
+        // build a + b*I and EVALUATE it so the result lands in the canonical
+        // Plus form — a raw Minus/Plus BinaryOp is opaque to plus_ast's
+        // flattening, so `(1.5 + 2.5 I) + Complex[2., -3.75]` never combined.
+        let numeric_part = |x: &Expr| {
+          matches!(
+            x,
+            Expr::Integer(_)
+              | Expr::BigInteger(_)
+              | Expr::Real(_)
+              | Expr::BigFloat(_, _)
+          ) || matches!(x, Expr::FunctionCall { name, args }
+               if name == "Rational" && args.len() == 2)
         };
-        if is_neg {
-          return Some(Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Minus,
-            left: Box::new(real.clone()),
-            right: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
-              left: Box::new(abs_imag),
-              right: Box::new(Expr::Identifier("I".to_string())),
-            }),
-          }));
+        if numeric_part(real) && numeric_part(imag) {
+          let bi = match evaluate_function_call_ast(
+            "Times",
+            &[imag.clone(), Expr::Identifier("I".to_string())],
+          ) {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+          };
+          return Some(evaluate_function_call_ast("Plus", &[real.clone(), bi]));
         }
+        // Symbolic components (e.g. the pattern Complex[a_, b_]) keep the
+        // raw a + b*I BinaryOp shape so structural pattern matching against
+        // Plus/Times complex trees still works.
         return Some(Ok(Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Plus,
           left: Box::new(real.clone()),

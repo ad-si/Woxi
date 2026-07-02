@@ -954,7 +954,9 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
       }
     }
   } else {
-    let re_expr = num_to_expr(re);
+    // A machine-complex result keeps its Real head even for an integral real
+    // part: wolframscript prints (1.5 + 2.5 I)^2 as -4. + 7.5*I, not -4 + 7.5*I.
+    let re_expr = Expr::Real(re);
     if im > 0.0 {
       Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Plus,
