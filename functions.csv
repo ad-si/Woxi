@@ -2537,7 +2537,7 @@ WignerD,Wigner D-matrix elements for rotation group representations,✅,pure,8.0
 ByteArray,Creates a byte array from a list of unsigned byte values or a Base64-encoded string,✅,pure,10.1,2591
 FrenetSerretSystem,Compute the Frenet-Serret system (curvatures and orthonormal frame) for a parametric curve,✅,pure,10.0,2591
 NumericalSort,Sorts a list by the numeric value of its elements,✅,pure,11.1,2591
-Transliterate,,🚫,,10.3,2591
+Transliterate,Transliterate text in other writing scripts to plain Latin/ASCII characters,✅,pure,10.3,2591
 AnyOrder,grammar pattern for any order,✅,Symbolic,10.1,2596
 ConstantImage,Create a constant image filled with a specified color or gray level,✅,pure,10.0,2596
 Decrypt,,🚫,,10.1,2596

@@ -54,6 +54,7 @@ pub mod sum_convergence_ast;
 pub mod tabular_ast;
 pub mod timeline_plot;
 pub mod timeseries_ast;
+pub mod transliterate_ast;
 pub mod tree_form;
 pub mod trig_factor_ast;
 pub mod turing_machine_ast;
