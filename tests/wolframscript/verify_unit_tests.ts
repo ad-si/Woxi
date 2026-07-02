@@ -592,6 +592,9 @@ function main() {
   // artifacts (1.0000000000000002).
   const EXACT_EXPR_SKIP = new Set([
     "NSolve[x^3 - 3*x^2 + 2*x == 0, x]",
+    // wolframscript leaks its internal System`HarmonicNumberDump`MQHN symbol
+    // for a symbolic exponent (a WL bug); Woxi stays unevaluated instead.
+    "HyperHarmonicNumber[2, 3, s]",
     // Last-ULP floating-point differences (different summation algorithms at machine epsilon):
     "HypergeometricPFQ[{1, 2}, {3}, 0.5]",
     "HypergeometricPFQ[{1}, {2}, 1.0]",

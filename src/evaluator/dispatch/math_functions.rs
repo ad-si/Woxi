@@ -3048,6 +3048,9 @@ pub fn dispatch_math_functions(
         crate::functions::math_ast::alternating_harmonic_number_ast(args),
       );
     }
+    "HyperHarmonicNumber" if (2..=4).contains(&args.len()) => {
+      return Some(crate::functions::math_ast::hyper_harmonic_number_ast(args));
+    }
     "CoefficientList" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::coefficient_list_ast(
         args,

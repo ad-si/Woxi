@@ -2221,6 +2221,159 @@ pub fn alternating_harmonic_number_ast(
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
+/// HyperHarmonicNumber[r, n] - the hyperharmonic number H_n^(r): r-fold
+/// iterated partial sums of the harmonic series.
+/// HyperHarmonicNumber[r, n, s] - iterated sums over the base 1/k^s.
+/// HyperHarmonicNumber[r, n, s, x] - iterated sums over the base x^k/k^s.
+///
+/// Evaluated via the coefficient form
+/// Sum[Binomial[n - k + r - 1, r - 1] x^k / k^s, {k, 1, n}].
+///
+/// NOTE the argument order: the ORDER r comes first (wolframscript's
+/// convention), so HyperHarmonicNumber[1, n] == HarmonicNumber[n].
+///
+/// Only exact arguments are evaluated: wolframscript computes Real arguments
+/// through digamma/Gamma closed forms whose float rounding differs from
+/// direct summation in the last digits, so Reals stay unevaluated here.
+/// A symbolic s with r >= 1 and n >= 1 also stays unevaluated — wolframscript
+/// leaks the internal System`HarmonicNumberDump`MQHN[...] symbol for it,
+/// which is a bug not worth reproducing.
+pub fn hyper_harmonic_number_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = Expr::FunctionCall {
+    name: "HyperHarmonicNumber".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  let contains_real = |e: &Expr| -> bool {
+    fn walk(e: &Expr) -> bool {
+      match e {
+        Expr::Real(_) | Expr::BigFloat(_, _) => true,
+        Expr::BinaryOp { left, right, .. } => walk(left) || walk(right),
+        Expr::UnaryOp { operand, .. } => walk(operand),
+        Expr::FunctionCall { args, .. } | Expr::List(args) => {
+          args.iter().any(walk)
+        }
+        _ => false,
+      }
+    }
+    walk(e)
+  };
+  if args.iter().any(contains_real) {
+    return Ok(unevaluated);
+  }
+
+  // The order r and the index n must be concrete non-negative integers.
+  let (Some(r), Some(n)) = (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+  else {
+    return Ok(unevaluated);
+  };
+  if r < 0 || n < 0 {
+    return Ok(unevaluated);
+  }
+
+  let s = if args.len() >= 3 {
+    args[2].clone()
+  } else {
+    Expr::Integer(1)
+  };
+  let x = args.get(3);
+
+  // The empty sum is 0 for any s and x, even symbolic ones.
+  if n == 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  let neg_s = |s: &Expr| -> Expr {
+    match s {
+      Expr::Integer(p) => Expr::Integer(-p),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), s.clone()].into(),
+      },
+    }
+  };
+
+  // r = 0 is the plain base term x^n / n^s; wolframscript evaluates it even
+  // for symbolic s and x (e.g. HyperHarmonicNumber[0, 5, s] -> 5^(-s)).
+  if r == 0 {
+    let n_pow = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(Expr::Integer(n)),
+      right: Box::new(neg_s(&s)),
+    };
+    let term = match x {
+      Some(x) => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(x.clone()),
+            right: Box::new(Expr::Integer(n)),
+          },
+          n_pow,
+        ]
+        .into(),
+      },
+      None => n_pow,
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&term);
+  }
+
+  // r >= 1: the exponent s must be an exact Integer/Rational, and x (when
+  // present) a concrete numeric value.
+  let s_is_exact = expr_to_i128(&s).is_some()
+    || matches!(&s, Expr::FunctionCall { name, args }
+         if name == "Rational" && args.len() == 2);
+  if !s_is_exact {
+    return Ok(unevaluated);
+  }
+  if let Some(x) = x
+    && !crate::functions::predicate_ast::is_numeric_q_pub(x)
+  {
+    return Ok(unevaluated);
+  }
+
+  // Binomial[n - k + r - 1, r - 1] as an exact BigInt.
+  let binom = |m: i128, j: i128| -> BigInt {
+    let mut acc = BigInt::from(1);
+    for i in 0..j {
+      acc = acc * BigInt::from(m - i) / BigInt::from(i + 1);
+    }
+    acc
+  };
+
+  let neg_s = neg_s(&s);
+  let mut terms = Vec::new();
+  for k in 1..=n {
+    let coeff = bigint_to_expr(binom(n - k + r - 1, r - 1));
+    let k_pow = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(Expr::Integer(k)),
+      right: Box::new(neg_s.clone()),
+    };
+    let mut factors = vec![coeff];
+    if let Some(x) = x {
+      factors.push(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(k)),
+      });
+    }
+    factors.push(k_pow);
+    terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    });
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum)
+}
+
 /// Prime[n] - Returns the nth prime number
 pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

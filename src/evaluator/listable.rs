@@ -105,6 +105,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "StirlingS2"
       | "HarmonicNumber"
       | "AlternatingHarmonicNumber"
+      | "HyperHarmonicNumber"
       | "ContinuedFraction"
       | "Boole"
       | "BitLength"

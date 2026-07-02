@@ -977,6 +977,145 @@ mod complex_plus_folding {
   }
 }
 
+// All expected values verified against wolframscript 15.0. NOTE the argument
+// order: the ORDER r comes first, so HyperHarmonicNumber[1, n] equals
+// HarmonicNumber[n].
+mod hyper_harmonic_number {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("HyperHarmonicNumber[5, 2]").unwrap(), "11/2");
+    assert_eq!(interpret("HyperHarmonicNumber[1, 3]").unwrap(), "11/6");
+    assert_eq!(interpret("HyperHarmonicNumber[3, 4]").unwrap(), "57/4");
+    assert_eq!(interpret("HyperHarmonicNumber[10, 4]").unwrap(), "3013/12");
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, 100]").unwrap(),
+      "1182248763312705558524238086612268061991611/\
+       2788815009188499086581352357412492142272"
+    );
+  }
+
+  #[test]
+  fn edge_cases() {
+    // The empty sum is 0; a single term is 1 for any order.
+    assert_eq!(interpret("HyperHarmonicNumber[5, 0]").unwrap(), "0");
+    assert_eq!(interpret("HyperHarmonicNumber[7, 1]").unwrap(), "1");
+    // Order 0 is the plain base term 1/n.
+    assert_eq!(interpret("HyperHarmonicNumber[0, 2]").unwrap(), "1/2");
+    assert_eq!(interpret("HyperHarmonicNumber[0, 5]").unwrap(), "1/5");
+    // Negative, rational, symbolic, and Infinity arguments stay unevaluated,
+    // matching wolframscript (Reals are a documented divergence: wolframscript
+    // computes them via digamma closed forms).
+    assert_eq!(
+      interpret("HyperHarmonicNumber[5, -1]").unwrap(),
+      "HyperHarmonicNumber[5, -1]"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[-3, 2]").unwrap(),
+      "HyperHarmonicNumber[-3, 2]"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[1/2, 3]").unwrap(),
+      "HyperHarmonicNumber[1/2, 3]"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, n]").unwrap(),
+      "HyperHarmonicNumber[2, n]"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[r, 5]").unwrap(),
+      "HyperHarmonicNumber[r, 5]"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, Infinity]").unwrap(),
+      "HyperHarmonicNumber[2, Infinity]"
+    );
+  }
+
+  #[test]
+  fn generalized_exponent() {
+    assert_eq!(
+      interpret("HyperHarmonicNumber[1, 5, 2]").unwrap(),
+      "5269/3600"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[4, 6, 2]").unwrap(),
+      "13557/200"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, 5, 3]").unwrap(),
+      "203413/36000"
+    );
+    // Zero and negative exponents give integer power sums.
+    assert_eq!(interpret("HyperHarmonicNumber[2, 5, 0]").unwrap(), "15");
+    assert_eq!(interpret("HyperHarmonicNumber[2, 5, -1]").unwrap(), "35");
+    // Rational exponent: exact radical sum.
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, 5, 1/2]").unwrap(),
+      "6 + 2*Sqrt[2] + Sqrt[3] + 1/Sqrt[5]"
+    );
+    // Order 0 evaluates even for a symbolic exponent.
+    assert_eq!(interpret("HyperHarmonicNumber[0, 5, 2]").unwrap(), "1/25");
+    assert_eq!(interpret("HyperHarmonicNumber[0, 5, s]").unwrap(), "5^(-s)");
+    assert_eq!(interpret("HyperHarmonicNumber[2, 0, s]").unwrap(), "0");
+    // A symbolic exponent with r >= 1, n >= 1 stays unevaluated (wolframscript
+    // leaks its internal HarmonicNumberDump`MQHN symbol here — a WL bug).
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, 3, s]").unwrap(),
+      "HyperHarmonicNumber[2, 3, s]"
+    );
+  }
+
+  #[test]
+  fn four_argument_form() {
+    // HyperHarmonicNumber[r, n, s, x]: iterated sums over the base x^k/k^s.
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, 5, 3, 4]").unwrap(),
+      "57716/1125"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, 3, 1, 1/2]").unwrap(),
+      "43/24"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, 3, 1, I]").unwrap(),
+      "-1 + (8*I)/3"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[3, 2, 1/2, 1/2]").unwrap(),
+      "3/2 + 1/(4*Sqrt[2])"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, 2, 1, Pi]").unwrap(),
+      "2*Pi + Pi^2/2"
+    );
+    // Order 0 is x^n/n^s, evaluated even for symbolic x.
+    assert_eq!(
+      interpret("HyperHarmonicNumber[0, 4, 2, 3]").unwrap(),
+      "81/16"
+    );
+    assert_eq!(
+      interpret("HyperHarmonicNumber[0, 5, 1, x]").unwrap(),
+      "x^5/5"
+    );
+    assert_eq!(interpret("HyperHarmonicNumber[2, 0, 1, x]").unwrap(), "0");
+    // Symbolic x with r >= 1 stays unevaluated.
+    assert_eq!(
+      interpret("HyperHarmonicNumber[2, 3, 1, x]").unwrap(),
+      "HyperHarmonicNumber[2, 3, 1, x]"
+    );
+  }
+
+  #[test]
+  fn listable() {
+    assert_eq!(
+      interpret("HyperHarmonicNumber[{1, 2}, 3]").unwrap(),
+      "{11/6, 13/3}"
+    );
+  }
+}
+
 mod harmonic_number {
   use super::*;
 
