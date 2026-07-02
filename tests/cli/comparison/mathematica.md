@@ -154,7 +154,7 @@ Woxi does **not** support.
 - Solid-mechanics / fluid-dynamics PDEs
 - Computable species data
 - Synthetic geometry constraint solving
-- Graphics: texture mapping, haloing, `DropShadowing`
+- Graphics: texture mapping, haloing
 
 ### Version 13.3 (2023)
 

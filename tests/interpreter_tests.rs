@@ -948,6 +948,105 @@ mod interpreter_tests {
     }
   }
 
+  #[test]
+  fn drop_shadowing_canonicalizes_with_defaults() {
+    // DropShadowing arguments are matched positionally in the order
+    // offset (2-element numeric list), radius (number), color (color
+    // directive or None), each slot optional, and the missing slots are
+    // filled with the defaults {-3, -3}, 2 and
+    // Opacity[1/3, ThemeColor[Foreground]] — matching wolframscript.
+    let cases = [
+      (
+        "DropShadowing[]",
+        "DropShadowing[{-3, -3}, 2, Opacity[1/3, ThemeColor[Foreground]]]",
+      ),
+      (
+        "DropShadowing[{1, 2}]",
+        "DropShadowing[{1, 2}, 2, Opacity[1/3, ThemeColor[Foreground]]]",
+      ),
+      (
+        "DropShadowing[5]",
+        "DropShadowing[{-3, -3}, 5, Opacity[1/3, ThemeColor[Foreground]]]",
+      ),
+      (
+        "DropShadowing[2.5]",
+        "DropShadowing[{-3, -3}, 2.5, Opacity[1/3, ThemeColor[Foreground]]]",
+      ),
+      (
+        "DropShadowing[Red]",
+        "DropShadowing[{-3, -3}, 2, RGBColor[1, 0, 0]]",
+      ),
+      (
+        "DropShadowing[Opacity[0.5]]",
+        "DropShadowing[{-3, -3}, 2, Opacity[0.5]]",
+      ),
+      ("DropShadowing[None]", "DropShadowing[{-3, -3}, 2, None]"),
+      (
+        "DropShadowing[{1, 2}, 5]",
+        "DropShadowing[{1, 2}, 5, Opacity[1/3, ThemeColor[Foreground]]]",
+      ),
+      (
+        "DropShadowing[{1, 2}, Red]",
+        "DropShadowing[{1, 2}, 2, RGBColor[1, 0, 0]]",
+      ),
+      (
+        "DropShadowing[5, Red]",
+        "DropShadowing[{-3, -3}, 5, RGBColor[1, 0, 0]]",
+      ),
+      (
+        "DropShadowing[{1, 2}, 5, Red]",
+        "DropShadowing[{1, 2}, 5, RGBColor[1, 0, 0]]",
+      ),
+      // The canonical form is a fixed point of evaluation.
+      (
+        "DropShadowing[{-3, -3}, 2, Opacity[1/3, ThemeColor[Foreground]]]",
+        "DropShadowing[{-3, -3}, 2, Opacity[1/3, ThemeColor[Foreground]]]",
+      ),
+    ];
+    for (input, expected) in cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, expected, "result mismatch for {input}");
+      assert!(
+        !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+        "unexpected 'not yet implemented' warning for {input}: {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  #[test]
+  fn drop_shadowing_invalid_specs_stay_unevaluated() {
+    // Argument lists that don't fit the offset/radius/color pattern
+    // (wrong types, wrong slot order, too many arguments) are left
+    // unevaluated with evaluated arguments, and must NOT emit a spurious
+    // "not yet implemented" warning (like Glow/EdgeForm/Opacity).
+    let cases = [
+      ("DropShadowing[True]", "DropShadowing[True]"),
+      ("DropShadowing[False]", "DropShadowing[False]"),
+      ("DropShadowing[x]", "DropShadowing[x]"),
+      ("DropShadowing[{a, b}]", "DropShadowing[{a, b}]"),
+      ("DropShadowing[{1, 2, 3}]", "DropShadowing[{1, 2, 3}]"),
+      // Color before offset is out of order.
+      (
+        "DropShadowing[Red, {1, 2}]",
+        "DropShadowing[RGBColor[1, 0, 0], {1, 2}]",
+      ),
+      (
+        "DropShadowing[{1, 2}, 5, Red, 7]",
+        "DropShadowing[{1, 2}, 5, RGBColor[1, 0, 0], 7]",
+      ),
+    ];
+    for (input, expected) in cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, expected, "result mismatch for {input}");
+      assert!(
+        !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+        "unexpected 'not yet implemented' warning for {input}: {:?}",
+        r.warnings
+      );
+    }
+  }
+
   mod case_helpers;
 
   mod algebra;

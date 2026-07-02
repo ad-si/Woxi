@@ -986,6 +986,8 @@ pub(crate) struct SeriesStyle {
   pub thickness: Option<f64>,
   /// Dash pattern in display pixels. None = solid line.
   pub dashing: Option<Vec<f64>>,
+  /// DropShadowing[...] directive: draw the curve with a drop shadow.
+  pub shadow: Option<crate::functions::graphics::DropShadow>,
 }
 
 /// A single explicit grid line: a position on its axis plus an optional
@@ -1773,6 +1775,8 @@ fn generate_svg_with_options(
     render_height,
     full_width,
   );
+
+  inject_drop_shadows(&mut buf, &opts.plot_style, all_points.len());
 
   // Emit deferred dashed series as single stroke-dasharray polylines (on top
   // of the plot content, just before </svg>).
@@ -4875,6 +4879,55 @@ pub(crate) fn rewrite_svg_header(
   }
 }
 
+/// Inject drop-shadow filters for series styled with `DropShadowing[…]`
+/// into a finished plotters SVG. plotters has no filter API, so a
+/// `<defs>` block is inserted after the `<svg>` header and each curve
+/// polyline — identified by the exact stroke color of its series — is
+/// tagged with the filter attribute. Shadow parameters are scaled by
+/// RESOLUTION_SCALE to match the oversampled render coordinates.
+pub(crate) fn inject_drop_shadows(
+  buf: &mut String,
+  plot_style: &[SeriesStyle],
+  n_series: usize,
+) {
+  if plot_style.is_empty() || !plot_style.iter().any(|s| s.shadow.is_some()) {
+    return;
+  }
+  let mut defs = String::new();
+  let mut seen_ids: Vec<String> = Vec::new();
+  // (needle with the series' stroke attr, tagged replacement)
+  let mut rules: Vec<(String, String)> = Vec::new();
+  for idx in 0..n_series {
+    let style = &plot_style[idx % plot_style.len()];
+    if let Some(ds) = &style.shadow {
+      let id = ds.filter_id();
+      if !seen_ids.contains(&id) {
+        seen_ids.push(id.clone());
+        defs.push_str(&ds.filter_def(RESOLUTION_SCALE as f64));
+        defs.push('\n');
+      }
+      let (r, g, b) = series_color(plot_style, idx);
+      let needle = format!(
+        "<polyline fill=\"none\" opacity=\"1\" stroke=\"#{:02X}{:02X}{:02X}\"",
+        r, g, b
+      );
+      let replacement = format!(
+        "<polyline filter=\"url(#{})\" fill=\"none\" opacity=\"1\" stroke=\"#{:02X}{:02X}{:02X}\"",
+        id, r, g, b
+      );
+      if !rules.iter().any(|(n, _)| n == &needle) {
+        rules.push((needle, replacement));
+      }
+    }
+  }
+  if let Some(pos) = buf.find('>') {
+    buf.insert_str(pos + 1, &format!("\n<defs>\n{defs}</defs>"));
+  }
+  for (needle, replacement) in &rules {
+    *buf = buf.replace(needle, replacement);
+  }
+}
+
 /// Parse ImageSize option value into (width, height, full_width).
 /// Supports: integer, {w, h}, and named sizes (Tiny, Small, Medium, Large, Full).
 /// Full uses a 720px render resolution but emits `width="100%"` in SVG.
@@ -4984,6 +5037,9 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
         for a in args {
           apply_style_directive(a, style);
         }
+      }
+      "DropShadowing" => {
+        style.shadow = crate::functions::graphics::parse_drop_shadowing(args);
       }
       "Thickness" if args.len() == 1 => {
         if let Expr::Identifier(s) = &args[0] {
@@ -5098,6 +5154,7 @@ pub(crate) fn parse_plot_style(replacement: &Expr) -> Vec<SeriesStyle> {
       if style.color.is_some()
         || style.thickness.is_some()
         || style.dashing.is_some()
+        || style.shadow.is_some()
       {
         vec![style]
       } else {
