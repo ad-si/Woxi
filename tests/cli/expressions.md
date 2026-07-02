@@ -54,6 +54,7 @@ Output is always in [FullForm].
 - [`Level`](expressions/Level.md)
 - [`LightDarkSwitched`](expressions/LightDarkSwitched.md)
 - [`MatrixForm`](expressions/MatrixForm.md)
+- [`Molecule`](expressions/Molecule.md)
 - [`Opening`](expressions/Opening.md)
 - [`OrthogonalMatrixQ`](expressions/OrthogonalMatrixQ.md)
 - [`ParallelMap`](expressions/ParallelMap.md)

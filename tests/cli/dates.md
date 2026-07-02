@@ -27,6 +27,7 @@ Wolfram Language. Dates can be specified either as 3-element lists
 - [`DayCount`](dates/DayCount.md)
 - [`DayPlus`](dates/DayPlus.md)
 - [`DateInterval`](dates/DateInterval.md)
+- [`MidDate`](dates/MidDate.md)
 - [`SessionTime`](dates/SessionTime.md)
 - [`TimeUsed`](dates/TimeUsed.md)
 - [`UnixTime`](dates/UnixTime.md)

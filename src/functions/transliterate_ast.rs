@@ -5,7 +5,8 @@
 //! "Any-Latin; Latin-ASCII" transform chain, so the per-script rules here
 //! follow the corresponding CLDR transform data:
 //!
-//! - Greek: ISO 843 (β→v, η→i, θ→th, χ→ch, ψ→ps, γ-nasal, υ-diphthong)
+//! - Greek: ICU Greek-Latin classical scheme (β→b, η→e, φ→ph, χ→ch,
+//!   ψ→ps, θ→th, γ-nasal, υ→u after α/ε/ο, rough breathing→h)
 //! - Cyrillic: ISO 9 / GOST 7.79 System A, folded to ASCII (ь→', ъ→")
 //! - Hiragana/Katakana: Hepburn romanization (し→shi, っ gemination, ん')
 //! - Hangul: Revised Romanization transliteration (letter-by-letter)
@@ -147,17 +148,27 @@ fn is_greek(c: char) -> bool {
   matches!(c as u32, 0x0370..=0x03FF | 0x1F00..=0x1FFF)
 }
 
-/// Strip diacritics from a Greek letter and return its lowercase base
-/// together with whether the original was uppercase.
-fn greek_base(c: char) -> Option<(char, bool)> {
+/// Strip diacritics from a Greek letter and return its lowercase base,
+/// whether the original was uppercase, and whether it carried a rough
+/// breathing mark (U+0314), which transliterates as an `h`.
+fn greek_base(c: char) -> Option<(char, bool, bool)> {
   use unicode_normalization::UnicodeNormalization;
-  let b = std::iter::once(c).nfd().next()?;
+  let mut marks = std::iter::once(c).nfd();
+  let b = marks.next()?;
   if !is_greek(b) {
     return None;
   }
+  let rough = marks.any(|m| m == '\u{0314}');
   let upper = b.is_uppercase();
   let low = b.to_lowercase().next()?;
-  Some((low, upper))
+  Some((low, upper, rough))
+}
+
+/// Last code point of a character's NFD expansion (the base letter if
+/// unaccented, else its final combining mark).
+fn last_nfd_codepoint(c: char) -> Option<char> {
+  use unicode_normalization::UnicodeNormalization;
+  std::iter::once(c).nfd().last()
 }
 
 /// Is the character at `idx` (if any) a lowercase letter? Used for the
@@ -177,7 +188,7 @@ fn emit_greek(chars: &[char], i: usize, out: &mut String) -> usize {
     out.push(';'); // ano teleia
     return i + 1;
   }
-  let Some((low, upper)) = greek_base(c) else {
+  let Some((low, upper, rough)) = greek_base(c) else {
     out.push(c);
     return i + 1;
   };
@@ -186,15 +197,19 @@ fn emit_greek(chars: &[char], i: usize, out: &mut String) -> usize {
     && chars
       .get(i + 1)
       .and_then(|&n| greek_base(n))
-      .is_some_and(|(n, _)| matches!(n, 'γ' | 'κ' | 'ξ' | 'χ'));
-  // υ in the diphthongs αυ, ευ, ηυ, ου is transliterated u (else y)
+      .is_some_and(|(n, _, _)| matches!(n, 'γ' | 'κ' | 'ξ' | 'χ'));
+  // υ in the diphthongs αυ, ευ, ου is transliterated u (else y). ICU
+  // matches the context on NFD text, so an accent on the PRECEDING vowel
+  // blocks the rule (άυ → ay) while an accent on υ itself does not
+  // (ού → ou): check the last NFD code point of the previous character.
   let diphthong = low == 'υ'
     && i > 0
-    && greek_base(chars[i - 1])
-      .is_some_and(|(p, _)| matches!(p, 'α' | 'ε' | 'η' | 'ο'));
+    && last_nfd_codepoint(chars[i - 1])
+      .and_then(|p| p.to_lowercase().next())
+      .is_some_and(|p| matches!(p, 'α' | 'ε' | 'ο'));
   let s: &str = match low {
     'α' => "a",
-    'β' | 'ϐ' => "v",
+    'β' | 'ϐ' => "b",
     'γ' => {
       if nasal {
         "n"
@@ -205,7 +220,7 @@ fn emit_greek(chars: &[char], i: usize, out: &mut String) -> usize {
     'δ' => "d",
     'ε' => "e",
     'ζ' => "z",
-    'η' => "i",
+    'η' => "e",
     'θ' | 'ϑ' => "th",
     'ι' => "i",
     'κ' | 'ϰ' => "k",
@@ -225,7 +240,7 @@ fn emit_greek(chars: &[char], i: usize, out: &mut String) -> usize {
         "y"
       }
     }
-    'φ' | 'ϕ' => "f",
+    'φ' | 'ϕ' => "ph",
     'χ' => "ch",
     'ψ' => "ps",
     'ω' => "o",
@@ -234,6 +249,16 @@ fn emit_greek(chars: &[char], i: usize, out: &mut String) -> usize {
       out.push(c);
       return i + 1;
     }
+  };
+  // Rough breathing adds an h: before vowels (ἁ → ha), after ρ (ῥ → rh)
+  let s: String = if rough {
+    if low == 'ρ' {
+      "rh".to_string()
+    } else {
+      format!("h{s}")
+    }
+  } else {
+    s.to_string()
   };
   if upper {
     if s.len() == 1 || next_is_lowercase(chars, i + 1) {
@@ -247,7 +272,7 @@ fn emit_greek(chars: &[char], i: usize, out: &mut String) -> usize {
       out.push_str(&s.to_uppercase());
     }
   } else {
-    out.push_str(s);
+    out.push_str(&s);
   }
   i + 1
 }

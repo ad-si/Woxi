@@ -2223,3 +2223,221 @@ mod previous_date {
     );
   }
 }
+
+mod mid_date {
+  use super::*;
+
+  // The midpoint of a single granular date is the middle instant of the
+  // interval it covers (September has 30 days, so its middle is the 16th
+  // at midnight). Reference: MidDate docs, basic example 1.
+  #[test]
+  fn middle_of_a_month() {
+    assert_eq!(
+      interpret("MidDate[DateObject[{2024, 9}]]").unwrap(),
+      "DateObject[{2024, 9, 16, 0, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  // The middle day of a (leap) year. Reference: docs basic example 2.
+  #[test]
+  fn middle_of_a_year_as_day() {
+    assert_eq!(
+      interpret(r#"MidDate[DateObject[{2024}], "Day"]"#).unwrap(),
+      "DateObject[{2024, 7, 2}, Day]"
+    );
+    // Non-leap year: 365 days, midpoint falls at noon of day 183 (Jul 2).
+    assert_eq!(
+      interpret(r#"MidDate[DateObject[{2023}], "Day"]"#).unwrap(),
+      "DateObject[{2023, 7, 2}, Day]"
+    );
+  }
+
+  // The date a fraction of the way through an interval; a Week-granular
+  // date covers the week starting on its Monday. Reference: docs basic
+  // example 3 (2/3 through the week of Mon Sep 30 is Fri Oct 4, 4 pm).
+  #[test]
+  fn fraction_of_a_week_as_hour() {
+    assert_eq!(
+      interpret(r#"MidDate[DateObject[{2024, 9, 30}, "Week"], "Hour", 2/3]"#)
+        .unwrap(),
+      "DateObject[{2024, 10, 4, 16}, Hour, Gregorian, 0.]"
+    );
+  }
+
+  // A list of instants gives their plain mean. Reference: docs basic
+  // example 4.
+  #[test]
+  fn mean_of_instants() {
+    assert_eq!(
+      interpret(
+        "MidDate[{DateObject[{2024, 12, 30, 18, 1, 56.77401781082153}], \
+         DateObject[{2024, 4, 8, 12, 54, 47.175180435180664}], \
+         DateObject[{2024, 8, 13, 22, 45, 35.52135992050171}]}]"
+      )
+      .unwrap(),
+      "DateObject[{2024, 8, 17, 17, 54, 6.4901862144470215}, Instant, \
+       Gregorian, 0.]"
+    );
+  }
+
+  // For a list of dates each date's implicit interval is used: the
+  // midpoints of Oct 1 and Oct 3 (both at noon) average to noon of Oct 2.
+  // Reference: docs scope example 1.
+  #[test]
+  fn mean_of_days() {
+    assert_eq!(
+      interpret(
+        r#"MidDate[{DateObject[{2024, 10, 1}], DateObject[{2024, 10, 3}]}, "Day"]"#
+      )
+      .unwrap(),
+      "DateObject[{2024, 10, 2}, Day]"
+    );
+  }
+
+  // Truncation to a coarser granularity. Reference: docs scope example.
+  #[test]
+  fn mean_of_days_as_month() {
+    assert_eq!(
+      interpret(
+        "MidDate[{DateObject[{2024, 10, 3}], DateObject[{2024, 10, 5}], \
+         DateObject[{2024, 10, 5}]}, \"Month\"]"
+      )
+      .unwrap(),
+      "DateObject[{2024, 10}, Month]"
+    );
+  }
+
+  // The default "GranularMean" method weighs each midpoint by the nominal
+  // length of its granularity: a Week counts 7 times as much as a Day, so
+  // {Oct 1 (Day), week of Oct 7} lands at Oct 9, 9:00. Reference: docs
+  // scope example ("dates of different granularity").
+  #[test]
+  fn granular_mean_weighs_by_nominal_length() {
+    assert_eq!(
+      interpret(
+        r#"MidDate[{DateObject[{2024, 10, 1}], DateObject[{2024, 10, 7}, "Week"]}]"#
+      )
+      .unwrap(),
+      "DateObject[{2024, 10, 9, 9, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+    // The same midpoint from the eight days the two intervals cover.
+    assert_eq!(
+      interpret(
+        "MidDate[{DateObject[{2024, 10, 1}], DateObject[{2024, 10, 7}], \
+         DateObject[{2024, 10, 8}], DateObject[{2024, 10, 9}], \
+         DateObject[{2024, 10, 10}], DateObject[{2024, 10, 11}], \
+         DateObject[{2024, 10, 12}], DateObject[{2024, 10, 13}]}]"
+      )
+      .unwrap(),
+      "DateObject[{2024, 10, 9, 9, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  // Months all get the same nominal weight (the mean Gregorian month),
+  // so February (29 days) and April (30 days) average to Mar 16 — not the
+  // Mar 17 a duration-weighted mean would give. Reference: docs scope
+  // example (Method -> "GranularMean" vs "WeightedMean").
+  #[test]
+  fn months_weigh_equally() {
+    assert_eq!(
+      interpret(
+        r#"MidDate[{DateObject[{2024, 2}], DateObject[{2024, 4}]}, "Day"]"#
+      )
+      .unwrap(),
+      "DateObject[{2024, 3, 16}, Day]"
+    );
+    // Mixed granularities: a Month outweighs a Day 30.436875 : 1.
+    assert_eq!(
+      interpret(
+        r#"MidDate[{DateObject[{2024, 2}], DateObject[{2024, 10, 4}]}, "Day"]"#
+      )
+      .unwrap(),
+      "DateObject[{2024, 2, 22}, Day]"
+    );
+  }
+
+  // A DateInterval covers everything from the start of its first day to
+  // the end of its last day (20 days here), so the midpoint is Jan 11.
+  #[test]
+  fn middle_of_a_date_interval() {
+    assert_eq!(
+      interpret(
+        r#"MidDate[DateInterval[{{2019, 1, 1}, {2019, 1, 20}}], "Day"]"#
+      )
+      .unwrap(),
+      "DateObject[{2019, 1, 11}, Day]"
+    );
+    assert_eq!(
+      interpret("MidDate[DateInterval[{{2019, 1, 1}, {2019, 1, 20}}]]")
+        .unwrap(),
+      "DateObject[{2019, 1, 11, 0, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  // Date lists and date strings are accepted like DateObjects.
+  #[test]
+  fn accepts_date_lists_and_strings() {
+    assert_eq!(
+      interpret(r#"MidDate[{{2024, 1, 1}, {2024, 1, 3}}, "Day"]"#).unwrap(),
+      "DateObject[{2024, 1, 2}, Day]"
+    );
+    assert_eq!(
+      interpret(r#"MidDate[{"1 January 2019", "31 December 2019"}, "Day"]"#)
+        .unwrap(),
+      "DateObject[{2019, 7, 2}, Day]"
+    );
+  }
+
+  // The values of an association are treated as the list of dates.
+  #[test]
+  fn accepts_associations() {
+    assert_eq!(
+      interpret(
+        "MidDate[<|\"date1\" -> DateObject[{2024, 9, 22}], \
+         \"date2\" -> DateObject[{2024, 4, 24}], \
+         \"date3\" -> DateObject[{2024, 10, 28}]|>]"
+      )
+      .unwrap(),
+      "DateObject[{2024, 8, 15, 4, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  // Truncation to the remaining output granularities.
+  #[test]
+  fn output_granularities() {
+    assert_eq!(
+      interpret(r#"MidDate[{DateObject[{2023}], DateObject[{2025}]}, "Year"]"#)
+        .unwrap(),
+      "DateObject[{2024}, Year]"
+    );
+    // Mid-October noon falls in the week starting Mon Oct 14.
+    assert_eq!(
+      interpret(r#"MidDate[DateObject[{2024, 10}], "Week"]"#).unwrap(),
+      "DateObject[{2024, 10, 14}, Week]"
+    );
+  }
+
+  // Fractions 0 and 1 give the interval bounds.
+  #[test]
+  fn fraction_bounds() {
+    assert_eq!(
+      interpret(r#"MidDate[DateObject[{2024}], "Day", 0]"#).unwrap(),
+      "DateObject[{2024, 1, 1}, Day]"
+    );
+    assert_eq!(
+      interpret(r#"MidDate[DateObject[{2024}], "Day", 1]"#).unwrap(),
+      "DateObject[{2025, 1, 1}, Day]"
+    );
+  }
+
+  // Uninterpretable arguments leave the expression unevaluated.
+  #[test]
+  fn unevaluated_for_bad_input() {
+    assert_eq!(interpret("MidDate[x]").unwrap(), "MidDate[x]");
+    assert_eq!(interpret("MidDate[{}]").unwrap(), "MidDate[{}]");
+    assert_eq!(
+      interpret(r#"MidDate[DateObject[{2024}], "Fortnight"]"#).unwrap(),
+      "MidDate[DateObject[{2024}, Year], Fortnight]"
+    );
+  }
+}

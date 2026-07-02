@@ -408,6 +408,33 @@ pre.output-box {
   font-size: 14px;
 }
 
+.output-box.sound-box {
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.output-box.sound-box audio {
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+}
+
+.output-box.sound-box .sound-label {
+  color: var(--output-text);
+  font-family: "Atkinson Hyperlegible Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+}
+
+.output-box.sound-box .sound-note {
+  color: var(--status-info-text);
+  font-family: "Atkinson Hyperlegible Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+}
+
 .output-box.manipulate-box {
   background: var(--surface);
   display: flex;

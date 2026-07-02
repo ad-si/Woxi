@@ -12,6 +12,9 @@ use crate::syntax::Expr;
 const CELL: f64 = 100.0;
 /// Inner gap between a cell's border and the coloured tile.
 const PAD: f64 = 6.0;
+/// Extra horizontal gap between groups 2 and 3 (columns >= 2 shift right
+/// by this much) hosting the `*` / `**` series-insertion markers.
+const GUTTER: f64 = 36.0;
 /// Default on-screen width in pixels (matches the periodic table's 18-column
 /// aspect ratio, not the generic plot default).
 const DEFAULT_PTP_WIDTH: u32 = 540;
@@ -26,7 +29,9 @@ struct Cell {
 /// Map an element to its `(col, row)` position in the standard periodic
 /// table layout. Main-group and d-block elements sit at `(group, period)`;
 /// the f-block (lanthanides 57–70 and actinides 89–102) is pulled out into
-/// two rows below the main table, aligned under group 3.
+/// two rows below the main table, aligned under group 3. Small `*` / `**`
+/// markers in the gutter between groups 2 and 3 show where the detached
+/// rows insert.
 fn element_cell(elem: &ElementLayout) -> Cell {
   match elem.group {
     Some(g) => Cell {
@@ -84,6 +89,33 @@ fn theme_colors(
     ("#1a1a1a", "#2a2a2a", "#e0e0e0", "#666666", "#444444")
   } else {
     ("#ffffff", "#f0f0f0", "#222222", "#bbbbbb", "#999999")
+  }
+}
+
+/// Horizontal position of a cell's left edge: columns right of group 2
+/// shift by the gutter that hosts the series-insertion markers.
+fn cell_x(col: f64) -> f64 {
+  col * CELL + if col >= 2.0 { GUTTER } else { 0.0 }
+}
+
+/// Draw `count` vertically stacked asterisks centred in the group 2/3
+/// gutter, in row `row` — the insertion markers linking the gutter to the
+/// detached lanthanide/actinide rows.
+fn push_series_marker(body: &mut String, row: f64, count: usize, color: &str) {
+  let cx = 2.0 * CELL + GUTTER / 2.0;
+  let cy = (row + 0.5) * CELL;
+  let step = 24.0;
+  let top = cy - step * (count as f64 - 1.0) / 2.0;
+  for i in 0..count {
+    // The asterisk glyph's ink sits high in the em box; push the baseline
+    // below the target centre so the mark looks centred.
+    body.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"40\" fill=\"{}\">*</text>\n",
+      cx,
+      top + i as f64 * step + 14.0,
+      color,
+    ));
   }
 }
 
@@ -225,9 +257,9 @@ pub fn periodic_table_plot_ast(
   let dark = crate::is_dark_mode();
   let (bg, faded_tile, text, faded_text, border) = theme_colors(dark);
 
-  // Overall grid extent: 18 columns wide; the actinide row sits at row 8.6,
-  // so the drawing reaches 9.6 rows tall.
-  let vb_w = 18.0 * CELL;
+  // Overall grid extent: 18 columns plus the group 2/3 gutter wide; the
+  // actinide row sits at row 8.6, so the drawing reaches 9.6 rows tall.
+  let vb_w = 18.0 * CELL + GUTTER;
   let vb_h = 9.6 * CELL;
   let svg_height = (svg_width as f64 * vb_h / vb_w).round().max(1.0) as u32;
 
@@ -239,7 +271,7 @@ pub fn periodic_table_plot_ast(
 
   for elem in &elements {
     let cell = element_cell(elem);
-    let x = cell.col * CELL;
+    let x = cell_x(cell.col);
     let y = cell.row * CELL;
     let highlighted = highlights
       .as_ref()
@@ -282,6 +314,14 @@ pub fn periodic_table_plot_ast(
       escape_xml(elem.abbreviation),
     ));
   }
+
+  // Insertion markers: `*` in the group 2/3 gutter of period 6 and to
+  // the left of the detached lanthanide row, `**` likewise for period 7
+  // and the actinide row.
+  push_series_marker(&mut body, 5.0, 1, text);
+  push_series_marker(&mut body, 6.0, 2, text);
+  push_series_marker(&mut body, 7.6, 1, text);
+  push_series_marker(&mut body, 8.6, 2, text);
 
   let width_attr = if full_width {
     "width=\"100%\"".to_string()
