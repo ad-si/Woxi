@@ -201,7 +201,6 @@ Woxi does **not** support.
 ### Version 12.3 (2021)
 
 - Multivariate transcendental equation solving; symbolic PDE solutions
-- Tree family: `Tree`, `TreeMap`, `TreeFold`
 - Data structures: `ByteTrie`, `KDTree`, `ImmutableVector`
 - `GeometricTest`; region dilation/erosion
 - `StreamPlot3D`, `ListStreamPlot3D`
