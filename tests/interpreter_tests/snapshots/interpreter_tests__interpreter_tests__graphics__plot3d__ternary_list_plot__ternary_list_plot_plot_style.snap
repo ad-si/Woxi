@@ -1,0 +1,25 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"TernaryListPlot[{{1, 1, 1}, {1, 2, 3}}, PlotStyle -> Red]\")"
+---
+<svg width="360" height="360" viewBox="0 0 3600 3600" xmlns="http://www.w3.org/2000/svg">
+<rect width="3600" height="3600" fill="#ffffff"/>
+<line x1="552.0" y1="2610.6" x2="3048.0" y2="2610.6" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="1488.0" y1="989.4" x2="2736.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="2112.0" y1="989.4" x2="864.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="864.0" y1="2070.2" x2="2736.0" y2="2070.2" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="1176.0" y1="1529.8" x2="2112.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="2424.0" y1="1529.8" x2="1488.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="1176.0" y1="1529.8" x2="2424.0" y2="1529.8" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="864.0" y1="2070.2" x2="1488.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="2736.0" y1="2070.2" x2="2112.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="1488.0" y1="989.4" x2="2112.0" y2="989.4" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="552.0" y1="2610.6" x2="864.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
+<line x1="3048.0" y1="2610.6" x2="2736.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
+<polygon points="1800.0,449.0 240.0,3151.0 3360.0,3151.0" fill="none" stroke="#555555" stroke-width="10.0"/>
+<text x="1800.0" y="384.0" text-anchor="middle" font-family="sans-serif" font-size="130" fill="#333333">1</text>
+<text x="188.0" y="3281.0" text-anchor="end" font-family="sans-serif" font-size="130" fill="#333333">2</text>
+<text x="3412.0" y="3281.0" text-anchor="start" font-family="sans-serif" font-size="130" fill="#333333">3</text>
+<circle cx="1800.0" cy="2250.3" r="30.0" fill="rgb(255,0,0)"/>
+<circle cx="2060.0" cy="2700.7" r="30.0" fill="rgb(255,0,0)"/>
+</svg>

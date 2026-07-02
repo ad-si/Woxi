@@ -1319,6 +1319,7 @@
     - [`Wronskian`](symbolic/Wronskian.md)
   - [Module](module.md)
 - [Plotting](plotting.md)
+  - [`TernaryListPlot`](plotting/TernaryListPlot.md)
   - [`TimelinePlot`](plotting/TimelinePlot.md)
   - [`GeoGraphics`](plotting/GeoGraphics.md)
   - [`ArrayPlot`](plotting/ArrayPlot.md)

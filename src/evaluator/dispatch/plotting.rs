@@ -525,6 +525,9 @@ pub fn dispatch_plotting(
     "Dendrogram" if !args.is_empty() => {
       Some(crate::functions::dendrogram::dendrogram_ast(args))
     }
+    "TernaryListPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::ternary_list_plot::ternary_list_plot_ast(args)
+    })),
     "WordCloud" if !args.is_empty() => {
       Some(crate::functions::chart::word_cloud_ast(args))
     }

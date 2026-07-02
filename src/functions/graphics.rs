@@ -8285,6 +8285,7 @@ fn is_graphics_producing_head(name: &str) -> bool {
       | "ListContourPlot"
       | "ListDensityPlot"
       | "ListPolarPlot"
+      | "TernaryListPlot"
       | "ListStreamPlot"
       | "ListVectorPlot"
       | "ListPlot3D"
