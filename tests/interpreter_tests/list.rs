@@ -2840,10 +2840,7 @@ mod unique_elements {
 
   #[test]
   fn non_list_argument_stays_unevaluated() {
-    assert_eq!(
-      interpret("UniqueElements[5]").unwrap(),
-      "UniqueElements[5]"
-    );
+    assert_eq!(interpret("UniqueElements[5]").unwrap(), "UniqueElements[5]");
   }
 }
 

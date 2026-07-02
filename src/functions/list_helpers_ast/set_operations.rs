@@ -880,7 +880,8 @@ pub fn unique_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Extract the elements and preserved head of each inner list. The inner
   // lists need not have `List` as their head.
-  let mut slices: Vec<(&[Expr], Option<&str>)> = Vec::with_capacity(lists.len());
+  let mut slices: Vec<(&[Expr], Option<&str>)> =
+    Vec::with_capacity(lists.len());
   for l in lists.iter() {
     match l {
       Expr::List(items) => slices.push((items.as_slice(), None)),
