@@ -957,6 +957,50 @@ pub fn apply_curried_call(
       // Interpreter["Country"][input] — resolve input to an Entity.
       crate::functions::country_data::apply_interpreter(&func_args[0], args)
     }
+    // DiscreteWaveletData[…][wind | All | Automatic | "prop"(, form)] —
+    // wavelet coefficient and property access.
+    Expr::FunctionCall { name, .. }
+      if name == "DiscreteWaveletData"
+        && !args.is_empty()
+        && args.len() <= 2 =>
+    {
+      crate::functions::wavelet_ast::data::apply_dwd(func, args)
+    }
+    // ContinuousWaveletData[…][{oct,voc} | All | "prop"(, form)]
+    Expr::FunctionCall { name, .. }
+      if name == "ContinuousWaveletData"
+        && !args.is_empty()
+        && args.len() <= 2 =>
+    {
+      crate::functions::wavelet_ast::continuous::apply_cwd(func, args)
+    }
+    // LiftingFilterData[wave]["prop"] — filter properties of the wavelet
+    // the lifting data was derived from.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "LiftingFilterData"
+      && func_args.len() == 1
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!()
+      };
+      match prop.as_str() {
+        "Wavelet" => Ok(func_args[0].clone()),
+        "PrimalLowpass" | "PrimalHighpass" | "DualLowpass" | "DualHighpass" => {
+          crate::functions::wavelet_ast::wavelet_filter_coefficients_ast(&[
+            func_args[0].clone(),
+            args[0].clone(),
+          ])
+        }
+        _ => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // AssessmentFunction[spec][answer] — grade the answer, returning an
     // AssessmentResultObject.
     Expr::FunctionCall {

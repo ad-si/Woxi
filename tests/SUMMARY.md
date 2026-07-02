@@ -810,6 +810,7 @@
       - [`WinsorizedMean`](math/utility/WinsorizedMean.md)
       - [`WinsorizedVariance`](math/utility/WinsorizedVariance.md)
       - [`YuleDissimilarity`](math/utility/YuleDissimilarity.md)
+  - [Wavelet Analysis](wavelets.md)
   - [List Operations](list_operations.md)
     - [`Orthogonalize`](list_operations/Orthogonalize.md)
     - [`PermutationProduct`](list_operations/PermutationProduct.md)

@@ -35,6 +35,7 @@ mod quantity_functions;
 mod string_functions;
 mod structural;
 mod timeseries_functions;
+mod wavelet_functions;
 
 pub use association_functions::*;
 pub use attributes::*;
@@ -1477,6 +1478,11 @@ pub fn evaluate_function_call_ast_inner(
   }
   if let Some(result) =
     timeseries_functions::dispatch_timeseries_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    wavelet_functions::dispatch_wavelet_functions(name, args)
   {
     return result;
   }
@@ -9939,6 +9945,28 @@ pub fn evaluate_function_call_ast_inner(
         // unevaluated as its canonical form and is consumed by AudioPlot,
         // so it is not "unimplemented".
         | "Audio"
+        // Wavelet family heads are symbolic constructor objects consumed by
+        // the wavelet transforms, WaveletFilterCoefficients, and
+        // WaveletPhi/WaveletPsi; the data objects and LiftingFilterData are
+        // canonical forms produced by those functions.
+        | "HaarWavelet"
+        | "DaubechiesWavelet"
+        | "SymletWavelet"
+        | "CoifletWavelet"
+        | "BattleLemarieWavelet"
+        | "BiorthogonalSplineWavelet"
+        | "ReverseBiorthogonalSplineWavelet"
+        | "CDFWavelet"
+        | "MeyerWavelet"
+        | "ShannonWavelet"
+        | "MexicanHatWavelet"
+        | "GaborWavelet"
+        | "DGaussianWavelet"
+        | "MorletWavelet"
+        | "PaulWavelet"
+        | "DiscreteWaveletData"
+        | "ContinuousWaveletData"
+        | "LiftingFilterData"
         // Quiz/assessment objects. AssessmentFunction[spec] and
         // QuestionObject[q, assess] are symbolic constructor objects that stay
         // unevaluated until applied to a candidate answer (handled in

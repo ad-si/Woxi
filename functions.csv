@@ -1588,7 +1588,7 @@ CompressedData,Holds a compressed expression and evaluates to the original on us
 PolarAxes,Polar axes option,,unevaluated,7.0,1611
 PolynomialGCD,Greatest common divisor of polynomials,✅,pure,2.0,1611
 ARProcess,Autoregressive process,,unevaluated,9.0,1614
-DiscreteWaveletTransform,Discrete wavelet transform,,unevaluated,8.0,1614
+DiscreteWaveletTransform,Discrete wavelet transform giving a DiscreteWaveletData object,✅,pure,8.0,1614
 SystemDialogInput,System dialog input,,unevaluated,6.0,1614
 Commonest,Returns the most common elements in a list,✅,pure,6.0,1617
 ImagePartition,Partition an image,,unevaluated,7.0,1617
@@ -1774,7 +1774,7 @@ NumericFunction,Numeric function attribute,,unevaluated,3.0,1801
 ColorSetter,Color setter control,,unevaluated,6.0,1803
 Scrollbars,Scrollbars option,,unevaluated,7.0,1803
 DistanceMatrix,Matrix of pairwise distances between vectors (default EuclideanDistance),✅,pure,10.3,1806
-InverseWaveletTransform,Inverse wavelet transform,,unevaluated,8.0,1806
+InverseWaveletTransform,Inverse discrete/stationary/packet/lifting wavelet transform,✅,pure,8.0,1806
 RayleighDistribution,Rayleigh distribution,✅,pure,6.0,1806
 SetSharedVariable,Set shared variable,,unevaluated,7.0,1808
 TreeGraph,Tree graph from directed edges with tree layout visualization,✅,pure,8.0,1808
@@ -1888,7 +1888,7 @@ EditDistance,Returns the edit distance between two strings,✅,pure,6.0,1921
 NotElement,Test non-membership of an expression in a mathematical domain,✅,pure,6.0,1921
 SubsuperscriptBox,Represents a box with both subscript and superscript for typesetting,✅,pure,3.0,1921
 TakeLargestBy,Takes the n largest elements by a criterion; supports the operator form TakeLargestBy[f;n][list],✅,pure,10.1,1921
-WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,🚫,graphics,8.0,1921
+WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,✅,graphics,8.0,1921
 BinaryRead,Reads a single binary object from a file or stream,✅,io,5.1,1926
 LABColor,Represents a color in the LAB color space,🚫,pure,10.0,1926
 Overflow,Symbol representing arithmetic overflow,✅,pure,1.0,1926
@@ -1970,7 +1970,7 @@ TooltipStyle,Style option for tooltips (GUI),🚫,,8.0,2002
 BitShiftRight,Shifts integer bits to the right,✅,pure,6.0,2003
 MultiedgeStyle,Style option for multi-edges in graphs (GUI),🚫,,6.0,2005
 PixelValue,Get pixel value from image (image processing),✅,,8.0,2005
-WaveletPsi,Wavelet function (signal processing),🚫,,8.0,2006
+WaveletPsi,Wavelet function psi of a wavelet family evaluated at a point,✅,pure,8.0,2006
 FindCurvePath,Find smooth path through points (computational geometry),🚫,,7.0,2008
 Shallow,Control output depth display (notebook display),🚫,,2.0,2008
 BooleanCountingFunction,Boolean function from a count specification (DNF over true-variable counts),✅,pure,7.0,2012
@@ -2032,7 +2032,7 @@ CholeskyDecomposition,Returns the upper-triangular Cholesky factor U of a Hermit
 IntegerReverse,Reverses the digits of an integer (Listable),✅,pure,10.3,2067
 ColorDistance,Distance between colors,🚫,,10.0,2071
 Construct,Constructs an expression from a head and arguments,✅,pure,11.3,2071
-ContinuousWaveletTransform,CWT of signal,🚫,,8.0,2071
+ContinuousWaveletTransform,Continuous wavelet transform giving a ContinuousWaveletData object,✅,pure,8.0,2071
 PearsonDistribution,Pearson family distribution,🚫,,8.0,2071
 AngleVector,Direction vector from angle,✅,pure,10.1,2074
 Back,Navigate back in history,🚫,,6.0,2074
@@ -2156,7 +2156,7 @@ Sunset,Gives the time of sunset for a given location and date,🚫,None,10.0,219
 HankelH2,Hankel function of the second kind,✅,pure,6.0,2197
 LinkObject,Represents a MathLink or WSTP connection to an external process,🚫,None,3.0,2197
 RemoveAlphaChannel,Removes the alpha transparency channel from an image,🚫,None,8.0,2197
-WaveletScalogram,Plots the wavelet scalogram of a signal,🚫,None,8.0,2197
+WaveletScalogram,Scalogram plot of discrete or continuous wavelet data,✅,graphics,8.0,2197
 ProbabilityPlot,Creates a probability plot for assessing data distribution fit,🚫,None,8.0,2198
 Gradient,Symbolic gradient operator,🚫,None,2.2,2203
 InverseErfc,Inverse complementary error function,✅,pure,3.0,2203
@@ -2196,11 +2196,11 @@ DiamondMatrix,Gives the diamond (L1-ball) structuring element for a scalar radiu
 MaxItems,Display option,🚫,None,10.1,2236
 SSSTriangle,Constructs a triangle from three side lengths,✅,None,10.0,2239
 ThreadingLayer,Machine learning,🚫,None,11.1,2239
-WaveletFilterCoefficients,Signal processing,🚫,None,8.0,2239
+WaveletFilterCoefficients,Filter coefficients of a wavelet family as index/value pairs,✅,pure,8.0,2239
 NotebookFileName,Notebook UI,🚫,None,7.0,2240
 AppearanceRules,UI styling,🚫,None,10.0,2243
 LowerCaseQ,Tests if a string consists entirely of lowercase letters,✅,pure,2.0,2243
-StationaryWaveletTransform,Signal processing,🚫,None,8.0,2243
+StationaryWaveletTransform,Undecimated (a trous) stationary wavelet transform,✅,pure,8.0,2243
 AlgebraicNumber,Algebraic number theory,🚫,None,6.0,2246
 DateHistogram,Date visualization,🚫,None,10.2,2246
 DirectedGraph,Graph construction,🚫,None,8.0,2246
@@ -2251,7 +2251,7 @@ AlignmentPoint,typesetting option,🚫,None,6.0,2294
 DateListLogPlot,date visualization,🚫,None,7.0,2294
 AbsoluteCurrentValue,dynamic content,🚫,None,6.0,2299
 BatchSize,machine learning option,🚫,None,11.0,2299
-DaubechiesWavelet,wavelet function,🚫,None,8.0,2299
+DaubechiesWavelet,Daubechies wavelet family of order n,✅,pure,8.0,2299
 HalfLine,Geometric half-line primitive,✅,pure,10.0,2299
 PalindromeQ,Tests if a string or list is a palindrome,✅,pure,10.3,2299
 GraphQ,Test whether an expression is a valid Graph object,✅,1,8.0,2305
@@ -2323,7 +2323,7 @@ TriangulateMesh,mesh generation,🚫,None,10.0,2367
 CloseKernels,parallel computing,🚫,None,7.0,2371
 DefaultBaseStyle,styling option,🚫,None,7.0,2371
 ImageDeconvolve,image processing,🚫,None,8.0,2371
-WaveletPhi,wavelet function,🚫,None,8.0,2371
+WaveletPhi,Scaling function phi of a wavelet family evaluated at a point,✅,pure,8.0,2371
 FrameBox,Low-level box construct for framed content display,✅,pure,3.0,2374
 IrreduciblePolynomialQ,Tests whether a polynomial is irreducible over the rationals,✅,pure,1.0,2374
 ToPolarCoordinates,Converts Cartesian coordinates to polar,✅,None,10.1,2374
@@ -2335,7 +2335,7 @@ MultivariateTDistribution,probability distribution,🚫,None,8.0,2380
 PartitionsQ,Number of partitions of n into distinct parts,✅,pure,1.0,2380
 BatesDistribution,probability distribution,🚫,None,8.0,2383
 SetSelectedNotebook,notebook UI,🚫,None,3.0,2383
-WaveletMapIndexed,wavelet processing,🚫,None,8.0,2383
+WaveletMapIndexed,Applies a function to wavelet coefficient arrays with their indices,✅,pure,8.0,2383
 ChineseRemainder,Solves a system of modular congruences (optional third argument gives the smallest solution >= d),✅,pure,6.0,2389
 ContentPadding,UI styling,🚫,None,8.0,2389
 FromSphericalCoordinates,Converts spherical coordinates to Cartesian,✅,None,10.1,2389
@@ -2351,7 +2351,7 @@ CircleThrough,Finds the circumscribed circle through given points,✅,None,12.0,
 Cyclotomic,n-th cyclotomic polynomial,✅,pure,1.0,2399
 ReshapeLayer,neural network,🚫,None,11.0,2399
 Stack,Return the current evaluation call stack as a list of function names,✅,pure,2.0,2399
-HaarWavelet,wavelet function,🚫,None,8.0,2404
+HaarWavelet,Haar wavelet family,✅,pure,8.0,2404
 LineIntegralConvolutionPlot,visualization,🚫,None,7.0,2404
 PolynomialExtendedGCD,Extended GCD of two polynomials returning the monic GCD and Bezout cofactors,✅,pure,6.0,2404
 VertexReplace,graph operation,🚫,None,8.0,2404
@@ -2476,7 +2476,7 @@ DeviceOpen,,🚫,,10.0,2528
 InverseWeierstrassP,Inverse Weierstrass elliptic function,✅,pure,3.0,2528
 Upsample,Upsample a list by inserting zeros,✅,none,9.0,2528
 DEigensystem,,🚫,,10.3,2533
-DiscreteWaveletPacketTransform,,🚫,,8.0,2533
+DiscreteWaveletPacketTransform,Full-tree discrete wavelet packet transform,✅,pure,8.0,2533
 MengerMesh,,🚫,,11.1,2533
 PolynomialLCM,Least common multiple of polynomials,✅,pure,2.0,2533
 TensorWedge,Exterior (wedge) product of vectors/tensors,✅,pure,9.0,2533
@@ -2659,14 +2659,14 @@ TravelDistance,,🚫,,10.3,2712
 WordTranslation,,🚫,,10.3,2712
 Environment,Symbol representing the system environment,✅,pure,1.0,2720
 ExactNumberQ,Tests if an expression is an exact number,✅,pure,4.0,2720
-LiftingWaveletTransform,,🚫,,8.0,2720
+LiftingWaveletTransform,Lifting wavelet transform with exact results for exact input,✅,pure,8.0,2720
 MultivariatePoissonDistribution,Represents a multivariate Poisson distribution,✅,pure,8.0,2720
 SpheroidalQS,,🚫,,6.0,2720
 TemplateSlot,Represents a template slot for string templates,✅,pure,10.0,2720
 TextureCoordinateScaling,,🚫,,8.0,2720
 CellEpilog,,🚫,,6.0,2723
 DialogNotebook,,🚫,,6.0,2723
-WaveletThreshold,Threshold wavelet coefficients in discrete wavelet data,🚫,,8.0,2723
+WaveletThreshold,Threshold wavelet coefficients in discrete wavelet data,✅,pure,8.0,2723
 DotEqual,dot-equal symbol,✅,Symbolic,3.0,2729
 EntityTypeName,,🚫,,10.0,2729
 LatitudeLongitude,extract latitude and longitude from a geo position,✅,none,7.0,2729
@@ -2688,7 +2688,7 @@ RenderingOptions,,🚫,,4.0,2742
 RowSpacings,option for row spacing in grids,✅,Symbolic,3.0,2742
 Ask,,🚫,,10.4,2748
 BitNot,Returns the bitwise NOT of an integer,✅,pure,4.0,2748
-DiscreteWaveletData,,🚫,,8.0,2748
+DiscreteWaveletData,Discrete wavelet coefficient object with properties and coefficient access,✅,pure,8.0,2748
 LocalClusteringCoefficient,local clustering coefficient of graph vertices,✅,Computation,9.0,2748
 MixedRadix,mixed-radix number representation,✅,Symbolic,10.2,2748
 TimeSeriesRescale,,🚫,,10.0,2748
@@ -2756,7 +2756,7 @@ HyperbolicDistribution,Hyperbolic distribution with parameters for shape and loc
 ImageKeypoints,,🚫,,8.0,2812
 SectorSpacing,Option for pie chart sector spacing,✅,pure,7.0,2812
 FindEulerianCycle,,🚫,,8.0,2816
-GaborWavelet,,🚫,,8.0,2816
+GaborWavelet,Gabor wavelet of a given frequency (continuous complex family),✅,pure,8.0,2816
 MultivariateHypergeometricDistribution,,🚫,,8.0,2816
 PolarAxesOrigin,Option for the origin of polar axes in polar plots,✅,pure,7.0,2816
 HistogramTransform,,🚫,,9.0,2821
@@ -2919,7 +2919,7 @@ FindMinimumCostFlow,Minimum cost of a maximum flow over a cost matrix,✅,pure,9
 Forward,,,,6.0,2986
 PermutationOrder,Order of a permutation,✅,1,8.0,2986
 RiceDistribution,Rice distribution (Bessel PDF and MarcumQ CDF and factored moments),✅,pure,8.0,2986
-SymletWavelet,,🚫,,8.0,2986
+SymletWavelet,Least-asymmetric orthogonal Symlet wavelet family of order n,✅,pure,8.0,2986
 TargetDevice,,🚫,,11.0,2986
 VerifySolutions,Option for Solve to verify solutions,✅,pure,1.0,2986
 BlockchainBase,,🚫,,11.3,2993
@@ -2965,7 +2965,7 @@ MeshCellIndex,,🚫,,10.0,3031
 MomentOfInertia,,,,10.4,3031
 NetMeasurements,,🚫,,12.0,3031
 URLEncode,Percent-encode a string for use in URLs,✅,pure,10.0,3031
-WaveletImagePlot,,🚫,,8.0,3031
+WaveletImagePlot,Pyramid image plot of 2D wavelet coefficients,✅,graphics,8.0,3031
 Xnor,Logical XNOR (true when even number of args are true),✅,pure,7.0,3031
 AbsoluteCorrelationFunction,,,,9.0,3048
 BetaBinomialDistribution,Beta-binomial compound distribution (exact PMF and moments),✅,pure,6.0,3048
@@ -2992,7 +2992,7 @@ FacialFeatures,,🚫,,11.3,3059
 LessThan,Operator form of Less,✅,none,10.3,3059
 MissingDataMethod,,,,9.0,3059
 NoncentralChiSquareDistribution,Noncentral chi-square distribution (moments and parity-cased PDF),✅,pure,6.0,3059
-StationaryWaveletPacketTransform,,🚫,,8.0,3059
+StationaryWaveletPacketTransform,Undecimated full-tree wavelet packet transform,✅,pure,8.0,3059
 ZTest,One-sample z-test p-value (known or estimated variance),✅,pure,8.0,3059
 BioSequence,,🚫,,12.2,3070
 CorrelationDistance,1 minus Pearson correlation between vectors,✅,none,6.0,3070
@@ -3104,7 +3104,7 @@ MeshCellCentroid,,🚫,,10.0,3176
 PermutationLength,Number of non-fixed points in a permutation,✅,1,8.0,3176
 Printout3D,,🚫,,11.0,3176
 UnixTime,Returns the current Unix timestamp (seconds since 1970-01-01),✅,effectful,10.1,3176
-WaveletMatrixPlot,,🚫,,8.0,3176
+WaveletMatrixPlot,Pyramid matrix plot of 2D wavelet coefficients,✅,graphics,8.0,3176
 WishartMatrixDistribution,,,,10.3,3176
 AllowedHeads,,,,12.0,3191
 BilateralFilter,,🚫,,8.0,3191
@@ -3175,7 +3175,7 @@ GatedRecurrentLayer,,🚫,,11.1,3257
 InverseFourierSequenceTransform,,,,7.0,3257
 JacobiSD,Jacobi elliptic function sd (sn/dn),✅,pure,1.0,3257
 LabelingSize,,,,11.3,3257
-MexicanHatWavelet,,🚫,,8.0,3257
+MexicanHatWavelet,Mexican hat (Ricker) continuous wavelet with scale sigma,✅,pure,8.0,3257
 NullRecords,,,,2.0,3257
 ParallelNeeds,,🚫,,7.0,3257
 PartLayer,,🚫,,11.1,3257
@@ -3250,7 +3250,7 @@ RepeatingElement,,,,10.1,3326
 SetEnvironment,"Sets or unsets an environment variable (rule {name -> value} or list of rules; None unsets)",✅,io,9.0,3326
 SinghMaddalaDistribution,,,,8.0,3326
 VertexInComponent,,,,8.0,3326
-CDFWavelet,,🚫,,8.0,3344
+CDFWavelet,Cohen-Daubechies-Feauveau 5/3 and 9/7 biorthogonal wavelets (JPEG2000),✅,pure,8.0,3344
 ClipRange,,🚫,,9.0,3344
 CommunityRegionStyle,,,,9.0,3344
 ControllerState,,,,6.0,3344
@@ -3271,7 +3271,7 @@ ClipPlanesStyle,,🚫,,10.0,3353
 CreateSearchIndex,,🚫,,10.2,3353
 EntityClassList,List entity classes for a type,✅,,10.0,3353
 FindTransientRepeat,Split a sequence into {transient repeat} where repeat is the shortest end-cycle occurring at least n times,✅,pure,10.4,3353
-InverseContinuousWaveletTransform,,🚫,,8.0,3353
+InverseContinuousWaveletTransform,Inverse continuous wavelet transform (least-squares reconstruction),✅,pure,8.0,3353
 Perimeter,Compute the perimeter of a region,✅,pure,11.1,3353
 PriceGraphDistribution,,,,8.0,3353
 SocketConnect,,🚫,,10.3,3353
@@ -3308,7 +3308,7 @@ NotebookPrint,,🚫,,3.0,3389
 ObservableModelQ,,,,8.0,3389
 Permanent,Permanent of a square matrix,✅,pure,10.2,3389
 PlaneCurveData,,🚫,,10.0,3389
-WaveletBestBasis,,🚫,,8.0,3389
+WaveletBestBasis,Entropy-optimal basis selection for wavelet packet data,✅,pure,8.0,3389
 WeakStationarity,,,,9.0,3389
 Contexts,"Lists known contexts; optional string pattern with * wildcards filters the result",✅,pure,2.0,3402
 CoordinateBoundingBoxArray,,,,10.1,3402
@@ -3360,7 +3360,7 @@ ScaleOrigin,,,,9.0,3440
 SystemsModelParallelConnect,,🚫,,8.0,3440
 UnsavedVariables,,,,8.0,3440
 VertexConnectivity,Minimum vertex cut size (s-t form uses vertex-disjoint paths),✅,pure,9.0,3440
-BiorthogonalSplineWavelet,,🚫,,8.0,3462
+BiorthogonalSplineWavelet,Biorthogonal spline wavelet family with exact rational filters,✅,pure,8.0,3462
 CanonicalGraph,,,,10.0,3462
 ComposeSeries,Composes power series by substituting one series into another,✅,pure,1.0,3462
 ConstantRegionQ,,,,10.0,3462
@@ -3456,7 +3456,7 @@ BasicRecurrentLayer,,🚫,,11.1,3566
 BooleanVariables,Boolean variables of an expression (canonically sorted; opaque subexpressions count),✅,pure,7.0,3566
 ChannelListen,,🚫,,11.0,3566
 CompleteGraphQ,Tests whether a graph is complete (every pair adjacent exactly once),✅,pure,8.0,3566
-DGaussianWavelet,,🚫,,8.0,3566
+DGaussianWavelet,Derivative-of-Gaussian continuous wavelet of order n,✅,pure,8.0,3566
 DMSString,,,,7.0,3566
 DefaultNewCellStyle,,🚫,,3.0,3566
 GenericCylindricalDecomposition,,,,6.0,3566
@@ -3484,7 +3484,7 @@ DoubleRightArrow,,,,3.0,3578
 FeedbackLinearize,,🚫,,10.0,3578
 FunctionInjective,,,,12.2,3578
 LinearFractionalTransform,Build a TransformationFunction for the projective map x -> (m.x + v)/(w.x + b),✅,none,6.0,3578
-MorletWavelet,,🚫,,8.0,3578
+MorletWavelet,Morlet continuous wavelet (modulated Gaussian),✅,pure,8.0,3578
 MovingMedian,Compute moving median of a list,✅,pure,6.0,3578
 StringToByteArray,Convert string to byte array,✅,pure,11.2,3578
 WebSearch,,🚫,,11.1,3578
@@ -3685,7 +3685,7 @@ LogMultinormalDistribution,,,,9.0,3785
 MathieuCharacteristicExponent,,,,3.0,3785
 NegativeSemidefiniteMatrixQ,Test whether a matrix is negative semidefinite,✅,none,10.0,3785
 PageBreakAbove,,🚫,,3.0,3785
-ReverseBiorthogonalSplineWavelet,,🚫,,8.0,3785
+ReverseBiorthogonalSplineWavelet,Biorthogonal spline wavelet with primal and dual filters swapped,✅,pure,8.0,3785
 ScaleRangeStyle,,,,9.0,3785
 ShiftedGompertzDistribution,,,,10.3,3785
 TextClipboardType,,,,7.0,3785
@@ -3728,7 +3728,7 @@ ShrinkingDelay,,,,6.0,3823
 SimpleGraphQ,Tests whether a graph has no self-loops or multi-edges,✅,pure,8.0,3823
 VideoGenerator,,🚫,,12.2,3823
 AcousticPDEComponent,,🚫,,12.2,3843
-BattleLemarieWavelet,,🚫,,8.0,3843
+BattleLemarieWavelet,Battle-Lemarie orthonormalized B-spline wavelet family,✅,pure,8.0,3843
 CanberraDistance,Canberra distance between vectors,✅,none,6.0,3843
 ClusteringTree,,,,10.4,3843
 CriticalSection,,,,7.0,3843
@@ -3807,9 +3807,9 @@ LinearOffsetFunction,,,,7.0,3916
 MarchenkoPasturDistribution,,,,10.3,3916
 MatchingDissimilarity,Matching dissimilarity between binary vectors,✅,pure,6.0,3916
 MenuStyle,,🚫,,8.0,3916
-MeyerWavelet,,🚫,,8.0,3916
+MeyerWavelet,Meyer wavelet family defined in the frequency domain,✅,pure,8.0,3916
 SearchQueryString,,🚫,,11.0,3916
-ShannonWavelet,,🚫,,8.0,3916
+ShannonWavelet,Shannon (sinc) wavelet family,✅,pure,8.0,3916
 SpellingCorrection,,🚫,,2.0,3916
 SubsetEqual,,,,3.0,3916
 SymmetrizedArrayRules,,,,9.0,3916
@@ -3870,7 +3870,7 @@ ToContinuousTimeModel,,,,8.0,3972
 ArrayPlot3D,,🚫,,12.2,4006
 BlockchainTokenData,,🚫,,12.0,4006
 CanonicalizePolygon,,,,12.0,4006
-CoifletWavelet,,🚫,,8.0,4006
+CoifletWavelet,Coiflet orthogonal wavelet family of order n (1-5),✅,pure,8.0,4006
 DamerauLevenshteinDistance,Edit distance counting adjacent transpositions as unit cost (true Damerau-Levenshtein),✅,pure,7.0,4006
 DeepSpaceProbeData,,🚫,,10.0,4006
 EscapeRadius,,,,10.0,4006
@@ -3886,7 +3886,7 @@ MandelbrotSetIterationCount,,,,10.0,4006
 MardiaSkewnessTest,,,,8.0,4006
 MessageList,,,,2.0,4006
 NeedlemanWunschSimilarity,Global sequence-alignment similarity score,✅,pure,7.0,4006
-PaulWavelet,,🚫,,8.0,4006
+PaulWavelet,Paul continuous complex wavelet of order m,✅,pure,8.0,4006
 Precedence,Returns the parsing precedence of a symbol or expression,✅,pure,1.0,4005
 PrecedenceForm,Formatting wrapper that specifies precedence for output display,✅,none,1.0,4006
 RandomPointConfiguration,,,,12.2,4006
@@ -4121,7 +4121,7 @@ CauchyWindow,,,,9.0,4262
 ClearCookies,,🚫,,11.0,4262
 ConfirmMatch,,,,12.2,4262
 ConnesWindow,Compute ConnesWindow value,✅,pure,9.0,4262
-ContinuousWaveletData,,🚫,,8.0,4262
+ContinuousWaveletData,Continuous wavelet coefficient object with octave/voice access,✅,pure,8.0,4262
 ErlangC,,,,9.0,4262
 FindSettings,,,,4.0,4262
 FiniteAbelianGroupCount,Number of abelian groups of order n,✅,pure,7.0,4262
@@ -4947,7 +4947,7 @@ IgnoreDiacritics,,,,10.1,5184
 InhomogeneousPoissonPointProcess,,🚫,,12.2,5184
 JankoGroupJ4,,,,8.0,5184
 LameEigenvalueB,,,,12.2,5184
-LiftingFilterData,,🚫,,8.0,5184
+LiftingFilterData,Lifting-filter object produced by WaveletFilterCoefficients for lifting transforms,✅,pure,8.0,5184
 LyonsGroupLy,,,,8.0,5184
 MissingString,,,,10.0,5184
 MoleculeContainsQ,,🚫,,12.0,5184
