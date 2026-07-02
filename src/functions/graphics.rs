@@ -1268,7 +1268,7 @@ fn collect_primitives(
         "Rectangle" => {
           parse_rectangle(args, style, prims);
         }
-        "Polygon" if !args.is_empty() => {
+        "Polygon" | "Triangle" if !args.is_empty() => {
           let before = prims.len();
           parse_polygon(args, style, prims);
           if prims.len() == before {
@@ -1376,7 +1376,7 @@ fn resolve_graphics_complex_indices(
     Expr::FunctionCall { name, args } => {
       // For primitives that take point arguments, resolve integer indices
       match name.as_str() {
-        "Point" | "Line" | "Polygon" | "Arrow" | "BezierCurve"
+        "Point" | "Line" | "Polygon" | "Triangle" | "Arrow" | "BezierCurve"
         | "BSplineCurve" => Expr::FunctionCall {
           name: name.clone(),
           args: args

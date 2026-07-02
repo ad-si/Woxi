@@ -2358,3 +2358,50 @@ mod light_dark_theme_colors {
     );
   }
 }
+
+// ── Triangle primitive rendering ──
+//
+// Triangle[] evaluates to Triangle[{{0,0},{1,0},{0,1}}] and renders as a
+// filled polygon, exactly like Polygon with the same points.
+mod triangle_rendering {
+  fn svg_of(code: &str) -> String {
+    woxi::interpret(&format!(r#"ExportString[{code}, "SVG"]"#))
+      .expect("interpret should succeed")
+  }
+
+  #[test]
+  fn default_triangle_renders_as_polygon() {
+    let svg = svg_of("Graphics[Triangle[]]");
+    assert!(
+      svg.contains("<polygon"),
+      "Triangle[] should produce a polygon element: {svg}"
+    );
+  }
+
+  #[test]
+  fn explicit_triangle_matches_equivalent_polygon() {
+    let tri = svg_of("Graphics[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]");
+    let poly = svg_of("Graphics[Polygon[{{0, 0}, {1, 0}, {0, 1}}]]");
+    assert_eq!(tri, poly);
+  }
+
+  #[test]
+  fn triangle_respects_color_directives() {
+    woxi::set_dark_mode(false);
+    let svg =
+      svg_of("Graphics[{LightDarkSwitched[Brown, Orange], Triangle[]}]");
+    assert!(
+      svg.contains("fill=\"rgb(153,102,51)\""),
+      "Triangle should pick up the resolved Brown fill: {svg}"
+    );
+  }
+
+  #[test]
+  fn triangle_in_graphics_complex_resolves_indices() {
+    let complex = svg_of(
+      "Graphics[GraphicsComplex[{{0, 0}, {1, 0}, {0, 1}}, Triangle[{1, 2, 3}]]]",
+    );
+    let direct = svg_of("Graphics[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]");
+    assert_eq!(complex, direct);
+  }
+}
