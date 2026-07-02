@@ -1320,13 +1320,6 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let a = *a_i;
     let b = *b_i;
     let z = BigInt::from(z_int);
-    fn fact_bi(n: i128) -> BigInt {
-      let mut acc = BigInt::from(1);
-      for i in 2..=n {
-        acc *= i;
-      }
-      acc
-    }
     // Compute P_n, Q_n for n = a-1..=b-2 using BigInt recurrence.
     let max_n = (b - 2) as usize;
     let mut p_vec: Vec<BigInt> = Vec::with_capacity(max_n + 1);
@@ -1359,8 +1352,9 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       e_num += &coeff * &scale * &p_vec[n_idx];
       const_num += &coeff * &scale * &q_vec[n_idx];
     }
-    // Multiply by Γ(b)/(Γ(a)·Γ(b-a)) = (b-1)!/((a-1)!·(b-a-1)!)
-    let prefactor = fact_bi(b - 1) / (fact_bi(a - 1) * fact_bi(b - a - 1));
+    // Multiply by Γ(b)/(Γ(a)·Γ(b-a)) = 1/Beta[a, b-a]
+    let (num, den) = beta_parts_big(a, b - a);
+    let prefactor = den / num;
     e_num *= &prefactor;
     const_num *= &prefactor;
     // Result = (e_num · E^z + const_num) / z_max  — reduce by gcd.

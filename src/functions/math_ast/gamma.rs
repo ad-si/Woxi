@@ -381,20 +381,15 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if num > 0 {
           let k = (num - 1) / 2;
           // Gamma[(2k+1)/2] = (2k)! * Sqrt[Pi] / (4^k * k!)
-          let mut factorial_2k = BigInt::from(1);
-          for i in 2..=(2 * k) {
-            factorial_2k *= i;
+          let mut numer = BigInt::from(1);
+          for i in (k + 1)..=(2 * k) {
+            numer *= i;
           }
-          let mut factorial_k = BigInt::from(1);
-          for i in 2..=k {
-            factorial_k *= i;
-          }
-          let four_k = BigInt::from(4).pow(k as u32);
-          let denom = four_k * factorial_k;
-          // Result = factorial_2k / denom * Sqrt[Pi]
+          let denom = BigInt::from(4).pow(k as u32);
+          // Result = numer / denom * Sqrt[Pi]
           // Simplify the rational part
-          let g = gcd_bigint(&factorial_2k, &denom);
-          let num_simplified = &factorial_2k / &g;
+          let g = gcd_bigint(&numer, &denom);
+          let num_simplified = &numer / &g;
           let den_simplified = &denom / &g;
           let sqrt_pi = Expr::FunctionCall {
             name: "Power".to_string(),
@@ -432,27 +427,15 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Negative half-integers: Gamma[(1-2n)/2] = Gamma[1/2 - n]
           // = (-4)^n * n! * Sqrt[Pi] / (2n)!  where n = (1 - num) / 2
           let n = (1 - num) / 2;
-          let sign = if n % 2 == 0 {
-            BigInt::from(1)
-          } else {
-            BigInt::from(-1)
-          };
-          let four_n = BigInt::from(4).pow(n as u32);
-          let mut factorial_n = BigInt::from(1);
-          for i in 2..=n {
-            factorial_n *= i;
+          let is_neg = n % 2 != 0;
+          let numer = BigInt::from(4).pow(n as u32);
+          let mut denom = BigInt::from(1);
+          for i in (n + 1)..=(2 * n) {
+            denom *= i;
           }
-          let mut factorial_2n = BigInt::from(1);
-          for i in 2..=(2 * n) {
-            factorial_2n *= i;
-          }
-          let numerator = &sign * &four_n * &factorial_n;
-          let denominator = factorial_2n;
-          let num_abs: BigInt = numerator.magnitude().clone().into();
-          let g = gcd_bigint(&num_abs, &denominator);
-          let num_simplified = &num_abs / &g;
-          let den_simplified = &denominator / &g;
-          let is_neg = numerator < BigInt::from(0);
+          let g = gcd_bigint(&numer, &denom);
+          let num_simplified = &numer / &g;
+          let den_simplified = &denom / &g;
           let sqrt_pi = Expr::FunctionCall {
             name: "Power".to_string(),
             args: vec![
@@ -847,6 +830,23 @@ fn factorial_big(n: usize) -> BigInt {
   result
 }
 
+pub fn beta_parts_big(a: i128, b: i128) -> (BigInt, BigInt) {
+  // Beta[a, b] = (a-1)! (b-1)! / (a+b-1)!
+  // = (b-1)! / (a(a+1)...(a+b-1)) or
+  // = (a-1)! / (b(b+1)...(a+b-1))
+  // = (z-1)! / ((a+b-z)(a+b-z+1)...(a+b-1)) where z=min(a,b)
+  let z = a.min(b);
+  let mut num = BigInt::from(1);
+  for i in 2..z {
+    num *= i;
+  }
+  let mut den = BigInt::from(1);
+  for i in (a + b - z)..(a + b) {
+    den *= i;
+  }
+  (num, den)
+}
+
 pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 3 {
     return incomplete_beta_ast(&args[0], &args[1], &args[2]);
@@ -863,11 +863,7 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && *a > 0
     && *b > 0
   {
-    let a_u = (*a - 1) as usize;
-    let b_u = (*b - 1) as usize;
-    let ab_u = (*a + *b - 1) as usize;
-    let num = factorial_big(a_u) * factorial_big(b_u);
-    let den = factorial_big(ab_u);
+    let (num, den) = beta_parts_big(*a, *b);
     return Ok(make_rational_expr(num, den));
   }
 
@@ -887,14 +883,14 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Poles cancel (exactly one argument non-positive and a+b <= 0): the
       // finite limit is (-1)^pos * (pos-1)! * (m - pos)! / m!, where `pos` is
       // the positive argument and m = -neg (the magnitude of the other one).
+      // (pos-1)! (m-pos)! / m! = (pos-1)! ((m-(pos-1))-1)! / ((pos-1) + (m-(pos-1)))!
+      // = Beta[pos, m-pos+1]
       let (pos, neg) = if a > 0 { (a, b) } else { (b, a) };
       let m = -neg;
-      let mut num =
-        factorial_big((pos - 1) as usize) * factorial_big((m - pos) as usize);
-      if pos % 2 != 0 {
-        num = -num;
-      }
-      return Ok(make_rational_expr(num, factorial_big(m as usize)));
+      let is_neg = pos % 2 != 0;
+      let (mut num, den) = beta_parts_big(pos, m - pos + 1);
+      num = if is_neg { -num } else { num };
+      return Ok(make_rational_expr(num, den));
     }
   }
 
