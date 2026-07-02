@@ -879,6 +879,28 @@ pub fn apply_curried_call(
         Ok(result)
       }
     }
+    // HTTPRequest[…]["property"] — property access on the symbolic HTTP
+    // request object (e.g. "Method", "URL", "Domain"). Properties Woxi does
+    // not resolve keep the curried form unevaluated.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "HTTPRequest"
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!()
+      };
+      match crate::functions::http_ast::http_request_property(func_args, prop)
+      {
+        Some(result) => Ok(result),
+        None => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // TimeSeries[…][t] — value lookup at time `t` (a date or number) or, for a
     // string argument, a path-property accessor (e.g. ts["Values"], ts["Path"]).
     Expr::FunctionCall { name, .. }

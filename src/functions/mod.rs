@@ -24,6 +24,7 @@ pub mod graph;
 pub mod graphics;
 pub mod graphicsbox;
 pub mod groebner_ast;
+pub mod http_ast;
 pub mod image_ast;
 pub mod information_render;
 pub mod interval_ast;

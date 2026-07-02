@@ -1031,6 +1031,7 @@ nav = [
       ] },
       { "Set Operations" = [
         "list/sets.md",
+        { "UniqueElements" = "list/sets/UniqueElements.md" },
         { "Complement" = "list/sets/Complement.md" },
         { "ContainsAll" = "list/sets/ContainsAll.md" },
         { "ContainsAny" = "list/sets/ContainsAny.md" },
@@ -1409,6 +1410,7 @@ nav = [
   ] },
   { "Plotting" = [
     "plotting.md",
+    { "TimelinePlot" = "plotting/TimelinePlot.md" },
     { "GeoGraphics" = "plotting/GeoGraphics.md" },
     { "ArrayPlot" = "plotting/ArrayPlot.md" },
     { "BarChart" = "plotting/BarChart.md" },
@@ -1463,7 +1465,6 @@ nav = [
     { "SphericalPlot3D" = "plotting/SphericalPlot3D.md" },
     { "StreamDensityPlot" = "plotting/StreamDensityPlot.md" },
     { "StreamPlot" = "plotting/StreamPlot.md" },
-    { "TimelinePlot" = "plotting/TimelinePlot.md" },
     { "TreeForm" = "plotting/TreeForm.md" },
     { "TreeGraph" = "plotting/TreeGraph.md" },
     { "VectorPlot" = "plotting/VectorPlot.md" },
@@ -1549,6 +1550,7 @@ nav = [
   ] },
   { "File System & I/O" = [
     "file_system.md",
+    { "HTTPRequest" = "file_system/HTTPRequest.md" },
     { "AbsoluteFileName" = "file_system/AbsoluteFileName.md" },
     { "AnimationRate" = "file_system/AnimationRate.md" },
     { "BinaryRead" = "file_system/BinaryRead.md" },
