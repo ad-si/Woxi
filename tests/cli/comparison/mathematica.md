@@ -89,13 +89,15 @@ Woxi does **not** support.
     `EventSeriesAccumulate`
 - `ModelFit` superfunction with `ExponentialModel`, `PowerModel`,
     `LogModel`, `PolynomialModel`, `PeriodicModel`, `DecisionTreeModel`
-- Big-data `Tabular` enhancements, `TabularSummary`, `Around` data type
+- Big-data `Tabular` enhancements, `TabularSummary`
+- `Around` data type
 - Exception handling: `ThrowException`, `CatchExceptions`,
     `RegisterExceptionType`
 - Lazy sequences via `IncrementalObject` and incremental
     `Permutations` / `Subsets` / `Tuples`
 - Visualization: `PlotGrid`, `BubbleHistogram`, `PeriodicTablePlot`
-- WebSocket connectivity, GPU/CUDA kernels
+- WebSocket connectivity
+- GPU/CUDA kernels
 
 ### Version 14.3 (2025)
 
@@ -125,7 +127,8 @@ Woxi does **not** support.
 - `GPUArray` GPU-native arrays
 - Astronomy: `FindAstroEvent`
 - `ParallelSelect`, `ParallelCases`
-- `Failsafe`, `MidDate`
+- `Failsafe`
+- `MidDate`
 
 ### Version 14.1 (2024)
 
@@ -176,7 +179,9 @@ Woxi does **not** support.
 - Temperature-difference units
 - `RandomTime`
 - `ClusteringMeasurements`
-- `NetExternalObject` (ONNX), `TerminatedEvaluation`, `TypeHint`
+- `NetExternalObject` (ONNX)
+- `TerminatedEvaluation`
+- `TypeHint`
 - Chess format support (FEN/PGN)
 
 ### Version 13.1 (2022)
