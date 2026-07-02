@@ -1994,6 +1994,8 @@ pub fn evaluate_function_call_ast_inner(
     | "BezierCurve"
     | "BezierFunction"
     | "BSplineCurve"
+    | "PolarCurve"
+    | "FilledPolarCurve"
     | "GraphicsComplex"
     | "Rotate"
     | "Translate"
