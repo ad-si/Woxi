@@ -1188,6 +1188,9 @@ nav = [
     ] },
     { "Expressions" = [
       "expressions.md",
+      { "LightDarkSwitched" = "expressions/LightDarkSwitched.md" },
+      { "SystemColor" = "expressions/SystemColor.md" },
+      { "ThemeColor" = "expressions/ThemeColor.md" },
       { "Haloing" = "expressions/Haloing.md" },
       { "Highlighted" = "expressions/Highlighted.md" },
       { "BaseForm" = "expressions/BaseForm.md" },
@@ -1414,6 +1417,7 @@ nav = [
   ] },
   { "Plotting" = [
     "plotting.md",
+    { "PeriodicTablePlot" = "plotting/PeriodicTablePlot.md" },
     { "ArrayPlot" = "plotting/ArrayPlot.md" },
     { "AudioPlot" = "plotting/AudioPlot.md" },
     { "BarChart" = "plotting/BarChart.md" },
