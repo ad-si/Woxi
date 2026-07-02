@@ -4201,14 +4201,16 @@ mod high_level_functions_tests {
     fn test_export_wav_audio_samples() {
       let tmp = std::env::temp_dir().join("woxi_test_audio_samples.wav");
       let path = tmp.display().to_string();
+      // 800 samples keep the symbolic Table cheap enough for debug-build CI
+      // (8000 samples exceeded nextest's 20s timeout on the runner).
       let result = interpret(&format!(
-        "Export[\"{path}\", Audio[Table[Sin[2 Pi 440 n/8000], {{n, 0, 7999}}], \
+        "Export[\"{path}\", Audio[Table[Sin[2 Pi 440 n/8000], {{n, 0, 799}}], \
          SampleRate -> 8000]]"
       ))
       .unwrap();
       assert_eq!(result, path);
       let frames = assert_wav(&tmp, 8000);
-      assert_eq!(frames, 8000, "1 second at 8000 Hz");
+      assert_eq!(frames, 800, "0.1 seconds at 8000 Hz");
       std::fs::remove_file(&tmp).ok();
     }
 
