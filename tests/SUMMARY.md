@@ -1316,6 +1316,7 @@
 - [Plotting](plotting.md)
   - [`GeoGraphics`](plotting/GeoGraphics.md)
   - [`ArrayPlot`](plotting/ArrayPlot.md)
+  - [`AudioPlot`](plotting/AudioPlot.md)
   - [`BarChart`](plotting/BarChart.md)
   - [`BarChart3D`](plotting/BarChart3D.md)
   - [`BoxWhiskerChart`](plotting/BoxWhiskerChart.md)

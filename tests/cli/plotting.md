@@ -52,6 +52,7 @@ SVG images.
 - [`LinearGradientFilling`](plotting/LinearGradientFilling.md)
 - [`Manipulate`](plotting/Manipulate.md)
 - [`ArrayPlot`](plotting/ArrayPlot.md)
+- [`AudioPlot`](plotting/AudioPlot.md)
 - [`BarChart3D`](plotting/BarChart3D.md)
 - [`BoxWhiskerChart`](plotting/BoxWhiskerChart.md)
 - [`ComplexPlot`](plotting/ComplexPlot.md)

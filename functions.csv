@@ -1386,7 +1386,7 @@ Skewness,Computes the skewness of a list or distribution,✅,pure,6.0,1402
 Speak,Text-to-speech output,🚫,io,7.0,1405
 StreamColorFunction,Color function for stream plots,🚫,pure,7.0,1405
 TreePlot,Plot a tree graph,🚫,pure,6.0,1405
-Audio,Create an audio object,🚫,io,11.0,1406
+Audio,Audio object from sample data (stays symbolic; consumed by AudioPlot),✅,unevaluated,11.0,1406
 ColorSeparate,Separate color channels of an image,✅,io,7.0,1409
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10.0,1409
 StringContainsQ,Tests if a string contains a substring; supports the one-argument operator form,✅,pure,10.1,1409
@@ -2062,7 +2062,7 @@ TimeUsed,Total CPU time (user+system) used by the current process in seconds,✅
 HTTPRequest,HTTP request object,🚫,,11.0,2100
 ImageConvolve,Convolve image with kernel,✅,,7.0,2100
 SemanticImport,Import with semantic interpretation,🚫,,10.0,2100
-AudioPlot,Plot audio waveform,🚫,,11.0,2102
+AudioPlot,Plot the waveform of an Audio or Sound object,✅,pure,11.0,2102
 FlipView,Flippable view control (stays symbolic in script mode),✅,unevaluated,6.0,2102
 EmptyRegion,Empty geometric region,🚫,,10.0,2108
 HorizontalGauge,Horizontal gauge display,🚫,,9.0,2108
