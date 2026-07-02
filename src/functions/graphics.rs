@@ -9690,6 +9690,103 @@ fn evenly_spaced_stops(n: usize) -> Vec<Expr> {
     .collect()
 }
 
+// ─── DropShadowing ──────────────────────────────────────────────────
+
+/// DropShadowing[...] — canonicalize to the full three-argument form
+/// DropShadowing[offset, radius, color], filling in the defaults
+/// {-3, -3}, 2 and Opacity[1/3, ThemeColor[Foreground]].
+/// Arguments are matched positionally in the order offset (2-element
+/// numeric list), radius (number), color (color directive or None);
+/// each slot is optional but the order is fixed. Argument lists that
+/// don't fit this pattern stay unevaluated.
+pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  fn is_number(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _) => true,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        is_number(&args[0]) && is_number(&args[1])
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => is_number(operand),
+      _ => false,
+    }
+  }
+  fn is_offset(e: &Expr) -> bool {
+    matches!(e, Expr::List(items) if items.len() == 2 && items.iter().all(is_number))
+  }
+  fn is_color(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(name) => name == "None",
+      Expr::FunctionCall { name, .. } => matches!(
+        name.as_str(),
+        "RGBColor"
+          | "GrayLevel"
+          | "Hue"
+          | "CMYKColor"
+          | "XYZColor"
+          | "LABColor"
+          | "LUVColor"
+          | "LCHColor"
+          | "Opacity"
+          | "ThemeColor"
+      ),
+      _ => false,
+    }
+  }
+
+  let (mut offset, mut radius, mut color) = (None, None, None);
+  let mut valid = true;
+  for arg in args {
+    if offset.is_none() && radius.is_none() && color.is_none() && is_offset(arg)
+    {
+      offset = Some(arg.clone());
+    } else if radius.is_none() && color.is_none() && is_number(arg) {
+      radius = Some(arg.clone());
+    } else if color.is_none() && is_color(arg) {
+      color = Some(arg.clone());
+    } else {
+      valid = false;
+      break;
+    }
+  }
+
+  if !valid {
+    return Ok(Expr::FunctionCall {
+      name: "DropShadowing".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "DropShadowing".to_string(),
+    args: vec![
+      offset.unwrap_or_else(|| {
+        Expr::List(vec![Expr::Integer(-3), Expr::Integer(-3)].into())
+      }),
+      radius.unwrap_or(Expr::Integer(2)),
+      color.unwrap_or_else(|| Expr::FunctionCall {
+        name: "Opacity".to_string(),
+        args: vec![
+          crate::functions::make_rational_pub(1, 3),
+          Expr::FunctionCall {
+            name: "ThemeColor".to_string(),
+            args: vec![Expr::Identifier("Foreground".to_string())].into(),
+          },
+        ]
+        .into(),
+      }),
+    ]
+    .into(),
+  })
+}
+
 /// LinearGradientFilling[...] - normalizes gradient color specifications
 pub fn linear_gradient_filling_ast(
   args: &[Expr],

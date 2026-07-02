@@ -160,6 +160,9 @@ pub fn dispatch_plotting(
     "LinearGradientFilling" => Some(
       crate::functions::graphics::linear_gradient_filling_ast(args),
     ),
+    "DropShadowing" => {
+      Some(crate::functions::graphics::drop_shadowing_ast(args))
+    }
     "ListPlot3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::plot3d::list_plot3d_ast(args)
     })),

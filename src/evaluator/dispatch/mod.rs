@@ -2061,7 +2061,6 @@ pub fn evaluate_function_call_ast_inner(
     | "CirclePlus"
     | "CircleMinus"
     | "Glow"
-    | "DropShadowing"
     | "PrincipalValue"
     | "LetterCharacter"
     | "Longest"
