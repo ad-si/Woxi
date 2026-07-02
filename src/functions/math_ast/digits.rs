@@ -4349,3 +4349,79 @@ pub fn from_roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 }
+
+/// ThueMorse[n] - the n-th Thue–Morse number: the parity (0 or 1) of the
+/// number of 1-bits in the binary expansion of n. Negative integers use the
+/// absolute value (ThueMorse[-5] == ThueMorse[5]). Non-integer numeric
+/// arguments produce a message and stay unevaluated (matching wolframscript);
+/// symbolic arguments echo silently.
+pub fn thue_morse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "ThueMorse".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  match expr_to_bigint(&args[0]) {
+    Some(n) => {
+      let ones = n
+        .abs()
+        .to_radix_le(2)
+        .1
+        .into_iter()
+        .filter(|&b| b == 1)
+        .count();
+      Ok(Expr::Integer((ones % 2) as i128))
+    }
+    None => {
+      // A Real or Rational is numeric but not a valid non-negative integer.
+      if matches!(&args[0], Expr::Real(_))
+        || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
+      {
+        crate::emit_message(&format!(
+          "ThueMorse::nnintprm: Parameter {} at position 1 in {} is expected \
+           to be a non-negative integer.",
+          crate::syntax::expr_to_string(&args[0]),
+          crate::syntax::expr_to_string(&unevaluated(args))
+        ));
+      }
+      Ok(unevaluated(args))
+    }
+  }
+}
+
+/// RudinShapiro[n] - the n-th Rudin–Shapiro number: (-1)^a(n), where a(n) is
+/// the number of (possibly overlapping) occurrences of "11" in the binary
+/// expansion of n. Defined only for non-negative integers; negative or
+/// non-integer arguments stay unevaluated (matching wolframscript).
+pub fn rudin_shapiro_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "RudinShapiro".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  match expr_to_bigint(&args[0]) {
+    Some(n) if !n.is_negative() => {
+      // Bits from least- to most-significant; count adjacent 1,1 pairs.
+      let bits = n.to_radix_le(2).1;
+      let pairs = bits.windows(2).filter(|w| w[0] == 1 && w[1] == 1).count();
+      Ok(Expr::Integer(if pairs % 2 == 0 { 1 } else { -1 }))
+    }
+    _ => {
+      if matches!(&args[0], Expr::Real(_))
+        || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
+      {
+        crate::emit_message(&format!(
+          "RudinShapiro::nnintprm: Parameter {} at position 1 in {} is \
+           expected to be a non-negative integer.",
+          crate::syntax::expr_to_string(&args[0]),
+          crate::syntax::expr_to_string(&unevaluated(args))
+        ));
+      }
+      Ok(unevaluated(args))
+    }
+  }
+}

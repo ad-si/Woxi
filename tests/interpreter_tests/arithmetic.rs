@@ -880,6 +880,46 @@ mod big_integer {
     );
   }
 
+  // ThueMorse[n] is the parity of the number of 1-bits in the binary
+  // expansion of |n|.
+  #[test]
+  fn thue_morse() {
+    assert_eq!(
+      interpret("Table[ThueMorse[n], {n, 0, 10}]").unwrap(),
+      "{0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0}"
+    );
+    assert_eq!(interpret("ThueMorse[5]").unwrap(), "0");
+    assert_eq!(interpret("ThueMorse[255]").unwrap(), "0");
+    // Negative integers use the absolute value.
+    assert_eq!(interpret("ThueMorse[-5]").unwrap(), "0");
+    assert_eq!(interpret("ThueMorse[-2]").unwrap(), "1");
+    // Listable over a vector of arguments.
+    assert_eq!(interpret("ThueMorse[{1, 2, 3}]").unwrap(), "{1, 1, 0}");
+    // Non-integer / symbolic arguments stay unevaluated.
+    assert_eq!(interpret("ThueMorse[x]").unwrap(), "ThueMorse[x]");
+    assert_eq!(interpret("ThueMorse[2.5]").unwrap(), "ThueMorse[2.5]");
+  }
+
+  // RudinShapiro[n] is (-1)^(number of overlapping "11" pairs in the binary
+  // expansion of n); defined only for non-negative integers.
+  #[test]
+  fn rudin_shapiro() {
+    assert_eq!(
+      interpret("Table[RudinShapiro[n], {n, 0, 10}]").unwrap(),
+      "{1, 1, 1, -1, 1, 1, -1, 1, 1, 1, 1}"
+    );
+    assert_eq!(interpret("RudinShapiro[3]").unwrap(), "-1");
+    // 111 → two overlapping "11" pairs → (-1)^2 = 1.
+    assert_eq!(interpret("RudinShapiro[7]").unwrap(), "1");
+    assert_eq!(interpret("RudinShapiro[100]").unwrap(), "-1");
+    assert_eq!(interpret("RudinShapiro[0]").unwrap(), "1");
+    // Listable over a vector of arguments.
+    assert_eq!(interpret("RudinShapiro[{1, 2, 3}]").unwrap(), "{1, 1, -1}");
+    // Negative / symbolic arguments stay unevaluated.
+    assert_eq!(interpret("RudinShapiro[-3]").unwrap(), "RudinShapiro[-3]");
+    assert_eq!(interpret("RudinShapiro[x]").unwrap(), "RudinShapiro[x]");
+  }
+
   #[test]
   fn nest_with_big_integer() {
     assert_eq!(

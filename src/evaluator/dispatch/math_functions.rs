@@ -2978,6 +2978,12 @@ pub fn dispatch_math_functions(
     "DigitSum" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::digit_sum_ast(args));
     }
+    "ThueMorse" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::thue_morse_ast(args));
+    }
+    "RudinShapiro" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::rudin_shapiro_ast(args));
+    }
     "ContinuedFraction" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::continued_fraction_ast(args));
     }
