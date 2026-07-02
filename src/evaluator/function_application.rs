@@ -893,6 +893,34 @@ pub fn apply_curried_call(
       // Interpreter["Country"][input] — resolve input to an Entity.
       crate::functions::country_data::apply_interpreter(&func_args[0], args)
     }
+    // AssessmentFunction[spec][answer] — grade the answer, returning an
+    // AssessmentResultObject.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "AssessmentFunction" && args.len() == 1 => {
+      crate::functions::assessment_ast::apply_assessment_function(
+        func_args, &args[0],
+      )
+    }
+    // QuestionObject[q, assess][answer] — grade the answer through the
+    // embedded assessment.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "QuestionObject" && args.len() == 1 => {
+      crate::functions::assessment_ast::apply_question_object(
+        func_args, &args[0],
+      )
+    }
+    // AssessmentResultObject[<|…|>]["property"] — property access
+    // (e.g. "Score", "AnswerCorrect", or All for the whole association).
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "AssessmentResultObject" && args.len() == 1 => {
+      crate::functions::assessment_ast::apply_result_object(func_args, &args[0])
+    }
     // BooleanFunction[n, k][b1, …, bk] — the integer-indexed boolean function.
     // The result is bit `v` of `n`, where `v` is the k arguments read as a
     // binary number (first argument most significant, True/1 → 1, False/0 → 0).

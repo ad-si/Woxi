@@ -7562,3 +7562,85 @@ mod negative_half_times_sum_display {
     }
   }
 }
+
+/// Regression tests for issue #136: the canonical Times ordering of a
+/// factor against a Plus factor must follow Wolfram's top-term rule for
+/// function calls and powers, not just bare identifiers.
+mod times_factor_vs_sum_ordering {
+  use super::*;
+
+  // A factor sorts before `1 + factor` regardless of its head.
+  #[test]
+  fn factor_before_shifted_sum() {
+    assert_eq!(interpret("n(n+1)").unwrap(), "n*(1 + n)");
+    assert_eq!(interpret("f[x](f[x]+1)").unwrap(), "f[x]*(1 + f[x])");
+    assert_eq!(
+      interpret("f[x,y](1+f[x,y])").unwrap(),
+      "f[x, y]*(1 + f[x, y])"
+    );
+    assert_eq!(
+      interpret("Sin[x](Cos[x]+Sin[x])").unwrap(),
+      "Sin[x]*(Cos[x] + Sin[x])"
+    );
+    assert_eq!(
+      interpret("Cos[x](1+Cos[x])(2+Cos[x])").unwrap(),
+      "Cos[x]*(1 + Cos[x])*(2 + Cos[x])"
+    );
+    assert_eq!(
+      interpret("f'[x](1+f'[x])").unwrap(),
+      "Derivative[1][f][x]*(1 + Derivative[1][f][x])"
+    );
+  }
+
+  // The sum's highest term decides the order across different heads.
+  #[test]
+  fn sum_top_term_decides() {
+    assert_eq!(interpret("g[x](f[x]+1)").unwrap(), "(1 + f[x])*g[x]");
+    assert_eq!(interpret("f[x](g[x]+1)").unwrap(), "f[x]*(1 + g[x])");
+    assert_eq!(interpret("f[y](1+f[x])").unwrap(), "(1 + f[x])*f[y]");
+    assert_eq!(
+      interpret("Sin[x](1+Cos[x])").unwrap(),
+      "(1 + Cos[x])*Sin[x]"
+    );
+    assert_eq!(
+      interpret("Log[x](1+Sin[x])").unwrap(),
+      "Log[x]*(1 + Sin[x])"
+    );
+    assert_eq!(interpret("h[x](1+Sin[x])").unwrap(), "h[x]*(1 + Sin[x])");
+  }
+
+  // An atom sorts before a sum whose top term is a function call.
+  #[test]
+  fn atom_before_function_call_sum() {
+    assert_eq!(interpret("x(1+f[x])").unwrap(), "x*(1 + f[x])");
+    assert_eq!(interpret("x(1-f[x])").unwrap(), "x*(1 - f[x])");
+    assert_eq!(interpret("x(f[x]-x)").unwrap(), "x*(-x + f[x])");
+    assert_eq!(interpret("f[x](x+1)").unwrap(), "(1 + x)*f[x]");
+  }
+
+  // Negated top terms and `Plus[negative, base]` pull the sum forward.
+  #[test]
+  fn negated_forms_put_sum_first() {
+    assert_eq!(interpret("f[x](f[x]-1)").unwrap(), "(-1 + f[x])*f[x]");
+    assert_eq!(interpret("f[x](2-f[x])").unwrap(), "(2 - f[x])*f[x]");
+    assert_eq!(interpret("g[x](f[x]-g[x])").unwrap(), "(f[x] - g[x])*g[x]");
+    assert_eq!(interpret("x^2(x-1)").unwrap(), "(-1 + x)*x^2");
+    assert_eq!(interpret("f[x]^2(f[x]-1)").unwrap(), "(-1 + f[x])*f[x]^2");
+    // ...but not with a coefficient on the top term, extra terms, or a
+    // lower power of the shared base.
+    assert_eq!(interpret("x(11x-4)").unwrap(), "x*(-4 + 11*x)");
+    assert_eq!(interpret("b(-1+a+b)").unwrap(), "b*(-1 + a + b)");
+    assert_eq!(interpret("x(x^2-3)").unwrap(), "x*(-3 + x^2)");
+  }
+
+  // Powers compare by base; exponents only matter on a tie.
+  #[test]
+  fn powers_compare_by_base() {
+    assert_eq!(interpret("f[x]^2(1+f[x])").unwrap(), "f[x]^2*(1 + f[x])");
+    assert_eq!(interpret("f[x](1+f[x]^2)").unwrap(), "f[x]*(1 + f[x]^2)");
+    assert_eq!(interpret("f[x](2-f[x]^2)").unwrap(), "f[x]*(2 - f[x]^2)");
+    assert_eq!(interpret("x^3(1+x^2)").unwrap(), "x^3*(1 + x^2)");
+    assert_eq!(interpret("y(1+x^2)").unwrap(), "(1 + x^2)*y");
+    assert_eq!(interpret("y(x-y^2)").unwrap(), "y*(x - y^2)");
+  }
+}

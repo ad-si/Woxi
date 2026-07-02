@@ -978,25 +978,6 @@ fn hypergeometric_2f1_regularized_non_positive_c(
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&product)?))
 }
 
-/// Returns Binomial[n, k] / k! as a reduced (numerator, denominator) pair.
-fn binomial_over_factorial(n: u32, k: u32) -> (i128, i128) {
-  // Binomial[n, k] = n! / (k! * (n-k)!), so Binomial[n, k] / k! has
-  // numerator n! / (n-k)! and denominator k!·k!.
-  let mut num: i128 = 1;
-  for i in 0..k {
-    num *= (n - i) as i128;
-  }
-  let mut den: i128 = 1;
-  for i in 1..=k {
-    den *= i as i128;
-  }
-  // Also divide by k! again (k!·k! total)
-  let kfact: i128 = (1..=k).map(|i| i as i128).product::<i128>().max(1);
-  den *= kfact;
-  let g = gcd_i128(num.abs(), den.abs());
-  (num / g, den / g)
-}
-
 fn gcd_i128(a: i128, b: i128) -> i128 {
   let (mut a, mut b) = (a, b);
   while b != 0 {
@@ -1478,13 +1459,28 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1])
     && *a >= 1
     && *b == 1
-    && *a <= 20
+    && *a <= 34
   {
     let n = (*a - 1) as u32;
     let z = &args[2];
     let mut terms: Vec<Expr> = Vec::with_capacity((n + 1) as usize);
+    // Binomial[n, k] / k! = (n! / k!) / (k! (n-k)!).
+    // This (numer, denom) separation overflows above n=33.
+    let mut numer: i128 = 1;
+    for i in 2..=n {
+      numer *= i as i128;
+    }
+    let mut denom = numer;
     for k in 0..=n {
-      let coeff = binomial_over_factorial(n, k);
+      // numer(k) = n! / k! = (n! / (k-1)!) / k = numer(k-1) / k
+      // denom(k) = k! (n-k)! = (k-1)! k (n-k+1)! / (n-k+1) = denom(k-1) k / (n-k+1)
+      if k > 0 {
+        numer /= k as i128;
+        denom /= (n - k + 1) as i128;
+        denom *= k as i128;
+      }
+      let g = gcd_i128(numer, denom);
+      let coeff = (numer / g, denom / g);
       let z_pow = if k == 0 {
         Expr::Integer(1)
       } else if k == 1 {
