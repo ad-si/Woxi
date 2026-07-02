@@ -6276,3 +6276,4 @@ ShowChatbar,Notebook option controlling display of a floating AI chatbar,,pure,1
 NotebookTheme,Sets the color theme for displaying notebooks,,pure,15.0,
 SystemModelSurrogate,Represents a symbolic surrogate model approximating a system model outputs,,pure,15.0,
 SystemModelSurrogateTrain,Generates a reduced echo-state-network surrogate from a system model,,pure,15.0,
+BubbleHistogram,Bins two-dimensional data and draws a bubble at each non-empty bin sized by count,✅,pure,14.0,
