@@ -42,6 +42,7 @@ pub mod music_render;
 pub mod number_line_plot;
 pub mod ode_ast;
 pub mod parametric_plot;
+pub mod periodic_table_plot;
 pub mod plot;
 pub mod plot3d;
 pub mod polynomial_ast;

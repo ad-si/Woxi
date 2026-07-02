@@ -94,7 +94,7 @@ Woxi does **not** support.
     `RegisterExceptionType`
 - Lazy sequences via `IncrementalObject` and incremental
     `Permutations` / `Subsets` / `Tuples`
-- Visualization: `PlotGrid`, `BubbleHistogram`, `PeriodicTablePlot`
+- Visualization: `PlotGrid`, `BubbleHistogram`
 - WebSocket connectivity
 - GPU/CUDA kernels
 

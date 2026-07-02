@@ -79,6 +79,7 @@ SVG images.
 - [`MatrixPlot`](plotting/MatrixPlot.md)
 - [`NumberLinePlot`](plotting/NumberLinePlot.md)
 - [`ParametricPlot3D`](plotting/ParametricPlot3D.md)
+- [`PeriodicTablePlot`](plotting/PeriodicTablePlot.md)
 - [`PieChart3D`](plotting/PieChart3D.md)
 - [`PlotGrid`](plotting/PlotGrid.md)
 - [`RegionPlot3D`](plotting/RegionPlot3D.md)

@@ -6268,7 +6268,7 @@ FluidViscosity,Computes apparent or dynamic viscosity from velocity fields and f
 FluidViscousStress,Computes the viscous stress component of a fluid from its velocity field,,pure,15.0,
 MagneticFieldIntensity,Computes magnetic field intensity from a scalar or vector magnetic potential,,pure,15.0,
 MagneticFluxDensity,Computes magnetic flux density from a scalar or vector magnetic potential,,pure,15.0,
-PeriodicTablePlot,Generates a graphical periodic table with optional element highlighting,,pure,15.0,
+PeriodicTablePlot,Generates a graphical periodic table with optional element highlighting,✅,pure,15.0,
 LQRegulatorTrain,Trains a regulator minimizing quadratic cost by simulating an environment,,pure,15.0,
 DarkModePane,Displays its contents in dark mode regardless of surrounding settings,,pure,15.0,
 LightModePane,Displays its contents in light mode regardless of surrounding settings,,pure,15.0,

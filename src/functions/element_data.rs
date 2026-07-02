@@ -2219,6 +2219,38 @@ static ELEMENTS: &[Element] = &[
   },
 ];
 
+/// Minimal per-element info needed for laying out and rendering the
+/// periodic table (see `periodic_table_plot`).
+pub struct ElementLayout {
+  pub atomic_number: i128,
+  pub abbreviation: &'static str,
+  pub standard_name: &'static str,
+  pub group: Option<i128>,
+  pub period: i128,
+  pub block: &'static str,
+}
+
+/// Return layout/render info for every known element (Z = 1..118).
+pub fn elements_layout() -> Vec<ElementLayout> {
+  ELEMENTS
+    .iter()
+    .map(|e| ElementLayout {
+      atomic_number: e.atomic_number,
+      abbreviation: e.abbreviation,
+      standard_name: e.standard_name,
+      group: e.group,
+      period: e.period,
+      block: e.block,
+    })
+    .collect()
+}
+
+/// Resolve an element identifier (atomic number, symbol, or name) to its
+/// atomic number, reusing ElementData's matching rules.
+pub fn resolve_atomic_number(identifier: &Expr) -> Option<i128> {
+  find_element(identifier).map(|e| e.atomic_number)
+}
+
 /// Look up an element by name (case-insensitive), abbreviation, or atomic number
 fn find_element(identifier: &Expr) -> Option<&'static Element> {
   match identifier {
