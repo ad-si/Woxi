@@ -3188,3 +3188,172 @@ mod arc_length_circular_arc {
     );
   }
 }
+
+// Region[reg] — displays a geometric region as a plot (2D/3D graphics).
+// Unsupported heads and symbolic coordinates leave the call unevaluated.
+mod region {
+  use super::*;
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Region[Disk[]]]").unwrap(), "Region");
+  }
+
+  #[test]
+  fn areas_render_as_2d_graphics() {
+    for reg in [
+      "Disk[]",
+      "Disk[{1, 1}]",
+      "Disk[{0, 0}, 2]",
+      "Disk[{0, 0}, {2, 1}]",
+      "Disk[{0, 0}, 1, {0, Pi/2}]",
+      "Rectangle[]",
+      "Rectangle[{1, 2}]",
+      "Rectangle[{0, 0}, {2, 1}]",
+      "Triangle[]",
+      "Triangle[{{0, 0}, {2, 0}, {1, 2}}]",
+      "Polygon[{{0, 0}, {2, 0}, {1, 2}}]",
+      "RegularPolygon[5]",
+      "RegularPolygon[{1, 1}, 2, 6]",
+      "Ball[{0, 0}, 2]",
+    ] {
+      assert_eq!(
+        interpret(&format!("Region[{reg}]")).unwrap(),
+        "-Graphics-",
+        "Region[{reg}]"
+      );
+    }
+  }
+
+  #[test]
+  fn curves_and_points_render_as_2d_graphics() {
+    for reg in [
+      "Circle[]",
+      "Circle[{0, 0}, 2]",
+      "Circle[{0, 0}, {2, 1}]",
+      "Sphere[{1, 2}, 3]",
+      "Line[{{0, 0}, {1, 1}, {2, 0}}]",
+      "Line[{{{0, 0}, {1, 1}}, {{2, 0}, {3, 1}}}]",
+      "Point[{1, 2}]",
+      "Point[{{0, 0}, {1, 1}}]",
+    ] {
+      assert_eq!(
+        interpret(&format!("Region[{reg}]")).unwrap(),
+        "-Graphics-",
+        "Region[{reg}]"
+      );
+    }
+  }
+
+  #[test]
+  fn solids_render_as_3d_graphics() {
+    for reg in [
+      "Ball[]",
+      "Ball[{0, 0, 0}, 2]",
+      "Sphere[]",
+      "Sphere[{1, 2, 3}, 2]",
+      "Cuboid[]",
+      "Cuboid[{0, 0, 0}, {2, 1, 1}]",
+      "Cylinder[]",
+      "Cylinder[{{0, 0, 0}, {0, 0, 2}}, 1]",
+      "Cone[]",
+      "Line[{{0, 0, 0}, {1, 1, 1}}]",
+      "Point[{1, 2, 3}]",
+      "Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]",
+      "Triangle[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]",
+    ] {
+      assert_eq!(
+        interpret(&format!("Region[{reg}]")).unwrap(),
+        "-Graphics3D-",
+        "Region[{reg}]"
+      );
+    }
+  }
+
+  #[test]
+  fn accepts_graphics_options() {
+    assert_eq!(
+      interpret("Region[Disk[], ImageSize -> 200]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn export_string_svg() {
+    let svg = interpret("ExportString[Region[Disk[]], \"SVG\"]").unwrap();
+    assert!(svg.starts_with("<svg"), "Got: {svg}");
+    assert!(svg.contains("ellipse"), "Got: {svg}");
+  }
+
+  // The SVG must be captured for graphical front ends (playground,
+  // JupyterLite, Woxi Studio all read InterpretResult::graphics).
+  #[test]
+  fn graphics_captured_for_frontends() {
+    let result = woxi::interpret_with_stdout("Region[Disk[]]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.expect("no captured graphics");
+    assert!(svg.starts_with("<svg"), "Got: {svg}");
+  }
+
+  // Symbolic coordinates or non-region arguments stay unevaluated.
+  #[test]
+  fn symbolic_or_invalid_unevaluated() {
+    assert_eq!(
+      interpret("Region[Disk[{a, b}]]").unwrap(),
+      "Region[Disk[{a, b}]]"
+    );
+    assert_eq!(interpret("Region[5]").unwrap(), "Region[5]");
+    assert_eq!(interpret("Region[{1, 2}]").unwrap(), "Region[{1, 2}]");
+    assert_eq!(interpret("Region[foo]").unwrap(), "Region[foo]");
+  }
+
+  // The renderer draws full circles only, so an arc spec must not be
+  // silently drawn as a full circle.
+  #[test]
+  fn circle_arc_unevaluated() {
+    assert_eq!(
+      interpret("Region[Circle[{0, 0}, 1, {0, Pi/2}]]").unwrap(),
+      "Region[Circle[{0, 0}, 1, {0, Pi/2}]]"
+    );
+  }
+
+  // Region functions unwrap the Region display wrapper.
+  #[test]
+  fn region_functions_unwrap_wrapper() {
+    assert_eq!(interpret("RegionMeasure[Region[Disk[]]]").unwrap(), "Pi");
+    assert_eq!(
+      interpret("Area[Region[Rectangle[{0, 0}, {2, 3}]]]").unwrap(),
+      "6"
+    );
+    assert_eq!(interpret("RegionDimension[Region[Disk[]]]").unwrap(), "2");
+    assert_eq!(
+      interpret("RegionEmbeddingDimension[Region[Ball[]]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("RegionMember[Region[Disk[]], {0, 0}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Region[Disk[{1, 2}]]]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Region[Disk[]]]").unwrap(),
+      "{{-1, 1}, {-1, 1}}"
+    );
+    assert_eq!(
+      interpret("RegionDistance[Region[Disk[]], {2, 0}]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("ArcLength[Region[Circle[]]]").unwrap(), "2*Pi");
+    assert_eq!(interpret("Volume[Region[Ball[]]]").unwrap(), "(4*Pi)/3");
+    assert_eq!(
+      interpret(
+        "RegionWithin[Region[Disk[{0, 0}, 2]], Region[Disk[{0, 0}, 1]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}

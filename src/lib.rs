@@ -2501,6 +2501,18 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
       expr
     }
     syntax::Expr::FunctionCall { name, args }
+      if name == "Region" && !args.is_empty() =>
+    {
+      // Region[reg, opts…] displays as a plot of the region (embedding
+      // dimension 2 or 3), like in Wolfram notebooks. Unsupported or
+      // symbolic regions keep the textual Region[…] echo.
+      if let Some(rendered) = functions::region::region_to_graphics(args) {
+        rendered
+      } else {
+        expr
+      }
+    }
+    syntax::Expr::FunctionCall { name, args }
       if name == "MeshRegion" && args.len() == 2 =>
     {
       // Render MeshRegion as SVG (e.g. from VoronoiMesh)

@@ -3309,6 +3309,18 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       }
     }
     Expr::FunctionCall {
+      name: rg_name,
+      args: rg_args,
+    } if rg_name == "Region" && !rg_args.is_empty() => {
+      if let Some(Expr::Graphics { ref svg, .. }) =
+        crate::functions::region::region_to_graphics(rg_args)
+      {
+        svg.clone()
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    Expr::FunctionCall {
       name: mr_name,
       args: mr_args,
     } if mr_name == "MeshRegion" && mr_args.len() == 2 => {

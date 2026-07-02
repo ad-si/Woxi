@@ -948,7 +948,7 @@ PreIncrement,Increments a variable by 1 and returns the new value,✅,stateful,1
 DisplayForm,Wrapper that causes box expressions to be rendered visually,✅,pure,3.0,956
 TransferFunctionModel,Requires external services or GUI infrastructure,🚫,io,8.0,957
 Shortest,Pattern wrapper for shortest (non-greedy) matching in strings,✅,1,6.0,958
-Region,,🚫,,11.1,959
+Region,Represents a geometric region and renders it as a plot (Point/Line/Circle/Disk/Rectangle/Triangle/Polygon/RegularPolygon/MeshRegion in 2D; Ball/Sphere/Cuboid/Cylinder/Cone/Polygon in 3D),✅,pure,11.1,959
 EdgeDetect,Detects edges in an image with Gaussian smoothing and Sobel operator,✅,pure,8.0,962
 JacobiP,Jacobi polynomial,✅,pure,1.0,962
 VectorAngle,Angle between two vectors,✅,pure,6.0,962

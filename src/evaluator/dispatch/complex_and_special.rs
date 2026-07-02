@@ -1969,27 +1969,39 @@ pub fn dispatch_complex_and_special(
     }
     // Area[region] — compute the area of a geometric region
     "Area" if args.len() == 1 => {
-      return Some(compute_area(&args[0]));
+      return Some(compute_area(strip_region_wrapper(&args[0])));
     }
     // Volume[region] — n-dimensional measure of a geometric region
     "Volume" if args.len() == 1 => {
-      return Some(compute_volume(&args[0]));
+      return Some(compute_volume(strip_region_wrapper(&args[0])));
     }
     // RegionMeasure[region] — n-dim measure for explicit regions
     "RegionMeasure" if args.len() == 1 => {
-      return Some(compute_region_measure(&args[0]));
+      return Some(compute_region_measure(strip_region_wrapper(&args[0])));
     }
     "RegionMember" if args.len() == 2 => {
-      return Some(compute_region_member(&args[0], &args[1]));
+      return Some(compute_region_member(
+        strip_region_wrapper(&args[0]),
+        &args[1],
+      ));
     }
     "RegionDistance" if args.len() == 2 => {
-      return Some(compute_region_distance(&args[0], &args[1]));
+      return Some(compute_region_distance(
+        strip_region_wrapper(&args[0]),
+        &args[1],
+      ));
     }
     "RegionNearest" if args.len() == 2 => {
-      return Some(compute_region_nearest(&args[0], &args[1]));
+      return Some(compute_region_nearest(
+        strip_region_wrapper(&args[0]),
+        &args[1],
+      ));
     }
     "SignedRegionDistance" if args.len() == 2 => {
-      return Some(compute_signed_region_distance(&args[0], &args[1]));
+      return Some(compute_signed_region_distance(
+        strip_region_wrapper(&args[0]),
+        &args[1],
+      ));
     }
     "FindShortestCurve" if args.len() == 3 => {
       return Some(compute_find_shortest_curve(&args[0], &args[1], &args[2]));
@@ -2000,25 +2012,27 @@ pub fn dispatch_complex_and_special(
       ));
     }
     "RegionBounds" if args.len() == 1 => {
-      return Some(compute_region_bounds(&args[0]));
+      return Some(compute_region_bounds(strip_region_wrapper(&args[0])));
     }
     "RegionDimension" if args.len() == 1 => {
-      return Some(compute_region_dimension(&args[0]));
+      return Some(compute_region_dimension(strip_region_wrapper(&args[0])));
     }
     "RegionEmbeddingDimension" if args.len() == 1 => {
-      return Some(compute_region_embedding_dimension(&args[0]));
+      return Some(compute_region_embedding_dimension(strip_region_wrapper(
+        &args[0],
+      )));
     }
     "RegionCentroid" if args.len() == 1 => {
-      return Some(compute_region_centroid(&args[0]));
+      return Some(compute_region_centroid(strip_region_wrapper(&args[0])));
     }
     "ArcLength" if args.len() == 1 => {
-      return Some(compute_arc_length(&args[0]));
+      return Some(compute_arc_length(strip_region_wrapper(&args[0])));
     }
     "ArcLength" if args.len() == 2 => {
       return Some(compute_arc_length_curve(&args[0], &args[1], args));
     }
     "Perimeter" if args.len() == 1 => {
-      return Some(compute_perimeter(&args[0]));
+      return Some(compute_perimeter(strip_region_wrapper(&args[0])));
     }
     "Insphere" if args.len() == 1 => {
       return Some(compute_insphere(&args[0]));
@@ -2037,7 +2051,11 @@ pub fn dispatch_complex_and_special(
       return Some(compute_bounding_region(&args[0]));
     }
     "RegionWithin" if args.len() == 2 => {
-      return Some(region_within(&args[0], &args[1], args));
+      return Some(region_within(
+        strip_region_wrapper(&args[0]),
+        strip_region_wrapper(&args[1]),
+        args,
+      ));
     }
     // PlanarAngle[{p1, vertex, p2}] — angle at vertex between rays to p1 and p2
     "PlanarAngle" if args.len() == 1 => {
@@ -6628,6 +6646,19 @@ fn compute_shortest_curve_distance(
 // ─── Area ──────────────────────────────────────────────────────────────
 
 /// Compute the area of a geometric region.
+/// `Region[reg, opts…]` is a display wrapper around a geometric region;
+/// region functions operate on the wrapped region itself.
+fn strip_region_wrapper(expr: &Expr) -> &Expr {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Region"
+    && !args.is_empty()
+  {
+    &args[0]
+  } else {
+    expr
+  }
+}
+
 fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Ellipsoid[c, {r1, ..., rn}]:
   //   2D -> Pi * r1 * r2
