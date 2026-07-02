@@ -2018,7 +2018,7 @@ mod batch_unevaluated_wrappers_2 {
   fn rayleigh_distribution_variance() {
     assert_eq!(
       interpret("Variance[RayleighDistribution[s]]").unwrap(),
-      "s^2*(2 - Pi/2)"
+      "(2 - Pi/2)*s^2"
     );
   }
 

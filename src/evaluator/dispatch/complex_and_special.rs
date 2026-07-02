@@ -3841,15 +3841,19 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         op_str.to_string()
       };
+      // Additive operands of a product need parens so `(-5+n) (-4+n)`
+      // doesn't render as `-5+n -4+n` (issue #135).
+      let box_operand = |e: &Expr| {
+        if matches!(op, crate::syntax::BinaryOperator::Times) {
+          box_with_paren_if_needed(e)
+        } else {
+          expr_to_box_form(e)
+        }
+      };
       Expr::FunctionCall {
         name: "RowBox".to_string(),
         args: vec![Expr::List(
-          vec![
-            expr_to_box_form(left),
-            Expr::String(sep),
-            expr_to_box_form(right),
-          ]
-          .into(),
+          vec![box_operand(left), Expr::String(sep), box_operand(right)].into(),
         )]
         .into(),
       }

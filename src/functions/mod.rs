@@ -1,4 +1,5 @@
 // Functions are organized by categories
+pub mod assessment_ast;
 pub mod association_ast;
 pub mod boolean_ast;
 pub mod calculus_ast;

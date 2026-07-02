@@ -4715,7 +4715,7 @@ mod johnson_distribution {
         r#"Variance[JohnsonDistribution["SU", gamma, delta, mu, sigma]]"#
       )
       .unwrap(),
-      "(sigma^2*(1 + E^delta^(-2)*Cosh[(2*gamma)/delta])*(-1 + E^delta^(-2)))/2"
+      "((-1 + E^delta^(-2))*sigma^2*(1 + E^delta^(-2)*Cosh[(2*gamma)/delta]))/2"
     );
   }
 
@@ -4734,7 +4734,7 @@ mod johnson_distribution {
         r#"Variance[JohnsonDistribution["SL", gamma, delta, mu, sigma]]"#
       )
       .unwrap(),
-      "E^((1 - 2*delta*gamma)/delta^2)*sigma^2*(-1 + E^delta^(-2))"
+      "E^((1 - 2*delta*gamma)/delta^2)*(-1 + E^delta^(-2))*sigma^2"
     );
   }
 

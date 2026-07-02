@@ -702,7 +702,7 @@ mod simplify {
   fn trig_polynomial_cos_dominant() {
     assert_eq!(
       interpret("Simplify[2*Cos[x]^4 - Cos[x]^2*Sin[x]^2]").unwrap(),
-      "((1 + 3*Cos[2*x])*Cos[x]^2)/2"
+      "(Cos[x]^2*(1 + 3*Cos[2*x]))/2"
     );
   }
 
