@@ -1327,6 +1327,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Transpose" => Some((1, 2)),
     "TensorTranspose" => Some((1, 2)),
     "Triangle" => Some((0, 1)),
+    "TriangleCenter" => Some((1, 2)),
     "TriangleWave" => Some((1, 2)),
     "TrigExpand" => Some((1, 1)),
     "TrigReduce" => Some((1, 1)),

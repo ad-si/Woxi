@@ -4641,7 +4641,7 @@ TemplateWith,,,,10.0,4809
 TransitionDirection,,🚫,,9.0,4809
 TransitionDuration,,🚫,,9.0,4809
 TranslationOptions,,,,10.2,4809
-TriangleCenter,,,,12.0,4809
+TriangleCenter,Compute a named center of a triangle (centroid; circumcenter; incenter; orthocenter; nine-point center; symmedian point),✅,pure,12.0,4809
 UniversityData,,🚫,,10.0,4809
 VideoExtractFrames,,🚫,,12.1,4809
 WeierstrassInvariantG2,,,,11.2,4809
