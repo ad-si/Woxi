@@ -1299,6 +1299,24 @@ fn collect_primitives(
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }
+        "PolarCurve" if args.len() >= 2 => {
+          parse_polar_curve(args, style, prims, false);
+        }
+        "FilledPolarCurve" if !args.is_empty() => {
+          // FilledPolarCurve[PolarCurve[r, {t, t0, t1}]] wraps a curve;
+          // also accept the direct FilledPolarCurve[r, {t, t0, t1}] form.
+          if let Expr::FunctionCall {
+            name: inner_name,
+            args: inner_args,
+          } = &args[0]
+            && inner_name == "PolarCurve"
+            && inner_args.len() >= 2
+          {
+            parse_polar_curve(inner_args, style, prims, true);
+          } else if args.len() >= 2 {
+            parse_polar_curve(args, style, prims, true);
+          }
+        }
         "Inset" if !args.is_empty() => {
           // Inset[text, pos] is similar to Text
           parse_text(args, style, prims);
@@ -1732,6 +1750,61 @@ fn parse_bezier(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   {
     prims.push(Primitive::BezierCurvePrim {
       points: pts,
+      style: style.clone(),
+    });
+  }
+}
+
+/// Parse PolarCurve[r, {t, t0, t1}] into a stroked curve (`filled` =
+/// false) or the region it encloses (`filled` = true, used for
+/// FilledPolarCurve). The radius expression is sampled numerically over
+/// the angle range and converted to Cartesian coordinates.
+fn parse_polar_curve(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+  filled: bool,
+) {
+  let Expr::List(iter) = &args[1] else {
+    return;
+  };
+  if iter.len() != 3 {
+    return;
+  }
+  let Expr::Identifier(var) = &iter[0] else {
+    return;
+  };
+  let (Some(t_min), Some(t_max)) =
+    (expr_to_f64(&iter[1]), expr_to_f64(&iter[2]))
+  else {
+    return;
+  };
+  if !t_min.is_finite() || !t_max.is_finite() || t_min == t_max {
+    return;
+  }
+
+  const SAMPLES: usize = 300;
+  let step = (t_max - t_min) / (SAMPLES - 1) as f64;
+  let mut points = Vec::with_capacity(SAMPLES);
+  for i in 0..SAMPLES {
+    let t = t_min + i as f64 * step;
+    if let Some(r) = crate::functions::plot::evaluate_at_point(&args[0], var, t)
+      && r.is_finite()
+    {
+      points.push((r * t.cos(), r * t.sin()));
+    }
+  }
+  if points.len() < 2 {
+    return;
+  }
+  if filled {
+    prims.push(Primitive::PolygonPrim {
+      points,
+      style: style.clone(),
+    });
+  } else {
+    prims.push(Primitive::Line {
+      segments: vec![points],
       style: style.clone(),
     });
   }
