@@ -1365,6 +1365,7 @@
   - [`SectorChart`](plotting/SectorChart.md)
   - [`Show`](plotting/Show.md)
   - [`SphericalPlot3D`](plotting/SphericalPlot3D.md)
+  - [`StackedListPlot`](plotting/StackedListPlot.md)
   - [`StreamDensityPlot`](plotting/StreamDensityPlot.md)
   - [`StreamPlot`](plotting/StreamPlot.md)
   - [`TreeForm`](plotting/TreeForm.md)

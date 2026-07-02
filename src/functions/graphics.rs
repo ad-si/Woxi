@@ -8221,6 +8221,7 @@ fn is_graphics_producing_head(name: &str) -> bool {
       | "ListLogLogPlot"
       | "ListLogLinearPlot"
       | "ListStepPlot"
+      | "StackedListPlot"
       | "ListContourPlot"
       | "ListDensityPlot"
       | "ListPolarPlot"
