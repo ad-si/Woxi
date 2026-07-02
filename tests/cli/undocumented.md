@@ -1,6 +1,6 @@
 # Dispatched functions still without scrut-tested docs
 
-Generated from `src/evaluator/dispatch/`. Total: **287**.
+Generated from `src/evaluator/dispatch/`. Total: **288**.
 
 These are functions that are reachable in Woxi's evaluator but don't yet have a `## \`Fn\``
 section with a working scrut example in `tests/cli/`. Most fall into categories that resist
@@ -256,7 +256,7 @@ syntactic forms (`UpSet`, `Span`), and special functions that stay symbolic for 
 - `Word` — Symbol representing a word in string patterns
 - `Zz`
 
-## Plotting (37)
+## Plotting (38)
 
 - `ArrayPlot` — Plots a matrix as a grid of colored cells
 - `BarChart3D` — 3D bar chart
@@ -284,6 +284,7 @@ syntactic forms (`UpSet`, `Span`), and special functions that stay symbolic for 
 - `NumberLinePlot` — Plots values or intervals on a number line
 - `ParametricPlot3D` — 3D parametric plot
 - `PieChart3D` — 3D pie chart
+- `PlotGrid` — Arranges a matrix of plots in a shared grid
 - `RegionPlot3D` — plots the 3D region where a condition is true
 - `RevolutionPlot3D` — creates a surface of revolution by rotating a curve around the z-axis
 - `SectorChart` — Creates a sector chart from data

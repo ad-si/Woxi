@@ -8622,6 +8622,16 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// PlotGrid[{{p1, p2}, {p3, p4}}, opts...]
+/// Arranges a matrix of plots in a shared grid. Like GraphicsGrid, each
+/// cell is re-rendered at a uniform per-cell width so the plots stay
+/// legible; the resulting composite renders as a single `-Graphics-`
+/// object. PlotGrid is tailored to plots (which already carry their own
+/// frames and axes), so the layout logic is shared with GraphicsGrid.
+pub fn plot_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  graphics_grid_ast(args)
+}
+
 // ── Tabular SVG rendering ────────────────────────────────────────────
 
 /// Convert a Tabular[data, schema] to an SVG table.

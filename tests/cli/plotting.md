@@ -80,6 +80,7 @@ SVG images.
 - [`NumberLinePlot`](plotting/NumberLinePlot.md)
 - [`ParametricPlot3D`](plotting/ParametricPlot3D.md)
 - [`PieChart3D`](plotting/PieChart3D.md)
+- [`PlotGrid`](plotting/PlotGrid.md)
 - [`RegionPlot3D`](plotting/RegionPlot3D.md)
 - [`RevolutionPlot3D`](plotting/RevolutionPlot3D.md)
 - [`SectorChart`](plotting/SectorChart.md)
