@@ -2467,7 +2467,14 @@ mod date_object_panel {
     assert_eq!(result.result, "-Graphics-");
     let svg = result.graphics.expect("no captured graphics");
     assert!(svg.contains("Thu 2 Jul 2026 16:37:38"), "Got: {svg}");
-    assert!(svg.contains("GMT+0"), "Got: {svg}");
+    // The zone label must flow after the date glyphs (tspan), not sit at an
+    // absolutely-positioned x, or it overlaps the seconds when the host's
+    // monospace font is wider than the width estimate.
+    assert!(
+      svg.contains("<tspan dx=\"5\" font-size=\"11\""),
+      "Got: {svg}"
+    );
+    assert!(svg.contains("GMT+0</tspan>"), "Got: {svg}");
   }
 
   #[test]

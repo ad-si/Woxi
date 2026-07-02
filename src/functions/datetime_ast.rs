@@ -3049,7 +3049,9 @@ pub fn date_object_panel_svg(expr: &Expr) -> Option<String> {
 
   let theme = crate::functions::graphics::theme();
   let font_size = 14.0;
-  let char_w = 8.4; // approximate monospace char width at font-size 14
+  // Atkinson Hyperlegible Mono (the monospace face all visual hosts map
+  // `monospace` to) advances 0.632 em per glyph.
+  let char_w = font_size * 0.632;
   let tz_font_size = 11.0;
   let tz_char_w = char_w * tz_font_size / font_size;
   let pad_x = 10.0;
@@ -3099,25 +3101,26 @@ pub fn date_object_panel_svg(expr: &Expr) -> Option<String> {
     ry = iy + 0.5,
     ry2 = iy + 4.0,
   ));
-  // Date text (dates contain no XML-special characters)
+  // Date text (dates contain no XML-special characters). The time-zone
+  // label rides along as a tspan so it always starts right after the date
+  // glyphs, whatever monospace face the host actually resolves.
   let tx = pad_x + icon_w + gap;
+  let tz_span = tz_label
+    .map(|tz| {
+      format!(
+        "<tspan dx=\"5\" font-size=\"{tz_font_size}\" fill=\"{}\">{}</tspan>",
+        theme.text_muted, tz,
+      )
+    })
+    .unwrap_or_default();
   svg.push_str(&format!(
     "<text x=\"{tx:.1}\" y=\"{ty:.1}\" font-family=\"monospace\" \
-     font-size=\"{font_size}\" fill=\"{}\" xml:space=\"preserve\">{}</text>",
+     font-size=\"{font_size}\" fill=\"{}\" xml:space=\"preserve\">{}{}</text>",
     theme.text_primary,
     text,
+    tz_span,
     ty = height / 2.0 + font_size * 0.35,
   ));
-  if let Some(tz) = tz_label {
-    svg.push_str(&format!(
-      "<text x=\"{x:.1}\" y=\"{ty:.1}\" font-family=\"monospace\" \
-       font-size=\"{tz_font_size}\" fill=\"{}\">{}</text>",
-      theme.text_muted,
-      tz,
-      x = tx + text_w + 5.0,
-      ty = height / 2.0 + font_size * 0.35,
-    ));
-  }
   svg.push_str("</svg>");
   Some(svg)
 }
