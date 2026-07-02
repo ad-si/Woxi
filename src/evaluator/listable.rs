@@ -321,10 +321,32 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         None
       }
     }
-    "$UserName" => std::env::var("USER")
-      .or_else(|_| std::env::var("USERNAME"))
-      .ok()
-      .map(Expr::String),
+    "$UserName" => {
+      // Some minimal environments (e.g. containers) don't set USER/USERNAME;
+      // fall back to the account name of the effective uid.
+      #[cfg(unix)]
+      fn os_user_name() -> Option<String> {
+        unsafe {
+          let pw = libc::getpwuid(libc::geteuid());
+          if pw.is_null() {
+            return None;
+          }
+          std::ffi::CStr::from_ptr((*pw).pw_name)
+            .to_str()
+            .ok()
+            .map(str::to_string)
+        }
+      }
+      #[cfg(not(unix))]
+      fn os_user_name() -> Option<String> {
+        None
+      }
+      std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .ok()
+        .or_else(os_user_name)
+        .map(Expr::String)
+    }
     "$VersionNumber" => {
       Some(Expr::String(env!("WOXI_GIT_VERSION").to_string()))
     }
