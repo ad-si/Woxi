@@ -716,6 +716,229 @@ mod integer_reverse {
   }
 }
 
+// All expected values verified against wolframscript 15.0.
+mod alternating_harmonic_number {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("AlternatingHarmonicNumber[5]").unwrap(), "47/60");
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[7]").unwrap(),
+      "319/420"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[10]").unwrap(),
+      "1627/2520"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[100]").unwrap(),
+      "47979622564155786918478609039662898122617/\
+       69720375229712477164533808935312303556800"
+    );
+  }
+
+  #[test]
+  fn edge_cases() {
+    assert_eq!(interpret("AlternatingHarmonicNumber[0]").unwrap(), "0");
+    assert_eq!(interpret("AlternatingHarmonicNumber[1]").unwrap(), "1");
+    // Negative integers and exact non-integers stay unevaluated,
+    // matching wolframscript.
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[-3]").unwrap(),
+      "AlternatingHarmonicNumber[-3]"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[1/2]").unwrap(),
+      "AlternatingHarmonicNumber[1/2]"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[n]").unwrap(),
+      "AlternatingHarmonicNumber[n]"
+    );
+  }
+
+  #[test]
+  fn generalized() {
+    assert_eq!(interpret("AlternatingHarmonicNumber[2, 3]").unwrap(), "7/8");
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[4, 2]").unwrap(),
+      "115/144"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[2, 10]").unwrap(),
+      "1023/1024"
+    );
+    // Order 0 is an alternating sum of ones.
+    assert_eq!(interpret("AlternatingHarmonicNumber[5, 0]").unwrap(), "1");
+    // Negative order: alternating power sum, always an integer.
+    assert_eq!(interpret("AlternatingHarmonicNumber[5, -1]").unwrap(), "3");
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[4, -2]").unwrap(),
+      "-10"
+    );
+  }
+
+  #[test]
+  fn generalized_symbolic_and_rational_order() {
+    // The empty and single-term sums collapse for any order.
+    assert_eq!(interpret("AlternatingHarmonicNumber[0, x]").unwrap(), "0");
+    assert_eq!(interpret("AlternatingHarmonicNumber[1, x]").unwrap(), "1");
+    // Longer sums with a symbolic order stay unevaluated.
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[5, x]").unwrap(),
+      "AlternatingHarmonicNumber[5, x]"
+    );
+    // Rational order gives the exact radical sum in term order.
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[3, 1/2]").unwrap(),
+      "1 - 1/Sqrt[2] + 1/Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn at_infinity() {
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity]").unwrap(),
+      "Log[2]"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 1]").unwrap(),
+      "Log[2]"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 2]").unwrap(),
+      "Pi^2/12"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 3]").unwrap(),
+      "(3*Zeta[3])/4"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 4]").unwrap(),
+      "(7*Pi^4)/720"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 5]").unwrap(),
+      "(15*Zeta[5])/16"
+    );
+    // Dirichlet eta at zero and negative integers.
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 0]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, -1]").unwrap(),
+      "1/4"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, -2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, -3]").unwrap(),
+      "-1/8"
+    );
+    // Symbolic and exact non-integer orders give the eta closed form.
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, s]").unwrap(),
+      "((-2 + 2^s)*Zeta[s])/2^s"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 1/2]").unwrap(),
+      "((-2 + Sqrt[2])*Zeta[1/2])/Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn three_argument_form() {
+    // AlternatingHarmonicNumber[n, r, x] = Sum[(-1)^(k+1) x^k/k^r, {k,1,n}]
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[3, 1, 2]").unwrap(),
+      "8/3"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[5, 2, 3]").unwrap(),
+      "3363/400"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[3, 1, 1/2]").unwrap(),
+      "5/12"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[4, 2, -2]").unwrap(),
+      "-44/9"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[0, 2, 3]").unwrap(),
+      "0"
+    );
+    // Complex and Real x sum through ordinary arithmetic.
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[3, 1, I]").unwrap(),
+      "1/2 + (2*I)/3"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[2, 1, 1.5 + 2.5*I]").unwrap(),
+      "3.5 - 1.25*I"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[3, 1, 2.5]").unwrap(),
+      "4.583333333333333"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[4, 2, 0.3]").unwrap(),
+      "0.27999375"
+    );
+    // Rational order with concrete x.
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[3, 1/2, 2]").unwrap(),
+      "2 - 2*Sqrt[2] + 8/Sqrt[3]"
+    );
+    // Symbolic x keeps the whole form unevaluated — even for n = 0 and 1.
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[5, 2, x]").unwrap(),
+      "AlternatingHarmonicNumber[5, 2, x]"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[1, r, x]").unwrap(),
+      "AlternatingHarmonicNumber[1, r, x]"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[0, r, x]").unwrap(),
+      "AlternatingHarmonicNumber[0, r, x]"
+    );
+  }
+
+  #[test]
+  fn three_argument_infinity_polylog() {
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 1, 1/2]").unwrap(),
+      "Log[3/2]"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 2, 1/3]").unwrap(),
+      "-PolyLog[2, -1/3]"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, 2, 2]").unwrap(),
+      "-PolyLog[2, -2]"
+    );
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[Infinity, s, x]").unwrap(),
+      "-PolyLog[s, -x]"
+    );
+  }
+
+  #[test]
+  fn listable() {
+    assert_eq!(
+      interpret("AlternatingHarmonicNumber[{1, 2, 3}]").unwrap(),
+      "{1, 1/2, 5/6}"
+    );
+  }
+}
+
 // Complex Times/Power results (internally Complex[re, im]) must fold with
 // other summands in Plus. Regression: `(1.5 + 2.5 I) + Complex[2., -3.75]`
 // and Plus over complex-valued products stayed uncombined.

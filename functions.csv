@@ -6201,7 +6201,7 @@ MusicScore,Represents a musical score,✅,pure,15.0,5605
 MusicMeasurements,Compute properties of a music object,🚫,pure,15.0,5606
 MusicTransform,Transform a music object,🚫,pure,15.0,5607
 MusicPlot,Visualize a music object as staff notation,✅,effectful,15.0,5608
-AlternatingHarmonicNumber,Computes sign-alternating reciprocal harmonic sums,,pure,15.0,
+AlternatingHarmonicNumber,Computes sign-alternating reciprocal harmonic sums,✅,pure,15.0,5609
 GeneralizedPolyLog,Computes the Goncharov polylogarithm as an iterated integral,,pure,15.0,
 HarmonicPolyLog,Computes harmonic polylogarithms as Chen iterated integrals,,pure,15.0,
 HyperHarmonicNumber,Computes hyperharmonic numbers via iterated summation,,pure,15.0,

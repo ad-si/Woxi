@@ -1981,6 +1981,246 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// AlternatingHarmonicNumber[n] - Sum[(-1)^(k+1)/k, {k,1,n}].
+/// AlternatingHarmonicNumber[n, r] - Sum[(-1)^(k+1)/k^r, {k,1,n}].
+/// AlternatingHarmonicNumber[n, r, x] - Sum[(-1)^(k+1) x^k/k^r, {k,1,n}].
+///
+/// Only exact arguments are evaluated: wolframscript routes Real n/r through
+/// its internal Hurwitz-zeta closed form (and an analytic continuation for
+/// non-integer n), whose float rounding differs from direct summation in the
+/// last digits, so Real n/r stay unevaluated here.
+pub fn alternating_harmonic_number_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = Expr::FunctionCall {
+    name: "AlternatingHarmonicNumber".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  // Exact negation of the order r, used to build k^(-r) terms.
+  fn negate_exact(r: &Expr) -> Option<Expr> {
+    match r {
+      Expr::Integer(p) => Some(Expr::Integer(-p)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        let p = expr_to_bigint(&args[0])?;
+        Some(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![bigint_to_expr(-p), args[1].clone()].into(),
+        })
+      }
+      _ => None,
+    }
+  }
+
+  // Sum[(-1)^(k+1) x^k / k^r] built term by term; Woxi's Plus fold keeps
+  // wolframscript's term order (e.g. 1 - 1/Sqrt[2] + 1/Sqrt[3]) and handles
+  // exact, Real, and complex x uniformly.
+  fn build_alternating_sum(n: i128, neg_r: &Expr, x: Option<&Expr>) -> Expr {
+    let mut terms = Vec::new();
+    for k in 1..=n {
+      let k_pow = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(Expr::Integer(k)),
+        right: Box::new(neg_r.clone()),
+      };
+      let mut factors = Vec::new();
+      if k % 2 == 0 {
+        factors.push(Expr::Integer(-1));
+      }
+      if let Some(x) = x {
+        factors.push(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(x.clone()),
+          right: Box::new(Expr::Integer(k)),
+        });
+      }
+      factors.push(k_pow);
+      terms.push(if factors.len() == 1 {
+        factors.pop().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors.into(),
+        }
+      });
+    }
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    }
+  }
+
+  let is_exact_order = |r: &Expr| {
+    expr_to_i128(r).is_some()
+      || matches!(r, Expr::FunctionCall { name, args }
+           if name == "Rational" && args.len() == 2)
+  };
+
+  // n = Infinity: closed forms via DirichletEta / PolyLog.
+  let is_infinity = matches!(&args[0],
+    Expr::Identifier(n) | Expr::Constant(n) if n == "Infinity");
+  if is_infinity {
+    let log2 = Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![Expr::Integer(2)].into(),
+    };
+    match args.len() {
+      1 => return crate::evaluator::evaluate_expr_to_expr(&log2),
+      2 => {
+        let r = &args[1];
+        if matches!(r, Expr::Real(_) | Expr::BigFloat(_, _)) {
+          return Ok(unevaluated);
+        }
+        if expr_to_i128(r) == Some(1) {
+          return crate::evaluator::evaluate_expr_to_expr(&log2);
+        }
+        // Eta[r] in wolframscript's form: ((-2 + 2^r) Zeta[r])/2^r
+        let two_pow_r = |exp: Expr| Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(Expr::Integer(2)),
+          right: Box::new(exp),
+        };
+        let eta = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![Expr::Integer(-2), two_pow_r(r.clone())].into(),
+            },
+            Expr::FunctionCall {
+              name: "Zeta".to_string(),
+              args: vec![r.clone()].into(),
+            },
+            two_pow_r(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), r.clone()].into(),
+            }),
+          ]
+          .into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&eta);
+      }
+      _ => {
+        // Sum[(-1)^(k+1) x^k/k^r, {k,1,Infinity}] = -PolyLog[r, -x]
+        let poly_log = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(-1),
+            Expr::FunctionCall {
+              name: "PolyLog".to_string(),
+              args: vec![
+                args[1].clone(),
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![Expr::Integer(-1), args[2].clone()].into(),
+                },
+              ]
+              .into(),
+            },
+          ]
+          .into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&poly_log);
+      }
+    }
+  }
+
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n,
+    // Negative integers and all non-exact-integer arguments stay symbolic
+    // (wolframscript leaves AlternatingHarmonicNumber[-3] unevaluated too).
+    _ => return Ok(unevaluated),
+  };
+
+  if args.len() <= 2 {
+    // The empty and single-term sums collapse for ANY order, even symbolic:
+    // wolframscript gives AlternatingHarmonicNumber[0, x] == 0 and [1, x] == 1.
+    if n == 0 {
+      return Ok(Expr::Integer(0));
+    }
+    if n == 1 {
+      return Ok(Expr::Integer(1));
+    }
+
+    let r_expr = if args.len() == 2 {
+      args[1].clone()
+    } else {
+      Expr::Integer(1)
+    };
+
+    if let Some(r) = expr_to_i128(&r_expr) {
+      // Exact rational alternating sum, mirroring harmonic_number_ast.
+      let mut num = BigInt::from(0);
+      let mut den = BigInt::from(1);
+      if r >= 0 {
+        for k in 1..=n {
+          let k_pow = num_traits::pow::pow(BigInt::from(k), r as usize);
+          let signed = if k % 2 == 0 {
+            -den.clone()
+          } else {
+            den.clone()
+          };
+          num = &num * &k_pow + signed;
+          den = &den * &k_pow;
+          let g = bigint_gcd(num.clone(), den.clone());
+          use num_traits::One;
+          if g > BigInt::one() {
+            num /= &g;
+            den /= &g;
+          }
+        }
+      } else {
+        // Negative order: alternating power sum, always an integer.
+        for k in 1..=n {
+          let k_pow =
+            num_traits::pow::pow(BigInt::from(k), r.unsigned_abs() as usize);
+          if k % 2 == 0 {
+            num -= k_pow;
+          } else {
+            num += k_pow;
+          }
+        }
+      }
+      return if den == BigInt::from(1) {
+        Ok(bigint_to_expr(num))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![bigint_to_expr(num), bigint_to_expr(den)].into(),
+        })
+      };
+    }
+
+    // Rational order: term-built symbolic sum (1 - 1/Sqrt[2] + 1/Sqrt[3]).
+    if let Some(neg_r) = negate_exact(&r_expr) {
+      let sum = build_alternating_sum(n, &neg_r, None);
+      return crate::evaluator::evaluate_expr_to_expr(&sum);
+    }
+    return Ok(unevaluated);
+  }
+
+  // Three arguments: wolframscript only evaluates for concrete numeric x
+  // (AlternatingHarmonicNumber[1, r, x] stays unevaluated).
+  let r_expr = &args[1];
+  let x = &args[2];
+  if !is_exact_order(r_expr)
+    || !crate::functions::predicate_ast::is_numeric_q_pub(x)
+  {
+    return Ok(unevaluated);
+  }
+  if n == 0 {
+    return Ok(Expr::Integer(0));
+  }
+  let neg_r = match negate_exact(r_expr) {
+    Some(neg_r) => neg_r,
+    None => return Ok(unevaluated),
+  };
+  let sum = build_alternating_sum(n, &neg_r, Some(x));
+  crate::evaluator::evaluate_expr_to_expr(&sum)
+}
+
 /// Prime[n] - Returns the nth prime number
 pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
