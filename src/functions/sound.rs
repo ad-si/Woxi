@@ -76,7 +76,10 @@ fn sample_play(play: &Expr) -> Option<Vec<f64>> {
   let mut samples = Vec::with_capacity(count);
   let mut any_finite = false;
   for i in 0..count {
-    let t = tmin + i as f64 / SAMPLE_RATE as f64;
+    // wolframscript samples at tmin + (i+1)/rate — the first sample is one
+    // step past tmin and the last lands exactly on tmax (verified against
+    // its WAV export byte stream).
+    let t = tmin + (i + 1) as f64 / SAMPLE_RATE as f64;
     // Outside the defined range or where the amplitude is non-numeric, emit
     // silence rather than failing the whole segment.
     let amp = evaluate_at_point(body, var, t).unwrap_or(0.0);
@@ -136,6 +139,22 @@ fn encode_wav(samples: &[i16], channels: u16, sample_rate: u32) -> Vec<u8> {
   buf
 }
 
+/// Quantize a [-1, 1] amplitude to 16-bit PCM the way wolframscript does:
+/// positive amplitudes scale by 32767, negative by 32768 (the asymmetric
+/// int16 range), rounding half up. Verified byte-for-byte against
+/// wolframscript's WAV export.
+fn quantize_i16(v: f64) -> i16 {
+  let scale = if v >= 0.0 { 32767.0 } else { 32768.0 };
+  (v * scale + 0.5).floor() as i16
+}
+
+/// Quantize [-1, 1] amplitude samples to 16-bit PCM and encode them as a
+/// mono WAV byte stream.
+fn samples_to_mono_wav(samples: &[f64], rate: u32) -> Vec<u8> {
+  let pcm: Vec<i16> = samples.iter().map(|s| quantize_i16(*s)).collect();
+  encode_wav(&pcm, 1, rate)
+}
+
 /// Render a `Sound` expression (containing one or more `Play` segments) into a
 /// base64-encoded WAV byte stream. Returns `None` when the sound contains no
 /// samplable `Play` segment.
@@ -143,12 +162,27 @@ pub fn sound_to_wav_base64(sound_expr: &Expr) -> Option<String> {
   // Concatenate the segments in order (matching how Sound plays a list of
   // sounds sequentially).
   let (samples, rate) = sound_to_samples(sound_expr)?;
-  let pcm: Vec<i16> = samples
-    .iter()
-    .map(|s| (s * i16::MAX as f64).round() as i16)
-    .collect();
-  let wav = encode_wav(&pcm, 1, rate);
+  let wav = samples_to_mono_wav(&samples, rate);
   Some(base64::engine::general_purpose::STANDARD.encode(&wav))
+}
+
+/// Render a playable expression into WAV bytes for `Export[…, "WAV"]`:
+/// `Sound`/`Play` synthesis is sampled and encoded (16-bit mono PCM at
+/// 8000 Hz, matching wolframscript); `Audio` objects whose bytes are
+/// already WAV (built from sample data, or backed by a .wav file) pass
+/// them through. Returns `None` for expressions that cannot be turned
+/// into WAV without an audio transcoder (e.g. a flac-backed `Audio`).
+pub fn expr_to_wav_bytes(expr: &Expr) -> Option<Vec<u8>> {
+  if let Some((samples, rate)) = sound_to_samples(expr) {
+    return Some(samples_to_mono_wav(&samples, rate));
+  }
+  audio_to_output(expr)
+    .filter(|a| a.mime == "audio/wav" && !a.base64.is_empty())
+    .and_then(|a| {
+      base64::engine::general_purpose::STANDARD
+        .decode(a.base64)
+        .ok()
+    })
 }
 
 /// Default sample rate wolframscript assumes for `Audio[{samples…}]` built
@@ -306,7 +340,7 @@ pub fn audio_to_output(expr: &Expr) -> Option<AudioOutput> {
   let mut pcm = Vec::with_capacity(frames * channels.len());
   for i in 0..frames {
     for ch in &channels {
-      pcm.push((ch[i] * i16::MAX as f64).round() as i16);
+      pcm.push(quantize_i16(ch[i]));
     }
   }
   let wav = encode_wav(&pcm, channels.len() as u16, rate);

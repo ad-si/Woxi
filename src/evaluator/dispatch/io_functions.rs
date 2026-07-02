@@ -663,6 +663,19 @@ pub fn dispatch_io_functions(
           Err(e) => return Some(Err(e)),
         }
       }
+      // WAV export of a playable sound (Play[…] / Sound[…] / Audio[…]).
+      if matches!(fmt.as_str(), "WAV" | "WAVE")
+        && let Some(bytes) =
+          crate::functions::sound::expr_to_wav_bytes(&args[1])
+      {
+        if let Err(e) = std::fs::write(&filename, &bytes).map_err(|e| {
+          InterpreterError::EvaluationError(format!("Export: {e}"))
+        }) {
+          return Some(Err(e));
+        }
+        return Some(Ok(Expr::String(filename)));
+      }
+
       // MIDI export of a computational-music object (MusicScore / MusicVoice / …).
       if (fmt == "MID" || fmt == "MIDI")
         && let Some(bytes) =

@@ -4146,6 +4146,87 @@ mod high_level_functions_tests {
     }
   }
 
+  mod wav_export_tests {
+    use super::*;
+
+    /// Assert the file at `tmp` is a mono 16-bit PCM WAV at the given
+    /// sample rate and return the number of sample frames.
+    fn assert_wav(tmp: &std::path::Path, expected_rate: u32) -> u32 {
+      let bytes = std::fs::read(tmp).unwrap();
+      assert!(bytes.starts_with(b"RIFF"), "missing RIFF header");
+      assert_eq!(&bytes[8..12], b"WAVE", "missing WAVE tag");
+      let rate = u32::from_le_bytes(bytes[24..28].try_into().unwrap());
+      assert_eq!(rate, expected_rate, "unexpected sample rate");
+      let data_len = u32::from_le_bytes(bytes[40..44].try_into().unwrap());
+      assert_eq!(bytes.len(), 44 + data_len as usize, "truncated data chunk");
+      data_len / 2
+    }
+
+    #[test]
+    fn test_export_wav_play() {
+      // wolframscript writes 16-bit mono PCM at Play's 8000 Hz default.
+      let tmp = std::env::temp_dir().join("woxi_test_play.wav");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(
+        "Export[\"{path}\", Play[Sin[440 2 Pi t], {{t, 0, 1}}]]"
+      ))
+      .unwrap();
+      assert_eq!(result, path);
+      let frames = assert_wav(&tmp, 8000);
+      assert_eq!(frames, 8000, "1 second at 8000 Hz");
+      // First PCM samples, byte-verified against wolframscript's export
+      // (samples start at t = 1/8000, positive amplitudes scale by 32767).
+      let bytes = std::fs::read(&tmp).unwrap();
+      assert_eq!(&bytes[44..48], &[0x5b, 0x2b, 0x96, 0x51]);
+      std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_export_wav_sound() {
+      let tmp = std::env::temp_dir().join("woxi_test_sound.wav");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(
+        "Export[\"{path}\", Sound[{{Play[Sin[220 2 Pi t], {{t, 0, 1}}], \
+         Play[Sin[330 2 Pi t], {{t, 0, 1}}]}}]]"
+      ))
+      .unwrap();
+      assert_eq!(result, path);
+      // Two 1-second segments are concatenated.
+      let frames = assert_wav(&tmp, 8000);
+      assert_eq!(frames, 16000, "2 seconds at 8000 Hz");
+      std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_export_wav_audio_samples() {
+      let tmp = std::env::temp_dir().join("woxi_test_audio_samples.wav");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(
+        "Export[\"{path}\", Audio[Table[Sin[2 Pi 440 n/8000], {{n, 0, 7999}}], \
+         SampleRate -> 8000]]"
+      ))
+      .unwrap();
+      assert_eq!(result, path);
+      let frames = assert_wav(&tmp, 8000);
+      assert_eq!(frames, 8000, "1 second at 8000 Hz");
+      std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_export_wav_explicit_format() {
+      // The format can be given explicitly instead of via the extension.
+      let tmp = std::env::temp_dir().join("woxi_test_explicit_wav.bin");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(
+        "Export[\"{path}\", Play[Sin[440 2 Pi t], {{t, 0, 1}}], \"WAV\"]"
+      ))
+      .unwrap();
+      assert_eq!(result, path);
+      assert_wav(&tmp, 8000);
+      std::fs::remove_file(&tmp).ok();
+    }
+  }
+
   mod pause_tests {
     use super::*;
     use std::time::Instant;
