@@ -202,13 +202,15 @@ fn run_notebook_notebook_directory_resolves_to_file_dir() {
   let _ = std::fs::remove_file(&path);
   assert!(ok, "woxi run notebook failed: stderr={}", stderr);
   // The canonical temp dir, with a trailing separator (WL convention).
-  let expected = format!("{}/", dir.to_string_lossy().trim_end_matches('/'));
+  let sep = std::path::MAIN_SEPARATOR;
+  let expected =
+    format!("{}{}", dir.to_string_lossy().trim_end_matches(sep), sep);
   assert!(
     !stderr.contains("nosv"),
     "NotebookDirectory emitted nosv message: stderr={}",
     stderr
   );
-  assert_eq!(stdout.trim(), expected.trim_end_matches('/'));
+  assert_eq!(stdout.trim(), expected.trim_end_matches(sep));
 }
 
 /// Pipe a REPL session's input via stdin and capture (stdout, stderr, ok).
