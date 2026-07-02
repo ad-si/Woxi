@@ -8243,6 +8243,7 @@ fn is_graphics_producing_head(name: &str) -> bool {
       | "DateHistogram"
       | "BubbleChart"
       | "BubbleChart3D"
+      | "BubbleHistogram"
       | "BoxWhiskerChart"
       | "DistributionChart"
       | "SectorChart"

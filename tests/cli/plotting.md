@@ -39,6 +39,7 @@ SVG images.
 - [`Histogram`](plotting/Histogram.md)
 - [`PieChart`](plotting/PieChart.md)
 - [`BubbleChart`](plotting/BubbleChart.md)
+- [`BubbleHistogram`](plotting/BubbleHistogram.md)
 
 ## Raw graphics
 

@@ -2025,6 +2025,168 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
+/// BubbleHistogram[{{x1,y1}, {x2,y2}, ...}] bins the two-dimensional data
+/// into a rectangular grid and draws a bubble at the center of every
+/// non-empty bin, its size encoding the number of points that fell in it.
+///
+/// An optional second argument controls the binning, mirroring `Histogram`:
+///   - `n`    — use `n` equal-width bins along each axis
+///   - `{dx}` — use bins of width `dx` along each axis
+/// When omitted, the bin count is chosen per axis with Sturges' rule.
+pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "BubbleHistogram: first argument must be a list of {x, y} pairs"
+          .into(),
+      ));
+    }
+  };
+
+  // Parse the {x, y} pairs, silently skipping entries that aren't numeric
+  // pairs (mirrors how the other charts treat unparseable points).
+  let mut points: Vec<(f64, f64)> = Vec::with_capacity(items.len());
+  for item in items {
+    if let Expr::List(inner) = item
+      && inner.len() >= 2
+    {
+      let x = try_eval_to_f64(
+        &evaluate_expr_to_expr(&inner[0]).unwrap_or(inner[0].clone()),
+      );
+      let y = try_eval_to_f64(
+        &evaluate_expr_to_expr(&inner[1]).unwrap_or(inner[1].clone()),
+      );
+      if let (Some(x), Some(y)) = (x, y) {
+        points.push((x, y));
+      }
+    }
+  }
+
+  if points.is_empty() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  // Optional binning specification. `None` requests per-axis auto-binning.
+  enum BinReq {
+    Count(usize),
+    Width(f64),
+  }
+  let bin_req = if args.len() > 1 {
+    let evaluated = evaluate_expr_to_expr(&args[1])?;
+    match &evaluated {
+      Expr::List(inner) if inner.len() == 1 => try_eval_to_f64(&inner[0])
+        .filter(|dx| *dx > 0.0)
+        .map(BinReq::Width),
+      other => try_eval_to_f64(other)
+        .map(|n| n as usize)
+        .filter(|n| *n > 0)
+        .map(BinReq::Count),
+    }
+  } else {
+    None
+  };
+
+  // Determine bin edges for one axis from its values and the binning request.
+  // Returns `(d_min, bin_width, num_bins)`.
+  let axis_bins = |vals: &[f64]| -> (f64, f64, usize) {
+    let d_min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+    let d_max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let range = d_max - d_min;
+    match &bin_req {
+      Some(BinReq::Width(dx)) => {
+        let num_bins = if range.abs() < f64::EPSILON {
+          1
+        } else {
+          (range / dx).ceil() as usize
+        }
+        .max(1);
+        (d_min, *dx, num_bins)
+      }
+      Some(BinReq::Count(n)) => {
+        let bw = if range.abs() < f64::EPSILON {
+          1.0
+        } else {
+          range / *n as f64
+        };
+        (d_min, bw, *n)
+      }
+      None => {
+        let num_bins =
+          ((1.0 + (vals.len() as f64).log2()).ceil() as usize).max(1);
+        let bw = if range.abs() < f64::EPSILON {
+          1.0
+        } else {
+          range / num_bins as f64
+        };
+        (d_min, bw, num_bins)
+      }
+    }
+  };
+
+  let xs: Vec<f64> = points.iter().map(|p| p.0).collect();
+  let ys: Vec<f64> = points.iter().map(|p| p.1).collect();
+  let (x_min, x_bw, x_bins) = axis_bins(&xs);
+  let (y_min, y_bw, y_bins) = axis_bins(&ys);
+
+  // Accumulate counts per (ix, iy) bin.
+  let mut counts = vec![0usize; x_bins * y_bins];
+  for &(x, y) in &points {
+    let ix = (((x - x_min) / x_bw).floor() as usize).min(x_bins - 1);
+    let iy = (((y - y_min) / y_bw).floor() as usize).min(y_bins - 1);
+    counts[iy * x_bins + ix] += 1;
+  }
+
+  // One bubble per non-empty bin, positioned at the bin center. The count
+  // becomes the bubble's size coordinate, exactly like `BubbleChart`.
+  let mut bubbles: Vec<(f64, f64, f64)> = Vec::new();
+  for iy in 0..y_bins {
+    for ix in 0..x_bins {
+      let c = counts[iy * x_bins + ix];
+      if c > 0 {
+        let cx = x_min + (ix as f64 + 0.5) * x_bw;
+        let cy = y_min + (iy as f64 + 0.5) * y_bw;
+        bubbles.push((cx, cy, c as f64));
+      }
+    }
+  }
+
+  let mut opts = parse_chart_options(args);
+  // Match BubbleChart's square plot area unless the caller set ImageSize.
+  let user_set_image_size = args[1..].iter().any(|opt| {
+    matches!(
+      opt,
+      Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
+    )
+  });
+  if !user_set_image_size {
+    opts.svg_height = opts.svg_width.saturating_sub(25);
+  }
+
+  let groups = vec![bubbles];
+  let svg = crate::functions::plot::generate_bubble_chart_svg(
+    &groups,
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
+    opts.plot_label.as_ref(),
+    opts
+      .axes_label
+      .as_ref()
+      .map(|(x, y)| (x.as_str(), y.as_str())),
+    &opts.chart_style,
+    &opts.chart_legends,
+    &[],
+    opts.plot_range_x,
+    opts.plot_range_y,
+  )?;
+  Ok(crate::graphics_result(svg))
+}
+
 /// SectorChart[{{angle, radius}, ...}] - like PieChart but with variable radius
 pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;

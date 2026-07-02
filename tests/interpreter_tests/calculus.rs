@@ -8599,11 +8599,11 @@ mod exponential_generating_function {
   #[test]
   fn egf_sin_n() {
     clear_state();
-    // EGF[Sin[n], n, x] = (Cosh[x*Cos[1]] + Sinh[x*Cos[1]]) * Sin[x*Sin[1]]
+    // EGF[Sin[n], n, x] = Sin[x*Sin[1]] * (Cosh[x*Cos[1]] + Sinh[x*Cos[1]])
     // which equals E^(x*Cos[1]) * Sin[x*Sin[1]]
     assert_eq!(
       interpret("ExponentialGeneratingFunction[Sin[n], n, x]").unwrap(),
-      "(Cosh[x*Cos[1]] + Sinh[x*Cos[1]])*Sin[x*Sin[1]]"
+      "Sin[x*Sin[1]]*(Cosh[x*Cos[1]] + Sinh[x*Cos[1]])"
     );
   }
 

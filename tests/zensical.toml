@@ -1415,6 +1415,7 @@ nav = [
     { "BarChart3D" = "plotting/BarChart3D.md" },
     { "BoxWhiskerChart" = "plotting/BoxWhiskerChart.md" },
     { "BubbleChart" = "plotting/BubbleChart.md" },
+    { "BubbleHistogram" = "plotting/BubbleHistogram.md" },
     { "ComplexPlot" = "plotting/ComplexPlot.md" },
     { "ContourPlot" = "plotting/ContourPlot.md" },
     { "DateListPlot" = "plotting/DateListPlot.md" },

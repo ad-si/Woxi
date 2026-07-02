@@ -501,6 +501,9 @@ pub fn dispatch_plotting(
     "BubbleChart" if !args.is_empty() => {
       Some(crate::functions::chart::bubble_chart_ast(args))
     }
+    "BubbleHistogram" if !args.is_empty() => {
+      Some(crate::functions::chart::bubble_histogram_ast(args))
+    }
     "SectorChart" if !args.is_empty() => {
       Some(crate::functions::chart::sector_chart_ast(args))
     }
