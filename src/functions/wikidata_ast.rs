@@ -54,36 +54,38 @@ pub fn wikidata_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   };
 
-  #[cfg(target_arch = "wasm32")]
-  {
-    let _ = (items, props);
-    Err(InterpreterError::EvaluationError(
-      "WikidataData: network access is not available in the browser".into(),
-    ))
-  }
-  #[cfg(not(target_arch = "wasm32"))]
-  {
-    let result_for_item = |item: &str| -> Result<Expr, InterpreterError> {
-      match &props {
-        Spec::Single(p) => property_values(item, p),
-        Spec::Multiple(ps) => Ok(Expr::List(
-          ps.iter()
-            .map(|p| property_values(item, p))
-            .collect::<Result<Vec<_>, _>>()?
-            .into(),
-        )),
-      }
-    };
-    match &items {
-      Spec::Single(item) => result_for_item(item),
-      Spec::Multiple(is) => Ok(Expr::List(
-        is.iter()
-          .map(|i| result_for_item(i))
+  let result_for_item = |item: &str| -> Result<Expr, InterpreterError> {
+    match &props {
+      Spec::Single(p) => property_values(item, p),
+      Spec::Multiple(ps) => Ok(Expr::List(
+        ps.iter()
+          .map(|p| property_values(item, p))
           .collect::<Result<Vec<_>, _>>()?
           .into(),
       )),
     }
+  };
+  match &items {
+    Spec::Single(item) => result_for_item(item),
+    Spec::Multiple(is) => Ok(Expr::List(
+      is.iter()
+        .map(|i| result_for_item(i))
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    )),
   }
+}
+
+/// In the browser there is no `curl` / network access: every lookup fails
+/// with the same diagnostic.
+#[cfg(target_arch = "wasm32")]
+fn property_values(
+  _item: &str,
+  _property: &str,
+) -> Result<Expr, InterpreterError> {
+  Err(InterpreterError::EvaluationError(
+    "WikidataData: network access is not available in the browser".into(),
+  ))
 }
 
 /// Resolve an item/property specification to Wikidata identifiers of the
