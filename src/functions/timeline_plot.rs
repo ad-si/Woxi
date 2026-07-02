@@ -140,14 +140,22 @@ fn parse_one_event(item: &Expr) -> Option<TimelineEvent> {
 fn event_from_date(expr: &Expr) -> Option<TimelineEvent> {
   let evaluated = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
 
-  // DateInterval[{d1, d2}] — an explicit time span.
+  // DateInterval[{d1, d2}] — an explicit time span. Also matches the
+  // canonical form DateInterval[{{d1, d2}}, granularity, calendar, timezone]
+  // that evaluating DateInterval produces.
   if let Expr::FunctionCall { name, args } = &evaluated
     && name == "DateInterval"
-    && args.len() == 1
-    && let Expr::List(pair) = &args[0]
-    && pair.len() == 2
-    && let (Some(lo), Some(hi)) =
-      (date_to_absolute_time(&pair[0]), date_to_absolute_time(&pair[1]))
+    && !args.is_empty()
+    && let Expr::List(spec) = &args[0]
+    && let Some(pair) = match spec.as_slice() {
+      [d1, d2] => Some([d1, d2]),
+      [Expr::List(span)] if span.len() == 2 => Some([&span[0], &span[1]]),
+      _ => None,
+    }
+    && let (Some(lo), Some(hi)) = (
+      date_to_absolute_time(pair[0]),
+      date_to_absolute_time(pair[1]),
+    )
   {
     let (lo, hi) = if lo <= hi { (lo, hi) } else { (hi, lo) };
     return Some(TimelineEvent {
@@ -316,30 +324,29 @@ fn render_timeline_svg(
     .max(20.0 * sf);
   let plot_width = (render_width as f64 - margin_left - margin_right).max(1.0);
 
-  let x_to_px =
-    |x: f64| -> f64 { margin_left + (x - x_min) / (x_max - x_min) * plot_width };
+  let x_to_px = |x: f64| -> f64 {
+    margin_left + (x - x_min) / (x_max - x_min) * plot_width
+  };
 
   // Pack events into rows.
   let rows = pack_rows(
     events,
-    |x| x_to_px(x),
+    x_to_px,
     |lbl| est_text_width(lbl, font_size),
     marker_gap,
     row_gap,
   );
   let num_rows = rows.iter().copied().max().map(|m| m + 1).unwrap_or(1);
 
-  let svg_height = PADDING_TOP
-    + num_rows as u32 * ROW_HEIGHT
-    + AXIS_GAP
-    + PADDING_BOTTOM;
+  let svg_height =
+    PADDING_TOP + num_rows as u32 * ROW_HEIGHT + AXIS_GAP + PADDING_BOTTOM;
   let render_height = svg_height * RESOLUTION_SCALE;
 
   let top = PADDING_TOP as f64 * sf;
-  let axis_y = top + num_rows as f64 * ROW_HEIGHT as f64 * sf + AXIS_GAP as f64 * sf;
-  let row_y = |row: usize| -> f64 {
-    top + (row as f64 + 0.5) * ROW_HEIGHT as f64 * sf
-  };
+  let axis_y =
+    top + num_rows as f64 * ROW_HEIGHT as f64 * sf + AXIS_GAP as f64 * sf;
+  let row_y =
+    |row: usize| -> f64 { top + (row as f64 + 0.5) * ROW_HEIGHT as f64 * sf };
 
   let mut body = String::new();
 

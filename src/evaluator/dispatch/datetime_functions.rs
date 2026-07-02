@@ -60,6 +60,14 @@ pub fn dispatch_datetime_functions(
     "DayRound" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::datetime_ast::day_round_ast(args));
     }
+    // The canonical form DateInterval[{{d1, d2}, ...}, granularity, calendar,
+    // timezone] evaluates to itself, like wolframscript.
+    "DateInterval" if args.len() == 4 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "DateInterval".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // DateInterval[{date1, date2}] — create a date interval
     "DateInterval" if args.len() == 1 => {
       if let Expr::List(dates) = &args[0]
