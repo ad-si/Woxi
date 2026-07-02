@@ -45,6 +45,8 @@ SVG images.
 
 - [`Graphics`](plotting/Graphics.md)
 - [`Graphics3D`](plotting/Graphics3D.md)
+- [`PolarCurve`](plotting/PolarCurve.md)
+- [`FilledPolarCurve`](plotting/FilledPolarCurve.md)
 - [`Show`](plotting/Show.md)
 
 ## Additional Functions
