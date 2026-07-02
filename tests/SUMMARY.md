@@ -794,6 +794,7 @@
       - [`ToSphericalCoordinates`](math/utility/ToSphericalCoordinates.md)
       - [`TraditionalForm`](math/utility/TraditionalForm.md)
       - [`Triangle`](math/utility/Triangle.md)
+      - [`TriangleCenter`](math/utility/TriangleCenter.md)
       - [`TriangleWave`](math/utility/TriangleWave.md)
       - [`TrimmedMean`](math/utility/TrimmedMean.md)
       - [`TrimmedVariance`](math/utility/TrimmedVariance.md)

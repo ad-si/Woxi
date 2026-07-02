@@ -1018,6 +1018,201 @@ mod triangle {
   }
 }
 
+mod triangle_center {
+  use super::*;
+
+  // TriangleCenter[tri] defaults to the centroid.
+  #[test]
+  fn default_is_centroid() {
+    assert_eq!(
+      interpret("TriangleCenter[Triangle[{{0, 0}, {4, 0}, {0, 3}}]]").unwrap(),
+      "{4/3, 1}"
+    );
+    assert_eq!(
+      interpret("TriangleCenter[Triangle[]]").unwrap(),
+      "{1/3, 1/3}"
+    );
+  }
+
+  #[test]
+  fn centroid() {
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{0, 0}, {4, 0}, {0, 3}}], \"Centroid\"]"
+      )
+      .unwrap(),
+      "{4/3, 1}"
+    );
+    // Symbolic vertices: the mean of the coordinates.
+    assert_eq!(
+      interpret("TriangleCenter[Triangle[{{a, b}, {c, d}, {e, f}}]]").unwrap(),
+      "{(a + c + e)/3, (b + d + f)/3}"
+    );
+  }
+
+  #[test]
+  fn incenter() {
+    // 3-4-5 right triangle: inradius 1, incenter {1, 1}.
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{0, 0}, {4, 0}, {0, 3}}], \"Incenter\"]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+    // Matches the center of Insphere for the unit right triangle.
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{0, 0}, {1, 0}, {0, 1}}], \"Incenter\"]"
+      )
+      .unwrap(),
+      "{(2 + Sqrt[2])^(-1), (2 + Sqrt[2])^(-1)}"
+    );
+  }
+
+  #[test]
+  fn circumcenter() {
+    // Right triangle: circumcenter is the hypotenuse midpoint.
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{0, 0}, {4, 0}, {0, 3}}], \"Circumcenter\"]"
+      )
+      .unwrap(),
+      "{2, 3/2}"
+    );
+    // Scalene triangle with a rational circumcenter; matches the center of
+    // Circumsphere[{{-1, 0}, {5, 1}, {2, 4}}].
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{-1, 0}, {5, 1}, {2, 4}}], \"Circumcenter\"]"
+      )
+      .unwrap(),
+      "{27/14, 13/14}"
+    );
+  }
+
+  #[test]
+  fn orthocenter() {
+    // Right triangle: orthocenter is the right-angle vertex.
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{0, 0}, {4, 0}, {0, 3}}], \"Orthocenter\"]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{-1, 0}, {5, 1}, {2, 4}}], \"Orthocenter\"]"
+      )
+      .unwrap(),
+      "{15/7, 22/7}"
+    );
+  }
+
+  #[test]
+  fn nine_point_center() {
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{0, 0}, {4, 0}, {0, 3}}], \
+         \"NinePointCenter\"]"
+      )
+      .unwrap(),
+      "{1, 3/4}"
+    );
+    // Midpoint of the circumcenter {27/14, 13/14} and orthocenter
+    // {15/7, 22/7}.
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{-1, 0}, {5, 1}, {2, 4}}], \
+         \"NinePointCenter\"]"
+      )
+      .unwrap(),
+      "{57/28, 57/28}"
+    );
+  }
+
+  #[test]
+  fn symmedian_point() {
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{0, 0}, {4, 0}, {0, 3}}], \
+         \"SymmedianPoint\"]"
+      )
+      .unwrap(),
+      "{18/25, 24/25}"
+    );
+  }
+
+  // In an equilateral triangle every center coincides.
+  #[test]
+  fn equilateral_centers_coincide() {
+    let tri = "Triangle[{{0, 0}, {1, 0}, {1/2, Sqrt[3]/2}}]";
+    for ctype in [
+      "Incenter",
+      "Circumcenter",
+      "Orthocenter",
+      "NinePointCenter",
+      "SymmedianPoint",
+    ] {
+      assert_eq!(
+        interpret(&format!("TriangleCenter[{tri}, \"{ctype}\"]")).unwrap(),
+        "{1/2, 1/(2*Sqrt[3])}",
+        "center type {ctype}"
+      );
+    }
+  }
+
+  // A bare vertex list works like Triangle[{p1, p2, p3}].
+  #[test]
+  fn bare_vertex_list() {
+    assert_eq!(
+      interpret("TriangleCenter[{{0, 0}, {4, 0}, {0, 3}}, \"Incenter\"]")
+        .unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  // Triangles in 3D are supported.
+  #[test]
+  fn triangle_3d() {
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{0, 0, 0}, {4, 0, 0}, {0, 3, 0}}], \
+         \"Circumcenter\"]"
+      )
+      .unwrap(),
+      "{2, 3/2, 0}"
+    );
+  }
+
+  #[test]
+  fn float_vertices() {
+    assert_eq!(
+      interpret(
+        "TriangleCenter[Triangle[{{0., 0.}, {4., 0.}, {0., 3.}}], \
+         \"Circumcenter\"]"
+      )
+      .unwrap(),
+      "{2., 1.5}"
+    );
+  }
+
+  // Unknown center types and non-triangle input stay unevaluated.
+  #[test]
+  fn unevaluated_cases() {
+    assert_eq!(
+      interpret("TriangleCenter[Triangle[{{0, 0}, {4, 0}, {0, 3}}], \"Foo\"]")
+        .unwrap(),
+      "TriangleCenter[Triangle[{{0, 0}, {4, 0}, {0, 3}}], Foo]"
+    );
+    assert_eq!(
+      interpret("TriangleCenter[foo]").unwrap(),
+      "TriangleCenter[foo]"
+    );
+  }
+}
+
 mod circle_points {
   use super::*;
 

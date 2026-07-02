@@ -2018,6 +2018,10 @@ pub fn dispatch_complex_and_special(
     "Circumsphere" if args.len() == 1 => {
       return Some(compute_circumsphere(&args[0]));
     }
+    // TriangleCenter[tri] / TriangleCenter[tri, ctype] — named triangle center
+    "TriangleCenter" if args.len() == 1 || args.len() == 2 => {
+      return Some(compute_triangle_center(args));
+    }
     // BoundingRegion[pts] — smallest axis-aligned bounding box of a point list:
     // Rectangle for 2D points, Cuboid for 1D or >=3D. Named-method and region
     // forms are left unevaluated.
@@ -9819,6 +9823,157 @@ fn insphere_tetrahedron(
   };
 
   crate::evaluator::evaluate_expr_to_expr(&sphere)
+}
+
+/// Squared distance between two points of equal dimension, as a symbolic
+/// Plus of squared coordinate differences.
+fn dist2_nd(p1: &[Expr], p2: &[Expr]) -> Expr {
+  let terms: Vec<Expr> = p1
+    .iter()
+    .zip(p2.iter())
+    .map(|(c1, c2)| {
+      insphere_power(insphere_minus(c2.clone(), c1.clone()), Expr::Integer(2))
+    })
+    .collect();
+  if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    }
+  }
+}
+
+/// TriangleCenter[tri] / TriangleCenter[tri, ctype] — a named center of a
+/// triangle. The triangle can be Triangle[{p1, p2, p3}] or a bare vertex
+/// list; ctype is one of "Centroid" (the default), "Circumcenter",
+/// "Incenter", "NinePointCenter", "Orthocenter" or "SymmedianPoint".
+///
+/// Every supported center is the barycentric combination
+/// (w1*p1 + w2*p2 + w3*p3) / (w1 + w2 + w3) whose weights are polynomial in
+/// the squared side lengths (the incenter uses the side lengths themselves),
+/// so exact input stays exact and the formulas work in any embedding
+/// dimension.
+fn compute_triangle_center(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let uneval = || {
+    Ok(Expr::FunctionCall {
+      name: "TriangleCenter".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let vertices = match &args[0] {
+    Expr::FunctionCall { name, args: targs }
+      if name == "Triangle" && targs.len() == 1 =>
+    {
+      &targs[0]
+    }
+    v @ Expr::List(_) => v,
+    _ => return uneval(),
+  };
+  let Expr::List(vs) = vertices else {
+    return uneval();
+  };
+  if vs.len() != 3 {
+    return uneval();
+  }
+  let pts: Vec<&[Expr]> = vs
+    .iter()
+    .filter_map(|v| match v {
+      Expr::List(c) => Some(c.as_slice()),
+      _ => None,
+    })
+    .collect();
+  if pts.len() != 3 {
+    return uneval();
+  }
+  let d = pts[0].len();
+  if d < 2 || pts.iter().any(|p| p.len() != d) {
+    return uneval();
+  }
+  let ctype = match args.get(1) {
+    None => "Centroid",
+    Some(Expr::String(s)) => s.as_str(),
+    Some(_) => return uneval(),
+  };
+
+  // Squared side lengths; side a is opposite vertex p1, etc.
+  let a2 = dist2_nd(pts[1], pts[2]);
+  let b2 = dist2_nd(pts[0], pts[2]);
+  let c2 = dist2_nd(pts[0], pts[1]);
+
+  let plus3 = |x: Expr, y: Expr, z: Expr| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![x, y, z].into(),
+  };
+  let neg = |x: Expr| insphere_times(Expr::Integer(-1), x);
+  // Law-of-cosines terms: b² + c² − a² = 2*b*c*Cos[A], and cyclic.
+  let ca = plus3(b2.clone(), c2.clone(), neg(a2.clone()));
+  let cb = plus3(c2.clone(), a2.clone(), neg(b2.clone()));
+  let cc = plus3(a2.clone(), b2.clone(), neg(c2.clone()));
+
+  let weights: [Expr; 3] = match ctype {
+    // (p1 + p2 + p3) / 3
+    "Centroid" => [Expr::Integer(1), Expr::Integer(1), Expr::Integer(1)],
+    // a : b : c
+    "Incenter" => [
+      make_sqrt(a2.clone()),
+      make_sqrt(b2.clone()),
+      make_sqrt(c2.clone()),
+    ],
+    // a²(b² + c² − a²) : b²(c² + a² − b²) : c²(a² + b² − c²)
+    "Circumcenter" => [
+      insphere_times(a2.clone(), ca.clone()),
+      insphere_times(b2.clone(), cb.clone()),
+      insphere_times(c2.clone(), cc.clone()),
+    ],
+    // tan A : tan B : tan C, cleared of denominators
+    "Orthocenter" => [
+      insphere_times(cb.clone(), cc.clone()),
+      insphere_times(ca.clone(), cc.clone()),
+      insphere_times(ca.clone(), cb.clone()),
+    ],
+    // a²(b² + c²) − (b² − c²)², and cyclic
+    "NinePointCenter" => [
+      insphere_minus(
+        insphere_times(a2.clone(), insphere_plus(b2.clone(), c2.clone())),
+        insphere_power(
+          insphere_minus(b2.clone(), c2.clone()),
+          Expr::Integer(2),
+        ),
+      ),
+      insphere_minus(
+        insphere_times(b2.clone(), insphere_plus(c2.clone(), a2.clone())),
+        insphere_power(
+          insphere_minus(c2.clone(), a2.clone()),
+          Expr::Integer(2),
+        ),
+      ),
+      insphere_minus(
+        insphere_times(c2.clone(), insphere_plus(a2.clone(), b2.clone())),
+        insphere_power(
+          insphere_minus(a2.clone(), b2.clone()),
+          Expr::Integer(2),
+        ),
+      ),
+    ],
+    // a² : b² : c²
+    "SymmedianPoint" => [a2.clone(), b2.clone(), c2.clone()],
+    _ => return uneval(),
+  };
+
+  let total = plus3(weights[0].clone(), weights[1].clone(), weights[2].clone());
+  let coords: Vec<Expr> = (0..d)
+    .map(|j| {
+      let num = plus3(
+        insphere_times(weights[0].clone(), pts[0][j].clone()),
+        insphere_times(weights[1].clone(), pts[1][j].clone()),
+        insphere_times(weights[2].clone(), pts[2][j].clone()),
+      );
+      insphere_times(num, insphere_power(total.clone(), Expr::Integer(-1)))
+    })
+    .collect();
+  crate::evaluator::evaluate_expr_to_expr(&Expr::List(coords.into()))
 }
 
 /// RegionWithin[reg1, reg2] - True if reg2 is entirely within reg1

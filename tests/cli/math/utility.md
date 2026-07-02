@@ -158,6 +158,7 @@ and the membership predicate `MemberQ`.
 - [`ToSphericalCoordinates`](utility/ToSphericalCoordinates.md)
 - [`TraditionalForm`](utility/TraditionalForm.md)
 - [`Triangle`](utility/Triangle.md)
+- [`TriangleCenter`](utility/TriangleCenter.md)
 - [`TriangleWave`](utility/TriangleWave.md)
 - [`TrimmedMean`](utility/TrimmedMean.md)
 - [`UnitBox`](utility/UnitBox.md)
