@@ -25,7 +25,7 @@ mod image_functions;
 mod interval_functions;
 mod io_functions;
 mod linear_algebra_functions;
-mod list_operations;
+pub(crate) mod list_operations;
 mod math_functions;
 mod music_functions;
 mod plotting;
@@ -1982,6 +1982,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Dashing"
     | "EdgeForm"
     | "FaceForm"
+    | "Haloing"
     | "Directive"
     | "Point"
     | "Line"
@@ -9844,6 +9845,10 @@ pub fn evaluate_function_call_ast_inner(
         // CyclicGroup[n] is likewise a symbolic group object consumed by
         // GroupOrder/GroupGenerators/GroupElements.
         | "CyclicGroup"
+        // URL["…"] is a symbolic URL wrapper whose canonical form stays
+        // unevaluated (matching wolframscript). It is consumed by
+        // HTTPRequest/URLBuild-style functions, so it is not "unimplemented".
+        | "URL"
         // KeyValuePattern[…] is a symbolic pattern object whose canonical form
         // stays unevaluated (matching wolframscript). It is consumed by the
         // pattern matcher (MatchQ/Cases/Replace/…), so it is not "unimplemented".
@@ -9894,6 +9899,18 @@ pub fn evaluate_function_call_ast_inner(
         // consumed by the quantum framework, so they are not "unimplemented".
         | "Ket"
         | "Bra"
+        // Audio[data, …] is a symbolic audio object constructor. It stays
+        // unevaluated as its canonical form and is consumed by AudioPlot,
+        // so it is not "unimplemented".
+        | "Audio"
+        // Quiz/assessment objects. AssessmentFunction[spec] and
+        // QuestionObject[q, assess] are symbolic constructor objects that stay
+        // unevaluated until applied to a candidate answer (handled in
+        // apply_curried_call), and AssessmentResultObject[<|…|>] is the graded
+        // result they produce, so none of these are "unimplemented".
+        | "AssessmentFunction"
+        | "QuestionObject"
+        | "AssessmentResultObject"
         // More notation/display wrapper heads. Like Subscript/Framed, these
         // describe layout rather than a value to compute, so wolframscript
         // leaves them unevaluated as their canonical form.

@@ -857,6 +857,28 @@ pub fn apply_curried_call(
       // Entity["type", "name"]["property"] — property access on entities
       crate::functions::entity_ast::entity_property_access(func_args, args)
     }
+    // Around[x, δ]["Value"] / ["Uncertainty"] — property extraction on an
+    // uncertain value. Unknown properties keep the curried form unevaluated.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "Around"
+      && func_args.len() == 2
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!();
+      };
+      match prop.as_str() {
+        "Value" => Ok(func_args[0].clone()),
+        "Uncertainty" => Ok(func_args[1].clone()),
+        _ => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // DateObject[...]["property"] — extract a date component (e.g. "Day",
     // "DayName", "Week"). Delegates to DateValue, which already resolves every
     // such property; if it cannot, the curried form is kept unevaluated.
@@ -879,6 +901,27 @@ pub fn apply_curried_call(
         Ok(result)
       }
     }
+    // HTTPRequest[…]["property"] — property access on the symbolic HTTP
+    // request object (e.g. "Method", "URL", "Domain"). Properties Woxi does
+    // not resolve keep the curried form unevaluated.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "HTTPRequest"
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!()
+      };
+      match crate::functions::http_ast::http_request_property(func_args, prop) {
+        Some(result) => Ok(result),
+        None => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // TimeSeries[…][t] — value lookup at time `t` (a date or number) or, for a
     // string argument, a path-property accessor (e.g. ts["Values"], ts["Path"]).
     Expr::FunctionCall { name, .. }
@@ -892,6 +935,34 @@ pub fn apply_curried_call(
     } if name == "Interpreter" && func_args.len() == 1 => {
       // Interpreter["Country"][input] — resolve input to an Entity.
       crate::functions::country_data::apply_interpreter(&func_args[0], args)
+    }
+    // AssessmentFunction[spec][answer] — grade the answer, returning an
+    // AssessmentResultObject.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "AssessmentFunction" && args.len() == 1 => {
+      crate::functions::assessment_ast::apply_assessment_function(
+        func_args, &args[0],
+      )
+    }
+    // QuestionObject[q, assess][answer] — grade the answer through the
+    // embedded assessment.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "QuestionObject" && args.len() == 1 => {
+      crate::functions::assessment_ast::apply_question_object(
+        func_args, &args[0],
+      )
+    }
+    // AssessmentResultObject[<|…|>]["property"] — property access
+    // (e.g. "Score", "AnswerCorrect", or All for the whole association).
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "AssessmentResultObject" && args.len() == 1 => {
+      crate::functions::assessment_ast::apply_result_object(func_args, &args[0])
     }
     // BooleanFunction[n, k][b1, …, bk] — the integer-indexed boolean function.
     // The result is bit `v` of `n`, where `v` is the k arguments read as a
@@ -1241,6 +1312,12 @@ pub fn apply_curried_call(
         // MapAt[f, pos][expr] -> MapAt[f, expr, pos] (likewise SubsetMap)
         let new_args =
           vec![func_args[0].clone(), args[0].clone(), func_args[1].clone()];
+        evaluate_function_call_ast(name, &new_args)
+      } else if name == "ReplaceAt" && func_args.len() == 2 && args.len() == 1 {
+        // ReplaceAt[rules, pos][expr] -> ReplaceAt[expr, rules, pos]. Unlike
+        // MapAt, ReplaceAt takes the subject as its FIRST argument.
+        let new_args =
+          vec![args[0].clone(), func_args[0].clone(), func_args[1].clone()];
         evaluate_function_call_ast(name, &new_args)
       } else if name == "Key" && func_args.len() == 1 && args.len() == 1 {
         // Key[k][assoc] — extract value for key k from association

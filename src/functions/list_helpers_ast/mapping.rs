@@ -425,13 +425,27 @@ pub fn map_at_ast(
   list: &Expr,
   pos_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  map_at_ast_named("MapAt", func, list, pos_spec)
+}
+
+/// Like [`map_at_ast`], but `caller` names the symbol used in emitted
+/// diagnostics (`caller::partw` / `caller::psl`). Delegates such as
+/// `ReplaceAt`, which are implemented as `MapAt[Replace[#, rules] &, …]`,
+/// pass their own name so messages read `ReplaceAt::partw` rather than
+/// `MapAt::partw`.
+pub fn map_at_ast_named(
+  caller: &str,
+  func: &Expr,
+  list: &Expr,
+  pos_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "MapAt".to_string(),
     args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
   };
   let partw = |path: &[i128]| {
     crate::emit_message(&format!(
-      "MapAt::partw: Part {{{}}} of {} does not exist.",
+      "{caller}::partw: Part {{{}}} of {} does not exist.",
       path
         .iter()
         .map(|p| p.to_string())
@@ -442,7 +456,7 @@ pub fn map_at_ast(
   };
   let psl = || {
     crate::emit_message(&format!(
-      "MapAt::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
+      "{caller}::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
       crate::syntax::format_expr(pos_spec, crate::syntax::ExprForm::Output),
       crate::syntax::format_expr(
         &unevaluated(),
@@ -487,7 +501,7 @@ pub fn map_at_ast(
     }
     // Key not present: emit partw and leave unevaluated.
     crate::emit_message(&format!(
-      "MapAt::partw: Part {} of {} does not exist.",
+      "{caller}::partw: Part {} of {} does not exist.",
       crate::syntax::format_expr(pos_spec, crate::syntax::ExprForm::Output),
       crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
     ));

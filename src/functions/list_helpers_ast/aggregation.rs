@@ -2233,6 +2233,87 @@ fn all_multiples_of(values: &[f64], dx: f64) -> bool {
     })
 }
 
+/// Round the Freedman-Diaconis bin-width estimate to a "nice" number
+/// (1, 2, 5, 10, …) the way wolframscript does: of the two nice candidates
+/// bracketing the estimate, one the data is commensurate with (every value
+/// an integer multiple — those bins get centered on the values) wins even
+/// when the other is log-nearer; otherwise the log-nearest is chosen.
+/// Verified against wolframscript: integer data with estimate 1.82 gets
+/// dx = 1 (commensurate) over the nearer 2, while even-valued data with
+/// estimate 9.28 gets the plain nearest 10 (2 is not a bracketing
+/// candidate, and neither 5 nor 10 is commensurate).
+fn wl_nice_bin_width(est: f64, values: &[f64]) -> f64 {
+  if est <= 0.0 {
+    return 1.0;
+  }
+  let base = 10f64.powi(est.log10().floor() as i32);
+  let candidates = [base, 2.0 * base, 5.0 * base, 10.0 * base];
+  let hi_idx = candidates.iter().position(|&c| c >= est).unwrap_or(3);
+  let (lo, hi) = (candidates[hi_idx.saturating_sub(1)], candidates[hi_idx]);
+  let lo_comm = all_multiples_of(values, lo);
+  let hi_comm = all_multiples_of(values, hi);
+  if lo_comm != hi_comm {
+    return if lo_comm { lo } else { hi };
+  }
+  if (est / lo).ln().abs() <= (hi / est).ln().abs() {
+    lo
+  } else {
+    hi
+  }
+}
+
+/// Wolfram-compatible 1-D histogram bin placement, shared by HistogramList
+/// and BubbleHistogram. Returns `(min_edge, max_edge, dx, centered)` for
+/// auto-binning (`width == None`, Freedman-Diaconis estimate rounded via
+/// `wl_nice_bin_width`) or an explicit bin width. `centered` is set when the
+/// data is commensurate with `dx` and the bins are centered on the values;
+/// wolframscript then reports the edges as reals even when integer-valued.
+/// `values` must be non-empty.
+pub(crate) fn wl_bin_spec(
+  values: &[f64],
+  width: Option<f64>,
+) -> (f64, f64, f64, bool) {
+  let (data_min, data_max, dx) = match width {
+    Some(dx) => {
+      let mn = values.iter().cloned().fold(f64::INFINITY, f64::min);
+      let mx = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      (mn, mx, dx)
+    }
+    None => {
+      let mut sorted = values.to_vec();
+      sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      let data_min = sorted[0];
+      let data_max = sorted[sorted.len() - 1];
+      let n = sorted.len() as f64;
+      let iqr = interquartile_range(&sorted);
+      let dx = if iqr > 0.0 {
+        wl_nice_bin_width(2.0 * iqr / n.cbrt(), &sorted)
+      } else if data_max > data_min {
+        // Fallback: use range / Sturges' rule
+        let sturges_bins = (n.log2() + 1.0).ceil().max(1.0);
+        wl_nice_bin_width((data_max - data_min) / sturges_bins, &sorted)
+      } else {
+        // All values identical
+        let v = data_min.abs();
+        if v == 0.0 { 1.0 } else { nice_number(v) }
+      };
+      (data_min, data_max, dx)
+    }
+  };
+  if data_max > data_min && all_multiples_of(values, dx) {
+    // Center bins on the values: edges at value ± dx/2.
+    (data_min - dx / 2.0, data_max + dx / 2.0, dx, true)
+  } else {
+    let lo = (data_min / dx).floor() * dx;
+    let mut hi = (data_max / dx).ceil() * dx;
+    // Ensure data_max is strictly inside the last bin
+    if (data_max - hi).abs() < 1e-12 * dx.max(1.0) {
+      hi += dx;
+    }
+    (lo, hi, dx, false)
+  }
+}
+
 /// HistogramList[data] - returns {bin_edges, counts}
 /// HistogramList[data, {dx}] - explicit bin width
 /// HistogramList[data, {min, max, dx}] - explicit bin specification
@@ -2264,37 +2345,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `{1., 3., 5.}`) even when they are integer-valued.
   let (min_val, max_val, dx, force_real_edges) = if args.len() == 1 {
     // Auto-binning: Freedman-Diaconis rule with nice number rounding
-    let mut sorted = values.clone();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let data_min = sorted[0];
-    let data_max = sorted[sorted.len() - 1];
-    let n = sorted.len() as f64;
-
-    let iqr = interquartile_range(&sorted);
-    let dx = if iqr > 0.0 {
-      nice_number(2.0 * iqr / n.cbrt())
-    } else if data_max > data_min {
-      // Fallback: use range / Sturges' rule
-      let sturges_bins = (n.log2() + 1.0).ceil().max(1.0);
-      nice_number((data_max - data_min) / sturges_bins)
-    } else {
-      // All values identical
-      let v = data_min.abs();
-      if v == 0.0 { 1.0 } else { nice_number(v) }
-    };
-
-    if data_max > data_min && all_multiples_of(&sorted, dx) {
-      // Center bins on the values: edges at value ± dx/2.
-      (data_min - dx / 2.0, data_max + dx / 2.0, dx, true)
-    } else {
-      let lo = (data_min / dx).floor() * dx;
-      let mut hi = (data_max / dx).ceil() * dx;
-      // Ensure data_max is strictly inside the last bin
-      if (data_max - hi).abs() < 1e-12 * dx.max(1.0) {
-        hi += dx;
-      }
-      (lo, hi, dx, false)
-    }
+    wl_bin_spec(&values, None)
   } else if args.len() == 2 {
     match &args[1] {
       // HistogramList[data, {dx}]
@@ -2308,18 +2359,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         };
-        let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        if data_max > data_min && all_multiples_of(&values, dx) {
-          (data_min - dx / 2.0, data_max + dx / 2.0, dx, true)
-        } else {
-          let lo = (data_min / dx).floor() * dx;
-          let mut hi = (data_max / dx).ceil() * dx;
-          if (data_max - hi).abs() < 1e-12 * dx.max(1.0) {
-            hi += dx;
-          }
-          (lo, hi, dx, false)
-        }
+        wl_bin_spec(&values, Some(dx))
       }
       // HistogramList[data, {min, max, dx}]
       Expr::List(spec) if spec.len() == 3 => {

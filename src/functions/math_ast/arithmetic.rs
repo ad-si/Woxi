@@ -3731,10 +3731,145 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
   }
 }
 
+/// Base and numeric exponent of a Times/Plus term for canonical-order
+/// comparisons: sees through unary minus and numeric Times coefficients
+/// (`-2*f[x]^3` → base `f[x]`, exponent 3). A symbolic exponent
+/// (e.g. `E^(2*mu + sigma^2)`) yields None.
+fn times_term_base_exp(e: &Expr) -> (Expr, Option<f64>) {
+  match e {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => times_term_base_exp(operand),
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      times_term_base_exp(args.last().unwrap())
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      right,
+      ..
+    } => times_term_base_exp(right),
+    _ => {
+      let (base, exp) = extract_base_exponent(e);
+      let exp_num = match &exp {
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::Real(r) => Some(*r),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+            Some(*n as f64 / *d as f64)
+          } else {
+            None
+          }
+        }
+        _ => None,
+      };
+      (base, exp_num)
+    }
+  }
+}
+
+/// If `e` is a canonical `Plus[...]` function call, return its args.
+fn plus_call_args(e: &Expr) -> Option<&[Expr]> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
+      Some(args)
+    }
+    _ => None,
+  }
+}
+
+/// Order a non-additive Times factor against an additive (Plus) factor
+/// the way Wolfram does: compare the factor's base with the base of the
+/// Plus's highest (last) term — the smaller base sorts first, so
+/// `f[x]*(1 + g[x])` but `(1 + f[x])*g[x]`. When the bases tie, the
+/// factor sorts first (`f[x]*(1 + f[x])`, `x*(-3 + x^2)`) unless its
+/// exponent is >= the top term's and the Plus starts with a negative
+/// number or ends in a negated term (`(-1 + x)*x^2`, `(2 - f[x])*f[x]`).
+/// Returns Less when the factor sorts first.
+fn order_factor_vs_additive(
+  factor: &Expr,
+  plus_args: &[Expr],
+) -> std::cmp::Ordering {
+  use std::cmp::Ordering;
+  let top = plus_args.last().unwrap();
+  let (fb, fe) = times_term_base_exp(factor);
+  let (hb, he) = times_term_base_exp(top);
+  // Atom bases compare by name only — compare_exprs would evaluate
+  // constants numerically and order Pi (numeric) before I (non-numeric),
+  // but Wolfram writes `(2 + I)*Pi`.
+  let ord = if matches!(fb, Expr::Identifier(_) | Expr::Constant(_))
+    && matches!(hb, Expr::Identifier(_) | Expr::Constant(_))
+  {
+    crate::functions::list_helpers_ast::wolfram_string_order(
+      &crate::syntax::expr_to_string(&fb),
+      &crate::syntax::expr_to_string(&hb),
+    )
+  } else {
+    crate::functions::list_helpers_ast::compare_exprs(&fb, &hb)
+  };
+  if ord > 0 {
+    return Ordering::Less;
+  }
+  if ord < 0 {
+    return Ordering::Greater;
+  }
+  if let (Some(f), Some(h)) = (fe, he)
+    && f < h
+  {
+    return Ordering::Less;
+  }
+  if is_negated_form(top) {
+    return Ordering::Greater;
+  }
+  // A negative leading constant pulls the additive forward only in the
+  // exact `Plus[negative number, base^n]` shape with numeric exponents:
+  // `(-3 + x)*x` and `(-1 + x)*x^2`, but `x*(-4 + 11*x)` (coefficient on
+  // the top term), `b*(-1 + a + b)` (extra terms), and
+  // `E^(2*mu + sigma^2)*(-1 + E^sigma^2)` (symbolic exponents).
+  let neg_leading = match plus_args.first() {
+    Some(Expr::Integer(n)) => *n < 0,
+    Some(Expr::Real(r)) => *r < 0.0,
+    Some(Expr::FunctionCall { name, args }) if name == "Rational" => {
+      matches!(args.first(), Some(Expr::Integer(n)) if *n < 0)
+    }
+    _ => false,
+  };
+  let top_is_bare = !matches!(
+    top,
+    Expr::UnaryOp { .. }
+      | Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        ..
+      }
+  ) && !matches!(top, Expr::FunctionCall { name, .. } if name == "Times");
+  if neg_leading
+    && top_is_bare
+    && plus_args.len() == 2
+    && fe.is_some()
+    && he.is_some()
+  {
+    Ordering::Greater
+  } else {
+    Ordering::Less
+  }
+}
+
 pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
   symbolic_args.sort_by(|a, b| {
-    let pa = term_priority(a);
-    let pb = term_priority(b);
+    // A Plus factor takes the max priority of its terms (like Times) so a
+    // transcendental sum such as (Cos[x]+Sin[x]) shares the bucket with
+    // Sin[x] and gets ordered by the top-term rule below. term_priority
+    // itself keeps Plus at 0 because other callers rely on that.
+    let eff_priority = |e: &Expr| match plus_call_args(e) {
+      Some(args) => args.iter().map(term_priority).max().unwrap_or(0),
+      None => term_priority(e),
+    };
+    let pa = eff_priority(a);
+    let pb = eff_priority(b);
     if pa != pb {
       return pa.cmp(&pb);
     }
@@ -3749,6 +3884,44 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
       // This matches Wolfram's canonical ordering.
       let is_bare_identifier =
         |e: &Expr| matches!(e, Expr::Identifier(_) | Expr::Constant(_));
+      // An identifier (or power of one) vs a canonical Plus: order by the
+      // Plus's top term. This takes precedence over the negated-containment
+      // checks below because Wolfram gives `x*(-x + f[x])` — the negated -x
+      // inside the sum doesn't matter when the top term is a function call.
+      // Powers with a constant base (E^a) keep their dedicated sort-key
+      // comparison below.
+      let ident_base_factor = |e: &Expr| {
+        power_const_base(e).is_none()
+          && matches!(
+            times_term_base_exp(e).0,
+            Expr::Identifier(_) | Expr::Constant(_)
+          )
+      };
+      if sa == 0 && sb == 1
+        && let Some(pargs) = plus_call_args(b)
+        && ident_base_factor(a)
+      {
+        return order_factor_vs_additive(a, pargs);
+      }
+      if sa == 1 && sb == 0
+        && let Some(pargs) = plus_call_args(a)
+        && ident_base_factor(b)
+      {
+        return order_factor_vs_additive(b, pargs).reverse();
+      }
+      // Plain function-call factors (and their powers / curried calls) vs a
+      // canonical Plus: same top-term rule, so `f[x]*(1 + f[x])` keeps f[x]
+      // first while `(1 + f[x])*g[x]` stays additive-first.
+      if (sa == 2 || sa == 3) && sb == 1
+        && let Some(pargs) = plus_call_args(b)
+      {
+        return order_factor_vs_additive(a, pargs);
+      }
+      if sa == 1 && (sb == 2 || sb == 3)
+        && let Some(pargs) = plus_call_args(a)
+      {
+        return order_factor_vs_additive(b, pargs).reverse();
+      }
       if sa == 0 && sb == 1 {
         // a is Identifier, b is additive
         if additive_contains_negated(b, a) || additive_is_neg_const_plus_ident(b, a) {
@@ -8519,18 +8692,45 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Check if an expression contains any `Expr::Real` (float) value.
-/// (value, uncertainty) of an `Around[v, d]` with numeric components.
-fn as_around(e: &Expr) -> Option<(f64, f64)> {
-  if let Expr::FunctionCall { name, args } = e
-    && name == "Around"
-    && args.len() == 2
-    && let (Some(v), Some(d)) =
-      (around_literal(&args[0]), around_literal(&args[1]))
-  {
-    Some((v, d))
-  } else {
-    None
+/// Numeric payload of an `Around`: the central value together with the
+/// downward/upward uncertainties. A symmetric `Around[v, d]` has
+/// `minus == plus`; the asymmetric `Around[v, {δ₋, δ₊}]` form sets `asym` so
+/// propagated results stay in list form.
+struct AroundNum {
+  value: f64,
+  minus: f64,
+  plus: f64,
+  asym: bool,
+}
+
+fn as_around(e: &Expr) -> Option<AroundNum> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Around" || args.len() != 2 {
+    return None;
+  }
+  let value = around_literal(&args[0])?;
+  match &args[1] {
+    Expr::List(items) if items.len() == 2 => {
+      let minus = around_literal(&items[0])?;
+      let plus = around_literal(&items[1])?;
+      Some(AroundNum {
+        value,
+        minus,
+        plus,
+        asym: true,
+      })
+    }
+    d => {
+      let d = around_literal(d)?;
+      Some(AroundNum {
+        value,
+        minus: d,
+        plus: d,
+        asym: false,
+      })
+    }
   }
 }
 
@@ -8566,6 +8766,37 @@ fn make_around(value: f64, uncertainty: f64) -> Expr {
   }
 }
 
+/// Assemble a propagated result: list-form uncertainty iff any input was
+/// asymmetric, and a vanishing uncertainty collapses to the bare value.
+fn make_around_general(value: f64, minus: f64, plus: f64, asym: bool) -> Expr {
+  if !asym {
+    return make_around(value, minus);
+  }
+  if minus == 0.0 && plus == 0.0 {
+    return Expr::Real(value);
+  }
+  Expr::FunctionCall {
+    name: "Around".to_string(),
+    args: vec![
+      Expr::Real(value),
+      Expr::List(vec![Expr::Real(minus), Expr::Real(plus)].into()),
+    ]
+    .into(),
+  }
+}
+
+/// Contribution of one argument to the (minus, plus) sides of a result,
+/// through the partial derivative `c`: a positive coefficient keeps the
+/// sides aligned, a negative one swaps them (the value's downward excursion
+/// pushes the result upward).
+fn side_contributions(c: f64, a: &AroundNum) -> (f64, f64) {
+  if c >= 0.0 {
+    (c * a.minus, c * a.plus)
+  } else {
+    (-c * a.plus, -c * a.minus)
+  }
+}
+
 /// Around[a, δa] + Around[b, δb] + c = Around[a+b+c, Sqrt[δa²+δb²]] —
 /// first-order error propagation treating each Around as independent. Returns
 /// None unless at least one argument is an Around and every other argument is a
@@ -8575,18 +8806,27 @@ pub fn try_around_plus(args: &[Expr]) -> Option<Expr> {
     return None;
   }
   let mut value = 0.0;
-  let mut var = 0.0;
+  let mut var_minus = 0.0;
+  let mut var_plus = 0.0;
+  let mut asym = false;
   for a in args {
-    if let Some((v, d)) = as_around(a) {
-      value += v;
-      var += d * d;
+    if let Some(ar) = as_around(a) {
+      value += ar.value;
+      var_minus += ar.minus * ar.minus;
+      var_plus += ar.plus * ar.plus;
+      asym |= ar.asym;
     } else if let Some(c) = around_literal(a) {
       value += c;
     } else {
       return None;
     }
   }
-  Some(make_around(value, var.sqrt()))
+  Some(make_around_general(
+    value,
+    var_minus.sqrt(),
+    var_plus.sqrt(),
+    asym,
+  ))
 }
 
 /// Product of Around values and literal scalars, with the absolute partial
@@ -8599,35 +8839,47 @@ pub fn try_around_times(args: &[Expr]) -> Option<Expr> {
     return None;
   }
   let mut value = 1.0;
-  let mut arounds: Vec<(f64, f64)> = Vec::new();
+  let mut arounds: Vec<AroundNum> = Vec::new();
+  let mut asym = false;
   for a in args {
-    if let Some((v, d)) = as_around(a) {
-      if v == 0.0 {
+    if let Some(ar) = as_around(a) {
+      if ar.value == 0.0 {
         return None; // partial (Π/a_i) undefined at 0
       }
-      value *= v;
-      arounds.push((v, d));
+      value *= ar.value;
+      asym |= ar.asym;
+      arounds.push(ar);
     } else if let Some(c) = around_literal(a) {
       value *= c;
     } else {
       return None;
     }
   }
-  let mut var = 0.0;
-  for (v, d) in arounds {
-    let partial = (value / v) * d;
-    var += partial * partial;
+  let mut var_minus = 0.0;
+  let mut var_plus = 0.0;
+  for ar in &arounds {
+    let (m, p) = side_contributions(value / ar.value, ar);
+    var_minus += m * m;
+    var_plus += p * p;
   }
-  Some(make_around(value, var.sqrt()))
+  Some(make_around_general(
+    value,
+    var_minus.sqrt(),
+    var_plus.sqrt(),
+    asym,
+  ))
 }
 
 /// Around[a, δ]^n = Around[a^n, |n·a^(n-1)|·δ] for a literal exponent n.
 pub fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
-  let (a, d) = as_around(base)?;
+  let ar = as_around(base)?;
   let n = around_literal(exp)?;
-  let value = a.powf(n);
-  let uncertainty = (n * a.powf(n - 1.0)).abs() * d;
-  Some(make_around(value, uncertainty))
+  let value = ar.value.powf(n);
+  let (m, p) = side_contributions(n * ar.value.powf(n - 1.0), &ar);
+  if !value.is_finite() || !m.is_finite() || !p.is_finite() {
+    return None;
+  }
+  Some(make_around_general(value, m, p, ar.asym))
 }
 
 /// (f(a), f'(a)) for an elementary unary function, used to propagate an
@@ -8665,12 +8917,13 @@ pub fn try_around_unary(
   if args.len() != 1 {
     return None;
   }
-  let (a, d) = as_around(&args[0])?;
-  let (fa, fpa) = around_func_and_deriv(name, a)?;
+  let ar = as_around(&args[0])?;
+  let (fa, fpa) = around_func_and_deriv(name, ar.value)?;
   if !fa.is_finite() || !fpa.is_finite() {
     return None;
   }
-  Some(Ok(make_around(fa, fpa.abs() * d)))
+  let (m, p) = side_contributions(fpa, &ar);
+  Some(Ok(make_around_general(fa, m, p, ar.asym)))
 }
 
 fn contains_real(expr: &Expr) -> bool {

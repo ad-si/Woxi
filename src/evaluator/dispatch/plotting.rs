@@ -123,6 +123,9 @@ pub fn dispatch_plotting(
     "GeoRegionValuePlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::geographics::geo_region_value_plot_ast(args)
     })),
+    "GeoHistogram" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::geographics::geo_histogram_ast(args)
+    })),
     "Show" if !args.is_empty() => {
       Some(crate::functions::graphics::show_ast(args))
     }
@@ -134,6 +137,9 @@ pub fn dispatch_plotting(
     }
     "GraphicsGrid" if !args.is_empty() => {
       Some(crate::functions::graphics::graphics_grid_ast(args))
+    }
+    "PlotGrid" if !args.is_empty() => {
+      Some(crate::functions::graphics::plot_grid_ast(args))
     }
     "TreeForm" if !args.is_empty() => {
       // TreeForm stays as a wrapper in OutputForm (matching wolframscript)
@@ -205,6 +211,9 @@ pub fn dispatch_plotting(
         })),
       }
     }
+    "AudioPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::audio_plot_ast(args)
+    })),
     "ListLogPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::list_log_plot_ast(args)
     })),
@@ -501,6 +510,9 @@ pub fn dispatch_plotting(
     "BubbleChart" if !args.is_empty() => {
       Some(crate::functions::chart::bubble_chart_ast(args))
     }
+    "BubbleHistogram" if !args.is_empty() => {
+      Some(crate::functions::chart::bubble_histogram_ast(args))
+    }
     "SectorChart" if !args.is_empty() => {
       Some(crate::functions::chart::sector_chart_ast(args))
     }
@@ -510,6 +522,15 @@ pub fn dispatch_plotting(
     "NumberLinePlot" if !args.is_empty() => Some(
       crate::functions::number_line_plot::number_line_plot_ast(args),
     ),
+    "TimelinePlot" if !args.is_empty() => {
+      Some(crate::functions::timeline_plot::timeline_plot_ast(args))
+    }
+    "Dendrogram" if !args.is_empty() => {
+      Some(crate::functions::dendrogram::dendrogram_ast(args))
+    }
+    "TernaryListPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::ternary_list_plot::ternary_list_plot_ast(args)
+    })),
     "WordCloud" if !args.is_empty() => {
       Some(crate::functions::chart::word_cloud_ast(args))
     }

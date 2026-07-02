@@ -2021,6 +2021,213 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &filtered_labels,
     opts.plot_range_x,
     opts.plot_range_y,
+    None,
+    None,
+    None,
+  )?;
+  Ok(crate::graphics_result(svg))
+}
+
+/// BubbleHistogram[{{x1,y1}, {x2,y2}, ...}] bins the two-dimensional data
+/// into a rectangular grid and draws a bubble at the center of every
+/// non-empty bin, its size encoding the number of points that fell in it.
+///
+/// An optional second argument controls the binning, mirroring `Histogram`:
+///   - `n`    — use `n` equal-width bins along each axis
+///   - `{dx}` — use bins of width `dx` along each axis
+/// When omitted, each axis is binned like `HistogramList` (Freedman-Diaconis
+/// width rounded to a nice number, edges aligned to multiples of the width,
+/// bins centered on commensurate data).
+///
+/// Each bubble is colored by its bin count via Wolfram's
+/// "WL12DefaultVectorGradient" and drawn without an edge, matching
+/// wolframscript.
+pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "BubbleHistogram: first argument must be a list of {x, y} pairs".into(),
+      ));
+    }
+  };
+
+  // Parse the {x, y} pairs, silently skipping entries that aren't numeric
+  // pairs (mirrors how the other charts treat unparseable points).
+  let mut points: Vec<(f64, f64)> = Vec::with_capacity(items.len());
+  for item in items {
+    if let Expr::List(inner) = item
+      && inner.len() >= 2
+    {
+      let x = try_eval_to_f64(
+        &evaluate_expr_to_expr(&inner[0]).unwrap_or(inner[0].clone()),
+      );
+      let y = try_eval_to_f64(
+        &evaluate_expr_to_expr(&inner[1]).unwrap_or(inner[1].clone()),
+      );
+      if let (Some(x), Some(y)) = (x, y) {
+        points.push((x, y));
+      }
+    }
+  }
+
+  if points.is_empty() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  // Optional binning specification. `None` requests per-axis auto-binning.
+  enum BinReq {
+    Count(usize),
+    Width(f64),
+  }
+  let bin_req = if args.len() > 1 {
+    let evaluated = evaluate_expr_to_expr(&args[1])?;
+    match &evaluated {
+      Expr::List(inner) if inner.len() == 1 => try_eval_to_f64(&inner[0])
+        .filter(|dx| *dx > 0.0)
+        .map(BinReq::Width),
+      other => try_eval_to_f64(other)
+        .map(|n| n as usize)
+        .filter(|n| *n > 0)
+        .map(BinReq::Count),
+    }
+  } else {
+    None
+  };
+
+  // Determine bin edges for one axis from its values and the binning request.
+  // Returns `(min_edge, bin_width, num_bins)`. The width and auto cases use
+  // HistogramList's Wolfram-compatible placement (Freedman-Diaconis width,
+  // dx-aligned edges, bins centered on commensurate data).
+  let axis_bins = |vals: &[f64]| -> (f64, f64, usize) {
+    if let Some(BinReq::Count(n)) = &bin_req {
+      let d_min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+      let d_max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let range = d_max - d_min;
+      let bw = if range.abs() < f64::EPSILON {
+        1.0
+      } else {
+        range / *n as f64
+      };
+      return (d_min, bw, *n);
+    }
+    let width = match &bin_req {
+      Some(BinReq::Width(dx)) => Some(*dx),
+      _ => None,
+    };
+    let (min_edge, max_edge, dx, _) =
+      crate::functions::list_helpers_ast::wl_bin_spec(vals, width);
+    let num_bins =
+      (((max_edge - min_edge) / dx + 1e-9).floor() as usize).max(1);
+    (min_edge, dx, num_bins)
+  };
+
+  let xs: Vec<f64> = points.iter().map(|p| p.0).collect();
+  let ys: Vec<f64> = points.iter().map(|p| p.1).collect();
+  let (x_min, x_bw, x_bins) = axis_bins(&xs);
+  let (y_min, y_bw, y_bins) = axis_bins(&ys);
+
+  // Accumulate counts per (ix, iy) bin.
+  let mut counts = vec![0usize; x_bins * y_bins];
+  for &(x, y) in &points {
+    let ix = (((x - x_min) / x_bw).floor() as usize).min(x_bins - 1);
+    let iy = (((y - y_min) / y_bw).floor() as usize).min(y_bins - 1);
+    counts[iy * x_bins + ix] += 1;
+  }
+
+  // One bubble per non-empty bin, positioned at the bin center. The count
+  // becomes the bubble's size coordinate, exactly like `BubbleChart`.
+  let mut bubbles: Vec<(f64, f64, f64)> = Vec::new();
+  for iy in 0..y_bins {
+    for ix in 0..x_bins {
+      let c = counts[iy * x_bins + ix];
+      if c > 0 {
+        let cx = x_min + (ix as f64 + 0.5) * x_bw;
+        let cy = y_min + (iy as f64 + 0.5) * y_bw;
+        bubbles.push((cx, cy, c as f64));
+      }
+    }
+  }
+
+  // Wolfram colors each bubble by its bin count with the
+  // "WL12DefaultVectorGradient" blend, normalized from the smallest to the
+  // largest count (all-equal counts collapse to the gradient start). The
+  // gradient always applies — wolframscript ignores even an explicit
+  // ChartStyle here.
+  let c_min = bubbles.iter().map(|b| b.2).fold(f64::INFINITY, f64::min);
+  let c_max = bubbles
+    .iter()
+    .map(|b| b.2)
+    .fold(f64::NEG_INFINITY, f64::max);
+  let colors: Vec<(u8, u8, u8)> = bubbles
+    .iter()
+    .map(|b| {
+      let t = if c_max > c_min {
+        (b.2 - c_min) / (c_max - c_min)
+      } else {
+        0.0
+      };
+      crate::functions::plot::wl_default_vector_gradient(t)
+    })
+    .collect();
+
+  // PlotLegends -> Automatic adds a count-gradient bar legend (Wolfram's
+  // BarLegend) right of the plot.
+  let wants_legend = args[1..].iter().any(|opt| {
+    matches!(
+      opt,
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLegends")
+          && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "Automatic")
+    )
+  });
+
+  let mut opts = parse_chart_options(args);
+  // Match BubbleChart's square plot area unless the caller set ImageSize.
+  let user_set_image_size = args[1..].iter().any(|opt| {
+    matches!(
+      opt,
+      Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
+    )
+  });
+  if !user_set_image_size {
+    opts.svg_height = opts.svg_width.saturating_sub(25);
+    if wants_legend {
+      // The legend strip widens the image rather than shrinking the plot,
+      // exactly like wolframscript (360 → 413 pt at the default size).
+      opts.svg_width += 53;
+    }
+  }
+
+  let groups = vec![bubbles];
+  let svg = crate::functions::plot::generate_bubble_chart_svg(
+    &groups,
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
+    opts.plot_label.as_ref(),
+    opts
+      .axes_label
+      .as_ref()
+      .map(|(x, y)| (x.as_str(), y.as_str())),
+    &opts.chart_style,
+    &opts.chart_legends,
+    &[],
+    opts.plot_range_x,
+    opts.plot_range_y,
+    // Bins are x_bw × y_bw rectangles — cap bubble radii so bubbles in
+    // adjacent bins never overlap.
+    Some((x_bw, y_bw)),
+    Some(&colors),
+    if wants_legend {
+      Some((c_min, c_max))
+    } else {
+      None
+    },
   )?;
   Ok(crate::graphics_result(svg))
 }

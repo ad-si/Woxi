@@ -2,6 +2,8 @@
 
 # 2025-05-08 - 0.1.0
 
+- Add support for `HTTPRequest` objects including property extraction
+- Add support for `QuestionObject`, `AssessmentFunction`, and `AssessmentResultObject`
 - Implement `DateString` and `Now`
 - Implement `StringStartsQ` and `StringEndsQ`
 - Support executing Woxi as a shebang script

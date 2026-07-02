@@ -67,6 +67,13 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
     }
+    // HTTPRequest[url] / HTTPRequest[url, assoc] / HTTPRequest[assoc] —
+    // symbolic HTTP request object; no network access is performed.
+    // The one-argument URL form canonicalizes to HTTPRequest[url, <||>],
+    // matching wolframscript; other shapes stay as given.
+    "HTTPRequest" if !args.is_empty() => {
+      return Some(crate::functions::http_ast::http_request_ast(args));
+    }
     // URLFetch[url] / URLFetch[url, params] — minimal stub.
     // Returns $Failed for URLs that lack a host (e.g. "https://"), matching
     // wolframscript's behavior. Network fetches are out of scope for the

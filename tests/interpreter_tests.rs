@@ -890,7 +890,8 @@ mod interpreter_tests {
       ("Underscript[x, 2]", "Underscript[x, 2]"),
       ("Underoverscript[x, 1, 2]", "Underoverscript[x, 1, 2]"),
       ("Underlined[\"x\"]", "Underlined[x]"),
-      ("Highlighted[\"x\"]", "Highlighted[x]"),
+      // Highlighted is intentionally omitted here: like Framed it renders to
+      // an SVG box (`-Graphics-`) in visual mode rather than staying symbolic.
       ("Mouseover[a, b]", "Mouseover[a, b]"),
       ("Magnify[x, 2]", "Magnify[x, 2]"),
       ("Ket[0]", "Ket[0]"),
@@ -974,6 +975,7 @@ mod interpreter_tests {
   mod algebra;
   mod arg_count;
   mod arithmetic;
+  mod assessment;
   mod association;
   mod attributes;
   mod batch_wrappers;

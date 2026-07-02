@@ -6655,6 +6655,144 @@ mod batch_inert_symbols_2 {
     assert_eq!(interpret("Around[5, 0.3]").unwrap(), "Around[5., 0.3]");
   }
 
+  // Exact numbers are promoted to machine reals, rationals included.
+  #[test]
+  fn around_promotes_rationals() {
+    assert_eq!(
+      interpret("Around[3/4, 1/8]").unwrap(),
+      "Around[0.75, 0.125]"
+    );
+    assert_eq!(interpret("Around[1/2, 0.1]").unwrap(), "Around[0.5, 0.1]");
+  }
+
+  // Around[x, {δ₋, δ₊}] holds asymmetric uncertainties; exact components are
+  // promoted to reals and a vanishing {0, 0} collapses to the bare value.
+  #[test]
+  fn around_asymmetric_construction() {
+    assert_eq!(
+      interpret("Around[5, {0.1, 0.2}]").unwrap(),
+      "Around[5., {0.1, 0.2}]"
+    );
+    assert_eq!(
+      interpret("Around[5, {1, 2}]").unwrap(),
+      "Around[5., {1., 2.}]"
+    );
+    assert_eq!(
+      interpret("Around[5, {1/4, 1/2}]").unwrap(),
+      "Around[5., {0.25, 0.5}]"
+    );
+    assert_eq!(interpret("Around[5, {0, 0}]").unwrap(), "5");
+  }
+
+  // Asymmetric uncertainties propagate per side, in quadrature.
+  #[test]
+  fn around_asymmetric_plus() {
+    assert_eq!(
+      interpret("Around[5, {0.3, 0.4}] + Around[3, {0.4, 0.3}]").unwrap(),
+      "Around[8., {0.5, 0.5}]"
+    );
+    // A constant shifts the value but not the uncertainties.
+    assert_eq!(
+      interpret("Around[5, {0.1, 0.2}] + 1").unwrap(),
+      "Around[6., {0.1, 0.2}]"
+    );
+    // Mixing with a symmetric Around keeps the result asymmetric.
+    assert_eq!(
+      interpret("Around[5, {3, 4}] + Around[3, 0]").unwrap(),
+      "Around[8., {3., 4.}]"
+    );
+  }
+
+  // A negative coefficient swaps the two sides: the value's downward
+  // excursion pushes the result upward.
+  #[test]
+  fn around_asymmetric_negation_swaps_sides() {
+    assert_eq!(
+      interpret("-Around[5, {0.1, 0.2}]").unwrap(),
+      "Around[-5., {0.2, 0.1}]"
+    );
+    assert_eq!(
+      interpret("2 * Around[5, {0.1, 0.2}]").unwrap(),
+      "Around[10., {0.2, 0.4}]"
+    );
+    assert_eq!(
+      interpret("Around[10, 0] - Around[5, {0.1, 0.2}]").unwrap(),
+      "Around[5., {0.2, 0.1}]"
+    );
+  }
+
+  #[test]
+  fn around_asymmetric_power() {
+    assert_eq!(
+      interpret("Around[2, {0.1, 0.2}]^2").unwrap(),
+      "Around[4., {0.4, 0.8}]"
+    );
+    // Negative derivative (d(1/x)/dx < 0) swaps the sides.
+    assert_eq!(
+      interpret("Around[2, {0.1, 0.2}]^-1").unwrap(),
+      "Around[0.5, {0.05, 0.025}]"
+    );
+  }
+
+  #[test]
+  fn around_asymmetric_unary_functions() {
+    assert_eq!(
+      interpret("Sqrt[Around[4, {1, 2}]]").unwrap(),
+      "Around[2., {0.25, 0.5}]"
+    );
+    // Exp'(0) = 1 keeps the sides aligned.
+    assert_eq!(
+      interpret("Exp[Around[0, {0.1, 0.2}]]").unwrap(),
+      "Around[1., {0.1, 0.2}]"
+    );
+  }
+
+  // Around[dist] gives Around[N[Mean[dist]], N[StandardDeviation[dist]]].
+  #[test]
+  fn around_from_distribution() {
+    assert_eq!(
+      interpret("Around[NormalDistribution[3, 2]]").unwrap(),
+      "Around[3., 2.]"
+    );
+    assert_eq!(
+      interpret("Around[UniformDistribution[{0, 1}]]").unwrap(),
+      "Around[0.5, 0.28867513459481287]"
+    );
+    assert_eq!(
+      interpret("Around[PoissonDistribution[4]]").unwrap(),
+      "Around[4., 2.]"
+    );
+  }
+
+  // Around[Interval[{a, b}]] treats the interval as a uniform distribution:
+  // Around[(a+b)/2, (b-a)/(2 Sqrt[3])].
+  #[test]
+  fn around_from_interval() {
+    assert_eq!(
+      interpret("Around[Interval[{2, 4}]]").unwrap(),
+      "Around[3., 0.5773502691896258]"
+    );
+    // A degenerate interval collapses to its point value.
+    assert_eq!(interpret("Around[Interval[{3, 3}]]").unwrap(), "3.");
+  }
+
+  // A non-distribution argument leaves the 1-argument form unevaluated.
+  #[test]
+  fn around_one_arg_symbolic_stays() {
+    assert_eq!(interpret("Around[x]").unwrap(), "Around[x]");
+  }
+
+  // around["Value"] / around["Uncertainty"] extract the stored components.
+  #[test]
+  fn around_properties() {
+    assert_eq!(interpret("Around[5, 0.3][\"Value\"]").unwrap(), "5.");
+    assert_eq!(interpret("Around[5, 0.3][\"Uncertainty\"]").unwrap(), "0.3");
+    assert_eq!(
+      interpret("Around[5, {0.1, 0.2}][\"Uncertainty\"]").unwrap(),
+      "{0.1, 0.2}"
+    );
+  }
+
   // Around[{v1, …}, u] threads over the central values, giving each the same
   // uncertainty.
   #[test]

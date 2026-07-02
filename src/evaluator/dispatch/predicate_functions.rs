@@ -656,6 +656,9 @@ pub fn dispatch_predicate_functions(
     "PrimeQ" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::prime_q_ast(args));
     }
+    "GeometricTest" if args.len() >= 2 => {
+      return crate::functions::geometric_test_ast::geometric_test(args);
+    }
     "CompositeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::composite_q_ast(args));
     }

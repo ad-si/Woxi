@@ -1,0 +1,25 @@
+name: Nightly
+
+on:
+  schedule:
+    # Every day at 03:00 UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Correctness of the ~24 heavy `#[ignore]`d script snapshots — mirrors
+  # `make test-slow` (see `slow_script_test!`). Too slow for every push/PR,
+  # so it runs once per night. Performance of these is tracked by the
+  # benchmarks.
+  test-slow:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+    - uses: taiki-e/install-action@nextest
+    - name: Run slow script tests
+      run: make test-slow

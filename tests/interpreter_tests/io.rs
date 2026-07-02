@@ -3115,6 +3115,170 @@ mod url_build {
   }
 }
 
+mod http_request {
+  use super::*;
+
+  #[test]
+  fn url_form_canonicalizes_with_empty_association() {
+    assert_eq!(
+      interpret(r#"HTTPRequest["https://example.com"]"#).unwrap(),
+      "HTTPRequest[https://example.com, <||>]"
+    );
+  }
+
+  #[test]
+  fn url_wrapper_is_unwrapped() {
+    assert_eq!(
+      interpret(r#"HTTPRequest[URL["https://example.com"]]"#).unwrap(),
+      "HTTPRequest[https://example.com, <||>]"
+    );
+  }
+
+  #[test]
+  fn two_argument_form_stays_canonical() {
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["https://example.com", <|"Method" -> "POST"|>]"#
+      )
+      .unwrap(),
+      "HTTPRequest[https://example.com, <|Method -> POST|>]"
+    );
+  }
+
+  #[test]
+  fn association_form_stays_as_given() {
+    assert_eq!(
+      interpret(r#"HTTPRequest[<|"Method" -> "POST"|>]"#).unwrap(),
+      "HTTPRequest[<|Method -> POST|>]"
+    );
+  }
+
+  #[test]
+  fn head_is_httprequest() {
+    assert_eq!(
+      interpret(r#"Head[HTTPRequest["https://example.com"]]"#).unwrap(),
+      "HTTPRequest"
+    );
+  }
+
+  #[test]
+  fn url_components_are_extracted() {
+    let req = r#"req = HTTPRequest["https://user:pass@www.example.com:8080/path/to/file.html?a=1&b=2#frag"];"#;
+    for (prop, expected) in [
+      (
+        "URL",
+        "https://user:pass@www.example.com:8080/path/to/file.html?a=1&b=2#frag",
+      ),
+      ("Scheme", "https"),
+      ("UserName", "user"),
+      ("Password", "pass"),
+      ("Domain", "www.example.com"),
+      ("Port", "8080"),
+      ("Path", "/path/to/file.html"),
+      ("Query", "{a -> 1, b -> 2}"),
+      ("Fragment", "frag"),
+    ] {
+      assert_eq!(
+        interpret(&format!(r#"{req} req["{prop}"]"#)).unwrap(),
+        expected,
+        "property {prop}"
+      );
+    }
+  }
+
+  #[test]
+  fn defaults_for_bare_url() {
+    let req = r#"req = HTTPRequest["https://example.com"];"#;
+    for (prop, expected) in [
+      ("Method", "GET"),
+      ("Headers", "{}"),
+      ("Body", ""),
+      ("Query", "{}"),
+      ("Path", ""),
+      ("Port", "None"),
+      ("Fragment", "None"),
+      ("UserName", "None"),
+    ] {
+      assert_eq!(
+        interpret(&format!(r#"{req} req["{prop}"]"#)).unwrap(),
+        expected,
+        "property {prop}"
+      );
+    }
+  }
+
+  #[test]
+  fn method_and_body_from_association() {
+    assert_eq!(
+      interpret(
+        r#"req = HTTPRequest["https://example.com", <|"Method" -> "POST", "Body" -> "x=1"|>]; {req["Method"], req["Body"]}"#
+      )
+      .unwrap(),
+      "{POST, x=1}"
+    );
+  }
+
+  #[test]
+  fn headers_from_association_normalize_to_rule_list() {
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["https://example.com", <|"Headers" -> <|"Accept" -> "text/html"|>|>]["Headers"]"#
+      )
+      .unwrap(),
+      "{Accept -> text/html}"
+    );
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["https://example.com", <|"Headers" -> {"Accept" -> "text/html"}|>]["Headers"]"#
+      )
+      .unwrap(),
+      "{Accept -> text/html}"
+    );
+  }
+
+  #[test]
+  fn url_is_rebuilt_from_association_components() {
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest[<|"Scheme" -> "https", "Domain" -> "example.com", "Path" -> "/api", "Query" -> {"k" -> "v"}|>]["URL"]"#
+      )
+      .unwrap(),
+      "https://example.com/api?k=v"
+    );
+  }
+
+  #[test]
+  fn association_components_override_url_parts() {
+    assert_eq!(
+      interpret(
+        r#"HTTPRequest["https://example.com/a", <|"Path" -> "/b", "Fragment" -> "top"|>]["URL"]"#
+      )
+      .unwrap(),
+      "https://example.com/b#top"
+    );
+  }
+
+  #[test]
+  fn schemeless_url_is_all_path() {
+    assert_eq!(
+      interpret(r#"HTTPRequest["example.com/x"]["Domain"]"#).unwrap(),
+      "None"
+    );
+    assert_eq!(
+      interpret(r#"HTTPRequest["example.com/x"]["Path"]"#).unwrap(),
+      "example.com/x"
+    );
+  }
+
+  #[test]
+  fn unknown_property_stays_unevaluated() {
+    assert_eq!(
+      interpret(r#"HTTPRequest["https://example.com"]["Frobnicate"]"#).unwrap(),
+      "HTTPRequest[https://example.com, <||>][Frobnicate]"
+    );
+  }
+}
+
 mod csv_import {
   use super::*;
 

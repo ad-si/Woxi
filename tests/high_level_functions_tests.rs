@@ -6384,6 +6384,239 @@ mod high_level_functions_tests {
       );
       assert!(svg.contains("fill=\"rgb(0,0,255)\""), "blue point missing");
     }
+
+    // ── GeoHistogram ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_geohistogram_head_and_placeholder() {
+      // Like GeoGraphics, GeoHistogram renders as an SVG image (echoing the
+      // -Graphics- placeholder in CLI output) but keeps the GeoGraphics head.
+      let data = "{GeoPosition[{40, -100}], GeoPosition[{41, -101}], \
+                  GeoPosition[{34, -118}]}";
+      assert_eq!(
+        interpret(&format!("GeoHistogram[{data}]")).unwrap(),
+        "-Graphics-"
+      );
+      assert_eq!(
+        interpret(&format!("Head[GeoHistogram[{data}]]")).unwrap(),
+        "GeoGraphics"
+      );
+    }
+
+    #[test]
+    fn test_geohistogram_denser_bin_is_darker() {
+      // Two clusters: three near-coincident points and one lone point. The
+      // dense bin gets the darkest heat color (t = 1); the lone point's bin
+      // gets the t = 1/3 color. Bare {lat, lon} pairs are accepted.
+      let svg = interpret(
+        "ExportString[GeoHistogram[{{40, -100}, {40.2, -100.1}, \
+         {40.1, -100.2}, {34, -118}}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("fill=\"rgb(140,26,33)\" fill-opacity=\"0.7\""),
+        "densest bin missing its full-scale heat color"
+      );
+      // heat_color(1/3) = (0.837, 0.653, 0.443) → rgb(213,167,113)
+      assert!(
+        svg.contains("fill=\"rgb(213,167,113)\" fill-opacity=\"0.7\""),
+        "sparse bin missing its scaled heat color"
+      );
+      // Default bins are hexagons: every bin path has 6 vertices (M + 5 L).
+      for chunk in svg.split("<path d=\"").skip(1) {
+        if !chunk.contains("fill-opacity=\"0.7\"") {
+          continue;
+        }
+        let path = chunk.split('"').next().unwrap();
+        let verts = path.matches(['M', 'L']).count();
+        assert_eq!(verts, 6, "hexagon bin should have 6 vertices: {path}");
+      }
+    }
+
+    #[test]
+    fn test_geohistogram_rectangle_and_triangle_bins() {
+      // "Rectangle" bins are 4-vertex tiles, "Triangle" bins 3-vertex tiles.
+      let rect = interpret(
+        "ExportString[GeoHistogram[{{40, -100}, {41, -101}, {34, -118}}, \
+         \"Rectangle\"], \"SVG\"]",
+      )
+      .unwrap();
+      let tri = interpret(
+        "ExportString[GeoHistogram[{{40, -100}, {41, -101}, {34, -118}}, \
+         \"Triangle\"], \"SVG\"]",
+      )
+      .unwrap();
+      for (svg, expected) in [(&rect, 4), (&tri, 3)] {
+        let mut bins = 0;
+        for chunk in svg.split("<path d=\"").skip(1) {
+          if !chunk.contains("fill-opacity=\"0.7\"") {
+            continue;
+          }
+          bins += 1;
+          let path = chunk.split('"').next().unwrap();
+          let verts = path.matches(['M', 'L']).count();
+          assert_eq!(verts, expected, "bin should have {expected} vertices");
+        }
+        assert!(bins > 0, "no bins rendered");
+      }
+    }
+
+    #[test]
+    fn test_geohistogram_association_weights() {
+      // <|pos -> w, …|> weights each location; the max-normalized colors put
+      // the w=10 bin at full scale and the w=1 bin at t = 0.1.
+      let svg = interpret(
+        "ExportString[GeoHistogram[<|GeoPosition[{40, -100}] -> 10, \
+         GeoPosition[{34, -118}] -> 1|>], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("fill=\"rgb(140,26,33)\""),
+        "heavy bin not at full scale"
+      );
+      // heat_color(0.1) = (0.937, 0.847, 0.553) → rgb(239,216,141)
+      assert!(
+        svg.contains("fill=\"rgb(239,216,141)\""),
+        "light bin not at t = 0.1"
+      );
+    }
+
+    #[test]
+    fn test_geohistogram_weighted_data() {
+      // WeightedData[locs, wts] canonicalizes to
+      // WeightedData[Automatic, {locs, wts}] before GeoHistogram sees it.
+      let svg = interpret(
+        "ExportString[GeoHistogram[WeightedData[{{40, -100}, {34, -118}}, \
+         {5, 1}]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("fill=\"rgb(140,26,33)\""),
+        "weight-5 bin not at full scale"
+      );
+      // heat_color(0.2) = (0.894, 0.764, 0.506) → rgb(228,195,129)
+      assert!(
+        svg.contains("fill=\"rgb(228,195,129)\""),
+        "weight-1 bin not at t = 0.2"
+      );
+    }
+
+    #[test]
+    fn test_geohistogram_bin_count_spec() {
+      // A numeric bspec sets the tile count across the data: more bins across
+      // means smaller tiles, so 20 bins yield at least as many non-empty
+      // tiles as 2 bins for spread-out data.
+      let data = "{{40, -100}, {42, -104}, {44, -108}, {46, -112}, \
+                  {48, -116}, {50, -120}}";
+      let count_bins = |svg: &str| svg.matches("fill-opacity=\"0.7\"").count();
+      let coarse =
+        interpret(&format!("ExportString[GeoHistogram[{data}, 2], \"SVG\"]"))
+          .unwrap();
+      let fine =
+        interpret(&format!("ExportString[GeoHistogram[{data}, 20], \"SVG\"]"))
+          .unwrap();
+      assert!(
+        count_bins(&fine) > count_bins(&coarse),
+        "20 bins across should produce more tiles than 2 ({} vs {})",
+        count_bins(&fine),
+        count_bins(&coarse)
+      );
+    }
+
+    #[test]
+    fn test_geohistogram_quantity_bin_size() {
+      // Quantity bin diameters are honored: 50 km tiles separate two points
+      // ~110 km apart into two bins.
+      let svg = interpret(
+        "ExportString[GeoHistogram[{{40, -100}, {41, -100}}, \
+         Quantity[50, \"Kilometers\"]], \"SVG\"]",
+      )
+      .unwrap();
+      assert_eq!(
+        svg.matches("fill-opacity=\"0.7\"").count(),
+        2,
+        "50 km tiles should separate points 1° of latitude apart"
+      );
+    }
+
+    #[test]
+    fn test_geohistogram_plot_legends() {
+      // No legend by default; PlotLegends -> Automatic adds the color-scale
+      // bar (widening the canvas) with the max count as its top tick label.
+      let plain = interpret(
+        "ExportString[GeoHistogram[{{40, -100}, {40.1, -100.1}, \
+         {34, -118}}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(!plain.contains("<text"), "no legend expected by default");
+      let legended = interpret(
+        "ExportString[GeoHistogram[{{40, -100}, {40.1, -100.1}, {34, -118}}, \
+         PlotLegends -> Automatic], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(legended.contains("<text"), "legend tick labels missing");
+      assert!(legended.contains(">2<"), "legend max label missing");
+      assert!(legended.contains(">0<"), "legend min label missing");
+    }
+
+    #[test]
+    fn test_geohistogram_height_specs_accepted() {
+      // The hspec argument ("Count"/"Probability"/"Intensity"/"PDF") is
+      // accepted; with equal-size bins and max-normalized colors, all four
+      // shade the map identically.
+      let base = interpret(
+        "ExportString[GeoHistogram[{{40, -100}, {41, -101}}, Automatic, \
+         \"Count\"], \"SVG\"]",
+      )
+      .unwrap();
+      for hspec in ["Probability", "Intensity", "PDF"] {
+        let svg = interpret(&format!(
+          "ExportString[GeoHistogram[{{{{40, -100}}, {{41, -101}}}}, \
+           Automatic, \"{hspec}\"], \"SVG\"]"
+        ))
+        .unwrap();
+        assert_eq!(svg, base, "{hspec} should shade like Count");
+      }
+    }
+
+    #[test]
+    fn test_geohistogram_options_passthrough() {
+      // GeoGraphics options (ImageSize, GeoRange, GeoProjection, …) pass
+      // through to the underlying map.
+      let svg = interpret(
+        "ExportString[GeoHistogram[{{40, -100}, {41, -101}}, \
+         ImageSize -> 500, GeoRange -> \"World\"], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("width=\"500\""), "ImageSize not honored");
+      assert!(
+        svg.contains("height=\"250\""),
+        "world view should be 2:1 at width 500"
+      );
+    }
+
+    #[test]
+    fn test_geohistogram_single_point_renders() {
+      // A single location still produces a (one-bin) map instead of a
+      // degenerate view.
+      let svg = interpret(
+        "ExportString[GeoHistogram[{GeoPosition[{48.8566, 2.3522}]}], \
+         \"SVG\"]",
+      )
+      .unwrap();
+      assert_eq!(
+        svg.matches("fill-opacity=\"0.7\"").count(),
+        1,
+        "expected exactly one bin"
+      );
+    }
+
+    #[test]
+    fn test_geohistogram_invalid_data_stays_symbolic() {
+      // Non-positional data leaves the expression unevaluated, matching the
+      // GeoRegionValuePlot behavior for unusable input.
+      assert_eq!(interpret("GeoHistogram[5]").unwrap(), "GeoHistogram[5]");
+    }
   }
 
   mod dihedral_angle_tests {
@@ -6981,6 +7214,330 @@ mod high_level_functions_tests {
       assert_eq!(
         interpret("IntegerName[1000000000000000000, \"German\"]").unwrap(),
         "IntegerName[1000000000000000000, German]"
+      );
+    }
+  }
+
+  mod geometric_test_tests {
+    use super::*;
+
+    // --- Point relations --------------------------------------------------
+
+    #[test]
+    fn collinear_points() {
+      assert_eq!(
+        interpret("GeometricTest[{{2, 3}, {4, 6}, {-2, -3}}, \"Collinear\"]")
+          .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[{{0, 0}, {1, 0}, {2, 0}, {3, 0}}, \"Collinear\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn non_collinear_points() {
+      assert_eq!(
+        interpret("GeometricTest[{{0, 0}, {1, 1}, {2, 3}}, \"Collinear\"]")
+          .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn distinct_points() {
+      assert_eq!(
+        interpret("GeometricTest[{{0, 0}, {1, 1}, {2, 3}}, \"Distinct\"]")
+          .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("GeometricTest[{{0, 0}, {1, 1}, {0, 0}}, \"Distinct\"]")
+          .unwrap(),
+        "False"
+      );
+    }
+
+    // --- Line relations ---------------------------------------------------
+
+    #[test]
+    fn parallel_lines() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 1}}], \
+           InfiniteLine[{{0, 1}, {1, 2}}]}, \"Parallel\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 1}}], \
+           InfiniteLine[{{0, 0}, {1, -1}}]}, \"Parallel\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn perpendicular_lines() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 1}}], \
+           InfiniteLine[{{0, 0}, {1, -1}}]}, \"Perpendicular\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 0}}], \
+           InfiniteLine[{{0, 0}, {1, 1}}]}, \"Perpendicular\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn concurrent_lines() {
+      // Three lines through the common point (1, 1).
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 1}}], \
+           InfiniteLine[{{0, 2}, {1, 1}}], \
+           InfiniteLine[{{2, 0}, {1, 1}}]}, \"Concurrent\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      // Two parallel lines are never concurrent.
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 0}}], \
+           InfiniteLine[{{0, 1}, {1, 1}}]}, \"Concurrent\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn horizontal_and_vertical_lines() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[InfiniteLine[{{0, 0}, {1, 0}}], \"Horizontal\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[InfiniteLine[{{0, 0}, {1, 0}}], \"Vertical\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[InfiniteLine[{{0, 0}, {0, 1}}], \"Vertical\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    // --- Polygon predicates ----------------------------------------------
+
+    #[test]
+    fn convex_polygon() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {5, 1}, {4, 4}, {-2, 0}}], \"Convex\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      // Self-intersecting vertex order is not convex.
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {2, 0}, {0, 2}, {2, 2}}], \"Convex\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn equilateral_and_regular_triangle() {
+      let eq = "Triangle[{{0, 0}, {2, 0}, {1, 1.7320508075688772}}]";
+      assert_eq!(
+        interpret(&format!("GeometricTest[{eq}, \"Equilateral\"]")).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(&format!("GeometricTest[{eq}, \"Regular\"]")).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[Triangle[{{0, 0}, {1, 0}, {0, 1}}], \"Equilateral\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn square_is_regular_rectangle() {
+      let sq = "Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}]";
+      assert_eq!(
+        interpret(&format!("GeometricTest[{sq}, \"Regular\"]")).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(&format!("GeometricTest[{sq}, \"Rectangle\"]")).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(&format!("GeometricTest[{sq}, \"Equiangular\"]")).unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn parallelogram_and_rectangle() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {3, 0}, {4, 2}, {1, 2}}], \
+           \"Parallelogram\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      // A slanted parallelogram is not a rectangle.
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {3, 0}, {4, 2}, {1, 2}}], \
+           \"Rectangle\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn orientation() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}], \
+           \"Counterclockwise\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {0, 2}, {2, 2}, {2, 0}}], \
+           \"Clockwise\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn simple_polygon() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}], \"Simple\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[Polygon[{{0, 0}, {2, 2}, {2, 0}, {0, 2}}], \"Simple\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    // --- Object relations -------------------------------------------------
+
+    #[test]
+    fn congruent_triangles() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[{Triangle[{{0, 0}, {3, 0}, {0, 4}}], \
+           Triangle[{{1, 1}, {1, 5}, {4, 1}}]}, \"Congruent\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "GeometricTest[{Triangle[{{0, 0}, {3, 0}, {0, 4}}], \
+           Triangle[{{0, 0}, {6, 0}, {0, 8}}]}, \"Congruent\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn similar_triangles() {
+      assert_eq!(
+        interpret(
+          "GeometricTest[{Triangle[{{0, 0}, {3, 0}, {0, 4}}], \
+           Triangle[{{0, 0}, {6, 0}, {0, 8}}]}, \"Similar\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    // --- Multiple properties and fallbacks --------------------------------
+
+    #[test]
+    fn multiple_properties_are_anded() {
+      let sq = "Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}]";
+      assert_eq!(
+        interpret(&format!("GeometricTest[{sq}, \"Convex\", \"Rectangle\"]"))
+          .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "GeometricTest[{sq}, \"Convex\", \"Equilateral\", \"Rectangle\"]"
+        ))
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn symbolic_input_stays_unevaluated() {
+      // Symbolic coordinates yield algebraic conditions in Wolfram; here the
+      // call is simply left unevaluated.
+      assert_eq!(
+        interpret("GeometricTest[{{a, b}, {c, d}, {e, f}}, \"Collinear\"]")
+          .unwrap(),
+        "GeometricTest[{{a, b}, {c, d}, {e, f}}, Collinear]"
+      );
+    }
+
+    #[test]
+    fn unknown_property_stays_unevaluated() {
+      assert_eq!(
+        interpret("GeometricTest[{{0, 0}, {1, 1}}, \"Bogus\"]").unwrap(),
+        "GeometricTest[{{0, 0}, {1, 1}}, Bogus]"
       );
     }
   }

@@ -19,3 +19,4 @@ Union, intersection, containment, and related relational queries.
 ## Additional Functions
 
 - [`SymmetricDifference`](sets/SymmetricDifference.md)
+- [`UniqueElements`](sets/UniqueElements.md)

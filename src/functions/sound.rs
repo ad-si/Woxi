@@ -36,10 +36,10 @@ fn collect_play_segments<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
   }
 }
 
-/// Sample a single `Play[f, {t, tmin, tmax}]` segment into 16-bit PCM samples.
-/// Returns `None` when the iterator is malformed or the amplitude cannot be
-/// evaluated to a number anywhere on the interval.
-fn sample_play(play: &Expr) -> Option<Vec<i16>> {
+/// Sample a single `Play[f, {t, tmin, tmax}]` segment into amplitude values
+/// clipped to [-1, 1]. Returns `None` when the iterator is malformed or the
+/// amplitude cannot be evaluated to a number anywhere on the interval.
+fn sample_play(play: &Expr) -> Option<Vec<f64>> {
   let Expr::FunctionCall { name, args } = play else {
     return None;
   };
@@ -78,10 +78,25 @@ fn sample_play(play: &Expr) -> Option<Vec<i16>> {
       any_finite = true;
     }
     // wolframscript clips amplitudes to [-1, 1] before quantizing.
-    let clipped = amp.clamp(-1.0, 1.0);
-    samples.push((clipped * i16::MAX as f64).round() as i16);
+    samples.push(amp.clamp(-1.0, 1.0));
   }
   any_finite.then_some(samples)
+}
+
+/// Sample every `Play` segment inside a `Sound` (or bare `Play`) expression
+/// into amplitude values clipped to [-1, 1], concatenated in order. Returns
+/// the samples together with the sample rate in Hz, or `None` when the
+/// expression contains no samplable `Play` segment.
+pub fn sound_to_samples(sound_expr: &Expr) -> Option<(Vec<f64>, u32)> {
+  let mut plays = Vec::new();
+  collect_play_segments(sound_expr, &mut plays);
+  let mut samples = Vec::new();
+  for play in plays {
+    if let Some(seg) = sample_play(play) {
+      samples.extend(seg);
+    }
+  }
+  (!samples.is_empty()).then_some((samples, SAMPLE_RATE))
 }
 
 /// Encode mono 16-bit PCM samples as a little-endian WAV byte stream.
@@ -120,24 +135,13 @@ fn encode_wav(samples: &[i16]) -> Vec<u8> {
 /// base64-encoded WAV byte stream. Returns `None` when the sound contains no
 /// samplable `Play` segment.
 pub fn sound_to_wav_base64(sound_expr: &Expr) -> Option<String> {
-  let mut plays = Vec::new();
-  collect_play_segments(sound_expr, &mut plays);
-  if plays.is_empty() {
-    return None;
-  }
-
   // Concatenate the segments in order (matching how Sound plays a list of
   // sounds sequentially).
-  let mut samples = Vec::new();
-  for play in plays {
-    if let Some(seg) = sample_play(play) {
-      samples.extend(seg);
-    }
-  }
-  if samples.is_empty() {
-    return None;
-  }
-
-  let wav = encode_wav(&samples);
+  let (samples, _rate) = sound_to_samples(sound_expr)?;
+  let pcm: Vec<i16> = samples
+    .iter()
+    .map(|s| (s * i16::MAX as f64).round() as i16)
+    .collect();
+  let wav = encode_wav(&pcm);
   Some(base64::engine::general_purpose::STANDARD.encode(&wav))
 }

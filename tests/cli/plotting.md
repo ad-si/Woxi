@@ -39,6 +39,7 @@ SVG images.
 - [`Histogram`](plotting/Histogram.md)
 - [`PieChart`](plotting/PieChart.md)
 - [`BubbleChart`](plotting/BubbleChart.md)
+- [`BubbleHistogram`](plotting/BubbleHistogram.md)
 
 ## Raw graphics
 
@@ -51,6 +52,7 @@ SVG images.
 - [`LinearGradientFilling`](plotting/LinearGradientFilling.md)
 - [`Manipulate`](plotting/Manipulate.md)
 - [`ArrayPlot`](plotting/ArrayPlot.md)
+- [`AudioPlot`](plotting/AudioPlot.md)
 - [`BarChart3D`](plotting/BarChart3D.md)
 - [`BoxWhiskerChart`](plotting/BoxWhiskerChart.md)
 - [`ComplexPlot`](plotting/ComplexPlot.md)
@@ -78,12 +80,14 @@ SVG images.
 - [`NumberLinePlot`](plotting/NumberLinePlot.md)
 - [`ParametricPlot3D`](plotting/ParametricPlot3D.md)
 - [`PieChart3D`](plotting/PieChart3D.md)
+- [`PlotGrid`](plotting/PlotGrid.md)
 - [`RegionPlot3D`](plotting/RegionPlot3D.md)
 - [`RevolutionPlot3D`](plotting/RevolutionPlot3D.md)
 - [`SectorChart`](plotting/SectorChart.md)
 - [`SphericalPlot3D`](plotting/SphericalPlot3D.md)
 - [`StreamDensityPlot`](plotting/StreamDensityPlot.md)
 - [`StreamPlot`](plotting/StreamPlot.md)
+- [`TimelinePlot`](plotting/TimelinePlot.md)
 - [`TreeForm`](plotting/TreeForm.md)
 - [`TreeGraph`](plotting/TreeGraph.md)
 - [`VectorPlot`](plotting/VectorPlot.md)

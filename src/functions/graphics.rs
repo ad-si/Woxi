@@ -135,6 +135,7 @@ pub struct ThemeColors {
   pub table_border_strong: &'static str,
   pub table_border_light: &'static str,
   pub framed_border: &'static str,
+  pub highlighted_bg: &'static str,
 }
 
 const LIGHT_THEME: ThemeColors = ThemeColors {
@@ -150,6 +151,7 @@ const LIGHT_THEME: ThemeColors = ThemeColors {
   table_border_strong: "#999",
   table_border_light: "#ccc",
   framed_border: "rgb(190,190,190)",
+  highlighted_bg: "rgb(255,245,155)",
 };
 
 const DARK_THEME: ThemeColors = ThemeColors {
@@ -165,6 +167,7 @@ const DARK_THEME: ThemeColors = ThemeColors {
   table_border_strong: "#555",
   table_border_light: "#3a3a3a",
   framed_border: "rgb(80,80,80)",
+  highlighted_bg: "rgb(102,92,20)",
 };
 
 pub fn theme() -> &'static ThemeColors {
@@ -217,6 +220,7 @@ struct StyleState {
   point_size: f64, // fraction of plot width, default ~0.012
   dashing: Option<Vec<f64>>, // dash lengths in coordinate-space fractions
   edge_form: Option<EdgeForm>,
+  halo: Option<Halo>, // Haloing[...] contrasting outline behind primitives
   font_size: f64,
   font_weight: String,
   font_style: String,
@@ -229,6 +233,15 @@ struct EdgeForm {
   thickness: Option<f64>,
 }
 
+/// `Haloing[…]` directive: draws a contrasting outline (halo) behind a
+/// primitive so it stays visible against any background.  The halo is a
+/// wider stroke of `color` extending `radius` pixels beyond the primitive.
+#[derive(Debug, Clone)]
+struct Halo {
+  color: Color,
+  radius: f64, // extra pixel radius beyond the primitive
+}
+
 impl Default for StyleState {
   fn default() -> Self {
     Self {
@@ -238,6 +251,7 @@ impl Default for StyleState {
       point_size: 0.012,
       dashing: None,
       edge_form: None,
+      halo: None,
       font_size: 14.0,
       font_weight: "normal".to_string(),
       font_style: "normal".to_string(),
@@ -722,6 +736,25 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         // FaceForm[color] sets fill color
         if let Some(c) = parse_color(&args[0]) {
           style.color = c;
+        }
+        true
+      }
+      "Haloing" => {
+        // Haloing[]           → white halo, default radius
+        // Haloing[color]      → colored halo, default radius
+        // Haloing[color, r]   → colored halo of pixel radius r
+        // Haloing[None]       → disable haloing
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == "None")
+        {
+          style.halo = None;
+        } else {
+          let color = args
+            .first()
+            .and_then(parse_color)
+            .unwrap_or(Color::new(1.0, 1.0, 1.0));
+          let radius = args.get(1).and_then(expr_to_f64).unwrap_or(2.0);
+          style.halo = Some(Halo { color, radius });
         }
         true
       }
@@ -2296,6 +2329,14 @@ fn render_primitive(
       let cy = coord_y(*y, bb, svg_h);
       let r = style.point_size * svg_w * 0.5;
       let color = style.effective_color();
+      if let Some(ref halo) = style.halo {
+        out.push_str(&format!(
+          "<circle cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{:.2}\" fill=\"{}\"{}/>\n",
+          r + halo.radius,
+          halo.color.to_svg_rgb(),
+          halo.color.opacity_attr(),
+        ));
+      }
       out.push_str(&format!(
         "<circle cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{r:.2}\" fill=\"{}\"{}/>\n",
         color.to_svg_rgb(),
@@ -2308,6 +2349,14 @@ fn render_primitive(
       for &(x, y) in points {
         let cx = coord_x(x, bb, svg_w);
         let cy = coord_y(y, bb, svg_h);
+        if let Some(ref halo) = style.halo {
+          out.push_str(&format!(
+            "<circle cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{:.2}\" fill=\"{}\"{}/>\n",
+            r + halo.radius,
+            halo.color.to_svg_rgb(),
+            halo.color.opacity_attr(),
+          ));
+        }
         out.push_str(&format!(
           "<circle cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{r:.2}\" fill=\"{}\"{}/>\n",
           color.to_svg_rgb(),
@@ -2326,6 +2375,16 @@ fn render_primitive(
             format!("{:.2},{:.2}", coord_x(x, bb, svg_w), coord_y(y, bb, svg_h))
           })
           .collect();
+        // Draw the halo (contrasting outline) behind the line first.
+        if let Some(ref halo) = style.halo {
+          let hw = sw + 2.0 * halo.radius;
+          out.push_str(&format!(
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{hw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"{}/>\n",
+            pts.join(" "),
+            halo.color.to_svg_rgb(),
+            halo.color.opacity_attr(),
+          ));
+        }
         out.push_str(&format!(
           "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
           pts.join(" "),
@@ -8206,6 +8265,8 @@ fn is_graphics_producing_head(name: &str) -> bool {
       | "VectorPlot"
       | "VectorPlot3D"
       | "NumberLinePlot"
+      | "TimelinePlot"
+      | "Dendrogram"
       | "ComplexPlot"
       | "ComplexPlot3D"
       | "ComplexListPlot"
@@ -8224,6 +8285,7 @@ fn is_graphics_producing_head(name: &str) -> bool {
       | "ListContourPlot"
       | "ListDensityPlot"
       | "ListPolarPlot"
+      | "TernaryListPlot"
       | "ListStreamPlot"
       | "ListVectorPlot"
       | "ListPlot3D"
@@ -8242,6 +8304,7 @@ fn is_graphics_producing_head(name: &str) -> bool {
       | "DateHistogram"
       | "BubbleChart"
       | "BubbleChart3D"
+      | "BubbleHistogram"
       | "BoxWhiskerChart"
       | "DistributionChart"
       | "SectorChart"
@@ -8557,6 +8620,16 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     )),
   }
+}
+
+/// PlotGrid[{{p1, p2}, {p3, p4}}, opts...]
+/// Arranges a matrix of plots in a shared grid. Like GraphicsGrid, each
+/// cell is re-rendered at a uniform per-cell width so the plots stay
+/// legible; the resulting composite renders as a single `-Graphics-`
+/// object. PlotGrid is tailored to plots (which already carry their own
+/// frames and axes), so the layout logic is shared with GraphicsGrid.
+pub fn plot_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  graphics_grid_ast(args)
 }
 
 // ── Tabular SVG rendering ────────────────────────────────────────────
@@ -9262,6 +9335,114 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
   }
 }
 
+/// Render `Highlighted[expr]` (or `Highlighted[expr, color]`) as an SVG box
+/// with a filled, colored background behind the content. Without an explicit
+/// color the theme's default highlight color (a light yellow) is used.
+/// Handles nested `Highlighted`/`Framed` and embedded `Graphics` recursively.
+pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
+  if args.is_empty() {
+    return None;
+  }
+
+  let content = &args[0];
+
+  // Optional second argument: a color for the highlight background.
+  let bg_fill = args
+    .get(1)
+    .and_then(parse_color)
+    .map(|c| c.to_svg_rgb())
+    .unwrap_or_else(|| theme().highlighted_bg.to_string());
+
+  // Layout constants (mirrors framed_to_svg)
+  let char_width: f64 = 8.4;
+  let font_size: f64 = 14.0;
+  let margin: f64 = 6.0; // padding between content and highlight edge
+  let rounding: f64 = 3.0;
+
+  // Check whether the content is itself renderable as a nested SVG.
+  let (inner_svg, inner_w, inner_h): (Option<String>, f64, f64) =
+    if let Expr::FunctionCall {
+      name,
+      args: inner_args,
+    } = content
+    {
+      match name.as_str() {
+        "Highlighted" => highlighted_to_svg(inner_args)
+          .map(|svg| {
+            let (w, h) = parse_svg_wh(&svg);
+            (Some(svg), w, h)
+          })
+          .unwrap_or((None, 0.0, 0.0)),
+        "Framed" => framed_to_svg(inner_args)
+          .map(|svg| {
+            let (w, h) = parse_svg_wh(&svg);
+            (Some(svg), w, h)
+          })
+          .unwrap_or((None, 0.0, 0.0)),
+        _ => (None, 0.0, 0.0),
+      }
+    } else if let Expr::Graphics { svg, .. } = content {
+      let (w, h) = parse_svg_wh(svg);
+      (Some(svg.clone()), w, h)
+    } else {
+      (None, 0.0, 0.0)
+    };
+
+  if let Some(ref child_svg) = inner_svg {
+    // Embed child SVG on top of a highlighted background.
+    let total_w = inner_w + 2.0 * margin;
+    let total_h = inner_h + 2.0 * margin;
+    let svg_w = total_w.ceil() as u32;
+    let svg_h = total_h.ceil() as u32;
+
+    let mut svg = String::with_capacity(child_svg.len() + 512);
+    svg.push_str(&format!(
+      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+    ));
+    // Highlighted background rectangle (filled, no border).
+    svg.push_str(&format!(
+      "<rect x=\"0\" y=\"0\" width=\"{total_w:.1}\" height=\"{total_h:.1}\" rx=\"{rounding:.1}\" fill=\"{bg_fill}\"/>\n"
+    ));
+    // Embed child SVG.
+    svg.push_str(&format!(
+      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\">\n"
+    ));
+    svg.push_str(strip_svg_wrapper(child_svg));
+    svg.push_str("</svg>\n");
+    svg.push_str("</svg>");
+    Some(svg)
+  } else {
+    // Text content — measure and render on a highlighted background.
+    let content_w = estimate_display_width(content) * char_width;
+    let frac_extra = if has_fraction(content) { 10.0 } else { 0.0 };
+    let content_h = font_size + frac_extra;
+
+    let total_w = content_w + 2.0 * margin;
+    let total_h = content_h + 2.0 * margin;
+    let svg_w = total_w.ceil() as u32;
+    let svg_h = total_h.ceil() as u32;
+
+    let mut svg = String::with_capacity(512);
+    svg.push_str(&format!(
+      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+    ));
+    // Highlighted background rectangle (filled, no border).
+    svg.push_str(&format!(
+      "<rect x=\"0\" y=\"0\" width=\"{total_w:.1}\" height=\"{total_h:.1}\" rx=\"{rounding:.1}\" fill=\"{bg_fill}\"/>\n"
+    ));
+    // Text centered inside.
+    let cx = total_w / 2.0;
+    let cy = total_h / 2.0;
+    let text_fill = theme().text_primary;
+    svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      expr_to_svg_markup(content)
+    ));
+    svg.push_str("</svg>");
+    Some(svg)
+  }
+}
+
 /// Parse width and height from an SVG's root element attributes.
 fn parse_svg_wh(svg: &str) -> (f64, f64) {
   let w = svg
@@ -9290,10 +9471,11 @@ fn strip_svg_wrapper(svg: &str) -> &str {
   &svg[start..end]
 }
 
-/// Render a list that contains Framed elements as a horizontal row SVG.
-/// Plain items are rendered as text; Framed items are fully rendered via
-/// `framed_to_svg` (which handles arbitrary nesting) and embedded as child SVGs.
-/// The result looks like `{x, |a|, ||b||}` with visual brackets and commas.
+/// Render a list that contains Framed or Highlighted elements as a horizontal
+/// row SVG. Plain items are rendered as text; Framed/Highlighted items are
+/// fully rendered via `framed_to_svg` / `highlighted_to_svg` (each handling
+/// arbitrary nesting) and embedded as child SVGs. The result looks like
+/// `{x, |a|, ||b||}` with visual brackets and commas.
 pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
   if items.is_empty() {
     return None;
@@ -9321,11 +9503,15 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
   let mut cells: Vec<CellInfo> = Vec::with_capacity(items.len());
   for item in items {
     if let Expr::FunctionCall { name, args } = item
-      && name == "Framed"
       && !args.is_empty()
     {
-      // Render the entire Framed (with any nesting) as SVG
-      if let Some(child_svg) = framed_to_svg(args) {
+      // Render the entire Framed / Highlighted (with any nesting) as SVG
+      let child_svg = match name.as_str() {
+        "Framed" => framed_to_svg(args),
+        "Highlighted" => highlighted_to_svg(args),
+        _ => None,
+      };
+      if let Some(child_svg) = child_svg {
         let (w, h) = parse_svg_wh(&child_svg);
         cells.push(CellInfo {
           width: w,
