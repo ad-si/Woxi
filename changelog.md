@@ -2,6 +2,8 @@
 
 # 2025-05-08 - 0.1.0
 
+- Implement `WikidataData` and `ExternalIdentifier`,
+    including `Import` of SVG files and `URL[…]` sources
 - Add support for `HTTPRequest` objects including property extraction
 - Add support for `QuestionObject`, `AssessmentFunction`, and `AssessmentResultObject`
 - Implement `DateString` and `Now`
