@@ -2251,6 +2251,22 @@ pub fn resolve_atomic_number(identifier: &Expr) -> Option<i128> {
   find_element(identifier).map(|e| e.atomic_number)
 }
 
+/// Exact-match check that `sym` is a chemical element abbreviation
+/// ("C", "Cl", …). Case-sensitive: molecule atom symbols must use the
+/// canonical capitalization.
+pub fn is_element_abbreviation(sym: &str) -> bool {
+  ELEMENTS.iter().any(|e| e.abbreviation == sym)
+}
+
+/// Abbreviation ("C", "Cl", …) of the element with the given atomic number.
+pub fn abbreviation_for_atomic_number(z: i128) -> Option<&'static str> {
+  if (1..=118).contains(&z) {
+    Some(ELEMENTS[(z - 1) as usize].abbreviation)
+  } else {
+    None
+  }
+}
+
 /// Look up an element by name (case-insensitive), abbreviation, or atomic number
 fn find_element(identifier: &Expr) -> Option<&'static Element> {
   match identifier {

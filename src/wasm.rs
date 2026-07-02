@@ -142,11 +142,13 @@ pub fn get_graphicsbox() -> String {
   crate::get_captured_graphicsbox().unwrap_or_default()
 }
 
-/// Return the synthesized audio (base64-encoded WAV) from the last
-/// `evaluate()` call, if any. Returns an empty string when there is no sound.
+/// Return the playable audio (base64-encoded) from the last `evaluate()`
+/// call, if any. Returns an empty string when there is no sound.
 #[wasm_bindgen]
 pub fn get_sound() -> String {
-  crate::get_captured_sound().unwrap_or_default()
+  crate::get_captured_sound()
+    .map(|audio| audio.base64)
+    .unwrap_or_default()
 }
 
 /// Return warnings from the last `evaluate()` call as newline-separated text.
@@ -237,13 +239,13 @@ fn evaluate_statement_items(stmt: &str) -> Vec<String> {
         return items;
       }
 
-      // Synthesized audio (Play[…] / Sound[…]) — emit a dedicated "sound"
-      // item carrying the base64 WAV so the frontend can render an <audio>
-      // player. The textual "-Sound-" echo is suppressed in favor of it.
-      if let Some(ref wav_b64) = result.sound
+      // Playable audio (Play[…] / Sound[…] / Audio[…]) — emit a dedicated
+      // "sound" item carrying the base64 data so the frontend can render a
+      // graphical audio player. The textual echo is suppressed in favor of it.
+      if let Some(ref audio) = result.sound
         && result.result != "\0"
       {
-        items.push(json_sound_item(wav_b64));
+        items.push(json_sound_item(audio));
         return items;
       }
 
@@ -396,13 +398,21 @@ fn json_output_item(kind: &str, content: &str, svg: Option<&str>) -> String {
   }
 }
 
-/// Build a "sound" output item carrying a base64-encoded WAV. The frontend
-/// turns the `audio` field into an `<audio controls>` data URI.
-fn json_sound_item(wav_base64: &str) -> String {
-  format!(
-    r#"{{"type":"sound","audio":"{}"}}"#,
-    json_escape(wav_base64)
-  )
+/// Build a "sound" output item carrying base64-encoded audio data. The
+/// frontend turns the `audio` + `mime` fields into an `<audio controls>`
+/// data URI; `label` (the source file name, when present) is shown next to
+/// the player. An empty `audio` field means the data is unavailable (e.g. a
+/// local file the browser cannot read) — the player chrome is still shown.
+fn json_sound_item(audio: &crate::AudioOutput) -> String {
+  let mut fields = vec![
+    r#""type":"sound""#.to_string(),
+    format!(r#""audio":"{}""#, json_escape(&audio.base64)),
+    format!(r#""mime":"{}""#, json_escape(&audio.mime)),
+  ];
+  if let Some(ref label) = audio.label {
+    fields.push(format!(r#""label":"{}""#, json_escape(label)));
+  }
+  format!("{{{}}}", fields.join(","))
 }
 
 /// Escape a string for safe inclusion in JSON.

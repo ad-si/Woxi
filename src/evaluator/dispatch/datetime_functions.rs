@@ -33,6 +33,9 @@ pub fn dispatch_datetime_functions(
     "DateDifference" if args.len() >= 2 => {
       return Some(crate::functions::datetime_ast::date_difference_ast(args));
     }
+    "MidDate" if !args.is_empty() && args.len() <= 3 => {
+      return Some(crate::functions::datetime_ast::mid_date_ast(args));
+    }
     "DateString" => {
       return Some(crate::functions::datetime_ast::date_string_ast(args));
     }

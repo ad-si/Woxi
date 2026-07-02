@@ -2003,6 +2003,14 @@ pub fn dispatch_complex_and_special(
         &args[1],
       ));
     }
+    "FindShortestCurve" if args.len() == 3 => {
+      return Some(compute_find_shortest_curve(&args[0], &args[1], &args[2]));
+    }
+    "ShortestCurveDistance" if args.len() == 3 => {
+      return Some(compute_shortest_curve_distance(
+        &args[0], &args[1], &args[2],
+      ));
+    }
     "RegionBounds" if args.len() == 1 => {
       return Some(compute_region_bounds(strip_region_wrapper(&args[0])));
     }
@@ -6151,6 +6159,486 @@ fn compute_signed_region_distance(
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
+// ─── FindShortestCurve / ShortestCurveDistance ─────────────────────────
+
+/// Numeric coordinates of a point expression: a list whose components all
+/// evaluate to machine floats (exact rationals and constants included).
+fn shortest_curve_point(e: &Expr) -> Option<Vec<f64>> {
+  if let Expr::List(items) = e {
+    items
+      .iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect()
+  } else {
+    None
+  }
+}
+
+/// Center and radius of a `Circle`/`Sphere`/`Disk`/`Ball` primitive with the
+/// Wolfram Language defaults filled in (center at the origin, radius 1).
+/// Fails for the ellipse forms (radius given as a list) and for the arc /
+/// sector forms (a third argument), which are not handled by the geodesic
+/// code below.
+fn circle_center_radius(args: &[Expr], dim: usize) -> Option<(Expr, Expr)> {
+  if args.len() > 2 {
+    return None;
+  }
+  let center = match args.first() {
+    None => Expr::List(vec![Expr::Integer(0); dim].into()),
+    Some(c) => c.clone(),
+  };
+  let radius = match args.get(1) {
+    None => Expr::Integer(1),
+    Some(Expr::List(_)) => return None,
+    Some(r) => r.clone(),
+  };
+  Some((center, radius))
+}
+
+/// Convex solid primitives where the shortest curve between two member
+/// points is the straight segment. Sector/arc argument forms (which break
+/// convexity) are excluded by the argument-count guards.
+fn is_convex_region(name: &str, args: &[Expr]) -> bool {
+  match name {
+    "Disk" | "Ball" => {
+      // Disk[c, {rx, ry}] (an ellipse) is still convex; Disk[c, r, {θ1, θ2}]
+      // (a sector) is not always geodesically convex, so require ≤ 2 args.
+      args.len() <= 2
+    }
+    "Rectangle" | "Cuboid" => args.len() <= 2,
+    "Triangle" => args.len() == 1,
+    _ => false,
+  }
+}
+
+/// True when `point` provably belongs to `region` (numeric check via
+/// RegionMember). `None` means the membership could not be decided (e.g.
+/// symbolic coordinates).
+fn region_member_check(region: &Expr, point: &Expr) -> Option<bool> {
+  match compute_region_member(region, point) {
+    Ok(Expr::Identifier(ref b)) if b == "True" => Some(true),
+    Ok(Expr::Identifier(ref b)) if b == "False" => Some(false),
+    _ => None,
+  }
+}
+
+/// Locate `p` on the polyline `verts`: the segment index and parameter in
+/// [0, 1] of the closest chain point, provided `p` actually lies on the
+/// chain (within a small relative tolerance).
+fn polyline_locate(verts: &[Vec<f64>], p: &[f64]) -> Option<(usize, f64)> {
+  let dist = |a: &[f64], b: &[f64]| -> f64 {
+    a.iter()
+      .zip(b)
+      .map(|(x, y)| (x - y) * (x - y))
+      .sum::<f64>()
+      .sqrt()
+  };
+  let mut best: Option<(usize, f64, f64)> = None;
+  for i in 0..verts.len() - 1 {
+    let a = &verts[i];
+    let b = &verts[i + 1];
+    let len2: f64 = a.iter().zip(b).map(|(x, y)| (y - x) * (y - x)).sum();
+    let u = if len2 == 0.0 {
+      0.0
+    } else {
+      let dot: f64 = p
+        .iter()
+        .zip(a.iter().zip(b))
+        .map(|(pi, (ai, bi))| (pi - ai) * (bi - ai))
+        .sum();
+      (dot / len2).clamp(0.0, 1.0)
+    };
+    let proj: Vec<f64> =
+      a.iter().zip(b).map(|(ai, bi)| ai + u * (bi - ai)).collect();
+    let err = dist(p, &proj);
+    if best.is_none_or(|(_, _, e)| err < e) {
+      best = Some((i, u, err));
+    }
+  }
+  let (i, u, err) = best?;
+  let scale = p.iter().fold(1.0_f64, |m, x| m.max(x.abs()));
+  (err <= 1e-8 * scale).then_some((i, u))
+}
+
+/// The shortest path along the polyline `verts` between two points lying on
+/// it. Walks the chain between the two positions; for a closed chain (first
+/// vertex equals last) both ways around are compared. Returns the path
+/// vertices (starting at `s`, ending at `t`) and its length, or `None` when
+/// either point is not on the polyline.
+fn polyline_shortest_path(
+  verts: &[Vec<f64>],
+  s: &[f64],
+  t: &[f64],
+) -> Option<(Vec<Vec<f64>>, f64)> {
+  let dim = verts.first()?.len();
+  if verts.len() < 2
+    || s.len() != dim
+    || t.len() != dim
+    || verts.iter().any(|v| v.len() != dim)
+  {
+    return None;
+  }
+  let dist = |a: &[f64], b: &[f64]| -> f64 {
+    a.iter()
+      .zip(b)
+      .map(|(x, y)| (x - y) * (x - y))
+      .sum::<f64>()
+      .sqrt()
+  };
+  let (si, su) = polyline_locate(verts, s)?;
+  let (ti, tu) = polyline_locate(verts, t)?;
+
+  // Drop consecutive duplicates (a located endpoint often coincides with a
+  // chain vertex) and measure the result.
+  let finish = |raw: Vec<Vec<f64>>| -> (Vec<Vec<f64>>, f64) {
+    let mut path: Vec<Vec<f64>> = Vec::with_capacity(raw.len());
+    for p in raw {
+      if path.last().map(|q| dist(q, &p) > 1e-12) != Some(false) {
+        path.push(p);
+      }
+    }
+    if path.len() == 1 {
+      path.push(path[0].clone());
+    }
+    let len = path.windows(2).map(|w| dist(&w[0], &w[1])).sum();
+    (path, len)
+  };
+
+  // Forward walk from the earlier chain position to the later one.
+  let (from, to, reversed) = if (si, su) <= (ti, tu) {
+    ((si, su, s), (ti, tu, t), false)
+  } else {
+    ((ti, tu, t), (si, su, s), true)
+  };
+  let mut raw = vec![from.2.to_vec()];
+  for v in verts.iter().take(to.0 + 1).skip(from.0 + 1) {
+    raw.push(v.clone());
+  }
+  raw.push(to.2.to_vec());
+  let (mut path, mut len) = finish(raw);
+
+  // A closed chain also offers the way around through the seam.
+  if dist(&verts[0], verts.last().unwrap()) <= 1e-12 {
+    let mut raw = vec![from.2.to_vec()];
+    for v in verts.iter().take(from.0 + 1).rev() {
+      raw.push(v.clone());
+    }
+    // verts[len-1] == verts[0] was just visited; continue before the seam.
+    for v in verts.iter().take(verts.len() - 1).skip(to.0 + 1).rev() {
+      raw.push(v.clone());
+    }
+    raw.push(to.2.to_vec());
+    let (alt_path, alt_len) = finish(raw);
+    if alt_len < len {
+      path = alt_path;
+      len = alt_len;
+    }
+  }
+
+  if reversed {
+    path.reverse();
+  }
+  Some((path, len))
+}
+
+/// A polyline path as a machine-precision Line[…] expression, matching the
+/// mesh-based (numeric) results wolframscript produces for curve regions.
+fn polyline_path_to_line(path: &[Vec<f64>]) -> Expr {
+  Expr::FunctionCall {
+    name: "Line".to_string(),
+    args: vec![Expr::List(
+      path
+        .iter()
+        .map(|p| {
+          Expr::List(
+            p.iter().map(|&x| Expr::Real(x)).collect::<Vec<_>>().into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )]
+    .into(),
+  }
+}
+
+/// FindShortestCurve[reg, s, t] — the shortest curve (minimizing geodesic)
+/// between two points s and t on the region reg. Handled analytically:
+///   • Circle[c, r]  → the shorter arc, as Circle[c, r, {θ1, θ2}]
+///   • convex solids (Disk, Ball, Rectangle, Cuboid, Triangle) → Line[{s, t}]
+///   • Line[{p1, …, pn}] chains → the sub-path along the polyline, at machine
+///     precision (wolframscript treats curve regions as meshes)
+/// Anything else stays unevaluated.
+fn compute_find_shortest_curve(
+  region: &Expr,
+  s: &Expr,
+  t: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "FindShortestCurve".to_string(),
+      args: vec![region.clone(), s.clone(), t.clone()].into(),
+    })
+  };
+  let Expr::FunctionCall { name, args } = region else {
+    return unevaluated();
+  };
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+
+  match name.as_str() {
+    "Circle" => {
+      let Some((center, radius)) = circle_center_radius(args, 2) else {
+        return unevaluated();
+      };
+      // The arc endpoints must be concrete: the short way around depends on
+      // the numeric angles.
+      let (Some(cf), Some(rf), Some(sf), Some(tf)) = (
+        shortest_curve_point(&center),
+        crate::functions::math_ast::try_eval_to_f64(&radius),
+        shortest_curve_point(s),
+        shortest_curve_point(t),
+      ) else {
+        return unevaluated();
+      };
+      if cf.len() != 2 || sf.len() != 2 || tf.len() != 2 {
+        return unevaluated();
+      }
+      // Both points must lie on the circle.
+      for p in [&sf, &tf] {
+        let d = ((p[0] - cf[0]).powi(2) + (p[1] - cf[1]).powi(2)).sqrt();
+        if (d - rf).abs() > 1e-8 * rf.abs().max(1.0) {
+          return unevaluated();
+        }
+      }
+      // Exact angular position of a point: ArcTan[x - cx, y - cy].
+      let (Expr::List(cc), Expr::List(sc), Expr::List(tc)) = (&center, s, t)
+      else {
+        return unevaluated();
+      };
+      let angle_of = |p: &crate::ExprList| -> Result<Expr, InterpreterError> {
+        let comp = |i: usize| {
+          call(
+            "Plus",
+            vec![
+              p[i].clone(),
+              call("Times", vec![Expr::Integer(-1), cc[i].clone()]),
+            ],
+          )
+        };
+        evaluate_expr_to_expr(&call("ArcTan", vec![comp(0), comp(1)]))
+      };
+      let theta_s = angle_of(sc)?;
+      let theta_t = angle_of(tc)?;
+      let ns = (sf[1] - cf[1]).atan2(sf[0] - cf[0]);
+      let nt = (tf[1] - cf[1]).atan2(tf[0] - cf[0]);
+      let ((lo, nlo), (hi, nhi)) = if ns <= nt {
+        ((theta_s, ns), (theta_t, nt))
+      } else {
+        ((theta_t, nt), (theta_s, ns))
+      };
+      let spec = if nhi - nlo <= std::f64::consts::PI + 1e-12 {
+        vec![lo, hi]
+      } else {
+        // The short way crosses the ±π branch cut of ArcTan: start at the
+        // larger angle and end at the smaller one shifted by a full turn.
+        let shifted = evaluate_expr_to_expr(&call(
+          "Plus",
+          vec![
+            lo,
+            call(
+              "Times",
+              vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+            ),
+          ],
+        ))?;
+        vec![hi, shifted]
+      };
+      Ok(call(
+        "Circle",
+        vec![center, radius, Expr::List(spec.into())],
+      ))
+    }
+    _ if is_convex_region(name, args) => {
+      // In a convex solid the geodesic is the straight segment. Both
+      // endpoints must provably belong to the region.
+      for p in [s, t] {
+        if region_member_check(region, p) != Some(true) {
+          return unevaluated();
+        }
+      }
+      Ok(call(
+        "Line",
+        vec![Expr::List(vec![s.clone(), t.clone()].into())],
+      ))
+    }
+    "Line" if args.len() == 1 => {
+      let Expr::List(pts) = &args[0] else {
+        return unevaluated();
+      };
+      let Some(verts) = pts
+        .iter()
+        .map(shortest_curve_point)
+        .collect::<Option<Vec<_>>>()
+      else {
+        return unevaluated();
+      };
+      let (Some(sf), Some(tf)) =
+        (shortest_curve_point(s), shortest_curve_point(t))
+      else {
+        return unevaluated();
+      };
+      match polyline_shortest_path(&verts, &sf, &tf) {
+        Some((path, _)) => Ok(polyline_path_to_line(&path)),
+        None => unevaluated(),
+      }
+    }
+    _ => unevaluated(),
+  }
+}
+
+/// ShortestCurveDistance[reg, s, t] — the geodesic distance between two
+/// points on reg, i.e. ArcLength[FindShortestCurve[reg, s, t]]:
+///   • Circle/Sphere → r ArcCos[(s-c).(t-c)/r²] (kept symbolic when the
+///     coordinates are, e.g. ShortestCurveDistance[Sphere[], {1,0,0},
+///     {x,y,z}] gives ArcCos[x])
+///   • convex solids → the Euclidean distance Sqrt[Σ (tᵢ-sᵢ)²]
+///   • Line[…] chains → the machine-precision length along the polyline
+fn compute_shortest_curve_distance(
+  region: &Expr,
+  s: &Expr,
+  t: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ShortestCurveDistance".to_string(),
+      args: vec![region.clone(), s.clone(), t.clone()].into(),
+    })
+  };
+  let Expr::FunctionCall { name, args } = region else {
+    return unevaluated();
+  };
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let sub = |a: &Expr, b: &Expr| {
+    call(
+      "Plus",
+      vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
+    )
+  };
+
+  match name.as_str() {
+    "Circle" | "Sphere" => {
+      let dim = if name.as_str() == "Sphere" { 3 } else { 2 };
+      let Some((center, radius)) = circle_center_radius(args, dim) else {
+        return unevaluated();
+      };
+      let (Expr::List(cc), Expr::List(sc), Expr::List(tc)) = (&center, s, t)
+      else {
+        return unevaluated();
+      };
+      if sc.len() != cc.len() || tc.len() != cc.len() {
+        return unevaluated();
+      }
+      // Concrete points must lie on the circle/sphere; symbolic coordinates
+      // are taken at face value (the doc formula case).
+      if let (Some(cf), Some(rf)) = (
+        shortest_curve_point(&center),
+        crate::functions::math_ast::try_eval_to_f64(&radius),
+      ) {
+        for p in [s, t] {
+          if let Some(pf) = shortest_curve_point(p) {
+            let d2: f64 =
+              pf.iter().zip(&cf).map(|(a, b)| (a - b) * (a - b)).sum();
+            if (d2.sqrt() - rf).abs() > 1e-8 * rf.abs().max(1.0) {
+              return unevaluated();
+            }
+          }
+        }
+      }
+      // r ArcCos[(s-c).(t-c)/r²] — the great-circle distance.
+      let dot = call(
+        "Plus",
+        (0..cc.len())
+          .map(|i| {
+            call("Times", vec![sub(&sc[i], &cc[i]), sub(&tc[i], &cc[i])])
+          })
+          .collect(),
+      );
+      let unit_radius = matches!(radius, Expr::Integer(1));
+      let inner = if unit_radius {
+        dot
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(dot),
+          right: Box::new(call(
+            "Power",
+            vec![radius.clone(), Expr::Integer(2)],
+          )),
+        }
+      };
+      let arc = call("ArcCos", vec![inner]);
+      let expr = if unit_radius {
+        arc
+      } else {
+        call("Times", vec![radius, arc])
+      };
+      evaluate_expr_to_expr(&expr)
+    }
+    _ if is_convex_region(name, args) => {
+      for p in [s, t] {
+        // Reject only points that provably lie outside; symbolic points
+        // fall through to the distance formula.
+        if region_member_check(region, p) == Some(false) {
+          return unevaluated();
+        }
+      }
+      let (Expr::List(sc), Expr::List(tc)) = (s, t) else {
+        return unevaluated();
+      };
+      if sc.len() != tc.len() {
+        return unevaluated();
+      }
+      // Sqrt[Σ (tᵢ-sᵢ)²] — spelled out (rather than EuclideanDistance) so
+      // symbolic coordinates give Sqrt[x² + (-1 + y)²] without Abs, as
+      // wolframscript does for this function.
+      let sum = call(
+        "Plus",
+        (0..sc.len())
+          .map(|i| call("Power", vec![sub(&tc[i], &sc[i]), Expr::Integer(2)]))
+          .collect(),
+      );
+      evaluate_expr_to_expr(&make_sqrt(sum))
+    }
+    "Line" if args.len() == 1 => {
+      let Expr::List(pts) = &args[0] else {
+        return unevaluated();
+      };
+      let Some(verts) = pts
+        .iter()
+        .map(shortest_curve_point)
+        .collect::<Option<Vec<_>>>()
+      else {
+        return unevaluated();
+      };
+      let (Some(sf), Some(tf)) =
+        (shortest_curve_point(s), shortest_curve_point(t))
+      else {
+        return unevaluated();
+      };
+      match polyline_shortest_path(&verts, &sf, &tf) {
+        Some((_, len)) => Ok(Expr::Real(len)),
+        None => unevaluated(),
+      }
+    }
+    _ => unevaluated(),
+  }
+}
+
 // ─── Area ──────────────────────────────────────────────────────────────
 
 /// Compute the area of a geometric region.
@@ -8447,6 +8935,31 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
               Expr::Integer(2),
               Expr::Constant("Pi".to_string()),
               args[1].clone(),
+            ]
+            .into(),
+          };
+          crate::evaluator::evaluate_expr_to_expr(&result)
+        } else if args.len() == 3
+          && !matches!(&args[1], Expr::List(_))
+          && let Expr::List(spec) = &args[2]
+          && spec.len() == 2
+        {
+          // Circle[center, r, {θ1, θ2}] (a circular arc) -> r*(θ2 - θ1)
+          let result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              args[1].clone(),
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  spec[1].clone(),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), spec[0].clone()].into(),
+                  },
+                ]
+                .into(),
+              },
             ]
             .into(),
           };

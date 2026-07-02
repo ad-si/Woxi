@@ -4,7 +4,7 @@ Transliterates text in other writing scripts to plain Latin/ASCII characters.
 
 ```scrut
 $ wo 'Transliterate["Αλφαβητικός"]'
-Alfavitikos
+Alphabetikos
 ```
 
 ```scrut

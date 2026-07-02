@@ -2670,6 +2670,330 @@ mod bounding_region {
   }
 }
 
+mod find_shortest_curve {
+  use super::*;
+
+  // The shortest curve between two points on a circle is the shorter arc,
+  // returned as Circle[c, r, {θ1, θ2}] with exact angles.
+  #[test]
+  fn circle_exact_arc() {
+    assert_eq!(
+      interpret("FindShortestCurve[Circle[], {1, 0}, {0, 1}]").unwrap(),
+      "Circle[{0, 0}, 1, {0, Pi/2}]"
+    );
+    assert_eq!(
+      interpret("FindShortestCurve[Circle[], {-1, 0}, {0, 1}]").unwrap(),
+      "Circle[{0, 0}, 1, {Pi/2, Pi}]"
+    );
+  }
+
+  // When the shorter arc crosses the ±π branch cut of ArcTan, the spec
+  // continues past π instead of taking the long way around.
+  #[test]
+  fn circle_arc_across_branch_cut() {
+    assert_eq!(
+      interpret(
+        "FindShortestCurve[Circle[], {-Sqrt[2]/2, Sqrt[2]/2}, \
+         {-Sqrt[2]/2, -Sqrt[2]/2}]"
+      )
+      .unwrap(),
+      "Circle[{0, 0}, 1, {(3*Pi)/4, (5*Pi)/4}]"
+    );
+  }
+
+  #[test]
+  fn circle_translated_and_scaled() {
+    assert_eq!(
+      interpret("FindShortestCurve[Circle[{1, 2}, 3], {4, 2}, {1, 5}]")
+        .unwrap(),
+      "Circle[{1, 2}, 3, {0, Pi/2}]"
+    );
+  }
+
+  // Antipodal points: both arcs are geodesics; the spec starts at the
+  // smaller angle.
+  #[test]
+  fn circle_antipodal_points() {
+    assert_eq!(
+      interpret("FindShortestCurve[Circle[], {1, 0}, {-1, 0}]").unwrap(),
+      "Circle[{0, 0}, 1, {0, Pi}]"
+    );
+  }
+
+  // Machine-precision coordinates give machine-precision angles.
+  #[test]
+  fn circle_machine_precision() {
+    assert_eq!(
+      interpret("FindShortestCurve[Circle[], {1, 0}, {0.6, 0.8}]").unwrap(),
+      "Circle[{0, 0}, 1, {0, 0.9272952180016123}]"
+    );
+  }
+
+  // A point that is not on the circle leaves the call unevaluated.
+  #[test]
+  fn circle_point_off_region_unevaluated() {
+    assert_eq!(
+      interpret("FindShortestCurve[Circle[], {2, 0}, {0, 1}]").unwrap(),
+      "FindShortestCurve[Circle[{0, 0}], {2, 0}, {0, 1}]"
+    );
+  }
+
+  // ArcLength closes over the returned arc.
+  #[test]
+  fn arc_length_of_result() {
+    assert_eq!(
+      interpret("ArcLength[FindShortestCurve[Circle[], {1, 0}, {0, 1}]]")
+        .unwrap(),
+      "Pi/2"
+    );
+  }
+
+  // In convex solids the geodesic is the straight segment, kept exact.
+  #[test]
+  fn convex_solids_straight_segment() {
+    assert_eq!(
+      interpret("FindShortestCurve[Disk[], {1/10, 4/5}, {-1/2, 0}]").unwrap(),
+      "Line[{{1/10, 4/5}, {-1/2, 0}}]"
+    );
+    assert_eq!(
+      interpret(
+        "FindShortestCurve[Triangle[{{0, 0}, {4, 0}, {0, 3}}], {1, 1}, {2, 0}]"
+      )
+      .unwrap(),
+      "Line[{{1, 1}, {2, 0}}]"
+    );
+    assert_eq!(
+      interpret("FindShortestCurve[Cuboid[], {0, 0, 0}, {1, 1, 1}]").unwrap(),
+      "Line[{{0, 0, 0}, {1, 1, 1}}]"
+    );
+  }
+
+  #[test]
+  fn convex_solid_point_outside_unevaluated() {
+    assert_eq!(
+      interpret("FindShortestCurve[Disk[], {2, 0}, {0, 0}]").unwrap(),
+      "FindShortestCurve[Disk[{0, 0}], {2, 0}, {0, 0}]"
+    );
+  }
+
+  // Curve regions are treated as meshes: the sub-path along the polyline,
+  // at machine precision, starting at the first query point.
+  #[test]
+  fn polyline_path() {
+    assert_eq!(
+      interpret(
+        "FindShortestCurve[Line[{{1, 0}, {2, 1}, {3, 0}, {4, 1}}], \
+         {1, 0}, {3, 0}]"
+      )
+      .unwrap(),
+      "Line[{{1., 0.}, {2., 1.}, {3., 0.}}]"
+    );
+    assert_eq!(
+      interpret(
+        "FindShortestCurve[Line[{{1, 0}, {2, 1}, {3, 0}, {4, 1}}], \
+         {3, 0}, {1, 0}]"
+      )
+      .unwrap(),
+      "Line[{{3., 0.}, {2., 1.}, {1., 0.}}]"
+    );
+  }
+
+  // Points in the middle of segments work too.
+  #[test]
+  fn polyline_mid_segment_points() {
+    assert_eq!(
+      interpret("FindShortestCurve[Line[{{0, 0}, {4, 0}}], {1, 0}, {3, 0}]")
+        .unwrap(),
+      "Line[{{1., 0.}, {3., 0.}}]"
+    );
+  }
+
+  // On a closed chain the shorter way around is taken — here through the
+  // shared first/last vertex rather than the three other corners.
+  #[test]
+  fn closed_polyline_takes_short_way() {
+    assert_eq!(
+      interpret(
+        "FindShortestCurve[Line[{{0, 0}, {2, 0}, {2, 2}, {0, 2}, {0, 0}}], \
+         {1, 0}, {0, 1}]"
+      )
+      .unwrap(),
+      "Line[{{1., 0.}, {0., 0.}, {0., 1.}}]"
+    );
+  }
+
+  // One-dimensional mesh-style chains match wolframscript's Line[{{0.}, {1.}}].
+  #[test]
+  fn one_dimensional_chain() {
+    assert_eq!(
+      interpret("FindShortestCurve[Line[{{0}, {1}}], {0}, {1}]").unwrap(),
+      "Line[{{0.}, {1.}}]"
+    );
+  }
+
+  #[test]
+  fn point_not_on_polyline_unevaluated() {
+    assert_eq!(
+      interpret("FindShortestCurve[Line[{{0, 0}, {1, 0}}], {5, 5}, {0, 0}]")
+        .unwrap(),
+      "FindShortestCurve[Line[{{0, 0}, {1, 0}}], {5, 5}, {0, 0}]"
+    );
+  }
+
+  // Unsupported regions stay unevaluated.
+  #[test]
+  fn unsupported_region_unevaluated() {
+    assert_eq!(
+      interpret("FindShortestCurve[Annulus[], {1, 0}, {-0.8, 0.4}]").unwrap(),
+      "FindShortestCurve[Annulus[], {1, 0}, {-0.8, 0.4}]"
+    );
+  }
+}
+
+mod shortest_curve_distance {
+  use super::*;
+
+  // Geodesic distance on a circle: r times the central angle, exact.
+  #[test]
+  fn circle_exact() {
+    assert_eq!(
+      interpret("ShortestCurveDistance[Circle[], {1, 0}, {0, 1}]").unwrap(),
+      "Pi/2"
+    );
+    assert_eq!(
+      interpret("ShortestCurveDistance[Circle[{0, 0}, 2], {2, 0}, {-2, 0}]")
+        .unwrap(),
+      "2*Pi"
+    );
+  }
+
+  // Consistent with ArcLength[FindShortestCurve[…]] (Properties & Relations
+  // example from the reference page).
+  #[test]
+  fn equals_arc_length_of_shortest_curve() {
+    assert_eq!(
+      interpret(
+        "ArcLength[FindShortestCurve[Circle[], {-1, 0}, {0, 1}]] == \
+         ShortestCurveDistance[Circle[], {-1, 0}, {0, 1}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Great-circle distance on a sphere stays symbolic for symbolic points:
+  // ShortestCurveDistance[Sphere[], {1, 0, 0}, {x, y, z}] is ArcCos[x].
+  #[test]
+  fn sphere_symbolic() {
+    assert_eq!(
+      interpret("ShortestCurveDistance[Sphere[], {1, 0, 0}, {x, y, z}]")
+        .unwrap(),
+      "ArcCos[x]"
+    );
+  }
+
+  #[test]
+  fn sphere_exact() {
+    assert_eq!(
+      interpret("ShortestCurveDistance[Sphere[], {0, 0, 1}, {0, 1, 0}]")
+        .unwrap(),
+      "Pi/2"
+    );
+    // Radius scales the distance: 2 ArcCos[0] = Pi.
+    assert_eq!(
+      interpret(
+        "ShortestCurveDistance[Sphere[{0, 0, 0}, 2], {0, 0, 2}, {0, 2, 0}]"
+      )
+      .unwrap(),
+      "Pi"
+    );
+  }
+
+  // Convex solids: the Euclidean distance, without Abs for symbolic
+  // coordinates (matching wolframscript's Sqrt[x^2 + (-1 + y)^2]).
+  #[test]
+  fn disk_symbolic() {
+    assert_eq!(
+      interpret("ShortestCurveDistance[Disk[], {0, 1}, {x, y}]").unwrap(),
+      "Sqrt[x^2 + (-1 + y)^2]"
+    );
+  }
+
+  #[test]
+  fn convex_solids_numeric_and_exact() {
+    assert_eq!(
+      interpret(
+        "ShortestCurveDistance[Ball[], {-0.2, 0.1, 0.3}, {-0.8, 0.19, -0.01}]"
+      )
+      .unwrap(),
+      "0.6813222438758331"
+    );
+    assert_eq!(
+      interpret(
+        "ShortestCurveDistance[Rectangle[{0, 0}, {4, 3}], {1, 1}, {3, 2}]"
+      )
+      .unwrap(),
+      "Sqrt[5]"
+    );
+    assert_eq!(
+      interpret("ShortestCurveDistance[Cuboid[], {0, 0, 0}, {1, 1, 1}]")
+        .unwrap(),
+      "Sqrt[3]"
+    );
+  }
+
+  // Curve regions: the machine-precision length along the polyline.
+  #[test]
+  fn polyline_length() {
+    assert_eq!(
+      interpret(
+        "ShortestCurveDistance[Line[{{1, 0}, {2, 1}, {3, 0}, {4, 1}}], \
+         {1, 0}, {3, 0}]"
+      )
+      .unwrap(),
+      "2.8284271247461903"
+    );
+    assert_eq!(
+      interpret("ShortestCurveDistance[Line[{{0}, {1}}], {0}, {1}]").unwrap(),
+      "1."
+    );
+  }
+
+  // Off-region points leave the call unevaluated.
+  #[test]
+  fn off_region_unevaluated() {
+    assert_eq!(
+      interpret("ShortestCurveDistance[Circle[], {2, 0}, {0, 1}]").unwrap(),
+      "ShortestCurveDistance[Circle[{0, 0}], {2, 0}, {0, 1}]"
+    );
+    assert_eq!(
+      interpret("ShortestCurveDistance[Disk[], {5, 5}, {0, 0}]").unwrap(),
+      "ShortestCurveDistance[Disk[{0, 0}], {5, 5}, {0, 0}]"
+    );
+  }
+}
+
+mod arc_length_circular_arc {
+  use super::*;
+
+  // Circle[c, r, {θ1, θ2}] is a circular arc of length r (θ2 - θ1).
+  #[test]
+  fn quarter_arc() {
+    assert_eq!(
+      interpret("ArcLength[Circle[{0, 0}, 1, {0, Pi/2}]]").unwrap(),
+      "Pi/2"
+    );
+  }
+
+  #[test]
+  fn scaled_arc() {
+    assert_eq!(
+      interpret("ArcLength[Circle[{0, 0}, 3, {Pi/4, Pi}]]").unwrap(),
+      "(9*Pi)/4"
+    );
+  }
+}
+
 // Region[reg] — displays a geometric region as a plot (2D/3D graphics).
 // Unsupported heads and symbolic coordinates leave the call unevaluated.
 mod region {
