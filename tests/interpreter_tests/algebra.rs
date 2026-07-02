@@ -6858,7 +6858,7 @@ mod root {
     let result = interpret("N[Root[#^2 - 2 &, 1]]").unwrap();
     let val: f64 = result.parse().expect("should be a number");
     assert!(
-      (val - (-std::f64::consts::SQRT_2)).abs() < 1e-10,
+      (val + std::f64::consts::SQRT_2).abs() < 1e-10,
       "Expected -1.414..., got {}",
       val
     );

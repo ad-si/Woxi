@@ -36,6 +36,7 @@ pub mod list_helpers_ast;
 pub mod list_plot;
 pub mod math_ast;
 pub mod memory;
+pub mod molecule_ast;
 pub mod music_ast;
 pub mod music_font;
 pub mod music_midi;
@@ -66,6 +67,7 @@ pub mod trig_factor_ast;
 pub mod turing_machine_ast;
 pub mod txt_ast;
 pub mod voronoi;
+pub mod wikidata_ast;
 pub mod wl_serialize;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod xlsx_ast;

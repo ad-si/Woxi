@@ -782,7 +782,9 @@ mod carlson_integrals {
   // R_C(x, y) — degenerate integral. R_C(1, 2) = Pi/4, R_C(2, 2) = 1/Sqrt[2].
   #[test]
   fn rc_values() {
-    assert!((num("N[CarlsonRC[1, 2]]") - std::f64::consts::FRAC_PI_4).abs() < 1e-9);
+    assert!(
+      (num("N[CarlsonRC[1, 2]]") - std::f64::consts::FRAC_PI_4).abs() < 1e-9
+    );
     assert!((num("N[CarlsonRC[1, 4]]") - 0.6045997880780727).abs() < 1e-9);
     assert!((num("N[CarlsonRC[2, 2]]") - 0.7071067811865475).abs() < 1e-9);
   }
@@ -8203,7 +8205,10 @@ mod inverse_gamma_regularized {
       .unwrap()
       .parse()
       .unwrap();
-    assert!((result - std::f64::consts::LN_2).abs() < 1e-9, "got {result}");
+    assert!(
+      (result - std::f64::consts::LN_2).abs() < 1e-9,
+      "got {result}"
+    );
   }
 
   // The 3-arg form with z0 == 0 inverts the lower regularized gamma and equals

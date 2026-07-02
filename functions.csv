@@ -1386,7 +1386,7 @@ Skewness,Computes the skewness of a list or distribution,✅,pure,6.0,1402
 Speak,Text-to-speech output,🚫,io,7.0,1405
 StreamColorFunction,Color function for stream plots,🚫,pure,7.0,1405
 TreePlot,Plot a tree graph,🚫,pure,6.0,1405
-Audio,Audio object from sample data (stays symbolic; consumed by AudioPlot),✅,unevaluated,11.0,1406
+Audio,Audio object from sample data or files (symbolic in the CLI; visual hosts render a graphical audio player),✅,unevaluated,11.0,1406
 ColorSeparate,Separate color channels of an image,✅,io,7.0,1409
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10.0,1409
 StringContainsQ,Tests if a string contains a substring; supports the one-argument operator form,✅,pure,10.1,1409
@@ -1978,7 +1978,7 @@ DeleteStopwords,Remove stopwords from text (NLP),🚫,,10.1,2012
 Downsample,Take every n-th element from a list,✅,none,9.0,2012
 SliceContourPlot3D,3D contour slice plot (plotting),🚫,,10.2,2012
 FieldHint,Input field hint text option (GUI),🚫,,8.0,2015
-Molecule,Chemical molecule representation (chemistry),🚫,,12.0,2015
+Molecule,Chemical molecule representation (chemistry),✅,pure,12.0,2015
 ShowCellBracket,Notebook cell bracket display option (GUI),🚫,,3.0,2015
 FileByteCount,Count bytes in file (file I/O),✅,,2.0,2018
 NegativeBinomialDistribution,Discrete distribution for number of failures before n successes,✅,none,6.0,2018
@@ -2024,7 +2024,7 @@ MachineNumberQ,Test whether an expression is a machine-precision real number,✅
 TextString,Convert any expression to a human-readable string,✅,1,10.0,2059
 ContainsAny,Test if any elements of the second list appear in the first,✅,none,10.2,2061
 ImagePerspectiveTransformation,Perspective transform on image,🚫,,8.0,2061
-Atom,Basic building block,🚫,,12.0,2065
+Atom,Represents an atom in a molecule (chemistry),✅,pure,12.0,2065
 InverseSeries,Computes the reversion (inverse) of a power series,✅,pure,1.0,2065
 RootMeanSquare,Returns the root mean square of a list,✅,pure,6.0,2065
 SquareMatrixQ,Test if an expression is a square matrix,✅,none,10.0,2065
@@ -3900,7 +3900,7 @@ UniverseModelData,,🚫,,10.4,4006
 VarianceEquivalenceTest,,,,8.0,4006
 WaitNext,,🚫,,7.0,4006
 WalleniusHypergeometricDistribution,,,,8.0,4006
-WikidataData,,🚫,,12.1,4006
+WikidataData,Retrieves the values of Wikidata properties for Wikidata items from the wikidata.org API,✅,effectful,12.1,4006
 WordOrientation,,,,10.1,4006
 AnimatedImage,,🚫,,12.2,4027
 BioSequenceTranslate,,🚫,,12.2,4027
@@ -3978,7 +3978,7 @@ URLDownloadSubmit,,🚫,,11.2,4081
 UpperRightArrow,,,,3.0,4081
 AskDisplay,,🚫,,10.4,4104
 AsymptoticEqual,,,,11.3,4104
-AtomList,,,,12.0,4104
+AtomList,List of atoms in a molecule,✅,pure,12.0,4104
 AutoItalicWords,,,,3.0,4104
 CircularOrthogonalMatrixDistribution,,,,10.3,4104
 DayHemisphere,,,,10.0,4104
@@ -4107,7 +4107,7 @@ GaussianWindow,Gaussian window function E^(-x^2/(2 sigma^2)) on [-1/2 1/2] (defa
 ImageCapture,,🚫,,8.0,4225
 MaxDuration,,,,11.2,4225
 MaxMixtureKernels,,,,8.0,4225
-MoleculeValue,,🚫,,12.0,4225
+MoleculeValue,Computes properties of a molecule,✅,pure,12.0,4225
 NumberDecompose,Greedy decomposition of a number into unit multiples,✅,pure,10.2,4225
 ReferenceLineStyle,,,,8.0,4225
 SequenceFold,Fold over a list keeping an n-element history at each step and returning the last result,✅,pure,10.2,4225
@@ -4528,7 +4528,7 @@ Confirm,,🚫,,12.2,4707
 DescriptorStateSpace,,,,9.0,4707
 DimensionReducerFunction,,🚫,,10.1,4707
 EmbeddedService,,🚫,,10.0,4707
-ExternalIdentifier,,🚫,,12.1,4707
+ExternalIdentifier,Symbolic wrapper for an identifier in an external system (stays symbolic),✅,unevaluated,12.1,4707
 FeatureNearest,,🚫,,11.1,4707
 FunctionSign,,,,12.2,4707
 GeodesicOpening,,🚫,,9.0,4707
@@ -4747,7 +4747,7 @@ MassTransferValue,,,,12.2,4947
 MathieuGroupM23,,,,8.0,4947
 MeanDegreeConnectivity,Mean neighbor degree of vertices indexed by degree,✅,pure,9.0,4947
 MoleculeProperty,,🚫,,12.0,4947
-MoleculeQ,,🚫,,12.0,4947
+MoleculeQ,Tests whether an expression is a valid molecule,✅,pure,12.0,4947
 OutputPorts,,,,12.2,4947
 ParticleAcceleratorData,,🚫,,10.0,4947
 PersistenceTime,,🚫,,11.1,4947
@@ -4998,7 +4998,7 @@ AutocompletionFunction,,🚫,,10.2,5390
 BaseDecode,Base64-decode a string to a ByteArray,✅,pure,11.3,5390
 BinomialPointProcess,,🚫,,12.2,5390
 BlockchainContractValue,,🚫,,12.0,5390
-BondList,,,,12.0,5390
+BondList,List of bonds in a molecule,✅,pure,12.0,5390
 ByteArrayFormatQ,,,,12.2,5390
 CTCLossLayer,,🚫,,11.3,5390
 CaptureRunning,,🚫,,11.2,5390
@@ -5578,7 +5578,7 @@ FeatureValueImpactPlot,,🚫,,13.1,
 FileFormatProperties,,,,13.0,
 FileNameToFormatList,,,,13.0,
 FileSystemTree,,,,13.2,
-FilledPolarCurve,,,,14.1,
+FilledPolarCurve,Filled region enclosed by a polar curve in Graphics,✅,pure,14.1,
 FilledTorus,,,,13.0,
 FindEdgeColoring,,,,13.0,
 FindExternalEvaluators,,,,11.2,
@@ -5862,7 +5862,7 @@ PointDensityFunction,,,,12.2,
 PointLight,,🚫,,13.0,
 PointStatisticFunction,,,,12.2,
 PoissonPDEComponent,,,,12.2,
-PolarCurve,,,,14.1,
+PolarCurve,Polar curve graphics primitive with radius as a function of angle,✅,pure,14.1,
 PolynomialExpressionQ,,,,12.2,
 PolynomialSumOfSquaresList,,,,13.0,
 PositionLargest,Positions of the largest elements of a numeric list,✅,pure,13.2,5589
@@ -6281,3 +6281,6 @@ PlotGrid,Arranges a matrix of plots in a shared grid,✅,pure,13.1,
 LightDarkSwitched,Represents an expression that switches between light and dark mode variants,✅,pure,14.2,
 SystemColor,Represents a named color provided by the windowing system theme,✅,pure,14.3,
 ThemeColor,Represents a named color of the current notebook theme,✅,pure,14.3,
+FindShortestCurve,Shortest curve (minimizing geodesic) between two points on a region (Circle arcs; straight segments in convex solids; paths along Line chains),✅,pure,14.3,
+ShortestCurveDistance,Geodesic distance between two points on a region (Circle/Sphere great-circle distance; Euclidean distance in convex solids; length along Line chains),✅,pure,14.3,
+MidDate,Gives the date at the midpoint of a date interval or list of dates,✅,pure,14.2,

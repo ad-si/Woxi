@@ -7,6 +7,7 @@ use crate::functions::plot::{
   generate_svg_with_filling, parse_filling, parse_image_size,
   parse_plot_legends, parse_plot_style,
 };
+use crate::functions::sound::audio_sample_rate;
 use crate::syntax::Expr;
 
 /// Parse list data from the first argument.
@@ -661,36 +662,10 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// Sample rate wolframscript assumes for `Audio[{samples…}]` built from raw
-/// sample data (Hz).
-const AUDIO_SAMPLE_RATE: f64 = 44100.0;
-
 /// Cap on rendered points per channel. Longer audio is reduced to a min/max
 /// envelope per bucket so the SVG stays small while the waveform shape is
 /// preserved (wolframscript likewise draws an envelope for long audio).
 const AUDIO_MAX_POINTS: usize = 2000;
-
-/// Extract the sample rate from an `Audio[data, opts…]` argument list
-/// (`SampleRate -> r`), falling back to the 44100 Hz default.
-fn audio_sample_rate(args: &[Expr]) -> f64 {
-  for opt in args.iter().skip(1) {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SampleRate")
-    {
-      let val =
-        evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-      if let Some(r) = try_eval_to_f64(&val)
-        && r > 0.0
-      {
-        return r;
-      }
-    }
-  }
-  AUDIO_SAMPLE_RATE
-}
 
 /// Turn one audio-like object into per-channel (time, amplitude) series:
 /// `Audio[{s1, s2, …}]` (one channel), `Audio[{{ch1…}, {ch2…}}]` (one series

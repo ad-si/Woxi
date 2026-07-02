@@ -2666,3 +2666,347 @@ pub fn julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let seconds = (parts[3] - 12.0) * 3600.0 + parts[4] * 60.0 + parts[5];
   Ok(Expr::Real(jdn as f64 + seconds / 86400.0))
 }
+
+// ─── MidDate ────────────────────────────────────────────────────────
+
+/// Calendar granularity names accepted by MidDate's second argument and
+/// carried by DateObject/DateInterval expressions.
+fn is_granularity_name(s: &str) -> bool {
+  matches!(
+    s,
+    "Year"
+      | "Quarter"
+      | "Month"
+      | "Week"
+      | "Day"
+      | "Hour"
+      | "Minute"
+      | "Second"
+      | "Instant"
+  )
+}
+
+/// The granularity implied by the number of components in a raw date list,
+/// mirroring DateObject's tagging (1 → Year, …, 6 → Instant).
+fn granularity_from_component_count(len: usize) -> &'static str {
+  match len {
+    1 => "Year",
+    2 => "Month",
+    3 => "Day",
+    4 => "Hour",
+    5 => "Minute",
+    _ => "Instant",
+  }
+}
+
+/// The real span in seconds of one granularity unit starting at the given
+/// calendar date (a "Month" at 2024-02 is 29 days, at 2024-04 is 30).
+fn granularity_actual_seconds(y: i64, m: i64, gran: &str) -> f64 {
+  match gran {
+    "Year" => days_in_year(y) as f64 * 86400.0,
+    "Quarter" => {
+      let qm = (m - 1) / 3 * 3 + 1;
+      (days_in_month(y, qm)
+        + days_in_month(y, qm + 1)
+        + days_in_month(y, qm + 2)) as f64
+        * 86400.0
+    }
+    "Month" => days_in_month(y, m) as f64 * 86400.0,
+    "Week" => 7.0 * 86400.0,
+    "Day" => 86400.0,
+    "Hour" => 3600.0,
+    "Minute" => 60.0,
+    "Second" => 1.0,
+    _ => 0.0, // "Instant"
+  }
+}
+
+/// The average span in seconds of one granularity unit, used as the weight
+/// in MidDate's default "GranularMean" method: all months weigh the mean
+/// Gregorian month (30.436875 days) regardless of their actual length.
+fn granularity_nominal_seconds(gran: &str) -> f64 {
+  match gran {
+    "Year" => 365.2425 * 86400.0,
+    "Quarter" => 365.2425 / 4.0 * 86400.0,
+    "Month" => 30.436875 * 86400.0,
+    "Week" => 7.0 * 86400.0,
+    "Day" => 86400.0,
+    "Hour" => 3600.0,
+    "Minute" => 60.0,
+    "Second" => 1.0,
+    _ => 0.0, // "Instant"
+  }
+}
+
+/// The implicit interval covered by a raw component list with the given (or
+/// implied) granularity, as (start, end, nominal_weight) in absolute seconds.
+fn date_component_interval(
+  list: &Expr,
+  gran: Option<&str>,
+) -> Option<(f64, f64, f64)> {
+  let comps = extract_date_components(list)?;
+  if comps.is_empty() {
+    return None;
+  }
+  let gran = gran.map(str::to_string).unwrap_or_else(|| {
+    granularity_from_component_count(comps.len()).to_string()
+  });
+  let mut y = comps[0] as i64;
+  let mut m = if comps.len() > 1 { comps[1] as i64 } else { 1 };
+  let mut d = if comps.len() > 2 { comps[2] as i64 } else { 1 };
+  let h = if comps.len() > 3 { comps[3] as i64 } else { 0 };
+  let mi = if comps.len() > 4 { comps[4] as i64 } else { 0 };
+  let s = if comps.len() > 5 { comps[5] } else { 0.0 };
+  match gran.as_str() {
+    // A Week-granular date denotes the week containing it, starting Monday.
+    "Week" => {
+      let abs = date_to_absolute_days(y, m, d) - day_of_week(y, m, d);
+      let (ny, nm, nd) = absolute_days_to_date(abs);
+      y = ny;
+      m = nm;
+      d = nd;
+    }
+    // A Quarter-granular date denotes the quarter containing its month.
+    "Quarter" => {
+      m = (m - 1) / 3 * 3 + 1;
+      d = 1;
+    }
+    _ => {}
+  }
+  let start = date_to_absolute_seconds(y, m, d, h, mi, s);
+  let end = start + granularity_actual_seconds(y, m, &gran);
+  Some((start, end, granularity_nominal_seconds(&gran)))
+}
+
+/// The implicit time interval covered by a single date specification
+/// (DateObject, DateInterval, date list, or date string), as
+/// (start, end, nominal_weight) in absolute seconds since 1900-01-01.
+fn date_spec_interval(expr: &Expr) -> Option<(f64, f64, f64)> {
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(expr).ok()?;
+  match &evaluated {
+    // Canonical form: DateInterval[{{start, end}, …}, gran, cal, tz].
+    // The interval runs from the start of its first date to the *end* of
+    // its last granular unit (a Day interval covers the whole end day).
+    Expr::FunctionCall { name, args }
+      if name == "DateInterval" && !args.is_empty() =>
+    {
+      let gran = match args.get(1) {
+        Some(Expr::String(g)) | Some(Expr::Identifier(g))
+          if is_granularity_name(g) =>
+        {
+          g.clone()
+        }
+        _ => "Day".to_string(),
+      };
+      let Expr::List(pairs) = &args[0] else {
+        return None;
+      };
+      let mut lo = f64::INFINITY;
+      let mut hi = f64::NEG_INFINITY;
+      for pair in pairs.iter() {
+        let Expr::List(se) = pair else {
+          return None;
+        };
+        if se.len() != 2 {
+          return None;
+        }
+        let (start, _, _) = date_component_interval(&se[0], Some(&gran))?;
+        let (_, end, _) = date_component_interval(&se[1], Some(&gran))?;
+        lo = lo.min(start);
+        hi = hi.max(end);
+      }
+      if !lo.is_finite() || !hi.is_finite() {
+        return None;
+      }
+      Some((lo, hi, hi - lo))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "DateObject" && !args.is_empty() =>
+    {
+      let gran = match args.get(1) {
+        Some(Expr::String(g)) | Some(Expr::Identifier(g))
+          if is_granularity_name(g) =>
+        {
+          Some(g.as_str())
+        }
+        _ => None,
+      };
+      date_component_interval(&args[0], gran)
+    }
+    Expr::List(_) => date_component_interval(&evaluated, None),
+    Expr::String(s) => {
+      let (y, m, d) = parse_date_string(s)?;
+      let start = date_to_absolute_seconds(y, m, d, 0, 0, 0.0);
+      Some((start, start + 86400.0, 86400.0))
+    }
+    _ => None,
+  }
+}
+
+/// Build the DateObject for an instant truncated to the given granularity.
+fn instant_to_granular_date_object(seconds: f64, gran: &str) -> Expr {
+  // Round to microseconds so float noise cannot flip a calendar boundary.
+  let seconds = (seconds * 1e6).round() / 1e6;
+  let (y, m, d, h, mi, s) = absolute_seconds_to_date(seconds);
+  let int = |v: i64| Expr::Integer(v as i128);
+  let with_time_zone = |fields: Vec<Expr>, gran: &str| Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: vec![
+      Expr::List(fields.into()),
+      Expr::String(gran.to_string()),
+      Expr::String("Gregorian".to_string()),
+      Expr::Real(0.0),
+    ]
+    .into(),
+  };
+  let date_only = |fields: Vec<Expr>, gran: &str| Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: vec![Expr::List(fields.into()), Expr::String(gran.to_string())]
+      .into(),
+  };
+  match gran {
+    "Year" => date_only(vec![int(y)], "Year"),
+    "Quarter" => date_only(vec![int(y), int((m - 1) / 3 * 3 + 1)], "Quarter"),
+    "Month" => date_only(vec![int(y), int(m)], "Month"),
+    "Week" => {
+      let abs = date_to_absolute_days(y, m, d) - day_of_week(y, m, d);
+      let (wy, wm, wd) = absolute_days_to_date(abs);
+      date_only(vec![int(wy), int(wm), int(wd)], "Week")
+    }
+    "Day" => date_only(vec![int(y), int(m), int(d)], "Day"),
+    "Hour" => with_time_zone(vec![int(y), int(m), int(d), int(h)], "Hour"),
+    "Minute" => {
+      with_time_zone(vec![int(y), int(m), int(d), int(h), int(mi)], "Minute")
+    }
+    "Second" => with_time_zone(
+      vec![
+        int(y),
+        int(m),
+        int(d),
+        int(h),
+        int(mi),
+        int(s.floor() as i64),
+      ],
+      "Second",
+    ),
+    _ => with_time_zone(
+      vec![int(y), int(m), int(d), int(h), int(mi), Expr::Real(s)],
+      "Instant",
+    ),
+  }
+}
+
+/// MidDate[datespec] — the instant at the middle of the implicit interval
+///   covered by a date (a "Month" date covers its whole month, and so on).
+/// MidDate[{date1, date2, …}] — the mean of the dates' interval midpoints,
+///   weighted by the nominal length of each date's granularity (Wolfram's
+///   default "GranularMean" method); instants get an unweighted mean.
+/// MidDate[dateint] — the midpoint of a DateInterval.
+/// MidDate[datespec, gran] — the result truncated to calendar granularity
+///   gran ("Year", "Quarter", "Month", "Week", "Day", "Hour", "Minute",
+///   "Second", or "Instant").
+/// MidDate[datespec, gran, x] — the date at fraction x (instead of 1/2) of
+///   the interval; for a list of dates x spans their overall bounds.
+pub fn mid_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "MidDate".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 3 {
+    return unevaluated();
+  }
+
+  let out_gran: Option<String> = match args.get(1) {
+    None => None,
+    Some(g) => match &crate::evaluator::evaluate_expr_to_expr(g)? {
+      Expr::String(s) | Expr::Identifier(s) if is_granularity_name(s) => {
+        Some(s.clone())
+      }
+      Expr::Identifier(s) if s == "Automatic" => None,
+      _ => return unevaluated(),
+    },
+  };
+
+  let fraction: Option<f64> = match args.get(2) {
+    None => None,
+    Some(x) => match &crate::evaluator::evaluate_expr_to_expr(x)? {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(r) => Some(*r),
+      Expr::FunctionCall { name, args: rargs }
+        if name == "Rational" && rargs.len() == 2 =>
+      {
+        match (&rargs[0], &rargs[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
+            Some(*p as f64 / *q as f64)
+          }
+          _ => return unevaluated(),
+        }
+      }
+      _ => return unevaluated(),
+    },
+  };
+
+  let date_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+
+  // A list argument is a collection of dates unless every element is a
+  // number, in which case it is a single date list like {2024, 10, 1}.
+  let specs: Vec<Expr> = match &date_arg {
+    Expr::List(items)
+      if !items.is_empty()
+        && !items
+          .iter()
+          .all(|e| matches!(e, Expr::Integer(_) | Expr::Real(_))) =>
+    {
+      items.to_vec()
+    }
+    Expr::Association(pairs) if !pairs.is_empty() => {
+      pairs.iter().map(|(_, v)| v.clone()).collect()
+    }
+    other => vec![other.clone()],
+  };
+
+  let mut intervals: Vec<(f64, f64, f64)> = Vec::with_capacity(specs.len());
+  for spec in &specs {
+    match date_spec_interval(spec) {
+      Some(iv) => intervals.push(iv),
+      None => return unevaluated(),
+    }
+  }
+
+  let point = if let Some(x) = fraction {
+    // Fraction x of the overall bounds (for a single date, its interval).
+    let lo = intervals
+      .iter()
+      .map(|iv| iv.0)
+      .fold(f64::INFINITY, f64::min);
+    let hi = intervals
+      .iter()
+      .map(|iv| iv.1)
+      .fold(f64::NEG_INFINITY, f64::max);
+    lo + x * (hi - lo)
+  } else if intervals.len() == 1 {
+    let (start, end, _) = intervals[0];
+    (start + end) / 2.0
+  } else {
+    // "GranularMean": midpoints weighted by nominal granularity length.
+    let total_weight: f64 = intervals.iter().map(|iv| iv.2).sum();
+    if total_weight > 0.0 {
+      intervals
+        .iter()
+        .map(|(s, e, w)| (s + e) / 2.0 * w)
+        .sum::<f64>()
+        / total_weight
+    } else {
+      // All instants: plain mean.
+      intervals.iter().map(|(s, e, _)| (s + e) / 2.0).sum::<f64>()
+        / intervals.len() as f64
+    }
+  };
+
+  Ok(instant_to_granular_date_object(
+    point,
+    out_gran.as_deref().unwrap_or("Instant"),
+  ))
+}

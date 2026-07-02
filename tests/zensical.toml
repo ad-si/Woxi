@@ -684,6 +684,8 @@ nav = [
       ] },
       { "Math Utilities" = [
         "math/utility.md",
+        { "FindShortestCurve" = "math/utility/FindShortestCurve.md" },
+        { "ShortestCurveDistance" = "math/utility/ShortestCurveDistance.md" },
         { "CovarianceFunction" = "math/utility/CovarianceFunction.md" },
         { "Entropy" = "math/utility/Entropy.md" },
         { "RegionDistance" = "math/utility/RegionDistance.md" },
@@ -1432,6 +1434,7 @@ nav = [
     { "DensityPlot" = "plotting/DensityPlot.md" },
     { "DiscretePlot" = "plotting/DiscretePlot.md" },
     { "DiscretePlot3D" = "plotting/DiscretePlot3D.md" },
+    { "FilledPolarCurve" = "plotting/FilledPolarCurve.md" },
     { "FrameRate" = "plotting/FrameRate.md" },
     { "GeoGraphics" = "plotting/GeoGraphics.md" },
     { "GeoHistogram" = "plotting/GeoHistogram.md" },
@@ -1467,6 +1470,7 @@ nav = [
     { "Plot" = "plotting/Plot.md" },
     { "Plot3D" = "plotting/Plot3D.md" },
     { "PlotGrid" = "plotting/PlotGrid.md" },
+    { "PolarCurve" = "plotting/PolarCurve.md" },
     { "PolarPlot" = "plotting/PolarPlot.md" },
     { "RegionPlot" = "plotting/RegionPlot.md" },
     { "RegionPlot3D" = "plotting/RegionPlot3D.md" },
@@ -1531,6 +1535,7 @@ nav = [
   ] },
   { "Dates & Time" = [
     "dates.md",
+    { "MidDate" = "dates/MidDate.md" },
     { "DateValue" = "dates/DateValue.md" },
     { "Pause" = "dates/Pause.md" },
     { "AbsoluteTime" = "dates/AbsoluteTime.md" },

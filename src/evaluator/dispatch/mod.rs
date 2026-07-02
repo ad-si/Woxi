@@ -1558,6 +1558,26 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::element_data::element_data_ast(args);
   }
 
+  // Chemistry: molecules and their properties
+  match name {
+    "Molecule" => {
+      return crate::functions::molecule_ast::molecule_ast(args);
+    }
+    "MoleculeQ" => {
+      return crate::functions::molecule_ast::molecule_q_ast(args);
+    }
+    "AtomList" => {
+      return crate::functions::molecule_ast::atom_list_ast(args);
+    }
+    "BondList" => {
+      return crate::functions::molecule_ast::bond_list_ast(args);
+    }
+    "MoleculeValue" => {
+      return crate::functions::molecule_ast::molecule_value_ast(args);
+    }
+    _ => {}
+  }
+
   // Entity store functions
   match name {
     "EntityStore" => {
@@ -1584,6 +1604,12 @@ pub fn evaluate_function_call_ast_inner(
     }
     "CountryData" => {
       return crate::functions::country_data::country_data_ast(args);
+    }
+    "ExternalIdentifier" => {
+      return crate::functions::wikidata_ast::external_identifier_ast(args);
+    }
+    "WikidataData" => {
+      return crate::functions::wikidata_ast::wikidata_data_ast(args);
     }
     "GeoDistance" => {
       return crate::functions::geo_math::geo_distance_ast(args);
@@ -1994,6 +2020,8 @@ pub fn evaluate_function_call_ast_inner(
     | "BezierCurve"
     | "BezierFunction"
     | "BSplineCurve"
+    | "PolarCurve"
+    | "FilledPolarCurve"
     | "GraphicsComplex"
     | "Rotate"
     | "Translate"
@@ -2029,6 +2057,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Offset"
     | "RowBox"
     | "Bond"
+    | "Atom"
     | "Colon"
     | "Cap"
     | "Cup"
