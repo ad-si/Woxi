@@ -138,6 +138,9 @@ pub fn dispatch_plotting(
     "GraphicsGrid" if !args.is_empty() => {
       Some(crate::functions::graphics::graphics_grid_ast(args))
     }
+    "PlotGrid" if !args.is_empty() => {
+      Some(crate::functions::graphics::plot_grid_ast(args))
+    }
     "TreeForm" if !args.is_empty() => {
       // TreeForm stays as a wrapper in OutputForm (matching wolframscript)
       Some(Ok(Expr::FunctionCall {

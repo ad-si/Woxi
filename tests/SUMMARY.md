@@ -1368,6 +1368,7 @@
   - [`PieChart3D`](plotting/PieChart3D.md)
   - [`Plot`](plotting/Plot.md)
   - [`Plot3D`](plotting/Plot3D.md)
+  - [`PlotGrid`](plotting/PlotGrid.md)
   - [`PolarPlot`](plotting/PolarPlot.md)
   - [`RegionPlot`](plotting/RegionPlot.md)
   - [`RegionPlot3D`](plotting/RegionPlot3D.md)

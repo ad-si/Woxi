@@ -1967,6 +1967,7 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "GraphicsRow"
         || name == "GraphicsColumn"
         || name == "GraphicsGrid"
+        || name == "PlotGrid"
         || name == "BooleanTable"
         // Manipulate holds its body and variable specs so that controls
         // like Plot[Sin[a*x], {x, 0, 6}] aren't evaluated with `a` free
