@@ -1060,6 +1060,10 @@ pub(crate) struct PlotOptions {
   pub log_y: bool,
   /// Callout labels for each series (None = no callout for that series)
   pub callout_labels: Vec<Option<String>>,
+  /// Stacked mode (StackedListPlot): fill each series down to the previous
+  /// series' curve instead of to a constant baseline, producing opaque
+  /// stacked bands. The `all_points` passed in are the cumulative curves.
+  pub stacked: bool,
 }
 
 impl Default for PlotOptions {
@@ -1089,6 +1093,7 @@ impl Default for PlotOptions {
       callout_labels: Vec::new(),
       log_x: false,
       log_y: false,
+      stacked: false,
     }
   }
 }
@@ -1640,8 +1645,31 @@ fn generate_svg_with_options(
             y_max,
           );
 
-          // Draw filled area before the line so the line renders on top
-          if let Some(ref_y) = filling.reference_y(y_min, y_max) {
+          // Draw filled area before the line so the line renders on top.
+          // In stacked mode each band is bounded below by the previous
+          // cumulative curve (or the axis for the first series) and above by
+          // the current one; the bands are disjoint so an opaque polygon fill
+          // renders cleanly. Otherwise fill each segment down to the constant
+          // reference level given by the Filling option.
+          if opts.stacked {
+            let baseline: Vec<(f64, f64)> = if series_idx == 0 {
+              points.iter().map(|&(x, _)| (x, 0.0)).collect()
+            } else {
+              all_points[series_idx - 1].clone()
+            };
+            let mut polygon: Vec<(f64, f64)> = points.to_vec();
+            polygon.extend(baseline.iter().rev().copied());
+            if polygon.len() >= 3 {
+              chart
+                .draw_series(std::iter::once(Polygon::new(
+                  polygon,
+                  RGBColor(r, g, b).mix(0.6),
+                )))
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!("Plot: {e}"))
+                })?;
+            }
+          } else if let Some(ref_y) = filling.reference_y(y_min, y_max) {
             for segment in &segments {
               if segment.len() < 2 {
                 continue;

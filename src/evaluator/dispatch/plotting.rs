@@ -232,6 +232,9 @@ pub fn dispatch_plotting(
     "ListStepPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::list_step_plot_ast(args)
     })),
+    "StackedListPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::stacked_list_plot_ast(args)
+    })),
     "LogLogPlot" if args.len() >= 2 => Some(quiet_plot(|| {
       crate::functions::plot::log_log_plot_ast(args)
     })),

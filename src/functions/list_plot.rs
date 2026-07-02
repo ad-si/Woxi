@@ -382,6 +382,45 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
+/// StackedListPlot[{list1, list2, ...}]: plot several datasets with their
+/// y-values accumulated, so each successive dataset is stacked on top of the
+/// running total of the preceding ones. The regions between consecutive
+/// cumulative curves are filled by default.
+pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let all_series = parse_list_data(&args[0])?;
+  let mut parsed = parse_plot_options(args);
+  parsed.opts.stacked = true;
+  // Default to filled bands unless the user explicitly overrode Filling.
+  if parsed.opts.filling == crate::functions::plot::Filling::None {
+    parsed.opts.filling = crate::functions::plot::Filling::Axis;
+  }
+
+  // Accumulate y-values by index position across the series so that each
+  // curve is the running total up to and including that dataset.
+  let mut cumulative: Vec<Vec<(f64, f64)>> =
+    Vec::with_capacity(all_series.len());
+  let mut running: Vec<f64> = Vec::new();
+  for series in &all_series {
+    let mut curve = Vec::with_capacity(series.len());
+    for (j, &(x, y)) in series.iter().enumerate() {
+      if j >= running.len() {
+        running.push(0.0);
+      }
+      running[j] += y;
+      curve.push((x, running[j]));
+    }
+    cumulative.push(curve);
+  }
+
+  let (x_range, mut y_range) = compute_ranges(&cumulative);
+  y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+
+  let svg =
+    generate_svg_with_filling(&cumulative, x_range, y_range, &parsed.opts)?;
+  Ok(crate::graphics_result(svg))
+}
+
 /// ListStepPlot[{y1, y2, ...}]
 pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;

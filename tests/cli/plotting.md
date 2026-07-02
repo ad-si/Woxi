@@ -86,6 +86,7 @@ SVG images.
 - [`RevolutionPlot3D`](plotting/RevolutionPlot3D.md)
 - [`SectorChart`](plotting/SectorChart.md)
 - [`SphericalPlot3D`](plotting/SphericalPlot3D.md)
+- [`StackedListPlot`](plotting/StackedListPlot.md)
 - [`StreamDensityPlot`](plotting/StreamDensityPlot.md)
 - [`StreamPlot`](plotting/StreamPlot.md)
 - [`TimelinePlot`](plotting/TimelinePlot.md)
