@@ -242,10 +242,28 @@ function appendOutputItem(outputsEl, item) {
   } else if (item.type === "sound") {
     const div = document.createElement("div")
     div.className = "output-box sound-box"
+    if (item.label) {
+      const label = document.createElement("div")
+      label.className = "sound-label"
+      label.textContent = item.label
+      div.appendChild(label)
+    }
     const audio = document.createElement("audio")
     audio.controls = true
-    audio.src = "data:audio/wav;base64," + item.audio
+    if (item.audio) {
+      audio.src =
+        "data:" + (item.mime || "audio/wav") + ";base64," + item.audio
+    }
     div.appendChild(audio)
+    if (!item.audio) {
+      // File-backed audio whose bytes are unavailable in the browser (local
+      // paths cannot be read from WASM) — keep the player chrome, explain
+      // why it cannot play.
+      const note = document.createElement("div")
+      note.className = "sound-note"
+      note.textContent = "Audio file is not accessible from the browser"
+      div.appendChild(note)
+    }
     outputsEl.appendChild(div)
   } else if (item.type === "text") {
     if (item.svg) {

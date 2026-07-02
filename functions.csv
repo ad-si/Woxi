@@ -1386,7 +1386,7 @@ Skewness,Computes the skewness of a list or distribution,✅,pure,6.0,1402
 Speak,Text-to-speech output,🚫,io,7.0,1405
 StreamColorFunction,Color function for stream plots,🚫,pure,7.0,1405
 TreePlot,Plot a tree graph,🚫,pure,6.0,1405
-Audio,Audio object from sample data (stays symbolic; consumed by AudioPlot),✅,unevaluated,11.0,1406
+Audio,Audio object from sample data or files (symbolic in the CLI; visual hosts render a graphical audio player),✅,unevaluated,11.0,1406
 ColorSeparate,Separate color channels of an image,✅,io,7.0,1409
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10.0,1409
 StringContainsQ,Tests if a string contains a substring; supports the one-argument operator form,✅,pure,10.1,1409

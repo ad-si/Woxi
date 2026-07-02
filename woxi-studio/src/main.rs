@@ -113,9 +113,10 @@ struct CellEditor {
   graphics_handle: Option<svg::Handle>,
   /// Pre-rasterized image of the SVG (avoids resvg parse on scroll).
   graphics_image: Option<(iced::widget::image::Handle, u32, u32)>,
-  /// Synthesized audio (base64-encoded WAV) from Play/Sound, if any. When
-  /// present the cell renders a "Play sound" button.
-  sound: Option<String>,
+  /// Playable audio from Play/Sound synthesis or an Audio object (file-backed
+  /// or from sample data), if any. When present the cell renders a graphical
+  /// audio player.
+  sound: Option<woxi::AudioOutput>,
   /// Warning messages from evaluation (e.g. unimplemented functions).
   warnings: Vec<String>,
   /// Undo stack: previous text snapshots.
@@ -1642,9 +1643,9 @@ impl WoxiStudio {
 
       Message::PlaySound(idx) => {
         if let Some(editor) = self.cell_editors.get(idx)
-          && let Some(wav_b64) = editor.sound.clone()
+          && let Some(audio) = editor.sound.clone()
         {
-          match play_wav_base64(&wav_b64) {
+          match play_audio(&audio) {
             Ok(()) => self.status = String::from("Playing sound…"),
             Err(e) => self.status = format!("Could not play sound: {e}"),
           }
@@ -2607,9 +2608,9 @@ impl WoxiStudio {
           output_col.push(render_manipulate_widget(idx, state, stale));
       }
 
-      // Play-sound button (Play[…] / Sound[…] results)
-      if editor.sound.is_some() {
-        output_col = output_col.push(render_play_sound_button(idx));
+      // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
+      if let Some(ref audio) = editor.sound {
+        output_col = output_col.push(render_audio_player(idx, audio));
       }
 
       // Hyperlink buttons (clickable, blue, opens URL on press)
@@ -2696,9 +2697,9 @@ impl WoxiStudio {
           content_col.push(render_manipulate_widget(idx, state, stale));
       }
 
-      // Play-sound button (Play[…] / Sound[…] results)
-      if editor.sound.is_some() {
-        content_col = content_col.push(render_play_sound_button(idx));
+      // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
+      if let Some(ref audio) = editor.sound {
+        content_col = content_col.push(render_audio_player(idx, audio));
       }
 
       // Hyperlink buttons
@@ -3183,14 +3184,54 @@ fn render_hyperlink<'a>(
     .into()
 }
 
-/// Render the "▶ Play sound" button shown for cells whose result is a
-/// playable sound (Play[…] / Sound[…]).
-fn render_play_sound_button<'a>(idx: usize) -> Element<'a, Message> {
-  let label = text("▶ Play sound").size(13).font(Font::MONOSPACE);
-  button(label)
+/// Render the graphical audio player shown for cells whose result is
+/// playable audio (Play[…] / Sound[…] / Audio[…]): a play button next to
+/// the audio's label (the source file name for file-backed Audio objects).
+fn render_audio_player<'a>(
+  idx: usize,
+  audio: &woxi::AudioOutput,
+) -> Element<'a, Message> {
+  let play = button(text("▶").size(14))
     .on_press(Message::PlaySound(idx))
-    .padding([2, 8])
+    .padding([4, 10]);
+  let label = audio.label.clone().unwrap_or_else(|| String::from("Sound"));
+  let mut info = column![text(label).size(13).font(Font::MONOSPACE)];
+  if audio.base64.is_empty() {
+    // File-backed audio whose bytes could not be read — keep the player
+    // chrome and explain why pressing play will not work.
+    info = info.push(text("audio file could not be read").size(11));
+  }
+  let player = row![play, info].spacing(10).align_y(Center);
+  container(player)
+    .padding(8)
+    .style(audio_player_style)
     .into()
+}
+
+/// Style the audio player card: a subtly bordered rounded container so the
+/// player reads as one widget rather than a lone button.
+fn audio_player_style(theme: &Theme) -> container::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let (bg, border) = if is_dark {
+    (
+      Color::from_rgb(0.14, 0.14, 0.16),
+      Color::from_rgb(0.30, 0.30, 0.34),
+    )
+  } else {
+    (
+      Color::from_rgb(0.96, 0.96, 0.97),
+      Color::from_rgb(0.80, 0.80, 0.83),
+    )
+  };
+  container::Style {
+    background: Some(Background::Color(bg)),
+    border: Border {
+      color: border,
+      width: 1.0,
+      radius: 6.0.into(),
+    },
+    ..container::Style::default()
+  }
 }
 
 /// Style the hyperlink button: borderless, transparent background,
@@ -3271,46 +3312,79 @@ fn rasterize_svg(
 
 // ── Cell evaluation ─────────────────────────────────────────────────
 
-/// Evaluate all statements in a cell and collect their results.
-/// When a cell contains multiple newline-separated expressions,
-/// each expression's output is included (matching Mathematica behavior).
-/// Decode a base64 WAV and play it through the operating system's audio
+/// File extension for the temp file holding decoded audio, derived from the
+/// audio's MIME type so the system player recognizes the format.
+fn audio_file_extension(mime: &str) -> &'static str {
+  match mime {
+    "audio/wav" => "wav",
+    "audio/flac" => "flac",
+    "audio/mpeg" => "mp3",
+    "audio/ogg" => "ogg",
+    "audio/mp4" => "m4a",
+    "audio/aac" => "aac",
+    "audio/aiff" => "aiff",
+    _ => "bin",
+  }
+}
+
+/// Decode base64 audio and play it through the operating system's audio
 /// player. The bytes are written to a temp file and a platform-appropriate
 /// player is spawned (non-blocking). Returns an error string on failure.
-fn play_wav_base64(wav_base64: &str) -> Result<(), String> {
+fn play_audio(audio: &woxi::AudioOutput) -> Result<(), String> {
   use base64::Engine;
+  if audio.base64.is_empty() {
+    return Err(match &audio.label {
+      Some(label) => format!("audio file could not be read: {label}"),
+      None => String::from("no audio data available"),
+    });
+  }
   let bytes = base64::engine::general_purpose::STANDARD
-    .decode(wav_base64)
+    .decode(&audio.base64)
     .map_err(|e| e.to_string())?;
 
   let mut path = std::env::temp_dir();
-  path.push("woxi-studio-sound.wav");
+  path.push(format!(
+    "woxi-studio-sound.{}",
+    audio_file_extension(&audio.mime)
+  ));
   std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
 
   #[cfg(target_os = "macos")]
   let result = std::process::Command::new("afplay").arg(&path).spawn();
 
   #[cfg(target_os = "windows")]
-  let result = std::process::Command::new("powershell")
-    .args([
-      "-NoProfile",
-      "-Command",
-      &format!(
-        "(New-Object Media.SoundPlayer '{}').PlaySync()",
-        path.display()
-      ),
-    ])
-    .spawn();
+  let result = if audio.mime == "audio/wav" {
+    std::process::Command::new("powershell")
+      .args([
+        "-NoProfile",
+        "-Command",
+        &format!(
+          "(New-Object Media.SoundPlayer '{}').PlaySync()",
+          path.display()
+        ),
+      ])
+      .spawn()
+  } else {
+    // Media.SoundPlayer only decodes WAV — hand other formats to the
+    // system's default audio player.
+    std::process::Command::new("cmd")
+      .args(["/C", "start", "", &path.display().to_string()])
+      .spawn()
+  };
 
   #[cfg(all(unix, not(target_os = "macos")))]
   let result = std::process::Command::new("paplay")
     .arg(&path)
     .spawn()
-    .or_else(|_| std::process::Command::new("aplay").arg(&path).spawn());
+    .or_else(|_| std::process::Command::new("aplay").arg(&path).spawn())
+    .or_else(|_| std::process::Command::new("xdg-open").arg(&path).spawn());
 
   result.map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Evaluate all statements in a cell and collect their results.
+/// When a cell contains multiple newline-separated expressions,
+/// each expression's output is included (matching Mathematica behavior).
 fn evaluate_cell_statements(
   editor: &mut CellEditor,
   code: &str,
@@ -3322,7 +3396,7 @@ fn evaluate_cell_statements(
   let mut outputs: Vec<String> = Vec::new();
   let mut all_stdout = String::new();
   let mut last_graphics: Option<String> = None;
-  let mut last_sound: Option<String> = None;
+  let mut last_sound: Option<woxi::AudioOutput> = None;
   let mut all_warnings: Vec<String> = Vec::new();
   let mut had_error = false;
   // Track a Manipulate that appears as the final statement's result, so
@@ -3370,9 +3444,9 @@ fn evaluate_cell_statements(
           }
         }
 
-        if let Some(wav) = result.sound {
+        if let Some(audio) = result.sound {
           if result.result != "\0" {
-            last_sound = Some(wav);
+            last_sound = Some(audio);
           }
         }
 
@@ -3399,7 +3473,8 @@ fn evaluate_cell_statements(
         .replace("-Graphics-", "")
         .replace("-Graphics3D-", "")
         .replace("-Image-", "")
-        .replace("-Sound-", "");
+        .replace("-Sound-", "")
+        .replace("-Audio-", "");
       let display = display.trim();
       if display.is_empty() {
         text_editor::Content::new()
