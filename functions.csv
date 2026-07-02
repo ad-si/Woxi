@@ -6278,3 +6278,6 @@ SystemModelSurrogate,Represents a symbolic surrogate model approximating a syste
 SystemModelSurrogateTrain,Generates a reduced echo-state-network surrogate from a system model,,pure,15.0,
 BubbleHistogram,Bins two-dimensional data and draws a bubble at each non-empty bin sized by count,✅,pure,14.0,
 PlotGrid,Arranges a matrix of plots in a shared grid,✅,pure,13.1,
+LightDarkSwitched,Represents an expression that switches between light and dark mode variants,✅,pure,14.2,
+SystemColor,Represents a named color provided by the windowing system theme,✅,pure,14.3,
+ThemeColor,Represents a named color of the current notebook theme,✅,pure,14.3,

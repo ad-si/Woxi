@@ -468,6 +468,119 @@ fn parse_hex_color(s: &str) -> Option<Color> {
   }
 }
 
+/// Derive the automatic counterpart of a color for the opposite appearance
+/// (`LightDarkSwitched[c]`, `LightDarkSwitched[c, Automatic]`,
+/// `LightDarkSwitched[Automatic, c]`): hue and saturation are kept while
+/// the HSL lightness is flipped, so the color stays legible when the
+/// background switches between light and dark.
+fn auto_light_dark_variant(c: Color) -> Color {
+  let max = c.r.max(c.g).max(c.b);
+  let min = c.r.min(c.g).min(c.b);
+  let l = (max + min) / 2.0;
+  let flipped = 1.0 - l;
+  let d = max - min;
+  if d < 1e-12 {
+    return Color::new(flipped, flipped, flipped).with_alpha(c.a);
+  }
+  let s = if l > 0.5 {
+    d / (2.0 - max - min)
+  } else {
+    d / (max + min)
+  };
+  let h = if max == c.r {
+    ((c.g - c.b) / d + if c.g < c.b { 6.0 } else { 0.0 }) / 6.0
+  } else if max == c.g {
+    ((c.b - c.r) / d + 2.0) / 6.0
+  } else {
+    ((c.r - c.g) / d + 4.0) / 6.0
+  };
+  let q = if flipped < 0.5 {
+    flipped * (1.0 + s)
+  } else {
+    flipped + s - flipped * s
+  };
+  let p = 2.0 * flipped - q;
+  let channel = |t: f64| {
+    let t = ((t % 1.0) + 1.0) % 1.0;
+    if t < 1.0 / 6.0 {
+      p + (q - p) * 6.0 * t
+    } else if t < 0.5 {
+      q
+    } else if t < 2.0 / 3.0 {
+      p + (q - p) * (2.0 / 3.0 - t) * 6.0
+    } else {
+      p
+    }
+  };
+  Color::new(channel(h + 1.0 / 3.0), channel(h), channel(h - 1.0 / 3.0))
+    .with_alpha(c.a)
+}
+
+/// (light, dark) rendering values for `ThemeColor` names. The front end
+/// resolves these at render time; Woxi's SVG renderer plays that role using
+/// its own palette (accents follow the ColorData[97] plot colors, lightened
+/// for dark mode).
+fn theme_color_pair(name: &str) -> Option<(&'static str, &'static str)> {
+  Some(match name {
+    "Foreground" => ("#333333", "#e0e0e0"),
+    "Background" => ("#ffffff", "#1e1e1e"),
+    "Accent1" => ("#5e81b5", "#7a9bc9"),
+    "Accent2" => ("#e19c24", "#eab04a"),
+    "Accent3" => ("#8fb032", "#a3c455"),
+    "Accent4" => ("#eb6235", "#ef7f58"),
+    "Accent5" => ("#8778b3", "#9f92c4"),
+    "Accent6" => ("#c56e1a", "#d68a40"),
+    "Accent7" => ("#5d9ec7", "#7db3d4"),
+    "Accent8" => ("#ffbf00", "#ffcc33"),
+    "Accent9" => ("#a5609d", "#b87eb1"),
+    "Syntax1" => ("#2e5f9e", "#7aa6d9"),
+    "Syntax2" => ("#3c7d3c", "#7dbb7d"),
+    "Syntax3" => ("#2e8b8b", "#66c2c2"),
+    "Syntax4" => ("#666666", "#999999"),
+    "Syntax5" => ("#8250a8", "#b48ad6"),
+    "Syntax6" => ("#a8642a", "#cc9257"),
+    "Syntax7" => ("#3a3a3a", "#d0d0d0"),
+    "Syntax8" => ("#888888", "#808080"),
+    "SyntaxError1" => ("#cc0000", "#ff6666"),
+    "SyntaxError2" => ("#d94f00", "#ff8c4d"),
+    "SyntaxError3" => ("#b8860b", "#e0b040"),
+    "SyntaxError4" => ("#cc3366", "#e07a9e"),
+    "SyntaxError5" => ("#993399", "#c273c2"),
+    "SyntaxError6" => ("#8b4513", "#c47a4d"),
+    _ => return None,
+  })
+}
+
+/// (light, dark) rendering values for `SystemColor` names — the named UI
+/// element colors of the windowing system, resolved with Woxi's palette.
+fn system_color_pair(name: &str) -> Option<(&'static str, &'static str)> {
+  Some(match name {
+    "Accent" | "Highlight" => ("#3875d7", "#4d8de0"),
+    "HighlightText" => ("#ffffff", "#ffffff"),
+    "Hotlight" => ("#0066cc", "#66aaff"),
+    "InactiveHighlight" => ("#c0c0c0", "#4a4a4a"),
+    "InactiveHighlightText" => ("#333333", "#cccccc"),
+    "Window" | "ModalDialog" | "ModelessDialog" => ("#f5f5f5", "#1e1e1e"),
+    "Menu" => ("#ffffff", "#2a2a2a"),
+    "Toolbar" | "Status" => ("#ececec", "#2d2d2d"),
+    "Palette" | "PanelBackground" => ("#f0f0f0", "#262626"),
+    "DialogButton" | "PaletteButton" => ("#e8e8e8", "#3a3a3a"),
+    "StatusFrame" => ("#cccccc", "#3a3a3a"),
+    "Tooltip" => ("#ffffe1", "#3a3a2e"),
+    "TooltipFrame" => ("#c9c98f", "#55553a"),
+    "WindowText" | "MenuText" | "DialogText" | "ButtonText" | "StatusText"
+    | "TooltipText" | "TabButtonText" | "DefaultButtonText"
+    | "CancelButtonText" => ("#333333", "#e0e0e0"),
+    "PressedButtonText" | "PressedCancelButtonText"
+    | "PressedDefaultButtonText" | "TabButtonTextPressed" => {
+      ("#000000", "#ffffff")
+    }
+    "TabButtonTextHover" => ("#111111", "#f5f5f5"),
+    "DialogTextDisabled" | "TabButtonTextDisabled" => ("#999999", "#6e6e6e"),
+    _ => return None,
+  })
+}
+
 pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
@@ -596,6 +709,49 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
               ))
             }
           }
+        } else {
+          None
+        }
+      }
+      // Kernel evaluation keeps these symbolic; the front end resolves them
+      // when rendering. Woxi's renderer resolves them here from the current
+      // light/dark mode.
+      "LightDarkSwitched" if !args.is_empty() && args.len() <= 2 => {
+        let is_auto =
+          |e: &Expr| matches!(e, Expr::Identifier(s) if s == "Automatic");
+        let light = &args[0];
+        let dark = args.get(1);
+        if crate::is_dark_mode() {
+          match dark {
+            Some(d) if !is_auto(d) => parse_color(d),
+            // Missing/Automatic dark variant: derive it from the light color
+            _ if !is_auto(light) => {
+              parse_color(light).map(auto_light_dark_variant)
+            }
+            _ => None,
+          }
+        } else if !is_auto(light) {
+          parse_color(light)
+        } else {
+          // LightDarkSwitched[Automatic, dark]: derive the light variant
+          dark
+            .filter(|d| !is_auto(d))
+            .and_then(|d| parse_color(d))
+            .map(auto_light_dark_variant)
+        }
+      }
+      "ThemeColor" if args.len() == 1 => {
+        if let Expr::String(n) = &args[0] {
+          let (light, dark) = theme_color_pair(n)?;
+          parse_hex_color(if crate::is_dark_mode() { dark } else { light })
+        } else {
+          None
+        }
+      }
+      "SystemColor" if args.len() == 1 => {
+        if let Expr::String(n) = &args[0] {
+          let (light, dark) = system_color_pair(n)?;
+          parse_hex_color(if crate::is_dark_mode() { dark } else { light })
         } else {
           None
         }
@@ -9668,12 +9824,20 @@ pub fn koch_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── LinearGradientFilling ──────────────────────────────────────────
 
-/// Check if an expression is a color specification (RGBColor, GrayLevel, Hue, CMYKColor)
+/// Check if an expression is a color specification (RGBColor, GrayLevel, Hue,
+/// CMYKColor, or a theme-resolved color like LightDarkSwitched/ThemeColor/
+/// SystemColor)
 fn is_color_expr(expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name, .. } => matches!(
       name.as_str(),
-      "RGBColor" | "GrayLevel" | "Hue" | "CMYKColor"
+      "RGBColor"
+        | "GrayLevel"
+        | "Hue"
+        | "CMYKColor"
+        | "LightDarkSwitched"
+        | "ThemeColor"
+        | "SystemColor"
     ),
     _ => false,
   }

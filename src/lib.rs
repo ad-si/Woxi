@@ -1907,12 +1907,17 @@ fn render_tabular_if_needed(expr: syntax::Expr) -> syntax::Expr {
 
 /// Check if an expression is an explicit color function call (not a named color
 /// identifier like `Red`). Returns `true` for `RGBColor[…]`, `Hue[…]`,
-/// `GrayLevel[…]`, `Darker[…]`, `Lighter[…]`.
+/// `GrayLevel[…]`, `Darker[…]`, `Lighter[…]`, and theme-resolved colors
+/// (`LightDarkSwitched[…]`, `ThemeColor[…]`, `SystemColor[…]`).
 fn is_color_function_call(expr: &syntax::Expr) -> bool {
   matches!(
     expr,
     syntax::Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "RGBColor" | "Hue" | "GrayLevel" | "Darker" | "Lighter")
+      if matches!(
+        name.as_str(),
+        "RGBColor" | "Hue" | "GrayLevel" | "Darker" | "Lighter"
+          | "LightDarkSwitched" | "ThemeColor" | "SystemColor"
+      )
   )
 }
 
