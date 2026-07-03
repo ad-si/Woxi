@@ -1010,6 +1010,7 @@ fn is_half(expr: &Expr) -> bool {
 }
 
 pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use num_bigint::BigInt;
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "Hypergeometric1F1 expects exactly 3 arguments".into(),
@@ -1116,7 +1117,6 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && *a_i <= 0
     && !matches!(&args[1], Expr::Integer(bi) if *bi <= 0 && -*bi < -*a_i)
   {
-    use num_bigint::BigInt;
     let neg_n = *a_i;
     let n = -neg_n;
     let b = &args[1];
@@ -1186,7 +1186,6 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && *a_i > *b_i + 1
     && *a_i - *b_i <= 30
   {
-    use num_bigint::BigInt;
     let n = *a_i - *b_i; // positive
     let b = *b_i;
     let z = &args[2];
@@ -1210,14 +1209,13 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let denom = fact(n - k) * &b_pochhammer * &k_fact;
       // coeff = n! / denom (reduce GCD).
-      use num_bigint::BigInt as BI;
-      fn bigint_gcd(a: &BI, b: &BI) -> BI {
+      fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
         use num_traits::Zero;
         let (mut a, mut b) = (a.clone(), b.clone());
-        if a < BI::from(0) {
+        if a < BigInt::from(0) {
           a = -a;
         }
-        if b < BI::from(0) {
+        if b < BigInt::from(0) {
           b = -b;
         }
         while !b.is_zero() {
@@ -1316,7 +1314,6 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && z_int != 0
     && *b_i <= 30
   {
-    use num_bigint::BigInt;
     let a = *a_i;
     let b = *b_i;
     let z = BigInt::from(z_int);
@@ -1427,11 +1424,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
-  fn bigint_gcd(
-    a: num_bigint::BigInt,
-    b: num_bigint::BigInt,
-  ) -> num_bigint::BigInt {
-    use num_bigint::BigInt;
+  fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
     use num_traits::Zero;
     let (mut a, mut b) = (a, b);
     while !b.is_zero() {
@@ -2410,7 +2403,7 @@ fn hypergeometric2f1_polynomial(
   // (-n)_k = (-n)(-n+1)...(-n+k-1) = (-1)^k * n!/(n-k)!
   let mut terms: Vec<Expr> = vec![Expr::Integer(1)]; // k=0 term
   let ni = n as i128;
-
+  let mut k_fact = 1i128;
   for k in 1..=n {
     let ki = k as i128;
     // Build coefficient: product of (-n+j)*(b+j)/(c+j) for j=0..k-1, divided by k!
@@ -2434,7 +2427,8 @@ fn hypergeometric2f1_polynomial(
       });
     }
     // k! in denominator
-    denom_factors.push(Expr::Integer(factorial_i128(k).unwrap_or(1)));
+    k_fact *= k as i128;
+    denom_factors.push(Expr::Integer(k_fact));
 
     // z^k
     let zk = if k == 1 {

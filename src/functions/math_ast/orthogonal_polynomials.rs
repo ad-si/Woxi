@@ -3627,15 +3627,6 @@ fn laguerre_scaled_coefficients(n: usize) -> (BigInt, Vec<BigInt>) {
   (n_fact, coeffs)
 }
 
-/// Compute n! as i128, returning None on overflow
-pub fn factorial_i128(n: usize) -> Option<i128> {
-  let mut result: i128 = 1;
-  for i in 2..=n {
-    result = result.checked_mul(i as i128)?;
-  }
-  Some(result)
-}
-
 /// HermiteH[n, x] - Hermite polynomial (physicist's convention)
 /// H_0(x) = 1, H_1(x) = 2x, H_{n+1}(x) = 2x*H_n(x) - 2n*H_{n-1}(x)
 pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
