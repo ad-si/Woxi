@@ -1981,6 +1981,88 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// MultipleHarmonicNumber[n, {s1, …, sk}] - the finite multiple harmonic sum
+///   Sum over  n ≥ i1 > i2 > … > ik ≥ 1  of  Product_j 1/ij^sj
+/// (strictly decreasing indices). The one-argument form
+/// MultipleHarmonicNumber[n] uses the weight {1}, i.e. the ordinary harmonic
+/// number H_n. Only a non-negative integer `n` and a list of positive-integer
+/// weights are evaluated; anything else stays unevaluated.
+pub fn multiple_harmonic_number_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use num_bigint::BigInt;
+  let unevaluated = || Expr::FunctionCall {
+    name: "MultipleHarmonicNumber".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated());
+  }
+  // `n` must be a non-negative integer.
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n,
+    _ => return Ok(unevaluated()),
+  };
+  // Weight list: {1} for the one-argument form, otherwise a list of
+  // positive integers.
+  let exps: Vec<u32> = if args.len() == 1 {
+    vec![1]
+  } else if let Expr::List(items) = &args[1] {
+    if items.is_empty() {
+      return Ok(unevaluated());
+    }
+    let mut v = Vec::with_capacity(items.len());
+    for it in items.iter() {
+      match expr_to_i128(it) {
+        Some(s) if s >= 1 && s <= i128::from(u32::MAX) => v.push(s as u32),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    v
+  } else {
+    // A non-list second argument is a usage error in wolframscript.
+    crate::emit_message(&format!(
+      "MultipleHarmonicNumber::list: List expected at position 2 in {}.",
+      crate::syntax::expr_to_string(&unevaluated())
+    ));
+    return Ok(unevaluated());
+  };
+
+  // Recursively enumerate each strictly-decreasing index tuple, accumulating
+  // its denominator ∏ ij^sj as a `1/denom` term.
+  fn gen_terms(
+    exps: &[u32],
+    max_i: i128,
+    denom: &BigInt,
+    terms: &mut Vec<Expr>,
+  ) {
+    let Some((&s, rest)) = exps.split_first() else {
+      terms.push(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(bigint_to_expr(denom.clone())),
+      });
+      return;
+    };
+    // Leave room for the `rest.len()` smaller indices still to be chosen.
+    let mut i = rest.len() as i128 + 1;
+    while i <= max_i {
+      let factor = BigInt::from(i).pow(s);
+      gen_terms(rest, i - 1, &(denom * &factor), terms);
+      i += 1;
+    }
+  }
+  let mut terms: Vec<Expr> = Vec::new();
+  gen_terms(&exps, n, &BigInt::from(1), &mut terms);
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+}
+
 /// AlternatingHarmonicNumber[n] - Sum[(-1)^(k+1)/k, {k,1,n}].
 /// AlternatingHarmonicNumber[n, r] - Sum[(-1)^(k+1)/k^r, {k,1,n}].
 /// AlternatingHarmonicNumber[n, r, x] - Sum[(-1)^(k+1) x^k/k^r, {k,1,n}].

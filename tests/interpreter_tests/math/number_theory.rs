@@ -1195,6 +1195,86 @@ mod harmonic_number {
   }
 }
 
+// MultipleHarmonicNumber[n, {s1,…,sk}] is the finite multiple harmonic sum
+// over strictly decreasing indices n ≥ i1 > … > ik ≥ 1 of ∏ 1/ij^sj.
+// All expected values verified against wolframscript 15.0.
+mod multiple_harmonic_number {
+  use super::*;
+
+  #[test]
+  fn depth_two() {
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[3, {2, 1}]").unwrap(),
+      "5/12"
+    );
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[5, {2, 1}]").unwrap(),
+      "59/96"
+    );
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[4, {1, 1}]").unwrap(),
+      "35/24"
+    );
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[10, {2, 1}]").unwrap(),
+      "2152309/2592000"
+    );
+  }
+
+  #[test]
+  fn depth_one_matches_harmonic_number() {
+    // A single weight reduces to the (generalized) harmonic number.
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[6, {1}]").unwrap(),
+      "49/20"
+    );
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[5, {3}]").unwrap(),
+      "256103/216000"
+    );
+    // The one-argument form defaults to weight {1}, i.e. H_n.
+    assert_eq!(interpret("MultipleHarmonicNumber[5]").unwrap(), "137/60");
+  }
+
+  #[test]
+  fn depth_three() {
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[4, {2, 1, 1}]").unwrap(),
+      "17/144"
+    );
+  }
+
+  #[test]
+  fn empty_sums_are_zero() {
+    // Fewer available indices than the depth gives an empty sum.
+    assert_eq!(interpret("MultipleHarmonicNumber[1, {2, 1}]").unwrap(), "0");
+    assert_eq!(interpret("MultipleHarmonicNumber[0, {2}]").unwrap(), "0");
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[3, {2, 1, 1, 1}]").unwrap(),
+      "0"
+    );
+    // Partial sum: only i1=2,i2=1 contributes 1/(2^2 · 1).
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[2, {2, 1}]").unwrap(),
+      "1/4"
+    );
+  }
+
+  #[test]
+  fn unevaluated_forms() {
+    // Symbolic n stays unevaluated.
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[n, {2, 1}]").unwrap(),
+      "MultipleHarmonicNumber[n, {2, 1}]"
+    );
+    // A non-list weight argument is a usage error and stays unevaluated.
+    assert_eq!(
+      interpret("MultipleHarmonicNumber[5, 3]").unwrap(),
+      "MultipleHarmonicNumber[5, 3]"
+    );
+  }
+}
+
 mod integer_name {
   use super::*;
 

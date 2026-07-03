@@ -6205,7 +6205,7 @@ AlternatingHarmonicNumber,Computes sign-alternating reciprocal harmonic sums,✅
 GeneralizedPolyLog,Computes the Goncharov polylogarithm as an iterated integral,,pure,15.0,
 HarmonicPolyLog,Computes harmonic polylogarithms as Chen iterated integrals,,pure,15.0,
 HyperHarmonicNumber,Computes hyperharmonic numbers via iterated summation,✅,pure,15.0,5610
-MultipleHarmonicNumber,Computes finite harmonic sums over strictly ordered indices,,pure,15.0,
+MultipleHarmonicNumber,Computes finite harmonic sums over strictly ordered indices,✅,pure,15.0,
 MultiplePolyLog,Computes the depth-k multiple polylogarithm,,pure,15.0,
 MultipleZeta,Computes multiple zeta values as nested reciprocal-power sums,,pure,15.0,
 BunchKaufmanDecomposition,Computes the Bunch-Kaufman factorization of a symmetric or Hermitian matrix,,pure,15.0,

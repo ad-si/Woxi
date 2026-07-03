@@ -3057,6 +3057,11 @@ pub fn dispatch_math_functions(
     "HyperHarmonicNumber" if (2..=4).contains(&args.len()) => {
       return Some(crate::functions::math_ast::hyper_harmonic_number_ast(args));
     }
+    "MultipleHarmonicNumber" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::multiple_harmonic_number_ast(
+        args,
+      ));
+    }
     "CoefficientList" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::coefficient_list_ast(
         args,

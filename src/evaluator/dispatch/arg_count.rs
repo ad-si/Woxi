@@ -533,6 +533,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "HarmonicNumber" => Some((1, 2)),
     "AlternatingHarmonicNumber" => Some((1, 3)),
     "HyperHarmonicNumber" => Some((2, 4)),
+    "MultipleHarmonicNumber" => Some((1, 2)),
     "Hash" => Some((1, 3)),
     "Haversine" => Some((1, 1)),
     "Head" => Some((1, 1)),
