@@ -9325,6 +9325,51 @@ mod difference_delta {
     // DifferenceDelta[2^x, x] = 2^(x+1) - 2^x = 2^x
     assert_eq!(interpret("DifferenceDelta[2^x, x]").unwrap(), "2^x");
   }
+
+  // A rational summand combines over a common denominator (previously it left
+  // an unsimplified `1 + 2 + 2 n` and two separate fractions).
+  #[test]
+  fn rational_summand() {
+    assert_eq!(
+      interpret("DifferenceDelta[1/(2 n + 1), n]").unwrap(),
+      "-2/((1 + 2*n)*(3 + 2*n))"
+    );
+    assert_eq!(
+      interpret("DifferenceDelta[1/n, n]").unwrap(),
+      "-(1/(n*(1 + n)))"
+    );
+  }
+
+  // With a numeric step wolframscript factors the polynomial result.
+  #[test]
+  fn numeric_step_factors() {
+    assert_eq!(
+      interpret("DifferenceDelta[x^2 + x, x]").unwrap(),
+      "2*(1 + x)"
+    );
+    assert_eq!(
+      interpret("DifferenceDelta[a*x^2, x]").unwrap(),
+      "a*(1 + 2*x)"
+    );
+    assert_eq!(
+      interpret("DifferenceDelta[x^2, {x, 1, 2}]").unwrap(),
+      "4*(1 + x)"
+    );
+    // An irreducible polynomial stays expanded.
+    assert_eq!(
+      interpret("DifferenceDelta[x^3, x]").unwrap(),
+      "1 + 3*x + 3*x^2"
+    );
+  }
+
+  // With a symbolic step the result stays expanded (not factored).
+  #[test]
+  fn symbolic_step_stays_expanded() {
+    assert_eq!(
+      interpret("DifferenceDelta[x^2 + x, {x, 1, h}]").unwrap(),
+      "h + h^2 + 2*h*x"
+    );
+  }
 }
 
 // DiscreteShift[f, n] substitutes n -> n+1 in f.

@@ -17565,11 +17565,20 @@ pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       left: Box::new(shifted),
       right: Box::new(current.clone()),
     };
-    let expanded = Expr::FunctionCall {
-      name: "Expand".to_string(),
+    // wolframscript canonicalizes with a numeric step by factoring (which also
+    // combines rational terms over a common denominator, e.g.
+    // Δ[1/(2 n + 1)] = -2/((1 + 2 n) (3 + 2 n))); with a symbolic step it leaves
+    // the result expanded (e.g. Δ[x^2, {x, 1, h}] = h^2 + 2 h x).
+    let head = if matches!(step, Expr::Integer(_)) {
+      "Factor"
+    } else {
+      "Expand"
+    };
+    let canonicalized = Expr::FunctionCall {
+      name: head.to_string(),
       args: vec![diff].into(),
     };
-    current = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
+    current = crate::evaluator::evaluate_expr_to_expr(&canonicalized)?;
   }
 
   Ok(current)
