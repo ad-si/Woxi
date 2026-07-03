@@ -6861,7 +6861,9 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// for its single top-level statement. Multiple `;`-separated statements
 /// become a `CompoundExpression`. Used by the three-argument ToExpression
 /// form so a holding head receives the unevaluated parse.
-fn parse_program_to_expr(src: &str) -> Result<Expr, InterpreterError> {
+pub(crate) fn parse_program_to_expr(
+  src: &str,
+) -> Result<Expr, InterpreterError> {
   use crate::Rule;
   use crate::syntax::pair_to_expr;
   let normalized = if src.contains('\r') {

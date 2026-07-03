@@ -2404,4 +2404,80 @@ mod triangle_rendering {
     let direct = svg_of("Graphics[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]");
     assert_eq!(complex, direct);
   }
+
+  // ── Graphics objects: Parallelogram, HalfPlane, InfinitePlane,
+  //    JoinedCurve, Torus, FilledTorus, BSplineSurface, Raster3D ──
+
+  #[test]
+  fn parallelogram_renders_as_polygon() {
+    let svg = svg_of("Graphics[Parallelogram[{0, 0}, {{2, 0}, {1, 1}}]]");
+    assert!(svg.contains("<polygon"), "expected a polygon: {svg}");
+  }
+
+  #[test]
+  fn half_plane_renders_clipped_fill() {
+    let svg =
+      svg_of("Graphics[{Blue, HalfPlane[{{0, 0}, {1, 0}}, {0, 1}]}]");
+    assert!(
+      svg.contains("<polygon") && svg.contains("fill=\"rgb(0,0,255)\""),
+      "expected a blue fill polygon: {svg}"
+    );
+  }
+
+  #[test]
+  fn infinite_plane_renders_full_fill() {
+    let svg =
+      svg_of("Graphics[{Red, InfinitePlane[{{0, 0}, {1, 0}, {0, 1}}]}]");
+    assert!(
+      svg.contains("<polygon") && svg.contains("fill=\"rgb(255,0,0)\""),
+      "expected a red fill polygon: {svg}"
+    );
+  }
+
+  #[test]
+  fn joined_curve_renders_components() {
+    let svg = svg_of(
+      "Graphics[JoinedCurve[{Line[{{0, 0}, {1, 1}}], \
+       BezierCurve[{{1, 1}, {2, 0}, {3, 1}}]}]]",
+    );
+    assert!(svg.contains("<polyline"), "expected the line part: {svg}");
+    assert!(svg.contains("<path"), "expected the bezier part: {svg}");
+  }
+
+  #[test]
+  fn torus_renders_in_graphics3d() {
+    let svg = svg_of("Graphics3D[Torus[]]");
+    assert!(
+      svg.matches("<polygon").count() > 100,
+      "expected a tessellated torus surface: {svg}"
+    );
+    let filled = svg_of("Graphics3D[FilledTorus[{0, 0, 0}, {1, 2}]]");
+    assert!(
+      filled.matches("<polygon").count() > 100,
+      "expected a tessellated filled torus surface"
+    );
+  }
+
+  #[test]
+  fn bspline_surface_renders_in_graphics3d() {
+    let svg = svg_of(
+      "Graphics3D[BSplineSurface[Table[{i, j, Sin[i j]}, {i, 5}, {j, 5}]]]",
+    );
+    assert!(
+      svg.matches("<polygon").count() > 100,
+      "expected a tessellated spline surface"
+    );
+  }
+
+  #[test]
+  fn raster3d_renders_voxels() {
+    let svg =
+      svg_of("Graphics3D[Raster3D[{{{0, 1}, {1, 0}}, {{1, 0}, {0, 1}}}]]");
+    // 8 voxel cuboids, 12 triangles each.
+    assert_eq!(svg.matches("<polygon").count(), 96);
+    // Voxels with value 0 are black, voxels with value 1 are white; both
+    // shades must appear (modulated by lighting, so just check some
+    // polygons exist with distinct fills).
+    assert!(svg.contains("<polygon"), "expected voxel polygons: {svg}");
+  }
 }

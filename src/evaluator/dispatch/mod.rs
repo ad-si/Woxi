@@ -1564,6 +1564,11 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::element_data::element_data_ast(args);
   }
 
+  // Polyhedron data function
+  if name == "PolyhedronData" && !args.is_empty() {
+    return crate::functions::polyhedron_data::polyhedron_data_ast(args);
+  }
+
   // Chemistry: molecules and their properties
   match name {
     "Molecule" => {
@@ -7861,7 +7866,8 @@ pub fn evaluate_function_call_ast_inner(
       | "Ellipsoid" | "Cone" | "Cylinder" | "Tetrahedron" | "Hexahedron"
       | "Prism" | "Pyramid" | "Point" | "Interval" | "Simplex"
       | "Parallelepiped" | "Annulus" | "StadiumShape" | "DiskSegment"
-      | "SphericalShell" | "CapsuleShape" => Some(true),
+      | "SphericalShell" | "CapsuleShape" | "Torus" | "FilledTorus"
+      | "Parallelogram" => Some(true),
       // Unbounded regions
       "HalfPlane" | "HalfSpace" | "InfiniteLine" | "InfinitePlane"
       | "HalfLine" | "ConicHullRegion" | "AffineHalfSpace" | "AffineSpace" => {
@@ -9901,6 +9907,20 @@ pub fn evaluate_function_call_ast_inner(
         | "Simplex"
         | "Annulus"
         | "Parallelepiped"
+        // Torus/FilledTorus/Parallelogram/HalfPlane/InfinitePlane are likewise
+        // symbolic geometric regions consumed by the region functions.
+        | "Torus"
+        | "FilledTorus"
+        | "Parallelogram"
+        | "HalfPlane"
+        | "InfinitePlane"
+        // JoinedCurve/BSplineSurface/Raster3D/AxisObject are graphics
+        // primitives: they stay unevaluated as their canonical form and are
+        // consumed by the Graphics/Graphics3D renderers.
+        | "JoinedCurve"
+        | "BSplineSurface"
+        | "Raster3D"
+        | "AxisObject"
         // OperatorApplied[f, …] is a symbolic operator object that stays
         // unevaluated until applied to arguments via the curried form
         // OperatorApplied[f][x][y] (handled in parse_curry_form), so it is

@@ -6743,6 +6743,97 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
       "Disk" | "Rectangle" | "Triangle" | "Polygon" => {
         return or_unevaluated(compute_area(expr));
       }
+      // Unbounded regions have infinite measure in their intrinsic dimension.
+      "HalfPlane" | "InfinitePlane" | "HalfLine" | "InfiniteLine"
+      | "HalfSpace" | "ConicHullRegion" => {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      }
+      // Parallelogram[p, {v1, v2}] — the area spanned by v1 and v2 is
+      // Sqrt[Det of the Gram matrix] = Sqrt[(v1.v1)(v2.v2) - (v1.v2)^2],
+      // which reduces to |Det[{v1, v2}]| in the plane but also covers
+      // parallelograms embedded in higher-dimensional space.
+      // Parallelogram[] is the unit square {0,0} + {{0,1},{1,0}}.
+      "Parallelogram" => {
+        let Some((_, v1, v2)) = parallelogram_parts(args) else {
+          return unevaluated();
+        };
+        if v1.len() == 2 {
+          return det_measure(
+            vec![Expr::List(v1.into()), Expr::List(v2.into())],
+            1,
+          );
+        }
+        let dot = |a: &[Expr], b: &[Expr]| Expr::FunctionCall {
+          name: "Dot".to_string(),
+          args: vec![
+            Expr::List(a.to_vec().into()),
+            Expr::List(b.to_vec().into()),
+          ]
+          .into(),
+        };
+        let gram_det = Expr::FunctionCall {
+          name: "Subtract".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![dot(&v1, &v1), dot(&v2, &v2)].into(),
+            },
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![dot(&v1, &v2), Expr::Integer(2)].into(),
+            },
+          ]
+          .into(),
+        };
+        let area = Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![gram_det].into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&area);
+      }
+      // Torus[{x,y,z}, {r1, r2}] is the surface with inner radius r1 and
+      // outer radius r2: tube radius a = (r2-r1)/2 around a circle of
+      // radius c = (r1+r2)/2, so the area is 4 Pi^2 a c = Pi^2 (r2^2 - r1^2).
+      // FilledTorus is the enclosed solid: 2 Pi^2 a^2 c.
+      "Torus" | "FilledTorus" => {
+        let Some((_, r1, r2)) = torus_parts(args) else {
+          return unevaluated();
+        };
+        let half = |e: Expr| Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(e),
+          right: Box::new(Expr::Integer(2)),
+        };
+        let tube = half(Expr::FunctionCall {
+          name: "Subtract".to_string(),
+          args: vec![r2.clone(), r1.clone()].into(),
+        });
+        let ring = half(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![r1, r2].into(),
+        });
+        let pi_sq = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(2)]
+            .into(),
+        };
+        let measure = if name == "Torus" {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(4), pi_sq, tube, ring].into(),
+          }
+        } else {
+          let tube_sq = Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![tube, Expr::Integer(2)].into(),
+          };
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(2), pi_sq, tube_sq, ring].into(),
+          }
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&measure);
+      }
       // A Sphere is a 2-dimensional surface embedded in 3-space, so its
       // measure is the surface area (Area already returns 4 Pi r^2).
       "Sphere" => {
@@ -6868,11 +6959,14 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
     match name.as_str() {
       // Regions of fixed intrinsic dimension.
       "Disk" | "Rectangle" | "Triangle" | "Polygon" | "RegularPolygon"
-      | "Annulus" => return Ok(Expr::Integer(2)),
+      | "Annulus" | "Parallelogram" | "HalfPlane" | "InfinitePlane"
+      | "Torus" => return Ok(Expr::Integer(2)),
       "Circle" | "Line" | "HalfLine" | "InfiniteLine" => {
         return Ok(Expr::Integer(1));
       }
-      "Cylinder" | "Cone" | "Tetrahedron" => return Ok(Expr::Integer(3)),
+      "Cylinder" | "Cone" | "Tetrahedron" | "FilledTorus" => {
+        return Ok(Expr::Integer(3));
+      }
       "Point" => return Ok(Expr::Integer(0)),
       // Ball / Ellipsoid are solid: their dimension is the length of the
       // center vector (default unit ball / sphere lives in 3-space).
@@ -6938,6 +7032,41 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
 fn compute_region_embedding_dimension(
   expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  if let Expr::FunctionCall { name, args } = expr {
+    match name.as_str() {
+      "Torus" | "FilledTorus" => {
+        if torus_parts(args).is_some() {
+          return Ok(Expr::Integer(3));
+        }
+      }
+      "Parallelogram" => {
+        if let Some((p, _, _)) = parallelogram_parts(args) {
+          return Ok(Expr::Integer(p.len() as i128));
+        }
+      }
+      // HalfPlane[{p1, p2}, w] / HalfPlane[p, v, w] — ambient space of the
+      // defining points. InfinitePlane[{p1, p2, p3}] / InfinitePlane[p,
+      // {v1, v2}] likewise.
+      "HalfPlane" | "InfinitePlane" => {
+        let first_coord = match args.first() {
+          Some(Expr::List(items)) if !items.is_empty() => {
+            if let Expr::List(p) = &items[0] {
+              // A list of defining points: use one point's length.
+              Some(p.len())
+            } else {
+              // A single coordinate vector.
+              Some(items.len())
+            }
+          }
+          _ => None,
+        };
+        if let Some(n) = first_coord {
+          return Ok(Expr::Integer(n as i128));
+        }
+      }
+      _ => {}
+    }
+  }
   match compute_region_bounds(expr)? {
     Expr::List(ref bounds) => Ok(Expr::Integer(bounds.len() as i128)),
     _ => Ok(Expr::FunctionCall {
@@ -7059,6 +7188,49 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
         bounds.push(Expr::List(vec![lo, hi].into()));
       }
       return Ok(Expr::List(bounds.into()));
+    }
+    // Torus/FilledTorus — x and y span center ± outer radius r2, z spans
+    // center ± tube radius (r2 - r1)/2.
+    if matches!(name.as_str(), "Torus" | "FilledTorus")
+      && let Some((center, r1, r2)) = torus_parts(args)
+    {
+      let tube = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::FunctionCall {
+          name: "Subtract".to_string(),
+          args: vec![r2.clone(), r1].into(),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      };
+      let extents = [r2.clone(), r2, tube];
+      let bounds: Vec<Expr> = center
+        .iter()
+        .zip(extents.iter())
+        .map(|(c, e)| {
+          let lo = eval_binop("Subtract", c.clone(), e.clone());
+          let hi = eval_binop("Plus", c.clone(), e.clone());
+          Expr::List(vec![lo, hi].into())
+        })
+        .collect();
+      return Ok(Expr::List(bounds.into()));
+    }
+    // Parallelogram — min/max over the four corners p, p+v1, p+v2, p+v1+v2.
+    if name == "Parallelogram"
+      && let Some((p, v1, v2)) = parallelogram_parts(args)
+    {
+      let add = |a: &[Expr], b: &[Expr]| -> Vec<Expr> {
+        a.iter()
+          .zip(b.iter())
+          .map(|(x, y)| eval_binop("Plus", x.clone(), y.clone()))
+          .collect()
+      };
+      let corners: Vec<Expr> = vec![
+        Expr::List(p.clone().into()),
+        Expr::List(add(&p, &v1).into()),
+        Expr::List(add(&p, &v2).into()),
+        Expr::List(add(&add(&p, &v1), &v2).into()),
+      ];
+      return Ok(points_bounds(&corners).unwrap_or_else(unevaluated));
     }
     // Rectangle/Cuboid[c1, c2] — per-dimension sorted corners.
     if matches!(name.as_str(), "Rectangle" | "Cuboid") {
@@ -7222,6 +7394,79 @@ fn simplex_edges(pts: &[Expr]) -> Option<Vec<Expr>> {
 /// `n!` as an `i128` for small `n`.
 fn factorial_small(n: usize) -> i128 {
   (1..=n as i128).product::<i128>().max(1)
+}
+
+/// Decompose Parallelogram arguments into (base point, v1, v2), applying the
+/// default Parallelogram[] == Parallelogram[{0, 0}, {{0, 1}, {1, 0}}].
+/// Returns None for malformed argument lists.
+fn parallelogram_parts(
+  args: &[Expr],
+) -> Option<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
+  match args.len() {
+    0 => Some((
+      vec![Expr::Integer(0), Expr::Integer(0)],
+      vec![Expr::Integer(0), Expr::Integer(1)],
+      vec![Expr::Integer(1), Expr::Integer(0)],
+    )),
+    2 => {
+      let Expr::List(p) = &args[0] else {
+        return None;
+      };
+      let Expr::List(vecs) = &args[1] else {
+        return None;
+      };
+      if vecs.len() != 2 {
+        return None;
+      }
+      let (Expr::List(v1), Expr::List(v2)) = (&vecs[0], &vecs[1]) else {
+        return None;
+      };
+      if v1.len() != p.len() || v2.len() != p.len() || p.is_empty() {
+        return None;
+      }
+      Some((p.to_vec(), v1.to_vec(), v2.to_vec()))
+    }
+    _ => None,
+  }
+}
+
+/// Decompose Torus/FilledTorus arguments into (center, r1, r2), applying the
+/// defaults Torus[] == Torus[{0, 0, 0}, {1/2, 1}]. Returns None for
+/// malformed argument lists.
+fn torus_parts(args: &[Expr]) -> Option<(Vec<Expr>, Expr, Expr)> {
+  let default_center = || vec![Expr::Integer(0); 3];
+  let default_radii = || {
+    (
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      },
+      Expr::Integer(1),
+    )
+  };
+  match args.len() {
+    0 => {
+      let (r1, r2) = default_radii();
+      Some((default_center(), r1, r2))
+    }
+    1 | 2 => {
+      let Expr::List(center) = &args[0] else {
+        return None;
+      };
+      if center.len() != 3 {
+        return None;
+      }
+      let (r1, r2) = match args.get(1) {
+        None => default_radii(),
+        Some(Expr::List(radii)) if radii.len() == 2 => {
+          (radii[0].clone(), radii[1].clone())
+        }
+        Some(_) => return None,
+      };
+      Some((center.to_vec(), r1, r2))
+    }
+    _ => None,
+  }
 }
 
 fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -8150,6 +8395,41 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           return compute_triangle_centroid(pts);
         }
         unevaluated()
+      }
+      // Torus / FilledTorus — symmetric about the center.
+      "Torus" | "FilledTorus" => {
+        if let Some((center, _, _)) = torus_parts(args) {
+          Ok(Expr::List(center.into()))
+        } else {
+          unevaluated()
+        }
+      }
+      // Parallelogram[p, {v1, v2}] — centroid is p + (v1 + v2)/2.
+      "Parallelogram" => {
+        let (p, v1, v2) = match parallelogram_parts(args) {
+          Some(parts) => parts,
+          None => return unevaluated(),
+        };
+        let coords: Vec<Expr> = (0..p.len())
+          .map(|d| {
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                p[d].clone(),
+                Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Divide,
+                  left: Box::new(Expr::FunctionCall {
+                    name: "Plus".to_string(),
+                    args: vec![v1[d].clone(), v2[d].clone()].into(),
+                  }),
+                  right: Box::new(Expr::Integer(2)),
+                },
+              ]
+              .into(),
+            }
+          })
+          .collect();
+        crate::evaluator::evaluate_expr_to_expr(&Expr::List(coords.into()))
       }
       // Tetrahedron / Simplex — the centroid is the mean of the vertices.
       "Tetrahedron" | "Simplex" => {
