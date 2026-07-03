@@ -7826,4 +7826,71 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  // TimeValue[Cashflow[...], i, t]. Cashflow[{c0, c1, ...}] places amount c_k
+  // at time k; Cashflow[{{t0,c0}, {t1,c1}, ...}] places amount c_k at the
+  // explicit time t_k. Its value at time t is Sum[c_k * (1+i)^(t - t_k)].
+  // Previously the {time, amount}-pair form was fed through the scalar formula
+  // and returned a list of values. Rounded to the cent so the assertions are
+  // immune to last-digit float noise (verified identical to wolframscript).
+  mod time_value_cashflow_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_time_amount_pairs() {
+      // 100 at time 1 and 300 at time 3, valued at time 0.
+      assert_eq!(
+        interpret(
+          "Round[TimeValue[Cashflow[{{1, 100}, {3, 300}}], 0.05, 0], 0.01]"
+        )
+        .unwrap(),
+        "354.39"
+      );
+    }
+
+    #[test]
+    fn pairs_including_time_zero() {
+      assert_eq!(
+        interpret(
+          "Round[TimeValue[Cashflow[{{0, 100}, {1, 100}, {2, 100}}], 0.05, 0], \
+           0.01]"
+        )
+        .unwrap(),
+        "285.94"
+      );
+    }
+
+    #[test]
+    fn single_pair_discounted() {
+      // A single 500 payment at time 2, discounted to time 0.
+      assert_eq!(
+        interpret("Round[TimeValue[Cashflow[{{2, 500}}], 0.05, 0], 0.01]")
+          .unwrap(),
+        "453.51"
+      );
+    }
+
+    #[test]
+    fn pairs_future_value() {
+      // Same pairs valued at time 3 rather than time 0.
+      assert_eq!(
+        interpret(
+          "Round[TimeValue[Cashflow[{{1, 100}, {3, 300}}], 0.05, 3], 0.01]"
+        )
+        .unwrap(),
+        "410.25"
+      );
+    }
+
+    #[test]
+    fn scalar_amounts_still_use_index_times() {
+      // Regression guard: the plain-amount form is unchanged (amounts at
+      // times 0, 1, 2).
+      assert_eq!(
+        interpret("Round[TimeValue[Cashflow[{100, 200, 300}], 0.05, 0], 0.01]")
+          .unwrap(),
+        "562.59"
+      );
+    }
+  }
 }

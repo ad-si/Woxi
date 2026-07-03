@@ -9362,7 +9362,14 @@ pub fn evaluate_function_call_ast_inner(
       return evaluate_expr_to_expr(&result);
     }
 
-    // TimeValue[Cashflow[list], i, t] — Sum[c_k * (1+i)^(t-k), {k, 0, len-1}].
+    // TimeValue[Cashflow[list], i, t].
+    //   Cashflow[{c0, c1, ...}]          — amount c_k at time k, so the value
+    //                                      is Sum[c_k * (1+i)^(t-k)].
+    //   Cashflow[{{t0,c0}, {t1,c1}, ...}] — amount c_k at explicit time t_k,
+    //                                      so the value is Sum[c_k * (1+i)^(t-t_k)].
+    // A list whose elements are 2-element {time, amount} pairs must use the
+    // explicit-time form; feeding a pair into the scalar formula would thread
+    // it elementwise and return a list of values.
     if let Expr::FunctionCall {
       name: cf_name,
       args: cf_args,
@@ -9373,16 +9380,44 @@ pub fn evaluate_function_call_ast_inner(
       && t_scalar
       && let Expr::List(flows) = &cf_args[0]
     {
+      let is_pair = |e: &Expr| matches!(e, Expr::List(p) if p.len() == 2);
+      let all_pairs = !flows.is_empty() && flows.iter().all(is_pair);
+      let any_list = flows.iter().any(|e| matches!(e, Expr::List(_)));
+      // Mixed or malformed sublist shapes are not valid cashflow specs; leave
+      // the call unevaluated rather than producing a spurious list.
+      if any_list && !all_pairs {
+        return Ok(Expr::FunctionCall {
+          name: "TimeValue".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
       let mut terms: Vec<Expr> = Vec::with_capacity(flows.len());
       for (k, c) in flows.iter().enumerate() {
+        // time_k and amount_k depend on whether this is a {time, amount} pair.
+        let (time_k, amount) = if all_pairs {
+          match c {
+            Expr::List(p) => (p[0].clone(), p[1].clone()),
+            _ => unreachable!(),
+          }
+        } else {
+          (Expr::Integer(k as i128), c.clone())
+        };
+        // exponent = t - time_k
         let exp = Expr::FunctionCall {
           name: "Plus".to_string(),
-          args: vec![t.clone(), Expr::Integer(-(k as i128))].into(),
+          args: vec![
+            t.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), time_k].into(),
+            },
+          ]
+          .into(),
         };
         terms.push(Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            c.clone(),
+            amount,
             Expr::FunctionCall {
               name: "Power".to_string(),
               args: vec![
