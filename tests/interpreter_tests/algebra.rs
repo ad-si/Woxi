@@ -477,6 +477,29 @@ mod simplify {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
 
+  // A standalone `c*Log[n]` (positive integers) folds to `Log[n^c]` when that
+  // is simpler under wolframscript's digit-aware complexity measure. Large
+  // powers (many digits) and symbolic bases/coefficients stay factored.
+  #[test]
+  fn folds_standalone_integer_log() {
+    assert_eq!(interpret("Simplify[2*Log[2]]").unwrap(), "Log[4]");
+    assert_eq!(interpret("Simplify[2*Log[3]]").unwrap(), "Log[9]");
+    assert_eq!(interpret("Simplify[3*Log[3]]").unwrap(), "Log[27]");
+    assert_eq!(interpret("Simplify[2*Log[100]]").unwrap(), "Log[10000]");
+    // Right at the digit-count threshold for base 2: 2^13 folds, 2^14 does not.
+    assert_eq!(interpret("Simplify[13*Log[2]]").unwrap(), "Log[8192]");
+    assert_eq!(interpret("Simplify[14*Log[2]]").unwrap(), "14*Log[2]");
+    // A large power stays factored (Log[1048576] is more complex).
+    assert_eq!(interpret("Simplify[20*Log[2]]").unwrap(), "20*Log[2]");
+    // 3^7 = 2187 has too many digits to be worth folding.
+    assert_eq!(interpret("Simplify[7*Log[3]]").unwrap(), "7*Log[3]");
+    // A symbolic base or coefficient is never folded.
+    assert_eq!(interpret("Simplify[2*Log[x]]").unwrap(), "2*Log[x]");
+    assert_eq!(interpret("Simplify[a*Log[2]]").unwrap(), "a*Log[2]");
+    // A single Log is left as-is.
+    assert_eq!(interpret("Simplify[Log[2]]").unwrap(), "Log[2]");
+  }
+
   // Simplify must keep the canonical radical form for a numeric base:
   // `2*Sqrt[2]` (= 2^1 * 2^(1/2)) stays factored rather than merging into the
   // less-standard `2^(3/2)`. Symbolic bases still merge (`x*Sqrt[x]`).

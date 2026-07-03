@@ -3922,6 +3922,17 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let simplified = simplify_expr_with_together(&args[0]);
   let assumed = apply_active_assumptions(&simplified);
+  // wolframscript's default Simplify collapses a standalone `c*Log[n]` (positive
+  // integers) to `Log[n^c]` when that reduces leaf count, e.g.
+  // Simplify[2 Log[2]] -> Log[4]. Only the top-level standalone form is folded
+  // here so logs embedded in a sum (e.g. LogLikelihood results like
+  // `-6 + 5 Log[2] - Log[6]`) are left untouched, matching wolframscript.
+  let assumed = match log_collapse_candidate(&assumed) {
+    Some(cand) if complexity_digits(&cand) <= complexity_digits(&assumed) => {
+      cand
+    }
+    _ => assumed,
+  };
   // If simplification exposed a singularity like `0^(-1)` (e.g. after
   // cancelling `Sin[x]^2 + Cos[x]^2 − 1`), re-evaluate so it collapses to
   // `ComplexInfinity`. Limited to this pattern to avoid re-canonicalizing
@@ -6517,6 +6528,34 @@ fn leaf_count(expr: &Expr) -> usize {
       1 + args.iter().map(leaf_count).sum::<usize>()
     }
     Expr::List(items) => items.iter().map(leaf_count).sum::<usize>().max(1),
+    _ => 1,
+  }
+}
+
+/// Like `leaf_count` but each integer contributes its decimal digit count.
+/// wolframscript's default Simplify complexity penalizes large numbers, so
+/// `Log[1048576]` is considered *more* complex than `20*Log[2]` even though it
+/// has fewer nodes. Used to decide whether folding `c*Log[n]` → `Log[n^c]`
+/// actually simplifies.
+fn complexity_digits(expr: &Expr) -> usize {
+  let digits = |s: String| s.trim_start_matches('-').len().max(1);
+  match expr {
+    Expr::Integer(n) => digits(n.to_string()),
+    Expr::BigInteger(n) => digits(n.to_string()),
+    Expr::Real(_)
+    | Expr::String(_)
+    | Expr::Constant(_)
+    | Expr::Identifier(_) => 1,
+    Expr::BinaryOp { left, right, .. } => {
+      1 + complexity_digits(left) + complexity_digits(right)
+    }
+    Expr::UnaryOp { operand, .. } => 1 + complexity_digits(operand),
+    Expr::FunctionCall { args, .. } => {
+      1 + args.iter().map(complexity_digits).sum::<usize>()
+    }
+    Expr::List(items) => {
+      items.iter().map(complexity_digits).sum::<usize>().max(1)
+    }
     _ => 1,
   }
 }
