@@ -137,6 +137,25 @@ struct CellEditor {
   graphics_handle: Option<svg::Handle>,
   /// Pre-rasterized image of the SVG (avoids resvg parse on scroll).
   graphics_image: Option<(iced::widget::image::Handle, u32, u32)>,
+  /// Typeset SVG renderings of the result outputs — the same SVGs the
+  /// Playground shows — one per result statement that produced one. This is how
+  /// number/superscript/fraction formatting is reused instead of being
+  /// re-implemented for Studio. Empty when results display as plain text
+  /// (trivial literals, or a notebook loaded from disk that hasn't been
+  /// re-evaluated).
+  output_svgs: Vec<String>,
+  /// Pre-rasterized images of `output_svgs`, rebuilt on scale change.
+  output_images: Vec<(iced::widget::image::Handle, u32, u32)>,
+  /// Dark-mode flag in effect when `output_svgs` were generated. When it no
+  /// longer matches the current theme the baked text color would clash with the
+  /// background, so the view falls back to the theme-aware text output until the
+  /// cell is re-evaluated.
+  output_dark: bool,
+  /// Whether every result statement in the cell produced a typeset SVG. Only
+  /// then does the view render the SVG images (in place of the text output);
+  /// otherwise — text-only results, mixed cells, or a rasterization failure —
+  /// it shows the plain-text output so nothing is dropped.
+  output_all_svg: bool,
   /// Playable audio from Play/Sound synthesis or an Audio object (file-backed
   /// or from sample data), if any. When present the cell renders a graphical
   /// audio player.
@@ -459,6 +478,10 @@ impl WoxiStudio {
             graphics_svg: None,
             graphics_handle: None,
             graphics_image: None,
+            output_svgs: Vec::new(),
+            output_images: Vec::new(),
+            output_dark: false,
+            output_all_svg: false,
             sound: None,
             warnings: Vec::new(),
             undo_stack: Vec::new(),
@@ -525,6 +548,10 @@ impl WoxiStudio {
                 graphics_svg: None,
                 graphics_handle: None,
                 graphics_image: None,
+                output_svgs: Vec::new(),
+                output_images: Vec::new(),
+                output_dark: false,
+                output_all_svg: false,
                 sound: None,
                 warnings: Vec::new(),
                 undo_stack: Vec::new(),
@@ -550,6 +577,10 @@ impl WoxiStudio {
                 graphics_svg: None,
                 graphics_handle: None,
                 graphics_image: None,
+                output_svgs: Vec::new(),
+                output_images: Vec::new(),
+                output_dark: false,
+                output_all_svg: false,
                 sound: None,
                 warnings: Vec::new(),
                 undo_stack: Vec::new(),
@@ -1294,6 +1325,9 @@ impl WoxiStudio {
             self.cell_editors[idx].graphics_svg = None;
             self.cell_editors[idx].graphics_handle = None;
             self.cell_editors[idx].graphics_image = None;
+            self.cell_editors[idx].output_svgs.clear();
+            self.cell_editors[idx].output_images.clear();
+            self.cell_editors[idx].output_all_svg = false;
             self.cell_editors[idx].sound = None;
             self.cell_editors[idx].hyperlinks.clear();
             self.cell_editors[idx].warnings.clear();
@@ -1493,6 +1527,11 @@ impl WoxiStudio {
               .graphics_svg
               .as_ref()
               .and_then(|s| rasterize_svg(s, scale, &self.fontdb));
+            editor.output_images = editor
+              .output_svgs
+              .iter()
+              .filter_map(|s| rasterize_svg(s, scale, &self.fontdb))
+              .collect();
             if let Some(ref mut state) = editor.manipulate_state {
               state.rerasterize(scale, &self.fontdb);
             }
@@ -1579,6 +1618,10 @@ impl WoxiStudio {
             graphics_svg: None,
             graphics_handle: None,
             graphics_image: None,
+            output_svgs: Vec::new(),
+            output_images: Vec::new(),
+            output_dark: false,
+            output_all_svg: false,
             sound: None,
             warnings: Vec::new(),
             undo_stack: Vec::new(),
@@ -1614,6 +1657,10 @@ impl WoxiStudio {
             graphics_svg: None,
             graphics_handle: None,
             graphics_image: None,
+            output_svgs: Vec::new(),
+            output_images: Vec::new(),
+            output_dark: false,
+            output_all_svg: false,
             sound: None,
             warnings: Vec::new(),
             undo_stack: Vec::new(),
@@ -1717,9 +1764,11 @@ impl WoxiStudio {
                 }
               }
             }
+            let is_dark = !matches!(self.theme, Theme::Light);
             evaluate_cell_statements(
               &mut self.cell_editors[idx],
               &code,
+              is_dark,
               self.scale_factor,
               &self.fontdb,
             );
@@ -1804,9 +1853,11 @@ impl WoxiStudio {
           ) {
             let code = self.cell_editors[idx].content.text().trim().to_string();
             if !code.is_empty() {
+              let is_dark = !matches!(self.theme, Theme::Light);
               evaluate_cell_statements(
                 &mut self.cell_editors[idx],
                 &code,
+                is_dark,
                 self.scale_factor,
                 &self.fontdb,
               );
@@ -2417,6 +2468,7 @@ impl WoxiStudio {
   ) -> Element<'a, Message> {
     let is_input =
       editor.style == CellStyle::Input || editor.style == CellStyle::Code;
+    let is_dark = !matches!(self.theme, Theme::Light);
 
     // ── Left gutter: style picker + delete ──
     let mut gutter = Column::new().spacing(2).width(iced::Length::Shrink);
@@ -2770,8 +2822,17 @@ impl WoxiStudio {
         output_col = output_col.push(render_hyperlink(label, uri, stale));
       }
 
-      // Text output (filter out graphics placeholders)
-      if editor.output.is_some()
+      // Result output: the typeset SVG (same rendering the Playground shows)
+      // when every result produced one and the baked colors still match the
+      // theme, otherwise the selectable plain text (filtering graphics
+      // placeholders).
+      if editor.output_all_svg
+        && editor.output_dark == is_dark
+        && !editor.output_images.is_empty()
+      {
+        output_col =
+          output_col.push(output_images_element(&editor.output_images, stale));
+      } else if editor.output.is_some()
         && !editor.output_content.text().trim().is_empty()
       {
         let output_editor = text_editor(&editor.output_content)
@@ -2863,7 +2924,13 @@ impl WoxiStudio {
         content_col = content_col.push(render_hyperlink(label, uri, stale));
       }
 
-      if editor.output.is_some()
+      if editor.output_all_svg
+        && editor.output_dark == is_dark
+        && !editor.output_images.is_empty()
+      {
+        content_col =
+          content_col.push(output_images_element(&editor.output_images, stale));
+      } else if editor.output.is_some()
         && !editor.output_content.text().trim().is_empty()
       {
         let output_editor = text_editor(&editor.output_content)
@@ -3470,6 +3537,26 @@ fn rasterize_svg(
   Some((handle, logical_w, logical_h))
 }
 
+/// Build the result-output element from pre-rasterized typeset SVG images,
+/// stacked one per result statement. Each image is displayed at its logical
+/// (unscaled) size so it stays crisp on HiDPI, matching the graphics output.
+fn output_images_element<'a>(
+  images: &'a [(iced::widget::image::Handle, u32, u32)],
+  stale: bool,
+) -> Element<'a, Message> {
+  let mut col = Column::new().spacing(2);
+  for (handle, w, h) in images {
+    let mut img = image(handle.clone())
+      .width(iced::Length::Fixed(*w as f32))
+      .height(iced::Length::Fixed(*h as f32));
+    if stale {
+      img = img.opacity(0.3);
+    }
+    col = col.push(container(img).padding(6));
+  }
+  col.into()
+}
+
 // ── Cell evaluation ─────────────────────────────────────────────────
 
 /// File extension for the temp file holding decoded audio, derived from the
@@ -3571,12 +3658,22 @@ fn play_audio(
 fn evaluate_cell_statements(
   editor: &mut CellEditor,
   code: &str,
+  is_dark: bool,
   scale_factor: f32,
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) {
+  // Render result SVGs (and any graphics) with theme-appropriate colors so the
+  // typeset output reads against the current background.
+  woxi::set_dark_mode(is_dark);
+
   let statements = woxi::split_into_statements(code);
 
   let mut outputs: Vec<String> = Vec::new();
+  // Typeset SVG per result statement (the same rendering the Playground shows),
+  // plus a count of result statements so the view can prefer the SVGs only when
+  // every result produced one.
+  let mut output_svgs: Vec<String> = Vec::new();
+  let mut result_count = 0usize;
   let mut all_stdout = String::new();
   let mut last_graphics: Option<String> = None;
   let mut last_sound: Option<woxi::AudioOutput> = None;
@@ -3634,11 +3731,16 @@ fn evaluate_cell_statements(
         }
 
         if result.result != "\0" {
+          result_count += 1;
+          if let Some(svg) = result.output_svg {
+            output_svgs.push(svg);
+          }
           outputs.push(result.result);
         }
       }
       Err(woxi::InterpreterError::EmptyInput) => {}
       Err(e) => {
+        result_count += 1;
         outputs.push(format!("Error: {e}"));
         had_error = true;
       }
@@ -3679,6 +3781,20 @@ fn evaluate_cell_statements(
     Some(s) => text_editor::Content::with_text(s),
     None => text_editor::Content::new(),
   };
+  // Typeset SVG output: rasterize each result SVG. The view uses these images
+  // (instead of the plain text) only when every result produced one and the
+  // theme still matches — see `output_all_svg` / `output_dark`.
+  editor.output_dark = is_dark;
+  editor.output_images = output_svgs
+    .iter()
+    .filter_map(|s| rasterize_svg(s, scale_factor, fontdb))
+    .collect();
+  // Require one image per result; a rasterization failure falls the whole cell
+  // back to text so no result is silently dropped.
+  editor.output_all_svg = result_count > 0
+    && output_svgs.len() == result_count
+    && editor.output_images.len() == output_svgs.len();
+  editor.output_svgs = output_svgs;
   editor.sound = last_sound;
   editor.graphics_svg = last_graphics;
   editor.graphics_handle = editor
@@ -5279,5 +5395,92 @@ mod tests {
       args: vec![].into(),
     };
     assert_eq!(extract_hyperlink(&expr), None);
+  }
+
+  // ── Result-output SVG rendering ──
+
+  /// A blank Input-cell editor for exercising `evaluate_cell_statements`.
+  fn blank_editor() -> CellEditor {
+    CellEditor {
+      content: text_editor::Content::new(),
+      style: CellStyle::Input,
+      output: None,
+      stdout: None,
+      graphics_svg: None,
+      graphics_handle: None,
+      graphics_image: None,
+      output_svgs: Vec::new(),
+      output_images: Vec::new(),
+      output_dark: false,
+      output_all_svg: false,
+      sound: None,
+      warnings: Vec::new(),
+      undo_stack: Vec::new(),
+      redo_stack: Vec::new(),
+      output_stale: false,
+      is_collapsed: false,
+      manipulate_state: None,
+      hyperlinks: Vec::new(),
+      output_content: text_editor::Content::new(),
+      stdout_content: text_editor::Content::new(),
+    }
+  }
+
+  #[test]
+  fn scientific_real_result_renders_as_svg_image() {
+    // A computed scientific real (`10.^10`) is shown as the typeset SVG image
+    // (reusing the Playground rendering) rather than the plain `1.*^10` text.
+    let fontdb = Arc::new(resvg::usvg::fontdb::Database::new());
+    let mut editor = blank_editor();
+    evaluate_cell_statements(&mut editor, "10.^10", false, 1.0, &fontdb);
+    assert!(editor.output_all_svg, "result should render via SVG image");
+    assert_eq!(editor.output_images.len(), 1);
+    // The SVG typesets the exponent as a superscript, not the raw `*^`.
+    assert_eq!(editor.output_svgs.len(), 1);
+    assert!(!editor.output_svgs[0].contains("*^"));
+    assert!(editor.output_svgs[0].contains('\u{00d7}'));
+    // The raw text is still kept (for saving to the notebook).
+    assert_eq!(editor.output.as_deref(), Some("1.\u{00d7}10^10"));
+  }
+
+  #[test]
+  fn string_result_stays_plain_text() {
+    // A bare string result has no typeset SVG (matching the Playground), so the
+    // cell falls back to the selectable plain-text output.
+    let fontdb = Arc::new(resvg::usvg::fontdb::Database::new());
+    let mut editor = blank_editor();
+    evaluate_cell_statements(&mut editor, "\"hello\"", false, 1.0, &fontdb);
+    assert!(!editor.output_all_svg, "string should stay text");
+    assert!(editor.output_images.is_empty());
+    assert_eq!(editor.output.as_deref(), Some("hello"));
+  }
+
+  #[test]
+  fn list_of_large_literals_groups_digits_as_svg() {
+    // A list literal now renders as a typeset SVG so its numbers get digit
+    // grouping (`{10000, 20000}` → `{10 000, 20 000}`).
+    let fontdb = Arc::new(resvg::usvg::fontdb::Database::new());
+    let mut editor = blank_editor();
+    evaluate_cell_statements(
+      &mut editor,
+      "{10000, 20000}",
+      false,
+      1.0,
+      &fontdb,
+    );
+    assert!(editor.output_all_svg, "list literal should render via SVG");
+    assert_eq!(editor.output_images.len(), 1);
+    assert!(editor.output_svgs[0].contains(">10<"));
+    assert!(!editor.output_svgs[0].contains(">10000<"));
+  }
+
+  #[test]
+  fn output_dark_flag_tracks_eval_theme() {
+    // The dark-mode flag records the theme at evaluation time so the view can
+    // fall back to text when the theme later changes.
+    let fontdb = Arc::new(resvg::usvg::fontdb::Database::new());
+    let mut editor = blank_editor();
+    evaluate_cell_statements(&mut editor, "10.^10", true, 1.0, &fontdb);
+    assert!(editor.output_dark);
   }
 }
