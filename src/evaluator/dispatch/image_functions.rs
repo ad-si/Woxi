@@ -124,6 +124,84 @@ fn import_netpbm(path: &str) -> Result<Expr, InterpreterError> {
   Ok(Expr::Identifier("$Failed".to_string()))
 }
 
+/// Import a host-registered virtual file (WASM). The browser host registers
+/// file contents via `crate::wasm::set_virtual_file` (e.g. chat attachments);
+/// all non-URL `Import` calls resolve against that store since there is no
+/// local filesystem in the browser.
+#[cfg(target_arch = "wasm32")]
+fn import_virtual(
+  path: &str,
+  element: Option<&str>,
+) -> Result<Expr, InterpreterError> {
+  let Some(bytes) = crate::wasm::virtual_file(path) else {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Import: cannot open \"{}\" in the browser. Only files attached to the conversation can be imported.",
+      path
+    )));
+  };
+  let ext = import_extension(path);
+
+  if matches!(
+    ext.as_str(),
+    "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "tif" | "webp"
+  ) {
+    return crate::functions::image_ast::import_image_from_bytes(&bytes);
+  }
+
+  let content = String::from_utf8(bytes).map_err(|_| {
+    InterpreterError::EvaluationError(format!(
+      "Import: \"{}\" is not valid UTF-8 text",
+      path
+    ))
+  })?;
+
+  // JSON via explicit format element or .json extension.
+  if matches!(element, Some("JSON") | Some("RawJSON")) || ext == "json" {
+    let raw = matches!(element, Some("RawJSON"));
+    return Ok(match serde_json::from_str::<serde_json::Value>(&content) {
+      Ok(value) => json_value_to_expr(&value, raw),
+      Err(_) => Expr::Identifier("$Failed".to_string()),
+    });
+  }
+
+  if ext == "svg" {
+    return Ok(crate::graphics_result(content));
+  }
+
+  if ext == "csv" || ext == "tsv" {
+    let rows: Vec<Vec<String>> = if ext == "tsv" {
+      let trimmed = content.strip_suffix('\n').unwrap_or(&content);
+      if trimmed.is_empty() {
+        Vec::new()
+      } else {
+        trimmed
+          .split('\n')
+          .map(|line| line.split('\t').map(|s| s.to_string()).collect())
+          .collect()
+      }
+    } else {
+      crate::functions::csv_ast::parse_csv(&content)
+    };
+    return Ok(crate::functions::csv_ast::csv_import_element(
+      &rows, element,
+    ));
+  }
+
+  // Everything else is treated as plain text (matches the native txt path).
+  match element {
+    None => Ok(Expr::String(
+      crate::functions::txt_ast::strip_trailing_newline(content),
+    )),
+    Some(elem) => crate::functions::txt_ast::import_element(&content, elem)
+      .ok_or_else(|| {
+        InterpreterError::EvaluationError(format!(
+          "Import: unsupported element \"{}\" for \"{}\"",
+          elem, path
+        ))
+      }),
+  }
+}
+
 /// Convert a parsed JSON value to a Woxi expression, matching
 /// `ImportString[…, "JSON"]`: arrays become lists, scalars/true/false/null map
 /// to atoms. A JSON object becomes a list of `key -> value` rules for the
@@ -446,6 +524,13 @@ pub fn dispatch_image_functions(
       let is_url = path.starts_with("http://") || path.starts_with("https://");
       let ext = import_extension(&path);
 
+      // In the browser every non-URL path is served from the
+      // host-registered virtual file store.
+      #[cfg(target_arch = "wasm32")]
+      if !is_url {
+        return Some(import_virtual(&path, None));
+      }
+
       if ext == "svg" {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -577,6 +662,19 @@ pub fn dispatch_image_functions(
       };
       let is_url = path.starts_with("http://") || path.starts_with("https://");
       let ext = import_extension(&path);
+
+      // In the browser every non-URL path is served from the
+      // host-registered virtual file store.
+      #[cfg(target_arch = "wasm32")]
+      if !is_url {
+        if let Expr::String(elem) = &args[1] {
+          return Some(import_virtual(&path, Some(elem)));
+        }
+        return Some(Ok(Expr::FunctionCall {
+          name: "Import".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
 
       if let Expr::String(fmt) = &args[1]
         && (fmt == "JSON" || fmt == "RawJSON")

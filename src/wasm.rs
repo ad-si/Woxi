@@ -1,6 +1,46 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use wasm_bindgen::prelude::*;
 
 use crate::{clear_state, interpret, interpret_with_stdout};
+
+thread_local! {
+  // Host-registered in-memory files. The browser has no local filesystem,
+  // so `Import["name"]` resolves against this store instead (see
+  // `import_virtual` in evaluator/dispatch/image_functions.rs).
+  static VIRTUAL_FILES: RefCell<HashMap<String, Vec<u8>>> =
+    RefCell::new(HashMap::new());
+}
+
+/// Register (or replace) an in-memory file so `Import["name"]` can read it
+/// in the browser.
+#[wasm_bindgen]
+pub fn set_virtual_file(name: &str, data: &[u8]) {
+  VIRTUAL_FILES.with(|files| {
+    files.borrow_mut().insert(name.to_string(), data.to_vec());
+  });
+}
+
+/// Remove all host-registered in-memory files.
+#[wasm_bindgen]
+pub fn clear_virtual_files() {
+  VIRTUAL_FILES.with(|files| files.borrow_mut().clear());
+}
+
+/// Look up a host-registered file by exact name, falling back to the
+/// basename so `Import["/tmp/data.csv"]` still finds a file registered
+/// as "data.csv".
+pub fn virtual_file(path: &str) -> Option<Vec<u8>> {
+  VIRTUAL_FILES.with(|files| {
+    let files = files.borrow();
+    if let Some(data) = files.get(path) {
+      return Some(data.clone());
+    }
+    let base = path.rsplit('/').next().unwrap_or(path);
+    files.get(base).cloned()
+  })
+}
 
 // Import a JS-provided function that fetches a URL and returns its content
 // as a base64-encoded string.  The host (worker.js / kernel) must supply this.
