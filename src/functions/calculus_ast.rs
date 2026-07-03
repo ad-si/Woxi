@@ -17354,7 +17354,15 @@ pub fn discrete_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     result = crate::syntax::substitute_variable(&result, var, &shifted);
   }
-  let result = crate::evaluator::evaluate_expr_to_expr(&result)?;
+  let mut result = crate::evaluator::evaluate_expr_to_expr(&result)?;
+
+  // With an integer shift wolframscript combines the result over a common
+  // denominator, so `DiscreteShift[1/(2 n + 1), n]` becomes `(3 + 2 n)^-1`
+  // rather than the unsimplified `(1 + 2 (1 + n))^-1`. A symbolic shift is left
+  // as-is (e.g. `(1 + 2 (k + n))^-1`), so only fold for a purely integer step.
+  if specs.iter().all(|(_, k)| matches!(k, Expr::Integer(_))) {
+    result = crate::functions::polynomial_ast::together_ast(&[result])?;
+  }
 
   // wolframscript expands the result only when its top-level head is Plus.
   let head =

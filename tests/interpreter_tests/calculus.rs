@@ -9444,6 +9444,38 @@ mod discrete_shift {
       r.warnings
     );
   }
+
+  // A rational summand is combined over a common denominator for an integer
+  // shift (previously it left the unsimplified `(1 + 2 (1 + n))^-1`).
+  #[test]
+  fn rational_summand_integer_shift() {
+    assert_eq!(
+      interpret("DiscreteShift[1/(2 n + 1), n]").unwrap(),
+      "(3 + 2*n)^(-1)"
+    );
+    assert_eq!(
+      interpret("DiscreteShift[1/(3 n - 2), n]").unwrap(),
+      "(1 + 3*n)^(-1)"
+    );
+    assert_eq!(
+      interpret("DiscreteShift[1/(2 n + 1), {n, 2}]").unwrap(),
+      "(5 + 2*n)^(-1)"
+    );
+    // A mixed sum combines into a single fraction.
+    assert_eq!(
+      interpret("DiscreteShift[1/(2 n + 1) + n, n]").unwrap(),
+      "(4 + 5*n + 2*n^2)/(3 + 2*n)"
+    );
+  }
+
+  // A symbolic shift is left unfolded (folding would distribute the step).
+  #[test]
+  fn rational_symbolic_shift_unfolded() {
+    assert_eq!(
+      interpret("DiscreteShift[1/(2 n + 1), {n, k}]").unwrap(),
+      "(1 + 2*(k + n))^(-1)"
+    );
+  }
 }
 
 // DiscreteRatio[f, n] = f(n+1)/f(n), the multiplicative analog of
