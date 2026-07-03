@@ -4274,6 +4274,17 @@ mod cases {
     assert_case(r#"Norm[{}]"#, r#"Norm[{}]"#);
   }
   #[test]
+  fn norm_rank_three_tensor_emits_nvm() {
+    // Norm accepts only scalars, vectors and matrices. A rank-3 array is
+    // rejected with Norm::nvm and stays unevaluated rather than threading the
+    // matrix-norm formula over the inner vectors. (wolframscript parity)
+    assert_case(r#"Norm[{{{1, 2}}}]"#, r#"Norm[{{{1, 2}}}]"#);
+  }
+  #[test]
+  fn norm_rank_four_tensor_emits_nvm() {
+    assert_case(r#"Norm[{{{{1}}}}]"#, r#"Norm[{{{{1}}}}]"#);
+  }
+  #[test]
   fn kronecker_product_1() {
     assert_case(
       r#"a = {{a11, a12}, {a21, a22}}; b = {{b11, b12}, {b21, b22}}; KroneckerProduct[a, b]"#,

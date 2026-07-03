@@ -2266,6 +2266,22 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => unreachable!(),
       })
       .collect();
+    // A matrix has scalar entries. If any entry is itself a list the argument
+    // is a rank >= 3 tensor, which Norm does not accept: emit Norm::nvm and
+    // stay unevaluated (matching wolframscript) rather than threading the
+    // matrix-norm formula over the deeper structure.
+    if mat
+      .iter()
+      .any(|row| row.iter().any(|c| matches!(c, Expr::List(_))))
+    {
+      crate::emit_message(
+        "Norm::nvm: The first Norm argument should be a scalar, vector or matrix.",
+      );
+      return Ok(Expr::FunctionCall {
+        name: "Norm".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
     let ncols = mat[0].len();
     if ncols > 0 && mat.iter().all(|r| r.len() == ncols) {
       use crate::evaluator::evaluate_expr_to_expr;
