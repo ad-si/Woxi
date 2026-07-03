@@ -346,6 +346,51 @@ mod tr {
       "{1, 5}"
     );
   }
+
+  // Tr[array] for a rank >= 3 array sums the super-diagonal a[[i, i, ..., i]]
+  // over i = 1..min(dimensions), producing a scalar. Previously Woxi only
+  // contracted the first two levels and returned a list.
+
+  #[test]
+  fn trace_rank_three_cube() {
+    assert_eq!(
+      interpret("Tr[Array[a, {2, 2, 2}]]").unwrap(),
+      "a[1, 1, 1] + a[2, 2, 2]"
+    );
+  }
+
+  #[test]
+  fn trace_rank_three_3x3x3() {
+    assert_eq!(
+      interpret("Tr[Array[a, {3, 3, 3}]]").unwrap(),
+      "a[1, 1, 1] + a[2, 2, 2] + a[3, 3, 3]"
+    );
+  }
+
+  #[test]
+  fn trace_rank_three_non_cubic_uses_min_dimension() {
+    // The diagonal runs i = 1..min(2, 3, 4) = 2.
+    assert_eq!(
+      interpret("Tr[Array[a, {2, 3, 4}]]").unwrap(),
+      "a[1, 1, 1] + a[2, 2, 2]"
+    );
+  }
+
+  #[test]
+  fn trace_rank_four() {
+    assert_eq!(
+      interpret("Tr[Array[a, {2, 2, 2, 2}]]").unwrap(),
+      "a[1, 1, 1, 1] + a[2, 2, 2, 2]"
+    );
+  }
+
+  #[test]
+  fn trace_rank_three_with_times() {
+    assert_eq!(
+      interpret("Tr[Array[a, {2, 2, 2}], Times]").unwrap(),
+      "a[1, 1, 1]*a[2, 2, 2]"
+    );
+  }
 }
 
 mod identity_matrix {

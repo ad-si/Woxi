@@ -498,7 +498,7 @@ Through,Distributes a list of functions over arguments,✅,pure,1.0,501
 HoldAll,Attribute specifying all args are held,✅,pure,1.0,502
 GenomeData,,🚫,,7.0,503
 ArrayFlatten,Flatten a matrix of sub-matrices into a single matrix,✅,pure,6.0,504
-Tr,Computes the trace of a matrix,✅,pure,4.0,505
+Tr,Computes the trace of a matrix or array (sum of main-diagonal entries),✅,pure,4.0,505
 MeshFunctions,Option for specifying mesh line functions in plots,✅,pure,6.0,506
 Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
 DateListPlot,Plots data with date-valued x-axis,✅,pure,6.0,508

@@ -895,7 +895,41 @@ fn gcd_i128(a: i128, b: i128) -> i128 {
   a
 }
 
-/// Tr[matrix] - trace of a square matrix
+/// The rectangular shape of a nested-List array, found by descending through
+/// the first element of each level. A non-list has an empty shape; `{a, b}`
+/// gives `[2]`; `{{a, b}}` gives `[1, 2]`.
+fn array_shape(expr: &Expr) -> Vec<usize> {
+  let mut shape = Vec::new();
+  let mut cur = expr;
+  while let Expr::List(items) = cur {
+    shape.push(items.len());
+    match items.first() {
+      Some(first) => cur = first,
+      None => break,
+    }
+  }
+  shape
+}
+
+/// The main-diagonal element `array[[i, i, ..., i]]` (index `i` repeated
+/// `depth` times). Returns None if an index is out of range or the array is
+/// too shallow (ragged input).
+fn diagonal_element(expr: &Expr, i: usize, depth: usize) -> Option<Expr> {
+  if depth == 0 {
+    return Some(expr.clone());
+  }
+  match expr {
+    Expr::List(items) => {
+      items.get(i).and_then(|e| diagonal_element(e, i, depth - 1))
+    }
+    _ => None,
+  }
+}
+
+/// Tr[array] - the trace of an array: the sum of its main-diagonal entries
+/// `array[[i, i, ..., i]]` for i = 1..min(dimensions). For a rank-1 vector
+/// this is the sum of all entries; for a matrix it is the usual trace. With a
+/// second argument f, the combining head f is used in place of Plus.
 pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -933,24 +967,35 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Plus".to_string()
   };
 
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Tr".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
   // Collect the diagonal entries (or, for a plain vector, all entries).
   let diag: Vec<Expr> = if let Some(vec) = expr_to_vector(&args[0]) {
     vec
-  } else {
-    match expr_to_matrix(&args[0]) {
-      Some(matrix) => {
-        let nrows = matrix.len();
-        let ncols = matrix.first().map(|r| r.len()).unwrap_or(0);
-        let min_dim = nrows.min(ncols);
-        (0..min_dim).map(|i| matrix[i][i].clone()).collect()
-      }
-      None => {
-        return Ok(Expr::FunctionCall {
-          name: "Tr".to_string(),
-          args: args.to_vec().into(),
-        });
+  } else if matches!(&args[0], Expr::List(_)) {
+    // Rank >= 2 array: the main diagonal a[[i, i, ..., i]] over all levels,
+    // i = 1..min(dimensions). (A rank-2 matrix reduces to the usual trace.)
+    let shape = array_shape(&args[0]);
+    if shape.len() < 2 {
+      return unevaluated();
+    }
+    let rank = shape.len();
+    let min_dim = *shape.iter().min().unwrap();
+    let mut d = Vec::with_capacity(min_dim);
+    for i in 0..min_dim {
+      match diagonal_element(&args[0], i, rank) {
+        Some(e) => d.push(e),
+        None => return unevaluated(),
       }
     }
+    d
+  } else {
+    return unevaluated();
   };
 
   if diag.is_empty() {
