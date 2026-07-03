@@ -6814,8 +6814,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
         });
         let pi_sq = Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(2)]
-            .into(),
+          args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(2)].into(),
         };
         let measure = if name == "Torus" {
           Expr::FunctionCall {
@@ -8411,22 +8410,20 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           None => return unevaluated(),
         };
         let coords: Vec<Expr> = (0..p.len())
-          .map(|d| {
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![
-                p[d].clone(),
-                Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Divide,
-                  left: Box::new(Expr::FunctionCall {
-                    name: "Plus".to_string(),
-                    args: vec![v1[d].clone(), v2[d].clone()].into(),
-                  }),
-                  right: Box::new(Expr::Integer(2)),
-                },
-              ]
-              .into(),
-            }
+          .map(|d| Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              p[d].clone(),
+              Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![v1[d].clone(), v2[d].clone()].into(),
+                }),
+                right: Box::new(Expr::Integer(2)),
+              },
+            ]
+            .into(),
           })
           .collect();
         crate::evaluator::evaluate_expr_to_expr(&Expr::List(coords.into()))

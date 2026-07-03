@@ -2416,8 +2416,7 @@ mod triangle_rendering {
 
   #[test]
   fn half_plane_renders_clipped_fill() {
-    let svg =
-      svg_of("Graphics[{Blue, HalfPlane[{{0, 0}, {1, 0}}, {0, 1}]}]");
+    let svg = svg_of("Graphics[{Blue, HalfPlane[{{0, 0}, {1, 0}}, {0, 1}]}]");
     assert!(
       svg.contains("<polygon") && svg.contains("fill=\"rgb(0,0,255)\""),
       "expected a blue fill polygon: {svg}"

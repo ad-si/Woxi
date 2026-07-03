@@ -24,12 +24,7 @@ const PHI: f64 = 1.618_033_988_749_895; // golden ratio (1 + Sqrt[5])/2
 fn tetrahedron_vertices() -> Vec<[f64; 3]> {
   // Edge length of {±1, ±1, ±1} alternated corners is 2 Sqrt[2].
   let s = 1.0 / (2.0 * std::f64::consts::SQRT_2);
-  vec![
-    [s, s, s],
-    [s, -s, -s],
-    [-s, s, -s],
-    [-s, -s, s],
-  ]
+  vec![[s, s, s], [s, -s, -s], [-s, s, -s], [-s, -s, s]]
 }
 
 fn cube_vertices() -> Vec<[f64; 3]> {
@@ -170,8 +165,7 @@ fn convex_faces(vertices: &[[f64; 3]]) -> Vec<Vec<usize>> {
       a[0] * b[1] - a[1] * b[0],
     ]
   };
-  let dot =
-    |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   let norm = |a: [f64; 3]| dot(a, a).sqrt();
 
   let n = vertices.len();
@@ -262,7 +256,10 @@ fn polyhedron_graphics(
         .iter()
         .map(|&idx| {
           Expr::List(
-            vertices[idx].iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>()
+            vertices[idx]
+              .iter()
+              .map(|&c| Expr::Real(c))
+              .collect::<Vec<_>>()
               .into(),
           )
         })
@@ -286,9 +283,7 @@ fn eval_wl(src: &str) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&parsed)
 }
 
-pub fn polyhedron_data_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
       name: "PolyhedronData".to_string(),

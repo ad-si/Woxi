@@ -2091,8 +2091,7 @@ fn bspline_sample_weights(n: usize, num_samples: usize) -> Vec<Vec<f64>> {
   let t_max = knots[n];
   (0..num_samples)
     .map(|s| {
-      let t =
-        t_min + (t_max - t_min) * s as f64 / (num_samples - 1) as f64;
+      let t = t_min + (t_max - t_min) * s as f64 / (num_samples - 1) as f64;
       (0..n)
         .map(|j| {
           crate::functions::graphics::bspline_basis(j, degree, t, &knots)
@@ -2163,9 +2162,8 @@ fn collect_raster3d(
   style: &StyleState3D,
   prims: &mut Vec<Primitive3D>,
 ) {
-  let num = |e: &Expr| {
-    try_eval_to_f64(&evaluate_expr_to_expr(e).unwrap_or(e.clone()))
-  };
+  let num =
+    |e: &Expr| try_eval_to_f64(&evaluate_expr_to_expr(e).unwrap_or(e.clone()));
   let Expr::List(layers) = data else {
     return;
   };

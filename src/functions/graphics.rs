@@ -1724,7 +1724,8 @@ fn parse_half_plane(
       if pts.len() != 2 {
         return;
       }
-      let (Some(p1), Some(p2)) = (expr_to_point(&pts[0]), expr_to_point(&pts[1]))
+      let (Some(p1), Some(p2)) =
+        (expr_to_point(&pts[0]), expr_to_point(&pts[1]))
       else {
         return;
       };

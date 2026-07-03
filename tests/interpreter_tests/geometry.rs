@@ -3505,7 +3505,10 @@ mod graphics_object_regions {
         .unwrap(),
       "{{0, 3}, {0, 3}}"
     );
-    assert_eq!(interpret("BoundedRegionQ[Parallelogram[]]").unwrap(), "True");
+    assert_eq!(
+      interpret("BoundedRegionQ[Parallelogram[]]").unwrap(),
+      "True"
+    );
   }
 
   #[test]
@@ -3527,8 +3530,7 @@ mod graphics_object_regions {
       "2"
     );
     assert_eq!(
-      interpret("BoundedRegionQ[HalfPlane[{{0, 0}, {1, 0}}, {0, 1}]]")
-        .unwrap(),
+      interpret("BoundedRegionQ[HalfPlane[{{0, 0}, {1, 0}}, {0, 1}]]").unwrap(),
       "False"
     );
     // HalfPlane[p, v, w] form stays symbolic.
@@ -3599,8 +3601,10 @@ mod graphics_object_regions {
       "JoinedCurve[{Line[{{0, 0}, {1, 1}}]}]"
     );
     assert_eq!(
-      interpret("BSplineSurface[{{{0, 0, 0}, {1, 0, 1}}, {{0, 1, 1}, {1, 1, 0}}}]")
-        .unwrap(),
+      interpret(
+        "BSplineSurface[{{{0, 0, 0}, {1, 0, 1}}, {{0, 1, 1}, {1, 1, 0}}}]"
+      )
+      .unwrap(),
       "BSplineSurface[{{{0, 0, 0}, {1, 0, 1}}, {{0, 1, 1}, {1, 1, 0}}}]"
     );
     assert_eq!(
