@@ -7693,4 +7693,66 @@ mod high_level_functions_tests {
       assert_eq!(r.stdout, "11\n12\n21\n22\n");
     }
   }
+
+  // TimeValue[Annuity[pmt, tspan, q], i, t]: a level annuity paying pmt at the
+  // end of every interval q over a total time span tspan, valued with interest
+  // rate i per unit time at time t. There are tspan/q payments and the
+  // effective per-interval rate is (1+i)^q - 1. Results are rounded to the
+  // cent so the assertions are immune to last-digit floating-point noise
+  // (verified identical to wolframscript after the same rounding).
+  mod time_value_annuity_tests {
+    use super::*;
+
+    #[test]
+    fn future_value_semiannual_payments() {
+      // 20 semiannual payments of 1000 over 10 years at 6%/yr, valued at t=10.
+      assert_eq!(
+        interpret("Round[TimeValue[Annuity[1000, 10, 1/2], 0.06, 10], 0.01]")
+          .unwrap(),
+        "26751.25"
+      );
+    }
+
+    #[test]
+    fn present_value_quarterly_payments() {
+      // 20 quarterly payments of 500 over 5 years at 8%/yr, valued at t=0.
+      assert_eq!(
+        interpret("Round[TimeValue[Annuity[500, 5, 1/4], 0.08, 0], 0.01]")
+          .unwrap(),
+        "8221.14"
+      );
+    }
+
+    #[test]
+    fn present_value_monthly_payments() {
+      // 36 monthly payments of 100 over 3 years at 8%/yr, valued at t=0.
+      assert_eq!(
+        interpret("Round[TimeValue[Annuity[100, 3, 1/12], 0.08, 0], 0.01]")
+          .unwrap(),
+        "3204.33"
+      );
+    }
+
+    #[test]
+    fn present_value_semiannual_payments() {
+      assert_eq!(
+        interpret("Round[TimeValue[Annuity[1000, 10, 1/2], 0.06, 0], 0.01]")
+          .unwrap(),
+        "14937.76"
+      );
+    }
+
+    #[test]
+    fn payment_interval_one_matches_two_arg_form() {
+      // Annuity[pmt, tspan, 1] is the q = 1 specialization of the 2-arg form.
+      let three_arg =
+        interpret("Round[TimeValue[Annuity[1000, 10, 1], 0.06, 10], 0.01]")
+          .unwrap();
+      let two_arg =
+        interpret("Round[TimeValue[Annuity[1000, 10], 0.06, 10], 0.01]")
+          .unwrap();
+      assert_eq!(three_arg, two_arg);
+      assert_eq!(three_arg, "13180.79");
+    }
+  }
 }

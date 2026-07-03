@@ -9171,6 +9171,94 @@ pub fn evaluate_function_call_ast_inner(
       return evaluate_expr_to_expr(&result);
     }
 
+    // TimeValue[Annuity[pmt, tspan, q], i, t] — a level annuity with payment
+    // pmt made at the end of every payment interval q over a total time span
+    // tspan, valued with interest rate i per unit time. There are n = tspan/q
+    // payments and the effective rate over one interval is i_eff = (1+i)^q - 1.
+    // Because q*n = tspan, (1+i_eff)^-n = (1+i)^-tspan, so:
+    //   PV  = pmt * (1 - (1+i)^-tspan) / ((1+i)^q - 1)   (annuity-immediate)
+    //   V_t = PV * (1+i)^t
+    // The 2-arg case is the q = 1 specialization of this formula.
+    if let Expr::FunctionCall {
+      name: ann_name,
+      args: ann_args,
+    } = s
+      && ann_name == "Annuity"
+      && ann_args.len() == 3
+      && i_scalar
+      && t_scalar
+    {
+      let pmt = ann_args[0].clone();
+      let tspan = ann_args[1].clone();
+      let q = ann_args[2].clone();
+      let one_plus_i = || Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![Expr::Integer(1), i.clone()].into(),
+      };
+      // (1+i)^-tspan
+      let pow_neg_tspan = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          one_plus_i(),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), tspan].into(),
+          },
+        ]
+        .into(),
+      };
+      // 1 - (1+i)^-tspan
+      let numer = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), pow_neg_tspan].into(),
+          },
+        ]
+        .into(),
+      };
+      // i_eff = (1+i)^q - 1
+      let i_eff = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![one_plus_i(), q].into(),
+          },
+          Expr::Integer(-1),
+        ]
+        .into(),
+      };
+      // PV = pmt * numer / i_eff
+      let pv = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          pmt,
+          numer,
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![i_eff, Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      };
+      // V_t = PV * (1+i)^t
+      let result = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          pv,
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![one_plus_i(), t.clone()].into(),
+          },
+        ]
+        .into(),
+      };
+      return evaluate_expr_to_expr(&result);
+    }
+
     // TimeValue[Cashflow[list], i, t] — Sum[c_k * (1+i)^(t-k), {k, 0, len-1}].
     if let Expr::FunctionCall {
       name: cf_name,
