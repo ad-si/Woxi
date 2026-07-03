@@ -2,6 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr};
+use num_bigint::BigInt;
 
 /// Visit every additive term of a polynomial expression, flattening nested and
 /// n-ary `Plus`. Anything that is not a `Plus` is a single term.
@@ -27,8 +28,7 @@ fn for_each_plus_term(e: &Expr, f: &mut impl FnMut(&Expr)) {
 /// The integer coefficient of a single monomial term, or `None` if the term has
 /// a non-integer (e.g. Rational) numeric coefficient — in which case the caller
 /// declines to reduce. A bare power/symbol has coefficient 1.
-fn integer_coeff_of_term(t: &Expr) -> Option<num_bigint::BigInt> {
-  use num_bigint::BigInt;
+fn integer_coeff_of_term(t: &Expr) -> Option<BigInt> {
   match t {
     Expr::Integer(c) => Some(BigInt::from(*c)),
     Expr::BigInteger(c) => Some(c.clone()),
@@ -75,31 +75,44 @@ fn integer_coeff_of_term(t: &Expr) -> Option<num_bigint::BigInt> {
 /// form (3 - 18 x + 18 x^2 - 4 x^3)/3. A no-op for non-fraction results or when
 /// any term carries a non-integer coefficient.
 fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
-  use num_bigint::BigInt;
   use num_traits::Signed;
   // Extract (polynomial, integer denominator d) from either the `poly / d`
   // (BinaryOp Divide) form or the post-evaluation `(1/d) * poly` form
   // (Times of a Rational[1, d] coefficient and a Plus). Returns None otherwise.
-  let parts: Option<(Expr, i128)> = match &expr {
+  // The denominator can be an `Integer` or, for large `n!`, a `BigInteger`.
+  let as_int_denom = |e: &Expr| -> Option<BigInt> {
+    match e {
+      Expr::Integer(d) if *d != 0 => Some(BigInt::from(*d)),
+      Expr::BigInteger(d) if *d != BigInt::from(0) => Some(d.clone()),
+      _ => None,
+    }
+  };
+  let parts: Option<(Expr, BigInt)> = match &expr {
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left,
       right,
-    } => match right.as_ref() {
-      Expr::Integer(d) if *d != 0 => Some(((**left).clone(), *d)),
-      _ => None,
-    },
+    } => as_int_denom(right).map(|d| ((**left).clone(), d)),
     Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
-      let rat_denom = |e: &Expr| -> Option<i128> {
-        if let Expr::FunctionCall { name, args } = e
-          && name == "Rational"
-          && args.len() == 2
-          && let (Expr::Integer(1), Expr::Integer(d)) = (&args[0], &args[1])
-          && *d != 0
-        {
-          Some(*d)
-        } else {
-          None
+      // A `1/d` factor appears either as `Rational[1, d]` or, when `d` was a
+      // BigInteger, as the unfolded reciprocal `Power[d, -1]`.
+      let rat_denom = |e: &Expr| -> Option<BigInt> {
+        match e {
+          Expr::FunctionCall { name, args }
+            if name == "Rational"
+              && args.len() == 2
+              && matches!(&args[0], Expr::Integer(1)) =>
+          {
+            as_int_denom(&args[1])
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } if matches!(right.as_ref(), Expr::Integer(-1)) => {
+            as_int_denom(left)
+          }
+          _ => None,
         }
       };
       if let Some(d) = rat_denom(&args[0]) {
@@ -122,7 +135,7 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
   if bail {
     return Ok(expr);
   }
-  let g = bigint_gcd(content, BigInt::from(d).abs());
+  let g = bigint_gcd(content, d.abs());
   if g <= BigInt::from(1) {
     return Ok(expr);
   }
@@ -134,7 +147,7 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
   };
   let reduced_num =
     crate::evaluator::evaluate_function_call_ast("Expand", &[scaled])?;
-  let new_d = BigInt::from(d) / &g;
+  let new_d = &d / &g;
   if new_d == BigInt::from(1) {
     return Ok(reduced_num);
   }
@@ -204,7 +217,6 @@ fn jacobi_p_integer_ab(
     return crate::functions::math_ast::times_ast(&[half, numer]);
   }
 
-  use num_bigint::BigInt;
   let ni = n as i128;
   // (x - 1) as Plus[-1, x] so it prints as `(-1 + x)`.
   let x_minus_1 = Expr::BinaryOp {
@@ -457,10 +469,8 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[1] {
     Expr::Integer(x) => {
       // Evaluate at integer x using recurrence with rationals
-      let (num, den) = legendre_eval_rational(
-        n,
-        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
-      );
+      let (num, den) =
+        legendre_eval_rational(n, (BigInt::from(*x), BigInt::from(1)));
       Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
@@ -469,10 +479,8 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
       {
-        let (num, den) = legendre_eval_rational(
-          n,
-          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
-        );
+        let (num, den) =
+          legendre_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
         Ok(make_rational_expr(num, den))
       } else {
         Ok(Expr::FunctionCall {
@@ -681,11 +689,10 @@ fn associated_legendre_p_ast(
 /// Evaluate P_n(p/q) as a rational number using the recurrence
 pub fn legendre_eval_rational(
   n: usize,
-  x: (num_bigint::BigInt, num_bigint::BigInt),
-) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  x: (BigInt, BigInt),
+) -> (BigInt, BigInt) {
   // BigInt throughout: the former i128 recurrence multiplied unchecked and
   // panicked / produced wrong values for moderate n and x (LegendreP[20, 100]).
-  use num_bigint::BigInt;
   let (xn, xd) = x;
   if n == 0 {
     return (BigInt::from(1), BigInt::from(1));
@@ -2170,10 +2177,8 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[1] {
     Expr::Integer(x) => {
-      let (num, den) = chebyshev_t_eval_rational_big(
-        n,
-        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
-      );
+      let (num, den) =
+        chebyshev_t_eval_rational_big(n, (BigInt::from(*x), BigInt::from(1)));
       Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
@@ -2184,7 +2189,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let (num, den) = chebyshev_t_eval_rational_big(
           n,
-          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
+          (BigInt::from(*p), BigInt::from(*q)),
         );
         Ok(make_rational_expr(num, den))
       } else {
@@ -2256,9 +2261,8 @@ pub fn chebyshev_t_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
 /// exact rational T_n(p/q) with no overflow.
 pub fn chebyshev_t_eval_rational_big(
   n: usize,
-  x: (num_bigint::BigInt, num_bigint::BigInt),
-) -> (num_bigint::BigInt, num_bigint::BigInt) {
-  use num_bigint::BigInt;
+  x: (BigInt, BigInt),
+) -> (BigInt, BigInt) {
   let (xn, xd) = x;
   if n == 0 {
     return (BigInt::from(1), BigInt::from(1));
@@ -2444,10 +2448,8 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[1] {
     Expr::Integer(x) => {
-      let (num, den) = chebyshev_u_eval_rational_big(
-        n,
-        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
-      );
+      let (num, den) =
+        chebyshev_u_eval_rational_big(n, (BigInt::from(*x), BigInt::from(1)));
       Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
@@ -2458,7 +2460,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let (num, den) = chebyshev_u_eval_rational_big(
           n,
-          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
+          (BigInt::from(*p), BigInt::from(*q)),
         );
         Ok(make_rational_expr(num, den))
       } else {
@@ -2525,9 +2527,8 @@ pub fn chebyshev_u_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
 /// [`chebyshev_t_eval_rational_big`] — same i128 overflow-to-0 corruption).
 pub fn chebyshev_u_eval_rational_big(
   n: usize,
-  x: (num_bigint::BigInt, num_bigint::BigInt),
-) -> (num_bigint::BigInt, num_bigint::BigInt) {
-  use num_bigint::BigInt;
+  x: (BigInt, BigInt),
+) -> (BigInt, BigInt) {
   let (xn, xd) = x;
   if n == 0 {
     return (BigInt::from(1), BigInt::from(1));
@@ -2773,19 +2774,14 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let lam = lambda.unwrap();
-  let lam_big = || {
-    (
-      num_bigint::BigInt::from(lam.0),
-      num_bigint::BigInt::from(lam.1),
-    )
-  };
+  let lam_big = || (BigInt::from(lam.0), BigInt::from(lam.1));
 
   match &args[2] {
     Expr::Integer(x) => {
       let (num, den) = gegenbauer_eval_rational(
         n,
         lam_big(),
-        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
+        (BigInt::from(*x), BigInt::from(1)),
       );
       Ok(make_rational_expr(num, den))
     }
@@ -2798,7 +2794,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (num, den) = gegenbauer_eval_rational(
           n,
           lam_big(),
-          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
+          (BigInt::from(*p), BigInt::from(*q)),
         );
         Ok(make_rational_expr(num, den))
       } else {
@@ -2834,12 +2830,11 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// C_0^λ = 1, C_1^λ = 2λx, C_{k+1}^λ = (2(k+λ)x C_k^λ - (k+2λ-1) C_{k-1}^λ) / (k+1)
 pub fn gegenbauer_eval_rational(
   n: usize,
-  lam: (num_bigint::BigInt, num_bigint::BigInt),
-  x: (num_bigint::BigInt, num_bigint::BigInt),
-) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  lam: (BigInt, BigInt),
+  x: (BigInt, BigInt),
+) -> (BigInt, BigInt) {
   // BigInt throughout: the former i128 recurrence substituted 0 on overflow,
   // corrupting GegenbauerC[20, 3, 100] (value ≈ 2.4×10^39).
-  use num_bigint::BigInt;
   if n == 0 {
     return (BigInt::from(1), BigInt::from(1));
   }
@@ -3245,10 +3240,8 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[1] {
     Expr::Integer(x) => {
-      let (num, den) = laguerre_eval_rational(
-        n,
-        (num_bigint::BigInt::from(*x), num_bigint::BigInt::from(1)),
-      );
+      let (num, den) =
+        laguerre_eval_rational(n, (BigInt::from(*x), BigInt::from(1)));
       Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
@@ -3257,10 +3250,8 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
       {
-        let (num, den) = laguerre_eval_rational(
-          n,
-          (num_bigint::BigInt::from(*p), num_bigint::BigInt::from(*q)),
-        );
+        let (num, den) =
+          laguerre_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
         Ok(make_rational_expr(num, den))
       } else {
         Ok(Expr::FunctionCall {
@@ -3490,9 +3481,8 @@ fn generalized_laguerre_f64(n: usize, a: f64, x: f64) -> f64 {
 /// LaguerreL[30, 100] returned 0 instead of ≈ -2.4×10^38.
 pub fn laguerre_eval_rational(
   n: usize,
-  x: (num_bigint::BigInt, num_bigint::BigInt),
-) -> (num_bigint::BigInt, num_bigint::BigInt) {
-  use num_bigint::BigInt;
+  x: (BigInt, BigInt),
+) -> (BigInt, BigInt) {
   let (xn, xd) = x;
   if n == 0 {
     return (BigInt::from(1), BigInt::from(1));
@@ -3553,12 +3543,11 @@ pub fn laguerre_eval_f64(n: usize, x: f64) -> f64 {
 /// Build symbolic Laguerre polynomial L_n(x)
 /// Output as (c_0 + c_1*x + c_2*x^2 + ...) / n!
 pub fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
-  let coeffs = laguerre_scaled_coefficients(n)?;
-  let n_fact = factorial_i128(n)?;
-
+  use num_traits::Zero;
+  let (n_fact, coeffs) = laguerre_scaled_coefficients(n);
   let mut terms: Vec<Expr> = Vec::new();
   for (k, c) in coeffs.iter().enumerate() {
-    if *c == 0 {
+    if c.is_zero() {
       continue;
     }
     let x_power = if k == 0 {
@@ -3574,15 +3563,15 @@ pub fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     };
 
     let term = match x_power {
-      None => Expr::Integer(*c),
-      Some(xp) if *c == 1 => xp,
-      Some(xp) if *c == -1 => Expr::FunctionCall {
+      None => Expr::BigInteger(c.clone()),
+      Some(xp) if *c == BigInt::from(1) => xp,
+      Some(xp) if *c == BigInt::from(-1) => Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), xp].into(),
       },
       Some(xp) => Expr::BinaryOp {
         op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(*c)),
+        left: Box::new(Expr::BigInteger(c.clone())),
         right: Box::new(xp),
       },
     };
@@ -3602,30 +3591,40 @@ pub fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     };
   }
 
-  if n_fact == 1 {
+  if n_fact == BigInt::from(1) {
     return Some(numerator);
   }
 
   Some(Expr::BinaryOp {
     op: BinaryOperator::Divide,
     left: Box::new(numerator),
-    right: Box::new(Expr::Integer(n_fact)),
+    right: Box::new(Expr::BigInteger(n_fact.clone())),
   })
 }
 
 /// Compute Laguerre scaled coefficients: n! * L_n(x) = Σ c_k x^k
 /// c_k = (-1)^k * C(n,k) * n! / k!
-pub fn laguerre_scaled_coefficients(n: usize) -> Option<Vec<i128>> {
-  let n_fact = factorial_i128(n)?;
-  let mut coeffs = vec![0i128; n + 1];
-  for k in 0..=n {
-    let k_fact = factorial_i128(k)?;
-    let nk_fact = factorial_i128(n - k)?;
-    let binom = n_fact / (k_fact * nk_fact);
-    let sign: i128 = if k % 2 == 0 { 1 } else { -1 };
-    coeffs[k] = sign * binom * n_fact / k_fact;
+fn laguerre_scaled_coefficients(n: usize) -> (BigInt, Vec<BigInt>) {
+  let mut n_fact = BigInt::from(1);
+  for k in 2..=n {
+    n_fact *= k;
   }
-  Some(coeffs)
+  let mut coeffs = vec![BigInt::from(0); n + 1];
+  let mut coeff = n_fact.clone();
+  for k in 0..=n {
+    if k > 0 {
+      coeff *= (n - k + 1) as i128; // (n!/(n-k)!k!) n!/k!
+      coeff /= k as i128;
+      coeff /= k as i128;
+    }
+    let is_neg = k % 2 != 0;
+    coeffs[k] = if is_neg {
+      -coeff.clone()
+    } else {
+      coeff.clone()
+    };
+  }
+  (n_fact, coeffs)
 }
 
 /// Compute n! as i128, returning None on overflow
@@ -3704,7 +3703,7 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[1] {
     Expr::Integer(x) => {
       // Evaluate using recurrence with exact (BigInt) arithmetic
-      let result = hermite_eval_big(n, &num_bigint::BigInt::from(*x));
+      let result = hermite_eval_big(n, &BigInt::from(*x));
       Ok(bigint_to_expr(result))
     }
     Expr::Real(f) => Ok(Expr::Real(hermite_eval_f64(n, *f))),
@@ -3765,11 +3764,7 @@ fn is_fully_numeric_arg(e: &Expr) -> bool {
 /// Evaluate H_n(x) at an integer x exactly. Uses BigInt: the i128 version
 /// panicked with "attempt to multiply with overflow" for moderate n and x
 /// (e.g. HermiteH[20, 100] ≈ 10^39).
-pub fn hermite_eval_big(
-  n: usize,
-  x: &num_bigint::BigInt,
-) -> num_bigint::BigInt {
-  use num_bigint::BigInt;
+pub fn hermite_eval_big(n: usize, x: &BigInt) -> BigInt {
   if n == 0 {
     return BigInt::from(1);
   }
