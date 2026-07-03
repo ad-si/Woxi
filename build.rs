@@ -11,12 +11,12 @@ fn main() {
   println!("cargo:rerun-if-changed=.git/HEAD");
   // HEAD is usually a symbolic ref; track the branch ref file it points to
   // so new commits on the current branch refresh the version stamp.
-  if let Ok(head) = std::fs::read_to_string(".git/HEAD") {
-    if let Some(git_ref) = head.strip_prefix("ref: ") {
-      let ref_path = format!(".git/{}", git_ref.trim());
-      if std::path::Path::new(&ref_path).exists() {
-        println!("cargo:rerun-if-changed={}", ref_path);
-      }
+  if let Ok(head) = std::fs::read_to_string(".git/HEAD")
+    && let Some(git_ref) = head.strip_prefix("ref: ")
+  {
+    let ref_path = format!(".git/{}", git_ref.trim());
+    if std::path::Path::new(&ref_path).exists() {
+      println!("cargo:rerun-if-changed={}", ref_path);
     }
   }
 
