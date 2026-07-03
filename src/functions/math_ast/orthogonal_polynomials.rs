@@ -79,26 +79,40 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
   // Extract (polynomial, integer denominator d) from either the `poly / d`
   // (BinaryOp Divide) form or the post-evaluation `(1/d) * poly` form
   // (Times of a Rational[1, d] coefficient and a Plus). Returns None otherwise.
-  let parts: Option<(Expr, i128)> = match &expr {
+  // The denominator can be an `Integer` or, for large `n!`, a `BigInteger`.
+  let as_int_denom = |e: &Expr| -> Option<BigInt> {
+    match e {
+      Expr::Integer(d) if *d != 0 => Some(BigInt::from(*d)),
+      Expr::BigInteger(d) if *d != BigInt::from(0) => Some(d.clone()),
+      _ => None,
+    }
+  };
+  let parts: Option<(Expr, BigInt)> = match &expr {
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left,
       right,
-    } => match right.as_ref() {
-      Expr::Integer(d) if *d != 0 => Some(((**left).clone(), *d)),
-      _ => None,
-    },
+    } => as_int_denom(right).map(|d| ((**left).clone(), d)),
     Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
-      let rat_denom = |e: &Expr| -> Option<i128> {
-        if let Expr::FunctionCall { name, args } = e
-          && name == "Rational"
-          && args.len() == 2
-          && let (Expr::Integer(1), Expr::Integer(d)) = (&args[0], &args[1])
-          && *d != 0
-        {
-          Some(*d)
-        } else {
-          None
+      // A `1/d` factor appears either as `Rational[1, d]` or, when `d` was a
+      // BigInteger, as the unfolded reciprocal `Power[d, -1]`.
+      let rat_denom = |e: &Expr| -> Option<BigInt> {
+        match e {
+          Expr::FunctionCall { name, args }
+            if name == "Rational"
+              && args.len() == 2
+              && matches!(&args[0], Expr::Integer(1)) =>
+          {
+            as_int_denom(&args[1])
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } if matches!(right.as_ref(), Expr::Integer(-1)) => {
+            as_int_denom(left)
+          }
+          _ => None,
         }
       };
       if let Some(d) = rat_denom(&args[0]) {
@@ -121,7 +135,7 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
   if bail {
     return Ok(expr);
   }
-  let g = bigint_gcd(content, BigInt::from(d).abs());
+  let g = bigint_gcd(content, d.abs());
   if g <= BigInt::from(1) {
     return Ok(expr);
   }
@@ -133,7 +147,7 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
   };
   let reduced_num =
     crate::evaluator::evaluate_function_call_ast("Expand", &[scaled])?;
-  let new_d = BigInt::from(d) / &g;
+  let new_d = &d / &g;
   if new_d == BigInt::from(1) {
     return Ok(reduced_num);
   }
