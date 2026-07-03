@@ -631,6 +631,49 @@ mod box_representation_tests {
     assert_eq!(box_str(&boxes), "SuperscriptBox[x, 2]",);
   }
 
+  // Regression for https://github.com/ad-si/Woxi/issues/179 (playground/SVG
+  // path): `1 + -n x` must fold to `1 - n x` in box form even when the
+  // coefficient overflows i128 and is a BigInteger. The box-form Plus
+  // renderer previously handled only `Expr::Integer` coefficients, so the
+  // typeset (SVG) output showed `1 + -n x`.
+  #[test]
+  fn box_plus_negative_bigint_coefficient_folds_to_minus() {
+    use num_bigint::BigInt;
+    // 2^129 = 680564733841876926926749214863536422912 overflows i128.
+    let big = BigInt::from(2).pow(129);
+    let expr = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Integer(1),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::BigInteger(-big.clone()),
+            Expr::Identifier("x".to_string()),
+          ]
+          .into(),
+        },
+      ]
+      .into(),
+    };
+    let s = box_str(&expr_to_box_form(&expr));
+    // The positive coefficient is present, negated out of the term.
+    assert!(
+      s.contains(&big.to_string()),
+      "box form should contain the coefficient: {s}"
+    );
+    // No negative BigInteger literal remains (the sign was folded).
+    assert!(
+      !s.contains(&format!("-{big}")),
+      "coefficient should be negated, not left negative: {s}"
+    );
+    // The term is joined with `-`, never `+`.
+    assert!(
+      !s.contains(", +,"),
+      "big negative term must fold to subtraction, not `+`: {s}"
+    );
+  }
+
   #[test]
   fn box_power_binary_plus_base() {
     let expr = Expr::BinaryOp {

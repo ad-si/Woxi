@@ -113,6 +113,7 @@ rust_xlsxwriter = { version = "0.94", default-features = false }
 
 [dev-dependencies]
 base64 = "0.22"
+num-bigint = "0.4.6"
 insta = { version = "1", features = ["glob"] }
 proptest = "1"
 image = { version = "0.25", default-features = false, features = ["png", "gif"] }

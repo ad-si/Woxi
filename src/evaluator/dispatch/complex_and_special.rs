@@ -4132,6 +4132,26 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             parts.push(expr_to_box_form(&pos_term));
             continue;
           }
+          // Check for negative BigInteger coefficient: Times[-n, x] where the
+          // coefficient overflows i128 (e.g. 2^129). Mirrors the Integer arm
+          // above so `1 + -2^129 x` folds to `1 - 2^129 x`.
+          if let Expr::FunctionCall { name: tn, args: ta } = arg
+            && tn == "Times"
+            && ta.len() >= 2
+            && matches!(&ta[0], Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus)
+          {
+            parts.push(Expr::String("-".to_string()));
+            let mut pos_args = ta.clone();
+            if let Expr::BigInteger(n) = &ta[0] {
+              pos_args[0] = Expr::BigInteger(-n);
+            }
+            let pos_term = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: pos_args,
+            };
+            parts.push(expr_to_box_form(&pos_term));
+            continue;
+          }
           parts.push(Expr::String("+".to_string()));
         }
         parts.push(expr_to_box_form(arg));
