@@ -377,55 +377,19 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let num = *num;
         // num is odd, denominator is 2, so argument is num/2
-        // For positive half-integers: Gamma[(2k+1)/2] where k = (num-1)/2
         if num > 0 {
-          let k = (num - 1) / 2;
-          // Gamma[(2k+1)/2] = (2k)! * Sqrt[Pi] / (4^k * k!)
+          // Positive half-integers: Gamma[(1+2n)/2] where n = (num-1)/2
+          // Gamma[(2n+1)/2] = (2n)! * Sqrt[Pi] / (4^n * n!)
+          let n = (num - 1) / 2;
           let mut numer = BigInt::from(1);
-          for i in (k + 1)..=(2 * k) {
+          for i in (n + 1)..=(2 * n) {
             numer *= i;
           }
-          let denom = BigInt::from(4).pow(k as u32);
-          // Result = numer / denom * Sqrt[Pi]
-          // Simplify the rational part
-          let g = gcd_bigint(&numer, &denom);
-          let num_simplified = &numer / &g;
-          let den_simplified = &denom / &g;
-          let sqrt_pi = Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              Expr::Identifier("Pi".to_string()),
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-              },
-            ]
-            .into(),
-          };
-          if den_simplified == BigInt::from(1) {
-            if num_simplified == BigInt::from(1) {
-              return Ok(sqrt_pi);
-            }
-            return Ok(Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![bigint_to_expr(num_simplified), sqrt_pi].into(),
-            });
-          }
-          let coeff = Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![
-              bigint_to_expr(num_simplified),
-              bigint_to_expr(den_simplified),
-            ]
-            .into(),
-          };
-          return Ok(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![coeff, sqrt_pi].into(),
-          });
+          let denom = BigInt::from(4).pow(n as u32);
+          return Ok(gamma_half_expr(numer, denom, false));
         } else if num < 0 {
-          // Negative half-integers: Gamma[(1-2n)/2] = Gamma[1/2 - n]
-          // = (-4)^n * n! * Sqrt[Pi] / (2n)!  where n = (1 - num) / 2
+          // Negative half-integers: Gamma[(1-2n)/2] where n = (1-num)/2
+          // Gamma[1/2 - n] = (-4)^n * n! * Sqrt[Pi] / (2n)!
           let n = (1 - num) / 2;
           let is_neg = n % 2 != 0;
           let numer = BigInt::from(4).pow(n as u32);
@@ -433,46 +397,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for i in (n + 1)..=(2 * n) {
             denom *= i;
           }
-          let g = gcd_bigint(&numer, &denom);
-          let num_simplified = &numer / &g;
-          let den_simplified = &denom / &g;
-          let sqrt_pi = Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              Expr::Identifier("Pi".to_string()),
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-              },
-            ]
-            .into(),
-          };
-          let coeff_num = if is_neg {
-            -num_simplified.clone()
-          } else {
-            num_simplified.clone()
-          };
-          if den_simplified == BigInt::from(1) {
-            if coeff_num == BigInt::from(1) {
-              return Ok(sqrt_pi);
-            }
-            return Ok(Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![bigint_to_expr(coeff_num), sqrt_pi].into(),
-            });
-          }
-          let coeff = Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![
-              bigint_to_expr(coeff_num),
-              bigint_to_expr(den_simplified),
-            ]
-            .into(),
-          };
-          return Ok(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![coeff, sqrt_pi].into(),
-          });
+          return Ok(gamma_half_expr(numer, denom, is_neg));
         }
       }
       Ok(Expr::FunctionCall {
@@ -501,6 +426,48 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec().into(),
       })
     }
+  }
+}
+
+fn gamma_half_expr(numer: BigInt, denom: BigInt, is_neg: bool) -> Expr {
+  // Simplify the rational part
+  let g = gcd_bigint(&numer, &denom);
+  let num_simplified = &numer / &g;
+  let den_simplified = &denom / &g;
+  let coeff_num = if is_neg {
+    -num_simplified.clone()
+  } else {
+    num_simplified.clone()
+  };
+
+  let sqrt_pi = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      Expr::Identifier("Pi".to_string()),
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      },
+    ]
+    .into(),
+  };
+  if den_simplified == BigInt::from(1) {
+    if coeff_num == BigInt::from(1) {
+      return sqrt_pi;
+    }
+    return Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![bigint_to_expr(coeff_num), sqrt_pi].into(),
+    };
+  }
+  let coeff = Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![bigint_to_expr(coeff_num), bigint_to_expr(den_simplified)]
+      .into(),
+  };
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![coeff, sqrt_pi].into(),
   }
 }
 
