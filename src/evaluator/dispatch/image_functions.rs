@@ -550,6 +550,10 @@ pub fn dispatch_image_functions(
           "ppm" | "pgm" | "pbm" | "pnm" => {
             return Some(import_netpbm(&path));
           }
+          "wav" | "wave" | "flac" | "mp3" | "ogg" | "oga" | "opus" | "m4a"
+          | "aac" | "aif" | "aiff" => {
+            return Some(crate::functions::audio_ast::import_audio_file(&path));
+          }
           _ => {
             return Some(Err(InterpreterError::EvaluationError(format!(
               "Import: unsupported file format \"{}\"",

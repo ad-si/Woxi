@@ -1181,6 +1181,7 @@ mod interpreter_tests {
   mod assessment;
   mod association;
   mod attributes;
+  mod audio;
   mod batch_wrappers;
   mod calculus;
   mod cellular_automaton;

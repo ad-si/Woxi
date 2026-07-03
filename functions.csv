@@ -171,7 +171,7 @@ ColumnForm,Legacy display directive stacking elements one per line (renders at t
 FontColor,Option symbol for specifying text color in Style,✅,pure,3.0,175
 NIntegrate,Computes a numerical integral,✅,pure,1.0,176
 Dashed,Shorthand for Dashing[{Small Small}] line style,✅,pure,6.0,177
-Import,Imports data from a file (images CSV XLSX TXT PPM/PGM/PBM/PNM),✅,effectful,4.0,178
+Import,Imports data from a file (images CSV XLSX TXT PPM/PGM/PBM/PNM WAV and other audio),✅,effectful,4.0,178
 Thread,Threads a function over corresponding list elements,✅,pure,1.0,179
 Min,Returns the minimum value from a set of arguments or a list,✅,pure,1.0,180
 Arrow,Represents an arrow graphics primitive,✅,pure,6.0,181
@@ -1929,7 +1929,7 @@ OneIdentity,Attribute indicating f[x] is identical to x for matching,✅,pure,1.
 Subfactorial,Returns the subfactorial (number of derangements),✅,pure,6.0,1960
 BinaryFormat,Option for opening streams in binary format,🚫,,3.0,1962
 ImageLines,Find line segments in an image,🚫,,8.0,1964
-LowpassFilter,Apply a lowpass filter to data,✅,pure,9.0,1964
+LowpassFilter,Apply a lowpass filter to data lists images or Audio objects,✅,pure,9.0,1964
 Evaluatable,Option for Cell specifying if it should be evaluated,🚫,,3.0,1967
 LinkWrite,Write an expression to a WSTP connection,🚫,,3.0,1967
 URLRead,Send HTTP request and read response,✅,effectful,11.0,1967
@@ -1954,7 +1954,7 @@ TautologyQ,Tests whether a boolean expression is a tautology; two-arg form Tauto
 CheckAbort,Evaluate expression and catch aborts,✅,pure,2.0,1991
 DayRange,Generate the list of DateObject days between two dates inclusive,✅,pure,9.0,1991
 ImageSizeAction,Option controlling image size behavior,🚫,,6.0,1991
-MeanFilter,Replace each element by the mean of values in a clipped neighborhood of radius r (1D/2D lists),✅,,7.0,1991
+MeanFilter,Replace each element by the mean of values in a clipped neighborhood of radius r (1D/2D lists and Audio objects),✅,pure,7.0,1991
 PeriodicBoundaryCondition,PDE boundary condition specification,🚫,,11.0,1991
 OrderlessPatternSequence,Pattern matching construct for orderless sequences,🚫,,10.1,1992
 Character,Symbol used in string patterns to represent a single character,✅,pure,1.0,1993
@@ -1997,7 +1997,7 @@ MedianFilter,Apply median filter to data (signal processing),✅,,7.0,2031
 VertexOutDegree,Number of outgoing edges per vertex of a graph or edge list,✅,none,8.0,2031
 BernsteinBasis,Bernstein basis polynomial,✅,pure,7.0,2034
 LegendMargins,Margins around plot legends,🚫,,9.0,2034
-Spectrogram,Time-frequency spectrogram of signal,🚫,,9.0,2034
+Spectrogram,Plot the magnitude of the short-time Fourier transform (time vs frequency),✅,pure,9.0,2034
 DateTicksFormat,Date format for plot tick labels,🚫,,6.0,2036
 RootLocusPlot,Root locus plot for control systems,🚫,,8.0,2036
 UndirectedGraph,Create undirected graph,🚫,,8.0,2038
@@ -2067,7 +2067,7 @@ FlipView,Flippable view control (stays symbolic in script mode),✅,unevaluated,
 EmptyRegion,Empty geometric region,🚫,,10.0,2108
 HorizontalGauge,Horizontal gauge display,🚫,,9.0,2108
 InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7.0,2108
-Periodogram,Signal periodogram,🚫,,9.0,2108
+Periodogram,Plot the power spectrum of data or audio in decibels,✅,pure,9.0,2108
 TensorReduce,Reduce tensor expressions,🚫,,9.0,2108
 TextJustification,Text justification option,🚫,,3.0,2108
 MaxStepFraction,ODE solver step size option,🚫,,4.0,2112
@@ -2729,7 +2729,7 @@ Locked,Attribute preventing modification of a symbol,✅,pure,1.0,2786
 MeshCellLabel,,🚫,,10.0,2786
 StartOfLine,string pattern for start of line,✅,Symbolic,5.1,2786
 TimeSeriesAggregate,,🚫,,10.0,2786
-AudioLocalMeasurements,,🚫,,11.0,2792
+AudioLocalMeasurements,Windowed audio measurements as a TimeSeries (25 ms partitions),✅,pure,11.0,2792
 DepthFirstScan,,🚫,,8.0,2792
 ImageRestyle,,🚫,,11.2,2792
 IndependenceTest,,🚫,,9.0,2792
@@ -2954,10 +2954,10 @@ FirstPassageTimeDistribution,,,,9.0,3020
 FisherRatioTest,One-sample variance ratio test (chi-square two-sided p-value),✅,pure,8.0,3020
 HammingWindow,Compute HammingWindow value,✅,pure,9.0,3020
 NetReplacePart,,🚫,,11.0,3020
-TotalVariationFilter,,🚫,,8.0,3020
+TotalVariationFilter,Total-variation denoising of 1D/2D data or Audio objects,✅,pure,8.0,3020
 UniformSumDistribution,Irwin-Hall sum of n uniform variables (PDF and CDF and moments),✅,pure,8.0,3020
 AbsoluteFileName,,✅,,7.0,3031
-AudioTrim,,🚫,,11.0,3031
+AudioTrim,Trim audio to an interval or trim leading/trailing silence,✅,pure,11.0,3031
 BitSet,Set a bit in an integer,✅,pure,6.0,3031
 DeBruijnGraph,Generate a De Bruijn graph with m symbols and n dimensions,✅,pure,8.0,3031
 MeshCellHighlight,,🚫,,10.2,3031
@@ -3393,7 +3393,7 @@ TemplateObject,Symbolic template object produced by StringTemplate or FileTempla
 VoigtDistribution,,,,9.0,3474
 AddSides,Add an expression to both sides of an equation; an equation second argument pairs the sides,✅,none,11.3,3491
 AlgebraicNumberTrace,,,,6.0,3491
-AudioIntervals,,🚫,,11.0,3491
+AudioIntervals,Time intervals of silence or where a measurement criterion holds,✅,pure,11.0,3491
 BipartiteGraphQ,Tests whether a graph is bipartite (2-colorable),✅,pure,8.0,3491
 CreateArchive,,,,8.0,3491
 DifferentialRoot,,,,7.0,3491
@@ -3747,8 +3747,8 @@ RenameDirectory,,,,2.0,3843
 TriangleMeasurement,,,,12.0,3843
 WindDirectionData,,🚫,,10.0,3843
 AffineSpace,,,,10.2,3862
-AudioCapture,,🚫,,11.1,3862
-AudioJoin,,🚫,,11.0,3862
+AudioCapture,Record from a microphone ($Failed: no audio input device headless),✅,effectful,11.1,3862
+AudioJoin,Concatenate audio objects (conforming sample rates and channels),✅,pure,11.0,3862
 CallPacket,,🚫,,3.0,3862
 CosineWindow,Compute CosineWindow value,✅,pure,9.0,3862
 GrammarRules,,🚫,,10.0,3862
@@ -3924,7 +3924,7 @@ WeaklyConnectedGraphQ,Test whether a directed graph is weakly connected (underly
 WindowStatusArea,,🚫,,6.0,4027
 WinsorizedMean,Mean after winsorizing extreme values,✅,none,11.1,4027
 AnglePath3D,,,,11.1,4052
-AudioPitchShift,,🚫,,11.0,4052
+AudioPitchShift,Shift audio pitch by a ratio or semitone quantity preserving duration,✅,pure,11.0,4052
 BaseEncode,Base64-encode a ByteArray to a string,✅,pure,11.3,4052
 ButtonMinHeight,,🚫,,3.0,4052
 CanonicalWarpingDistance,,,,11.0,4052
@@ -4036,7 +4036,7 @@ AutocorrelationTest,,,,10.0,4173
 BaringhausHenzeTest,,,,10.2,4173
 BlackmanNuttallWindow,,,,9.0,4173
 BrightnessEqualize,,🚫,,11.1,4173
-Cepstrogram,,🚫,,11.1,4173
+Cepstrogram,Plot the power cepstrum of each partition (time vs quefrency),✅,pure,11.1,4173
 CombinatorS,,,,12.2,4173
 FullDefinition,Shows the definition of a symbol and all its dependencies,✅,pure,1.0,4173
 FullInformationOutputRegulator,,,,10.0,4173
@@ -4064,7 +4064,7 @@ ShowAutoSpellCheck,,🚫,,11.0,4173
 SystemsModelDelayApproximate,,🚫,,9.0,4173
 AffineHalfSpace,,,,10.2,4204
 AngleBisector,,,,12.0,4204
-AudioMeasurements,,🚫,,11.0,4204
+AudioMeasurements,Scalar measurements of audio (amplitude spectral and pitch properties),✅,pure,11.0,4204
 BoxObject,,🚫,,10.0,4204
 CloudExpressions,,🚫,,10.4,4204
 ControllabilityGramian,,,,8.0,4204
@@ -4199,7 +4199,7 @@ RiskReductionImportance,,,,9.0,4315
 ScientificNotationThreshold,,,,11.2,4315
 SourceLink,,,,10.4,4315
 TimeGoal,,,,11.2,4315
-WienerFilter,,🚫,,8.0,4315
+WienerFilter,Remove locally stationary noise via a local Wiener estimator (1D/2D data or Audio),✅,pure,8.0,4315
 ActivePrediction,,🚫,,11.1,4356
 AudioChannelCombine,,🚫,,11.0,4356
 AudioSplit,,🚫,,11.0,4356
@@ -4352,7 +4352,7 @@ AcousticPressureCondition,,🚫,,12.2,4527
 ActiveStyle,,🚫,,7.0,4527
 AlgebraicUnitQ,,,,6.0,4527
 AsymptoticExpectation,,,,12.2,4527
-AudioAmplify,,🚫,,11.0,4527
+AudioAmplify,Multiply audio samples by an amplification factor,✅,pure,11.0,4527
 AudioChannelSeparate,,🚫,,11.0,4527
 Chebyshev2FilterModel,,,,9.0,4527
 Containing,,,,10.2,4527
@@ -4557,7 +4557,7 @@ TrainingUpdateSchedule,,🚫,,12.1,4707
 TravelMethod,,🚫,,10.3,4707
 URLResponseTime,,🚫,,11.1,4707
 VerifyDigitalSignature,,🚫,,12.0,4707
-WebAudioSearch,,🚫,,12.0,4707
+WebAudioSearch,Search for audio on the web ($Failed: requires the paid web service),✅,effectful,12.0,4707
 WikidataSearch,,🚫,,12.1,4707
 AiryBiPrime,Derivative of Airy function Bi,✅,pure,2.0,4747
 AiryBiZero,n-th real zero of the Airy function Bi,✅,pure,6.0,4747
@@ -5953,8 +5953,8 @@ ServiceRequest,,🚫,,12.0,
 ServiceSubmit,,🚫,,12.0,
 SetFileFormatProperties,,,,13.0,
 SetSystemModel,,🚫,,11.3,
-ShortTimeFourier,,,,12.0,
-ShortTimeFourierData,,🚫,,12.0,
+ShortTimeFourier,Short-time Fourier transform as a ShortTimeFourierData object,✅,pure,12.0,
+ShortTimeFourierData,Data object produced by ShortTimeFourier with property access,✅,pure,12.0,
 SimplePolyhedronQ,,,,12.0,
 SinDegrees,Compute sine of angle in degrees,✅,pure,14.1,
 SlideShowVideo,,🚫,,12.3,

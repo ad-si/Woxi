@@ -2,6 +2,7 @@
 pub mod assessment_ast;
 pub mod assessment_render;
 pub mod association_ast;
+pub mod audio_ast;
 pub mod boolean_ast;
 pub mod calculus_ast;
 pub mod cellular_automaton_ast;

@@ -19,7 +19,7 @@ mod mathieu;
 mod misc_special;
 mod number_theory;
 mod numeric_utils;
-mod numerical;
+pub(crate) mod numerical;
 mod orthogonal_polynomials;
 mod polylog;
 mod random;

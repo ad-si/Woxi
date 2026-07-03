@@ -239,7 +239,7 @@ fn audio_mime_for_path(path: &str) -> &'static str {
 
 /// Extract the source path from a file-backed `Audio` first argument:
 /// `File["path"]`, or a bare string with a recognized audio file extension.
-fn audio_file_source(arg: &Expr) -> Option<String> {
+pub(crate) fn audio_file_source(arg: &Expr) -> Option<String> {
   match arg {
     Expr::FunctionCall { name, args } if name == "File" && args.len() == 1 => {
       match &args[0] {

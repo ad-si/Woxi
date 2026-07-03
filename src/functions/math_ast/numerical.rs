@@ -3783,7 +3783,7 @@ pub fn dft_core(
 /// In-place Cooley-Tukey radix-2 FFT. `data.len()` must be a power of 2.
 /// `exp_sign` is +1 or -1, selecting forward vs inverse twiddle direction.
 /// Scaling is left to the caller.
-fn fft_pow2_in_place(data: &mut [(f64, f64)], exp_sign: f64) {
+pub(crate) fn fft_pow2_in_place(data: &mut [(f64, f64)], exp_sign: f64) {
   let n = data.len();
   // Bit-reverse permutation.
   let mut j = 0usize;

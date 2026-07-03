@@ -14,6 +14,7 @@ pub(crate) use crate::{
 pub mod arg_count;
 mod association_functions;
 mod attributes;
+mod audio_functions;
 mod boolean_functions;
 pub(crate) mod calculus_functions;
 pub mod complex_and_special;
@@ -1479,6 +1480,9 @@ pub fn evaluate_function_call_ast_inner(
   if let Some(result) =
     timeseries_functions::dispatch_timeseries_functions(name, args)
   {
+    return result;
+  }
+  if let Some(result) = audio_functions::dispatch_audio_functions(name, args) {
     return result;
   }
   if let Some(result) =
@@ -9967,8 +9971,10 @@ pub fn evaluate_function_call_ast_inner(
         | "SwatchLegend"
         // Audio[data, …] is a symbolic audio object constructor. It stays
         // unevaluated as its canonical form and is consumed by AudioPlot,
-        // so it is not "unimplemented".
+        // so it is not "unimplemented". ShortTimeFourierData[…] is the
+        // canonical data object produced by ShortTimeFourier.
         | "Audio"
+        | "ShortTimeFourierData"
         // Wavelet family heads are symbolic constructor objects consumed by
         // the wavelet transforms, WaveletFilterCoefficients, and
         // WaveletPhi/WaveletPsi; the data objects and LiftingFilterData are
