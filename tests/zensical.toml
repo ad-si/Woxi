@@ -351,6 +351,9 @@ nav = [
       ] },
       { "Number Theory & Combinatorics" = [
         "math/number_theory.md",
+        { "MultipleHarmonicNumber" = "math/number_theory/MultipleHarmonicNumber.md" },
+        { "RudinShapiro" = "math/number_theory/RudinShapiro.md" },
+        { "ThueMorse" = "math/number_theory/ThueMorse.md" },
         { "FrobeniusSolve" = "math/number_theory/FrobeniusSolve.md" },
         { "AlternatingFactorial" = "math/number_theory/AlternatingFactorial.md" },
         { "BernoulliB" = "math/number_theory/BernoulliB.md" },
@@ -562,6 +565,9 @@ nav = [
       ] },
       { "Linear Algebra" = [
         "math/linear_algebra.md",
+        { "DrazinInverse" = "math/linear_algebra/DrazinInverse.md" },
+        { "MatrixMinimalPolynomial" = "math/linear_algebra/MatrixMinimalPolynomial.md" },
+        { "RankDecomposition" = "math/linear_algebra/RankDecomposition.md" },
         { "EulerMatrix" = "math/linear_algebra/EulerMatrix.md" },
         { "ReflectionTransform" = "math/linear_algebra/ReflectionTransform.md" },
         { "ShearingTransform" = "math/linear_algebra/ShearingTransform.md" },
@@ -877,6 +883,7 @@ nav = [
         { "YuleDissimilarity" = "math/utility/YuleDissimilarity.md" },
       ] },
     ] },
+    { "Wavelet Analysis" = "wavelets.md" },
     { "List Operations" = [
       "list_operations.md",
       { "Orthogonalize" = "list_operations/Orthogonalize.md" },
@@ -1315,6 +1322,7 @@ nav = [
     ] },
     { "Symbolic" = [
       "symbolic.md",
+      { "DiscreteShift" = "symbolic/DiscreteShift.md" },
       { "ComposeSeries" = "symbolic/ComposeSeries.md" },
       { "InverseSeries" = "symbolic/InverseSeries.md" },
       { "PadeApproximant" = "symbolic/PadeApproximant.md" },
