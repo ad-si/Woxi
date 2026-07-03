@@ -328,10 +328,11 @@ Woxi does **not** support.
 
 - Arbitrary-precision numerics engine and packed-array performance optimizations
 
-### Version 4.0 (1999)
+### Version 4.0–4.2 (1999–2002)
 
-- Packed arrays — an internal machine-number storage optimization
-    (Woxi computes the same results without this representation)
+- `LinearProgramming` solver
+- Web/markup formats: MathML and XML `Import`/`Export`
+- Add-on packages: `Combinatorica` (graph theory) and `ANOVA` (statistics)
 
 ### Version 3.0 (1996)
 
