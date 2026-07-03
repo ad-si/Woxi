@@ -1074,6 +1074,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RotationTransform" => Some((1, 2)),
     "Round" => Some((1, 2)),
     "RowReduce" => Some((1, 1)),
+    "RankDecomposition" => Some((1, 1)),
     "RSolve" => Some((3, 3)),
     "RSolveValue" => Some((3, 3)),
     "InverseZTransform" => Some((3, 3)),

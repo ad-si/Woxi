@@ -6213,7 +6213,7 @@ LDLDecomposition,Computes the LDL factorization of a Hermitian matrix,,pure,15.0
 OrderedSchurDecomposition,Computes a Schur decomposition with ordered diagonal blocks,,pure,15.0,
 PolarDecomposition,Computes the polar decomposition into unitary and Hermitian factors,,pure,15.0,
 PopovDecomposition,Computes the Popov normal form of a polynomial matrix,,pure,15.0,
-RankDecomposition,Factors a matrix into two factors whose inner dimension equals its rank,,pure,15.0,
+RankDecomposition,Factors a matrix into two factors whose inner dimension equals its rank,✅,pure,15.0,
 DiscreteHilbertTransform,Computes the discrete Hilbert transform of a list of real numbers,,pure,15.0,
 FrobeniusReduce,Computes the Frobenius rational canonical form of a square matrix,,pure,15.0,
 JordanReduce,Computes the Jordan canonical form of a square matrix,,pure,15.0,

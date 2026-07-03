@@ -3565,6 +3565,62 @@ pub fn row_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(matrix_to_expr(row_reduce_impl(&matrix)))
 }
 
+/// RankDecomposition[m] factors an m×n matrix of rank r into {C, F} where C is
+/// m×r (the pivot columns of `m`) and F is r×n (the nonzero rows of the reduced
+/// row echelon form), so that C.F == m. A rank-0 (all-zero) matrix has no rank
+/// decomposition; a non-matrix argument is a usage error. Both cases emit the
+/// matching wolframscript message and stay unevaluated.
+pub fn rank_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "RankDecomposition".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) if !m.is_empty() && !m[0].is_empty() => m,
+    _ => {
+      crate::emit_message(&format!(
+        "RankDecomposition::matrix: Argument {} at position 1 is not a \
+         nonempty rectangular matrix.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated());
+    }
+  };
+
+  let rref = row_reduce_impl(&matrix);
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0)
+  };
+  // Each nonzero RREF row's leading entry marks a pivot column; those columns
+  // of the original matrix form C, and the nonzero RREF rows form F.
+  let mut pivot_cols: Vec<usize> = Vec::new();
+  let mut f_rows: Vec<Vec<Expr>> = Vec::new();
+  for row in &rref {
+    if let Some(pc) = row.iter().position(|e| !is_zero(e)) {
+      pivot_cols.push(pc);
+      f_rows.push(row.clone());
+    }
+  }
+  if pivot_cols.is_empty() {
+    crate::emit_message(
+      "RankDecomposition::rnkz: A rank decomposition does not exist for a \
+       rank 0 matrix.",
+    );
+    return Ok(unevaluated());
+  }
+
+  let c: Vec<Vec<Expr>> = matrix
+    .iter()
+    .map(|row| pivot_cols.iter().map(|&j| row[j].clone()).collect())
+    .collect();
+  Ok(Expr::List(
+    vec![matrix_to_expr(c), matrix_to_expr(f_rows)].into(),
+  ))
+}
+
 /// Simplify expression via the evaluator (with Simplify for symbolic)
 fn simplify_expr(e: &Expr) -> Expr {
   let evaluated = match evaluate_expr_to_expr(e) {

@@ -602,6 +602,11 @@ pub fn dispatch_linear_algebra_functions(
     "RowReduce" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::row_reduce_ast(args));
     }
+    "RankDecomposition" if args.len() == 1 => {
+      return Some(
+        crate::functions::linear_algebra_ast::rank_decomposition_ast(args),
+      );
+    }
     "MatrixRank" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::matrix_rank_ast(args));
     }

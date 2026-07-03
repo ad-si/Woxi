@@ -1085,6 +1085,69 @@ mod row_reduce {
   }
 }
 
+// RankDecomposition[m] = {C, F} with C the pivot columns of m and F the
+// nonzero rows of RowReduce[m], so that C.F == m. Verified vs wolframscript.
+mod rank_decomposition {
+  use super::*;
+
+  #[test]
+  fn rank_one() {
+    assert_eq!(
+      interpret("RankDecomposition[{{1, 2}, {2, 4}}]").unwrap(),
+      "{{{1}, {2}}, {{1, 2}}}"
+    );
+  }
+
+  #[test]
+  fn rank_two_wide() {
+    assert_eq!(
+      interpret("RankDecomposition[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "{{{1, 2}, {4, 5}}, {{1, 0, -1}, {0, 1, 2}}}"
+    );
+  }
+
+  #[test]
+  fn rank_deficient_square() {
+    assert_eq!(
+      interpret("RankDecomposition[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]")
+        .unwrap(),
+      "{{{1, 2}, {4, 5}, {7, 8}}, {{1, 0, -1}, {0, 1, 2}}}"
+    );
+  }
+
+  #[test]
+  fn full_rank_returns_identity_factor() {
+    assert_eq!(
+      interpret("RankDecomposition[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{{1, 2}, {3, 4}}, {{1, 0}, {0, 1}}}"
+    );
+  }
+
+  // Reconstruction: C.F recovers the original matrix.
+  #[test]
+  fn reconstructs_original() {
+    assert_eq!(
+      interpret("RankDecomposition[{{1, 2, 3}, {4, 5, 6}}] /. {c_, f_} :> c.f")
+        .unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}}"
+    );
+  }
+
+  // A rank-0 (all-zero) matrix has no decomposition; a non-matrix argument is
+  // a usage error. Both stay unevaluated.
+  #[test]
+  fn unevaluated_forms() {
+    assert_eq!(
+      interpret("RankDecomposition[{{0, 0}, {0, 0}}]").unwrap(),
+      "RankDecomposition[{{0, 0}, {0, 0}}]"
+    );
+    assert_eq!(
+      interpret("RankDecomposition[{1, 2, 3}]").unwrap(),
+      "RankDecomposition[{1, 2, 3}]"
+    );
+  }
+}
+
 mod matrix_rank {
   use super::*;
 
