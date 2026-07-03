@@ -134,6 +134,10 @@ split-debuginfo = "unpacked"
 [profile.release]
 codegen-units = 1
 lto = true
+# Surface integer-overflow bugs as loud panics in shipped builds instead of
+# silently wrapping to wrong results. For a CAS, numeric correctness matters
+# more than the small runtime cost of the checks (see issue #180).
+overflow-checks = true
 
 # Profile for shipping Woxi Studio (see `make install-macos-app`). The GUI
 # doesn't need the interpreter's fat-LTO/single-CGU treatment, and applying
