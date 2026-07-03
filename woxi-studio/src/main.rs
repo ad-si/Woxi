@@ -3648,7 +3648,10 @@ fn evaluate_cell_statements(
   editor.output = if outputs.is_empty() {
     None
   } else {
-    Some(outputs.join("\n"))
+    // Show notebook OutputForm: truncate arbitrary-precision reals to their
+    // precision and drop the backtick marker (`N[Pi, 3]` → `3.14`). The CLI
+    // keeps the full backtick InputForm; this is a display-layer transform.
+    Some(woxi::truncate_precision_reals(&outputs.join("\n")))
   };
   editor.output_content = match &editor.output {
     Some(s) => {

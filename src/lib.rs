@@ -2898,15 +2898,17 @@ fn generate_output_svg(expr: &syntax::Expr) {
   capture_output_svg(&svg);
 }
 
-/// Strip the trailing precision-marker backtick from numeric box-String
-/// leaves so the typeset SVG display shows `2.` instead of `` 2.` ``.
+/// Rewrite numeric box-String leaves to their typeset notebook form: the
+/// trailing precision marker is dropped (so a machine real shows `2.` instead
+/// of `` 2.` ``) and an arbitrary-precision real is truncated to its precision
+/// in significant digits (so `` N[Pi, 3] `` shows `3.14`, not all 20 digits).
 /// Recurses through the box tree (RowBox/SuperscriptBox/… → List args).
 fn strip_number_precision_markers(expr: &syntax::Expr) -> syntax::Expr {
   use syntax::Expr;
   match expr {
-    Expr::String(s) => Expr::String(
-      strip_number_precision_marker(s).unwrap_or_else(|| s.clone()),
-    ),
+    Expr::String(s) => {
+      Expr::String(precision_number_display(s).unwrap_or_else(|| s.clone()))
+    }
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -2926,29 +2928,195 @@ fn strip_number_precision_markers(expr: &syntax::Expr) -> syntax::Expr {
   }
 }
 
-/// Remove a Wolfram number precision marker (`` ` `` plus any following
-/// precision digits) from a numeric string leaf. Returns `None` when the
-/// string is not a number with such a marker, so symbol context names like
-/// `` Global` `` (which start with a letter) are left untouched.
-fn strip_number_precision_marker(s: &str) -> Option<String> {
+/// Convert a single numeric token in Wolfram backtick notation to its typeset
+/// notebook display form. Returns `None` when `token` is not a number with a
+/// precision marker, so symbol context names like `` Global` `` (which start
+/// with a letter) are left untouched.
+///
+/// - A machine real (bare backtick, `` 2.` ``) just loses the marker → `2.`.
+/// - An arbitrary-precision real (`` 3.1415…`3. ``) is truncated to its
+///   precision in significant figures → `3.14`.
+/// - A `*^exp` scientific suffix is preserved (`` 1.23`5.*^6 `` → `1.23*^6`).
+fn precision_number_display(token: &str) -> Option<String> {
   // Numeric leaves start with a digit (negatives are wrapped in a RowBox
   // with a separate "-" token, so the magnitude leaf is unsigned).
-  if !s.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+  if !token.as_bytes().first().is_some_and(u8::is_ascii_digit) {
     return None;
   }
-  let tick = s.find('`')?;
+  let tick = token.find('`')?;
   // The backtick must immediately follow a digit or decimal point.
-  let prev = s[..tick].chars().next_back()?;
+  let prev = token[..tick].chars().next_back()?;
   if !(prev.is_ascii_digit() || prev == '.') {
     return None;
   }
-  let rest = &s[tick + 1..];
-  // Skip the precision specification (digits and dots) after the backtick;
-  // anything else (e.g. a `*^exp` scientific suffix) is kept.
-  let suffix_start = rest
+  let mantissa = &token[..tick];
+  // Skip the second backtick of an accuracy form (`` 0``5. ``).
+  let after = &token[tick + 1..];
+  let after = after.strip_prefix('`').unwrap_or(after);
+  // The precision spec is the run of digits/dots after the backtick(s);
+  // anything else (e.g. a `*^exp` scientific suffix) is preserved.
+  let spec_end = after
     .find(|c: char| !(c.is_ascii_digit() || c == '.'))
-    .unwrap_or(rest.len());
-  Some(format!("{}{}", &s[..tick], &rest[suffix_start..]))
+    .unwrap_or(after.len());
+  let prec_spec = &after[..spec_end];
+  let suffix = &after[spec_end..];
+  // A parseable precision → truncate to that many significant digits; a bare
+  // backtick (machine precision, empty spec) → strip the marker only.
+  let body = match prec_spec.parse::<f64>() {
+    Ok(prec) => {
+      let digits = (prec.round() as i64).max(1) as usize;
+      round_significant(mantissa, digits)
+    }
+    Err(_) => mantissa.to_string(),
+  };
+  Some(format!("{}{}", body, suffix))
+}
+
+/// Round the unsigned decimal `mantissa` (e.g. `"3.1415926"`, `"0.00123"`, no
+/// sign or precision marker) to `prec` significant figures for notebook
+/// display, matching Wolfram's `N[Pi, 4]` → `3.142`. Magnitude is preserved
+/// with placeholder zeros in the integer part (`314.159` → 2 sig figs →
+/// `310.`), rounding carries propagate (`9.99` → 2 sig figs → `10.`), and a
+/// trailing decimal point is always kept so an approximate real still reads as
+/// `3.` rather than `3`. When `prec` exceeds the digits available, every
+/// stored digit is shown unrounded.
+fn round_significant(mantissa: &str, prec: usize) -> String {
+  let prec = prec.max(1);
+  let (int_s, frac_s) = match mantissa.find('.') {
+    Some(i) => (&mantissa[..i], &mantissa[i + 1..]),
+    None => (mantissa, ""),
+  };
+  // Flatten to a digit stream and record the decimal point position (the
+  // number of integer digits), so each digit's place value is known.
+  let digits: Vec<u8> = int_s
+    .chars()
+    .chain(frac_s.chars())
+    .filter_map(|c| c.to_digit(10).map(|d| d as u8))
+    .collect();
+  let point_pos = int_s.chars().filter(char::is_ascii_digit).count() as isize;
+
+  // Index of the first significant (non-zero) digit; a zero value shows "0.".
+  let Some(fs) = digits.iter().position(|&d| d != 0) else {
+    return "0.".to_string();
+  };
+
+  let avail = digits.len() - fs;
+  let keep = prec.min(avail);
+  let mut kept = digits[fs..fs + keep].to_vec();
+  // Place-value exponent of the first kept digit (10^lead_exp).
+  let mut lead_exp = point_pos - 1 - fs as isize;
+
+  // Round half-up using the first dropped digit, propagating any carry. A
+  // carry out of the front (all nines) grows the magnitude by one place.
+  if keep < avail && digits[fs + keep] >= 5 {
+    let mut i = kept.len();
+    loop {
+      if i == 0 {
+        kept.insert(0, 1);
+        kept.truncate(prec); // drop the now-redundant trailing zero
+        lead_exp += 1;
+        break;
+      }
+      i -= 1;
+      if kept[i] == 9 {
+        kept[i] = 0;
+      } else {
+        kept[i] += 1;
+        break;
+      }
+    }
+  }
+
+  let m = kept.len() as isize;
+  let tail_exp = lead_exp - (m - 1);
+  // Digit at a given place-value exponent (kept digits, else placeholder 0).
+  let digit_at = |exp: isize| -> char {
+    if (tail_exp..=lead_exp).contains(&exp) {
+      (b'0' + kept[(lead_exp - exp) as usize]) as char
+    } else {
+      '0'
+    }
+  };
+
+  let mut int_str = String::new();
+  for exp in (0..=lead_exp.max(0)).rev() {
+    int_str.push(digit_at(exp));
+  }
+  let mut frac_str = String::new();
+  if tail_exp < 0 {
+    for exp in (tail_exp..=-1).rev() {
+      frac_str.push(digit_at(exp));
+    }
+  }
+  format!("{}.{}", int_str, frac_str)
+}
+
+/// Rewrite every arbitrary-precision real in a flat output string to its
+/// notebook display form: the backtick precision marker is removed and the
+/// mantissa truncated to its precision in significant figures
+/// (`` {3.1415…`1., 3.1415…`3.} `` → `{3., 3.14}`). Machine-real text carries
+/// no marker, so it passes through unchanged.
+///
+/// The CLI / `eval` result string keeps the backtick InputForm (it must match
+/// `wolframscript -code`), so notebook front-ends (Woxi Studio) apply this at
+/// the display layer only.
+pub fn truncate_precision_reals(text: &str) -> String {
+  let bytes = text.as_bytes();
+  let n = bytes.len();
+  let mut out = String::with_capacity(n);
+  let mut i = 0;
+  // Whether the previous char continues an identifier/number, so a digit that
+  // follows it starts no fresh number token (e.g. the `2` in the symbol `x2`).
+  let mut in_word = false;
+  while i < n {
+    let c = bytes[i];
+    if c.is_ascii_digit() && !in_word {
+      let start = i;
+      let mut j = i;
+      while j < n && (bytes[j].is_ascii_digit() || bytes[j] == b'.') {
+        j += 1;
+      }
+      if j < n && bytes[j] == b'`' {
+        // Consume the marker: an optional second backtick, the precision
+        // digits/dots, then an optional `*^exp` scientific suffix.
+        let mut k = j + 1;
+        if k < n && bytes[k] == b'`' {
+          k += 1;
+        }
+        while k < n && (bytes[k].is_ascii_digit() || bytes[k] == b'.') {
+          k += 1;
+        }
+        if k + 1 < n && bytes[k] == b'*' && bytes[k + 1] == b'^' {
+          k += 2;
+          if k < n && bytes[k] == b'-' {
+            k += 1;
+          }
+          while k < n && bytes[k].is_ascii_digit() {
+            k += 1;
+          }
+        }
+        if let Some(display) = precision_number_display(&text[start..k]) {
+          out.push_str(&display);
+          i = k;
+          in_word = true;
+          continue;
+        }
+      }
+      // Not a precision token — copy the scanned digits verbatim.
+      out.push_str(&text[start..j]);
+      i = j;
+      in_word = true;
+      continue;
+    }
+    let ch = text[i..].chars().next().unwrap();
+    let len = ch.len_utf8();
+    out.push_str(&text[i..i + len]);
+    // A following digit continues a symbol iff this char is alphanumeric, an
+    // underscore, or a context backtick.
+    in_word = ch.is_ascii_alphanumeric() || ch == '_' || ch == '`';
+    i += len;
+  }
+  out
 }
 
 /// Expand Wolfram character escape sequences to UTF-8 characters:
