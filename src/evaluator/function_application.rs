@@ -1004,6 +1004,21 @@ pub fn apply_curried_call(
         }),
       }
     }
+    // ShortTimeFourierData[…]["property"] — property access on the data
+    // object produced by ShortTimeFourier (e.g. "Data", "SampleRate").
+    Expr::FunctionCall { name, .. }
+      if name == "ShortTimeFourierData"
+        && args.len() == 1
+        && crate::functions::audio_ast::spectral::stfd_property(
+          func, &args[0],
+        )
+        .is_some() =>
+    {
+      Ok(
+        crate::functions::audio_ast::spectral::stfd_property(func, &args[0])
+          .unwrap(),
+      )
+    }
     // AssessmentFunction[spec][answer] — grade the answer, returning an
     // AssessmentResultObject.
     Expr::FunctionCall {

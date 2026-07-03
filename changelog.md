@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- Implement the audio processing functions: editing (`AudioAmplify`,
+    `AudioTrim`, `AudioJoin`, `AudioPitchShift`), analysis
+    (`AudioMeasurements`, `AudioLocalMeasurements`, `AudioIntervals`),
+    the short-time Fourier transform (`ShortTimeFourier` with the
+    `ShortTimeFourierData` object), the spectral plots (`Spectrogram`,
+    `Cepstrogram`, `Periodogram`), the noise-removal filters
+    (`WienerFilter`, `TotalVariationFilter`), Audio support for
+    `LowpassFilter`, `MeanFilter`, `Mean`, `Median`, `Variance`, and
+    `Quantile`, `Import` of audio files (WAV decoded to sample data),
+    and headless `$Failed` stubs for `AudioCapture`/`WebAudioSearch`
 - Implement the wavelet analysis functions: the wavelet families
     (`HaarWavelet`, `DaubechiesWavelet`, `SymletWavelet`, `CoifletWavelet`,
     `BattleLemarieWavelet`, `BiorthogonalSplineWavelet`,
