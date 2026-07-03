@@ -7457,6 +7457,74 @@ mod series_coefficient {
       "1"
     );
   }
+
+  // A symbolic index returns the general term as a Piecewise for the
+  // recognized standard Maclaurin series.
+  #[test]
+  fn symbolic_index_exp() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Exp[x], {x, 0, n}]").unwrap(),
+      "Piecewise[{{n!^(-1), n >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[Exp[2 x], {x, 0, n}]").unwrap(),
+      "Piecewise[{{2^n/n!, n >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[Exp[-x], {x, 0, n}]").unwrap(),
+      "Piecewise[{{(-1)^n/n!, n >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[Exp[a x], {x, 0, n}]").unwrap(),
+      "Piecewise[{{a^n/n!, n >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn symbolic_index_geometric() {
+    assert_eq!(
+      interpret("SeriesCoefficient[1/(1 - x), {x, 0, n}]").unwrap(),
+      "Piecewise[{{1, n >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[1/(1 - 2 x), {x, 0, n}]").unwrap(),
+      "Piecewise[{{2^n, n >= 0}}, 0]"
+    );
+    // Higher powers give the polynomial binomial term over a common denominator.
+    assert_eq!(
+      interpret("SeriesCoefficient[1/(1 - x)^2, {x, 0, n}]").unwrap(),
+      "Piecewise[{{1 + n, n >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[1/(1 - x)^3, {x, 0, n}]").unwrap(),
+      "Piecewise[{{(2 + 3*n + n^2)/2, n >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[1/(1 - 2 x)^2, {x, 0, n}]").unwrap(),
+      "Piecewise[{{2^n*(1 + n), n >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn symbolic_index_hyperbolic() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Cosh[x], {x, 0, n}]").unwrap(),
+      "Piecewise[{{n!^(-1), Mod[n, 2] == 0 && n >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[Sinh[x], {x, 0, n}]").unwrap(),
+      "Piecewise[{{n!^(-1), Mod[n, 2] == 1 && n >= 0}}, 0]"
+    );
+  }
+
+  // An unrecognized form is left unevaluated (not crashed).
+  #[test]
+  fn symbolic_index_unrecognized_unevaluated() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Exp[x^2], {x, 0, n}]").unwrap(),
+      "SeriesCoefficient[E^x^2, {x, 0, n}]"
+    );
+  }
 }
 
 mod exp_to_trig {

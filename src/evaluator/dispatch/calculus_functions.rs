@@ -665,6 +665,11 @@ pub fn dispatch_calculus_functions(
           Err(e) => return Some(Err(e)),
         }
       }
+      // SeriesCoefficient[f, {x, 0, n}] with a *symbolic* index n — closed forms
+      // for a handful of standard functions, returned as a Piecewise.
+      if let Some(result) = symbolic_series_coefficient(&args[0], &args[1]) {
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+      }
       return Some(Ok(Expr::FunctionCall {
         name: "SeriesCoefficient".to_string(),
         args: args.to_vec().into(),
@@ -3496,6 +3501,141 @@ fn contains_variable(expr: &Expr, var: &str) -> bool {
 }
 
 /// GeneratingFunction[a_n, n, x] = Sum[a_n * x^n, {n, 0, Infinity}]
+/// SeriesCoefficient[f, {x, 0, n}] with a symbolic index `n`. Recognizes a few
+/// standard Maclaurin series and returns the general term as a Piecewise:
+///   Exp[a x]        -> {{a^n/n!,           n >= 0}, 0}
+///   Cosh[a x]       -> {{a^n/n!, Mod[n,2]==0 && n >= 0}, 0}
+///   Sinh[a x]       -> {{a^n/n!, Mod[n,2]==1 && n >= 0}, 0}
+///   1/(1 - a x)^k   -> {{Binomial[n+k-1, k-1] a^n, n >= 0}, 0}
+/// Returns `None` for anything else (left unevaluated), matching wolframscript's
+/// support for these forms.
+fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  let Expr::List(parts) = spec else {
+    return None;
+  };
+  if parts.len() != 3 {
+    return None;
+  }
+  let Expr::Identifier(x) = &parts[0] else {
+    return None;
+  };
+  if !matches!(&parts[1], Expr::Integer(0)) {
+    return None;
+  }
+  let Expr::Identifier(nvar) = &parts[2] else {
+    return None;
+  };
+
+  let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let is_int = |e: &Expr, v: i128| matches!(e, Expr::Integer(k) if *k == v);
+  // Coefficient[e, x, deg].
+  let coeff = |e: &Expr, deg: i128| -> Option<Expr> {
+    ev(Expr::FunctionCall {
+      name: "Coefficient".to_string(),
+      args: vec![e.clone(), Expr::Identifier(x.clone()), Expr::Integer(deg)]
+        .into(),
+    })
+  };
+  // Extract `a` when `arg == a*x` exactly (linear monomial, no constant term).
+  let linear = |arg: &Expr| -> Option<Expr> {
+    if !is_int(&coeff(arg, 0)?, 0) {
+      return None;
+    }
+    let a = coeff(arg, 1)?;
+    let residual = ev(Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(arg.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(a.clone()),
+          right: Box::new(Expr::Identifier(x.clone())),
+        }),
+      }]
+      .into(),
+    })?;
+    is_int(&residual, 0).then_some(a)
+  };
+  // `(a)` string with parentheses so a negative `a` keeps its sign inside a power.
+  let paren = |a: &Expr| format!("({})", crate::syntax::expr_to_string(a));
+
+  // Build and parse `Piecewise[{{coeff, cond}}, 0]`.
+  let build = |coeff_src: String, cond: &str| -> Option<Expr> {
+    let src = format!("Piecewise[{{{{{coeff_src}, {cond}}}}}, 0]");
+    crate::syntax::string_to_expr(&src).ok()
+  };
+
+  match f {
+    // Exp[a x] = E^(a x): a^n / n!.
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Constant(c) if c == "E") => {
+      let a = linear(right)?;
+      build(
+        format!("{}^{nvar}/{nvar}!", paren(&a)),
+        &format!("{nvar} >= 0"),
+      )
+    }
+    // 1/(1 - a x)^k = (1 - a x)^(-k): Binomial[n+k-1, k-1] a^n.
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } if matches!(exp.as_ref(), Expr::Integer(k) if *k < 0) => {
+      let Expr::Integer(neg_k) = exp.as_ref() else {
+        return None;
+      };
+      let k = -neg_k;
+      // base must be `1 - a x`: constant term 1, linear in x.
+      if !is_int(&coeff(base, 0)?, 1) {
+        return None;
+      }
+      let neg_a = coeff(base, 1)?; // = -a
+      let a = ev(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), neg_a].into(),
+      })?;
+      let residual = ev(Expr::FunctionCall {
+        name: "Expand".to_string(),
+        args: vec![Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(base.as_ref().clone()),
+          right: Box::new(
+            crate::syntax::string_to_expr(&format!("1 - {}*{x}", paren(&a)))
+              .ok()?,
+          ),
+        }]
+        .into(),
+      })?;
+      if !is_int(&residual, 0) {
+        return None;
+      }
+      let km1 = k - 1;
+      let binom = format!("Together[Expand[Binomial[{nvar} + {km1}, {km1}]]]");
+      build(
+        format!("{binom}*{}^{nvar}", paren(&a)),
+        &format!("{nvar} >= 0"),
+      )
+    }
+    // Cosh[a x] / Sinh[a x]: a^n/n! on the even / odd indices.
+    Expr::FunctionCall { name, args: fa }
+      if (name == "Cosh" || name == "Sinh") && fa.len() == 1 =>
+    {
+      let a = linear(&fa[0])?;
+      let parity = if name == "Cosh" { 0 } else { 1 };
+      build(
+        format!("{}^{nvar}/{nvar}!", paren(&a)),
+        &format!("Mod[{nvar}, 2] == {parity} && {nvar} >= 0"),
+      )
+    }
+    _ => None,
+  }
+}
+
 fn generating_function(
   expr: &Expr,
   n_expr: &Expr,
