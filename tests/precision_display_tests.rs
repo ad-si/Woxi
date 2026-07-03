@@ -5,7 +5,46 @@
 //! `wolframscript -code`), but the Playground and Woxi Studio show the
 //! notebook OutputForm where `N[Pi, 3]` reads as `3.14`.
 
-use woxi::truncate_precision_reals;
+use woxi::{
+  clear_state, get_captured_output_svg, interpret, truncate_precision_reals,
+};
+
+/// The Playground/Studio result SVG for `code`, with all SVG tags removed so
+/// only the visible text remains (the renderer wraps runs in `<text>`/`<tspan>`).
+fn output_text(code: &str) -> String {
+  clear_state();
+  interpret(code).unwrap();
+  let svg = get_captured_output_svg().expect("output SVG captured");
+  // Strip tags, leaving just the rendered glyph runs.
+  let mut text = String::new();
+  let mut in_tag = false;
+  for ch in svg.chars() {
+    match ch {
+      '<' => in_tag = true,
+      '>' => in_tag = false,
+      _ if !in_tag => text.push(ch),
+      _ => {}
+    }
+  }
+  text
+}
+
+#[test]
+fn playground_machine_reals_show_six_significant_figures() {
+  // The notebook front end (emulated by the Playground/Studio SVG) shows
+  // machine-precision reals at 6 significant figures, unlike the full-precision
+  // CLI/`eval` output. Trailing zeros are dropped.
+  // (List items are laid out by coordinate, so the extracted text has no
+  // literal space after each comma.)
+  assert_eq!(
+    output_text("{N[Pi], N[E], N[Log[0.5]]}"),
+    "{3.14159,2.71828,-0.693147}"
+  );
+  // A short machine real keeps its exact digits (no zero padding to 6 figs).
+  assert_eq!(output_text("0.1 + 0.2"), "0.3");
+  assert_eq!(output_text("N[1/3]"), "0.333333");
+  assert_eq!(output_text("N[2/3]"), "0.666667");
+}
 
 #[test]
 fn truncates_n_pi_by_precision() {

@@ -3048,14 +3048,17 @@ fn precision_number_display(token: &str) -> Option<String> {
     .unwrap_or(after.len());
   let prec_spec = &after[..spec_end];
   let suffix = &after[spec_end..];
-  // A parseable precision → truncate to that many significant digits; a bare
-  // backtick (machine precision, empty spec) → strip the marker only.
+  // A parseable precision → round to that many significant digits, keeping
+  // trailing zeros (an arbitrary-precision real shows every requested figure).
+  // A bare backtick marks a machine-precision real: the notebook front end
+  // shows those at 6 significant figures with trailing zeros dropped
+  // (`N[Pi]` → `3.14159`, `0.1 + 0.2` → `0.3`), so round to 6 and trim.
   let body = match prec_spec.parse::<f64>() {
     Ok(prec) => {
       let digits = (prec.round() as i64).max(1) as usize;
       round_significant(mantissa, digits)
     }
-    Err(_) => mantissa.to_string(),
+    Err(_) => drop_trailing_frac_zeros(&round_significant(mantissa, 6)),
   };
   Some(format!("{}{}", body, suffix))
 }
@@ -3137,6 +3140,20 @@ fn round_significant(mantissa: &str, prec: usize) -> String {
     }
   }
   format!("{}.{}", int_str, frac_str)
+}
+
+/// Drop trailing zeros from the fractional part of an `int.frac` decimal string
+/// while always keeping the decimal point (`0.300000` → `0.3`, `2.` → `2.`,
+/// `100.` → `100.`). Only fractional zeros are trimmed; integer-part zeros carry
+/// magnitude and stay. Used for machine-precision real display, which shows no
+/// trailing zeros (unlike a fixed arbitrary-precision real).
+fn drop_trailing_frac_zeros(s: &str) -> String {
+  match s.split_once('.') {
+    Some((int_s, frac_s)) => {
+      format!("{}.{}", int_s, frac_s.trim_end_matches('0'))
+    }
+    None => s.to_string(),
+  }
 }
 
 /// Rewrite every arbitrary-precision real in a flat output string to its
