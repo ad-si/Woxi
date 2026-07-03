@@ -3363,7 +3363,9 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
           args: vec![Expr::List(
             vec![
               Expr::String("-".to_string()),
-              Expr::String((-n).to_string()),
+              // `unsigned_abs` avoids overflow when `n == i128::MIN`
+              // (e.g. `-2^127`), where `-n` has no representable value.
+              Expr::String(n.unsigned_abs().to_string()),
             ]
             .into(),
           )]
@@ -3808,7 +3810,9 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           args: vec![Expr::List(
             vec![
               Expr::String("-".to_string()),
-              Expr::String((-*n).to_string()),
+              // `unsigned_abs` avoids overflow when `n == i128::MIN`
+              // (e.g. `-2^127`), where `-n` has no representable value.
+              Expr::String(n.unsigned_abs().to_string()),
             ]
             .into(),
           )]

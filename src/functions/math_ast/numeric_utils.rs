@@ -535,13 +535,15 @@ pub fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
 
 /// Compute GCD of two integers using Euclidean algorithm
 pub fn gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
+  // Use `unsigned_abs` (u128) so `i128::MIN` (whose `abs()` overflows) is
+  // handled correctly, e.g. gcd(-2^127, 1).
+  let (mut a, mut b) = (a.unsigned_abs(), b.unsigned_abs());
   while b != 0 {
     let temp = b;
     b = a % b;
     a = temp;
   }
-  a
+  a as i128
 }
 
 /// Create a rational or integer result from numerator/denominator

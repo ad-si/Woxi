@@ -602,6 +602,34 @@ mod big_integer {
   }
 
   #[test]
+  fn negate_i128_min() {
+    // -2^127 == i128::MIN. It fits in i128 (stored as Integer), but negating
+    // it directly overflows. Regression test for issue #180 (used to panic
+    // with "attempt to negate with overflow").
+    assert_eq!(
+      interpret("-2^127").unwrap(),
+      "-170141183460469231731687303715884105728"
+    );
+    // Abs must promote to BigInteger because 2^127 exceeds i128::MAX.
+    assert_eq!(
+      interpret("Abs[-2^127]").unwrap(),
+      "170141183460469231731687303715884105728"
+    );
+    // Multiplying i128::MIN by a negative factor also went through the
+    // overflowing negation (via gcd on the exact-rational path).
+    assert_eq!(
+      interpret("-2^127 * -1").unwrap(),
+      "170141183460469231731687303715884105728"
+    );
+    assert_eq!(interpret("GCD[-2^127, 4]").unwrap(), "4");
+    // Display forms (box/SVG) negate the magnitude for the leading sign.
+    assert_eq!(
+      interpret("FullForm[-2^127]").unwrap(),
+      "FullForm[-170141183460469231731687303715884105728]"
+    );
+  }
+
+  #[test]
   fn power_200() {
     assert_eq!(
       interpret("2^200").unwrap(),

@@ -52,7 +52,15 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Handle integers and reals directly
   match &args[0] {
-    Expr::Integer(n) => return Ok(Expr::Integer(n.abs())),
+    Expr::Integer(n) => {
+      // `checked_abs` returns None for `i128::MIN` (e.g. `Abs[-2^127]`),
+      // whose magnitude `2^127` is not representable as an i128; promote
+      // to a BigInteger in that case.
+      return Ok(match n.checked_abs() {
+        Some(a) => Expr::Integer(a),
+        None => Expr::BigInteger(-num_bigint::BigInt::from(*n)),
+      });
+    }
     Expr::Real(f) => return Ok(Expr::Real(f.abs())),
     _ => {}
   }
