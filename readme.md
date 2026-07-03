@@ -127,6 +127,7 @@ Woxi | WolframScript
 --- | ---
 `woxi eval "1 + 2"` | `wolframscript -code "1 + 2"`
 `woxi run script.wls` | `wolframscript script.wls`
+`woxi run notebook.nb` | *not supported* (can't run `.nb` files directly)
 `woxi repl` | `wolframscript` (no arguments)
 
 

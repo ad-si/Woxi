@@ -38,6 +38,14 @@ they intentionally deviate from to provide a better user experience.
     woxi eval 'N[2π * 4]'
     ```
 
+- **Woxi runs `.nb` notebooks directly** \
+    WolframScript can only execute `.wls` / `.m` script files, but Woxi can
+    evaluate the Input/Code cells of a Mathematica `.nb` notebook right from
+    the command line:
+    ```sh
+    woxi run notebook.nb
+    ```
+
 
 ## Mathematica vs Woxi Studio
 
