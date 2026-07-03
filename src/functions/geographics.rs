@@ -22,6 +22,7 @@
 use crate::InterpreterError;
 use crate::functions::graphics::{Color, expr_to_f64, parse_color};
 use crate::syntax::Expr;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 /// Embedded Natural Earth 1:110m countries blob. See module docs / generator.
@@ -138,17 +139,39 @@ const BORDER_STROKE: &str = "rgb(176,169,159)";
 
 // ── Position extraction ───────────────────────────────────────────────────
 
-/// Look up a country in the keshvar gazetteer. `find_by_name` matches the
-/// (English/translated) name case-sensitively against a lowercased table, so we
-/// lowercase the query first.
+/// Lowercased country-name → code index, replicating keshvar's `find_by_name`:
+/// it maps each country's official ISO short and long names plus every
+/// translated/unofficial name to that country. We build it ourselves from the
+/// `translations` data instead of enabling keshvar's `search-translations`
+/// feature, whose single auto-generated ~34k-entry `HashMap` literal adds ~20s
+/// to every clean compile. The result is byte-for-byte identical to
+/// `find_by_name` over the whole name set (verified against all ~33k keys).
+fn country_name_index() -> &'static HashMap<String, keshvar::Alpha2> {
+  static INDEX: OnceLock<HashMap<String, keshvar::Alpha2>> = OnceLock::new();
+  INDEX.get_or_init(|| {
+    let mut m = HashMap::new();
+    for c in keshvar::CountryIterator::new() {
+      m.insert(c.iso_short_name().to_lowercase(), c.alpha2());
+      m.insert(c.iso_long_name().to_lowercase(), c.alpha2());
+      for v in c.translations().values() {
+        m.insert(v.to_lowercase(), c.alpha2());
+      }
+    }
+    m
+  })
+}
+
+/// Look up a country by (English/translated) name, matched case-insensitively
+/// via [`country_name_index`].
 ///
-/// The search materializes every country's data (including subdivisions) in a
-/// single frame, which overruns a small thread stack, so we run it behind
+/// Materializing a country's data (including subdivisions) uses a single deep
+/// stack frame that overruns a small thread stack, so we run the lookup — which
+/// builds the index on first call and reifies the matched `Country` — behind
 /// `stacker::maybe_grow` to borrow a large temporary stack when needed.
 fn keshvar_country(name: &str) -> Option<keshvar::Country> {
   let lower = name.to_lowercase();
   stacker::maybe_grow(4 * 1024 * 1024, 16 * 1024 * 1024, || {
-    keshvar::find_by_name(&lower).ok()
+    country_name_index().get(&lower).map(|a| a.to_country())
   })
 }
 

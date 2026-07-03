@@ -90,8 +90,11 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 imbl = "5"
 # Country / subdivision gazetteer (names, translations, geo coordinates) used
 # to resolve geographic Entity[…] specifications to positions.
-
-keshvar = { version = "0.7", features = ["subdivisions", "geo", "translations", "search-translations"] }
+# `search-translations` is deliberately NOT enabled: its single auto-generated
+# ~34k-entry HashMap literal adds ~20s to every clean compile. We rebuild that
+# name→country lookup ourselves at runtime from `translations` (see
+# `country_name_index` in src/functions/geographics.rs), which is identical.
+keshvar = { version = "0.7", features = ["subdivisions", "geo", "translations"] }
 
 # Kept on the same resvg minor as svg2pdf 0.13 and iced 0.14 (woxi-studio),
 # so only ONE copy of the resvg/usvg/tiny-skia stack is compiled and linked
