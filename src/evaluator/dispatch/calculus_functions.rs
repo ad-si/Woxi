@@ -3605,6 +3605,29 @@ fn gf_inner(
     }));
   }
 
+  // Fibonacci[n] and LucasL[n]: the classic linear-recurrence sequences share
+  // the denominator 1 - x - x^2. wolframscript renders them with the
+  // `-1 + x + x^2` denominator, so build that exact form.
+  if let Expr::FunctionCall {
+    name: fname,
+    args: fargs,
+  } = expr
+    && fargs.len() == 1
+    && matches!(&fargs[0], Expr::Identifier(v) if v == n)
+  {
+    let xs = crate::syntax::expr_to_string(x);
+    let src = match fname.as_str() {
+      "Fibonacci" => Some(format!("-({xs}/(-1 + {xs} + {xs}^2))")),
+      "LucasL" => Some(format!("(-2 + {xs})/(-1 + {xs} + {xs}^2)")),
+      _ => None,
+    };
+    if let Some(src) = src
+      && let Ok(parsed) = crate::syntax::string_to_expr(&src)
+    {
+      return Ok(Some(parsed));
+    }
+  }
+
   // Handle Divide explicitly (before as_func_args normalizes it)
   // Also handle canonical Times[..., Power[..., -1]] and Power[..., -1] forms
   {

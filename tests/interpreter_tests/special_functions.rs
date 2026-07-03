@@ -442,6 +442,43 @@ mod generating_function {
       "{Protected, ReadProtected}"
     );
   }
+
+  // The Fibonacci and Lucas sequences share the denominator 1 - x - x^2.
+  #[test]
+  fn fibonacci_sequence() {
+    assert_eq!(
+      interpret("GeneratingFunction[Fibonacci[n], n, x]").unwrap(),
+      "-(x/(-1 + x + x^2))"
+    );
+    // The variable name is respected.
+    assert_eq!(
+      interpret("GeneratingFunction[Fibonacci[n], n, t]").unwrap(),
+      "-(t/(-1 + t + t^2))"
+    );
+  }
+
+  #[test]
+  fn lucas_sequence() {
+    assert_eq!(
+      interpret("GeneratingFunction[LucasL[n], n, x]").unwrap(),
+      "(-2 + x)/(-1 + x + x^2)"
+    );
+  }
+
+  // A scalar multiple threads through and the closed form round-trips to the
+  // sequence via a series expansion.
+  #[test]
+  fn fibonacci_scaled_and_series() {
+    assert_eq!(
+      interpret("GeneratingFunction[3*Fibonacci[n], n, x]").unwrap(),
+      "(-3*x)/(-1 + x + x^2)"
+    );
+    assert_eq!(
+      interpret("Series[GeneratingFunction[Fibonacci[n], n, x], {x, 0, 6}]")
+        .unwrap(),
+      "SeriesData[x, 0, {1, 1, 2, 3, 5, 8}, 1, 7, 1]"
+    );
+  }
 }
 
 mod airy_bi {
