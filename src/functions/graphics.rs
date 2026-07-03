@@ -8996,6 +8996,7 @@ fn is_graphics_producing_head(name: &str) -> bool {
       // Misc
       | "BodePlot"
       | "AbsArgPlot"
+      | "MoleculePlot"
       | "Framed"
   )
 }

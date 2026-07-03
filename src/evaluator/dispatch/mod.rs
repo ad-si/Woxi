@@ -1574,6 +1574,9 @@ pub fn evaluate_function_call_ast_inner(
     "Molecule" => {
       return crate::functions::molecule_ast::molecule_ast(args);
     }
+    "MoleculePlot" => {
+      return crate::functions::molecule_render::molecule_plot_ast(args);
+    }
     "MoleculeQ" => {
       return crate::functions::molecule_ast::molecule_q_ast(args);
     }

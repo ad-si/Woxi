@@ -75,3 +75,44 @@ Properties can also be accessed by applying the molecule to a property name:
 $ wo 'Molecule["benzene"]["AtomCount"]'
 12
 ```
+
+## Information tile
+
+In visual hosts (the playground and Woxi Studio) a molecule displays as a
+compact information tile: a structure thumbnail beside the molecular formula,
+atom count, and bond count. The same tile is available anywhere via
+`ExportString[mol, "SVG"]`:
+
+```scrut
+$ wo 'StringTake[ExportString[Molecule["caffeine"], "SVG"], 4]'
+<svg
+```
+
+The tile reports the formula and counts as text:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Molecule["water"], "SVG"], "Formula: "]'
+True
+```
+
+## `MoleculePlot`
+
+`MoleculePlot[mol]` draws the full 2-D skeletal structure diagram as a
+`Graphics` object. Atoms are laid out with a spring embedder; single, double,
+triple, and aromatic bonds, heteroatom labels, formal charges, and isotope
+mass numbers are all drawn. It accepts a molecule or any specification
+`Molecule` itself accepts:
+
+```scrut
+$ wo 'MoleculePlot["caffeine"]'
+-Graphics-
+```
+
+Carbon atoms with heavy-atom neighbors are drawn as bare vertices (implicit
+hydrogens omitted), so an aromatic ring like benzene needs no atom labels — its
+twelve strokes are the six ring bonds plus the six inner aromatic lines:
+
+```scrut
+$ wo 'StringCount[ExportString[MoleculePlot["benzene"], "SVG"], "<line"]'
+12
+```

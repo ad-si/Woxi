@@ -1691,6 +1691,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         } else {
           result_expr
         };
+        // Render Molecule results as a 2-D structure diagram (visual mode
+        // only — the CLI keeps the symbolic Molecule[…] echo to match
+        // wolframscript).
+        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          render_molecule_if_needed(result_expr)
+        } else {
+          result_expr
+        };
         // Render DateObject results (e.g. from RandomDate, Now) as the
         // framed date panel Wolfram notebooks show (visual mode only —
         // CLI keeps the symbolic form to match wolframscript).
@@ -2042,6 +2050,21 @@ fn render_music_if_needed(expr: syntax::Expr) -> syntax::Expr {
     && let Some(svg) = functions::music_render::music_list_to_svg(&expr)
   {
     return graphics_result(svg);
+  }
+  expr
+}
+
+/// If `expr` is a `Molecule[…]`, render it as the compact information tile
+/// (structure thumbnail + formula + atom/bond counts) Wolfram notebooks show,
+/// and capture it as graphics. The full 2-D structure diagram is instead
+/// produced by `MoleculePlot[…]`. Visual hosts only — the CLI keeps the
+/// symbolic `Molecule[…]` echo to match wolframscript.
+fn render_molecule_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if let syntax::Expr::FunctionCall { ref name, .. } = expr
+    && name == "Molecule"
+    && let Some(svg) = functions::molecule_render::molecule_tile_svg(&expr)
+  {
+    return graphics_result_with_head(svg, "Molecule");
   }
   expr
 }

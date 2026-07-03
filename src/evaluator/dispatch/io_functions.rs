@@ -3391,6 +3391,20 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       crate::functions::assessment_render::question_object_to_svg(expr)
         .unwrap_or_else(|| expr_text_svg(expr))
     }
+    // Molecule[…] — render the compact information tile (thumbnail + formula
+    // + atom/bond counts).
+    Expr::FunctionCall { name: mol_name, .. } if mol_name == "Molecule" => {
+      crate::functions::molecule_render::molecule_tile_svg(expr)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    // MoleculePlot[mol] — render the full 2-D skeletal structure diagram.
+    Expr::FunctionCall {
+      name: mp_name,
+      args: mp_args,
+    } if mp_name == "MoleculePlot" && mp_args.len() == 1 => {
+      crate::functions::molecule_render::molecule_to_svg(&mp_args[0])
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
     other => expr_text_svg(other),
   }
 }

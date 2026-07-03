@@ -37,6 +37,7 @@ pub mod list_plot;
 pub mod math_ast;
 pub mod memory;
 pub mod molecule_ast;
+pub mod molecule_render;
 pub mod music_ast;
 pub mod music_font;
 pub mod music_midi;

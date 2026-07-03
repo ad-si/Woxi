@@ -3012,7 +3012,7 @@ FieldHintStyle,,,,8.0,3083
 GeoLocation,,🚫,,10.0,3083
 GeologicalPeriodData,,🚫,,10.0,3083
 ImageAlign,,🚫,,8.0,3083
-MoleculePlot,,🚫,,12.0,3083
+MoleculePlot,Draws the 2-D skeletal structure diagram of a molecule as a Graphics object,✅,pure,12.0,3083
 SchurDecomposition,,,,2.0,3083
 SpherePoints,,,,11.1,3083
 ToSphericalCoordinates,Converts Cartesian coordinates to spherical,✅,None,10.1,3083

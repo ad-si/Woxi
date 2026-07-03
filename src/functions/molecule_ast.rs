@@ -750,6 +750,80 @@ fn graph_from_lists(atoms: &[Expr], bonds: &[Expr]) -> Option<MolGraph> {
   })
 }
 
+/// A molecule reduced to the atoms and bonds that a 2-D structure diagram
+/// actually draws. Hydrogens bonded to a carbon that has at least one heavy
+/// (non-hydrogen) neighbor are suppressed — the standard skeletal-formula
+/// convention — while hydrogens on heteroatoms (and on an otherwise bare
+/// carbon, e.g. methane) are kept and drawn explicitly.
+pub struct DrawMolecule {
+  /// `(symbol, formal_charge, mass_number)` for each drawn atom.
+  pub atoms: Vec<(String, i64, Option<i64>)>,
+  /// `(atom_i, atom_j, bond_kind)` with 0-based indices into `atoms`.
+  pub bonds: Vec<(usize, usize, &'static str)>,
+}
+
+/// Summary facts shown in a molecule's information tile:
+/// `(molecular_formula, atom_count, bond_count)`. `None` if `expr` is not a
+/// valid molecule.
+pub fn molecule_info(expr: &Expr) -> Option<(String, i128, i128)> {
+  let formula = match molecule_property_from_expr(expr, "MolecularFormula")? {
+    Expr::String(ref s) => s.clone(),
+    _ => return None,
+  };
+  let atoms = match molecule_property_from_expr(expr, "AtomCount")? {
+    Expr::Integer(n) => n,
+    _ => return None,
+  };
+  let bonds = match molecule_property_from_expr(expr, "BondCount")? {
+    Expr::Integer(n) => n,
+    _ => return None,
+  };
+  Some((formula, atoms, bonds))
+}
+
+/// Build the drawable (skeletal) view of a canonical molecule expression.
+/// Returns `None` when `expr` is not a valid `Molecule[{atoms…}, {bonds…}]`.
+pub fn drawable_molecule(expr: &Expr) -> Option<DrawMolecule> {
+  let graph = graph_from_molecule_expr(expr)?;
+  let n = graph.atoms.len();
+  let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for (a, b, _) in &graph.bonds {
+    neighbors[*a].push(*b);
+    neighbors[*b].push(*a);
+  }
+  let is_h = |i: usize| graph.atoms[i].symbol == "H";
+  let heavy_degree =
+    |i: usize| neighbors[i].iter().filter(|&&j| !is_h(j)).count();
+
+  // Decide which atoms survive into the skeletal drawing.
+  let mut keep = vec![true; n];
+  for i in 0..n {
+    if is_h(i)
+      && let Some(&j) = neighbors[i].first()
+      && graph.atoms[j].symbol == "C"
+      && heavy_degree(j) >= 1
+    {
+      keep[i] = false;
+    }
+  }
+
+  let mut new_index = vec![usize::MAX; n];
+  let mut atoms = Vec::new();
+  for (i, atom) in graph.atoms.iter().enumerate() {
+    if keep[i] {
+      new_index[i] = atoms.len();
+      atoms.push((atom.symbol.clone(), atom.formal_charge, atom.mass_number));
+    }
+  }
+  let mut bonds = Vec::new();
+  for (a, b, kind) in &graph.bonds {
+    if keep[*a] && keep[*b] {
+      bonds.push((new_index[*a], new_index[*b], kind.as_str()));
+    }
+  }
+  Some(DrawMolecule { atoms, bonds })
+}
+
 /// Extract the validated graph from an already-evaluated
 /// `Molecule[{atoms…}, {bonds…}]` expression.
 fn graph_from_molecule_expr(expr: &Expr) -> Option<MolGraph> {

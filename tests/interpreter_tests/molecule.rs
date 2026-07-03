@@ -418,4 +418,108 @@ mod molecule_tests {
       "H4N+"
     );
   }
+
+  // --- Molecule information tile -------------------------------------------
+
+  #[test]
+  fn molecule_exports_info_tile() {
+    clear_state();
+    // ExportString[Molecule[…], "SVG"] draws the information tile: a structure
+    // thumbnail beside the formula, atom count, and bond count — not a text
+    // dump of the symbolic `Molecule[…]` expression.
+    let svg = interpret(r#"ExportString[Molecule["water"], "SVG"]"#).unwrap();
+    assert!(svg.starts_with("<svg"), "should be an SVG document");
+    assert!(!svg.contains("Molecule"), "must not dump the symbolic form");
+    assert!(svg.contains("Formula: "), "shows the molecular formula");
+    assert!(svg.contains("Atoms: "), "shows the atom count");
+    assert!(svg.contains("Bonds: "), "shows the bond count");
+    // Water counts: 3 atoms (O + 2 H) and 2 bonds, shown as value tspans.
+    assert!(svg.contains(">3</tspan>"));
+    assert!(svg.contains(">2</tspan>"));
+    // The thumbnail draws the two O–H bonds and labels the oxygen.
+    assert_eq!(svg.matches("<line").count(), 2);
+    assert!(svg.contains(">O</text>"), "thumbnail labels the oxygen");
+  }
+
+  #[test]
+  fn tile_formula_uses_subscripts_and_charge() {
+    clear_state();
+    // Ammonium: formula H4N+ — the element count "4" is a subscript tspan and
+    // the "+" net charge rides as a superscript tspan.
+    let svg = interpret(r#"ExportString[Molecule["[NH4+]"], "SVG"]"#).unwrap();
+    assert!(svg.contains(">H</tspan>"));
+    assert!(svg.contains(">4</tspan>"), "element count as a tspan");
+    assert!(svg.contains(">+</tspan>"), "net charge as a tspan");
+  }
+
+  #[test]
+  fn molecule_tile_in_visual_mode() {
+    use woxi::interpret_with_stdout;
+    clear_state();
+    // In a visual host (playground / woxi-studio) a bare Molecule result is
+    // captured as the info tile rather than echoed symbolically.
+    let r = interpret_with_stdout(r#"Molecule["ethanol"]"#).unwrap();
+    let svg = r.graphics.expect("Molecule should produce a graphics SVG");
+    assert!(svg.contains("Formula: "));
+    assert!(svg.contains("Atoms: "));
+  }
+
+  #[test]
+  fn bare_molecule_stays_symbolic_in_cli() {
+    clear_state();
+    // Plain `interpret` (CLI / wolframscript parity) keeps the symbolic echo.
+    assert_eq!(
+      interpret(r#"Molecule["water"]"#).unwrap(),
+      "Molecule[{Atom[O], Atom[H], Atom[H]}, \
+       {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}]"
+    );
+  }
+
+  // --- MoleculePlot structure diagram --------------------------------------
+
+  #[test]
+  fn molecule_plot_is_graphics_in_cli() {
+    clear_state();
+    // Like other plot functions, MoleculePlot echoes as -Graphics- in the CLI.
+    assert_eq!(
+      interpret(r#"MoleculePlot[Molecule["water"]]"#).unwrap(),
+      "-Graphics-"
+    );
+    // It also accepts a bare name / SMILES specification.
+    assert_eq!(
+      interpret(r#"MoleculePlot["benzene"]"#).unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn molecule_plot_draws_aromatic_ring() {
+    clear_state();
+    let svg =
+      interpret(r#"ExportString[MoleculePlot["benzene"], "SVG"]"#).unwrap();
+    // Six ring bonds, each aromatic bond adding an inner line: 12 strokes.
+    assert_eq!(svg.matches("<line").count(), 12);
+    // A pure-carbon aromatic ring has no atom labels.
+    assert!(!svg.contains("</text>"));
+  }
+
+  #[test]
+  fn molecule_plot_draws_double_bonds() {
+    clear_state();
+    // O=C=O: two double bonds, each drawn as two parallel strokes.
+    let svg =
+      interpret(r#"ExportString[MoleculePlot["carbon dioxide"], "SVG"]"#)
+        .unwrap();
+    assert_eq!(svg.matches("<line").count(), 4);
+    assert_eq!(svg.matches(">O</text>").count(), 2);
+  }
+
+  #[test]
+  fn molecule_plot_labels_heteroatoms() {
+    clear_state();
+    // The hydroxyl oxygen of ethanol is labeled in the structure diagram.
+    let svg =
+      interpret(r#"ExportString[MoleculePlot["ethanol"], "SVG"]"#).unwrap();
+    assert!(svg.contains(">O</text>"));
+  }
 }
