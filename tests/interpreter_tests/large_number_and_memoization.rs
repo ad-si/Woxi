@@ -195,4 +195,42 @@ mod large_number_and_memoization {
       );
     }
   }
+
+  // Regression for https://github.com/ad-si/Woxi/issues/179:
+  // `a + -n x` must fold to `a - n x` even when the coefficient `n`
+  // overflows i128 and is stored as a BigInteger. The sign-extraction
+  // logic previously only handled `Expr::Integer` coefficients, so a big
+  // integer coefficient wrongly printed as `a + -n x`.
+  mod plus_negative_bigint_coefficient {
+    use super::*;
+
+    #[test]
+    fn folds_to_minus() {
+      // 2^129 = 680564733841876926926749214863536422912 overflows i128.
+      assert_eq!(
+        interpret("1 + -2^129 x").unwrap(),
+        "1 - 680564733841876926926749214863536422912*x"
+      );
+      // Still within i128 (2^125), same result shape.
+      assert_eq!(
+        interpret("1 + -2^125 x").unwrap(),
+        "1 - 42535295865117307932921825928971026432*x"
+      );
+      // Leading symbol, trailing big negative term.
+      assert_eq!(
+        interpret("x - 2^129 y").unwrap(),
+        "x - 680564733841876926926749214863536422912*y"
+      );
+      // Multiple non-numeric factors after the big coefficient.
+      assert_eq!(
+        interpret("a + -2^129 b c").unwrap(),
+        "a - 680564733841876926926749214863536422912*b*c"
+      );
+      // InputForm path (expr_to_input_form) folds the sign too.
+      assert_eq!(
+        interpret("ToString[1 + -2^129 x, InputForm]").unwrap(),
+        "1 - 680564733841876926926749214863536422912*x"
+      );
+    }
+  }
 }
