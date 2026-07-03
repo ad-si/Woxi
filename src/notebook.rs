@@ -248,7 +248,20 @@ fn parse_single_cell(s: &str) -> Result<Cell, String> {
       break;
     }
   }
-  let style_idx = style_idx.unwrap_or(parts.len() - 1);
+  // Fallback for styles we don't model (e.g. `CodeText`, `MSG`): the style is
+  // the first bare string literal after the content. Options always take the
+  // form `name -> value` / `name :> value`, so a part with no rule arrow that
+  // starts with `"` is the style name. Picking it (rather than the last part)
+  // keeps the trailing options out of the extracted content.
+  let style_idx = style_idx
+    .or_else(|| {
+      parts.iter().enumerate().skip(1).find_map(|(i, part)| {
+        let t = part.trim();
+        let is_option = t.contains("->") || t.contains(":>");
+        (!is_option && t.starts_with('"')).then_some(i)
+      })
+    })
+    .unwrap_or(parts.len() - 1);
 
   let style_str = parts[style_idx].trim();
   let style_str = style_str.trim_matches('"').trim();
@@ -296,6 +309,18 @@ fn extract_cell_content(s: &str) -> String {
     let inner = &s[7..];
     let inner = inner.strip_suffix(']').unwrap_or(inner);
     return extract_rowbox_content(inner);
+  }
+
+  // Handle TextData[...] used by Text/Section/Subsection heading cells.
+  // Forms: `TextData["str"]`, `TextData[{elem, elem, ...}]`, or
+  // `TextData[ButtonBox[...]]` (a hyperlink). The Wolfram Demonstrations
+  // templates embed the section label as the leading string, followed by an
+  // inline `Cell[...]` "more info" opener button that carries no textual
+  // content — see `extract_textdata`.
+  if s.starts_with("TextData[") {
+    let inner = &s[9..];
+    let inner = inner.strip_suffix(']').unwrap_or(inner);
+    return extract_textdata(inner);
   }
 
   // Handle 2-D typeset display boxes. These are emitted by the Wolfram
@@ -506,6 +531,62 @@ fn extract_rowbox_content(s: &str) -> String {
     }
   }
   result
+}
+
+/// Render the argument of a `TextData[...]` wrapper to plain text.
+///
+/// `TextData` holds a run of inline content — a bare string, a single box
+/// (e.g. `ButtonBox`), or a `{...}` list mixing strings and boxes. We
+/// concatenate the textual rendering of each element.
+fn extract_textdata(s: &str) -> String {
+  let s = s.trim();
+  if s.starts_with('{') && s.ends_with('}') {
+    let inner = &s[1..s.len() - 1];
+    return split_top_level_commas(inner)
+      .iter()
+      .map(|p| render_text_element(p.trim()))
+      .collect::<String>();
+  }
+  render_text_element(s)
+}
+
+/// Render one inline element of a `TextData` run to plain text.
+fn render_text_element(s: &str) -> String {
+  let s = s.trim();
+
+  // Plain string literal (prose).
+  if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+    return extract_string_content(s);
+  }
+
+  // `StyleBox["text", opts...]` and `ButtonBox["label", opts...]` (hyperlinks)
+  // display their first argument; recurse into it so nested styling resolves.
+  for head in ["StyleBox", "ButtonBox"] {
+    if let Some(rest) = s.strip_prefix(&format!("{head}["))
+      && let Ok((inner, _)) = find_matching_bracket(rest)
+    {
+      let args = split_top_level_commas(inner);
+      if let Some(first) = args.first() {
+        return render_text_element(first.trim());
+      }
+    }
+  }
+
+  // Inline `Cell[...]` elements are the attached "more info" opener buttons in
+  // Demonstrations templates — they carry no textual content, so drop them.
+  if s.starts_with("Cell[") {
+    return String::new();
+  }
+
+  // Nested RowBox / typeset boxes.
+  if s.starts_with("RowBox[") {
+    return extract_rowbox_content(&s[7..s.len().saturating_sub(1)]);
+  }
+  if let Some(conv) = extract_typeset_box(s) {
+    return conv;
+  }
+
+  s.to_string()
 }
 
 /// Map Wolfram named operator characters to their InputForm ASCII
@@ -1890,6 +1971,63 @@ Cell["Chapter 2", "Chapter"]
          RowBox[{"r", ",", "1", ",", "1"}], "]"}],
         "35"}]}]]"#;
     assert_eq!(extract_cell_content(s), "ImageSize->Part[r,1,1]35");
+  }
+
+  #[test]
+  fn test_extract_textdata_section_label() {
+    // Section/heading cells in Wolfram Demonstrations wrap the label in
+    // `TextData[{"Label", Cell[BoxData[...]]}]`, where the trailing inline
+    // `Cell` is an attached "more info" opener button that carries no text.
+    // We render just the label.
+    let s = r#"TextData[{
+ "Manipulate",
+ Cell[BoxData[
+  PaneSelectorBox[{True->
+   TemplateBox[{"ManipulateGroup"},
+    "MoreInfoOpenerButtonTemplate"]}, Dynamic[x]]]]
+}]"#;
+    assert_eq!(extract_cell_content(s), "Manipulate");
+  }
+
+  #[test]
+  fn test_extract_textdata_mixed_styled_prose() {
+    // A `TextData` run mixing plain strings and `StyleBox` spans concatenates
+    // to the plain prose.
+    let s = r#"TextData[{
+ "If you provide initialization code, include a ",
+ StyleBox["SaveDefinitions->True", "MRbig"],
+ " option in the ",
+ StyleBox["Manipulate", "MRbig"],
+ "."
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "If you provide initialization code, include a SaveDefinitions->True \
+       option in the Manipulate."
+    );
+  }
+
+  #[test]
+  fn test_extract_textdata_button_hyperlink() {
+    // `TextData[ButtonBox["label", ...]]` is a hyperlink; render its label.
+    let s = r#"TextData[ButtonBox["Ellipse",
+ BaseStyle->"Hyperlink",
+ ButtonData->{URL["http://mathworld.wolfram.com/Ellipse.html"], None}]]"#;
+    assert_eq!(extract_cell_content(s), "Ellipse");
+  }
+
+  #[test]
+  fn test_parse_cell_unrecognized_style_keeps_content_clean() {
+    // `CodeText` is a style we don't model. The style-detection fallback must
+    // still identify it as the style (not fold the trailing options into the
+    // content) so the extracted content is just the cell body.
+    let s = r#"TextData[{"hello ", StyleBox["world", "MRbig"]}], "CodeText",
+ Editable->False,
+ CellID->687519280,ExpressionUUID->"39c481cb-843d-42b3-8aef-160cab90e699""#;
+    let cell = parse_single_cell(s).unwrap();
+    // Unmodelled styles fall back to Text for rendering.
+    assert_eq!(cell.style, CellStyle::Text);
+    assert_eq!(cell.content, "hello world");
   }
 
   #[test]
