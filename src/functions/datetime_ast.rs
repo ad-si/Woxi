@@ -1074,6 +1074,61 @@ fn make_date_result(
   }
 }
 
+/// Advance `(y, m, d)` by `k` months, clamping the day to the last valid day
+/// of the resulting month (matching DatePlus / Wolfram calendar arithmetic).
+/// `k` may be negative.
+fn add_months_clamped(y: i64, m: i64, d: i64, k: i64) -> (i64, i64, i64) {
+  let total = (m - 1) + k;
+  let new_y = y + total.div_euclid(12);
+  let new_m = total.rem_euclid(12) + 1;
+  let new_d = d.min(days_in_month(new_y, new_m));
+  (new_y, new_m, new_d)
+}
+
+/// Calendar-based difference in whole steps plus a fractional part, matching
+/// Wolfram's `DateDifference[d1, d2, "Month" | "Year"]`. Each step is
+/// `step_months` months (1 for "Month", 12 for "Year"). The result is
+///   k + (days(d2) - days(start)) / (days(next) - days(start))
+/// where `k` is the largest number of whole steps with `d1 + k*step <= d2`,
+/// `start = d1 + k*step`, and `next = d1 + (k+1)*step`; i.e. the fractional
+/// part divides the leftover days by the actual length of the partial
+/// month/year. Negative when `d2` precedes `d1`.
+fn calendar_step_difference(
+  y1: i64,
+  m1: i64,
+  d1: i64,
+  y2: i64,
+  m2: i64,
+  d2: i64,
+  step_months: i64,
+) -> f64 {
+  let days1 = date_to_absolute_days(y1, m1, d1);
+  let days2 = date_to_absolute_days(y2, m2, d2);
+  // Work forward from the earlier date and negate if the order is reversed.
+  if days2 < days1 {
+    return -calendar_step_difference(y2, m2, d2, y1, m1, d1, step_months);
+  }
+  let add_k = |k: i64| -> i64 {
+    let (yy, mm, dd) = add_months_clamped(y1, m1, d1, k * step_months);
+    date_to_absolute_days(yy, mm, dd)
+  };
+  // Initial estimate of the whole-step count, then adjust by ±1.
+  let mut k = ((y2 - y1) * 12 + (m2 - m1)) / step_months;
+  if k < 0 {
+    k = 0;
+  }
+  while add_k(k + 1) <= days2 {
+    k += 1;
+  }
+  while k > 0 && add_k(k) > days2 {
+    k -= 1;
+  }
+  let start = add_k(k);
+  let next = add_k(k + 1);
+  let period = next - start;
+  k as f64 + (days2 - start) as f64 / period as f64
+}
+
 /// DateDifference[date1, date2] — difference in days
 /// DateDifference[date1, date2, "unit"] — difference in given unit
 pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1156,30 +1211,33 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Calendar-based helpers use whole (y, m, d) components; the leading three
+  // components default to 1 when absent (e.g. a bare {year}).
+  let ymd = |c: &[f64]| -> (i64, i64, i64) {
+    (
+      c[0] as i64,
+      if c.len() > 1 { c[1] as i64 } else { 1 },
+      if c.len() > 2 { c[2] as i64 } else { 1 },
+    )
+  };
+
   let (value, unit_name) = match unit.as_str() {
     "Year" => {
-      // Wolfram computes: complete_years + remaining_days / 365
-      let y1 = c1[0] as i64;
-      let m1 = if c1.len() > 1 { c1[1] as i64 } else { 1 };
-      let d1 = if c1.len() > 2 { c1[2] as i64 } else { 1 };
-      let y2 = c2[0] as i64;
-      let m2 = if c2.len() > 1 { c2[1] as i64 } else { 1 };
-      let d2 = if c2.len() > 2 { c2[2] as i64 } else { 1 };
-      let mut complete_years = y2 - y1;
-      // Check if the anniversary hasn't happened yet
-      if (m2, d2) < (m1, d1) {
-        complete_years -= 1;
-      }
-      // Calculate remaining days after complete years
-      let anniversary_abs = date_to_absolute_days(y1 + complete_years, m1, d1);
-      let end_abs = date_to_absolute_days(y2, m2, d2);
-      let remaining_days = end_abs - anniversary_abs;
+      let (y1, m1, d1) = ymd(&c1);
+      let (y2, m2, d2) = ymd(&c2);
       (
-        complete_years as f64 + remaining_days as f64 / 365.0,
+        calendar_step_difference(y1, m1, d1, y2, m2, d2, 12),
         "Years",
       )
     }
-    "Month" => (diff_days / 30.436875, "Months"),
+    "Month" => {
+      let (y1, m1, d1) = ymd(&c1);
+      let (y2, m2, d2) = ymd(&c2);
+      (
+        calendar_step_difference(y1, m1, d1, y2, m2, d2, 1),
+        "Months",
+      )
+    }
     "Week" => (diff_days / 7.0, "Weeks"),
     "Day" => (diff_days, "Days"),
     "Hour" => (diff_seconds / 3600.0, "Hours"),

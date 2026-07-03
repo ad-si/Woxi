@@ -2513,3 +2513,90 @@ mod date_object_panel {
     assert!(result.graphics.is_none());
   }
 }
+
+// DateDifference with the "Month" and "Year" units uses calendar arithmetic:
+// whole months/years counted with end-of-month day clamping, then a
+// fractional part that divides the leftover days by the actual length of the
+// partial month/year. Previously Woxi used fixed 30.436875-day and 365-day
+// approximations, giving fractional results where Wolfram returns exact
+// integers and diverging on leap-year spans. All expected values were
+// verified against wolframscript.
+mod date_difference_calendar_units {
+  use super::*;
+
+  #[test]
+  fn whole_months_are_exact() {
+    assert_eq!(
+      interpret("DateDifference[{2023, 1, 1}, {2023, 3, 1}, \"Month\"]")
+        .unwrap(),
+      "Quantity[2, Months]"
+    );
+  }
+
+  #[test]
+  fn month_end_clamping_counts_as_whole_month() {
+    // Jan 31 + 1 month clamps to Feb 28, so the span is exactly one month.
+    assert_eq!(
+      interpret("DateDifference[{2023, 1, 31}, {2023, 2, 28}, \"Month\"]")
+        .unwrap(),
+      "Quantity[1, Months]"
+    );
+  }
+
+  #[test]
+  fn fractional_month_divides_by_partial_month_length() {
+    // 2 whole months (to Mar 1) plus 14 days into March (31-day month).
+    assert_eq!(
+      interpret("DateDifference[{2023, 1, 1}, {2023, 3, 15}, \"Month\"]")
+        .unwrap(),
+      "Quantity[2.4516129032258065, Months]"
+    );
+  }
+
+  #[test]
+  fn fractional_month_partial_starts_in_february() {
+    // 1 whole month (to Feb 15) plus 14 days, divided by February's 28 days.
+    assert_eq!(
+      interpret("DateDifference[{2023, 1, 15}, {2023, 3, 1}, \"Month\"]")
+        .unwrap(),
+      "Quantity[1.5, Months]"
+    );
+  }
+
+  #[test]
+  fn month_difference_is_negative_when_reversed() {
+    assert_eq!(
+      interpret("DateDifference[{2023, 3, 1}, {2023, 1, 1}, \"Month\"]")
+        .unwrap(),
+      "Quantity[-2, Months]"
+    );
+  }
+
+  #[test]
+  fn whole_years_are_exact_across_a_leap_year() {
+    assert_eq!(
+      interpret("DateDifference[{2020, 1, 1}, {2023, 1, 1}, \"Year\"]")
+        .unwrap(),
+      "Quantity[3, Years]"
+    );
+  }
+
+  #[test]
+  fn fractional_year_uses_366_day_period_in_a_leap_year() {
+    // Jan 1 -> Jul 1 in 2020 is 182 days over a 366-day year period.
+    assert_eq!(
+      interpret("DateDifference[{2020, 1, 1}, {2020, 7, 1}, \"Year\"]")
+        .unwrap(),
+      "Quantity[0.4972677595628415, Years]"
+    );
+  }
+
+  #[test]
+  fn fractional_year_general_case() {
+    assert_eq!(
+      interpret("DateDifference[{2023, 6, 15}, {2025, 9, 20}, \"Year\"]")
+        .unwrap(),
+      "Quantity[2.265753424657534, Years]"
+    );
+  }
+}
