@@ -1,5 +1,9 @@
 [workspace]
 members = [".", "woxi-studio"]
+# Unscoped commands at the root (`cargo build`, `make test`, CI) build only
+# the interpreter; woxi-studio (iced → wgpu/winit, 100+ extra crates) is
+# built explicitly via `-p woxi-studio` / `make install-macos-app`.
+default-members = ["."]
 resolver = "3"
 
 [package]
@@ -89,8 +93,11 @@ imbl = "5"
 
 keshvar = { version = "0.7", features = ["subdivisions", "geo", "translations", "search-translations"] }
 
+# Kept on the same resvg minor as svg2pdf 0.13 and iced 0.14 (woxi-studio),
+# so only ONE copy of the resvg/usvg/tiny-skia stack is compiled and linked
+# across the workspace. Bump only in lockstep with those two.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.resvg]
-version = "0.47"
+version = "0.45"
 default-features = false
 features = ["text", "raster-images"]
 
@@ -115,9 +122,27 @@ criterion = { version = "0.5", default-features = false, features = ["html_repor
 name = "interpreter"
 harness = false
 
+# Dev/test builds keep file:line info for panics and backtraces but skip
+# local-variable debug info — faster codegen and much faster linking for a
+# ~400k-line crate. `split-debuginfo = "unpacked"` additionally skips the
+# slow dsymutil packaging step on macOS.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
 [profile.release]
 codegen-units = 1
 lto = true
+
+# Profile for shipping Woxi Studio (see `make install-macos-app`). The GUI
+# doesn't need the interpreter's fat-LTO/single-CGU treatment, and applying
+# it to the iced/wgpu dependency tree makes release builds take far longer
+# than necessary. Thin LTO + parallel codegen builds several times faster
+# at near-identical runtime performance.
+[profile.studio]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
 
 [patch.crates-io]
 astro-float-num = { git = "https://github.com/stencillogic/astro-float", rev = "f92380e025deb8e1743ed93c6d5bf0783ac28717" }

@@ -1,0 +1,8 @@
+# Use LLVM's lld for host builds on macOS — substantially faster than the
+# default ld64, and linking dominates incremental build time for a crate
+# this size. `lld` is provided by the nix dev shell (flake.nix) and the
+# clang driver honors -fuse-ld=lld. Scoped to the host triple so wasm
+# builds are unaffected. If a link ever fails with an lld-specific error,
+# delete this file to fall back to the system linker.
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
