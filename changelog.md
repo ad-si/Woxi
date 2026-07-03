@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- Extend interactive `Manipulate` rendering (Playground + Studio) to
+    support `Locator` controls and `ControlType -> None` (both bound to a
+    frozen initial value), discrete pick lists whose value list is an
+    expression that evaluates to a list (e.g. `{g, PolyhedronData[All]}`),
+    and extra display arguments such as a trailing `Dynamic[Panel[…]]`
+    (ignored). Also add `PolyhedronData[All]`, `PolyhedronData["Properties"]`,
+    and `PolyhedronData["Classes"]`.
 - Implement the audio processing functions: editing (`AudioAmplify`,
     `AudioTrim`, `AudioJoin`, `AudioPitchShift`), analysis
     (`AudioMeasurements`, `AudioLocalMeasurements`, `AudioIntervals`),

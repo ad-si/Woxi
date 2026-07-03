@@ -90,7 +90,11 @@ dismiss it without losing the scroll position.
 `Manipulate[expr, {u, umin, umax}, …]` is rendered as an interactive
 widget with sliders and pick lists.  Option values such as
 `Initialization :> …` are preserved and prepended to every
-re-evaluation.
+re-evaluation.  Discrete pick lists may be given as an expression that
+evaluates to a list (e.g. `{g, PolyhedronData[All]}`).  Controls with no
+visible UI — a `Locator` or `ControlType -> None` — bind their variable
+to a (frozen) initial value, and extra display arguments such as a
+trailing `Dynamic[Panel[…]]` are ignored.
 
 Output text is rendered in a read-only text editor, so it can be
 selected and copied with the mouse.

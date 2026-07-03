@@ -2394,7 +2394,11 @@ fn render_inline_display_wrapper(expr: syntax::Expr) -> syntax::Expr {
   let expr = render_row_if_needed(expr);
   let expr = render_treeform_if_needed(expr);
   let expr = render_framed_if_needed(expr);
-  render_highlighted_if_needed(expr)
+  let expr = render_highlighted_if_needed(expr);
+  // Raw `Graphics[…]` / `Graphics3D[…]` items (e.g. from Plot or
+  // PolyhedronData) are rendered to embedded SVG so a `Column[{plot, …}]`
+  // shows the actual graphic instead of a `-Graphics-` text placeholder.
+  render_graphics_fc_if_needed(expr)
 }
 
 /// If `expr` is `Column[{…}]`, render it as an SVG column and return `-Graphics-`.
