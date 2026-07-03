@@ -3621,6 +3621,85 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
         &format!("{nvar} >= 0"),
       )
     }
+    // (a + b x)^p with a positive-integer or fractional exponent p: the
+    // binomial series a^(p-n) b^n Binomial[p, n]. A positive integer p
+    // truncates at n = p (so the index is bounded), while a fraction runs for
+    // all n >= 0. The constant term a must be non-zero.
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } if matches!(exp.as_ref(), Expr::Integer(p) if *p >= 1)
+      || matches!(exp.as_ref(),
+        Expr::FunctionCall { name, .. } if name == "Rational") =>
+    {
+      // base must be `a + b x`: a non-zero constant term plus a linear term.
+      let a = coeff(base, 0)?;
+      if is_int(&a, 0) {
+        return None;
+      }
+      let b = coeff(base, 1)?;
+      let residual = ev(Expr::FunctionCall {
+        name: "Expand".to_string(),
+        args: vec![Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(base.as_ref().clone()),
+          right: Box::new(
+            crate::syntax::string_to_expr(&format!(
+              "{} + {}*{x}",
+              paren(&a),
+              paren(&b)
+            ))
+            .ok()?,
+          ),
+        }]
+        .into(),
+      })?;
+      if !is_int(&residual, 0) {
+        return None;
+      }
+      let p_str = crate::syntax::expr_to_string(exp);
+      let cond = match exp.as_ref() {
+        Expr::Integer(p) => {
+          format!("Inequality[0, LessEqual, {nvar}, LessEqual, {p}]")
+        }
+        _ => format!("{nvar} >= 0"),
+      };
+      build(
+        format!(
+          "{}^({p_str} - {nvar})*{}^{nvar}*Binomial[{p_str}, {nvar}]",
+          paren(&a),
+          paren(&b)
+        ),
+        &cond,
+      )
+    }
+    // Log[1 + a x]: -((-a)^n / n) for n >= 1.
+    Expr::FunctionCall { name, args: fa } if name == "Log" && fa.len() == 1 => {
+      if !is_int(&coeff(&fa[0], 0)?, 1) {
+        return None;
+      }
+      let a = coeff(&fa[0], 1)?;
+      let residual = ev(Expr::FunctionCall {
+        name: "Expand".to_string(),
+        args: vec![Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(fa[0].clone()),
+          right: Box::new(
+            crate::syntax::string_to_expr(&format!("1 + {}*{x}", paren(&a)))
+              .ok()?,
+          ),
+        }]
+        .into(),
+      })?;
+      if !is_int(&residual, 0) {
+        return None;
+      }
+      build(
+        format!("-((-{})^{nvar}/{nvar})", paren(&a)),
+        &format!("{nvar} >= 1"),
+      )
+    }
     // Cosh[a x] / Sinh[a x]: a^n/n! on the even / odd indices.
     Expr::FunctionCall { name, args: fa }
       if (name == "Cosh" || name == "Sinh") && fa.len() == 1 =>

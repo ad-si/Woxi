@@ -25,3 +25,15 @@ Piecewise[{{n!^(-1), n >= 0}}, 0]
 $ wo 'SeriesCoefficient[1/(1 - 2 x), {x, 0, n}]'
 Piecewise[{{2^n, n >= 0}}, 0]
 ```
+
+A binomial power gives the binomial-series term.
+
+```scrut
+$ wo 'SeriesCoefficient[(1 + x)^5, {x, 0, n}]'
+Piecewise[{{Binomial[5, n], Inequality[0, LessEqual, n, LessEqual, 5]}}, 0]
+```
+
+```scrut
+$ wo 'SeriesCoefficient[Log[1 + x], {x, 0, n}]'
+Piecewise[{{-((-1)^n/n), n >= 1}}, 0]
+```

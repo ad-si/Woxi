@@ -7525,6 +7525,41 @@ mod series_coefficient {
       "SeriesCoefficient[E^x^2, {x, 0, n}]"
     );
   }
+
+  // (a + b x)^p: the binomial series. A positive integer exponent bounds the
+  // index; a non-unit constant term keeps the a^(p-n) factor.
+  #[test]
+  fn symbolic_index_binomial() {
+    assert_eq!(
+      interpret("SeriesCoefficient[(1 + x)^5, {x, 0, n}]").unwrap(),
+      "Piecewise[{{Binomial[5, n], Inequality[0, LessEqual, n, LessEqual, 5]}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[(1 + 2 x)^3, {x, 0, n}]").unwrap(),
+      "Piecewise[{{2^n*Binomial[3, n], Inequality[0, LessEqual, n, LessEqual, 3]}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[(x + 2)^3, {x, 0, n}]").unwrap(),
+      "Piecewise[{{2^(3 - n)*Binomial[3, n], Inequality[0, LessEqual, n, LessEqual, 3]}}, 0]"
+    );
+    // A fractional exponent runs for all n >= 0.
+    assert_eq!(
+      interpret("SeriesCoefficient[Sqrt[1 + x], {x, 0, n}]").unwrap(),
+      "Piecewise[{{Binomial[1/2, n], n >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn symbolic_index_log() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Log[1 + x], {x, 0, n}]").unwrap(),
+      "Piecewise[{{-((-1)^n/n), n >= 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[Log[1 + 2 x], {x, 0, n}]").unwrap(),
+      "Piecewise[{{-((-2)^n/n), n >= 1}}, 0]"
+    );
+  }
 }
 
 mod exp_to_trig {
