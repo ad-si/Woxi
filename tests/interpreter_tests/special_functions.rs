@@ -479,6 +479,57 @@ mod generating_function {
       "SeriesData[x, 0, {1, 1, 2, 3, 5, 8}, 1, 7, 1]"
     );
   }
+
+  #[test]
+  fn catalan_and_harmonic() {
+    assert_eq!(
+      interpret("GeneratingFunction[CatalanNumber[n], n, x]").unwrap(),
+      "2/(1 + Sqrt[1 - 4*x])"
+    );
+    assert_eq!(
+      interpret("GeneratingFunction[HarmonicNumber[n], n, x]").unwrap(),
+      "Log[1 - x]/(-1 + x)"
+    );
+    // The Catalan closed form round-trips to 1, 1, 2, 5, 14, 42.
+    assert_eq!(
+      interpret(
+        "Series[GeneratingFunction[CatalanNumber[n], n, x], {x, 0, 5}]"
+      )
+      .unwrap(),
+      "SeriesData[x, 0, {1, 1, 2, 5, 14, 42}, 0, 6, 1]"
+    );
+  }
+
+  // Sum[x^m/(m+k)] for a positive integer k, generalizing 1/(n+1).
+  #[test]
+  fn reciprocal_shifted_integer() {
+    assert_eq!(
+      interpret("GeneratingFunction[1/(n + 1), n, x]").unwrap(),
+      "-(Log[1 - x]/x)"
+    );
+    assert_eq!(
+      interpret("GeneratingFunction[1/(n + 2), n, x]").unwrap(),
+      "(-1 - Log[1 - x]/x)/x"
+    );
+    assert_eq!(
+      interpret("GeneratingFunction[1/(n + 3), n, x]").unwrap(),
+      "(-1 - x/2 - Log[1 - x]/x)/x^2"
+    );
+  }
+
+  // Regression: `1/(a n + b)` forms with `a >= 2` used to rewrite endlessly and
+  // overflow the stack. They now stay unevaluated instead of crashing.
+  #[test]
+  fn linear_denominator_does_not_overflow() {
+    assert_eq!(
+      interpret("GeneratingFunction[1/(2 n + 1), n, x]").unwrap(),
+      "GeneratingFunction[(1 + 2*n)^(-1), n, x]"
+    );
+    assert_eq!(
+      interpret("GeneratingFunction[1/(2 n), n, x]").unwrap(),
+      "GeneratingFunction[1/(2*n), n, x]"
+    );
+  }
 }
 
 mod airy_bi {

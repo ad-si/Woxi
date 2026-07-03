@@ -18,3 +18,15 @@ $ wo 'GeneratingFunction[Fibonacci[n], n, x]'
 $ wo 'GeneratingFunction[LucasL[n], n, x]'
 (-2 + x)/(-1 + x + x^2)
 ```
+
+The Catalan numbers and the reciprocal-shift sequence.
+
+```scrut
+$ wo 'GeneratingFunction[CatalanNumber[n], n, x]'
+2/(1 + Sqrt[1 - 4*x])
+```
+
+```scrut
+$ wo 'GeneratingFunction[1/(n + 2), n, x]'
+(-1 - Log[1 - x]/x)/x
+```

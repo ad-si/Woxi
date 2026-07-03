@@ -3619,6 +3619,8 @@ fn gf_inner(
     let src = match fname.as_str() {
       "Fibonacci" => Some(format!("-({xs}/(-1 + {xs} + {xs}^2))")),
       "LucasL" => Some(format!("(-2 + {xs})/(-1 + {xs} + {xs}^2)")),
+      "CatalanNumber" => Some(format!("2/(1 + Sqrt[1 - 4*{xs}])")),
+      "HarmonicNumber" => Some(format!("Log[1 - {xs}]/(-1 + {xs})")),
       _ => None,
     };
     if let Some(src) = src
@@ -4247,33 +4249,36 @@ fn gf_divide(
 ) -> Result<Option<Expr>, InterpreterError> {
   use crate::syntax::BinaryOperator;
 
-  // 1/(n+1) => -Log[1-x]/x
+  // 1/(n+k) for a positive integer k:
+  //   Sum[x^m/(m+k), {m,0,Inf}]
+  //     = (-Log[1-x]/x - Sum[x^(m-1)/m, {m,1,k-1}]) / x^(k-1)
+  // (k=1 gives the familiar -Log[1-x]/x).
   if matches!(num, Expr::Integer(1)) {
     if let Some((fname, fargs)) = as_func_args(den)
       && fname == "Plus"
       && fargs.len() == 2
     {
-      let is_n_plus_1 = (matches!(fargs[0], Expr::Identifier(name) if name == n)
-        && matches!(fargs[1], Expr::Integer(1)))
-        || (matches!(fargs[1], Expr::Identifier(name) if name == n)
-          && matches!(fargs[0], Expr::Integer(1)));
-      if is_n_plus_1 {
-        return Ok(Some(Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
-            operand: Box::new(Expr::FunctionCall {
-              name: "Log".to_string(),
-              args: vec![Expr::BinaryOp {
-                op: BinaryOperator::Minus,
-                left: Box::new(Expr::Integer(1)),
-                right: Box::new(x.clone()),
-              }]
-              .into(),
-            }),
-          }),
-          right: Box::new(x.clone()),
-        }));
+      let n_and_k = |a: &Expr, b: &Expr| -> Option<i64> {
+        match (a, b) {
+          (Expr::Identifier(name), Expr::Integer(k))
+            if name == n && *k >= 1 =>
+          {
+            i64::try_from(*k).ok()
+          }
+          _ => None,
+        }
+      };
+      if let Some(k) =
+        n_and_k(fargs[0], fargs[1]).or_else(|| n_and_k(fargs[1], fargs[0]))
+      {
+        let xs = crate::syntax::expr_to_string(x);
+        let km1 = k - 1;
+        let src = format!(
+          "(-Log[1 - {xs}]/{xs} - Sum[{xs}^(m - 1)/m, {{m, 1, {km1}}}])/{xs}^{km1}"
+        );
+        if let Ok(parsed) = crate::syntax::string_to_expr(&src) {
+          return Ok(Some(parsed));
+        }
       }
     }
 
@@ -4315,13 +4320,16 @@ fn gf_divide(
       left: Box::new(num.clone()),
       right: Box::new(inv_den),
     };
-    // Guard: avoid infinite recursion if rewriting produces an equivalent expression
-    if crate::syntax::expr_to_string(&product)
-      == crate::syntax::expr_to_string(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(num.clone()),
-        right: Box::new(den.clone()),
-      })
+    // Guard against infinite recursion: `gf_inner` re-extracts a numerator and
+    // denominator from `product`, so if that decomposition is the same one we
+    // started with (e.g. `1/(2 n + 1)`), recursing would loop forever. Give up
+    // and leave the generating function unevaluated instead.
+    let (pnum, pden) =
+      crate::functions::polynomial_ast::together::extract_num_den(&product);
+    if crate::syntax::expr_to_string(&pnum)
+      == crate::syntax::expr_to_string(num)
+      && crate::syntax::expr_to_string(&pden)
+        == crate::syntax::expr_to_string(den)
     {
       return Ok(None);
     }
