@@ -3922,17 +3922,10 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let simplified = simplify_expr_with_together(&args[0]);
   let assumed = apply_active_assumptions(&simplified);
-  // wolframscript's default Simplify collapses a standalone `c*Log[n]` (positive
-  // integers) to `Log[n^c]` when that reduces leaf count, e.g.
-  // Simplify[2 Log[2]] -> Log[4]. Only the top-level standalone form is folded
-  // here so logs embedded in a sum (e.g. LogLikelihood results like
-  // `-6 + 5 Log[2] - Log[6]`) are left untouched, matching wolframscript.
-  let assumed = match log_collapse_candidate(&assumed) {
-    Some(cand) if complexity_digits(&cand) <= complexity_digits(&assumed) => {
-      cand
-    }
-    _ => assumed,
-  };
+  // wolframscript's default Simplify merges integer-base logs (whether standalone
+  // like `2 Log[2]` -> `Log[4]` or summed like `Log[2]+Log[3]` -> `Log[6]`) into
+  // a single Log when that reduces its digit-aware complexity measure.
+  let assumed = try_merge_logs(&assumed).unwrap_or(assumed);
   // If simplification exposed a singularity like `0^(-1)` (e.g. after
   // cancelling `Sin[x]^2 + Cos[x]^2 − 1`), re-evaluate so it collapses to
   // `ComplexInfinity`. Limited to this pattern to avoid re-canonicalizing
@@ -6558,6 +6551,276 @@ fn complexity_digits(expr: &Expr) -> usize {
     }
     _ => 1,
   }
+}
+
+/// Parse a summand of the form `c*Log[n]` with an integer coefficient `c` and a
+/// positive integer base `n >= 2`, returning `(c, n)`. Symbolic/rational bases
+/// and non-integer coefficients are not recognised (they are left un-merged).
+fn parse_log_term(term: &Expr) -> Option<(i64, num_bigint::BigInt)> {
+  use num_bigint::BigInt;
+  let as_log = |e: &Expr| -> Option<BigInt> {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Log"
+      && args.len() == 1
+    {
+      return match &args[0] {
+        Expr::Integer(n) if *n >= 2 => Some(BigInt::from(*n)),
+        Expr::BigInteger(n) if *n >= BigInt::from(2) => Some(n.clone()),
+        _ => None,
+      };
+    }
+    None
+  };
+  if let Some(n) = as_log(term) {
+    return Some((1, n));
+  }
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = term
+    && let Some((c, n)) = parse_log_term(operand)
+  {
+    return Some((-c, n));
+  }
+  let int_of = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Integer(v) => i64::try_from(*v).ok(),
+      _ => None,
+    }
+  };
+  // Times[c, Log[n]] (FunctionCall or BinaryOp form).
+  if let Expr::FunctionCall { name, args } = term
+    && name == "Times"
+    && args.len() == 2
+  {
+    if let (Some(c), Some(n)) = (int_of(&args[0]), as_log(&args[1])) {
+      return Some((c, n));
+    }
+    if let (Some(n), Some(c)) = (as_log(&args[0]), int_of(&args[1])) {
+      return Some((c, n));
+    }
+  }
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left,
+    right,
+  } = term
+  {
+    if let (Some(c), Some(n)) = (int_of(left), as_log(right)) {
+      return Some((c, n));
+    }
+    if let (Some(n), Some(c)) = (as_log(left), int_of(right)) {
+      return Some((c, n));
+    }
+  }
+  None
+}
+
+/// wolframscript's default Simplify merges integer-base logs in a sum into a
+/// single `Log`, choosing between the fully-merged form `Log[prod n_i^c_i]` and
+/// the coefficient-GCD-factored form `g*Log[prod n_i^(c_i/g)]` — whichever (with
+/// the non-log terms) is simplest under the digit-aware complexity measure.
+/// E.g. `2 Log[2]` → `Log[4]`, `Log[2]+Log[3]` → `Log[6]`,
+/// `20 Log[2]+20 Log[3]` → `20 Log[6]`, `5 Log[2]-Log[6]` → `Log[16/3]`.
+/// Returns `None` when no merge beats the original (or the base cannot exceed
+/// a sanity bound on the coefficient magnitude).
+fn try_merge_logs(expr: &Expr) -> Option<Expr> {
+  use num_bigint::BigInt;
+  use num_traits::{One, Zero};
+
+  // gcd of two non-negative BigInts (Euclid).
+  fn big_gcd(mut a: BigInt, mut b: BigInt) -> BigInt {
+    while !b.is_zero() {
+      let r = &a % &b;
+      a = std::mem::replace(&mut b, r);
+    }
+    a
+  }
+  fn u64_gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+      let r = a % b;
+      a = std::mem::replace(&mut b, r);
+    }
+    a
+  }
+
+  // Flatten the additive structure (both FunctionCall and BinaryOp forms),
+  // and distribute an integer coefficient over a parenthesised sum of logs so
+  // that e.g. a `2*(Log[2]+Log[3])` produced by common-factor pulling is still
+  // recognised.
+  fn collect_addends(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        for a in args.iter() {
+          collect_addends(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        collect_addends(left, out);
+        collect_addends(right, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left,
+        right,
+      } => {
+        collect_addends(left, out);
+        out.push(Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new((**right).clone()),
+        });
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  // Distribute `Times[c, (sum)]` into the addends so the pieces can be parsed.
+  fn distribute(e: &Expr) -> Option<Vec<Expr>> {
+    let (coeff, inner) = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(c), inner) => (*c, inner),
+          (inner, Expr::Integer(c)) => (*c, inner),
+          _ => return None,
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => match (left.as_ref(), right.as_ref()) {
+        (Expr::Integer(c), inner) => (*c, inner),
+        (inner, Expr::Integer(c)) => (*c, inner),
+        _ => return None,
+      },
+      _ => return None,
+    };
+    let mut pieces = Vec::new();
+    collect_addends(inner, &mut pieces);
+    if pieces.len() < 2 {
+      return None;
+    }
+    Some(
+      pieces
+        .into_iter()
+        .map(|p| Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(coeff), p].into(),
+        })
+        .collect(),
+    )
+  }
+
+  let mut addends: Vec<Expr> = Vec::new();
+  collect_addends(expr, &mut addends);
+  let mut logs: Vec<(i64, BigInt)> = Vec::new();
+  let mut rest: Vec<Expr> = Vec::new();
+  for a in &addends {
+    if let Some(t) = parse_log_term(a) {
+      logs.push(t);
+    } else if let Some(pieces) = distribute(a) {
+      // A distributed `c*(…)`: parse each piece, spilling non-logs to `rest`.
+      for p in pieces {
+        match parse_log_term(&p) {
+          Some(t) => logs.push(t),
+          None => rest.push(p),
+        }
+      }
+    } else {
+      rest.push(a.clone());
+    }
+  }
+  if logs.is_empty() {
+    return None;
+  }
+  // A lone `Log[n]` (coefficient ±1) has nothing to fold.
+  if logs.len() == 1 && logs[0].0.abs() == 1 {
+    return None;
+  }
+  // Guard against pathological exponents (Log[n^huge]).
+  if logs.iter().any(|(c, _)| c.unsigned_abs() > 10_000) {
+    return None;
+  }
+
+  // Build `Log[prod n_i^c_i]` for a set of (coeff, base) pairs.
+  let build_log = |terms: &[(i64, BigInt)]| -> Expr {
+    let mut num = BigInt::one();
+    let mut den = BigInt::one();
+    for (c, n) in terms {
+      if *c >= 0 {
+        num *= n.pow(*c as u32);
+      } else {
+        den *= n.pow((-c) as u32);
+      }
+    }
+    let g = big_gcd(num.clone(), den.clone());
+    let num = &num / &g;
+    let den = &den / &g;
+    let q = if den.is_one() {
+      crate::functions::math_ast::bigint_to_expr(num)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![
+          crate::functions::math_ast::bigint_to_expr(num),
+          crate::functions::math_ast::bigint_to_expr(den),
+        ]
+        .into(),
+      }
+    };
+    Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![q].into(),
+    }
+  };
+
+  // Candidate merged-log forms: fully merged, and (for >= 2 terms) the
+  // coefficient-GCD-factored form.
+  let mut candidate_logs: Vec<Expr> = vec![build_log(&logs)];
+  if logs.len() >= 2 {
+    let g = logs
+      .iter()
+      .map(|(c, _)| c.unsigned_abs())
+      .fold(0u64, u64_gcd);
+    if g > 1 {
+      let reduced: Vec<(i64, BigInt)> = logs
+        .iter()
+        .map(|(c, n)| (c / g as i64, n.clone()))
+        .collect();
+      candidate_logs.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(g as i128), build_log(&reduced)].into(),
+      });
+    }
+  }
+
+  let orig_complexity = complexity_digits(expr);
+  let mut best: Option<(usize, Expr)> = None;
+  for cand_log in candidate_logs {
+    let mut terms = rest.clone();
+    terms.push(cand_log);
+    let cand = if terms.len() == 1 {
+      terms.pop().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      }
+    };
+    let cand = crate::evaluator::evaluate_expr_to_expr(&cand).unwrap_or(cand);
+    let c = complexity_digits(&cand);
+    // `<=` so a tie with the original still folds (matching wolframscript);
+    // ties between candidates keep the first (fully-merged) one.
+    if c <= orig_complexity && best.as_ref().is_none_or(|(bc, _)| c < *bc) {
+      best = Some((c, cand));
+    }
+  }
+  best.map(|(_, e)| e)
 }
 
 /// Factor out common symbolic factors from additive terms.

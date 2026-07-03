@@ -500,6 +500,60 @@ mod simplify {
     assert_eq!(interpret("Simplify[Log[2]]").unwrap(), "Log[2]");
   }
 
+  // Integer-base logs in a sum merge into a single Log, choosing between the
+  // fully-merged `Log[prod n^c]` and the coefficient-GCD-factored `g*Log[…]`
+  // forms by wolframscript's digit-aware complexity measure.
+  #[test]
+  fn merges_integer_logs_in_sum() {
+    // Basic products and quotients.
+    assert_eq!(interpret("Simplify[Log[2] + Log[3]]").unwrap(), "Log[6]");
+    assert_eq!(interpret("Simplify[Log[6] - Log[2]]").unwrap(), "Log[3]");
+    assert_eq!(
+      interpret("Simplify[Log[2] + Log[3] + Log[5]]").unwrap(),
+      "Log[30]"
+    );
+    // Coefficients: fully merged when the product stays small.
+    assert_eq!(
+      interpret("Simplify[3*Log[2] + 2*Log[3]]").unwrap(),
+      "Log[72]"
+    );
+    assert_eq!(
+      interpret("Simplify[5*Log[2] - Log[6]]").unwrap(),
+      "Log[16/3]"
+    );
+    // Large shared coefficient: GCD-factored form wins over the huge product.
+    assert_eq!(
+      interpret("Simplify[20*Log[2] + 20*Log[3]]").unwrap(),
+      "20*Log[6]"
+    );
+    assert_eq!(
+      interpret("Simplify[4*Log[2] + 4*Log[3]]").unwrap(),
+      "4*Log[6]"
+    );
+    // Right at the threshold between fully-merged and GCD-factored.
+    assert_eq!(
+      interpret("Simplify[3*Log[2] + 3*Log[3]]").unwrap(),
+      "Log[216]"
+    );
+    // A negative result flips to `-Log[...]`.
+    assert_eq!(interpret("Simplify[Log[2] - Log[3]]").unwrap(), "-Log[3/2]");
+    assert_eq!(interpret("Simplify[-2*Log[2]]").unwrap(), "-Log[4]");
+    // Logs cancel to zero.
+    assert_eq!(interpret("Simplify[2*Log[2] - 2*Log[2]]").unwrap(), "0");
+    // Non-log terms are kept alongside the merged Log.
+    assert_eq!(interpret("Simplify[2*Log[2] + 1]").unwrap(), "1 + Log[4]");
+    assert_eq!(interpret("Simplify[x + 2*Log[2]]").unwrap(), "x + Log[4]");
+    // Symbolic bases/coefficients are never merged (would need a > 0 etc.).
+    assert_eq!(
+      interpret("Simplify[Log[a] + Log[b]]").unwrap(),
+      "Log[a] + Log[b]"
+    );
+    assert_eq!(
+      interpret("Simplify[a*Log[2] + b*Log[3]]").unwrap(),
+      "a*Log[2] + b*Log[3]"
+    );
+  }
+
   // Simplify must keep the canonical radical form for a numeric base:
   // `2*Sqrt[2]` (= 2^1 * 2^(1/2)) stays factored rather than merging into the
   // less-standard `2^(3/2)`. Symbolic bases still merge (`x*Sqrt[x]`).
