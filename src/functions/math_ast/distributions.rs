@@ -2547,6 +2547,16 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let event = &args[0];
   let dist_spec = &args[1];
 
+  // A certain / impossible event has probability 1 / 0 under any distribution.
+  if let Expr::Identifier(b) = event {
+    if b == "True" {
+      return Ok(Expr::Integer(1));
+    }
+    if b == "False" {
+      return Ok(Expr::Integer(0));
+    }
+  }
+
   // Conditional probability: P[A \[Conditioned] B, x ~ d] = P[A && B, x ~ d] / P[B, x ~ d].
   if let Expr::FunctionCall { name, args: cargs } = event
     && name == "Conditioned"
@@ -2605,6 +2615,41 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Empirical (data-list) distribution:
+  //   Probability[event, x \[Distributed] {d1, …, dn}]
+  // is the fraction of data points that satisfy the event. Only comparison
+  // events (inequalities/equalities and their logical combinations) are
+  // treated this way; other predicates (e.g. EvenQ[x]) fall through to the
+  // event-algebra path, matching wolframscript.
+  if let Expr::List(data) = dist
+    && !data.is_empty()
+    && is_comparison_event(event)
+  {
+    let mut count: i128 = 0;
+    for d in data.iter() {
+      let substituted =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "ReplaceAll".to_string(),
+          args: vec![
+            event.clone(),
+            Expr::Rule {
+              pattern: Box::new(Expr::Identifier(var_name.to_string())),
+              replacement: Box::new(d.clone()),
+            },
+          ]
+          .into(),
+        })?;
+      if matches!(&substituted, Expr::Identifier(s) if s == "True") {
+        count += 1;
+      }
+    }
+    return eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(count)),
+      right: Box::new(Expr::Integer(data.len() as i128)),
+    });
+  }
+
   // P[event, x \[Distributed] ProbabilityDistribution[pdf, {x, lo, hi}]]
   // = Integrate[pdf * Boole[event], {x, lo, hi}], reduced to a sub-range
   // integral for simple `x > k` / `x < k` / `a < x < b` events.
@@ -2630,6 +2675,32 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Together".to_string(),
     args: vec![result].into(),
   })
+}
+
+/// True when `event` is a comparison chain (inequality/equality) or a logical
+/// combination of such — i.e. an event wolframscript interprets as a subset of
+/// the sample space. Arbitrary predicate calls (e.g. `EvenQ[x]`) are not
+/// comparison events, so the empirical-probability path leaves them alone.
+fn is_comparison_event(event: &Expr) -> bool {
+  match event {
+    Expr::Comparison { .. } => true,
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "And"
+          | "Or"
+          | "Not"
+          | "Nor"
+          | "Nand"
+          | "Xor"
+          | "Implies"
+          | "Equivalent"
+      ) =>
+    {
+      !args.is_empty() && args.iter().all(is_comparison_event)
+    }
+    _ => false,
+  }
 }
 
 fn probability_from_event(

@@ -894,6 +894,75 @@ mod probability_distribution {
     );
   }
 
+  // Probability over a data list is the fraction of data points satisfying
+  // the (comparison) event.
+  #[test]
+  fn probability_data_list() {
+    assert_eq!(
+      interpret("Probability[x > 1, x \\[Distributed] {1, 2, 3}]").unwrap(),
+      "2/3"
+    );
+    // Non-strict inequality includes the boundary value (distinct from the
+    // strict case for discrete data).
+    assert_eq!(
+      interpret("Probability[x >= 2, x \\[Distributed] {1, 2, 3, 4}]").unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("Probability[x < 3, x \\[Distributed] {1, 2, 3, 4, 5}]")
+        .unwrap(),
+      "2/5"
+    );
+    // Equality counts repeated data points.
+    assert_eq!(
+      interpret("Probability[x == 2, x \\[Distributed] {1, 2, 2, 3}]").unwrap(),
+      "1/2"
+    );
+    // Chained inequality.
+    assert_eq!(
+      interpret("Probability[2 < x < 5, x \\[Distributed] {1, 2, 3, 4, 5, 6}]")
+        .unwrap(),
+      "1/3"
+    );
+    // Logical combinations of comparisons.
+    assert_eq!(
+      interpret(
+        "Probability[x > 1 && x < 4, x \\[Distributed] {1, 2, 3, 4, 5}]"
+      )
+      .unwrap(),
+      "2/5"
+    );
+    // Certain / impossible events collapse to 1 / 0.
+    assert_eq!(
+      interpret("Probability[x > 0, x \\[Distributed] {1, 2, 3}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Probability[x > 10, x \\[Distributed] {1, 2, 3}]").unwrap(),
+      "0"
+    );
+  }
+
+  // A literal True / False event has probability 1 / 0 under any distribution.
+  #[test]
+  fn probability_literal_boolean_event() {
+    assert_eq!(
+      interpret("Probability[True, x \\[Distributed] {1, 2, 3, 4}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Probability[False, x \\[Distributed] {1, 2, 3, 4}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "Probability[False, x \\[Distributed] NormalDistribution[0, 1]]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   #[test]
   fn n_expectation_routes_through_n() {
     // `NExpectation` should wrap `Expectation`'s result with `N`. For a
