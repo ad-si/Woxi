@@ -9093,6 +9093,107 @@ pub fn evaluate_function_call_ast_inner(
       return evaluate_expr_to_expr(&value);
     }
 
+    // TimeValue[Annuity[{p, ip, fp}, tspan (, q)], i, t] — an annuity whose
+    // first argument is a list carries, in addition to the level payment p,
+    // an initial payment `ip` made at time 0 and a final payment `fp` made at
+    // time tspan (a length-2 list omits `fp`). Its value at time t is
+    //   V_t = (PV_annuity + ip + fp*(1+i)^-tspan) * (1+i)^t
+    // where PV_annuity is the level-annuity present value using interval q
+    // (q defaults to 1). Lists of length other than 2 or 3 stay unevaluated
+    // (matching wolframscript). Handled before the scalar-payment blocks so
+    // the list isn't threaded elementwise through the annuity formula.
+    if let Expr::FunctionCall {
+      name: ann_name,
+      args: ann_args,
+    } = s
+      && ann_name == "Annuity"
+      && (ann_args.len() == 2 || ann_args.len() == 3)
+      && i_scalar
+      && t_scalar
+      && let Expr::List(pay) = &ann_args[0]
+      && (pay.len() == 2 || pay.len() == 3)
+    {
+      let p = pay[0].clone();
+      let ip = pay[1].clone();
+      let fp = pay.get(2).cloned().unwrap_or(Expr::Integer(0));
+      let tspan = ann_args[1].clone();
+      let q = ann_args.get(2).cloned().unwrap_or(Expr::Integer(1));
+      let one_plus_i = || Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![Expr::Integer(1), i.clone()].into(),
+      };
+      // (1+i)^-tspan
+      let pow_neg_tspan = || Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          one_plus_i(),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), tspan.clone()].into(),
+          },
+        ]
+        .into(),
+      };
+      // i_eff = (1+i)^q - 1
+      let i_eff = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![one_plus_i(), q].into(),
+          },
+          Expr::Integer(-1),
+        ]
+        .into(),
+      };
+      // PV_annuity = p * (1 - (1+i)^-tspan) / i_eff
+      let pv_annuity = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          p,
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::Integer(1),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), pow_neg_tspan()].into(),
+              },
+            ]
+            .into(),
+          },
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![i_eff, Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      };
+      // fp * (1+i)^-tspan  (final payment discounted from time tspan)
+      let fp_term = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![fp, pow_neg_tspan()].into(),
+      };
+      // PV_0 = PV_annuity + ip + fp_term
+      let pv0 = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![pv_annuity, ip, fp_term].into(),
+      };
+      // V_t = PV_0 * (1+i)^t
+      let result = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          pv0,
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![one_plus_i(), t.clone()].into(),
+          },
+        ]
+        .into(),
+      };
+      return evaluate_expr_to_expr(&result);
+    }
+
     // TimeValue[Annuity[pmt, n], i, t] — present value (t = 0) or general
     // time-shifted value of an n-period level annuity with payment pmt at
     // each period and interest rate i per period.
@@ -9104,6 +9205,7 @@ pub fn evaluate_function_call_ast_inner(
     } = s
       && ann_name == "Annuity"
       && ann_args.len() == 2
+      && !matches!(&ann_args[0], Expr::List(_))
       && i_scalar
       && t_scalar
     {
@@ -9185,6 +9287,7 @@ pub fn evaluate_function_call_ast_inner(
     } = s
       && ann_name == "Annuity"
       && ann_args.len() == 3
+      && !matches!(&ann_args[0], Expr::List(_))
       && i_scalar
       && t_scalar
     {

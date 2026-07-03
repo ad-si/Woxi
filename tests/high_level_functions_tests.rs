@@ -7754,5 +7754,76 @@ mod high_level_functions_tests {
       assert_eq!(three_arg, two_arg);
       assert_eq!(three_arg, "13180.79");
     }
+
+    // Annuity[{p, ip, fp}, tspan (, q)]: a list first argument adds an initial
+    // payment ip at time 0 and a final payment fp at time tspan on top of the
+    // level payment p. A length-2 list omits fp. Previously Woxi threaded the
+    // list through the annuity formula and returned a list of values.
+
+    #[test]
+    fn list_payment_with_initial() {
+      // {100, 200}: level 100 for 2 periods plus a 200 payment at time 0.
+      assert_eq!(
+        interpret("Round[TimeValue[Annuity[{100, 200}, 2], 0.05, 0], 0.01]")
+          .unwrap(),
+        "385.94"
+      );
+    }
+
+    #[test]
+    fn list_payment_with_initial_and_final() {
+      // {100, 50, 25}: level 100 for 4 periods, 50 at time 0, 25 at time 4.
+      assert_eq!(
+        interpret("Round[TimeValue[Annuity[{100, 50, 25}, 4], 0.05, 0], 0.01]")
+          .unwrap(),
+        "425.16"
+      );
+    }
+
+    #[test]
+    fn list_payment_with_interval() {
+      // List payment composed with a semiannual payment interval q = 1/2.
+      assert_eq!(
+        interpret(
+          "Round[TimeValue[Annuity[{100, 50, 25}, 4, 1/2], 0.05, 0], 0.01]"
+        )
+        .unwrap(),
+        "788.51"
+      );
+    }
+
+    #[test]
+    fn list_payment_final_only_discounted() {
+      // {0, 0, 500}: a single 500 payment at time 3, discounted to time 0.
+      assert_eq!(
+        interpret("Round[TimeValue[Annuity[{0, 0, 500}, 3], 0.05, 0], 0.01]")
+          .unwrap(),
+        "431.92"
+      );
+    }
+
+    #[test]
+    fn list_payment_future_value() {
+      // {100, 200} valued at time 2 rather than time 0.
+      assert_eq!(
+        interpret("Round[TimeValue[Annuity[{100, 200}, 2], 0.05, 2], 0.01]")
+          .unwrap(),
+        "425.5"
+      );
+    }
+
+    #[test]
+    fn invalid_list_length_stays_unevaluated() {
+      // Lists of length other than 2 or 3 are not valid annuity payment
+      // specs and stay unevaluated (matching wolframscript).
+      assert_eq!(
+        interpret("TimeValue[Annuity[{100}, 2], 0.05, 0]").unwrap(),
+        "TimeValue[Annuity[{100}, 2], 0.05, 0]"
+      );
+      assert_eq!(
+        interpret("TimeValue[Annuity[{1, 2, 3, 4}, 2], 0.05, 0]").unwrap(),
+        "TimeValue[Annuity[{1, 2, 3, 4}, 2], 0.05, 0]"
+      );
+    }
   }
 }
