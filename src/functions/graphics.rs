@@ -534,6 +534,17 @@ enum Primitive {
     x_max: f64,
     y_max: f64,
   },
+  /// HalfPlane (fill on the `w` side of the line through `p` along `v`) or,
+  /// with `full`, InfinitePlane covering the whole viewport. The actual fill
+  /// polygon is built at render time so it always reaches past the visible
+  /// plot range.
+  HalfPlanePrim {
+    p: (f64, f64),
+    v: (f64, f64),
+    w: (f64, f64),
+    full: bool,
+    style: StyleState,
+  },
 }
 
 impl Primitive {
@@ -551,7 +562,8 @@ impl Primitive {
       | Primitive::PolygonPrim { style, .. }
       | Primitive::ArrowPrim { style, .. }
       | Primitive::TextPrim { style, .. }
-      | Primitive::BezierCurvePrim { style, .. } => Some(style),
+      | Primitive::BezierCurvePrim { style, .. }
+      | Primitive::HalfPlanePrim { style, .. } => Some(style),
       Primitive::RasterPrim { .. } => None,
     }
   }
@@ -1334,6 +1346,20 @@ fn collect_primitives(
         "RegularPolygon" if !args.is_empty() => {
           parse_regular_polygon(args, style, prims);
         }
+        "Parallelogram" => {
+          parse_parallelogram(args, style, prims);
+        }
+        // JoinedCurve[{c1, c2, …}] draws its curve components as one path;
+        // stroke-rendering each component in order is visually equivalent.
+        "JoinedCurve" if !args.is_empty() => {
+          collect_primitives(&args[0], style, prims, errors);
+        }
+        "HalfPlane" => {
+          parse_half_plane(args, style, prims);
+        }
+        "InfinitePlane" => {
+          parse_infinite_plane(args, style, prims);
+        }
 
         _ => {
           // Try as directive first
@@ -1642,6 +1668,135 @@ fn parse_polygon(
   }
 }
 
+/// Parallelogram[p, {v1, v2}] (default: unit square {0,0} + {{0,1},{1,0}})
+/// — a filled quadrilateral with corners p, p+v1, p+v1+v2, p+v2.
+fn parse_parallelogram(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  let (p, v1, v2) = if args.is_empty() {
+    ((0.0, 0.0), (0.0, 1.0), (1.0, 0.0))
+  } else if args.len() == 2 {
+    let Some(p) = expr_to_point(&args[0]) else {
+      return;
+    };
+    let Expr::List(vecs) = &args[1] else {
+      return;
+    };
+    if vecs.len() != 2 {
+      return;
+    }
+    let (Some(v1), Some(v2)) =
+      (expr_to_point(&vecs[0]), expr_to_point(&vecs[1]))
+    else {
+      return;
+    };
+    (p, v1, v2)
+  } else {
+    return;
+  };
+  let points = vec![
+    p,
+    (p.0 + v1.0, p.1 + v1.1),
+    (p.0 + v1.0 + v2.0, p.1 + v1.1 + v2.1),
+    (p.0 + v2.0, p.1 + v2.1),
+  ];
+  prims.push(Primitive::PolygonPrim {
+    points,
+    style: style.clone(),
+  });
+}
+
+/// HalfPlane[{p1, p2}, w] — the half plane swept by translating the line
+/// through p1 and p2 along w. HalfPlane[p, v, w] — the same with the line
+/// given as point p and direction v.
+fn parse_half_plane(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  let (p, v, w) = match args.len() {
+    2 => {
+      let Expr::List(pts) = &args[0] else {
+        return;
+      };
+      if pts.len() != 2 {
+        return;
+      }
+      let (Some(p1), Some(p2)) = (expr_to_point(&pts[0]), expr_to_point(&pts[1]))
+      else {
+        return;
+      };
+      let Some(w) = expr_to_point(&args[1]) else {
+        return;
+      };
+      (p1, (p2.0 - p1.0, p2.1 - p1.1), w)
+    }
+    3 => {
+      let (Some(p), Some(v), Some(w)) = (
+        expr_to_point(&args[0]),
+        expr_to_point(&args[1]),
+        expr_to_point(&args[2]),
+      ) else {
+        return;
+      };
+      (p, v, w)
+    }
+    _ => return,
+  };
+  if (v.0 == 0.0 && v.1 == 0.0) || (w.0 == 0.0 && w.1 == 0.0) {
+    return;
+  }
+  prims.push(Primitive::HalfPlanePrim {
+    p,
+    v,
+    w,
+    full: false,
+    style: style.clone(),
+  });
+}
+
+/// InfinitePlane[{p1, p2, p3}] / InfinitePlane[p, {v1, v2}] — with 2D
+/// coordinates the plane covers the entire viewport.
+fn parse_infinite_plane(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  let p = match args.len() {
+    1 => {
+      let Expr::List(pts) = &args[0] else {
+        return;
+      };
+      if pts.len() != 3 {
+        return;
+      }
+      let Some(p1) = expr_to_point(&pts[0]) else {
+        return;
+      };
+      if expr_to_point(&pts[1]).is_none() || expr_to_point(&pts[2]).is_none() {
+        return;
+      }
+      p1
+    }
+    2 => {
+      let Some(p) = expr_to_point(&args[0]) else {
+        return;
+      };
+      p
+    }
+    _ => return,
+  };
+  prims.push(Primitive::HalfPlanePrim {
+    p,
+    v: (1.0, 0.0),
+    w: (0.0, 1.0),
+    full: true,
+    style: style.clone(),
+  });
+}
+
 fn parse_regular_polygon(
   args: &[Expr],
   style: &StyleState,
@@ -1936,7 +2091,7 @@ fn evaluate_bspline(
 }
 
 /// Cox-de Boor recursion for B-spline basis function.
-fn bspline_basis(i: usize, k: usize, t: f64, knots: &[f64]) -> f64 {
+pub(crate) fn bspline_basis(i: usize, k: usize, t: f64, knots: &[f64]) -> f64 {
   if k == 0 {
     return if knots[i] <= t && t < knots[i + 1] {
       1.0
@@ -2132,6 +2287,13 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
     } => {
       bb.include_point(*x_min, *y_min);
       bb.include_point(*x_max, *y_max);
+    }
+    // An unbounded fill only anchors the plot range at its defining
+    // points; the fill itself extends past whatever range results.
+    Primitive::HalfPlanePrim { p, v, w, .. } => {
+      bb.include_point(p.0, p.1);
+      bb.include_point(p.0 + v.0, p.1 + v.1);
+      bb.include_point(p.0 + w.0, p.1 + w.1);
     }
   }
   bb
@@ -3046,6 +3208,56 @@ fn render_primitive(
         stroke_attr,
       ));
     }
+    Primitive::HalfPlanePrim {
+      p,
+      v,
+      w,
+      full,
+      style,
+    } => {
+      // Build a parallelogram that extends far past the visible plot range
+      // in every relevant direction; the SVG viewport clips it.
+      let ext = 10.0 * (bb.width() + bb.height());
+      let corners: Vec<(f64, f64)> = if *full {
+        vec![
+          (bb.x_min - ext, bb.y_min - ext),
+          (bb.x_max + ext, bb.y_min - ext),
+          (bb.x_max + ext, bb.y_max + ext),
+          (bb.x_min - ext, bb.y_max + ext),
+        ]
+      } else {
+        let norm = |(x, y): (f64, f64)| {
+          let len = (x * x + y * y).sqrt();
+          (x / len * ext, y / len * ext)
+        };
+        let (vx, vy) = norm(*v);
+        let (wx, wy) = norm(*w);
+        vec![
+          (p.0 - vx, p.1 - vy),
+          (p.0 + vx, p.1 + vy),
+          (p.0 + vx + wx, p.1 + vy + wy),
+          (p.0 - vx + wx, p.1 - vy + wy),
+        ]
+      };
+      let color = style.effective_color();
+      let pts: Vec<String> = corners
+        .iter()
+        .map(|&(x, y)| {
+          format!("{:.2},{:.2}", coord_x(x, bb, svg_w), coord_y(y, bb, svg_h))
+        })
+        .collect();
+      let fill_opacity = if color.a < 1.0 {
+        format!(" fill-opacity=\"{}\"", color.a)
+      } else {
+        String::new()
+      };
+      out.push_str(&format!(
+        "<polygon points=\"{}\" fill=\"{}\"{}/>\n",
+        pts.join(" "),
+        color.to_svg_rgb(),
+        fill_opacity,
+      ));
+    }
     Primitive::ArrowPrim {
       points,
       setback,
@@ -3533,6 +3745,9 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
       }
       Primitive::RasterPrim { .. } => {
         // RasterBox is not yet supported in .nb export; skip
+      }
+      Primitive::HalfPlanePrim { .. } => {
+        // Unbounded fills have no fixed-coordinate box form; skip
       }
     }
   }

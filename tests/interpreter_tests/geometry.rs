@@ -3416,3 +3416,200 @@ mod region {
     );
   }
 }
+
+// Graphics-object regions from the GraphicsObjects guide: Torus, FilledTorus,
+// Parallelogram, HalfPlane, InfinitePlane.
+mod graphics_object_regions {
+  use super::*;
+
+  #[test]
+  fn torus_stays_symbolic() {
+    assert_eq!(interpret("Torus[]").unwrap(), "Torus[]");
+    assert_eq!(
+      interpret("FilledTorus[{0, 0, 0}, {1, 2}]").unwrap(),
+      "FilledTorus[{0, 0, 0}, {1, 2}]"
+    );
+  }
+
+  // Torus[{x,y,z}, {r1, r2}] is a surface: area = Pi^2 (r2^2 - r1^2).
+  // The default is Torus[{0, 0, 0}, {1/2, 1}].
+  #[test]
+  fn torus_region_functions() {
+    assert_eq!(interpret("RegionMeasure[Torus[]]").unwrap(), "(3*Pi^2)/4");
+    assert_eq!(
+      interpret("RegionMeasure[Torus[{0, 0, 0}, {1, 3}]]").unwrap(),
+      "8*Pi^2"
+    );
+    assert_eq!(interpret("RegionDimension[Torus[]]").unwrap(), "2");
+    assert_eq!(interpret("RegionEmbeddingDimension[Torus[]]").unwrap(), "3");
+    assert_eq!(
+      interpret("RegionCentroid[Torus[{1, 2, 3}, {1, 2}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(interpret("BoundedRegionQ[Torus[]]").unwrap(), "True");
+    assert_eq!(
+      interpret("RegionBounds[Torus[]]").unwrap(),
+      "{{-1, 1}, {-1, 1}, {-1/4, 1/4}}"
+    );
+  }
+
+  // FilledTorus is the solid: volume = Pi^2 (r2 - r1)^2 (r1 + r2) / 4.
+  #[test]
+  fn filled_torus_region_functions() {
+    assert_eq!(
+      interpret("RegionMeasure[FilledTorus[]]").unwrap(),
+      "(3*Pi^2)/32"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[FilledTorus[{0, 0, 0}, {1, 3}]]").unwrap(),
+      "4*Pi^2"
+    );
+    assert_eq!(interpret("RegionDimension[FilledTorus[]]").unwrap(), "3");
+    assert_eq!(
+      interpret("RegionCentroid[FilledTorus[]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(interpret("BoundedRegionQ[FilledTorus[]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn parallelogram_region_functions() {
+    // Area is |Det[{v1, v2}]| in the plane…
+    assert_eq!(
+      interpret("RegionMeasure[Parallelogram[{0, 0}, {{2, 0}, {1, 3}}]]")
+        .unwrap(),
+      "6"
+    );
+    // …and Sqrt of the Gram determinant in higher-dimensional space.
+    assert_eq!(
+      interpret(
+        "RegionMeasure[Parallelogram[{0, 0, 0}, {{1, 0, 0}, {0, 2, 0}}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    // Parallelogram[] is the unit square.
+    assert_eq!(interpret("RegionMeasure[Parallelogram[]]").unwrap(), "1");
+    assert_eq!(interpret("RegionDimension[Parallelogram[]]").unwrap(), "2");
+    assert_eq!(
+      interpret("RegionEmbeddingDimension[Parallelogram[]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Parallelogram[{0, 0}, {{2, 0}, {1, 3}}]]")
+        .unwrap(),
+      "{3/2, 3/2}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Parallelogram[{0, 0}, {{2, 0}, {1, 3}}]]")
+        .unwrap(),
+      "{{0, 3}, {0, 3}}"
+    );
+    assert_eq!(interpret("BoundedRegionQ[Parallelogram[]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn half_plane_region_functions() {
+    assert_eq!(
+      interpret("RegionMeasure[HalfPlane[{{0, 0}, {1, 0}}, {0, 1}]]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("RegionDimension[HalfPlane[{{0, 0}, {1, 0}}, {0, 1}]]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "RegionEmbeddingDimension[HalfPlane[{{0, 0}, {1, 0}}, {0, 1}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("BoundedRegionQ[HalfPlane[{{0, 0}, {1, 0}}, {0, 1}]]")
+        .unwrap(),
+      "False"
+    );
+    // HalfPlane[p, v, w] form stays symbolic.
+    assert_eq!(
+      interpret("HalfPlane[{0, 0}, {1, 0}, {0, 1}]").unwrap(),
+      "HalfPlane[{0, 0}, {1, 0}, {0, 1}]"
+    );
+  }
+
+  #[test]
+  fn infinite_plane_region_functions() {
+    assert_eq!(
+      interpret(
+        "RegionMeasure[InfinitePlane[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]]"
+      )
+      .unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDimension[InfinitePlane[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "RegionEmbeddingDimension[InfinitePlane[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "RegionEmbeddingDimension[InfinitePlane[{0, 0}, {{1, 0}, {0, 1}}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "BoundedRegionQ[InfinitePlane[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  // Unbounded curves also have infinite measure.
+  #[test]
+  fn unbounded_curve_measures() {
+    assert_eq!(
+      interpret("RegionMeasure[InfiniteLine[{{0, 0}, {1, 1}}]]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[HalfLine[{{0, 0}, {1, 1}}]]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  // JoinedCurve / BSplineSurface / Raster3D / AxisObject stay symbolic
+  // (they are consumed by the Graphics/Graphics3D renderers).
+  #[test]
+  fn graphics_primitives_stay_symbolic() {
+    assert_eq!(
+      interpret("JoinedCurve[{Line[{{0, 0}, {1, 1}}]}]").unwrap(),
+      "JoinedCurve[{Line[{{0, 0}, {1, 1}}]}]"
+    );
+    assert_eq!(
+      interpret("BSplineSurface[{{{0, 0, 0}, {1, 0, 1}}, {{0, 1, 1}, {1, 1, 0}}}]")
+        .unwrap(),
+      "BSplineSurface[{{{0, 0, 0}, {1, 0, 1}}, {{0, 1, 1}, {1, 1, 0}}}]"
+    );
+    assert_eq!(
+      interpret("Raster3D[{{{0, 1}, {1, 0}}, {{1, 0}, {0, 1}}}]").unwrap(),
+      "Raster3D[{{{0, 1}, {1, 0}}, {{1, 0}, {0, 1}}}]"
+    );
+    assert_eq!(
+      interpret("AxisObject[Line[{{0, 0}, {1, 0}}]]").unwrap(),
+      "AxisObject[Line[{{0, 0}, {1, 0}}]]"
+    );
+  }
+}

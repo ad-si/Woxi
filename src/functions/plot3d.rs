@@ -1564,6 +1564,12 @@ enum Primitive3D {
     radius: f64,
     style: StyleState3D,
   },
+  /// A pre-tessellated triangle surface (Torus, FilledTorus, BSplineSurface,
+  /// Raster3D voxels, …).
+  Surface3D {
+    tris: Vec<(Point3D, Point3D, Point3D)>,
+    style: StyleState3D,
+  },
 }
 
 /// Try to apply a 3D style directive (color or Opacity). Returns true if consumed.
@@ -1914,6 +1920,45 @@ fn collect_3d_primitives(
             style: style.clone(),
           });
         }
+        "Torus" | "FilledTorus" => {
+          let center = if !args.is_empty() {
+            parse_point3d(&args[0]).unwrap_or(Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: 0.0,
+            })
+          } else {
+            Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: 0.0,
+            }
+          };
+          let (r1, r2) = match args.get(1) {
+            Some(Expr::List(radii)) if radii.len() == 2 => {
+              let num = |e: &Expr| {
+                try_eval_to_f64(&evaluate_expr_to_expr(e).unwrap_or(e.clone()))
+              };
+              (num(&radii[0]).unwrap_or(0.5), num(&radii[1]).unwrap_or(1.0))
+            }
+            _ => (0.5, 1.0),
+          };
+          prims.push(Primitive3D::Surface3D {
+            tris: tessellate_torus(&center, r1, r2),
+            style: style.clone(),
+          });
+        }
+        "BSplineSurface" if !args.is_empty() => {
+          if let Some(grid) = parse_point3d_grid(&args[0]) {
+            prims.push(Primitive3D::Surface3D {
+              tris: tessellate_bspline_surface(&grid),
+              style: style.clone(),
+            });
+          }
+        }
+        "Raster3D" if !args.is_empty() => {
+          collect_raster3d(&args[0], style, prims);
+        }
         _ => {
           // Try as directive first
           if !apply_3d_directive(expr, style) {
@@ -1964,6 +2009,217 @@ fn tessellate_sphere(
     }
   }
   tris
+}
+
+/// Tessellate a torus with inner radius r1 and outer radius r2 (so the tube
+/// of radius (r2 - r1)/2 follows a circle of radius (r1 + r2)/2 in the
+/// z = center.z plane).
+fn tessellate_torus(
+  center: &Point3D,
+  r1: f64,
+  r2: f64,
+) -> Vec<(Point3D, Point3D, Point3D)> {
+  let ring = (r1 + r2) / 2.0;
+  let tube = (r2 - r1) / 2.0;
+  let n_u = 32;
+  let n_v = 16;
+  let pi = std::f64::consts::PI;
+  let p = |u: f64, v: f64| -> Point3D {
+    Point3D {
+      x: center.x + (ring + tube * v.cos()) * u.cos(),
+      y: center.y + (ring + tube * v.cos()) * u.sin(),
+      z: center.z + tube * v.sin(),
+    }
+  };
+  let mut tris = Vec::new();
+  for i in 0..n_u {
+    let u1 = 2.0 * pi * i as f64 / n_u as f64;
+    let u2 = 2.0 * pi * (i + 1) as f64 / n_u as f64;
+    for j in 0..n_v {
+      let v1 = 2.0 * pi * j as f64 / n_v as f64;
+      let v2 = 2.0 * pi * (j + 1) as f64 / n_v as f64;
+      let a = p(u1, v1);
+      let b = p(u2, v1);
+      let c = p(u2, v2);
+      let d = p(u1, v2);
+      tris.push((a, b, c));
+      tris.push((a, c, d));
+    }
+  }
+  tris
+}
+
+/// Parse a rectangular grid of 3D control points (a list of equal-length
+/// rows with at least 2 rows and 2 columns).
+fn parse_point3d_grid(expr: &Expr) -> Option<Vec<Vec<Point3D>>> {
+  let Expr::List(rows) = expr else {
+    return None;
+  };
+  let mut grid = Vec::with_capacity(rows.len());
+  for row in rows {
+    grid.push(parse_point3d_list(row)?);
+  }
+  if grid.len() >= 2
+    && grid[0].len() >= 2
+    && grid.iter().all(|r| r.len() == grid[0].len())
+  {
+    Some(grid)
+  } else {
+    None
+  }
+}
+
+/// B-spline basis weights for `n` control points sampled at `num_samples`
+/// evenly spaced parameter values (degree min(3, n-1), clamped uniform
+/// knots): one weight row per sample.
+fn bspline_sample_weights(n: usize, num_samples: usize) -> Vec<Vec<f64>> {
+  let degree = 3usize.min(n - 1);
+  let num_knots = n + degree + 1;
+  let mut knots = Vec::with_capacity(num_knots);
+  for _ in 0..=degree {
+    knots.push(0.0);
+  }
+  let num_internal = num_knots - 2 * (degree + 1);
+  for i in 1..=num_internal {
+    knots.push(i as f64);
+  }
+  let max_knot = (num_internal + 1) as f64;
+  for _ in 0..=degree {
+    knots.push(max_knot);
+  }
+  let t_min = knots[degree];
+  let t_max = knots[n];
+  (0..num_samples)
+    .map(|s| {
+      let t =
+        t_min + (t_max - t_min) * s as f64 / (num_samples - 1) as f64;
+      (0..n)
+        .map(|j| {
+          crate::functions::graphics::bspline_basis(j, degree, t, &knots)
+        })
+        .collect()
+    })
+    .collect()
+}
+
+/// Tessellate a B-spline surface from its control-point grid by sampling
+/// the tensor-product spline on a fixed grid.
+fn tessellate_bspline_surface(
+  grid: &[Vec<Point3D>],
+) -> Vec<(Point3D, Point3D, Point3D)> {
+  let n_rows = grid.len();
+  let n_cols = grid[0].len();
+  let samples = 24;
+  let wu = bspline_sample_weights(n_rows, samples);
+  let wv = bspline_sample_weights(n_cols, samples);
+  let surface: Vec<Vec<Point3D>> = wu
+    .iter()
+    .map(|row_w| {
+      wv.iter()
+        .map(|col_w| {
+          let mut acc = Point3D {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+          };
+          for (r, &rw) in row_w.iter().enumerate() {
+            if rw == 0.0 {
+              continue;
+            }
+            for (c, &cw) in col_w.iter().enumerate() {
+              let w = rw * cw;
+              if w == 0.0 {
+                continue;
+              }
+              acc.x += w * grid[r][c].x;
+              acc.y += w * grid[r][c].y;
+              acc.z += w * grid[r][c].z;
+            }
+          }
+          acc
+        })
+        .collect()
+    })
+    .collect();
+  let mut tris = Vec::new();
+  for i in 0..samples - 1 {
+    for j in 0..samples - 1 {
+      let a = surface[i][j];
+      let b = surface[i + 1][j];
+      let c = surface[i + 1][j + 1];
+      let d = surface[i][j + 1];
+      tris.push((a, b, c));
+      tris.push((a, c, d));
+    }
+  }
+  tris
+}
+
+/// Raster3D[data] — data is a nested list of layers (z), rows (y), and
+/// cells (x); each cell is a grayscale value in [0, 1] or an {r, g, b} /
+/// {r, g, b, a} list. Every cell becomes a unit voxel cuboid.
+fn collect_raster3d(
+  data: &Expr,
+  style: &StyleState3D,
+  prims: &mut Vec<Primitive3D>,
+) {
+  let num = |e: &Expr| {
+    try_eval_to_f64(&evaluate_expr_to_expr(e).unwrap_or(e.clone()))
+  };
+  let Expr::List(layers) = data else {
+    return;
+  };
+  for (k, layer) in layers.iter().enumerate() {
+    let Expr::List(rows) = layer else {
+      return;
+    };
+    for (j, row) in rows.iter().enumerate() {
+      let Expr::List(cells) = row else {
+        return;
+      };
+      for (i, cell) in cells.iter().enumerate() {
+        let (r, g, b, a) = match cell {
+          Expr::List(channels) => {
+            let vals: Vec<f64> =
+              match channels.iter().map(num).collect::<Option<Vec<_>>>() {
+                Some(v) => v,
+                None => return,
+              };
+            match vals.len() {
+              3 => (vals[0], vals[1], vals[2], 1.0),
+              4 => (vals[0], vals[1], vals[2], vals[3]),
+              _ => return,
+            }
+          }
+          other => match num(other) {
+            Some(v) => (v, v, v, 1.0),
+            None => return,
+          },
+        };
+        let mut voxel_style = style.clone();
+        voxel_style.color = Some((
+          (r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        ));
+        voxel_style.opacity = a.clamp(0.0, 1.0) * style.opacity;
+        let p_min = Point3D {
+          x: i as f64,
+          y: j as f64,
+          z: k as f64,
+        };
+        let p_max = Point3D {
+          x: i as f64 + 1.0,
+          y: j as f64 + 1.0,
+          z: k as f64 + 1.0,
+        };
+        prims.push(Primitive3D::Surface3D {
+          tris: tessellate_cuboid(&p_min, &p_max),
+          style: voxel_style,
+        });
+      }
+    }
+  }
 }
 
 /// Tessellate a cuboid into 12 triangles (2 per face).
@@ -2302,6 +2558,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           (t, style)
         }
+        Primitive3D::Surface3D { tris, style } => (tris.clone(), style),
         // Line and Point are handled separately below
         _ => (
           vec![],
@@ -2478,6 +2735,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Primitive3D::Line3D { segments, .. } => {
         for seg in segments {
           for pt in seg {
+            extend_3d(
+              pt,
+              &mut x3_min,
+              &mut x3_max,
+              &mut y3_min,
+              &mut y3_max,
+              &mut z3_min,
+              &mut z3_max,
+            );
+          }
+        }
+      }
+      Primitive3D::Surface3D { tris, .. } => {
+        for (a, b, c) in tris {
+          for pt in [a, b, c] {
             extend_3d(
               pt,
               &mut x3_min,

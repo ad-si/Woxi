@@ -594,7 +594,7 @@ PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package context (no-op in Woxi),✅,effectful,1.0,599
-PolyhedronData,,🚫,,6.0,601
+PolyhedronData,Properties of named polyhedra (Platonic solids),🚧,pure,6.0,601
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance),✅,pure,6.0,602
 RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6.0,603
 IntervalMemberQ,Tests if a point or sub-interval is contained in an interval,✅,pure,3.0,605
@@ -1413,7 +1413,7 @@ GeoBackground,Background for geographic plots,🚫,pure,10.0,1430
 ItemStyle,Style specification for items,🚫,pure,6.0,1431
 GeoStyling,Styling for geographic regions,🚫,pure,10.0,1432
 CharacterEncoding,Character encoding specification,🚫,io,3.0,1434
-InfinitePlane,Infinite plane geometric region,🚫,pure,10.0,1434
+InfinitePlane,Infinite plane geometric region; symbolic region consumed by region functions and rendered in Graphics,✅,unevaluated,10.0,1434
 ProgressIndicator,Dynamic progress indicator,🚫,io,6.0,1435
 Square,Square geometric primitive,🚫,pure,3.0,1437
 StruveL,Modified Struve function L_n(z); elementary closed form at order +-1/2 and +-3/2; numeric for inexact args,✅,pure,4.0,1437
@@ -1724,7 +1724,7 @@ SequenceCases,Finds matching subsequences in a list (supports a count limit and 
 TimeConstraint,Time constraint option,,unevaluated,3.0,1751
 DoubleRightTee,Inert operator displayed with the ⊨ symbol,✅,pure,3.0,1752
 Matrices,Matrix domain,,unevaluated,9.0,1753
-JoinedCurve,Joined curve primitive,,unevaluated,8.0,1754
+JoinedCurve,Joined curve graphics primitive,✅,unevaluated,8.0,1754
 DefaultButton,Default button control,,unevaluated,6.0,1760
 GeoMarker,Geographic marker primitive for GeoGraphics,✅,pure,10.0,1760
 MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4.0,1760
@@ -1858,7 +1858,7 @@ CovarianceFunction,Sample autocovariance of a numeric time series at a lag; or t
 XYZColor,XYZ color specification,,unevaluated,10.0,1887
 GraphHighlightStyle,Graph highlight style,,unevaluated,8.0,1889
 ImageTrim,Trims an image to a specified coordinate region,✅,pure,8.0,1889
-BSplineSurface,B-spline surface,,unevaluated,7.0,1891
+BSplineSurface,B-spline surface 3D graphics primitive,✅,unevaluated,7.0,1891
 Setting,Setting wrapper,,unevaluated,6.0,1891
 SingularValueList,Returns the nonzero singular values of a matrix in decreasing order,✅,pure,5.0,1892
 Gudermannian,Returns the Gudermannian function value,✅,pure,7.0,1895
@@ -2096,7 +2096,7 @@ MatrixFunction,Apply a scalar function to a square matrix via its eigenvalues,�
 QuantityUnit,Returns the unit of a quantity,✅,pure,9.0,2134
 Delayed,Delayed evaluation wrapper,🚫,,10.0,2138
 PacletInstall,Install Wolfram paclet,🚫,,12.1,2138
-Parallelogram,Parallelogram geometric region,🚫,,10.0,2138
+Parallelogram,Parallelogram geometric region; symbolic region consumed by region functions and rendered in Graphics,✅,unevaluated,10.0,2138
 SectorChart,Creates a sector chart from data,✅,pure,7.0,2138
 InexactNumberQ,Tests if an expression is an inexact real number,✅,pure,4.0,2141
 RootSum,Sum of form[r] over the roots r of a polynomial; numeric-coefficient polynomial f with polynomial form gives an exact power-sum value via Newton identities; other shapes stay symbolic,✅,pure,3.0,2141
@@ -2271,7 +2271,7 @@ FindClique,Finds maximal cliques (largest by default; size spec and count/All fo
 GraphHighlight,graph visualization,🚫,None,8.0,2317
 MissingQ,Test whether an expression is a Missing value,✅,1,10.2,2317
 PlanckRadiationLaw,physics formula (external data),🚫,None,10.0,2317
-Raster3D,3D graphics primitive,🚫,None,9.0,2317
+Raster3D,3D raster (voxel) graphics primitive,✅,unevaluated,9.0,2317
 GeoGridLines,Graticule option for GeoGraphics,✅,pure,10.0,2320
 NArgMax,numeric optimization,✅,None,7.0,2320
 PrimePowerQ,Tests if a number is a prime power,✅,pure,6.0,2320
@@ -2415,7 +2415,7 @@ VerticalGauge,,🚫,,9.0,2462
 Algebraics,,🚫,,4.0,2468
 Beep,,🚫,,6.0,2468
 GaussianIntegers,,🚫,,2.0,2468
-HalfPlane,,🚫,,10.0,2468
+HalfPlane,Half-plane geometric region; symbolic region consumed by region functions and rendered in Graphics,✅,unevaluated,10.0,2468
 MantissaExponent,Decompose a number into mantissa and exponent,✅,pure,2.0,2468
 SelectedCells,,🚫,,10.0,2468
 CellID,,🚫,,6.0,2469
@@ -5399,7 +5399,7 @@ AudioReverse,,🚫,,12.1,
 AudioTrackSelection,,🚫,,12.2,
 AutoOperatorRenderings,,,,12.3,
 AxisLabel,,,,12.3,
-AxisObject,,,,12.3,
+AxisObject,Symbolic axis object; contained primitives render in Graphics,✅,unevaluated,12.3,
 AxisStyle,,,,12.3,
 BeginDialogPacket,,🚫,,3.0,
 BilateralHypergeometricPFQ,,,,14.0,
@@ -5579,7 +5579,7 @@ FileFormatProperties,,,,13.0,
 FileNameToFormatList,,,,13.0,
 FileSystemTree,,,,13.2,
 FilledPolarCurve,"Filled region enclosed by a polar curve: FilledPolarCurve[PolarCurve[r; {t; t0; t1}]] or FilledPolarCurve[r; t] (full period)",✅,pure,14.1,
-FilledTorus,,,,13.0,
+FilledTorus,Solid torus graphics and region primitive,✅,unevaluated,13.0,
 FindEdgeColoring,,,,13.0,
 FindExternalEvaluators,,,,11.2,
 FindImageShapes,,,,13.3,
@@ -6062,7 +6062,7 @@ ToFiniteField,,,,14.0,
 ToRawPointer,,,,13.1,
 ToTabular,Converts data into a Tabular object with specified orientation,✅,pure,14.2,
 ToonShading,,🚫,,12.1,
-Torus,,,,13.0,
+Torus,Torus surface graphics and region primitive,✅,unevaluated,13.0,
 TorusGraph,,,,13.1,
 Tour3DVideo,,🚫,,14.0,
 TourVideo,,🚫,,13.0,

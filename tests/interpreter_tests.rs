@@ -1208,6 +1208,7 @@ mod interpreter_tests {
   mod molecule;
   mod music;
   mod patterns;
+  mod polyhedron_data;
   mod property;
   mod quantity;
   mod rosetta_script_fixes;
