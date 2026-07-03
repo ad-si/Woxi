@@ -772,6 +772,11 @@ pub fn dispatch_linear_algebra_functions(
         return Some(result);
       }
     }
+    "DrazinInverse" if args.len() == 1 => {
+      return Some(crate::functions::linear_algebra_ast::drazin_inverse_ast(
+        args,
+      ));
+    }
     "Projection" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::projection_ast(args));
     }

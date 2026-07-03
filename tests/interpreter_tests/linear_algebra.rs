@@ -1899,6 +1899,86 @@ mod pseudo_inverse {
   }
 }
 
+// DrazinInverse[m] = A^D, the unique matrix with A^D A A^D = A^D, A A^D = A^D A,
+// and A^(k+1) A^D = A^k (k = matrix index). Verified against wolframscript 15.0.
+mod drazin_inverse {
+  use super::*;
+
+  // An invertible matrix reduces to the ordinary inverse (index 0).
+  #[test]
+  fn invertible_is_inverse() {
+    assert_eq!(
+      interpret("DrazinInverse[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{-2, 1}, {3/2, -1/2}}"
+    );
+    assert_eq!(
+      interpret("DrazinInverse[{{2, 0}, {0, 3}}]").unwrap(),
+      "{{1/2, 0}, {0, 1/3}}"
+    );
+    assert_eq!(interpret("DrazinInverse[{{2}}]").unwrap(), "{{1/2}}");
+  }
+
+  // A nilpotent matrix has the zero matrix as its Drazin inverse.
+  #[test]
+  fn nilpotent_is_zero() {
+    assert_eq!(
+      interpret("DrazinInverse[{{0, 1}, {0, 0}}]").unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+    assert_eq!(interpret("DrazinInverse[{{0}}]").unwrap(), "{{0}}");
+  }
+
+  // Index-1 singular matrices: the core is inverted, the nilpotent part zeroed.
+  #[test]
+  fn index_one_singular() {
+    // A projection is its own Drazin inverse.
+    assert_eq!(
+      interpret("DrazinInverse[{{1, 0}, {0, 0}}]").unwrap(),
+      "{{1, 0}, {0, 0}}"
+    );
+    // Core and nilpotent parts are not axis-aligned here.
+    assert_eq!(
+      interpret("DrazinInverse[{{2, 1}, {0, 0}}]").unwrap(),
+      "{{1/2, 1/4}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("DrazinInverse[{{4, 0, 0}, {0, 0, 0}, {0, 0, 2}}]").unwrap(),
+      "{{1/4, 0, 0}, {0, 0, 0}, {0, 0, 1/2}}"
+    );
+  }
+
+  // Index-2 matrix with a nonzero core eigenvalue and a size-2 nilpotent block.
+  #[test]
+  fn index_two() {
+    assert_eq!(
+      interpret("DrazinInverse[{{2, 0, 0}, {0, 0, 1}, {0, 0, 0}}]").unwrap(),
+      "{{1/2, 0, 0}, {0, 0, 0}, {0, 0, 0}}"
+    );
+  }
+
+  // Symbolic entries are handled (generic rank).
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("DrazinInverse[{{a, 0}, {0, 0}}]").unwrap(),
+      "{{a^(-1), 0}, {0, 0}}"
+    );
+  }
+
+  // A non-square (or non-matrix) argument stays unevaluated.
+  #[test]
+  fn non_square_unevaluated() {
+    assert_eq!(
+      interpret("DrazinInverse[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "DrazinInverse[{{1, 2, 3}, {4, 5, 6}}]"
+    );
+    assert_eq!(
+      interpret("DrazinInverse[{1, 2, 3}]").unwrap(),
+      "DrazinInverse[{1, 2, 3}]"
+    );
+  }
+}
+
 mod lattice_reduce {
   use super::*;
 

@@ -970,6 +970,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Probability" => Some((2, 3)),
     "ProductLog" => Some((1, 2)),
     "Projection" => Some((2, 2)),
+    "DrazinInverse" => Some((1, 1)),
     "PseudoInverse" => Some((1, 1)),
     "QBinomial" => Some((3, 3)),
     "QFactorial" => Some((2, 2)),

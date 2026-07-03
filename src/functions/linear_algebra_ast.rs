@@ -3621,6 +3621,148 @@ pub fn rank_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// DrazinInverse[m] - the Drazin inverse A^D of a square matrix, the unique
+/// matrix with A^D A A^D = A^D, A A^D = A^D A, and A^{k+1} A^D = A^k where k is
+/// the matrix index. Computed via the core–nilpotent split: with k the index
+/// and W = m^k, the columns of m at the pivot positions of W span the core
+/// (invertible) subspace and NullSpace[W] spans the nilpotent subspace; in that
+/// basis m is block-diagonal diag(C, N) and A^D = P diag(C^{-1}, 0) P^{-1}. An
+/// invertible matrix reduces to Inverse[m] and a nilpotent one to the zero
+/// matrix. A non-square argument emits the wolframscript `matsq` message.
+pub fn drazin_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "DrazinInverse".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) if !m.is_empty() && m.len() == m[0].len() => m,
+    _ => {
+      crate::emit_message(&format!(
+        "DrazinInverse::matsq: Argument {} at position 1 is not a nonempty \
+         square matrix.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated());
+    }
+  };
+  let n = matrix.len();
+  let a_expr = matrix_to_expr(matrix.clone());
+
+  let dot = |x: &Expr, y: &Expr| {
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: vec![x.clone(), y.clone()].into(),
+    })
+  };
+  let unary = |name: &str, m: &Expr| {
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![m.clone()].into(),
+    })
+  };
+  let rank = |m: &Expr| -> Option<usize> {
+    match unary("MatrixRank", m) {
+      Ok(Expr::Integer(r)) if r >= 0 => Some(r as usize),
+      _ => None,
+    }
+  };
+
+  // Matrix index k (≤ n) and W = mᵏ: smallest k with rank(mᵏ⁺¹) == rank(mᵏ).
+  let identity = identity_matrix_ast(&[Expr::Integer(n as i128)])?;
+  let mut powers = vec![identity]; // m⁰ = I
+  let mut ranks = vec![n]; // rank(m⁰) = n
+  let mut k = 0usize;
+  loop {
+    let next = dot(&powers[k], &a_expr)?;
+    let Some(rnext) = rank(&next) else {
+      return Ok(unevaluated());
+    };
+    powers.push(next);
+    ranks.push(rnext);
+    if rnext == ranks[k] {
+      break;
+    }
+    k += 1;
+    if k >= n {
+      break;
+    }
+  }
+  let w = powers[k].clone();
+  let r = ranks[k];
+
+  // Invertible → ordinary inverse; nilpotent → zero matrix.
+  if r == n {
+    return unary("Inverse", &a_expr);
+  }
+  if r == 0 {
+    return Ok(matrix_to_expr(vec![vec![Expr::Integer(0); n]; n]));
+  }
+
+  // Core basis: the columns of W at the pivot positions of RowReduce[W].
+  let Some(w_mat) = expr_to_matrix(&w) else {
+    return Ok(unevaluated());
+  };
+  let rref = row_reduce_impl(&w_mat);
+  let mut pivot_cols: Vec<usize> = Vec::new();
+  for row in &rref {
+    if let Some(pc) = row.iter().position(|e| !is_zero_expr(e)) {
+      pivot_cols.push(pc);
+    }
+  }
+  // Nilpotent basis: NullSpace[W].
+  let null_expr = unary("NullSpace", &w)?;
+  let Expr::List(null_vecs) = &null_expr else {
+    return Ok(unevaluated());
+  };
+  if pivot_cols.len() + null_vecs.len() != n {
+    return Ok(unevaluated());
+  }
+
+  // P = [core columns | nilpotent columns] (n × n).
+  let mut p: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut row = Vec::with_capacity(n);
+    for &j in &pivot_cols {
+      row.push(w_mat[i][j].clone());
+    }
+    for nv in null_vecs.iter() {
+      let Expr::List(comp) = nv else {
+        return Ok(unevaluated());
+      };
+      row.push(comp[i].clone());
+    }
+    p.push(row);
+  }
+  let p_expr = matrix_to_expr(p);
+  let pinv = unary("Inverse", &p_expr)?;
+
+  // B = P⁻¹ m P is block-diagonal diag(C, N); invert the r×r core block C.
+  let b = dot(&dot(&pinv, &a_expr)?, &p_expr)?;
+  let Some(b_mat) = expr_to_matrix(&b) else {
+    return Ok(unevaluated());
+  };
+  let c: Vec<Vec<Expr>> = (0..r)
+    .map(|i| (0..r).map(|j| b_mat[i][j].clone()).collect())
+    .collect();
+  let cinv = unary("Inverse", &matrix_to_expr(c))?;
+  let Some(cinv_mat) = expr_to_matrix(&cinv) else {
+    return Ok(unevaluated());
+  };
+
+  // D = block-diag(C⁻¹, 0); A^D = P D P⁻¹, entrywise simplified.
+  let mut dblock: Vec<Vec<Expr>> = vec![vec![Expr::Integer(0); n]; n];
+  for (i, crow) in cinv_mat.iter().enumerate() {
+    for (j, val) in crow.iter().enumerate() {
+      dblock[i][j] = val.clone();
+    }
+  }
+  let ad = dot(&dot(&p_expr, &matrix_to_expr(dblock))?, &pinv)?;
+  unary("Simplify", &ad)
+}
+
 /// Simplify expression via the evaluator (with Simplify for symbolic)
 fn simplify_expr(e: &Expr) -> Expr {
   let evaluated = match evaluate_expr_to_expr(e) {
