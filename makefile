@@ -145,11 +145,11 @@ APP_BUNDLE := /Applications/Woxi Studio.app
 
 .PHONY: install-macos-app
 install-macos-app:
-	cargo build --release -p woxi-studio
+	cargo build --profile studio -p woxi-studio
 	rm -rf "$(APP_BUNDLE)"
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
-	cp target/release/woxi-studio "$(APP_BUNDLE)/Contents/MacOS/woxi-studio"
+	cp target/studio/woxi-studio "$(APP_BUNDLE)/Contents/MacOS/woxi-studio"
 	cp woxi-studio/macos/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
 	@tmp=$$(mktemp -d) && \
 		iconset="$$tmp/icon.iconset" && \
