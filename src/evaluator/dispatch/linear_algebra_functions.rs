@@ -3651,7 +3651,13 @@ fn matrix_minimal_polynomial(
         name: "Plus".to_string(),
         args: terms.into(),
       };
-      return Some(evaluate_expr_to_expr(&poly));
+      // Expand so a matrix with symbolic entries flattens to the wolframscript
+      // term form (e.g. -(b c) + a d - a x - d x + x^2 rather than the factored
+      // -(b c) + a d + (-a - d) x + x^2); harmless for numeric entries.
+      return Some(evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Expand".to_string(),
+        args: vec![poly].into(),
+      }));
     }
   }
   None

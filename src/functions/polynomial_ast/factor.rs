@@ -685,7 +685,10 @@ pub fn poly_div(num: &[i128], den: &[i128]) -> Option<(Vec<i128>, Vec<i128>)> {
     let coeff = rem[i + m - 1] / lead_den;
     quot[i] = coeff;
     for j in 0..m {
-      rem[i + j] -= coeff * den[j];
+      // Bail out (rather than panic) if an intermediate product overflows;
+      // the caller treats `None` as "not exactly divisible over integers".
+      let prod = coeff.checked_mul(den[j])?;
+      rem[i + j] = rem[i + j].checked_sub(prod)?;
     }
   }
 

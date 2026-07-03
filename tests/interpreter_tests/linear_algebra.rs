@@ -5373,6 +5373,33 @@ mod matrix_minimal_polynomial {
       );
     }
   }
+
+  // Matrices with symbolic entries return the fully expanded polynomial
+  // (matching wolframscript), rather than a factored coefficient form.
+  #[test]
+  fn symbolic_entries_are_expanded() {
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{a, b}, {c, d}}, x]").unwrap(),
+      "-(b*c) + a*d - a*x - d*x + x^2"
+    );
+    assert_eq!(
+      interpret("MatrixMinimalPolynomial[{{a, 1}, {0, a}}, x]").unwrap(),
+      "a^2 - 2*a*x + x^2"
+    );
+  }
+
+  // Regression: a 3x3 matrix with symbolic entries used to overflow i128 in the
+  // polynomial-division path and panic. It now returns the expanded cubic.
+  #[test]
+  fn symbolic_3x3_does_not_overflow() {
+    assert_eq!(
+      interpret(
+        "MatrixMinimalPolynomial[{{p, q, 0}, {0, p, 0}, {0, 0, r}}, x]"
+      )
+      .unwrap(),
+      "-(p^2*r) + p^2*x + 2*p*r*x - 2*p*x^2 - r*x^2 + x^3"
+    );
+  }
 }
 
 mod permutation_matrix {
