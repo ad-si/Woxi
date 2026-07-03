@@ -1158,6 +1158,12 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   // Fast path for simple literals that don't need parsing
   // Check for integer
   if let Ok(n) = trimmed.parse::<i64>() {
+    // Visual hosts (Playground/Studio) still want the typeset SVG so a bare
+    // literal gets the same digit grouping as a computed result
+    // (`10000` → `10 000`). The CLI skips this (not visual mode).
+    if is_visual_mode() {
+      generate_output_svg(&syntax::Expr::Integer(n.into()));
+    }
     return Ok(n.to_string());
   }
   // Check for float (must contain '.' to distinguish from integer)
@@ -1190,9 +1196,15 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       if zero_accuracy || nonzero_precision {
         // Fall through to the full parser.
       } else {
+        if is_visual_mode() {
+          generate_output_svg(&syntax::Expr::Real(n));
+        }
         return Ok(format_real_result(n));
       }
     } else {
+      if is_visual_mode() {
+        generate_output_svg(&syntax::Expr::Real(n));
+      }
       return Ok(format_real_result(n));
     }
   }
@@ -1269,7 +1281,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               | "DotDashed"
           )
       });
-      if !needs_eval {
+      // In visual mode fall through to the full parser so a list of literals
+      // gets a typeset SVG with digit-grouped numbers (`{10000}` → `{10 000}`);
+      // the CLI keeps the fast return.
+      if !needs_eval && !is_visual_mode() {
         // Simple list with no function calls or operators - return as-is
         return Ok(trimmed.to_string());
       }
@@ -2930,7 +2945,19 @@ fn strip_number_precision_markers(expr: &syntax::Expr) -> syntax::Expr {
   use syntax::Expr;
   match expr {
     Expr::String(s) => {
-      Expr::String(precision_number_display(s).unwrap_or_else(|| s.clone()))
+      let display = precision_number_display(s).unwrap_or_else(|| s.clone());
+      // A machine/real Real in `mantissa*^exp` scientific notation is stored as
+      // a literal InputForm string (`1.*^10`). Typeset it as `1. × 10^exp` so
+      // the Playground/Studio SVG shows a superscript exponent instead of the
+      // raw `*^`, matching the notebook front-end.
+      match scientific_string_to_box(&display) {
+        Some(boxed) => boxed,
+        // A plain (non-scientific) number gets thin-space digit grouping for
+        // the notebook-style display (`10000000000` → `10 000 000 000`). The
+        // scientific mantissa above is intentionally left ungrouped, matching
+        // the Wolfram notebook.
+        None => Expr::String(functions::graphics::group_digits_str(&display)),
+      }
     }
     Expr::List(items) => Expr::List(
       items
@@ -2949,6 +2976,44 @@ fn strip_number_precision_markers(expr: &syntax::Expr) -> syntax::Expr {
     },
     other => other.clone(),
   }
+}
+
+/// If `s` is a real number in `mantissa*^exp` scientific notation, build the
+/// typeset box `RowBox[{mantissa, " × ", SuperscriptBox["10", exp]}]` so the
+/// Playground/Studio SVG renders `1. × 10^10` (with a superscript exponent)
+/// instead of the literal InputForm `1.*^10`. The exponent is an optionally
+/// signed integer; anything else (or no `*^` factor) returns `None`.
+fn scientific_string_to_box(s: &str) -> Option<syntax::Expr> {
+  use syntax::Expr;
+  let idx = s.find("*^")?;
+  let mantissa = &s[..idx];
+  let exp = &s[idx + 2..];
+  if mantissa.is_empty() || exp.is_empty() {
+    return None;
+  }
+  let exp_digits = exp.strip_prefix('-').unwrap_or(exp);
+  if exp_digits.is_empty() || !exp_digits.bytes().all(|b| b.is_ascii_digit()) {
+    return None;
+  }
+  Some(Expr::FunctionCall {
+    name: "RowBox".to_string(),
+    args: vec![Expr::List(
+      vec![
+        Expr::String(mantissa.to_string()),
+        Expr::String(" \u{00d7} ".to_string()),
+        Expr::FunctionCall {
+          name: "SuperscriptBox".to_string(),
+          args: vec![
+            Expr::String("10".to_string()),
+            Expr::String(exp.to_string()),
+          ]
+          .into(),
+        },
+      ]
+      .into(),
+    )]
+    .into(),
+  })
 }
 
 /// Convert a single numeric token in Wolfram backtick notation to its typeset
@@ -3138,6 +3203,34 @@ pub fn truncate_precision_reals(text: &str) -> String {
     // underscore, or a context backtick.
     in_word = ch.is_ascii_alphanumeric() || ch == '_' || ch == '`';
     i += len;
+  }
+  scientific_to_caret(&out)
+}
+
+/// Rewrite the InputForm scientific-notation operator `*^` (as in `1.5*^-8`) to
+/// the readable `×10^` form for plain-text notebook display (Woxi Studio):
+/// `1.*^10` → `1.×10^10`, `1.5*^-8` → `1.5×10^-8`. `*^` only ever occurs as a
+/// real literal's exponent marker, always immediately after a digit or `.`, so
+/// the guard on the preceding character leaves any other `*` / `^` untouched.
+/// The Playground/Studio SVG path renders the exponent as a true superscript
+/// via [`scientific_string_to_box`]; the plain-text widget cannot, so the base
+/// stays inline with a caret.
+fn scientific_to_caret(text: &str) -> String {
+  let mut out = String::with_capacity(text.len() + 8);
+  let mut prev: Option<char> = None;
+  let mut chars = text.chars().peekable();
+  while let Some(c) = chars.next() {
+    if c == '*'
+      && chars.peek() == Some(&'^')
+      && prev.is_some_and(|p| p.is_ascii_digit() || p == '.')
+    {
+      chars.next(); // consume the '^'
+      out.push_str("\u{00d7}10^");
+      prev = Some('^');
+    } else {
+      out.push(c);
+      prev = Some(c);
+    }
   }
   out
 }

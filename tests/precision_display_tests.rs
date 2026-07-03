@@ -70,9 +70,19 @@ fn negative_reals_keep_their_sign() {
 }
 
 #[test]
-fn scientific_suffix_is_preserved() {
-  assert_eq!(truncate_precision_reals("1.23456`3.*^6"), "1.23*^6");
-  assert_eq!(truncate_precision_reals("1.23456`3.*^-6"), "1.23*^-6");
+fn scientific_suffix_renders_as_times_ten_power() {
+  // The InputForm `*^` operator becomes the readable `×10^` form for plain-text
+  // (Studio) display, and the mantissa is still truncated to its precision.
+  assert_eq!(
+    truncate_precision_reals("1.23456`3.*^6"),
+    "1.23\u{00d7}10^6"
+  );
+  assert_eq!(
+    truncate_precision_reals("1.23456`3.*^-6"),
+    "1.23\u{00d7}10^-6"
+  );
+  // A machine-precision scientific real (no backtick) is converted too.
+  assert_eq!(truncate_precision_reals("1.*^10"), "1.\u{00d7}10^10");
 }
 
 #[test]

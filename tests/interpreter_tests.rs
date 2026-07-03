@@ -644,6 +644,111 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_scientific_real_output_svg_uses_superscript() {
+    // Regression: a machine Real in scientific notation (`10.^10` → `1.*^10`)
+    // must be typeset as `1. × 10^10` in the Playground/Studio SVG — a `×`
+    // factor with the exponent as a smaller superscript — rather than the raw
+    // InputForm `*^` operator.
+    for code in ["10.^10", "1.5*^-8", "3.4*^10"] {
+      clear_state();
+      let svg = interpret_with_stdout(code)
+        .unwrap()
+        .output_svg
+        .unwrap_or_else(|| panic!("expected output SVG for {code}"));
+      assert!(
+        !svg.contains("*^"),
+        "scientific SVG for {code} must not contain the literal `*^`:\n{svg}"
+      );
+      assert!(
+        svg.contains('\u{00d7}'),
+        "scientific SVG for {code} must contain the × factor:\n{svg}"
+      );
+      // The exponent renders in the reduced superscript font size (14 * 0.7).
+      assert!(
+        svg.contains("font-size=\"9.8\""),
+        "scientific SVG for {code} must have a superscript exponent:\n{svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn test_large_number_output_svg_groups_digits() {
+    // The Wolfram notebook groups the integer part of large numbers into
+    // 3-digit blocks (`10^10` → `10 000 000 000`). In the Playground/Studio SVG
+    // each group renders as its own `<text>` atom, so the full ungrouped run
+    // never appears and the leading/interior groups do.
+    clear_state();
+    let svg = interpret_with_stdout("10^10").unwrap().output_svg.unwrap();
+    assert!(
+      !svg.contains(">10000000000<"),
+      "large integer digits must be grouped:\n{svg}"
+    );
+    assert!(
+      svg.contains(">10<") && svg.contains(">000<"),
+      "expected 3-digit groups:\n{svg}"
+    );
+
+    // Grouping starts at five integer digits: `10^3` (1000) stays ungrouped,
+    // `10^4` (10000) becomes `10 000`.
+    clear_state();
+    let four = interpret_with_stdout("10^3").unwrap().output_svg.unwrap();
+    assert!(
+      four.contains(">1000<"),
+      "4-digit number must not group:\n{four}"
+    );
+    clear_state();
+    let five = interpret_with_stdout("10^4").unwrap().output_svg.unwrap();
+    assert!(
+      five.contains(">10<") && five.contains(">000<"),
+      "5-digit number must group:\n{five}"
+    );
+
+    // A non-scientific real groups only its integer part (`10.^5` → `100 000.`).
+    clear_state();
+    let real = interpret_with_stdout("10.^5").unwrap().output_svg.unwrap();
+    assert!(
+      real.contains(">100<") && real.contains(">000.<"),
+      "real integer part must group, fractional dot kept:\n{real}"
+    );
+  }
+
+  #[test]
+  fn test_bare_literal_output_svg_groups_digits() {
+    // A bare number literal (which the interpreter serves from a fast path)
+    // still gets a typeset, digit-grouped SVG in visual hosts, like a computed
+    // result: `10000` → `10 000`, `100000.` → `100 000.`, and a list literal
+    // `{10000, 20000}` groups each element.
+    for (code, present, absent) in [
+      ("10000", ">10<", ">10000<"),
+      ("100000.", ">000.<", ">100000.<"),
+      ("{10000, 20000}", ">000<", ">10000<"),
+    ] {
+      clear_state();
+      let svg = interpret_with_stdout(code)
+        .unwrap()
+        .output_svg
+        .unwrap_or_else(|| {
+          panic!("bare literal {code} should have an output SVG")
+        });
+      assert!(
+        svg.contains(present),
+        "{code}: expected {present} in:\n{svg}"
+      );
+      assert!(
+        !svg.contains(absent),
+        "{code}: must not contain {absent}:\n{svg}"
+      );
+    }
+    // Below the 5-digit threshold a bare literal stays ungrouped.
+    clear_state();
+    let small = interpret_with_stdout("1000").unwrap().output_svg.unwrap();
+    assert!(
+      small.contains(">1000<"),
+      "1000 must stay ungrouped:\n{small}"
+    );
+  }
+
+  #[test]
   fn test_play_synthesizes_audio_in_visual_mode() {
     // In visual mode (playground / woxi-studio), Play[f, {t, …}] synthesizes a
     // playable WAV exposed via the `sound` channel instead of the -Sound- echo.
@@ -1223,4 +1328,13 @@ mod interpreter_tests {
   mod timeseries;
   mod turing_machine;
   mod wavelets;
+}
+
+#[cfg(test)]
+mod tmp_dbg4 {
+  #[test]
+  fn t() {
+    woxi::clear_state();
+    let _ = woxi::interpret_with_stdout("{1, 2, 3}");
+  }
 }

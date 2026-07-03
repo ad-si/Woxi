@@ -4208,6 +4208,34 @@ impl BoxLayout {
         ),
       };
     }
+    // Digit-group separator (thin space U+2009, inserted by `group_digits_str`):
+    // render each 3-digit group as its own atom separated by a narrow gap, so
+    // the spacing is thinner than a full monospace advance and matches the
+    // Wolfram notebook's grouping (a mono thin-space glyph advances a full em,
+    // which would look too wide).
+    if s.contains('\u{2009}') {
+      let ascent = font_size * 0.8;
+      let descent = font_size * 0.25;
+      let gap = ch * 0.32;
+      let mut x = 0.0_f64;
+      let mut elements = String::new();
+      for (i, seg) in s.split('\u{2009}').enumerate() {
+        if i > 0 {
+          x += gap;
+        }
+        let escaped = svg_escape(seg);
+        elements.push_str(&format!(
+          "<text x=\"{x:.2}\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\" xml:space=\"preserve\">{escaped}</text>"
+        ));
+        x += seg.chars().count() as f64 * ch;
+      }
+      return BoxLayout {
+        width: x,
+        height: ascent + descent,
+        baseline: ascent,
+        elements,
+      };
+    }
     // Map Wolfram private-use operator glyphs to standard Unicode. The box
     // form emits `\[Rule]` / `\[RuleDelayed]` as their FrontEnd private-use
     // codepoints (U+F522 / U+F51F), which only have glyphs in Mathematica's
@@ -4760,10 +4788,49 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   }
 }
 
-/// Helper: group digits with thin spaces, returning plain text (not SVG).
-fn group_digits_str(s: &str) -> String {
-  // Just return the number as-is for simplicity in layout
-  s.to_string()
+/// Group the integer part of a decimal number string into blocks of three
+/// digits separated by a thin space (U+2009), matching the Wolfram notebook's
+/// digit grouping (`10000000000` → `10 000 000 000`, `100000.` → `100 000.`).
+/// Grouping only kicks in at five or more integer digits, so `1000` stays
+/// `1000` and `10000` becomes `10 000`. The fractional part and any leading
+/// sign are left untouched; a non-numeric string is returned unchanged.
+///
+/// `BoxLayout::text` renders the U+2009 separators as narrow gaps (thinner than
+/// a full monospace advance) so the spacing reads like the notebook's.
+pub(crate) fn group_digits_str(s: &str) -> String {
+  // The box form usually splits a sign into its own token, but the
+  // Integer/BigInteger layout arms pass a signed magnitude — handle both.
+  let (sign, rest) = match s.strip_prefix('-') {
+    Some(r) => ("-", r),
+    None => ("", s),
+  };
+  let (int_part, frac) = match rest.find('.') {
+    Some(i) => (&rest[..i], &rest[i..]),
+    None => (rest, ""),
+  };
+  // Only a plain decimal number is grouped: all-digit integer part and an
+  // optional `.` followed by digits.
+  if int_part.is_empty()
+    || !int_part.bytes().all(|b| b.is_ascii_digit())
+    || !frac.bytes().all(|b| b == b'.' || b.is_ascii_digit())
+    || int_part.len() < 5
+  {
+    return s.to_string();
+  }
+  let n = int_part.len();
+  let first = match n % 3 {
+    0 => 3,
+    r => r,
+  };
+  let mut grouped = String::with_capacity(n + n / 3);
+  grouped.push_str(&int_part[..first]);
+  let mut i = first;
+  while i < n {
+    grouped.push('\u{2009}');
+    grouped.push_str(&int_part[i..i + 3]);
+    i += 3;
+  }
+  format!("{sign}{grouped}{frac}")
 }
 
 /// Render a `BoxLayout` into a complete SVG string.
