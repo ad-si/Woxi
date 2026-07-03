@@ -10673,6 +10673,9 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           && let needs_dynamic = match &new_items[1] {
             Expr::Integer(_) | Expr::Real(_) | Expr::List(_) => false,
             Expr::FunctionCall { name, .. } if name == "Dynamic" => false,
+            // A trailing control option such as `ControlType -> None` is
+            // not a range, so it must not be wrapped in Dynamic[…].
+            Expr::Rule { .. } | Expr::RuleDelayed { .. } => false,
             _ => true,
           }
           && needs_dynamic
@@ -10710,6 +10713,12 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           let _ = evaluate_expr_to_expr(replacement);
         }
+        out_args.push(spec.clone());
+      }
+      // A trailing `Dynamic[…]` is an additional displayed expression, not
+      // a variable specification, so it passes through without a vsform
+      // message (matching wolframscript).
+      Expr::FunctionCall { name, .. } if name == "Dynamic" => {
         out_args.push(spec.clone());
       }
       _ => {
@@ -10777,6 +10786,16 @@ pub struct ManipulateSpec {
   pub initialization: Option<String>,
 }
 
+/// Result of parsing a single list-shaped Manipulate argument.
+enum ParsedControl {
+  /// A control that renders a UI element (slider or pick list).
+  Visible(ManipulateControl),
+  /// A control with no UI — either `ControlType -> None` or a `Locator`.
+  /// It contributes only a fixed `name = value` binding to the body so
+  /// the variable is in scope while the visible controls drive the plot.
+  Fixed { name: String, value: String },
+}
+
 /// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]`
 /// expression. Returns `None` if the expression is not a well-formed
 /// Manipulate (e.g. `Manipulate[]`, `Manipulate[expr]`, or a spec that
@@ -10793,6 +10812,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
 
   let body_code = crate::syntax::expr_to_input_form(&args[0]);
   let mut controls = Vec::with_capacity(args.len() - 1);
+  // Hidden controls (`Locator`, `ControlType -> None`) bind their variable
+  // to a fixed value that is baked into the body below.
+  let mut fixed: Vec<(String, String)> = Vec::new();
   let mut initialization: Option<String> = None;
   for spec in &args[1..] {
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
@@ -10813,8 +10835,32 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       continue;
     }
-    controls.push(parse_manipulate_control(spec)?);
+    // Only list-shaped arguments are control specs. Extra display elements
+    // such as a trailing `Dynamic[Panel[…]]` are not renderable here, so
+    // skip them rather than aborting the whole extraction.
+    if !matches!(spec, Expr::List(_)) {
+      continue;
+    }
+    match parse_manipulate_control(spec)? {
+      ParsedControl::Visible(c) => controls.push(c),
+      ParsedControl::Fixed { name, value } => fixed.push((name, value)),
+    }
   }
+
+  // A Manipulate with no controls at all (e.g. `Manipulate[x^2, badspec]`,
+  // where `badspec` is neither a spec nor an option) isn't renderable as an
+  // interactive widget — fall back to the plain text/graphics path.
+  if controls.is_empty() && fixed.is_empty() {
+    return None;
+  }
+
+  // Bake fixed (Locator / hidden) bindings into the body so they remain in
+  // scope on every re-evaluation, independent of the visible control state.
+  let body_code = if fixed.is_empty() {
+    body_code
+  } else {
+    manipulate_block_code(&body_code, &fixed)
+  };
 
   Some(ManipulateSpec {
     body_code,
@@ -10823,8 +10869,19 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   })
 }
 
-/// Parse a single variable-spec list into a `ManipulateControl`.
-fn parse_manipulate_control(spec: &Expr) -> Option<ManipulateControl> {
+/// Evaluate `expr` and render the result as InputForm. Falls back to the
+/// unevaluated form if evaluation fails. Used to freeze a hidden control's
+/// initial value (e.g. `RandomInteger[…]`) to a concrete literal so it does
+/// not change on every re-evaluation.
+fn manipulate_value_to_input_form(expr: &Expr) -> String {
+  match crate::evaluator::evaluate_expr_to_expr(expr) {
+    Ok(evaluated) => crate::syntax::expr_to_input_form(&evaluated),
+    Err(_) => crate::syntax::expr_to_input_form(expr),
+  }
+}
+
+/// Parse a single variable-spec list into a `ParsedControl`.
+fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   let items = match spec {
     Expr::List(items) => items,
     _ => return None,
@@ -10852,30 +10909,66 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ManipulateControl> {
     _ => return None,
   };
 
-  // Discrete form: {u, {u1, u2, …}} or {{u, uinit, …}, {u1, u2, …}}
-  if items.len() == 2
-    && let Expr::List(value_items) = &items[1]
-  {
-    let values: Vec<String> = value_items
-      .iter()
-      .map(crate::syntax::expr_to_input_form)
-      .collect();
-    if values.is_empty() {
-      return None;
-    }
-    let initial_index = match explicit_initial {
-      Some(init) => {
-        let init_code = crate::syntax::expr_to_input_form(&init);
-        values.iter().position(|v| *v == init_code).unwrap_or(0)
-      }
-      None => 0,
-    };
-    return Some(ManipulateControl::Discrete {
+  // Hidden controls: a `Locator` marker (`{{p, init}, pmin, pmax, Locator}`)
+  // or `ControlType -> None` (`{{v, init}, ControlType -> None}`). Neither
+  // renders a UI element in the static widget; both bind their variable to
+  // the (evaluated) initial value so the body can reference it.
+  let is_locator = items
+    .iter()
+    .any(|it| matches!(it, Expr::Identifier(s) if s == "Locator"));
+  let is_hidden = items.iter().any(|it| {
+    matches!(
+      it,
+      Expr::Rule { pattern, replacement }
+      | Expr::RuleDelayed { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
+          && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
+    )
+  });
+  if is_locator || is_hidden {
+    let value_expr = explicit_initial
+      .clone()
+      .or_else(|| items.get(1).cloned())
+      .unwrap_or(Expr::Identifier("Null".to_string()));
+    return Some(ParsedControl::Fixed {
       name,
-      values,
-      initial_index,
-      label,
+      value: manipulate_value_to_input_form(&value_expr),
     });
+  }
+
+  // Discrete form: `{u, {u1, u2, …}}` or `{{u, uinit, …}, {u1, u2, …}}`.
+  // The value list may also be given as an expression that evaluates to a
+  // list (e.g. `{g, PolyhedronData[All]}`), so evaluate a non-literal.
+  if items.len() == 2 {
+    let value_items: Option<Vec<Expr>> = match &items[1] {
+      Expr::List(vs) => Some(vs.iter().cloned().collect()),
+      other => match crate::evaluator::evaluate_expr_to_expr(other) {
+        Ok(Expr::List(ref vs)) => Some(vs.iter().cloned().collect()),
+        _ => None,
+      },
+    };
+    if let Some(value_items) = value_items {
+      let values: Vec<String> = value_items
+        .iter()
+        .map(crate::syntax::expr_to_input_form)
+        .collect();
+      if values.is_empty() {
+        return None;
+      }
+      let initial_index = match explicit_initial {
+        Some(init) => {
+          let init_code = crate::syntax::expr_to_input_form(&init);
+          values.iter().position(|v| *v == init_code).unwrap_or(0)
+        }
+        None => 0,
+      };
+      return Some(ParsedControl::Visible(ManipulateControl::Discrete {
+        name,
+        values,
+        initial_index,
+        label,
+      }));
+    }
   }
 
   // Continuous form: {u, umin, umax} or {u, umin, umax, du}
@@ -10895,14 +10988,14 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ManipulateControl> {
     None => min,
   };
 
-  Some(ManipulateControl::Continuous {
+  Some(ParsedControl::Visible(ManipulateControl::Continuous {
     name,
     min,
     max,
     step,
     initial,
     label,
-  })
+  }))
 }
 
 /// Pick a reasonable current value for each control. For continuous

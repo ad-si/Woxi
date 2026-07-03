@@ -283,6 +283,33 @@ fn eval_wl(src: &str) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&parsed)
 }
 
+/// Metric/count properties exposed by `PolyhedronData[name, property]`,
+/// returned (sorted) by `PolyhedronData["Properties"]`.
+static PROPERTIES: &[&str] = &[
+  "Circumradius",
+  "EdgeCount",
+  "FaceCount",
+  "Inradius",
+  "SurfaceArea",
+  "VertexCount",
+  "Volume",
+];
+
+/// Classes the built-in solids belong to, returned by
+/// `PolyhedronData["Classes"]`. Disjoint from `PROPERTIES`.
+static CLASSES: &[&str] = &["Convex", "Platonic", "Regular"];
+
+/// Build a `List` of string entries.
+fn string_list(items: &[&str]) -> Expr {
+  Expr::List(
+    items
+      .iter()
+      .map(|s| Expr::String(s.to_string()))
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
 pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -290,6 +317,30 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     })
   };
+
+  // `PolyhedronData[All]` — the list of known entities (by name).
+  if let Some(Expr::Identifier(sym)) = args.first()
+    && sym == "All"
+    && args.len() == 1
+  {
+    let mut names: Vec<&str> = POLYHEDRA.iter().map(|p| p.name).collect();
+    names.sort_unstable();
+    return Ok(string_list(&names));
+  }
+
+  // `PolyhedronData["Properties"]` / `PolyhedronData["Classes"]` — the
+  // available property and class names. Handled before `find_polyhedron`
+  // so these reserved strings aren't reported as unknown entities.
+  if let Some(Expr::String(kind)) = args.first()
+    && args.len() == 1
+  {
+    match kind.as_str() {
+      "Properties" => return Ok(string_list(PROPERTIES)),
+      "Classes" => return Ok(string_list(CLASSES)),
+      _ => {}
+    }
+  }
+
   let Some(Expr::String(name)) = args.first() else {
     return unevaluated();
   };
