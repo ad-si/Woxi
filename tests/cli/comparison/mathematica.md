@@ -66,7 +66,6 @@ they intentionally deviate from to provide a better user experience.
     - [Chemistry](https://www.wolfram.com/language/core-areas/chemistry/)
     - [Audio Computation](https://www.wolfram.com/language/core-areas/audio/)
     - [Video Computation](https://www.wolfram.com/language/core-areas/video/)
-    - [Geography](https://www.wolfram.com/language/core-areas/geography/)
     - [Astronomy](https://www.wolfram.com/language/core-areas/astronomy/)
     - [Control Systems](https://www.wolfram.com/language/core-areas/controls/)
     - [Signal Processing](https://www.wolfram.com/language/core-areas/signal/)
@@ -94,30 +93,26 @@ Woxi does **not** support.
     `RegisterExceptionType`
 - Lazy sequences via `IncrementalObject` and incremental
     `Permutations` / `Subsets` / `Tuples`
-- Visualization: `PlotGrid`, `BubbleHistogram`
 - WebSocket connectivity
 - GPU/CUDA kernels
 
 ### Version 14.3 (2025)
 
-- Dark mode: `LightDarkSwitched`, `SystemColor`, `ThemeColor`
 - Data fitting: `ListFitPlot`, `ListFitPlot3D`, `LocalModelFit` (LOESS),
     `KernelModelFit`
 - Surface and mesh processing: `SurfaceDensityPlot3D`, `SmoothMesh`,
     `SimplifyMesh`, `Remesh`, `SubdivisionRegion`
-- Geodesics: `FindShortestCurve`, `ShortestCurveDistance`
 - Non-commutative algebra: `NonCommutativeExpand`, `Commutator`,
     `AntiCommutator`
 - `HilbertTransform`
 - Lommel functions `LommelS1`/`LommelS2`/`LommelT1`/`LommelT2`
-- Linear algebra: `EigenvalueDecomposition`, `FrobeniusDecomposition`,
-    `MatrixMinimalPolynomial`
+- Linear algebra: `EigenvalueDecomposition`, `FrobeniusDecomposition`
 - `LLMGraph` for agentic workflows
 - Many new database connectors
 
 ### Version 14.2 (2025)
 
-- `Tabular` big-data subsystem: `ToTabular`, `AggregateRows`,
+- `Tabular` big-data subsystem: `AggregateRows`,
     `PivotTable`, `TransformColumns`
 - Chat cells in notebooks
 - Symbolic arrays: `ArrayExpand`, `ArraySimplify`, `ComponentExpand`
@@ -127,7 +122,6 @@ Woxi does **not** support.
 - Astronomy: `FindAstroEvent`
 - `ParallelSelect`, `ParallelCases`
 - `Failsafe`
-- `MidDate`
 
 ### Version 14.1 (2024)
 
@@ -139,7 +133,6 @@ Woxi does **not** support.
 - `DStabilityConditions`
 - Biomolecules: `BioMolecule`, `BioMoleculePlot3D`
 - `AstroGraphics`
-- `PolarCurve`, `FilledPolarCurve`
 - Video generation: `ManipulateVideo`, `VideoTranscribe`, `SpeechRecognize`
 
 ### Version 14.0 (2024)
@@ -149,22 +142,21 @@ Woxi does **not** support.
     `ContourIntegrate`, fractional differentiation
 - Video as a first-class object: `VideoJoin`, `OverlayVideo`
 - Astronomy: `AstroPosition`, `AstroGraphics`
-- Chemistry: `Molecule`, `ChemicalFormula`, `ReactionBalance`
+- Chemistry: `ChemicalFormula`, `ReactionBalance`
 - Symbolic finite-field arithmetic and factoring
 - Solid-mechanics / fluid-dynamics PDEs
 - Computable species data
 - Synthetic geometry constraint solving
-- Graphics: texture mapping, haloing
+- Graphics: texture mapping
 
 ### Version 13.3 (2023)
 
 - LLM suite: `LLMFunction`, `LLMSynthesize`, `LLMTool`,
     `LLMExampleFunction`, Chat Notebooks
-- Appell functions: `AppellF2`, `AppellF3`, `AppellF4`
 - `FiniteField` arithmetic
-- Region metrics: `RegionDistance`, `RegionHausdorffDistance`,
+- Region metrics: `RegionHausdorffDistance`,
     `InscribedBall`, `CircumscribedBall`
-- `PlotHighlighting`, `Haloing`, `Highlighted`
+- `PlotHighlighting`
 - `ImageSynthesize` (text-to-image)
 - `FindImageShapes`
 - Test framework: `TestCreate`, `TestObject`, `TestReport`
@@ -176,7 +168,6 @@ Woxi does **not** support.
 - Astronomy: `AstroPosition`, `AstroDistance`, `AstroAngularSeparation`
 - Multivariate polynomial factoring over finite fields
 - Temperature-difference units
-- `RandomTime`
 - `ClusteringMeasurements`
 - `NetExternalObject` (ONNX)
 - `TerminatedEvaluation`
@@ -185,21 +176,18 @@ Woxi does **not** support.
 
 ### Version 13.1 (2022)
 
-- `Threaded` construct
 - Compiler enhancements
 - Full 32-bit Unicode and emoji support
 - Fractional calculus: `FractionalD`, `CaputoD`, `ImplicitD`,
     `IntegrateChangeVariables`, `DSolveChangeVariables`
-- Data ops: `UniqueElements`, `ReplaceAt`
 - Chemistry: `PatternReaction`, `ApplyReaction`, `ChemicalConvert`
 - Geometry: `ReconstructionMesh`, 3D `VoronoiMesh`, `GeodesicPolyhedron`
-- `TernaryListPlot`
 - `VideoCapture`, `VideoScreenCapture`
 
 ### Version 13.0 (2021)
 
 - Solid mechanics: `SolidMechanicsPDEComponent`, `SolidMechanicsStress`
-- Matrix ops: `DrazinInverse`, `FunctionPoles`, `CenteredInterval`
+- Matrix ops: `FunctionPoles`
 - Geometry: `RegionFit`, `ConcaveHullMesh`, `CSGRegion`,
     `FindRegionTransform`
 - Graph theory: `FindVertexColoring`, `VertexChromaticNumber`,
@@ -208,14 +196,12 @@ Woxi does **not** support.
 - Spatial estimation: `SpatialEstimate`, `VariogramModel`
 - Video composition: `TourVideo`, `GridVideo`
 - Symbolic lighting (`PointLight`, `SpotLight`)
-- Quizzes: `QuestionObject`, `AssessmentFunction`
 
 ### Version 12.3 (2021)
 
 - Multivariate transcendental equation solving
 - Symbolic PDE solutions
 - Data structures: `ByteTrie`, `KDTree`, `ImmutableVector`
-- `GeometricTest`
 - Region dilation/erosion
 - `StreamPlot3D`, `ListStreamPlot3D`
 - Video editing: `VideoRecord`, `VideoInsert`, `VideoReplace`
@@ -227,8 +213,7 @@ Woxi does **not** support.
     `BioSequenceComplement`
 - Spatial statistics: `SpatialPointData`, `MeanPointDensity`,
     `SpatialRandomnessTest`
-- PDE term framework: `LaplacianPDETerm`, `DiffusionPDETerm`,
-    `HelmholtzPDEComponent`
+- PDE term framework: `LaplacianPDETerm`, `HelmholtzPDEComponent`
 - Interactive Euclidean geometry
 - 37 new calendar systems
 
@@ -243,18 +228,16 @@ Woxi does **not** support.
 - Neural net types BERT and GPT-2
 - `NetGANOperator`
 - `MoleculeRecognize`
-- `WikidataData`
 
 ### Version 12.0 (2019)
 
-- Complex plotting: `ComplexPlot`, `ComplexPlot3D`, `ReImPlot`
 - Euclidean geometry automation: `GeometricScene`, `RandomInstance`,
-    `FindGeometricConjectures`, `TriangleCenter`
+    `FindGeometricConjectures`
 - Theorem proving: `AxiomaticTheory`, `FindEquationalProof`
 - Machine learning: `LearnDistribution`, `FindAnomalies`, `AttentionLayer`
 - Recognition: `ImageCases`, `ImageContents`, `AudioIdentify`,
     `PitchRecognize`
-- Chemistry: `Molecule`, `MoleculePlot3D`, `FindMoleculeSubstructure`
+- Chemistry: `MoleculePlot3D`, `FindMoleculeSubstructure`
 - NLP: `TextCases`, `TextContents`, `Synonyms`, `Antonyms`
 - `Iconize`
 
@@ -275,7 +258,7 @@ Woxi does **not** support.
 - Improved `Classify` / `Predict`
 - `GeoImage` (satellite imagery)
 - `TideData`
-- `StackedListPlot`, `StackedDateListPlot`
+- `StackedDateListPlot`
 - `AnatomyPlot3D`
 - `RegionIntersection` (constructive solid geometry)
 - `SpeechSynthesize`
@@ -294,20 +277,17 @@ Woxi does **not** support.
 - `GeoBubbleChart`
 - `WebSearch`, `WebImageSearch`, `TextTranslation`
 - `HilbertCurve`, `SierpinskiMesh`, `SpherePoints`, `AnglePath3D`
-- `DateObject` granularity
 - `PersistentValue`
 
 ### Version 11.0 (2016)
 
 - `Printout3D` (3D printing) with automatic mesh repair
 - Neural networks: `ImageIdentify`, `NetChain`, `ConvolutionLayer`
-- `Audio` as a first-class type
 - Routing: `TravelDirections`, `TravelTime`
 - Differential operators: `DEigenvalues`, `GreenFunction`, `MellinTransform`
 - `Channel` publish-subscribe framework
 - Cryptography
-- `HTTPRequest`
-- Text: `TextCases`, `Transliterate`
+- Text: `TextCases`
 
 ### Version 10.0 (2014)
 
@@ -331,7 +311,7 @@ Woxi does **not** support.
 - GPU computing: `CUDAFunction` (CUDALink / OpenCLLink)
 - C code generation: `CCodeGenerate`, `CompileToC`
 - Financial engineering: `FinancialDerivative`, `FinancialData`
-- Wavelet analysis: `WaveletTransform`, `DiscreteWaveletTransform`
+- Continuous `WaveletTransform`
 
 ### Version 7.0 (2008)
 
