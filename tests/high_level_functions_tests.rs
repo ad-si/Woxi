@@ -7624,4 +7624,73 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  // ParallelDo has no real parallel kernels in Woxi, so it iterates
+  // sequentially exactly like Do (matching the rest of the Parallel*
+  // family). It returns Null and holds its body, so side-effecting bodies
+  // like Print[i] are not evaluated once before iteration begins.
+  //
+  // Note: in wolframscript the parallel kernels run in isolated memory, so
+  // master-kernel side effects are NOT observable and Print output is
+  // reordered with per-kernel headers. Only the return value (Null) and the
+  // attributes match verbatim; the stdout-capture tests below lock in
+  // Woxi's deterministic sequential behavior.
+  mod parallel_do_tests {
+    use super::*;
+    use woxi::interpret_with_stdout;
+
+    #[test]
+    fn returns_null() {
+      // `interpret` renders the Null return value as the "\0" sentinel.
+      assert_eq!(interpret("ParallelDo[i, {i, 3}]").unwrap(), "\0");
+    }
+
+    #[test]
+    fn returns_null_in_list() {
+      // Wraps the Null so it is observable in the result (matches WS).
+      assert_eq!(
+        interpret("{ParallelDo[i, {i, 3}], 42}").unwrap(),
+        "{Null, 42}"
+      );
+    }
+
+    #[test]
+    fn attributes_match_wolframscript() {
+      assert_eq!(
+        interpret("Attributes[ParallelDo]").unwrap(),
+        "{Protected, ReadProtected}"
+      );
+    }
+
+    #[test]
+    fn holds_body_no_premature_evaluation() {
+      // Before the fix, Print[i] was evaluated once eagerly (printing the
+      // bare symbol `i`) before ParallelDo saw its held argument.
+      let r = interpret_with_stdout("ParallelDo[Print[i], {i, 3}]").unwrap();
+      assert_eq!(r.result, "\0");
+      assert_eq!(r.stdout, "1\n2\n3\n");
+    }
+
+    #[test]
+    fn iterates_with_imin_imax_step() {
+      let r =
+        interpret_with_stdout("ParallelDo[Print[i], {i, 2, 6, 2}]").unwrap();
+      assert_eq!(r.stdout, "2\n4\n6\n");
+    }
+
+    #[test]
+    fn iterates_over_explicit_list() {
+      let r =
+        interpret_with_stdout("ParallelDo[Print[k], {k, {a, b, c}}]").unwrap();
+      assert_eq!(r.stdout, "a\nb\nc\n");
+    }
+
+    #[test]
+    fn multiple_iterators() {
+      let r =
+        interpret_with_stdout("ParallelDo[Print[10 i + j], {i, 2}, {j, 2}]")
+          .unwrap();
+      assert_eq!(r.stdout, "11\n12\n21\n22\n");
+    }
+  }
 }

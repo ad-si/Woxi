@@ -4516,10 +4516,13 @@ pub fn dispatch_list_operations(
     "Parallelize" if args.len() == 1 => {
       return Some(Ok(args[0].clone()));
     }
-    "Do" if args.len() == 2 => {
+    // ParallelDo has no real parallel kernels in Woxi, so it evaluates
+    // sequentially exactly like Do (matching the rest of the Parallel*
+    // family, which are implemented as their sequential counterparts).
+    "Do" | "ParallelDo" if args.len() == 2 => {
       return Some(list_helpers_ast::do_ast(&args[0], &args[1]));
     }
-    "Do" if args.len() > 2 => {
+    "Do" | "ParallelDo" if args.len() > 2 => {
       // Multi-iterator Do: Do[body, {i, ...}, {j, ...}, ...] is a single
       // construct in Wolfram. Break[] and Return[] exit the entire Do, not
       // just the innermost iterator, so we cannot lower it to nested Do

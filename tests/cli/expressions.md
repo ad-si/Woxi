@@ -57,6 +57,7 @@ Output is always in [FullForm].
 - [`Molecule`](expressions/Molecule.md)
 - [`Opening`](expressions/Opening.md)
 - [`OrthogonalMatrixQ`](expressions/OrthogonalMatrixQ.md)
+- [`ParallelDo`](expressions/ParallelDo.md)
 - [`ParallelMap`](expressions/ParallelMap.md)
 - [`ParallelTable`](expressions/ParallelTable.md)
 - [`Protect`](expressions/Protect.md)

@@ -899,6 +899,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PadLeft" => Some((1, 4)),
     "PadRight" => Some((1, 4)),
     "ParallelArray" => Some((2, 4)),
+    "ParallelDo" => Some((2, usize::MAX)),
     "PalindromeQ" => Some((1, 1)),
     "ParabolicCylinderD" => Some((2, 2)),
     "ParametricPlot" => Some((2, usize::MAX)),

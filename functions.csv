@@ -1696,7 +1696,7 @@ VertexNormals,Vertex normal vectors,,unevaluated,6.0,1721
 CorrelationFunction,Sample autocorrelation of data at a given lag,✅,pure,9.0,1723
 RandomImage,Generates a random image with given dimensions,✅,pure,8.0,1723
 BellY,Partial Bell polynomial (Bell Y polynomial),✅,pure,8.0,1725
-ParallelDo,Parallel Do loop,,unevaluated,7.0,1725
+ParallelDo,Parallel version of Do (evaluated sequentially),✅,pure,7.0,1725
 BarnesG,Barnes G-function (double gamma function),✅,pure,7.0,1727
 URL,URL wrapper (stays symbolic),✅,unevaluated,11.0,1727
 Between,Tests if a value is between bounds,✅,pure,10.3,1728

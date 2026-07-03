@@ -1938,6 +1938,9 @@ pub fn evaluate_expr_to_expr_inner(
         // These functions take unevaluated expressions as first argument
         if name == "Table"
         || name == "Do"
+        // ParallelDo holds its body like Do so side-effecting expressions
+        // (e.g. Print[i]) aren't evaluated once before iteration begins.
+        || name == "ParallelDo"
         || name == "With"
         || name == "Block"
         || name == "Function"
