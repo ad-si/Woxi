@@ -196,6 +196,21 @@ $(WASM_PKG): $(WASM_SRCS)
 wasm-build: $(WASM_PKG)
 
 
+# Bundle CodeMirror (+ LZString) into tests/playground/vendor/codemirror.js so
+# the playground loads its editor locally instead of from the esm.sh CDN. The
+# committed bundle is what the playground actually serves; run this only to
+# regenerate it after changing versions or the export list in
+# tests/playground-deps/. `npm ci` needs network access to the npm registry.
+CM_BUNDLE := tests/playground/vendor/codemirror.js
+CM_SRCS   := tests/playground-deps/entry.mjs tests/playground-deps/package.json
+
+$(CM_BUNDLE): $(CM_SRCS)
+	cd tests/playground-deps && npm ci && npm run build
+
+.PHONY: playground-codemirror
+playground-codemirror: $(CM_BUNDLE)
+
+
 .PHONY: wasm-build-production
 wasm-build-production:
 	wasm-pack build \
@@ -251,7 +266,7 @@ docs/site: wasm-build docs/summary
 # bundle (built once by wasm-build into tests/playground/pkg/), copied
 # into each location so worker.js can find ./pkg/woxi.js.
 .PHONY: docs/build
-docs/build: jupyterlite-build docs/site
+docs/build: jupyterlite-build docs/site playground-codemirror
 	cp -R tests/landing/. tests/book/
 	cp -R tests/playground/pkg tests/book/pkg
 	rm -rf tests/book/playground

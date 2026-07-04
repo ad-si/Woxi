@@ -10,8 +10,9 @@ use iced::keyboard;
 use iced::overlay::menu;
 use iced::widget::operation::focus;
 use iced::widget::{
-  Column, button, column, container, image, mouse_area, opaque, pick_list, row,
-  rule, scrollable, slider, space, stack, svg, text, text_editor,
+  Column, button, column, container, image, mouse_area, opaque, pick_list,
+  rich_text, row, rule, scrollable, slider, space, stack, svg, text,
+  text_editor,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font, Subscription, Task,
@@ -3332,26 +3333,92 @@ fn handle_event(
 /// Returns the image handle together with the *logical* (1×) width and height.
 /// Build the interactive widget for a Manipulate cell: one row of
 /// controls (sliders or pick lists) followed by the current rendering.
+/// Build the caption widget shown next to a Manipulate control. Renders the
+/// label's styled runs as rich text so `Style[…, Italic]` shows as an italic
+/// glyph (e.g. an italic `t`, or the italic `m` of `m₁`). Falls back to the
+/// plain `label`, then the variable `name`, when there are no runs.
+fn manipulate_label_widget<'a>(
+  runs: &[woxi::functions::graphics::LabelRun],
+  label: &str,
+  name: &str,
+  width: f32,
+) -> Element<'a, Message> {
+  const SIZE: f32 = 12.0;
+  // Match the family the upright runs inherit (the app default is
+  // MONOSPACE) so an italic run doesn't jump to a different typeface.
+  let italic = Font {
+    style: iced::font::Style::Italic,
+    ..Font::MONOSPACE
+  };
+
+  if runs.is_empty() {
+    let fallback = if label.is_empty() { name } else { label };
+    return text(fallback.to_string())
+      .size(SIZE)
+      .width(iced::Length::Fixed(width))
+      .into();
+  }
+
+  let spans: Vec<text::Span<'a, ()>> = runs
+    .iter()
+    .map(|r| {
+      let s = iced::widget::span(r.text.clone());
+      if r.italic { s.font(italic) } else { s }
+    })
+    .collect();
+  rich_text(spans)
+    .size(SIZE)
+    .width(iced::Length::Fixed(width))
+    .into()
+}
+
+/// Approximate rendered width (px) of a Manipulate label at the caption font
+/// size, from its character count. Used to size the shared label column to
+/// the widest label so it sits snug against the sliders instead of leaving a
+/// fixed 140px gutter.
+fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
+  let (label, name) = match ctrl {
+    manipulate::ControlState::Continuous { label, name, .. }
+    | manipulate::ControlState::Discrete { label, name, .. }
+    | manipulate::ControlState::Slider2D { label, name, .. }
+    | manipulate::ControlState::IntervalSlider { label, name, .. } => {
+      (label, name)
+    }
+  };
+  let text = if label.is_empty() { name } else { label };
+  text.chars().count()
+}
+
 fn render_manipulate_widget<'a>(
   cell_idx: usize,
   state: &'a manipulate::ManipulateState,
   stale: bool,
 ) -> Element<'a, Message> {
   let mut controls_col = Column::new().spacing(6).width(Fill);
+  // Size the label column to the widest label so it sits snug against the
+  // sliders. ~7.3px per character at the 12px caption font (monospace),
+  // plus a little trailing padding; clamped so a single-glyph label still
+  // reads and a very long one can't swallow the slider.
+  let max_label_chars = state
+    .controls
+    .iter()
+    .map(manipulate_label_char_count)
+    .max()
+    .unwrap_or(0);
+  let label_col_width = (max_label_chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0);
   for (ctrl_idx, ctrl) in state.controls.iter().enumerate() {
     match ctrl {
       manipulate::ControlState::Continuous {
         name,
         label,
+        label_runs,
         min,
         max,
         step,
         current,
       } => {
-        let label_display = if label.is_empty() { name } else { label };
-        let label_widget = text(format!("{label_display}"))
-          .size(12)
-          .width(iced::Length::Fixed(140.0));
+        let label_widget =
+          manipulate_label_widget(label_runs, label, name, label_col_width);
         let s = slider(*min..=*max, *current, move |v| {
           Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
         })
@@ -3369,13 +3436,12 @@ fn render_manipulate_widget<'a>(
       manipulate::ControlState::Discrete {
         name,
         label,
+        label_runs,
         values,
         current_index,
       } => {
-        let label_display = if label.is_empty() { name } else { label };
-        let label_widget = text(format!("{label_display}"))
-          .size(12)
-          .width(iced::Length::Fixed(140.0));
+        let label_widget =
+          manipulate_label_widget(label_runs, label, name, label_col_width);
         let selected = values.get(*current_index).cloned();
         let picker = pick_list(values.clone(), selected, move |choice| {
           Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice)
@@ -3395,7 +3461,6 @@ fn render_manipulate_widget<'a>(
         y,
       } => {
         // Rendered as two linked sliders (X and Y) driving the 2-vector.
-        let label_display = if label.is_empty() { name } else { label };
         let x_span = (*x_max - *x_min).abs();
         let y_span = (*y_max - *y_min).abs();
         let x_step = if x_span > 0.0 { x_span / 100.0 } else { 1.0 };
@@ -3418,9 +3483,10 @@ fn render_manipulate_widget<'a>(
         .size(11)
         .font(Font::MONOSPACE)
         .width(iced::Length::Fixed(120.0));
-        let label_widget = text(format!("{label_display}"))
-          .size(12)
-          .width(iced::Length::Fixed(140.0));
+        // Empty runs → plain label; shares label_col_width so 2D-slider rows
+        // align with the other controls.
+        let label_widget =
+          manipulate_label_widget(&[], label, name, label_col_width);
         let control_row = row![
           label_widget,
           column![x_slider, y_slider].spacing(4),
@@ -3440,7 +3506,6 @@ fn render_manipulate_widget<'a>(
         high,
       } => {
         // Rendered as two linked sliders (low and high endpoints).
-        let label_display = if label.is_empty() { name } else { label };
         let low_slider = slider(*min..=*max, *low, move |v| {
           Message::ManipulateIntervalChanged(cell_idx, ctrl_idx, 0, v)
         })
@@ -3459,9 +3524,10 @@ fn render_manipulate_widget<'a>(
         .size(11)
         .font(Font::MONOSPACE)
         .width(iced::Length::Fixed(120.0));
-        let label_widget = text(format!("{label_display}"))
-          .size(12)
-          .width(iced::Length::Fixed(140.0));
+        // Empty runs → plain label; shares label_col_width so interval-slider
+        // rows align with the other controls.
+        let label_widget =
+          manipulate_label_widget(&[], label, name, label_col_width);
         let control_row = row![
           label_widget,
           column![low_slider, high_slider].spacing(4),
@@ -5526,6 +5592,34 @@ mod tests {
       args: vec![].into(),
     };
     assert_eq!(extract_hyperlink(&expr), None);
+  }
+
+  #[test]
+  fn label_char_count_uses_visible_glyphs_and_falls_back_to_name() {
+    // A short styled label counts its rendered glyphs (m₁ = 2), while an
+    // empty label falls back to the variable name. The widest of these
+    // drives the shared label-column width, so a row of single-glyph
+    // labels no longer reserves the old fixed 140px gutter.
+    let m1 = manipulate::ControlState::Continuous {
+      name: "m1".to_string(),
+      label: "m\u{2081}".to_string(),
+      label_runs: vec![],
+      min: 0.0,
+      max: 1.0,
+      step: 0.1,
+      current: 0.0,
+    };
+    let empty = manipulate::ControlState::Continuous {
+      name: "theta".to_string(),
+      label: String::new(),
+      label_runs: vec![],
+      min: 0.0,
+      max: 1.0,
+      step: 0.1,
+      current: 0.0,
+    };
+    assert_eq!(manipulate_label_char_count(&m1), 2);
+    assert_eq!(manipulate_label_char_count(&empty), 5); // "theta"
   }
 
   // ── Result-output SVG rendering ──

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use iced::widget::image;
 use iced::widget::svg;
 use woxi::functions::graphics::{
-  ManipulateControl, ManipulateSpec, extract_control_spec,
+  LabelRun, ManipulateControl, ManipulateSpec, extract_control_spec,
   extract_manipulate_spec, manipulate_block_code,
 };
 use woxi::syntax::Expr;
@@ -25,6 +25,8 @@ pub enum ControlState {
   Continuous {
     name: String,
     label: String,
+    /// The label split into styled runs, for rich-text (italic) rendering.
+    label_runs: Vec<LabelRun>,
     min: f64,
     max: f64,
     /// Step size used by the slider. When the spec doesn't specify one
@@ -35,6 +37,7 @@ pub enum ControlState {
   Discrete {
     name: String,
     label: String,
+    label_runs: Vec<LabelRun>,
     /// Each entry is an InputForm fragment ready for substitution.
     values: Vec<String>,
     current_index: usize,
@@ -237,6 +240,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
       ManipulateControl::Continuous {
         name,
         label,
+        label_runs,
         min,
         max,
         step,
@@ -249,6 +253,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         ControlState::Continuous {
           name: name.clone(),
           label: label.clone(),
+          label_runs: label_runs.clone(),
           min: *min,
           max: *max,
           step,
@@ -258,11 +263,13 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
       ManipulateControl::Discrete {
         name,
         label,
+        label_runs,
         values,
         initial_index,
       } => ControlState::Discrete {
         name: name.clone(),
         label: label.clone(),
+        label_runs: label_runs.clone(),
         values: values.clone(),
         current_index: *initial_index,
       },

@@ -12,5 +12,6 @@
 /tests/book
 /tests/jupyterlite
 /tests/playground/pkg
+/tests/playground/vendor
 /tests/scripts/_*
 /todos.md

@@ -1,23 +1,19 @@
+// CodeMirror (and LZString) are bundled locally into vendor/codemirror.js so
+// the playground has no runtime dependency on the esm.sh CDN. Regenerate the
+// bundle with `make playground-codemirror` after changing versions. See
+// tests/playground-deps/ for the build sources.
 import {
   EditorView, keymap, lineNumbers, highlightSpecialChars,
   highlightActiveLine,
-} from "https://esm.sh/@codemirror/view@6"
-import { EditorState, Compartment } from "https://esm.sh/@codemirror/state@6"
-import {
+  EditorState, Compartment,
   StreamLanguage,
   syntaxHighlighting, defaultHighlightStyle, bracketMatching,
-} from "https://esm.sh/@codemirror/language@6"
-import {
   defaultKeymap, history, historyKeymap, indentWithTab,
-} from "https://esm.sh/@codemirror/commands@6"
-import {
   closeBrackets, closeBracketsKeymap,
-} from "https://esm.sh/@codemirror/autocomplete@6"
-import {
   mathematica,
-} from "https://esm.sh/@codemirror/legacy-modes@6/mode/mathematica"
-import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6"
-import LZString from "https://esm.sh/lz-string@1"
+  oneDark,
+  LZString,
+} from "./vendor/codemirror.js"
 
 
 let worker = null
@@ -423,7 +419,20 @@ function renderManipulate(item) {
 
     const lbl = document.createElement("span")
     lbl.className = "manipulate-label"
-    lbl.textContent = ctrl.label || ctrl.name
+    // Render the label's styled runs (italic where flagged, e.g. an italic
+    // `t` or the italic `m` of `m₁`). Fall back to the plain label / name
+    // when no runs are present.
+    const runs = ctrl.labelRuns
+    if (Array.isArray(runs) && runs.length > 0) {
+      for (const run of runs) {
+        const part = document.createElement("span")
+        part.textContent = run.text
+        if (run.italic) part.style.fontStyle = "italic"
+        lbl.appendChild(part)
+      }
+    } else {
+      lbl.textContent = ctrl.label || ctrl.name
+    }
     row.appendChild(lbl)
 
     if (ctrl.kind === "continuous") {
@@ -460,6 +469,14 @@ function renderManipulate(item) {
         current[ctrl.name] = select.value
         requestUpdate()
       })
+
+      // The controls share one grid (rows use `display: contents`), so every
+      // row must contribute the same three cells or auto-placement desyncs the
+      // shared label column. Discrete controls have no value readout, so add an
+      // empty cell to fill the third column.
+      const spacer = document.createElement("span")
+      spacer.className = "manipulate-value"
+      row.appendChild(spacer)
     } else if (ctrl.kind === "slider2d") {
       // A 2D draggable pad. The handle position maps linearly onto the
       // [xMin,xMax] × [yMin,yMax] range; the bound value is `{x, y}`.

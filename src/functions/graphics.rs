@@ -10990,6 +10990,16 @@ pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // Interactive Manipulate support (for Woxi Playground / Woxi Studio)
 // ─────────────────────────────────────────────────────────────────
 
+/// A styled run of a control label. A label is a sequence of these so the
+/// UI can render `Style["t", Italic]` as an italic `t` while leaving the
+/// rest upright. Only italic is tracked — the styling Wolfram labels use in
+/// practice for slider captions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LabelRun {
+  pub text: String,
+  pub italic: bool,
+}
+
 /// A single control inside a Manipulate expression.
 ///
 /// Continuous controls correspond to `{u, umin, umax}` or
@@ -11006,7 +11016,11 @@ pub enum ManipulateControl {
     /// reasonable default (e.g. (max - min) / 100).
     step: Option<f64>,
     initial: f64,
+    /// Plain-text label (all runs concatenated) — used for JSON and any
+    /// consumer that can't render styling.
     label: String,
+    /// The label split into styled runs for rich-text rendering.
+    label_runs: Vec<LabelRun>,
   },
   Discrete {
     name: String,
@@ -11015,6 +11029,7 @@ pub enum ManipulateControl {
     values: Vec<String>,
     initial_index: usize,
     label: String,
+    label_runs: Vec<LabelRun>,
   },
   /// A 2D control (`ControlType -> Slider2D`, or a 2D range spec
   /// `{u, {xmin, ymin}, {xmax, ymax}}`). Binds its variable to a 2-vector
@@ -11213,6 +11228,180 @@ fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Render a control-label expression into styled runs for the interactive
+/// widget. Wolfram labels are frequently wrapped in presentation heads
+/// (`Style[…, Italic]`, `Text[…]`) or use `Subscript`, none of which should
+/// appear as literal source next to a slider.
+///
+/// The heavy lifting is delegated to the OutputForm renderer
+/// (`format_expr(_, Output)`), which already unwraps `Style`, concatenates
+/// `Row`, renders `Rational`, etc. The arms handled explicitly here are the
+/// label-specific bits OutputForm intentionally does *not* do: it keeps
+/// `Subscript`/`Superscript` in 1D structural form (`Subscript[m, 1]`, to
+/// match wolframscript's 1D text output) and leaves `Text[…]` wrapped. So we
+/// recurse through those heads to reach a nested `Subscript`/`Superscript`
+/// (folding it into Unicode) and to carry `Style[…, Italic]` down to the
+/// individual runs, giving e.g. `Text[Subscript[Style["m", Italic], 1]]` →
+/// an italic `m` followed by an upright `₁`, and `Style["t", Italic]` → an
+/// italic `t`. `italic` is the style inherited from an enclosing `Style`.
+fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
+  let output_run = |italic: bool| {
+    let text =
+      crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output);
+    if text.is_empty() {
+      vec![]
+    } else {
+      vec![LabelRun { text, italic }]
+    }
+  };
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // Style[expr, dir…] — render `expr`, turning italic on if any directive
+      // asks for it (bare `Italic` or `FontSlant -> "Italic"`).
+      "Style" => {
+        let styled = italic || args.iter().skip(1).any(is_italic_directive);
+        args
+          .first()
+          .map(|a| manipulate_label_runs(a, styled))
+          .unwrap_or_default()
+      }
+      // Presentation wrappers whose content may nest styling/subscripts —
+      // recurse rather than defer to OutputForm.
+      "Text" | "DisplayForm" | "TraditionalForm" => args
+        .first()
+        .map(|a| manipulate_label_runs(a, italic))
+        .unwrap_or_default(),
+      // Row[{a, b, …}] — concatenate the (recursively rendered) parts.
+      "Row" => match args.first() {
+        Some(Expr::List(parts)) => parts
+          .iter()
+          .flat_map(|p| manipulate_label_runs(p, italic))
+          .collect(),
+        _ => output_run(italic),
+      },
+      "Subscript" => script_runs(args, italic, false),
+      "Superscript" => script_runs(args, italic, true),
+      _ => output_run(italic),
+    },
+    _ => output_run(italic),
+  }
+}
+
+/// Build the runs for a `Subscript`/`Superscript`: the base rendered in the
+/// inherited style, followed by each remaining argument folded into Unicode
+/// sub-/superscript glyphs (which have no italic variant, so they stay
+/// upright).
+fn script_runs(
+  args: &[Expr],
+  italic: bool,
+  superscript: bool,
+) -> Vec<LabelRun> {
+  let mut runs = args
+    .first()
+    .map(|a| manipulate_label_runs(a, italic))
+    .unwrap_or_default();
+  let script: String = args
+    .iter()
+    .skip(1)
+    .map(|a| {
+      to_unicode_script(
+        &flatten_label_runs(&manipulate_label_runs(a, false)),
+        superscript,
+      )
+    })
+    .collect();
+  if !script.is_empty() {
+    runs.push(LabelRun {
+      text: script,
+      italic: false,
+    });
+  }
+  runs
+}
+
+/// True when a `Style` directive requests italic: bare `Italic` or
+/// `FontSlant -> "Italic" | Italic`.
+fn is_italic_directive(dir: &Expr) -> bool {
+  match dir {
+    Expr::Identifier(s) => s == "Italic",
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      matches!(pattern.as_ref(), Expr::Identifier(s) if s == "FontSlant")
+        && match replacement.as_ref() {
+          Expr::String(s) => s == "Italic",
+          Expr::Identifier(s) => s == "Italic",
+          _ => false,
+        }
+    }
+    _ => false,
+  }
+}
+
+/// Concatenate the text of a run sequence, discarding styling. Used where a
+/// plain string is needed (JSON export, Unicode-script folding).
+fn flatten_label_runs(runs: &[LabelRun]) -> String {
+  runs.iter().map(|r| r.text.as_str()).collect()
+}
+
+/// Map the characters of `s` to their Unicode sub-/superscript form when a
+/// mapping exists, leaving other characters unchanged. Used to render
+/// `Subscript`/`Superscript` control labels inline.
+fn to_unicode_script(s: &str, superscript: bool) -> String {
+  s.chars()
+    .map(|c| unicode_script_char(c, superscript).unwrap_or(c))
+    .collect()
+}
+
+/// Unicode sub-/superscript for a single character, if one exists.
+fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
+  let mapped = if superscript {
+    match c {
+      '0' => '\u{2070}',
+      '1' => '\u{00B9}',
+      '2' => '\u{00B2}',
+      '3' => '\u{00B3}',
+      '4' => '\u{2074}',
+      '5' => '\u{2075}',
+      '6' => '\u{2076}',
+      '7' => '\u{2077}',
+      '8' => '\u{2078}',
+      '9' => '\u{2079}',
+      '+' => '\u{207A}',
+      '-' => '\u{207B}',
+      '(' => '\u{207D}',
+      ')' => '\u{207E}',
+      'n' => '\u{207F}',
+      'i' => '\u{2071}',
+      _ => return None,
+    }
+  } else {
+    match c {
+      '0' => '\u{2080}',
+      '1' => '\u{2081}',
+      '2' => '\u{2082}',
+      '3' => '\u{2083}',
+      '4' => '\u{2084}',
+      '5' => '\u{2085}',
+      '6' => '\u{2086}',
+      '7' => '\u{2087}',
+      '8' => '\u{2088}',
+      '9' => '\u{2089}',
+      '+' => '\u{208A}',
+      '-' => '\u{208B}',
+      '(' => '\u{208D}',
+      ')' => '\u{208E}',
+      _ => return None,
+    }
+  };
+  Some(mapped)
+}
+
 /// Parse a single variable-spec list into a `ParsedControl`.
 fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   let items = match spec {
@@ -11224,8 +11413,14 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   }
 
   // Head can be either a plain symbol `u` or `{u, uinit}` / `{u, uinit, ulbl}`.
-  let (name, explicit_initial, label) = match &items[0] {
-    Expr::Identifier(n) => (n.clone(), None, n.clone()),
+  let plain_run = |s: String| {
+    vec![LabelRun {
+      text: s,
+      italic: false,
+    }]
+  };
+  let (name, explicit_initial, label_runs) = match &items[0] {
+    Expr::Identifier(n) => (n.clone(), None, plain_run(n.clone())),
     Expr::List(head_items) if !head_items.is_empty() => {
       let n = match &head_items[0] {
         Expr::Identifier(n) => n.clone(),
@@ -11233,14 +11428,15 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       };
       let init = head_items.get(1).cloned();
       let lbl = match head_items.get(2) {
-        Some(Expr::String(s)) => s.clone(),
-        Some(other) => crate::syntax::expr_to_string(other),
-        None => n.clone(),
+        Some(Expr::String(s)) => plain_run(s.clone()),
+        Some(other) => manipulate_label_runs(other, false),
+        None => plain_run(n.clone()),
       };
       (n, init, lbl)
     }
     _ => return None,
   };
+  let label = flatten_label_runs(&label_runs);
 
   // Hidden controls: a `Locator` marker (`{{p, init}, pmin, pmax, Locator}`)
   // or `ControlType -> None` (`{{v, init}, ControlType -> None}`). Neither
@@ -11391,6 +11587,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         values,
         initial_index,
         label,
+        label_runs,
       }));
     }
   }
@@ -11419,6 +11616,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
     step,
     initial,
     label,
+    label_runs,
   }))
 }
 
@@ -11651,6 +11849,23 @@ fn json_escape_manipulate(s: &str) -> String {
   out
 }
 
+/// Serialize the styled runs of a label as a JSON array, e.g.
+/// `[{"text":"m","italic":true},{"text":"₁","italic":false}]`. The playground
+/// renders each run as a span, applying italic where flagged.
+fn label_runs_to_json(runs: &[LabelRun]) -> String {
+  let parts: Vec<String> = runs
+    .iter()
+    .map(|r| {
+      format!(
+        r#"{{"text":"{}","italic":{}}}"#,
+        json_escape_manipulate(&r.text),
+        r.italic,
+      )
+    })
+    .collect();
+  format!("[{}]", parts.join(","))
+}
+
 /// Serialize a `ManipulateSpec` to a JSON object string (no surrounding
 /// braces for an output-item wrapper — the caller adds `"type":"manipulate"`
 /// etc. around it).
@@ -11665,15 +11880,17 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         step,
         initial,
         label,
+        label_runs,
       } => {
         let step_json = match step {
           Some(s) => format!(r#","step":{}"#, s),
           None => String::new(),
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"continuous","name":"{}","label":"{}","min":{},"max":{},"initial":{}{}}}"#,
+          r#"{{"kind":"continuous","name":"{}","label":"{}","labelRuns":{},"min":{},"max":{},"initial":{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
           min,
           max,
           initial,
@@ -11685,15 +11902,17 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         values,
         initial_index,
         label,
+        label_runs,
       } => {
         let value_parts: Vec<String> = values
           .iter()
           .map(|v| format!(r#""{}""#, json_escape_manipulate(v)))
           .collect();
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","values":[{}],"initialIndex":{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"initialIndex":{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
           value_parts.join(","),
           initial_index,
         ));
@@ -11752,4 +11971,94 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     json_escape_manipulate(&spec.body_code),
     ctrl_parts.join(","),
   )
+}
+
+#[cfg(test)]
+mod manipulate_label_tests {
+  use super::*;
+  use crate::syntax::Expr;
+
+  fn call(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    }
+  }
+
+  fn runs(expr: &Expr) -> Vec<LabelRun> {
+    manipulate_label_runs(expr, false)
+  }
+
+  fn run(text: &str, italic: bool) -> LabelRun {
+    LabelRun {
+      text: text.to_string(),
+      italic,
+    }
+  }
+
+  #[test]
+  fn style_italic_string_is_one_italic_run() {
+    let label = call(
+      "Style",
+      vec![Expr::String("t".into()), Expr::Identifier("Italic".into())],
+    );
+    assert_eq!(runs(&label), vec![run("t", true)]);
+  }
+
+  #[test]
+  fn style_fontslant_rule_is_italic() {
+    let label = call(
+      "Style",
+      vec![
+        Expr::String("t".into()),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("FontSlant".into())),
+          replacement: Box::new(Expr::String("Italic".into())),
+        },
+      ],
+    );
+    assert_eq!(runs(&label), vec![run("t", true)]);
+  }
+
+  #[test]
+  fn text_subscript_style_renders_italic_base_and_upright_subscript() {
+    // Text[Subscript[Style["m", Italic], 1]]  ->  italic "m", upright "₁"
+    let styled = call(
+      "Style",
+      vec![Expr::String("m".into()), Expr::Identifier("Italic".into())],
+    );
+    let subscript = call("Subscript", vec![styled, Expr::Integer(1)]);
+    let label = call("Text", vec![subscript]);
+    assert_eq!(runs(&label), vec![run("m", true), run("\u{2081}", false)]);
+  }
+
+  #[test]
+  fn plain_identifier_passthrough() {
+    let label = Expr::Identifier("\u{03B8}".into());
+    assert_eq!(runs(&label), vec![run("\u{03B8}", false)]);
+    assert_eq!(flatten_label_runs(&runs(&label)), "\u{03B8}");
+  }
+
+  #[test]
+  fn superscript_renders_unicode() {
+    let label = call(
+      "Superscript",
+      vec![Expr::Identifier("x".into()), Expr::Integer(2)],
+    );
+    assert_eq!(runs(&label), vec![run("x", false), run("\u{00B2}", false)]);
+  }
+
+  #[test]
+  fn row_concatenates_parts_preserving_style() {
+    let italic_a = call(
+      "Style",
+      vec![Expr::String("a".into()), Expr::Identifier("Italic".into())],
+    );
+    let row = call(
+      "Row",
+      vec![Expr::List(vec![italic_a, Expr::String("b".into())].into())],
+    );
+    assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
+    assert_eq!(flatten_label_runs(&runs(&row)), "ab");
+  }
 }

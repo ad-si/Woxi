@@ -82,6 +82,13 @@ jobs:
           cache: 'npm'
           cache-dependency-path: jupyterlite-woxi-kernel/package-lock.json
 
+      # Bundle CodeMirror locally so the deployed playground loads its editor
+      # from tests/playground/vendor/codemirror.js instead of the esm.sh CDN.
+      # The bundle is a generated artifact (gitignored), so it must be built
+      # before the playground is copied into the deployment tree below.
+      - name: Build CodeMirror playground bundle
+        run: make playground-codemirror
+
       - name: Build JupyterLite kernel extension
         run: |
           cd jupyterlite-woxi-kernel && npm install && npx tsc

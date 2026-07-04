@@ -443,20 +443,25 @@ pre.output-box {
 }
 
 .manipulate-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  /* One shared grid for all control rows so the label column is exactly as
+     wide as the widest label (sliders stay aligned across rows) instead of a
+     fixed 6rem gutter. `fit-content(12rem)` sizes the column to its content
+     but caps it, so a short label like `t` sits snug against its slider while
+     a long label can't swallow it. Rows use `display: contents` (below) so
+     their label/slider/value cells land directly in this grid. */
+  display: grid;
+  grid-template-columns: fit-content(12rem) 1fr auto;
+  align-items: center;
+  column-gap: 0.6rem;
+  row-gap: 0.35rem;
   padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 .manipulate-control-row {
-  display: grid;
-  grid-template-columns: minmax(6rem, 10rem) 1fr auto;
-  align-items: center;
-  gap: 0.6rem;
-  font-size: 13px;
-  color: var(--text-secondary);
+  display: contents;
 }
 
 .manipulate-label {
