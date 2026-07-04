@@ -3037,6 +3037,15 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) if (-1.0..=1.0).contains(f) => {
       return Ok(Expr::Real(f.asin()));
     }
+    // Outside [-1, 1] the (inexact) real argument gives a complex result:
+    // ArcSin[x] = sign(x)*Pi/2 - sign(x)*ArcCosh[|x|].
+    Expr::Real(f) if f.abs() > 1.0 => {
+      use std::f64::consts::PI;
+      let x = *f;
+      let s = x.signum();
+      let arccosh = (x.abs() + (x * x - 1.0).sqrt()).ln();
+      return build_complex_float_result(s * PI / 2.0, -s * arccosh);
+    }
     _ => {}
   }
   // Check for special rational/irrational values via numeric comparison
@@ -3160,6 +3169,15 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(-1) => return Ok(Expr::Constant("Pi".to_string())),
     Expr::Real(f) if (-1.0..=1.0).contains(f) => {
       return Ok(Expr::Real(f.acos()));
+    }
+    // Outside [-1, 1] the (inexact) real argument gives a complex result:
+    // ArcCos[x] = Pi/2 - ArcSin[x] = (Pi/2 - sign(x)*Pi/2) + sign(x)*ArcCosh[|x|] I.
+    Expr::Real(f) if f.abs() > 1.0 => {
+      use std::f64::consts::PI;
+      let x = *f;
+      let s = x.signum();
+      let arccosh = (x.abs() + (x * x - 1.0).sqrt()).ln();
+      return build_complex_float_result(PI / 2.0 - s * PI / 2.0, s * arccosh);
     }
     _ => {}
   }
@@ -4403,6 +4421,14 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
     Expr::Real(f) if f.abs() < 1.0 => return Ok(Expr::Real(f.atanh())),
+    // Outside (-1, 1) the (inexact) real argument gives a complex result:
+    // ArcTanh[x] = (1/2) Log|(1+x)/(1-x)| - sign(x)*Pi/2 I.
+    Expr::Real(f) if f.abs() > 1.0 => {
+      use std::f64::consts::PI;
+      let x = *f;
+      let re = 0.5 * ((1.0 + x).abs().ln() - (1.0 - x).abs().ln());
+      return build_complex_float_result(re, -x.signum() * PI / 2.0);
+    }
     _ => {}
   }
   // Complex float input: ArcTanh[x + I y] with careful precision.

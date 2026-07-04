@@ -795,6 +795,55 @@ mod inverse_trig_identities {
     // A finite exact argument stays symbolic.
     assert_eq!(interpret("ArcCosh[2]").unwrap(), "ArcCosh[2]");
   }
+
+  // ArcSin/ArcCos/ArcTanh of an inexact real outside their real domain give a
+  // numeric complex result (an exact integer/rational argument stays
+  // symbolic). All expected values verified against wolframscript.
+  #[test]
+  fn arcsin_out_of_domain_real_is_complex() {
+    assert_eq!(
+      interpret("ArcSin[2.0]").unwrap(),
+      "1.5707963267948966 - 1.3169578969248166*I"
+    );
+    assert_eq!(
+      interpret("ArcSin[-1.5]").unwrap(),
+      "-1.5707963267948966 + 0.9624236501192069*I"
+    );
+    // Exact integer stays symbolic.
+    assert_eq!(interpret("ArcSin[3]").unwrap(), "ArcSin[3]");
+  }
+
+  #[test]
+  fn arccos_out_of_domain_real_is_complex() {
+    assert_eq!(
+      interpret("ArcCos[2.0]").unwrap(),
+      "0. + 1.3169578969248166*I"
+    );
+    assert_eq!(
+      interpret("ArcCos[-1.5]").unwrap(),
+      "3.141592653589793 - 0.9624236501192069*I"
+    );
+  }
+
+  #[test]
+  fn arctanh_out_of_domain_real_is_complex() {
+    assert_eq!(
+      interpret("ArcTanh[2.0]").unwrap(),
+      "0.5493061443340549 - 1.5707963267948966*I"
+    );
+    assert_eq!(
+      interpret("ArcTanh[-2.0]").unwrap(),
+      "-0.5493061443340549 + 1.5707963267948966*I"
+    );
+  }
+
+  // In-domain reals are unchanged (still return a plain real).
+  #[test]
+  fn arc_in_domain_reals_stay_real() {
+    assert_eq!(interpret("ArcSin[0.5]").unwrap(), "0.5235987755982988");
+    assert_eq!(interpret("ArcCos[0.5]").unwrap(), "1.0471975511965976");
+    assert_eq!(interpret("ArcTanh[0.5]").unwrap(), "0.5493061443340549");
+  }
 }
 
 mod inverse_function {
