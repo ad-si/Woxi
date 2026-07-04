@@ -647,6 +647,17 @@ mod im_tests {
     assert_eq!(interpret("Arg[0]").unwrap(), "0");
   }
 
+  // Abs is always a non-negative real, so Arg[Abs[z]] = 0. A positive scalar
+  // multiple reduces to the same. wolframscript does NOT simplify compound
+  // forms (Abs[x] + 1, Abs[x]^2), so those stay unevaluated.
+  #[test]
+  fn arg_of_abs_is_zero() {
+    assert_eq!(interpret("Arg[Abs[x]]").unwrap(), "0");
+    assert_eq!(interpret("Arg[2 Abs[x]]").unwrap(), "0");
+    assert_eq!(interpret("Arg[Abs[x] + 1]").unwrap(), "Arg[1 + Abs[x]]");
+    assert_eq!(interpret("Arg[Abs[x]^2]").unwrap(), "Arg[Abs[x]^2]");
+  }
+
   #[test]
   fn arg_positive_rational() {
     assert_eq!(interpret("Arg[1/2]").unwrap(), "0");

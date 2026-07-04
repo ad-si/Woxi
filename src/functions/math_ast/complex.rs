@@ -1088,6 +1088,17 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Arg[Abs[z]] = 0: Abs is always a non-negative real, so its argument is 0.
+  // A positive scalar multiple (Arg[2 Abs[x]]) reduces to this via the
+  // factor-stripping below. wolframscript does NOT extend this to compound
+  // forms like Arg[Abs[x] + 1] or Arg[Abs[x]^2], so keep it to a direct Abs.
+  if let Expr::FunctionCall { name, args: inner } = &args[0]
+    && name == "Abs"
+    && inner.len() == 1
+  {
+    return Ok(Expr::Integer(0));
+  }
+
   // A concrete inexact complex value with a nonzero imaginary part has an
   // inexact argument: Arg[2. I] = 1.5707..., not the exact Pi/2 that a pure
   // imaginary integer (Arg[2 I] = Pi/2) gives. Handle it before the
