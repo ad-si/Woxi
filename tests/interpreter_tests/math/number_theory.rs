@@ -3128,6 +3128,21 @@ mod factorial {
     assert_eq!(interpret("(-3)!").unwrap(), "ComplexInfinity");
   }
 
+  // The poles at the negative integers are ComplexInfinity for an inexact
+  // (Real) argument too. Previously only -1. was caught (Gamma[0.] diverges);
+  // -2., -3., ... fell through to the numeric gamma_fn, which returns a large
+  // finite garbage value at the poles. Per wolframscript.
+  #[test]
+  fn factorial_negative_integer_reals() {
+    assert_eq!(interpret("Factorial[-1.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Factorial[-2.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Factorial[-3.0]").unwrap(), "ComplexInfinity");
+    // A negative non-integer real stays finite (Factorial[-1.5] = Gamma[-0.5]).
+    let result = interpret("Factorial[-1.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - (-3.5449077018110318)).abs() < 1e-12);
+  }
+
   #[test]
   fn factorial_half_integer_rational() {
     // Factorial[1/2] = Gamma[3/2] = Sqrt[Pi]/2

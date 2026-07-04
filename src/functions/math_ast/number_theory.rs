@@ -494,6 +494,13 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = kg_inner(n, 1, &mut shift);
     Ok(bigint_to_expr(result << shift))
   } else if let Expr::Real(f) = &args[0] {
+    // Factorial has poles at the negative integers: Factorial[-n.] =
+    // Gamma[1 - n] = ComplexInfinity. The numeric gamma_fn returns a large
+    // finite garbage value at those poles instead of diverging, so detect
+    // them explicitly. (A negative non-integer, e.g. -1.5, stays finite.)
+    if *f < 0.0 && f.fract() == 0.0 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
     // An integer-valued real index gives the exact factorial rounded to a
     // machine real: Factorial[5.0] -> 120., not the float-Gamma
     // 120.00000000000021. Compute the exact integer factorial, then convert
