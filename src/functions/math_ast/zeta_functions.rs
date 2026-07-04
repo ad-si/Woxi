@@ -1040,7 +1040,15 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![Expr::Integer(n as i128), Expr::Integer(z as i128)].into(),
       })
     }
-    Expr::Real(f) => Ok(Expr::Real(polygamma_numeric(n, *f))),
+    Expr::Real(f) => {
+      // PolyGamma has poles at the non-positive integers (z = 0, -1, -2, ...);
+      // there it is ComplexInfinity, not the real +/-Infinity the numeric
+      // series would diverge to. (A non-integer negative z is finite.)
+      if *f <= 0.0 && f.fract() == 0.0 {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      Ok(Expr::Real(polygamma_numeric(n, *f)))
+    }
     // Half-integer z (Rational[odd, 2]) with odd n >= 1: use the
     // polygamma-Hurwitz relation PolyGamma[n, z] = (-1)^(n+1) n! Zeta[n+1, z].
     // For odd n, n+1 is even so Zeta[n+1, half-integer] reduces to a closed

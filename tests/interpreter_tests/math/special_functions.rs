@@ -1778,6 +1778,20 @@ mod polygamma {
     assert_eq!(interpret("PolyGamma[1, 0]").unwrap(), "ComplexInfinity");
   }
 
+  // The poles at the non-positive integers are ComplexInfinity for an inexact
+  // (Real) argument too, not the +/-Infinity the numeric series diverges to.
+  // A negative non-integer argument stays finite. Per wolframscript.
+  #[test]
+  fn pole_at_real_nonpositive_integers() {
+    assert_eq!(interpret("PolyGamma[0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("PolyGamma[-1.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("PolyGamma[-2.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("PolyGamma[1, 0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("PolyGamma[2, -3.0]").unwrap(), "ComplexInfinity");
+    // A negative half-integer is finite (equals PolyGamma[2.5] here).
+    assert_eq!(interpret("PolyGamma[-1.5]").unwrap(), "0.7031566406452437");
+  }
+
   #[test]
   fn symbolic_unevaluated() {
     assert_eq!(interpret("PolyGamma[x]").unwrap(), "PolyGamma[0, x]");
