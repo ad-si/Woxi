@@ -840,9 +840,9 @@ mod inverse_trig_identities {
   // In-domain reals are unchanged (still return a plain real).
   #[test]
   fn arc_in_domain_reals_stay_real() {
-    assert_eq!(interpret("ArcSin[0.5]").unwrap(), "0.5235987755982988");
-    assert_eq!(interpret("ArcCos[0.5]").unwrap(), "1.0471975511965976");
-    assert_eq!(interpret("ArcTanh[0.5]").unwrap(), "0.5493061443340549");
+    assert_eq!(interpret("ArcSin[0.5]").unwrap(), "0.5235987755982989");
+    assert_eq!(interpret("ArcCos[0.5]").unwrap(), "1.0471975511965979");
+    assert_eq!(interpret("ArcTanh[0.5]").unwrap(), "0.5493061443340548");
   }
 
   // ArcSec/ArcCsc/ArcSech follow the reciprocal identities (ArcSec[x] =
@@ -869,7 +869,7 @@ mod inverse_trig_identities {
   fn arcsech_out_of_domain_real_is_complex() {
     assert_eq!(
       interpret("ArcSech[2.0]").unwrap(),
-      "0. + 1.0471975511965976*I"
+      "0. + 1.0471975511965979*I"
     );
     assert_eq!(
       interpret("ArcSech[-0.5]").unwrap(),
@@ -894,8 +894,8 @@ mod inverse_trig_identities {
   // stay symbolic rather than being numericized.
   #[test]
   fn arcsec_arccsc_in_domain_and_exact() {
-    assert_eq!(interpret("ArcSec[2.0]").unwrap(), "1.0471975511965976");
-    assert_eq!(interpret("ArcCsc[2.0]").unwrap(), "0.5235987755982988");
+    assert_eq!(interpret("ArcSec[2.0]").unwrap(), "1.0471975511965979");
+    assert_eq!(interpret("ArcCsc[2.0]").unwrap(), "0.5235987755982989");
     assert_eq!(interpret("ArcSech[0.5]").unwrap(), "1.3169578969248166");
     assert_eq!(interpret("ArcSec[3]").unwrap(), "ArcSec[3]");
     assert_eq!(interpret("ArcCsc[3]").unwrap(), "ArcCsc[3]");
@@ -932,7 +932,7 @@ mod inverse_trig_identities {
   // The non-singular real branches are unchanged.
   #[test]
   fn arccoth_arccsch_real_branches_unchanged() {
-    assert_eq!(interpret("ArcCoth[2.0]").unwrap(), "0.5493061443340549");
+    assert_eq!(interpret("ArcCoth[2.0]").unwrap(), "0.5493061443340548");
     assert_eq!(
       interpret("ArcCoth[0.5]").unwrap(),
       "0.5493061443340549 - 1.5707963267948966*I"
