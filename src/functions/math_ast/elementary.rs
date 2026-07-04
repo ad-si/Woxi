@@ -2982,6 +2982,15 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "FractionalPart expects exactly 1 argument".into(),
     ));
   }
+  // FractionalPart of an integer-valued expression is 0. IntegerPart, Floor,
+  // Ceiling, and Round always return integers, so the fractional part of any
+  // of them vanishes (a bare symbol could be non-integer and stays symbolic).
+  if let Expr::FunctionCall { name, args: inner } = &args[0]
+    && inner.len() == 1
+    && matches!(name.as_str(), "IntegerPart" | "Floor" | "Ceiling" | "Round")
+  {
+    return Ok(Expr::Integer(0));
+  }
   // FractionalPart of an infinite quantity is the full unit interval in the
   // corresponding direction (wolframscript): Infinity -> Interval[{0, 1}],
   // -Infinity -> Interval[{-1, 0}], ComplexInfinity -> Interval[{0, 1}].

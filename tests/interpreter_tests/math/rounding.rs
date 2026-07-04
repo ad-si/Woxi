@@ -52,6 +52,18 @@ mod fractional_part {
     assert_eq!(interpret("FractionalPart[Pi]").unwrap(), "-3 + Pi");
   }
 
+  // IntegerPart, Floor, Ceiling, and Round always return integers, so the
+  // fractional part of any of them is 0. A bare symbol stays symbolic.
+  #[test]
+  fn integer_valued_head_is_zero() {
+    assert_eq!(interpret("FractionalPart[IntegerPart[x]]").unwrap(), "0");
+    assert_eq!(interpret("FractionalPart[Floor[x]]").unwrap(), "0");
+    assert_eq!(interpret("FractionalPart[Ceiling[x]]").unwrap(), "0");
+    assert_eq!(interpret("FractionalPart[Round[x]]").unwrap(), "0");
+    // A bare symbol could be non-integer and stays symbolic.
+    assert_eq!(interpret("FractionalPart[n]").unwrap(), "FractionalPart[n]");
+  }
+
   #[test]
   fn symbolic_e() {
     assert_eq!(interpret("FractionalPart[E]").unwrap(), "-2 + E");
