@@ -328,6 +328,18 @@ mod degree_trig_functions {
     assert_eq!(interpret("Csch[ComplexInfinity]").unwrap(), "Indeterminate");
   }
 
+  // Csch and Coth have a pole at 0. An inexact zero argument must yield
+  // ComplexInfinity (like the exact Csch[0]/Coth[0]) rather than raising a
+  // division-by-zero error. Per wolframscript.
+  #[test]
+  fn csch_coth_zero_real_is_complex_infinity() {
+    assert_eq!(interpret("Csch[0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Csch[0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Coth[0.0]").unwrap(), "ComplexInfinity");
+    // Non-singular real inputs are unchanged.
+    assert_eq!(interpret("Csch[2.0]").unwrap(), "0.27572056477178325");
+  }
+
   #[test]
   fn arctan_degrees_exact() {
     assert_eq!(interpret("ArcTanDegrees[1]").unwrap(), "45");

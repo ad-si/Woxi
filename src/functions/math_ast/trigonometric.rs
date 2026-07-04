@@ -4259,9 +4259,9 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Real(f) = &args[0] {
     let s = f.sinh();
     if s == 0.0 {
-      return Err(InterpreterError::EvaluationError(
-        "Csch: division by zero".into(),
-      ));
+      // Csch has a pole at 0 (Sinh[0] = 0): Csch[0.] = ComplexInfinity, like
+      // the exact Csch[0], rather than raising an error.
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
     return Ok(Expr::Real(1.0 / s));
   }
