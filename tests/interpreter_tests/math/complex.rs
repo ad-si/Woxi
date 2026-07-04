@@ -1209,6 +1209,33 @@ mod complex_power_numeric {
       "-0.163450932107355 + 0.09600498360894891*I"
     );
   }
+
+  // Sqrt of a negative machine real is a numeric imaginary: the inexact base
+  // forces a complex result 0. + Sqrt[|x|] I, without needing an N wrapper.
+  // (Sqrt of a negative exact integer stays symbolic, e.g. Sqrt[-4] = 2 I.)
+  #[test]
+  fn sqrt_negative_real() {
+    assert_eq!(interpret("Sqrt[-4.0]").unwrap(), "0. + 2.*I");
+  }
+
+  #[test]
+  fn sqrt_negative_real_irrational() {
+    assert_eq!(
+      interpret("Sqrt[-2.0]").unwrap(),
+      "0. + 1.4142135623730951*I"
+    );
+  }
+
+  #[test]
+  fn negative_real_to_one_half_power() {
+    // Power[-4.0, 1/2] routes through Sqrt and must also numericize.
+    assert_eq!(interpret("(-4.0)^(1/2)").unwrap(), "0. + 2.*I");
+  }
+
+  #[test]
+  fn sqrt_negative_real_head_is_complex() {
+    assert_eq!(interpret("Head[Sqrt[-4.0]]").unwrap(), "Complex");
+  }
 }
 
 mod re_im_constants {

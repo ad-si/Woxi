@@ -1027,6 +1027,15 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       times_ast(&[Expr::Identifier("I".to_string()), sqrt_pos])
     }
     Expr::Real(f) if *f >= 0.0 => Ok(Expr::Real(f.sqrt())),
+    // Sqrt of a negative machine real is the numeric imaginary 0. + Sqrt[|f|] I
+    // (an inexact base forces a numeric complex result, matching wolframscript).
+    Expr::Real(f) => {
+      let complex = Expr::FunctionCall {
+        name: "Complex".to_string(),
+        args: vec![Expr::Real(0.0), Expr::Real((-*f).sqrt())].into(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&complex)
+    }
     // Sqrt[base^(2n)] → base^n only when base is known non-negative
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
