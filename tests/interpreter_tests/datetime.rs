@@ -2691,3 +2691,124 @@ mod date_difference_calendar_units {
     );
   }
 }
+
+mod date_object_q_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn date_objects_are_true() {
+    assert_eq!(interpret("DateObjectQ[Today]").unwrap(), "True");
+    assert_eq!(interpret("DateObjectQ[Now]").unwrap(), "True");
+    assert_eq!(
+      interpret("DateObjectQ[DateObject[{2026, 7, 4}]]").unwrap(),
+      "True"
+    );
+    // Out-of-range components normalize into a valid date, so still True.
+    assert_eq!(
+      interpret("DateObjectQ[DateObject[{2026, 13, 45}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_date_objects_are_false() {
+    assert_eq!(
+      interpret("DateObjectQ[TimeObject[{12, 30}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret(r#"DateObjectQ["2026-07-04"]"#).unwrap(), "False");
+    assert_eq!(interpret("DateObjectQ[42]").unwrap(), "False");
+    assert_eq!(interpret("DateObjectQ[x]").unwrap(), "False");
+    // Failed constructions (echoed unevaluated) are not date objects.
+    assert_eq!(
+      interpret(r#"DateObjectQ[DateObject["not a date"]]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("DateObjectQ[DateObject[{1, 2, 3, 4, 5, 6, 7}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("DateObjectQ[DateObject[{2026, x, 4}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn wrong_arg_counts_stay_unevaluated() {
+    assert_eq!(interpret("DateObjectQ[]").unwrap(), "DateObjectQ[]");
+    assert_eq!(interpret("DateObjectQ[1, 2]").unwrap(), "DateObjectQ[1, 2]");
+  }
+}
+
+// DateObject rolls out-of-range components into the next-larger unit,
+// exactly like wolframscript (regression tests for the normalization fix).
+mod date_object_normalization_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn month_overflow_and_underflow() {
+    assert_eq!(
+      interpret("DateObject[{2026, 13, 45}]").unwrap(),
+      "DateObject[{2027, 2, 14}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 0, 5}]").unwrap(),
+      "DateObject[{2025, 12, 5}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, -1, 5}]").unwrap(),
+      "DateObject[{2025, 11, 5}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 13}, \"Month\"]").unwrap(),
+      "DateObject[{2027, 1}, Month]"
+    );
+  }
+
+  #[test]
+  fn day_overflow_and_underflow() {
+    assert_eq!(
+      interpret("DateObject[{2026, 1, 0}]").unwrap(),
+      "DateObject[{2025, 12, 31}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 1, -1}]").unwrap(),
+      "DateObject[{2025, 12, 30}, Day]"
+    );
+    // February length respects leap years.
+    assert_eq!(
+      interpret("DateObject[{2026, 2, 30}]").unwrap(),
+      "DateObject[{2026, 3, 2}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 30}]").unwrap(),
+      "DateObject[{2024, 3, 1}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 12, 32}]").unwrap(),
+      "DateObject[{2027, 1, 1}, Day]"
+    );
+    // Explicit granularity normalizes too.
+    assert_eq!(
+      interpret("DateObject[{2026, 13, 45}, \"Day\"]").unwrap(),
+      "DateObject[{2027, 2, 14}, Day]"
+    );
+  }
+
+  #[test]
+  fn time_component_carry() {
+    assert_eq!(
+      interpret("DateObject[{2026, 7, 4, 25, 0, 0}]").unwrap(),
+      "DateObject[{2026, 7, 5, 1, 0, 0}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 7, 4, 23, 61, 0}]").unwrap(),
+      "DateObject[{2026, 7, 5, 0, 1, 0}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 7, 4, 12, 30, 75.5}]").unwrap(),
+      "DateObject[{2026, 7, 4, 12, 31, 15.5}, Instant, Gregorian, 0.]"
+    );
+  }
+}

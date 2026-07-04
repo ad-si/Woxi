@@ -253,6 +253,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "D" => Some((2, usize::MAX)),
     "DateDifference" => Some((2, usize::MAX)),
     "DateInterval" => Some((1, 4)),
+    "DateObjectQ" => Some((1, 1)),
     "DatePlus" => Some((2, 2)),
     "MidDate" => Some((1, 3)),
     "DateRange" => Some((2, 3)),

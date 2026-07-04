@@ -102,6 +102,29 @@ pub fn dispatch_datetime_functions(
         args: args.to_vec().into(),
       }));
     }
+    // DateObjectQ[expr] — True iff expr is a well-formed DateObject: the
+    // head is DateObject and the first argument is a list of 1–6 numeric
+    // components. Anything else (TimeObject, strings, echoes of failed
+    // constructions) is False.
+    "DateObjectQ" if args.len() == 1 => {
+      let valid = if let Expr::FunctionCall { name, args: dargs } = &args[0]
+        && name == "DateObject"
+        && !dargs.is_empty()
+        && let Expr::List(items) = &dargs[0]
+      {
+        (1..=6).contains(&items.len())
+          && items.iter().all(|c| {
+            matches!(c, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+              || matches!(c, Expr::FunctionCall { name, args }
+              if name == "Rational" && args.len() == 2)
+          })
+      } else {
+        false
+      };
+      return Some(Ok(Expr::Identifier(
+        if valid { "True" } else { "False" }.to_string(),
+      )));
+    }
     // DateObject is a data container — normalize granularity
     "DateObject" => {
       // DateObject[] → current instant (same shape as `Now`)
@@ -147,22 +170,40 @@ pub fn dispatch_datetime_functions(
       // component list and let the list logic below tag the granularity.
       if args.len() == 1
         && let Expr::String(s) = &args[0]
-        && let Some(components) =
-          crate::functions::datetime_ast::parse_iso_date_components(s)
       {
-        return Some(crate::evaluator::evaluate_function_call_ast(
-          "DateObject",
-          &[Expr::List(components.into())],
-        ));
+        match crate::functions::datetime_ast::parse_iso_date_components(s) {
+          Some(components) => {
+            return Some(crate::evaluator::evaluate_function_call_ast(
+              "DateObject",
+              &[Expr::List(components.into())],
+            ));
+          }
+          None => {
+            crate::emit_message(&format!(
+              "DateObject::str: String {} cannot be interpreted as a date.",
+              s
+            ));
+            return Some(Ok(Expr::FunctionCall {
+              name: "DateObject".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        }
       }
 
       // DateObject[{y, ...}] adds a granularity tag based on list length.
       //   1 → Year, 2 → Month, 3 → Day
       //   4 → Hour, Gregorian, 0., 5 → Minute, Gregorian, 0.,
       //   6 → Instant, Gregorian, 0.
+      // Out-of-range components carry into the next-larger unit first
+      // ({2026, 13, 45} → {2027, 2, 14}), like wolframscript.
       if args.len() == 1
         && let Expr::List(items) = &args[0]
       {
+        let normalized =
+          crate::functions::datetime_ast::normalize_date_components(items)
+            .map(|c| Expr::List(c.into()))
+            .unwrap_or_else(|| args[0].clone());
         let mut extra: Vec<Expr> = Vec::new();
         match items.len() {
           1 => extra.push(Expr::String("Year".to_string())),
@@ -185,8 +226,25 @@ pub fn dispatch_datetime_functions(
             }));
           }
         }
-        let mut new_args = vec![args[0].clone()];
+        let mut new_args = vec![normalized];
         new_args.extend(extra);
+        return Some(Ok(Expr::FunctionCall {
+          name: "DateObject".to_string(),
+          args: new_args.into(),
+        }));
+      }
+      // Explicit-granularity forms (and evaluated DateObjects passing
+      // through again) still normalize their component list; the helper is
+      // idempotent, so canonical DateObjects stay fixed points.
+      if args.len() >= 2
+        && let Expr::List(items) = &args[0]
+        && let Some(normalized) =
+          crate::functions::datetime_ast::normalize_date_components(items)
+        && crate::syntax::expr_to_string(&Expr::List(normalized.clone().into()))
+          != crate::syntax::expr_to_string(&args[0])
+      {
+        let mut new_args = vec![Expr::List(normalized.into())];
+        new_args.extend(args[1..].iter().cloned());
         return Some(Ok(Expr::FunctionCall {
           name: "DateObject".to_string(),
           args: new_args.into(),

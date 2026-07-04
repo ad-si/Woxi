@@ -86,6 +86,78 @@ fn days_in_year(year: i64) -> i64 {
   if is_leap_year(year) { 366 } else { 365 }
 }
 
+/// Normalize the components of a DateObject date list the way wolframscript
+/// does: out-of-range values carry into the next-larger unit, cascading from
+/// seconds up through minutes, hours, days, and months (so
+/// `{2026, 13, 45}` becomes `{2027, 2, 14}` and `{2026, 1, 0}` rolls back to
+/// `{2025, 12, 31}`). Only the final component (the seconds of a 6-element
+/// list) may be a Real; it keeps its type. Returns `None` — leaving the list
+/// untouched — when the shape or component types don't qualify.
+pub(crate) fn normalize_date_components(items: &[Expr]) -> Option<Vec<Expr>> {
+  if items.is_empty() || items.len() > 6 {
+    return None;
+  }
+  let as_i64 = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Integer(n) => i64::try_from(*n).ok(),
+      _ => None,
+    }
+  };
+  let mut y = as_i64(&items[0])?;
+  let mut mo = items.get(1).map(&as_i64).unwrap_or(Some(1))?;
+  let mut d = items.get(2).map(&as_i64).unwrap_or(Some(1))?;
+  let mut h = items.get(3).map(&as_i64).unwrap_or(Some(0))?;
+  let mut mi = items.get(4).map(&as_i64).unwrap_or(Some(0))?;
+  let (mut s, s_is_real) = match items.get(5) {
+    None => (0.0, false),
+    Some(Expr::Integer(n)) => (i64::try_from(*n).ok()? as f64, false),
+    Some(Expr::Real(v)) if v.is_finite() => (*v, true),
+    Some(_) => return None,
+  };
+
+  // Carry each unit into the next-larger one, smallest first.
+  let s_carry = (s / 60.0).floor() as i64;
+  s -= 60.0 * s_carry as f64;
+  mi += s_carry;
+  h += mi.div_euclid(60);
+  mi = mi.rem_euclid(60);
+  d += h.div_euclid(24);
+  h = h.rem_euclid(24);
+  // Months before days: the month determines each month's length.
+  y += (mo - 1).div_euclid(12);
+  mo = (mo - 1).rem_euclid(12) + 1;
+  while d > days_in_month(y, mo) {
+    d -= days_in_month(y, mo);
+    mo += 1;
+    if mo > 12 {
+      mo = 1;
+      y += 1;
+    }
+  }
+  while d < 1 {
+    mo -= 1;
+    if mo < 1 {
+      mo = 12;
+      y -= 1;
+    }
+    d += days_in_month(y, mo);
+  }
+
+  let ints = [y, mo, d, h, mi];
+  let mut out: Vec<Expr> = ints[..items.len().min(5)]
+    .iter()
+    .map(|&n| Expr::Integer(n as i128))
+    .collect();
+  if items.len() == 6 {
+    out.push(if s_is_real {
+      Expr::Real(s)
+    } else {
+      Expr::Integer(s as i128)
+    });
+  }
+  Some(out)
+}
+
 /// DayCount[d1, d2, weekday]: count occurrences of `weekday` in the interval
 /// between the two dates, excluding the earlier endpoint and including the
 /// later (half-open `(min, max]`). Symmetric for reversed dates. Returns None
