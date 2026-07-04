@@ -3448,6 +3448,74 @@ mod bernoulli_b {
       "-1215233140483755572040304994079820246041491/56786730"
     );
   }
+
+  // A concrete first argument that isn't a non-negative integer (a negative
+  // integer or a non-integer) emits BernoulliB::intnm and stays unevaluated.
+  #[test]
+  fn negative_index_emits_intnm() {
+    assert_eq!(interpret("BernoulliB[-2]").unwrap(), "BernoulliB[-2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BernoulliB::intnm: Non-negative machine-sized integer expected at position 1 in BernoulliB[-2]."
+      )),
+      "expected BernoulliB::intnm, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn real_index_emits_intnm() {
+    assert_eq!(interpret("BernoulliB[2.5]").unwrap(), "BernoulliB[2.5]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BernoulliB::intnm: Non-negative machine-sized integer expected at position 1 in BernoulliB[2.5]."
+      )),
+      "expected BernoulliB::intnm, got {msgs:?}"
+    );
+  }
+
+  // A symbolic argument stays unevaluated silently, and the two-argument
+  // polynomial form never emits the message.
+  #[test]
+  fn symbolic_and_polynomial_forms_stay_silent() {
+    assert_eq!(interpret("BernoulliB[x]").unwrap(), "BernoulliB[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("BernoulliB::intnm")),
+      "unexpected intnm for symbolic arg, got {msgs:?}"
+    );
+    assert_eq!(interpret("BernoulliB[-2, x]").unwrap(), "BernoulliB[-2, x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("BernoulliB::intnm")),
+      "unexpected intnm for polynomial form, got {msgs:?}"
+    );
+  }
+}
+
+mod euler_e_intnm {
+  use super::*;
+
+  // EulerE shares the intnm rule: a negative index emits EulerE::intnm and
+  // stays unevaluated.
+  #[test]
+  fn negative_index_emits_intnm() {
+    assert_eq!(interpret("EulerE[-2]").unwrap(), "EulerE[-2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "EulerE::intnm: Non-negative machine-sized integer expected at position 1 in EulerE[-2]."
+      )),
+      "expected EulerE::intnm, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn valid_values_unaffected() {
+    assert_eq!(interpret("EulerE[4]").unwrap(), "5");
+    assert_eq!(interpret("EulerE[0]").unwrap(), "1");
+  }
 }
 
 mod partitions_p {

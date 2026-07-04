@@ -5,6 +5,25 @@ use crate::syntax::Expr;
 use num_bigint::BigInt;
 use num_traits::Signed;
 
+/// True if `e` denotes a concrete number (an integer, real, big-float, or
+/// rational, possibly negated) rather than a symbolic expression. Used to
+/// decide whether a "not a valid index" message should fire: a concrete
+/// non-integer argument is an error, but a symbolic one stays unevaluated.
+fn is_concrete_number(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { name, .. } => name == "Rational",
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_concrete_number(operand),
+    _ => false,
+  }
+}
+
 pub fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
   use num_traits::Zero;
   let (mut a, mut b) = (a.abs(), b.abs());
@@ -1008,10 +1027,21 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
+      let call = Expr::FunctionCall {
         name: "BernoulliB".to_string(),
         args: args.to_vec().into(),
-      });
+      };
+      // A concrete first argument that isn't a non-negative integer (a
+      // negative integer, a real, or a rational) emits intnm; a symbolic
+      // argument stays unevaluated silently. The two-argument polynomial
+      // form never emits this message.
+      if args.len() == 1 && is_concrete_number(&args[0]) {
+        crate::emit_message(&format!(
+          "BernoulliB::intnm: Non-negative machine-sized integer expected at position 1 in {}.",
+          crate::syntax::expr_to_message_form(&call)
+        ));
+      }
+      return Ok(call);
     }
   };
 
@@ -1243,10 +1273,20 @@ pub fn euler_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
+      let call = Expr::FunctionCall {
         name: "EulerE".to_string(),
         args: args.to_vec().into(),
-      });
+      };
+      // As with BernoulliB: a concrete non-(non-negative-integer) first
+      // argument emits intnm; symbolic stays silent; the polynomial form
+      // never emits it.
+      if args.len() == 1 && is_concrete_number(&args[0]) {
+        crate::emit_message(&format!(
+          "EulerE::intnm: Non-negative machine-sized integer expected at position 1 in {}.",
+          crate::syntax::expr_to_message_form(&call)
+        ));
+      }
+      return Ok(call);
     }
   };
 
