@@ -1131,6 +1131,26 @@ mod harmonic_number {
     assert_eq!(interpret("HarmonicNumber[1]").unwrap(), "1");
   }
 
+  // HarmonicNumber has poles at the negative integers (it equals
+  // Zeta[r] - HurwitzZeta[r, n+1], whose Hurwitz term diverges there for a
+  // positive order r). It is ComplexInfinity, not unevaluated. HarmonicNumber
+  // [0] = 0 is not a pole. Per wolframscript.
+  #[test]
+  fn negative_integer_pole() {
+    assert_eq!(interpret("HarmonicNumber[-1]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("HarmonicNumber[-2]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("HarmonicNumber[-3]").unwrap(), "ComplexInfinity");
+    // The generalized form with a positive integer order also diverges.
+    assert_eq!(
+      interpret("HarmonicNumber[-1, 2]").unwrap(),
+      "ComplexInfinity"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[-3, 2]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
   #[test]
   fn generalized() {
     assert_eq!(interpret("HarmonicNumber[5, 2]").unwrap(), "5269/3600");

@@ -1896,6 +1896,18 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n,
     Some(_) => {
+      // HarmonicNumber[n, r] = Zeta[r] - HurwitzZeta[r, n+1]. At a negative
+      // integer n the Hurwitz zeta has a pole for a positive order r, so the
+      // harmonic number diverges to ComplexInfinity. (For r <= 0 it is a
+      // finite Faulhaber polynomial, left to the existing handling; a symbolic
+      // order stays unevaluated.)
+      let order_is_positive = match args.get(1) {
+        None => true, // the 1-argument form has order 1
+        Some(r_expr) => matches!(expr_to_i128(r_expr), Some(r) if r >= 1),
+      };
+      if order_is_positive {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
       return Ok(Expr::FunctionCall {
         name: "HarmonicNumber".to_string(),
         args: args.to_vec().into(),
