@@ -3564,6 +3564,132 @@ mod high_level_functions_tests {
     }
   }
 
+  mod graphics_rotate_tests {
+    use super::*;
+
+    // Extract the four "x,y" vertex pairs from the first <polygon> element.
+    fn polygon_points(svg: &str) -> Vec<(f64, f64)> {
+      let start = svg.find("<polygon").expect("no polygon");
+      let seg = &svg[start..];
+      let pstart = seg.find("points=\"").expect("no points") + 8;
+      let pend = seg[pstart..].find('"').unwrap() + pstart;
+      seg[pstart..pend]
+        .split_whitespace()
+        .map(|pair| {
+          let (x, y) = pair.split_once(',').unwrap();
+          (x.parse::<f64>().unwrap(), y.parse::<f64>().unwrap())
+        })
+        .collect()
+    }
+
+    #[test]
+    fn test_rotate_rectangle_becomes_tilted_polygon() {
+      // A rotated rectangle is no longer axis-aligned: it must render as a
+      // polygon whose edges are not parallel to the axes.
+      let svg = interpret(
+        "ExportString[Graphics[Rotate[Rectangle[{0, 0}, {2, 1}], 0.5]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("<polygon"),
+        "rotated rectangle should be a polygon: {svg}"
+      );
+      let pts = polygon_points(&svg);
+      assert_eq!(pts.len(), 4, "expected 4 corners: {svg}");
+      // No edge is purely horizontal or vertical once rotated.
+      let axis_aligned = pts.windows(2).any(|w| {
+        (w[0].0 - w[1].0).abs() < 1e-6 || (w[0].1 - w[1].1).abs() < 1e-6
+      });
+      assert!(!axis_aligned, "rotated rect edges must be tilted: {svg}");
+    }
+
+    #[test]
+    fn test_rotate_by_zero_keeps_axis_alignment() {
+      // Rotating by 0 must leave the shape axis-aligned (every edge stays
+      // horizontal or vertical), even though a rectangle is emitted as a
+      // polygon once wrapped in Rotate.
+      let svg = interpret(
+        "ExportString[Graphics[Rotate[Rectangle[{0, 0}, {2, 1}], 0]], \"SVG\"]",
+      )
+      .unwrap();
+      let pts = polygon_points(&svg);
+      assert_eq!(pts.len(), 4);
+      for w in pts.windows(2) {
+        assert!(
+          (w[0].0 - w[1].0).abs() < 1e-6 || (w[0].1 - w[1].1).abs() < 1e-6,
+          "edges must stay axis-aligned at angle 0: {svg}"
+        );
+      }
+    }
+
+    #[test]
+    fn test_rotate_line_about_point() {
+      // Rotating the horizontal segment {{1,0},{2,0}} by Pi/2 about {0,0}
+      // maps (1,0)->(0,1) and (2,0)->(0,2): the line becomes vertical.
+      let svg = interpret(
+        "ExportString[Graphics[Rotate[Line[{{1, 0}, {2, 0}}], Pi/2, {0, 0}], PlotRange -> {{-1, 3}, {-1, 3}}], \"SVG\"]",
+      )
+      .unwrap();
+      let start = svg.find("<polyline").expect("no polyline");
+      let seg = &svg[start..];
+      let pstart = seg.find("points=\"").unwrap() + 8;
+      let pend = seg[pstart..].find('"').unwrap() + pstart;
+      let xs: Vec<f64> = seg[pstart..pend]
+        .split_whitespace()
+        .map(|p| p.split_once(',').unwrap().0.parse::<f64>().unwrap())
+        .collect();
+      // A vertical segment has both endpoints at the same x pixel.
+      assert!(
+        (xs[0] - xs[1]).abs() < 1e-3,
+        "rotated line should be vertical: {svg}"
+      );
+    }
+
+    #[test]
+    fn test_rotate_disk_moves_center_keeps_radius() {
+      // Disk at {1,0}, r=0.25 rotated Pi/2 about origin -> center {0,1}.
+      let svg = interpret(
+        "ExportString[Graphics[Rotate[Disk[{1, 0}, 0.25], Pi/2, {0, 0}], PlotRange -> {{-1, 1}, {-1, 1}}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("<ellipse"), "disk should render: {svg}");
+      // rx and ry unchanged by rotation (still a circle).
+      let e = &svg[svg.find("<ellipse").unwrap()..];
+      let rx = e[e.find("rx=\"").unwrap() + 4..]
+        .split('"')
+        .next()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+      let ry = e[e.find("ry=\"").unwrap() + 4..]
+        .split('"')
+        .next()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+      assert!((rx - ry).abs() < 1e-6, "disk stays circular: {svg}");
+    }
+
+    #[test]
+    fn test_rectangle_reversed_corners_render() {
+      // Wolfram accepts corners in any order. A reversed pair must still
+      // produce a positive-size rect, not a dropped negative-height one.
+      let svg = interpret(
+        "ExportString[Graphics[Rectangle[{0, 2.}, {0.5, 1.5}]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("<rect"), "should render a rect: {svg}");
+      let r = &svg[svg.find("<rect").unwrap()..];
+      let h = r[r.find("height=\"").unwrap() + 8..]
+        .split('"')
+        .next()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+      assert!(h > 0.0, "height must be positive, got {h}: {svg}");
+    }
+  }
+
   mod string_split_delimiter_tests {
     use super::*;
 

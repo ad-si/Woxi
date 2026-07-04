@@ -1360,6 +1360,35 @@ fn collect_primitives(
         "InfinitePlane" => {
           parse_infinite_plane(args, style, prims);
         }
+        // Rotate[g, θ] rotates g by θ radians counterclockwise about the
+        // center of its bounding box; Rotate[g, θ, {x, y}] about the point
+        // {x, y}. Collect the inner primitives, then rotate their coordinates.
+        "Rotate" if args.len() >= 2 => {
+          let mut inner_style = style.clone();
+          let mut inner = Vec::new();
+          collect_primitives(&args[0], &mut inner_style, &mut inner, errors);
+          match expr_to_f64(&args[1]) {
+            Some(angle) => {
+              let (cx, cy) =
+                args.get(2).and_then(expr_to_point).unwrap_or_else(|| {
+                  let mut bb = BBox::empty();
+                  for p in &inner {
+                    bb.merge(&primitive_bbox(p));
+                  }
+                  if bb.is_empty() {
+                    (0.0, 0.0)
+                  } else {
+                    ((bb.x_min + bb.x_max) / 2.0, (bb.y_min + bb.y_max) / 2.0)
+                  }
+                });
+              for p in &inner {
+                prims.push(rotate_primitive(p, cx, cy, angle));
+              }
+            }
+            // Non-numeric angle: draw the content unrotated as a fallback.
+            None => prims.extend(inner),
+          }
+        }
 
         _ => {
           // Try as directive first
@@ -1644,13 +1673,16 @@ fn parse_rectangle(
   let (x_max, y_max) = if args.len() >= 2 {
     expr_to_point(&args[1]).unwrap_or((1.0, 1.0))
   } else {
-    (1.0, 1.0)
+    (x_min + 1.0, y_min + 1.0)
   };
+  // Wolfram accepts the two corners in any order; normalize so the primitive
+  // always has min <= max (a reversed pair would otherwise render as a rect
+  // with negative width/height, which SVG drops entirely).
   prims.push(Primitive::RectPrim {
-    x_min,
-    y_min,
-    x_max,
-    y_max,
+    x_min: x_min.min(x_max),
+    y_min: y_min.min(y_max),
+    x_max: x_min.max(x_max),
+    y_max: y_min.max(y_max),
     style: style.clone(),
   });
 }
@@ -2298,6 +2330,187 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
     }
   }
   bb
+}
+
+/// Rotate a point (x, y) by `angle` radians counterclockwise about (cx, cy).
+fn rotate_point(
+  x: f64,
+  y: f64,
+  cx: f64,
+  cy: f64,
+  cos: f64,
+  sin: f64,
+) -> (f64, f64) {
+  let dx = x - cx;
+  let dy = y - cy;
+  (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos)
+}
+
+/// Return a copy of `prim` rotated by `angle` radians about (cx, cy).
+///
+/// An axis-aligned rectangle becomes a (generally non-axis-aligned) polygon.
+/// A circular disk/arc keeps its radius and only moves its center. An
+/// elliptical disk (rx != ry) cannot be represented tilted in this model, so
+/// its axes are kept axis-aligned as a best-effort approximation.
+fn rotate_primitive(
+  prim: &Primitive,
+  cx: f64,
+  cy: f64,
+  angle: f64,
+) -> Primitive {
+  let cos = angle.cos();
+  let sin = angle.sin();
+  let rp = |x: f64, y: f64| rotate_point(x, y, cx, cy, cos, sin);
+  // Rotate a direction vector (no translation).
+  let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
+  match prim {
+    Primitive::PointSingle { x, y, style } => {
+      let (nx, ny) = rp(*x, *y);
+      Primitive::PointSingle {
+        x: nx,
+        y: ny,
+        style: style.clone(),
+      }
+    }
+    Primitive::PointMulti { points, style } => Primitive::PointMulti {
+      points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
+      style: style.clone(),
+    },
+    Primitive::Line { segments, style } => Primitive::Line {
+      segments: segments
+        .iter()
+        .map(|seg| seg.iter().map(|&(x, y)| rp(x, y)).collect())
+        .collect(),
+      style: style.clone(),
+    },
+    Primitive::PolygonPrim { points, style } => Primitive::PolygonPrim {
+      points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
+      style: style.clone(),
+    },
+    Primitive::ArrowPrim {
+      points,
+      setback,
+      style,
+    } => Primitive::ArrowPrim {
+      points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
+      setback: *setback,
+      style: style.clone(),
+    },
+    Primitive::BezierCurvePrim { points, style } => {
+      Primitive::BezierCurvePrim {
+        points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
+        style: style.clone(),
+      }
+    }
+    // A rotated rectangle is no longer axis-aligned → emit a polygon of its
+    // four rotated corners.
+    Primitive::RectPrim {
+      x_min,
+      y_min,
+      x_max,
+      y_max,
+      style,
+    } => Primitive::PolygonPrim {
+      points: [
+        (*x_min, *y_min),
+        (*x_max, *y_min),
+        (*x_max, *y_max),
+        (*x_min, *y_max),
+      ]
+      .iter()
+      .map(|&(x, y)| rp(x, y))
+      .collect(),
+      style: style.clone(),
+    },
+    Primitive::Disk {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      style,
+    } => {
+      let (nx, ny) = rp(*dcx, *dcy);
+      Primitive::Disk {
+        cx: nx,
+        cy: ny,
+        rx: *rx,
+        ry: *ry,
+        style: style.clone(),
+      }
+    }
+    Primitive::CircleArc {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      style,
+    } => {
+      let (nx, ny) = rp(*dcx, *dcy);
+      Primitive::CircleArc {
+        cx: nx,
+        cy: ny,
+        rx: *rx,
+        ry: *ry,
+        style: style.clone(),
+      }
+    }
+    Primitive::DiskSector {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      angle1,
+      angle2,
+      style,
+    } => {
+      let (nx, ny) = rp(*dcx, *dcy);
+      Primitive::DiskSector {
+        cx: nx,
+        cy: ny,
+        rx: *rx,
+        ry: *ry,
+        angle1: angle1 + angle,
+        angle2: angle2 + angle,
+        style: style.clone(),
+      }
+    }
+    Primitive::TextPrim { text, x, y, style } => {
+      let (nx, ny) = rp(*x, *y);
+      Primitive::TextPrim {
+        text: text.clone(),
+        x: nx,
+        y: ny,
+        style: style.clone(),
+      }
+    }
+    // Rasters aren't re-sampled here; keep them in place.
+    Primitive::RasterPrim {
+      data,
+      x_min,
+      y_min,
+      x_max,
+      y_max,
+    } => Primitive::RasterPrim {
+      data: data.clone(),
+      x_min: *x_min,
+      y_min: *y_min,
+      x_max: *x_max,
+      y_max: *y_max,
+    },
+    Primitive::HalfPlanePrim {
+      p,
+      v,
+      w,
+      full,
+      style,
+    } => Primitive::HalfPlanePrim {
+      p: rp(p.0, p.1),
+      v: rv(v.0, v.1),
+      w: rv(w.0, w.1),
+      full: *full,
+      style: style.clone(),
+    },
+  }
 }
 
 /// Trim a polyline by `setback.0` from the start and `setback.1` from the end,
