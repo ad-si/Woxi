@@ -450,6 +450,27 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(args[0].clone());
   }
+  // Sign[b^z] = b^(I Im[z]) for a strictly-positive real base b. Since
+  // b^z = E^(z Log b) with |b^z| = b^Re[z], Sign = b^z / b^Re[z] = b^(z - Re[z])
+  // = b^(I Im[z]). Mirrors the Abs[b^z] = b^Re[z] rule (Sign[E^x] = E^(I Im[x]),
+  // Sign[2^x] = 2^(I Im[x])). The purely-imaginary-exponent case above already
+  // returned the expression unchanged.
+  if let Some((base, exp)) = power_parts
+    && crate::functions::math_ast::complex::is_strictly_positive_real(base)
+  {
+    let im_exp = Expr::FunctionCall {
+      name: "Im".to_string(),
+      args: vec![exp.clone()].into(),
+    };
+    let new_exp = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Identifier("I".to_string()), im_exp].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![base.clone(), new_exp].into(),
+    });
+  }
   // Handle Infinity, -Infinity, ComplexInfinity, Indeterminate
   if matches!(&args[0], Expr::Identifier(s) if s == "Infinity") {
     return Ok(Expr::Integer(1));

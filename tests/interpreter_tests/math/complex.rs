@@ -32,6 +32,22 @@ mod sign_complex_tests {
     assert_eq!(interpret("Sign[3 - 4*I]").unwrap(), "3/5 - (4*I)/5");
   }
 
+  // Sign[b^z] = b^(I Im[z]) for a positive real base b, since |b^z| = b^Re[z].
+  // Mirrors Abs[b^z] = b^Re[z].
+  #[test]
+  fn sign_of_positive_base_power() {
+    assert_eq!(interpret("Sign[E^x]").unwrap(), "E^(I*Im[x])");
+    assert_eq!(interpret("Sign[2^x]").unwrap(), "2^(I*Im[x])");
+    assert_eq!(interpret("Sign[E^(I x)]").unwrap(), "E^(I*Re[x])");
+    assert_eq!(interpret("Sign[E^(2 x)]").unwrap(), "E^((2*I)*Im[x])");
+    // A positive scalar factor drops out first.
+    assert_eq!(interpret("Sign[2 E^x]").unwrap(), "E^(I*Im[x])");
+    // A real positive value still gives 1, and a unit-magnitude power is
+    // returned unchanged.
+    assert_eq!(interpret("Sign[E^5]").unwrap(), "1");
+    assert_eq!(interpret("Sign[E^(2 I)]").unwrap(), "E^(2*I)");
+  }
+
   #[test]
   fn sign_complex_positive_imaginary() {
     assert_eq!(interpret("Sign[3 + 4*I]").unwrap(), "3/5 + (4*I)/5");
