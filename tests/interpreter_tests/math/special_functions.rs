@@ -275,6 +275,17 @@ mod bessel_k {
     assert_eq!(interpret("BesselK[1, 0]").unwrap(), "ComplexInfinity");
   }
 
+  // At an inexact origin the pole behaves like the exact case: K_0(0.) =
+  // Infinity, and every other order is ComplexInfinity (rather than the
+  // Indeterminate/0 the numeric series produced). Per wolframscript.
+  #[test]
+  fn at_real_zero() {
+    assert_eq!(interpret("BesselK[0.0, 0.0]").unwrap(), "Infinity");
+    assert_eq!(interpret("BesselK[1, 0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("BesselK[2, 0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("BesselK[1.5, 0.0]").unwrap(), "ComplexInfinity");
+  }
+
   #[test]
   fn numeric_order_zero() {
     let result: f64 = interpret("BesselK[0, 1.5]").unwrap().parse().unwrap();
@@ -321,6 +332,18 @@ mod bessel_y {
   #[test]
   fn at_zero_order_two() {
     assert_eq!(interpret("BesselY[2, 0]").unwrap(), "ComplexInfinity");
+  }
+
+  // At an inexact origin the pole behaves like the exact case: Y_0(0.) =
+  // -Infinity, and every other order is ComplexInfinity (rather than the
+  // Indeterminate/0 the numeric series produced). Per wolframscript.
+  #[test]
+  fn at_real_zero() {
+    assert_eq!(interpret("BesselY[0.0, 0.0]").unwrap(), "-Infinity");
+    assert_eq!(interpret("BesselY[1, 0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("BesselY[2, 0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("BesselY[0.5, 0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("BesselY[-1.0, 0.0]").unwrap(), "ComplexInfinity");
   }
 
   #[test]

@@ -740,7 +740,15 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
 
   if is_numeric_eval {
-    let result = bessel_k(n_val.unwrap(), z_val.unwrap());
+    let n = n_val.unwrap();
+    let z = z_val.unwrap();
+    // At the origin K_0(0) = Infinity, but every other order diverges as
+    // ComplexInfinity (the numeric series would give NaN/0 there). The n = 0
+    // case falls through to bessel_k, which returns Infinity.
+    if z == 0.0 && n != 0.0 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    let result = bessel_k(n, z);
     return Ok(Expr::Real(result));
   }
 
@@ -1028,7 +1036,15 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
 
   if is_numeric_eval {
-    let result = bessel_y(n_val.unwrap(), z_val.unwrap());
+    let n = n_val.unwrap();
+    let z = z_val.unwrap();
+    // At the origin Y_0(0) = -Infinity, but every other order diverges as
+    // ComplexInfinity (the numeric series would give NaN/0 there). The n = 0
+    // case falls through to bessel_y, which returns -Infinity.
+    if z == 0.0 && n != 0.0 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    let result = bessel_y(n, z);
     return Ok(Expr::Real(result));
   }
 
