@@ -895,6 +895,41 @@ fn interval_sign(expr: &Expr, name: &str) -> Option<Expr> {
   Some(bool_expr(val))
 }
 
+/// True if `expr` is provably non-negative because it is a bare `Abs[z]` or a
+/// product of strictly-positive reals with (at least one) `Abs[z]` factor.
+/// wolframscript decides NonNegative[Abs[x]] = True and Negative[Abs[x]] =
+/// False (also for 2 Abs[x]), but does NOT extend this to compound forms like
+/// Abs[x]^2, -Abs[x], or Abs[x] + Abs[y], so those stay unevaluated.
+fn is_nonnegative_abs_form(expr: &Expr) -> bool {
+  fn is_bare_abs(e: &Expr) -> bool {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "Abs" && args.len() == 1)
+  }
+  if is_bare_abs(expr) {
+    return true;
+  }
+  let factors: Vec<&Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().collect()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return false,
+  };
+  let mut has_abs = false;
+  for f in factors {
+    if is_bare_abs(f) {
+      has_abs = true;
+    } else if !crate::functions::math_ast::is_strictly_positive_real(f) {
+      return false;
+    }
+  }
+  has_abs
+}
+
 /// Positive[x] - Tests if x is a positive number
 pub fn positive_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -934,6 +969,10 @@ pub fn negative_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Negative on a non-real complex value is False.
   if has_nonzero_imag_part(&args[0]) {
+    return Ok(bool_expr(false));
+  }
+  // Abs[z] (and a positive multiple) is non-negative, so it is never negative.
+  if is_nonnegative_abs_form(&args[0]) {
     return Ok(bool_expr(false));
   }
   if let Some(val) = is_known_negative(&args[0]) {
@@ -996,6 +1035,10 @@ pub fn non_negative_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // NonNegative: x >= 0, i.e. positive or zero
   if is_zero(&args[0]) {
+    return Ok(bool_expr(true));
+  }
+  // Abs[z] (and a positive multiple) is always >= 0.
+  if is_nonnegative_abs_form(&args[0]) {
     return Ok(bool_expr(true));
   }
   if let Some(val) = is_known_positive(&args[0]) {

@@ -7312,6 +7312,31 @@ mod non_negative_non_positive {
     assert_eq!(interpret("NonNegative[I]").unwrap(), "False");
   }
 
+  // Abs[z] (and a positive multiple) is always >= 0, so NonNegative is True
+  // and Negative is False. Positive/NonPositive stay unevaluated because
+  // Abs[z] can be 0. wolframscript does not extend this to compound forms.
+  #[test]
+  fn abs_is_nonnegative() {
+    assert_eq!(interpret("NonNegative[Abs[x]]").unwrap(), "True");
+    assert_eq!(interpret("Negative[Abs[x]]").unwrap(), "False");
+    assert_eq!(interpret("NonNegative[2 Abs[x]]").unwrap(), "True");
+    // Could be zero, so these stay unevaluated.
+    assert_eq!(interpret("Positive[Abs[x]]").unwrap(), "Positive[Abs[x]]");
+    assert_eq!(
+      interpret("NonPositive[Abs[x]]").unwrap(),
+      "NonPositive[Abs[x]]"
+    );
+    // Compound forms and negated Abs are not simplified.
+    assert_eq!(
+      interpret("NonNegative[Abs[x]^2]").unwrap(),
+      "NonNegative[Abs[x]^2]"
+    );
+    assert_eq!(
+      interpret("NonNegative[-Abs[x]]").unwrap(),
+      "NonNegative[-Abs[x]]"
+    );
+  }
+
   #[test]
   fn exact_and_symbolic_unchanged() {
     assert_eq!(interpret("NonNegative[0]").unwrap(), "True");
