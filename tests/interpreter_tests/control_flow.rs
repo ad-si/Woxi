@@ -994,6 +994,44 @@ mod boolean_convert_dnf {
     );
   }
 
+  // If[a, b, c] is a boolean expression equal to (a && b) || (!a && c);
+  // BooleanConvert expands it rather than leaving the If untouched.
+  #[test]
+  fn if_three_args_is_boolean() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[If[a, b, c]]").unwrap(),
+      "(a && b) || ( !a && c)"
+    );
+  }
+
+  #[test]
+  fn if_three_args_explicit_dnf() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[If[a, b, c], \"DNF\"]").unwrap(),
+      "(a && b) || ( !a && c)"
+    );
+  }
+
+  #[test]
+  fn if_nested_in_and() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[a && If[b, c, d]]").unwrap(),
+      "(a && b && c) || (a &&  !b && d)"
+    );
+  }
+
+  #[test]
+  fn if_with_trailing_and() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[If[p, q, r] && s]").unwrap(),
+      "(p && q && s) || ( !p && r && s)"
+    );
+  }
+
   // A pure contradiction collapses to False; a tautology over a single
   // clause is dropped entirely.
   #[test]

@@ -1595,6 +1595,30 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             .into(),
           }
         }
+        "If" if args.len() == 3 => {
+          // As a boolean expression, If[a, b, c] is (a && b) || (!a && c).
+          let a = eliminate_connectives(&args[0]);
+          let b = eliminate_connectives(&args[1]);
+          let c = eliminate_connectives(&args[2]);
+          let not_a = Expr::FunctionCall {
+            name: "Not".to_string(),
+            args: vec![a.clone()].into(),
+          };
+          Expr::FunctionCall {
+            name: "Or".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "And".to_string(),
+                args: vec![a, b].into(),
+              },
+              Expr::FunctionCall {
+                name: "And".to_string(),
+                args: vec![not_a, c].into(),
+              },
+            ]
+            .into(),
+          }
+        }
         "And" | "Or" | "Not" => {
           let new_args: Vec<Expr> =
             args.iter().map(eliminate_connectives).collect();
