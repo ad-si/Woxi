@@ -1812,7 +1812,15 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    _ => Ok(args[0].clone()),
+    other => {
+      // A bare negative power (Power[base, -n], e.g. Numerator[x^-2]) is a
+      // pure denominator, so its numerator is 1.
+      if get_negative_power_exponent(other).is_some() {
+        Ok(Expr::Integer(1))
+      } else {
+        Ok(other.clone())
+      }
+    }
   }
 }
 
@@ -1891,7 +1899,23 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    _ => Ok(Expr::Integer(1)),
+    other => {
+      // A bare negative power (Power[base, -n] not inside a Times, e.g.
+      // Denominator[x^-2]) contributes Power[base, n] to the denominator.
+      if let Some((base, pos_exp)) = get_negative_power_exponent(other) {
+        if matches!(pos_exp, Expr::Integer(1)) {
+          Ok(base)
+        } else {
+          Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(base),
+            right: Box::new(pos_exp),
+          })
+        }
+      } else {
+        Ok(Expr::Integer(1))
+      }
+    }
   }
 }
 

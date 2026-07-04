@@ -8444,6 +8444,25 @@ mod cases {
       r#"{1, 1, Cosh[x], Sinh[x], Cosh[x], Sinh[x]}"#,
     );
   }
+  // A bare negative power (Power[base, -n] not inside a Times) is a pure
+  // denominator: Denominator[x^-2] = x^2 and Numerator[x^-2] = 1. Previously
+  // the standalone-Power case fell through to Denominator -> 1.
+  #[test]
+  fn denominator_bare_negative_power() {
+    assert_case(r#"Denominator[x^-1]"#, r#"x"#);
+    assert_case(r#"Denominator[x^-2]"#, r#"x^2"#);
+    assert_case(r#"Denominator[(x + 1)^-2]"#, r#"(1 + x)^2"#);
+    // A positive power still has denominator 1.
+    assert_case(r#"Denominator[x^2]"#, r#"1"#);
+  }
+  #[test]
+  fn numerator_bare_negative_power() {
+    assert_case(r#"Numerator[x^-1]"#, r#"1"#);
+    assert_case(r#"Numerator[x^-2]"#, r#"1"#);
+    assert_case(r#"Numerator[a^-3]"#, r#"1"#);
+    // A positive power is its own numerator.
+    assert_case(r#"Numerator[x^2]"#, r#"x^2"#);
+  }
   #[test]
   fn expand_1() {
     assert_case(r#"Expand[(x + y) ^ 3]"#, r#"x^3 + 3*x^2*y + 3*x*y^2 + y^3"#);
