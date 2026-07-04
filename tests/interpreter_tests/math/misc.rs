@@ -801,13 +801,14 @@ mod inverse_trig_identities {
   // symbolic). All expected values verified against wolframscript.
   #[test]
   fn arcsin_out_of_domain_real_is_complex() {
+    // Round to avoid last-ULP libm divergence between platforms.
     assert_eq!(
-      interpret("ArcSin[2.0]").unwrap(),
-      "1.5707963267948966 - 1.3169578969248166*I"
+      interpret("Round[ArcSin[2.0], 0.001]").unwrap(),
+      "1.571 - 1.317*I"
     );
     assert_eq!(
-      interpret("ArcSin[-1.5]").unwrap(),
-      "-1.5707963267948966 + 0.9624236501192069*I"
+      interpret("Round[ArcSin[-1.5], 0.001]").unwrap(),
+      "-1.571 + 0.962*I"
     );
     // Exact integer stays symbolic.
     assert_eq!(interpret("ArcSin[3]").unwrap(), "ArcSin[3]");
@@ -815,13 +816,14 @@ mod inverse_trig_identities {
 
   #[test]
   fn arccos_out_of_domain_real_is_complex() {
+    // Round to avoid last-ULP libm divergence between platforms.
     assert_eq!(
-      interpret("ArcCos[2.0]").unwrap(),
-      "0. + 1.3169578969248166*I"
+      interpret("Round[ArcCos[2.0], 0.001]").unwrap(),
+      "0. + 1.317*I"
     );
     assert_eq!(
-      interpret("ArcCos[-1.5]").unwrap(),
-      "3.141592653589793 - 0.9624236501192069*I"
+      interpret("Round[ArcCos[-1.5], 0.001]").unwrap(),
+      "3.142 - 0.962*I"
     );
   }
 
@@ -855,42 +857,46 @@ mod inverse_trig_identities {
   // covers the ArcCosh[x < -1] branch. Verified against wolframscript.
   #[test]
   fn arcsec_out_of_domain_real_is_complex() {
+    // Round to avoid last-ULP libm divergence between platforms.
     assert_eq!(
-      interpret("ArcSec[0.5]").unwrap(),
-      "0. + 1.3169578969248166*I"
+      interpret("Round[ArcSec[0.5], 0.001]").unwrap(),
+      "0. + 1.317*I"
     );
   }
 
   #[test]
   fn arccsc_out_of_domain_real_is_complex() {
+    // Round to avoid last-ULP libm divergence between platforms.
     assert_eq!(
-      interpret("ArcCsc[0.5]").unwrap(),
-      "1.5707963267948966 - 1.3169578969248166*I"
+      interpret("Round[ArcCsc[0.5], 0.001]").unwrap(),
+      "1.571 - 1.317*I"
     );
   }
 
   #[test]
   fn arcsech_out_of_domain_real_is_complex() {
+    // Round to avoid last-ULP libm divergence between platforms.
     assert_eq!(
-      interpret("ArcSech[2.0]").unwrap(),
-      "0. + 1.0471975511965976*I"
+      interpret("Round[ArcSech[2.0], 0.001]").unwrap(),
+      "0. + 1.047*I"
     );
     assert_eq!(
-      interpret("ArcSech[-0.5]").unwrap(),
-      "1.3169578969248166 + 3.141592653589793*I"
+      interpret("Round[ArcSech[-0.5], 0.001]").unwrap(),
+      "1.317 + 3.142*I"
     );
   }
 
   #[test]
   fn arccosh_below_negative_one_is_complex() {
     // Previously returned Indeterminate (x.acos() is NaN for x < -1).
+    // Round to avoid last-ULP libm divergence between platforms.
     assert_eq!(
-      interpret("ArcCosh[-2.0]").unwrap(),
-      "1.3169578969248166 + 3.141592653589793*I"
+      interpret("Round[ArcCosh[-2.0], 0.001]").unwrap(),
+      "1.317 + 3.142*I"
     );
     assert_eq!(
-      interpret("ArcCosh[-1.0]").unwrap(),
-      "0. + 3.141592653589793*I"
+      interpret("Round[ArcCosh[-1.0], 0.001]").unwrap(),
+      "0. + 3.142*I"
     );
   }
 
@@ -898,9 +904,10 @@ mod inverse_trig_identities {
   // stay symbolic rather than being numericized.
   #[test]
   fn arcsec_arccsc_in_domain_and_exact() {
-    assert_eq!(interpret("ArcSec[2.0]").unwrap(), "1.0471975511965976");
-    assert_eq!(interpret("ArcCsc[2.0]").unwrap(), "0.5235987755982988");
-    assert_eq!(interpret("ArcSech[0.5]").unwrap(), "1.3169578969248166");
+    // Round to avoid last-ULP libm divergence between platforms.
+    assert_eq!(interpret("Round[ArcSec[2.0], 0.001]").unwrap(), "1.047");
+    assert_eq!(interpret("Round[ArcCsc[2.0], 0.001]").unwrap(), "0.524");
+    assert_eq!(interpret("Round[ArcSech[0.5], 0.001]").unwrap(), "1.317");
     assert_eq!(interpret("ArcSec[3]").unwrap(), "ArcSec[3]");
     assert_eq!(interpret("ArcCsc[3]").unwrap(), "ArcCsc[3]");
     assert_eq!(interpret("ArcSec[2]").unwrap(), "Pi/3");

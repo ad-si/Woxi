@@ -9298,7 +9298,8 @@ mod cases {
   }
   #[test]
   fn arc_csch_2() {
-    assert_case(r#"ArcCsch[0]; ArcCsch[1.0]"#, r#"0.881373587019543"#);
+    // Round to avoid last-ULP libm divergence between platforms.
+    assert_case(r#"ArcCsch[0]; Round[ArcCsch[1.0], 0.001]"#, r#"0.881"#);
   }
   #[test]
   fn arc_sech_1() {
@@ -9310,9 +9311,10 @@ mod cases {
   }
   #[test]
   fn arc_sech_3() {
+    // Round to avoid last-ULP libm divergence between platforms.
     assert_case(
-      r#"ArcSech[0]; ArcSech[1]; ArcSech[0.5]"#,
-      r#"1.3169578969248166"#,
+      r#"ArcSech[0]; ArcSech[1]; Round[ArcSech[0.5], 0.001]"#,
+      r#"1.317"#,
     );
   }
   #[test]
@@ -9325,9 +9327,10 @@ mod cases {
   }
   #[test]
   fn arc_sinh_3() {
+    // Round to avoid last-ULP libm divergence between platforms.
     assert_case(
-      r#"ArcSinh[0]; ArcSinh[0.]; ArcSinh[1.0]"#,
-      r#"0.881373587019543"#,
+      r#"ArcSinh[0]; ArcSinh[0.]; Round[ArcSinh[1.0], 0.001]"#,
+      r#"0.881"#,
     );
   }
   // ArcSinh is odd: ArcSinh[-x] -> -ArcSinh[x] for negative integers,
@@ -9361,8 +9364,9 @@ mod cases {
   #[test]
   fn arc_tanh_4() {
     assert_case(
-      r#"ArcTanh[0]; ArcTanh[1]; ArcTanh[0]; ArcTanh[.5 + 2 I]"#,
-      r#"0.09641562020299617 + 1.1265564408348223*I"#,
+      // Round to avoid last-ULP libm divergence between platforms.
+      r#"ArcTanh[0]; ArcTanh[1]; ArcTanh[0]; Round[ArcTanh[.5 + 2 I], 0.001]"#,
+      r#"0.096 + 1.127*I"#,
     );
   }
   #[test]
