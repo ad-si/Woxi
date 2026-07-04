@@ -2483,6 +2483,33 @@ mod solve {
     );
   }
 
+  // A list of equations with a bare-symbol variable is a valid system:
+  // Solve[{x == 1, x == 2}, x] behaves like Solve[..., {x}], not a
+  // Solve::naqs error. Previously it fell through to the single-equation
+  // path and stayed unevaluated with a bogus message.
+  #[test]
+  fn list_equations_with_bare_variable() {
+    // Inconsistent system → no solutions.
+    assert_eq!(interpret("Solve[{x == 1, x == 2}, x]").unwrap(), "{}");
+    // Redundant consistent system → the solution.
+    assert_eq!(
+      interpret("Solve[{x == 1, x == 1}, x]").unwrap(),
+      "{{x -> 1}}"
+    );
+    // A single equation in a list still enumerates its roots.
+    assert_eq!(
+      interpret("Solve[{x^2 == 1}, x]").unwrap(),
+      "{{x -> -1}, {x -> 1}}"
+    );
+    // An inequality constraint alongside the equation is honored.
+    assert_eq!(
+      interpret("Solve[{x^2 == 1, x > 0}, x]").unwrap(),
+      "{{x -> 1}}"
+    );
+    // The And form is flattened to the same list system.
+    assert_eq!(interpret("Solve[x == 1 && x == 2, x]").unwrap(), "{}");
+  }
+
   #[test]
   fn one_argument_auto_detects_variable() {
     // Single-variable: the variable is inferred from the equation.

@@ -1160,6 +1160,23 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => args,
   };
 
+  // Pre-pass: normalize a bare-symbol variable to a single-element list when
+  // the first argument is a list of equations. Solve[{x == 1, x == 2}, x]
+  // behaves like Solve[{x == 1, x == 2}, {x}], which the system path handles;
+  // without this it fell through to the single-equation path and wrongly
+  // emitted Solve::naqs.
+  let barevar_args_owned: Vec<Expr>;
+  let args = if matches!(&args[0], Expr::List(_))
+    && matches!(&args[1], Expr::Identifier(_))
+  {
+    let mut new_args = args.to_vec();
+    new_args[1] = Expr::List(vec![args[1].clone()].into());
+    barevar_args_owned = new_args;
+    barevar_args_owned.as_slice()
+  } else {
+    args
+  };
+
   // Pre-pass: drop variables from the var list that don't appear in any
   // equation. Wolfram emits Solve::svars and continues with the
   // remaining variables. Without this, an extra var like `y` in
