@@ -844,6 +844,72 @@ mod inverse_trig_identities {
     assert_eq!(interpret("ArcCos[0.5]").unwrap(), "1.0471975511965976");
     assert_eq!(interpret("ArcTanh[0.5]").unwrap(), "0.5493061443340549");
   }
+
+  // ArcSec/ArcCsc/ArcSech follow the reciprocal identities (ArcSec[x] =
+  // ArcCos[1/x], ArcCsc[x] = ArcSin[1/x], ArcSech[x] = ArcCosh[1/x]), so an
+  // inexact real outside their real domain gives a complex result. Also
+  // covers the ArcCosh[x < -1] branch. Verified against wolframscript.
+  #[test]
+  fn arcsec_out_of_domain_real_is_complex() {
+    assert_eq!(
+      interpret("ArcSec[0.5]").unwrap(),
+      "0. + 1.3169578969248166*I"
+    );
+  }
+
+  #[test]
+  fn arccsc_out_of_domain_real_is_complex() {
+    assert_eq!(
+      interpret("ArcCsc[0.5]").unwrap(),
+      "1.5707963267948966 - 1.3169578969248166*I"
+    );
+  }
+
+  #[test]
+  fn arcsech_out_of_domain_real_is_complex() {
+    assert_eq!(
+      interpret("ArcSech[2.0]").unwrap(),
+      "0. + 1.0471975511965976*I"
+    );
+    assert_eq!(
+      interpret("ArcSech[-0.5]").unwrap(),
+      "1.3169578969248166 + 3.141592653589793*I"
+    );
+  }
+
+  #[test]
+  fn arccosh_below_negative_one_is_complex() {
+    // Previously returned Indeterminate (x.acos() is NaN for x < -1).
+    assert_eq!(
+      interpret("ArcCosh[-2.0]").unwrap(),
+      "1.3169578969248166 + 3.141592653589793*I"
+    );
+    assert_eq!(
+      interpret("ArcCosh[-1.0]").unwrap(),
+      "0. + 3.141592653589793*I"
+    );
+  }
+
+  // In-domain reals still return a plain real, and exact integer arguments
+  // stay symbolic rather than being numericized.
+  #[test]
+  fn arcsec_arccsc_in_domain_and_exact() {
+    assert_eq!(interpret("ArcSec[2.0]").unwrap(), "1.0471975511965976");
+    assert_eq!(interpret("ArcCsc[2.0]").unwrap(), "0.5235987755982988");
+    assert_eq!(interpret("ArcSech[0.5]").unwrap(), "1.3169578969248166");
+    assert_eq!(interpret("ArcSec[3]").unwrap(), "ArcSec[3]");
+    assert_eq!(interpret("ArcCsc[3]").unwrap(), "ArcCsc[3]");
+    assert_eq!(interpret("ArcSec[2]").unwrap(), "Pi/3");
+  }
+
+  // A zero real argument: ArcSec/ArcCsc diverge to ComplexInfinity, ArcSech
+  // to Indeterminate. Per wolframscript.
+  #[test]
+  fn arcsec_family_zero_real() {
+    assert_eq!(interpret("ArcSec[0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("ArcCsc[0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("ArcSech[0.0]").unwrap(), "Indeterminate");
+  }
 }
 
 mod inverse_function {

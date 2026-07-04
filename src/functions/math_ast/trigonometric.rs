@@ -4327,17 +4327,16 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => {
-      if *f >= 1.0 {
-        return Ok(Expr::Real(f.acosh()));
-      }
-      // For 0 <= f < 1 or f < 0, return complex result
-      // ArcCosh[x] = I*ArcCos[x] for real x in [-1,1]
       let x = *f;
-      let acos_x = x.acos();
-      return crate::evaluator::evaluate_function_call_ast(
-        "Complex",
-        &[Expr::Real(0.0), Expr::Real(acos_x)],
-      );
+      if x >= 1.0 {
+        return Ok(Expr::Real(x.acosh()));
+      } else if x >= -1.0 {
+        // ArcCosh[x] = I*ArcCos[x] for real x in [-1, 1].
+        return build_complex_float_result(0.0, x.acos());
+      } else {
+        // x < -1: ArcCosh[x] = ArcCosh[|x|] + I*Pi. (x.acos() would be NaN.)
+        return build_complex_float_result((-x).acosh(), std::f64::consts::PI);
+      }
     }
     // ArcCosh[0``α] = (Pi/2 at α-digit accuracy) * I
     Expr::BigFloat(s, prec) if s == "0" => {
@@ -4591,11 +4590,21 @@ pub fn arcsech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Identifier("Infinity".to_string())),
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => {
-      // ArcSech[x] = ArcCosh[1/x]
+      // ArcSech[x] = ArcCosh[1/x].
       let x = *f;
+      if x == 0.0 {
+        // 1/0. is indeterminate for an inexact zero (ArcSech[0] exact stays
+        // Infinity, handled above).
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      }
       if x > 0.0 && x <= 1.0 {
         return Ok(Expr::Real((1.0 / x).acosh()));
       }
+      // Out of domain (x < 0 or x > 1): delegate for the complex result.
+      return crate::evaluator::evaluate_function_call_ast(
+        "ArcCosh",
+        &[Expr::Real(1.0 / x)],
+      );
     }
     _ => {}
   }
@@ -4685,10 +4694,18 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(result);
     }
   }
-  if let Some(f) = try_eval_to_f64(&args[0])
-    && f.abs() >= 1.0
-  {
-    return Ok(Expr::Real((1.0 / f).asin()));
+  // Inexact real argument: ArcCsc[x] = ArcSin[1/x]. Delegating covers the
+  // in-domain (|x| >= 1, real) and out-of-domain (|x| < 1, complex) cases;
+  // an exact argument that did not reduce above stays symbolic (not
+  // numericized), matching wolframscript.
+  if let Expr::Real(f) = &args[0] {
+    if *f == 0.0 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    return crate::evaluator::evaluate_function_call_ast(
+      "ArcSin",
+      &[Expr::Real(1.0 / *f)],
+    );
   }
   Ok(Expr::FunctionCall {
     name: "ArcCsc".to_string(),
@@ -4724,10 +4741,18 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(result);
     }
   }
-  if let Some(f) = try_eval_to_f64(&args[0])
-    && f.abs() >= 1.0
-  {
-    return Ok(Expr::Real((1.0 / f).acos()));
+  // Inexact real argument: ArcSec[x] = ArcCos[1/x]. Delegating covers the
+  // in-domain (|x| >= 1, real) and out-of-domain (|x| < 1, complex) cases;
+  // an exact argument that did not reduce above stays symbolic (not
+  // numericized), matching wolframscript.
+  if let Expr::Real(f) = &args[0] {
+    if *f == 0.0 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    return crate::evaluator::evaluate_function_call_ast(
+      "ArcCos",
+      &[Expr::Real(1.0 / *f)],
+    );
   }
   Ok(Expr::FunctionCall {
     name: "ArcSec".to_string(),
