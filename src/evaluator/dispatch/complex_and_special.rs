@@ -4963,30 +4963,751 @@ fn trim_bigfloat_to_precision_for_output(expr: &Expr) -> Expr {
   }
 }
 
-/// Like `expr_to_box_form` but renders function calls with `(` / `)`
-/// instead of `[` / `]` for TraditionalForm (e.g. `F[x]` → `F(x)`).
-/// Only function-call brackets are swapped; List `{…}` braces and all
-/// other syntax stay as in StandardForm.
-pub fn expr_to_box_form_traditional(expr: &Expr) -> Expr {
-  match expr {
-    Expr::FunctionCall { name, args } => {
-      let mut row_args: Vec<Expr> = Vec::with_capacity(args.len() * 2 + 2);
-      row_args.push(Expr::String(name.clone()));
-      row_args.push(Expr::String("(".to_string()));
-      for (i, arg) in args.iter().enumerate() {
-        if i > 0 {
-          row_args.push(Expr::String(",".to_string()));
+// ── TraditionalForm typesetting helpers ───────────────────────────────
+//
+// These build the 2D box tree that the Playground/Studio SVG renderer
+// consumes so held mathematical expressions display in conventional
+// notation: `∑`/`∫`/`∏` operators with limits, invisible HoldForm, `π`/`∞`
+// glyphs, `sin(x)` instead of `Sin[x]`, stacked fractions, radicals, and
+// bracketed matrices. Only the *display* shape is produced here — no
+// evaluation happens.
+
+fn tf_string(s: &str) -> Expr {
+  Expr::String(s.to_string())
+}
+
+fn tf_row(items: Vec<Expr>) -> Expr {
+  if items.len() == 1 {
+    return items.into_iter().next().unwrap();
+  }
+  Expr::FunctionCall {
+    name: "RowBox".to_string(),
+    args: vec![Expr::List(items.into())].into(),
+  }
+}
+
+fn tf_box(name: &str, args: Vec<Expr>) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  }
+}
+
+/// Thin space used between implicitly-multiplied factors (`2 a`, `n x`).
+/// The SVG text renderer draws a standalone U+2009 as a narrow gap.
+fn tf_thin_space() -> Expr {
+  Expr::String("\u{2009}".to_string())
+}
+
+fn tf_parens(inner: Expr) -> Expr {
+  tf_row(vec![tf_string("("), inner, tf_string(")")])
+}
+
+/// Map a symbol/constant name to its TraditionalForm glyph. Greek letters
+/// entered as `\[Mu]` etc. already arrive as their Unicode character, so
+/// only the named mathematical constants need translating here.
+fn tf_symbol(name: &str) -> String {
+  match name {
+    "Pi" => "\u{03C0}".to_string(),                    // π
+    "Infinity" => "\u{221E}".to_string(),              // ∞
+    "E" | "ExponentialE" => "\u{2147}".to_string(),    // ⅇ
+    "I" | "ImaginaryI" => "\u{2148}".to_string(),      // ⅈ
+    "Degree" => "\u{00B0}".to_string(),                // °
+    "EulerGamma" => "\u{03B3}".to_string(),            // γ
+    "GoldenRatio" => "\u{03C6}".to_string(),           // φ
+    "ComplexInfinity" => "\u{221E}".to_string(),       // ∞
+    _ => name.to_string(),
+  }
+}
+
+/// TraditionalForm display name for a well-known function (lowercase roman),
+/// or `None` if the head should be shown verbatim.
+fn tf_known_func(name: &str) -> Option<&'static str> {
+  Some(match name {
+    "Sin" => "sin",
+    "Cos" => "cos",
+    "Tan" => "tan",
+    "Cot" => "cot",
+    "Sec" => "sec",
+    "Csc" => "csc",
+    "Sinh" => "sinh",
+    "Cosh" => "cosh",
+    "Tanh" => "tanh",
+    "ArcSin" => "arcsin",
+    "ArcCos" => "arccos",
+    "ArcTan" => "arctan",
+    "Log" => "log",
+    "Log10" => "log",
+    "Ln" => "ln",
+    "Max" => "max",
+    "Min" => "min",
+    "Sign" => "sgn",
+    "Mod" => "mod",
+    "Gcd" => "gcd",
+    "Lcm" => "lcm",
+    "Gamma" => "\u{0393}", // Γ
+    "Zeta" => "\u{03B6}",  // ζ
+    _ => return None,
+  })
+}
+
+/// True for a trig/hyperbolic function whose power is written on the name
+/// (`sin²(x)`) rather than around the whole call.
+fn tf_is_trig(name: &str) -> bool {
+  matches!(
+    name,
+    "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh" | "Cosh" | "Tanh"
+  )
+}
+
+/// Whether a List is a matrix (a non-empty list whose every element is a
+/// list of equal length ≥ 1).
+fn tf_is_matrix(items: &[Expr]) -> bool {
+  if items.is_empty() {
+    return false;
+  }
+  let mut cols = None;
+  for it in items {
+    match it {
+      Expr::List(row) if !row.is_empty() => {
+        if *cols.get_or_insert(row.len()) != row.len() {
+          return false;
         }
-        row_args.push(expr_to_box_form_traditional(arg));
       }
-      row_args.push(Expr::String(")".to_string()));
-      Expr::FunctionCall {
-        name: "RowBox".to_string(),
-        args: vec![Expr::List(row_args.into())].into(),
+      _ => return false,
+    }
+  }
+  true
+}
+
+/// True if `expr` is the literal integer 0 (used to strip the spurious
+/// `0 -` the parser emits for a leading unary minus like `-x`).
+fn tf_is_zero(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(0))
+}
+
+/// Collect the signed terms of an additive expression, flattening nested
+/// Plus/Minus and unary minus and dropping literal `0` terms. Each entry is
+/// `(is_negative, term)`.
+fn tf_flatten_additive(expr: &Expr, neg: bool, out: &mut Vec<(bool, Expr)>) {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      tf_flatten_additive(left, neg, out);
+      tf_flatten_additive(right, neg, out);
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      tf_flatten_additive(left, neg, out);
+      tf_flatten_additive(right, !neg, out);
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => tf_flatten_additive(operand, !neg, out),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for a in args.iter() {
+        tf_flatten_additive(a, neg, out);
       }
     }
+    _ if tf_is_zero(expr) => {}
+    _ => out.push((neg, expr.clone())),
+  }
+}
+
+/// Flatten a multiplicative expression into its factors.
+fn tf_flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      tf_flatten_times(left, out);
+      tf_flatten_times(right, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args.iter() {
+        tf_flatten_times(a, out);
+      }
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+/// Does this term need parentheses when placed as a factor in a product or
+/// as the base of a power?
+fn tf_needs_paren_factor(expr: &Expr) -> bool {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    } => true,
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      ..
+    } => true,
+    Expr::Comparison { .. } => true,
+    Expr::FunctionCall { name, args } => {
+      (name == "Plus" && args.len() >= 2)
+        || (name == "Times"
+          && matches!(args.first(), Some(Expr::Integer(n)) if *n < 0))
+    }
+    _ => false,
+  }
+}
+
+fn tf_factor_boxed(expr: &Expr) -> Expr {
+  let boxed = tf(expr);
+  if tf_needs_paren_factor(expr) {
+    tf_parens(boxed)
+  } else {
+    boxed
+  }
+}
+
+/// TraditionalForm box of `base^exp`, with trig special-casing (`sin²(x)`)
+/// and half-integer exponents rendered as radicals.
+fn tf_power(base: &Expr, exp: &Expr) -> Expr {
+  // sin[x]^2 → sin²(x)
+  if let Expr::FunctionCall { name, args } = base
+    && tf_is_trig(name)
+    && args.len() == 1
+    && matches!(exp, Expr::Integer(n) if *n > 0)
+  {
+    let disp = tf_known_func(name).unwrap_or(name.as_str());
+    return tf_row(vec![
+      tf_box("SuperscriptBox", vec![tf_string(disp), tf(exp)]),
+      tf_string("("),
+      tf(&args[0]),
+      tf_string(")"),
+    ]);
+  }
+  // x^(1/2) → √x
+  let is_half = matches!(exp, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2
+      && matches!(&args[0], Expr::Integer(1))
+      && matches!(&args[1], Expr::Integer(2)))
+    || matches!(exp, Expr::Real(f) if (*f - 0.5).abs() < f64::EPSILON);
+  if is_half {
+    return tf_box("SqrtBox", vec![tf(base)]);
+  }
+  let negative_number = matches!(base, Expr::Integer(n) if *n < 0)
+    || matches!(base, Expr::Real(f) if *f < 0.0);
+  let base_box = if tf_needs_paren_factor(base)
+    || negative_number
+    || matches!(base, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Power | crate::syntax::BinaryOperator::Divide, .. })
+    || matches!(base, Expr::FunctionCall { name, .. } if name == "Power" || name == "Rational")
+  {
+    tf_parens(tf(base))
+  } else {
+    tf(base)
+  };
+  tf_box("SuperscriptBox", vec![base_box, tf(exp)])
+}
+
+fn tf_fraction(num: &Expr, den: &Expr) -> Expr {
+  tf_box("FractionBox", vec![tf(num), tf(den)])
+}
+
+/// TraditionalForm box of a product (already flattened factor list).
+fn tf_times(expr: &Expr) -> Expr {
+  let mut factors = Vec::new();
+  tf_flatten_times(expr, &mut factors);
+  // Pull a leading -1 / negative numeric coefficient into a sign.
+  let mut negative = false;
+  if let Some(Expr::Integer(n)) = factors.first()
+    && *n < 0
+  {
+    negative = true;
+    if *n == -1 {
+      factors.remove(0);
+    } else {
+      factors[0] = Expr::Integer(-*n);
+    }
+  }
+  let mut items: Vec<Expr> = Vec::new();
+  for (i, f) in factors.iter().enumerate() {
+    if i > 0 {
+      items.push(tf_thin_space());
+    }
+    items.push(tf_factor_boxed(f));
+  }
+  let body = tf_row(items);
+  if negative {
+    tf_row(vec![tf_string("-"), body])
+  } else {
+    body
+  }
+}
+
+/// TraditionalForm box of an additive expression.
+fn tf_plus(expr: &Expr) -> Expr {
+  let mut terms = Vec::new();
+  tf_flatten_additive(expr, false, &mut terms);
+  if terms.is_empty() {
+    return tf_string("0");
+  }
+  let mut items: Vec<Expr> = Vec::new();
+  for (i, (neg, term)) in terms.iter().enumerate() {
+    if i == 0 {
+      if *neg {
+        items.push(tf_string("-"));
+      }
+    } else {
+      items.push(tf_string(if *neg { "-" } else { "+" }));
+    }
+    items.push(tf(term));
+  }
+  tf_row(items)
+}
+
+/// Render the iterator body of Sum/Product with the given large operator.
+fn tf_big_operator(glyph: &str, args: &[Expr]) -> Expr {
+  // Build one Underoverscript operator per iterator spec.
+  let mut ops: Vec<Expr> = Vec::new();
+  for spec in &args[1..] {
+    if let Expr::List(parts) = spec {
+      match parts.as_slice() {
+        [var, lo, hi] => {
+          let under =
+            tf_row(vec![tf(var), tf_string("="), tf(lo)]);
+          ops.push(tf_box(
+            "UnderoverscriptBox",
+            vec![tf_string(glyph), under, tf(hi)],
+          ));
+        }
+        [var, hi] => {
+          ops.push(tf_box(
+            "UnderoverscriptBox",
+            vec![tf_string(glyph), tf(var), tf(hi)],
+          ));
+        }
+        _ => ops.push(tf_string(glyph)),
+      }
+    } else {
+      ops.push(tf_string(glyph));
+    }
+  }
+  if ops.is_empty() {
+    ops.push(tf_string(glyph));
+  }
+  let mut items = ops;
+  items.push(tf_thin_space());
+  items.push(tf(&args[0]));
+  tf_row(items)
+}
+
+/// Render `Integrate[body, {x, a, b}, …]` with ∫ operators and ⅆx factors.
+fn tf_integrate(args: &[Expr]) -> Expr {
+  let mut ops: Vec<Expr> = Vec::new();
+  let mut diffs: Vec<Expr> = Vec::new();
+  for spec in &args[1..] {
+    match spec {
+      Expr::List(parts) if parts.len() == 3 => {
+        ops.push(tf_box(
+          "SubsuperscriptBox",
+          vec![tf_string("\u{222B}"), tf(&parts[1]), tf(&parts[2])],
+        ));
+        diffs.push(tf_string("\u{2146}")); // ⅆ
+        diffs.push(tf(&parts[0]));
+      }
+      Expr::List(parts) if parts.len() == 1 => {
+        ops.push(tf_string("\u{222B}"));
+        diffs.push(tf_string("\u{2146}"));
+        diffs.push(tf(&parts[0]));
+      }
+      other => {
+        ops.push(tf_string("\u{222B}"));
+        diffs.push(tf_string("\u{2146}"));
+        diffs.push(tf(other));
+      }
+    }
+  }
+  if ops.is_empty() {
+    return tf_generic_call("Integrate", args);
+  }
+  let mut items = ops;
+  items.push(tf_thin_space());
+  let body_needs_paren = matches!(&args[0],
+    Expr::BinaryOp { op: crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus, .. })
+    || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus");
+  if body_needs_paren {
+    items.push(tf_parens(tf(&args[0])));
+  } else {
+    items.push(tf(&args[0]));
+  }
+  items.push(tf_thin_space());
+  items.extend(diffs);
+  tf_row(items)
+}
+
+/// Render `D[body, x]`, `D[body, {x, n}]`, `D[body, s1, s2, …]` as a
+/// Leibniz-style derivative `∂ⁿ/(∂x^a ∂y^b) body`.
+fn tf_derivative(args: &[Expr]) -> Expr {
+  // Parse each spec into (var, order).
+  let mut specs: Vec<(Expr, i128)> = Vec::new();
+  for spec in &args[1..] {
+    match spec {
+      Expr::List(parts) if parts.len() == 2 => {
+        let order = match &parts[1] {
+          Expr::Integer(n) => *n,
+          _ => 1,
+        };
+        specs.push((parts[0].clone(), order));
+      }
+      other => specs.push((other.clone(), 1)),
+    }
+  }
+  if specs.is_empty() {
+    return tf_generic_call("D", args);
+  }
+  let total: i128 = specs.iter().map(|(_, n)| *n).sum();
+  let partial = "\u{2202}"; // ∂
+  let num = if total > 1 {
+    tf_box(
+      "SuperscriptBox",
+      vec![tf_string(partial), tf(&Expr::Integer(total))],
+    )
+  } else {
+    tf_string(partial)
+  };
+  let mut den_items: Vec<Expr> = Vec::new();
+  for (var, order) in &specs {
+    den_items.push(tf_string(partial));
+    if *order > 1 {
+      den_items.push(tf_box(
+        "SuperscriptBox",
+        vec![tf(var), tf(&Expr::Integer(*order))],
+      ));
+    } else {
+      den_items.push(tf(var));
+    }
+  }
+  let frac = tf_box("FractionBox", vec![num, tf_row(den_items)]);
+  let body = &args[0];
+  let body_box = if tf_needs_paren_factor(body)
+    || matches!(body, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Times, .. })
+    || matches!(body, Expr::FunctionCall { name, .. } if name == "Times")
+  {
+    tf_parens(tf(body))
+  } else {
+    tf(body)
+  };
+  tf_row(vec![frac, tf_thin_space(), body_box])
+}
+
+/// Build a GridBox from a matrix (list of row-lists), boxing each cell.
+fn tf_matrix_grid(rows: &[Expr]) -> Expr {
+  let grid_rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| {
+      if let Expr::List(cells) = row {
+        Expr::List(cells.iter().map(tf).collect::<Vec<_>>().into())
+      } else {
+        Expr::List(vec![tf(row)].into())
+      }
+    })
+    .collect();
+  tf_box("GridBox", vec![Expr::List(grid_rows.into())])
+}
+
+/// Generic `head(arg, …)` rendering (unknown functions). The head is shown
+/// verbatim — the constant glyph map (E→ⅇ, I→ⅈ, …) is deliberately *not*
+/// applied here, so a symbol used as a function head (e.g. the field `E` in
+/// `E[x, y, z]`) stays `E(x, y, z)` rather than becoming `ⅇ(x, y, z)`.
+fn tf_generic_call(name: &str, args: &[Expr]) -> Expr {
+  let mut items: Vec<Expr> = Vec::with_capacity(args.len() * 2 + 3);
+  items.push(tf_string(name));
+  items.push(tf_string("("));
+  for (i, arg) in args.iter().enumerate() {
+    if i > 0 {
+      items.push(tf_string(","));
+    }
+    items.push(tf(arg));
+  }
+  items.push(tf_string(")"));
+  tf_row(items)
+}
+
+/// Dispatch a function call to its TraditionalForm rendering.
+fn tf_call(name: &str, args: &[Expr]) -> Expr {
+  match name {
+    "HoldForm" | "HoldComplete" | "Defer" | "Identity" if args.len() == 1 => {
+      tf(&args[0])
+    }
+    "Sqrt" if args.len() == 1 => tf_box("SqrtBox", vec![tf(&args[0])]),
+    "Power" if args.len() == 2 => tf_power(&args[0], &args[1]),
+    "Rational" if args.len() == 2 => tf_fraction(&args[0], &args[1]),
+    "Times" if args.len() >= 2 => tf_times(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: args.to_vec().into(),
+    }),
+    "Plus" if args.len() >= 2 => tf_plus(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: args.to_vec().into(),
+    }),
+    "Divide" if args.len() == 2 => tf_fraction(&args[0], &args[1]),
+    "Exp" if args.len() == 1 => {
+      tf_box("SuperscriptBox", vec![tf_string("\u{2147}"), tf(&args[0])])
+    }
+    "Sum" if args.len() >= 2 => tf_big_operator("\u{2211}", args), // ∑
+    "Product" if args.len() >= 2 => tf_big_operator("\u{220F}", args), // ∏
+    "Integrate" if args.len() >= 2 => tf_integrate(args),
+    "D" if args.len() >= 2 => tf_derivative(args),
+    "Abs" if args.len() == 1 => {
+      tf_row(vec![tf_string("|"), tf(&args[0]), tf_string("|")])
+    }
+    "Det" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0]
+        && tf_is_matrix(rows)
+      {
+        tf_row(vec![
+          tf_string("|"),
+          tf_matrix_grid(rows),
+          tf_string("|"),
+        ])
+      } else {
+        tf_row(vec![tf_string("det"), tf_parens(tf(&args[0]))])
+      }
+    }
+    "MatrixForm" | "TableForm" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0]
+        && tf_is_matrix(rows)
+      {
+        tf_row(vec![
+          tf_string("("),
+          tf_matrix_grid(rows),
+          tf_string(")"),
+        ])
+      } else {
+        tf(&args[0])
+      }
+    }
+    // Vector-calculus operators drop their coordinate-list argument and use
+    // ∇ notation: Grad → ∇f, Div → ∇·f, Curl → ∇×f, Laplacian → ∇²f.
+    "Grad" if args.len() == 2 && matches!(&args[1], Expr::List(_)) => {
+      tf_row(vec![tf_string("\u{2207}"), tf(&args[0])])
+    }
+    "Div" if args.len() == 2 && matches!(&args[1], Expr::List(_)) => {
+      tf_row(vec![
+        tf_string("\u{2207}"),
+        tf_string("\u{22C5}"),
+        tf(&args[0]),
+      ])
+    }
+    "Curl" if args.len() == 2 && matches!(&args[1], Expr::List(_)) => {
+      tf_row(vec![
+        tf_string("\u{2207}"),
+        tf_string("\u{00D7}"),
+        tf(&args[0]),
+      ])
+    }
+    "Laplacian" if args.len() == 2 && matches!(&args[1], Expr::List(_)) => {
+      tf_row(vec![
+        tf_box(
+          "SuperscriptBox",
+          vec![tf_string("\u{2207}"), tf_string("2")],
+        ),
+        tf(&args[0]),
+      ])
+    }
+    // Limit[body, x -> x0] → lim_{x→x0} body
+    "Limit" if args.len() >= 2 => {
+      let sub = match &args[1] {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => tf_row(vec![
+          tf(pattern),
+          tf_string("\u{2192}"),
+          tf(replacement),
+        ]),
+        Expr::FunctionCall { name, args: ra }
+          if name == "Rule" && ra.len() == 2 =>
+        {
+          tf_row(vec![
+            tf(&ra[0]),
+            tf_string("\u{2192}"),
+            tf(&ra[1]),
+          ])
+        }
+        other => tf(other),
+      };
+      let op = tf_box("UnderscriptBox", vec![tf_string("lim"), sub]);
+      let body_box = if tf_needs_paren_factor(&args[0]) {
+        tf_parens(tf(&args[0]))
+      } else {
+        tf(&args[0])
+      };
+      tf_row(vec![op, tf_thin_space(), body_box])
+    }
+    // Bessel functions render with a subscript order: BesselJ[n, x] → Jₙ(x).
+    "BesselJ" | "BesselY" | "BesselI" | "BesselK" if args.len() == 2 => {
+      let letter = match name {
+        "BesselJ" => "J",
+        "BesselY" => "Y",
+        "BesselI" => "I",
+        _ => "K",
+      };
+      tf_row(vec![
+        tf_box("SubscriptBox", vec![tf_string(letter), tf(&args[0])]),
+        tf_string("("),
+        tf(&args[1]),
+        tf_string(")"),
+      ])
+    }
+    "Subscript" if args.len() >= 2 => {
+      let sub = if args.len() == 2 {
+        tf(&args[1])
+      } else {
+        let mut parts: Vec<Expr> = Vec::new();
+        for (i, a) in args[1..].iter().enumerate() {
+          if i > 0 {
+            parts.push(tf_string(","));
+          }
+          parts.push(tf(a));
+        }
+        tf_row(parts)
+      };
+      tf_box("SubscriptBox", vec![tf(&args[0]), sub])
+    }
+    "Superscript" if args.len() == 2 => {
+      tf_box("SuperscriptBox", vec![tf(&args[0]), tf(&args[1])])
+    }
+    _ => {
+      if let Some(disp) = tf_known_func(name) {
+        let mut items: Vec<Expr> = vec![tf_string(disp), tf_string("(")];
+        for (i, arg) in args.iter().enumerate() {
+          if i > 0 {
+            items.push(tf_string(","));
+          }
+          items.push(tf(arg));
+        }
+        items.push(tf_string(")"));
+        tf_row(items)
+      } else {
+        tf_generic_call(name, args)
+      }
+    }
+  }
+}
+
+/// Core TraditionalForm typesetter: expression → 2D box tree.
+fn tf(expr: &Expr) -> Expr {
+  use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
+  match expr {
+    Expr::Identifier(s) | Expr::Constant(s) => tf_string(&tf_symbol(s)),
+    Expr::FunctionCall { name, args } => tf_call(name, args),
+    Expr::List(items) => {
+      if tf_is_matrix(items) {
+        tf_row(vec![tf_string("("), tf_matrix_grid(items), tf_string(")")])
+      } else {
+        let mut parts: Vec<Expr> = vec![tf_string("{")];
+        for (i, it) in items.iter().enumerate() {
+          if i > 0 {
+            parts.push(tf_string(","));
+          }
+          parts.push(tf(it));
+        }
+        parts.push(tf_string("}"));
+        tf_row(parts)
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => tf_power(left, right),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => tf_fraction(left, right),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => tf_times(expr),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } if tf_is_zero(left) => {
+      // Parser artifact: leading unary minus `-x` becomes `0 - x`.
+      tf_row(vec![tf_string("-"), tf_factor_boxed(right)])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    } => tf_plus(expr),
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => tf_row(vec![tf(left), tf_string("\u{2227}"), tf(right)]),
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left,
+      right,
+    } => tf_row(vec![tf(left), tf_string("\u{2228}"), tf(right)]),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => tf_row(vec![tf_string("-"), tf_factor_boxed(operand)]),
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand,
+    } => tf_row(vec![tf_string("\u{00AC}"), tf(operand)]),
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let mut parts = vec![tf(&operands[0])];
+      for (i, op) in operators.iter().enumerate() {
+        let sym = match op {
+          ComparisonOp::Equal => "=",
+          ComparisonOp::NotEqual => "\u{2260}",     // ≠
+          ComparisonOp::Less => "<",
+          ComparisonOp::LessEqual => "\u{2264}",    // ≤
+          ComparisonOp::Greater => ">",
+          ComparisonOp::GreaterEqual => "\u{2265}", // ≥
+          ComparisonOp::SameQ => "\u{2261}",        // ≡
+          ComparisonOp::UnsameQ => "\u{2262}",      // ≢
+        };
+        parts.push(tf_string(sym));
+        parts.push(tf(&operands[i + 1]));
+      }
+      tf_row(parts)
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => tf_row(vec![
+      tf(pattern),
+      tf_string("\u{2192}"),
+      tf(replacement),
+    ]),
     _ => expr_to_box_form(expr),
   }
+}
+
+/// Convert an expression to its TraditionalForm box tree for typeset SVG
+/// display (Playground / Studio) and for `MakeBoxes[…, TraditionalForm]`.
+/// Produces conventional mathematical notation: `∑`/`∫`/`∏` operators with
+/// limits, invisible HoldForm, `π`/`∞`/`ⅇ` glyphs, `sin(x)` for `Sin[x]`,
+/// stacked fractions, radicals, and bracketed matrices. Unknown functions
+/// render as `head(args)`.
+pub fn expr_to_box_form_traditional(expr: &Expr) -> Expr {
+  tf(expr)
 }
 
 /// Convert a Quantity unit expression to box form with proper abbreviations.

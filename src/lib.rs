@@ -2960,10 +2960,16 @@ fn generate_output_svg(expr: &syntax::Expr) {
   {
     return;
   }
-  // Unwrap StandardForm/TraditionalForm — render SVG for the inner expression
+  // Unwrap StandardForm/TraditionalForm — render SVG for the inner expression.
+  // TraditionalForm routes through the dedicated traditional typesetter so
+  // math renders in conventional notation (∑/∫ operators, invisible HoldForm,
+  // π/∞ glyphs, `sin(x)` instead of `Sin[x]`, …) rather than the literal
+  // StandardForm box tree.
+  let mut traditional = false;
   let expr = if let syntax::Expr::FunctionCall { name, args } = expr {
     if (name == "StandardForm" || name == "TraditionalForm") && args.len() == 1
     {
+      traditional = name == "TraditionalForm";
       &args[0]
     } else {
       expr
@@ -2976,9 +2982,15 @@ fn generate_output_svg(expr: &syntax::Expr) {
   let boxes = if let syntax::Expr::FunctionCall { name, args } = expr {
     if (name == "RawBoxes" || name == "DisplayForm") && args.len() == 1 {
       args[0].clone()
+    } else if traditional {
+      evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+        expr,
+      )
     } else {
       evaluator::dispatch::complex_and_special::expr_to_box_form(expr)
     }
+  } else if traditional {
+    evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr)
   } else {
     evaluator::dispatch::complex_and_special::expr_to_box_form(expr)
   };

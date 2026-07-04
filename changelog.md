@@ -2,6 +2,18 @@
 
 # Unreleased
 
+- Render `TraditionalForm` mathematics in conventional, TeX-like notation in
+    the Playground and Studio typeset SVG output. `HoldForm` is now invisible;
+    `Sum`/`Product` become large `∑`/`∏` operators with limits above and below;
+    `Integrate` uses a `∫` sign with bounds and a `ⅆx` differential; `D` renders
+    as a Leibniz `∂ⁿ/∂xᵐ` fraction; `Det` and matrices get stretchy bars and
+    parentheses; `Sqrt` is drawn as one connected radical-and-vinculum object
+    that scales to its content; `Sin[x]^2` becomes `sin²(x)`; constants map to
+    glyphs (`Pi`→`π`, `Infinity`→`∞`, `Exp[x]`→`ⅇˣ`); `Gamma`/`Zeta`/`BesselJ`,
+    `Grad`/`Div`/`Curl`/`Laplacian` (`∇`), and `Limit` use their standard
+    notation; binary operators and relations get proper spacing; and single
+    Latin-letter variables are italicized. The parser now also accepts a
+    named-character symbol as a function head (e.g. `\[Psi][x, t]`).
 - Add support for the standalone `Control[…]` control expression in the
     Playground and Studio. `Control[{x, 0, 1}]` renders a slider,
     `Control[{x, {a, b, c}}]` a popup menu, `Control[{x, {0, 0}, {1, 1}}]`

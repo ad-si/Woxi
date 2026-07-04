@@ -143,4 +143,20 @@ mod tests {
       assert_eq!(pair.as_rule(), Rule::Program, "Failed to parse: {}", input);
     }
   }
+
+  #[test]
+  fn test_parse_named_character_function_head() {
+    // Regression: a named-character symbol used as a function head — e.g. the
+    // wavefunction `\[Psi][x, t]` — must parse as a call on the decoded symbol
+    // `ψ`, not fail at the trailing `[`.
+    for input in ["\\[Psi][x, t]", "\\[Phi][r]", "\\[CapitalGamma][z]"] {
+      let pair = parse(input).unwrap().next().unwrap();
+      assert_eq!(pair.as_rule(), Rule::Program, "Failed to parse: {}", input);
+    }
+    assert_eq!(
+      woxi::interpret("\\[Psi][x, t]").unwrap(),
+      "\u{03C8}[x, t]",
+      "named-char head resolves to ψ"
+    );
+  }
 }

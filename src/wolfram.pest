@@ -156,7 +156,7 @@ ParenExtended = {
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
 RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
-BaseFunctionCall = { Identifier ~ DerivativePrime? ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
+BaseFunctionCall = { (Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
 // Atomic so that WHITESPACE/COMMENT tokens are not consumed within
 // the operator span — otherwise as_str() would include e.g. comments
@@ -412,7 +412,7 @@ GetPathChar = _{ ASCII_ALPHANUMERIC | LETTER | "~" | "/" | "." | "\\" | "-" | "_
 // `Function[Equal[Mod[#1,3], Mod[#2,3]]]`.
 FunctionCallImplicitSuffix = { ImplicitTimesFactor+ }
 FunctionCallExtended = {
-    Identifier ~ DerivativePrime? ~ BracketArgs+
+    (Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ BracketArgs+
     ~ DerivativePrime?
     ~ (
         PartIndexSuffix ~ (ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
@@ -709,7 +709,7 @@ FunctionArgRule = { ReplacementRule ~ RuleAnonSuffix? }
 FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
-FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ ~ DerivativePrime? }
+FunctionCall = { (Identifier | NamedCharIdentifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ ~ DerivativePrime? }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
 FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalAnonBlank | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
