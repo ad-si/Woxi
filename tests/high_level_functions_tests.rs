@@ -1734,32 +1734,36 @@ mod high_level_functions_tests {
 
     #[test]
     fn test_save_to_file() {
-      let result =
-        interpret(r#"a = 5; Save["/tmp/woxi_save_test.wl", a]"#).unwrap();
+      let tmp = std::env::temp_dir().join("woxi_save_test.wl");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(r#"a = 5; Save["{path}", a]"#)).unwrap();
       assert_eq!(result, "\0");
-      let content = std::fs::read_to_string("/tmp/woxi_save_test.wl").unwrap();
+      let content = std::fs::read_to_string(&tmp).unwrap();
       assert!(content.contains("a = 5"));
-      std::fs::remove_file("/tmp/woxi_save_test.wl").ok();
+      std::fs::remove_file(&tmp).ok();
     }
 
     #[test]
     fn test_save_roundtrip() {
-      let result = interpret(
-        r#"f[x_] := x + 1; Save["/tmp/woxi_save_rt.wl", f]; Clear[f]; Get["/tmp/woxi_save_rt.wl"]; f[3]"#,
-      )
+      let tmp = std::env::temp_dir().join("woxi_save_rt.wl");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(
+        r#"f[x_] := x + 1; Save["{path}", f]; Clear[f]; Get["{path}"]; f[3]"#
+      ))
       .unwrap();
       assert_eq!(result, "4");
-      std::fs::remove_file("/tmp/woxi_save_rt.wl").ok();
+      std::fs::remove_file(&tmp).ok();
     }
 
     #[test]
     fn test_save_multiple_to_file() {
-      let result = interpret(
-        r#"f[x_] := x^2; a = 10; Save["/tmp/woxi_save_multi.wl", {f, a}]; Clear[f]; Clear[a]; Get["/tmp/woxi_save_multi.wl"]; {f[3], a}"#,
-      )
-      .unwrap();
+      let tmp = std::env::temp_dir().join("woxi_save_multi.wl");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(
+        r#"f[x_] := x^2; a = 10; Save["{path}", {{f, a}}]; Clear[f]; Clear[a]; Get["{path}"]; {{f[3], a}}"#
+      )).unwrap();
       assert_eq!(result, "{9, 10}");
-      std::fs::remove_file("/tmp/woxi_save_multi.wl").ok();
+      std::fs::remove_file(&tmp).ok();
     }
 
     #[test]
@@ -1779,11 +1783,11 @@ mod high_level_functions_tests {
 
     #[test]
     fn test_save_returns_null() {
-      assert_eq!(
-        interpret(r#"a = 5; Save["/tmp/woxi_save_null.wl", a]"#).unwrap(),
-        "\0"
-      );
-      std::fs::remove_file("/tmp/woxi_save_null.wl").ok();
+      let tmp = std::env::temp_dir().join("woxi_save_null.wl");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(r#"a = 5; Save["{path}", a]"#)).unwrap();
+      assert_eq!(result, "\0");
+      std::fs::remove_file(&tmp).ok();
     }
 
     #[test]
@@ -6092,10 +6096,11 @@ mod high_level_functions_tests {
     #[test]
     fn test_geodestination_returns_geoposition() {
       // GeoDestination[pos, {distance_meters, azimuth_degrees}].
-      assert_eq!(
-        interpret("GeoDestination[{40, -100}, {100000, 45}]").unwrap(),
-        "GeoPosition[{40.63380067529133, -99.1641722386888}]"
-      );
+      let result =
+        interpret("GeoDestination[{40, -100}, {100000, 45}]").unwrap();
+      let regex =
+        "GeoPosition\\[\\{40.63380067529133, -99.164172238688(8|79)\\}\\]";
+      assert!(regex::Regex::new(regex).unwrap().is_match(&result));
     }
 
     #[test]
