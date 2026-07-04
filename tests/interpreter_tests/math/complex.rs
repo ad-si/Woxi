@@ -644,6 +644,44 @@ mod im_tests {
   }
 
   #[test]
+  fn arg_inexact_pure_imaginary_stays_real() {
+    // A concrete inexact complex value (nonzero imaginary part) has an
+    // inexact argument: Arg[2. I] = 1.5707..., not the exact Pi/2 that the
+    // exact Arg[2 I] gives.
+    assert_eq!(interpret("Arg[2. I]").unwrap(), "1.5707963267948966");
+    assert_eq!(interpret("Arg[2 (1. I)]").unwrap(), "1.5707963267948966");
+    // Exact pure imaginary keeps the exact argument.
+    assert_eq!(interpret("Arg[2 I]").unwrap(), "Pi/2");
+    // Pi is exact, so Arg[Pi I] stays exact too.
+    assert_eq!(interpret("Arg[Pi I]").unwrap(), "Pi/2");
+  }
+
+  #[test]
+  fn arg_inexact_purely_real_stays_exact() {
+    // A purely real inexact value has a zero imaginary part, so its argument
+    // is the exact 0 or Pi, not a machine real.
+    assert_eq!(interpret("Arg[-1.]").unwrap(), "Pi");
+    assert_eq!(interpret("Arg[2. (-1)]").unwrap(), "Pi");
+    assert_eq!(interpret("Arg[1.]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arg_inexact_general_complex_stays_real() {
+    assert_eq!(interpret("Arg[3. (1 + I)]").unwrap(), "0.7853981633974483");
+    assert_eq!(
+      interpret("Arg[2.5 (3 + 4 I)]").unwrap(),
+      "0.9272952180016122"
+    );
+    assert_eq!(interpret("Arg[-3. I]").unwrap(), "-1.5707963267948966");
+  }
+
+  #[test]
+  fn arg_inexact_positive_scalar_symbolic() {
+    // A positive inexact scalar times a symbol drops out of the argument.
+    assert_eq!(interpret("Arg[2. x]").unwrap(), "Arg[x]");
+  }
+
+  #[test]
   fn arg_first_quadrant() {
     assert_eq!(interpret("Arg[1+I]").unwrap(), "Pi/4");
   }

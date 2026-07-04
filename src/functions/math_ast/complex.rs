@@ -981,6 +981,22 @@ fn match_re_plus_i_im(expr: &Expr) -> Option<String> {
   None
 }
 
+/// True if the expression contains a machine-precision real anywhere, i.e. the
+/// value it denotes is inexact.
+fn arg_is_inexact(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      arg_is_inexact(left) || arg_is_inexact(right)
+    }
+    Expr::UnaryOp { operand, .. } => arg_is_inexact(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(arg_is_inexact)
+    }
+    _ => false,
+  }
+}
+
 pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1062,6 +1078,20 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Arg".to_string(),
       args: vec![Expr::Identifier(v)].into(),
     });
+  }
+
+  // A concrete inexact complex value with a nonzero imaginary part has an
+  // inexact argument: Arg[2. I] = 1.5707..., not the exact Pi/2 that a pure
+  // imaginary integer (Arg[2 I] = Pi/2) gives. Handle it before the
+  // positive-real-factor stripping below, which would strip the inexact
+  // scalar and recurse into Arg[I], discarding the inexactness. Purely real
+  // inexact values (Arg[2. (-1)] = Pi) keep their exact argument and fall
+  // through, since their imaginary part is zero.
+  if arg_is_inexact(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    return Ok(Expr::Real(im.atan2(re)));
   }
 
   // Arg[Times[positive_real, z, ...]] = Arg[Times[z, ...]]
