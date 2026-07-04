@@ -73,6 +73,35 @@ mod exponent {
     assert_eq!(interpret("Exponent[x^2 + 3*x + 2, x]").unwrap(), "2");
   }
 
+  // A bare number in the form slot is not a variable that ever appears, so
+  // Exponent is 0 — it must not raise an error. (Integers, reals, rationals,
+  // and 0 all behave the same.)
+  #[test]
+  fn number_form_gives_zero() {
+    assert_eq!(interpret("Exponent[x^2, 5]").unwrap(), "0");
+    assert_eq!(interpret("Exponent[x^2 + 3 x, 5]").unwrap(), "0");
+    assert_eq!(interpret("Exponent[x^2, 2.5]").unwrap(), "0");
+    assert_eq!(interpret("Exponent[x^2, 1/2]").unwrap(), "0");
+    assert_eq!(interpret("Exponent[x^2, 0]").unwrap(), "0");
+  }
+
+  // A compound form (a sum, a product, or a function application) is treated
+  // as an atomic unit: Exponent reports the highest power of that whole
+  // subexpression, without expanding it.
+  #[test]
+  fn compound_form_as_unit() {
+    assert_eq!(interpret("Exponent[(x + 1)^2, x + 1]").unwrap(), "2");
+    assert_eq!(interpret("Exponent[(x + 1)^2 y, x + 1]").unwrap(), "2");
+    assert_eq!(interpret("Exponent[(x + 1)^2 + 1, x + 1]").unwrap(), "2");
+    assert_eq!(interpret("Exponent[Sin[x]^3, Sin[x]]").unwrap(), "3");
+    assert_eq!(
+      interpret("Exponent[Sin[x]^2 + Sin[x], Sin[x]]").unwrap(),
+      "2"
+    );
+    // A form that never appears gives 0.
+    assert_eq!(interpret("Exponent[x^2 y, 2 x]").unwrap(), "0");
+  }
+
   #[test]
   fn bigint_coefficient_is_constant() {
     // Regression: is_constant_wrt did not recognize BigInteger, so a term with

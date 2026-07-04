@@ -138,10 +138,12 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
+    // A non-symbol form (a bare number, or a compound like x + 1 or Sin[x])
+    // is treated as an atomic unit: Exponent returns the highest power of
+    // that form across the additive terms, without expanding. A form that
+    // never appears (any bare number) gives 0. Matches wolframscript.
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Second argument of Exponent must be a symbol".into(),
-      ));
+      return exponent_of_form(args);
     }
   };
 
@@ -206,6 +208,84 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
       }
     }
+  }
+}
+
+/// Exponent[expr, form] for a non-symbol `form`: the highest (Max, default),
+/// lowest (Min), or every (List) power of `form` treated as an atomic unit
+/// across the additive terms of `expr`. The expression is NOT expanded, so a
+/// compound form such as `x + 1` keeps its structure
+/// (Exponent[(x + 1)^2, x + 1] = 2). A form that never appears contributes 0.
+fn exponent_of_form(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let form = &args[1];
+  let terms = super::coefficient::collect_additive_terms(&args[0]);
+  let mut powers: Vec<Rat> =
+    terms.iter().map(|t| term_power_of_form(t, form)).collect();
+  if powers.is_empty() {
+    powers.push(Rat::zero());
+  }
+
+  let use_min =
+    args.len() == 3 && matches!(&args[2], Expr::Identifier(s) if s == "Min");
+  let use_list =
+    args.len() == 3 && matches!(&args[2], Expr::Identifier(s) if s == "List");
+
+  if use_list {
+    powers.sort_by(|a, b| (a.n * b.d).cmp(&(b.n * a.d)));
+    powers.dedup_by(|a, b| a.n * b.d == b.n * a.d);
+    let elems: Vec<Expr> = powers.into_iter().map(|r| r.to_expr()).collect();
+    Ok(Expr::List(elems.into()))
+  } else if use_min {
+    let m = powers.into_iter().reduce(|a, b| a.min(b)).unwrap();
+    Ok(m.to_expr())
+  } else {
+    let m = powers.into_iter().reduce(|a, b| a.max(b)).unwrap();
+    Ok(m.to_expr())
+  }
+}
+
+/// Power to which `form` (an atomic unit) is raised in a single multiplicative
+/// term. `form^n` gives `n`, a factor equal to `form` gives 1, a product sums
+/// the powers across its factors, and a term without `form` gives 0.
+fn term_power_of_form(term: &Expr, form: &Expr) -> Rat {
+  use crate::evaluator::pattern_matching::expr_equal;
+  if expr_equal(term, form) {
+    return Rat::from_int(1);
+  }
+  match term {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if expr_equal(left, form)
+        && let Some(r) = expr_to_rat(right)
+      {
+        return r;
+      }
+      Rat::zero()
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if expr_equal(&args[0], form)
+        && let Some(r) = expr_to_rat(&args[1])
+      {
+        return r;
+      }
+      Rat::zero()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => term_power_of_form(left, form).add(term_power_of_form(right, form)),
+    Expr::FunctionCall { name, args } if name == "Times" => args
+      .iter()
+      .fold(Rat::zero(), |acc, a| acc.add(term_power_of_form(a, form))),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => term_power_of_form(operand, form),
+    _ => Rat::zero(),
   }
 }
 
