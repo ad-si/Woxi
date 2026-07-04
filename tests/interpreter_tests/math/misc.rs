@@ -827,13 +827,15 @@ mod inverse_trig_identities {
 
   #[test]
   fn arctanh_out_of_domain_real_is_complex() {
+    // Round to avoid a last-ULP libm divergence between platforms in the real
+    // part (macOS ...549 vs Linux ...548).
     assert_eq!(
-      interpret("ArcTanh[2.0]").unwrap(),
-      "0.5493061443340549 - 1.5707963267948966*I"
+      interpret("Round[ArcTanh[2.0], 0.0001]").unwrap(),
+      "0.5493 - 1.5708*I"
     );
     assert_eq!(
-      interpret("ArcTanh[-2.0]").unwrap(),
-      "-0.5493061443340549 + 1.5707963267948966*I"
+      interpret("Round[ArcTanh[-2.0], 0.0001]").unwrap(),
+      "-0.5493 + 1.5708*I"
     );
   }
 
@@ -844,7 +846,7 @@ mod inverse_trig_identities {
     // full-precision output (macOS ...988 vs Linux ...989).
     assert_eq!(interpret("Round[ArcSin[0.5], 0.001]").unwrap(), "0.524");
     assert_eq!(interpret("Round[ArcCos[0.5], 0.001]").unwrap(), "1.047");
-    assert_eq!(interpret("ArcTanh[0.5]").unwrap(), "0.5493061443340549");
+    assert_eq!(interpret("Round[ArcTanh[0.5], 0.001]").unwrap(), "0.549");
   }
 
   // ArcSec/ArcCsc/ArcSech follow the reciprocal identities (ArcSec[x] =
