@@ -2698,6 +2698,192 @@ fn is_structural_zero(expr: &Expr) -> bool {
   }
 }
 
+/// MandelbrotSetMemberQ[c] — True when the complex number c is in the
+/// Mandelbrot set, False otherwise. Points inside the main cardioid or the
+/// period-2 bulb are decided exactly; everything else iterates z -> z^2 + c
+/// (escape radius 2) up to MaxIterations (default 1000, also settable as a
+/// positional second argument), returning True with a ::maxiter warning when
+/// the orbit has not escaped by then. Lists thread elementwise, but only when
+/// every leaf is numeric — otherwise the whole call stays unevaluated, like
+/// wolframscript.
+pub fn mandelbrot_set_member_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "MandelbrotSetMemberQ".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // wolframscript leaves the zero-argument form unevaluated without a message.
+  if args.is_empty() {
+    return unevaluated();
+  }
+
+  let call_str = || {
+    format!(
+      "MandelbrotSetMemberQ[{}]",
+      args
+        .iter()
+        .map(crate::syntax::expr_to_output)
+        .collect::<Vec<_>>()
+        .join(", ")
+    )
+  };
+
+  let mut max_iter: usize = 1000;
+  let mut rest_start = 1;
+  // Undocumented positional form MandelbrotSetMemberQ[c, n]. A non-integer
+  // number in this slot is consumed but ignored (wolframscript computes with
+  // the default in that case).
+  if args.len() >= 2 {
+    match &args[1] {
+      Expr::Integer(n) => {
+        max_iter = (*n).max(0) as usize;
+        rest_start = 2;
+      }
+      Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(..) => {
+        rest_start = 2;
+      }
+      _ => {}
+    }
+  }
+
+  // Trailing arguments must be option rules (or lists of rules).
+  let nonopt = |offender: &Expr, position: usize| {
+    crate::emit_message(&format!(
+      "MandelbrotSetMemberQ::nonopt: Options expected (instead of {}) beyond position {} in {}. An option must be a rule or a list of rules.",
+      crate::syntax::expr_to_output(offender),
+      position,
+      call_str()
+    ));
+  };
+  let mut opts: Vec<&Expr> = Vec::new();
+  for (i, arg) in args.iter().enumerate().skip(rest_start) {
+    match arg {
+      Expr::List(items) => opts.extend(items.iter()),
+      _ => opts.push(arg),
+    }
+    if !matches!(
+      arg,
+      Expr::Rule { .. }
+        | Expr::RuleDelayed { .. }
+        | Expr::List(_)
+        | Expr::FunctionCall { .. }
+    ) {
+      nonopt(arg, i + 1);
+      return unevaluated();
+    }
+  }
+  for opt in opts {
+    let (lhs, rhs) = match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args: rargs }
+        if (name == "Rule" || name == "RuleDelayed") && rargs.len() == 2 =>
+      {
+        (&rargs[0], &rargs[1])
+      }
+      _ => {
+        nonopt(opt, rest_start + 1);
+        return unevaluated();
+      }
+    };
+    match lhs {
+      Expr::Identifier(s) if s == "MaxIterations" => match rhs {
+        Expr::Integer(n) => max_iter = (*n).max(0) as usize,
+        Expr::Constant(c) if c == "Infinity" => max_iter = 10_000_000,
+        Expr::Identifier(s) if s == "Infinity" => max_iter = 10_000_000,
+        _ => {}
+      },
+      Expr::Identifier(s) if s == "WorkingPrecision" => {}
+      _ => {
+        crate::emit_message(&format!(
+          "MandelbrotSetMemberQ::optx: Unknown option {} in {}.",
+          crate::syntax::expr_to_output(opt),
+          call_str()
+        ));
+        return unevaluated();
+      }
+    }
+  }
+
+  // (member, hit MaxIterations without escaping)
+  fn member(x: f64, y: f64, max_iter: usize) -> (bool, bool) {
+    let xq = x - 0.25;
+    let q = xq * xq + y * y;
+    if q * (q + xq) <= 0.25 * y * y {
+      return (true, false); // main cardioid, boundary inclusive
+    }
+    if (x + 1.0) * (x + 1.0) + y * y <= 0.0625 {
+      return (true, false); // period-2 bulb, boundary inclusive
+    }
+    let (mut zx, mut zy) = (0.0_f64, 0.0_f64);
+    for _ in 0..max_iter {
+      let nx = zx * zx - zy * zy + x;
+      let ny = 2.0 * zx * zy + y;
+      zx = nx;
+      zy = ny;
+      if zx * zx + zy * zy > 4.0 {
+        return (false, false);
+      }
+    }
+    (true, true)
+  }
+
+  // The whole call stays unevaluated unless every leaf is a finite number.
+  fn all_leaves_numeric(e: &Expr) -> bool {
+    match e {
+      Expr::List(items) => items.iter().all(all_leaves_numeric),
+      _ => expr_to_complex_parts_pub(e)
+        .is_some_and(|(x, y)| x.is_finite() && y.is_finite()),
+    }
+  }
+  if !all_leaves_numeric(&args[0]) {
+    return unevaluated();
+  }
+
+  fn thread(e: &Expr, max_iter: usize, msg_count: &mut u32) -> Expr {
+    match e {
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|it| thread(it, max_iter, msg_count))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      _ => {
+        let (x, y) = expr_to_complex_parts_pub(e).unwrap();
+        let (is_member, hit_max) = member(x, y, max_iter);
+        if hit_max {
+          *msg_count += 1;
+          if *msg_count <= 3 {
+            crate::emit_message(
+              "MandelbrotSetMemberQ::maxiter: Maximum number of iterations reached. Point may not actually be in the Mandelbrot set, but just extremely close.",
+            );
+            if *msg_count == 3 {
+              crate::emit_message(
+                "General::stop: Further output of MandelbrotSetMemberQ::maxiter will be suppressed during this calculation.",
+              );
+            }
+          }
+        }
+        bool_expr(is_member)
+      }
+    }
+  }
+  let mut msg_count = 0u32;
+  Ok(thread(&args[0], max_iter, &mut msg_count))
+}
+
 /// OptionQ[expr] - Tests if expr is a Rule or RuleDelayed or a list thereof
 pub fn option_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

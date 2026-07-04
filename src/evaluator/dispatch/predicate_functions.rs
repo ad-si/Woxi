@@ -495,6 +495,11 @@ pub fn dispatch_predicate_functions(
     "SquareFreeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::square_free_q_ast(args));
     }
+    "MandelbrotSetMemberQ" => {
+      return Some(
+        crate::functions::predicate_ast::mandelbrot_set_member_q_ast(args),
+      );
+    }
     "PerfectNumberQ" if args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
         if *n <= 0 {

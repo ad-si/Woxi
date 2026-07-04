@@ -3080,7 +3080,7 @@ DirichletConvolve,Dirichlet convolution of two arithmetic expressions (divisor-s
 InString,,,,2.0,3153
 LanguageCategory,,🚫,,4.0,3153
 LibraryFunction,,,,8.0,3153
-MandelbrotSetMemberQ,,,,10.0,3153
+MandelbrotSetMemberQ,Tests whether a complex number is in the Mandelbrot set (exact cardioid/bulb tests plus escape iteration with MaxIterations option),✅,pure,10.0,3153
 MeshConnectivityGraph,,🚫,,12.1,3153
 MinFilter,Minimum filter over a sliding window,✅,none,7.0,3153
 Prefix,Prefix output form symbol,✅,pure,1.0,3153

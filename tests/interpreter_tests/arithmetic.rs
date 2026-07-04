@@ -7739,3 +7739,122 @@ mod times_factor_vs_sum_ordering {
     assert_eq!(interpret("y(x-y^2)").unwrap(), "y*(x - y^2)");
   }
 }
+
+mod mandelbrot_set_member_q_tests {
+  use woxi::interpret;
+
+  // Points decided by the exact main-cardioid / period-2-bulb tests
+  // (no iteration, no ::maxiter message).
+  #[test]
+  fn exact_region_members() {
+    assert_eq!(interpret("MandelbrotSetMemberQ[0]").unwrap(), "True");
+    assert_eq!(interpret("MandelbrotSetMemberQ[-1]").unwrap(), "True");
+    assert_eq!(interpret("MandelbrotSetMemberQ[1/4]").unwrap(), "True");
+    assert_eq!(interpret("MandelbrotSetMemberQ[0.25]").unwrap(), "True");
+    assert_eq!(interpret("MandelbrotSetMemberQ[-5/4]").unwrap(), "True");
+    assert_eq!(interpret("MandelbrotSetMemberQ[1/8]").unwrap(), "True");
+    assert_eq!(interpret("MandelbrotSetMemberQ[0.5 I]").unwrap(), "True");
+    assert_eq!(interpret("MandelbrotSetMemberQ[-0.7499]").unwrap(), "True");
+  }
+
+  #[test]
+  fn escaping_points_are_false() {
+    assert_eq!(interpret("MandelbrotSetMemberQ[2]").unwrap(), "False");
+    assert_eq!(interpret("MandelbrotSetMemberQ[0.2501]").unwrap(), "False");
+    assert_eq!(interpret("MandelbrotSetMemberQ[Pi]").unwrap(), "False");
+    assert_eq!(interpret("MandelbrotSetMemberQ[3/2 I]").unwrap(), "False");
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[-0.75 + 0.1 I]").unwrap(),
+      "False"
+    );
+  }
+
+  // Bounded orbits outside the exact regions run to MaxIterations and
+  // report True (wolframscript adds a ::maxiter warning).
+  #[test]
+  fn bounded_orbit_members() {
+    assert_eq!(interpret("MandelbrotSetMemberQ[I]").unwrap(), "True");
+    assert_eq!(interpret("MandelbrotSetMemberQ[-2]").unwrap(), "True");
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[0.3 + 0.5 I]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[-1.401155]").unwrap(),
+      "True"
+    );
+  }
+
+  // 0.2501 escapes only after ~316 iterations, so a lower cap flips the
+  // verdict to (indeterminate) True. MaxIterations also has an undocumented
+  // positional form.
+  #[test]
+  fn max_iterations_option() {
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[0.2501, MaxIterations -> 250]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[0.2501, 250]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[0.2501, 500]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[0, MaxIterations -> 5]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[0, WorkingPrecision -> 20]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn threads_over_numeric_lists() {
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[{0, 1, -1}]").unwrap(),
+      "{True, False, True}"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[{{0, 2}, {-1}}]").unwrap(),
+      "{{True, False}, {True}}"
+    );
+  }
+
+  // Symbolic input — including a list with any non-numeric leaf — leaves the
+  // whole call unevaluated, matching wolframscript.
+  #[test]
+  fn non_numeric_stays_unevaluated() {
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[x]").unwrap(),
+      "MandelbrotSetMemberQ[x]"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[{0, x}]").unwrap(),
+      "MandelbrotSetMemberQ[{0, x}]"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[Infinity]").unwrap(),
+      "MandelbrotSetMemberQ[Infinity]"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[]").unwrap(),
+      "MandelbrotSetMemberQ[]"
+    );
+  }
+
+  #[test]
+  fn invalid_options_stay_unevaluated() {
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[0, Foo -> 1]").unwrap(),
+      "MandelbrotSetMemberQ[0, Foo -> 1]"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetMemberQ[0, 1, 2]").unwrap(),
+      "MandelbrotSetMemberQ[0, 1, 2]"
+    );
+  }
+}
