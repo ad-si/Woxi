@@ -2278,6 +2278,197 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
+/// HoeffdingD[v1, v2] — Hoeffding's dependence statistic D, computed with
+/// mid-ranks and the φ = 1/2 tie convention (Hollander & Wolfe):
+///   D1 = Σ (Qi-1)(Qi-2),  D2 = Σ (Ri-1)(Ri-2)(Si-1)(Si-2),
+///   D3 = Σ (Ri-2)(Si-2)(Qi-1),
+///   D  = 30 ((n-2)(n-3) D1 + D2 - 2(n-2) D3) / (n(n-1)(n-2)(n-3)(n-4)).
+/// Exact input gives an exact rational; machine reals give a Real. A single
+/// n×k matrix gives the k×k matrix of column-pairwise D values, and two
+/// matrices give the cross matrix. Lists shorter than 5 emit `::dtlnth`;
+/// length mismatches and non-numeric data emit `::rctneqln`.
+pub fn hoeffding_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "HoeffdingD".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let rctneqln = || {
+    crate::emit_message(
+      "HoeffdingD::rctneqln: The arguments to HoeffdingD are not a pair of vectors or matrices of equal length.",
+    );
+    unevaluated()
+  };
+  let dtlnth = |pos: usize, arg: &Expr| {
+    crate::emit_message(&format!(
+      "HoeffdingD::dtlnth: The argument {} at position {} is expected to have length greater than 5.",
+      crate::syntax::expr_to_output(arg),
+      pos
+    ));
+    unevaluated()
+  };
+
+  // The two mid-rank/bivariate-rank statistics scale to integers: mid-ranks
+  // are halves (×2) and the bivariate ranks Q are quarters (×4), so all
+  // three sums are integers at a combined factor of 16.
+  fn pair_d(xf: &[f64], yf: &[f64], exact: bool) -> Expr {
+    let n = xf.len();
+    let rank2 = |v: &[f64]| -> Vec<i128> {
+      v.iter()
+        .map(|&a| {
+          let less = v.iter().filter(|&&b| b < a).count() as i128;
+          let eq = v.iter().filter(|&&b| b == a).count() as i128; // incl. self
+          2 * less + eq + 1
+        })
+        .collect()
+    };
+    let r2 = rank2(xf);
+    let s2 = rank2(yf);
+    // 2φ ∈ {2 (less), 1 (tie), 0 (greater)}; Q×4 = 4 + Σ (2φx)(2φy).
+    let phi2 = |a: f64, b: f64| -> i128 {
+      if a < b {
+        2
+      } else if a == b {
+        1
+      } else {
+        0
+      }
+    };
+    let q4: Vec<i128> = (0..n)
+      .map(|i| {
+        4 + (0..n)
+          .filter(|&j| j != i)
+          .map(|j| phi2(xf[j], xf[i]) * phi2(yf[j], yf[i]))
+          .sum::<i128>()
+      })
+      .collect();
+    let mut d1: i128 = 0;
+    let mut d2: i128 = 0;
+    let mut d3: i128 = 0;
+    for i in 0..n {
+      d1 += (q4[i] - 4) * (q4[i] - 8);
+      d2 += (r2[i] - 2) * (r2[i] - 4) * (s2[i] - 2) * (s2[i] - 4);
+      d3 += (r2[i] - 4) * (s2[i] - 4) * (q4[i] - 4);
+    }
+    let n = n as i128;
+    let k = (n - 2) * (n - 3) * d1 + d2 - 2 * (n - 2) * d3;
+    let den = 16 * n * (n - 1) * (n - 2) * (n - 3) * (n - 4);
+    if exact {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![Expr::Integer(30 * k), Expr::Integer(den)].into(),
+      })
+      .unwrap_or(Expr::Integer(0))
+    } else {
+      Expr::Real(30.0 * k as f64 / den as f64)
+    }
+  }
+  let to_f64s = |v: &[Expr]| -> Option<Vec<f64>> {
+    v.iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect()
+  };
+  let has_real = |v: &[Expr]| {
+    v.iter()
+      .any(|e| matches!(e, Expr::Real(_) | Expr::BigFloat(_, _)))
+  };
+
+  let is_matrix = |e: &Expr| matches!(e, Expr::List(rows) if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_))));
+  match args {
+    // One n×k matrix → the k×k matrix of column-pairwise D values.
+    [m] if is_matrix(m) => {
+      let Expr::List(rows) = m else { unreachable!() };
+      if rows.len() < 5 {
+        return dtlnth(1, m);
+      }
+      let Some(cols) = transpose_rows(rows) else {
+        return rctneqln();
+      };
+      let data: Option<Vec<(Vec<f64>, bool)>> = cols
+        .iter()
+        .map(|c| to_f64s(c).map(|f| (f, has_real(c))))
+        .collect();
+      let Some(data) = data else {
+        return rctneqln();
+      };
+      let entries: Vec<Expr> = data
+        .iter()
+        .map(|(ci, ri)| {
+          Expr::List(
+            data
+              .iter()
+              .map(|(cj, rj)| pair_d(ci, cj, !(ri | rj)))
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect();
+      Ok(Expr::List(entries.into()))
+    }
+    // Two matrices → the cross matrix over both column sets.
+    [m1, m2] if is_matrix(m1) && is_matrix(m2) => {
+      let (Expr::List(rows1), Expr::List(rows2)) = (m1, m2) else {
+        unreachable!()
+      };
+      if rows1.len() < 5 {
+        return dtlnth(1, m1);
+      }
+      if rows2.len() < 5 {
+        return dtlnth(2, m2);
+      }
+      if rows1.len() != rows2.len() {
+        return rctneqln();
+      }
+      let (Some(cols1), Some(cols2)) =
+        (transpose_rows(rows1), transpose_rows(rows2))
+      else {
+        return rctneqln();
+      };
+      let parse = |cols: &[Vec<Expr>]| -> Option<Vec<(Vec<f64>, bool)>> {
+        cols
+          .iter()
+          .map(|c| to_f64s(c).map(|f| (f, has_real(c))))
+          .collect()
+      };
+      let (Some(data1), Some(data2)) = (parse(&cols1), parse(&cols2)) else {
+        return rctneqln();
+      };
+      let entries: Vec<Expr> = data1
+        .iter()
+        .map(|(ci, ri)| {
+          Expr::List(
+            data2
+              .iter()
+              .map(|(cj, rj)| pair_d(ci, cj, !(ri | rj)))
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect();
+      Ok(Expr::List(entries.into()))
+    }
+    // Two vectors → the scalar statistic.
+    [Expr::List(x), Expr::List(y)] => {
+      if x.len() < 5 {
+        return dtlnth(1, &args[0]);
+      }
+      if y.len() < 5 {
+        return dtlnth(2, &args[1]);
+      }
+      if x.len() != y.len() {
+        return rctneqln();
+      }
+      let (Some(xf), Some(yf)) = (to_f64s(x), to_f64s(y)) else {
+        return rctneqln();
+      };
+      Ok(pair_d(&xf, &yf, !(has_real(x) || has_real(y))))
+    }
+    [_] | [_, _] => rctneqln(),
+    _ => unevaluated(),
+  }
+}
+
 pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {

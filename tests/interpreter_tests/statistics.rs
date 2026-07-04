@@ -6373,3 +6373,117 @@ mod dms_string_tests {
     );
   }
 }
+
+mod hoeffding_d_tests {
+  use woxi::interpret;
+
+  // Exact input gives an exact rational result; D depends only on ranks.
+  #[test]
+  fn exact_vectors() {
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4, 5}, {2, 3, 1, 5, 4}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4, 5}, {1, 2, 3, 4, 5}]").unwrap(),
+      "1"
+    );
+    // D measures dependence, not direction: a reversal is still 1.
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4, 5}, {5, 4, 3, 2, 1}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4, 5, 6}, {1, 3, 2, 4, 6, 5}]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4, 5, 6, 7}, {1, 2, 3, 5, 4, 7, 6}]")
+        .unwrap(),
+      "4/7"
+    );
+    // Rank invariance: scaling the values changes nothing.
+    assert_eq!(
+      interpret("HoeffdingD[{2, 4, 6, 8, 10}, {2, 3, 1, 5, 4}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("HoeffdingD[{1/2, 1, 3/2, 2, 5/2}, {2, 3, 1, 5, 4}]").unwrap(),
+      "0"
+    );
+  }
+
+  // Ties use mid-ranks and the phi = 1/2 convention.
+  #[test]
+  fn ties() {
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 2, 3, 4}, {2, 2, 3, 4, 5}]").unwrap(),
+      "9/64"
+    );
+  }
+
+  #[test]
+  fn real_input_gives_real() {
+    assert_eq!(
+      interpret("HoeffdingD[{1.5, 2.5, 3.5, 4.5, 5.5}, {2, 3, 1, 5, 4}]")
+        .unwrap(),
+      "0."
+    );
+  }
+
+  // An n×k matrix gives the k×k column-pairwise matrix; two matrices give
+  // the cross matrix.
+  #[test]
+  fn matrix_forms() {
+    assert_eq!(
+      interpret("HoeffdingD[{{1, 2}, {2, 3}, {3, 1}, {4, 5}, {5, 4}}]")
+        .unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "HoeffdingD[{{1, 2, 3}, {2, 3, 1}, {3, 1, 2}, {4, 5, 4}, {5, 4, 5}}]"
+      )
+      .unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "HoeffdingD[{{1, 2}, {2, 3}, {3, 1}, {4, 5}, {5, 4}}, {{2, 1}, {3, 2}, {1, 3}, {5, 4}, {4, 5}}]"
+      )
+      .unwrap(),
+      "{{0, 1}, {1, 0}}"
+    );
+  }
+
+  // Short data emits ::dtlnth (with the offending position); mismatched
+  // lengths and non-numeric data emit ::rctneqln; extra arguments stay
+  // silently unevaluated.
+  #[test]
+  fn error_forms() {
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4}, {1, 2, 3, 4}]").unwrap(),
+      "HoeffdingD[{1, 2, 3, 4}, {1, 2, 3, 4}]"
+    );
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4, 5}, {1, 2, 3, 4}]").unwrap(),
+      "HoeffdingD[{1, 2, 3, 4, 5}, {1, 2, 3, 4}]"
+    );
+    assert_eq!(
+      interpret("HoeffdingD[{{1, 2}, {2, 3}, {3, 1}}]").unwrap(),
+      "HoeffdingD[{{1, 2}, {2, 3}, {3, 1}}]"
+    );
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4, 5, 6}, {1, 2, 3, 4, 5}]").unwrap(),
+      "HoeffdingD[{1, 2, 3, 4, 5, 6}, {1, 2, 3, 4, 5}]"
+    );
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4, x}, {1, 2, 3, 4, 5}]").unwrap(),
+      "HoeffdingD[{1, 2, 3, 4, x}, {1, 2, 3, 4, 5}]"
+    );
+    assert_eq!(
+      interpret("HoeffdingD[{1, 2, 3, 4, 5}, {2, 3, 1, 5, 4}, 3]").unwrap(),
+      "HoeffdingD[{1, 2, 3, 4, 5}, {2, 3, 1, 5, 4}, 3]"
+    );
+  }
+}

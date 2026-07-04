@@ -1052,6 +1052,11 @@ pub fn dispatch_math_functions(
     "SpearmanRho" if args.len() == 2 => {
       return Some(crate::functions::math_ast::spearman_rho_ast(args));
     }
+    // Any arg count: wrong counts stay silently unevaluated (matching
+    // wolframscript, which emits no message for e.g. three arguments).
+    "HoeffdingD" => {
+      return Some(crate::functions::math_ast::hoeffding_d_ast(args));
+    }
     "KendallTau" if args.len() == 2 => {
       return Some(crate::functions::math_ast::kendall_tau_ast(args));
     }

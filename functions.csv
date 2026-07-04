@@ -3317,7 +3317,7 @@ CreateChannel,,🚫,,11.0,3402
 DiscreteMinLimit,,,,11.2,3402
 GeoServer,,🚫,,10.1,3402
 HamiltonianGraphQ,Tests whether a graph has a Hamiltonian cycle,✅,pure,8.0,3402
-HoeffdingD,,,,9.0,3402
+HoeffdingD,Hoeffding dependence statistic D of two vectors (exact rationals for exact input; matrix forms give pairwise/cross matrices),✅,pure,9.0,3402
 LevyDistribution,Levy heavy-tailed distribution (infinite moments with radical PDF and Erfc CDF),✅,pure,7.0,3402
 MeanShift,,🚫,,8.0,3402
 MedianDeviation,Median absolute deviation from the median,✅,pure,6.0,3402
