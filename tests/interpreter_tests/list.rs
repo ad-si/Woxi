@@ -138,6 +138,69 @@ mod table_with_list_iterator {
   }
 }
 
+mod table_do_raw_iterator {
+  use super::*;
+
+  // A non-symbol iterator (a raw object where the iterator variable belongs)
+  // emits <func>::itraw and stays unevaluated, rather than raising an error.
+  #[test]
+  fn table_raw_iterator_emits_itraw() {
+    for (input, call, raw) in [
+      ("Table[i, {3, 1, 5}]", "Table[i, {3, 1, 5}]", "3"),
+      ("Table[i, {3, 5}]", "Table[i, {3, 5}]", "3"),
+      ("Table[i, {2.5, 5}]", "Table[i, {2.5, 5}]", "2.5"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call, "for {input}");
+      let expected = format!(
+        "Table::itraw: Raw object {raw} cannot be used as an iterator."
+      );
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?} for {input}, got {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn do_raw_iterator_emits_itraw() {
+    clear_state();
+    assert_eq!(
+      interpret("Do[Print[i], {3, 1, 5}]").unwrap(),
+      "Do[Print[i], {3, 1, 5}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Do::itraw: Raw object 3 cannot be used as an iterator.")),
+      "expected Do::itraw, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn do_multi_raw_iterator_emits_itraw() {
+    clear_state();
+    assert_eq!(
+      interpret("Do[Print[i + j], {3, 1, 2}, {j, 1, 2}]").unwrap(),
+      "Do[Print[i + j], {3, 1, 2}, {j, 1, 2}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Do::itraw: Raw object 3 cannot be used as an iterator.")),
+      "expected Do::itraw, got {msgs:?}"
+    );
+  }
+
+  // A valid symbol iterator is unaffected.
+  #[test]
+  fn valid_iterator_unaffected() {
+    assert_eq!(interpret("Table[i, {i, 1, 5}]").unwrap(), "{1, 2, 3, 4, 5}");
+    assert_eq!(interpret("Table[i, {5}]").unwrap(), "{i, i, i, i, i}");
+  }
+}
+
 mod table_with_step {
   use super::*;
 

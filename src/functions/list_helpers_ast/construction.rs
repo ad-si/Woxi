@@ -78,10 +78,18 @@ pub fn table_ast(
       // Extract iterator variable
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "Table: iterator variable must be an identifier".into(),
+        other => {
+          // A non-symbol iterator (Table[i, {3, 1, 5}]) is a raw object that
+          // cannot be used as an iterator: wolframscript emits Table::itraw
+          // and returns the call unevaluated rather than raising an error.
+          crate::emit_message(&format!(
+            "Table::itraw: Raw object {} cannot be used as an iterator.",
+            crate::syntax::expr_to_string(other)
           ));
+          return Ok(Expr::FunctionCall {
+            name: "Table".to_string(),
+            args: vec![body.clone(), iter_spec.clone()].into(),
+          });
         }
       };
 
@@ -979,10 +987,18 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() >= 2 => {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "Do: iterator variable must be an identifier".into(),
+        other => {
+          // A non-symbol iterator (Do[body, {3, 1, 5}]) is a raw object that
+          // cannot be used as an iterator: wolframscript emits Do::itraw and
+          // returns the call unevaluated rather than raising an error.
+          crate::emit_message(&format!(
+            "Do::itraw: Raw object {} cannot be used as an iterator.",
+            crate::syntax::expr_to_string(other)
           ));
+          return Ok(Expr::FunctionCall {
+            name: "Do".to_string(),
+            args: vec![body.clone(), iter_spec.clone()].into(),
+          });
         }
       };
 
@@ -1263,6 +1279,26 @@ pub fn do_multi_ast(
   body: &Expr,
   iter_specs: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // A non-symbol iterator in any spec (Do[body, {3, 1, 5}, {j, 1, 2}]) is a
+  // raw object that cannot be used as an iterator: emit Do::itraw and return
+  // the call unevaluated, matching wolframscript, rather than crashing.
+  for spec in iter_specs {
+    if let Expr::List(items) = spec
+      && items.len() >= 2
+      && !matches!(&items[0], Expr::Identifier(_))
+    {
+      crate::emit_message(&format!(
+        "Do::itraw: Raw object {} cannot be used as an iterator.",
+        crate::syntax::expr_to_string(&items[0])
+      ));
+      return Ok(Expr::FunctionCall {
+        name: "Do".to_string(),
+        args: std::iter::once(body.clone())
+          .chain(iter_specs.iter().cloned())
+          .collect(),
+      });
+    }
+  }
   match do_multi_inner(body, iter_specs) {
     Ok(_) => Ok(Expr::Identifier("Null".to_string())),
     Err(InterpreterError::BreakSignal) => {
