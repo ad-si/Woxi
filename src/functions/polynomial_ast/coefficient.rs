@@ -39,6 +39,28 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A bare number in the form slot (Coefficient[x^2, 5]) is not a valid
+  // variable: wolframscript emits Coefficient::ivar and returns the call
+  // unevaluated rather than treating the number as an absent monomial and
+  // returning 0. Symbolic monomial forms (x^2, 2 y, x + 1) stay valid.
+  let is_number_literal = matches!(
+    &args[1],
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
+  ) || matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Rational");
+  if is_number_literal {
+    crate::emit_message(&format!(
+      "Coefficient::ivar: {} is not a valid variable.",
+      crate::syntax::expr_to_message_form(&args[1])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "Coefficient".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // SeriesData input: reduce via `Normal` first so the ordinary polynomial
   // path can extract the coefficient (Coefficient[Series[Exp[x],{x,0,5}],x,3]
   // -> 1/6), matching wolframscript.

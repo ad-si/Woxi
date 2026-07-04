@@ -184,6 +184,48 @@ mod coefficient {
     assert_eq!(interpret("Coefficient[x^2 + 3*x + 2, x, 0]").unwrap(), "2");
   }
 
+  // A bare number in the form slot is not a valid variable: emit
+  // Coefficient::ivar and stay unevaluated, rather than treating the number
+  // as an absent monomial and returning 0.
+  #[test]
+  fn number_form_emits_ivar() {
+    for (input, call, bad) in [
+      ("Coefficient[x^2, 5]", "Coefficient[x^2, 5]", "5"),
+      ("Coefficient[x^2, 2.5]", "Coefficient[x^2, 2.5]", "2.5"),
+      ("Coefficient[x^2, 0]", "Coefficient[x^2, 0]", "0"),
+      ("Coefficient[x^2, 5, 2]", "Coefficient[x^2, 5, 2]", "5"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call, "for {input}");
+      let expected =
+        format!("Coefficient::ivar: {bad} is not a valid variable.");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?} for {input}, got {msgs:?}"
+      );
+    }
+  }
+
+  // A rational form is also invalid; only the unevaluated result is checked
+  // here because wolframscript renders the message in 2D.
+  #[test]
+  fn rational_form_unevaluated() {
+    assert_eq!(
+      interpret("Coefficient[x^2, 1/2]").unwrap(),
+      "Coefficient[x^2, 1/2]"
+    );
+  }
+
+  // Symbolic monomial forms (a power, a product, a sum) remain valid.
+  #[test]
+  fn symbolic_form_unaffected() {
+    assert_eq!(interpret("Coefficient[x^2, x^2]").unwrap(), "1");
+    assert_eq!(interpret("Coefficient[3 x y, x y]").unwrap(), "3");
+    assert_eq!(interpret("Coefficient[x^2, 2 y]").unwrap(), "0");
+    assert_eq!(interpret("Coefficient[x^2, x + 1]").unwrap(), "0");
+  }
+
   // Coefficient extracts from a SeriesData by reducing it to its polynomial
   // first (Normal): the x^k coefficient, or 0 past the truncation order.
   #[test]
