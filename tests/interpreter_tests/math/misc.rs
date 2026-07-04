@@ -843,7 +843,7 @@ mod inverse_trig_identities {
     // Round to avoid a last-ULP libm divergence between platforms in the
     // full-precision output (macOS ...988 vs Linux ...989).
     assert_eq!(interpret("Round[ArcSin[0.5], 0.001]").unwrap(), "0.524");
-    assert_eq!(interpret("ArcCos[0.5]").unwrap(), "1.0471975511965976");
+    assert_eq!(interpret("Round[ArcCos[0.5], 0.001]").unwrap(), "1.047");
     assert_eq!(interpret("ArcTanh[0.5]").unwrap(), "0.5493061443340549");
   }
 
