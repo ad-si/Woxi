@@ -255,6 +255,50 @@ mod coefficient {
     assert_eq!(interpret("Coefficient[x^2, x + 1]").unwrap(), "0");
   }
 
+  // CoefficientList shares the ivar rule: a bare number in the variable slot
+  // emits CoefficientList::ivar and stays unevaluated.
+  #[test]
+  fn coefficient_list_number_form_emits_ivar() {
+    for (input, call, bad) in [
+      ("CoefficientList[x^2, 5]", "CoefficientList[x^2, 5]", "5"),
+      ("CoefficientList[x^2, 0]", "CoefficientList[x^2, 0]", "0"),
+      (
+        "CoefficientList[x^2, 2.5]",
+        "CoefficientList[x^2, 2.5]",
+        "2.5",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call, "for {input}");
+      let expected =
+        format!("CoefficientList::ivar: {bad} is not a valid variable.");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?} for {input}, got {msgs:?}"
+      );
+    }
+  }
+
+  // A rational is also invalid; only the result is checked because
+  // wolframscript renders the message in 2D.
+  #[test]
+  fn coefficient_list_rational_form_unevaluated() {
+    assert_eq!(
+      interpret("CoefficientList[x^2, 1/2]").unwrap(),
+      "CoefficientList[x^2, 1/2]"
+    );
+  }
+
+  // A genuine variable is unaffected.
+  #[test]
+  fn coefficient_list_symbol_unaffected() {
+    assert_eq!(
+      interpret("CoefficientList[1 + 2 x + 3 x^2, x]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
   // Coefficient extracts from a SeriesData by reducing it to its polynomial
   // first (Normal): the x^k coefficient, or 0 past the truncation order.
   #[test]

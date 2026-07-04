@@ -486,6 +486,27 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A bare number in the variable slot (CoefficientList[x^2, 5]) is not a
+  // valid variable: wolframscript emits CoefficientList::ivar and returns the
+  // call unevaluated. Symbolic variables and forms stay valid.
+  let is_number_literal = matches!(
+    &args[1],
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
+  ) || matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Rational");
+  if is_number_literal {
+    crate::emit_message(&format!(
+      "CoefficientList::ivar: {} is not a valid variable.",
+      crate::syntax::expr_to_message_form(&args[1])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "CoefficientList".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // SeriesData input: reduce via `Normal` first so the ordinary polynomial
   // path can extract the coefficients and trim trailing zeros.
   let normalized = match &args[0] {
