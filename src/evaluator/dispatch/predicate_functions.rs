@@ -706,20 +706,15 @@ pub fn dispatch_predicate_functions(
               .to_string(),
             )));
           }
-          // Symbolic: a <= x && x <= b.
-          let lo_le_x = Expr::Comparison {
-            operands: vec![range[0].clone(), x.clone()],
-            operators: vec![crate::syntax::ComparisonOp::LessEqual],
+          // Symbolic: a <= x <= b (chained inequality, like wolframscript).
+          let chained = Expr::Comparison {
+            operands: vec![range[0].clone(), x.clone(), range[1].clone()],
+            operators: vec![
+              crate::syntax::ComparisonOp::LessEqual,
+              crate::syntax::ComparisonOp::LessEqual,
+            ],
           };
-          let x_le_hi = Expr::Comparison {
-            operands: vec![x.clone(), range[1].clone()],
-            operators: vec![crate::syntax::ComparisonOp::LessEqual],
-          };
-          let conjunction = Expr::FunctionCall {
-            name: "And".to_string(),
-            args: vec![lo_le_x, x_le_hi].into(),
-          };
-          return Some(crate::evaluator::evaluate_expr_to_expr(&conjunction));
+          return Some(crate::evaluator::evaluate_expr_to_expr(&chained));
         } else if is_list_of_ranges {
           // Multiple ranges: Between[x, {{min1, max1}, ...}]
           if let Some(xv) = try_eval_to_f64(x) {
@@ -760,17 +755,12 @@ pub fn dispatch_predicate_functions(
               shape_ok = false;
               break;
             }
-            let lo_le_x = Expr::Comparison {
-              operands: vec![pair[0].clone(), x.clone()],
-              operators: vec![crate::syntax::ComparisonOp::LessEqual],
-            };
-            let x_le_hi = Expr::Comparison {
-              operands: vec![x.clone(), pair[1].clone()],
-              operators: vec![crate::syntax::ComparisonOp::LessEqual],
-            };
-            clauses.push(Expr::FunctionCall {
-              name: "And".to_string(),
-              args: vec![lo_le_x, x_le_hi].into(),
+            clauses.push(Expr::Comparison {
+              operands: vec![pair[0].clone(), x.clone(), pair[1].clone()],
+              operators: vec![
+                crate::syntax::ComparisonOp::LessEqual,
+                crate::syntax::ComparisonOp::LessEqual,
+              ],
             });
           }
           if shape_ok {
