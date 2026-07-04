@@ -9136,6 +9136,17 @@ mod cases {
       r#"1.764589463349829 + 2.3309746530493123*I"#,
     );
   }
+  // Sinc[0] = 1, but an inexact zero gives the machine real 1., not the exact
+  // integer 1. Per wolframscript.
+  #[test]
+  fn sinc_exact_zero() {
+    assert_case(r#"Sinc[0]"#, r#"1"#);
+  }
+  #[test]
+  fn sinc_inexact_zero() {
+    assert_case(r#"Sinc[0.0]"#, r#"1."#);
+    assert_case(r#"Head[Sinc[0.0]]"#, r#"Real"#);
+  }
   #[test]
   fn sec_1() {
     assert_case(r#"Sec[0]"#, r#"1"#);

@@ -1925,14 +1925,14 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::arccsc_degrees_ast(args));
     }
     "Sinc" if args.len() == 1 => {
-      // Sinc[0] = 1
-      let is_zero = match &args[0] {
-        Expr::Integer(0) => true,
-        Expr::Real(f) => *f == 0.0,
-        _ => false,
-      };
-      if is_zero {
-        return Some(Ok(Expr::Integer(1)));
+      // Sinc[0] = 1. An inexact zero gives the machine real 1., not the exact
+      // integer 1.
+      match &args[0] {
+        Expr::Integer(0) => return Some(Ok(Expr::Integer(1))),
+        Expr::Real(f) if *f == 0.0 => {
+          return Some(Ok(Expr::Real(1.0)));
+        }
+        _ => {}
       }
       // Limits at infinity: Sin is bounded while the denominator diverges, so
       // Sinc[±Infinity] = 0. An undirected ComplexInfinity is Indeterminate.
