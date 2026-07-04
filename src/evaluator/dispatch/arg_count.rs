@@ -748,6 +748,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LogNormalDistribution" => Some((2, 2)),
     "LogPlot" => Some((2, usize::MAX)),
     "LongestCommonSequence" => Some((2, 2)),
+    "LongestCommonSequencePositions" => Some((2, 2)),
     "LongestCommonSubsequence" => Some((2, 2)),
     "LongestCommonSubsequencePositions" => Some((2, 2)),
     "Longitude" => Some((1, 1)),

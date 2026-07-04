@@ -4577,7 +4577,7 @@ ImageSaliencyFilter,,🚫,,10.0,4747
 InputPorts,,,,12.2,4747
 JacobiEpsilon,Jacobi epsilon function EllipticE[JacobiAmplitude[u m] m]; reduces to u at m=0 and Tanh[u] at m=1,✅,pure,12.2,4747
 LameS,,,,12.2,4747
-LongestCommonSequencePositions,,,,10.2,4747
+LongestCommonSequencePositions,Returns the {start end} spans in each argument covering the longest noncontiguous common sequence of two strings or lists,✅,pure,10.2,4747
 NotificationFunction,,🚫,,10.1,4747
 PhaseMargins,,,,8.0,4747
 QuadraticIrrationalQ,Tests whether a number is a real quadratic irrational,✅,pure,6.0,4747

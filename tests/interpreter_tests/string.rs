@@ -10810,3 +10810,75 @@ mod longest_common_subsequence_positions_tests {
     );
   }
 }
+
+mod longest_common_sequence_positions_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn strings() {
+    assert_eq!(
+      interpret(r#"LongestCommonSequencePositions["abcd", "acbd"]"#).unwrap(),
+      "{{{1, 2}, {4, 4}}, {{1, 1}, {3, 4}}}"
+    );
+    assert_eq!(
+      interpret(r#"LongestCommonSequencePositions["mathematica", "thematic"]"#)
+        .unwrap(),
+      "{{{3, 10}}, {{1, 8}}}"
+    );
+  }
+
+  #[test]
+  fn lists() {
+    assert_eq!(
+      interpret("LongestCommonSequencePositions[{1, 2, 3, 4}, {2, 4, 3}]")
+        .unwrap(),
+      "{{{2, 3}}, {{1, 1}, {3, 3}}}"
+    );
+    assert_eq!(
+      interpret(
+        "LongestCommonSequencePositions[{a, b, c, a, b}, {b, c, b, a}]"
+      )
+      .unwrap(),
+      "{{{2, 4}}, {{1, 2}, {4, 4}}}"
+    );
+  }
+
+  #[test]
+  fn no_common_is_empty() {
+    assert_eq!(
+      interpret(r#"LongestCommonSequencePositions["abc", "xyz"]"#).unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret(r#"LongestCommonSequencePositions["", "abc"]"#).unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("LongestCommonSequencePositions[{}, {1, 2}]").unwrap(),
+      "{}"
+    );
+  }
+
+  // Mixed string/list arguments stay unevaluated, matching Wolfram.
+  #[test]
+  fn mixed_args_unevaluated() {
+    assert_eq!(
+      interpret(r#"LongestCommonSequencePositions["abc", {1, 2}]"#).unwrap(),
+      "LongestCommonSequencePositions[abc, {1, 2}]"
+    );
+  }
+
+  // The spans cover exactly what LongestCommonSequence returns.
+  #[test]
+  fn consistent_with_longest_common_sequence() {
+    assert_eq!(
+      interpret(r#"LongestCommonSequence["abcd", "acbd"]"#).unwrap(),
+      "abd"
+    );
+    assert_eq!(
+      interpret("LongestCommonSequence[{a, b, c, a, b}, {b, c, b, a}]")
+        .unwrap(),
+      "{b, c, a}"
+    );
+  }
+}

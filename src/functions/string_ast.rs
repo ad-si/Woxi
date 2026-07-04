@@ -9045,9 +9045,9 @@ pub fn longest_common_sequence_ast(
       l1.iter().map(crate::syntax::expr_to_output).collect();
     let t2: Vec<String> =
       l2.iter().map(crate::syntax::expr_to_output).collect();
-    let sub: Vec<Expr> = lcs_indices(&t1, &t2)
+    let sub: Vec<Expr> = lcs_index_pairs(&t1, &t2)
       .iter()
-      .map(|&i| l1[i].clone())
+      .map(|&(i, _)| l1[i].clone())
       .collect();
     return Ok(Expr::List(sub.into()));
   }
@@ -9058,15 +9058,17 @@ pub fn longest_common_sequence_ast(
   let chars2: Vec<char> = s2.chars().collect();
   let t1: Vec<String> = chars1.iter().map(|c| c.to_string()).collect();
   let t2: Vec<String> = chars2.iter().map(|c| c.to_string()).collect();
-  let result: String =
-    lcs_indices(&t1, &t2).iter().map(|&i| chars1[i]).collect();
+  let result: String = lcs_index_pairs(&t1, &t2)
+    .iter()
+    .map(|&(i, _)| chars1[i])
+    .collect();
   Ok(Expr::String(result))
 }
 
-/// Indices into the first sequence forming the longest common subsequence with
-/// the second. Backtracking prefers moving up (decreasing the first index) on
-/// ties, matching Wolfram's choice among equal-length results.
-fn lcs_indices(t1: &[String], t2: &[String]) -> Vec<usize> {
+/// Index pairs (into the first and second sequence) forming the longest
+/// common subsequence. Backtracking prefers moving up (decreasing the first
+/// index) on ties, matching Wolfram's choice among equal-length results.
+fn lcs_index_pairs(t1: &[String], t2: &[String]) -> Vec<(usize, usize)> {
   let m = t1.len();
   let n = t2.len();
   let mut l = vec![vec![0usize; n + 1]; m + 1];
@@ -9083,7 +9085,7 @@ fn lcs_indices(t1: &[String], t2: &[String]) -> Vec<usize> {
   let (mut i, mut j) = (m, n);
   while i > 0 && j > 0 {
     if t1[i - 1] == t2[j - 1] {
-      idx.push(i - 1);
+      idx.push((i - 1, j - 1));
       i -= 1;
       j -= 1;
     } else if l[i - 1][j] >= l[i][j - 1] {
@@ -9094,6 +9096,69 @@ fn lcs_indices(t1: &[String], t2: &[String]) -> Vec<usize> {
   }
   idx.reverse();
   idx
+}
+
+/// LongestCommonSequencePositions[s1, s2] — the 1-indexed inclusive
+/// {start, end} spans in each argument covering the longest *noncontiguous*
+/// common sequence (the positions of what LongestCommonSequence returns):
+/// `{spans1, spans2}`. Consecutive matched positions merge into one span.
+/// Returns `{}` when there is no common element.
+pub fn longest_common_sequence_positions_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LongestCommonSequencePositions expects exactly 2 arguments".into(),
+    ));
+  }
+  // Wolfram only evaluates for two strings or two lists; mixed or other
+  // argument types stay unevaluated.
+  let (t1, t2) = match (&args[0], &args[1]) {
+    (Expr::String(_), Expr::String(_)) | (Expr::List(_), Expr::List(_)) => {
+      (lcs_tokens(&args[0]).unwrap(), lcs_tokens(&args[1]).unwrap())
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LongestCommonSequencePositions".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let pairs = lcs_index_pairs(&t1, &t2);
+  if pairs.is_empty() {
+    return Ok(Expr::List(vec![].into()));
+  }
+  // Group each side's (sorted) indices into maximal runs of consecutive
+  // positions, emitted as 1-indexed inclusive {start, end} spans.
+  let spans = |indices: Vec<usize>| {
+    let mut result: Vec<Expr> = Vec::new();
+    let mut start = indices[0];
+    let mut prev = indices[0];
+    for &i in &indices[1..] {
+      if i != prev + 1 {
+        result.push(Expr::List(
+          vec![
+            Expr::Integer((start + 1) as i128),
+            Expr::Integer((prev + 1) as i128),
+          ]
+          .into(),
+        ));
+        start = i;
+      }
+      prev = i;
+    }
+    result.push(Expr::List(
+      vec![
+        Expr::Integer((start + 1) as i128),
+        Expr::Integer((prev + 1) as i128),
+      ]
+      .into(),
+    ));
+    Expr::List(result.into())
+  };
+  let idx1: Vec<usize> = pairs.iter().map(|&(i, _)| i).collect();
+  let idx2: Vec<usize> = pairs.iter().map(|&(_, j)| j).collect();
+  Ok(Expr::List(vec![spans(idx1), spans(idx2)].into()))
 }
 
 /// SequenceAlignment[s1, s2] — aligns two strings using Needleman-Wunsch

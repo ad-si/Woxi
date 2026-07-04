@@ -158,6 +158,13 @@ pub fn dispatch_string_functions(
         args,
       ));
     }
+    "LongestCommonSequencePositions" if args.len() == 2 => {
+      return Some(
+        crate::functions::string_ast::longest_common_sequence_positions_ast(
+          args,
+        ),
+      );
+    }
     "LongestCommonSubsequencePositions" if args.len() == 2 => {
       return Some(
         crate::functions::string_ast::longest_common_subsequence_positions_ast(
