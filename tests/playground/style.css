@@ -448,9 +448,13 @@ pre.output-box {
      fixed 6rem gutter. `fit-content(12rem)` sizes the column to its content
      but caps it, so a short label like `t` sits snug against its slider while
      a long label can't swallow it. Rows use `display: contents` (below) so
-     their label/slider/value cells land directly in this grid. */
+     their label/slider/value cells land directly in this grid.
+     The slider column is `minmax(0, 22rem)` rather than `1fr`: it still
+     shrinks on narrow viewports but never stretches a slider past ~22rem, so
+     the controls stay a comfortable width on a wide window. */
   display: grid;
-  grid-template-columns: fit-content(12rem) 1fr auto;
+  grid-template-columns: fit-content(12rem) minmax(0, 22rem) auto;
+  justify-content: start;
   align-items: center;
   column-gap: 0.6rem;
   row-gap: 0.35rem;
