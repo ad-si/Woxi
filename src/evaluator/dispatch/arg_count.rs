@@ -523,8 +523,10 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Get" => Some((1, 1)),
     "GompertzMakehamDistribution" => Some((2, 2)),
     "Grad" => Some((2, 3)),
-    "Greater" => Some((2, usize::MAX)),
-    "GreaterEqual" => Some((2, usize::MAX)),
+    // A comparison of 0 or 1 element is vacuously True (Greater[] = Greater[5]
+    // = True), so accept any argument count like Equal/Unequal.
+    "Greater" => Some((0, usize::MAX)),
+    "GreaterEqual" => Some((0, usize::MAX)),
     "GreaterEqualThan" => Some((1, 1)),
     "GreaterThan" => Some((1, 1)),
     "GroupBy" => Some((1, 3)),
@@ -713,8 +715,10 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LengthWhile" => Some((2, 2)),
     "HurwitzLerchPhi" => Some((3, 3)),
     "LerchPhi" => Some((3, 3)),
-    "Less" => Some((2, usize::MAX)),
-    "LessEqual" => Some((2, usize::MAX)),
+    // A comparison of 0 or 1 element is vacuously True (Less[] = Less[5] =
+    // True), so accept any argument count like Equal/Unequal.
+    "Less" => Some((0, usize::MAX)),
+    "LessEqual" => Some((0, usize::MAX)),
     "LessEqualThan" => Some((1, 1)),
     "LessThan" => Some((1, 1)),
     "LetterCounts" => Some((1, 2)),

@@ -869,6 +869,22 @@ mod equal_edge_cases {
     );
   }
 
+  // The ordered comparisons are also vacuously True for fewer than two
+  // elements (Less[] = Less[5] = Greater[x] = True), matching Equal/Unequal —
+  // previously they emitted an argm message and stayed unevaluated.
+  #[test]
+  fn ordered_comparisons_zero_or_one_arg() {
+    assert_eq!(interpret("Less[]").unwrap(), "True");
+    assert_eq!(interpret("Less[5]").unwrap(), "True");
+    assert_eq!(interpret("Greater[x]").unwrap(), "True");
+    assert_eq!(interpret("LessEqual[3]").unwrap(), "True");
+    assert_eq!(interpret("GreaterEqual[]").unwrap(), "True");
+    // Two or more arguments are unaffected.
+    assert_eq!(interpret("Less[1, 2]").unwrap(), "True");
+    assert_eq!(interpret("Greater[3, 2, 1]").unwrap(), "True");
+    assert_eq!(interpret("Less[a, b]").unwrap(), "a < b");
+  }
+
   #[test]
   fn equal_funccall_var_symbolic() {
     // n[1] + 2 == 3 should stay symbolic, not evaluate to False

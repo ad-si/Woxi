@@ -143,6 +143,13 @@ pub fn dispatch_predicate_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // A comparison of fewer than two elements is vacuously True:
+  // Less[] = Less[x] = Greater[5] = True, matching Equal/Unequal.
+  if args.len() < 2
+    && matches!(name, "Less" | "LessEqual" | "Greater" | "GreaterEqual")
+  {
+    return Some(Ok(Expr::Identifier("True".to_string())));
+  }
   match name {
     // Inequality[a, Less, b, Less, c, ...] - evaluate chained comparisons
     "Inequality" if args.len() >= 3 && args.len() % 2 == 1 => {
