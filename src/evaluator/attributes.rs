@@ -233,6 +233,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // attribute. Adding HoldAll here would diverge from `Attributes[
     // Manipulate]` in wolframscript without changing semantics.
     "Manipulate" => vec!["Protected", "ReadProtected"],
+    // Control: Protected (matches wolframscript). Like Manipulate it holds
+    // its argument via the explicit name-match in core_eval.rs rather than a
+    // HoldAll attribute.
+    "Control" => vec!["Protected"],
     // Parallel* combinators: Protected + ReadProtected (matches
     // wolframscript). Like Manipulate, ParallelDo holds its body via the
     // explicit name-match in core_eval.rs rather than a HoldAll attribute

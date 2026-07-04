@@ -295,6 +295,10 @@ enum Message {
   // Manipulate interactive widgets
   ManipulateContinuousChanged(usize, usize, f64),
   ManipulateDiscreteChanged(usize, usize, String),
+  /// (cell_idx, ctrl_idx, axis 0=x/1=y, value)
+  ManipulateSlider2DChanged(usize, usize, u8, f64),
+  /// (cell_idx, ctrl_idx, endpoint 0=low/1=high, value)
+  ManipulateIntervalChanged(usize, usize, u8, f64),
 
   // Hyperlink: open the given URL in the user's default browser.
   OpenHyperlink(String),
@@ -1564,6 +1568,46 @@ impl WoxiStudio {
           && let Some(idx) = values.iter().position(|v| *v == choice)
         {
           *current_index = idx;
+          state.reevaluate(self.scale_factor, &self.fontdb);
+        }
+        Task::none()
+      }
+
+      Message::ManipulateSlider2DChanged(cell_idx, ctrl_idx, axis, value) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(control) = state.controls.get_mut(ctrl_idx)
+          && let manipulate::ControlState::Slider2D { x, y, .. } = control
+        {
+          if axis == 0 {
+            *x = value;
+          } else {
+            *y = value;
+          }
+          state.reevaluate(self.scale_factor, &self.fontdb);
+        }
+        Task::none()
+      }
+
+      Message::ManipulateIntervalChanged(
+        cell_idx,
+        ctrl_idx,
+        endpoint,
+        value,
+      ) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(control) = state.controls.get_mut(ctrl_idx)
+          && let manipulate::ControlState::IntervalSlider { low, high, .. } =
+            control
+        {
+          // Keep the interval ordered: the low thumb can't pass the high
+          // thumb and vice versa.
+          if endpoint == 0 {
+            *low = value.min(*high);
+          } else {
+            *high = value.max(*low);
+          }
           state.reevaluate(self.scale_factor, &self.fontdb);
         }
         Task::none()
@@ -3338,6 +3382,93 @@ fn render_manipulate_widget<'a>(
         })
         .width(iced::Length::Shrink);
         let control_row = row![label_widget, picker].align_y(Center).spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
+      manipulate::ControlState::Slider2D {
+        name,
+        label,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x,
+        y,
+      } => {
+        // Rendered as two linked sliders (X and Y) driving the 2-vector.
+        let label_display = if label.is_empty() { name } else { label };
+        let x_span = (*x_max - *x_min).abs();
+        let y_span = (*y_max - *y_min).abs();
+        let x_step = if x_span > 0.0 { x_span / 100.0 } else { 1.0 };
+        let y_step = if y_span > 0.0 { y_span / 100.0 } else { 1.0 };
+        let x_slider = slider(*x_min..=*x_max, *x, move |v| {
+          Message::ManipulateSlider2DChanged(cell_idx, ctrl_idx, 0, v)
+        })
+        .step(x_step)
+        .width(Fill);
+        let y_slider = slider(*y_min..=*y_max, *y, move |v| {
+          Message::ManipulateSlider2DChanged(cell_idx, ctrl_idx, 1, v)
+        })
+        .step(y_step)
+        .width(Fill);
+        let value_widget = text(format!(
+          "{{{}, {}}}",
+          format_manipulate_number(*x),
+          format_manipulate_number(*y)
+        ))
+        .size(11)
+        .font(Font::MONOSPACE)
+        .width(iced::Length::Fixed(120.0));
+        let label_widget = text(format!("{label_display}"))
+          .size(12)
+          .width(iced::Length::Fixed(140.0));
+        let control_row = row![
+          label_widget,
+          column![x_slider, y_slider].spacing(4),
+          value_widget
+        ]
+        .align_y(Center)
+        .spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
+      manipulate::ControlState::IntervalSlider {
+        name,
+        label,
+        min,
+        max,
+        step,
+        low,
+        high,
+      } => {
+        // Rendered as two linked sliders (low and high endpoints).
+        let label_display = if label.is_empty() { name } else { label };
+        let low_slider = slider(*min..=*max, *low, move |v| {
+          Message::ManipulateIntervalChanged(cell_idx, ctrl_idx, 0, v)
+        })
+        .step(*step)
+        .width(Fill);
+        let high_slider = slider(*min..=*max, *high, move |v| {
+          Message::ManipulateIntervalChanged(cell_idx, ctrl_idx, 1, v)
+        })
+        .step(*step)
+        .width(Fill);
+        let value_widget = text(format!(
+          "{{{}, {}}}",
+          format_manipulate_number(*low),
+          format_manipulate_number(*high)
+        ))
+        .size(11)
+        .font(Font::MONOSPACE)
+        .width(iced::Length::Fixed(120.0));
+        let label_widget = text(format!("{label_display}"))
+          .size(12)
+          .width(iced::Length::Fixed(140.0));
+        let control_row = row![
+          label_widget,
+          column![low_slider, high_slider].spacing(4),
+          value_widget
+        ]
+        .align_y(Center)
+        .spacing(8);
         controls_col = controls_col.push(control_row);
       }
     }

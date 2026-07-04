@@ -105,6 +105,10 @@ pub fn dispatch_plotting(
     // specs preserved. A non-list variable spec emits a Manipulate::vsform
     // message but the expression is still returned unchanged.
     "Manipulate" => Some(crate::functions::graphics::manipulate_ast(args)),
+    // Control holds its argument (see core_eval.rs) and echoes itself back
+    // with the variable spec's bounds evaluated. Playground / Studio detect
+    // the held Control[…] and render an interactive control widget.
+    "Control" => Some(crate::functions::graphics::control_ast(args)),
     "Plot3D" if args.len() >= 3 => {
       Some(quiet_plot(|| crate::functions::plot3d::plot3d_ast(args)))
     }

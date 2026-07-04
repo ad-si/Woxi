@@ -338,6 +338,10 @@ function renderManipulate(item) {
       current[ctrl.name] = ctrl.initial
     } else if (ctrl.kind === "discrete") {
       current[ctrl.name] = ctrl.values[ctrl.initialIndex] ?? ctrl.values[0]
+    } else if (ctrl.kind === "slider2d") {
+      current[ctrl.name] = { x: ctrl.xInit, y: ctrl.yInit }
+    } else if (ctrl.kind === "interval") {
+      current[ctrl.name] = { low: ctrl.lowInit, high: ctrl.highInit }
     }
   }
 
@@ -373,7 +377,14 @@ function renderManipulate(item) {
   function buildBindings() {
     const bindings = {}
     for (const ctrl of item.controls) {
-      bindings[ctrl.name] = String(current[ctrl.name])
+      const v = current[ctrl.name]
+      if (ctrl.kind === "slider2d") {
+        bindings[ctrl.name] = `{${v.x}, ${v.y}}`
+      } else if (ctrl.kind === "interval") {
+        bindings[ctrl.name] = `{${v.low}, ${v.high}}`
+      } else {
+        bindings[ctrl.name] = String(v)
+      }
     }
     return bindings
   }
@@ -449,6 +460,102 @@ function renderManipulate(item) {
         current[ctrl.name] = select.value
         requestUpdate()
       })
+    } else if (ctrl.kind === "slider2d") {
+      // A 2D draggable pad. The handle position maps linearly onto the
+      // [xMin,xMax] × [yMin,yMax] range; the bound value is `{x, y}`.
+      const pad = document.createElement("div")
+      pad.className = "manipulate-pad"
+      const handle = document.createElement("div")
+      handle.className = "manipulate-pad-handle"
+      pad.appendChild(handle)
+
+      const display = document.createElement("span")
+      display.className = "manipulate-value"
+
+      const xSpan = ctrl.xMax - ctrl.xMin
+      const ySpan = ctrl.yMax - ctrl.yMin
+
+      function placeHandle(x, y) {
+        const fx = xSpan !== 0 ? (x - ctrl.xMin) / xSpan : 0.5
+        const fy = ySpan !== 0 ? (y - ctrl.yMin) / ySpan : 0.5
+        handle.style.left = `${fx * 100}%`
+        handle.style.bottom = `${fy * 100}%`
+        display.textContent = `{${fmt(x)}, ${fmt(y)}}`
+      }
+      placeHandle(current[ctrl.name].x, current[ctrl.name].y)
+
+      let dragging = false
+      function updateFromPointer(ev) {
+        const rect = pad.getBoundingClientRect()
+        let fx = rect.width !== 0 ? (ev.clientX - rect.left) / rect.width : 0
+        let fy = rect.height !== 0 ? 1 - (ev.clientY - rect.top) / rect.height : 0
+        fx = Math.max(0, Math.min(1, fx))
+        fy = Math.max(0, Math.min(1, fy))
+        const x = ctrl.xMin + fx * xSpan
+        const y = ctrl.yMin + fy * ySpan
+        current[ctrl.name] = { x, y }
+        placeHandle(x, y)
+        requestUpdate()
+      }
+      pad.addEventListener("pointerdown", (ev) => {
+        dragging = true
+        pad.setPointerCapture(ev.pointerId)
+        updateFromPointer(ev)
+        ev.preventDefault()
+      })
+      pad.addEventListener("pointermove", (ev) => {
+        if (dragging) updateFromPointer(ev)
+      })
+      pad.addEventListener("pointerup", () => {
+        dragging = false
+      })
+
+      row.appendChild(pad)
+      row.appendChild(display)
+    } else if (ctrl.kind === "interval") {
+      // Two range inputs (low and high endpoints) kept ordered so the
+      // bound value `{low, high}` is always a valid interval.
+      const stack = document.createElement("div")
+      stack.className = "manipulate-interval"
+
+      const step = ctrl.step ?? (ctrl.max - ctrl.min) / 100
+      const lowInput = document.createElement("input")
+      lowInput.type = "range"
+      lowInput.min = ctrl.min
+      lowInput.max = ctrl.max
+      lowInput.step = step > 0 ? step : "any"
+      lowInput.value = ctrl.lowInit
+      const highInput = document.createElement("input")
+      highInput.type = "range"
+      highInput.min = ctrl.min
+      highInput.max = ctrl.max
+      highInput.step = step > 0 ? step : "any"
+      highInput.value = ctrl.highInit
+      stack.appendChild(lowInput)
+      stack.appendChild(highInput)
+
+      const display = document.createElement("span")
+      display.className = "manipulate-value"
+      display.textContent = `{${fmt(ctrl.lowInit)}, ${fmt(ctrl.highInit)}}`
+
+      function syncInterval() {
+        let low = Number(lowInput.value)
+        let high = Number(highInput.value)
+        if (low > high) {
+          // Whichever thumb crossed over drags the other with it.
+          [low, high] = [Math.min(low, high), Math.max(low, high)]
+          lowInput.value = low
+          highInput.value = high
+        }
+        current[ctrl.name] = { low, high }
+        display.textContent = `{${fmt(low)}, ${fmt(high)}}`
+        requestUpdate()
+      }
+      lowInput.addEventListener("input", syncInterval)
+      highInput.addEventListener("input", syncInterval)
+
+      row.appendChild(stack)
+      row.appendChild(display)
     }
 
     controlsEl.appendChild(row)

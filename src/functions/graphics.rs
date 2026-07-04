@@ -10866,40 +10866,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for spec in args.iter().skip(1) {
     match spec {
       Expr::List(items) if !items.is_empty() => {
-        // Preserve the head (variable symbol or {u, uinit, ulbl}) as-is;
-        // evaluate any trailing bounds/step/discrete-values.
-        let mut new_items: Vec<Expr> = Vec::with_capacity(items.len());
-        new_items.push(items[0].clone());
-        for item in &items[1..] {
-          // Try to evaluate bounds; if evaluation fails, keep the
-          // original so the echoed form still round-trips.
-          let evaluated =
-            evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone());
-          new_items.push(evaluated);
-        }
-        // A 2-item spec `{var, range}` whose `range` doesn't reduce to
-        // a concrete numeric value or list (e.g. it still contains a
-        // free symbol like `Range[y]`) is wrapped in Dynamic[…] in
-        // wolframscript's echoed form so the menu updates as the host
-        // variable changes.
-        if new_items.len() == 2
-          && let needs_dynamic = match &new_items[1] {
-            Expr::Integer(_) | Expr::Real(_) | Expr::List(_) => false,
-            Expr::FunctionCall { name, .. } if name == "Dynamic" => false,
-            // A trailing control option such as `ControlType -> None` is
-            // not a range, so it must not be wrapped in Dynamic[…].
-            Expr::Rule { .. } | Expr::RuleDelayed { .. } => false,
-            _ => true,
-          }
-          && needs_dynamic
-        {
-          let range = new_items.pop().unwrap();
-          new_items.push(Expr::FunctionCall {
-            name: "Dynamic".to_string(),
-            args: vec![range].into(),
-          });
-        }
-        out_args.push(Expr::List(new_items.into()));
+        out_args.push(process_manipulate_var_spec(items));
       }
       Expr::List(_) => {
         // Empty list — echo as-is.
@@ -10953,6 +10920,72 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Process a single Manipulate/Control variable specification list,
+/// evaluating trailing bounds/step/discrete values while keeping the head
+/// (variable symbol or `{u, uinit, ulbl}`) intact. A 2-item spec
+/// `{var, range}` whose range is still symbolic is wrapped in `Dynamic[…]`
+/// to match wolframscript's echoed form.
+fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
+  // Preserve the head as-is; evaluate any trailing bounds/step/values.
+  let mut new_items: Vec<Expr> = Vec::with_capacity(items.len());
+  new_items.push(items[0].clone());
+  for item in &items[1..] {
+    // Try to evaluate bounds; if evaluation fails, keep the original so
+    // the echoed form still round-trips.
+    let evaluated =
+      evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone());
+    new_items.push(evaluated);
+  }
+  // A 2-item spec `{var, range}` whose `range` doesn't reduce to a concrete
+  // numeric value or list (e.g. it still contains a free symbol like
+  // `Range[y]`) is wrapped in Dynamic[…] so the menu updates as the host
+  // variable changes.
+  if new_items.len() == 2
+    && let needs_dynamic = match &new_items[1] {
+      Expr::Integer(_) | Expr::Real(_) | Expr::List(_) => false,
+      Expr::FunctionCall { name, .. } if name == "Dynamic" => false,
+      // A trailing control option such as `ControlType -> None` is not a
+      // range, so it must not be wrapped in Dynamic[…].
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => false,
+      _ => true,
+    }
+    && needs_dynamic
+  {
+    let range = new_items.pop().unwrap();
+    new_items.push(Expr::FunctionCall {
+      name: "Dynamic".to_string(),
+      args: vec![range].into(),
+    });
+  }
+  Expr::List(new_items.into())
+}
+
+/// Held evaluation of a standalone `Control[…]` expression. Like Manipulate,
+/// Control holds its argument and, in a text front-end, echoes itself back
+/// with the variable spec's bounds evaluated (`Control[{x, 0, 2 Pi}]` →
+/// `Control[{x, 0, 2 Pi}]` with `2 Pi` reduced). The Playground / Studio
+/// front-ends detect the held `Control[…]` and render an interactive
+/// control widget (see `extract_control_spec`).
+pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut out_args: Vec<Expr> = Vec::with_capacity(args.len());
+  if let Some(first) = args.first() {
+    match first {
+      Expr::List(items) if !items.is_empty() => {
+        out_args.push(process_manipulate_var_spec(items));
+      }
+      other => out_args.push(other.clone()),
+    }
+  }
+  // Any trailing options pass through unchanged.
+  for extra in args.iter().skip(1) {
+    out_args.push(extra.clone());
+  }
+  Ok(Expr::FunctionCall {
+    name: "Control".to_string(),
+    args: out_args.into(),
+  })
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Interactive Manipulate support (for Woxi Playground / Woxi Studio)
 // ─────────────────────────────────────────────────────────────────
@@ -10983,6 +11016,43 @@ pub enum ManipulateControl {
     initial_index: usize,
     label: String,
   },
+  /// A 2D control (`ControlType -> Slider2D`, or a 2D range spec
+  /// `{u, {xmin, ymin}, {xmax, ymax}}`). Binds its variable to a 2-vector
+  /// `{x, y}`.
+  Slider2D {
+    name: String,
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+    x_initial: f64,
+    y_initial: f64,
+    label: String,
+  },
+  /// An interval control (`ControlType -> IntervalSlider`). Binds its
+  /// variable to a 2-vector `{low, high}` describing the selected range.
+  IntervalSlider {
+    name: String,
+    min: f64,
+    max: f64,
+    /// Optional explicit step size. When `None`, the UI picks a default.
+    step: Option<f64>,
+    low_initial: f64,
+    high_initial: f64,
+    label: String,
+  },
+}
+
+impl ManipulateControl {
+  /// The bound variable name for this control.
+  pub fn name(&self) -> &str {
+    match self {
+      ManipulateControl::Continuous { name, .. }
+      | ManipulateControl::Discrete { name, .. }
+      | ManipulateControl::Slider2D { name, .. }
+      | ManipulateControl::IntervalSlider { name, .. } => name,
+    }
+  }
 }
 
 /// A parsed Manipulate expression ready for interactive rendering.
@@ -11082,6 +11152,42 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   })
 }
 
+/// Attempt to extract a `ManipulateSpec` from a held standalone
+/// `Control[{…}]` expression. A bare `Control` renders a single interactive
+/// control whose bound variable has no body to display, so the "body" is
+/// synthesized as the variable itself — dragging the control then shows the
+/// current bound value (a number, a discrete choice, a 2-vector, …).
+///
+/// Returns `None` if the expression is not a well-formed `Control` (e.g. the
+/// argument is not a variable-spec list, or resolves to a hidden control).
+pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  let (name, args) = match expr {
+    Expr::FunctionCall { name, args } => (name, args),
+    _ => return None,
+  };
+  if name != "Control" || args.is_empty() {
+    return None;
+  }
+  // The first argument is the variable specification; any trailing options
+  // are ignored for rendering purposes.
+  if !matches!(&args[0], Expr::List(items) if !items.is_empty()) {
+    return None;
+  }
+  let control = match parse_manipulate_control(&args[0])? {
+    ParsedControl::Visible(c) => c,
+    // A hidden control (`ControlType -> None` / Locator) has no widget and
+    // nothing to display on its own — fall back to the plain output path.
+    ParsedControl::Fixed { .. } => return None,
+  };
+  // Display the bound variable so the control's effect is visible.
+  let body_code = control.name().to_string();
+  Some(ManipulateSpec {
+    body_code,
+    controls: vec![control],
+    initialization: None,
+  })
+}
+
 /// Evaluate `expr` and render the result as InputForm. Falls back to the
 /// unevaluated form if evaluation fails. Used to freeze a hidden control's
 /// initial value (e.g. `RandomInteger[…]`) to a concrete literal so it does
@@ -11090,6 +11196,20 @@ fn manipulate_value_to_input_form(expr: &Expr) -> String {
   match crate::evaluator::evaluate_expr_to_expr(expr) {
     Ok(evaluated) => crate::syntax::expr_to_input_form(&evaluated),
     Err(_) => crate::syntax::expr_to_input_form(expr),
+  }
+}
+
+/// Interpret an expression as a 2-element numeric list `{a, b}`, evaluating
+/// each element to an `f64`. Returns `None` for anything that isn't a
+/// 2-vector of numbers.
+fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
+  match e {
+    Expr::List(l) if l.len() == 2 => {
+      let a = crate::functions::math_ast::try_eval_to_f64(&l[0])?;
+      let b = crate::functions::math_ast::try_eval_to_f64(&l[1])?;
+      Some((a, b))
+    }
+    _ => None,
   }
 }
 
@@ -11147,6 +11267,97 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       name,
       value: manipulate_value_to_input_form(&value_expr),
     });
+  }
+
+  // A `ControlType -> Slider2D` / `ControlType -> IntervalSlider` option
+  // selects a compound control. The bounds are the non-option items after
+  // the head.
+  let control_type = items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType") => {
+      match replacement.as_ref() {
+        Expr::Identifier(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  });
+  let bounds: Vec<&Expr> = items[1..]
+    .iter()
+    .filter(|it| !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .collect();
+
+  // 2D control: either an explicit `ControlType -> Slider2D`, or a range
+  // given as two corner points `{u, {xmin, ymin}, {xmax, ymax}}`.
+  let is_2d_range = bounds.len() >= 2
+    && list2_f64(bounds[0]).is_some()
+    && list2_f64(bounds[1]).is_some();
+  if control_type.as_deref() == Some("Slider2D") || is_2d_range {
+    let (x_min, x_max, y_min, y_max) = if is_2d_range {
+      let (x0, y0) = list2_f64(bounds[0])?;
+      let (x1, y1) = list2_f64(bounds[1])?;
+      (x0, x1, y0, y1)
+    } else {
+      // Scalar bounds `{u, min, max}` apply to both axes.
+      let mn = bounds
+        .first()
+        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))?;
+      let mx = bounds
+        .get(1)
+        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+        .unwrap_or(mn + 1.0);
+      (mn, mx, mn, mx)
+    };
+    let (x_initial, y_initial) =
+      match explicit_initial.as_ref().and_then(list2_f64) {
+        Some((a, b)) => (a, b),
+        None => (x_min, y_min),
+      };
+    return Some(ParsedControl::Visible(ManipulateControl::Slider2D {
+      name,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      x_initial,
+      y_initial,
+      label,
+    }));
+  }
+
+  // Interval control: `{u, min, max, ControlType -> IntervalSlider}` binds
+  // `u` to a `{low, high}` pair.
+  if control_type.as_deref() == Some("IntervalSlider") {
+    let min = bounds
+      .first()
+      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))?;
+    let max = bounds
+      .get(1)
+      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+      .unwrap_or(min + 1.0);
+    let step = bounds
+      .get(2)
+      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e));
+    let (low_initial, high_initial) =
+      match explicit_initial.as_ref().and_then(list2_f64) {
+        Some((a, b)) => (a, b),
+        None => (min, max),
+      };
+    return Some(ParsedControl::Visible(ManipulateControl::IntervalSlider {
+      name,
+      min,
+      max,
+      step,
+      low_initial,
+      high_initial,
+      label,
+    }));
   }
 
   // Discrete form: `{u, {u1, u2, …}}` or `{{u, uinit, …}, {u1, u2, …}}`.
@@ -11235,6 +11446,32 @@ pub fn manipulate_initial_bindings(
           .get(*initial_index)
           .cloned()
           .unwrap_or_else(|| "Null".to_string()),
+      ),
+      ManipulateControl::Slider2D {
+        name,
+        x_initial,
+        y_initial,
+        ..
+      } => (
+        name.clone(),
+        format!(
+          "{{{}, {}}}",
+          format_f64_input(*x_initial),
+          format_f64_input(*y_initial)
+        ),
+      ),
+      ManipulateControl::IntervalSlider {
+        name,
+        low_initial,
+        high_initial,
+        ..
+      } => (
+        name.clone(),
+        format!(
+          "{{{}, {}}}",
+          format_f64_input(*low_initial),
+          format_f64_input(*high_initial)
+        ),
       ),
     })
     .collect()
@@ -11459,6 +11696,52 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           json_escape_manipulate(label),
           value_parts.join(","),
           initial_index,
+        ));
+      }
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        label,
+      } => {
+        ctrl_parts.push(format!(
+          r#"{{"kind":"slider2d","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"xInit":{},"yInit":{}}}"#,
+          json_escape_manipulate(name),
+          json_escape_manipulate(label),
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          x_initial,
+          y_initial,
+        ));
+      }
+      ManipulateControl::IntervalSlider {
+        name,
+        min,
+        max,
+        step,
+        low_initial,
+        high_initial,
+        label,
+      } => {
+        let step_json = match step {
+          Some(s) => format!(r#","step":{}"#, s),
+          None => String::new(),
+        };
+        ctrl_parts.push(format!(
+          r#"{{"kind":"interval","name":"{}","label":"{}","min":{},"max":{},"lowInit":{},"highInit":{}{}}}"#,
+          json_escape_manipulate(name),
+          json_escape_manipulate(label),
+          min,
+          max,
+          low_initial,
+          high_initial,
+          step_json,
         ));
       }
     }

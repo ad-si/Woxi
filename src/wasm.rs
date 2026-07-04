@@ -285,10 +285,10 @@ fn evaluate_statement_items(stmt: &str) -> Vec<String> {
         items.push(json_output_item("warning", w, None));
       }
 
-      // If the statement is a top-level Manipulate[…] call, emit a
-      // dedicated "manipulate" item so the frontend can render
-      // interactive controls instead of the plain text echo. We re-parse
-      // the source so we can inspect the held expression shape.
+      // If the statement is a top-level Manipulate[…] or a standalone
+      // Control[…] call, emit a dedicated "manipulate" item so the frontend
+      // can render interactive controls instead of the plain text echo. We
+      // re-parse the source so we can inspect the held expression shape.
       if result.result != "\0"
         && let Some(item) = try_build_manipulate_item(stmt)
       {
@@ -344,7 +344,10 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
   // is HoldAll-ish (see functions::graphics::manipulate_ast), so its body
   // and variable symbols remain intact.
   let expr = crate::interpret_to_expr(stmt).ok()?;
-  let spec = crate::functions::graphics::extract_manipulate_spec(&expr)?;
+  // A top-level Manipulate[…] or a standalone Control[…] both render as an
+  // interactive control widget backed by a ManipulateSpec.
+  let spec = crate::functions::graphics::extract_manipulate_spec(&expr)
+    .or_else(|| crate::functions::graphics::extract_control_spec(&expr))?;
 
   // Produce an initial rendering by substituting initial values via Block.
   let bindings = crate::functions::graphics::manipulate_initial_bindings(&spec);

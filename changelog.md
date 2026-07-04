@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- Add support for the standalone `Control[…]` control expression in the
+    Playground and Studio. `Control[{x, 0, 1}]` renders a slider,
+    `Control[{x, {a, b, c}}]` a popup menu, `Control[{x, {0, 0}, {1, 1}}]`
+    and `Control[{xy, 0, 1, ControlType -> Slider2D}]` a 2D slider, and
+    `Control[{int, 0, 1, ControlType -> IntervalSlider}]` an interval
+    slider. Initial values and labels (`Control[{{x, 0.5, "variable"}, 0, 1}]`)
+    are honored, and the same `Slider2D` / `IntervalSlider` control types now
+    work inside `Manipulate` too.
 - Extend interactive `Manipulate` rendering (Playground + Studio) to
     support `Locator` controls and `ControlType -> None` (both bound to a
     frozen initial value), discrete pick lists whose value list is an
