@@ -10820,7 +10820,8 @@ fn slots_to_template_slots(expr: &Expr) -> Expr {
     }),
     Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
       let key = match &args[0] {
-        Expr::String(s) => Expr::Identifier(s.clone()),
+        // Named slots use a string key (`TemplateSlot["name"]`).
+        Expr::String(s) => Expr::String(s.clone()),
         Expr::Integer(n) => Expr::Integer(*n),
         other => other.clone(),
       };
@@ -10925,7 +10926,9 @@ pub fn parse_template_parts(template: &str) -> Vec<Expr> {
       } else if let Ok(n) = key.parse::<i128>() {
         Expr::Integer(n)
       } else {
-        Expr::Identifier(key)
+        // Named slots use a string key (matches wolframscript's
+        // `TemplateSlot["name"]`).
+        Expr::String(key)
       };
       parts.push(Expr::FunctionCall {
         name: "TemplateSlot".to_string(),
@@ -10969,10 +10972,14 @@ pub fn build_template_object(
     "CombinerFunction",
     Expr::Identifier("StringJoin".to_string()),
   ));
-  object_args.push(option(
-    "InsertionFunction",
-    Expr::Identifier(insertion_function.to_string()),
-  ));
+  // XMLTemplate reports its insertion function as the string "HTMLFragment";
+  // plain string templates use the TextString symbol.
+  let insertion_value = if insertion_function == "HTMLFragment" {
+    Expr::String(insertion_function.to_string())
+  } else {
+    Expr::Identifier(insertion_function.to_string())
+  };
+  object_args.push(option("InsertionFunction", insertion_value));
   object_args.push(option("MetaInformation", Expr::Association(Vec::new())));
   Expr::FunctionCall {
     name: "TemplateObject".to_string(),
