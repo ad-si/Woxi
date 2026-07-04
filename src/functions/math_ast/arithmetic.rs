@@ -823,6 +823,12 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Handle DateObject + Quantity[n, unit]: shift the date by the time span
+  // (commutatively, and for any number of calendar-unit quantities).
+  if let Some(result) = try_date_object_plus_quantity(args) {
+    return result;
+  }
+
   // Combine multiple `SeriesData[var, x0, …]` summands sharing the same
   // (var, x0) into a single SeriesData. Truncates to the minimum order.
   if let Some(result) = try_series_data_plus(args)? {
@@ -9757,4 +9763,79 @@ fn try_date_object_subtraction(
   }
 
   None
+}
+
+/// Adds one or more calendar-unit `Quantity` time spans to a single
+/// `DateObject`: e.g. `DateObject[{2024, 7, 4}] + Quantity[1, "Days"]` shifts
+/// the date to July 5. Subtraction arrives here as a negated quantity
+/// (`Quantity[-n, unit]`). Only the calendar units Days/Weeks/Months/Years are
+/// handled (the ones DatePlus resolves correctly); other units, or symbolic
+/// summands, leave the sum for ordinary Plus handling.
+fn try_date_object_plus_quantity(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() < 2 {
+    return None;
+  }
+
+  fn is_date_object(e: &Expr) -> bool {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "DateObject")
+  }
+  fn is_calendar_quantity(e: &Expr) -> bool {
+    if let Expr::FunctionCall { name, args: qa } = e
+      && name == "Quantity"
+      && qa.len() == 2
+      && let Expr::String(unit) = &qa[1]
+    {
+      matches!(
+        unit.as_str(),
+        "Days"
+          | "Day"
+          | "Weeks"
+          | "Week"
+          | "Months"
+          | "Month"
+          | "Years"
+          | "Year"
+      )
+    } else {
+      false
+    }
+  }
+
+  // Exactly one DateObject summand; every other summand a calendar quantity.
+  let mut date_idx = None;
+  for (i, a) in args.iter().enumerate() {
+    if is_date_object(a) {
+      if date_idx.is_some() {
+        return None; // more than one DateObject: not a simple shift
+      }
+      date_idx = Some(i);
+    }
+  }
+  let date_idx = date_idx?;
+  let quantities: Vec<&Expr> = args
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != date_idx)
+    .map(|(_, a)| a)
+    .collect();
+  if quantities.is_empty()
+    || !quantities.iter().all(|q| is_calendar_quantity(q))
+  {
+    return None;
+  }
+
+  // Fold the shifts through DatePlus, one quantity at a time.
+  let mut date = args[date_idx].clone();
+  for q in quantities {
+    match crate::functions::datetime_ast::date_plus_ast(&[
+      date.clone(),
+      (*q).clone(),
+    ]) {
+      Ok(next) if is_date_object(&next) => date = next,
+      _ => return None, // DatePlus did not yield a date: leave for Plus
+    }
+  }
+  Some(Ok(date))
 }

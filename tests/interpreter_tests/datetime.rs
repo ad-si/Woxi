@@ -343,6 +343,74 @@ mod date_plus {
   }
 }
 
+// Adding (or subtracting) a calendar-unit Quantity to a DateObject with `+`
+// shifts the date, the same as DatePlus. Previously the sum stayed
+// unevaluated. All expected values were verified against wolframscript.
+mod date_object_plus_quantity {
+  use super::*;
+
+  #[test]
+  fn add_days() {
+    assert_eq!(
+      interpret("DateObject[{2024, 7, 4}] + Quantity[1, \"Day\"]").unwrap(),
+      "DateObject[{2024, 7, 5}, Day]"
+    );
+  }
+
+  #[test]
+  fn commutes_with_quantity_on_the_left() {
+    assert_eq!(
+      interpret("Quantity[1, \"Day\"] + DateObject[{2024, 7, 4}]").unwrap(),
+      "DateObject[{2024, 7, 5}, Day]"
+    );
+  }
+
+  #[test]
+  fn add_months() {
+    assert_eq!(
+      interpret("DateObject[{2024, 7, 4}] + Quantity[2, \"Months\"]").unwrap(),
+      "DateObject[{2024, 9, 4}, Day]"
+    );
+  }
+
+  #[test]
+  fn subtract_days() {
+    assert_eq!(
+      interpret("DateObject[{2024, 7, 4}] - Quantity[3, \"Days\"]").unwrap(),
+      "DateObject[{2024, 7, 1}, Day]"
+    );
+  }
+
+  #[test]
+  fn month_addition_clamps_to_leap_february() {
+    assert_eq!(
+      interpret("DateObject[{2024, 1, 31}] + Quantity[1, \"Months\"]").unwrap(),
+      "DateObject[{2024, 2, 29}, Day]"
+    );
+  }
+
+  #[test]
+  fn adds_multiple_quantities() {
+    assert_eq!(
+      interpret(
+        "DateObject[{2024, 7, 4}] + Quantity[1, \"Days\"] + Quantity[1, \"Days\"]"
+      )
+      .unwrap(),
+      "DateObject[{2024, 7, 6}, Day]"
+    );
+  }
+
+  #[test]
+  fn incompatible_unit_stays_unevaluated() {
+    // A non-time quantity cannot shift a date: the sum is left for ordinary
+    // Plus handling rather than being treated as days.
+    assert_eq!(
+      interpret("DateObject[{2024, 7, 4}] + Quantity[5, \"Meters\"]").unwrap(),
+      "DateObject[{2024, 7, 4}, Day] + Quantity[5, Meters]"
+    );
+  }
+}
+
 mod date_difference {
   use super::*;
 
