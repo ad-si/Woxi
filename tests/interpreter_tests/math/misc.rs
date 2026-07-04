@@ -910,6 +910,35 @@ mod inverse_trig_identities {
     assert_eq!(interpret("ArcCsc[0.0]").unwrap(), "ComplexInfinity");
     assert_eq!(interpret("ArcSech[0.0]").unwrap(), "Indeterminate");
   }
+
+  // ArcCoth[±1.] is a singularity: it returns Indeterminate (the (x+1)/(x-1)
+  // ratio divides by zero). The exact ArcCoth[±1] instead stays ±Infinity,
+  // and ArcCsch[0.] diverges to ComplexInfinity. Per wolframscript.
+  #[test]
+  fn arccoth_singular_real_is_indeterminate() {
+    assert_eq!(interpret("ArcCoth[1.0]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("ArcCoth[-1.0]").unwrap(), "Indeterminate");
+    // Exact ±1 is a different limit and stays ±Infinity.
+    assert_eq!(interpret("ArcCoth[1]").unwrap(), "Infinity");
+    assert_eq!(interpret("ArcCoth[-1]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn arccsch_zero_real_is_complex_infinity() {
+    assert_eq!(interpret("ArcCsch[0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("ArcCsch[0]").unwrap(), "ComplexInfinity");
+  }
+
+  // The non-singular real branches are unchanged.
+  #[test]
+  fn arccoth_arccsch_real_branches_unchanged() {
+    assert_eq!(interpret("ArcCoth[2.0]").unwrap(), "0.5493061443340549");
+    assert_eq!(
+      interpret("ArcCoth[0.5]").unwrap(),
+      "0.5493061443340549 - 1.5707963267948966*I"
+    );
+    assert_eq!(interpret("ArcCsch[2.0]").unwrap(), "0.48121182505960347");
+  }
 }
 
 mod inverse_function {

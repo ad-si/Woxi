@@ -4545,7 +4545,11 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // For |x| > 1: real result
       // For |x| < 1: complex result
       // For x == 0: I*Pi/2
+      // For x == ±1: a singularity — Indeterminate.
       let x = *f;
+      if x.abs() == 1.0 {
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      }
       if x.abs() > 1.0 {
         return Ok(Expr::Real((1.0 / x).atanh()));
       } else if x == 0.0 {
@@ -4811,6 +4815,10 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Only inexact arguments evaluate numerically; exact ones (e.g. ArcCsch[2])
   // stay symbolic, matching Wolfram.
   if let Expr::Real(f) = x {
+    if *f == 0.0 {
+      // ArcCsch[0.] = ArcSinh[1/0.] diverges (like the exact ArcCsch[0]).
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
     return Ok(Expr::Real((1.0 / f).asinh()));
   }
   // Odd function: ArcCsch[-x] = -ArcCsch[x].
