@@ -351,8 +351,9 @@ mod degree_trig_functions {
     assert_eq!(interpret("Csch[0.0]").unwrap(), "ComplexInfinity");
     assert_eq!(interpret("Csch[0]").unwrap(), "ComplexInfinity");
     assert_eq!(interpret("Coth[0.0]").unwrap(), "ComplexInfinity");
-    // Non-singular real inputs are unchanged.
-    assert_eq!(interpret("Csch[2.0]").unwrap(), "0.27572056477178325");
+    // Non-singular real inputs are unchanged. Round to avoid a last-ULP
+    // libm divergence between platforms in the full-precision output.
+    assert_eq!(interpret("Round[Csch[2.0], 0.0001]").unwrap(), "0.2757");
   }
 
   #[test]
