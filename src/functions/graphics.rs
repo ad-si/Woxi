@@ -4886,6 +4886,35 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let base = layout_box(&args[0], font_size);
         let sub = layout_box(&args[1], font_size * 0.7);
         let sup = layout_box(&args[2], font_size * 0.7);
+        // A large-operator base (∫) carries its limits like a display
+        // integral: the upper bound at the top-right tip and the lower bound
+        // at the bottom, nudged left to sit under the slanted stem (the sign's
+        // lower hook is on the left). Other bases use ordinary tight
+        // sub/superscripts to the right.
+        let large_op = matches!(&args[0],
+          Expr::String(s) if large_operator_scale(s).is_some());
+        if large_op {
+          let sup_x = base.width * 0.66;
+          let sup_y = 0.0;
+          let sub_x = base.width * 0.28;
+          let sub_y = (base.height - sub.height).max(base.baseline);
+          let width = base
+            .width
+            .max(sup_x + sup.width)
+            .max(sub_x + sub.width);
+          let elements = format!(
+            "{}{}{}",
+            base.translate(0.0, 0.0),
+            sup.translate(sup_x, sup_y),
+            sub.translate(sub_x, sub_y),
+          );
+          return BoxLayout {
+            width,
+            height: (sub_y + sub.height).max(base.height),
+            baseline: base.baseline,
+            elements,
+          };
+        }
         let sup_y = 0.0;
         let base_y = sup.height * 0.4;
         let sub_y = base_y + base.height * 0.4;
