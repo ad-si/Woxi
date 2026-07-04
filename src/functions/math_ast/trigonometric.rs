@@ -2882,6 +2882,22 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(Expr::Real(x.ln() / base.ln()));
       }
+      // Log[base, x] with an inexact negative real argument gives the numeric
+      // complex value Log[x]/Log[base] = (Log|x| + Pi I)/Log[base]. The base
+      // may be exact (e.g. Log[10, -5.]) as long as it is a positive number;
+      // without this the result kept an unevaluated Log[base] denominator.
+      if let Expr::Real(x) = &args[1]
+        && *x < 0.0
+        && let Some(base_f) = try_eval_to_f64(&args[0])
+        && base_f > 0.0
+        && base_f != 1.0
+      {
+        let base_ln = base_f.ln();
+        return build_complex_float_result(
+          x.abs().ln() / base_ln,
+          std::f64::consts::PI / base_ln,
+        );
+      }
       // Canonicalize Log[base, x] → Log[x]/Log[base] (evaluated so
       // sub-expressions like Log[0] collapse to -Infinity).
       let result = Expr::BinaryOp {
@@ -2926,6 +2942,14 @@ pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) if *f > 0.0 => {
       return Ok(Expr::Real(f.log10()));
     }
+    // Negative real: Log10[x] = (Log|x| + Pi I)/Log[10] (numeric complex).
+    Expr::Real(f) if *f < 0.0 => {
+      let base_ln = 10f64.ln();
+      return build_complex_float_result(
+        f.abs().ln() / base_ln,
+        std::f64::consts::PI / base_ln,
+      );
+    }
     _ => {}
   }
   // Symbolic fallback: Log10[x] = Log[x] / Log[10]
@@ -2960,6 +2984,14 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Real(f) if *f > 0.0 => {
       return Ok(Expr::Real(f.log2()));
+    }
+    // Negative real: Log2[x] = (Log|x| + Pi I)/Log[2] (numeric complex).
+    Expr::Real(f) if *f < 0.0 => {
+      let base_ln = 2f64.ln();
+      return build_complex_float_result(
+        f.abs().ln() / base_ln,
+        std::f64::consts::PI / base_ln,
+      );
     }
     _ => {}
   }

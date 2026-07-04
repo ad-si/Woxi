@@ -1238,6 +1238,58 @@ mod complex_power_numeric {
   }
 }
 
+// A logarithm of a negative machine real is complex: Log[b, x] =
+// (Log|x| + Pi I)/Log[b]. Previously Woxi kept an unevaluated Log[b]
+// denominator (e.g. Log[10, -5.] returned (... + Pi I)/Log[10]) instead of
+// the fully numeric complex value wolframscript gives. Expected values with
+// an irrational real part are only asserted where they match wolframscript
+// exactly (an integer real part); the irrational case is checked via Head
+// and the imaginary part, which is exact.
+mod log_negative_real_base {
+  use woxi::interpret;
+
+  #[test]
+  fn log2_negative_powers_of_two() {
+    assert_eq!(interpret("Log2[-4.0]").unwrap(), "2. + 4.532360141827194*I");
+    assert_eq!(interpret("Log2[-8.0]").unwrap(), "3. + 4.532360141827194*I");
+  }
+
+  #[test]
+  fn log10_negative_power_of_ten() {
+    assert_eq!(
+      interpret("Log10[-100.0]").unwrap(),
+      "2. + 1.3643763538418412*I"
+    );
+  }
+
+  #[test]
+  fn two_arg_log_negative() {
+    assert_eq!(
+      interpret("Log[2, -16.0]").unwrap(),
+      "4. + 4.532360141827194*I"
+    );
+  }
+
+  #[test]
+  fn two_arg_log_irrational_is_complex() {
+    // Real part is irrational (Log|5|/Log[10]); assert only the structural
+    // fix and the exact imaginary part.
+    assert_eq!(interpret("Head[Log[10, -5.0]]").unwrap(), "Complex");
+    assert_eq!(
+      interpret("Im[Log[10, -5.0]]").unwrap(),
+      "1.3643763538418412"
+    );
+  }
+
+  // Positive real arguments are unchanged (still a plain real).
+  #[test]
+  fn positive_real_arguments_stay_real() {
+    assert_eq!(interpret("Log[10, 100.0]").unwrap(), "2.");
+    assert_eq!(interpret("Log2[8.0]").unwrap(), "3.");
+    assert_eq!(interpret("Log10[100.0]").unwrap(), "2.");
+  }
+}
+
 mod re_im_constants {
   use woxi::interpret;
 
