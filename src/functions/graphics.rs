@@ -482,6 +482,11 @@ enum Primitive {
     cy: f64,
     rx: f64,
     ry: f64,
+    /// Angular extent `(theta1, theta2)` in radians for a partial circle
+    /// (`Circle[c, r, {t1, t2}]`). `None` draws the full circle; a range that
+    /// is not a full turn draws only that open arc (stroked on one side, not a
+    /// closed sector).
+    angles: Option<(f64, f64)>,
     style: StyleState,
   },
   Disk {
@@ -1611,11 +1616,15 @@ fn parse_circle(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   } else {
     (1.0, 1.0)
   };
+  // Circle[center, r, {theta1, theta2}] draws only the arc over that angular
+  // range (an open curve stroked on one side), not the whole circle.
+  let angles = args.get(2).and_then(expr_to_point);
   prims.push(Primitive::CircleArc {
     cx,
     cy,
     rx,
     ry,
+    angles,
     style: style.clone(),
   });
 }
@@ -2479,6 +2488,7 @@ fn rotate_primitive(
       cy: dcy,
       rx,
       ry,
+      angles,
       style,
     } => {
       let (nx, ny) = rp(*dcx, *dcy);
@@ -2487,6 +2497,8 @@ fn rotate_primitive(
         cy: ny,
         rx: *rx,
         ry: *ry,
+        // Rotating the circle rotates its arc's angular range too.
+        angles: angles.map(|(a1, a2)| (a1 + angle, a2 + angle)),
         style: style.clone(),
       }
     }
@@ -3237,6 +3249,7 @@ fn render_primitive(
       cy,
       rx,
       ry,
+      angles,
       style,
     } => {
       let scx = coord_x(*cx, bb, svg_w);
@@ -3246,12 +3259,36 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
       let dash = dash_attr(&style.dashing, bb, svg_w);
-      out.push_str(&format!(
-        "<ellipse cx=\"{scx:.2}\" cy=\"{scy:.2}\" rx=\"{srx:.2}\" ry=\"{sry:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
-        color.to_svg_rgb(),
-        color.opacity_attr(),
-        dash,
-      ));
+      // A partial angular range draws only that open arc (stroked on one
+      // side); a full turn (or no range) draws the whole circle as an ellipse.
+      let partial = angles
+        .filter(|(a1, a2)| (a2 - a1).abs() < std::f64::consts::TAU - 1e-9);
+      if let Some((a1, a2)) = partial {
+        // SVG y is flipped, so negate the sine component; sweep-flag 0 then
+        // traces the arc in the mathematical (counter-clockwise) direction.
+        let x1 = scx + srx * a1.cos();
+        let y1 = scy - sry * a1.sin();
+        let x2 = scx + srx * a2.cos();
+        let y2 = scy - sry * a2.sin();
+        let large_arc = if (a2 - a1).abs() > std::f64::consts::PI {
+          1
+        } else {
+          0
+        };
+        out.push_str(&format!(
+          "<path d=\"M {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} 0 {x2:.2},{y2:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
+          color.to_svg_rgb(),
+          color.opacity_attr(),
+          dash,
+        ));
+      } else {
+        out.push_str(&format!(
+          "<ellipse cx=\"{scx:.2}\" cy=\"{scy:.2}\" rx=\"{srx:.2}\" ry=\"{sry:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
+          color.to_svg_rgb(),
+          color.opacity_attr(),
+          dash,
+        ));
+      }
     }
     Primitive::Disk {
       cx,
