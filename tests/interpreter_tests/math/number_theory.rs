@@ -3015,6 +3015,18 @@ mod coprime_q {
     assert_eq!(interpret("CoprimeQ[2, 4, 5]").unwrap(), "False");
   }
 
+  // GCD[0, n] = |n|, so CoprimeQ with a zero argument is True only when the
+  // other value is a unit. A zero must not be coerced to 1.
+  #[test]
+  fn zero_argument() {
+    assert_eq!(interpret("CoprimeQ[0, 0]").unwrap(), "False");
+    assert_eq!(interpret("CoprimeQ[0, 5]").unwrap(), "False");
+    assert_eq!(interpret("CoprimeQ[0, 1]").unwrap(), "True");
+    assert_eq!(interpret("CoprimeQ[0, -1]").unwrap(), "True");
+    // A zero in a triple makes the whole set non-coprime with any non-unit.
+    assert_eq!(interpret("CoprimeQ[0, 5, 7]").unwrap(), "False");
+  }
+
   // Gaussian integers are coprime iff their gcd over Z[i] is a unit.
   #[test]
   fn gaussian_integers() {

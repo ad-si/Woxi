@@ -4145,10 +4145,13 @@ pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Check all pairs are coprime
+  // Check all pairs are coprime, i.e. GCD == 1. A zero argument must NOT be
+  // coerced to 1: GCD[0, n] = |n|, so CoprimeQ[0, 5] is False and only
+  // CoprimeQ[0, 1] (GCD 1) is True. The Euclidean loop already handles a
+  // zero operand, leaving the other value as the gcd.
   for i in 0..nums.len() {
     for j in (i + 1)..nums.len() {
-      let (mut a, mut b) = (nums[i].max(1), nums[j].max(1));
+      let (mut a, mut b) = (nums[i], nums[j]);
       while b != 0 {
         let temp = b;
         b = a % b;
