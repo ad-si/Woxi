@@ -11,7 +11,7 @@ use iced::widget::svg;
 use woxi::functions::graphics::{
   DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
   apply_manipulate_mutations, build_manipulate_display, extract_control_spec,
-  extract_manipulate_spec,
+  extract_list_animate_spec, extract_manipulate_spec,
 };
 use woxi::syntax::Expr;
 
@@ -147,8 +147,12 @@ impl ManipulateState {
   /// `None` if `expr` is not a well-formed Manipulate (in which case
   /// the caller should fall back to the normal text/graphics path).
   pub fn from_expr(expr: &Expr) -> Option<Self> {
-    let spec =
-      extract_manipulate_spec(expr).or_else(|| extract_control_spec(expr))?;
+    // Manipulate/Animate, a standalone Control, or a ListAnimate frame list
+    // all back an interactive widget. (Native auto-play for Animate/ListAnimate
+    // is a follow-up; here they render as an interactive frame slider.)
+    let spec = extract_manipulate_spec(expr)
+      .or_else(|| extract_control_spec(expr))
+      .or_else(|| extract_list_animate_spec(expr))?;
     let controls = controls_from_spec(&spec);
     // Line each control up with its `Enabled` condition (if any) by name.
     let control_enabled: Vec<Option<String>> = controls

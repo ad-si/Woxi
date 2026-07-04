@@ -11449,6 +11449,12 @@ pub struct ManipulateSpec {
   /// while `YinYang` is `True`). Controls with no `Enabled` option (or the
   /// trivial `Enabled -> True`) do not appear here and stay always enabled.
   pub control_enabled: Vec<(String, String)>,
+  /// Whether this spec should auto-play, i.e. it came from `Animate[…]` or
+  /// `ListAnimate[…]`. An animated widget advances its first continuous
+  /// control on a timer (with a play/pause toggle) instead of sitting still
+  /// until the user drags a slider. Plain `Manipulate`/`Control` widgets leave
+  /// this `false`.
+  pub animated: bool,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -11468,19 +11474,22 @@ enum ParsedControl {
   State { name: String, value: String },
 }
 
-/// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]`
-/// expression. Returns `None` if the expression is not a well-formed
-/// Manipulate (e.g. `Manipulate[]`, `Manipulate[expr]`, or a spec that
-/// isn't a list). In those cases the caller should fall back to the
-/// standard text/graphics output path.
+/// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]` or
+/// `Animate[…]` expression. `Animate` shares `Manipulate`'s argument shape
+/// (a body followed by `{u, umin, umax}`-style control specs) but auto-plays,
+/// so it produces the same spec with `animated` set. Returns `None` if the
+/// expression is not a well-formed Manipulate/Animate (e.g. `Manipulate[]`,
+/// `Manipulate[expr]`, or a spec that isn't a list). In those cases the caller
+/// should fall back to the standard text/graphics output path.
 pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let (name, args) = match expr {
     Expr::FunctionCall { name, args } => (name, args),
     _ => return None,
   };
-  if name != "Manipulate" || args.len() < 2 {
+  if (name != "Manipulate" && name != "Animate") || args.len() < 2 {
     return None;
   }
+  let animated = name == "Animate";
 
   let body_code = crate::syntax::expr_to_input_form(&args[0]);
   let mut controls = Vec::with_capacity(args.len() - 1);
@@ -11552,6 +11561,54 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays,
     initialization,
     control_enabled,
+    animated,
+  })
+}
+
+/// Attempt to extract a `ManipulateSpec` from a held `ListAnimate[{e1, …, en}]`
+/// expression. Each element is one animation frame; the widget cycles through
+/// them by binding an integer frame index and displaying the selected element.
+/// It renders as an auto-playing single-slider Manipulate whose body is
+/// `Part[{e1, …, en}, i]`. Returns `None` when the argument is not a non-empty
+/// list literal (e.g. `ListAnimate[expr]` or `ListAnimate[{}]`), so the caller
+/// falls back to the plain output path.
+pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  let (name, args) = match expr {
+    Expr::FunctionCall { name, args } => (name, args),
+    _ => return None,
+  };
+  if name != "ListAnimate" || args.is_empty() {
+    return None;
+  }
+  let frames = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return None,
+  };
+  let n = frames.len();
+  let list_code = crate::syntax::expr_to_input_form(&args[0]);
+  // Frame index `i` runs 1..n in unit steps; the body picks that element.
+  // `Round` guards against any float drift the slider might introduce.
+  let body_code = format!("Part[{}, Round[i]]", list_code);
+  let control = ManipulateControl::Continuous {
+    name: "i".to_string(),
+    min: 1.0,
+    max: n as f64,
+    step: Some(1.0),
+    initial: 1.0,
+    label: "i".to_string(),
+    label_runs: vec![LabelRun {
+      text: "i".to_string(),
+      italic: false,
+    }],
+  };
+  Some(ManipulateSpec {
+    body_code,
+    controls: vec![control],
+    state: Vec::new(),
+    displays: Vec::new(),
+    initialization: None,
+    control_enabled: Vec::new(),
+    animated: true,
   })
 }
 
@@ -11595,6 +11652,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled,
+    animated: false,
   })
 }
 
@@ -12637,12 +12695,19 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     .map(|d| format!(r#""{}""#, json_escape_manipulate(d)))
     .collect();
 
+  let animated_json = if spec.animated {
+    r#","animated":true"#
+  } else {
+    ""
+  };
+
   format!(
-    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]"#,
+    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}"#,
     json_escape_manipulate(&spec.body_code),
     ctrl_parts.join(","),
     state_parts.join(","),
     display_parts.join(","),
+    animated_json,
   )
 }
 

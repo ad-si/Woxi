@@ -547,6 +547,36 @@ pre.output-box {
   cursor: not-allowed;
 }
 
+/* Animate/ListAnimate play-pause bar. The controls panel is a shared grid, so
+   span every column and left-align the button under the sliders. */
+.manipulate-animator {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  padding-top: 0.15rem;
+}
+
+.manipulate-play {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  width: 2rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.manipulate-play:hover {
+  background: var(--surface-3, rgba(127, 127, 127, 0.22));
+}
+
 /* 2D slider pad (ControlType -> Slider2D) */
 .manipulate-pad {
   position: relative;

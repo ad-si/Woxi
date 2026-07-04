@@ -344,10 +344,12 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
   // is HoldAll-ish (see functions::graphics::manipulate_ast), so its body
   // and variable symbols remain intact.
   let expr = crate::interpret_to_expr(stmt).ok()?;
-  // A top-level Manipulate[…] or a standalone Control[…] both render as an
-  // interactive control widget backed by a ManipulateSpec.
+  // A top-level Manipulate[…]/Animate[…], a standalone Control[…], or a
+  // ListAnimate[{…}] all render as an interactive control widget backed by a
+  // ManipulateSpec (Animate/ListAnimate additionally auto-play).
   let spec = crate::functions::graphics::extract_manipulate_spec(&expr)
-    .or_else(|| crate::functions::graphics::extract_control_spec(&expr))?;
+    .or_else(|| crate::functions::graphics::extract_control_spec(&expr))
+    .or_else(|| crate::functions::graphics::extract_list_animate_spec(&expr))?;
 
   // Produce an initial rendering by substituting initial values via Block.
   let bindings = crate::functions::graphics::manipulate_initial_bindings(&spec);

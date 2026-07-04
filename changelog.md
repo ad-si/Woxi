@@ -13,6 +13,14 @@
     `ContinuousAction`, and `AppearanceElements` do the same. `ControlActive`
     now evaluates: `ControlActive[active, normal]` returns its inactive form
     `normal` outside an actively-manipulated control.
+- Render `Animate[…]` and `ListAnimate[{…}]` as interactive, auto-playing
+    widgets in the Playground (and as interactive slider widgets in Studio).
+    `Animate` reuses the `Manipulate` control pipeline but auto-advances its
+    first continuous slider on a timer with a play/pause button;
+    `ListAnimate[{e1, …, en}]` cycles a frame index through the list, showing
+    one element per frame. Both hold their body appropriately (`Animate` like
+    `Manipulate`; `ListAnimate` evaluates its frame list first, matching
+    Wolfram).
 - Render `TraditionalForm` mathematics in conventional, TeX-like notation in
     the Playground and Studio typeset SVG output. `HoldForm` is now invisible;
     `Sum`/`Product` become large `∑`/`∏` operators with limits above and below;
