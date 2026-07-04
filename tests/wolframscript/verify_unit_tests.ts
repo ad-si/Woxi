@@ -584,6 +584,72 @@ function main() {
     /\bPlay\[/,            // Wolfram compiles Play[] into a Sound[SampledSoundFunction[...]]
                             // with a CompiledFunction body; Woxi wraps the inert Play[] in a
                             // Sound object that renders as -Sound-, so the printed forms differ.
+
+    // ── Whole subsystems whose canonical form is an implementation-specific
+    // internal representation that can never match byte-for-byte ──────────────
+
+    // Audio objects: Wolfram stores samples as a quantized NumericArray[...,
+    // "Real32"] and prints the full option list (Appearance, AudioOutputDevice,
+    // SampleRate, SoundVolume); Woxi keeps the plain {samples} + SampleRate form
+    // (and matches Wolfram byte-for-byte on WAV export). Measurement/statistic
+    // divergences (channel wrapping {0.5} vs 0.5, int-vs-real, last-ULP filter
+    // coefficients) all stem from this same internal-representation choice.
+    /\bAudio\[/,
+    /\bAudioCapture\[/,     // Wolfram keeps AudioCapture[] symbolic (needs a device);
+                            // Woxi returns $Failed with no capture device.
+    /\bWebAudioSearch\[/,   // Network-dependent; Wolfram returns Failure[...], Woxi $Failed.
+
+    // AssessmentFunction / QuestionObject: Wolfram's AssessmentResultObject and
+    // AssessmentFunction embed a live Timestamp -> DateObject[<now>] plus a rich
+    // settings association, so the printed form is non-deterministic and can
+    // never match; Woxi keeps a simplified deterministic form.
+    /\bAssessmentFunction\[/,
+    /\bQuestionObject\[/,
+
+    // Molecule objects: Wolfram stores atoms as bare element strings ("O") with a
+    // trailing bond-stereo slot ({}), and renders MolecularFormula as a
+    // Row[{Subscript[...]}] box; Woxi wraps atoms in Atom["O"], adds implicit
+    // hydrogens, and returns a plain "C8H10N4O2" string. Internal representation.
+    /\bMolecule/,
+
+    // Music objects: Wolfram represents MusicPitch/MusicChord/MusicNote/
+    // MusicDuration as normalized <|...|> associations (MIDINumber / Accidental /
+    // BeatDuration keys); Woxi uses named-string forms ("C4") and a reduced
+    // association. Internal representation differs across the whole subsystem.
+    /\bMusic(Pitch|Chord|Note|Duration)\[/,
+
+    // Wavelet subsystem: Wolfram renders filter coefficients as machine reals
+    // (0.5) where Woxi keeps exact rationals (1/2), wraps DiscreteWaveletData
+    // values one level deeper ({{...}} vs {...}), carries default arguments
+    // (SymletWavelet[4], CDFWavelet["9/7"], MexicanHatWavelet[1]) and diverges by
+    // last-ULP in the transforms. Value-correct, representation-divergent.
+    /Wavelet/,
+
+    // TimeSeries: Wolfram's TimeSeries stores an internal temporal-path object
+    // whose Length is the number of data points and whose values are coerced to
+    // reals; Normal renders dates as DateObject[..., "Day"] granularity. Woxi's
+    // literal {{t, v}, ...} model diverges on Length, Mean type, and date form.
+    /\bTimeSeries\[/,
+
+    // LUDecomposition: Wolfram returns StructuredArray-wrapped
+    // LowerTriangularMatrix / UpperTriangularMatrix / PermutationMatrix objects;
+    // Woxi returns the classic {combined-LU, permutation, condition} triple.
+    /\bLUDecomposition\[/,
+
+    // DateInterval: Wolfram appends two trailing calendar/timezone slots
+    // (Automatic, Automatic or "UT", Automatic) that Woxi's 4-argument canonical
+    // form omits. See project_dateinterval_canonical_form.
+    /\bDateInterval\[/,
+
+    // WikidataData: network-dependent knowledge-base lookups; Wolfram returns
+    // arbitrary-precision quantities / DateObject granularity that Woxi's cached
+    // data rounds differently.
+    /\bWikidataData\[/,
+
+    // FindShortestCurve: geodesic tie-breaking (which semicircle) and int-vs-real
+    // coordinate preservation are implementation-specific; the numeric Annulus
+    // solver is unimplemented.
+    /\bFindShortestCurve\[/,
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.
@@ -1138,6 +1204,88 @@ function main() {
     // (HoldAll) bodies aren't Orderless-sorted — a broad held-expression form
     // difference, not specific to Sum.
     "Sum[1/(2 n - 1), {n, 1, Infinity}]",
+
+    // ── Individual CAS form / gap divergences (value-correct or unimplemented) ──
+
+    // Trace: Wolfram wraps each evaluation step in HoldCompleteForm[...]; Woxi
+    // uses HoldForm[...]. Step-wrapper head differs, content matches.
+    "Trace[1 + 2]",
+    "Trace[3 * 4]",
+    // GeometricTest["Collinear"]: Wolfram expands to the collinearity
+    // determinant equation; Woxi keeps the predicate symbolic.
+    "GeometricTest[{{a, b}, {c, d}, {e, f}}, \"Collinear\"]",
+    // ShortTimeFourier / WienerFilter: STFT windowing convention (sum vs mean,
+    // complex vs real first bin) and last-ULP filter differences.
+    "ShortTimeFourier[{1., 2., 3., 4., 5., 6., 7., 8.}][\"Data\"][[1, 1]]",
+    "WienerFilter[{1., 2., 3., 4.}, 1, 0]",
+    // MovingMap[Mean, ...]: value-correct windows but Woxi keeps exact rationals
+    // (5/2) where Wolfram coerces to reals (2.5).
+    "MovingMap[Mean, {1, 2, 3, 4, 5}, 3]",
+    // Integrate[Log[...]]: Wolfram factors out x (x*(-1 + Log[x])); Woxi keeps
+    // the expanded antiderivative. Same value.
+    "Integrate[Log[x], x]",
+    "Integrate[Log[x]^2, x]",
+    "Integrate[Log[x]^3, x]",
+    "Integrate[Log[y]^2, y]",
+    "Integrate[x*Log[x], x]",
+    // SeriesCoefficient[Exp[x^2], {x, 0, n}]: Wolfram returns a symbolic-n
+    // Piecewise/Gamma closed form; Woxi keeps it unevaluated.
+    "SeriesCoefficient[Exp[x^2], {x, 0, n}]",
+    // Fourier transforms: Pi/Sqrt[2*Pi] vs Sqrt[Pi/2] — value-equal, differ only
+    // in the radical-folding of the normalization constant.
+    "FourierTransform[1/t, t, w]",
+    "FourierSinTransform[Cos[t]/t, t, 2]",
+    "FourierSinTransform[Cos[t]/t, t, 1]",
+    // AsymptoticIntegrate at x -> 0: Wolfram returns the leading asymptotic term
+    // (0); Woxi computes the exact integral (x^2/3, x^5/6).
+    "AsymptoticIntegrate[(t*x)^2, {t, 0, 1}, x -> 0]",
+    "AsymptoticIntegrate[(t*x)^5, {t, 0, 1}, x -> 0]",
+    // MidDate: seconds field renders as 0 (Wolfram) vs 0. (Woxi) in the midpoint
+    // DateObject.
+    "MidDate[{DateObject[{2024, 10, 1}], DateObject[{2024, 10, 7}, \"Week\"]}]",
+    // RiceDistribution Mean: Sqrt[Pi/2] vs Sqrt[Pi]/Sqrt[2] — value-equal radical
+    // folding difference.
+    "Mean[RiceDistribution[1, 1]]",
+    "Mean[RiceDistribution[1, 2]]",
+    // ShortestCurveDistance on a 1D line: 1 (Wolfram) vs 1. (Woxi).
+    "ShortestCurveDistance[Line[{{0}, {1}}], {0}, {1}]",
+    // Region[Style[...]]: Wolfram lowers the style into a {Properties -> {...}}
+    // region-properties record; Woxi keeps the Style[...] wrapper.
+    "Region[Style[Ball[], Yellow]]",
+    "Region[Style[Disk[{a, b}], Green]]",
+    // Torus[]: Wolfram fills in default arguments Torus[{0,0,0}, {1/2, 1}]; Woxi
+    // keeps the bare Torus[] symbolic.
+    "Torus[]",
+    // RegionMeasure[Parallelogram[3D]]: Woxi computes the area (2); Wolfram
+    // leaves the higher-embedding parallelogram measure unevaluated.
+    "RegionMeasure[Parallelogram[{0, 0, 0}, {{1, 0, 0}, {0, 2, 0}}]]",
+    // Dendrogram: Wolfram returns a full Graphics[...] rendering; Woxi keeps the
+    // call symbolic for a non-clusterable input.
+    "Dendrogram[{1, \"a\"}]",
+    // HTTPRequest: Wolfram keeps the URL[...] wrapper and normalizes a lone
+    // options association into the two-argument HTTPRequest[<||>, opts] form;
+    // Woxi unwraps URL[...] and keeps the single-argument association form.
+    // Changing either ripples through the property-extraction path.
+    "HTTPRequest[URL[\"https://example.com\"]]",
+    "HTTPRequest[<|\"Method\" -> \"POST\"|>]",
+    // RandomTime[][[2]]: the DateObject type slot renders as "Instant" (string)
+    // in Wolfram vs Instant (symbol) in Woxi.
+    "RandomTime[][[2]]",
+    // PolyGamma[-1.5]: last-ULP floating-point difference.
+    "PolyGamma[-1.5]",
+    // PolyhedronData Volume: (5*GoldenRatio^2)/6 vs (5*(3 + Sqrt[5]))/12 —
+    // value-equal, GoldenRatio-folding difference.
+    "PolyhedronData[\"Icosahedron\", \"Volume\"]",
+    // GeneratingFunction[1/(2n+1), n, x]: Wolfram returns ArcTanh[Sqrt[x]]/Sqrt[x];
+    // Woxi keeps the sum unevaluated.
+    "GeneratingFunction[1/(2 n + 1), n, x]",
+    // Transliterate to non-Latin scripts (Hiragana) is unimplemented; Woxi keeps
+    // the call symbolic.
+    "Transliterate[\"tadaima\", \"Hiragana\"]",
+    // Around[<distribution>]: last-digit std difference (Uniform) and Woxi
+    // evaluating Poisson to Around[4., 2.] where Wolfram keeps it symbolic.
+    "Around[UniformDistribution[{0, 1}]]",
+    "Around[PoissonDistribution[4]]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
