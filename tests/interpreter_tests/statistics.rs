@@ -1812,6 +1812,32 @@ mod variance_extended {
     assert_eq!(interpret("Variance[{}]").unwrap(), "Variance[{}]");
     assert_eq!(interpret("Variance[{1}]").unwrap(), "Variance[{1}]");
   }
+
+  #[test]
+  fn variance_single_element_emits_shlen() {
+    clear_state();
+    assert_eq!(interpret("Variance[{5}]").unwrap(), "Variance[{5}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Variance::shlen: The argument {5} should have at least two elements."
+      )),
+      "expected Variance::shlen, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn variance_empty_list_emits_nothing() {
+    // An empty list returns unevaluated silently — no shlen message,
+    // unlike a single-element list (matching wolframscript).
+    clear_state();
+    assert_eq!(interpret("Variance[{}]").unwrap(), "Variance[{}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("::shlen")),
+      "unexpected shlen for empty list: {msgs:?}"
+    );
+  }
 }
 
 mod stddev_extended {
@@ -1839,6 +1865,38 @@ mod stddev_extended {
     assert_eq!(
       interpret("StandardDeviation[{1}]").unwrap(),
       "StandardDeviation[{1}]"
+    );
+  }
+
+  #[test]
+  fn stddev_single_element_emits_shlen() {
+    clear_state();
+    assert_eq!(
+      interpret("StandardDeviation[{5}]").unwrap(),
+      "StandardDeviation[{5}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StandardDeviation::shlen: The argument {5} should have at least two elements."
+      )),
+      "expected StandardDeviation::shlen, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn stddev_empty_list_emits_nothing() {
+    // An empty list returns unevaluated silently — no shlen message,
+    // unlike a single-element list (matching wolframscript).
+    clear_state();
+    assert_eq!(
+      interpret("StandardDeviation[{}]").unwrap(),
+      "StandardDeviation[{}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("::shlen")),
+      "unexpected shlen for empty list: {msgs:?}"
     );
   }
 }

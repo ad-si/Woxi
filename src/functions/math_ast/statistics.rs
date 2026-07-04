@@ -761,10 +761,14 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::List(items) => {
       if items.len() < 2 {
-        crate::emit_message(&format!(
-          "Variance::shlen: The argument {} should have at least two elements.",
-          crate::syntax::expr_to_string(&args[0])
-        ));
+        // A single-element list triggers the shlen message, but an empty
+        // list returns unevaluated silently (matching wolframscript).
+        if items.len() == 1 {
+          crate::emit_message(&format!(
+            "Variance::shlen: The argument {} should have at least two elements.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
+        }
         return Ok(Expr::FunctionCall {
           name: "Variance".to_string(),
           args: vec![args[0].clone()].into(),
@@ -1065,14 +1069,17 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Emit the StandardDeviation::shlen warning directly when the list has
   // fewer than two elements, instead of falling through to Variance's
-  // warning. Use ::is_quiet to suppress the inner Variance message.
+  // warning. A single-element list triggers the message; an empty list
+  // returns unevaluated silently (matching wolframscript).
   if let Expr::List(items) = &args[0]
     && items.len() < 2
   {
-    crate::emit_message(&format!(
-      "StandardDeviation::shlen: The argument {} should have at least two elements.",
-      crate::syntax::expr_to_string(&args[0])
-    ));
+    if items.len() == 1 {
+      crate::emit_message(&format!(
+        "StandardDeviation::shlen: The argument {} should have at least two elements.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+    }
     return Ok(Expr::FunctionCall {
       name: "StandardDeviation".to_string(),
       args: args.to_vec().into(),
