@@ -3346,7 +3346,7 @@ PointFigureChart,,🚫,,8.0,3427
 ScalingMatrix,Scaling matrix from a list of factors (diagonal) or a factor and a direction vector,✅,pure,6.0,3427
 SignedRankTest,,,,8.0,3427
 ThueMorse,Returns the parity of the number of 1-bits in the binary expansion of n (Listable),✅,pure,10.2,3427
-VertexQ,,,,8.0,3427
+VertexQ,True if a vertex is in a graph (False for any non-graph first argument),✅,pure,8.0,3427
 BrayCurtisDistance,Bray-Curtis distance between vectors,✅,none,6.0,3440
 EdgeCost,,,,9.0,3440
 GaborFilter,,🚫,,9.0,3440
@@ -3446,7 +3446,7 @@ LessLess,,,,3.0,3537
 LongestCommonSubsequencePositions,Returns the {start end} spans of the longest contiguous common subsequence in two strings or lists,✅,pure,10.2,3537
 PeriodogramArray,,🚫,,9.0,3537
 PoleZeroMarkers,,,,8.0,3537
-ReverseGraph,,,,8.0,3537
+ReverseGraph,Graph with every directed edge reversed; edges emitted in vertex-position order like wolframscript,✅,pure,8.0,3537
 SemialgebraicComponentInstances,,,,6.0,3537
 SubStar,Subscript star notation,✅,none,6.0,3537
 AbsoluteCorrelation,Uncentered (second-moment) correlation Mean[v1*Conjugate[v2]] of two vectors or the correlation matrix of a data matrix,✅,pure,9.0,3566

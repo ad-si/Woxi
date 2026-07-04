@@ -2283,6 +2283,93 @@ pub fn transitive_closure_graph_ast(
   })
 }
 
+/// ReverseGraph[g] - the graph with every directed edge reversed (undirected
+/// edges are unchanged). The vertex list is kept as is; the edges come out
+/// stably sorted by (source position, target position) in the vertex list —
+/// the readout order wolframscript produces from its reversed adjacency
+/// structure.
+pub fn reverse_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "ReverseGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  let not_a_graph = || {
+    crate::emit_message(&format!(
+      "ReverseGraph::graph: A graph object is expected at position 1 in {}.",
+      crate::syntax::expr_to_string(&unevaluated())
+    ));
+    Ok(unevaluated())
+  };
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated());
+  }
+  let (vertices, edges, extra) = match &args[0] {
+    Expr::FunctionCall { name, args: gargs }
+      if name == "Graph" && gargs.len() >= 2 =>
+    {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => {
+          (v.clone(), e.clone(), gargs[2..].to_vec())
+        }
+        _ => return not_a_graph(),
+      }
+    }
+    _ => return not_a_graph(),
+  };
+
+  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+
+  // Reverse directed edges in place, then stable-sort everything by the
+  // vertex-list positions of the (new) endpoints.
+  let mut reversed: Vec<(usize, usize, Expr)> = Vec::with_capacity(edges.len());
+  for edge in edges.iter() {
+    // `a -> b` edges may still be raw Rule nodes in the explicit
+    // Graph[vertices, edges] form.
+    let (head, from, to) = match edge {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        (name.as_str(), &eargs[0], &eargs[1])
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => ("Rule", pattern.as_ref(), replacement.as_ref()),
+      _ => return not_a_graph(),
+    };
+    let flipped = match head {
+      "DirectedEdge" | "Rule" => Expr::FunctionCall {
+        name: "DirectedEdge".to_string(),
+        args: vec![to.clone(), from.clone()].into(),
+      },
+      "UndirectedEdge" => edge.clone(),
+      _ => return not_a_graph(),
+    };
+    let (src, dst) = match &flipped {
+      Expr::FunctionCall { args: fargs, .. } => (&fargs[0], &fargs[1]),
+      _ => unreachable!(),
+    };
+    match (index.get(&key(src)), index.get(&key(dst))) {
+      (Some(&s), Some(&d)) => reversed.push((s, d, flipped)),
+      _ => return not_a_graph(),
+    }
+  }
+  reversed.sort_by_key(|(s, d, _)| (*s, *d));
+
+  let mut new_args = vec![
+    Expr::List(vertices),
+    Expr::List(reversed.into_iter().map(|(_, _, e)| e).collect()),
+  ];
+  new_args.extend(extra);
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: new_args.into(),
+  })
+}
+
 /// FindIndependentVertexSet[g] - one maximum independent vertex set,
 /// wrapped in a list. Among all maximum sets wolframscript returns the
 /// lexicographically first by vertex-list position (so Graph[{2 <-> 1}]

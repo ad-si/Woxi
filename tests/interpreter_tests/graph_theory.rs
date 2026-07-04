@@ -4784,3 +4784,143 @@ mod edge_betweenness_centrality {
     );
   }
 }
+
+mod vertex_q_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn vertex_membership() {
+    assert_eq!(
+      interpret("VertexQ[Graph[{1 -> 2, 2 -> 3}], 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("VertexQ[Graph[{1 -> 2, 2 -> 3}], 5]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"VertexQ[Graph[{"a" -> "b"}], "a"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"VertexQ[Graph[{1 -> 2}], "a"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  // A non-graph first argument gives False without any message.
+  #[test]
+  fn non_graph_is_false() {
+    assert_eq!(interpret("VertexQ[{1, 2}, 1]").unwrap(), "False");
+  }
+}
+
+mod reverse_graph_tests {
+  use woxi::interpret;
+
+  // Directed edges flip; the edge list comes out stably sorted by the
+  // vertex-list positions of the new endpoints (wolframscript's readout
+  // order from the reversed adjacency structure).
+  #[test]
+  fn reverses_directed_edges() {
+    assert_eq!(
+      interpret("EdgeList[ReverseGraph[Graph[{1 -> 2, 2 -> 3, 1 -> 3}]]]")
+        .unwrap(),
+      "{2 \u{f3d5} 1, 3 \u{f3d5} 1, 3 \u{f3d5} 2}"
+    );
+    assert_eq!(
+      interpret("EdgeList[ReverseGraph[Graph[{3 -> 1, 2 -> 1, 1 -> 2}]]]")
+        .unwrap(),
+      "{1 \u{f3d5} 3, 1 \u{f3d5} 2, 2 \u{f3d5} 1}"
+    );
+    assert_eq!(
+      interpret("EdgeList[ReverseGraph[Graph[{1 -> 3, 1 -> 2}]]]").unwrap(),
+      "{3 \u{f3d5} 1, 2 \u{f3d5} 1}"
+    );
+    assert_eq!(
+      interpret(r#"EdgeList[ReverseGraph[Graph[{"b" -> "a", "a" -> "c"}]]]"#)
+        .unwrap(),
+      "{a \u{f3d5} b, c \u{f3d5} a}"
+    );
+    // Self-loops stay in place.
+    assert_eq!(
+      interpret("EdgeList[ReverseGraph[Graph[{2 -> 2, 1 -> 2}]]]").unwrap(),
+      "{2 \u{f3d5} 2, 2 \u{f3d5} 1}"
+    );
+  }
+
+  // The vertex list (and its order) is preserved, including isolated
+  // vertices from the explicit Graph[vertices, edges] form.
+  #[test]
+  fn preserves_vertex_order() {
+    assert_eq!(
+      interpret("VertexList[ReverseGraph[Graph[{1 -> 2, 2 -> 3, 1 -> 3}]]]")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[ReverseGraph[Graph[{4, 3, 2, 1}, {1 -> 2, 3 -> 2}]]]"
+      )
+      .unwrap(),
+      "{2 \u{f3d5} 3, 2 \u{f3d5} 1}"
+    );
+    assert_eq!(
+      interpret(
+        "VertexList[ReverseGraph[Graph[{4, 3, 2, 1}, {1 -> 2, 3 -> 2}]]]"
+      )
+      .unwrap(),
+      "{4, 3, 2, 1}"
+    );
+    assert_eq!(
+      interpret(r#"VertexList[ReverseGraph[Graph[{"x", "y"}, {"x" -> "y"}]]]"#)
+        .unwrap(),
+      "{x, y}"
+    );
+  }
+
+  #[test]
+  fn undirected_edges_unchanged() {
+    assert_eq!(
+      interpret(
+        "EdgeList[ReverseGraph[Graph[{UndirectedEdge[2, 3], UndirectedEdge[1, 2]}]]]"
+      )
+      .unwrap(),
+      "{2 \u{f3d4} 3, 1 \u{f3d4} 2}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[ReverseGraph[Graph[{UndirectedEdge[1, 2], 2 -> 3}]]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d4} 2, 3 \u{f3d5} 2}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[ReverseGraph[Graph[{UndirectedEdge[3, 1], 2 -> 1}]]]"
+      )
+      .unwrap(),
+      "{3 \u{f3d4} 1, 1 \u{f3d5} 2}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[ReverseGraph[Graph[{3 -> 2, UndirectedEdge[1, 2], 2 -> 1}]]]"
+      )
+      .unwrap(),
+      "{2 \u{f3d5} 3, 1 \u{f3d4} 2, 1 \u{f3d5} 2}"
+    );
+    assert_eq!(
+      interpret("EdgeList[ReverseGraph[Graph[{}, {}]]]").unwrap(),
+      "{}"
+    );
+  }
+
+  // A non-graph argument echoes with the ::graph message.
+  #[test]
+  fn non_graph_stays_unevaluated() {
+    assert_eq!(
+      interpret("ReverseGraph[{1, 2}]").unwrap(),
+      "ReverseGraph[{1, 2}]"
+    );
+  }
+}
