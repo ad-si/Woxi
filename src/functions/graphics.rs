@@ -4894,14 +4894,20 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let large_op = matches!(&args[0],
           Expr::String(s) if large_operator_scale(s).is_some());
         if large_op {
-          let sup_x = base.width * 0.66;
+          // Set the limits beside the sign, clear of its ink: the upper bound
+          // at the top-right tip and the lower bound at the bottom, a little
+          // left of the upper (following the sign's slant). Both start at (or
+          // past) the sign's right edge so neither overlaps the stroke.
+          let gap = font_size * 0.08;
+          let sup_x = base.width + gap;
           let sup_y = 0.0;
-          let sub_x = base.width * 0.28;
+          let sub_x = base.width * 0.72 + gap;
           let sub_y = (base.height - sub.height).max(base.baseline);
           let width = base
             .width
             .max(sup_x + sup.width)
-            .max(sub_x + sub.width);
+            .max(sub_x + sub.width)
+            + gap;
           let elements = format!(
             "{}{}{}",
             base.translate(0.0, 0.0),
