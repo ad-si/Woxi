@@ -1494,10 +1494,20 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
+      let call = Expr::FunctionCall {
         name: "BellB".to_string(),
         args: args.to_vec().into(),
-      });
+      };
+      // As with BernoulliB/EulerE: a concrete first argument that isn't a
+      // non-negative integer emits intnm; symbolic stays silent; the Bell
+      // polynomial form never emits it.
+      if args.len() == 1 && is_concrete_number(&args[0]) {
+        crate::emit_message(&format!(
+          "BellB::intnm: Non-negative machine-sized integer expected at position 1 in {}.",
+          crate::syntax::expr_to_message_form(&call)
+        ));
+      }
+      return Ok(call);
     }
   };
 

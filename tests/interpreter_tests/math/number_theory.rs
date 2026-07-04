@@ -3423,6 +3423,50 @@ mod bell_b {
       "185724268771078270438257767181908917499221852770"
     );
   }
+
+  // A concrete first argument that isn't a non-negative integer emits
+  // BellB::intnm and stays unevaluated (negative integer or non-integer).
+  #[test]
+  fn negative_index_emits_intnm() {
+    assert_eq!(interpret("BellB[-2]").unwrap(), "BellB[-2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BellB::intnm: Non-negative machine-sized integer expected at position 1 in BellB[-2]."
+      )),
+      "expected BellB::intnm, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn real_index_emits_intnm() {
+    assert_eq!(interpret("BellB[2.5]").unwrap(), "BellB[2.5]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BellB::intnm: Non-negative machine-sized integer expected at position 1 in BellB[2.5]."
+      )),
+      "expected BellB::intnm, got {msgs:?}"
+    );
+  }
+
+  // A symbolic argument stays silent, and the Bell polynomial form never
+  // emits the message.
+  #[test]
+  fn symbolic_and_polynomial_forms_stay_silent() {
+    assert_eq!(interpret("BellB[x]").unwrap(), "BellB[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("BellB::intnm")),
+      "unexpected intnm for symbolic arg, got {msgs:?}"
+    );
+    assert_eq!(interpret("BellB[-2, x]").unwrap(), "BellB[-2, x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("BellB::intnm")),
+      "unexpected intnm for polynomial form, got {msgs:?}"
+    );
+  }
 }
 
 mod bernoulli_b {
