@@ -9286,8 +9286,10 @@ mod cases {
   #[test]
   fn arc_coth_4() {
     assert_case(
-      r#"ArcCoth[0]; ArcCoth[1]; ArcCoth[0.0]; ArcCoth[0.5]"#,
-      r#"0.5493061443340549 - 1.5707963267948966*I"#,
+      // Round to avoid a last-ULP libm divergence between platforms in the
+      // real part (macOS ...549 vs Linux ...548).
+      r#"ArcCoth[0]; ArcCoth[1]; ArcCoth[0.0]; Round[ArcCoth[0.5], 0.0001]"#,
+      r#"0.5493 - 1.5708*I"#,
     );
   }
   #[test]

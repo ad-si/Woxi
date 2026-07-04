@@ -3418,9 +3418,11 @@ mod expand_threading {
 
   #[test]
   fn arccoth_half() {
+    // Round to avoid a last-ULP libm divergence between platforms in the real
+    // part (macOS ...549 vs Linux ...548).
     assert_eq!(
-      interpret("ArcCoth[0.5]").unwrap(),
-      "0.5493061443340549 - 1.5707963267948966*I"
+      interpret("Round[ArcCoth[0.5], 0.0001]").unwrap(),
+      "0.5493 - 1.5708*I"
     );
   }
 

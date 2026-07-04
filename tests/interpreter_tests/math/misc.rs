@@ -936,12 +936,14 @@ mod inverse_trig_identities {
   // The non-singular real branches are unchanged.
   #[test]
   fn arccoth_arccsch_real_branches_unchanged() {
-    assert_eq!(interpret("ArcCoth[2.0]").unwrap(), "0.5493061443340549");
+    // Round to avoid a last-ULP libm divergence between platforms
+    // (macOS ...549 vs Linux ...548).
+    assert_eq!(interpret("Round[ArcCoth[2.0], 0.001]").unwrap(), "0.549");
     assert_eq!(
-      interpret("ArcCoth[0.5]").unwrap(),
-      "0.5493061443340549 - 1.5707963267948966*I"
+      interpret("Round[ArcCoth[0.5], 0.0001]").unwrap(),
+      "0.5493 - 1.5708*I"
     );
-    assert_eq!(interpret("ArcCsch[2.0]").unwrap(), "0.48121182505960347");
+    assert_eq!(interpret("Round[ArcCsch[2.0], 0.0001]").unwrap(), "0.4812");
   }
 }
 
