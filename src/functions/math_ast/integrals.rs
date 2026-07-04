@@ -717,6 +717,10 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if *n == 1 {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     } else if *n > 1 {
+      // An inexact zero gives an inexact result: E_2(0.) = 1., not 1.
+      if matches!(z_expr, Expr::Real(_)) {
+        return Ok(Expr::Real(1.0 / (*n - 1) as f64));
+      }
       return Ok(make_rational(1, *n - 1));
     }
   }

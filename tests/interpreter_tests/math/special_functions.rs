@@ -2775,6 +2775,21 @@ mod exp_integral_e {
     assert_eq!(interpret("ExpIntegralE[3, 0]").unwrap(), "1/2");
   }
 
+  // E_n(0) = 1/(n-1), but an inexact zero argument gives an inexact result:
+  // E_2(0.) is 1., not the exact 1, and E_3(0.) is 0.5, not 1/2. Per
+  // wolframscript. (The exact-argument results above are unchanged.)
+  #[test]
+  fn inexact_zero_stays_real() {
+    assert_eq!(interpret("ExpIntegralE[2, 0.0]").unwrap(), "1.");
+    assert_eq!(interpret("Head[ExpIntegralE[2, 0.0]]").unwrap(), "Real");
+    assert_eq!(interpret("ExpIntegralE[3, 0.0]").unwrap(), "0.5");
+    // Order 1 still diverges to ComplexInfinity for an inexact zero.
+    assert_eq!(
+      interpret("ExpIntegralE[1, 0.0]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
   #[test]
   fn numeric_order_one() {
     let result: f64 =
