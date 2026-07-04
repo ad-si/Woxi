@@ -6727,10 +6727,11 @@ mod batch_inert_symbols_2 {
       interpret("Around[2, {0.1, 0.2}]^2").unwrap(),
       "Around[4., {0.4, 0.8}]"
     );
-    // Negative derivative (d(1/x)/dx < 0) swaps the sides.
+    // Power keeps the {minus, plus} order (wolframscript does not swap the
+    // sides for a negative derivative here, unlike Plus/Times).
     assert_eq!(
       interpret("Around[2, {0.1, 0.2}]^-1").unwrap(),
-      "Around[0.5, {0.05, 0.025}]"
+      "Around[0.5, {0.025, 0.05}]"
     );
   }
 
@@ -6765,15 +6766,15 @@ mod batch_inert_symbols_2 {
   }
 
   // Around[Interval[{a, b}]] treats the interval as a uniform distribution:
-  // Around[(a+b)/2, (b-a)/(2 Sqrt[3])].
+  // Around[(a+b)/2, (b-a)/2] — uncertainty is the interval half-width.
   #[test]
   fn around_from_interval() {
     assert_eq!(
       interpret("Around[Interval[{2, 4}]]").unwrap(),
-      "Around[3., 0.5773502691896258]"
+      "Around[3., 1.]"
     );
-    // A degenerate interval collapses to its point value.
-    assert_eq!(interpret("Around[Interval[{3, 3}]]").unwrap(), "3.");
+    // A degenerate interval collapses to its exact point value.
+    assert_eq!(interpret("Around[Interval[{3, 3}]]").unwrap(), "3");
   }
 
   // A non-distribution argument leaves the 1-argument form unevaluated.

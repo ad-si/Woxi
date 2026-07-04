@@ -8963,11 +8963,15 @@ pub fn try_around_times(args: &[Expr]) -> Option<Expr> {
 }
 
 /// Around[a, δ]^n = Around[a^n, |n·a^(n-1)|·δ] for a literal exponent n.
+/// Unlike Plus/Times, wolframscript does not swap the asymmetric sides for a
+/// negative derivative here — it scales both sides by the absolute partial and
+/// keeps their `{minus, plus}` order.
 pub fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
   let ar = as_around(base)?;
   let n = around_literal(exp)?;
   let value = ar.value.powf(n);
-  let (m, p) = side_contributions(n * ar.value.powf(n - 1.0), &ar);
+  let c = (n * ar.value.powf(n - 1.0)).abs();
+  let (m, p) = (c * ar.minus, c * ar.plus);
   if !value.is_finite() || !m.is_finite() || !p.is_finite() {
     return None;
   }

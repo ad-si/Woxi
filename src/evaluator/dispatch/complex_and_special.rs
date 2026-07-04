@@ -2396,9 +2396,12 @@ pub fn dispatch_complex_and_special(
             )
           {
             let value = (a + b) / 2.0;
-            let uncertainty = (b - a).abs() / (2.0 * 3f64.sqrt());
+            // Around[Interval[{a, b}]] uses the interval half-width as the
+            // uncertainty (wolframscript), not the uniform-distribution std.
+            let uncertainty = (b - a).abs() / 2.0;
             if uncertainty == 0.0 {
-              return Some(Ok(Expr::Real(value)));
+              // Degenerate interval collapses to its exact bound value.
+              return Some(Ok(bounds[0].clone()));
             }
             return Some(Ok(Expr::FunctionCall {
               name: "Around".to_string(),
