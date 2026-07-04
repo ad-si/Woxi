@@ -1371,6 +1371,67 @@ mod differentiate_plus_times {
   fn derivative_wrt_numeric_times_is_unevaluated() {
     assert_eq!(interpret("D[2x, 2x]").unwrap(), "D[2*x, 2*x]");
   }
+
+  // A bare number in the variable slot is not a valid variable: emit D::ivar
+  // and stay unevaluated, rather than treating the number as an absent
+  // variable and returning 0.
+  #[test]
+  fn derivative_wrt_number_emits_ivar() {
+    for (input, call, bad) in [
+      ("D[x^2, 3]", "D[x^2, 3]", "3"),
+      ("D[x^2 + y, 2]", "D[x^2 + y, 2]", "2"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call, "for {input}");
+      let expected = format!("D::ivar: {bad} is not a valid variable.");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?} for {input}, got {msgs:?}"
+      );
+    }
+  }
+
+  // A sum or a product of symbols is likewise not a valid variable — the old
+  // behaviour returned 0 (sum) or 1 (self-equal product).
+  #[test]
+  fn derivative_wrt_compound_emits_ivar() {
+    clear_state();
+    assert_eq!(interpret("D[x^2, x + 1]").unwrap(), "D[x^2, 1 + x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("D::ivar: 1 + x is not a valid variable.")),
+      "expected D::ivar for 1 + x, got {msgs:?}"
+    );
+
+    clear_state();
+    assert_eq!(interpret("D[a b, a b]").unwrap(), "D[a*b, a*b]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("D::ivar: a b is not a valid variable.")),
+      "expected D::ivar for a b, got {msgs:?}"
+    );
+  }
+
+  // A power or fraction variable also stays unevaluated (the message renders
+  // the 2D form in wolframscript, so only the result is asserted here).
+  #[test]
+  fn derivative_wrt_power_or_fraction_unevaluated() {
+    assert_eq!(interpret("D[y, x^2]").unwrap(), "D[y, x^2]");
+    assert_eq!(interpret("D[y, x/2]").unwrap(), "D[y, x/2]");
+  }
+
+  // A symbol-headed variable (an indexed symbol or a function application)
+  // remains valid and is unaffected.
+  #[test]
+  fn derivative_wrt_symbol_headed_var_unaffected() {
+    assert_eq!(interpret("D[f[x[i]], x[k]]").unwrap(), "0");
+    assert_eq!(interpret("D[y, Sin[x]]").unwrap(), "0");
+  }
 }
 
 mod derivative_prime_notation {

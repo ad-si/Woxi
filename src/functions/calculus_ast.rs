@@ -239,30 +239,32 @@ fn differentiate_wrt_expr(
   expr: &Expr,
   var_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // A variable specifier like `2x` (Times with a numeric coefficient) is not
-  // a valid symbol to differentiate against — Wolfram emits `D::ivar` and
-  // returns the call unevaluated.
-  let is_numeric = |e: &Expr| -> bool {
-    matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
-      || matches!(
-        e,
-        Expr::FunctionCall { name, .. } if name == "Rational"
-      )
-  };
-  let is_bad_product = |e: &Expr| -> bool {
+  // A bare number (3) or an arithmetic-compound expression (2 x, x + 1, x^2,
+  // x/2, a b) is not a valid symbol to differentiate against — Wolfram emits
+  // `D::ivar` and returns the call unevaluated. Symbol-headed forms such as
+  // x[k] or Sin[x] stay valid and fall through.
+  fn is_invalid_dvar(e: &Expr) -> bool {
     match e {
-      Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
-        left,
-        right,
-      } => is_numeric(left) || is_numeric(right),
-      Expr::FunctionCall { name, args } if name == "Times" => {
-        args.iter().any(&is_numeric)
-      }
+      Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _) => true,
+      Expr::BinaryOp { op, .. } => matches!(
+        op,
+        crate::syntax::BinaryOperator::Plus
+          | crate::syntax::BinaryOperator::Minus
+          | crate::syntax::BinaryOperator::Times
+          | crate::syntax::BinaryOperator::Divide
+          | crate::syntax::BinaryOperator::Power
+      ),
+      Expr::FunctionCall { name, .. } => matches!(
+        name.as_str(),
+        "Plus" | "Minus" | "Times" | "Divide" | "Power" | "Rational"
+      ),
       _ => false,
     }
-  };
-  if is_bad_product(var_expr) {
+  }
+  if is_invalid_dvar(var_expr) {
     crate::emit_message(&format!(
       "D::ivar: {} is not a valid variable.",
       crate::syntax::expr_to_message_form(var_expr)
