@@ -757,7 +757,11 @@ function clearOutputs() {
 function initWorker() {
   showStatus("Loading Woxi WebAssembly module ...", "info", { autoHide: false })
 
-  worker = new Worker("worker.js", { type: "module" })
+  // Cache-bust the worker script so a stale worker.js (e.g. one missing a
+  // newly added message handler) can never be served against a fresh wasm
+  // build — that manifests as messages being silently dropped (e.g. a
+  // Manipulate slider that no longer updates the graphic).
+  worker = new Worker("worker.js?v=" + Date.now(), { type: "module" })
 
   worker.onmessage = (e) => {
     const { type, success, message, result } = e.data

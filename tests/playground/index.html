@@ -40,7 +40,16 @@
     </section>
   </main>
 
-  <script type="module" src="script.js"></script>
+  <!-- Load the app script with a cache-busting query so a browser never
+       runs a stale script.js against a freshly built wasm module. -->
+  <script>
+    (function () {
+      const s = document.createElement("script")
+      s.type = "module"
+      s.src = "script.js?v=" + Date.now()
+      document.head.appendChild(s)
+    })()
+  </script>
 </body>
 
 </html>
