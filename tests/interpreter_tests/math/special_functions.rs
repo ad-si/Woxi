@@ -3427,6 +3427,31 @@ mod beta_fn {
     assert!((result - 0.19634954084936207).abs() < 1e-10);
   }
 
+  // Beta[a, b] = Gamma[a] Gamma[b] / Gamma[a+b] has poles when a or b is a
+  // non-positive integer. With inexact (Real) arguments the naive gamma_fn
+  // product returned Infinity/Indeterminate or a large garbage value; it must
+  // instead resolve by pole order, matching the exact-integer case and
+  // wolframscript.
+  #[test]
+  fn real_pole_is_complex_infinity() {
+    // A surviving numerator pole -> ComplexInfinity.
+    assert_eq!(interpret("Beta[0.0, 2.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Beta[2.0, 0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Beta[0.0, 0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Beta[-1.0, 2.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Beta[-2.0, 5.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Beta[-1.0, -1.0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn real_cancelling_poles_are_finite() {
+    // Numerator and denominator poles cancel to a finite limit.
+    assert_eq!(interpret("Beta[-3.0, 2.0]").unwrap(), "0.16666666666666666");
+    assert_eq!(interpret("Beta[2.0, -2.0]").unwrap(), "0.5");
+    // A denominator-only pole (a+b a non-positive integer) -> 0.
+    assert_eq!(interpret("Beta[1.5, -3.5]").unwrap(), "0.");
+  }
+
   #[test]
   fn symbolic_unevaluated() {
     assert_eq!(interpret("Beta[a, b]").unwrap(), "Beta[a, b]");

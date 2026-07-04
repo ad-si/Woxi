@@ -971,6 +971,37 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let (Some(a_f), Some(b_f)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]))
     && (matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_)))
   {
+    // Beta[a, b] = Gamma[a] Gamma[b] / Gamma[a+b]. A non-positive integer a or
+    // b is a numerator pole; a non-positive integer a+b is a denominator pole.
+    // gamma_fn diverges/garbages at the poles, so resolve them by pole order
+    // (mirroring the exact-integer branch above) before the numeric formula.
+    let is_nonpos_int = |x: f64| {
+      let r = x.round();
+      r <= 0.0 && (x - r).abs() < 1e-9
+    };
+    let num_poles = is_nonpos_int(a_f) as i32 + is_nonpos_int(b_f) as i32;
+    let den_pole = is_nonpos_int(a_f + b_f) as i32;
+    let net = num_poles - den_pole;
+    if net > 0 {
+      // A surviving numerator pole → ComplexInfinity.
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    if net < 0 {
+      // The denominator pole dominates → 0.
+      return Ok(Expr::Real(0.0));
+    }
+    if num_poles > 0 {
+      // net == 0 with poles present: they cancel to a finite value. Both
+      // arguments are integers here, so the exact integer branch yields the
+      // limit; convert it to a machine real to match the inexact inputs.
+      let exact = beta_ast(&[
+        Expr::Integer(a_f.round() as i128),
+        Expr::Integer(b_f.round() as i128),
+      ])?;
+      if let Some(v) = expr_to_f64(&exact) {
+        return Ok(Expr::Real(v));
+      }
+    }
     let result = gamma_fn(a_f) * gamma_fn(b_f) / gamma_fn(a_f + b_f);
     return Ok(Expr::Real(result));
   }
