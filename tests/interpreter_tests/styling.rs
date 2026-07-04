@@ -175,6 +175,36 @@ mod font_size {
       "Style[\"green\", Italic, RGBColor[0, 1, 0]]"
     );
   }
+
+  #[test]
+  fn tostring_style_resolves_nested_number_form() {
+    // Regression: under ToString a Style wrapper is display-only, so a nested
+    // display wrapper such as NumberForm must still resolve to its formatted
+    // text. Previously `ToString[Style[NumberForm[...], 18]]` echoed the raw
+    // `NumberForm[50., {3, 1}]` head instead of "50.0".
+    assert_eq!(
+      interpret("ToString[Style[NumberForm[50., {3, 1}], 18, Bold]]").unwrap(),
+      "50.0"
+    );
+  }
+
+  #[test]
+  fn tostring_row_concatenates_and_resolves_wrappers() {
+    // A Row concatenates its parts under ToString, resolving nested Style /
+    // NumberForm, matching wolframscript.
+    assert_eq!(
+      interpret(
+        "ToString[Row[{Style[NumberForm[50., {3, 1}], 18, Bold], Style[\"% shaded\", 18, Bold]}]]"
+      )
+      .unwrap(),
+      "50.0% shaded"
+    );
+    // Row with an explicit separator joins the (resolved) parts with it.
+    assert_eq!(
+      interpret("ToString[Row[{NumberForm[50., {3, 1}], \" pct\"}]]").unwrap(),
+      "50.0 pct"
+    );
+  }
 }
 
 mod font_family {

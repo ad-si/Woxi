@@ -1895,28 +1895,64 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   }
 }
 
+/// Render the text content of a `Text`/`Inset` label. Inside a graphic the
+/// label is typeset, so display wrappers resolve to their formatted text:
+/// `Style` unwraps, `Row` concatenates, and `NumberForm` (and friends)
+/// render their formatted number — e.g.
+/// `Row[{Style[NumberForm[50., {3, 1}], 18], Style["% shaded", 18]}]`
+/// becomes "50.0% shaded". Plain strings pass through verbatim; anything
+/// else falls back to `ToString`'s default form.
+fn graphics_text_content(expr: &Expr) -> String {
+  match expr {
+    Expr::String(s) => s.clone(),
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      graphics_text_content(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && !args.is_empty()
+        && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let Some(Expr::List(items)) = args.first() else {
+        unreachable!()
+      };
+      let parts: Vec<String> =
+        items.iter().map(graphics_text_content).collect();
+      match args.get(1) {
+        Some(sep) => parts.join(&graphics_text_content(sep)),
+        None => parts.concat(),
+      }
+    }
+    _ => match crate::functions::string_ast::to_string_ast(
+      std::slice::from_ref(expr),
+    ) {
+      Ok(Expr::String(ref s)) => s.clone(),
+      _ => crate::syntax::expr_to_string(expr),
+    },
+  }
+}
+
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // Text[str, {x, y}] or Text[Style[str, ...], {x, y}]
   let mut local_style = style.clone();
-  let text = match &args[0] {
-    Expr::String(s) => s.clone(),
+  // A top-level `Style[content, dirs…]` carries text directives (font size,
+  // weight, color) that apply to the whole label; peel it off and apply them
+  // to the primitive, then render the inner content.
+  let content = match &args[0] {
     Expr::FunctionCall { name, args: sargs }
       if name == "Style" && !sargs.is_empty() =>
     {
-      // Apply style directives
       for d in &sargs[1..] {
         apply_directive(d, &mut local_style);
         apply_text_style_directive(d, &mut local_style);
       }
-      match &sargs[0] {
-        Expr::String(s) => s.clone(),
-        Expr::Integer(n) => n.to_string(),
-        Expr::Real(f) => crate::syntax::expr_to_string(&Expr::Real(*f)),
-        other => crate::syntax::expr_to_string(other),
-      }
+      &sargs[0]
     }
-    other => crate::syntax::expr_to_string(other),
+    other => other,
   };
+  let text = graphics_text_content(content);
 
   let (x, y) = if args.len() >= 2 {
     expr_to_point(&args[1]).unwrap_or((0.0, 0.0))

@@ -3839,6 +3839,58 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(rendered));
   }
 
+  // Style[content, directives...] — the directives (font size, weight, color)
+  // are display-only and carry no plain-text form, so ToString renders just
+  // the inner content. Recurse through ToString (preserving any explicit form
+  // argument) so a nested display wrapper such as `NumberForm` still resolves,
+  // e.g. `ToString[Style[NumberForm[50., {3, 1}], 18]]` -> "50.0". InputForm
+  // and TeXForm keep the literal `Style[...]` head and fall through.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "Style"
+    && !is_input_form
+    && !is_tex_form
+    && !inner_args.is_empty()
+  {
+    let mut recursed = args.to_vec();
+    recursed[0] = inner_args[0].clone();
+    return to_string_ast(&recursed);
+  }
+
+  // Row[{e1, e2, ...}] / Row[{e1, e2, ...}, sep] — concatenate the elements
+  // (joining with `sep` when given). Each element is rendered through ToString
+  // so nested display wrappers resolve, matching wolframscript's
+  // `ToString[Row[{NumberForm[50., {3, 1}], " pct"}]]` -> "50.0 pct".
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "Row"
+    && !is_input_form
+    && !is_tex_form
+    && !inner_args.is_empty()
+    && let Expr::List(items) = &inner_args[0]
+  {
+    let render = |e: &Expr| -> String {
+      let mut recursed = args.to_vec();
+      recursed[0] = e.clone();
+      match to_string_ast(&recursed) {
+        Ok(Expr::String(ref s)) => s.clone(),
+        Ok(other) => crate::syntax::expr_to_output(&other),
+        Err(_) => crate::syntax::expr_to_output(e),
+      }
+    };
+    let parts: Vec<String> = items.iter().map(&render).collect();
+    let joined = if inner_args.len() >= 2 {
+      parts.join(&render(&inner_args[1]))
+    } else {
+      parts.concat()
+    };
+    return Ok(Expr::String(joined));
+  }
+
   // NumberForm[x, DigitBlock -> n, ...] — group digits into blocks. Detected by
   // the presence of a `DigitBlock` option among the arguments.
   if let Expr::FunctionCall {
