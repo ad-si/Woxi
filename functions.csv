@@ -404,7 +404,7 @@ Unevaluated,Wrapper that prevents evaluation of its argument,✅,pure,2.0,407
 ZIPCodeData,,🚫,,10.0,408
 DynamicModule,,🚫,,6.0,409
 FillingStyle,Option for specifying the style of plot filling,✅,pure,6.0,410
-Control,,🚫,,7.0,411
+Control,Represents a standalone interactive control such as a slider or popup menu bound to a variable,✅,pure,7.0,411
 WorkingPrecision,Option for numerical precision,✅,pure,1.0,412
 Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1.0,413
 Complement,Returns elements in first list but not in others,✅,pure,1.0,414

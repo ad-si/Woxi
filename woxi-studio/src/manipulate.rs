@@ -12,8 +12,8 @@ use std::sync::Arc;
 use iced::widget::image;
 use iced::widget::svg;
 use woxi::functions::graphics::{
-  ManipulateControl, ManipulateSpec, extract_manipulate_spec,
-  manipulate_block_code,
+  ManipulateControl, ManipulateSpec, extract_control_spec,
+  extract_manipulate_spec, manipulate_block_code,
 };
 use woxi::syntax::Expr;
 
@@ -39,6 +39,27 @@ pub enum ControlState {
     values: Vec<String>,
     current_index: usize,
   },
+  /// A 2D slider binding its variable to a `{x, y}` pair.
+  Slider2D {
+    name: String,
+    label: String,
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+    x: f64,
+    y: f64,
+  },
+  /// An interval slider binding its variable to a `{low, high}` pair.
+  IntervalSlider {
+    name: String,
+    label: String,
+    min: f64,
+    max: f64,
+    step: f64,
+    low: f64,
+    high: f64,
+  },
 }
 
 impl ControlState {
@@ -46,6 +67,8 @@ impl ControlState {
     match self {
       ControlState::Continuous { name, .. } => name,
       ControlState::Discrete { name, .. } => name,
+      ControlState::Slider2D { name, .. } => name,
+      ControlState::IntervalSlider { name, .. } => name,
     }
   }
 
@@ -62,6 +85,12 @@ impl ControlState {
         .get(*current_index)
         .cloned()
         .unwrap_or_else(|| "Null".to_string()),
+      ControlState::Slider2D { x, y, .. } => {
+        format!("{{{}, {}}}", format_f64(*x), format_f64(*y))
+      }
+      ControlState::IntervalSlider { low, high, .. } => {
+        format!("{{{}, {}}}", format_f64(*low), format_f64(*high))
+      }
     }
   }
 }
@@ -92,7 +121,8 @@ impl ManipulateState {
     scale_factor: f32,
     fontdb: &Arc<resvg::usvg::fontdb::Database>,
   ) -> Option<Self> {
-    let spec = extract_manipulate_spec(expr)?;
+    let spec =
+      extract_manipulate_spec(expr).or_else(|| extract_control_spec(expr))?;
     let controls = controls_from_spec(&spec);
     let mut state = ManipulateState {
       body: spec.body_code,
@@ -236,6 +266,48 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         values: values.clone(),
         current_index: *initial_index,
       },
+      ManipulateControl::Slider2D {
+        name,
+        label,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+      } => ControlState::Slider2D {
+        name: name.clone(),
+        label: label.clone(),
+        x_min: *x_min,
+        x_max: *x_max,
+        y_min: *y_min,
+        y_max: *y_max,
+        x: *x_initial,
+        y: *y_initial,
+      },
+      ManipulateControl::IntervalSlider {
+        name,
+        label,
+        min,
+        max,
+        step,
+        low_initial,
+        high_initial,
+      } => {
+        let step = step.unwrap_or_else(|| {
+          let span = (*max - *min).abs();
+          if span > 0.0 { span / 100.0 } else { 1.0 }
+        });
+        ControlState::IntervalSlider {
+          name: name.clone(),
+          label: label.clone(),
+          min: *min,
+          max: *max,
+          step,
+          low: *low_initial,
+          high: *high_initial,
+        }
+      }
     })
     .collect()
 }

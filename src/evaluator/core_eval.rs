@@ -1976,6 +1976,9 @@ pub fn evaluate_expr_to_expr_inner(
         // like Plot[Sin[a*x], {x, 0, 6}] aren't evaluated with `a` free
         // (matching Wolfram Language notebook behavior).
         || name == "Manipulate"
+        // Control likewise holds its variable spec so that the bound symbol
+        // and any symbolic values stay intact for interactive rendering.
+        || name == "Control"
         {
           // Flatten Sequence even in held args (unless SequenceHold)
           let flattened = flatten_sequences(name, args);

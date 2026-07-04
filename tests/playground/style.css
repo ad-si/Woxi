@@ -477,6 +477,43 @@ pre.output-box {
   text-align: right;
 }
 
+/* 2D slider pad (ControlType -> Slider2D) */
+.manipulate-pad {
+  position: relative;
+  width: 100%;
+  max-width: 12rem;
+  aspect-ratio: 1 / 1;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.manipulate-pad-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-bottom: -6px;
+  border-radius: 50%;
+  background: var(--accent, #3b82f6);
+  border: 2px solid var(--surface);
+  pointer-events: none;
+}
+
+/* Interval slider (ControlType -> IntervalSlider) */
+.manipulate-interval {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+}
+
+.manipulate-interval input[type="range"] {
+  width: 100%;
+}
+
 .manipulate-output {
   min-height: 2rem;
   transition: opacity 0.1s ease-out;
