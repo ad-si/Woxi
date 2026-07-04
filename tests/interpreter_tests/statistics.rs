@@ -6487,3 +6487,168 @@ mod hoeffding_d_tests {
     );
   }
 }
+
+mod goodman_kruskal_gamma_tests {
+  use woxi::interpret;
+
+  // γ = (C - D)/(C + D) over untied pairs; exact input stays exact.
+  #[test]
+  fn exact_vectors() {
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1, 2, 3, 4, 5}, {2, 3, 1, 5, 4}]")
+        .unwrap(),
+      "2/5"
+    );
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1, 2, 3}, {1, 3, 2}]").unwrap(),
+      "1/3"
+    );
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1, 2, 3, 4, 5, 6}, {2, 1, 4, 3, 6, 5}]")
+        .unwrap(),
+      "3/5"
+    );
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1, 2}, {2, 1}]").unwrap(),
+      "-1"
+    );
+    // Tied pairs are ignored entirely.
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1, 2, 2, 3}, {1, 2, 3, 3}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn real_input_gives_real() {
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1., 2., 3.}, {1, 3, 2}]").unwrap(),
+      "0.3333333333333333"
+    );
+  }
+
+  // No untied pairs at all → ::zrvr and Indeterminate (even when neither
+  // vector is constant, like {1, 1} vs {1, 2}).
+  #[test]
+  fn zero_variance() {
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1, 1, 1}, {1, 2, 3}]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1, 1}, {1, 2}]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn matrix_forms_and_errors() {
+    assert_eq!(
+      interpret(
+        "GoodmanKruskalGamma[{{1, 2}, {2, 3}, {3, 1}, {4, 5}, {5, 4}}]"
+      )
+      .unwrap(),
+      "{{1, 2/5}, {2/5, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "GoodmanKruskalGamma[{{1, 2}, {2, 3}, {3, 1}}, {{2, 1}, {3, 2}, {1, 3}}]"
+      )
+      .unwrap(),
+      "{{-1/3, 1}, {1, -1/3}}"
+    );
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1, 2, 3}, {1, 2}]").unwrap(),
+      "GoodmanKruskalGamma[{1, 2, 3}, {1, 2}]"
+    );
+    // Extra arguments stay silently unevaluated.
+    assert_eq!(
+      interpret("GoodmanKruskalGamma[{1, 2, 3}, {1, 3, 2}, 5]").unwrap(),
+      "GoodmanKruskalGamma[{1, 2, 3}, {1, 3, 2}, 5]"
+    );
+  }
+}
+
+mod blomqvist_beta_tests {
+  use woxi::interpret;
+
+  // β correlates the sign vectors around the medians; points on a median
+  // line shrink the denominator, giving values like 3/4 and 1/Sqrt[2].
+  #[test]
+  fn exact_vectors() {
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 2, 3, 4, 5}, {2, 3, 1, 5, 4}]").unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 2, 3, 4}, {1, 3, 2, 4}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 2, 3}, {3, 2, 1}]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 2, 3, 4}, {1, 1, 2, 2}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 2, 2, 3}, {1, 2, 3, 4}]").unwrap(),
+      "1/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 2, 3, 4, 5}, {1, 2, 4, 3, 5}]").unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 2, 3, 4, 5}, {2, 1, 3, 5, 4}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 1, 2, 2}, {1, 2, 1, 2}]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn real_input_gives_real() {
+    assert_eq!(
+      interpret("BlomqvistBeta[{1., 2., 3., 4.}, {1, 3, 2, 4}]").unwrap(),
+      "0."
+    );
+  }
+
+  // Constant data divides 0/Sqrt[0], which surfaces as Indeterminate (with
+  // wolframscript's Power::infy / Infinity::indet messages).
+  #[test]
+  fn constant_data_is_indeterminate() {
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 1, 1}, {1, 2, 3}]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn matrix_forms_and_errors() {
+    assert_eq!(
+      interpret("BlomqvistBeta[{{1, 2}, {2, 3}, {3, 1}, {4, 5}, {5, 4}}]")
+        .unwrap(),
+      "{{1, 3/4}, {3/4, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "BlomqvistBeta[{{1, 2}, {2, 3}, {3, 1}}, {{2, 1}, {3, 2}, {1, 3}}]"
+      )
+      .unwrap(),
+      "{{-1/2, 1}, {1, -1/2}}"
+    );
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 2, x}, {1, 2, 3}]").unwrap(),
+      "BlomqvistBeta[{1, 2, x}, {1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret("BlomqvistBeta[{1, 2, 3, 4}, {1, 3, 2, 4}, 5]").unwrap(),
+      "BlomqvistBeta[{1, 2, 3, 4}, {1, 3, 2, 4}, 5]"
+    );
+  }
+}

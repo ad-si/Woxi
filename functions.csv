@@ -3818,7 +3818,7 @@ WeightedGraphQ,,,,8.0,3916
 AcceptanceThreshold,,🚫,,12.0,3947
 AntihermitianMatrixQ,Test whether a matrix is anti-Hermitian,✅,none,10.0,3947
 BetaNegativeBinomialDistribution,Beta negative binomial distribution (Mean and Variance),✅,pure,6.0,3947
-BlomqvistBeta,,,,9.0,3947
+BlomqvistBeta,Blomqvist medial rank-correlation coefficient (sign correlation around the medians; exact for exact input),✅,pure,9.0,3947
 ContentObject,,🚫,,10.2,3947
 ControllerPath,,,,6.0,3947
 DataStructure,,,,12.1,3947
@@ -3930,7 +3930,7 @@ ButtonMinHeight,,🚫,,3.0,4052
 CanonicalWarpingDistance,,,,11.0,4052
 ClassPriors,,🚫,,10.0,4052
 DiscreteChirpZTransform,,,,9.0,4052
-GoodmanKruskalGamma,,,,9.0,4052
+GoodmanKruskalGamma,Goodman-Kruskal gamma rank-correlation coefficient (concordant minus discordant over untied pairs),✅,pure,9.0,4052
 ImagePeriodogram,,🚫,,9.0,4052
 ImportByteArray,,,,11.2,4052
 InverseDistanceTransform,,,,8.0,4052

@@ -2469,6 +2469,200 @@ pub fn hoeffding_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Shared argument plumbing for the two-sample rank statistics
+/// GoodmanKruskalGamma and BlomqvistBeta: a vector pair gives the scalar, a
+/// single n×k matrix the k×k column-pairwise matrix, and two matrices the
+/// cross matrix. Length mismatches and non-numeric data emit `::rctneqln`;
+/// other argument shapes stay silently unevaluated.
+fn rank_statistic_forms(
+  name: &str,
+  args: &[Expr],
+  pair: &dyn Fn(&[f64], &[f64], bool) -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let rctneqln = || {
+    crate::emit_message(&format!(
+      "{name}::rctneqln: The arguments to {name} are not a pair of vectors or matrices of equal length.",
+    ));
+    unevaluated()
+  };
+  let to_f64s = |v: &[Expr]| -> Option<Vec<f64>> {
+    v.iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect()
+  };
+  let has_real = |v: &[Expr]| {
+    v.iter()
+      .any(|e| matches!(e, Expr::Real(_) | Expr::BigFloat(_, _)))
+  };
+  let parse_cols = |rows: &[Expr]| -> Option<Vec<(Vec<f64>, bool)>> {
+    let cols = transpose_rows(rows)?;
+    cols
+      .iter()
+      .map(|c| to_f64s(c).map(|f| (f, has_real(c))))
+      .collect()
+  };
+  let cross = |data1: &[(Vec<f64>, bool)],
+               data2: &[(Vec<f64>, bool)]|
+   -> Result<Expr, InterpreterError> {
+    let mut out: Vec<Expr> = Vec::with_capacity(data1.len());
+    for (ci, ri) in data1 {
+      let mut row: Vec<Expr> = Vec::with_capacity(data2.len());
+      for (cj, rj) in data2 {
+        row.push(pair(ci, cj, !(ri | rj))?);
+      }
+      out.push(Expr::List(row.into()));
+    }
+    Ok(Expr::List(out.into()))
+  };
+
+  let is_matrix = |e: &Expr| matches!(e, Expr::List(rows) if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_))));
+  match args {
+    [m] if is_matrix(m) => {
+      let Expr::List(rows) = m else { unreachable!() };
+      match parse_cols(rows) {
+        Some(data) => cross(&data, &data),
+        None => rctneqln(),
+      }
+    }
+    [m1, m2] if is_matrix(m1) && is_matrix(m2) => {
+      let (Expr::List(rows1), Expr::List(rows2)) = (m1, m2) else {
+        unreachable!()
+      };
+      if rows1.len() != rows2.len() {
+        return rctneqln();
+      }
+      match (parse_cols(rows1), parse_cols(rows2)) {
+        (Some(d1), Some(d2)) => cross(&d1, &d2),
+        _ => rctneqln(),
+      }
+    }
+    [Expr::List(x), Expr::List(y)] => {
+      if x.len() != y.len() || x.is_empty() {
+        return rctneqln();
+      }
+      match (to_f64s(x), to_f64s(y)) {
+        (Some(xf), Some(yf)) => pair(&xf, &yf, !(has_real(x) || has_real(y))),
+        _ => rctneqln(),
+      }
+    }
+    [_] | [_, _] => rctneqln(),
+    _ => unevaluated(),
+  }
+}
+
+/// GoodmanKruskalGamma[v1, v2] — Goodman and Kruskal's γ: (C - D)/(C + D)
+/// over the concordant and discordant pairs, ignoring all ties. Exact input
+/// gives an exact rational; machine reals give a Real. When no untied pairs
+/// exist, emits `::zrvr` and returns Indeterminate.
+pub fn goodman_kruskal_gamma_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let pair = |xf: &[f64], yf: &[f64], exact: bool| {
+    let n = xf.len();
+    // Note f64::signum(0.0) is 1.0, so ties need explicit comparisons.
+    let sgn = |d: f64| -> i128 {
+      if d > 0.0 {
+        1
+      } else if d < 0.0 {
+        -1
+      } else {
+        0
+      }
+    };
+    let mut num: i128 = 0;
+    let mut den: i128 = 0;
+    for i in 0..n {
+      for j in (i + 1)..n {
+        let s = sgn(xf[j] - xf[i]) * sgn(yf[j] - yf[i]);
+        num += s;
+        den += s.abs();
+      }
+    }
+    if den == 0 {
+      crate::emit_message(
+        "GoodmanKruskalGamma::zrvr: The input data has zero variance. The statistic cannot be computed.",
+      );
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    if exact {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
+      })
+    } else {
+      Ok(Expr::Real(num as f64 / den as f64))
+    }
+  };
+  rank_statistic_forms("GoodmanKruskalGamma", args, &pair)
+}
+
+/// BlomqvistBeta[v1, v2] — Blomqvist's medial correlation coefficient: the
+/// correlation of the sign vectors around the medians,
+///   β = Σ sgn(xi-mx) sgn(yi-my) / Sqrt[Σ sgn²(xi-mx) · Σ sgn²(yi-my)],
+/// so points on one median line shrink the denominator (giving exact values
+/// like 1/Sqrt[2]) and constant data divides 0/0, emitting Power::infy /
+/// Infinity::indet with Indeterminate — all matching wolframscript.
+pub fn blomqvist_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let pair = |xf: &[f64], yf: &[f64], exact: bool| {
+    let median = |v: &[f64]| -> f64 {
+      let mut s = v.to_vec();
+      s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+      let n = s.len();
+      if n % 2 == 1 {
+        s[n / 2]
+      } else {
+        (s[n / 2 - 1] + s[n / 2]) / 2.0
+      }
+    };
+    let mx = median(xf);
+    let my = median(yf);
+    // Note f64::signum(0.0) is 1.0, so median points need explicit
+    // comparisons.
+    let sgn = |d: f64| -> i128 {
+      if d > 0.0 {
+        1
+      } else if d < 0.0 {
+        -1
+      } else {
+        0
+      }
+    };
+    let mut num: i128 = 0;
+    let mut a: i128 = 0;
+    let mut b: i128 = 0;
+    for i in 0..xf.len() {
+      let sx = sgn(xf[i] - mx);
+      let sy = sgn(yf[i] - my);
+      num += sx * sy;
+      a += sx * sx;
+      b += sy * sy;
+    }
+    // Constant data divides 0 by Sqrt[0]; evaluating that through the
+    // infix-division path reproduces wolframscript's Power::infy /
+    // Infinity::indet messages and Indeterminate (the Divide head would
+    // emit Divide::indet instead).
+    if exact || a * b == 0 {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(num)),
+        right: Box::new(Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![Expr::Integer(a * b)].into(),
+        }),
+      })
+    } else {
+      Ok(Expr::Real(num as f64 / ((a * b) as f64).sqrt()))
+    }
+  };
+  rank_statistic_forms("BlomqvistBeta", args, &pair)
+}
+
 pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
