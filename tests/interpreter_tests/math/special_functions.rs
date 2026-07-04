@@ -8858,6 +8858,21 @@ mod gamma_incomplete {
     assert_eq!(interpret("Gamma[5]").unwrap(), "24");
   }
 
+  // Gamma[a, 0] = Gamma[a] for Re[a] > 0, but diverges for a <= 0:
+  // Gamma[0, 0] = Infinity, Gamma[a, 0] = ComplexInfinity for a < 0. With an
+  // inexact zero second argument these previously stayed unevaluated (a = 0)
+  // or returned a large garbage value (a < 0). Per wolframscript.
+  #[test]
+  fn gamma_at_real_zero() {
+    assert_eq!(interpret("Gamma[0, 0.0]").unwrap(), "Infinity");
+    assert_eq!(interpret("Gamma[-1, 0.0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Gamma[-2, 0.0]").unwrap(), "ComplexInfinity");
+    // A non-integer negative order also diverges.
+    assert_eq!(interpret("Gamma[-0.5, 0.0]").unwrap(), "ComplexInfinity");
+    // Positive order stays finite (Gamma[a, 0.] = Gamma[a] as a real).
+    assert_eq!(interpret("Gamma[1, 0.0]").unwrap(), "1.");
+  }
+
   // Limits at infinity: Gamma[Infinity] = Infinity, Gamma[-Infinity] is
   // Indeterminate, Gamma[ComplexInfinity] = ComplexInfinity. Per wolframscript.
   #[test]

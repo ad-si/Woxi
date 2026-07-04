@@ -507,6 +507,20 @@ fn gamma_incomplete_upper(
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
   }
+  // Same divergences for an inexact zero z: Gamma[0, 0.] = Infinity and
+  // Gamma[a, 0.] = ComplexInfinity for a < 0. (a > 0 falls through to the
+  // numeric paths below, which return the finite Gamma[a] as a machine real,
+  // so the numeric series never sees the z = 0 pole.)
+  if matches!(z, Expr::Real(f) if *f == 0.0)
+    && let Some(a_val) = try_eval_to_f64(a)
+    && a_val <= 0.0
+  {
+    return Ok(if a_val == 0.0 {
+      Expr::Identifier("Infinity".to_string())
+    } else {
+      Expr::Identifier("ComplexInfinity".to_string())
+    });
+  }
 
   // Special case: Gamma[1, z] = E^(-z)
   if matches!(a, Expr::Integer(1)) {
