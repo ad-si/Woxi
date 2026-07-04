@@ -2561,412 +2561,8 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         list_expr
       }
     }
-    Rule::FunctionCallExtended => {
-      // Merged rule: FunctionCall + optional Part extraction + optional implicit multiplication suffix
-      // Inner pairs: (Identifier|SimpleAnonymousFunction) DerivativePrime? BracketArgs+ DerivativePrime? [PartIndexSuffix | FunctionCallImplicitSuffix]
-      // Note: Anonymous function suffix (&) is NOT handled here — it is handled
-      // at the Expression level via AnonymousFunctionSuffix so that `&` gets the
-      // correct low precedence (binds the whole infix chain, not just the call).
-      let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
-
-      let name_pair = &inner_pairs[0];
-
-      // A leading DerivativePrime (between Identifier and BracketArgs)
-      // applies to the head symbol: `f'[x]` → `Derivative[1][f][x]`. A
-      // trailing DerivativePrime (after the last BracketArgs) wraps the
-      // entire call: `h[1]'` → `Derivative[1][h[1]]`.
-      let first_bracket_idx_fce =
-        inner_pairs.iter().enumerate().find_map(|(i, p)| {
-          if matches!(p.as_rule(), Rule::BracketArgs) {
-            Some(i)
-          } else {
-            None
-          }
-        });
-      let last_bracket_idx_fce =
-        inner_pairs.iter().enumerate().rev().find_map(|(i, p)| {
-          if matches!(p.as_rule(), Rule::BracketArgs) {
-            Some(i)
-          } else {
-            None
-          }
-        });
-      let derivative_order = first_bracket_idx_fce.and_then(|fb| {
-        inner_pairs[..fb]
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
-          .map(|p| p.as_str().len())
-      });
-      let trailing_prime_order_fce = last_bracket_idx_fce.and_then(|lb| {
-        inner_pairs[lb + 1..]
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
-          .map(|p| p.as_str().len())
-      });
-
-      // Collect the function call's BracketArgs (consecutive BracketArgs after name, before any suffix)
-      let fc_bracket_args: Vec<Vec<Expr>> = inner_pairs
-        .iter()
-        .skip(1) // skip Identifier/SimpleAnonymousFunction
-        .skip_while(|p| matches!(p.as_rule(), Rule::DerivativePrime)) // skip optional DerivativePrime
-        .take_while(|p| matches!(p.as_rule(), Rule::BracketArgs))
-        .map(|bracket| bracket.clone().into_inner().map(pair_to_expr).collect())
-        .collect();
-
-      // Detect suffix types via named rules
-      let has_part_index = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::PartIndexSuffix));
-      let has_implicit_suffix = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix));
-      let has_implicit_power = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix));
-
-      // Extract part indices if present
-      let part_indices: Vec<Expr> = inner_pairs
-        .iter()
-        .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-        .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
-        .collect();
-
-      // Build the base function call expression
-      let base_func =
-        if matches!(name_pair.as_rule(), Rule::SimpleAnonymousFunction) {
-          let anon_expr = pair_to_expr(name_pair.clone());
-          let mut result = Expr::CurriedCall {
-            func: Box::new(anon_expr),
-            args: fc_bracket_args[0].clone(),
-          };
-          for args in fc_bracket_args.iter().skip(1) {
-            result = Expr::CurriedCall {
-              func: Box::new(result),
-              args: args.clone(),
-            };
-          }
-          result
-        } else if let Some(order) = derivative_order {
-          // f'[x] → Derivative[1][f][x], f''[x] → Derivative[2][f][x], etc.
-          let name = name_pair.as_str().to_string();
-          // Derivative[n][f]
-          let mut result = Expr::CurriedCall {
-            func: Box::new(Expr::FunctionCall {
-              name: "Derivative".to_string(),
-              args: vec![Expr::Integer(order as i128)].into(),
-            }),
-            args: vec![Expr::Identifier(name)],
-          };
-          // Apply bracket args: Derivative[n][f][x], then any further chained calls
-          for args in fc_bracket_args.iter() {
-            result = Expr::CurriedCall {
-              func: Box::new(result),
-              args: args.clone(),
-            };
-          }
-          result
-        } else {
-          let name = name_pair.as_str().to_string();
-          if fc_bracket_args.len() == 1 {
-            Expr::FunctionCall {
-              name,
-              args: fc_bracket_args[0].clone().into(),
-            }
-          } else {
-            let mut result = Expr::FunctionCall {
-              name,
-              args: fc_bracket_args[0].clone().into(),
-            };
-            for args in fc_bracket_args.iter().skip(1) {
-              result = Expr::CurriedCall {
-                func: Box::new(result),
-                args: args.clone(),
-              };
-            }
-            result
-          }
-        };
-
-      // A trailing DerivativePrime wraps the entire constructed call in
-      // `Derivative[n][...]` (e.g. `h[1]'` → `Derivative[1][h[1]]`).
-      let base_func = if let Some(order) = trailing_prime_order_fce {
-        Expr::CurriedCall {
-          func: Box::new(Expr::FunctionCall {
-            name: "Derivative".to_string(),
-            args: vec![Expr::Integer(order as i128)].into(),
-          }),
-          args: vec![base_func],
-        }
-      } else {
-        base_func
-      };
-
-      // Helper: parse FunctionCallImplicitSuffix inner pairs into multiplication factors
-      // (same logic as ImplicitTimes handler)
-      let parse_implicit_factors =
-        |suffix_pair: &pest::iterators::Pair<Rule>| -> Vec<Expr> {
-          let inners: Vec<_> = suffix_pair.clone().into_inner().collect();
-          let mut factors: Vec<Expr> = Vec::new();
-          let mut i = 0;
-          while i < inners.len() {
-            if inners[i].as_rule() == Rule::PartIndexSuffix {
-              if let Some(base) = factors.pop() {
-                let mut result = base;
-                for idx_pair in inners[i].clone().into_inner() {
-                  let index = pair_to_expr(idx_pair);
-                  result = Expr::Part {
-                    expr: Box::new(result),
-                    index: Box::new(index),
-                  };
-                }
-                factors.push(result);
-              }
-            } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
-              if let Some(base) = factors.pop() {
-                let exponent = implicit_power_exponent(inners[i].clone());
-                factors.push(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(base),
-                  right: Box::new(exponent),
-                });
-              }
-            } else if inners[i].as_rule() == Rule::FactorialSuffix {
-              // `!` / `!!` postfix wraps the previous factor in
-              // `Factorial[…]` / `Factorial2[…]`, so `f[x] n!` parses as
-              // `Times[f[x], Factorial[n]]`.
-              if let Some(base) = factors.pop() {
-                let func_name = if inners[i].as_str() == "!!" {
-                  "Factorial2"
-                } else {
-                  "Factorial"
-                };
-                factors.push(Expr::FunctionCall {
-                  name: func_name.to_string(),
-                  args: vec![base].into(),
-                });
-              }
-            } else if matches!(
-              inners[i].as_rule(),
-              Rule::RepeatedSuffix | Rule::RepeatedNullSuffix
-            ) {
-              // `..` / `...` postfix wraps the previous factor in
-              // `Repeated[…]` / `RepeatedNull[…]`.
-              if let Some(base) = factors.pop() {
-                let func_name =
-                  if inners[i].as_rule() == Rule::RepeatedNullSuffix {
-                    "RepeatedNull"
-                  } else {
-                    "Repeated"
-                  };
-                factors.push(Expr::FunctionCall {
-                  name: func_name.to_string(),
-                  args: vec![base].into(),
-                });
-              }
-            } else {
-              factors.push(pair_to_expr(inners[i].clone()));
-            }
-            i += 1;
-          }
-          factors
-        };
-
-      // Helper: fold a base expression with implicit multiplication factors into nested Times
-      let fold_implicit_times = |base: Expr, factors: Vec<Expr>| -> Expr {
-        factors.into_iter().fold(base, |acc, f| Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(acc),
-          right: Box::new(f),
-        })
-      };
-
-      if has_part_index && has_implicit_suffix {
-        // PartExtract with implicit multiplication: f[x][[i]]^2 y
-        let mut result = base_func;
-        for idx in &part_indices {
-          result = Expr::Part {
-            expr: Box::new(result),
-            index: Box::new(idx.clone()),
-          };
-        }
-        if has_implicit_power {
-          let exponent = implicit_power_exponent(
-            inner_pairs
-              .iter()
-              .find(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix))
-              .unwrap()
-              .clone(),
-          );
-          result = Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(result),
-            right: Box::new(exponent),
-          };
-        }
-        let suffix_pair = inner_pairs
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix))
-          .unwrap();
-        let factors = parse_implicit_factors(suffix_pair);
-        fold_implicit_times(result, factors)
-      } else if has_part_index {
-        // Plain PartExtract: f[x][[i]]
-        let mut result = base_func;
-        for idx in &part_indices {
-          result = Expr::Part {
-            expr: Box::new(result),
-            index: Box::new(idx.clone()),
-          };
-        }
-        result
-      } else if has_implicit_suffix {
-        // Implicit multiplication after function call: f[x] g[y] or f[x]^2 y
-        let mut result = base_func;
-        if has_implicit_power {
-          let exponent = implicit_power_exponent(
-            inner_pairs
-              .iter()
-              .find(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix))
-              .unwrap()
-              .clone(),
-          );
-          result = Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(result),
-            right: Box::new(exponent),
-          };
-        }
-        let suffix_pair = inner_pairs
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix))
-          .unwrap();
-        let factors = parse_implicit_factors(suffix_pair);
-        fold_implicit_times(result, factors)
-      } else {
-        // Plain FunctionCall
-        base_func
-      }
-    }
-    Rule::FunctionCall => {
-      let inner_pairs: Vec<_> = pair.into_inner().collect();
-      let name_pair = &inner_pairs[0];
-      // Leading vs. trailing DerivativePrime: a leading prime applies to
-      // the head (`f'[x]` → `Derivative[1][f][x]`); a trailing prime wraps
-      // the entire call (`h[1]'` → `Derivative[1][h[1]]`).
-      let first_bracket_idx_fc =
-        inner_pairs.iter().enumerate().find_map(|(i, p)| {
-          if matches!(p.as_rule(), Rule::BracketArgs) {
-            Some(i)
-          } else {
-            None
-          }
-        });
-      let last_bracket_idx_fc =
-        inner_pairs.iter().enumerate().rev().find_map(|(i, p)| {
-          if matches!(p.as_rule(), Rule::BracketArgs) {
-            Some(i)
-          } else {
-            None
-          }
-        });
-      let derivative_order = first_bracket_idx_fc.and_then(|fb| {
-        inner_pairs[..fb]
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
-          .map(|p| p.as_str().len())
-      });
-      let trailing_prime_order_fc = last_bracket_idx_fc.and_then(|lb| {
-        inner_pairs[lb + 1..]
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
-          .map(|p| p.as_str().len())
-      });
-      // Collect bracket sequences separately for proper chained call handling
-      let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
-        .iter()
-        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-        .map(|bracket| {
-          bracket
-            .clone()
-            .into_inner()
-            .filter(|p| {
-              p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
-            })
-            .map(pair_to_expr)
-            .collect()
-        })
-        .collect();
-      // Check if the function head is an anonymous function
-      if matches!(name_pair.as_rule(), Rule::SimpleAnonymousFunction) {
-        let anon_expr = pair_to_expr(name_pair.clone());
-        // Build curried calls: (#&)[1] or (#^2&)[{1,2,3}]
-        let mut result = Expr::CurriedCall {
-          func: Box::new(anon_expr),
-          args: bracket_sequences[0].clone(),
-        };
-        for args in bracket_sequences.into_iter().skip(1) {
-          result = Expr::CurriedCall {
-            func: Box::new(result),
-            args,
-          };
-        }
-        result
-      } else if let Some(order) = derivative_order {
-        // f'[x] → Derivative[1][f][x]
-        let name = name_pair.as_str().to_string();
-        let mut result = Expr::CurriedCall {
-          func: Box::new(Expr::FunctionCall {
-            name: "Derivative".to_string(),
-            args: vec![Expr::Integer(order as i128)].into(),
-          }),
-          args: vec![Expr::Identifier(name)],
-        };
-        for args in bracket_sequences.iter() {
-          result = Expr::CurriedCall {
-            func: Box::new(result),
-            args: args.clone(),
-          };
-        }
-        result
-      } else {
-        let name = name_pair.as_str().to_string();
-        // Build chained calls: f[a][b] becomes Apply(f[a], b)
-        let result = if bracket_sequences.len() == 1 {
-          Expr::FunctionCall {
-            name,
-            args: bracket_sequences.into_iter().next().unwrap().into(),
-          }
-        } else {
-          // Multiple bracket sequences: build nested Apply calls
-          // f[a][b][c] becomes: first build f[a], then apply [b], then apply [c]
-          let mut result = Expr::FunctionCall {
-            name,
-            args: bracket_sequences[0].clone().into(),
-          };
-          for args in bracket_sequences.into_iter().skip(1) {
-            // Wrap as a curried call: FunctionCall applied to new args
-            result = Expr::CurriedCall {
-              func: Box::new(result),
-              args,
-            };
-          }
-          result
-        };
-        // Trailing DerivativePrime wraps the entire call:
-        // `h[1]'` → `Derivative[1][h[1]]`.
-        if let Some(order) = trailing_prime_order_fc {
-          Expr::CurriedCall {
-            func: Box::new(Expr::FunctionCall {
-              name: "Derivative".to_string(),
-              args: vec![Expr::Integer(order as i128)].into(),
-            }),
-            args: vec![result],
-          }
-        } else {
-          result
-        }
-      }
-    }
+    Rule::FunctionCallExtended => parse_function_call_extended(pair),
+    Rule::FunctionCall => parse_function_call(pair),
     Rule::BaseFunctionCall => {
       let inner_pairs: Vec<_> = pair.into_inner().collect();
       let name_pair = &inner_pairs[0];
@@ -3051,201 +2647,10 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
       parse_expression(pair)
     }
-    Rule::CompoundExpression => {
-      // Use each child Expression's span position to detect `;` separators
-      // that have no Expression between them (Wolfram: `a ; ; c` →
-      // CompoundExpression[a, Null, c]). Pest doesn't emit pairs for literal
-      // `;` tokens, so we reconstruct the positions of omitted Expressions
-      // by scanning the source string for top-level `;`s between children.
-      let src = pair.as_str();
-      let src_start = pair.as_span().start();
-      let children: Vec<_> = pair.clone().into_inner().collect();
-      let mut exprs: Vec<Expr> = Vec::new();
-      // Count the number of top-level `;` separators between `lo` and `hi`
-      // (absolute offsets into the original input). `;;` is treated as a
-      // Span separator and counted as zero semicolons.
-      let count_separators = |lo: usize, hi: usize| -> usize {
-        let local_lo = lo.saturating_sub(src_start);
-        let local_hi = hi.saturating_sub(src_start);
-        let slice = &src[local_lo.min(src.len())..local_hi.min(src.len())];
-        let bytes = slice.as_bytes();
-        let mut depth: i32 = 0;
-        let mut i = 0;
-        let mut count = 0usize;
-        while i < bytes.len() {
-          let c = bytes[i];
-          match c {
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' => depth -= 1,
-            b'"' => {
-              // Skip string literal
-              i += 1;
-              while i < bytes.len() && bytes[i] != b'"' {
-                if bytes[i] == b'\\' && i + 1 < bytes.len() {
-                  i += 1;
-                }
-                i += 1;
-              }
-            }
-            b';' if depth == 0 => {
-              // Skip `;;` (Span) — it's two chars, not two separators.
-              if i + 1 < bytes.len() && bytes[i + 1] == b';' {
-                i += 1;
-              } else {
-                count += 1;
-              }
-            }
-            _ => {}
-          }
-          i += 1;
-        }
-        count
-      };
-      let mut prev_end = src_start;
-      for (idx, child) in children.iter().enumerate() {
-        let span = child.as_span();
-        if idx > 0 {
-          // Missing expressions between the previous child and this one:
-          // count separators minus 1 (one separator connects two expressions).
-          let seps = count_separators(prev_end, span.start());
-          for _ in 1..seps {
-            exprs.push(Expr::Identifier("Null".to_string()));
-          }
-        }
-        exprs.push(pair_to_expr(child.clone()));
-        prev_end = span.end();
-      }
-      // Trailing separators after the last child → each is a Null.
-      let end_offset = src_start + src.len();
-      let trailing = count_separators(prev_end, end_offset);
-      for _ in 0..trailing {
-        exprs.push(Expr::Identifier("Null".to_string()));
-      }
-      if exprs.len() == 1 {
-        exprs.into_iter().next().unwrap()
-      } else {
-        Expr::CompoundExpr(exprs)
-      }
-    }
-    Rule::AssociationExtended => {
-      let inner_pairs: Vec<_> = pair.into_inner().collect();
-      // First child is always the Association
-      let base_expr = pair_to_expr(inner_pairs[0].clone());
-      // Check whether this is a bracket call or Part extraction
-      let has_call_suffix = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::AssociationCallSuffix));
-      if has_call_suffix {
-        // <|...|>[args] -> CurriedCall
-        let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
-          .iter()
-          .filter(|p| matches!(p.as_rule(), Rule::AssociationCallSuffix))
-          .flat_map(|p| p.clone().into_inner())
-          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-          .map(|bracket| {
-            bracket
-              .into_inner()
-              .filter(|p| {
-                p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
-              })
-              .map(pair_to_expr)
-              .collect()
-          })
-          .collect();
-        let mut result = Expr::CurriedCall {
-          func: Box::new(base_expr),
-          args: bracket_sequences[0].clone(),
-        };
-        for args in bracket_sequences.into_iter().skip(1) {
-          result = Expr::CurriedCall {
-            func: Box::new(result),
-            args,
-          };
-        }
-        result
-      } else {
-        // <|...|>[[index]] -> Part[assoc, index]
-        let part_indices: Vec<Expr> = inner_pairs
-          .iter()
-          .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-          .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
-          .collect();
-        let mut result = base_expr;
-        for idx in &part_indices {
-          result = Expr::Part {
-            expr: Box::new(result),
-            index: Box::new(idx.clone()),
-          };
-        }
-        result
-      }
-    }
-    Rule::Association => {
-      // Association literal: <|item, item, ...|>.
-      // If every item is a Rule (AssociationItem), produce Expr::Association.
-      // Otherwise fall back to a FunctionCall so AssociationQ can return False
-      // for malformed inputs like <|a, b|>.
-      let inner_pairs: Vec<_> = pair.into_inner().collect();
-      let all_rules = inner_pairs
-        .iter()
-        .all(|p| p.as_rule() == Rule::AssociationItem);
-      if all_rules {
-        let items: Vec<(Expr, Expr)> = inner_pairs
-          .into_iter()
-          .map(|item| {
-            // Detect `key :> val` from the raw item text. `:>` keeps the
-            // RuleDelayed marker (value is not evaluated eagerly) per the
-            // Expr::Association convention used by the formatter.
-            let item_text = item.as_str();
-            let is_delayed = is_assoc_item_delayed(item_text);
-            let mut inner = item.into_inner();
-            let key = pair_to_expr(inner.next().unwrap());
-            let val = pair_to_expr(inner.next().unwrap());
-            if is_delayed {
-              (
-                key.clone(),
-                Expr::RuleDelayed {
-                  pattern: Box::new(key),
-                  replacement: Box::new(val),
-                },
-              )
-            } else {
-              (key, val)
-            }
-          })
-          .collect();
-        Expr::Association(items)
-      } else {
-        let args: Vec<Expr> = inner_pairs
-          .into_iter()
-          .map(|p| match p.as_rule() {
-            Rule::AssociationItem => {
-              let mut inner = p.into_inner();
-              let key = pair_to_expr(inner.next().unwrap());
-              let val = pair_to_expr(inner.next().unwrap());
-              Expr::Rule {
-                pattern: Box::new(key),
-                replacement: Box::new(val),
-              }
-            }
-            _ => pair_to_expr(p.into_inner().next().unwrap()),
-          })
-          .collect();
-        Expr::FunctionCall {
-          name: "Association".to_string(),
-          args: args.into(),
-        }
-      }
-    }
-    Rule::AssociationItem => {
-      let mut inner = pair.into_inner();
-      let key = pair_to_expr(inner.next().unwrap());
-      let val = pair_to_expr(inner.next().unwrap());
-      Expr::Rule {
-        pattern: Box::new(key),
-        replacement: Box::new(val),
-      }
-    }
+    Rule::CompoundExpression => parse_compound_expression(pair),
+    Rule::AssociationExtended => parse_association_extended(pair),
+    Rule::Association => parse_association(pair),
+    Rule::AssociationItem => parse_association_item(pair),
     Rule::ReplacementRule => {
       let pair_start = pair.as_span().start();
       let full_str = pair.as_str().to_string();
@@ -3659,103 +3064,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
       result
     }
-    Rule::ParenExtended => {
-      let inner_pairs: Vec<_> = pair.into_inner().collect();
-      let base_expr = pair_to_expr(inner_pairs[0].clone());
-      // Check for derivative prime first: (expr)' -> Derivative[n][expr]
-      // and (expr)'[args] -> Derivative[n][expr][args].
-      let prime_pair = inner_pairs
-        .iter()
-        .find(|p| matches!(p.as_rule(), Rule::DerivativePrime));
-      if let Some(prime) = prime_pair {
-        let order = prime.as_str().chars().filter(|c| *c == '\'').count();
-        let derivative_head = Expr::FunctionCall {
-          name: "Derivative".to_string(),
-          args: vec![Expr::Integer(order as i128)].into(),
-        };
-        let derivative_call = Expr::CurriedCall {
-          func: Box::new(derivative_head),
-          args: vec![base_expr],
-        };
-        // Optional bracket call: (expr)'[args]
-        let call_suffix = inner_pairs
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::ParenCallSuffix));
-        if let Some(suffix) = call_suffix {
-          let bracket_sequences: Vec<Vec<Expr>> = suffix
-            .clone()
-            .into_inner()
-            .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-            .map(|bracket| {
-              bracket
-                .into_inner()
-                .filter(|p| {
-                  p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
-                })
-                .map(pair_to_expr)
-                .collect()
-            })
-            .collect();
-          let mut result = derivative_call;
-          for args in bracket_sequences {
-            result = Expr::CurriedCall {
-              func: Box::new(result),
-              args,
-            };
-          }
-          return result;
-        }
-        return derivative_call;
-      }
-      // Check whether this is a Part extraction or a bracket call
-      let has_call_suffix = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::ParenCallSuffix));
-      if has_call_suffix {
-        // (expr)[args] -> CurriedCall: treat parenthesized expr as function head
-        let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
-          .iter()
-          .filter(|p| matches!(p.as_rule(), Rule::ParenCallSuffix))
-          .flat_map(|p| p.clone().into_inner())
-          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-          .map(|bracket| {
-            bracket
-              .into_inner()
-              .filter(|p| {
-                p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
-              })
-              .map(pair_to_expr)
-              .collect()
-          })
-          .collect();
-        let mut result = Expr::CurriedCall {
-          func: Box::new(base_expr),
-          args: bracket_sequences[0].clone(),
-        };
-        for args in bracket_sequences.into_iter().skip(1) {
-          result = Expr::CurriedCall {
-            func: Box::new(result),
-            args,
-          };
-        }
-        result
-      } else {
-        // (expr)[[index]] -> Part[expr, index]
-        let part_indices: Vec<Expr> = inner_pairs
-          .iter()
-          .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-          .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
-          .collect();
-        let mut result = base_expr;
-        for idx in &part_indices {
-          result = Expr::Part {
-            expr: Box::new(result),
-            index: Box::new(idx.clone()),
-          };
-        }
-        result
-      }
-    }
+    Rule::ParenExtended => parse_paren_extended(pair),
     Rule::Increment => {
       // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
       // Grammar emits one base pair followed by N `IncrementOp` pairs
@@ -4110,6 +3419,411 @@ fn flatten_times_chain(expr: Expr) -> Vec<Expr> {
   let mut out = Vec::new();
   walk(&expr, &mut out);
   out
+}
+
+fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
+  // Merged rule: FunctionCall + optional Part extraction + optional implicit multiplication suffix
+  // Inner pairs: (Identifier|SimpleAnonymousFunction) DerivativePrime? BracketArgs+ DerivativePrime? [PartIndexSuffix | FunctionCallImplicitSuffix]
+  // Note: Anonymous function suffix (&) is NOT handled here — it is handled
+  // at the Expression level via AnonymousFunctionSuffix so that `&` gets the
+  // correct low precedence (binds the whole infix chain, not just the call).
+  let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
+
+  let name_pair = &inner_pairs[0];
+
+  // A leading DerivativePrime (between Identifier and BracketArgs)
+  // applies to the head symbol: `f'[x]` → `Derivative[1][f][x]`. A
+  // trailing DerivativePrime (after the last BracketArgs) wraps the
+  // entire call: `h[1]'` → `Derivative[1][h[1]]`.
+  let first_bracket_idx_fce =
+    inner_pairs.iter().enumerate().find_map(|(i, p)| {
+      if matches!(p.as_rule(), Rule::BracketArgs) {
+        Some(i)
+      } else {
+        None
+      }
+    });
+  let last_bracket_idx_fce =
+    inner_pairs.iter().enumerate().rev().find_map(|(i, p)| {
+      if matches!(p.as_rule(), Rule::BracketArgs) {
+        Some(i)
+      } else {
+        None
+      }
+    });
+  let derivative_order = first_bracket_idx_fce.and_then(|fb| {
+    inner_pairs[..fb]
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+      .map(|p| p.as_str().len())
+  });
+  let trailing_prime_order_fce = last_bracket_idx_fce.and_then(|lb| {
+    inner_pairs[lb + 1..]
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+      .map(|p| p.as_str().len())
+  });
+
+  // Collect the function call's BracketArgs (consecutive BracketArgs after name, before any suffix)
+  let fc_bracket_args: Vec<Vec<Expr>> = inner_pairs
+    .iter()
+    .skip(1) // skip Identifier/SimpleAnonymousFunction
+    .skip_while(|p| matches!(p.as_rule(), Rule::DerivativePrime)) // skip optional DerivativePrime
+    .take_while(|p| matches!(p.as_rule(), Rule::BracketArgs))
+    .map(|bracket| bracket.clone().into_inner().map(pair_to_expr).collect())
+    .collect();
+
+  // Detect suffix types via named rules
+  let has_part_index = inner_pairs
+    .iter()
+    .any(|p| matches!(p.as_rule(), Rule::PartIndexSuffix));
+  let has_implicit_suffix = inner_pairs
+    .iter()
+    .any(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix));
+  let has_implicit_power = inner_pairs
+    .iter()
+    .any(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix));
+
+  // Extract part indices if present
+  let part_indices: Vec<Expr> = inner_pairs
+    .iter()
+    .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+    .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+    .collect();
+
+  // Build the base function call expression
+  let base_func =
+    if matches!(name_pair.as_rule(), Rule::SimpleAnonymousFunction) {
+      let anon_expr = pair_to_expr(name_pair.clone());
+      let mut result = Expr::CurriedCall {
+        func: Box::new(anon_expr),
+        args: fc_bracket_args[0].clone(),
+      };
+      for args in fc_bracket_args.iter().skip(1) {
+        result = Expr::CurriedCall {
+          func: Box::new(result),
+          args: args.clone(),
+        };
+      }
+      result
+    } else if let Some(order) = derivative_order {
+      // f'[x] → Derivative[1][f][x], f''[x] → Derivative[2][f][x], etc.
+      let name = name_pair.as_str().to_string();
+      // Derivative[n][f]
+      let mut result = Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "Derivative".to_string(),
+          args: vec![Expr::Integer(order as i128)].into(),
+        }),
+        args: vec![Expr::Identifier(name)],
+      };
+      // Apply bracket args: Derivative[n][f][x], then any further chained calls
+      for args in fc_bracket_args.iter() {
+        result = Expr::CurriedCall {
+          func: Box::new(result),
+          args: args.clone(),
+        };
+      }
+      result
+    } else {
+      let name = name_pair.as_str().to_string();
+      if fc_bracket_args.len() == 1 {
+        Expr::FunctionCall {
+          name,
+          args: fc_bracket_args[0].clone().into(),
+        }
+      } else {
+        let mut result = Expr::FunctionCall {
+          name,
+          args: fc_bracket_args[0].clone().into(),
+        };
+        for args in fc_bracket_args.iter().skip(1) {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args: args.clone(),
+          };
+        }
+        result
+      }
+    };
+
+  // A trailing DerivativePrime wraps the entire constructed call in
+  // `Derivative[n][...]` (e.g. `h[1]'` → `Derivative[1][h[1]]`).
+  let base_func = if let Some(order) = trailing_prime_order_fce {
+    Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: "Derivative".to_string(),
+        args: vec![Expr::Integer(order as i128)].into(),
+      }),
+      args: vec![base_func],
+    }
+  } else {
+    base_func
+  };
+
+  // Helper: parse FunctionCallImplicitSuffix inner pairs into multiplication factors
+  // (same logic as ImplicitTimes handler)
+  let parse_implicit_factors =
+    |suffix_pair: &pest::iterators::Pair<Rule>| -> Vec<Expr> {
+      let inners: Vec<_> = suffix_pair.clone().into_inner().collect();
+      let mut factors: Vec<Expr> = Vec::new();
+      let mut i = 0;
+      while i < inners.len() {
+        if inners[i].as_rule() == Rule::PartIndexSuffix {
+          if let Some(base) = factors.pop() {
+            let mut result = base;
+            for idx_pair in inners[i].clone().into_inner() {
+              let index = pair_to_expr(idx_pair);
+              result = Expr::Part {
+                expr: Box::new(result),
+                index: Box::new(index),
+              };
+            }
+            factors.push(result);
+          }
+        } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
+          if let Some(base) = factors.pop() {
+            let exponent = implicit_power_exponent(inners[i].clone());
+            factors.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(base),
+              right: Box::new(exponent),
+            });
+          }
+        } else if inners[i].as_rule() == Rule::FactorialSuffix {
+          // `!` / `!!` postfix wraps the previous factor in
+          // `Factorial[…]` / `Factorial2[…]`, so `f[x] n!` parses as
+          // `Times[f[x], Factorial[n]]`.
+          if let Some(base) = factors.pop() {
+            let func_name = if inners[i].as_str() == "!!" {
+              "Factorial2"
+            } else {
+              "Factorial"
+            };
+            factors.push(Expr::FunctionCall {
+              name: func_name.to_string(),
+              args: vec![base].into(),
+            });
+          }
+        } else if matches!(
+          inners[i].as_rule(),
+          Rule::RepeatedSuffix | Rule::RepeatedNullSuffix
+        ) {
+          // `..` / `...` postfix wraps the previous factor in
+          // `Repeated[…]` / `RepeatedNull[…]`.
+          if let Some(base) = factors.pop() {
+            let func_name = if inners[i].as_rule() == Rule::RepeatedNullSuffix {
+              "RepeatedNull"
+            } else {
+              "Repeated"
+            };
+            factors.push(Expr::FunctionCall {
+              name: func_name.to_string(),
+              args: vec![base].into(),
+            });
+          }
+        } else {
+          factors.push(pair_to_expr(inners[i].clone()));
+        }
+        i += 1;
+      }
+      factors
+    };
+
+  // Helper: fold a base expression with implicit multiplication factors into nested Times
+  let fold_implicit_times = |base: Expr, factors: Vec<Expr>| -> Expr {
+    factors.into_iter().fold(base, |acc, f| Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(acc),
+      right: Box::new(f),
+    })
+  };
+
+  if has_part_index && has_implicit_suffix {
+    // PartExtract with implicit multiplication: f[x][[i]]^2 y
+    let mut result = base_func;
+    for idx in &part_indices {
+      result = Expr::Part {
+        expr: Box::new(result),
+        index: Box::new(idx.clone()),
+      };
+    }
+    if has_implicit_power {
+      let exponent = implicit_power_exponent(
+        inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix))
+          .unwrap()
+          .clone(),
+      );
+      result = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(result),
+        right: Box::new(exponent),
+      };
+    }
+    let suffix_pair = inner_pairs
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix))
+      .unwrap();
+    let factors = parse_implicit_factors(suffix_pair);
+    fold_implicit_times(result, factors)
+  } else if has_part_index {
+    // Plain PartExtract: f[x][[i]]
+    let mut result = base_func;
+    for idx in &part_indices {
+      result = Expr::Part {
+        expr: Box::new(result),
+        index: Box::new(idx.clone()),
+      };
+    }
+    result
+  } else if has_implicit_suffix {
+    // Implicit multiplication after function call: f[x] g[y] or f[x]^2 y
+    let mut result = base_func;
+    if has_implicit_power {
+      let exponent = implicit_power_exponent(
+        inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix))
+          .unwrap()
+          .clone(),
+      );
+      result = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(result),
+        right: Box::new(exponent),
+      };
+    }
+    let suffix_pair = inner_pairs
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix))
+      .unwrap();
+    let factors = parse_implicit_factors(suffix_pair);
+    fold_implicit_times(result, factors)
+  } else {
+    // Plain FunctionCall
+    base_func
+  }
+}
+
+fn parse_function_call(pair: Pair<Rule>) -> Expr {
+  let inner_pairs: Vec<_> = pair.into_inner().collect();
+  let name_pair = &inner_pairs[0];
+  // Leading vs. trailing DerivativePrime: a leading prime applies to
+  // the head (`f'[x]` → `Derivative[1][f][x]`); a trailing prime wraps
+  // the entire call (`h[1]'` → `Derivative[1][h[1]]`).
+  let first_bracket_idx_fc =
+    inner_pairs.iter().enumerate().find_map(|(i, p)| {
+      if matches!(p.as_rule(), Rule::BracketArgs) {
+        Some(i)
+      } else {
+        None
+      }
+    });
+  let last_bracket_idx_fc =
+    inner_pairs.iter().enumerate().rev().find_map(|(i, p)| {
+      if matches!(p.as_rule(), Rule::BracketArgs) {
+        Some(i)
+      } else {
+        None
+      }
+    });
+  let derivative_order = first_bracket_idx_fc.and_then(|fb| {
+    inner_pairs[..fb]
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+      .map(|p| p.as_str().len())
+  });
+  let trailing_prime_order_fc = last_bracket_idx_fc.and_then(|lb| {
+    inner_pairs[lb + 1..]
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+      .map(|p| p.as_str().len())
+  });
+  // Collect bracket sequences separately for proper chained call handling
+  let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
+    .iter()
+    .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+    .map(|bracket| {
+      bracket
+        .clone()
+        .into_inner()
+        .filter(|p| p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ",")
+        .map(pair_to_expr)
+        .collect()
+    })
+    .collect();
+  // Check if the function head is an anonymous function
+  if matches!(name_pair.as_rule(), Rule::SimpleAnonymousFunction) {
+    let anon_expr = pair_to_expr(name_pair.clone());
+    // Build curried calls: (#&)[1] or (#^2&)[{1,2,3}]
+    let mut result = Expr::CurriedCall {
+      func: Box::new(anon_expr),
+      args: bracket_sequences[0].clone(),
+    };
+    for args in bracket_sequences.into_iter().skip(1) {
+      result = Expr::CurriedCall {
+        func: Box::new(result),
+        args,
+      };
+    }
+    result
+  } else if let Some(order) = derivative_order {
+    // f'[x] → Derivative[1][f][x]
+    let name = name_pair.as_str().to_string();
+    let mut result = Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: "Derivative".to_string(),
+        args: vec![Expr::Integer(order as i128)].into(),
+      }),
+      args: vec![Expr::Identifier(name)],
+    };
+    for args in bracket_sequences.iter() {
+      result = Expr::CurriedCall {
+        func: Box::new(result),
+        args: args.clone(),
+      };
+    }
+    result
+  } else {
+    let name = name_pair.as_str().to_string();
+    // Build chained calls: f[a][b] becomes Apply(f[a], b)
+    let result = if bracket_sequences.len() == 1 {
+      Expr::FunctionCall {
+        name,
+        args: bracket_sequences.into_iter().next().unwrap().into(),
+      }
+    } else {
+      // Multiple bracket sequences: build nested Apply calls
+      // f[a][b][c] becomes: first build f[a], then apply [b], then apply [c]
+      let mut result = Expr::FunctionCall {
+        name,
+        args: bracket_sequences[0].clone().into(),
+      };
+      for args in bracket_sequences.into_iter().skip(1) {
+        // Wrap as a curried call: FunctionCall applied to new args
+        result = Expr::CurriedCall {
+          func: Box::new(result),
+          args,
+        };
+      }
+      result
+    };
+    // Trailing DerivativePrime wraps the entire call:
+    // `h[1]'` → `Derivative[1][h[1]]`.
+    if let Some(order) = trailing_prime_order_fc {
+      Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "Derivative".to_string(),
+          args: vec![Expr::Integer(order as i128)].into(),
+        }),
+        args: vec![result],
+      }
+    } else {
+      result
+    }
+  }
 }
 
 /// Parse an expression with operators into an Expr
@@ -4779,6 +4493,303 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   }
 
   result
+}
+
+fn parse_compound_expression(pair: Pair<Rule>) -> Expr {
+  // Use each child Expression's span position to detect `;` separators
+  // that have no Expression between them (Wolfram: `a ; ; c` →
+  // CompoundExpression[a, Null, c]). Pest doesn't emit pairs for literal
+  // `;` tokens, so we reconstruct the positions of omitted Expressions
+  // by scanning the source string for top-level `;`s between children.
+  let src = pair.as_str();
+  let src_start = pair.as_span().start();
+  let children: Vec<_> = pair.clone().into_inner().collect();
+  let mut exprs: Vec<Expr> = Vec::new();
+  // Count the number of top-level `;` separators between `lo` and `hi`
+  // (absolute offsets into the original input). `;;` is treated as a
+  // Span separator and counted as zero semicolons.
+  let count_separators = |lo: usize, hi: usize| -> usize {
+    let local_lo = lo.saturating_sub(src_start);
+    let local_hi = hi.saturating_sub(src_start);
+    let slice = &src[local_lo.min(src.len())..local_hi.min(src.len())];
+    let bytes = slice.as_bytes();
+    let mut depth: i32 = 0;
+    let mut i = 0;
+    let mut count = 0usize;
+    while i < bytes.len() {
+      let c = bytes[i];
+      match c {
+        b'(' | b'[' | b'{' => depth += 1,
+        b')' | b']' | b'}' => depth -= 1,
+        b'"' => {
+          // Skip string literal
+          i += 1;
+          while i < bytes.len() && bytes[i] != b'"' {
+            if bytes[i] == b'\\' && i + 1 < bytes.len() {
+              i += 1;
+            }
+            i += 1;
+          }
+        }
+        b';' if depth == 0 => {
+          // Skip `;;` (Span) — it's two chars, not two separators.
+          if i + 1 < bytes.len() && bytes[i + 1] == b';' {
+            i += 1;
+          } else {
+            count += 1;
+          }
+        }
+        _ => {}
+      }
+      i += 1;
+    }
+    count
+  };
+  let mut prev_end = src_start;
+  for (idx, child) in children.iter().enumerate() {
+    let span = child.as_span();
+    if idx > 0 {
+      // Missing expressions between the previous child and this one:
+      // count separators minus 1 (one separator connects two expressions).
+      let seps = count_separators(prev_end, span.start());
+      for _ in 1..seps {
+        exprs.push(Expr::Identifier("Null".to_string()));
+      }
+    }
+    exprs.push(pair_to_expr(child.clone()));
+    prev_end = span.end();
+  }
+  // Trailing separators after the last child → each is a Null.
+  let end_offset = src_start + src.len();
+  let trailing = count_separators(prev_end, end_offset);
+  for _ in 0..trailing {
+    exprs.push(Expr::Identifier("Null".to_string()));
+  }
+  if exprs.len() == 1 {
+    exprs.into_iter().next().unwrap()
+  } else {
+    Expr::CompoundExpr(exprs)
+  }
+}
+
+fn parse_association_extended(pair: Pair<Rule>) -> Expr {
+  let inner_pairs: Vec<_> = pair.into_inner().collect();
+  // First child is always the Association
+  let base_expr = pair_to_expr(inner_pairs[0].clone());
+  // Check whether this is a bracket call or Part extraction
+  let has_call_suffix = inner_pairs
+    .iter()
+    .any(|p| matches!(p.as_rule(), Rule::AssociationCallSuffix));
+  if has_call_suffix {
+    // <|...|>[args] -> CurriedCall
+    let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
+      .iter()
+      .filter(|p| matches!(p.as_rule(), Rule::AssociationCallSuffix))
+      .flat_map(|p| p.clone().into_inner())
+      .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+      .map(|bracket| {
+        bracket
+          .into_inner()
+          .filter(|p| {
+            p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+          })
+          .map(pair_to_expr)
+          .collect()
+      })
+      .collect();
+    let mut result = Expr::CurriedCall {
+      func: Box::new(base_expr),
+      args: bracket_sequences[0].clone(),
+    };
+    for args in bracket_sequences.into_iter().skip(1) {
+      result = Expr::CurriedCall {
+        func: Box::new(result),
+        args,
+      };
+    }
+    result
+  } else {
+    // <|...|>[[index]] -> Part[assoc, index]
+    let part_indices: Vec<Expr> = inner_pairs
+      .iter()
+      .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+      .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+      .collect();
+    let mut result = base_expr;
+    for idx in &part_indices {
+      result = Expr::Part {
+        expr: Box::new(result),
+        index: Box::new(idx.clone()),
+      };
+    }
+    result
+  }
+}
+
+fn parse_association(pair: Pair<Rule>) -> Expr {
+  // Association literal: <|item, item, ...|>.
+  // If every item is a Rule (AssociationItem), produce Expr::Association.
+  // Otherwise fall back to a FunctionCall so AssociationQ can return False
+  // for malformed inputs like <|a, b|>.
+  let inner_pairs: Vec<_> = pair.into_inner().collect();
+  let all_rules = inner_pairs
+    .iter()
+    .all(|p| p.as_rule() == Rule::AssociationItem);
+  if all_rules {
+    let items: Vec<(Expr, Expr)> = inner_pairs
+      .into_iter()
+      .map(|item| {
+        // Detect `key :> val` from the raw item text. `:>` keeps the
+        // RuleDelayed marker (value is not evaluated eagerly) per the
+        // Expr::Association convention used by the formatter.
+        let item_text = item.as_str();
+        let is_delayed = is_assoc_item_delayed(item_text);
+        let mut inner = item.into_inner();
+        let key = pair_to_expr(inner.next().unwrap());
+        let val = pair_to_expr(inner.next().unwrap());
+        if is_delayed {
+          (
+            key.clone(),
+            Expr::RuleDelayed {
+              pattern: Box::new(key),
+              replacement: Box::new(val),
+            },
+          )
+        } else {
+          (key, val)
+        }
+      })
+      .collect();
+    Expr::Association(items)
+  } else {
+    let args: Vec<Expr> = inner_pairs
+      .into_iter()
+      .map(|p| match p.as_rule() {
+        Rule::AssociationItem => {
+          let mut inner = p.into_inner();
+          let key = pair_to_expr(inner.next().unwrap());
+          let val = pair_to_expr(inner.next().unwrap());
+          Expr::Rule {
+            pattern: Box::new(key),
+            replacement: Box::new(val),
+          }
+        }
+        _ => pair_to_expr(p.into_inner().next().unwrap()),
+      })
+      .collect();
+    Expr::FunctionCall {
+      name: "Association".to_string(),
+      args: args.into(),
+    }
+  }
+}
+
+fn parse_association_item(pair: Pair<Rule>) -> Expr {
+  let mut inner = pair.into_inner();
+  let key = pair_to_expr(inner.next().unwrap());
+  let val = pair_to_expr(inner.next().unwrap());
+  Expr::Rule {
+    pattern: Box::new(key),
+    replacement: Box::new(val),
+  }
+}
+
+fn parse_paren_extended(pair: Pair<Rule>) -> Expr {
+  let inner_pairs: Vec<_> = pair.into_inner().collect();
+  let base_expr = pair_to_expr(inner_pairs[0].clone());
+  // Check for derivative prime first: (expr)' -> Derivative[n][expr]
+  // and (expr)'[args] -> Derivative[n][expr][args].
+  let prime_pair = inner_pairs
+    .iter()
+    .find(|p| matches!(p.as_rule(), Rule::DerivativePrime));
+  if let Some(prime) = prime_pair {
+    let order = prime.as_str().chars().filter(|c| *c == '\'').count();
+    let derivative_head = Expr::FunctionCall {
+      name: "Derivative".to_string(),
+      args: vec![Expr::Integer(order as i128)].into(),
+    };
+    let derivative_call = Expr::CurriedCall {
+      func: Box::new(derivative_head),
+      args: vec![base_expr],
+    };
+    // Optional bracket call: (expr)'[args]
+    let call_suffix = inner_pairs
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::ParenCallSuffix));
+    if let Some(suffix) = call_suffix {
+      let bracket_sequences: Vec<Vec<Expr>> = suffix
+        .clone()
+        .into_inner()
+        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        .map(|bracket| {
+          bracket
+            .into_inner()
+            .filter(|p| {
+              p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+            })
+            .map(pair_to_expr)
+            .collect()
+        })
+        .collect();
+      let mut result = derivative_call;
+      for args in bracket_sequences {
+        result = Expr::CurriedCall {
+          func: Box::new(result),
+          args,
+        };
+      }
+      return result;
+    }
+    return derivative_call;
+  }
+  // Check whether this is a Part extraction or a bracket call
+  let has_call_suffix = inner_pairs
+    .iter()
+    .any(|p| matches!(p.as_rule(), Rule::ParenCallSuffix));
+  if has_call_suffix {
+    // (expr)[args] -> CurriedCall: treat parenthesized expr as function head
+    let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
+      .iter()
+      .filter(|p| matches!(p.as_rule(), Rule::ParenCallSuffix))
+      .flat_map(|p| p.clone().into_inner())
+      .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+      .map(|bracket| {
+        bracket
+          .into_inner()
+          .filter(|p| {
+            p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+          })
+          .map(pair_to_expr)
+          .collect()
+      })
+      .collect();
+    let mut result = Expr::CurriedCall {
+      func: Box::new(base_expr),
+      args: bracket_sequences[0].clone(),
+    };
+    for args in bracket_sequences.into_iter().skip(1) {
+      result = Expr::CurriedCall {
+        func: Box::new(result),
+        args,
+      };
+    }
+    result
+  } else {
+    // (expr)[[index]] -> Part[expr, index]
+    let part_indices: Vec<Expr> = inner_pairs
+      .iter()
+      .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+      .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+      .collect();
+    let mut result = base_expr;
+    for idx in &part_indices {
+      result = Expr::Part {
+        expr: Box::new(result),
+        index: Box::new(idx.clone()),
+      };
+    }
+    result
+  }
 }
 
 /// Get precedence of an operator (higher = binds tighter)
