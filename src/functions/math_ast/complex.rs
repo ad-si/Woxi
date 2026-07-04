@@ -496,6 +496,14 @@ pub fn is_real_valued(expr: &Expr) -> bool {
   if is_known_real(expr) {
     return true;
   }
+  // Re, Im, Abs, and Arg return a real value for ANY argument, so nesting
+  // them simplifies: Re[Re[x]] = Re[x], Im[Abs[x]] = 0, Re[Arg[x]] = Arg[x].
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg")
+  {
+    return true;
+  }
   // NumericQ expressions: check if they evaluate to a real number
   if crate::functions::predicate_ast::is_numeric_q_pub(expr) {
     // Try to evaluate numerically - if it gives a real, it's real-valued

@@ -427,6 +427,18 @@ mod re_tests {
     assert_eq!(interpret("Re[3 + 4*I]").unwrap(), "3");
   }
 
+  // Re, Im, Abs, and Arg are real-valued for any argument, so Re of any of
+  // them is that expression unchanged.
+  #[test]
+  fn re_of_real_valued_head() {
+    assert_eq!(interpret("Re[Re[x]]").unwrap(), "Re[x]");
+    assert_eq!(interpret("Re[Im[x]]").unwrap(), "Im[x]");
+    assert_eq!(interpret("Re[Abs[x]]").unwrap(), "Abs[x]");
+    assert_eq!(interpret("Re[Arg[x]]").unwrap(), "Arg[x]");
+    // A bare symbol still has no simplification.
+    assert_eq!(interpret("Re[x]").unwrap(), "Re[x]");
+  }
+
   #[test]
   fn re_complex_negative_imag() {
     assert_eq!(interpret("Re[3 - 4*I]").unwrap(), "3");
@@ -525,6 +537,18 @@ mod im_tests {
   #[test]
   fn im_complex() {
     assert_eq!(interpret("Im[3 + 4*I]").unwrap(), "4");
+  }
+
+  // Re, Im, Abs, and Arg are real-valued for any argument, so Im of any of
+  // them is 0.
+  #[test]
+  fn im_of_real_valued_head() {
+    assert_eq!(interpret("Im[Re[x]]").unwrap(), "0");
+    assert_eq!(interpret("Im[Im[x]]").unwrap(), "0");
+    assert_eq!(interpret("Im[Abs[x]]").unwrap(), "0");
+    assert_eq!(interpret("Im[Arg[x]]").unwrap(), "0");
+    // A bare symbol still has no simplification.
+    assert_eq!(interpret("Im[x]").unwrap(), "Im[x]");
   }
 
   #[test]
