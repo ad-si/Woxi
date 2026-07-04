@@ -8463,6 +8463,21 @@ mod cases {
     // A positive power is its own numerator.
     assert_case(r#"Numerator[x^2]"#, r#"x^2"#);
   }
+  // A negative RATIONAL exponent (x^(-1/2) = 1/Sqrt[x]) is also a denominator
+  // power. Previously negate_if_negative did not recognise Rational[-n, d].
+  #[test]
+  fn denominator_negative_rational_power() {
+    assert_case(r#"Denominator[x^(-1/2)]"#, r#"Sqrt[x]"#);
+    assert_case(r#"Denominator[x^(-3/2)]"#, r#"x^(3/2)"#);
+    assert_case(r#"Denominator[1/Sqrt[2]]"#, r#"Sqrt[2]"#);
+    // A positive fractional exponent has denominator 1.
+    assert_case(r#"Denominator[x^(1/2)]"#, r#"1"#);
+  }
+  #[test]
+  fn numerator_negative_rational_power() {
+    assert_case(r#"Numerator[x^(-1/2)]"#, r#"1"#);
+    assert_case(r#"Numerator[x^(-3/2)]"#, r#"1"#);
+  }
   #[test]
   fn expand_1() {
     assert_case(r#"Expand[(x + y) ^ 3]"#, r#"x^3 + 3*x^2*y + 3*x*y^2 + y^3"#);

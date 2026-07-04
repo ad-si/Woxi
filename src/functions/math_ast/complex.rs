@@ -2044,6 +2044,22 @@ pub fn get_negative_power_exponent(expr: &Expr) -> Option<(Expr, Expr)> {
 fn negate_if_negative(exp: &Expr) -> Option<Expr> {
   match exp {
     Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    // A negative rational exponent (e.g. Power[x, -1/2] = 1/Sqrt[x]) is also a
+    // denominator power: Rational[-n, d] negates to Rational[n, d].
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      if let Expr::Integer(n) = &args[0] {
+        Some(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-n), args[1].clone()].into(),
+        })
+      } else {
+        None
+      }
+    }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
