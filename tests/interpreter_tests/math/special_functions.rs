@@ -1816,6 +1816,21 @@ mod zeta {
     assert_eq!(interpret("Zeta[0]").unwrap(), "-1/2");
   }
 
+  // An inexact zero argument evaluates numerically to -0.5. Previously the
+  // reflection formula computed sin(0)*Zeta[1] = 0*Infinity = NaN, so
+  // Zeta[0.] came back as Indeterminate. Per wolframscript.
+  #[test]
+  fn zero_real() {
+    assert_eq!(interpret("Zeta[0.0]").unwrap(), "-0.5");
+  }
+
+  // The pole at s = 1 is ComplexInfinity for an inexact argument too, not a
+  // real Infinity. Per wolframscript.
+  #[test]
+  fn pole_at_one_real() {
+    assert_eq!(interpret("Zeta[1.0]").unwrap(), "ComplexInfinity");
+  }
+
   // As s -> +Infinity the series collapses to its first term, so
   // Zeta[Infinity] = 1; an undirected ComplexInfinity is Indeterminate.
   // Zeta[-Infinity] stays unevaluated. Per wolframscript.

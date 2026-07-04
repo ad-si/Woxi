@@ -87,6 +87,11 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
     Expr::Real(f) => {
+      // Zeta has a simple pole at s = 1: Zeta[1.] = ComplexInfinity (like the
+      // exact Zeta[1]), not a real Infinity.
+      if *f == 1.0 {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
       // Numeric evaluation
       let result = zeta_numeric(*f);
       Ok(Expr::Real(result))
@@ -706,6 +711,12 @@ pub fn zeta_numeric(s: f64) -> f64 {
 
   if (s - 1.0).abs() < 1e-15 {
     return f64::INFINITY;
+  }
+
+  // Zeta[0] = -1/2. The reflection formula below would otherwise evaluate
+  // sin(0) * zeta(1) = 0 * Infinity = NaN at s = 0.
+  if s == 0.0 {
+    return -0.5;
   }
 
   // For s < 0.5, use the reflection formula:
