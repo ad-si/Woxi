@@ -1855,6 +1855,24 @@ fn parse_box_continued(
 /// Convert a pest Pair to an owned Expr AST.
 /// This is used to store function bodies without re-parsing.
 pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
+  // Handle some cases that recurse to avoid large stack usage.
+  match pair.as_rule() {
+    Rule::NumericValue | Rule::UnsignedNumericValue => {
+      let inner = pair.into_inner().next().unwrap();
+      pair_to_expr(inner)
+    }
+    Rule::List => parse_list(pair),
+    Rule::ListExtended => parse_list_extended(pair),
+    Rule::FunctionCallExtended => parse_function_call_extended(pair),
+    Rule::FunctionCall => parse_function_call(pair),
+    Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
+      parse_expression(pair)
+    }
+    _ => pair_to_expr_inner(pair),
+  }
+}
+
+fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
   match pair.as_rule() {
     Rule::Integer | Rule::UnsignedInteger => {
       let s = pair.as_str();
@@ -2487,82 +2505,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::Constant | Rule::UnsignedConstant => {
       Expr::Constant(pair.as_str().trim().to_string())
     }
-    Rule::NumericValue | Rule::UnsignedNumericValue => {
-      let inner = pair.into_inner().next().unwrap();
-      pair_to_expr(inner)
-    }
-    Rule::List => {
-      let items: Vec<Expr> = pair
-        .into_inner()
-        .filter(|p| p.as_str() != ",")
-        .map(pair_to_expr)
-        .collect();
-      Expr::List(items.into())
-    }
-    Rule::ListExtended => {
-      // Merged rule: List + optional suffix (PartIndexSuffix or ListCallSuffix)
-      // Eliminates exponential backtracking for deeply nested lists.
-      // Note: Anonymous function suffix (&) is NOT handled here — it is handled
-      // at the Expression level via AnonymousFunctionSuffix so `&` gets the
-      // correct low precedence.
-      let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
-
-      // First inner pair is always List
-      let list_expr = pair_to_expr(inner_pairs[0].clone());
-
-      // Check for suffix types
-      let has_part_index = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::PartIndexSuffix));
-      let has_list_call = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::ListCallSuffix));
-
-      if has_part_index {
-        // List[[...]]: PartExtract with List base
-        let part_indices: Vec<Expr> = inner_pairs
-          .iter()
-          .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-          .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
-          .collect();
-        let mut result = list_expr;
-        for idx in &part_indices {
-          result = Expr::Part {
-            expr: Box::new(result),
-            index: Box::new(idx.clone()),
-          };
-        }
-        result
-      } else if has_list_call {
-        // List[...]: ListCall
-        let suffix_pair = inner_pairs
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::ListCallSuffix))
-          .unwrap();
-        let bracket_sequences: Vec<Vec<Expr>> = suffix_pair
-          .clone()
-          .into_inner()
-          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-          .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
-          .collect();
-        let mut result = Expr::CurriedCall {
-          func: Box::new(list_expr),
-          args: bracket_sequences[0].clone(),
-        };
-        for args in bracket_sequences.into_iter().skip(1) {
-          result = Expr::CurriedCall {
-            func: Box::new(result),
-            args,
-          };
-        }
-        result
-      } else {
-        // Plain List
-        list_expr
-      }
-    }
-    Rule::FunctionCallExtended => parse_function_call_extended(pair),
-    Rule::FunctionCall => parse_function_call(pair),
     Rule::BaseFunctionCall => {
       let inner_pairs: Vec<_> = pair.into_inner().collect();
       let name_pair = &inner_pairs[0];
@@ -2643,9 +2585,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           args: vec![start, end].into(),
         }
       }
-    }
-    Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
-      parse_expression(pair)
     }
     Rule::CompoundExpression => parse_compound_expression(pair),
     Rule::AssociationExtended => parse_association_extended(pair),
@@ -3419,6 +3358,78 @@ fn flatten_times_chain(expr: Expr) -> Vec<Expr> {
   let mut out = Vec::new();
   walk(&expr, &mut out);
   out
+}
+
+fn parse_list(pair: Pair<Rule>) -> Expr {
+  let items: Vec<Expr> = pair
+    .into_inner()
+    .filter(|p| p.as_str() != ",")
+    .map(pair_to_expr)
+    .collect();
+  Expr::List(items.into())
+}
+
+fn parse_list_extended(pair: Pair<Rule>) -> Expr {
+  // Merged rule: List + optional suffix (PartIndexSuffix or ListCallSuffix)
+  // Eliminates exponential backtracking for deeply nested lists.
+  // Note: Anonymous function suffix (&) is NOT handled here — it is handled
+  // at the Expression level via AnonymousFunctionSuffix so `&` gets the
+  // correct low precedence.
+  let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
+
+  // First inner pair is always List
+  let list_expr = pair_to_expr(inner_pairs[0].clone());
+
+  // Check for suffix types
+  let has_part_index = inner_pairs
+    .iter()
+    .any(|p| matches!(p.as_rule(), Rule::PartIndexSuffix));
+  let has_list_call = inner_pairs
+    .iter()
+    .any(|p| matches!(p.as_rule(), Rule::ListCallSuffix));
+
+  if has_part_index {
+    // List[[...]]: PartExtract with List base
+    let part_indices: Vec<Expr> = inner_pairs
+      .iter()
+      .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+      .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+      .collect();
+    let mut result = list_expr;
+    for idx in &part_indices {
+      result = Expr::Part {
+        expr: Box::new(result),
+        index: Box::new(idx.clone()),
+      };
+    }
+    result
+  } else if has_list_call {
+    // List[...]: ListCall
+    let suffix_pair = inner_pairs
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::ListCallSuffix))
+      .unwrap();
+    let bracket_sequences: Vec<Vec<Expr>> = suffix_pair
+      .clone()
+      .into_inner()
+      .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+      .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
+      .collect();
+    let mut result = Expr::CurriedCall {
+      func: Box::new(list_expr),
+      args: bracket_sequences[0].clone(),
+    };
+    for args in bracket_sequences.into_iter().skip(1) {
+      result = Expr::CurriedCall {
+        func: Box::new(result),
+        args,
+      };
+    }
+    result
+  } else {
+    // Plain List
+    list_expr
+  }
 }
 
 fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
