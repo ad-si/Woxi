@@ -1430,6 +1430,7 @@ nav = [
   ] },
   { "Plotting" = [
     "plotting.md",
+    { "Control" = "plotting/Control.md" },
     { "PeriodicTablePlot" = "plotting/PeriodicTablePlot.md" },
     { "ArrayPlot" = "plotting/ArrayPlot.md" },
     { "AudioPlot" = "plotting/AudioPlot.md" },

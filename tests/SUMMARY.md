@@ -1335,6 +1335,7 @@
     - [`Wronskian`](symbolic/Wronskian.md)
   - [Module](module.md)
 - [Plotting](plotting.md)
+  - [`Control`](plotting/Control.md)
   - [`PeriodicTablePlot`](plotting/PeriodicTablePlot.md)
   - [`ArrayPlot`](plotting/ArrayPlot.md)
   - [`AudioPlot`](plotting/AudioPlot.md)
