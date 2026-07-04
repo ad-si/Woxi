@@ -2566,7 +2566,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::BaseFunctionCall => {
       let inner_pairs: Vec<_> = pair.into_inner().collect();
       let name_pair = &inner_pairs[0];
-      let name = name_pair.as_str().to_string();
+      let name = resolve_head_name(name_pair);
       let derivative_order = inner_pairs
         .iter()
         .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
@@ -3508,7 +3508,7 @@ fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
       result
     } else if let Some(order) = derivative_order {
       // f'[x] → Derivative[1][f][x], f''[x] → Derivative[2][f][x], etc.
-      let name = name_pair.as_str().to_string();
+      let name = resolve_head_name(name_pair);
       // Derivative[n][f]
       let mut result = Expr::CurriedCall {
         func: Box::new(Expr::FunctionCall {
@@ -3526,7 +3526,7 @@ fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
       }
       result
     } else {
-      let name = name_pair.as_str().to_string();
+      let name = resolve_head_name(name_pair);
       if fc_bracket_args.len() == 1 {
         Expr::FunctionCall {
           name,
@@ -3707,6 +3707,20 @@ fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
   }
 }
 
+/// Resolve the display name of a function-call head pair. A plain
+/// `Identifier` head uses its raw text; a `NamedCharIdentifier` head (e.g.
+/// `\[Psi]`) is decoded to its Unicode symbol (`ψ`) so `\[Psi][x, t]` calls
+/// the same symbol that `\[Psi]` denotes on its own.
+fn resolve_head_name(name_pair: &Pair<Rule>) -> String {
+  if matches!(name_pair.as_rule(), Rule::NamedCharIdentifier) {
+    let decoded = pair_to_expr(name_pair.clone());
+    if let Expr::Identifier(s) | Expr::Constant(s) = &decoded {
+      return s.clone();
+    }
+  }
+  name_pair.as_str().to_string()
+}
+
 fn parse_function_call(pair: Pair<Rule>) -> Expr {
   let inner_pairs: Vec<_> = pair.into_inner().collect();
   let name_pair = &inner_pairs[0];
@@ -3771,7 +3785,7 @@ fn parse_function_call(pair: Pair<Rule>) -> Expr {
     result
   } else if let Some(order) = derivative_order {
     // f'[x] → Derivative[1][f][x]
-    let name = name_pair.as_str().to_string();
+    let name = resolve_head_name(name_pair);
     let mut result = Expr::CurriedCall {
       func: Box::new(Expr::FunctionCall {
         name: "Derivative".to_string(),
@@ -3787,7 +3801,7 @@ fn parse_function_call(pair: Pair<Rule>) -> Expr {
     }
     result
   } else {
-    let name = name_pair.as_str().to_string();
+    let name = resolve_head_name(name_pair);
     // Build chained calls: f[a][b] becomes Apply(f[a], b)
     let result = if bracket_sequences.len() == 1 {
       Expr::FunctionCall {

@@ -2523,3 +2523,169 @@ mod triangle_rendering {
     assert!(svg.contains("<polygon"), "expected voxel polygons: {svg}");
   }
 }
+
+// ── TraditionalForm typesetting ──────────────────────────────────────
+//
+// These verify the 2D box tree produced for `TraditionalForm` math so held
+// expressions render in conventional notation (∑/∫/∏ operators, invisible
+// HoldForm, π/∞/ⅇ glyphs, `sin(x)`, stacked fractions, radicals, bracketed
+// matrices) rather than as literal `Sum[…]`/`Integrate[…]` function calls.
+mod traditional_form_boxes {
+  use woxi::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional;
+  use woxi::interpret_with_stdout;
+  use woxi::syntax::string_to_expr;
+
+  /// TraditionalForm box tree of `code`, as a debug string for substring
+  /// assertions.
+  fn tf(code: &str) -> String {
+    let expr = string_to_expr(code).expect("parse");
+    format!("{:?}", expr_to_box_form_traditional(&expr))
+  }
+
+  /// Typeset SVG the Playground/Studio produce for `code`.
+  fn tf_svg(code: &str) -> String {
+    interpret_with_stdout(code)
+      .expect("eval")
+      .output_svg
+      .expect("output_svg")
+  }
+
+  #[test]
+  fn hold_form_is_invisible() {
+    let boxes = tf("HoldForm[a + b]");
+    assert!(!boxes.contains("HoldForm"), "HoldForm should vanish: {boxes}");
+  }
+
+  #[test]
+  fn constants_map_to_glyphs() {
+    // Go through the full parser (bare `string_to_expr("Infinity")` would hit
+    // an f64 fast-path and yield a Real, not the symbol).
+    let svg = tf_svg("TraditionalForm @ HoldForm[Pi + Infinity + Exp[x]]");
+    assert!(svg.contains('\u{03C0}'), "Pi → π: {svg}");
+    assert!(svg.contains('\u{221E}'), "Infinity → ∞: {svg}");
+    assert!(svg.contains('\u{2147}'), "Exp base → ⅇ: {svg}");
+  }
+
+  #[test]
+  fn equal_renders_as_single_equals() {
+    let boxes = tf("a == b");
+    assert!(boxes.contains("\"=\""), "== → = : {boxes}");
+    assert!(!boxes.contains("\"==\""), "no literal == : {boxes}");
+  }
+
+  #[test]
+  fn known_function_lowercased_with_parens() {
+    let boxes = tf("Sin[x]");
+    assert!(boxes.contains("\"sin\""), "Sin → sin: {boxes}");
+    assert!(boxes.contains("\"(\""), "uses parentheses: {boxes}");
+  }
+
+  #[test]
+  fn trig_power_sits_on_the_name() {
+    // Sin[x]^2 → sin²(x): the exponent goes on the function name.
+    let boxes = tf("Sin[x]^2");
+    let sup = boxes.find("SuperscriptBox").expect("has superscript");
+    let sin = boxes.find("\"sin\"").expect("has sin");
+    assert!(sup < sin, "exponent precedes the name: {boxes}");
+  }
+
+  #[test]
+  fn unknown_function_uses_parentheses() {
+    // Preserves the MakeBoxes contract: F[x] → RowBox[{F, (, x, )}].
+    let boxes = tf("F[x]");
+    assert!(boxes.contains("\"F\""), "head kept: {boxes}");
+    assert!(boxes.contains("\"(\"") && boxes.contains("\")\""), "parens: {boxes}");
+    assert!(!boxes.contains("\"[\""), "no square brackets: {boxes}");
+  }
+
+  #[test]
+  fn sum_becomes_underoverscript_operator() {
+    let boxes = tf("Sum[1/n^2, {n, 1, Infinity}]");
+    assert!(
+      boxes.contains("UnderoverscriptBox"),
+      "Sum uses a large operator with limits: {boxes}"
+    );
+    assert!(boxes.contains('\u{2211}'), "∑ glyph present: {boxes}");
+    assert!(!boxes.contains("\"Sum\""), "no literal Sum head: {boxes}");
+  }
+
+  #[test]
+  fn product_becomes_large_operator() {
+    let boxes = tf("Product[k, {k, 1, Infinity}]");
+    assert!(boxes.contains('\u{220F}'), "∏ glyph present: {boxes}");
+  }
+
+  #[test]
+  fn integrate_uses_integral_sign_and_differential() {
+    let boxes = tf("Integrate[Exp[-x^2], {x, 0, Infinity}]");
+    assert!(boxes.contains('\u{222B}'), "∫ present: {boxes}");
+    assert!(boxes.contains('\u{2146}'), "ⅆ differential present: {boxes}");
+    assert!(
+      boxes.contains("SubsuperscriptBox"),
+      "integral carries limits: {boxes}"
+    );
+  }
+
+  #[test]
+  fn derivative_renders_as_leibniz_fraction() {
+    let boxes = tf("D[f[x], {x, 2}]");
+    assert!(boxes.contains("FractionBox"), "∂/∂ fraction: {boxes}");
+    assert!(boxes.contains('\u{2202}'), "∂ glyph present: {boxes}");
+  }
+
+  #[test]
+  fn determinant_uses_bars_and_grid() {
+    let boxes = tf("Det[{{a, b}, {c, d}}]");
+    assert!(boxes.contains("GridBox"), "matrix laid out as a grid: {boxes}");
+    assert!(boxes.contains("\"|\""), "determinant bars: {boxes}");
+  }
+
+  #[test]
+  fn leading_unary_minus_has_no_zero_artifact() {
+    // The parser stores `-x^2` as `0 - x^2`; the display must drop the 0.
+    let boxes = tf("-x^2");
+    assert!(boxes.starts_with("FunctionCall") || boxes.contains("\"-\""));
+    assert!(!boxes.contains("\"0\""), "no spurious 0 term: {boxes}");
+  }
+
+  #[test]
+  fn negative_power_base_is_parenthesized() {
+    // (-1)^n must keep its parentheses.
+    let boxes = tf("(-1)^n");
+    let sup = boxes.find("SuperscriptBox").expect("superscript");
+    let paren = boxes.find("\"(\"").expect("open paren");
+    assert!(paren > sup, "parens wrap the base: {boxes}");
+  }
+
+  #[test]
+  fn symbol_used_as_head_is_not_glyph_mapped() {
+    // `E[x, y, z]` is a field, not Euler's number — keep the head as `E`.
+    let boxes = tf("Div[E[x, y, z], {x, y, z}]");
+    assert!(boxes.contains("\"E\""), "E head preserved: {boxes}");
+    assert!(!boxes.contains('\u{2147}'), "not turned into ⅇ: {boxes}");
+  }
+
+  #[test]
+  fn vector_operators_use_nabla() {
+    assert!(tf("Grad[f[x], {x}]").contains('\u{2207}'), "Grad → ∇");
+    assert!(tf("Laplacian[f[x], {x}]").contains('\u{2207}'), "Laplacian → ∇²");
+  }
+
+  #[test]
+  fn end_to_end_svg_carries_operator_glyphs() {
+    let svg = tf_svg("TraditionalForm @ HoldForm[Sum[1/n^2, {n, 1, Infinity}] == Pi^2/6]");
+    assert!(svg.contains('\u{2211}'), "∑ rendered: {svg}");
+    assert!(svg.contains('\u{03C0}'), "π rendered: {svg}");
+    assert!(svg.contains('\u{221E}'), "∞ rendered: {svg}");
+    assert!(!svg.contains("HoldForm"), "HoldForm invisible: {svg}");
+    assert!(!svg.contains("Sum["), "no literal Sum call: {svg}");
+  }
+
+  #[test]
+  fn end_to_end_svg_draws_stretchy_determinant_bars() {
+    let svg = tf_svg("TraditionalForm @ HoldForm[Det[{{a, b, c}, {d, e, f}, {g, h, i}}]]");
+    // Bars stretch into vertical <line>s spanning the grid.
+    assert!(svg.contains("<line"), "stretchy bars drawn as lines: {svg}");
+    assert!(svg.contains(">a<") && svg.contains(">i<"), "cells present: {svg}");
+  }
+}

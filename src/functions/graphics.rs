@@ -4393,6 +4393,184 @@ pub struct BoxLayout {
 /// opening `[`) overlap.
 pub(crate) const MONO_ADVANCE: f64 = 0.632;
 
+/// If `s` is a single n-ary/large operator glyph (∑ ∏ ∫ …), return the font
+/// scale factor at which it should be drawn so it reads as a display-size
+/// operator. Returns `None` for ordinary atoms.
+fn large_operator_scale(s: &str) -> Option<f64> {
+  match s {
+    "\u{2211}" | "\u{220F}" | "\u{2210}" => Some(1.9), // ∑ ∏ ∐
+    "\u{22C3}" | "\u{22C2}" | "\u{2A01}" | "\u{2A02}" | "\u{2A00}" => Some(1.8), // ⋃ ⋂ ⨁ ⨂ ⨀
+    "\u{222B}" | "\u{222C}" | "\u{222D}" | "\u{222E}" => Some(1.8), // ∫ ∬ ∭ ∮
+    _ => None,
+  }
+}
+
+/// True if `s` is a single Latin letter, which TraditionalForm renders as an
+/// italic math variable.
+fn is_math_italic_atom(s: &str) -> bool {
+  let mut chars = s.chars();
+  match (chars.next(), chars.next()) {
+    (Some(c), None) => c.is_ascii_alphabetic(),
+    _ => false,
+  }
+}
+
+/// The set of single-character bracket/bar glyphs that can be vertically
+/// stretched to enclose tall content.
+fn stretchy_delim_kind(s: &str) -> Option<char> {
+  match s {
+    "(" | ")" | "[" | "]" | "|" | "{" | "}" => s.chars().next(),
+    _ => None,
+  }
+}
+
+/// Whether `open`/`close` form a matching stretchy-delimiter pair. Braces
+/// are intentionally excluded: lists keep ordinary `{`/`}` glyphs.
+fn delim_pair_matches(open: char, close: char) -> bool {
+  matches!((open, close), ('(', ')') | ('[', ']') | ('|', '|'))
+}
+
+/// Horizontal space (in character advances) placed on each side of a binary
+/// operator or relation token; `0.0` for non-operators.
+fn operator_space(s: &str) -> f64 {
+  match s {
+    "=" | "\u{2260}" | "<" | ">" | "\u{2264}" | "\u{2265}" | "\u{2261}"
+    | "\u{2262}" | "\u{2192}" | "\u{29F4}" | "\u{2248}" | "\u{221D}"
+    | "\u{21D2}" | "\u{27F9}" => 0.44,
+    "+" | "-" | "\u{00B1}" | "\u{2213}" => 0.36,
+    "\u{2227}" | "\u{2228}" | "\u{22C5}" => 0.34,
+    _ => 0.0,
+  }
+}
+
+/// Draw a bracket/bar/paren glyph as a vector path stretched vertically to
+/// enclose content of the given ascent/descent. The delimiter's baseline is
+/// aligned to the inner content's baseline so the surrounding row stays on the
+/// math axis.
+fn render_stretchy_delim(
+  kind: char,
+  inner_ascent: f64,
+  inner_descent: f64,
+  font_size: f64,
+) -> BoxLayout {
+  let pad = font_size * 0.14;
+  let h = inner_ascent + inner_descent + pad * 2.0;
+  let baseline = inner_ascent + pad;
+  let sw = (font_size * 0.055).max(0.7);
+  // Width reserved for the delimiter, plus a hair of side bearing.
+  let (body_w, bearing) = match kind {
+    '|' => (font_size * 0.10, font_size * 0.10),
+    '[' | ']' => (font_size * 0.22, font_size * 0.08),
+    '{' | '}' => (font_size * 0.28, font_size * 0.08),
+    _ => (font_size * 0.30, font_size * 0.08), // ( )
+  };
+  let w = body_w + bearing * 2.0;
+  let x0 = bearing;
+  let x1 = bearing + body_w;
+  let path = match kind {
+    '|' => {
+      let cx = (x0 + x1) / 2.0;
+      format!(
+        "<line x1=\"{cx:.2}\" y1=\"0\" x2=\"{cx:.2}\" y2=\"{h:.2}\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+      )
+    }
+    '[' => format!(
+      "<path d=\"M {x1:.2} 0 L {x0:.2} 0 L {x0:.2} {h:.2} L {x1:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+    ),
+    ']' => format!(
+      "<path d=\"M {x0:.2} 0 L {x1:.2} 0 L {x1:.2} {h:.2} L {x0:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+    ),
+    '{' => {
+      let midy = h / 2.0;
+      let xm = (x0 + x1) / 2.0;
+      format!(
+        "<path d=\"M {x1:.2} 0 Q {x0:.2} 0 {x0:.2} {q:.2} L {x0:.2} {a:.2} Q {x0:.2} {midy:.2} {xm:.2} {midy:.2} Q {x0:.2} {midy:.2} {x0:.2} {b:.2} L {x0:.2} {c:.2} Q {x0:.2} {h:.2} {x1:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
+        q = h * 0.12,
+        a = midy - h * 0.06,
+        b = midy + h * 0.06,
+        c = h * 0.88,
+      )
+    }
+    '}' => {
+      let midy = h / 2.0;
+      let xm = (x0 + x1) / 2.0;
+      format!(
+        "<path d=\"M {x0:.2} 0 Q {x1:.2} 0 {x1:.2} {q:.2} L {x1:.2} {a:.2} Q {x1:.2} {midy:.2} {xm:.2} {midy:.2} Q {x1:.2} {midy:.2} {x1:.2} {b:.2} L {x1:.2} {c:.2} Q {x1:.2} {h:.2} {x0:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
+        q = h * 0.12,
+        a = midy - h * 0.06,
+        b = midy + h * 0.06,
+        c = h * 0.88,
+      )
+    }
+    '(' => {
+      let cx = x1 + body_w * 0.15;
+      format!(
+        "<path d=\"M {cx:.2} 0 Q {x0:.2} {midy:.2} {cx:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
+        midy = h / 2.0,
+      )
+    }
+    ')' => {
+      let cx = x0 - body_w * 0.15;
+      format!(
+        "<path d=\"M {cx:.2} 0 Q {x1:.2} {midy:.2} {cx:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
+        midy = h / 2.0,
+      )
+    }
+    _ => String::new(),
+  };
+  BoxLayout {
+    width: w,
+    height: h,
+    baseline,
+    elements: path,
+  }
+}
+
+/// Lay out a square-root: the radical hook and the vinculum over `content`
+/// are emitted as one connected polyline that scales to the content height,
+/// so the sign and overbar read as a single object. `left_offset` reserves
+/// space to the left of the hook (used by RadicalBox for its index). Returns
+/// the hook width and the composed layout.
+fn sqrt_radical(
+  content: &BoxLayout,
+  left_offset: f64,
+  font_size: f64,
+) -> (f64, BoxLayout) {
+  let ch = content.height;
+  let sw = (font_size * 0.06).max(0.9);
+  let gap_top = font_size * 0.18;
+  let hook_w = font_size * 0.55;
+  let line_y = sw; // keep the vinculum fully inside the viewport
+  let content_x = left_offset + hook_w;
+  let content_top = line_y + gap_top;
+  let bottom = content_top + ch;
+  let h = bottom + sw;
+  let w = content_x + content.width + font_size * 0.10;
+
+  // Radical polyline: enter mid-left, dip to the bottom vertex, rise along
+  // the long diagonal to the top-left corner, then run across as the vinculum.
+  let x0 = left_offset;
+  let p0 = (x0 + hook_w * 0.04, content_top + ch * 0.55);
+  let p1 = (x0 + hook_w * 0.30, content_top + ch * 0.72);
+  let p2 = (x0 + hook_w * 0.52, h - sw * 0.5);
+  let p3 = (content_x, line_y);
+  let p4 = (w, line_y);
+  let path = format!(
+    "<path d=\"M {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>",
+    p0.0, p0.1, p1.0, p1.1, p2.0, p2.1, p3.0, p3.1, p4.0, p4.1,
+  );
+  let elements = format!("{}{}", path, content.translate(content_x, content_top));
+  (
+    hook_w,
+    BoxLayout {
+      width: w,
+      height: h,
+      baseline: content_top + content.baseline,
+      elements,
+    },
+  )
+}
+
 impl BoxLayout {
   /// Create a layout for a simple text atom.
   fn text(s: &str, font_size: f64) -> Self {
@@ -4400,6 +4578,26 @@ impl BoxLayout {
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
     let height = ascent + descent;
+    // Large (n-ary) operators — ∑ ∏ ∫ … — are drawn oversized and vertically
+    // centered on the math axis so they read as display-size operators with
+    // limits stacked above/below (Sum, Product) or as scripts (Integrate),
+    // matching conventional math typesetting.
+    if let Some(scale) = large_operator_scale(s) {
+      let fs = font_size * scale;
+      let glyph_ascent = fs * 0.72;
+      let glyph_descent = fs * 0.28;
+      let w = fs * 0.62;
+      let escaped = svg_escape(s);
+      return BoxLayout {
+        width: w,
+        height: glyph_ascent + glyph_descent,
+        baseline: glyph_ascent,
+        elements: format!(
+          "<text x=\"{cx:.2}\" y=\"{glyph_ascent:.2}\" font-family=\"serif\" font-size=\"{fs:.2}\" stroke=\"none\" text-anchor=\"middle\">{escaped}</text>",
+          cx = w / 2.0,
+        ),
+      };
+    }
     // The multiplication separator " × " reserves a full monospace space on
     // each side of the small sign, which reads as too wide. Render it in a
     // tighter slot (~half a space per side) with the sign centered, without
@@ -4467,6 +4665,14 @@ impl BoxLayout {
     let s = mapped.as_str();
     let w = s.chars().count() as f64 * ch;
     let escaped = svg_escape(s);
+    // Single Latin letters are math variables — render them italic for a
+    // conventional TeX-like look. The advance width is unchanged (same font,
+    // slanted), so surrounding layout is unaffected.
+    let style_attr = if is_math_italic_atom(s) {
+      " font-style=\"italic\""
+    } else {
+      ""
+    };
     BoxLayout {
       width: w,
       height,
@@ -4476,7 +4682,7 @@ impl BoxLayout {
       // their allocated width rather than the glyph sticking to the previous
       // token. The width above already counts those spaces.
       elements: format!(
-        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\" xml:space=\"preserve\">{escaped}</text>"
+        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\"{style_attr} xml:space=\"preserve\">{escaped}</text>"
       ),
     }
   }
@@ -4515,8 +4721,48 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         if items.is_empty() {
           return BoxLayout::text("", font_size);
         }
-        let children: Vec<BoxLayout> =
+        let mut children: Vec<BoxLayout> =
           items.iter().map(|e| layout_box(e, font_size)).collect();
+
+        // Stretchy delimiters: when the row is bracketed — its first child is
+        // an opening (or bar) delimiter and its last child is the matching
+        // closing (or bar) delimiter — grow both to enclose the inner content
+        // (matrices, determinants, tall fractions). Function-call parens are
+        // unaffected because the head token precedes the `(`.
+        if items.len() >= 3 {
+          let open = match &items[0] {
+            Expr::String(s) => stretchy_delim_kind(s),
+            _ => None,
+          };
+          let close = match items.last() {
+            Some(Expr::String(s)) => stretchy_delim_kind(s),
+            _ => None,
+          };
+          if let (Some(o), Some(c)) = (open, close)
+            && delim_pair_matches(o, c)
+          {
+            let inner_ascent = children[1..children.len() - 1]
+              .iter()
+              .map(|c| c.baseline)
+              .fold(0.0_f64, f64::max);
+            let inner_descent = children[1..children.len() - 1]
+              .iter()
+              .map(|c| c.height - c.baseline)
+              .fold(0.0_f64, f64::max);
+            let natural = children[0].height;
+            // Only stretch for genuinely tall content (fractions, grids,
+            // nested radicals) — a lone superscript (~1.3×) stays with plain
+            // glyphs so ordinary parenthesized expressions are unaffected.
+            if inner_ascent + inner_descent > natural * 1.5 {
+              let last = children.len() - 1;
+              children[0] =
+                render_stretchy_delim(o, inner_ascent, inner_descent, font_size);
+              children[last] =
+                render_stretchy_delim(c, inner_ascent, inner_descent, font_size);
+            }
+          }
+        }
+
         // Find the maximum baseline and maximum below-baseline
         let max_baseline =
           children.iter().map(|c| c.baseline).fold(0.0_f64, f64::max);
@@ -4528,19 +4774,29 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut elements = String::new();
         let mut x = 0.0_f64;
         for (i, child) in children.iter().enumerate() {
+          // Medium space around binary operators / relations (but not around a
+          // leading unary sign, which has no left operand).
+          let op_space = match &items[i] {
+            Expr::String(s) if i > 0 && i + 1 < items.len() => {
+              operator_space(s) * ch
+            }
+            _ => 0.0,
+          };
           // A small space before a bare comma so it does not crowd the
           // preceding token (e.g. the trailing digit of a list element).
           if i > 0 && matches!(&items[i], Expr::String(s) if s == ",") {
-            x += ch * 0.35;
+            x += ch * 0.2;
           }
+          x += op_space;
           let dy = max_baseline - child.baseline;
           elements.push_str(&child.translate(x, dy));
           x += child.width;
+          x += op_space;
           // Add space after bare comma
           if matches!(&items[i], Expr::String(s) if s == ",")
             && i + 1 < items.len()
           {
-            x += ch * 0.5;
+            x += ch * 0.4;
           }
         }
         BoxLayout {
@@ -4649,54 +4905,29 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         }
       }
 
-      // SqrtBox: √ symbol + overline (vinculum) above content
+      // SqrtBox: the radical hook and its vinculum (overline) are drawn as a
+      // single connected stroke that scales to the content height, so the
+      // sign and bar read as one object instead of a fixed glyph butted
+      // against a separate line.
       "SqrtBox" if args.len() == 1 => {
         let content = layout_box(&args[0], font_size);
-        let radical = BoxLayout::text("\u{221A}", font_size);
-        let pad = 2.0; // space above content for the vinculum
-        let line_y = pad * 0.5;
-        let content_x = radical.width;
-        let w = radical.width + content.width;
-        let h = content.height + pad;
-        let elements = format!(
-          "{}\
-           <line x1=\"{content_x:.1}\" y1=\"{line_y:.1}\" x2=\"{w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"0.8\"/>\
-           {}",
-          radical.translate(0.0, pad),
-          content.translate(content_x, pad),
-        );
-        BoxLayout {
-          width: w,
-          height: h,
-          baseline: pad + content.baseline,
-          elements,
-        }
+        sqrt_radical(&content, 0.0, font_size).1
       }
 
-      // RadicalBox: index + √ symbol + overline above content
+      // RadicalBox: like SqrtBox but with a small index tucked into the hook.
       "RadicalBox" if args.len() == 2 => {
         let content = layout_box(&args[0], font_size);
-        let index = layout_box(&args[1], font_size * 0.7);
-        let radical = BoxLayout::text("\u{221A}", font_size);
-        let pad = 2.0;
-        let index_dy = 0.0;
-        let body_dy = index.height * 0.3 + pad;
-        let content_x = index.width + radical.width;
-        let w = content_x + content.width;
-        let line_y = body_dy - pad * 0.5;
-        let elements = format!(
-          "{}{}\
-           <line x1=\"{content_x:.1}\" y1=\"{line_y:.1}\" x2=\"{w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"0.8\"/>\
-           {}",
-          index.translate(0.0, index_dy),
-          radical.translate(index.width, body_dy),
-          content.translate(content_x, body_dy),
-        );
+        let index = layout_box(&args[1], font_size * 0.6);
+        let index_w = index.width + font_size * 0.05;
+        let (hook_w, body) = sqrt_radical(&content, index_w, font_size);
+        // Place the index over the low part of the hook.
+        let index_x = (index_w + hook_w - index.width).max(0.0) * 0.4;
+        let index_y = body.height * 0.18;
+        let elements =
+          format!("{}{}", index.translate(index_x, index_y), body.elements);
         BoxLayout {
-          width: w,
-          height: body_dy + content.height,
-          baseline: body_dy + content.baseline,
           elements,
+          ..body
         }
       }
 
