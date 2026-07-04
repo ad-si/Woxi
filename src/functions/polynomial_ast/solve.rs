@@ -4698,6 +4698,21 @@ pub fn minimize_ast(
     )));
   }
 
+  // A non-symbol in the variable slot (a constraint, equation, or literal —
+  // e.g. Minimize[x^2, x >= 1]) is not a valid variable: wolframscript emits
+  // <func>::ivar and returns the call unevaluated rather than raising an
+  // error.
+  if let Some(bad) = minimize_first_invalid_var(&args[1]) {
+    crate::emit_message(&format!(
+      "{func_name}::ivar: {} is not a valid variable.",
+      expr_to_string(bad)
+    ));
+    return Ok(Expr::FunctionCall {
+      name: func_name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // Parse variable list: x, {x}, {x, y}, or {n[1], n[2], ...}
   let (_var_strings, var_exprs) =
     minimize_parse_vars_full(&args[1], func_name)?;
@@ -4789,6 +4804,22 @@ pub fn minimize_ast(
     return Ok(result);
   }
   Ok(result)
+}
+
+/// Return the first entry in the variable specification that is not a valid
+/// variable (a plain symbol or an indexed symbol like `n[1]`). A constraint,
+/// equation, or literal in the variable slot is invalid. Returns `None` when
+/// every entry is a valid variable (or the spec is an empty list, which is
+/// handled separately).
+fn minimize_first_invalid_var(expr: &Expr) -> Option<&Expr> {
+  fn is_valid_var(item: &Expr) -> bool {
+    matches!(item, Expr::Identifier(_) | Expr::FunctionCall { .. })
+  }
+  match expr {
+    Expr::List(items) => items.iter().find(|it| !is_valid_var(it)),
+    _ if !is_valid_var(expr) => Some(expr),
+    _ => None,
+  }
 }
 
 /// Parse var list returning (string_names, original_exprs).

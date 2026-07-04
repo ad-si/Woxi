@@ -5078,6 +5078,49 @@ mod minimize {
     );
   }
 
+  // A non-symbol in the variable slot (a constraint, equation, or literal)
+  // emits <func>::ivar and stays unevaluated, rather than raising a hard
+  // error.
+  #[test]
+  fn invalid_variable_emits_ivar() {
+    for (input, call, bad) in [
+      ("Minimize[x^2, x >= 1]", "Minimize[x^2, x >= 1]", "x >= 1"),
+      ("Maximize[x^2, x < 5]", "Maximize[x^2, x < 5]", "x < 5"),
+      ("Minimize[x^2, x == 2]", "Minimize[x^2, x == 2]", "x == 2"),
+      ("Minimize[x^2, 3]", "Minimize[x^2, 3]", "3"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call, "for {input}");
+      let func = if input.starts_with("Maximize") {
+        "Maximize"
+      } else {
+        "Minimize"
+      };
+      let expected = format!("{func}::ivar: {bad} is not a valid variable.");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?} for {input}, got {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn invalid_variable_in_list_emits_ivar() {
+    clear_state();
+    assert_eq!(
+      interpret("Minimize[x^2, {x, y >= 1}]").unwrap(),
+      "Minimize[x^2, {x, y >= 1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("Minimize::ivar: y >= 1 is not a valid variable.")),
+      "expected Minimize::ivar for y >= 1, got {msgs:?}"
+    );
+  }
+
   #[test]
   fn quartic_sqrt_minimum() {
     // x^4 - 4x^2 has minimum -4 at x = ±Sqrt[2]
