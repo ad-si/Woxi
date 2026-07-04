@@ -4924,3 +4924,127 @@ mod reverse_graph_tests {
     );
   }
 }
+
+mod incidence_graph_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn undirected_from_ones() {
+    assert_eq!(
+      interpret("EdgeList[IncidenceGraph[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]]")
+        .unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 3}"
+    );
+    // Non-loop edges keep their column order (no sorting).
+    assert_eq!(
+      interpret("EdgeList[IncidenceGraph[{{0, 1}, {1, 1}, {1, 0}}]]").unwrap(),
+      "{2 \u{f3d4} 3, 1 \u{f3d4} 2}"
+    );
+  }
+
+  // A -1/+1 column is a directed edge from the -1 row to the +1 row;
+  // zero rows are isolated vertices.
+  #[test]
+  fn directed_from_signed_pairs() {
+    assert_eq!(
+      interpret("EdgeList[IncidenceGraph[{{-1, 1}, {1, -1}, {0, 0}}]]")
+        .unwrap(),
+      "{1 \u{f3d5} 2, 2 \u{f3d5} 1}"
+    );
+    assert_eq!(
+      interpret("VertexList[IncidenceGraph[{{-1, 1}, {1, -1}, {0, 0}}]]")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+    // In mixed graphs the directed edges come first.
+    assert_eq!(
+      interpret("Head /@ EdgeList[IncidenceGraph[{{1, -1}, {1, 1}}]]").unwrap(),
+      "{DirectedEdge, UndirectedEdge}"
+    );
+  }
+
+  // A single 2 is an undirected self-loop, emitted after the other edges;
+  // a single -2 is a directed self-loop (kept with the directed group).
+  #[test]
+  fn self_loops() {
+    assert_eq!(
+      interpret("EdgeList[IncidenceGraph[{{2, 1}, {0, 1}}]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 1}"
+    );
+    assert_eq!(
+      interpret("EdgeList[IncidenceGraph[{{2, 1, 0}, {0, 1, 2}}]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 1, 2 \u{f3d4} 2}"
+    );
+    assert_eq!(
+      interpret("Head /@ EdgeList[IncidenceGraph[{{-1, 2}, {1, 0}}]]").unwrap(),
+      "{DirectedEdge, UndirectedEdge}"
+    );
+    assert_eq!(
+      interpret("Head /@ EdgeList[IncidenceGraph[{{-2, 0}, {0, -2}}]]")
+        .unwrap(),
+      "{DirectedEdge, DirectedEdge}"
+    );
+  }
+
+  #[test]
+  fn named_vertices() {
+    assert_eq!(
+      interpret(
+        r#"VertexList[IncidenceGraph[{"a", "b", "c"}, {{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]]"#
+      )
+      .unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret(
+        r#"EdgeList[IncidenceGraph[{"a", "b", "c"}, {{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]]"#
+      )
+      .unwrap(),
+      "{a \u{f3d4} b, a \u{f3d4} c, b \u{f3d4} c}"
+    );
+    // A name list whose length doesn't match the rows stays silently
+    // unevaluated.
+    assert_eq!(
+      interpret(r#"IncidenceGraph[{"a", "b"}, {{1, 1}, {1, 0}, {0, 1}}]"#)
+        .unwrap(),
+      "IncidenceGraph[{a, b}, {{1, 1}, {1, 0}, {0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn round_trips_with_incidence_matrix() {
+    assert_eq!(
+      interpret(
+        "Normal[IncidenceMatrix[IncidenceGraph[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]]]"
+      )
+      .unwrap(),
+      "{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}"
+    );
+  }
+
+  // Invalid columns (bad entries, zero columns, three 1s) give ::inv;
+  // non-matrices give ::matrix — both leave the call unevaluated.
+  #[test]
+  fn invalid_inputs() {
+    assert_eq!(
+      interpret("IncidenceGraph[{{1, 2}, {3, 4}}]").unwrap(),
+      "IncidenceGraph[{{1, 2}, {3, 4}}]"
+    );
+    assert_eq!(
+      interpret("IncidenceGraph[{{1}, {1}, {1}}]").unwrap(),
+      "IncidenceGraph[{{1}, {1}, {1}}]"
+    );
+    assert_eq!(
+      interpret("IncidenceGraph[{{1, 0}, {1, 0}}]").unwrap(),
+      "IncidenceGraph[{{1, 0}, {1, 0}}]"
+    );
+    assert_eq!(
+      interpret("IncidenceGraph[{{0.5, 1}, {1, 1}}]").unwrap(),
+      "IncidenceGraph[{{0.5, 1}, {1, 1}}]"
+    );
+    assert_eq!(
+      interpret(r#"IncidenceGraph["foo"]"#).unwrap(),
+      "IncidenceGraph[foo]"
+    );
+  }
+}

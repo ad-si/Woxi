@@ -3234,7 +3234,7 @@ StreamColorFunctionScaling,,,,7.0,3306
 CentralMomentGeneratingFunction,,,,8.0,3317
 CorrelationTest,,,,9.0,3317
 FindGraphPartition,,,,9.0,3317
-IncidenceGraph,,,,8.0,3317
+IncidenceGraph,Builds the graph with a given vertex-by-edge incidence matrix (optionally with named vertices),✅,pure,8.0,3317
 InflationAdjust,,🚫,,10.0,3317
 InputAutoReplacements,,🚫,,4.0,3317
 MatrixNormalDistribution,,,,10.3,3317

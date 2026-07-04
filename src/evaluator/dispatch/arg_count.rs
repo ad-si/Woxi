@@ -612,6 +612,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Indexed" => Some((2, 2)),
     "Import" => Some((1, 2)),
     "ImportString" => Some((1, 2)),
+    "IncidenceGraph" => Some((1, 2)),
     "InexactNumberQ" => Some((1, 1)),
     "Information" => Some((1, 2)),
     "Inner" => Some((3, 4)),

@@ -3579,6 +3579,114 @@ pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// IncidenceGraph[m] / IncidenceGraph[vertices, m] — build the graph whose
+/// vertex-by-edge incidence matrix is m. Recognized column patterns are the
+/// ones IncidenceMatrix itself produces: two 1s → undirected edge, a -1/+1
+/// pair → directed edge, a single 2 → undirected self-loop, a single -2 →
+/// directed self-loop. wolframscript emits directed edges first (in column
+/// order, -2 loops in place), then undirected non-loop edges, then the
+/// undirected self-loops.
+pub fn incidence_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "IncidenceGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  let (names, matrix_expr, matrix_pos) = match args {
+    [m] => (None, m, 1),
+    [Expr::List(v), m] => (Some(v), m, 2),
+    _ => return Ok(unevaluated()),
+  };
+
+  // The matrix must be a nonempty rectangular list of integer lists.
+  let not_a_matrix = || {
+    crate::emit_message(&format!(
+      "IncidenceGraph::matrix: Argument {} at position {} is not a nonempty rectangular matrix.",
+      crate::syntax::expr_to_output(matrix_expr),
+      matrix_pos
+    ));
+    Ok(unevaluated())
+  };
+  let invalid = || {
+    crate::emit_message(&format!(
+      "IncidenceGraph::inv: The argument {} in {} is not a valid incidence matrix.",
+      crate::syntax::expr_to_output(matrix_expr),
+      crate::syntax::expr_to_string(&unevaluated())
+    ));
+    Ok(unevaluated())
+  };
+  let Expr::List(rows) = matrix_expr else {
+    return not_a_matrix();
+  };
+  let mut matrix: Vec<Vec<&Expr>> = Vec::with_capacity(rows.len());
+  for row in rows.iter() {
+    match row {
+      Expr::List(cells) if !cells.is_empty() => {
+        matrix.push(cells.iter().collect())
+      }
+      _ => return not_a_matrix(),
+    }
+  }
+  if matrix.is_empty() || matrix.iter().any(|r| r.len() != matrix[0].len()) {
+    return not_a_matrix();
+  }
+  let n = matrix.len();
+  let n_cols = matrix[0].len();
+  let int_matrix: Option<Vec<Vec<i64>>> = matrix
+    .iter()
+    .map(|r| {
+      r.iter()
+        .map(|c| match c {
+          Expr::Integer(v) => i64::try_from(*v).ok(),
+          _ => None,
+        })
+        .collect()
+    })
+    .collect();
+  let Some(int_matrix) = int_matrix else {
+    return invalid();
+  };
+
+  // A row-name list of the wrong length stays silently unevaluated.
+  let vertices: Vec<Expr> = match names {
+    Some(v) => {
+      if v.len() != n {
+        return Ok(unevaluated());
+      }
+      v.to_vec()
+    }
+    None => (1..=n as i128).map(Expr::Integer).collect(),
+  };
+
+  let edge = |head: &str, i: usize, j: usize| Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![vertices[i].clone(), vertices[j].clone()].into(),
+  };
+  let mut directed: Vec<Expr> = Vec::new();
+  let mut undirected: Vec<Expr> = Vec::new();
+  let mut loops: Vec<Expr> = Vec::new();
+  for c in 0..n_cols {
+    let nonzero: Vec<(usize, i64)> = (0..n)
+      .filter(|&r| int_matrix[r][c] != 0)
+      .map(|r| (r, int_matrix[r][c]))
+      .collect();
+    match nonzero.as_slice() {
+      [(i, 1), (j, 1)] => undirected.push(edge("UndirectedEdge", *i, *j)),
+      [(i, -1), (j, 1)] => directed.push(edge("DirectedEdge", *i, *j)),
+      [(i, 1), (j, -1)] => directed.push(edge("DirectedEdge", *j, *i)),
+      [(i, 2)] => loops.push(edge("UndirectedEdge", *i, *i)),
+      [(i, -2)] => directed.push(edge("DirectedEdge", *i, *i)),
+      _ => return invalid(),
+    }
+  }
+  let mut edges = directed;
+  edges.append(&mut undirected);
+  edges.append(&mut loops);
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
+  })
+}
+
 // LineGraph[g] — the line graph: one vertex per edge of g (numbered by
 // EdgeList position), with two vertices adjacent when the underlying
 // edges share an endpoint. Edges are listed in ascending canonical order,

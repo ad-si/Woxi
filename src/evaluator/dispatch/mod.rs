@@ -4245,6 +4245,12 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::reverse_graph_ast(args);
   }
 
+  // IncidenceGraph[m] / IncidenceGraph[vertices, m] → graph from an
+  // incidence matrix
+  if name == "IncidenceGraph" && !args.is_empty() && args.len() <= 2 {
+    return crate::functions::graph::incidence_graph_ast(args);
+  }
+
   // FindIndependentVertexSet[graph] → {maximum independent vertex set}
   if name == "FindIndependentVertexSet" && args.len() == 1 {
     return crate::functions::graph::find_independent_vertex_set_ast(args);
