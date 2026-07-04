@@ -129,34 +129,57 @@ impl ManipulateState {
       None => block,
     };
 
-    // Clear output state before re-evaluating so a partial result
-    // doesn't linger when the new evaluation produces less output.
-    self.graphics_svg = None;
-    self.graphics_handle = None;
-    self.graphics_image = None;
-    self.text_output = None;
-    self.error = None;
-
+    // Double-buffer the render: rasterize the new output into locals and
+    // only swap the cached fields once the replacement is ready, rather
+    // than nulling them out before the (potentially slow) re-evaluation.
+    // This keeps the old graphic on screen right up until the new one
+    // takes its place, preventing the vanish/flicker while a slider is
+    // dragged. A result that genuinely produces no output still blanks
+    // the frame — the old rendering is only preserved by being replaced,
+    // never by an absent one.
     match woxi::interpret_with_stdout(&code) {
       Ok(result) => {
-        if let Some(svg) = result.graphics {
-          self.graphics_handle =
-            Some(svg::Handle::from_memory(svg.as_bytes().to_vec()));
-          self.graphics_image = rasterize_svg(&svg, scale_factor, fontdb);
-          self.graphics_svg = Some(svg);
-        } else if result.result != "\0" {
-          let cleaned = result
+        let cleaned = if result.graphics.is_some() || result.result == "\0" {
+          String::new()
+        } else {
+          result
             .result
             .replace("-Graphics-", "")
             .replace("-Graphics3D-", "")
-            .replace("-Image-", "");
-          let cleaned = cleaned.trim();
-          if !cleaned.is_empty() {
-            self.text_output = Some(cleaned.to_string());
-          }
+            .replace("-Image-", "")
+            .trim()
+            .to_string()
+        };
+
+        if let Some(svg) = result.graphics {
+          let handle = svg::Handle::from_memory(svg.as_bytes().to_vec());
+          let image = rasterize_svg(&svg, scale_factor, fontdb);
+          self.graphics_svg = Some(svg);
+          self.graphics_handle = Some(handle);
+          self.graphics_image = image;
+          self.text_output = None;
+          self.error = None;
+        } else {
+          // No graphic: either a textual result or genuinely empty output.
+          // Blank the graphic and show the text (empty text => blank cell).
+          self.graphics_svg = None;
+          self.graphics_handle = None;
+          self.graphics_image = None;
+          self.text_output = if cleaned.is_empty() {
+            None
+          } else {
+            Some(cleaned)
+          };
+          self.error = None;
         }
       }
       Err(e) => {
+        // Surface the evaluation error. The render path shows the error in
+        // place of the graphic, so drop the cached rendering here.
+        self.graphics_svg = None;
+        self.graphics_handle = None;
+        self.graphics_image = None;
+        self.text_output = None;
         self.error = Some(format!("{e}"));
       }
     }
