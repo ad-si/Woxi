@@ -4895,9 +4895,15 @@ fn minimize_eval_exact(
   let evaled = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
   let simplified = simplify(evaled);
 
-  // If already a simple exact number, return it
-  if matches!(&simplified, Expr::Integer(_) | Expr::Real(_)) {
+  // If already an exact integer, return it.
+  if matches!(&simplified, Expr::Integer(_)) {
     return Ok(simplified);
+  }
+  // A Real value at the extremum is usually the machine form of an exact
+  // integer/rational (e.g. Sin[x]/3 at its minimum is -0.3333… = -1/3). Try to
+  // recover that exact value, falling back to the Real when none is close.
+  if let Expr::Real(v) = &simplified {
+    return Ok(minimize_recognize_exact(*v));
   }
   if let Expr::FunctionCall { name, .. } = &simplified
     && name == "Rational"
@@ -4966,9 +4972,15 @@ fn minimize_eval_exact_multi(
   let evaled = crate::evaluator::evaluate_expr_to_expr(&expr)?;
   let simplified = simplify(evaled);
 
-  // If already a simple exact number, return it
-  if matches!(&simplified, Expr::Integer(_) | Expr::Real(_)) {
+  // If already an exact integer, return it.
+  if matches!(&simplified, Expr::Integer(_)) {
     return Ok(simplified);
+  }
+  // A Real value at the extremum is usually the machine form of an exact
+  // integer/rational (e.g. Sin[x]/3 at its minimum is -0.3333… = -1/3). Try to
+  // recover that exact value, falling back to the Real when none is close.
+  if let Expr::Real(v) = &simplified {
+    return Ok(minimize_recognize_exact(*v));
   }
   if let Expr::FunctionCall { name, .. } = &simplified
     && name == "Rational"

@@ -1257,7 +1257,9 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Real args: evaluate numerically
   if let Expr::Real(f) = &args[0] {
-    return Ok(num_to_expr(f.sin()));
+    // An inexact argument gives an inexact result: Sin[0.] is 0., not 0.
+    // (num_to_expr would collapse a whole-number value to an exact Integer).
+    return Ok(Expr::Real(f.sin()));
   }
   // Sin of a BigFloat: evaluate at the input's working precision and
   // propagate the precision tag using the relative condition number.
@@ -1471,7 +1473,8 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   if let Expr::Real(f) = &args[0] {
-    return Ok(num_to_expr(f.cos()));
+    // An inexact argument gives an inexact result: Cos[0.] is 1., not 1.
+    return Ok(Expr::Real(f.cos()));
   }
   // Cos of a BigFloat: evaluate at the input's working precision and
   // propagate the precision tag using the relative condition number.
@@ -1754,7 +1757,7 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if c == 0.0 {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
-    return Ok(num_to_expr(1.0 / c));
+    return Ok(Expr::Real(1.0 / c));
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sec(k, n)
@@ -1806,7 +1809,7 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if s == 0.0 {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
-    return Ok(num_to_expr(1.0 / s));
+    return Ok(Expr::Real(1.0 / s));
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_csc(k, n)
@@ -1858,7 +1861,7 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if s == 0.0 {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
-    return Ok(num_to_expr(f.cos() / s));
+    return Ok(Expr::Real(f.cos() / s));
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cot(k, n)

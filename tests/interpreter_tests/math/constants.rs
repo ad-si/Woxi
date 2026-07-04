@@ -78,6 +78,21 @@ mod degree_constant {
     assert_eq!(interpret("Cos[2 Pi]").unwrap(), "1");
   }
 
+  // An inexact (machine real) argument gives an inexact result even at a
+  // whole-number value: Cos[0.] is 1., not the exact 1; Sin[0.] is 0., not 0.
+  // Per wolframscript. (The exact-argument results above are unchanged.)
+  #[test]
+  fn trig_inexact_argument_stays_real() {
+    assert_eq!(interpret("Cos[0.0]").unwrap(), "1.");
+    assert_eq!(interpret("Head[Cos[0.0]]").unwrap(), "Real");
+    assert_eq!(interpret("Sin[0.0]").unwrap(), "0.");
+    assert_eq!(interpret("Sec[0.0]").unwrap(), "1.");
+    assert_eq!(interpret("Cos[2.0 Pi]").unwrap(), "1.");
+    // Exact arguments still return exact numbers.
+    assert_eq!(interpret("Cos[0]").unwrap(), "1");
+    assert_eq!(interpret("Sin[0]").unwrap(), "0");
+  }
+
   #[test]
   fn cos_exact_negative() {
     assert_eq!(interpret("Cos[120 Degree]").unwrap(), "-1/2");
