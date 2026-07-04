@@ -6226,3 +6226,150 @@ mod weighted_data {
     assert_eq!(interpret("Median[{1, 2, 3, 4}]").unwrap(), "5/2");
   }
 }
+
+mod dms_string_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn scalar_angles() {
+    assert_eq!(interpret("DMSString[30.264]").unwrap(), "30°15'50.400\"");
+    assert_eq!(interpret("DMSString[123.456]").unwrap(), "123°27'21.600\"");
+    // A bare scalar drops the sign entirely.
+    assert_eq!(interpret("DMSString[-30.264]").unwrap(), "30°15'50.400\"");
+    assert_eq!(interpret("DMSString[-30]").unwrap(), "30°0'0\"");
+    // Exact input with integral seconds prints them without decimals…
+    assert_eq!(interpret("DMSString[30]").unwrap(), "30°0'0\"");
+    assert_eq!(interpret("DMSString[61/2]").unwrap(), "30°30'0\"");
+    assert_eq!(interpret("DMSString[1/3]").unwrap(), "0°20'0\"");
+    assert_eq!(interpret("DMSString[30 + 1/3600]").unwrap(), "30°0'1\"");
+    // …but exact fractional seconds get the decimal treatment.
+    assert_eq!(interpret("DMSString[30 + 1/7200]").unwrap(), "30°0'0.500\"");
+    // Reals always show decimals, even for whole seconds.
+    assert_eq!(interpret("DMSString[30.5]").unwrap(), "30°30'0.000\"");
+    // Exact-but-irrational input takes the machine-real path.
+    assert_eq!(interpret("DMSString[Pi]").unwrap(), "3°8'29.734\"");
+  }
+
+  // Seconds rounding carries into minutes and degrees.
+  #[test]
+  fn rounding_carry() {
+    assert_eq!(interpret("DMSString[59.9999999]").unwrap(), "60°0'0.000\"");
+    assert_eq!(
+      interpret("DMSString[29.999999999999]").unwrap(),
+      "30°0'0.000\""
+    );
+  }
+
+  // The second argument sets the number of decimals on the seconds
+  // (default 3, trailing dot at 0, half-even rounding). It is ignored for
+  // exact integral seconds.
+  #[test]
+  fn precision_argument() {
+    assert_eq!(interpret("DMSString[30.264, 1]").unwrap(), "30°15'50.4\"");
+    assert_eq!(interpret("DMSString[30.264, 2]").unwrap(), "30°15'50.40\"");
+    assert_eq!(
+      interpret("DMSString[30.264, 6]").unwrap(),
+      "30°15'50.400000\""
+    );
+    assert_eq!(interpret("DMSString[30.264, 0]").unwrap(), "30°15'50.\"");
+    assert_eq!(interpret("DMSString[30, 2]").unwrap(), "30°0'0\"");
+    assert_eq!(interpret("DMSString[30 + 1/7200, 0]").unwrap(), "30°0'0.\"");
+    assert_eq!(interpret("DMSString[30 + 3/7200, 0]").unwrap(), "30°0'2.\"");
+  }
+
+  // {lat, lon} pairs get hemisphere suffixes (N/E for zero), two spaces
+  // between the parts; GeoPosition unwraps (altitude dropped).
+  #[test]
+  fn lat_lon_pairs() {
+    assert_eq!(
+      interpret("DMSString[{30.264, -87.155}]").unwrap(),
+      "30°15'50.400\"N  87°9'18.000\"W"
+    );
+    assert_eq!(
+      interpret("DMSString[{-30.264, 87.155}]").unwrap(),
+      "30°15'50.400\"S  87°9'18.000\"E"
+    );
+    assert_eq!(
+      interpret("DMSString[{0, 0}]").unwrap(),
+      "0°0'0\"N  0°0'0\"E"
+    );
+    assert_eq!(
+      interpret("DMSString[{30, 87}]").unwrap(),
+      "30°0'0\"N  87°0'0\"E"
+    );
+    assert_eq!(
+      interpret("DMSString[{30.264, -87.155}, 1]").unwrap(),
+      "30°15'50.4\"N  87°9'18.0\"W"
+    );
+    assert_eq!(
+      interpret("DMSString[GeoPosition[{30.264, -87.155}]]").unwrap(),
+      "30°15'50.400\"N  87°9'18.000\"W"
+    );
+    assert_eq!(
+      interpret("DMSString[GeoPosition[{30.264, -87.155, 100}]]").unwrap(),
+      "30°15'50.400\"N  87°9'18.000\"W"
+    );
+  }
+
+  // A 3-element list is a {d, m, s} value, not a coordinate pair.
+  #[test]
+  fn dms_triple_input() {
+    assert_eq!(
+      interpret("DMSString[{30.1, 87.2, 100}]").unwrap(),
+      "31°34'52.000\""
+    );
+    assert_eq!(
+      interpret("DMSString[{30, 15, 50.5}]").unwrap(),
+      "30°15'50.500\""
+    );
+  }
+
+  // DMS strings parse and re-format; sign and hemisphere suffix drop.
+  #[test]
+  fn string_input() {
+    assert_eq!(
+      interpret(r#"DMSString["30°15'50\""]"#).unwrap(),
+      "30°15'50\""
+    );
+    assert_eq!(interpret(r#"DMSString["30°"]"#).unwrap(), "30°0'0\"");
+    assert_eq!(interpret(r#"DMSString["30°15'"]"#).unwrap(), "30°15'0\"");
+    assert_eq!(
+      interpret(r#"DMSString["30°15'50.5\""]"#).unwrap(),
+      "30°15'50.500\""
+    );
+    assert_eq!(
+      interpret(r#"DMSString["30°15'50\"N"]"#).unwrap(),
+      "30°15'50\""
+    );
+    assert_eq!(
+      interpret(r#"DMSString["-30°15'50\""]"#).unwrap(),
+      "30°15'50\""
+    );
+  }
+
+  // Invalid inputs echo the call (each with its own message tag).
+  #[test]
+  fn invalid_inputs() {
+    assert_eq!(interpret("DMSString[x]").unwrap(), "DMSString[x]");
+    assert_eq!(
+      interpret("DMSString[{30.264}]").unwrap(),
+      "DMSString[{30.264}]"
+    );
+    assert_eq!(
+      interpret("DMSString[{{30, 15, 50}, {87, 9, 18}}]").unwrap(),
+      "DMSString[{{30, 15, 50}, {87, 9, 18}}]"
+    );
+    assert_eq!(
+      interpret(r#"DMSString["30.264"]"#).unwrap(),
+      "DMSString[30.264]"
+    );
+    assert_eq!(
+      interpret(r#"DMSString[45.5074, "Latitude"]"#).unwrap(),
+      "DMSString[45.5074, Latitude]"
+    );
+    assert_eq!(
+      interpret("DMSString[30.264, -1]").unwrap(),
+      "DMSString[30.264, -1]"
+    );
+  }
+}

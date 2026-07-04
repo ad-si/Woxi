@@ -491,6 +491,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FromCoefficientRules" => Some((2, 2)),
     "FromContinuedFraction" => Some((1, 1)),
     "FromDigits" => Some((1, 2)),
+    "DMSString" => Some((1, 2)),
     "FromDMS" => Some((1, 1)),
     "FromLetterNumber" => Some((1, 2)),
     "FromPolarCoordinates" => Some((1, 1)),

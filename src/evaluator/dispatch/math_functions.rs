@@ -5025,6 +5025,9 @@ pub fn dispatch_math_functions(
         return Some(evaluate_expr_to_expr(&result));
       }
     }
+    "DMSString" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::geo_math::dms_string_ast(args));
+    }
     // FromDMS[{d, m, s}] — convert degrees/minutes/seconds to decimal degrees
     "FromDMS" if args.len() == 1 => {
       match &args[0] {

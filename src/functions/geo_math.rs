@@ -267,6 +267,338 @@ fn antipode_longitude(lon: &Expr) -> Result<Expr, InterpreterError> {
   Ok(shifted)
 }
 
+/// An angle for DMS formatting: exact rational degrees (sign included) or a
+/// machine real. Exact values whose seconds come out integral print without
+/// decimals (`30°0'0"`); everything else gets a fixed number of decimals.
+enum AngleVal {
+  Exact(i128, i128), // p/q with q > 0
+  Real(f64),
+}
+
+impl AngleVal {
+  fn is_negative(&self) -> bool {
+    match self {
+      AngleVal::Exact(p, _) => *p < 0,
+      AngleVal::Real(v) => *v < 0.0,
+    }
+  }
+
+  fn abs(&self) -> AngleVal {
+    match self {
+      AngleVal::Exact(p, q) => AngleVal::Exact(p.abs(), *q),
+      AngleVal::Real(v) => AngleVal::Real(v.abs()),
+    }
+  }
+
+  /// d + m/60 + s/3600, staying exact only when all three parts are exact.
+  fn from_dms(d: &AngleVal, m: &AngleVal, s: &AngleVal) -> AngleVal {
+    if let (
+      AngleVal::Exact(dp, dq),
+      AngleVal::Exact(mp, mq),
+      AngleVal::Exact(sp, sq),
+    ) = (d, m, s)
+      && let Some(v) = (|| {
+        let a = rat_add((*dp, *dq), (*mp, mq.checked_mul(60)?))?;
+        rat_add(a, (*sp, sq.checked_mul(3600)?))
+      })()
+    {
+      return AngleVal::Exact(v.0, v.1);
+    }
+    AngleVal::Real(d.to_f64() + m.to_f64() / 60.0 + s.to_f64() / 3600.0)
+  }
+
+  fn to_f64(&self) -> f64 {
+    match self {
+      AngleVal::Exact(p, q) => *p as f64 / *q as f64,
+      AngleVal::Real(v) => *v,
+    }
+  }
+}
+
+/// Exact rational addition with overflow checks (falls back to `None`).
+fn rat_add(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
+  let num = a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?;
+  let den = a.1.checked_mul(b.1)?;
+  let g = gcd_i128(num.abs().max(1), den);
+  Some((num / g, den / g))
+}
+
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+  while b != 0 {
+    (a, b) = (b, a % b);
+  }
+  a.max(1)
+}
+
+/// Convert a numeric scalar expression to an `AngleVal`. Exactness is
+/// preserved for Integer/Rational; Reals and exact-but-irrational numerics
+/// (Pi, Sqrt[2], …) take the machine-real path like wolframscript.
+fn to_angle(expr: &Expr) -> Option<AngleVal> {
+  match expr {
+    Expr::Integer(n) => Some(AngleVal::Exact(*n, 1)),
+    Expr::Real(v) => Some(AngleVal::Real(*v)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
+          Some(AngleVal::Exact(*p * q.signum(), q.abs()))
+        }
+        _ => None,
+      }
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => to_angle(operand).map(|v| match v {
+      AngleVal::Exact(p, q) => AngleVal::Exact(-p, q),
+      AngleVal::Real(x) => AngleVal::Real(-x),
+    }),
+    _ => {
+      let v = crate::functions::math_ast::try_eval_to_f64(expr)?;
+      if !v.is_finite() {
+        return None;
+      }
+      Some(AngleVal::Real(v))
+    }
+  }
+}
+
+/// Format a non-negative angle as `d°m's"`. Seconds of an exact angle that
+/// are integral print as a bare integer (ignoring `prec`); otherwise they are
+/// rounded half-even to `prec` decimals (a trailing `.` remains for prec 0).
+fn format_dms(v: &AngleVal, prec: u32) -> String {
+  let pow = 10_i128.pow(prec);
+  // Total scaled seconds (angle * 3600 * 10^prec), rounded half-even.
+  let scaled: i128 = match v {
+    AngleVal::Exact(p, q) => {
+      if (3600 * p) % q == 0 {
+        // Integral seconds: emit without any decimal point.
+        let total = 3600 * p / q;
+        return format!(
+          "{}°{}'{}\"",
+          total / 3600,
+          (total % 3600) / 60,
+          total % 60
+        );
+      }
+      let num = p.checked_mul(3600 * pow);
+      match num {
+        Some(num) => {
+          let t = num / q;
+          let r = num % q;
+          match (2 * r).cmp(q) {
+            std::cmp::Ordering::Greater => t + 1,
+            std::cmp::Ordering::Equal => {
+              if t % 2 == 0 {
+                t
+              } else {
+                t + 1
+              }
+            }
+            std::cmp::Ordering::Less => t,
+          }
+        }
+        // Overflow: fall back to the machine-real path.
+        None => return format_dms(&AngleVal::Real(v.to_f64()), prec),
+      }
+    }
+    AngleVal::Real(x) => {
+      let d = x.floor();
+      let rem = ((x - d) * 3600.0 * pow as f64).round_ties_even() as i128;
+      d as i128 * 3600 * pow + rem
+    }
+  };
+  let d = scaled / (3600 * pow);
+  let m = (scaled % (3600 * pow)) / (60 * pow);
+  let s_scaled = scaled % (60 * pow);
+  let s_int = s_scaled / pow;
+  if prec == 0 {
+    format!("{d}°{m}'{s_int}.\"")
+  } else {
+    format!(
+      "{d}°{m}'{s_int}.{:0width$}\"",
+      s_scaled % pow,
+      width = prec as usize
+    )
+  }
+}
+
+/// Parse a DMS string like `30°15'50.5"` (each component optional after the
+/// degrees, optional sign, optional trailing N/S/E/W). Numbers may have a
+/// decimal part and are kept exact so integral seconds round-trip without
+/// decimals.
+fn parse_dms_string(s: &str) -> Option<AngleVal> {
+  let mut rest = s.trim();
+  let mut negative = false;
+  if let Some(r) = rest.strip_prefix('-') {
+    negative = true;
+    rest = r;
+  } else if let Some(r) = rest.strip_prefix('+') {
+    rest = r;
+  }
+  // One decimal number as an exact rational, consuming it from the input.
+  fn take_number(rest: &mut &str) -> Option<(i128, i128)> {
+    let digits = |s: &str| s.chars().take_while(|c| c.is_ascii_digit()).count();
+    let int_len = digits(rest);
+    if int_len == 0 {
+      return None;
+    }
+    let mut num: i128 = rest[..int_len].parse().ok()?;
+    let mut den: i128 = 1;
+    let mut consumed = int_len;
+    let after = &rest[int_len..];
+    if let Some(frac) = after.strip_prefix('.') {
+      let frac_len = digits(frac);
+      let frac_part: i128 = if frac_len == 0 {
+        0
+      } else {
+        frac[..frac_len].parse().ok()?
+      };
+      den = 10_i128.checked_pow(frac_len as u32)?;
+      num = num.checked_mul(den)?.checked_add(frac_part)?;
+      consumed += 1 + frac_len;
+    }
+    *rest = &rest[consumed..];
+    Some((num, den))
+  }
+  let deg = take_number(&mut rest)?;
+  rest = rest.strip_prefix('°')?;
+  let mut min = (0, 1);
+  let mut sec = (0, 1);
+  if !rest.is_empty() && rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+  {
+    min = take_number(&mut rest)?;
+    rest = rest.strip_prefix('\'')?;
+  }
+  if !rest.is_empty() && rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+  {
+    sec = take_number(&mut rest)?;
+    rest = rest.strip_prefix('"')?;
+  }
+  if matches!(rest, "N" | "S" | "E" | "W") {
+    rest = "";
+  }
+  if !rest.is_empty() {
+    return None;
+  }
+  let v = AngleVal::from_dms(
+    &AngleVal::Exact(deg.0, deg.1),
+    &AngleVal::Exact(min.0, min.1),
+    &AngleVal::Exact(sec.0, sec.1),
+  );
+  Some(if negative {
+    match v {
+      AngleVal::Exact(p, q) => AngleVal::Exact(-p, q),
+      AngleVal::Real(x) => AngleVal::Real(-x),
+    }
+  } else {
+    v
+  })
+}
+
+/// DMSString[angle] — format an angle in degrees as a `d°m's"` string.
+/// A `{lat, lon}` pair (or GeoPosition) formats both with N/S / E/W
+/// suffixes joined by two spaces; a `{d, m, s}` triple is a DMS value;
+/// DMS strings parse and re-format. The optional second argument is the
+/// number of decimals on the seconds (default 3).
+pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DMSString".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+
+  let prec: u32 = match args.get(1) {
+    None => 3,
+    Some(Expr::Integer(n)) if (0..=27).contains(n) => *n as u32,
+    Some(Expr::String(s)) => {
+      crate::emit_message(&format!(
+        "DMSString::form: Invalid formatting specification {}.",
+        s
+      ));
+      return unevaluated();
+    }
+    Some(_) => {
+      crate::emit_message(&format!(
+        "DMSString::num: {} cannot be interpreted as a numerical angle specification.",
+        crate::syntax::expr_to_output(&args[0])
+      ));
+      return unevaluated();
+    }
+  };
+
+  // A lat/lon pair: each formatted as an absolute angle plus hemisphere
+  // suffix (N/E for zero), joined by two spaces.
+  let format_pair = |lat: &AngleVal, lon: &AngleVal| -> String {
+    let side = |v: &AngleVal, pos: char, neg: char| {
+      let c = if v.is_negative() { neg } else { pos };
+      format!("{}{}", format_dms(&v.abs(), prec), c)
+    };
+    format!("{}  {}", side(lat, 'N', 'S'), side(lon, 'E', 'W'))
+  };
+
+  match &args[0] {
+    Expr::String(s) => match parse_dms_string(s) {
+      Some(v) => Ok(Expr::String(format_dms(&v.abs(), prec))),
+      None => {
+        crate::emit_message(&format!(
+          "DMSString::str: {} cannot be interpreted as a degree-minute-second string specification.",
+          s
+        ));
+        unevaluated()
+      }
+    },
+    Expr::List(items) => {
+      let vals: Option<Vec<AngleVal>> = items.iter().map(to_angle).collect();
+      match vals.as_deref() {
+        Some([lat, lon]) => Ok(Expr::String(format_pair(lat, lon))),
+        Some([d, m, s]) => Ok(Expr::String(format_dms(
+          &AngleVal::from_dms(d, m, s).abs(),
+          prec,
+        ))),
+        _ => {
+          crate::emit_message(&format!(
+            "DMSString::dms: {} cannot be interpreted as a degree-minute-second list specification.",
+            crate::syntax::expr_to_output(&args[0])
+          ));
+          unevaluated()
+        }
+      }
+    }
+    Expr::FunctionCall { name, args: gargs }
+      if name == "GeoPosition" && gargs.len() == 1 =>
+    {
+      if let Expr::List(items) = &gargs[0]
+        && (items.len() == 2 || items.len() == 3)
+        && let (Some(lat), Some(lon)) =
+          (to_angle(&items[0]), to_angle(&items[1]))
+      {
+        return Ok(Expr::String(format_pair(&lat, &lon)));
+      }
+      crate::emit_message(&format!(
+        "DMSString::ang: {} cannot be interpreted as a degree-minute-second angle specification.",
+        crate::syntax::expr_to_output(&args[0])
+      ));
+      unevaluated()
+    }
+    other => match to_angle(other) {
+      Some(v) => Ok(Expr::String(format_dms(&v.abs(), prec))),
+      None => {
+        crate::emit_message(&format!(
+          "DMSString::ang: {} cannot be interpreted as a degree-minute-second angle specification.",
+          crate::syntax::expr_to_output(other)
+        ));
+        unevaluated()
+      }
+    },
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

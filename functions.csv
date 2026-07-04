@@ -3457,7 +3457,7 @@ BooleanVariables,Boolean variables of an expression (canonically sorted; opaque 
 ChannelListen,,🚫,,11.0,3566
 CompleteGraphQ,Tests whether a graph is complete (every pair adjacent exactly once),✅,pure,8.0,3566
 DGaussianWavelet,Derivative-of-Gaussian continuous wavelet of order n,✅,pure,8.0,3566
-DMSString,,,,7.0,3566
+DMSString,Formats an angle or lat/lon pair as a degrees-minutes-seconds string; accepts scalars and {d;m;s} triples and GeoPosition and DMS strings,✅,pure,7.0,3566
 DefaultNewCellStyle,,🚫,,3.0,3566
 GenericCylindricalDecomposition,,,,6.0,3566
 IgnoringInactive,,,,10.0,3566
