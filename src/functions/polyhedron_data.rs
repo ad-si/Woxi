@@ -348,7 +348,8 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "PolyhedronData::notent: {name} is not a known entity, class, or tag for PolyhedronData. Use PolyhedronData[] for a list of entities."
     ));
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    // Wolfram emits the message but leaves the call unevaluated.
+    return unevaluated();
   };
   match args.len() {
     1 => polyhedron_graphics(info),

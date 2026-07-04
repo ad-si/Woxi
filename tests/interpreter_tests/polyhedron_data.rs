@@ -107,12 +107,12 @@ mod polyhedron_data_tests {
     );
   }
 
-  // Unknown polyhedra yield $Failed (with a notent message).
+  // Unknown polyhedra stay unevaluated (with a notent message).
   #[test]
   fn polyhedron_data_unknown_name() {
     assert_eq!(
       interpret(r#"PolyhedronData["NoSuchSolid", "Volume"]"#).unwrap(),
-      "$Failed"
+      r#"PolyhedronData[NoSuchSolid, Volume]"#
     );
   }
 
