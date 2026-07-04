@@ -840,7 +840,9 @@ mod inverse_trig_identities {
   // In-domain reals are unchanged (still return a plain real).
   #[test]
   fn arc_in_domain_reals_stay_real() {
-    assert_eq!(interpret("ArcSin[0.5]").unwrap(), "0.5235987755982988");
+    // Round to avoid a last-ULP libm divergence between platforms in the
+    // full-precision output (macOS ...988 vs Linux ...989).
+    assert_eq!(interpret("Round[ArcSin[0.5], 0.001]").unwrap(), "0.524");
     assert_eq!(interpret("ArcCos[0.5]").unwrap(), "1.0471975511965976");
     assert_eq!(interpret("ArcTanh[0.5]").unwrap(), "0.5493061443340549");
   }

@@ -2553,7 +2553,10 @@ mod traditional_form_boxes {
   #[test]
   fn hold_form_is_invisible() {
     let boxes = tf("HoldForm[a + b]");
-    assert!(!boxes.contains("HoldForm"), "HoldForm should vanish: {boxes}");
+    assert!(
+      !boxes.contains("HoldForm"),
+      "HoldForm should vanish: {boxes}"
+    );
   }
 
   #[test]
@@ -2594,7 +2597,10 @@ mod traditional_form_boxes {
     // Preserves the MakeBoxes contract: F[x] → RowBox[{F, (, x, )}].
     let boxes = tf("F[x]");
     assert!(boxes.contains("\"F\""), "head kept: {boxes}");
-    assert!(boxes.contains("\"(\"") && boxes.contains("\")\""), "parens: {boxes}");
+    assert!(
+      boxes.contains("\"(\"") && boxes.contains("\")\""),
+      "parens: {boxes}"
+    );
     assert!(!boxes.contains("\"[\""), "no square brackets: {boxes}");
   }
 
@@ -2619,7 +2625,10 @@ mod traditional_form_boxes {
   fn integrate_uses_integral_sign_and_differential() {
     let boxes = tf("Integrate[Exp[-x^2], {x, 0, Infinity}]");
     assert!(boxes.contains('\u{222B}'), "∫ present: {boxes}");
-    assert!(boxes.contains('\u{2146}'), "ⅆ differential present: {boxes}");
+    assert!(
+      boxes.contains('\u{2146}'),
+      "ⅆ differential present: {boxes}"
+    );
     assert!(
       boxes.contains("SubsuperscriptBox"),
       "integral carries limits: {boxes}"
@@ -2636,7 +2645,10 @@ mod traditional_form_boxes {
   #[test]
   fn determinant_uses_bars_and_grid() {
     let boxes = tf("Det[{{a, b}, {c, d}}]");
-    assert!(boxes.contains("GridBox"), "matrix laid out as a grid: {boxes}");
+    assert!(
+      boxes.contains("GridBox"),
+      "matrix laid out as a grid: {boxes}"
+    );
     assert!(boxes.contains("\"|\""), "determinant bars: {boxes}");
   }
 
@@ -2668,12 +2680,17 @@ mod traditional_form_boxes {
   #[test]
   fn vector_operators_use_nabla() {
     assert!(tf("Grad[f[x], {x}]").contains('\u{2207}'), "Grad → ∇");
-    assert!(tf("Laplacian[f[x], {x}]").contains('\u{2207}'), "Laplacian → ∇²");
+    assert!(
+      tf("Laplacian[f[x], {x}]").contains('\u{2207}'),
+      "Laplacian → ∇²"
+    );
   }
 
   #[test]
   fn end_to_end_svg_carries_operator_glyphs() {
-    let svg = tf_svg("TraditionalForm @ HoldForm[Sum[1/n^2, {n, 1, Infinity}] == Pi^2/6]");
+    let svg = tf_svg(
+      "TraditionalForm @ HoldForm[Sum[1/n^2, {n, 1, Infinity}] == Pi^2/6]",
+    );
     assert!(svg.contains('\u{2211}'), "∑ rendered: {svg}");
     assert!(svg.contains('\u{03C0}'), "π rendered: {svg}");
     assert!(svg.contains('\u{221E}'), "∞ rendered: {svg}");
@@ -2683,9 +2700,14 @@ mod traditional_form_boxes {
 
   #[test]
   fn end_to_end_svg_draws_stretchy_determinant_bars() {
-    let svg = tf_svg("TraditionalForm @ HoldForm[Det[{{a, b, c}, {d, e, f}, {g, h, i}}]]");
+    let svg = tf_svg(
+      "TraditionalForm @ HoldForm[Det[{{a, b, c}, {d, e, f}, {g, h, i}}]]",
+    );
     // Bars stretch into vertical <line>s spanning the grid.
     assert!(svg.contains("<line"), "stretchy bars drawn as lines: {svg}");
-    assert!(svg.contains(">a<") && svg.contains(">i<"), "cells present: {svg}");
+    assert!(
+      svg.contains(">a<") && svg.contains(">i<"),
+      "cells present: {svg}"
+    );
   }
 }

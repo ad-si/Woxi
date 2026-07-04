@@ -4559,7 +4559,8 @@ fn sqrt_radical(
     "<path d=\"M {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>",
     p0.0, p0.1, p1.0, p1.1, p2.0, p2.1, p3.0, p3.1, p4.0, p4.1,
   );
-  let elements = format!("{}{}", path, content.translate(content_x, content_top));
+  let elements =
+    format!("{}{}", path, content.translate(content_x, content_top));
   (
     hook_w,
     BoxLayout {
@@ -4755,10 +4756,18 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             // glyphs so ordinary parenthesized expressions are unaffected.
             if inner_ascent + inner_descent > natural * 1.5 {
               let last = children.len() - 1;
-              children[0] =
-                render_stretchy_delim(o, inner_ascent, inner_descent, font_size);
-              children[last] =
-                render_stretchy_delim(c, inner_ascent, inner_descent, font_size);
+              children[0] = render_stretchy_delim(
+                o,
+                inner_ascent,
+                inner_descent,
+                font_size,
+              );
+              children[last] = render_stretchy_delim(
+                c,
+                inner_ascent,
+                inner_descent,
+                font_size,
+              );
             }
           }
         }
@@ -4903,11 +4912,8 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           let sup_y = 0.0;
           let sub_x = base.width * 0.72 + gap;
           let sub_y = (base.height - sub.height).max(base.baseline);
-          let width = base
-            .width
-            .max(sup_x + sup.width)
-            .max(sub_x + sub.width)
-            + gap;
+          let width =
+            base.width.max(sup_x + sup.width).max(sub_x + sub.width) + gap;
           let elements = format!(
             "{}{}{}",
             base.translate(0.0, 0.0),
@@ -4960,10 +4966,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let index_y = body.height * 0.18;
         let elements =
           format!("{}{}", index.translate(index_x, index_y), body.elements);
-        BoxLayout {
-          elements,
-          ..body
-        }
+        BoxLayout { elements, ..body }
       }
 
       // OverscriptBox / UnderscriptBox / UnderoverscriptBox — same as super/sub for now

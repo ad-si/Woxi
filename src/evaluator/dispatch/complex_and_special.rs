@@ -5008,14 +5008,14 @@ fn tf_parens(inner: Expr) -> Expr {
 /// only the named mathematical constants need translating here.
 fn tf_symbol(name: &str) -> String {
   match name {
-    "Pi" => "\u{03C0}".to_string(),                    // π
-    "Infinity" => "\u{221E}".to_string(),              // ∞
-    "E" | "ExponentialE" => "\u{2147}".to_string(),    // ⅇ
-    "I" | "ImaginaryI" => "\u{2148}".to_string(),      // ⅈ
-    "Degree" => "\u{00B0}".to_string(),                // °
-    "EulerGamma" => "\u{03B3}".to_string(),            // γ
-    "GoldenRatio" => "\u{03C6}".to_string(),           // φ
-    "ComplexInfinity" => "\u{221E}".to_string(),       // ∞
+    "Pi" => "\u{03C0}".to_string(),       // π
+    "Infinity" => "\u{221E}".to_string(), // ∞
+    "E" | "ExponentialE" => "\u{2147}".to_string(), // ⅇ
+    "I" | "ImaginaryI" => "\u{2148}".to_string(), // ⅈ
+    "Degree" => "\u{00B0}".to_string(),   // °
+    "EulerGamma" => "\u{03B3}".to_string(), // γ
+    "GoldenRatio" => "\u{03C6}".to_string(), // φ
+    "ComplexInfinity" => "\u{221E}".to_string(), // ∞
     _ => name.to_string(),
   }
 }
@@ -5205,7 +5205,14 @@ fn tf_power(base: &Expr, exp: &Expr) -> Expr {
     || matches!(base, Expr::Real(f) if *f < 0.0);
   let base_box = if tf_needs_paren_factor(base)
     || negative_number
-    || matches!(base, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Power | crate::syntax::BinaryOperator::Divide, .. })
+    || matches!(
+      base,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power
+          | crate::syntax::BinaryOperator::Divide,
+        ..
+      }
+    )
     || matches!(base, Expr::FunctionCall { name, .. } if name == "Power" || name == "Rational")
   {
     tf_parens(tf(base))
@@ -5279,8 +5286,7 @@ fn tf_big_operator(glyph: &str, args: &[Expr]) -> Expr {
     if let Expr::List(parts) = spec {
       match parts.as_slice() {
         [var, lo, hi] => {
-          let under =
-            tf_row(vec![tf(var), tf_string("="), tf(lo)]);
+          let under = tf_row(vec![tf(var), tf_string("="), tf(lo)]);
           ops.push(tf_box(
             "UnderoverscriptBox",
             vec![tf_string(glyph), under, tf(hi)],
@@ -5338,9 +5344,14 @@ fn tf_integrate(args: &[Expr]) -> Expr {
   }
   let mut items = ops;
   items.push(tf_thin_space());
-  let body_needs_paren = matches!(&args[0],
-    Expr::BinaryOp { op: crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus, .. })
-    || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus");
+  let body_needs_paren = matches!(
+    &args[0],
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus
+        | crate::syntax::BinaryOperator::Minus,
+      ..
+    }
+  ) || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus");
   if body_needs_paren {
     items.push(tf_parens(tf(&args[0])));
   } else {
@@ -5396,7 +5407,13 @@ fn tf_derivative(args: &[Expr]) -> Expr {
   let frac = tf_box("FractionBox", vec![num, tf_row(den_items)]);
   let body = &args[0];
   let body_box = if tf_needs_paren_factor(body)
-    || matches!(body, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Times, .. })
+    || matches!(
+      body,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        ..
+      }
+    )
     || matches!(body, Expr::FunctionCall { name, .. } if name == "Times")
   {
     tf_parens(tf(body))
@@ -5471,11 +5488,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       if let Expr::List(rows) = &args[0]
         && tf_is_matrix(rows)
       {
-        tf_row(vec![
-          tf_string("|"),
-          tf_matrix_grid(rows),
-          tf_string("|"),
-        ])
+        tf_row(vec![tf_string("|"), tf_matrix_grid(rows), tf_string("|")])
       } else {
         tf_row(vec![tf_string("det"), tf_parens(tf(&args[0]))])
       }
@@ -5484,11 +5497,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       if let Expr::List(rows) = &args[0]
         && tf_is_matrix(rows)
       {
-        tf_row(vec![
-          tf_string("("),
-          tf_matrix_grid(rows),
-          tf_string(")"),
-        ])
+        tf_row(vec![tf_string("("), tf_matrix_grid(rows), tf_string(")")])
       } else {
         tf(&args[0])
       }
@@ -5527,19 +5536,11 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         Expr::Rule {
           pattern,
           replacement,
-        } => tf_row(vec![
-          tf(pattern),
-          tf_string("\u{2192}"),
-          tf(replacement),
-        ]),
+        } => tf_row(vec![tf(pattern), tf_string("\u{2192}"), tf(replacement)]),
         Expr::FunctionCall { name, args: ra }
           if name == "Rule" && ra.len() == 2 =>
         {
-          tf_row(vec![
-            tf(&ra[0]),
-            tf_string("\u{2192}"),
-            tf(&ra[1]),
-          ])
+          tf_row(vec![tf(&ra[0]), tf_string("\u{2192}"), tf(&ra[1])])
         }
         other => tf(other),
       };
@@ -5675,9 +5676,9 @@ fn tf(expr: &Expr) -> Expr {
       for (i, op) in operators.iter().enumerate() {
         let sym = match op {
           ComparisonOp::Equal => "=",
-          ComparisonOp::NotEqual => "\u{2260}",     // ≠
+          ComparisonOp::NotEqual => "\u{2260}", // ≠
           ComparisonOp::Less => "<",
-          ComparisonOp::LessEqual => "\u{2264}",    // ≤
+          ComparisonOp::LessEqual => "\u{2264}", // ≤
           ComparisonOp::Greater => ">",
           ComparisonOp::GreaterEqual => "\u{2265}", // ≥
           ComparisonOp::SameQ => "\u{2261}",        // ≡
@@ -5691,11 +5692,7 @@ fn tf(expr: &Expr) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => tf_row(vec![
-      tf(pattern),
-      tf_string("\u{2192}"),
-      tf(replacement),
-    ]),
+    } => tf_row(vec![tf(pattern), tf_string("\u{2192}"), tf(replacement)]),
     _ => expr_to_box_form(expr),
   }
 }
