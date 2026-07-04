@@ -2190,6 +2190,50 @@ mod modular_inverse {
     assert_eq!(interpret("ModularInverse[1, 100]").unwrap(), "1");
     assert_eq!(interpret("ModularInverse[17, 19]").unwrap(), "9");
   }
+
+  #[test]
+  fn negative_modulus_uses_negative_representative() {
+    // For a negative modulus n the result is the representative in (n, 0]:
+    // ModularInverse[3, -7] = 5 - 7 = -2.
+    assert_eq!(interpret("ModularInverse[3, -7]").unwrap(), "-2");
+    assert_eq!(interpret("ModularInverse[2, -11]").unwrap(), "-5");
+    assert_eq!(interpret("ModularInverse[10, -7]").unwrap(), "-2");
+  }
+
+  #[test]
+  fn modulus_one_is_zero() {
+    // Everything is congruent modulo (+/-)1, so the inverse is 0.
+    assert_eq!(interpret("ModularInverse[5, 1]").unwrap(), "0");
+    assert_eq!(interpret("ModularInverse[5, -1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn reduces_base_before_inverting() {
+    assert_eq!(interpret("ModularInverse[100, 3]").unwrap(), "1");
+    assert_eq!(interpret("ModularInverse[10, 7]").unwrap(), "5");
+  }
+
+  #[test]
+  fn zero_modulus_stays_unevaluated() {
+    // A zero modulus is invalid (ModularInverse::intnz).
+    assert_eq!(
+      interpret("ModularInverse[1, 0]").unwrap(),
+      "ModularInverse[1, 0]"
+    );
+  }
+
+  #[test]
+  fn non_integer_arguments_stay_unevaluated() {
+    // Symbolic or inexact arguments are rejected (ModularInverse::minv).
+    assert_eq!(
+      interpret("ModularInverse[k, n]").unwrap(),
+      "ModularInverse[k, n]"
+    );
+    assert_eq!(
+      interpret("ModularInverse[3.5, 7]").unwrap(),
+      "ModularInverse[3.5, 7]"
+    );
+  }
 }
 
 mod multiplicative_order {

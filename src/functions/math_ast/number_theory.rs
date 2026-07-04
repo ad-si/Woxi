@@ -5019,51 +5019,62 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ModularInverse expects exactly 2 arguments".into(),
     ));
   }
-  let a = match expr_to_bigint(&args[0]) {
-    Some(v) => v,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "ModularInverse".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ModularInverse".to_string(),
+      args: args.to_vec().into(),
+    })
   };
-  let m = match expr_to_bigint(&args[1]) {
-    Some(v) => v,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "ModularInverse".to_string(),
-        args: args.to_vec().into(),
-      });
+
+  use num_traits::{One, Signed, Zero};
+
+  // Both arguments must be ordinary integers.
+  let (a, m) = match (expr_to_bigint(&args[0]), expr_to_bigint(&args[1])) {
+    (Some(a), Some(m)) => (a, m),
+    _ => {
+      crate::emit_message(
+        "ModularInverse::minv: The two arguments to ModularInverse must be \
+         ordinary or Gaussian integers.",
+      );
+      return unevaluated();
     }
   };
 
-  use num_traits::{One, Zero};
-
+  // The modulus must be nonzero.
   if m.is_zero() {
-    return Ok(Expr::FunctionCall {
-      name: "ModularInverse".to_string(),
-      args: args.to_vec().into(),
-    });
+    crate::emit_message(&format!(
+      "ModularInverse::intnz: Nonzero integer expected at position 2 in \
+       ModularInverse[{}, {}].",
+      crate::syntax::expr_to_string(&args[0]),
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return unevaluated();
   }
 
-  // Extended Euclidean algorithm
-  let m_abs = if m < BigInt::zero() {
-    -m.clone()
-  } else {
-    m.clone()
-  };
+  let m_abs = m.abs();
+
+  // The inverse modulo (+/-)1 is 0.
+  if m_abs.is_one() {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Extended Euclidean algorithm. `a` and the modulus must be coprime.
   let (gcd, x, _) = extended_gcd(&a, &m_abs);
-  if !gcd.is_one() && gcd != -BigInt::one() {
-    // Not coprime, no inverse exists - return unevaluated
-    return Ok(Expr::FunctionCall {
-      name: "ModularInverse".to_string(),
-      args: args.to_vec().into(),
-    });
+  if !gcd.abs().is_one() {
+    crate::emit_message(&format!(
+      "ModularInverse::ninv: {} is not invertible modulo {}.",
+      crate::syntax::expr_to_string(&args[0]),
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return unevaluated();
   }
 
-  // Normalize result to be in range [0, |m|-1]
-  let result = ((x % &m_abs) + &m_abs) % &m_abs;
+  // Canonical inverse in [0, |m|).
+  let mut result = ((x % &m_abs) + &m_abs) % &m_abs;
+  // A negative modulus uses the representative in (m, 0].
+  if m.is_negative() && !result.is_zero() {
+    result -= &m_abs;
+  }
   Ok(bigint_to_expr(result))
 }
 
