@@ -303,6 +303,10 @@ enum Message {
   /// A checkbox in a Manipulate display element was toggled.
   /// (cell_idx, write-back assignment, e.g. `data[[3, 5]] = 1`)
   ManipulateDisplayToggled(usize, String),
+  /// The throttle timer for a Manipulate cell fired; re-evaluate the body
+  /// with the latest control values if any change is still pending.
+  /// (cell_idx)
+  ManipulateReeval(usize),
 
   // Hyperlink: open the given URL in the user's default browser.
   OpenHyperlink(String),
@@ -1540,9 +1544,8 @@ impl WoxiStudio {
               .iter()
               .filter_map(|s| rasterize_svg(s, scale, &self.fontdb))
               .collect();
-            if let Some(ref mut state) = editor.manipulate_state {
-              state.rerasterize(scale, &self.fontdb);
-            }
+            // Manipulate graphics are drawn by the `svg` widget, which
+            // rescales for DPI on its own — no manual re-rasterization needed.
           }
         }
         Task::none()
@@ -1555,7 +1558,9 @@ impl WoxiStudio {
           && let manipulate::ControlState::Continuous { current, .. } = control
         {
           *current = value;
-          state.reevaluate(self.scale_factor, &self.fontdb);
+          if state.request_reeval() {
+            return manipulate_reeval_task(cell_idx);
+          }
         }
         Task::none()
       }
@@ -1572,7 +1577,9 @@ impl WoxiStudio {
           && let Some(idx) = values.iter().position(|v| *v == choice)
         {
           *current_index = idx;
-          state.reevaluate(self.scale_factor, &self.fontdb);
+          if state.request_reeval() {
+            return manipulate_reeval_task(cell_idx);
+          }
         }
         Task::none()
       }
@@ -1588,7 +1595,9 @@ impl WoxiStudio {
           } else {
             *y = value;
           }
-          state.reevaluate(self.scale_factor, &self.fontdb);
+          if state.request_reeval() {
+            return manipulate_reeval_task(cell_idx);
+          }
         }
         Task::none()
       }
@@ -1612,7 +1621,9 @@ impl WoxiStudio {
           } else {
             *high = value.max(*low);
           }
-          state.reevaluate(self.scale_factor, &self.fontdb);
+          if state.request_reeval() {
+            return manipulate_reeval_task(cell_idx);
+          }
         }
         Task::none()
       }
@@ -1621,11 +1632,16 @@ impl WoxiStudio {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
         {
-          state.apply_display_mutation(
-            &mutation,
-            self.scale_factor,
-            &self.fontdb,
-          );
+          state.apply_display_mutation(&mutation);
+        }
+        Task::none()
+      }
+
+      Message::ManipulateReeval(cell_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.run_scheduled_reeval();
         }
         Task::none()
       }
@@ -3405,6 +3421,25 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
   text.chars().count()
 }
 
+/// Throttle window for Manipulate re-evaluation. A slider drag emits a burst of
+/// change messages; coalescing them behind this short delay keeps the (blocking)
+/// body evaluation off every mouse-move tick, so the graphic updates smoothly
+/// instead of flickering while dragging. The control value itself still updates
+/// immediately, so the thumb and value label track the cursor without lag.
+const MANIPULATE_THROTTLE_MS: u64 = 16;
+
+/// Spawn the debounce timer that drives a throttled Manipulate re-evaluation.
+/// When it fires, `ManipulateReeval` re-evaluates the body with the latest
+/// control values (see `ManipulateState::run_scheduled_reeval`).
+fn manipulate_reeval_task(cell_idx: usize) -> Task<Message> {
+  Task::perform(
+    tokio::time::sleep(std::time::Duration::from_millis(
+      MANIPULATE_THROTTLE_MS,
+    )),
+    move |()| Message::ManipulateReeval(cell_idx),
+  )
+}
+
 fn render_manipulate_widget<'a>(
   cell_idx: usize,
   state: &'a manipulate::ManipulateState,
@@ -3570,15 +3605,11 @@ fn render_manipulate_widget<'a>(
       .padding(4)
       .width(Fill),
     );
-  } else if let Some((ref img_handle, w, h)) = state.graphics_image {
-    let mut img_widget = image(img_handle.clone())
-      .width(iced::Length::Fixed(w as f32))
-      .height(iced::Length::Fixed(h as f32));
-    if stale {
-      img_widget = img_widget.opacity(0.3);
-    }
-    output_col = output_col.push(container(img_widget).padding(4));
   } else if let Some(ref handle) = state.graphics_handle {
+    // Render via the iced `svg` widget (not a pre-rasterized bitmap): its
+    // vector cache uploads synchronously, so each re-evaluation's new handle
+    // is drawn the same frame instead of flashing blank through iced's async
+    // raster-upload path. See `ManipulateState::reevaluate`.
     let mut svg_widget =
       svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
     if stale {
@@ -3990,8 +4021,7 @@ fn evaluate_cell_statements(
         // statement's interactive widget is shown.
         if result.result != "\0"
           && let Ok(expr) = woxi::interpret_to_expr(stmt)
-          && let Some(state) =
-            manipulate::ManipulateState::from_expr(&expr, scale_factor, fontdb)
+          && let Some(state) = manipulate::ManipulateState::from_expr(&expr)
         {
           last_manipulate = Some((result.result.clone(), state));
           // Skip adding to outputs / graphics — the interactive widget
@@ -5578,6 +5608,34 @@ mod tests {
     let states = &[(CellStyle::Item, true), (CellStyle::Text, false)];
     let hidden = compute_hidden_cells_from_states(states);
     assert_eq!(hidden, vec![false, false]);
+  }
+
+  #[test]
+  fn manipulate_reeval_coalesces_burst() {
+    // A burst of slider changes must arm exactly one throttle timer and then
+    // re-evaluate a single time — this is what stops the per-tick blocking
+    // eval that made the graphic flicker while dragging.
+    let expr = woxi::interpret_to_expr("Manipulate[x, {x, 0, 10}]").unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+
+    // First change schedules the timer; the rest only accumulate.
+    assert!(state.request_reeval(), "first change should arm the timer");
+    assert!(!state.request_reeval(), "second change must not re-arm");
+    assert!(!state.request_reeval(), "third change must not re-arm");
+
+    // Timer fires: the pending changes render and the flag clears, so the
+    // next change arms a fresh timer.
+    state.run_scheduled_reeval();
+    assert!(
+      state.request_reeval(),
+      "a change after the timer fired should arm a new timer"
+    );
+
+    // A timer that fires with nothing new pending is a no-op that still
+    // clears the flag (so a later change can re-arm).
+    state.run_scheduled_reeval();
+    state.run_scheduled_reeval();
+    assert!(state.request_reeval(), "flag must clear on an empty fire");
   }
 
   #[test]

@@ -7,9 +7,6 @@
 //! in place and the body is re-evaluated inside a `Block[{…}, body]` so
 //! that free control variables are substituted.
 
-use std::sync::Arc;
-
-use iced::widget::image;
 use iced::widget::svg;
 use woxi::functions::graphics::{
   DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
@@ -17,8 +14,6 @@ use woxi::functions::graphics::{
   extract_manipulate_spec,
 };
 use woxi::syntax::Expr;
-
-use crate::rasterize_svg;
 
 /// Runtime state for a single control inside a Manipulate cell.
 #[derive(Debug, Clone)]
@@ -118,22 +113,28 @@ pub struct ManipulateState {
   pub displays: Vec<String>,
   /// The rendered widget tree for each display element.
   pub display_trees: Vec<DisplayNode>,
-  pub graphics_svg: Option<String>,
   pub graphics_handle: Option<svg::Handle>,
-  pub graphics_image: Option<(image::Handle, u32, u32)>,
   pub text_output: Option<String>,
   pub error: Option<String>,
+  /// Generation of the most recent control change. Bumped on every
+  /// slider/picklist move so the throttled re-evaluation can tell whether a
+  /// newer change has superseded a queued one.
+  reeval_pending: u64,
+  /// Generation last actually re-evaluated. When it lags `reeval_pending`
+  /// there is fresh input waiting to be rendered.
+  reeval_applied: u64,
+  /// Whether a debounce timer is already in flight. While set, further
+  /// control changes only bump `reeval_pending` instead of arming a second
+  /// timer — this is what coalesces a burst of slider events into a single
+  /// re-evaluation, mirroring the Playground's inflight/pending pipeline.
+  reeval_scheduled: bool,
 }
 
 impl ManipulateState {
   /// Build a `ManipulateState` from an evaluated expression. Returns
   /// `None` if `expr` is not a well-formed Manipulate (in which case
   /// the caller should fall back to the normal text/graphics path).
-  pub fn from_expr(
-    expr: &Expr,
-    scale_factor: f32,
-    fontdb: &Arc<resvg::usvg::fontdb::Database>,
-  ) -> Option<Self> {
+  pub fn from_expr(expr: &Expr) -> Option<Self> {
     let spec =
       extract_manipulate_spec(expr).or_else(|| extract_control_spec(expr))?;
     let controls = controls_from_spec(&spec);
@@ -144,13 +145,14 @@ impl ManipulateState {
       state: spec.state,
       displays: spec.displays,
       display_trees: Vec::new(),
-      graphics_svg: None,
       graphics_handle: None,
-      graphics_image: None,
       text_output: None,
       error: None,
+      reeval_pending: 0,
+      reeval_applied: 0,
+      reeval_scheduled: false,
     };
-    state.reevaluate(scale_factor, fontdb);
+    state.reevaluate();
     Some(state)
   }
 
@@ -168,12 +170,7 @@ impl ManipulateState {
 
   /// Apply an interactive checkbox write-back (e.g. `data[[3, 5]] = 1`),
   /// update the affected state variable, and re-render.
-  pub fn apply_display_mutation(
-    &mut self,
-    mutation: &str,
-    scale_factor: f32,
-    fontdb: &Arc<resvg::usvg::fontdb::Database>,
-  ) {
+  pub fn apply_display_mutation(&mut self, mutation: &str) {
     let updated =
       apply_manipulate_mutations(&self.bindings(), &[mutation.to_string()]);
     for (name, value) in updated {
@@ -182,16 +179,43 @@ impl ManipulateState {
         None => self.state.push((name, value)),
       }
     }
-    self.reevaluate(scale_factor, fontdb);
+    self.reevaluate();
+  }
+
+  /// Register a control change and report whether the caller must arm a
+  /// throttle timer. Re-evaluating the body on *every* slider mouse-move tick
+  /// blocks the UI thread and makes the graphic stutter/flicker while
+  /// dragging. Instead we mark the change here and only re-evaluate once the
+  /// timer fires (see [`run_scheduled_reeval`]), coalescing the whole burst
+  /// into a single render. Returns `true` when no timer is pending yet and the
+  /// caller should spawn one.
+  ///
+  /// [`run_scheduled_reeval`]: Self::run_scheduled_reeval
+  pub fn request_reeval(&mut self) -> bool {
+    self.reeval_pending = self.reeval_pending.wrapping_add(1);
+    if self.reeval_scheduled {
+      false
+    } else {
+      self.reeval_scheduled = true;
+      true
+    }
+  }
+
+  /// Run a throttled re-evaluation when the debounce timer fires. Clears the
+  /// pending-timer flag and re-evaluates only if a control change is still
+  /// waiting to be rendered, so intermediate slider positions dropped during a
+  /// fast drag never trigger a wasted (and UI-blocking) evaluation.
+  pub fn run_scheduled_reeval(&mut self) {
+    self.reeval_scheduled = false;
+    if self.reeval_applied != self.reeval_pending {
+      self.reeval_applied = self.reeval_pending;
+      self.reevaluate();
+    }
   }
 
   /// Re-run the body with the current control bindings and update the
   /// cached SVG / text output. Called on every slider change.
-  pub fn reevaluate(
-    &mut self,
-    scale_factor: f32,
-    fontdb: &Arc<resvg::usvg::fontdb::Database>,
-  ) {
+  pub fn reevaluate(&mut self) {
     let bindings = self.bindings();
     // Prepend `Initialization :> …` code so helper definitions made there
     // (e.g. `d[t_] := …`) are in scope while the body evaluates. The init
@@ -214,14 +238,20 @@ impl ManipulateState {
     });
     self.display_trees = display_trees;
 
-    // Double-buffer the render: rasterize the new output into locals and
-    // only swap the cached fields once the replacement is ready, rather
-    // than nulling them out before the (potentially slow) re-evaluation.
-    // This keeps the old graphic on screen right up until the new one
-    // takes its place, preventing the vanish/flicker while a slider is
-    // dragged. A result that genuinely produces no output still blanks
-    // the frame — the old rendering is only preserved by being replaced,
-    // never by an absent one.
+    // Double-buffer the render: build the new SVG handle in a local and only
+    // swap the cached field once the replacement is ready, rather than nulling
+    // it out before the (potentially slow) re-evaluation. This keeps the old
+    // graphic on screen right up until the new one takes its place. A result
+    // that genuinely produces no output still blanks the frame — the old
+    // rendering is only preserved by being replaced, never by an absent one.
+    //
+    // The graphic is rendered by the iced `svg` widget (see the view layer),
+    // not a pre-rasterized bitmap: iced's raster-image pipeline uploads any
+    // texture larger than 2 MiB asynchronously on a worker thread, leaving the
+    // image blank for a frame or two whenever the (always-unique) handle id
+    // changes — that async upload gap is what made the graphic flicker while
+    // dragging. The `svg` widget uploads synchronously in the same frame, so
+    // the new graphic is drawn the instant it replaces the old one.
     match render {
       Ok(result) => {
         let cleaned = if result.graphics.is_some() || result.result == "\0" {
@@ -238,18 +268,13 @@ impl ManipulateState {
 
         if let Some(svg) = result.graphics {
           let handle = svg::Handle::from_memory(svg.as_bytes().to_vec());
-          let image = rasterize_svg(&svg, scale_factor, fontdb);
-          self.graphics_svg = Some(svg);
           self.graphics_handle = Some(handle);
-          self.graphics_image = image;
           self.text_output = None;
           self.error = None;
         } else {
           // No graphic: either a textual result or genuinely empty output.
           // Blank the graphic and show the text (empty text => blank cell).
-          self.graphics_svg = None;
           self.graphics_handle = None;
-          self.graphics_image = None;
           self.text_output = if cleaned.is_empty() {
             None
           } else {
@@ -261,26 +286,11 @@ impl ManipulateState {
       Err(e) => {
         // Surface the evaluation error. The render path shows the error in
         // place of the graphic, so drop the cached rendering here.
-        self.graphics_svg = None;
         self.graphics_handle = None;
-        self.graphics_image = None;
         self.text_output = None;
         self.error = Some(format!("{e}"));
       }
     }
-  }
-
-  /// Re-rasterize the current SVG at a new scale factor. Called when
-  /// the window DPI changes (mirrors the cell-level rasterize flow).
-  pub fn rerasterize(
-    &mut self,
-    scale_factor: f32,
-    fontdb: &Arc<resvg::usvg::fontdb::Database>,
-  ) {
-    self.graphics_image = self
-      .graphics_svg
-      .as_ref()
-      .and_then(|s| rasterize_svg(s, scale_factor, fontdb));
   }
 }
 
