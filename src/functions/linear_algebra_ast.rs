@@ -1214,18 +1214,45 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = diag.len();
   let size = n + k.unsigned_abs() as usize;
   let k_abs = k.unsigned_abs() as usize;
+  // An inexact diagonal makes the whole matrix inexact: the off-diagonal
+  // fill is the machine real 0. rather than the exact Integer 0, and any
+  // exact numeric diagonal entry is promoted to a Real too
+  // (DiagonalMatrix[{1, 2.}] = {{1., 0.}, {0., 2.}}). Symbolic entries are
+  // left untouched (DiagonalMatrix[{a, 2.}] = {{a, 0.}, {0., 2.}}).
+  let inexact = diag.iter().any(|e| matches!(e, Expr::Real(_)));
+  let zero = if inexact {
+    Expr::Real(0.0)
+  } else {
+    Expr::Integer(0)
+  };
+  let is_exact_number = |e: &Expr| -> bool {
+    match e {
+      Expr::Integer(_) | Expr::BigInteger(_) => true,
+      Expr::FunctionCall { name, .. } => name == "Rational",
+      _ => false,
+    }
+  };
+  let promote = |e: &Expr| -> Expr {
+    if inexact
+      && is_exact_number(e)
+      && let Some(v) = crate::functions::math_ast::expr_to_f64(e)
+    {
+      return Expr::Real(v);
+    }
+    e.clone()
+  };
   let mut matrix = Vec::with_capacity(size);
   for i in 0..size {
-    let mut row = vec![Expr::Integer(0); size];
+    let mut row = vec![zero.clone(); size];
     if k >= 0 {
       // Super-diagonal: element j goes at row j, column j + k
       if i < n {
-        row[i + k_abs] = diag[i].clone();
+        row[i + k_abs] = promote(&diag[i]);
       }
     } else {
       // Sub-diagonal: element j goes at row j + |k|, column j
       if i >= k_abs && i - k_abs < n {
-        row[i - k_abs] = diag[i - k_abs].clone();
+        row[i - k_abs] = promote(&diag[i - k_abs]);
       }
     }
     matrix.push(Expr::List(row.into()));

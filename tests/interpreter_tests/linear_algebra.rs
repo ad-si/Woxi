@@ -503,6 +503,55 @@ mod diagonal_matrix {
       "{{0, 0, 0}, {0, 0, 0}, {x, 0, 0}}"
     );
   }
+
+  #[test]
+  fn inexact_diagonal_fills_with_real_zero() {
+    // An inexact diagonal makes the whole matrix inexact: the off-diagonal
+    // fill is the machine real 0., not the exact Integer 0.
+    assert_eq!(
+      interpret("DiagonalMatrix[{1., 2.}]").unwrap(),
+      "{{1., 0.}, {0., 2.}}"
+    );
+    assert_eq!(
+      interpret("Head[DiagonalMatrix[{1., 2.}][[1, 2]]]").unwrap(),
+      "Real"
+    );
+  }
+
+  #[test]
+  fn mixed_diagonal_promotes_exact_numbers() {
+    // A single inexact entry promotes the exact numeric entries to Real,
+    // but leaves symbolic entries untouched.
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2.}]").unwrap(),
+      "{{1., 0.}, {0., 2.}}"
+    );
+    assert_eq!(
+      interpret("DiagonalMatrix[{1/2, 2.}]").unwrap(),
+      "{{0.5, 0.}, {0., 2.}}"
+    );
+    assert_eq!(
+      interpret("DiagonalMatrix[{a, 2.}]").unwrap(),
+      "{{a, 0.}, {0., 2.}}"
+    );
+  }
+
+  #[test]
+  fn inexact_diagonal_with_offset() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{1., 2.}, 1]").unwrap(),
+      "{{0., 1., 0.}, {0., 0., 2.}, {0., 0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn exact_diagonal_stays_exact() {
+    // A purely exact diagonal keeps Integer zeros.
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2}]").unwrap(),
+      "{{1, 0}, {0, 2}}"
+    );
+  }
 }
 
 mod cross {
