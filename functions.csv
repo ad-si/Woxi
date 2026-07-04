@@ -3203,7 +3203,7 @@ NameQ,Test if a string is a defined symbol name,✅,pure,1.0,3280
 ParticleData,,🚫,,6.0,3280
 PermutationCyclesQ,True if valid Cycles form,✅,1,8.0,3280
 SiderealTime,,,,10.0,3280
-URLParse,,,,10.0,3280
+URLParse,Parses a URL into an association of its components (or just the requested components) with percent-decoded Path and Query,✅,pure,10.0,3280
 UnitDimensions,Gives the physical base dimensions of a unit as {{dimension exponent} ...},✅,pure,9.0,3280
 WignerSemicircleDistribution,Wigner semicircle distribution (ArcSin CDF),✅,pure,8.0,3280
 AskFunction,,🚫,,10.4,3291

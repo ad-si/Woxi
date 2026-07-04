@@ -1149,6 +1149,9 @@ pub fn dispatch_io_functions(
         args: args.to_vec().into(),
       }));
     }
+    "URLParse" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::http_ast::url_parse_ast(args));
+    }
     "URLBuild" if args.len() == 1 || args.len() == 2 => {
       // URLBuild["url"] => "url"
       // URLBuild[{"base", "path1", ...}] => "base/path1/..."

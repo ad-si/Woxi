@@ -1379,6 +1379,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Upsample" => Some((2, 2)),
     "UpValues" => Some((1, 1)),
     "URLBuild" => Some((1, 2)),
+    "URLParse" => Some((1, 2)),
     "ValueQ" => Some((1, 1)),
     "Values" => Some((1, 2)),
     "Variables" => Some((1, 1)),

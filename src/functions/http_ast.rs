@@ -803,3 +803,267 @@ fn parse_response(data: &[u8]) -> Option<(Vec<(String, String)>, i128, &[u8])> {
     return Some((headers, status, after));
   }
 }
+
+/// The URL components of one parsed `URLParse` input. Unlike `UrlParts`
+/// (whose query is pre-split), the path and query keep their raw text so
+/// `PathString`/`QueryString` can report them exactly as given while
+/// `Path`/`Query` percent-decode.
+#[derive(Default)]
+struct ParsedUrl {
+  scheme: Option<String>,
+  user: Option<String>,
+  password: Option<String>,
+  domain: Option<String>,
+  port: Option<i128>,
+  raw_path: String,
+  raw_query: Option<String>,
+  fragment: Option<String>,
+}
+
+/// Parse a URL string for `URLParse`. Handles opaque scheme forms like
+/// `mailto:user@example.com` and protocol-relative `//host/path` in addition
+/// to `scheme://host` URLs; the scheme and domain are lowercased, everything
+/// else keeps its case. Returns `Err(port_text)` for a non-numeric port,
+/// which `URLParse` reports as `::nvldval` with `$Failed`.
+fn parse_url_components(url: &str) -> Result<ParsedUrl, String> {
+  let mut out = ParsedUrl::default();
+  let mut rest = url;
+  if let Some(idx) = rest.find('#') {
+    out.fragment = Some(rest[idx + 1..].to_string());
+    rest = &rest[..idx];
+  }
+  if let Some(idx) = rest.find('?') {
+    out.raw_query = Some(rest[idx + 1..].to_string());
+    rest = &rest[..idx];
+  }
+  if let Some(idx) = rest.find(':') {
+    let candidate = &rest[..idx];
+    let valid_scheme = !candidate.is_empty()
+      && candidate
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic())
+      && candidate
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    if valid_scheme {
+      out.scheme = Some(candidate.to_ascii_lowercase());
+      rest = &rest[idx + 1..];
+    }
+  }
+  if let Some(after) = rest.strip_prefix("//") {
+    let (authority, path) = match after.find('/') {
+      Some(idx) => (&after[..idx], &after[idx..]),
+      None => (after, ""),
+    };
+    out.raw_path = path.to_string();
+    let mut auth = authority;
+    if let Some(idx) = auth.rfind('@') {
+      let userinfo = &auth[..idx];
+      auth = &auth[idx + 1..];
+      match userinfo.split_once(':') {
+        Some((u, p)) => {
+          out.user = Some(u.to_string());
+          out.password = Some(p.to_string());
+        }
+        None => out.user = Some(userinfo.to_string()),
+      }
+    }
+    match auth.rsplit_once(':') {
+      Some((host, port)) => {
+        if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) {
+          return Err(port.to_string());
+        }
+        out.domain = non_empty(&host.to_ascii_lowercase());
+        out.port = port.parse().ok();
+      }
+      None => out.domain = non_empty(&auth.to_ascii_lowercase()),
+    }
+  } else {
+    out.raw_path = rest.to_string();
+  }
+  Ok(out)
+}
+
+/// Decode one `key` or `value` of a query string: `+` means space, and
+/// percent-escapes decode to bytes (`%2B` is how a literal `+` survives).
+fn decode_query_component(s: &str) -> String {
+  crate::functions::string_ast::percent_decode(&s.replace('+', " "))
+}
+
+/// URLParse[url] — parse a URL into an association of its components.
+/// URLParse[url, "component"] / URLParse[url, {"c1", "c2"}] / URLParse[url,
+/// All] return the given component(s) only. `Path` segments and `Query`
+/// keys/values are percent-decoded; `Fragment`, `PathString`, and
+/// `QueryString` stay raw, matching wolframscript.
+pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "URLParse".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+
+  let unwrapped = unwrap_url(&args[0]);
+  let url = match &unwrapped {
+    Expr::String(s) => s.clone(),
+    other => {
+      crate::emit_message(&format!(
+        "URLParse::invuri: The URI {} is invalid.",
+        crate::syntax::expr_to_output(other)
+      ));
+      return unevaluated();
+    }
+  };
+  let parsed = match parse_url_components(&url) {
+    Ok(p) => p,
+    Err(port) => {
+      crate::emit_message(&format!(
+        "URLParse::nvldval: {} is not a valid value",
+        port
+      ));
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+  };
+
+  let none = || Expr::Identifier("None".to_string());
+  let opt_str = |v: &Option<String>| match v {
+    Some(s) => Expr::String(s.clone()),
+    None => none(),
+  };
+  let component_value = |name: &str| -> Option<Expr> {
+    match name {
+      "Scheme" => Some(opt_str(&parsed.scheme)),
+      "User" => Some(match (&parsed.user, &parsed.password) {
+        (Some(u), Some(p)) => Expr::String(format!("{u}:{p}")),
+        (Some(u), None) => Expr::String(u.clone()),
+        (None, _) => none(),
+      }),
+      "Domain" => Some(opt_str(&parsed.domain)),
+      "Port" => Some(match parsed.port {
+        Some(p) => Expr::Integer(p),
+        None => none(),
+      }),
+      "Path" => Some(Expr::List(if parsed.raw_path.is_empty() {
+        vec![].into()
+      } else {
+        parsed
+          .raw_path
+          .split('/')
+          .map(|s| {
+            Expr::String(crate::functions::string_ast::percent_decode(s))
+          })
+          .collect()
+      })),
+      "Query" => Some(Expr::List(
+        parsed
+          .raw_query
+          .as_deref()
+          .unwrap_or("")
+          .split('&')
+          .filter(|kv| !kv.is_empty())
+          .map(|kv| {
+            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+            Expr::Rule {
+              pattern: Box::new(Expr::String(decode_query_component(k))),
+              replacement: Box::new(Expr::String(decode_query_component(v))),
+            }
+          })
+          .collect(),
+      )),
+      "Fragment" => Some(opt_str(&parsed.fragment)),
+      "PathString" => Some(Expr::String(parsed.raw_path.clone())),
+      "QueryString" => Some(match &parsed.raw_query {
+        Some(q) => Expr::String(q.clone()),
+        None => none(),
+      }),
+      "Username" => Some(opt_str(&parsed.user)),
+      "Password" => Some(opt_str(&parsed.password)),
+      "AbsolutePath" | "AbsoluteDomain" => {
+        let domain_parts = UrlParts {
+          scheme: parsed.scheme.clone(),
+          user: parsed.user.clone(),
+          password: parsed.password.clone(),
+          domain: parsed.domain.clone(),
+          port: parsed.port,
+          ..Default::default()
+        };
+        let mut s = absolute_domain(&domain_parts);
+        if name == "AbsolutePath" {
+          s.push_str(&parsed.raw_path);
+        }
+        Some(Expr::String(s))
+      }
+      _ => None,
+    }
+  };
+  let assoc_of = |names: &[&str]| {
+    Expr::Association(
+      names
+        .iter()
+        .map(|n| (Expr::String(n.to_string()), component_value(n).unwrap()))
+        .collect(),
+    )
+  };
+  const DEFAULT_COMPONENTS: [&str; 7] = [
+    "Scheme", "User", "Domain", "Port", "Path", "Query", "Fragment",
+  ];
+  const ALL_COMPONENTS: [&str; 13] = [
+    "Scheme",
+    "User",
+    "Domain",
+    "Port",
+    "Path",
+    "Query",
+    "Fragment",
+    "PathString",
+    "QueryString",
+    "Username",
+    "Password",
+    "AbsolutePath",
+    "AbsoluteDomain",
+  ];
+
+  let Some(spec) = args.get(1) else {
+    return Ok(assoc_of(&DEFAULT_COMPONENTS));
+  };
+  let invcomp = || {
+    crate::emit_message(&format!(
+      "URLParse::invcomp: The component specification {} is invalid.",
+      crate::syntax::expr_to_output(spec)
+    ));
+  };
+  match spec {
+    Expr::Identifier(s) if s == "All" => Ok(assoc_of(&ALL_COMPONENTS)),
+    Expr::String(s) => match component_value(s) {
+      Some(v) => Ok(v),
+      None => {
+        invcomp();
+        unevaluated()
+      }
+    },
+    Expr::List(items) => {
+      let values: Option<Vec<Expr>> = items
+        .iter()
+        .map(|item| match item {
+          Expr::String(s) => component_value(s),
+          _ => None,
+        })
+        .collect();
+      match values {
+        Some(v) => Ok(Expr::List(v.into())),
+        None => {
+          invcomp();
+          unevaluated()
+        }
+      }
+    }
+    _ => {
+      invcomp();
+      unevaluated()
+    }
+  }
+}

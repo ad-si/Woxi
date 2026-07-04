@@ -11448,7 +11448,7 @@ fn percent_encode(s: &str) -> String {
   result
 }
 
-fn percent_decode(s: &str) -> String {
+pub(crate) fn percent_decode(s: &str) -> String {
   let mut result = Vec::new();
   let bytes = s.as_bytes();
   let mut i = 0;

@@ -6127,3 +6127,180 @@ mod json_import {
     );
   }
 }
+
+mod url_parse {
+  use woxi::interpret;
+
+  #[test]
+  fn full_association() {
+    assert_eq!(
+      interpret(r#"URLParse["http://www.wolfram.com/solutions"]"#).unwrap(),
+      "<|Scheme -> http, User -> None, Domain -> www.wolfram.com, Port -> None, Path -> {, solutions}, Query -> {}, Fragment -> None|>"
+    );
+    assert_eq!(
+      interpret(
+        r#"URLParse["https://user:pass@example.com:8080/a/b%20c?x=1&y=two#frag"]"#
+      )
+      .unwrap(),
+      "<|Scheme -> https, User -> user:pass, Domain -> example.com, Port -> 8080, Path -> {, a, b c}, Query -> {x -> 1, y -> two}, Fragment -> frag|>"
+    );
+    // No path at all is an empty segment list; a bare "/" is {"", ""}.
+    assert_eq!(
+      interpret(r#"URLParse["ftp://example.org"]"#).unwrap(),
+      "<|Scheme -> ftp, User -> None, Domain -> example.org, Port -> None, Path -> {}, Query -> {}, Fragment -> None|>"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/", "Path"]"#).unwrap(),
+      "{, }"
+    );
+  }
+
+  // Scheme and domain are lowercased; path keeps its case.
+  #[test]
+  fn case_normalization() {
+    assert_eq!(
+      interpret(r#"URLParse["HTTP://EXAMPLE.com/Path"]"#).unwrap(),
+      "<|Scheme -> http, User -> None, Domain -> example.com, Port -> None, Path -> {, Path}, Query -> {}, Fragment -> None|>"
+    );
+  }
+
+  // "+" means space only in the query; the path keeps it. Percent-escapes
+  // decode in Path and Query but stay raw in Fragment/PathString/QueryString.
+  #[test]
+  fn decoding_rules() {
+    assert_eq!(
+      interpret(
+        r#"URLParse["http://www.wolframalpha.com/input?i=100+USD+in+EUR", {"Path", "Query"}]"#
+      )
+      .unwrap(),
+      "{{, input}, {i -> 100 USD in EUR}}"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/a+b", "Path"]"#).unwrap(),
+      "{, a+b}"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/x?a=&b=%26c", "Query"]"#)
+        .unwrap(),
+      "{a -> , b -> &c}"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/a#b%20c", "Fragment"]"#)
+        .unwrap(),
+      "b%20c"
+    );
+    assert_eq!(
+      interpret(
+        r#"URLParse["/a%20b?x=%26", {"PathString", "QueryString", "AbsolutePath", "AbsoluteDomain"}]"#
+      )
+      .unwrap(),
+      "{/a%20b, x=%26, /a%20b, }"
+    );
+  }
+
+  #[test]
+  fn query_quirks() {
+    // A key without "=" maps to the empty string; repeated keys survive.
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/x?flag", "Query"]"#).unwrap(),
+      "{flag -> }"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/x?a=1&a=2", "Query"]"#)
+        .unwrap(),
+      "{a -> 1, a -> 2}"
+    );
+  }
+
+  // A scheme without "//" keeps the remainder as an opaque path; "//" without
+  // a scheme still parses the authority; no scheme at all is pure path.
+  #[test]
+  fn scheme_forms() {
+    assert_eq!(
+      interpret(r#"URLParse["mailto:user@example.com"]"#).unwrap(),
+      "<|Scheme -> mailto, User -> None, Domain -> None, Port -> None, Path -> {user@example.com}, Query -> {}, Fragment -> None|>"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["//example.com/x", "Domain"]"#).unwrap(),
+      "example.com"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["example.com/x", "Path"]"#).unwrap(),
+      "{example.com, x}"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["/relative/path?a=b"]"#).unwrap(),
+      "<|Scheme -> None, User -> None, Domain -> None, Port -> None, Path -> {, relative, path}, Query -> {a -> b}, Fragment -> None|>"
+    );
+    assert_eq!(
+      interpret(r#"URLParse[""]"#).unwrap(),
+      "<|Scheme -> None, User -> None, Domain -> None, Port -> None, Path -> {}, Query -> {}, Fragment -> None|>"
+    );
+  }
+
+  #[test]
+  fn components() {
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/x", "PathString"]"#).unwrap(),
+      "/x"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/x?a=1&b=2", "QueryString"]"#)
+        .unwrap(),
+      "a=1&b=2"
+    );
+    assert_eq!(
+      interpret(
+        r#"URLParse["http://example.com/x", {"Scheme", "PathString"}]"#
+      )
+      .unwrap(),
+      "{http, /x}"
+    );
+    // QueryString is None (not "") when the URL has no query; PathString is "".
+    assert_eq!(
+      interpret(
+        r#"URLParse["http://example.com", {"PathString", "QueryString"}]"#
+      )
+      .unwrap(),
+      "{, None}"
+    );
+    // AbsolutePath drops query and fragment.
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/x?a=1#f", "AbsolutePath"]"#)
+        .unwrap(),
+      "http://example.com/x"
+    );
+    assert_eq!(
+      interpret(r#"URLParse[URL["http://example.com/x"], "Domain"]"#).unwrap(),
+      "example.com"
+    );
+  }
+
+  #[test]
+  fn all_components() {
+    assert_eq!(
+      interpret(r#"URLParse["https://user:pass@example.com/x", All]"#).unwrap(),
+      "<|Scheme -> https, User -> user:pass, Domain -> example.com, Port -> None, Path -> {, x}, Query -> {}, Fragment -> None, PathString -> /x, QueryString -> None, Username -> user, Password -> pass, AbsolutePath -> https://user:pass@example.com/x, AbsoluteDomain -> https://user:pass@example.com|>"
+    );
+  }
+
+  // A non-numeric port is $Failed; bad components and non-string input echo
+  // the call (each with a message).
+  #[test]
+  fn error_forms() {
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com:80x/"]"#).unwrap(),
+      "$Failed"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/x", "Foo"]"#).unwrap(),
+      "URLParse[http://example.com/x, Foo]"
+    );
+    assert_eq!(
+      interpret(r#"URLParse["http://example.com/x", {"Domain", All}]"#)
+        .unwrap(),
+      "URLParse[http://example.com/x, {Domain, All}]"
+    );
+    assert_eq!(interpret("URLParse[42]").unwrap(), "URLParse[42]");
+  }
+}
