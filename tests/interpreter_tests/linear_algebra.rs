@@ -4284,6 +4284,18 @@ mod cases {
   fn norm_rank_four_tensor_emits_nvm() {
     assert_case(r#"Norm[{{{{1}}}}]"#, r#"Norm[{{{{1}}}}]"#);
   }
+  // An inexact (Real) vector gives an inexact norm even at a whole-number
+  // value: Norm[{3., 4.}] is 5., not the exact 5. Exact vectors are
+  // unchanged. Per wolframscript.
+  #[test]
+  fn norm_inexact_vector_stays_real() {
+    assert_case(r#"Norm[{3., 4.}]"#, r#"5."#);
+    assert_case(r#"Head[Norm[{3., 4.}]]"#, r#"Real"#);
+    assert_case(r#"Norm[{6., 8.}, 1]"#, r#"14."#);
+    assert_case(r#"Norm[{3., 4.}, Infinity]"#, r#"4."#);
+    // An exact vector still gives an exact integer.
+    assert_case(r#"Norm[{3, 4}]"#, r#"5"#);
+  }
   #[test]
   fn kronecker_product_1() {
     assert_case(

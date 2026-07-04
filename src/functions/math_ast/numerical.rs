@@ -2365,16 +2365,19 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
         }
+        // An inexact vector gives an inexact norm even at a whole-number value
+        // (Norm[{3., 4.}] = 5., not 5), so return Real rather than num_to_expr
+        // (which would collapse a whole number to an exact Integer).
         if p == 1.0 {
           let result: f64 = vals.iter().map(|x| x.abs()).sum();
-          return Ok(num_to_expr(result));
+          return Ok(Expr::Real(result));
         }
         if is_infinity {
           let result = vals.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-          return Ok(num_to_expr(result));
+          return Ok(Expr::Real(result));
         }
         let sum: f64 = vals.iter().map(|x| x.abs().powf(p)).sum();
-        return Ok(num_to_expr(sum.powf(1.0 / p)));
+        return Ok(Expr::Real(sum.powf(1.0 / p)));
       }
 
       // Exact/symbolic mode.
