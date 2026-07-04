@@ -6313,8 +6313,10 @@ fn bell_y_enumerate(
 pub fn finite_group_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 1 => n as usize,
+    // There are no groups of order 0, so Wolfram returns 0.
+    Some(0) => return Ok(bigint_to_expr(BigInt::from(0))),
     Some(_) => {
-      // Non-positive: return unevaluated (Wolfram returns error message)
+      // Negative: return unevaluated (Wolfram returns error message)
       return Ok(Expr::FunctionCall {
         name: "FiniteGroupCount".to_string(),
         args: args.to_vec().into(),
@@ -6348,6 +6350,8 @@ pub fn finite_abelian_group_count_ast(
 ) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 1 => n,
+    // There are no abelian groups of order 0, so Wolfram returns 0.
+    Some(0) => return Ok(bigint_to_expr(BigInt::from(0))),
     Some(_) => {
       return Ok(Expr::FunctionCall {
         name: "FiniteAbelianGroupCount".to_string(),

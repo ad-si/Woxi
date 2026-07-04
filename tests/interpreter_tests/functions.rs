@@ -4343,10 +4343,7 @@ mod byte_array_to_string {
   }
   #[test]
   fn finite_group_count_zero() {
-    assert_eq!(
-      interpret("FiniteGroupCount[0]").unwrap(),
-      "FiniteGroupCount[0]"
-    );
+    assert_eq!(interpret("FiniteGroupCount[0]").unwrap(), "0");
   }
   #[test]
   fn finite_group_count_negative() {
@@ -4397,10 +4394,7 @@ mod byte_array_to_string {
   }
   #[test]
   fn finite_abelian_group_count_zero() {
-    assert_eq!(
-      interpret("FiniteAbelianGroupCount[0]").unwrap(),
-      "FiniteAbelianGroupCount[0]"
-    );
+    assert_eq!(interpret("FiniteAbelianGroupCount[0]").unwrap(), "0");
   }
   #[test]
   fn finite_abelian_group_count_negative() {
