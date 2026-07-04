@@ -1995,15 +1995,27 @@ fn rescale_rebuild(
         })
         .collect(),
     ),
-    _ if degenerate => Expr::Integer(0),
+    // Degenerate (zero-range) data maps every leaf to 0. An inexact list
+    // gives the machine real 0., an exact list the Integer 0.
+    _ if degenerate => {
+      if all_int {
+        Expr::Integer(0)
+      } else {
+        Expr::Real(0.0)
+      }
+    }
     Expr::Integer(n) if all_int => make_rational(n - min_i, range_i),
     _ => {
+      // Reached only for an inexact list (all_int is false), so the result
+      // stays a Real even at a whole-number value (Rescale[{1., 2., 3.}] =
+      // {0., 0.5, 1.}, not {0, 0.5, 1}). num_to_expr would collapse a whole
+      // number to an exact Integer, discarding the inexactness.
       let x = match expr {
         Expr::Integer(n) => *n as f64,
         Expr::Real(f) => *f,
         _ => 0.0,
       };
-      num_to_expr((x - min_f) / range_f)
+      Expr::Real((x - min_f) / range_f)
     }
   }
 }

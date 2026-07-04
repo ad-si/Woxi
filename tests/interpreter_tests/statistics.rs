@@ -822,6 +822,27 @@ mod rescale {
     assert_eq!(interpret("Rescale[1/3, {1, 4}]").unwrap(), "-2/9");
   }
 
+  // An inexact list gives an inexact result even at whole-number values:
+  // the min and max rescale to the machine reals 0. and 1., not the exact
+  // Integers 0 and 1 (which num_to_expr would have produced).
+  #[test]
+  fn rescale_inexact_list_stays_real() {
+    assert_eq!(interpret("Rescale[{1., 2., 3.}]").unwrap(), "{0., 0.5, 1.}");
+    assert_eq!(interpret("Rescale[{1., 3.}]").unwrap(), "{0., 1.}");
+    // A single inexact entry makes the whole result inexact.
+    assert_eq!(interpret("Rescale[{1, 2, 3.}]").unwrap(), "{0., 0.5, 1.}");
+    // An exact list is unchanged.
+    assert_eq!(interpret("Rescale[{1, 2, 3}]").unwrap(), "{0, 1/2, 1}");
+  }
+
+  // Degenerate (zero-range) inexact data maps to the machine real 0.,
+  // while exact data maps to the Integer 0.
+  #[test]
+  fn rescale_inexact_degenerate_stays_real() {
+    assert_eq!(interpret("Rescale[{2., 2.}]").unwrap(), "{0., 0.}");
+    assert_eq!(interpret("Rescale[{2, 2}]").unwrap(), "{0, 0}");
+  }
+
   #[test]
   fn rescale_symbolic_constant_kept_exact() {
     // Symbolic real numerics rescale exactly (xmin = 0).
