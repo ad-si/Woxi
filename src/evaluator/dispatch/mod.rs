@@ -10262,6 +10262,27 @@ pub fn evaluate_function_call_ast_inner(
         | "MenuView"
         | "SlideView"
         | "FlipView"
+        // Further interactive control / animation / view heads from the
+        // InteractiveManipulation guide. Like Slider/Toggler above, these
+        // stay unevaluated as their canonical form in wolframscript's script
+        // mode (they produce an interactive object only inside a notebook),
+        // so flagging them as "unimplemented" is a false positive.
+        | "Animate"
+        | "Animator"
+        | "ListAnimate"
+        | "ControllerManipulate"
+        | "Trigger"
+        | "SetterBar"
+        | "CheckboxBar"
+        | "TogglerBar"
+        | "RadioButton"
+        | "ProgressIndicator"
+        | "ClickPane"
+        | "PaneSelector"
+        | "PopupView"
+        | "ColorSetter"
+        | "IntervalSlider"
+        | "Slider2D"
     )
   {
     let args_str = args

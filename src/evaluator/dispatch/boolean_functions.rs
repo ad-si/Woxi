@@ -50,6 +50,14 @@ pub fn dispatch_boolean_functions(
       };
       return Some(Err(InterpreterError::ReturnValue(Box::new(val))));
     }
+    // ControlActive[activeform, normalform] displays as `activeform` only
+    // while it appears inside a control that is being actively manipulated,
+    // and as `normalform` otherwise. In script mode (and any non-interactive
+    // evaluation) nothing is ever actively manipulated, so it evaluates to
+    // its inactive form `normalform`, matching wolframscript.
+    "ControlActive" if args.len() == 2 => {
+      return Some(Ok(args[1].clone()));
+    }
     "SameQ" => {
       return Some(crate::functions::boolean_ast::same_q_ast(args));
     }
