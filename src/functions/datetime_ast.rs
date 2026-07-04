@@ -1015,7 +1015,31 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             input_is_date_object,
           ));
         }
-        _ => n,
+        // Sub-day time units are valid calendar increments in Wolfram, but
+        // Woxi does not yet carry the time-of-day component, so it keeps the
+        // (approximate) day-based behavior rather than rejecting them.
+        "Hour" | "Hours" | "hour" | "hours" | "Minute" | "Minutes"
+        | "minute" | "minutes" | "Second" | "Seconds" | "second"
+        | "seconds" => n,
+        // Any other unit (e.g. "Meters", "Kilograms") is not a calendar
+        // increment: emit the incompatible-unit messages and stay unevaluated,
+        // rather than silently treating the magnitude as a number of days.
+        _ => {
+          crate::emit_message(&format!(
+            "UnitConvert::compat: {} and MixedUnit[{{Years, Months, Days, \
+             Hours, Minutes, Seconds}}] are incompatible units.",
+            unit
+          ));
+          crate::emit_message(&format!(
+            "DatePlus::inc: {} is not a recognized calendar increment \
+             specification for DatePlus.",
+            quantity_increment_text(&qargs[0], &unit)
+          ));
+          return Ok(Expr::FunctionCall {
+            name: "DatePlus".to_string(),
+            args: vec![date_arg, delta_arg].into(),
+          });
+        }
       }
     }
     _ => {
@@ -1035,6 +1059,25 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     input_len,
     input_is_date_object,
   ))
+}
+
+/// Renders a `Quantity` magnitude and unit the way Wolfram names it in the
+/// `DatePlus::inc` message: the lowercased unit, singular when the magnitude
+/// is exactly 1 and plural otherwise, e.g. `5 meters`, `1 meter`.
+fn quantity_increment_text(magnitude: &Expr, unit: &str) -> String {
+  let unit_lower = unit.to_ascii_lowercase();
+  let is_one = matches!(magnitude, Expr::Integer(1));
+  let word = if is_one {
+    unit_lower
+      .strip_suffix('s')
+      .unwrap_or(&unit_lower)
+      .to_string()
+  } else if unit_lower.ends_with('s') {
+    unit_lower
+  } else {
+    format!("{unit_lower}s")
+  };
+  format!("{} {}", crate::syntax::expr_to_string(magnitude), word)
 }
 
 fn make_date_result(

@@ -341,6 +341,29 @@ mod date_plus {
       "Tuesday"
     );
   }
+
+  // A Quantity whose unit is not a calendar/time increment (e.g. Meters or
+  // Kilograms) is not a valid DatePlus specification. It must stay unevaluated
+  // (DatePlus::inc) rather than silently treating the magnitude as days.
+  // (wolframscript parity)
+  #[test]
+  fn incompatible_unit_stays_unevaluated_list() {
+    assert_eq!(
+      interpret("DatePlus[{2024, 7, 4}, Quantity[5, \"Meters\"]]").unwrap(),
+      "DatePlus[{2024, 7, 4}, Quantity[5, Meters]]"
+    );
+  }
+
+  #[test]
+  fn incompatible_unit_stays_unevaluated_date_object() {
+    assert_eq!(
+      interpret(
+        "DatePlus[DateObject[{2024, 7, 4}], Quantity[3, \"Kilograms\"]]"
+      )
+      .unwrap(),
+      "DatePlus[DateObject[{2024, 7, 4}, Day], Quantity[3, Kilograms]]"
+    );
+  }
 }
 
 // Adding (or subtracting) a calendar-unit Quantity to a DateObject with `+`
