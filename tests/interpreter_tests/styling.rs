@@ -793,11 +793,11 @@ mod decimal_form {
     // The integer part is kept exact (not switched to scientific notation).
     assert_eq!(
       interpret("ToString[DecimalForm[1234567.89]]").unwrap(),
-      "1234568."
+      "1234568"
     );
     assert_eq!(
       interpret("ToString[DecimalForm[123456789012.0]]").unwrap(),
-      "123456789012."
+      "123456789012"
     );
   }
   #[test]
@@ -816,7 +816,7 @@ mod decimal_form {
     );
     assert_eq!(
       interpret("ToString[DecimalForm[1234567.89, 3]]").unwrap(),
-      "1230000."
+      "1230000"
     );
   }
 }

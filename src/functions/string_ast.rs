@@ -4238,6 +4238,12 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(rendered) = rendered {
+      // DecimalForm drops a trailing decimal point when there is no
+      // fractional part (wolframscript: `1234568.` -> `1234568`).
+      let rendered = rendered
+        .strip_suffix('.')
+        .map(str::to_string)
+        .unwrap_or(rendered);
       return Ok(Expr::String(rendered));
     }
   }
