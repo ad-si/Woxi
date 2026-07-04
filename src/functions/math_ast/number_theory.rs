@@ -4161,6 +4161,28 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => crate::functions::math_ast::try_eval_to_f64(&args[1]),
       };
       if let (Some(n), Some(k)) = (n_f64, k_f64) {
+        // A negative integer n (as a machine real) with a non-negative integer
+        // k collides Gamma poles in both the numerator (Gamma[n+1]) and the
+        // denominator (Gamma[n-k+1]), so the Gamma-ratio path yields NaN/Inf.
+        // Use the finite falling-factorial definition instead:
+        //   Binomial[n, k] = n (n-1) ... (n-k+1) / k!
+        if n < 0.0
+          && n.fract() == 0.0
+          && k >= 0.0
+          && k.fract() == 0.0
+          && k <= 170.0
+        {
+          let kk = k as i128;
+          let mut numer = 1.0;
+          for i in 0..kk {
+            numer *= n - i as f64;
+          }
+          let mut fact = 1.0;
+          for i in 1..=kk {
+            fact *= i as f64;
+          }
+          return Ok(Expr::Real(numer / fact));
+        }
         // Poles of Gamma in numerator/denominator: a Gamma at a
         // non-positive integer is ComplexInfinity. If the denominator is
         // infinite (and the numerator is not), Binomial is 0.

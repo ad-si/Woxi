@@ -1658,6 +1658,19 @@ mod binomial {
     assert_eq!(interpret("Binomial[-3, 2]").unwrap(), "6");
   }
 
+  // A negative integer n given as a machine real with a non-negative integer
+  // k is finite via the falling-factorial definition. Previously the Real
+  // path used a Gamma ratio whose numerator and denominator were both poles,
+  // giving Infinity/Indeterminate. Per wolframscript.
+  #[test]
+  fn negative_real_n_integer_k() {
+    assert_eq!(interpret("Binomial[-1.0, 2.0]").unwrap(), "1.");
+    assert_eq!(interpret("Binomial[-2.0, 3.0]").unwrap(), "-4.");
+    assert_eq!(interpret("Binomial[-1.0, 0.0]").unwrap(), "1.");
+    assert_eq!(interpret("Binomial[-3.0, 2.0]").unwrap(), "6.");
+    assert_eq!(interpret("Binomial[-5.0, 3.0]").unwrap(), "-35.");
+  }
+
   // Negative k is zero when n >= 0.
   #[test]
   fn negative_k_nonneg_n() {
