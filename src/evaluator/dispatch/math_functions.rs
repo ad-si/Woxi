@@ -5266,74 +5266,19 @@ pub fn dispatch_math_functions(
       }
       return Some(Ok(result));
     }
-    // CoordinateBoundsArray[{{xmin,xmax},{ymin,ymax},...}] — grid of coordinate tuples (step 1)
-    // CoordinateBoundsArray[{{xmin,xmax},{ymin,ymax},...}, d] — grid with step d
-    "CoordinateBoundsArray" if !args.is_empty() && args.len() <= 2 => {
-      if let Expr::List(bounds) = &args[0] {
-        // Parse bounds pairs as integer ranges
-        let mut ranges: Vec<(i128, i128)> = Vec::new();
-        let mut ok = true;
-        for b in bounds {
-          if let Expr::List(pair) = b
-            && pair.len() == 2
-            && let (Some(lo), Some(hi)) =
-              (expr_to_i128(&pair[0]), expr_to_i128(&pair[1]))
-          {
-            ranges.push((lo, hi));
-          } else {
-            ok = false;
-            break;
-          }
-        }
-        if ok && !ranges.is_empty() {
-          let step = if args.len() == 2 {
-            expr_to_i128(&args[1]).unwrap_or(1)
-          } else {
-            1
-          };
-          if step > 0 {
-            // Generate discrete values for each dimension
-            let dim_values: Vec<Vec<i128>> = ranges
-              .iter()
-              .map(|&(lo, hi)| {
-                let mut vals = Vec::new();
-                let mut v = lo;
-                while v <= hi {
-                  vals.push(v);
-                  v += step;
-                }
-                vals
-              })
-              .collect();
-
-            // Build nested array: outer dimensions correspond to first dims
-            fn build_grid(dim_values: &[Vec<i128>], prefix: &[i128]) -> Expr {
-              if prefix.len() == dim_values.len() {
-                // Create a coordinate tuple
-                if prefix.len() == 1 {
-                  Expr::List(vec![Expr::Integer(prefix[0])].into())
-                } else {
-                  Expr::List(prefix.iter().map(|&v| Expr::Integer(v)).collect())
-                }
-              } else {
-                let dim_idx = prefix.len();
-                let items: Vec<Expr> = dim_values[dim_idx]
-                  .iter()
-                  .map(|&v| {
-                    let mut new_prefix = prefix.to_vec();
-                    new_prefix.push(v);
-                    build_grid(dim_values, &new_prefix)
-                  })
-                  .collect();
-                Expr::List(items.into())
-              }
-            }
-
-            let result = build_grid(&dim_values, &[]);
-            return Some(Ok(result));
-          }
-        }
-      }
+    // CoordinateBoundsArray[{{xmin,xmax},…}, spec, offsets] — grid of
+    // coordinate tuples; spec is a step, per-dimension steps, or Into[n].
+    "CoordinateBoundsArray" if !args.is_empty() && args.len() <= 3 => {
+      return Some(crate::functions::math_ast::coordinate_bounds_array_ast(
+        args,
+      ));
+    }
+    // CoordinateBoundingBoxArray[{mins, maxs}, spec, offsets] — the same
+    // grid written with the two corner points.
+    "CoordinateBoundingBoxArray" if !args.is_empty() && args.len() <= 3 => {
+      return Some(
+        crate::functions::math_ast::coordinate_bounding_box_array_ast(args),
+      );
     }
     "CantorStaircase" if args.len() == 1 => {
       return Some(cantor_staircase_ast(&args[0]));

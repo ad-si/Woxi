@@ -16291,3 +16291,172 @@ mod numerical_order {
     assert_eq!(interpret("NumericalOrder[a, b]").unwrap(), "1");
   }
 }
+
+mod coordinate_bounding_box_array_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn basic_grids() {
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0, 0}, {2, 4}}]").unwrap(),
+      "{{{0, 0}, {0, 1}, {0, 2}, {0, 3}, {0, 4}}, {{1, 0}, {1, 1}, {1, 2}, {1, 3}, {1, 4}}, {{2, 0}, {2, 1}, {2, 2}, {2, 3}, {2, 4}}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0, 0}, {2, 4}}, 2]").unwrap(),
+      "{{{0, 0}, {0, 2}, {0, 4}}, {{2, 0}, {2, 2}, {2, 4}}}"
+    );
+    // A step that doesn't divide the range stops below the maximum.
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0, 0}, {3, 3}}, 2]").unwrap(),
+      "{{{0, 0}, {0, 2}}, {{2, 0}, {2, 2}}}"
+    );
+    // Per-dimension steps and 1D boxes.
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0, 0}, {4, 2}}, {2, 1}]")
+        .unwrap(),
+      "{{{0, 0}, {0, 1}, {0, 2}}, {{2, 0}, {2, 1}, {2, 2}}, {{4, 0}, {4, 1}, {4, 2}}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0}, {2}}]").unwrap(),
+      "{{0}, {1}, {2}}"
+    );
+  }
+
+  // Into[n] divides each range into n equal parts, staying exact for exact
+  // bounds and real for real bounds.
+  #[test]
+  fn into_divisions() {
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0, 0}, {1, 1}}, Into[2]]")
+        .unwrap(),
+      "{{{0, 0}, {0, 1/2}, {0, 1}}, {{1/2, 0}, {1/2, 1/2}, {1/2, 1}}, {{1, 0}, {1, 1/2}, {1, 1}}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0, 0}, {1, 2}}, {Into[2], 1}]")
+        .unwrap(),
+      "{{{0, 0}, {0, 1}, {0, 2}}, {{1/2, 0}, {1/2, 1}, {1/2, 2}}, {{1, 0}, {1, 1}, {1, 2}}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0., 0.}, {1., 1.}}, Into[2]]")
+        .unwrap(),
+      "{{{0., 0.}, {0., 0.5}, {0., 1.}}, {{0.5, 0.}, {0.5, 0.5}, {0.5, 1.}}, {{1., 0.}, {1., 0.5}, {1., 1.}}}"
+    );
+  }
+
+  // The third argument shifts each dimension by (offset mod step), relative
+  // to the lower bound.
+  #[test]
+  fn offsets() {
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0, 0}, {4, 4}}, 2, 1]").unwrap(),
+      "{{{1, 1}, {1, 3}}, {{3, 1}, {3, 3}}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0, 0}, {4, 4}}, 2, {1, 0}]")
+        .unwrap(),
+      "{{{1, 0}, {1, 2}, {1, 4}}, {{3, 0}, {3, 2}, {3, 4}}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{{0, 0}, {4, 4}}, 2, 1/2]")
+        .unwrap(),
+      "{{{1/2, 1/2}, {1/2, 5/2}}, {{5/2, 1/2}, {5/2, 5/2}}}"
+    );
+  }
+
+  #[test]
+  fn invalid_inputs() {
+    // A non-corner-pair first argument emits ::bbox and echoes.
+    assert_eq!(
+      interpret("CoordinateBoundingBoxArray[{0, 2}]").unwrap(),
+      "CoordinateBoundingBoxArray[{0, 2}]"
+    );
+    // Invalid step specs stay silently unevaluated.
+    assert_eq!(
+      interpret(r#"CoordinateBoundingBoxArray[{{0, 0}, {2, 2}}, "x"]"#)
+        .unwrap(),
+      r#"CoordinateBoundingBoxArray[{{0, 0}, {2, 2}}, x]"#
+    );
+  }
+}
+
+// Regression tests for the CoordinateBoundsArray upgrade to the shared
+// engine (rational/real steps, Into[n], and grid offsets).
+mod coordinate_bounds_array_spec_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn fractional_steps_and_into() {
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 1}}, Into[2]]").unwrap(),
+      "{{0}, {1/2}, {1}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 1}}, 0.25]").unwrap(),
+      "{{0.}, {0.25}, {0.5}, {0.75}, {1.}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 2}, {0, 4}}, {2, 4}]").unwrap(),
+      "{{{0, 0}, {0, 4}}, {{2, 0}, {2, 4}}}"
+    );
+  }
+
+  // Offsets shift by (offset mod step): a whole-step offset is a no-op,
+  // negative offsets wrap, and the grid is clipped at the plain maximum.
+  #[test]
+  fn offsets_mod_step() {
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 4}}, 2, 1]").unwrap(),
+      "{{1}, {3}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 4}}, 1, 1]").unwrap(),
+      "{{0}, {1}, {2}, {3}, {4}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 4}}, 1, 1/2]").unwrap(),
+      "{{1/2}, {3/2}, {5/2}, {7/2}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 4}}, 2, 2]").unwrap(),
+      "{{0}, {2}, {4}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 4}}, 2, -1]").unwrap(),
+      "{{1}, {3}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 4}}, 3, 1]").unwrap(),
+      "{{1}, {4}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{1, 5}}, 2, 1]").unwrap(),
+      "{{2}, {4}}"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 4}}, 4, 1]").unwrap(),
+      "{{1}}"
+    );
+  }
+
+  // Bad bounds emit ::bound, bad offsets ::offs; a negative step gives an
+  // empty grid and a bad step spec stays silently unevaluated.
+  #[test]
+  fn error_forms() {
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{0, 2}]").unwrap(),
+      "CoordinateBoundsArray[{0, 2}]"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 4}}, 2, Automatic]").unwrap(),
+      "CoordinateBoundsArray[{{0, 4}}, 2, Automatic]"
+    );
+    assert_eq!(
+      interpret(r#"CoordinateBoundsArray[{{0, 2}}, "x"]"#).unwrap(),
+      "CoordinateBoundsArray[{{0, 2}}, x]"
+    );
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 2}}, -1]").unwrap(),
+      "{}"
+    );
+  }
+}
