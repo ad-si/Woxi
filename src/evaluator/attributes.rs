@@ -237,11 +237,13 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // its argument via the explicit name-match in core_eval.rs rather than a
     // HoldAll attribute.
     "Control" => vec!["Protected"],
-    // Parallel* combinators: Protected + ReadProtected (matches
-    // wolframscript). Like Manipulate, ParallelDo holds its body via the
-    // explicit name-match in core_eval.rs rather than a HoldAll attribute
-    // (Wolfram does not expose HoldAll on ParallelDo either).
-    "ParallelDo" | "ParallelTable" | "ParallelSum" | "ParallelProduct"
+    // ParallelDo: HoldAll + Protected (matches wolframscript). It holds its
+    // body via the HoldAll attribute like the sequential Do.
+    "ParallelDo" => vec!["HoldAll", "Protected"],
+    // Other Parallel* combinators: Protected + ReadProtected (matches
+    // wolframscript). Like Manipulate, they hold their body via the
+    // explicit name-match in core_eval.rs rather than a HoldAll attribute.
+    "ParallelTable" | "ParallelSum" | "ParallelProduct"
     | "ParallelMap" | "ParallelArray" | "ParallelCombine"
     | "ParallelSubmit" => vec!["Protected", "ReadProtected"],
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
