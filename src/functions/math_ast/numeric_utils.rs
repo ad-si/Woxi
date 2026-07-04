@@ -301,6 +301,13 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Rational" if args.len() == 2 => {
+        // Prefer a bignum-aware ratio so huge exact rationals whose numerator
+        // and denominator overflow f64 individually still convert correctly.
+        if let (Some(num), Some(den)) =
+          (expr_to_bigint(&args[0]), expr_to_bigint(&args[1]))
+        {
+          return big_rational_to_f64(&num, &den);
+        }
         let n = try_eval_to_f64(&args[0])?;
         let d = try_eval_to_f64(&args[1])?;
         if d != 0.0 { Some(n / d) } else { None }
@@ -503,6 +510,52 @@ pub fn expr_to_bigint(e: &Expr) -> Option<BigInt> {
     Expr::BigInteger(n) => Some(n.clone()),
     _ => None,
   }
+}
+
+/// Converts the rational `num / den` to the nearest f64, staying correct when
+/// the numerator and denominator individually overflow f64's range even though
+/// their ratio is representable (e.g. `2^2000 / 3^1000`). A naive
+/// `num.to_f64() / den.to_f64()` would compute `inf / inf = NaN` there.
+/// Returns None when `den` is zero.
+pub fn big_rational_to_f64(num: &BigInt, den: &BigInt) -> Option<f64> {
+  use num_traits::{Signed, ToPrimitive, Zero};
+  if den.is_zero() {
+    return None;
+  }
+  if num.is_zero() {
+    return Some(0.0);
+  }
+  let sign = if num.is_negative() ^ den.is_negative() {
+    -1.0
+  } else {
+    1.0
+  };
+  let num_a = num.abs();
+  let den_a = den.abs();
+
+  // Fast path: both magnitudes are comfortably within f64 range.
+  let nb = num_a.bits() as i64;
+  let db = den_a.bits() as i64;
+  if nb < 1000 && db < 1000 {
+    let n = num_a.to_f64()?;
+    let d = den_a.to_f64()?;
+    return Some(sign * n / d);
+  }
+
+  // General path: form q = floor((num << k) / den) so the integer quotient
+  // carries ~64 significant bits (q ≈ (num/den) * 2^k), then scale by 2^-k.
+  // Choosing k = 64 - (nb - db) makes q's bit length ≈ 64 regardless of how
+  // large num and den are, so q.to_f64() never overflows.
+  let k: i64 = 64 - (nb - db);
+  let q = if k >= 0 {
+    (&num_a << (k as usize)) / &den_a
+  } else {
+    &num_a / (&den_a << ((-k) as usize))
+  };
+  let qf = q.to_f64()?;
+  // num/den = q * 2^{-k}; a too-large exponent overflows to +/-inf and a
+  // too-small one underflows to 0, both of which are the correct f64 result.
+  Some(sign * qf * 2.0_f64.powi(-k as i32))
 }
 
 /// Check if an expression requires BigInt arithmetic (exceeds f64 precision).

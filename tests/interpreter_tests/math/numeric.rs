@@ -1353,6 +1353,43 @@ mod overflow_safety {
       result
     );
   }
+
+  // N of a huge exact rational must not become Indeterminate. The numerator
+  // and denominator individually overflow f64, but their ratio is
+  // representable; a naive num.to_f64()/den.to_f64() computes inf/inf = NaN.
+  #[test]
+  fn n_of_huge_rational_is_finite() {
+    assert_eq!(
+      interpret("N[2^2000/3^1000]").unwrap(),
+      "8.68433580377441*^124"
+    );
+  }
+
+  #[test]
+  fn n_of_tiny_rational_is_finite() {
+    assert_eq!(
+      interpret("N[3^1000/2^2000]").unwrap(),
+      "1.151498540124827*^-125"
+    );
+  }
+
+  #[test]
+  fn n_of_huge_rational_is_negatable() {
+    assert_eq!(
+      interpret("N[-(2^2000)/3^1000]").unwrap(),
+      "-8.68433580377441*^124"
+    );
+  }
+
+  #[test]
+  fn n_of_large_pi_squared_partial_sum() {
+    // Sum_{n=1}^{1000} 1/n^2 is an exact rational with a ~430-digit
+    // numerator and denominator; N must still yield the finite ~1.6439.
+    assert_eq!(
+      interpret("Total[Table[1/n^2, {n, 1, 1000}]] // N").unwrap(),
+      "1.64393456668156"
+    );
+  }
 }
 
 mod cases {
