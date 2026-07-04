@@ -174,6 +174,34 @@ self.onmessage = async function (e) {
     }
   }
 
+  // Evaluate each control's `Enabled` condition against the current bindings
+  // and report which controls should be interactive. Fired alongside a
+  // Manipulate re-render when any control has an `Enabled -> Dynamic[…]`
+  // option, so a control can grey itself out for the current state.
+  if (type === "evaluate_manipulate_enabled") {
+    if (!wasm) return
+    try {
+      lastPanic = null
+      const conditions = JSON.stringify(e.data.conditions || [])
+      const bindings = JSON.stringify(e.data.bindings || {})
+      const result = wasm.evaluate_manipulate_enabled(conditions, bindings)
+      postMessage({
+        type: "manipulate_enabled_result",
+        requestId: e.data.requestId,
+        success: true,
+        result,
+      })
+    }
+    catch (error) {
+      await recoverWasm(error.message)
+      postMessage({
+        type: "manipulate_enabled_result",
+        requestId: e.data.requestId,
+        success: false,
+      })
+    }
+  }
+
   // Re-evaluate a Manipulate that has extra display elements (e.g. a
   // Checkbox grid): renders the body, the display widget trees, and applies
   // any pending checkbox write-backs in one call, returning the updated

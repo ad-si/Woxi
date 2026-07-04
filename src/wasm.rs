@@ -441,6 +441,31 @@ pub fn evaluate_manipulate(body: &str, bindings_json: &str) -> String {
   format!("{{{}}}", parts.join(","))
 }
 
+/// Evaluate each Manipulate control's `Enabled` condition against a binding
+/// set and return a JSON array of booleans (one per control, in order).
+///
+/// `conditions_json` is a JSON string array aligned with the control list;
+/// an empty string marks a control with no condition (always enabled).
+/// `bindings_json` is the same JSON object of variable bindings used by
+/// `evaluate_manipulate`. Used by the Playground to grey out controls that a
+/// `Enabled -> Dynamic[…]` option has switched off for the current state.
+#[wasm_bindgen]
+pub fn evaluate_manipulate_enabled(
+  conditions_json: &str,
+  bindings_json: &str,
+) -> String {
+  use crate::functions::graphics as g;
+  let bindings = g::parse_manipulate_bindings(bindings_json);
+  let conditions: Vec<Option<String>> =
+    g::parse_json_string_array(conditions_json)
+      .into_iter()
+      .map(|c| if c.is_empty() { None } else { Some(c) })
+      .collect();
+  let states = g::manipulate_enabled_states(&conditions, &bindings);
+  let parts: Vec<String> = states.iter().map(|b| b.to_string()).collect();
+  format!("[{}]", parts.join(","))
+}
+
 /// Render a Manipulate body, its extra display elements, and any pending
 /// interactive write-backs in one call. Used by widgets that have display
 /// elements (e.g. a `Checkbox` grid) that both read and rewrite shared

@@ -11293,9 +11293,14 @@ pub enum ManipulateControl {
   },
   Discrete {
     name: String,
-    /// Each discrete value rendered as InputForm (so the UI can show it
-    /// and echo it back into a Block binding).
+    /// Each discrete value rendered as InputForm — echoed back into the
+    /// variable binding. For a rule-form choice `value -> "label"` this is
+    /// the left side (the actual value), never the whole rule.
     values: Vec<String>,
+    /// The display label for each choice, parallel to `values`. For a plain
+    /// choice this equals the value's InputForm; for a rule-form choice it is
+    /// the (unquoted) right side of the rule.
+    value_labels: Vec<String>,
     initial_index: usize,
     label: String,
     label_runs: Vec<LabelRun>,
@@ -11364,12 +11369,22 @@ pub struct ManipulateSpec {
   /// `d[t_] := …`) are in scope. `None` when the Manipulate has no
   /// `Initialization` option.
   pub initialization: Option<String>,
+  /// Per-control `Enabled -> Dynamic[cond]` gating, as `(control name,
+  /// condition code)`. Each condition is a boolean expression in the control
+  /// variables, re-evaluated against the live bindings so a control can grey
+  /// itself out (e.g. the Yin-Yang demonstration disables the curve sliders
+  /// while `YinYang` is `True`). Controls with no `Enabled` option (or the
+  /// trivial `Enabled -> True`) do not appear here and stay always enabled.
+  pub control_enabled: Vec<(String, String)>,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
 enum ParsedControl {
-  /// A control that renders a UI element (slider or pick list).
-  Visible(ManipulateControl),
+  /// A control that renders a UI element (slider or pick list). The second
+  /// field is an optional `Enabled` condition (InputForm code) that gates the
+  /// widget: when it evaluates to `False` against the live bindings the
+  /// control is shown greyed-out and non-interactive.
+  Visible(ManipulateControl, Option<String>),
   /// A `Locator` control with no widget. It contributes a fixed `name =
   /// value` binding that is baked directly into the body so the variable is
   /// in scope while the visible controls drive the plot.
@@ -11402,6 +11417,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut state: Vec<(String, String)> = Vec::new();
   let mut displays: Vec<String> = Vec::new();
   let mut initialization: Option<String> = None;
+  let mut control_enabled: Vec<(String, String)> = Vec::new();
   for spec in &args[1..] {
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
@@ -11429,7 +11445,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       continue;
     }
     match parse_manipulate_control(spec)? {
-      ParsedControl::Visible(c) => controls.push(c),
+      ParsedControl::Visible(c, enabled) => {
+        if let Some(cond) = enabled {
+          control_enabled.push((c.name().to_string(), cond));
+        }
+        controls.push(c);
+      }
       ParsedControl::Fixed { name, value } => fixed.push((name, value)),
       ParsedControl::State { name, value } => state.push((name, value)),
     }
@@ -11457,6 +11478,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     state,
     displays,
     initialization,
+    control_enabled,
   })
 }
 
@@ -11481,20 +11503,25 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
   if !matches!(&args[0], Expr::List(items) if !items.is_empty()) {
     return None;
   }
-  let control = match parse_manipulate_control(&args[0])? {
-    ParsedControl::Visible(c) => c,
+  let (control, enabled) = match parse_manipulate_control(&args[0])? {
+    ParsedControl::Visible(c, enabled) => (c, enabled),
     // A hidden control (`ControlType -> None` / Locator) has no widget and
     // nothing to display on its own — fall back to the plain output path.
     ParsedControl::Fixed { .. } | ParsedControl::State { .. } => return None,
   };
   // Display the bound variable so the control's effect is visible.
   let body_code = control.name().to_string();
+  let control_enabled = match enabled {
+    Some(cond) => vec![(control.name().to_string(), cond)],
+    None => Vec::new(),
+  };
   Some(ManipulateSpec {
     body_code,
     controls: vec![control],
     state: Vec::new(),
     displays: Vec::new(),
     initialization: None,
+    control_enabled,
   })
 }
 
@@ -11733,6 +11760,36 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   };
   let label = flatten_label_runs(&label_runs);
 
+  // `Enabled -> cond` / `Enabled :> cond` gates the control. `Dynamic[expr]`
+  // unwraps to its live condition `expr`; a plain value is used as-is. The
+  // default `Enabled -> True` needs no gating and yields `None` so the control
+  // stays unconditionally enabled.
+  let enabled: Option<String> = items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Enabled") => {
+      let cond = match replacement.as_ref() {
+        Expr::FunctionCall { name, args }
+          if name == "Dynamic" && args.len() == 1 =>
+        {
+          &args[0]
+        }
+        other => other,
+      };
+      if matches!(cond, Expr::Identifier(s) if s == "True") {
+        None
+      } else {
+        Some(crate::syntax::expr_to_input_form(cond))
+      }
+    }
+    _ => None,
+  });
+
   // Hidden controls: a `Locator` marker (`{{p, init}, pmin, pmax, Locator}`)
   // or `ControlType -> None` (`{{v, init}, ControlType -> None}`). Neither
   // renders a UI element in the static widget; both bind their variable to
@@ -11815,16 +11872,19 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         Some((a, b)) => (a, b),
         None => (x_min, y_min),
       };
-    return Some(ParsedControl::Visible(ManipulateControl::Slider2D {
-      name,
-      x_min,
-      x_max,
-      y_min,
-      y_max,
-      x_initial,
-      y_initial,
-      label,
-    }));
+    return Some(ParsedControl::Visible(
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        label,
+      },
+      enabled,
+    ));
   }
 
   // Interval control: `{u, min, max, ControlType -> IntervalSlider}` binds
@@ -11845,15 +11905,18 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         Some((a, b)) => (a, b),
         None => (min, max),
       };
-    return Some(ParsedControl::Visible(ManipulateControl::IntervalSlider {
-      name,
-      min,
-      max,
-      step,
-      low_initial,
-      high_initial,
-      label,
-    }));
+    return Some(ParsedControl::Visible(
+      ManipulateControl::IntervalSlider {
+        name,
+        min,
+        max,
+        step,
+        low_initial,
+        high_initial,
+        label,
+      },
+      enabled,
+    ));
   }
 
   // Discrete form: `{u, {u1, u2, …}}` or `{{u, uinit, …}, {u1, u2, …}}`.
@@ -11868,10 +11931,24 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       },
     };
     if let Some(value_items) = value_items {
-      let values: Vec<String> = value_items
+      // A choice may be given as a rule `value -> "label"` (e.g. a SetterBar
+      // spec `{True -> "Yin-Yang", False -> "alternate image"}`). In that
+      // case the left side is the value bound to the variable and the right
+      // side is only the display label. Split the two so the binding sees the
+      // real value, not the whole rule.
+      let (values, value_labels): (Vec<String>, Vec<String>) = value_items
         .iter()
-        .map(crate::syntax::expr_to_input_form)
-        .collect();
+        .map(|item| match discrete_choice_rule(item) {
+          Some((value, label)) => (
+            crate::syntax::expr_to_input_form(value),
+            discrete_choice_label(label),
+          ),
+          None => (
+            crate::syntax::expr_to_input_form(item),
+            discrete_choice_label(item),
+          ),
+        })
+        .unzip();
       if values.is_empty() {
         return None;
       }
@@ -11882,13 +11959,17 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         }
         None => 0,
       };
-      return Some(ParsedControl::Visible(ManipulateControl::Discrete {
-        name,
-        values,
-        initial_index,
-        label,
-        label_runs,
-      }));
+      return Some(ParsedControl::Visible(
+        ManipulateControl::Discrete {
+          name,
+          values,
+          value_labels,
+          initial_index,
+          label,
+          label_runs,
+        },
+        enabled,
+      ));
     }
   }
 
@@ -11909,15 +11990,44 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
     None => min,
   };
 
-  Some(ParsedControl::Visible(ManipulateControl::Continuous {
-    name,
-    min,
-    max,
-    step,
-    initial,
-    label,
-    label_runs,
-  }))
+  Some(ParsedControl::Visible(
+    ManipulateControl::Continuous {
+      name,
+      min,
+      max,
+      step,
+      initial,
+      label,
+      label_runs,
+    },
+    enabled,
+  ))
+}
+
+/// If `item` is a rule `lhs -> rhs` (in either `Expr::Rule` or
+/// `Rule[…]` function-call form), return `(lhs, rhs)`. Used to split a
+/// discrete-choice spec like `True -> "Yin-Yang"` into its bound value and
+/// its display label.
+fn discrete_choice_rule(item: &Expr) -> Option<(&Expr, &Expr)> {
+  match item {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some((pattern, replacement)),
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  }
+}
+
+/// Render a discrete-choice label. A string label is shown without its
+/// surrounding quotes; anything else falls back to its InputForm.
+fn discrete_choice_label(expr: &Expr) -> String {
+  match expr {
+    Expr::String(s) => s.clone(),
+    other => crate::syntax::expr_to_input_form(other),
+  }
 }
 
 /// Pick a reasonable current value for each control. For continuous
@@ -12003,6 +12113,41 @@ pub fn manipulate_block_code(
     .map(|(name, value)| format!("{} = {}", name, value))
     .collect();
   format!("Block[{{{}}}, {}]", binding_parts.join(", "), body_code)
+}
+
+/// Evaluate a control's `Enabled` condition and report whether the control
+/// should be interactive. The condition is a boolean expression in the
+/// Manipulate variables; it is evaluated against whatever bindings are
+/// currently installed as globals (the caller wraps this in
+/// [`crate::with_scoped_globals`]). The control is disabled only when the
+/// condition evaluates to the literal `False`; a symbolic or errored result
+/// fails open (enabled) so a control never becomes permanently stuck.
+pub fn manipulate_condition_enabled(condition: &str) -> bool {
+  match crate::interpret(condition) {
+    Ok(result) => result.trim() != "False",
+    Err(_) => true,
+  }
+}
+
+/// Evaluate each condition against the given bindings and return one flag per
+/// condition. A `None` condition (control with no `Enabled` option) is always
+/// enabled. Installs the bindings as globals once for the whole batch.
+pub fn manipulate_enabled_states(
+  conditions: &[Option<String>],
+  bindings: &[(String, String)],
+) -> Vec<bool> {
+  if conditions.iter().all(Option::is_none) {
+    return vec![true; conditions.len()];
+  }
+  crate::with_scoped_globals(bindings, || {
+    conditions
+      .iter()
+      .map(|c| match c {
+        Some(cond) => manipulate_condition_enabled(cond),
+        None => true,
+      })
+      .collect()
+  })
 }
 
 /// Parse a very small JSON object `{"name": "value", …}` where every
@@ -12315,6 +12460,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
       ManipulateControl::Discrete {
         name,
         values,
+        value_labels,
         initial_index,
         label,
         label_runs,
@@ -12323,12 +12469,17 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           .iter()
           .map(|v| format!(r#""{}""#, json_escape_manipulate(v)))
           .collect();
+        let label_parts: Vec<String> = value_labels
+          .iter()
+          .map(|v| format!(r#""{}""#, json_escape_manipulate(v)))
+          .collect();
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"initialIndex":{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
           value_parts.join(","),
+          label_parts.join(","),
           initial_index,
         ));
       }
@@ -12378,6 +12529,21 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           step_json,
         ));
       }
+    }
+  }
+
+  // Inject each control's `Enabled` condition (when present) into its JSON
+  // object so the frontend can re-evaluate it and grey the control out.
+  for (c, part) in spec.controls.iter().zip(ctrl_parts.iter_mut()) {
+    if let Some((_, cond)) =
+      spec.control_enabled.iter().find(|(n, _)| n == c.name())
+      && part.ends_with('}')
+    {
+      let field =
+        format!(r#","enabledWhen":"{}""#, json_escape_manipulate(cond));
+      part.truncate(part.len() - 1);
+      part.push_str(&field);
+      part.push('}');
     }
   }
 

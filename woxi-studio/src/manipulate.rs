@@ -34,8 +34,13 @@ pub enum ControlState {
     name: String,
     label: String,
     label_runs: Vec<LabelRun>,
-    /// Each entry is an InputForm fragment ready for substitution.
+    /// Each entry is an InputForm fragment ready for substitution into the
+    /// variable binding. For a rule-form choice `value -> "label"` this is the
+    /// value (left side), not the whole rule.
     values: Vec<String>,
+    /// The label shown for each choice, parallel to `values`. Equals `values`
+    /// for plain choices; the rule's right side for rule-form choices.
+    value_labels: Vec<String>,
     current_index: usize,
   },
   /// A 2D slider binding its variable to a `{x, y}` pair.
@@ -116,6 +121,13 @@ pub struct ManipulateState {
   pub graphics_handle: Option<svg::Handle>,
   pub text_output: Option<String>,
   pub error: Option<String>,
+  /// Per-control `Enabled` condition (InputForm code), parallel to `controls`.
+  /// `None` means the control has no condition and is always enabled.
+  control_enabled: Vec<Option<String>>,
+  /// Whether each control is currently interactive, recomputed on every
+  /// re-evaluation from `control_enabled` against the live bindings. Parallel
+  /// to `controls`; a control indexes in with its position.
+  pub control_is_enabled: Vec<bool>,
   /// Generation of the most recent control change. Bumped on every
   /// slider/picklist move so the throttled re-evaluation can tell whether a
   /// newer change has superseded a queued one.
@@ -138,6 +150,18 @@ impl ManipulateState {
     let spec =
       extract_manipulate_spec(expr).or_else(|| extract_control_spec(expr))?;
     let controls = controls_from_spec(&spec);
+    // Line each control up with its `Enabled` condition (if any) by name.
+    let control_enabled: Vec<Option<String>> = controls
+      .iter()
+      .map(|c| {
+        spec
+          .control_enabled
+          .iter()
+          .find(|(n, _)| n == c.name())
+          .map(|(_, cond)| cond.clone())
+      })
+      .collect();
+    let control_is_enabled = vec![true; controls.len()];
     let mut state = ManipulateState {
       body: spec.body_code,
       initialization: spec.initialization,
@@ -148,6 +172,8 @@ impl ManipulateState {
       graphics_handle: None,
       text_output: None,
       error: None,
+      control_enabled,
+      control_is_enabled,
       reeval_pending: 0,
       reeval_applied: 0,
       reeval_scheduled: false,
@@ -226,17 +252,30 @@ impl ManipulateState {
     };
 
     // Install the bindings as globals once so a large `data` matrix is parsed
-    // a single time, then evaluate the body and rebuild the display elements
-    // against those globals (empty local bindings → no matrix re-embed).
+    // a single time, then evaluate the body, rebuild the display elements, and
+    // resolve each control's `Enabled` condition against those same globals
+    // (empty local bindings → no matrix re-embed).
     let displays = self.displays.clone();
-    let (render, display_trees) = woxi::with_scoped_globals(&bindings, || {
-      let trees: Vec<_> = displays
-        .iter()
-        .map(|d| build_manipulate_display(d, &[]))
-        .collect();
-      (woxi::interpret_with_stdout(&code), trees)
-    });
+    let control_enabled = self.control_enabled.clone();
+    let (render, display_trees, enabled) =
+      woxi::with_scoped_globals(&bindings, || {
+        let trees: Vec<_> = displays
+          .iter()
+          .map(|d| build_manipulate_display(d, &[]))
+          .collect();
+        let enabled: Vec<bool> = control_enabled
+          .iter()
+          .map(|c| match c {
+            Some(cond) => {
+              woxi::functions::graphics::manipulate_condition_enabled(cond)
+            }
+            None => true,
+          })
+          .collect();
+        (woxi::interpret_with_stdout(&code), trees, enabled)
+      });
     self.display_trees = display_trees;
+    self.control_is_enabled = enabled;
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -327,12 +366,14 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label,
         label_runs,
         values,
+        value_labels,
         initial_index,
       } => ControlState::Discrete {
         name: name.clone(),
         label: label.clone(),
         label_runs: label_runs.clone(),
         values: values.clone(),
+        value_labels: value_labels.clone(),
         current_index: *initial_index,
       },
       ManipulateControl::Slider2D {

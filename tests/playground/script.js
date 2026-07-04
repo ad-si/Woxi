@@ -21,6 +21,10 @@ let editorView = null
 
 const wolframLanguage = StreamLanguage.define(mathematica)
 const themeConfig = new Compartment()
+// Discrete Manipulate controls with at most this many choices render as a
+// segmented SetterBar (toggle buttons); larger sets use a dropdown. Mirrors
+// SETTER_BAR_MAX_CHOICES in woxi-studio.
+const SETTER_BAR_MAX_CHOICES = 6
 const STORAGE_KEY_THEME = "woxi-playground-theme"
 const THEME_MODES = ["auto", "light", "dark"]
 const THEME_ICONS = { auto: "\u25D0", light: "\u2600", dark: "\u263E" }
@@ -301,6 +305,7 @@ function renderOutputItems(items) {
   // nodes that have been removed.  Drop their entries so stale
   // results arriving from the worker are ignored.
   manipulateRequests.clear()
+  enabledRequests.clear()
 
   for (const item of items) {
     appendOutputItem(outputsEl, item)
@@ -321,6 +326,9 @@ function appendOutputItems(items) {
 // `manipulate_result` messages back to the right widget when multiple
 // Manipulates coexist on one page.
 const manipulateRequests = new Map()
+// In-flight `evaluate_manipulate_enabled` requests, keyed by request id, so a
+// result can be routed back to the widget whose controls it re-gates.
+const enabledRequests = new Map()
 let manipulateRequestCounter = 0
 
 function renderManipulate(item) {
@@ -387,6 +395,11 @@ function renderManipulate(item) {
     structureDirty: false,
     // Set per-dispatch: whether that request asked for fresh display trees.
     expectDisplays: false,
+    // Controls with an `Enabled -> Dynamic[…]` option: `{condition, apply}`
+    // in control order. `condition` is the boolean code ("" = always enabled);
+    // `apply(on)` greys the control's DOM in or out. Re-evaluated on every
+    // binding change so a control can disable itself for the current state.
+    enabledControls: [],
   }
 
   // Format a continuous value for display (strip trailing zeros).
@@ -434,9 +447,28 @@ function renderManipulate(item) {
     dispatchUpdate(bindings)
   }
 
+  // Re-evaluate every gated control's `Enabled` condition for the current
+  // bindings and grey the affected controls in or out. A no-op when no control
+  // has a condition.
+  function refreshEnabled(bindings) {
+    if (!worker) return
+    const conditions = widget.enabledControls.map((c) => c.condition)
+    if (conditions.every((c) => !c)) return
+    const requestId = ++manipulateRequestCounter
+    enabledRequests.set(requestId, widget)
+    worker.postMessage({
+      type: "evaluate_manipulate_enabled",
+      requestId,
+      conditions,
+      bindings: bindings || buildBindings(),
+    })
+  }
+  widget.refreshEnabled = refreshEnabled
+
   function dispatchUpdate(bindings) {
     widget.inflight = true
     widget.pendingBindings = null
+    refreshEnabled(bindings)
     const requestId = ++manipulateRequestCounter
     manipulateRequests.set(requestId, widget)
     outputEl.classList.add("stale")
@@ -586,20 +618,73 @@ function renderManipulate(item) {
         display.textContent = fmt(input.value)
         requestUpdate()
       })
-    } else if (ctrl.kind === "discrete") {
-      const select = document.createElement("select")
-      for (let idx = 0; idx < ctrl.values.length; idx++) {
-        const opt = document.createElement("option")
-        opt.value = ctrl.values[idx]
-        opt.textContent = ctrl.values[idx]
-        if (idx === ctrl.initialIndex) opt.selected = true
-        select.appendChild(opt)
-      }
-      row.appendChild(select)
-      select.addEventListener("change", () => {
-        current[ctrl.name] = select.value
-        requestUpdate()
+      widget.enabledControls.push({
+        condition: ctrl.enabledWhen || "",
+        apply: (on) => {
+          input.disabled = !on
+          row.classList.toggle("disabled", !on)
+        },
       })
+    } else if (ctrl.kind === "discrete") {
+      // The bound value is `values[idx]`; the visible text is the parallel
+      // `valueLabels[idx]` (a rule's right-hand side for a `value -> "label"`
+      // choice, else the value itself).
+      const labels = ctrl.valueLabels ?? ctrl.values
+      const values = ctrl.values
+      if (values.length <= SETTER_BAR_MAX_CHOICES) {
+        // A small enumerated set renders as a segmented SetterBar: a row of
+        // adjacent toggle buttons with the active choice highlighted, matching
+        // Wolfram's SetterBar.
+        const bar = document.createElement("div")
+        bar.className = "manipulate-setterbar"
+        const buttons = []
+        values.forEach((val, idx) => {
+          const btn = document.createElement("button")
+          btn.type = "button"
+          btn.className = "setter-btn"
+          btn.textContent = labels[idx] ?? val
+          if (idx === ctrl.initialIndex) btn.classList.add("active")
+          btn.addEventListener("click", () => {
+            current[ctrl.name] = val
+            for (const b of buttons) b.classList.remove("active")
+            btn.classList.add("active")
+            requestUpdate()
+          })
+          buttons.push(btn)
+          bar.appendChild(btn)
+        })
+        row.appendChild(bar)
+        widget.enabledControls.push({
+          condition: ctrl.enabledWhen || "",
+          apply: (on) => {
+            for (const b of buttons) b.disabled = !on
+            bar.classList.toggle("disabled", !on)
+            row.classList.toggle("disabled", !on)
+          },
+        })
+      } else {
+        // Larger sets fall back to a dropdown so the row can't grow unbounded.
+        const select = document.createElement("select")
+        for (let idx = 0; idx < values.length; idx++) {
+          const opt = document.createElement("option")
+          opt.value = values[idx]
+          opt.textContent = labels[idx] ?? values[idx]
+          if (idx === ctrl.initialIndex) opt.selected = true
+          select.appendChild(opt)
+        }
+        row.appendChild(select)
+        select.addEventListener("change", () => {
+          current[ctrl.name] = select.value
+          requestUpdate()
+        })
+        widget.enabledControls.push({
+          condition: ctrl.enabledWhen || "",
+          apply: (on) => {
+            select.disabled = !on
+            row.classList.toggle("disabled", !on)
+          },
+        })
+      }
 
       // The controls share one grid (rows use `display: contents`), so every
       // row must contribute the same three cells or auto-placement desyncs the
@@ -660,6 +745,13 @@ function renderManipulate(item) {
 
       row.appendChild(pad)
       row.appendChild(display)
+      widget.enabledControls.push({
+        condition: ctrl.enabledWhen || "",
+        apply: (on) => {
+          pad.style.pointerEvents = on ? "" : "none"
+          row.classList.toggle("disabled", !on)
+        },
+      })
     } else if (ctrl.kind === "interval") {
       // Two range inputs (low and high endpoints) kept ordered so the
       // bound value `{low, high}` is always a valid interval.
@@ -704,10 +796,21 @@ function renderManipulate(item) {
 
       row.appendChild(stack)
       row.appendChild(display)
+      widget.enabledControls.push({
+        condition: ctrl.enabledWhen || "",
+        apply: (on) => {
+          lowInput.disabled = !on
+          highInput.disabled = !on
+          row.classList.toggle("disabled", !on)
+        },
+      })
     }
 
     controlsEl.appendChild(row)
   }
+
+  // Grey out any control that starts disabled for the initial bindings.
+  widget.refreshEnabled(buildBindings())
 
   box.appendChild(controlsEl)
   // Extra display elements (e.g. the Checkbox grid) sit above the rendered
@@ -838,6 +941,22 @@ function initWorker() {
       // so rapid slider movement doesn't trigger repeated localStorage
       // writes of full SVGs.  The initial rendering is already
       // persisted when the "result" message first arrived.
+    }
+    else if (type === "manipulate_enabled_result") {
+      const widget = enabledRequests.get(e.data.requestId)
+      enabledRequests.delete(e.data.requestId)
+      if (!widget || !success) return
+      let flags
+      try {
+        flags = JSON.parse(result)
+      } catch (_) {
+        return
+      }
+      if (!Array.isArray(flags)) return
+      widget.enabledControls.forEach((c, i) => {
+        // Absent/undefined flag fails open (enabled).
+        c.apply(flags[i] !== false)
+      })
     }
     else if (type === "manipulate_full_result") {
       const widget = manipulateRequests.get(e.data.requestId)

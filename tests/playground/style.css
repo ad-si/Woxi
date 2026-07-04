@@ -486,6 +486,67 @@ pre.output-box {
   text-align: right;
 }
 
+/* Segmented SetterBar (a small set of discrete choices as toggle buttons) */
+.manipulate-setterbar {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.manipulate-setterbar .setter-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-right-width: 0;
+  /* Square by default so the inner (touching) corners stay flush; only the
+     outer corners of the first/last segment are rounded below. */
+  border-radius: 0;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 0.2rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.manipulate-setterbar .setter-btn:first-child {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.manipulate-setterbar .setter-btn:last-child {
+  border-right-width: 1px;
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.manipulate-setterbar .setter-btn:hover:not(.active) {
+  background: var(--surface-3, rgba(127, 127, 127, 0.22));
+}
+
+.manipulate-setterbar .setter-btn.active {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: #fff;
+}
+
+/* A control whose `Enabled -> Dynamic[…]` condition is currently false is
+   greyed out and non-interactive. */
+.manipulate-control-row.disabled {
+  opacity: 0.45;
+}
+
+.manipulate-control-row.disabled input[type="range"] {
+  cursor: not-allowed;
+}
+
+.manipulate-setterbar.disabled .setter-btn {
+  cursor: not-allowed;
+}
+
+.manipulate-setterbar .setter-btn:disabled {
+  cursor: not-allowed;
+}
+
 /* 2D slider pad (ControlType -> Slider2D) */
 .manipulate-pad {
   position: relative;

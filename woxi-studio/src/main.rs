@@ -307,6 +307,9 @@ enum Message {
   /// with the latest control values if any change is still pending.
   /// (cell_idx)
   ManipulateReeval(usize),
+  /// Swallow an interaction with a disabled control (its `Enabled` condition
+  /// is currently `False`) without changing any state.
+  Noop,
 
   // Hyperlink: open the given URL in the user's default browser.
   OpenHyperlink(String),
@@ -1570,11 +1573,11 @@ impl WoxiStudio {
           && let Some(state) = editor.manipulate_state.as_mut()
           && let Some(control) = state.controls.get_mut(ctrl_idx)
           && let manipulate::ControlState::Discrete {
-            values,
+            value_labels,
             current_index,
             ..
           } = control
-          && let Some(idx) = values.iter().position(|v| *v == choice)
+          && let Some(idx) = value_labels.iter().position(|v| *v == choice)
         {
           *current_index = idx;
           if state.request_reeval() {
@@ -1645,6 +1648,8 @@ impl WoxiStudio {
         }
         Task::none()
       }
+
+      Message::Noop => Task::none(),
 
       Message::OpenHyperlink(url) => {
         open_url(&url);
@@ -3374,6 +3379,7 @@ fn manipulate_label_widget<'a>(
   label: &str,
   name: &str,
   width: f32,
+  enabled: bool,
 ) -> Element<'a, Message> {
   const SIZE: f32 = 12.0;
   // Match the family the upright runs inherit (the app default is
@@ -3382,20 +3388,40 @@ fn manipulate_label_widget<'a>(
     style: iced::font::Style::Italic,
     ..Font::MONOSPACE
   };
+  // A disabled control's label is dimmed to match the greyed-out widget.
+  let color = move |theme: &Theme| {
+    if enabled {
+      text::Style::default()
+    } else {
+      text::Style {
+        color: Some(theme.extended_palette().background.strong.color),
+      }
+    }
+  };
 
   if runs.is_empty() {
     let fallback = if label.is_empty() { name } else { label };
     return text(fallback.to_string())
       .size(SIZE)
       .width(iced::Length::Fixed(width))
+      .style(color)
       .into();
   }
 
+  // rich_text spans carry a fixed color, so a disabled label uses a muted grey
+  // (theme-agnostic) rather than the theme-derived color used above.
+  let muted = Color::from_rgb(0.55, 0.55, 0.58);
   let spans: Vec<text::Span<'a, ()>> = runs
     .iter()
     .map(|r| {
-      let s = iced::widget::span(r.text.clone());
-      if r.italic { s.font(italic) } else { s }
+      let mut s = iced::widget::span(r.text.clone());
+      if r.italic {
+        s = s.font(italic);
+      }
+      if !enabled {
+        s = s.color(muted);
+      }
+      s
     })
     .collect();
   rich_text(spans)
@@ -3428,6 +3454,11 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
 /// immediately, so the thumb and value label track the cursor without lag.
 const MANIPULATE_THROTTLE_MS: u64 = 16;
 
+/// Maximum number of choices rendered as a segmented SetterBar (a row of
+/// toggle buttons). Discrete controls with more settings fall back to a
+/// dropdown so the control row can't grow unbounded.
+const SETTER_BAR_MAX_CHOICES: usize = 6;
+
 /// Spawn the debounce timer that drives a throttled Manipulate re-evaluation.
 /// When it fires, `ManipulateReeval` re-evaluates the body with the latest
 /// control values (see `ManipulateState::run_scheduled_reeval`).
@@ -3458,6 +3489,13 @@ fn render_manipulate_widget<'a>(
     .unwrap_or(0);
   let label_col_width = (max_label_chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0);
   for (ctrl_idx, ctrl) in state.controls.iter().enumerate() {
+    // A control whose `Enabled` condition currently evaluates to `False` is
+    // greyed out and swallows interaction (see `Message::Noop`).
+    let enabled = state
+      .control_is_enabled
+      .get(ctrl_idx)
+      .copied()
+      .unwrap_or(true);
     match ctrl {
       manipulate::ControlState::Continuous {
         name,
@@ -3468,13 +3506,25 @@ fn render_manipulate_widget<'a>(
         step,
         current,
       } => {
-        let label_widget =
-          manipulate_label_widget(label_runs, label, name, label_col_width);
-        let s = slider(*min..=*max, *current, move |v| {
-          Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
+        let label_widget = manipulate_label_widget(
+          label_runs,
+          label,
+          name,
+          label_col_width,
+          enabled,
+        );
+        let mut s = slider(*min..=*max, *current, move |v| {
+          if enabled {
+            Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
+          } else {
+            Message::Noop
+          }
         })
         .step(*step)
         .width(Fill);
+        if !enabled {
+          s = s.style(disabled_slider_style);
+        }
         let value_widget = text(format_manipulate_number(*current))
           .size(11)
           .font(Font::MONOSPACE)
@@ -3488,17 +3538,65 @@ fn render_manipulate_widget<'a>(
         name,
         label,
         label_runs,
-        values,
+        value_labels,
         current_index,
+        ..
       } => {
-        let label_widget =
-          manipulate_label_widget(label_runs, label, name, label_col_width);
-        let selected = values.get(*current_index).cloned();
-        let picker = pick_list(values.clone(), selected, move |choice| {
-          Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice)
-        })
-        .width(iced::Length::Shrink);
-        let control_row = row![label_widget, picker].align_y(Center).spacing(8);
+        let label_widget = manipulate_label_widget(
+          label_runs,
+          label,
+          name,
+          label_col_width,
+          enabled,
+        );
+        let count = value_labels.len();
+        // A small enumerated set renders as a segmented SetterBar (a row of
+        // adjacent toggle buttons with the active choice highlighted), matching
+        // Wolfram's SetterBar; a larger set falls back to a dropdown so the
+        // row can't grow unbounded. The button labels are the display labels
+        // (rule right-hand sides); pressing one sends its label, which the
+        // update handler maps back to an index. A disabled control drops its
+        // press handlers so it can't be changed.
+        let control: Element<Message> = if count <= SETTER_BAR_MAX_CHOICES {
+          let mut bar = Row::new().spacing(0).align_y(Center);
+          for (i, choice_label) in value_labels.iter().enumerate() {
+            let is_selected = i == *current_index;
+            let choice = choice_label.clone();
+            let mut btn = button(text(choice_label.clone()).size(12))
+              .padding([3, 10])
+              .style(move |theme: &Theme, status| {
+                setter_button_style(
+                  theme,
+                  status,
+                  is_selected,
+                  i,
+                  count,
+                  enabled,
+                )
+              });
+            if enabled {
+              btn = btn.on_press(Message::ManipulateDiscreteChanged(
+                cell_idx, ctrl_idx, choice,
+              ));
+            }
+            bar = bar.push(btn);
+          }
+          bar.into()
+        } else {
+          let selected = value_labels.get(*current_index).cloned();
+          let on_select = move |choice: String| {
+            if enabled {
+              Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice)
+            } else {
+              Message::Noop
+            }
+          };
+          pick_list(value_labels.clone(), selected, on_select)
+            .width(iced::Length::Shrink)
+            .into()
+        };
+        let control_row =
+          row![label_widget, control].align_y(Center).spacing(8);
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Slider2D {
@@ -3516,16 +3614,28 @@ fn render_manipulate_widget<'a>(
         let y_span = (*y_max - *y_min).abs();
         let x_step = if x_span > 0.0 { x_span / 100.0 } else { 1.0 };
         let y_step = if y_span > 0.0 { y_span / 100.0 } else { 1.0 };
-        let x_slider = slider(*x_min..=*x_max, *x, move |v| {
-          Message::ManipulateSlider2DChanged(cell_idx, ctrl_idx, 0, v)
+        let mut x_slider = slider(*x_min..=*x_max, *x, move |v| {
+          if enabled {
+            Message::ManipulateSlider2DChanged(cell_idx, ctrl_idx, 0, v)
+          } else {
+            Message::Noop
+          }
         })
         .step(x_step)
         .width(Fill);
-        let y_slider = slider(*y_min..=*y_max, *y, move |v| {
-          Message::ManipulateSlider2DChanged(cell_idx, ctrl_idx, 1, v)
+        let mut y_slider = slider(*y_min..=*y_max, *y, move |v| {
+          if enabled {
+            Message::ManipulateSlider2DChanged(cell_idx, ctrl_idx, 1, v)
+          } else {
+            Message::Noop
+          }
         })
         .step(y_step)
         .width(Fill);
+        if !enabled {
+          x_slider = x_slider.style(disabled_slider_style);
+          y_slider = y_slider.style(disabled_slider_style);
+        }
         let value_widget = text(format!(
           "{{{}, {}}}",
           format_manipulate_number(*x),
@@ -3537,7 +3647,7 @@ fn render_manipulate_widget<'a>(
         // Empty runs → plain label; shares label_col_width so 2D-slider rows
         // align with the other controls.
         let label_widget =
-          manipulate_label_widget(&[], label, name, label_col_width);
+          manipulate_label_widget(&[], label, name, label_col_width, enabled);
         let control_row = row![
           label_widget,
           column![x_slider, y_slider].spacing(4),
@@ -3557,16 +3667,28 @@ fn render_manipulate_widget<'a>(
         high,
       } => {
         // Rendered as two linked sliders (low and high endpoints).
-        let low_slider = slider(*min..=*max, *low, move |v| {
-          Message::ManipulateIntervalChanged(cell_idx, ctrl_idx, 0, v)
+        let mut low_slider = slider(*min..=*max, *low, move |v| {
+          if enabled {
+            Message::ManipulateIntervalChanged(cell_idx, ctrl_idx, 0, v)
+          } else {
+            Message::Noop
+          }
         })
         .step(*step)
         .width(Fill);
-        let high_slider = slider(*min..=*max, *high, move |v| {
-          Message::ManipulateIntervalChanged(cell_idx, ctrl_idx, 1, v)
+        let mut high_slider = slider(*min..=*max, *high, move |v| {
+          if enabled {
+            Message::ManipulateIntervalChanged(cell_idx, ctrl_idx, 1, v)
+          } else {
+            Message::Noop
+          }
         })
         .step(*step)
         .width(Fill);
+        if !enabled {
+          low_slider = low_slider.style(disabled_slider_style);
+          high_slider = high_slider.style(disabled_slider_style);
+        }
         let value_widget = text(format!(
           "{{{}, {}}}",
           format_manipulate_number(*low),
@@ -3578,7 +3700,7 @@ fn render_manipulate_widget<'a>(
         // Empty runs → plain label; shares label_col_width so interval-slider
         // rows align with the other controls.
         let label_widget =
-          manipulate_label_widget(&[], label, name, label_col_width);
+          manipulate_label_widget(&[], label, name, label_col_width, enabled);
         let control_row = row![
           label_widget,
           column![low_slider, high_slider].spacing(4),
@@ -4327,6 +4449,109 @@ fn context_menu_style(theme: &Theme) -> container::Style {
       radius: 6.0.into(),
     },
     ..container::Style::default()
+  }
+}
+
+/// Style one segment of a Manipulate SetterBar (segmented toggle group).
+/// The selected segment is filled blue with white text; the others are a
+/// neutral surface with a hairline border. `index`/`count` decide which
+/// outer corners are rounded so the row reads as a single pill.
+fn setter_button_style(
+  theme: &Theme,
+  status: button::Status,
+  selected: bool,
+  index: usize,
+  count: usize,
+  enabled: bool,
+) -> button::Style {
+  use iced::border::Radius;
+  let is_dark = !matches!(theme, Theme::Light);
+  // A disabled bar keeps the selected segment marked but drained of accent so
+  // it reads as inactive; hover has no effect since it takes no input.
+  let accent = if enabled {
+    Color::from_rgb(0.26, 0.52, 0.96)
+  } else {
+    Color::from_rgba(0.26, 0.52, 0.96, 0.4)
+  };
+  let accent_hover = Color::from_rgb(0.30, 0.56, 0.98);
+
+  // Round only the outer corners of the first and last segment.
+  let r = 6.0;
+  let first = index == 0;
+  let last = index + 1 == count;
+  let radius = Radius {
+    top_left: if first { r } else { 0.0 },
+    bottom_left: if first { r } else { 0.0 },
+    top_right: if last { r } else { 0.0 },
+    bottom_right: if last { r } else { 0.0 },
+  };
+
+  let (idle_bg, idle_text, border_color) = if is_dark {
+    (
+      Color::from_rgb(0.20, 0.21, 0.24),
+      Color::from_rgb(0.85, 0.87, 0.92),
+      Color::from_rgba(1.0, 1.0, 1.0, 0.18),
+    )
+  } else {
+    (
+      Color::from_rgb(0.97, 0.97, 0.98),
+      Color::from_rgb(0.15, 0.15, 0.18),
+      Color::from_rgba(0.0, 0.0, 0.0, 0.18),
+    )
+  };
+
+  let hovered = matches!(status, button::Status::Hovered);
+  let (background, text_color) = if selected {
+    (if hovered { accent_hover } else { accent }, Color::WHITE)
+  } else if hovered {
+    let hb = if is_dark {
+      Color::from_rgb(0.26, 0.27, 0.31)
+    } else {
+      Color::from_rgb(0.92, 0.93, 0.95)
+    };
+    (hb, idle_text)
+  } else {
+    (idle_bg, idle_text)
+  };
+
+  button::Style {
+    background: Some(Background::Color(background)),
+    text_color,
+    border: Border {
+      color: if selected { accent } else { border_color },
+      width: 1.0,
+      radius,
+    },
+    ..button::Style::default()
+  }
+}
+
+/// Greyed style for a Manipulate slider whose control is currently disabled
+/// (its `Enabled` condition is `False`): the rail and handle drop to muted
+/// surface colors so the widget reads as inactive.
+fn disabled_slider_style(
+  theme: &Theme,
+  _status: iced::widget::slider::Status,
+) -> iced::widget::slider::Style {
+  use iced::widget::slider::{Handle, HandleShape, Rail, Style};
+  let palette = theme.extended_palette();
+  let muted = palette.background.strong.color;
+  Style {
+    rail: Rail {
+      backgrounds: (muted.into(), palette.background.weak.color.into()),
+      width: 4.0,
+      border: Border {
+        radius: 2.0.into(),
+        width: 0.0,
+        color: Color::TRANSPARENT,
+      },
+    },
+    handle: Handle {
+      shape: HandleShape::Circle { radius: 7.0 },
+      background: muted.into(),
+      border_color: Color::TRANSPARENT,
+      border_width: 0.0,
+    },
   }
 }
 
