@@ -1408,6 +1408,16 @@ mod collect_tests {
     assert_eq!(interpret("Collect[x*y + x*z, x]").unwrap(), "x*(y + z)");
   }
 
+  // Collecting with respect to a bare number is a no-op: the expression is
+  // returned unchanged, rather than staying unevaluated.
+  #[test]
+  fn collect_by_number_returns_expression() {
+    assert_eq!(interpret("Collect[x^2, 5]").unwrap(), "x^2");
+    assert_eq!(interpret("Collect[a x + b x, 5]").unwrap(), "a*x + b*x");
+    assert_eq!(interpret("Collect[x^2, 2.5]").unwrap(), "x^2");
+    assert_eq!(interpret("Collect[x^2 + x, 0]").unwrap(), "x + x^2");
+  }
+
   #[test]
   fn collect_constant_after_collect_variable() {
     // A bare-symbol constant term that sorts after the collect variable must

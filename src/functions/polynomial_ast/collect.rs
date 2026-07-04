@@ -70,6 +70,18 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(substitute_expr_local(&result, &placeholder_id, &args[1]));
     }
     _ => {
+      // Collecting with respect to a bare number is a no-op: wolframscript
+      // returns the expression unchanged (Collect[x^2, 5] = x^2) rather than
+      // staying unevaluated.
+      if matches!(
+        &args[1],
+        Expr::Integer(_)
+          | Expr::Real(_)
+          | Expr::BigInteger(_)
+          | Expr::BigFloat(_, _)
+      ) {
+        return Ok(args[0].clone());
+      }
       return Ok(Expr::FunctionCall {
         name: "Collect".to_string(),
         args: args.to_vec().into(),
