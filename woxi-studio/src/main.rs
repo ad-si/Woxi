@@ -10,8 +10,8 @@ use iced::keyboard;
 use iced::overlay::menu;
 use iced::widget::operation::focus;
 use iced::widget::{
-  Column, button, column, container, image, mouse_area, opaque, pick_list,
-  rich_text, row, rule, scrollable, slider, space, stack, svg, text,
+  Column, Row, button, checkbox, column, container, image, mouse_area, opaque,
+  pick_list, rich_text, row, rule, scrollable, slider, space, stack, svg, text,
   text_editor,
 };
 use iced::{
@@ -300,6 +300,9 @@ enum Message {
   ManipulateSlider2DChanged(usize, usize, u8, f64),
   /// (cell_idx, ctrl_idx, endpoint 0=low/1=high, value)
   ManipulateIntervalChanged(usize, usize, u8, f64),
+  /// A checkbox in a Manipulate display element was toggled.
+  /// (cell_idx, write-back assignment, e.g. `data[[3, 5]] = 1`)
+  ManipulateDisplayToggled(usize, String),
 
   // Hyperlink: open the given URL in the user's default browser.
   OpenHyperlink(String),
@@ -1610,6 +1613,19 @@ impl WoxiStudio {
             *high = value.max(*low);
           }
           state.reevaluate(self.scale_factor, &self.fontdb);
+        }
+        Task::none()
+      }
+
+      Message::ManipulateDisplayToggled(cell_idx, mutation) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.apply_display_mutation(
+            &mutation,
+            self.scale_factor,
+            &self.fontdb,
+          );
         }
         Task::none()
       }
@@ -3577,10 +3593,89 @@ fn render_manipulate_widget<'a>(
     output_col = output_col.push(container(output_text).padding(6).width(Fill));
   }
 
-  container(column![controls_col, output_col].spacing(6))
-    .padding(6)
-    .width(Fill)
-    .into()
+  // Extra display elements (e.g. a Checkbox grid) sit above the rendered
+  // body output; each interactive checkbox emits a write-back on toggle.
+  let mut widget_col = column![controls_col].spacing(6);
+  for tree in &state.display_trees {
+    widget_col = widget_col.push(render_display_node(cell_idx, tree));
+  }
+  widget_col = widget_col.push(output_col);
+
+  container(widget_col).padding(6).width(Fill).into()
+}
+
+/// Recursively render a Manipulate display-element widget tree into iced.
+/// Interactive checkboxes emit `ManipulateDisplayToggled` with the write-back
+/// assignment (`<target> = <on|off>`) to apply on toggle.
+fn render_display_node<'a>(
+  cell_idx: usize,
+  node: &woxi::functions::graphics::DisplayNode,
+) -> Element<'a, Message> {
+  use woxi::functions::graphics::DisplayNode;
+  match node {
+    DisplayNode::Panel(child) => {
+      container(render_display_node(cell_idx, child))
+        .padding(6)
+        .style(container::rounded_box)
+        .into()
+    }
+    DisplayNode::Grid(rows) => {
+      let mut col = Column::new().spacing(2);
+      for row_cells in rows {
+        let mut r = Row::new().spacing(2).align_y(Center);
+        for cell in row_cells {
+          r = r.push(render_display_node(cell_idx, cell));
+        }
+        col = col.push(r);
+      }
+      col.into()
+    }
+    DisplayNode::Column(children) => {
+      let mut col = Column::new().spacing(4);
+      for c in children {
+        col = col.push(render_display_node(cell_idx, c));
+      }
+      col.into()
+    }
+    DisplayNode::Row(children) => {
+      let mut r = Row::new().spacing(4).align_y(Center);
+      for c in children {
+        r = r.push(render_display_node(cell_idx, c));
+      }
+      r.into()
+    }
+    DisplayNode::Checkbox {
+      target,
+      checked,
+      on,
+      off,
+    } => {
+      let cb = checkbox(*checked);
+      match target {
+        Some(t) => {
+          let assignment =
+            format!("{} = {}", t, if *checked { off } else { on });
+          cb.on_toggle(move |_| {
+            Message::ManipulateDisplayToggled(cell_idx, assignment.clone())
+          })
+          .into()
+        }
+        // Non-interactive checkbox: rendered but not clickable.
+        None => cb.into(),
+      }
+    }
+    DisplayNode::Static {
+      svg: svg_src,
+      text: txt,
+    } => {
+      if let Some(svg_str) = svg_src {
+        let handle = svg::Handle::from_memory(svg_str.clone().into_bytes());
+        svg::Svg::new(handle).width(iced::Length::Shrink).into()
+      } else {
+        text(txt.clone()).size(12).font(Font::MONOSPACE).into()
+      }
+    }
+  }
 }
 
 /// Build a clickable hyperlink button: blue label, transparent

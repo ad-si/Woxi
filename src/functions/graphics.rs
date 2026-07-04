@@ -11077,6 +11077,19 @@ pub struct ManipulateSpec {
   /// substituted into a `Block[{…}, body]` for re-evaluation.
   pub body_code: String,
   pub controls: Vec<ManipulateControl>,
+  /// Mutable state variables that have no visible slider/picker widget
+  /// (`ControlType -> None`) but are shared between the body and any
+  /// interactive display element (e.g. a `Checkbox` grid writing back into
+  /// the variable). Each entry is `(name, initial value as InputForm)`; the
+  /// value is evaluated once so it does not re-randomize on every frame.
+  /// Unlike `Locator`-style fixed bindings (which are baked into `body_code`),
+  /// these are passed live in the binding set so a control can rewrite them.
+  pub state: Vec<(String, String)>,
+  /// Extra display expressions that trail the control specs, e.g. a
+  /// `Dynamic[Panel[Grid[…]]]` of `Checkbox`es. Stored as InputForm so the
+  /// frontend can re-render them (via `render_manipulate_display`) on every
+  /// state change. Empty when the Manipulate has no extra display.
+  pub displays: Vec<String>,
   /// Initialization code from `Initialization :> …`. Runs once before the
   /// first evaluation of the body so that helper definitions (e.g.
   /// `d[t_] := …`) are in scope. `None` when the Manipulate has no
@@ -11088,10 +11101,14 @@ pub struct ManipulateSpec {
 enum ParsedControl {
   /// A control that renders a UI element (slider or pick list).
   Visible(ManipulateControl),
-  /// A control with no UI — either `ControlType -> None` or a `Locator`.
-  /// It contributes only a fixed `name = value` binding to the body so
-  /// the variable is in scope while the visible controls drive the plot.
+  /// A `Locator` control with no widget. It contributes a fixed `name =
+  /// value` binding that is baked directly into the body so the variable is
+  /// in scope while the visible controls drive the plot.
   Fixed { name: String, value: String },
+  /// A `ControlType -> None` variable: no widget, but a *mutable* binding
+  /// passed live in the binding set so an interactive display element (a
+  /// `Checkbox`, `Setter`, …) can write back into it.
+  State { name: String, value: String },
 }
 
 /// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]`
@@ -11110,9 +11127,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
 
   let body_code = crate::syntax::expr_to_input_form(&args[0]);
   let mut controls = Vec::with_capacity(args.len() - 1);
-  // Hidden controls (`Locator`, `ControlType -> None`) bind their variable
-  // to a fixed value that is baked into the body below.
+  // `Locator` bindings are baked into the body (never rewritten by a
+  // display); `ControlType -> None` bindings become live mutable state.
   let mut fixed: Vec<(String, String)> = Vec::new();
+  let mut state: Vec<(String, String)> = Vec::new();
+  let mut displays: Vec<String> = Vec::new();
   let mut initialization: Option<String> = None;
   for spec in &args[1..] {
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
@@ -11133,27 +11152,30 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       continue;
     }
-    // Only list-shaped arguments are control specs. Extra display elements
-    // such as a trailing `Dynamic[Panel[…]]` are not renderable here, so
-    // skip them rather than aborting the whole extraction.
+    // Only list-shaped arguments are control specs. Any other trailing
+    // argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an extra
+    // display element: capture it so the frontend can render it live.
     if !matches!(spec, Expr::List(_)) {
+      displays.push(crate::syntax::expr_to_input_form(spec));
       continue;
     }
     match parse_manipulate_control(spec)? {
       ParsedControl::Visible(c) => controls.push(c),
       ParsedControl::Fixed { name, value } => fixed.push((name, value)),
+      ParsedControl::State { name, value } => state.push((name, value)),
     }
   }
 
-  // A Manipulate with no controls at all (e.g. `Manipulate[x^2, badspec]`,
-  // where `badspec` is neither a spec nor an option) isn't renderable as an
-  // interactive widget — fall back to the plain text/graphics path.
-  if controls.is_empty() && fixed.is_empty() {
+  // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
+  // badspec]`, where `badspec` is neither a spec nor an option) isn't
+  // renderable as an interactive widget — fall back to the plain path.
+  if controls.is_empty() && fixed.is_empty() && state.is_empty() {
     return None;
   }
 
-  // Bake fixed (Locator / hidden) bindings into the body so they remain in
-  // scope on every re-evaluation, independent of the visible control state.
+  // Bake fixed (Locator) bindings into the body so they remain in scope on
+  // every re-evaluation, independent of the visible control state. Mutable
+  // `state` bindings are not baked — they travel live in the binding set.
   let body_code = if fixed.is_empty() {
     body_code
   } else {
@@ -11163,6 +11185,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   Some(ManipulateSpec {
     body_code,
     controls,
+    state,
+    displays,
     initialization,
   })
 }
@@ -11192,13 +11216,15 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     ParsedControl::Visible(c) => c,
     // A hidden control (`ControlType -> None` / Locator) has no widget and
     // nothing to display on its own — fall back to the plain output path.
-    ParsedControl::Fixed { .. } => return None,
+    ParsedControl::Fixed { .. } | ParsedControl::State { .. } => return None,
   };
   // Display the bound variable so the control's effect is visible.
   let body_code = control.name().to_string();
   Some(ManipulateSpec {
     body_code,
     controls: vec![control],
+    state: Vec::new(),
+    displays: Vec::new(),
     initialization: None,
   })
 }
@@ -11459,9 +11485,14 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       .clone()
       .or_else(|| items.get(1).cloned())
       .unwrap_or(Expr::Identifier("Null".to_string()));
-    return Some(ParsedControl::Fixed {
-      name,
-      value: manipulate_value_to_input_form(&value_expr),
+    let value = manipulate_value_to_input_form(&value_expr);
+    // A Locator's initial point list is baked into the body (it is never
+    // rewritten by a display); a `ControlType -> None` variable stays a
+    // live, mutable binding so an interactive display can rewrite it.
+    return Some(if is_locator {
+      ParsedControl::Fixed { name, value }
+    } else {
+      ParsedControl::State { name, value }
     });
   }
 
@@ -11672,6 +11703,9 @@ pub fn manipulate_initial_bindings(
         ),
       ),
     })
+    // Mutable `ControlType -> None` state variables travel in the binding
+    // set alongside the visible controls so displays can read/write them.
+    .chain(spec.state.iter().cloned())
     .collect()
 }
 
@@ -11785,6 +11819,118 @@ pub fn parse_manipulate_bindings(s: &str) -> Vec<(String, String)> {
   }
 
   out
+}
+
+/// Parse a small JSON array of string literals `["a", "b", …]` into a
+/// `Vec<String>`. Non-string elements are skipped. Used to decode the
+/// `displays` and `mutations` arguments handed to `evaluate_manipulate_full`
+/// (each a list of InputForm code fragments), so their embedded brackets and
+/// commas survive without a full JSON dependency.
+pub fn parse_json_string_array(s: &str) -> Vec<String> {
+  let bytes = s.as_bytes();
+  let mut i = 0;
+  let mut out: Vec<String> = Vec::new();
+  while i < bytes.len() && bytes[i] != b'[' {
+    i += 1;
+  }
+  if i >= bytes.len() {
+    return out;
+  }
+  i += 1; // past '['
+  loop {
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i >= bytes.len() || bytes[i] == b']' {
+      break;
+    }
+    if bytes[i] == b'"' {
+      match parse_json_string(bytes, i) {
+        Some((val, next)) => {
+          out.push(val);
+          i = next;
+        }
+        None => break,
+      }
+    } else {
+      // Skip an unexpected non-string token up to the next separator.
+      while i < bytes.len() && bytes[i] != b',' && bytes[i] != b']' {
+        i += 1;
+      }
+    }
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b',' {
+      i += 1;
+      continue;
+    }
+    break;
+  }
+  out
+}
+
+/// Apply a set of interactive write-back mutations — each an assignment like
+/// `data[[3, 5]] = 1` produced by toggling a `Checkbox` — to the current
+/// `bindings`, and return the updated InputForm value of every mutated
+/// variable. The target variable of a mutation is the leading symbol of its
+/// left-hand side (`data` for `data[[3, 5]] = 1`). All mutations run in one
+/// `Block` so later ones see earlier writes.
+pub fn apply_manipulate_mutations(
+  bindings: &[(String, String)],
+  mutations: &[String],
+) -> Vec<(String, String)> {
+  if mutations.is_empty() {
+    return Vec::new();
+  }
+  let mut vars: Vec<String> = Vec::new();
+  for m in mutations {
+    if let Some(v) = mutation_target_symbol(m)
+      && !vars.contains(&v)
+    {
+      vars.push(v);
+    }
+  }
+  if vars.is_empty() {
+    return Vec::new();
+  }
+  let body = format!("{}; {{{}}}", mutations.join("; "), vars.join(", "));
+  let code = manipulate_block_code(&body, bindings);
+  match crate::interpret_to_expr(&code) {
+    Ok(Expr::List(ref vals)) if vals.len() == vars.len() => vars
+      .into_iter()
+      .zip(vals.iter())
+      .map(|(name, v)| (name, crate::syntax::expr_to_input_form(v)))
+      .collect(),
+    _ => Vec::new(),
+  }
+}
+
+/// The distinct target variables of a set of write-back assignments, in first-
+/// seen order. Used to read back the mutated state values after applying the
+/// assignments to the (globally-installed) bindings.
+pub fn mutation_target_symbols(mutations: &[String]) -> Vec<String> {
+  let mut vars: Vec<String> = Vec::new();
+  for m in mutations {
+    if let Some(v) = mutation_target_symbol(m)
+      && !vars.contains(&v)
+    {
+      vars.push(v);
+    }
+  }
+  vars
+}
+
+/// The target variable of a write-back assignment: the leading identifier of
+/// its left-hand side, up to the first `[`, whitespace, or `=`.
+fn mutation_target_symbol(m: &str) -> Option<String> {
+  let end = m.find(|c: char| c == '[' || c == '=' || c.is_whitespace())?;
+  let sym = m[..end].trim();
+  if sym.is_empty() {
+    None
+  } else {
+    Some(sym.to_string())
+  }
 }
 
 /// Parse a JSON string literal starting at `start` (which must point at
@@ -11966,11 +12112,384 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     }
   }
 
+  let state_parts: Vec<String> = spec
+    .state
+    .iter()
+    .map(|(name, value)| {
+      format!(
+        r#""{}":"{}""#,
+        json_escape_manipulate(name),
+        json_escape_manipulate(value),
+      )
+    })
+    .collect();
+  let display_parts: Vec<String> = spec
+    .displays
+    .iter()
+    .map(|d| format!(r#""{}""#, json_escape_manipulate(d)))
+    .collect();
+
   format!(
-    r#""body":"{}","controls":[{}]"#,
+    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]"#,
     json_escape_manipulate(&spec.body_code),
     ctrl_parts.join(","),
+    state_parts.join(","),
+    display_parts.join(","),
   )
+}
+
+/// A node in a rendered Manipulate extra-display widget tree. Both frontends
+/// consume this: the Playground via `render_manipulate_display` (JSON), the
+/// Studio via `build_manipulate_display` (this enum directly).
+#[derive(Debug, Clone)]
+pub enum DisplayNode {
+  /// A framed container wrapping a single child (`Panel`, `Framed`, …).
+  Panel(Box<DisplayNode>),
+  /// A 2D grid of cells (`Grid`).
+  Grid(Vec<Vec<DisplayNode>>),
+  /// A vertical stack (`Column`, or a bare list).
+  Column(Vec<DisplayNode>),
+  /// A horizontal stack (`Row`).
+  Row(Vec<DisplayNode>),
+  /// A checkbox. `target` is the InputForm of the write-back lvalue (e.g.
+  /// `data[[3, 5]]`), `None` for a non-interactive checkbox; `checked` is its
+  /// current state; `on`/`off` are the InputForm values a toggle writes back.
+  Checkbox {
+    target: Option<String>,
+    checked: bool,
+    on: String,
+    off: String,
+  },
+  /// Any unrecognized leaf, rendered to SVG (graphics) or text.
+  Static { svg: Option<String>, text: String },
+}
+
+/// Render one extra-display expression (its InputForm in `display_code`) in
+/// the scope of the current variable `bindings` into a JSON widget tree the
+/// Playground can lay out and wire up interactively.
+pub fn render_manipulate_display(
+  display_code: &str,
+  bindings: &[(String, String)],
+) -> String {
+  display_node_to_json(&build_manipulate_display(display_code, bindings))
+}
+
+/// Render one extra-display expression into a native `DisplayNode` tree.
+///
+/// Every checkbox's current on/off state is read in a *single* batched
+/// evaluation rather than one interpreter call per cell — the difference
+/// between 1 and (rows × cols) `Block` evaluations for a large grid, which is
+/// what keeps a toggle responsive.
+pub fn build_manipulate_display(
+  display_code: &str,
+  bindings: &[(String, String)],
+) -> DisplayNode {
+  let expr = match crate::interpret_to_expr(display_code) {
+    Ok(e) => e,
+    Err(_) => {
+      return DisplayNode::Static {
+        svg: None,
+        text: String::new(),
+      };
+    }
+  };
+
+  // First pass: build the tree, collecting each checkbox's value-probe
+  // expression (deferring `checked`). `Dynamic` layout wrappers still expand
+  // eagerly (one call each), but the many leaf reads are collected here.
+  let mut probes: Vec<String> = Vec::new();
+  let mut ons: Vec<String> = Vec::new();
+  let mut tree = display_expr_to_node(&expr, bindings, &mut probes, &mut ons);
+
+  // Second pass: evaluate all probes at once, then fill in `checked`.
+  if !probes.is_empty() {
+    let list_code = format!("{{{}}}", probes.join(", "));
+    let flags: Vec<bool> = match eval_display_in_scope_str(&list_code, bindings)
+    {
+      Some(Expr::List(ref vals)) if vals.len() == ons.len() => vals
+        .iter()
+        .zip(ons.iter())
+        .map(|(v, on)| crate::syntax::expr_to_input_form(v) == *on)
+        .collect(),
+      _ => vec![false; probes.len()],
+    };
+    let mut idx = 0;
+    assign_checkbox_state(&mut tree, &flags, &mut idx);
+  }
+  tree
+}
+
+/// Evaluate `expr` inside `Block[{bindings}, expr]` and return the resulting
+/// expression. Used to release a held `Dynamic[…]`, expanding the layout it
+/// wraps while inner `Dynamic[lval]` stays held.
+fn eval_display_in_scope(
+  expr: &Expr,
+  bindings: &[(String, String)],
+) -> Option<Expr> {
+  eval_display_in_scope_str(&crate::syntax::expr_to_input_form(expr), bindings)
+}
+
+/// Like `eval_display_in_scope` but takes the InputForm code directly (used
+/// for the batched checkbox-value probe list).
+fn eval_display_in_scope_str(
+  code: &str,
+  bindings: &[(String, String)],
+) -> Option<Expr> {
+  crate::interpret_to_expr(&manipulate_block_code(code, bindings)).ok()
+}
+
+/// Recursively convert a display expression into a `DisplayNode`. Each
+/// checkbox pushes its value-probe expression to `probes` (and the "on" value
+/// to `ons`) instead of evaluating it inline; `checked` is filled in later
+/// from a single batched evaluation.
+fn display_expr_to_node(
+  expr: &Expr,
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> DisplayNode {
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // `Dynamic` is HoldFirst, so its content arrives unexpanded. Release
+      // the hold under the current bindings so the layout (Grid/Outer/…)
+      // expands, while any nested `Dynamic[lval]` stays held (keeping its
+      // write-back target). Then render the expanded content.
+      "Dynamic" if !args.is_empty() => {
+        match eval_display_in_scope(&args[0], bindings) {
+          Some(inner) => display_expr_to_node(&inner, bindings, probes, ons),
+          None => static_leaf_node(expr, bindings),
+        }
+      }
+      "Panel" | "Framed" | "Deploy" | "Item" | "Pane" | "Labeled"
+        if !args.is_empty() =>
+      {
+        DisplayNode::Panel(Box::new(display_expr_to_node(
+          &args[0], bindings, probes, ons,
+        )))
+      }
+      "Grid" | "GridBox" | "TableForm" if !args.is_empty() => match &args[0] {
+        Expr::List(rows) => DisplayNode::Grid(
+          rows
+            .iter()
+            .map(|row| match row {
+              Expr::List(cs) => cs
+                .iter()
+                .map(|c| display_expr_to_node(c, bindings, probes, ons))
+                .collect(),
+              other => {
+                vec![display_expr_to_node(other, bindings, probes, ons)]
+              }
+            })
+            .collect(),
+        ),
+        _ => static_leaf_node(expr, bindings),
+      },
+      "Column" if !args.is_empty() => {
+        DisplayNode::Column(list_children(&args[0], bindings, probes, ons))
+      }
+      "Row" if !args.is_empty() => {
+        DisplayNode::Row(list_children(&args[0], bindings, probes, ons))
+      }
+      "Checkbox" => checkbox_node(args, probes, ons),
+      _ => static_leaf_node(expr, bindings),
+    },
+    // A bare list of display elements stacks vertically, like `Column`.
+    Expr::List(_) => {
+      DisplayNode::Column(list_children(expr, bindings, probes, ons))
+    }
+    _ => static_leaf_node(expr, bindings),
+  }
+}
+
+/// Render the children of a `Column[{…}]` / `Row[{…}]` (or a bare list).
+fn list_children(
+  list: &Expr,
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> Vec<DisplayNode> {
+  match list {
+    Expr::List(items) => items
+      .iter()
+      .map(|c| display_expr_to_node(c, bindings, probes, ons))
+      .collect(),
+    other => vec![display_expr_to_node(other, bindings, probes, ons)],
+  }
+}
+
+/// Build a `Checkbox[…]` leaf node. An interactive checkbox is
+/// `Checkbox[Dynamic[lval], {off, on}]` (the value list defaults to
+/// `{False, True}`); its `target` is the InputForm of `lval`, its `checked`
+/// state is `lval == on` under the current bindings, and `on`/`off` are the
+/// values a toggle writes back. A non-`Dynamic` `Checkbox[val, …]` renders
+/// the same but non-interactively (no `target`).
+///
+/// The value that decides `checked` is not evaluated here — its InputForm is
+/// pushed onto `probes` (with the matching `on` value onto `ons`) so the
+/// caller can evaluate every checkbox in one batched call. The returned node
+/// carries a provisional `checked = false`, patched afterwards.
+fn checkbox_node(
+  args: &[Expr],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> DisplayNode {
+  // Extract the {off, on} value pair (InputForm), defaulting to False/True.
+  let (off, on) = match args.get(1) {
+    Some(Expr::List(vs)) if vs.len() == 2 => (
+      crate::syntax::expr_to_input_form(&vs[0]),
+      crate::syntax::expr_to_input_form(&vs[1]),
+    ),
+    _ => ("False".to_string(), "True".to_string()),
+  };
+
+  // A `Dynamic[lval]` first argument is an interactive, write-back target.
+  let dynamic_lval = match args.first() {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      Some(&dargs[0])
+    }
+    _ => None,
+  };
+
+  // The expression whose value determines `checked`: the held lvalue for an
+  // interactive checkbox, or the (static) first argument otherwise.
+  let probe = match dynamic_lval.or_else(|| args.first()) {
+    Some(e) => crate::syntax::expr_to_input_form(e),
+    None => "False".to_string(),
+  };
+  probes.push(probe);
+  ons.push(on.clone());
+
+  DisplayNode::Checkbox {
+    checked: false,
+    target: dynamic_lval.map(crate::syntax::expr_to_input_form),
+    on,
+    off,
+  }
+}
+
+/// Fill in each checkbox's `checked` flag from the batched probe results, in
+/// the same pre-order the probes were collected.
+fn assign_checkbox_state(
+  node: &mut DisplayNode,
+  flags: &[bool],
+  idx: &mut usize,
+) {
+  match node {
+    DisplayNode::Panel(child) => assign_checkbox_state(child, flags, idx),
+    DisplayNode::Grid(rows) => {
+      for row in rows {
+        for cell in row {
+          assign_checkbox_state(cell, flags, idx);
+        }
+      }
+    }
+    DisplayNode::Column(children) | DisplayNode::Row(children) => {
+      for c in children {
+        assign_checkbox_state(c, flags, idx);
+      }
+    }
+    DisplayNode::Checkbox { checked, .. } => {
+      if let Some(f) = flags.get(*idx) {
+        *checked = *f;
+      }
+      *idx += 1;
+    }
+    DisplayNode::Static { .. } => {}
+  }
+}
+
+/// Render an unrecognized display leaf by evaluating it in scope and
+/// capturing its SVG (graphics) or text output.
+fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
+  let code =
+    manipulate_block_code(&crate::syntax::expr_to_input_form(expr), bindings);
+  match crate::interpret_with_stdout(&code) {
+    Ok(r) => {
+      if let Some(svg) = r.graphics {
+        DisplayNode::Static {
+          svg: Some(svg),
+          text: String::new(),
+        }
+      } else {
+        let text = r
+          .result
+          .replace("-Graphics-", "")
+          .replace("-Graphics3D-", "")
+          .replace("-Image-", "");
+        DisplayNode::Static {
+          svg: None,
+          text: text.trim().to_string(),
+        }
+      }
+    }
+    Err(_) => DisplayNode::Static {
+      svg: None,
+      text: String::new(),
+    },
+  }
+}
+
+/// Serialize a `DisplayNode` tree to the JSON the Playground consumes.
+fn display_node_to_json(node: &DisplayNode) -> String {
+  match node {
+    DisplayNode::Panel(child) => {
+      format!(
+        r#"{{"kind":"panel","child":{}}}"#,
+        display_node_to_json(child)
+      )
+    }
+    DisplayNode::Grid(rows) => {
+      let row_json: Vec<String> = rows
+        .iter()
+        .map(|row| {
+          let cells: Vec<String> =
+            row.iter().map(display_node_to_json).collect();
+          format!("[{}]", cells.join(","))
+        })
+        .collect();
+      format!(r#"{{"kind":"grid","rows":[{}]}}"#, row_json.join(","))
+    }
+    DisplayNode::Column(children) => {
+      let cs: Vec<String> = children.iter().map(display_node_to_json).collect();
+      format!(r#"{{"kind":"column","children":[{}]}}"#, cs.join(","))
+    }
+    DisplayNode::Row(children) => {
+      let cs: Vec<String> = children.iter().map(display_node_to_json).collect();
+      format!(r#"{{"kind":"row","children":[{}]}}"#, cs.join(","))
+    }
+    DisplayNode::Checkbox {
+      target,
+      checked,
+      on,
+      off,
+    } => match target {
+      Some(t) => format!(
+        r#"{{"kind":"checkbox","target":"{}","checked":{},"on":"{}","off":"{}"}}"#,
+        json_escape_manipulate(t),
+        checked,
+        json_escape_manipulate(on),
+        json_escape_manipulate(off),
+      ),
+      None => format!(
+        r#"{{"kind":"checkbox","checked":{},"on":"{}","off":"{}"}}"#,
+        checked,
+        json_escape_manipulate(on),
+        json_escape_manipulate(off),
+      ),
+    },
+    DisplayNode::Static { svg, text } => match svg {
+      Some(svg) => format!(
+        r#"{{"kind":"static","svg":"{}"}}"#,
+        json_escape_manipulate(svg)
+      ),
+      None => format!(
+        r#"{{"kind":"static","text":"{}"}}"#,
+        json_escape_manipulate(text)
+      ),
+    },
+  }
 }
 
 #[cfg(test)]

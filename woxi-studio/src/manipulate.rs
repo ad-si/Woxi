@@ -12,8 +12,9 @@ use std::sync::Arc;
 use iced::widget::image;
 use iced::widget::svg;
 use woxi::functions::graphics::{
-  LabelRun, ManipulateControl, ManipulateSpec, extract_control_spec,
-  extract_manipulate_spec, manipulate_block_code,
+  DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
+  apply_manipulate_mutations, build_manipulate_display, extract_control_spec,
+  extract_manipulate_spec,
 };
 use woxi::syntax::Expr;
 
@@ -108,6 +109,15 @@ pub struct ManipulateState {
   /// scope regardless of the slider state.
   pub initialization: Option<String>,
   pub controls: Vec<ControlState>,
+  /// Mutable `ControlType -> None` state variables, `(name, current value as
+  /// InputForm)`. Passed live in the binding set so interactive displays can
+  /// rewrite them.
+  pub state: Vec<(String, String)>,
+  /// Extra display expressions (InputForm), e.g. a `Dynamic[Panel[Grid[…]]]`
+  /// of checkboxes, rebuilt into `display_trees` on every re-evaluation.
+  pub displays: Vec<String>,
+  /// The rendered widget tree for each display element.
+  pub display_trees: Vec<DisplayNode>,
   pub graphics_svg: Option<String>,
   pub graphics_handle: Option<svg::Handle>,
   pub graphics_image: Option<(image::Handle, u32, u32)>,
@@ -131,6 +141,9 @@ impl ManipulateState {
       body: spec.body_code,
       initialization: spec.initialization,
       controls,
+      state: spec.state,
+      displays: spec.displays,
+      display_trees: Vec::new(),
       graphics_svg: None,
       graphics_handle: None,
       graphics_image: None,
@@ -141,6 +154,37 @@ impl ManipulateState {
     Some(state)
   }
 
+  /// The full binding set (visible controls + mutable state) used to
+  /// re-evaluate the body and render the display elements.
+  fn bindings(&self) -> Vec<(String, String)> {
+    let mut b: Vec<(String, String)> = self
+      .controls
+      .iter()
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    b.extend(self.state.iter().cloned());
+    b
+  }
+
+  /// Apply an interactive checkbox write-back (e.g. `data[[3, 5]] = 1`),
+  /// update the affected state variable, and re-render.
+  pub fn apply_display_mutation(
+    &mut self,
+    mutation: &str,
+    scale_factor: f32,
+    fontdb: &Arc<resvg::usvg::fontdb::Database>,
+  ) {
+    let updated =
+      apply_manipulate_mutations(&self.bindings(), &[mutation.to_string()]);
+    for (name, value) in updated {
+      match self.state.iter_mut().find(|(n, _)| *n == name) {
+        Some(slot) => slot.1 = value,
+        None => self.state.push((name, value)),
+      }
+    }
+    self.reevaluate(scale_factor, fontdb);
+  }
+
   /// Re-run the body with the current control bindings and update the
   /// cached SVG / text output. Called on every slider change.
   pub fn reevaluate(
@@ -148,19 +192,27 @@ impl ManipulateState {
     scale_factor: f32,
     fontdb: &Arc<resvg::usvg::fontdb::Database>,
   ) {
-    let bindings: Vec<(String, String)> = self
-      .controls
-      .iter()
-      .map(|c| (c.name().to_string(), c.current_code()))
-      .collect();
-    let block = manipulate_block_code(&self.body, &bindings);
+    let bindings = self.bindings();
     // Prepend `Initialization :> …` code so helper definitions made there
     // (e.g. `d[t_] := …`) are in scope while the body evaluates. The init
     // is a CompoundExpression — join with `;` so both run in one call.
     let code = match self.initialization.as_deref() {
-      Some(init) => format!("{init}; {block}"),
-      None => block,
+      Some(init) => format!("{init}; {}", self.body),
+      None => self.body.clone(),
     };
+
+    // Install the bindings as globals once so a large `data` matrix is parsed
+    // a single time, then evaluate the body and rebuild the display elements
+    // against those globals (empty local bindings → no matrix re-embed).
+    let displays = self.displays.clone();
+    let (render, display_trees) = woxi::with_scoped_globals(&bindings, || {
+      let trees: Vec<_> = displays
+        .iter()
+        .map(|d| build_manipulate_display(d, &[]))
+        .collect();
+      (woxi::interpret_with_stdout(&code), trees)
+    });
+    self.display_trees = display_trees;
 
     // Double-buffer the render: rasterize the new output into locals and
     // only swap the cached fields once the replacement is ready, rather
@@ -170,7 +222,7 @@ impl ManipulateState {
     // dragged. A result that genuinely produces no output still blanks
     // the frame — the old rendering is only preserved by being replaced,
     // never by an absent one.
-    match woxi::interpret_with_stdout(&code) {
+    match render {
       Ok(result) => {
         let cleaned = if result.graphics.is_some() || result.result == "\0" {
           String::new()

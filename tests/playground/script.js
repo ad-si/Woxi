@@ -340,6 +340,17 @@ function renderManipulate(item) {
       current[ctrl.name] = { low: ctrl.lowInit, high: ctrl.highInit }
     }
   }
+  // Mutable state variables (ControlType -> None) carry an InputForm value
+  // string that interactive displays (e.g. a Checkbox grid) can rewrite.
+  const stateVars = (item.state && typeof item.state === "object")
+    ? item.state
+    : {}
+  for (const name in stateVars) current[name] = stateVars[name]
+
+  // Whether this widget has extra display elements (Checkbox grids, …). When
+  // it does, every re-render goes through the "full" path so the displays and
+  // any checkbox write-backs stay in sync with the body.
+  const hasDisplays = Array.isArray(item.displays) && item.displays.length > 0
 
   // Controls panel
   const controlsEl = document.createElement("div")
@@ -349,6 +360,10 @@ function renderManipulate(item) {
   const outputEl = document.createElement("div")
   outputEl.className = "manipulate-output"
   fillManipulateOutput(outputEl, item.initial)
+
+  // Extra-display panel (rendered from the initial widget trees, if any).
+  const displaysEl = document.createElement("div")
+  displaysEl.className = "manipulate-displays"
 
   // Per-widget coalescing state.  At most one evaluation is in flight
   // at a time: slider events that fire while an eval is pending only
@@ -361,6 +376,17 @@ function renderManipulate(item) {
     current,
     inflight: false,
     pendingBindings: null,
+    // Checkbox write-backs waiting to be sent (merged while an eval is in
+    // flight, then flushed on the next dispatch).
+    pendingMutations: [],
+    // Whether the display grid needs rebuilding on the next dispatch. Only a
+    // control change (which can resize the grid) sets this; a checkbox toggle
+    // leaves the grid structure intact (the clicked box already reflects its
+    // new state), so we skip the expensive re-expansion and re-render only the
+    // body. Cleared once a rebuild is dispatched.
+    structureDirty: false,
+    // Set per-dispatch: whether that request asked for fresh display trees.
+    expectDisplays: false,
   }
 
   // Format a continuous value for display (strip trailing zeros).
@@ -382,15 +408,26 @@ function renderManipulate(item) {
         bindings[ctrl.name] = String(v)
       }
     }
+    // State variables already hold InputForm value strings.
+    for (const name in stateVars) bindings[name] = current[name]
     return bindings
   }
 
-  function requestUpdate() {
+  // `mutations` is an optional array of write-back assignments (e.g.
+  // `data[[3, 5]] = 1`) produced by toggling a checkbox. A control change
+  // (no mutations) can resize the grid, so it marks the structure dirty; a
+  // checkbox toggle does not (only the body needs re-rendering).
+  function requestUpdate(mutations) {
     if (!worker) return
+    if (Array.isArray(mutations) && mutations.length > 0) {
+      widget.pendingMutations.push(...mutations)
+    } else {
+      widget.structureDirty = true
+    }
     const bindings = buildBindings()
     if (widget.inflight) {
-      // An evaluation is already running; just remember the latest
-      // desired bindings.  Whatever was previously pending is dropped.
+      // An evaluation is already running; remember the latest bindings.
+      // Pending mutations accumulate and are flushed on the next dispatch.
       widget.pendingBindings = bindings
       return
     }
@@ -403,15 +440,109 @@ function renderManipulate(item) {
     const requestId = ++manipulateRequestCounter
     manipulateRequests.set(requestId, widget)
     outputEl.classList.add("stale")
-    worker.postMessage({
-      type: "evaluate_manipulate",
-      requestId,
-      body: item.body,
-      bindings,
-    })
+    if (hasDisplays) {
+      const mutations = widget.pendingMutations
+      widget.pendingMutations = []
+      // Only rebuild the (expensive) display grid when its structure may have
+      // changed. A pure checkbox toggle re-renders just the body.
+      const wantDisplays = widget.structureDirty
+      widget.structureDirty = false
+      widget.expectDisplays = wantDisplays
+      worker.postMessage({
+        type: "evaluate_manipulate_full",
+        requestId,
+        body: item.body,
+        displays: wantDisplays ? item.displays : [],
+        bindings,
+        mutations,
+      })
+    } else {
+      worker.postMessage({
+        type: "evaluate_manipulate",
+        requestId,
+        body: item.body,
+        bindings,
+      })
+    }
   }
 
   widget.dispatchUpdate = dispatchUpdate
+
+  // Render the widget trees for the extra display elements. Each checkbox
+  // toggle produces a `target = value` write-back that re-renders the widget.
+  function renderDisplayTree(node) {
+    if (!node || typeof node !== "object") return document.createTextNode("")
+    switch (node.kind) {
+      case "panel": {
+        const div = document.createElement("div")
+        div.className = "manipulate-display-panel"
+        div.appendChild(renderDisplayTree(node.child))
+        return div
+      }
+      case "grid": {
+        const grid = document.createElement("div")
+        grid.className = "manipulate-display-grid"
+        for (const row of node.rows || []) {
+          const tr = document.createElement("div")
+          tr.className = "manipulate-display-grid-row"
+          for (const cell of row) tr.appendChild(renderDisplayTree(cell))
+          grid.appendChild(tr)
+        }
+        return grid
+      }
+      case "column":
+      case "row": {
+        const div = document.createElement("div")
+        div.className = node.kind === "row"
+          ? "manipulate-display-row"
+          : "manipulate-display-column"
+        for (const c of node.children || []) {
+          div.appendChild(renderDisplayTree(c))
+        }
+        return div
+      }
+      case "checkbox": {
+        const input = document.createElement("input")
+        input.type = "checkbox"
+        input.checked = !!node.checked
+        input.className = "manipulate-display-checkbox"
+        if (node.target) {
+          input.addEventListener("change", () => {
+            const val = input.checked ? node.on : node.off
+            requestUpdate([`${node.target} = ${val}`])
+          })
+        } else {
+          input.disabled = true
+        }
+        return input
+      }
+      case "static": {
+        const div = document.createElement("div")
+        if (node.svg) {
+          div.className = "graphics-box"
+          div.innerHTML = node.svg
+        } else {
+          div.className = "text-box"
+          div.textContent = node.text || ""
+        }
+        return div
+      }
+      default:
+        return document.createTextNode("")
+    }
+  }
+
+  function renderDisplays(trees) {
+    displaysEl.innerHTML = ""
+    if (!Array.isArray(trees)) return
+    for (const tree of trees) displaysEl.appendChild(renderDisplayTree(tree))
+  }
+  widget.renderDisplays = renderDisplays
+
+  // Populate the initial display trees, if the widget shipped any.
+  if (hasDisplays && item.initial && item.initial.displayTrees) {
+    renderDisplays(item.initial.displayTrees)
+  }
 
   for (const ctrl of item.controls) {
     const row = document.createElement("label")
@@ -579,6 +710,9 @@ function renderManipulate(item) {
   }
 
   box.appendChild(controlsEl)
+  // Extra display elements (e.g. the Checkbox grid) sit above the rendered
+  // body output.
+  if (hasDisplays) box.appendChild(displaysEl)
   box.appendChild(outputEl)
   return box
 }
@@ -700,6 +834,41 @@ function initWorker() {
       // so rapid slider movement doesn't trigger repeated localStorage
       // writes of full SVGs.  The initial rendering is already
       // persisted when the "result" message first arrived.
+    }
+    else if (type === "manipulate_full_result") {
+      const widget = manipulateRequests.get(e.data.requestId)
+      manipulateRequests.delete(e.data.requestId)
+      if (!widget) return
+      widget.inflight = false
+      if (success) {
+        try {
+          const payload = JSON.parse(result)
+          fillManipulateOutput(widget.outputEl, payload.output || {})
+          // Only replace the display DOM when this request asked for a
+          // rebuild; a checkbox toggle leaves the existing grid in place (the
+          // clicked box already shows its new state).
+          if (widget.expectDisplays) widget.renderDisplays(payload.displays)
+          // Fold any updated state values back into the binding set so the
+          // next toggle/slider builds on the current matrix.
+          if (payload.state && typeof payload.state === "object") {
+            for (const name in payload.state) {
+              widget.current[name] = payload.state[name]
+            }
+          }
+        } catch (_) {
+          fillManipulateOutput(widget.outputEl, { error: result })
+        }
+      } else {
+        fillManipulateOutput(widget.outputEl, { error: message })
+      }
+      // Flush any binding/mutation update queued while we were busy. Queued
+      // mutations always travel with `pendingBindings` (set together in
+      // requestUpdate), so dispatching on the latter also flushes them.
+      if (widget.pendingBindings) {
+        const next = widget.pendingBindings
+        widget.pendingBindings = null
+        widget.dispatchUpdate(next)
+      }
     }
   }
 

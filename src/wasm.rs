@@ -382,6 +382,20 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
       initial_parts.push(format!(r#""textSvg":"{}""#, json_escape(output_svg)));
     }
   }
+  // Render any extra display elements (e.g. a Checkbox grid) against the
+  // initial bindings so the widget is fully populated on first paint.
+  // Install the bindings as globals once so a large `data` matrix is parsed a
+  // single time rather than once per display.
+  if !spec.displays.is_empty() {
+    let trees: Vec<String> = crate::with_scoped_globals(&bindings, || {
+      spec
+        .displays
+        .iter()
+        .map(|d| crate::functions::graphics::render_manipulate_display(d, &[]))
+        .collect()
+    });
+    initial_parts.push(format!(r#""displayTrees":[{}]"#, trees.join(",")));
+  }
   let initial_json = format!("{{{}}}", initial_parts.join(","));
 
   Some(format!(
@@ -425,6 +439,94 @@ pub fn evaluate_manipulate(body: &str, bindings_json: &str) -> String {
     }
   }
   format!("{{{}}}", parts.join(","))
+}
+
+/// Render a Manipulate body, its extra display elements, and any pending
+/// interactive write-backs in one call. Used by widgets that have display
+/// elements (e.g. a `Checkbox` grid) that both read and rewrite shared
+/// state.
+///
+/// `displays_json` and `mutations_json` are JSON string arrays. Each
+/// mutation is an assignment (e.g. `data[[3, 5]] = 1`) applied before the
+/// re-render; the updated value of every mutated variable is returned under
+/// `state` so the frontend can keep its binding set in sync.
+///
+/// The result is `{"output":{svg|text|textSvg}, "displays":[<tree>…],
+/// "state":{name:value,…}}`.
+#[wasm_bindgen]
+pub fn evaluate_manipulate_full(
+  body: &str,
+  displays_json: &str,
+  bindings_json: &str,
+  mutations_json: &str,
+) -> String {
+  use crate::functions::graphics as g;
+  let bindings = g::parse_manipulate_bindings(bindings_json);
+  let displays = g::parse_json_string_array(displays_json);
+  let mutations = g::parse_json_string_array(mutations_json);
+  let mutated_vars = g::mutation_target_symbols(&mutations);
+
+  // Install the bindings as globals once — parsing a large `data` matrix a
+  // single time — then evaluate the write-backs, body, and displays against
+  // them without re-embedding (and re-parsing) that matrix every call.
+  let (output, trees, updated) = crate::with_scoped_globals(&bindings, || {
+    // Apply interactive write-backs to the installed globals.
+    for m in &mutations {
+      let _ = crate::interpret(m);
+    }
+    // Read back the mutated variables so the frontend can track them.
+    let updated: Vec<(String, String)> = mutated_vars
+      .iter()
+      .filter_map(|v| {
+        crate::interpret_to_expr(v)
+          .ok()
+          .map(|e| (v.clone(), crate::syntax::expr_to_input_form(&e)))
+      })
+      .collect();
+
+    // Body output — the globals are in scope, so the body string carries no
+    // matrix literal.
+    let output = match crate::interpret_with_stdout(body) {
+      Ok(result) => {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(ref svg) = result.graphics {
+          parts.push(format!(r#""svg":"{}""#, json_escape(svg)));
+        }
+        let cleaned_text = residual_text(&result.result);
+        if !cleaned_text.is_empty() && result.graphics.is_none() {
+          parts.push(format!(r#""text":"{}""#, json_escape(&cleaned_text)));
+          if let Some(ref output_svg) = result.output_svg {
+            parts.push(format!(r#""textSvg":"{}""#, json_escape(output_svg)));
+          }
+        }
+        format!("{{{}}}", parts.join(","))
+      }
+      Err(e) => format!(r#"{{"error":"{}"}}"#, json_escape(&format!("{e}"))),
+    };
+
+    // Displays render against the installed globals (empty local bindings).
+    let trees: Vec<String> = displays
+      .iter()
+      .map(|d| g::render_manipulate_display(d, &[]))
+      .collect();
+
+    (output, trees, updated)
+  });
+
+  // Report the updated state values so the frontend can track them.
+  let state_parts: Vec<String> = updated
+    .iter()
+    .map(|(name, value)| {
+      format!(r#""{}":"{}""#, json_escape(name), json_escape(value))
+    })
+    .collect();
+
+  format!(
+    r#"{{"output":{},"displays":[{}],"state":{{{}}}}}"#,
+    output,
+    trees.join(","),
+    state_parts.join(","),
+  )
 }
 
 /// Build a single JSON object string for an output item.

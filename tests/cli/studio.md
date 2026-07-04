@@ -91,10 +91,13 @@ dismiss it without losing the scroll position.
 widget with sliders and pick lists.  Option values such as
 `Initialization :> …` are preserved and prepended to every
 re-evaluation.  Discrete pick lists may be given as an expression that
-evaluates to a list (e.g. `{g, PolyhedronData[All]}`).  Controls with no
-visible UI — a `Locator` or `ControlType -> None` — bind their variable
-to a (frozen) initial value, and extra display arguments such as a
-trailing `Dynamic[Panel[…]]` are ignored.
+evaluates to a list (e.g. `{g, PolyhedronData[All]}`).  A `Locator`
+control binds its variable to a (frozen) initial value.  A
+`ControlType -> None` variable has no slider but stays live, mutable
+state: extra display arguments such as a trailing
+`Dynamic[Panel[Grid[… Checkbox …]]]` are rendered as interactive
+widgets, and toggling a checkbox writes back into that state and
+re-renders both the display and the body.
 
 Output text is rendered in a read-only text editor, so it can be
 selected and copied with the mouse.

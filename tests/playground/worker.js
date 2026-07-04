@@ -173,4 +173,50 @@ self.onmessage = async function (e) {
       })
     }
   }
+
+  // Re-evaluate a Manipulate that has extra display elements (e.g. a
+  // Checkbox grid): renders the body, the display widget trees, and applies
+  // any pending checkbox write-backs in one call, returning the updated
+  // state so the main thread can keep its bindings in sync.
+  if (type === "evaluate_manipulate_full") {
+    if (!wasm) {
+      postMessage({
+        type: "manipulate_full_result",
+        requestId: e.data.requestId,
+        success: false,
+        message: "WASM module not loaded",
+      })
+      return
+    }
+    try {
+      lastPanic = null
+      const body = e.data.body
+      const displays = JSON.stringify(e.data.displays || [])
+      const bindings = JSON.stringify(e.data.bindings || {})
+      const mutations = JSON.stringify(e.data.mutations || [])
+      const result = wasm.evaluate_manipulate_full(
+        body,
+        displays,
+        bindings,
+        mutations,
+      )
+      postMessage({
+        type: "manipulate_full_result",
+        requestId: e.data.requestId,
+        success: true,
+        result,
+      })
+    }
+    catch (error) {
+      const cause = await recoverWasm(error.message)
+      postMessage({
+        type: "manipulate_full_result",
+        requestId: e.data.requestId,
+        success: false,
+        message: "Error: the Woxi kernel restarted after an internal error. " +
+          "Cause: " + cause,
+        restarted: true,
+      })
+    }
+  }
 }

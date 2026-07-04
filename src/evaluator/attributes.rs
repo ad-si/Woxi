@@ -255,6 +255,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "PreDecrement" | "Unset" => {
       vec!["HoldFirst", "Protected", "ReadProtected"]
     }
+    // Dynamic holds its displayed expression (Attributes[Dynamic] =
+    // {HoldFirst, Protected, ReadProtected}). Without this, `Dynamic[
+    // data[[i, j]]]` collapses to the cell's value and loses the reference
+    // an interactive control (e.g. a Checkbox) needs to write back to.
+    "Dynamic" => vec!["HoldFirst", "Protected", "ReadProtected"],
     "Message" | "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy"
     | "ClearAttributes" | "AssociateTo" | "KeyDropFrom" | "Inactivate" => {
       vec!["HoldFirst", "Protected"]

@@ -546,6 +546,53 @@ pre.output-box {
   word-wrap: break-word;
 }
 
+/* ── Manipulate extra-display elements (Checkbox grids, panels, …) ── */
+.manipulate-displays {
+  margin-top: 0.75rem;
+}
+
+.manipulate-display-panel {
+  display: inline-block;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  background: var(--panel-bg, rgba(127, 127, 127, 0.06));
+}
+
+.manipulate-display-grid {
+  display: inline-grid;
+  gap: 2px;
+}
+
+.manipulate-display-grid-row {
+  display: flex;
+  gap: 2px;
+}
+
+.manipulate-display-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.manipulate-display-row {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  align-items: center;
+}
+
+.manipulate-display-checkbox {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.manipulate-display-checkbox:disabled {
+  cursor: default;
+}
+
 .status {
   position: fixed;
   top: 1rem;
