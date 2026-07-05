@@ -312,6 +312,15 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         let d = try_eval_to_f64(&args[1])?;
         if d != 0.0 { Some(n / d) } else { None }
       }
+      // Champernowne constants: numeric (NumericQ True) but symbolic until
+      // numericized.
+      "ChampernowneNumber" if args.len() <= 1 => match args.first() {
+        None => Some(crate::functions::math_ast::champernowne_f64(10)),
+        Some(Expr::Integer(b)) if *b >= 2 => {
+          Some(crate::functions::math_ast::champernowne_f64(*b))
+        }
+        _ => None,
+      },
       // Stieltjes constants (machine-precision values from wolframscript)
       "StieltjesGamma" if args.len() == 1 => match &args[0] {
         Expr::Integer(0) => Some(0.5772156649015329),

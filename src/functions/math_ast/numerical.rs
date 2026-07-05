@@ -1470,6 +1470,18 @@ pub fn expr_to_bigfloat(
           let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(bigfloat_exp_integral_ei(&x, bits, rm, cc))
         }
+        "ChampernowneNumber" if args.len() <= 1 => {
+          let base = match args.first() {
+            None => 10,
+            Some(Expr::Integer(b)) if *b >= 2 => *b,
+            _ => {
+              return Err(InterpreterError::EvaluationError(
+                "N: invalid ChampernowneNumber base".into(),
+              ));
+            }
+          };
+          Ok(compute_champernowne(base, bits, rm, cc))
+        }
         _ => Err(InterpreterError::EvaluationError(format!(
           "N: cannot evaluate {}[...] to arbitrary precision",
           name
@@ -5034,6 +5046,73 @@ fn compute_khinchin(
   // Khinchin's constant K_0 (OEIS A002210, ~105 digits).
   let khinchin_str = "2.68545200106530644530971483548179569382038229399446295305115234555721885953715200280114117493184769799";
   BigFloat::parse(khinchin_str, astro_float::Radix::Dec, bits, rm, cc)
+}
+
+/// The decimal expansion of the base-b Champernowne constant — the digits
+/// of 1, 2, 3, … concatenated after the radix point in base b — truncated
+/// to `decimal_digits` decimal places, as a "0.ddd…" string. Computed
+/// exactly: enough base-b digits accumulate into a big integer M so that
+/// M/b^K determines the requested decimal digits, then long-divided.
+pub(crate) fn champernowne_decimal_digits(
+  base: i128,
+  decimal_digits: usize,
+) -> String {
+  use num_bigint::BigInt;
+  let k_needed = ((decimal_digits as f64 + 2.0) * std::f64::consts::LN_10
+    / (base as f64).ln())
+  .ceil() as usize
+    + 2;
+  let big_base = BigInt::from(base);
+  let mut m = BigInt::from(0);
+  let mut count = 0usize;
+  let mut n: i128 = 1;
+  'outer: loop {
+    let mut digits = Vec::new();
+    let mut v = n;
+    while v > 0 {
+      digits.push(v % base);
+      v /= base;
+    }
+    for &d in digits.iter().rev() {
+      m = &m * &big_base + BigInt::from(d);
+      count += 1;
+      if count >= k_needed {
+        break 'outer;
+      }
+    }
+    n += 1;
+  }
+  let ten_p = BigInt::from(10).pow(decimal_digits as u32);
+  let b_k = big_base.pow(count as u32);
+  let d = (&m * &ten_p) / &b_k;
+  let s = d.to_string();
+  format!(
+    "0.{}{}",
+    "0".repeat(decimal_digits.saturating_sub(s.len())),
+    s
+  )
+}
+
+/// The machine-precision value of ChampernowneNumber[base].
+pub(crate) fn champernowne_f64(base: i128) -> f64 {
+  champernowne_decimal_digits(base, 20).parse().unwrap_or(0.0)
+}
+
+fn compute_champernowne(
+  base: i128,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+  // Generous guard digits: the parsed decimal string must exceed the
+  // BigFloat's internal precision comfortably, like the ~105-digit
+  // hardcoded constant strings, or the displayed digit tail diverges from
+  // wolframscript.
+  let decimal_digits =
+    (bits as f64 * std::f64::consts::LOG10_2).ceil() as usize + 20;
+  let s = champernowne_decimal_digits(base, decimal_digits);
+  BigFloat::parse(&s, astro_float::Radix::Dec, bits, rm, cc)
 }
 
 /// ListFourierSequenceTransform[{a0, a1, ..., an}, omega] — discrete-time Fourier transform.

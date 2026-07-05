@@ -639,6 +639,7 @@ fn is_numeric_function(name: &str) -> bool {
       | "Power"
       | "Sqrt"
       | "Rational"
+      | "ChampernowneNumber"
       | "Sin"
       | "Cos"
       | "Tan"

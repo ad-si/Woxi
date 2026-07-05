@@ -7976,3 +7976,62 @@ mod cosine_sum_window_tests {
     assert_eq!(interpret("FlatTopWindow[-0.7]").unwrap(), "0.");
   }
 }
+
+mod champernowne_number_tests {
+  use woxi::interpret;
+
+  // The constant stays symbolic until numericized; it is numeric for
+  // predicates and comparisons.
+  #[test]
+  fn symbolic_and_numeric_status() {
+    assert_eq!(
+      interpret("ChampernowneNumber[]").unwrap(),
+      "ChampernowneNumber[]"
+    );
+    assert_eq!(
+      interpret("ChampernowneNumber[10]").unwrap(),
+      "ChampernowneNumber[10]"
+    );
+    assert_eq!(interpret("NumericQ[ChampernowneNumber[]]").unwrap(), "True");
+    assert_eq!(interpret("0 < ChampernowneNumber[] < 1").unwrap(), "True");
+  }
+
+  // Machine-precision values match wolframscript exactly (the digit
+  // strings are computed with exact big-integer arithmetic).
+  #[test]
+  fn machine_values() {
+    assert_eq!(
+      interpret("N[ChampernowneNumber[]]").unwrap(),
+      "0.12345678910111213"
+    );
+    assert_eq!(
+      interpret("N[ChampernowneNumber[2]]").unwrap(),
+      "0.8622401258680545"
+    );
+    assert_eq!(
+      interpret("N[ChampernowneNumber[3]]").unwrap(),
+      "0.598958167538434"
+    );
+    assert_eq!(
+      interpret("N[ChampernowneNumber[16]]").unwrap(),
+      "0.07111111111111111"
+    );
+  }
+
+  // Invalid numeric bases emit ::ibase; symbolic bases echo silently.
+  #[test]
+  fn base_validation() {
+    assert_eq!(
+      interpret("ChampernowneNumber[1]").unwrap(),
+      "ChampernowneNumber[1]"
+    );
+    assert_eq!(
+      interpret("ChampernowneNumber[2.5]").unwrap(),
+      "ChampernowneNumber[2.5]"
+    );
+    assert_eq!(
+      interpret("ChampernowneNumber[x]").unwrap(),
+      "ChampernowneNumber[x]"
+    );
+  }
+}

@@ -5346,6 +5346,28 @@ pub fn dispatch_math_functions(
         args: args.to_vec().into(),
       }));
     }
+    // ChampernowneNumber[] / ChampernowneNumber[b] — a numeric constant
+    // that stays symbolic until numericized with N. Non-integer or < 2
+    // numeric bases emit ::ibase; symbolic bases echo silently.
+    "ChampernowneNumber" => {
+      if args.len() <= 1
+        && let Some(first) = args.first()
+      {
+        let valid = matches!(first, Expr::Integer(b) if *b >= 2);
+        if !valid
+          && crate::functions::math_ast::try_eval_to_f64(first).is_some()
+        {
+          crate::emit_message(&format!(
+            "ChampernowneNumber::ibase: Base {} is not an integer greater than 1.",
+            crate::syntax::expr_to_output(first)
+          ));
+        }
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "ChampernowneNumber".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "CantorStaircase" if args.len() == 1 => {
       return Some(cantor_staircase_ast(&args[0]));
     }

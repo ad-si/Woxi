@@ -3675,7 +3675,7 @@ RegionResize,,,,11.0,3765
 AudioChannelMix,,🚫,,11.0,3785
 BayesianMinimization,,,,11.0,3785
 BuildingData,,🚫,,10.0,3785
-ChampernowneNumber,,,,7.0,3785
+ChampernowneNumber,Champernowne constant in any base >= 2 (symbolic until N; exact big-integer digit generation; NumericQ True),✅,pure,7.0,3785
 DynamicSetting,,🚫,,6.0,3785
 EmptyGraphQ,Tests whether a graph has no edges,✅,pure,8.0,3785
 FindVertexCover,,,,8.0,3785
