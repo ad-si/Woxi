@@ -6683,15 +6683,37 @@ mod erlang_tests {
   }
 
   // Non-positive-integer server counts emit ::intp; non-positive traffic
-  // emits ::posprm for ErlangB (which, unlike ErlangC, rejects a = 0);
-  // symbolic arguments stay unevaluated.
+  // emits ::posprm for ErlangB (which, unlike ErlangC, rejects a = 0).
   #[test]
   fn error_forms() {
     assert_eq!(interpret("ErlangB[0, 2]").unwrap(), "ErlangB[0, 2]");
     assert_eq!(interpret("ErlangB[3, -1]").unwrap(), "ErlangB[3, -1]");
     assert_eq!(interpret("ErlangB[3, 0]").unwrap(), "ErlangB[3, 0]");
-    assert_eq!(interpret("ErlangB[x, 2]").unwrap(), "ErlangB[x, 2]");
+    assert_eq!(interpret("ErlangB[x, 0]").unwrap(), "ErlangB[x, 0]");
+    assert_eq!(interpret("ErlangB[0, a]").unwrap(), "ErlangB[0, a]");
     assert_eq!(interpret("ErlangB[3]").unwrap(), "ErlangB[3]");
+  }
+
+  // Symbolic arguments produce wolframscript's Piecewise Gamma closed form
+  // (a^c/(E^a*Gamma[1 + c, a]) over the parameter domain).
+  #[test]
+  fn symbolic_closed_form() {
+    assert_eq!(
+      interpret("ErlangB[x, 2]").unwrap(),
+      "Piecewise[{{2^x/(E^2*Gamma[1 + x, 2]), Element[x, Integers] && x > 0}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("ErlangB[x, a]").unwrap(),
+      "Piecewise[{{a^x/(E^a*Gamma[1 + x, a]), Element[x, Integers] && Element[a, Reals] && a > 0 && x > 0}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("ErlangB[3, a]").unwrap(),
+      "Piecewise[{{a^3/(E^a*Gamma[4, a]), Element[a, Reals] && a > 0}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("ErlangB[x, 2.5]").unwrap(),
+      "Piecewise[{{(0.0820849986238988*2.5^x)/Gamma[1 + x, 2.5], Element[x, Integers] && x > 0}}, Indeterminate]"
+    );
   }
 }
 

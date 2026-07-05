@@ -7724,13 +7724,130 @@ pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated())
 }
 
+/// Symbolic ErlangB: wolframscript returns the closed Gamma form
+/// `a^c/(E^a*Gamma[1 + c, a])` guarded by a Piecewise over the parameter
+/// domain (`Element[c, Integers] && c > 0` for a symbolic server count,
+/// `Element[a, Reals] && a > 0` for symbolic traffic). Numeric-invalid
+/// arguments keep the numeric path's ::intp/::posprm behavior; strings and
+/// lists echo silently. (ErlangC's symbolic closed form is a two-branch
+/// Piecewise with mixed-strictness Inequality conditions and stays
+/// unevaluated.)
+fn erlang_b_symbolic(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let fc = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: fargs.into(),
+  };
+  let plausible_symbol = |e: &Expr| {
+    !matches!(e, Expr::String(_) | Expr::List(_))
+      && crate::functions::math_ast::try_eval_to_f64(e).is_none()
+  };
+  let c_num = crate::functions::math_ast::try_eval_to_f64(&args[0]);
+  let a_num = crate::functions::math_ast::try_eval_to_f64(&args[1]);
+  // Both numeric → exact numeric path; non-scalar symbolic shapes echo.
+  if c_num.is_some() && a_num.is_some() {
+    return None;
+  }
+  if (c_num.is_none() && !plausible_symbol(&args[0]))
+    || (a_num.is_none() && !plausible_symbol(&args[1]))
+  {
+    return None;
+  }
+  // A numeric server count must be a positive integer (else ::intp fires
+  // in the numeric path even when the traffic is symbolic).
+  if let Some(cv) = c_num
+    && (cv.fract() != 0.0 || cv < 1.0)
+  {
+    return None;
+  }
+  // Numeric traffic must be positive, matching the numeric path's message.
+  if let Some(av) = a_num
+    && av <= 0.0
+  {
+    crate::emit_message(&format!(
+      "{}::posprm: Parameter {} at position 2 in {}[{}, {}] is expected to be positive.",
+      name,
+      crate::syntax::expr_to_output(&args[1]),
+      name,
+      crate::syntax::expr_to_output(&args[0]),
+      crate::syntax::expr_to_output(&args[1]),
+    ));
+    return Some(Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    }));
+  }
+  let (c, a) = (args[0].clone(), args[1].clone());
+  // a^c * E^(-a) / Gamma[1 + c, a]
+  let body = fc(
+    "Times",
+    vec![
+      fc("Power", vec![a.clone(), c.clone()]),
+      fc(
+        "Power",
+        vec![
+          Expr::Constant("E".to_string()),
+          fc("Times", vec![Expr::Integer(-1), a.clone()]),
+        ],
+      ),
+      fc(
+        "Power",
+        vec![
+          fc(
+            "Gamma",
+            vec![fc("Plus", vec![Expr::Integer(1), c.clone()]), a.clone()],
+          ),
+          Expr::Integer(-1),
+        ],
+      ),
+    ],
+  );
+  let body = match crate::evaluator::evaluate_expr_to_expr(&body) {
+    Ok(b) => b,
+    Err(e) => return Some(Err(e)),
+  };
+  // Domain conditions in wolframscript's order: Element[c, Integers],
+  // Element[a, Reals], a > 0, c > 0 (each only for the symbolic slot).
+  let integers = || Expr::Identifier("Integers".to_string());
+  let reals = || Expr::Identifier("Reals".to_string());
+  let positive = |e: &Expr| Expr::Comparison {
+    operands: vec![e.clone(), Expr::Integer(0)],
+    operators: vec![crate::syntax::ComparisonOp::Greater],
+  };
+  let mut conds: Vec<Expr> = Vec::new();
+  if c_num.is_none() {
+    conds.push(fc("Element", vec![c.clone(), integers()]));
+  }
+  if a_num.is_none() {
+    conds.push(fc("Element", vec![a.clone(), reals()]));
+    conds.push(positive(&a));
+  }
+  if c_num.is_none() {
+    conds.push(positive(&c));
+  }
+  let cond = if conds.len() == 1 {
+    conds.pop().unwrap()
+  } else {
+    fc("And", conds)
+  };
+  Some(Ok(fc(
+    "Piecewise",
+    vec![
+      Expr::List(vec![Expr::List(vec![body, cond].into())].into()),
+      Expr::Identifier("Indeterminate".to_string()),
+    ],
+  )))
+}
+
 /// ErlangB[c, a] / ErlangC[c, a] — the Erlang blocking and waiting
 /// probabilities for c servers and offered traffic a, computed exactly over
 /// the rationals (machine reals convert via their exact binary fractions
 /// and round back). ErlangC clamps to 1 for a >= c and gives 0 for a = 0;
 /// ErlangB requires a > 0 (::posprm). A non-positive-integer numeric c
-/// emits ::intp. Symbolic arguments stay unevaluated (wolframscript's
-/// closed Gamma forms are out of scope).
+/// emits ::intp. Symbolic ErlangB arguments produce the Piecewise Gamma
+/// closed form via `erlang_b_symbolic`; symbolic ErlangC stays unevaluated.
 fn erlang_common(
   name: &str,
   args: &[Expr],
@@ -7784,6 +7901,10 @@ fn erlang_common(
   };
   if args.len() != 2 {
     return unevaluated();
+  }
+  // Symbolic ErlangB arguments take the closed-Gamma-form path.
+  if !waiting && let Some(r) = erlang_b_symbolic(name, args) {
+    return r;
   }
   // c: a positive machine integer; other numerics emit ::intp, symbols
   // stay unevaluated.

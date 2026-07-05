@@ -4243,7 +4243,7 @@ CapitalDifferentialD,,,,3.0,4387
 CurrentScreenImage,,🚫,,11.2,4387
 DecryptFile,,🚫,,11.1,4387
 EllipticFilterModel,,,,9.0,4387
-ErlangB,Erlang blocking probability for c servers and traffic a (exact rationals; reals round-trip exactly),✅,pure,9.0,4387
+ErlangB,Erlang blocking probability for c servers and traffic a (exact rationals; symbolic arguments give the Piecewise Gamma closed form),✅,pure,9.0,4387
 ExactBlackmanWindow,Compute ExactBlackmanWindow value,✅,pure,9.0,4387
 FeatureDistance,,🚫,,11.0,4387
 FileSystemScan,,,,11.0,4387
