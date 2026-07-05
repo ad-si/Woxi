@@ -121,6 +121,15 @@ pub fn dispatch_boolean_functions(
     "UnateQ" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::boolean_ast::unate_q_ast(args));
     }
+    "BooleanMaxterms" if args.len() == 2 => {
+      return Some(crate::functions::boolean_ast::boolean_maxterms_ast(args));
+    }
+    "Conjunction" if args.len() == 2 => {
+      return Some(crate::functions::boolean_ast::conjunction_ast(args));
+    }
+    "Disjunction" if args.len() == 2 => {
+      return Some(crate::functions::boolean_ast::disjunction_ast(args));
+    }
     "VectorLess" if args.len() == 1 => {
       return Some(crate::functions::boolean_ast::vector_less_ast(args));
     }

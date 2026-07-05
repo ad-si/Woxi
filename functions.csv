@@ -4115,7 +4115,7 @@ StringRotateRight,Rotates characters in a string to the right,✅,pure,9.0,4225
 TrainingProgressFunction,,🚫,,11.1,4225
 TransferFunctionCancel,,🚫,,8.0,4225
 AsymptoticRSolveValue,,,,12.0,4262
-BooleanMaxterms,,,,7.0,4262
+BooleanMaxterms,Conjunction of maxterms from True/False rows or indices (ascending index order; dual of BooleanMinterms),✅,pure,7.0,4262
 CalendarData,,🚫,,9.0,4262
 CauchyWindow,,,,9.0,4262
 ClearCookies,,🚫,,11.0,4262
@@ -4274,7 +4274,7 @@ BiweightMidvariance,,,,11.1,4437
 CentralFeature,,,,11.1,4437
 CepstrogramArray,,🚫,,11.1,4437
 CodeAssistOptions,,🚫,,10.0,4437
-Conjunction,,,,7.0,4437
+Conjunction,And of an expression over all True/False assignments of the given variables (minimized),✅,pure,7.0,4437
 DocumentGenerators,,🚫,,10.0,4437
 FindKClub,,,,9.0,4437
 FindMinimumCut,,,,9.0,4437
@@ -4401,7 +4401,7 @@ ClassifierFunction,,🚫,,10.0,4567
 ContrastiveLossLayer,,🚫,,11.1,4567
 DefaultNaturalLanguage,,,,4.0,4567
 DimensionalCombinations,,,,10.0,4567
-Disjunction,,,,7.0,4567
+Disjunction,Or of an expression over all True/False assignments of the given variables (minimized),✅,pure,7.0,4567
 GoodmanKruskalGammaTest,,,,9.0,4567
 GraphHub,,,,9.0,4567
 ImageDemosaic,,🚫,,9.0,4567

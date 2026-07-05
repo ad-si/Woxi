@@ -2994,3 +2994,29 @@ mod from_julian_date_tests {
     assert_eq!(interpret("FromJulianDate[x]").unwrap(), "FromJulianDate[x]");
   }
 }
+
+// Regression: JulianDate accepts DateObject input (previously only
+// component lists worked).
+mod julian_date_date_object_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn date_object_input() {
+    assert_eq!(
+      interpret("JulianDate[DateObject[{2023, 2, 24, 12, 0, 0}]]").unwrap(),
+      "2.46*^6"
+    );
+    assert_eq!(
+      interpret("JulianDate[DateObject[{2023, 2, 24}]]").unwrap(),
+      "2.4599995*^6"
+    );
+    // Round-trips with FromJulianDate to the same instant.
+    assert_eq!(
+      interpret(
+        "FromJulianDate[JulianDate[DateObject[{2023, 2, 24, 6, 30, 15}]]]"
+      )
+      .unwrap(),
+      "DateObject[{2023, 2, 24, 6, 30, 15.000012516975403}, Instant, Gregorian, 0.]"
+    );
+  }
+}

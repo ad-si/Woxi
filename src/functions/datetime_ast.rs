@@ -2793,6 +2793,16 @@ pub fn julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(args));
   }
 
+  // A DateObject argument contributes its component list directly (all
+  // Woxi date instants carry TimeZone 0, matching JulianDate's UTC base).
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "DateObject"
+    && !dargs.is_empty()
+    && matches!(&dargs[0], Expr::List(_))
+  {
+    return julian_date_ast(std::slice::from_ref(&dargs[0]));
+  }
+
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() && items.len() <= 6 => items,
     _ => return Ok(unevaluated(args)),

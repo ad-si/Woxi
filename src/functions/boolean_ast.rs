@@ -3420,3 +3420,217 @@ pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::Identifier("True".to_string()))
 }
+
+/// BooleanMaxterms[spec, {vars}] — the conjunction of maxterms given as
+/// True/False rows or indices. The dual of BooleanMinterms: literals keep
+/// the same polarity (plain where True / bit 1, negated where False),
+/// each maxterm is an Or, the terms conjoin in ascending index order, an
+/// empty specification is True, and covering every index collapses to
+/// False.
+pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "BooleanMaxterms".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  let bspec = || {
+    crate::emit_message(&format!(
+      "BooleanMaxterms::bspec: {} is not a valid BooleanMaxterms specification.",
+      crate::syntax::format_expr(
+        &Expr::FunctionCall {
+          name: "BooleanMaxterms".to_string(),
+          args: args.to_vec().into(),
+        },
+        crate::syntax::ExprForm::Output
+      )
+    ));
+  };
+  let vars = match &args[1] {
+    Expr::List(v) if !v.is_empty() => v,
+    _ => {
+      bspec();
+      return Ok(unevaluated());
+    }
+  };
+  let nvars = vars.len();
+  if nvars > 32 {
+    return Ok(unevaluated());
+  }
+  let mut rows: Vec<Vec<bool>> = Vec::new();
+  let spec_items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      bspec();
+      return Ok(unevaluated());
+    }
+  };
+  let all_ints = spec_items
+    .iter()
+    .all(|i| matches!(i, Expr::Integer(v) if *v >= 0));
+  let all_rows = spec_items.iter().all(|i| {
+    matches!(i, Expr::List(cells) if cells.iter().all(
+      |c| matches!(c, Expr::Identifier(s) if s == "True" || s == "False")
+    ))
+  });
+  if all_ints && !spec_items.is_empty() {
+    for i in spec_items.iter() {
+      let Expr::Integer(v) = i else { unreachable!() };
+      let idx = (*v as u64) % (1u64 << nvars);
+      rows.push(
+        (0..nvars)
+          .map(|b| (idx >> (nvars - 1 - b)) & 1 == 1)
+          .collect(),
+      );
+    }
+  } else if all_rows {
+    let mut row_len: Option<usize> = None;
+    for i in spec_items.iter() {
+      let Expr::List(cells) = i else { unreachable!() };
+      if cells.len() > nvars
+        || *row_len.get_or_insert(cells.len()) != cells.len()
+      {
+        bspec();
+        return Ok(unevaluated());
+      }
+      rows.push(
+        cells
+          .iter()
+          .map(|c| matches!(c, Expr::Identifier(s) if s == "True"))
+          .collect(),
+      );
+    }
+  } else if spec_items.is_empty() {
+    return Ok(Expr::Identifier("True".to_string()));
+  } else {
+    bspec();
+    return Ok(unevaluated());
+  }
+
+  // Deduplicate and order by ascending maxterm index (rows left-aligned).
+  let sort_key = |row: &Vec<bool>| -> u64 {
+    let mut k = 0u64;
+    for b in 0..nvars {
+      k <<= 1;
+      if *row.get(b).unwrap_or(&false) {
+        k |= 1;
+      }
+    }
+    k
+  };
+  rows.sort_by_key(&sort_key);
+  rows.dedup();
+
+  // Covering every maxterm collapses the conjunction to False.
+  let covered: u64 = rows.iter().map(|r| 1u64 << (nvars - r.len())).sum();
+  if covered >= (1u64 << nvars) {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
+  let terms: Vec<Expr> = rows
+    .iter()
+    .map(|row| {
+      let literals: Vec<Expr> = row
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| {
+          if b {
+            vars[i].clone()
+          } else {
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Not,
+              operand: Box::new(vars[i].clone()),
+            }
+          }
+        })
+        .collect();
+      if literals.len() == 1 {
+        literals.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Or".to_string(),
+          args: literals.into(),
+        }
+      }
+    })
+    .collect();
+  let result = match terms.len() {
+    0 => Expr::Identifier("True".to_string()),
+    1 => terms.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "And".to_string(),
+      args: terms.into(),
+    },
+  };
+  evaluate_expr_to_expr(&result)
+}
+
+/// Conjunction[expr, vars] / Disjunction[expr, vars] — And/Or of the
+/// expression over every True/False assignment of the given variables
+/// (a bare symbol counts as one variable), like wolframscript's Boolean
+/// quantifier eliminations.
+fn boolean_quantifier(
+  name: &str,
+  args: &[Expr],
+  conjunct: bool,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let vars: Vec<Expr> = match &args[1] {
+    Expr::List(v) if !v.is_empty() => v.to_vec(),
+    Expr::Identifier(_) => vec![args[1].clone()],
+    _ => return unevaluated(),
+  };
+  let n = vars.len();
+  if n > 16 {
+    return unevaluated();
+  }
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let mut branches: Vec<Expr> = Vec::with_capacity(1 << n);
+  for idx in 0..(1usize << n) {
+    let rules: Vec<Expr> = vars
+      .iter()
+      .enumerate()
+      .map(|(vi, v)| Expr::Rule {
+        pattern: Box::new(v.clone()),
+        replacement: Box::new(Expr::Identifier(
+          if idx & (1usize << (n - 1 - vi)) == 0 {
+            "True".to_string()
+          } else {
+            "False".to_string()
+          },
+        )),
+      })
+      .collect();
+    branches.push(eval(&Expr::FunctionCall {
+      name: "ReplaceAll".to_string(),
+      args: vec![args[0].clone(), Expr::List(rules.into())].into(),
+    })?);
+  }
+  // wolframscript returns minimized results (x || x collapses, absorption
+  // applies), so run the combined expression through BooleanMinimize.
+  let combined = eval(&Expr::FunctionCall {
+    name: if conjunct { "And" } else { "Or" }.to_string(),
+    args: branches.into(),
+  })?;
+  eval(&Expr::FunctionCall {
+    name: "BooleanMinimize".to_string(),
+    args: vec![combined].into(),
+  })
+}
+
+pub fn conjunction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  boolean_quantifier("Conjunction", args, true)
+}
+
+pub fn disjunction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  boolean_quantifier("Disjunction", args, false)
+}

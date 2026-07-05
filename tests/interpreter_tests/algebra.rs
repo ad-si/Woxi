@@ -10290,3 +10290,70 @@ mod replace_all_unary_op_tests {
     assert_eq!(interpret("(x || ! y) /. y -> True").unwrap(), "x");
   }
 }
+
+mod boolean_maxterms_tests {
+  use woxi::interpret;
+
+  // The dual of BooleanMinterms: Or-terms with the same literal polarity
+  // (plain where True / bit 1), conjoined in ascending index order.
+  #[test]
+  fn rows_and_indices() {
+    assert_eq!(
+      interpret("BooleanMaxterms[{{True, False}}, {x, y}]").unwrap(),
+      "x ||  !y"
+    );
+    assert_eq!(
+      interpret("BooleanMaxterms[{1, 2}, {x, y}]").unwrap(),
+      "( !x || y) && (x ||  !y)"
+    );
+    // Indices sort ascending regardless of the given order.
+    assert_eq!(
+      interpret("BooleanMaxterms[{2, 1}, {x, y}]").unwrap(),
+      "( !x || y) && (x ||  !y)"
+    );
+    assert_eq!(
+      interpret("BooleanMaxterms[{{False, False}}, {x, y}]").unwrap(),
+      " !x ||  !y"
+    );
+    assert_eq!(interpret("BooleanMaxterms[{0}, {x}]").unwrap(), " !x");
+    // Prefix rows cover the remaining variables.
+    assert_eq!(interpret("BooleanMaxterms[{{True}}, {x, y}]").unwrap(), "x");
+    // An empty specification is True (dual of Minterms' False).
+    assert_eq!(interpret("BooleanMaxterms[{}, {x, y}]").unwrap(), "True");
+  }
+}
+
+mod boolean_quantifier_tests {
+  use woxi::interpret;
+
+  // Conjunction/Disjunction are And/Or over all True/False assignments of
+  // the given variables, minimized like wolframscript.
+  #[test]
+  fn conjunction() {
+    assert_eq!(interpret("Conjunction[x && y || z, {x}]").unwrap(), "z");
+    assert_eq!(
+      interpret("Conjunction[Xor[x, y], {x, y}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Conjunction[x || y, {x, y, z}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Conjunction[(x && y) || (! x && z), {x}]").unwrap(),
+      "y && z"
+    );
+    // A bare symbol counts as one variable.
+    assert_eq!(interpret("Conjunction[x, x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn disjunction() {
+    assert_eq!(interpret("Disjunction[x && y, {x}]").unwrap(), "y");
+    assert_eq!(interpret("Disjunction[x, {y}]").unwrap(), "x");
+    assert_eq!(
+      interpret("Disjunction[(x && y) || (! x && z), {x}]").unwrap(),
+      "y || z"
+    );
+  }
+}
