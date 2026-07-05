@@ -6679,3 +6679,104 @@ fn complex_cos(zr: f64, zi: f64) -> (f64, f64) {
   // Cos(a + bi) = Cos(a) Cosh(b) - i Sin(a) Sinh(b)
   (zr.cos() * zi.cosh(), -zr.sin() * zi.sinh())
 }
+
+/// The cosine-sum windows: w(x) = Σ aₖ Cos[2πkx] on [-1/2, 1/2], zero
+/// outside, with the exact rational coefficients wolframscript uses (all
+/// with plus signs — negative lobes come from coefficient magnitudes, e.g.
+/// FlatTopWindow[1/4] = -54736843/1000000000). Exact arguments build the
+/// sum symbolically so the trig tables produce exact rationals and radical
+/// forms; Real arguments evaluate in floating point. Symbolic arguments
+/// stay unevaluated, like wolframscript.
+pub fn cosine_sum_window_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  // (numerators for a0, a1, …; common denominator)
+  let (numerators, denom): (&[i128], i128) = match name {
+    "BlackmanHarrisWindow" => (&[35875, 48829, 14128, 1168], 100000),
+    "NuttallWindow" => (&[88942, 121849, 36058, 3151], 250000),
+    "BlackmanNuttallWindow" => (&[3635819, 4891775, 1365995, 106411], 10000000),
+    "FlatTopWindow" => (
+      &[215578947, 416631580, 277263158, 83578947, 6947368],
+      1000000000,
+    ),
+    _ => return Ok(unevaluated()),
+  };
+
+  let Some(x) = try_eval_to_f64(&args[0]) else {
+    return Ok(unevaluated());
+  };
+  let is_real = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..));
+  if x.abs() > 0.5 {
+    return Ok(if is_real {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+  if is_real {
+    // Integer-numerator terms summed in coefficient order, divided once at
+    // the end. This matches wolframscript's machine values at most tested
+    // points; the remaining last-ULP drift at some arguments is the known
+    // summation-order/libm divergence class (no single ordering reproduces
+    // wolframscript everywhere — reverse and value-sorted orders each fix
+    // some points while breaking others).
+    let pi = std::f64::consts::PI;
+    let val: f64 = numerators
+      .iter()
+      .enumerate()
+      .map(|(k, &n)| n as f64 * (2.0 * pi * k as f64 * x).cos())
+      .sum::<f64>()
+      / denom as f64;
+    return Ok(Expr::Real(val));
+  }
+
+  // Exact argument: build Σ (nₖ/d) Cos[2πk x] and let the evaluator's exact
+  // trig tables fold it (rational at the common grid points, radicals
+  // elsewhere).
+  let rational = |n: i128, d: i128| Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
+  };
+  let terms: Vec<Expr> = numerators
+    .iter()
+    .enumerate()
+    .map(|(k, &n)| {
+      if k == 0 {
+        rational(n, denom)
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            rational(n, denom),
+            Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::Integer(2 * k as i128),
+                  Expr::Identifier("Pi".to_string()),
+                  args[0].clone(),
+                ]
+                .into(),
+              }]
+              .into(),
+            },
+          ]
+          .into(),
+        }
+      }
+    })
+    .collect();
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+}

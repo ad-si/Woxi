@@ -3709,7 +3709,7 @@ RamanujanTau,Ramanujan tau function,✅,pure,6.0,3803
 RowMinHeight,,,,3.0,3803
 StateSpaceRealization,,🚫,,8.0,3803
 Underoverscript,Underoverscript notation wrapper (stays symbolic),✅,unevaluated,3.0,3803
-BlackmanHarrisWindow,,,,9.0,3823
+BlackmanHarrisWindow,Blackman-Harris 4-term cosine-sum window on [-1/2 1/2] (exact rationals for exact input),✅,pure,9.0,3823
 CloudSubmit,,🚫,,10.2,3823
 ControllerManipulate,,🚫,,6.0,3823
 CreateIntermediateDirectories,,,,6.0,3823
@@ -4034,7 +4034,7 @@ AudioFrequencyShift,,🚫,,11.0,4173
 Autocomplete,,🚫,,10.2,4173
 AutocorrelationTest,,,,10.0,4173
 BaringhausHenzeTest,,,,10.2,4173
-BlackmanNuttallWindow,,,,9.0,4173
+BlackmanNuttallWindow,Blackman-Nuttall 4-term cosine-sum window on [-1/2 1/2] (exact rationals for exact input),✅,pure,9.0,4173
 BrightnessEqualize,,🚫,,11.1,4173
 Cepstrogram,Plot the power cepstrum of each partition (time vs quefrency),✅,pure,11.1,4173
 CombinatorS,,,,12.2,4173
@@ -4163,7 +4163,7 @@ GeoVisibleRegionBoundary,,🚫,,10.0,4291
 GroupCentralizer,,,,8.0,4291
 NumberFieldFundamentalUnits,,,,6.0,4291
 NumericArray,Typed numeric array with auto-detected element type,✅,pure,12.0,4291
-NuttallWindow,,,,9.0,4291
+NuttallWindow,Nuttall 4-term cosine-sum window on [-1/2 1/2] (exactly 0 at the edges),✅,pure,9.0,4291
 ObservableDecomposition,,,,8.0,4291
 OutputNamePacket,,🚫,,3.0,4291
 ParametricRampLayer,,🚫,,12.1,4291
@@ -4248,7 +4248,7 @@ ExactBlackmanWindow,Compute ExactBlackmanWindow value,✅,pure,9.0,4387
 FeatureDistance,,🚫,,11.0,4387
 FileSystemScan,,,,11.0,4387
 FindChannels,,,,11.0,4387
-FlatTopWindow,,,,9.0,4387
+FlatTopWindow,Flat-top 5-term cosine-sum window on [-1/2 1/2] (dips negative near the edges),✅,pure,9.0,4387
 FunctionSurjective,,,,12.2,4387
 GaugeFaceElementFunction,,🚫,,9.0,4387
 ImageContents,,🚫,,12.0,4387

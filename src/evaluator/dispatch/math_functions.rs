@@ -572,6 +572,16 @@ pub fn dispatch_math_functions(
     "TukeyWindow" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::tukey_window_ast(args));
     }
+    "BlackmanHarrisWindow"
+    | "BlackmanNuttallWindow"
+    | "NuttallWindow"
+    | "FlatTopWindow"
+      if args.len() == 1 =>
+    {
+      return Some(crate::functions::math_ast::cosine_sum_window_ast(
+        name, args,
+      ));
+    }
     "ParzenWindow" if args.len() == 1 => {
       return Some(crate::functions::math_ast::parzen_window_ast(args));
     }

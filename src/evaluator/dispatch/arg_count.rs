@@ -270,6 +270,22 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DeBruijnSequence" => Some((2, 2)),
     "DedekindEta" => Some((1, 1)),
     "DiracComb" => Some((1, usize::MAX)),
+    // Window functions all take exactly one argument.
+    "HammingWindow"
+    | "HannWindow"
+    | "BlackmanWindow"
+    | "DirichletWindow"
+    | "BartlettWindow"
+    | "WelchWindow"
+    | "CosineWindow"
+    | "ConnesWindow"
+    | "LanczosWindow"
+    | "ExactBlackmanWindow"
+    | "ParzenWindow"
+    | "BlackmanHarrisWindow"
+    | "BlackmanNuttallWindow"
+    | "NuttallWindow"
+    | "FlatTopWindow" => Some((1, 1)),
     "Default" => Some((1, 3)),
     "Definition" => Some((1, 1)),
     "Delete" => Some((1, 2)),

@@ -7893,3 +7893,86 @@ mod dirac_comb_tests {
     assert_eq!(interpret("DiracComb[]").unwrap(), "DiracComb[]");
   }
 }
+
+// The four cosine-sum windows (all-plus coefficients on [-1/2, 1/2], zero
+// outside; negative lobes come from coefficient magnitudes).
+mod cosine_sum_window_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn blackman_harris() {
+    assert_eq!(interpret("BlackmanHarrisWindow[0]").unwrap(), "1");
+    assert_eq!(
+      interpret("BlackmanHarrisWindow[1/4]").unwrap(),
+      "21747/100000"
+    );
+    assert_eq!(interpret("BlackmanHarrisWindow[1/2]").unwrap(), "3/50000");
+    assert_eq!(
+      interpret("BlackmanHarrisWindow[1/6]").unwrap(),
+      "20823/40000"
+    );
+    assert_eq!(
+      interpret("BlackmanHarrisWindow[0.2]").unwrap(),
+      "0.3858926687237511"
+    );
+    assert_eq!(interpret("BlackmanHarrisWindow[3/4]").unwrap(), "0");
+    // Symbolic arguments stay unevaluated, like wolframscript.
+    assert_eq!(
+      interpret("BlackmanHarrisWindow[x]").unwrap(),
+      "BlackmanHarrisWindow[x]"
+    );
+    assert_eq!(
+      interpret("BlackmanHarrisWindow[1, 2]").unwrap(),
+      "BlackmanHarrisWindow[1, 2]"
+    );
+  }
+
+  #[test]
+  fn nuttall() {
+    assert_eq!(interpret("NuttallWindow[0]").unwrap(), "1");
+    assert_eq!(interpret("NuttallWindow[1/4]").unwrap(), "13221/62500");
+    // The Nuttall coefficients alternate to exactly zero at the edge.
+    assert_eq!(interpret("NuttallWindow[1/2]").unwrap(), "0");
+    assert_eq!(interpret("NuttallWindow[-3/4]").unwrap(), "0");
+    assert_eq!(
+      interpret("NuttallWindow[0.2]").unwrap(),
+      "0.3794986576605826"
+    );
+  }
+
+  #[test]
+  fn blackman_nuttall() {
+    assert_eq!(interpret("BlackmanNuttallWindow[0]").unwrap(), "1");
+    assert_eq!(
+      interpret("BlackmanNuttallWindow[1/4]").unwrap(),
+      "17733/78125"
+    );
+    assert_eq!(
+      interpret("BlackmanNuttallWindow[1/2]").unwrap(),
+      "907/2500000"
+    );
+    assert_eq!(
+      interpret("BlackmanNuttallWindow[0.2]").unwrap(),
+      "0.39562591310388695"
+    );
+  }
+
+  #[test]
+  fn flat_top() {
+    assert_eq!(interpret("FlatTopWindow[0]").unwrap(), "1");
+    // The flat-top window dips negative near the edges.
+    assert_eq!(
+      interpret("FlatTopWindow[1/4]").unwrap(),
+      "-54736843/1000000000"
+    );
+    assert_eq!(
+      interpret("FlatTopWindow[1/2]").unwrap(),
+      "-210527/500000000"
+    );
+    assert_eq!(
+      interpret("FlatTopWindow[0.1]").unwrap(),
+      "0.6068721495762119"
+    );
+    assert_eq!(interpret("FlatTopWindow[-0.7]").unwrap(), "0.");
+  }
+}
