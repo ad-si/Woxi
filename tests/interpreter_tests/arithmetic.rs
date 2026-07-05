@@ -8148,3 +8148,46 @@ mod list_z_transform_tests {
     );
   }
 }
+
+mod discrete_hadamard_transform_tests {
+  use woxi::interpret;
+
+  // Sequency-ordered Walsh–Hadamard transform with 1/Sqrt[N] scaling;
+  // inputs zero-pad to the next power of two.
+  #[test]
+  fn exact_transforms() {
+    assert_eq!(
+      interpret("DiscreteHadamardTransform[{1, 2, 3, 4}]").unwrap(),
+      "{5, -2, 0, -1}"
+    );
+    assert_eq!(
+      interpret("DiscreteHadamardTransform[{1, 0}]").unwrap(),
+      "{1/Sqrt[2], 1/Sqrt[2]}"
+    );
+    // Zero-padding: length 3 transforms as {1, 2, 3, 0}.
+    assert_eq!(
+      interpret("DiscreteHadamardTransform[{1, 2, 3}]").unwrap(),
+      "{3, 0, -2, 1}"
+    );
+    assert_eq!(
+      interpret("DiscreteHadamardTransform[{1, 2, 3, 4, 5}]").unwrap(),
+      "{15/(2*Sqrt[2]), 5/(2*Sqrt[2]), -9/(2*Sqrt[2]), 1/(2*Sqrt[2]), 5/(2*Sqrt[2]), -5/(2*Sqrt[2]), -7/(2*Sqrt[2]), 3/(2*Sqrt[2])}"
+    );
+  }
+
+  #[test]
+  fn real_and_invalid() {
+    assert_eq!(
+      interpret("DiscreteHadamardTransform[{1., 2., 3., 4.}]").unwrap(),
+      "{5., -2., 0., -1.}"
+    );
+    assert_eq!(
+      interpret("DiscreteHadamardTransform[{a, b}]").unwrap(),
+      "DiscreteHadamardTransform[{a, b}]"
+    );
+    assert_eq!(
+      interpret("DiscreteHadamardTransform[x]").unwrap(),
+      "DiscreteHadamardTransform[x]"
+    );
+  }
+}

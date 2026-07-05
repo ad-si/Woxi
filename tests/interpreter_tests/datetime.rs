@@ -2945,3 +2945,52 @@ mod time_zone_offset_tests {
     );
   }
 }
+
+mod from_julian_date_tests {
+  use woxi::interpret;
+
+  // Julian dates are noon-based; wolframscript uses historical year
+  // numbering (no year zero), so JD 0 lands on -4714-11-24 12:00.
+  #[test]
+  fn calendar_conversion() {
+    assert_eq!(
+      interpret("FromJulianDate[2460000]").unwrap(),
+      "DateObject[{2023, 2, 24, 12, 0, 0}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("FromJulianDate[0]").unwrap(),
+      "DateObject[{-4714, 11, 24, 12, 0, 0}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("FromJulianDate[1721425.5]").unwrap(),
+      "DateObject[{1, 1, 1, 0, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("FromJulianDate[1721059.5]").unwrap(),
+      "DateObject[{-1, 1, 1, 0, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  // Exact input gives exact time components; Real input keeps a Real
+  // seconds slot even when it is zero.
+  #[test]
+  fn seconds_typing() {
+    assert_eq!(
+      interpret("FromJulianDate[2460000.5]").unwrap(),
+      "DateObject[{2023, 2, 25, 0, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("FromJulianDate[2460000.]").unwrap(),
+      "DateObject[{2023, 2, 24, 12, 0, 0.}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("FromJulianDate[2460000 + 1/4]").unwrap(),
+      "DateObject[{2023, 2, 24, 18, 0, 0}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn invalid_input() {
+    assert_eq!(interpret("FromJulianDate[x]").unwrap(), "FromJulianDate[x]");
+  }
+}

@@ -3390,3 +3390,143 @@ pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if within { "True" } else { "False" }.to_string(),
   ))
 }
+
+/// FromJulianDate[jd] — the DateObject instant of a Julian date (days
+/// since noon on -4714-11-24, proleptic Gregorian). Exact input gives
+/// exact time components (integer seconds when whole); Real input gives a
+/// Real seconds component. Non-numeric arguments emit ::arg.
+pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "FromJulianDate".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  // jd as exact (num, den) plus realness; reals convert via their exact
+  // binary fraction so the calendar arithmetic is exact either way.
+  let (num, den, is_real): (i128, i128, bool) = match &args[0] {
+    Expr::Integer(n) => (*n, 1, false),
+    Expr::FunctionCall { name, args: ra }
+      if name == "Rational" && ra.len() == 2 =>
+    {
+      match (&ra[0], &ra[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q > 0 => (*p, *q, false),
+        _ => return unevaluated(),
+      }
+    }
+    Expr::Real(v) if v.is_finite() => {
+      let bits = v.to_bits();
+      let sign = if bits >> 63 == 0 { 1i128 } else { -1 };
+      let exp = ((bits >> 52) & 0x7ff) as i64;
+      let frac = (bits & ((1u64 << 52) - 1)) as i128;
+      let (m, e2) = if exp == 0 {
+        (frac, -1074i64)
+      } else {
+        (frac + (1i128 << 52), exp - 1075)
+      };
+      if *v == 0.0 {
+        (0, 1, true)
+      } else if (0..70).contains(&e2) {
+        (sign * (m << e2), 1, true)
+      } else if e2 < 0 && e2 > -100 {
+        (sign * m, 1i128 << (-e2), true)
+      } else {
+        return unevaluated();
+      }
+    }
+    _ => {
+      crate::emit_message(&format!(
+        "FromJulianDate::arg: Argument {} cannot be interpreted as a Julian date input.",
+        crate::syntax::expr_to_output(&args[0])
+      ));
+      return unevaluated();
+    }
+  };
+
+  // Split jd + 1/2 into whole days (the Julian day number at the civil
+  // date) and the fraction of the day since midnight.
+  let shifted_num = num
+    .checked_mul(2)
+    .and_then(|x| x.checked_add(den))
+    .map(|x| (x, den * 2));
+  let Some((sn, sd)) = shifted_num else {
+    return unevaluated();
+  };
+  let days = sn.div_euclid(sd);
+  let frac_num = sn.rem_euclid(sd); // fraction = frac_num / sd of a day
+
+  // Fliegel–Van Flandern: Julian day number → proleptic Gregorian date.
+  let jdn = days;
+  let a = jdn + 68569;
+  let b = (4 * a).div_euclid(146097);
+  let c = a - (146097 * b + 3).div_euclid(4);
+  let d = (4000 * (c + 1)).div_euclid(1461001);
+  let e = c - (1461 * d).div_euclid(4) + 31;
+  let m = (80 * e).div_euclid(2447);
+  let day = e - (2447 * m).div_euclid(80);
+  let f = m.div_euclid(11);
+  let month = m + 2 - 12 * f;
+  let mut year = 100 * (b - 49) + d + f;
+  // Fliegel–Van Flandern yields astronomical years (with a year 0);
+  // wolframscript's DateObject uses historical numbering, so astronomical
+  // 0 is -1, -4713 is -4714, and so on.
+  if year <= 0 {
+    year -= 1;
+  }
+
+  // Time of day from the exact fraction: seconds = frac * 86400.
+  let total_secs_num = frac_num * 86400; // / sd
+  let whole_secs = total_secs_num.div_euclid(sd);
+  let rem_num = total_secs_num.rem_euclid(sd);
+  let hour = whole_secs.div_euclid(3600);
+  let minute = (whole_secs.rem_euclid(3600)).div_euclid(60);
+  let sec_whole = whole_secs.rem_euclid(60);
+  let second: Expr = if is_real {
+    Expr::Real(sec_whole as f64 + rem_num as f64 / sd as f64)
+  } else if rem_num == 0 {
+    Expr::Integer(sec_whole)
+  } else {
+    let g = {
+      let (mut x, mut y) = (rem_num, sd);
+      while y != 0 {
+        (x, y) = (y, x % y);
+      }
+      x.max(1)
+    };
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Integer(sec_whole),
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(rem_num / g), Expr::Integer(sd / g)].into(),
+        },
+      ]
+      .into(),
+    })?
+  };
+
+  Ok(Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: vec![
+      Expr::List(
+        vec![
+          Expr::Integer(year),
+          Expr::Integer(month),
+          Expr::Integer(day),
+          Expr::Integer(hour),
+          Expr::Integer(minute),
+          second,
+        ]
+        .into(),
+      ),
+      Expr::String("Instant".to_string()),
+      Expr::String("Gregorian".to_string()),
+      Expr::Real(0.0),
+    ]
+    .into(),
+  })
+}

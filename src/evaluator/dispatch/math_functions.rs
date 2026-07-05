@@ -623,6 +623,11 @@ pub fn dispatch_math_functions(
     "ListZTransform" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::list_z_transform_ast(args));
     }
+    "DiscreteHadamardTransform" if args.len() == 1 => {
+      return Some(
+        crate::functions::math_ast::discrete_hadamard_transform_ast(args),
+      );
+    }
     // MultinormalDistribution statistics: the mean vector, covariance
     // matrix, and per-component variances read straight off the
     // constructor arguments

@@ -6908,3 +6908,121 @@ pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
+
+/// DiscreteHadamardTransform[list] — the sequency-ordered Walsh–Hadamard
+/// transform: the input is zero-padded to the next power of two N, each
+/// output is a ±-signed sum scaled by 1/Sqrt[N], and the rows come in
+/// sequency (Walsh) order — natural row bitreverse(grayEncode(s)) for
+/// output slot s, matching wolframscript. Exact input stays exact (odd
+/// log2 sizes give radical forms like 15/(2*Sqrt[2])); non-numeric data
+/// emits ::data.
+pub fn discrete_hadamard_transform_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DiscreteHadamardTransform".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let data_err = || {
+    crate::emit_message(&format!(
+      "DiscreteHadamardTransform::data: {} is not a numerical array.",
+      crate::syntax::expr_to_output(&args[0])
+    ));
+    Ok(Expr::FunctionCall {
+      name: "DiscreteHadamardTransform".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let Expr::List(items) = &args[0] else {
+    return data_err();
+  };
+  if items.is_empty()
+    || !items
+      .iter()
+      .all(|e| try_eval_to_f64(e).is_some_and(|v| v.is_finite()))
+  {
+    return data_err();
+  }
+  let is_real = items
+    .iter()
+    .any(|e| matches!(e, Expr::Real(_) | Expr::BigFloat(..)));
+  let mut bits = 0u32;
+  while (1usize << bits) < items.len() {
+    bits += 1;
+  }
+  let n = 1usize << bits;
+  if n > 1 << 16 {
+    return unevaluated();
+  }
+  // Natural-order row for sequency slot s: bitreverse(gray(s)).
+  let natural_row = |s: usize| -> usize {
+    let g = s ^ (s >> 1);
+    let mut r = 0usize;
+    for b in 0..bits {
+      if g & (1 << b) != 0 {
+        r |= 1 << (bits - 1 - b);
+      }
+    }
+    r
+  };
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let mut out: Vec<Expr> = Vec::with_capacity(n);
+  for s in 0..n {
+    let r = natural_row(s);
+    if is_real {
+      let mut sum = 0.0f64;
+      for (j, e) in items.iter().enumerate() {
+        let v = try_eval_to_f64(e).unwrap_or(0.0);
+        if (r & j).count_ones() % 2 == 0 {
+          sum += v;
+        } else {
+          sum -= v;
+        }
+      }
+      out.push(Expr::Real(sum / (n as f64).sqrt()));
+    } else {
+      let terms: Vec<Expr> = items
+        .iter()
+        .enumerate()
+        .map(|(j, e)| {
+          if (r & j).count_ones() % 2 == 0 {
+            e.clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), e.clone()].into(),
+            }
+          }
+        })
+        .collect();
+      let scaled = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms.into(),
+          },
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::Integer(n as i128),
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
+              },
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      };
+      out.push(eval(&scaled)?);
+    }
+  }
+  Ok(Expr::List(out.into()))
+}

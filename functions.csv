@@ -4180,7 +4180,7 @@ AnnotationRules,,,,12.0,4315
 AskConfirm,,🚫,,10.4,4315
 CanonicalWarpingCorrespondence,,,,11.0,4315
 CarmichaelLambda,Carmichael lambda function (reduced totient),✅,pure,4.0,4315
-DiscreteHadamardTransform,,,,9.0,4315
+DiscreteHadamardTransform,Sequency-ordered Walsh-Hadamard transform with 1/Sqrt[N] scaling and zero-padding (exact radicals for exact input),✅,pure,9.0,4315
 FormLayoutFunction,,🚫,,10.0,4315
 GestureHandler,,🚫,,9.0,4315
 ImageAugmentationLayer,,🚫,,11.1,4315
@@ -4278,7 +4278,7 @@ Conjunction,,,,7.0,4437
 DocumentGenerators,,🚫,,10.0,4437
 FindKClub,,,,9.0,4437
 FindMinimumCut,,,,9.0,4437
-FromJulianDate,,,,10.2,4437
+FromJulianDate,DateObject instant of a Julian date (noon-based; historical year numbering; exact or Real seconds by input type),✅,pure,10.2,4437
 FunctionDiscontinuities,,,,12.2,4437
 FussellVeselyImportance,,,,9.0,4437
 GaugeFrameElementFunction,,🚫,,9.0,4437

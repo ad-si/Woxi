@@ -54,6 +54,9 @@ pub fn dispatch_datetime_functions(
     "DateWithinQ" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_within_q_ast(args));
     }
+    "FromJulianDate" if args.len() == 1 => {
+      return Some(crate::functions::datetime_ast::from_julian_date_ast(args));
+    }
     // TimeZoneOffset[] → $TimeZone; TimeZoneOffset[tz] → the zone's UTC
     // offset (numeric zones pass through); TimeZoneOffset[tz1, tz2(, date)]
     // → tz1 - tz2 (the date only matters for named zones, which need a tz

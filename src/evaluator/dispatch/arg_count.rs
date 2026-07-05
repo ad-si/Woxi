@@ -394,6 +394,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Erfc" => Some((1, 1)),
     "ErlangB" => Some((2, 2)),
     "ErlangC" => Some((2, 2)),
+    "FromJulianDate" => Some((1, 1)),
     "Erfi" => Some((1, 1)),
     "InverseErf" => Some((1, 1)),
     "InverseGammaRegularized" => Some((2, 3)),
