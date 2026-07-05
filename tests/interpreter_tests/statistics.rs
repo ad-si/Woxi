@@ -6911,3 +6911,115 @@ mod power_distribution_tests {
     );
   }
 }
+
+mod pert_distribution_tests {
+  use woxi::interpret;
+
+  // PERTDistribution[{min, max}, mode] — a Beta distribution rescaled to
+  // the interval, shape exponent 4 (or g in the modified 3-argument
+  // form). All values verified against wolframscript.
+  #[test]
+  fn pdf_and_cdf() {
+    assert_eq!(
+      interpret("PDF[PERTDistribution[{a, b}, m], x]").unwrap(),
+      "Piecewise[{{((b - x)^((4*(b - m))/(-a + b))*(-a + x)^((4*(-a + m))/(-a + b)))/((-a + b)^5*Beta[1 + (4*(-a + m))/(-a + b), 1 + (4*(b - m))/(-a + b)]), a < x < b}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[PERTDistribution[{a, b}, m], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[(-a + x)/(-a + b), 1 + (4*(-a + m))/(-a + b), 1 + (4*(b - m))/(-a + b)], a < x < b}, {1, x >= b}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[PERTDistribution[{0, 4}, 3], x]").unwrap(),
+      "Piecewise[{{(5*(4 - x)*x^3)/256, 0 < x < 4}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[PERTDistribution[{0, 4}, 3], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[x/4, 4, 2], 0 < x < 4}, {1, x >= 4}}, 0]"
+    );
+    // The modified (3-argument) form keeps (b-a)^(-1-g) as a factor.
+    assert_eq!(
+      interpret("PDF[PERTDistribution[{a, b}, m, g], x]").unwrap(),
+      "Piecewise[{{((-a + b)^(-1 - g)*(b - x)^((g*(b - m))/(-a + b))*(-a + x)^((g*(-a + m))/(-a + b)))/Beta[1 + (g*(-a + m))/(-a + b), 1 + (g*(b - m))/(-a + b)], a < x < b}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[PERTDistribution[{0, 4}, 3, 2], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[x/4, 5/2, 3/2], 0 < x < 4}, {1, x >= 4}}, 0]"
+    );
+    // Exact arguments give exact values; machine reals numericize.
+    assert_eq!(
+      interpret("PDF[PERTDistribution[{0, 4}, 3], 2]").unwrap(),
+      "5/16"
+    );
+    assert_eq!(
+      interpret("CDF[PERTDistribution[{0, 4}, 3], 2]").unwrap(),
+      "3/16"
+    );
+    assert_eq!(
+      interpret("PDF[PERTDistribution[{0, 4}, 3], 5]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CDF[PERTDistribution[{0, 4}, 3], 5]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("PDF[PERTDistribution[{0, 4}, 3], 5.]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("CDF[PERTDistribution[{0, 4}, 3], 5.]").unwrap(),
+      "1."
+    );
+  }
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[PERTDistribution[{a, b}, m]]").unwrap(),
+      "(a + b + 4*m)/6"
+    );
+    assert_eq!(
+      interpret("Mean[PERTDistribution[{0, 4}, 3]]").unwrap(),
+      "8/3"
+    );
+    assert_eq!(
+      interpret("Mean[PERTDistribution[{0., 4.}, 3.]]").unwrap(),
+      "2.6666666666666665"
+    );
+    assert_eq!(
+      interpret("Variance[PERTDistribution[{a, b}, m]]").unwrap(),
+      "((-a + 5*b - 4*m)*(-5*a + b + 4*m))/252"
+    );
+    assert_eq!(
+      interpret("Variance[PERTDistribution[{0, 4}, 3]]").unwrap(),
+      "32/63"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[PERTDistribution[{0, 4}, 3]]").unwrap(),
+      "(4*Sqrt[2/7])/3"
+    );
+    // Modified form.
+    assert_eq!(
+      interpret("Mean[PERTDistribution[{a, b}, m, g]]").unwrap(),
+      "(a + b + g*m)/(2 + g)"
+    );
+    assert_eq!(
+      interpret("Mean[PERTDistribution[{0, 4}, 3, 2]]").unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("Variance[PERTDistribution[{0, 4}, 3, 2]]").unwrap(),
+      "3/4"
+    );
+  }
+
+  // One argument emits `argtu` via the arg-count table.
+  #[test]
+  fn argument_count() {
+    let r = woxi::interpret_with_stdout("PERTDistribution[{0, 4}]").unwrap();
+    assert_eq!(r.result, "PERTDistribution[{0, 4}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "PERTDistribution::argtu: PERTDistribution called with 1 argument; 2 or 3 arguments are expected."
+    )));
+  }
+}

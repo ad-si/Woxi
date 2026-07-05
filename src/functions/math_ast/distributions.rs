@@ -209,6 +209,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BetaDistribution" => pdf_beta(dargs, x),
     "KumaraswamyDistribution" => pdf_kumaraswamy(dargs, x),
     "PowerDistribution" => pdf_power(dargs, x),
+    "PERTDistribution" => pdf_pert(dargs, x),
     "StudentTDistribution" => pdf_student_t(dargs, x),
     "LogNormalDistribution" => pdf_lognormal(dargs, x),
     "ChiSquareDistribution" => pdf_chi_square(dargs, x),
@@ -1784,6 +1785,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BetaDistribution" => cdf_beta(dargs, x),
     "KumaraswamyDistribution" => cdf_kumaraswamy(dargs, x),
     "PowerDistribution" => cdf_power(dargs, x),
+    "PERTDistribution" => cdf_pert(dargs, x),
     "ExpGammaDistribution" => cdf_expgamma(dargs, x),
     "LogGammaDistribution" => cdf_loggamma(dargs, x),
     "LogNormalDistribution" => cdf_lognormal(dargs, x),
@@ -3974,6 +3976,66 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "PERTDistribution" => {
+      let Some((a, b, m, g)) = pert_params(dargs) else {
+        return Err(InterpreterError::EvaluationError(
+          "PERTDistribution expects {min, max} and a mode".into(),
+        ));
+      };
+      if dargs.len() == 2 {
+        // Mean = (a + b + 4 m)/6; Variance = ((-a+5b-4m)(-5a+b+4m))/252.
+        let mean = eval(divide(
+          plus(plus(a.clone(), b.clone()), times(int(4), m.clone())),
+          int(6),
+        ))?;
+        let f1 = plus(
+          plus(times(int(-1), a.clone()), times(int(5), b.clone())),
+          times(int(-4), m.clone()),
+        );
+        let f2 = plus(plus(times(int(-5), a), b), times(int(4), m));
+        let var = eval(divide(times(f1, f2), int(252)))?;
+        Ok((mean, var))
+      } else {
+        // Mean = (a + b + g m)/(2 + g);
+        // Variance = ((-a + b + b g - g m)(b - a(1 + g) + g m)) /
+        //   ((2 + g)^2 (3 + g)). The symbolic form is value-correct but
+        //   the caller's canonicalization orders the two Plus factors
+        //   differently from wolframscript (the known sum-vs-sum Times
+        //   ordering divergence).
+        let mean = eval(divide(
+          plus(plus(a.clone(), b.clone()), times(g.clone(), m.clone())),
+          plus(int(2), g.clone()),
+        ))?;
+        let numeric = [&a, &b, &m, &g]
+          .iter()
+          .all(|e| crate::functions::math_ast::try_eval_to_f64(e).is_some());
+        let f1 = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            times(int(-1), a.clone()),
+            b.clone(),
+            times(b.clone(), g.clone()),
+            times(int(-1), times(g.clone(), m.clone())),
+          ]
+          .into(),
+        };
+        let f2 = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            b,
+            times(int(-1), times(a, plus(int(1), g.clone()))),
+            times(g.clone(), m),
+          ]
+          .into(),
+        };
+        let var_expr = divide(
+          times(f1, f2),
+          times(power(plus(int(2), g.clone()), int(2)), plus(int(3), g)),
+        );
+        let var = if numeric { eval(var_expr)? } else { var_expr };
+        Ok((mean, var))
+      }
+    }
     "PowerDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
@@ -5379,6 +5441,108 @@ fn pdf_beta(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond =
     comparison3(int(0), ComparisonOp::Less, x, ComparisonOp::Less, int(1));
   eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Extract ({a, b}, m, g) from PERTDistribution[{a, b}, m] (g defaults to
+/// 4) or PERTDistribution[{a, b}, m, g]. Returns None for malformed specs.
+fn pert_params(dargs: &[Expr]) -> Option<(Expr, Expr, Expr, Expr)> {
+  if dargs.len() != 2 && dargs.len() != 3 {
+    return None;
+  }
+  let Expr::List(minmax) = &dargs[0] else {
+    return None;
+  };
+  if minmax.len() != 2 {
+    return None;
+  }
+  let g = if dargs.len() == 3 {
+    dargs[2].clone()
+  } else {
+    int(4)
+  };
+  Some((minmax[0].clone(), minmax[1].clone(), dargs[1].clone(), g))
+}
+
+/// PDF[PERTDistribution[{a, b}, m], x] — a Beta distribution rescaled to
+/// (a, b) with shape exponents g (m - a)/(b - a) and g (b - m)/(b - a);
+/// the default (PERT) shape parameter is g = 4. Machine-real arguments
+/// numericize the result like wolframscript.
+fn pdf_pert(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let Some((a, b, m, g)) = pert_params(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "PERTDistribution expects {min, max} and a mode".into(),
+    ));
+  };
+  let real_arg = matches!(x, Expr::Real(_) | Expr::BigFloat(..));
+  let width = minus(b.clone(), a.clone());
+  let e_low =
+    divide(times(g.clone(), minus(m.clone(), a.clone())), width.clone());
+  let e_high =
+    divide(times(g.clone(), minus(b.clone(), m.clone())), width.clone());
+  let beta_call = Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: vec![plus(int(1), e_low.clone()), plus(int(1), e_high.clone())]
+      .into(),
+  };
+  let powers = times(
+    power(minus(b.clone(), x.clone()), e_high),
+    power(minus(x.clone(), a.clone()), e_low),
+  );
+  // The 2-argument (g = 4) form divides by (b-a)^5; the modified form
+  // keeps (b-a)^(-1-g) as a leading factor — matching wolframscript's
+  // displayed shapes.
+  let value = if dargs.len() == 2 {
+    divide(powers, times(power(width, int(5)), beta_call))
+  } else {
+    divide(
+      times(power(width, minus(int(-1), g.clone()).clone()), powers),
+      beta_call,
+    )
+  };
+  let cond = comparison3(a, ComparisonOp::Less, x, ComparisonOp::Less, b);
+  let result = eval(piecewise(vec![(value, cond)], int(0)))?;
+  if real_arg {
+    return eval(unary_fn("N", result));
+  }
+  Ok(result)
+}
+
+/// CDF[PERTDistribution[{a, b}, m], x] =
+///   Piecewise[{{BetaRegularized[(x-a)/(b-a), 1 + g(m-a)/(b-a),
+///   1 + g(b-m)/(b-a)], a < x < b}, {1, x >= b}}, 0].
+fn cdf_pert(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let Some((a, b, m, g)) = pert_params(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "PERTDistribution expects {min, max} and a mode".into(),
+    ));
+  };
+  let real_arg = matches!(x, Expr::Real(_) | Expr::BigFloat(..));
+  let width = minus(b.clone(), a.clone());
+  let e_low =
+    divide(times(g.clone(), minus(m.clone(), a.clone())), width.clone());
+  let e_high = divide(times(g, minus(b.clone(), m)), width.clone());
+  let reg = Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: vec![
+      divide(minus(x.clone(), a.clone()), width),
+      plus(int(1), e_low),
+      plus(int(1), e_high),
+    ]
+    .into(),
+  };
+  let cond1 = comparison3(
+    a,
+    ComparisonOp::Less,
+    x.clone(),
+    ComparisonOp::Less,
+    b.clone(),
+  );
+  let cond2 = comparison(x, ComparisonOp::GreaterEqual, b);
+  let result = eval(piecewise(vec![(reg, cond1), (int(1), cond2)], int(0)))?;
+  if real_arg {
+    return eval(unary_fn("N", result));
+  }
+  Ok(result)
 }
 
 /// PDF[PowerDistribution[k, a], x] =

@@ -108,6 +108,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BetaDistribution" => Some((2, 2)),
     "KumaraswamyDistribution" => Some((2, 2)),
     "PowerDistribution" => Some((2, 2)),
+    "PERTDistribution" => Some((2, 3)),
     "Between" => Some((1, 2)),
     "Binarize" => Some((1, 2)),
     "BinaryDistance" => Some((2, 2)),
