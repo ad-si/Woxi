@@ -1,5 +1,56 @@
 use super::*;
 
+fn assert_numeric_notation(
+  input: &str,
+  precision: i32,
+  exponent: i32,
+  expected: &str,
+) {
+  let expression = format!("N[{}, {}]", input, precision);
+  let result = interpret(&expression).unwrap();
+  assert!(
+    result.starts_with(expected),
+    "{} should start with {}: {}",
+    expression,
+    expected,
+    result
+  );
+
+  let trailing = if exponent == 0 {
+    format!("`{}.", precision)
+  } else {
+    format!("`10.*^{}", exponent)
+  };
+  assert!(
+    result.ends_with(&trailing),
+    "{} should have precision/exponent marker {}: {}",
+    expression,
+    trailing,
+    result
+  );
+
+  // Check digit count: should have > precision sig digits
+  // since this is non-scientific notation case.
+  let re = if exponent == 0 {
+    regex::Regex::new(&format!(
+      "^\\-?[0-9]+\\.[0-9]{{{0},}}+`{0}\\.$",
+      precision
+    ))
+  } else {
+    regex::Regex::new(&format!(
+      "^\\-?[0-9]+\\.[0-9]{{{0},}}+`10\\.\\*\\^{1}$",
+      precision, exponent
+    ))
+  };
+  assert!(
+    re.unwrap().is_match(&result),
+    "{} should have at least {} digits: {}",
+    expression,
+    precision,
+    result
+  );
+}
+
 mod n_arbitrary_precision {
   use super::*;
 
@@ -208,20 +259,18 @@ mod n_arbitrary_precision {
   #[test]
   fn n_pi_arbitrary_first_digits() {
     // N[Pi, 50] — check that first 50 significant digits are correct
-    let result = interpret("N[Pi, 50]").unwrap();
-    assert!(
-      result
-        .starts_with("3.14159265358979323846264338327950288419716939937510")
+    assert_numeric_notation(
+      "Pi",
+      50,
+      0,
+      "3.14159265358979323846264338327950288419716939937510",
     );
-    assert!(result.ends_with("`50."));
   }
 
   #[test]
   fn n_e_arbitrary_first_digits() {
     // N[E, 30] — check first 30 significant digits
-    let result = interpret("N[E, 30]").unwrap();
-    assert!(result.starts_with("2.7182818284590452353602874713"));
-    assert!(result.ends_with("`30."));
+    assert_numeric_notation("E", 30, 0, "2.7182818284590452353602874713");
   }
 
   #[test]
@@ -235,53 +284,57 @@ mod n_arbitrary_precision {
   #[test]
   fn n_rational_arbitrary() {
     // N[1/3, 20] — should start with 0.3333...
-    let result = interpret("N[1/3, 20]").unwrap();
-    assert!(result.starts_with("0.3333333333333333333"));
-    assert!(result.ends_with("`20."));
+    assert_numeric_notation("1/3", 20, 0, "0.3333333333333333333");
   }
 
   #[test]
   fn n_golden_ratio_arbitrary() {
     // N[GoldenRatio, 40] — (1 + Sqrt[5]) / 2 evaluated at arbitrary precision.
-    let result = interpret("N[GoldenRatio, 40]").unwrap();
-    assert!(result.starts_with("1.618033988749894848204586834365638117720"));
-    assert!(result.ends_with("`40."));
+    assert_numeric_notation(
+      "GoldenRatio",
+      40,
+      0,
+      "1.618033988749894848204586834365638117720",
+    );
   }
 
   #[test]
   fn n_euler_gamma_arbitrary() {
     // N[EulerGamma, 40] — Euler–Mascheroni constant at arbitrary precision.
-    let result = interpret("N[EulerGamma, 40]").unwrap();
-    assert!(result.starts_with("0.577215664901532860606512090082402431042"));
-    assert!(result.ends_with("`40."));
+    assert_numeric_notation(
+      "EulerGamma",
+      40,
+      0,
+      "0.577215664901532860606512090082402431042",
+    );
   }
 
   #[test]
   fn n_catalan_arbitrary() {
     // N[Catalan, 20] — Catalan's constant G at arbitrary precision.
-    let result = interpret("N[Catalan, 20]").unwrap();
-    assert!(result.starts_with("0.91596559417721901505"));
-    assert!(result.ends_with("`20."));
+    assert_numeric_notation("Catalan", 20, 0, "0.91596559417721901505");
   }
 
   #[test]
   fn n_glaisher_arbitrary() {
     // N[Glaisher, 50] — Glaisher–Kinkelin constant A.
-    let result = interpret("N[Glaisher, 50]").unwrap();
-    assert!(
-      result.starts_with("1.2824271291006226368753425688697917277676889273250")
+    assert_numeric_notation(
+      "Glaisher",
+      50,
+      0,
+      "1.2824271291006226368753425688697917277676889273250",
     );
-    assert!(result.ends_with("`50."));
   }
 
   #[test]
   fn n_khinchin_arbitrary() {
     // N[Khinchin, 50] — Khinchin's constant K₀.
-    let result = interpret("N[Khinchin, 50]").unwrap();
-    assert!(
-      result.starts_with("2.6854520010653064453097148354817956938203822939944")
+    assert_numeric_notation(
+      "Khinchin",
+      50,
+      0,
+      "2.6854520010653064453097148354817956938203822939944",
     );
-    assert!(result.ends_with("`50."));
   }
 
   #[test]
@@ -289,21 +342,18 @@ mod n_arbitrary_precision {
     // N[MachinePrecision, 30] — MachinePrecision = Log10[2^53] ≈ 15.9545…
     // Regression for the mathics atomic/numbers.py MachinePrecision doctest
     // and for the `N[MachinePrecision, _]` path more broadly.
-    let result = interpret("N[MachinePrecision, 30]").unwrap();
-    assert!(
-      result.starts_with("15.9545897701910033463281614203"),
-      "Got: {}",
-      result
+    assert_numeric_notation(
+      "MachinePrecision",
+      30,
+      0,
+      "15.9545897701910033463281614203",
     );
-    assert!(result.ends_with("`30."));
   }
 
   #[test]
   fn n_sqrt_arbitrary() {
     // N[Sqrt[2], 20] — check first 20 digits
-    let result = interpret("N[Sqrt[2], 20]").unwrap();
-    assert!(result.starts_with("1.414213562373095048801688724"));
-    assert!(result.ends_with("`20."));
+    assert_numeric_notation("Sqrt[2]", 20, 0, "1.414213562373095048801688724");
   }
 
   #[test]
@@ -317,28 +367,23 @@ mod n_arbitrary_precision {
 
   #[test]
   fn n_pi_10000_digits() {
-    // N[Pi, 10000] — the main todo item
-    let result = interpret("N[Pi, 10000]").unwrap();
-    // Check the suffix
-    assert!(result.ends_with("`10000."));
-    // Check first 50 digits of Pi
-    assert!(
-      result
-        .starts_with("3.14159265358979323846264338327950288419716939937510")
+    assert_numeric_notation(
+      "Pi",
+      10000,
+      0,
+      "3.14159265358979323846264338327950288419716939937510",
     );
-    // Check digit count: should have > 10000 sig digits
-    let digits_part = result.split('`').next().unwrap();
-    let sig_digits: usize =
-      digits_part.chars().filter(|c| c.is_ascii_digit()).count();
-    assert!(sig_digits >= 10000);
   }
 
   #[test]
   fn n_pi_100_digits() {
     // N[Pi, 100] — check first 100 digits
-    let result = interpret("N[Pi, 100]").unwrap();
-    assert!(result.starts_with("3.14159265358979323846264338327950288419716939937510582097494459230781640628620899862803482534211706798214808651"));
-    assert!(result.ends_with("`100."));
+    assert_numeric_notation(
+      "Pi",
+      100,
+      0,
+      "3.14159265358979323846264338327950288419716939937510582097494459230781640628620899862803482534211706798214808651",
+    );
   }
 
   #[test]
@@ -356,37 +401,25 @@ mod n_arbitrary_precision {
   #[test]
   fn n_exp_negative_integer() {
     // N[Exp[-2], 10] — uses E^(-2) with integer power
-    let result = interpret("N[Exp[-2], 10]").unwrap();
-    assert!(result.starts_with("0.13533528323661269"));
-    assert!(result.ends_with("`10."));
+    assert_numeric_notation("Exp[-2]", 10, 0, "0.13533528323661269");
 
     // N[Exp[-2], 20]
-    let result = interpret("N[Exp[-2], 20]").unwrap();
-    assert!(result.starts_with("0.13533528323661269189"));
-    assert!(result.ends_with("`20."));
+    assert_numeric_notation("Exp[-2]", 20, 0, "0.13533528323661269189");
 
     // N[Exp[-1], 10]
-    let result = interpret("N[Exp[-1], 10]").unwrap();
-    assert!(result.starts_with("0.36787944117144232"));
-    assert!(result.ends_with("`10."));
+    assert_numeric_notation("Exp[-1]", 10, 0, "0.36787944117144232");
 
     // N[Exp[-3], 10]
-    let result = interpret("N[Exp[-3], 10]").unwrap();
-    assert!(result.starts_with("0.049787068367863942"));
-    assert!(result.ends_with("`10."));
+    assert_numeric_notation("Exp[-3]", 10, 0, "0.049787068367863942");
   }
 
   #[test]
   fn n_exp_positive_integer_power() {
     // N[E^2, 10] — integer power of E
-    let result = interpret("N[E^2, 10]").unwrap();
-    assert!(result.starts_with("7.38905609893065022"));
-    assert!(result.ends_with("`10."));
+    assert_numeric_notation("E^2", 10, 0, "7.38905609893065022");
 
     // N[Pi^2, 10] — integer power of Pi
-    let result = interpret("N[Pi^2, 10]").unwrap();
-    assert!(result.starts_with("9.86960440108935861"));
-    assert!(result.ends_with("`10."));
+    assert_numeric_notation("Pi^2", 10, 0, "9.86960440108935861");
   }
 
   #[test]
@@ -398,70 +431,25 @@ mod n_arbitrary_precision {
   #[test]
   fn n_bigfloat_scientific_notation_large() {
     // N[Exp[1000], 10] should use *^ scientific notation (value >= 1e6)
-    let result = interpret("N[Exp[1000], 10]").unwrap();
-    assert!(
-      result.starts_with("1.9700711140170469"),
-      "Expected mantissa starting with 1.97..., got: {}",
-      result
-    );
-    assert!(
-      result.contains("`10.*^434"),
-      "Expected scientific notation *^434, got: {}",
-      result
-    );
+    assert_numeric_notation("Exp[1000]", 10, 434, "1.9700711140170469");
   }
 
   #[test]
   fn n_bigfloat_scientific_notation_small() {
     // N[Exp[-1000], 10] should use *^ scientific notation (value < 1e-5)
-    let result = interpret("N[Exp[-1000], 10]").unwrap();
-    assert!(
-      result.starts_with("5.0759588975494"),
-      "Expected mantissa starting with 5.07..., got: {}",
-      result
-    );
-    assert!(
-      result.contains("`10.*^-435"),
-      "Expected scientific notation *^-435, got: {}",
-      result
-    );
+    assert_numeric_notation("Exp[-1000]", 10, -435, "5.0759588975494");
   }
 
   #[test]
   fn n_bigfloat_scientific_notation_medium() {
     // N[Exp[100], 10] should use *^ (value ~ 2.69e43)
-    let result = interpret("N[Exp[100], 10]").unwrap();
-    assert!(
-      result.starts_with("2.688117141816"),
-      "Expected mantissa starting with 2.688..., got: {}",
-      result
-    );
-    assert!(
-      result.contains("`10.*^43"),
-      "Expected scientific notation *^43, got: {}",
-      result
-    );
+    assert_numeric_notation("Exp[100]", 10, 43, "2.688117141816");
   }
 
   #[test]
   fn n_bigfloat_no_scientific_notation() {
     // N[Exp[10], 10] — value ~ 22026, should NOT use *^ (< 1e6)
-    let result = interpret("N[Exp[10], 10]").unwrap();
-    assert!(
-      result.starts_with("22026.465794806"),
-      "Expected normal notation, got: {}",
-      result
-    );
-    assert!(
-      result.ends_with("`10."),
-      "Expected plain backtick notation, got: {}",
-      result
-    );
-    assert!(
-      !result.contains("*^"),
-      "Should not use scientific notation, got: {}",
-      result
-    );
+    assert_numeric_notation("Exp[10]", 10, 0, "22026.465794806");
   }
 }
 
@@ -1309,48 +1297,28 @@ mod overflow_safety {
   #[test]
   fn n_erf_evaluates_numerically() {
     // N[Erf[1], 20] should produce a numeric result, not stay symbolic
-    let result = interpret("N[Erf[1], 20]").unwrap();
-    assert!(
-      result.starts_with("0.8427007929497148693412"),
-      "N[Erf[1],20] should start with correct first 22 digits: {}",
-      result
-    );
-    assert!(
-      result.ends_with("`20."),
-      "Should have precision marker `20.: {}",
-      result
-    );
+    assert_numeric_notation("Erf[1]", 20, 0, "0.8427007929497148693412");
   }
 
   #[test]
   fn n_erf_zero() {
-    let result = interpret("N[Erf[0], 20]").unwrap();
-    assert!(
-      result.starts_with("0"),
-      "N[Erf[0],20] should be 0: {}",
-      result
-    );
+    assert_eq!(interpret("N[Erf[0], 20]").unwrap(), "0.`20.");
   }
 
   #[test]
   fn n_erfc_evaluates_numerically() {
     // Erfc[1] = 1 - Erf[1] ≈ 0.1572992...
-    let result = interpret("N[Erfc[1], 20]").unwrap();
-    assert!(
-      result.starts_with("0.1572992070502851306587"),
-      "N[Erfc[1],20] should start correctly: {}",
-      result
-    );
+    assert_numeric_notation("Erfc[1]", 20, 0, "0.1572992070502851306587");
   }
 
   #[test]
   fn n_exp_integral_ei_evaluates_numerically() {
     // ExpIntegralEi[1] ≈ 1.895117816355937...
-    let result = interpret("N[ExpIntegralEi[1], 20]").unwrap();
-    assert!(
-      result.starts_with("1.89511781635593675546"),
-      "N[ExpIntegralEi[1],20] should start correctly: {}",
-      result
+    assert_numeric_notation(
+      "ExpIntegralEi[1]",
+      20,
+      0,
+      "1.89511781635593675546",
     );
   }
 
