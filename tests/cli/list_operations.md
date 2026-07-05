@@ -56,6 +56,7 @@ functions. The material has been split into topical sub-pages:
 - [`SubsetPosition`](list_operations/SubsetPosition.md)
 - [`TensorProduct`](list_operations/TensorProduct.md)
 - [`TensorRank`](list_operations/TensorRank.md)
+- [`FoldWhile`](list_operations/FoldWhile.md)
 - [`FoldWhileList`](list_operations/FoldWhileList.md)
 - [`CountBy`](list_operations/CountBy.md)
 - [`Heads`](list_operations/Heads.md)

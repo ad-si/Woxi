@@ -489,7 +489,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FoldList" => Some((2, 3)),
     "FoldPair" => Some((2, 4)),
     "FoldPairList" => Some((2, 4)),
-    "FoldWhile" => Some((3, 4)),
+    "FoldWhile" => Some((3, 6)),
     "SequenceFold" => Some((3, 4)),
     "SequenceFoldList" => Some((3, 4)),
     "FoldWhileList" => Some((3, 4)),

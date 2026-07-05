@@ -1829,6 +1829,66 @@ pub fn dispatch_list_operations(
       };
       return Some(list_helpers_ast::fold_ast(&args[0], &init, &rest));
     }
+    "FoldWhile" if (3..=6).contains(&args.len()) => {
+      // FoldWhile[f, x, {a1, …}, test, m, n]  — full form
+      // FoldWhile[f, list, test]  ==  FoldWhile[f, First[list], Rest[list], test]
+      let func = &args[0];
+      // The 3-arg form takes the initial value from the head of the list.
+      let (init, items, tail): (Expr, Vec<Expr>, &[Expr]) = if args.len() == 3 {
+        let list_items: &[Expr] = match &args[1] {
+          Expr::List(items) => items.as_slice(),
+          Expr::FunctionCall { args: fargs, .. } => fargs.as_slice(),
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "FoldWhile".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        };
+        if list_items.is_empty() {
+          return Some(Ok(Expr::FunctionCall {
+            name: "FoldWhile".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+        (list_items[0].clone(), list_items[1..].to_vec(), &args[2..3])
+      } else {
+        let list_items: Vec<Expr> = match &args[2] {
+          Expr::List(items) => items.to_vec(),
+          Expr::FunctionCall { args: fargs, .. } => fargs.to_vec(),
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "FoldWhile".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        };
+        (args[1].clone(), list_items, &args[3..])
+      };
+      // `tail` = [test, (m), (n)].
+      let test = &tail[0];
+      let m = if tail.len() >= 2 {
+        match parse_nest_while_m(&tail[1]) {
+          Some(m) => m,
+          None => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "FoldWhile".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        }
+      } else {
+        list_helpers_ast::NestWhileM::Last(1)
+      };
+      let extra_n = if tail.len() == 3 {
+        expr_to_i128(&tail[2]).unwrap_or(0)
+      } else {
+        0
+      };
+      return Some(list_helpers_ast::fold_while_ast(
+        func, &init, &items, test, m, extra_n,
+      ));
+    }
     "GroupBy" if args.len() == 2 || args.len() == 3 => {
       // GroupBy needs a list (incl. list of rules) or an association as its
       // first argument; anything else emits ::list1 and stays unevaluated
@@ -6596,9 +6656,11 @@ pub fn dispatch_list_operations(
       // Non-list input
       return Some(Ok(Expr::Identifier("False".to_string())));
     }
-    // FoldWhile / FoldWhileList — fold while test is True. The 3-argument
-    // form takes the first list element as the initial value.
-    "FoldWhile" | "FoldWhileList" if args.len() == 3 || args.len() == 4 => {
+    // FoldWhileList — fold while test is True, returning the whole history.
+    // The 3-argument form takes the first list element as the initial value.
+    // (FoldWhile itself, including the `m`/`n` extended forms, is handled by
+    // the dedicated arm near Fold above.)
+    "FoldWhileList" if args.len() == 3 || args.len() == 4 => {
       let (init, items) = if args.len() == 4 {
         match &args[2] {
           Expr::List(items) => {

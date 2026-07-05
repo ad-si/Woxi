@@ -3454,4 +3454,64 @@ mod list_tests {
       "SubsetReplace[5, {1, 2} -> x]"
     );
   }
+
+  #[test]
+  fn fold_while() {
+    // FoldWhile[f, x, list, test] returns the first accumulator value that
+    // fails the test (the failing value is included).
+    assert_eq!(
+      interpret("FoldWhile[Times, 2, {2, 3, 4, 5}, # < 100 &]").unwrap(),
+      "240"
+    );
+    assert_eq!(
+      interpret("FoldWhile[Plus, 0, {1, 2, 3, 4, 5}, # < 6 &]").unwrap(),
+      "6"
+    );
+    // When the test never fails, the final fold result is returned.
+    assert_eq!(
+      interpret("FoldWhile[Times, 1, {2, 3, 4}, # < 100 &]").unwrap(),
+      "24"
+    );
+    assert_eq!(
+      interpret("FoldWhile[f, x, {a, b, c}, True &]").unwrap(),
+      "f[f[f[x, a], b], c]"
+    );
+    // The initial value is tested first: if it already fails, x is returned
+    // with no folding at all.
+    assert_eq!(
+      interpret("FoldWhile[Times, 2, {2, 3, 4, 5}, # < 1 &]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("FoldWhile[Plus, 100, {1, 2, 3}, # < 6 &]").unwrap(),
+      "100"
+    );
+    // An empty list returns the initial value.
+    assert_eq!(interpret("FoldWhile[Plus, 0, {}, # < 6 &]").unwrap(), "0");
+    // The 3-argument form takes the initial value from the head of the list.
+    assert_eq!(
+      interpret("FoldWhile[Plus, {1, 2, 3, 4, 5}, # < 6 &]").unwrap(),
+      "6"
+    );
+    // The `m` argument supplies the last m results to the test.
+    assert_eq!(
+      interpret("FoldWhile[Times, 1, {2, 2, 3, 3, 4}, Unequal, 2]").unwrap(),
+      "144"
+    );
+    // `All` supplies the entire history to the test.
+    assert_eq!(
+      interpret("FoldWhile[Times, 2, {2, 3, 4, 5}, # < 100 &, All]").unwrap(),
+      "240"
+    );
+    // A negative `n` steps back n results from where the test failed.
+    assert_eq!(
+      interpret("FoldWhile[Plus, 0, {1, 2, 3, 4, 5}, # < 6 &, 1, -1]").unwrap(),
+      "3"
+    );
+    // A positive `n` folds n extra times past the failing value.
+    assert_eq!(
+      interpret("FoldWhile[Plus, 0, {1, 2, 3, 4, 5}, # < 6 &, 1, 1]").unwrap(),
+      "10"
+    );
+  }
 }

@@ -30,6 +30,70 @@ pub fn fold_ast(
   Ok(acc)
 }
 
+/// AST-based FoldWhile: fold `func` over `items` starting from `init`,
+/// applying `test` to the most recent accumulator value(s) before each
+/// further fold. Returns the first accumulator value for which `test`
+/// does not yield `True` (or the final value if `test` never fails).
+///
+/// `FoldWhile[f, x, {a1, …}, test]`               (m = 1)
+/// `FoldWhile[f, x, {a1, …}, test, m]`            — test gets last m values
+/// `FoldWhile[f, x, {a1, …}, test, m, n]`         — n extra folds after the
+///                                                   test fails (or `-n` to
+///                                                   step back n values)
+pub fn fold_while_ast(
+  func: &Expr,
+  init: &Expr,
+  items: &[Expr],
+  test: &Expr,
+  m: NestWhileM,
+  extra_n: i128,
+) -> Result<Expr, InterpreterError> {
+  // Build the accumulator history: r0 = init, r1 = f[r0, a1], …
+  // Wolfram tests the current value(s) before each further fold and, unlike
+  // NestWhile, tests immediately even before m values are available.
+  let mut history = vec![init.clone()];
+  let mut consumed = 0usize;
+  loop {
+    let window: Vec<Expr> = match m {
+      NestWhileM::Last(n) => {
+        history[history.len().saturating_sub(n)..].to_vec()
+      }
+      NestWhileM::All => history.clone(),
+    };
+    let test_result = apply_func_to_n_args(test, &window)?;
+    if expr_to_bool(&test_result) != Some(true) {
+      break;
+    }
+    if consumed >= items.len() {
+      break;
+    }
+    let next =
+      apply_func_to_two_args(func, history.last().unwrap(), &items[consumed])?;
+    history.push(next);
+    consumed += 1;
+  }
+  // `history.last()` is the fail point (or the final value if the list was
+  // exhausted). Apply the optional extra-step offset.
+  let target = (history.len() as i128 - 1) + extra_n;
+  if target < 0 {
+    return Ok(history[0].clone());
+  }
+  if (target as usize) < history.len() {
+    return Ok(history[target as usize].clone());
+  }
+  // Positive offset: keep folding with any remaining list elements.
+  let mut current = history.last().cloned().unwrap_or_else(|| init.clone());
+  let extra = (target as usize) - (history.len() - 1);
+  for i in 0..extra {
+    let idx = consumed + i;
+    if idx >= items.len() {
+      break;
+    }
+    current = apply_func_to_two_args(func, &current, &items[idx])?;
+  }
+  Ok(current)
+}
+
 /// AST-based Nest: apply a function n times.
 /// Nest[f, x, n] -> f[f[f[...f[x]...]]] (n times)
 pub fn nest_ast(
