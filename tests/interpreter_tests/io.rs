@@ -1,5 +1,17 @@
 use super::*;
 
+fn missing_file() -> String {
+  format!(
+    "ExampleData{0}sunflowers.jpg",
+    std::path::MAIN_SEPARATOR_STR
+  )
+}
+
+fn temp_file(file: &str) -> String {
+  let tmp = std::env::temp_dir().join(file);
+  tmp.display().to_string()
+}
+
 mod date_string {
   use super::*;
 
@@ -182,8 +194,8 @@ mod find {
 
   #[test]
   fn find_matching_line() {
-    let path = "/tmp/woxi_test_find.txt";
-    std::fs::write(path, "hello world\nfoo bar\nbaz").unwrap();
+    let path = temp_file("woxi_test_find.txt");
+    std::fs::write(&path, "hello world\nfoo bar\nbaz").unwrap();
     let result = interpret(&format!("Find[\"{path}\", \"foo\"]")).unwrap();
     assert_eq!(result, "foo bar");
     std::fs::remove_file(path).ok();
@@ -191,8 +203,8 @@ mod find {
 
   #[test]
   fn find_no_match() {
-    let path = "/tmp/woxi_test_find2.txt";
-    std::fs::write(path, "hello world\nfoo bar").unwrap();
+    let path = temp_file("woxi_test_find2.txt");
+    std::fs::write(&path, "hello world\nfoo bar").unwrap();
     let result = interpret(&format!("Find[\"{path}\", \"xyz\"]")).unwrap();
     assert_eq!(result, "EndOfFile");
     std::fs::remove_file(path).ok();
@@ -228,7 +240,7 @@ mod get {
   use std::io::Write;
 
   fn write_temp(name: &str, content: &str) -> String {
-    let path = format!("/tmp/woxi_test_{}.wl", name);
+    let path = temp_file(&format!("woxi_test_{}.txt", name));
     let mut f = std::fs::File::create(&path).unwrap();
     f.write_all(content.as_bytes()).unwrap();
     path
@@ -268,7 +280,8 @@ mod get {
 
   #[test]
   fn nonexistent_file() {
-    let result = interpret("Get[\"/tmp/nonexistent_woxi_file.wl\"]").unwrap();
+    let path = temp_file("nonexistent_woxi_file.wl");
+    let result = interpret(&format!("Get[\"{path}\"]")).unwrap();
     assert_eq!(result, "$Failed");
   }
 
@@ -307,7 +320,10 @@ mod directory {
   #[test]
   fn directory_contains_separator() {
     // Any real directory path should contain a path separator
-    let result = interpret("StringContainsQ[Directory[], \"/\"]").unwrap();
+    let mut sep = std::path::MAIN_SEPARATOR_STR;
+    sep = if sep == "\\" { "\\\\" } else { sep };
+    let result =
+      interpret(&format!("StringContainsQ[Directory[], \"{sep}\"]")).unwrap();
     assert_eq!(result, "True");
   }
 }
@@ -360,8 +376,8 @@ mod streams {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn open_read_nonexistent() {
-    let result =
-      interpret(r#"OpenRead["/nonexistent/path/file.txt"]"#).unwrap();
+    let path = missing_file();
+    let result = interpret(&format!(r#"OpenRead["{path}"]"#)).unwrap();
     assert_eq!(result, "$Failed");
   }
 
@@ -468,8 +484,9 @@ mod find_file {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn missing_file_returns_failed() {
+    let path = missing_file();
     assert_eq!(
-      interpret(r#"FindFile["ExampleData/sunflowers.jpg"]"#).unwrap(),
+      interpret(&format!(r#"FindFile["{path}"]"#)).unwrap(),
       "$Failed"
     );
   }
@@ -494,8 +511,9 @@ mod absolute_file_name {
   fn missing_file_returns_failed() {
     // Missing files emit AbsoluteFileName::fdnfnd and return $Failed,
     // matching wolframscript.
+    let path = missing_file();
     assert_eq!(
-      interpret(r#"AbsoluteFileName["ExampleData/sunflowers.jpg"]"#).unwrap(),
+      interpret(&format!(r#"AbsoluteFileName["{path}"]"#)).unwrap(),
       "$Failed"
     );
   }
@@ -594,9 +612,10 @@ mod copy_file_missing_source {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn message_uses_absolute_path() {
-    let result = interpret_with_stdout(
-      r#"CopyFile["ExampleData/sunflowers.jpg", "MathicsSunflowers.jpg"]"#,
-    )
+    let path = missing_file();
+    let result = interpret_with_stdout(&format!(
+      r#"CopyFile["{path}", "MathicsSunflowers.jpg"]"#
+    ))
     .unwrap();
     assert_eq!(result.result, "$Failed");
     assert!(
@@ -604,8 +623,8 @@ mod copy_file_missing_source {
         .warnings
         .iter()
         .any(|w| w.contains("CopyFile::fdnfnd: Directory or file ")
-          && w.contains("ExampleData/sunflowers.jpg")
-          && w.starts_with("CopyFile::fdnfnd: Directory or file \"/")),
+          && w.contains(&path)
+          && w.starts_with("CopyFile::fdnfnd: Directory or file \"")),
       "expected absolute-path fdnfnd warning, got {:?}",
       result.warnings
     );
@@ -620,14 +639,14 @@ mod file_format {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn missing_file_returns_failed() {
+    let path = missing_file();
     let result =
-      interpret_with_stdout(r#"FileFormat["ExampleData/sunflowers.jpg"]"#)
-        .unwrap();
+      interpret_with_stdout(&format!(r#"FileFormat["{path}"]"#)).unwrap();
     assert_eq!(result.result, "$Failed");
     assert!(
-      result.warnings.iter().any(|w| w.contains(
-        "FileFormat::nffil: File not found during FileFormat[ExampleData/sunflowers.jpg]."
-      )),
+      result.warnings.iter().any(|w| w.contains(&format!(
+        "FileFormat::nffil: File not found during FileFormat[{path}]."
+      ))),
       "expected nffil warning, got {:?}",
       result.warnings
     );
@@ -642,10 +661,10 @@ mod file_date {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn missing_file_emits_fdnfnd() {
+    let path = missing_file();
     let result =
-      interpret_with_stdout(r#"FileDate["ExampleData/sunflowers.jpg"]"#)
-        .unwrap();
-    assert_eq!(result.result, "FileDate[ExampleData/sunflowers.jpg]");
+      interpret_with_stdout(&format!(r#"FileDate["{path}"]"#)).unwrap();
+    assert_eq!(result.result, format!("FileDate[{path}]"));
     assert!(
       result
         .warnings
@@ -666,16 +685,16 @@ mod file_hash {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn missing_file_returns_failed() {
+    let path = missing_file();
     let result =
-      interpret_with_stdout(r#"FileHash["ExampleData/sunflowers.jpg"]"#)
-        .unwrap();
+      interpret_with_stdout(&format!(r#"FileHash["{path}"]"#)).unwrap();
     assert_eq!(result.result, "$Failed");
     assert!(
       result
         .warnings
         .iter()
         .any(|w| w.contains("FileHash::noopen: Cannot open")
-          && w.contains("ExampleData/sunflowers.jpg")),
+          && w.contains(&format!("{path}"))),
       "expected FileHash::noopen warning with absolute path, got {:?}",
       result.warnings
     );
@@ -690,8 +709,9 @@ mod file_byte_count {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn missing_file_returns_failed() {
+    let path = missing_file();
     assert_eq!(
-      interpret(r#"FileByteCount["ExampleData/sunflowers.jpg"]"#).unwrap(),
+      interpret(&format!(r#"FileByteCount["{path}"]"#)).unwrap(),
       "$Failed"
     );
   }
@@ -965,12 +985,12 @@ mod plot {
   #[test]
   fn export_plot_to_svg() {
     clear_state();
-    let path = "/tmp/woxi_test_export_plot.svg";
+    let path = temp_file("woxi_test_export_plot.svg");
     let result =
       interpret(&format!("Export[\"{path}\", Plot[Sin[x], {{x, -10, 10}}]]"))
         .unwrap();
     assert_eq!(result, path);
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert!(content.starts_with("<svg"));
     assert!(content.contains("</svg>"));
     std::fs::remove_file(path).ok();
@@ -979,11 +999,11 @@ mod plot {
   #[test]
   fn export_string_to_file() {
     clear_state();
-    let path = "/tmp/woxi_test_export_string.txt";
+    let path = temp_file("woxi_test_export_string.txt");
     let result =
       interpret(&format!("Export[\"{path}\", \"hello world\"]")).unwrap();
     assert_eq!(result, path);
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "hello world");
     std::fs::remove_file(path).ok();
   }
@@ -1921,8 +1941,8 @@ mod read_string {
   #[test]
   fn basic_file() {
     use std::io::Write;
-    let path = "/tmp/woxi_readstring_test.txt";
-    let mut file = std::fs::File::create(path).unwrap();
+    let path = temp_file("woxi_readstring_test.txt");
+    let mut file = std::fs::File::create(&path).unwrap();
     file.write_all(b"hello world\nfoo bar").unwrap();
     drop(file);
 
@@ -1933,8 +1953,9 @@ mod read_string {
 
   #[test]
   fn nonexistent_file() {
+    let path = temp_file("nonexistent_woxi_file.wl");
     assert_eq!(
-      interpret("ReadString[\"/tmp/woxi_no_such_file_12345.txt\"]").unwrap(),
+      interpret(&format!("ReadString[\"{path}\"]")).unwrap(),
       "$Failed"
     );
   }
@@ -2035,8 +2056,8 @@ mod read_list {
   #[test]
   fn from_file() {
     use std::io::Write;
-    let path = "/tmp/woxi_readlist_test.txt";
-    let mut file = std::fs::File::create(path).unwrap();
+    let path = temp_file("woxi_readlist_test.txt");
+    let mut file = std::fs::File::create(&path).unwrap();
     writeln!(file, "10").unwrap();
     writeln!(file, "20").unwrap();
     writeln!(file, "30").unwrap();
@@ -2054,10 +2075,10 @@ mod put {
   #[test]
   fn put_single_expression() {
     clear_state();
-    let path = "/tmp/woxi_test_put_single.wl";
+    let path = temp_file("woxi_test_put_single.txt");
     let result = interpret(&format!("Put[3, \"{path}\"]")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "3\n");
     std::fs::remove_file(path).ok();
   }
@@ -2065,10 +2086,10 @@ mod put {
   #[test]
   fn put_multiple_expressions() {
     clear_state();
-    let path = "/tmp/woxi_test_put_multi.wl";
+    let path = temp_file("woxi_test_put_multi.txt");
     let result = interpret(&format!("Put[1, 2, 3, \"{path}\"]")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "1\n2\n3\n");
     std::fs::remove_file(path).ok();
   }
@@ -2076,10 +2097,10 @@ mod put {
   #[test]
   fn put_list() {
     clear_state();
-    let path = "/tmp/woxi_test_put_list.wl";
+    let path = temp_file("woxi_test_put_list.txt");
     let result = interpret(&format!("Put[{{1, 2, 3}}, \"{path}\"]")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "{1, 2, 3}\n");
     std::fs::remove_file(path).ok();
   }
@@ -2087,10 +2108,10 @@ mod put {
   #[test]
   fn put_symbolic_expression() {
     clear_state();
-    let path = "/tmp/woxi_test_put_sym.wl";
+    let path = temp_file("woxi_test_put_sym.txt");
     let result = interpret(&format!("Put[x + y, \"{path}\"]")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "x + y\n");
     std::fs::remove_file(path).ok();
   }
@@ -2098,10 +2119,10 @@ mod put {
   #[test]
   fn put_evaluates_argument() {
     clear_state();
-    let path = "/tmp/woxi_test_put_eval.wl";
+    let path = temp_file("woxi_test_put_eval.txt");
     let result = interpret(&format!("Put[1 + 2, \"{path}\"]")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "3\n");
     std::fs::remove_file(path).ok();
   }
@@ -2109,10 +2130,10 @@ mod put {
   #[test]
   fn put_empty_file() {
     clear_state();
-    let path = "/tmp/woxi_test_put_empty.wl";
+    let path = temp_file("woxi_test_put_empty.txt");
     let result = interpret(&format!("Put[\"{path}\"]")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "");
     std::fs::remove_file(path).ok();
   }
@@ -2120,10 +2141,10 @@ mod put {
   #[test]
   fn put_rational() {
     clear_state();
-    let path = "/tmp/woxi_test_put_rat.wl";
+    let path = temp_file("woxi_test_put_rat.txt");
     let result = interpret(&format!("Put[1/3, \"{path}\"]")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "1/3\n");
     std::fs::remove_file(path).ok();
   }
@@ -2131,10 +2152,10 @@ mod put {
   #[test]
   fn put_operator_form() {
     clear_state();
-    let path = "/tmp/woxi_test_put_op.wl";
+    let path = temp_file("woxi_test_put_op.txt");
     let result = interpret(&format!("42 >> \"{path}\"")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "42\n");
     std::fs::remove_file(path).ok();
   }
@@ -2142,10 +2163,10 @@ mod put {
   #[test]
   fn put_overwrites_file() {
     clear_state();
-    let path = "/tmp/woxi_test_put_overwrite.wl";
+    let path = temp_file("woxi_test_put_overwrite.txt");
     interpret(&format!("Put[1, \"{path}\"]")).unwrap();
     interpret(&format!("Put[2, \"{path}\"]")).unwrap();
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "2\n");
     std::fs::remove_file(path).ok();
   }
@@ -2153,7 +2174,7 @@ mod put {
   #[test]
   fn put_return_value_in_list() {
     clear_state();
-    let path = "/tmp/woxi_test_put_retval.wl";
+    let path = temp_file("woxi_test_put_retval.txt");
     let result = interpret(&format!("{{Put[1, \"{path}\"]}}")).unwrap();
     assert_eq!(result, "{Null}");
     std::fs::remove_file(path).ok();
@@ -2166,11 +2187,11 @@ mod put_append {
   #[test]
   fn put_append_basic() {
     clear_state();
-    let path = "/tmp/woxi_test_putappend.wl";
+    let path = temp_file("woxi_test_putappend.txt");
     interpret(&format!("Put[1, \"{path}\"]")).unwrap();
     let result = interpret(&format!("PutAppend[2, \"{path}\"]")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "1\n2\n");
     std::fs::remove_file(path).ok();
   }
@@ -2178,10 +2199,10 @@ mod put_append {
   #[test]
   fn put_append_multiple() {
     clear_state();
-    let path = "/tmp/woxi_test_putappend_multi.wl";
+    let path = temp_file("woxi_test_putappend_multi.txt");
     interpret(&format!("Put[1, \"{path}\"]")).unwrap();
     interpret(&format!("PutAppend[2, 3, \"{path}\"]")).unwrap();
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "1\n2\n3\n");
     std::fs::remove_file(path).ok();
   }
@@ -2189,10 +2210,10 @@ mod put_append {
   #[test]
   fn put_append_operator_form() {
     clear_state();
-    let path = "/tmp/woxi_test_putappend_op.wl";
+    let path = temp_file("woxi_test_putappend_op.txt");
     interpret(&format!("Put[1, \"{path}\"]")).unwrap();
     interpret(&format!("2 >>> \"{path}\"")).unwrap();
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "1\n2\n");
     std::fs::remove_file(path).ok();
   }
@@ -2200,11 +2221,11 @@ mod put_append {
   #[test]
   fn put_append_creates_file() {
     clear_state();
-    let path = "/tmp/woxi_test_putappend_create.wl";
-    std::fs::remove_file(path).ok();
+    let path = temp_file("woxi_test_putappend_create.txt");
+    std::fs::remove_file(&path).ok();
     let result = interpret(&format!("PutAppend[42, \"{path}\"]")).unwrap();
     assert_eq!(result, "\0");
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "42\n");
     std::fs::remove_file(path).ok();
   }
@@ -2216,13 +2237,13 @@ mod write {
   #[test]
   fn write_single_expression() {
     clear_state();
-    let path = "/tmp/woxi_test_write_single.txt";
+    let path = temp_file("woxi_test_write_single.txt");
     let result = interpret(&format!(
       "str = OpenWrite[\"{path}\"]; Write[str, 42]; Close[str]"
     ))
     .unwrap();
     assert_eq!(result, path);
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "42\n");
     std::fs::remove_file(path).ok();
   }
@@ -2230,12 +2251,12 @@ mod write {
   #[test]
   fn write_multiple_expressions_concatenated() {
     clear_state();
-    let path = "/tmp/woxi_test_write_concat.txt";
+    let path = temp_file("woxi_test_write_concat.txt");
     interpret(&format!(
       "str = OpenWrite[\"{path}\"]; Write[str, a^2, 1 + b^2]; Close[str]"
     ))
     .unwrap();
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "a^21 + b^2\n");
     std::fs::remove_file(path).ok();
   }
@@ -2243,12 +2264,12 @@ mod write {
   #[test]
   fn write_multiple_calls() {
     clear_state();
-    let path = "/tmp/woxi_test_write_multi.txt";
+    let path = temp_file("woxi_test_write_multi.txt");
     interpret(&format!(
       "str = OpenWrite[\"{path}\"]; Write[str, 1]; Write[str, 2]; Write[str, 3]; Close[str]"
     ))
     .unwrap();
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "1\n2\n3\n");
     std::fs::remove_file(path).ok();
   }
@@ -2256,12 +2277,12 @@ mod write {
   #[test]
   fn write_list() {
     clear_state();
-    let path = "/tmp/woxi_test_write_list.txt";
+    let path = temp_file("woxi_test_write_list.txt");
     interpret(&format!(
       "str = OpenWrite[\"{path}\"]; Write[str, {{1, 2, 3}}]; Close[str]"
     ))
     .unwrap();
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(content, "{1, 2, 3}\n");
     std::fs::remove_file(path).ok();
   }
@@ -2269,13 +2290,13 @@ mod write {
   #[test]
   fn write_returns_null() {
     clear_state();
-    let path = "/tmp/woxi_test_write_null.txt";
+    let path = temp_file("woxi_test_write_null.txt");
     let result = interpret(&format!(
       "str = OpenWrite[\"{path}\"]; r = Write[str, 1]; Close[str]; r"
     ))
     .unwrap();
     assert_eq!(result, "\0");
-    std::fs::remove_file(path).ok();
+    std::fs::remove_file(&path).ok();
   }
 }
 
@@ -2806,13 +2827,16 @@ mod file_name_join {
   fn basic_join() {
     assert_eq!(
       interpret(r#"FileNameJoin[{"home", "user", "file.txt"}]"#).unwrap(),
-      "home/user/file.txt"
+      format!("home{0}user{0}file.txt", std::path::MAIN_SEPARATOR_STR)
     );
   }
 
   #[test]
   fn two_parts() {
-    assert_eq!(interpret(r#"FileNameJoin[{"a", "b"}]"#).unwrap(), "a/b");
+    assert_eq!(
+      interpret(r#"FileNameJoin[{"a", "b"}]"#).unwrap(),
+      format!("a{0}b", std::path::MAIN_SEPARATOR_STR)
+    );
   }
 
   #[test]
@@ -2853,7 +2877,7 @@ mod to_file_name {
   fn list_dirs_and_file() {
     assert_eq!(
       interpret(r#"ToFileName[{"dir1", "dir2"}, "file"]"#).unwrap(),
-      "dir1/dir2/file"
+      format!("dir1{0}dir2{0}file", std::path::MAIN_SEPARATOR_STR)
     );
   }
 
@@ -2861,7 +2885,7 @@ mod to_file_name {
   fn string_dir_and_file() {
     assert_eq!(
       interpret(r#"ToFileName["dir1", "file"]"#).unwrap(),
-      "dir1/file"
+      format!("dir1{0}file", std::path::MAIN_SEPARATOR_STR)
     );
   }
 
@@ -2869,7 +2893,7 @@ mod to_file_name {
   fn list_dirs_only_has_trailing_slash() {
     assert_eq!(
       interpret(r#"ToFileName[{"dir1", "dir2", "dir3"}]"#).unwrap(),
-      "dir1/dir2/dir3/"
+      format!("dir1{0}dir2{0}dir3{0}", std::path::MAIN_SEPARATOR_STR)
     );
   }
 
@@ -2877,7 +2901,7 @@ mod to_file_name {
   fn single_dir_has_trailing_slash() {
     assert_eq!(
       interpret(r#"ToFileName["just_a_dir"]"#).unwrap(),
-      "just_a_dir/"
+      format!("just_a_dir{0}", std::path::MAIN_SEPARATOR_STR)
     );
   }
 }
@@ -3040,6 +3064,7 @@ mod expand_file_name {
   }
 
   #[test]
+  #[cfg(not(target_os = "windows"))]
   fn tilde_expansion() {
     let result = interpret(r#"ExpandFileName["~/test.txt"]"#).unwrap();
     assert!(
@@ -4277,8 +4302,11 @@ mod file_names {
   #[test]
   fn with_directory() {
     // FileNames["*.rs", "src"] should find lib.rs
-    let result =
-      interpret(r#"MemberQ[FileNames["*.rs", "src"], "src/lib.rs"]"#).unwrap();
+    let result = interpret(&format!(
+      r#"MemberQ[FileNames["*.rs", "src"], "src{0}lib.rs"]"#,
+      std::path::MAIN_SEPARATOR_STR
+    ))
+    .unwrap();
     assert_eq!(result, "True");
   }
 
@@ -4438,11 +4466,12 @@ mod read_line {
   fn read_line_from_file() {
     clear_state();
     // Write a test file, read first line
-    let _ = interpret(
-      r#"Export["/tmp/woxi_readline_test.txt", "hello world\nsecond line", "Text"]"#,
-    );
+    let path = temp_file("woxi_readline_test.txt");
+    let _ = interpret(&format!(
+      r#"Export["{path}", "hello world\nsecond line", "Text"]"#
+    ));
     assert_eq!(
-      interpret(r#"ReadLine["/tmp/woxi_readline_test.txt"]"#).unwrap(),
+      interpret(&format!(r#"ReadLine["{path}"]"#)).unwrap(),
       "hello world"
     );
   }
@@ -4450,11 +4479,12 @@ mod read_line {
   #[test]
   fn read_line_from_stream() {
     clear_state();
-    let _ = interpret(
-      r#"Export["/tmp/woxi_readline_test2.txt", "line1\nline2\nline3", "Text"]"#,
-    );
+    let path = temp_file("woxi_readline_test2.txt");
+    let _ = interpret(&format!(
+      r#"Export["{path}", "line1\nline2\nline3", "Text"]"#
+    ));
     let result = interpret(
-      r#"stream = OpenRead["/tmp/woxi_readline_test2.txt"]; l1 = ReadLine[stream]; l2 = ReadLine[stream]; Close[stream]; {l1, l2}"#,
+      &format!(r#"stream = OpenRead["{path}"]; l1 = ReadLine[stream]; l2 = ReadLine[stream]; Close[stream]; {{l1, l2}}"#)
     )
     .unwrap();
     assert_eq!(result, "{line1, line2}");
@@ -4463,10 +4493,10 @@ mod read_line {
   #[test]
   fn read_line_end_of_file() {
     clear_state();
-    let _ =
-      interpret(r#"Export["/tmp/woxi_readline_test3.txt", "only", "Text"]"#);
+    let path = temp_file("woxi_readline_test3.txt");
+    let _ = interpret(&format!(r#"Export["{path}", "only", "Text"]"#));
     let result = interpret(
-      r#"stream = OpenRead["/tmp/woxi_readline_test3.txt"]; l1 = ReadLine[stream]; l2 = ReadLine[stream]; Close[stream]; {l1, l2}"#,
+      &format!(r#"stream = OpenRead["{path}"]; l1 = ReadLine[stream]; l2 = ReadLine[stream]; Close[stream]; {{l1, l2}}"#)
     )
     .unwrap();
     assert_eq!(result, "{only, EndOfFile}");
@@ -4586,6 +4616,7 @@ mod import_export_formats {
 
 mod cases {
   use super::super::case_helpers::assert_case;
+  use super::*;
 
   #[test]
   fn f_1() {
@@ -4795,20 +4826,23 @@ mod cases {
   }
   #[test]
   fn set_1() {
-    assert_case(r#"path = FileNameJoin[{"a","b","c"}]"#, r#""a/b/c""#);
+    assert_case(
+      r#"path = FileNameJoin[{"a","b","c"}]"#,
+      &format!(r#""a{0}b{0}c""#, std::path::MAIN_SEPARATOR_STR),
+    );
   }
   #[test]
   fn file_name_drop_1() {
     assert_case(
       r#"path = FileNameJoin[{"a","b","c"}]; FileNameDrop[path, -1]"#,
-      r#""a/b""#,
+      &format!(r#""a{0}b""#, std::path::MAIN_SEPARATOR_STR),
     );
   }
   #[test]
   fn file_name_drop_2() {
     assert_case(
       r#"path = FileNameJoin[{"a","b","c"}]; FileNameDrop[path, -1]; FileNameDrop[path]"#,
-      r#""a/b""#,
+      &format!(r#""a{0}b""#, std::path::MAIN_SEPARATOR_STR),
     );
   }
   #[test]
@@ -4923,7 +4957,7 @@ mod cases {
   fn file_name_join_1() {
     assert_case(
       r#"FileNameJoin[{"dir1", "dir2", "dir3"}]"#,
-      r#""dir1/dir2/dir3""#,
+      &format!(r#""dir1{0}dir2{0}dir3""#, std::path::MAIN_SEPARATOR_STR),
     );
   }
   #[test]
@@ -5060,15 +5094,21 @@ mod cases {
   fn get_1() {
     // Use a test-unique filename: get_1 and get_2 otherwise both write to
     // `$TemporaryDirectory/example_file` and race under parallel test runs.
+    let path = format!("{0}example_file_get2", std::path::MAIN_SEPARATOR_STR);
     assert_case(
-      r#"filename = $TemporaryDirectory <> "/example_file_get1"; Put[x + y, filename]; Get[filename]"#,
+      &format!(
+        r#"filename = $TemporaryDirectory <> "{path}"; Put[x + y, filename]; Get[filename]"#
+      ),
       r#"x + y"#,
     );
   }
   #[test]
   fn get_2() {
+    let path = format!("{0}example_file_get2", std::path::MAIN_SEPARATOR_STR);
     assert_case(
-      r#"filename = $TemporaryDirectory <> "/example_file_get2"; Put[x + y, filename]; Get[filename]; filename = $TemporaryDirectory <> "/example_file_get2"; Put[x + y, 2x^2 + 4z!, Cos[x] + I Sin[x], filename]; Get[filename]"#,
+      &format!(
+        r#"filename = $TemporaryDirectory <> "{path}"; Put[x + y, filename]; Get[filename]; filename = $TemporaryDirectory <> "{path}"; Put[x + y, 2x^2 + 4z!, Cos[x] + I Sin[x], filename]; Get[filename]"#
+      ),
       r#"Cos[x] + I*Sin[x]"#,
     );
   }
@@ -5327,12 +5367,15 @@ mod cases {
   }
   #[test]
   fn file_exists_q_1() {
-    assert_case(r#"FileExistsQ["ExampleData/sunflowers.jpg"]"#, r#"False"#);
+    let path = missing_file();
+    assert_case(&format!(r#"FileExistsQ["{path}"]"#), r#"False"#);
   }
   #[test]
   fn file_exists_q_2() {
+    let path = missing_file();
+    let path2 = path.replace("jpg", "png");
     assert_case(
-      r#"FileExistsQ["ExampleData/sunflowers.jpg"]; FileExistsQ["ExampleData/sunflowers.png"]"#,
+      &format!(r#"FileExistsQ["{path}"]; FileExistsQ["{path2}"]"#),
       r#"False"#,
     );
   }
@@ -5351,21 +5394,21 @@ mod cases {
   fn to_file_name_1() {
     assert_case(
       r#"ToFileName[{"dir1", "dir2"}, "file"]"#,
-      r#""dir1/dir2/file""#,
+      &format!(r#""dir1{0}dir2{0}file""#, std::path::MAIN_SEPARATOR_STR),
     );
   }
   #[test]
   fn to_file_name_2() {
     assert_case(
       r#"ToFileName[{"dir1", "dir2"}, "file"]; ToFileName["dir1", "file"]"#,
-      r#""dir1/file""#,
+      &format!(r#""dir1{0}file""#, std::path::MAIN_SEPARATOR_STR),
     );
   }
   #[test]
   fn to_file_name_3() {
     assert_case(
       r#"ToFileName[{"dir1", "dir2"}, "file"]; ToFileName["dir1", "file"]; ToFileName[{"dir1", "dir2", "dir3"}]"#,
-      r#""dir1/dir2/dir3/""#,
+      &format!(r#""dir1{0}dir2{0}dir3{0}""#, std::path::MAIN_SEPARATOR_STR),
     );
   }
   #[test]
@@ -5404,8 +5447,11 @@ mod cases {
     // element forms but not the \`"Elements"\` introspection query).
     // Verify a tractable element form on a freshly written tmp .txt
     // file: \`Import[path, "Lines"]\` returns the file's lines.
+    let path = temp_file("woxi-case3270.txt");
     assert_case(
-      r#"tmp = OpenWrite["/tmp/woxi-case3270.txt"]; WriteString[tmp, "hello\nworld\n"]; Close[tmp]; Import["/tmp/woxi-case3270.txt", "Lines"]"#,
+      &format!(
+        r#"tmp = OpenWrite["{path}"]; WriteString[tmp, "hello\nworld\n"]; Close[tmp]; Import["{path}", "Lines"]"#
+      ),
       r#"{"hello", "world"}"#,
     );
   }
@@ -5414,8 +5460,11 @@ mod cases {
     // Duplicate \`ExampleData\`-dependent situation as case 3270 with
     // an extra \`"Lines"\` call. Same fix: use a tmp .txt with known
     // content and verify Import\` reads the lines.
+    let path = temp_file("woxi-case3271.txt");
     assert_case(
-      r#"tmp = OpenWrite["/tmp/woxi-case3271.txt"]; WriteString[tmp, "alpha\nbeta\ngamma\n"]; Close[tmp]; Import["/tmp/woxi-case3271.txt", "Lines"]"#,
+      &format!(
+        r#"tmp = OpenWrite["{path}"]; WriteString[tmp, "alpha\nbeta\ngamma\n"]; Close[tmp]; Import["{path}", "Lines"]"#
+      ),
       r#"{"alpha", "beta", "gamma"}"#,
     );
   }
