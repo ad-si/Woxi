@@ -6744,6 +6744,228 @@ pub fn cumulant_generating_function_ast(
   }
 }
 
+// ─── Factorial / Central MomentGeneratingFunction ────────────────────
+
+/// FactorialMomentGeneratingFunction[dist, t] — E[t^X], which is the
+/// MomentGeneratingFunction evaluated at Log[t].
+pub fn factorial_moment_generating_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "FactorialMomentGeneratingFunction".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let log_t = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![args[1].clone()].into(),
+  };
+  // Symbolic NormalDistribution keeps E^(m Log[t] + (s^2 Log[t]^2)/2)
+  // unfolded like wolframscript (evaluation would extract t^m; both
+  // engines only do that folding for numeric m).
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "NormalDistribution"
+    && dargs.len() == 2
+    && matches!(&args[1], Expr::Identifier(_))
+    && dargs.iter().all(|d| matches!(d, Expr::Identifier(_)))
+  {
+    let (m, sd) = (dargs[0].clone(), dargs[1].clone());
+    let times = |f: Vec<Expr>| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: f.into(),
+    };
+    let sq = |e: Expr| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(e),
+      right: Box::new(Expr::Integer(2)),
+    };
+    return Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(Expr::Identifier("E".to_string())),
+      right: Box::new(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          times(vec![m, log_t.clone()]),
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(times(vec![sq(sd), sq(log_t)])),
+            right: Box::new(Expr::Integer(2)),
+          },
+        ]
+        .into(),
+      }),
+    });
+  }
+  let mgf = moment_generating_function_ast(&[args[0].clone(), log_t])?;
+  if matches!(&mgf, Expr::FunctionCall { name, .. }
+    if name == "MomentGeneratingFunction")
+  {
+    return Ok(unevaluated(args));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&mgf)
+}
+
+/// CentralMomentGeneratingFunction[dist, t] — E[e^(t (X - mean))], i.e.
+/// E^(-t Mean[dist]) times the MomentGeneratingFunction.
+pub fn central_moment_generating_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "CentralMomentGeneratingFunction".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let mgf = moment_generating_function_ast(args)?;
+  if matches!(&mgf, Expr::FunctionCall { name, .. }
+    if name == "MomentGeneratingFunction")
+  {
+    return Ok(unevaluated(args));
+  }
+  let mean = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Mean".to_string(),
+    args: vec![args[0].clone()].into(),
+  })?;
+  if matches!(&mean, Expr::FunctionCall { name, .. } if name == "Mean") {
+    return Ok(unevaluated(args));
+  }
+  let damp_exponent =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), mean.clone(), args[1].clone()].into(),
+    })?;
+  // UniformDistribution keeps wolframscript's numerator order
+  // (-E^(a t) + E^(b t)); a re-evaluated product would resort it.
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "UniformDistribution"
+    && dargs.len() == 1
+    && let Expr::List(minmax) = &dargs[0]
+    && minmax.len() == 2
+  {
+    let (a, b) = (minmax[0].clone(), minmax[1].clone());
+    let symbolic = matches!(&args[1], Expr::Identifier(_))
+      && minmax.iter().all(|d| matches!(d, Expr::Identifier(_)));
+    let times = |f: Vec<Expr>| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: f.into(),
+    };
+    let e_pow = |e: Expr| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(Expr::Identifier("E".to_string())),
+      right: Box::new(e),
+    };
+    let half = Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+    };
+    let t = args[1].clone();
+    let expr = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          times(vec![
+            Expr::Integer(-1),
+            e_pow(times(vec![a.clone(), t.clone()])),
+          ]),
+          e_pow(times(vec![b.clone(), t.clone()])),
+        ]
+        .into(),
+      }),
+      right: Box::new(times(vec![
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![times(vec![Expr::Integer(-1), a.clone()]), b.clone()]
+            .into(),
+        },
+        e_pow(times(vec![
+          half,
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![a, b].into(),
+          },
+          t.clone(),
+        ])),
+        t,
+      ])),
+    };
+    return if symbolic {
+      Ok(expr)
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(&expr)
+    };
+  }
+  // E-power MGFs combine exponents in wolframscript's order: the MGF
+  // exponent first, then -mean*t. Returned raw — re-evaluation would
+  // merge the terms in a different order.
+  let e_exponent = match &mgf {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Identifier(b) if b == "E")
+      || matches!(left.as_ref(), Expr::Constant(c) if c == "E") =>
+    {
+      Some((**right).clone())
+    }
+    Expr::FunctionCall { name, args: pargs }
+      if name == "Power"
+        && pargs.len() == 2
+        && (matches!(&pargs[0], Expr::Identifier(b) if b == "E")
+          || matches!(&pargs[0], Expr::Constant(c) if c == "E")) =>
+    {
+      Some(pargs[1].clone())
+    }
+    _ => None,
+  };
+  if let Some(expo) = e_exponent {
+    if matches!(damp_exponent, Expr::Integer(0)) {
+      return Ok(mgf);
+    }
+    let raw = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![expo, damp_exponent].into(),
+    };
+    // Keep wolframscript's exponent order (MGF exponent first, then
+    // -mean*t) unless evaluation cancels terms — then use the
+    // simplified exponent (e.g. the Normal case collapses to
+    // (s^2 t^2)/2).
+    let plus_len = |e: &Expr| -> usize {
+      match e {
+        Expr::FunctionCall { name, args } if name == "Plus" => args.len(),
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          ..
+        } => 2,
+        _ => 1,
+      }
+    };
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&raw)?;
+    let exponent = if plus_len(&evaluated) < plus_len(&raw) {
+      evaluated
+    } else {
+      raw
+    };
+    return Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(Expr::Identifier("E".to_string())),
+      right: Box::new(exponent),
+    });
+  }
+  let damp = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(Expr::Identifier("E".to_string())),
+    right: Box::new(damp_exponent),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![damp, mgf].into(),
+  })
+}
+
 // ─── CorrelationFunction ─────────────────────────────────────────────
 
 /// CorrelationFunction[data, k] — the sample autocorrelation at lag k:

@@ -843,6 +843,20 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    "FactorialMomentGeneratingFunction" if args.len() == 2 => {
+      return Some(
+        crate::functions::math_ast::factorial_moment_generating_function_ast(
+          args,
+        ),
+      );
+    }
+    "CentralMomentGeneratingFunction" if args.len() == 2 => {
+      return Some(
+        crate::functions::math_ast::central_moment_generating_function_ast(
+          args,
+        ),
+      );
+    }
     "CumulantGeneratingFunction" if args.len() == 2 => {
       return Some(
         crate::functions::math_ast::cumulant_generating_function_ast(args),

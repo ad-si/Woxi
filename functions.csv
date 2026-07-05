@@ -3094,7 +3094,7 @@ MoonPosition,,🚫,,10.0,3162
 StartExternalSession,,🚫,,11.2,3162
 CumulantGeneratingFunction,Cumulant-generating function Log[E[e^(tX)]] of a probability distribution,✅,pure,8.0,3176
 DimensionReduction,,🚫,,10.1,3176
-FactorialMomentGeneratingFunction,,,,8.0,3176
+FactorialMomentGeneratingFunction,Expected value E[t^X] of a distribution (MGF at Log t),✅,pure,8.0,3176
 HadamardMatrix,Hadamard matrix of size n,✅,none,9.0,3176
 KeyIntersection,Restricts each association to the keys common to all,✅,pure,10.0,3176
 LeftRightArrow,,,,3.0,3176
@@ -3231,7 +3231,7 @@ MannWhitneyTest,,,,8.0,3306
 PageRankCentrality,PageRank centrality of graph vertices with damping factor alpha,✅,pure,8.0,3306
 PowerModList,List of successive power-mod values,✅,none,6.0,3306
 StreamColorFunctionScaling,,,,7.0,3306
-CentralMomentGeneratingFunction,,,,8.0,3317
+CentralMomentGeneratingFunction,Expected value E[e^(t(X-mean))] of a distribution,✅,pure,8.0,3317
 CorrelationTest,,,,9.0,3317
 FindGraphPartition,,,,9.0,3317
 IncidenceGraph,Builds the graph with a given vertex-by-edge incidence matrix (optionally with named vertices),✅,pure,8.0,3317

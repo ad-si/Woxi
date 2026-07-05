@@ -7023,3 +7023,123 @@ mod pert_distribution_tests {
     )));
   }
 }
+
+mod factorial_central_mgf_tests {
+  use woxi::interpret;
+
+  // FactorialMomentGeneratingFunction[dist, t] = E[t^X], i.e. the MGF at
+  // Log[t]. All values verified against wolframscript.
+  #[test]
+  fn factorial_mgf() {
+    assert_eq!(
+      interpret("FactorialMomentGeneratingFunction[PoissonDistribution[m], t]")
+        .unwrap(),
+      "E^(m*(-1 + t))"
+    );
+    assert_eq!(
+      interpret(
+        "FactorialMomentGeneratingFunction[BernoulliDistribution[p], t]"
+      )
+      .unwrap(),
+      "1 - p + p*t"
+    );
+    assert_eq!(
+      interpret(
+        "FactorialMomentGeneratingFunction[BinomialDistribution[n, p], t]"
+      )
+      .unwrap(),
+      "(1 + p*(-1 + t))^n"
+    );
+    assert_eq!(
+      interpret(
+        "FactorialMomentGeneratingFunction[GeometricDistribution[p], t]"
+      )
+      .unwrap(),
+      "p/(1 - (1 - p)*t)"
+    );
+    assert_eq!(
+      interpret(
+        "FactorialMomentGeneratingFunction[ExponentialDistribution[a], t]"
+      )
+      .unwrap(),
+      "a/(a - Log[t])"
+    );
+    // Symbolic Normal keeps the Log form unfolded; numeric m folds to
+    // t^m — both engines agree on that split.
+    assert_eq!(
+      interpret(
+        "FactorialMomentGeneratingFunction[NormalDistribution[m, s], t]"
+      )
+      .unwrap(),
+      "E^(m*Log[t] + (s^2*Log[t]^2)/2)"
+    );
+    assert_eq!(
+      interpret(
+        "FactorialMomentGeneratingFunction[NormalDistribution[2, 1], t]"
+      )
+      .unwrap(),
+      "E^(Log[t]^2/2)*t^2"
+    );
+    assert_eq!(
+      interpret("FactorialMomentGeneratingFunction[NormalDistribution[], t]")
+        .unwrap(),
+      "E^(Log[t]^2/2)"
+    );
+    assert_eq!(
+      interpret("FactorialMomentGeneratingFunction[PoissonDistribution[3], t]")
+        .unwrap(),
+      "E^(3*(-1 + t))"
+    );
+  }
+
+  // CentralMomentGeneratingFunction[dist, t] = E^(-t Mean) MGF(t).
+  #[test]
+  fn central_mgf() {
+    assert_eq!(
+      interpret("CentralMomentGeneratingFunction[NormalDistribution[m, s], t]")
+        .unwrap(),
+      "E^((s^2*t^2)/2)"
+    );
+    assert_eq!(
+      interpret("CentralMomentGeneratingFunction[NormalDistribution[0, 1], t]")
+        .unwrap(),
+      "E^(t^2/2)"
+    );
+    assert_eq!(
+      interpret("CentralMomentGeneratingFunction[PoissonDistribution[m], t]")
+        .unwrap(),
+      "E^((-1 + E^t)*m - m*t)"
+    );
+    assert_eq!(
+      interpret("CentralMomentGeneratingFunction[PoissonDistribution[4], t]")
+        .unwrap(),
+      "E^(4*(-1 + E^t) - 4*t)"
+    );
+    assert_eq!(
+      interpret(
+        "CentralMomentGeneratingFunction[ExponentialDistribution[a], t]"
+      )
+      .unwrap(),
+      "a/(E^(t/a)*(a - t))"
+    );
+    assert_eq!(
+      interpret(
+        "CentralMomentGeneratingFunction[UniformDistribution[{a, b}], t]"
+      )
+      .unwrap(),
+      "(-E^(a*t) + E^(b*t))/((-a + b)*E^(((a + b)*t)/2)*t)"
+    );
+    assert_eq!(
+      interpret(
+        "CentralMomentGeneratingFunction[UniformDistribution[{0, 2}], t]"
+      )
+      .unwrap(),
+      "(-1 + E^(2*t))/(2*E^t*t)"
+    );
+    assert_eq!(
+      interpret("CentralMomentGeneratingFunction[BernoulliDistribution[p], t]")
+        .unwrap(),
+      "(1 - p + E^t*p)/E^(p*t)"
+    );
+  }
+}
