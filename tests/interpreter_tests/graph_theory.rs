@@ -5176,3 +5176,108 @@ mod kirchhoff_graph_tests {
     );
   }
 }
+
+mod find_fundamental_cycles_tests {
+  use woxi::interpret;
+
+  // One cycle per non-tree edge of the BFS spanning forest, in reverse
+  // EdgeList order, closed by the non-tree edge in input orientation.
+  // All values verified against wolframscript.
+  #[test]
+  fn fundamental_cycles() {
+    assert_eq!(
+      interpret("FindFundamentalCycles[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}]]")
+        .unwrap(),
+      "{{3  1, 1  2, 2  3}}"
+    );
+    assert_eq!(
+      interpret("FindFundamentalCycles[CompleteGraph[4]]").unwrap(),
+      "{{4  1, 1  3, 3  4}, {4  1, 1  2, 2  4}, {3  1, 1  2, 2  3}}"
+    );
+    assert_eq!(
+      interpret("FindFundamentalCycles[CycleGraph[5]]").unwrap(),
+      "{{4  5, 5  1, 1  2, 2  3, 3  4}}"
+    );
+    // Non-root LCA.
+    assert_eq!(
+      interpret(
+        "FindFundamentalCycles[Graph[{1 <-> 2, 2 <-> 3, 2 <-> 4, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "{{4  2, 2  3, 3  4}}"
+    );
+    // Vertex order comes from first appearance, not sorting.
+    assert_eq!(
+      interpret("FindFundamentalCycles[Graph[{2 <-> 1, 1 <-> 3, 3 <-> 2}]]")
+        .unwrap(),
+      "{{3  2, 2  1, 1  3}}"
+    );
+    // Disconnected: global reverse edge order across components.
+    assert_eq!(
+      interpret(
+        "FindFundamentalCycles[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1, 4 <-> 5, 5 <-> 6, 6 <-> 4}]]"
+      )
+      .unwrap(),
+      "{{6  4, 4  5, 5  6}, {3  1, 1  2, 2  3}}"
+    );
+    // Bare edge lists, multi-edges, and self-loops.
+    assert_eq!(
+      interpret("FindFundamentalCycles[{1 <-> 2, 2 <-> 3, 3 <-> 1}]").unwrap(),
+      "{{3  1, 1  2, 2  3}}"
+    );
+    assert_eq!(
+      interpret("FindFundamentalCycles[Graph[{1 <-> 2, 1 <-> 2}]]").unwrap(),
+      "{{2  1, 1  2}}"
+    );
+    assert_eq!(
+      interpret("FindFundamentalCycles[Graph[{1 <-> 2, 1 <-> 1}]]").unwrap(),
+      "{{1  1}}"
+    );
+    // Acyclic graphs give an empty list; options are accepted.
+    assert_eq!(
+      interpret("FindFundamentalCycles[Graph[{1 <-> 2, 2 <-> 3}]]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret(
+        "FindFundamentalCycles[CycleGraph[3], VertexLabels -> \"Name\"]"
+      )
+      .unwrap(),
+      "{{3  1, 1  2, 2  3}}"
+    );
+  }
+
+  // Directed graphs emit `ngen`, non-graphs `graph`, non-option extras
+  // `nonopt`, and zero arguments `argx` — all unevaluated.
+  #[test]
+  fn message_cases() {
+    let r = woxi::interpret_with_stdout(
+      "FindFundamentalCycles[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "FindFundamentalCycles[Graph[<3>, <3>]]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindFundamentalCycles::ngen: The generalized FindFundamentalCycles[Graph[<3>, <3>]] is not implemented."
+    )));
+
+    let r = woxi::interpret_with_stdout("FindFundamentalCycles[5]").unwrap();
+    assert_eq!(r.result, "FindFundamentalCycles[5]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindFundamentalCycles::graph: A graph object is expected at position 1 in FindFundamentalCycles[5]."
+    )));
+
+    let r =
+      woxi::interpret_with_stdout("FindFundamentalCycles[CycleGraph[3], 1]")
+        .unwrap();
+    assert_eq!(r.result, "FindFundamentalCycles[Graph[<3>, <3>], 1]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindFundamentalCycles::nonopt: Options expected (instead of 1) beyond position 1 in FindFundamentalCycles[Graph[<3>, <3>], 1]. An option must be a rule or a list of rules."
+    )));
+
+    let r = woxi::interpret_with_stdout("FindFundamentalCycles[]").unwrap();
+    assert_eq!(r.result, "FindFundamentalCycles[]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindFundamentalCycles::argx: FindFundamentalCycles called with 0 arguments; 1 argument is expected."
+    )));
+  }
+}

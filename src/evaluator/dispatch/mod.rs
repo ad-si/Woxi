@@ -4235,6 +4235,11 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::find_cycle_ast(args);
   }
 
+  // FindFundamentalCycles[graph | edgeList] → BFS fundamental cycle basis
+  if name == "FindFundamentalCycles" {
+    return crate::functions::graph::find_fundamental_cycles_ast(args);
+  }
+
   // TransitiveClosureGraph[graph | edgeList] → graph with reachability edges
   if name == "TransitiveClosureGraph" && args.len() == 1 {
     return crate::functions::graph::transitive_closure_graph_ast(args);

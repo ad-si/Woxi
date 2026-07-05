@@ -3907,7 +3907,7 @@ BioSequenceTranslate,,🚫,,12.2,4027
 CompoundRenewalProcess,,🚫,,9.0,4027
 EnterExpressionPacket,,🚫,,3.0,4027
 EntityInstance,,🚫,,10.3,4027
-FindFundamentalCycles,,,,10.0,4027
+FindFundamentalCycles,Fundamental cycle basis from a BFS spanning forest in reverse edge order,✅,pure,10.0,4027
 HalftoneShading,,,,12.1,4027
 LibraryDataType,,,,10.0,4027
 LibraryLoad,,,,8.0,4027

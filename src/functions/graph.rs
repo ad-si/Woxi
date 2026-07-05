@@ -1963,6 +1963,184 @@ fn parse_vertex_style(
 /// `Method -> …` option is accepted and ignored (the result is method-
 /// independent). Edge weights come from the graph's `EdgeWeight` option
 /// (default 1 per edge); undirected edges are traversable both ways.
+/// FindFundamentalCycles[g] — fundamental cycles with respect to a BFS
+/// spanning forest, matching wolframscript: one cycle per non-tree edge,
+/// cycles listed in reverse EdgeList order of their non-tree edge; each
+/// cycle walks from the closing edge's second endpoint up to the LCA,
+/// back down to the first endpoint, and closes with the non-tree edge in
+/// its input orientation. Directed graphs emit `ngen`, non-graphs `graph`,
+/// and non-option extra arguments `nonopt` — all like wolframscript.
+pub fn find_fundamental_cycles_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "FindFundamentalCycles".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let call_display = || {
+    expr_to_string(&Expr::FunctionCall {
+      name: "FindFundamentalCycles".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  if args.is_empty() {
+    crate::emit_message(
+      "FindFundamentalCycles::argx: FindFundamentalCycles called with 0 arguments; 1 argument is expected.",
+    );
+    return unevaluated();
+  }
+
+  // Arguments beyond the graph must be options; they are ignored.
+  for extra in &args[1..] {
+    let is_opt = matches!(
+      extra,
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+    );
+    if !is_opt {
+      crate::emit_message(&format!(
+        "FindFundamentalCycles::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
+        expr_to_string(extra),
+        call_display()
+      ));
+      return unevaluated();
+    }
+  }
+
+  let graph_expected = || {
+    crate::emit_message(&format!(
+      "FindFundamentalCycles::graph: A graph object is expected at position 1 in {}.",
+      call_display()
+    ));
+  };
+
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    graph_expected();
+    return unevaluated();
+  };
+
+  let n = vertices.len();
+  let mut rank: HashMap<String, usize> = HashMap::new();
+  for (i, v) in vertices.iter().enumerate() {
+    rank.entry(expr_to_string(v)).or_insert(i);
+  }
+
+  // Edge instances in input order, keeping the input orientation.
+  let mut edges: Vec<(usize, usize)> = Vec::new();
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (src, dst, directed) = match inner {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        let d = name != "UndirectedEdge" && name != "TwoWayRule";
+        (&eargs[0], &eargs[1], d)
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), true),
+      _ => {
+        graph_expected();
+        return unevaluated();
+      }
+    };
+    if directed {
+      crate::emit_message(&format!(
+        "FindFundamentalCycles::ngen: The generalized {} is not implemented.",
+        call_display()
+      ));
+      return unevaluated();
+    }
+    match (
+      rank.get(&expr_to_string(src)),
+      rank.get(&expr_to_string(dst)),
+    ) {
+      (Some(&si), Some(&di)) => edges.push((si, di)),
+      _ => {
+        graph_expected();
+        return unevaluated();
+      }
+    }
+  }
+
+  // BFS spanning forest: roots in vertex order, neighbours in edge input
+  // order.
+  let mut adj: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n];
+  for (idx, &(u, v)) in edges.iter().enumerate() {
+    adj[u].push((v, idx));
+    if u != v {
+      adj[v].push((u, idx));
+    }
+  }
+  let mut parent: Vec<Option<usize>> = vec![None; n];
+  let mut visited = vec![false; n];
+  let mut tree_edge = vec![false; edges.len()];
+  for root in 0..n {
+    if visited[root] {
+      continue;
+    }
+    visited[root] = true;
+    let mut queue = std::collections::VecDeque::from([root]);
+    while let Some(u) = queue.pop_front() {
+      for &(v, idx) in &adj[u] {
+        if !visited[v] {
+          visited[v] = true;
+          parent[v] = Some(u);
+          tree_edge[idx] = true;
+          queue.push_back(v);
+        }
+      }
+    }
+  }
+
+  let render_edge = |s: usize, d: usize| -> Expr {
+    Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
+      args: vec![vertices[s].clone(), vertices[d].clone()].into(),
+    }
+  };
+  let chain_to_root = |mut x: usize| -> Vec<usize> {
+    let mut c = vec![x];
+    while let Some(p) = parent[x] {
+      c.push(p);
+      x = p;
+    }
+    c
+  };
+
+  let mut cycles: Vec<Expr> = Vec::new();
+  for idx in (0..edges.len()).rev() {
+    if tree_edge[idx] {
+      continue;
+    }
+    let (u, v) = edges[idx];
+    let mut cycle: Vec<Expr> = Vec::new();
+    if u != v {
+      let cu = chain_to_root(u);
+      let cv = chain_to_root(v);
+      // Strip the common tail (below the LCA both chains coincide).
+      let mut lu = cu.len();
+      let mut lv = cv.len();
+      while lu > 1 && lv > 1 && cu[lu - 2] == cv[lv - 2] {
+        lu -= 1;
+        lv -= 1;
+      }
+      // cu[lu - 1] == cv[lv - 1] is the LCA.
+      for i in 0..lv - 1 {
+        cycle.push(render_edge(cv[i], cv[i + 1]));
+      }
+      for i in (0..lu - 1).rev() {
+        cycle.push(render_edge(cu[i + 1], cu[i]));
+      }
+    }
+    cycle.push(render_edge(u, v));
+    cycles.push(Expr::List(cycle.into()));
+  }
+
+  Ok(Expr::List(cycles.into()))
+}
+
 pub fn find_shortest_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let inert = || {
     Ok(Expr::FunctionCall {
