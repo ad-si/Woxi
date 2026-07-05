@@ -87,12 +87,32 @@ pub fn dispatch_datetime_functions(
       if args.is_empty() {
         return Some(Ok(Expr::Real(0.0)));
       }
+      // Resolve the first two zone specs. Named IANA zones resolve
+      // through chrono-tz (CLI builds) at the reference date (3rd
+      // argument) or the current instant, yielding a Real offset.
+      let mut zones: Vec<Expr> = Vec::new();
       for zone in args.iter().take(2) {
-        if matches!(zone, Expr::String(_)) {
-          // Named zones need a DST-aware tz database; left unevaluated.
-          return unevaluated();
-        }
-        if !numeric(zone) {
+        if let Expr::String(name) = zone {
+          match crate::functions::datetime_ast::named_zone_offset_at(
+            name,
+            args.get(2),
+          ) {
+            Some(off) => zones.push(Expr::Real(off)),
+            None => {
+              if crate::functions::datetime_ast::zone_name_invalid(name) {
+                for head in ["DateObject", "TimeZoneOffset"] {
+                  crate::emit_message(&format!(
+                    "{}::zone: Time zone specification {} should be a real number, integer or time zone string.",
+                    head, name
+                  ));
+                }
+              }
+              return unevaluated();
+            }
+          }
+        } else if numeric(zone) {
+          zones.push(zone.clone());
+        } else {
           crate::emit_message(&format!(
             "TimeZoneOffset::zone: Time zone specification {} should be a real number, integer or time zone string.",
             crate::syntax::expr_to_output(zone)
@@ -101,12 +121,12 @@ pub fn dispatch_datetime_functions(
         }
       }
       if args.len() == 1 {
-        return Some(Ok(args[0].clone()));
+        return Some(Ok(zones[0].clone()));
       }
       return Some(crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Minus,
-        left: Box::new(args[0].clone()),
-        right: Box::new(args[1].clone()),
+        left: Box::new(zones[0].clone()),
+        right: Box::new(zones[1].clone()),
       }));
     }
     "DayMatchQ" if args.len() == 2 => {

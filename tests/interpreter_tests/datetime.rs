@@ -2934,14 +2934,51 @@ mod time_zone_offset_tests {
     assert_eq!(interpret("TimeZoneOffset[1, 2, 3]").unwrap(), "-1");
   }
 
-  // Invalid zone specs emit ::zone; named zones would need a DST-aware tz
-  // database and stay unevaluated.
+  // Invalid zone specs emit ::zone; named IANA zones resolve through
+  // chrono-tz at the reference date (the 1-argument form uses the current
+  // instant, so tests pin the date to stay DST-independent).
   #[test]
-  fn invalid_and_named_zones() {
+  fn invalid_zones() {
     assert_eq!(interpret("TimeZoneOffset[x]").unwrap(), "TimeZoneOffset[x]");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn named_zones() {
     assert_eq!(
-      interpret(r#"TimeZoneOffset["America/Chicago"]"#).unwrap(),
-      "TimeZoneOffset[America/Chicago]"
+      interpret(
+        r#"TimeZoneOffset["America/Chicago", 0, DateObject[{2020, 1, 1}]]"#
+      )
+      .unwrap(),
+      "-6."
+    );
+    assert_eq!(
+      interpret(
+        r#"TimeZoneOffset["America/Chicago", 0, DateObject[{2020, 7, 1}]]"#
+      )
+      .unwrap(),
+      "-5."
+    );
+    assert_eq!(
+      interpret(
+        r#"TimeZoneOffset["Asia/Kathmandu", 0, DateObject[{2020, 1, 1}]]"#
+      )
+      .unwrap(),
+      "5.75"
+    );
+    assert_eq!(
+      interpret(
+        r#"TimeZoneOffset["Europe/Berlin", "America/Chicago", DateObject[{2020, 7, 1}]]"#
+      )
+      .unwrap(),
+      "7."
+    );
+    assert_eq!(
+      interpret(
+        r#"TimeZoneOffset["America/Chicago", 2, DateObject[{2020, 7, 1}]]"#
+      )
+      .unwrap(),
+      "-7."
     );
   }
 }

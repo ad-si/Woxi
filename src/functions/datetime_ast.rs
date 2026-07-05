@@ -1081,6 +1081,52 @@ fn zone_exists(_name: &str) -> bool {
   false
 }
 
+/// Whether a zone name is definitely invalid. Only decidable on CLI builds
+/// (which bundle the chrono-tz database); WASM builds return false so a
+/// possibly-valid name stays silently unevaluated instead of erroring.
+#[cfg(all(feature = "cli", not(target_arch = "wasm32")))]
+pub(crate) fn zone_name_invalid(name: &str) -> bool {
+  !zone_exists(name)
+}
+#[cfg(not(all(feature = "cli", not(target_arch = "wasm32"))))]
+pub(crate) fn zone_name_invalid(_name: &str) -> bool {
+  false
+}
+
+/// UTC offset in hours of a named IANA zone at a reference date (a
+/// date-like expression) or, when `date` is None, at the current instant.
+/// Returns None when the zone database is unavailable (WASM), the name is
+/// unknown, or the date can't be resolved.
+#[cfg(all(feature = "cli", not(target_arch = "wasm32")))]
+pub(crate) fn named_zone_offset_at(
+  name: &str,
+  date: Option<&Expr>,
+) -> Option<f64> {
+  let comps: Vec<f64> = match date {
+    Some(d) => extract_date_components(d)?,
+    None => {
+      use chrono::{Datelike, Timelike};
+      let now = chrono::Utc::now();
+      vec![
+        now.year() as f64,
+        now.month() as f64,
+        now.day() as f64,
+        now.hour() as f64,
+        now.minute() as f64,
+        now.second() as f64,
+      ]
+    }
+  };
+  named_zone_offset(name, &comps, false)
+}
+#[cfg(not(all(feature = "cli", not(target_arch = "wasm32"))))]
+pub(crate) fn named_zone_offset_at(
+  _name: &str,
+  _date: Option<&Expr>,
+) -> Option<f64> {
+  None
+}
+
 /// UTC offset in hours for a zone spec. For named zones, `local` selects
 /// whether the components are zone-local wall time (source side) or UTC
 /// (target side).
