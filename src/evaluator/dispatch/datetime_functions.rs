@@ -12,6 +12,9 @@ pub fn dispatch_datetime_functions(
     "DateList" => {
       return Some(crate::functions::datetime_ast::date_list_ast(args));
     }
+    "TimeZoneConvert" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::datetime_ast::time_zone_convert_ast(args));
+    }
     "DatePlus" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_plus_ast(args));
     }

@@ -3020,3 +3020,105 @@ mod julian_date_date_object_tests {
     );
   }
 }
+
+mod time_zone_convert_tests {
+  use woxi::interpret;
+
+  // DST-aware conversion between named IANA zones and numeric offsets.
+  // All values verified against wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn conversions() {
+    assert_eq!(
+      interpret(
+        r#"TimeZoneConvert[DateObject[{2020, 1, 1, 12, 0, 0}, TimeZone -> "America/New_York"], "Europe/Berlin"]"#
+      )
+      .unwrap(),
+      "DateObject[{2020, 1, 1, 18, 0, 0}, Instant, Gregorian, Europe/Berlin]"
+    );
+    assert_eq!(
+      interpret(
+        r#"TimeZoneConvert[DateObject[{2020, 7, 1, 12, 0, 0}, TimeZone -> "America/New_York"], "Europe/Berlin"]"#
+      )
+      .unwrap(),
+      "DateObject[{2020, 7, 1, 18, 0, 0}, Instant, Gregorian, Europe/Berlin]"
+    );
+    assert_eq!(
+      interpret(
+        r#"TimeZoneConvert[DateObject[{2020, 1, 1, 12, 0, 0}, TimeZone -> "America/New_York"], 1]"#
+      )
+      .unwrap(),
+      "DateObject[{2020, 1, 1, 18, 0, 0}, Instant, Gregorian, 1.]"
+    );
+    assert_eq!(
+      interpret(
+        "TimeZoneConvert[DateObject[{2020, 1, 1, 12, 0, 0}, TimeZone -> 3], -2]"
+      )
+      .unwrap(),
+      "DateObject[{2020, 1, 1, 7, 0, 0}, Instant, Gregorian, -2.]"
+    );
+    // Day rollover across the zone shift.
+    assert_eq!(
+      interpret(
+        "TimeZoneConvert[DateObject[{2020, 1, 1, 23, 30, 0}, TimeZone -> 0], 2]"
+      )
+      .unwrap(),
+      "DateObject[{2020, 1, 2, 1, 30, 0}, Instant, Gregorian, 2.]"
+    );
+    // Real seconds keep their type; day-granularity dates only relabel.
+    assert_eq!(
+      interpret(
+        "TimeZoneConvert[DateObject[{2020, 1, 1, 12, 0, 30.5}, TimeZone -> 0], 1]"
+      )
+      .unwrap(),
+      "DateObject[{2020, 1, 1, 13, 0, 30.5}, Instant, Gregorian, 1.]"
+    );
+    assert_eq!(
+      interpret(
+        r#"TimeZoneConvert[DateObject[{2020, 1, 1}], "Europe/Berlin"]"#
+      )
+      .unwrap(),
+      "DateObject[{2020, 1, 1}, Day, Gregorian, Europe/Berlin]"
+    );
+    // One-argument form converts to $TimeZone (0.).
+    assert_eq!(
+      interpret(
+        "TimeZoneConvert[DateObject[{2020, 1, 1, 12, 0, 0}, TimeZone -> 0]]"
+      )
+      .unwrap(),
+      "DateObject[{2020, 1, 1, 12, 0, 0}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  // Non-DateObject arguments emit `nodobj`, unknown zone names emit
+  // `DateObject::zone`, and zero arguments emit `argt`.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn message_cases() {
+    let r =
+      woxi::interpret_with_stdout(r#"TimeZoneConvert[5, "Europe/Berlin"]"#)
+        .unwrap();
+    assert_eq!(r.result, "TimeZoneConvert[5, Europe/Berlin]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "TimeZoneConvert::nodobj: First argument 5 in TimeZoneConvert is not a DateObject."
+    )));
+
+    let r = woxi::interpret_with_stdout(
+      r#"TimeZoneConvert[DateObject[{2020, 1, 1, 12, 0, 0}, TimeZone -> 0], "Nowhere/Nothing"]"#,
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "TimeZoneConvert[DateObject[{2020, 1, 1, 12, 0, 0}, TimeZone -> 0], Nowhere/Nothing]"
+    );
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "DateObject::zone: Time zone specification Nowhere/Nothing should be a real number, integer or time zone string."
+    )));
+
+    let r = woxi::interpret_with_stdout("TimeZoneConvert[]").unwrap();
+    assert_eq!(r.result, "TimeZoneConvert[]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "TimeZoneConvert::argt: TimeZoneConvert called with 0 arguments; 1 or 2 arguments are expected."
+    )));
+  }
+}

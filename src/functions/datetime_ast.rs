@@ -914,6 +914,224 @@ pub fn date_bounds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// TimeZoneConvert[date, tz] — convert a DateObject between time zones.
+/// Numeric offsets work everywhere; named IANA zones resolve through
+/// chrono-tz (CLI builds only — the WASM build leaves named zones
+/// unevaluated). One-argument form converts to $TimeZone (0.).
+pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "TimeZoneConvert".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+
+  let Expr::FunctionCall {
+    name: dname,
+    args: dargs,
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "TimeZoneConvert::nodobj: First argument {} in TimeZoneConvert is not a DateObject.",
+      crate::syntax::expr_to_output(&args[0])
+    ));
+    return unevaluated();
+  };
+  if dname != "DateObject" || dargs.is_empty() {
+    crate::emit_message(&format!(
+      "TimeZoneConvert::nodobj: First argument {} in TimeZoneConvert is not a DateObject.",
+      crate::syntax::expr_to_output(&args[0])
+    ));
+    return unevaluated();
+  }
+  let Expr::List(components) = &dargs[0] else {
+    return unevaluated();
+  };
+
+  // Source zone: canonical 4th argument, or a TimeZone -> tz rule, or 0.
+  let mut source_tz = Expr::Real(0.0);
+  if dargs.len() == 4 && !matches!(&dargs[3], Expr::Rule { .. }) {
+    source_tz = dargs[3].clone();
+  } else {
+    for a in dargs.iter().skip(1) {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = a
+        && matches!(pattern.as_ref(), Expr::Identifier(p) if p == "TimeZone")
+      {
+        source_tz = (**replacement).clone();
+      }
+    }
+  }
+  // Granularity and calendar to copy into the result.
+  let granularity = match dargs.get(1) {
+    Some(Expr::Identifier(g)) => g.clone(),
+    _ => {
+      if components.len() >= 4 {
+        "Instant".to_string()
+      } else {
+        ["Year", "Month", "Day"][components.len() - 1].to_string()
+      }
+    }
+  };
+  let calendar = match dargs.get(2) {
+    Some(Expr::Identifier(c)) => c.clone(),
+    _ => "Gregorian".to_string(),
+  };
+
+  let target_tz = args.get(1).cloned().unwrap_or(Expr::Real(0.0));
+  // Displayed zone value: numeric offsets print as Reals, names stay.
+  let tz_display = |tz: &Expr| -> Option<Expr> {
+    match tz {
+      Expr::Integer(n) => Some(Expr::Real(*n as f64)),
+      Expr::Real(v) => Some(Expr::Real(*v)),
+      Expr::String(name) => {
+        zone_exists(name).then(|| Expr::String(name.clone()))
+      }
+      _ => None,
+    }
+  };
+  let Some(target_display) = tz_display(&target_tz) else {
+    crate::emit_message(&format!(
+      "DateObject::zone: Time zone specification {} should be a real number, integer or time zone string.",
+      crate::syntax::expr_to_output(&target_tz)
+    ));
+    return unevaluated();
+  };
+
+  let rebuild = |list: Vec<Expr>, tz: Expr| -> Expr {
+    Expr::FunctionCall {
+      name: "DateObject".to_string(),
+      args: vec![
+        Expr::List(list.into()),
+        Expr::Identifier(granularity.clone()),
+        Expr::Identifier(calendar.clone()),
+        tz,
+      ]
+      .into(),
+    }
+  };
+
+  // Date-granularity objects only swap the zone label.
+  if components.len() <= 3 {
+    return Ok(rebuild(components.to_vec(), target_display));
+  }
+
+  // Numeric components for offset resolution.
+  let as_f64 = |e: &Expr| -> Option<f64> {
+    match e {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(v) => Some(*v),
+      _ => None,
+    }
+  };
+  let nums: Vec<f64> = match components.iter().map(as_f64).collect() {
+    Some(v) => v,
+    None => return unevaluated(),
+  };
+
+  let source_offset = match zone_offset_hours(&source_tz, &nums, true) {
+    Some(v) => v,
+    None => return unevaluated(),
+  };
+  let utc: Vec<f64> = {
+    let mut u = nums.clone();
+    while u.len() < 6 {
+      u.push(0.0);
+    }
+    u[5] -= source_offset * 3600.0;
+    u
+  };
+  let Some(target_offset) = zone_offset_hours(&target_tz, &utc, false) else {
+    crate::emit_message(&format!(
+      "DateObject::zone: Time zone specification {} should be a real number, integer or time zone string.",
+      crate::syntax::expr_to_output(&target_tz)
+    ));
+    return unevaluated();
+  };
+
+  let shift = ((target_offset - source_offset) * 3600.0).round() as i64;
+  let mut list: Vec<Expr> = components.to_vec();
+  while list.len() < 6 {
+    list.push(Expr::Integer(0));
+  }
+  // Add the shift to the seconds component, preserving its Real-ness.
+  list[5] = match &list[5] {
+    Expr::Integer(n) => Expr::Integer(n + shift as i128),
+    Expr::Real(v) => Expr::Real(v + shift as f64),
+    other => other.clone(),
+  };
+  let Some(normalized) = normalize_date_components(&list) else {
+    return unevaluated();
+  };
+  Ok(rebuild(normalized, target_display))
+}
+
+/// Whether a named IANA zone exists (always false in WASM builds).
+#[cfg(all(feature = "cli", not(target_arch = "wasm32")))]
+fn zone_exists(name: &str) -> bool {
+  name.parse::<chrono_tz::Tz>().is_ok()
+}
+#[cfg(not(all(feature = "cli", not(target_arch = "wasm32"))))]
+fn zone_exists(_name: &str) -> bool {
+  false
+}
+
+/// UTC offset in hours for a zone spec. For named zones, `local` selects
+/// whether the components are zone-local wall time (source side) or UTC
+/// (target side).
+fn zone_offset_hours(
+  tz: &Expr,
+  components: &[f64],
+  local: bool,
+) -> Option<f64> {
+  match tz {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(v) => Some(*v),
+    Expr::String(name) => named_zone_offset(name, components, local),
+    _ => None,
+  }
+}
+
+#[cfg(all(feature = "cli", not(target_arch = "wasm32")))]
+fn named_zone_offset(name: &str, c: &[f64], local: bool) -> Option<f64> {
+  use chrono::{Offset, TimeZone};
+  let tz: chrono_tz::Tz = name.parse().ok()?;
+  let (y, mo, d) = (
+    c[0] as i32,
+    c.get(1).copied().unwrap_or(1.0) as u32,
+    c.get(2).copied().unwrap_or(1.0) as u32,
+  );
+  let h = c.get(3).copied().unwrap_or(0.0);
+  let mi = c.get(4).copied().unwrap_or(0.0);
+  let sec = c.get(5).copied().unwrap_or(0.0);
+  // Roll sub-day components into whole seconds from midnight; the date
+  // itself may need normalizing when the UTC shift crossed midnight.
+  let total = (h * 3600.0 + mi * 60.0 + sec).floor() as i64;
+  let date = chrono::NaiveDate::from_ymd_opt(y, mo, d)?;
+  let datetime = date.and_hms_opt(0, 0, 0)? + chrono::Duration::seconds(total);
+  let offset_secs = if local {
+    tz.from_local_datetime(&datetime)
+      .earliest()?
+      .offset()
+      .fix()
+      .local_minus_utc()
+  } else {
+    tz.offset_from_utc_datetime(&datetime)
+      .fix()
+      .local_minus_utc()
+  };
+  Some(offset_secs as f64 / 3600.0)
+}
+#[cfg(not(all(feature = "cli", not(target_arch = "wasm32"))))]
+fn named_zone_offset(_name: &str, _c: &[f64], _local: bool) -> Option<f64> {
+  None
+}
+
 pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {

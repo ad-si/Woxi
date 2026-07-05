@@ -2932,7 +2932,7 @@ URLDownload,,🚫,,11.0,2993
 OpacityFunction,,🚫,,10.2,2999
 Radon,,,,8.0,2999
 RemoveDiacritics,Removes diacritical marks from a string,✅,pure,10.1,2999
-TimeZoneConvert,,,,10.0,2999
+TimeZoneConvert,Convert a DateObject between named IANA zones or numeric offsets (DST-aware),✅,pure,10.0,2999
 TransitiveClosureGraph,Graph with edges for every reachable vertex pair,✅,pure,10.0,2999
 Video,,🚫,,12.1,2999
 Booleans,Domain of booleans,✅,1,4.0,3008

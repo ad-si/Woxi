@@ -113,6 +113,7 @@ features = ["text"]
 libc = "0.2"
 calamine = "0.34"
 rust_xlsxwriter = { version = "0.94", default-features = false }
+chrono-tz = "0.10"
 
 [dev-dependencies]
 base64 = "0.22"
