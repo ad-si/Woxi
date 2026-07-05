@@ -3958,7 +3958,7 @@ CombinatorK,,,,12.2,4081
 ControlsRendering,,,,6.0,4081
 Cup,Inert operator displayed with smile symbol,✅,pure,3.0,4081
 DisableFormatting,,🚫,,11.0,4081
-EchoFunction,,,,10.3,4081
+EchoFunction,Operator form of Echo: EchoFunction[f][expr] prints f[expr] (optional label) and returns expr,✅,effectful,10.3,4081
 FeatureNames,,🚫,,10.1,4081
 FetalGrowthData,,🚫,,10.1,4081
 FindEdgeCover,,,,8.0,4081

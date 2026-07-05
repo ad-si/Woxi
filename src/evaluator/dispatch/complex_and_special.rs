@@ -431,6 +431,14 @@ pub fn dispatch_complex_and_special(
     // Echo[expr] - prints ">> expr" and returns expr
     // Echo[expr, label] - prints ">> label expr" and returns expr
     // Echo[expr, label, f] - prints ">> label f[expr]" and returns expr
+    // EchoFunction[…] is an operator form: it stays symbolic until applied
+    // to an argument (handled in apply_curried_call).
+    "EchoFunction" if args.len() <= 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "EchoFunction".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "Echo" if !args.is_empty() && args.len() <= 3 => {
       let label = if args.len() >= 2 {
         crate::syntax::expr_to_output(&args[1])

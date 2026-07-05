@@ -879,6 +879,39 @@ pub fn apply_curried_call(
         }),
       }
     }
+    // EchoFunction[f][expr] — print ">> f[expr]" (or ">> label f[expr]"
+    // for EchoFunction[label, f], or the expression itself for
+    // EchoFunction[]) and return expr unchanged, like Echo.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "EchoFunction" && func_args.len() <= 2 && args.len() == 1 => {
+      let expr = &args[0];
+      let f = match func_args.len() {
+        0 => None,
+        1 => Some(&func_args[0]),
+        _ => Some(&func_args[1]),
+      };
+      let display = match f {
+        None => expr.clone(),
+        Some(Expr::Identifier(f_name)) => {
+          evaluate_function_call_ast(f_name, std::slice::from_ref(expr))?
+        }
+        Some(other) => apply_curried_call(other, std::slice::from_ref(expr))?,
+      };
+      let line = if func_args.len() == 2 {
+        format!(
+          ">> {} {}",
+          crate::syntax::expr_to_output(&func_args[0]),
+          crate::syntax::expr_to_output(&display)
+        )
+      } else {
+        format!(">> {}", crate::syntax::expr_to_output(&display))
+      };
+      println!("{}", line);
+      crate::capture_stdout(&line);
+      Ok(expr.clone())
+    }
     // DateObject[...]["property"] — extract a date component (e.g. "Day",
     // "DayName", "Week"). Delegates to DateValue, which already resolves every
     // such property; if it cannot, the curried form is kept unevaluated.

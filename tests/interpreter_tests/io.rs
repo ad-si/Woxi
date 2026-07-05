@@ -6346,3 +6346,39 @@ mod file_size {
     assert_eq!(interpret("FileSize[42]").unwrap(), "FileSize[42]");
   }
 }
+
+mod echo_function {
+  use woxi::interpret_with_stdout;
+
+  // EchoFunction[f][expr] prints ">> f[expr]" and returns expr unchanged;
+  // EchoFunction[label, f] prefixes the label; EchoFunction[] echoes the
+  // expression itself.
+  #[test]
+  fn applies_and_returns() {
+    let r = interpret_with_stdout("EchoFunction[Head][{1, 2, 3}]").unwrap();
+    assert_eq!(r.result, "{1, 2, 3}");
+    assert_eq!(r.stdout, ">> List\n");
+
+    let r = interpret_with_stdout(r#"EchoFunction["lbl", Length][{1, 2, 3}]"#)
+      .unwrap();
+    assert_eq!(r.result, "{1, 2, 3}");
+    assert_eq!(r.stdout, ">> lbl 3\n");
+
+    let r = interpret_with_stdout("EchoFunction[][5]").unwrap();
+    assert_eq!(r.result, "5");
+    assert_eq!(r.stdout, ">> 5\n");
+
+    // Pure-function heads work too.
+    let r = interpret_with_stdout("EchoFunction[#^2 &][4]").unwrap();
+    assert_eq!(r.result, "4");
+    assert_eq!(r.stdout, ">> 16\n");
+  }
+
+  // The bare operator form stays symbolic.
+  #[test]
+  fn operator_form_is_symbolic() {
+    let r = interpret_with_stdout("EchoFunction[Head]").unwrap();
+    assert_eq!(r.result, "EchoFunction[Head]");
+    assert_eq!(r.stdout, "");
+  }
+}
