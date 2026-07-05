@@ -2,6 +2,32 @@
 
 # Unreleased
 
+- Add support for the remaining interactive-manipulation heads from the
+    [InteractiveManipulation](https://reference.wolfram.com/language/guide/InteractiveManipulation.html)
+    guide. `Animate`, `Animator`, `ListAnimate`, `ControllerManipulate`,
+    `Trigger`, `SetterBar`, `CheckboxBar`, `TogglerBar`, `RadioButton`,
+    `ProgressIndicator`, `ClickPane`, `PaneSelector`, `PopupView`,
+    `ColorSetter`, `IntervalSlider`, and `Slider2D` now stay symbolic in
+    script mode (matching `wolframscript`) instead of emitting a spurious
+    "not yet implemented" warning, and the option symbols `Bookmarks`,
+    `ContinuousAction`, and `AppearanceElements` do the same. `ControlActive`
+    now evaluates: `ControlActive[active, normal]` returns its inactive form
+    `normal` outside an actively-manipulated control.
+- Render `Animate[…]` and `ListAnimate[{…}]` as interactive, auto-playing
+    widgets in the Playground (and as interactive slider widgets in Studio).
+    `Animate` reuses the `Manipulate` control pipeline but auto-advances its
+    first continuous slider on a timer with a play/pause button;
+    `ListAnimate[{e1, …, en}]` cycles a frame index through the list, showing
+    one element per frame. Both hold their body appropriately (`Animate` like
+    `Manipulate`; `ListAnimate` evaluates its frame list first, matching
+    Wolfram).
+- Render the remaining dynamic UI panes as interactive widgets in the
+    Playground and Studio: `Animator[{min, max}[, step]]` (and its
+    `Dynamic[v]` / single-value forms) as a standalone auto-playing slider;
+    `LocatorPane[Dynamic[p], body]` as a draggable 2D locator driving the
+    graphic; and `ClickPane[expr, func]` as a clickable pad that feeds the
+    pointer position to the handler. `LocatorPane`/`ClickPane` hold their body
+    / handler so it stays intact for interactive re-evaluation.
 - Render `TraditionalForm` mathematics in conventional, TeX-like notation in
     the Playground and Studio typeset SVG output. `HoldForm` is now invisible;
     `Sum`/`Product` become large `∑`/`∏` operators with limits above and below;

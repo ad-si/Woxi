@@ -1976,9 +1976,19 @@ pub fn evaluate_expr_to_expr_inner(
         // like Plot[Sin[a*x], {x, 0, 6}] aren't evaluated with `a` free
         // (matching Wolfram Language notebook behavior).
         || name == "Manipulate"
+        // Animate is Manipulate that auto-plays; it holds its body and
+        // variable spec for the same reason. (ListAnimate is deliberately
+        // NOT held: its argument is a precomputed list of frames that must
+        // evaluate first, matching Wolfram Language.)
+        || name == "Animate"
         // Control likewise holds its variable spec so that the bound symbol
         // and any symbolic values stay intact for interactive rendering.
         || name == "Control"
+        // LocatorPane holds its body graphic so it isn't evaluated with the
+        // locator point free; ClickPane holds its handler so it stays an
+        // un-applied function until fed a click position.
+        || name == "LocatorPane"
+        || name == "ClickPane"
         {
           // Flatten Sequence even in held args (unless SequenceHold)
           let flattened = flatten_sequences(name, args);

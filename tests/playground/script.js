@@ -25,6 +25,18 @@ const themeConfig = new Compartment()
 // segmented SetterBar (toggle buttons); larger sets use a dropdown. Mirrors
 // SETTER_BAR_MAX_CHOICES in woxi-studio.
 const SETTER_BAR_MAX_CHOICES = 6
+// Auto-playing widgets (Animate / ListAnimate) advance their animation
+// control one step every ANIM_INTERVAL_MS. At ~60ms the default 100-step
+// continuous range sweeps in ~6s, matching Wolfram's leisurely Animate.
+const ANIM_INTERVAL_MS = 60
+// Every running animation's stop() function, so a re-run or clear can halt
+// timers that would otherwise keep firing against removed DOM nodes.
+const activeAnimators = new Set()
+
+function stopAllAnimators() {
+  for (const stop of activeAnimators) stop()
+  activeAnimators.clear()
+}
 const STORAGE_KEY_THEME = "woxi-playground-theme"
 const THEME_MODES = ["auto", "light", "dark"]
 const THEME_ICONS = { auto: "\u25D0", light: "\u2600", dark: "\u263E" }
@@ -306,6 +318,8 @@ function renderOutputItems(items) {
   // results arriving from the worker are ignored.
   manipulateRequests.clear()
   enabledRequests.clear()
+  // Halt any running animation timers whose widgets are about to be replaced.
+  stopAllAnimators()
 
   for (const item of items) {
     appendOutputItem(outputsEl, item)
@@ -400,6 +414,8 @@ function renderManipulate(item) {
     // `apply(on)` greys the control's DOM in or out. Re-evaluated on every
     // binding change so a control can disable itself for the current state.
     enabledControls: [],
+    // Continuous-slider drivers an Animate/ListAnimate animator can advance.
+    animatables: [],
   }
 
   // Format a continuous value for display (strip trailing zeros).
@@ -625,6 +641,19 @@ function renderManipulate(item) {
           row.classList.toggle("disabled", !on)
         },
       })
+      // Expose this slider so an Animate/ListAnimate animator can drive it.
+      widget.animatables.push({
+        min: Number(ctrl.min),
+        max: Number(ctrl.max),
+        step: step > 0 ? Number(step) : (Number(ctrl.max) - Number(ctrl.min)) / 100,
+        get: () => Number(input.value),
+        set: (v) => {
+          input.value = v
+          current[ctrl.name] = String(v)
+          display.textContent = fmt(v)
+          requestUpdate()
+        },
+      })
     } else if (ctrl.kind === "discrete") {
       // The bound value is `values[idx]`; the visible text is the parallel
       // `valueLabels[idx]` (a rule's right-hand side for a `value -> "label"`
@@ -812,6 +841,53 @@ function renderManipulate(item) {
   // Grey out any control that starts disabled for the initial bindings.
   widget.refreshEnabled(buildBindings())
 
+  // An Animate/ListAnimate widget auto-plays: a play/pause button advances its
+  // first continuous slider on a timer, looping min → max → min.
+  if (item.animated && widget.animatables.length > 0) {
+    const target = widget.animatables[0]
+    const bar = document.createElement("div")
+    bar.className = "manipulate-animator"
+
+    const btn = document.createElement("button")
+    btn.type = "button"
+    btn.className = "manipulate-play"
+
+    let timer = null
+    function stop() {
+      if (timer !== null) {
+        clearInterval(timer)
+        timer = null
+      }
+      btn.textContent = "▶"
+      btn.setAttribute("aria-label", "Play")
+      activeAnimators.delete(stop)
+    }
+    function tick() {
+      let v = target.get() + target.step
+      // Loop back to the start once we step past the end (small epsilon so
+      // floating-point drift doesn't skip the final frame).
+      if (v > target.max + target.step * 1e-6) v = target.min
+      target.set(v)
+    }
+    function play() {
+      if (timer !== null) return
+      btn.textContent = "❚❚"
+      btn.setAttribute("aria-label", "Pause")
+      timer = setInterval(tick, ANIM_INTERVAL_MS)
+      activeAnimators.add(stop)
+    }
+    btn.addEventListener("click", () => {
+      if (timer === null) play()
+      else stop()
+    })
+    widget.stopAnimation = stop
+
+    bar.appendChild(btn)
+    controlsEl.appendChild(bar)
+    // Start playing immediately (Wolfram's default AnimationRunning -> True).
+    play()
+  }
+
   box.appendChild(controlsEl)
   // Extra display elements (e.g. the Checkbox grid) sit above the rendered
   // body output.
@@ -854,6 +930,7 @@ function fillManipulateOutput(el, payload) {
 }
 
 function clearOutputs() {
+  stopAllAnimators()
   document.getElementById("outputs").innerHTML = ""
 }
 

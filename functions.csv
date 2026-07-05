@@ -410,7 +410,7 @@ Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1.0,413
 Complement,Returns elements in first list but not in others,✅,pure,1.0,414
 Dashing,Sets line dashing in graphics,✅,pure,1.0,416
 StreamPlot,Creates a streamline plot of a vector field,✅,pure,7.0,416
-Animate,,🚫,,6.0,417
+Animate,Animated version of an expression (stays symbolic in script mode),✅,unevaluated,6.0,417
 Contours,Option specifying contour levels in contour plots,✅,none,2.0,418
 ColorSpace,Option for specifying the color space of images,✅,pure,7.0,419
 MaxRecursion,Option specifying the maximum recursion depth,✅,none,2.0,420
@@ -885,7 +885,7 @@ Eliminate,Eliminates variables from a system of equations,✅,pure,1.0,891
 TimeZone,,🚫,,2.0,892
 InfiniteLine,Geometric primitive representing an infinite line,✅,none,10.0,893
 GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x); two-arg form GegenbauerC[n;x] is the renormalized (2/n) ChebyshevT[n;x],✅,pure,1.0,894
-SetterBar,,🚫,,6.0,895
+SetterBar,Setter bar control (stays symbolic in script mode),✅,unevaluated,6.0,895
 StyleBox,Low-level box construct for styled content display,✅,pure,3.0,896
 PadLeft,Pads a list on the left to a specified length,✅,pure,4.0,897
 Counts,Returns association of element counts (on an association counts the values),✅,pure,10.0,898
@@ -915,7 +915,7 @@ RuntimeOptions,,🚫,,8.0,922
 StringPosition,Finds all positions of a substring or pattern (overlapping by default; Overlaps and IgnoreCase options),✅,pure,2.0,923
 Roots,Finds roots of polynomial equations as Or conditions; roots are listed in ascending order (matching Solve) except a pure quadratic x^2==c lists the principal + root first,✅,pure,1.0,924
 InputNotebook,Requires external services or GUI infrastructure,🚫,io,3.0,926
-ListAnimate,,🚫,,6.0,926
+ListAnimate,Animation of a list of expressions (stays symbolic in script mode),✅,unevaluated,6.0,926
 RegionUnion,,🚫,,10.0,927
 CloudObject,Requires external services or GUI infrastructure,🚫,io,10.0,928
 HarmonicNumber,Returns the n-th harmonic number,✅,pure,4.0,929
@@ -972,7 +972,7 @@ Abort,Aborts evaluation,✅,effectful,2.0,980
 GammaDistribution,Gamma probability distribution,✅,pure,6.0,981
 FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3.0,982
 ScientificForm,Displays number in scientific notation,✅,pure,1.0,983
-LocatorPane,Requires external services or GUI infrastructure,🚫,io,6.0,984
+LocatorPane,Draggable locator over a graphic; renders as an interactive 2D pane,✅,unevaluated,6.0,984
 DirectedEdges,,🚫,,6.0,986
 ViewVertical,,🚫,,2.0,986
 StyleDefinitions,,🚫,,3.0,987
@@ -1018,7 +1018,7 @@ ToRules,Convert logical equation combinations to lists of rules,✅,pure,1.0,102
 Context,Return the context (namespace) of a symbol,✅,pure,1.0,1029
 Placeholder,,🚫,,7.0,1029
 StudentTDistribution,Represents a Student t-distribution with nu degrees of freedom,✅,1,6.0,1030
-AppearanceElements,,🚫,,6.0,1031
+AppearanceElements,Option specifying which interface elements appear,✅,pure,6.0,1031
 TimesBy,Multiplies a variable by a value,✅,stateful,1.0,1032
 Merge,Merges associations using a combining function,✅,pure,10.0,1033
 Colorize,Colorize a label matrix or image,✅,,8.0,1035
@@ -1141,7 +1141,7 @@ LegendMarkerSize,,🚫,,9.0,1151
 Subsuperscript,Subsuperscript notation wrapper (stays symbolic),✅,unevaluated,3.0,1152
 KelvinBei,Kelvin bei function (imaginary part of BesselJ on a rotated argument),✅,pure,6.0,1153
 CubeRoot,Returns the real-valued cube root,✅,pure,9.0,1154
-ContinuousAction,,🚫,,6.0,1155
+ContinuousAction,Option for continuous action during interactive manipulation,✅,pure,6.0,1155
 Overlay,,🚫,,8.0,1156
 Permissions,,🚫,,10.0,1157
 CirclePlus,Represents the direct sum or XOR operator,✅,pure,3.0,1158
@@ -1295,7 +1295,7 @@ TabView,Tabbed view control (stays symbolic in script mode),✅,unevaluated,6.0,
 SinhIntegral,Hyperbolic sine integral Shi(z),✅,pure,3.0,1309
 KelvinKer,Kelvin ker function (real part of e^(-Pi I/2) BesselK on a rotated argument),✅,pure,6.0,1310
 ComplexPlot3D,Plot the modulus of a complex function as a 3D surface over the complex plane,✅,pure,12.0,1311
-ControlActive,,🚫,,6.0,1312
+ControlActive,Represents an object displayed differently while a control is actively manipulated,✅,pure,6.0,1312
 ButtonBox,,🚫,,3.0,1313
 RegionDistance,Shortest distance from a point to a region (Point/Line/Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon),✅,pure,10.0,1314
 FirstPosition,Find the position of the first element matching a pattern (supports associations),✅,pure,10.0,1317
@@ -1414,7 +1414,7 @@ ItemStyle,Style specification for items,🚫,pure,6.0,1431
 GeoStyling,Styling for geographic regions,🚫,pure,10.0,1432
 CharacterEncoding,Character encoding specification,🚫,io,3.0,1434
 InfinitePlane,Infinite plane geometric region; symbolic region consumed by region functions and rendered in Graphics,✅,unevaluated,10.0,1434
-ProgressIndicator,Dynamic progress indicator,🚫,io,6.0,1435
+ProgressIndicator,Progress indicator control (stays symbolic in script mode),✅,unevaluated,6.0,1435
 Square,Square geometric primitive,🚫,pure,3.0,1437
 StruveL,Modified Struve function L_n(z); elementary closed form at order +-1/2 and +-3/2; numeric for inexact args,✅,pure,4.0,1437
 DecimalForm,Display a number in decimal notation without scientific notation; ToString renders it (optional second arg gives significant figures),✅,pure,11.2,1438
@@ -1547,7 +1547,7 @@ CreateDirectory,Creates a directory including intermediate directories,✅,files
 ImageSubtract,Subtracts pixel values of two images pointwise,✅,pure,7.0,1569
 CopyFile,Copies a file to a new location,✅,filesystem,2.0,1571
 EstimatedProcess,Estimated stochastic process,,unevaluated,9.0,1571
-Animator,Animated control element,,unevaluated,6.0,1573
+Animator,Auto-playing animation control; renders as an interactive auto-advancing slider,✅,unevaluated,6.0,1573
 HighlightMesh,Highlight mesh elements,,unevaluated,10.0,1573
 PolynomialReduce,Reduce a polynomial modulo a list of polynomials (single- and multi-variable lexicographic division),✅,pure,3.0,1574
 AutoScroll,Auto-scrolling option,,unevaluated,3.0,1578
@@ -1582,7 +1582,7 @@ Vectors,Vector space domain,,unevaluated,9.0,1604
 SectorOrigin,Sector origin in pie charts,,unevaluated,7.0,1605
 JacobiSymbol,Compute the Jacobi symbol for quadratic residue testing,✅,pure,1.0,1606
 MaxTrainingRounds,Max training iterations,,unevaluated,11.0,1607
-Slider2D,,🚫,,6.0,1608
+Slider2D,Two-dimensional slider control (stays symbolic in script mode),✅,unevaluated,6.0,1608
 Compress,Compresses an expression to a string,✅,pure,6.0,1611
 CompressedData,Holds a compressed expression and evaluates to the original on use,✅,pure,9.0,1612
 PolarAxes,Polar axes option,,unevaluated,7.0,1611
@@ -1608,7 +1608,7 @@ LinearRecurrence,Generates a linear recurrence sequence,✅,pure,7.0,1632
 WindowMargins,Window margin specification,,unevaluated,3.0,1632
 AffineTransform,Build a TransformationFunction for an affine map x -> m.x + v,✅,none,6.0,1633
 CellGroupData,,🚫,,3.0,1635
-RadioButton,Radio button control,,unevaluated,6.0,1635
+RadioButton,Radio button control (stays symbolic in script mode),✅,unevaluated,6.0,1635
 LegendMarkers,Legend marker specification,,unevaluated,9.0,1637
 PowersRepresentations,Gives all representations of n as a sum of k non-negative p-th powers,✅,pure,6.0,1637
 ShowStringCharacters,Show string quote characters,,unevaluated,3.0,1639
@@ -1687,7 +1687,7 @@ SoftmaxLayer,Softmax neural layer,,unevaluated,11.0,1712
 ProductDistribution,Independent product of distributions (merged PDF plus component stats),✅,pure,8.0,1713
 Save,Saves definitions associated with symbols to a file,✅,effectful,1.0,1714
 RegionDimension,Intrinsic (manifold) dimension of a region,✅,pure,10.0,1716
-TogglerBar,Toggler bar control,,unevaluated,6.0,1716
+TogglerBar,Toggler bar control (stays symbolic in script mode),✅,unevaluated,6.0,1716
 GeoElevationData,,🚫,,10.0,1717
 WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1.0,1718
 FeatureExtractor,Feature extractor,,unevaluated,11.0,1719
@@ -1730,7 +1730,7 @@ GeoMarker,Geographic marker primitive for GeoGraphics,✅,pure,10.0,1760
 MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4.0,1760
 RunProcess,Run external process,,unevaluated,10.0,1760
 StartingStepSize,Starting step size option,,unevaluated,4.0,1760
-Trigger,Trigger control,,unevaluated,6.0,1760
+Trigger,Trigger control (stays symbolic in script mode),✅,unevaluated,6.0,1760
 ContentSelectable,Content selectable option,,unevaluated,6.0,1761
 TakeList,Take successive sublists of given lengths,✅,computation,11.2,1762
 ExportForm,Export form wrapper,,unevaluated,10.0,1763
@@ -1762,7 +1762,7 @@ GeoRegionValuePlot,Choropleth shading countries by value,✅,pure,10.0,1789
 MaxExtraConditions,Max extra conditions option,,unevaluated,8.0,1791
 TimeSeriesModelFit,Time series model fit,,unevaluated,10.0,1791
 Find,Finds a file on the search path,🚧,effectful,2.0,1793
-PaneSelector,Pane selector control,,unevaluated,6.0,1793
+PaneSelector,Pane selector control (stays symbolic in script mode),✅,unevaluated,6.0,1793
 URLExecute,Execute URL request,,unevaluated,10.0,1794
 FileBaseName,Returns the base name of a file (without directory and extension),✅,pure,7.0,1796
 SequencePosition,Finds positions of subsequences matching a pattern in a list (overlapping by default; supports a count limit and the Overlaps option),✅,pure,10.1,1796
@@ -1771,7 +1771,7 @@ CoordinatesToolOptions,Coordinates tool options,,unevaluated,7.0,1800
 Highlighted,Display wrapper that draws a colored background behind its argument,✅,pure,10.4,1800
 TextGrid,Displays data in a text grid layout,✅,pure,10.3,1800
 NumericFunction,Numeric function attribute,,unevaluated,3.0,1801
-ColorSetter,Color setter control,,unevaluated,6.0,1803
+ColorSetter,Color setter control (stays symbolic in script mode),✅,unevaluated,6.0,1803
 Scrollbars,Scrollbars option,,unevaluated,7.0,1803
 DistanceMatrix,Matrix of pairwise distances between vectors (default EuclideanDistance),✅,pure,10.3,1806
 InverseWaveletTransform,Inverse discrete/stationary/packet/lifting wavelet transform,✅,pure,8.0,1806
@@ -1798,7 +1798,7 @@ DigitQ,Tests if a string consists entirely of digits,✅,pure,2.0,1827
 RealExponent,Returns the base-b real exponent Log[b Abs[x]] of x as a machine real (base 10 by default),✅,pure,6.0,1827
 TriangularDistribution,Triangular distribution (piecewise PDF and CDF and moments),✅,pure,6.0,1827
 BinaryWrite,Write binary data,✅,io,5.1,1833
-CheckboxBar,Checkbox bar control,,unevaluated,6.0,1833
+CheckboxBar,Checkbox bar control (stays symbolic in script mode),✅,unevaluated,6.0,1833
 DuplicateFreeQ,Test if list has no duplicates,✅,computation,10.0,1833
 OutputForm,Converts expression to output form,✅,pure,1.0,1833
 RandomPermutation,Random permutation of n points returned as a Cycles object,✅,contextual,8.0,1833
@@ -2191,7 +2191,7 @@ Hexahedron,3D geometric primitive,🚫,None,10.0,2233
 Nand,Logical NAND,✅,pure,4.1,2233
 TimeSeriesShift,Time series manipulation,🚫,None,10.0,2233
 WaitAll,Async parallel computation,🚫,None,7.0,2233
-ClickPane,UI interaction,🚫,None,6.0,2236
+ClickPane,Clickable pane feeding a handler; renders as an interactive 2D pane,✅,unevaluated,6.0,2236
 DiamondMatrix,Gives the diamond (L1-ball) structuring element for a scalar radius or list of radii (n-D),✅,pure,7.0,2236
 MaxItems,Display option,🚫,None,10.1,2236
 SSSTriangle,Constructs a triangle from three side lengths,✅,None,10.0,2239
@@ -2339,7 +2339,7 @@ WaveletMapIndexed,Applies a function to wavelet coefficient arrays with their in
 ChineseRemainder,Solves a system of modular congruences (optional third argument gives the smallest solution >= d),✅,pure,6.0,2389
 ContentPadding,UI styling,🚫,None,8.0,2389
 FromSphericalCoordinates,Converts spherical coordinates to Cartesian,✅,None,10.1,2389
-IntervalSlider,UI widget,🚫,None,10.0,2389
+IntervalSlider,Interval slider control (stays symbolic in script mode),✅,unevaluated,10.0,2389
 PunctuationCharacter,String pattern matching a single punctuation character,✅,pure,10.3,2389
 TransformedProcess,stochastic process,🚫,None,10.0,2389
 CayleyGraph,group theory graph,🚫,None,8.0,2394
@@ -2456,7 +2456,7 @@ ChiDistribution,represents a chi distribution with n degrees of freedom,✅,none
 CloudPublish,,🚫,,10.2,2509
 Glaisher,Glaisher-Kinkelin constant,✅,none,4.0,2509
 ListCurvePathPlot,,🚫,,7.0,2509
-Bookmarks,,🚫,,7.0,2512
+Bookmarks,Option for bookmarked settings in Manipulate,✅,pure,7.0,2512
 SliceDensityPlot3D,,🚫,,10.2,2512
 StringRepeat,Repeats a string a specified number of times,✅,pure,10.1,2512
 BracketingBar,,🚫,,3.0,2514
@@ -3429,7 +3429,7 @@ InteractiveTradingChart,,🚫,,8.0,3522
 JacobiND,Jacobi elliptic function nd (1/dn),✅,pure,1.0,3522
 KeySortBy,Sort association by applying function to keys,✅,none,10.0,3522
 PermissionsGroup,,🚫,,10.0,3522
-PopupView,,🚫,,6.0,3522
+PopupView,Popup view control (stays symbolic in script mode),✅,unevaluated,6.0,3522
 SetCloudDirectory,,🚫,,10.0,3522
 SkeletonTransform,,🚫,,8.0,3522
 StandardDeviationFilter,Replaces each element with the sample standard deviation of its radius-r neighborhood (1D list or 2D array),✅,pure,7.0,3522
@@ -3711,7 +3711,7 @@ StateSpaceRealization,,🚫,,8.0,3803
 Underoverscript,Underoverscript notation wrapper (stays symbolic),✅,unevaluated,3.0,3803
 BlackmanHarrisWindow,Blackman-Harris 4-term cosine-sum window on [-1/2 1/2] (exact rationals for exact input),✅,pure,9.0,3823
 CloudSubmit,,🚫,,10.2,3823
-ControllerManipulate,,🚫,,6.0,3823
+ControllerManipulate,Manipulate driven by an external controller (stays symbolic in script mode),✅,unevaluated,6.0,3823
 CreateIntermediateDirectories,,,,6.0,3823
 DateWithinQ,True when the second date lies within the first date's half-open calendar span,✅,pure,11.1,3823
 DavisDistribution,,,,8.0,3823

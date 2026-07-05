@@ -11449,6 +11449,12 @@ pub struct ManipulateSpec {
   /// while `YinYang` is `True`). Controls with no `Enabled` option (or the
   /// trivial `Enabled -> True`) do not appear here and stay always enabled.
   pub control_enabled: Vec<(String, String)>,
+  /// Whether this spec should auto-play, i.e. it came from `Animate[…]` or
+  /// `ListAnimate[…]`. An animated widget advances its first continuous
+  /// control on a timer (with a play/pause toggle) instead of sitting still
+  /// until the user drags a slider. Plain `Manipulate`/`Control` widgets leave
+  /// this `false`.
+  pub animated: bool,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -11468,19 +11474,22 @@ enum ParsedControl {
   State { name: String, value: String },
 }
 
-/// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]`
-/// expression. Returns `None` if the expression is not a well-formed
-/// Manipulate (e.g. `Manipulate[]`, `Manipulate[expr]`, or a spec that
-/// isn't a list). In those cases the caller should fall back to the
-/// standard text/graphics output path.
+/// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]` or
+/// `Animate[…]` expression. `Animate` shares `Manipulate`'s argument shape
+/// (a body followed by `{u, umin, umax}`-style control specs) but auto-plays,
+/// so it produces the same spec with `animated` set. Returns `None` if the
+/// expression is not a well-formed Manipulate/Animate (e.g. `Manipulate[]`,
+/// `Manipulate[expr]`, or a spec that isn't a list). In those cases the caller
+/// should fall back to the standard text/graphics output path.
 pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let (name, args) = match expr {
     Expr::FunctionCall { name, args } => (name, args),
     _ => return None,
   };
-  if name != "Manipulate" || args.len() < 2 {
+  if (name != "Manipulate" && name != "Animate") || args.len() < 2 {
     return None;
   }
+  let animated = name == "Animate";
 
   let body_code = crate::syntax::expr_to_input_form(&args[0]);
   let mut controls = Vec::with_capacity(args.len() - 1);
@@ -11552,6 +11561,239 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays,
     initialization,
     control_enabled,
+    animated,
+  })
+}
+
+/// Attempt to extract a `ManipulateSpec` from a held `ListAnimate[{e1, …, en}]`
+/// expression. Each element is one animation frame; the widget cycles through
+/// them by binding an integer frame index and displaying the selected element.
+/// It renders as an auto-playing single-slider Manipulate whose body is
+/// `Part[{e1, …, en}, i]`. Returns `None` when the argument is not a non-empty
+/// list literal (e.g. `ListAnimate[expr]` or `ListAnimate[{}]`), so the caller
+/// falls back to the plain output path.
+pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  let (name, args) = match expr {
+    Expr::FunctionCall { name, args } => (name, args),
+    _ => return None,
+  };
+  if name != "ListAnimate" || args.is_empty() {
+    return None;
+  }
+  let frames = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return None,
+  };
+  let n = frames.len();
+  let list_code = crate::syntax::expr_to_input_form(&args[0]);
+  // Frame index `i` runs 1..n in unit steps; the body picks that element.
+  // `Round` guards against any float drift the slider might introduce.
+  let body_code = format!("Part[{}, Round[i]]", list_code);
+  let control = ManipulateControl::Continuous {
+    name: "i".to_string(),
+    min: 1.0,
+    max: n as f64,
+    step: Some(1.0),
+    initial: 1.0,
+    label: "i".to_string(),
+    label_runs: vec![LabelRun {
+      text: "i".to_string(),
+      italic: false,
+    }],
+  };
+  Some(ManipulateSpec {
+    body_code,
+    controls: vec![control],
+    state: Vec::new(),
+    displays: Vec::new(),
+    initialization: None,
+    control_enabled: Vec::new(),
+    animated: true,
+  })
+}
+
+/// Attempt to extract a `ManipulateSpec` from a held `Animator[…]` expression.
+/// `Animator` is a standalone auto-playing control: it sweeps a value over a
+/// range and (like `Control`) displays the bound variable so its effect is
+/// visible. Supported forms: `Animator[{min, max}]`, `Animator[{min, max,
+/// step}]`, `Animator[Dynamic[v], {min, max}[, step]]`, `Animator[x]` (the
+/// default 0..1 range with initial value `x`), and `Animator[]`. Returns
+/// `None` when the range doesn't resolve to numbers.
+pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  let (name, args) = match expr {
+    Expr::FunctionCall { name, args } => (name, args),
+    _ => return None,
+  };
+  if name != "Animator" {
+    return None;
+  }
+  // An optional leading `Dynamic[v]` names the bound variable; else `u`.
+  let mut var = "u".to_string();
+  let mut idx = 0;
+  if let Some(Expr::FunctionCall { name: dn, args: da }) = args.first()
+    && dn == "Dynamic"
+    && da.len() == 1
+    && let Expr::Identifier(s) = &da[0]
+  {
+    var = s.clone();
+    idx = 1;
+  }
+  let (min, max, step, initial) = match args.get(idx) {
+    Some(Expr::List(items)) if !items.is_empty() => {
+      let min = crate::functions::math_ast::try_eval_to_f64(&items[0])?;
+      let max = items
+        .get(1)
+        .and_then(crate::functions::math_ast::try_eval_to_f64)
+        .unwrap_or(min + 1.0);
+      let step = items
+        .get(2)
+        .and_then(crate::functions::math_ast::try_eval_to_f64);
+      (min, max, step, min)
+    }
+    // A single number is the initial value over the default 0..1 range.
+    Some(other) if idx == 0 => {
+      let init = crate::functions::math_ast::try_eval_to_f64(other)?;
+      (0.0, 1.0, None, init)
+    }
+    // `Animator[]` / `Animator[Dynamic[v]]`: default 0..1 range.
+    None => (0.0, 1.0, None, 0.0),
+    _ => return None,
+  };
+  let control = ManipulateControl::Continuous {
+    name: var.clone(),
+    min,
+    max,
+    step,
+    initial,
+    label: var.clone(),
+    label_runs: vec![LabelRun {
+      text: var.clone(),
+      italic: false,
+    }],
+  };
+  Some(ManipulateSpec {
+    body_code: var,
+    controls: vec![control],
+    state: Vec::new(),
+    displays: Vec::new(),
+    initialization: None,
+    control_enabled: Vec::new(),
+    animated: true,
+  })
+}
+
+/// Interpret an optional trailing `{{xmin, ymin}, {xmax, ymax}}` range
+/// argument, defaulting to the unit square when absent or malformed. Shared by
+/// the `LocatorPane`/`ClickPane` pane extractors.
+fn pane_range(arg: Option<&Expr>) -> ((f64, f64), (f64, f64)) {
+  match arg {
+    Some(Expr::List(corners)) if corners.len() == 2 => {
+      match (list2_f64(&corners[0]), list2_f64(&corners[1])) {
+        (Some(lo), Some(hi)) => (lo, hi),
+        _ => ((0.0, 0.0), (1.0, 1.0)),
+      }
+    }
+    _ => ((0.0, 0.0), (1.0, 1.0)),
+  }
+}
+
+/// Attempt to extract a `ManipulateSpec` from a held `LocatorPane[…]`.
+/// A locator pane shows a graphic with a draggable point that drives it.
+/// Supported forms: `LocatorPane[Dynamic[p], body]` and `LocatorPane[p0,
+/// body]`, each with an optional trailing coordinate range `{{xmin, ymin},
+/// {xmax, ymax}}` (default: the unit square). Renders as a 2D pad — the
+/// draggable locator — beside the live `body` graphic. Returns `None` if the
+/// arguments don't fit.
+pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  let (name, args) = match expr {
+    Expr::FunctionCall { name, args } => (name, args),
+    _ => return None,
+  };
+  if name != "LocatorPane" || args.len() < 2 {
+    return None;
+  }
+  // arg0: `Dynamic[p]` (named variable) or a literal initial point `{x, y}`.
+  let (var, explicit_init) = match &args[0] {
+    Expr::FunctionCall { name: dn, args: da }
+      if dn == "Dynamic" && da.len() == 1 =>
+    {
+      match &da[0] {
+        Expr::Identifier(s) => (s.clone(), None),
+        _ => return None,
+      }
+    }
+    pt => match list2_f64(pt) {
+      Some(p) => ("p".to_string(), Some(p)),
+      None => return None,
+    },
+  };
+  let body_code = crate::syntax::expr_to_input_form(&args[1]);
+  let ((x_min, y_min), (x_max, y_max)) = pane_range(args.get(2));
+  // Start the locator at the given point, else the range centre.
+  let (x_initial, y_initial) =
+    explicit_init.unwrap_or(((x_min + x_max) / 2.0, (y_min + y_max) / 2.0));
+  let control = ManipulateControl::Slider2D {
+    name: var.clone(),
+    x_min,
+    x_max,
+    y_min,
+    y_max,
+    x_initial,
+    y_initial,
+    label: var,
+  };
+  Some(ManipulateSpec {
+    body_code,
+    controls: vec![control],
+    state: Vec::new(),
+    displays: Vec::new(),
+    initialization: None,
+    control_enabled: Vec::new(),
+    animated: false,
+  })
+}
+
+/// Attempt to extract a `ManipulateSpec` from a held `ClickPane[…]`.
+/// A click pane applies a handler to the coordinates of each click. We model
+/// it as a 2D pad whose position feeds the handler: `ClickPane[expr, func]`
+/// (and `ClickPane[expr, {{xmin, ymin}, {xmax, ymax}}, func]`) render as a
+/// clickable/draggable pad with the live `func[{x, y}]` result shown beside
+/// it. Returns `None` if there's no handler to apply.
+pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  let (name, args) = match expr {
+    Expr::FunctionCall { name, args } => (name, args),
+    _ => return None,
+  };
+  if name != "ClickPane" || args.len() < 2 {
+    return None;
+  }
+  // The handler is the last argument; a 3-argument form carries an explicit
+  // coordinate range in the middle.
+  let func = args.last()?;
+  let range_arg = if args.len() >= 3 { args.get(1) } else { None };
+  let ((x_min, y_min), (x_max, y_max)) = pane_range(range_arg);
+  // Bind the click position `pos` and show the handler applied to it; the body
+  // re-evaluates `func[pos]` on every pad move.
+  let func_code = crate::syntax::expr_to_input_form(func);
+  let body_code = format!("({})[pos]", func_code);
+  let control = ManipulateControl::Slider2D {
+    name: "pos".to_string(),
+    x_min,
+    x_max,
+    y_min,
+    y_max,
+    x_initial: (x_min + x_max) / 2.0,
+    y_initial: (y_min + y_max) / 2.0,
+    label: "pos".to_string(),
+  };
+  Some(ManipulateSpec {
+    body_code,
+    controls: vec![control],
+    state: Vec::new(),
+    displays: Vec::new(),
+    initialization: None,
+    control_enabled: Vec::new(),
+    animated: false,
   })
 }
 
@@ -11595,6 +11837,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled,
+    animated: false,
   })
 }
 
@@ -12637,12 +12880,19 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     .map(|d| format!(r#""{}""#, json_escape_manipulate(d)))
     .collect();
 
+  let animated_json = if spec.animated {
+    r#","animated":true"#
+  } else {
+    ""
+  };
+
   format!(
-    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]"#,
+    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}"#,
     json_escape_manipulate(&spec.body_code),
     ctrl_parts.join(","),
     state_parts.join(","),
     display_parts.join(","),
+    animated_json,
   )
 }
 

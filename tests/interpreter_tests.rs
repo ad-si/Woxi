@@ -1167,6 +1167,57 @@ mod interpreter_tests {
       ("MenuView[x]", "MenuView[x]"),
       ("SlideView[x]", "SlideView[x]"),
       ("FlipView[x]", "FlipView[x]"),
+      // Interactive manipulation heads from the InteractiveManipulation
+      // guide. In script mode these stay unevaluated as their canonical form
+      // (they only become interactive objects inside a notebook), so they
+      // must not emit a spurious "not yet implemented" warning.
+      ("Animate[x, {x, 0, 1}]", "Animate[x, {x, 0, 1}]"),
+      ("Animator[0]", "Animator[0]"),
+      ("ListAnimate[{1, 2, 3}]", "ListAnimate[{1, 2, 3}]"),
+      (
+        "ControllerManipulate[x, {x, 0, 1}]",
+        "ControllerManipulate[x, {x, 0, 1}]",
+      ),
+      ("Trigger[Dynamic[x]]", "Trigger[Dynamic[x]]"),
+      ("SetterBar[1, {1, 2, 3}]", "SetterBar[1, {1, 2, 3}]"),
+      ("CheckboxBar[{1}, {1, 2}]", "CheckboxBar[{1}, {1, 2}]"),
+      ("TogglerBar[{1}, {1, 2}]", "TogglerBar[{1}, {1, 2}]"),
+      ("RadioButton[1]", "RadioButton[1]"),
+      ("ProgressIndicator[0.5]", "ProgressIndicator[0.5]"),
+      ("PaneSelector[{1 -> a}, 1]", "PaneSelector[{1 -> a}, 1]"),
+      ("PopupView[{a, b}]", "PopupView[{a, b}]"),
+      ("IntervalSlider[{2, 4}]", "IntervalSlider[{2, 4}]"),
+      ("Slider2D[{0, 0}]", "Slider2D[{0, 0}]"),
+      // Manipulate option symbols used on their own stay symbolic too.
+      ("Bookmarks", "Bookmarks"),
+      ("ContinuousAction", "ContinuousAction"),
+      ("AppearanceElements", "AppearanceElements"),
+    ];
+    for (input, expected) in cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, expected, "result mismatch for {input}");
+      assert!(
+        !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+        "unexpected 'not yet implemented' warning for {input}: {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  #[test]
+  fn control_active_returns_inactive_form_in_script_mode() {
+    // ControlActive[activeform, normalform] displays as `activeform` only
+    // while it sits inside a control that is being actively manipulated. In
+    // script mode nothing is ever actively manipulated, so it evaluates to
+    // its inactive form `normalform` (with the argument fully evaluated).
+    let cases = [
+      ("ControlActive[1, 2]", "2"),
+      ("ControlActive[1 + 1, 2 + 2]", "4"),
+      ("ControlActive[\"fast\", \"slow\"]", "slow"),
+      // Non-two-argument forms have no active/normal split, so they stay
+      // symbolic (and must not warn about being unimplemented).
+      ("ControlActive[]", "ControlActive[]"),
+      ("ControlActive[5]", "ControlActive[5]"),
     ];
     for (input, expected) in cases {
       let r = interpret_with_stdout(input).unwrap();
