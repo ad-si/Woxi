@@ -6652,3 +6652,45 @@ mod blomqvist_beta_tests {
     );
   }
 }
+
+mod erlang_tests {
+  use woxi::interpret;
+
+  // ErlangB[c, a] = (a^c/c!) / Σ_{k<=c} a^k/k!, exact over the rationals.
+  #[test]
+  fn erlang_b() {
+    assert_eq!(interpret("ErlangB[3, 2]").unwrap(), "4/19");
+    assert_eq!(interpret("ErlangB[1, 1]").unwrap(), "1/2");
+    assert_eq!(interpret("ErlangB[5, 3/2]").unwrap(), "81/5711");
+    assert_eq!(
+      interpret("ErlangB[20, 15]").unwrap(),
+      "81091461181640625/1778586136832190169"
+    );
+    // Machine reals convert exactly and round back.
+    assert_eq!(interpret("ErlangB[3, 2.]").unwrap(), "0.21052631578947367");
+  }
+
+  // ErlangC clamps to 1 for a >= c (unstable queue) and gives 0 for a = 0.
+  #[test]
+  fn erlang_c() {
+    assert_eq!(interpret("ErlangC[3, 2]").unwrap(), "4/9");
+    assert_eq!(interpret("ErlangC[1, 1/2]").unwrap(), "1/2");
+    assert_eq!(interpret("ErlangC[3, 2.]").unwrap(), "0.4444444444444444");
+    assert_eq!(interpret("ErlangC[2, 3]").unwrap(), "1");
+    assert_eq!(interpret("ErlangC[2, 2]").unwrap(), "1");
+    assert_eq!(interpret("ErlangC[2, 5/2]").unwrap(), "1");
+    assert_eq!(interpret("ErlangC[3, 0]").unwrap(), "0");
+  }
+
+  // Non-positive-integer server counts emit ::intp; non-positive traffic
+  // emits ::posprm for ErlangB (which, unlike ErlangC, rejects a = 0);
+  // symbolic arguments stay unevaluated.
+  #[test]
+  fn error_forms() {
+    assert_eq!(interpret("ErlangB[0, 2]").unwrap(), "ErlangB[0, 2]");
+    assert_eq!(interpret("ErlangB[3, -1]").unwrap(), "ErlangB[3, -1]");
+    assert_eq!(interpret("ErlangB[3, 0]").unwrap(), "ErlangB[3, 0]");
+    assert_eq!(interpret("ErlangB[x, 2]").unwrap(), "ErlangB[x, 2]");
+    assert_eq!(interpret("ErlangB[3]").unwrap(), "ErlangB[3]");
+  }
+}

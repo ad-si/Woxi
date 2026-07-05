@@ -7495,3 +7495,198 @@ pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(unevaluated())
 }
+
+/// ErlangB[c, a] / ErlangC[c, a] — the Erlang blocking and waiting
+/// probabilities for c servers and offered traffic a, computed exactly over
+/// the rationals (machine reals convert via their exact binary fractions
+/// and round back). ErlangC clamps to 1 for a >= c and gives 0 for a = 0;
+/// ErlangB requires a > 0 (::posprm). A non-positive-integer numeric c
+/// emits ::intp. Symbolic arguments stay unevaluated (wolframscript's
+/// closed Gamma forms are out of scope).
+fn erlang_common(
+  name: &str,
+  args: &[Expr],
+  waiting: bool,
+) -> Result<Expr, InterpreterError> {
+  #[derive(Clone, Copy)]
+  struct Q {
+    n: i128,
+    d: i128,
+  }
+  fn qg(mut a: i128, mut b: i128) -> i128 {
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a.max(1)
+  }
+  impl Q {
+    fn new(mut n: i128, mut d: i128) -> Option<Q> {
+      if d == 0 {
+        return None;
+      }
+      if d < 0 {
+        n = n.checked_neg()?;
+        d = d.checked_neg()?;
+      }
+      let g = qg(n.abs(), d);
+      Some(Q { n: n / g, d: d / g })
+    }
+    fn add(self, o: Q) -> Option<Q> {
+      Q::new(
+        self
+          .n
+          .checked_mul(o.d)?
+          .checked_add(o.n.checked_mul(self.d)?)?,
+        self.d.checked_mul(o.d)?,
+      )
+    }
+    fn mul(self, o: Q) -> Option<Q> {
+      Q::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
+    }
+    fn div(self, o: Q) -> Option<Q> {
+      Q::new(self.n.checked_mul(o.d)?, self.d.checked_mul(o.n)?)
+    }
+  }
+
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  // c: a positive machine integer; other numerics emit ::intp, symbols
+  // stay unevaluated.
+  let c = match &args[0] {
+    Expr::Integer(n) if *n >= 1 && *n <= 1_000 => *n as u32,
+    other if crate::functions::math_ast::try_eval_to_f64(other).is_some() => {
+      crate::emit_message(&format!(
+        "{}::intp: Positive integer expected at position 1 in {}[{}, {}].",
+        name,
+        name,
+        crate::syntax::expr_to_output(&args[0]),
+        crate::syntax::expr_to_output(&args[1])
+      ));
+      return unevaluated();
+    }
+    _ => return unevaluated(),
+  };
+  // a: exact or machine-real traffic.
+  let mut is_real = false;
+  let a: Q = match &args[1] {
+    Expr::Integer(n) => match Q::new(*n, 1) {
+      Some(q) => q,
+      None => return unevaluated(),
+    },
+    Expr::FunctionCall { name: rn, args: ra }
+      if rn == "Rational" && ra.len() == 2 =>
+    {
+      match (&ra[0], &ra[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) => match Q::new(*p, *q) {
+          Some(q) => q,
+          None => return unevaluated(),
+        },
+        _ => return unevaluated(),
+      }
+    }
+    Expr::Real(v) if v.is_finite() => {
+      is_real = true;
+      // Exact binary fraction of the double.
+      let bits = v.to_bits();
+      let sign = if bits >> 63 == 0 { 1i128 } else { -1 };
+      let exp = ((bits >> 52) & 0x7ff) as i64;
+      let frac = (bits & ((1u64 << 52) - 1)) as i128;
+      let (m, e2) = if exp == 0 {
+        (frac, -1074i64)
+      } else {
+        (frac + (1i128 << 52), exp - 1075)
+      };
+      let q = if *v == 0.0 {
+        Q::new(0, 1)
+      } else if (0..70).contains(&e2) {
+        Q::new(sign * (m << e2), 1)
+      } else if e2 < 0 && e2 > -100 {
+        Q::new(sign * m, 1i128 << (-e2))
+      } else {
+        None
+      };
+      match q {
+        Some(q) => q,
+        None => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+
+  // Positivity: ErlangB needs a > 0; ErlangC accepts a = 0 (giving 0).
+  if a.n < 0 || (!waiting && a.n == 0) {
+    crate::emit_message(&format!(
+      "{}::posprm: Parameter {} at position 2 in {}[{}, {}] is expected to be positive.",
+      name,
+      crate::syntax::expr_to_output(&args[1]),
+      name,
+      crate::syntax::expr_to_output(&args[0]),
+      crate::syntax::expr_to_output(&args[1])
+    ));
+    return unevaluated();
+  }
+
+  let finish = |q: Q| -> Expr {
+    if is_real {
+      Expr::Real(q.n as f64 / q.d as f64)
+    } else if q.d == 1 {
+      Expr::Integer(q.n)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(q.n), Expr::Integer(q.d)].into(),
+      }
+    }
+  };
+  if waiting {
+    // Unstable queue (a >= c): the waiting probability is 1.
+    if a.n >= a.d.saturating_mul(c as i128) {
+      return Ok(finish(Q { n: 1, d: 1 }));
+    }
+    if a.n == 0 {
+      return Ok(finish(Q { n: 0, d: 1 }));
+    }
+  }
+
+  // Terms t_k = a^k/k! built incrementally; overflow bails unevaluated.
+  let compute = || -> Option<Q> {
+    let mut term = Q { n: 1, d: 1 };
+    let mut partial = Q { n: 1, d: 1 }; // Σ_{k<c} a^k/k!, built below
+    for k in 1..=c {
+      term = term.mul(a)?.div(Q::new(k as i128, 1)?)?;
+      if k < c {
+        partial = partial.add(term)?;
+      }
+    }
+    // term is now a^c/c!.
+    if waiting {
+      // C = t·c/(c-a) / (Σ_{k<c} + t·c/(c-a))
+      let factor = Q::new(c as i128, 1)?
+        .div(Q::new(c as i128, 1)?.add(Q { n: -a.n, d: a.d })?)?;
+      let top = term.mul(factor)?;
+      top.div(partial.add(top)?)
+    } else {
+      // B = t / (Σ_{k<c} + t)
+      term.div(partial.add(term)?)
+    }
+  };
+  match compute() {
+    Some(q) => Ok(finish(q)),
+    None => unevaluated(),
+  }
+}
+
+pub fn erlang_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  erlang_common("ErlangB", args, false)
+}
+
+pub fn erlang_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  erlang_common("ErlangC", args, true)
+}

@@ -4122,7 +4122,7 @@ ClearCookies,,🚫,,11.0,4262
 ConfirmMatch,,,,12.2,4262
 ConnesWindow,Compute ConnesWindow value,✅,pure,9.0,4262
 ContinuousWaveletData,Continuous wavelet coefficient object with octave/voice access,✅,pure,8.0,4262
-ErlangC,,,,9.0,4262
+ErlangC,Erlang waiting probability for c servers and traffic a (1 for a >= c; 0 for a = 0; exact rationals),✅,pure,9.0,4262
 FindSettings,,,,4.0,4262
 FiniteAbelianGroupCount,Number of abelian groups of order n,✅,pure,7.0,4262
 FunctionBijective,,,,12.2,4262
@@ -4243,7 +4243,7 @@ CapitalDifferentialD,,,,3.0,4387
 CurrentScreenImage,,🚫,,11.2,4387
 DecryptFile,,🚫,,11.1,4387
 EllipticFilterModel,,,,9.0,4387
-ErlangB,,,,9.0,4387
+ErlangB,Erlang blocking probability for c servers and traffic a (exact rationals; reals round-trip exactly),✅,pure,9.0,4387
 ExactBlackmanWindow,Compute ExactBlackmanWindow value,✅,pure,9.0,4387
 FeatureDistance,,🚫,,11.0,4387
 FileSystemScan,,,,11.0,4387

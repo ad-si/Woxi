@@ -1076,6 +1076,12 @@ pub fn dispatch_math_functions(
     "BlomqvistBeta" => {
       return Some(crate::functions::math_ast::blomqvist_beta_ast(args));
     }
+    "ErlangB" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::erlang_b_ast(args));
+    }
+    "ErlangC" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::erlang_c_ast(args));
+    }
     "KendallTau" if args.len() == 2 => {
       return Some(crate::functions::math_ast::kendall_tau_ast(args));
     }
