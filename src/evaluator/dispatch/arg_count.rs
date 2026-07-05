@@ -763,6 +763,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ListCorrelate" => Some((2, 4)),
     "ListFourierSequenceTransform" => Some((2, 2)),
     "ListQ" => Some((1, 1)),
+    "ListZTransform" => Some((2, 3)),
     "LocationTest" => Some((1, 3)),
     "Log" => Some((1, 2)),
     "LogGamma" => Some((1, 1)),

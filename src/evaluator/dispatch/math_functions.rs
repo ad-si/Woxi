@@ -620,6 +620,9 @@ pub fn dispatch_math_functions(
         crate::functions::math_ast::list_fourier_sequence_transform_ast(args),
       );
     }
+    "ListZTransform" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::math_ast::list_z_transform_ast(args));
+    }
     // MultinormalDistribution statistics: the mean vector, covariance
     // matrix, and per-component variances read straight off the
     // constructor arguments

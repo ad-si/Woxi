@@ -6859,3 +6859,52 @@ pub fn cosine_sum_window_ast(
     args: terms.into(),
   })
 }
+
+/// ListZTransform[{a0, a1, …}, z] — the finite Z transform
+/// Sum[a_k z^(-k-n)] with the optional third argument n shifting the
+/// starting index (default 0). An empty list gives {}; non-list first
+/// arguments emit ::arg1 and echo, like wolframscript.
+pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ListZTransform".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let Expr::List(items) = &args[0] else {
+    crate::emit_message(&format!(
+      "ListZTransform::arg1: Expected a numeric array instead of {}.",
+      crate::syntax::expr_to_output(&args[0])
+    ));
+    return unevaluated();
+  };
+  if items.is_empty() {
+    return Ok(Expr::List(vec![].into()));
+  }
+  let shift: i128 = match args.get(2) {
+    None => 0,
+    Some(Expr::Integer(n)) => *n,
+    Some(_) => return unevaluated(),
+  };
+  let terms: Vec<Expr> = items
+    .iter()
+    .enumerate()
+    .map(|(k, a)| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        a.clone(),
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![args[1].clone(), Expr::Integer(-(k as i128) - shift)]
+            .into(),
+        },
+      ]
+      .into(),
+    })
+    .collect();
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum)
+}

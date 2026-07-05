@@ -8116,3 +8116,35 @@ mod mandelbrot_set_iteration_count_tests {
     );
   }
 }
+
+mod list_z_transform_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn basic_transforms() {
+    assert_eq!(
+      interpret("ListZTransform[{1, 2, 3}, z]").unwrap(),
+      "1 + 3/z^2 + 2/z"
+    );
+    assert_eq!(
+      interpret("ListZTransform[{a, b, c}, z]").unwrap(),
+      "a + c/z^2 + b/z"
+    );
+    // Numeric z evaluates the sum.
+    assert_eq!(interpret("ListZTransform[{1, 2, 3}, 2]").unwrap(), "11/4");
+  }
+
+  // The third argument shifts the starting index; an empty list gives {}.
+  #[test]
+  fn shift_and_edge_cases() {
+    assert_eq!(
+      interpret("ListZTransform[{1, 2}, z, 3]").unwrap(),
+      "2/z^4 + z^(-3)"
+    );
+    assert_eq!(interpret("ListZTransform[{}, z]").unwrap(), "{}");
+    assert_eq!(
+      interpret("ListZTransform[x, z]").unwrap(),
+      "ListZTransform[x, z]"
+    );
+  }
+}
