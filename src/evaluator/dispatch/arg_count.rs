@@ -518,6 +518,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FreeQ" => Some((1, 3)),
     "FresnelC" => Some((1, 1)),
     "FresnelS" => Some((1, 1)),
+    "FresnelF" => Some((1, 1)),
+    "FresnelG" => Some((1, 1)),
     "FrenetSerretSystem" => Some((2, 2)),
     "FrobeniusNumber" => Some((1, 1)),
     "FrobeniusSolve" => Some((2, 3)),

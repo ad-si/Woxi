@@ -1424,6 +1424,9 @@ pub fn dispatch_math_functions(
     "FresnelC" if args.len() == 1 => {
       return Some(crate::functions::math_ast::fresnel_c_ast(args));
     }
+    "FresnelF" | "FresnelG" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::fresnel_fg_ast(name, args));
+    }
     "SinhIntegral" if args.len() == 1 => {
       return Some(crate::functions::math_ast::sinh_integral_ast(args));
     }

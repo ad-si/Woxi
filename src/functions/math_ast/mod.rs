@@ -14,7 +14,7 @@ mod elementary;
 mod elliptic;
 pub(crate) mod gamma;
 mod hypergeometric;
-mod integrals;
+pub(crate) mod integrals;
 mod jacobi;
 mod mathieu;
 mod misc_special;

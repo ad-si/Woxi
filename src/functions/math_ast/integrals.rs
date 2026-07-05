@@ -1107,3 +1107,69 @@ fn cosh_integral_numeric(z: f64) -> f64 {
     }
   }
 }
+
+/// FresnelF[z] / FresnelG[z] — the auxiliary Fresnel modulus functions
+/// (DLMF 7.5 with the Wolfram π/2 normalization):
+///   f(z) = (C(z) - 1/2) Sin[π z²/2] - (S(z) - 1/2) Cos[π z²/2]
+///   g(z) = -(C(z) - 1/2) Cos[π z²/2] - (S(z) - 1/2) Sin[π z²/2]
+/// Exact points: f(0) = g(0) = 1/2 and f(∞) = g(∞) = 0; other exact or
+/// symbolic arguments stay unevaluated like wolframscript. Lists thread.
+///
+/// Machine values compose from the FresnelS/C machine values, so the last
+/// digits can differ from wolframscript (which uses dedicated rational
+/// approximations), and for large |x| the subtraction cancellation limits
+/// relative accuracy to roughly 1e-13 — the known real-path divergence
+/// class.
+pub fn fresnel_fg_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  match &args[0] {
+    Expr::Integer(0) => {
+      return Ok(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      });
+    }
+    Expr::Constant(c) | Expr::Identifier(c) if c == "Infinity" => {
+      return Ok(Expr::Integer(0));
+    }
+    Expr::List(items) => {
+      let threaded: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|item| fresnel_fg_ast(name, std::slice::from_ref(item)))
+        .collect();
+      return Ok(Expr::List(threaded?.into()));
+    }
+    _ => {}
+  }
+  if !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..)) {
+    return unevaluated();
+  }
+  let Some(x) = crate::functions::math_ast::try_eval_to_f64(&args[0]) else {
+    return unevaluated();
+  };
+  Ok(Expr::Real(fresnel_fg_numeric(name == "FresnelF", x)))
+}
+
+/// The machine value of f(x) or g(x) via the FresnelS/C machine values.
+pub(crate) fn fresnel_fg_numeric(f_variant: bool, x: f64) -> f64 {
+  let s = fresnel_s_numeric(x);
+  let c = fresnel_c_numeric(x);
+  let phase = std::f64::consts::PI * x * x / 2.0;
+  let (sin_p, cos_p) = (phase.sin(), phase.cos());
+  if f_variant {
+    (c - 0.5) * sin_p - (s - 0.5) * cos_p
+  } else {
+    -(c - 0.5) * cos_p - (s - 0.5) * sin_p
+  }
+}

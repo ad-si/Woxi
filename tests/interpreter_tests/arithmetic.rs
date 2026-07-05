@@ -8301,3 +8301,30 @@ mod annuity_due_tests {
     );
   }
 }
+
+mod fresnel_fg_tests {
+  use woxi::interpret;
+
+  // The auxiliary Fresnel moduli: exact at 0 and Infinity, symbolic for
+  // other exact arguments, threading over lists.
+  #[test]
+  fn structural_cases() {
+    assert_eq!(interpret("FresnelF[0]").unwrap(), "1/2");
+    assert_eq!(interpret("FresnelG[0]").unwrap(), "1/2");
+    assert_eq!(interpret("FresnelF[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("FresnelG[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("FresnelF[1/2]").unwrap(), "FresnelF[1/2]");
+    assert_eq!(interpret("FresnelF[x]").unwrap(), "FresnelF[x]");
+    assert_eq!(
+      interpret("FresnelF[-Infinity]").unwrap(),
+      "FresnelF[-Infinity]"
+    );
+  }
+
+  // A wolframscript-byte-exact machine point (the general real path can
+  // differ in the last digits; see the implementation note).
+  #[test]
+  fn machine_value() {
+    assert_eq!(interpret("FresnelF[0.75]").unwrap(), "0.3342840193756982");
+  }
+}

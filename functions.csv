@@ -4215,8 +4215,8 @@ EdgeBetweennessCentrality,Betweenness centrality of each graph edge via Brandes 
 EncryptFile,,🚫,,11.1,4356
 ExtendedEntityClass,,🚫,,12.0,4356
 FindVertexCut,,,,9.0,4356
-FresnelF,,,,10.0,4356
-FresnelG,,,,10.0,4356
+FresnelF,Auxiliary Fresnel modulus f(z) (exact at 0 and Infinity; machine reals compose from FresnelS/C),✅,pure,10.0,4356
+FresnelG,Auxiliary Fresnel modulus g(z) (exact at 0 and Infinity; machine reals compose from FresnelS/C),✅,pure,10.0,4356
 FromAbsoluteTime,Returns the DateObject for an absolute time (seconds since 1900-01-01),✅,pure,11.1,4356
 GaussianSymplecticMatrixDistribution,,,,10.3,4356
 GeoGroup,,🚫,,10.0,4356

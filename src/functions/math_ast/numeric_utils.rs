@@ -312,6 +312,15 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         let d = try_eval_to_f64(&args[1])?;
         if d != 0.0 { Some(n / d) } else { None }
       }
+      // Auxiliary Fresnel moduli: symbolic for exact arguments but
+      // numericizable (so N[FresnelF[1]] works).
+      "FresnelF" | "FresnelG" if args.len() == 1 => {
+        let x = try_eval_to_f64(&args[0])?;
+        Some(crate::functions::math_ast::integrals::fresnel_fg_numeric(
+          name == "FresnelF",
+          x,
+        ))
+      }
       // Champernowne constants: numeric (NumericQ True) but symbolic until
       // numericized.
       "ChampernowneNumber" if args.len() <= 1 => match args.first() {
