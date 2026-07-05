@@ -1260,9 +1260,6 @@ function main() {
     // Changing either ripples through the property-extraction path.
     "HTTPRequest[URL[\"https://example.com\"]]",
     "HTTPRequest[<|\"Method\" -> \"POST\"|>]",
-    // RandomTime[][[2]]: the DateObject type slot renders as "Instant" (string)
-    // in Wolfram vs Instant (symbol) in Woxi.
-    "RandomTime[][[2]]",
     // PolyGamma[-1.5]: last-ULP floating-point difference.
     "PolyGamma[-1.5]",
     // PolyhedronData Volume: (5*GoldenRatio^2)/6 vs (5*(3 + Sqrt[5]))/12 —

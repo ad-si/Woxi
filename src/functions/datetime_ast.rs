@@ -969,7 +969,7 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Granularity and calendar to copy into the result.
   let granularity = match dargs.get(1) {
-    Some(Expr::Identifier(g)) => g.clone(),
+    Some(Expr::Identifier(g)) | Some(Expr::String(g)) => g.clone(),
     _ => {
       if components.len() >= 4 {
         "Instant".to_string()
@@ -979,7 +979,7 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let calendar = match dargs.get(2) {
-    Some(Expr::Identifier(c)) => c.clone(),
+    Some(Expr::Identifier(c)) | Some(Expr::String(c)) => c.clone(),
     _ => "Gregorian".to_string(),
   };
 
@@ -1008,8 +1008,8 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "DateObject".to_string(),
       args: vec![
         Expr::List(list.into()),
-        Expr::Identifier(granularity.clone()),
-        Expr::Identifier(calendar.clone()),
+        Expr::String(granularity.clone()),
+        Expr::String(calendar.clone()),
         tz,
       ]
       .into(),
@@ -2792,7 +2792,7 @@ pub fn time_object_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "TimeObject".to_string(),
     args: vec![
       Expr::List(fields.into()),
-      Expr::Identifier(granularity.to_string()),
+      Expr::String(granularity.to_string()),
     ]
     .into(),
   })

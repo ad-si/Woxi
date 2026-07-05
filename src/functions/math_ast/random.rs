@@ -720,7 +720,7 @@ pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ]
           .into(),
         ),
-        Expr::Identifier("Instant".to_string()),
+        Expr::String("Instant".to_string()),
       ]
       .into(),
     }
