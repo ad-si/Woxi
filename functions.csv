@@ -3099,7 +3099,7 @@ HadamardMatrix,Hadamard matrix of size n,✅,none,9.0,3176
 KeyIntersection,Restricts each association to the keys common to all,✅,pure,10.0,3176
 LeftRightArrow,,,,3.0,3176
 LightMagenta,Named light color evaluating to RGBColor[1 0.9 1],✅,pure,6.0,3176
-MellinTransform,,,,11.0,3176
+MellinTransform,Table-driven Mellin transform for classical integrands with shift and substitution rules,✅,pure,11.0,3176
 MeshCellCentroid,,🚫,,10.0,3176
 PermutationLength,Number of non-fixed points in a permutation,✅,1,8.0,3176
 Printout3D,,🚫,,11.0,3176

@@ -837,6 +837,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MeanAround" => Some((1, 1)),
     "MeanDeviation" => Some((1, 1)),
     "Median" => Some((1, 1)),
+    "MellinTransform" => Some((3, usize::MAX)),
     "MedianDeviation" => Some((1, 1)),
     "MeijerG" => Some((3, 3)),
     "MemberQ" => Some((1, 3)),
@@ -1514,9 +1515,11 @@ pub fn check_arg_count(
   } else if max == usize::MAX {
     // Variadic with minimum — shouldn't normally reach here since we only
     // check when n < min (max is unlimited)
+    // wolframscript uses the `argmu` tag when called with one argument.
+    let tag = if n == 1 { "argmu" } else { "argm" };
     format!(
-      "{}::argm: {} called with {} {}; {} or more arguments are expected.",
-      name, name, n, arg_word, min
+      "{}::{}: {} called with {} {}; {} or more arguments are expected.",
+      name, tag, name, n, arg_word, min
     )
   } else if max - min == 1 {
     // wolframscript uses the *u tag variants when called with one argument

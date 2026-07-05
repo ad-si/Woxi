@@ -12096,3 +12096,161 @@ mod sum_convergence {
     );
   }
 }
+
+mod mellin_transform_tests {
+  use woxi::interpret;
+
+  // Classical Mellin table entries, all verified against wolframscript.
+  #[test]
+  fn exponential_entries() {
+    assert_eq!(
+      interpret("MellinTransform[E^(-x), x, s]").unwrap(),
+      "Gamma[s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[E^(-a x), x, s]").unwrap(),
+      "Gamma[s]/a^s"
+    );
+    assert_eq!(
+      interpret("MellinTransform[E^(-3 x), x, s]").unwrap(),
+      "Gamma[s]/3^s"
+    );
+    assert_eq!(
+      interpret("MellinTransform[E^(-x^2), x, s]").unwrap(),
+      "Gamma[s/2]/2"
+    );
+    assert_eq!(
+      interpret("MellinTransform[E^(-x^3), x, s]").unwrap(),
+      "Gamma[s/3]/3"
+    );
+    assert_eq!(
+      interpret("MellinTransform[E^(-a x^2), x, s]").unwrap(),
+      "Gamma[s/2]/(2*a^(s/2))"
+    );
+    // The x^p factor shifts s; constants factor out.
+    assert_eq!(
+      interpret("MellinTransform[x^2 E^(-x), x, s]").unwrap(),
+      "Gamma[2 + s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[x E^(-2 x), x, s]").unwrap(),
+      "2^(-1 - s)*Gamma[1 + s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[Sqrt[x] E^(-x), x, s]").unwrap(),
+      "Gamma[1/2 + s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[x^a E^(-b x), x, s]").unwrap(),
+      "b^(-a - s)*Gamma[a + s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[2 E^(-x), x, s]").unwrap(),
+      "2*Gamma[s]"
+    );
+    // Divergent integrand stays unevaluated.
+    assert_eq!(
+      interpret("MellinTransform[E^x, x, s]").unwrap(),
+      "MellinTransform[E^x, x, s]"
+    );
+  }
+
+  #[test]
+  fn algebraic_and_special_entries() {
+    assert_eq!(
+      interpret("MellinTransform[1/(1 + x), x, s]").unwrap(),
+      "Pi*Csc[Pi*s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[1/(a + x), x, s]").unwrap(),
+      "a^(-1 + s)*Pi*Csc[Pi*s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[1/(1 + x^2), x, s]").unwrap(),
+      "(Pi*Csc[(Pi*s)/2])/2"
+    );
+    assert_eq!(
+      interpret("MellinTransform[(1 + x)^(-a), x, s]").unwrap(),
+      "(Gamma[s]*Gamma[a - s])/Gamma[a]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[1/(1 + x)^2, x, s]").unwrap(),
+      "Gamma[s]*Gamma[2 - s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[Sin[x], x, s]").unwrap(),
+      "Gamma[s]*Sin[(Pi*s)/2]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[Cos[x], x, s]").unwrap(),
+      "Cos[(Pi*s)/2]*Gamma[s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[Sin[a x], x, s]").unwrap(),
+      "(Gamma[s]*Sin[(Pi*s)/2])/a^s"
+    );
+    assert_eq!(
+      interpret("MellinTransform[Cos[a x], x, s]").unwrap(),
+      "(Cos[(Pi*s)/2]*Gamma[s])/a^s"
+    );
+    assert_eq!(
+      interpret("MellinTransform[Log[1 + x], x, s]").unwrap(),
+      "(Pi*Csc[Pi*s])/s"
+    );
+    assert_eq!(
+      interpret("MellinTransform[UnitStep[1 - x], x, s]").unwrap(),
+      "s^(-1)"
+    );
+    assert_eq!(
+      interpret("MellinTransform[HeavisideTheta[1 - x], x, s]").unwrap(),
+      "s^(-1)"
+    );
+    assert_eq!(
+      interpret("MellinTransform[DiracDelta[x - a], x, s]").unwrap(),
+      "a^(-1 + s)"
+    );
+    assert_eq!(
+      interpret("MellinTransform[Erfc[x], x, s]").unwrap(),
+      "Gamma[1/2 + s/2]/(Sqrt[Pi]*s)"
+    );
+    assert_eq!(
+      interpret("MellinTransform[BesselJ[0, x], x, s]").unwrap(),
+      "(2^(-1 + s)*Gamma[s/2])/Gamma[1 - s/2]"
+    );
+  }
+
+  // Powers of x alone give DiracDelta distributions; expressions free of
+  // the variable use the constant rule; unknown integrands stay
+  // unevaluated; short calls emit argm/argmu.
+  #[test]
+  fn distributional_and_edge_cases() {
+    assert_eq!(
+      interpret("MellinTransform[1, x, s]").unwrap(),
+      "2*Pi*DiracDelta[I*s]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[x, x, s]").unwrap(),
+      "2*Pi*DiracDelta[I*(1 + s)]"
+    );
+    assert_eq!(
+      interpret("MellinTransform[E^(-x), 5, s]").unwrap(),
+      "(2*Pi*DiracDelta[I*s])/E^x"
+    );
+    assert_eq!(
+      interpret("MellinTransform[f[x], x, s]").unwrap(),
+      "MellinTransform[f[x], x, s]"
+    );
+
+    let r = woxi::interpret_with_stdout("MellinTransform[E^(-x), x]").unwrap();
+    assert_eq!(r.result, "MellinTransform[E^(-x), x]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "MellinTransform::argm: MellinTransform called with 2 arguments; 3 or more arguments are expected."
+    )));
+
+    let r = woxi::interpret_with_stdout("MellinTransform[E^(-x)]").unwrap();
+    assert_eq!(r.result, "MellinTransform[E^(-x)]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "MellinTransform::argmu: MellinTransform called with 1 argument; 3 or more arguments are expected."
+    )));
+  }
+}

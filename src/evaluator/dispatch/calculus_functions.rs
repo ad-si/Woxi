@@ -758,6 +758,9 @@ pub fn dispatch_calculus_functions(
     "LaplaceTransform" if args.len() == 3 => {
       return Some(laplace_transform(&args[0], &args[1], &args[2]));
     }
+    "MellinTransform" if args.len() == 3 => {
+      return Some(mellin_transform(&args[0], &args[1], &args[2]));
+    }
     "InverseLaplaceTransform" if args.len() == 3 => {
       return Some(inverse_laplace_transform(&args[0], &args[1], &args[2]));
     }
@@ -2338,6 +2341,460 @@ fn collect_dirac_like_terms(terms: Vec<Expr>) -> Vec<Expr> {
 }
 
 /// Compute Fourier transform of expr w.r.t. variable t, into variable w.
+/// MellinTransform[f, x, s] — table-driven Mellin transform matching
+/// wolframscript for the classical entries (exponentials, powers of
+/// 1 + x, trig, Log[1 + x], step functions, DiracDelta, Erfc, BesselJ)
+/// plus linearity, the x^p shift rule, and the x^k substitution rule.
+/// Unknown integrands stay unevaluated.
+fn mellin_transform(
+  expr: &Expr,
+  x_expr: &Expr,
+  s_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "MellinTransform".to_string(),
+      args: vec![expr.clone(), x_expr.clone(), s_expr.clone()].into(),
+    })
+  };
+  let Expr::Identifier(x) = x_expr else {
+    // A non-symbol "variable" makes every integrand a constant, so the
+    // constant rule applies (wolframscript does the same).
+    let result = make_times(vec![
+      expr.clone(),
+      Expr::Integer(2),
+      Expr::Identifier("Pi".to_string()),
+      Expr::FunctionCall {
+        name: "DiracDelta".to_string(),
+        args: vec![make_times(vec![
+          Expr::Identifier("I".to_string()),
+          s_expr.clone(),
+        ])]
+        .into(),
+      },
+    ]);
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  };
+
+  let normalized = normalize_to_func_calls(expr);
+  let normalized =
+    crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+  // Evaluation can re-introduce BinaryOp/Divide shapes; flatten them back
+  // to FunctionCall form so the table matchers see one representation.
+  let normalized = normalize_to_func_calls(&normalized);
+
+  match mellin_inner(&normalized, x, s_expr) {
+    Some(result) => crate::evaluator::evaluate_expr_to_expr(&result),
+    None => unevaluated(),
+  }
+}
+
+/// Core Mellin table. Returns None when no rule applies.
+fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
+  let two_pi_delta = |arg: Expr| -> Expr {
+    make_times(vec![
+      Expr::Integer(2),
+      Expr::Identifier("Pi".to_string()),
+      Expr::FunctionCall {
+        name: "DiracDelta".to_string(),
+        args: vec![make_times(vec![Expr::Identifier("I".to_string()), arg])]
+          .into(),
+      },
+    ])
+  };
+  let gamma = |arg: Expr| -> Expr {
+    Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: vec![arg].into(),
+    }
+  };
+  let neg = |e: Expr| make_times(vec![Expr::Integer(-1), e]);
+
+  // Constants: M[c] = c 2 Pi DiracDelta[I s].
+  if !contains_variable(expr, x) {
+    return Some(make_times(vec![expr.clone(), two_pi_delta(s.clone())]));
+  }
+
+  match expr {
+    // Linearity over sums.
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let parts: Option<Vec<Expr>> =
+        args.iter().map(|a| mellin_inner(a, x, s)).collect();
+      Some(make_plus(parts?))
+    }
+
+    // Products: pull out constant factors, then apply the x^p shift rule.
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let (consts, deps): (Vec<Expr>, Vec<Expr>) =
+        args.iter().cloned().partition(|a| !contains_variable(a, x));
+      if deps.is_empty() {
+        return Some(make_times(vec![
+          make_times(consts),
+          two_pi_delta(s.clone()),
+        ]));
+      }
+      // x^p (or bare x) among the factors shifts s by p.
+      if deps.len() > 1 {
+        for (i, d) in deps.iter().enumerate() {
+          let p = match d {
+            Expr::Identifier(name) if name == x => Some(Expr::Integer(1)),
+            Expr::FunctionCall { name, args }
+              if name == "Power"
+                && args.len() == 2
+                && matches!(&args[0], Expr::Identifier(b) if b == x)
+                && !contains_variable(&args[1], x) =>
+            {
+              Some(args[1].clone())
+            }
+            _ => None,
+          };
+          if let Some(p) = p {
+            let mut rest: Vec<Expr> = deps.clone();
+            rest.remove(i);
+            let shifted = make_plus(vec![p, s.clone()]);
+            let inner = mellin_inner(&make_times(rest), x, &shifted)?;
+            return Some(make_times(vec![make_times(consts), inner]));
+          }
+        }
+        return None;
+      }
+      let inner = mellin_inner(&deps[0], x, s)?;
+      if consts.is_empty() {
+        Some(inner)
+      } else {
+        Some(make_times(vec![make_times(consts), inner]))
+      }
+    }
+
+    // Bare x: M[x^p] = 2 Pi DiracDelta[I (p + s)].
+    Expr::Identifier(name) if name == x => {
+      Some(two_pi_delta(make_plus(vec![Expr::Integer(1), s.clone()])))
+    }
+
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let (base, exp) = (&args[0], &args[1]);
+      // x^p.
+      if matches!(base, Expr::Identifier(b) if b == x)
+        && !contains_variable(exp, x)
+      {
+        return Some(two_pi_delta(make_plus(vec![exp.clone(), s.clone()])));
+      }
+      // E^u — exponential entries.
+      if matches!(base, Expr::Identifier(b) if b == "E")
+        || matches!(base, Expr::Constant(c) if c == "E")
+      {
+        let (coeff, n) = decompose_coeff_power(exp, x)?;
+        // Need u = -a x^n with a = -coeff and Re[a] > 0 (E^(+a x^n)
+        // diverges); symbolic a is assumed valid like wolframscript.
+        let a = crate::evaluator::evaluate_expr_to_expr(&neg(coeff)).ok()?;
+        if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&a)
+          && v <= 0.0
+        {
+          return None;
+        }
+        if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&n)
+          && v <= 0.0
+        {
+          return None;
+        }
+        let s_over_n = if matches!(n, Expr::Integer(1)) {
+          s.clone()
+        } else {
+          make_times(vec![s.clone(), make_power(n.clone(), Expr::Integer(-1))])
+        };
+        let mut factors = vec![gamma(s_over_n.clone())];
+        if !matches!(n, Expr::Integer(1)) {
+          factors.push(make_power(n.clone(), Expr::Integer(-1)));
+        }
+        if !matches!(a, Expr::Integer(1)) {
+          factors.push(make_power(a, neg(s_over_n)));
+        }
+        return Some(make_times(factors));
+      }
+      // (c + x^k)^(-p) with c free of x.
+      if let Expr::FunctionCall {
+        name: bname,
+        args: bargs,
+      } = base
+        && bname == "Plus"
+        && bargs.len() == 2
+        && !contains_variable(exp, x)
+      {
+        let (c, xpart) = if contains_variable(&bargs[0], x) {
+          (&bargs[1], &bargs[0])
+        } else {
+          (&bargs[0], &bargs[1])
+        };
+        if contains_variable(c, x) {
+          return None;
+        }
+        let k = match xpart {
+          Expr::Identifier(b) if b == x => Expr::Integer(1),
+          Expr::FunctionCall {
+            name: pname,
+            args: pargs,
+          } if pname == "Power"
+            && pargs.len() == 2
+            && matches!(&pargs[0], Expr::Identifier(b) if b == x)
+            && !contains_variable(&pargs[1], x) =>
+          {
+            pargs[1].clone()
+          }
+          _ => return None,
+        };
+        // p = -exp must be "positive" (numeric check when possible).
+        let p =
+          crate::evaluator::evaluate_expr_to_expr(&neg(exp.clone())).ok()?;
+        if let Expr::Integer(v) = p
+          && v <= 0
+        {
+          return None;
+        }
+        // Substitution rule: s -> s/k, result scaled by 1/k.
+        let s_eff = if matches!(k, Expr::Integer(1)) {
+          s.clone()
+        } else {
+          make_times(vec![s.clone(), make_power(k.clone(), Expr::Integer(-1))])
+        };
+        // M[(c + y)^(-p)](t) = c^(t-p) Gamma[p-t] Gamma[t] / Gamma[p],
+        // displayed via Pi Csc[Pi t] when p == 1.
+        let core = if matches!(p, Expr::Integer(1)) {
+          make_times(vec![
+            Expr::Identifier("Pi".to_string()),
+            Expr::FunctionCall {
+              name: "Csc".to_string(),
+              args: vec![make_times(vec![
+                Expr::Identifier("Pi".to_string()),
+                s_eff.clone(),
+              ])]
+              .into(),
+            },
+          ])
+        } else {
+          make_times(vec![
+            gamma(make_plus(vec![p.clone(), neg(s_eff.clone())])),
+            gamma(s_eff.clone()),
+            make_power(gamma(p.clone()), Expr::Integer(-1)),
+          ])
+        };
+        let mut factors = vec![core];
+        if !matches!(c, Expr::Integer(1)) {
+          factors.push(make_power(c.clone(), make_plus(vec![s_eff, neg(p)])));
+        }
+        if !matches!(k, Expr::Integer(1)) {
+          factors.push(make_power(k, Expr::Integer(-1)));
+        }
+        return Some(make_times(factors));
+      }
+      None
+    }
+
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      let u = &args[0];
+      match name.as_str() {
+        // Sin[a x] / Cos[a x].
+        "Sin" | "Cos" => {
+          let (coeff, n) = decompose_coeff_power(u, x)?;
+          if !matches!(n, Expr::Integer(1)) {
+            return None;
+          }
+          let half_pi_s = make_times(vec![
+            Expr::Identifier("Pi".to_string()),
+            s.clone(),
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+            },
+          ]);
+          let mut factors = vec![
+            gamma(s.clone()),
+            Expr::FunctionCall {
+              name: name.clone(),
+              args: vec![half_pi_s].into(),
+            },
+          ];
+          if !matches!(coeff, Expr::Integer(1)) {
+            factors.push(make_power(coeff, neg(s.clone())));
+          }
+          Some(make_times(factors))
+        }
+        // Log[1 + x] = Pi Csc[Pi s] / s.
+        "Log" => {
+          let Expr::FunctionCall {
+            name: pname,
+            args: pargs,
+          } = u
+          else {
+            return None;
+          };
+          if pname != "Plus" || pargs.len() != 2 {
+            return None;
+          }
+          let ok = matches!(&pargs[0], Expr::Integer(1))
+            && matches!(&pargs[1], Expr::Identifier(b) if b == x)
+            || matches!(&pargs[1], Expr::Integer(1))
+              && matches!(&pargs[0], Expr::Identifier(b) if b == x);
+          if !ok {
+            return None;
+          }
+          Some(make_times(vec![
+            Expr::Identifier("Pi".to_string()),
+            Expr::FunctionCall {
+              name: "Csc".to_string(),
+              args: vec![make_times(vec![
+                Expr::Identifier("Pi".to_string()),
+                s.clone(),
+              ])]
+              .into(),
+            },
+            make_power(s.clone(), Expr::Integer(-1)),
+          ]))
+        }
+        // UnitStep[1 - x] / HeavisideTheta[1 - x] = 1/s.
+        "UnitStep" | "HeavisideTheta" => {
+          let Expr::FunctionCall {
+            name: pname,
+            args: pargs,
+          } = u
+          else {
+            return None;
+          };
+          if pname != "Plus" || pargs.len() != 2 {
+            return None;
+          }
+          let is_neg_x = |e: &Expr| {
+            matches!(e, Expr::FunctionCall { name, args }
+              if name == "Times" && args.len() == 2
+                && matches!(&args[0], Expr::Integer(-1))
+                && matches!(&args[1], Expr::Identifier(b) if b == x))
+          };
+          let ok = matches!(&pargs[0], Expr::Integer(1)) && is_neg_x(&pargs[1])
+            || matches!(&pargs[1], Expr::Integer(1)) && is_neg_x(&pargs[0]);
+          if !ok {
+            return None;
+          }
+          Some(make_power(s.clone(), Expr::Integer(-1)))
+        }
+        // DiracDelta[x - a] = a^(s - 1).
+        "DiracDelta" => {
+          let Expr::FunctionCall {
+            name: pname,
+            args: pargs,
+          } = u
+          else {
+            return None;
+          };
+          if pname != "Plus" || pargs.len() != 2 {
+            return None;
+          }
+          let (xterm, cterm) = if matches!(&pargs[0], Expr::Identifier(b) if b == x)
+          {
+            (&pargs[0], &pargs[1])
+          } else if matches!(&pargs[1], Expr::Identifier(b) if b == x) {
+            (&pargs[1], &pargs[0])
+          } else {
+            return None;
+          };
+          let _ = xterm;
+          if contains_variable(cterm, x) {
+            return None;
+          }
+          let a = crate::evaluator::evaluate_expr_to_expr(&neg(cterm.clone()))
+            .ok()?;
+          Some(make_power(a, make_plus(vec![Expr::Integer(-1), s.clone()])))
+        }
+        // Erfc[x] = Gamma[1/2 + s/2] / (Sqrt[Pi] s).
+        "Erfc" => {
+          if !matches!(u, Expr::Identifier(b) if b == x) {
+            return None;
+          }
+          let half = Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+          };
+          Some(make_times(vec![
+            gamma(make_plus(vec![
+              half.clone(),
+              make_times(vec![half.clone(), s.clone()]),
+            ])),
+            make_power(
+              make_sqrt(Expr::Identifier("Pi".to_string())),
+              Expr::Integer(-1),
+            ),
+            make_power(s.clone(), Expr::Integer(-1)),
+          ]))
+        }
+        _ => None,
+      }
+    }
+
+    // BesselJ[n, x] = 2^(s-1) Gamma[(n+s)/2] / Gamma[(2+n-s)/2].
+    Expr::FunctionCall { name, args }
+      if name == "BesselJ"
+        && args.len() == 2
+        && !contains_variable(&args[0], x)
+        && matches!(&args[1], Expr::Identifier(b) if b == x) =>
+    {
+      let n = args[0].clone();
+      let half = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      };
+      Some(make_times(vec![
+        make_power(
+          Expr::Integer(2),
+          make_plus(vec![Expr::Integer(-1), s.clone()]),
+        ),
+        gamma(make_times(vec![
+          half.clone(),
+          make_plus(vec![n.clone(), s.clone()]),
+        ])),
+        make_power(
+          gamma(make_plus(vec![
+            Expr::Integer(1),
+            make_times(vec![half.clone(), n]),
+            make_times(vec![Expr::Integer(-1), half, s.clone()]),
+          ])),
+          Expr::Integer(-1),
+        ),
+      ]))
+    }
+
+    _ => None,
+  }
+}
+
+/// Decompose `u` as coeff * x^n (coeff free of x). Returns (coeff, n);
+/// bare x gives (1, 1).
+fn decompose_coeff_power(u: &Expr, x: &str) -> Option<(Expr, Expr)> {
+  match u {
+    Expr::Identifier(b) if b == x => Some((Expr::Integer(1), Expr::Integer(1))),
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(b) if b == x)
+        && !contains_variable(&args[1], x) =>
+    {
+      Some((Expr::Integer(1), args[1].clone()))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let (consts, deps): (Vec<Expr>, Vec<Expr>) =
+        args.iter().cloned().partition(|a| !contains_variable(a, x));
+      if deps.len() != 1 || consts.is_empty() {
+        return None;
+      }
+      let (inner_c, n) = decompose_coeff_power(&deps[0], x)?;
+      if !matches!(inner_c, Expr::Integer(1)) {
+        return None;
+      }
+      let coeff =
+        crate::evaluator::evaluate_expr_to_expr(&make_times(consts)).ok()?;
+      Some((coeff, n))
+    }
+    _ => None,
+  }
+}
+
 fn fourier_transform(
   expr: &Expr,
   t_expr: &Expr,
