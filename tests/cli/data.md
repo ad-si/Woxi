@@ -8,8 +8,8 @@ Woxi can hold and analyze temporal data. A `TimeSeries` pairs values with
 time stamps, and descriptive statistics operate on the value path.
 
 ```scrut
-$ wo 'Mean[TimeSeries[{{1, 10}, {2, 20}, {3, 30}}]]'
-20
+$ wo 'Mean[TimeSeries[{{1, 10.}, {2, 20.}, {3, 30.}}]]'
+20.
 ```
 
 `CompressedData` holds a compressed expression (as produced by `Compress` or

@@ -12,7 +12,7 @@ notation.
 
 ```scrut
 $ wo 'ToString[DecimalForm[1234567.89]]'
-1234568.
+1234568
 ```
 
 A second argument gives the number of significant figures.

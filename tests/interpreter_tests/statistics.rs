@@ -1038,6 +1038,19 @@ mod bin_lists {
     );
   }
 
+  // The `vectmat` message text matches Wolfram verbatim, including the
+  // hyphenation in "unit-compatible".
+  #[test]
+  fn bin_lists_symbolic_emits_vectmat_message() {
+    clear_state();
+    let result = interpret_with_stdout("BinLists[x, {0, 10, 1}]").unwrap();
+    assert_eq!(result.result, "BinLists[x, {0, 10, 1}]");
+    assert!(result.warnings.iter().any(|w| w.contains(
+      "BinLists::vectmat: The first argument is expected to be a \
+       unit-compatible vector or a matrix with unit-compatible columns."
+    )));
+  }
+
   #[test]
   fn bin_lists_explicit_edges() {
     assert_eq!(

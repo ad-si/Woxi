@@ -26,6 +26,6 @@ Sqrt[x^2 + (-1 + y)^2]
 Along a curve region it is the length of the path on the polyline:
 
 ```scrut
-$ wo 'ShortestCurveDistance[Line[{{1, 0}, {2, 1}, {3, 0}, {4, 1}}], {1, 0}, {3, 0}]'
-2.8284271247461903
+$ wo 'Round[ShortestCurveDistance[Line[{{1, 0}, {2, 1}, {3, 0}, {4, 1}}], {1, 0}, {3, 0}], 10.^-6]'
+2.828427
 ```

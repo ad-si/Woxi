@@ -2008,7 +2008,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => items,
     _ => {
       crate::emit_message(
-        "BinLists::vectmat: The first argument is expected to be a unit compatible vector or a matrix with unit compatible columns.",
+        "BinLists::vectmat: The first argument is expected to be a unit-compatible vector or a matrix with unit-compatible columns.",
       );
       return Ok(Expr::FunctionCall {
         name: "BinLists".to_string(),
