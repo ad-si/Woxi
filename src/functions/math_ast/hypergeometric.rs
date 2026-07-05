@@ -901,7 +901,8 @@ fn hypergeometric_2f1_regularized_non_positive_c(
   // m = -c, so c = -m. The shift is m + 1.
   let m = -c_i;
   // Guard against unreasonable shifts that would balloon the expression.
-  if !(0..=64).contains(&m) {
+  // k! overflows i128 at k=34, so m > 32 is a problem.
+  if m < 0 || m > 32 {
     return Ok(None);
   }
   let shift = m + 1;
@@ -933,14 +934,10 @@ fn hypergeometric_2f1_regularized_non_positive_c(
 
   let poch_a = pochhammer(a);
   let poch_b = pochhammer(b);
-  // (m+1)! as an Integer (m ≤ 64 keeps this in i128 range).
+  // (m+1)! as an Integer (m ≤ 32 keeps this in i128 range).
   let mut factorial: i128 = 1;
-  for k in 1..=shift {
-    factorial = factorial.checked_mul(k).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Hypergeometric2F1Regularized: factorial overflow".into(),
-      )
-    })?;
+  for k in 2..=shift {
+    factorial *= k;
   }
   let inv_factorial = Expr::FunctionCall {
     name: "Rational".to_string(),
