@@ -3737,7 +3737,7 @@ EnterTextPacket,,🚫,,3.0,3843
 FrobeniusNumber,Returns the Frobenius number for a set of integers,✅,pure,6.0,3843
 InheritScope,,,,10.0,3843
 KalmanEstimator,,,,8.0,3843
-KirchhoffGraph,,,,8.0,3843
+KirchhoffGraph,Builds the graph with a given Kirchhoff (Laplacian) matrix; symmetric gives undirected edges and non-symmetric directed; -k means k parallel edges,✅,pure,8.0,3843
 LeveneTest,,,,8.0,3843
 MandelbrotSetDistance,,,,10.0,3843
 MeanClusteringCoefficient,Mean of the local clustering coefficients,✅,pure,9.0,3843

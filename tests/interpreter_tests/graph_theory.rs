@@ -5072,3 +5072,107 @@ mod edge_rules_tests {
     assert_eq!(interpret("EdgeRules[{1, 2}]").unwrap(), "EdgeRules[{1, 2}]");
   }
 }
+
+mod kirchhoff_graph_tests {
+  use woxi::interpret;
+
+  // A symmetric Laplacian gives undirected edges from the upper triangle.
+  #[test]
+  fn symmetric_matrices() {
+    assert_eq!(
+      interpret(
+        "EdgeList[KirchhoffGraph[{{2, -1, -1}, {-1, 1, 0}, {-1, 0, 1}}]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[KirchhoffGraph[{{3, -1, -1, -1}, {-1, 1, 0, 0}, {-1, 0, 1, 0}, {-1, 0, 0, 1}}]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 1 \u{f3d4} 4}"
+    );
+    // -k means k parallel edges; the diagonal is not validated.
+    assert_eq!(
+      interpret("EdgeList[KirchhoffGraph[{{2, -2}, {-2, 2}}]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 2}"
+    );
+    assert_eq!(
+      interpret("EdgeList[KirchhoffGraph[{{1, -1}, {-1, 2}}]]").unwrap(),
+      "{1 \u{f3d4} 2}"
+    );
+    assert_eq!(
+      interpret("VertexList[KirchhoffGraph[{{0, 0}, {0, 0}}]]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  // Non-symmetric matrices give directed edges, read row by row.
+  #[test]
+  fn directed_matrices() {
+    assert_eq!(
+      interpret(
+        "EdgeList[KirchhoffGraph[{{1, -1, 0}, {0, 1, -1}, {-1, 0, 1}}]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d5} 2, 2 \u{f3d5} 3, 3 \u{f3d5} 1}"
+    );
+    assert_eq!(
+      interpret("EdgeList[KirchhoffGraph[{{1, 0}, {-1, 1}}]]").unwrap(),
+      "{2 \u{f3d5} 1}"
+    );
+  }
+
+  #[test]
+  fn named_vertices_and_options() {
+    assert_eq!(
+      interpret(
+        r#"VertexList[KirchhoffGraph[{"a", "b"}, {{1, -1}, {-1, 1}}]]"#
+      )
+      .unwrap(),
+      "{a, b}"
+    );
+    // Trailing Graph options pass through.
+    assert_eq!(
+      interpret(
+        r#"EdgeList[KirchhoffGraph[{{1, -1}, {-1, 1}}, VertexLabels -> "Name"]]"#
+      )
+      .unwrap(),
+      "{1 \u{f3d4} 2}"
+    );
+  }
+
+  #[test]
+  fn round_trips_with_kirchhoff_matrix() {
+    assert_eq!(
+      interpret(
+        "Normal[KirchhoffMatrix[KirchhoffGraph[{{2, -1, -1}, {-1, 1, 0}, {-1, 0, 1}}]]]"
+      )
+      .unwrap(),
+      "{{2, -1, -1}, {-1, 1, 0}, {-1, 0, 1}}"
+    );
+  }
+
+  // Positive off-diagonal or real entries emit ::inv; non-square input
+  // emits ::matsq — both echo the call.
+  #[test]
+  fn invalid_inputs() {
+    assert_eq!(
+      interpret("KirchhoffGraph[{{1, 1}, {-1, 1}}]").unwrap(),
+      "KirchhoffGraph[{{1, 1}, {-1, 1}}]"
+    );
+    assert_eq!(
+      interpret("KirchhoffGraph[{{1.5, -1.5}, {-1.5, 1.5}}]").unwrap(),
+      "KirchhoffGraph[{{1.5, -1.5}, {-1.5, 1.5}}]"
+    );
+    assert_eq!(
+      interpret("KirchhoffGraph[{{1, -1}, {-1, 1}, {0, 0}}]").unwrap(),
+      "KirchhoffGraph[{{1, -1}, {-1, 1}, {0, 0}}]"
+    );
+    assert_eq!(
+      interpret(r#"KirchhoffGraph["foo"]"#).unwrap(),
+      "KirchhoffGraph[foo]"
+    );
+  }
+}

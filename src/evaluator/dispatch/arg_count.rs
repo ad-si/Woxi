@@ -635,6 +635,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Import" => Some((1, 2)),
     "ImportString" => Some((1, 2)),
     "IncidenceGraph" => Some((1, 2)),
+    "KirchhoffGraph" => Some((1, usize::MAX)),
     "InexactNumberQ" => Some((1, 1)),
     "Information" => Some((1, 2)),
     "Inner" => Some((3, 4)),

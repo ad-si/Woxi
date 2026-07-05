@@ -3579,6 +3579,124 @@ pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// KirchhoffGraph[m] / KirchhoffGraph[vertices, m] — build the graph whose
+/// Kirchhoff (Laplacian) matrix is m. Off-diagonal entries must be
+/// non-positive integers; -k means k parallel edges (the diagonal is not
+/// validated, matching wolframscript). A symmetric matrix gives undirected
+/// edges from the upper triangle; a non-symmetric one gives directed edges
+/// row by row. Trailing arguments (Graph options) pass through.
+pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "KirchhoffGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() {
+    return Ok(unevaluated());
+  }
+  // Optional leading vertex-name list, then the matrix, then options.
+  let (names, matrix_expr, matrix_pos, extra) = match args {
+    [Expr::List(v), m @ Expr::List(rows), rest @ ..]
+      if v.iter().all(|e| !matches!(e, Expr::List(_)))
+        && rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+    {
+      (Some(v), m, 2, rest)
+    }
+    [m, rest @ ..] => (None, m, 1, rest),
+    _ => return Ok(unevaluated()),
+  };
+
+  let not_square = || {
+    crate::emit_message(&format!(
+      "KirchhoffGraph::matsq: Argument {} at position {} is not a nonempty square matrix.",
+      crate::syntax::expr_to_output(matrix_expr),
+      matrix_pos
+    ));
+    Ok(unevaluated())
+  };
+  let invalid = || {
+    crate::emit_message(&format!(
+      "KirchhoffGraph::inv: The argument {} in {} is not a valid Kirchhoff matrix.",
+      crate::syntax::expr_to_output(matrix_expr),
+      crate::syntax::expr_to_string(&Expr::FunctionCall {
+        name: "KirchhoffGraph".to_string(),
+        args: vec![matrix_expr.clone()].into(),
+      })
+    ));
+    Ok(unevaluated())
+  };
+  let Expr::List(rows) = matrix_expr else {
+    return not_square();
+  };
+  let n = rows.len();
+  let mut matrix: Vec<Vec<i64>> = Vec::with_capacity(n);
+  for row in rows.iter() {
+    let Expr::List(cells) = row else {
+      return not_square();
+    };
+    if cells.len() != n {
+      return not_square();
+    }
+    let mut out = Vec::with_capacity(n);
+    for cell in cells.iter() {
+      match cell {
+        Expr::Integer(v) => match i64::try_from(*v) {
+          Ok(v) => out.push(v),
+          Err(_) => return invalid(),
+        },
+        _ => return invalid(),
+      }
+    }
+    matrix.push(out);
+  }
+  if n == 0 {
+    return not_square();
+  }
+  for (i, row) in matrix.iter().enumerate() {
+    for (j, &v) in row.iter().enumerate() {
+      if i != j && v > 0 {
+        return invalid();
+      }
+    }
+  }
+
+  let vertices: Vec<Expr> = match names {
+    Some(v) => {
+      if v.len() != n {
+        return Ok(unevaluated());
+      }
+      v.to_vec()
+    }
+    None => (1..=n as i128).map(Expr::Integer).collect(),
+  };
+  let symmetric = (0..n).all(|i| (0..n).all(|j| matrix[i][j] == matrix[j][i]));
+  let mut edges: Vec<Expr> = Vec::new();
+  for i in 0..n {
+    for j in 0..n {
+      if i == j || matrix[i][j] >= 0 || (symmetric && j < i) {
+        continue;
+      }
+      let head = if symmetric {
+        "UndirectedEdge"
+      } else {
+        "DirectedEdge"
+      };
+      for _ in 0..(-matrix[i][j]) {
+        edges.push(Expr::FunctionCall {
+          name: head.to_string(),
+          args: vec![vertices[i].clone(), vertices[j].clone()].into(),
+        });
+      }
+    }
+  }
+  let mut graph_args =
+    vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+  graph_args.extend(extra.iter().cloned());
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: graph_args.into(),
+  })
+}
+
 /// IncidenceGraph[m] / IncidenceGraph[vertices, m] — build the graph whose
 /// vertex-by-edge incidence matrix is m. Recognized column patterns are the
 /// ones IncidenceMatrix itself produces: two 1s → undirected edge, a -1/+1
