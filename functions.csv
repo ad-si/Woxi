@@ -3882,7 +3882,7 @@ HistogramPointDensity,,🚫,,12.2,4006
 InverseBetaRegularized,Inverse of the regularized incomplete beta function I_z(a b),✅,pure,3.0,4006
 InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1.0,4006
 ListZTransform,,,,9.0,4006
-MandelbrotSetIterationCount,,,,10.0,4006
+MandelbrotSetIterationCount,Number of z->z^2+c iterates with abs z <= 2 up to MaxIterations (cap+1 for exact cardioid/bulb points; Listable),✅,pure,10.0,4006
 MardiaSkewnessTest,,,,8.0,4006
 MessageList,,,,2.0,4006
 NeedlemanWunschSimilarity,Global sequence-alignment similarity score,✅,pure,7.0,4006

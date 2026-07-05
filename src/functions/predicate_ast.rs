@@ -2699,6 +2699,142 @@ fn is_structural_zero(expr: &Expr) -> bool {
   }
 }
 
+/// MandelbrotSetIterationCount[c] — the number of iterates z_k of
+/// z -> z^2 + c (from z_0 = 0) with |z_k| <= 2, capped at MaxIterations
+/// (default 1000, also settable as a positional second argument). A point
+/// already outside radius 2 after one step gives 0; orbits that never
+/// leave give the cap itself, except points inside the exactly-decided
+/// main cardioid or period-2 bulb, which report cap + 1. Lists thread when
+/// every leaf is numeric; unknown options emit ::optx.
+pub fn mandelbrot_set_iteration_count_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "MandelbrotSetIterationCount".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() {
+    return unevaluated();
+  }
+  let call_str = || {
+    format!(
+      "MandelbrotSetIterationCount[{}]",
+      args
+        .iter()
+        .map(crate::syntax::expr_to_output)
+        .collect::<Vec<_>>()
+        .join(", ")
+    )
+  };
+
+  let mut max_iter: usize = 1000;
+  let mut rest_start = 1;
+  if args.len() >= 2 {
+    match &args[1] {
+      Expr::Integer(n) => {
+        max_iter = (*n).max(0) as usize;
+        rest_start = 2;
+      }
+      Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(..) => {
+        rest_start = 2;
+      }
+      _ => {}
+    }
+  }
+  for (i, arg) in args.iter().enumerate().skip(rest_start) {
+    let (lhs, rhs) = match arg {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args: rargs }
+        if (name == "Rule" || name == "RuleDelayed") && rargs.len() == 2 =>
+      {
+        (&rargs[0], &rargs[1])
+      }
+      other => {
+        crate::emit_message(&format!(
+          "MandelbrotSetIterationCount::nonopt: Options expected (instead of {}) beyond position {} in {}. An option must be a rule or a list of rules.",
+          crate::syntax::expr_to_output(other),
+          i + 1,
+          call_str()
+        ));
+        return unevaluated();
+      }
+    };
+    match lhs {
+      Expr::Identifier(s) if s == "MaxIterations" => {
+        if let Expr::Integer(n) = rhs {
+          max_iter = (*n).max(0) as usize
+        }
+      }
+      Expr::Identifier(s) if s == "WorkingPrecision" => {}
+      _ => {
+        crate::emit_message(&format!(
+          "MandelbrotSetIterationCount::optx: Unknown option {} in {}.",
+          crate::syntax::expr_to_output(arg),
+          call_str()
+        ));
+        return unevaluated();
+      }
+    }
+  }
+
+  fn count(x: f64, y: f64, max_iter: usize) -> i128 {
+    let xq = x - 0.25;
+    let q = xq * xq + y * y;
+    if q * (q + xq) <= 0.25 * y * y || (x + 1.0) * (x + 1.0) + y * y <= 0.0625 {
+      return max_iter as i128 + 1; // exactly inside: never escapes
+    }
+    let (mut zx, mut zy) = (0.0_f64, 0.0_f64);
+    for k in 1..=max_iter {
+      let nx = zx * zx - zy * zy + x;
+      let ny = 2.0 * zx * zy + y;
+      zx = nx;
+      zy = ny;
+      if zx * zx + zy * zy > 4.0 {
+        return k as i128 - 1;
+      }
+    }
+    max_iter as i128
+  }
+
+  fn all_leaves_numeric(e: &Expr) -> bool {
+    match e {
+      Expr::List(items) => items.iter().all(all_leaves_numeric),
+      _ => expr_to_complex_parts_pub(e)
+        .is_some_and(|(x, y)| x.is_finite() && y.is_finite()),
+    }
+  }
+  if !all_leaves_numeric(&args[0]) {
+    return unevaluated();
+  }
+  fn thread(e: &Expr, max_iter: usize) -> Expr {
+    match e {
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|it| thread(it, max_iter))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      _ => {
+        let (x, y) = expr_to_complex_parts_pub(e).unwrap();
+        Expr::Integer(count(x, y, max_iter))
+      }
+    }
+  }
+  Ok(thread(&args[0], max_iter))
+}
+
 /// MandelbrotSetMemberQ[c] — True when the complex number c is in the
 /// Mandelbrot set, False otherwise. Points inside the main cardioid or the
 /// period-2 bulb are decided exactly; everything else iterates z -> z^2 + c

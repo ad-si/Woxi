@@ -500,6 +500,13 @@ pub fn dispatch_predicate_functions(
         crate::functions::predicate_ast::mandelbrot_set_member_q_ast(args),
       );
     }
+    "MandelbrotSetIterationCount" => {
+      return Some(
+        crate::functions::predicate_ast::mandelbrot_set_iteration_count_ast(
+          args,
+        ),
+      );
+    }
     "PerfectNumberQ" if args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
         if *n <= 0 {

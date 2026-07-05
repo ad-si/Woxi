@@ -8035,3 +8035,84 @@ mod champernowne_number_tests {
     );
   }
 }
+
+mod mandelbrot_set_iteration_count_tests {
+  use woxi::interpret;
+
+  // The count is how many iterates z_k of z -> z^2 + c keep |z| <= 2,
+  // capped at MaxIterations (default 1000). Points inside the exactly
+  // decided cardioid/bulb report cap + 1; bounded orbits outside them
+  // report the cap itself.
+  #[test]
+  fn counting_convention() {
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[0.2501]").unwrap(),
+      "311"
+    );
+    // z1 = 2 counts (|z| = 2 inclusive), z2 = 6 escapes.
+    assert_eq!(interpret("MandelbrotSetIterationCount[2]").unwrap(), "1");
+    // |c| > 2 immediately: nothing to count.
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[3 + 4 I]").unwrap(),
+      "0"
+    );
+    // Cardioid/bulb points short-circuit to cap + 1…
+    assert_eq!(interpret("MandelbrotSetIterationCount[0]").unwrap(), "1001");
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[-1]").unwrap(),
+      "1001"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[1/4]").unwrap(),
+      "1001"
+    );
+    // …while other bounded orbits report exactly the cap.
+    assert_eq!(interpret("MandelbrotSetIterationCount[I]").unwrap(), "1000");
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[0.3 + 0.5 I]").unwrap(),
+      "1000"
+    );
+  }
+
+  #[test]
+  fn max_iterations_and_threading() {
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[0.2501, MaxIterations -> 250]")
+        .unwrap(),
+      "250"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[0.2501, 250]").unwrap(),
+      "250"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[I, MaxIterations -> 50]").unwrap(),
+      "50"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[{0, 1, 2}]").unwrap(),
+      "{1001, 2, 1}"
+    );
+  }
+
+  // Symbolic input echoes; unknown options emit ::optx and echo.
+  #[test]
+  fn unevaluated_forms() {
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[x]").unwrap(),
+      "MandelbrotSetIterationCount[x]"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[]").unwrap(),
+      "MandelbrotSetIterationCount[]"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[0, Foo -> 1]").unwrap(),
+      "MandelbrotSetIterationCount[0, Foo -> 1]"
+    );
+    assert_eq!(
+      interpret("MandelbrotSetIterationCount[2, EscapeRadius -> 10]").unwrap(),
+      "MandelbrotSetIterationCount[2, EscapeRadius -> 10]"
+    );
+  }
+}
