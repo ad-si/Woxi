@@ -6304,3 +6304,45 @@ mod url_parse {
     assert_eq!(interpret("URLParse[42]").unwrap(), "URLParse[42]");
   }
 }
+
+mod file_size {
+  use woxi::interpret;
+
+  // FileSize gives Quantity[bytes, "Bytes"] with a Real magnitude (unlike
+  // FileByteCount's plain Integer).
+  #[test]
+  fn existing_file() {
+    let path = std::env::temp_dir().join("woxi_file_size_test.txt");
+    std::fs::write(&path, "hello world").unwrap();
+    let path_str = path.to_string_lossy().into_owned();
+    assert_eq!(
+      interpret(&format!(r#"FileSize["{path_str}"]"#)).unwrap(),
+      "Quantity[11., Bytes]"
+    );
+    // The File["…"] wrapper is accepted too.
+    assert_eq!(
+      interpret(&format!(r#"FileSize[File["{path_str}"]]"#)).unwrap(),
+      "Quantity[11., Bytes]"
+    );
+    std::fs::remove_file(&path).ok();
+  }
+
+  // Errors echo the call unevaluated (each with its own message tag):
+  // ::fdnfnd for missing paths, ::fdir for directories, ::badfile for
+  // non-string arguments.
+  #[test]
+  fn error_forms() {
+    assert_eq!(
+      interpret(r#"FileSize["/definitely/missing/file_xyz.txt"]"#).unwrap(),
+      "FileSize[/definitely/missing/file_xyz.txt]"
+    );
+    let dir = std::env::temp_dir();
+    let dir_str = dir.to_string_lossy();
+    let dir_str = dir_str.trim_end_matches('/');
+    assert_eq!(
+      interpret(&format!(r#"FileSize["{dir_str}"]"#)).unwrap(),
+      format!("FileSize[{dir_str}]")
+    );
+    assert_eq!(interpret("FileSize[42]").unwrap(), "FileSize[42]");
+  }
+}

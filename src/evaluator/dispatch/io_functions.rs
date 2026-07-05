@@ -2644,6 +2644,65 @@ pub fn dispatch_io_functions(
         args: args.to_vec().into(),
       }));
     }
+    // FileSize["name"] — the size as Quantity[bytes, "Bytes"] with a Real
+    // magnitude. Unlike FileByteCount, errors echo the call unevaluated:
+    // ::fdnfnd for a missing path, ::fdir for a directory, ::badfile for a
+    // non-string argument. A File["…"] wrapper is accepted.
+    #[cfg(not(target_arch = "wasm32"))]
+    "FileSize" if args.len() == 1 => {
+      let unevaluated = || {
+        Some(Ok(Expr::FunctionCall {
+          name: "FileSize".to_string(),
+          args: args.to_vec().into(),
+        }))
+      };
+      let name = match &args[0] {
+        Expr::String(s) => s.clone(),
+        Expr::FunctionCall { name, args: fargs }
+          if name == "File"
+            && fargs.len() == 1
+            && matches!(&fargs[0], Expr::String(_)) =>
+        {
+          match &fargs[0] {
+            Expr::String(s) => s.clone(),
+            _ => unreachable!(),
+          }
+        }
+        other => {
+          crate::emit_message(&format!(
+            "FileSize::badfile: The specified argument, {}, should be a valid string or File object.",
+            crate::syntax::expr_to_output(other)
+          ));
+          return unevaluated();
+        }
+      };
+      match std::fs::metadata(&name) {
+        Ok(meta) if meta.is_file() => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "Quantity".to_string(),
+            args: vec![
+              Expr::Real(meta.len() as f64),
+              Expr::String("Bytes".to_string()),
+            ]
+            .into(),
+          }));
+        }
+        Ok(meta) if meta.is_dir() => {
+          crate::emit_message(&format!(
+            "FileSize::fdir: The specified path {} refers to a directory; a file path was expected.",
+            name
+          ));
+          return unevaluated();
+        }
+        _ => {
+          crate::emit_message(&format!(
+            "FileSize::fdnfnd: Directory or file \"{}\" not found.",
+            name
+          ));
+          return unevaluated();
+        }
+      }
+    }
     // FileByteCount["name"] — size in bytes, or emit `fdnfnd` and
     // return `$Failed` when the file is missing.
     #[cfg(not(target_arch = "wasm32"))]
