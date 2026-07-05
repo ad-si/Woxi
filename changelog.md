@@ -21,6 +21,13 @@
     one element per frame. Both hold their body appropriately (`Animate` like
     `Manipulate`; `ListAnimate` evaluates its frame list first, matching
     Wolfram).
+- Render the remaining dynamic UI panes as interactive widgets in the
+    Playground and Studio: `Animator[{min, max}[, step]]` (and its
+    `Dynamic[v]` / single-value forms) as a standalone auto-playing slider;
+    `LocatorPane[Dynamic[p], body]` as a draggable 2D locator driving the
+    graphic; and `ClickPane[expr, func]` as a clickable pad that feeds the
+    pointer position to the handler. `LocatorPane`/`ClickPane` hold their body
+    / handler so it stays intact for interactive re-evaluation.
 - Render `TraditionalForm` mathematics in conventional, TeX-like notation in
     the Playground and Studio typeset SVG output. `HoldForm` is now invisible;
     `Sum`/`Product` become large `∑`/`∏` operators with limits above and below;

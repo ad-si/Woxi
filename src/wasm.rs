@@ -344,12 +344,17 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
   // is HoldAll-ish (see functions::graphics::manipulate_ast), so its body
   // and variable symbols remain intact.
   let expr = crate::interpret_to_expr(stmt).ok()?;
-  // A top-level Manipulate[…]/Animate[…], a standalone Control[…], or a
-  // ListAnimate[{…}] all render as an interactive control widget backed by a
-  // ManipulateSpec (Animate/ListAnimate additionally auto-play).
-  let spec = crate::functions::graphics::extract_manipulate_spec(&expr)
-    .or_else(|| crate::functions::graphics::extract_control_spec(&expr))
-    .or_else(|| crate::functions::graphics::extract_list_animate_spec(&expr))?;
+  // A top-level Manipulate[…]/Animate[…], a standalone Control[…]/Animator[…],
+  // a ListAnimate[{…}], or a LocatorPane/ClickPane all render as an interactive
+  // control widget backed by a ManipulateSpec (Animate/Animator/ListAnimate
+  // additionally auto-play).
+  use crate::functions::graphics as g;
+  let spec = g::extract_manipulate_spec(&expr)
+    .or_else(|| g::extract_control_spec(&expr))
+    .or_else(|| g::extract_list_animate_spec(&expr))
+    .or_else(|| g::extract_animator_spec(&expr))
+    .or_else(|| g::extract_locator_pane_spec(&expr))
+    .or_else(|| g::extract_click_pane_spec(&expr))?;
 
   // Produce an initial rendering by substituting initial values via Block.
   let bindings = crate::functions::graphics::manipulate_initial_bindings(&spec);

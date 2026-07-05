@@ -972,7 +972,7 @@ Abort,Aborts evaluation,✅,effectful,2.0,980
 GammaDistribution,Gamma probability distribution,✅,pure,6.0,981
 FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3.0,982
 ScientificForm,Displays number in scientific notation,✅,pure,1.0,983
-LocatorPane,Requires external services or GUI infrastructure,🚫,io,6.0,984
+LocatorPane,Draggable locator over a graphic; renders as an interactive 2D pane,✅,unevaluated,6.0,984
 DirectedEdges,,🚫,,6.0,986
 ViewVertical,,🚫,,2.0,986
 StyleDefinitions,,🚫,,3.0,987
@@ -1547,7 +1547,7 @@ CreateDirectory,Creates a directory including intermediate directories,✅,files
 ImageSubtract,Subtracts pixel values of two images pointwise,✅,pure,7.0,1569
 CopyFile,Copies a file to a new location,✅,filesystem,2.0,1571
 EstimatedProcess,Estimated stochastic process,,unevaluated,9.0,1571
-Animator,Animated control element (stays symbolic in script mode),✅,unevaluated,6.0,1573
+Animator,Auto-playing animation control; renders as an interactive auto-advancing slider,✅,unevaluated,6.0,1573
 HighlightMesh,Highlight mesh elements,,unevaluated,10.0,1573
 PolynomialReduce,Reduce a polynomial modulo a list of polynomials (single- and multi-variable lexicographic division),✅,pure,3.0,1574
 AutoScroll,Auto-scrolling option,,unevaluated,3.0,1578
@@ -2191,7 +2191,7 @@ Hexahedron,3D geometric primitive,🚫,None,10.0,2233
 Nand,Logical NAND,✅,pure,4.1,2233
 TimeSeriesShift,Time series manipulation,🚫,None,10.0,2233
 WaitAll,Async parallel computation,🚫,None,7.0,2233
-ClickPane,Clickable pane control (stays symbolic in script mode),✅,unevaluated,6.0,2236
+ClickPane,Clickable pane feeding a handler; renders as an interactive 2D pane,✅,unevaluated,6.0,2236
 DiamondMatrix,Gives the diamond (L1-ball) structuring element for a scalar radius or list of radii (n-D),✅,pure,7.0,2236
 MaxItems,Display option,🚫,None,10.1,2236
 SSSTriangle,Constructs a triangle from three side lengths,✅,None,10.0,2239

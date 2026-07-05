@@ -57,3 +57,22 @@ IntervalSlider[{2, 4}]
 $ wo 'Slider2D[{0, 0}]'
 Slider2D[{0, 0}]
 ```
+
+Standalone animator and the draggable / clickable panes (these auto-play or
+respond to pointer input in the Playground and Studio; in script mode they stay
+symbolic):
+
+```scrut
+$ wo 'Animator[{0, 10}]'
+Animator[{0, 10}]
+```
+
+```scrut
+$ wo 'LocatorPane[Dynamic[p], Graphics[Point[p]]]'
+LocatorPane[Dynamic[p], Graphics[Point[p]]]
+```
+
+```scrut
+$ wo 'ClickPane[Graphics[{}], f]'
+ClickPane[Graphics[{}], f]
+```

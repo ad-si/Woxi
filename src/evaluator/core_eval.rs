@@ -1984,6 +1984,11 @@ pub fn evaluate_expr_to_expr_inner(
         // Control likewise holds its variable spec so that the bound symbol
         // and any symbolic values stay intact for interactive rendering.
         || name == "Control"
+        // LocatorPane holds its body graphic so it isn't evaluated with the
+        // locator point free; ClickPane holds its handler so it stays an
+        // un-applied function until fed a click position.
+        || name == "LocatorPane"
+        || name == "ClickPane"
         {
           // Flatten Sequence even in held args (unless SequenceHold)
           let flattened = flatten_sequences(name, args);

@@ -329,10 +329,10 @@ Woxi does **not** support.
 
 ### Version 6.0 (2007)
 
-- Dynamic UI panes: `Animator`, `LocatorPane`, `ClickPane`
-    (`Animate` and `ListAnimate` now render as interactive auto-playing widgets
-    in the Playground and Studio)
 - Live mouse-driven manipulation of 2D/3D graphics in notebooks
+    (`Animate`, `Animator`, `ListAnimate`, `LocatorPane`, and `ClickPane` are
+    supported as interactive widgets in the Playground and Studio, but
+    dragging directly on a graphic — and 3D rotation — is not)
 
 ### Version 5.0 (2003)
 

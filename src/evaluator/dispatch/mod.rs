@@ -10278,6 +10278,7 @@ pub fn evaluate_function_call_ast_inner(
         | "RadioButton"
         | "ProgressIndicator"
         | "ClickPane"
+        | "LocatorPane"
         | "PaneSelector"
         | "PopupView"
         | "ColorSetter"
