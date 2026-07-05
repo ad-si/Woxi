@@ -13089,3 +13089,178 @@ mod manipulate_label_tests {
     assert_eq!(flatten_label_runs(&runs(&row)), "ab");
   }
 }
+
+// ─── HilbertCurve / PeanoCurve ─────────────────────────────────────
+
+/// Shared plumbing for the integer-grid space-filling curves: parses the
+/// order (::intpm for anything but a positive machine integer) and an
+/// optional DataRange -> {{xmin, xmax}, {ymin, ymax}} rule that affinely
+/// maps the grid to real coordinates, then wraps the points in Line[…].
+fn space_filling_curve(
+  name: &str,
+  args: &[Expr],
+  side: i64,
+  points: Vec<(i64, i64)>,
+) -> Expr {
+  let mut range: Option<[(f64, f64); 2]> = None;
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "DataRange")
+      && let Expr::List(pair) = replacement.as_ref()
+      && pair.len() == 2
+    {
+      let parse_pair = |e: &Expr| -> Option<(f64, f64)> {
+        if let Expr::List(mm) = e
+          && mm.len() == 2
+        {
+          Some((
+            crate::functions::graphics::expr_to_f64(&mm[0])?,
+            crate::functions::graphics::expr_to_f64(&mm[1])?,
+          ))
+        } else {
+          None
+        }
+      };
+      if let (Some(xr), Some(yr)) = (parse_pair(&pair[0]), parse_pair(&pair[1]))
+      {
+        range = Some([xr, yr]);
+      }
+    }
+  }
+  let point_exprs: Vec<Expr> = points
+    .iter()
+    .map(|&(x, y)| match &range {
+      Some([xr, yr]) => {
+        let denom = (side - 1).max(1) as f64;
+        Expr::List(
+          vec![
+            Expr::Real(xr.0 + x as f64 * (xr.1 - xr.0) / denom),
+            Expr::Real(yr.0 + y as f64 * (yr.1 - yr.0) / denom),
+          ]
+          .into(),
+        )
+      }
+      None => Expr::List(
+        vec![Expr::Integer(x as i128), Expr::Integer(y as i128)].into(),
+      ),
+    })
+    .collect();
+  let _ = name;
+  Expr::FunctionCall {
+    name: "Line".to_string(),
+    args: vec![Expr::List(point_exprs.into())].into(),
+  }
+}
+
+/// The curve order, or None (after emitting ::intpm) for invalid input.
+fn curve_order(name: &str, args: &[Expr], max_n: i128) -> Option<i128> {
+  match args.first() {
+    Some(Expr::Integer(n)) if *n >= 1 && *n <= max_n => Some(*n),
+    Some(other) => {
+      crate::emit_message(&format!(
+        "{}::intpm: Positive machine-sized integer expected at position 1 in {}[{}].",
+        name,
+        name,
+        crate::syntax::expr_to_output(other)
+      ));
+      None
+    }
+    None => None,
+  }
+}
+
+/// HilbertCurve[n] — one Line through all 4^n cells of the 2^n × 2^n grid
+/// in Hilbert order (the classic table-driven index-to-coordinate walk,
+/// which reproduces wolframscript's orientation exactly: order 1 runs
+/// (0,0) → (0,1) → (1,1) → (1,0)).
+pub fn hilbert_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "HilbertCurve".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let Some(n) = curve_order("HilbertCurve", args, 10) else {
+    return unevaluated();
+  };
+  let n = n as u32;
+  let side = 1i64 << n;
+  let total = 1u64 << (2 * n);
+  let mut points = Vec::with_capacity(total as usize);
+  for d in 0..total {
+    let (mut x, mut y) = (0i64, 0i64);
+    let mut t = d;
+    let mut s = 1i64;
+    while s < side {
+      let rx = (1 & (t / 2)) as i64;
+      let ry = (1 & (t ^ (rx as u64))) as i64;
+      if ry == 0 {
+        if rx == 1 {
+          x = s - 1 - x;
+          y = s - 1 - y;
+        }
+        std::mem::swap(&mut x, &mut y);
+      }
+      x += s * rx;
+      y += s * ry;
+      t /= 4;
+      s *= 2;
+    }
+    points.push((x, y));
+  }
+  Ok(space_filling_curve("HilbertCurve", args, side, points))
+}
+
+/// PeanoCurve[n] — one Line through all 9^n cells of the 3^n × 3^n grid in
+/// Peano order. Coordinates come from Peano's digit construction: index
+/// digits alternate y/x roles (y first), and each digit is complemented
+/// (d → 2 - d) when the sum of the preceding other-coordinate digits is
+/// odd — which reproduces wolframscript's serpentine orientation.
+pub fn peano_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "PeanoCurve".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let Some(n) = curve_order("PeanoCurve", args, 7) else {
+    return unevaluated();
+  };
+  let n = n as u32;
+  let digits_len = (2 * n) as usize;
+  let side = 3i64.pow(n);
+  let total = 9u64.pow(n);
+  let mut points = Vec::with_capacity(total as usize);
+  let mut digits = vec![0u8; digits_len];
+  for index in 0..total {
+    let mut t = index;
+    for slot in (0..digits_len).rev() {
+      digits[slot] = (t % 3) as u8;
+      t /= 3;
+    }
+    let (mut x, mut y) = (0i64, 0i64);
+    for (i, &d) in digits.iter().enumerate() {
+      let flip: u32 = digits[..i]
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| (j % 2) != (i % 2))
+        .map(|(_, &v)| v as u32)
+        .sum();
+      let e = if flip % 2 == 1 {
+        2 - d as i64
+      } else {
+        d as i64
+      };
+      if i % 2 == 0 {
+        y = y * 3 + e;
+      } else {
+        x = x * 3 + e;
+      }
+    }
+    points.push((x, y));
+  }
+  Ok(space_filling_curve("PeanoCurve", args, side, points))
+}

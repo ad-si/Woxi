@@ -3512,7 +3512,7 @@ CreateNotebook,,🚫,,10.0,3612
 Dialog,,🚫,,2.0,3612
 DiscreteShift,Discrete shift of an expression (n -> n+1),✅,pure,7.0,3612
 GaugeFaceStyle,,🚫,,9.0,3612
-HilbertCurve,,,,11.1,3612
+HilbertCurve,Line through all cells of the 2^n x 2^n grid in Hilbert order (integer grid; DataRange maps to reals),✅,pure,11.1,3612
 KumaraswamyDistribution,Kumaraswamy continuous distribution on the unit interval,✅,pure,8.0,3612
 LogLogisticDistribution,,,,8.0,3612
 LongestCommonSequence,Returns the longest noncontiguous subsequence common to two strings or lists,✅,pure,7.0,3612
@@ -4297,7 +4297,7 @@ NumberFieldNormRepresentatives,,,,6.0,4437
 PacletObject,,🚫,,12.1,4437
 PaddingLayer,,🚫,,11.1,4437
 PartBehavior,,,,10.0,4437
-PeanoCurve,,,,11.1,4437
+PeanoCurve,Line through all cells of the 3^n x 3^n grid in Peano order (integer grid; DataRange maps to reals),✅,pure,11.1,4437
 PrimitivePolynomialQ,,,,11.1,4437
 RadonTransform,,,,11.2,4437
 ReadByteArray,,,,11.3,4437

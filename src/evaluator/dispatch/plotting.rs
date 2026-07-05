@@ -161,6 +161,12 @@ pub fn dispatch_plotting(
     "KochCurve" if !args.is_empty() => {
       Some(crate::functions::graphics::koch_curve_ast(args))
     }
+    "HilbertCurve" if !args.is_empty() => {
+      Some(crate::functions::graphics::hilbert_curve_ast(args))
+    }
+    "PeanoCurve" if !args.is_empty() => {
+      Some(crate::functions::graphics::peano_curve_ast(args))
+    }
     "LinearGradientFilling" => Some(
       crate::functions::graphics::linear_gradient_filling_ast(args),
     ),
