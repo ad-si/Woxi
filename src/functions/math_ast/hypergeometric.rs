@@ -902,7 +902,7 @@ fn hypergeometric_2f1_regularized_non_positive_c(
   let m = -c_i;
   // Guard against unreasonable shifts that would balloon the expression.
   // k! overflows i128 at k=34, so m > 32 is a problem.
-  if m < 0 || m > 32 {
+  if !(0..=32).contains(&m) {
     return Ok(None);
   }
   let shift = m + 1;
