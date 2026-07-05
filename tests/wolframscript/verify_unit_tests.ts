@@ -1349,29 +1349,45 @@ function main() {
   const failures: string[] = [];
   let failCount = 0;
 
+  // wolframscript intermittently fails to start a batch (cold-start flake:
+  // transient "not activated" / SIGKILL / empty output that is unrelated to any
+  // test expression — see the retry-on-flake handling below). A single such
+  // flake must not abort a multi-hour run, so on a crashed / DONE-less batch we
+  // first bisect: a reproducible culprit is a genuine hang and aborts the run;
+  // an unreproducible one is a flake and we retry the whole batch a few times.
+  const MAX_BATCH_RETRIES = 3;
+
   for (let b = 0; b < totalBatches; b++) {
     const batchStart = b * BATCH_SIZE;
     const batch = woxiResultsFiltered.slice(batchStart, batchStart + BATCH_SIZE);
+    const batchEnd = batchStart + batch.length - 1;
 
-    let output: string;
-    let batchCrashed = false;
-    let crashErr = "";
-    try {
-      output = runWolframBatch(batch);
-    } catch (err: any) {
-      batchCrashed = true;
-      crashErr = err.message || String(err);
-      output = "";
-    }
+    let output = "";
+    let succeeded = false;
 
-    const outputLines = output.trim().split("\n");
+    for (let attempt = 0; attempt <= MAX_BATCH_RETRIES; attempt++) {
+      let batchCrashed = false;
+      let crashErr = "";
+      try {
+        output = runWolframBatch(batch);
+      } catch (err: any) {
+        batchCrashed = true;
+        crashErr = err.message || String(err);
+        output = "";
+      }
 
-    // Check for DONE sentinel — Print["DONE"] returns Null which wolframscript
-    // may print as an extra trailing line, so search all lines rather than
-    // requiring DONE to be last.
-    const doneIdx = outputLines.findIndex((l) => l.trim() === "DONE");
-    if (batchCrashed || doneIdx === -1) {
-      const batchEnd = batchStart + batch.length - 1;
+      // Check for DONE sentinel — Print["DONE"] returns Null which wolframscript
+      // may print as an extra trailing line, so search all lines rather than
+      // requiring DONE to be last.
+      const doneIdx = output
+        .trim()
+        .split("\n")
+        .findIndex((l) => l.trim() === "DONE");
+      if (!batchCrashed && doneIdx !== -1) {
+        succeeded = true;
+        break;
+      }
+
       const reason = batchCrashed
         ? `crashed: ${crashErr}`
         : output.trim() === ""
@@ -1383,6 +1399,9 @@ function main() {
       if (!batchCrashed && output.trim()) {
         console.error(`wolframscript output:\n${output}`);
       }
+
+      // Bisect to distinguish a genuine hang from a wolframscript cold-start
+      // flake. A reproducible culprit is a real problem and aborts the run.
       console.error(`\nBisecting to find the failing expression...`);
       const culprit = findFailingExpression(batch);
       if (culprit) {
@@ -1390,14 +1409,35 @@ function main() {
         console.error(`\nFailing expression (case #${culprit.idx + 1}): ${culprit.expr}`);
         console.error(`Woxi result: ${culprit.woxiResult}`);
         if (tc) console.error(`Source: ${tc.file}:${tc.line}`);
-      } else {
-        console.error(`Bisection could not reproduce the failure (flaky?).`);
+        process.exit(2);
       }
-      process.exit(2);
+
+      // Unreproducible → flake. Retry the whole batch rather than aborting the
+      // entire run, so genuine mismatches in later batches still surface.
+      if (attempt < MAX_BATCH_RETRIES) {
+        console.error(
+          `Bisection could not reproduce the failure (flaky); ` +
+            `retrying batch (attempt ${attempt + 2}/${MAX_BATCH_RETRIES + 1})...`
+        );
+      } else {
+        console.error(
+          `Bisection could not reproduce the failure after ${MAX_BATCH_RETRIES + 1} ` +
+            `attempts; skipping this flaky batch and continuing.`
+        );
+      }
+    }
+
+    if (!succeeded) {
+      // Exhausted retries on a flaky batch — record it so the run ends non-zero
+      // but keep going to surface real mismatches elsewhere.
+      failures.push(
+        `FLAKY batch ${b + 1}/${totalBatches} (cases ${batchStart + 1}–${batchEnd + 1}) never produced DONE`
+      );
+      continue;
     }
 
     // Collect failures from this batch
-    for (const line of outputLines) {
+    for (const line of output.trim().split("\n")) {
       if (line.startsWith("FAIL") || line.startsWith("  ")) {
         failures.push(line);
         if (line.startsWith("FAIL")) failCount++;
@@ -1415,11 +1455,14 @@ function main() {
 
   const testedFiltered = woxiResultsFiltered.length;
   const passCount = testedFiltered - failCount;
+  const flakyBatches = failures.filter((l) => l.startsWith("FLAKY batch"));
 
-  if (failCount === 0) {
+  if (failCount === 0 && flakyBatches.length === 0) {
     console.log(`All ${testedFiltered} test cases match between Woxi and wolframscript.`);
   } else {
-    console.error(`\n${passCount}/${testedFiltered} passed, ${failCount} differ:\n`);
+    if (failCount > 0) {
+      console.error(`\n${passCount}/${testedFiltered} passed, ${failCount} differ:\n`);
+    }
     for (const line of failures) {
       const m = line.match(/^FAIL #(\d+)/);
       if (m) {
@@ -1430,6 +1473,12 @@ function main() {
         }
       }
       console.error(line);
+    }
+    if (flakyBatches.length > 0) {
+      console.error(
+        `\n${flakyBatches.length} batch(es) were skipped after repeated wolframscript ` +
+          `cold-start flakes; re-run to verify them.`
+      );
     }
 
     process.exit(1);
