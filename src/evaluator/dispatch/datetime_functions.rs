@@ -51,6 +51,9 @@ pub fn dispatch_datetime_functions(
     "DateValue" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_value_ast(args));
     }
+    "DateWithinQ" if args.len() == 2 => {
+      return Some(crate::functions::datetime_ast::date_within_q_ast(args));
+    }
     "DayMatchQ" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::day_match_q_ast(args));
     }

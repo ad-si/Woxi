@@ -2812,3 +2812,107 @@ mod date_object_normalization_tests {
     );
   }
 }
+
+mod date_within_q_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn containment_by_granularity() {
+    assert_eq!(
+      interpret("DateWithinQ[DateObject[{2026}], DateObject[{2026, 7, 4}]]")
+        .unwrap(),
+      "True"
+    );
+    // The coarser date is not within the finer one.
+    assert_eq!(
+      interpret("DateWithinQ[DateObject[{2026, 7, 4}], DateObject[{2026}]]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2026, 7}], DateObject[{2026, 7, 31}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2026, 12}], DateObject[{2026, 12, 31}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2026, 7, 4}], DateObject[{2026, 7, 4}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2026, 7, 4}], DateObject[{2026, 7, 4, 12, 30, 0}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DateWithinQ[DateObject[{2026}], DateObject[{2027, 1, 1}]]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("DateWithinQ[DateObject[{2026, 7}], DateObject[{2027, 1, 1}]]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  // Spans are half-open: a day's opening midnight is within it, its
+  // closing midnight is not.
+  #[test]
+  fn half_open_boundaries() {
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2026, 7, 4}], DateObject[{2026, 7, 4, 0, 0, 0}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2026, 7, 4}], DateObject[{2026, 7, 5, 0, 0, 0}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  // Non-date arguments emit ::arg and echo; TimeObjects and instant
+  // containers stay silently unevaluated, matching wolframscript.
+  #[test]
+  fn unresolvable_forms() {
+    assert_eq!(
+      interpret(r#"DateWithinQ[DateObject[{2026, 7, 4}], "2026-07-04"]"#)
+        .unwrap(),
+      "DateWithinQ[DateObject[{2026, 7, 4}, Day], 2026-07-04]"
+    );
+    assert_eq!(
+      interpret("DateWithinQ[DateObject[{2026}], x]").unwrap(),
+      "DateWithinQ[DateObject[{2026}, Year], x]"
+    );
+    assert_eq!(
+      interpret("DateWithinQ[TimeObject[{12, 0}], DateObject[{2026}]]")
+        .unwrap(),
+      "DateWithinQ[TimeObject[{12, 0}, Minute], DateObject[{2026}, Year]]"
+    );
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2026, 7, 4, 12, 0, 0}], DateObject[{2026, 7, 4, 12, 0, 0}]]"
+      )
+      .unwrap(),
+      "DateWithinQ[DateObject[{2026, 7, 4, 12, 0, 0}, Instant, Gregorian, 0.], DateObject[{2026, 7, 4, 12, 0, 0}, Instant, Gregorian, 0.]]"
+    );
+  }
+}

@@ -3570,7 +3570,7 @@ AssessmentFunction,Symbolic assessment object; AssessmentFunction[spec][answer] 
 DEigenvalues,,,,10.3,3678
 DeviceReadBuffer,,🚫,,10.0,3678
 DirichletWindow,Compute DirichletWindow value,✅,pure,9.0,3678
-EdgeRules,,,,8.0,3678
+EdgeRules,Returns the edges of a graph as a list of rules in edge order,✅,pure,8.0,3678
 InitialSeeding,,,,12.0,3678
 JarqueBeraALMTest,,,,8.0,3678
 JuliaSetPoints,,,,10.0,3678
@@ -3713,7 +3713,7 @@ BlackmanHarrisWindow,,,,9.0,3823
 CloudSubmit,,🚫,,10.2,3823
 ControllerManipulate,,🚫,,6.0,3823
 CreateIntermediateDirectories,,,,6.0,3823
-DateWithinQ,,,,11.1,3823
+DateWithinQ,True when the second date lies within the first date's half-open calendar span,✅,pure,11.1,3823
 DavisDistribution,,,,8.0,3823
 Deletable,,,,3.0,3823
 FindKPlex,,,,9.0,3823

@@ -5048,3 +5048,27 @@ mod incidence_graph_tests {
     );
   }
 }
+
+mod edge_rules_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn edges_as_rules() {
+    assert_eq!(
+      interpret("EdgeRules[Graph[{1 -> 2, 2 -> 3, UndirectedEdge[3, 4]}]]")
+        .unwrap(),
+      "{1 -> 2, 2 -> 3, 3 -> 4}"
+    );
+    // Undirected edges become rules too.
+    assert_eq!(
+      interpret(r#"EdgeRules[Graph[{"x" <-> "y"}]]"#).unwrap(),
+      "{x -> y}"
+    );
+    assert_eq!(interpret("EdgeRules[Graph[{1, 2}, {}]]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn non_graph_emits_message() {
+    assert_eq!(interpret("EdgeRules[{1, 2}]").unwrap(), "EdgeRules[{1, 2}]");
+  }
+}

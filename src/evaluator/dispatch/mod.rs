@@ -5003,6 +5003,54 @@ pub fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // EdgeRules[graph] — the edges as a list of rules (undirected edges
+  // become rules too), in edge-list order. Non-graphs emit ::graph.
+  if name == "EdgeRules" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(edges) = &gargs[1]
+    {
+      let mut rules: Vec<Expr> = Vec::with_capacity(edges.len());
+      for edge in edges.iter() {
+        let (from, to) = match edge {
+          Expr::FunctionCall { name, args: eargs }
+            if (name == "DirectedEdge" || name == "UndirectedEdge")
+              && eargs.len() == 2 =>
+          {
+            (eargs[0].clone(), eargs[1].clone())
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => ((**pattern).clone(), (**replacement).clone()),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "EdgeRules".to_string(),
+              args: args.to_vec().into(),
+            });
+          }
+        };
+        rules.push(Expr::Rule {
+          pattern: Box::new(from),
+          replacement: Box::new(to),
+        });
+      }
+      return Ok(Expr::List(rules.into()));
+    }
+    crate::emit_message(&format!(
+      "EdgeRules::graph: A graph object is expected at position 1 in EdgeRules[{}].",
+      expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "EdgeRules".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // VertexQ[graph, vertex] — True if vertex is in graph. Anything that is
   // not a Graph in the first slot gives False (no message), like
   // wolframscript.

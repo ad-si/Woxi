@@ -3297,3 +3297,96 @@ pub fn date_object_panel_svg(expr: &Expr) -> Option<String> {
   svg.push_str("</svg>");
   Some(svg)
 }
+
+/// DateWithinQ[container, date] — True when `date`'s calendar span lies
+/// inside `container`'s span. Spans are half-open, so the instant at a day's
+/// closing midnight is not within that day, while its opening midnight is.
+/// Instant containers (and TimeObject arguments) stay silently unevaluated;
+/// non-date arguments emit `::arg` and echo.
+pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DateWithinQ".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+
+  // The half-open [start, end) span of a DateObject in absolute seconds,
+  // by granularity (= component-list length). Instants are points.
+  fn span(e: &Expr) -> Option<(f64, f64)> {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if name != "DateObject" || args.is_empty() {
+      return None;
+    }
+    let Expr::List(items) = &args[0] else {
+      return None;
+    };
+    if items.is_empty() || items.len() > 6 {
+      return None;
+    }
+    let mut c = [0.0f64; 6];
+    for (i, item) in items.iter().enumerate() {
+      c[i] = match item {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(v) => *v,
+        _ => return None,
+      };
+    }
+    let (y, mo, d, h, mi, s) = (
+      c[0] as i64,
+      if items.len() > 1 { c[1] as i64 } else { 1 },
+      if items.len() > 2 { c[2] as i64 } else { 1 },
+      if items.len() > 3 { c[3] as i64 } else { 0 },
+      if items.len() > 4 { c[4] as i64 } else { 0 },
+      if items.len() > 5 { c[5] } else { 0.0 },
+    );
+    let start = date_to_absolute_seconds(y, mo, d, h, mi, s);
+    let end = match items.len() {
+      1 => date_to_absolute_seconds(y + 1, 1, 1, 0, 0, 0.0),
+      2 => {
+        let (ny, nm) = if mo == 12 { (y + 1, 1) } else { (y, mo + 1) };
+        date_to_absolute_seconds(ny, nm, 1, 0, 0, 0.0)
+      }
+      3 => start + 86400.0,
+      4 => start + 3600.0,
+      5 => start + 60.0,
+      _ => start, // instant: a point
+    };
+    Some((start, end))
+  }
+
+  // Date-like but unresolvable arguments (TimeObject, instant containers)
+  // stay silently unevaluated, matching wolframscript.
+  let is_time_object = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "TimeObject");
+  if is_time_object(&args[0]) || is_time_object(&args[1]) {
+    return unevaluated();
+  }
+  let arg_error = |e: &Expr| {
+    crate::emit_message(&format!(
+      "DateWithinQ::arg: Argument {} is not a valid date object expression.",
+      crate::syntax::expr_to_output(e)
+    ));
+  };
+  let Some((s1, e1)) = span(&args[0]) else {
+    arg_error(&args[0]);
+    return unevaluated();
+  };
+  let Some((s2, e2)) = span(&args[1]) else {
+    arg_error(&args[1]);
+    return unevaluated();
+  };
+  // An instant container is a point; wolframscript leaves those calls
+  // unevaluated rather than answering.
+  if s1 == e1 {
+    return unevaluated();
+  }
+  let within = s2 >= s1 && e2 <= e1 && s2 < e1;
+  Ok(Expr::Identifier(
+    if within { "True" } else { "False" }.to_string(),
+  ))
+}
