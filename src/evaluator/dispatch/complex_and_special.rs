@@ -2053,6 +2053,11 @@ pub fn dispatch_complex_and_special(
     "TriangleCenter" if args.len() == 1 || args.len() == 2 => {
       return Some(compute_triangle_center(args));
     }
+    // TriangleMeasurement[tri] / TriangleMeasurement[tri, prop] — scalar
+    // triangle measurements (Area default, Perimeter, radii, …)
+    "TriangleMeasurement" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::triangle_measurement_ast(args));
+    }
     // BoundingRegion[pts] — smallest axis-aligned bounding box of a point list:
     // Rectangle for 2D points, Cuboid for 1D or >=3D. Named-method and region
     // forms are left unevaluated.

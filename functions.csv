@@ -3744,7 +3744,7 @@ MeanClusteringCoefficient,Mean of the local clustering coefficients,✅,pure,9.0
 RegularlySampledQ,,,,10.0,3843
 RelationalDatabase,,🚫,,12.0,3843
 RenameDirectory,,,,2.0,3843
-TriangleMeasurement,,,,12.0,3843
+TriangleMeasurement,Scalar triangle measurements: Area (default) Perimeter Semiperimeter Inradius Circumradius for Triangle or point-list input,✅,pure,12.0,3843
 WindDirectionData,,🚫,,10.0,3843
 AffineSpace,,,,10.2,3862
 AudioCapture,Record from a microphone ($Failed: no audio input device headless),✅,effectful,11.1,3862

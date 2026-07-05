@@ -322,3 +322,166 @@ pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   triangle(c_eval, cx, cy)
 }
+
+/// TriangleMeasurement[tri, "prop"] — scalar measurements of a triangle
+/// given as Triangle[{p1, p2, p3}] or a bare three-point list. Supported
+/// properties: "Area" (the one-argument default), "Perimeter",
+/// "Semiperimeter", "Inradius", "Circumradius". Degenerate (collinear)
+/// triangles emit ::invtri; unknown properties stay silently unevaluated.
+///
+/// Rational-coordinate triangles match wolframscript exactly. For
+/// irrational side lengths the Inradius/Circumradius values are correct but
+/// wolframscript's radical canonicalization (e.g. Sqrt[1105/2]/11 for
+/// Sqrt[2210]/22) is not replicated.
+pub fn triangle_measurement_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "TriangleMeasurement".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  let prop = match args.get(1) {
+    None => "Area".to_string(),
+    Some(Expr::String(s)) => s.clone(),
+    Some(_) => return unevaluated(),
+  };
+  if !matches!(
+    prop.as_str(),
+    "Area" | "Perimeter" | "Semiperimeter" | "Inradius" | "Circumradius"
+  ) {
+    return unevaluated();
+  }
+
+  // Extract the three 2D vertices from Triangle[{…}] or a bare list.
+  let points = match &args[0] {
+    Expr::FunctionCall { name, args: targs }
+      if name == "Triangle" && targs.len() == 1 =>
+    {
+      &targs[0]
+    }
+    other => other,
+  };
+  let Expr::List(pts) = points else {
+    return unevaluated();
+  };
+  if pts.len() != 3 {
+    return unevaluated();
+  }
+  let mut coords: Vec<(Expr, Expr)> = Vec::with_capacity(3);
+  for p in pts.iter() {
+    match p {
+      Expr::List(xy) if xy.len() == 2 => {
+        coords.push((xy[0].clone(), xy[1].clone()))
+      }
+      _ => return unevaluated(),
+    }
+  }
+
+  // Signed shoelace area ×2; zero means collinear (::invtri).
+  let (ax, ay) = &coords[0];
+  let (bx, by) = &coords[1];
+  let (cx, cy) = &coords[2];
+  let diff = |u: &Expr, v: &Expr| {
+    fc(
+      "Plus",
+      vec![u.clone(), fc("Times", vec![Expr::Integer(-1), v.clone()])],
+    )
+  };
+  let twice_signed_area = fc(
+    "Plus",
+    vec![
+      fc("Times", vec![diff(bx, ax), diff(cy, ay)]),
+      fc("Times", vec![Expr::Integer(-1), diff(cx, ax), diff(by, ay)]),
+    ],
+  );
+  let signed = eval(twice_signed_area.clone())?;
+  if crate::functions::math_ast::try_eval_to_f64(&signed) == Some(0.0) {
+    crate::emit_message(&format!(
+      "TriangleMeasurement::invtri: {} expected to specify a nondegenerate triangle in the plane.",
+      crate::syntax::expr_to_output(&args[0])
+    ));
+    return unevaluated();
+  }
+  let area = fc(
+    "Times",
+    vec![
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      },
+      fc("Abs", vec![twice_signed_area]),
+    ],
+  );
+
+  let dist = |p: &(Expr, Expr), q: &(Expr, Expr)| {
+    fc(
+      "Sqrt",
+      vec![fc(
+        "Plus",
+        vec![
+          fc("Power", vec![diff(&p.0, &q.0), Expr::Integer(2)]),
+          fc("Power", vec![diff(&p.1, &q.1), Expr::Integer(2)]),
+        ],
+      )],
+    )
+  };
+  let side_a = dist(&coords[1], &coords[2]);
+  let side_b = dist(&coords[0], &coords[2]);
+  let side_c = dist(&coords[0], &coords[1]);
+  let half = |e: Expr| {
+    fc(
+      "Times",
+      vec![
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+        },
+        e,
+      ],
+    )
+  };
+
+  let result = match prop.as_str() {
+    "Area" => area,
+    "Perimeter" => fc("Plus", vec![side_a, side_b, side_c]),
+    // Term-wise halves so rational parts fold (1/2 + 1/2 + Sqrt[2]/2 →
+    // 1 + 1/Sqrt[2], matching wolframscript's display).
+    "Semiperimeter" => {
+      fc("Plus", vec![half(side_a), half(side_b), half(side_c)])
+    }
+    // r = Area / s
+    "Inradius" => fc(
+      "Times",
+      vec![
+        area,
+        fc(
+          "Power",
+          vec![
+            fc("Plus", vec![half(side_a), half(side_b), half(side_c)]),
+            Expr::Integer(-1),
+          ],
+        ),
+      ],
+    ),
+    // R = a b c / (4 Area)
+    "Circumradius" => fc(
+      "Times",
+      vec![
+        side_a,
+        side_b,
+        side_c,
+        fc(
+          "Power",
+          vec![fc("Times", vec![Expr::Integer(4), area]), Expr::Integer(-1)],
+        ),
+      ],
+    ),
+    _ => unreachable!(),
+  };
+  eval(result)
+}

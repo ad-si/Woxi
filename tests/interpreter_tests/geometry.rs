@@ -3730,3 +3730,121 @@ mod exact_trig_canonicalization_tests {
     assert_eq!(interpret("1/Cos[Pi/4]").unwrap(), "Sqrt[2]");
   }
 }
+
+mod triangle_measurement_tests {
+  use woxi::interpret;
+
+  // The 3-4-5 right triangle: every measurement is rational.
+  #[test]
+  fn pythagorean_triangle() {
+    let t = r#"Triangle[{{0, 0}, {5, 0}, {16/5, 12/5}}]"#;
+    assert_eq!(
+      interpret(&format!(r#"TriangleMeasurement[{t}, "Area"]"#)).unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(&format!(r#"TriangleMeasurement[{t}, "Perimeter"]"#)).unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret(&format!(r#"TriangleMeasurement[{t}, "Semiperimeter"]"#))
+        .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(&format!(r#"TriangleMeasurement[{t}, "Inradius"]"#)).unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(&format!(r#"TriangleMeasurement[{t}, "Circumradius"]"#))
+        .unwrap(),
+      "5/2"
+    );
+    // The one-argument form defaults to the area.
+    assert_eq!(
+      interpret(&format!("TriangleMeasurement[{t}]")).unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn exact_irrational_forms() {
+    let u = "Triangle[{{0, 0}, {1, 0}, {0, 1}}]";
+    assert_eq!(
+      interpret(&format!(r#"TriangleMeasurement[{u}, "Area"]"#)).unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret(&format!(r#"TriangleMeasurement[{u}, "Perimeter"]"#)).unwrap(),
+      "2 + Sqrt[2]"
+    );
+    // Term-wise halves fold the rational part, like wolframscript.
+    assert_eq!(
+      interpret(&format!(r#"TriangleMeasurement[{u}, "Semiperimeter"]"#))
+        .unwrap(),
+      "1 + 1/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret(&format!(r#"TriangleMeasurement[{u}, "Circumradius"]"#))
+        .unwrap(),
+      "1/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret(
+        r#"TriangleMeasurement[Triangle[{{0, 0}, {3, 1}, {1, 4}}], "Perimeter"]"#
+      )
+      .unwrap(),
+      "Sqrt[10] + Sqrt[13] + Sqrt[17]"
+    );
+    assert_eq!(
+      interpret(
+        r#"TriangleMeasurement[Triangle[{{0, 0}, {3, 1}, {1, 4}}], "Area"]"#
+      )
+      .unwrap(),
+      "11/2"
+    );
+  }
+
+  // Bare point lists and real coordinates work too.
+  #[test]
+  fn input_forms() {
+    assert_eq!(
+      interpret(r#"TriangleMeasurement[{{0, 0}, {1, 0}, {0, 1}}, "Area"]"#)
+        .unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret(
+        r#"TriangleMeasurement[Triangle[{{0., 0.}, {1., 0.}, {0., 1.}}], "Circumradius"]"#
+      )
+      .unwrap(),
+      "0.7071067811865476"
+    );
+  }
+
+  // Collinear points emit ::invtri; unknown properties echo silently.
+  #[test]
+  fn invalid_inputs() {
+    assert_eq!(
+      interpret(
+        r#"TriangleMeasurement[Triangle[{{0, 0}, {1, 0}, {2, 0}}], "Area"]"#
+      )
+      .unwrap(),
+      "TriangleMeasurement[Triangle[{{0, 0}, {1, 0}, {2, 0}}], Area]"
+    );
+    assert_eq!(
+      interpret(
+        r#"TriangleMeasurement[Triangle[{{0, 0}, {1, 1}, {2, 2}}], "Inradius"]"#
+      )
+      .unwrap(),
+      "TriangleMeasurement[Triangle[{{0, 0}, {1, 1}, {2, 2}}], Inradius]"
+    );
+    assert_eq!(
+      interpret(
+        r#"TriangleMeasurement[Triangle[{{0, 0}, {5, 0}, {16/5, 12/5}}], "Foo"]"#
+      )
+      .unwrap(),
+      "TriangleMeasurement[Triangle[{{0, 0}, {5, 0}, {16/5, 12/5}}], Foo]"
+    );
+  }
+}
