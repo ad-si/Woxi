@@ -167,6 +167,9 @@ pub fn dispatch_plotting(
     "PeanoCurve" if !args.is_empty() => {
       Some(crate::functions::graphics::peano_curve_ast(args))
     }
+    "SierpinskiCurve" if !args.is_empty() => {
+      Some(crate::functions::graphics::sierpinski_curve_ast(args))
+    }
     "LinearGradientFilling" => Some(
       crate::functions::graphics::linear_gradient_filling_ast(args),
     ),
