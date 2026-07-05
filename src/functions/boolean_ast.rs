@@ -3333,3 +3333,90 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   evaluate_expr_to_expr(&result)
 }
+
+/// UnateQ[bf] / UnateQ[bf, {vars}] — True when the Boolean function is
+/// positive unate (monotone increasing) in every listed variable (all of
+/// its Boolean variables by default). Checked over the full truth table:
+/// a violation is any assignment pair, differing only in the tested
+/// variable, with f(var=False) True but f(var=True) False. Expressions
+/// whose Boolean-variable set is empty (or opaque non-Boolean atoms) are
+/// vacuously True, like wolframscript.
+pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "UnateQ".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let fc = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: a.into(),
+  };
+  let vars = match eval(&fc("BooleanVariables", vec![args[0].clone()]))? {
+    Expr::List(ref v) => v.to_vec(),
+    _ => return unevaluated(),
+  };
+  if vars.is_empty() {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+  let n = vars.len();
+  if n > 16 {
+    return unevaluated();
+  }
+  // Which variable positions to test for positive unateness.
+  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let checked: Vec<usize> = match args.get(1) {
+    None => (0..n).collect(),
+    Some(Expr::List(sel)) => sel
+      .iter()
+      .filter_map(|s| vars.iter().position(|v| key(v) == key(s)))
+      .collect(),
+    Some(_) => return unevaluated(),
+  };
+
+  // Direct truth table via ReplaceAll so opaque variables (like `x + y`,
+  // which BooleanVariables reports as one atom) substitute fine too.
+  // Index bit 0 = True for that variable, first variable outermost.
+  let mut table: Vec<Expr> = Vec::with_capacity(1 << n);
+  for idx in 0..(1usize << n) {
+    let rules: Vec<Expr> = vars
+      .iter()
+      .enumerate()
+      .map(|(vi, v)| Expr::Rule {
+        pattern: Box::new(v.clone()),
+        replacement: Box::new(Expr::Identifier(
+          if idx & (1usize << (n - 1 - vi)) == 0 {
+            "True".to_string()
+          } else {
+            "False".to_string()
+          },
+        )),
+      })
+      .collect();
+    table.push(eval(&fc(
+      "ReplaceAll",
+      vec![args[0].clone(), Expr::List(rules.into())],
+    ))?);
+  }
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
+  let is_false = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "False");
+  // BooleanTable orders assignments with True first, the first variable
+  // outermost: bit 0 in the index means True for that variable.
+  for &vi in &checked {
+    let bit = 1usize << (n - 1 - vi);
+    for idx_true in 0..(1usize << n) {
+      if idx_true & bit != 0 {
+        continue; // this index has the tested variable False
+      }
+      let idx_false = idx_true | bit;
+      if is_true(&table[idx_false]) && is_false(&table[idx_true]) {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+    }
+  }
+  Ok(Expr::Identifier("True".to_string()))
+}

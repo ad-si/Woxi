@@ -2299,6 +2299,12 @@ pub fn apply_rules_once(
       left: Box::new(apply_rules_once(left, rules)?),
       right: Box::new(apply_rules_once(right, rules)?),
     }),
+    // `!x /. x -> True` must descend into the operand like any other
+    // compound expression.
+    Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(apply_rules_once(operand, rules)?),
+    }),
     _ => Ok(expr.clone()),
   }
 }
@@ -4075,6 +4081,15 @@ fn apply_replace_all_multi_ast_impl(
         op: *op,
         left: Box::new(new_left),
         right: Box::new(new_right),
+      })
+    }
+    // `!x /. {x -> True}` must descend into the operand like any other
+    // compound expression.
+    Expr::UnaryOp { op, operand } => {
+      let new_operand = apply_replace_all_multi_ast_impl(operand, rules, held)?;
+      Ok(Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(new_operand),
       })
     }
     // Function[body] — `expr &` form. Body stays held (Function holds its

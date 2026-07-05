@@ -10234,3 +10234,59 @@ mod apart_square_free_tests {
     );
   }
 }
+
+mod unate_q_tests {
+  use woxi::interpret;
+
+  // UnateQ tests POSITIVE unateness (monotone increasing) in every
+  // variable by default — so x || !y is False despite being unate in the
+  // signed sense.
+  #[test]
+  fn default_all_variables() {
+    assert_eq!(interpret("UnateQ[x && y]").unwrap(), "True");
+    assert_eq!(interpret("UnateQ[x || (y && z)]").unwrap(), "True");
+    assert_eq!(interpret("UnateQ[x]").unwrap(), "True");
+    assert_eq!(interpret("UnateQ[x || ! y]").unwrap(), "False");
+    assert_eq!(interpret("UnateQ[! x]").unwrap(), "False");
+    assert_eq!(interpret("UnateQ[! x && ! y]").unwrap(), "False");
+    assert_eq!(interpret("UnateQ[Xor[x, y]]").unwrap(), "False");
+    assert_eq!(
+      interpret("UnateQ[Or[And[x, ! y], And[! x, y]], {x, y}]").unwrap(),
+      "False"
+    );
+  }
+
+  // The second argument restricts the check to the listed variables.
+  #[test]
+  fn selected_variables() {
+    assert_eq!(interpret("UnateQ[x && y, {x, y}]").unwrap(), "True");
+    assert_eq!(interpret("UnateQ[x && y, {x}]").unwrap(), "True");
+    assert_eq!(interpret("UnateQ[x || ! y, {x}]").unwrap(), "True");
+    assert_eq!(interpret("UnateQ[! x, {x}]").unwrap(), "False");
+  }
+
+  // Constants and opaque non-Boolean atoms are vacuously unate.
+  #[test]
+  fn vacuous_cases() {
+    assert_eq!(interpret("UnateQ[True]").unwrap(), "True");
+    assert_eq!(interpret("UnateQ[False]").unwrap(), "True");
+    assert_eq!(interpret("UnateQ[5]").unwrap(), "True");
+    assert_eq!(interpret("UnateQ[x + y]").unwrap(), "True");
+  }
+}
+
+// Regression tests for ReplaceAll descending into UnaryOp operands
+// (previously `!y /. y -> True` left the expression untouched).
+mod replace_all_unary_op_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn substitutes_inside_not() {
+    assert_eq!(interpret("ReplaceAll[! y, {y -> True}]").unwrap(), "False");
+    assert_eq!(
+      interpret("ReplaceAll[x || ! y, {x -> False, y -> True}]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("(x || ! y) /. y -> True").unwrap(), "x");
+  }
+}

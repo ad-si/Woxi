@@ -3996,7 +3996,7 @@ LogBarnesG,Logarithm of the Barnes G-function (exact for integers),✅,pure,7.0,
 ParallelArray,Serial version of Array that constructs an array by applying a function to index tuples,✅,pure,7.0,4104
 RamanujanTauTheta,Riemann-Siegel style theta function for the Ramanujan tau L-function,✅,pure,6.0,4104
 ShiftRegisterSequence,,,,11.0,4104
-UnateQ,,,,9.0,4104
+UnateQ,True when a Boolean function is positive unate (monotone increasing) in all or the listed variables via truth-table check,✅,pure,9.0,4104
 AttachCell,,,,12.2,4138
 AudioBlockMap,,🚫,,11.0,4138
 BioSequenceComplement,,🚫,,12.2,4138

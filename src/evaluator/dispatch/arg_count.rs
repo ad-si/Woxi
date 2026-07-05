@@ -133,6 +133,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BooleanMinterms" => Some((2, 2)),
     "BooleanTable" => Some((2, 2)),
     "BooleanVariables" => Some((1, 1)),
+    "UnateQ" => Some((1, 2)),
     "BoxMatrix" => Some((1, 1)),
     "BrayCurtisDistance" => Some((2, 2)),
     "ByteArray" => Some((1, 1)),
