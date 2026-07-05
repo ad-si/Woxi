@@ -840,6 +840,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MeanDeviation" => Some((1, 1)),
     "Median" => Some((1, 1)),
     "MellinTransform" => Some((3, usize::MAX)),
+    "InverseFourierSinTransform" => Some((3, usize::MAX)),
+    "InverseFourierCosTransform" => Some((3, usize::MAX)),
     "MedianDeviation" => Some((1, 1)),
     "MeijerG" => Some((3, 3)),
     "MemberQ" => Some((1, 3)),

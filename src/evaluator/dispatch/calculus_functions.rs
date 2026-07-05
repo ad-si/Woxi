@@ -767,6 +767,16 @@ pub fn dispatch_calculus_functions(
     "FourierTransform" if args.len() == 3 => {
       return Some(fourier_transform(&args[0], &args[1], &args[2]));
     }
+    "InverseFourierSinTransform" if args.len() == 3 => {
+      return Some(inverse_fourier_sin_cos_transform(
+        &args[0], &args[1], &args[2], true,
+      ));
+    }
+    "InverseFourierCosTransform" if args.len() == 3 => {
+      return Some(inverse_fourier_sin_cos_transform(
+        &args[0], &args[1], &args[2], false,
+      ));
+    }
     "FourierSinTransform" if args.len() == 3 => {
       return Some(fourier_sin_transform(&args[0], &args[1], &args[2]));
     }
@@ -894,7 +904,12 @@ fn laplace_transform(
 fn depends_on(expr: &Expr, t: &str) -> bool {
   match expr {
     Expr::Identifier(name) => name == t,
-    Expr::Integer(_) | Expr::Real(_) | Expr::String(_) => false,
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::String(_)
+    | Expr::Constant(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(..) => false,
     Expr::FunctionCall { args, .. } => args.iter().any(|a| depends_on(a, t)),
     Expr::List(items) => items.iter().any(|a| depends_on(a, t)),
     Expr::Rule {
@@ -5672,6 +5687,9 @@ fn fourier_sin_transform(
   let normalized = normalize_to_func_calls(expr);
   let normalized =
     crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+  // Evaluation can re-introduce BinaryOp/Divide shapes; flatten again so
+  // the table matchers see one representation.
+  let normalized = normalize_to_func_calls(&normalized);
 
   if let Some(result) =
     fourier_sin_cos_transform_inner(&normalized, t, w_expr, true)
@@ -5683,6 +5701,35 @@ fn fourier_sin_transform(
       args: vec![expr.clone(), t_expr.clone(), w_expr.clone()].into(),
     })
   }
+}
+
+/// InverseFourierSinTransform / InverseFourierCosTransform — with the
+/// default parameters the sine and cosine transforms are involutions, so
+/// the inverse is the same operator (only the unevaluated echo keeps the
+/// Inverse head).
+fn inverse_fourier_sin_cos_transform(
+  expr: &Expr,
+  w_expr: &Expr,
+  t_expr: &Expr,
+  is_sin: bool,
+) -> Result<Expr, InterpreterError> {
+  let (fwd_name, inv_name) = if is_sin {
+    ("FourierSinTransform", "InverseFourierSinTransform")
+  } else {
+    ("FourierCosTransform", "InverseFourierCosTransform")
+  };
+  let result = if is_sin {
+    fourier_sin_transform(expr, w_expr, t_expr)?
+  } else {
+    fourier_cos_transform(expr, w_expr, t_expr)?
+  };
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == fwd_name) {
+    return Ok(Expr::FunctionCall {
+      name: inv_name.to_string(),
+      args: vec![expr.clone(), w_expr.clone(), t_expr.clone()].into(),
+    });
+  }
+  Ok(result)
 }
 
 fn fourier_cos_transform(
@@ -5713,6 +5760,7 @@ fn fourier_cos_transform(
   let normalized = normalize_to_func_calls(expr);
   let normalized =
     crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+  let normalized = normalize_to_func_calls(&normalized);
 
   if let Some(result) =
     fourier_sin_cos_transform_inner(&normalized, t, w_expr, false)
@@ -5743,6 +5791,38 @@ fn fourier_sin_cos_transform_inner(
   // Handle linearity: c * f(t) where c doesn't depend on t
   if let Some((fname, fargs)) = as_func_args(expr) {
     if fname == "Times" {
+      // Flatten nested Times so a Divide-normalized product like
+      // Times[Times[c, t], Power[..., -1]] exposes all its factors.
+      fn flatten_times_args(args: &[&Expr], out: &mut Vec<Expr>) {
+        for a in args {
+          if let Some((n, inner)) = as_func_args(a)
+            && n == "Times"
+          {
+            flatten_times_args(&inner, out);
+          } else if let Some((n, inner)) = as_func_args(a)
+            && n == "Power"
+            && inner.len() == 2
+            && matches!(inner[1], Expr::Integer(-1))
+            && matches!(as_func_args(inner[0]), Some((bn, _)) if bn == "Times")
+          {
+            // 1/(c*f) — split the fused reciprocal into 1/c * 1/f.
+            let Some((_, factors)) = as_func_args(inner[0]) else {
+              unreachable!()
+            };
+            for f in factors {
+              out.push(Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![f.clone(), Expr::Integer(-1)].into(),
+              });
+            }
+          } else {
+            out.push((*a).clone());
+          }
+        }
+      }
+      let mut flat: Vec<Expr> = Vec::new();
+      flatten_times_args(&fargs, &mut flat);
+      let fargs: Vec<&Expr> = flat.iter().collect();
       let mut coeff_parts = Vec::new();
       let mut t_parts = Vec::new();
       for a in &fargs {
@@ -5817,7 +5897,7 @@ fn fourier_sin_cos_transform_inner(
     return None;
   }
 
-  // FST[1/t, t, w] = sqrt(Pi/2) (for w > 0)
+  // FST[1/t, t, w] = Sqrt[Pi/2] Sign[w]
   if is_sin
     && let Some((fname, fargs)) = as_func_args(expr)
     && fname == "Power"
@@ -5825,13 +5905,19 @@ fn fourier_sin_cos_transform_inner(
     && matches!(&fargs[0], Expr::Identifier(v) if v == t)
     && matches!(&fargs[1], Expr::Integer(-1))
   {
-    return Some(make_sqrt(make_times(vec![
-      Expr::Constant("Pi".to_string()),
+    return Some(make_times(vec![
+      make_sqrt(make_times(vec![
+        Expr::Constant("Pi".to_string()),
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+        },
+      ])),
       Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+        name: "Sign".to_string(),
+        args: vec![w.clone()].into(),
       },
-    ])));
+    ]));
   }
 
   // FST/FCT[1/Sqrt[t], t, w] = 1/Sqrt[w] (for w > 0)
@@ -5936,6 +6022,121 @@ fn fourier_sin_cos_transform_inner(
       numer,
       make_power(denom, Expr::Integer(-1)),
     ]));
+  }
+
+  // FCT[1/(c + t^2)] = Sqrt[c^(-1)] Sqrt[Pi/2] E^(-w/Sqrt[c^(-1)]) and
+  // FST[t/(c + t^2)] = Sqrt[Pi/2] E^(-w/Sqrt[c^(-1)]) — both printed via
+  // Sqrt[c^(-1)] like wolframscript (c is the constant term as given, so
+  // 1/(a^2 + t^2) shows Sqrt[a^(-2)]).
+  {
+    // Split an optional leading t factor (the sine case).
+    let (has_t_factor, core) = match as_func_args(expr) {
+      Some((fname, fargs))
+        if fname == "Times"
+          && fargs.len() == 2
+          && matches!(&fargs[0], Expr::Identifier(v) if v == t) =>
+      {
+        (true, fargs[1].clone())
+      }
+      Some((fname, fargs))
+        if fname == "Times"
+          && fargs.len() == 2
+          && matches!(&fargs[1], Expr::Identifier(v) if v == t) =>
+      {
+        (true, fargs[0].clone())
+      }
+      _ => (false, expr.clone()),
+    };
+    if has_t_factor == is_sin
+      && let Some((fname, fargs)) = as_func_args(&core)
+      && fname == "Power"
+      && fargs.len() == 2
+      && matches!(&fargs[1], Expr::Integer(-1))
+      && let Some((pname, pargs)) = as_func_args(fargs[0])
+      && pname == "Plus"
+      && pargs.len() == 2
+    {
+      let (c, tsq) = if depends_on(pargs[0], t) {
+        (&pargs[1], &pargs[0])
+      } else {
+        (&pargs[0], &pargs[1])
+      };
+      let tsq_ok = matches!(as_func_args(tsq), Some((n, a))
+        if n == "Power" && a.len() == 2
+          && matches!(&a[0], Expr::Identifier(v) if v == t)
+          && matches!(&a[1], Expr::Integer(2)));
+      if tsq_ok && !depends_on(c, t) {
+        let inv_amp = make_sqrt(make_power((*c).clone(), Expr::Integer(-1)));
+        let decay = make_power(
+          Expr::Constant("E".to_string()),
+          make_times(vec![
+            Expr::Integer(-1),
+            w.clone(),
+            make_power(inv_amp.clone(), Expr::Integer(-1)),
+          ]),
+        );
+        let sqrt_pi_half = make_sqrt(make_times(vec![
+          Expr::Constant("Pi".to_string()),
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+          },
+        ]));
+        let mut factors = vec![sqrt_pi_half, decay];
+        if !is_sin {
+          factors.insert(0, inv_amp);
+        }
+        return Some(make_times(factors));
+      }
+    }
+  }
+
+  // FST[t E^(-a t^2)] = w E^(-w^2/(4a)) / (2 Sqrt[2] a^(3/2)).
+  if is_sin
+    && let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Times"
+    && fargs.len() == 2
+  {
+    let (t_factor, exp_factor) = if matches!(&fargs[0], Expr::Identifier(v) if v == t)
+    {
+      (Some(&fargs[0]), &fargs[1])
+    } else if matches!(&fargs[1], Expr::Identifier(v) if v == t) {
+      (Some(&fargs[1]), &fargs[0])
+    } else {
+      (None, &fargs[0])
+    };
+    if t_factor.is_some()
+      && let Some(exp_arg) = is_exp_of(exp_factor)
+      && let Some(a) = extract_neg_quadratic_coeff(exp_arg, t)
+    {
+      let decay = make_power(
+        Expr::Constant("E".to_string()),
+        make_times(vec![
+          Expr::Integer(-1),
+          make_power(w.clone(), Expr::Integer(2)),
+          make_power(
+            make_times(vec![Expr::Integer(4), a.clone()]),
+            Expr::Integer(-1),
+          ),
+        ]),
+      );
+      let denom = make_times(vec![
+        Expr::Integer(2),
+        make_sqrt(Expr::Integer(2)),
+        make_power(
+          a,
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(3), Expr::Integer(2)].into(),
+          },
+        ),
+      ]);
+      return Some(make_times(vec![
+        w.clone(),
+        decay,
+        make_power(denom, Expr::Integer(-1)),
+      ]));
+    }
   }
 
   // FCT[E^(-a*t^2), t, w] = E^(-w^2/(4a)) / Sqrt[2 a]   for a > 0.

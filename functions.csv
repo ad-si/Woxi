@@ -3053,7 +3053,7 @@ Dithering,,🚫,,8.0,3121
 DynamicModuleBox,,🚫,,6.0,3121
 FARIMAProcess,,🚫,,9.0,3121
 ImageLevels,,🚫,,8.0,3121
-InverseFourierSinTransform,,,,4.0,3121
+InverseFourierSinTransform,Inverse Fourier sine transform (the sine transform is an involution),✅,pure,4.0,3121
 LocalTime,,,,10.0,3121
 CycleIndexPolynomial,Cycle index polynomial of a permutation group in given variables,✅,pure,9.0,3124
 Dodecahedron,,,,12.0,3124
@@ -3441,7 +3441,7 @@ EdgeConnectivity,Minimum edge cut size (s-t form uses edge-disjoint paths),✅,p
 EntropyFilter,,🚫,,7.0,3537
 ExponentStep,,,,3.0,3537
 GeoDistanceList,,🚫,,10.4,3537
-InverseFourierCosTransform,,,,4.0,3537
+InverseFourierCosTransform,Inverse Fourier cosine transform (the cosine transform is an involution),✅,pure,4.0,3537
 LessLess,,,,3.0,3537
 LongestCommonSubsequencePositions,Returns the {start end} spans of the longest contiguous common subsequence in two strings or lists,✅,pure,10.2,3537
 PeriodogramArray,,🚫,,9.0,3537

@@ -12254,3 +12254,100 @@ mod mellin_transform_tests {
     )));
   }
 }
+
+mod inverse_fourier_sin_cos_tests {
+  use woxi::interpret;
+
+  // With default parameters the sine/cosine transforms are involutions,
+  // so the inverse is the same operator. All verified against
+  // wolframscript.
+  #[test]
+  fn inverse_transforms() {
+    assert_eq!(
+      interpret("InverseFourierSinTransform[E^(-w), w, t]").unwrap(),
+      "(Sqrt[2/Pi]*t)/(1 + t^2)"
+    );
+    assert_eq!(
+      interpret("InverseFourierCosTransform[E^(-w), w, t]").unwrap(),
+      "Sqrt[2/Pi]/(1 + t^2)"
+    );
+    assert_eq!(
+      interpret("InverseFourierSinTransform[1/w, w, t]").unwrap(),
+      "Sqrt[Pi/2]*Sign[t]"
+    );
+    assert_eq!(
+      interpret("InverseFourierCosTransform[1/(1 + w^2), w, t]").unwrap(),
+      "Sqrt[Pi/2]/E^t"
+    );
+    assert_eq!(
+      interpret("InverseFourierSinTransform[w E^(-w^2), w, t]").unwrap(),
+      "t/(2*Sqrt[2]*E^(t^2/4))"
+    );
+    assert_eq!(
+      interpret("InverseFourierCosTransform[E^(-w^2), w, t]").unwrap(),
+      "1/(Sqrt[2]*E^(t^2/4))"
+    );
+    // Unknown integrands echo the Inverse head, not the forward one.
+    assert_eq!(
+      interpret("InverseFourierSinTransform[f[w], w, t]").unwrap(),
+      "InverseFourierSinTransform[f[w], w, t]"
+    );
+  }
+
+  // Forward-table entries added alongside (and one regression: 1/t was
+  // missing the Sign[w] factor).
+  #[test]
+  fn forward_table_additions() {
+    assert_eq!(
+      interpret("FourierSinTransform[1/t, t, w]").unwrap(),
+      "Sqrt[Pi/2]*Sign[w]"
+    );
+    assert_eq!(
+      interpret("FourierSinTransform[1/t, t, 2]").unwrap(),
+      "Sqrt[Pi/2]"
+    );
+    assert_eq!(
+      interpret("FourierSinTransform[1/t, t, -2]").unwrap(),
+      "-Sqrt[Pi/2]"
+    );
+    assert_eq!(
+      interpret("FourierCosTransform[1/(1 + t^2), t, w]").unwrap(),
+      "Sqrt[Pi/2]/E^w"
+    );
+    assert_eq!(
+      interpret("FourierCosTransform[1/(a^2 + t^2), t, w]").unwrap(),
+      "(Sqrt[a^(-2)]*Sqrt[Pi/2])/E^(w/Sqrt[a^(-2)])"
+    );
+    assert_eq!(
+      interpret("FourierSinTransform[t/(1 + t^2), t, w]").unwrap(),
+      "Sqrt[Pi/2]/E^w"
+    );
+    assert_eq!(
+      interpret("FourierSinTransform[t/(a^2 + t^2), t, w]").unwrap(),
+      "Sqrt[Pi/2]/E^(w/Sqrt[a^(-2)])"
+    );
+    assert_eq!(
+      interpret("FourierSinTransform[t E^(-t^2), t, w]").unwrap(),
+      "w/(2*Sqrt[2]*E^(w^2/4))"
+    );
+    assert_eq!(
+      interpret("FourierSinTransform[t E^(-a t^2), t, w]").unwrap(),
+      "w/(2*Sqrt[2]*a^(3/2)*E^(w^2/(4*a)))"
+    );
+    // Radical coefficients still fold through the linearity rule.
+    assert_eq!(
+      interpret("FourierSinTransform[Sqrt[3] t/(1 + t^2), t, w]").unwrap(),
+      "Sqrt[(3*Pi)/2]/E^w"
+    );
+  }
+
+  #[test]
+  fn argument_counts() {
+    let r = woxi::interpret_with_stdout("InverseFourierSinTransform[E^(-w)]")
+      .unwrap();
+    assert_eq!(r.result, "InverseFourierSinTransform[E^(-w)]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "InverseFourierSinTransform::argmu: InverseFourierSinTransform called with 1 argument; 3 or more arguments are expected."
+    )));
+  }
+}
