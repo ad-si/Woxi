@@ -12351,3 +12351,77 @@ mod inverse_fourier_sin_cos_tests {
     )));
   }
 }
+
+mod inverse_mellin_transform_tests {
+  use woxi::interpret;
+
+  // The reverse Mellin table, matching wolframscript's result forms
+  // (including deliberately unsimplified ones like Pi/(Pi + Pi*x)).
+  #[test]
+  fn reverse_table() {
+    assert_eq!(
+      interpret("InverseMellinTransform[Gamma[s], s, x]").unwrap(),
+      "E^(-x)"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[Gamma[s]/a^s, s, x]").unwrap(),
+      "E^(-(a*x))"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[2 Gamma[s], s, x]").unwrap(),
+      "2/E^x"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[Gamma[s + 2], s, x]").unwrap(),
+      "x^2/E^x"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[Gamma[s/2]/2, s, x]").unwrap(),
+      "E^(-x^2)"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[Gamma[s] Sin[Pi s/2], s, x]").unwrap(),
+      "Sin[x]"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[Gamma[s] Cos[Pi s/2], s, x]").unwrap(),
+      "Cos[x]"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[Pi Csc[Pi s], s, x]").unwrap(),
+      "Pi/(Pi + Pi*x)"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[Pi Csc[Pi s]/s, s, x]").unwrap(),
+      "Log[1 + x^(-1)]"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[1/s, s, x]").unwrap(),
+      "HeavisideTheta[1 - x]"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[Gamma[s]^2, s, x]").unwrap(),
+      "2*BesselK[0, 2*Sqrt[x]]"
+    );
+    assert_eq!(
+      interpret("InverseMellinTransform[Gamma[a - s] Gamma[s]/Gamma[a], s, x]")
+        .unwrap(),
+      "(1 + x)^(-a)"
+    );
+  }
+
+  // Unknown transforms stay unevaluated; short calls emit argmu.
+  #[test]
+  fn edge_cases() {
+    assert_eq!(
+      interpret("InverseMellinTransform[f[s], s, x]").unwrap(),
+      "InverseMellinTransform[f[s], s, x]"
+    );
+    let r =
+      woxi::interpret_with_stdout("InverseMellinTransform[Gamma[s]]").unwrap();
+    assert_eq!(r.result, "InverseMellinTransform[Gamma[s]]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "InverseMellinTransform::argmu: InverseMellinTransform called with 1 argument; 3 or more arguments are expected."
+    )));
+  }
+}

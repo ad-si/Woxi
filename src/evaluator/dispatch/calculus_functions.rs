@@ -761,6 +761,9 @@ pub fn dispatch_calculus_functions(
     "MellinTransform" if args.len() == 3 => {
       return Some(mellin_transform(&args[0], &args[1], &args[2]));
     }
+    "InverseMellinTransform" if args.len() == 3 => {
+      return Some(inverse_mellin_transform(&args[0], &args[1], &args[2]));
+    }
     "InverseLaplaceTransform" if args.len() == 3 => {
       return Some(inverse_laplace_transform(&args[0], &args[1], &args[2]));
     }
@@ -2402,6 +2405,401 @@ fn mellin_transform(
     Some(result) => crate::evaluator::evaluate_expr_to_expr(&result),
     None => unevaluated(),
   }
+}
+
+/// InverseMellinTransform[F, s, x] — the reverse of the MellinTransform
+/// table, matching wolframscript's (sometimes unsimplified) result forms.
+fn inverse_mellin_transform(
+  expr: &Expr,
+  s_expr: &Expr,
+  x_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "InverseMellinTransform".to_string(),
+      args: vec![expr.clone(), s_expr.clone(), x_expr.clone()].into(),
+    })
+  };
+  let Expr::Identifier(sv) = s_expr else {
+    return unevaluated();
+  };
+
+  let normalized = normalize_to_func_calls(expr);
+  let normalized =
+    crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+  let normalized = normalize_to_func_calls(&normalized);
+
+  match inverse_mellin_inner(&normalized, sv, x_expr) {
+    Some((result, needs_eval)) => {
+      if needs_eval {
+        crate::evaluator::evaluate_expr_to_expr(&result)
+      } else {
+        Ok(result)
+      }
+    }
+    None => unevaluated(),
+  }
+}
+
+/// Reverse Mellin table. Returns (result, needs_eval) — some wolframscript
+/// forms are deliberately unsimplified and must not be re-evaluated.
+fn inverse_mellin_inner(
+  expr: &Expr,
+  sv: &str,
+  x: &Expr,
+) -> Option<(Expr, bool)> {
+  let neg = |e: Expr| make_times(vec![Expr::Integer(-1), e]);
+  let e_pow = |e: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(Expr::Identifier("E".to_string())),
+    right: Box::new(e),
+  };
+  let is_s = |e: &Expr| matches!(e, Expr::Identifier(v) if v == sv);
+  let is_pi = |e: &Expr| {
+    matches!(e, Expr::Constant(c) if c == "Pi")
+      || matches!(e, Expr::Identifier(v) if v == "Pi")
+  };
+  // Gamma[u] → Some(u)
+  let gamma_arg = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Gamma" && args.len() == 1 =>
+      {
+        Some(args[0].clone())
+      }
+      _ => None,
+    }
+  };
+  // (Pi s)/2 as a Times factor multiset {1/2, Pi, s}.
+  let is_half_pi_s = |e: &Expr| -> bool {
+    let Some((n, fs)) = as_func_args(e) else {
+      return false;
+    };
+    if n != "Times" || fs.len() != 3 {
+      return false;
+    }
+    let mut has_half = false;
+    let mut has_pi = false;
+    let mut has_s = false;
+    for f in &fs {
+      match f {
+        Expr::FunctionCall { name, args }
+          if name == "Rational"
+            && args.len() == 2
+            && matches!(&args[0], Expr::Integer(1))
+            && matches!(&args[1], Expr::Integer(2)) =>
+        {
+          has_half = true;
+        }
+        e if is_pi(e) => has_pi = true,
+        Expr::Identifier(v) if v == sv => has_s = true,
+        _ => return false,
+      }
+    }
+    has_half && has_pi && has_s
+  };
+  // Pi s as {Pi, s}.
+  let is_pi_s = |e: &Expr| -> bool {
+    let Some((n, fs)) = as_func_args(e) else {
+      return false;
+    };
+    n == "Times"
+      && fs.len() == 2
+      && fs.iter().any(|f| is_pi(f))
+      && fs.iter().any(|f| is_s(f))
+  };
+
+  // Sums: linearity.
+  if let Some((n, fs)) = as_func_args(expr)
+    && n == "Plus"
+  {
+    let mut parts = Vec::new();
+    for f in &fs {
+      let (r, _) = inverse_mellin_inner(f, sv, x)?;
+      parts.push(r);
+    }
+    return Some((make_plus(parts), true));
+  }
+
+  // Collect the expression as a flat factor list.
+  let mut factors: Vec<Expr> = Vec::new();
+  fn flatten_factors(e: &Expr, out: &mut Vec<Expr>) {
+    if let Some((n, fs)) = as_func_args(e)
+      && n == "Times"
+    {
+      for f in fs {
+        flatten_factors(f, out);
+      }
+    } else if let Some((n, fs)) = as_func_args(e)
+      && n == "Power"
+      && fs.len() == 2
+      && matches!(fs[1], Expr::Integer(-1))
+      && matches!(as_func_args(fs[0]), Some((bn, _)) if bn == "Times")
+    {
+      let Some((_, inner)) = as_func_args(fs[0]) else {
+        unreachable!()
+      };
+      for f in inner {
+        out.push(Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![f.clone(), Expr::Integer(-1)].into(),
+        });
+      }
+    } else {
+      out.push(e.clone());
+    }
+  }
+  flatten_factors(expr, &mut factors);
+
+  let (consts, sparts): (Vec<Expr>, Vec<Expr>) =
+    factors.into_iter().partition(|f| !depends_on(f, sv));
+
+  let with_consts = |result: Expr, consts: &[Expr]| -> (Expr, bool) {
+    if consts.is_empty() {
+      (result, true)
+    } else {
+      let mut all = consts.to_vec();
+      all.push(result);
+      (make_times(all), true)
+    }
+  };
+
+  // Single s-dependent factor cases.
+  if sparts.len() == 1 {
+    let f = &sparts[0];
+    // Gamma[s] → E^(-x); Gamma[s + p] → x^p E^(-x); Gamma[s/n] (with a
+    // 1/n constant) → E^(-x^n).
+    if let Some(garg) = gamma_arg(f) {
+      if is_s(&garg) {
+        return Some(with_consts(e_pow(neg(x.clone())), &consts));
+      }
+      if let Some((n, ps)) = as_func_args(&garg)
+        && n == "Plus"
+        && ps.len() == 2
+      {
+        let (shift, svar) = if is_s(ps[0]) {
+          (ps[1], ps[0])
+        } else {
+          (ps[0], ps[1])
+        };
+        let _ = svar;
+        if is_s(if is_s(ps[0]) { ps[0] } else { ps[1] })
+          && !depends_on(shift, sv)
+        {
+          let result = make_times(vec![
+            make_power(x.clone(), shift.clone()),
+            e_pow(neg(x.clone())),
+          ]);
+          return Some(with_consts(result, &consts));
+        }
+      }
+      // Gamma[s/n]: Times[Rational[1, n], s].
+      if let Some((n, fs)) = as_func_args(&garg)
+        && n == "Times"
+        && fs.len() == 2
+      {
+        let (rat, svar) = if is_s(fs[1]) {
+          (fs[0], fs[1])
+        } else {
+          (fs[1], fs[0])
+        };
+        let _ = svar;
+        if is_s(if is_s(fs[1]) { fs[1] } else { fs[0] })
+          && let Expr::FunctionCall { name, args } = rat
+          && name == "Rational"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(1))
+          && let Expr::Integer(nn) = &args[1]
+        {
+          // The 1/n prefactor must be among the constants.
+          let inv_n = Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(*nn)].into(),
+          };
+          let pos = consts.iter().position(|c| {
+            crate::syntax::expr_to_string(c)
+              == crate::syntax::expr_to_string(&inv_n)
+          })?;
+          let mut rest = consts.clone();
+          rest.remove(pos);
+          let result = e_pow(neg(make_power(x.clone(), Expr::Integer(*nn))));
+          return Some(with_consts(result, &rest));
+        }
+      }
+      return None;
+    }
+    // Gamma[s]^2 → 2 BesselK[0, 2 Sqrt[x]].
+    if let Some((n, fs)) = as_func_args(f)
+      && n == "Power"
+      && fs.len() == 2
+      && matches!(fs[1], Expr::Integer(2))
+      && gamma_arg(fs[0]).is_some_and(|g| is_s(&g))
+    {
+      let result = make_times(vec![
+        Expr::Integer(2),
+        Expr::FunctionCall {
+          name: "BesselK".to_string(),
+          args: vec![
+            Expr::Integer(0),
+            make_times(vec![Expr::Integer(2), make_sqrt(x.clone())]),
+          ]
+          .into(),
+        },
+      ]);
+      return Some(with_consts(result, &consts));
+    }
+    // 1/s → HeavisideTheta[1 - x].
+    if let Some((n, fs)) = as_func_args(f)
+      && n == "Power"
+      && fs.len() == 2
+      && matches!(fs[1], Expr::Integer(-1))
+      && is_s(fs[0])
+    {
+      let result = Expr::FunctionCall {
+        name: "HeavisideTheta".to_string(),
+        args: vec![make_plus(vec![Expr::Integer(1), neg(x.clone())])].into(),
+      };
+      return Some(with_consts(result, &consts));
+    }
+    // Pi Csc[Pi s] → Pi/(Pi + Pi x), returned unsimplified like
+    // wolframscript.
+    if let Some((n, fs)) = as_func_args(f)
+      && n == "Csc"
+      && fs.len() == 1
+      && is_pi_s(fs[0])
+      && consts.len() == 1
+      && is_pi(&consts[0])
+    {
+      let result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(make_plus(vec![
+          Expr::Constant("Pi".to_string()),
+          make_times(vec![Expr::Constant("Pi".to_string()), x.clone()]),
+        ])),
+      };
+      return Some((result, false));
+    }
+    return None;
+  }
+
+  // Two s-dependent factors.
+  if sparts.len() == 2 {
+    let find = |pred: &dyn Fn(&Expr) -> bool| -> Option<usize> {
+      sparts.iter().position(pred)
+    };
+    // Gamma[s] * Sin/Cos[(Pi s)/2] → Sin[x]/Cos[x].
+    if let Some(gi) = find(&|f| gamma_arg(f).is_some_and(|g| is_s(&g))) {
+      let other = &sparts[1 - gi];
+      if let Some((n, fs)) = as_func_args(other)
+        && (n == "Sin" || n == "Cos")
+        && fs.len() == 1
+        && is_half_pi_s(fs[0])
+      {
+        let result = Expr::FunctionCall {
+          name: n.to_string(),
+          args: vec![x.clone()].into(),
+        };
+        return Some(with_consts(result, &consts));
+      }
+      // Gamma[s] * a^(-s) → E^(-(a x)).
+      if let Some((n, fs)) = as_func_args(other)
+        && n == "Power"
+        && fs.len() == 2
+        && !depends_on(fs[0], sv)
+      {
+        let is_neg_s = match as_func_args(fs[1]) {
+          Some((tn, tf)) if tn == "Times" && tf.len() == 2 => {
+            tf.iter().any(|f| matches!(f, Expr::Integer(-1)))
+              && tf.iter().any(|f| is_s(f))
+          }
+          _ => false,
+        };
+        if is_neg_s {
+          let result = e_pow(neg(make_times(vec![fs[0].clone(), x.clone()])));
+          return Some(with_consts(result, &consts));
+        }
+      }
+      // Gamma[a - s] * Gamma[s] / Gamma[a] → (1 + x)^(-a).
+      if let Some(ga) = gamma_arg(other)
+        && let Some((n, ps)) = as_func_args(&ga)
+        && n == "Plus"
+        && ps.len() == 2
+      {
+        let (a_part, neg_s) = if depends_on(ps[0], sv) {
+          (ps[1], ps[0])
+        } else {
+          (ps[0], ps[1])
+        };
+        let neg_s_ok = match as_func_args(neg_s) {
+          Some((tn, tf)) if tn == "Times" && tf.len() == 2 => {
+            tf.iter().any(|f| matches!(f, Expr::Integer(-1)))
+              && tf.iter().any(|f| is_s(f))
+          }
+          _ => false,
+        };
+        if neg_s_ok && !depends_on(a_part, sv) {
+          // Require the 1/Gamma[a] constant.
+          let inv_gamma = crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Gamma".to_string(),
+                args: vec![a_part.clone()].into(),
+              },
+              Expr::Integer(-1),
+            ]
+            .into(),
+          });
+          let pos = consts
+            .iter()
+            .position(|c| crate::syntax::expr_to_string(c) == inv_gamma)?;
+          let mut rest = consts.clone();
+          rest.remove(pos);
+          let result = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(make_plus(vec![Expr::Integer(1), x.clone()])),
+            right: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(a_part.clone()),
+            }),
+          };
+          if rest.is_empty() {
+            return Some((result, false));
+          }
+          let mut all = rest;
+          all.push(result);
+          return Some((make_times(all), true));
+        }
+      }
+    }
+    // Pi Csc[Pi s] / s → Log[1 + x^(-1)].
+    let csc_i = find(&|f| {
+      matches!(as_func_args(f), Some((n, fs))
+        if n == "Csc" && fs.len() == 1 && is_pi_s(fs[0]))
+    });
+    let inv_s_i = find(&|f| {
+      matches!(as_func_args(f), Some((n, fs))
+        if n == "Power" && fs.len() == 2
+          && matches!(fs[1], Expr::Integer(-1)) && is_s(fs[0]))
+    });
+    if let (Some(_), Some(_)) = (csc_i, inv_s_i)
+      && consts.len() == 1
+      && is_pi(&consts[0])
+    {
+      let result = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![make_plus(vec![
+          Expr::Integer(1),
+          make_power(x.clone(), Expr::Integer(-1)),
+        ])]
+        .into(),
+      };
+      return Some((result, false));
+    }
+  }
+
+  None
 }
 
 /// Core Mellin table. Returns None when no rule applies.
