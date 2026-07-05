@@ -4424,6 +4424,10 @@ fn lyapunov_solve_common(
   };
 
   let Some(a) = parse_matrix(&args[0]) else {
+    // Symbolic entries: the diagonal 2-argument case still solves.
+    if let Some(r) = lyapunov_symbolic_diagonal(name, args, discrete) {
+      return r;
+    }
     return unevaluated();
   };
   let n = a.len();
@@ -4456,6 +4460,10 @@ fn lyapunov_solve_common(
   };
   let m = b.len();
   let Some(c) = parse_matrix(c_expr) else {
+    // Numeric diagonal a with a symbolic c also decouples entrywise.
+    if let Some(r) = lyapunov_symbolic_diagonal(name, args, discrete) {
+      return r;
+    }
     return unevaluated();
   };
   if c.len() != n || c[0].len() != m {
@@ -4567,6 +4575,109 @@ fn lyapunov_solve_common(
     .map(|i| Expr::List((0..m).map(|j| entry_expr(sol[idx(i, j)])).collect()))
     .collect();
   Ok(Expr::List(rows.into()))
+}
+
+/// Symbolic 2-argument Lyapunov solve for a DIAGONAL first matrix: the
+/// equation decouples entrywise into x[i][j] = c[i][j]/(a_i + Conjugate[a_j])
+/// (continuous) or c[i][j]/(-1 + a_i*Conjugate[a_j]) (discrete), matching
+/// wolframscript's Conjugate closed forms (`{{(a + Conjugate[a])^(-1), 0},
+/// {0, (b + Conjugate[b])^(-1)}}`). Non-diagonal symbolic matrices stay
+/// unevaluated — wolframscript's general symbolic path produces large
+/// unsimplified Conjugate quotients that are out of scope.
+fn lyapunov_symbolic_diagonal(
+  name: &str,
+  args: &[Expr],
+  discrete: bool,
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 2 {
+    return None;
+  }
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(v) if *v == 0.0)
+  };
+  let Expr::List(rows) = &args[0] else {
+    return None;
+  };
+  let n = rows.len();
+  if n == 0 {
+    return None;
+  }
+  let mut diag: Vec<Expr> = Vec::with_capacity(n);
+  for (i, row) in rows.iter().enumerate() {
+    let Expr::List(cells) = row else { return None };
+    if cells.len() != n {
+      return None;
+    }
+    for (j, cell) in cells.iter().enumerate() {
+      if i == j {
+        diag.push(cell.clone());
+      } else if !is_zero(cell) {
+        return None;
+      }
+    }
+  }
+  let Expr::List(crows) = &args[1] else {
+    return None;
+  };
+  if crows.len() != n {
+    return None;
+  }
+  let fc = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: fargs.into(),
+  };
+  // Shape-check every row up front so no messages are emitted for
+  // malformed input, then solve entrywise.
+  for crow in crows.iter() {
+    let Expr::List(ccells) = crow else {
+      return None;
+    };
+    if ccells.len() != n {
+      return None;
+    }
+  }
+  let mut out_rows: Vec<Expr> = Vec::with_capacity(n);
+  for (i, crow) in crows.iter().enumerate() {
+    let Expr::List(ccells) = crow else {
+      return None;
+    };
+    let mut out_cells: Vec<Expr> = Vec::with_capacity(n);
+    for (j, cij) in ccells.iter().enumerate() {
+      let conj = fc("Conjugate", vec![diag[j].clone()]);
+      let denom = if discrete {
+        fc(
+          "Plus",
+          vec![Expr::Integer(-1), fc("Times", vec![diag[i].clone(), conj])],
+        )
+      } else {
+        fc("Plus", vec![diag[i].clone(), conj])
+      };
+      let denom = match crate::evaluator::evaluate_expr_to_expr(&denom) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
+      if is_zero(&denom) {
+        crate::emit_message(&format!(
+          "{}::nosol: The matrix equation has no solution.",
+          name
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      let entry = fc(
+        "Times",
+        vec![cij.clone(), fc("Power", vec![denom, Expr::Integer(-1)])],
+      );
+      match crate::evaluator::evaluate_expr_to_expr(&entry) {
+        Ok(e) => out_cells.push(e),
+        Err(e) => return Some(Err(e)),
+      }
+    }
+    out_rows.push(Expr::List(out_cells.into()));
+  }
+  Some(Ok(Expr::List(out_rows.into())))
 }
 
 pub fn lyapunov_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

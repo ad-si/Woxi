@@ -3303,7 +3303,7 @@ CellDynamicExpression,,🚫,,8.0,3389
 CoxIngersollRossProcess,,🚫,,9.0,3389
 FunctionCompile,,🚫,,12.0,3389
 KillProcess,,🚫,,10.0,3389
-LyapunovSolve,Solves a.x + x.aT == c (3-arg Sylvester a.x + x.b == c) exactly for real numeric matrices,✅,pure,8.0,3389
+LyapunovSolve,Solves a.x + x.aT == c (3-arg Sylvester a.x + x.b == c) exactly for real numeric matrices; diagonal symbolic a gives Conjugate closed forms,✅,pure,8.0,3389
 NotebookPrint,,🚫,,3.0,3389
 ObservableModelQ,,,,8.0,3389
 Permanent,Permanent of a square matrix,✅,pure,10.2,3389
@@ -4005,7 +4005,7 @@ ContainsExactly,Test if two lists contain exactly the same elements,✅,none,10.
 ControllerMethod,,,,6.0,4138
 CriticalityFailureImportance,,,,9.0,4138
 DirichletTransform,,,,7.0,4138
-DiscreteLyapunovSolve,Solves a.x.aT - x == c (3-arg a.x.b - x == c) exactly for real numeric matrices,✅,pure,8.0,4138
+DiscreteLyapunovSolve,Solves a.x.aT - x == c (3-arg a.x.b - x == c) exactly for real numeric matrices; diagonal symbolic a gives Conjugate closed forms,✅,pure,8.0,4138
 EdgeTaggedGraph,,,,12.1,4138
 EstimatorRegulator,,,,8.0,4138
 ExportByteArray,,,,11.2,4138

@@ -5869,8 +5869,9 @@ mod lyapunov_solve_tests {
   }
 
   // Singular systems emit ::nosol; shape errors emit ::matsq/::ndims;
-  // symbolic matrices stay unevaluated (wolframscript's symbolic path uses
-  // Conjugate forms that are out of scope).
+  // non-diagonal symbolic matrices stay unevaluated (wolframscript's
+  // general symbolic path produces large unsimplified Conjugate quotients
+  // that are out of scope).
   #[test]
   fn error_forms() {
     assert_eq!(
@@ -5891,8 +5892,39 @@ mod lyapunov_solve_tests {
       "LyapunovSolve[{{1, 2}, {0, 3}}, {{1, 0}}]"
     );
     assert_eq!(
+      interpret("LyapunovSolve[{{a, 1}, {0, b}}, {{1, 0}, {0, 1}}]").unwrap(),
+      "LyapunovSolve[{{a, 1}, {0, b}}, {{1, 0}, {0, 1}}]"
+    );
+  }
+
+  // A diagonal symbolic first matrix decouples entrywise into
+  // wolframscript's Conjugate closed forms.
+  #[test]
+  fn symbolic_diagonal() {
+    assert_eq!(
       interpret("LyapunovSolve[{{a, 0}, {0, b}}, {{1, 0}, {0, 1}}]").unwrap(),
-      "LyapunovSolve[{{a, 0}, {0, b}}, {{1, 0}, {0, 1}}]"
+      "{{(a + Conjugate[a])^(-1), 0}, {0, (b + Conjugate[b])^(-1)}}"
+    );
+    assert_eq!(
+      interpret("LyapunovSolve[{{a, 0}, {0, b}}, {{c, 0}, {0, d}}]").unwrap(),
+      "{{c/(a + Conjugate[a]), 0}, {0, d/(b + Conjugate[b])}}"
+    );
+    assert_eq!(
+      interpret("LyapunovSolve[{{a, 0}, {0, b}}, {{0, 1}, {2, 0}}]").unwrap(),
+      "{{0, (a + Conjugate[b])^(-1)}, {2/(b + Conjugate[a]), 0}}"
+    );
+    assert_eq!(
+      interpret("LyapunovSolve[{{a}}, {{c}}]").unwrap(),
+      "{{c/(a + Conjugate[a])}}"
+    );
+    assert_eq!(
+      interpret("LyapunovSolve[{{2, 0}, {0, 3}}, {{c, 0}, {0, d}}]").unwrap(),
+      "{{c/4, 0}, {0, d/6}}"
+    );
+    assert_eq!(
+      interpret("DiscreteLyapunovSolve[{{a, 0}, {0, b}}, {{1, 0}, {0, 1}}]")
+        .unwrap(),
+      "{{(-1 + a*Conjugate[a])^(-1), 0}, {0, (-1 + b*Conjugate[b])^(-1)}}"
     );
   }
 }

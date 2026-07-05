@@ -1172,6 +1172,11 @@ function main() {
     "MakeBoxes[NumberForm[1234567.8]]",
     "MakeBoxes[NumberForm[3.14159, {6, 2}]]",
 
+    // LyapunovSolve with a NON-diagonal symbolic matrix: WL emits a page-long
+    // unsimplified Conjugate quotient from its general symbolic solver. Woxi
+    // solves the decoupled diagonal case (which matches WL exactly) and
+    // leaves non-diagonal symbolic input unevaluated.
+    "LyapunovSolve[{{a, 1}, {0, b}}, {{1, 0}, {0, 1}}]",
     // RotationTransform / RotationMatrix about a symbolic 3D axis {a,b,c}: WL
     // emits a page-long unsimplified Conjugate/Sqrt expression from its generic
     // Householder construction. Woxi has no symbolic-axis rotation builder and
