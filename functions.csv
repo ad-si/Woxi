@@ -3087,7 +3087,7 @@ Prefix,Prefix output form symbol,✅,pure,1.0,3153
 ContinuousMarkovProcess,,🚫,,9.0,3162
 DeconvolutionLayer,,🚫,,11.0,3162
 ExtentMarkers,,,,8.0,3162
-FindList,,,,2.0,3162
+FindList,Lines in files containing any of the given literal substrings,✅,filesystem,2.0,3162
 GeoBounds,Latitude and longitude bounds of geo positions,✅,pure,10.0,3162
 LinkReadyQ,,🚫,,3.0,3162
 MoonPosition,,🚫,,10.0,3162

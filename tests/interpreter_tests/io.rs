@@ -6493,3 +6493,131 @@ mod echo_label {
     assert_eq!(r.stdout, "");
   }
 }
+
+mod find_list_tests {
+  use super::*;
+
+  fn setup() -> String {
+    let base = std::env::temp_dir()
+      .join(format!("woxi_findlist_test_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    std::fs::write(
+      base.join("sample.txt"),
+      "alpha beta\ngamma delta\nALPHA epsilon\nzeta alpha eta\nlast line\n",
+    )
+    .unwrap();
+    std::fs::write(base.join("second.txt"), "one alpha\ntwo beta\n").unwrap();
+    base.to_str().unwrap().to_string()
+  }
+
+  // Literal, case-sensitive substring search per line; the third argument
+  // caps the total count globally. All verified against wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn matching_lines() {
+    let b = setup();
+    for (input, expected) in [
+      (
+        format!(r#"FindList["{b}/sample.txt", "alpha"]"#),
+        "{alpha beta, zeta alpha eta}",
+      ),
+      (
+        format!(r#"FindList["{b}/sample.txt", {{"alpha", "delta"}}]"#),
+        "{alpha beta, gamma delta, zeta alpha eta}",
+      ),
+      (
+        format!(r#"FindList[{{"{b}/sample.txt", "{b}/second.txt"}}, "alpha"]"#),
+        "{alpha beta, zeta alpha eta, one alpha}",
+      ),
+      (
+        format!(
+          r#"FindList[{{"{b}/sample.txt", "{b}/second.txt"}}, "alpha", 2]"#
+        ),
+        "{alpha beta, zeta alpha eta}",
+      ),
+      (
+        format!(r#"FindList["{b}/sample.txt", "ALPHA"]"#),
+        "{ALPHA epsilon}",
+      ),
+      (
+        format!(r#"FindList["{b}/sample.txt", "a b"]"#),
+        "{alpha beta}",
+      ),
+      (format!(r#"FindList["{b}/sample.txt", "nosuch"]"#), "{}"),
+      (format!(r#"FindList["{b}/sample.txt", "alpha", 0]"#), "{}"),
+      (r#"FindList[{}, "alpha"]"#.to_string(), "{}"),
+    ] {
+      assert_eq!(interpret(&input).unwrap(), expected, "input: {input}");
+    }
+  }
+
+  // Missing files emit `noopen` and yield $Failed — as the whole result
+  // for a single file, as one element inside a file-list result.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_files_and_messages() {
+    let b = setup();
+    let r =
+      interpret_with_stdout(&format!(r#"FindList["{b}/nofile.txt", "alpha"]"#))
+        .unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings.iter().any(|w| {
+      w.contains(&format!("FindList::noopen: Cannot open {b}/nofile.txt."))
+    }));
+
+    let r = interpret_with_stdout(&format!(
+      r#"FindList[{{"{b}/sample.txt", "{b}/nofile.txt"}}, "alpha"]"#
+    ))
+    .unwrap();
+    assert_eq!(r.result, "{alpha beta, zeta alpha eta, $Failed}");
+    assert!(r.warnings.iter().any(|w| {
+      w.contains(&format!("FindList::noopen: Cannot open {b}/nofile.txt."))
+    }));
+
+    // Argument validation: counts, types, and option positions (message
+    // displays use OutputForm — strings without quotes).
+    let r = interpret_with_stdout("FindList[]").unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindList::argt: FindList called with 0 arguments; 2 or 3 arguments are expected."
+    )));
+
+    let r = interpret_with_stdout(r#"FindList["file.txt"]"#).unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindList::argtu: FindList called with 1 argument; 2 or 3 arguments are expected."
+    )));
+
+    let r = interpret_with_stdout(r#"FindList[5, "alpha"]"#).unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindList::stream: 5 is not a string, SocketObject, InputStream[ ] or OutputStream[ ]."
+    )));
+
+    let r = interpret_with_stdout(r#"FindList["f.txt", 5]"#).unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindList::strs: A string or nonempty list of strings is expected at position 2 in FindList[f.txt, 5]."
+    )));
+
+    let r = interpret_with_stdout(r#"FindList["f.txt", {}]"#).unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindList::strs: A string or nonempty list of strings is expected at position 2 in FindList[f.txt, {}]."
+    )));
+
+    let r = interpret_with_stdout(r#"FindList["f.txt", "alpha", -1]"#).unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindList::intnm: Non-negative machine-sized integer expected at position 3 in FindList[f.txt, alpha, -1]."
+    )));
+
+    let r =
+      interpret_with_stdout(r#"FindList["f.txt", "alpha", 2, 9]"#).unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "FindList::nonopt: Options expected (instead of 9) beyond position 3 in FindList[f.txt, alpha, 2, 9]. An option must be a rule or a list of rules."
+    )));
+  }
+}

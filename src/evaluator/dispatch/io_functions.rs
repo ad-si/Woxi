@@ -889,6 +889,135 @@ pub fn dispatch_io_functions(
       return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
     }
     #[cfg(not(target_arch = "wasm32"))]
+    "FindList" => {
+      // FindList[file(s), text(s)[, n]] — all lines containing any of the
+      // search strings (literal, case-sensitive substrings). Errors return
+      // $Failed with the matching wolframscript message; a failed file in
+      // a file LIST contributes a $Failed element instead.
+      let failed = || Some(Ok(Expr::Identifier("$Failed".to_string())));
+      let call_display = || {
+        crate::syntax::expr_to_output(&Expr::FunctionCall {
+          name: "FindList".to_string(),
+          args: args.to_vec().into(),
+        })
+      };
+      if args.len() < 2 {
+        let (tag, noun) = if args.len() == 1 {
+          ("argtu", "1 argument")
+        } else {
+          ("argt", "0 arguments")
+        };
+        crate::emit_message(&format!(
+          "FindList::{}: FindList called with {}; 2 or 3 arguments are expected.",
+          tag, noun
+        ));
+        return failed();
+      }
+      if args.len() > 3 {
+        for extra in &args[3..] {
+          let is_opt = matches!(
+            extra,
+            Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+          );
+          if !is_opt {
+            crate::emit_message(&format!(
+              "FindList::nonopt: Options expected (instead of {}) beyond position 3 in {}. An option must be a rule or a list of rules.",
+              crate::syntax::expr_to_string(extra),
+              call_display()
+            ));
+            return failed();
+          }
+        }
+      }
+      let terms: Vec<String> = match &args[1] {
+        Expr::String(s) => vec![s.clone()],
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|it| matches!(it, Expr::String(_))) =>
+        {
+          items
+            .iter()
+            .map(|it| {
+              let Expr::String(s) = it else { unreachable!() };
+              s.clone()
+            })
+            .collect()
+        }
+        _ => {
+          crate::emit_message(&format!(
+            "FindList::strs: A string or nonempty list of strings is expected at position 2 in {}.",
+            call_display()
+          ));
+          return failed();
+        }
+      };
+      let limit: usize = match args.get(2) {
+        None => usize::MAX,
+        Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
+        Some(_) => {
+          crate::emit_message(&format!(
+            "FindList::intnm: Non-negative machine-sized integer expected at position 3 in {}.",
+            call_display()
+          ));
+          return failed();
+        }
+      };
+      let (files, is_list): (Vec<Expr>, bool) = match &args[0] {
+        Expr::String(_) => (vec![args[0].clone()], false),
+        Expr::List(items) => (items.iter().cloned().collect(), true),
+        other => {
+          crate::emit_message(&format!(
+            "FindList::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
+            crate::syntax::expr_to_string(other)
+          ));
+          return failed();
+        }
+      };
+      let mut out: Vec<Expr> = Vec::new();
+      let mut found = 0usize;
+      for f in &files {
+        if found >= limit {
+          break;
+        }
+        let Expr::String(path) = f else {
+          crate::emit_message(&format!(
+            "FindList::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
+            crate::syntax::expr_to_string(f)
+          ));
+          if !is_list {
+            return failed();
+          }
+          out.push(Expr::Identifier("$Failed".to_string()));
+          continue;
+        };
+        match std::fs::read_to_string(path) {
+          Err(_) => {
+            crate::emit_message(&format!(
+              "FindList::noopen: Cannot open {}.",
+              path
+            ));
+            if !is_list {
+              return failed();
+            }
+            out.push(Expr::Identifier("$Failed".to_string()));
+          }
+          Ok(content) => {
+            for line in content.lines() {
+              if found >= limit {
+                break;
+              }
+              let stripped = line.trim_end_matches('\r');
+              if terms.iter().any(|t| stripped.contains(t.as_str())) {
+                out.push(Expr::String(stripped.to_string()));
+                found += 1;
+              }
+            }
+          }
+        }
+      }
+      return Some(Ok(Expr::List(out.into())));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     "CreateFile" => {
       let filename_opt = if args.is_empty() {
         None
