@@ -2717,16 +2717,17 @@ pub fn dispatch_io_functions(
         } else {
           -1 // default: drop last component
         };
-        let parts: Vec<&str> = path.split('/').collect();
+        let sep = std::path::MAIN_SEPARATOR_STR;
+        let parts: Vec<&str> = path.split(sep).collect();
         let total = parts.len() as i128;
         let result = if n >= 0 {
           // Drop first n components
           let skip = (n as usize).min(parts.len());
-          parts[skip..].join("/")
+          parts[skip..].join(sep)
         } else {
           // Drop last |n| components
           let keep = (total + n).max(0) as usize;
-          parts[..keep].join("/")
+          parts[..keep].join(sep)
         };
         return Some(Ok(Expr::String(result)));
       }
