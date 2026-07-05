@@ -4662,3 +4662,105 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
     })
   }
 }
+
+/// AnglePath3D[{step1, step2, …}] — the 3D angle path: an orientation frame
+/// starts at the identity and each step left-multiplies it by
+/// RollPitchYawMatrix of the NEGATED angles, then moves along the frame's
+/// first row. Steps are {α, β, γ} angle triples or {dist, {α, β, γ}} pairs.
+/// All arithmetic goes through the evaluator, so exact angles give exact
+/// radical coordinates like wolframscript's. Invalid specifications emit
+/// ::steps.
+pub fn angle_path_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "AnglePath3D".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let steps_err = || {
+    crate::emit_message(&format!(
+      "AnglePath3D::steps: Invalid steps specification {}.",
+      crate::syntax::expr_to_output(&args[0])
+    ));
+    Ok(Expr::FunctionCall {
+      name: "AnglePath3D".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let Expr::List(steps) = &args[0] else {
+    return steps_err();
+  };
+
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let fc = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: a.into(),
+  };
+  let zero = || Expr::Integer(0);
+  // Real step data gives a real origin ({0., 0., 0.}), like wolframscript.
+  fn contains_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(..) => true,
+      Expr::List(items) => items.iter().any(contains_real),
+      _ => false,
+    }
+  }
+  let origin = || {
+    if steps.iter().any(contains_real) {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    }
+  };
+  let mut point = Expr::List(vec![origin(), origin(), origin()].into());
+  // The frame as an explicit 3×3 matrix expression, starting at identity.
+  let mut frame = Expr::List(
+    vec![
+      Expr::List(vec![Expr::Integer(1), zero(), zero()].into()),
+      Expr::List(vec![zero(), Expr::Integer(1), zero()].into()),
+      Expr::List(vec![zero(), zero(), Expr::Integer(1)].into()),
+    ]
+    .into(),
+  );
+  let mut points: Vec<Expr> = vec![point.clone()];
+
+  for step in steps.iter() {
+    // {α, β, γ} or {dist, {α, β, γ}}.
+    let (dist, angles): (Option<&Expr>, &crate::ExprList) = match step {
+      Expr::List(items) if items.len() == 3 => (None, items),
+      Expr::List(items)
+        if items.len() == 2
+          && matches!(&items[1], Expr::List(a) if a.len() == 3) =>
+      {
+        match &items[1] {
+          Expr::List(a) => (Some(&items[0]), a),
+          _ => unreachable!(),
+        }
+      }
+      _ => return steps_err(),
+    };
+    let negated = Expr::List(
+      angles
+        .iter()
+        .map(|a| fc("Times", vec![Expr::Integer(-1), a.clone()]))
+        .collect(),
+    );
+    let rotation = eval(&fc("RollPitchYawMatrix", vec![negated]))?;
+    if !matches!(&rotation, Expr::List(_)) {
+      // Symbolic angles keep the whole call unevaluated.
+      return unevaluated();
+    }
+    frame = eval(&fc("Dot", vec![rotation, frame.clone()]))?;
+    let mut direction =
+      eval(&fc("Part", vec![frame.clone(), Expr::Integer(1)]))?;
+    if let Some(d) = dist {
+      direction = eval(&fc("Times", vec![d.clone(), direction]))?;
+    }
+    point = eval(&fc("Plus", vec![point.clone(), direction]))?;
+    points.push(point.clone());
+  }
+  Ok(Expr::List(points.into()))
+}

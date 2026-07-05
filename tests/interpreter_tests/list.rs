@@ -16460,3 +16460,57 @@ mod coordinate_bounds_array_spec_tests {
     );
   }
 }
+
+mod angle_path_3d_tests {
+  use woxi::interpret;
+
+  // The orientation frame accumulates left-multiplied RollPitchYaw
+  // rotations of the negated angles; each step moves along the frame's
+  // first row.
+  #[test]
+  fn exact_paths() {
+    assert_eq!(
+      interpret("AnglePath3D[{{Pi/2, 0, 0}, {0, Pi/2, 0}}]").unwrap(),
+      "{{0, 0, 0}, {0, 1, 0}, {0, 1, -1}}"
+    );
+    assert_eq!(
+      interpret("AnglePath3D[{{Pi/2, 0, 0}, {0, Pi/2, 0}, {0, 0, Pi/2}}]")
+        .unwrap(),
+      "{{0, 0, 0}, {0, 1, 0}, {0, 1, -1}, {0, 1, -2}}"
+    );
+    // Exact angles give exact radical coordinates.
+    assert_eq!(
+      interpret("AnglePath3D[{{Pi/6, Pi/4, Pi/3}}]").unwrap(),
+      "{{0, 0, 0}, {Sqrt[3/2]/2, 1/(2*Sqrt[2]), -(1/Sqrt[2])}}"
+    );
+    assert_eq!(interpret("AnglePath3D[{}]").unwrap(), "{{0, 0, 0}}");
+  }
+
+  // {dist, {α, β, γ}} pairs scale the step.
+  #[test]
+  fn distance_pairs() {
+    assert_eq!(
+      interpret("AnglePath3D[{{2, {Pi/2, 0, 0}}, {3, {0, Pi/2, 0}}}]").unwrap(),
+      "{{0, 0, 0}, {0, 2, 0}, {0, 2, -3}}"
+    );
+  }
+
+  // Real step data gives a real origin and machine coordinates matching
+  // wolframscript to the last digit.
+  #[test]
+  fn real_paths() {
+    assert_eq!(
+      interpret("AnglePath3D[{{0.5, 0.3, 0.1}}]").unwrap(),
+      "{{0., 0., 0.}, {0.8383866435942036, 0.45801271084729195, -0.29552020666133955}}"
+    );
+    assert_eq!(
+      interpret("AnglePath3D[{{0.5, 0.3, 0.1}, {0.2, 0.1, 0.4}}]").unwrap(),
+      "{{0., 0., 0.}, {0.8383866435942036, 0.45801271084729195, -0.29552020666133955}, {1.5362365645138127, 1.0747330739889946, -0.6597474455642828}}"
+    );
+  }
+
+  #[test]
+  fn invalid_steps() {
+    assert_eq!(interpret("AnglePath3D[x]").unwrap(), "AnglePath3D[x]");
+  }
+}

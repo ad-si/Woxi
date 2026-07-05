@@ -2999,6 +2999,9 @@ pub fn dispatch_list_operations(
     "AnglePath" => {
       return Some(list_helpers_ast::angle_path_ast(args));
     }
+    "AnglePath3D" if args.len() == 1 => {
+      return Some(list_helpers_ast::angle_path_3d_ast(args));
+    }
     "FindPeaks" if args.len() == 1 => {
       return Some(list_helpers_ast::find_peaks_ast(&args[0]));
     }

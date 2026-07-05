@@ -3923,7 +3923,7 @@ VertexCapacity,,,,9.0,4027
 WeaklyConnectedGraphQ,Test whether a directed graph is weakly connected (underlying undirected graph is connected),✅,pure,9.0,4027
 WindowStatusArea,,🚫,,6.0,4027
 WinsorizedMean,Mean after winsorizing extreme values,✅,none,11.1,4027
-AnglePath3D,,,,11.1,4052
+AnglePath3D,3D angle path from successive {roll pitch yaw} rotations with unit or {dist angles} steps (exact radicals for exact angles),✅,pure,11.1,4052
 AudioPitchShift,Shift audio pitch by a ratio or semitone quantity preserving duration,✅,pure,11.0,4052
 BaseEncode,Base64-encode a ByteArray to a string,✅,pure,11.3,4052
 ButtonMinHeight,,🚫,,3.0,4052
