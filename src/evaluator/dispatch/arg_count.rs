@@ -35,6 +35,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "AnyMatch" => Some((1, 3)),
     "AnyTrue" => Some((2, 3)),
     "Apart" => Some((1, 2)),
+    "ApartSquareFree" => Some((1, 2)),
     // 1-arg forms are the unapplied operator form, e.g. Append[x][list].
     "Append" => Some((1, 2)),
     "AppellF1" => Some((6, 6)),

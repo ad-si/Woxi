@@ -3645,7 +3645,7 @@ StateOutputEstimator,,,,8.0,3737
 SurvivalDistribution,,,,8.0,3737
 SuzukiDistribution,,,,8.0,3737
 WindowOpacity,,🚫,,6.0,3737
-ApartSquareFree,,,,6.0,3755
+ApartSquareFree,Partial fractions over the denominator's syntactic factor bases without factoring them (whole part split off; lists thread),✅,pure,6.0,3755
 CircularUnitaryMatrixDistribution,,,,10.3,3755
 ColorDetect,,🚫,,12.0,3755
 CoordinateBoundingBox,Bounding box corners of a list of points with optional padding,✅,none,10.1,3755

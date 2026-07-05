@@ -1144,3 +1144,274 @@ fn apart_symbolic(
     });
   Ok(summed)
 }
+
+/// ApartSquareFree[expr] / ApartSquareFree[expr, var] — partial fraction
+/// decomposition over the denominator's *syntactic* factorization: the
+/// bases of the powers in the product are used exactly as given and never
+/// factored further. So 1/(x^2 - 1) stays put (one square-free base) while
+/// 1/((x - 1) (x + 2)^2) splits fully, and an expanded 1/(x^2 + x - 2)^2
+/// keeps its quadratic base. Reuses Apart's rational linear solve; the
+/// whole part of improper fractions is split off first.
+pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Ok(Expr::FunctionCall {
+      name: "ApartSquareFree".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  // Thread over lists, like Apart.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| {
+        let mut sub = vec![item.clone()];
+        sub.extend(args[1..].iter().cloned());
+        apart_square_free_ast(&sub)
+      })
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
+
+  let unchanged = || Ok(args[0].clone());
+  let (num, den) = super::together::extract_num_den(&args[0]);
+  if matches!(&den, Expr::Integer(1)) {
+    return unchanged();
+  }
+  let var = if args.len() == 2 {
+    match &args[1] {
+      Expr::Identifier(name) => name.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "ApartSquareFree".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
+  } else {
+    match find_single_variable(&args[0]) {
+      Some(v) => v,
+      None => return unchanged(),
+    }
+  };
+
+  // The denominator's syntactic factors: bases of integer powers in the
+  // product, with constant factors folded into an overall scale.
+  fn collect_syntactic_factors(e: &Expr, out: &mut Vec<(Expr, usize)>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        collect_syntactic_factors(left, out);
+        collect_syntactic_factors(right, out);
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          collect_syntactic_factors(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        if let Expr::Integer(k) = right.as_ref()
+          && *k >= 1
+        {
+          out.push(((**left).clone(), *k as usize));
+        } else {
+          out.push((e.clone(), 1));
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        if let Expr::Integer(k) = &args[1]
+          && *k >= 1
+        {
+          out.push((args[0].clone(), *k as usize));
+        } else {
+          out.push((e.clone(), 1));
+        }
+      }
+      _ => out.push((e.clone(), 1)),
+    }
+  }
+  let mut raw_factors: Vec<(Expr, usize)> = Vec::new();
+  collect_syntactic_factors(&den, &mut raw_factors);
+
+  let mut scale: i128 = 1;
+  // Distinct bases by coefficient vector, multiplicities summed, in the
+  // order given.
+  let mut groups: Vec<(Vec<i128>, usize)> = Vec::new();
+  for (base, mult) in &raw_factors {
+    let coeffs = match extract_poly_coeffs(&expand_and_combine(base), &var) {
+      Some(c) => c,
+      None => return unchanged(),
+    };
+    if coeffs.len() <= 1 {
+      // Constant factor: fold its mult-th power into the scale.
+      let c = coeffs.first().copied().unwrap_or(0);
+      if c == 0 {
+        return unchanged();
+      }
+      for _ in 0..*mult {
+        scale = match scale.checked_mul(c) {
+          Some(s) => s,
+          None => return unchanged(),
+        };
+      }
+      continue;
+    }
+    if let Some(g) = groups.iter_mut().find(|(f, _)| *f == coeffs) {
+      g.1 += mult;
+    } else {
+      groups.push((coeffs, *mult));
+    }
+  }
+  if groups.is_empty() {
+    return unchanged();
+  }
+  let num_coeffs = match extract_poly_coeffs(&expand_and_combine(&num), &var) {
+    Some(c) => c,
+    None => return unchanged(),
+  };
+
+  let mut prod_nc = vec![1i128];
+  for (f, m) in &groups {
+    for _ in 0..*m {
+      prod_nc = poly_mul_i128(&prod_nc, f);
+    }
+  }
+  let deg_d = prod_nc.len() - 1;
+
+  // Split off the whole part with rational long division.
+  let mut rem: Vec<Rat> =
+    num_coeffs.iter().map(|&c| Rat::new(c, scale)).collect();
+  let mut quot: Vec<Rat> = vec![Rat::int(0); rem.len().saturating_sub(deg_d)];
+  let lead = Rat::int(*prod_nc.last().unwrap());
+  while rem.len() > deg_d {
+    let l = *rem.last().unwrap();
+    let pos = rem.len() - 1 - deg_d;
+    if !l.is_zero() {
+      let c = l.div(lead);
+      quot[pos] = c;
+      for (i, &p) in prod_nc.iter().enumerate() {
+        rem[pos + i] = rem[pos + i].sub(c.mul(Rat::int(p)));
+      }
+    }
+    rem.pop();
+  }
+
+  // The same column basis Apart's general solver uses, but over the
+  // syntactic groups: unknown numerators of degree < deg(base) for each
+  // power of each base. A singular or ill-sized system (e.g. non-coprime
+  // bases) leaves the input unchanged.
+  let mut basis: Vec<Vec<Rat>> = Vec::new();
+  let mut meta: Vec<(usize, usize, usize)> = Vec::new();
+  for (gi, (f, e)) in groups.iter().enumerate() {
+    let dfi = f.len() - 1;
+    for k in 1..=*e {
+      let mut fk = vec![1i128];
+      for _ in 0..k {
+        fk = poly_mul_i128(&fk, f);
+      }
+      let base = match crate::functions::polynomial_ast::poly_exact_divide(
+        &prod_nc, &fk,
+      ) {
+        Some(b) => b,
+        None => return unchanged(),
+      };
+      for t in 0..dfi {
+        let mut col = vec![Rat::int(0); deg_d];
+        for (i, &c) in base.iter().enumerate() {
+          let idx = i + t;
+          if idx >= deg_d {
+            return unchanged();
+          }
+          col[idx] = Rat::int(c);
+        }
+        basis.push(col);
+        meta.push((gi, k, t));
+      }
+    }
+  }
+  if basis.len() != deg_d {
+    return unchanged();
+  }
+  let mut rhs = vec![Rat::int(0); deg_d];
+  for (i, &c) in rem.iter().enumerate() {
+    rhs[i] = c;
+  }
+  let mat: Vec<Vec<Rat>> = (0..deg_d)
+    .map(|r| basis.iter().map(|col| col[r]).collect())
+    .collect();
+  let sol = match solve_rat_system(mat, rhs) {
+    Some(s) => s,
+    None => return unchanged(),
+  };
+
+  let mut term_nums: Vec<((usize, usize), Vec<Rat>)> = Vec::new();
+  for (u, &(gi, k, t)) in meta.iter().enumerate() {
+    let dfi = groups[gi].0.len() - 1;
+    if let Some((_, v)) = term_nums
+      .iter_mut()
+      .find(|((g, kk), _)| *g == gi && *kk == k)
+    {
+      v[t] = sol[u];
+    } else {
+      let mut v = vec![Rat::int(0); dfi];
+      v[t] = sol[u];
+      term_nums.push(((gi, k), v));
+    }
+  }
+
+  let mut terms: Vec<Expr> = Vec::new();
+  // Whole part first (evaluation re-sorts the sum canonically anyway).
+  for (p, &c) in quot.iter().enumerate() {
+    if c.is_zero() {
+      continue;
+    }
+    let coeff = if c.d == 1 {
+      Expr::Integer(c.n)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(c.n), Expr::Integer(c.d)].into(),
+      }
+    };
+    let term = match p {
+      0 => coeff,
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          coeff,
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![Expr::Identifier(var.clone()), Expr::Integer(p as i128)]
+              .into(),
+          },
+        ]
+        .into(),
+      },
+    };
+    terms.push(term);
+  }
+  for (gi, (f, _e)) in groups.iter().enumerate() {
+    let mut ks: Vec<&((usize, usize), Vec<Rat>)> =
+      term_nums.iter().filter(|((g, _), _)| *g == gi).collect();
+    ks.sort_by_key(|((_, k), _)| *k);
+    for ((_, k), pnum) in ks {
+      if pnum.iter().all(|r| r.is_zero()) {
+        continue;
+      }
+      terms.push(build_apart_term(pnum, f, *k, &var));
+    }
+  }
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  let sum = build_sum(terms);
+  Ok(crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum))
+}

@@ -10164,3 +10164,73 @@ mod sqrt_ratio_combination {
     );
   }
 }
+
+mod apart_square_free_tests {
+  use woxi::interpret;
+
+  // The denominator's syntactic bases are used as given and never factored:
+  // an expanded square-free denominator stays put.
+  #[test]
+  fn square_free_bases_stay_unfactored() {
+    assert_eq!(
+      interpret("ApartSquareFree[1/(x^2 - 1)]").unwrap(),
+      "(-1 + x^2)^(-1)"
+    );
+    assert_eq!(
+      interpret("ApartSquareFree[1/(x^2 + x - 2)^2]").unwrap(),
+      "(-2 + x + x^2)^(-2)"
+    );
+    // …while explicitly factored products split fully.
+    assert_eq!(
+      interpret("ApartSquareFree[(3 + x)/((1 + x) (2 + x))]").unwrap(),
+      "2/(1 + x) - (2 + x)^(-1)"
+    );
+  }
+
+  #[test]
+  fn repeated_factors_split() {
+    assert_eq!(
+      interpret("ApartSquareFree[(x^2 + 1)/((x - 1)^2 (x + 2))]").unwrap(),
+      "2/(3*(-1 + x)^2) + 4/(9*(-1 + x)) + 5/(9*(2 + x))"
+    );
+    assert_eq!(
+      interpret("ApartSquareFree[(x^2 + 1)/((x - 1)^2 (x + 2)^2)]").unwrap(),
+      "2/(9*(-1 + x)^2) + 2/(27*(-1 + x)) + 5/(9*(2 + x)^2) - 2/(27*(2 + x))"
+    );
+    assert_eq!(
+      interpret("ApartSquareFree[1/((x - 1) (x + 2)^2)]").unwrap(),
+      "1/(9*(-1 + x)) - 1/(3*(2 + x)^2) - 1/(9*(2 + x))"
+    );
+  }
+
+  // Quadratic bases stay quadratic in the split terms.
+  #[test]
+  fn quadratic_bases() {
+    assert_eq!(
+      interpret("ApartSquareFree[1/((x^2 + 1) (x - 1)^2)]").unwrap(),
+      "1/(2*(-1 + x)^2) - 1/(2*(-1 + x)) + x/(2*(1 + x^2))"
+    );
+    assert_eq!(
+      interpret("ApartSquareFree[1/((x^2 - 2) (x - 1)^2)]").unwrap(),
+      "-(-1 + x)^(-2) - 2/(-1 + x) + (3 + 2*x)/(-2 + x^2)"
+    );
+  }
+
+  // Improper fractions split off their whole part; non-polynomial
+  // numerators pass through; lists thread.
+  #[test]
+  fn whole_parts_and_fallbacks() {
+    assert_eq!(
+      interpret("ApartSquareFree[(x^2 + 1)/(x^2 - 1)]").unwrap(),
+      "1 + 2/(-1 + x^2)"
+    );
+    assert_eq!(
+      interpret("ApartSquareFree[Sin[x]/(x^2 - 1)]").unwrap(),
+      "Sin[x]/(-1 + x^2)"
+    );
+    assert_eq!(
+      interpret("ApartSquareFree[{1/((x-1)(x+2)^2), 1/(x^2-1)}]").unwrap(),
+      "{1/(9*(-1 + x)) - 1/(3*(2 + x)^2) - 1/(9*(2 + x)), (-1 + x^2)^(-1)}"
+    );
+  }
+}
