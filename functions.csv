@@ -4117,7 +4117,7 @@ TransferFunctionCancel,,🚫,,8.0,4225
 AsymptoticRSolveValue,,,,12.0,4262
 BooleanMaxterms,Conjunction of maxterms from True/False rows or indices (ascending index order; dual of BooleanMinterms),✅,pure,7.0,4262
 CalendarData,,🚫,,9.0,4262
-CauchyWindow,,,,9.0,4262
+CauchyWindow,Cauchy window 1/(1+(2 alpha x)^2) on [-1/2 1/2] (default alpha 3; exact rationals),✅,pure,9.0,4262
 ClearCookies,,🚫,,11.0,4262
 ConfirmMatch,,,,12.2,4262
 ConnesWindow,Compute ConnesWindow value,✅,pure,9.0,4262
@@ -4140,7 +4140,7 @@ NondimensionalizationTransform,,,,11.3,4262
 ObservabilityGramian,,,,8.0,4262
 OperatorApplied,Builds an operator that applies a function to arguments supplied one at a time,✅,pure,12.1,4262
 OrderingBy,Gives the positions that order a list by a function applied to each element,✅,pure,12.0,4262
-PoissonWindow,,,,9.0,4262
+PoissonWindow,Poisson window E^(-2 alpha abs x) on [-1/2 1/2] (default alpha 3; unfolded E powers),✅,pure,9.0,4262
 QuartileSkewness,Bowley (quartile) skewness coefficient of a list (or columnwise for a matrix),✅,pure,6.0,4262
 SequencePredict,,🚫,,11.1,4262
 SnDispersion,,,,11.1,4262
@@ -4203,7 +4203,7 @@ WienerFilter,Remove locally stationary noise via a local Wiener estimator (1D/2D
 ActivePrediction,,🚫,,11.1,4356
 AudioChannelCombine,,🚫,,11.0,4356
 AudioSplit,,🚫,,11.0,4356
-BartlettHannWindow,,,,9.0,4356
+BartlettHannWindow,Bartlett-Hann window 31/50 - (12/25) abs x + (19/50) Cos[2 Pi x] on [-1/2 1/2],✅,pure,9.0,4356
 Chebyshev1FilterModel,,,,9.0,4356
 ColorToneMapping,,🚫,,10.2,4356
 DeleteChannel,,🚫,,11.0,4356
@@ -4253,7 +4253,7 @@ FunctionSurjective,,,,12.2,4387
 GaugeFaceElementFunction,,🚫,,9.0,4387
 ImageContents,,🚫,,12.0,4387
 JuliaSetBoettcher,,,,10.0,4387
-KaiserBesselWindow,,,,9.0,4387
+KaiserBesselWindow,Kaiser-Bessel window as wolframscript rational 4-term cosine sum {402 498 99 1}/1000,✅,pure,9.0,4387
 LanczosWindow,Compute LanczosWindow value,✅,pure,9.0,4387
 MathieuGroupM24,,,,8.0,4387
 PolygonAngle,Interior angle(s) of a polygon at its vertices,✅,pure,12.0,4387

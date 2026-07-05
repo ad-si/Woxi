@@ -576,9 +576,20 @@ pub fn dispatch_math_functions(
     | "BlackmanNuttallWindow"
     | "NuttallWindow"
     | "FlatTopWindow"
+    | "KaiserBesselWindow"
       if args.len() == 1 =>
     {
       return Some(crate::functions::math_ast::cosine_sum_window_ast(
+        name, args,
+      ));
+    }
+    "CauchyWindow" | "PoissonWindow" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::parametric_window_ast(
+        name, args,
+      ));
+    }
+    "BartlettHannWindow" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::parametric_window_ast(
         name, args,
       ));
     }

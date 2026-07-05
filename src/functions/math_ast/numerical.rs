@@ -6786,6 +6786,9 @@ pub fn cosine_sum_window_ast(
       &[215578947, 416631580, 277263158, 83578947, 6947368],
       1000000000,
     ),
+    // wolframscript's KaiserBesselWindow is this rational 4-term
+    // cosine-sum approximation (fitted exactly from its outputs).
+    "KaiserBesselWindow" => (&[402, 498, 99, 1], 1000),
     _ => return Ok(unevaluated()),
   };
 
@@ -7025,4 +7028,136 @@ pub fn discrete_hadamard_transform_ast(
     }
   }
   Ok(Expr::List(out.into()))
+}
+
+/// CauchyWindow[x] / CauchyWindow[x, α] — 1/(1 + (2αx)²) on [-1/2, 1/2]
+/// (default α = 3), zero outside; PoissonWindow[x] / [x, α] — E^(-2α|x|);
+/// BartlettHannWindow[x] — 31/50 - (12/25)|x| + (19/50)Cos[2πx]. Exact
+/// arguments evaluate symbolically (Poisson keeps wolframscript's
+/// unfolded E^(-3/2) form); Reals numericize; symbolic arguments stay
+/// unevaluated.
+pub fn parametric_window_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let max_args = if name == "BartlettHannWindow" { 1 } else { 2 };
+  if args.is_empty() || args.len() > max_args {
+    return unevaluated();
+  }
+  let Some(x) = try_eval_to_f64(&args[0]) else {
+    return unevaluated();
+  };
+  let is_real = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..))
+    || matches!(args.get(1), Some(Expr::Real(_) | Expr::BigFloat(..)));
+  if !x.is_finite() {
+    return unevaluated();
+  }
+  if x.abs() > 0.5 {
+    return Ok(if is_real {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+  // The α parameter (Cauchy/Poisson only; default 3).
+  let alpha_expr = args.get(1).cloned().unwrap_or(Expr::Integer(3));
+  let Some(alpha) = try_eval_to_f64(&alpha_expr) else {
+    return unevaluated();
+  };
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let fc = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let rational = |p: i128, q: i128| Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
+  };
+  if is_real {
+    let pi = std::f64::consts::PI;
+    let v = match name {
+      "CauchyWindow" => 1.0 / (1.0 + (2.0 * alpha * x).powi(2)),
+      "PoissonWindow" => (-2.0 * alpha * x.abs()).exp(),
+      _ => {
+        31.0 / 50.0 - 12.0 / 25.0 * x.abs() + 19.0 / 50.0 * (2.0 * pi * x).cos()
+      }
+    };
+    return Ok(Expr::Real(v));
+  }
+  let expr = match name {
+    // 1/(1 + (2 α x)²)
+    "CauchyWindow" => fc(
+      "Power",
+      vec![
+        fc(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            fc(
+              "Power",
+              vec![
+                fc(
+                  "Times",
+                  vec![Expr::Integer(2), alpha_expr, args[0].clone()],
+                ),
+                Expr::Integer(2),
+              ],
+            ),
+          ],
+        ),
+        Expr::Integer(-1),
+      ],
+    ),
+    // E^(-2 α |x|)
+    "PoissonWindow" => fc(
+      "Power",
+      vec![
+        Expr::Identifier("E".to_string()),
+        fc(
+          "Times",
+          vec![
+            Expr::Integer(-2),
+            alpha_expr,
+            fc("Abs", vec![args[0].clone()]),
+          ],
+        ),
+      ],
+    ),
+    // 31/50 - (12/25)|x| + (19/50)Cos[2 π x]
+    _ => fc(
+      "Plus",
+      vec![
+        rational(31, 50),
+        fc(
+          "Times",
+          vec![rational(-12, 25), fc("Abs", vec![args[0].clone()])],
+        ),
+        fc(
+          "Times",
+          vec![
+            rational(19, 50),
+            fc(
+              "Cos",
+              vec![fc(
+                "Times",
+                vec![
+                  Expr::Integer(2),
+                  Expr::Identifier("Pi".to_string()),
+                  args[0].clone(),
+                ],
+              )],
+            ),
+          ],
+        ),
+      ],
+    ),
+  };
+  let _ = alpha;
+  eval(&expr)
 }

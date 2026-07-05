@@ -8191,3 +8191,71 @@ mod discrete_hadamard_transform_tests {
     );
   }
 }
+
+mod parametric_window_tests {
+  use woxi::interpret;
+
+  // CauchyWindow[x, α] = 1/(1 + (2αx)²) with default α = 3.
+  #[test]
+  fn cauchy_window() {
+    assert_eq!(interpret("CauchyWindow[1/4]").unwrap(), "4/13");
+    assert_eq!(interpret("CauchyWindow[0]").unwrap(), "1");
+    assert_eq!(interpret("CauchyWindow[1/6]").unwrap(), "1/2");
+    assert_eq!(interpret("CauchyWindow[1/4, 5]").unwrap(), "4/29");
+    assert_eq!(interpret("CauchyWindow[1/4, 5/2]").unwrap(), "16/41");
+    assert_eq!(interpret("CauchyWindow[-1/4]").unwrap(), "4/13");
+    assert_eq!(interpret("CauchyWindow[3/4]").unwrap(), "0");
+    assert_eq!(
+      interpret("CauchyWindow[0.2]").unwrap(),
+      "0.40983606557377045"
+    );
+    assert_eq!(interpret("CauchyWindow[x]").unwrap(), "CauchyWindow[x]");
+  }
+
+  // PoissonWindow[x, α] = E^(-2α|x|); exact results keep the unfolded
+  // E^(-3/2) form.
+  #[test]
+  fn poisson_window() {
+    assert_eq!(interpret("PoissonWindow[1/4]").unwrap(), "E^(-3/2)");
+    assert_eq!(interpret("PoissonWindow[1/4, 5]").unwrap(), "E^(-5/2)");
+    assert_eq!(interpret("PoissonWindow[-1/3]").unwrap(), "E^(-2)");
+    assert_eq!(interpret("PoissonWindow[0]").unwrap(), "1");
+    assert_eq!(
+      interpret("PoissonWindow[0.2]").unwrap(),
+      "0.301194211912202"
+    );
+  }
+
+  // BartlettHannWindow[x] = 31/50 - (12/25)|x| + (19/50)Cos[2πx].
+  #[test]
+  fn bartlett_hann_window() {
+    assert_eq!(interpret("BartlettHannWindow[1/4]").unwrap(), "1/2");
+    assert_eq!(interpret("BartlettHannWindow[0]").unwrap(), "1");
+    assert_eq!(interpret("BartlettHannWindow[1/6]").unwrap(), "73/100");
+    assert_eq!(interpret("BartlettHannWindow[1/3]").unwrap(), "27/100");
+    assert_eq!(interpret("BartlettHannWindow[-1/4]").unwrap(), "1/2");
+    assert_eq!(
+      interpret("BartlettHannWindow[0.2]").unwrap(),
+      "0.6414264578624801"
+    );
+  }
+
+  // wolframscript's KaiserBesselWindow is a rational 4-term cosine sum
+  // with coefficients {402, 498, 99, 1}/1000 (fitted exactly).
+  #[test]
+  fn kaiser_bessel_window() {
+    assert_eq!(interpret("KaiserBesselWindow[1/4]").unwrap(), "303/1000");
+    assert_eq!(interpret("KaiserBesselWindow[0]").unwrap(), "1");
+    assert_eq!(interpret("KaiserBesselWindow[1/2]").unwrap(), "1/500");
+    assert_eq!(interpret("KaiserBesselWindow[1/6]").unwrap(), "1201/2000");
+    assert_eq!(
+      interpret("KaiserBesselWindow[0.2]").unwrap(),
+      "0.47498876376122917"
+    );
+    // One argument only (::argx for more).
+    assert_eq!(
+      interpret("KaiserBesselWindow[1/4, 3]").unwrap(),
+      "KaiserBesselWindow[1/4, 3]"
+    );
+  }
+}

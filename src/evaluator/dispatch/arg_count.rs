@@ -290,7 +290,10 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     | "BlackmanHarrisWindow"
     | "BlackmanNuttallWindow"
     | "NuttallWindow"
-    | "FlatTopWindow" => Some((1, 1)),
+    | "FlatTopWindow"
+    | "KaiserBesselWindow"
+    | "BartlettHannWindow" => Some((1, 1)),
+    "CauchyWindow" | "PoissonWindow" => Some((1, 2)),
     "Default" => Some((1, 3)),
     "Definition" => Some((1, 1)),
     "Delete" => Some((1, 2)),
