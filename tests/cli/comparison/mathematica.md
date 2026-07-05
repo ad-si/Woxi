@@ -329,7 +329,9 @@ Woxi does **not** support.
 
 ### Version 6.0 (2007)
 
-- Dynamic UI panes: `Animate`, `Animator`, `LocatorPane`, `ClickPane`
+- Dynamic UI panes: `Animator`, `LocatorPane`, `ClickPane`
+    (`Animate` and `ListAnimate` now render as interactive auto-playing widgets
+    in the Playground and Studio)
 - Live mouse-driven manipulation of 2D/3D graphics in notebooks
 
 ### Version 5.0 (2003)
