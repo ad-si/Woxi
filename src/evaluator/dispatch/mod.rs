@@ -10471,6 +10471,14 @@ pub fn evaluate_function_call_ast_inner(
         | "ColorSetter"
         | "IntervalSlider"
         | "Slider2D"
+        // Structured-array display wrappers produced by LUDecomposition (and
+        // the other structured-matrix functions). Like the notation wrappers
+        // above, these are canonical inert forms wrapping a
+        // `StructuredArray`StructuredData[…]` object rather than a value to
+        // compute, so flagging them as "unimplemented" is a false positive.
+        | "LowerTriangularMatrix"
+        | "UpperTriangularMatrix"
+        | "PermutationMatrix"
     )
   {
     let args_str = args

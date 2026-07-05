@@ -3197,10 +3197,22 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 
   let n = rows.len();
   if n == 0 {
+    let empty = Expr::List(vec![].into());
+    let perm_data = Expr::List(
+      vec![
+        Expr::FunctionCall {
+          name: "Cycles".to_string(),
+          args: vec![Expr::List(vec![].into())].into(),
+        },
+        Expr::Identifier("Infinity".into()),
+      ]
+      .into(),
+    );
     return Ok(Expr::List(
       vec![
-        Expr::List(vec![].into()),
-        Expr::List(vec![].into()),
+        lu_structured_matrix("LowerTriangularMatrix", 0, empty.clone()),
+        lu_structured_matrix("UpperTriangularMatrix", 0, empty),
+        lu_structured_matrix("PermutationMatrix", 0, perm_data),
         Expr::Integer(0),
       ]
       .into(),
@@ -3225,19 +3237,44 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Machine-precision matrices (any Real entry) use magnitude-based partial
+  // pivoting like Wolfram; exact matrices pivot only to avoid a zero pivot.
+  let numeric = matrix
+    .iter()
+    .any(|row| row.iter().any(|e| matches!(e, Expr::Real(_))));
+
+  // Keep the original matrix for the condition-number computation, which must
+  // use the input (not the in-place L/U factors).
+  let original = matrix.clone();
+
   // Partial pivoting LU decomposition
   let mut pivots: Vec<usize> = (0..n).collect();
 
   for k in 0..n {
-    // Find pivot (first non-zero in column k, from row k downward)
-    // For symbolic: just check if it's Integer(0)
-    let mut pivot_row = k;
-    for i in k..n {
-      if !is_zero_expr(&matrix[i][k]) {
-        pivot_row = i;
-        break;
+    // Choose the pivot row. For machine matrices pick the largest magnitude in
+    // column k (numerical stability); for exact matrices take the first
+    // non-zero entry so no gratuitous permutation is introduced.
+    let pivot_row = if numeric {
+      let mut best_row = k;
+      let mut best_mag = lu_magnitude(&matrix[k][k]);
+      for i in (k + 1)..n {
+        let mag = lu_magnitude(&matrix[i][k]);
+        if mag > best_mag {
+          best_mag = mag;
+          best_row = i;
+        }
       }
-    }
+      best_row
+    } else {
+      let mut first = k;
+      for i in k..n {
+        if !is_zero_expr(&matrix[i][k]) {
+          first = i;
+          break;
+        }
+      }
+      first
+    };
 
     // Swap rows
     if pivot_row != k {
@@ -3298,20 +3335,191 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Build result
-  let lu_matrix =
-    Expr::List(matrix.into_iter().map(|v| Expr::List(v.into())).collect());
+  // Wolfram 15 returns the structured representation
+  //   {LowerTriangularMatrix[StructuredArray`StructuredData[{n, n}, L]],
+  //    UpperTriangularMatrix[StructuredArray`StructuredData[{n, n}, U]],
+  //    PermutationMatrix[StructuredArray`StructuredData[{n, n},
+  //                                                     {Cycles[…], Infinity}]],
+  //    c}
+  // where L is unit lower-triangular, U is upper-triangular, the permutation
+  // is given in cycle notation, and c is the ∞-norm condition number (0 for
+  // exact matrices, which Wolfram leaves uncomputed).
+  let one = if numeric {
+    Expr::Real(1.0)
+  } else {
+    Expr::Integer(1)
+  };
+  let zero = if numeric {
+    Expr::Real(0.0)
+  } else {
+    Expr::Integer(0)
+  };
 
-  let pivot_list = Expr::List(
-    pivots
-      .into_iter()
-      .map(|p| Expr::Integer((p + 1) as i128)) // 1-indexed
-      .collect(),
+  let mut lower: Vec<Expr> = Vec::with_capacity(n);
+  let mut upper: Vec<Expr> = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut l_row: Vec<Expr> = Vec::with_capacity(n);
+    let mut u_row: Vec<Expr> = Vec::with_capacity(n);
+    for j in 0..n {
+      match i.cmp(&j) {
+        std::cmp::Ordering::Greater => {
+          l_row.push(matrix[i][j].clone());
+          u_row.push(zero.clone());
+        }
+        std::cmp::Ordering::Equal => {
+          l_row.push(one.clone());
+          u_row.push(matrix[i][j].clone());
+        }
+        std::cmp::Ordering::Less => {
+          l_row.push(zero.clone());
+          u_row.push(matrix[i][j].clone());
+        }
+      }
+    }
+    lower.push(Expr::List(l_row.into()));
+    upper.push(Expr::List(u_row.into()));
+  }
+
+  let l_expr = Expr::List(lower.into());
+  let u_expr = Expr::List(upper.into());
+
+  let cond = if numeric {
+    lu_infinity_condition(&original)
+  } else {
+    Expr::Integer(0)
+  };
+
+  let perm_data = Expr::List(
+    vec![
+      lu_pivots_to_cycles(&pivots),
+      Expr::Identifier("Infinity".into()),
+    ]
+    .into(),
   );
 
   Ok(Expr::List(
-    vec![lu_matrix, pivot_list, Expr::Integer(0)].into(),
+    vec![
+      lu_structured_matrix("LowerTriangularMatrix", n, l_expr),
+      lu_structured_matrix("UpperTriangularMatrix", n, u_expr),
+      lu_structured_matrix("PermutationMatrix", n, perm_data),
+      cond,
+    ]
+    .into(),
   ))
+}
+
+/// Wrap a payload in `head[StructuredArray`StructuredData[{n, n}, payload]]`,
+/// the canonical structured-array form Wolfram uses for the LU factors.
+fn lu_structured_matrix(head: &str, n: usize, payload: Expr) -> Expr {
+  let dims =
+    Expr::List(vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into());
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "StructuredArray`StructuredData".to_string(),
+      args: vec![dims, payload].into(),
+    }]
+    .into(),
+  }
+}
+
+/// Convert a row permutation (0-indexed `pivots[i]` = original row now at
+/// position `i`) into `Cycles[{{…}, …}]` with fixed points dropped.
+fn lu_pivots_to_cycles(pivots: &[usize]) -> Expr {
+  let n = pivots.len();
+  let mut visited = vec![false; n];
+  let mut cycles: Vec<Expr> = Vec::new();
+  for start in 0..n {
+    if visited[start] || pivots[start] == start {
+      visited[start] = true;
+      continue;
+    }
+    let mut cycle: Vec<Expr> = Vec::new();
+    let mut j = start;
+    while !visited[j] {
+      visited[j] = true;
+      cycle.push(Expr::Integer((j + 1) as i128));
+      j = pivots[j];
+    }
+    if cycle.len() > 1 {
+      cycles.push(Expr::List(cycle.into()));
+    }
+  }
+  Expr::FunctionCall {
+    name: "Cycles".to_string(),
+    args: vec![Expr::List(cycles.into())].into(),
+  }
+}
+
+/// Numeric value of an expression (integer, real, or rational) via `N`.
+fn lu_num(e: &Expr) -> Option<f64> {
+  match evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![e.clone()].into(),
+  }) {
+    Ok(Expr::Real(r)) => Some(r),
+    Ok(Expr::Integer(i)) => Some(i as f64),
+    _ => None,
+  }
+}
+
+/// Magnitude of a numeric expression for pivot selection; non-numeric or
+/// unreadable entries sort as 0.
+fn lu_magnitude(e: &Expr) -> f64 {
+  lu_num(e).map(f64::abs).unwrap_or(0.0)
+}
+
+/// ∞-norm condition number ‖A‖∞·‖A⁻¹‖∞ of a machine matrix, matching Wolfram's
+/// third LUDecomposition element. Returns `Infinity` for a singular matrix.
+fn lu_infinity_condition(matrix: &[Vec<Expr>]) -> Expr {
+  let n = matrix.len();
+  let orig = Expr::List(
+    matrix
+      .iter()
+      .map(|row| Expr::List(row.clone().into()))
+      .collect(),
+  );
+  let norm_a = lu_infinity_norm(matrix);
+
+  let inv = match evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Inverse".to_string(),
+    args: vec![orig].into(),
+  }) {
+    Ok(e) => e,
+    _ => return Expr::Identifier("Infinity".into()),
+  };
+  let mut inv_mat: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  match &inv {
+    Expr::List(rows) if rows.len() == n => {
+      for row in rows.iter() {
+        match row {
+          Expr::List(cols) if cols.len() == n => inv_mat.push(cols.to_vec()),
+          _ => return Expr::Identifier("Infinity".into()),
+        }
+      }
+    }
+    _ => return Expr::Identifier("Infinity".into()),
+  }
+  let norm_inv = lu_infinity_norm(&inv_mat);
+  match (norm_a, norm_inv) {
+    (Some(a), Some(b)) => Expr::Real(a * b),
+    _ => Expr::Identifier("Infinity".into()),
+  }
+}
+
+/// Induced ∞-norm of a matrix: the maximum absolute row sum.
+fn lu_infinity_norm(matrix: &[Vec<Expr>]) -> Option<f64> {
+  let mut max_sum = 0.0_f64;
+  for row in matrix {
+    let mut sum = 0.0_f64;
+    for e in row {
+      sum += lu_num(e)?.abs();
+    }
+    if sum > max_sum {
+      max_sum = sum;
+    }
+  }
+  Some(max_sum)
 }
 
 fn is_zero_expr(expr: &Expr) -> bool {

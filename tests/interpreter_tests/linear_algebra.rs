@@ -2236,11 +2236,18 @@ mod find_fit {
 mod lu_decomposition {
   use super::*;
 
+  // Wolfram 15 returns the separate L and U factors and the row permutation as
+  // structured-array objects, followed by the ∞-norm condition number.
+
   #[test]
   fn basic_2x2() {
     assert_eq!(
       interpret("LUDecomposition[{{1, 2}, {3, 4}}]").unwrap(),
-      "{{{1, 2}, {3, -2}}, {1, 2}, 0}"
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {3, 1}}]], UpperTriangularMatrix[StructuredArray`\
+       StructuredData[{2, 2}, {{1, 2}, {0, -2}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {Cycles[{}], Infinity}]], 0}"
     );
   }
 
@@ -2248,7 +2255,12 @@ mod lu_decomposition {
   fn basic_3x3() {
     assert_eq!(
       interpret("LUDecomposition[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}]").unwrap(),
-      "{{{1, 2, 3}, {4, -3, -6}, {7, 2, 1}}, {1, 2, 3}, 0}"
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {{1, 0, 0}, {4, 1, 0}, {7, 2, 1}}]], \
+       UpperTriangularMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {{1, 2, 3}, {0, -3, -6}, {0, 0, 1}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {Cycles[{}], Infinity}]], 0}"
     );
   }
 
@@ -2256,7 +2268,25 @@ mod lu_decomposition {
   fn with_pivoting() {
     assert_eq!(
       interpret("LUDecomposition[{{0, 1}, {1, 0}}]").unwrap(),
-      "{{{1, 0}, {0, 1}}, {2, 1}, 0}"
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {0, 1}}]], UpperTriangularMatrix[StructuredArray`\
+       StructuredData[{2, 2}, {{1, 0}, {0, 1}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {Cycles[{{1, 2}}], Infinity}]], 0}"
+    );
+  }
+
+  // A machine matrix uses magnitude-based partial pivoting and reports the
+  // ∞-norm condition number ‖A‖∞·‖A⁻¹‖∞ = 4·0.8 = 3.2 as the last element.
+  #[test]
+  fn numeric_pivoting_and_condition_number() {
+    assert_eq!(
+      interpret("LUDecomposition[{{1., 3.}, {2., 1.}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1., 0.}, {0.5, 1.}}]], UpperTriangularMatrix[StructuredArray`\
+       StructuredData[{2, 2}, {{2., 1.}, {0., 2.5}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {Cycles[{{1, 2}}], Infinity}]], 3.2}"
     );
   }
 
@@ -2264,7 +2294,11 @@ mod lu_decomposition {
   fn symbolic() {
     assert_eq!(
       interpret("LUDecomposition[{{a, b}, {c, d}}]").unwrap(),
-      "{{{a, b}, {c/a, -((b*c)/a) + d}}, {1, 2}, 0}"
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {c/a, 1}}]], UpperTriangularMatrix[StructuredArray`\
+       StructuredData[{2, 2}, {{a, b}, {0, -((b*c)/a) + d}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {Cycles[{}], Infinity}]], 0}"
     );
   }
 
@@ -2272,7 +2306,11 @@ mod lu_decomposition {
   fn identity() {
     assert_eq!(
       interpret("LUDecomposition[{{1, 0}, {0, 1}}]").unwrap(),
-      "{{{1, 0}, {0, 1}}, {1, 2}, 0}"
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {0, 1}}]], UpperTriangularMatrix[StructuredArray`\
+       StructuredData[{2, 2}, {{1, 0}, {0, 1}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {Cycles[{}], Infinity}]], 0}"
     );
   }
 }
