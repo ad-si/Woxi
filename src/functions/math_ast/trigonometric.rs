@@ -834,6 +834,35 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
 }
 
 /// Negate an Expr, simplifying integer, rational, and division cases
+
+/// Canonicalize an exact-value table result with one evaluation pass. The
+/// tables build raw BinaryOp trees (e.g. Divide[1, Sqrt[2]]) that would
+/// otherwise nest instead of simplifying in downstream arithmetic like
+/// 2/Sin[Pi/4]. A negated sum distributes its sign first, so Cot[-Pi/12]
+/// keeps wolframscript's "-2 - Sqrt[3]" form rather than "-(2 + Sqrt[3])".
+fn canonicalize_exact_trig_value(
+  exact: Expr,
+) -> Result<Expr, crate::InterpreterError> {
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = &exact
+    && let Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } = operand.as_ref()
+  {
+    let distributed = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(negate_expr((**left).clone())),
+      right: Box::new(negate_expr((**right).clone())),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&distributed);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&exact)
+}
+
 pub fn negate_expr(mut expr: Expr) -> Expr {
   match &mut expr {
     Expr::Integer(n) => return Expr::Integer(-*n),
@@ -852,6 +881,16 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       return Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), Expr::FunctionCall { name, args }].into(),
+      };
+    }
+    // Canonical (evaluated) sums distribute the sign over every term, just
+    // like the BinaryOp arm below, so -Plus[2, Sqrt[3]] stays the additive
+    // "-2 - Sqrt[3]" instead of the factored "-(2 + Sqrt[3])".
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let args = std::mem::take(args);
+      return Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: args.iter().map(|a| negate_expr(a.clone())).collect(),
       };
     }
     // -(a + b) => (-a) + (-b): distribute over a sum so the result keeps the
@@ -1412,7 +1451,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sin(k, n)
   {
-    return Ok(exact);
+    return canonicalize_exact_trig_value(exact);
   }
   // Pi/2 shift: Sin[rest + k*Pi/2] -> +/-Sin/Cos[rest].
   if let Some(r) = try_trig_half_pi_shift("Sin", &args[0]) {
@@ -1606,7 +1645,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cos(k, n)
   {
-    return Ok(exact);
+    return canonicalize_exact_trig_value(exact);
   }
   if let Some(r) = try_trig_half_pi_shift("Cos", &args[0]) {
     return r;
@@ -1711,7 +1750,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_tan(k, n)
   {
-    return Ok(exact);
+    return canonicalize_exact_trig_value(exact);
   }
   if let Some(r) = try_trig_half_pi_shift("Tan", &args[0]) {
     return r;
@@ -1762,7 +1801,7 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sec(k, n)
   {
-    return Ok(exact);
+    return canonicalize_exact_trig_value(exact);
   }
   if let Some(r) = try_trig_half_pi_shift("Sec", &args[0]) {
     return r;
@@ -1814,7 +1853,7 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_csc(k, n)
   {
-    return Ok(exact);
+    return canonicalize_exact_trig_value(exact);
   }
   if let Some(r) = try_trig_half_pi_shift("Csc", &args[0]) {
     return r;
@@ -1866,7 +1905,7 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cot(k, n)
   {
-    return Ok(exact);
+    return canonicalize_exact_trig_value(exact);
   }
   if let Some(r) = try_trig_half_pi_shift("Cot", &args[0]) {
     return r;

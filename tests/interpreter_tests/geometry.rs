@@ -3617,3 +3617,116 @@ mod graphics_object_regions {
     );
   }
 }
+
+mod triangle_constructor_tests {
+  use woxi::interpret;
+
+  // Vertex A sits at the origin with side c along the x axis, exactly as
+  // wolframscript places these.
+  #[test]
+  fn sas_triangle() {
+    assert_eq!(
+      interpret("SASTriangle[3, Pi/2, 4]").unwrap(),
+      "Triangle[{{0, 0}, {5, 0}, {16/5, 12/5}}]"
+    );
+    assert_eq!(
+      interpret("SASTriangle[1, Pi/3, 1]").unwrap(),
+      "Triangle[{{0, 0}, {1, 0}, {1/2, Sqrt[3]/2}}]"
+    );
+    assert_eq!(
+      interpret("SASTriangle[2, Pi/3, 3]").unwrap(),
+      "Triangle[{{0, 0}, {Sqrt[7], 0}, {6/Sqrt[7], 3*Sqrt[3/7]}}]"
+    );
+    // A plain-integer (radian) angle stays symbolic in Cos/Sin form.
+    assert_eq!(
+      interpret("SASTriangle[3, 3, 4]").unwrap(),
+      "Triangle[{{0, 0}, {Sqrt[25 - 24*Cos[3]], 0}, {(16 - 12*Cos[3])/Sqrt[25 - 24*Cos[3]], (12*Sin[3])/Sqrt[25 - 24*Cos[3]]}}]"
+    );
+    // Symbolic side lengths compute through.
+    assert_eq!(
+      interpret("SASTriangle[x, Pi/2, 4]").unwrap(),
+      "Triangle[{{0, 0}, {Sqrt[16 + x^2], 0}, {16/Sqrt[16 + x^2], (4*x)/Sqrt[16 + x^2]}}]"
+    );
+  }
+
+  #[test]
+  fn asa_triangle() {
+    assert_eq!(
+      interpret("ASATriangle[Pi/4, 5, Pi/4]").unwrap(),
+      "Triangle[{{0, 0}, {5, 0}, {5/2, 5/2}}]"
+    );
+    assert_eq!(
+      interpret("ASATriangle[Pi/3, 2, Pi/6]").unwrap(),
+      "Triangle[{{0, 0}, {2, 0}, {1/2, Sqrt[3]/2}}]"
+    );
+    assert_eq!(
+      interpret("ASATriangle[Pi/4, s, Pi/4]").unwrap(),
+      "Triangle[{{0, 0}, {s, 0}, {s/2, s/2}}]"
+    );
+  }
+
+  #[test]
+  fn aas_triangle() {
+    assert_eq!(
+      interpret("AASTriangle[Pi/6, Pi/3, 1]").unwrap(),
+      "Triangle[{{0, 0}, {2, 0}, {3/2, Sqrt[3]/2}}]"
+    );
+    assert_eq!(
+      interpret("AASTriangle[Pi/4, Pi/4, 2]").unwrap(),
+      "Triangle[{{0, 0}, {2*Sqrt[2], 0}, {Sqrt[2], Sqrt[2]}}]"
+    );
+    assert_eq!(
+      interpret("AASTriangle[Pi/6, Pi/3, x]").unwrap(),
+      "Triangle[{{0, 0}, {2*x, 0}, {(3*x)/2, (Sqrt[3]*x)/2}}]"
+    );
+  }
+
+  // Angle sums of Pi or more emit ::asm and echo; non-positive or invalid
+  // sides/angles echo silently, matching wolframscript.
+  #[test]
+  fn invalid_inputs() {
+    assert_eq!(
+      interpret("AASTriangle[Pi/2, Pi/2, 1]").unwrap(),
+      "AASTriangle[Pi/2, Pi/2, 1]"
+    );
+    assert_eq!(
+      interpret("ASATriangle[Pi/2, 1, Pi/2]").unwrap(),
+      "ASATriangle[Pi/2, 1, Pi/2]"
+    );
+    assert_eq!(
+      interpret("SASTriangle[-1, Pi/3, 2]").unwrap(),
+      "SASTriangle[-1, Pi/3, 2]"
+    );
+    assert_eq!(
+      interpret("SASTriangle[0, Pi/3, 2]").unwrap(),
+      "SASTriangle[0, Pi/3, 2]"
+    );
+    assert_eq!(
+      interpret("SASTriangle[1, 4, 2]").unwrap(),
+      "SASTriangle[1, 4, 2]"
+    );
+    // Symbolic angles would need wolframscript's trig canonicalization;
+    // they stay unevaluated.
+    assert_eq!(
+      interpret("AASTriangle[a, Pi/3, 1]").unwrap(),
+      "AASTriangle[a, Pi/3, 1]"
+    );
+  }
+}
+
+// The exact trig values now canonicalize on return, so quotients by them
+// simplify instead of nesting divisions (regression for 2/Sin[Pi/4]).
+mod exact_trig_canonicalization_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn quotients_by_exact_trig_values_simplify() {
+    assert_eq!(interpret("2*Sin[Pi/2]/Sin[Pi/4]").unwrap(), "2*Sqrt[2]");
+    assert_eq!(interpret("Sin[Pi/4]").unwrap(), "1/Sqrt[2]");
+    assert_eq!(
+      interpret("Sin[Pi/12]").unwrap(),
+      "(-1 + Sqrt[3])/(2*Sqrt[2])"
+    );
+    assert_eq!(interpret("1/Cos[Pi/4]").unwrap(), "Sqrt[2]");
+  }
+}

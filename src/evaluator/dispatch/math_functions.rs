@@ -3463,6 +3463,15 @@ pub fn dispatch_math_functions(
         return Some(find_linear_recurrence_impl(elems));
       }
     }
+    "AASTriangle" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::aas_triangle_ast(args));
+    }
+    "ASATriangle" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::asa_triangle_ast(args));
+    }
+    "SASTriangle" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::sas_triangle_ast(args));
+    }
     // SSSTriangle[a, b, c] — triangle from three side lengths
     "SSSTriangle" if args.len() == 3 => {
       // Place A at origin, B at (c, 0), find C via law of cosines
