@@ -8259,3 +8259,45 @@ mod parametric_window_tests {
     );
   }
 }
+
+mod annuity_due_tests {
+  use woxi::interpret;
+
+  // An annuity-due pays at the start of each interval:
+  // TimeValue[AnnuityDue[...]] = (1+i)^q · TimeValue[Annuity[...]].
+  // Exact rates give exact rationals matching wolframscript byte-for-byte
+  // (real rates inherit the existing Annuity real path).
+  #[test]
+  fn exact_values() {
+    assert_eq!(
+      interpret("TimeValue[AnnuityDue[100, 5], 1/20, 0]").unwrap(),
+      "88410100/194481"
+    );
+    // Future value at t = 5.
+    assert_eq!(
+      interpret("TimeValue[AnnuityDue[100, 5], 1/20, 5]").unwrap(),
+      "18566121/32000"
+    );
+    assert_eq!(
+      interpret("TimeValue[AnnuityDue[50, 3], 1/10, 3]").unwrap(),
+      "3641/20"
+    );
+    // The defining relationship against the ordinary annuity.
+    assert_eq!(
+      interpret(
+        "TimeValue[AnnuityDue[100, 5], 1/20, 0] == (21/20) TimeValue[Annuity[100, 5], 1/20, 0]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // The bare object is a symbolic container, like Annuity.
+  #[test]
+  fn passthrough() {
+    assert_eq!(
+      interpret("AnnuityDue[100, 5]").unwrap(),
+      "AnnuityDue[100, 5]"
+    );
+  }
+}

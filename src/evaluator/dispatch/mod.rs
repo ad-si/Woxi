@@ -9096,6 +9096,58 @@ pub fn evaluate_function_call_ast_inner(
   // (t < 0): result = s * (1 + i)^t.
   if name == "TimeValue" && args.len() == 3 {
     let (s, i, t) = (&args[0], &args[1], &args[2]);
+    // AnnuityDue pays at the start of each interval, so its value is the
+    // annuity-immediate value grown by one payment interval:
+    //   TimeValue[AnnuityDue[p, t, q], i, t0]
+    //     = (1+i)^q * TimeValue[Annuity[p, t, q], i, t0]   (q defaults to 1)
+    if let Expr::FunctionCall {
+      name: ann_name,
+      args: ann_args,
+    } = s
+      && ann_name == "AnnuityDue"
+      && (ann_args.len() == 2 || ann_args.len() == 3)
+    {
+      let q = ann_args.get(2).cloned().unwrap_or(Expr::Integer(1));
+      let ordinary = Expr::FunctionCall {
+        name: "TimeValue".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Annuity".to_string(),
+            args: ann_args.clone(),
+          },
+          args[1].clone(),
+          args[2].clone(),
+        ]
+        .into(),
+      };
+      let due = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![Expr::Integer(1), args[1].clone()].into(),
+              },
+              q,
+            ]
+            .into(),
+          },
+          ordinary,
+        ]
+        .into(),
+      };
+      let result = evaluate_expr_to_expr(&due)?;
+      // Only commit when the inner annuity actually evaluated.
+      if !expr_to_string(&result).contains("Annuity") {
+        return Ok(result);
+      }
+      return Ok(Expr::FunctionCall {
+        name: "TimeValue".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
     let s_scalar =
       matches!(s, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
         || matches!(s, Expr::FunctionCall { name, .. } if name == "Rational");
@@ -10068,6 +10120,7 @@ pub fn evaluate_function_call_ast_inner(
       | "NotebookClose"
       | "Failure"
       | "Annuity"
+      | "AnnuityDue"
       | "Cashflow"
       | "LineIndent"
       | "LayeredGraphPlot"

@@ -4266,7 +4266,7 @@ ServiceObject,,🚫,,10.0,4387
 ShowPageBreaks,,,,3.0,4387
 TextPosition,,,,10.2,4387
 TransitionEffect,,🚫,,9.0,4387
-AnnuityDue,,,,8.0,4437
+AnnuityDue,Annuity paying at interval start: TimeValue is (1+i)^q times the ordinary annuity (symbolic passthrough object),✅,pure,8.0,4437
 AskAppend,,🚫,,10.4,4437
 AudioLength,,🚫,,11.0,4437
 AutoIndent,,,,3.0,4437
