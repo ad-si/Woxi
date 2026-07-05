@@ -23,11 +23,11 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Cache WASM build output
         id: wasm-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: tests/playground/pkg
           key: wasm-pkg-${{ hashFiles('src/**', 'Cargo.lock', 'Cargo.toml') }}
@@ -38,7 +38,7 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache Cargo registry and build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -50,7 +50,7 @@ jobs:
 
       - name: Install wasm-pack
         if: steps.wasm-cache.outputs.cache-hit != 'true'
-        uses: jetli/wasm-pack-action@v0.4.0
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM playground
         if: steps.wasm-cache.outputs.cache-hit != 'true'
@@ -58,7 +58,7 @@ jobs:
 
       - name: Cache woxi binary
         id: woxi-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/woxi
           key: woxi-bin-${{ hashFiles('src/**', 'Cargo.lock', 'Cargo.toml') }}
@@ -68,15 +68,15 @@ jobs:
         run: make install
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -122,7 +122,7 @@ jobs:
           cp tests/cli/favicon.png tests/book/favicon.png
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: tests/book
 
@@ -138,10 +138,10 @@ jobs:
       # "Deployment failed, try again later."
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
         continue-on-error: true
 
       - name: Retry deploy to GitHub Pages
         id: deployment-retry
         if: steps.deployment.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
