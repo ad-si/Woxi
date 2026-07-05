@@ -5747,3 +5747,58 @@ mod companion_matrix {
     );
   }
 }
+
+mod roll_pitch_yaw_matrix_tests {
+  use woxi::interpret;
+
+  // R_x(γ).R_y(β).R_z(α) — rotations applied in reverse order of the angle
+  // list (wolframscript's default {3, 2, 1} convention).
+  #[test]
+  fn exact_angles() {
+    assert_eq!(
+      interpret("RollPitchYawMatrix[{Pi/2, 0, Pi/2}]").unwrap(),
+      "{{0, -1, 0}, {0, 0, -1}, {1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("RollPitchYawMatrix[{Pi/4, 0, 0}]").unwrap(),
+      "{{1/Sqrt[2], -(1/Sqrt[2]), 0}, {1/Sqrt[2], 1/Sqrt[2], 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn explicit_axis_sequence() {
+    assert_eq!(
+      interpret("RollPitchYawMatrix[{Pi/2, Pi/2, 0}, {1, 2, 3}]").unwrap(),
+      "{{0, 1, 0}, {0, 0, -1}, {-1, 0, 0}}"
+    );
+  }
+
+  // The identity RollPitchYawMatrix[{α,β,γ}, {p,q,r}] =
+  // EulerMatrix[{γ,β,α}, {r,q,p}], verified symbolically in wolframscript.
+  #[test]
+  fn euler_matrix_delegation() {
+    assert_eq!(
+      interpret(
+        "RollPitchYawMatrix[{a, b, c}] === EulerMatrix[{c, b, a}, {1, 2, 3}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "RollPitchYawMatrix[{a, b, c}, {3, 1, 3}] === EulerMatrix[{c, b, a}, {3, 1, 3}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A non-list argument emits ::ang and echoes.
+  #[test]
+  fn invalid_angles() {
+    assert_eq!(
+      interpret("RollPitchYawMatrix[a]").unwrap(),
+      "RollPitchYawMatrix[a]"
+    );
+  }
+}

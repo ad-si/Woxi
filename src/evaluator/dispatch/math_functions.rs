@@ -5289,6 +5289,53 @@ pub fn dispatch_math_functions(
         crate::functions::math_ast::coordinate_bounding_box_array_ast(args),
       );
     }
+    // DiracComb[x…] — 0 when any argument is a definite non-integer (a
+    // Rational, or a Real with a fractional part); everything else —
+    // integers, integer-valued reals, symbols, even Pi — stays unevaluated,
+    // exactly like wolframscript. A single list argument threads.
+    "DiracComb" if !args.is_empty() => {
+      fn definite_non_integer(e: &Expr) -> bool {
+        match e {
+          Expr::Real(v) => v.is_finite() && v.fract() != 0.0,
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            // Canonical rationals are already non-integer.
+            true
+          }
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand,
+          } => definite_non_integer(operand),
+          _ => false,
+        }
+      }
+      if args.len() == 1
+        && let Expr::List(items) = &args[0]
+      {
+        let threaded: Vec<Expr> = items
+          .iter()
+          .map(|item| {
+            if definite_non_integer(item) {
+              Expr::Integer(0)
+            } else {
+              Expr::FunctionCall {
+                name: "DiracComb".to_string(),
+                args: vec![item.clone()].into(),
+              }
+            }
+          })
+          .collect();
+        return Some(Ok(Expr::List(threaded.into())));
+      }
+      if args.iter().any(definite_non_integer) {
+        return Some(Ok(Expr::Integer(0)));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "DiracComb".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "CantorStaircase" if args.len() == 1 => {
       return Some(cantor_staircase_ast(&args[0]));
     }

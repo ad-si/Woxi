@@ -3623,7 +3623,7 @@ PageBreakWithin,,🚫,,3.0,3717
 PersistentObjects,,🚫,,11.1,3717
 RegionSymmetricDifference,,,,10.0,3717
 ReturnPacket,,,,3.0,3717
-RollPitchYawMatrix,,,,10.2,3717
+RollPitchYawMatrix,Rotation matrix from roll-pitch-yaw angles (default {3 2 1} convention; rotations apply in reverse angle order; optional axis sequence),✅,pure,10.2,3717
 WatsonUSquareTest,,,,8.0,3717
 BooleanGraph,,,,8.0,3737
 CharacterName,,,,10.2,3737
@@ -3732,7 +3732,7 @@ BattleLemarieWavelet,Battle-Lemarie orthonormalized B-spline wavelet family,✅,
 CanberraDistance,Canberra distance between vectors,✅,none,6.0,3843
 ClusteringTree,,,,10.4,3843
 CriticalSection,,,,7.0,3843
-DiracComb,,,,7.0,3843
+DiracComb,Dirac comb distribution: 0 at definite non-integers; unevaluated at integers and symbols; multidimensional and Listable,✅,pure,7.0,3843
 EnterTextPacket,,🚫,,3.0,3843
 FrobeniusNumber,Returns the Frobenius number for a set of integers,✅,pure,6.0,3843
 InheritScope,,,,10.0,3843

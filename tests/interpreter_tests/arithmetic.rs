@@ -7858,3 +7858,38 @@ mod mandelbrot_set_member_q_tests {
     );
   }
 }
+
+mod dirac_comb_tests {
+  use woxi::interpret;
+
+  // Definite non-integers (rationals, reals with a fractional part) give 0;
+  // integers, integer-valued reals, symbols, and even Pi stay unevaluated,
+  // exactly like wolframscript.
+  #[test]
+  fn scalar_values() {
+    assert_eq!(interpret("DiracComb[1/2]").unwrap(), "0");
+    assert_eq!(interpret("DiracComb[-5/2]").unwrap(), "0");
+    assert_eq!(interpret("DiracComb[0.3]").unwrap(), "0");
+    assert_eq!(interpret("DiracComb[3]").unwrap(), "DiracComb[3]");
+    assert_eq!(interpret("DiracComb[0]").unwrap(), "DiracComb[0]");
+    assert_eq!(interpret("DiracComb[1.]").unwrap(), "DiracComb[1.]");
+    assert_eq!(interpret("DiracComb[Pi]").unwrap(), "DiracComb[Pi]");
+    assert_eq!(interpret("DiracComb[x]").unwrap(), "DiracComb[x]");
+  }
+
+  // Multidimensional combs are 0 as soon as any coordinate is a definite
+  // non-integer, even with symbolic coordinates present.
+  #[test]
+  fn multi_argument() {
+    assert_eq!(interpret("DiracComb[1/2, 1/3]").unwrap(), "0");
+    assert_eq!(interpret("DiracComb[1/2, x]").unwrap(), "0");
+    assert_eq!(interpret("DiracComb[1, 1/2]").unwrap(), "0");
+    assert_eq!(interpret("DiracComb[x, y]").unwrap(), "DiracComb[x, y]");
+  }
+
+  #[test]
+  fn list_threading_and_arity() {
+    assert_eq!(interpret("DiracComb[{1/2, 1/3}]").unwrap(), "{0, 0}");
+    assert_eq!(interpret("DiracComb[]").unwrap(), "DiracComb[]");
+  }
+}

@@ -1204,6 +1204,9 @@ pub fn dispatch_linear_algebra_functions(
     "EulerMatrix" if args.len() == 1 || args.len() == 2 => {
       return Some(euler_matrix_ast(args));
     }
+    "RollPitchYawMatrix" if args.len() == 1 || args.len() == 2 => {
+      return Some(roll_pitch_yaw_matrix_ast(args));
+    }
     "LUDecomposition" if args.len() == 1 => {
       return Some(lu_decomposition_ast(&args[0]));
     }
@@ -4066,6 +4069,55 @@ pub fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let r12 = crate::functions::linear_algebra_ast::dot_ast(&[r1, r2])?;
   let r123 = crate::functions::linear_algebra_ast::dot_ast(&[r12, r3])?;
   evaluate_expr_to_expr(&r123)
+}
+
+/// RollPitchYawMatrix[{α, β, γ}] — the rotation matrix R_x(γ).R_y(β).R_z(α)
+/// (wolframscript's default {3, 2, 1} roll-pitch-yaw convention), with an
+/// optional explicit axis sequence. The rotations apply in reverse order of
+/// the angle list, so this is EulerMatrix with both the angles and the axes
+/// reversed: RollPitchYawMatrix[{α,β,γ}, {p,q,r}] = EulerMatrix[{γ,β,α},
+/// {r,q,p}] (verified symbolically against wolframscript).
+pub fn roll_pitch_yaw_matrix_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let angles = match &args[0] {
+    Expr::List(items) if items.len() == 3 => items,
+    other => {
+      crate::emit_message(&format!(
+        "RollPitchYawMatrix::ang: {} should be a list of three real-valued quantities.",
+        crate::syntax::expr_to_output(other)
+      ));
+      return Ok(Expr::FunctionCall {
+        name: "RollPitchYawMatrix".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let reversed_angles = Expr::List(
+    vec![angles[2].clone(), angles[1].clone(), angles[0].clone()].into(),
+  );
+  let mut euler_args = vec![reversed_angles];
+  if args.len() == 2 {
+    match &args[1] {
+      Expr::List(axes) if axes.len() == 3 => {
+        euler_args.push(Expr::List(
+          vec![axes[2].clone(), axes[1].clone(), axes[0].clone()].into(),
+        ));
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "RollPitchYawMatrix".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
+  } else {
+    // Default convention {3, 2, 1}, reversed for EulerMatrix.
+    euler_args.push(Expr::List(
+      vec![Expr::Integer(1), Expr::Integer(2), Expr::Integer(3)].into(),
+    ));
+  }
+  euler_matrix_ast(&euler_args)
 }
 
 /// RotationTransform[theta, {x, y, z}] for a numeric 3D axis.
