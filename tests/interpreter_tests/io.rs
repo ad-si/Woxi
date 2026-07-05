@@ -563,6 +563,94 @@ mod rename_file {
   }
 }
 
+mod rename_directory {
+  use super::*;
+
+  // Round trip against a fresh temp directory: successful renames return
+  // the absolute destination path, missing sources emit `fdnfnd` with the
+  // absolute path, and existing destinations emit `eexist` with the path
+  // as given — all matching wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn rename_semantics() {
+    let base = std::env::temp_dir()
+      .join(format!("woxi_rename_dir_test_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(base.join("src")).unwrap();
+    let b = base.to_str().unwrap();
+
+    // Success returns the destination path (absolute in, absolute out).
+    let result = interpret_with_stdout(&format!(
+      r#"RenameDirectory["{b}/src", "{b}/dst"]"#
+    ))
+    .unwrap();
+    assert_eq!(result.result, format!("{b}/dst"));
+    assert!(base.join("dst").is_dir() && !base.join("src").exists());
+
+    // Missing source: fdnfnd with the absolute path, $Failed.
+    let result = interpret_with_stdout(&format!(
+      r#"RenameDirectory["{b}/nosuch", "{b}/x"]"#
+    ))
+    .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(&format!(
+        "RenameDirectory::fdnfnd: Directory or file \"{b}/nosuch\" not found."
+      ))),
+      "expected fdnfnd warning, got {:?}",
+      result.warnings
+    );
+
+    // Existing destination: eexist with the path as given, $Failed.
+    std::fs::create_dir_all(base.join("src2")).unwrap();
+    let result = interpret_with_stdout(&format!(
+      r#"RenameDirectory["{b}/src2", "{b}/dst"]"#
+    ))
+    .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(&format!(
+        "RenameDirectory::eexist: {b}/dst already exists."
+      ))),
+      "expected eexist warning, got {:?}",
+      result.warnings
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
+  }
+
+  // Non-string arguments stay unevaluated without a message; wrong arg
+  // counts emit argr/argrx like wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn argument_checks() {
+    let result = interpret_with_stdout(r#"RenameDirectory[5, "x"]"#).unwrap();
+    assert_eq!(result.result, "RenameDirectory[5, x]");
+    assert!(result.warnings.is_empty(), "got {:?}", result.warnings);
+
+    let result = interpret_with_stdout(r#"RenameDirectory["a"]"#).unwrap();
+    assert_eq!(result.result, "RenameDirectory[a]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "RenameDirectory::argr: RenameDirectory called with 1 argument; 2 arguments are expected."
+      )),
+      "expected argr warning, got {:?}",
+      result.warnings
+    );
+
+    let result =
+      interpret_with_stdout(r#"RenameDirectory["a", "b", "c"]"#).unwrap();
+    assert_eq!(result.result, "RenameDirectory[a, b, c]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "RenameDirectory::argrx: RenameDirectory called with 3 arguments; 2 arguments are expected."
+      )),
+      "expected argrx warning, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod find_stream {
   use super::*;
 

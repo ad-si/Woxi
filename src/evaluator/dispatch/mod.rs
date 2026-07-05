@@ -8583,6 +8583,48 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // RenameDirectory[source, dest] — rename/move a directory (wolframscript
+  // also renames plain files with it). Returns the absolute destination
+  // path; missing sources emit `fdnfnd` with the absolute path, existing
+  // destinations emit `eexist` with the path as given, and non-string
+  // arguments stay unevaluated without a message.
+  if name == "RenameDirectory" && args.len() == 2 {
+    if let (Expr::String(source), Expr::String(dest)) = (&args[0], &args[1]) {
+      let to_abs = |p: &str| {
+        let path = std::path::Path::new(p);
+        if path.is_absolute() {
+          p.to_string()
+        } else {
+          std::env::current_dir()
+            .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
+            .unwrap_or_else(|_| p.to_string())
+        }
+      };
+      if !std::path::Path::new(source).exists() {
+        crate::emit_message(&format!(
+          "RenameDirectory::fdnfnd: Directory or file \"{}\" not found.",
+          to_abs(source)
+        ));
+        return Ok(Expr::Identifier("$Failed".to_string()));
+      }
+      if std::path::Path::new(dest).exists() {
+        crate::emit_message(&format!(
+          "RenameDirectory::eexist: {} already exists.",
+          dest
+        ));
+        return Ok(Expr::Identifier("$Failed".to_string()));
+      }
+      match std::fs::rename(source, dest) {
+        Ok(()) => return Ok(Expr::String(to_abs(dest))),
+        Err(_) => return Ok(Expr::Identifier("$Failed".to_string())),
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "RenameDirectory".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // DeleteDirectory[path] — remove an empty directory. Mirror
   // wolframscript's error paths: non-string args emit `strs`, missing
   // directories emit `dirnf`, non-empty dirs emit `dirne`.

@@ -3743,7 +3743,7 @@ MandelbrotSetDistance,,,,10.0,3843
 MeanClusteringCoefficient,Mean of the local clustering coefficients,✅,pure,9.0,3843
 RegularlySampledQ,,,,10.0,3843
 RelationalDatabase,,🚫,,12.0,3843
-RenameDirectory,,,,2.0,3843
+RenameDirectory,Renames a directory returning the absolute destination path,✅,filesystem,2.0,3843
 TriangleMeasurement,Scalar triangle measurements: Area (default) Perimeter Semiperimeter Inradius Circumradius for Triangle or point-list input,✅,pure,12.0,3843
 WindDirectionData,,🚫,,10.0,3843
 AffineSpace,,,,10.2,3862
