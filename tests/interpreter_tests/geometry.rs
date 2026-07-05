@@ -3705,11 +3705,37 @@ mod triangle_constructor_tests {
       interpret("SASTriangle[1, 4, 2]").unwrap(),
       "SASTriangle[1, 4, 2]"
     );
-    // Symbolic angles would need wolframscript's trig canonicalization;
-    // they stay unevaluated.
+    // Symbolic angles evaluate through the Csc/Cot closed form with
+    // wolframscript's trig phase canonicalization (Sin[a + Pi/3] ->
+    // Cos[a - Pi/6]).
     assert_eq!(
       interpret("AASTriangle[a, Pi/3, 1]").unwrap(),
-      "AASTriangle[a, Pi/3, 1]"
+      "Triangle[{{0, 0}, {Cos[a - Pi/6]*Csc[a], 0}, {(Sqrt[3]*Cot[a])/2, Sqrt[3]/2}}]"
+    );
+  }
+
+  // Fully symbolic constructors emit the general Csc/Cot closed forms.
+  #[test]
+  fn symbolic_angles() {
+    assert_eq!(
+      interpret("AASTriangle[a, b, c]").unwrap(),
+      "Triangle[{{0, 0}, {c*Csc[a]*Sin[a + b], 0}, {c*Cot[a]*Sin[b], c*Sin[b]}}]"
+    );
+    assert_eq!(
+      interpret("AASTriangle[a, Pi/4, 1]").unwrap(),
+      "Triangle[{{0, 0}, {Csc[a]*Sin[a + Pi/4], 0}, {Cot[a]/Sqrt[2], 1/Sqrt[2]}}]"
+    );
+    assert_eq!(
+      interpret("AASTriangle[Pi/3, a, 1]").unwrap(),
+      "Triangle[{{0, 0}, {(2*Cos[a - Pi/6])/Sqrt[3], 0}, {Sin[a]/Sqrt[3], Sin[a]}}]"
+    );
+    assert_eq!(
+      interpret("ASATriangle[a, 1, b]").unwrap(),
+      "Triangle[{{0, 0}, {1, 0}, {Cos[a]*Csc[a + b]*Sin[b], Csc[a + b]*Sin[a]*Sin[b]}}]"
+    );
+    assert_eq!(
+      interpret("SASTriangle[1, a, 2]").unwrap(),
+      "Triangle[{{0, 0}, {Sqrt[5 - 4*Cos[a]], 0}, {(4 - 2*Cos[a])/Sqrt[5 - 4*Cos[a]], (2*Sin[a])/Sqrt[5 - 4*Cos[a]]}}]"
     );
   }
 }

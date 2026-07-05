@@ -3420,7 +3420,7 @@ MenuCommandKey,,🚫,,6.0,3506
 Octahedron,,,,12.0,3506
 SavitzkyGolayMatrix,,,,10.0,3506
 SpearmanRankTest,,,,9.0,3506
-AASTriangle,Triangle from two angles and the side opposite the first (numeric angles; symbolic side lengths supported),✅,pure,10.0,3522
+AASTriangle,Triangle from two angles and the side opposite the first (symbolic angles give the Csc/Cot closed form),✅,pure,10.0,3522
 BlockchainData,,🚫,,11.3,3522
 CramerVonMisesTest,,,,8.0,3522
 Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,pure,1.0,3522
@@ -3662,7 +3662,7 @@ SpatialPointData,,🚫,,12.2,3755
 TemplateBoxOptions,,🚫,,6.0,3755
 URLSubmit,,🚫,,11.0,3755
 WeaklyConnectedGraphComponents,,,,10.4,3755
-ASATriangle,Triangle from two angles with the included side (numeric angles; symbolic side lengths supported),✅,pure,10.0,3765
+ASATriangle,Triangle from two angles with the included side (symbolic angles give the Csc closed form),✅,pure,10.0,3765
 AsymptoticOutputTracker,,,,10.0,3765
 BenktanderWeibullDistribution,,,,8.0,3765
 CelestialSystem,,,,10.0,3765
@@ -4058,7 +4058,7 @@ PillaiTraceTest,,,,9.0,4173
 PreviousDate,Previous occurrence of a given day of the week before a date,✅,pure,11.1,4173
 PrivateNotebookOptions,,🚫,,4.0,4173
 RegisterExternalEvaluator,,🚫,,11.2,4173
-SASTriangle,Triangle from two sides enclosing an angle via the law of cosines (numeric angles; symbolic side lengths supported),✅,pure,10.0,4173
+SASTriangle,Triangle from two sides enclosing an angle via the law of cosines (symbolic angles and sides supported),✅,pure,10.0,4173
 SendMessage,,🚫,,10.0,4173
 ShowAutoSpellCheck,,🚫,,11.0,4173
 SystemsModelDelayApproximate,,🚫,,9.0,4173

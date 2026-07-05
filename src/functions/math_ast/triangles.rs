@@ -155,6 +155,12 @@ fn emit_asm(head: &str, a1: &Expr, a2: &Expr) {
   }
 }
 
+/// A symbolic (non-numeric) angle expression that can still plausibly
+/// denote a scalar angle — strings and lists echo unevaluated instead.
+fn symbolic_angle_ok(e: &Expr) -> bool {
+  !matches!(e, Expr::String(_) | Expr::List(_))
+}
+
 /// Vertices {{0,0}, {c,0}, {cx,cy}} as an evaluated Triangle expression.
 fn triangle(c: Expr, cx: Expr, cy: Expr) -> Result<Expr, InterpreterError> {
   let zero = || Expr::Integer(0);
@@ -187,17 +193,34 @@ fn two_angle_triangle(
       args: args.to_vec().into(),
     })
   };
-  let (Some(va), Some(vb)) = (angle_value(alpha), angle_value(beta)) else {
-    return unevaluated();
-  };
-  if va <= 0.0 || vb <= 0.0 || !side_ok(side) {
+  // Numeric angles must be positive with a sum below Pi; symbolic angles
+  // evaluate symbolically (wolframscript computes `AASTriangle[a, Pi/3, 1]`
+  // via its trig canonicalization).
+  let (va, vb) = (angle_value(alpha), angle_value(beta));
+  if va.is_some_and(|v| v <= 0.0)
+    || vb.is_some_and(|v| v <= 0.0)
+    || (va.is_none() && !symbolic_angle_ok(alpha))
+    || (vb.is_none() && !symbolic_angle_ok(beta))
+    || !side_ok(side)
+  {
     return unevaluated();
   }
-  if va + vb >= std::f64::consts::PI {
-    emit_asm(head, alpha, beta);
+  if let (Some(va), Some(vb)) = (va, vb) {
+    if va + vb >= std::f64::consts::PI {
+      emit_asm(head, alpha, beta);
+      return unevaluated();
+    }
+  } else if va.is_none() && vb.is_none() {
+    // Fully symbolic angles are fine (wolframscript emits the general
+    // Csc/Cot closed form), but a numeric angle of Pi or more with a
+    // symbolic partner can never make a valid triangle.
+  } else if va.or(vb).is_some_and(|v| v >= std::f64::consts::PI) {
     return unevaluated();
   }
-  // γ = Pi - α - β; law of sines for the remaining sides.
+  // γ = Pi - α - β; law of sines for the remaining sides, written with the
+  // Csc/Cot forms wolframscript displays (`c*Csc[a]*Sin[a + b]`,
+  // `c*Cot[a]*Sin[b]`). Numeric angles evaluate these to the same values
+  // the plain Sin-quotient forms produce.
   let gamma = fc(
     "Plus",
     vec![
@@ -206,29 +229,52 @@ fn two_angle_triangle(
       fc("Times", vec![Expr::Integer(-1), beta.clone()]),
     ],
   );
-  let ratio = |num_angle: Expr, den_angle: Expr| {
-    fc(
-      "Times",
-      vec![
-        side.clone(),
-        fc("Sin", vec![num_angle]),
-        fc("Power", vec![fc("Sin", vec![den_angle]), Expr::Integer(-1)]),
-      ],
-    )
-  };
-  let (c, b) = if side_is_included {
-    // ASA: the given side is c; b = c Sin[β]/Sin[γ].
-    (side.clone(), ratio(beta.clone(), gamma))
-  } else {
-    // AAS: the given side is a (opposite α); c = a Sin[γ]/Sin[α],
-    // b = a Sin[β]/Sin[α].
+  let (c, cx, cy) = if side_is_included {
+    // ASA: the given side is c; apex = c Sin[β]/Sin[γ] * (Cos[α], Sin[α]).
     (
-      ratio(gamma, alpha.clone()),
-      ratio(beta.clone(), alpha.clone()),
+      side.clone(),
+      fc(
+        "Times",
+        vec![
+          side.clone(),
+          fc("Cos", vec![alpha.clone()]),
+          fc("Csc", vec![gamma.clone()]),
+          fc("Sin", vec![beta.clone()]),
+        ],
+      ),
+      fc(
+        "Times",
+        vec![
+          side.clone(),
+          fc("Csc", vec![gamma]),
+          fc("Sin", vec![alpha.clone()]),
+          fc("Sin", vec![beta.clone()]),
+        ],
+      ),
+    )
+  } else {
+    // AAS: the given side is a (opposite α); c = a Sin[γ] Csc[α],
+    // apex = (a Sin[β] Cot[α], a Sin[β]).
+    (
+      fc(
+        "Times",
+        vec![
+          side.clone(),
+          fc("Csc", vec![alpha.clone()]),
+          fc("Sin", vec![gamma]),
+        ],
+      ),
+      fc(
+        "Times",
+        vec![
+          side.clone(),
+          fc("Cot", vec![alpha.clone()]),
+          fc("Sin", vec![beta.clone()]),
+        ],
+      ),
+      fc("Times", vec![side.clone(), fc("Sin", vec![beta.clone()])]),
     )
   };
-  let cx = fc("Times", vec![b.clone(), fc("Cos", vec![alpha.clone()])]);
-  let cy = fc("Times", vec![b, fc("Sin", vec![alpha.clone()])]);
   triangle(c, cx, cy)
 }
 
@@ -268,10 +314,14 @@ pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
   let (a, gamma, b) = (&args[0], &args[1], &args[2]);
-  let Some(vg) = angle_value(gamma) else {
-    return unevaluated();
-  };
-  if vg <= 0.0 || vg >= std::f64::consts::PI || !side_ok(a) || !side_ok(b) {
+  // A numeric included angle must lie in (0, Pi); symbolic angles compute
+  // through the law-of-cosines closed form like wolframscript.
+  let vg = angle_value(gamma);
+  if vg.is_some_and(|v| v <= 0.0 || v >= std::f64::consts::PI)
+    || (vg.is_none() && !symbolic_angle_ok(gamma))
+    || !side_ok(a)
+    || !side_ok(b)
+  {
     return unevaluated();
   }
   let c = fc(
