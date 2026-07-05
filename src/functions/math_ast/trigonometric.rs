@@ -243,13 +243,46 @@ fn collect_plus_terms(e: &Expr, out: &mut Vec<Expr>) {
   }
 }
 
-/// If `arg` is a sum containing integer multiples of `Pi/2`, return
-/// `(k mod 4, rest)` with `arg = rest + k*(Pi/2)` and `rest` the remaining
-/// `Pi/2`-free part. Returns None when there is no such term, when nothing is
-/// left over (a pure fraction, handled elsewhere), or when a `Pi` term has a
-/// denominator that does not divide 2 (e.g. `Pi/3`) — those require the fuller
-/// trig canonicalization wolframscript performs and are left untouched.
-fn extract_half_pi_shift(arg: &Expr) -> Option<(i64, Expr)> {
+/// Whether a canonical Plus term carries a negative leading sign
+/// (a negative number, `-x`, or a product with a negative coefficient).
+fn term_is_negative(e: &Expr) -> bool {
+  use crate::syntax::BinaryOperator;
+  match e {
+    Expr::Integer(n) => *n < 0,
+    Expr::Real(v) => *v < 0.0,
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      ..
+    } => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(&args[0], Expr::Integer(n) if *n < 0)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      term_is_negative(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times | BinaryOperator::Divide,
+      left,
+      ..
+    } => term_is_negative(left),
+    _ => None::<()>.is_some(),
+  }
+}
+
+/// Decompose a trig argument `rest + r*Pi` (rational `r`, non-empty Pi-free
+/// `rest`) the way Wolfram canonicalizes trig arguments:
+///   * `rest` is sign-normalized — a negative leading term flips the whole
+///     sum (`Sin[b - a] -> -Sin[a - b]`, `Sin[Pi/3 - a] -> Cos[a + Pi/6]`);
+///   * the phase is reduced into `[-Pi/4, Pi/4]` by quarter-turn (`Pi/2`)
+///     steps; the step count `k` rounds half-to-even, so `Sin[a + Pi/4]`
+///     stays while `Sin[a + 3*Pi/4]` becomes `-Sin[a - Pi/4]`.
+/// Returns `(k mod 4, flip, (pn, pd), rest_terms)` with the residual phase
+/// `pn/pd * Pi`, or None when the argument is already canonical.
+fn extract_pi_phase(arg: &Expr) -> Option<(i64, bool, (i64, i64), Vec<Expr>)> {
   use crate::syntax::BinaryOperator;
   let is_sum = matches!(arg, Expr::FunctionCall { name, .. } if name == "Plus")
     || matches!(
@@ -264,48 +297,89 @@ fn extract_half_pi_shift(arg: &Expr) -> Option<(i64, Expr)> {
   }
   let mut terms = Vec::new();
   collect_plus_terms(arg, &mut terms);
-  let mut m: i64 = 0;
-  let mut found = false;
+  // Sum all rational-multiple-of-Pi terms into pn/pd; keep the others.
+  let (mut pn, mut pd): (i64, i64) = (0, 1);
   let mut rest: Vec<Expr> = Vec::new();
   for t in terms {
     match try_symbolic_pi_fraction(&t) {
-      // term = (a/b)*Pi; it is an integer multiple of Pi/2 iff b divides 2.
-      Some((a, b)) if a != 0 => match b {
-        1 => {
-          m += 2 * a;
-          found = true;
-        }
-        2 => {
-          m += a;
-          found = true;
-        }
-        _ => return None,
-      },
+      Some((a, b)) if a != 0 => {
+        pn = pn.checked_mul(b)?.checked_add(a.checked_mul(pd)?)?;
+        pd = pd.checked_mul(b)?;
+        let g = gcd(pn.unsigned_abs().max(1) as i128, pd as i128) as i64;
+        pn /= g;
+        pd /= g;
+      }
       _ => rest.push(t),
     }
   }
-  if !found || rest.is_empty() {
+  if rest.is_empty() {
     return None;
   }
-  let rest_expr = if rest.len() == 1 {
-    rest.pop().unwrap()
-  } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: rest.into(),
-    }
+  // Sign-normalize: Wolfram flips the whole argument when the leading term
+  // of the WL-canonical sum is negative. Pi-multiples sort alphabetically
+  // as the symbol "Pi" among the other monomials (numbers still lead), so
+  // the phase term itself leads when every rest term sorts after "Pi"
+  // (`Sin[x - Pi/8] -> -Sin[Pi/8 - x]` but `Sin[a - Pi/4]` stays).
+  let rest0_is_number = matches!(
+    &rest[0],
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
+  ) || matches!(&rest[0], Expr::FunctionCall { name, .. } if name == "Rational");
+  let pi_leads = pn != 0 && !rest0_is_number && {
+    let key =
+      crate::functions::list_helpers_ast::sorting::expr_sort_key(&rest[0]);
+    crate::functions::list_helpers_ast::wolfram_string_order("Pi", &key) > 0
   };
-  Some((m.rem_euclid(4), rest_expr))
+  let flip = if pi_leads {
+    pn < 0
+  } else {
+    term_is_negative(&rest[0])
+  };
+  if flip {
+    for t in rest.iter_mut() {
+      *t = negate_expr(t.clone());
+    }
+    pn = -pn;
+  }
+  // k = round-half-to-even(2 * pn/pd): the quarter-turn step count.
+  let num = 2 * pn;
+  let div = num.div_euclid(pd);
+  let rem = num.rem_euclid(pd);
+  let k = if 2 * rem > pd {
+    div + 1
+  } else if 2 * rem < pd {
+    div
+  } else if div % 2 == 0 {
+    div
+  } else {
+    div + 1
+  };
+  if k == 0 && !flip {
+    return None;
+  }
+  // Residual phase r' = pn/pd - k/2 = (2*pn - k*pd) / (2*pd).
+  let mut rpn = 2 * pn - k * pd;
+  let mut rpd = 2 * pd;
+  if rpn != 0 {
+    let g = gcd(rpn.unsigned_abs() as i128, rpd as i128) as i64;
+    rpn /= g;
+    rpd /= g;
+  }
+  Some((k.rem_euclid(4), flip, (rpn, rpd), rest))
 }
 
-/// Apply the `[trig](rest + k*Pi/2)` shift identity (k taken mod 4), e.g.
-/// `Sin[x + Pi/2] -> Cos[x]`, `Cos[x + Pi/2] -> -Sin[x]`,
-/// `Tan[x + Pi/2] -> -Cot[x]`. Returns None for an unrecognized head.
-fn try_trig_half_pi_shift(
+/// Apply Wolfram's trig-argument canonicalization: quarter-turn phase
+/// shifts (`Sin[x + Pi/2] -> Cos[x]`, `Sin[a + Pi/3] -> Cos[a - Pi/6]`,
+/// `Tan[x + Pi/2] -> -Cot[x]`) and leading-sign normalization
+/// (`Sin[b - a] -> -Sin[a - b]`). Returns None for an unrecognized head or
+/// an already-canonical argument.
+fn try_trig_pi_phase(
   head: &str,
   arg: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let (k, rest) = extract_half_pi_shift(arg)?;
+  let (k, flip, (pn, pd), mut rest) = extract_pi_phase(arg)?;
   let (new_head, neg): (&str, bool) = match (head, k) {
     ("Sin", 0) => ("Sin", false),
     ("Sin", 1) => ("Cos", false),
@@ -329,7 +403,27 @@ fn try_trig_half_pi_shift(
     ("Csc", 3) => ("Sec", true),
     _ => return None,
   };
-  let inner = crate::evaluator::evaluate_function_call_ast(new_head, &[rest]);
+  // Odd functions pick up a sign from the leading-term flip.
+  let neg = neg ^ (flip && matches!(head, "Sin" | "Tan" | "Cot" | "Csc"));
+  if pn != 0 {
+    rest.push(lit(&format!("({}*Pi)/{}", pn, pd)));
+  }
+  let rest_expr = if rest.len() == 1 {
+    rest.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: rest.into(),
+    }
+  };
+  // Re-evaluate the rebuilt argument so the sum re-canonicalizes before
+  // the (possibly different) trig head sees it.
+  let rest_expr = match crate::evaluator::evaluate_expr_to_expr(&rest_expr) {
+    Ok(e) => e,
+    Err(err) => return Some(Err(err)),
+  };
+  let inner =
+    crate::evaluator::evaluate_function_call_ast(new_head, &[rest_expr]);
   Some(inner.map(|e| if neg { negate_expr(e) } else { e }))
 }
 
@@ -867,6 +961,71 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
   match &mut expr {
     Expr::Integer(n) => return Expr::Integer(-*n),
     Expr::Real(f) => return Expr::Real(-*f),
+    // --x => x (collapse instead of stacking another wrapper)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      return *std::mem::replace(operand, Box::new(Expr::Integer(0)));
+    }
+    // Times with a leading numeric coefficient: negate the coefficient,
+    // collapsing Times[-1, x] => x.
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::Integer(_))
+        && !matches!(&args[0], Expr::Integer(0)) =>
+    {
+      let Expr::Integer(n) = args[0] else {
+        unreachable!()
+      };
+      if n == -1 && args.len() == 2 {
+        return args[1].clone();
+      }
+      if n == -1 {
+        let rest: Vec<Expr> = args[1..].to_vec();
+        return Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: rest.into(),
+        };
+      }
+      let mut new_args = std::mem::take(args);
+      new_args[0] = Expr::Integer(-n);
+      return Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
+      };
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(_))) =>
+    {
+      let mut new_args = std::mem::take(args);
+      new_args[0] = negate_expr(new_args[0].clone());
+      return Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
+      };
+    }
+    Expr::BinaryOp { op, left, right }
+      if *op == crate::syntax::BinaryOperator::Times
+        && matches!(left.as_ref(), Expr::Integer(n) if *n != 0) =>
+    {
+      let Expr::Integer(n) = **left else {
+        unreachable!()
+      };
+      if n == -1 {
+        return *std::mem::replace(right, Box::new(Expr::Integer(0)));
+      }
+      let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
+      return Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-n)),
+        right,
+      };
+    }
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
@@ -1454,7 +1613,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return canonicalize_exact_trig_value(exact);
   }
   // Pi/2 shift: Sin[rest + k*Pi/2] -> +/-Sin/Cos[rest].
-  if let Some(r) = try_trig_half_pi_shift("Sin", &args[0]) {
+  if let Some(r) = try_trig_pi_phase("Sin", &args[0]) {
     return r;
   }
   // Return unevaluated
@@ -1647,7 +1806,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return canonicalize_exact_trig_value(exact);
   }
-  if let Some(r) = try_trig_half_pi_shift("Cos", &args[0]) {
+  if let Some(r) = try_trig_pi_phase("Cos", &args[0]) {
     return r;
   }
   Ok(Expr::FunctionCall {
@@ -1752,7 +1911,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return canonicalize_exact_trig_value(exact);
   }
-  if let Some(r) = try_trig_half_pi_shift("Tan", &args[0]) {
+  if let Some(r) = try_trig_pi_phase("Tan", &args[0]) {
     return r;
   }
   Ok(Expr::FunctionCall {
@@ -1803,7 +1962,7 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return canonicalize_exact_trig_value(exact);
   }
-  if let Some(r) = try_trig_half_pi_shift("Sec", &args[0]) {
+  if let Some(r) = try_trig_pi_phase("Sec", &args[0]) {
     return r;
   }
   Ok(Expr::FunctionCall {
@@ -1855,7 +2014,7 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return canonicalize_exact_trig_value(exact);
   }
-  if let Some(r) = try_trig_half_pi_shift("Csc", &args[0]) {
+  if let Some(r) = try_trig_pi_phase("Csc", &args[0]) {
     return r;
   }
   Ok(Expr::FunctionCall {
@@ -1907,7 +2066,7 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return canonicalize_exact_trig_value(exact);
   }
-  if let Some(r) = try_trig_half_pi_shift("Cot", &args[0]) {
+  if let Some(r) = try_trig_pi_phase("Cot", &args[0]) {
     return r;
   }
   Ok(Expr::FunctionCall {

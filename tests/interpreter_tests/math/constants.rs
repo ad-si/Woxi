@@ -908,3 +908,73 @@ mod trig_half_pi_shift {
     assert_eq!(interpret("Sin[x + y]").unwrap(), "Sin[x + y]");
   }
 }
+
+// The general phase canonicalization: rational Pi-multiples reduce into
+// [-Pi/4, Pi/4] by quarter turns (step count rounds half-to-even), and a
+// negative leading canonical term flips the whole argument. All values
+// verified against wolframscript.
+mod trig_pi_phase_canonicalization {
+  use super::*;
+
+  #[test]
+  fn quarter_turn_reduction() {
+    assert_eq!(interpret("Sin[a + Pi/3]").unwrap(), "Cos[a - Pi/6]");
+    assert_eq!(interpret("Sin[a - Pi/3]").unwrap(), "-Cos[a + Pi/6]");
+    assert_eq!(interpret("Sin[a + 2 Pi/3]").unwrap(), "Cos[a + Pi/6]");
+    assert_eq!(interpret("Sin[a + 5 Pi/6]").unwrap(), "-Sin[a - Pi/6]");
+    assert_eq!(interpret("Sin[a + 7 Pi/3]").unwrap(), "Cos[a - Pi/6]");
+    assert_eq!(interpret("Cos[a + Pi/3]").unwrap(), "-Sin[a - Pi/6]");
+    assert_eq!(interpret("Cos[a - Pi/3]").unwrap(), "Sin[a + Pi/6]");
+    assert_eq!(interpret("Tan[a + Pi/3]").unwrap(), "-Cot[a - Pi/6]");
+    assert_eq!(interpret("Cot[a + Pi/3]").unwrap(), "-Tan[a - Pi/6]");
+    assert_eq!(interpret("Sec[a + Pi/3]").unwrap(), "-Csc[a - Pi/6]");
+    assert_eq!(interpret("Csc[a + Pi/3]").unwrap(), "Sec[a - Pi/6]");
+    assert_eq!(interpret("Sin[2 a + Pi/3]").unwrap(), "Cos[2*a - Pi/6]");
+    assert_eq!(interpret("Sin[a + b + Pi/3]").unwrap(), "Cos[a + b - Pi/6]");
+  }
+
+  // Phases of exactly Pi/4 stay put on both sides (the quarter-turn count
+  // rounds half-to-even), while 3 Pi/4 reduces.
+  #[test]
+  fn quarter_pi_boundary() {
+    assert_eq!(interpret("Sin[a + Pi/4]").unwrap(), "Sin[a + Pi/4]");
+    assert_eq!(interpret("Sin[a - Pi/4]").unwrap(), "Sin[a - Pi/4]");
+    assert_eq!(interpret("Sin[a + 3 Pi/4]").unwrap(), "-Sin[a - Pi/4]");
+    assert_eq!(interpret("Cos[a - 3 Pi/4]").unwrap(), "-Cos[a + Pi/4]");
+  }
+
+  // A negative leading canonical term (numbers first, then monomials with
+  // Pi sorting alphabetically as a symbol) flips the whole argument.
+  #[test]
+  fn leading_sign_normalization() {
+    assert_eq!(interpret("Sin[b - a]").unwrap(), "-Sin[a - b]");
+    assert_eq!(interpret("Sin[-2 + a]").unwrap(), "-Sin[2 - a]");
+    assert_eq!(interpret("Sin[2 - a]").unwrap(), "Sin[2 - a]");
+    assert_eq!(interpret("Sin[Pi/3 - a]").unwrap(), "Cos[a + Pi/6]");
+    assert_eq!(interpret("Sin[Pi/6 - a]").unwrap(), "-Sin[a - Pi/6]");
+    assert_eq!(interpret("Cos[Pi/3 - a]").unwrap(), "Sin[a + Pi/6]");
+    assert_eq!(interpret("Cos[-a + Pi/6]").unwrap(), "Cos[a - Pi/6]");
+    assert_eq!(interpret("Sin[-a - Pi/3]").unwrap(), "-Cos[a - Pi/6]");
+    assert_eq!(interpret("Sin[b - a + Pi/3]").unwrap(), "Cos[a - b + Pi/6]");
+    assert_eq!(interpret("Sin[Pi/3 - a - b]").unwrap(), "Cos[a + b + Pi/6]");
+    assert_eq!(interpret("Tan[Pi/3 - a]").unwrap(), "Cot[a + Pi/6]");
+    assert_eq!(interpret("Csc[Pi/3 - a]").unwrap(), "Sec[a + Pi/6]");
+    // Pi sorts after x, so the phase term leads and its sign decides.
+    assert_eq!(interpret("Sin[x - Pi/8]").unwrap(), "-Sin[Pi/8 - x]");
+  }
+
+  // Named constants sort alphabetically among the variables of a sum
+  // (Pi and E count as the symbols "Pi"/"E"), matching wolframscript.
+  #[test]
+  fn constant_symbol_plus_ordering() {
+    assert_eq!(interpret("a - Pi/6").unwrap(), "a - Pi/6");
+    assert_eq!(interpret("a + b - Pi/6").unwrap(), "a + b - Pi/6");
+    assert_eq!(interpret("x - Pi/8").unwrap(), "-1/8*Pi + x");
+    assert_eq!(interpret("p + Pi").unwrap(), "p + Pi");
+    assert_eq!(interpret("Pi + q").unwrap(), "Pi + q");
+    assert_eq!(interpret("a + E").unwrap(), "a + E");
+    assert_eq!(interpret("x + E").unwrap(), "E + x");
+    assert_eq!(interpret("1 + Pi + a").unwrap(), "1 + a + Pi");
+    assert_eq!(interpret("a + Sqrt[2]").unwrap(), "Sqrt[2] + a");
+  }
+}
