@@ -4271,7 +4271,7 @@ AskAppend,,🚫,,10.4,4437
 AudioLength,,🚫,,11.0,4437
 AutoIndent,,,,3.0,4437
 BiweightMidvariance,,,,11.1,4437
-CentralFeature,,,,11.1,4437
+CentralFeature,Element minimizing total distance to all others (Euclidean/EditDistance/equality metric),✅,pure,11.1,4437
 CepstrogramArray,,🚫,,11.1,4437
 CodeAssistOptions,,🚫,,10.0,4437
 Conjunction,And of an expression over all True/False assignments of the given variables (minimized),✅,pure,7.0,4437

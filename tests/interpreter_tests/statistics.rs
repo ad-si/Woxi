@@ -6694,3 +6694,131 @@ mod erlang_tests {
     assert_eq!(interpret("ErlangB[3]").unwrap(), "ErlangB[3]");
   }
 }
+
+mod central_feature_tests {
+  use woxi::interpret;
+
+  // The element minimizing total distance to the others; earliest wins
+  // ties. All values verified against wolframscript.
+  #[test]
+  fn numeric_data() {
+    assert_eq!(interpret("CentralFeature[{1, 2, 3, 4}]").unwrap(), "2");
+    assert_eq!(interpret("CentralFeature[{1, 2, 3, 4, 5}]").unwrap(), "3");
+    assert_eq!(interpret("CentralFeature[{3, 1, 2}]").unwrap(), "2");
+    assert_eq!(interpret("CentralFeature[{1., 5., 2.5}]").unwrap(), "2.5");
+    assert_eq!(interpret("CentralFeature[{1/2, 3/2, 5}]").unwrap(), "3/2");
+    assert_eq!(interpret("CentralFeature[{2, 2, 8}]").unwrap(), "2");
+    assert_eq!(interpret("CentralFeature[{7}]").unwrap(), "7");
+    // Numeric symbolic constants participate numerically and the original
+    // expression is returned.
+    assert_eq!(interpret("CentralFeature[{Pi, E, 3}]").unwrap(), "3");
+    assert_eq!(
+      interpret("CentralFeature[{Sqrt[2], 2, 0}]").unwrap(),
+      "Sqrt[2]"
+    );
+    // Complex numbers act as 2D points.
+    assert_eq!(
+      interpret("CentralFeature[{1 + 2 I, 3 I, 2}]").unwrap(),
+      "1 + 2*I"
+    );
+  }
+
+  #[test]
+  fn vector_data() {
+    assert_eq!(
+      interpret(
+        "CentralFeature[{{1., 3., 5.}, {7., 1., 2.}, {9., 3., 1.}, {4., 5., 6.}}]"
+      )
+      .unwrap(),
+      "{7., 1., 2.}"
+    );
+    assert_eq!(
+      interpret("CentralFeature[{{1, 2, 3}, {2, 3, 4}, {10, 10, 10}}]")
+        .unwrap(),
+      "{2, 3, 4}"
+    );
+    // Symmetric tie picks the earlier element.
+    assert_eq!(
+      interpret("CentralFeature[{{0, 0}, {1, 0}, {0, 1}, {5, 5}}]").unwrap(),
+      "{1, 0}"
+    );
+  }
+
+  // Strings use EditDistance; non-metric data falls back to the discrete
+  // equality metric (so frequency wins, then position).
+  #[test]
+  fn strings_and_fallback() {
+    assert_eq!(
+      interpret(r#"CentralFeature[{"ab", "abc", "abcde"}]"#).unwrap(),
+      "abc"
+    );
+    assert_eq!(interpret("CentralFeature[{b, a, a}]").unwrap(), "a");
+    assert_eq!(interpret("CentralFeature[{b, b, a}]").unwrap(), "b");
+    assert_eq!(interpret("CentralFeature[{b, a, c}]").unwrap(), "b");
+    assert_eq!(interpret("CentralFeature[{0, 10, 11, a}]").unwrap(), "0");
+    assert_eq!(interpret("CentralFeature[{1, a, 2}]").unwrap(), "1");
+    assert_eq!(
+      interpret(r#"CentralFeature[{"ab", "abc", 5, 6}]"#).unwrap(),
+      "ab"
+    );
+    assert_eq!(
+      interpret("CentralFeature[{{1, 2}, {3}, {4, 5}}]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("CentralFeature[{True, False, True}]").unwrap(),
+      "True"
+    );
+  }
+
+  // Rule forms return the value belonging to the central key.
+  #[test]
+  fn rule_forms() {
+    assert_eq!(interpret("CentralFeature[{1, 2} -> {x, y}]").unwrap(), "x");
+    assert_eq!(
+      interpret("CentralFeature[{1, 2, 3} -> {x, y, z}]").unwrap(),
+      "y"
+    );
+    assert_eq!(
+      interpret("CentralFeature[{1 -> x, 2 -> y, 3 -> z}]").unwrap(),
+      "y"
+    );
+    assert_eq!(interpret("CentralFeature[{x -> 1, 2 -> y}]").unwrap(), "1");
+  }
+
+  // Invalid data emits `near1`; extra non-options emit `nonopt`; zero
+  // arguments emit `argx` — all unevaluated, matching wolframscript.
+  #[test]
+  fn message_cases() {
+    let r = woxi::interpret_with_stdout("CentralFeature[{}]").unwrap();
+    assert_eq!(r.result, "CentralFeature[{}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "CentralFeature::near1: {} is neither a list of real points nor a valid list of rules."
+    )));
+
+    let r = woxi::interpret_with_stdout("CentralFeature[7]").unwrap();
+    assert_eq!(r.result, "CentralFeature[7]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "CentralFeature::near1: 7 is neither a list of real points nor a valid list of rules."
+    )));
+
+    let r =
+      woxi::interpret_with_stdout("CentralFeature[{1, 2} -> {x}]").unwrap();
+    assert_eq!(r.result, "CentralFeature[{1, 2} -> {x}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "CentralFeature::near1: {1, 2} -> {x} is neither a list of real points nor a valid list of rules."
+    )));
+
+    let r = woxi::interpret_with_stdout("CentralFeature[{1, 2}, 3]").unwrap();
+    assert_eq!(r.result, "CentralFeature[{1, 2}, 3]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "CentralFeature::nonopt: Options expected (instead of 3) beyond position 1 in CentralFeature[{1, 2}, 3]. An option must be a rule or a list of rules."
+    )));
+
+    let r = woxi::interpret_with_stdout("CentralFeature[]").unwrap();
+    assert_eq!(r.result, "CentralFeature[]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "CentralFeature::argx: CentralFeature called with 0 arguments; 1 argument is expected."
+    )));
+  }
+}

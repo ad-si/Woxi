@@ -7690,3 +7690,221 @@ pub fn erlang_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn erlang_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   erlang_common("ErlangC", args, true)
 }
+
+/// CentralFeature[data] — the element minimizing the total distance to all
+/// other elements, matching wolframscript: homogeneous numeric scalars
+/// (including complex, as 2D points) use Euclidean distance, equal-length
+/// numeric vectors use Euclidean distance, strings use EditDistance, and
+/// everything else falls back to the discrete equality metric. Ties pick
+/// the earliest element. Rule forms ({k...} -> {v...} or {k -> v, ...})
+/// return the value belonging to the central key.
+pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "CentralFeature".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let call_display = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "CentralFeature".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  if args.is_empty() {
+    crate::emit_message(
+      "CentralFeature::argx: CentralFeature called with 0 arguments; 1 argument is expected.",
+    );
+    return unevaluated();
+  }
+  for extra in &args[1..] {
+    let is_opt = matches!(
+      extra,
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+    );
+    if !is_opt {
+      crate::emit_message(&format!(
+        "CentralFeature::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
+        crate::syntax::expr_to_string(extra),
+        call_display()
+      ));
+      return unevaluated();
+    }
+  }
+
+  let data = &args[0];
+  // Wrapped data forms Woxi does not model (e.g. WeightedData) stay
+  // silently unevaluated instead of wrongly emitting `near1`.
+  if matches!(data, Expr::FunctionCall { name, .. } if name == "WeightedData") {
+    return unevaluated();
+  }
+  let near1 = || {
+    crate::emit_message(&format!(
+      "CentralFeature::near1: {} is neither a list of real points nor a valid list of rules.",
+      crate::syntax::expr_to_string(data)
+    ));
+  };
+
+  let (keys, values): (Vec<Expr>, Vec<Expr>) = match data {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match (pattern.as_ref(), replacement.as_ref()) {
+      (Expr::List(k), Expr::List(v)) if k.len() == v.len() && !k.is_empty() => {
+        (k.to_vec(), v.to_vec())
+      }
+      _ => {
+        near1();
+        return unevaluated();
+      }
+    },
+    Expr::List(items) if !items.is_empty() => {
+      if items.iter().all(|it| matches!(it, Expr::Rule { .. })) {
+        items
+          .iter()
+          .map(|it| {
+            let Expr::Rule {
+              pattern,
+              replacement,
+            } = it
+            else {
+              unreachable!()
+            };
+            ((**pattern).clone(), (**replacement).clone())
+          })
+          .unzip()
+      } else {
+        (items.to_vec(), items.to_vec())
+      }
+    }
+    _ => {
+      near1();
+      return unevaluated();
+    }
+  };
+
+  let idx = central_feature_index(&keys)?;
+  Ok(values[idx].clone())
+}
+
+/// Index of the element with the smallest total distance to the others
+/// (earliest wins ties), using the automatic metric described above.
+fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
+  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+
+  let n = keys.len();
+  if n == 1 {
+    return Ok(0);
+  }
+
+  let numeric_parts = |e: &Expr| -> Option<(f64, f64)> {
+    if let Some(p) = expr_to_complex_parts_pub(e) {
+      return Some(p);
+    }
+    let evaluated =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "N".to_string(),
+        args: vec![e.clone()].into(),
+      })
+      .ok()?;
+    expr_to_complex_parts_pub(&evaluated)
+  };
+
+  // Distance matrix column sums for whichever metric applies.
+  let sums: Vec<f64> = if let Some(points) = keys
+    .iter()
+    .map(numeric_parts)
+    .collect::<Option<Vec<(f64, f64)>>>(
+  ) {
+    // Numeric scalars (complex values are 2D points).
+    (0..n)
+      .map(|i| {
+        (0..n)
+          .map(|j| {
+            let dr = points[i].0 - points[j].0;
+            let di = points[i].1 - points[j].1;
+            (dr * dr + di * di).sqrt()
+          })
+          .sum()
+      })
+      .collect()
+  } else if let Some(vectors) = keys
+    .iter()
+    .map(|e| match e {
+      Expr::List(items) if !items.is_empty() => items
+        .iter()
+        .map(|c| {
+          numeric_parts(c).and_then(|(re, im)| (im == 0.0).then_some(re))
+        })
+        .collect::<Option<Vec<f64>>>(),
+      _ => None,
+    })
+    .collect::<Option<Vec<Vec<f64>>>>()
+    .filter(|vs| vs.iter().all(|v| v.len() == vs[0].len()))
+  {
+    // Equal-length real vectors: Euclidean distance.
+    (0..n)
+      .map(|i| {
+        (0..n)
+          .map(|j| {
+            vectors[i]
+              .iter()
+              .zip(vectors[j].iter())
+              .map(|(a, b)| (a - b) * (a - b))
+              .sum::<f64>()
+              .sqrt()
+          })
+          .sum()
+      })
+      .collect()
+  } else if keys.iter().all(|e| matches!(e, Expr::String(_))) {
+    // Strings: EditDistance.
+    let strings: Vec<&str> = keys
+      .iter()
+      .map(|e| {
+        let Expr::String(s) = e else { unreachable!() };
+        s.as_str()
+      })
+      .collect();
+    (0..n)
+      .map(|i| {
+        (0..n)
+          .map(|j| edit_distance_chars(strings[i], strings[j]) as f64)
+          .sum()
+      })
+      .collect()
+  } else {
+    // Discrete equality metric.
+    let reprs: Vec<String> =
+      keys.iter().map(crate::syntax::expr_to_string).collect();
+    (0..n)
+      .map(|i| (0..n).filter(|&j| reprs[i] != reprs[j]).count() as f64)
+      .collect()
+  };
+
+  let mut best = 0usize;
+  for (i, s) in sums.iter().enumerate() {
+    if *s < sums[best] {
+      best = i;
+    }
+  }
+  Ok(best)
+}
+
+/// Levenshtein distance over Unicode scalar values.
+fn edit_distance_chars(a: &str, b: &str) -> usize {
+  let a: Vec<char> = a.chars().collect();
+  let b: Vec<char> = b.chars().collect();
+  let mut prev: Vec<usize> = (0..=b.len()).collect();
+  let mut curr = vec![0usize; b.len() + 1];
+  for (i, ca) in a.iter().enumerate() {
+    curr[0] = i + 1;
+    for (j, cb) in b.iter().enumerate() {
+      let cost = usize::from(ca != cb);
+      curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+    }
+    std::mem::swap(&mut prev, &mut curr);
+  }
+  prev[b.len()]
+}
