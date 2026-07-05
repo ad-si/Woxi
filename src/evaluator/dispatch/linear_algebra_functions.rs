@@ -1207,6 +1207,12 @@ pub fn dispatch_linear_algebra_functions(
     "RollPitchYawMatrix" if args.len() == 1 || args.len() == 2 => {
       return Some(roll_pitch_yaw_matrix_ast(args));
     }
+    "LyapunovSolve" if args.len() == 2 || args.len() == 3 => {
+      return Some(lyapunov_solve_ast(args));
+    }
+    "DiscreteLyapunovSolve" if args.len() == 2 || args.len() == 3 => {
+      return Some(discrete_lyapunov_solve_ast(args));
+    }
     "LUDecomposition" if args.len() == 1 => {
       return Some(lu_decomposition_ast(&args[0]));
     }
@@ -4248,4 +4254,327 @@ fn rotation_matrix_plane(
     ],
   );
   evaluate_expr_to_expr(&r)
+}
+
+/// Shared solver for LyapunovSolve / DiscreteLyapunovSolve. The two-argument
+/// forms solve a.x + x.aᵀ == c and a.x.aᵀ - x == c; the three-argument
+/// (Sylvester) forms solve a.x + x.b == c and a.x.b - x == c with an m×m b
+/// and n×m c. Real numeric matrices only (wolframscript's symbolic path
+/// introduces Conjugate forms that are out of scope; symbolic input stays
+/// unevaluated). Everything is solved exactly over the rationals — machine
+/// reals convert via their exact binary fractions and round back — so
+/// results match wolframscript to the last digit.
+fn lyapunov_solve_common(
+  name: &str,
+  args: &[Expr],
+  discrete: bool,
+) -> Result<Expr, InterpreterError> {
+  #[derive(Clone, Copy)]
+  struct Q {
+    n: i128,
+    d: i128,
+  }
+  fn qgcd(mut a: i128, mut b: i128) -> i128 {
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a.max(1)
+  }
+  impl Q {
+    fn new(mut n: i128, mut d: i128) -> Option<Q> {
+      if d == 0 {
+        return None;
+      }
+      if d < 0 {
+        n = n.checked_neg()?;
+        d = d.checked_neg()?;
+      }
+      let g = qgcd(n.abs(), d);
+      Some(Q { n: n / g, d: d / g })
+    }
+    fn zero() -> Q {
+      Q { n: 0, d: 1 }
+    }
+    fn add(self, o: Q) -> Option<Q> {
+      Q::new(
+        self
+          .n
+          .checked_mul(o.d)?
+          .checked_add(o.n.checked_mul(self.d)?)?,
+        self.d.checked_mul(o.d)?,
+      )
+    }
+    fn sub(self, o: Q) -> Option<Q> {
+      Q::new(
+        self
+          .n
+          .checked_mul(o.d)?
+          .checked_sub(o.n.checked_mul(self.d)?)?,
+        self.d.checked_mul(o.d)?,
+      )
+    }
+    fn mul(self, o: Q) -> Option<Q> {
+      Q::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
+    }
+    fn div(self, o: Q) -> Option<Q> {
+      Q::new(self.n.checked_mul(o.d)?, self.d.checked_mul(o.n)?)
+    }
+    fn to_f64(self) -> f64 {
+      self.n as f64 / self.d as f64
+    }
+  }
+
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() < 2 || args.len() > 3 {
+    return unevaluated();
+  }
+
+  // Parse a rectangular real numeric matrix; None for anything symbolic or
+  // complex. Reals convert exactly (mantissa/2^k).
+  let mut any_real = false;
+  let mut parse_entry = |e: &Expr| -> Option<Q> {
+    match e {
+      Expr::Integer(v) => Q::new(*v, 1),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) => Q::new(*p, *q),
+          _ => None,
+        }
+      }
+      Expr::Real(v) if v.is_finite() => {
+        any_real = true;
+        if *v == 0.0 {
+          return Some(Q::zero());
+        }
+        let (m, e2, s) = {
+          let bits = v.to_bits();
+          let sign = if bits >> 63 == 0 { 1i128 } else { -1 };
+          let exp = ((bits >> 52) & 0x7ff) as i64;
+          let frac = (bits & ((1u64 << 52) - 1)) as i128;
+          if exp == 0 {
+            (frac, -1074i64, sign)
+          } else {
+            (frac + (1i128 << 52), exp - 1075, sign)
+          }
+        };
+        if e2 >= 0 {
+          Q::new(s * m.checked_shl(e2 as u32)?, 1)
+        } else if e2 > -120 {
+          Q::new(s * m, 1i128.checked_shl((-e2) as u32)?)
+        } else {
+          None
+        }
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => {
+        let q = parse_matrix_entry_recur(operand)?;
+        Q::new(-q.n, q.d)
+      }
+      _ => None,
+    }
+  };
+  // (small helper for the negation arm above)
+  fn parse_matrix_entry_recur(e: &Expr) -> Option<Q> {
+    match e {
+      Expr::Integer(v) => Q::new(*v, 1),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) => Q::new(*p, *q),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  let mut parse_matrix = |e: &Expr| -> Option<Vec<Vec<Q>>> {
+    let Expr::List(rows) = e else { return None };
+    if rows.is_empty() {
+      return None;
+    }
+    let mut out: Vec<Vec<Q>> = Vec::with_capacity(rows.len());
+    let mut width = None;
+    for row in rows.iter() {
+      let Expr::List(cells) = row else { return None };
+      match width {
+        None => width = Some(cells.len()),
+        Some(w) if w != cells.len() => return None,
+        _ => {}
+      }
+      if cells.is_empty() {
+        return None;
+      }
+      let mut r = Vec::with_capacity(cells.len());
+      for c in cells.iter() {
+        r.push(parse_entry(c)?);
+      }
+      out.push(r);
+    }
+    Some(out)
+  };
+
+  let Some(a) = parse_matrix(&args[0]) else {
+    return unevaluated();
+  };
+  let n = a.len();
+  if a[0].len() != n {
+    crate::emit_message(&format!(
+      "{}::matsq: Argument {} at position 1 is not a nonempty square matrix.",
+      name,
+      crate::syntax::expr_to_output(&args[0])
+    ));
+    return unevaluated();
+  }
+  // 2-arg: b = aᵀ (real conjugate transpose); 3-arg: b as given.
+  let (b, c_expr) = if args.len() == 3 {
+    let Some(b) = parse_matrix(&args[1]) else {
+      return unevaluated();
+    };
+    if b[0].len() != b.len() {
+      crate::emit_message(&format!(
+        "{}::matsq: Argument {} at position 2 is not a nonempty square matrix.",
+        name,
+        crate::syntax::expr_to_output(&args[1])
+      ));
+      return unevaluated();
+    }
+    (b, &args[2])
+  } else {
+    let at: Vec<Vec<Q>> =
+      (0..n).map(|i| (0..n).map(|j| a[j][i]).collect()).collect();
+    (at, &args[1])
+  };
+  let m = b.len();
+  let Some(c) = parse_matrix(c_expr) else {
+    return unevaluated();
+  };
+  if c.len() != n || c[0].len() != m {
+    crate::emit_message(&format!(
+      "{}::ndims: The arguments {} and {} have incorrect dimensions.",
+      name,
+      crate::syntax::expr_to_output(&args[0]),
+      crate::syntax::expr_to_output(c_expr)
+    ));
+    return unevaluated();
+  }
+
+  // Build the (n·m) × (n·m) system over vec(x), row-major x[k][l].
+  let size = n * m;
+  let idx = |k: usize, l: usize| k * m + l;
+  let mut mat: Vec<Vec<Q>> = vec![vec![Q::zero(); size + 1]; size];
+  let build = || -> Option<Vec<Vec<Q>>> {
+    let mut mat = vec![vec![Q::zero(); size + 1]; size];
+    for i in 0..n {
+      for j in 0..m {
+        let row = idx(i, j);
+        if discrete {
+          // Σ_{k,l} a[i][k] b[l][j] x[k][l]  -  x[i][j]  = c[i][j]
+          for k in 0..n {
+            for l in 0..m {
+              let coeff = a[i][k].mul(b[l][j])?;
+              mat[row][idx(k, l)] = mat[row][idx(k, l)].add(coeff)?;
+            }
+          }
+          mat[row][idx(i, j)] = mat[row][idx(i, j)].sub(Q::new(1, 1)?)?;
+        } else {
+          // Σ_k a[i][k] x[k][j]  +  Σ_l x[i][l] b[l][j]  = c[i][j]
+          for k in 0..n {
+            mat[row][idx(k, j)] = mat[row][idx(k, j)].add(a[i][k])?;
+          }
+          for l in 0..m {
+            mat[row][idx(i, l)] = mat[row][idx(i, l)].add(b[l][j])?;
+          }
+        }
+        mat[row][size] = c[i][j];
+      }
+    }
+    Some(mat)
+  };
+  match build() {
+    Some(built) => mat = built,
+    None => return unevaluated(),
+  }
+
+  // Exact Gaussian elimination. No pivot in a column → singular (::nosol);
+  // rational overflow → conservatively leave the call unevaluated.
+  enum Outcome {
+    Solved(Vec<Q>),
+    Singular,
+    Overflow,
+  }
+  let outcome = (|| {
+    for col in 0..size {
+      let Some(pivot) = (col..size).find(|&r| mat[r][col].n != 0) else {
+        return Outcome::Singular;
+      };
+      mat.swap(col, pivot);
+      let p = mat[col][col];
+      for cc in col..=size {
+        match mat[col][cc].div(p) {
+          Some(v) => mat[col][cc] = v,
+          None => return Outcome::Overflow,
+        }
+      }
+      for r in 0..size {
+        if r != col && mat[r][col].n != 0 {
+          let f = mat[r][col];
+          for cc in col..=size {
+            match f.mul(mat[col][cc]).and_then(|x| mat[r][cc].sub(x)) {
+              Some(v) => mat[r][cc] = v,
+              None => return Outcome::Overflow,
+            }
+          }
+        }
+      }
+    }
+    Outcome::Solved((0..size).map(|r| mat[r][size]).collect())
+  })();
+  let sol = match outcome {
+    Outcome::Solved(s) => s,
+    Outcome::Singular => {
+      crate::emit_message(&format!(
+        "{}::nosol: The matrix equation has no solution.",
+        name
+      ));
+      return unevaluated();
+    }
+    Outcome::Overflow => return unevaluated(),
+  };
+
+  let entry_expr = |q: Q| -> Expr {
+    if any_real {
+      Expr::Real(q.to_f64())
+    } else if q.d == 1 {
+      Expr::Integer(q.n)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(q.n), Expr::Integer(q.d)].into(),
+      }
+    }
+  };
+  let rows: Vec<Expr> = (0..n)
+    .map(|i| Expr::List((0..m).map(|j| entry_expr(sol[idx(i, j)])).collect()))
+    .collect();
+  Ok(Expr::List(rows.into()))
+}
+
+pub fn lyapunov_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  lyapunov_solve_common("LyapunovSolve", args, false)
+}
+
+pub fn discrete_lyapunov_solve_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  lyapunov_solve_common("DiscreteLyapunovSolve", args, true)
 }

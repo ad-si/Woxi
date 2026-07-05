@@ -5802,3 +5802,97 @@ mod roll_pitch_yaw_matrix_tests {
     );
   }
 }
+
+mod lyapunov_solve_tests {
+  use woxi::interpret;
+
+  // LyapunovSolve[a, c] solves a.x + x.aᵀ == c exactly over the rationals.
+  #[test]
+  fn continuous() {
+    assert_eq!(
+      interpret("LyapunovSolve[{{1, 2}, {0, 3}}, {{1, 0}, {0, 1}}]").unwrap(),
+      "{{2/3, -1/12}, {-1/12, 1/6}}"
+    );
+    assert_eq!(
+      interpret("LyapunovSolve[{{-1, 0}, {0, -2}}, {{4, 2}, {2, 4}}]").unwrap(),
+      "{{-2, -2/3}, {-2/3, -1}}"
+    );
+    // Machine reals convert exactly and round back, matching wolframscript
+    // to the last digit.
+    assert_eq!(
+      interpret("LyapunovSolve[{{1., 2.}, {0., 3.}}, {{1., 0.}, {0., 1.}}]")
+        .unwrap(),
+      "{{0.6666666666666666, -0.08333333333333333}, {-0.08333333333333333, 0.16666666666666666}}"
+    );
+  }
+
+  // The three-argument form is the general Sylvester equation
+  // a.x + x.b == c (b untransposed), allowing rectangular c.
+  #[test]
+  fn sylvester() {
+    assert_eq!(
+      interpret(
+        "LyapunovSolve[{{1, 2}, {0, 3}}, {{4, 5}, {6, 7}}, {{1, 0}, {0, 1}}]"
+      )
+      .unwrap(),
+      "{{5/4, -33/40}, {-3/20, 7/40}}"
+    );
+    assert_eq!(
+      interpret("LyapunovSolve[{{1, 0}, {0, 2}}, {{3}}, {{1}, {1}}]").unwrap(),
+      "{{1/4}, {1/5}}"
+    );
+  }
+
+  // DiscreteLyapunovSolve[a, c] solves a.x.aᵀ - x == c; the 3-argument form
+  // solves a.x.b - x == c.
+  #[test]
+  fn discrete() {
+    assert_eq!(
+      interpret(
+        "DiscreteLyapunovSolve[{{1/2, 0}, {0, 1/3}}, {{1, 0}, {0, 1}}]"
+      )
+      .unwrap(),
+      "{{-4/3, 0}, {0, -9/8}}"
+    );
+    assert_eq!(
+      interpret("DiscreteLyapunovSolve[{{0, 1}, {-1/2, 0}}, {{1, 2}, {2, 1}}]")
+        .unwrap(),
+      "{{-8/3, -4/3}, {-4/3, -5/3}}"
+    );
+    assert_eq!(
+      interpret(
+        "DiscreteLyapunovSolve[{{1/2, 0}, {0, 1/3}}, {{1/4, 0}, {0, 1/5}}, {{1, 0}, {0, 1}}]"
+      )
+      .unwrap(),
+      "{{-8/7, 0}, {0, -15/14}}"
+    );
+  }
+
+  // Singular systems emit ::nosol; shape errors emit ::matsq/::ndims;
+  // symbolic matrices stay unevaluated (wolframscript's symbolic path uses
+  // Conjugate forms that are out of scope).
+  #[test]
+  fn error_forms() {
+    assert_eq!(
+      interpret("LyapunovSolve[{{1, -1}, {1, -1}}, {{1, 0}, {0, 1}}]").unwrap(),
+      "LyapunovSolve[{{1, -1}, {1, -1}}, {{1, 0}, {0, 1}}]"
+    );
+    assert_eq!(
+      interpret("DiscreteLyapunovSolve[{{1, 0}, {0, 1}}, {{1, 0}, {0, 1}}]")
+        .unwrap(),
+      "DiscreteLyapunovSolve[{{1, 0}, {0, 1}}, {{1, 0}, {0, 1}}]"
+    );
+    assert_eq!(
+      interpret("LyapunovSolve[{{1, 2}}, {{1, 0}, {0, 1}}]").unwrap(),
+      "LyapunovSolve[{{1, 2}}, {{1, 0}, {0, 1}}]"
+    );
+    assert_eq!(
+      interpret("LyapunovSolve[{{1, 2}, {0, 3}}, {{1, 0}}]").unwrap(),
+      "LyapunovSolve[{{1, 2}, {0, 3}}, {{1, 0}}]"
+    );
+    assert_eq!(
+      interpret("LyapunovSolve[{{a, 0}, {0, b}}, {{1, 0}, {0, 1}}]").unwrap(),
+      "LyapunovSolve[{{a, 0}, {0, b}}, {{1, 0}, {0, 1}}]"
+    );
+  }
+}

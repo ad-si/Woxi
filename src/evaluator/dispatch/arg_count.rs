@@ -784,6 +784,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LowerCaseQ" => Some((1, 1)),
     "PrintableASCIIQ" => Some((1, 1)),
     "LowerTriangularize" => Some((1, 2)),
+    "LyapunovSolve" => Some((2, 3)),
+    "DiscreteLyapunovSolve" => Some((2, 3)),
     "LowerTriangularMatrixQ" => Some((1, 1)),
     "LowpassFilter" => Some((2, 4)),
     "LucasL" => Some((1, 2)),
