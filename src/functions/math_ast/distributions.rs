@@ -208,6 +208,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GammaDistribution" => pdf_gamma(dargs, x),
     "BetaDistribution" => pdf_beta(dargs, x),
     "KumaraswamyDistribution" => pdf_kumaraswamy(dargs, x),
+    "PowerDistribution" => pdf_power(dargs, x),
     "StudentTDistribution" => pdf_student_t(dargs, x),
     "LogNormalDistribution" => pdf_lognormal(dargs, x),
     "ChiSquareDistribution" => pdf_chi_square(dargs, x),
@@ -1782,6 +1783,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
     "KumaraswamyDistribution" => cdf_kumaraswamy(dargs, x),
+    "PowerDistribution" => cdf_power(dargs, x),
     "ExpGammaDistribution" => cdf_expgamma(dargs, x),
     "LogGammaDistribution" => cdf_loggamma(dargs, x),
     "LogNormalDistribution" => cdf_lognormal(dargs, x),
@@ -3972,6 +3974,27 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "PowerDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "PowerDistribution expects 2 arguments".into(),
+        ));
+      }
+      let (k, a) = (dargs[0].clone(), dargs[1].clone());
+      // Mean = a/(k + a k); Variance = a/((1+a)^2 (2+a) k^2).
+      let mean = eval(divide(
+        a.clone(),
+        plus(k.clone(), times(a.clone(), k.clone())),
+      ))?;
+      let var = eval(divide(
+        a.clone(),
+        times(
+          times(power(plus(int(1), a.clone()), int(2)), plus(int(2), a)),
+          power(k, int(2)),
+        ),
+      ))?;
+      Ok((mean, var))
+    }
     "KumaraswamyDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
@@ -5356,6 +5379,62 @@ fn pdf_beta(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond =
     comparison3(int(0), ComparisonOp::Less, x, ComparisonOp::Less, int(1));
   eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// PDF[PowerDistribution[k, a], x] =
+///   Piecewise[{{a k^a x^(a-1), 0 < x <= 1/k}}, 0].
+fn pdf_power(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "PowerDistribution expects 2 arguments".into(),
+    ));
+  }
+  let (k, a) = (dargs[0].clone(), dargs[1].clone());
+  let value = times(
+    times(a.clone(), power(k.clone(), a.clone())),
+    power(x.clone(), minus(a, int(1))),
+  );
+  let real_arg = matches!(x, Expr::Real(_) | Expr::BigFloat(..));
+  let cond = comparison3(
+    int(0),
+    ComparisonOp::Less,
+    x,
+    ComparisonOp::LessEqual,
+    power(k, int(-1)),
+  );
+  let result = eval(piecewise(vec![(value, cond)], int(0)))?;
+  // wolframscript numericizes the whole result for machine-real arguments
+  // (0. and 1. outside the support), unlike most other distributions.
+  if real_arg {
+    return eval(unary_fn("N", result));
+  }
+  Ok(result)
+}
+
+/// CDF[PowerDistribution[k, a], x] =
+///   Piecewise[{{(k x)^a, 0 < x <= 1/k}, {1, x > 1/k}}, 0].
+fn cdf_power(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "PowerDistribution expects 2 arguments".into(),
+    ));
+  }
+  let (k, a) = (dargs[0].clone(), dargs[1].clone());
+  let value = power(times(k.clone(), x.clone()), a.clone());
+  let cond1 = comparison3(
+    int(0),
+    ComparisonOp::Less,
+    x.clone(),
+    ComparisonOp::LessEqual,
+    power(k.clone(), int(-1)),
+  );
+  let real_arg = matches!(x, Expr::Real(_) | Expr::BigFloat(..));
+  let cond2 = comparison(x, ComparisonOp::Greater, power(k, int(-1)));
+  let result = eval(piecewise(vec![(value, cond1), (int(1), cond2)], int(0)))?;
+  if real_arg {
+    return eval(unary_fn("N", result));
+  }
+  Ok(result)
 }
 
 /// PDF[KumaraswamyDistribution[a, b], x] =

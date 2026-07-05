@@ -6822,3 +6822,92 @@ mod central_feature_tests {
     )));
   }
 }
+
+mod power_distribution_tests {
+  use woxi::interpret;
+
+  // PowerDistribution[k, a] has support (0, 1/k]. All values verified
+  // against wolframscript.
+  #[test]
+  fn pdf_and_cdf() {
+    assert_eq!(
+      interpret("PDF[PowerDistribution[k, a], x]").unwrap(),
+      "Piecewise[{{a*k^a*x^(-1 + a), Inequality[0, Less, x, LessEqual, k^(-1)]}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[PowerDistribution[2, 3], x]").unwrap(),
+      "Piecewise[{{24*x^2, Inequality[0, Less, x, LessEqual, 1/2]}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[PowerDistribution[k, a], x]").unwrap(),
+      "Piecewise[{{(k*x)^a, Inequality[0, Less, x, LessEqual, k^(-1)]}, {1, x > k^(-1)}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[PowerDistribution[2, 3], x]").unwrap(),
+      "Piecewise[{{8*x^3, Inequality[0, Less, x, LessEqual, 1/2]}, {1, x > 1/2}}, 0]"
+    );
+    // Exact arguments give exact values.
+    assert_eq!(interpret("PDF[PowerDistribution[2, 3], 1/2]").unwrap(), "6");
+    assert_eq!(interpret("PDF[PowerDistribution[2, 3], 1]").unwrap(), "0");
+    assert_eq!(interpret("PDF[PowerDistribution[2, 3], 5]").unwrap(), "0");
+    assert_eq!(interpret("PDF[PowerDistribution[2, 3], 0]").unwrap(), "0");
+    assert_eq!(interpret("CDF[PowerDistribution[2, 3], 1/2]").unwrap(), "1");
+    assert_eq!(interpret("CDF[PowerDistribution[2, 3], 3]").unwrap(), "1");
+    assert_eq!(interpret("CDF[PowerDistribution[2, 3], 0]").unwrap(), "0");
+    // Machine-real arguments numericize the result (unlike most other
+    // distributions in wolframscript).
+    assert_eq!(
+      interpret("PDF[PowerDistribution[2, 3], 1.5]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("CDF[PowerDistribution[2, 3], 1.5]").unwrap(),
+      "1."
+    );
+    assert_eq!(
+      interpret("PDF[PowerDistribution[2, 3], -1.]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("CDF[PowerDistribution[2, 3], -1.]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("CDF[PowerDistribution[2, 3], 0.3]").unwrap(),
+      "0.21599999999999997"
+    );
+  }
+
+  #[test]
+  fn moments_and_median() {
+    assert_eq!(
+      interpret("Mean[PowerDistribution[k, a]]").unwrap(),
+      "a/(k + a*k)"
+    );
+    assert_eq!(interpret("Mean[PowerDistribution[2, 3]]").unwrap(), "3/8");
+    assert_eq!(
+      interpret("Mean[PowerDistribution[2., 3.]]").unwrap(),
+      "0.375"
+    );
+    assert_eq!(
+      interpret("Variance[PowerDistribution[k, a]]").unwrap(),
+      "a/((1 + a)^2*(2 + a)*k^2)"
+    );
+    assert_eq!(
+      interpret("Variance[PowerDistribution[2, 3]]").unwrap(),
+      "3/320"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[PowerDistribution[2, 3]]").unwrap(),
+      "Sqrt[3/5]/8"
+    );
+    assert_eq!(
+      interpret("Median[PowerDistribution[k, a]]").unwrap(),
+      "1/(2^a^(-1)*k)"
+    );
+    assert_eq!(
+      interpret("Median[PowerDistribution[2, 3]]").unwrap(),
+      "1/(2*2^(1/3))"
+    );
+  }
+}

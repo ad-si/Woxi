@@ -3148,7 +3148,7 @@ DateObjectQ,True if the expression is a well-formed DateObject,✅,pure,10.0,322
 FilteredEntityClass,,🚫,,12.0,3224
 LanguageIdentify,,🚫,,10.1,3224
 ObservabilityMatrix,,,,8.0,3224
-PowerDistribution,,,,8.0,3224
+PowerDistribution,Continuous distribution with PDF a k^a x^(a-1) on support (0 1/k],✅,pure,8.0,3224
 TopologicalSort,Tie-breaking order among independent vertices follows WL-internal traversal (three candidate models contradicted by probes),🚫,pure,8.0,3224
 DynamicUpdating,,🚫,,6.0,3233
 EvaluatorNames,,🚫,,4.0,3233

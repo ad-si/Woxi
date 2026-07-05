@@ -318,6 +318,31 @@ fn group_by_nested(
 /// distributions whose median Woxi cannot express symbolically.
 fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
   match name {
+    "PowerDistribution" if dargs.len() == 2 => {
+      // Median[PowerDistribution[k, a]] = 1/(2^(1/a) k).
+      let (k, a) = (dargs[0].clone(), dargs[1].clone());
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(Expr::Integer(2)),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(a),
+                right: Box::new(Expr::Integer(-1)),
+              }),
+            },
+            k,
+          ]
+          .into(),
+        }),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "LogisticDistribution" => match dargs.len() {
       0 => Some(Expr::Integer(0)),
       2 => Some(dargs[0].clone()),
