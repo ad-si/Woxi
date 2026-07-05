@@ -6382,3 +6382,26 @@ mod echo_function {
     assert_eq!(r.stdout, "");
   }
 }
+
+mod echo_label {
+  use woxi::interpret_with_stdout;
+
+  // EchoLabel[label][expr] is Echo[expr, label] in operator form.
+  #[test]
+  fn applies_and_returns() {
+    let r = interpret_with_stdout(r#"EchoLabel["x"][42]"#).unwrap();
+    assert_eq!(r.result, "42");
+    assert_eq!(r.stdout, ">> x 42\n");
+    // Non-string labels work too.
+    let r = interpret_with_stdout("EchoLabel[42][7]").unwrap();
+    assert_eq!(r.result, "7");
+    assert_eq!(r.stdout, ">> 42 7\n");
+  }
+
+  #[test]
+  fn operator_form_is_symbolic() {
+    let r = interpret_with_stdout(r#"EchoLabel["x"]"#).unwrap();
+    assert_eq!(r.result, "EchoLabel[x]");
+    assert_eq!(r.stdout, "");
+  }
+}

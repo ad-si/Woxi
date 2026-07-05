@@ -54,6 +54,55 @@ pub fn dispatch_datetime_functions(
     "DateWithinQ" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_within_q_ast(args));
     }
+    // TimeZoneOffset[] → $TimeZone; TimeZoneOffset[tz] → the zone's UTC
+    // offset (numeric zones pass through); TimeZoneOffset[tz1, tz2(, date)]
+    // → tz1 - tz2 (the date only matters for named zones, which need a tz
+    // database and stay unevaluated). Non-numeric, non-string zones emit
+    // ::zone.
+    "TimeZoneOffset" if args.len() <= 3 => {
+      let numeric = |e: &Expr| {
+        matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+          || matches!(e, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2)
+          || matches!(
+            e,
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              ..
+            }
+          )
+      };
+      let unevaluated = || {
+        Some(Ok(Expr::FunctionCall {
+          name: "TimeZoneOffset".to_string(),
+          args: args.to_vec().into(),
+        }))
+      };
+      if args.is_empty() {
+        return Some(Ok(Expr::Real(0.0)));
+      }
+      for zone in args.iter().take(2) {
+        if matches!(zone, Expr::String(_)) {
+          // Named zones need a DST-aware tz database; left unevaluated.
+          return unevaluated();
+        }
+        if !numeric(zone) {
+          crate::emit_message(&format!(
+            "TimeZoneOffset::zone: Time zone specification {} should be a real number, integer or time zone string.",
+            crate::syntax::expr_to_output(zone)
+          ));
+          return unevaluated();
+        }
+      }
+      if args.len() == 1 {
+        return Some(Ok(args[0].clone()));
+      }
+      return Some(crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(args[0].clone()),
+        right: Box::new(args[1].clone()),
+      }));
+    }
     "DayMatchQ" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::day_match_q_ast(args));
     }

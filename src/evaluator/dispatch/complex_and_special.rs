@@ -431,11 +431,17 @@ pub fn dispatch_complex_and_special(
     // Echo[expr] - prints ">> expr" and returns expr
     // Echo[expr, label] - prints ">> label expr" and returns expr
     // Echo[expr, label, f] - prints ">> label f[expr]" and returns expr
-    // EchoFunction[…] is an operator form: it stays symbolic until applied
-    // to an argument (handled in apply_curried_call).
+    // EchoFunction[…] and EchoLabel[…] are operator forms: they stay
+    // symbolic until applied to an argument (handled in apply_curried_call).
     "EchoFunction" if args.len() <= 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "EchoFunction".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    "EchoLabel" if args.len() <= 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "EchoLabel".to_string(),
         args: args.to_vec().into(),
       }));
     }

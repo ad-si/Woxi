@@ -912,6 +912,21 @@ pub fn apply_curried_call(
       crate::capture_stdout(&line);
       Ok(expr.clone())
     }
+    // EchoLabel[label][expr] — print ">> label expr" and return expr,
+    // exactly Echo[expr, label] in operator form.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "EchoLabel" && func_args.len() == 1 && args.len() == 1 => {
+      let line = format!(
+        ">> {} {}",
+        crate::syntax::expr_to_output(&func_args[0]),
+        crate::syntax::expr_to_output(&args[0])
+      );
+      println!("{}", line);
+      crate::capture_stdout(&line);
+      Ok(args[0].clone())
+    }
     // DateObject[...]["property"] — extract a date component (e.g. "Day",
     // "DayName", "Week"). Delegates to DateValue, which already resolves every
     // such property; if it cannot, the curried form is kept unevaluated.

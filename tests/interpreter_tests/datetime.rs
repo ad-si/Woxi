@@ -2916,3 +2916,32 @@ mod date_within_q_tests {
     );
   }
 }
+
+mod time_zone_offset_tests {
+  use woxi::interpret;
+
+  // TimeZoneOffset[tz] is the zone's UTC offset (numeric zones pass
+  // through); the 2- and 3-argument forms give tz1 - tz2 (the date
+  // argument only matters for named zones).
+  #[test]
+  fn numeric_zones() {
+    assert_eq!(interpret("TimeZoneOffset[]").unwrap(), "0.");
+    assert_eq!(interpret("$TimeZone").unwrap(), "0.");
+    assert_eq!(interpret("TimeZoneOffset[5]").unwrap(), "5");
+    assert_eq!(interpret("TimeZoneOffset[2.5]").unwrap(), "2.5");
+    assert_eq!(interpret("TimeZoneOffset[5, 2]").unwrap(), "3");
+    assert_eq!(interpret("TimeZoneOffset[-3, 5/2]").unwrap(), "-11/2");
+    assert_eq!(interpret("TimeZoneOffset[1, 2, 3]").unwrap(), "-1");
+  }
+
+  // Invalid zone specs emit ::zone; named zones would need a DST-aware tz
+  // database and stay unevaluated.
+  #[test]
+  fn invalid_and_named_zones() {
+    assert_eq!(interpret("TimeZoneOffset[x]").unwrap(), "TimeZoneOffset[x]");
+    assert_eq!(
+      interpret(r#"TimeZoneOffset["America/Chicago"]"#).unwrap(),
+      "TimeZoneOffset[America/Chicago]"
+    );
+  }
+}

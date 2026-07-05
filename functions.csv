@@ -3841,7 +3841,7 @@ RootOfUnityQ,Tests whether a number is exactly a root of unity,✅,pure,6.0,3947
 SystemsModelOrder,,🚫,,8.0,3947
 TemplateExpression,Embedded expression inside a TemplateObject evaluated at TemplateApply time,✅,pure,10.0,3947
 TimeSeriesInvertibility,,🚫,,9.0,3947
-TimeZoneOffset,,,,10.3,3947
+TimeZoneOffset,UTC offset of a numeric time zone; 2/3-arg forms give tz1 - tz2 (named zones need a tz database and stay unevaluated),✅,pure,10.3,3947
 TsallisQExponentialDistribution,,,,9.0,3947
 AntisymmetricMatrixQ,Test if matrix is antisymmetric,✅,none,10.0,3972
 AutoMultiplicationSymbol,,,,6.0,3972
@@ -4566,7 +4566,7 @@ CircularSymplecticMatrixDistribution,,,,10.3,4747
 DateOverlapsQ,,,,11.1,4747
 DefineOutputStreamMethod,,,,9.0,4747
 Devices,,🚫,,10.0,4747
-EchoLabel,,,,12.2,4747
+EchoLabel,Operator form of labelled Echo: EchoLabel[label][expr] prints ">> label expr" and returns expr,✅,effectful,12.2,4747
 ExternalStorageObject,,,,12.1,4747
 FindTextualAnswer,,🚫,,11.3,4747
 FunctionCompileExportLibrary,,🚫,,12.0,4747
