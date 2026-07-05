@@ -2147,15 +2147,21 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
     // Indexed variables (x[1], f[2], ...) sort as polynomial variables
     // keyed by their padded string form, matching wolframscript.
     e if is_indexed_variable(e) => Some(vec![(indexed_var_key(e), 1.0)]),
-    Expr::Constant(c) => Some(vec![(format!("{c:?}"), 1.0)]),
+    // Named constants (Pi, E, EulerGamma, …) sort alphabetically among the
+    // ordinary (lowercase) variables, matching Wolfram: `a - Pi/6` but
+    // `Pi/8 - x`, `a + E` but `E + x`. The lowercase key gives the
+    // case-insensitive order under the byte-wise pair comparison.
+    Expr::Constant(c) => Some(vec![(c.to_lowercase(), 1.0)]),
     // Treat the real-valued complex-component functions (Re, Im, Abs, Arg,
     // Conjugate) as polynomial "variables" keyed by their full string form
     // so that products like `Im[z]^2*Re[z]` sort as polynomials in
-    // (Re[z], Im[z]). Generic FunctionCall heads stay opaque.
+    // (Re[z], Im[z]). Generic FunctionCall heads stay opaque. The lowercase
+    // key gives Wolfram's case-insensitive order against plain variables
+    // (`a + Conjugate[a]` but `Conjugate[x] + x`).
     Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate") =>
     {
-      Some(vec![(expr_to_string(e), 1.0)])
+      Some(vec![(expr_to_string(e).to_lowercase(), 1.0)])
     }
     // Curried `Derivative[…][f][args…]` calls behave like algebraic
     // variables for Plus-ordering purposes: keying them by their full
@@ -2199,7 +2205,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         // wolframscript. Symbolic exponents (e.g. `E^x`) fall
         // through to the term-sort-key path so their existing
         // ordering rules apply.
-        return Some(vec![(format!("{c:?}"), exp)]);
+        return Some(vec![(c.to_lowercase(), exp)]);
       }
       if is_indexed_variable(left) {
         let exp = expr_to_f64(right).unwrap_or(f64::INFINITY);
@@ -2209,7 +2215,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         && matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
       {
         let exp = expr_to_f64(right)?;
-        return Some(vec![(expr_to_string(left), exp)]);
+        return Some(vec![(expr_to_string(left).to_lowercase(), exp)]);
       }
       None
     }
@@ -2221,7 +2227,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
       if let Expr::Constant(c) = &args[0]
         && let Some(exp) = expr_to_f64(&args[1])
       {
-        return Some(vec![(format!("{c:?}"), exp)]);
+        return Some(vec![(c.to_lowercase(), exp)]);
       }
       if is_indexed_variable(&args[0]) {
         let exp = expr_to_f64(&args[1]).unwrap_or(f64::INFINITY);
@@ -2231,7 +2237,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         && matches!(inner.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
       {
         let exp = expr_to_f64(&args[1])?;
-        return Some(vec![(expr_to_string(&args[0]), exp)]);
+        return Some(vec![(expr_to_string(&args[0]).to_lowercase(), exp)]);
       }
       None
     }
@@ -2429,6 +2435,26 @@ fn is_numeric_constant(e: &Expr) -> bool {
     }
     Expr::UnaryOp { operand, .. } => is_numeric_constant(operand),
     _ => false,
+  }
+}
+
+/// If `base` (already coefficient-stripped) is a named symbolic constant
+/// (Pi, E, EulerGamma, Degree, …) or a power of one, return its name.
+/// Wolfram sorts such Plus terms alphabetically among the polynomial
+/// monomials (`a - Pi/6` but `Pi/8 - x`), not as leading numeric constants.
+/// The imaginary unit is excluded — complex terms keep their own ordering.
+fn constant_symbol_name(base: &Expr) -> Option<&str> {
+  match base {
+    Expr::Constant(name) if name != "I" => Some(name),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      ..
+    } => constant_symbol_name(left),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      constant_symbol_name(&args[0])
+    }
+    _ => None,
   }
 }
 
@@ -2640,6 +2666,25 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
             std::cmp::Ordering::Greater
           };
         }
+        // A named-constant monomial (Pi, E, EulerGamma, or a power of one)
+        // sorts ALPHABETICALLY among the polynomial monomials, matching
+        // Wolfram: `a - Pi/6` but `Pi/8 - x`, `a + E` but `E + x`.
+        if let Some(cname) = constant_symbol_name(&none_base) {
+          let (_, pair_base) = decompose_term(pair_term);
+          if let Some(pv) = extract_earliest_variable(&pair_base) {
+            let ord = crate::functions::list_helpers_ast::wolfram_string_order(
+              cname, &pv,
+            );
+            if ord != 0 {
+              let const_first = ord > 0;
+              return if const_first == a_has_pairs {
+                std::cmp::Ordering::Greater
+              } else {
+                std::cmp::Ordering::Less
+              };
+            }
+          }
+        }
         // Purely numeric constant non-pair term sorts before pair terms
         // (e.g. (1+Pi)/2 comes before x, matching Wolfram).
         // Uses is_numeric_constant (not just !has_free_variables) so that
@@ -2751,6 +2796,30 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       if !a_has_pairs && !b_has_pairs && pa == 0 {
         let a_const = is_numeric_constant(&base_a);
         let b_const = is_numeric_constant(&base_b);
+        // Named-constant monomials (Pi, E, …) sort alphabetically against
+        // free-variable terms instead of leading unconditionally.
+        if a_const != b_const {
+          let (cbase, obase, a_is_const) = if a_const {
+            (&base_a, &base_b, true)
+          } else {
+            (&base_b, &base_a, false)
+          };
+          if let Some(cname) = constant_symbol_name(cbase)
+            && let Some(ov) = extract_earliest_variable(obase)
+          {
+            let ord = crate::functions::list_helpers_ast::wolfram_string_order(
+              cname, &ov,
+            );
+            if ord != 0 {
+              let const_first = ord > 0;
+              return if const_first == a_is_const {
+                std::cmp::Ordering::Less
+              } else {
+                std::cmp::Ordering::Greater
+              };
+            }
+          }
+        }
         if a_const && !b_const {
           return std::cmp::Ordering::Less;
         }
@@ -3364,6 +3433,27 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     _ => {}
   }
 
+  // Sum vs non-sum: Wolfram compares the term sequences from the highest
+  // (last) canonical term backwards, so `Gamma[a - s]` sorts before
+  // `Gamma[s]` (last term -s < s by coefficient) while `Gamma[s]` sorts
+  // before `Gamma[-s + x]` (last term x > s). When the compared suffix
+  // ties, the operand with FEWER terms sorts first (`s < 2 + s`).
+  if pattern_compound_head(a).is_none() && pattern_compound_head(b).is_none() {
+    let a_terms = sum_term_list(a);
+    let b_terms = sum_term_list(b);
+    if a_terms.is_some() != b_terms.is_some() {
+      let av = a_terms.unwrap_or_else(|| vec![a.clone()]);
+      let bv = b_terms.unwrap_or_else(|| vec![b.clone()]);
+      for (x, y) in av.iter().rev().zip(bv.iter().rev()) {
+        let cmp = compare_expr_canonical(x, y);
+        if cmp != Ordering::Equal {
+          return cmp;
+        }
+      }
+      return av.len().cmp(&bv.len());
+    }
+  }
+
   let ta = type_tag(a);
   let tb = type_tag(b);
 
@@ -3605,6 +3695,60 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         sa.cmp(&sb)
       }
     }
+  }
+}
+
+/// Flatten a sum expression (FunctionCall "Plus" or BinaryOp Plus/Minus
+/// chains) into its term list, preserving the stored (canonical) order.
+/// Returns None when `e` is not a sum.
+fn sum_term_list(e: &Expr) -> Option<Vec<Expr>> {
+  fn collect(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Plus" && args.len() >= 2 =>
+      {
+        for a in args.iter() {
+          collect(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        collect(right, out);
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        out.push(Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: right.clone(),
+        });
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  match e {
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      let mut out = Vec::new();
+      collect(e, &mut out);
+      Some(out)
+    }
+    Expr::BinaryOp {
+      op:
+        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      ..
+    } => {
+      let mut out = Vec::new();
+      collect(e, &mut out);
+      Some(out)
+    }
+    _ => None,
   }
 }
 

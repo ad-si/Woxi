@@ -12171,11 +12171,11 @@ mod mellin_transform_tests {
     );
     assert_eq!(
       interpret("MellinTransform[(1 + x)^(-a), x, s]").unwrap(),
-      "(Gamma[s]*Gamma[a - s])/Gamma[a]"
+      "(Gamma[a - s]*Gamma[s])/Gamma[a]"
     );
     assert_eq!(
       interpret("MellinTransform[1/(1 + x)^2, x, s]").unwrap(),
-      "Gamma[s]*Gamma[2 - s]"
+      "Gamma[2 - s]*Gamma[s]"
     );
     assert_eq!(
       interpret("MellinTransform[Sin[x], x, s]").unwrap(),

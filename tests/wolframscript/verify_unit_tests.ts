@@ -738,8 +738,6 @@ function main() {
     // Insphere: algebraic factoring difference. Woxi gives (n+Sqrt[n])^(-1), Wolfram factors to 1/(Sqrt[n]*(1+Sqrt[n]))
     "Insphere[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]",
     "Insphere[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]",
-    // HyperbolicDistribution PDF symbolic: Plus ordering in exponent (-(a*Sqrt[...]) + b*... vs b*... - a*Sqrt[...])
-    "PDF[HyperbolicDistribution[a, b, d, m], x]",
     // Variance symbolic: Plus ordering of BesselK terms (different ordering of positive/negative terms)
     "Variance[HyperbolicDistribution[a, b, d, m]]",
     // FindIntegerNullVector: sign convention is implementation-specific (LLL algorithm produces different signs)
@@ -968,9 +966,6 @@ function main() {
     // Multinomial[3, x] — Woxi keeps the Binomial[3+x, x] reduction; Wolfram
     // expands to the polynomial ((1+x)(2+x)(3+x))/6. Mathematically equal.
     "Multinomial[3, x]",
-    // Series[x!, {x, 0, 2}] — Plus ordering inside the third-order
-    // coefficient: Woxi `Pi^2 + 6*EulerGamma^2` vs Wolfram `6*EulerGamma^2 + Pi^2`.
-    "Series[x!, {x, 0, 2}]",
     // Series[x!!, {x, 0, 2}] — Woxi factors the third-order coefficient
     // (`6*(EulerGamma - Log[2])^2 + Pi^2*(1 + Log[64] - 6*Log[Pi])`), Wolfram
     // expands it. Same value, different surface.
@@ -996,9 +991,6 @@ function main() {
     // (the StudentT distribution is symmetric about 0, so the CDF at 0 is
     // exactly 1/2 for any v > 0). Wolfram leaves the BetaRegularized form.
     "CDF[StudentTDistribution[v], 0]",
-    // PDF[HypergeometricDistribution[20, 50, 100], k] — same expression up
-    // to Binomial factor ordering inside the Piecewise.
-    "PDF[HypergeometricDistribution[20, 50, 100], k]",
     // Around[x, Scaled[0.1]] — Wolfram resolves Scaled[0.1] to 0.1*x at
     // evaluation time; Woxi keeps the Scaled[] uncertainty marker symbolic.
     "Around[x, Scaled[0.1]]",

@@ -7738,6 +7738,36 @@ mod times_factor_vs_sum_ordering {
     assert_eq!(interpret("y(1+x^2)").unwrap(), "(1 + x^2)*y");
     assert_eq!(interpret("y(x-y^2)").unwrap(), "y*(x - y^2)");
   }
+
+  // Same-head factors compare by their arguments: a sum argument whose
+  // highest term is the negated atom sorts before the atom (`a - s < s`),
+  // while a plain shift keeps the atom first (`s < 2 + s`).
+  #[test]
+  fn same_head_sum_argument_ordering() {
+    assert_eq!(
+      interpret("Gamma[s] Gamma[a - s]").unwrap(),
+      "Gamma[a - s]*Gamma[s]"
+    );
+    assert_eq!(
+      interpret("Gamma[s] Gamma[2 - s]").unwrap(),
+      "Gamma[2 - s]*Gamma[s]"
+    );
+    assert_eq!(
+      interpret("Gamma[1 - s] Gamma[s]").unwrap(),
+      "Gamma[1 - s]*Gamma[s]"
+    );
+    assert_eq!(
+      interpret("Gamma[s] Gamma[x - s]").unwrap(),
+      "Gamma[s]*Gamma[-s + x]"
+    );
+    assert_eq!(interpret("f[s] f[2 + s]").unwrap(), "f[s]*f[2 + s]");
+    assert_eq!(interpret("f[y] f[x + y]").unwrap(), "f[y]*f[x + y]");
+    assert_eq!(interpret("f[s] f[s^2 - s]").unwrap(), "f[s]*f[-s + s^2]");
+    assert_eq!(
+      interpret("f[a - s] f[b - s] f[s]").unwrap(),
+      "f[a - s]*f[b - s]*f[s]"
+    );
+  }
 }
 
 mod mandelbrot_set_member_q_tests {

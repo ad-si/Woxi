@@ -3250,12 +3250,11 @@ mod factorial {
 
   #[test]
   fn series_at_zero_order_2() {
-    // wolframscript:
-    //   SeriesData[x, 0, {1, -EulerGamma, (6*EulerGamma^2 + Pi^2)/12}, 0, 3, 1]
-    // Woxi's Plus canonicalisation reorders to (Pi^2 + 6*EulerGamma^2)/12.
+    // Matches wolframscript: named constants sort alphabetically, so the
+    // third-order coefficient reads (6*EulerGamma^2 + Pi^2)/12.
     assert_eq!(
       interpret("Series[x!, {x, 0, 2}]").unwrap(),
-      "SeriesData[x, 0, {1, -EulerGamma, (Pi^2 + 6*EulerGamma^2)/12}, 0, 3, 1]"
+      "SeriesData[x, 0, {1, -EulerGamma, (6*EulerGamma^2 + Pi^2)/12}, 0, 3, 1]"
     );
   }
 }

@@ -1046,6 +1046,12 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         if crate::functions::additive_is_neg_const_plus_ident(b, a) {
           return -1; // compound (Plus) comes before atom
         }
+        // A sum whose highest canonical term is the NEGATED atom sorts
+        // before the atom (coefficient -1 < 1 on the tied term), matching
+        // wolframscript: Gamma[a - s]*Gamma[s], but Gamma[s]*Gamma[2 + s].
+        if sum_highest_term_negates(b, a) {
+          return -1;
+        }
         let b_key = expr_sort_key(b);
         let a_str = crate::syntax::expr_to_string(a);
         let cmp = wolfram_string_order(&a_str, &b_key);
@@ -1059,6 +1065,9 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         // Compound vs atom: reverse of above
         if crate::functions::additive_is_neg_const_plus_ident(a, b) {
           return 1; // compound (Plus) comes before atom
+        }
+        if sum_highest_term_negates(a, b) {
+          return 1;
         }
         let a_key = expr_sort_key(a);
         let b_str = crate::syntax::expr_to_string(b);
@@ -1105,6 +1114,62 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         wolfram_string_order(&a_str, &b_str)
       }
     }
+  }
+}
+
+/// True when `sum` is an additive expression whose highest (last) canonical
+/// term is exactly the negation of `atom`. Wolfram's canonical order compares
+/// sums by their highest term first, and on a symbol tie the negative
+/// coefficient sorts first — so `a - s` and `2 - s` sort before `s`, while
+/// `2 + s` sorts after it.
+fn sum_highest_term_negates(sum: &Expr, atom: &Expr) -> bool {
+  let last = match sum {
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      args.last().cloned()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      right,
+      ..
+    } => Some(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: right.clone(),
+    }),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      right,
+      ..
+    } => Some((**right).clone()),
+    _ => None,
+  };
+  let Some(last) = last else { return false };
+  let negated_inner = match &last {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Some((**operand).clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      Some(args[1].clone())
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(n) if *n < 0) => {
+      Some((**right).clone())
+    }
+    _ => None,
+  };
+  match negated_inner {
+    Some(inner) => {
+      crate::syntax::expr_to_string(&inner)
+        == crate::syntax::expr_to_string(atom)
+    }
+    None => false,
   }
 }
 

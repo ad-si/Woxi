@@ -2289,7 +2289,7 @@ mod cdf {
     //  reverse order.)
     assert_eq!(
       interpret("PDF[HypergeometricDistribution[20, 50, 100], k]").unwrap(),
-      "Piecewise[{{(Binomial[50, k]*Binomial[50, 20 - k])/535983370403809682970, 0 <= k <= 20}}, 0]"
+      "Piecewise[{{(Binomial[50, 20 - k]*Binomial[50, k])/535983370403809682970, 0 <= k <= 20}}, 0]"
     );
   }
 
@@ -3330,7 +3330,7 @@ mod hyperbolic_distribution {
   fn pdf_symbolic() {
     assert_eq!(
       interpret("PDF[HyperbolicDistribution[a, b, d, m], x]").unwrap(),
-      "(Sqrt[a^2 - b^2]*E^(-(a*Sqrt[d^2 + (-m + x)^2]) + b*(-m + x)))/(2*a*d*BesselK[1, Sqrt[a^2 - b^2]*d])"
+      "(Sqrt[a^2 - b^2]*E^(b*(-m + x) - a*Sqrt[d^2 + (-m + x)^2]))/(2*a*d*BesselK[1, Sqrt[a^2 - b^2]*d])"
     );
   }
 
