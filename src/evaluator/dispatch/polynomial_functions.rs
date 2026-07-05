@@ -160,6 +160,11 @@ pub fn dispatch_polynomial_functions(
     "Root" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::root_ast(args));
     }
+    "NumberFieldSignature" if (1..=3).contains(&args.len()) => {
+      return Some(
+        crate::functions::polynomial_ast::number_field_signature_ast(args),
+      );
+    }
     "RootSum" if args.len() == 2 => {
       // Evaluates to an exact power-sum value for polynomial f with numeric
       // coefficients and polynomial form; otherwise returns unevaluated.

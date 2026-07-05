@@ -10357,3 +10357,94 @@ mod boolean_quantifier_tests {
     );
   }
 }
+
+mod number_field_signature_tests {
+  use woxi::interpret;
+
+  // {r1, r2}: the minimal polynomial has r1 real roots and r2
+  // complex-conjugate pairs. All values verified against wolframscript.
+  #[test]
+  fn signatures_of_algebraic_numbers() {
+    assert_eq!(
+      interpret("NumberFieldSignature[Sqrt[2]]").unwrap(),
+      "{2, 0}"
+    );
+    assert_eq!(
+      interpret("NumberFieldSignature[2^(1/3)]").unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(interpret("NumberFieldSignature[I]").unwrap(), "{0, 1}");
+    assert_eq!(interpret("NumberFieldSignature[3]").unwrap(), "{1, 0}");
+    assert_eq!(interpret("NumberFieldSignature[1/2]").unwrap(), "{1, 0}");
+    assert_eq!(
+      interpret("NumberFieldSignature[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "{4, 0}"
+    );
+    assert_eq!(
+      interpret("NumberFieldSignature[GoldenRatio]").unwrap(),
+      "{2, 0}"
+    );
+    assert_eq!(interpret("NumberFieldSignature[1 + I]").unwrap(), "{0, 1}");
+    assert_eq!(
+      interpret("NumberFieldSignature[Sqrt[-5]]").unwrap(),
+      "{0, 1}"
+    );
+  }
+
+  #[test]
+  fn signatures_of_root_objects() {
+    assert_eq!(
+      interpret("NumberFieldSignature[Root[#^5 - # - 1 &, 1]]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("NumberFieldSignature[Root[#^4 + 2 #^2 + 2 &, 1]]").unwrap(),
+      "{0, 2}"
+    );
+    // A Root that collapses to a rational.
+    assert_eq!(
+      interpret("NumberFieldSignature[Root[#^2 - 1 &, 2]]").unwrap(),
+      "{1, 0}"
+    );
+    // Multi-argument form is interpreted as a Root specification.
+    assert_eq!(
+      interpret("NumberFieldSignature[#^2 - 2 &, 1]").unwrap(),
+      "{2, 0}"
+    );
+  }
+
+  // Non-algebraic arguments emit `nalg` and stay unevaluated.
+  #[test]
+  fn non_algebraic_emits_nalg() {
+    for (input, shown) in [
+      ("NumberFieldSignature[Pi]", "Pi"),
+      ("NumberFieldSignature[x]", "x"),
+      ("NumberFieldSignature[1.5]", "1.5"),
+      ("NumberFieldSignature[Sqrt[2], 3]", "Root[Sqrt[2], 3]"),
+    ] {
+      let result = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(result.result, input);
+      assert!(
+        result.warnings.iter().any(|w| w.contains(&format!(
+          "NumberFieldSignature::nalg: {} is not an explicit algebraic number.",
+          shown
+        ))),
+        "expected nalg for {input}, got {:?}",
+        result.warnings
+      );
+    }
+  }
+
+  // The Root-object arm also closes a MinimalPolynomial gap.
+  #[test]
+  fn minimal_polynomial_of_root_objects() {
+    assert_eq!(
+      interpret("MinimalPolynomial[Root[#^5 - # - 1 &, 1], x]").unwrap(),
+      "-1 - x + x^5"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[Root[#^4 + 2 #^2 + 2 &, 1], x]").unwrap(),
+      "2 + 2*x^2 + x^4"
+    );
+  }
+}

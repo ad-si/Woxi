@@ -180,6 +180,40 @@ fn compute_minpoly_coeffs(
       handle_times(expr)
     }
 
+    // Root objects: the defining polynomial of a canonical Root object
+    // vanishes at the root, so its irreducible factor at the root's
+    // numeric value is the minimal polynomial. (wolframscript keeps only
+    // irreducible Root polynomials, but Woxi-built Root objects may carry
+    // a reducible one.)
+    Expr::FunctionCall { name, args }
+      if name == "Root"
+        && (args.len() == 2 || args.len() == 3)
+        && matches!(&args[0], Expr::Function { .. }) =>
+    {
+      let Expr::Function { body } = &args[0] else {
+        return Ok(None);
+      };
+      let var = "\u{2620}mp\u{2620}";
+      let poly =
+        crate::syntax::substitute_slots(body, &[Expr::Identifier(var.into())]);
+      let expanded = crate::evaluator::evaluate_expr_to_expr(&poly)?;
+      match crate::functions::polynomial_ast::extract_poly_coeffs(
+        &expanded, var,
+      ) {
+        Some(c) if c.len() >= 2 => {
+          let primitive = make_primitive_monic(&c);
+          let nval = numeric_value_of(expr);
+          Ok(Some(match nval {
+            Some(val) => {
+              pick_irreducible_factor(&primitive, val).unwrap_or(primitive)
+            }
+            None => primitive,
+          }))
+        }
+        _ => Ok(None),
+      }
+    }
+
     // BinaryOp Minus
     Expr::BinaryOp {
       op: BinaryOperator::Minus,
@@ -1023,4 +1057,180 @@ fn small_divisors(n: i128) -> Vec<i128> {
   }
   divs.sort();
   divs
+}
+
+/// Numeric value of an expression via `N[...]`, used to pick the right
+/// irreducible factor for Root objects (whose value `expr_to_f64` cannot
+/// see directly).
+fn numeric_value_of(expr: &Expr) -> Option<f64> {
+  if let Some(v) = expr_to_f64(expr) {
+    return Some(v);
+  }
+  match crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![expr.clone()].into(),
+  }) {
+    Ok(Expr::Real(v)) => Some(v),
+    Ok(Expr::Integer(n)) => Some(n as f64),
+    _ => None,
+  }
+}
+
+/// NumberFieldSignature[a] — the signature {r1, r2} of the number field
+/// Q(a): its minimal polynomial has r1 real roots and r2 complex-conjugate
+/// pairs. Extra arguments are interpreted as a Root specification
+/// (`NumberFieldSignature[f, k]` ≡ `NumberFieldSignature[Root[f, k]]`),
+/// and non-algebraic arguments emit `nalg` and stay unevaluated — both
+/// matching wolframscript.
+pub fn number_field_signature_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let alpha = if args.len() == 1 {
+    args[0].clone()
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Root".to_string(),
+      args: args.to_vec().into(),
+    })?
+  };
+  if let Some(coeffs) = compute_minpoly_coeffs(&alpha)? {
+    let coeffs = make_square_free(&coeffs);
+    let deg = coeffs.len() - 1;
+    if deg >= 1 {
+      let r1 = sturm_real_root_count(&coeffs);
+      return Ok(Expr::List(
+        vec![
+          Expr::Integer(r1 as i128),
+          Expr::Integer(((deg - r1) / 2) as i128),
+        ]
+        .into(),
+      ));
+    }
+  }
+  crate::emit_message(&format!(
+    "NumberFieldSignature::nalg: {} is not an explicit algebraic number.",
+    crate::syntax::expr_to_string(&alpha)
+  ));
+  Ok(Expr::FunctionCall {
+    name: "NumberFieldSignature".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// Count the real roots of a square-free integer polynomial with a Sturm
+/// chain over exact big-integer arithmetic (pseudo-remainders scaled by
+/// positive constants so the sign structure is preserved).
+fn sturm_real_root_count(coeffs: &[i128]) -> usize {
+  use num_bigint::BigInt;
+  use num_traits::{Signed, Zero};
+
+  fn trim(mut v: Vec<BigInt>) -> Vec<BigInt> {
+    while v.len() > 1 && v.last().is_some_and(|c| c.is_zero()) {
+      v.pop();
+    }
+    v
+  }
+
+  fn big_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+    let mut a = a.abs();
+    let mut b = b.abs();
+    while !b.is_zero() {
+      let t = &a % &b;
+      a = b;
+      b = t;
+    }
+    a
+  }
+
+  fn content_reduce(v: &[BigInt]) -> Vec<BigInt> {
+    let mut g = BigInt::ZERO;
+    for c in v {
+      g = big_gcd(&g, c);
+    }
+    if g > BigInt::from(1) {
+      v.iter().map(|c| c / &g).collect()
+    } else {
+      v.to_vec()
+    }
+  }
+
+  // Pseudo-remainder of a by b, scaled by the positive constant
+  // |lc(b)|^(deg a - deg b + 1) so integer division stays exact and the
+  // sign of the true remainder is preserved.
+  fn pseudo_rem(a: &[BigInt], b: &[BigInt]) -> Vec<BigInt> {
+    let lc = b.last().unwrap().clone();
+    let delta = a.len() - b.len();
+    let scale = lc.abs().pow(delta as u32 + 1);
+    let mut r: Vec<BigInt> = a.iter().map(|c| c * &scale).collect();
+    while r.len() >= b.len() && !(r.len() == 1 && r[0].is_zero()) {
+      let q = r.last().unwrap() / &lc;
+      let shift = r.len() - b.len();
+      for (i, bc) in b.iter().enumerate() {
+        let idx = shift + i;
+        let sub = bc * &q;
+        r[idx] -= sub;
+      }
+      r = trim(r);
+      if r.len() < b.len() {
+        break;
+      }
+    }
+    r
+  }
+
+  let p0 = trim(coeffs.iter().map(|&c| BigInt::from(c)).collect());
+  if p0.len() <= 1 {
+    return 0;
+  }
+  let p1: Vec<BigInt> = p0
+    .iter()
+    .enumerate()
+    .skip(1)
+    .map(|(i, c)| c * BigInt::from(i as i64))
+    .collect();
+  let mut chain = vec![p0, trim(p1)];
+  loop {
+    let b = chain.last().unwrap();
+    if b.len() <= 1 && b[0].is_zero() {
+      chain.pop();
+      break;
+    }
+    if b.len() == 1 {
+      break;
+    }
+    let a = &chain[chain.len() - 2];
+    let r = trim(pseudo_rem(a, b));
+    if r.iter().all(|c| c.is_zero()) {
+      break;
+    }
+    let neg: Vec<BigInt> = content_reduce(&r).iter().map(|c| -c).collect();
+    chain.push(neg);
+  }
+
+  let variations = |at_neg_inf: bool| -> usize {
+    let mut count = 0usize;
+    let mut prev = 0i8;
+    for p in &chain {
+      let lc = p.last().unwrap();
+      let mut s: i8 = if lc.is_zero() {
+        0
+      } else if lc.is_positive() {
+        1
+      } else {
+        -1
+      };
+      if at_neg_inf && (p.len() - 1) % 2 == 1 {
+        s = -s;
+      }
+      if s != 0 {
+        if prev != 0 && s != prev {
+          count += 1;
+        }
+        prev = s;
+      }
+    }
+    count
+  };
+
+  variations(true) - variations(false)
 }
