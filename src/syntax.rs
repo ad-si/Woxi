@@ -3927,6 +3927,22 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     return result;
   }
 
+  parse_expression_inner(
+    inner,
+    replace_rules,
+    postfix_funcs,
+    anon_func_suffix,
+    post_anon_pairs,
+  )
+}
+
+fn parse_expression_inner(
+  inner: Vec<Pair<Rule>>,
+  replace_rules: Option<(Pair<Rule>, bool)>,
+  postfix_funcs: Vec<Pair<Rule>>,
+  anon_func_suffix: Option<Vec<Vec<Expr>>>,
+  post_anon_pairs: Vec<Pair<Rule>>,
+) -> Expr {
   // Parse operators: Term (Operator Term)*
   // Build expression with proper precedence
   let mut terms: Vec<Expr> = Vec::new();
