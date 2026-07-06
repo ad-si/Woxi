@@ -11319,23 +11319,50 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// StringPartition[string, n] partitions string into non-overlapping substrings of length n.
 /// StringPartition[string, n, d] partitions with offset d.
 pub fn string_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let s = expr_to_str(&args[0])?;
-  let n = expr_to_int(&args[1])? as usize;
-  if n == 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Partition size must be positive.".to_string(),
-    ));
-  }
+  let unevaluated = || Expr::FunctionCall {
+    name: "StringPartition".to_string(),
+    args: args.to_vec().into(),
+  };
+  // A non-string first argument stays unevaluated.
+  let s = match &args[0] {
+    Expr::String(s) => s.clone(),
+    _ => return Ok(unevaluated()),
+  };
+  // The block size (position 2) must be a positive machine integer; anything
+  // else (0, negative, non-integer, symbolic) emits ::intpm and leaves the
+  // call unevaluated — matching wolframscript, rather than raising an error.
+  let n = match &args[1] {
+    Expr::Integer(n) if *n > 0 => *n as usize,
+    _ => {
+      crate::emit_message(&format!(
+        "StringPartition::intpm: Positive machine-sized integer expected at position 2 in {}.",
+        crate::syntax::format_expr(
+          &unevaluated(),
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      return Ok(unevaluated());
+    }
+  };
+  // The offset (position 3) must likewise be a positive integer; it defaults
+  // to the block size.
   let d = if args.len() >= 3 {
-    expr_to_int(&args[2])? as usize
+    match &args[2] {
+      Expr::Integer(d) if *d > 0 => *d as usize,
+      _ => {
+        crate::emit_message(&format!(
+          "StringPartition::intp: Positive integer expected at position 3 in {}.",
+          crate::syntax::format_expr(
+            &unevaluated(),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+        return Ok(unevaluated());
+      }
+    }
   } else {
     n
   };
-  if d == 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Offset must be positive.".to_string(),
-    ));
-  }
 
   let chars: Vec<char> = s.chars().collect();
   let mut parts = Vec::new();

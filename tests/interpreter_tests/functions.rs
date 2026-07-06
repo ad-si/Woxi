@@ -735,6 +735,41 @@ mod string_partition {
       "{a, b, c}"
     );
   }
+
+  // An invalid block size or offset leaves the call unevaluated (matching
+  // wolframscript) rather than raising an evaluation error.
+  #[test]
+  fn invalid_block_size_stays_unevaluated() {
+    assert_eq!(
+      interpret("StringPartition[\"abc\", 0]").unwrap(),
+      "StringPartition[abc, 0]"
+    );
+    assert_eq!(
+      interpret("StringPartition[\"abc\", -2]").unwrap(),
+      "StringPartition[abc, -2]"
+    );
+    // A non-integer / symbolic block size stays unevaluated too.
+    assert_eq!(
+      interpret("StringPartition[\"abc\", x]").unwrap(),
+      "StringPartition[abc, x]"
+    );
+    assert_eq!(
+      interpret("StringPartition[\"abc\", {3, 2}]").unwrap(),
+      "StringPartition[abc, {3, 2}]"
+    );
+  }
+
+  #[test]
+  fn invalid_offset_stays_unevaluated() {
+    assert_eq!(
+      interpret("StringPartition[\"abc\", 3, 0]").unwrap(),
+      "StringPartition[abc, 3, 0]"
+    );
+    assert_eq!(
+      interpret("StringPartition[\"abc\", 3, -1]").unwrap(),
+      "StringPartition[abc, 3, -1]"
+    );
+  }
 }
 
 mod color_q {
