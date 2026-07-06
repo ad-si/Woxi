@@ -23,3 +23,33 @@ jobs:
     - uses: taiki-e/install-action@nextest
     - name: Run slow script tests
       run: make test-slow
+
+  # Coverage-guided crash fuzzing of the parser and interpreter (see
+  # fuzz/README.md). A few minutes per target per night compounds into
+  # deep coverage over time; crashing inputs are uploaded as artifacts.
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - uses: dtolnay/rust-toolchain@nightly
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          fuzz
+    - uses: taiki-e/install-action@cargo-fuzz
+    - name: Seed corpora from the test scripts
+      run: make fuzz-corpus
+    - name: Fuzz the parser
+      run: cargo fuzz run parse -- -timeout=10 -max_len=4096 -max_total_time=300
+    - name: Fuzz the interpreter
+      # Runs even when the parse target already found a crash, so one
+      # night reports both.
+      if: '!cancelled()'
+      run: cargo fuzz run interpret -- -timeout=20 -max_len=2048 -max_total_time=300
+    - name: Upload crashing inputs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: fuzz-artifacts
+        path: fuzz/artifacts/
