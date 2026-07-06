@@ -1955,3 +1955,66 @@ mod cases {
     );
   }
 }
+
+mod subdivide {
+  use super::*;
+
+  #[test]
+  fn valid_forms() {
+    // One-, two- and three-argument forms.
+    assert_eq!(interpret("Subdivide[4]").unwrap(), "{0, 1/4, 1/2, 3/4, 1}");
+    assert_eq!(interpret("Subdivide[2, 3]").unwrap(), "{0, 2/3, 4/3, 2}");
+    assert_eq!(
+      interpret("Subdivide[0, 10, 5]").unwrap(),
+      "{0, 2, 4, 6, 8, 10}"
+    );
+  }
+
+  #[test]
+  fn integer_valued_real_count_is_accepted() {
+    // Wolfram accepts an integer-valued Real as the subdivision count.
+    assert_eq!(
+      interpret("Subdivide[10, 3.0]").unwrap(),
+      "{0, 10/3, 20/3, 10}"
+    );
+    assert_eq!(interpret("Subdivide[0, 10, 2.0]").unwrap(), "{0, 5, 10}");
+    assert_eq!(interpret("Subdivide[3.0]").unwrap(), "{0, 1/3, 2/3, 1}");
+  }
+
+  #[test]
+  fn non_positive_integer_count_emits_sdmint() {
+    // A concrete count that is not a positive integer triggers Subdivide::sdmint
+    // and leaves the call unevaluated. The reported position is the argument
+    // index of the count.
+    let r = woxi::interpret_with_stdout("Subdivide[0, 10, 0]").unwrap();
+    assert_eq!(r.result, "Subdivide[0, 10, 0]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Subdivide::sdmint: The number of subdivisions given in position 3 of Subdivide[0, 10, 0] should be a positive machine-sized integer."
+    )));
+
+    let r = woxi::interpret_with_stdout("Subdivide[0, 10, 2.5]").unwrap();
+    assert_eq!(r.result, "Subdivide[0, 10, 2.5]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Subdivide::sdmint: The number of subdivisions given in position 3 of Subdivide[0, 10, 2.5] should be a positive machine-sized integer."
+    )));
+
+    let r = woxi::interpret_with_stdout("Subdivide[10, 1/2]").unwrap();
+    assert_eq!(r.result, "Subdivide[10, 1/2]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Subdivide::sdmint: The number of subdivisions given in position 2 of Subdivide[10, 1/2] should be a positive machine-sized integer."
+    )));
+
+    let r = woxi::interpret_with_stdout("Subdivide[0]").unwrap();
+    assert_eq!(r.result, "Subdivide[0]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Subdivide::sdmint: The number of subdivisions given in position 1 of Subdivide[0] should be a positive machine-sized integer."
+    )));
+  }
+
+  #[test]
+  fn symbolic_count_is_unevaluated_without_message() {
+    let r = woxi::interpret_with_stdout("Subdivide[0, 10, x]").unwrap();
+    assert_eq!(r.result, "Subdivide[0, 10, x]");
+    assert!(!r.warnings.iter().any(|w| w.contains("Subdivide::sdmint")));
+  }
+}

@@ -3330,6 +3330,24 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Subdivide[n] - subdivide [0,1] into n equal parts
 /// Subdivide[xmax, n] - subdivide [0, xmax] into n equal parts
 /// Subdivide[xmin, xmax, n] - subdivide [xmin, xmax] into n equal parts
+/// True when `e` is a fully concrete number (integer, real, big number, or a
+/// Rational), possibly negated. Used to distinguish a bad numeric argument
+/// (which triggers a message) from a symbolic one (left unevaluated silently).
+fn is_concrete_number(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { name, .. } => name == "Rational",
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_concrete_number(operand),
+    _ => false,
+  }
+}
+
 pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -3345,15 +3363,52 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => unreachable!(),
   };
 
-  // n must be a positive integer
+  // The number of subdivisions n (always the last argument) must be a positive
+  // machine-sized integer. Wolfram also accepts an integer-valued Real (e.g.
+  // 3.0). A concrete number that is not a positive integer triggers the
+  // Subdivide::sdmint message and leaves the call unevaluated; a symbolic n is
+  // left unevaluated silently.
+  let unevaluated = || Expr::FunctionCall {
+    name: "Subdivide".to_string(),
+    args: args.to_vec().into(),
+  };
   let n_val = match &n_expr {
     Expr::Integer(n) if *n > 0 => *n,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Subdivide".to_string(),
-        args: args.to_vec().into(),
-      });
+    Expr::BigInteger(b) => {
+      use num_traits::ToPrimitive;
+      match b.to_i128() {
+        Some(n) if n > 0 => n,
+        _ => {
+          crate::emit_message(&format!(
+            "Subdivide::sdmint: The number of subdivisions given in position {} of {} should be a positive machine-sized integer.",
+            args.len(),
+            crate::syntax::format_expr(
+              &unevaluated(),
+              crate::syntax::ExprForm::Output
+            )
+          ));
+          return Ok(unevaluated());
+        }
+      }
     }
+    Expr::Real(r) if r.is_finite() && *r > 0.0 && r.fract() == 0.0 => {
+      *r as i128
+    }
+    // Any other concrete number (a non-positive integer, a non-integral Real,
+    // or a Rational) is invalid.
+    _ if is_concrete_number(&n_expr) => {
+      crate::emit_message(&format!(
+        "Subdivide::sdmint: The number of subdivisions given in position {} of {} should be a positive machine-sized integer.",
+        args.len(),
+        crate::syntax::format_expr(
+          &unevaluated(),
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      return Ok(unevaluated());
+    }
+    // Symbolic n: leave unevaluated without a message.
+    _ => return Ok(unevaluated()),
   };
 
   // Fast path: both endpoints are integers
