@@ -7688,7 +7688,28 @@ mod to_string_bigfloat {
       "no precision marker, got: {}",
       result
     );
-    assert!(result.starts_with("1.41421356237309504880168872420"));
+    // wolframscript rounds the 30th significant figure (the 31st digit of
+    // Sqrt[2] is 9), so the value ends in ...421, not the truncated ...420.
+    assert_eq!(result, "1.41421356237309504880168872421");
+  }
+
+  // ToString rounds (does not truncate) the last significant figure.
+  #[test]
+  fn to_string_rounds_last_digit() {
+    // Pi's 6th figure is 9, so 5-figure Pi rounds up to 3.1416.
+    assert_eq!(interpret("ToString[N[Pi, 5]]").unwrap(), "3.1416");
+    assert_eq!(interpret("ToString[N[Pi, 10]]").unwrap(), "3.141592654");
+    // 2/3 rounds the trailing 6 up to 7.
+    assert_eq!(interpret("ToString[N[2/3, 10]]").unwrap(), "0.6666666667");
+    assert_eq!(interpret("ToString[N[E, 7]]").unwrap(), "2.718282");
+  }
+
+  // A rounding carry that propagates through every kept digit grows the
+  // magnitude (0.999 -> 1.0, 9.9995 -> 10.0).
+  #[test]
+  fn to_string_rounding_carry() {
+    assert_eq!(interpret("ToString[N[999/1000, 2]]").unwrap(), "1.0");
+    assert_eq!(interpret("ToString[N[19999/2000, 3]]").unwrap(), "10.0");
   }
 }
 

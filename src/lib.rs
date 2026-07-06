@@ -3140,7 +3140,7 @@ fn precision_number_display(token: &str) -> Option<String> {
 /// trailing decimal point is always kept so an approximate real still reads as
 /// `3.` rather than `3`. When `prec` exceeds the digits available, every
 /// stored digit is shown unrounded.
-fn round_significant(mantissa: &str, prec: usize) -> String {
+pub(crate) fn round_significant(mantissa: &str, prec: usize) -> String {
   let prec = prec.max(1);
   let (int_s, frac_s) = match mantissa.find('.') {
     Some(i) => (&mantissa[..i], &mantissa[i + 1..]),

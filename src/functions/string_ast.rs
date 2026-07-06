@@ -4557,9 +4557,10 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(format_string_form(template, &sf_args[1..])));
   }
 
-  // Arbitrary-precision numbers: ToString drops the `\`p` precision
-  // marker and returns just the truncated decimal expansion (matching
-  // wolframscript: `ToString[N[Pi, 100]]` is the bare 101-char string).
+  // Arbitrary-precision numbers: ToString drops the `\`p` precision marker
+  // and returns the decimal expansion rounded (not truncated) to `p`
+  // significant figures, matching wolframscript: `ToString[N[Pi, 5]]` is
+  // "3.1416" (not "3.1415") and `ToString[N[999/1000, 2]]` is "1.0".
   if let Expr::BigFloat(digits, prec) = &args[0] {
     let trimmed = digits.trim();
     let (sign, body) = if let Some(rest) = trimmed.strip_prefix('-') {
@@ -4567,37 +4568,16 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       ("", trimmed)
     };
-    let dot = body.find('.');
-    let int_part = match dot {
-      Some(i) => &body[..i],
-      None => body,
-    };
-    let frac_part = match dot {
-      Some(i) => &body[i + 1..],
-      None => "",
-    };
-    let int_zero = int_part.is_empty() || int_part.chars().all(|c| c == '0');
-    // Number of "significant" digits already in the integer part.
-    let int_sig = if int_zero {
-      0
-    } else {
-      int_part.trim_start_matches('0').len()
-    };
     let prec_digits = prec.round() as i64;
-    let frac_keep = if prec_digits > 0 {
-      let want = prec_digits - int_sig as i64;
-      if want < 0 { 0 } else { want as usize }
+    let s = if prec_digits > 0 {
+      format!(
+        "{}{}",
+        sign,
+        crate::round_significant(body, prec_digits as usize)
+      )
     } else {
-      frac_part.len()
-    };
-    let frac_truncated: String = frac_part.chars().take(frac_keep).collect();
-    let int_display = if int_part.is_empty() { "0" } else { int_part };
-    let s = if frac_truncated.is_empty() && dot.is_some() {
-      format!("{}{}.", sign, int_display)
-    } else if frac_truncated.is_empty() {
-      format!("{}{}", sign, int_display)
-    } else {
-      format!("{}{}.{}", sign, int_display, frac_truncated)
+      // Non-positive precision (e.g. an accuracy form): keep the digits.
+      format!("{}{}", sign, body)
     };
     return Ok(Expr::String(s));
   }
