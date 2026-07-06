@@ -8800,6 +8800,48 @@ abb""#,
       r#""1.234.567.890.123.456""#,
     );
   }
+  // An out-of-range position leaves the whole call unevaluated (WL emits
+  // StringInsert::ins). Valid positions are 1..=n+1 and -(n+1)..=-1.
+  #[test]
+  fn string_insert_out_of_range_positive() {
+    // n+1 = 4 is the last valid position; 5 is out of range.
+    assert_case(r#"StringInsert["abc", "X", 4]"#, r#""abcX""#);
+    assert_case(
+      r#"StringInsert["abc", "X", 5]"#,
+      r#"StringInsert[abc, X, 5]"#,
+    );
+  }
+  #[test]
+  fn string_insert_out_of_range_negative() {
+    // -(n+1) = -4 is the first valid position; -5 is out of range.
+    assert_case(r#"StringInsert["abc", "X", -4]"#, r#""Xabc""#);
+    assert_case(
+      r#"StringInsert["abc", "X", -5]"#,
+      r#"StringInsert[abc, X, -5]"#,
+    );
+  }
+  #[test]
+  fn string_insert_position_zero() {
+    assert_case(
+      r#"StringInsert["abc", "X", 0]"#,
+      r#"StringInsert[abc, X, 0]"#,
+    );
+  }
+  #[test]
+  fn string_insert_list_with_invalid_position() {
+    // A single out-of-range entry invalidates the whole position list.
+    assert_case(
+      r#"StringInsert["abcd", "X", {1, 0, 2}]"#,
+      r#"StringInsert[abcd, X, {1, 0, 2}]"#,
+    );
+  }
+  #[test]
+  fn string_insert_empty_string() {
+    // Only positions 1 and -1 are valid for the empty string.
+    assert_case(r#"StringInsert["", "X", 1]"#, r#""X""#);
+    assert_case(r#"StringInsert["", "X", -1]"#, r#""X""#);
+    assert_case(r#"StringInsert["", "X", 2]"#, r#"StringInsert[, X, 2]"#);
+  }
   // The inserted text (position 2) must be a single string; a list or other
   // expression there stays unevaluated (WL emits StringInsert::string).
   #[test]

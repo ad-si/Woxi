@@ -8270,6 +8270,35 @@ pub fn printable_ascii_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // ─── StringInsert ──────────────────────────────────────────────────
 
 /// StringInsert[string, snew, n] - inserts snew at position n in string
+/// Map a 1-based `StringInsert` position `n` (positive = before the n-th
+/// character, negative = counted from the end) into a 0-based insertion index
+/// for a string of length `len`. Valid positions are `1..=len+1` and
+/// `-(len+1)..=-1`; anything else (including 0 and out-of-range values) yields
+/// `None`, which callers turn into an unevaluated result.
+fn string_insert_index(n: i128, len: i128) -> Option<usize> {
+  if (1..=len + 1).contains(&n) {
+    Some((n - 1) as usize)
+  } else if (-(len + 1)..=-1).contains(&n) {
+    Some((len + 1 + n) as usize)
+  } else {
+    None
+  }
+}
+
+/// Emit `StringInsert::ins` for an out-of-range position and return the
+/// unevaluated call, matching wolframscript.
+fn string_insert_invalid(args: &[Expr], pos: i128) -> Expr {
+  crate::emit_message(&format!(
+    "StringInsert::ins: Cannot insert at position {} in {}.",
+    pos,
+    crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+  ));
+  Expr::FunctionCall {
+    name: "StringInsert".to_string(),
+    args: args.to_vec().into(),
+  }
+}
+
 pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
@@ -8316,21 +8345,15 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let chars: Vec<char> = s.chars().collect();
     let len = chars.len() as i128;
 
-    // Convert all positions to 0-based indices, accounting for
-    // the fact that earlier insertions shift later positions
+    // Convert all positions to 0-based indices. If any position is out of
+    // range the whole call stays unevaluated (with a ::ins message for the
+    // first offending position), matching wolframscript.
     let mut abs_positions: Vec<usize> = Vec::new();
     for &n in &pos_list {
-      let pos = if n > 0 {
-        (n - 1).min(len) as usize
-      } else if n < 0 {
-        let p = len + 1 + n;
-        p.max(0) as usize
-      } else {
-        return Err(InterpreterError::EvaluationError(
-          "StringInsert: position cannot be 0".into(),
-        ));
-      };
-      abs_positions.push(pos);
+      match string_insert_index(n, len) {
+        Some(pos) => abs_positions.push(pos),
+        None => return Ok(string_insert_invalid(args, n)),
+      }
     }
 
     // Sort positions in ascending order
@@ -8359,17 +8382,11 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let chars: Vec<char> = s.chars().collect();
   let len = chars.len() as i128;
 
-  // Wolfram: positive n means before position n, negative means from end
-  let pos = if n > 0 {
-    (n - 1).min(len) as usize
-  } else if n < 0 {
-    // -1 means after last char, -2 means before last char, etc.
-    let p = len + 1 + n;
-    p.max(0) as usize
-  } else {
-    return Err(InterpreterError::EvaluationError(
-      "StringInsert: position cannot be 0".into(),
-    ));
+  // Positive n inserts before the n-th character, negative counts from the
+  // end. Out-of-range positions leave the call unevaluated.
+  let pos = match string_insert_index(n, len) {
+    Some(pos) => pos,
+    None => return Ok(string_insert_invalid(args, n)),
   };
 
   let mut result: String = chars[..pos].iter().collect();
