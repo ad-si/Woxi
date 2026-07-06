@@ -3224,7 +3224,7 @@ OutputStream,Output stream object,✅,effectful,2.0,3298
 ParallelTry,,🚫,,7.0,3298
 RenkoChart,,🚫,,8.0,3298
 AggregationLayer,,🚫,,11.1,3306
-AlgebraicNumberNorm,,,,6.0,3306
+AlgebraicNumberNorm,Norm of an algebraic number (product of its conjugates over the rationals),✅,pure,6.0,3306
 LightingAngle,,🚫,,6.0,3306
 LineIntegralConvolutionScale,,,,7.0,3306
 MannWhitneyTest,,,,8.0,3306
@@ -3392,7 +3392,7 @@ SpokenString,,🚫,,7.0,3474
 TemplateObject,Symbolic template object produced by StringTemplate or FileTemplate,✅,pure,10.0,3474
 VoigtDistribution,,,,9.0,3474
 AddSides,Add an expression to both sides of an equation; an equation second argument pairs the sides,✅,none,11.3,3491
-AlgebraicNumberTrace,,,,6.0,3491
+AlgebraicNumberTrace,Trace of an algebraic number (sum of its conjugates over the rationals),✅,pure,6.0,3491
 AudioIntervals,Time intervals of silence or where a measurement criterion holds,✅,pure,11.0,3491
 BipartiteGraphQ,Tests whether a graph is bipartite (2-colorable),✅,pure,8.0,3491
 CreateArchive,,,,8.0,3491
@@ -4350,7 +4350,7 @@ SubresultantPolynomials,Subresultant polynomial sequence of two polynomials with
 SymmetrizedDependentComponents,,,,9.0,4479
 AcousticPressureCondition,,🚫,,12.2,4527
 ActiveStyle,,🚫,,7.0,4527
-AlgebraicUnitQ,,,,6.0,4527
+AlgebraicUnitQ,Tests whether a number is an algebraic unit,✅,pure,6.0,4527
 AsymptoticExpectation,,,,12.2,4527
 AudioAmplify,Multiply audio samples by an amplification factor,✅,pure,11.0,4527
 AudioChannelSeparate,,🚫,,11.0,4527
@@ -4515,7 +4515,7 @@ URLQueryDecode,,,,10.0,4660
 UnregisterExternalEvaluator,,🚫,,11.2,4660
 WebImage,,🚫,,12.0,4660
 WeierstrassHalfPeriodW2,,,,11.2,4660
-AlgebraicNumberDenominator,,,,6.0,4707
+AlgebraicNumberDenominator,Smallest positive integer whose product with the number is an algebraic integer,✅,pure,6.0,4707
 AnySubset,,,,10.1,4707
 AskedQ,,🚫,,10.4,4707
 BarlowProschanImportance,,,,9.0,4707

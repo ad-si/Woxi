@@ -51,6 +51,13 @@ pub fn minimal_polynomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn compute_minpoly_coeffs(
   expr: &Expr,
 ) -> Result<Option<Vec<i128>>, InterpreterError> {
+  // Expressions that are rational polynomials in a single radical m^(1/q)
+  // (e.g. 2^(1/3) + 4^(1/3), where 4^(1/3) = (2^(1/3))^2) get an exact
+  // treatment inside Q(m^(1/q)); the pairwise resultant composition below
+  // would return a reducible degree-q^2 annihilating polynomial instead.
+  if let Some(coeffs) = single_radical_minpoly(expr)? {
+    return Ok(Some(coeffs));
+  }
   match expr {
     // Integer n → x - n
     Expr::Integer(n) => Ok(Some(vec![-*n, 1])),
@@ -767,6 +774,391 @@ fn poly_sub_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
 /// A minimal polynomial is always square-free, so this corrects a candidate
 /// like `(x^2+2)^2` to `x^2+2`. For a square-free input, gcd(p, p') is a
 /// constant and the polynomial is returned unchanged.
+// ---- minimal polynomials inside a single radical extension Q(m^(1/q)) ----
+
+/// Exact rational as a normalized (numerator, positive denominator) pair.
+type Rat = (i128, i128);
+
+fn rat_norm(n: i128, d: i128) -> Rat {
+  let g = gcd_abs(n, d).max(1);
+  let s = if d < 0 { -1 } else { 1 };
+  (s * n / g, d.abs() / g)
+}
+
+fn rat_add(a: Rat, b: Rat) -> Rat {
+  rat_norm(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
+}
+
+fn rat_mul(a: Rat, b: Rat) -> Rat {
+  rat_norm(a.0 * b.0, a.1 * b.1)
+}
+
+/// A rational polynomial in r = base^(1/q); `base: None` means no radical
+/// has appeared yet (a plain rational constant with q = 1).
+#[derive(Clone)]
+struct RadPoly {
+  base: Option<i128>,
+  q: usize,
+  coeffs: Vec<Rat>,
+}
+
+fn rad_const(c: Rat) -> RadPoly {
+  RadPoly {
+    base: None,
+    q: 1,
+    coeffs: vec![c],
+  }
+}
+
+const RAD_MAX_DEGREE: usize = 24;
+
+/// Common (base, q) for two polynomials, or None when their radicals live
+/// in visibly different extensions.
+fn rad_unify(a: &RadPoly, b: &RadPoly) -> Option<(Option<i128>, usize)> {
+  let base = match (a.base, b.base) {
+    (Some(x), Some(y)) if x != y => return None,
+    (Some(x), _) => Some(x),
+    (_, y) => y,
+  };
+  let g = gcd_abs(a.q as i128, b.q as i128) as usize;
+  let l = a.q / g * b.q;
+  if l > RAD_MAX_DEGREE {
+    return None;
+  }
+  Some((base, l))
+}
+
+fn rad_reindex(p: &RadPoly, base: Option<i128>, q: usize) -> RadPoly {
+  let f = q / p.q;
+  let mut coeffs = vec![(0, 1); q];
+  for (j, c) in p.coeffs.iter().enumerate() {
+    coeffs[j * f] = *c;
+  }
+  RadPoly { base, q, coeffs }
+}
+
+fn rad_add_polys(a: &RadPoly, b: &RadPoly) -> Option<RadPoly> {
+  let (base, q) = rad_unify(a, b)?;
+  let a = rad_reindex(a, base, q);
+  let b = rad_reindex(b, base, q);
+  let coeffs = a
+    .coeffs
+    .iter()
+    .zip(b.coeffs.iter())
+    .map(|(&x, &y)| rat_add(x, y))
+    .collect();
+  Some(RadPoly { base, q, coeffs })
+}
+
+fn rad_mul_polys(a: &RadPoly, b: &RadPoly) -> Option<RadPoly> {
+  let (base, q) = rad_unify(a, b)?;
+  let a = rad_reindex(a, base, q);
+  let b = rad_reindex(b, base, q);
+  let m = base.unwrap_or(1);
+  let mut coeffs: Vec<Rat> = vec![(0, 1); q];
+  for (i, &ai) in a.coeffs.iter().enumerate() {
+    if ai.0 == 0 {
+      continue;
+    }
+    for (j, &bj) in b.coeffs.iter().enumerate() {
+      if bj.0 == 0 {
+        continue;
+      }
+      let idx = i + j;
+      let mut term = rat_mul(ai, bj);
+      for _ in 0..(idx / q) {
+        term = rat_mul(term, (m, 1));
+      }
+      coeffs[idx % q] = rat_add(coeffs[idx % q], term);
+    }
+  }
+  Some(RadPoly { base, q, coeffs })
+}
+
+fn rad_scale(p: &RadPoly, c: Rat) -> RadPoly {
+  RadPoly {
+    base: p.base,
+    q: p.q,
+    coeffs: p.coeffs.iter().map(|&x| rat_mul(x, c)).collect(),
+  }
+}
+
+/// Write b = m^k with k maximal, via complete trial-division factorization.
+/// None when b cannot be fully factored quickly (then the radical is left
+/// to the generic machinery — a partially reduced base could make x^q - m
+/// reducible and the characteristic polynomial no longer a pure power).
+fn perfect_power_root(b: i128) -> Option<(i128, i128)> {
+  let mut n = b;
+  let mut factors: Vec<(i128, i128)> = Vec::new();
+  let mut d = 2i128;
+  while d * d <= n && d <= 1_000_000 {
+    if n % d == 0 {
+      let mut e = 0;
+      while n % d == 0 {
+        n /= d;
+        e += 1;
+      }
+      factors.push((d, e));
+    }
+    d += 1;
+  }
+  if n > 1 {
+    if d * d > n {
+      factors.push((n, 1));
+    } else {
+      return None;
+    }
+  }
+  let mut g = 0i128;
+  for &(_, e) in &factors {
+    g = gcd_abs(g, e);
+  }
+  let mut m = 1i128;
+  for &(p, e) in &factors {
+    for _ in 0..(e / g) {
+      m = m.checked_mul(p)?;
+    }
+  }
+  Some((m, g))
+}
+
+/// b^(p/q) as a RadPoly over the maximally reduced base m (so x^q - m is
+/// irreducible and Q(m^(1/q)) is a field).
+fn rad_radical(b: i128, p: i128, q: i128) -> Option<RadPoly> {
+  if b < 2 || p < 1 || q < 2 {
+    return None;
+  }
+  let (m, k) = perfect_power_root(b)?;
+  let num = k.checked_mul(p)?;
+  let g = gcd_abs(num, q).max(1);
+  let (num, den) = (num / g, q / g);
+  if num > 64 {
+    return None;
+  }
+  let mut whole: Rat = (1, 1);
+  for _ in 0..(num / den) {
+    whole = rat_mul(whole, (m, 1));
+    if whole.0 > i64::MAX as i128 {
+      return None;
+    }
+  }
+  if den == 1 {
+    return Some(rad_const(whole));
+  }
+  if den as usize > RAD_MAX_DEGREE {
+    return None;
+  }
+  let mut coeffs: Vec<Rat> = vec![(0, 1); den as usize];
+  coeffs[(num % den) as usize] = whole;
+  Some(RadPoly {
+    base: Some(m),
+    q: den as usize,
+    coeffs,
+  })
+}
+
+/// Recognize `expr` as a rational polynomial in a single radical.
+fn collect_rad_poly(expr: &Expr, depth: usize) -> Option<RadPoly> {
+  if depth > 32 {
+    return None;
+  }
+  let power = |base: &Expr, exp: &Expr| -> Option<RadPoly> {
+    let b = match base {
+      Expr::Integer(b) => *b,
+      _ => return None,
+    };
+    match exp {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+          rad_radical(b, *p, *q)
+        } else {
+          None
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        if let (Expr::Integer(p), Expr::Integer(q)) = (&**left, &**right) {
+          rad_radical(b, *p, *q)
+        } else {
+          None
+        }
+      }
+      _ => None,
+    }
+  };
+  match expr {
+    Expr::Integer(n) => Some(rad_const((*n, 1))),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+        Some(rad_const(rat_norm(*p, *q)))
+      } else {
+        None
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      match &args[0] {
+        Expr::Integer(b) => rad_radical(*b, 1, 2),
+        _ => None,
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      let mut acc = collect_rad_poly(&args[0], depth + 1)?;
+      for a in &args[1..] {
+        acc = rad_add_polys(&acc, &collect_rad_poly(a, depth + 1)?)?;
+      }
+      Some(acc)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      let mut acc = collect_rad_poly(&args[0], depth + 1)?;
+      for a in &args[1..] {
+        acc = rad_mul_polys(&acc, &collect_rad_poly(a, depth + 1)?)?;
+      }
+      Some(acc)
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      power(&args[0], &args[1])
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Some(rad_scale(&collect_rad_poly(operand, depth + 1)?, (-1, 1))),
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus => rad_add_polys(
+        &collect_rad_poly(left, depth + 1)?,
+        &collect_rad_poly(right, depth + 1)?,
+      ),
+      BinaryOperator::Minus => rad_add_polys(
+        &collect_rad_poly(left, depth + 1)?,
+        &rad_scale(&collect_rad_poly(right, depth + 1)?, (-1, 1)),
+      ),
+      BinaryOperator::Times => rad_mul_polys(
+        &collect_rad_poly(left, depth + 1)?,
+        &collect_rad_poly(right, depth + 1)?,
+      ),
+      BinaryOperator::Divide => {
+        let den = collect_rad_poly(right, depth + 1)?;
+        // Only division by a radical-free rational is a polynomial op.
+        if den.base.is_some() || den.coeffs[0].0 == 0 {
+          return None;
+        }
+        let inv = (den.coeffs[0].1, den.coeffs[0].0);
+        Some(rad_scale(&collect_rad_poly(left, depth + 1)?, inv))
+      }
+      BinaryOperator::Power => power(left, right),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Minimal polynomial of a rational polynomial in one radical m^(1/q): the
+/// characteristic polynomial of multiplication by the value on the basis
+/// {1, r, ..., r^(q-1)} of the field Q(r) is minpoly^(q/deg), so its
+/// square-free part is exactly the minimal polynomial.
+fn single_radical_minpoly(
+  expr: &Expr,
+) -> Result<Option<Vec<i128>>, InterpreterError> {
+  let Some(p) = collect_rad_poly(expr, 0) else {
+    return Ok(None);
+  };
+  let (Some(m), q) = (p.base, p.q) else {
+    return Ok(None);
+  };
+  if q < 2 {
+    return Ok(None);
+  }
+
+  // Multiplication matrix: column i holds the coefficients of value * r^i.
+  let mut mat = vec![vec![(0i128, 1i128); q]; q];
+  for i in 0..q {
+    for (j, &c) in p.coeffs.iter().enumerate() {
+      if c.0 == 0 {
+        continue;
+      }
+      let idx = i + j;
+      let mut term = c;
+      for _ in 0..(idx / q) {
+        term = rat_mul(term, (m, 1));
+      }
+      mat[idx % q][i] = rat_add(mat[idx % q][i], term);
+    }
+  }
+
+  // Characteristic polynomial det(x I - M) via the evaluator.
+  let var = Expr::Identifier("MinimalPolynomial$r".to_string());
+  let rat_expr = |r: Rat| {
+    if r.1 == 1 {
+      Expr::Integer(r.0)
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(r.0)),
+        right: Box::new(Expr::Integer(r.1)),
+      }
+    }
+  };
+  let mut rows = Vec::with_capacity(q);
+  for (i, mat_row) in mat.iter().enumerate() {
+    let mut row = Vec::with_capacity(q);
+    for (j, &entry) in mat_row.iter().enumerate() {
+      row.push(if i == j {
+        Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(var.clone()),
+          right: Box::new(rat_expr(entry)),
+        }
+      } else {
+        rat_expr(rat_mul(entry, (-1, 1)))
+      });
+    }
+    rows.push(Expr::List(row.into()));
+  }
+  let det = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Det".to_string(),
+    args: vec![Expr::List(rows.into())].into(),
+  })?;
+  let coeff_list =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "CoefficientList".to_string(),
+      args: vec![det, var].into(),
+    })?;
+  let Expr::List(ref items) = coeff_list else {
+    return Ok(None);
+  };
+  let mut rats: Vec<Rat> = Vec::with_capacity(items.len());
+  for it in items.iter() {
+    match it {
+      Expr::Integer(n) => rats.push((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          rats.push(rat_norm(*n, *d));
+        } else {
+          return Ok(None);
+        }
+      }
+      _ => return Ok(None),
+    }
+  }
+  if rats.len() != q + 1 {
+    return Ok(None);
+  }
+  let mut den_lcm = 1i128;
+  for &(_, d) in &rats {
+    den_lcm = den_lcm / gcd_abs(den_lcm, d).max(1) * d;
+  }
+  let ints: Vec<i128> = rats.iter().map(|&(n, d)| n * (den_lcm / d)).collect();
+  Ok(Some(make_square_free(&make_primitive_monic(&ints))))
+}
+
 fn make_square_free(coeffs: &[i128]) -> Vec<i128> {
   if coeffs.len() <= 2 {
     return make_primitive_monic(coeffs);
@@ -1115,6 +1507,107 @@ pub fn number_field_signature_ast(
     name: "NumberFieldSignature".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// Minimal-polynomial coefficients (ascending, primitive, positive leading
+/// coefficient) of an explicit algebraic number, or None.
+fn algebraic_minpoly(
+  expr: &Expr,
+) -> Result<Option<Vec<i128>>, InterpreterError> {
+  if let Some(coeffs) = compute_minpoly_coeffs(expr)? {
+    let coeffs = make_square_free(&coeffs);
+    if coeffs.len() >= 2 {
+      return Ok(Some(coeffs));
+    }
+  }
+  Ok(None)
+}
+
+/// Emit `<head>::nalg` and return the unevaluated call, the shared failure
+/// path of the AlgebraicNumber* functions (AlgebraicUnitQ instead returns
+/// False without a message).
+fn nalg_unevaluated(head: &str, args: &[Expr]) -> Expr {
+  crate::emit_message(&format!(
+    "{head}::nalg: {} is not an explicit algebraic number.",
+    crate::syntax::expr_to_string(&args[0])
+  ));
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: args.to_vec().into(),
+  }
+}
+
+/// AlgebraicUnitQ[a] — True iff a is an algebraic integer whose reciprocal
+/// is also an algebraic integer: the minimal polynomial is monic with
+/// constant term ±1. Non-algebraic input gives False without a message.
+pub fn algebraic_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let is_unit = match algebraic_minpoly(&args[0])? {
+    Some(c) => *c.last().unwrap() == 1 && c[0].abs() == 1,
+    None => false,
+  };
+  Ok(Expr::Identifier(
+    if is_unit { "True" } else { "False" }.to_string(),
+  ))
+}
+
+/// AlgebraicNumberNorm[a] — the product of all conjugates of a over Q:
+/// (-1)^n * c_0/c_n for the degree-n minimal polynomial.
+pub fn algebraic_number_norm_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Some(c) = algebraic_minpoly(&args[0])? else {
+    return Ok(nalg_unevaluated("AlgebraicNumberNorm", args));
+  };
+  let n = c.len() - 1;
+  let sign = if n % 2 == 0 { 1 } else { -1 };
+  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::Integer(sign * c[0])),
+    right: Box::new(Expr::Integer(*c.last().unwrap())),
+  })
+}
+
+/// AlgebraicNumberTrace[a] — the sum of all conjugates of a over Q:
+/// -c_(n-1)/c_n for the degree-n minimal polynomial.
+pub fn algebraic_number_trace_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Some(c) = algebraic_minpoly(&args[0])? else {
+    return Ok(nalg_unevaluated("AlgebraicNumberTrace", args));
+  };
+  let n = c.len() - 1;
+  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::Integer(-c[n - 1])),
+    right: Box::new(Expr::Integer(c[n])),
+  })
+}
+
+/// AlgebraicNumberDenominator[a] — the smallest positive integer d such
+/// that d*a is an algebraic integer: the minimal polynomial of d*a is
+/// (up to content) sum c_k d^(n-k) x^k, which is monic exactly when
+/// c_n divides every c_k d^(n-k).
+pub fn algebraic_number_denominator_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Some(c) = algebraic_minpoly(&args[0])? else {
+    return Ok(nalg_unevaluated("AlgebraicNumberDenominator", args));
+  };
+  let n = c.len() - 1;
+  let lc = c[n];
+  for d in 1..=lc {
+    let divides_all = (0..n).all(|k| {
+      let mut pow = 1i128 % lc;
+      for _ in 0..(n - k) {
+        pow = (pow * (d % lc)) % lc;
+      }
+      (c[k] % lc) * pow % lc == 0
+    });
+    if divides_all {
+      return Ok(Expr::Integer(d));
+    }
+  }
+  Ok(Expr::Integer(lc))
 }
 
 /// Count the real roots of a square-free integer polynomial with a Sturm

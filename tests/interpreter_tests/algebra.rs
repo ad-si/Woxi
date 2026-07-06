@@ -7458,6 +7458,26 @@ mod minimal_polynomial {
     assert_eq!(interpret("MinimalPolynomial[3, x]").unwrap(), "-3 + x");
   }
 
+  // Sums of radicals over one base live in a single field extension; the
+  // pairwise resultant composition used to return a reducible degree-9
+  // annihilating polynomial for these instead of the cubic minimal
+  // polynomial.
+  #[test]
+  fn same_base_radical_sums() {
+    assert_eq!(
+      interpret("MinimalPolynomial[2^(1/3) + 4^(1/3), x]").unwrap(),
+      "-6 - 6*x + x^3"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[2^(1/3) + 2^(2/3), x]").unwrap(),
+      "-6 - 6*x + x^3"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[1 + 2^(1/3) + 4^(1/3), x]").unwrap(),
+      "-1 - 3*x - 3*x^2 + x^3"
+    );
+  }
+
   #[test]
   fn rational() {
     assert_eq!(interpret("MinimalPolynomial[1/3, x]").unwrap(), "-1 + 3*x");
@@ -10894,6 +10914,111 @@ mod boolean_quantifier_tests {
       interpret("Disjunction[(x && y) || (! x && z), {x}]").unwrap(),
       "y || z"
     );
+  }
+}
+
+mod algebraic_number_functions {
+  use super::*;
+
+  #[test]
+  fn algebraic_unit_q() {
+    for (input, expected) in [
+      ("AlgebraicUnitQ[I]", "True"),
+      ("AlgebraicUnitQ[Sqrt[2]]", "False"),
+      ("AlgebraicUnitQ[1 + Sqrt[2]]", "True"),
+      ("AlgebraicUnitQ[GoldenRatio]", "True"),
+      ("AlgebraicUnitQ[2]", "False"),
+      ("AlgebraicUnitQ[1]", "True"),
+      ("AlgebraicUnitQ[-1]", "True"),
+      ("AlgebraicUnitQ[0]", "False"),
+      ("AlgebraicUnitQ[1/2]", "False"),
+      ("AlgebraicUnitQ[Sqrt[2]/2]", "False"),
+      ("AlgebraicUnitQ[(1 + Sqrt[5])/2]", "True"),
+      ("AlgebraicUnitQ[2^(1/3)]", "False"),
+      ("AlgebraicUnitQ[1 + 2^(1/3) + 4^(1/3)]", "True"),
+      ("AlgebraicUnitQ[3 + 4*I]", "False"),
+      // Non-algebraic input gives False without a message
+      ("AlgebraicUnitQ[Pi]", "False"),
+      ("AlgebraicUnitQ[1.5]", "False"),
+      ("AlgebraicUnitQ[x]", "False"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn algebraic_number_norm() {
+    for (input, expected) in [
+      ("AlgebraicNumberNorm[Sqrt[2]]", "-2"),
+      ("AlgebraicNumberNorm[1 + Sqrt[2]]", "-1"),
+      ("AlgebraicNumberNorm[I]", "1"),
+      ("AlgebraicNumberNorm[3]", "3"),
+      ("AlgebraicNumberNorm[1/2]", "1/2"),
+      ("AlgebraicNumberNorm[GoldenRatio]", "-1"),
+      ("AlgebraicNumberNorm[2^(1/3)]", "2"),
+      ("AlgebraicNumberNorm[1 + I]", "2"),
+      ("AlgebraicNumberNorm[3 + 4*I]", "25"),
+      ("AlgebraicNumberNorm[0]", "0"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn algebraic_number_trace() {
+    for (input, expected) in [
+      ("AlgebraicNumberTrace[Sqrt[2]]", "0"),
+      ("AlgebraicNumberTrace[1 + Sqrt[2]]", "2"),
+      ("AlgebraicNumberTrace[I]", "0"),
+      ("AlgebraicNumberTrace[3]", "3"),
+      ("AlgebraicNumberTrace[1/2]", "1/2"),
+      ("AlgebraicNumberTrace[GoldenRatio]", "1"),
+      ("AlgebraicNumberTrace[2^(1/3)]", "0"),
+      ("AlgebraicNumberTrace[1 + I]", "2"),
+      ("AlgebraicNumberTrace[3 + 4*I]", "6"),
+      ("AlgebraicNumberTrace[0]", "0"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn algebraic_number_denominator() {
+    for (input, expected) in [
+      ("AlgebraicNumberDenominator[Sqrt[2]]", "1"),
+      ("AlgebraicNumberDenominator[Sqrt[2]/2]", "2"),
+      ("AlgebraicNumberDenominator[1/2]", "2"),
+      ("AlgebraicNumberDenominator[3]", "1"),
+      ("AlgebraicNumberDenominator[GoldenRatio]", "1"),
+      ("AlgebraicNumberDenominator[(1 + Sqrt[5])/2]", "1"),
+      ("AlgebraicNumberDenominator[2^(1/3)/3]", "3"),
+      ("AlgebraicNumberDenominator[I/2]", "2"),
+      ("AlgebraicNumberDenominator[(1 + I)/2]", "2"),
+      ("AlgebraicNumberDenominator[0]", "1"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // Non-algebraic arguments emit `nalg` and stay unevaluated.
+  #[test]
+  fn non_algebraic_emits_nalg() {
+    for (head, shown) in [
+      ("AlgebraicNumberNorm", "Pi"),
+      ("AlgebraicNumberTrace", "Pi"),
+      ("AlgebraicNumberDenominator", "1.5"),
+    ] {
+      let input = format!("{head}[{shown}]");
+      let result = woxi::interpret_with_stdout(&input).unwrap();
+      assert_eq!(result.result, input);
+      assert!(
+        result.warnings.iter().any(|w| w.contains(&format!(
+          "{head}::nalg: {shown} is not an explicit algebraic number."
+        ))),
+        "expected nalg for {input}, got {:?}",
+        result.warnings
+      );
+    }
   }
 }
 

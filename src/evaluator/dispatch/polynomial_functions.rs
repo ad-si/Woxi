@@ -179,6 +179,28 @@ pub fn dispatch_polynomial_functions(
         crate::functions::polynomial_ast::number_field_signature_ast(args),
       );
     }
+    "AlgebraicUnitQ" if args.len() == 1 => {
+      return Some(crate::functions::polynomial_ast::algebraic_unit_q_ast(
+        args,
+      ));
+    }
+    "AlgebraicNumberNorm" if args.len() == 1 => {
+      return Some(
+        crate::functions::polynomial_ast::algebraic_number_norm_ast(args),
+      );
+    }
+    "AlgebraicNumberTrace" if args.len() == 1 => {
+      return Some(
+        crate::functions::polynomial_ast::algebraic_number_trace_ast(args),
+      );
+    }
+    "AlgebraicNumberDenominator" if args.len() == 1 => {
+      return Some(
+        crate::functions::polynomial_ast::algebraic_number_denominator_ast(
+          args,
+        ),
+      );
+    }
     "RootSum" if args.len() == 2 => {
       // Evaluates to an exact power-sum value for polynomial f with numeric
       // coefficients and polynomial form; otherwise returns unevaluated.
