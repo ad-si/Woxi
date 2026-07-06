@@ -1,5 +1,18 @@
 use super::*;
 
+fn temp_path() -> String {
+  let mut tmp = std::env::temp_dir().display().to_string();
+  if tmp.ends_with(std::path::MAIN_SEPARATOR) {
+    tmp.pop();
+  }
+  tmp
+}
+
+fn temp_file(file: &str) -> String {
+  let tmp = std::env::temp_dir().join(file);
+  tmp.display().to_string()
+}
+
 mod batch_unevaluated_wrappers {
   use super::*;
 
@@ -1290,7 +1303,11 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn directory_q_true() {
-    assert_eq!(interpret(r#"DirectoryQ["/tmp"]"#).unwrap(), "True");
+    let tmp = temp_path();
+    assert_eq!(
+      interpret(&format!(r#"DirectoryQ["{tmp}"]"#)).unwrap(),
+      "True"
+    );
   }
 
   #[test]
@@ -1303,29 +1320,33 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn directory_q_file() {
-    let file = "/tmp/woxi_test_directoryq_file.txt";
-    std::fs::write(file, "test").unwrap();
+    let file = temp_file("woxi_test_directoryq_file.txt");
+    std::fs::write(&file, "test").unwrap();
     assert_eq!(
-      interpret(&format!(r#"DirectoryQ["{}"]"#, file)).unwrap(),
+      interpret(&format!(r#"DirectoryQ["{file}"]"#)).unwrap(),
       "False"
     );
-    std::fs::remove_file(file).unwrap();
+    std::fs::remove_file(&file).unwrap();
   }
 
   #[test]
   fn file_type_directory() {
-    assert_eq!(interpret(r#"FileType["/tmp"]"#).unwrap(), "Directory");
+    let tmp = temp_path();
+    assert_eq!(
+      interpret(&format!(r#"FileType["{tmp}"]"#)).unwrap(),
+      "Directory"
+    );
   }
 
   #[test]
   fn file_type_file() {
-    let file = "/tmp/woxi_test_filetype.txt";
-    std::fs::write(file, "test").unwrap();
+    let file = temp_file("woxi_test_filetype.txt");
+    std::fs::write(&file, "test").unwrap();
     assert_eq!(
-      interpret(&format!(r#"FileType["{}"]"#, file)).unwrap(),
+      interpret(&format!(r#"FileType["{file}"]"#)).unwrap(),
       "File"
     );
-    std::fs::remove_file(file).unwrap();
+    std::fs::remove_file(&file).unwrap();
   }
 
   #[test]
@@ -1343,13 +1364,13 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn file_print_basic() {
-    let file = "/tmp/woxi_test_fileprint.txt";
-    std::fs::write(file, "Hello World\nLine 2\nLine 3").unwrap();
+    let file = temp_file("woxi_test_fileprint.txt");
+    std::fs::write(&file, "Hello World\nLine 2\nLine 3").unwrap();
     let result =
-      interpret_with_stdout(&format!(r#"FilePrint["{}"]"#, file)).unwrap();
+      interpret_with_stdout(&format!(r#"FilePrint["{file}"]"#)).unwrap();
     assert_eq!(result.stdout, "Hello World\nLine 2\nLine 3\n");
     assert_eq!(result.result, "\0");
-    std::fs::remove_file(file).unwrap();
+    std::fs::remove_file(&file).unwrap();
   }
 
   #[test]
@@ -5259,34 +5280,46 @@ mod batch_unevaluated_wrappers_2 {
   // FileNameDrop
   #[test]
   fn file_name_drop_default() {
-    assert_eq!(interpret("FileNameDrop[\"a/b/c/d.txt\"]").unwrap(), "a/b/c");
+    let sep = std::path::MAIN_SEPARATOR_STR;
+    assert_eq!(
+      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\"]")).unwrap(),
+      format!("a{sep}b{sep}c")
+    );
   }
   #[test]
   fn file_name_drop_positive() {
+    let sep = std::path::MAIN_SEPARATOR_STR;
     assert_eq!(
-      interpret("FileNameDrop[\"a/b/c/d.txt\", 1]").unwrap(),
-      "b/c/d.txt"
+      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\", 1]"))
+        .unwrap(),
+      format!("b{sep}c{sep}d.txt")
     );
   }
   #[test]
   fn file_name_drop_positive_2() {
+    let sep = std::path::MAIN_SEPARATOR_STR;
     assert_eq!(
-      interpret("FileNameDrop[\"a/b/c/d.txt\", 2]").unwrap(),
-      "c/d.txt"
+      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\", 2]"))
+        .unwrap(),
+      format!("c{sep}d.txt")
     );
   }
   #[test]
   fn file_name_drop_negative() {
+    let sep = std::path::MAIN_SEPARATOR_STR;
     assert_eq!(
-      interpret("FileNameDrop[\"a/b/c/d.txt\", -1]").unwrap(),
-      "a/b/c"
+      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\", -1]"))
+        .unwrap(),
+      format!("a{sep}b{sep}c")
     );
   }
   #[test]
   fn file_name_drop_negative_2() {
+    let sep = std::path::MAIN_SEPARATOR_STR;
     assert_eq!(
-      interpret("FileNameDrop[\"a/b/c/d.txt\", -2]").unwrap(),
-      "a/b"
+      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\", -2]"))
+        .unwrap(),
+      format!("a{sep}b")
     );
   }
 
@@ -8285,17 +8318,19 @@ mod batch_unevaluated_wrappers_2 {
   // ResetDirectory
   #[test]
   fn reset_directory_restores_previous() {
+    let tmp = temp_path();
     let result = interpret(
-      "old = Directory[]; SetDirectory[\"/tmp\"]; ResetDirectory[]; Directory[] == old",
-    )
+      &format!("old = Directory[]; SetDirectory[\"{tmp}\"]; ResetDirectory[]; Directory[] == old"
+    ))
     .unwrap();
     assert_eq!(result, "True");
   }
   #[test]
   fn reset_directory_returns_restored_dir() {
+    let tmp = temp_path();
     let result = interpret(
-      "old = Directory[]; SetDirectory[\"/tmp\"]; restored = ResetDirectory[]; restored == old",
-    )
+      &format!("old = Directory[]; SetDirectory[\"{tmp}\"]; restored = ResetDirectory[]; restored == old"
+    ))
     .unwrap();
     assert_eq!(result, "True");
   }
@@ -8326,41 +8361,45 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn rename_file_basic() {
     // Clean up stale files from prior failed runs
-    let _ = interpret(r#"Quiet[DeleteFile["/tmp/test_rename_src_woxi.txt"]]"#);
-    let _ = interpret(r#"Quiet[DeleteFile["/tmp/test_rename_dst_woxi.txt"]]"#);
+    let src = temp_file("woxi_test_rename_src.txt");
+    let dst = temp_file("woxi_test_rename_dst.txt");
+    let _ = interpret(&format!(r#"Quiet[DeleteFile["{src}"]]"#));
+    let _ = interpret(&format!(r#"Quiet[DeleteFile["{dst}"]]"#));
     // Create a temp file, rename it, check old doesn't exist and new does, clean up
-    let result = interpret(
-      r#"Block[{src = CreateFile["/tmp/test_rename_src_woxi.txt"]},
+    let result = interpret(&format!(
+      r#"Block[{{src = CreateFile["{src}"]}},
         Close[src];
-        RenameFile["/tmp/test_rename_src_woxi.txt", "/tmp/test_rename_dst_woxi.txt"];
-        result = {FileExistsQ["/tmp/test_rename_src_woxi.txt"], FileExistsQ["/tmp/test_rename_dst_woxi.txt"]};
-        DeleteFile["/tmp/test_rename_dst_woxi.txt"];
-        result]"#,
-    )
+        RenameFile["{src}", "{dst}"];
+        result = {{FileExistsQ["{src}"], FileExistsQ["{dst}"]}};
+        DeleteFile["{dst}"];
+        result]"#
+    ))
     .unwrap();
     assert_eq!(result, "{False, True}");
   }
 
   #[test]
   fn rename_file_returns_dest_path() {
+    let src = temp_file("woxi_test_rename_ret.txt");
+    let dst = temp_file("woxi_test_rename_ret2.txt");
     // Clean up stale files from prior failed runs
-    let _ = interpret(r#"Quiet[DeleteFile["/tmp/test_rename_ret_woxi.txt"]]"#);
-    let _ = interpret(r#"Quiet[DeleteFile["/tmp/test_rename_ret2_woxi.txt"]]"#);
-    let result = interpret(
-      r#"Block[{src = CreateFile["/tmp/test_rename_ret_woxi.txt"]},
+    let _ = interpret(&format!(r#"Quiet[DeleteFile["{src}"]]"#));
+    let _ = interpret(&format!(r#"Quiet[DeleteFile["{dst}"]]"#));
+    let result = interpret(&format!(
+      r#"Block[{{src = CreateFile["{src}"]}},
         Close[src];
-        result = RenameFile["/tmp/test_rename_ret_woxi.txt", "/tmp/test_rename_ret2_woxi.txt"];
-        DeleteFile["/tmp/test_rename_ret2_woxi.txt"];
-        result]"#,
-    )
+        result = RenameFile["{src}", "{dst}"];
+        DeleteFile["{dst}"];
+        result]"#
+    ))
     .unwrap();
-    assert!(result.contains("test_rename_ret2_woxi.txt"));
+    assert!(result.contains("woxi_test_rename_ret2.txt"));
   }
 
   #[test]
   fn rename_file_not_found() {
     let result =
-      interpret(r#"RenameFile["nonexistent_woxi_file.txt", "dest.txt"]"#)
+      interpret(r#"RenameFile["woxi_nonexistent_file.txt", "dest.txt"]"#)
         .unwrap();
     assert_eq!(result, "$Failed");
   }
@@ -8719,45 +8758,49 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn create_directory_basic() {
-    let dir = "/tmp/woxi_test_create_dir_basic";
+    let dir = temp_file("woxi_test_create_dir_basic");
     // Clean up if left over from previous test
-    let _ = std::fs::remove_dir_all(dir);
+    let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(
       interpret(&format!(r#"CreateDirectory["{}"]"#, dir)).unwrap(),
       dir
     );
-    assert!(std::path::Path::new(dir).is_dir());
-    std::fs::remove_dir_all(dir).unwrap();
+    assert!(std::path::Path::new(&dir).is_dir());
+    std::fs::remove_dir_all(&dir).unwrap();
   }
 
   #[test]
   fn create_directory_nested() {
-    let dir = "/tmp/woxi_test_create_dir_nested/sub1/sub2";
-    let base = "/tmp/woxi_test_create_dir_nested";
-    let _ = std::fs::remove_dir_all(base);
+    let dir = temp_file("woxi_test_create_dir_nested/sub1/sub2");
+    let base = temp_file("woxi_test_create_dir_nested");
+    let _ = std::fs::remove_dir_all(&base);
     assert_eq!(
       interpret(&format!(r#"CreateDirectory["{}"]"#, dir)).unwrap(),
       dir
     );
-    assert!(std::path::Path::new(dir).is_dir());
-    std::fs::remove_dir_all(base).unwrap();
+    assert!(std::path::Path::new(&dir).is_dir());
+    std::fs::remove_dir_all(&base).unwrap();
   }
 
   #[test]
   fn create_directory_already_exists() {
-    let dir = "/tmp/woxi_test_create_dir_exists";
-    let _ = std::fs::remove_dir_all(dir);
-    std::fs::create_dir_all(dir).unwrap();
+    let dir = temp_file("woxi_test_create_dir_exists");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
     let result = interpret(&format!(r#"CreateDirectory["{}"]"#, dir)).unwrap();
     assert_eq!(result, "$Failed");
-    std::fs::remove_dir_all(dir).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
   }
 
   #[test]
   fn create_directory_no_args() {
     let result = interpret("CreateDirectory[]").unwrap();
     // Should return a string path (temp directory)
-    assert!(result.starts_with('/'), "Expected a path, got: {}", result);
+    assert!(
+      result.contains("/woxi_"),
+      "Expected a path, got: {}",
+      result
+    );
   }
 
   #[test]
@@ -8767,38 +8810,38 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn copy_file_basic() {
-    let src = "/tmp/woxi_test_copy_src.txt";
-    let dst = "/tmp/woxi_test_copy_dst.txt";
-    let _ = std::fs::remove_file(dst);
-    std::fs::write(src, "hello").unwrap();
+    let src = temp_file("woxi_test_copy_src.txt");
+    let dst = temp_file("woxi_test_copy_dst.txt");
+    let _ = std::fs::remove_file(&dst);
+    std::fs::write(&src, "hello").unwrap();
     assert_eq!(
-      interpret(&format!(r#"CopyFile["{}", "{}"]"#, src, dst)).unwrap(),
+      interpret(&format!(r#"CopyFile["{src}", "{dst}"]"#)).unwrap(),
       dst
     );
-    assert_eq!(std::fs::read_to_string(dst).unwrap(), "hello");
-    std::fs::remove_file(src).unwrap();
-    std::fs::remove_file(dst).unwrap();
+    assert_eq!(std::fs::read_to_string(&dst).unwrap(), "hello");
+    std::fs::remove_file(&src).unwrap();
+    std::fs::remove_file(&dst).unwrap();
   }
 
   #[test]
   fn copy_file_source_not_found() {
-    let result =
-      interpret(r#"CopyFile["/tmp/woxi_nonexistent_file", "/tmp/woxi_out"]"#)
-        .unwrap();
+    let src = temp_file("woxi_nonexistent_file");
+    let dst = temp_file("woxi_out");
+    let result = interpret(&format!(r#"CopyFile["{src}", "{dst}"]"#)).unwrap();
     assert_eq!(result, "$Failed");
   }
 
   #[test]
   fn copy_file_dest_exists() {
-    let src = "/tmp/woxi_test_copy_exists_src.txt";
-    let dst = "/tmp/woxi_test_copy_exists_dst.txt";
-    std::fs::write(src, "hello").unwrap();
-    std::fs::write(dst, "world").unwrap();
+    let src = temp_file("woxi_test_copy_exists_src.txt");
+    let dst = temp_file("woxi_test_copy_exists_dst.txt");
+    std::fs::write(&src, "hello").unwrap();
+    std::fs::write(&dst, "world").unwrap();
     let result =
       interpret(&format!(r#"CopyFile["{}", "{}"]"#, src, dst)).unwrap();
     assert_eq!(result, "$Failed");
-    std::fs::remove_file(src).unwrap();
-    std::fs::remove_file(dst).unwrap();
+    std::fs::remove_file(&src).unwrap();
+    std::fs::remove_file(&dst).unwrap();
   }
 
   #[test]
