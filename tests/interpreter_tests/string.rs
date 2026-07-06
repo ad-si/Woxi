@@ -7039,6 +7039,31 @@ mod string_contains_free_patterns {
     ));
   }
 
+  // An invalid length (position 2) that is not a non-negative integer emits
+  // ::intnm and stays unevaluated, rather than raising an evaluation error.
+  #[test]
+  fn string_pad_invalid_length_warns_intnm() {
+    use woxi::interpret_with_stdout;
+    // A symbolic length stays unevaluated.
+    let r = interpret_with_stdout(r#"StringPadLeft["ab", x]"#).unwrap();
+    assert_eq!(r.result, "StringPadLeft[ab, x]");
+    assert!(r.warnings[0].contains(
+      "StringPadLeft::intnm: Non-negative machine-sized integer expected at \
+       position 2 in StringPadLeft[ab, x]."
+    ));
+    // Negative and non-integer lengths also stay unevaluated.
+    assert_eq!(
+      interpret(r#"StringPadLeft["abc", -1]"#).unwrap(),
+      "StringPadLeft[abc, -1]"
+    );
+    assert_eq!(
+      interpret(r#"StringPadRight["ab", 1.5]"#).unwrap(),
+      "StringPadRight[ab, 1.5]"
+    );
+    // Zero is valid — pad/truncate to the empty string.
+    assert_eq!(interpret(r#"StringPadLeft["ab", 0]"#).unwrap(), "");
+  }
+
   // One-argument list form: pad every string to the longest one's length.
   #[test]
   fn string_pad_one_arg_list() {

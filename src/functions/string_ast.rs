@@ -7072,6 +7072,28 @@ fn string_pad_strlist(name: &str, args: &[Expr]) -> Expr {
   call
 }
 
+/// Validate the length argument (position 2) of StringPadLeft/StringPadRight:
+/// it must be a non-negative machine integer. On failure, emits the ::intnm
+/// message and returns the unevaluated call (matching wolframscript) rather
+/// than raising an error.
+fn string_pad_length(name: &str, args: &[Expr]) -> Result<usize, Expr> {
+  match &args[1] {
+    Expr::Integer(n) if *n >= 0 => Ok(*n as usize),
+    _ => {
+      let call = Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      };
+      crate::emit_message(&format!(
+        "{}::intnm: Non-negative machine-sized integer expected at position 2 in {}.",
+        name,
+        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+      ));
+      Err(call)
+    }
+  }
+}
+
 pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // StringPadLeft[{s1, …}] pads each string to the longest one's length.
   if args.len() == 1 {
@@ -7104,6 +7126,12 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(call);
   }
 
+  // The length (2nd argument) must be a non-negative integer.
+  let target_len = match string_pad_length("StringPadLeft", args) {
+    Ok(n) => n,
+    Err(call) => return Ok(call),
+  };
+
   // Thread over list of strings in the first argument.
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
@@ -7118,14 +7146,6 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let s = expr_to_str(&args[0])?;
-  let n = expr_to_int(&args[1])?;
-  if n < 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Second argument of StringPadLeft must be non-negative".into(),
-    ));
-  }
-
-  let target_len = n as usize;
   let pad_str = if args.len() == 3 {
     expr_to_str(&args[2])?
   } else {
@@ -7186,6 +7206,12 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(call);
   }
 
+  // The length (2nd argument) must be a non-negative integer.
+  let target_len = match string_pad_length("StringPadRight", args) {
+    Ok(n) => n,
+    Err(call) => return Ok(call),
+  };
+
   // Thread over list of strings in the first argument.
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
@@ -7200,14 +7226,6 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let s = expr_to_str(&args[0])?;
-  let n = expr_to_int(&args[1])?;
-  if n < 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Second argument of StringPadRight must be non-negative".into(),
-    ));
-  }
-
-  let target_len = n as usize;
   let pad_str = if args.len() == 3 {
     expr_to_str(&args[2])?
   } else {
