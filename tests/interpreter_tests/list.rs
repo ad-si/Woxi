@@ -3949,14 +3949,52 @@ mod constant_array {
       interpret("ConstantArray[0, 3.5]").unwrap(),
       "ConstantArray[0, 3.5]"
     );
-    // A negative or symbolic entry inside a dimension list.
+    // A negative entry inside a dimension list is an invalid dimension.
     assert_eq!(
       interpret("ConstantArray[0, {-1, 2}]").unwrap(),
       "ConstantArray[0, {-1, 2}]"
     );
+    // A concrete invalid dimension alongside a symbolic one still errors out.
+    assert_eq!(
+      interpret("ConstantArray[0, {x, -1}]").unwrap(),
+      "ConstantArray[0, {x, -1}]"
+    );
+    assert_eq!(
+      interpret("ConstantArray[0, {x, 3.5}]").unwrap(),
+      "ConstantArray[0, {x, 3.5}]"
+    );
+  }
+
+  // A symbolic dimension yields a SymbolicZerosArray/SymbolicOnesArray
+  // placeholder, matching wolframscript.
+  #[test]
+  fn symbolic_dimension_yields_symbolic_array() {
     assert_eq!(
       interpret("ConstantArray[0, {x, 2}]").unwrap(),
-      "ConstantArray[0, {x, 2}]"
+      "SymbolicZerosArray[{x, 2}]"
+    );
+    // A scalar symbolic dimension is wrapped into a single-element list.
+    assert_eq!(
+      interpret("ConstantArray[0, x]").unwrap(),
+      "SymbolicZerosArray[{x}]"
+    );
+    assert_eq!(
+      interpret("ConstantArray[0, {x, y}]").unwrap(),
+      "SymbolicZerosArray[{x, y}]"
+    );
+    // Element 1 gives a bare SymbolicOnesArray.
+    assert_eq!(
+      interpret("ConstantArray[1, {x, 2}]").unwrap(),
+      "SymbolicOnesArray[{x, 2}]"
+    );
+    // Any other element multiplies SymbolicOnesArray.
+    assert_eq!(
+      interpret("ConstantArray[5, {x, 2}]").unwrap(),
+      "5*SymbolicOnesArray[{x, 2}]"
+    );
+    assert_eq!(
+      interpret("ConstantArray[a, {x, 2}]").unwrap(),
+      "a*SymbolicOnesArray[{x, 2}]"
     );
   }
 

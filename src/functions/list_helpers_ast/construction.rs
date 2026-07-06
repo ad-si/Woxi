@@ -974,28 +974,64 @@ pub fn constant_array_ast(
       _ => None,
     }
   };
-  let dim_vec: Vec<usize> = match dims {
-    Expr::Integer(_) | Expr::BigInteger(_) => match nonneg_dim(dims) {
-      Some(n) => vec![n],
-      None => return unevaluated(),
-    },
-    Expr::List(dim_list) => {
-      let mut v = Vec::with_capacity(dim_list.len());
-      for d in dim_list.iter() {
-        match nonneg_dim(d) {
-          Some(n) => v.push(n),
-          None => return unevaluated(),
-        }
-      }
-      v
-    }
-    _ => return unevaluated(),
+  // Flatten the dimension specifier into a list (a scalar dimension counts as
+  // a single-element list, matching wolframscript's `SymbolicZerosArray[{n}]`).
+  let dim_exprs: Vec<Expr> = match dims {
+    Expr::List(dim_list) => dim_list.iter().cloned().collect(),
+    other => vec![other.clone()],
   };
-  // Build the nested constant array from the innermost dimension outward.
-  let mut result = elem.clone();
-  for &n in dim_vec.iter().rev() {
-    result = Expr::List(vec![result; n].into());
+
+  // Classify each dimension. A concrete non-negative machine integer is a
+  // usable dimension; a concrete number that isn't (negative, non-integer,
+  // too large) makes wolframscript emit `::ilsmn` and leave the call
+  // unevaluated; anything else is symbolic.
+  let mut concrete_dims: Vec<usize> = Vec::with_capacity(dim_exprs.len());
+  let mut has_symbolic = false;
+  for d in &dim_exprs {
+    match nonneg_dim(d) {
+      Some(n) => concrete_dims.push(n),
+      None => {
+        // A concrete but invalid dimension is an error, so leave unevaluated;
+        // a symbolic dimension yields a SymbolicZeros/OnesArray placeholder.
+        if crate::functions::predicate_ast::is_numeric_q_pub(d) {
+          return unevaluated();
+        }
+        has_symbolic = true;
+      }
+    }
   }
+
+  if !has_symbolic {
+    // Build the nested constant array from the innermost dimension outward.
+    let mut result = elem.clone();
+    for &n in concrete_dims.iter().rev() {
+      result = Expr::List(vec![result; n].into());
+    }
+    return Ok(result);
+  }
+
+  // At least one symbolic dimension (and no invalid concrete ones): produce a
+  // SymbolicZerosArray/SymbolicOnesArray placeholder like wolframscript.
+  //   ConstantArray[0, dims] -> SymbolicZerosArray[dims]
+  //   ConstantArray[1, dims] -> SymbolicOnesArray[dims]
+  //   ConstantArray[c, dims] -> c*SymbolicOnesArray[dims]
+  let dims_list = Expr::List(dim_exprs.into());
+  let ones = || Expr::FunctionCall {
+    name: "SymbolicOnesArray".to_string(),
+    args: vec![dims_list.clone()].into(),
+  };
+  let result = match elem {
+    Expr::Integer(0) => Expr::FunctionCall {
+      name: "SymbolicZerosArray".to_string(),
+      args: vec![dims_list.clone()].into(),
+    },
+    Expr::Integer(1) => ones(),
+    _ => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(elem.clone()),
+      right: Box::new(ones()),
+    },
+  };
   Ok(result)
 }
 
