@@ -939,6 +939,35 @@ mod factor {
   }
 
   #[test]
+  fn modulus_option_factors_over_gf_p() {
+    for (input, expected) in [
+      (
+        "Factor[x^5 + x + 1, Modulus -> 2]",
+        "(1 + x + x^2)*(1 + x^2 + x^3)",
+      ),
+      (
+        "Factor[x^8 + x^4 + 1, Modulus -> 3]",
+        "(1 + x)^2*(2 + x)^2*(1 + x^2)^2",
+      ),
+      (
+        "Factor[x^4 - 1, Modulus -> 5]",
+        "(1 + x)*(2 + x)*(3 + x)*(4 + x)",
+      ),
+      // A non-unit leading coefficient stays as a constant prefactor
+      ("Factor[2*x^4 + 2, Modulus -> 5]", "2*(2 + x^2)*(3 + x^2)"),
+      ("Factor[x^2 + x, Modulus -> 2]", "x*(1 + x)"),
+      // Repeated factors (including the derivative == 0 path f = g(x^p))
+      ("Factor[(x + 1)^4, Modulus -> 2]", "(1 + x)^4"),
+      ("Factor[x^6 + 1, Modulus -> 2]", "(1 + x)^2*(1 + x + x^2)^2"),
+      ("Factor[x^2, Modulus -> 2]", "x^2"),
+      // Constants reduce mod p
+      ("Factor[5, Modulus -> 3]", "2"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
   fn difference_of_squares() {
     assert_eq!(interpret("Factor[x^2 - 4]").unwrap(), "(-2 + x)*(2 + x)");
   }
@@ -1269,6 +1298,27 @@ mod factor_list {
       interpret("FactorList[2*x^2 + 4*x + 2]").unwrap(),
       "{{2, 1}, {1 + x, 2}}"
     );
+  }
+
+  #[test]
+  fn modulus_option_factors_over_gf_p() {
+    for (input, expected) in [
+      (
+        "FactorList[x^8 + x^4 + 1, Modulus -> 3]",
+        "{{1, 1}, {1 + x, 2}, {2 + x, 2}, {1 + x^2, 2}}",
+      ),
+      (
+        "FactorList[x^5 + x + 1, Modulus -> 2]",
+        "{{1, 1}, {1 + x + x^2, 1}, {1 + x^2 + x^3, 1}}",
+      ),
+      (
+        "FactorList[2*x^4 + 2, Modulus -> 5]",
+        "{{2, 1}, {2 + x^2, 1}, {3 + x^2, 1}}",
+      ),
+      ("FactorList[5, Modulus -> 3]", "{{2, 1}}"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
   }
 
   #[test]
@@ -5127,6 +5177,40 @@ mod polynomial_lcm {
       interpret("PolynomialLCM[x^2 - 1, x^2 + 2 x + 1]").unwrap(),
       "(-1 + x)*(1 + 2*x + x^2)"
     );
+  }
+
+  // The modular form keeps the same (a/gcd)*b product presentation, with
+  // both parts reduced mod p (equal factors merge into a power).
+  #[test]
+  fn modulus_option_computes_over_gf_p() {
+    for (input, expected) in [
+      ("PolynomialLCM[x^2 + 1, x + 1, Modulus -> 2]", "(1 + x)^2"),
+      (
+        "PolynomialLCM[x^3 + 1, x^2 + 1, Modulus -> 2]",
+        "(1 + x^2)*(1 + x + x^2)",
+      ),
+      (
+        "PolynomialLCM[x^4 - 1, x^2 + 4*x + 3, Modulus -> 5]",
+        "(3 + x + x^2)*(3 + 4*x + x^2)",
+      ),
+      // Coprime inputs after reduction: the raw product, unnormalized
+      (
+        "PolynomialLCM[2*x^2 + 2, x + 1, Modulus -> 5]",
+        "(1 + x)*(2 + 2*x^2)",
+      ),
+      (
+        "PolynomialLCM[x + 1, 2*x^2 + 2, Modulus -> 5]",
+        "(1 + x)*(2 + 2*x^2)",
+      ),
+      (
+        "PolynomialLCM[x^2 - 1, x^3 - 1, Modulus -> 7]",
+        "(1 + x)*(6 + x^3)",
+      ),
+      // An input vanishing mod p gives the zero polynomial
+      ("PolynomialLCM[5*x + 5, x + 1, Modulus -> 5]", "0"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
   }
 
   #[test]
@@ -9369,6 +9453,27 @@ mod irreducible_polynomial_q {
     // Linear polynomials are irreducible.
     assert_eq!(interpret("IrreduciblePolynomialQ[x]").unwrap(), "True");
     assert_eq!(interpret("IrreduciblePolynomialQ[x + 1]").unwrap(), "True");
+  }
+
+  #[test]
+  fn modulus_option_tests_over_gf_p() {
+    for (input, expected) in [
+      ("IrreduciblePolynomialQ[x^4 + x + 1, Modulus -> 2]", "True"),
+      (
+        "IrreduciblePolynomialQ[x^4 + x^2 + 1, Modulus -> 2]",
+        "False",
+      ),
+      ("IrreduciblePolynomialQ[x + 1, Modulus -> 2]", "True"),
+      ("IrreduciblePolynomialQ[7, Modulus -> 2]", "False"),
+      ("IrreduciblePolynomialQ[(x + 1)^2, Modulus -> 2]", "False"),
+      // Scalar multiples do not affect irreducibility
+      (
+        "IrreduciblePolynomialQ[2*x^2 + 2*x + 2, Modulus -> 5]",
+        "True",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
   }
 
   #[test]

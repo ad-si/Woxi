@@ -79,7 +79,7 @@ pub fn dispatch_polynomial_functions(
     "Decompose" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::decompose_ast(args));
     }
-    "Factor" if args.len() == 1 => {
+    "Factor" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::factor_ast(args));
     }
     "FactorSquareFree" if args.len() == 1 => {
@@ -100,10 +100,10 @@ pub fn dispatch_polynomial_functions(
     "FactorTerms" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::polynomial_ast::factor_terms_ast(args));
     }
-    "FactorList" if args.len() == 1 => {
+    "FactorList" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::factor_list_ast(args));
     }
-    "IrreduciblePolynomialQ" if args.len() == 1 => {
+    "IrreduciblePolynomialQ" if args.len() == 1 || args.len() == 2 => {
       return Some(
         crate::functions::polynomial_ast::irreducible_polynomial_q_ast(args),
       );

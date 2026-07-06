@@ -5323,40 +5323,7 @@ pub fn dispatch_math_functions(
     }
     // PolynomialLCM[p1, p2, ...] — least common multiple of polynomials
     "PolynomialLCM" if args.len() >= 2 => {
-      // LCM(p1, p2) = (p1 / gcd) * p2, kept as an unexpanded product to match
-      // Wolfram's factored display (e.g. (-1 + x)*(1 + x), not -1 + x^2).
-      // For more than 2 args, fold pairwise.
-      let mut result = args[0].clone();
-      for arg in &args[1..] {
-        let gcd = Expr::FunctionCall {
-          name: "PolynomialGCD".to_string(),
-          args: vec![result.clone(), arg.clone()].into(),
-        };
-        // q = result / gcd as an exact polynomial (Cancel clears the gcd).
-        let quotient = Expr::FunctionCall {
-          name: "Cancel".to_string(),
-          args: vec![Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              result,
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![gcd, Expr::Integer(-1)].into(),
-              },
-            ]
-            .into(),
-          }]
-          .into(),
-        };
-        let quotient = evaluate_expr_to_expr(&quotient).unwrap_or(quotient);
-        // LCM = q * arg, left unexpanded.
-        let lcm = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![quotient, arg.clone()].into(),
-        };
-        result = evaluate_expr_to_expr(&lcm).unwrap_or(lcm);
-      }
-      return Some(Ok(result));
+      return Some(crate::functions::polynomial_ast::polynomial_lcm_ast(args));
     }
     // CoordinateBoundsArray[{{xmin,xmax},…}, spec, offsets] — grid of
     // coordinate tuples; spec is a step, per-dimension steps, or Into[n].

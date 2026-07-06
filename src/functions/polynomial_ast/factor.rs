@@ -9,6 +9,19 @@ use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 /// Factor[expr] - Factor a polynomial expression
 /// Threads over List.
 pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Factor[poly, Modulus -> p] factors over GF(p); inputs the modular
+  // engine cannot handle (multivariate, symbolic) stay unevaluated.
+  if args.len() == 2
+    && let Some(p) = extract_modulus_option(&args[1])
+  {
+    return match super::factor_modulus(&args[0], p)? {
+      Some(e) => Ok(e),
+      None => Ok(Expr::FunctionCall {
+        name: "Factor".to_string(),
+        args: args.to_vec().into(),
+      }),
+    };
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Factor expects exactly 1 argument".into(),
@@ -1087,6 +1100,17 @@ pub fn lagrange_interpolate_integer(
 
 /// FactorList[poly] - list irreducible factors of a polynomial with exponents
 pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 2
+    && let Some(p) = extract_modulus_option(&args[1])
+  {
+    return match super::factor_list_modulus(&args[0], p)? {
+      Some(e) => Ok(e),
+      None => Ok(Expr::FunctionCall {
+        name: "FactorList".to_string(),
+        args: args.to_vec().into(),
+      }),
+    };
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "FactorList expects exactly 1 argument".into(),
@@ -1157,6 +1181,17 @@ fn factor_exponent_is_negative(pair: &Expr) -> bool {
 pub fn irreducible_polynomial_q_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  if args.len() == 2
+    && let Some(p) = extract_modulus_option(&args[1])
+  {
+    return match super::irreducible_polynomial_q_modulus(&args[0], p)? {
+      Some(e) => Ok(e),
+      None => Ok(Expr::FunctionCall {
+        name: "IrreduciblePolynomialQ".to_string(),
+        args: args.to_vec().into(),
+      }),
+    };
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "IrreduciblePolynomialQ expects exactly 1 argument".into(),
