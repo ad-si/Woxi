@@ -638,9 +638,7 @@ fn web_audio_search_fails_without_service() {
 
 #[test]
 fn wav_export_import_round_trip() {
-  let dir = std::env::temp_dir().join("woxi_audio_tests");
-  std::fs::create_dir_all(&dir).unwrap();
-  let path = dir.join("roundtrip.wav");
+  let path = std::env::temp_dir().join("woxi_roundtrip.wav");
   let path_str = path.display().to_string();
   // Export 4 samples at 8 kHz, re-import, and measure: 16-bit
   // quantization keeps values within 1/32768 of the originals.
@@ -661,9 +659,7 @@ fn wav_export_import_round_trip() {
 
 #[test]
 fn audio_from_wav_file_measurable() {
-  let dir = std::env::temp_dir().join("woxi_audio_tests");
-  std::fs::create_dir_all(&dir).unwrap();
-  let path = dir.join("file_backed.wav");
+  let path = std::env::temp_dir().join("woxi_file_backed.wav");
   let path_str = path.display().to_string();
   let code = format!(
     "Export[\"{path_str}\", Audio[{{0.25, 0.25}}, SampleRate -> 4000], \
