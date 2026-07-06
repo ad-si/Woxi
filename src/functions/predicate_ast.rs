@@ -2326,6 +2326,13 @@ pub fn construct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// LeapYearQ[year] or LeapYearQ[{year}] or LeapYearQ[DateObject[...]] - Tests if a year is a leap year
 pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A bare symbol or arbitrary function call cannot be interpreted as a date;
+  // Wolfram emits LeapYearQ::date and leaves the call unevaluated.
+  if let Some(unevaluated) =
+    crate::functions::datetime_ast::date_spec_error("LeapYearQ", args, args)
+  {
+    return Ok(unevaluated);
+  }
   let extract_year = |e: &Expr| -> Option<i128> {
     match e {
       Expr::Integer(n) => Some(*n),

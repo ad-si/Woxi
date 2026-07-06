@@ -1510,12 +1510,74 @@ fn calendar_step_difference(
 
 /// DateDifference[date1, date2] — difference in days
 /// DateDifference[date1, date2, "unit"] — difference in given unit
+/// A date argument that Wolfram reports as un-interpretable via a `::date`
+/// message: a bare symbol or an arbitrary (non date-producing) function call.
+/// Numbers, strings and lists are left to the normal date extractors.
+fn is_uninterpretable_date_spec(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(name) => {
+      !matches!(name.as_str(), "Today" | "Now" | "Yesterday" | "Tomorrow")
+    }
+    Expr::FunctionCall { name, .. } => !matches!(
+      name.as_str(),
+      "DateObject"
+        | "DateList"
+        | "DateString"
+        | "AbsoluteTime"
+        | "FromAbsoluteTime"
+        | "FromUnixTime"
+        | "TimeObject"
+        | "Today"
+        | "Now"
+        | "Yesterday"
+        | "Tomorrow"
+        | "Quantity"
+    ),
+    _ => false,
+  }
+}
+
+/// If any of the given date-position arguments (evaluated) cannot be
+/// interpreted as a date specification and is clearly non-date (a symbol or an
+/// arbitrary function call), emit the `head::date` message for the first such
+/// argument and return the whole call `head[args...]` unevaluated. Returns
+/// `None` when every date argument looks interpretable, so the caller can
+/// proceed with its normal computation. Mirrors Wolfram, which reports the
+/// first un-interpretable date and leaves the expression unevaluated.
+pub fn date_spec_error(
+  head: &str,
+  args: &[Expr],
+  date_args: &[Expr],
+) -> Option<Expr> {
+  for a in date_args {
+    let ev =
+      crate::evaluator::evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone());
+    if is_uninterpretable_date_spec(&ev) {
+      crate::emit_message(&format!(
+        "{}::date: Expression {} cannot be interpreted as a date specification.",
+        head,
+        crate::syntax::format_expr(&ev, crate::syntax::ExprForm::Output)
+      ));
+      return Some(Expr::FunctionCall {
+        name: head.to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  }
+  None
+}
+
 pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Ok(Expr::FunctionCall {
       name: "DateDifference".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  if let Some(unevaluated) = date_spec_error("DateDifference", args, &args[..2])
+  {
+    return Ok(unevaluated);
   }
 
   let date1 = crate::evaluator::evaluate_expr_to_expr(&args[0])?;

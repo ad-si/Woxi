@@ -349,6 +349,13 @@ pub fn dispatch_datetime_functions(
       }));
     }
     "DayCount" if args.len() == 2 => {
+      // Report un-interpretable date arguments under the DayCount head before
+      // delegating (otherwise the DateDifference conversion would leak).
+      if let Some(unevaluated) =
+        crate::functions::datetime_ast::date_spec_error("DayCount", args, args)
+      {
+        return Some(Ok(unevaluated));
+      }
       // Use DateDifference which returns Quantity[n, "Days"]
       let result = crate::functions::datetime_ast::date_difference_ast(args);
       if let Ok(Expr::FunctionCall {

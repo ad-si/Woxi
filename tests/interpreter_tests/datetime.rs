@@ -1210,6 +1210,56 @@ mod leap_year_q {
     // ISO date string -> uses its year:
     assert_eq!(interpret(r#"LeapYearQ["2024-03-01"]"#).unwrap(), "True");
   }
+
+  #[test]
+  fn leap_year_symbolic_is_unevaluated() {
+    // A bare symbol or arbitrary call cannot be interpreted as a date:
+    // Wolfram emits LeapYearQ::date and leaves the call unevaluated.
+    let r = woxi::interpret_with_stdout("LeapYearQ[x]").unwrap();
+    assert_eq!(r.result, "LeapYearQ[x]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "LeapYearQ::date: Expression x cannot be interpreted as a date specification."
+    )));
+
+    let r = woxi::interpret_with_stdout("LeapYearQ[foo[1]]").unwrap();
+    assert_eq!(r.result, "LeapYearQ[foo[1]]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "LeapYearQ::date: Expression foo[1] cannot be interpreted as a date specification."
+    )));
+  }
+
+  #[test]
+  fn day_count_symbolic_is_unevaluated() {
+    // DayCount with an un-interpretable date argument must report under its own
+    // head (not leak the internal DateDifference conversion).
+    let r = woxi::interpret_with_stdout("DayCount[{2024, 1, 1}, x]").unwrap();
+    assert_eq!(r.result, "DayCount[{2024, 1, 1}, x]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "DayCount::date: Expression x cannot be interpreted as a date specification."
+    )));
+
+    let r = woxi::interpret_with_stdout("DayCount[x, {2024, 1, 1}]").unwrap();
+    assert_eq!(r.result, "DayCount[x, {2024, 1, 1}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "DayCount::date: Expression x cannot be interpreted as a date specification."
+    )));
+
+    // A valid pair still computes the day count.
+    assert_eq!(
+      interpret("DayCount[{2024, 1, 1}, {2024, 2, 1}]").unwrap(),
+      "31"
+    );
+  }
+
+  #[test]
+  fn date_difference_symbolic_is_unevaluated() {
+    let r =
+      woxi::interpret_with_stdout("DateDifference[{2024, 1, 1}, x]").unwrap();
+    assert_eq!(r.result, "DateDifference[{2024, 1, 1}, x]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "DateDifference::date: Expression x cannot be interpreted as a date specification."
+    )));
+  }
 }
 
 mod cases {
