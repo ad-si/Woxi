@@ -3936,6 +3936,35 @@ mod constant_array {
   fn zero_length() {
     assert_eq!(interpret("ConstantArray[1, 0]").unwrap(), "{}");
   }
+
+  // An invalid dimension (negative, non-integer, or symbolic) leaves the call
+  // unevaluated rather than raising an evaluation error.
+  #[test]
+  fn invalid_dimension_stays_unevaluated() {
+    assert_eq!(
+      interpret("ConstantArray[0, -1]").unwrap(),
+      "ConstantArray[0, -1]"
+    );
+    assert_eq!(
+      interpret("ConstantArray[0, 3.5]").unwrap(),
+      "ConstantArray[0, 3.5]"
+    );
+    // A negative or symbolic entry inside a dimension list.
+    assert_eq!(
+      interpret("ConstantArray[0, {-1, 2}]").unwrap(),
+      "ConstantArray[0, {-1, 2}]"
+    );
+    assert_eq!(
+      interpret("ConstantArray[0, {x, 2}]").unwrap(),
+      "ConstantArray[0, {x, 2}]"
+    );
+  }
+
+  // An empty dimension list yields the bare element.
+  #[test]
+  fn empty_dimension_list() {
+    assert_eq!(interpret("ConstantArray[0, {}]").unwrap(), "0");
+  }
 }
 
 mod unitize {

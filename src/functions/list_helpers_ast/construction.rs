@@ -955,42 +955,48 @@ pub fn constant_array_ast(
   elem: &Expr,
   dims: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  match dims {
-    Expr::Integer(_) | Expr::BigInteger(_) => {
-      let n = expr_to_i128(dims).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "ConstantArray: dimension too large".into(),
-        )
-      })?;
-      if n < 0 {
-        return Err(InterpreterError::EvaluationError(
-          "ConstantArray: dimension must be non-negative".into(),
-        ));
-      }
-      Ok(Expr::List(vec![elem.clone(); n as usize].into()))
-    }
-    Expr::List(dim_list) => {
-      if dim_list.is_empty() {
-        return Ok(elem.clone());
-      }
-      let first_dim = expr_to_i128(&dim_list[0]).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "ConstantArray: dimensions must be integers".into(),
-        )
-      })?;
-      if dim_list.len() == 1 {
-        Ok(Expr::List(vec![elem.clone(); first_dim as usize].into()))
-      } else {
-        let rest_dims = Expr::List(dim_list[1..].to_vec().into());
-        let inner = constant_array_ast(elem, &rest_dims)?;
-        Ok(Expr::List(vec![inner; first_dim as usize].into()))
-      }
-    }
-    _ => Ok(Expr::FunctionCall {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
       name: "ConstantArray".to_string(),
       args: vec![elem.clone(), dims.clone()].into(),
-    }),
+    })
+  };
+  // A dimension must be a non-negative machine integer; anything else
+  // (negative, non-integer, symbolic, or too large for i128) leaves the call
+  // unevaluated rather than raising an error — matching wolframscript, which
+  // returns the unevaluated form (or a SymbolicZerosArray for symbolic dims).
+  let nonneg_dim = |e: &Expr| -> Option<usize> {
+    match e {
+      Expr::Integer(n) if *n >= 0 => usize::try_from(*n).ok(),
+      Expr::BigInteger(_) => expr_to_i128(e)
+        .filter(|&n| n >= 0)
+        .and_then(|n| usize::try_from(n).ok()),
+      _ => None,
+    }
+  };
+  let dim_vec: Vec<usize> = match dims {
+    Expr::Integer(_) | Expr::BigInteger(_) => match nonneg_dim(dims) {
+      Some(n) => vec![n],
+      None => return unevaluated(),
+    },
+    Expr::List(dim_list) => {
+      let mut v = Vec::with_capacity(dim_list.len());
+      for d in dim_list.iter() {
+        match nonneg_dim(d) {
+          Some(n) => v.push(n),
+          None => return unevaluated(),
+        }
+      }
+      v
+    }
+    _ => return unevaluated(),
+  };
+  // Build the nested constant array from the innermost dimension outward.
+  let mut result = elem.clone();
+  for &n in dim_vec.iter().rev() {
+    result = Expr::List(vec![result; n].into());
   }
+  Ok(result)
 }
 
 /// True when `body` references `var_name` as the head of a `FunctionCall`
