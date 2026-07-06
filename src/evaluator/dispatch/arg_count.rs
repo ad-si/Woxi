@@ -873,6 +873,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Moment" => Some((2, 2)),
     "MonomialList" => Some((1, 2)),
     "Most" => Some((1, 1)),
+    "DirichletDistribution" => Some((1, 1)),
     "MovingMap" => Some((3, 3)),
     "MovingMedian" => Some((2, 2)),
     "MultinomialDistribution" => Some((2, 2)),

@@ -417,6 +417,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "DirichletDistribution" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "DirichletDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "ArcSinDistribution" if args.is_empty() => {
       // Default: ArcSinDistribution[{0, 1}]
       return Some(Ok(Expr::FunctionCall {

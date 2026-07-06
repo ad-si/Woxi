@@ -684,6 +684,13 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "DirichletDistribution" => {
+      let (mean, _) = super::distributions::dirichlet_mean_variance(dargs)?;
+      Ok(mean)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "MultivariatePoissonDistribution" => {
       let (mean, _) =
         super::distributions::multivariate_poisson_mean_variance(dargs)?;
@@ -964,6 +971,13 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if dist_name == "MultinomialDistribution" => {
       let (_, variance) =
         super::distributions::multinomial_mean_variance(dargs)?;
+      Ok(variance)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "DirichletDistribution" => {
+      let (_, variance) = super::distributions::dirichlet_mean_variance(dargs)?;
       Ok(variance)
     }
     Expr::FunctionCall {
@@ -1970,6 +1984,14 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     })
   };
+
+  // Covariance[DirichletDistribution[{α1, …}]] is the k×k moment matrix.
+  if args.len() == 1
+    && let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "DirichletDistribution"
+  {
+    return super::distributions::dirichlet_covariance(dargs);
+  }
 
   // Covariance[BinormalDistribution[…, {s1, s2}, rho]] is the 2×2 covariance
   // matrix {{s1^2, rho s1 s2}, {rho s1 s2, s2^2}}.

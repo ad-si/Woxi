@@ -3176,6 +3176,150 @@ mod multinomial_distribution {
   }
 }
 
+mod dirichlet_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("DirichletDistribution[{2, 3, 2}]").unwrap(),
+      "DirichletDistribution[{2, 3, 2}]"
+    );
+  }
+
+  #[test]
+  fn mean_exact() {
+    // The mean is a k-vector {αi/α0} — the last component is determined by
+    // the others and dropped.
+    assert_eq!(
+      interpret("Mean[DirichletDistribution[{2, 3, 2}]]").unwrap(),
+      "{2/7, 3/7}"
+    );
+    assert_eq!(
+      interpret("Mean[DirichletDistribution[{2, 3, 4, 5}]]").unwrap(),
+      "{1/7, 3/14, 2/7}"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[DirichletDistribution[{a, b, c}]]").unwrap(),
+      "{a/(a + b + c), b/(a + b + c)}"
+    );
+  }
+
+  #[test]
+  fn variance_exact() {
+    assert_eq!(
+      interpret("Variance[DirichletDistribution[{2, 3, 2}]]").unwrap(),
+      "{5/196, 3/98}"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    // Variance_i = αi (α0 - αi) / (α0² (1 + α0)), the numerator spelled
+    // αi·(sum of the other parameters) as Wolfram displays it.
+    assert_eq!(
+      interpret("Variance[DirichletDistribution[{a, b, c}]]").unwrap(),
+      "{(a*(b + c))/((a + b + c)^2*(1 + a + b + c)), \
+       (b*(a + c))/((a + b + c)^2*(1 + a + b + c))}"
+    );
+  }
+
+  #[test]
+  fn standard_deviation_exact() {
+    assert_eq!(
+      interpret("StandardDeviation[DirichletDistribution[{2, 3, 2}]]").unwrap(),
+      "{Sqrt[5]/14, Sqrt[3/2]/7}"
+    );
+  }
+
+  #[test]
+  fn covariance_exact() {
+    assert_eq!(
+      interpret("Covariance[DirichletDistribution[{2, 3, 2}]]").unwrap(),
+      "{{5/196, -3/196}, {-3/196, 3/98}}"
+    );
+  }
+
+  #[test]
+  fn covariance_symbolic() {
+    // Diagonal (-αi² + αi α0) and off-diagonal -αi αj over α0² (1 + α0).
+    assert_eq!(
+      interpret("Covariance[DirichletDistribution[{a, b, c}]]").unwrap(),
+      "{{(-a^2 + a*(a + b + c))/((a + b + c)^2*(1 + a + b + c)), \
+       -((a*b)/((a + b + c)^2*(1 + a + b + c)))}, \
+       {-((a*b)/((a + b + c)^2*(1 + a + b + c))), \
+       (-b^2 + b*(a + b + c))/((a + b + c)^2*(1 + a + b + c))}}"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric_params() {
+    // Gamma[7]/(Gamma[2] Gamma[3] Gamma[2]) = 360 on the open simplex.
+    assert_eq!(
+      interpret("PDF[DirichletDistribution[{2, 3, 2}], {x, y}]").unwrap(),
+      "Piecewise[{{360*x*(1 - x - y)*y^2, x > 0 && y > 0 && 1 - x - y > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic_params() {
+    assert_eq!(
+      interpret("PDF[DirichletDistribution[{a, b, c}], {x, y}]").unwrap(),
+      "Piecewise[{{(x^(-1 + a)*(1 - x - y)^(-1 + c)*y^(-1 + b)*\
+       Gamma[a + b + c])/(Gamma[a]*Gamma[b]*Gamma[c]), \
+       x > 0 && y > 0 && 1 - x - y > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_unit_alphas_is_constant() {
+    // All αi = 1 is the uniform density on the simplex: Gamma[3] = 2.
+    assert_eq!(
+      interpret("PDF[DirichletDistribution[{1, 1, 1}], {x, y}]").unwrap(),
+      "Piecewise[{{2, x > 0 && y > 0 && 1 - x - y > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_higher_dimension() {
+    assert_eq!(
+      interpret("PDF[DirichletDistribution[{2, 3, 4, 5}], {x, y, z}]").unwrap(),
+      "Piecewise[{{21621600*x*y^2*(1 - x - y - z)^4*z^3, \
+       x > 0 && y > 0 && z > 0 && 1 - x - y - z > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_at_numeric_point() {
+    // Inside the simplex the piecewise value applies; outside it is 0.
+    assert_eq!(
+      interpret("PDF[DirichletDistribution[{2, 3, 2}], {1/4, 1/2}]").unwrap(),
+      "45/8"
+    );
+    assert_eq!(
+      interpret("PDF[DirichletDistribution[{2, 3, 2}], {3/4, 1/2}]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn pdf_wrong_point_shape_stays_unevaluated() {
+    // A scalar or wrong-length point echoes back unevaluated, as in Wolfram.
+    assert_eq!(
+      interpret("PDF[DirichletDistribution[{2, 3, 2}], x]").unwrap(),
+      "PDF[DirichletDistribution[{2, 3, 2}], x]"
+    );
+    assert_eq!(
+      interpret("PDF[DirichletDistribution[{2, 3, 2}], {x}]").unwrap(),
+      "PDF[DirichletDistribution[{2, 3, 2}], {x}]"
+    );
+  }
+}
+
 mod negative_binomial_distribution {
   use super::*;
 

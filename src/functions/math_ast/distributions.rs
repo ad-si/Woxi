@@ -221,6 +221,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LaplaceDistribution" => pdf_laplace(dargs, x),
     "RayleighDistribution" => pdf_rayleigh(dargs, x),
     "MultinomialDistribution" => pdf_multinomial(dargs, x),
+    "DirichletDistribution" => pdf_dirichlet(dargs, x),
     "NegativeBinomialDistribution" => pdf_negative_binomial(dargs, x),
     "MultivariatePoissonDistribution" => pdf_multivariate_poisson(dargs, x),
     "HalfNormalDistribution" => pdf_half_normal(dargs, x),
@@ -1681,6 +1682,7 @@ fn is_multivariate_distribution(name: &str) -> bool {
       | "BinormalDistribution"
       | "MultivariatePoissonDistribution"
       | "MultinomialDistribution"
+      | "DirichletDistribution"
       | "ProductDistribution"
       | "CopulaDistribution"
   )
@@ -6576,6 +6578,168 @@ pub fn multivariate_poisson_mean_variance(
     Expr::List(components.clone().into()),
     Expr::List(components.into()),
   ))
+}
+
+/// The shape parameters {α1, …, α(k+1)} of a
+/// `DirichletDistribution[{α1, …, α(k+1)}]` (a k-dimensional Dirichlet needs
+/// at least two parameters).
+fn dirichlet_alphas(
+  dargs: &[Expr],
+) -> Result<crate::ExprList, InterpreterError> {
+  match dargs {
+    [Expr::List(alphas)] if alphas.len() >= 2 => Ok(alphas.clone()),
+    _ => Err(InterpreterError::EvaluationError(
+      "DirichletDistribution expects one list of at least 2 shape parameters"
+        .into(),
+    )),
+  }
+}
+
+/// The Dirichlet normalizing total α0 = α1 + … + α(k+1), unevaluated.
+fn dirichlet_total(alphas: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: alphas.to_vec().into(),
+  }
+}
+
+/// The common denominator of the Dirichlet second moments,
+/// α0^2 (1 + α0), as an unevaluated reciprocal `α0^-2 (1 + α0)^-1`.
+fn dirichlet_moment_denominator(alphas: &[Expr]) -> Expr {
+  let total = dirichlet_total(alphas);
+  times(
+    power(total.clone(), int(-2)),
+    power(plus(int(1), total), int(-1)),
+  )
+}
+
+/// Mean and Variance for `DirichletDistribution[{α1, …, α(k+1)}]`. Both are
+/// k-vectors (the last component is determined by the others and dropped):
+/// Mean_i = αi/α0 and Variance_i = αi (α0 - αi) / (α0² (1 + α0)), the
+/// numerator spelled αi·(sum of the other parameters) as Wolfram displays it.
+pub fn dirichlet_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let alphas = dirichlet_alphas(dargs)?;
+  let total = dirichlet_total(&alphas);
+  let denom = dirichlet_moment_denominator(&alphas);
+
+  let mut means = Vec::with_capacity(alphas.len() - 1);
+  let mut variances = Vec::with_capacity(alphas.len() - 1);
+  for (i, alpha_i) in alphas.iter().enumerate().take(alphas.len() - 1) {
+    means.push(eval(times(alpha_i.clone(), power(total.clone(), int(-1))))?);
+    let others = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: alphas
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| *j != i)
+        .map(|(_, a)| a.clone())
+        .collect::<Vec<_>>()
+        .into(),
+    };
+    variances.push(eval(times(times(alpha_i.clone(), others), denom.clone()))?);
+  }
+  Ok((Expr::List(means.into()), Expr::List(variances.into())))
+}
+
+/// Covariance matrix for `DirichletDistribution[{α1, …, α(k+1)}]`: the k×k
+/// matrix with diagonal (αi α0 - αi²) / (α0² (1 + α0)) — spelled
+/// `-αi² + αi·α0` as Wolfram displays it — and off-diagonal
+/// -αi αj / (α0² (1 + α0)).
+pub fn dirichlet_covariance(dargs: &[Expr]) -> Result<Expr, InterpreterError> {
+  let alphas = dirichlet_alphas(dargs)?;
+  let total = dirichlet_total(&alphas);
+  let denom = dirichlet_moment_denominator(&alphas);
+  let k = alphas.len() - 1;
+
+  let mut rows = Vec::with_capacity(k);
+  for i in 0..k {
+    let mut row = Vec::with_capacity(k);
+    for j in 0..k {
+      let numer = if i == j {
+        plus(
+          times(int(-1), power(alphas[i].clone(), int(2))),
+          times(alphas[i].clone(), total.clone()),
+        )
+      } else {
+        times(int(-1), times(alphas[i].clone(), alphas[j].clone()))
+      };
+      row.push(eval(times(numer, denom.clone()))?);
+    }
+    rows.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(rows.into()))
+}
+
+/// PDF[DirichletDistribution[{α1, …, α(k+1)}], {x1, …, xk}]
+/// = Gamma[α0]/∏ Gamma[αi] · x1^(α1-1) ⋯ xk^(αk-1) (1-Σxi)^(α(k+1)-1)
+///   on the open simplex x1 > 0 ∧ … ∧ xk > 0 ∧ 1 - Σxi > 0, and 0 outside.
+fn pdf_dirichlet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  // Anything that is not a k-component point stays unevaluated, as in
+  // Wolfram (a scalar second argument just echoes back).
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "DirichletDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let alphas = dirichlet_alphas(dargs)?;
+  let xs = match &x {
+    Expr::List(items) => items.clone(),
+    _ => return unevaluated(x),
+  };
+  if xs.len() != alphas.len() - 1 {
+    return unevaluated(x);
+  }
+
+  // The last coordinate is determined by the simplex: 1 - x1 - … - xk.
+  let mut last = int(1);
+  for xi in xs.iter() {
+    last = minus(last, xi.clone());
+  }
+
+  let gamma = |a: Expr| Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![a].into(),
+  };
+
+  // x1^(α1-1) ⋯ xk^(αk-1) (1-Σxi)^(α(k+1)-1) · Gamma[α0] / ∏ Gamma[αi]
+  let mut value = power(xs[0].clone(), minus(alphas[0].clone(), int(1)));
+  for (xi, alpha_i) in xs.iter().zip(alphas.iter()).skip(1) {
+    value = times(value, power(xi.clone(), minus(alpha_i.clone(), int(1))));
+  }
+  value = times(
+    value,
+    power(
+      last.clone(),
+      minus(alphas[alphas.len() - 1].clone(), int(1)),
+    ),
+  );
+  value = times(value, gamma(dirichlet_total(&alphas)));
+  for alpha_i in alphas.iter() {
+    value = times(value, power(gamma(alpha_i.clone()), int(-1)));
+  }
+
+  // x1 > 0 && … && xk > 0 && 1 - Σxi > 0 (the open simplex).
+  let mut conditions: Vec<Expr> = xs
+    .iter()
+    .map(|xi| comparison(xi.clone(), ComparisonOp::Greater, int(0)))
+    .collect();
+  conditions.push(comparison(last, ComparisonOp::Greater, int(0)));
+  let combined = Expr::FunctionCall {
+    name: "And".to_string(),
+    args: conditions.into(),
+  };
+
+  eval(piecewise(vec![(eval(value)?, combined)], int(0)))
 }
 
 /// PDF[NegativeBinomialDistribution[n, p], k]
