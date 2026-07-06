@@ -38,8 +38,7 @@ mod moon_phase {
       ("{2024, 2, 2, 12, 0, 0}", "LastQuarter"),
     ] {
       assert_eq!(
-        interpret(&format!("MoonPhase[DateObject[{date}], \"Name\"]"))
-          .unwrap(),
+        interpret(&format!("MoonPhase[DateObject[{date}], \"Name\"]")).unwrap(),
         format!("Entity[MoonPhase, {name}]"),
         "phase name at {date}"
       );
@@ -185,9 +184,11 @@ mod sidereal_time {
     // Meeus example 12.b: apparent sidereal time at Greenwich on
     // 1987 April 10.0 UT is 13h 10m 46.1351s
     assert_eq!(
-      interpret("SiderealTime[GeoPosition[{0, 0}], DateObject[{1987, 4, \
-                 10}]]")
-        .unwrap(),
+      interpret(
+        "SiderealTime[GeoPosition[{0, 0}], DateObject[{1987, 4, \
+                 10}]]"
+      )
+      .unwrap(),
       "Quantity[MixedMagnitude[{13, 10, 46.1306}], \
        MixedUnit[{\"HoursOfRightAscension\", \"MinutesOfRightAscension\", \
        \"SecondsOfRightAscension\"}]]"
@@ -317,8 +318,7 @@ mod eclipses {
       "Partial"
     );
     assert_eq!(
-      interpret("SolarEclipse[DateObject[{2013, 10, 20}], \"Type\"]")
-        .unwrap(),
+      interpret("SolarEclipse[DateObject[{2013, 10, 20}], \"Type\"]").unwrap(),
       "Hybrid"
     );
   }

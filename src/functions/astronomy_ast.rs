@@ -73,17 +73,23 @@ fn delta_t_seconds(year: f64) -> f64 {
   } else if y < 500.0 {
     let u = y / 100.0;
     10583.6
-      + u * (-1014.41
-        + u * (33.78311
-          + u * (-5.952053
-            + u * (-0.1798452 + u * (0.022174192 + u * 0.0090316521)))))
+      + u
+        * (-1014.41
+          + u
+            * (33.78311
+              + u
+                * (-5.952053
+                  + u * (-0.1798452 + u * (0.022174192 + u * 0.0090316521)))))
   } else if y < 1600.0 {
     let u = (y - 1000.0) / 100.0;
     1574.2
-      + u * (-556.01
-        + u * (71.23472
-          + u * (0.319781
-            + u * (-0.8503463 + u * (-0.005050998 + u * 0.0083572073)))))
+      + u
+        * (-556.01
+          + u
+            * (71.23472
+              + u
+                * (0.319781
+                  + u * (-0.8503463 + u * (-0.005050998 + u * 0.0083572073)))))
   } else if y < 1700.0 {
     let t = y - 1600.0;
     120.0 + t * (-0.9808 + t * (-0.01532 + t / 7129.0))
@@ -93,17 +99,25 @@ fn delta_t_seconds(year: f64) -> f64 {
   } else if y < 1860.0 {
     let t = y - 1800.0;
     13.72
-      + t * (-0.332447
-        + t * (0.0068612
-          + t * (0.0041116
-            + t * (-0.00037436
-              + t * (0.0000121272 + t * (-0.0000001699 + t * 0.000000000875))))))
+      + t
+        * (-0.332447
+          + t
+            * (0.0068612
+              + t
+                * (0.0041116
+                  + t
+                    * (-0.00037436
+                      + t
+                        * (0.0000121272
+                          + t * (-0.0000001699 + t * 0.000000000875))))))
   } else if y < 1900.0 {
     let t = y - 1860.0;
     7.62
-      + t * (0.5737
-        + t * (-0.251754
-          + t * (0.01680668 + t * (-0.0004473624 + t / 233174.0))))
+      + t
+        * (0.5737
+          + t
+            * (-0.251754
+              + t * (0.01680668 + t * (-0.0004473624 + t / 233174.0))))
   } else if y < 1920.0 {
     let t = y - 1900.0;
     -2.79 + t * (1.494119 + t * (-0.0598939 + t * (0.0061966 - t * 0.000197)))
@@ -119,9 +133,11 @@ fn delta_t_seconds(year: f64) -> f64 {
   } else if y < 2005.0 {
     let t = y - 2000.0;
     63.86
-      + t * (0.3345
-        + t * (-0.060374
-          + t * (0.0017275 + t * (0.000651814 + t * 0.00002373599))))
+      + t
+        * (0.3345
+          + t
+            * (-0.060374
+              + t * (0.0017275 + t * (0.000651814 + t * 0.00002373599))))
   } else if y < 2050.0 {
     let t = y - 2000.0;
     62.92 + t * (0.32217 + t * 0.005589)
@@ -158,7 +174,8 @@ fn nutation(t: f64) -> (f64, f64) {
   // Mean longitudes of Sun and Moon
   let l_sun = 280.4665 + 36000.7698 * t;
   let l_moon = 218.3165 + 481267.8813 * t;
-  let dpsi = (-17.20 * sin_d(omega) - 1.32 * sin_d(2.0 * l_sun)
+  let dpsi = (-17.20 * sin_d(omega)
+    - 1.32 * sin_d(2.0 * l_sun)
     - 0.23 * sin_d(2.0 * l_moon)
     + 0.21 * sin_d(2.0 * omega))
     / 3600.0;
@@ -360,8 +377,8 @@ fn moon_coordinates(jde: f64) -> (f64, f64, f64) {
     297.8501921 + 445267.1114034 * t - 0.0018819 * t2 + t3 / 545868.0
       - t4 / 113065000.0,
   );
-  let m = norm360(357.5291092 + 35999.0502909 * t - 0.0001536 * t2
-    + t3 / 24490000.0);
+  let m =
+    norm360(357.5291092 + 35999.0502909 * t - 0.0001536 * t2 + t3 / 24490000.0);
   let mp = norm360(
     134.9633964 + 477198.8675055 * t + 0.0087414 * t2 + t3 / 69699.0
       - t4 / 14712000.0,
@@ -379,8 +396,7 @@ fn moon_coordinates(jde: f64) -> (f64, f64, f64) {
   let mut sum_l = 0.0;
   let mut sum_r = 0.0;
   for &(cd, cm, cmp, cf, sl, sr) in MOON_LR.iter() {
-    let arg =
-      cd as f64 * d + cm as f64 * m + cmp as f64 * mp + cf as f64 * f;
+    let arg = cd as f64 * d + cm as f64 * m + cmp as f64 * mp + cf as f64 * f;
     let e_factor = match cm.abs() {
       1 => e,
       2 => e * e,
@@ -393,8 +409,7 @@ fn moon_coordinates(jde: f64) -> (f64, f64, f64) {
 
   let mut sum_b = 0.0;
   for &(cd, cm, cmp, cf, sb) in MOON_B.iter() {
-    let arg =
-      cd as f64 * d + cm as f64 * m + cmp as f64 * mp + cf as f64 * f;
+    let arg = cd as f64 * d + cm as f64 * m + cmp as f64 * mp + cf as f64 * f;
     let e_factor = match cm.abs() {
       1 => e,
       2 => e * e,
@@ -402,7 +417,9 @@ fn moon_coordinates(jde: f64) -> (f64, f64, f64) {
     };
     sum_b += sb as f64 * e_factor * sin_d(arg);
   }
-  sum_b += -2235.0 * sin_d(lp) + 382.0 * sin_d(a3) + 175.0 * sin_d(a1 - f)
+  sum_b += -2235.0 * sin_d(lp)
+    + 382.0 * sin_d(a3)
+    + 175.0 * sin_d(a1 - f)
     + 175.0 * sin_d(a1 + f)
     + 127.0 * sin_d(lp - mp)
     - 115.0 * sin_d(lp + mp);
@@ -429,8 +446,9 @@ fn ecliptic_to_equatorial(lambda: f64, beta: f64, eps: f64) -> (f64, f64) {
     sin_d(lambda) * cos_d(eps) - (beta * DEG).tan() * sin_d(eps),
     cos_d(lambda),
   ) / DEG;
-  let dec = (sin_d(beta) * cos_d(eps) + cos_d(beta) * sin_d(eps) * sin_d(lambda))
-    .asin()
+  let dec = (sin_d(beta) * cos_d(eps)
+    + cos_d(beta) * sin_d(eps) * sin_d(lambda))
+  .asin()
     / DEG;
   (norm360(ra), dec)
 }
@@ -467,14 +485,14 @@ fn equatorial_to_horizontal(
 ) -> (f64, f64) {
   let lst = apparent_gst_deg(jd_ut) + lon;
   let h = lst - ra; // local hour angle
-  let alt = (sin_d(lat) * sin_d(dec) + cos_d(lat) * cos_d(dec) * cos_d(h))
-    .asin()
-    / DEG;
+  let alt =
+    (sin_d(lat) * sin_d(dec) + cos_d(lat) * cos_d(dec) * cos_d(h)).asin() / DEG;
   // Meeus measures azimuth from South; add 180° for the from-North
   // convention used by SunPosition.
-  let az_south =
-    f64::atan2(sin_d(h), cos_d(h) * sin_d(lat) - (dec * DEG).tan() * cos_d(lat))
-      / DEG;
+  let az_south = f64::atan2(
+    sin_d(h),
+    cos_d(h) * sin_d(lat) - (dec * DEG).tan() * cos_d(lat),
+  ) / DEG;
   (norm360(az_south + 180.0), alt)
 }
 
@@ -512,7 +530,8 @@ fn phase_jde(k_int: f64, phase: Phase) -> f64 {
     160.7108 + 390.67050284 * k - 0.0016118 * t2 - 0.00000227 * t3
       + 0.000000011 * t4,
   );
-  let om = norm360(124.7746 - 1.56375588 * k + 0.0020672 * t2 + 0.00000215 * t3);
+  let om =
+    norm360(124.7746 - 1.56375588 * k + 0.0020672 * t2 + 0.00000215 * t3);
 
   match phase {
     Phase::New => {
@@ -570,8 +589,7 @@ fn phase_jde(k_int: f64, phase: Phase) -> f64 {
         + 0.00002 * sin_d(4.0 * mp);
     }
     Phase::FirstQuarter | Phase::LastQuarter => {
-      jde += -0.62801 * sin_d(mp)
-        + 0.17172 * e * sin_d(m)
+      jde += -0.62801 * sin_d(mp) + 0.17172 * e * sin_d(m)
         - 0.01183 * e * sin_d(mp + m)
         + 0.00862 * sin_d(2.0 * mp)
         + 0.00804 * sin_d(2.0 * f)
@@ -626,8 +644,8 @@ fn phase_jde(k_int: f64, phase: Phase) -> f64 {
     (0.000023, 331.55, 3.592518),
   ];
   // The first term's argument includes the T² correction (A1 of ch. 49).
-  jde += planetary[0].0 * sin_d(planetary[0].1 + planetary[0].2 * k
-    - 0.009173 * t2);
+  jde +=
+    planetary[0].0 * sin_d(planetary[0].1 + planetary[0].2 * k - 0.009173 * t2);
   for &(amp, a, b) in planetary.iter().skip(1) {
     jde += amp * sin_d(a + b * k);
   }
@@ -708,7 +726,8 @@ fn eclipse_at_k(k: f64) -> Option<(f64, f64, f64)> {
     201.5643 + 385.81693528 * k + 0.0107582 * t2 + 0.00001238 * t3
       - 0.000000058 * t4,
   );
-  let om = norm360(124.7746 - 1.56375588 * k + 0.0020672 * t2 + 0.00000215 * t3);
+  let om =
+    norm360(124.7746 - 1.56375588 * k + 0.0020672 * t2 + 0.00000215 * t3);
   let f1 = f - 0.02665 * sin_d(om);
   let a1 = norm360(299.77 + 0.107408 * k - 0.009173 * t2);
 
@@ -822,11 +841,7 @@ const SUN_RISE_SET_ALTITUDE: f64 = -0.8333;
 /// UTC Julian dates of sunrise and sunset (and transit) for the UTC
 /// calendar day containing `jd_day` (any instant of that day). Returns
 /// None for polar day/night (the Sun never crosses the horizon).
-fn sun_rise_set(
-  jd_day: f64,
-  lat: f64,
-  lon: f64,
-) -> Option<(f64, f64)> {
+fn sun_rise_set(jd_day: f64, lat: f64, lon: f64) -> Option<(f64, f64)> {
   // Midnight UT of the target day
   let jd0 = (jd_day - 0.5).floor() + 0.5;
   let theta0 = apparent_gst_deg(jd0);
@@ -838,8 +853,8 @@ fn sun_rise_set(
   let (ra_p, dec_p) = coords(1.0);
 
   let h0 = SUN_RISE_SET_ALTITUDE;
-  let cos_h = (sin_d(h0) - sin_d(lat) * sin_d(dec_0))
-    / (cos_d(lat) * cos_d(dec_0));
+  let cos_h =
+    (sin_d(h0) - sin_d(lat) * sin_d(dec_0)) / (cos_d(lat) * cos_d(dec_0));
   if !(-1.0..=1.0).contains(&cos_h) {
     return None;
   }
@@ -884,10 +899,9 @@ fn sun_rise_set(
       let h_signed = if h > 180.0 { h - 360.0 } else { h };
       let alt = (sin_d(lat) * sin_d(dec)
         + cos_d(lat) * cos_d(dec) * cos_d(h_signed))
-        .asin()
+      .asin()
         / DEG;
-      let dm =
-        (alt - h0) / (360.0 * cos_d(dec) * cos_d(lat) * sin_d(h_signed));
+      let dm = (alt - h0) / (360.0 * cos_d(dec) * cos_d(lat) * sin_d(h_signed));
       *m += dm;
     }
   }
@@ -1199,10 +1213,15 @@ pub fn moon_phase_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result = match phase_arg {
     None => {
       // Next principal phase of any kind
-      [Phase::New, Phase::FirstQuarter, Phase::Full, Phase::LastQuarter]
-        .into_iter()
-        .map(|p| next_phase_jd(jd, p))
-        .fold(f64::INFINITY, f64::min)
+      [
+        Phase::New,
+        Phase::FirstQuarter,
+        Phase::Full,
+        Phase::LastQuarter,
+      ]
+      .into_iter()
+      .map(|p| next_phase_jd(jd, p))
+      .fold(f64::INFINITY, f64::min)
     }
     Some(p) => match phase_from_expr(p) {
       Some(phase) => next_phase_jd(jd, phase),
@@ -1314,7 +1333,11 @@ pub fn sidereal_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     (s, m, h)
   };
-  let (m, h) = if m >= 60.0 { (m - 60.0, h + 1.0) } else { (m, h) };
+  let (m, h) = if m >= 60.0 {
+    (m - 60.0, h + 1.0)
+  } else {
+    (m, h)
+  };
   let h = if h >= 24.0 { h - 24.0 } else { h };
   Ok(Expr::FunctionCall {
     name: "Quantity".to_string(),
@@ -1358,7 +1381,8 @@ fn sun_event_ast(
   let Some(((lat, lon), jd)) = parse_location_date(args) else {
     return unevaluated(name, args);
   };
-  let explicit_date = matches!(args, [d] if !is_location_arg(d)) || args.len() == 2;
+  let explicit_date =
+    matches!(args, [d] if !is_location_arg(d)) || args.len() == 2;
 
   if explicit_date {
     // The event on the given UTC calendar day
@@ -1422,7 +1446,7 @@ pub fn daylight_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Positional args and the "Type"/"MaximumEclipseDate" property for the
 /// eclipse functions.
-fn eclipse_args<'a>(args: &'a [Expr]) -> Option<(Option<&'a Expr>, &'a str)> {
+fn eclipse_args(args: &[Expr]) -> Option<(Option<&Expr>, &str)> {
   // A lone string is a property only when it names one; otherwise it is
   // read as a date string.
   let is_property = |s: &str| matches!(s, "Type" | "MaximumEclipseDate");
