@@ -6218,6 +6218,48 @@ mod make_boxes {
       "            8\n{1.2345 \u{00d7} 10 , 0.00012345, 123.45}"
     );
   }
+
+  #[test]
+  fn number_form_reqsigz_warns_when_precision_below_integer_digits() {
+    // Requesting fewer significant figures than the number has integer digits
+    // pads with zeros and emits NumberForm::reqsigz. The value still renders.
+    let r = woxi::interpret_with_stdout("ToString[NumberForm[123456.789, 5]]")
+      .unwrap();
+    assert_eq!(r.result, "123460.");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "NumberForm::reqsigz: Requested number precision is lower than number of digits shown; padding with zeros."
+      )),
+      "expected reqsigz warning, got {:?}",
+      r.warnings
+    );
+
+    // 999.9 -> 2 sig figs rounds up to 1000. (3 original integer digits > 2).
+    let r =
+      woxi::interpret_with_stdout("ToString[NumberForm[999.9, 2]]").unwrap();
+    assert_eq!(r.result, "1000.");
+    assert!(r.warnings.iter().any(|w| w.contains("NumberForm::reqsigz")));
+  }
+
+  #[test]
+  fn number_form_reqsigz_not_emitted_when_precision_sufficient() {
+    // n >= integer-digit count: no warning.
+    for code in [
+      "ToString[NumberForm[123456.789, 6]]",
+      "ToString[NumberForm[99.9, 2]]",
+      "ToString[NumberForm[123.456, 5]]",
+      "ToString[NumberForm[3.14159, 3]]",
+      // Scientific range (|exponent| >= 6): mantissa fits n, never warns.
+      "ToString[NumberForm[1234567.89, 5]]",
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert!(
+        !r.warnings.iter().any(|w| w.contains("NumberForm::reqsigz")),
+        "unexpected reqsigz warning for {code}: {:?}",
+        r.warnings
+      );
+    }
+  }
 }
 
 mod raw_boxes {

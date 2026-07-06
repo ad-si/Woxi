@@ -3059,6 +3059,24 @@ fn extract_cases_rules(
 /// Render `NumberForm[x, n]` to a string: a real `x` is rounded to `n`
 /// significant figures and shown with a trailing decimal point and no padding
 /// zeros (`3.14`, `3.`, `1200.`); an integer `x` is shown unchanged.
+/// Whether `NumberForm[x, n]` requests fewer significant figures than the
+/// number has integer digits, triggering Wolfram's `NumberForm::reqsigz`
+/// warning. Only applies in the fixed-notation range: a value whose original
+/// decimal exponent `m0 = floor(log10(|x|))` is `>= 6` renders in scientific
+/// notation (mantissa fits `n`) and never warns. Otherwise the number has
+/// `m0 + 1` integer digits, so `n <= m0` means `n` cannot cover them all.
+/// Threads element-wise over a list argument.
+fn number_form_reqsigz(x: &Expr, n: i64) -> bool {
+  match x {
+    Expr::Real(f) if *f != 0.0 && n >= 1 => {
+      let m0 = f.abs().log10().floor() as i64;
+      m0 < 6 && n <= m0
+    }
+    Expr::List(items) => items.iter().any(|e| number_form_reqsigz(e, n)),
+    _ => false,
+  }
+}
+
 fn number_form_to_string(x: &Expr, n: i64) -> Option<String> {
   // Integer argument: shown unchanged, ignoring the precision.
   if let Expr::Integer(i) = x {
@@ -4016,9 +4034,16 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && inner_args.len() == 2
   {
     let rendered = match &inner_args[1] {
-      Expr::Integer(n) => render_form_threaded(&inner_args[0], |x| {
-        number_form_render(x, *n as i64)
-      }),
+      Expr::Integer(n) => {
+        if number_form_reqsigz(&inner_args[0], *n as i64) {
+          crate::emit_message(
+            "NumberForm::reqsigz: Requested number precision is lower than number of digits shown; padding with zeros.",
+          );
+        }
+        render_form_threaded(&inner_args[0], |x| {
+          number_form_render(x, *n as i64)
+        })
+      }
       Expr::List(spec) if spec.len() == 2 => match &spec[1] {
         Expr::Integer(f) => render_form_threaded(&inner_args[0], |x| {
           number_form_fixed_to_string(x, *f as i64)
