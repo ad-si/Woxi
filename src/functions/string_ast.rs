@@ -697,6 +697,20 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
+  // Anything that is not a string (or the list of strings handled above) is
+  // invalid: Wolfram emits StringSplit::strse referencing the whole call and
+  // leaves it unevaluated, rather than coercing the value to a string.
+  if !matches!(&args[0], Expr::String(_)) {
+    let unevaluated = Expr::FunctionCall {
+      name: "StringSplit".to_string(),
+      args: args.to_vec().into(),
+    };
+    crate::emit_message(&format!(
+      "StringSplit::strse: A string or list of strings is expected at position 1 in {}.",
+      crate::syntax::format_expr(&unevaluated, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated);
+  }
   let s = expr_to_str(&args[0])?;
 
   // 1-argument form: split by whitespace, removing empty strings

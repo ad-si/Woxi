@@ -3656,6 +3656,48 @@ mod string_split_edge {
       "{{a, b, c}, {x, y}}"
     );
   }
+
+  #[test]
+  fn non_string_emits_strse() {
+    // A non-string first argument stays unevaluated and emits StringSplit::strse
+    // referencing the whole call (regression: used to return {5} / {x}).
+    let r = woxi::interpret_with_stdout("StringSplit[5]").unwrap();
+    assert_eq!(r.result, "StringSplit[5]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "StringSplit::strse: A string or list of strings is expected at position 1 in StringSplit[5]."
+      )),
+      "expected StringSplit::strse, got {:?}",
+      r.warnings
+    );
+
+    let r = woxi::interpret_with_stdout("StringSplit[x]").unwrap();
+    assert_eq!(r.result, "StringSplit[x]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "StringSplit::strse: A string or list of strings is expected at position 1 in StringSplit[x]."
+    )));
+  }
+
+  #[test]
+  fn non_string_with_delimiter_reports_full_call() {
+    // The reported call includes the delimiter, rendered in OutputForm.
+    let r = woxi::interpret_with_stdout(r#"StringSplit[5, ","]"#).unwrap();
+    assert_eq!(r.result, "StringSplit[5, ,]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "StringSplit::strse: A string or list of strings is expected at position 1 in StringSplit[5, ,]."
+    )));
+  }
+
+  #[test]
+  fn list_with_a_non_string_is_rejected_whole() {
+    // A list is only valid when every element is a string; otherwise the whole
+    // first argument is rejected (not threaded element-wise).
+    let r = woxi::interpret_with_stdout(r#"StringSplit[{"a b", 5}]"#).unwrap();
+    assert_eq!(r.result, "StringSplit[{a b, 5}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "StringSplit::strse: A string or list of strings is expected at position 1 in StringSplit[{a b, 5}]."
+    )));
+  }
 }
 
 mod integer_string_tests {
