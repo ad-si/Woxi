@@ -4047,6 +4047,80 @@ mod divisors_tests {
   }
 }
 
+mod gaussian_divisors {
+  use super::*;
+
+  // Divisors over ℤ[i]: one first-quadrant representative per associate
+  // class, sorted by real then imaginary part.
+  #[test]
+  fn gaussian_integer_arguments() {
+    for (input, expected) in [
+      ("Divisors[2 + I]", "{1, 2 + I}"),
+      (
+        "Divisors[10 + 5*I]",
+        "{1, 1 + 2*I, 2 + I, 3 + 4*I, 5, 10 + 5*I}",
+      ),
+      // Units have only the trivial divisor class
+      ("Divisors[I]", "{1}"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn gaussian_integers_option() {
+    for (input, expected) in [
+      // Inert prime
+      ("Divisors[3, GaussianIntegers -> True]", "{1, 3}"),
+      // Split prime
+      (
+        "Divisors[5, GaussianIntegers -> True]",
+        "{1, 1 + 2*I, 2 + I, 5}",
+      ),
+      // Ramified and inert together
+      (
+        "Divisors[6, GaussianIntegers -> True]",
+        "{1, 1 + I, 2, 3, 3 + 3*I, 6}",
+      ),
+      (
+        "Divisors[4, GaussianIntegers -> True]",
+        "{1, 1 + I, 2, 2 + 2*I, 4}",
+      ),
+      // The sign is a unit
+      (
+        "Divisors[-5, GaussianIntegers -> True]",
+        "{1, 1 + 2*I, 2 + I, 5}",
+      ),
+      ("Divisors[5, GaussianIntegers -> False]", "{1, 5}"),
+      // Divisors[0] stays unevaluated over ℤ[i] too
+      (
+        "Divisors[0, GaussianIntegers -> True]",
+        "Divisors[0, GaussianIntegers -> True]",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // DivisorSigma over ℤ[i] uses the multiplicative formula over the
+  // canonical primes (NOT the sum of the canonical divisor list — for 5
+  // that sum would be 9 + 3 I, but wolframscript gives 4 + 8 I).
+  #[test]
+  fn gaussian_divisor_sigma() {
+    for (input, expected) in [
+      ("DivisorSigma[1, 3, GaussianIntegers -> True]", "4"),
+      ("DivisorSigma[1, 5, GaussianIntegers -> True]", "4 + 8*I"),
+      // Order 0 counts the associate classes
+      ("DivisorSigma[0, 5, GaussianIntegers -> True]", "4"),
+      // Gaussian-integer second argument without the option
+      ("DivisorSigma[1, 2 + I]", "3 + I"),
+      ("DivisorSigma[2, 2 + I]", "4 + 4*I"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}
+
 mod divisor_sigma {
   use super::*;
 

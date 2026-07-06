@@ -2992,6 +2992,174 @@ fn factor_gaussian_complex(
   Ok(Expr::List(factors.into()))
 }
 
+/// Canonical Gaussian factorization of a nonzero Gaussian integer:
+/// (unit, [(first-quadrant prime, exponent)]) sorted by (re, im). Uses the
+/// same norm-factorization + trial-division construction as
+/// `factor_gaussian_complex` (with which it agrees for real inputs too).
+fn gaussian_factorization(
+  a: i128,
+  b: i128,
+) -> Option<((i128, i128), Vec<((i128, i128), i128)>)> {
+  let norm = a
+    .checked_mul(a)
+    .and_then(|x| b.checked_mul(b).and_then(|y| x.checked_add(y)))
+    .filter(|&n| n > 0 && n <= (1i128 << 53))?;
+
+  let mut num = norm as u128;
+  let mut rational: Vec<(i128, i128)> = Vec::new();
+  let mut c2 = 0i128;
+  while num.is_multiple_of(2) {
+    c2 += 1;
+    num /= 2;
+  }
+  if c2 > 0 {
+    rational.push((2, c2));
+  }
+  let mut i: u128 = 3;
+  while i * i <= num {
+    let mut c = 0i128;
+    while num.is_multiple_of(i) {
+      c += 1;
+      num /= i;
+    }
+    if c > 0 {
+      rational.push((i as i128, c));
+    }
+    i += 2;
+  }
+  if num > 1 {
+    rational.push((num as i128, 1));
+  }
+
+  let mut z = (a, b);
+  let mut gprimes: Vec<((i128, i128), i128)> = Vec::new();
+  for (p, e) in rational {
+    if p == 2 {
+      for _ in 0..e {
+        z = gaussian_div(z, (1, 1))?;
+      }
+      gprimes.push(((1, 1), e));
+    } else if p % 4 == 3 {
+      if e % 2 != 0 {
+        return None;
+      }
+      for _ in 0..(e / 2) {
+        z = gaussian_div(z, (p, 0))?;
+      }
+      gprimes.push(((p, 0), e / 2));
+    } else {
+      let (s, t) = sum_of_two_squares(p)?;
+      let mut k1 = 0i128;
+      while k1 < e {
+        let Some(w) = gaussian_div(z, (s, t)) else {
+          break;
+        };
+        z = w;
+        k1 += 1;
+      }
+      for _ in 0..(e - k1) {
+        z = gaussian_div(z, (t, s))?;
+      }
+      if k1 > 0 {
+        gprimes.push(((s, t), k1));
+      }
+      if e - k1 > 0 {
+        gprimes.push(((t, s), e - k1));
+      }
+    }
+  }
+  gprimes.sort_by_key(|&((re, im), _)| (re, im));
+  Some((z, gprimes))
+}
+
+fn gaussian_mul_checked(
+  a: (i128, i128),
+  b: (i128, i128),
+) -> Option<(i128, i128)> {
+  let re = a.0.checked_mul(b.0)?.checked_sub(a.1.checked_mul(b.1)?)?;
+  let im = a.0.checked_mul(b.1)?.checked_add(a.1.checked_mul(b.0)?)?;
+  Some((re, im))
+}
+
+fn gaussian_pow(mut base: (i128, i128), mut e: i128) -> Option<(i128, i128)> {
+  let mut acc = (1i128, 0i128);
+  while e > 0 {
+    if e & 1 == 1 {
+      acc = gaussian_mul_checked(acc, base)?;
+    }
+    e >>= 1;
+    if e > 0 {
+      base = gaussian_mul_checked(base, base)?;
+    }
+  }
+  Some(acc)
+}
+
+/// The first-quadrant associate (re > 0, im >= 0) of a nonzero Gaussian
+/// integer.
+fn gaussian_first_quadrant(mut z: (i128, i128)) -> (i128, i128) {
+  for _ in 0..3 {
+    if z.0 > 0 && z.1 >= 0 {
+      return z;
+    }
+    z = (-z.1, z.0); // multiply by I
+  }
+  z
+}
+
+/// Divisors of a Gaussian integer (or of a rational integer over ℤ[i]):
+/// one first-quadrant representative per associate class, sorted by
+/// (re, im). None for zero, overflow, or too many divisors.
+fn gaussian_divisors(a: i128, b: i128) -> Option<Vec<(i128, i128)>> {
+  let (_, gprimes) = gaussian_factorization(a, b)?;
+  let count: i128 = gprimes.iter().map(|&(_, e)| e + 1).product();
+  if count > 4096 {
+    return None;
+  }
+  let mut divisors: Vec<(i128, i128)> = vec![(1, 0)];
+  for &(p, e) in &gprimes {
+    let mut next = Vec::with_capacity(divisors.len() * (e as usize + 1));
+    for d in &divisors {
+      let mut acc = *d;
+      next.push(acc);
+      for _ in 0..e {
+        acc = gaussian_mul_checked(acc, p)?;
+        next.push(acc);
+      }
+    }
+    divisors = next;
+  }
+  let mut out: Vec<(i128, i128)> =
+    divisors.into_iter().map(gaussian_first_quadrant).collect();
+  out.sort();
+  Some(out)
+}
+
+/// DivisorSigma over ℤ[i]: k = 0 counts associate classes; k >= 1 uses the
+/// multiplicative formula prod (p^(k(e+1)) - 1)/(p^k - 1) over the
+/// canonical first-quadrant primes.
+fn gaussian_divisor_sigma(k: i128, a: i128, b: i128) -> Option<(i128, i128)> {
+  let (_, gprimes) = gaussian_factorization(a, b)?;
+  if k == 0 {
+    let count: i128 = gprimes.iter().map(|&(_, e)| e + 1).product();
+    return Some((count, 0));
+  }
+  let mut acc = (1i128, 0i128);
+  for &(p, e) in &gprimes {
+    let num = {
+      let (re, im) = gaussian_pow(p, k.checked_mul(e + 1)?)?;
+      (re - 1, im)
+    };
+    let den = {
+      let (re, im) = gaussian_pow(p, k)?;
+      (re - 1, im)
+    };
+    let term = gaussian_div(num, den)?;
+    acc = gaussian_mul_checked(acc, term)?;
+  }
+  Some(acc)
+}
+
 /// Render a Gaussian integer `re + im·I` as an `Expr` — a bare `Integer` when
 /// `im == 0`, otherwise the evaluated `Complex[re, im]`.
 fn gaussian_to_expr(re: i128, im: i128) -> Result<Expr, InterpreterError> {
@@ -3792,11 +3960,80 @@ fn divisors_u128(n: u128) -> Option<Vec<u128>> {
   Some(divs)
 }
 
+/// The value of a `GaussianIntegers -> True/False` option argument.
+fn gaussian_integers_option(opt: &Expr) -> Option<bool> {
+  let value = |v: &Expr| match v {
+    Expr::Identifier(s) if s == "True" => Some(true),
+    Expr::Identifier(s) if s == "False" => Some(false),
+    _ => None,
+  };
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+    && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "GaussianIntegers")
+  {
+    return value(replacement);
+  }
+  if let Expr::FunctionCall { name, args } = opt
+    && (name == "Rule" || name == "RuleDelayed")
+    && args.len() == 2
+    && matches!(&args[0], Expr::Identifier(s) if s == "GaussianIntegers")
+  {
+    return value(&args[1]);
+  }
+  None
+}
+
+fn divisors_gaussian_expr(
+  a: i128,
+  b: i128,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Some(divs) = gaussian_divisors(a, b) else {
+    return Ok(Expr::FunctionCall {
+      name: "Divisors".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  let mut items = Vec::with_capacity(divs.len());
+  for (re, im) in divs {
+    items.push(gaussian_to_expr(re, im)?);
+  }
+  Ok(Expr::List(items.into()))
+}
+
 pub fn divisors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Divisors[n, GaussianIntegers -> True] lists divisors over ℤ[i];
+  // GaussianIntegers -> False is the ordinary form.
+  if args.len() == 2 {
+    return match gaussian_integers_option(&args[1]) {
+      Some(true) => match extract_gaussian_integer(&args[0]) {
+        Some((a, b)) if (a, b) != (0, 0) => divisors_gaussian_expr(a, b, args),
+        _ => Ok(Expr::FunctionCall {
+          name: "Divisors".to_string(),
+          args: args.to_vec().into(),
+        }),
+      },
+      Some(false) => divisors_ast(&args[..1]),
+      None => Ok(Expr::FunctionCall {
+        name: "Divisors".to_string(),
+        args: args.to_vec().into(),
+      }),
+    };
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Divisors expects exactly 1 argument".into(),
     ));
+  }
+
+  // Divisors[z] for a proper Gaussian integer lists one first-quadrant
+  // representative per associate class.
+  if let Some((a, b)) = extract_gaussian_integer(&args[0])
+    && b != 0
+  {
+    return divisors_gaussian_expr(a, b, args);
   }
 
   let n = match expr_to_i128(&args[0]) {
@@ -3839,8 +4076,55 @@ pub fn divisors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+fn divisor_sigma_gaussian_expr(
+  k_expr: &Expr,
+  a: i128,
+  b: i128,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DivisorSigma".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let Some(k) = expr_to_i128(k_expr).filter(|&k| k >= 0) else {
+    return unevaluated();
+  };
+  match gaussian_divisor_sigma(k, a, b) {
+    Some((re, im)) => gaussian_to_expr(re, im),
+    None => unevaluated(),
+  }
+}
+
 /// DivisorSigma[k, n] - Returns the sum of the k-th powers of divisors of n
 pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // DivisorSigma[k, n, GaussianIntegers -> True] and Gaussian-integer n
+  // use the multiplicative formula over the canonical ℤ[i] primes.
+  if args.len() == 3 {
+    return match gaussian_integers_option(&args[2]) {
+      Some(true) => match extract_gaussian_integer(&args[1]) {
+        Some((a, b)) if (a, b) != (0, 0) => {
+          divisor_sigma_gaussian_expr(&args[0], a, b, args)
+        }
+        _ => Ok(Expr::FunctionCall {
+          name: "DivisorSigma".to_string(),
+          args: args.to_vec().into(),
+        }),
+      },
+      Some(false) => divisor_sigma_ast(&args[..2]),
+      None => Ok(Expr::FunctionCall {
+        name: "DivisorSigma".to_string(),
+        args: args.to_vec().into(),
+      }),
+    };
+  }
+  if args.len() == 2
+    && let Some((a, b)) = extract_gaussian_integer(&args[1])
+    && b != 0
+  {
+    return divisor_sigma_gaussian_expr(&args[0], a, b, args);
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "DivisorSigma expects exactly 2 arguments".into(),

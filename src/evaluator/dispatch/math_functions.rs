@@ -2532,10 +2532,10 @@ pub fn dispatch_math_functions(
     "IntegerPartitions" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
     }
-    "Divisors" if args.len() == 1 => {
+    "Divisors" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::divisors_ast(args));
     }
-    "DivisorSigma" if args.len() == 2 => {
+    "DivisorSigma" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::divisor_sigma_ast(args));
     }
     "MoebiusMu" if args.len() == 1 => {
