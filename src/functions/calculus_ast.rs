@@ -7,6 +7,27 @@ use crate::InterpreterError;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
 use crate::syntax::Expr;
 
+thread_local! {
+  /// Active `NonConstants` context for `D`. Holds the symbol names that must be
+  /// treated as depending on the differentiation variable, together with the
+  /// original `NonConstants -> {…}` option rule used to render the carried
+  /// `D[a, x, NonConstants -> {…}]` derivative terms.
+  static NON_CONSTANTS: std::cell::RefCell<Option<(Vec<String>, Expr)>> =
+    const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with the given `NonConstants` context installed, restoring the
+/// previous context afterwards.
+fn with_non_constants<F, R>(names: Vec<String>, rule: Expr, f: F) -> R
+where
+  F: FnOnce() -> R,
+{
+  let prev = NON_CONSTANTS.with(|nc| nc.borrow_mut().replace((names, rule)));
+  let result = f();
+  NON_CONSTANTS.with(|nc| *nc.borrow_mut() = prev);
+  result
+}
+
 /// D[expr, var] or D[expr, {var, n}] or D[expr, x, y, ...] - Symbolic differentiation
 pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -29,6 +50,12 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if args[1..].iter().any(|a| option_name(a).is_some()) {
     let expr = &args[0];
+    let unevaluated = || {
+      Ok(Expr::FunctionCall {
+        name: "D".to_string(),
+        args: args.to_vec().into(),
+      })
+    };
     let mut diff_vars: Vec<Expr> = Vec::new();
     let mut non_constants: Vec<Expr> = Vec::new();
     for a in &args[1..] {
@@ -41,36 +68,43 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
         }
-        // Other options (Assumptions, PerformanceGoal, …) do not change the
-        // structure of the derivatives handled here; accept and ignore them.
-        Some(_) => {}
+        // NonConstants is D's only option. Any other option is unknown, so
+        // wolframscript emits `D::optx` and leaves the call unevaluated.
+        Some(opt) => {
+          crate::emit_message(&format!(
+            "D::optx: Unknown option {} in {}.",
+            opt,
+            crate::syntax::expr_to_output(&Expr::FunctionCall {
+              name: "D".to_string(),
+              args: args.to_vec().into(),
+            })
+          ));
+          return unevaluated();
+        }
         None => diff_vars.push(a.clone()),
       }
     }
-    let unevaluated = || {
-      Ok(Expr::FunctionCall {
-        name: "D".to_string(),
-        args: args.to_vec().into(),
-      })
-    };
     if diff_vars.is_empty() {
       return unevaluated();
     }
-    // When a NonConstants variable actually occurs in the expression, the
-    // correct result carries symbolic `D[a, x, NonConstants -> {…}]` terms
-    // that Woxi does not synthesise; leave the call unevaluated rather than
-    // return the (wrong) constant-treatment derivative.
-    let appears = non_constants.iter().any(
-      |nc| matches!(nc, Expr::Identifier(name) if contains_var(expr, name)),
-    );
-    if appears {
-      return unevaluated();
-    }
-    // The options have no effect here — differentiate against the real
-    // variables only.
+    // Differentiate against the real variables, treating every NonConstants
+    // symbol as dependent on the differentiation variable. Its derivative is
+    // carried symbolically as `D[a, x, NonConstants -> {…}]`, e.g.
+    // `D[a x^2, x, NonConstants -> {a}]` = `2 a x + x^2 D[a, x, NonConstants -> {a}]`.
+    let names: Vec<String> = non_constants
+      .iter()
+      .filter_map(|nc| match nc {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect();
+    let rule = Expr::Rule {
+      pattern: Box::new(Expr::Identifier("NonConstants".to_string())),
+      replacement: Box::new(Expr::List(non_constants.into())),
+    };
     let mut new_args = vec![expr.clone()];
     new_args.extend(diff_vars);
-    return d_ast(&new_args);
+    return with_non_constants(names, rule, || d_ast(&new_args));
   }
 
   // D[expr, x, y, ...] — mixed partial derivatives: differentiate sequentially
@@ -1814,7 +1848,23 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       if name == var {
         Ok(Expr::Integer(1))
       } else {
-        Ok(Expr::Integer(0))
+        // A symbol listed in the active `NonConstants` context depends on the
+        // differentiation variable, so its derivative is the unevaluated
+        // `D[name, var, NonConstants -> {…}]` rather than zero.
+        let carried = NON_CONSTANTS.with(|nc| {
+          nc.borrow().as_ref().and_then(|(names, rule)| {
+            names.iter().any(|n| n == name).then(|| Expr::FunctionCall {
+              name: "D".to_string(),
+              args: vec![
+                Expr::Identifier(name.clone()),
+                Expr::Identifier(var.to_string()),
+                rule.clone(),
+              ]
+              .into(),
+            })
+          })
+        });
+        Ok(carried.unwrap_or(Expr::Integer(0)))
       }
     }
 

@@ -1463,20 +1463,28 @@ mod differentiate_nonconstants {
     );
   }
 
-  // Unrelated options are accepted and ignored for these derivatives.
+  // NonConstants is D's only option; any other option is unknown, so the call
+  // is left unevaluated (wolframscript emits D::optx).
   #[test]
-  fn other_options_ignored() {
-    assert_eq!(interpret("D[x^2, x, Assumptions -> x > 0]").unwrap(), "2*x");
+  fn unknown_option_stays_unevaluated() {
+    assert_eq!(
+      interpret("D[x^2, x, Assumptions -> x > 0]").unwrap(),
+      "D[x^2, x, Assumptions -> x > 0]"
+    );
   }
 
-  // When a NonConstants variable actually occurs, the correct result needs
-  // symbolic derivative terms Woxi does not synthesise, so the call stays
-  // unevaluated rather than returning a wrong constant-treatment derivative.
+  // When a NonConstants variable actually occurs, the derivative carries
+  // symbolic `D[a, x, NonConstants -> {…}]` terms via the product rule.
   #[test]
-  fn nonconstant_variable_present_stays_unevaluated() {
+  fn nonconstant_variable_present_carries_derivative() {
     assert_eq!(
       interpret("D[a x^2, x, NonConstants -> {a}]").unwrap(),
-      "D[a*x^2, x, NonConstants -> {a}]"
+      "2*a*x + x^2*D[a, x, NonConstants -> {a}]"
+    );
+    // The bare NonConstants symbol differentiates to its carried derivative.
+    assert_eq!(
+      interpret("D[a, x, NonConstants -> {a}]").unwrap(),
+      "D[a, x, NonConstants -> {a}]"
     );
   }
 }
