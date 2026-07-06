@@ -6996,6 +6996,37 @@ mod refine {
       "False"
     );
   }
+
+  // Refining a Piecewise re-evaluates it once the assumption resolves a case
+  // condition to True/False, so the Piecewise collapses to a plain value.
+  #[test]
+  fn refine_piecewise_collapses() {
+    // The single case's condition becomes True -> its value.
+    assert_eq!(
+      interpret("Refine[Piecewise[{{x, x > 0}}], x > 0]").unwrap(),
+      "x"
+    );
+    // The only case's condition becomes False -> the default (0).
+    assert_eq!(
+      interpret("Refine[Piecewise[{{x, x > 0}}], x < 0]").unwrap(),
+      "0"
+    );
+    // The first still-possible case wins.
+    assert_eq!(
+      interpret("Refine[Piecewise[{{a, x > 0}, {b, x < 0}}], x > 0]").unwrap(),
+      "a"
+    );
+    // Earlier case falsified; a later literal-True case supplies the value.
+    assert_eq!(
+      interpret("Refine[Piecewise[{{a, x > 0}, {b, True}}], x < 0]").unwrap(),
+      "b"
+    );
+    // A symbolic value is preserved when its condition holds.
+    assert_eq!(
+      interpret("Refine[Piecewise[{{x^2, x > 0}}], x > 0]").unwrap(),
+      "x^2"
+    );
+  }
 }
 
 mod simplify_solve_verification {

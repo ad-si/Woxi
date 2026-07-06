@@ -1288,6 +1288,21 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
     }
 
+    // Piecewise: refine the case conditions, then re-evaluate so a condition
+    // that the assumption turned into True/False collapses the Piecewise
+    // (e.g. Refine[Piecewise[{{x, x > 0}}], x > 0] -> x).
+    Expr::FunctionCall { name, args } if name == "Piecewise" => {
+      let refined = Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| refine_expr(a, info, assumption))
+          .collect(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&refined)
+        .unwrap_or_else(|_| refined.clone())
+    }
+
     // Recurse into function calls
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
