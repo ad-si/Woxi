@@ -499,6 +499,43 @@ mod string_split_single_arg {
   }
 
   #[test]
+  fn string_reverse_non_string_emits_string_message() {
+    // A non-string argument stays unevaluated and emits StringReverse::string;
+    // it must NOT be coerced to a string (regression: used to return 5 / x).
+    let r = woxi::interpret_with_stdout("StringReverse[5]").unwrap();
+    assert_eq!(r.result, "StringReverse[5]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "StringReverse::string: String expected at position 1 in StringReverse[5]."
+      )),
+      "expected StringReverse::string, got {:?}",
+      r.warnings
+    );
+
+    let r = woxi::interpret_with_stdout("StringReverse[x]").unwrap();
+    assert_eq!(r.result, "StringReverse[x]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "StringReverse::string: String expected at position 1 in StringReverse[x]."
+    )));
+  }
+
+  #[test]
+  fn string_reverse_mixed_list_reports_per_element() {
+    // Listable: string elements reverse, non-string elements stay wrapped and
+    // each emits its own message referencing StringReverse[value].
+    let r = woxi::interpret_with_stdout(r#"StringReverse[{"ab", 5}]"#).unwrap();
+    assert_eq!(r.result, "{ba, StringReverse[5]}");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "StringReverse::string: String expected at position 1 in StringReverse[5]."
+    )));
+
+    let r = woxi::interpret_with_stdout("StringReverse[{5, 6}]").unwrap();
+    assert_eq!(r.result, "{StringReverse[5], StringReverse[6]}");
+    assert!(r.warnings.iter().any(|w| w.contains("StringReverse[5]")));
+    assert!(r.warnings.iter().any(|w| w.contains("StringReverse[6]")));
+  }
+
+  #[test]
   fn characters_single_string() {
     assert_eq!(interpret(r#"Characters["abc"]"#).unwrap(), "{a, b, c}");
   }

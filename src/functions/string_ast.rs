@@ -2053,8 +2053,21 @@ pub fn string_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
-  Ok(Expr::String(s.chars().rev().collect()))
+  // Only a string is reversed. Any other expression emits StringReverse::string
+  // and stays unevaluated (matching Wolfram, which reports the offending value
+  // as `StringReverse[value]` at position 1).
+  if let Expr::String(s) = &args[0] {
+    return Ok(Expr::String(s.chars().rev().collect()));
+  }
+  let unevaluated = Expr::FunctionCall {
+    name: "StringReverse".to_string(),
+    args: args.to_vec().into(),
+  };
+  crate::emit_message(&format!(
+    "StringReverse::string: String expected at position 1 in {}.",
+    crate::syntax::format_expr(&unevaluated, crate::syntax::ExprForm::Output)
+  ));
+  Ok(unevaluated)
 }
 
 /// StringRepeat[s, n] - repeat string n times
