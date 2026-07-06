@@ -1503,6 +1503,23 @@ mod total {
       "expected Total::normal, got {msgs:?}"
     );
   }
+
+  // A wrong argument count leaves Total unevaluated (with a message) rather
+  // than raising an evaluation error.
+  #[test]
+  fn wrong_argument_count_stays_unevaluated() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("Total[]").unwrap();
+    assert_eq!(r.result, "Total[]");
+    assert!(r.warnings.iter().any(|m| m.contains(
+      "Total::argt: Total called with 0 arguments; 1 or 2 arguments are expected."
+    )));
+    // Three or more arguments (an unexpected option) also stay unevaluated.
+    assert_eq!(
+      interpret("Total[{1, 2, 3}, 2, 3]").unwrap(),
+      "Total[{1, 2, 3}, 2, 3]"
+    );
+  }
 }
 
 mod normalize {

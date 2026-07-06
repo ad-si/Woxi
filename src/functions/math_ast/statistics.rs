@@ -139,10 +139,28 @@ pub fn rectn_if_not_real_rectangular(
 /// Total[list, n] - Sum across levels 1 through n
 /// Total[list, {n}] - Sum at exactly level n
 pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Total expects 1 or 2 arguments".into(),
+  let unevaluated = || Expr::FunctionCall {
+    name: "Total".to_string(),
+    args: args.to_vec().into(),
+  };
+  // A wrong argument count leaves the call unevaluated (with a message),
+  // matching wolframscript, rather than raising an evaluation error.
+  if args.is_empty() {
+    crate::emit_message(
+      "Total::argt: Total called with 0 arguments; 1 or 2 arguments are expected.",
+    );
+    return Ok(unevaluated());
+  }
+  if args.len() > 2 {
+    crate::emit_message(&format!(
+      "Total::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
+      crate::syntax::format_expr(&args[2], crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(
+        &unevaluated(),
+        crate::syntax::ExprForm::Output
+      )
     ));
+    return Ok(unevaluated());
   }
 
   // A SparseArray argument is summed over its dense form.
