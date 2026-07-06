@@ -2419,6 +2419,22 @@ mod sort_canonical {
     );
   }
 
+  // Same-head function calls also order by argument count first, so f[3] and
+  // f[2] (one argument) precede f[1, 2] (two arguments).
+  #[test]
+  fn sort_function_calls_by_arg_count() {
+    assert_eq!(
+      interpret("Sort[{f[3], f[1, 2], f[2]}]").unwrap(),
+      "{f[2], f[3], f[1, 2]}"
+    );
+    assert_eq!(
+      interpret("Sort[{g[2, 3], g[1], g[5]}]").unwrap(),
+      "{g[1], g[5], g[2, 3]}"
+    );
+    // Order agrees with Sort.
+    assert_eq!(interpret("Order[f[3], f[1, 2]]").unwrap(), "1");
+  }
+
   #[test]
   fn sort_function_calls_element_wise() {
     // Function calls compared by name, then args

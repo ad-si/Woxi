@@ -272,13 +272,19 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           if name_ord != std::cmp::Ordering::Equal {
             return name_ord;
           }
+          // Same head: Wolfram orders by argument count first, then argument
+          // by argument (so f[3] precedes f[1, 2]).
+          match a_args.len().cmp(&b_args.len()) {
+            std::cmp::Ordering::Equal => {}
+            other => return other,
+          }
           for (ai, bi) in a_args.iter().zip(b_args.iter()) {
             let ord = canonical_cmp(ai, bi);
             if ord != std::cmp::Ordering::Equal {
               return ord;
             }
           }
-          return a_args.len().cmp(&b_args.len());
+          return std::cmp::Ordering::Equal;
         }
         // Lists sort after non-lists
         (Expr::List(_), _) => return std::cmp::Ordering::Greater,
@@ -1143,17 +1149,20 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
           && a_is_func_call
           && b_is_func_call
         {
+          // Same head: order by argument count first, then argument by
+          // argument (Wolfram: f[3] precedes f[1, 2]).
+          match aa.len().cmp(&ab.len()) {
+            std::cmp::Ordering::Less => return 1,
+            std::cmp::Ordering::Greater => return -1,
+            std::cmp::Ordering::Equal => {}
+          }
           for (ai, bi) in aa.iter().zip(ab.iter()) {
             let ord = compare_exprs(ai, bi);
             if ord != 0 {
               return ord;
             }
           }
-          return match aa.len().cmp(&ab.len()) {
-            std::cmp::Ordering::Less => 1,
-            std::cmp::Ordering::Greater => -1,
-            std::cmp::Ordering::Equal => 0,
-          };
+          return 0;
         }
         // Both compounds: compare sort keys, then by full string
         let a_key = expr_sort_key(a);
