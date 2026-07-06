@@ -633,6 +633,51 @@ mod date_string {
     );
   }
 
+  // "Hour24" is the explicit 2-digit 24-hour clock; "Hour24Short" drops the
+  // leading zero; "ISOWeekDay" is Monday=1 .. Sunday=7.
+  #[test]
+  fn date_string_hour24_and_isoweekday() {
+    assert_eq!(
+      interpret(
+        "DateString[{2024, 3, 7, 14, 5}, {\"Hour24\", \":\", \"Minute\"}]"
+      )
+      .unwrap(),
+      "14:05"
+    );
+    // Zero-padded for single-digit hours, including midnight.
+    assert_eq!(
+      interpret("DateString[{2024, 3, 7, 3, 5}, {\"Hour24\"}]").unwrap(),
+      "03"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 3, 7, 0, 5}, {\"Hour24\"}]").unwrap(),
+      "00"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 3, 7, 3, 5}, {\"Hour24Short\"}]").unwrap(),
+      "3"
+    );
+    // A bare-string element formats the same way.
+    assert_eq!(
+      interpret("DateString[{2024, 3, 7, 14, 5}, \"Hour24\"]").unwrap(),
+      "14"
+    );
+    // ISO weekday: 2024-03-07 is a Thursday (4), the 3rd a Sunday (7), the
+    // 4th a Monday (1).
+    assert_eq!(
+      interpret("DateString[{2024, 3, 7}, {\"ISOWeekDay\"}]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 3, 3}, {\"ISOWeekDay\"}]").unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 3, 4}, {\"ISOWeekDay\"}]").unwrap(),
+      "1"
+    );
+  }
+
   #[test]
   fn date_string_fractional_day() {
     assert_eq!(

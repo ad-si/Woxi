@@ -18,6 +18,13 @@ $ wo 'DateString[{2026, 4, 15}, "Year"]'
 2026
 ```
 
+The `"Hour24"` element is the 2-digit 24-hour clock:
+
+```scrut
+$ wo 'DateString[{2026, 4, 15, 14, 5}, {"Hour24", ":", "Minute"}]'
+14:05
+```
+
 ### Common format specifications
 
 - `"ISODate"` → `2026-04-15`

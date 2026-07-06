@@ -2030,13 +2030,19 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Day" => result.push_str(&format!("{:02}", d)),
         "DayName" => result.push_str(day_name(day_of_week(y, m, d))),
         "DayNameShort" => result.push_str(day_name_short(day_of_week(y, m, d))),
-        "Hour" => result.push_str(&format!("{:02}", h)),
+        // "Hour" is the 24-hour clock by default; "Hour24" is its explicit
+        // 2-digit form.
+        "Hour" | "Hour24" => result.push_str(&format!("{:02}", h)),
         "Minute" => result.push_str(&format!("{:02}", min)),
         "Second" => result.push_str(&format!("{:02}", sec as i64)),
+        // ISO day of the week: Monday = 1, ..., Sunday = 7.
+        "ISOWeekDay" => {
+          result.push_str(&format!("{}", day_of_week(y, m, d) + 1))
+        }
         // "Short" variants omit the leading zero.
         "MonthShort" => result.push_str(&format!("{}", m)),
         "DayShort" => result.push_str(&format!("{}", d)),
-        "HourShort" => result.push_str(&format!("{}", h)),
+        "HourShort" | "Hour24Short" => result.push_str(&format!("{}", h)),
         "MinuteShort" => result.push_str(&format!("{}", min)),
         "SecondShort" => result.push_str(&format!("{}", sec as i64)),
         // 12-hour clock: 0 and 12 both map to 12, 13..23 map to 1..11.
