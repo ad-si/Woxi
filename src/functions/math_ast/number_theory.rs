@@ -2721,10 +2721,28 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       factor_integer_rational(&rat_args[0], &rat_args[1])
     }
+    // A Gaussian integer argument factors over ℤ[i] directly.
+    e if extract_gaussian_integer(e).is_some_and(|(_, im)| im != 0) => {
+      factor_integer_gaussian(&args[0])
+    }
     _ => Ok(Expr::FunctionCall {
       name: "FactorInteger".to_string(),
       args: args.to_vec().into(),
     }),
+  }
+}
+
+/// Recognize an exact Gaussian integer `re + im I`.
+fn extract_gaussian_integer(expr: &Expr) -> Option<(i128, i128)> {
+  if let Expr::Integer(n) = expr {
+    return Some((*n, 0));
+  }
+  let ((rn, rd), (in_, id)) =
+    crate::functions::math_ast::try_extract_complex_exact(expr)?;
+  if rd == 1 && id == 1 {
+    Some((rn, in_))
+  } else {
+    None
   }
 }
 
@@ -2755,10 +2773,12 @@ fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
     })
   };
 
-  let n = match n_expr {
-    Expr::Integer(n) => *n,
-    _ => return unevaluated(),
+  let Some((n, n_im)) = extract_gaussian_integer(n_expr) else {
+    return unevaluated();
   };
+  if n_im != 0 {
+    return factor_gaussian_complex(n, n_im, &unevaluated);
+  }
 
   let single = |re: i128, im: i128| -> Result<Expr, InterpreterError> {
     Ok(Expr::List(
@@ -2838,6 +2858,130 @@ fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
   if unit != (1, 0) {
     factors.push(Expr::List(
       vec![gaussian_to_expr(unit.0, unit.1)?, Expr::Integer(1)].into(),
+    ));
+  }
+  for ((re, im), e) in gprimes {
+    factors.push(Expr::List(
+      vec![gaussian_to_expr(re, im)?, Expr::Integer(e)].into(),
+    ));
+  }
+  Ok(Expr::List(factors.into()))
+}
+
+/// Exact quotient z/w in ℤ[i], or None when w does not divide z.
+fn gaussian_div(z: (i128, i128), w: (i128, i128)) -> Option<(i128, i128)> {
+  let n = w.0 * w.0 + w.1 * w.1;
+  let re = z.0 * w.0 + z.1 * w.1;
+  let im = z.1 * w.0 - z.0 * w.1;
+  if re % n == 0 && im % n == 0 {
+    Some((re / n, im / n))
+  } else {
+    None
+  }
+}
+
+/// Factorization of a proper Gaussian integer `a + b I` (b != 0): factor
+/// the norm a² + b² into rational primes, then trial-divide by the
+/// canonical prime representatives (first quadrant: 1 + I for 2, the
+/// {s + t I, t + s I} pair for split primes, the rational prime itself
+/// for inert ones); whatever remains is the leading unit.
+fn factor_gaussian_complex(
+  a: i128,
+  b: i128,
+  unevaluated: &dyn Fn() -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let Some(norm) = a
+    .checked_mul(a)
+    .and_then(|x| b.checked_mul(b).and_then(|y| x.checked_add(y)))
+    .filter(|&n| n <= (1i128 << 53))
+  else {
+    return unevaluated();
+  };
+
+  // Factor the norm into rational primes.
+  let mut num = norm as u128;
+  let mut rational: Vec<(i128, i128)> = Vec::new();
+  let mut c2 = 0i128;
+  while num.is_multiple_of(2) {
+    c2 += 1;
+    num /= 2;
+  }
+  if c2 > 0 {
+    rational.push((2, c2));
+  }
+  let mut i: u128 = 3;
+  while i * i <= num {
+    let mut c = 0i128;
+    while num.is_multiple_of(i) {
+      c += 1;
+      num /= i;
+    }
+    if c > 0 {
+      rational.push((i as i128, c));
+    }
+    i += 2;
+  }
+  if num > 1 {
+    rational.push((num as i128, 1));
+  }
+
+  let mut z = (a, b);
+  let mut gprimes: Vec<((i128, i128), i128)> = Vec::new();
+  for (p, e) in rational {
+    if p == 2 {
+      // Each factor 2 of the norm is one ramified prime 1 + I in z.
+      for _ in 0..e {
+        let Some(w) = gaussian_div(z, (1, 1)) else {
+          return unevaluated();
+        };
+        z = w;
+      }
+      gprimes.push(((1, 1), e));
+    } else if p % 4 == 3 {
+      // Inert: the norm exponent is twice the multiplicity in z.
+      if e % 2 != 0 {
+        return unevaluated();
+      }
+      for _ in 0..(e / 2) {
+        let Some(w) = gaussian_div(z, (p, 0)) else {
+          return unevaluated();
+        };
+        z = w;
+      }
+      gprimes.push(((p, 0), e / 2));
+    } else {
+      let Some((s, t)) = sum_of_two_squares(p) else {
+        return unevaluated();
+      };
+      let mut k1 = 0i128;
+      while k1 < e {
+        let Some(w) = gaussian_div(z, (s, t)) else {
+          break;
+        };
+        z = w;
+        k1 += 1;
+      }
+      for _ in 0..(e - k1) {
+        let Some(w) = gaussian_div(z, (t, s)) else {
+          return unevaluated();
+        };
+        z = w;
+      }
+      if k1 > 0 {
+        gprimes.push(((s, t), k1));
+      }
+      if e - k1 > 0 {
+        gprimes.push(((t, s), e - k1));
+      }
+    }
+  }
+
+  // The fully divided z is one of the four units.
+  gprimes.sort_by_key(|&((re, im), _)| (re, im));
+  let mut factors: Vec<Expr> = Vec::new();
+  if z != (1, 0) || gprimes.is_empty() {
+    factors.push(Expr::List(
+      vec![gaussian_to_expr(z.0, z.1)?, Expr::Integer(1)].into(),
     ));
   }
   for ((re, im), e) in gprimes {

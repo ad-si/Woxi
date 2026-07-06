@@ -175,6 +175,56 @@ mod factor_integer {
       "{{2, 2}, {5, 2}}"
     );
   }
+
+  // A Gaussian integer argument factors over ℤ[i] directly, without the
+  // GaussianIntegers option.
+  #[test]
+  fn gaussian_integer_arguments() {
+    for (input, expected) in [
+      // Already a Gaussian prime
+      ("FactorInteger[2 + I]", "{{2 + I, 1}}"),
+      // 10 + 5 I = -I (1 + 2 I) (2 + I)^2
+      (
+        "FactorInteger[10 + 5*I]",
+        "{{-I, 1}, {1 + 2*I, 1}, {2 + I, 2}}",
+      ),
+      // A pure prime power with unit 1: (2 + I)^4
+      ("FactorInteger[-7 + 24*I]", "{{2 + I, 4}}"),
+      // The ramified prime and a split prime
+      (
+        "FactorInteger[4 + 2*I]",
+        "{{-I, 1}, {1 + I, 2}, {2 + I, 1}}",
+      ),
+      // ... plus an inert prime
+      (
+        "FactorInteger[9 + 3*I]",
+        "{{-I, 1}, {1 + I, 1}, {1 + 2*I, 1}, {3, 1}}",
+      ),
+      // Units factor as themselves
+      ("FactorInteger[I]", "{{I, 1}}"),
+      ("FactorInteger[-I]", "{{-I, 1}}"),
+      ("FactorInteger[-1 - I]", "{{-1, 1}, {1 + I, 1}}"),
+      // A real-valued complex input reduces to ordinary factorization
+      ("FactorInteger[100 + 0*I]", "{{2, 2}, {5, 2}}"),
+      ("FactorInteger[3 + 0*I]", "{{3, 1}}"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // Unknown options on the Factor family emit `optx` and stay
+  // unevaluated instead of raising an argument error.
+  #[test]
+  fn factor_unknown_option_emits_optx() {
+    let result = woxi::interpret_with_stdout("Factor[x, Foo -> 1]").unwrap();
+    assert_eq!(result.result, "Factor[x, Foo -> 1]");
+    assert!(
+      result.warnings.iter().any(|w| w
+        .contains("Factor::optx: Unknown option Foo in Factor[x, Foo -> 1].")),
+      "expected optx, got {:?}",
+      result.warnings
+    );
+  }
 }
 
 mod divisible {

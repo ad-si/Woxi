@@ -8,19 +8,58 @@ use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 /// Factor[expr] - Factor a polynomial expression
 /// Threads over List.
+/// For a 2-argument call whose option is not `Modulus`, emit `optx` for
+/// genuinely unknown options (valid-but-unimplemented ones like
+/// GaussianIntegers/Extension/Trig stay silently unevaluated) and return
+/// the unevaluated call.
+fn unknown_option_fallback(head: &str, args: &[Expr]) -> Expr {
+  let known = |s: &str| {
+    matches!(s, "Modulus" | "GaussianIntegers" | "Extension" | "Trig")
+  };
+  let option_name = match &args[1] {
+    Expr::Rule { pattern, .. } => match pattern.as_ref() {
+      Expr::Identifier(s) => Some(s.clone()),
+      _ => None,
+    },
+    Expr::FunctionCall { name, args: ra }
+      if (name == "Rule" || name == "RuleDelayed") && ra.len() == 2 =>
+    {
+      match &ra[0] {
+        Expr::Identifier(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let call = Expr::FunctionCall {
+    name: head.to_string(),
+    args: args.to_vec().into(),
+  };
+  if let Some(opt) = option_name
+    && !known(&opt)
+  {
+    crate::emit_message(&format!(
+      "{head}::optx: Unknown option {opt} in {}.",
+      expr_to_string(&call)
+    ));
+  }
+  call
+}
+
 pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Factor[poly, Modulus -> p] factors over GF(p); inputs the modular
   // engine cannot handle (multivariate, symbolic) stay unevaluated.
-  if args.len() == 2
-    && let Some(p) = extract_modulus_option(&args[1])
-  {
-    return match super::factor_modulus(&args[0], p)? {
-      Some(e) => Ok(e),
-      None => Ok(Expr::FunctionCall {
-        name: "Factor".to_string(),
-        args: args.to_vec().into(),
-      }),
-    };
+  if args.len() == 2 {
+    if let Some(p) = extract_modulus_option(&args[1]) {
+      return match super::factor_modulus(&args[0], p)? {
+        Some(e) => Ok(e),
+        None => Ok(Expr::FunctionCall {
+          name: "Factor".to_string(),
+          args: args.to_vec().into(),
+        }),
+      };
+    }
+    return Ok(unknown_option_fallback("Factor", args));
   }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1100,16 +1139,17 @@ pub fn lagrange_interpolate_integer(
 
 /// FactorList[poly] - list irreducible factors of a polynomial with exponents
 pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() == 2
-    && let Some(p) = extract_modulus_option(&args[1])
-  {
-    return match super::factor_list_modulus(&args[0], p)? {
-      Some(e) => Ok(e),
-      None => Ok(Expr::FunctionCall {
-        name: "FactorList".to_string(),
-        args: args.to_vec().into(),
-      }),
-    };
+  if args.len() == 2 {
+    if let Some(p) = extract_modulus_option(&args[1]) {
+      return match super::factor_list_modulus(&args[0], p)? {
+        Some(e) => Ok(e),
+        None => Ok(Expr::FunctionCall {
+          name: "FactorList".to_string(),
+          args: args.to_vec().into(),
+        }),
+      };
+    }
+    return Ok(unknown_option_fallback("FactorList", args));
   }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1181,16 +1221,17 @@ fn factor_exponent_is_negative(pair: &Expr) -> bool {
 pub fn irreducible_polynomial_q_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() == 2
-    && let Some(p) = extract_modulus_option(&args[1])
-  {
-    return match super::irreducible_polynomial_q_modulus(&args[0], p)? {
-      Some(e) => Ok(e),
-      None => Ok(Expr::FunctionCall {
-        name: "IrreduciblePolynomialQ".to_string(),
-        args: args.to_vec().into(),
-      }),
-    };
+  if args.len() == 2 {
+    if let Some(p) = extract_modulus_option(&args[1]) {
+      return match super::irreducible_polynomial_q_modulus(&args[0], p)? {
+        Some(e) => Ok(e),
+        None => Ok(Expr::FunctionCall {
+          name: "IrreduciblePolynomialQ".to_string(),
+          args: args.to_vec().into(),
+        }),
+      };
+    }
+    return Ok(unknown_option_fallback("IrreduciblePolynomialQ", args));
   }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
