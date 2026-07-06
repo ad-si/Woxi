@@ -545,6 +545,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Resolve" => Some((1, 3)),
     "TrigFactor" => Some((1, 1)),
     "Subresultants" => Some((3, 3)),
+    "SubresultantPolynomials" => Some((3, 4)),
     "FunctionRange" => Some((3, 3)),
     "CountRoots" => Some((2, 2)),
     "FunctionExpand" => Some((1, 1)),

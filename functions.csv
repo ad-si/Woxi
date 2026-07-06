@@ -4346,7 +4346,7 @@ SolidData,,🚫,,10.0,4479
 StackComplete,,,,2.0,4479
 Standardized,,,,10.1,4479
 StippleShading,,,,12.1,4479
-SubresultantPolynomials,,,,9.0,4479
+SubresultantPolynomials,Subresultant polynomial sequence of two polynomials with respect to a variable,✅,pure,9.0,4479
 SymmetrizedDependentComponents,,,,9.0,4479
 AcousticPressureCondition,,🚫,,12.2,4527
 ActiveStyle,,🚫,,7.0,4527

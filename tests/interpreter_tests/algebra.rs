@@ -9870,6 +9870,177 @@ mod subresultants {
   }
 }
 
+mod subresultant_polynomials {
+  use super::*;
+
+  #[test]
+  fn integer_chains() {
+    // Documentation example: the coefficient of x^j in entry j is the
+    // matching Subresultants entry {0, 36, 11, 1}
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomials[(x - 1)^2*(x - 2)*(x - 3), (x - 1)*(x - 4)^2, x]"
+      )
+      .unwrap(),
+      "{0, -36 + 36*x, 38 - 49*x + 11*x^2, -16 + 24*x - 9*x^2 + x^3}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^2 + 1, x^2 - 1, x]").unwrap(),
+      "{4, -2, -1 + x^2}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^2 - 4, x - 2, x]").unwrap(),
+      "{0, -2 + x}"
+    );
+    // A degree-1 entry can vanish entirely mid-chain
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^4 + x^2 + 1, x^2 + x + 1, x]")
+        .unwrap(),
+      "{0, 0, 1 + x + x^2}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^5 + 3, 2*x^2 + 1, x]").unwrap(),
+      "{289, 48 + 4*x, 4 + 8*x^2}"
+    );
+  }
+
+  #[test]
+  fn last_entry_lc_scaling() {
+    // Final entry is lc^(m-n-1) * poly2, expanded when m > n
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^4 + x^2 + 1, 2*x^2 + x + 1, x]")
+        .unwrap(),
+      "{7, -5 + x, 2 + 2*x + 4*x^2}"
+    );
+    // ... and kept as the quotient poly2/lc when m == n
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^2 + 1, 2*x^2 - 1, x]").unwrap(),
+      "{9, -3, (-1 + 2*x^2)/2}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomials[2*x + 3, 4*x + 1, x]").unwrap(),
+      "{-10, (1 + 4*x)/4}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^3 + 1, 2*x^3 - x, x]").unwrap(),
+      "{-7, 2 + x, -2 - x, (-x + 2*x^3)/2}"
+    );
+    // Negative leading coefficient distributes instead of dividing
+    assert_eq!(
+      interpret("SubresultantPolynomials[2*x^2 - 1, -x^2 + 3, x]").unwrap(),
+      "{25, 5, -3 + x^2}"
+    );
+  }
+
+  #[test]
+  fn symbolic_coefficients() {
+    // Documentation example: cubic against a general quadratic
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomials[a*x^3 + b*x^2 + c*x + d, 3*a*x^2 + b*x + c, x]"
+      )
+      .unwrap(),
+      "{4*a^2*c^3 + 2*a*b^3*d - 18*a^2*b*c*d + 27*a^3*d^2, \
+       -2*a*b*c + 9*a^2*d - 2*a*b^2*x + 6*a^2*c*x, c + b*x + 3*a*x^2}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomials[a*x^2 + b*x + c, d*x^2 + e*x + f, x]")
+        .unwrap(),
+      "{c^2*d^2 - b*c*d*e + a*c*e^2 + b^2*d*f - 2*a*c*d*f - a*b*e*f + a^2*f^2, \
+       -(c*d) + a*f - b*d*x + a*e*x, (f + e*x + d*x^2)/d}"
+    );
+    // Symbolic leading coefficient with m > n expands the scaled final entry
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^4 + x^2 + 1, d*x^2 + e*x + f, x]")
+        .unwrap(),
+      "{d^4 + d^2*e^2 + e^4 - 2*d^3*f - 4*d*e^2*f + 3*d^2*f^2 + e^2*f^2 - \
+       2*d*f^3 + f^4, -d^3 + d^2*f + e^2*f - d*f^2 + d^2*e*x + e^3*x - \
+       2*d*e*f*x, d*f + d*e*x + d^2*x^2}"
+    );
+    // Any symbol can serve as the variable
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^2 + y, x + y, y]").unwrap(),
+      "{x - x^2, x + y}"
+    );
+  }
+
+  #[test]
+  fn degenerate_inputs() {
+    // Constant second polynomial: only the resultant lc^m remains
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^2 + 1, 5, x]").unwrap(),
+      "{25}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomials[5, 5, x]").unwrap(),
+      "{1}"
+    );
+    // Zero second polynomial has no subresultant chain
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^2 + 1, 0, x]").unwrap(),
+      "{}"
+    );
+    assert_eq!(interpret("SubresultantPolynomials[0, 0, x]").unwrap(), "{}");
+    // Identical polynomials: all proper entries vanish
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^3 + 2*x, x^3 + 2*x, x]").unwrap(),
+      "{0, 0, 0, 2*x + x^3}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomials[x + 3, x + 1, x]").unwrap(),
+      "{-2, 1 + x}"
+    );
+  }
+
+  #[test]
+  fn modulus_option() {
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomials[(x - 1)^2*(x - 2)*(x - 3), (x - 1)*(x - 4)^2, x, Modulus -> 7]"
+      )
+      .unwrap(),
+      "{0, 6 + x, 3 + 4*x^2, 5 + 3*x + 5*x^2 + x^3}"
+    );
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomials[x^3 - 2*x + 1, 3*x^2 - 2, x, Modulus -> 5]"
+      )
+      .unwrap(),
+      "{0, 4 + 3*x, 3 + 3*x^2}"
+    );
+    // The scaled final entry reduces mod p ...
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^5 + 3, 2*x^2 + 1, x, Modulus -> 5]")
+        .unwrap(),
+      "{4, 3 + 4*x, 4 + 3*x^2}"
+    );
+    // ... but the m == n quotient keeps its unreduced divisor
+    assert_eq!(
+      interpret("SubresultantPolynomials[x^2 + 1, 2*x^2 - 1, x, Modulus -> 5]")
+        .unwrap(),
+      "{4, 2, (4 + 2*x^2)/2}"
+    );
+  }
+
+  // A first polynomial of lower degree emits `npolys` and stays unevaluated.
+  #[test]
+  fn lower_first_degree_emits_npolys() {
+    let result =
+      woxi::interpret_with_stdout("SubresultantPolynomials[2, x + 1, x]")
+        .unwrap();
+    assert_eq!(result.result, "SubresultantPolynomials[2, 1 + x, x]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "SubresultantPolynomials::npolys: 2 and 1 + x should be polynomials \
+         with exact coefficients and the degree of 2 in x should not be \
+         less than the degree of 1 + x in x."
+      )),
+      "expected npolys, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod count_roots {
   use super::*;
 
