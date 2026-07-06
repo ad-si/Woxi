@@ -28,6 +28,152 @@ pub fn table_multi_ast(
   table_ast(&inner_body, &iters[0])
 }
 
+/// A count/bound value: an exact integer, or a real/rational truncated toward
+/// zero (wolframscript's `Table[q, {5.5}]` yields 5 copies). Returns None for a
+/// non-numeric (symbolic) value.
+fn bound_to_count(e: &Expr) -> Option<i128> {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) => expr_to_i128(e),
+    _ => crate::functions::math_ast::try_eval_to_f64(e).map(|f| f as i128),
+  }
+}
+
+/// The unevaluated single-iterator `Table[body, iter_spec]`.
+fn table_unevaluated(body: &Expr, iter_spec: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Table".to_string(),
+    args: vec![body.clone(), iter_spec.clone()].into(),
+  }
+}
+
+/// If any iterator in a `Table`/`Do`-style call has bounds that don't resolve
+/// to real numbers, return the message to emit before leaving the whole call
+/// unevaluated (matching wolframscript's `::iterb` / `::nliter`). `name` is the
+/// enclosing head (e.g. "Table", "Do"). `iters` are the iterator specs (the
+/// arguments after the body).
+pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
+  let iterb = |iter: &Expr| {
+    Some(format!(
+      "{}::iterb: Iterator {} does not have appropriate bounds.",
+      name,
+      crate::syntax::format_expr(iter, crate::syntax::ExprForm::Output)
+    ))
+  };
+  // Variables introduced by earlier iterators: a later bound that references
+  // one of them (e.g. the inner `{j, i}` of `Table[j, {i, 1, 3}, {j, i}]`)
+  // becomes numeric during iteration, so it must not be flagged.
+  let mut bound_vars: Vec<String> = Vec::new();
+  // A bound "resolves" if it is already numeric or references an earlier
+  // iterator variable.
+  let resolves = |e: &Expr, vars: &[String]| -> bool {
+    if expr_references_any(e, vars) {
+      return true;
+    }
+    let ev =
+      crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(&ev).is_some()
+  };
+  for (idx, iter) in iters.iter().enumerate() {
+    let position = idx + 2; // the body is argument 1
+    match iter {
+      // A bare count `Table[expr, n]`: valid when it resolves.
+      _ if !matches!(iter, Expr::List(_)) && resolves(iter, &bound_vars) => {}
+      Expr::List(items) => {
+        if items.is_empty() {
+          continue;
+        }
+        if items.len() == 1 {
+          if !resolves(&items[0], &bound_vars) {
+            return iterb(iter);
+          }
+          continue;
+        }
+        // `{i, ...}`: items[0] is the iterator variable (introduced for later
+        // iterators). The remaining entries must be a single list, or all
+        // resolve to numbers / earlier iterator variables.
+        if let Expr::Identifier(v) = &items[0] {
+          bound_vars.push(v.clone());
+        }
+        let second = crate::evaluator::evaluate_expr_to_expr(&items[1])
+          .unwrap_or_else(|_| items[1].clone());
+        if matches!(second, Expr::List(_)) {
+          continue;
+        }
+        // The variable of this iterator is in scope only for later ones, so
+        // check the bounds against the earlier variables (all but the last).
+        let earlier = &bound_vars[..bound_vars.len().saturating_sub(1)];
+        if items[1..].iter().all(|b| resolves(b, earlier)) {
+          continue;
+        }
+        // A `{i, min, max, step}` range with symbolic bounds is still valid
+        // when its count (max - min)/step is a definite non-negative integer
+        // (e.g. `{x, a, a + 5 n, n}` -> 6 values).
+        if items.len() >= 3
+          && symbolic_count_definite(&items[1], &items[2], items.get(3))
+        {
+          continue;
+        }
+        return iterb(iter);
+      }
+      // A non-list, non-numeric iterator such as the `i` in `Table[i, i]`.
+      _ => {
+        return Some(format!(
+          "{}::nliter: Nonlist iterator {} at position {} does not evaluate to a real numeric value.",
+          name,
+          crate::syntax::expr_to_string(iter),
+          position
+        ));
+      }
+    }
+  }
+  None
+}
+
+/// Whether the range `{min, max, step}` has a definite non-negative integer
+/// count `(max - min)/step`, so `Table` can iterate it symbolically even when
+/// the bounds themselves are symbolic (e.g. `{a, a + 5 n, n}` -> count 5).
+fn symbolic_count_definite(
+  min: &Expr,
+  max: &Expr,
+  step: Option<&Expr>,
+) -> bool {
+  let eval = |e: &Expr| {
+    crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone())
+  };
+  let (min_e, max_e) = (eval(min), eval(max));
+  let step_e = step.map(eval).unwrap_or(Expr::Integer(1));
+  let Ok(diff) =
+    crate::evaluator::evaluate_function_call_ast("Subtract", &[max_e, min_e])
+  else {
+    return false;
+  };
+  let Ok(ratio) =
+    crate::evaluator::evaluate_function_call_ast("Divide", &[diff, step_e])
+  else {
+    return false;
+  };
+  matches!(ratio, Expr::Integer(n) if n >= 0)
+}
+
+/// Whether `expr` references any identifier named in `vars`.
+fn expr_references_any(expr: &Expr, vars: &[String]) -> bool {
+  if vars.is_empty() {
+    return false;
+  }
+  match expr {
+    Expr::Identifier(n) => vars.iter().any(|v| v == n),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_references_any(left, vars) || expr_references_any(right, vars)
+    }
+    Expr::UnaryOp { operand, .. } => expr_references_any(operand, vars),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| expr_references_any(a, vars))
+    }
+    Expr::List(items) => items.iter().any(|a| expr_references_any(a, vars)),
+    _ => false,
+  }
+}
+
 pub fn table_ast(
   body: &Expr,
   iter_spec: &Expr,
@@ -60,11 +206,14 @@ pub fn table_ast(
       // Handle {n} form (single element = just repeat count, no variable)
       if items.len() == 1 {
         let evaluated = crate::evaluator::evaluate_expr_to_expr(&items[0])?;
-        let n = expr_to_i128(&evaluated).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "Table: iterator bound must be an integer".into(),
-          )
-        })?;
+        // A non-numeric count leaves the call unevaluated (the dispatch-level
+        // check normally intercepts this; kept here as a safety net). A real
+        // count is truncated toward zero, matching wolframscript's
+        // Table[q, {5.5}] -> 5 copies.
+        let n = match bound_to_count(&evaluated) {
+          Some(n) => n,
+          None => return Ok(table_unevaluated(body, iter_spec)),
+        };
         let mut results = Vec::new();
         for _ in 0..n {
           let val = crate::evaluator::evaluate_expr_to_expr(body)?;
@@ -111,12 +260,11 @@ pub fn table_ast(
             return Ok(Expr::List(results.into()));
           }
           _ => {
-            // {i, max} form - iterate from 1 to max
-            let max_val = expr_to_i128(&second).ok_or_else(|| {
-              InterpreterError::EvaluationError(
-                "Table: iterator bound must be an integer".into(),
-              )
-            })?;
+            // {i, max} form - iterate from 1 to max (real max truncated).
+            let max_val = match bound_to_count(&second) {
+              Some(n) => n,
+              None => return Ok(table_unevaluated(body, iter_spec)),
+            };
             let mut results = Vec::new();
             for i in 1..=max_val {
               let substituted = crate::syntax::substitute_variable(
@@ -231,27 +379,24 @@ pub fn table_ast(
           return Ok(Expr::List(results.into()));
         }
 
-        // Fallback: numeric iteration for symbolic numeric bounds/step (e.g. Pi/4).
-        crate::functions::math_ast::try_eval_to_f64(&min_expr).ok_or_else(
-          || {
-            InterpreterError::EvaluationError(
-              "Table: iterator bound must be numeric".into(),
-            )
-          },
-        )?;
-        let max_num = crate::functions::math_ast::try_eval_to_f64(&max_expr)
-          .ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Table: iterator bound must be numeric".into(),
-            )
-          })?;
+        // Fallback: numeric iteration for symbolic numeric bounds/step (e.g.
+        // Pi/4). Non-numeric bounds/step leave the call unevaluated (the
+        // dispatch-level check normally intercepts this first).
+        if crate::functions::math_ast::try_eval_to_f64(&min_expr).is_none() {
+          return Ok(table_unevaluated(body, iter_spec));
+        }
+        let max_num =
+          match crate::functions::math_ast::try_eval_to_f64(&max_expr) {
+            Some(v) => v,
+            None => return Ok(table_unevaluated(body, iter_spec)),
+          };
         let step_num =
-          crate::functions::math_ast::try_eval_to_f64_with_infinity(&step_expr)
-            .ok_or_else(|| {
-              InterpreterError::EvaluationError(
-                "Table: step must be numeric".into(),
-              )
-            })?;
+          match crate::functions::math_ast::try_eval_to_f64_with_infinity(
+            &step_expr,
+          ) {
+            Some(v) => v,
+            None => return Ok(table_unevaluated(body, iter_spec)),
+          };
 
         if step_num.abs() <= f64::EPSILON {
           return Err(InterpreterError::EvaluationError(

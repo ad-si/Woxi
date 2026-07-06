@@ -2139,12 +2139,22 @@ pub fn dispatch_list_operations(
     }
 
     // Additional AST-native list functions
-    "Table" | "ParallelTable" if args.len() == 2 => {
-      return Some(list_helpers_ast::table_ast(&args[0], &args[1]));
-    }
-    "Table" | "ParallelTable" if args.len() >= 3 => {
+    "Table" | "ParallelTable" if args.len() >= 2 => {
+      // An iterator with non-numeric bounds leaves the whole call unevaluated
+      // (matching wolframscript's ::iterb / ::nliter) rather than erroring.
+      if let Some(msg) =
+        list_helpers_ast::table_iterators_invalid(name, &args[1..])
+      {
+        crate::emit_message(&msg);
+        return Some(Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      if args.len() == 2 {
+        return Some(list_helpers_ast::table_ast(&args[0], &args[1]));
+      }
       // Multi-dimensional Table: Table[expr, iter1, iter2, ...]
-      // Nest from innermost to outermost
       return Some(list_helpers_ast::table_multi_ast(&args[0], &args[1..]));
     }
     "MapThread" if args.len() == 2 || args.len() == 3 => {
@@ -4581,10 +4591,21 @@ pub fn dispatch_list_operations(
     // ParallelDo has no real parallel kernels in Woxi, so it evaluates
     // sequentially exactly like Do (matching the rest of the Parallel*
     // family, which are implemented as their sequential counterparts).
-    "Do" | "ParallelDo" if args.len() == 2 => {
-      return Some(list_helpers_ast::do_ast(&args[0], &args[1]));
-    }
-    "Do" | "ParallelDo" if args.len() > 2 => {
+    "Do" | "ParallelDo" if args.len() >= 2 => {
+      // A non-numeric iterator bound leaves the whole call unevaluated
+      // (matching wolframscript's ::iterb / ::nliter) rather than erroring.
+      if let Some(msg) =
+        list_helpers_ast::table_iterators_invalid(name, &args[1..])
+      {
+        crate::emit_message(&msg);
+        return Some(Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      if args.len() == 2 {
+        return Some(list_helpers_ast::do_ast(&args[0], &args[1]));
+      }
       // Multi-iterator Do: Do[body, {i, ...}, {j, ...}, ...] is a single
       // construct in Wolfram. Break[] and Return[] exit the entire Do, not
       // just the innermost iterator, so we cannot lower it to nested Do

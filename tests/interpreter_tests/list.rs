@@ -201,6 +201,75 @@ mod table_do_raw_iterator {
   }
 }
 
+mod table_symbolic_bounds {
+  use super::*;
+
+  // A non-numeric iterator bound leaves Table unevaluated (::iterb) instead of
+  // raising an evaluation error.
+  #[test]
+  fn symbolic_bound_stays_unevaluated() {
+    assert_eq!(interpret("Table[i, {i, x}]").unwrap(), "Table[i, {i, x}]");
+    assert_eq!(
+      interpret("Table[i, {i, 1, x}]").unwrap(),
+      "Table[i, {i, 1, x}]"
+    );
+    assert_eq!(
+      interpret("Table[i^2, {i, a, b}]").unwrap(),
+      "Table[i^2, {i, a, b}]"
+    );
+    assert_eq!(
+      interpret("Table[i, {i, 1, 10, x}]").unwrap(),
+      "Table[i, {i, 1, 10, x}]"
+    );
+    // A bare (nonlist) iterator stays unevaluated too.
+    assert_eq!(interpret("Table[i, i]").unwrap(), "Table[i, i]");
+  }
+
+  // In a multi-iterator Table, an inner iterator with symbolic bounds leaves
+  // the whole call unevaluated.
+  #[test]
+  fn symbolic_inner_iterator_stays_unevaluated() {
+    assert_eq!(
+      interpret("Table[i, {i, 3}, {j, y}]").unwrap(),
+      "Table[i, {i, 3}, {j, y}]"
+    );
+    assert_eq!(
+      interpret("Do[Print[i], {i, x}]").unwrap(),
+      "Do[Print[i], {i, x}]"
+    );
+  }
+
+  // A dependent iterator whose bound is an earlier iterator variable still
+  // evaluates.
+  #[test]
+  fn dependent_iterator_evaluates() {
+    assert_eq!(
+      interpret("Table[j, {i, 1, 3}, {j, i}]").unwrap(),
+      "{{1}, {1, 2}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("Table[i j, {i, 2}, {j, i, 3}]").unwrap(),
+      "{{1, 2, 3}, {4, 6}}"
+    );
+  }
+
+  // A symbolic range with a definite non-negative integer count evaluates.
+  #[test]
+  fn definite_symbolic_count_evaluates() {
+    assert_eq!(
+      interpret("Table[x, {x, a, a + 5 n, n}]").unwrap(),
+      "{a, a + n, a + 2*n, a + 3*n, a + 4*n, a + 5*n}"
+    );
+  }
+
+  // A real count/bound is truncated toward zero, matching wolframscript.
+  #[test]
+  fn real_count_truncates() {
+    assert_eq!(interpret("Table[q, {5.5}]").unwrap(), "{q, q, q, q, q}");
+    assert_eq!(interpret("Table[i, {i, 5.5}]").unwrap(), "{1, 2, 3, 4, 5}");
+  }
+}
+
 mod table_with_step {
   use super::*;
 
