@@ -583,6 +583,18 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("True".to_string()));
   }
 
+  // Any other equality touching a MusicPitch stays unevaluated, matching
+  // Wolfram: only the all-pitch enharmonic rule above resolves, so e.g.
+  // `MusicPitch["C"] == 5` echoes back.
+  if args.iter().any(
+    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "MusicPitch"),
+  ) {
+    return Ok(symbolic_comparison_chain(
+      args,
+      crate::syntax::ComparisonOp::Equal,
+    ));
+  }
+
   // Check if all args are numeric
   let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
   if nums.iter().all(|n| n.is_some()) {
@@ -722,6 +734,18 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("False".to_string()));
       }
     }
+  }
+
+  // Wolfram has no Unequal rule for MusicPitch: `!=` involving distinct pitch
+  // objects stays unevaluated (only Equal compares enharmonically), while
+  // structurally identical operands already collapsed to False above.
+  if args.iter().any(
+    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "MusicPitch"),
+  ) {
+    return Ok(symbolic_comparison_chain(
+      args,
+      crate::syntax::ComparisonOp::NotEqual,
+    ));
   }
 
   // Check if all args are numeric

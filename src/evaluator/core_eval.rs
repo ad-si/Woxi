@@ -2449,10 +2449,11 @@ pub fn evaluate_expr_to_expr_inner(
           continue;
         }
 
-        // Enharmonic MusicPitch (in)equality (WL 15): two `MusicPitch` objects
-        // compare by their sounding MIDI pitch, so `MusicPitch["C#"]` equals
-        // `MusicPitch["Db"]`.
-        if matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual)
+        // Enharmonic MusicPitch equality (WL 15): two `MusicPitch` objects
+        // compare equal by their sounding MIDI pitch, so `MusicPitch["C#"]`
+        // equals `MusicPitch["Db"]`. Only `Equal` has this rule — Wolfram
+        // leaves `!=` on distinct pitch objects unevaluated.
+        if matches!(op, ComparisonOp::Equal)
           && matches!(left, Expr::FunctionCall { name, .. } if name == "MusicPitch")
           && matches!(right, Expr::FunctionCall { name, .. } if name == "MusicPitch")
           && let (Some(lm), Some(rm)) = (
@@ -2460,15 +2461,30 @@ pub fn evaluate_expr_to_expr_inner(
             crate::functions::music_ast::music_pitch_midi(right),
           )
         {
-          let ok = if matches!(op, ComparisonOp::Equal) {
-            lm == rm
-          } else {
-            lm != rm
-          };
-          if !ok {
+          if lm != rm {
             return Ok(Expr::Identifier("False".to_string()));
           }
           continue;
+        }
+
+        // Any other (in)equality touching a MusicPitch stays unevaluated
+        // (after the structurally-identical collapse below), matching
+        // Wolfram: `MusicPitch["C#"] != MusicPitch["Db"]` and
+        // `MusicPitch["C"] == 5` both echo back.
+        if matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual)
+          && (matches!(left, Expr::FunctionCall { name, .. } if name == "MusicPitch")
+            || matches!(right, Expr::FunctionCall { name, .. } if name == "MusicPitch"))
+        {
+          if expr_to_string(left) == expr_to_string(right) {
+            if matches!(op, ComparisonOp::NotEqual) {
+              return Ok(Expr::Identifier("False".to_string()));
+            }
+            continue;
+          }
+          return Ok(Expr::Comparison {
+            operands: values,
+            operators: operators.clone(),
+          });
         }
 
         let result = match op {

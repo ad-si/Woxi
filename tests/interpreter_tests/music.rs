@@ -520,10 +520,37 @@ fn music_pitch_enharmonic_equality() {
     interpret("MusicPitch[\"C4\"] == MusicPitch[\"D4\"]").unwrap(),
     "False"
   );
-  // Unequal is the negation.
+  // Only Equal compares enharmonically — Unequal on distinct pitch objects
+  // stays unevaluated (echoing the canonical forms), as in Wolfram.
   assert_eq!(
     interpret("MusicPitch[\"C#\"] != MusicPitch[\"Db\"]").unwrap(),
+    "MusicPitch[<|Accidental -> 1, Key -> C|>] != \
+     MusicPitch[<|Accidental -> -1, Key -> D|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"C4\"] != MusicPitch[\"D4\"]").unwrap(),
+    "MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>] != \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> D, Name -> D|>]"
+  );
+  // Structurally identical operands still collapse.
+  assert_eq!(
+    interpret("MusicPitch[\"C#\"] != MusicPitch[\"C#\"]").unwrap(),
     "False"
+  );
+  // The FunctionCall heads behave like the operators.
+  assert_eq!(
+    interpret("Unequal[MusicPitch[\"C#\"], MusicPitch[\"Db\"]]").unwrap(),
+    "MusicPitch[<|Accidental -> 1, Key -> C|>] != \
+     MusicPitch[<|Accidental -> -1, Key -> D|>]"
+  );
+  // Comparisons mixing a pitch with a non-pitch also stay unevaluated.
+  assert_eq!(
+    interpret("MusicPitch[\"C\"] == 5").unwrap(),
+    "MusicPitch[<|Accidental -> 0, Key -> C|>] == 5"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"C\"] != 5").unwrap(),
+    "MusicPitch[<|Accidental -> 0, Key -> C|>] != 5"
   );
 }
 
