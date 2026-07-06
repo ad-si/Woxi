@@ -58,6 +58,7 @@ normalised to `##` in this file.
 - [`NegativeSemidefiniteMatrixQ`](linear_algebra/NegativeSemidefiniteMatrixQ.md)
 - [`NormalMatrixQ`](linear_algebra/NormalMatrixQ.md)
 - [`NullSpace`](linear_algebra/NullSpace.md)
+- [`PfaffianDet`](linear_algebra/PfaffianDet.md)
 - [`PositiveDefiniteMatrixQ`](linear_algebra/PositiveDefiniteMatrixQ.md)
 - [`PositiveSemidefiniteMatrixQ`](linear_algebra/PositiveSemidefiniteMatrixQ.md)
 - [`PrincipalComponents`](linear_algebra/PrincipalComponents.md)

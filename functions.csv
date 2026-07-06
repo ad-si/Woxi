@@ -6219,7 +6219,7 @@ FrobeniusReduce,Computes the Frobenius rational canonical form of a square matri
 JordanReduce,Computes the Jordan canonical form of a square matrix,,pure,15.0,
 PartialFractionElements,Returns the structural elements of a partial fraction decomposition,,pure,15.0,
 PartialFractions,Computes a partial fraction decomposition of a rational expression,,pure,15.0,
-PfaffianDet,Computes the Pfaffian of an antisymmetric matrix,,pure,15.0,
+PfaffianDet,Computes the Pfaffian of an antisymmetric matrix,✅,pure,15.0,
 NonCommutativePolynomialReduction,Reduces a polynomial modulo others over a non-commutative algebra,,pure,15.0,
 CliffordAlgebra,Constructs a Clifford algebra object with signed and null generators,,pure,15.0,
 GrassmannAlgebra,Constructs an exterior Grassmann algebra object with anticommuting generators,,pure,15.0,

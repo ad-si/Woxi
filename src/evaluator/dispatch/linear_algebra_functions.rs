@@ -16,6 +16,11 @@ pub fn dispatch_linear_algebra_functions(
     "Permanent" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::permanent_ast(args));
     }
+    "PfaffianDet" if args.len() == 1 => {
+      return Some(crate::functions::linear_algebra_ast::pfaffian_det_ast(
+        args,
+      ));
+    }
     "Minors" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::linear_algebra_ast::minors_ast(args));
     }

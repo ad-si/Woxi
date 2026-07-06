@@ -316,6 +316,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DesignMatrix" => Some((3, 3)),
     "Det" => Some((1, 1)),
     "Permanent" => Some((1, 1)),
+    "PfaffianDet" => Some((1, 1)),
     "Diagonal" => Some((1, 2)),
     "DiagonalizableMatrixQ" => Some((1, 1)),
     "DiagonalMatrix" => Some((1, 2)),

@@ -8024,4 +8024,78 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod pfaffian_det_tests {
+    use super::*;
+
+    #[test]
+    fn basic_numeric() {
+      // 2x2: Pf[{{0, a}, {-a, 0}}] == a.
+      assert_eq!(interpret("PfaffianDet[{{0, 1}, {-1, 0}}]").unwrap(), "1");
+      assert_eq!(
+        interpret("PfaffianDet[{{0, 1/2}, {-1/2, 0}}]").unwrap(),
+        "1/2"
+      );
+      // 4x4: Pf == a12 a34 - a13 a24 + a14 a23 = 6 - 10 + 12 = 8.
+      assert_eq!(
+        interpret(
+          "PfaffianDet[{{0,1,2,3},{-1,0,4,5},{-2,-4,0,6},{-3,-5,-6,0}}]"
+        )
+        .unwrap(),
+        "8"
+      );
+      // Block-diagonal 6x6 with 2x2 blocks 1, 2, 3 → Pf = 1*2*3 = 6.
+      assert_eq!(
+        interpret(
+          "PfaffianDet[{{0,1,0,0,0,0},{-1,0,0,0,0,0},{0,0,0,2,0,0},\
+           {0,0,-2,0,0,0},{0,0,0,0,0,3},{0,0,0,0,-3,0}}]"
+        )
+        .unwrap(),
+        "6"
+      );
+    }
+
+    #[test]
+    fn symbolic() {
+      assert_eq!(interpret("PfaffianDet[{{0, a}, {-a, 0}}]").unwrap(), "a");
+    }
+
+    #[test]
+    fn pfaffian_squared_is_det() {
+      // Defining property: PfaffianDet[m]^2 == Det[m].
+      assert_eq!(
+        interpret(
+          "PfaffianDet[{{0,1,2,3},{-1,0,4,5},{-2,-4,0,6},{-3,-5,-6,0}}]^2 \
+           == Det[{{0,1,2,3},{-1,0,4,5},{-2,-4,0,6},{-3,-5,-6,0}}]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn odd_order_is_zero() {
+      // An odd-order antisymmetric matrix has Pfaffian 0.
+      assert_eq!(
+        interpret("PfaffianDet[{{0, 1, 2}, {-1, 0, 3}, {-2, -3, 0}}]").unwrap(),
+        "0"
+      );
+    }
+
+    #[test]
+    fn invalid_arguments_stay_unevaluated() {
+      // Not antisymmetric.
+      assert_eq!(
+        interpret("PfaffianDet[{{5, 7}, {2, 9}}]").unwrap(),
+        "PfaffianDet[{{5, 7}, {2, 9}}]"
+      );
+      // Not square.
+      assert_eq!(
+        interpret("PfaffianDet[{{0, 1, 2}, {-1, 0, 3}}]").unwrap(),
+        "PfaffianDet[{{0, 1, 2}, {-1, 0, 3}}]"
+      );
+      // Not a matrix.
+      assert_eq!(interpret("PfaffianDet[5]").unwrap(), "PfaffianDet[5]");
+    }
+  }
 }

@@ -787,6 +787,89 @@ fn permanent_ryser(matrix: &[Vec<Expr>]) -> Expr {
   total
 }
 
+/// PfaffianDet[m] — the Pfaffian of an antisymmetric matrix `m`. Defined so
+/// that `PfaffianDet[m]^2 == Det[m]`. Requires a nonempty square antisymmetric
+/// matrix; an odd-order matrix has Pfaffian `0`. Non-matrix / non-square /
+/// non-antisymmetric arguments emit the matching message and stay unevaluated,
+/// as in wolframscript.
+pub fn pfaffian_det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PfaffianDet expects exactly 1 argument".into(),
+    ));
+  }
+  let unevaluated = || Expr::FunctionCall {
+    name: "PfaffianDet".to_string(),
+    args: args.to_vec().into(),
+  };
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      // A concrete non-matrix argument (scalar or ragged list) → ::matrix.
+      if is_matsq_subject(&args[0]) {
+        crate::emit_message(&format!(
+          "PfaffianDet::matrix: Argument {} at position 1 is not a nonempty rectangular matrix.",
+          crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+        ));
+      }
+      return Ok(unevaluated());
+    }
+  };
+  if !is_nonempty_square(&matrix) {
+    return Ok(matsq_unevaluated("PfaffianDet", args));
+  }
+  // The Pfaffian is only defined for antisymmetric matrices (A^T == -A, which
+  // forces a zero diagonal). Bail with ::asymm otherwise.
+  let n = matrix.len();
+  let antisymmetric = (0..n).all(|i| {
+    (i..n).all(|j| is_zero_expr(&eval_add(&matrix[i][j], &matrix[j][i])))
+  });
+  if !antisymmetric {
+    crate::emit_message(&format!(
+      "PfaffianDet::asymm: Argument at position 1 is not antisymmetric ({}).",
+      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated());
+  }
+  Ok(crate::functions::expand_and_combine(&pfaffian(&matrix)))
+}
+
+/// Recursive Pfaffian via minor expansion along the first row:
+///   Pf(A) = sum_{j>0} (-1)^(j-1) A[0][j] Pf(A with rows/cols 0 and j removed).
+/// Pf of the empty (0x0) matrix is 1; an odd-order matrix has Pfaffian 0.
+fn pfaffian(m: &[Vec<Expr>]) -> Expr {
+  let n = m.len();
+  if n == 0 {
+    return Expr::Integer(1);
+  }
+  if n % 2 == 1 {
+    return Expr::Integer(0);
+  }
+  let mut result = Expr::Integer(0);
+  for j in 1..n {
+    if is_zero_expr(&m[0][j]) {
+      continue;
+    }
+    // Minor: keep rows and columns in {1, …, n-1} \ {j}.
+    let minor: Vec<Vec<Expr>> = (1..n)
+      .filter(|&i| i != j)
+      .map(|i| {
+        (1..n)
+          .filter(|&k| k != j)
+          .map(|k| m[i][k].clone())
+          .collect()
+      })
+      .collect();
+    let term = eval_mul(&m[0][j], &pfaffian(&minor));
+    if (j - 1) % 2 == 0 {
+      result = eval_add(&result, &term);
+    } else {
+      result = eval_sub(&result, &term);
+    }
+  }
+  result
+}
+
 /// Inverse[matrix] - matrix inverse (integer matrices → rational entries)
 pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

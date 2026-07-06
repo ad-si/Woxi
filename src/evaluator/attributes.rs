@@ -237,6 +237,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // its argument via the explicit name-match in core_eval.rs rather than a
     // HoldAll attribute.
     "Control" => vec!["Protected"],
+    // PfaffianDet: Protected + ReadProtected (matches wolframscript).
+    "PfaffianDet" => vec!["Protected", "ReadProtected"],
     // ParallelDo: HoldAll + Protected (matches wolframscript). It holds its
     // body via the HoldAll attribute like the sequential Do.
     "ParallelDo" => vec!["HoldAll", "Protected"],
