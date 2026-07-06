@@ -1672,9 +1672,16 @@ pub fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
     }
 
     // Before accepting this full convergent, check semi-convergents
-    // Semi-convergents: (p0 + j * p1) / (q0 + j * q1) for j = 1, ..., ai - 1
+    // Semi-convergents: (p0 + j * p1) / (q0 + j * q1) for j = 1, ..., ai - 1.
+    // The approximation error is monotone in j, so the smallest denominator
+    // within tolerance is found at the smallest qualifying j. A partial
+    // quotient `ai` can be astronomically large (e.g. Rationalize[0.333…3]
+    // has a ~3.3*10^9 quotient), so cap the scan — beyond the cap the
+    // denominator is far larger than the full convergent's anyway, and the
+    // full convergent below is the better answer.
     if ai > 1 {
-      for j in 1..ai {
+      let j_cap = ai.min(1_000_000);
+      for j in 1..j_cap {
         let sp = p0 + j * p1;
         let sq = q0 + j * q1;
         if sq > 0 {

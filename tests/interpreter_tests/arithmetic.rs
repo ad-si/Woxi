@@ -4778,6 +4778,23 @@ mod rationalize {
   fn not_listable_attribute() {
     assert_eq!(interpret("Attributes[Rationalize]").unwrap(), "{Protected}");
   }
+
+  // Regression: an input very close to (but not exactly) a simple fraction
+  // yields a continued fraction with an astronomically large partial quotient
+  // (~10^9). The semi-convergent scan used to loop over every value up to that
+  // quotient, hanging for minutes. These must terminate immediately; the value
+  // is left as the machine real, matching wolframscript.
+  #[test]
+  fn near_simple_fraction_does_not_hang() {
+    assert_eq!(
+      interpret("Rationalize[0.142857142857]").unwrap(),
+      "0.142857142857"
+    );
+    assert_eq!(
+      interpret("Rationalize[0.166666666666]").unwrap(),
+      "0.166666666666"
+    );
+  }
 }
 
 mod biginteger_division {
