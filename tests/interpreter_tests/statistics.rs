@@ -4125,6 +4125,67 @@ mod group_generators {
   }
 }
 
+mod mathieu_groups {
+  use super::*;
+
+  #[test]
+  fn formal_heads_echo() {
+    for g in ["M11", "M12", "M22", "M23", "M24"] {
+      let input = format!("MathieuGroup{g}[]");
+      assert_eq!(interpret(&input).unwrap(), input);
+    }
+  }
+
+  #[test]
+  fn group_orders() {
+    for (g, order) in [
+      ("M11", "7920"),
+      ("M12", "95040"),
+      ("M22", "443520"),
+      ("M23", "10200960"),
+      ("M24", "244823040"),
+    ] {
+      assert_eq!(
+        interpret(&format!("GroupOrder[MathieuGroup{g}[]]")).unwrap(),
+        order
+      );
+    }
+  }
+
+  #[test]
+  fn group_generators() {
+    assert_eq!(
+      interpret("GroupGenerators[MathieuGroupM11[]]").unwrap(),
+      "{Cycles[{{2, 10}, {4, 11}, {5, 7}, {8, 9}}], \
+       Cycles[{{1, 4, 3, 8}, {2, 5, 6, 9}}]}"
+    );
+    assert_eq!(
+      interpret("GroupGenerators[MathieuGroupM12[]]").unwrap(),
+      "{Cycles[{{1, 4}, {3, 10}, {5, 11}, {6, 12}}], \
+       Cycles[{{1, 8, 9}, {2, 3, 4}, {5, 12, 11}, {6, 10, 7}}]}"
+    );
+    assert_eq!(
+      interpret("GroupGenerators[MathieuGroupM22[]]").unwrap(),
+      "{Cycles[{{1, 13}, {2, 8}, {3, 16}, {4, 12}, {6, 22}, {7, 17}, \
+       {9, 10}, {11, 14}}], Cycles[{{1, 22, 3, 21}, {2, 18, 4, 13}, \
+       {5, 12}, {6, 11, 7, 15}, {8, 14, 20, 10}, {17, 19}}]}"
+    );
+    assert_eq!(
+      interpret("GroupGenerators[MathieuGroupM23[]]").unwrap(),
+      "{Cycles[{{1, 2}, {3, 4}, {7, 8}, {9, 10}, {13, 14}, {15, 16}, \
+       {19, 20}, {21, 22}}], Cycles[{{1, 16, 11, 3}, {2, 9, 21, 12}, \
+       {4, 5, 8, 23}, {6, 22, 14, 18}, {13, 20}, {15, 17}}]}"
+    );
+    assert_eq!(
+      interpret("GroupGenerators[MathieuGroupM24[]]").unwrap(),
+      "{Cycles[{{1, 4}, {2, 7}, {3, 17}, {5, 13}, {6, 9}, {8, 15}, \
+       {10, 19}, {11, 18}, {12, 21}, {14, 16}, {20, 24}, {22, 23}}], \
+       Cycles[{{1, 4, 6}, {2, 21, 14}, {3, 9, 15}, {5, 18, 10}, \
+       {13, 17, 16}, {19, 24, 23}}]}"
+    );
+  }
+}
+
 mod group_order {
   use super::*;
 

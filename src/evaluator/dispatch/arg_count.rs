@@ -579,6 +579,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GroupStabilizer" => Some((2, 2)),
     "GroupGenerators" => Some((1, 1)),
     "GroupOrder" => Some((1, 1)),
+    "MathieuGroupM11" | "MathieuGroupM12" | "MathieuGroupM22"
+    | "MathieuGroupM23" | "MathieuGroupM24" => Some((0, 0)),
     "HalfLine" => Some((1, 2)),
     "Groupings" => Some((2, 2)),
     "Gudermannian" => Some((1, 1)),

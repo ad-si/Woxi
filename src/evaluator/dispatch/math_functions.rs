@@ -813,6 +813,17 @@ pub fn dispatch_math_functions(
     "Latitude" if args.len() == 1 => {
       return Some(crate::functions::math_ast::latitude_ast(args));
     }
+    // Named sporadic groups are formal 0-argument heads that echo; the
+    // Group* functions read their canonical data.
+    "MathieuGroupM11" | "MathieuGroupM12" | "MathieuGroupM22"
+    | "MathieuGroupM23" | "MathieuGroupM24"
+      if args.is_empty() =>
+    {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: vec![].into(),
+      }));
+    }
     "GroupGenerators" if args.len() == 1 => {
       return Some(crate::functions::math_ast::group_generators_ast(args));
     }

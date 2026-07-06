@@ -4823,6 +4823,128 @@ pub fn latitude_longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── GroupGenerators ──────────────────────────────────────────────────
 
+/// The order of a named Mathieu group (0-argument formal group heads).
+fn mathieu_order(name: &str) -> Option<i128> {
+  match name {
+    "MathieuGroupM11" => Some(7920),
+    "MathieuGroupM12" => Some(95_040),
+    "MathieuGroupM22" => Some(443_520),
+    "MathieuGroupM23" => Some(10_200_960),
+    "MathieuGroupM24" => Some(244_823_040),
+    _ => None,
+  }
+}
+
+/// The canonical generators of a named Mathieu group, exactly as
+/// wolframscript returns them from GroupGenerators.
+fn mathieu_generators(name: &str) -> Option<Vec<Vec<Vec<i128>>>> {
+  match name {
+    "MathieuGroupM11" => Some(vec![
+      vec![vec![2, 10], vec![4, 11], vec![5, 7], vec![8, 9]],
+      vec![vec![1, 4, 3, 8], vec![2, 5, 6, 9]],
+    ]),
+    "MathieuGroupM12" => Some(vec![
+      vec![vec![1, 4], vec![3, 10], vec![5, 11], vec![6, 12]],
+      vec![
+        vec![1, 8, 9],
+        vec![2, 3, 4],
+        vec![5, 12, 11],
+        vec![6, 10, 7],
+      ],
+    ]),
+    "MathieuGroupM22" => Some(vec![
+      vec![
+        vec![1, 13],
+        vec![2, 8],
+        vec![3, 16],
+        vec![4, 12],
+        vec![6, 22],
+        vec![7, 17],
+        vec![9, 10],
+        vec![11, 14],
+      ],
+      vec![
+        vec![1, 22, 3, 21],
+        vec![2, 18, 4, 13],
+        vec![5, 12],
+        vec![6, 11, 7, 15],
+        vec![8, 14, 20, 10],
+        vec![17, 19],
+      ],
+    ]),
+    "MathieuGroupM23" => Some(vec![
+      vec![
+        vec![1, 2],
+        vec![3, 4],
+        vec![7, 8],
+        vec![9, 10],
+        vec![13, 14],
+        vec![15, 16],
+        vec![19, 20],
+        vec![21, 22],
+      ],
+      vec![
+        vec![1, 16, 11, 3],
+        vec![2, 9, 21, 12],
+        vec![4, 5, 8, 23],
+        vec![6, 22, 14, 18],
+        vec![13, 20],
+        vec![15, 17],
+      ],
+    ]),
+    "MathieuGroupM24" => Some(vec![
+      vec![
+        vec![1, 4],
+        vec![2, 7],
+        vec![3, 17],
+        vec![5, 13],
+        vec![6, 9],
+        vec![8, 15],
+        vec![10, 19],
+        vec![11, 18],
+        vec![12, 21],
+        vec![14, 16],
+        vec![20, 24],
+        vec![22, 23],
+      ],
+      vec![
+        vec![1, 4, 6],
+        vec![2, 21, 14],
+        vec![3, 9, 15],
+        vec![5, 18, 10],
+        vec![13, 17, 16],
+        vec![19, 24, 23],
+      ],
+    ]),
+    _ => None,
+  }
+}
+
+fn mathieu_generators_expr(name: &str) -> Option<Expr> {
+  let gens = mathieu_generators(name)?;
+  Some(Expr::List(
+    gens
+      .into_iter()
+      .map(|cycles| Expr::FunctionCall {
+        name: "Cycles".to_string(),
+        args: vec![Expr::List(
+          cycles
+            .into_iter()
+            .map(|c| {
+              Expr::List(
+                c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        )]
+        .into(),
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
 /// GroupGenerators[group] - return a list of generators for the given group
 pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -4838,6 +4960,13 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(factors) = abelian_factors(&gargs[0])
   {
     return Ok(abelian_group_generators(&factors));
+  }
+
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && gargs.is_empty()
+    && let Some(gens) = mathieu_generators_expr(name)
+  {
+    return Ok(gens);
   }
 
   // GroupGenerators[PermutationGroup[{gens}]] → the same generator list.
@@ -4921,6 +5050,12 @@ pub fn group_order_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if args.len() != 1 {
     return Ok(unevaluated());
+  }
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && gargs.is_empty()
+    && let Some(order) = mathieu_order(name)
+  {
+    return Ok(Expr::Integer(order));
   }
   if let Expr::FunctionCall { name, args: gargs } = &args[0]
     && gargs.len() == 1

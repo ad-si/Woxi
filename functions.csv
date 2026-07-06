@@ -1627,7 +1627,7 @@ InversePermutation,Inverse of a permutation,✅,computation,8.0,1650
 WhittakerM,Whittaker M function E^(-z/2) z^(m+1/2) Hypergeometric1F1[m-k+1/2 2m+1 z],✅,pure,6.0,1651
 InterpretationBox,Low-level box that displays one expression but interprets as another,✅,pure,3.0,1652
 IncludePods,Include pods in computation,,unevaluated,8.0,1653
-MathieuGroupM11,Mathieu group M11,,unevaluated,8.0,1656
+MathieuGroupM11,Mathieu group M11 (order 7920) as a formal permutation group,✅,pure,8.0,1656
 RulePlot,Placeholder visualization of a substitution or cellular-automaton rule,✅,pure,11.0,1656
 Overlaps,Overlap specification,,unevaluated,5.1,1658
 Trig,Trigonometric functions option,,unevaluated,2.0,1658
@@ -4255,7 +4255,7 @@ ImageContents,,🚫,,12.0,4387
 JuliaSetBoettcher,,,,10.0,4387
 KaiserBesselWindow,Kaiser-Bessel window as wolframscript rational 4-term cosine sum {402 498 99 1}/1000,✅,pure,9.0,4387
 LanczosWindow,Compute LanczosWindow value,✅,pure,9.0,4387
-MathieuGroupM24,,,,8.0,4387
+MathieuGroupM24,Mathieu group M24 (order 244823040) as a formal permutation group,✅,pure,8.0,4387
 PolygonAngle,Interior angle(s) of a polygon at its vertices,✅,pure,12.0,4387
 PredictorFunction,,🚫,,10.0,4387
 ProcessParameterQ,,,,9.0,4387
@@ -4374,7 +4374,7 @@ IndependentEdgeSetQ,,,,8.0,4527
 InverseHankelTransform,,,,11.1,4527
 KEdgeConnectedGraphQ,,,,10.0,4527
 LinkRankCentrality,,,,10.0,4527
-MathieuGroupM12,,,,8.0,4527
+MathieuGroupM12,Mathieu group M12 (order 95040) as a formal permutation group,✅,pure,8.0,4527
 MeshCellQuality,,🚫,,10.0,4527
 MovieData,,🚫,,10.0,4527
 NetEvaluationMode,,🚫,,11.1,4527
@@ -4744,7 +4744,7 @@ IslandData,,🚫,,10.0,4947
 JankoGroupJ2,,,,8.0,4947
 MannedSpaceMissionData,,🚫,,10.0,4947
 MassTransferValue,,,,12.2,4947
-MathieuGroupM23,,,,8.0,4947
+MathieuGroupM23,Mathieu group M23 (order 10200960) as a formal permutation group,✅,pure,8.0,4947
 MeanDegreeConnectivity,Mean neighbor degree of vertices indexed by degree,✅,pure,9.0,4947
 MoleculeProperty,,🚫,,12.0,4947
 MoleculeQ,Tests whether an expression is a valid molecule,✅,pure,12.0,4947
@@ -4860,7 +4860,7 @@ JankoGroupJ1,,,,8.0,5079
 LeapVariant,,,,12.2,5079
 MassImpermeableBoundaryValue,,,,12.2,5079
 MassOutflowValue,,,,12.2,5079
-MathieuGroupM22,,,,8.0,5079
+MathieuGroupM22,Mathieu group M22 (order 443520) as a formal permutation group,✅,pure,8.0,5079
 MaxFeatureDisplacement,,🚫,,10.1,5079
 MaxWordGap,,,,11.0,5079
 McLaughlinGroupMcL,,,,8.0,5079
