@@ -1336,6 +1336,7 @@ mod interpreter_tests {
   mod arithmetic;
   mod assessment;
   mod association;
+  mod astronomy;
   mod attributes;
   mod audio;
   mod batch_wrappers;
