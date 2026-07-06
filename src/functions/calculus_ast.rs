@@ -1023,6 +1023,15 @@ fn try_definite_integral(
   lo: &Expr,
   hi: &Expr,
 ) -> Option<Expr> {
+  // Definite integral of a Piecewise: split [lo, hi] at the piece boundaries
+  // and integrate each piece over the sub-interval where its condition holds.
+  // The antiderivative path uses a discontinuous default-0 antiderivative, so
+  // a bounded-support condition like `0 < x < 1` otherwise integrates to 0.
+  if let Some(result) = try_piecewise_definite_integral(integrand, var, lo, hi)
+  {
+    return Some(result);
+  }
+
   // DiracDelta sifting property:
   //   ∫_lo^hi g(x) DiracDelta[c x + d] dx = g(x0)/|c|  when lo < x0 < hi,
   // 0 when x0 is strictly outside [lo, hi], g(x0)/|c| * HeavisideTheta[0] when
@@ -10920,6 +10929,282 @@ fn conditions_are_complementary(a: &Expr, b: &Expr) -> bool {
       | (ComparisonOp::Less, ComparisonOp::GreaterEqual)
       | (ComparisonOp::GreaterEqual, ComparisonOp::Less)
   )
+}
+
+/// Definite integral of a `Piecewise` with a zero default: integrate each
+/// piece's value over the sub-interval of `[lo, hi]` where its condition
+/// holds, and sum. Returns `None` (leaving the generic path to try) when the
+/// integrand is not such a Piecewise, when any condition is not a simple
+/// interval in `var`, when a bound is not numerically comparable, or when a
+/// piece's sub-integral cannot be evaluated.
+fn try_piecewise_definite_integral(
+  integrand: &Expr,
+  var: &str,
+  lo: &Expr,
+  hi: &Expr,
+) -> Option<Expr> {
+  let (pieces, default) = match integrand {
+    Expr::FunctionCall { name, args }
+      if name == "Piecewise" && !args.is_empty() =>
+    {
+      let pieces = match &args[0] {
+        Expr::List(p) => p,
+        _ => return None,
+      };
+      (pieces, args.get(1).cloned().unwrap_or(Expr::Integer(0)))
+    }
+    _ => return None,
+  };
+  // Only the zero-default case is handled; a non-zero default would need the
+  // complement of the pieces (and diverges over an unbounded axis).
+  let default_is_zero = matches!(&default, Expr::Integer(0))
+    || matches!(&default, Expr::Real(f) if *f == 0.0);
+  if !default_is_zero {
+    return None;
+  }
+
+  let bound_f64 = |e: &Expr| -> Option<f64> {
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
+  };
+  let mut terms: Vec<Expr> = Vec::new();
+  for piece in pieces.iter() {
+    let (val, cond) = match piece {
+      Expr::List(p) if p.len() == 2 => (&p[0], &p[1]),
+      _ => return None,
+    };
+    let (cond_lo, cond_hi) = piecewise_condition_bounds(cond, var)?;
+    // Clip the condition's interval to the integration bounds.
+    let eff_lo =
+      tighter_definite_bound(lo, cond_lo.as_ref(), true, &bound_f64)?;
+    let eff_hi =
+      tighter_definite_bound(hi, cond_hi.as_ref(), false, &bound_f64)?;
+    let (elf, ehf) = (bound_f64(&eff_lo)?, bound_f64(&eff_hi)?);
+    if elf >= ehf {
+      continue; // empty sub-interval contributes nothing
+    }
+    let sub = integrate_ast(&[
+      val.clone(),
+      Expr::List(
+        vec![Expr::Identifier(var.to_string()), eff_lo, eff_hi].into(),
+      ),
+    ])
+    .ok()?;
+    // If the piece could not be integrated, bail to the generic path.
+    if expr_mentions_head(&sub, "Integrate") {
+      return None;
+    }
+    terms.push(sub);
+  }
+  if terms.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  Some(crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum))
+}
+
+/// Resolve a Piecewise condition into an interval `(lower, upper)` for `var`,
+/// where `None` on a side means unbounded. Understands single comparisons,
+/// uniform chained comparisons (`a < x < b`), the `Inequality[…]` form,
+/// `Abs[x] < c`, and `And` intersections.
+fn piecewise_condition_bounds(
+  cond: &Expr,
+  var: &str,
+) -> Option<(Option<Expr>, Option<Expr>)> {
+  use crate::syntax::ComparisonOp;
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+  let is_abs_var = |e: &Expr| {
+    matches!(e,
+    Expr::FunctionCall { name, args }
+      if name == "Abs" && args.len() == 1 && is_var(&args[0]))
+  };
+  let less =
+    |o: ComparisonOp| matches!(o, ComparisonOp::Less | ComparisonOp::LessEqual);
+  let greater = |o: ComparisonOp| {
+    matches!(o, ComparisonOp::Greater | ComparisonOp::GreaterEqual)
+  };
+  match cond {
+    Expr::Identifier(t) if t == "True" => Some((None, None)),
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1 && operands.len() == 2 => {
+      let op = operators[0];
+      // Abs[x] < c / <= c -> (-c, c).
+      if is_abs_var(&operands[0]) && less(op) {
+        let c = operands[1].clone();
+        return Some((Some(negate_bound(&c)), Some(c)));
+      }
+      if is_abs_var(&operands[1]) && greater(op) {
+        let c = operands[0].clone();
+        return Some((Some(negate_bound(&c)), Some(c)));
+      }
+      // var OP c, or c OP var (flip the operator).
+      let (op, other) = if is_var(&operands[0]) {
+        (op, operands[1].clone())
+      } else if is_var(&operands[1]) {
+        (flip_comparison_op(op), operands[0].clone())
+      } else {
+        return None;
+      };
+      if greater(op) {
+        Some((Some(other), None))
+      } else if less(op) {
+        Some((None, Some(other)))
+      } else {
+        None
+      }
+    }
+    // a < x < b (uniform chained comparison).
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 2
+      && operands.len() == 3
+      && is_var(&operands[1]) =>
+    {
+      let (o1, o2) = (operators[0], operators[1]);
+      if less(o1) && less(o2) {
+        Some((Some(operands[0].clone()), Some(operands[2].clone())))
+      } else if greater(o1) && greater(o2) {
+        Some((Some(operands[2].clone()), Some(operands[0].clone())))
+      } else {
+        None
+      }
+    }
+    // Inequality[a, op1, x, op2, b] (mixed operators).
+    Expr::FunctionCall { name, args }
+      if name == "Inequality" && args.len() == 5 && is_var(&args[2]) =>
+    {
+      let o1 = comparison_op_from_symbol(&args[1])?;
+      let o2 = comparison_op_from_symbol(&args[3])?;
+      if less(o1) && less(o2) {
+        Some((Some(args[0].clone()), Some(args[4].clone())))
+      } else {
+        None
+      }
+    }
+    // And[…] / a && b: intersect the bounds.
+    Expr::FunctionCall { name, args } if name == "And" => {
+      let mut lo: Option<Expr> = None;
+      let mut hi: Option<Expr> = None;
+      for c in args.iter() {
+        let (l, h) = piecewise_condition_bounds(c, var)?;
+        lo = intersect_bound(lo, l, true)?;
+        hi = intersect_bound(hi, h, false)?;
+      }
+      Some((lo, hi))
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::And,
+      left,
+      right,
+    } => {
+      let (l1, h1) = piecewise_condition_bounds(left, var)?;
+      let (l2, h2) = piecewise_condition_bounds(right, var)?;
+      Some((
+        intersect_bound(l1, l2, true)?,
+        intersect_bound(h1, h2, false)?,
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// Negate a numeric bound expression (`c` -> `-c`), keeping integers exact.
+fn negate_bound(c: &Expr) -> Expr {
+  match c {
+    Expr::Integer(n) => Expr::Integer(-n),
+    _ => Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(c.clone()),
+    },
+  }
+}
+
+fn flip_comparison_op(
+  op: crate::syntax::ComparisonOp,
+) -> crate::syntax::ComparisonOp {
+  use crate::syntax::ComparisonOp::*;
+  match op {
+    Less => Greater,
+    LessEqual => GreaterEqual,
+    Greater => Less,
+    GreaterEqual => LessEqual,
+    other => other,
+  }
+}
+
+fn comparison_op_from_symbol(e: &Expr) -> Option<crate::syntax::ComparisonOp> {
+  use crate::syntax::ComparisonOp::*;
+  match e {
+    Expr::Identifier(s) => match s.as_str() {
+      "Less" => Some(Less),
+      "LessEqual" => Some(LessEqual),
+      "Greater" => Some(Greater),
+      "GreaterEqual" => Some(GreaterEqual),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Combine two interval bounds on the same side, keeping the tighter one
+/// (larger for the lower bound, smaller for the upper). `None` means unbounded.
+fn intersect_bound(
+  a: Option<Expr>,
+  b: Option<Expr>,
+  is_lower: bool,
+) -> Option<Option<Expr>> {
+  match (a, b) {
+    (None, x) | (x, None) => Some(x),
+    (Some(a), Some(b)) => {
+      let af = crate::functions::math_ast::try_eval_to_f64_with_infinity(&a)?;
+      let bf = crate::functions::math_ast::try_eval_to_f64_with_infinity(&b)?;
+      let pick_a = if is_lower { af >= bf } else { af <= bf };
+      Some(Some(if pick_a { a } else { b }))
+    }
+  }
+}
+
+/// Clip an integration bound against a condition bound, returning the tighter.
+/// `is_lower` picks the larger of the two for a lower bound (smaller for upper).
+fn tighter_definite_bound(
+  int_bound: &Expr,
+  cond_bound: Option<&Expr>,
+  is_lower: bool,
+  bound_f64: &dyn Fn(&Expr) -> Option<f64>,
+) -> Option<Expr> {
+  match cond_bound {
+    None => Some(int_bound.clone()),
+    Some(c) => {
+      let ib = bound_f64(int_bound)?;
+      let cb = bound_f64(c)?;
+      let pick_int = if is_lower { ib >= cb } else { ib <= cb };
+      Some(if pick_int {
+        int_bound.clone()
+      } else {
+        c.clone()
+      })
+    }
+  }
+}
+
+/// True if `expr` contains a `FunctionCall` with the given head anywhere.
+fn expr_mentions_head(expr: &Expr, head: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == head || args.iter().any(|a| expr_mentions_head(a, head))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_mentions_head(left, head) || expr_mentions_head(right, head)
+    }
+    Expr::UnaryOp { operand, .. } => expr_mentions_head(operand, head),
+    Expr::List(items) => items.iter().any(|a| expr_mentions_head(a, head)),
+    _ => false,
+  }
 }
 
 /// Check if an expression contains a Piecewise function call anywhere.

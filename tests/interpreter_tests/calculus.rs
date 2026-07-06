@@ -9935,6 +9935,78 @@ mod differentiate_integrate_leibniz {
   }
 }
 
+mod integrate_piecewise_definite {
+  use super::*;
+
+  // A bounded-support condition (0 < x < 1) integrates only over its support,
+  // not to 0 (which the discontinuous default-0 antiderivative produced).
+  #[test]
+  fn bounded_support() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, 0 < x < 1}}], {x, -2, 2}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{x, 0 < x < 1}}], {x, 0, 1}]").unwrap(),
+      "1/2"
+    );
+    // Integration bounds narrower than the support.
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, 0 < x < 10}}], {x, 2, 5}]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn multiple_bounded_pieces() {
+    assert_eq!(
+      interpret(
+        "Integrate[Piecewise[{{1, 0 < x < 1}, {2, 1 < x < 2}}], {x, 0, 2}]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn abs_condition() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, Abs[x] < 1}}], {x, -2, 2}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn nonconstant_value_over_support() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{x^2, 0 < x < 2}}], {x, -5, 5}]")
+        .unwrap(),
+      "8/3"
+    );
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{Sin[x], 0 < x < Pi}}], {x, -1, 4}]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  // One-sided and complementary conditions keep working.
+  #[test]
+  fn one_sided_and_complementary() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, x > 0}}], {x, -1, 3}]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "Integrate[Piecewise[{{x^2, x < 0}, {x, x >= 0}}], {x, -1, 1}]"
+      )
+      .unwrap(),
+      "5/6"
+    );
+  }
+}
+
 mod cases {
   use super::super::case_helpers::assert_case;
 
