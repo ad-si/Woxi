@@ -40,6 +40,15 @@ pub fn dispatch_polynomial_functions(
         crate::functions::polynomial_ast::subresultant_polynomials_ast(args),
       );
     }
+    "SubresultantPolynomialRemainders"
+      if args.len() == 3 || args.len() == 4 =>
+    {
+      return Some(
+        crate::functions::polynomial_ast::subresultant_polynomial_remainders_ast(
+          args,
+        ),
+      );
+    }
     "SymmetricReduction" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::symmetric_reduction_ast(
         args,

@@ -10041,6 +10041,174 @@ mod subresultant_polynomials {
   }
 }
 
+mod subresultant_polynomial_remainders {
+  use super::*;
+
+  #[test]
+  fn integer_chains() {
+    // Documentation example: both inputs expanded, then the remainders
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomialRemainders[(x - 1)^2*(x - 2)*(x - 3), (x - 1)*(x - 4)^2, x]"
+      )
+      .unwrap(),
+      "{6 - 17*x + 17*x^2 - 7*x^3 + x^4, -16 + 24*x - 9*x^2 + x^3, \
+       38 - 49*x + 11*x^2, -36 + 36*x}"
+    );
+    // Knuth's classic subresultant PRS example
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomialRemainders[x^8 + x^6 - 3*x^4 - 3*x^3 + 8*x^2 + 2*x - 5, 3*x^6 + 5*x^4 - 4*x^2 - 9*x + 21, x]"
+      )
+      .unwrap(),
+      "{-5 + 2*x + 8*x^2 - 3*x^3 - 3*x^4 + x^6 + x^8, \
+       21 - 9*x - 4*x^2 + 5*x^4 + 3*x^6, 9 - 3*x^2 + 15*x^4, \
+       -245 + 125*x + 65*x^2, -12300 + 9326*x, 260708}"
+    );
+    // Degree gaps in the chain (defective case)
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[x^7 - x, x^3 + 2, x]")
+        .unwrap(),
+      "{-x + x^7, 2 + x^3, -3*x, 54}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[x^6 - 1, x^2, x]").unwrap(),
+      "{-1 + x^6, x^2, 1}"
+    );
+    // Equal degrees: the first pseudo-remainder gets sign (-1)^(0+1)
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[x^2 + 1, x^2 - 1, x]")
+        .unwrap(),
+      "{1 + x^2, -1 + x^2, -2}"
+    );
+  }
+
+  #[test]
+  fn symbolic_coefficients() {
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomialRemainders[a*x^2 + b*x + c, d*x + e, x]"
+      )
+      .unwrap(),
+      "{c + b*x + a*x^2, e + d*x, c*d^2 - b*d*e + a*e^2}"
+    );
+    // delta = 2 flips the sign of the first pseudo-remainder
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[x^4 + a, x^2 + b, x]")
+        .unwrap(),
+      "{a + x^4, b + x^2, -a - b^2}"
+    );
+    // Documentation example: a longer chain whose later steps divide the
+    // pseudo-remainder by a symbolic beta factor
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomialRemainders[(x - a)^2*(x - b)*(x - c), (x - a)*(x - b)^2*(x - d), x]"
+      )
+      .unwrap(),
+      "{a^2*b*c - a^2*b*x - a^2*c*x - 2*a*b*c*x + a^2*x^2 + 2*a*b*x^2 + \
+       2*a*c*x^2 + b*c*x^2 - 2*a*x^3 - b*x^3 - c*x^3 + x^4, \
+       a*b^2*d - a*b^2*x - 2*a*b*d*x - b^2*d*x + 2*a*b*x^2 + b^2*x^2 + \
+       a*d*x^2 + 2*b*d*x^2 - a*x^3 - 2*b*x^3 - d*x^3 + x^4, \
+       -(a^2*b*c) + a*b^2*d + a^2*b*x - a*b^2*x + a^2*c*x + 2*a*b*c*x - \
+       2*a*b*d*x - b^2*d*x - a^2*x^2 + b^2*x^2 - 2*a*c*x^2 - b*c*x^2 + \
+       a*d*x^2 + 2*b*d*x^2 + a*x^3 - b*x^3 + c*x^3 - d*x^3, \
+       -(a^3*b^2*c) + a^2*b^3*c + a^3*b*c^2 - a^2*b^2*c^2 + a^3*b^2*d - \
+       a^2*b^3*d - a^3*b*c*d + 2*a^2*b^2*c*d - a*b^3*c*d - a^2*b*c^2*d + \
+       a*b^2*c^2*d - a^2*b^2*d^2 + a*b^3*d^2 + a^2*b*c*d^2 - a*b^2*c*d^2 + \
+       a^3*b*c*x - a*b^3*c*x - a^3*c^2*x + a*b^2*c^2*x - a^3*b*d*x + \
+       a*b^3*d*x + a^3*c*d*x - a^2*b*c*d*x - a*b^2*c*d*x + b^3*c*d*x + \
+       a^2*c^2*d*x - b^2*c^2*d*x + a^2*b*d^2*x - b^3*d^2*x - a^2*c*d^2*x + \
+       b^2*c*d^2*x - a^2*b*c*x^2 + a*b^2*c*x^2 + a^2*c^2*x^2 - a*b*c^2*x^2 + \
+       a^2*b*d*x^2 - a*b^2*d*x^2 - a^2*c*d*x^2 + 2*a*b*c*d*x^2 - \
+       b^2*c*d*x^2 - a*c^2*d*x^2 + b*c^2*d*x^2 - a*b*d^2*x^2 + b^2*d^2*x^2 + \
+       a*c*d^2*x^2 - b*c*d^2*x^2}"
+    );
+  }
+
+  #[test]
+  fn zero_remainders_terminate_the_chain() {
+    // An exact division stops the sequence without appending the zero
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[x^2 - 1, x - 1, x]").unwrap(),
+      "{-1 + x^2, -1 + x}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[x^3 + 2*x, x^3 + 2*x, x]")
+        .unwrap(),
+      "{2*x + x^3, 2*x + x^3}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[x^4, x^2, x]").unwrap(),
+      "{x^4, x^2}"
+    );
+    // ... but a literal zero second argument is echoed
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[x^2 + 1, 0, x]").unwrap(),
+      "{1 + x^2, 0}"
+    );
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[0, 0, x]").unwrap(),
+      "{0, 0}"
+    );
+    // A constant second argument stops immediately
+    assert_eq!(
+      interpret("SubresultantPolynomialRemainders[x^2 + 1, 5, x]").unwrap(),
+      "{1 + x^2, 5}"
+    );
+  }
+
+  #[test]
+  fn modulus_option_computes_over_gf_p() {
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomialRemainders[(x - 1)^2*(x - 2)*(x - 3), (x - 1)*(x - 4)^2, x, Modulus -> 7]"
+      )
+      .unwrap(),
+      "{6 + 4*x + 3*x^2 + x^4, 5 + 3*x + 5*x^2 + x^3, 3 + 4*x^2, 6 + x}"
+    );
+    // Leading coefficients vanish mod 5, so the chain genuinely differs
+    // from a coefficient reduction of the plain sequence
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomialRemainders[x^8 + x^6 - 3*x^4 - 3*x^3 + 8*x^2 + 2*x - 5, 3*x^6 + 5*x^4 - 4*x^2 - 9*x + 21, x, Modulus -> 5]"
+      )
+      .unwrap(),
+      "{2*x + 3*x^2 + 2*x^3 + 2*x^4 + x^6 + x^8, 1 + x + x^2 + 3*x^6, \
+       4 + 2*x^2, x, 3}"
+    );
+    // The second input drops to degree 1 after reduction mod 2
+    assert_eq!(
+      interpret(
+        "SubresultantPolynomialRemainders[x^4 + x^2 + 1, 2*x^2 + x + 1, x, Modulus -> 2]"
+      )
+      .unwrap(),
+      "{1 + x^2 + x^4, 1 + x, 1}"
+    );
+  }
+
+  // A first polynomial of lower degree emits `npolys` and stays unevaluated.
+  #[test]
+  fn lower_first_degree_emits_npolys() {
+    let result = woxi::interpret_with_stdout(
+      "SubresultantPolynomialRemainders[2, x + 1, x]",
+    )
+    .unwrap();
+    assert_eq!(
+      result.result,
+      "SubresultantPolynomialRemainders[2, 1 + x, x]"
+    );
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "SubresultantPolynomialRemainders::npolys: 2 and 1 + x should be \
+         polynomials with exact coefficients and the degree of 2 in x \
+         should not be less than the degree of 1 + x in x."
+      )),
+      "expected npolys, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod count_roots {
   use super::*;
 

@@ -497,6 +497,392 @@ pub fn subresultant_polynomials_ast(
   Ok(Expr::List(entries.into()))
 }
 
+/// SubresultantPolynomialRemainders[poly1, poly2, var] - Brown's
+/// subresultant polynomial remainder sequence: the two expanded input
+/// polynomials followed by each pseudo-remainder divided by the
+/// subresultant beta factor, stopping before a zero remainder (though a
+/// literal zero second argument is echoed). With `Modulus -> p` the whole
+/// chain runs over GF(p) — degrees drop where leading coefficients vanish
+/// mod p, so this is not a mere coefficient reduction of the plain chain.
+pub fn subresultant_polynomial_remainders_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let mut rebuilt: Vec<Expr> = args.to_vec();
+  let mut pos_idx: Vec<usize> = Vec::new();
+  let mut modulus: Option<i128> = None;
+  for (i, a) in args.iter().enumerate() {
+    if let Some(p) = extract_modulus_option(a) {
+      modulus = Some(p);
+    } else {
+      pos_idx.push(i);
+    }
+  }
+  let unevaluated = |rebuilt: &[Expr]| Expr::FunctionCall {
+    name: "SubresultantPolynomialRemainders".to_string(),
+    args: rebuilt.to_vec().into(),
+  };
+  if pos_idx.len() != 3 {
+    return Ok(unevaluated(&rebuilt));
+  }
+  let poly1 = crate::evaluator::evaluate_expr_to_expr(&args[pos_idx[0]])?;
+  let poly2 = crate::evaluator::evaluate_expr_to_expr(&args[pos_idx[1]])?;
+  rebuilt[pos_idx[0]] = poly1.clone();
+  rebuilt[pos_idx[1]] = poly2.clone();
+  let var = match &args[pos_idx[2]] {
+    Expr::Identifier(name) => name.clone(),
+    _ => return Ok(unevaluated(&rebuilt)),
+  };
+
+  let npolys_message = |poly1: &Expr, poly2: &Expr| {
+    let p1 = crate::syntax::expr_to_string(poly1);
+    let p2 = crate::syntax::expr_to_string(poly2);
+    crate::emit_message(&format!(
+      "SubresultantPolynomialRemainders::npolys: {p1} and {p2} should be \
+       polynomials with exact coefficients and the degree of {p1} in {var} \
+       should not be less than the degree of {p2} in {var}."
+    ));
+  };
+
+  // A zero first polynomial fails the degree requirement (its degree is
+  // -Infinity) unless the second one is zero too.
+  if matches!(poly1, Expr::Integer(0)) && !matches!(poly2, Expr::Integer(0)) {
+    npolys_message(&poly1, &poly2);
+    return Ok(unevaluated(&rebuilt));
+  }
+
+  let m = match max_power_int(&poly1, &var) {
+    Some(d) => d as usize,
+    None => return Ok(unevaluated(&rebuilt)),
+  };
+  let n = if matches!(poly2, Expr::Integer(0)) {
+    0
+  } else {
+    match max_power_int(&poly2, &var) {
+      Some(d) => d as usize,
+      None => return Ok(unevaluated(&rebuilt)),
+    }
+  };
+  if m < n || subres_contains_real(&poly1) || subres_contains_real(&poly2) {
+    npolys_message(&poly1, &poly2);
+    return Ok(unevaluated(&rebuilt));
+  }
+
+  let var_expr = Expr::Identifier(var.clone());
+  let var_pow = |k: usize| -> Expr {
+    match k {
+      0 => Expr::Integer(1),
+      1 => var_expr.clone(),
+      _ => Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(var_expr.clone()),
+        right: Box::new(Expr::Integer(k as i128)),
+      },
+    }
+  };
+  let poly_expr = |coeffs: &[Expr]| -> Result<Expr, InterpreterError> {
+    let mut sum = Expr::Integer(0);
+    for (i, c) in coeffs.iter().enumerate() {
+      sum = sym_add(&sum, &sym_mul(c, &var_pow(i)));
+    }
+    // Symbolic coefficients are multi-term sums; wolframscript prints the
+    // fully expanded flat polynomial.
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![sum].into(),
+    })
+  };
+
+  let mut coeff1 = Vec::with_capacity(m + 1);
+  let mut coeff2 = Vec::with_capacity(n + 1);
+  for i in 0..=m {
+    let c = coefficient_ast(&[
+      poly1.clone(),
+      var_expr.clone(),
+      Expr::Integer(i as i128),
+    ])?;
+    coeff1.push(crate::evaluator::evaluate_expr_to_expr(&c)?);
+  }
+  for i in 0..=n {
+    let c = coefficient_ast(&[
+      poly2.clone(),
+      var_expr.clone(),
+      Expr::Integer(i as i128),
+    ])?;
+    coeff2.push(crate::evaluator::evaluate_expr_to_expr(&c)?);
+  }
+
+  let int_coeffs1: Option<Vec<i128>> =
+    coeff1.iter().map(expr_to_i128).collect();
+  let int_coeffs2: Option<Vec<i128>> =
+    coeff2.iter().map(expr_to_i128).collect();
+  // Modular arithmetic on symbolic coefficients is not supported.
+  if modulus.is_some() && (int_coeffs1.is_none() || int_coeffs2.is_none()) {
+    return Ok(unevaluated(&rebuilt));
+  }
+
+  // ---- integer / GF(p) path ----
+  if let (Some(ic1), Some(ic2)) = (&int_coeffs1, &int_coeffs2) {
+    let mut c1 = ic1.clone();
+    let mut c2 = ic2.clone();
+    if let Some(p) = modulus {
+      for v in c1.iter_mut() {
+        *v = v.rem_euclid(p);
+      }
+      for v in c2.iter_mut() {
+        *v = v.rem_euclid(p);
+      }
+    }
+    trim_int_poly(&mut c1);
+    trim_int_poly(&mut c2);
+    let int_entry = |v: &[i128]| -> Result<Expr, InterpreterError> {
+      let coeffs: Vec<Expr> = v.iter().map(|&c| Expr::Integer(c)).collect();
+      poly_expr(&coeffs)
+    };
+
+    let mut entries = vec![int_entry(&c1)?, int_entry(&c2)?];
+    if c2 == [0] {
+      return Ok(Expr::List(entries.into()));
+    }
+    if int_poly_deg(&c1) < int_poly_deg(&c2) || c1 == [0] {
+      // Degrees can invert after mod-p reduction.
+      npolys_message(&poly1, &poly2);
+      return Ok(unevaluated(&rebuilt));
+    }
+
+    let mut r0 = c1;
+    let mut r1 = c2;
+    let mut delta = int_poly_deg(&r0) - int_poly_deg(&r1);
+    let mut beta: i128 = if delta.is_multiple_of(2) { -1 } else { 1 };
+    let mut psi: i128 = -1;
+    while int_poly_deg(&r1) > 0 {
+      let rem = int_prem(&r0, &r1, modulus);
+      if rem == [0] {
+        break;
+      }
+      let r2: Vec<i128> = if let Some(p) = modulus {
+        let inv = mod_inverse(beta.rem_euclid(p), p);
+        rem.iter().map(|c| (c * inv).rem_euclid(p)).collect()
+      } else {
+        rem.iter().map(|c| c / beta).collect()
+      };
+      entries.push(int_entry(&r2)?);
+      let lcb = *r1.last().unwrap();
+      if delta > 0 {
+        let num = (-lcb).pow(delta as u32);
+        psi = if let Some(p) = modulus {
+          (num
+            * mod_inverse(
+              psi.rem_euclid(p).pow((delta - 1) as u32).rem_euclid(p),
+              p,
+            ))
+          .rem_euclid(p)
+        } else {
+          num / psi.pow((delta - 1) as u32)
+        };
+      }
+      delta = int_poly_deg(&r1) - int_poly_deg(&r2);
+      beta = -lcb * psi.pow(delta as u32);
+      if let Some(p) = modulus {
+        beta = beta.rem_euclid(p);
+      }
+      r0 = r1;
+      r1 = r2;
+    }
+    return Ok(Expr::List(entries.into()));
+  }
+
+  // ---- symbolic path ----
+  // Coefficients are kept in expanded canonical form so exact zeros are
+  // detected as Integer(0); beta divisions are exact by the subresultant
+  // theory, so Cancel removes the divisor completely.
+  let simp = |e: &Expr| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![e.clone()].into(),
+    })
+  };
+  let exact_div = |num: &Expr, den: &Expr| -> Result<Expr, InterpreterError> {
+    if matches!(den, Expr::Integer(1)) {
+      return Ok(num.clone());
+    }
+    if matches!(den, Expr::Integer(-1)) {
+      return simp(&sym_mul(&Expr::Integer(-1), num));
+    }
+    let quotient = Expr::FunctionCall {
+      name: "Cancel".to_string(),
+      args: vec![Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(num.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(den.clone()),
+          right: Box::new(Expr::Integer(-1)),
+        }),
+      }]
+      .into(),
+    };
+    simp(&quotient)
+  };
+  let sym_pow = |base: &Expr, k: usize| -> Result<Expr, InterpreterError> {
+    let mut acc = Expr::Integer(1);
+    for _ in 0..k {
+      acc = sym_mul(&acc, base);
+    }
+    simp(&acc)
+  };
+
+  let mut c1 = coeff1.iter().map(simp).collect::<Result<Vec<_>, _>>()?;
+  let mut c2 = coeff2.iter().map(simp).collect::<Result<Vec<_>, _>>()?;
+  trim_sym_poly(&mut c1);
+  trim_sym_poly(&mut c2);
+
+  let mut entries = vec![poly_expr(&c1)?, poly_expr(&c2)?];
+  if sym_poly_is_zero(&c2) {
+    return Ok(Expr::List(entries.into()));
+  }
+
+  let mut r0 = c1;
+  let mut r1 = c2;
+  let mut delta = r0.len() - r1.len();
+  let mut beta = Expr::Integer(if delta % 2 == 0 { -1 } else { 1 });
+  let mut psi = Expr::Integer(-1);
+  while r1.len() > 1 {
+    let rem = sym_prem(&r0, &r1, &simp)?;
+    if sym_poly_is_zero(&rem) {
+      break;
+    }
+    let mut r2 = Vec::with_capacity(rem.len());
+    for c in &rem {
+      r2.push(exact_div(c, &beta)?);
+    }
+    trim_sym_poly(&mut r2);
+    entries.push(poly_expr(&r2)?);
+    let lcb = r1.last().unwrap().clone();
+    if delta > 0 {
+      let neg_lcb = simp(&sym_mul(&Expr::Integer(-1), &lcb))?;
+      psi = exact_div(&sym_pow(&neg_lcb, delta)?, &sym_pow(&psi, delta - 1)?)?;
+    }
+    delta = r1.len() - r2.len();
+    beta = simp(&sym_mul(
+      &sym_mul(&Expr::Integer(-1), &lcb),
+      &sym_pow(&psi, delta)?,
+    ))?;
+    r0 = r1;
+    r1 = r2;
+  }
+  Ok(Expr::List(entries.into()))
+}
+
+/// Degree of a trimmed ascending coefficient vector (zero polynomial: 0).
+fn int_poly_deg(v: &[i128]) -> usize {
+  v.len() - 1
+}
+
+/// Drop trailing zero coefficients, keeping at least one entry.
+fn trim_int_poly(v: &mut Vec<i128>) {
+  while v.len() > 1 && *v.last().unwrap() == 0 {
+    v.pop();
+  }
+}
+
+fn trim_sym_poly(v: &mut Vec<Expr>) {
+  while v.len() > 1 && matches!(v.last().unwrap(), Expr::Integer(0)) {
+    v.pop();
+  }
+}
+
+fn sym_poly_is_zero(v: &[Expr]) -> bool {
+  v.len() == 1 && matches!(v[0], Expr::Integer(0))
+}
+
+/// Pseudo-remainder prem(a, b) = lc(b)^(deg a - deg b + 1) * a mod b for
+/// trimmed ascending integer coefficient vectors, deg a >= deg b.
+fn int_prem(a: &[i128], b: &[i128], modulus: Option<i128>) -> Vec<i128> {
+  let db = int_poly_deg(b);
+  let lcb = *b.last().unwrap();
+  let mut r = a.to_vec();
+  let mut e = int_poly_deg(a) + 1 - db;
+  while r != [0] && int_poly_deg(&r) >= db {
+    let dr = int_poly_deg(&r);
+    let lead = r[dr];
+    let mut new = vec![0i128; dr + 1];
+    for (i, c) in r.iter().enumerate() {
+      new[i] = lcb * c;
+    }
+    for (i, c) in b.iter().enumerate() {
+      new[i + dr - db] -= lead * c;
+    }
+    if let Some(p) = modulus {
+      for v in new.iter_mut() {
+        *v = v.rem_euclid(p);
+      }
+    }
+    trim_int_poly(&mut new);
+    r = new;
+    e -= 1;
+  }
+  for _ in 0..e {
+    for v in r.iter_mut() {
+      *v *= lcb;
+    }
+    if let Some(p) = modulus {
+      for v in r.iter_mut() {
+        *v = v.rem_euclid(p);
+      }
+    }
+  }
+  r
+}
+
+/// Symbolic pseudo-remainder over expanded Expr coefficient vectors.
+fn sym_prem(
+  a: &[Expr],
+  b: &[Expr],
+  simp: &dyn Fn(&Expr) -> Result<Expr, InterpreterError>,
+) -> Result<Vec<Expr>, InterpreterError> {
+  let db = b.len() - 1;
+  let lcb = b.last().unwrap().clone();
+  let mut r = a.to_vec();
+  let mut e = a.len() - db;
+  while !sym_poly_is_zero(&r) && r.len() > db {
+    let dr = r.len() - 1;
+    let lead = r[dr].clone();
+    let mut new = vec![Expr::Integer(0); dr + 1];
+    for (i, c) in r.iter().enumerate() {
+      new[i] = sym_mul(&lcb, c);
+    }
+    for (i, c) in b.iter().enumerate() {
+      new[i + dr - db] = sym_sub(&new[i + dr - db], &sym_mul(&lead, c));
+    }
+    // The leading term cancels by construction.
+    new[dr] = Expr::Integer(0);
+    for v in new.iter_mut() {
+      *v = simp(v)?;
+    }
+    trim_sym_poly(&mut new);
+    r = new;
+    e -= 1;
+  }
+  for _ in 0..e {
+    for v in r.iter_mut() {
+      *v = simp(&sym_mul(v, &lcb))?;
+    }
+  }
+  Ok(r)
+}
+
+/// Modular inverse via the extended Euclidean algorithm (gcd(a, p) = 1).
+fn mod_inverse(a: i128, p: i128) -> i128 {
+  let (mut old_r, mut r) = (a, p);
+  let (mut old_s, mut s) = (1i128, 0i128);
+  while r != 0 {
+    let q = old_r / r;
+    (old_r, r) = (r, old_r - q * r);
+    (old_s, s) = (s, old_s - q * s);
+  }
+  old_s.rem_euclid(p)
+}
+
 /// True if `expr` contains any inexact (Real/BigFloat) number.
 fn subres_contains_real(expr: &Expr) -> bool {
   match expr {

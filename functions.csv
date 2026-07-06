@@ -4466,7 +4466,7 @@ SocketReadyQ,,🚫,,11.2,4612
 SpheroidalJoiningFactor,,🚫,,6.0,4612
 StackInhibit,,,,2.0,4612
 StringRotateLeft,Rotates characters in a string to the left,✅,pure,9.0,4612
-SubresultantPolynomialRemainders,,,,9.0,4612
+SubresultantPolynomialRemainders,Subresultant polynomial remainder sequence of two polynomials,✅,pure,9.0,4612
 Success,,,,11.3,4612
 TextContents,,🚫,,12.0,4612
 TildeEqual,,,,3.0,4612
