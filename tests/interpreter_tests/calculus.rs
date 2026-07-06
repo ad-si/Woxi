@@ -1434,6 +1434,53 @@ mod differentiate_plus_times {
   }
 }
 
+mod differentiate_nonconstants {
+  use super::*;
+
+  // A trailing `NonConstants -> {…}` option must not be consumed as an extra
+  // differentiation variable. When the option's variables do not occur in the
+  // expression the derivative is the plain one.
+  #[test]
+  fn option_not_treated_as_variable() {
+    assert_eq!(interpret("D[x^2, x, NonConstants -> {a}]").unwrap(), "2*x");
+    assert_eq!(
+      interpret("D[x^3, x, NonConstants -> {a, b}]").unwrap(),
+      "3*x^2"
+    );
+    assert_eq!(
+      interpret("D[Sin[x], x, NonConstants -> {a}]").unwrap(),
+      "Cos[x]"
+    );
+    // The {var, n} spec still works alongside the option.
+    assert_eq!(
+      interpret("D[x^2, {x, 2}, NonConstants -> {a}]").unwrap(),
+      "2"
+    );
+    // Another symbol in the expression is still treated as constant.
+    assert_eq!(
+      interpret("D[x^2 y, x, NonConstants -> {a}]").unwrap(),
+      "2*x*y"
+    );
+  }
+
+  // Unrelated options are accepted and ignored for these derivatives.
+  #[test]
+  fn other_options_ignored() {
+    assert_eq!(interpret("D[x^2, x, Assumptions -> x > 0]").unwrap(), "2*x");
+  }
+
+  // When a NonConstants variable actually occurs, the correct result needs
+  // symbolic derivative terms Woxi does not synthesise, so the call stays
+  // unevaluated rather than returning a wrong constant-treatment derivative.
+  #[test]
+  fn nonconstant_variable_present_stays_unevaluated() {
+    assert_eq!(
+      interpret("D[a x^2, x, NonConstants -> {a}]").unwrap(),
+      "D[a*x^2, x, NonConstants -> {a}]"
+    );
+  }
+}
+
 mod derivative_prime_notation {
   use super::*;
 

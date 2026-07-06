@@ -15,6 +15,64 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Trailing option rules (e.g. `NonConstants -> {a}`) must not be treated as
+  // extra differentiation variables. wolframscript: `D[x^2, x,
+  // NonConstants -> {a}]` is `2 x`, not `0`.
+  fn option_name(e: &Expr) -> Option<String> {
+    if let Expr::Rule { pattern, .. } = e
+      && let Expr::Identifier(s) = pattern.as_ref()
+    {
+      Some(s.clone())
+    } else {
+      None
+    }
+  }
+  if args[1..].iter().any(|a| option_name(a).is_some()) {
+    let expr = &args[0];
+    let mut diff_vars: Vec<Expr> = Vec::new();
+    let mut non_constants: Vec<Expr> = Vec::new();
+    for a in &args[1..] {
+      match option_name(a).as_deref() {
+        Some("NonConstants") => {
+          if let Expr::Rule { replacement, .. } = a {
+            match replacement.as_ref() {
+              Expr::List(vs) => non_constants.extend(vs.iter().cloned()),
+              other => non_constants.push(other.clone()),
+            }
+          }
+        }
+        // Other options (Assumptions, PerformanceGoal, …) do not change the
+        // structure of the derivatives handled here; accept and ignore them.
+        Some(_) => {}
+        None => diff_vars.push(a.clone()),
+      }
+    }
+    let unevaluated = || {
+      Ok(Expr::FunctionCall {
+        name: "D".to_string(),
+        args: args.to_vec().into(),
+      })
+    };
+    if diff_vars.is_empty() {
+      return unevaluated();
+    }
+    // When a NonConstants variable actually occurs in the expression, the
+    // correct result carries symbolic `D[a, x, NonConstants -> {…}]` terms
+    // that Woxi does not synthesise; leave the call unevaluated rather than
+    // return the (wrong) constant-treatment derivative.
+    let appears = non_constants.iter().any(
+      |nc| matches!(nc, Expr::Identifier(name) if contains_var(expr, name)),
+    );
+    if appears {
+      return unevaluated();
+    }
+    // The options have no effect here — differentiate against the real
+    // variables only.
+    let mut new_args = vec![expr.clone()];
+    new_args.extend(diff_vars);
+    return d_ast(&new_args);
+  }
+
   // D[expr, x, y, ...] — mixed partial derivatives: differentiate sequentially
   if args.len() > 2 {
     // First differentiate with respect to the last variable
