@@ -2633,6 +2633,48 @@ mod complement {
     );
   }
 
+  // SameTest replaces the membership (and dedup) comparison; previously
+  // the parsed option was silently discarded.
+  #[test]
+  fn same_test_option() {
+    for (input, expected) in [
+      (
+        "Complement[{1, 2, 3, 4}, {2.1}, SameTest -> (Abs[#1 - #2] < 0.5 &)]",
+        "{1, 3, 4}",
+      ),
+      // Several excluded lists
+      (
+        "Complement[{1, 2, 3, 4, 5}, {2}, {4.2}, SameTest -> (Abs[#1 - #2] < 0.5 &)]",
+        "{1, 3, 5}",
+      ),
+      // The kept elements are sorted and then deduplicated by the test
+      // (keeping the canonically first of each equivalence class)
+      (
+        "Complement[{3, 1, 1.1}, {5}, SameTest -> (Abs[#1 - #2] < 0.5 &)]",
+        "{1, 3}",
+      ),
+      (
+        "Complement[{1.1, 3, 1}, {5}, SameTest -> (Abs[#1 - #2] < 0.5 &)]",
+        "{1, 3}",
+      ),
+      (
+        "Complement[{6, 4, 2}, {2.2}, SameTest -> (Abs[#1 - #2] < 0.5 &)]",
+        "{4, 6}",
+      ),
+      (
+        "Complement[{a, b, c, d}, {b}, SameTest -> (#1 === #2 &)]",
+        "{a, c, d}",
+      ),
+      // A general head is preserved
+      (
+        "Complement[f[4, 2, 6], f[2.2], SameTest -> (Abs[#1 - #2] < 0.5 &)]",
+        "f[4, 6]",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn no_overlap() {
     assert_eq!(

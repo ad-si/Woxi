@@ -514,11 +514,22 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use std::collections::HashSet;
 
-  let (slices, head, _same_test) =
+  let (slices, head, same_test) =
     match collect_set_subjects("Complement", lists) {
       Ok(t) => t,
       Err(unevaluated) => return Ok(unevaluated),
     };
+
+  if let Some(test) = same_test {
+    let result = complement_with_same_test(&slices, test)?;
+    return Ok(match head {
+      Some(name) => Expr::FunctionCall {
+        name: name.to_string(),
+        args: result.into(),
+      },
+      None => Expr::List(result.into()),
+    });
+  }
 
   let Some(first_items) = slices.first() else {
     return Ok(Expr::List(vec![].into()));
@@ -554,6 +565,42 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     }),
     None => Ok(Expr::List(result.into())),
   }
+}
+
+/// Complement with a custom SameTest: keep the elements of the first list
+/// that have no test-match in any later list, sort canonically, and
+/// deduplicate with the candidate on the left of the test (like Union).
+fn complement_with_same_test(
+  slices: &[&[Expr]],
+  test: &Expr,
+) -> Result<Vec<Expr>, InterpreterError> {
+  let Some(first_items) = slices.first() else {
+    return Ok(Vec::new());
+  };
+  let mut kept: Vec<Expr> = Vec::new();
+  'items: for item in first_items.iter() {
+    for other in slices.iter().skip(1) {
+      for o in other.iter() {
+        let r = apply_func_to_two_args(test, item, o)?;
+        if matches!(r, Expr::Identifier(ref s) if s == "True") {
+          continue 'items;
+        }
+      }
+    }
+    kept.push(item.clone());
+  }
+  sort_canonical(&mut kept);
+  let mut reps: Vec<Expr> = Vec::new();
+  'dedup: for item in kept.into_iter() {
+    for rep in &reps {
+      let r = apply_func_to_two_args(test, &item, rep)?;
+      if matches!(r, Expr::Identifier(ref s) if s == "True") {
+        continue 'dedup;
+      }
+    }
+    reps.push(item);
+  }
+  Ok(reps)
 }
 
 /// AST-based DeleteElements: multiset difference with multiplicity control.
