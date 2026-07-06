@@ -9568,6 +9568,41 @@ mod nearest {
       "{}"
     );
   }
+
+  #[test]
+  fn operator_form_single_point() {
+    // Nearest[data] is a NearestFunction; applying it forwards to the direct
+    // form Nearest[data, x].
+    assert_eq!(interpret("Nearest[{1, 3, 7, 10}][6]").unwrap(), "{7}");
+    assert_eq!(interpret("Nearest[{1, 3, 5, 7, 9}][4]").unwrap(), "{3, 5}");
+  }
+
+  #[test]
+  fn operator_form_with_count() {
+    // Nearest[data][x, n] == Nearest[data, x, n].
+    assert_eq!(interpret("Nearest[{1, 3, 7, 10}][6, 2]").unwrap(), "{7, 3}");
+  }
+
+  #[test]
+  fn operator_form_threads_over_query_list() {
+    // A list of query points yields one result list per point.
+    assert_eq!(
+      interpret("Nearest[{1, 3, 7, 10}][{6, 9}]").unwrap(),
+      "{{7}, {10}}"
+    );
+    assert_eq!(
+      interpret("Nearest[{1, 3, 7, 10}][{6, 9}, 2]").unwrap(),
+      "{{7, 3}, {10, 7}}"
+    );
+  }
+
+  #[test]
+  fn operator_form_maps_over_points() {
+    assert_eq!(
+      interpret("Map[Nearest[{1, 3, 7, 10}], {2, 8}]").unwrap(),
+      "{{1, 3}, {7}}"
+    );
+  }
 }
 
 mod nearest_to {

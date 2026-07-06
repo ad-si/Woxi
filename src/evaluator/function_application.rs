@@ -523,6 +523,13 @@ pub fn apply_function_to_arg(
         new_args.extend(args.iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
+      // Nearest[data] is a NearestFunction; applying it forwards to the direct
+      // form: Nearest[data][x] -> Nearest[data, x].
+      if name == "Nearest" && args.len() == 1 {
+        let mut new_args = args.to_vec();
+        new_args.push(arg.clone());
+        return evaluate_function_call_ast("Nearest", &new_args);
+      }
       // Distribution operator forms: CDF[dist][x] -> CDF[dist, x], and the
       // same for PDF / Quantile / InverseCDF / SurvivalFunction /
       // HazardFunction. The applied argument is appended. Guarded so the head
@@ -1365,6 +1372,17 @@ pub fn apply_curried_call(
       if name == "NearestTo" && (func_args.len() == 1 || func_args.len() == 2) {
         let mut new_args = args.to_vec();
         new_args.extend(func_args.iter().cloned());
+        return evaluate_function_call_ast("Nearest", &new_args);
+      }
+      // Nearest[data] is a NearestFunction; applying it forwards to the direct
+      // form: Nearest[data][x] -> Nearest[data, x], and
+      // Nearest[data][x, n] -> Nearest[data, x, n].
+      if name == "Nearest"
+        && func_args.len() == 1
+        && (1..=2).contains(&args.len())
+      {
+        let mut new_args = func_args.to_vec();
+        new_args.extend(args.iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
       if matches!(
