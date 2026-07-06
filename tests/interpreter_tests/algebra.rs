@@ -1307,6 +1307,50 @@ mod factor_list {
       "{{1, 1}, {1 + x, 1}, {2 + x, 1}}"
     );
   }
+
+  #[test]
+  fn rational_number() {
+    // A rational splits into numerator/denominator entries (kept whole, not
+    // prime-factored): {p, 1} then {q, -1}.
+    assert_eq!(interpret("FactorList[3/4]").unwrap(), "{{3, 1}, {4, -1}}");
+    assert_eq!(interpret("FactorList[6/35]").unwrap(), "{{6, 1}, {35, -1}}");
+    // A unit numerator is elided.
+    assert_eq!(interpret("FactorList[1/2]").unwrap(), "{{2, -1}}");
+    // The sign rides on the numerator.
+    assert_eq!(interpret("FactorList[-3/4]").unwrap(), "{{-3, 1}, {4, -1}}");
+    assert_eq!(interpret("FactorList[-1/2]").unwrap(), "{{-1, 1}, {2, -1}}");
+  }
+
+  #[test]
+  fn negative_integer_constant() {
+    assert_eq!(interpret("FactorList[-6]").unwrap(), "{{-6, 1}}");
+    assert_eq!(interpret("FactorList[-1]").unwrap(), "{{-1, 1}}");
+  }
+
+  #[test]
+  fn rational_function() {
+    // Denominator factors carry negative exponents and come after the
+    // numerator factors.
+    assert_eq!(
+      interpret("FactorList[(x^2 - 1)/(x + 2)]").unwrap(),
+      "{{1, 1}, {-1 + x, 1}, {1 + x, 1}, {2 + x, -1}}"
+    );
+    // The rational content becomes the leading {q, -1} entry.
+    assert_eq!(
+      interpret("FactorList[(x^2 - 1)/2]").unwrap(),
+      "{{2, -1}, {-1 + x, 1}, {1 + x, 1}}"
+    );
+    // Numerator content + numerator/denominator polynomial factors.
+    assert_eq!(
+      interpret("FactorList[6*(x - 1)/(x + 2)]").unwrap(),
+      "{{6, 1}, {-1 + x, 1}, {2 + x, -1}}"
+    );
+    // A pure reciprocal polynomial: all factors in the denominator.
+    assert_eq!(
+      interpret("FactorList[2/(x^2 - 1)]").unwrap(),
+      "{{2, 1}, {-1 + x, -1}, {1 + x, -1}}"
+    );
+  }
 }
 
 mod cancel {

@@ -1102,12 +1102,50 @@ pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   decompose_product(&factored, &mut pairs, &mut numeric_coeff);
 
-  // Build result: {{numeric_coeff, 1}, {factor1, exp1}, ...}
-  let mut result =
-    vec![Expr::List(vec![numeric_coeff, Expr::Integer(1)].into())];
-  result.extend(pairs);
+  // Numeric content comes first, split into numerator/denominator entries,
+  // matching wolframscript (e.g. `FactorList[3/4]` → `{{3, 1}, {4, -1}}`).
+  let mut result = numeric_content_entries(&numeric_coeff);
+
+  // Then the polynomial factors: numerator factors (positive exponent) first,
+  // then denominator factors (negative exponent). `partition` is stable, so
+  // the relative order of factors within each group is preserved.
+  let (pos, neg): (Vec<Expr>, Vec<Expr>) = pairs
+    .into_iter()
+    .partition(|p| !factor_exponent_is_negative(p));
+  result.extend(pos);
+  result.extend(neg);
 
   Ok(Expr::List(result.into()))
+}
+
+/// The leading numeric-content entries of a `FactorList` result. An integer
+/// content `n` becomes the single entry `{n, 1}`. A rational `p/q` (in lowest
+/// terms, `q > 1`) becomes `{p, 1}` (omitted when `p == 1`) followed by
+/// `{q, -1}` — matching wolframscript, which keeps the numerator and
+/// denominator whole rather than prime-factoring them.
+fn numeric_content_entries(coeff: &Expr) -> Vec<Expr> {
+  let entry =
+    |value: Expr, exp: i128| Expr::List(vec![value, Expr::Integer(exp)].into());
+  if let Expr::FunctionCall { name, args } = coeff
+    && name == "Rational"
+    && args.len() == 2
+  {
+    let mut out = Vec::new();
+    // The numerator carries the sign; `{1, 1}` is elided.
+    if !matches!(&args[0], Expr::Integer(1)) {
+      out.push(entry(args[0].clone(), 1));
+    }
+    out.push(entry(args[1].clone(), -1));
+    return out;
+  }
+  vec![entry(coeff.clone(), 1)]
+}
+
+/// Whether a `{factor, exponent}` pair has a negative integer exponent — i.e.
+/// it came from a rational-function denominator.
+fn factor_exponent_is_negative(pair: &Expr) -> bool {
+  matches!(pair, Expr::List(items)
+    if items.len() == 2 && matches!(&items[1], Expr::Integer(n) if *n < 0))
 }
 
 /// IrreduciblePolynomialQ[poly] - test whether `poly` is irreducible over
