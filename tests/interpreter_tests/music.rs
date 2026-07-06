@@ -415,12 +415,28 @@ fn music_note_canonicalizes_pitch_and_duration() {
 
 #[test]
 fn music_note_from_pitch_and_duration_objects() {
-  // Pitch/duration given as objects resolve the same way; a named duration maps
-  // to its rhythmic value, and an explicit octave keeps the pitch's `Octave`
-  // and spelled `Name`.
+  // Pitch/duration given as objects resolve the same way; a named duration
+  // keeps its spelled `Name` alongside its rhythmic value, and an explicit
+  // octave keeps the pitch's `Octave` and spelled `Name`.
   assert_eq!(
     interpret("MusicNote[MusicPitch[\"C4\"], MusicDuration[\"Half\"]]")
       .unwrap(),
+    "MusicNote[<|Pitch -> \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>], \
+     Duration -> MusicDuration[<|Duration -> 1/2, Name -> Half|>]|>]"
+  );
+  // A bare name string resolves like the wrapped form…
+  assert_eq!(
+    interpret("MusicNote[\"A#\", \"Half\"]").unwrap(),
+    "MusicNote[<|Pitch -> MusicPitch[<|Accidental -> 1, Key -> A|>], \
+     Duration -> MusicDuration[<|Duration -> 1/2, Name -> Half|>]|>]"
+  );
+  // …while an explicit association passes through without gaining a `Name`.
+  assert_eq!(
+    interpret(
+      "MusicNote[MusicPitch[\"C4\"], MusicDuration[<|\"Duration\" -> 1/2|>]]"
+    )
+    .unwrap(),
     "MusicNote[<|Pitch -> \
      MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>], \
      Duration -> MusicDuration[<|Duration -> 1/2|>]|>]"
@@ -446,6 +462,25 @@ fn music_duration_canonicalizes_number() {
   assert_eq!(
     interpret("MusicDuration[1/4]").unwrap(),
     "MusicDuration[<|Duration -> 1/4|>]"
+  );
+}
+
+#[test]
+fn music_duration_canonicalizes_name() {
+  // A named duration keeps its spelled `Name` alongside its rhythmic value.
+  assert_eq!(
+    interpret("MusicDuration[\"Half\"]").unwrap(),
+    "MusicDuration[<|Duration -> 1/2, Name -> Half|>]"
+  );
+  assert_eq!(
+    interpret("MusicRest[\"Half\"]").unwrap(),
+    "MusicRest[<|Duration -> MusicDuration[<|Duration -> 1/2, \
+     Name -> Half|>]|>]"
+  );
+  // Duration arithmetic counts in beats and drops the spelled name.
+  assert_eq!(
+    interpret("MusicDuration[\"Half\"] + MusicDuration[1/4]").unwrap(),
+    "MusicDuration[<|Duration -> 3/4, BeatDuration -> 1/4|>]"
   );
 }
 

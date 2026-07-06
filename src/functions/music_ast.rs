@@ -1189,19 +1189,50 @@ fn resolve_duration_value(spec: &Expr) -> Option<Expr> {
   }
 }
 
-/// `MusicDuration[spec]` — canonicalize a numeric duration to the association
-/// form `MusicDuration[<|"Duration" -> value|>]`. Named durations and the
-/// already-canonical association form are left untouched (`None`).
+/// The canonical `MusicDuration[<|…|>]` object for any duration specification:
+/// a bare number, a named duration string, or a `MusicDuration[…]` object in
+/// any of those forms. A named duration keeps its spelled `"Name"` alongside
+/// its rhythmic value (as in Wolfram, where `MusicDuration["Half"]` is
+/// `MusicDuration[<|"Duration" -> 1/2, "Name" -> "Half"|>]`); the
+/// already-canonical association form passes through unchanged.
+fn resolve_duration_object(spec: &Expr) -> Option<Expr> {
+  match spec {
+    Expr::Integer(_) | Expr::Real(_) => Some(music_assoc(
+      "MusicDuration",
+      vec![("Duration", spec.clone())],
+    )),
+    Expr::FunctionCall { name, .. } if name == "Rational" => Some(music_assoc(
+      "MusicDuration",
+      vec![("Duration", spec.clone())],
+    )),
+    Expr::String(s) => {
+      let value = named_duration_value(s)?;
+      Some(music_assoc(
+        "MusicDuration",
+        vec![("Duration", value), ("Name", Expr::String(s.clone()))],
+      ))
+    }
+    Expr::FunctionCall { name, args } if name == "MusicDuration" => {
+      match args.first()? {
+        Expr::Association(_) => Some(spec.clone()),
+        other => resolve_duration_object(other),
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `MusicDuration[spec]` — canonicalize a numeric or named duration to the
+/// association form `MusicDuration[<|"Duration" -> value, …|>]`. The
+/// already-canonical association form is left untouched (`None`).
 pub fn music_duration(args: &[Expr]) -> Option<Expr> {
   let [spec] = args else {
     return None;
   };
-  let value = match spec {
-    Expr::Integer(_) | Expr::Real(_) => spec.clone(),
-    Expr::FunctionCall { name, .. } if name == "Rational" => spec.clone(),
-    _ => return None,
-  };
-  Some(music_assoc("MusicDuration", vec![("Duration", value)]))
+  if matches!(spec, Expr::Association(_)) {
+    return None;
+  }
+  resolve_duration_object(spec)
 }
 
 /// `MusicNote[pitch]` / `MusicNote[pitch, duration]` — canonicalize to the
@@ -1217,9 +1248,7 @@ pub fn music_note(args: &[Expr]) -> Option<Expr> {
     }
     [pitch_spec, duration_spec] => {
       let pitch = resolve_pitch_object(pitch_spec)?;
-      let duration_value = resolve_duration_value(duration_spec)?;
-      let duration =
-        music_assoc("MusicDuration", vec![("Duration", duration_value)]);
+      let duration = resolve_duration_object(duration_spec)?;
       Some(music_assoc(
         "MusicNote",
         vec![("Pitch", pitch), ("Duration", duration)],
@@ -1803,8 +1832,7 @@ pub fn music_rest(args: &[Expr]) -> Option<Expr> {
   match args {
     [] => Some(music_assoc("MusicRest", vec![])),
     [spec] => {
-      let value = resolve_duration_value(spec)?;
-      let duration = music_assoc("MusicDuration", vec![("Duration", value)]);
+      let duration = resolve_duration_object(spec)?;
       Some(music_assoc("MusicRest", vec![("Duration", duration)]))
     }
     _ => None,
