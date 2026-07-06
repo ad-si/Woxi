@@ -150,11 +150,97 @@ fn music_pitch_arithmetic_documented_example() {
 }
 
 #[test]
-fn music_pitch_arithmetic_octave_climb() {
-  // C4 + C4 rises one diatonic octave.
+fn music_pitch_plain_sum_collects_like_terms() {
+  // Plain pitches only combine through intervals (`p - q`, `p + interval`);
+  // `p + p` has no musical meaning and collects like ordinary terms.
   assert_eq!(
     interpret("MusicPitch[\"C\"] + MusicPitch[\"C\"]").unwrap(),
-    "MusicPitch[<|Accidental -> 12, Key -> C, MIDINumber -> 120|>]"
+    "2*MusicPitch[<|Accidental -> 0, Key -> C|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"C\"] + MusicPitch[\"C\"] + MusicPitch[\"C\"]")
+      .unwrap(),
+    "3*MusicPitch[<|Accidental -> 0, Key -> C|>]"
+  );
+  // Distinct plain pitches don't combine either.
+  assert_eq!(
+    interpret("MusicPitch[\"C\"] + MusicPitch[\"D\"] + MusicPitch[\"C\"]")
+      .unwrap(),
+    "2*MusicPitch[<|Accidental -> 0, Key -> C|>] + \
+     MusicPitch[<|Accidental -> 0, Key -> D|>]"
+  );
+  // A scaled pitch never takes part in pitch arithmetic, so `2 p - p`
+  // collects to the canonical `p` rather than forming an interval.
+  assert_eq!(
+    interpret("2*MusicPitch[\"C\"] - MusicPitch[\"C\"]").unwrap(),
+    "MusicPitch[<|Accidental -> 0, Key -> C|>]"
+  );
+}
+
+#[test]
+fn music_pitch_difference_is_interval() {
+  // Subtracting pitches yields the MusicInterval between them.
+  assert_eq!(
+    interpret("MusicPitch[\"A4\"] - MusicPitch[\"A4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 0, Name -> Unison, CompoundOctaves -> 0|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"E4\"] - MusicPitch[\"C4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 4, Name -> MajorThird, \
+     CompoundOctaves -> 0|>]"
+  );
+  // A descending interval keeps its signed semitone span but is named from
+  // the absolute one.
+  assert_eq!(
+    interpret("MusicPitch[\"C4\"] - MusicPitch[\"E4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> -4, Name -> MajorThird, \
+     CompoundOctaves -> 0|>]"
+  );
+  // The name follows the diatonic spelling, not just the semitone count.
+  assert_eq!(
+    interpret("MusicPitch[\"C#4\"] - MusicPitch[\"C4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 1, Name -> DiminishedUnison, \
+     CompoundOctaves -> 0|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"Db4\"] - MusicPitch[\"C4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 1, Name -> MinorSecond, \
+     CompoundOctaves -> 0|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"Gb4\"] - MusicPitch[\"C4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 6, Name -> DiminishedFifth, \
+     CompoundOctaves -> 0|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"F#4\"] - MusicPitch[\"C4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 6, Name -> AugmentedFourth, \
+     CompoundOctaves -> 0|>]"
+  );
+}
+
+#[test]
+fn music_pitch_difference_compound_intervals() {
+  // A plain octave is not compound…
+  assert_eq!(
+    interpret("MusicPitch[\"C5\"] - MusicPitch[\"C4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 12, Name -> Octave, CompoundOctaves -> 0|>]"
+  );
+  // …but anything wider folds into a Compound name plus an octave count.
+  assert_eq!(
+    interpret("MusicPitch[\"D5\"] - MusicPitch[\"C4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 14, Name -> CompoundMajorSecond, \
+     CompoundOctaves -> 1|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"C6\"] - MusicPitch[\"C4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 24, Name -> CompoundOctave, \
+     CompoundOctaves -> 1|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"D6\"] - MusicPitch[\"C4\"]").unwrap(),
+    "MusicInterval[<|Semitones -> 26, Name -> CompoundMajorSecond, \
+     CompoundOctaves -> 2|>]"
   );
 }
 

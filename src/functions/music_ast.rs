@@ -553,6 +553,74 @@ fn interval_name_axes(name: &str) -> Option<(i128, i128)> {
   })
 }
 
+/// The spelled name of a simple (within-octave) interval spanning `dia` letter
+/// steps and `semi` semitones, or `None` for a spelling outside the standard
+/// table (e.g. a doubly-augmented step).
+fn simple_interval_name(dia: i128, semi: i128) -> Option<&'static str> {
+  Some(match (dia, semi) {
+    (0, 0) => "Unison",
+    // Wolfram 15 names the augmented unison (C# - C) "DiminishedUnison".
+    (0, 1) => "DiminishedUnison",
+    (1, 0) => "DiminishedSecond",
+    (1, 1) => "MinorSecond",
+    (1, 2) => "MajorSecond",
+    (1, 3) => "AugmentedSecond",
+    (2, 2) => "DiminishedThird",
+    (2, 3) => "MinorThird",
+    (2, 4) => "MajorThird",
+    (2, 5) => "AugmentedThird",
+    (3, 4) => "DiminishedFourth",
+    (3, 5) => "PerfectFourth",
+    (3, 6) => "AugmentedFourth",
+    (4, 6) => "DiminishedFifth",
+    (4, 7) => "PerfectFifth",
+    (4, 8) => "AugmentedFifth",
+    (5, 7) => "DiminishedSixth",
+    (5, 8) => "MinorSixth",
+    (5, 9) => "MajorSixth",
+    (5, 10) => "AugmentedSixth",
+    (6, 9) => "DiminishedSeventh",
+    (6, 10) => "MinorSeventh",
+    (6, 11) => "MajorSeventh",
+    (6, 12) => "AugmentedSeventh",
+    (7, 11) => "DiminishedOctave",
+    (7, 12) => "Octave",
+    (7, 13) => "AugmentedOctave",
+    _ => return None,
+  })
+}
+
+/// The canonical `MusicInterval[<|"Semitones" -> …, "Name" -> …,
+/// "CompoundOctaves" -> …|>]` object spanning the given diatonic-step and
+/// semitone axes, as produced by a pitch difference. `Semitones` keeps the
+/// direction sign while the spelled `Name` and the octave fold come from the
+/// absolute span — `C4 - E4` is a `MajorThird` with `Semitones -> -4`, and
+/// `D6 - C4` folds to `CompoundMajorSecond` with `CompoundOctaves -> 2`.
+fn axes_to_music_interval(dia: i128, semi: i128) -> Expr {
+  let (d, s) = (dia.abs(), semi.abs());
+  let compound = if d > 7 { (d - 1).div_euclid(7) } else { 0 };
+  let (d_simple, s_simple) = (d - 7 * compound, s - 12 * compound);
+  let base = simple_interval_name(d_simple, s_simple).unwrap_or_else(|| {
+    // A spelling outside the standard table falls back to the simplest
+    // diatonic reading of its semitone class.
+    let (dd, _) = semitone_interval_axes(s_simple);
+    simple_interval_name(dd, s_simple).unwrap_or("Unison")
+  });
+  let name = if compound > 0 {
+    format!("Compound{base}")
+  } else {
+    base.to_string()
+  };
+  music_assoc(
+    "MusicInterval",
+    vec![
+      ("Semitones", Expr::Integer(semi)),
+      ("Name", Expr::String(name)),
+      ("CompoundOctaves", Expr::Integer(compound)),
+    ],
+  )
+}
+
 /// The `(diatonic step, semitone)` span of a bare-semitone interval such as
 /// `MusicInterval[5]`, spelled with the simplest (most common) diatonic reading
 /// of each semitone class. Handles compound (>octave) and descending intervals.
@@ -684,18 +752,21 @@ fn flatten_plus(args: &[Expr]) -> Vec<Expr> {
   flat
 }
 
-/// `Plus[…]` over `MusicPitch` and `MusicInterval` objects. Returns the combined
-/// pitch when every summand is a (possibly negated or integer-scaled)
-/// `MusicPitch` or `MusicInterval` and at least one is a pitch — so `pitch +
-/// pitch` combines and `pitch + interval` transposes. Returns `None` otherwise
-/// so ordinary `Plus` evaluation proceeds unchanged (a sum mixing a pitch with a
-/// non-music term, or one with no pitch at all, is left symbolic, as in Wolfram).
+/// `Plus[…]` over `MusicPitch` and `MusicInterval` objects. Pitches only
+/// combine *through intervals*: `pitch - pitch` is the `MusicInterval` between
+/// them and `pitch + interval` transposes, but plain `pitch + pitch` has no
+/// musical meaning and collects like ordinary terms (`p + p` is `2 p`, as in
+/// Wolfram). Returns `None` whenever the sum is not such an arithmetic — a sum
+/// mixing in a non-music term, a scaled pitch like `2 p`, or only plain
+/// pitches — so ordinary `Plus` evaluation proceeds unchanged.
 pub fn try_music_pitch_plus(args: &[Expr]) -> Option<Expr> {
   let flat = flatten_plus(args);
 
   let mut total = (0i128, 0i128);
   let mut count = 0;
-  let mut pitch_count = 0;
+  let mut pos_pitches = 0;
+  let mut neg_pitches = 0;
+  let mut interval_count = 0;
   let mut chromatic = false;
   for term in &flat {
     let (coeff, (position, midi), is_pitch) = music_summand_axes(term)?;
@@ -703,7 +774,15 @@ pub fn try_music_pitch_plus(args: &[Expr]) -> Option<Expr> {
     total.1 += coeff * midi;
     count += 1;
     if is_pitch {
-      pitch_count += 1;
+      // Only a bare pitch or its negation takes part in pitch arithmetic; a
+      // scaled pitch like `2 p` never does, so `2 p - p` collects to `p`.
+      match coeff {
+        1 => pos_pitches += 1,
+        -1 => neg_pitches += 1,
+        _ => return None,
+      }
+    } else {
+      interval_count += 1;
     }
     if is_chromatic_interval(term) {
       chromatic = true;
@@ -711,17 +790,29 @@ pub fn try_music_pitch_plus(args: &[Expr]) -> Option<Expr> {
   }
   // A lone pitch is not arithmetic, and a sum with no pitch (e.g. two intervals)
   // is not a pitch — leave both for the normal path.
-  if count < 2 || pitch_count == 0 {
+  if count < 2 || pos_pitches + neg_pitches == 0 {
     return None;
   }
-  // A bare-semitone interval carries no diatonic step, so its transposition is
-  // spelled straight from the MIDI number; otherwise the summed staff position
-  // fixes the letter.
-  Some(if chromatic {
-    midi_to_music_pitch(total.1)
-  } else {
-    axes_to_music_pitch(total.0, total.1)
-  })
+  // Plain pitches don't combine with each other — without a subtraction or an
+  // interval summand there is no pitch arithmetic, and Plus collects like
+  // terms instead.
+  if neg_pitches == 0 && interval_count == 0 {
+    return None;
+  }
+  match pos_pitches - neg_pitches {
+    // The pitches cancel pairwise into an interval: `A4 - A4` is a Unison.
+    0 => Some(axes_to_music_interval(total.0, total.1)),
+    // One pitch survives, transposed by the paired-off rest. A bare-semitone
+    // interval carries no diatonic step, so its transposition is spelled
+    // straight from the MIDI number; otherwise the summed staff position
+    // fixes the letter.
+    1 => Some(if chromatic {
+      midi_to_music_pitch(total.1)
+    } else {
+      axes_to_music_pitch(total.0, total.1)
+    }),
+    _ => None,
+  }
 }
 
 /// `MusicChord[{pitches…}] + MusicInterval[…] + …` — transpose every pitch of an
@@ -2545,15 +2636,16 @@ mod tests {
   }
 
   #[test]
-  fn music_pitch_plus_is_associative_via_association_form() {
-    // The intermediate `Bb + A#` decodes back exactly, so subtracting `C`
-    // afterwards gives the same answer as summing all three at once.
-    let partial =
-      try_music_pitch_plus(&[named_pitch("Bb"), named_pitch("A#")]).unwrap();
-    let result = try_music_pitch_plus(&[
-      partial,
+  fn music_pitch_plus_is_associative_via_interval_form() {
+    // The intermediate `Bb - C` decodes back exactly as a MusicInterval, so
+    // adding `A#` afterwards gives the same answer as summing all three at
+    // once.
+    let partial = try_music_pitch_plus(&[
+      named_pitch("Bb"),
       func("Times", vec![Expr::Integer(-1), named_pitch("C")]),
-    ]);
+    ])
+    .unwrap();
+    let result = try_music_pitch_plus(&[named_pitch("A#"), partial]);
     expect_pitch_sum(result, 1, "G", 80);
   }
 
@@ -2572,14 +2664,58 @@ mod tests {
   }
 
   #[test]
-  fn music_pitch_plus_octaveless_names_default_to_octave_4() {
-    // C + C climbs one octave along the diatonic axis (C4 -> C5-ish MIDI 120).
-    expect_pitch_sum(
-      try_music_pitch_plus(&[named_pitch("C"), named_pitch("C")]),
-      12,
-      "C",
-      120,
+  fn music_pitch_plus_plain_sum_declines() {
+    // Plain pitches only combine through intervals — `p + p` is left for the
+    // ordinary Plus path, which collects it to `2 p`.
+    assert!(
+      try_music_pitch_plus(&[named_pitch("C"), named_pitch("C")]).is_none()
     );
+    // Distinct plain pitches don't combine either.
+    assert!(
+      try_music_pitch_plus(&[named_pitch("C"), named_pitch("D")]).is_none()
+    );
+    // A scaled pitch never takes part in pitch arithmetic (`2 p - p`
+    // collects to `p` on the ordinary path).
+    assert!(
+      try_music_pitch_plus(&[
+        func("Times", vec![Expr::Integer(2), named_pitch("C")]),
+        func("Times", vec![Expr::Integer(-1), named_pitch("C")]),
+      ])
+      .is_none()
+    );
+  }
+
+  #[test]
+  fn music_pitch_plus_octaveless_names_default_to_octave_4() {
+    // Octaveless `C` defaults to octave 4, so `C - C4` cancels to a Unison.
+    let result = try_music_pitch_plus(&[
+      named_pitch("C"),
+      func("Times", vec![Expr::Integer(-1), named_pitch("C4")]),
+    ]);
+    match &result {
+      Some(Expr::FunctionCall { name, args }) if name == "MusicInterval" => {
+        match &args[..] {
+          [Expr::Association(pairs)] => {
+            let get = |k: &str| {
+              pairs.iter().find_map(|(pk, pv)| match pk {
+                Expr::String(s) if s == k => Some(pv),
+                _ => None,
+              })
+            };
+            assert!(
+              matches!(get("Semitones"), Some(Expr::Integer(0))),
+              "semitones mismatch in {result:?}",
+            );
+            assert!(
+              matches!(get("Name"), Some(Expr::String(s)) if s == "Unison"),
+              "name mismatch in {result:?}",
+            );
+          }
+          other => panic!("expected an association arg, got {other:?}"),
+        }
+      }
+      other => panic!("expected MusicInterval[<|…|>], got {other:?}"),
+    }
   }
 
   #[test]
