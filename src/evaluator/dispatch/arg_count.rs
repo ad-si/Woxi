@@ -1363,6 +1363,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SymmetricMatrixQ" => Some((1, 1)),
     "SymmetricPolynomial" => Some((2, 2)),
     "SymmetricReduction" => Some((2, 3)),
+    "PowerSymmetricPolynomial" => Some((1, 2)),
     "Symmetrize" => Some((1, 1)),
     "SyntaxQ" => Some((1, 1)),
     "Table" => Some((2, usize::MAX)),

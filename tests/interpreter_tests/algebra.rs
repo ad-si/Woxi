@@ -10209,6 +10209,131 @@ mod subresultant_polynomial_remainders {
   }
 }
 
+mod power_symmetric_polynomial {
+  use super::*;
+
+  #[test]
+  fn scalar_exponent() {
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[3, {x, y, z}]").unwrap(),
+      "x^3 + y^3 + z^3"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[1, {a, b, c, d}]").unwrap(),
+      "a + b + c + d"
+    );
+    // Exponent 0 counts the elements
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[0, {x, y, z}]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[3, {2, 3, 4}]").unwrap(),
+      "99"
+    );
+    assert_eq!(interpret("PowerSymmetricPolynomial[2, {}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic_rational_and_real_exponents() {
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[k, {x, y}]").unwrap(),
+      "x^k + y^k"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[1/2, {x, y}]").unwrap(),
+      "Sqrt[x] + Sqrt[y]"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[2.5, {x, y}]").unwrap(),
+      "x^2.5 + y^2.5"
+    );
+  }
+
+  #[test]
+  fn multivariate_tuple_spec() {
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{2, 1}, {{x1, y1}, {x2, y2}}]")
+        .unwrap(),
+      "x1^2*y1 + x2^2*y2"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{2, 1}, {{1, 2}, {3, 4}}]").unwrap(),
+      "38"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{2, 1, 3}, {{a, b, c}, {d, e, f}}]")
+        .unwrap(),
+      "a^2*b*c^3 + d^2*e*f^3"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{2}, {{x}, {y}}]").unwrap(),
+      "x^2 + y^2"
+    );
+    // Symbolic exponents and zero components evaluate too
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{k, 1}, {{x, y}, {u, v}}]").unwrap(),
+      "u^k*v + x^k*y"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{2, 0}, {{x, y}, {u, v}}]").unwrap(),
+      "u^2 + x^2"
+    );
+  }
+
+  #[test]
+  fn scalar_exponent_threads_listably_over_rows() {
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[2, {{1, 2}, {3, 4}}]").unwrap(),
+      "{10, 20}"
+    );
+  }
+
+  #[test]
+  fn unevaluated_forms() {
+    // Explicitly negative numeric exponents stay unevaluated
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[-2, {x, y}]").unwrap(),
+      "PowerSymmetricPolynomial[-2, {x, y}]"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[-1/2, {x, y}]").unwrap(),
+      "PowerSymmetricPolynomial[-1/2, {x, y}]"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{2, -1}, {{x, y}, {u, v}}]").unwrap(),
+      "PowerSymmetricPolynomial[{2, -1}, {{x, y}, {u, v}}]"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[-2, {2, 3}]").unwrap(),
+      "PowerSymmetricPolynomial[-2, {2, 3}]"
+    );
+    // A list spec needs tuple rows of the same length
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{2, 1}, {x, y}]").unwrap(),
+      "PowerSymmetricPolynomial[{2, 1}, {x, y}]"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{2}, {x, y}]").unwrap(),
+      "PowerSymmetricPolynomial[{2}, {x, y}]"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[{2, 1}, {{1, 2}, {3, 4, 5}}]")
+        .unwrap(),
+      "PowerSymmetricPolynomial[{2, 1}, {{1, 2}, {3, 4, 5}}]"
+    );
+    // Non-list data and the one-argument formal form
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[2, x]").unwrap(),
+      "PowerSymmetricPolynomial[2, x]"
+    );
+    assert_eq!(
+      interpret("PowerSymmetricPolynomial[3]").unwrap(),
+      "PowerSymmetricPolynomial[3]"
+    );
+  }
+}
+
 mod count_roots {
   use super::*;
 

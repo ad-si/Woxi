@@ -4547,7 +4547,7 @@ OptionalElement,,,,10.1,4707
 PerpendicularBisector,,,,12.0,4707
 PlaceholderLayer,,🚫,,12.2,4707
 PolyhedronCoordinates,,🚫,,12.0,4707
-PowerSymmetricPolynomial,,,,8.0,4707
+PowerSymmetricPolynomial,Power sum symmetric polynomial in given data (scalar or tuple exponent spec),✅,pure,8.0,4707
 ResourceRemove,,🚫,,11.0,4707
 SearchIndexObject,,🚫,,10.2,4707
 SimilarityRules,,,,7.0,4707

@@ -85,6 +85,116 @@ fn coeff_rules(
   Ok(Some(out))
 }
 
+/// True for explicitly negative numeric values (integer, rational, real) in
+/// any of their expression representations.
+fn negative_numeric(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n < 0,
+    Expr::Real(x) => *x < 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(
+        (&args[0], &args[1]),
+        (Expr::Integer(a), Expr::Integer(b)) if a.signum() * b.signum() < 0
+      )
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      matches!(
+        (&**left, &**right),
+        (Expr::Integer(a), Expr::Integer(b)) if a.signum() * b.signum() < 0
+      )
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      matches!(
+        &**operand,
+        Expr::Integer(n) if *n > 0
+      ) || matches!(
+        &**operand,
+        Expr::Real(x) if *x > 0.0
+      )
+    }
+    _ => false,
+  }
+}
+
+/// `PowerSymmetricPolynomial[r, {x1, ..., xn}]` — the power sum
+/// `x1^r + ... + xn^r` (threading listably over nested data), and
+/// `PowerSymmetricPolynomial[{r1, ..., rk}, {{...}, ...}]` — the multivariate
+/// power sum over k-tuples. The one-argument formal form, any spec with an
+/// explicitly negative numeric exponent, and tuple data whose rows do not
+/// match the spec length all stay unevaluated, matching wolframscript.
+pub fn power_symmetric_polynomial_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "PowerSymmetricPolynomial".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    // The one-argument form is a formal object.
+    return unevaluated();
+  }
+  let rspec = eval(args[0].clone())?;
+  let data = match eval(args[1].clone())? {
+    Expr::List(ref items) => items.to_vec(),
+    _ => return unevaluated(),
+  };
+
+  let power = |base: &Expr, exp: &Expr| Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(base.clone()),
+    right: Box::new(exp.clone()),
+  };
+
+  match &rspec {
+    Expr::List(rs) => {
+      if rs.iter().any(negative_numeric) {
+        return unevaluated();
+      }
+      let mut terms = Vec::with_capacity(data.len());
+      for row in &data {
+        let Expr::List(cells) = row else {
+          return unevaluated();
+        };
+        if cells.len() != rs.len() {
+          return unevaluated();
+        }
+        let factors: Vec<Expr> = cells
+          .iter()
+          .zip(rs.iter())
+          .map(|(c, r)| power(c, r))
+          .collect();
+        terms.push(match factors.len() {
+          0 => Expr::Integer(1),
+          1 => factors.into_iter().next().unwrap(),
+          _ => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: factors.into(),
+          },
+        });
+      }
+      eval(sum(terms))
+    }
+    r => {
+      if negative_numeric(r) {
+        return unevaluated();
+      }
+      let terms: Vec<Expr> = data.iter().map(|e| power(e, r)).collect();
+      eval(sum(terms))
+    }
+  }
+}
+
 pub fn symmetric_reduction_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
