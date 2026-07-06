@@ -568,6 +568,30 @@ mod string_split_single_arg {
       "{{AB, CD}, EF}"
     );
   }
+
+  #[test]
+  fn to_upper_case_non_string_stays_unevaluated() {
+    // Only strings are transformed. A symbol must NOT have its name uppercased
+    // (regression: ToUpperCase[x] used to return X); numbers and reals echo.
+    assert_eq!(interpret("ToUpperCase[x]").unwrap(), "ToUpperCase[x]");
+    assert_eq!(interpret("ToUpperCase[5]").unwrap(), "ToUpperCase[5]");
+    assert_eq!(interpret("ToUpperCase[3.5]").unwrap(), "ToUpperCase[3.5]");
+    assert_eq!(interpret("ToLowerCase[x]").unwrap(), "ToLowerCase[x]");
+    assert_eq!(interpret("ToLowerCase[5]").unwrap(), "ToLowerCase[5]");
+  }
+
+  #[test]
+  fn to_upper_case_threads_over_mixed_list() {
+    // Non-string elements stay wrapped per element, matching Wolfram.
+    assert_eq!(
+      interpret("ToUpperCase[{1, 2}]").unwrap(),
+      "{ToUpperCase[1], ToUpperCase[2]}"
+    );
+    assert_eq!(
+      interpret(r#"ToUpperCase[{"a", 1}]"#).unwrap(),
+      "{A, ToUpperCase[1]}"
+    );
+  }
 }
 
 mod string_split_regex {

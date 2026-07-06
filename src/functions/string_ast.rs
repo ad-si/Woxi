@@ -1586,8 +1586,16 @@ pub fn to_upper_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
-  Ok(Expr::String(s.to_uppercase()))
+  // Only a string is transformed. Any other expression (number, symbol, …)
+  // stays unevaluated — wolframscript emits no message and leaves the call as
+  // is (e.g. ToUpperCase[x] echoes, it does not uppercase the symbol name).
+  if let Expr::String(s) = &args[0] {
+    return Ok(Expr::String(s.to_uppercase()));
+  }
+  Ok(Expr::FunctionCall {
+    name: "ToUpperCase".to_string(),
+    args: args.to_vec().into(),
+  })
 }
 
 /// ToLowerCase[s] - converts string to lowercase
@@ -1605,8 +1613,14 @@ pub fn to_lower_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
-  Ok(Expr::String(s.to_lowercase()))
+  // Only a string is transformed; any other expression stays unevaluated.
+  if let Expr::String(s) = &args[0] {
+    return Ok(Expr::String(s.to_lowercase()));
+  }
+  Ok(Expr::FunctionCall {
+    name: "ToLowerCase".to_string(),
+    args: args.to_vec().into(),
+  })
 }
 
 /// Characters[s] - converts string to list of characters
