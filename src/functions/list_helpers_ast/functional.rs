@@ -144,21 +144,39 @@ pub fn fixed_point_ast(
   func: &Expr,
   init: &Expr,
   max_iterations: Option<i128>,
+  same_test: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   let max = max_iterations.unwrap_or(10000);
   let mut current = init.clone();
 
   for _ in 0..max {
     let next = apply_func_ast(func, &current)?;
-    // FixedPoint's default convergence test is SameQ, which treats two
-    // machine reals differing by at most one ULP as identical.
-    if same_q_default(&current, &next) {
+    if fixed_point_converged(same_test, &current, &next)? {
       return Ok(next);
     }
     current = next;
   }
 
   Ok(current)
+}
+
+/// Convergence check shared by FixedPoint and FixedPointList: the
+/// `SameTest -> f` option applied to {previous, next}, or the default
+/// SameQ comparison (which treats two machine reals differing by at most
+/// one ULP as identical).
+fn fixed_point_converged(
+  same_test: Option<&Expr>,
+  current: &Expr,
+  next: &Expr,
+) -> Result<bool, InterpreterError> {
+  match same_test {
+    None => Ok(same_q_default(current, next)),
+    Some(test) => {
+      let result =
+        apply_func_to_n_args(test, &[current.clone(), next.clone()])?;
+      Ok(expr_to_bool(&result) == Some(true))
+    }
+  }
 }
 
 /// FixedPoint/FixedPointList default comparison: SameQ semantics.
@@ -584,6 +602,7 @@ pub fn fixed_point_list_ast(
   func: &Expr,
   init: &Expr,
   max_iterations: Option<i128>,
+  same_test: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   let max = max_iterations.unwrap_or(10000);
   let mut results = vec![init.clone()];
@@ -591,7 +610,7 @@ pub fn fixed_point_list_ast(
 
   for _ in 0..max {
     let next = apply_func_ast(func, &current)?;
-    let converged = same_q_default(&current, &next);
+    let converged = fixed_point_converged(same_test, &current, &next)?;
     results.push(next.clone());
     if converged {
       break;

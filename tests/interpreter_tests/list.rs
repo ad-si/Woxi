@@ -12968,6 +12968,34 @@ mod cases {
       r#"{1., 0.5403023058681398, 0.8575532158463933, 0.6542897904977792, 0.7934803587425655}"#,
     );
   }
+  // The SameTest option replaces the default SameQ convergence test; it
+  // receives {previous, next} and stops (including next) when True.
+  #[test]
+  fn fixed_point_same_test() {
+    assert_case(
+      r#"FixedPoint[1 + Floor[#/2] &, 1000, SameTest -> (Abs[#1 - #2] < 3 &)]"#,
+      r#"3"#,
+    );
+    assert_case(
+      r#"FixedPointList[1 + Floor[#/2] &, 1000, SameTest -> (Abs[#1 - #2] < 3 &)]"#,
+      r#"{1000, 501, 251, 126, 64, 33, 17, 9, 5, 3}"#,
+    );
+    // An explicit iteration bound combines with SameTest (the bound wins
+    // here after 4 steps)
+    assert_case(
+      r#"FixedPoint[1 + Floor[#/2] &, 1000, 4, SameTest -> (Abs[#1 - #2] < 3 &)]"#,
+      r#"64"#,
+    );
+    assert_case(
+      r#"FixedPointList[1 + Floor[#/2] &, 1000, 4, SameTest -> (Abs[#1 - #2] < 3 &)]"#,
+      r#"{1000, 501, 251, 126, 64}"#,
+    );
+    // The test may use only the newer value
+    assert_case(
+      r#"FixedPoint[Floor[#/2] &, 20, SameTest -> (#2 < 2 &)]"#,
+      r#"1"#,
+    );
+  }
   #[test]
   fn newton() {
     assert_case(

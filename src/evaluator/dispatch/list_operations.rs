@@ -177,6 +177,33 @@ fn intnm_message(name: &str, args: &[Expr], pos: usize) -> Expr {
   call
 }
 
+/// Split a trailing `SameTest -> f` option off an argument list
+/// (FixedPoint / FixedPointList).
+fn split_same_test_option(args: &[Expr]) -> (Vec<Expr>, Option<Expr>) {
+  let same_test_value = |opt: &Expr| -> Option<Expr> {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SameTest")
+    {
+      return Some(replacement.as_ref().clone());
+    }
+    if let Expr::FunctionCall { name, args: ra } = opt
+      && (name == "Rule" || name == "RuleDelayed")
+      && ra.len() == 2
+      && matches!(&ra[0], Expr::Identifier(s) if s == "SameTest")
+    {
+      return Some(ra[1].clone());
+    }
+    None
+  };
+  match args.last().and_then(same_test_value) {
+    Some(test) => (args[..args.len() - 1].to_vec(), Some(test)),
+    None => (args.to_vec(), None),
+  }
+}
+
 /// Check recursively whether an expression contains pattern elements (Blank, Pattern, etc.)
 fn has_pattern_element(expr: &Expr) -> bool {
   match expr {
@@ -1953,13 +1980,16 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::nest_list_ast(&args[0], &args[1], n));
     }
     "FixedPoint" if args.len() >= 2 => {
+      // A trailing `SameTest -> f` option replaces the default SameQ
+      // convergence test.
+      let (pos, same_test) = split_same_test_option(args);
       // The optional third argument accepts Infinity (the default) or a
       // non-negative machine integer; anything else emits ::intnm.
-      let max_iter = if args.len() == 3 {
-        if is_infinity_symbol(&args[2]) {
+      let max_iter = if pos.len() == 3 {
+        if is_infinity_symbol(&pos[2]) {
           None
         } else {
-          match nonneg_machine_int(&args[2]) {
+          match nonneg_machine_int(&pos[2]) {
             Some(n) => Some(n),
             None => return Some(Ok(intnm_message(name, args, 3))),
           }
@@ -1968,7 +1998,10 @@ pub fn dispatch_list_operations(
         None
       };
       return Some(list_helpers_ast::fixed_point_ast(
-        &args[0], &args[1], max_iter,
+        &pos[0],
+        &pos[1],
+        max_iter,
+        same_test.as_ref(),
       ));
     }
     "Cases" if args.len() >= 2 && args.len() <= 5 => {
@@ -3249,13 +3282,17 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::fold_list_ast(&args[0], &init, &rest));
     }
     "FixedPointList" if args.len() >= 2 => {
-      let max_iter = if args.len() == 3 {
-        expr_to_i128(&args[2])
+      let (pos, same_test) = split_same_test_option(args);
+      let max_iter = if pos.len() == 3 {
+        expr_to_i128(&pos[2])
       } else {
         None
       };
       return Some(list_helpers_ast::fixed_point_list_ast(
-        &args[0], &args[1], max_iter,
+        &pos[0],
+        &pos[1],
+        max_iter,
+        same_test.as_ref(),
       ));
     }
     "Transpose" if args.len() == 1 => {
