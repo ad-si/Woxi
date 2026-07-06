@@ -5880,6 +5880,46 @@ mod fold_list {
       "g[0, 1, 3, 6]"
     );
   }
+
+  #[test]
+  fn fold_operator_form() {
+    // Fold[f][list] == Fold[f, list]: the operator appends the list.
+    assert_eq!(interpret("Fold[f][{1, 2, 3}]").unwrap(), "f[f[1, 2], 3]");
+    assert_eq!(
+      interpret("Fold[f][{a, b, c, d}]").unwrap(),
+      "f[f[f[a, b], c], d]"
+    );
+    assert_eq!(interpret("Fold[Plus][{1, 2, 3, 4}]").unwrap(), "10");
+    // Single element returns it unchanged; empty list echoes the 2-arg form.
+    assert_eq!(interpret("Fold[f][{x}]").unwrap(), "x");
+    assert_eq!(interpret("Fold[f][{}]").unwrap(), "Fold[f, {}]");
+  }
+
+  #[test]
+  fn fold_list_operator_form() {
+    assert_eq!(
+      interpret("FoldList[f][{1, 2, 3}]").unwrap(),
+      "{1, f[1, 2], f[f[1, 2], 3]}"
+    );
+    assert_eq!(
+      interpret("FoldList[Plus][{1, 2, 3, 4}]").unwrap(),
+      "{1, 3, 6, 10}"
+    );
+  }
+
+  #[test]
+  fn fold_bare_operator_stays_unevaluated() {
+    assert_eq!(interpret("Fold[f]").unwrap(), "Fold[f]");
+    assert_eq!(interpret("FoldList[f]").unwrap(), "FoldList[f]");
+  }
+
+  #[test]
+  fn fold_operator_maps_over_lists() {
+    assert_eq!(
+      interpret("Map[Fold[Plus], {{1, 2}, {3, 4, 5}}]").unwrap(),
+      "{3, 12}"
+    );
+  }
 }
 
 mod sequence_fold {
