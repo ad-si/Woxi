@@ -16424,6 +16424,40 @@ mod quantifier_semantics {
     assert_eq!(interpret("AnyTrue[{1, 2, 3}, EvenQ]").unwrap(), "True");
     assert_eq!(interpret("NoneTrue[{1, 3}, EvenQ]").unwrap(), "True");
   }
+
+  #[test]
+  fn operator_form_applies_predicate() {
+    // AllTrue[test][list] == AllTrue[list, test] (and likewise for the other
+    // two quantifiers).
+    assert_eq!(interpret("AllTrue[EvenQ][{2, 4, 6}]").unwrap(), "True");
+    assert_eq!(interpret("AllTrue[#>0&][{1, 2, -3}]").unwrap(), "False");
+    assert_eq!(interpret("AnyTrue[OddQ][{2, 4, 6}]").unwrap(), "False");
+    assert_eq!(interpret("AnyTrue[EvenQ][{1, 2, 3}]").unwrap(), "True");
+    assert_eq!(interpret("NoneTrue[OddQ][{2, 4}]").unwrap(), "True");
+    assert_eq!(interpret("NoneTrue[EvenQ][{1, 3, 5}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn operator_form_vacuous_on_empty() {
+    assert_eq!(interpret("AllTrue[Positive][{}]").unwrap(), "True");
+    assert_eq!(interpret("AnyTrue[Positive][{}]").unwrap(), "False");
+    assert_eq!(interpret("NoneTrue[Positive][{}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn operator_form_maps_over_lists() {
+    assert_eq!(
+      interpret("Map[AllTrue[EvenQ], {{2, 4}, {2, 3}}]").unwrap(),
+      "{True, False}"
+    );
+  }
+
+  #[test]
+  fn bare_operator_stays_unevaluated() {
+    assert_eq!(interpret("AllTrue[EvenQ]").unwrap(), "AllTrue[EvenQ]");
+    assert_eq!(interpret("AnyTrue[OddQ]").unwrap(), "AnyTrue[OddQ]");
+    assert_eq!(interpret("NoneTrue[EvenQ]").unwrap(), "NoneTrue[EvenQ]");
+  }
 }
 
 mod numerical_order {
