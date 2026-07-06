@@ -1860,6 +1860,12 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     for sub in &subs {
       if sub.is_empty() {
+        // An empty pattern matches (with length 0) before every character and
+        // once after the last, giving the n+1 positions {i, i-1} — matching
+        // wolframscript's `StringPosition["ab", ""]` -> {{1,0},{2,1},{3,2}}.
+        for i in 0..=s_chars.len() {
+          raw_matches.push((i, 0));
+        }
         continue;
       }
       let sub_chars: Vec<char> = sub.chars().collect();

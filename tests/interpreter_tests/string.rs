@@ -7314,6 +7314,23 @@ mod string_position_alternatives {
   }
 
   #[test]
+  fn string_position_empty_pattern() {
+    // An empty pattern matches with length 0 before every character and once
+    // after the last, giving the n+1 positions {i, i - 1}.
+    assert_eq!(
+      interpret(r#"StringPosition["ab", ""]"#).unwrap(),
+      "{{1, 0}, {2, 1}, {3, 2}}"
+    );
+    // Empty string, empty pattern: a single 0-length match at position 1.
+    assert_eq!(interpret(r#"StringPosition["", ""]"#).unwrap(), "{{1, 0}}");
+    // Overlaps -> False keeps every empty match (each has length 0).
+    assert_eq!(
+      interpret(r#"StringPosition["ab", "", Overlaps -> False]"#).unwrap(),
+      "{{1, 0}, {2, 1}, {3, 2}}"
+    );
+  }
+
+  #[test]
   fn string_position_patterns() {
     // Alternatives and character-class / predicate patterns, not just
     // literals and RegularExpression.
