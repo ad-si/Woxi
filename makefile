@@ -101,6 +101,44 @@ test-all: test-unit test-slow test-cli test-shebang
 test-conformance: test-unit-wolframscript test-cli-wolframscript test-scripts-wolframscript
 
 
+# --- Fuzzing (see fuzz/README.md) -----------------------------------------
+
+# Seed the libFuzzer corpora from the existing test scripts (plus generated
+# expressions for the interpret target) so the fuzzer starts from valid
+# Wolfram Language programs instead of random bytes.
+.PHONY: fuzz-corpus
+fuzz-corpus:
+	mkdir -p fuzz/corpus/parse fuzz/corpus/interpret
+	cp tests/scripts/*.wls fuzz/corpus/parse/
+	cp tests/scripts/*.wls fuzz/corpus/interpret/
+	cargo run --bin woxi-diff-fuzz -- --print-cases --cases 200 --seed 0 \
+		| split -l 1 - fuzz/corpus/interpret/gen-
+
+# Coverage-guided crash fuzzing (requires a nightly toolchain and
+# cargo-fuzz). Runs until interrupted; crash inputs land in fuzz/artifacts/.
+.PHONY: fuzz-parse
+fuzz-parse: fuzz-corpus
+	@if ! command -v cargo-fuzz &> /dev/null; \
+		then cargo install cargo-fuzz; \
+		fi
+	cargo +nightly fuzz run parse -- -timeout=10 -max_len=4096
+
+.PHONY: fuzz-interpret
+fuzz-interpret: fuzz-corpus
+	@if ! command -v cargo-fuzz &> /dev/null; \
+		then cargo install cargo-fuzz; \
+		fi
+	cargo +nightly fuzz run interpret -- -timeout=20 -max_len=2048
+
+# Differential fuzzing against wolframscript (local binary or the
+# cmd-server.js Docker bridge — auto-detected). Reports and shrinks any
+# output divergence; exits non-zero when one is found.
+.PHONY: fuzz-diff
+fuzz-diff:
+	cargo build --bins
+	cargo run --bin woxi-diff-fuzz -- --cases 200
+
+
 # Build a Docker image with a pinned Rust toolchain and run the
 # machine-specific tests inside a clean Linux environment. The tests
 # themselves derive expected values from the host (env vars,

@@ -5,6 +5,9 @@ members = [".", "woxi-studio"]
 # built explicitly via `-p woxi-studio` / `make install-macos-app`.
 default-members = ["."]
 resolver = "3"
+# The cargo-fuzz crate is its own workspace: it needs nightly + libFuzzer
+# and must not affect the root Cargo.lock or default builds.
+exclude = ["fuzz"]
 
 [package]
 name = "woxi"
@@ -14,6 +17,13 @@ version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/ad-si/Woxi"
+
+# Differential fuzzer comparing woxi against wolframscript
+# (see fuzz/README.md and `make fuzz-diff`).
+[[bin]]
+name = "woxi-diff-fuzz"
+path = "src/bin/diff_fuzz.rs"
+required-features = ["cli"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

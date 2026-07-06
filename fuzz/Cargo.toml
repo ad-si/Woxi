@@ -1,0 +1,38 @@
+[package]
+name = "woxi-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Standalone workspace — excluded from the root workspace (see the
+# `exclude` entry in ../Cargo.toml).
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+# Native builds of the woxi lib require the `cli` feature set (see the
+# feature table in ../Cargo.toml), so the default features stay on.
+[dependencies.woxi]
+path = ".."
+
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "interpret"
+path = "fuzz_targets/interpret.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+# Keep enough debug info for readable crash backtraces.
+debug = 1
