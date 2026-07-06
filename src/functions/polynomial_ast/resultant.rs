@@ -178,6 +178,92 @@ pub fn subresultants_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Subresultants".to_string(),
     args: args.to_vec().into(),
   };
+  // A `Modulus -> p` option computes over GF(p) with the reduced inputs
+  // (degrees drop where leading coefficients vanish mod p). Entries are
+  // normalized to [0, p), except that for deg1 < deg2 wolframscript
+  // presents entry j as the SIGNED swap representative: it normalizes the
+  // swapped-argument value and then applies the transposition sign
+  // (-1)^((m-j)(n-j)) without renormalizing (e.g. {-6, 1} mod 7).
+  if args.iter().any(|a| extract_modulus_option(a).is_some()) {
+    let mut pos: Vec<Expr> = Vec::new();
+    let mut modulus: Option<i128> = None;
+    for a in args {
+      if let Some(p) = extract_modulus_option(a) {
+        modulus = Some(p);
+      } else {
+        pos.push(a.clone());
+      }
+    }
+    let (Some(p), 3) = (modulus, pos.len()) else {
+      return Ok(unevaluated(args));
+    };
+    let poly1 = crate::evaluator::evaluate_expr_to_expr(&pos[0])?;
+    let poly2 = crate::evaluator::evaluate_expr_to_expr(&pos[1])?;
+    let var = match &pos[2] {
+      Expr::Identifier(name) => name.clone(),
+      _ => return Ok(unevaluated(args)),
+    };
+    if matches!(poly1, Expr::Integer(0)) || matches!(poly2, Expr::Integer(0)) {
+      return Ok(Expr::List(vec![].into()));
+    }
+    let (Some(m), Some(n)) =
+      (max_power_int(&poly1, &var), max_power_int(&poly2, &var))
+    else {
+      return Ok(unevaluated(args));
+    };
+    let var_expr = Expr::Identifier(var.clone());
+    let mut coeff1 = Vec::with_capacity(m as usize + 1);
+    let mut coeff2 = Vec::with_capacity(n as usize + 1);
+    for i in 0..=m {
+      let c =
+        coefficient_ast(&[poly1.clone(), var_expr.clone(), Expr::Integer(i)])?;
+      coeff1.push(crate::evaluator::evaluate_expr_to_expr(&c)?);
+    }
+    for i in 0..=n {
+      let c =
+        coefficient_ast(&[poly2.clone(), var_expr.clone(), Expr::Integer(i)])?;
+      coeff2.push(crate::evaluator::evaluate_expr_to_expr(&c)?);
+    }
+    let int_coeffs1: Option<Vec<i128>> =
+      coeff1.iter().map(expr_to_i128).collect();
+    let int_coeffs2: Option<Vec<i128>> =
+      coeff2.iter().map(expr_to_i128).collect();
+    let (Some(ic1), Some(ic2)) = (int_coeffs1, int_coeffs2) else {
+      // Symbolic coefficients: wolframscript ignores the modulus.
+      return subresultants_ast(&pos);
+    };
+    let mut c1: Vec<i128> = ic1.iter().map(|v| v.rem_euclid(p)).collect();
+    let mut c2: Vec<i128> = ic2.iter().map(|v| v.rem_euclid(p)).collect();
+    trim_int_poly(&mut c1);
+    trim_int_poly(&mut c2);
+    if c1 == [0] || c2 == [0] {
+      return Ok(Expr::List(vec![].into()));
+    }
+    let (mr, nr) = (int_poly_deg(&c1), int_poly_deg(&c2));
+    let entries: Vec<i128> = if mr >= nr {
+      psc_int(&c1, &c2).iter().map(|v| v.rem_euclid(p)).collect()
+    } else {
+      psc_int(&c2, &c1)
+        .iter()
+        .enumerate()
+        .map(|(j, v)| {
+          let w = v.rem_euclid(p);
+          if (mr - j) % 2 == 1 && (nr - j) % 2 == 1 {
+            -w
+          } else {
+            w
+          }
+        })
+        .collect()
+    };
+    return Ok(Expr::List(
+      entries
+        .into_iter()
+        .map(Expr::Integer)
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }
@@ -269,6 +355,40 @@ pub fn subresultants_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   Ok(Expr::List(result.into()))
+}
+
+/// Principal subresultant coefficients over the integers for trimmed
+/// ascending coefficient vectors — the same matrices as the Expr-based loop
+/// in `subresultants_ast`, specialized to i128.
+fn psc_int(c1: &[i128], c2: &[i128]) -> Vec<i128> {
+  let m = int_poly_deg(c1);
+  let n = int_poly_deg(c2);
+  let d = m.min(n);
+  let mut result = Vec::with_capacity(d + 1);
+  for j in 0..=d {
+    let size = m + n - 2 * j;
+    if size == 0 {
+      result.push(1);
+      continue;
+    }
+    let top_degree = m + n - j - 1;
+    let mut matrix: Vec<Vec<i128>> = Vec::with_capacity(size);
+    for (coeffs, shifts) in [(c1, n - j), (c2, m - j)] {
+      for i in 0..shifts {
+        let s = shifts - 1 - i;
+        let mut row = vec![0i128; size];
+        for (idx, &c) in coeffs.iter().enumerate() {
+          let deg = idx + s;
+          if deg >= j && deg <= top_degree {
+            row[top_degree - deg] = c;
+          }
+        }
+        matrix.push(row);
+      }
+    }
+    result.push(bareiss_determinant(&mut matrix));
+  }
+  result
 }
 
 /// SubresultantPolynomials[poly1, poly2, var] - The subresultant polynomial

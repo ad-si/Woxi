@@ -32,7 +32,7 @@ pub fn dispatch_polynomial_functions(
     "Resolve" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::resolve_ast::resolve_ast(args));
     }
-    "Subresultants" if args.len() == 3 => {
+    "Subresultants" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::polynomial_ast::subresultants_ast(args));
     }
     "SubresultantPolynomials" if args.len() == 3 || args.len() == 4 => {

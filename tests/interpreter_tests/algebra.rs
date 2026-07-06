@@ -9875,6 +9875,90 @@ mod subresultants {
   }
 
   #[test]
+  fn modulus_option_computes_over_gf_p() {
+    assert_eq!(
+      interpret(
+        "Subresultants[(x - 1)^2*(x - 2)*(x - 3), (x - 1)*(x - 4)^2, x, Modulus -> 7]"
+      )
+      .unwrap(),
+      "{0, 1, 4, 1}"
+    );
+    assert_eq!(
+      interpret("Subresultants[x^5 + 3, 2*x^2 + 1, x, Modulus -> 5]").unwrap(),
+      "{4, 4, 3}"
+    );
+    // The second input drops to degree 0 mod 2, shortening the chain
+    assert_eq!(
+      interpret("Subresultants[x^2 + 1, 2*x^2 - 1, x, Modulus -> 2]").unwrap(),
+      "{1}"
+    );
+    // ... and an input vanishing mod p leaves no chain at all
+    assert_eq!(
+      interpret("Subresultants[x^2 + 1, 5, x, Modulus -> 5]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("Subresultants[5*x^2 + 5, x + 3, x, Modulus -> 5]").unwrap(),
+      "{}"
+    );
+    // The first input dropping degree below the second selects the
+    // signed-swap presentation
+    assert_eq!(
+      interpret("Subresultants[3*x^3 + x, x^2 + 4, x, Modulus -> 3]").unwrap(),
+      "{1, 1}"
+    );
+    // Symbolic coefficients ignore the modulus
+    assert_eq!(
+      interpret("Subresultants[a*x^2 + b, x + 1, x, Modulus -> 5]").unwrap(),
+      "{a + b, 1}"
+    );
+  }
+
+  // For deg1 < deg2 wolframscript normalizes the swapped-argument value to
+  // [0, p) and then applies the transposition sign (-1)^((m-j)(n-j))
+  // without renormalizing, so entries can print as negative residues.
+  #[test]
+  fn modulus_option_lower_first_degree_uses_signed_swap_representatives() {
+    assert_eq!(
+      interpret("Subresultants[x + 1, x^3 + 2, x, Modulus -> 5]").unwrap(),
+      "{-4, 1}"
+    );
+    assert_eq!(
+      interpret("Subresultants[x + 1, x^3 + 2, x, Modulus -> 7]").unwrap(),
+      "{-6, 1}"
+    );
+    assert_eq!(
+      interpret("Subresultants[x + 2, x^3 + 5, x, Modulus -> 5]").unwrap(),
+      "{-3, 1}"
+    );
+    assert_eq!(
+      interpret("Subresultants[x^2 + x + 1, x^4 + 3, x, Modulus -> 5]")
+        .unwrap(),
+      "{2, -4, 1}"
+    );
+    // ... while the swapped argument order stays fully normalized
+    assert_eq!(
+      interpret("Subresultants[x^4 + 3, x^2 + x + 1, x, Modulus -> 5]")
+        .unwrap(),
+      "{2, 4, 1}"
+    );
+    // Even-sign positions and zero entries are unaffected
+    assert_eq!(
+      interpret("Subresultants[x^2 + 1, x^3 + 2, x, Modulus -> 7]").unwrap(),
+      "{5, 6, 1}"
+    );
+    assert_eq!(
+      interpret("Subresultants[x + 1, x^3 + 1, x, Modulus -> 5]").unwrap(),
+      "{0, 1}"
+    );
+    assert_eq!(
+      interpret("Subresultants[2*x + 1, x^4 + x + 1, x, Modulus -> 3]")
+        .unwrap(),
+      "{0, 2}"
+    );
+  }
+
+  #[test]
   fn degenerate_inputs() {
     // Constant polynomial: only the resultant c^deg remains
     assert_eq!(interpret("Subresultants[3, x^2 + 1, x]").unwrap(), "{9}");
