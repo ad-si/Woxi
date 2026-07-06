@@ -8156,3 +8156,409 @@ pub fn hermite_decomposition_ast(
   };
   Ok(Expr::List(vec![to_matrix(&u), to_matrix(&h)].into()))
 }
+
+// ─── Modulus -> m support for Det / Inverse / RowReduce / NullSpace /
+//     MatrixRank / LinearSolve ────────────────────────────────────────
+
+/// Extract `Modulus -> m` (m >= 0) from an option argument.
+pub fn extract_modulus_option_la(opt: &Expr) -> Option<i128> {
+  let value = |v: &Expr| crate::functions::math_ast::expr_to_i128(v);
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+    && let Expr::Identifier(s) = pattern.as_ref()
+    && s == "Modulus"
+  {
+    return value(replacement).filter(|&m| m >= 0);
+  }
+  if let Expr::FunctionCall { name, args } = opt
+    && (name == "Rule" || name == "RuleDelayed")
+    && args.len() == 2
+    && let Expr::Identifier(s) = &args[0]
+    && s == "Modulus"
+  {
+    return value(&args[1]).filter(|&m| m >= 0);
+  }
+  None
+}
+
+/// Rectangular non-empty integer matrix, or None.
+fn la_int_matrix(expr: &Expr) -> Option<Vec<Vec<i128>>> {
+  use crate::functions::math_ast::expr_to_i128;
+  let Expr::List(rows) = expr else {
+    return None;
+  };
+  if rows.is_empty() {
+    return None;
+  }
+  let mut out = Vec::with_capacity(rows.len());
+  let mut width = None;
+  for row in rows.iter() {
+    let Expr::List(cells) = row else {
+      return None;
+    };
+    if *width.get_or_insert(cells.len()) != cells.len() || cells.is_empty() {
+      return None;
+    }
+    let r: Option<Vec<i128>> = cells.iter().map(expr_to_i128).collect();
+    out.push(r?);
+  }
+  Some(out)
+}
+
+fn la_int_vector(expr: &Expr) -> Option<Vec<i128>> {
+  use crate::functions::math_ast::expr_to_i128;
+  let Expr::List(cells) = expr else {
+    return None;
+  };
+  if cells.is_empty() || cells.iter().any(|c| matches!(c, Expr::List(_))) {
+    return None;
+  }
+  cells.iter().map(expr_to_i128).collect()
+}
+
+fn la_is_prime(m: i128) -> bool {
+  if m < 2 {
+    return false;
+  }
+  let mut d = 2i128;
+  while d * d <= m {
+    if m % d == 0 {
+      return false;
+    }
+    d += 1;
+  }
+  true
+}
+
+fn la_mod_inv(a: i128, m: i128) -> i128 {
+  let (mut old_r, mut r) = (a.rem_euclid(m), m);
+  let (mut old_s, mut s) = (1i128, 0i128);
+  while r != 0 {
+    let q = old_r / r;
+    (old_r, r) = (r, old_r - q * r);
+    (old_s, s) = (s, old_s - q * s);
+  }
+  old_s.rem_euclid(m)
+}
+
+fn la_gcd(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    (a, b) = (b, a % b);
+  }
+  a
+}
+
+/// Fraction-free integer determinant (Bareiss).
+fn la_int_det(mat: &[Vec<i128>]) -> i128 {
+  let n = mat.len();
+  let mut m: Vec<Vec<i128>> = mat.to_vec();
+  let mut sign = 1i128;
+  let mut prev = 1i128;
+  for k in 0..n {
+    if m[k][k] == 0 {
+      let Some(pr) = (k + 1..n).find(|&r| m[r][k] != 0) else {
+        return 0;
+      };
+      m.swap(k, pr);
+      sign = -sign;
+    }
+    for i in (k + 1)..n {
+      for j in (k + 1)..n {
+        m[i][j] = (m[i][j] * m[k][k] - m[i][k] * m[k][j]) / prev;
+      }
+    }
+    prev = m[k][k];
+  }
+  sign * m[n - 1][n - 1]
+}
+
+fn la_matrix_expr(rows: &[Vec<i128>]) -> Expr {
+  Expr::List(
+    rows
+      .iter()
+      .map(|r| {
+        Expr::List(
+          r.iter()
+            .map(|&c| Expr::Integer(c))
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
+fn la_vector_expr(v: &[i128]) -> Expr {
+  Expr::List(
+    v.iter()
+      .map(|&c| Expr::Integer(c))
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
+/// Gauss-Jordan over Z/m with invertible pivots (always succeeds for
+/// prime m); returns pivot columns or None when a column has nonzero
+/// entries but no invertible one (possible only for composite m).
+fn la_rref(mat: &mut [Vec<i128>], m: i128) -> Option<Vec<usize>> {
+  let rows = mat.len();
+  let cols = mat[0].len();
+  for row in mat.iter_mut() {
+    for c in row.iter_mut() {
+      *c = c.rem_euclid(m);
+    }
+  }
+  let mut pivots = Vec::new();
+  let mut rank = 0usize;
+  for col in 0..cols {
+    if rank == rows {
+      break;
+    }
+    let Some(pr) = (rank..rows).find(|&r| la_gcd(mat[r][col], m) == 1) else {
+      if (rank..rows).any(|r| mat[r][col] != 0) {
+        return None;
+      }
+      continue;
+    };
+    mat.swap(rank, pr);
+    let inv = la_mod_inv(mat[rank][col], m);
+    for j in 0..cols {
+      mat[rank][j] = (mat[rank][j] * inv).rem_euclid(m);
+    }
+    for r in 0..rows {
+      if r != rank && mat[r][col] != 0 {
+        let f = mat[r][col];
+        for j in 0..cols {
+          mat[r][j] = (mat[r][j] - f * mat[rank][j]).rem_euclid(m);
+        }
+      }
+    }
+    pivots.push(col);
+    rank += 1;
+  }
+  Some(pivots)
+}
+
+fn la_unevaluated(name: &str, args: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  }
+}
+
+/// Det[m, Modulus -> p]
+pub fn det_modulus_ast(
+  args: &[Expr],
+  m: i128,
+) -> Result<Expr, InterpreterError> {
+  let Some(mat) = la_int_matrix(&args[0]) else {
+    return Ok(la_unevaluated("Det", args));
+  };
+  if mat.len() != mat[0].len() {
+    crate::emit_message(&format!(
+      "Det::matsq: Argument {} at position 1 is not a nonempty square matrix.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(la_unevaluated("Det", args));
+  }
+  Ok(Expr::Integer(la_int_det(&mat).rem_euclid(m)))
+}
+
+/// Inverse[m, Modulus -> p] via the adjugate, which works for any
+/// modulus coprime to the determinant.
+pub fn inverse_modulus_ast(
+  args: &[Expr],
+  m: i128,
+) -> Result<Expr, InterpreterError> {
+  let Some(mat) = la_int_matrix(&args[0]) else {
+    return Ok(la_unevaluated("Inverse", args));
+  };
+  let n = mat.len();
+  if n != mat[0].len() {
+    return Ok(la_unevaluated("Inverse", args));
+  }
+  let reduced: Vec<Vec<i128>> = mat
+    .iter()
+    .map(|r| r.iter().map(|c| c.rem_euclid(m)).collect())
+    .collect();
+  let det = la_int_det(&reduced).rem_euclid(m);
+  let g = la_gcd(det, m);
+  if g != 1 {
+    if la_is_prime(m) {
+      crate::emit_message(&format!(
+        "Inverse::sing: Matrix {} is singular.",
+        crate::syntax::expr_to_string(&la_matrix_expr(&reduced))
+      ));
+    } else {
+      crate::emit_message(&format!(
+        "Inverse::nmod: 1/{g} cannot be inverted in non-prime modulus {m}."
+      ));
+    }
+    return Ok(la_unevaluated("Inverse", args));
+  }
+  let inv_det = la_mod_inv(det, m);
+  let mut out = vec![vec![0i128; n]; n];
+  for i in 0..n {
+    for j in 0..n {
+      // Cofactor C[i][j] lands at out[j][i] (adjugate transpose).
+      let minor: Vec<Vec<i128>> = reduced
+        .iter()
+        .enumerate()
+        .filter(|(r, _)| *r != i)
+        .map(|(_, row)| {
+          row
+            .iter()
+            .enumerate()
+            .filter(|(c, _)| *c != j)
+            .map(|(_, &v)| v)
+            .collect()
+        })
+        .collect();
+      let mut cof = if n == 1 { 1 } else { la_int_det(&minor) };
+      if (i + j) % 2 == 1 {
+        cof = -cof;
+      }
+      out[j][i] = (cof.rem_euclid(m) * inv_det).rem_euclid(m);
+    }
+  }
+  Ok(la_matrix_expr(&out))
+}
+
+/// RowReduce[m, Modulus -> p]; wolframscript insists on a prime modulus.
+pub fn row_reduce_modulus_ast(
+  args: &[Expr],
+  m: i128,
+) -> Result<Expr, InterpreterError> {
+  let Some(mut mat) = la_int_matrix(&args[0]) else {
+    return Ok(la_unevaluated("RowReduce", args));
+  };
+  if !la_is_prime(m) {
+    crate::emit_message(&format!(
+      "RowReduce::nmod: {} cannot be reduced in non-prime modulus {m}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(la_unevaluated("RowReduce", args));
+  }
+  la_rref(&mut mat, m);
+  Ok(la_matrix_expr(&mat))
+}
+
+/// MatrixRank[m, Modulus -> p]; non-prime moduli emit `modp`.
+pub fn matrix_rank_modulus_ast(
+  args: &[Expr],
+  m: i128,
+) -> Result<Expr, InterpreterError> {
+  let Some(mut mat) = la_int_matrix(&args[0]) else {
+    return Ok(la_unevaluated("MatrixRank", args));
+  };
+  if !la_is_prime(m) {
+    crate::emit_message(&format!(
+      "MatrixRank::modp: The value of the option Modulus -> {m} should be \
+       a prime number or zero."
+    ));
+    return Ok(la_unevaluated("MatrixRank", args));
+  }
+  let pivots = la_rref(&mut mat, m).expect("prime modulus always reduces");
+  Ok(Expr::Integer(pivots.len() as i128))
+}
+
+/// NullSpace[m, Modulus -> p]. Basis vectors take the free columns in
+/// reverse order with the free variable set to 1, like wolframscript.
+pub fn null_space_modulus_ast(
+  args: &[Expr],
+  m: i128,
+) -> Result<Expr, InterpreterError> {
+  let Some(mut mat) = la_int_matrix(&args[0]) else {
+    return Ok(la_unevaluated("NullSpace", args));
+  };
+  let cols = mat[0].len();
+  let Some(pivots) = la_rref(&mut mat, m) else {
+    return Ok(la_unevaluated("NullSpace", args));
+  };
+  let mut basis = Vec::new();
+  for free in (0..cols).rev() {
+    if pivots.contains(&free) {
+      continue;
+    }
+    let mut v = vec![0i128; cols];
+    v[free] = 1;
+    for (r, &pc) in pivots.iter().enumerate() {
+      v[pc] = (-mat[r][free]).rem_euclid(m);
+    }
+    basis.push(la_vector_expr(&v));
+  }
+  Ok(Expr::List(basis.into()))
+}
+
+/// LinearSolve[a, b, Modulus -> p] for a vector or matrix right-hand
+/// side; inconsistent systems emit `nosol`, free variables become 0.
+pub fn linear_solve_modulus_ast(
+  args: &[Expr],
+  m: i128,
+) -> Result<Expr, InterpreterError> {
+  let Some(a) = la_int_matrix(&args[0]) else {
+    return Ok(la_unevaluated("LinearSolve", args));
+  };
+  if !la_is_prime(m) {
+    return Ok(la_unevaluated("LinearSolve", args));
+  }
+  let (b_cols, matrix_rhs): (Vec<Vec<i128>>, bool) =
+    if let Some(v) = la_int_vector(&args[1]) {
+      (vec![v], false)
+    } else if let Some(bm) = la_int_matrix(&args[1]) {
+      // Columns of the right-hand matrix.
+      let cols = bm[0].len();
+      (
+        (0..cols)
+          .map(|c| bm.iter().map(|row| row[c]).collect())
+          .collect(),
+        true,
+      )
+    } else {
+      return Ok(la_unevaluated("LinearSolve", args));
+    };
+  let rows = a.len();
+  let cols = a[0].len();
+  if b_cols.iter().any(|b| b.len() != rows) {
+    return Ok(la_unevaluated("LinearSolve", args));
+  }
+  let mut solutions: Vec<Vec<i128>> = Vec::new();
+  for b in &b_cols {
+    let mut aug: Vec<Vec<i128>> = a
+      .iter()
+      .zip(b.iter())
+      .map(|(row, &bv)| {
+        let mut r = row.clone();
+        r.push(bv);
+        r
+      })
+      .collect();
+    let pivots = la_rref(&mut aug, m).expect("prime modulus always reduces");
+    if pivots.contains(&cols) {
+      crate::emit_message(
+        "LinearSolve::nosol: Linear equation encountered that has no \
+         solution.",
+      );
+      return Ok(la_unevaluated("LinearSolve", args));
+    }
+    let mut x = vec![0i128; cols];
+    for (r, &pc) in pivots.iter().enumerate() {
+      x[pc] = aug[r][cols];
+    }
+    solutions.push(x);
+  }
+  if matrix_rhs {
+    // Solutions are columns of the result.
+    let n = solutions[0].len();
+    let rows: Vec<Vec<i128>> = (0..n)
+      .map(|i| solutions.iter().map(|s| s[i]).collect())
+      .collect();
+    Ok(la_matrix_expr(&rows))
+  } else {
+    Ok(la_vector_expr(&solutions[0]))
+  }
+}

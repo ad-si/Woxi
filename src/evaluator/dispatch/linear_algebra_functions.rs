@@ -13,6 +13,39 @@ pub fn dispatch_linear_algebra_functions(
     "Det" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::det_ast(args));
     }
+    // Modulus -> m variants (Modulus -> 0 means ordinary arithmetic).
+    "Det" | "Inverse" | "RowReduce" | "NullSpace" | "MatrixRank"
+      if args.len() == 2 =>
+    {
+      use crate::functions::linear_algebra_ast as la;
+      let Some(m) = la::extract_modulus_option_la(&args[1]) else {
+        return None;
+      };
+      if m == 0 {
+        return dispatch_linear_algebra_functions(name, &args[..1]);
+      }
+      return Some(match name {
+        "Det" => la::det_modulus_ast(args, m),
+        "Inverse" => la::inverse_modulus_ast(args, m),
+        "RowReduce" => la::row_reduce_modulus_ast(args, m),
+        "NullSpace" => la::null_space_modulus_ast(args, m),
+        _ => la::matrix_rank_modulus_ast(args, m),
+      });
+    }
+    "LinearSolve"
+      if args.len() == 3
+        && crate::functions::linear_algebra_ast::extract_modulus_option_la(
+          &args[2],
+        )
+        .is_some() =>
+    {
+      use crate::functions::linear_algebra_ast as la;
+      let m = la::extract_modulus_option_la(&args[2]).unwrap();
+      if m == 0 {
+        return dispatch_linear_algebra_functions(name, &args[..2]);
+      }
+      return Some(la::linear_solve_modulus_ast(args, m));
+    }
     "Permanent" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::permanent_ast(args));
     }

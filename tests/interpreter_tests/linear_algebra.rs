@@ -5966,3 +5966,193 @@ mod lyapunov_solve_tests {
     );
   }
 }
+
+mod modulus_option {
+  use super::*;
+
+  #[test]
+  fn det_reduces_mod_m() {
+    assert_eq!(
+      interpret("Det[{{1, 2}, {3, 4}}, Modulus -> 5]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Det[{{2, 3, 1}, {0, 4, 6}, {1, 1, 1}}, Modulus -> 5]")
+        .unwrap(),
+      "0"
+    );
+    // Composite moduli are fine for Det, and Modulus -> 0 means
+    // ordinary arithmetic
+    assert_eq!(
+      interpret("Det[{{1, 2}, {3, 4}}, Modulus -> 6]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Det[{{1, 2}, {3, 4}}, Modulus -> 0]").unwrap(),
+      "-2"
+    );
+  }
+
+  #[test]
+  fn inverse_mod_m() {
+    assert_eq!(
+      interpret("Inverse[{{1, 2}, {3, 4}}, Modulus -> 5]").unwrap(),
+      "{{3, 1}, {4, 2}}"
+    );
+    // Composite modulus works when the determinant is invertible
+    assert_eq!(
+      interpret("Inverse[{{1, 2}, {3, 4}}, Modulus -> 9]").unwrap(),
+      "{{7, 1}, {6, 4}}"
+    );
+  }
+
+  // A singular matrix emits `sing` showing the mod-reduced matrix.
+  #[test]
+  fn inverse_singular_emits_sing() {
+    let result =
+      woxi::interpret_with_stdout("Inverse[{{1, 3}, {2, 6}}, Modulus -> 5]")
+        .unwrap();
+    assert_eq!(result.result, "Inverse[{{1, 3}, {2, 6}}, Modulus -> 5]");
+    assert!(
+      result.warnings.iter().any(
+        |w| w.contains("Inverse::sing: Matrix {{1, 3}, {2, 1}} is singular.")
+      ),
+      "expected sing, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn row_reduce_mod_p() {
+    assert_eq!(
+      interpret("RowReduce[{{1, 2, 3}, {4, 5, 6}}, Modulus -> 7]").unwrap(),
+      "{{1, 0, 6}, {0, 1, 2}}"
+    );
+    assert_eq!(
+      interpret("RowReduce[{{2, 4}, {1, 3}}, Modulus -> 5]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("RowReduce[{{0, 0}, {0, 0}}, Modulus -> 3]").unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn row_reduce_rejects_composite_modulus() {
+    let result =
+      woxi::interpret_with_stdout("RowReduce[{{2, 4}, {1, 3}}, Modulus -> 6]")
+        .unwrap();
+    assert_eq!(result.result, "RowReduce[{{2, 4}, {1, 3}}, Modulus -> 6]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "RowReduce::nmod: {{2, 4}, {1, 3}} cannot be reduced in non-prime \
+         modulus 6."
+      )),
+      "expected nmod, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn null_space_mod_m() {
+    assert_eq!(
+      interpret("NullSpace[{{1, 2}, {2, 4}}, Modulus -> 5]").unwrap(),
+      "{{3, 1}}"
+    );
+    assert_eq!(
+      interpret("NullSpace[{{1, 2, 3}, {2, 4, 6}, {0, 1, 1}}, Modulus -> 7]")
+        .unwrap(),
+      "{{6, 6, 1}}"
+    );
+    assert_eq!(
+      interpret("NullSpace[{{1, 0}, {0, 1}}, Modulus -> 5]").unwrap(),
+      "{}"
+    );
+    // Free columns are taken in reverse order with the free variable 1
+    assert_eq!(
+      interpret("NullSpace[{{1, 2, 3}}, Modulus -> 5]").unwrap(),
+      "{{2, 0, 1}, {3, 1, 0}}"
+    );
+    // Composite moduli work when the pivots stay invertible
+    assert_eq!(
+      interpret("NullSpace[{{1, 2}, {2, 4}}, Modulus -> 6]").unwrap(),
+      "{{4, 1}}"
+    );
+  }
+
+  #[test]
+  fn linear_solve_mod_p() {
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 4}}, {5, 6}, Modulus -> 7]").unwrap(),
+      "{3, 1}"
+    );
+    // Underdetermined systems set the free variables to 0
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {2, 4}}, {3, 6}, Modulus -> 5]").unwrap(),
+      "{3, 0}"
+    );
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2, 3}}, {4}, Modulus -> 5]").unwrap(),
+      "{4, 0, 0}"
+    );
+    // A matrix right-hand side solves column-wise
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {2, 4}}, {{3}, {6}}, Modulus -> 5]")
+        .unwrap(),
+      "{{3}, {0}}"
+    );
+  }
+
+  #[test]
+  fn linear_solve_inconsistent_emits_nosol() {
+    let result = woxi::interpret_with_stdout(
+      "LinearSolve[{{1, 2}, {2, 4}}, {3, 7}, Modulus -> 5]",
+    )
+    .unwrap();
+    assert_eq!(
+      result.result,
+      "LinearSolve[{{1, 2}, {2, 4}}, {3, 7}, Modulus -> 5]"
+    );
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "LinearSolve::nosol: Linear equation encountered that has no \
+         solution."
+      )),
+      "expected nosol, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn matrix_rank_mod_p() {
+    assert_eq!(
+      interpret("MatrixRank[{{1, 2}, {3, 6}}, Modulus -> 3]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("MatrixRank[{{1, 2}, {3, 4}}, Modulus -> 5]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("MatrixRank[{{0, 0}, {0, 0}}, Modulus -> 3]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn matrix_rank_rejects_composite_modulus() {
+    let result =
+      woxi::interpret_with_stdout("MatrixRank[{{2, 4}, {1, 3}}, Modulus -> 6]")
+        .unwrap();
+    assert_eq!(result.result, "MatrixRank[{{2, 4}, {1, 3}}, Modulus -> 6]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "MatrixRank::modp: The value of the option Modulus -> 6 should be \
+         a prime number or zero."
+      )),
+      "expected modp, got {:?}",
+      result.warnings
+    );
+  }
+}
