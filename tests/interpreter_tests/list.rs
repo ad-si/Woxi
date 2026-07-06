@@ -2390,6 +2390,26 @@ mod sort_canonical {
     );
   }
 
+  // Canonical Sort orders lists by LENGTH first, then element by element — so a
+  // length-1 list precedes any length-2 list even when its first element is
+  // larger. (LexicographicSort keeps the element-first order.)
+  #[test]
+  fn sort_shorter_list_before_longer_even_with_larger_head() {
+    assert_eq!(
+      interpret("Sort[{{3}, {1, 2}, {2}}]").unwrap(),
+      "{{2}, {3}, {1, 2}}"
+    );
+    assert_eq!(
+      interpret("Sort[{{1, 2, 3}, {5}, {2, 1}}]").unwrap(),
+      "{{5}, {2, 1}, {1, 2, 3}}"
+    );
+    // A LexicographicSort of the same list keeps the element-first order.
+    assert_eq!(
+      interpret("LexicographicSort[{{3}, {1, 2}, {2}}]").unwrap(),
+      "{{1, 2}, {2}, {3}}"
+    );
+  }
+
   #[test]
   fn sort_lists_after_atoms() {
     // Numbers sort before lists

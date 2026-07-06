@@ -242,15 +242,20 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (None, None) => {
       // Handle compound expressions (lists, function calls) element-wise
       match (a, b) {
-        // Both lists: compare element-wise
+        // Both lists: Wolfram's canonical order compares by length first, then
+        // element by element — so `{2}` and `{3}` precede `{1, 2}`.
         (Expr::List(a_items), Expr::List(b_items)) => {
+          match a_items.len().cmp(&b_items.len()) {
+            std::cmp::Ordering::Equal => {}
+            other => return other,
+          }
           for (ai, bi) in a_items.iter().zip(b_items.iter()) {
             let ord = canonical_cmp(ai, bi);
             if ord != std::cmp::Ordering::Equal {
               return ord;
             }
           }
-          return a_items.len().cmp(&b_items.len());
+          return std::cmp::Ordering::Equal;
         }
         // Both function calls: compare by name first, then args element-wise
         (
@@ -891,6 +896,35 @@ pub fn emit_nonatomic_normal_message(name: &str, args: &[Expr]) {
   ));
 }
 
+/// Purely lexicographic comparison: unlike canonical `Sort`, lists are
+/// compared element by element (shorter lists are a tie-break, not pulled to
+/// the front), so `{2}` sorts between `{1, 9}` and `{3}`. Non-list expressions
+/// fall back to the canonical order.
+pub fn lexicographic_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  if let (Expr::List(la), Expr::List(lb)) = (a, b) {
+    for (ai, bi) in la.iter().zip(lb.iter()) {
+      let ord = lexicographic_cmp(ai, bi);
+      if ord != std::cmp::Ordering::Equal {
+        return ord;
+      }
+    }
+    return la.len().cmp(&lb.len());
+  }
+  canonical_cmp(a, b)
+}
+
+/// `LexicographicSort[list]` — sort by the purely lexicographic order.
+pub fn lexicographic_sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  match list {
+    Expr::List(items) => {
+      let mut sorted = items.clone();
+      sorted.sort_by(lexicographic_cmp);
+      Ok(Expr::List(sorted))
+    }
+    _ => sort_ast(list),
+  }
+}
+
 pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
     Expr::List(items) => {
@@ -1003,6 +1037,25 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   }
   if b_num.is_some() {
     return -1;
+  }
+
+  // Two Lists: Wolfram's canonical order compares expressions with the same
+  // head by length first, then element by element — so `{2}` and `{3}` (each
+  // length 1) precede `{1, 2}` (length 2). Without this, Lists fell through to
+  // a lexicographic string comparison that ordered `{1, 2}` first.
+  if let (Expr::List(la), Expr::List(lb)) = (a, b) {
+    match la.len().cmp(&lb.len()) {
+      std::cmp::Ordering::Less => return 1,
+      std::cmp::Ordering::Greater => return -1,
+      std::cmp::Ordering::Equal => {}
+    }
+    for (ai, bi) in la.iter().zip(lb.iter()) {
+      let ord = compare_exprs(ai, bi);
+      if ord != 0 {
+        return ord;
+      }
+    }
+    return 0;
   }
 
   // Wolfram canonical ordering: symbols and compounds are compared structurally

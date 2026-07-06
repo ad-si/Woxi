@@ -2923,10 +2923,9 @@ pub fn dispatch_list_operations(
           args: args.to_vec().into(),
         }));
       }
-      // Woxi's Sort orders elements element-wise lexicographically (shorter
-      // lists are NOT pulled to the front the way Wolfram's canonical Sort
-      // does), which is exactly LexicographicSort's semantics.
-      return Some(list_helpers_ast::sort_ast(&args[0]));
+      // LexicographicSort compares lists element by element (shorter lists are
+      // NOT pulled to the front the way the canonical Sort does).
+      return Some(list_helpers_ast::lexicographic_sort_ast(&args[0]));
     }
     "Sort" if args.len() == 1 => {
       return Some(list_helpers_ast::sort_ast(&args[0]));
