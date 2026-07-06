@@ -731,7 +731,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Keys" => Some((1, 2)),
     "KeySelect" => Some((1, 2)),
     "KeySort" => Some((1, 1)),
-    "KeySortBy" => Some((2, 2)),
+    "KeySortBy" => Some((1, 2)),
     "KeyTake" => Some((1, 2)),
     "KeyUnion" => Some((1, 2)),
     "KeyIntersection" => Some((1, 1)),

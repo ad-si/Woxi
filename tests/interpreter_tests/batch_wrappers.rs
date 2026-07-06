@@ -4966,6 +4966,33 @@ mod batch_unevaluated_wrappers_2 {
       "<|2 -> c, 1 -> b, 3 -> a|>"
     );
   }
+  // Operator form: KeySortBy[f][assoc] == KeySortBy[assoc, f].
+  #[test]
+  fn key_sort_by_operator_form() {
+    assert_eq!(
+      interpret("KeySortBy[Abs][<|-3 -> a, 1 -> b, -2 -> c|>]").unwrap(),
+      "<|1 -> b, -2 -> c, -3 -> a|>"
+    );
+    assert_eq!(
+      interpret(
+        "KeySortBy[StringLength][<|\"bb\" -> 1, \"a\" -> 2, \"ccc\" -> 3|>]"
+      )
+      .unwrap(),
+      "<|a -> 2, bb -> 1, ccc -> 3|>"
+    );
+  }
+  // The bare operator echoes, and it threads under Map.
+  #[test]
+  fn key_sort_by_operator_bare_and_mapped() {
+    assert_eq!(interpret("KeySortBy[Abs]").unwrap(), "KeySortBy[Abs]");
+    assert_eq!(
+      interpret(
+        "Map[KeySortBy[Abs], {<|2 -> a, -1 -> b|>, <|-3 -> x, 1 -> y|>}]"
+      )
+      .unwrap(),
+      "{<|-1 -> b, 2 -> a|>, <|1 -> y, -3 -> x|>}"
+    );
+  }
   #[test]
   fn max_filter_basic() {
     assert_eq!(

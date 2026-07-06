@@ -3427,7 +3427,7 @@ Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,
 HyperexponentialDistribution,,,,9.0,3522
 InteractiveTradingChart,,🚫,,8.0,3522
 JacobiND,Jacobi elliptic function nd (1/dn),✅,pure,1.0,3522
-KeySortBy,Sort association by applying function to keys,✅,none,10.0,3522
+KeySortBy,Sorts an association by applying a function to its keys; supports the operator form KeySortBy[f][assoc],✅,pure,10.0,3522
 PermissionsGroup,,🚫,,10.0,3522
 PopupView,Popup view control (stays symbolic in script mode),✅,unevaluated,6.0,3522
 SetCloudDirectory,,🚫,,10.0,3522
