@@ -7077,14 +7077,41 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   if let (Some((a_n, a_d)), Some((b_n, b_d))) =
     (try_as_rational(a), try_as_rational(b))
   {
-    let numer = a_n.checked_mul(b_d);
-    let denom = a_d.checked_mul(b_n);
-    if let (Some(n), Some(d)) = (numer, denom) {
-      if d == 0 {
-        // A zero rational divisor: same as x/0.
-        return Ok(divide_by_zero_result(a));
+    match (a_n.checked_mul(b_d), a_d.checked_mul(b_n)) {
+      (Some(n), Some(d)) => {
+        if d == 0 {
+          // A zero rational divisor: same as x/0.
+          return Ok(divide_by_zero_result(a));
+        }
+        return Ok(make_rational(n, d));
       }
-      return Ok(make_rational(n, d));
+      // The i128 product overflowed. Redo in BigInt so the exact value is
+      // preserved instead of collapsing to a lossy Real (e.g. iterating
+      // `#/2 &` past a 2^127 denominator must stay an exact fraction).
+      _ => {
+        use crate::functions::math_ast::number_theory::bigint_gcd;
+        use num_bigint::BigInt;
+        use num_traits::Zero;
+        let numer = BigInt::from(a_n) * BigInt::from(b_d);
+        let denom = BigInt::from(a_d) * BigInt::from(b_n);
+        if denom.is_zero() {
+          return Ok(divide_by_zero_result(a));
+        }
+        let g = bigint_gcd(numer.clone(), denom.clone());
+        let mut rn = &numer / &g;
+        let mut rd = &denom / &g;
+        if rd < BigInt::from(0) {
+          rn = -rn;
+          rd = -rd;
+        }
+        if rd == BigInt::from(1) {
+          return Ok(bigint_to_expr(rn));
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![bigint_to_expr(rn), bigint_to_expr(rd)].into(),
+        });
+      }
     }
   }
 

@@ -1073,6 +1073,27 @@ mod big_integer {
       "{False, True, True}"
     );
   }
+
+  // Regression: dividing a rational whose denominator fits in i128 by a value
+  // that pushes it past 2^127 overflowed and collapsed to a lossy Real instead
+  // of promoting to BigInteger. `1/2^126 / 2` must stay the exact `1/2^127`.
+  #[test]
+  fn rational_divide_overflows_to_bigint() {
+    assert_eq!(
+      interpret("1/85070591730234615865843651857942052864 / 2").unwrap(),
+      "1/170141183460469231731687303715884105728"
+    );
+    // Iterating `#/2 &` past the i128 boundary keeps exact fractions.
+    assert_eq!(
+      interpret("Nest[#/2 &, 8, 130]").unwrap(),
+      "1/170141183460469231731687303715884105728"
+    );
+    // The Divide head takes the same path.
+    assert_eq!(
+      interpret("Divide[1/85070591730234615865843651857942052864, 2]").unwrap(),
+      "1/170141183460469231731687303715884105728"
+    );
+  }
 }
 
 mod nary_power {
