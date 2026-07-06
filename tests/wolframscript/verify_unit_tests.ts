@@ -612,12 +612,6 @@ function main() {
     // hydrogens, and returns a plain "C8H10N4O2" string. Internal representation.
     /\bMolecule/,
 
-    // Music objects: Wolfram represents MusicPitch/MusicChord/MusicNote/
-    // MusicDuration as normalized <|...|> associations (MIDINumber / Accidental /
-    // BeatDuration keys); Woxi uses named-string forms ("C4") and a reduced
-    // association. Internal representation differs across the whole subsystem.
-    /\bMusic(Pitch|Chord|Note|Duration)\[/,
-
     // Wavelet subsystem: Wolfram renders filter coefficients as machine reals
     // (0.5) where Woxi keeps exact rationals (1/2), wraps DiscreteWaveletData
     // values one level deeper ({{...}} vs {...}), carries default arguments

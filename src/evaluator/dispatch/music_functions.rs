@@ -48,10 +48,22 @@ pub fn dispatch_music_functions(
     "MusicScore" if args.len() <= 1 => {
       crate::functions::music_ast::music_score(args).map(Ok)
     }
+    // MusicScale's second argument must be a property association; any other
+    // second argument emits MusicScale::passc and stays unevaluated.
+    "MusicScale" => crate::functions::music_ast::music_scale(args).map(Ok),
     // MusicPlot[obj] draws the object as staff notation, returning a Graphics
     // (which renders as the SVG in visual hosts and as `-Graphics-` in the CLI,
-    // just like Plot). Non-renderable arguments are left symbolic.
+    // just like Plot). An invalid MusicScale (rejected by MusicScale::passc)
+    // is not a valid music object: it emits MusicPlot::music and stays
+    // unevaluated. Other non-renderable arguments are left symbolic.
     "MusicPlot" if args.len() == 1 => {
+      if crate::functions::music_ast::is_invalid_music_scale(&args[0]) {
+        crate::functions::music_ast::emit_music_plot_message(&args[0]);
+        return Some(Ok(Expr::FunctionCall {
+          name: "MusicPlot".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       crate::functions::music_render::music_to_svg(&args[0])
         .map(|svg| Ok(crate::graphics_result(svg)))
     }

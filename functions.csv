@@ -6188,7 +6188,7 @@ MusicNote,Represents a musical note,✅,pure,15.0,5592
 MusicRest,Represents a musical rest (silence),✅,pure,15.0,5593
 MusicChord,Represents a musical chord,✅,pure,15.0,5594
 MusicDuration,Specification for note or rest duration,✅,pure,15.0,5595
-MusicPitch,Specification for note pitch (MIDI integers/frequencies/SoundNote/MusicNote canonicalize to named pitches),✅,pure,15.0,5596
+MusicPitch,Specification for note pitch (spelled names canonicalize to Accidental/Octave/Key associations; MIDI/frequency/SoundNote forms keep a MIDINumber),✅,pure,15.0,5596
 MusicInterval,Represents the interval between two pitches,✅,pure,15.0,5597
 MusicKeySignature,Key signature for a measure or score,✅,pure,15.0,5598
 MusicTimeSignature,Time signature for a measure or score,✅,pure,15.0,5599

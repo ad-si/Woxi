@@ -52,53 +52,82 @@ fn music_object_q_false_for_operations() {
 
 #[test]
 fn music_pitch_canonicalizes_midi_number() {
-  // Middle C is MIDI 60 / C4; A4 is MIDI 69.
-  assert_eq!(interpret("MusicPitch[60]").unwrap(), "MusicPitch[C4]");
-  assert_eq!(interpret("MusicPitch[69]").unwrap(), "MusicPitch[A4]");
-  assert_eq!(interpret("MusicPitch[61]").unwrap(), "MusicPitch[C#4]");
-  assert_eq!(interpret("MusicPitch[0]").unwrap(), "MusicPitch[C-1]");
+  // A MIDI number fixes no letter spelling, so the canonical object keeps
+  // just the number (middle C is MIDI 60; A4 is 69).
+  assert_eq!(
+    interpret("MusicPitch[60]").unwrap(),
+    "MusicPitch[<|MIDINumber -> 60|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[69]").unwrap(),
+    "MusicPitch[<|MIDINumber -> 69|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[0]").unwrap(),
+    "MusicPitch[<|MIDINumber -> 0|>]"
+  );
 }
 
 #[test]
-fn music_pitch_string_stays_symbolic() {
-  assert_eq!(interpret("MusicPitch[\"C4\"]").unwrap(), "MusicPitch[C4]");
+fn music_pitch_string_canonicalizes_to_association() {
+  // A spelled name with an octave carries Accidental/Octave/Key plus its
+  // spelled Name; an octaveless name keeps only Accidental/Key.
+  assert_eq!(
+    interpret("MusicPitch[\"C4\"]").unwrap(),
+    "MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"C#4\"]").unwrap(),
+    "MusicPitch[<|Accidental -> 1, Octave -> 4, Key -> C, Name -> C\u{266F}|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"C\"]").unwrap(),
+    "MusicPitch[<|Accidental -> 0, Key -> C|>]"
+  );
+  assert_eq!(
+    interpret("MusicPitch[\"Bb\"]").unwrap(),
+    "MusicPitch[<|Accidental -> -1, Key -> B|>]"
+  );
 }
 
 #[test]
 fn music_pitch_canonicalizes_frequency() {
-  // A4 is 440 Hz; 200 Hz is the nearest to G3 (per the MusicPitch docs).
+  // A4 is 440 Hz; 200 Hz is the nearest to G3 / MIDI 55 (per the MusicPitch
+  // docs). Frequencies keep their MIDI number unspelled.
   assert_eq!(
     interpret("MusicPitch[Quantity[440, \"Hertz\"]]").unwrap(),
-    "MusicPitch[A4]"
+    "MusicPitch[<|MIDINumber -> 69|>]"
   );
   assert_eq!(
     interpret("MusicPitch[Quantity[200, \"Hertz\"]]").unwrap(),
-    "MusicPitch[G3]"
+    "MusicPitch[<|MIDINumber -> 55|>]"
   );
 }
 
 #[test]
 fn music_pitch_canonicalizes_soundnote() {
-  // SoundNote numbers pitches relative to middle C (0 -> C4).
+  // SoundNote numbers pitches relative to middle C (0 -> MIDI 60).
   assert_eq!(
     interpret("MusicPitch[SoundNote[0]]").unwrap(),
-    "MusicPitch[C4]"
+    "MusicPitch[<|MIDINumber -> 60|>]"
   );
   assert_eq!(
     interpret("MusicPitch[SoundNote[-5]]").unwrap(),
-    "MusicPitch[G3]"
+    "MusicPitch[<|MIDINumber -> 55|>]"
   );
 }
 
 #[test]
 fn music_pitch_extracts_note_pitch() {
+  // The pitch of a note is returned exactly as the note stores it: a spelled
+  // note carries the full association, a MIDI-numbered note stays unspelled.
   assert_eq!(
     interpret("MusicPitch[MusicNote[\"G3\"]]").unwrap(),
-    "MusicPitch[G3]"
+    "MusicPitch[<|Accidental -> 0, Octave -> 3, Key -> G, Name -> G|>]"
   );
   assert_eq!(
     interpret("MusicPitch[MusicNote[MusicPitch[55]]]").unwrap(),
-    "MusicPitch[G3]"
+    "MusicPitch[<|MIDINumber -> 55|>]"
   );
 }
 
@@ -141,10 +170,11 @@ fn music_pitch_arithmetic_cancels() {
 
 #[test]
 fn music_pitch_mixed_sum_stays_symbolic() {
-  // A pitch plus a plain number is not pitch arithmetic; it stays symbolic.
+  // A pitch plus a plain number is not pitch arithmetic; it stays symbolic
+  // (with the pitch in its canonical association form).
   assert_eq!(
     interpret("MusicPitch[\"C\"] + 5").unwrap(),
-    "5 + MusicPitch[C]"
+    "5 + MusicPitch[<|Accidental -> 0, Key -> C|>]"
   );
 }
 
@@ -203,11 +233,55 @@ fn bare_pitch_is_not_staff_notation() {
 
 #[test]
 fn music_plot_returns_graphics() {
-  // MusicPlot draws the object; in the CLI a Graphics prints as -Graphics-.
+  // MusicPlot draws a valid music object; in the CLI a Graphics prints as
+  // -Graphics-.
   assert_eq!(
-    interpret("MusicPlot[MusicScale[\"Major\", MusicPitch[\"C4\"]]]").unwrap(),
+    interpret("MusicPlot[MusicNote[\"C4\"]]").unwrap(),
     "-Graphics-"
   );
+}
+
+#[test]
+fn music_scale_rejects_non_association_second_argument() {
+  // MusicScale's second argument must be a property association; a pitch
+  // object there emits MusicScale::passc (showing the object's -MusicPitch-
+  // summary form) and the scale stays unevaluated. MusicPlot then rejects the
+  // invalid scale with MusicPlot::music instead of drawing it.
+  clear_state();
+  let r = woxi::interpret_with_stdout(
+    "Head[MusicPlot[MusicScale[\"Major\", MusicPitch[\"C4\"]]]]",
+  )
+  .unwrap();
+  assert_eq!(r.result, "MusicPlot");
+  assert!(
+    r.warnings.iter().any(|w| w.contains(
+      "MusicScale::passc: -MusicPitch- is not a valid property association."
+    )),
+    "expected MusicScale::passc, got {:?}",
+    r.warnings
+  );
+  assert!(
+    r.warnings.iter().any(|w| w.contains(
+      "MusicPlot::music: Expecting a valid music object instead of \
+       MusicScale[Major, -MusicPitch-]."
+    )),
+    "expected MusicPlot::music, got {:?}",
+    r.warnings
+  );
+
+  // A string second argument is reported in its plain form. (The textual
+  // script-mode result comes from `interpret`; `interpret_with_stdout` runs
+  // in visual mode, where music objects auto-render.)
+  clear_state();
+  assert_eq!(
+    interpret("MusicScale[\"Major\", \"C4\"]").unwrap(),
+    "MusicScale[Major, C4]"
+  );
+  clear_state();
+  let r = woxi::interpret_with_stdout("MusicScale[\"Major\", \"C4\"]").unwrap();
+  assert!(r.warnings.iter().any(|w| {
+    w.contains("MusicScale::passc: C4 is not a valid property association.")
+  }));
 }
 
 #[test]
@@ -292,15 +366,22 @@ fn music_duration_canonicalizes_number() {
 #[test]
 fn music_duration_arithmetic() {
   // Durations add (scaled by any leading coefficient): 3·(1/2) + 1/4 = 7/4.
+  // The sum counts in the default quarter-note beat, so it carries
+  // BeatDuration -> 1/4.
   assert_eq!(
     interpret("3 MusicDuration[<|\"Duration\" -> 1/2|>] + MusicDuration[1/4]")
       .unwrap(),
-    "MusicDuration[<|Duration -> 7/4|>]"
+    "MusicDuration[<|Duration -> 7/4, BeatDuration -> 1/4|>]"
   );
   // Subtraction works too: 1 - 1/4 = 3/4.
   assert_eq!(
     interpret("MusicDuration[1] - MusicDuration[1/4]").unwrap(),
-    "MusicDuration[<|Duration -> 3/4|>]"
+    "MusicDuration[<|Duration -> 3/4, BeatDuration -> 1/4|>]"
+  );
+  // The beat unit is 1/4 regardless of the summands' values.
+  assert_eq!(
+    interpret("MusicDuration[1/2] + MusicDuration[1/8]").unwrap(),
+    "MusicDuration[<|Duration -> 5/8, BeatDuration -> 1/4|>]"
   );
 }
 
@@ -328,6 +409,23 @@ fn music_pitch_enharmonic_equality() {
 // ─── MusicChord canonicalization + properties (WL 15) ─────────────────────────
 
 #[test]
+fn music_chord_canonicalizes_explicit_pitch_list() {
+  // An explicit pitch list becomes the canonical PitchList association, each
+  // tone spelled as its full pitch object (octaveless pitches default to
+  // register 4, without gaining a Name).
+  assert_eq!(
+    interpret(
+      "MusicChord[{MusicPitch[\"C\"], MusicPitch[\"E\"], MusicPitch[\"G\"]}]"
+    )
+    .unwrap(),
+    "MusicChord[<|PitchList -> {\
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>]}|>]"
+  );
+}
+
+#[test]
 fn music_chord_canonicalizes_named_chord() {
   assert_eq!(
     interpret("MusicChord[\"GMajor\"]").unwrap(),
@@ -338,12 +436,32 @@ fn music_chord_canonicalizes_named_chord() {
 
 #[test]
 fn music_chord_pitch_list() {
-  // G major triad, spelled on the correct staff letters: G4, B4, D5.
+  // G major triad, spelled on the correct staff letters: G4, B4, D5. The
+  // chord crosses an octave boundary, so every tone shows its Octave.
   assert_eq!(
     interpret("MusicChord[\"GMajor\"][\"PitchList\"]").unwrap(),
     "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], \
      MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> B|>], \
      MusicPitch[<|Accidental -> 0, Octave -> 5, Key -> D|>]}"
+  );
+}
+
+#[test]
+fn music_chord_pitch_list_omits_octave_within_register() {
+  // A named chord whose tones all stay in the root's octave prints them
+  // without Octave keys …
+  assert_eq!(
+    interpret("MusicChord[\"CMajor\"][\"PitchList\"]").unwrap(),
+    "{MusicPitch[<|Accidental -> 0, Key -> C|>], \
+     MusicPitch[<|Accidental -> 0, Key -> E|>], \
+     MusicPitch[<|Accidental -> 0, Key -> G|>]}"
+  );
+  // … while a bare root (no stored quality) always spells the register.
+  assert_eq!(
+    interpret("MusicChord[\"C\"][\"PitchList\"]").unwrap(),
+    "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>]}"
   );
 }
 
@@ -369,52 +487,88 @@ fn music_chord_minor_spelling() {
 }
 
 #[test]
-fn music_chord_unknown_quality_stays_symbolic() {
-  assert_eq!(interpret("MusicChord[\"Xyz\"]").unwrap(), "MusicChord[Xyz]");
+fn music_chord_unknown_quality_emits_args_message() {
+  // Any chord string that fails to parse — invalid root letter or unknown
+  // quality suffix — emits MusicChord::args and stays unevaluated.
+  clear_state();
+  let r = woxi::interpret_with_stdout("MusicChord[\"Xyz\"]").unwrap();
+  assert_eq!(r.result, "MusicChord[Xyz]");
+  assert!(r.warnings.iter().any(|w| {
+    w.contains("MusicChord::args: MusicChord called with invalid parameters.")
+  }));
+
+  clear_state();
+  let r = woxi::interpret_with_stdout("MusicChord[\"Cfoo\"]").unwrap();
+  assert_eq!(r.result, "MusicChord[Cfoo]");
+  assert!(r.warnings.iter().any(|w| {
+    w.contains("MusicChord::args: MusicChord called with invalid parameters.")
+  }));
 }
 
 // ─── MusicChord notation aliases ──────────────────────────────────────────────
 
-/// A bare root, the spelled-out quality, and the space-separated form all
-/// resolve to the same canonical major chord.
+/// A bare root stores no quality at all — which is what makes it unequal to
+/// the explicitly-major forms — while the spelled-out, space-separated, and
+/// letter qualities all store `Name -> Major`.
 #[test]
-fn music_chord_bare_root_and_spaced_forms_are_major() {
-  let expected = "MusicChord[<|Name -> Major, \
+fn music_chord_bare_root_and_spaced_forms() {
+  assert_eq!(
+    interpret("MusicChord[\"G\"]").unwrap(),
+    "MusicChord[<|Root -> MusicPitch[<|Key -> G, Accidental -> 0|>]|>]"
+  );
+  let major = "MusicChord[<|Name -> Major, \
      Root -> MusicPitch[<|Key -> G, Accidental -> 0|>]|>]";
-  assert_eq!(interpret("MusicChord[\"G\"]").unwrap(), expected);
-  assert_eq!(interpret("MusicChord[\"GMajor\"]").unwrap(), expected);
-  assert_eq!(interpret("MusicChord[\"G Major\"]").unwrap(), expected);
-  assert_eq!(interpret("MusicChord[\"GM\"]").unwrap(), expected);
-  assert_eq!(interpret("MusicChord[\"Gmaj\"]").unwrap(), expected);
+  assert_eq!(interpret("MusicChord[\"GMajor\"]").unwrap(), major);
+  assert_eq!(interpret("MusicChord[\"G Major\"]").unwrap(), major);
+  assert_eq!(interpret("MusicChord[\"GM\"]").unwrap(), major);
+  assert_eq!(interpret("MusicChord[\"Gmaj\"]").unwrap(), major);
+  // The bare root is therefore not identical to the named major chord, but
+  // still *sounds* the default major triad through its properties.
+  assert_eq!(
+    interpret(
+      "MusicChord[\"G\"] === MusicChord[\"GMajor\"] === MusicChord[\"G Major\"]"
+    )
+    .unwrap(),
+    "False"
+  );
+  assert_eq!(interpret("MusicChord[\"G\"][\"Name\"]").unwrap(), "Major");
 }
 
-/// The short symbols map to the same canonical names as the long ones.
+/// A trailing sign with no digits is dropped: `"C-"` and `"C+"` are the bare
+/// root C, not minor/augmented chords.
+#[test]
+fn music_chord_trailing_sign_is_bare_root() {
+  let bare =
+    "MusicChord[<|Root -> MusicPitch[<|Key -> C, Accidental -> 0|>]|>]";
+  assert_eq!(interpret("MusicChord[\"C-\"]").unwrap(), bare);
+  assert_eq!(interpret("MusicChord[\"C+\"]").unwrap(), bare);
+}
+
+/// The short symbols map to the same canonical (spaced) names as the long
+/// ones.
 #[test]
 fn music_chord_short_symbols_resolve() {
   let cases = [
     ("Cm", "Minor"),
-    ("C-", "Minor"),
     ("Cmin", "Minor"),
     ("Caug", "Augmented"),
-    ("C+", "Augmented"),
     ("Cdim", "Diminished"),
     ("Co", "Diminished"),
-    ("C7", "DominantSeventh"),
-    ("Cmaj7", "MajorSeventh"),
-    ("CM7", "MajorSeventh"),
-    ("Cm7", "MinorSeventh"),
-    ("Cdim7", "DiminishedSeventh"),
-    ("Cm7b5", "HalfDiminishedSeventh"),
-    ("CmM7", "MinorMajorSeventh"),
-    ("Caug7", "AugmentedSeventh"),
-    ("C6", "Sixth"),
-    ("Cm6", "MinorSixth"),
-    ("C9", "DominantNinth"),
-    ("CM9", "MajorNinth"),
-    ("Cm9", "MinorNinth"),
-    ("Csus2", "SuspendedSecond"),
-    ("Csus4", "SuspendedFourth"),
-    ("Csus", "SuspendedFourth"),
+    ("Cdom7", "Dominant Seventh"),
+    ("Cmaj7", "Major Seventh"),
+    ("CM7", "Major Seventh"),
+    ("Cm7", "Minor Seventh"),
+    ("Cdim7", "Diminished Seventh"),
+    ("Cm7b5", "Half Diminished Seventh"),
+    ("Caug7", "Augmented Seventh"),
+    ("Cm6", "Minor Sixth"),
+    ("CDominantNinth", "Dominant Ninth"),
+    ("CM9", "Major Ninth"),
+    ("Cm9", "Minor Ninth"),
+    ("Csus2", "Suspended Second"),
+    ("Csus4", "Suspended Fourth"),
+    ("Csus", "Suspended Fourth"),
+    ("CMinorMajorSeventh", "Minor Major Seventh"),
   ];
   for (input, name) in cases {
     assert_eq!(
@@ -430,6 +584,50 @@ fn music_chord_short_symbols_resolve() {
   }
 }
 
+/// A root followed only by a (possibly `+`-signed) digit is the note's
+/// *octave*, not a chord quality: `"C7"` is the note C in octave 7 and its
+/// pitch list is a major triad in that register. Octaves outside 0–9 (and a
+/// negative sign) are invalid parameters.
+#[test]
+fn music_chord_trailing_digit_is_octave() {
+  assert_eq!(
+    interpret("MusicChord[\"C7\"]").unwrap(),
+    "MusicChord[<|Root -> \
+     MusicPitch[<|Key -> C, Accidental -> 0, Octave -> 7, Name -> C7|>]|>]"
+  );
+  assert_eq!(
+    interpret("MusicChord[\"C7\"][\"PitchList\"]").unwrap(),
+    "{MusicPitch[<|Accidental -> 0, Octave -> 7, Key -> C|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 7, Key -> E|>], \
+     MusicPitch[<|Accidental -> 0, Octave -> 7, Key -> G|>]}"
+  );
+  // The accidental is part of the root's spelled name (C♯7).
+  assert_eq!(
+    interpret("MusicChord[\"C#7\"]").unwrap(),
+    "MusicChord[<|Root -> \
+     MusicPitch[<|Key -> C, Accidental -> 1, Octave -> 7, Name -> C\u{266F}7|>]|>]"
+  );
+  // An explicit plus sign reads the same octave.
+  assert_eq!(
+    interpret("MusicChord[\"C+7\"]").unwrap(),
+    "MusicChord[<|Root -> \
+     MusicPitch[<|Key -> C, Accidental -> 0, Octave -> 7, Name -> C7|>]|>]"
+  );
+  // Out-of-range octaves and negative octaves are invalid parameters.
+  for bad in ["C10", "C-7", "C13"] {
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout(&format!("MusicChord[\"{bad}\"]")).unwrap();
+    assert_eq!(r.result, format!("MusicChord[{bad}]"));
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "MusicChord::args: MusicChord called with invalid parameters."
+      )),
+      "expected MusicChord::args for {bad}"
+    );
+  }
+}
+
 /// Case matters where it must: `m` is minor, `M` is major.
 #[test]
 fn music_chord_case_distinguishes_major_from_minor() {
@@ -437,11 +635,11 @@ fn music_chord_case_distinguishes_major_from_minor() {
   assert_eq!(interpret("MusicChord[\"Cm\"][\"Name\"]").unwrap(), "Minor");
   assert_eq!(
     interpret("MusicChord[\"CM7\"][\"Name\"]").unwrap(),
-    "MajorSeventh"
+    "Major Seventh"
   );
   assert_eq!(
     interpret("MusicChord[\"Cm7\"][\"Name\"]").unwrap(),
-    "MinorSeventh"
+    "Minor Seventh"
   );
 }
 
@@ -451,7 +649,7 @@ fn music_chord_case_distinguishes_major_from_minor() {
 fn music_chord_accidental_roots() {
   assert_eq!(
     interpret("MusicChord[\"Bbm7\"]").unwrap(),
-    "MusicChord[<|Name -> MinorSeventh, \
+    "MusicChord[<|Name -> Minor Seventh, \
      Root -> MusicPitch[<|Key -> B, Accidental -> -1|>]|>]"
   );
   assert_eq!(
@@ -470,15 +668,16 @@ fn music_chord_accidental_roots() {
   );
 }
 
-/// A dominant seventh spells a diminished-quality top: C7 → C E G Bb.
+/// A dominant seventh spells a diminished-quality top: Cdom7 → C E G Bb (all
+/// within the root's octave, so no Octave keys).
 #[test]
 fn music_chord_dominant_seventh_spelling() {
   assert_eq!(
-    interpret("MusicChord[\"C7\"][\"PitchList\"]").unwrap(),
-    "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
-     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], \
-     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], \
-     MusicPitch[<|Accidental -> -1, Octave -> 4, Key -> B|>]}"
+    interpret("MusicChord[\"Cdom7\"][\"PitchList\"]").unwrap(),
+    "{MusicPitch[<|Accidental -> 0, Key -> C|>], \
+     MusicPitch[<|Accidental -> 0, Key -> E|>], \
+     MusicPitch[<|Accidental -> 0, Key -> G|>], \
+     MusicPitch[<|Accidental -> -1, Key -> B|>]}"
   );
 }
 
@@ -487,17 +686,18 @@ fn music_chord_dominant_seventh_spelling() {
 fn music_chord_suspended_fourth_spelling() {
   assert_eq!(
     interpret("MusicChord[\"Csus4\"][\"PitchList\"]").unwrap(),
-    "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
-     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> F|>], \
-     MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>]}"
+    "{MusicPitch[<|Accidental -> 0, Key -> C|>], \
+     MusicPitch[<|Accidental -> 0, Key -> F|>], \
+     MusicPitch[<|Accidental -> 0, Key -> G|>]}"
   );
 }
 
-/// A dominant ninth stacks the ninth an octave up: C E G Bb D5.
+/// A dominant ninth stacks the ninth an octave up: C E G Bb D5. Crossing the
+/// octave boundary makes every tone spell its register.
 #[test]
 fn music_chord_dominant_ninth_spelling() {
   assert_eq!(
-    interpret("MusicChord[\"C9\"][\"PitchList\"]").unwrap(),
+    interpret("MusicChord[\"CDominantNinth\"][\"PitchList\"]").unwrap(),
     "{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], \
      MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], \
      MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], \

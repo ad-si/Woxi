@@ -182,7 +182,16 @@ pub fn resolve_pitch_name(spec: &Expr) -> Option<String> {
     },
     // The canonical `MusicPitch` association form,
     // `<|"Accidental" -> a, ["Octave" -> o,] "Key" -> k[, "MIDINumber" -> n]|>`.
+    // A `MIDINumber`-only association (from a MIDI/frequency/SoundNote
+    // specification) has no spelling of its own and reads straight off the
+    // MIDI number.
     Expr::Association(pairs) => {
+      if assoc_get(pairs, "Key").is_none() {
+        return match assoc_get(pairs, "MIDINumber")? {
+          Expr::Integer(m) => Some(midi_to_pitch_name(*m)),
+          _ => None,
+        };
+      }
       let key = match assoc_get(pairs, "Key")? {
         Expr::String(s) => s.as_bytes().first()?.to_ascii_uppercase() as char,
         _ => return None,
@@ -222,35 +231,67 @@ pub fn resolve_pitch_name(spec: &Expr) -> Option<String> {
   }
 }
 
+/// The canonical MIDI-numbered pitch object `MusicPitch[<|"MIDINumber" -> n|>]`
+/// that a MIDI / frequency / `SoundNote` specification resolves to. Unlike a
+/// spelled name, these forms fix no letter spelling, so the Wolfram Language
+/// keeps just the MIDI number.
+fn midi_number_pitch(midi: i128) -> Expr {
+  music_assoc("MusicPitch", vec![("MIDINumber", Expr::Integer(midi))])
+}
+
 /// `MusicPitch[spec]`. Canonicalizes any of the documented pitch
-/// specifications — MIDI integer, `Quantity` frequency, `SoundNote`,
-/// `MusicNote`, or a nested `MusicPitch` — to the named-pitch form
-/// `MusicPitch["name"]`. A bare pitch string such as `"C4"` is already the
-/// canonical symbolic object, so `None` is returned and the caller leaves it
-/// unevaluated.
+/// specifications to its association-form pitch object: a spelled name keeps
+/// its letter/accidental (plus `Octave`/`Name` when an octave is given), while
+/// a MIDI integer, `Quantity` frequency, or `SoundNote` — which fix no
+/// spelling — keep only their `MIDINumber`. An association argument is already
+/// the canonical object and is left untouched (`None`), which keeps the result
+/// idempotent under re-evaluation.
 pub fn music_pitch(args: &[Expr]) -> Option<Expr> {
   let [spec] = args else {
     return None;
   };
-  // A bare pitch name is already canonical; keep it unevaluated to avoid
-  // pointless rewriting (MusicPitch["C4"] -> MusicPitch["C4"]).
-  if matches!(spec, Expr::String(_)) {
-    return None;
+  match spec {
+    // A spelled pitch name: `<|Accidental, [Octave,] Key[, Name]|>`.
+    Expr::String(name) => {
+      let (letter, accidental, octave) = parse_pitch_spelled(name)?;
+      Some(note_pitch_object(letter, accidental, octave))
+    }
+    // MIDI note number (middle C = 60): no spelling, keep the number.
+    Expr::Integer(midi) => Some(midi_number_pitch(*midi)),
+    // Already canonical (any association form).
+    Expr::Association(_) => None,
+    Expr::FunctionCall { name, args: inner } => match name.as_str() {
+      // MusicPitch[Quantity[f, "Hertz"]] — a frequency.
+      "Quantity" if inner.len() == 2 => {
+        let is_hertz = matches!(
+          &inner[1],
+          Expr::String(u) | Expr::Identifier(u) if u == "Hertz" || u == "Hz"
+        );
+        if !is_hertz {
+          return None;
+        }
+        frequency_to_midi(magnitude_as_f64(&inner[0])?).map(midi_number_pitch)
+      }
+      // MusicPitch[SoundNote[p, …]] — SoundNote numbers pitches relative to
+      // middle C (0), so the MIDI number is p + 60.
+      "SoundNote" => match inner.first()? {
+        Expr::Integer(p) => Some(midi_number_pitch(p + 60)),
+        Expr::String(s) => pitch_name_to_midi(s).map(midi_number_pitch),
+        _ => None,
+      },
+      // MusicPitch[MusicNote[…]] — the pitch of the note. A canonical note
+      // carries its pitch object under the `"Pitch"` key; a raw
+      // `MusicNote[spec, …]` resolves its first argument.
+      "MusicNote" => match inner.first()? {
+        Expr::Association(pairs) => assoc_get(pairs, "Pitch").cloned(),
+        other => resolve_pitch_object(other),
+      },
+      // MusicPitch[MusicPitch[…]] — already a pitch object.
+      "MusicPitch" => Some(spec.clone()),
+      _ => None,
+    },
+    _ => None,
   }
-  // A canonical pitch *association* (`<|"Accidental" -> …, "Key" -> …, …|>`,
-  // as carried by a resolved note/measure) is already the canonical object.
-  // Leaving it untouched keeps it idempotent under re-evaluation, so a stored
-  // note's pitch stays in association form instead of collapsing to a name.
-  if let Expr::Association(pairs) = spec
-    && assoc_get(pairs, "Key").is_some()
-  {
-    return None;
-  }
-  let name = resolve_pitch_name(spec)?;
-  Some(Expr::FunctionCall {
-    name: "MusicPitch".to_string(),
-    args: vec![Expr::String(name)].into(),
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -356,32 +397,48 @@ fn music_pitch_axes(expr: &Expr) -> Option<(i128, i128)> {
         parse_pitch_parts(&midi_to_pitch_name(*midi))?;
       Some(parts_to_axes(diatonic, accidental, octave))
     }
-    // The canonical `<|"Accidental" -> a, "Key" -> k, "MIDINumber" -> n|>`
-    // association: recover the octave from the MIDI number so the staff
-    // position is exact.
+    // A canonical pitch association. With a `Key` spelling, the octave comes
+    // from the `MIDINumber` when present (exact), else from an explicit
+    // `Octave`, else WL's default register 4. A `MIDINumber`-only association
+    // (a MIDI/frequency/SoundNote pitch) is spelled straight from its number.
     Expr::Association(pairs) => {
-      let lookup = |key: &str| {
-        pairs.iter().find_map(|(k, v)| match k {
-          Expr::String(s) if s == key => Some(v),
+      let lookup = |key: &str| assoc_get(pairs, key);
+      let Some(key) = lookup("Key") else {
+        return match lookup("MIDINumber")? {
+          Expr::Integer(m) => {
+            let (diatonic, accidental, octave) =
+              parse_pitch_parts(&midi_to_pitch_name(*m))?;
+            Some(parts_to_axes(diatonic, accidental, octave))
+          }
           _ => None,
-        })
+        };
       };
-      let key = match lookup("Key")? {
+      let key = match key {
         Expr::String(s) => s,
         _ => return None,
       };
       let diatonic = letter_diatonic_index(*key.as_bytes().first()?)?;
-      let midi = match lookup("MIDINumber")? {
-        Expr::Integer(n) => *n,
+      let accidental = match lookup("Accidental") {
+        Some(Expr::Integer(n)) => *n,
+        None => 0,
         _ => return None,
       };
-      let accidental = match lookup("Accidental")? {
-        Expr::Integer(n) => *n,
-        _ => return None,
-      };
-      let base = DIATONIC_BASE_SEMITONE[diatonic as usize];
-      let octave = (midi - base - accidental).div_euclid(12) - 1;
-      Some((octave * 7 + diatonic, midi))
+      match lookup("MIDINumber") {
+        Some(Expr::Integer(midi)) => {
+          let base = DIATONIC_BASE_SEMITONE[diatonic as usize];
+          let octave = (midi - base - accidental).div_euclid(12) - 1;
+          Some((octave * 7 + diatonic, *midi))
+        }
+        Some(_) => None,
+        None => {
+          let octave = match lookup("Octave") {
+            Some(Expr::Integer(o)) => *o,
+            None => 4,
+            _ => return None,
+          };
+          Some(parts_to_axes(diatonic, accidental, octave))
+        }
+      }
     }
     _ => None,
   }
@@ -682,7 +739,9 @@ pub fn try_music_chord_plus_interval(args: &[Expr]) -> Option<Expr> {
   for term in &flat {
     if let Expr::FunctionCall { name, args: cargs } = term
       && name == "MusicChord"
-      && matches!(cargs.first(), Some(Expr::List(_)))
+      && (matches!(cargs.first(), Some(Expr::List(_)))
+        || matches!(cargs.first(), Some(Expr::Association(pairs))
+          if matches!(assoc_get(pairs, "PitchList"), Some(Expr::List(_)))))
     {
       if chord.is_some() {
         return None; // two chords: not pitch arithmetic
@@ -710,8 +769,15 @@ pub fn try_music_chord_plus_interval(args: &[Expr]) -> Option<Expr> {
   let Expr::FunctionCall { args: cargs, .. } = chord else {
     return None;
   };
-  let Some(Expr::List(items)) = cargs.first() else {
-    return None;
+  // The tones live either in the raw list form or under the canonical
+  // `"PitchList"` key.
+  let items = match cargs.first() {
+    Some(Expr::List(items)) => items,
+    Some(Expr::Association(pairs)) => match assoc_get(pairs, "PitchList") {
+      Some(Expr::List(items)) => items,
+      _ => return None,
+    },
+    _ => return None,
   };
   // A bare-semitone interval carries no diatonic step, so every transposed tone
   // is spelled straight from its MIDI number; a named interval keeps the staff
@@ -983,7 +1049,16 @@ fn note_pitch_object(
 
 /// Resolve a pitch specification (name string, `MusicPitch`, MIDI integer, …)
 /// to the canonical note-pitch object, preserving whether an octave was given.
+/// An already-canonical `MusicPitch[<|…|>]` object is kept verbatim — a note
+/// built from a MIDI-numbered pitch stores `<|MIDINumber -> n|>` unspelled,
+/// matching Wolfram.
 fn resolve_pitch_object(spec: &Expr) -> Option<Expr> {
+  if let Expr::FunctionCall { name, args } = spec
+    && name == "MusicPitch"
+    && matches!(args.first(), Some(Expr::Association(_)))
+  {
+    return Some(spec.clone());
+  }
   let name = resolve_pitch_name(spec)?;
   let (letter, accidental, octave) = parse_pitch_spelled(&name)?;
   Some(note_pitch_object(letter, accidental, octave))
@@ -1100,22 +1175,21 @@ fn normalize_chord_quality(quality: &str) -> Option<&'static str> {
     "" | "M" | "maj" | "Maj" | "major" | "Major" | "Ma" | "ma" | "Δ" => {
       "Major"
     }
-    "m" | "min" | "Min" | "mi" | "Mi" | "minor" | "Minor" | "-" | "−" => {
-      "Minor"
-    }
-    "aug" | "Aug" | "augmented" | "Augmented" | "+" | "Maug" | "M#5"
-    | "M+5" | "M♯5" => "Augmented",
+    "m" | "min" | "Min" | "mi" | "Mi" | "minor" | "Minor" => "Minor",
+    "aug" | "Aug" | "augmented" | "Augmented" | "Maug" | "M#5" | "M+5"
+    | "M♯5" => "Augmented",
     "dim" | "Dim" | "diminished" | "Diminished" | "o" | "O" | "°" | "mb5"
     | "m♭5" | "mo5" => "Diminished",
     "sus2" | "Sus2" | "SuspendedSecond" => "SuspendedSecond",
     "sus" | "Sus" | "sus4" | "Sus4" | "SuspendedFourth" => "SuspendedFourth",
-    "6" | "M6" | "maj6" | "add6" | "Sixth" => "Sixth",
-    "m6" | "min6" | "-6" | "−6" | "MinorSixth" => "MinorSixth",
+    "M6" | "maj6" | "add6" | "Sixth" => "Sixth",
+    "m6" | "min6" | "MinorSixth" => "MinorSixth",
     "M7" | "maj7" | "Maj7" | "Ma7" | "major7" | "MajorSeventh" | "Δ7"
     | "MΔ7" => "MajorSeventh",
-    "m7" | "min7" | "Min7" | "mi7" | "-7" | "−7" | "minor7"
-    | "MinorSeventh" => "MinorSeventh",
-    "7" | "dom7" | "Dom7" | "dominant7" | "Mm7" | "DominantSeventh" => {
+    "m7" | "min7" | "Min7" | "mi7" | "minor7" | "MinorSeventh" => {
+      "MinorSeventh"
+    }
+    "dom7" | "Dom7" | "dominant7" | "Mm7" | "DominantSeventh" => {
       "DominantSeventh"
     }
     "dim7" | "Dim7" | "o7" | "O7" | "°7" | "DiminishedSeventh" => {
@@ -1130,14 +1204,15 @@ fn normalize_chord_quality(quality: &str) -> Option<&'static str> {
     | "Ø"
     | "Ø7"
     | "HalfDiminishedSeventh" => "HalfDiminishedSeventh",
-    "mM7" | "mmaj7" | "minmaj7" | "-M7" | "−M7" | "m#7" | "mΔ7" | "-Δ7"
-    | "MinorMajorSeventh" => "MinorMajorSeventh",
-    "aug7" | "Aug7" | "+7" | "7#5" | "7+5" | "7♯5" | "AugmentedSeventh" => {
+    "mmaj7" | "minmaj7" | "m#7" | "mΔ7" | "MinorMajorSeventh" => {
+      "MinorMajorSeventh"
+    }
+    "aug7" | "Aug7" | "7#5" | "7+5" | "7♯5" | "AugmentedSeventh" => {
       "AugmentedSeventh"
     }
-    "9" | "dom9" | "Dom9" | "DominantNinth" => "DominantNinth",
+    "DominantNinth" => "DominantNinth",
     "M9" | "maj9" | "Maj9" | "major9" | "Δ9" | "MajorNinth" => "MajorNinth",
-    "m9" | "min9" | "-9" | "−9" | "minor9" | "MinorNinth" => "MinorNinth",
+    "m9" | "min9" | "minor9" | "MinorNinth" => "MinorNinth",
     _ => return None,
   })
 }
@@ -1170,29 +1245,146 @@ fn parse_chord_name(name: &str) -> Option<(char, i128, &str)> {
   Some((letter, accidental, &name[rest..]))
 }
 
-/// `MusicChord["<root><quality>"]` — canonicalize a named chord to the
-/// association form `MusicChord[<|"Name" -> quality, "Root" -> MusicPitch[…]|>]`.
-/// A chord given by an explicit pitch list is left symbolic.
+/// The display spelling of a canonical chord quality: the CamelCase name with
+/// a space before each interior capital, e.g. `"MinorSeventh"` →
+/// `"Minor Seventh"` (the form Wolfram stores under a chord's `"Name"` key).
+fn spaced_quality_name(quality: &str) -> String {
+  let mut spaced = String::with_capacity(quality.len() + 3);
+  for (i, c) in quality.chars().enumerate() {
+    if i > 0 && c.is_ascii_uppercase() {
+      spaced.push(' ');
+    }
+    spaced.push(c);
+  }
+  spaced
+}
+
+/// `MusicChord["<root><quality>"]` / `MusicChord[{pitches…}]` — canonicalize to
+/// the association form.
+///
+/// A named chord becomes `MusicChord[<|"Name" -> quality, "Root" ->
+/// MusicPitch[…]|>]`, with the quality stored in its spaced display spelling
+/// (`"Minor Seventh"`). A bare root (`"G"`) stores no `"Name"` key at all —
+/// which is what makes `MusicChord["G"] =!= MusicChord["GMajor"]`. A root
+/// followed only by a digit (`"C7"`) is read as the note C in *octave* 7, not
+/// a seventh chord: the root gains `Octave`/`Name` keys and the chord again
+/// has no quality. An octave outside 0–9 emits `MusicChord::args` and leaves
+/// the chord unevaluated.
+///
+/// An explicit pitch list canonicalizes to `MusicChord[<|"PitchList" ->
+/// {…}|>]`, each tone spelled as its `<|Accidental, Octave, Key|>` object
+/// (octaveless pitches default to register 4).
 pub fn music_chord(args: &[Expr]) -> Option<Expr> {
-  let [Expr::String(spec)] = args else {
-    return None;
-  };
-  let (letter, accidental, quality) = parse_chord_name(spec)?;
-  // Resolve the written suffix to a canonical quality; anything unrecognized
-  // stays symbolic.
-  let quality = normalize_chord_quality(quality)?;
-  // The chord's Root pitch is keyed in the order `Key, Accidental`.
-  let root = music_assoc(
-    "MusicPitch",
-    vec![
-      ("Key", Expr::String(letter.to_string())),
-      ("Accidental", Expr::Integer(accidental)),
-    ],
-  );
-  Some(music_assoc(
-    "MusicChord",
-    vec![("Name", Expr::String(quality.to_string())), ("Root", root)],
-  ))
+  match args {
+    [Expr::String(spec)] => {
+      // Any spec that fails to parse — an invalid root letter, an unknown
+      // quality suffix, an out-of-range octave — emits `MusicChord::args` and
+      // stays unevaluated (matching Wolfram, which never leaves a chord
+      // string silently symbolic).
+      let invalid = || {
+        crate::emit_message_to_stdout(
+          "MusicChord::args: MusicChord called with invalid parameters.",
+        );
+        Some(Expr::FunctionCall {
+          name: "MusicChord".to_string(),
+          args: args.to_vec().into(),
+        })
+      };
+      let Some((letter, accidental, quality)) = parse_chord_name(spec) else {
+        return invalid();
+      };
+      // A trailing (optionally signed) number with no quality letters is the
+      // root's octave: `"C7"` is the note C in octave 7, not a seventh chord,
+      // and `"C+7"` reads the same (only octaves 0–9 exist, so `"C-7"` is
+      // invalid). A lone sign (`"C-"`, `"C+"`) carries no octave at all and
+      // is the bare root.
+      let signed_octave = quality
+        .strip_prefix(['+', '-'])
+        .unwrap_or(quality)
+        .bytes()
+        .all(|b| b.is_ascii_digit());
+      if !quality.is_empty() && signed_octave {
+        let digits = quality.trim_start_matches(['+', '-']);
+        if digits.is_empty() {
+          // A bare trailing sign: just the root.
+          let root = music_assoc(
+            "MusicPitch",
+            vec![
+              ("Key", Expr::String(letter.to_string())),
+              ("Accidental", Expr::Integer(accidental)),
+            ],
+          );
+          return Some(music_assoc("MusicChord", vec![("Root", root)]));
+        }
+        let octave: i128 = match quality.trim_start_matches('+').parse() {
+          Ok(o) => o,
+          Err(_) => return invalid(),
+        };
+        if !(0..=9).contains(&octave) {
+          return invalid();
+        }
+        // The octave-rooted pitch carries its full spelled name, octave digit
+        // included (`"C♯7"`), keyed `Key, Accidental, Octave, Name`.
+        let mut name = pitch_spelled_name(letter, accidental);
+        name.push_str(digits);
+        let root = music_assoc(
+          "MusicPitch",
+          vec![
+            ("Key", Expr::String(letter.to_string())),
+            ("Accidental", Expr::Integer(accidental)),
+            ("Octave", Expr::Integer(octave)),
+            ("Name", Expr::String(name)),
+          ],
+        );
+        return Some(music_assoc("MusicChord", vec![("Root", root)]));
+      }
+      // The chord's Root pitch is keyed in the order `Key, Accidental`.
+      let root = music_assoc(
+        "MusicPitch",
+        vec![
+          ("Key", Expr::String(letter.to_string())),
+          ("Accidental", Expr::Integer(accidental)),
+        ],
+      );
+      // A bare root stores no quality — which is what makes
+      // `MusicChord["G"] =!= MusicChord["GMajor"]`. A written suffix resolves
+      // to its canonical quality and is stored in the spaced display
+      // spelling.
+      if quality.trim().is_empty() {
+        return Some(music_assoc("MusicChord", vec![("Root", root)]));
+      }
+      let Some(quality) = normalize_chord_quality(quality) else {
+        return invalid();
+      };
+      Some(music_assoc(
+        "MusicChord",
+        vec![
+          ("Name", Expr::String(spaced_quality_name(quality))),
+          ("Root", root),
+        ],
+      ))
+    }
+    // An explicit pitch list: spell every tone as its full pitch object.
+    [Expr::List(items)] => {
+      let tones: Option<Vec<Expr>> = items
+        .iter()
+        .map(|p| {
+          if !matches!(p, Expr::FunctionCall { name, .. } if name == "MusicPitch")
+          {
+            return None;
+          }
+          let name = resolve_pitch_name(p)?;
+          let (letter, accidental, octave) = parse_pitch_spelled(&name)?;
+          Some(pitch_object(letter, accidental, Some(octave.unwrap_or(4))))
+        })
+        .collect();
+      Some(music_assoc(
+        "MusicChord",
+        vec![("PitchList", Expr::List(tones?.into()))],
+      ))
+    }
+    _ => None,
+  }
 }
 
 /// Base MIDI number of a note letter in a given octave (natural, no accidental).
@@ -1204,11 +1396,20 @@ fn letter_natural_midi(letter_idx: usize, octave: i128) -> i128 {
 /// tone stacks thirds from the root, spelled on the correct staff letter so the
 /// accidentals come out right (`GMajor` → G4, B4, D5).
 pub fn chord_tones(pairs: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
-  let quality = match assoc_get(pairs, "Name")? {
-    Expr::String(s) => s.as_str(),
+  // An explicit pitch list is already the chord's tones.
+  if let Some(Expr::List(tones)) = assoc_get(pairs, "PitchList") {
+    return Some(tones.to_vec());
+  }
+  // The stored quality is the spaced display spelling ("Minor Seventh"); a
+  // chord with no stored quality (a bare root like MusicChord["G"]) defaults
+  // to a major triad.
+  let has_stored_name = assoc_get(pairs, "Name").is_some();
+  let quality: String = match assoc_get(pairs, "Name") {
+    Some(Expr::String(s)) => s.chars().filter(|c| *c != ' ').collect(),
+    None => "Major".to_string(),
     _ => return None,
   };
-  let offsets = chord_quality_offsets(quality)?;
+  let offsets = chord_quality_offsets(&quality)?;
   let root = assoc_get(pairs, "Root")?;
   let Expr::FunctionCall { name, args } = root else {
     return None;
@@ -1236,6 +1437,14 @@ pub fn chord_tones(pairs: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
   let root_midi =
     letter_natural_midi(root_idx as usize, root_octave) + root_accidental;
 
+  // A named chord that stays within the root's octave prints its tones
+  // without `Octave` keys; one that crosses an octave boundary — and any
+  // chord with no stored quality (a bare/octave-numbered root) — spells the
+  // register on every tone.
+  let crosses_octave = offsets
+    .iter()
+    .any(|(_, step)| (root_idx + step).div_euclid(7) != 0);
+  let show_octave = !has_stored_name || crosses_octave;
   offsets
     .iter()
     .map(|(semitone, step)| {
@@ -1246,7 +1455,11 @@ pub fn chord_tones(pairs: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
       let target_midi = root_midi + semitone;
       let accidental = target_midi - letter_natural_midi(letter_idx, octave);
       let letter = DIATONIC_LETTERS[letter_idx].chars().next()?;
-      Some(pitch_object(letter, accidental, Some(octave)))
+      Some(pitch_object(
+        letter,
+        accidental,
+        show_octave.then_some(octave),
+      ))
     })
     .collect()
 }
@@ -1322,6 +1535,10 @@ pub fn music_property_access(
       "PitchList" => return chord_tones(pairs).map(|t| Expr::List(t.into())),
       "IntervalList" => {
         return chord_intervals(pairs).map(|t| Expr::List(t.into()));
+      }
+      // A chord with no stored quality (a bare root) is a major triad.
+      "Name" if assoc_get(pairs, "Root").is_some() => {
+        return Some(Expr::String("Major".to_string()));
       }
       _ => {}
     }
@@ -1456,8 +1673,15 @@ pub fn music_duration_plus_terms(args: &[Expr]) -> Option<Vec<Expr>> {
 }
 
 /// Wrap a computed total rhythmic value in the canonical duration object.
+/// Duration arithmetic counts in the default quarter-note beat, so the sum
+/// carries `BeatDuration -> 1/4` alongside its total (matching Wolfram, where
+/// e.g. `MusicDuration[1] - MusicDuration[1/4]` is
+/// `MusicDuration[<|Duration -> 3/4, BeatDuration -> 1/4|>]`).
 pub fn music_duration_from_value(value: Expr) -> Expr {
-  music_assoc("MusicDuration", vec![("Duration", value)])
+  music_assoc(
+    "MusicDuration",
+    vec![("Duration", value), ("BeatDuration", rational(1, 4))],
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -1940,6 +2164,67 @@ pub fn music_score(args: &[Expr]) -> Option<Expr> {
   ))
 }
 
+/// Render an expression for a music error message the way wolframscript
+/// does: a canonical music object (a music head wrapping an association)
+/// prints as its summary form `-Head-`; everything else prints in OutputForm.
+fn message_form(expr: &Expr) -> String {
+  fn summarize(expr: &Expr) -> Expr {
+    match expr {
+      Expr::FunctionCall { name, args }
+        if MUSIC_OBJECT_HEADS.contains(&name.as_str())
+          && matches!(args.first(), Some(Expr::Association(_))) =>
+      {
+        Expr::Identifier(format!("-{name}-"))
+      }
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(summarize).collect::<Vec<_>>().into(),
+      },
+      Expr::List(items) => {
+        Expr::List(items.iter().map(summarize).collect::<Vec<_>>().into())
+      }
+      other => other.clone(),
+    }
+  }
+  crate::syntax::format_expr(&summarize(expr), crate::syntax::ExprForm::Output)
+}
+
+/// `MusicScale[…]` with a second argument. The Wolfram Language only accepts
+/// a property *association* there; anything else (a pitch object, a name
+/// string, …) emits `MusicScale::passc` and leaves the scale unevaluated.
+pub fn music_scale(args: &[Expr]) -> Option<Expr> {
+  match args {
+    [_, second, ..] if !matches!(second, Expr::Association(_)) => {
+      crate::emit_message_to_stdout(&format!(
+        "MusicScale::passc: {} is not a valid property association.",
+        message_form(second)
+      ));
+      Some(Expr::FunctionCall {
+        name: "MusicScale".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+    _ => None,
+  }
+}
+
+/// Whether `expr` is a `MusicScale` left unevaluated by [`music_scale`]'s
+/// argument check — the form `MusicPlot` rejects with `MusicPlot::music`.
+pub fn is_invalid_music_scale(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if name == "MusicScale"
+      && args.len() >= 2
+      && !matches!(&args[1], Expr::Association(_)))
+}
+
+/// Emit the `MusicPlot::music` message for a non-music argument.
+pub fn emit_music_plot_message(arg: &Expr) {
+  crate::emit_message_to_stdout(&format!(
+    "MusicPlot::music: Expecting a valid music object instead of {}.",
+    message_form(arg)
+  ));
+}
+
 /// Render a beat count the way the Wolfram Language prints it in the
 /// `MusicMeasure::measdur` message (an integer, or `n/d` for a fraction).
 fn format_ratio((n, d): Ratio) -> String {
@@ -2008,21 +2293,69 @@ mod tests {
     assert_eq!(midi_to_pitch_name(-1), "B-2");
   }
 
-  #[test]
-  fn music_pitch_canonicalizes_midi_integer() {
-    let result = music_pitch(&[Expr::Integer(60)]);
+  /// Assert that a `music_pitch` result is the MIDI-numbered association
+  /// `MusicPitch[<|"MIDINumber" -> midi|>]`.
+  fn expect_midi_pitch(result: Option<Expr>, midi: i128) {
     match &result {
-      Some(Expr::FunctionCall { name, args }) => {
-        assert_eq!(name, "MusicPitch");
-        assert!(matches!(&args[..], [Expr::String(s)] if s == "C4"));
+      Some(Expr::FunctionCall { name, args }) if name == "MusicPitch" => {
+        match &args[..] {
+          [Expr::Association(pairs)] => {
+            assert!(
+              matches!(
+                assoc_get(pairs, "MIDINumber"),
+                Some(Expr::Integer(n)) if *n == midi
+              ),
+              "MIDINumber mismatch in {result:?}",
+            );
+            assert_eq!(pairs.len(), 1, "unexpected extra keys in {result:?}");
+          }
+          other => panic!("expected an association arg, got {other:?}"),
+        }
       }
-      other => panic!("expected MusicPitch[\"C4\"], got {other:?}"),
+      other => {
+        panic!("expected MusicPitch[<|MIDINumber -> …|>], got {other:?}")
+      }
     }
   }
 
   #[test]
-  fn music_pitch_leaves_string_spec_alone() {
-    assert!(music_pitch(&[Expr::String("C4".to_string())]).is_none());
+  fn music_pitch_canonicalizes_midi_integer() {
+    expect_midi_pitch(music_pitch(&[Expr::Integer(60)]), 60);
+  }
+
+  #[test]
+  fn music_pitch_spells_string_spec() {
+    // A named pitch canonicalizes to its spelled association; the octave adds
+    // `Octave`/`Name` keys, an octaveless name keeps only Accidental/Key.
+    let result = music_pitch(&[Expr::String("C4".to_string())]);
+    match &result {
+      Some(Expr::FunctionCall { name, args }) if name == "MusicPitch" => {
+        match &args[..] {
+          [Expr::Association(pairs)] => {
+            assert!(matches!(
+              assoc_get(pairs, "Octave"),
+              Some(Expr::Integer(4))
+            ));
+            assert!(
+              matches!(assoc_get(pairs, "Key"), Some(Expr::String(k)) if k == "C")
+            );
+            assert!(
+              matches!(assoc_get(pairs, "Name"), Some(Expr::String(n)) if n == "C")
+            );
+          }
+          other => panic!("expected an association arg, got {other:?}"),
+        }
+      }
+      other => panic!("expected MusicPitch[<|…|>], got {other:?}"),
+    }
+    // An association spec is already canonical and stays untouched.
+    assert!(
+      music_pitch(&[Expr::Association(vec![(
+        Expr::String("MIDINumber".into()),
+        Expr::Integer(60),
+      )])])
+      .is_none()
+    );
   }
 
   #[test]
@@ -2063,19 +2396,6 @@ mod tests {
     assert_eq!(frequency_to_midi(f64::INFINITY), None);
   }
 
-  fn expect_music_pitch(spec: Expr, name: &str) {
-    match &music_pitch(&[spec]) {
-      Some(Expr::FunctionCall { name: head, args }) => {
-        assert_eq!(head, "MusicPitch");
-        assert!(
-          matches!(&args[..], [Expr::String(s)] if s == name),
-          "expected MusicPitch[{name:?}], got args {args:?}",
-        );
-      }
-      other => panic!("expected MusicPitch[{name:?}], got {other:?}"),
-    }
-  }
-
   fn func(name: &str, args: Vec<Expr>) -> Expr {
     Expr::FunctionCall {
       name: name.to_string(),
@@ -2085,27 +2405,29 @@ mod tests {
 
   #[test]
   fn music_pitch_canonicalizes_frequency() {
-    expect_music_pitch(
-      func(
+    // Frequencies fix no letter spelling and keep their MIDI number:
+    // A4 = 440 Hz = MIDI 69; 200 Hz is nearest G3 = MIDI 55.
+    expect_midi_pitch(
+      music_pitch(&[func(
         "Quantity",
         vec![Expr::Integer(440), Expr::String("Hertz".into())],
-      ),
-      "A4",
+      )]),
+      69,
     );
-    expect_music_pitch(
-      func(
+    expect_midi_pitch(
+      music_pitch(&[func(
         "Quantity",
         vec![Expr::Integer(200), Expr::String("Hertz".into())],
-      ),
-      "G3",
+      )]),
+      55,
     );
     // Identifier unit spelling and the "Hz" abbreviation are both accepted.
-    expect_music_pitch(
-      func(
+    expect_midi_pitch(
+      music_pitch(&[func(
         "Quantity",
         vec![Expr::Real(440.0), Expr::Identifier("Hertz".into())],
-      ),
-      "A4",
+      )]),
+      69,
     );
     // A non-frequency Quantity has no pitch interpretation.
     assert!(
@@ -2119,30 +2441,58 @@ mod tests {
 
   #[test]
   fn music_pitch_canonicalizes_soundnote() {
-    // SoundNote numbers pitches relative to middle C (0), so 0 -> C4.
-    expect_music_pitch(func("SoundNote", vec![Expr::Integer(0)]), "C4");
-    expect_music_pitch(func("SoundNote", vec![Expr::Integer(-5)]), "G3");
-    expect_music_pitch(
-      func("SoundNote", vec![Expr::String("A4".into())]),
-      "A4",
+    // SoundNote numbers pitches relative to middle C (0), so 0 -> MIDI 60.
+    expect_midi_pitch(
+      music_pitch(&[func("SoundNote", vec![Expr::Integer(0)])]),
+      60,
+    );
+    expect_midi_pitch(
+      music_pitch(&[func("SoundNote", vec![Expr::Integer(-5)])]),
+      55,
+    );
+    expect_midi_pitch(
+      music_pitch(&[func("SoundNote", vec![Expr::String("A4".into())])]),
+      69,
     );
   }
 
   #[test]
   fn music_pitch_extracts_note_pitch() {
-    expect_music_pitch(
-      func("MusicNote", vec![Expr::String("G3".into())]),
-      "G3",
+    // A raw MusicNote spec resolves to the spelled note-pitch object …
+    let result =
+      music_pitch(&[func("MusicNote", vec![Expr::String("G3".into())])]);
+    match &result {
+      Some(Expr::FunctionCall { name, args }) if name == "MusicPitch" => {
+        match &args[..] {
+          [Expr::Association(pairs)] => {
+            assert!(matches!(
+              assoc_get(pairs, "Octave"),
+              Some(Expr::Integer(3))
+            ));
+            assert!(
+              matches!(assoc_get(pairs, "Key"), Some(Expr::String(k)) if k == "G")
+            );
+          }
+          other => panic!("expected an association arg, got {other:?}"),
+        }
+      }
+      other => panic!("expected MusicPitch[<|…|>], got {other:?}"),
+    }
+    // … while a canonical note returns its stored pitch object verbatim.
+    let stored = func(
+      "MusicNote",
+      vec![Expr::Association(vec![(
+        Expr::String("Pitch".into()),
+        func(
+          "MusicPitch",
+          vec![Expr::Association(vec![(
+            Expr::String("MIDINumber".into()),
+            Expr::Integer(55),
+          )])],
+        ),
+      )])],
     );
-    expect_music_pitch(
-      func(
-        "MusicNote",
-        vec![func("MusicPitch", vec![Expr::Integer(55)])],
-      ),
-      "G3",
-    );
-    // Nested MusicPitch resolves through to the underlying pitch.
-    expect_music_pitch(func("MusicPitch", vec![Expr::Integer(60)]), "C4");
+    expect_midi_pitch(music_pitch(&[stored]), 55);
   }
 
   fn named_pitch(name: &str) -> Expr {

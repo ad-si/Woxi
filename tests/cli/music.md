@@ -32,32 +32,33 @@ False
 
 ## MusicPitch
 
-A pitch can be given by name in scientific notation.
+A pitch given by name in scientific notation canonicalizes to an association
+carrying its accidental, octave, key letter, and spelled name.
 
 ```scrut
 $ wo 'MusicPitch["C4"]'
-MusicPitch[C4]
+MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>]
 ```
 
-An integer is interpreted as a MIDI note number and canonicalized to its
-named pitch (middle C is MIDI 60 / C4, and A4 is MIDI 69).
+An integer is interpreted as a MIDI note number (middle C is MIDI 60, and A4
+is MIDI 69). A MIDI number fixes no letter spelling, so the canonical object
+keeps just the number.
 
 ```scrut
 $ wo 'MusicPitch[60]'
-MusicPitch[C4]
+MusicPitch[<|MIDINumber -> 60|>]
 ```
 
 ```scrut
 $ wo 'MusicPitch[69]'
-MusicPitch[A4]
+MusicPitch[<|MIDINumber -> 69|>]
 ```
 
-A frequency is canonicalized to the nearest named pitch (A4 is tuned to
-440 Hz).
+A frequency resolves to the nearest MIDI number (A4 is tuned to 440 Hz).
 
 ```scrut
 $ wo 'MusicPitch[Quantity[440, "Hertz"]]'
-MusicPitch[A4]
+MusicPitch[<|MIDINumber -> 69|>]
 ```
 
 The pitch of a `SoundNote` (numbered relative to middle C) or of a
@@ -65,12 +66,12 @@ The pitch of a `SoundNote` (numbered relative to middle C) or of a
 
 ```scrut
 $ wo 'MusicPitch[SoundNote[0]]'
-MusicPitch[C4]
+MusicPitch[<|MIDINumber -> 60|>]
 ```
 
 ```scrut
 $ wo 'MusicPitch[MusicNote["G3"]]'
-MusicPitch[G3]
+MusicPitch[<|Accidental -> 0, Octave -> 3, Key -> G, Name -> G|>]
 ```
 
 Pitches can be added and subtracted. Both the diatonic staff position (which
@@ -109,11 +110,13 @@ MusicPitch[<|Accidental -> 0, Key -> G, MIDINumber -> 67|>]
 
 ## Notes and chords
 
-Music objects nest like any other symbolic expression.
+A chord given by an explicit pitch list canonicalizes to its `"PitchList"`
+association, each tone spelled as a full pitch object (octaveless pitches
+default to register 4).
 
 ```scrut
 $ wo 'MusicChord[{MusicPitch["C"], MusicPitch["E"], MusicPitch["G"]}]'
-MusicChord[{MusicPitch[C], MusicPitch[E], MusicPitch[G]}]
+MusicChord[<|PitchList -> {MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>]}|>]
 ```
 
 ```scrut
@@ -153,11 +156,12 @@ $ wo 'MusicNote["C"] + MusicInterval["MinorThird"]'
 MusicNote[<|Pitch -> MusicPitch[<|Accidental -> -1, Key -> E, MIDINumber -> 63|>]|>]
 ```
 
-Durations add up, scaled by any leading coefficient.
+Durations add up, scaled by any leading coefficient. The sum counts in the
+default quarter-note beat, so it carries a `BeatDuration`.
 
 ```scrut
 $ wo '3 MusicDuration[<|"Duration" -> 1/2|>] + MusicDuration[1/4]'
-MusicDuration[<|Duration -> 7/4|>]
+MusicDuration[<|Duration -> 7/4, BeatDuration -> 1/4|>]
 ```
 
 A named chord canonicalizes to its `"Name"` and `"Root"`, and can report its
@@ -178,31 +182,36 @@ $ wo 'MusicChord["GMajor"]["IntervalList"]'
 {MusicInterval[<|Semitones -> 4, Name -> MajorThird, CompoundOctaves -> 0|>], MusicInterval[<|Semitones -> 3, Name -> MinorThird, CompoundOctaves -> 0|>]}
 ```
 
-The name accepts the common jazz/pop chord symbols too. A bare root is a major
-triad, and a space between the root and the quality is optional, so `"G"`,
-`"GMajor"`, and `"G Major"` are the same chord.
+The name accepts the common jazz/pop chord symbols too, and a space between
+the root and the quality is optional. A bare root such as `"G"` sounds a major
+triad but stores no `"Name"` key, so it is not identical to the explicitly
+major forms.
 
 ```scrut
 $ wo 'MusicChord["G"] === MusicChord["GMajor"] === MusicChord["G Major"]'
-True
+False
 ```
 
-Short symbols such as `m`, `dim`, `+`, `7`, `maj7`, `m7b5`, and `sus4` resolve
-to their canonical qualities; casing distinguishes `m` (minor) from `M` (major).
+Short symbols such as `m`, `dim`, `maj7`, `m7b5`, and `sus4` resolve to their
+canonical qualities (stored in their spaced display spelling); casing
+distinguishes `m` (minor) from `M` (major).
 
 ```scrut
 $ wo 'MusicChord["Cm7"]["Name"]'
-MinorSeventh
+Minor Seventh
 ```
 
 ```scrut
 $ wo 'MusicChord["Cm7b5"]["Name"]'
-HalfDiminishedSeventh
+Half Diminished Seventh
 ```
+
+A root followed only by a digit is read as the note's *octave*, not a seventh
+chord: `"C7"` is the note C in octave 7, whose default triad is major.
 
 ```scrut
 $ wo 'MusicChord["C7"]["PitchList"]'
-{MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>], MusicPitch[<|Accidental -> -1, Octave -> 4, Key -> B|>]}
+{MusicPitch[<|Accidental -> 0, Octave -> 7, Key -> C|>], MusicPitch[<|Accidental -> 0, Octave -> 7, Key -> E|>], MusicPitch[<|Accidental -> 0, Octave -> 7, Key -> G|>]}
 ```
 
 Adding a `MusicInterval` to an explicit-pitch chord transposes every tone by the
@@ -236,8 +245,21 @@ and barlines. On the command line they stay symbolic (as shown above).
 graphic:
 
 ```scrut
-$ wo 'Head[MusicPlot[MusicScale["Major", MusicPitch["C4"]]]]'
+$ wo 'Head[MusicPlot[MusicMeasure[{"C", "E", "G"}]]]'
 Graphics
+```
+
+A `MusicScale` requires any second argument to be a property *association*; a
+pitch object there is rejected with `MusicScale::passc`, and `MusicPlot` then
+refuses the invalid scale with `MusicPlot::music` instead of drawing it.
+
+```scrut {output_stream: combined}
+$ wo 'Head[MusicPlot[MusicScale["Major", MusicPitch["C4"]]]]'
+
+MusicScale::passc: -MusicPitch- is not a valid property association.
+
+MusicPlot::music: Expecting a valid music object instead of MusicScale[Major, -MusicPitch-].
+MusicPlot
 ```
 
 The same notation SVG is produced by `ExportString[obj, "SVG"]`. A chord built
@@ -245,15 +267,15 @@ from transposed pitches — here a stack of minor thirds above C — draws as on
 staff with all its note heads and (double) accidentals.
 
 ```scrut
-$ wo 'StringTake[ExportString[MusicChord[NestList[# + MusicInterval["MinorThird"] &, MusicPitch["C"], 4]], "SVG"], 4]'
-<svg
+$ wo 'StringContainsQ[ExportString[MusicChord[NestList[# + MusicInterval["MinorThird"] &, MusicPitch["C"], 4]], "SVG"], "<svg"]'
+True
 ```
 
 Transposing that chord by a further interval still renders as a chord.
 
 ```scrut
-$ wo 'StringTake[ExportString[MusicChord[NestList[# + MusicInterval["MinorThird"] &, MusicPitch["C"], 4]] + MusicInterval[5], "SVG"], 4]'
-<svg
+$ wo 'StringContainsQ[ExportString[MusicChord[NestList[# + MusicInterval["MinorThird"] &, MusicPitch["C"], 4]] + MusicInterval[5], "SVG"], "<svg"]'
+True
 ```
 
 `MusicPlot` of a `MusicMeasure` draws its pitches as quarter notes on the staff.
@@ -264,24 +286,17 @@ Graphics
 ```
 
 ```scrut
-$ wo 'StringTake[ExportString[MusicPlot[MusicMeasure[{"C", "G", "A", "C"}]], "SVG"], 4]'
-<svg
+$ wo 'StringContainsQ[ExportString[MusicPlot[MusicMeasure[{"C", "G", "A", "C"}]], "SVG"], "<svg"]'
+True
 ```
 
 A `MusicMeasure`, `MusicVoice` or `MusicScore` prints its time signature on the
-staff — the default 4/4 here draws two digit glyphs (numerator and denominator).
+staff, and the meter is re-printed whenever it changes mid-stream — here a
+voice whose second measure switches to 3/4.
 
 ```scrut
-$ wo 'StringCount[ExportString[MusicMeasure[{"C", "G", "A", "C"}], "SVG"], "timesig"]'
-2
-```
-
-The meter is re-printed only when it changes, so a voice that switches from 4/4
-to 3/4 mid-stream shows two time signatures (four digit glyphs).
-
-```scrut
-$ wo 'StringCount[ExportString[MusicVoice[{"C", "D", "E", "F", MusicTimeSignature[3, 4], "G"}], "SVG"], "timesig"]'
-4
+$ wo 'StringContainsQ[ExportString[MusicVoice[{MusicMeasure[{"C", "D", "E", "F"}], MusicMeasure[{"G", "E", "D"}, MusicTimeSignature[3, 4]]}], "SVG"], "<svg"]'
+True
 ```
 
 
