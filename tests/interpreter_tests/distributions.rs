@@ -2203,6 +2203,187 @@ mod empirical_distribution {
       "EmpiricalDistribution[{x, y}]"
     );
   }
+
+  #[test]
+  fn standard_deviation_from_moments() {
+    // StandardDeviation = Sqrt[Variance] for a DataDistribution (regression:
+    // used to stay unevaluated).
+    assert_eq!(
+      interpret("StandardDeviation[EmpiricalDistribution[{1, 2, 2, 3}]]")
+        .unwrap(),
+      "1/Sqrt[2]"
+    );
+  }
+}
+
+mod histogram_distribution {
+  use super::*;
+
+  #[test]
+  fn automatic_binning_uses_machine_reals() {
+    // Automatic bins center on the (integer) data with the nice width 1;
+    // densities and edges are machine reals: count/(n·w).
+    assert_eq!(
+      interpret("HistogramDistribution[{1, 2, 2, 3, 4}]").unwrap(),
+      "DataDistribution[Histogram, \
+       {{0.2, 0.4, 0.2, 0.2}, {0.5, 1.5, 2.5, 3.5, 4.5}}, 1, 5]"
+    );
+  }
+
+  #[test]
+  fn explicit_exact_width_stays_exact() {
+    // An explicit exact width anchored at multiples of w keeps exact
+    // rational densities and integer edges.
+    assert_eq!(
+      interpret("HistogramDistribution[{1, 2, 2, 3, 4}, {2}]").unwrap(),
+      "DataDistribution[Histogram, {{1/10, 3/10, 1/10}, {0, 2, 4, 6}}, 1, 5]"
+    );
+  }
+
+  #[test]
+  fn explicit_width_centered_layout_uses_machine_reals() {
+    // Data commensurate with the width centers the bins on the values, which
+    // wolframscript reports in machine reals (like HistogramList).
+    assert_eq!(
+      interpret("HistogramDistribution[{2, 4, 4, 6}, {2}]").unwrap(),
+      "DataDistribution[Histogram, {{0.125, 0.25, 0.125}, {1., 3., 5., 7.}}, 1, 4]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic_is_boole_sum() {
+    assert_eq!(
+      interpret("PDF[HistogramDistribution[{1, 2, 2, 3, 4}], x]").unwrap(),
+      "0.2*Boole[Inequality[0.5, LessEqual, x, Less, 1.5]] + \
+       0.4*Boole[Inequality[1.5, LessEqual, x, Less, 2.5]] + \
+       0.2*Boole[Inequality[2.5, LessEqual, x, Less, 3.5]] + \
+       0.2*Boole[Inequality[3.5, LessEqual, x, Less, 4.5]]"
+    );
+    assert_eq!(
+      interpret("PDF[HistogramDistribution[{1, 2, 2, 3, 4}, {2}], x]").unwrap(),
+      "Boole[Inequality[0, LessEqual, x, Less, 2]]/10 + \
+       (3*Boole[Inequality[2, LessEqual, x, Less, 4]])/10 + \
+       Boole[Inequality[4, LessEqual, x, Less, 6]]/10"
+    );
+  }
+
+  #[test]
+  fn pdf_at_numeric_points() {
+    // Inside a bin the stored density is returned directly; outside the
+    // support the PDF is the exact integer 0 (even at a real point).
+    assert_eq!(
+      interpret("PDF[HistogramDistribution[{1, 2, 2, 3, 4}], 2.2]").unwrap(),
+      "0.4"
+    );
+    assert_eq!(
+      interpret("PDF[HistogramDistribution[{1, 2, 2, 3, 4}, {2}], 3]").unwrap(),
+      "3/10"
+    );
+    assert_eq!(
+      interpret("PDF[HistogramDistribution[{1, 2, 2, 3, 4}], 100]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[HistogramDistribution[{1, 2, 2, 3, 4}], 100.]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic_is_ramp_sum() {
+    // The CDF leads with Boole[x >= last edge] and ramps through each bin
+    // with the accumulated mass (0.2 + 0.4 accumulates to 0.6000000000000001
+    // in machine arithmetic, as in wolframscript).
+    assert_eq!(
+      interpret("CDF[HistogramDistribution[{1, 2, 2, 3, 4}], x]").unwrap(),
+      "Boole[x >= 4.5] + \
+       0.2*(-0.5 + x)*Boole[Inequality[0.5, LessEqual, x, Less, 1.5]] + \
+       (0.2 + 0.4*(-1.5 + x))*Boole[Inequality[1.5, LessEqual, x, Less, 2.5]] + \
+       (0.6000000000000001 + 0.2*(-2.5 + x))*Boole[Inequality[2.5, LessEqual, x, Less, 3.5]] + \
+       (0.8 + 0.2*(-3.5 + x))*Boole[Inequality[3.5, LessEqual, x, Less, 4.5]]"
+    );
+    assert_eq!(
+      interpret("CDF[HistogramDistribution[{1, 2, 2, 3, 4}, {2}], x]").unwrap(),
+      "Boole[x >= 6] + \
+       (x*Boole[Inequality[0, LessEqual, x, Less, 2]])/10 + \
+       (1/5 + (3*(-2 + x))/10)*Boole[Inequality[2, LessEqual, x, Less, 4]] + \
+       (4/5 + (-4 + x)/10)*Boole[Inequality[4, LessEqual, x, Less, 6]]"
+    );
+  }
+
+  #[test]
+  fn cdf_at_numeric_points() {
+    assert_eq!(
+      interpret("CDF[HistogramDistribution[{1, 2, 2, 3, 4}], 2.0]").unwrap(),
+      "0.4"
+    );
+    assert_eq!(
+      interpret("CDF[HistogramDistribution[{1, 2, 2, 3, 4}], 100]").unwrap(),
+      "1."
+    );
+    assert_eq!(
+      interpret("CDF[HistogramDistribution[{1, 2, 2, 3, 4}, {2}], 3]").unwrap(),
+      "1/2"
+    );
+    // Below the support the machine-real CDF collapses to 0. (float, like
+    // wolframscript).
+    assert_eq!(
+      interpret("CDF[HistogramDistribution[{1, 2, 2, 3, 4}], -5]").unwrap(),
+      "0."
+    );
+  }
+
+  #[test]
+  fn moments() {
+    // Continuous per-bin moments: machine-real results match wolframscript
+    // bit-for-bit; exact-width results stay rational.
+    assert_eq!(
+      interpret("Mean[HistogramDistribution[{1, 2, 2, 3, 4}]]").unwrap(),
+      "2.4000000000000004"
+    );
+    assert_eq!(
+      interpret("Mean[HistogramDistribution[{1, 2, 2, 3, 4}, {2}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Variance[HistogramDistribution[{1, 2, 2, 3, 4}]]").unwrap(),
+      "1.1233333333333322"
+    );
+    assert_eq!(
+      interpret("Variance[HistogramDistribution[{1, 2, 2, 3, 4}, {2}]]")
+        .unwrap(),
+      "29/15"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[HistogramDistribution[{1, 2, 2, 3, 4}]]")
+        .unwrap(),
+      "1.0598742063723092"
+    );
+    assert_eq!(
+      interpret(
+        "StandardDeviation[HistogramDistribution[{1, 2, 2, 3, 4}, {2}]]"
+      )
+      .unwrap(),
+      "Sqrt[29/15]"
+    );
+  }
+
+  #[test]
+  fn symbolic_data_warns_and_stays_unevaluated() {
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout("HistogramDistribution[{x, y}]").unwrap();
+    assert_eq!(r.result, "HistogramDistribution[{x, y}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "HistogramDistribution::invldd: The input data \
+         HistogramDistribution[{x, y}] should be a vector or a matrix of \
+         real numbers or a valid TemporalData object."
+      )),
+      "expected HistogramDistribution::invldd, got {:?}",
+      r.warnings
+    );
+  }
 }
 
 mod empirical_quantiles {

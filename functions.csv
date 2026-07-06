@@ -1744,7 +1744,7 @@ PassEventsDown,Pass events down option,,unevaluated,6.0,1771
 AssociateTo,Adds one or more key-value pairs to an association variable in-place,✅,stateful,10.0,1776
 CircleDot,Symbolic circle dot operator with Unicode display,✅,pure,3.0,1776
 FindGeneratingFunction,Find generating function,,unevaluated,7.0,1776
-HistogramDistribution,Histogram distribution,,unevaluated,8.0,1776
+HistogramDistribution,Histogram distribution of univariate data (DataDistribution container; PDF/CDF/Mean/Variance/StandardDeviation),✅,pure,8.0,1776
 VectorScaling,Vector scaling option,,unevaluated,12.1,1776
 GaussianMatrix,Discrete Gaussian matrix of radius r with standard deviation sigma (default r/2),✅,pure,7.0,1779
 NumberSigns,Number sign display,,unevaluated,2.0,1779

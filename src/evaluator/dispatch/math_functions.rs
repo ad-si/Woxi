@@ -701,7 +701,7 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    "Mean" | "Variance"
+    "Mean" | "Variance" | "StandardDeviation"
       if args.len() == 1
         && matches!(&args[0], Expr::FunctionCall { name: dn, args: da }
           if dn == "DataDistribution" && da.len() == 4) =>
@@ -710,7 +710,7 @@ pub fn dispatch_math_functions(
         let mean = crate::functions::math_ast::data_distribution_moment(da, 1);
         match (name, mean) {
           ("Mean", Some(m)) => return Some(Ok(m)),
-          ("Variance", Some(m)) => {
+          ("Variance" | "StandardDeviation", Some(m)) => {
             if let Some(m2) =
               crate::functions::math_ast::data_distribution_moment(da, 2)
             {
@@ -735,7 +735,19 @@ pub fn dispatch_math_functions(
                   .into(),
                 });
               if let Ok(v) = var {
-                return Some(Ok(v));
+                if name == "Variance" {
+                  return Some(Ok(v));
+                }
+                // StandardDeviation = Sqrt[Variance]
+                let sd = crate::evaluator::evaluate_expr_to_expr(
+                  &Expr::FunctionCall {
+                    name: "Sqrt".to_string(),
+                    args: vec![v].into(),
+                  },
+                );
+                if let Ok(s) = sd {
+                  return Some(Ok(s));
+                }
               }
             }
           }
@@ -773,6 +785,11 @@ pub fn dispatch_math_functions(
     }
     "EmpiricalDistribution" if args.len() == 1 => {
       return Some(crate::functions::math_ast::empirical_distribution_ast(
+        args,
+      ));
+    }
+    "HistogramDistribution" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::histogram_distribution_ast(
         args,
       ));
     }

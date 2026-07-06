@@ -601,6 +601,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "HermitianMatrixQ" => Some((1, 1)),
     "HighpassFilter" => Some((2, 4)),
     "HilbertMatrix" => Some((1, 1)),
+    "HistogramDistribution" => Some((1, 2)),
     "HistogramList" => Some((1, 2)),
     "HoldForm" => Some((1, 1)),
     "Hyperfactorial" => Some((1, 1)),

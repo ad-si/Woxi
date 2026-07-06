@@ -161,8 +161,10 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "NormalDistribution" => pdf_normal(dargs, x),
     "MultinormalDistribution" => pdf_multinormal(dargs, x),
     "ProductDistribution" => pdf_product_distribution(dargs, x),
-    "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, false) {
-      Some(v) => Ok(v),
+    "DataDistribution" => match histogram_pdf_cdf(dargs, &x, false)
+      .or_else(|| data_distribution_pdf_cdf(dargs, &x, false).map(Ok))
+    {
+      Some(v) => v,
       None => Ok(Expr::FunctionCall {
         name: "PDF".to_string(),
         args: vec![
@@ -1762,8 +1764,10 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BenktanderGibratDistribution" => cdf_benktander_gibrat(dargs, x),
     "GumbelDistribution" => cdf_gumbel(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
-    "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
-      Some(v) => Ok(v),
+    "DataDistribution" => match histogram_pdf_cdf(dargs, &x, true)
+      .or_else(|| data_distribution_pdf_cdf(dargs, &x, true).map(Ok))
+    {
+      Some(v) => v,
       None => Ok(Expr::FunctionCall {
         name: "CDF".to_string(),
         args: vec![
@@ -8399,6 +8403,371 @@ pub fn empirical_distribution_ast(
   })
 }
 
+// ─── HistogramDistribution ────────────────────────────────────────────
+
+fn frac_reduce(mut n: i128, mut d: i128) -> (i128, i128) {
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  let mut a = n.abs().max(1);
+  let mut b = d;
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  let g = a.max(1);
+  (n / g, d / g)
+}
+
+fn frac_expr((n, d): (i128, i128)) -> Expr {
+  if d == 1 {
+    Expr::Integer(n)
+  } else {
+    crate::functions::math_ast::make_rational_pub(n, d)
+  }
+}
+
+/// `HistogramDistribution[data]` / `HistogramDistribution[data, {w}]` —
+/// wolframscript's container `DataDistribution["Histogram",
+/// {densities, bin edges}, 1, n]`. The bins follow the same rules as
+/// `HistogramList`: automatic binning (and an explicit width whose bins are
+/// *centered* on commensurate data) reports machine-real densities and
+/// edges, while an explicit exact width anchored at multiples of `w` stays
+/// exact (`{{1/10, 3/10, 1/10}, {0, 2, 4, 6}}`). The densities are
+/// count/(n·w), so empty interior bins carry weight `0.`.
+pub fn histogram_distribution_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "HistogramDistribution".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let (data, width_spec) = match args {
+    [Expr::List(d)] if !d.is_empty() => (d, None),
+    [Expr::List(d), Expr::List(spec)] if !d.is_empty() && spec.len() == 1 => {
+      (d, Some(&spec[0]))
+    }
+    _ => return unevaluated(),
+  };
+  let Some(values) = data
+    .iter()
+    .map(crate::functions::math_ast::expr_to_f64)
+    .collect::<Option<Vec<f64>>>()
+  else {
+    // Multivariate (matrix) data is not implemented yet: stay silently
+    // symbolic. Anything else — symbolic entries, non-numbers — is invalid
+    // input and warns like wolframscript.
+    if !data.iter().all(|d| matches!(d, Expr::List(_))) {
+      let call = unevaluated()?;
+      crate::emit_message_to_stdout(&format!(
+        "HistogramDistribution::invldd: The input data {} should be a vector \
+         or a matrix of real numbers or a valid TemporalData object.",
+        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+      ));
+    }
+    return unevaluated();
+  };
+  let n = values.len() as i128;
+
+  let data_distribution = |weights: Vec<Expr>, edges: Vec<Expr>| {
+    Ok(Expr::FunctionCall {
+      name: "DataDistribution".to_string(),
+      args: vec![
+        Expr::String("Histogram".to_string()),
+        Expr::List(
+          vec![Expr::List(weights.into()), Expr::List(edges.into())].into(),
+        ),
+        Expr::Integer(1),
+        Expr::Integer(n),
+      ]
+      .into(),
+    })
+  };
+
+  // Exact path: an explicit exact width over exact data whose bins anchor at
+  // multiples of w (i.e. NOT the value-centered layout, which wolframscript
+  // reports in machine reals like HistogramList does).
+  if let Some(wexpr) = width_spec
+    && let Some(w) = as_exact_frac(wexpr)
+    && w.0 > 0
+    && let Some(exact) = data
+      .iter()
+      .map(as_exact_frac)
+      .collect::<Option<Vec<(i128, i128)>>>()
+  {
+    let spread = exact
+      .iter()
+      .any(|v| frac_cmp(*v, exact[0]) != std::cmp::Ordering::Equal);
+    // v/w is an integer iff (vn·wd) divides evenly by (vd·wn).
+    let centered =
+      spread && exact.iter().all(|v| (v.0 * w.1) % (v.1 * w.0) == 0);
+    if !centered {
+      // Quotient v/w as a reduced fraction, and its floor.
+      let quot = |v: (i128, i128)| frac_reduce(v.0 * w.1, v.1 * w.0);
+      let floor_div = |(qn, qd): (i128, i128)| qn.div_euclid(qd);
+      let mn = *exact
+        .iter()
+        .min_by(|a, b| frac_cmp(**a, **b))
+        .expect("nonempty");
+      let mx = *exact
+        .iter()
+        .max_by(|a, b| frac_cmp(**a, **b))
+        .expect("nonempty");
+      let k_lo = floor_div(quot(mn));
+      let (qn, qd) = quot(mx);
+      // ceil(mx/w), bumped one bin when mx lands exactly on an edge so the
+      // maximum stays strictly inside the last bin.
+      let k_hi = if qd == 1 {
+        qn + 1
+      } else {
+        qn.div_euclid(qd) + 1
+      };
+      let num_bins = (k_hi - k_lo).max(1) as usize;
+      let mut counts = vec![0i128; num_bins];
+      for v in &exact {
+        let idx = floor_div(quot(*v)) - k_lo;
+        if (0..num_bins as i128).contains(&idx) {
+          counts[idx as usize] += 1;
+        }
+      }
+      // Density = count / (n·w); edge_i = (k_lo + i)·w.
+      let weights: Vec<Expr> = counts
+        .iter()
+        .map(|c| frac_expr(frac_reduce(c * w.1, n * w.0)))
+        .collect();
+      let edges: Vec<Expr> = (0..=num_bins as i128)
+        .map(|i| frac_expr(frac_reduce((k_lo + i) * w.0, w.1)))
+        .collect();
+      return data_distribution(weights, edges);
+    }
+  }
+
+  // Machine-real path: automatic binning, a non-exact width, or the
+  // value-centered layout.
+  let dx_opt = match width_spec
+    .map(|e| crate::functions::math_ast::expr_to_f64(e).filter(|v| *v > 0.0))
+  {
+    None => None,
+    Some(Some(dx)) => Some(dx),
+    Some(None) => return unevaluated(),
+  };
+  let (min_val, max_val, dx, _) =
+    crate::functions::list_helpers_ast::wl_bin_spec(&values, dx_opt);
+  let num_bins = ((max_val - min_val) / dx + 1e-9).floor().max(1.0) as usize;
+  let mut counts = vec![0i128; num_bins];
+  for &v in &values {
+    if v < min_val {
+      continue;
+    }
+    let idx = ((v - min_val) / dx).floor();
+    if idx >= 0.0 && (idx as usize) < num_bins {
+      counts[idx as usize] += 1;
+    }
+  }
+  let weights: Vec<Expr> = counts
+    .iter()
+    .map(|c| Expr::Real(*c as f64 / (n as f64 * dx)))
+    .collect();
+  let edges: Vec<Expr> = (0..=num_bins)
+    .map(|i| Expr::Real(min_val + i as f64 * dx))
+    .collect();
+  data_distribution(weights, edges)
+}
+
+/// Extract (densities, bin edges) from a histogram DataDistribution
+/// (`dargs = ["Histogram", {weights, edges}, 1, n]`).
+fn histogram_parts(
+  dargs: &[Expr],
+) -> Option<(crate::ExprList, crate::ExprList)> {
+  if dargs.len() != 4 {
+    return None;
+  }
+  match &dargs[0] {
+    Expr::String(s) | Expr::Identifier(s) if s == "Histogram" => {}
+    _ => return None,
+  }
+  let inner = match &dargs[1] {
+    Expr::List(items) if items.len() == 2 => items,
+    _ => return None,
+  };
+  match (&inner[0], &inner[1]) {
+    (Expr::List(w), Expr::List(e))
+      if !w.is_empty() && e.len() == w.len() + 1 =>
+    {
+      Some((w.clone(), e.clone()))
+    }
+    _ => None,
+  }
+}
+
+/// PDF (density sum) or CDF (per-bin ramp sum) of a histogram
+/// DataDistribution, in wolframscript's Boole form:
+///
+/// PDF: Σ wᵢ·Boole[loᵢ ≤ x < hiᵢ]
+/// CDF: Boole[x ≥ last] + Σ (cumᵢ + wᵢ·(x − loᵢ))·Boole[loᵢ ≤ x < hiᵢ]
+///
+/// where cumᵢ accumulates wᵢ·widthᵢ in the stored arithmetic (machine reals
+/// or exact rationals). A numeric point collapses to its value through
+/// ordinary evaluation.
+pub fn histogram_pdf_cdf(
+  dargs: &[Expr],
+  x: &Expr,
+  cumulative: bool,
+) -> Option<Result<Expr, InterpreterError>> {
+  let (weights, edges) = histogram_parts(dargs)?;
+  let boole = |cond: Expr| Expr::FunctionCall {
+    name: "Boole".to_string(),
+    args: vec![cond].into(),
+  };
+  // At a numeric point the sum is evaluated down to its value; at a symbolic
+  // point the built form is returned as-is, preserving wolframscript's term
+  // order (CDF leads with Boole[x >= last] and the bins follow ascending),
+  // which ordinary Plus canonicalization would reshuffle.
+  let numeric_point = crate::functions::math_ast::expr_to_f64(x);
+  // PDF at a numeric point is a direct bin lookup: the stored density inside
+  // a bin, and the *exact* integer 0 outside the support (wolframscript
+  // returns 0, not 0., even for a real point).
+  if let Some(xf) = numeric_point
+    && !cumulative
+  {
+    let ef = |e: &Expr| crate::functions::math_ast::expr_to_f64(e);
+    for (i, w) in weights.iter().enumerate() {
+      let (Some(lo), Some(hi)) = (ef(&edges[i]), ef(&edges[i + 1])) else {
+        return Some(Ok(Expr::Integer(0)));
+      };
+      if lo <= xf && xf < hi {
+        return Some(Ok(w.clone()));
+      }
+    }
+    return Some(Ok(Expr::Integer(0)));
+  }
+  // Flat Times/Plus FunctionCalls: the display of the raw (uncanonicalized)
+  // tree matches wolframscript's, e.g. `(3*(-2 + x))/10` and `(x*Boole[…])/10`.
+  let fc = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let build = || -> Result<Expr, InterpreterError> {
+    let mut terms: Vec<Expr> = Vec::new();
+    if cumulative {
+      terms.push(boole(comparison(
+        x.clone(),
+        ComparisonOp::GreaterEqual,
+        edges[edges.len() - 1].clone(),
+      )));
+    }
+    let mut cum: Expr = int(0);
+    for (i, w) in weights.iter().enumerate() {
+      let (lo, hi) = (edges[i].clone(), edges[i + 1].clone());
+      let cond = comparison3(
+        lo.clone(),
+        ComparisonOp::LessEqual,
+        x.clone(),
+        ComparisonOp::Less,
+        hi.clone(),
+      );
+      if cumulative {
+        let is_zero = |e: &Expr| {
+          matches!(e, Expr::Integer(0))
+            || matches!(e, Expr::Real(r) if *r == 0.0)
+        };
+        // w·(x - lo), displayed `w*(-lo + x)` (bare `w*x` when lo is 0).
+        let ramp_offset = if is_zero(&lo) {
+          x.clone()
+        } else {
+          fc("Plus", vec![eval(times(int(-1), lo.clone()))?, x.clone()])
+        };
+        // (cum + w·(x - lo))·Boole[…]; the first bin has no accumulated mass.
+        terms.push(if is_zero(&cum) {
+          fc("Times", vec![w.clone(), ramp_offset, boole(cond)])
+        } else {
+          fc(
+            "Times",
+            vec![
+              fc(
+                "Plus",
+                vec![cum.clone(), fc("Times", vec![w.clone(), ramp_offset])],
+              ),
+              boole(cond),
+            ],
+          )
+        });
+        cum = eval(plus(cum, times(w.clone(), minus(hi, lo))))?;
+      } else {
+        terms.push(fc("Times", vec![w.clone(), boole(cond)]));
+      }
+    }
+    let sum = fc("Plus", terms);
+    if numeric_point.is_some() {
+      eval(sum)
+    } else {
+      Ok(sum)
+    }
+  };
+  Some(build())
+}
+
+/// Mean (k = 1) or raw second moment (k = 2) of a histogram
+/// DataDistribution: Σ probᵢ·midᵢ and Σ probᵢ·(midᵢ² + widthᵢ²/12) with
+/// probᵢ = wᵢ·widthᵢ, accumulated left-to-right in the stored arithmetic so
+/// machine-real results match wolframscript bit-for-bit.
+fn histogram_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
+  let (weights, edges) = histogram_parts(dargs)?;
+  // Exact path when every stored part is an integer/rational.
+  let exact_w: Option<Vec<(i128, i128)>> =
+    weights.iter().map(as_exact_frac).collect();
+  let exact_e: Option<Vec<(i128, i128)>> =
+    edges.iter().map(as_exact_frac).collect();
+  if let (Some(ws), Some(es)) = (exact_w, exact_e) {
+    let mul = |a: (i128, i128), b: (i128, i128)| -> Option<(i128, i128)> {
+      Some(frac_reduce(a.0.checked_mul(b.0)?, a.1.checked_mul(b.1)?))
+    };
+    let add = |a: (i128, i128), b: (i128, i128)| -> Option<(i128, i128)> {
+      Some(frac_reduce(
+        a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?,
+        a.1.checked_mul(b.1)?,
+      ))
+    };
+    let mut m = (0i128, 1i128);
+    for (i, w) in ws.iter().enumerate() {
+      let width = add(es[i + 1], (-es[i].0, es[i].1))?;
+      let prob = mul(*w, width)?;
+      let mid = mul(add(es[i], es[i + 1])?, (1, 2))?;
+      let term = match k {
+        1 => mul(prob, mid)?,
+        2 => mul(
+          prob,
+          add(mul(mid, mid)?, mul(mul(width, width)?, (1, 12))?)?,
+        )?,
+        _ => return None,
+      };
+      m = add(m, term)?;
+    }
+    return Some(frac_expr(m));
+  }
+  // Machine-real path, accumulated left-to-right.
+  let to_f64 = crate::functions::math_ast::expr_to_f64;
+  let ws: Option<Vec<f64>> = weights.iter().map(to_f64).collect();
+  let es: Option<Vec<f64>> = edges.iter().map(to_f64).collect();
+  let (ws, es) = (ws?, es?);
+  let mut m = 0.0;
+  for (i, w) in ws.iter().enumerate() {
+    let width = es[i + 1] - es[i];
+    let prob = w * width;
+    let mid = (es[i] + es[i + 1]) / 2.0;
+    m += match k {
+      1 => prob * mid,
+      2 => prob * (mid * mid + width * width / 12.0),
+      _ => return None,
+    };
+  }
+  Some(Expr::Real(m))
+}
+
 /// Extract (weights, values) from an empirical DataDistribution.
 pub fn data_distribution_parts(
   dargs: &[Expr],
@@ -8430,6 +8799,10 @@ pub fn data_distribution_parts(
 /// Mean (k = 1) or raw second moment (k = 2) of an empirical
 /// distribution, exactly.
 pub fn data_distribution_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
+  // A histogram DataDistribution has its own (continuous, per-bin) moments.
+  if let Some(m) = histogram_moment(dargs, k) {
+    return Some(m);
+  }
   let (weights, values) = data_distribution_parts(dargs)?;
   let mut num: i128 = 0;
   let mut den: i128 = 1;
