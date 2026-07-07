@@ -47,6 +47,83 @@ fn unknown_option_fallback(head: &str, args: &[Expr]) -> Expr {
 }
 
 pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  Ok(reorder_factored_product(factor_ast_impl(args)?))
+}
+
+/// Put a factored product's monomial factors in canonical position
+/// relative to its sum factors (`x*(-1 + x + x^2)`, not
+/// `(-1 + x + x^2)*x`), using only the decoded monomial-vs-sum rule so
+/// the relative order of sums — which factor construction already gets
+/// right (e.g. Factor[x^100 - 1]) — is untouched. A full re-evaluation
+/// would apply the evaluator's divergent sum-vs-sum comparison.
+fn reorder_factored_product(result: Expr) -> Expr {
+  fn collect(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        collect(right, out);
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          collect(a, out);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let is_times = matches!(
+    &result,
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    }
+  ) || matches!(&result, Expr::FunctionCall { name, .. } if name == "Times");
+  if !is_times {
+    return result;
+  }
+  let mut factors: Vec<Expr> = Vec::new();
+  collect(&result, &mut factors);
+
+  use crate::functions::math_ast::order_monomial_vs_sum;
+  use std::cmp::Ordering;
+  let mut swapped_any = false;
+  loop {
+    let mut swapped = false;
+    for i in 0..factors.len().saturating_sub(1) {
+      let (a, b) = (&factors[i], &factors[i + 1]);
+      let should_swap =
+        // sum before monomial, but the monomial sorts first
+        order_monomial_vs_sum(b, a) == Some(Ordering::Less)
+        // monomial before sum, but the sum sorts first
+        || order_monomial_vs_sum(a, b) == Some(Ordering::Greater);
+      if should_swap {
+        factors.swap(i, i + 1);
+        swapped = true;
+        swapped_any = true;
+      }
+    }
+    if !swapped {
+      break;
+    }
+  }
+  if !swapped_any {
+    return result;
+  }
+  factors
+    .into_iter()
+    .reduce(|acc, f| Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(acc),
+      right: Box::new(f),
+    })
+    .expect("non-empty factor list")
+}
+
+fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Factor[poly, Modulus -> p] factors over GF(p); inputs the modular
   // engine cannot handle (multivariate, symbolic) stay unevaluated.
   if args.len() == 2 {

@@ -938,6 +938,28 @@ mod factor {
     );
   }
 
+  // A bare monomial factor sorts against sum factors by the canonical
+  // Times rule (found by the differential fuzzer: the x used to trail).
+  #[test]
+  fn monomial_factor_position() {
+    for (input, expected) in [
+      ("Factor[x^3 + x^2 - x]", "x*(-1 + x + x^2)"),
+      ("Factor[x^5 + x^4 - x^3]", "x^3*(-1 + x + x^2)"),
+      // ... while the two-term negative-constant exception keeps the sum
+      // first, and sums keep their construction order among themselves
+      ("Factor[x^4 - x]", "(-1 + x)*x*(1 + x + x^2)"),
+      ("Factor[x^3 - 2*x^2 + x]", "(-1 + x)^2*x"),
+      ("Factor[x*y + y^2]", "y*(x + y)"),
+      ("Factor[x*y - y^2]", "(x - y)*y"),
+      (
+        "FactorList[x^3 + x^2 - x]",
+        "{{1, 1}, {x, 1}, {-1 + x + x^2, 1}}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn modulus_option_factors_over_gf_p() {
     for (input, expected) in [

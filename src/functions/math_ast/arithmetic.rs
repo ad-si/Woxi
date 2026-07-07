@@ -4094,6 +4094,63 @@ fn order_factor_vs_additive(
   }
 }
 
+/// The decoded WL ordering of an identifier-based factor against a
+/// canonical Plus factor in a Times product, or None when the pair is not
+/// of that shape. Lets Factor put its display factors in canonical order
+/// without a full re-sort (which would disturb sum-vs-sum order).
+pub fn order_monomial_vs_sum(
+  factor: &Expr,
+  sum: &Expr,
+) -> Option<std::cmp::Ordering> {
+  // Factored displays build sums as BinaryOp Plus chains, which
+  // plus_call_args does not see; flatten both representations. Minus
+  // chains are left alone (their construction order already matches).
+  fn flatten_plus(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        for a in args.iter() {
+          flatten_plus(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        flatten_plus(left, out);
+        flatten_plus(right, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let is_plus = matches!(sum, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      sum,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        ..
+      }
+    );
+  if !is_plus {
+    return None;
+  }
+  let mut terms = Vec::new();
+  flatten_plus(sum, &mut terms);
+  if terms.len() < 2 {
+    return None;
+  }
+  if power_const_base(factor).is_some() {
+    return None;
+  }
+  if !matches!(
+    times_term_base_exp(factor).0,
+    Expr::Identifier(_) | Expr::Constant(_)
+  ) {
+    return None;
+  }
+  Some(order_factor_vs_additive(factor, &terms))
+}
+
 pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
   symbolic_args.sort_by(|a, b| {
     // A Plus factor takes the max priority of its terms (like Times) so a
