@@ -326,6 +326,39 @@ const FN_SPECS: &[FnSpec] = &[
   f("Together", &[Arg::Poly]),
   f("D", &[Arg::Poly, Arg::VarX]),
   f("Head", &[Arg::Any]),
+  // Regression coverage for canonical-order and arithmetic fixes:
+  // mixed-content sorts exercise the number-vs-symbol comparators, the
+  // 3-argument forms exercise offsets/chains, and Factor/FactorInteger
+  // exercise the Zassenhaus and Gaussian paths.
+  f("Sort", &[Arg::ListAny]),
+  f("Union", &[Arg::ListAny]),
+  f("Max", &[Arg::Num, Arg::Num, Arg::Num]),
+  f("Min", &[Arg::Num, Arg::Num, Arg::Num]),
+  f(
+    "Mod",
+    &[Arg::IntIn(-50, 50), Arg::IntIn(1, 9), Arg::IntIn(-2, 2)],
+  ),
+  f("FactorInteger", &[Arg::IntIn(1, 500)]),
+  f("Binomial", &[Arg::IntIn(-10, 12), Arg::IntIn(-3, 12)]),
+  f("Rationalize", &[Arg::Num]),
+  f("IntegerPartitions", &[Arg::Nat(8)]),
+  // Previously unfuzzed list/string surface
+  f("Accumulate", &[Arg::ListNum]),
+  f("Differences", &[Arg::ListNum1]),
+  f("Tally", &[Arg::ListNum]),
+  f("DeleteDuplicates", &[Arg::ListNum]),
+  f("Gather", &[Arg::ListNum]),
+  f("Riffle", &[Arg::ListNum, Arg::IntIn(-5, 5)]),
+  f("Partition", &[Arg::ListNum1, Arg::IntIn(1, 3)]),
+  f("Position", &[Arg::ListNum, Arg::IntIn(-5, 5)]),
+  f("Nest", &[Arg::PureFn, Arg::Num, Arg::Nat(4)]),
+  f("ToString", &[Arg::Any]),
+  f("StringSplit", &[Arg::Str]),
+  f("StringRepeat", &[Arg::Str, Arg::Nat(3)]),
+  f("Clip", &[Arg::Num]),
+  f("UnitStep", &[Arg::Num]),
+  f("Ramp", &[Arg::Num]),
+  f("KroneckerDelta", &[Arg::Num, Arg::Num]),
 ];
 
 const PURE_FNS: &[&str] = &["#^2 &", "# + 1 &", "2*# &", "-# &", "Abs[#] &"];
