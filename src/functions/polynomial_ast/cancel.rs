@@ -79,6 +79,34 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
             return crate::functions::math_ast::make_divide(num_expr, den_expr);
           }
         }
+
+        // No usable polynomial GCD — still cancel the positive integer
+        // content shared by numerator and denominator, with no sign
+        // normalization: wolframscript gives Cancel[(2-4x)/(2+2x)] →
+        // (1-2x)/(1+x) and Cancel[(2-4x)/(-2+2x)] → (1-2x)/(-1+x).
+        let num_content = num_coeffs
+          .iter()
+          .copied()
+          .filter(|&c| c != 0)
+          .fold(0i128, gcd_i128);
+        let den_content = den_coeffs
+          .iter()
+          .copied()
+          .filter(|&c| c != 0)
+          .fold(0i128, gcd_i128);
+        let g = gcd_i128(num_content, den_content);
+        if g > 1 {
+          let new_num: Vec<i128> = num_coeffs.iter().map(|c| c / g).collect();
+          let new_den: Vec<i128> = den_coeffs.iter().map(|c| c / g).collect();
+          let num_expr = coeffs_to_expr(&new_num, &var);
+          if new_den == [1] {
+            return num_expr;
+          }
+          return crate::functions::math_ast::make_divide(
+            num_expr,
+            coeffs_to_expr(&new_den, &var),
+          );
+        }
       }
 
       // Try multivariate cancellation: extract common monomial factors from

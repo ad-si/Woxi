@@ -627,8 +627,12 @@ pub fn together_expr(expr: &Expr) -> Expr {
   }
 
   if base_exp_map.is_empty() {
-    // No fractions to combine
-    return expr_rec;
+    // No fractions to combine — but wolframscript still pulls the numeric
+    // content out of a plain sum: Together[2 - 4x - 4x^2] →
+    // -2*(-1 + 2x + 2x^2), Together[2 Sin[x] + 4 Sin[y]] →
+    // 2*(Sin[x] + 2*Sin[y]).
+    return super::factor::factor_terms_numeric(&expr_rec, &terms)
+      .unwrap_or(expr_rec);
   }
 
   // Build numerator: for each term, multiply by (common_den / den_i)
@@ -663,6 +667,50 @@ pub fn together_expr(expr: &Expr) -> Expr {
         }
       })
       .collect();
+    // Fold integer factors together so the numeric part of the common
+    // denominator is a single number: Together[x/2 + y/3] → (3x + 2y)/6,
+    // not (3x + 2y)/(2*3), and Together[x/2 + y/(3 z)] → (2y + 3xz)/(6z).
+    let mut int_prod: i128 = 1;
+    let mut split_dens: Vec<Expr> = Vec::new();
+    for f in canonical_dens.drain(..) {
+      match f {
+        Expr::Integer(n) => int_prod *= n,
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          ..
+        }
+        | Expr::FunctionCall { .. }
+          if matches!(&f, Expr::FunctionCall { name, .. } if name == "Times")
+            || matches!(
+              &f,
+              Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                ..
+              }
+            ) =>
+        {
+          // Pull integer factors out of a composite Times base.
+          let mut rest: Vec<Expr> = Vec::new();
+          for sub in flatten_times_args(std::slice::from_ref(&f)) {
+            if let Expr::Integer(n) = sub {
+              int_prod *= n;
+            } else {
+              rest.push(sub);
+            }
+          }
+          match rest.len() {
+            0 => {}
+            1 => split_dens.push(rest.remove(0)),
+            _ => split_dens.push(build_product(rest)),
+          }
+        }
+        other => split_dens.push(other),
+      }
+    }
+    canonical_dens = split_dens;
+    if int_prod != 1 {
+      canonical_dens.insert(0, Expr::Integer(int_prod));
+    }
     crate::functions::math_ast::sort_symbolic_factors(&mut canonical_dens);
     if canonical_dens.len() == 1 {
       canonical_dens.remove(0)
@@ -721,6 +769,18 @@ pub fn together_expr(expr: &Expr) -> Expr {
     if matches!(&simplified_den, Expr::Integer(1)) {
       simplified_num
     } else {
+      // Over a pure integer denominator wolframscript factors the numeric
+      // content out of the numerator: Together[3/2 - 3x/2] → (-3*(-1+x))/2,
+      // Together[2/3 + 4x/3] → (2*(1 + 2*x))/3.
+      if matches!(&simplified_den, Expr::Integer(_)) {
+        let num_terms = collect_additive_terms(&simplified_num);
+        if num_terms.len() > 1
+          && let Ok(factored) =
+            super::factor::factor_terms_numeric(&simplified_num, &num_terms)
+        {
+          simplified_num = factored;
+        }
+      }
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: Box::new(simplified_num),

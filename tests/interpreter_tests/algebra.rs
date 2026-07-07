@@ -1541,6 +1541,21 @@ mod cancel {
       "1 + x"
     );
   }
+
+  // Shared integer content cancels without any sign normalization
+  // (wolframscript-verified).
+  #[test]
+  fn integer_content_cancels_without_sign_flip() {
+    assert_eq!(
+      interpret("Cancel[(2 - 4 x)/(2 + 2 x)]").unwrap(),
+      "(1 - 2*x)/(1 + x)"
+    );
+    assert_eq!(
+      interpret("Cancel[(2 - 4 x)/(-2 + 2 x)]").unwrap(),
+      "(1 - 2*x)/(-1 + x)"
+    );
+    assert_eq!(interpret("Cancel[(2 - 4 x)/2]").unwrap(), "1 - 2*x");
+  }
 }
 
 mod expand_modulus {
@@ -1838,6 +1853,59 @@ mod together {
       "2*(1 + x)"
     );
     assert_eq!(interpret("Together[(2 x + 2)/(x + 1)]").unwrap(), "2");
+  }
+
+  // Together pulls the numeric content out of a plain (fraction-free) sum,
+  // like FactorTerms (wolframscript-verified).
+  #[test]
+  fn bare_sum_numeric_content() {
+    assert_eq!(
+      interpret("Together[2 - 4 x - 4 x^2]").unwrap(),
+      "-2*(-1 + 2*x + 2*x^2)"
+    );
+    assert_eq!(interpret("Together[3 + 3 x^3]").unwrap(), "3*(1 + x^3)");
+    assert_eq!(interpret("Together[2 + 3 x]").unwrap(), "2 + 3*x");
+    assert_eq!(
+      interpret("Together[2 Sin[x] + 4 Sin[y]]").unwrap(),
+      "2*(Sin[x] + 2*Sin[y])"
+    );
+  }
+
+  // Over a pure integer denominator the numerator's numeric content is
+  // factored out (wolframscript-verified).
+  #[test]
+  fn integer_denominator_numerator_content() {
+    assert_eq!(
+      interpret("Together[3/2 - (3 x)/2]").unwrap(),
+      "(-3*(-1 + x))/2"
+    );
+    assert_eq!(
+      interpret("Together[2/3 + (4 x)/3]").unwrap(),
+      "(2*(1 + 2*x))/3"
+    );
+    assert_eq!(interpret("Together[x/2 + 3/2]").unwrap(), "(3 + x)/2");
+    assert_eq!(interpret("Together[x/2 + 1/2]").unwrap(), "(1 + x)/2");
+  }
+
+  // Integer factors of the common denominator fold into one number
+  // (wolframscript-verified).
+  #[test]
+  fn integer_denominator_factors_fold() {
+    assert_eq!(interpret("Together[x/2 + y/3]").unwrap(), "(3*x + 2*y)/6");
+    assert_eq!(
+      interpret("Together[x/2 + y/(3 z)]").unwrap(),
+      "(2*y + 3*x*z)/(6*z)"
+    );
+  }
+
+  // Content cancellation in a fraction keeps term signs as they fall —
+  // no leading-sign extraction (wolframscript-verified).
+  #[test]
+  fn fraction_content_cancellation_no_sign_flip() {
+    assert_eq!(
+      interpret("Together[(2 - 4 x)/(2 + 2 x)]").unwrap(),
+      "(1 - 2*x)/(1 + x)"
+    );
   }
 }
 
