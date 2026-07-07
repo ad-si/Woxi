@@ -2347,6 +2347,75 @@ pub fn evaluate_expr_to_expr_inner(
         return evaluate_expr_to_expr(&and_expr);
       }
 
+      // Comparisons with complex infinities: the four order relations are
+      // invalid — emit `<Head>::nord` and stay unevaluated like
+      // wolframscript — and Equal/Unequal between TWO complex infinities
+      // is indeterminate (unevaluated, no message). Real-directed
+      // infinities (DirectedInfinity[±1]) stay comparable.
+      {
+        let complex_inf_display = |e: &Expr| -> Option<String> {
+          match e {
+            Expr::Identifier(s) | Expr::Constant(s)
+              if s == "ComplexInfinity" =>
+            {
+              Some("ComplexInfinity".to_string())
+            }
+            Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
+              match args.len() {
+                0 => Some("ComplexInfinity".to_string()),
+                1 => {
+                  let real = matches!(
+                    &args[0],
+                    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+                  ) || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational");
+                  if real {
+                    None
+                  } else {
+                    Some(format!(
+                      "{} Infinity",
+                      crate::syntax::expr_to_string(&args[0])
+                    ))
+                  }
+                }
+                _ => None,
+              }
+            }
+            _ => None,
+          }
+        };
+        for i in 0..operators.len() {
+          let op = operators[i];
+          let display = complex_inf_display(&values[i])
+            .or_else(|| complex_inf_display(&values[i + 1]));
+          let Some(display) = display else { continue };
+          let head = match op {
+            ComparisonOp::Less => Some("Less"),
+            ComparisonOp::LessEqual => Some("LessEqual"),
+            ComparisonOp::Greater => Some("Greater"),
+            ComparisonOp::GreaterEqual => Some("GreaterEqual"),
+            _ => None,
+          };
+          if let Some(head) = head {
+            crate::emit_message(&format!(
+              "{head}::nord: Invalid comparison with {display} attempted."
+            ));
+            return Ok(Expr::Comparison {
+              operands: values,
+              operators: operators.clone(),
+            });
+          }
+          if matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual)
+            && complex_inf_display(&values[i]).is_some()
+            && complex_inf_display(&values[i + 1]).is_some()
+          {
+            return Ok(Expr::Comparison {
+              operands: values,
+              operators: operators.clone(),
+            });
+          }
+        }
+      }
+
       // UnsameQ with 3+ operands is NOT transitive: it requires ALL pairs
       // to be distinct, not just adjacent ones. Delegate to unsame_q_ast,
       // which implements the correct all-pairs check.

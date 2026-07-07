@@ -1883,6 +1883,63 @@ mod infinity_arithmetic {
 mod infinity_comparisons {
   use super::*;
 
+  // Order comparisons with complex infinities are invalid: they emit
+  // `<Head>::nord` and stay unevaluated (found by the differential
+  // fuzzer). Real-directed infinities stay comparable.
+  #[test]
+  fn complex_infinity_order_comparisons_emit_nord() {
+    for (input, head) in [
+      ("Pi >= ComplexInfinity", "GreaterEqual"),
+      ("1 < ComplexInfinity", "Less"),
+      ("ComplexInfinity > 5", "Greater"),
+      ("x < ComplexInfinity", "Less"),
+      ("ComplexInfinity <= ComplexInfinity", "LessEqual"),
+    ] {
+      let result = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(result.result, input, "{input}");
+      assert!(
+        result.warnings.iter().any(|w| w.contains(&format!(
+          "{head}::nord: Invalid comparison with ComplexInfinity attempted."
+        ))),
+        "expected nord for {input}, got {:?}",
+        result.warnings
+      );
+    }
+    // A non-real directed infinity names its direction in the message.
+    let result =
+      woxi::interpret_with_stdout("1 < DirectedInfinity[I]").unwrap();
+    assert_eq!(result.result, "1 < DirectedInfinity[I]");
+    assert!(
+      result.warnings.iter().any(|w| w
+        .contains("Less::nord: Invalid comparison with I Infinity attempted.")),
+      "expected nord, got {:?}",
+      result.warnings
+    );
+    // ... while a real direction is an ordinary -Infinity.
+    assert_eq!(interpret("1 < DirectedInfinity[-1]").unwrap(), "False");
+  }
+
+  // Equal/Unequal between two complex infinities is indeterminate and
+  // stays unevaluated without a message; against a number it decides.
+  #[test]
+  fn complex_infinity_equality() {
+    assert_eq!(
+      interpret("ComplexInfinity == ComplexInfinity").unwrap(),
+      "ComplexInfinity == ComplexInfinity"
+    );
+    assert_eq!(
+      interpret("ComplexInfinity != ComplexInfinity").unwrap(),
+      "ComplexInfinity != ComplexInfinity"
+    );
+    assert_eq!(interpret("1 == ComplexInfinity").unwrap(), "False");
+    assert_eq!(interpret("1 != ComplexInfinity").unwrap(), "True");
+    // SameQ stays structural
+    assert_eq!(
+      interpret("ComplexInfinity === ComplexInfinity").unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn less_than_infinity() {
     assert_eq!(interpret("5 < Infinity").unwrap(), "True");
