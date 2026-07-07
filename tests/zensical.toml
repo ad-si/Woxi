@@ -565,6 +565,7 @@ nav = [
       ] },
       { "Linear Algebra" = [
         "math/linear_algebra.md",
+        { "PfaffianDet" = "math/linear_algebra/PfaffianDet.md" },
         { "DrazinInverse" = "math/linear_algebra/DrazinInverse.md" },
         { "MatrixMinimalPolynomial" = "math/linear_algebra/MatrixMinimalPolynomial.md" },
         { "RankDecomposition" = "math/linear_algebra/RankDecomposition.md" },
@@ -886,6 +887,7 @@ nav = [
     { "Wavelet Analysis" = "wavelets.md" },
     { "List Operations" = [
       "list_operations.md",
+      { "FoldWhile" = "list_operations/FoldWhile.md" },
       { "Orthogonalize" = "list_operations/Orthogonalize.md" },
       { "PermutationProduct" = "list_operations/PermutationProduct.md" },
       { "SequenceSplit" = "list_operations/SequenceSplit.md" },
@@ -1430,6 +1432,8 @@ nav = [
   ] },
   { "Plotting" = [
     "plotting.md",
+    { "ControlActive" = "plotting/ControlActive.md" },
+    { "InteractiveControls" = "plotting/InteractiveControls.md" },
     { "Control" = "plotting/Control.md" },
     { "PeriodicTablePlot" = "plotting/PeriodicTablePlot.md" },
     { "ArrayPlot" = "plotting/ArrayPlot.md" },
