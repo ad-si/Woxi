@@ -4105,6 +4105,354 @@ mod root_import {
   }
 }
 
+mod root_tree_data {
+  use super::*;
+
+  // tree_data.root was written with uproot (Python) and every expected
+  // value below was cross-verified against uproot's own decoding. It holds
+  // a TTree "mixed" (12 entries spread over 3 baskets per branch) with
+  // flat branches of every basic leaf type, bool and unsigned variants,
+  // and two jagged (leaf-count) branches, plus a TH2D "h2" (3×2 bins).
+  fn tree_data_path() -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    format!("{manifest}/tests/data/tree_data.root")
+  }
+
+  fn sample_path() -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    format!("{manifest}/tests/data/sample.root")
+  }
+
+  #[test]
+  fn tree_element_returns_metadata_only() {
+    // The bare tree element lists branches without materializing data.
+    let path = tree_data_path();
+    let result = interpret(&format!(
+      r#"t = Import["{path}", {{"ROOT", "mixed"}}]; {{t["Entries"], Keys[t], t["Branches"]["i32"]}}"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{12, {ClassName, Title, Entries, Branches}, i32/I}");
+  }
+
+  #[test]
+  fn branch_column_int_types() {
+    let path = tree_data_path();
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "mixed", "i32"}}]"#))
+        .unwrap();
+    assert_eq!(result, "{0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110}");
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "mixed", "i64"}}]"#))
+        .unwrap();
+    assert_eq!(
+      result,
+      "{0, 1000000000, 2000000000, 3000000000, 4000000000, 5000000000, \
+       6000000000, 7000000000, 8000000000, 9000000000, 10000000000, \
+       11000000000}"
+    );
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "mixed", "i16"}}]"#))
+        .unwrap();
+    assert_eq!(result, "{-3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8}");
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "mixed", "i8"}}]"#))
+        .unwrap();
+    assert_eq!(result, "{-2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9}");
+  }
+
+  #[test]
+  fn branch_column_unsigned_stays_positive() {
+    // fIsUnsigned must widen instead of wrapping to negative values.
+    let path = tree_data_path();
+    let result = interpret(&format!(
+      r#"Take[Import["{path}", {{"ROOT", "mixed", "u32"}}], 2]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{4000000000, 4000000001}");
+  }
+
+  #[test]
+  fn branch_column_float_types() {
+    let path = tree_data_path();
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "mixed", "f32"}}]"#))
+        .unwrap();
+    assert_eq!(
+      result,
+      "{0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5}"
+    );
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "mixed", "f64"}}]"#))
+        .unwrap();
+    assert_eq!(
+      result,
+      "{0., 1.5, 3., 4.5, 6., 7.5, 9., 10.5, 12., 13.5, 15., 16.5}"
+    );
+  }
+
+  #[test]
+  fn branch_column_bool() {
+    let path = tree_data_path();
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "mixed", "flag"}}]"#))
+        .unwrap();
+    assert_eq!(
+      result,
+      "{True, False, True, False, True, False, True, False, True, False, \
+       True, False}"
+    );
+  }
+
+  #[test]
+  fn branch_column_jagged_arrays() {
+    // Leaf-count branches decode to one list per entry, sized by the
+    // counter branch; entry boundaries come from the basket offset table.
+    let path = tree_data_path();
+    let result = interpret(&format!(
+      r#"Import["{path}", {{"ROOT", "mixed", "jag_f64"}}]"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "{{0.}, {1.5, 2.5}, {3., 4., 5.}, {4.5}, {6., 7.}, {7.5, 8.5, 9.5}, \
+       {9.}, {10.5, 11.5}, {12., 13., 14.}, {13.5}, {15., 16.}, \
+       {16.5, 17.5, 18.5}}"
+    );
+    let result = interpret(&format!(
+      r#"Import["{path}", {{"ROOT", "mixed", "jag_i32"}}]"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "{{}, {1}, {2, 3}, {3, 4, 5}, {}, {5}, {6, 7}, {7, 8, 9}, {}, {9}, \
+       {10, 11}, {11, 12, 13}}"
+    );
+  }
+
+  #[test]
+  fn branch_list_selector() {
+    let path = tree_data_path();
+    let result = interpret(&format!(
+      r#"Import["{path}", {{"ROOT", "mixed", {{"i32", "flag"}}}}]["flag"][[1]]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn tree_data_selector_returns_all_columns() {
+    let path = tree_data_path();
+    let result = interpret(&format!(
+      r#"Keys[Import["{path}", {{"ROOT", "mixed", "Data"}}]]"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "{i32, i64, i16, i8, u32, f32, f64, flag, njag_f64, jag_f64, \
+       njag_i32, jag_i32}"
+    );
+  }
+
+  #[test]
+  fn element_path_without_format_marker() {
+    // For a .root extension the leading "ROOT" element is optional.
+    let path = tree_data_path();
+    let result =
+      interpret(&format!(r#"Take[Import["{path}", {{"mixed", "f64"}}], 3]"#))
+        .unwrap();
+    assert_eq!(result, "{0., 1.5, 3.}");
+  }
+
+  #[test]
+  fn th2d_decodes_axes_and_matrix() {
+    // The bin matrix is NBinsX rows of NBinsY values (x-major), with the
+    // underflow/overflow border dropped; verified against uproot.
+    let path = tree_data_path();
+    let result = interpret(&format!(
+      r#"h = Import["{path}", {{"ROOT", "h2"}}]; {{h["ClassName"], h["NBinsX"], h["XMin"], h["XMax"], h["NBinsY"], h["YMin"], h["YMax"], h["Entries"], h["BinContents"]}}"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "{TH2D, 3, 0., 3., 2, 0., 2., 6., {{1., 1.}, {1., 0.}, {1., 2.}}}"
+    );
+  }
+
+  #[test]
+  fn th2d_appears_in_default_walk() {
+    let path = tree_data_path();
+    let result =
+      interpret(&format!(r#"Import["{path}"]["h2"]["BinContents"]"#)).unwrap();
+    assert_eq!(result, "{{1., 1.}, {1., 0.}, {1., 2.}}");
+  }
+
+  #[test]
+  fn element_path_into_subdirectory() {
+    let path = sample_path();
+    let result = interpret(&format!(
+      r#"Import["{path}", {{"ROOT", "subdir/inner"}}]["BinContents"]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{2., 7., 1.}");
+  }
+
+  #[test]
+  fn sample_tree_branch_columns() {
+    let path = sample_path();
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "events", "x"}}]"#))
+        .unwrap();
+    assert_eq!(result, "{1.1, 2.2, 3.3, 4.4, 5.5}");
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "events", "n"}}]"#))
+        .unwrap();
+    assert_eq!(result, "{10, 20, 30, 40, 50}");
+  }
+
+  #[test]
+  fn missing_branch_errors() {
+    let path = tree_data_path();
+    let err =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "mixed", "nope"}}]"#));
+    assert!(err.is_err(), "expected error for a missing branch");
+    assert!(
+      err.unwrap_err().to_string().contains("not found"),
+      "error should name the missing branch"
+    );
+  }
+
+  #[test]
+  fn missing_object_errors() {
+    let path = tree_data_path();
+    let err = interpret(&format!(r#"Import["{path}", {{"ROOT", "nope"}}]"#));
+    assert!(err.is_err(), "expected error for a missing object");
+  }
+
+  #[test]
+  fn histogram_has_no_sub_elements() {
+    let path = tree_data_path();
+    let err =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "h2", "column"}}]"#));
+    assert!(
+      err.is_err(),
+      "expected error for elements below a histogram"
+    );
+  }
+
+  #[test]
+  fn non_directory_path_component_errors() {
+    let path = tree_data_path();
+    let err =
+      interpret(&format!(r#"Import["{path}", {{"ROOT", "mixed/i32"}}]"#));
+    assert!(err.is_err(), "expected error for descending into a tree");
+    assert!(
+      err.unwrap_err().to_string().contains("not a directory"),
+      "error should say the component is not a directory"
+    );
+  }
+}
+
+// Tests against a real physics mDST file (141 MB, not committed); they
+// skip silently when the file is absent. Every expected value was
+// cross-verified with uproot.
+mod root_mdst {
+  use super::*;
+
+  fn mdst_path() -> Option<String> {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let path = format!(
+      "{manifest}/examples/_dominik_ecker_examples/2026-07-07_mDST-0-0-0-0.root"
+    );
+    std::path::Path::new(&path).exists().then_some(path)
+  }
+
+  #[test]
+  fn mdst_tree_metadata() {
+    let Some(path) = mdst_path() else { return };
+    let result = interpret(&format!(
+      r#"t = Import["{path}", {{"ROOT", "myCuts/USR15"}}]; {{t["Entries"], Length[Keys[t["Branches"]]], t["Branches"]["Run"], t["Branches"]["xExtrapolated"], t["Branches"]["beamLzVec"]}}"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{86707, 98, Run/I, vector<double>, TLorentzVector}");
+  }
+
+  #[test]
+  fn mdst_flat_int_branch() {
+    let Some(path) = mdst_path() else { return };
+    let result = interpret(&format!(
+      r#"run = Import["{path}", {{"ROOT", "myCuts/USR15", "Run"}}]; {{Length[run], Take[run, 3], Take[run, -3]}}"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "{86707, {81883, 81883, 81883}, {81883, 81883, 81883}}"
+    );
+  }
+
+  #[test]
+  fn mdst_flat_double_branch() {
+    let Some(path) = mdst_path() else { return };
+    let result = interpret(&format!(
+      r#"x = Import["{path}", {{"ROOT", "myCuts/USR15", "X_primV"}}]; {{Take[x, 3], Take[x, -1]}}"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "{{0.1593112051486969, 0.2166534960269928, 0.00837927870452404}, \
+       {-0.4235300123691559}}"
+    );
+  }
+
+  #[test]
+  fn mdst_vector_double_branch() {
+    let Some(path) = mdst_path() else { return };
+    let result = interpret(&format!(
+      r#"xe = Import["{path}", {{"ROOT", "myCuts/USR15", "xExtrapolated"}}]; {{Length[xe], First[xe]}}"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "{86707, {-1.256313443183899, -1.085208773612976, \
+       38.55726623535156, -1.1098251342773438, 26.30060577392578, \
+       2.7501540184020996, 33.8995475769043}}"
+    );
+  }
+
+  #[test]
+  fn mdst_vector_int_branch() {
+    let Some(path) = mdst_path() else { return };
+    let result = interpret(&format!(
+      r#"Take[Import["{path}", {{"ROOT", "myCuts/USR15", "calHitIndex"}}], 2]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{{0, 1, 2, 3, 4}, {1, 2, 3, 4, 5, 6}}");
+  }
+
+  #[test]
+  fn mdst_lorentz_vector_branch() {
+    let Some(path) = mdst_path() else { return };
+    let result = interpret(&format!(
+      r#"First[Import["{path}", {{"ROOT", "myCuts/USR15", "beamLzVec"}}]]"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "<|Px -> 0.01669505966583278, Py -> -0.02743925440041489, \
+       Pz -> 191.11888087405302, E -> 191.11893453560094|>"
+    );
+  }
+
+  #[test]
+  fn mdst_th2d_histogram() {
+    let Some(path) = mdst_path() else { return };
+    let result = interpret(&format!(
+      r#"h = Import["{path}", {{"ROOT", "myCuts/Theta vs Z/Theta vs Z_00000000000_hist"}}]; {{h["NBinsX"], h["NBinsY"], h["Entries"], Total[h["BinContents"], 2], Take[h["BinContents"][[1]], 3]}}"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{300, 100, 263466., 143314., {71., 28., 4.}}");
+  }
+}
+
 mod xlsx_export {
   use super::*;
 

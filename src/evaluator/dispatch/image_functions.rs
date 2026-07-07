@@ -689,6 +689,25 @@ pub fn dispatch_image_functions(
         if let Expr::String(elem) = &args[1] {
           return Some(import_virtual(&path, Some(elem)));
         }
+        // ROOT element paths resolve against the virtual file store.
+        if let Expr::List(items) = &args[1] {
+          let is_root_fmt =
+            matches!(items.first(), Some(Expr::String(s)) if s == "ROOT");
+          if is_root_fmt || ext == "root" {
+            let elems: &[Expr] = if is_root_fmt { &items[1..] } else { items };
+            let Some(bytes) = crate::wasm::virtual_file(&path) else {
+              return Some(Err(InterpreterError::EvaluationError(format!(
+                "Import: cannot open \"{}\" in the browser. Only files attached to the conversation can be imported.",
+                path
+              ))));
+            };
+            return Some(
+              crate::functions::root_ast::root_import_bytes_element(
+                &bytes, elems,
+              ),
+            );
+          }
+        }
         return Some(Ok(Expr::FunctionCall {
           name: "Import".to_string(),
           args: args.to_vec().into(),
@@ -732,6 +751,40 @@ pub fn dispatch_image_functions(
             "Import: ROOT import from a path is not available in the browser"
               .into(),
           )));
+        }
+      }
+
+      // ROOT element paths: Import[file, {"ROOT", "dir/obj", …}] descends
+      // into the file; for a .root extension the "ROOT" marker is optional.
+      if let Expr::List(items) = &args[1] {
+        let is_root_fmt =
+          matches!(items.first(), Some(Expr::String(s)) if s == "ROOT");
+        if is_root_fmt || ext == "root" {
+          #[cfg(not(target_arch = "wasm32"))]
+          {
+            let elems: &[Expr] = if is_root_fmt { &items[1..] } else { items };
+            if is_url {
+              return Some(
+                crate::functions::xlsx_ast::download_url(&path).and_then(
+                  |bytes| {
+                    crate::functions::root_ast::root_import_bytes_element(
+                      &bytes, elems,
+                    )
+                  },
+                ),
+              );
+            }
+            return Some(crate::functions::root_ast::root_import_file_element(
+              &path, elems,
+            ));
+          }
+          #[cfg(target_arch = "wasm32")]
+          {
+            return Some(Err(InterpreterError::EvaluationError(
+              "Import: ROOT import from a path is not available in the browser"
+                .into(),
+            )));
+          }
         }
       }
 
