@@ -1,3 +1,109 @@
+#[allow(unused_imports)]
+use super::*;
+
+use std::mem::size_of;
+
+// Windows-specific imports
+#[cfg(target_os = "windows")]
+#[repr(C)]
+#[allow(non_snake_case)]
+struct MEMORYSTATUSEX {
+  dwLength: u32,
+  dwMemoryLoad: u32,
+  ullTotalPhys: u64,
+  ullAvailPhys: u64,
+  ullTotalPageFile: u64,
+  ullAvailPageFile: u64,
+  ullTotalVirtual: u64,
+  ullAvailVirtual: u64,
+  ullAvailExtendedVirtual: u64,
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+  fn GlobalMemoryStatusEx(lpBuffer: *mut MEMORYSTATUSEX) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+fn get_memory_status() -> Option<MEMORYSTATUSEX> {
+  unsafe {
+    let mut mem_status = MEMORYSTATUSEX {
+      dwLength: size_of::<MEMORYSTATUSEX>() as u32,
+      dwMemoryLoad: 0,
+      ullTotalPhys: 0,
+      ullAvailPhys: 0,
+      ullTotalPageFile: 0,
+      ullAvailPageFile: 0,
+      ullTotalVirtual: 0,
+      ullAvailVirtual: 0,
+      ullAvailExtendedVirtual: 0,
+    };
+
+    if GlobalMemoryStatusEx(&mut mem_status as *mut MEMORYSTATUSEX) == 0 {
+      return None;
+    }
+
+    Some(mem_status)
+  }
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+#[allow(non_snake_case)]
+struct PROCESS_MEMORY_COUNTERS {
+  cb: u32,
+  PageFaultCount: u32,
+  PeakWorkingSetSize: usize,
+  WorkingSetSize: usize,
+  QuotaPeakPagedPoolUsage: usize,
+  QuotaPagedPoolUsage: usize,
+  QuotaPeakNonPagedPoolUsage: usize,
+  QuotaNonPagedPoolUsage: usize,
+  PagefileUsage: usize,
+  PeakPagefileUsage: usize,
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "psapi")]
+unsafe extern "system" {
+  fn GetProcessMemoryInfo(
+    hProcess: isize,
+    lpBuffer: *mut PROCESS_MEMORY_COUNTERS,
+    cb: u32,
+  ) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+fn get_process_memory_counters() -> Option<PROCESS_MEMORY_COUNTERS> {
+  unsafe {
+    let cb = size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    let mut counters = PROCESS_MEMORY_COUNTERS {
+      cb,
+      PageFaultCount: 0,
+      PeakWorkingSetSize: 0,
+      WorkingSetSize: 0,
+      QuotaPeakPagedPoolUsage: 0,
+      QuotaPagedPoolUsage: 0,
+      QuotaPeakNonPagedPoolUsage: 0,
+      QuotaNonPagedPoolUsage: 0,
+      PagefileUsage: 0,
+      PeakPagefileUsage: 0,
+    };
+
+    if GetProcessMemoryInfo(
+      -1,
+      &mut counters as *mut PROCESS_MEMORY_COUNTERS,
+      cb,
+    ) == 0
+    {
+      return None;
+    }
+
+    Some(counters)
+  }
+}
+
 #[cfg(target_os = "macos")]
 fn macos_current_rss() -> i128 {
   use std::mem::MaybeUninit;
@@ -18,8 +124,50 @@ fn macos_current_rss() -> i128 {
       let info = info.assume_init();
       info.resident_size as i128
     } else {
-      0
+      -1
     }
+  }
+}
+
+pub fn memory_physical() -> i128 {
+  #[cfg(target_os = "macos")]
+  {
+    // sysctlbyname("hw.memsize") returns total physical memory in bytes
+    let mut size: u64 = 0;
+    let mut len = std::mem::size_of::<u64>();
+    let name = std::ffi::CString::new("hw.memsize").unwrap_or_default();
+    let ret = unsafe {
+      libc::sysctlbyname(
+        name.as_ptr(),
+        &mut size as *mut u64 as *mut libc::c_void,
+        &mut len,
+        std::ptr::null_mut(),
+        0,
+      )
+    };
+    if ret == 0 { size as i128 } else { -1 }
+  }
+  #[cfg(target_os = "linux")]
+  {
+    // Parse /proc/meminfo for MemTotal (kB) and convert to bytes
+    let contents = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    for line in contents.lines() {
+      if let Some(rest) = line.strip_prefix("MemTotal:") {
+        if let Some(value) = rest.split_whitespace().next() {
+          let kb: u64 = value.parse().unwrap_or_default();
+          return (kb * 1024) as i128;
+        }
+      }
+    }
+    -1
+  }
+  #[cfg(target_os = "windows")]
+  {
+    let result = get_memory_status();
+    if let Some(status) = result {
+      return status.ullTotalPhys as i128;
+    }
+    -1
   }
 }
 
@@ -36,7 +184,7 @@ pub fn max_memory_used() -> i128 {
           .and_then(|v| v.parse::<i128>().ok())
           .map(|kb| kb * 1024)
       })
-      .unwrap_or(0)
+      .unwrap_or(-1)
   }
 
   #[cfg(target_os = "macos")]
@@ -49,16 +197,29 @@ pub fn max_memory_used() -> i128 {
       if libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) == 0 {
         usage.assume_init().ru_maxrss as i128
       } else {
-        0
+        -1
       }
     };
     let current = macos_current_rss();
     std::cmp::max(ru_max, current)
   }
 
-  #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+  #[cfg(target_os = "windows")]
   {
-    0
+    let result = get_process_memory_counters();
+    if let Some(counters) = result {
+      return counters.PeakWorkingSetSize as i128;
+    }
+    -1
+  }
+
+  #[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows"
+  )))]
+  {
+    -1
   }
 }
 
@@ -116,7 +277,20 @@ pub fn memory_available() -> i128 {
     (free + inactive + speculative) * page_size
   }
 
-  #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+  #[cfg(target_os = "windows")]
+  {
+    let result = get_memory_status();
+    if let Some(status) = result {
+      return status.ullAvailPhys as i128;
+    }
+    -1
+  }
+
+  #[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows"
+  )))]
   {
     -1
   }
@@ -135,7 +309,7 @@ pub fn memory_in_use() -> i128 {
           .and_then(|v| v.parse::<i128>().ok())
           .map(|kb| kb * 1024)
       })
-      .unwrap_or(0)
+      .unwrap_or(-1)
   }
 
   #[cfg(target_os = "macos")]
@@ -143,9 +317,22 @@ pub fn memory_in_use() -> i128 {
     macos_current_rss()
   }
 
-  #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+  #[cfg(target_os = "windows")]
   {
-    0
+    let result = get_process_memory_counters();
+    if let Some(counters) = result {
+      return counters.WorkingSetSize as i128;
+    }
+    -1
+  }
+
+  #[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows"
+  )))]
+  {
+    -1
   }
 }
 
