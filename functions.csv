@@ -465,7 +465,7 @@ VectorQ,Tests if an expression is a vector; two-arg form VectorQ[expr;test] also
 GoldenRatio,The golden ratio constant,✅,pure,1.0,469
 Differences,Returns successive differences between elements (supports order and step arguments),✅,pure,6.0,470
 Spacer,Creates empty space of a specified size for layout,✅,pure,6.0,471
-CellularAutomaton,Generates a cellular automaton evolution,✅,pure,4.2,472
+CellularAutomaton,Generates a 1D or 2D cellular automaton evolution,✅,pure,4.2,472
 Riffle,Inserts an element between each pair of elements,✅,pure,6.0,473
 Characters,Converts a string into a list of single-character strings,✅,pure,1.0,474
 GraphicsComplex,Indexed coordinate graphics container,✅,none,6.0,475

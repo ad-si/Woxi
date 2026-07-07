@@ -615,8 +615,7 @@ fn read_tree_branches(
   if size < 0 {
     return Err("negative branch count".into());
   }
-  let mut branches =
-    Vec::with_capacity((size as usize).min(MAX_PREALLOC));
+  let mut branches = Vec::with_capacity((size as usize).min(MAX_PREALLOC));
   for _ in 0..size {
     let raw = r.read_u32()?;
     if raw == 0 {
