@@ -376,6 +376,56 @@ mod association_nested_access {
     let result = interpret(r#"assoc = <|"a" -> 1|>; assoc["a"]"#).unwrap();
     assert_eq!(result, "1");
   }
+
+  #[test]
+  fn nested_multi_pair_value_lookup() {
+    // Regression test: the stored-association item splitter treated the
+    // `>` of every `->` as closing a nesting level, so any nested
+    // association with more than one pair mis-parsed and the lookup
+    // returned the raw tail string ("4, \"x\" -> 1.") instead of the value.
+    let result = interpret(
+      r#"data = <|"a" -> <|"n" -> 4, "x" -> 1.|>|>; h = data["a"]; h["n"]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "4");
+  }
+
+  #[test]
+  fn nested_multi_pair_chained_lookup() {
+    let result =
+      interpret(r#"data = <|"a" -> <|"n" -> 4, "x" -> 1.|>|>; data["a"]["x"]"#)
+        .unwrap();
+    assert_eq!(result, "1.");
+  }
+
+  #[test]
+  fn nested_value_with_list_lookup() {
+    // Commas inside a list value must not split the nested association.
+    let result = interpret(
+      r#"data = <|"a" -> <|"list" -> {1, 2, 3}, "n" -> 7|>|>; data["a"]["n"]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "7");
+  }
+
+  #[test]
+  fn nested_value_with_comma_in_string_lookup() {
+    // Commas inside a quoted string value must not split items either.
+    let result = interpret(
+      r#"data = <|"a" -> <|"s" -> "x, y", "n" -> 2|>|>; data["a"]["n"]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "2");
+  }
+
+  #[test]
+  fn nested_lookup_returns_full_association() {
+    // The intermediate association itself must round-trip intact.
+    let result =
+      interpret(r#"data = <|"a" -> <|"n" -> 4, "x" -> 1.|>|>; data["a"]"#)
+        .unwrap();
+    assert_eq!(result, "<|n -> 4, x -> 1.|>");
+  }
 }
 
 mod association_thread {

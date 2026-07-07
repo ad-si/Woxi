@@ -148,6 +148,11 @@ fn import_virtual(
     return crate::functions::image_ast::import_image_from_bytes(&bytes);
   }
 
+  // CERN ROOT files: binary format, decoded straight from the bytes.
+  if ext == "root" || matches!(element, Some("ROOT")) {
+    return crate::functions::root_ast::root_import_bytes(&bytes);
+  }
+
   let content = String::from_utf8(bytes).map_err(|_| {
     InterpreterError::EvaluationError(format!(
       "Import: \"{}\" is not valid UTF-8 text",
@@ -587,6 +592,13 @@ pub fn dispatch_image_functions(
               &path, None,
             ));
           }
+          if ext == "root" {
+            return Some(
+              crate::functions::xlsx_ast::download_url(&path).and_then(
+                |bytes| crate::functions::root_ast::root_import_bytes(&bytes),
+              ),
+            );
+          }
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -634,6 +646,9 @@ pub fn dispatch_image_functions(
           }
           "ppm" | "pgm" | "pbm" | "pnm" => {
             return Some(import_netpbm(&path));
+          }
+          "root" => {
+            return Some(crate::functions::root_ast::root_import_file(&path));
           }
           "wav" | "wave" | "flac" | "mp3" | "ogg" | "oga" | "opus" | "m4a"
           | "aac" | "aif" | "aiff" => {
@@ -691,6 +706,31 @@ pub fn dispatch_image_functions(
         {
           return Some(Err(InterpreterError::EvaluationError(
             "Import: JSON import is not available in the browser".into(),
+          )));
+        }
+      }
+
+      // Explicit "ROOT" format: parse as a CERN ROOT file regardless of
+      // the extension.
+      if let Expr::String(fmt) = &args[1]
+        && fmt == "ROOT"
+      {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          if is_url {
+            return Some(
+              crate::functions::xlsx_ast::download_url(&path).and_then(
+                |bytes| crate::functions::root_ast::root_import_bytes(&bytes),
+              ),
+            );
+          }
+          return Some(crate::functions::root_ast::root_import_file(&path));
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          return Some(Err(InterpreterError::EvaluationError(
+            "Import: ROOT import from a path is not available in the browser"
+              .into(),
           )));
         }
       }
