@@ -5041,7 +5041,8 @@ mod row {
   #[test]
   fn empty_list() {
     assert_eq!(interpret("Row[{}]").unwrap(), "");
-    assert_eq!(interpret(r#"Row[{}, ", "]"#).unwrap(), "");
+    // Row[{}, sep] prints as {} in wolframscript.
+    assert_eq!(interpret(r#"Row[{}, ", "]"#).unwrap(), "{}");
   }
 
   #[test]

@@ -3451,6 +3451,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       }
     }
     Expr::FunctionCall {
+      name: row_name,
+      args: row_args,
+    } if row_name == "Row" && !row_args.is_empty() => {
+      if let Some(svg) = crate::row_svg_with_rendered_items(row_args) {
+        svg
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    Expr::FunctionCall {
       name: ds_name,
       args: ds_args,
     } if ds_name == "Dataset" && !ds_args.is_empty() => {

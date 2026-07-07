@@ -2496,7 +2496,7 @@ fn render_row_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "Row" && !args.is_empty() =>
     {
-      if let Some(svg) = functions::graphics::row_to_svg(args) {
+      if let Some(svg) = row_svg_with_rendered_items(args) {
         graphics_result(svg)
       } else {
         expr
@@ -2504,6 +2504,25 @@ fn render_row_if_needed(expr: syntax::Expr) -> syntax::Expr {
     }
     _ => expr,
   }
+}
+
+/// Pre-render display wrappers inside a `Row[…]`'s items (so e.g.
+/// `Row[{Graphics[…], Framed[x]}]` embeds actual graphics rather than
+/// their textual echoes) and render the whole row as a horizontal SVG.
+/// `None` when the arguments don't form a renderable row.
+pub(crate) fn row_svg_with_rendered_items(
+  args: &[syntax::Expr],
+) -> Option<String> {
+  let mut new_args: Vec<syntax::Expr> = args.to_vec();
+  if let syntax::Expr::List(items) = &args[0] {
+    let new_items: Vec<syntax::Expr> = items
+      .iter()
+      .cloned()
+      .map(render_inline_display_wrapper)
+      .collect();
+    new_args[0] = syntax::Expr::List(new_items.into());
+  }
+  functions::graphics::row_to_svg(&new_args)
 }
 
 /// If `expr` is a `Framed[expr]` call, render it as an SVG box with a border
@@ -2693,6 +2712,7 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
         "TableForm"
           | "MatrixForm"
           | "Column"
+          | "Row"
           | "Style"
           | "MathMLForm"
           | "StandardForm"

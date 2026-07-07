@@ -20,66 +20,15 @@ mod row_text_mode {
   #[test]
   fn with_spacer_separator() {
     clear_state();
-    // Spacer[w] uses printer's points; ~7 pt per character.
-    // Spacer[21] = round(21/7) = 3 spaces between items.
+    // Script mode prints Spacer separators literally (like wolframscript);
+    // only visual contexts render them as pixel gaps.
     assert_eq!(
       interpret(r#"Row[{"a", "b", "c"}, Spacer[21]]"#).unwrap(),
-      "a   b   c"
+      "aSpacer[21]bSpacer[21]c"
     );
-  }
-
-  #[test]
-  fn with_spacer_small() {
-    clear_state();
-    // Spacer[7] = round(7/7) = 1 space
-    assert_eq!(
-      interpret(r#"Row[{"a", "b", "c"}, Spacer[7]]"#).unwrap(),
-      "a b c"
-    );
-  }
-
-  #[test]
-  fn with_spacer_14() {
-    clear_state();
-    // Spacer[14] = round(14/7) = 2 spaces
-    assert_eq!(interpret(r#"Row[{"x", "y"}, Spacer[14]]"#).unwrap(), "x  y");
-  }
-
-  #[test]
-  fn with_spacer_0() {
-    clear_state();
-    // Spacer[0] means no extra space
-    assert_eq!(interpret(r#"Row[{"a", "b"}, Spacer[0]]"#).unwrap(), "ab");
-  }
-
-  #[test]
-  fn with_spacer_list_form() {
-    clear_state();
-    // Spacer[{w, h}] — only the width (w) matters for Row separator
-    // Spacer[{14, 20}] = round(14/7) = 2 spaces
     assert_eq!(
       interpret(r#"Row[{"a", "b"}, Spacer[{14, 20}]]"#).unwrap(),
-      "a  b"
-    );
-  }
-
-  #[test]
-  fn with_spacer_list_form_3() {
-    clear_state();
-    // Spacer[{w, h, dh}]
-    assert_eq!(
-      interpret(r#"Row[{"a", "b"}, Spacer[{21, 10, 5}]]"#).unwrap(),
-      "a   b"
-    );
-  }
-
-  #[test]
-  fn with_spacer_float() {
-    clear_state();
-    // Spacer[10.5] = round(10.5/7) = round(1.5) = 2 spaces
-    assert_eq!(
-      interpret(r#"Row[{"x", "y"}, Spacer[10.5]]"#).unwrap(),
-      "x  y"
+      "aSpacer[{14, 20}]b"
     );
   }
 
@@ -92,14 +41,20 @@ mod row_text_mode {
   #[test]
   fn spacer_empty_list() {
     clear_state();
-    assert_eq!(interpret(r#"Row[{}, Spacer[10]]"#).unwrap(), "");
+    // Row[{}, sep] prints as {} in wolframscript (Row[{}] prints nothing).
+    assert_eq!(interpret(r#"Row[{}, Spacer[10]]"#).unwrap(), "{}");
+    assert_eq!(interpret(r#"Row[{}, ","]"#).unwrap(), "{}");
+    assert_eq!(interpret("Row[{}]").unwrap(), "");
   }
 
   #[test]
   fn evaluates_arguments() {
     clear_state();
     assert_eq!(interpret("Row[{1 + 1, 2 + 2}]").unwrap(), "24");
-    assert_eq!(interpret("Row[{1 + 1, 2 + 2}, Spacer[7]]").unwrap(), "2 4");
+    assert_eq!(
+      interpret("Row[{1 + 1, 2 + 2}, Spacer[7]]").unwrap(),
+      "2Spacer[7]4"
+    );
   }
 
   #[test]
@@ -107,6 +62,65 @@ mod row_text_mode {
     clear_state();
     assert_eq!(interpret("Row[x]").unwrap(), "Row[x]");
     assert_eq!(interpret("Row[5]").unwrap(), "Row[5]");
+  }
+
+  #[test]
+  fn options_are_ignored_in_output() {
+    clear_state();
+    assert_eq!(interpret("Row[{1, 2}, ImageSize -> 400]").unwrap(), "12");
+    assert_eq!(
+      interpret(
+        "Row[{1, 2}, Alignment -> {{Right, Left}, Center}, ImageSize -> 400]"
+      )
+      .unwrap(),
+      "12"
+    );
+    // A rule in separator position is an option, not a separator.
+    assert_eq!(interpret("Row[{1, 2}, a -> b]").unwrap(), "12");
+  }
+
+  #[test]
+  fn separator_with_options() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Row[{1, 2}, "|", ImageSize -> 400]"#).unwrap(),
+      "1|2"
+    );
+    assert_eq!(
+      interpret(r#"Row[{"a", "b"}, Spacer[7], Alignment -> Center]"#).unwrap(),
+      "aSpacer[7]b"
+    );
+  }
+
+  #[test]
+  fn extra_non_rule_arg_stays_symbolic() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Row[{1, 2}, "|", "x"]"#).unwrap(),
+      "Row[{1, 2}, |, x]"
+    );
+  }
+
+  #[test]
+  fn graphics_item_shows_placeholder() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Row[{Graphics[{Red, Disk[]}], "x"}]"#).unwrap(),
+      "-Graphics-x"
+    );
+    assert_eq!(
+      interpret(
+        r#"Row[
+          {
+            Graphics[{Red, Disk[]}, ImageSize -> {18, 18}, PlotRange -> 2],
+            Style["Hey there", Gray]
+          },
+          Alignment -> {{Right, Left}, Center}, ImageSize -> 400
+        ]"#
+      )
+      .unwrap(),
+      "-Graphics-Hey there"
+    );
   }
 
   #[test]
@@ -181,6 +195,75 @@ mod row_visual_mode {
     assert!(svg.contains(">3</text>"));
     // The separator " | " should be rendered
     assert!(svg.contains(" | </text>"));
+  }
+
+  #[test]
+  fn row_embeds_graphics_items() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"Row[{Graphics[{Red, Disk[]}, ImageSize -> {18, 18}], "label"}]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // The disk graphic is embedded as a nested <svg>, not shown as text.
+    assert!(svg.contains("<svg x="));
+    assert!(!svg.contains("Graphics["));
+    assert!(svg.contains(">label</text>"));
+  }
+
+  #[test]
+  fn row_applies_style_color() {
+    clear_state();
+    let result = interpret_with_stdout(r#"Row[{Style["hey", Gray]}]"#).unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(128,128,128)\""));
+    assert!(svg.contains(">hey</text>"));
+  }
+
+  #[test]
+  fn row_honors_image_size_and_alignment() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"Row[
+        {
+          Graphics[{Red, Disk[]}, ImageSize -> {18, 18}, PlotRange -> 2],
+          Style["Hey there", Gray]
+        },
+        Alignment -> {{Right, Left}, Center}, ImageSize -> 400
+      ]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // ImageSize -> 400 widens the canvas to 400.
+    assert!(svg.starts_with("<svg width=\"400\""));
+    // The disk graphic is embedded, the styled text is gray.
+    assert!(svg.contains("<svg x="));
+    assert!(svg.contains("fill=\"rgb(128,128,128)\""));
+    assert!(svg.contains(">Hey there</text>"));
+  }
+
+  #[test]
+  fn row_alignment_right_shifts_content() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"Row[{"ab"}, Alignment -> Right, ImageSize -> 200]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.starts_with("<svg width=\"200\""));
+    // Content block is right-aligned: the text center sits near the
+    // right edge (200 - width/2), far past the midpoint.
+    let x_attr = svg
+      .split("<text x=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse::<f64>().ok())
+      .unwrap();
+    assert!(x_attr > 150.0, "text x = {x_attr}");
   }
 
   #[test]

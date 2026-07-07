@@ -10447,9 +10447,143 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
     return None;
   }
 
+  // Split the tail into an optional separator (a non-rule second argument)
+  // and trailing option rules. A rule in separator position is an option,
+  // not a separator; any further non-rule argument keeps the expression
+  // symbolic, matching wolframscript (e.g. Row[{1, 2}, "|", "x"]).
+  let (sep_expr, opt_args) = match args.get(1) {
+    Some(a) if !crate::syntax::is_rule_expr(a) => (Some(a), &args[2..]),
+    _ => (None, &args[1..]),
+  };
+  if !opt_args.iter().all(crate::syntax::is_rule_expr) {
+    return None;
+  }
+
+  // Parse Alignment and ImageSize options. ImageSize widens the canvas;
+  // the horizontal alignment places the content block inside it (Wolfram
+  // typesets a per-item alignment list left-packed, so a list spec keeps
+  // the default). The vertical alignment positions items of different
+  // heights relative to each other.
+  fn h_of(spec: &Expr) -> Option<&'static str> {
+    match spec {
+      Expr::Identifier(s) if s == "Left" => Some("left"),
+      Expr::Identifier(s) if s == "Center" => Some("center"),
+      Expr::Identifier(s) if s == "Right" => Some("right"),
+      _ => None,
+    }
+  }
+  fn v_of(spec: &Expr) -> Option<&'static str> {
+    match spec {
+      Expr::Identifier(s) if s == "Top" => Some("top"),
+      Expr::Identifier(s) if s == "Center" => Some("center"),
+      Expr::Identifier(s) if s == "Bottom" => Some("bottom"),
+      _ => None,
+    }
+  }
+  let mut target_width: Option<f64> = None;
+  let mut h_align = "left";
+  let mut v_align = "center";
+  for opt in opt_args {
+    let Some((key, val)) = option_kv(opt) else {
+      continue;
+    };
+    match key {
+      "ImageSize" => {
+        target_width = match val {
+          Expr::List(pair) if !pair.is_empty() => expr_to_f64(&pair[0]),
+          other => expr_to_f64(other).or_else(|| {
+            parse_image_size(other, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+              .map(|(w, _, _)| w as f64)
+          }),
+        };
+      }
+      "Alignment" => match val {
+        Expr::List(pair) if pair.len() == 2 => {
+          if let Some(h) = h_of(&pair[0]) {
+            h_align = h;
+          }
+          if let Some(v) = v_of(&pair[1]) {
+            v_align = v;
+          }
+        }
+        single => {
+          if let Some(h) = h_of(single) {
+            h_align = h;
+          } else if let Some(v) = v_of(single) {
+            v_align = v;
+          }
+        }
+      },
+      _ => {}
+    }
+  }
+
   let char_width: f64 = 8.4;
   let font_size: f64 = 14.0;
   let pad_y: f64 = 8.0;
+
+  // An item is either a pre-rendered graphic embedded as a sub-SVG or an
+  // expression rendered as text (with `Style` font/color directives applied).
+  enum Cell {
+    Svg {
+      svg: String,
+      width: f64,
+      height: f64,
+    },
+    Text {
+      markup: String,
+      width: f64,
+      height: f64,
+      fill: String,
+      size: f64,
+      weight: String,
+      slant: String,
+    },
+  }
+
+  let make_text_cell = |item: &Expr| -> Cell {
+    let mut st = StyleState::default();
+    let mut color: Option<Color> = None;
+    if let Expr::FunctionCall { name, args: sargs } = item
+      && name == "Style"
+      && !sargs.is_empty()
+    {
+      for d in &sargs[1..] {
+        if let Some(c) = parse_color(d) {
+          color = Some(c);
+        } else {
+          apply_text_style_directive(d, &mut st);
+        }
+      }
+    }
+    let scale = st.font_size / font_size;
+    Cell::Text {
+      markup: expr_to_svg_markup(item),
+      width: estimate_display_width(item) * char_width * scale,
+      height: st.font_size + pad_y,
+      fill: color
+        .map(|c| c.to_svg_rgb())
+        .unwrap_or_else(|| theme().text_primary.to_string()),
+      size: st.font_size,
+      weight: st.font_weight,
+      slant: st.font_style,
+    }
+  };
+
+  let cells: Vec<Cell> = items
+    .iter()
+    .map(|item| match item {
+      Expr::Graphics { svg, .. } => {
+        let (w, h) = parse_svg_wh(svg);
+        Cell::Svg {
+          svg: svg.clone(),
+          width: w,
+          height: h,
+        }
+      }
+      _ => make_text_cell(item),
+    })
+    .collect();
 
   // Determine separator: either Spacer[n] (pixel gap) or rendered expression
   enum Separator {
@@ -10457,39 +10591,45 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
     Text(String, f64), // rendered text and its width
   }
 
-  let separator = if args.len() >= 2 {
-    if let Some(pts) = crate::syntax::spacer_width_pts(&args[1]) {
-      Separator::Gap(pts)
-    } else {
-      let text = expr_to_svg_markup(&args[1]);
-      let w = estimate_display_width(&args[1]) * char_width;
-      Separator::Text(text, w)
+  let separator = match sep_expr {
+    Some(sep) => {
+      if let Some(pts) = crate::syntax::spacer_width_pts(sep) {
+        Separator::Gap(pts)
+      } else {
+        let text = expr_to_svg_markup(sep);
+        let w = estimate_display_width(sep) * char_width;
+        Separator::Text(text, w)
+      }
     }
-  } else {
-    Separator::Gap(0.0) // no separator
+    None => Separator::Gap(0.0), // no separator
   };
-
-  // Compute item widths
-  let item_widths: Vec<f64> = items
-    .iter()
-    .map(|item| estimate_display_width(item) * char_width)
-    .collect();
 
   let sep_width = match &separator {
     Separator::Gap(g) => *g,
     Separator::Text(_, w) => *w,
   };
 
-  let items_width: f64 = item_widths.iter().sum();
-  let seps_total = if items.len() > 1 {
-    (items.len() - 1) as f64 * sep_width
+  let cell_width = |c: &Cell| match c {
+    Cell::Svg { width, .. } | Cell::Text { width, .. } => *width,
+  };
+  let cell_height = |c: &Cell| match c {
+    Cell::Svg { height, .. } | Cell::Text { height, .. } => *height,
+  };
+
+  let items_width: f64 = cells.iter().map(&cell_width).sum();
+  let seps_total = if cells.len() > 1 {
+    (cells.len() - 1) as f64 * sep_width
   } else {
     0.0
   };
-  let total_w = items_width + seps_total;
-  let total_h = font_size + pad_y;
+  let content_w = items_width + seps_total;
+  let total_h = cells
+    .iter()
+    .map(&cell_height)
+    .fold(font_size + pad_y, f64::max);
+  let canvas_w = target_width.map_or(content_w, |w| w.max(content_w));
 
-  let svg_w = total_w.ceil().max(1.0) as u32;
+  let svg_w = canvas_w.ceil().max(1.0) as u32;
   let svg_h = total_h.ceil() as u32;
 
   let mut svg = String::with_capacity(1024);
@@ -10499,9 +10639,18 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
 
   let mid_y = total_h / 2.0;
   let text_fill = theme().text_primary;
+  let cell_top = |h: f64| match v_align {
+    "top" => 0.0,
+    "bottom" => total_h - h,
+    _ => (total_h - h) / 2.0,
+  };
 
-  let mut x: f64 = 0.0;
-  for (i, item) in items.iter().enumerate() {
+  let mut x: f64 = match h_align {
+    "center" => (canvas_w - content_w) / 2.0,
+    "right" => canvas_w - content_w,
+    _ => 0.0,
+  };
+  for (i, cell) in cells.iter().enumerate() {
     if i > 0 {
       match &separator {
         Separator::Gap(g) => x += g,
@@ -10515,16 +10664,73 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
       }
     }
 
-    let cx = x + item_widths[i] / 2.0;
-    svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
-      expr_to_svg_markup(item)
-    ));
-    x += item_widths[i];
+    match cell {
+      Cell::Text {
+        markup,
+        width,
+        height,
+        fill,
+        size,
+        weight,
+        slant,
+      } => {
+        let cx = x + width / 2.0;
+        let cy = cell_top(*height) + height / 2.0;
+        let weight_attr = if weight != "normal" {
+          format!(" font-weight=\"{weight}\"")
+        } else {
+          String::new()
+        };
+        let slant_attr = if slant != "normal" {
+          format!(" font-style=\"{slant}\"")
+        } else {
+          String::new()
+        };
+        svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\">{markup}</text>\n"
+        ));
+        x += width;
+      }
+      Cell::Svg {
+        svg: child,
+        width,
+        height,
+      } => {
+        let y_off = cell_top(*height);
+        svg.push_str(&format!(
+          "<svg x=\"{x:.1}\" y=\"{y_off:.1}\" width=\"{width:.1}\" height=\"{height:.1}\">\n"
+        ));
+        svg.push_str(strip_svg_wrapper(child));
+        svg.push_str("</svg>\n");
+        x += width;
+      }
+    }
   }
 
   svg.push_str("</svg>");
   Some(svg)
+}
+
+/// Extract an option's key and value from a rule expression in either
+/// the dedicated `Expr::Rule`/`Expr::RuleDelayed` AST variants or the
+/// `Rule`/`RuleDelayed` FunctionCall forms.
+fn option_kv(expr: &Expr) -> Option<(&str, &Expr)> {
+  match expr {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => option_name(pattern).map(|k| (k, replacement.as_ref())),
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      option_name(&args[0]).map(|k| (k, &args[1]))
+    }
+    _ => None,
+  }
 }
 
 /// Render `Framed[expr]` as an SVG box with a rectangular border around the content.

@@ -7770,25 +7770,35 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // wolframscript's script mode prints it verbatim as `Column[{…}]`.
       // (Visual contexts render it as an SVG earlier, via
       // `render_column_if_needed`.) Fall through to the FunctionCall renderer.
-      // OutputForm-only: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
+      // OutputForm-only: Row[{exprs...}] concatenates; Row[{exprs...}, sep]
+      // joins with separator. Trailing option rules (Alignment, ImageSize, …)
+      // only affect notebook typesetting, so they are ignored here. A Rule
+      // in separator position is an option, not a separator; any non-Rule
+      // extra argument keeps the expression in its full form (matching
+      // wolframscript, e.g. Row[{1, 2}, "|", "x"]).
       if is_output
         && name == "Row"
-        && (args.len() == 1 || args.len() == 2)
         && let Some(Expr::List(items)) = args.first()
       {
-        let parts: Vec<String> = items.iter().map(&fmt).collect();
-        if args.len() == 2 {
-          // Spacer[w] / Spacer[{w, ...}] as separator: convert printer's
-          // points to approximate character widths (~7 pt per char).
-          let sep = if let Some(pts) = spacer_width_pts(&args[1]) {
-            let n_chars = (pts / 7.0).round().max(0.0) as usize;
-            " ".repeat(n_chars)
-          } else {
-            fmt(&args[1])
-          };
-          return parts.join(&sep);
+        let (sep_expr, opt_args) = match args.get(1) {
+          Some(a) if !is_rule_expr(a) => (Some(a), &args[2..]),
+          _ => (None, &args[1..]),
+        };
+        if opt_args.iter().all(is_rule_expr) {
+          let parts: Vec<String> = items.iter().map(&fmt).collect();
+          if let Some(sep_expr) = sep_expr {
+            // wolframscript prints `Row[{}, sep]` as `{}` (but `Row[{}]`
+            // as nothing).
+            if items.is_empty() {
+              return "{}".to_string();
+            }
+            // The separator prints in its plain OutputForm — wolframscript
+            // shows even Spacer[w] literally (`aSpacer[7]b`) in script
+            // mode; only visual contexts render it as a pixel gap.
+            return parts.join(&fmt(sep_expr));
+          }
+          return parts.concat();
         }
-        return parts.concat();
       }
       // Special case: Times displays as infix with *
       if name == "Times" && args.len() >= 2 {
@@ -10020,6 +10030,18 @@ fn find_matching_bracket(s: &str, start: usize) -> Option<usize> {
     }
   }
   None
+}
+
+/// True if `expr` is a rule (`a -> b` / `a :> b`), in either the dedicated
+/// AST variants or the `Rule`/`RuleDelayed` FunctionCall forms. Used to
+/// recognize trailing option rules in display wrappers like `Row`.
+pub fn is_rule_expr(expr: &Expr) -> bool {
+  matches!(expr, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+    || matches!(
+      expr,
+      Expr::FunctionCall { name, args }
+        if (name == "Rule" || name == "RuleDelayed") && args.len() == 2
+    )
 }
 
 /// Extract the width in printer's points from a `Spacer` expression.
