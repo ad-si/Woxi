@@ -9606,6 +9606,49 @@ mod groebner_basis {
     );
   }
 
+  // GroebnerBasis[polys, vars, Modulus -> p] computes over GF(p) with
+  // monic generators and coefficients in [0, p).
+  #[test]
+  fn modulus_option_computes_over_gf_p() {
+    for (input, expected) in [
+      (
+        "GroebnerBasis[{x^2 + y, y^2 + x}, {x, y}, Modulus -> 2]",
+        "{y + y^4, x + y^2}",
+      ),
+      // Leading coefficients invert mod p (basis is monic)
+      (
+        "GroebnerBasis[{2*x + y, 3*y^2 - x}, {x, y}, Modulus -> 5]",
+        "{y + y^2, x + 3*y}",
+      ),
+      (
+        "GroebnerBasis[{x^2 - 1, x*y - 1}, {x, y}, Modulus -> 3]",
+        "{2 + y^2, x + 2*y}",
+      ),
+      (
+        "GroebnerBasis[{x^2 + 2*y, y^2 + 3*x}, {x, y}, Modulus -> 7]",
+        "{4*y + y^4, x + 5*y^2}",
+      ),
+      // Rational input coefficients become modular inverses
+      (
+        "GroebnerBasis[{x/2 + y}, {x, y}, Modulus -> 5]",
+        "{x + 2*y}",
+      ),
+      // The trivial ideal is {1}, and inputs vanishing mod p leave {}
+      (
+        "GroebnerBasis[{x^2 + y^2 - 1, x - y}, {x, y}, Modulus -> 2]",
+        "{1}",
+      ),
+      ("GroebnerBasis[{6*x + 3}, {x}, Modulus -> 3]", "{}"),
+      // Modulus -> 0 is ordinary arithmetic
+      (
+        "GroebnerBasis[{x^2 + y, y^2 + x}, {x, y}, Modulus -> 0]",
+        "{y + y^4, x + y^2}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn circle_and_line() {
     assert_eq!(

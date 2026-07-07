@@ -15,6 +15,44 @@ type Frac = (i128, i128);
 type Mono = Vec<u32>;
 type Poly = BTreeMap<std::cmp::Reverse<Mono>, Frac>; // leading term first
 
+// With `Modulus -> p` (prime) the same engine runs over GF(p): every
+// coefficient is kept as (v, 1) with v in [0, p), which `norm` — the
+// funnel all fraction arithmetic passes through — enforces via modular
+// inversion of denominators.
+thread_local! {
+  static GB_MODULUS: std::cell::Cell<Option<i128>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// Set the thread-local modulus for the lifetime of the returned guard.
+struct ModulusGuard;
+impl Drop for ModulusGuard {
+  fn drop(&mut self) {
+    GB_MODULUS.with(|m| m.set(None));
+  }
+}
+fn set_modulus(p: i128) -> ModulusGuard {
+  GB_MODULUS.with(|m| m.set(Some(p)));
+  ModulusGuard
+}
+
+fn mod_inverse(a: i128, p: i128) -> Option<i128> {
+  let (mut old_r, mut r) = (a.rem_euclid(p), p);
+  let (mut old_s, mut s) = (1i128, 0i128);
+  if old_r == 0 {
+    return None;
+  }
+  while r != 0 {
+    let q = old_r / r;
+    (old_r, r) = (r, old_r - q * r);
+    (old_s, s) = (s, old_s - q * s);
+  }
+  if old_r != 1 {
+    return None;
+  }
+  Some(old_s.rem_euclid(p))
+}
+
 fn gcd(a: i128, b: i128) -> i128 {
   let (mut a, mut b) = (a.abs(), b.abs());
   while b != 0 {
@@ -28,6 +66,10 @@ fn gcd(a: i128, b: i128) -> i128 {
 fn norm(f: Frac) -> Option<Frac> {
   if f.1 == 0 {
     return None;
+  }
+  if let Some(p) = GB_MODULUS.with(|m| m.get()) {
+    let inv = mod_inverse(f.1, p)?;
+    return Some(((f.0.rem_euclid(p) * inv).rem_euclid(p), 1));
   }
   let g = gcd(f.0, f.1).max(1);
   let (mut n, mut d) = (f.0 / g, f.1 / g);
@@ -57,7 +99,7 @@ fn f_div(a: Frac, b: Frac) -> Option<Frac> {
 }
 
 fn f_neg(a: Frac) -> Option<Frac> {
-  Some((a.0.checked_neg()?, a.1))
+  norm((a.0.checked_neg()?, a.1))
 }
 
 fn poly_add_term(p: &mut Poly, m: Mono, c: Frac) -> Option<()> {
@@ -268,14 +310,70 @@ fn s_poly(a: &Poly, b: &Poly) -> Option<Poly> {
   poly_sub_scaled(&left, b, cb, &sb)
 }
 
-pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "GroebnerBasis".to_string(),
-    args: args.to_vec().into(),
+/// Extract `Modulus -> m` (m >= 0) from an option argument.
+fn groebner_modulus_option(opt: &Expr) -> Option<i128> {
+  let value = |v: &Expr| match v {
+    Expr::Integer(m) if *m >= 0 => Some(*m),
+    _ => None,
   };
-  if args.len() != 2 {
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+    && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Modulus")
+  {
+    return value(replacement);
+  }
+  if let Expr::FunctionCall { name, args } = opt
+    && (name == "Rule" || name == "RuleDelayed")
+    && args.len() == 2
+    && matches!(&args[0], Expr::Identifier(s) if s == "Modulus")
+  {
+    return value(&args[1]);
+  }
+  None
+}
+
+fn is_prime_i128(n: i128) -> bool {
+  if n < 2 {
+    return false;
+  }
+  let mut d = 2i128;
+  while d * d <= n {
+    if n % d == 0 {
+      return false;
+    }
+    d += 1;
+  }
+  true
+}
+
+fn unevaluated_call(name: &str, args: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  }
+}
+
+pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| unevaluated_call("GroebnerBasis", args);
+  // GroebnerBasis[polys, vars, Modulus -> p] computes over GF(p);
+  // Modulus -> 0 is ordinary arithmetic, and composite moduli (which
+  // would need strong Z/m bases) stay unevaluated.
+  let mut modulus: Option<i128> = None;
+  if args.len() == 3 {
+    match groebner_modulus_option(&args[2]) {
+      Some(0) => return groebner_basis_ast(&args[..2]),
+      Some(p) if is_prime_i128(p) => modulus = Some(p),
+      _ => return Ok(unevaluated(args)),
+    }
+  } else if args.len() != 2 {
     return Ok(unevaluated(args));
   }
+  let _guard = modulus.map(set_modulus);
+  let full_args = args;
+  let args = &args[..2];
+  let unevaluated = |_: &[Expr]| unevaluated_call("GroebnerBasis", full_args);
   let polys_in: Vec<Expr> = match &args[0] {
     Expr::List(items) if !items.is_empty() => items.iter().cloned().collect(),
     single => vec![single.clone()],
@@ -313,6 +411,11 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   if basis.is_empty() {
+    // Over GF(p) inputs that all vanish mod p leave an empty basis;
+    // over the rationals wolframscript prints {0}.
+    if modulus.is_some() {
+      return Ok(Expr::List(vec![].into()));
+    }
     return Ok(Expr::List(vec![Expr::Integer(0)].into()));
   }
 
@@ -397,9 +500,27 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   // Normalize to primitive integer coefficients with a positive leading
-  // coefficient, then render
+  // coefficient, then render. Over GF(p) the basis is made monic first,
+  // so the primitive/sign logic below is a no-op (content 1, lead +1).
   let mut out: Vec<Expr> = Vec::with_capacity(reduced.len());
   for p in &reduced {
+    let monic;
+    let p = if let Some(pm) = modulus {
+      let Some((_, lc)) = leading(p) else {
+        return Ok(unevaluated(args));
+      };
+      let Some(inv) = mod_inverse(lc.0, pm) else {
+        return Ok(unevaluated(args));
+      };
+      let mut q = Poly::new();
+      for (k, &c) in p {
+        q.insert(k.clone(), ((c.0 * inv).rem_euclid(pm), 1));
+      }
+      monic = q;
+      &monic
+    } else {
+      p
+    };
     let rendered = (|| -> Option<Expr> {
       let mut denom_lcm: i128 = 1;
       for &c in p.values() {

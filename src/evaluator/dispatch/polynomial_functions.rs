@@ -57,7 +57,7 @@ pub fn dispatch_polynomial_functions(
     "TrigFactor" if args.len() == 1 => {
       return Some(crate::functions::trig_factor_ast::trig_factor_ast(args));
     }
-    "GroebnerBasis" if args.len() == 2 => {
+    "GroebnerBasis" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::groebner_ast::groebner_basis_ast(args));
     }
     "PolynomialGCD" if args.len() >= 2 => {
