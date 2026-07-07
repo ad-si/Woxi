@@ -44,13 +44,23 @@ jobs:
         tool: cargo-fuzz
     - name: Seed corpora from the test scripts
       run: make fuzz-corpus
+    # The prebuilt cargo-fuzz binary is a static musl build and defaults to
+    # its own compile-time triple (x86_64-unknown-linux-musl), which cannot
+    # link ASan ("sanitizer is incompatible with statically linked libc").
+    # Pass the host triple explicitly so the fuzz targets build against glibc.
+    - name: Determine host target triple
+      run: |
+        echo "HOST_TARGET=$(rustc -vV | sed -n 's/host: //p')" >> "$GITHUB_ENV"
     - name: Fuzz the parser
-      run: cargo fuzz run parse -- -timeout=10 -max_len=4096 -max_total_time=300
+      run: cargo fuzz run parse --target "$HOST_TARGET" -- -timeout=10 -max_len=4096 -max_total_time=300
     - name: Fuzz the interpreter
       # Runs even when the parse target already found a crash, so one
       # night reports both.
       if: '!cancelled()'
-      run: cargo fuzz run interpret -- -timeout=20 -max_len=2048 -max_total_time=300
+      # -rss_limit_mb is raised above the 2048 default because some corpus
+      # seeds (tests/scripts/*.wls) are legitimately memory-hungry
+      # computations, and ASan roughly triples their footprint.
+      run: cargo fuzz run interpret --target "$HOST_TARGET" -- -timeout=20 -max_len=2048 -max_total_time=300 -rss_limit_mb=8192
     - name: Upload crashing inputs
       if: failure()
       uses: actions/upload-artifact@v4

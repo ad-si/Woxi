@@ -128,7 +128,7 @@ fuzz-interpret: fuzz-corpus
 	@if ! command -v cargo-fuzz &> /dev/null; \
 		then cargo install cargo-fuzz; \
 		fi
-	cargo +nightly fuzz run interpret -- -timeout=20 -max_len=2048
+	cargo +nightly fuzz run interpret -- -timeout=20 -max_len=2048 -rss_limit_mb=8192
 
 # Differential fuzzing against wolframscript (local binary or the
 # cmd-server.js Docker bridge — auto-detected). Reports and shrinks any
