@@ -5858,6 +5858,83 @@ mod factor_terms {
       "{6*(1 + 2*x), 4*(1 + 2*x)}"
     );
   }
+
+  // The content carries the sign of the highest-degree coefficient
+  // (wolframscript-verified).
+  #[test]
+  fn content_sign_from_highest_degree_term() {
+    assert_eq!(
+      interpret("FactorTerms[2 - 4 x - 4 x^2]").unwrap(),
+      "-2*(-1 + 2*x + 2*x^2)"
+    );
+    assert_eq!(interpret("FactorTerms[-2 + 4 x]").unwrap(), "2*(-1 + 2*x)");
+    assert_eq!(
+      interpret("FactorTerms[2 - 4 x + 6 x^2 - 4 x^3]").unwrap(),
+      "-2*(-1 + 2*x - 3*x^2 + 2*x^3)"
+    );
+  }
+
+  #[test]
+  fn content_sign_multivariate() {
+    assert_eq!(
+      interpret("FactorTerms[2 y - 4 x y - 4 x^2 y]").unwrap(),
+      "-2*(-y + 2*x*y + 2*x^2*y)"
+    );
+  }
+
+  // A -1/d rational content folds its sign into the sum
+  // (wolframscript-verified).
+  #[test]
+  fn unit_rational_content_folds_sign_into_sum() {
+    assert_eq!(
+      interpret("FactorTerms[x/2 - x^2/2]").unwrap(),
+      "(x - x^2)/2"
+    );
+    assert_eq!(
+      interpret("FactorTerms[1/2 - x^2/2]").unwrap(),
+      "(1 - x^2)/2"
+    );
+  }
+
+  #[test]
+  fn negative_rational_content() {
+    assert_eq!(
+      interpret("FactorTerms[3/2 - (3 x)/2]").unwrap(),
+      "(-3*(-1 + x))/2"
+    );
+  }
+
+  // The sign comes from the highest TOTAL-degree term (Sin[x] counts like
+  // a variable); among equal-degree maxima the first in canonical order
+  // wins (wolframscript-verified).
+  #[test]
+  fn content_sign_total_degree_and_ties() {
+    assert_eq!(
+      interpret("FactorTerms[2 - 2 Sin[theta]]").unwrap(),
+      "-2*(-1 + Sin[theta])"
+    );
+    assert_eq!(
+      interpret("FactorTerms[2 Sin[x] - 4 Sin[y]]").unwrap(),
+      "2*(Sin[x] - 2*Sin[y])"
+    );
+    assert_eq!(
+      interpret("FactorTerms[-2 Sin[x] + 4 Sin[y]]").unwrap(),
+      "-2*(Sin[x] - 2*Sin[y])"
+    );
+    assert_eq!(interpret("FactorTerms[2 x - 4 y]").unwrap(), "2*(x - 2*y)");
+    assert_eq!(
+      interpret("FactorTerms[2 x y - 4 x]").unwrap(),
+      "2*(-2*x + x*y)"
+    );
+    assert_eq!(
+      interpret("FactorTerms[2 - 4 Sin[theta]^2]").unwrap(),
+      "-2*(-1 + 2*Sin[theta]^2)"
+    );
+    assert_eq!(
+      interpret("FactorTerms[2 a^2 - 2 a^2 Sin[theta]]").unwrap(),
+      "-2*(-a^2 + a^2*Sin[theta])"
+    );
+  }
 }
 
 mod cyclotomic {
@@ -6441,6 +6518,48 @@ mod factor_terms_list {
   fn two_arg_var_independent_pure_number() {
     // Pure numeric inputs still collapse to the 2-element form.
     assert_eq!(interpret("FactorTermsList[4, x]").unwrap(), "{4, 1}");
+  }
+
+  // Rational content, signed by the highest-degree coefficient
+  // (wolframscript-verified).
+  #[test]
+  fn rational_content() {
+    assert_eq!(
+      interpret("FactorTermsList[x/2 - x^2/2]").unwrap(),
+      "{-1/2, -x + x^2}"
+    );
+    assert_eq!(
+      interpret("FactorTermsList[3/2 - (3 x)/2]").unwrap(),
+      "{-3/2, -1 + x}"
+    );
+    assert_eq!(
+      interpret("FactorTermsList[1/2 - x^2/2]").unwrap(),
+      "{-1/2, -1 + x^2}"
+    );
+  }
+
+  #[test]
+  fn rational_content_two_arg() {
+    assert_eq!(
+      interpret("FactorTermsList[x/2 - x^2/2, x]").unwrap(),
+      "{-1/2, 1, -x + x^2}"
+    );
+  }
+
+  #[test]
+  fn negative_unit_content() {
+    assert_eq!(
+      interpret("FactorTermsList[x - x^2]").unwrap(),
+      "{-1, -x + x^2}"
+    );
+  }
+
+  #[test]
+  fn two_arg_var_part_stays_expanded() {
+    assert_eq!(
+      interpret("FactorTermsList[3*(-1 + 2 x)^2*(-1 + y), x]").unwrap(),
+      "{3, -1 + y, 1 - 4*x + 4*x^2}"
+    );
   }
 }
 

@@ -1675,25 +1675,65 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
   }
 }
 
-/// Factor out the GCD of numeric coefficients from all terms.
-fn factor_terms_numeric(
-  expanded: &Expr,
-  terms: &[Expr],
-) -> Result<Expr, InterpreterError> {
-  // Extract rational coefficients from each term
+/// Total degree of a term's non-numeric part: each symbolic factor counts
+/// 1, an integer power counts its exponent. Sin[x]^2*y → 3.
+fn term_total_degree(term: &Expr) -> i128 {
+  let inner = match term {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => operand.as_ref(),
+    other => other,
+  };
+  let mut deg = 0i128;
+  for f in collect_multiplicative_factors(inner) {
+    let is_numeric = matches!(
+      &f,
+      Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_)
+    ) || matches!(&f, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2);
+    if is_numeric {
+      continue;
+    }
+    deg += match &f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        right,
+        ..
+      } => match right.as_ref() {
+        Expr::Integer(n) => *n,
+        _ => 1,
+      },
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        match &args[1] {
+          Expr::Integer(n) => *n,
+          _ => 1,
+        }
+      }
+      _ => 1,
+    };
+  }
+  deg
+}
+
+/// Compute the rational content of additive terms: gcd of numerators over
+/// lcm of denominators. The content carries the sign of the highest
+/// total-degree term's coefficient (ties keep the first in canonical
+/// order), matching wolframscript: FactorTerms[2 - 4x - 4x^2] →
+/// -2*(-1 + 2x + 2x^2), FactorTerms[3 + 3x^3] → 3*(1 + x^3),
+/// FactorTerms[2 Sin[x] - 4 Sin[y]] → 2*(Sin[x] - 2*Sin[y]).
+/// Returns (signed num_gcd, den_lcm, per-term coefficients), or None if a
+/// term has a non-rational coefficient.
+fn rational_content(terms: &[Expr]) -> Option<(i128, i128, Vec<(i128, i128)>)> {
   let mut coeffs: Vec<(i128, i128)> = Vec::new();
   for term in terms {
-    match extract_rational_coeff(term) {
-      Some(pair) => coeffs.push(pair),
-      None => return Ok(expanded.clone()), // non-numeric coefficient, return as-is
-    }
+    coeffs.push(extract_rational_coeff(term)?);
   }
-
   if coeffs.is_empty() {
-    return Ok(expanded.clone());
+    return None;
   }
 
-  // Compute GCD of all numerators and LCM of all denominators
   let num_gcd = coeffs
     .iter()
     .map(|(n, _)| *n)
@@ -1701,31 +1741,34 @@ fn factor_terms_numeric(
     .fold(0i128, gcd_i128);
   let den_lcm = coeffs.iter().map(|(_, d)| *d).fold(1i128, lcm_i128);
 
-  // If all non-zero numerators are negative, factor out the negative sign
-  let all_negative =
-    coeffs.iter().filter(|(n, _)| *n != 0).all(|(n, _)| *n < 0);
-  let sign: i128 = if all_negative { -1 } else { 1 };
-  let num_gcd = num_gcd * sign;
-
-  if num_gcd.abs() <= 1 && den_lcm == 1 {
-    return Ok(expanded.clone());
+  let mut best_deg = i128::MIN;
+  let mut sign: i128 = 1;
+  for (term, (n, _)) in terms.iter().zip(coeffs.iter()) {
+    if *n == 0 {
+      continue;
+    }
+    let d = term_total_degree(term);
+    if d > best_deg {
+      best_deg = d;
+      sign = if *n < 0 { -1 } else { 1 };
+    }
   }
 
-  // The overall factor is num_gcd / den_lcm
-  // Divide each term by this factor
+  Some((num_gcd * sign, den_lcm, coeffs))
+}
+
+/// Divide each term by num_gcd/den_lcm and rebuild the term list.
+fn divide_terms_by(
+  terms: &[Expr],
+  coeffs: &[(i128, i128)],
+  num_gcd: i128,
+  den_lcm: i128,
+) -> Vec<Expr> {
   let mut new_terms: Vec<Expr> = Vec::new();
   for (term, (n, d)) in terms.iter().zip(coeffs.iter()) {
     // New coefficient: (n/d) / (num_gcd/den_lcm) = (n * den_lcm) / (d * num_gcd)
     let new_n = n * den_lcm / (d * num_gcd);
     let var_factors = extract_non_numeric_factors(term);
-
-    let coeff_expr = if new_n == 1 && !var_factors.is_empty() {
-      None
-    } else if new_n == -1 && !var_factors.is_empty() {
-      None // handle sign below
-    } else {
-      Some(Expr::Integer(new_n.abs()))
-    };
 
     let var_part = if var_factors.is_empty() {
       None
@@ -1743,28 +1786,54 @@ fn factor_terms_numeric(
       Some(product)
     };
 
-    let term_expr = match (coeff_expr, var_part) {
-      (Some(c), Some(v)) => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(c),
-        right: Box::new(v),
+    // Constants stay signed Integers (not UnaryOp Minus around a positive
+    // one) and negative coefficients keep their sign inside the Times so a
+    // leading term renders `-2*x`, not `-(2*x)`.
+    let final_term = match var_part {
+      None => Expr::Integer(new_n),
+      Some(v) => match new_n {
+        1 => v,
+        -1 => Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(v),
+        },
+        _ => Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(new_n)),
+          right: Box::new(v),
+        },
       },
-      (Some(c), None) => c,
-      (None, Some(v)) => v,
-      (None, None) => Expr::Integer(1),
-    };
-
-    let final_term = if new_n < 0 {
-      Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
-        operand: Box::new(term_expr),
-      }
-    } else {
-      term_expr
     };
 
     new_terms.push(final_term);
   }
+
+  new_terms
+}
+
+/// Factor out the GCD of numeric coefficients from all terms.
+pub(crate) fn factor_terms_numeric(
+  expanded: &Expr,
+  terms: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Some((num_gcd, den_lcm, coeffs)) = rational_content(terms) else {
+    return Ok(expanded.clone());
+  };
+
+  if num_gcd.abs() <= 1 && den_lcm == 1 {
+    return Ok(expanded.clone());
+  }
+
+  // Display flip: Times[Rational[-1,d], sum] renders as Rational[1,d] times
+  // the negated sum in wolframscript — FactorTerms[x/2 - x^2/2] →
+  // (x - x^2)/2, not -1/2*(-x + x^2).
+  let num_gcd = if num_gcd == -1 && den_lcm != 1 {
+    1
+  } else {
+    num_gcd
+  };
+
+  let new_terms = divide_terms_by(terms, &coeffs, num_gcd, den_lcm);
 
   // Build the inner sum
   let inner = build_sum(new_terms);
@@ -2588,7 +2657,28 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && parts.len() == 2
       && let Expr::Integer(num_content) = &parts[0]
     {
-      let primitive = &parts[1];
+      let mut content = Expr::Integer(*num_content);
+      let mut primitive = parts[1].clone();
+      // Pull rational content the integer-only multi-var pass misses:
+      // FactorTermsList[x/2 - x^2/2, x] → {-1/2, 1, -x + x^2}.
+      if *num_content == 1 {
+        let terms = collect_additive_terms(&primitive);
+        if let Some((num_gcd, den_lcm, term_coeffs)) = rational_content(&terms)
+          && (num_gcd.abs() != 1 || den_lcm != 1)
+        {
+          primitive =
+            build_sum(divide_terms_by(&terms, &term_coeffs, num_gcd, den_lcm));
+          content = if den_lcm == 1 {
+            Expr::Integer(num_gcd)
+          } else {
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)].into(),
+            }
+          };
+        }
+      }
+      let primitive = &primitive;
       // If the primitive doesn't actually depend on `var`, route to the
       // existing fallback below.
       if contains_var(primitive, &var) {
@@ -2615,11 +2705,13 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let non_var_part = combine(non_var_factors);
         let var_part = combine(var_factors);
-        // Expand the non-var part so its display matches the test
-        // expectation `1 - a - y + a*y` (not `(-1+a)*(-1+y)`).
+        // Expand both parts so their display matches wolframscript:
+        // `1 - a - y + a*y` (not `(-1+a)*(-1+y)`) and `1 - 4*x + 4*x^2`
+        // (not `(-1+2*x)^2`).
         let non_var_expanded = expand_and_combine(&non_var_part);
+        let var_expanded = expand_and_combine(&var_part);
         return Ok(Expr::List(
-          vec![Expr::Integer(*num_content), non_var_expanded, var_part].into(),
+          vec![content, non_var_expanded, var_expanded].into(),
         ));
       }
     }
@@ -2628,6 +2720,36 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let coeffs = match extract_poly_coeffs(&expanded, &var) {
     Some(c) => c,
     None => {
+      // Rational coefficients: extract the rational content num_gcd/den_lcm
+      // (sign of the highest-degree term), matching wolframscript:
+      // FactorTermsList[x/2 - x^2/2] → {-1/2, -x + x^2}.
+      let terms = collect_additive_terms(&expanded);
+      if let Some((num_gcd, den_lcm, term_coeffs)) = rational_content(&terms)
+        && (num_gcd.abs() != 1 || den_lcm != 1)
+      {
+        let inner =
+          build_sum(divide_terms_by(&terms, &term_coeffs, num_gcd, den_lcm));
+        let content = if den_lcm == 1 {
+          Expr::Integer(num_gcd)
+        } else {
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)].into(),
+          }
+        };
+        if args.len() == 2 {
+          // The var-dependent primitive goes in the third slot; a
+          // primitive independent of `var` is the non-var second slot
+          // (FactorTermsList[3 f, x] → {3, f, 1}).
+          if contains_var(&inner, &var) {
+            return Ok(Expr::List(
+              vec![content, Expr::Integer(1), inner].into(),
+            ));
+          }
+          return Ok(Expr::List(vec![content, inner, Expr::Integer(1)].into()));
+        }
+        return Ok(Expr::List(vec![content, inner].into()));
+      }
       // 2-arg form always returns a 3-element {numeric, non-var, var-part}
       // list. When we can't extract integer coefficients, conservatively
       // split off a numeric factor and route the rest based on whether it
