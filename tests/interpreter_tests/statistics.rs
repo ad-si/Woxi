@@ -1756,6 +1756,24 @@ mod mean {
     assert_eq!(interpret("Mean[{a, b}]").unwrap(), "(a + b)/2");
   }
 
+  // Numeric constants mixed with inexact entries evaluate numerically
+  // (found by the differential fuzzer: these stayed unevaluated).
+  #[test]
+  fn mean_numeric_constants_with_reals() {
+    assert_eq!(interpret("Mean[{Pi, 16.0}]").unwrap(), "9.570796326794897");
+    assert_eq!(
+      interpret("Mean[{-5.5, Pi}]").unwrap(),
+      "-1.1792036732051034"
+    );
+    // ... while all-exact input stays exact
+    assert_eq!(interpret("Mean[{Pi, 1}]").unwrap(), "(1 + Pi)/2");
+    // Symbolic entries with an inexact one form the symbolic quotient
+    assert_eq!(interpret("Mean[{x, 1.0}]").unwrap(), "(1. + x)/2");
+    // The summation stays in list order (Plus would canonical-sort the
+    // reals and drift the last float digit)
+    assert_eq!(interpret("Mean[{23.1, 24.4, 21.8, 25.5}]").unwrap(), "23.7");
+  }
+
   #[test]
   fn mean_integers() {
     assert_eq!(interpret("Mean[{1, 2, 3}]").unwrap(), "2");

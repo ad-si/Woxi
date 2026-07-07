@@ -489,17 +489,12 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // Try to compute exact integer sum first
       let mut int_sum: Option<i128> = Some(0);
-      let mut has_real = false;
       for item in items {
         match item {
           Expr::Integer(n) => {
             if let Some(s) = int_sum {
               int_sum = s.checked_add(*n);
             }
-          }
-          Expr::Real(_) => {
-            has_real = true;
-            int_sum = None;
           }
           _ => {
             int_sum = None;
@@ -522,32 +517,18 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![Expr::Integer(num), Expr::Integer(denom)].into(),
           })
         }
-      } else if has_real {
-        // Has real numbers - compute float
-        let mut sum = 0.0;
-        for item in items {
-          if let Some(n) = expr_to_num(item) {
-            sum += n;
-          } else {
-            return Ok(Expr::FunctionCall {
-              name: "Mean".to_string(),
-              args: args.to_vec().into(),
-            });
-          }
-        }
-        // Always keep a Real result (machine precision) even when the
-        // mean is a whole number, matching wolframscript (e.g. 2.).
-        Ok(Expr::Real(sum / items.len() as f64))
       } else {
         // Check for list-of-lists (matrix) → compute column-wise mean
         if items.iter().all(|item| matches!(item, Expr::List(_))) {
           return mean_columnwise(items);
         }
-        // Non-numeric elements - compute symbolically: Total[list] / Length[list]
-        // Evaluate the sum first, then wrap in division (don't distribute)
+        // Compute as Total[list] / Length[list]. Total, not Plus[items...]:
+        // Plus canonical-sorts its operands, changing the f64 summation
+        // order for real entries (Mean[{23.1, 24.4, 21.8, 25.5}] must stay
+        // exactly 23.7 like wolframscript's left-to-right Total).
         let sum_expr = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: items.clone(),
+          name: "Total".to_string(),
+          args: vec![Expr::List(items.clone())].into(),
         };
         let evaluated_sum = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
         let n = items.len() as i128;
