@@ -9,8 +9,7 @@ use woxi::{
   clear_state, get_captured_output_svg, interpret, truncate_precision_reals,
 };
 
-mod tests
-{
+mod tests {
   use super::*;
 
   /// The Playground/Studio result SVG for `code`, with all SVG tags removed so
