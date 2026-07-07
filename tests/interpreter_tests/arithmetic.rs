@@ -1880,8 +1880,48 @@ mod infinity_arithmetic {
   }
 }
 
+mod power_zero_exponent {
+  use super::*;
+
+  // An inexact numeric base to the 0th power gives an inexact 1 (found
+  // by the differential fuzzer: Woxi returned the exact 1).
+  #[test]
+  fn inexact_base_gives_inexact_one() {
+    assert_eq!(interpret("2.0^0").unwrap(), "1.");
+    assert_eq!(interpret("(-4.3)^0").unwrap(), "1.");
+    assert_eq!(interpret("Power[Times[Pi, -4.3], 0]").unwrap(), "1.");
+    assert_eq!(interpret("(1.5 + 2.5*I)^0").unwrap(), "1. + 0.*I");
+    // Exact and symbolic bases stay exact — even when the symbolic
+    // expression merely contains an inexact coefficient
+    assert_eq!(interpret("2^0").unwrap(), "1");
+    assert_eq!(interpret("(2 + I)^0").unwrap(), "1");
+    assert_eq!(interpret("Pi^0").unwrap(), "1");
+    assert_eq!(interpret("(2.0*x)^0").unwrap(), "1");
+  }
+}
+
 mod infinity_comparisons {
   use super::*;
+
+  // The functional comparison forms route through the same evaluation as
+  // the operator syntax (found by the differential fuzzer: the nord
+  // message was missing for LessEqual[1/0, 0]).
+  #[test]
+  fn functional_forms_match_operator_forms() {
+    let result =
+      woxi::interpret_with_stdout("LessEqual[Divide[1, 0], 0]").unwrap();
+    assert_eq!(result.result, "ComplexInfinity <= 0");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "LessEqual::nord: Invalid comparison with ComplexInfinity attempted."
+      )),
+      "expected nord, got {:?}",
+      result.warnings
+    );
+    assert_eq!(interpret("Less[1, 2, 3]").unwrap(), "True");
+    assert_eq!(interpret("Less[3, 2]").unwrap(), "False");
+    assert_eq!(interpret("GreaterEqual[x, x]").unwrap(), "x >= x");
+  }
 
   // Order comparisons with complex infinities are invalid: they emit
   // `<Head>::nord` and stay unevaluated (found by the differential

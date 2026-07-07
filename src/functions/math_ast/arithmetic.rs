@@ -7763,6 +7763,24 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && !matches!(base, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
     && !crate::functions::math_ast::is_neg_infinity(base)
   {
+    // A raw inexact numeric base gives an inexact 1: 2.0^0 -> 1. and an
+    // inexact complex -> 1. + 0.*I. Symbolic expressions merely
+    // containing inexact numbers still give the exact 1 ((2.0*x)^0 -> 1),
+    // matching wolframscript.
+    if matches!(base, Expr::Real(_)) {
+      return Ok(Expr::Real(1.0));
+    }
+    if contains_real(base)
+      && matches!(
+        crate::functions::math_ast::try_extract_complex_float(base),
+        Some((_, im)) if im != 0.0
+      )
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Complex".to_string(),
+        args: vec![Expr::Real(1.0), Expr::Real(0.0)].into(),
+      });
+    }
     return Ok(Expr::Integer(1));
   }
 

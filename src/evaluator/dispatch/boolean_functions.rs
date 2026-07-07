@@ -82,17 +82,23 @@ pub fn dispatch_boolean_functions(
     "Unequal" if args.len() < 2 => {
       return Some(Ok(Expr::Identifier("True".to_string())));
     }
-    "Less" if args.len() >= 2 => {
-      return Some(crate::functions::boolean_ast::less_ast(args));
-    }
-    "Greater" if args.len() >= 2 => {
-      return Some(crate::functions::boolean_ast::greater_ast(args));
-    }
-    "LessEqual" if args.len() >= 2 => {
-      return Some(crate::functions::boolean_ast::less_equal_ast(args));
-    }
-    "GreaterEqual" if args.len() >= 2 => {
-      return Some(crate::functions::boolean_ast::greater_equal_ast(args));
+    // Route the functional forms through the same Comparison evaluation
+    // as the operator syntax, so e.g. the ComplexInfinity `nord` messages
+    // fire identically for LessEqual[1/0, 0] and 1/0 <= 0.
+    "Less" | "Greater" | "LessEqual" | "GreaterEqual" if args.len() >= 2 => {
+      use crate::syntax::ComparisonOp;
+      let op = match name {
+        "Less" => ComparisonOp::Less,
+        "Greater" => ComparisonOp::Greater,
+        "LessEqual" => ComparisonOp::LessEqual,
+        _ => ComparisonOp::GreaterEqual,
+      };
+      return Some(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::Comparison {
+          operands: args.to_vec(),
+          operators: vec![op; args.len() - 1],
+        },
+      ));
     }
     "Boole" if args.len() == 1 => {
       return Some(crate::functions::boolean_ast::boole_ast(args));

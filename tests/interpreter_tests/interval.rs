@@ -344,8 +344,12 @@ fn interval_less_disjoint_true() {
 
 #[test]
 fn interval_less_overlapping_unevaluated() {
-  let result = interpret("Less[Interval[{1, 5}], Interval[{3, 7}]]").unwrap();
-  assert!(result.contains("Less"));
+  // wolframscript prints the unevaluated functional form as the infix
+  // comparison (verified: `Interval[{1, 5}] < Interval[{3, 7}]`).
+  assert_eq!(
+    interpret("Less[Interval[{1, 5}], Interval[{3, 7}]]").unwrap(),
+    "Interval[{1, 5}] < Interval[{3, 7}]"
+  );
 }
 
 #[test]
