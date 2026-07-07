@@ -6126,6 +6126,48 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     symbolic_args = combine_like_bases(symbolic_args)?;
     sort_symbolic_factors(&mut symbolic_args);
+    // A negative (non-integer) rational coefficient absorbs its sign into
+    // a single additive factor, negating every term — wolframscript:
+    // (-1/3)*(-2 + x) -> (2 - x)/3, (-1/42)*(-54 - Pi) -> (54 + Pi)/42 —
+    // while integer coefficients keep their sign (-2*(-1 - x) stays).
+    let mut coeff_expr = coeff_expr;
+    let mut big_numer = big_numer;
+    if !coeff_is_int && big_numer < BigInt::from(0) {
+      let is_additive = |e: &Expr| {
+        matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(
+            e,
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus
+                | crate::syntax::BinaryOperator::Minus,
+              ..
+            }
+          )
+      };
+      let plus_positions: Vec<usize> = symbolic_args
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| is_additive(e))
+        .map(|(i, _)| i)
+        .collect();
+      if plus_positions.len() == 1 {
+        let i = plus_positions[0];
+        let negated =
+          times_ast(&[Expr::Integer(-1), symbolic_args[i].clone()])?;
+        if is_additive(&negated) {
+          symbolic_args[i] = negated;
+          big_numer = -big_numer;
+          coeff_expr = Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![
+              bigint_to_expr(big_numer.clone()),
+              bigint_to_expr(big_denom.clone()),
+            ]
+            .into(),
+          };
+        }
+      }
+    }
     let mut final_args: Vec<Expr> = Vec::new();
     if !(coeff_is_int && big_numer == BigInt::from(1)) {
       final_args.push(coeff_expr);
@@ -6663,6 +6705,20 @@ pub fn divide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// decays to `x*(1/0)` and emits the `Power::infy` form, so it — like the `/`
 /// operator — falls through to the shared `divide_ast` path.
 pub fn divide_head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Evaluate the operands first: quotient rewrites like a/(b/c) -> a*c/b
+  // must see the inner quotient in evaluated (sign-normalized) form, or
+  // Divide[-3, Divide[(Pi + 54)*(-1), -42]] lands on 126/(-54 - Pi)
+  // instead of wolframscript's -126/(54 + Pi).
+  let evaluated: Vec<Expr>;
+  let args = if args.len() == 2 {
+    evaluated = vec![
+      crate::evaluator::evaluate_expr_to_expr(&args[0])?,
+      crate::evaluator::evaluate_expr_to_expr(&args[1])?,
+    ];
+    evaluated.as_slice()
+  } else {
+    args
+  };
   if args.len() == 2 {
     let denom_is_zero = matches!(&args[1], Expr::Integer(0))
       || matches!(&args[1], Expr::Real(z) if *z == 0.0);

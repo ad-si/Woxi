@@ -1352,6 +1352,37 @@ mod multiplication_formatting {
     assert_eq!(interpret("Times[2, x]").unwrap(), "2*x");
   }
 
+  // A negative non-integer rational coefficient absorbs its sign into a
+  // single additive factor, negating every term (found via the
+  // differential fuzzer's -126/(54 + Pi) case); integer and symbolic
+  // coefficients keep their sign.
+  #[test]
+  fn negative_rational_absorbs_sign_into_sum() {
+    for (input, expected) in [
+      ("(-1/3)*(-2 + x)", "(2 - x)/3"),
+      ("(-1/3)*(-2 - x)", "(2 + x)/3"),
+      ("(-1/42)*(-54 - Pi)", "(54 + Pi)/42"),
+      ("(-1/3)*(2 - x)", "(-2 + x)/3"),
+      ("(-54 - Pi)/(-42)", "(54 + Pi)/42"),
+      ("-2*(-1 - x)", "-2*(-1 - x)"),
+      ("(1/3)*(-2 - x)", "(-2 - x)/3"),
+      ("a*(-2 - x)", "a*(-2 - x)"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // Divide evaluates its operands before quotient rewrites, so a
+  // once-evaluated inner quotient participates in sign-normalized form.
+  #[test]
+  fn divide_head_evaluates_operands() {
+    assert_eq!(
+      interpret("Divide[-3, Divide[54 + Pi, 42]]").unwrap(),
+      "-126/(54 + Pi)"
+    );
+    assert_eq!(interpret("Divide[6, Divide[4, 2]]").unwrap(), "3");
+  }
+
   #[test]
   fn power_no_spaces() {
     assert_eq!(interpret("Power[x, 2]").unwrap(), "x^2");
