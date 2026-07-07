@@ -6619,12 +6619,22 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Drop multiplicative-identity factors left behind by radical cancellation,
+  // e.g. Sqrt[1/3]*Sqrt[3] collapses to Sqrt[1] = 1 in combine_like_bases. Left
+  // in place it survives into the product as a stray factor, so
+  // `(-1/2)*Sqrt[1/3]*Sqrt[3]` printed `-1/2*1` instead of `-1/2`.
+  symbolic_args.retain(|f| !matches!(f, Expr::Integer(1)));
+
   let mut final_args: Vec<Expr> = Vec::new();
   let is_unit = matches!(&coeff, Expr::Integer(1));
   if !is_unit {
     final_args.push(coeff);
   }
   final_args.extend(symbolic_args);
+
+  if final_args.is_empty() {
+    return Ok(Expr::Integer(1));
+  }
 
   if final_args.len() == 1 {
     Ok(final_args.remove(0))

@@ -1023,6 +1023,123 @@ mod toeplitz_matrix {
   }
 }
 
+mod fourier_dct_matrix {
+  use super::*;
+
+  // FourierDCTMatrix[n] defaults to the type-2 discrete cosine transform
+  // matrix. Entry (i, j) = Sqrt[1/n] Cos[Pi (2i-1)(j-1)/(2n)].
+  #[test]
+  fn default_type_two() {
+    assert_eq!(
+      interpret("FourierDCTMatrix[3]").unwrap(),
+      "{{1/Sqrt[3], 1/2, 1/(2*Sqrt[3])}, {1/Sqrt[3], 0, -(1/Sqrt[3])}, \
+       {1/Sqrt[3], -1/2, 1/(2*Sqrt[3])}}"
+    );
+  }
+
+  #[test]
+  fn default_two_by_two() {
+    assert_eq!(
+      interpret("FourierDCTMatrix[2]").unwrap(),
+      "{{1/Sqrt[2], 1/2}, {1/Sqrt[2], -(1/2)}}"
+    );
+  }
+
+  #[test]
+  fn one_by_one() {
+    assert_eq!(interpret("FourierDCTMatrix[1]").unwrap(), "{{1}}");
+  }
+
+  // Keeps radicals that stay symbolic in wolframscript, e.g. Cos[Pi/8].
+  #[test]
+  fn default_four_keeps_symbolic_cos() {
+    assert_eq!(
+      interpret("FourierDCTMatrix[4]").unwrap(),
+      "{{1/2, Cos[Pi/8]/2, 1/(2*Sqrt[2]), Sin[Pi/8]/2}, \
+       {1/2, Sin[Pi/8]/2, -1/2*1/Sqrt[2], -1/2*Cos[Pi/8]}, \
+       {1/2, -1/2*Sin[Pi/8], -1/2*1/Sqrt[2], Cos[Pi/8]/2}, \
+       {1/2, -1/2*Cos[Pi/8], 1/(2*Sqrt[2]), -1/2*Sin[Pi/8]}}"
+    );
+  }
+
+  // FourierDCTMatrix[n, 1] — DCT type 1.
+  #[test]
+  fn type_one() {
+    assert_eq!(
+      interpret("FourierDCTMatrix[3, 1]").unwrap(),
+      "{{1/2, 1/2, 1/2}, {1, 0, -1}, {1/2, -1/2, 1/2}}"
+    );
+    assert_eq!(
+      interpret("FourierDCTMatrix[4, 1]").unwrap(),
+      "{{1/Sqrt[6], 1/Sqrt[6], 1/Sqrt[6], 1/Sqrt[6]}, \
+       {Sqrt[2/3], 1/Sqrt[6], -(1/Sqrt[6]), -Sqrt[2/3]}, \
+       {Sqrt[2/3], -(1/Sqrt[6]), -(1/Sqrt[6]), Sqrt[2/3]}, \
+       {1/Sqrt[6], -(1/Sqrt[6]), 1/Sqrt[6], -(1/Sqrt[6])}}"
+    );
+  }
+
+  // FourierDCTMatrix[n, 2] is the same as the default.
+  #[test]
+  fn type_two_matches_default() {
+    assert_eq!(
+      interpret("FourierDCTMatrix[3, 2]").unwrap(),
+      interpret("FourierDCTMatrix[3]").unwrap()
+    );
+  }
+
+  // FourierDCTMatrix[n, 3] — DCT type 3.
+  #[test]
+  fn type_three() {
+    assert_eq!(
+      interpret("FourierDCTMatrix[3, 3]").unwrap(),
+      "{{1/Sqrt[3], 1/Sqrt[3], 1/Sqrt[3]}, {1, 0, -1}, \
+       {1/Sqrt[3], -2/Sqrt[3], 1/Sqrt[3]}}"
+    );
+  }
+
+  // FourierDCTMatrix[n, 4] — DCT type 4, exact nested radicals.
+  #[test]
+  fn type_four() {
+    assert_eq!(
+      interpret("FourierDCTMatrix[3, 4]").unwrap(),
+      "{{(1 + Sqrt[3])/(2*Sqrt[3]), 1/Sqrt[3], (-1 + Sqrt[3])/(2*Sqrt[3])}, \
+       {1/Sqrt[3], -(1/Sqrt[3]), -(1/Sqrt[3])}, \
+       {(-1 + Sqrt[3])/(2*Sqrt[3]), -(1/Sqrt[3]), (1 + Sqrt[3])/(2*Sqrt[3])}}"
+    );
+    assert_eq!(
+      interpret("FourierDCTMatrix[2, 4]").unwrap(),
+      "{{Cos[Pi/8], Sin[Pi/8]}, {Sin[Pi/8], -Cos[Pi/8]}}"
+    );
+  }
+
+  // Non-integer size or out-of-range type stays unevaluated, matching
+  // wolframscript.
+  #[test]
+  fn stays_unevaluated_for_bad_args() {
+    assert_eq!(
+      interpret("FourierDCTMatrix[3, 5]").unwrap(),
+      "FourierDCTMatrix[3, 5]"
+    );
+  }
+}
+
+// Regression: a residual Integer(1) left behind when radicals cancel inside a
+// product (Sqrt[1/3]*Sqrt[3] = 1) must be dropped, not printed as `*1`.
+mod times_radical_cancellation {
+  use super::*;
+
+  #[test]
+  fn rational_coefficient_survives_cleanly() {
+    assert_eq!(interpret("(-1/2)*Sqrt[1/3]*Sqrt[3]").unwrap(), "-1/2");
+  }
+
+  #[test]
+  fn symbolic_factor_survives_cleanly() {
+    assert_eq!(interpret("x*Sqrt[1/3]*Sqrt[3]").unwrap(), "x");
+    assert_eq!(interpret("(-1/2)*Sqrt[1/3]*Sqrt[3]*y").unwrap(), "-1/2*y");
+  }
+}
+
 mod mantissa_exponent {
   use super::*;
 

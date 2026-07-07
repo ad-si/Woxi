@@ -40,6 +40,7 @@ normalised to `##` in this file.
 - [`Eigensystem`](linear_algebra/Eigensystem.md)
 - [`FindIntegerNullVector`](linear_algebra/FindIntegerNullVector.md)
 - [`Fit`](linear_algebra/Fit.md)
+- [`FourierDCTMatrix`](linear_algebra/FourierDCTMatrix.md)
 - [`FourierMatrix`](linear_algebra/FourierMatrix.md)
 - [`HadamardMatrix`](linear_algebra/HadamardMatrix.md)
 - [`HankelMatrix`](linear_algebra/HankelMatrix.md)

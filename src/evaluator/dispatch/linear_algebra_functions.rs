@@ -2842,6 +2842,96 @@ pub fn dispatch_linear_algebra_functions(
         args: args.to_vec().into(),
       }));
     }
+    // FourierDCTMatrix[n] / FourierDCTMatrix[n, m] — n x n discrete cosine
+    // transform matrix of type m (m defaults to 2). Each entry is built as a
+    // symbolic Sqrt/Cos expression and evaluated, so exact radical forms match
+    // wolframscript (e.g. Cos[Pi/8]/2, (1 + Sqrt[3])/(2 Sqrt[3])). Formulas,
+    // with 1-based row i and column j:
+    //   m=1: Sqrt[2/(n-1)] (1/2 if i in {1,n}) Cos[Pi (i-1)(j-1)/(n-1)]
+    //   m=2: Sqrt[1/n]                          Cos[Pi (2i-1)(j-1)/(2n)]
+    //   m=3: (Sqrt[1/n] if i==1 else 2 Sqrt[1/n]) Cos[Pi (2j-1)(i-1)/(2n)]
+    //   m=4: Sqrt[2/n]                          Cos[Pi (2i-1)(2j-1)/(4n)]
+    "FourierDCTMatrix" if args.len() == 1 || args.len() == 2 => {
+      let n_opt = expr_to_i128(&args[0]).filter(|n| *n >= 1);
+      let m_opt = if args.len() == 2 {
+        expr_to_i128(&args[1]).filter(|m| (1..=4).contains(m))
+      } else {
+        Some(2)
+      };
+      if let (Some(n), Some(m)) = (n_opt, m_opt) {
+        // The 1x1 matrix is {{1}} for every type (type 1 would otherwise hit a
+        // divide-by-zero on the n - 1 denominator).
+        if n == 1 {
+          return Some(Ok(Expr::List(
+            vec![Expr::List(vec![Expr::Integer(1)].into())].into(),
+          )));
+        }
+        {
+          use crate::functions::math_ast::make_rational_pub;
+          let cos_pi = |num: i128, den: i128| -> Expr {
+            let angle = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                make_rational_pub(num, den),
+                Expr::Identifier("Pi".to_string()),
+              ]
+              .into(),
+            };
+            Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: vec![angle].into(),
+            }
+          };
+          let times = |a: Expr, b: Expr| Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![a, b].into(),
+          };
+          let mut rows = Vec::with_capacity(n as usize);
+          for i in 1..=n {
+            let mut row = Vec::with_capacity(n as usize);
+            for j in 1..=n {
+              let entry = match m {
+                1 => {
+                  let base = make_sqrt(make_rational_pub(2, n - 1));
+                  let scale = if i == 1 || i == n {
+                    times(make_rational_pub(1, 2), base)
+                  } else {
+                    base
+                  };
+                  times(scale, cos_pi((i - 1) * (j - 1), n - 1))
+                }
+                2 => times(
+                  make_sqrt(make_rational_pub(1, n)),
+                  cos_pi((2 * i - 1) * (j - 1), 2 * n),
+                ),
+                3 => {
+                  let base = make_sqrt(make_rational_pub(1, n));
+                  let scale = if i == 1 {
+                    base
+                  } else {
+                    times(Expr::Integer(2), base)
+                  };
+                  times(scale, cos_pi((2 * j - 1) * (i - 1), 2 * n))
+                }
+                _ => times(
+                  make_sqrt(make_rational_pub(2, n)),
+                  cos_pi((2 * i - 1) * (2 * j - 1), 4 * n),
+                ),
+              };
+              row.push(entry);
+            }
+            rows.push(Expr::List(row.into()));
+          }
+          return Some(evaluate_expr_to_expr(&Expr::List(rows.into())));
+        }
+      }
+      // Non-positive-integer size or transform type outside 1..4: leave the
+      // call unevaluated, matching wolframscript (which also emits a message).
+      return Some(Ok(Expr::FunctionCall {
+        name: "FourierDCTMatrix".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // FourierMatrix[n] — discrete Fourier transform matrix
     // Entry (j,k) = omega^((j-1)*(k-1)) / sqrt(n), omega = e^(2*pi*i/n)
     // Uses Cos + I*Sin for exact symbolic results
