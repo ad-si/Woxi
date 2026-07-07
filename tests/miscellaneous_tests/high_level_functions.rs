@@ -1,6 +1,6 @@
 use woxi::interpret;
 
-mod high_level_functions_tests {
+mod high_level_functions {
   use super::*;
 
   mod entropy_tests {

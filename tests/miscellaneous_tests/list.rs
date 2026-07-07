@@ -1,6 +1,6 @@
 use woxi::interpret;
 
-mod list_tests {
+mod list {
   use super::*;
 
   #[test]

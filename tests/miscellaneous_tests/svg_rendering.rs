@@ -6,7 +6,7 @@ use woxi::functions::graphics::{
 };
 use woxi::syntax::{BinaryOperator, Expr};
 
-mod svg_rendering_tests {
+mod svg_rendering {
   use super::*;
 
   // ── Power base parenthesization ──
@@ -574,7 +574,7 @@ mod svg_rendering_tests {
 // resulting boxes produces the same SVG as the direct expr_to_svg_markup.
 // ══════════════════════════════════════════════════════════════════════
 
-mod box_representation_tests {
+mod box_representation {
   use super::*;
   use woxi::syntax::expr_to_output;
 
