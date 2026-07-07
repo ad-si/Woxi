@@ -2162,7 +2162,7 @@ fn generate_svg_with_options(
           "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
            font-family=\"sans-serif\" font-size=\"{callout_font_size:.0}\" \
            fill=\"{color_str}\" dominant-baseline=\"auto\">{}</text>\n",
-          html_escape(label_text)
+          crate::functions::graphics::box_string_to_svg(label_text)
         ));
       }
 
@@ -2905,7 +2905,10 @@ pub(crate) fn generate_bar_svg(
               // (pivot_y - half_width * sin(angle)) stays below the axis.
               let char_width_estimate = font_size * 0.6;
               let half_text_w =
-                label.text.len() as f64 * char_width_estimate / 2.0;
+                crate::functions::graphics::box_string_visible_len(&label.text)
+                  as f64
+                  * char_width_estimate
+                  / 2.0;
               let sin_a = svg_rotation_deg.to_radians().sin().abs();
               let offset = half_text_w * sin_a + font_size * 0.5;
               (axis_y + offset, label_fill)
@@ -2923,14 +2926,14 @@ pub(crate) fn generate_bar_svg(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" dominant-baseline=\"central\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{fill}\" transform=\"rotate({svg_rotation_deg:.1},{cx:.1},{ly:.1})\">{}</text>\n",
-            html_escape(&label.text)
+            crate::functions::graphics::box_string_to_svg(&label.text)
           ));
         } else {
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{fill}\">{}</text>\n",
-            html_escape(&label.text)
+            crate::functions::graphics::box_string_to_svg(&label.text)
           ));
         }
       }
@@ -2950,7 +2953,7 @@ pub(crate) fn generate_bar_svg(
       let max_len = bar_labels
         .iter()
         .filter(|s| !s.is_empty())
-        .map(|s| s.chars().count())
+        .map(|s| crate::functions::graphics::box_string_visible_len(s))
         .max()
         .unwrap_or(1)
         .max(1);
@@ -2972,7 +2975,7 @@ pub(crate) fn generate_bar_svg(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{fit_font:.0}\" \
              fill=\"{label_fill}\">{}</text>\n",
-            html_escape(&text)
+            crate::functions::graphics::box_string_to_svg(&text)
           ));
         }
       }
@@ -2992,7 +2995,7 @@ pub(crate) fn generate_bar_svg(
           "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
            fill=\"{label_fill}\">{}</text>\n",
-          html_escape(x_label)
+          crate::functions::graphics::box_string_to_svg(x_label)
         ));
       }
       if !y_label.is_empty() {
@@ -3002,7 +3005,7 @@ pub(crate) fn generate_bar_svg(
           "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
            fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-          html_escape(y_label)
+          crate::functions::graphics::box_string_to_svg(y_label)
         ));
       }
     }
@@ -3030,7 +3033,7 @@ pub(crate) fn generate_bar_svg(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
            fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        html_escape(&sl.text)
+        crate::functions::graphics::box_string_to_svg(&sl.text)
       ));
     }
 
@@ -3067,7 +3070,7 @@ pub(crate) fn generate_bar_svg(
            fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
           legend_x + swatch_size + swatch_gap,
           ly + swatch_size / 2.0,
-          html_escape(label)
+          crate::functions::graphics::box_string_to_svg(label)
         ));
       }
     }
@@ -3153,7 +3156,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   // Left area: widest category label (capped) plus a rotated y-axis label.
   let max_cat_len = chart_labels
     .iter()
-    .map(|l| l.text.chars().count())
+    .map(|l| crate::functions::graphics::box_string_visible_len(&l.text))
     .max()
     .unwrap_or(0);
   let cat_label_area = if has_chart_labels {
@@ -3171,7 +3174,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   // Right area: value labels (drawn past each bar) plus any legend block.
   let max_vlabel_len = bar_labels
     .iter()
-    .map(|s| s.chars().count())
+    .map(|s| crate::functions::graphics::box_string_visible_len(s))
     .max()
     .unwrap_or(0);
   let value_label_area = if has_value_labels {
@@ -3184,7 +3187,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   } else {
     let maxlen = chart_legends
       .iter()
-      .map(|l| l.chars().count())
+      .map(|l| crate::functions::graphics::box_string_visible_len(l))
       .max()
       .unwrap_or(0);
     sf * 12.0 + sf * 6.0 + maxlen as f64 * sf * 10.0 + sf * 16.0
@@ -3307,7 +3310,7 @@ pub(crate) fn generate_horizontal_bar_svg(
         "<text x=\"{lx:.2}\" y=\"{:.2}\" text-anchor=\"end\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
         band_center + font_size * 0.35,
-        html_escape(&label.text)
+        crate::functions::graphics::box_string_to_svg(&label.text)
       ));
     }
   }
@@ -3333,7 +3336,7 @@ pub(crate) fn generate_horizontal_bar_svg(
           "<text x=\"{lx:.2}\" y=\"{:.2}\" text-anchor=\"start\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
           y0 + sub_h / 2.0 + font_size * 0.35,
-          html_escape(&text)
+          crate::functions::graphics::box_string_to_svg(&text)
         ));
       }
     }
@@ -3346,7 +3349,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     svg.push_str(&format!(
       "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
-      html_escape(x_axis_label)
+      crate::functions::graphics::box_string_to_svg(x_axis_label)
     ));
   }
   if !y_axis_label.is_empty() {
@@ -3356,7 +3359,7 @@ pub(crate) fn generate_horizontal_bar_svg(
       "<text x=\"{lx:.2}\" y=\"{cy:.2}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\" \
        transform=\"rotate(-90,{lx:.2},{cy:.2})\">{}</text>\n",
-      html_escape(y_axis_label)
+      crate::functions::graphics::box_string_to_svg(y_axis_label)
     ));
   }
 
@@ -3383,7 +3386,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     svg.push_str(&format!(
       "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"{fs:.0}\" fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      html_escape(&sl.text)
+      crate::functions::graphics::box_string_to_svg(&sl.text)
     ));
   }
 
@@ -3416,7 +3419,7 @@ pub(crate) fn generate_horizontal_bar_svg(
          fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
         legend_x + swatch + swatch_gap,
         ly + swatch / 2.0,
-        html_escape(label)
+        crate::functions::graphics::box_string_to_svg(label)
       ));
     }
   }
@@ -3897,7 +3900,7 @@ pub(crate) fn generate_bubble_chart_svg(
           "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
            fill=\"{label_fill}\">{}</text>\n",
-          html_escape(x_label)
+          crate::functions::graphics::box_string_to_svg(x_label)
         ));
       }
       if !y_label.is_empty() {
@@ -3907,7 +3910,7 @@ pub(crate) fn generate_bubble_chart_svg(
           "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
            fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-          html_escape(y_label)
+          crate::functions::graphics::box_string_to_svg(y_label)
         ));
       }
     }
@@ -3934,7 +3937,7 @@ pub(crate) fn generate_bubble_chart_svg(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
            fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        html_escape(&sl.text)
+        crate::functions::graphics::box_string_to_svg(&sl.text)
       ));
     }
 
@@ -3970,7 +3973,7 @@ pub(crate) fn generate_bubble_chart_svg(
            fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
           legend_x + swatch_size + swatch_gap,
           ly + swatch_size / 2.0,
-          html_escape(label)
+          crate::functions::graphics::box_string_to_svg(label)
         ));
       }
     }
@@ -4067,7 +4070,7 @@ pub(crate) fn generate_bubble_chart_svg(
              dominant-baseline=\"central\" font-family=\"sans-serif\" \
              font-size=\"{bubble_label_font:.0}\" fill=\"#000000\"\
              {transform}>{}</text>\n",
-            html_escape(&label.text)
+            crate::functions::graphics::box_string_to_svg(&label.text)
           ));
         }
       }

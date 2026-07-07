@@ -1722,7 +1722,11 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let is_rotated = svg_rotation_deg.abs() > 0.01;
       if is_rotated {
         let char_width_estimate = font_size * 0.6;
-        let half_text_w = label.text.len() as f64 * char_width_estimate / 2.0;
+        let half_text_w =
+          crate::functions::graphics::box_string_visible_len(&label.text)
+            as f64
+            * char_width_estimate
+            / 2.0;
         let sin_a = svg_rotation_deg.to_radians().sin().abs();
         let offset = half_text_w * sin_a + font_size * 0.5;
         let ay = axis_y + offset;
@@ -1730,7 +1734,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "<text x=\"{cx:.1}\" y=\"{ay:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
            fill=\"{chart_label_fill}\" transform=\"rotate({svg_rotation_deg:.1},{cx:.1},{ay:.1})\">{}</text>\n",
-          html_escape(&label.text)
+          crate::functions::graphics::box_string_to_svg(&label.text)
         ));
       } else {
         let ly = axis_y + font_size * 1.5;
@@ -1738,7 +1742,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
            fill=\"{chart_label_fill}\">{}</text>\n",
-          html_escape(&label.text)
+          crate::functions::graphics::box_string_to_svg(&label.text)
         ));
       }
     }
@@ -1758,7 +1762,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{chart_label_fill}\">{}</text>\n",
-        html_escape(x_label)
+        crate::functions::graphics::box_string_to_svg(x_label)
       ));
     }
     if !y_label.is_empty() {
@@ -1768,7 +1772,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{chart_label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-        html_escape(y_label)
+        crate::functions::graphics::box_string_to_svg(y_label)
       ));
     }
   }
@@ -1796,7 +1800,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
          fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      html_escape(&sl.text)
+      crate::functions::graphics::box_string_to_svg(&sl.text)
     ));
   }
 
