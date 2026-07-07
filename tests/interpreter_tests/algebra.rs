@@ -6595,6 +6595,29 @@ mod factor_square_free {
     );
   }
 
+  // Monomial and sign content is pulled out even when nothing repeats
+  // (wolframscript-verified; found by the differential fuzzer, seed
+  // 90260727) — only coprime SUM factors stay unsplit.
+  #[test]
+  fn multivariate_monomial_content_extracted() {
+    assert_eq!(
+      interpret("FactorSquareFree[x^2 + 2 x y^2]").unwrap(),
+      "x*(x + 2*y^2)"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[-x^2 - x y]").unwrap(),
+      "-(x*(x + y))"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[2 x^2 + 4 x y]").unwrap(),
+      "2*x*(x + 2*y)"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[-x^2 y + 3 x^2 y^2 - 2 x y^2]").unwrap(),
+      "x*y*(-x - 2*y + 3*x*y)"
+    );
+  }
+
   #[test]
   fn keeps_square_free_base_whole() {
     // (-1+x^2)^2, not (-1+x)^2*(1+x)^2.

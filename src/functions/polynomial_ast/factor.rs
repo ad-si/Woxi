@@ -2123,7 +2123,7 @@ fn multivariate_square_free(
   expanded: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let factored = factor_ast(&[expanded.clone()])?;
-  let (negated, product) = match &factored {
+  let (mut negated, product) = match &factored {
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
@@ -2138,10 +2138,29 @@ fn multivariate_square_free(
   let mut out: Vec<Option<Expr>> = Vec::new();
   let mut groups: Vec<(i128, usize, Vec<Expr>)> = Vec::new();
   let mut any_repeat = false;
+  // A bare negation is not content: FactorSquareFree[-x - y] stays
+  // -x - y. Only numeric/monomial factors (or repeats) commit a rebuild.
+  let mut any_content = false;
+  let is_sum = |e: &Expr| -> bool {
+    matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+  };
   for f in collect_multiplicative_factors(&product) {
     let is_numeric = matches!(&f, Expr::Integer(_))
       || matches!(&f, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2);
     if is_numeric {
+      // A lone -1 factor is a sign, not content (FactorSquareFree[-x - y]
+      // stays -x - y).
+      if matches!(&f, Expr::Integer(-1)) {
+        negated = !negated;
+        continue;
+      }
+      any_content = true;
       out.push(Some(f));
       continue;
     }
@@ -2167,6 +2186,51 @@ fn multivariate_square_free(
     if exp > 1 {
       any_repeat = true;
     }
+    // A sum base surrenders its numeric content (FactorTerms sign rule):
+    // FactorSquareFree[-x^2 - x y] -> -(x*(x + y)), not x*(-x - y).
+    let base = if is_sum(&base) {
+      let terms = collect_additive_terms(&base);
+      match rational_content(&terms) {
+        Some((n, d, coeffs)) if n != 0 && (n != 1 || d != 1) => {
+          let (Ok(e32), true) = (u32::try_from(exp), d == 1) else {
+            return Ok(original.clone());
+          };
+          let Some(pow) = n.checked_pow(e32) else {
+            return Ok(original.clone());
+          };
+          if pow < 0 {
+            negated = !negated;
+          }
+          // Only a magnitude counts as content — a bare sign flip must
+          // not force a rebuild (FactorSquareFree[-x - y] stays -x - y).
+          if pow.abs() != 1 {
+            any_content = true;
+            out.push(Some(Expr::Integer(pow.abs())));
+          }
+          build_sum(divide_terms_by(&terms, &coeffs, n, d))
+        }
+        _ => base,
+      }
+    } else {
+      base
+    };
+    // Monomial content (x, y, x^2, …) stays a standalone factor —
+    // wolframscript pulls it out even when nothing repeats:
+    // FactorSquareFree[x^2 + 2 x y^2] -> x*(x + 2*y^2). Only SUM bases
+    // participate in the per-multiplicity merge.
+    if !is_sum(&base) {
+      any_content = true;
+      out.push(Some(if exp == 1 {
+        base
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(base),
+          right: Box::new(Expr::Integer(exp)),
+        }
+      }));
+      continue;
+    }
     if let Some(entry) = groups.iter_mut().find(|(e, _, _)| *e == exp) {
       entry.2.push(base);
     } else {
@@ -2175,10 +2239,11 @@ fn multivariate_square_free(
     }
   }
 
-  // Everything at multiplicity 1 means the input is square-free — return
-  // it untouched (not the re-expanded form, whose term order may differ)
-  // rather than exposing the full factorization.
-  if !any_repeat {
+  // Nothing repeats and no numeric/monomial content was pulled out —
+  // the input is square-free with unit content: return it untouched
+  // (not the re-expanded form, whose term order may differ) rather than
+  // exposing the full factorization.
+  if !any_repeat && !any_content {
     return Ok(original.clone());
   }
 
@@ -2328,6 +2393,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
   };
 
   let mut items: Vec<(Expr, i128)> = Vec::new();
+  let mut sum_changed = false;
   let merge = |base: Expr, exp: i128, items: &mut Vec<(Expr, i128)>| {
     let key = crate::syntax::expr_to_string(&base);
     if let Some(entry) = items
@@ -2350,6 +2416,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
     let terms = collect_additive_terms(&base);
     let (primitive, c_n, c_d) = match rational_content(&terms) {
       Some((n, d, coeffs)) if n != 0 && (n != 1 || d != 1) => {
+        sum_changed = true;
         (build_sum(divide_terms_by(&terms, &coeffs, n, d)), n, d)
       }
       _ => (base.clone(), 1, 1),
@@ -2373,7 +2440,12 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
 
     // Square-free factor the primitive (a sum, so this recursion cannot
     // re-enter the product path).
-    let factored = factor_square_free_ast(&[primitive])?;
+    let factored = factor_square_free_ast(&[primitive.clone()])?;
+    if crate::syntax::expr_to_string(&factored)
+      != crate::syntax::expr_to_string(&primitive)
+    {
+      sum_changed = true;
+    }
     let Some((n2, d2, sub_items)) = decompose_content_factors(&factored) else {
       return Ok(None);
     };
@@ -2404,6 +2476,19 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
   let g = gcd_i128(cnum, cden).max(1);
   cnum /= g;
   cden /= g;
+
+  // A pure sign flip around one untouched square-free sum is not a
+  // factorization: FactorSquareFree[-x - y] (Times[-1, x + y]) stays
+  // -x - y. Fall through to the expand-based paths, which return the
+  // input unchanged.
+  if items.len() == 1
+    && items[0].1 == 1
+    && cnum.abs() == 1
+    && cden == 1
+    && !sum_changed
+  {
+    return Ok(None);
+  }
 
   // Sort sum factors by ascending degree, ties by the descending
   // coefficient vector (wolframscript lists (2-5x+2x²+x³) before

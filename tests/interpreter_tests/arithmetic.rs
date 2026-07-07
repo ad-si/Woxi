@@ -5005,6 +5005,23 @@ mod rationalize {
       "0.166666666666"
     );
   }
+
+  // Exact symbolic expressions stay exact — no numeric evaluation
+  // (wolframscript-verified; found by the differential fuzzer, seed
+  // 90260727). Approximate reals INSIDE a symbolic expression are
+  // rationalized in place.
+  #[test]
+  fn exact_symbolic_expressions_stay_exact() {
+    assert_eq!(
+      interpret("Rationalize[-432/(5 Pi)]").unwrap(),
+      "-432/(5*Pi)"
+    );
+    assert_eq!(interpret("Rationalize[1/Pi]").unwrap(), "Pi^(-1)");
+    assert_eq!(interpret("Rationalize[Sqrt[2]]").unwrap(), "Sqrt[2]");
+    assert_eq!(interpret("Rationalize[0.5 x]").unwrap(), "x/2");
+    // Nonzero tolerance still approximates symbolic constants.
+    assert_eq!(interpret("Rationalize[Pi, 1/100]").unwrap(), "22/7");
+  }
 }
 
 mod biginteger_division {

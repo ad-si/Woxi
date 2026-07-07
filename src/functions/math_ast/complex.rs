@@ -1440,6 +1440,62 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
+  // A composite symbolic expression is handled structurally (1-arg form):
+  // an all-exact expression is already rational where possible and stays
+  // unchanged (Rationalize[-432/(5 Pi)] → -432/(5 Pi), NOT a float), and
+  // approximate reals inside are rationalized in place
+  // (Rationalize[0.5 x] → x/2). A nonzero tolerance keeps the numeric
+  // path below so Rationalize[Pi, 1*^-2] still gives 22/7-style output.
+  if args.len() == 1
+    && !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+  {
+    fn has_inexact_leaf(e: &Expr) -> bool {
+      match e {
+        Expr::Real(_) | Expr::BigFloat(_, _) => true,
+        Expr::BinaryOp { left, right, .. } => {
+          has_inexact_leaf(left) || has_inexact_leaf(right)
+        }
+        Expr::UnaryOp { operand, .. } => has_inexact_leaf(operand),
+        Expr::FunctionCall { args, .. } | Expr::List(args) => {
+          args.iter().any(has_inexact_leaf)
+        }
+        _ => false,
+      }
+    }
+    fn map_reals(e: &Expr) -> Result<Expr, InterpreterError> {
+      match e {
+        Expr::Real(_) | Expr::BigFloat(_, _) => rationalize_ast(&[e.clone()]),
+        Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
+          op: *op,
+          left: Box::new(map_reals(left)?),
+          right: Box::new(map_reals(right)?),
+        }),
+        Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
+          op: *op,
+          operand: Box::new(map_reals(operand)?),
+        }),
+        Expr::FunctionCall { name, args } => {
+          let mapped: Result<Vec<Expr>, InterpreterError> =
+            args.iter().map(map_reals).collect();
+          Ok(Expr::FunctionCall {
+            name: name.clone(),
+            args: mapped?.into(),
+          })
+        }
+        other => Ok(other.clone()),
+      }
+    }
+    if !has_inexact_leaf(&args[0]) {
+      return Ok(args[0].clone());
+    }
+    // Composite with reals inside — only map when there is symbolic
+    // structure; a purely numeric composite keeps the numeric path.
+    if crate::evaluator::has_free_symbols(&args[0]) {
+      let mapped = map_reals(&args[0])?;
+      return crate::evaluator::evaluate_expr_to_expr(&mapped);
+    }
+  }
+
   let x = match expr_to_num(&args[0]) {
     Some(x) => x,
     None => {

@@ -220,6 +220,12 @@ enum Arg {
   Poly,
   /// Product/power of small polynomials (for Expand, Factor)
   PolyProd,
+  /// Rational function: Poly / Poly (for Together, Cancel, Apart, …)
+  RatFn,
+  /// Polynomial in x and y (for multivariate Expand, Factor, …)
+  PolyXY,
+  /// Arithmetic over small square roots (radical canonicalization)
+  RadNum,
   /// Pure function mapping numbers to numbers (for Map)
   PureFn,
   /// Predicate (for Select)
@@ -416,6 +422,28 @@ const FN_SPECS: &[FnSpec] = &[
   f("StringCount", &[Arg::Str, Arg::Str]),
   f("StringPadLeft", &[Arg::Str, Arg::Nat(12)]),
   f("StringTrim", &[Arg::Str]),
+  // Rational functions (fraction combining / cancellation paths)
+  f("Together", &[Arg::RatFn]),
+  f("Cancel", &[Arg::RatFn]),
+  f("Apart", &[Arg::RatFn]),
+  f("Simplify", &[Arg::RatFn]),
+  f("Numerator", &[Arg::RatFn]),
+  f("Denominator", &[Arg::RatFn]),
+  f("D", &[Arg::RatFn, Arg::VarX]),
+  // Multivariate polynomials
+  f("Expand", &[Arg::PolyXY]),
+  f("Factor", &[Arg::PolyXY]),
+  f("FactorTerms", &[Arg::PolyXY]),
+  f("FactorSquareFree", &[Arg::PolyXY]),
+  f("D", &[Arg::PolyXY, Arg::VarX]),
+  f("Coefficient", &[Arg::PolyXY, Arg::VarX]),
+  f("Exponent", &[Arg::PolyXY, Arg::VarX]),
+  // Radical arithmetic (canonicalization of square roots)
+  f("Simplify", &[Arg::RadNum]),
+  f("Expand", &[Arg::RadNum]),
+  f("Abs", &[Arg::RadNum]),
+  f("Sign", &[Arg::RadNum]),
+  f("Numerator", &[Arg::RadNum]),
 ];
 
 const PURE_FNS: &[&str] = &["#^2 &", "# + 1 &", "2*# &", "-# &", "Abs[#] &"];
@@ -476,6 +504,9 @@ impl Generator {
       Arg::IntIn(lo, hi) => Expr::Int(rng.range(lo, hi)),
       Arg::Poly => gen_poly(rng),
       Arg::PolyProd => gen_poly_prod(rng),
+      Arg::RatFn => Expr::Call("Divide", vec![gen_poly(rng), gen_poly(rng)]),
+      Arg::PolyXY => gen_poly_xy(rng),
+      Arg::RadNum => gen_rad_num(rng, 2),
       // The explicit deref is load-bearing: without it inference resolves
       // the slice element type as `str` and the call fails to compile.
       #[allow(clippy::explicit_auto_deref)]
@@ -610,6 +641,62 @@ fn gen_poly_prod(rng: &mut Rng) -> Expr {
     Expr::Call("Power", vec![gen_poly(rng), Expr::Int(rng.range(2, 3))])
   } else {
     Expr::Call("Times", vec![gen_poly(rng), gen_poly(rng)])
+  }
+}
+
+/// Small polynomial in x and y: sum of c * x^i * y^j monomials.
+fn gen_poly_xy(rng: &mut Rng) -> Expr {
+  let terms = 2 + rng.below(3);
+  let xs = (0..terms)
+    .map(|_| {
+      let c = Expr::Int(rng.range(-5, 5));
+      let i = rng.range(0, 2);
+      let j = rng.range(0, 2);
+      let mut factors = vec![c];
+      if i == 1 {
+        factors.push(Expr::Sym("x"));
+      } else if i == 2 {
+        factors.push(Expr::Call("Power", vec![Expr::Sym("x"), Expr::Int(2)]));
+      }
+      if j == 1 {
+        factors.push(Expr::Sym("y"));
+      } else if j == 2 {
+        factors.push(Expr::Call("Power", vec![Expr::Sym("y"), Expr::Int(2)]));
+      }
+      if factors.len() == 1 {
+        factors.pop().unwrap()
+      } else {
+        Expr::Call("Times", factors)
+      }
+    })
+    .collect();
+  Expr::Call("Plus", xs)
+}
+
+/// Exact arithmetic over small square roots, e.g. Sqrt[8] + 3*Sqrt[2],
+/// Sqrt[12]*Sqrt[3], Sqrt[2]/Sqrt[8] — exercises radical canonicalization.
+fn gen_rad_num(rng: &mut Rng, depth: u32) -> Expr {
+  if depth == 0 || rng.chance(1, 3) {
+    let radicand = Expr::Int(rng.range(2, 30));
+    return if rng.chance(1, 3) {
+      Expr::Call(
+        "Times",
+        vec![
+          Expr::Int(rng.range(-4, 4)),
+          Expr::Call("Sqrt", vec![radicand]),
+        ],
+      )
+    } else {
+      Expr::Call("Sqrt", vec![radicand])
+    };
+  }
+  let a = gen_rad_num(rng, depth - 1);
+  let b = gen_rad_num(rng, depth - 1);
+  match rng.below(4) {
+    0 => Expr::Call("Plus", vec![a, b]),
+    1 => Expr::Call("Subtract", vec![a, b]),
+    2 => Expr::Call("Times", vec![a, b]),
+    _ => Expr::Call("Divide", vec![a, b]),
   }
 }
 
