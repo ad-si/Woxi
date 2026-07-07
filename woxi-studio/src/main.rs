@@ -101,6 +101,11 @@ struct WoxiStudio {
   /// process so it can be paused/resumed and so the play button of the
   /// owning cell can show a pause icon while audio is playing.
   playback: Option<Playback>,
+  /// When the last animation advance finished. Ticks generated before this
+  /// instant piled up in the runtime's message queue while that (blocking)
+  /// advance ran; they are dropped instead of processed — see
+  /// [`animation_tick_is_fresh`].
+  last_anim_advance: Option<std::time::Instant>,
 }
 
 /// A running (or paused) external audio-player process tied to a cell.
@@ -308,8 +313,10 @@ enum Message {
   /// (cell_idx)
   ManipulateReeval(usize),
   /// Periodic tick advancing every playing Animate/ListAnimate widget by
-  /// one animation step.
-  ManipulateAnimationTick,
+  /// one animation step. Carries the instant the tick was generated so
+  /// stale (backlogged) ticks can be dropped instead of each triggering a
+  /// full re-evaluation.
+  ManipulateAnimationTick(std::time::Instant),
   /// Toggle play/pause of an animated (Animate/ListAnimate) widget.
   ManipulateTogglePlay(usize),
   /// Swallow an interaction with a disabled control (its `Enabled` condition
@@ -459,6 +466,7 @@ impl WoxiStudio {
         dragging_cell: None,
         drop_target: None,
         playback: None,
+        last_anim_advance: None,
       },
       task,
     )
@@ -1654,14 +1662,24 @@ impl WoxiStudio {
         Task::none()
       }
 
-      Message::ManipulateAnimationTick => {
-        for editor in &mut self.cell_editors {
-          if let Some(state) = editor.manipulate_state.as_mut()
-            && state.animated
-            && state.playing
-          {
-            state.advance_animation();
+      Message::ManipulateAnimationTick(tick_at) => {
+        // Advancing re-evaluates every playing widget synchronously, which
+        // can take longer than the tick interval. The timer keeps producing
+        // ticks into the runtime's queue meanwhile, so without this check the
+        // backlog grows every frame and each stale tick triggers another full
+        // re-evaluation — the animation gets slower every cycle until the app
+        // freezes. Only a tick generated *after* the previous advance
+        // finished advances the animation; backlogged ones are dropped.
+        if animation_tick_is_fresh(tick_at, self.last_anim_advance) {
+          for editor in &mut self.cell_editors {
+            if let Some(state) = editor.manipulate_state.as_mut()
+              && state.animated
+              && state.playing
+            {
+              state.advance_animation();
+            }
           }
+          self.last_anim_advance = Some(std::time::Instant::now());
         }
         Task::none()
       }
@@ -2139,7 +2157,7 @@ impl WoxiStudio {
     }) {
       subs.push(
         iced::time::every(std::time::Duration::from_millis(ANIM_INTERVAL_MS))
-          .map(|_| Message::ManipulateAnimationTick),
+          .map(Message::ManipulateAnimationTick),
       );
     }
     #[cfg(target_os = "macos")]
@@ -3502,6 +3520,21 @@ const ANIM_INTERVAL_MS: u64 = 60;
 /// toggle buttons). Discrete controls with more settings fall back to a
 /// dropdown so the control row can't grow unbounded.
 const SETTER_BAR_MAX_CHOICES: usize = 6;
+
+/// Whether an animation tick generated at `tick_at` should advance the
+/// animation, given when the previous advance finished. The animation timer
+/// keeps producing ticks while a (blocking, possibly slower-than-interval)
+/// advance runs, so ticks queue up behind it in the runtime's message queue.
+/// A tick generated before the previous advance finished is that backlog —
+/// processing it would re-evaluate every playing widget again, making the
+/// backlog grow without bound. Only a tick fresher than the last advance
+/// counts; stale ones are dropped.
+fn animation_tick_is_fresh(
+  tick_at: std::time::Instant,
+  last_advance: Option<std::time::Instant>,
+) -> bool {
+  last_advance.is_none_or(|done| tick_at >= done)
+}
 
 /// Spawn the debounce timer that drives a throttled Manipulate re-evaluation.
 /// When it fires, `ManipulateReeval` re-evaluates the body with the latest
@@ -5948,6 +5981,29 @@ mod tests {
       0.0,
       "animation must loop back to the start"
     );
+  }
+
+  #[test]
+  fn stale_animation_ticks_are_dropped() {
+    // While a blocking animation advance runs, the timer keeps queueing
+    // ticks. Ticks generated before the advance finished are backlog and
+    // must be dropped — processing them would re-evaluate again and make
+    // the backlog grow every cycle until the app freezes (the showcase.nb
+    // spirograph regression).
+    let t0 = std::time::Instant::now();
+    let t1 = t0 + std::time::Duration::from_millis(60);
+    let t2 = t0 + std::time::Duration::from_millis(120);
+
+    // No advance yet: any tick is fresh.
+    assert!(animation_tick_is_fresh(t0, None));
+
+    // Last advance finished at t1. A tick generated earlier (t0) piled up
+    // in the queue while that advance ran — stale, dropped.
+    assert!(!animation_tick_is_fresh(t0, Some(t1)));
+
+    // A tick generated at/after the finish instant is fresh.
+    assert!(animation_tick_is_fresh(t1, Some(t1)));
+    assert!(animation_tick_is_fresh(t2, Some(t1)));
   }
 
   #[test]
