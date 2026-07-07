@@ -1383,6 +1383,26 @@ mod multiplication_formatting {
     assert_eq!(interpret("Divide[6, Divide[4, 2]]").unwrap(), "3");
   }
 
+  // Quotient evaluation normalizes a Rational[-1, d] coefficient into the
+  // sum INTERNALLY, so enclosing quotient rewrites see the flipped form
+  // (the differential fuzzer's -126/(54 + Pi) chain); a typed negative-led
+  // denominator stays put like wolframscript.
+  #[test]
+  fn nested_quotients_normalize_signs() {
+    assert_eq!(
+      interpret("-3/((-54 - Pi)/(-42))").unwrap(),
+      "-126/(54 + Pi)"
+    );
+    assert_eq!(
+      interpret(
+        "Divide[Plus[-83, 80], Divide[Times[Subtract[Pi, -54], Plus[-7, 6]], -42]]"
+      )
+      .unwrap(),
+      "-126/(54 + Pi)"
+    );
+    assert_eq!(interpret("126/(-54 - Pi)").unwrap(), "126/(-54 - Pi)");
+  }
+
   #[test]
   fn power_no_spaces() {
     assert_eq!(interpret("Power[x, 2]").unwrap(), "x^2");
