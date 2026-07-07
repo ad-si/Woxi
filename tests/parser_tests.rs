@@ -159,4 +159,26 @@ mod tests {
       "named-char head resolves to ψ"
     );
   }
+
+  #[test]
+  fn test_parse_pathological_nesting_rejected_quickly() {
+    // Regression (fuzz finding): deeply nested invalid input made pest
+    // backtrack exponentially — depth 20 previously took hours to reject.
+    // The call limit in parse_wolfram must turn these into prompt errors.
+    let cases = [
+      // unclosed nested brackets
+      format!("{}x", "f[".repeat(30)),
+      // balanced nesting around a token that is invalid everywhere
+      format!("{}\u{0}{}", "f[".repeat(30), "]".repeat(30)),
+    ];
+    for input in &cases {
+      let start = std::time::Instant::now();
+      assert!(parse(input).is_err(), "should not parse: {:?}", input);
+      assert!(
+        start.elapsed() < std::time::Duration::from_secs(60),
+        "rejection took too long for: {:?}",
+        input
+      );
+    }
+  }
 }
