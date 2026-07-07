@@ -98,6 +98,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Most lists stay backed by Vec<Expr> (cheap, contiguous slices). Lists
 # that hit `push_front` upgrade to imbl::Vector for O(log N) prepends.
 imbl = "5"
+# LZ4 block decompression for CERN ROOT (.root) file imports. Pure Rust and
+# wasm-compatible; `safe-decode` keeps the decoder free of unsafe code since
+# the input is untrusted file data.
+lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode"] }
 # Country / subdivision gazetteer (names, translations, geo coordinates) used
 # to resolve geographic Entity[…] specifications to positions.
 # `search-translations` is deliberately NOT enabled: its single auto-generated

@@ -3947,6 +3947,164 @@ mod xlsx_import {
   }
 }
 
+mod root_import {
+  use super::*;
+
+  // The sample files were written with uproot (Python) and verified against
+  // it: sample.root (zlib-compressed) holds a TObjString "greeting", a TH1D
+  // "hist" (4 bins over [1, 5], contents {2, 2, 2, 3}, 9 entries), a TTree
+  // "events" (5 entries, branches x/D and n/L), and a subdirectory "subdir"
+  // with a TH1D "inner". sample_lz4.root (LZ4-compressed) holds a TH1D
+  // "varhist" with variable-width bin edges {0, 1, 2.5, 10} and a
+  // TObjString "note".
+  fn root_path() -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    format!("{manifest}/tests/data/sample.root")
+  }
+
+  fn lz4_root_path() -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    format!("{manifest}/tests/data/sample_lz4.root")
+  }
+
+  #[test]
+  fn import_root_default() {
+    let path = root_path();
+    let result = interpret(&format!(r#"Import["{path}"]"#)).unwrap();
+    assert_eq!(
+      result,
+      "<|greeting -> Hello ROOT, \
+       hist -> <|ClassName -> TH1D, Title -> , NBins -> 4, XMin -> 1., \
+       XMax -> 5., Entries -> 9., BinContents -> {2., 2., 2., 3.}, \
+       Underflow -> 0., Overflow -> 0.|>, \
+       events -> <|ClassName -> TTree, Title -> , Entries -> 5, \
+       Branches -> <|x -> x/D, n -> n/L|>|>, \
+       subdir -> <|inner -> <|ClassName -> TH1D, Title -> , NBins -> 3, \
+       XMin -> 0., XMax -> 3., Entries -> 10., \
+       BinContents -> {2., 7., 1.}, Underflow -> 0., Overflow -> 0.|>|>|>"
+    );
+  }
+
+  #[test]
+  fn import_root_explicit_format() {
+    // Import[path, "ROOT"] parses the same file irrespective of extension.
+    let path = root_path();
+    let a = interpret(&format!(r#"Import["{path}"]"#)).unwrap();
+    let b = interpret(&format!(r#"Import["{path}", "ROOT"]"#)).unwrap();
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn import_root_tobjstring() {
+    let path = root_path();
+    let result =
+      interpret(&format!(r#"Import["{path}"]["greeting"]"#)).unwrap();
+    assert_eq!(result, "Hello ROOT");
+  }
+
+  #[test]
+  fn import_root_histogram_contents() {
+    let path = root_path();
+    let result = interpret(&format!(
+      r#"h = Import["{path}"]["hist"]; {{h["NBins"], h["XMin"], h["XMax"], h["Entries"], h["BinContents"]}}"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{4, 1., 5., 9., {2., 2., 2., 3.}}");
+  }
+
+  #[test]
+  fn import_root_histogram_contents_are_reals() {
+    // TH1D bins are doubles; they must come back as Reals.
+    let path = root_path();
+    let result = interpret(&format!(
+      r#"Head[Import["{path}"]["hist"]["BinContents"][[1]]]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "Real");
+  }
+
+  #[test]
+  fn import_root_ttree_metadata() {
+    let path = root_path();
+    let result = interpret(&format!(
+      r#"t = Import["{path}"]["events"]; {{t["ClassName"], t["Entries"], Keys[t["Branches"]], Values[t["Branches"]]}}"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{TTree, 5, {x, n}, {x/D, n/L}}");
+  }
+
+  #[test]
+  fn import_root_nested_directory() {
+    let path = root_path();
+    let result = interpret(&format!(
+      r#"Import["{path}"]["subdir"]["inner"]["BinContents"]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{2., 7., 1.}");
+  }
+
+  #[test]
+  fn import_root_stored_in_variable() {
+    // Regression test: the imported Association must survive a variable
+    // round trip with all nested lookups intact.
+    let path = root_path();
+    let result = interpret(&format!(
+      r#"data = Import["{path}"]; {{data["hist"]["BinContents"], data["events"]["Entries"], Total[data["hist"]["BinContents"]]}}"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{{2., 2., 2., 3.}, 5, 9.}");
+  }
+
+  #[test]
+  fn import_root_lz4_compression() {
+    let path = lz4_root_path();
+    let result = interpret(&format!(r#"Import["{path}"]"#)).unwrap();
+    assert_eq!(
+      result,
+      "<|varhist -> <|ClassName -> TH1D, Title -> , NBins -> 3, \
+       XMin -> 0., XMax -> 10., BinEdges -> {0., 1., 2.5, 10.}, \
+       Entries -> 16., BinContents -> {5., 3., 8.}, Underflow -> 0., \
+       Overflow -> 0.|>, note -> compressed with lz4|>"
+    );
+  }
+
+  #[test]
+  fn import_root_variable_bin_edges() {
+    // Variable-width binning surfaces the explicit edge list.
+    let path = lz4_root_path();
+    let result =
+      interpret(&format!(r#"Import["{path}"]["varhist"]["BinEdges"]"#))
+        .unwrap();
+    assert_eq!(result, "{0., 1., 2.5, 10.}");
+  }
+
+  #[test]
+  fn import_root_keys_order() {
+    // Objects keep their on-file order.
+    let path = root_path();
+    let result = interpret(&format!(r#"Keys[Import["{path}"]]"#)).unwrap();
+    assert_eq!(result, "{greeting, hist, events, subdir}");
+  }
+
+  #[test]
+  fn import_root_rejects_non_root_file() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let path = format!("{manifest}/tests/data/data.csv");
+    let err = interpret(&format!(r#"Import["{path}", "ROOT"]"#));
+    assert!(err.is_err(), "expected error for non-ROOT file");
+    assert!(
+      err.unwrap_err().to_string().contains("not a ROOT file"),
+      "error should say the file is not a ROOT file"
+    );
+  }
+
+  #[test]
+  fn import_root_missing_file() {
+    let err = interpret(r#"Import["definitely_missing.root"]"#);
+    assert!(err.is_err(), "expected error for missing file");
+  }
+}
+
 mod xlsx_export {
   use super::*;
 
