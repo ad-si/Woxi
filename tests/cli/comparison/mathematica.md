@@ -46,6 +46,15 @@ they intentionally deviate from to provide a better user experience.
     woxi run notebook.nb
     ```
 
+- **Woxi imports [CERN ROOT](https://root.cern/) files** \
+    The Wolfram Language has no importer for the standard container format
+    of particle physics, but Woxi decodes its histograms, trees, strings,
+    and nested directories into an Association
+    (see [`Import`](../file_system/Import.md#cern-root-files-woxi-extension)):
+    ```sh
+    woxi eval 'Import["experiment.root"]'
+    ```
+
 
 ## Mathematica vs Woxi Studio
 
