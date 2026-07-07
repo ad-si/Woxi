@@ -20,7 +20,9 @@ jobs:
     - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
-    - uses: taiki-e/install-action@nextest
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: nextest
     - name: Run slow script tests
       run: make test-slow
 
@@ -37,7 +39,9 @@ jobs:
         workspaces: |
           .
           fuzz
-    - uses: taiki-e/install-action@cargo-fuzz
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-fuzz
     - name: Seed corpora from the test scripts
       run: make fuzz-corpus
     - name: Fuzz the parser
