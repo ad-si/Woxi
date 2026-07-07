@@ -1064,6 +1064,9 @@ pub(crate) struct PlotOptions {
   /// series' curve instead of to a constant baseline, producing opaque
   /// stacked bands. The `all_points` passed in are the cumulative curves.
   pub stacked: bool,
+  /// `Epilog -> {…}` graphics primitives (already evaluated), drawn on top
+  /// of the plotted data in data coordinates.
+  pub epilog: Vec<Expr>,
 }
 
 impl Default for PlotOptions {
@@ -1094,6 +1097,7 @@ impl Default for PlotOptions {
       log_x: false,
       log_y: false,
       stacked: false,
+      epilog: Vec::new(),
     }
   }
 }
@@ -1609,10 +1613,11 @@ fn generate_svg_with_options(
             .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
         }
 
-        // Draw lighter origin lines through x=0 and y=0 if visible
-        if !opts.frame {
+        // Draw lighter origin lines through x=0 and y=0 if visible.
+        // `Axes -> False` hides them along with the axes themselves.
+        if !opts.frame && (show_x_axis || show_y_axis) {
           let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
-          if y_min < 0.0 && y_max > 0.0 {
+          if show_x_axis && y_min < 0.0 && y_max > 0.0 {
             chart
               .draw_series(std::iter::once(PathElement::new(
                 vec![(x_min, 0.0), (x_max, 0.0)],
@@ -1622,7 +1627,7 @@ fn generate_svg_with_options(
                 InterpreterError::EvaluationError(format!("Plot: {e}"))
               })?;
           }
-          if x_min < 0.0 && x_max > 0.0 {
+          if show_y_axis && x_min < 0.0 && x_max > 0.0 {
             chart
               .draw_series(std::iter::once(PathElement::new(
                 vec![(0.0, y_min), (0.0, y_max)],
@@ -1832,6 +1837,33 @@ fn generate_svg_with_options(
     );
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &series_svg);
+    }
+  }
+
+  // Draw Epilog primitives over the plotted data, using the same
+  // data→pixel transform as the dash overlays above.
+  if !opts.epilog.is_empty() {
+    let area = crate::functions::plot_epilog::PlotArea {
+      x0: margin_left as f64 + y_label_area as f64,
+      y0: top_margin as f64,
+      w: render_width as f64
+        - margin_left as f64
+        - margin_right as f64
+        - y_label_area as f64,
+      h: render_height as f64
+        - top_margin as f64
+        - margin_bottom as f64
+        - x_label_area as f64,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      scale: sf,
+    };
+    let epilog_svg =
+      crate::functions::plot_epilog::render_epilog_svg(&opts.epilog, &area);
+    if let Some(pos) = buf.rfind("</svg>") {
+      buf.insert_str(pos, &epilog_svg);
     }
   }
 
@@ -5476,6 +5508,139 @@ pub(crate) fn parse_plot_legends(
   }
 }
 
+/// Range/aspect overrides parsed from options and applied after all options
+/// (and the data) are known.
+#[derive(Default)]
+pub(crate) struct PlotRangeOverrides {
+  pub x: Option<(f64, f64)>,
+  pub y: Option<(f64, f64)>,
+  pub aspect_ratio: Option<f64>,
+}
+
+/// Apply one plot option shared by the function plotters (Plot,
+/// ParametricPlot, PolarPlot, …) to `plot_opts` / `overrides`. Returns
+/// `true` when `name` names an option this helper understands.
+pub(crate) fn apply_common_plot_option(
+  name: &str,
+  replacement: &Expr,
+  plot_opts: &mut PlotOptions,
+  overrides: &mut PlotRangeOverrides,
+) -> bool {
+  match name {
+    "ImageSize" => {
+      if let Some((w, h, fw)) =
+        parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+      {
+        plot_opts.svg_width = w;
+        plot_opts.svg_height = h;
+        plot_opts.full_width = fw;
+      }
+    }
+    "PlotLabel" => {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      if let Some(sl) = crate::functions::chart::parse_styled_label(&val) {
+        plot_opts.plot_label = Some(sl);
+      }
+    }
+    "AxesLabel" => {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      if let Expr::List(items) = &val
+        && items.len() >= 2
+      {
+        let x =
+          crate::functions::chart::expr_to_label(&items[0]).unwrap_or_default();
+        let y =
+          crate::functions::chart::expr_to_label(&items[1]).unwrap_or_default();
+        plot_opts.axes_label = Some((x, y));
+      }
+    }
+    "PlotStyle" => {
+      plot_opts.plot_style = parse_plot_style(replacement);
+    }
+    "PlotTheme" => {
+      if let Expr::String(theme) = replacement {
+        apply_plot_theme(plot_opts, theme);
+      }
+    }
+    "GridLines" => {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      let (sx, sy) = parse_grid_lines_spec(&val);
+      apply_grid_side(
+        sx,
+        &mut plot_opts.grid_lines_x,
+        &mut plot_opts.grid_x_lines,
+      );
+      apply_grid_side(
+        sy,
+        &mut plot_opts.grid_lines_y,
+        &mut plot_opts.grid_y_lines,
+      );
+    }
+    "PlotRange" => {
+      let (rx, ry) = parse_plot_range(replacement);
+      overrides.x = rx;
+      overrides.y = ry;
+    }
+    "Axes" => {
+      let parse_bool =
+        |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
+      match replacement {
+        Expr::Identifier(s) if s == "True" => plot_opts.axes = (true, true),
+        Expr::Identifier(s) if s == "False" => plot_opts.axes = (false, false),
+        // {xbool, ybool}: independent per-axis control
+        Expr::List(items) if items.len() == 2 => {
+          plot_opts.axes = (parse_bool(&items[0]), parse_bool(&items[1]));
+        }
+        _ => {}
+      }
+    }
+    "AspectRatio" => {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      if let Some(r) = try_eval_to_f64(&val)
+        && r > 0.0
+      {
+        overrides.aspect_ratio = Some(r);
+      }
+    }
+    "PlotPoints" => {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      match &val {
+        Expr::Integer(n) if *n > 0 => plot_opts.plot_points = *n as usize,
+        _ => {}
+      }
+    }
+    "Filling" => {
+      plot_opts.filling = parse_filling(replacement);
+    }
+    "Ticks" => match replacement {
+      Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
+      Expr::Identifier(s) if s == "Automatic" || s == "All" => {
+        plot_opts.ticks = true
+      }
+      _ => {}
+    },
+    "Epilog" => {
+      // Evaluate now so primitives inside (e.g. `Line[{ReIm[…], …}]`)
+      // resolve to numeric coordinates while the surrounding variable
+      // bindings (Block scope) are still live.
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      plot_opts.epilog = match val {
+        Expr::List(ref items) => items.to_vec(),
+        Expr::Identifier(ref s) if s == "None" => Vec::new(),
+        other => vec![other],
+      };
+    }
+    _ => return false,
+  }
+  true
+}
+
 /// Implementation of Plot[f, {x, xmin, xmax}]
 pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -5487,14 +5652,16 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = &args[0];
   let iter_spec = &args[1];
 
-  // Parse options (Rule expressions after the first two arguments)
+  // Parse options (Rule expressions after the first two arguments).
+  // Matching Wolfram Language, the first occurrence of a repeated option
+  // wins (e.g. `PlotPoints -> 200, …, PlotPoints -> 10` uses 200).
   let mut plot_opts = PlotOptions::default();
   // PlotRange and AspectRatio are applied after parsing all options
-  let mut plot_range_x: Option<(f64, f64)> = None;
-  let mut plot_range_y: Option<(f64, f64)> = None;
-  let mut aspect_ratio: Option<f64> = None;
+  let mut overrides = PlotRangeOverrides::default();
   let mut legends_automatic = false;
   let mut legends_expressions = false;
+  let mut seen: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
   for opt in &args[2..] {
     if let Expr::Rule {
       pattern,
@@ -5502,126 +5669,36 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } = opt
       && let Expr::Identifier(name) = pattern.as_ref()
     {
-      match name.as_str() {
-        "ImageSize" => {
-          if let Some((w, h, fw)) =
-            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
-          {
-            plot_opts.svg_width = w;
-            plot_opts.svg_height = h;
-            plot_opts.full_width = fw;
-          }
+      if !seen.insert(name.clone()) {
+        continue;
+      }
+      if apply_common_plot_option(
+        name,
+        replacement,
+        &mut plot_opts,
+        &mut overrides,
+      ) {
+        continue;
+      }
+      if name == "PlotLegends" {
+        let (labels, auto, expressions, position) =
+          parse_plot_legends(replacement);
+        plot_opts.legend_position = position;
+        if auto {
+          legends_automatic = true;
+        } else if expressions {
+          legends_expressions = true;
+        } else {
+          plot_opts.plot_legends = labels;
         }
-        "PlotLabel" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          if let Some(sl) = crate::functions::chart::parse_styled_label(&val) {
-            plot_opts.plot_label = Some(sl);
-          }
-        }
-        "AxesLabel" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          if let Expr::List(items) = &val
-            && items.len() >= 2
-          {
-            let x = crate::functions::chart::expr_to_label(&items[0])
-              .unwrap_or_default();
-            let y = crate::functions::chart::expr_to_label(&items[1])
-              .unwrap_or_default();
-            plot_opts.axes_label = Some((x, y));
-          }
-        }
-        "PlotStyle" => {
-          plot_opts.plot_style = parse_plot_style(replacement);
-        }
-        "PlotTheme" => {
-          if let Expr::String(theme) = replacement.as_ref() {
-            apply_plot_theme(&mut plot_opts, theme);
-          }
-        }
-        "GridLines" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          let (sx, sy) = parse_grid_lines_spec(&val);
-          apply_grid_side(
-            sx,
-            &mut plot_opts.grid_lines_x,
-            &mut plot_opts.grid_x_lines,
-          );
-          apply_grid_side(
-            sy,
-            &mut plot_opts.grid_lines_y,
-            &mut plot_opts.grid_y_lines,
-          );
-        }
-        "PlotRange" => {
-          let (rx, ry) = parse_plot_range(replacement);
-          plot_range_x = rx;
-          plot_range_y = ry;
-        }
-        "Axes" => {
-          let parse_bool =
-            |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
-          match replacement.as_ref() {
-            Expr::Identifier(s) if s == "True" => plot_opts.axes = (true, true),
-            Expr::Identifier(s) if s == "False" => {
-              plot_opts.axes = (false, false)
-            }
-            // {xbool, ybool}: independent per-axis control
-            Expr::List(items) if items.len() == 2 => {
-              plot_opts.axes = (parse_bool(&items[0]), parse_bool(&items[1]));
-            }
-            _ => {}
-          }
-        }
-        "AspectRatio" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          if let Some(r) = try_eval_to_f64(&val)
-            && r > 0.0
-          {
-            aspect_ratio = Some(r);
-          }
-        }
-        "PlotPoints" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          match &val {
-            Expr::Integer(n) if *n > 0 => plot_opts.plot_points = *n as usize,
-            _ => {}
-          }
-        }
-        "Filling" => {
-          plot_opts.filling = parse_filling(replacement);
-        }
-        "Ticks" => match replacement.as_ref() {
-          Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
-          Expr::Identifier(s) if s == "Automatic" || s == "All" => {
-            plot_opts.ticks = true
-          }
-          _ => {}
-        },
-        "PlotLegends" => {
-          let (labels, auto, expressions, position) =
-            parse_plot_legends(replacement);
-          plot_opts.legend_position = position;
-          if auto {
-            legends_automatic = true;
-          } else if expressions {
-            legends_expressions = true;
-          } else {
-            plot_opts.plot_legends = labels;
-          }
-        }
-        _ => {}
       }
     }
   }
+  let (plot_range_x, plot_range_y) = (overrides.x, overrides.y);
 
   // Apply AspectRatio: override svg_height based on width * ratio
   // (AspectRatio is height/width in Wolfram Language)
-  if let Some(ar) = aspect_ratio {
+  if let Some(ar) = overrides.aspect_ratio {
     plot_opts.svg_height = (plot_opts.svg_width as f64 * ar).round() as u32;
   }
 

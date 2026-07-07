@@ -1995,9 +1995,29 @@ pub fn evaluate_expr_to_expr_inner(
           // Honour Evaluate[...] inside HoldAll wrappers like Hold and
           // HoldForm — Evaluate forces evaluation of its argument even
           // through a hold. HoldComplete suppresses it (matching Wolfram).
+          // The plotting heads are included so the common
+          // `Plot[Table[…] // Evaluate, …]` idiom yields the evaluated
+          // list of curves instead of a whole-body expression the
+          // samplers can't decompose.
           let args: std::borrow::Cow<[Expr]> = if matches!(
             name.as_str(),
-            "Hold" | "HoldForm" | "Function" | "Reap" | "Manipulate"
+            "Hold"
+              | "HoldForm"
+              | "Function"
+              | "Reap"
+              | "Manipulate"
+              | "Animate"
+              | "Plot"
+              | "Plot3D"
+              | "ParametricPlot"
+              | "ParametricPlot3D"
+              | "PolarPlot"
+              | "DensityPlot"
+              | "ContourPlot"
+              | "RegionPlot"
+              | "StreamPlot"
+              | "VectorPlot"
+              | "StreamDensityPlot"
           ) {
             let raw: Vec<Expr> = flattened
               .iter()

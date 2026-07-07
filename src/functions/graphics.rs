@@ -11455,6 +11455,9 @@ pub struct ManipulateSpec {
   /// until the user drags a slider. Plain `Manipulate`/`Control` widgets leave
   /// this `false`.
   pub animated: bool,
+  /// `Appearance -> None`: the widget shows no visible control rows (the
+  /// animation just runs), matching Wolfram's control-free appearance.
+  pub appearance_none: bool,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -11500,6 +11503,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut displays: Vec<String> = Vec::new();
   let mut initialization: Option<String> = None;
   let mut control_enabled: Vec<(String, String)> = Vec::new();
+  let mut appearance_none = false;
   for spec in &args[1..] {
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
@@ -11516,6 +11520,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
       {
         initialization = Some(crate::syntax::expr_to_input_form(replacement));
+      }
+      // `Appearance -> None` hides the control rows; the animation just
+      // runs (an animated widget keeps its play/pause toggle).
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
+      {
+        appearance_none = true;
       }
       continue;
     }
@@ -11562,6 +11573,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization,
     control_enabled,
     animated,
+    appearance_none,
   })
 }
 
@@ -11609,6 +11621,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     animated: true,
+    appearance_none: false,
   })
 }
 
@@ -11679,6 +11692,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     animated: true,
+    appearance_none: false,
   })
 }
 
@@ -11750,6 +11764,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     animated: false,
+    appearance_none: false,
   })
 }
 
@@ -11794,6 +11809,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     animated: false,
+    appearance_none: false,
   })
 }
 
@@ -11838,6 +11854,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled,
     animated: false,
+    appearance_none: false,
   })
 }
 
@@ -12885,14 +12902,20 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
   } else {
     ""
   };
+  let appearance_json = if spec.appearance_none {
+    r#","appearanceNone":true"#
+  } else {
+    ""
+  };
 
   format!(
-    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}"#,
+    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}{}"#,
     json_escape_manipulate(&spec.body_code),
     ctrl_parts.join(","),
     state_parts.join(","),
     display_parts.join(","),
     animated_json,
+    appearance_json,
   )
 }
 

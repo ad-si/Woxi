@@ -374,9 +374,11 @@ function renderManipulate(item) {
   // any checkbox write-backs stay in sync with the body.
   const hasDisplays = Array.isArray(item.displays) && item.displays.length > 0
 
-  // Controls panel
+  // Controls panel. `Appearance -> None` hides the control rows entirely
+  // (the animation just runs); an animated widget keeps its play/pause bar.
   const controlsEl = document.createElement("div")
   controlsEl.className = "manipulate-controls"
+  if (item.appearanceNone) controlsEl.classList.add("appearance-none")
 
   // Output panel (filled with the initial rendering)
   const outputEl = document.createElement("div")

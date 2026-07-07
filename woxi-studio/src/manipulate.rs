@@ -122,6 +122,16 @@ pub struct ManipulateState {
   pub graphics_handle: Option<svg::Handle>,
   pub text_output: Option<String>,
   pub error: Option<String>,
+  /// Whether this widget auto-plays (from `Animate[…]` / `ListAnimate[…]` /
+  /// `Animator[…]`): a timer advances the first continuous control while
+  /// `playing` is set, and the view shows a play/pause toggle.
+  pub animated: bool,
+  /// Whether the animation is currently running. Starts `true` for animated
+  /// widgets (Wolfram's default `AnimationRunning -> True`).
+  pub playing: bool,
+  /// `Appearance -> None`: hide the control rows (the animation just runs);
+  /// the play/pause toggle stays visible for animated widgets.
+  pub appearance_none: bool,
   /// Per-control `Enabled` condition (InputForm code), parallel to `controls`.
   /// `None` means the control has no condition and is always enabled.
   control_enabled: Vec<Option<String>>,
@@ -149,9 +159,9 @@ impl ManipulateState {
   /// the caller should fall back to the normal text/graphics path).
   pub fn from_expr(expr: &Expr) -> Option<Self> {
     // Manipulate/Animate, a standalone Control/Animator, a ListAnimate frame
-    // list, or a LocatorPane/ClickPane all back an interactive widget. (Native
-    // auto-play for the animated ones is a follow-up; here they render as
-    // interactive slider / 2D-pad widgets.)
+    // list, or a LocatorPane/ClickPane all back an interactive widget. The
+    // animated ones (Animate/ListAnimate/Animator) auto-play: the app's
+    // animation-tick subscription advances them while `playing` is set.
     let spec = extract_manipulate_spec(expr)
       .or_else(|| extract_control_spec(expr))
       .or_else(|| extract_list_animate_spec(expr))
@@ -181,6 +191,10 @@ impl ManipulateState {
       graphics_handle: None,
       text_output: None,
       error: None,
+      animated: spec.animated,
+      // Auto-play immediately (Wolfram's default AnimationRunning -> True).
+      playing: spec.animated,
+      appearance_none: spec.appearance_none,
       control_enabled,
       control_is_enabled,
       reeval_pending: 0,
@@ -246,6 +260,33 @@ impl ManipulateState {
       self.reeval_applied = self.reeval_pending;
       self.reevaluate();
     }
+  }
+
+  /// Advance the animated (first continuous) control by one step, wrapping
+  /// back to the start once it passes the end, then re-render. Called from
+  /// the app's animation-tick subscription while `playing` is set.
+  pub fn advance_animation(&mut self) {
+    let Some(ControlState::Continuous {
+      min,
+      max,
+      step,
+      current,
+      ..
+    }) = self
+      .controls
+      .iter_mut()
+      .find(|c| matches!(c, ControlState::Continuous { .. }))
+    else {
+      return;
+    };
+    let mut v = *current + *step;
+    // Loop back to the start once we step past the end (small epsilon so
+    // floating-point drift doesn't skip the final frame).
+    if v > *max + *step * 1e-6 {
+      v = *min;
+    }
+    *current = v;
+    self.reevaluate();
   }
 
   /// Re-run the body with the current control bindings and update the
