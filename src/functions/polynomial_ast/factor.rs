@@ -75,6 +75,17 @@ fn reorder_factored_product(result: Expr) -> Expr {
       other => out.push(other.clone()),
     }
   }
+  // A negated product (-((1+x)*…)) reorders its inner factors the same way.
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = &result
+  {
+    return Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(reorder_factored_product(operand.as_ref().clone())),
+    };
+  }
   let is_times = matches!(
     &result,
     Expr::BinaryOp {
@@ -90,6 +101,44 @@ fn reorder_factored_product(result: Expr) -> Expr {
 
   use crate::functions::math_ast::order_monomial_vs_sum;
   use std::cmp::Ordering;
+
+  // Univariate degree of a sum factor (or an integer power of one), used
+  // to keep sum factors in ascending-degree order like wolframscript:
+  // Factor[(-5+2x-x^2-x^3)(-4-2x+5x^2+3x^3)] →
+  // -((1 + x)*(-4 + 2*x + 3*x^2)*(5 - 2*x + x^2 + x^3)). Ties keep
+  // construction order (stable), so cyclotomic products are untouched.
+  fn sum_degree(e: &Expr) -> Option<usize> {
+    let base = match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(n) if *n > 0) => {
+        left.as_ref()
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(n) if *n > 0) =>
+      {
+        &args[0]
+      }
+      other => other,
+    };
+    let is_sum = matches!(
+      base,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    ) || matches!(base, Expr::FunctionCall { name, .. } if name == "Plus");
+    if !is_sum {
+      return None;
+    }
+    let var = super::simplify::find_single_variable(base)?;
+    extract_poly_coeffs(base, &var).map(|c| c.len() - 1)
+  }
+
   let mut swapped_any = false;
   loop {
     let mut swapped = false;
@@ -99,7 +148,12 @@ fn reorder_factored_product(result: Expr) -> Expr {
         // sum before monomial, but the monomial sorts first
         order_monomial_vs_sum(b, a) == Some(Ordering::Less)
         // monomial before sum, but the sum sorts first
-        || order_monomial_vs_sum(a, b) == Some(Ordering::Greater);
+        || order_monomial_vs_sum(a, b) == Some(Ordering::Greater)
+        // both sums with known degrees: ascending degree
+        || matches!(
+          (sum_degree(a), sum_degree(b)),
+          (Some(da), Some(db)) if da > db
+        );
       if should_swap {
         factors.swap(i, i + 1);
         swapped = true;

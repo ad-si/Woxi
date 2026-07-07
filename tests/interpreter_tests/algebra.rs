@@ -1215,6 +1215,18 @@ mod factor {
       "(-1 + x)*x == 0"
     );
   }
+
+  #[test]
+  fn factor_orders_sum_factors_by_ascending_degree() {
+    // wolframscript lists sum factors ascending by degree, also inside a
+    // negated product (wolframscript-verified; found by the differential
+    // fuzzer, seed 8250707).
+    assert_eq!(
+      interpret("Factor[(-5 + 2 x - x^2 - x^3)*(-4 - 2 x + 5 x^2 + 3 x^3)]")
+        .unwrap(),
+      "-((1 + x)*(-4 + 2*x + 3*x^2)*(5 - 2*x + x^2 + x^3))"
+    );
+  }
 }
 
 mod factor_multivariate {

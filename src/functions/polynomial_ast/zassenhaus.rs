@@ -393,6 +393,10 @@ pub(super) fn zassenhaus_int_factors(
     let (prim, _) = primitive_part(&remaining);
     result.push(prim);
   }
+  // wolframscript lists the factors in ascending degree order, e.g.
+  // Factor of a product of degree-3 and degree-(1+2) polynomials returns
+  // -((1 + x)*(-4 + 2*x + 3*x^2)*(-1 + x^2 + x^3)).
+  result.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
   if result.len() == 1 && content == 1 {
     return Some(result); // proven irreducible
   }
