@@ -6603,6 +6603,111 @@ mod factor_square_free {
       "(-1 + x^2)^2"
     );
   }
+
+  // Explicit products factor square-free per factor and keep the
+  // structure unexpanded (wolframscript-verified; found by the
+  // differential fuzzer, seed 7726070).
+  #[test]
+  fn product_keeps_factor_structure() {
+    assert_eq!(
+      interpret("FactorSquareFree[(-4 - 5 x)*(-2 - 4 x - 5 x^2)]").unwrap(),
+      "(4 + 5*x)*(2 + 4*x + 5*x^2)"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(2 + 2 x - 2 x^2)*(-2 + 2 x)]").unwrap(),
+      "-4*(-1 + x)*(-1 - x + x^2)"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(2 x - 2)*(3 x + 6)]").unwrap(),
+      "6*(-1 + x)*(2 + x)"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[3 (2 x - 2)]").unwrap(),
+      "6*(-1 + x)"
+    );
+  }
+
+  #[test]
+  fn product_merges_repeated_factors() {
+    assert_eq!(
+      interpret("FactorSquareFree[(x - 1)*(x - 1)]").unwrap(),
+      "(-1 + x)^2"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(x - 1)*(1 - x)]").unwrap(),
+      "-(-1 + x)^2"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(x + 1)*(x - 1)*(x + 1)]").unwrap(),
+      "(-1 + x)*(1 + x)^2"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(x - 1)^2 (x + 1)^2]").unwrap(),
+      "(-1 + x)^2*(1 + x)^2"
+    );
+  }
+
+  #[test]
+  fn product_factors_each_factor_square_free() {
+    assert_eq!(
+      interpret("FactorSquareFree[(x^2 - 2 x + 1)*(x + 1)]").unwrap(),
+      "(-1 + x)^2*(1 + x)"
+    );
+    // Powers of a non-square-free base multiply exponents; a square-free
+    // base stays whole.
+    assert_eq!(
+      interpret("FactorSquareFree[(x^2 - 2 x + 1)^2]").unwrap(),
+      "(-1 + x)^4"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(x^2 - 1)^2]").unwrap(),
+      "(-1 + x^2)^2"
+    );
+  }
+
+  #[test]
+  fn product_factor_ordering() {
+    // Equal-degree sums order by leading coefficient (1 before 5),
+    // independent of input order.
+    assert_eq!(
+      interpret(
+        "FactorSquareFree[(5 + x - 5 x^2 - 5 x^3)*(-2 + 5 x - 2 x^2 - x^3)]"
+      )
+      .unwrap(),
+      "(2 - 5*x + 2*x^2 + x^3)*(-5 - x + 5*x^2 + 5*x^3)"
+    );
+    assert_eq!(
+      interpret(
+        "FactorSquareFree[(-2 + 5 x - 2 x^2 - x^3)*(5 + x - 5 x^2 - 5 x^3)]"
+      )
+      .unwrap(),
+      "(2 - 5*x + 2*x^2 + x^3)*(-5 - x + 5*x^2 + 5*x^3)"
+    );
+    // Monomials and non-polynomial factors place per wolframscript.
+    assert_eq!(
+      interpret("FactorSquareFree[x^2 (x - 1)]").unwrap(),
+      "(-1 + x)*x^2"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[Sin[x]*(x^2 - 2 x + 1)]").unwrap(),
+      "(-1 + x)^2*Sin[x]"
+    );
+  }
+
+  // Unit-content square-free sums stay untouched; a -1 content wraps the
+  // whole product (wolframscript-verified).
+  #[test]
+  fn unit_content_conventions() {
+    assert_eq!(interpret("FactorSquareFree[1 - x]").unwrap(), "1 - x");
+    assert_eq!(
+      interpret("FactorSquareFree[-x^3 - x^2]").unwrap(),
+      "-(x^2*(1 + x))"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[-x^2 + 2 x - 1]").unwrap(),
+      "-(-1 + x)^2"
+    );
+  }
 }
 
 mod factor_terms_list {

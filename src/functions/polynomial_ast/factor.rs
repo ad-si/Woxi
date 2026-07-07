@@ -2216,6 +2216,279 @@ fn multivariate_square_free(
 
 /// FactorSquareFree[poly] - Square-free factorization via Yun's algorithm
 /// Groups factors by multiplicity without fully factoring the square-free parts.
+/// Split a product into (numerator content, denominator content, list of
+/// (base, positive integer exponent)), unwrapping a top-level negation.
+/// Returns None for shapes with non-integer or negative exponents (or on
+/// content overflow) so callers can fall back to other methods.
+fn decompose_content_factors(
+  e: &Expr,
+) -> Option<(i128, i128, Vec<(Expr, i128)>)> {
+  let (mut num, mut den) = (1i128, 1i128);
+  let work = match e {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      num = -1;
+      operand.as_ref().clone()
+    }
+    other => other.clone(),
+  };
+  let mut items: Vec<(Expr, i128)> = Vec::new();
+  for f in collect_multiplicative_factors(&work) {
+    match &f {
+      Expr::Integer(n) => num = num.checked_mul(*n)?,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
+          num = num.checked_mul(*a)?;
+          den = den.checked_mul(*b)?;
+        } else {
+          return None;
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => match right.as_ref() {
+        Expr::Integer(k) if *k >= 1 => items.push((left.as_ref().clone(), *k)),
+        _ => return None,
+      },
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        match &args[1] {
+          Expr::Integer(k) if *k >= 1 => items.push((args[0].clone(), *k)),
+          _ => return None,
+        }
+      }
+      other => items.push((other.clone(), 1)),
+    }
+  }
+  Some((num, den, items))
+}
+
+/// FactorSquareFree of an explicit product or integer power of a sum:
+/// each factor is processed on its own — numeric content extracted with
+/// the FactorTerms sign rule, its primitive square-free factored — then
+/// equal bases merge and sum factors sort by ascending degree and
+/// coefficient order. The structure stays unexpanded, matching
+/// wolframscript: FactorSquareFree[(2x-2)(3x+6)] → 6*(-1+x)*(2+x),
+/// (x²-2x+1)^2 → (-1+x)^4, (x-1)(1-x) → -(-1+x)^2, while a square-free
+/// power base is kept whole ((x²-1)^2 stays).
+/// Returns Ok(None) when the input is not product-shaped (or on
+/// overflow), letting the caller run the expand-based paths.
+fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let is_sum = |e: &Expr| -> bool {
+    matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+  };
+
+  // Shape gate: a Times product, an integer power of a sum, or a
+  // negation of either. Everything else uses the expand-based paths.
+  let inner = match expr {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => operand.as_ref(),
+    other => other,
+  };
+  let is_times = matches!(
+    inner,
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    }
+  ) || matches!(inner, Expr::FunctionCall { name, .. } if name == "Times");
+  let is_pow_of_sum = match inner {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => matches!(right.as_ref(), Expr::Integer(k) if *k >= 2) && is_sum(left),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      matches!(&args[1], Expr::Integer(k) if *k >= 2) && is_sum(&args[0])
+    }
+    _ => false,
+  };
+  if !is_times && !is_pow_of_sum {
+    return Ok(None);
+  }
+
+  let Some((mut cnum, mut cden, top_items)) = decompose_content_factors(expr)
+  else {
+    return Ok(None);
+  };
+
+  let mut items: Vec<(Expr, i128)> = Vec::new();
+  let merge = |base: Expr, exp: i128, items: &mut Vec<(Expr, i128)>| {
+    let key = crate::syntax::expr_to_string(&base);
+    if let Some(entry) = items
+      .iter_mut()
+      .find(|(b, _)| crate::syntax::expr_to_string(b) == key)
+    {
+      entry.1 += exp;
+    } else {
+      items.push((base, exp));
+    }
+  };
+
+  for (base, exp) in top_items {
+    if !is_sum(&base) {
+      merge(base, exp, &mut items);
+      continue;
+    }
+    // Extract the numeric content (FactorTerms sign rule) so (1-x) and
+    // (x-1) merge into the same primitive base.
+    let terms = collect_additive_terms(&base);
+    let (primitive, c_n, c_d) = match rational_content(&terms) {
+      Some((n, d, coeffs)) if n != 0 && (n != 1 || d != 1) => {
+        (build_sum(divide_terms_by(&terms, &coeffs, n, d)), n, d)
+      }
+      _ => (base.clone(), 1, 1),
+    };
+    let exp_u32 = u32::try_from(exp).ok();
+    let (Some(eu), Some(cn_pow), Some(cd_pow)) = (
+      exp_u32,
+      exp_u32.and_then(|e| c_n.checked_pow(e)),
+      exp_u32.and_then(|e| c_d.checked_pow(e)),
+    ) else {
+      return Ok(None);
+    };
+    let _ = eu;
+    let (Some(new_cnum), Some(new_cden)) =
+      (cnum.checked_mul(cn_pow), cden.checked_mul(cd_pow))
+    else {
+      return Ok(None);
+    };
+    cnum = new_cnum;
+    cden = new_cden;
+
+    // Square-free factor the primitive (a sum, so this recursion cannot
+    // re-enter the product path).
+    let factored = factor_square_free_ast(&[primitive])?;
+    let Some((n2, d2, sub_items)) = decompose_content_factors(&factored) else {
+      return Ok(None);
+    };
+    let (Some(n2_pow), Some(d2_pow)) =
+      (n2.checked_pow(exp as u32), d2.checked_pow(exp as u32))
+    else {
+      return Ok(None);
+    };
+    let (Some(new_cnum), Some(new_cden)) =
+      (cnum.checked_mul(n2_pow), cden.checked_mul(d2_pow))
+    else {
+      return Ok(None);
+    };
+    cnum = new_cnum;
+    cden = new_cden;
+    for (b, e) in sub_items {
+      let Some(total) = e.checked_mul(exp) else {
+        return Ok(None);
+      };
+      merge(b, total, &mut items);
+    }
+  }
+
+  if cden < 0 {
+    cnum = -cnum;
+    cden = -cden;
+  }
+  let g = gcd_i128(cnum, cden).max(1);
+  cnum /= g;
+  cden /= g;
+
+  // Sort sum factors by ascending degree, ties by the descending
+  // coefficient vector (wolframscript lists (2-5x+2x²+x³) before
+  // (-5-x+5x²+5x³): leading 1 < 5). Non-sum factors keep their positions
+  // relative to each other; the final reorder pass places them against
+  // the sums (x² after (-1+x), before (1+x)).
+  let sum_key = |e: &Expr| -> Option<(usize, Vec<i128>)> {
+    if !is_sum(e) {
+      return None;
+    }
+    let var = super::simplify::find_single_variable(e)?;
+    let coeffs = extract_poly_coeffs(e, &var)?;
+    let deg = coeffs.len().saturating_sub(1);
+    Some((deg, coeffs.into_iter().rev().collect()))
+  };
+  // Symbol monomials (x, x²) start before the sums (the reorder pass
+  // then applies the decoded monomial-vs-sum rule); other factors like
+  // Sin[x] go after them: wolframscript writes (-1 + x)^2*Sin[x].
+  let is_symbol_factor = |e: &Expr| -> bool {
+    match e {
+      Expr::Identifier(_) | Expr::Constant(_) => true,
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        ..
+      } => matches!(left.as_ref(), Expr::Identifier(_) | Expr::Constant(_)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        matches!(&args[0], Expr::Identifier(_) | Expr::Constant(_))
+      }
+      _ => false,
+    }
+  };
+  let rank = |e: &Expr| -> (u8, Option<(usize, Vec<i128>)>) {
+    match sum_key(e) {
+      Some(k) => (1, Some(k)),
+      None if is_symbol_factor(e) => (0, None),
+      None => (2, None),
+    }
+  };
+  items.sort_by_key(|(a, _)| rank(a));
+
+  let mut factors: Vec<Expr> = Vec::new();
+  let negate = cnum < 0 && cnum == -1 && cden == 1;
+  if negate {
+    // handled by a UnaryOp wrapper below
+  } else if cden != 1 {
+    factors.push(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(cnum), Expr::Integer(cden)].into(),
+    });
+  } else if cnum != 1 {
+    factors.push(Expr::Integer(cnum));
+  }
+  for (base, exp) in items {
+    factors.push(if exp == 1 {
+      base
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(Expr::Integer(exp)),
+      }
+    });
+  }
+  if factors.is_empty() {
+    return Ok(Some(Expr::Integer(if negate { -1 } else { 1 })));
+  }
+  let product = if factors.len() == 1 {
+    factors.remove(0)
+  } else {
+    build_product(factors)
+  };
+  let product = reorder_factored_product(product);
+  Ok(Some(if negate {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(product),
+    }
+  } else {
+    product
+  }))
+}
+
 pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -2230,6 +2503,12 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|item| factor_square_free_ast(&[item.clone()]))
       .collect();
     return Ok(Expr::List(results?.into()));
+  }
+
+  // An explicit product (or integer power of a sum) factors square-free
+  // per factor, keeping the structure unexpanded.
+  if let Some(result) = product_square_free(&args[0])? {
+    return Ok(result);
   }
 
   let expanded = expand_and_combine(&args[0]);
@@ -2293,9 +2572,18 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sort by constant term (ascending) for consistent output
   all_pairs.sort_by_key(|(c, _)| c[0]);
 
+  // A square-free polynomial with unit content stays untouched:
+  // FactorSquareFree[1 - x] → 1 - x in wolframscript, not -(-1 + x).
+  if overall.abs() == 1 && all_pairs.len() == 1 && all_pairs[0].1 == 1 {
+    return Ok(expanded);
+  }
+
   let mut result_factors: Vec<Expr> = Vec::new();
 
-  if overall != 1 {
+  // A -1 content wraps the whole product as a negation so several
+  // factors display as -(x^2*(1 + x)), matching wolframscript.
+  let negate = overall == -1;
+  if overall != 1 && !negate {
     result_factors.push(Expr::Integer(overall));
   }
 
@@ -2316,11 +2604,19 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(overall));
   }
 
-  if result_factors.len() == 1 {
-    return Ok(result_factors.remove(0));
-  }
-
-  Ok(build_product(result_factors))
+  let product = if result_factors.len() == 1 {
+    result_factors.remove(0)
+  } else {
+    build_product(result_factors)
+  };
+  Ok(if negate {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(product),
+    }
+  } else {
+    product
+  })
 }
 
 /// FactorSquareFreeList[poly] - returns {{f1, e1}, {f2, e2}, ...}
