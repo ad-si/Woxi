@@ -2092,6 +2092,68 @@ mod infinity_comparisons {
       "no"
     );
   }
+
+  // Equal/Unequal with infinities (wolframscript-verified; found by the
+  // differential fuzzer, seed 60707261): an infinity never equals a
+  // finite numeric quantity; two explicit directions compare by
+  // direction; ComplexInfinity vs any infinity is indeterminate.
+  #[test]
+  fn infinity_equality_vs_finite_numerics() {
+    assert_eq!(interpret("ComplexInfinity == -1/2").unwrap(), "False");
+    assert_eq!(interpret("ComplexInfinity != -1/2").unwrap(), "True");
+    assert_eq!(interpret("ComplexInfinity == Pi").unwrap(), "False");
+    assert_eq!(interpret("DirectedInfinity[I] == 3").unwrap(), "False");
+    assert_eq!(interpret("DirectedInfinity[I] != 3").unwrap(), "True");
+    assert_eq!(interpret("Equal[Infinity, 2 + 3 I]").unwrap(), "False");
+    // The functional forms behave identically (fuzzer shape).
+    assert_eq!(
+      interpret("Equal[Divide[1, 0], Divide[-4, 8]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn directed_infinity_equality_by_direction() {
+    assert_eq!(
+      interpret("Equal[DirectedInfinity[I], DirectedInfinity[I]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Equal[DirectedInfinity[I], DirectedInfinity[-I]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Equal[DirectedInfinity[I], Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Equal[DirectedInfinity[1], Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("Equal[-Infinity, Infinity]").unwrap(), "False");
+    assert_eq!(interpret("Equal[Infinity, Infinity]").unwrap(), "True");
+  }
+
+  #[test]
+  fn complex_infinity_vs_infinity_indeterminate() {
+    assert_eq!(
+      interpret("ComplexInfinity == Infinity").unwrap(),
+      "ComplexInfinity == Infinity"
+    );
+    assert_eq!(
+      interpret("ComplexInfinity != Infinity").unwrap(),
+      "ComplexInfinity != Infinity"
+    );
+    assert_eq!(
+      interpret("Unequal[ComplexInfinity, ComplexInfinity]").unwrap(),
+      "ComplexInfinity != ComplexInfinity"
+    );
+    // Symbolic operands stay unevaluated too.
+    assert_eq!(
+      interpret("ComplexInfinity == x").unwrap(),
+      "ComplexInfinity == x"
+    );
+  }
 }
 
 mod length_atoms {

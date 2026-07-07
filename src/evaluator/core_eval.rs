@@ -2404,14 +2404,43 @@ pub fn evaluate_expr_to_expr_inner(
               operators: operators.clone(),
             });
           }
-          if matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual)
-            && complex_inf_display(&values[i]).is_some()
-            && complex_inf_display(&values[i + 1]).is_some()
-          {
-            return Ok(Expr::Comparison {
-              operands: values,
-              operators: operators.clone(),
-            });
+          let _ = display;
+        }
+
+        // Equal/Unequal with infinities (wolframscript-verified):
+        // any infinity vs a finite numeric quantity → False / True;
+        // two explicit directions compare by direction (Infinity ==
+        // DirectedInfinity[I] → False, DirectedInfinity[I] ==
+        // DirectedInfinity[I] → True); ComplexInfinity (unknown
+        // direction) vs any infinity stays unevaluated.
+        for i in 0..operators.len() {
+          let op = operators[i];
+          if !matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual) {
+            continue;
+          }
+          let verdict = crate::functions::boolean_ast::infinity_equal_verdict(
+            &values[i],
+            &values[i + 1],
+          );
+          match verdict {
+            None => {}
+            Some(Some(eq)) => {
+              let result = eq == matches!(op, ComparisonOp::Equal);
+              // A false pair settles an Equal chain (and an equal
+              // adjacent pair settles an Unequal chain) of any length;
+              // a true pair is only decisive for a 2-operand comparison.
+              if !result || operands.len() == 2 {
+                return Ok(Expr::Identifier(
+                  if result { "True" } else { "False" }.to_string(),
+                ));
+              }
+            }
+            Some(None) => {
+              return Ok(Expr::Comparison {
+                operands: values,
+                operators: operators.clone(),
+              });
+            }
           }
         }
       }

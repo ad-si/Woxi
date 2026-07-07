@@ -542,10 +542,78 @@ fn symbolic_comparison_chain(
   }
 }
 
+/// Equality verdict for a pair involving infinities, per wolframscript:
+/// `None` when neither operand is an infinity (proceed normally),
+/// `Some(None)` when indeterminate (ComplexInfinity vs any infinity —
+/// stay unevaluated), `Some(Some(eq))` when decisive: an infinity never
+/// equals a finite numeric quantity, and two explicit directions compare
+/// by direction (Infinity == DirectedInfinity[I] → False).
+pub fn infinity_equal_verdict(a: &Expr, b: &Expr) -> Option<Option<bool>> {
+  // None = not an infinity; Some(None) = ComplexInfinity (direction
+  // unknown); Some(Some(d)) = explicit direction d.
+  fn inf_direction(e: &Expr) -> Option<Option<String>> {
+    match e {
+      Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
+        Some(None)
+      }
+      Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
+        match args.len() {
+          0 => Some(None),
+          1 => Some(Some(crate::syntax::expr_to_string(&args[0]))),
+          _ => None,
+        }
+      }
+      _ => {
+        if crate::functions::predicate_ast::is_directed_infinity(e) {
+          if crate::functions::math_ast::is_neg_infinity(e) {
+            Some(Some("-1".to_string()))
+          } else {
+            Some(Some("1".to_string()))
+          }
+        } else {
+          None
+        }
+      }
+    }
+  }
+
+  let (ka, kb) = (inf_direction(a), inf_direction(b));
+  match (&ka, &kb) {
+    (None, None) => None,
+    (Some(_), None) | (None, Some(_)) => {
+      let finite = if ka.is_some() { b } else { a };
+      if crate::functions::predicate_ast::is_numeric_q_pub(finite) {
+        Some(Some(false))
+      } else {
+        None // symbolic operand — leave to the normal machinery
+      }
+    }
+    (Some(None), Some(_)) | (Some(_), Some(None)) => Some(None),
+    (Some(Some(d1)), Some(Some(d2))) => Some(Some(d1 == d2)),
+  }
+}
+
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Equal[] and Equal[x] return True (like wolframscript)
   if args.len() < 2 {
     return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // Infinity rules run before the string-identity fast path so
+  // ComplexInfinity == ComplexInfinity stays unevaluated.
+  for pair in args.windows(2) {
+    match infinity_equal_verdict(&pair[0], &pair[1]) {
+      Some(Some(false)) => {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+      Some(None) => {
+        return Ok(symbolic_comparison_chain(
+          args,
+          crate::syntax::ComparisonOp::Equal,
+        ));
+      }
+      _ => {}
+    }
   }
 
   // Enharmonic MusicPitch equality (WL 15): two `MusicPitch` objects are equal
@@ -704,6 +772,33 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Unequal expects at least 2 arguments".into(),
     ));
+  }
+
+  // Infinity rules run before the duplicate collapse so
+  // ComplexInfinity != ComplexInfinity stays unevaluated while
+  // ComplexInfinity != -1/2 is True.
+  let mut infinity_decided = 0usize;
+  for i in 0..args.len() {
+    for j in i + 1..args.len() {
+      match infinity_equal_verdict(&args[i], &args[j]) {
+        Some(Some(true)) => {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+        Some(Some(false)) => infinity_decided += 1,
+        Some(None) => {
+          return Ok(symbolic_comparison_chain(
+            args,
+            crate::syntax::ComparisonOp::NotEqual,
+          ));
+        }
+        None => {}
+      }
+    }
+  }
+  // All pairs decided unequal by the infinity rules (e.g. the 2-operand
+  // ComplexInfinity != -1/2) — True without consulting the numeric path.
+  if infinity_decided == args.len() * (args.len() - 1) / 2 {
+    return Ok(Expr::Identifier("True".to_string()));
   }
 
   use crate::functions::math_ast::try_eval_to_f64;
