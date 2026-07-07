@@ -592,6 +592,36 @@ mod simplify {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
 
+  // Numeric-content factoring follows the digit-weighted complexity with
+  // a negative-count tie-break (found by the differential fuzzer:
+  // Simplify[3 - 3x] over-factored to -3*(-1 + x)).
+  #[test]
+  fn numeric_content_factoring_threshold() {
+    for (input, expected) in [
+      // One-digit contents with a sign flip stay unfactored...
+      ("Simplify[3 - 3*x]", "3 - 3*x"),
+      ("Simplify[9 - 9*x]", "9 - 9*x"),
+      // ... two-digit contents factor (fewer total digits win)
+      ("Simplify[10 - 10*x]", "-10*(-1 + x)"),
+      ("Simplify[100 - 100*x]", "-100*(-1 + x)"),
+      // Sign-preserving ties prefer the factored form
+      ("Simplify[2*x + 2]", "2*(1 + x)"),
+      ("Simplify[3*x - 3*y]", "3*(x - y)"),
+      // ... including when factoring REDUCES the negatives
+      ("Simplify[-2*x - 2]", "-2*(1 + x)"),
+      // Strictly fewer leaves always factors
+      ("Simplify[2*x + 2*y]", "2*(x + y)"),
+      ("Simplify[10*x + 10*y]", "10*(x + y)"),
+      // No gain, no factoring
+      ("Simplify[6*x + 9]", "9 + 6*x"),
+      ("Simplify[4 - 4*x^2]", "4 - 4*x^2"),
+      ("Simplify[-x - y]", "-x - y"),
+      ("Simplify[x^2 - 2*x + 1]", "(-1 + x)^2"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   // A standalone `c*Log[n]` (positive integers) folds to `Log[n^c]` when that
   // is simpler under wolframscript's digit-aware complexity measure. Large
   // powers (many digits) and symbolic bases/coefficients stay factored.

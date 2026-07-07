@@ -4141,14 +4141,53 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   // current `best` lets a Together-combined fraction like
   // `2/(2*((1-I*x)*(1+I*x)))` collapse to `(1+x^2)^(-1)`.
   if let Ok(factored) = super::factor::factor_ast(&[best.clone()]) {
-    let fc = leaf_count(&factored);
-    if fc <= best_c && !exprs_equal(&factored, &best) {
+    // For a top-level sum the negative-count tie-break applies (keep
+    // `3 - 3x` over `-3*(-1 + x)`); other shapes (fractions, lists)
+    // keep the plain leaf-count preference for factored forms.
+    let is_sum = matches!(&best, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        &best,
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus
+            | crate::syntax::BinaryOperator::Minus,
+          ..
+        }
+      );
+    let accept = if is_sum {
+      simplify_cost_key(&factored) <= simplify_cost_key(&best)
+    } else {
+      leaf_count(&factored) <= best_c
+    };
+    if accept && !exprs_equal(&factored, &best) {
       best = factored;
       let _ = best_c;
     }
   }
 
   best
+}
+
+/// wolframscript's Simplify preference order for competing forms: the
+/// digit-weighted complexity first (integers count by decimal digits),
+/// then the number of negative integer leaves (so `3 - 3x` beats
+/// `-3*(-1 + x)` while `-2*(1 + x)` beats `-2 - 2x`); full ties prefer
+/// the candidate (callers compare with <=).
+fn simplify_cost_key(e: &Expr) -> (usize, usize) {
+  fn negative_ints(e: &Expr) -> usize {
+    match e {
+      Expr::Integer(n) => usize::from(*n < 0),
+      Expr::BigInteger(n) => usize::from(n < &num_bigint::BigInt::from(0)),
+      Expr::BinaryOp { left, right, .. } => {
+        negative_ints(left) + negative_ints(right)
+      }
+      Expr::UnaryOp { operand, .. } => 1 + negative_ints(operand),
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().map(negative_ints).sum()
+      }
+      _ => 0,
+    }
+  }
+  (complexity_digits(e), negative_ints(e))
 }
 
 fn exprs_equal(a: &Expr, b: &Expr) -> bool {
@@ -4664,28 +4703,34 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
-  // Try factoring (Factor[expr]) — prefer factored forms (use <=)
+  // Try factoring (Factor[expr]). Ties on the digit-weighted complexity
+  // prefer the factored form (Simplify[2x + 2] -> 2(1 + x)) UNLESS
+  // factoring introduces more negative integers — wolframscript keeps
+  // `3 - 3x` rather than `-3(-1 + x)`, but factors `-2x - 2` to
+  // `-2(1 + x)` (one negative instead of two).
   if let Ok(factored) =
     crate::functions::polynomial_ast::factor_ast(&[trig_simplified.clone()])
+    && simplify_cost_key(&factored) <= simplify_cost_key(&best)
   {
     let c = leaf_count(&factored);
-    if c <= best_complexity {
-      best = factored;
-      best_complexity = c;
-    }
+    best = factored;
+    best_complexity = c;
   }
 
-  // Try FactorTerms to factor out common numeric/symbolic terms
+  // Try FactorTerms to factor out common numeric/symbolic terms.
+  // wolframscript accepts the factored form only when it is STRICTLY
+  // cheaper by the digit-weighted complexity (integers count by decimal
+  // digit count): `100 - 100x` -> `-100(-1 + x)` (3+3 digits beat 3+1)
+  // but `3 - 3x` and `9 - 9x` stay unfactored (ties keep the original).
   let terms = collect_additive_terms(&trig_simplified);
   if terms.len() >= 2 {
     if let Ok(factored) = crate::functions::polynomial_ast::factor_terms_ast(&[
       trig_simplified.clone(),
-    ]) {
+    ]) && simplify_cost_key(&factored) <= simplify_cost_key(&best)
+    {
       let c = leaf_count(&factored);
-      if c <= best_complexity {
-        best = factored;
-        best_complexity = c;
-      }
+      best = factored;
+      best_complexity = c;
     }
 
     // Try extracting common symbolic factors from all terms
