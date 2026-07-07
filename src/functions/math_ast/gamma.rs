@@ -128,6 +128,33 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   } else {
+    // Exact numeric a with a non-integer rational b (integer b is handled
+    // above): Pochhammer[a, b] = Gamma[a + b]/Gamma[a]. wolframscript reduces
+    // these to closed form (e.g. Pochhammer[2, 1/2] -> (3 Sqrt[Pi])/4,
+    // Pochhammer[2, -1/2] -> Sqrt[Pi]/2). Woxi's Gamma already performs the
+    // same half-integer reduction, so evaluate the ratio symbolically.
+    let is_exact_number = |e: &Expr| {
+      matches!(e, Expr::Integer(_))
+        || matches!(e, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2)
+    };
+    if is_exact_number(&args[0]) && is_exact_number(&args[1]) {
+      let gamma = |arg: Expr| Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: vec![arg].into(),
+      };
+      let sum = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(args[0].clone()),
+        right: Box::new(args[1].clone()),
+      };
+      let ratio = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(gamma(sum)),
+        right: Box::new(gamma(args[0].clone())),
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&ratio);
+    }
     // Numeric evaluation: Pochhammer[a, n] = Gamma[a + n] / Gamma[a]
     if let (Some(a_f), Some(n_f)) =
       (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))

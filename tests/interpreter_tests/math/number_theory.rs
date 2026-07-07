@@ -3449,6 +3449,45 @@ mod pochhammer {
       "SeriesData[x, 0, {Sqrt[Pi], -(Sqrt[Pi]*Log[4])}, 1, 3, 1]"
     );
   }
+
+  // Exact numeric a with a non-integer rational b reduces to the closed-form
+  // Gamma[a + b]/Gamma[a], matching wolframscript.
+  #[test]
+  fn pochhammer_rational_second_arg() {
+    assert_eq!(interpret("Pochhammer[2, 1/2]").unwrap(), "(3*Sqrt[Pi])/4");
+    assert_eq!(interpret("Pochhammer[3, 1/2]").unwrap(), "(15*Sqrt[Pi])/16");
+    assert_eq!(interpret("Pochhammer[1/2, 1/2]").unwrap(), "1/Sqrt[Pi]");
+    assert_eq!(interpret("Pochhammer[5/2, 3/2]").unwrap(), "8/Sqrt[Pi]");
+  }
+
+  #[test]
+  fn pochhammer_rational_negative_second_arg() {
+    // Pochhammer[2, -1/2] = Gamma[3/2]/Gamma[2] = Sqrt[Pi]/2.
+    assert_eq!(interpret("Pochhammer[2, -1/2]").unwrap(), "Sqrt[Pi]/2");
+  }
+
+  #[test]
+  fn pochhammer_rational_no_closed_form_stays_gamma() {
+    // When the Gamma ratio has no elementary closed form it collapses to a
+    // single Gamma, as in wolframscript: Pochhammer[2, 1/3] = Gamma[7/3].
+    assert_eq!(interpret("Pochhammer[2, 1/3]").unwrap(), "Gamma[7/3]");
+  }
+
+  #[test]
+  fn pochhammer_rational_at_gamma_pole_is_zero() {
+    // a a non-positive integer makes 1/Gamma[a] vanish, so the result is 0.
+    assert_eq!(interpret("Pochhammer[0, 1/2]").unwrap(), "0");
+    assert_eq!(interpret("Pochhammer[-2, 1/2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn pochhammer_symbolic_a_rational_b_unevaluated() {
+    // Symbolic a keeps Pochhammer[a, 1/2] unevaluated (matches wolframscript).
+    assert_eq!(
+      interpret("Pochhammer[m, 1/2]").unwrap(),
+      "Pochhammer[m, 1/2]"
+    );
+  }
 }
 
 mod bell_b {
