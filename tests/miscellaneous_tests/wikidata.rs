@@ -1,9 +1,9 @@
 use woxi::interpret;
 
-mod wikidata_tests {
+mod tests {
   use super::*;
 
-  mod external_identifier_tests {
+  mod external_identifier {
     use super::*;
 
     #[test]
@@ -37,7 +37,7 @@ mod wikidata_tests {
     }
   }
 
-  mod wikidata_data_tests {
+  mod wikidata_data {
     use super::*;
 
     #[test]
@@ -156,7 +156,7 @@ mod wikidata_tests {
     }
   }
 
-  mod svg_import_tests {
+  mod svg_import {
     use super::*;
 
     #[test]
