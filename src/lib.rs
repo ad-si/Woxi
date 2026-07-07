@@ -146,10 +146,13 @@ impl WolframParser {
     // Deeply nested invalid input (e.g. `f[f[f[...` without closing
     // brackets) makes pest backtrack exponentially, so rejecting it would
     // take hours. The call limit turns that into a "call limit reached"
-    // parse error within seconds. The worst script in tests/scripts needs
-    // ~5,700 calls per byte, so 20,000 per byte (with a floor for tiny
-    // inputs) leaves ample headroom for legitimate code of any size.
-    let limit = 50_000_000.max(input.len().saturating_mul(20_000));
+    // parse error. The worst script in tests/scripts needs ~5,700 calls
+    // per byte, so 20,000 per byte (plus a base allowance covering the
+    // fixed overhead on tiny inputs) leaves ample headroom for legitimate
+    // code of any size, while short pathological inputs are rejected in
+    // well under a second even in debug builds on slow CI hardware.
+    let limit =
+      1_000_000_usize.saturating_add(input.len().saturating_mul(20_000));
     pest::set_call_limit(std::num::NonZeroUsize::new(limit));
     Self::parse(Rule::Program, input).map_err(Box::new)
   }
