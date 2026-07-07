@@ -933,7 +933,16 @@ pub fn try_factor_no_rational_roots(coeffs: &[i128], var: &str) -> Vec<Expr> {
     if !sqfree.is_empty() {
       return sqfree;
     }
-    // Then try Kronecker's method for small-degree polynomials
+    // Zassenhaus (mod-p Berlekamp + Hensel lifting) handles the general
+    // square-free case; a definitive single-factor answer means the
+    // polynomial is irreducible and Kronecker can be skipped.
+    if let Some(zf) = super::zassenhaus::zassenhaus_int_factors(coeffs) {
+      if zf.len() >= 2 {
+        return zf.iter().map(|f| coeffs_to_expr(f, var)).collect();
+      }
+      return vec![];
+    }
+    // Fall back to Kronecker's method for small-degree polynomials
     return try_kronecker_factor(coeffs, var);
   }
 
@@ -948,16 +957,27 @@ pub fn try_factor_no_rational_roots(coeffs: &[i128], var: &str) -> Vec<Expr> {
         .chain(sub)
         .collect();
     }
-    // Then try Kronecker
-    let sub = try_kronecker_factor(&remaining, var);
-    if sub.is_empty() {
+    // Then Zassenhaus, then Kronecker
+    if let Some(zf) = super::zassenhaus::zassenhaus_int_factors(&remaining) {
+      if zf.len() >= 2 {
+        return factors
+          .iter()
+          .map(|f| coeffs_to_expr(f, var))
+          .chain(zf.iter().map(|f| coeffs_to_expr(f, var)))
+          .collect();
+      }
       factors.push(remaining);
     } else {
-      return factors
-        .iter()
-        .map(|f| coeffs_to_expr(f, var))
-        .chain(sub)
-        .collect();
+      let sub = try_kronecker_factor(&remaining, var);
+      if sub.is_empty() {
+        factors.push(remaining);
+      } else {
+        return factors
+          .iter()
+          .map(|f| coeffs_to_expr(f, var))
+          .chain(sub)
+          .collect();
+      }
     }
   } else if remaining.len() > 1 || (remaining.len() == 1 && remaining[0] != 1) {
     factors.push(remaining);

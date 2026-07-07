@@ -31,6 +31,7 @@ pub mod solve;
 mod symmetric_reduction;
 mod to_radicals;
 pub mod together;
+mod zassenhaus;
 
 pub use apart::*;
 pub use cancel::*;

@@ -938,6 +938,40 @@ mod factor {
     );
   }
 
+  // General square-free factorization via Zassenhaus (mod-p Berlekamp +
+  // Hensel lifting); found by the differential fuzzer, which produced a
+  // product of two cubics that the cyclotomic/Kronecker paths missed.
+  #[test]
+  fn zassenhaus_products() {
+    assert_eq!(
+      interpret(
+        "Factor[Times[Plus[3, Times[-3, x], Power[x, 2], Power[x, 3]], Plus[2, Times[-2, x], Times[-4, Power[x, 2]], Times[-3, Power[x, 3]]]]]"
+      )
+      .unwrap(),
+      "-((3 - 3*x + x^2 + x^3)*(-2 + 2*x + 4*x^2 + 3*x^3))"
+    );
+    // Quartic times quadratic, both irreducible
+    assert_eq!(
+      interpret("Factor[(x^2 + 3)*(x^4 + x + 7)]").unwrap(),
+      "(3 + x^2)*(7 + x + x^4)"
+    );
+    // Non-monic factors
+    assert_eq!(
+      interpret("Factor[(2*x^2 + 3*x + 4)*(3*x^2 + x + 5)]").unwrap(),
+      "(4 + 3*x + 2*x^2)*(5 + x + 3*x^2)"
+    );
+    // Irreducible sextics and quartics stay whole
+    assert_eq!(
+      interpret("Factor[x^6 + 7*x^5 + 9*x^4 - 7*x^3 - 20*x^2 - 5*x + 12]")
+        .unwrap(),
+      "12 - 5*x - 20*x^2 - 7*x^3 + 9*x^4 + 7*x^5 + x^6"
+    );
+    assert_eq!(
+      interpret("Factor[x^4 + x^3 + x^2 + x + 73]").unwrap(),
+      "73 + x + x^2 + x^3 + x^4"
+    );
+  }
+
   // A bare monomial factor sorts against sum factors by the canonical
   // Times rule (found by the differential fuzzer: the x used to trail).
   #[test]
