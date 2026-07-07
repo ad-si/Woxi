@@ -7225,6 +7225,48 @@ mod zero_divisor {
     );
   }
 
+  // A rational numerator renders as a nested stacked fraction inside the
+  // Divide::infy box, wrapped in -(…) when negative
+  // (wolframscript-verified; found by the differential fuzzer, seed
+  // 42607726).
+  #[test]
+  fn divide_infy_stacked_rational_numerator() {
+    let pfx = "Divide::infy: Infinite expression ";
+    let lead = " ".repeat(pfx.len());
+
+    let r = interpret_with_stdout("Divide[-13/2, 0]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    let expected = format!(
+      "{lead}  13\n{lead}-(--)\n{lead}  2\n{pfx}----- encountered.\n{lead}  0"
+    );
+    assert!(
+      r.warnings.iter().any(|w| *w == expected),
+      "Divide[-13/2,0] message mismatch, got: {:?}",
+      r.warnings
+    );
+
+    let r = interpret_with_stdout("Divide[3/4, 0]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    let expected =
+      format!("{lead}3\n{lead}-\n{lead}4\n{pfx}- encountered.\n{lead}0");
+    assert!(
+      r.warnings.iter().any(|w| *w == expected),
+      "Divide[3/4,0] message mismatch, got: {:?}",
+      r.warnings
+    );
+
+    // A wider denominator sets the inner box width; the numerator centers.
+    let r = interpret_with_stdout("Divide[1/22, 0]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    let expected =
+      format!("{lead}1\n{lead}--\n{lead}22\n{pfx}-- encountered.\n{lead}0");
+    assert!(
+      r.warnings.iter().any(|w| *w == expected),
+      "Divide[1/22,0] message mismatch, got: {:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn power_zero_negative_renders_full_box() {
     // Regression: `Power[0, -1]` previously printed the `1` numerator with a

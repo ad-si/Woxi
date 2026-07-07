@@ -6694,32 +6694,99 @@ pub fn divide_head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
     let denom_is_zero = matches!(&args[1], Expr::Integer(0))
       || matches!(&args[1], Expr::Real(z) if *z == 0.0);
-    // Only single-line numbers (Integer / Real) keep the Divide-tagged form;
-    // Rationals would need a stacked-fraction numerator we don't render here.
-    let num_is_single_line_number =
-      matches!(&args[0], Expr::Integer(_) | Expr::Real(_));
-    if denom_is_zero && num_is_single_line_number {
-      let num = expr_to_string(&args[0]);
+    // Integers and Reals render single-line; Rationals render as a
+    // stacked fraction inside the message box (Divide[-13/2, 0] shows
+    // -(13/2) as a nested 2D fraction, matching wolframscript).
+    let num_is_number = matches!(&args[0], Expr::Integer(_) | Expr::Real(_))
+      || matches!(&args[0], Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2
+          && matches!((&args[0], &args[1]), (Expr::Integer(_), Expr::Integer(_))));
+    if denom_is_zero && num_is_number {
+      let num_lines = numerator_box_lines(&args[0]);
       let denom = expr_to_string(&args[1]);
       let num_is_zero = matches!(&args[0], Expr::Integer(0))
         || matches!(&args[0], Expr::Real(z) if *z == 0.0);
       if num_is_zero {
-        crate::emit_message(&format_infy_fraction_2d(
+        crate::emit_message(&format_infy_fraction_2d_block(
           "Divide::indet: Indeterminate expression ",
-          &num,
+          &num_lines,
           &denom,
         ));
         return Ok(Expr::Identifier("Indeterminate".to_string()));
       }
-      crate::emit_message(&format_infy_fraction_2d(
+      crate::emit_message(&format_infy_fraction_2d_block(
         "Divide::infy: Infinite expression ",
-        &num,
+        &num_lines,
         &denom,
       ));
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
   }
   divide_ast(args)
+}
+
+/// The 2D box lines for a message numerator: one line for integers and
+/// reals, a three-line stacked fraction for rationals — wrapped in
+/// `-(…)` when negative, e.g. -13/2 renders as
+/// ```text
+///   13
+/// -(--)
+///   2
+/// ```
+fn numerator_box_lines(e: &Expr) -> Vec<String> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Rational"
+    && args.len() == 2
+    && let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1])
+  {
+    let neg = *n < 0;
+    let ns = n.abs().to_string();
+    let ds = d.to_string();
+    let w = ns.len().max(ds.len());
+    let center =
+      |s: &str| -> String { format!("{}{}", " ".repeat((w - s.len()) / 2), s) };
+    if neg {
+      return vec![
+        format!("  {}", center(&ns)),
+        format!("-({})", "-".repeat(w)),
+        format!("  {}", center(&ds)),
+      ];
+    }
+    return vec![center(&ns), "-".repeat(w), center(&ds)];
+  }
+  vec![expr_to_string(e)]
+}
+
+/// Like `format_infy_fraction_2d`, but the numerator may span several
+/// lines (a stacked-fraction box). The block is centered over the main
+/// fraction bar, whose width is the wider of the block and denominator.
+fn format_infy_fraction_2d_block(
+  prefix: &str,
+  num_lines: &[String],
+  denom: &str,
+) -> String {
+  let base_lead = prefix.len();
+  let block_w = num_lines
+    .iter()
+    .map(|l| l.chars().count())
+    .max()
+    .unwrap_or(0);
+  let width = block_w.max(denom.chars().count());
+  let dashes = "-".repeat(width);
+  let block_off = base_lead + (width - block_w) / 2;
+  let denom_pad = base_lead + (width - denom.chars().count()) / 2;
+  let mut out = String::new();
+  for l in num_lines {
+    out.push_str(&" ".repeat(block_off));
+    out.push_str(l);
+    out.push('\n');
+  }
+  out.push_str(prefix);
+  out.push_str(&dashes);
+  out.push_str(" encountered.\n");
+  out.push_str(&" ".repeat(denom_pad));
+  out.push_str(denom);
+  out
 }
 
 /// Check if an expression represents an infinite quantity
