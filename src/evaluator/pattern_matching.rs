@@ -183,7 +183,9 @@ pub fn association_nested_access(
           .iter()
           .map(|(k, v)| {
             (
-              Expr::Identifier(k.clone()),
+              // Keys are stored in input form (strings keep their quotes),
+              // so parse them back instead of wrapping in an Identifier.
+              string_to_expr(k).unwrap_or(Expr::Identifier(k.clone())),
               string_to_expr(v).unwrap_or(Expr::Raw(v.clone())),
             )
           })
@@ -222,19 +224,53 @@ pub fn parse_association_string(
   Ok(pairs)
 }
 
-/// Split association items handling nested associations
+/// Split association items handling nested associations. Only a comma at
+/// top level separates items: commas inside quoted strings, nested
+/// `<|…|>` associations, lists, or bracketed calls belong to the current
+/// item. Depth is tracked on the two-character `<|` / `|>` delimiters (a
+/// bare `>` also appears in every `->` and must not affect nesting).
 pub fn split_association_items(s: &str) -> Vec<String> {
   let mut items = Vec::new();
   let mut current = String::new();
-  let mut depth = 0;
+  let mut depth = 0i64;
+  let mut in_string = false;
+  let mut chars = s.chars().peekable();
 
-  for c in s.chars() {
+  while let Some(c) = chars.next() {
+    if in_string {
+      current.push(c);
+      match c {
+        '\\' => {
+          // Keep the escaped character (e.g. \") out of delimiter logic.
+          if let Some(next) = chars.next() {
+            current.push(next);
+          }
+        }
+        '"' => in_string = false,
+        _ => {}
+      }
+      continue;
+    }
     match c {
-      '<' => {
+      '"' => {
+        in_string = true;
+        current.push(c);
+      }
+      '<' if chars.peek() == Some(&'|') => {
+        depth += 1;
+        current.push(c);
+        current.push(chars.next().expect("peeked"));
+      }
+      '|' if chars.peek() == Some(&'>') => {
+        depth -= 1;
+        current.push(c);
+        current.push(chars.next().expect("peeked"));
+      }
+      '{' | '[' | '(' => {
         depth += 1;
         current.push(c);
       }
-      '>' => {
+      '}' | ']' | ')' => {
         depth -= 1;
         current.push(c);
       }
