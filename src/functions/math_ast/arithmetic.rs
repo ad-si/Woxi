@@ -4620,13 +4620,28 @@ pub fn additive_is_neg_const_plus_ident(additive: &Expr, ident: &Expr) -> bool {
     matches!(a, Expr::Identifier(n) | Expr::Constant(n) if n == ident_name)
   };
 
+  // Negative rationals and reals count like negative integers:
+  // wolframscript writes (-67/2 + x)*x and (-17.5 + x)*x, sum first,
+  // while positive constants keep the factor first (x*(17/2 + x)).
+  let is_neg_num = |a: &Expr| -> bool {
+    match a {
+      Expr::Integer(n) => *n < 0,
+      Expr::Real(r) => *r < 0.0,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        matches!(&args[0], Expr::Integer(n) if *n < 0)
+      }
+      _ => false,
+    }
+  };
+
   // Check for FunctionCall Plus with exactly 2 args: negative number and same variable
   if let Expr::FunctionCall { name, args } = additive
     && name == "Plus"
     && args.len() == 2
   {
-    let has_neg_num =
-      args.iter().any(|a| matches!(a, Expr::Integer(n) if *n < 0));
+    let has_neg_num = args.iter().any(is_neg_num);
     let has_ident = args.iter().any(&is_same_ident);
     return has_neg_num && has_ident;
   }
@@ -4639,8 +4654,7 @@ pub fn additive_is_neg_const_plus_ident(additive: &Expr, ident: &Expr) -> bool {
   } = additive
   {
     let (l, r) = (left.as_ref(), right.as_ref());
-    let has_neg_num = matches!(l, Expr::Integer(n) if *n < 0)
-      || matches!(r, Expr::Integer(n) if *n < 0);
+    let has_neg_num = is_neg_num(l) || is_neg_num(r);
     let has_ident = is_same_ident(l) || is_same_ident(r);
     return has_neg_num && has_ident;
   }

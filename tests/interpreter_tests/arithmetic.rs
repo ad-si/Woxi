@@ -8016,6 +8016,38 @@ mod times_factor_vs_sum_ordering {
       "f[a - s]*f[b - s]*f[s]"
     );
   }
+
+  // A negative RATIONAL or REAL constant in a `Plus[c, x]` denominator
+  // factor pulls the sum before the bare symbol, exactly like a negative
+  // integer (wolframscript-verified; found by the differential fuzzer,
+  // seed 60707261). Positive constants keep the symbol first.
+  #[test]
+  fn negative_rational_constant_sum_sorts_first() {
+    assert_eq!(
+      interpret("Times[Power[x, -1], Power[Plus[-67/2, x], -1]]").unwrap(),
+      "1/((-67/2 + x)*x)"
+    );
+    assert_eq!(
+      interpret("Times[Power[x, -1], Power[Plus[-17.5, x], -1]]").unwrap(),
+      "1/((-17.5 + x)*x)"
+    );
+    assert_eq!(
+      interpret("Times[Power[x, -1], Power[Plus[67/2, x], -1]]").unwrap(),
+      "1/(x*(67/2 + x))"
+    );
+    assert_eq!(
+      interpret("Divide[Divide[1, Pi], Plus[-67/2, Pi]]").unwrap(),
+      "1/((-67/2 + Pi)*Pi)"
+    );
+    // The original fuzzer expression.
+    assert_eq!(
+      interpret(
+        "Times[Divide[Divide[Divide[56, -1], Pi], Plus[Divide[1, 2], Plus[Pi, -34]]], -72]"
+      )
+      .unwrap(),
+      "4032/((-67/2 + Pi)*Pi)"
+    );
+  }
 }
 
 mod mandelbrot_set_member_q_tests {
