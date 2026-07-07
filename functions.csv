@@ -3386,7 +3386,7 @@ CompoundPoissonProcess,,🚫,,9.0,3474
 GaugeFrameSize,,🚫,,9.0,3474
 HandlerFunctions,,🚫,,11.0,3474
 LogRankTest,,,,9.0,3474
-LogSeriesDistribution,,,,6.0,3474
+LogSeriesDistribution,Logarithmic series distribution with parameter theta,✅,pure,6.0,3474
 LongestOrderedSequence,Finds the longest ordered (non-decreasing by default) subsequence of a list using an optional ordering predicate,✅,pure,10.2,3474
 SpokenString,,🚫,,7.0,3474
 TemplateObject,Symbolic template object produced by StringTemplate or FileTemplate,✅,pure,10.0,3474

@@ -46,6 +46,7 @@ icon: lucide/square-function
 - [`InverseGaussianDistribution`](functions/InverseGaussianDistribution.md)
 - [`LaplaceDistribution`](functions/LaplaceDistribution.md)
 - [`LogNormalDistribution`](functions/LogNormalDistribution.md)
+- [`LogSeriesDistribution`](functions/LogSeriesDistribution.md)
 - [`LogisticDistribution`](functions/LogisticDistribution.md)
 - [`MultinomialDistribution`](functions/MultinomialDistribution.md)
 - [`MultivariatePoissonDistribution`](functions/MultivariatePoissonDistribution.md)

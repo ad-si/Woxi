@@ -218,6 +218,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ParetoDistribution" => pdf_pareto(dargs, x),
     "WeibullDistribution" => pdf_weibull(dargs, x),
     "GeometricDistribution" => pdf_geometric(dargs, x),
+    "LogSeriesDistribution" => pdf_log_series(dargs, x),
     "CauchyDistribution" => pdf_cauchy(dargs, x),
     "DiscreteUniformDistribution" => pdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => pdf_laplace(dargs, x),
@@ -1672,6 +1673,30 @@ fn pdf_geometric(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   eval(piecewise(vec![(density, cond)], int(0)))
 }
 
+/// PDF[LogSeriesDistribution[t], k] =
+///   Piecewise[{{-(t^k/(k*Log[1 - t])), k >= 1}}, 0]
+fn pdf_log_series(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "LogSeriesDistribution expects 1 argument".into(),
+    ));
+  }
+  let t = dargs[0].clone();
+  let log_1mt = unary_fn("Log", minus(int(1), t.clone()));
+  let density = times(
+    int(-1),
+    divide(power(t, x.clone()), times(x.clone(), log_1mt)),
+  );
+  // For a concrete integer k, pick the branch directly. Feeding k = 0 through
+  // the piecewise would evaluate the density (k in the denominator) and emit a
+  // spurious Power::infy message even though the 0 branch is selected.
+  if let Expr::Integer(k) = &x {
+    return if *k >= 1 { eval(density) } else { Ok(int(0)) };
+  }
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(1));
+  eval(piecewise(vec![(density, cond)], int(0)))
+}
+
 // ─── CDF ──────────────────────────────────────────────────────────────
 
 /// CDF[dist, x] - Cumulative distribution function
@@ -1799,6 +1824,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ParetoDistribution" => cdf_pareto(dargs, x),
     "WeibullDistribution" => cdf_weibull(dargs, x),
     "GeometricDistribution" => cdf_geometric(dargs, x),
+    "LogSeriesDistribution" => cdf_log_series(dargs, x),
     "CauchyDistribution" => cdf_cauchy(dargs, x),
     "DiscreteUniformDistribution" => cdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => cdf_laplace(dargs, x),
@@ -2022,6 +2048,26 @@ fn cdf_binomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     vec![(value, cond_mid), (int(1), cond_high)],
     int(0),
   ))
+}
+
+/// CDF[LogSeriesDistribution[t], k] =
+///   Piecewise[{{1 + Beta[t, 1 + Floor[k], 0]/Log[1 - t], k >= 1}}, 0]
+fn cdf_log_series(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "LogSeriesDistribution expects 1 argument".into(),
+    ));
+  }
+  let t = dargs[0].clone();
+  let log_1mt = unary_fn("Log", minus(int(1), t.clone()));
+  // Beta[t, 1 + Floor[k], 0] — the incomplete beta B_t(1 + Floor[k], 0).
+  let beta = Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: vec![t, plus(int(1), unary_fn("Floor", x.clone())), int(0)].into(),
+  };
+  let value = plus(int(1), divide(beta, log_1mt));
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(1));
+  eval(piecewise(vec![(value, cond)], int(0)))
 }
 
 /// CDF[GeometricDistribution[p], k] = Piecewise[{{1 - (1-p)^(Floor[k]+1), k >= 0}}, 0]
@@ -4776,6 +4822,29 @@ fn distribution_mean_variance(
       // combined fraction.
       let mean = plus(int(-1), power(p.clone(), int(-1)));
       let var = divide(minus(int(1), p.clone()), power(p, int(2)));
+      Ok((mean, var))
+    }
+    "LogSeriesDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "LogSeriesDistribution expects 1 argument".into(),
+        ));
+      }
+      let t = dargs[0].clone();
+      let log_1mt = unary_fn("Log", minus(int(1), t.clone()));
+      // Mean = -(t/((1 - t) Log[1 - t]))
+      let mean = times(
+        int(-1),
+        divide(t.clone(), times(minus(int(1), t.clone()), log_1mt.clone())),
+      );
+      // Var = -((t (t + Log[1 - t])) / ((-1 + t)^2 Log[1 - t]^2))
+      let var = times(
+        int(-1),
+        divide(
+          times(t.clone(), plus(t.clone(), log_1mt.clone())),
+          times(power(plus(int(-1), t), int(2)), power(log_1mt, int(2))),
+        ),
+      );
       Ok((mean, var))
     }
     "CauchyDistribution" => {

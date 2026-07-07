@@ -334,6 +334,111 @@ mod geometric_distribution {
   }
 }
 
+mod log_series_distribution {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("LogSeriesDistribution[1/2]").unwrap(),
+      "LogSeriesDistribution[1/2]"
+    );
+  }
+
+  // PDF[LogSeriesDistribution[t], k] =
+  //   Piecewise[{{-(t^k/(k Log[1 - t])), k >= 1}}, 0]
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[LogSeriesDistribution[t], k]").unwrap(),
+      "Piecewise[{{-(t^k/(k*Log[1 - t])), k >= 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[LogSeriesDistribution[1/2], 1]").unwrap(),
+      "1/(2*Log[2])"
+    );
+    assert_eq!(
+      interpret("PDF[LogSeriesDistribution[1/2], 3]").unwrap(),
+      "1/(24*Log[2])"
+    );
+  }
+
+  // Outside the support (k < 1) the PMF is 0, with no spurious Power::infy
+  // message from the k-in-the-denominator density.
+  #[test]
+  fn pdf_below_support() {
+    assert_eq!(
+      interpret("PDF[LogSeriesDistribution[1/2], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[LogSeriesDistribution[1/2], -2]").unwrap(),
+      "0"
+    );
+  }
+
+  // CDF[LogSeriesDistribution[t], k] =
+  //   Piecewise[{{1 + Beta[t, 1 + Floor[k], 0]/Log[1 - t], k >= 1}}, 0]
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[LogSeriesDistribution[t], k]").unwrap(),
+      "Piecewise[{{1 + Beta[t, 1 + Floor[k], 0]/Log[1 - t], k >= 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_below_support() {
+    assert_eq!(
+      interpret("CDF[LogSeriesDistribution[1/2], 0]").unwrap(),
+      "0"
+    );
+  }
+
+  // Mean = -(t/((1 - t) Log[1 - t])).
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[LogSeriesDistribution[t]]").unwrap(),
+      "-(t/((1 - t)*Log[1 - t]))"
+    );
+  }
+
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(
+      interpret("Mean[LogSeriesDistribution[1/2]]").unwrap(),
+      "Log[2]^(-1)"
+    );
+  }
+
+  // Variance = -((t (t + Log[1 - t]))/((-1 + t)^2 Log[1 - t]^2)).
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[LogSeriesDistribution[t]]").unwrap(),
+      "-((t*(t + Log[1 - t]))/((-1 + t)^2*Log[1 - t]^2))"
+    );
+  }
+
+  // theta must lie in (0, 1); otherwise the distribution is invalid.
+  #[test]
+  fn distribution_parameter_q() {
+    assert_eq!(
+      interpret("DistributionParameterQ[LogSeriesDistribution[1/2]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DistributionParameterQ[LogSeriesDistribution[2]]").unwrap(),
+      "False"
+    );
+  }
+}
+
 mod standard_deviation_symbolic_distributions {
   use super::*;
 
