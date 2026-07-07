@@ -193,9 +193,30 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     return ord;
   }
 
-  // Try numeric comparison (including complex numbers)
-  let a_num = expr_to_complex_parts(a);
-  let b_num = expr_to_complex_parts(b);
+  // Only NUMBER LITERALS compare numerically; symbolic constants (Pi, E,
+  // Degree, GoldenRatio) and numeric composites (2*Pi, Sqrt[2]) sort
+  // structurally after all numbers, per Wolfram canonical order
+  // (Sort[{E, 3}] = {3, E}, Sort[{Sqrt[2], 7}] = {7, Sqrt[2]}).
+  let is_number_literal = |e: &Expr| -> bool {
+    matches!(
+      e,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    ) || matches!(e, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+      || crate::functions::predicate_ast::is_complex_number(e)
+  };
+  let a_num = if is_number_literal(a) {
+    expr_to_complex_parts(a)
+  } else {
+    None
+  };
+  let b_num = if is_number_literal(b) {
+    expr_to_complex_parts(b)
+  } else {
+    None
+  };
 
   match (a_num, b_num) {
     (Some((a_re, a_im)), Some((b_re, b_im))) => {
@@ -1006,43 +1027,98 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
       std::cmp::Ordering::Equal => 0,
     };
   }
-  // Try numeric comparison first (including Infinity/-Infinity)
-  let a_num = try_eval_to_f64_with_infinity(a);
-  let b_num = try_eval_to_f64_with_infinity(b);
-  if let (Some(an), Some(bn)) = (a_num, b_num) {
-    return if an < bn {
-      1
-    } else if an > bn {
-      -1
-    } else {
-      // Numerically equal number atoms tie-break by type: Integer
-      // before Real before Rational. wolframscript: Sort[{1., 1}] =
-      // {1, 1.} and Sort[{3/2, 1.5}] = {1.5, 3/2}.
-      let type_rank = |e: &Expr| -> Option<i64> {
-        match e {
-          Expr::Integer(_) | Expr::BigInteger(_) => Some(0),
-          Expr::Real(_) | Expr::BigFloat(..) => Some(1),
-          Expr::FunctionCall { name, args }
-            if name == "Rational" && args.len() == 2 =>
-          {
-            Some(2)
-          }
-          _ => None,
-        }
-      };
-      match (type_rank(a), type_rank(b)) {
-        (Some(ra), Some(rb)) if ra < rb => 1,
-        (Some(ra), Some(rb)) if ra > rb => -1,
-        _ => 0,
+  // Only NUMBER LITERALS compare by value — symbolic constants (Pi, E)
+  // and numeric composites (2*Pi, Sqrt[2]) sort structurally after all
+  // numbers in Wolfram's canonical order (Sort[{Pi, 7}] = {7, Pi}).
+  // Complex literals order by real part, then imaginary part
+  // (Sort[{I, -I, 1, 1 + I}] = {-I, I, 1, 1 + I}).
+  let literal_parts = |e: &Expr| -> Option<(f64, f64)> {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..) => {
+        try_eval_to_f64_with_infinity(e).map(|v| (v, 0.0))
       }
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        try_eval_to_f64_with_infinity(e).map(|v| (v, 0.0))
+      }
+      _ if crate::functions::predicate_ast::is_complex_number(e) => {
+        crate::functions::math_ast::try_extract_complex_float(e)
+      }
+      _ => None,
+    }
+  };
+  let a_lit = literal_parts(a);
+  let b_lit = literal_parts(b);
+  if let (Some((ar, ai)), Some((br, bi))) = (a_lit, b_lit) {
+    if ar != br {
+      return if ar < br { 1 } else { -1 };
+    }
+    if ai != bi {
+      return if ai < bi { 1 } else { -1 };
+    }
+    // Numerically equal number atoms tie-break by type: Integer
+    // before Real before Rational. wolframscript: Sort[{1., 1}] =
+    // {1, 1.} and Sort[{3/2, 1.5}] = {1.5, 3/2}.
+    let type_rank = |e: &Expr| -> Option<i64> {
+      match e {
+        Expr::Integer(_) | Expr::BigInteger(_) => Some(0),
+        Expr::Real(_) | Expr::BigFloat(..) => Some(1),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          Some(2)
+        }
+        _ => None,
+      }
+    };
+    return match (type_rank(a), type_rank(b)) {
+      (Some(ra), Some(rb)) if ra < rb => 1,
+      (Some(ra), Some(rb)) if ra > rb => -1,
+      _ => 0,
     };
   }
   // Numbers come before non-numbers
-  if a_num.is_some() {
+  if a_lit.is_some() {
     return 1;
   }
-  if b_num.is_some() {
+  if b_lit.is_some() {
     return -1;
+  }
+  // Directed infinities (Infinity, -Infinity, ComplexInfinity) order as
+  // their DirectedInfinity[...] head: after symbols, among composites,
+  // with -Infinity before Infinity (Sort[{-Infinity, 5}] = {5, -Infinity}).
+  let normalize_infinity = |e: &Expr| -> Option<Expr> {
+    if matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
+    {
+      return None; // already in canonical form
+    }
+    if !crate::functions::predicate_ast::is_directed_infinity(e) {
+      return None;
+    }
+    let dir = if matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity")
+    {
+      vec![]
+    } else if crate::functions::math_ast::is_neg_infinity(e) {
+      vec![Expr::Integer(-1)]
+    } else {
+      vec![Expr::Integer(1)]
+    };
+    Some(Expr::FunctionCall {
+      name: "DirectedInfinity".to_string(),
+      args: dir.into(),
+    })
+  };
+  let a_inf = normalize_infinity(a);
+  let b_inf = normalize_infinity(b);
+  if a_inf.is_some() || b_inf.is_some() {
+    return compare_exprs(
+      a_inf.as_ref().unwrap_or(a),
+      b_inf.as_ref().unwrap_or(b),
+    );
   }
 
   // Two Lists: Wolfram's canonical order compares expressions with the same

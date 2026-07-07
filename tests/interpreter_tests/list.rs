@@ -1277,6 +1277,59 @@ mod find_peaks {
   }
 }
 
+mod canonical_order_constants {
+  use super::*;
+
+  // Wolfram canonical order sorts only NUMBER LITERALS by value; symbolic
+  // constants sort alphabetically among symbols and numeric composites
+  // sort structurally after them (found by the differential fuzzer:
+  // Sort[{Pi, 7}] came back {Pi, 7} from a numeric comparison).
+  #[test]
+  fn symbolic_constants_sort_after_numbers() {
+    for (input, expected) in [
+      (
+        "Sort[{Pi, 7, E, 1/2, 3.5, x, I, Infinity, GoldenRatio, -5}]",
+        "{-5, I, 1/2, 3.5, 7, E, GoldenRatio, Pi, x, Infinity}",
+      ),
+      ("Sort[{E, 3}]", "{3, E}"),
+      ("Sort[{Pi, 3}]", "{3, Pi}"),
+      ("Sort[{Degree, 100}]", "{100, Degree}"),
+      ("Sort[{2*Pi, 7}]", "{7, 2*Pi}"),
+      ("Sort[{Sqrt[2], 7}]", "{7, Sqrt[2]}"),
+      ("Sort[{Pi, E}]", "{E, Pi}"),
+      ("Sort[{Pi, x}]", "{Pi, x}"),
+      ("Union[{Pi}, {7}]", "{7, Pi}"),
+      ("Union[{-13, Pi, Divide[19, 2]}, {7}]", "{-13, 7, 19/2, Pi}"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // Directed infinities order as composites (after symbols), and complex
+  // literals order by real part then imaginary part among the numbers.
+  #[test]
+  fn infinities_and_complex_literals() {
+    for (input, expected) in [
+      ("Sort[{-Infinity, 5}]", "{5, -Infinity}"),
+      ("Sort[{Infinity, -Infinity, 0}]", "{0, -Infinity, Infinity}"),
+      ("Sort[{I, -I, 1, 1 + I}]", "{-I, I, 1, 1 + I}"),
+      ("Sort[{2 + I, 1, x}]", "{1, 2 + I, x}"),
+      // Type tie-breaks among equal values are unchanged
+      ("Sort[{1., 1}]", "{1, 1.}"),
+      ("Sort[{3/2, 1.5}]", "{1.5, 3/2}"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // Max/Min keep comparing symbolic constants numerically.
+  #[test]
+  fn max_min_stay_numeric() {
+    assert_eq!(interpret("Max[Pi, 3]").unwrap(), "Pi");
+    assert_eq!(interpret("Min[E, 3]").unwrap(), "E");
+  }
+}
+
 mod ordering {
   use super::*;
 
