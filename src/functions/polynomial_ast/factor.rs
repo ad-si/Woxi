@@ -2114,6 +2114,106 @@ fn lcm_i128(a: i128, b: i128) -> i128 {
 
 // ─── FactorSquareFree ──────────────────────────────────────────────
 
+/// Multivariate FactorSquareFree: fully factor, then group the factors by
+/// multiplicity and re-expand each multiplicity group, so only repeated
+/// factors stay split out — a^2 + 2ab + b^2 → (a + b)^2, while the
+/// square-free a^2 + 3ab + 2b^2 stays expanded (matching wolframscript).
+fn multivariate_square_free(
+  original: &Expr,
+  expanded: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let factored = factor_ast(&[expanded.clone()])?;
+  let (negated, product) = match &factored {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => (true, operand.as_ref().clone()),
+    other => (false, other.clone()),
+  };
+
+  // Keep every factor in its original product position; a multiplicity
+  // group with several bases merges (expanded) into its first slot, so
+  // (-1+x)^2*(1+x)^2 becomes (-1+x^2)^2 without disturbing the order of
+  // the remaining factors.
+  let mut out: Vec<Option<Expr>> = Vec::new();
+  let mut groups: Vec<(i128, usize, Vec<Expr>)> = Vec::new();
+  let mut any_repeat = false;
+  for f in collect_multiplicative_factors(&product) {
+    let is_numeric = matches!(&f, Expr::Integer(_))
+      || matches!(&f, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2);
+    if is_numeric {
+      out.push(Some(f));
+      continue;
+    }
+    let (base, exp) = match &f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => match right.as_ref() {
+        Expr::Integer(n) if *n >= 1 => (left.as_ref().clone(), *n),
+        _ => (f.clone(), 1),
+      },
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        match &args[1] {
+          Expr::Integer(n) if *n >= 1 => (args[0].clone(), *n),
+          _ => (f.clone(), 1),
+        }
+      }
+      _ => (f.clone(), 1),
+    };
+    if exp > 1 {
+      any_repeat = true;
+    }
+    if let Some(entry) = groups.iter_mut().find(|(e, _, _)| *e == exp) {
+      entry.2.push(base);
+    } else {
+      out.push(None);
+      groups.push((exp, out.len() - 1, vec![base]));
+    }
+  }
+
+  // Everything at multiplicity 1 means the input is square-free — return
+  // it untouched (not the re-expanded form, whose term order may differ)
+  // rather than exposing the full factorization.
+  if !any_repeat {
+    return Ok(original.clone());
+  }
+
+  for (e, slot, bases) in groups {
+    let prod = if bases.len() == 1 {
+      bases.into_iter().next().unwrap()
+    } else {
+      expand_and_combine(&build_product(bases))
+    };
+    out[slot] = Some(if e == 1 {
+      prod
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(prod),
+        right: Box::new(Expr::Integer(e)),
+      }
+    });
+  }
+  let mut out_factors: Vec<Expr> = out.into_iter().flatten().collect();
+  let result = if out_factors.len() == 1 {
+    out_factors.remove(0)
+  } else {
+    build_product(out_factors)
+  };
+  Ok(if negated {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(result),
+    }
+  } else {
+    result
+  })
+}
+
 /// FactorSquareFree[poly] - Square-free factorization via Yun's algorithm
 /// Groups factors by multiplicity without fully factoring the square-free parts.
 pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2136,7 +2236,7 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let var = match find_single_variable(&expanded) {
     Some(v) => v,
-    None => return Ok(expanded),
+    None => return multivariate_square_free(&args[0], &expanded),
   };
 
   let coeffs = match extract_poly_coeffs(&expanded, &var) {

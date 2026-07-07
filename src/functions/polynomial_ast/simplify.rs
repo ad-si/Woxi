@@ -4134,13 +4134,16 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     }
   }
 
-  // Candidate 4: Factor — wolframscript prefers `(1+a)^3` over the expanded
-  // `1 + 3a + 3a^2 + a^3` and also picks `3*(1+a)` over `3 + 3a` on a tie,
-  // so accept the factored form on `<=`. Skip when Factor returns a larger
-  // form (e.g. it would unexpand `-1 + x^2` to `(-1+x)*(1+x)`). Factoring the
+  // Candidate 4: factoring — wolframscript prefers `(1+a)^3` over the
+  // expanded `1 + 3a + 3a^2 + a^3` and also picks `3*(1+a)` over `3 + 3a`
+  // on a tie, so accept the factored form on `<=`. For a polynomial SUM
+  // the transformation wolframscript applies is FactorSquareFree, not
+  // Factor: `x^3+4x^2+5x+2` → `(1+x)^2*(2+x)` and `x^4-2x^2+1` →
+  // `(-1+x^2)^2`, but square-free `2+3x+x^2` / `-3-5x+2x^2` stay expanded
+  // even though the fully factored forms are cheaper. Factoring the
   // current `best` lets a Together-combined fraction like
   // `2/(2*((1-I*x)*(1+I*x)))` collapse to `(1+x^2)^(-1)`.
-  if let Ok(factored) = super::factor::factor_ast(&[best.clone()]) {
+  {
     // For a top-level sum the negative-count tie-break applies (keep
     // `3 - 3x` over `-3*(-1 + x)`); other shapes (fractions, lists)
     // keep the plain leaf-count preference for factored forms.
@@ -4153,14 +4156,24 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           ..
         }
       );
-    let accept = if is_sum {
-      simplify_cost_key(&factored) <= simplify_cost_key(&best)
+    // The square-free rule is decoded for POLYNOMIAL sums; sums carrying
+    // other functions (trig etc.) keep the full Factor candidate, whose
+    // numeric-content extraction the pipeline relies on.
+    let factored = if is_sum && polynomial_like(&best) {
+      super::factor::factor_square_free_ast(&[best.clone()])
     } else {
-      leaf_count(&factored) <= best_c
+      super::factor::factor_ast(&[best.clone()])
     };
-    if accept && !exprs_equal(&factored, &best) {
-      best = factored;
-      let _ = best_c;
+    if let Ok(factored) = factored {
+      let accept = if is_sum {
+        simplify_cost_key(&factored) <= simplify_cost_key(&best)
+      } else {
+        leaf_count(&factored) <= best_c
+      };
+      if accept && !exprs_equal(&factored, &best) {
+        best = factored;
+        let _ = best_c;
+      }
     }
   }
 
@@ -4172,6 +4185,43 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
 /// then the number of negative integer leaves (so `3 - 3x` beats
 /// `-3*(-1 + x)` while `-2*(1 + x)` beats `-2 - 2x`); full ties prefer
 /// the candidate (callers compare with <=).
+/// True when the expression is built purely from numbers, symbols and the
+/// arithmetic heads — the shapes Factor/FactorSquareFree treat as
+/// polynomials. Sums with other functions (Sin[x], Log[x], …) are not.
+fn polynomial_like(e: &Expr) -> bool {
+  use crate::syntax::BinaryOperator as B;
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::Identifier(_)
+    | Expr::Constant(_) => true,
+    Expr::BinaryOp { op, left, right } => match op {
+      B::Plus | B::Minus | B::Times => {
+        polynomial_like(left) && polynomial_like(right)
+      }
+      // Only non-negative integer powers keep a sum polynomial — fractions
+      // (Divide, x^-1) must keep the full Factor candidate.
+      B::Power => {
+        matches!(right.as_ref(), Expr::Integer(n) if *n >= 0)
+          && polynomial_like(left)
+      }
+      _ => false,
+    },
+    Expr::UnaryOp { operand, .. } => polynomial_like(operand),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      matches!(&args[1], Expr::Integer(n) if *n >= 0)
+        && polynomial_like(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Plus" | "Times" | "Rational" | "Complex") =>
+    {
+      args.iter().all(polynomial_like)
+    }
+    _ => false,
+  }
+}
+
 fn simplify_cost_key(e: &Expr) -> (usize, usize) {
   fn negative_ints(e: &Expr) -> usize {
     match e {
@@ -4703,13 +4753,32 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
-  // Try factoring (Factor[expr]). Ties on the digit-weighted complexity
-  // prefer the factored form (Simplify[2x + 2] -> 2(1 + x)) UNLESS
-  // factoring introduces more negative integers — wolframscript keeps
-  // `3 - 3x` rather than `-3(-1 + x)`, but factors `-2x - 2` to
-  // `-2(1 + x)` (one negative instead of two).
-  if let Ok(factored) =
+  // Try factoring. wolframscript's Simplify applies FactorSquareFree to
+  // polynomial sums (square-free `2+3x+x^2` stays expanded, `x^3+4x^2+5x+2`
+  // becomes `(1+x)^2*(2+x)`), Factor to other shapes. Ties on the
+  // digit-weighted complexity prefer the factored form
+  // (Simplify[2x + 2] -> 2(1 + x)) UNLESS factoring introduces more
+  // negative integers — wolframscript keeps `3 - 3x` rather than
+  // `-3(-1 + x)`, but factors `-2x - 2` to `-2(1 + x)` (one negative
+  // instead of two).
+  let is_sum_shape = matches!(&trig_simplified, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      &trig_simplified,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus
+          | crate::syntax::BinaryOperator::Minus,
+        ..
+      }
+    );
+  let factored_candidate = if is_sum_shape && polynomial_like(&trig_simplified)
+  {
+    crate::functions::polynomial_ast::factor_square_free_ast(&[
+      trig_simplified.clone()
+    ])
+  } else {
     crate::functions::polynomial_ast::factor_ast(&[trig_simplified.clone()])
+  };
+  if let Ok(factored) = factored_candidate
     && simplify_cost_key(&factored) <= simplify_cost_key(&best)
   {
     let c = leaf_count(&factored);

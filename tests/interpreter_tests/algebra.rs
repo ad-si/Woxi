@@ -955,6 +955,39 @@ mod simplify {
   fn equation_symbolic_stays_unevaluated() {
     assert_eq!(interpret("Simplify[x == y]").unwrap(), "x == y");
   }
+
+  // Simplify applies FactorSquareFree to polynomial sums, not Factor:
+  // square-free polynomials stay expanded even when the fully factored
+  // form has fewer leaves (wolframscript-verified; found by the
+  // differential fuzzer, seed 8250707).
+  #[test]
+  fn square_free_polynomials_stay_expanded() {
+    assert_eq!(
+      interpret("Simplify[-3 - 5 x + 2 x^2]").unwrap(),
+      "-3 - 5*x + 2*x^2"
+    );
+    assert_eq!(
+      interpret("Simplify[2 + 3 x + x^2]").unwrap(),
+      "2 + 3*x + x^2"
+    );
+    assert_eq!(interpret("Simplify[x^2 - 1]").unwrap(), "-1 + x^2");
+  }
+
+  #[test]
+  fn square_free_factorization_is_applied() {
+    assert_eq!(
+      interpret("Simplify[x^3 + 4 x^2 + 5 x + 2]").unwrap(),
+      "(1 + x)^2*(2 + x)"
+    );
+    // FactorSquareFree keeps the square-free base whole: (-1+x^2)^2,
+    // not (-1+x)^2*(1+x)^2.
+    assert_eq!(
+      interpret("Simplify[x^4 - 2 x^2 + 1]").unwrap(),
+      "(-1 + x^2)^2"
+    );
+    assert_eq!(interpret("Simplify[x + x^2]").unwrap(), "x*(1 + x)");
+    assert_eq!(interpret("Simplify[2 x + 2 x^2]").unwrap(), "2*x*(1 + x)");
+  }
 }
 
 mod factor {
@@ -6529,6 +6562,45 @@ mod factor_square_free {
     assert_eq!(
       interpret("Attributes[FactorSquareFree]").unwrap(),
       "{Listable, Protected}"
+    );
+  }
+
+  // Multivariate square-free factorization: repeated factors split out,
+  // square-free polynomials stay expanded (wolframscript-verified).
+  #[test]
+  fn multivariate_perfect_square() {
+    assert_eq!(
+      interpret("FactorSquareFree[a^2 + 2 a b + b^2]").unwrap(),
+      "(a + b)^2"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[-a^2 - 2 a b - b^2]").unwrap(),
+      "-(a + b)^2"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[2 a^2 + 4 a b + 2 b^2]").unwrap(),
+      "2*(a + b)^2"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[x^2 y + 2 x y + y]").unwrap(),
+      "(1 + x)^2*y"
+    );
+  }
+
+  #[test]
+  fn multivariate_square_free_unchanged() {
+    assert_eq!(
+      interpret("FactorSquareFree[a^2 + 3 a b + 2 b^2]").unwrap(),
+      "a^2 + 3*a*b + 2*b^2"
+    );
+  }
+
+  #[test]
+  fn keeps_square_free_base_whole() {
+    // (-1+x^2)^2, not (-1+x)^2*(1+x)^2.
+    assert_eq!(
+      interpret("FactorSquareFree[x^4 - 2 x^2 + 1]").unwrap(),
+      "(-1 + x^2)^2"
     );
   }
 }
