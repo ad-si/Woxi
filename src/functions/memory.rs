@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 
+#[cfg(target_os = "windows")]
 use std::mem::size_of;
 
 // Windows-specific imports
@@ -167,6 +168,15 @@ pub fn memory_physical() -> i128 {
     if let Some(status) = result {
       return status.ullTotalPhys as i128;
     }
+    -1
+  }
+
+  #[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows"
+  )))]
+  {
     -1
   }
 }
