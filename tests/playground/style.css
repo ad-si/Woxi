@@ -547,6 +547,12 @@ pre.output-box {
   cursor: not-allowed;
 }
 
+/* `Appearance -> None` hides the control rows entirely — the animation just
+   runs. An animated widget keeps its play/pause bar below. */
+.manipulate-controls.appearance-none .manipulate-control-row {
+  display: none;
+}
+
 /* Animate/ListAnimate play-pause bar. The controls panel is a shared grid, so
    span every column and left-align the button under the sliders. */
 .manipulate-animator {

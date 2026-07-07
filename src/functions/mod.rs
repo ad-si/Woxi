@@ -49,6 +49,7 @@ pub mod parametric_plot;
 pub mod periodic_table_plot;
 pub mod plot;
 pub mod plot3d;
+pub mod plot_epilog;
 pub mod polyhedron_data;
 pub mod polynomial_ast;
 pub mod predicate_ast;

@@ -307,6 +307,11 @@ enum Message {
   /// with the latest control values if any change is still pending.
   /// (cell_idx)
   ManipulateReeval(usize),
+  /// Periodic tick advancing every playing Animate/ListAnimate widget by
+  /// one animation step.
+  ManipulateAnimationTick,
+  /// Toggle play/pause of an animated (Animate/ListAnimate) widget.
+  ManipulateTogglePlay(usize),
   /// Swallow an interaction with a disabled control (its `Enabled` condition
   /// is currently `False`) without changing any state.
   Noop,
@@ -1649,6 +1654,27 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::ManipulateAnimationTick => {
+        for editor in &mut self.cell_editors {
+          if let Some(state) = editor.manipulate_state.as_mut()
+            && state.animated
+            && state.playing
+          {
+            state.advance_animation();
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateTogglePlay(cell_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.playing = !state.playing;
+        }
+        Task::none()
+      }
+
       Message::Noop => Task::none(),
 
       Message::OpenHyperlink(url) => {
@@ -2102,6 +2128,18 @@ impl WoxiStudio {
       subs.push(
         iced::time::every(std::time::Duration::from_millis(200))
           .map(|_| Message::PlaybackTick),
+      );
+    }
+    // While any Animate/ListAnimate widget is playing, tick its animation
+    // forward. One shared timer drives all playing widgets.
+    if self.cell_editors.iter().any(|e| {
+      e.manipulate_state
+        .as_ref()
+        .is_some_and(|s| s.animated && s.playing)
+    }) {
+      subs.push(
+        iced::time::every(std::time::Duration::from_millis(ANIM_INTERVAL_MS))
+          .map(|_| Message::ManipulateAnimationTick),
       );
     }
     #[cfg(target_os = "macos")]
@@ -3454,6 +3492,12 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
 /// immediately, so the thumb and value label track the cursor without lag.
 const MANIPULATE_THROTTLE_MS: u64 = 16;
 
+/// Auto-playing widgets (Animate / ListAnimate) advance their animation
+/// control one step every ANIM_INTERVAL_MS. At ~60ms the default 100-step
+/// continuous range sweeps in ~6s, matching Wolfram's leisurely Animate
+/// (and the Playground's pace).
+const ANIM_INTERVAL_MS: u64 = 60;
+
 /// Maximum number of choices rendered as a segmented SetterBar (a row of
 /// toggle buttons). Discrete controls with more settings fall back to a
 /// dropdown so the control row can't grow unbounded.
@@ -3477,6 +3521,9 @@ fn render_manipulate_widget<'a>(
   stale: bool,
 ) -> Element<'a, Message> {
   let mut controls_col = Column::new().spacing(6).width(Fill);
+  // `Appearance -> None` hides the control rows entirely — the animation
+  // just runs. An animated widget keeps its play/pause toggle below.
+  let show_controls = !state.appearance_none;
   // Size the label column to the widest label so it sits snug against the
   // sliders. ~7.3px per character at the 12px caption font (monospace),
   // plus a little trailing padding; clamped so a single-glyph label still
@@ -3488,7 +3535,9 @@ fn render_manipulate_widget<'a>(
     .max()
     .unwrap_or(0);
   let label_col_width = (max_label_chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0);
-  for (ctrl_idx, ctrl) in state.controls.iter().enumerate() {
+  let visible_controls: &[manipulate::ControlState] =
+    if show_controls { &state.controls } else { &[] };
+  for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
     // A control whose `Enabled` condition currently evaluates to `False` is
     // greyed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -3711,6 +3760,18 @@ fn render_manipulate_widget<'a>(
         controls_col = controls_col.push(control_row);
       }
     }
+  }
+
+  // An animated widget (Animate / ListAnimate / Animator) gets a play/pause
+  // toggle that starts in the playing state (Wolfram's default
+  // AnimationRunning -> True). It stays visible under Appearance -> None so
+  // the animation can still be paused.
+  if state.animated {
+    let symbol = if state.playing { "❚❚" } else { "▶" };
+    let play_btn = button(text(symbol).size(11))
+      .padding([3, 10])
+      .on_press(Message::ManipulateTogglePlay(cell_idx));
+    controls_col = controls_col.push(row![play_btn].align_y(Center));
   }
 
   let mut output_col = Column::new().spacing(0).width(Fill);
@@ -5861,6 +5922,47 @@ mod tests {
     state.run_scheduled_reeval();
     state.run_scheduled_reeval();
     assert!(state.request_reeval(), "flag must clear on an empty fire");
+  }
+
+  #[test]
+  fn animate_widget_starts_playing_and_wraps() {
+    // An Animate widget auto-plays from its initial value and its animation
+    // tick advances the continuous control by one step, wrapping back to
+    // the start once it passes the end.
+    let expr = woxi::interpret_to_expr("Animate[x, {x, 0, 1, 0.5}]").unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.animated, "Animate must mark the widget animated");
+    assert!(state.playing, "AnimationRunning -> True is the default");
+    let current = |s: &manipulate::ManipulateState| match &s.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current,
+      _ => panic!("expected continuous control"),
+    };
+    assert_eq!(current(&state), 0.0);
+    state.advance_animation();
+    assert_eq!(current(&state), 0.5);
+    state.advance_animation();
+    assert_eq!(current(&state), 1.0);
+    state.advance_animation();
+    assert_eq!(
+      current(&state),
+      0.0,
+      "animation must loop back to the start"
+    );
+  }
+
+  #[test]
+  fn animate_appearance_none_is_captured() {
+    // `Appearance -> None` hides the control rows in the widget view.
+    let expr =
+      woxi::interpret_to_expr("Animate[x, {x, 0, 1}, Appearance -> None]")
+        .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.appearance_none);
+    // A plain Manipulate keeps its controls visible.
+    let expr = woxi::interpret_to_expr("Manipulate[x, {x, 0, 1}]").unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(!state.appearance_none);
+    assert!(!state.animated && !state.playing);
   }
 
   #[test]
