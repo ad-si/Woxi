@@ -3281,7 +3281,7 @@ DayRound,Rounds a date to a day (optionally of a given weekday),✅,pure,9.0,336
 Equilibrium,,,,3.0,3363
 FindMeshDefects,,,,11.0,3363
 Interactive,,🚫,,9.0,3363
-NakagamiDistribution,,,,8.0,3363
+NakagamiDistribution,Nakagami distribution with shape parameter m and spread w,✅,pure,8.0,3363
 NicholsPlot,,🚫,,8.0,3363
 SystemsModelDelete,,🚫,,8.0,3363
 VarianceGammaDistribution,,,,9.0,3363

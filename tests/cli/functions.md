@@ -50,6 +50,7 @@ icon: lucide/square-function
 - [`LogisticDistribution`](functions/LogisticDistribution.md)
 - [`MultinomialDistribution`](functions/MultinomialDistribution.md)
 - [`MultivariatePoissonDistribution`](functions/MultivariatePoissonDistribution.md)
+- [`NakagamiDistribution`](functions/NakagamiDistribution.md)
 - [`Names`](functions/Names.md)
 - [`NegativeBinomialDistribution`](functions/NegativeBinomialDistribution.md)
 - [`Nest`](functions/Nest.md)

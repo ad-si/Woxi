@@ -1349,6 +1349,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "WignerSemicircleDistribution" => Some((1, 2)),
     "SechDistribution" => Some((0, 2)),
     "MoyalDistribution" => Some((0, 2)),
+    "NakagamiDistribution" => Some((2, 2)),
     "BorelTannerDistribution" => Some((2, 2)),
     "BenktanderGibratDistribution" => Some((2, 2)),
     "GumbelDistribution" => Some((0, 2)),

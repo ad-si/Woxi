@@ -439,6 +439,107 @@ mod log_series_distribution {
   }
 }
 
+mod nakagami_distribution {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("NakagamiDistribution[2, 3]").unwrap(),
+      "NakagamiDistribution[2, 3]"
+    );
+  }
+
+  // PDF[NakagamiDistribution[m, w], x] = Piecewise[{{
+  //   (2 (m/w)^m x^(-1 + 2 m))/(E^((m x^2)/w) Gamma[m]), x > 0}}, 0]
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[NakagamiDistribution[m, w], x]").unwrap(),
+      "Piecewise[{{(2*(m/w)^m*x^(-1 + 2*m))/(E^((m*x^2)/w)*Gamma[m]), \
+       x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[NakagamiDistribution[2, 3], 1]").unwrap(),
+      "8/(9*E^(2/3))"
+    );
+  }
+
+  // Outside the support (x <= 0) the density is 0.
+  #[test]
+  fn pdf_below_support() {
+    assert_eq!(
+      interpret("PDF[NakagamiDistribution[2, 3], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[NakagamiDistribution[2, 3], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  // CDF[NakagamiDistribution[m, w], x] =
+  //   Piecewise[{{GammaRegularized[m, 0, (m x^2)/w], x > 0}}, 0]
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[NakagamiDistribution[m, w], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[m, 0, (m*x^2)/w], x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_numeric() {
+    assert_eq!(
+      interpret("CDF[NakagamiDistribution[2, 3], 1]").unwrap(),
+      "GammaRegularized[2, 0, 2/3]"
+    );
+  }
+
+  // Mean = (Sqrt[w] Pochhammer[m, 1/2])/Sqrt[m].
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[NakagamiDistribution[m, w]]").unwrap(),
+      "(Sqrt[w]*Pochhammer[m, 1/2])/Sqrt[m]"
+    );
+  }
+
+  // Variance = w - (w Pochhammer[m, 1/2]^2)/m.
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[NakagamiDistribution[m, w]]").unwrap(),
+      "w - (w*Pochhammer[m, 1/2]^2)/m"
+    );
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[NakagamiDistribution[2, 3]]").unwrap(),
+      "3 - (27*Pi)/32"
+    );
+  }
+
+  // m and w must both be positive.
+  #[test]
+  fn distribution_parameter_q() {
+    assert_eq!(
+      interpret("DistributionParameterQ[NakagamiDistribution[2, 3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DistributionParameterQ[NakagamiDistribution[-1, 3]]").unwrap(),
+      "False"
+    );
+  }
+}
+
 mod standard_deviation_symbolic_distributions {
   use super::*;
 

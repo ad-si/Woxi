@@ -219,6 +219,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "WeibullDistribution" => pdf_weibull(dargs, x),
     "GeometricDistribution" => pdf_geometric(dargs, x),
     "LogSeriesDistribution" => pdf_log_series(dargs, x),
+    "NakagamiDistribution" => pdf_nakagami(dargs, x),
     "CauchyDistribution" => pdf_cauchy(dargs, x),
     "DiscreteUniformDistribution" => pdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => pdf_laplace(dargs, x),
@@ -1697,6 +1698,54 @@ fn pdf_log_series(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   eval(piecewise(vec![(density, cond)], int(0)))
 }
 
+/// PDF[NakagamiDistribution[m, w], x] = Piecewise[{{
+///   (2 (m/w)^m x^(-1 + 2 m))/(E^((m x^2)/w) Gamma[m]), x > 0}}, 0]
+fn pdf_nakagami(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "NakagamiDistribution expects 2 arguments".into(),
+    ));
+  }
+  let m = dargs[0].clone();
+  let w = dargs[1].clone();
+  // numerator = 2 (m/w)^m x^(-1 + 2 m)
+  let numer = times(
+    times(int(2), power(divide(m.clone(), w.clone()), m.clone())),
+    power(x.clone(), plus(int(-1), times(int(2), m.clone()))),
+  );
+  // denominator = E^((m x^2)/w) Gamma[m]
+  let denom = times(
+    power(e(), divide(times(m.clone(), power(x.clone(), int(2))), w)),
+    unary_fn("Gamma", m),
+  );
+  let density = divide(numer, denom);
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(density, cond)], int(0)))
+}
+
+/// CDF[NakagamiDistribution[m, w], x] =
+///   Piecewise[{{GammaRegularized[m, 0, (m x^2)/w], x > 0}}, 0]
+fn cdf_nakagami(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "NakagamiDistribution expects 2 arguments".into(),
+    ));
+  }
+  let m = dargs[0].clone();
+  let w = dargs[1].clone();
+  let value = Expr::FunctionCall {
+    name: "GammaRegularized".to_string(),
+    args: vec![
+      m.clone(),
+      int(0),
+      divide(times(m, power(x.clone(), int(2))), w),
+    ]
+    .into(),
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
 // ─── CDF ──────────────────────────────────────────────────────────────
 
 /// CDF[dist, x] - Cumulative distribution function
@@ -1825,6 +1874,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "WeibullDistribution" => cdf_weibull(dargs, x),
     "GeometricDistribution" => cdf_geometric(dargs, x),
     "LogSeriesDistribution" => cdf_log_series(dargs, x),
+    "NakagamiDistribution" => cdf_nakagami(dargs, x),
     "CauchyDistribution" => cdf_cauchy(dargs, x),
     "DiscreteUniformDistribution" => cdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => cdf_laplace(dargs, x),
@@ -4845,6 +4895,31 @@ fn distribution_mean_variance(
           times(power(plus(int(-1), t), int(2)), power(log_1mt, int(2))),
         ),
       );
+      Ok((mean, var))
+    }
+    "NakagamiDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "NakagamiDistribution expects 2 arguments".into(),
+        ));
+      }
+      let m = dargs[0].clone();
+      let w = dargs[1].clone();
+      let poch = Expr::FunctionCall {
+        name: "Pochhammer".to_string(),
+        args: vec![
+          m.clone(),
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![int(1), int(2)].into(),
+          },
+        ]
+        .into(),
+      };
+      // Mean = (Sqrt[w] Pochhammer[m, 1/2])/Sqrt[m]
+      let mean = divide(times(sqrt(w.clone()), poch.clone()), sqrt(m.clone()));
+      // Var = w - (w Pochhammer[m, 1/2]^2)/m
+      let var = minus(w.clone(), divide(times(w, power(poch, int(2))), m));
       Ok((mean, var))
     }
     "CauchyDistribution" => {
