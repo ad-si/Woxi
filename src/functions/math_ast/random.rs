@@ -7,6 +7,16 @@ use crate::syntax::Expr;
 pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
 
+  // RandomInteger[dist] / RandomInteger[dist, n] samples from a discrete
+  // distribution, exactly like RandomVariate (e.g. `RandomInteger[
+  // PoissonDistribution[10], 1000]`). Delegate to RandomVariate so every
+  // distribution it supports works here too.
+  if let Some(Expr::FunctionCall { name, .. }) = args.first()
+    && name.ends_with("Distribution")
+  {
+    return random_variate_ast(args);
+  }
+
   match args.len() {
     0 => Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(0..=1)))),
     1 => match &args[0] {

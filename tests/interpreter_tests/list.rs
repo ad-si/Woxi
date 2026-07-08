@@ -5256,6 +5256,35 @@ mod random_integer {
       "{{}, {}, {}}"
     );
   }
+
+  #[test]
+  fn distribution_single() {
+    // RandomInteger[dist] samples one integer from the distribution
+    // (identical to RandomVariate for discrete distributions).
+    let v: i128 = interpret("RandomInteger[PoissonDistribution[10]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(v >= 0, "Poisson sample must be non-negative");
+  }
+
+  #[test]
+  fn distribution_count() {
+    // Regression: `RandomInteger[PoissonDistribution[10], 1000]` used to
+    // error with "invalid range"; it must sample 1000 integers instead.
+    assert_eq!(
+      interpret("Length[RandomInteger[PoissonDistribution[10], 1000]]")
+        .unwrap(),
+      "1000"
+    );
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomInteger[PoissonDistribution[5], 200], IntegerQ[#] && # >= 0 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod distributions {

@@ -1,6 +1,31 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Colors of a Wolfram `ColorData` indexed scheme (`ColorData[n, "ColorList"]`).
+///
+/// Scheme 97 is the default plot-color palette; its exact RGB values are
+/// reproduced here (verified against wolframscript's output). Other indexed
+/// schemes are not yet tabulated.
+fn indexed_color_list(n: i128) -> Option<&'static [(f64, f64, f64)]> {
+  // ColorData[97, "ColorList"] — the modern default plot palette (10 colors).
+  const SCHEME_97: [(f64, f64, f64); 10] = [
+    (0.368417, 0.506779, 0.709798),
+    (0.880722, 0.611041, 0.142051),
+    (0.560181, 0.691569, 0.194885),
+    (0.922526, 0.385626, 0.209179),
+    (0.528488, 0.470624, 0.701351),
+    (0.772079, 0.431554, 0.102387),
+    (0.363898, 0.618501, 0.782349),
+    (1.0, 0.75, 0.0),
+    (0.647624, 0.37816, 0.614037),
+    (0.571589, 0.586483, 0.0),
+  ];
+  match n {
+    97 => Some(&SCHEME_97),
+    _ => None,
+  }
+}
+
 /// Extract a lowercase file extension from a path or URL.
 /// Strips any `?query` or `#fragment` first, so
 /// `"http://host/file.csv?x=1"` yields `"csv"`.
@@ -433,6 +458,24 @@ pub fn dispatch_image_functions(
         ]
         .into(),
       )));
+    }
+    // ColorData[n, "ColorList"]: the ordered list of colors in indexed
+    // scheme n (e.g. `ColorData[97, "ColorList"]` — the default plot palette).
+    "ColorData" if args.len() == 2 => {
+      if let (Expr::Integer(n), Expr::String(prop)) = (&args[0], &args[1])
+        && prop == "ColorList"
+        && let Some(colors) = indexed_color_list(*n)
+      {
+        return Some(Ok(Expr::List(
+          colors
+            .iter()
+            .map(|&(r, g, b)| Expr::FunctionCall {
+              name: "RGBColor".to_string(),
+              args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+            })
+            .collect(),
+        )));
+      }
     }
     // ColorData["Gradients"]: list of named built-in color gradients.
     "ColorData" if args.len() == 1 => {
