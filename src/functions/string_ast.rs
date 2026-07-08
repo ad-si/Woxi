@@ -10321,7 +10321,22 @@ fn readlist_get_text(source: &Expr) -> Result<String, InterpreterError> {
         ))
       }
     }
-    // String path → read file
+    // String path → read file. In the browser the host-registered virtual
+    // file store (set_virtual_file) replaces the filesystem.
+    #[cfg(target_arch = "wasm32")]
+    Expr::String(path) => match crate::wasm::virtual_file(path) {
+      Some(bytes) => String::from_utf8(bytes).map_err(|_| {
+        InterpreterError::EvaluationError(format!(
+          "ReadList: \"{}\" is not valid UTF-8 text",
+          path
+        ))
+      }),
+      None => Err(InterpreterError::EvaluationError(format!(
+        "ReadList::noopen: Cannot open {}.",
+        path
+      ))),
+    },
+    #[cfg(not(target_arch = "wasm32"))]
     Expr::String(path) => std::fs::read_to_string(path).map_err(|_| {
       InterpreterError::EvaluationError(format!(
         "ReadList::noopen: Cannot open {}.",

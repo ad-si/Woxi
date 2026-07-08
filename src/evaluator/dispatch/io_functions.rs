@@ -240,6 +240,35 @@ pub fn dispatch_io_functions(
     "ReadList" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::read_list_ast(args));
     }
+    // ReadString["file"] — read a host-registered virtual file (WASM).
+    // The browser has no local filesystem, so the virtual store registered
+    // via `set_virtual_file` is the only file source.
+    #[cfg(target_arch = "wasm32")]
+    "ReadString" if args.len() == 1 => {
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "ReadString".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      };
+      let Some(bytes) = crate::wasm::virtual_file(&filename) else {
+        crate::emit_message(&format!(
+          "ReadString::noopen: Cannot open {}.",
+          filename
+        ));
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      };
+      return Some(match String::from_utf8(bytes) {
+        Ok(content) => Ok(Expr::String(content)),
+        Err(_) => Err(InterpreterError::EvaluationError(format!(
+          "ReadString: \"{}\" is not valid UTF-8 text",
+          filename
+        ))),
+      });
+    }
     // ReadString["file"] — read file contents as a string
     #[cfg(not(target_arch = "wasm32"))]
     "ReadString" if args.len() == 1 => {
