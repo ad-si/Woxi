@@ -14,6 +14,13 @@
 //! - any other class → an Association with `"ClassName"` and `"Title"` so
 //!   the object is at least visible
 //!
+//! Listing a whole file stays cheap: a histogram whose bin count exceeds the
+//! walk's cell budget ([`MAX_LISTING_CELLS`]) keeps its metadata (axes, entry
+//! count) but omits the bin-content array, which is still read in full through
+//! its element path (`Import[file, {"ROOT", "name"}]`). Without this bound a
+//! detector file's large histograms turned a 14 MB file into gigabytes of
+//! decoded values and aborted the WASM heap.
+//!
 //! Branch *data* is available through element paths, so a multi-GB tree
 //! never has to be materialized just to list a file's contents:
 //!
@@ -56,6 +63,24 @@ const MAX_DIR_DEPTH: usize = 16;
 /// a corrupt length field fails with a read error instead of a huge
 /// allocation. Vectors still grow past this if the data really is there.
 const MAX_PREALLOC: usize = 65_536;
+/// Cumulative cap on the number of histogram cells a whole-directory walk
+/// (`Import[file]`) materializes. Detector files carry histograms with tens of
+/// millions of bins; fully decoding every one turned a 14 MB file into >7 GB
+/// of `Expr` values and aborted the (32-bit) WASM heap. Beyond this many
+/// cells, further histograms degrade to their metadata Association (see
+/// [`decode_object`]). The cap is also kept low enough that the listing stays
+/// small: an assigned value is stored and re-parsed through its string form on
+/// every access (`StoredValue::Raw`), so a multi-million-cell Association makes
+/// even `data = Import[file]; Head[data]` crawl (the stored string is
+/// re-parsed on every access by an O(n²) parser). Only genuinely small
+/// histograms keep their bin contents inline in a whole-file listing; larger
+/// ones show up as metadata and are read in full through their element path.
+const MAX_LISTING_CELLS: usize = 4_096;
+/// Cell budget for an explicit single-object element path
+/// (`Import[file, {"ROOT", "hist"}]`). Much larger than the whole-file listing
+/// cap because the caller asked for that one object by name, but still finite
+/// so a single pathological histogram can't exhaust the WASM heap.
+const MAX_OBJECT_CELLS: usize = 10_000_000;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn root_import_file(path: &str) -> Result<Expr, InterpreterError> {
@@ -136,7 +161,8 @@ fn root_element(data: &[u8], elements: &[Expr]) -> Result<Expr, String> {
             path
           ));
         }
-        return read_directory(data, sub, 0);
+        let mut budget = MAX_LISTING_CELLS;
+        return read_directory(data, sub, 0, &mut budget);
       }
       seek_keys = sub;
     } else if !is_last {
@@ -161,7 +187,10 @@ fn decode_element(
     if !rest.is_empty() {
       return Err(format!("class {} has no sub-elements", key.class_name));
     }
-    return Ok(decode_object(key, payload));
+    // Explicit single-object access gets its own, larger budget so a large
+    // histogram requested by name is still decoded in full.
+    let mut budget = MAX_OBJECT_CELLS;
+    return Ok(decode_object(key, payload, &mut budget));
   }
   let selector = match rest {
     [] => return decode_ttree(key, payload),
@@ -397,7 +426,8 @@ fn read_key(r: &mut Reader) -> Result<KeyInfo, String> {
 }
 
 fn parse_root(data: &[u8]) -> Result<Expr, String> {
-  read_directory(data, top_dir_seek_keys(data)?, 0)
+  let mut budget = MAX_LISTING_CELLS;
+  read_directory(data, top_dir_seek_keys(data)?, 0, &mut budget)
 }
 
 /// Validate the file header and return the top directory's key-list offset.
@@ -473,6 +503,7 @@ fn read_directory(
   data: &[u8],
   seek_keys: u64,
   depth: usize,
+  budget: &mut usize,
 ) -> Result<Expr, String> {
   if depth > MAX_DIR_DEPTH {
     return Err("directory nesting too deep".into());
@@ -497,10 +528,10 @@ fn read_directory(
       if key.class_name == "TDirectory" || key.class_name == "TDirectoryFile" {
         let sub_seek =
           dir_seek_keys(data, key.seek_key as usize + key.key_len as usize)?;
-        read_directory(data, sub_seek, depth + 1)?
+        read_directory(data, sub_seek, depth + 1, budget)?
       } else {
         match object_payload(data, key) {
-          Ok(payload) => decode_object(key, &payload),
+          Ok(payload) => decode_object(key, &payload, budget),
           Err(e) => {
             // Undecodable payloads (e.g. an unsupported compression codec for
             // this one record) degrade to metadata plus the reason.
@@ -590,14 +621,14 @@ fn object_payload(data: &[u8], key: &KeyInfo) -> Result<Vec<u8>, String> {
 
 /// Decode one object's streamed bytes. Any parse failure degrades to the
 /// metadata Association so a single odd object never breaks the import.
-fn decode_object(key: &KeyInfo, payload: &[u8]) -> Expr {
+fn decode_object(key: &KeyInfo, payload: &[u8], budget: &mut usize) -> Expr {
   let decoded = match key.class_name.as_str() {
     "TObjString" => decode_tobjstring(payload),
     "TH1C" | "TH1S" | "TH1I" | "TH1F" | "TH1D" => {
-      decode_th1(&key.class_name, payload)
+      decode_th1(&key.class_name, payload, budget)
     }
     "TH2C" | "TH2S" | "TH2I" | "TH2F" | "TH2D" => {
-      decode_th2(&key.class_name, payload)
+      decode_th2(&key.class_name, payload, budget)
     }
     "TTree" => decode_ttree(key, payload),
     _ => Err("class not decoded".into()),
@@ -687,11 +718,20 @@ fn read_th1_base(
 fn read_bin_array(
   r: &mut Reader,
   class_name: &str,
-) -> Result<Vec<Expr>, String> {
+  budget: &mut usize,
+) -> Result<Option<Vec<Expr>>, String> {
   let n = r.read_i32()?;
   if n < 0 {
     return Err("negative bin array length".into());
   }
+  // Charge the shared listing budget so one file's histograms can't
+  // collectively materialize gigabytes of cells. A histogram larger than the
+  // remaining budget keeps its metadata but drops the bin array (`None`); its
+  // full contents stay reachable through the object's element path.
+  if n as usize > *budget {
+    return Ok(None);
+  }
+  *budget -= n as usize;
   let kind = match class_name.as_bytes().last() {
     Some(b'C') => BasicKind::I8,
     Some(b'S') => BasicKind::I16,
@@ -704,16 +744,20 @@ fn read_bin_array(
   for _ in 0..n {
     contents.push(kind.read(r)?);
   }
-  Ok(contents)
+  Ok(Some(contents))
 }
 
 /// TH1 family: name/title, x-axis definition, entry count, and the bin
 /// content array (which includes underflow and overflow cells).
-fn decode_th1(class_name: &str, payload: &[u8]) -> Result<Expr, String> {
+fn decode_th1(
+  class_name: &str,
+  payload: &[u8],
+  budget: &mut usize,
+) -> Result<Expr, String> {
   let mut r = Reader::new(payload);
   let (_, _) = r.read_version()?; // TH1x wrapper
   let (title, axis, _y_axis, entries) = read_th1_base(&mut r)?;
-  let mut contents = read_bin_array(&mut r, class_name)?;
+  let contents = read_bin_array(&mut r, class_name, budget)?;
   let AxisInfo {
     nbins,
     min: xmin,
@@ -737,22 +781,26 @@ fn decode_th1(class_name: &str, payload: &[u8]) -> Result<Expr, String> {
     ));
   }
   pairs.push((Expr::String("Entries".into()), Expr::Real(entries)));
-  // The bin array holds nbins + 2 cells: index 0 is the underflow bin and
-  // the last index the overflow bin.
-  if contents.len() == nbins as usize + 2 {
-    let overflow = contents.pop().expect("len >= 2");
-    let underflow = contents.remove(0);
-    pairs.push((
-      Expr::String("BinContents".into()),
-      Expr::List(contents.into()),
-    ));
-    pairs.push((Expr::String("Underflow".into()), underflow));
-    pairs.push((Expr::String("Overflow".into()), overflow));
-  } else {
-    pairs.push((
-      Expr::String("BinContents".into()),
-      Expr::List(contents.into()),
-    ));
+  // A histogram over the listing budget keeps the metadata above but omits its
+  // bin contents (fetch them via the object's element path).
+  if let Some(mut contents) = contents {
+    // The bin array holds nbins + 2 cells: index 0 is the underflow bin and
+    // the last index the overflow bin.
+    if contents.len() == nbins as usize + 2 {
+      let overflow = contents.pop().expect("len >= 2");
+      let underflow = contents.remove(0);
+      pairs.push((
+        Expr::String("BinContents".into()),
+        Expr::List(contents.into()),
+      ));
+      pairs.push((Expr::String("Underflow".into()), underflow));
+      pairs.push((Expr::String("Overflow".into()), overflow));
+    } else {
+      pairs.push((
+        Expr::String("BinContents".into()),
+        Expr::List(contents.into()),
+      ));
+    }
   }
   Ok(Expr::Association(pairs))
 }
@@ -760,7 +808,11 @@ fn decode_th1(class_name: &str, payload: &[u8]) -> Result<Expr, String> {
 /// TH2 family: both axis definitions, entry count, and the bin contents as
 /// an `NBinsX × NBinsY` matrix (row `i` holds x-bin `i` over all y-bins;
 /// the underflow/overflow border cells are dropped).
-fn decode_th2(class_name: &str, payload: &[u8]) -> Result<Expr, String> {
+fn decode_th2(
+  class_name: &str,
+  payload: &[u8],
+  budget: &mut usize,
+) -> Result<Expr, String> {
   let mut r = Reader::new(payload);
   let (_, _) = r.read_version()?; // TH2x wrapper
   let (_, th2_end) = r.read_version()?; // TH2 base class
@@ -771,21 +823,8 @@ fn decode_th2(class_name: &str, payload: &[u8]) -> Result<Expr, String> {
   let _tsumwy2 = r.read_f64()?;
   let _tsumwxy = r.read_f64()?;
   r.seek(th2_end)?;
-  let contents = read_bin_array(&mut r, class_name)?;
+  let contents = read_bin_array(&mut r, class_name, budget)?;
   let (nx, ny) = (x_axis.nbins.max(0) as usize, y_axis.nbins.max(0) as usize);
-  if contents.len() != (nx + 2) * (ny + 2) {
-    return Err("2-D bin array size mismatch".into());
-  }
-  // ROOT stores cells as a flat array indexed binx + (nbinsx+2)*biny,
-  // where index 0 of each axis is the underflow bin.
-  let mut rows: Vec<Expr> = Vec::with_capacity(nx);
-  for x in 1..=nx {
-    let mut row: Vec<Expr> = Vec::with_capacity(ny);
-    for y in 1..=ny {
-      row.push(contents[x + (nx + 2) * y].clone());
-    }
-    rows.push(Expr::List(row.into()));
-  }
   let mut pairs: Vec<(Expr, Expr)> = vec![
     (
       Expr::String("ClassName".into()),
@@ -832,7 +871,24 @@ fn decode_th2(class_name: &str, payload: &[u8]) -> Result<Expr, String> {
     ));
   }
   pairs.push((Expr::String("Entries".into()), Expr::Real(entries)));
-  pairs.push((Expr::String("BinContents".into()), Expr::List(rows.into())));
+  // A histogram over the listing budget keeps the metadata above but omits its
+  // bin contents (fetch them via the object's element path).
+  if let Some(contents) = contents {
+    if contents.len() != (nx + 2) * (ny + 2) {
+      return Err("2-D bin array size mismatch".into());
+    }
+    // ROOT stores cells as a flat array indexed binx + (nbinsx+2)*biny,
+    // where index 0 of each axis is the underflow bin.
+    let mut rows: Vec<Expr> = Vec::with_capacity(nx);
+    for x in 1..=nx {
+      let mut row: Vec<Expr> = Vec::with_capacity(ny);
+      for y in 1..=ny {
+        row.push(contents[x + (nx + 2) * y].clone());
+      }
+      rows.push(Expr::List(row.into()));
+    }
+    pairs.push((Expr::String("BinContents".into()), Expr::List(rows.into())));
+  }
   Ok(Expr::Association(pairs))
 }
 
