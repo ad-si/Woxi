@@ -5837,7 +5837,6 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
-
   // Threaded[...] broadcasting takes precedence over ordinary list threading.
   if let Some(result) = try_threaded_op(args, ThreadedOp::Times) {
     return result;

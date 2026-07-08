@@ -4730,7 +4730,11 @@ pub(crate) fn generate_histogram_svg(
     };
     for (di, heights) in dataset_heights.iter().enumerate() {
       for (i, &h) in heights.iter().enumerate() {
-        let (r, g, b) = if multi { style_color(di) } else { style_color(i) };
+        let (r, g, b) = if multi {
+          style_color(di)
+        } else {
+          style_color(i)
+        };
         let color = RGBColor(r, g, b);
         let bx0 = bin_edges[i];
         let bx1 = bin_edges[i + 1];

@@ -455,11 +455,10 @@ pub(super) fn canonicalize_quotient_sign(
       if exp % 2 != 0 {
         sign = -sign;
       }
-      let base_content = super::factor::rational_content(
-        &collect_additive_terms(&base),
-      )
-      .map(|(n, d, _)| (n.abs(), d))
-      .unwrap_or((1, 1));
+      let base_content =
+        super::factor::rational_content(&collect_additive_terms(&base))
+          .map(|(n, d, _)| (n.abs(), d))
+          .unwrap_or((1, 1));
       if base_content == (1, 1) {
         any_flipped_content_one = true;
       }
@@ -472,17 +471,16 @@ pub(super) fn canonicalize_quotient_sign(
         && base_content.1 == 1
         && base_content.0 > 1
       {
-        let divided: Result<Vec<Expr>, _> =
-          collect_additive_terms(&neg_base)
-            .iter()
-            .map(|t| {
-              crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(t.clone()),
-                right: Box::new(Expr::Integer(base_content.0)),
-              })
+        let divided: Result<Vec<Expr>, _> = collect_additive_terms(&neg_base)
+          .iter()
+          .map(|t| {
+            crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(t.clone()),
+              right: Box::new(Expr::Integer(base_content.0)),
             })
-            .collect();
+          })
+          .collect();
         match divided {
           Ok(terms) => Expr::FunctionCall {
             name: "Times".to_string(),
@@ -548,8 +546,8 @@ pub(super) fn canonicalize_quotient_sign(
         && super::factor::rational_content(std::slice::from_ref(t))
           .is_some_and(|(_, _, coeffs)| coeffs.first() == Some(&(-1, 1)))
     });
-    let mixed_flip_is_free = mixed_leading_neg
-      && (any_flipped_content_one || has_unit_neg_term);
+    let mixed_flip_is_free =
+      mixed_leading_neg && (any_flipped_content_one || has_unit_neg_term);
     if sign >= 0
       || (!constant_num && !all_nonpositive_num && !mixed_flip_is_free)
     {

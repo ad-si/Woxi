@@ -684,7 +684,10 @@ mod simplify {
   // stays expanded unless it collapses to a power of a single factor.
   #[test]
   fn factoring_respects_quotient_denominators() {
-    assert_eq!(interpret("Simplify[4 x^2 - 2 x]").unwrap(), "2*x*(-1 + 2*x)");
+    assert_eq!(
+      interpret("Simplify[4 x^2 - 2 x]").unwrap(),
+      "2*x*(-1 + 2*x)"
+    );
     assert_eq!(interpret("Simplify[x^2 + x]").unwrap(), "x*(1 + x)");
     assert_eq!(
       interpret("Simplify[1/(4 x + 3 x^2)]").unwrap(),
@@ -701,10 +704,7 @@ mod simplify {
       interpret("Simplify[(4 x^2 - 2 x)/(2 + 3 x)]").unwrap(),
       "(2*x*(-1 + 2*x))/(2 + 3*x)"
     );
-    assert_eq!(
-      interpret("Simplify[(x^2 + x)/3]").unwrap(),
-      "(x*(1 + x))/3"
-    );
+    assert_eq!(interpret("Simplify[(x^2 + x)/3]").unwrap(), "(x*(1 + x))/3");
     // A denominator that IS a perfect power still factors.
     assert_eq!(
       interpret("Simplify[x^2/(1 - 3 x + 3 x^2 - x^3)]").unwrap(),

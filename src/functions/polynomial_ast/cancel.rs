@@ -424,13 +424,12 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
       // Fall back to simplify_division; wolframscript's Cancel still
       // canonicalizes an untouched quotient's denominator sign:
       // Cancel[(-4-3x^2)/(4+x-4x^2)] → (4+3x^2)/(-4-x+4x^2).
-      let fallback =
-        super::simplify::simplify_division_impl(
-          &num,
-          &den,
-          canonicalize_sign,
-          false,
-        );
+      let fallback = super::simplify::simplify_division_impl(
+        &num,
+        &den,
+        canonicalize_sign,
+        false,
+      );
       if canonicalize_sign {
         let (fnum, fden) = super::together::extract_num_den(&fallback);
         if !matches!(&fden, Expr::Integer(1))

@@ -3426,10 +3426,7 @@ mod expand_threading {
     );
     // Exact terms convert to f64 individually: the 1 is absorbed into
     // 2^60 in machine precision (exact coalescing would give 1.5).
-    assert_eq!(
-      interpret("Plus[2^60, 1, -2^60, 0.5]").unwrap(),
-      "0."
-    );
+    assert_eq!(interpret("Plus[2^60, 1, -2^60, 0.5]").unwrap(), "0.");
     assert_eq!(
       interpret("Plus[-7.4, Subtract[38, Pi]]").unwrap(),
       "27.45840734641021"

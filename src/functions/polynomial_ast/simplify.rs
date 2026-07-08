@@ -4181,8 +4181,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
         // Wolfram prints 2*x*(-1+2x). Non-polynomial results (with I,
         // E^…, Sqrt[…] factors) keep the pipeline's own ordering.
         best = if polynomial_like(&factored) {
-          crate::evaluator::evaluate_expr_to_expr(&factored)
-            .unwrap_or(factored)
+          crate::evaluator::evaluate_expr_to_expr(&factored).unwrap_or(factored)
         } else {
           factored
         };
@@ -4214,11 +4213,9 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     if terms.len() >= 2
       && let Some((_, _, coeffs)) = super::factor::rational_content(&terms)
     {
-      let g_num = coeffs
-        .iter()
-        .map(|(n, _)| *n)
-        .filter(|&n| n != 0)
-        .fold(0i128, |a, b| {
+      let g_num = coeffs.iter().map(|(n, _)| *n).filter(|&n| n != 0).fold(
+        0i128,
+        |a, b| {
           let (mut a, mut b) = (a.abs(), b.abs());
           while b != 0 {
             let t = a % b;
@@ -4226,7 +4223,8 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
             b = t;
           }
           a
-        });
+        },
+      );
       let g_den = coeffs.iter().map(|(_, d)| *d).fold(1i128, |a, b| {
         let g = {
           let (mut x, mut y) = (a.abs(), b.abs());

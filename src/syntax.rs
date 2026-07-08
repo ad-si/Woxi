@@ -13340,11 +13340,7 @@ fn factor_boxes(factors: &[&Expr], extra_boxes: usize) -> Vec<TextBox> {
 
 /// Wrap a box in parentheses on the baseline row.
 fn parenthesize(inner: &TextBox) -> TextBox {
-  TextBox::hconcat(&[
-    TextBox::atom("("),
-    inner.clone(),
-    TextBox::atom(")"),
-  ])
+  TextBox::hconcat(&[TextBox::atom("("), inner.clone(), TextBox::atom(")")])
 }
 
 /// Render Times arguments the way Wolfram's OutputForm does (all shapes
@@ -13416,10 +13412,7 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
     // Plain product row: `3 x`, `-2 x`, `-x`.
     let mut parts: Vec<TextBox> = Vec::new();
     if p_is_minus_one {
-      return TextBox::hconcat(&[
-        TextBox::atom("-"),
-        product_row(&num_boxes),
-      ]);
+      return TextBox::hconcat(&[TextBox::atom("-"), product_row(&num_boxes)]);
     }
     if let Some(p) = &coeff_num
       && !p_is_one

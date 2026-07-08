@@ -5429,7 +5429,10 @@ mod to_string_output_form_2d {
   #[test]
   fn fractions_in_sums() {
     assert_eq!(interpret("ToString[1/2 + x]").unwrap(), "1\n- + x\n2");
-    assert_eq!(interpret("ToString[1 - x/2]").unwrap(), "    x\n1 - -\n    2");
+    assert_eq!(
+      interpret("ToString[1 - x/2]").unwrap(),
+      "    x\n1 - -\n    2"
+    );
     assert_eq!(
       interpret("ToString[2/3 + x/5]").unwrap(),
       "2   x\n- + -\n3   5"
@@ -5465,10 +5468,7 @@ mod to_string_output_form_2d {
   #[test]
   fn sum_factors_parenthesize_in_products() {
     assert_eq!(interpret("ToString[2*(2 + y)]").unwrap(), "2 (2 + y)");
-    assert_eq!(
-      interpret("ToString[3 x (1 + x)]").unwrap(),
-      "3 x (1 + x)"
-    );
+    assert_eq!(interpret("ToString[3 x (1 + x)]").unwrap(), "3 x (1 + x)");
     assert_eq!(
       interpret("ToString[Factor[4 x^2 + 2 y^2 + 4]]").unwrap(),
       "          2    2\n2 (2 + 2 x  + y )"

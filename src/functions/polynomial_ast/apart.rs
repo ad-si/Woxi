@@ -157,7 +157,9 @@ fn apart_expr_raw(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let g = i128_gcd(lcm, d);
           lcm = match (lcm / g).checked_mul(d) {
             Some(v) => v,
-            None => return apart_symbolic(&divide_expr, &num_expanded, &den, var),
+            None => {
+              return apart_symbolic(&divide_expr, &num_expanded, &den, var);
+            }
           };
         }
         let rem_int: Option<Vec<i128>> = remainder
@@ -1037,8 +1039,7 @@ fn poly_long_divide_rat(
   if n_deg < d_deg || lead_den == 0 {
     return None;
   }
-  let mut remainder: Vec<(i128, i128)> =
-    num.iter().map(|&c| (c, 1)).collect();
+  let mut remainder: Vec<(i128, i128)> = num.iter().map(|&c| (c, 1)).collect();
   let mut quotient: Vec<(i128, i128)> = vec![(0, 1); n_deg - d_deg + 1];
 
   for i in (0..quotient.len()).rev() {
