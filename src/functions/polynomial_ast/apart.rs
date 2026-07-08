@@ -100,6 +100,29 @@ pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   let den_coeffs = extract_poly_coeffs(&den_expanded, var);
 
   if let (Some(nc), Some(dc)) = (&num_coeffs, &den_coeffs) {
+    // A constant denominator splits termwise: Apart[(4+2x)/5] →
+    // 4/5 + (2*x)/5 (wolframscript).
+    if dc.len() == 1 && dc[0] != 0 {
+      let d = dc[0];
+      let mut parts: Vec<Expr> = Vec::new();
+      for (i, &c) in nc.iter().enumerate() {
+        if c == 0 {
+          continue;
+        }
+        let mut term_coeffs = vec![0i128; i + 1];
+        term_coeffs[i] = c;
+        let term = Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(coeffs_to_expr(&term_coeffs, var)),
+          right: Box::new(Expr::Integer(d)),
+        };
+        parts.push(crate::evaluator::evaluate_expr_to_expr(&term)?);
+      }
+      if parts.is_empty() {
+        return Ok(Expr::Integer(0));
+      }
+      return Ok(build_sum(parts));
+    }
     // If numerator degree >= denominator degree, do polynomial division first
     if nc.len() >= dc.len() {
       if let Some(quot_coeffs) = poly_exact_divide(nc, dc) {
@@ -119,8 +142,14 @@ pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       let apart_remainder = apart_proper_fraction(&frac, var)?;
       // Splice the polynomial quotient in front of the partial-fraction
       // terms as one flat sum so the result reads `q + f1 + f2`, not the
-      // parenthesized `q + (f1 + f2)`.
-      let mut parts = vec![quot_expr];
+      // parenthesized `q + (f1 + f2)`. A zero quotient (non-exact
+      // leading-coefficient division) is dropped rather than emitting a
+      // spurious `0 + …` term.
+      let mut parts = if matches!(quot_expr, Expr::Integer(0)) {
+        Vec::new()
+      } else {
+        vec![quot_expr]
+      };
       flatten_plus(&apart_remainder, &mut parts);
       return Ok(build_sum(parts));
     }
@@ -200,7 +229,14 @@ pub fn apart_proper_fraction(
   }
 
   if roots.len() < 2 {
-    // Can't decompose further
+    // Can't decompose further — canonicalize the quotient display.
+    let num_expanded = expand_and_combine(&num);
+    if let Some(ncs) = extract_poly_coeffs(&num_expanded, var)
+      && ncs.len() < den_coeffs.len()
+      && let Some(norm) = normalize_irreducible_quotient(&ncs, &den_coeffs, var)
+    {
+      return Ok(norm);
+    }
     return Ok(expr.clone());
   }
 
@@ -218,6 +254,12 @@ pub fn apart_proper_fraction(
 
   // If there's a remaining irreducible factor, we can't do simple partial fractions
   if !remaining.iter().all(|&c| c == 0) && remaining.len() > 1 {
+    if num_coeffs.len() < den_coeffs.len()
+      && let Some(norm) =
+        normalize_irreducible_quotient(&num_coeffs, &den_coeffs, var)
+    {
+      return Ok(norm);
+    }
     return Ok(expr.clone());
   }
 
@@ -291,40 +333,39 @@ pub fn apart_proper_fraction(
       }
     };
 
-    let abs_an = an.abs();
-    let frac = if ad == 1 && abs_an == 1 {
-      // Wolfram canonical form: (expr)^(-1)
-      Expr::BinaryOp {
+    if ad == 1 && an.abs() == 1 {
+      // Wolfram canonical form: (expr)^(-1), negated via UnaryOp so it
+      // renders -(-1 + x)^(-1).
+      let pow = Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(linear_factor),
         right: Box::new(Expr::Integer(-1)),
-      }
-    } else if ad == 1 {
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(abs_an)),
-        right: Box::new(linear_factor),
-      }
+      };
+      result_terms.push(if an < 0 {
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(pow),
+        }
+      } else {
+        pow
+      });
     } else {
-      // an / (ad * linear_factor) — Wolfram format: 1/(2*(-1 + x))
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(abs_an)),
-        right: Box::new(Expr::BinaryOp {
+      // Signed numerator over the (possibly scaled) factor so negatives
+      // render -2/(1 + x) / -1/(2*(-1 + x)), matching wolframscript.
+      let denom = if ad == 1 {
+        linear_factor
+      } else {
+        Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(ad)),
           right: Box::new(linear_factor),
-        }),
-      }
-    };
-
-    if an < 0 {
-      result_terms.push(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(frac),
+        }
+      };
+      result_terms.push(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(an)),
+        right: Box::new(denom),
       });
-    } else {
-      result_terms.push(frac);
     }
   }
 
@@ -391,6 +432,91 @@ fn solve_rat_system(
   Some(sol)
 }
 
+/// gcd of the coefficients, signed by the highest-degree nonzero
+/// coefficient (the FactorTerms sign convention). Returns 0 for the zero
+/// polynomial.
+fn signed_content(coeffs: &[i128]) -> i128 {
+  let g = coeffs.iter().fold(0i128, |acc, &c| gcd_i128(acc, c.abs()));
+  if coeffs
+    .iter()
+    .rev()
+    .find(|&&c| c != 0)
+    .is_some_and(|&c| c < 0)
+  {
+    -g
+  } else {
+    g
+  }
+}
+
+/// Canonicalize a proper fraction that Apart cannot decompose further into
+/// wolframscript's display form: the denominator's signed integer content is
+/// divided out against the numerator's (Apart[(2+4x)/(-3+x-x^2)] →
+/// (-2*(1+2*x))/(3-x+x^2), Apart[(3+6x)/(2+2x^2)] → (3*(1+2*x))/(2*(1+x^2))),
+/// a multi-term numerator keeps its |content| > 1 factored out, and a -1
+/// content distributes back into the sum ((-1-2*x)/(3-x+x^2)).
+fn normalize_irreducible_quotient(
+  num_coeffs: &[i128],
+  den_coeffs: &[i128],
+  var: &str,
+) -> Option<Expr> {
+  let cn = signed_content(num_coeffs);
+  let cd = signed_content(den_coeffs);
+  if cn == 0 || cd == 0 {
+    return None;
+  }
+  let num_prim: Vec<i128> = num_coeffs.iter().map(|c| c / cn).collect();
+  let den_prim: Vec<i128> = den_coeffs.iter().map(|c| c / cd).collect();
+  let g = gcd_i128(cn.abs(), cd.abs()).max(1);
+  let (mut n_c, mut d_c) = (cn / g, cd / g);
+  if d_c < 0 {
+    n_c = -n_c;
+    d_c = -d_c;
+  }
+  // A ±1 numerator over an unscaled denominator displays as (den)^(-1) /
+  // -(den)^(-1): Apart[2/(-2-2x-4x^2)] → -(1+x+2x^2)^(-1).
+  if num_prim == [1] && n_c.abs() == 1 && d_c == 1 {
+    let pow = Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(coeffs_to_expr(&den_prim, var)),
+      right: Box::new(Expr::Integer(-1)),
+    };
+    return Some(if n_c < 0 {
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(pow),
+      }
+    } else {
+      pow
+    });
+  }
+  let nonzero = num_prim.iter().filter(|&&c| c != 0).count();
+  let num_expr = if nonzero >= 2 && n_c.abs() > 1 {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(n_c)),
+      right: Box::new(coeffs_to_expr(&num_prim, var)),
+    }
+  } else {
+    let scaled: Vec<i128> = num_prim.iter().map(|c| c * n_c).collect();
+    coeffs_to_expr(&scaled, var)
+  };
+  let den_expr = if d_c == 1 {
+    coeffs_to_expr(&den_prim, var)
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(d_c)),
+      right: Box::new(coeffs_to_expr(&den_prim, var)),
+    }
+  };
+  Some(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(num_expr),
+    right: Box::new(den_expr),
+  })
+}
+
 /// Build one partial-fraction term `numerator / (L * factor^k)` with integer
 /// numerator coefficients (rational denominators cleared, content reduced
 /// against L), in the natural shape the evaluator renders like wolframscript.
@@ -415,7 +541,22 @@ fn build_apart_term(
     }
     l /= g;
   }
-  let num_expr = coeffs_to_expr(&inum, var);
+  // Hoist integer content out of multi-term numerators, signed by the
+  // highest-degree coefficient (FactorTerms convention): (6+3x)/(3-x+x^2)
+  // displays as (3*(2+x))/(3-x+x^2), (6-3x) as -3*(-2+x). Content-1
+  // numerators stay expanded ((37+17x)/(5*(3-x+x^2))).
+  let nonzero = inum.iter().filter(|&&c| c != 0).count();
+  let content = signed_content(&inum);
+  let num_expr = if nonzero >= 2 && content.abs() > 1 {
+    let primitive: Vec<i128> = inum.iter().map(|c| c / content).collect();
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(content)),
+      right: Box::new(coeffs_to_expr(&primitive, var)),
+    }
+  } else {
+    coeffs_to_expr(&inum, var)
+  };
   let factor_expr = coeffs_to_expr(factor, var);
   let factor_pow = if k == 1 {
     factor_expr
@@ -748,37 +889,39 @@ fn apart_repeated_roots(
         right: Box::new(Expr::Integer(b.k as i128)),
       }
     };
-    let frac = if ad == 1 && an == 1 {
-      // (factor)^(-k)
-      Expr::BinaryOp {
+    if ad == 1 && an == 1 {
+      // (factor)^(-k), negated via UnaryOp so it renders -x^(-2).
+      let pow = Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(linear_factor),
         right: Box::new(Expr::Integer(-(b.k as i128))),
-      }
-    } else if ad == 1 {
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(an)),
-        right: Box::new(den_factor),
-      }
+      };
+      terms.push(if neg {
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(pow),
+        }
+      } else {
+        pow
+      });
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(an)),
-        right: Box::new(Expr::BinaryOp {
+      // Signed numerator over the (possibly scaled) factor, so negatives
+      // render -2/x^2 / -3/(2*x^2), matching wolframscript.
+      let signed_an = if neg { -an } else { an };
+      let denom = if ad == 1 {
+        den_factor
+      } else {
+        Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(ad)),
           right: Box::new(den_factor),
-        }),
-      }
-    };
-    if neg {
-      terms.push(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(frac),
+        }
+      };
+      terms.push(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(signed_an)),
+        right: Box::new(denom),
       });
-    } else {
-      terms.push(frac);
     }
   }
   if terms.is_empty() {

@@ -2127,6 +2127,107 @@ mod apart {
     );
   }
 
+  // Multi-term numerators over irreducible factors hoist their signed
+  // integer content ((6+3x) → 3*(2+x)); the denominator's content is
+  // divided out against the numerator's, and negative numerators render
+  // without an outer -( ) wrap. All wolframscript-verified (differential
+  // fuzzer, seed 1783515124284605000).
+  #[test]
+  fn apart_numerator_content_hoist() {
+    assert_eq!(
+      interpret("Apart[(3 + 5 x + 4 x^2)/(3 x - x^2 + x^3)]").unwrap(),
+      "x^(-1) + (3*(2 + x))/(3 - x + x^2)"
+    );
+    assert_eq!(
+      interpret("Apart[(6 - 3 x)/(3 - x + x^2)]").unwrap(),
+      "(-3*(-2 + x))/(3 - x + x^2)"
+    );
+    assert_eq!(
+      interpret("Apart[(6 + 3 x)/(3 - x + x^2)^2]").unwrap(),
+      "(3*(2 + x))/(3 - x + x^2)^2"
+    );
+    // Content-1 numerators stay expanded.
+    assert_eq!(
+      interpret("Apart[(1 + 2 x)/(3 - x + x^2)]").unwrap(),
+      "(1 + 2*x)/(3 - x + x^2)"
+    );
+    assert_eq!(
+      interpret("Apart[(2 + 4 x + 6 x^2 + 3 x^3)/((3 - x + x^2)*(1 + x^2))]")
+        .unwrap(),
+      "(-9 - 2*x)/(5*(1 + x^2)) + (37 + 17*x)/(5*(3 - x + x^2))"
+    );
+  }
+
+  #[test]
+  fn apart_irreducible_quotient_canonicalization() {
+    // Denominator sign and integer content fold into the numerator.
+    assert_eq!(
+      interpret("Apart[(2 + 4 x)/(-3 + x - x^2)]").unwrap(),
+      "(-2*(1 + 2*x))/(3 - x + x^2)"
+    );
+    // A -1 content distributes back into the sum.
+    assert_eq!(
+      interpret("Apart[(1 + 2 x)/(-3 + x - x^2)]").unwrap(),
+      "(-1 - 2*x)/(3 - x + x^2)"
+    );
+    // Shared content cancels; leftover denominator content stays factored.
+    assert_eq!(
+      interpret("Apart[(2 + 4 x)/(2 + 2 x^2)]").unwrap(),
+      "(1 + 2*x)/(1 + x^2)"
+    );
+    assert_eq!(
+      interpret("Apart[(3 + 6 x)/(2 + 2 x^2)]").unwrap(),
+      "(3*(1 + 2*x))/(2*(1 + x^2))"
+    );
+    assert_eq!(
+      interpret("Apart[(6 + 3 x)/(6 - 2 x + 2 x^2)]").unwrap(),
+      "(3*(2 + x))/(2*(3 - x + x^2))"
+    );
+    // Polynomial-division remainders normalize the same way.
+    assert_eq!(
+      interpret("Apart[(2 x + 4 x^2)/(3 - x + x^2)]").unwrap(),
+      "4 + (6*(-2 + x))/(3 - x + x^2)"
+    );
+  }
+
+  #[test]
+  fn apart_unit_numerator_and_constant_denominator() {
+    // ±1 numerators over an unscaled irreducible denominator render as
+    // (den)^(-1); a scaled one keeps the 1/(2*(...)) shape.
+    assert_eq!(
+      interpret("Apart[2/(-2 - 2 x - 4 x^2)]").unwrap(),
+      "-(1 + x + 2*x^2)^(-1)"
+    );
+    assert_eq!(
+      interpret("Apart[1/(2 + 2 x^2)]").unwrap(),
+      "1/(2*(1 + x^2))"
+    );
+    // Constant denominators split termwise — and no spurious leading 0.
+    assert_eq!(interpret("Apart[(4 + 2 x)/5]").unwrap(), "4/5 + (2*x)/5");
+    assert_eq!(
+      interpret("Apart[(6 x^2 + 4 x + 2)/3]").unwrap(),
+      "2/3 + (4*x)/3 + 2*x^2"
+    );
+  }
+
+  #[test]
+  fn apart_negative_numerator_display() {
+    // Negative numerators render -n/d, not -(n/d) — and never "+ -n/d"
+    // inside a sum.
+    assert_eq!(interpret("Apart[2/(-x^2)]").unwrap(), "-2/x^2");
+    assert_eq!(interpret("Apart[1/(-x^2)]").unwrap(), "-x^(-2)");
+    assert_eq!(interpret("Apart[3/(-2 x^2)]").unwrap(), "-3/(2*x^2)");
+    assert_eq!(
+      interpret("Apart[(2 + 3 x)/(-x^2)]").unwrap(),
+      "-2/x^2 - 3/x"
+    );
+    assert_eq!(interpret("Apart[1/(-(1+x)^2)]").unwrap(), "-(1 + x)^(-2)");
+    assert_eq!(
+      interpret("Apart[(4 + 6 x)/((1 + x)*(2 + x))]").unwrap(),
+      "-2/(1 + x) + 8/(2 + x)"
+    );
+  }
+
   #[test]
   fn apart_on_non_rational_is_noop() {
     // Apart on an expression without a denominator should return it unchanged.

@@ -9214,6 +9214,31 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           let right_str = expr_to_string(&abs_term);
           return format!("{} - {}", left_str, right_str);
         }
+        // a + Divide[-n, d] displays as a - n/d (Wolfram never shows "+ -").
+        if let Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: dnum,
+          right: dden,
+        } = right.as_ref()
+        {
+          let abs_num = match dnum.as_ref() {
+            Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+            Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+            _ => None,
+          };
+          if let Some(abs_num) = abs_num {
+            let abs_term = Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(abs_num),
+              right: dden.clone(),
+            };
+            return format!(
+              "{} - {}",
+              expr_to_string(left),
+              expr_to_string(&abs_term)
+            );
+          }
+        }
       }
 
       // BinaryOp::Times: flatten and check for denominator factors (negative exponents)
