@@ -700,7 +700,7 @@ script_test!(script_multiplication_tables, "multiplication_tables.wls");
 script_test!(script_multiplicative_order, "multiplicative_order.wls");
 script_test!(script_mutual_recursion, "mutual_recursion.wls");
 script_test!(script_n24_game_solve, "24_game_solve.wls");
-script_test!(
+slow_script_test!(
   script_narcissistic_decimal_number,
   "narcissistic_decimal_number.wls"
 );
@@ -1272,7 +1272,7 @@ script_test!(
   script_horners_rule_for_polynomial_evaluation,
   "horners_rule_for_polynomial_evaluation.wls"
 );
-script_test!(script_kaprekar_numbers, "kaprekar_numbers.wls");
+slow_script_test!(script_kaprekar_numbers, "kaprekar_numbers.wls");
 
 script_test!(
   script_convert_decimal_number_to_rational,
