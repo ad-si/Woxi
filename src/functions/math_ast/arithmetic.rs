@@ -3338,8 +3338,250 @@ fn extract_poly_degree_in_product(e: &Expr) -> f64 {
 ///   - BinaryOp::Plus/Times: compare left then right
 ///   - UnaryOp::Minus(x) < x (negative sorts before positive)
 ///   - Fall back to string comparison
+/// Factor is a call-like expression (opaque function call, pure function)
+/// that overrides the shared-denominator exponent ordering rules.
+fn cmp_is_call_like(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      !matches!(
+        name.as_str(),
+        "Power" | "Plus" | "Times" | "Rational" | "Complex"
+      ) || args.iter().any(cmp_is_call_like)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      cmp_is_call_like(left) || cmp_is_call_like(right)
+    }
+    Expr::UnaryOp { operand, .. } => cmp_is_call_like(operand),
+    Expr::Function { .. } | Expr::NamedFunction { .. } => true,
+    _ => false,
+  }
+}
+
+/// `Power[base, n]` with a negative integer exponent, in either the
+/// FunctionCall or BinaryOp representation.
+fn cmp_neg_pow(f: &Expr) -> Option<(&Expr, i128)> {
+  match f {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      match &args[1] {
+        Expr::Integer(e) if *e < 0 => Some((&args[0], *e)),
+        _ => None,
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => match right.as_ref() {
+      Expr::Integer(e) if *e < 0 => Some((left.as_ref(), *e)),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+fn cmp_is_sum_base(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      e,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus
+          | crate::syntax::BinaryOperator::Minus,
+        ..
+      }
+    )
+}
+
+/// Ascending integer coefficients of a univariate polynomial with number
+/// coefficients (sums of Integer / k*var / k*var^n terms, or a bare
+/// monomial). Returns (var, coeffs) or None for anything else.
+fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
+  fn monomial(e: &Expr) -> Option<(Option<String>, usize, i128)> {
+    match e {
+      Expr::Integer(n) => Some((None, 0, *n)),
+      Expr::Identifier(v) => Some((Some(v.clone()), 1, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => {
+            Some((Some(v.clone()), *n as usize, 1))
+          }
+          _ => None,
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => match (left.as_ref(), right.as_ref()) {
+        (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => {
+          Some((Some(v.clone()), *n as usize, 1))
+        }
+        _ => None,
+      },
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() == 2 =>
+      {
+        match (&args[0], monomial(&args[1])) {
+          (Expr::Integer(k), Some((v, d, c))) => {
+            Some((v, d, k.checked_mul(c)?))
+          }
+          _ => None,
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => match (left.as_ref(), monomial(right)) {
+        (Expr::Integer(k), Some((v, d, c))) => Some((v, d, k.checked_mul(c)?)),
+        _ => None,
+      },
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => {
+        let (v, d, c) = monomial(operand)?;
+        Some((v, d, c.checked_neg()?))
+      }
+      _ => None,
+    }
+  }
+  let terms: Vec<&Expr> = match e {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().collect()
+    }
+    other => vec![other],
+  };
+  let mut var: Option<String> = None;
+  let mut coeffs: Vec<i128> = Vec::new();
+  for t in terms {
+    let (v, d, c) = monomial(t)?;
+    if let Some(v) = v {
+      match &var {
+        None => var = Some(v),
+        Some(existing) if *existing == v => {}
+        _ => return None,
+      }
+    }
+    if coeffs.len() <= d {
+      coeffs.resize(d + 1, 0);
+    }
+    coeffs[d] = coeffs[d].checked_add(c)?;
+  }
+  Some((var?, coeffs))
+}
+
+/// WL polynomial term order for two univariate polynomials in the same
+/// variable: higher degree sorts larger; equal degrees compare
+/// coefficients ascending from the top monomial down ((5-4x) < (1+4x),
+/// (2+x) < (3+x), (1-2x) < x). Returns None when the polynomials aren't
+/// comparable this way.
+fn compare_univar_polys(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  use std::cmp::Ordering;
+  let (va, ca) = univar_int_coeffs(a)?;
+  let (vb, cb) = univar_int_coeffs(b)?;
+  if va != vb {
+    return None;
+  }
+  let dc = ca.len().cmp(&cb.len());
+  if dc != Ordering::Equal {
+    return Some(dc);
+  }
+  for i in (0..ca.len()).rev() {
+    let c = ca[i].cmp(&cb[i]);
+    if c != Ordering::Equal {
+      return Some(c);
+    }
+  }
+  Some(Ordering::Equal)
+}
+
+/// Bare `Power[sum, -n]` vs a product containing `Power[sum, -m]` with the
+/// same sum base: WL orders by ascending exponent when the product-side
+/// numerator N sorts below the base (1/(1+x) + x/(1+x)^2 → x-term first,
+/// (1+x)^-2 + x/(1+x) and (1+x)^-2 + (2+x)/(3+x) keep the bare power
+/// first), but the BARE side leads outright when N sorts above the base
+/// ((5-4x)^(-1) + (1+4x)/(5-4x)^2, (1-2x)^(-1) + x/(1-2x)^2 — decoded
+/// from the intra-Times sort + trailing-factor scan). Both input orders
+/// canonicalize. Returns None when the shape doesn't apply.
+fn cross_shape_shared_denom_order(
+  a: &Expr,
+  b: &Expr,
+) -> Option<std::cmp::Ordering> {
+  use std::cmp::Ordering;
+  fn is_product(e: &Expr) -> bool {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Times")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          ..
+        }
+      )
+  }
+  fn collect_factors<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().for_each(|x| collect_factors(x, out));
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        collect_factors(left, out);
+        collect_factors(right, out);
+      }
+      _ => out.push(e),
+    }
+  }
+  let (pow_expr, prod_expr, pow_is_a) = if !is_product(a) && is_product(b) {
+    (a, b, true)
+  } else if is_product(a) && !is_product(b) {
+    (b, a, false)
+  } else {
+    return None;
+  };
+  let (base_p, ep) = cmp_neg_pow(pow_expr)?;
+  if !cmp_is_sum_base(base_p) || cmp_is_call_like(prod_expr) {
+    return None;
+  }
+  let mut factors = Vec::new();
+  collect_factors(prod_expr, &mut factors);
+  for f in factors.iter() {
+    if let Some((base_t, et)) = cmp_neg_pow(f)
+      && et != ep
+      && compare_expr_canonical(base_p, base_t) == Ordering::Equal
+    {
+      // The product's single non-numeric numerator sorting ABOVE the base
+      // puts the bare power first regardless of exponents.
+      let numerators: Vec<&&Expr> = factors
+        .iter()
+        .filter(|g| cmp_neg_pow(g).is_none() && !is_numeric_literal_part(g))
+        .collect();
+      if numerators.len() == 1
+        && compare_univar_polys(numerators[0], base_p)
+          == Some(Ordering::Greater)
+      {
+        return Some(if pow_is_a {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        });
+      }
+      return Some(if pow_is_a { ep.cmp(&et) } else { et.cmp(&ep) });
+    }
+  }
+  None
+}
+
 fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   use std::cmp::Ordering;
+
+  if let Some(ord) = cross_shape_shared_denom_order(a, b) {
+    return ord;
+  }
 
   // Assign a type tag for top-level ordering
   fn type_tag(e: &Expr) -> u8 {
@@ -3543,43 +3785,6 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       // exponent rule (f[x]/y + g[x]/y^2 and Dt[x]/y - (x*Dt[y])/y^2 keep
       // the call order), so the rule only fires for call-free terms.
       if na == "Times" {
-        fn is_call_like(e: &Expr) -> bool {
-          match e {
-            Expr::FunctionCall { name, args } => {
-              !matches!(
-                name.as_str(),
-                "Power" | "Plus" | "Times" | "Rational" | "Complex"
-              ) || args.iter().any(is_call_like)
-            }
-            Expr::BinaryOp { left, right, .. } => {
-              is_call_like(left) || is_call_like(right)
-            }
-            Expr::UnaryOp { operand, .. } => is_call_like(operand),
-            Expr::Function { .. } | Expr::NamedFunction { .. } => true,
-            _ => false,
-          }
-        }
-        fn neg_pow(f: &Expr) -> Option<(&Expr, i128)> {
-          match f {
-            Expr::FunctionCall { name, args }
-              if name == "Power" && args.len() == 2 =>
-            {
-              match &args[1] {
-                Expr::Integer(e) if *e < 0 => Some((&args[0], *e)),
-                _ => None,
-              }
-            }
-            Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
-              left,
-              right,
-            } => match right.as_ref() {
-              Expr::Integer(e) if *e < 0 => Some((left.as_ref(), *e)),
-              _ => None,
-            },
-            _ => None,
-          }
-        }
         fn contains_expr(hay: &Expr, needle: &Expr) -> bool {
           if compare_expr_canonical(hay, needle) == Ordering::Equal {
             return true;
@@ -3596,23 +3801,123 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
             _ => false,
           }
         }
-        if !aa.iter().any(is_call_like) && !ab.iter().any(is_call_like) {
+        fn collect_symbols(e: &Expr, out: &mut Vec<String>) {
+          match e {
+            Expr::Identifier(s) => {
+              if !out.contains(s) {
+                out.push(s.clone());
+              }
+            }
+            Expr::FunctionCall { args, .. } => {
+              args.iter().for_each(|a| collect_symbols(a, out));
+            }
+            Expr::List(items) => {
+              items.iter().for_each(|a| collect_symbols(a, out));
+            }
+            Expr::BinaryOp { left, right, .. } => {
+              collect_symbols(left, out);
+              collect_symbols(right, out);
+            }
+            Expr::UnaryOp { operand, .. } => collect_symbols(operand, out),
+            _ => {}
+          }
+        }
+        if !aa.iter().any(cmp_is_call_like) && !ab.iter().any(cmp_is_call_like)
+        {
           for fa in aa.iter() {
-            if let Some((base_a, ea)) = neg_pow(fa) {
+            if let Some((base_a, ea)) = cmp_neg_pow(fa) {
               for fb in ab.iter() {
-                if let Some((base_b, eb)) = neg_pow(fb)
+                if let Some((base_b, eb)) = cmp_neg_pow(fb)
                   && ea != eb
                   && compare_expr_canonical(base_a, base_b) == Ordering::Equal
                 {
+                  if cmp_is_sum_base(base_a) {
+                    // Sum bases: a numerator sharing a variable with the
+                    // base sorts before one that doesn't; two sharing
+                    // numerators compare as polynomials (the generic
+                    // highest-term-first scan); ties and non-sharing
+                    // pairs order by ascending exponent, e.g.
+                    // (2+x)/(3+x) - (5+x)/(3+x)^2 but
+                    // (c+d)/(1+x)^2 + (a+b)/(1+x).
+                    let mut base_vars: Vec<String> = Vec::new();
+                    collect_symbols(base_a, &mut base_vars);
+                    fn numerators(args: &[Expr]) -> Vec<&Expr> {
+                      args
+                        .iter()
+                        .filter(|f| {
+                          cmp_neg_pow(f).is_none()
+                            && !is_numeric_literal_part(f)
+                        })
+                        .collect()
+                    }
+                    let na_f = numerators(aa);
+                    let nb_f = numerators(ab);
+                    let shares = |fs: &[&Expr]| {
+                      fs.iter().any(|f| {
+                        base_vars.iter().any(|v| {
+                          contains_expr(f, &Expr::Identifier(v.clone()))
+                        })
+                      })
+                    };
+                    // A numeric-only term (no non-numeric numerator, e.g.
+                    // 4/(5-4x)) against a sharing product follows the
+                    // bare-power rule: the numeric side leads when the
+                    // sharing numerator sorts ABOVE the base
+                    // (4/(5-4x) + (4*(1+4x))/(5-4x)^2), ascending
+                    // exponent otherwise ((2+x)/(3+x)^2 + 4/(3+x)).
+                    let numeric_vs_sharing = |shared: &[&Expr]| {
+                      if shared.len() == 1
+                        && compare_univar_polys(shared[0], base_a)
+                          == Some(Ordering::Greater)
+                      {
+                        Some(())
+                      } else {
+                        None
+                      }
+                    };
+                    match (shares(&na_f), shares(&nb_f)) {
+                      (true, false) => {
+                        if nb_f.is_empty()
+                          && numeric_vs_sharing(&na_f).is_some()
+                        {
+                          return Ordering::Greater;
+                        }
+                        if nb_f.is_empty() {
+                          return ea.cmp(&eb);
+                        }
+                        return Ordering::Less;
+                      }
+                      (false, true) => {
+                        if na_f.is_empty()
+                          && numeric_vs_sharing(&nb_f).is_some()
+                        {
+                          return Ordering::Less;
+                        }
+                        if na_f.is_empty() {
+                          return ea.cmp(&eb);
+                        }
+                        return Ordering::Greater;
+                      }
+                      (true, true) => {
+                        if na_f.len() == 1 && nb_f.len() == 1 {
+                          let cmp = compare_expr_canonical(na_f[0], nb_f[0]);
+                          if cmp != Ordering::Equal {
+                            return cmp;
+                          }
+                        }
+                        return ea.cmp(&eb);
+                      }
+                      (false, false) => return ea.cmp(&eb),
+                    }
+                  }
                   // Numerators containing the base itself are like-powers
                   // of it; WL keeps their input order instead of applying
-                  // the exponent rule ((1-4x)/(5x) + (x-2x^2)/(5x^2) and
-                  // both input orders of (c+x)/(1+x) vs (d+x)/(1+x)^2 stay
-                  // put).
+                  // the exponent rule ((1-4x)/(5x) + (x-2x^2)/(5x^2) both
+                  // input orders stay put).
                   let other_contains_base = aa
                     .iter()
                     .chain(ab.iter())
-                    .filter(|f| neg_pow(f).is_none())
+                    .filter(|f| cmp_neg_pow(f).is_none())
                     .any(|f| contains_expr(f, base_a));
                   if !other_contains_base {
                     return ea.cmp(&eb);

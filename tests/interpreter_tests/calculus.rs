@@ -1299,6 +1299,103 @@ mod differentiate_plus_times {
     assert_eq!(interpret("D[ArcCoth[x^2], x]").unwrap(), "(2*x)/(1 - x^4)");
   }
 
+  // Shared sum-denominator terms whose single-sum numerators contain the
+  // base variable compare by NUMERATOR polynomial order, not by exponent:
+  // the u'/v term of the quotient rule leads when its numerator's top
+  // monomial is smaller. A bare power (numerator-less) term instead
+  // orders by ascending exponent against a product term. All
+  // wolframscript-verified (differential fuzzer, seed 1783515124284605000).
+  #[test]
+  fn d_quotient_rule_numerator_term_order() {
+    assert_eq!(
+      interpret("D[(5 + 2 x + 2 x^2 - 5 x^3)/(3 + x), x]").unwrap(),
+      "(2 + 4*x - 15*x^2)/(3 + x) - (5 + 2*x + 2*x^2 - 5*x^3)/(3 + x)^2"
+    );
+    assert_eq!(
+      interpret("D[x/(1 + x), x]").unwrap(),
+      "-(x/(1 + x)^2) + (1 + x)^(-1)"
+    );
+  }
+
+  // A numeric-only term against a sharing product follows the
+  // numerator-vs-base rule: the numeric side leads when the sharing
+  // numerator sorts above the base ((1+4x) > (5-4x) by top-coefficient
+  // order), ascending exponent otherwise. And D's keep-sign Cancel must
+  // not re-factor an uncancellable quotient (2/(1-2x)^2 stays, while
+  // Cancel itself canonicalizes to 2/(-1+2x)^2). All wolframscript-
+  // verified (differential fuzzer, seed 1783515124284605000 re-run).
+  #[test]
+  fn d_quotient_negative_leading_base() {
+    assert_eq!(
+      interpret("D[(1 + 4 x)/(5 - 4 x), x]").unwrap(),
+      "4/(5 - 4*x) + (4*(1 + 4*x))/(5 - 4*x)^2"
+    );
+    assert_eq!(interpret("D[1/(1 - 2 x), x]").unwrap(), "2/(1 - 2*x)^2");
+    assert_eq!(interpret("Cancel[2/(1-2 x)^2]").unwrap(), "2/(-1 + 2*x)^2");
+    assert_eq!(
+      interpret("Plus[Power[Plus[5, Times[-4, x]], -1], Times[Plus[1, Times[4, x]], Power[Plus[5, Times[-4, x]], -2]]]").unwrap(),
+      "(5 - 4*x)^(-1) + (1 + 4*x)/(5 - 4*x)^2"
+    );
+    assert_eq!(
+      interpret("Plus[Times[4, Power[Plus[3, x], -1]], Times[Plus[2, x], Power[Plus[3, x], -2]]]").unwrap(),
+      "(2 + x)/(3 + x)^2 + 4/(3 + x)"
+    );
+    assert_eq!(
+      interpret("Plus[Power[Plus[1, Times[-2, x]], -1], Times[x, Power[Plus[1, Times[-2, x]], -2]]]").unwrap(),
+      "(1 - 2*x)^(-1) + x/(1 - 2*x)^2"
+    );
+  }
+
+  // Direct Plus canonicalization probes for the shared-denominator rules
+  // (both input orders give the same canonical form in wolframscript).
+  #[test]
+  fn shared_denominator_plus_term_order() {
+    // Sharing numerators: numerator polynomial order decides.
+    assert_eq!(
+      interpret("Plus[Times[Plus[2, x], Power[Plus[3, x], -1]], Times[Plus[5, x], Power[Plus[3, x], -2]]]").unwrap(),
+      "(2 + x)/(3 + x) + (5 + x)/(3 + x)^2"
+    );
+    assert_eq!(
+      interpret("Plus[Times[Plus[5, x], Power[Plus[3, x], -1]], Times[Plus[2, x], Power[Plus[3, x], -2]]]").unwrap(),
+      "(2 + x)/(3 + x)^2 + (5 + x)/(3 + x)"
+    );
+    // Equal monomials tie-break by ascending coefficient.
+    assert_eq!(
+      interpret("Plus[Times[Plus[2, Times[4, x]], Power[Plus[3, x], -1]], Times[Plus[5, Times[2, x]], Power[Plus[3, x], -2]]]").unwrap(),
+      "(5 + 2*x)/(3 + x)^2 + (2 + 4*x)/(3 + x)"
+    );
+    // Sharing beats non-sharing regardless of exponent.
+    assert_eq!(
+      interpret("Plus[Times[Plus[2, x], Power[Plus[3, x], -1]], Times[Plus[5, y], Power[Plus[3, x], -2]]]").unwrap(),
+      "(2 + x)/(3 + x) + (5 + y)/(3 + x)^2"
+    );
+    assert_eq!(
+      interpret("Plus[Times[Plus[a, b], Power[Plus[1, x], -1]], Times[x, Power[Plus[1, x], -2]]]").unwrap(),
+      "x/(1 + x)^2 + (a + b)/(1 + x)"
+    );
+    // Neither shares: ascending exponent.
+    assert_eq!(
+      interpret("Plus[Times[Plus[a, b], Power[Plus[1, x], -1]], Times[Plus[c, d], Power[Plus[1, x], -2]]]").unwrap(),
+      "(c + d)/(1 + x)^2 + (a + b)/(1 + x)"
+    );
+    // Cross-shape (bare power vs product): ascending exponent, both
+    // directions.
+    assert_eq!(
+      interpret(
+        "Plus[Power[Plus[3, x], -1], Times[Plus[2, x], Power[Plus[3, x], -2]]]"
+      )
+      .unwrap(),
+      "(2 + x)/(3 + x)^2 + (3 + x)^(-1)"
+    );
+    assert_eq!(
+      interpret(
+        "Plus[Power[Plus[3, x], -2], Times[Plus[2, x], Power[Plus[3, x], -1]]]"
+      )
+      .unwrap(),
+      "(3 + x)^(-2) + (2 + x)/(3 + x)"
+    );
+  }
+
   #[test]
   fn high_order_derivative_of_x_x_does_not_panic() {
     // Previously D[x^x, {x, 10}] aborted with a "comparison function does

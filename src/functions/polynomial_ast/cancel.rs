@@ -419,6 +419,53 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
         {
           return canon;
         }
+        return fallback;
+      }
+      // Keep-sign callers (D) keep the input's factored shape when an
+      // integer-coefficient polynomial quotient didn't actually cancel:
+      // simplify_division re-FACTORS the expanded quotient into canonical
+      // factors, which would silently flip 2/(1-2x)^2 into 2/(-1+2x)^2 —
+      // a sign wolframscript's D preserves. Radical/transcendental
+      // quotients keep the fallback's display normalization
+      // (-(1/Sqrt[1-x^2]) etc.), where no re-factoring occurs.
+      let is_int_poly_quotient = find_single_variable_both(&num, &den)
+        .map(|v| {
+          extract_poly_coeffs(&num, &v).is_some()
+            && extract_poly_coeffs(&den, &v).is_some()
+        })
+        .unwrap_or(false);
+      // …and only when the input was already in expanded shape (a power's
+      // base counts): 1/(1+2*(1+n)) must still normalize to (3+2*n)^(-1).
+      fn already_expanded(e: &Expr) -> bool {
+        let base = match e {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } if matches!(right.as_ref(), Expr::Integer(n) if *n > 0) => {
+            left.as_ref()
+          }
+          Expr::FunctionCall { name, args }
+            if name == "Power"
+              && args.len() == 2
+              && matches!(&args[1], Expr::Integer(n) if *n > 0) =>
+          {
+            &args[0]
+          }
+          other => other,
+        };
+        expr_to_string(&expand_and_combine(base)) == expr_to_string(base)
+      }
+      if is_int_poly_quotient
+        && already_expanded(&raw_num)
+        && already_expanded(&raw_den)
+      {
+        let (fnum, fden) = super::together::extract_num_den(&fallback);
+        if expr_to_string(&expand_and_combine(&fnum)) == expr_to_string(&num)
+          && expr_to_string(&expand_and_combine(&fden)) == expr_to_string(&den)
+        {
+          return expr.clone();
+        }
       }
       return fallback;
     }
