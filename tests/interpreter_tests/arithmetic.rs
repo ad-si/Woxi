@@ -3155,6 +3155,24 @@ mod expand_threading {
     assert_eq!(interpret("Factorial2[-7]").unwrap(), "-1/15");
   }
 
+  // The denominator (|n| - 2)!! exceeds i128 for n < -57, so these need
+  // BigInt arithmetic. Also covers both signs of (-1)^((|n| - 1)/2).
+  #[test]
+  fn factorial2_negative_odd_large() {
+    assert_eq!(
+      interpret("Factorial2[-59]").unwrap(),
+      "-1/495179769008019818390136611716089140625"
+    );
+    assert_eq!(
+      interpret("Factorial2[-61]").unwrap(),
+      "1/29215606371473169285018060091249259296875"
+    );
+    assert_eq!(
+      interpret("Factorial2[-101]").unwrap(),
+      "1/2725392139750729502980713245400918633290796330545803413734328823443106201171875"
+    );
+  }
+
   // Factorial2 should render with the `!!` suffix (not as `Factorial2[x]`),
   // matching wolframscript. Parentheses wrap Plus/Times operands so the
   // suffix binds to the whole expression.

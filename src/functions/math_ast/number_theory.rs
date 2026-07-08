@@ -597,27 +597,16 @@ pub fn factorial2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Negative odd integers: n!! = (n+2)!! / (n+2)
       // (-1)!! = 1, (-3)!! = -1, (-5)!! = 1/3, (-7)!! = -1/15, ...
       if n % 2 != 0 {
-        // Compute by working from -1 down
-        let mut numer: i128 = 1;
-        let mut denom: i128 = 1;
-        let mut k = -1i128;
-        while k > n {
-          k -= 2;
-          // (k)!! = (k+2)!! / (k+2)
-          denom *= k + 2;
-          // Simplify
-          let g = gcd_i128(numer.abs(), denom.abs());
-          numer /= g;
-          denom /= g;
+        // (-n)!! = (-1)^((n-1)/2) / (n-2)!! for n>1 odd
+        let mut denom = BigInt::from(1);
+        let mut i = -n - 2;
+        while i >= 2 {
+          denom *= i;
+          i -= 2;
         }
-        if denom < 0 {
-          numer = -numer;
-          denom = -denom;
-        }
-        if denom == 1 {
-          return Ok(Expr::Integer(numer));
-        }
-        return Ok(make_rational(numer, denom));
+
+        let numer = BigInt::from(if (-n + 1) % 4 == 0 { -1 } else { 1 });
+        return Ok(make_rational_expr(numer, denom));
       }
       return Ok(Expr::FunctionCall {
         name: "Factorial2".to_string(),
