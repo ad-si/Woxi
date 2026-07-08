@@ -3375,9 +3375,29 @@ mod expand_threading {
 
   #[test]
   fn norm_list_with_real_is_numeric() {
+    // The machine 2-norm uses Wolfram's scaled formula m*Sqrt[Sum[(x/m)^2]]
+    // (m = Max[Abs]) whose rounding differs from Sqrt[Sum[x^2]] = 3.741…413
+    // in the last digit.
+    assert_eq!(interpret("Norm[{1.0, 2, 3}]").unwrap(), "3.741657386773941");
+  }
+
+  // The scaled machine 2-norm (differential fuzzer, seed
+  // 1783515124284605000); Frobenius keeps the PLAIN sum of squares.
+  #[test]
+  fn norm_machine_two_norm_is_scaled() {
     assert_eq!(
-      interpret("Norm[{1.0, 2, 3}]").unwrap(),
-      "3.7416573867739413"
+      interpret("Norm[{10.9, -10.3}]").unwrap(),
+      "14.996666296213968"
+    );
+    assert_eq!(
+      interpret("Norm[{3.3, 4.4, 5.5}]").unwrap(),
+      "7.778174593052023"
+    );
+    assert_eq!(interpret("Norm[{0.3, 0.4}]").unwrap(), "0.5");
+    assert_eq!(interpret("Norm[{0., 0.}]").unwrap(), "0.");
+    assert_eq!(
+      interpret("Norm[{{1.5, 2.5}, {3.5, 4.5}}, \"Frobenius\"]").unwrap(),
+      "6.4031242374328485"
     );
   }
 

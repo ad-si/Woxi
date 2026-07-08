@@ -2270,6 +2270,17 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         flat.extend(cells.iter().cloned());
       }
     }
+    // Unlike the machine-precision vector 2-norm (which Wolfram computes
+    // with the scaled formula, see below), Frobenius sums the plain
+    // squares: Norm[{{1.5,2.5},{3.5,4.5}}, "Frobenius"] → Sqrt[41.] =
+    // 6.4031242374328485, not the scaled 6.403124237432849.
+    if flat.iter().any(contains_inexact_real) {
+      let vals: Option<Vec<f64>> = flat.iter().map(try_eval_to_f64).collect();
+      if let Some(vals) = vals {
+        let sum: f64 = vals.iter().map(|x| x * x).sum();
+        return Ok(Expr::Real(sum.sqrt()));
+      }
+    }
     return norm_ast(&[Expr::List(flat.into())]);
   }
 
@@ -2399,6 +2410,24 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if is_infinity {
           let result = vals.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
           return Ok(Expr::Real(result));
+        }
+        if p == 2.0 {
+          // Wolfram computes the machine-precision 2-norm with the
+          // overflow-safe scaled formula m*Sqrt[Sum[(x/m)^2]], m = Max[Abs],
+          // whose rounding differs from Sqrt[Sum[x^2]] by an ulp
+          // (Norm[{10.9, -10.3}] → 14.996666296213968).
+          let m = vals.iter().fold(0.0f64, |acc, x| acc.max(x.abs()));
+          if m == 0.0 {
+            return Ok(Expr::Real(0.0));
+          }
+          let sum: f64 = vals
+            .iter()
+            .map(|x| {
+              let r = x / m;
+              r * r
+            })
+            .sum();
+          return Ok(Expr::Real(m * sum.sqrt()));
         }
         let sum: f64 = vals.iter().map(|x| x.abs().powf(p)).sum();
         return Ok(Expr::Real(sum.powf(1.0 / p)));
