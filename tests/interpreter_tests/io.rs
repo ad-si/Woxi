@@ -5688,7 +5688,8 @@ mod cases {
   fn get_1() {
     // Use a test-unique filename: get_1 and get_2 otherwise both write to
     // `$TemporaryDirectory/example_file` and race under parallel test runs.
-    let path = format!("{0}woxi_example_file_get1", std::path::MAIN_SEPARATOR_STR);
+    let path =
+      format!("{0}woxi_example_file_get1", std::path::MAIN_SEPARATOR_STR);
     assert_case(
       &format!(
         r#"filename = $TemporaryDirectory <> "{path}"; Put[x + y, filename]; Get[filename]"#
@@ -5698,7 +5699,8 @@ mod cases {
   }
   #[test]
   fn get_2() {
-    let path = format!("{0}woxi_example_file_get2", std::path::MAIN_SEPARATOR_STR);
+    let path =
+      format!("{0}woxi_example_file_get2", std::path::MAIN_SEPARATOR_STR);
     assert_case(
       &format!(
         r#"filename = $TemporaryDirectory <> "{path}"; Put[x + y, filename]; Get[filename]; filename = $TemporaryDirectory <> "{path}"; Put[x + y, 2x^2 + 4z!, Cos[x] + I Sin[x], filename]; Get[filename]"#
