@@ -2,7 +2,9 @@ use plotters::prelude::*;
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::chart::{ChartLabel, LabelPosition, StyledLabel};
+use crate::functions::chart::{
+  ChartLabel, ChartOptions, LabelPosition, StyledLabel,
+};
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
@@ -4383,10 +4385,10 @@ pub enum BinSpec {
 pub(crate) fn generate_histogram_svg(
   values: &[f64],
   bin_spec: Option<BinSpec>,
-  svg_width: u32,
-  svg_height: u32,
-  full_width: bool,
+  opts: &mut ChartOptions,
 ) -> Result<String, InterpreterError> {
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
@@ -4442,39 +4444,66 @@ pub(crate) fn generate_histogram_svg(
   };
 
   let num_bins = counts.len();
+  // A named ChartStyle scheme colors each bin with a distinct sampled color.
+  crate::functions::chart::apply_color_scheme(opts, num_bins);
   let max_count = *counts.iter().max().unwrap_or(&1);
-  let y_max = max_count as f64 * 1.1;
-  let x_lo = bin_edges[0];
-  let x_hi = bin_edges[num_bins];
+
+  // Explicit PlotRange overrides the auto-computed extents (10% headroom
+  // above the tallest bar, bins spanning exactly the edge range).
+  let (y_min, y_max) =
+    opts.plot_range_y.unwrap_or((0.0, max_count as f64 * 1.1));
+  let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
+  let (x_lo, x_hi) = opts
+    .plot_range_x
+    .unwrap_or((bin_edges[0], bin_edges[num_bins]));
+  let x_hi = if x_hi <= x_lo { x_lo + 1.0 } else { x_hi };
+
+  let s = RESOLUTION_SCALE as i32;
+  let sf = RESOLUTION_SCALE as f64;
+
+  // Extra room for a PlotLabel above and an x-axis label below.
+  let has_plot_label = opts
+    .plot_label
+    .as_ref()
+    .is_some_and(|sl| !sl.text.is_empty());
+  let has_x_axis_label =
+    opts.axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
+  let top_margin = if has_plot_label { 35 * s } else { 10 * s };
+  let bottom_extra = if has_x_axis_label { 24.0 * sf } else { 0.0 };
+  let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
+  let y_label_area = 65 * RESOLUTION_SCALE;
+
+  let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
+    plot_theme();
 
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
       .into_drawing_area();
-    let (bg_color, dark_gray, _light_gray, _label_fill, _title_fill) =
-      plot_theme();
     root.fill(&bg_color).map_err(|e| {
       InterpreterError::EvaluationError(format!("Histogram: {e}"))
     })?;
 
-    let s = RESOLUTION_SCALE as i32;
     let tick = MINOR_TICK_LEN * s;
 
     let mut chart = ChartBuilder::on(&root)
-      .margin(10 * s)
-      .x_label_area_size(40 * RESOLUTION_SCALE)
-      .y_label_area_size(65 * RESOLUTION_SCALE)
-      .build_cartesian_2d(x_lo..x_hi, 0.0..y_max)
+      .margin_top(top_margin as u32)
+      .margin_right(10 * s as u32)
+      .margin_bottom(10 * s as u32)
+      .margin_left(10 * s as u32)
+      .x_label_area_size(x_label_area)
+      .y_label_area_size(y_label_area)
+      .build_cartesian_2d(x_lo..x_hi, y_min..y_max)
       .map_err(|e| {
         InterpreterError::EvaluationError(format!("Histogram: {e}"))
       })?;
 
     let x_major = nice_step(x_hi - x_lo, 5);
-    let y_major = nice_step(y_max, 5);
+    let y_major = nice_step(y_max - y_min, 5);
     let x_minor_step = x_major / 5.0;
     let y_minor_step = y_major / 5.0;
     let x_tick_count = ((x_hi - x_lo) / x_minor_step).round() as usize + 1;
-    let y_tick_count = (y_max / y_minor_step).round() as usize + 1;
+    let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
 
     chart
       .configure_mesh()
@@ -4508,10 +4537,21 @@ pub(crate) fn generate_histogram_svg(
         InterpreterError::EvaluationError(format!("Histogram: {e}"))
       })?;
 
-    // Draw contiguous histogram bars using plotters Rectangles
-    let (r, g, b) = PLOT_COLORS[0];
-    let color = RGBColor(r, g, b);
+    // Draw contiguous histogram bars using plotters Rectangles.
+    // ChartStyle colors cycle per bin (matching BarChart's per-element
+    // convention); the default is a single uniform color.
     for (i, &count) in counts.iter().enumerate() {
+      let (r, g, b) = if !opts.chart_style.is_empty() {
+        let c = &opts.chart_style[i % opts.chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      } else {
+        PLOT_COLORS[0]
+      };
+      let color = RGBColor(r, g, b);
       let bx0 = bin_edges[i];
       let bx1 = bin_edges[i + 1];
       chart
@@ -4552,17 +4592,19 @@ pub(crate) fn generate_histogram_svg(
     full_width,
   );
 
+  // Plot area coordinates (kept in sync with the ChartBuilder margins above).
+  let margin_left = 10.0 * sf;
+  let plot_x0 = margin_left + y_label_area as f64;
+  let plot_y0 = top_margin as f64;
+  let plot_w =
+    render_width as f64 - margin_left - 10.0 * sf - y_label_area as f64;
+  let plot_h =
+    render_height as f64 - top_margin as f64 - 10.0 * sf - x_label_area as f64;
+
   // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
   {
-    let sf = RESOLUTION_SCALE as f64;
-    let margin = 10.0 * sf;
-    let plot_x0 = margin + 65.0 * sf;
-    let plot_y0 = margin;
-    let plot_w = render_width as f64 - 2.0 * margin - 65.0 * sf;
-    let plot_h = render_height as f64 - 2.0 * margin - 40.0 * sf;
     let x_major = nice_step(x_hi - x_lo, 5);
-    let y_major = nice_step(y_max, 5);
-    let (_, _, _, label_fill, _) = plot_theme();
+    let y_major = nice_step(y_max - y_min, 5);
     inject_major_tick_extensions(
       &mut buf,
       plot_x0,
@@ -4570,12 +4612,76 @@ pub(crate) fn generate_histogram_svg(
       plot_w,
       plot_h,
       Some((x_lo, x_hi, x_major)),
-      Some((0.0, y_max, y_major)),
+      Some((y_min, y_max, y_major)),
       MINOR_TICK_LEN as f64 * sf,
       MAJOR_TICK_LEN as f64 * sf,
       sf,
       label_fill,
     );
+  }
+
+  // AxesLabel / FrameLabel and PlotLabel, inserted before </svg>.
+  let font_size = sf * 18.0;
+  let title_font_size = sf * 22.0;
+  if let Some(insert_pos) = buf.rfind("</svg>") {
+    let mut labels_svg = String::new();
+    let axis_y = plot_y0 + plot_h;
+
+    if let Some((x_label, y_label)) = &opts.axes_label {
+      // x-axis label centered below the tick labels
+      if !x_label.is_empty() {
+        let cx = plot_x0 + plot_w / 2.0;
+        let base_y = axis_y + font_size * 2.8;
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{label_fill}\">{}</text>\n",
+          crate::functions::graphics::box_string_to_svg(x_label)
+        ));
+      }
+      // y-axis label rotated on the left
+      if !y_label.is_empty() {
+        let cy = plot_y0 + plot_h / 2.0;
+        let lx = margin_left + font_size * 0.8;
+        labels_svg.push_str(&format!(
+          "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+          crate::functions::graphics::box_string_to_svg(y_label)
+        ));
+      }
+    }
+
+    // PlotLabel: centered above the chart
+    if let Some(sl) = &opts.plot_label
+      && !sl.text.is_empty()
+    {
+      let cx = plot_x0 + plot_w / 2.0;
+      let ty = top_margin as f64 - title_font_size * 0.5;
+      let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+      let fill = sl
+        .color
+        .as_ref()
+        .map(|c| c.to_svg_rgb())
+        .unwrap_or_else(|| title_default_fill.to_string());
+      let mut style_attrs = String::new();
+      if sl.bold {
+        style_attrs.push_str(" font-weight=\"bold\"");
+      }
+      if sl.italic {
+        style_attrs.push_str(" font-style=\"italic\"");
+      }
+      labels_svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+           fill=\"{fill}\"{style_attrs}>{}</text>\n",
+        crate::functions::graphics::box_string_to_svg(&sl.text)
+      ));
+    }
+
+    if !labels_svg.is_empty() {
+      buf.insert_str(insert_pos, &labels_svg);
+    }
   }
 
   Ok(buf)

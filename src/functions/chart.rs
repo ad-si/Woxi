@@ -492,7 +492,7 @@ fn sample_gradient(controls: &[(f64, f64, f64)], n: usize) -> Vec<Color> {
 
 /// If a named `ChartStyle` scheme was given and no explicit colors were
 /// supplied, fill `chart_style` with `count` colors sampled from the scheme.
-fn apply_color_scheme(opts: &mut ChartOptions, count: usize) {
+pub(crate) fn apply_color_scheme(opts: &mut ChartOptions, count: usize) {
   if !opts.chart_style.is_empty() {
     return;
   }
@@ -1474,13 +1474,8 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  let opts = parse_chart_options(args);
-  let (svg_width, svg_height, full_width) =
-    (opts.svg_width, opts.svg_height, opts.full_width);
-
-  let svg = generate_histogram_svg(
-    &values, bin_spec, svg_width, svg_height, full_width,
-  )?;
+  let mut opts = parse_chart_options(args);
+  let svg = generate_histogram_svg(&values, bin_spec, &mut opts)?;
   Ok(crate::graphics_result(svg))
 }
 
