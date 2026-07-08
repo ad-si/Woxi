@@ -7102,9 +7102,13 @@ mod echo_label {
 mod find_list_tests {
   use super::*;
 
-  fn setup() -> String {
+  // Each test gets its own directory: the tests in this module run in
+  // parallel within one process, so a shared (pid-keyed) directory that
+  // setup() wipes first races — one test deletes the files while another
+  // is still reading them.
+  fn setup(subdir: &str) -> String {
     let base = std::env::temp_dir()
-      .join(format!("woxi_findlist_test_{}", std::process::id()));
+      .join(format!("woxi_findlist_test_{}_{subdir}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(&base).unwrap();
     std::fs::write(
@@ -7121,7 +7125,7 @@ mod find_list_tests {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn matching_lines() {
-    let b = setup();
+    let b = setup("matching_lines");
     for (input, expected) in [
       (
         format!(r#"FindList["{b}/sample.txt", "alpha"]"#),
@@ -7162,7 +7166,7 @@ mod find_list_tests {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn missing_files_and_messages() {
-    let b = setup();
+    let b = setup("missing_files_and_messages");
     let r =
       interpret_with_stdout(&format!(r#"FindList["{b}/nofile.txt", "alpha"]"#))
         .unwrap();
