@@ -613,3 +613,83 @@ pub fn collinear_points_ast(
   }
   Some(Ok(bool_expr(true)))
 }
+
+/// CoplanarPoints[{p1, p2, …}] — `True`/`False` when every coordinate is
+/// numeric. Points are coplanar iff the matrix of difference vectors
+/// `pi - p1` has rank at most two, tested exactly via vanishing 3×3 minors.
+/// Symbolic coordinates (where Wolfram returns an algebraic condition) are
+/// left unevaluated.
+pub fn coplanar_points_ast(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 1 {
+    return None;
+  }
+  let pts = extract_nd_points(&args[0])?;
+  let n = pts.len();
+  // Three or fewer points always lie in a common plane.
+  if n <= 3 {
+    return Some(Ok(bool_expr(true)));
+  }
+  if !pts.iter().flatten().all(coord_is_numeric) {
+    return None;
+  }
+
+  let dim = pts[0].len();
+  // In two or fewer coordinates a 3×3 minor cannot exist → always coplanar.
+  if dim <= 2 {
+    return Some(Ok(bool_expr(true)));
+  }
+
+  let p0 = &pts[0];
+  // Difference vectors pi - p1 (rows of the matrix whose rank we bound).
+  let diffs: Vec<Vec<Expr>> = pts[1..]
+    .iter()
+    .map(|p| {
+      (0..dim)
+        .map(|j| sub_expr(&p[j], &p0[j]))
+        .collect::<Vec<_>>()
+    })
+    .collect();
+  let rows = diffs.len();
+
+  // Rank <= 2 iff every 3×3 minor of the difference matrix vanishes.
+  for a in 0..rows {
+    for b in (a + 1)..rows {
+      for c in (b + 1)..rows {
+        for j in 0..dim {
+          for k in (j + 1)..dim {
+            for l in (k + 1)..dim {
+              let submatrix = Expr::List(
+                [a, b, c]
+                  .iter()
+                  .map(|&row| {
+                    Expr::List(
+                      [j, k, l]
+                        .iter()
+                        .map(|&col| diffs[row][col].clone())
+                        .collect::<Vec<_>>()
+                        .into(),
+                    )
+                  })
+                  .collect::<Vec<_>>()
+                  .into(),
+              );
+              let det = crate::evaluator::evaluate_function_call_ast(
+                "Det",
+                &[submatrix],
+              )
+              .ok()?;
+              match expr_is_zero(&det) {
+                Some(true) => {}
+                Some(false) => return Some(Ok(bool_expr(false))),
+                None => return None,
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  Some(Ok(bool_expr(true)))
+}

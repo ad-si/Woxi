@@ -3948,3 +3948,83 @@ mod collinear_points {
     );
   }
 }
+
+mod coplanar_points {
+  use super::*;
+
+  #[test]
+  fn spatial_true_false() {
+    // Four points in the z = 0 plane are coplanar.
+    assert_eq!(
+      interpret("CoplanarPoints[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 0}}]")
+        .unwrap(),
+      "True"
+    );
+    // A tetrahedron's four vertices are not coplanar.
+    assert_eq!(
+      interpret("CoplanarPoints[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("CoplanarPoints[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 1}}]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn more_than_four_points() {
+    assert_eq!(
+      interpret(
+        "CoplanarPoints[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {2, 3, 0}, {-1, 5, 0}}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "CoplanarPoints[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {2, 3, 0}, {-1, 5, 1}}]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn rationals_are_exact() {
+    assert_eq!(
+      interpret(
+        "CoplanarPoints[{{0, 0, 0}, {1/2, 0, 0}, {0, 1/3, 0}, {1, 1, 0}}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn reals_are_strict() {
+    // A 1e-10 deviation out of plane is not coplanar.
+    assert_eq!(
+      interpret(
+        "CoplanarPoints[{{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {1., 1., 0.0000000001}}]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn degenerate_cases() {
+    // Three or fewer points are always coplanar.
+    assert_eq!(
+      interpret("CoplanarPoints[{{0, 0, 0}, {1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "True"
+    );
+    // Points with only two coordinates cannot leave a plane.
+    assert_eq!(
+      interpret("CoplanarPoints[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]").unwrap(),
+      "True"
+    );
+  }
+}

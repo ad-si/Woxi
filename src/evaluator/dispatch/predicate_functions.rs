@@ -681,6 +681,9 @@ pub fn dispatch_predicate_functions(
     "CollinearPoints" if args.len() == 1 => {
       return crate::functions::geometric_test_ast::collinear_points_ast(args);
     }
+    "CoplanarPoints" if args.len() == 1 => {
+      return crate::functions::geometric_test_ast::coplanar_points_ast(args);
+    }
     "CompositeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::composite_q_ast(args));
     }

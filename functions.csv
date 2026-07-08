@@ -4436,7 +4436,7 @@ Authentication,,🚫,,11.0,4612
 ChannelSubscribers,,🚫,,11.0,4612
 ConfirmBy,,,,12.2,4612
 ConformAudio,,,,11.0,4612
-CoplanarPoints,,,,12.2,4612
+CoplanarPoints,Tests whether a set of numeric points are coplanar,✅,pure,12.2,4612
 DatabaseReference,,🚫,,12.0,4612
 DatabinUpload,,🚫,,10.1,4612
 DefaultBoxStyle,,🚫,,7.0,4612
