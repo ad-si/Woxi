@@ -36,7 +36,9 @@ Details:
 
 - The corpora are seeded from `tests/scripts/*.wls` plus generated
   expressions (`make fuzz-corpus`), so the fuzzer starts from valid
-  programs instead of random bytes.
+  programs instead of random bytes. The `slow_script_test!` scripts are
+  excluded from the `interpret` corpus: they legitimately run for tens of
+  seconds, which the `-timeout` hang detector would misreport as crashes.
 - The `interpret` target skips inputs containing filesystem/network heads
   (`Export`, `Import`, `Run`, …) so fuzzing has no side effects; see
   `SIDE_EFFECT_DENYLIST` in `fuzz_targets/interpret.rs`.

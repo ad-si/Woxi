@@ -114,6 +114,13 @@ fuzz-corpus:
 	mkdir -p fuzz/corpus/parse fuzz/corpus/interpret
 	cp tests/scripts/*.wls fuzz/corpus/parse/
 	cp tests/scripts/*.wls fuzz/corpus/interpret/
+	# The slow_script_test! scripts legitimately run for tens of seconds,
+	# which the interpret target's libFuzzer -timeout hang detector would
+	# report as a crash. Keep them out of the interpret corpus; parsing them
+	# is fast, so the parse corpus keeps all scripts.
+	grep -A 2 'slow_script_test!' tests/script_snapshot_tests.rs \
+		| grep -o '"[^"]*\.wls"' | tr -d '"' | sort -u \
+		| (cd fuzz/corpus/interpret && xargs rm -f)
 	cargo run --bin woxi-diff-fuzz -- --print-cases --cases 200 --seed 0 \
 		| split -l 1 - fuzz/corpus/interpret/gen-
 
@@ -131,7 +138,7 @@ fuzz-interpret: fuzz-corpus
 	@if ! command -v cargo-fuzz &> /dev/null; \
 		then cargo install cargo-fuzz; \
 		fi
-	cargo +nightly fuzz run interpret -- -timeout=20 -max_len=2048 -rss_limit_mb=8192
+	cargo +nightly fuzz run interpret -- -timeout=60 -max_len=2048 -rss_limit_mb=8192
 
 # Differential fuzzing against wolframscript (local binary or the
 # cmd-server.js Docker bridge — auto-detected). Reports and shrinks any

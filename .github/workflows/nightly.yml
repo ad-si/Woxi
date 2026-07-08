@@ -62,7 +62,10 @@ jobs:
       # -rss_limit_mb is raised above the 2048 default because some corpus
       # seeds (tests/scripts/*.wls) are legitimately memory-hungry
       # computations, and ASan roughly triples their footprint.
-      run: cargo fuzz run interpret --target "$HOST_TARGET" -- -timeout=20 -max_len=2048 -max_total_time=300 -rss_limit_mb=8192
+      # -timeout=60 (not the 20 the parse target uses) because seeds and
+      # mutants can be heavy-but-terminating computations under ASan;
+      # true infinite loops are still caught.
+      run: cargo fuzz run interpret --target "$HOST_TARGET" -- -timeout=60 -max_len=2048 -max_total_time=300 -rss_limit_mb=8192
     - name: Upload crashing inputs
       if: failure()
       uses: actions/upload-artifact@v4

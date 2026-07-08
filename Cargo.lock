@@ -6639,6 +6639,7 @@ dependencies = [
  "jupyter-protocol",
  "keshvar",
  "libc",
+ "libm",
  "log",
  "lz4_flex",
  "md-5",
