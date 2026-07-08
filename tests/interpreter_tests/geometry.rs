@@ -3874,3 +3874,77 @@ mod triangle_measurement_tests {
     );
   }
 }
+
+mod collinear_points {
+  use super::*;
+
+  #[test]
+  fn planar_true_false() {
+    assert_eq!(
+      interpret("CollinearPoints[{{0, 0}, {1, 1}, {2, 2}}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("CollinearPoints[{{0, 0}, {1, 1}, {2, 3}}]").unwrap(),
+      "False"
+    );
+    // More than three points, all on the line.
+    assert_eq!(
+      interpret("CollinearPoints[{{0, 0}, {1, 1}, {2, 2}, {3, 3}}]").unwrap(),
+      "True"
+    );
+    // One point off the line breaks collinearity.
+    assert_eq!(
+      interpret("CollinearPoints[{{0, 0}, {1, 1}, {2, 2}, {3, 4}}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn three_dimensional() {
+    assert_eq!(
+      interpret(
+        "CollinearPoints[{{0, 0, 0}, {1, 2, 3}, {2, 4, 6}, {-1, -2, -3}}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("CollinearPoints[{{1, 2, 3}, {2, 4, 6}, {3, 6, 10}}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn rationals_are_exact() {
+    assert_eq!(
+      interpret("CollinearPoints[{{0, 0}, {1/2, 1}, {1, 2}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn reals_are_strict() {
+    // A 1e-10 deviation is not collinear — wolframscript uses no tolerance.
+    assert_eq!(
+      interpret("CollinearPoints[{{0., 0.}, {1., 1.}, {2., 2.0000000001}}]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn degenerate_cases() {
+    // Fewer than three points are trivially collinear.
+    assert_eq!(interpret("CollinearPoints[{{5, 5}}]").unwrap(), "True");
+    assert_eq!(
+      interpret("CollinearPoints[{{0, 0}, {1, 1}}]").unwrap(),
+      "True"
+    );
+    // Coincident points are collinear.
+    assert_eq!(
+      interpret("CollinearPoints[{{1, 1}, {1, 1}, {1, 1}}]").unwrap(),
+      "True"
+    );
+  }
+}

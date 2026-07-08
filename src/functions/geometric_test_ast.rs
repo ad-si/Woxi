@@ -479,3 +479,137 @@ pub fn geometric_test(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   }
   Some(Ok(bool_expr(all)))
 }
+
+// ---------------------------------------------------------------------------
+// CollinearPoints — exact-arithmetic test (arbitrary dimension)
+// ---------------------------------------------------------------------------
+
+/// Extract a list of n-dimensional points with a common dimension. Points may
+/// carry symbolic coordinates; those are handled by the caller.
+fn extract_nd_points(expr: &Expr) -> Option<Vec<Vec<Expr>>> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let mut pts = Vec::with_capacity(items.len());
+  let mut dim = None;
+  for item in items.iter() {
+    let Expr::List(coords) = item else {
+      return None;
+    };
+    if coords.is_empty() {
+      return None;
+    }
+    match dim {
+      None => dim = Some(coords.len()),
+      Some(d) if d != coords.len() => return None,
+      _ => {}
+    }
+    pts.push(coords.to_vec());
+  }
+  Some(pts)
+}
+
+/// Whether `e` is a numeric quantity in the Wolfram sense (`NumericQ`), i.e.
+/// reduces to a definite number (integers, rationals, reals, Pi, Sqrt[2], …).
+fn coord_is_numeric(e: &Expr) -> bool {
+  matches!(
+    crate::evaluator::evaluate_function_call_ast("NumericQ", &[e.clone()]),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  )
+}
+
+/// Evaluate `e` and decide whether it is exactly zero. Exact rationals reduce
+/// to `Integer(0)`; reals and other numeric constants are compared strictly
+/// against 0 (matching how wolframscript treats machine numbers). Returns
+/// `None` when the value cannot be reduced to a definite number.
+fn expr_is_zero(e: &Expr) -> Option<bool> {
+  let v = crate::evaluator::evaluate_expr_to_expr(e).ok()?;
+  match &v {
+    Expr::Integer(n) => Some(*n == 0),
+    Expr::BigInteger(n) => Some(*n == num_bigint::BigInt::from(0)),
+    Expr::Real(r) => Some(*r == 0.0),
+    _ => super::math_ast::try_eval_to_f64(&v).map(|f| f == 0.0),
+  }
+}
+
+fn sub_expr(a: &Expr, b: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![a.clone(), b.clone()].into(),
+  }
+}
+
+fn mul_expr(a: &Expr, b: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![a.clone(), b.clone()].into(),
+  }
+}
+
+/// CollinearPoints[{p1, p2, …}] — `True`/`False` when every coordinate is
+/// numeric. Points are collinear iff the matrix of difference vectors
+/// `pi - p1` has rank at most one, tested exactly via vanishing 2×2 minors.
+/// Symbolic coordinates (where Wolfram returns an algebraic condition) are
+/// left unevaluated.
+pub fn collinear_points_ast(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 1 {
+    return None;
+  }
+  let pts = extract_nd_points(&args[0])?;
+  let n = pts.len();
+  // Zero, one, or two points are always collinear.
+  if n <= 2 {
+    return Some(Ok(bool_expr(true)));
+  }
+  // Only fully numeric inputs are handled here.
+  if !pts.iter().flatten().all(coord_is_numeric) {
+    return None;
+  }
+
+  let dim = pts[0].len();
+  let p0 = &pts[0];
+  // Difference vectors pi - p1.
+  let diffs: Vec<Vec<Expr>> = pts[1..]
+    .iter()
+    .map(|p| {
+      (0..dim)
+        .map(|j| sub_expr(&p[j], &p0[j]))
+        .collect::<Vec<_>>()
+    })
+    .collect();
+
+  // Reference direction: the first non-zero difference vector.
+  let mut reference: Option<&Vec<Expr>> = None;
+  for d in &diffs {
+    let is_zero_vec = d.iter().all(|c| expr_is_zero(c).unwrap_or(false));
+    if !is_zero_vec {
+      reference = Some(d);
+      break;
+    }
+  }
+  let Some(r) = reference else {
+    // Every point coincides with the first.
+    return Some(Ok(bool_expr(true)));
+  };
+
+  // Each difference vector must be parallel to the reference: all 2×2 minors
+  // r[j]*v[k] - r[k]*v[j] vanish.
+  for v in &diffs {
+    for j in 0..dim {
+      for k in (j + 1)..dim {
+        let minor = sub_expr(&mul_expr(&r[j], &v[k]), &mul_expr(&r[k], &v[j]));
+        match expr_is_zero(&minor) {
+          Some(true) => {}
+          Some(false) => return Some(Ok(bool_expr(false))),
+          None => return None,
+        }
+      }
+    }
+  }
+  Some(Ok(bool_expr(true)))
+}

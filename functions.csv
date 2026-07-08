@@ -4907,7 +4907,7 @@ CachePersistence,,🚫,,10.2,5184
 CauchyPointProcess,,🚫,,12.2,5184
 ChannelBase,,🚫,,11.0,5184
 ChannelListener,,🚫,,11.0,5184
-CollinearPoints,,,,12.2,5184
+CollinearPoints,Tests whether a set of numeric points are collinear,✅,pure,12.2,5184
 ColorFunctionBinning,,🚫,,12.2,5184
 CompiledLayer,,🚫,,12.2,5184
 ConnectLibraryCallbackFunction,,,,10.0,5184
