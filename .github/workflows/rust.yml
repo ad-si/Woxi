@@ -10,9 +10,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Fast correctness suite — mirrors `make test`. The ~24 heavy script
-  # snapshots are `#[ignore]`d (see `slow_script_test!`) and run in the
-  # nightly workflow (nightly.yml) instead.
+  # Fast correctness suite — mirrors `make test`. The heavy script
+  # snapshots (see `slow_script_test!`) and the wikidata live-API tests are
+  # gated behind the `slow-tests` cargo feature and run in the nightly
+  # workflow (nightly.yml) instead.
   test:
     runs-on: ubuntu-latest
     steps:

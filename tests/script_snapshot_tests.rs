@@ -161,22 +161,24 @@ macro_rules! script_test {
   };
 }
 
-/// Like `script_test!`, but marks the test `#[ignore]` so it is skipped by
-/// the default `cargo test` / `cargo nextest run` (and therefore by
-/// `make test`). These scripts are heavy algorithmic RosettaCode programs
-/// that take tens of seconds in debug builds — they dominate the suite's
-/// wall-clock and are purely about throughput, not language correctness
-/// that isn't already covered by faster unit tests.
+/// Like `script_test!`, but gates the test behind the `slow-tests` cargo
+/// feature so it is not even compiled into the default test binary (and
+/// therefore neither run nor reported as skipped by `make test`). These
+/// scripts are heavy algorithmic RosettaCode programs that take tens of
+/// seconds in debug builds — they dominate the suite's wall-clock and are
+/// purely about throughput, not language correctness that isn't already
+/// covered by faster unit tests.
 ///
-/// Run them on demand for full correctness coverage with:
-///
-///   make test-slow   # cargo nextest run --profile slow --run-ignored only
+/// The `#[ignore]` attribute is what `make test-slow` selects on
+/// (`--features slow-tests --run-ignored only`); run that target for full
+/// correctness coverage — it happens nightly in CI (nightly.yml).
 ///
 /// Performance of the heaviest of these is tracked separately by the
 /// criterion benchmarks (see `benches/interpreter.rs`).
 macro_rules! slow_script_test {
   ($test_name:ident, $file:expr) => {
     #[test]
+    #[cfg(feature = "slow-tests")]
     #[ignore = "slow: heavy script; run via `make test-slow` (correctness) \
                 or benchmarks (performance)"]
     fn $test_name() {

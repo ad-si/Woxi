@@ -21,17 +21,19 @@ test-unit:
 		--failure-output=final
 
 
-# Run the heavy `#[ignore]`d script snapshot tests (see `slow_script_test!`
-# in tests/script_snapshot_tests.rs). These are excluded from `make test`
-# because they take tens of seconds each in debug builds and dominate the
-# suite's wall-clock; their performance is tracked by the benchmarks. This
-# target re-runs them for full correctness coverage on demand.
+# Run all tests gated behind the `slow-tests` cargo feature: the heavy
+# script snapshot tests (see `slow_script_test!` in
+# tests/script_snapshot_tests.rs) and the wikidata tests that query the
+# live wikidata.org API. These are excluded from `make test` (not compiled
+# at all without the feature) because the scripts take tens of seconds
+# each in debug builds and the wikidata tests need network access. This
+# target runs nightly, so hitting the live endpoint is fine.
 .PHONY: test-slow
 test-slow:
 	cargo nextest run \
+		--features slow-tests \
 		--profile slow \
 		--run-ignored only \
-		-E 'test(/^script_/)' \
 		--show-progress=none \
 		--status-level=fail \
 		--failure-output=final
@@ -78,6 +80,7 @@ test-scripts-wolframscript:
 	@echo "Warming wolframscript CalendarData subsystem (one-time lazy init) …"
 	@wolframscript -code 'DayRange[{2000,1,1},{2000,1,1},Sunday];' >/dev/null 2>&1 || true
 	WOXI_USE_WOLFRAM=true cargo nextest run \
+		--features slow-tests \
 		--profile slow --run-ignored all script_ --test-threads=1
 	@echo "All wolframscript script tests passed."
 

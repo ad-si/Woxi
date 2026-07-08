@@ -65,12 +65,14 @@ mod tests {
       );
     }
 
-    // The remaining tests hit the live wikidata.org API and are therefore
-    // excluded from the default offline suite; run them on demand with
-    // `cargo test -- --ignored` (or `make test-slow`).
+    // The remaining tests hit the live wikidata.org API. They are gated
+    // behind the `slow-tests` cargo feature so the default offline suite
+    // doesn't even compile them (and doesn't report them as skipped); they
+    // run as part of the nightly `make test-slow`.
 
     #[test]
-    #[ignore = "network: queries the live wikidata.org API"]
+    #[cfg(feature = "slow-tests")]
+    #[ignore = "network: queries the live wikidata.org API; runs in nightly `make test-slow`"]
     fn moon_mass_example() {
       assert_eq!(
         interpret(
@@ -84,7 +86,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "network: queries the live wikidata.org API"]
+    #[cfg(feature = "slow-tests")]
+    #[ignore = "network: queries the live wikidata.org API; runs in nightly `make test-slow`"]
     fn flag_of_germany_image_url_example() {
       assert_eq!(
         interpret(
@@ -98,7 +101,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "network: queries the live wikidata.org API"]
+    #[cfg(feature = "slow-tests")]
+    #[ignore = "network: queries the live wikidata.org API; runs in nightly `make test-slow`"]
     fn flag_of_germany_import_example() {
       assert_eq!(
         interpret(
@@ -112,7 +116,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "network: queries the live wikidata.org API"]
+    #[cfg(feature = "slow-tests")]
+    #[ignore = "network: queries the live wikidata.org API; runs in nightly `make test-slow`"]
     fn raw_identifier_strings_and_lists() {
       assert_eq!(
         interpret("WikidataData[\"Q405\", \"P2067\"]").unwrap(),
@@ -126,7 +131,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "network: queries the live wikidata.org API"]
+    #[cfg(feature = "slow-tests")]
+    #[ignore = "network: queries the live wikidata.org API; runs in nightly `make test-slow`"]
     fn entity_values_become_external_identifiers() {
       assert_eq!(
         interpret("WikidataData[\"Q405\", \"P361\"] // First").unwrap(),
@@ -136,7 +142,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "network: queries the live wikidata.org API"]
+    #[cfg(feature = "slow-tests")]
+    #[ignore = "network: queries the live wikidata.org API; runs in nightly `make test-slow`"]
     fn time_values_become_date_objects() {
       // Albert Einstein's date of birth.
       assert_eq!(
@@ -146,7 +153,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "network: queries the live wikidata.org API"]
+    #[cfg(feature = "slow-tests")]
+    #[ignore = "network: queries the live wikidata.org API; runs in nightly `make test-slow`"]
     fn no_values_give_empty_list() {
       // The Moon has no "image of grave" (P1442) statement.
       assert_eq!(

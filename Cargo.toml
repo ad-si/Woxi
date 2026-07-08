@@ -44,6 +44,12 @@ cli = [
   "dep:zeromq",
 ]
 wasm = ["dep:wasm-bindgen", "dep:getrandom", "dep:console_error_panic_hook", "dep:js-sys"]
+# Compiles in the tests that are excluded from the normal test run: the
+# heavy RosettaCode script snapshots (`slow_script_test!`) and the tests
+# that query the live wikidata.org API. Without this feature they don't
+# exist in the test binaries at all, so `make test` doesn't report them as
+# skipped. They run nightly via `make test-slow`.
+slow-tests = []
 
 [dependencies]
 anyhow = "1.0.98"

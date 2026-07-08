@@ -32,8 +32,8 @@ slow-timeout = { period = "90s", terminate-after = 1 }
 filter = 'test(/^script_/)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
-# Profile for `make test-slow` (`cargo nextest run --profile slow
-# --run-ignored only`). The heavy `#[ignore]`d scripts run with heavy
+# Profile for `make test-slow` (`cargo nextest run --features slow-tests
+# --profile slow --run-ignored only`). The heavy `#[ignore]`d scripts run with heavy
 # mutual CPU contention and are ~270s+ standalone in debug builds, so give
 # every test a very wide window.
 #

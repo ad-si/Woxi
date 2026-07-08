@@ -10,9 +10,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Correctness of the ~24 heavy `#[ignore]`d script snapshots — mirrors
-  # `make test-slow` (see `slow_script_test!`). Too slow for every push/PR,
-  # so it runs once per night. Performance of these is tracked by the
+  # Correctness of all tests gated behind the `slow-tests` cargo feature —
+  # the ~24 heavy script snapshots (see `slow_script_test!`; too slow for
+  # every push/PR) and the wikidata tests that query the live wikidata.org
+  # API (excluded from the offline suite). Runs once per night via
+  # `make test-slow`. Performance of the heavy scripts is tracked by the
   # benchmarks.
   test-slow:
     runs-on: ubuntu-latest
@@ -23,7 +25,7 @@ jobs:
     - uses: taiki-e/install-action@v2
       with:
         tool: nextest
-    - name: Run slow script tests
+    - name: Run slow and network tests
       run: make test-slow
 
   # Coverage-guided crash fuzzing of the parser and interpreter (see
