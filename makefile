@@ -114,6 +114,13 @@ fuzz-corpus:
 	mkdir -p fuzz/corpus/parse fuzz/corpus/interpret
 	cp tests/scripts/*.wls fuzz/corpus/parse/
 	cp tests/scripts/*.wls fuzz/corpus/interpret/
+	# The slow_script_test! scripts legitimately run for tens of seconds,
+	# which the interpret target's libFuzzer -timeout hang detector would
+	# report as a crash. Keep them out of the interpret corpus; parsing them
+	# is fast, so the parse corpus keeps all scripts.
+	grep -A 2 'slow_script_test!' tests/script_snapshot_tests.rs \
+		| grep -o '"[^"]*\.wls"' | tr -d '"' | sort -u \
+		| (cd fuzz/corpus/interpret && xargs rm -f)
 	cargo run --bin woxi-diff-fuzz -- --print-cases --cases 200 --seed 0 \
 		| split -l 1 - fuzz/corpus/interpret/gen-
 

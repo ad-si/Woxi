@@ -1891,7 +1891,10 @@ fn evaluate_complex_at(
 /// Convert complex value to domain coloring HSB color.
 /// Hue is determined by Arg(z), brightness by Abs(z).
 fn complex_to_rgb(re: f64, im: f64) -> (u8, u8, u8) {
-  let arg = im.atan2(re); // -PI to PI
+  // libm (not the std methods backed by the platform's libm) so the result
+  // is bit-identical across platforms; macOS and glibc disagree by ULPs,
+  // which flips the 8-bit rounding below at .5 boundaries.
+  let arg = libm::atan2(im, re); // -PI to PI
   let abs = (re * re + im * im).sqrt();
 
   // Hue: map argument from [-PI, PI] to [0, 1]
@@ -1899,7 +1902,7 @@ fn complex_to_rgb(re: f64, im: f64) -> (u8, u8, u8) {
 
   // Brightness: use a smooth function that maps [0, inf) to [0, 1)
   // Following Mathematica's approach: brightness varies with magnitude
-  let brightness = 1.0 - 1.0 / (1.0 + abs.powf(0.3));
+  let brightness = 1.0 - 1.0 / (1.0 + libm::pow(abs, 0.3));
 
   // Saturation: high saturation, slightly reduced for very large/small magnitudes
   let saturation = 0.8 + 0.2 * (1.0 - (2.0 * brightness - 1.0).abs());
