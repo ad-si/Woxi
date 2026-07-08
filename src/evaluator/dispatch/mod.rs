@@ -628,13 +628,18 @@ pub fn evaluate_function_call_ast_inner(
     args
   };
 
-  // Apply Orderless attribute: sort arguments into canonical order
-  let has_orderless = is_builtin_orderless(name)
-    || crate::FUNC_ATTRS.with(|m| {
-      m.borrow()
-        .get(name)
-        .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
-    });
+  // Apply Orderless attribute: sort arguments into canonical order.
+  // Plus is exempt: Wolfram's machine-precision fold is input-order-
+  // sensitive (Plus[0.1, 0.7, 0.3] → 1.0999999999999999 but
+  // Plus[0.1, 0.3, 0.7] → 1.1), so plus_ast must see the original
+  // argument order; it canonically sorts its own symbolic output.
+  let has_orderless = name != "Plus"
+    && (is_builtin_orderless(name)
+      || crate::FUNC_ATTRS.with(|m| {
+        m.borrow()
+          .get(name)
+          .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
+      }));
   let args_after_sort;
   let args = if has_orderless {
     let mut sorted_args = args.to_vec();

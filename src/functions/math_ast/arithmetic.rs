@@ -1120,7 +1120,41 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return bigfloat_plus(&flat_args);
   }
 
-  // If all numeric but has Reals, use f64
+  // If all numeric but has Reals, use f64. Wolfram's machine fold is
+  // input-order-sensitive: exact terms coalesce into ONE exact rational
+  // sum, which seeds the f64 fold when the first numeric term is exact
+  // and is appended after the reals otherwise (Plus[1/3, 0.1, 0.7, 0.3]
+  // → 1.4333333333333333 but Plus[0.1, 0.7, 1/3, 0.3] →
+  // 1.4333333333333331; Total[{1/3,1/3,1/3,0.5}] → 1.5 exactly).
+  if all_numeric && !has_bigfloat {
+    let mut exact_sum = Coeff::Exact(0, 1);
+    let mut has_exact = false;
+    let mut exact_first = false;
+    let mut reals: Vec<f64> = Vec::new();
+    for arg in &flat_args {
+      if let Expr::Real(f) = arg {
+        reals.push(*f);
+      } else if let Some(c) = expr_to_coeff(arg) {
+        if !has_exact && reals.is_empty() {
+          exact_first = true;
+        }
+        exact_sum = exact_sum.add(&c);
+        has_exact = true;
+      }
+    }
+    let mut total = if has_exact && exact_first {
+      exact_sum.to_f64()
+    } else {
+      0.0
+    };
+    for r in &reals {
+      total += r;
+    }
+    if has_exact && !exact_first {
+      total += exact_sum.to_f64();
+    }
+    return Ok(Expr::Real(total));
+  }
   if all_numeric {
     let mut sum = 0.0;
     for arg in &flat_args {
@@ -1135,17 +1169,21 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Separate numeric and symbolic terms
     let mut symbolic_args: Vec<Expr> = Vec::new();
     let mut has_exact = false;
+    let mut exact_first = false;
     let mut exact_sum = Coeff::Exact(0, 1);
-    let mut real_sum: f64 = 0.0;
+    let mut real_terms: Vec<f64> = Vec::new();
     let mut has_real_term = false;
 
     for arg in &flat_args {
       if let Some(c) = expr_to_coeff(arg) {
+        if !has_exact && real_terms.is_empty() {
+          exact_first = true;
+        }
         // Coeff::add promotes to BigInt on i128 overflow.
         exact_sum = exact_sum.add(&c);
         has_exact = true;
       } else if let Expr::Real(f) = arg {
-        real_sum += f;
+        real_terms.push(*f);
         has_real_term = true;
       } else {
         symbolic_args.push(arg.clone());
@@ -1153,18 +1191,23 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Numeric contagion: if any term is a machine Real, fold each
-    // symbolic numeric-constant term (Pi, E, etc.) into real_sum, and
+    // symbolic numeric-constant term (Pi, E, etc.) to a Real, and
     // numerify the numeric constants embedded inside otherwise non-real
     // terms like `Pi*I` so `2. + Pi*I` → `2. + 3.14159…*I`. Matches
     // wolframscript: `2. + Pi` → `5.14159…`, `2. + Pi*I` →
     // `2. + 3.14159…*I`, but `2. + (x-3)^2` stays `2. + (-3 + x)^2`
     // because the symbolic summand contains no numeric constants.
+    // The numerified constants fold AFTER the literal terms, one at a
+    // time in input order — Wolfram's machine fold never combines the
+    // symbolic terms first (Plus[0.1, 0.2, Pi, -Pi] →
+    // 0.2999999999999998, Plus[1.*10^16, Pi, -1.*10^16] → 3.14159…).
+    let mut numerified_tail: Vec<f64> = Vec::new();
     if has_real_term {
       let mut remaining_symbolic: Vec<Expr> = Vec::new();
       for arg in symbolic_args.drain(..) {
         if let Some(f) = try_eval_to_f64(&arg) {
           // Whole term reduces to a Real (e.g. Pi, E, Sqrt[2]).
-          real_sum += f;
+          numerified_tail.push(f);
         } else if contains_named_numeric_constant(&arg)
           && let Ok(n_val) = crate::functions::math_ast::n_eval(&arg)
         {
@@ -1203,14 +1246,28 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )
     });
 
-    // If we have both exact and real, convert exact to f64 and combine
-    if has_exact && has_real_term {
-      let total = exact_sum.to_f64() + real_sum;
+    // With any machine Real present, fold to f64 in Wolfram's order: the
+    // coalesced exact sum first when the first numeric term was exact
+    // (otherwise after the reals), then the reals in input order, then
+    // the numerified constants one at a time.
+    if has_real_term {
+      let mut total = if has_exact && exact_first {
+        exact_sum.to_f64()
+      } else {
+        0.0
+      };
+      for r in &real_terms {
+        total += r;
+      }
+      if has_exact && !exact_first {
+        total += exact_sum.to_f64();
+      }
+      for f in &numerified_tail {
+        total += f;
+      }
       if total != 0.0 || has_inexact_zero_imag {
         final_args.push(Expr::Real(total));
       }
-    } else if has_real_term && (real_sum != 0.0 || has_inexact_zero_imag) {
-      final_args.push(Expr::Real(real_sum));
     } else if has_exact && !exact_sum.is_zero() {
       final_args.push(exact_sum.to_expr());
     }

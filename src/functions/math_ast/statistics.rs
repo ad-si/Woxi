@@ -341,6 +341,13 @@ pub fn total_sum_level1(items: &[Expr]) -> Result<Expr, InterpreterError> {
   if items.is_empty() {
     return Ok(Expr::Integer(0));
   }
+  // Flat scalar lists sum in ONE Plus call so Wolfram's machine fold order
+  // applies (exact terms coalesced, reals in list order, numerified
+  // constants last): Total[{-7/5, Pi, 16., 89, 70}] → 176.74159265358978,
+  // where a pairwise fold numericizes Pi too early → 176.7415926535898.
+  if !items.iter().any(|i| matches!(i, Expr::List(_))) {
+    return plus_ast(items);
+  }
   let mut acc = items[0].clone();
   for item in &items[1..] {
     acc = add_exprs_recursive(&acc, item)?;

@@ -3408,6 +3408,68 @@ mod expand_threading {
     assert_eq!(interpret("Norm[{3, 4}, 3]").unwrap(), "91^(1/3)");
   }
 
+  // Wolfram's machine-precision Plus fold is input-order-sensitive: exact
+  // terms coalesce into ONE exact sum (seeded first iff the first numeric
+  // term is exact), reals fold in input order, and numerified constants
+  // (Pi, E, …) fold one at a time at the very end — they never cancel
+  // symbolically once a Real is present. All wolframscript-verified
+  // (differential fuzzer, seed 1783515124284605000).
+  #[test]
+  fn plus_machine_fold_order() {
+    assert_eq!(
+      interpret("Plus[-7.4, Subtract[38, Pi]]").unwrap(),
+      "27.45840734641021"
+    );
+    assert_eq!(
+      interpret("Plus[-7.4, 38, -Pi]").unwrap(),
+      "27.45840734641021"
+    );
+    assert_eq!(
+      interpret("Plus[0.1, 0.7, 0.3]").unwrap(),
+      "1.0999999999999999"
+    );
+    assert_eq!(interpret("Plus[0.1, 0.3, 0.7]").unwrap(), "1.1");
+    assert_eq!(interpret("Plus[0.3, 0.1, 0.7]").unwrap(), "1.1");
+    // Exact seed when the first numeric term is exact…
+    assert_eq!(
+      interpret("Plus[1/3, 0.1, 0.7, 0.3]").unwrap(),
+      "1.4333333333333333"
+    );
+    // …but exact sum folds after the reals otherwise.
+    assert_eq!(
+      interpret("Plus[0.1, 0.7, 1/3, 0.3]").unwrap(),
+      "1.4333333333333331"
+    );
+    // Constants numerify at the end, one at a time (no Pi - Pi cancel).
+    assert_eq!(
+      interpret("Plus[0.1, 0.2, Pi, -Pi]").unwrap(),
+      "0.2999999999999998"
+    );
+    assert_eq!(
+      interpret("Plus[1.*10^16, Pi, -1.*10^16]").unwrap(),
+      "3.141592653589793"
+    );
+  }
+
+  #[test]
+  fn total_machine_fold_order() {
+    assert_eq!(
+      interpret("Total[{-7/5, Pi, 16., 89, 70}]").unwrap(),
+      "176.74159265358978"
+    );
+    assert_eq!(
+      interpret("Total[{-7.4, 38, -Pi}]").unwrap(),
+      "27.45840734641021"
+    );
+    assert_eq!(
+      interpret("Total[{0.1, 0.7, 0.3}]").unwrap(),
+      "1.0999999999999999"
+    );
+    // Exact rationals sum exactly regardless of position.
+    assert_eq!(interpret("Total[{1/3, 1/3, 1/3, 0.5}]").unwrap(), "1.5");
+    assert_eq!(interpret("Total[{0.5, 1/3, 1/3, 1/3}]").unwrap(), "1.5");
+  }
+
   #[test]
   fn norm_vector_general_p_symbolic_entries() {
     assert_eq!(
