@@ -4099,6 +4099,59 @@ mod borel_tanner_distribution {
   }
 }
 
+mod poisson_consul_distribution {
+  use super::*;
+
+  // The generalized (Consul) Poisson distribution. PMF, Mean, and Variance
+  // are exact; the symbolic PDF factor order and StandardDeviation sqrt
+  // factoring differ from wolframscript only in form (value-correct).
+  #[test]
+  fn pdf_numeric_points() {
+    assert_eq!(
+      interpret("PDF[PoissonConsulDistribution[2, 1/3], 0]").unwrap(),
+      "E^(-2)"
+    );
+    assert_eq!(
+      interpret("PDF[PoissonConsulDistribution[2, 1/3], 1]").unwrap(),
+      "2/E^(7/3)"
+    );
+    assert_eq!(
+      interpret("PDF[PoissonConsulDistribution[2, 1/3], 2]").unwrap(),
+      "8/(3*E^(8/3))"
+    );
+    assert_eq!(
+      interpret("PDF[PoissonConsulDistribution[2, 1/3], 3]").unwrap(),
+      "3/E^3"
+    );
+    // Support is the non-negative integers.
+    assert_eq!(
+      interpret("PDF[PoissonConsulDistribution[2, 1/3], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn mean_and_variance() {
+    assert_eq!(
+      interpret("Mean[PoissonConsulDistribution[m, lam]]").unwrap(),
+      "m/(1 - lam)"
+    );
+    assert_eq!(
+      interpret("Variance[PoissonConsulDistribution[m, lam]]").unwrap(),
+      "m/(1 - lam)^3"
+    );
+  }
+
+  #[test]
+  fn cdf_has_no_closed_form() {
+    // wolframscript leaves the symbolic CDF unevaluated as well.
+    assert_eq!(
+      interpret("CDF[PoissonConsulDistribution[m, lam], k]").unwrap(),
+      "CDF[PoissonConsulDistribution[m, lam], k]"
+    );
+  }
+}
+
 mod benktander_gibrat_distribution {
   use super::*;
 

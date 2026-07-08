@@ -3578,7 +3578,7 @@ ListSliceVectorPlot3D,,🚫,,10.2,3678
 LogGammaDistribution,Log-gamma distribution with shape scale and location parameters,✅,pure,8.0,3678
 LoopFreeGraphQ,Tests whether a graph has no self-loops,✅,pure,8.0,3678
 MomentConvert,,,,8.0,3678
-PoissonConsulDistribution,,,,8.0,3678
+PoissonConsulDistribution,Generalized Consul-Poisson distribution with PDF Mean and Variance,✅,pure,8.0,3678
 SechDistribution,Hyperbolic secant distribution (Sech PDF and ArcTan CDF),✅,pure,8.0,3678
 StartWebSession,,🚫,,12.0,3678
 TimeSeriesInsert,,🚫,,10.0,3678

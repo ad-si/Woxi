@@ -200,6 +200,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ZipfDistribution" => pdf_zipf(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
+    "PoissonConsulDistribution" => pdf_poisson_consul(dargs, x),
     "LogGammaDistribution" => pdf_loggamma(dargs, x),
     "SkellamDistribution" => pdf_skellam(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1394,6 +1395,36 @@ fn pdf_poisson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 fn plus(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Plus, a, b)
+}
+
+/// PDF[PoissonConsulDistribution[m, lam], k] =
+///   Piecewise[{{(E^(-(k lam) - m) m (k lam + m)^(k-1))/k!, k >= 0}}, 0]
+/// Values are exact; the symbolic form differs from wolframscript only in the
+/// Times factor order of `m` vs the power (a Times-canonicalization quirk),
+/// and StandardDeviation keeps the (1-lam) factor inside the Sqrt.
+fn pdf_poisson_consul(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "PoissonConsulDistribution expects 2 arguments".into(),
+    ));
+  }
+  let m = dargs[0].clone();
+  let lam = dargs[1].clone();
+  let k = x.clone();
+
+  let klam = times(k.clone(), lam);
+  let klam_m = plus(klam.clone(), m.clone()); // k lam + m
+  // E^(-(k lam) - m)
+  let exp_part = power(e(), minus(times(int(-1), klam), m.clone()));
+  // (k lam + m)^(-1 + k)
+  let pow_part = power(klam_m, plus(int(-1), k.clone()));
+  let numerator = times(times(exp_part, m), pow_part);
+  let density = eval(divide(numerator, factorial(k.clone())))?;
+  let cond = comparison(k, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(density, cond)], int(0)))
 }
 
 fn unary_fn(name: &str, arg: Expr) -> Expr {
@@ -4930,6 +4961,20 @@ fn distribution_mean_variance(
       // combined fraction.
       let mean = plus(int(-1), power(p.clone(), int(-1)));
       let var = divide(minus(int(1), p.clone()), power(p, int(2)));
+      Ok((mean, var))
+    }
+    "PoissonConsulDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "PoissonConsulDistribution expects 2 arguments".into(),
+        ));
+      }
+      let m = dargs[0].clone();
+      let lam = dargs[1].clone();
+      let one_minus_lam = minus(int(1), lam);
+      // Mean = m/(1 - lam), Variance = m/(1 - lam)^3.
+      let mean = divide(m.clone(), one_minus_lam.clone());
+      let var = divide(m, power(one_minus_lam, int(3)));
       Ok((mean, var))
     }
     "LogSeriesDistribution" => {
