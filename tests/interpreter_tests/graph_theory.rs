@@ -4862,6 +4862,65 @@ mod edge_betweenness_centrality {
   }
 }
 
+mod radiality_centrality {
+  use super::*;
+
+  // radiality(v) = (sum over reachable w of (D + 1 - d(v, w))) / ((n-1) * D),
+  // D = graph diameter. Rounded to sidestep machine-float noise.
+  #[test]
+  fn path_and_star() {
+    // Center of a 3-path is maximally radial.
+    assert_eq!(
+      interpret("Round[RadialityCentrality[PathGraph[{1, 2, 3}]], 10^-6]")
+        .unwrap(),
+      "{3/4, 1, 3/4}"
+    );
+    // Star center is maximally radial; leaves share a lower value.
+    assert_eq!(
+      interpret("Round[RadialityCentrality[StarGraph[4]], 10^-6]").unwrap(),
+      "{1, 666667/1000000, 666667/1000000, 666667/1000000}"
+    );
+  }
+
+  #[test]
+  fn regular_graph_uniform() {
+    // Every vertex of a cycle has the same radiality.
+    assert_eq!(
+      interpret("Round[RadialityCentrality[CycleGraph[4]], 10^-6]").unwrap(),
+      "{833333/1000000, 833333/1000000, 833333/1000000, 833333/1000000}"
+    );
+    // A complete graph gives radiality 1 at every vertex.
+    assert_eq!(
+      interpret("RadialityCentrality[CompleteGraph[3]]").unwrap(),
+      "{1., 1., 1.}"
+    );
+  }
+
+  #[test]
+  fn longer_path() {
+    assert_eq!(
+      interpret("Round[RadialityCentrality[PathGraph[{1, 2, 3, 4}]], 10^-6]")
+        .unwrap(),
+      "{666667/1000000, 888889/1000000, 888889/1000000, 666667/1000000}"
+    );
+  }
+
+  #[test]
+  fn disconnected_and_edgeless() {
+    // Diameter is the largest within-component distance.
+    assert_eq!(
+      interpret("RadialityCentrality[Graph[{1 <-> 2, 3 <-> 4}]]").unwrap(),
+      "{0.3333333333333333, 0.3333333333333333, 0.3333333333333333, \
+       0.3333333333333333}"
+    );
+    // With no edges the diameter is zero and every radiality is zero.
+    assert_eq!(
+      interpret("RadialityCentrality[Graph[{1, 2, 3}, {}]]").unwrap(),
+      "{0., 0., 0.}"
+    );
+  }
+}
+
 mod vertex_q_tests {
   use woxi::interpret;
 

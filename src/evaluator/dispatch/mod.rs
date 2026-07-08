@@ -6011,6 +6011,52 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(centralities.into()));
   }
 
+  // RadialityCentrality[graph] — for each vertex v,
+  //   (sum over reachable w of (D + 1 - d(v, w))) / ((n - 1) * D)
+  // where D is the graph diameter (largest finite shortest-path distance).
+  // Distances are undirected, matching the other centrality measures.
+  if name == "RadialityCentrality"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    let (pg_graph, _) = build_undirected_graph(vertices, edges);
+    let all_dists: Vec<Vec<i128>> = (0..n)
+      .map(|s| {
+        bfs_all_dists_pg(&pg_graph, petgraph::graph::NodeIndex::new(s), n)
+      })
+      .collect();
+    // Diameter = largest finite (positive) shortest-path distance.
+    let diameter = all_dists
+      .iter()
+      .flat_map(|d| d.iter().copied())
+      .filter(|&d| d > 0)
+      .max()
+      .unwrap_or(0);
+    let result: Vec<Expr> = if n <= 1 || diameter == 0 {
+      (0..n).map(|_| Expr::Real(0.0)).collect()
+    } else {
+      all_dists
+        .iter()
+        .map(|dists| {
+          let sum: i128 = dists
+            .iter()
+            .filter(|&&d| d > 0)
+            .map(|&d| diameter + 1 - d)
+            .sum();
+          Expr::Real(sum as f64 / ((n as f64 - 1.0) * diameter as f64))
+        })
+        .collect()
+    };
+    return Ok(Expr::List(result.into()));
+  }
+
   // EigenvectorCentrality[graph] — principal eigenvector of the (undirected)
   // adjacency matrix, normalized so the entries sum to 1.
   if name == "EigenvectorCentrality"

@@ -4503,7 +4503,7 @@ NetNestOperator,,🚫,,11.1,4660
 NuclearExplosionData,,🚫,,10.0,4660
 ParallelProduct,,🚫,,7.0,4660
 PartProtection,,,,10.4,4660
-RadialityCentrality,,,,9.0,4660
+RadialityCentrality,Radiality centrality of each vertex based on shortest-path distances,✅,pure,9.0,4660
 RemoteConnect,,🚫,,11.3,4660
 RightTriangle,,,,3.0,4660
 ScorerHi,Scorer inhomogeneous Airy function Hi solving y'' - x y = 1/Pi,✅,pure,10.0,4660
