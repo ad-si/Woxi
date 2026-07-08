@@ -546,6 +546,126 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Dimensions of a rectangular tensor. Scalars have dimensions `[]`; a ragged
+/// list returns `None`.
+fn tensor_dims(e: &Expr) -> Option<Vec<usize>> {
+  match e {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Some(vec![0]);
+      }
+      let first = tensor_dims(&items[0])?;
+      for it in items.iter().skip(1) {
+        if tensor_dims(it)? != first {
+          return None;
+        }
+      }
+      let mut dims = Vec::with_capacity(first.len() + 1);
+      dims.push(items.len());
+      dims.extend(first);
+      Some(dims)
+    }
+    _ => Some(Vec::new()),
+  }
+}
+
+/// Flatten a rectangular tensor into its leaves in row-major order.
+fn flatten_tensor(e: &Expr) -> Vec<Expr> {
+  match e {
+    Expr::List(items) => items.iter().flat_map(flatten_tensor).collect(),
+    other => vec![other.clone()],
+  }
+}
+
+/// Rebuild a tensor of the given dimensions from a row-major flat list.
+/// Empty `dims` yields the single scalar leaf.
+fn build_from_flat(flat: &[Expr], dims: &[usize]) -> Expr {
+  if dims.is_empty() {
+    return flat[0].clone();
+  }
+  let inner: usize = dims[1..].iter().product();
+  let mut out = Vec::with_capacity(dims[0]);
+  for i in 0..dims[0] {
+    out.push(build_from_flat(
+      &flat[i * inner..(i + 1) * inner],
+      &dims[1..],
+    ));
+  }
+  Expr::List(out.into())
+}
+
+/// ArrayDot[a, b, k] — contract the last `k` dimensions of `a` with the first
+/// `k` dimensions of `b`, summing products over the shared block. `k == 0`
+/// gives the outer product; full contraction yields a scalar.
+pub fn array_dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ArrayDot".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 3 {
+    return unevaluated();
+  }
+  // The contraction depth must be a non-negative integer.
+  let k = match &args[2] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => return unevaluated(),
+  };
+  let (a, b) = (&args[0], &args[1]);
+  let (da, db) = match (tensor_dims(a), tensor_dims(b)) {
+    (Some(x), Some(y)) => (x, y),
+    _ => return unevaluated(),
+  };
+
+  // k may not exceed the depth (rank) of either array.
+  if k > da.len() || k > db.len() {
+    let bad = if k > da.len() { a } else { b };
+    crate::emit_message(&format!(
+      "ArrayDot::kspec: {} is larger than the depth of array {}.",
+      k,
+      crate::syntax::format_expr(bad, crate::syntax::ExprForm::Output)
+    ));
+    return unevaluated();
+  }
+
+  // The contracted dimensions must line up.
+  let a_contract = &da[da.len() - k..];
+  let b_contract = &db[..k];
+  if a_contract != b_contract {
+    crate::emit_message(&format!(
+      "Dot::dotsh: Tensors {} and {} have incompatible shapes.",
+      crate::syntax::format_expr(a, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(b, crate::syntax::ExprForm::Output)
+    ));
+    return unevaluated();
+  }
+
+  let c: usize = a_contract.iter().product();
+  let a_lead = &da[..da.len() - k];
+  let b_trail = &db[k..];
+  let pa: usize = a_lead.iter().product();
+  let pb: usize = b_trail.iter().product();
+
+  let fa = flatten_tensor(a);
+  let fb = flatten_tensor(b);
+
+  let mut res = Vec::with_capacity(pa * pb);
+  for i in 0..pa {
+    for j in 0..pb {
+      let mut sum = Expr::Integer(0);
+      for cc in 0..c {
+        sum = eval_add(&sum, &eval_mul(&fa[i * c + cc], &fb[cc * pb + j]));
+      }
+      res.push(sum);
+    }
+  }
+
+  let out_dims: Vec<usize> =
+    a_lead.iter().chain(b_trail.iter()).copied().collect();
+  Ok(build_from_flat(&res, &out_dims))
+}
+
 /// Whether a `Vec<Vec<Expr>>` from `expr_to_matrix` is a nonempty square
 /// matrix (every row has length equal to the number of rows).
 pub fn is_nonempty_square(m: &[Vec<Expr>]) -> bool {

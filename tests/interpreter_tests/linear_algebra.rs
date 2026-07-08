@@ -94,6 +94,98 @@ mod dot {
   }
 }
 
+mod array_dot {
+  use super::*;
+
+  #[test]
+  fn vectors_contract_one() {
+    // Contracting the single dimension of two vectors is the dot product.
+    assert_eq!(
+      interpret("ArrayDot[{1, 2, 3}, {4, 5, 6}, 1]").unwrap(),
+      "32"
+    );
+  }
+
+  #[test]
+  fn matrices_contract_one() {
+    // k = 1 over two matrices is ordinary matrix multiplication.
+    assert_eq!(
+      interpret("ArrayDot[{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}, 1]").unwrap(),
+      "{{19, 22}, {43, 50}}"
+    );
+  }
+
+  #[test]
+  fn matrices_full_contraction_scalar() {
+    // k = 2 contracts every dimension, giving the Frobenius inner product.
+    assert_eq!(
+      interpret("ArrayDot[{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}, 2]").unwrap(),
+      "70"
+    );
+  }
+
+  #[test]
+  fn zero_contraction_is_outer_product() {
+    assert_eq!(
+      interpret("ArrayDot[{1, 2}, {3, 4}, 0]").unwrap(),
+      "{{3, 4}, {6, 8}}"
+    );
+    assert_eq!(
+      interpret("ArrayDot[{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}, 0]").unwrap(),
+      "{{{{5, 6}, {7, 8}}, {{10, 12}, {14, 16}}}, \
+       {{{15, 18}, {21, 24}}, {{20, 24}, {28, 32}}}}"
+    );
+  }
+
+  #[test]
+  fn non_square_matrices() {
+    assert_eq!(
+      interpret("ArrayDot[{{1, 2, 3}}, {{1}, {2}, {3}}, 1]").unwrap(),
+      "{{14}}"
+    );
+    assert_eq!(
+      interpret("ArrayDot[{{1, 2}, {3, 4}}, {{5, 6, 7}, {8, 9, 10}}, 1]")
+        .unwrap(),
+      "{{21, 24, 27}, {47, 54, 61}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_entries() {
+    assert_eq!(
+      interpret("ArrayDot[{a, b}, {c, d}, 1]").unwrap(),
+      "a*c + b*d"
+    );
+  }
+
+  #[test]
+  fn higher_rank_dimensions() {
+    assert_eq!(
+      interpret(
+        "Dimensions[ArrayDot[Array[a, {2, 3, 4}], Array[b, {4, 5}], 1]]"
+      )
+      .unwrap(),
+      "{2, 3, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[ArrayDot[Array[a, {2, 3, 4}], Array[b, {3, 4, 5}], 2]]"
+      )
+      .unwrap(),
+      "{2, 5}"
+    );
+  }
+
+  #[test]
+  fn depth_exceeded_is_unevaluated() {
+    // k larger than the array depth stays unevaluated (emits ArrayDot::kspec).
+    assert_eq!(
+      interpret("ArrayDot[{1, 2}, {3, 4}, 2]").unwrap(),
+      "ArrayDot[{1, 2}, {3, 4}, 2]"
+    );
+  }
+}
+
 mod det {
   use super::*;
 

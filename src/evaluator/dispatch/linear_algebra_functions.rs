@@ -10,6 +10,9 @@ pub fn dispatch_linear_algebra_functions(
     "Dot" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::dot_ast(args));
     }
+    "ArrayDot" if args.len() == 3 => {
+      return Some(crate::functions::linear_algebra_ast::array_dot_ast(args));
+    }
     "Det" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::det_ast(args));
     }

@@ -365,6 +365,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     // imginv warning fires (instead of argt) when arg count is OK but
     // the first arg is non-image.
     "DominantColors" => Some((1, 4)),
+    "ArrayDot" => Some((3, 3)),
     "Dot" => Some((2, 2)),
     "DotProduct" => Some((2, 3)),
     "Downsample" => Some((2, 3)),
