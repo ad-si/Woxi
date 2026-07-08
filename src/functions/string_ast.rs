@@ -4654,15 +4654,19 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(s));
   }
 
-  // Default (no form or unrecognized form): OutputForm-like
+  // Default (no form or unrecognized form): OutputForm.
   // Resolve any nested form wrappers (TeXForm, CForm, FortranForm) first,
   // matching wolframscript behavior where ToString extracts form conversions.
   // Then truncate machine-precision Reals to 6 significant digits — Wolfram's
   // ToString default for `Real` values, which is *not* the same as the REPL
-  // /Print display (those keep full f64 precision).
+  // /Print display (those keep full f64 precision). The default form IS
+  // OutputForm, so the 2D renderer applies: `ToString[3/4]` is the
+  // three-line `3` / `-` / `4`, and `ToString[x^2]` puts the exponent on
+  // its own line (wolframscript-verified; differential fuzzer, seed
+  // 1783530056735545937).
   let resolved = strip_hold_form(&resolve_form_wrappers(&args[0]));
   let truncated = truncate_machine_reals_for_to_string(&resolved);
-  let s = crate::syntax::expr_to_output(&truncated);
+  let s = crate::syntax::expr_to_output_form_2d(&truncated);
   Ok(Expr::String(s))
 }
 

@@ -4168,11 +4168,121 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       let accept = if is_sum {
         simplify_cost_key(&factored) <= simplify_cost_key(&best)
       } else {
+        // Wolfram never factors a quotient's DENOMINATOR into a product
+        // of distinct factors: Simplify[1/(4x+3x^2)] stays
+        // (4x+3x^2)^(-1), not 1/(x(4+3x)). Powers still collapse
+        // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3)).
         leaf_count(&factored) <= best_c
+          && factored_den_acceptable(&best, &factored)
       };
       if accept && !exprs_equal(&factored, &best) {
-        best = factored;
+        // Canonicalize a factored POLYNOMIAL product's factor order
+        // through the evaluator: 4x^2-2x factors as 2*(-1+2x)*x but
+        // Wolfram prints 2*x*(-1+2x). Non-polynomial results (with I,
+        // E^…, Sqrt[…] factors) keep the pipeline's own ordering.
+        best = if polynomial_like(&factored) {
+          crate::evaluator::evaluate_expr_to_expr(&factored)
+            .unwrap_or(factored)
+        } else {
+          factored
+        };
         let _ = best_c;
+      }
+    }
+  }
+
+  // Simplify's quotient sign extraction (see together::extract_quotient_minus):
+  // a numerator with negative content or an all-nonpositive denominator
+  // pulls a -1 out front.
+  {
+    let (n, d) = super::together::extract_num_den(&best);
+    if !matches!(&d, Expr::Integer(1))
+      && let Some(signed) = super::together::extract_quotient_minus(&n, &d)
+    {
+      best = signed;
+    }
+  }
+
+  // Candidate 5: numeric-content extraction for NON-polynomial sums —
+  // Simplify[9 + 9*Sqrt[19]] → 9*(1 + Sqrt[19]), Simplify[-12*Sqrt[5] +
+  // 3*Sqrt[19]] → 3*(-4*Sqrt[5] + Sqrt[19]), Simplify[-2 - 2*Sqrt[2]] →
+  // -2*(1 + Sqrt[2]) (the content goes negative only when EVERY term
+  // is), and Simplify[3/2 + (3/2)*Sqrt[2]] → (3*(1 + Sqrt[2]))/2.
+  // Polynomial sums already go through the Factor candidate above.
+  if !polynomial_like(&best) {
+    let terms = super::coefficient::collect_additive_terms(&best);
+    if terms.len() >= 2
+      && let Some((_, _, coeffs)) = super::factor::rational_content(&terms)
+    {
+      let g_num = coeffs
+        .iter()
+        .map(|(n, _)| *n)
+        .filter(|&n| n != 0)
+        .fold(0i128, |a, b| {
+          let (mut a, mut b) = (a.abs(), b.abs());
+          while b != 0 {
+            let t = a % b;
+            a = b;
+            b = t;
+          }
+          a
+        });
+      let g_den = coeffs.iter().map(|(_, d)| *d).fold(1i128, |a, b| {
+        let g = {
+          let (mut x, mut y) = (a.abs(), b.abs());
+          while y != 0 {
+            let t = x % y;
+            x = y;
+            y = t;
+          }
+          x.max(1)
+        };
+        (a / g) * b
+      });
+      let all_negative = coeffs.iter().all(|(n, _)| *n < 0);
+      let content = if all_negative { -g_num } else { g_num };
+      if g_num > 1 || g_den > 1 {
+        let content_expr = Expr::Integer(content);
+        let divisor = if g_den == 1 {
+          Expr::Integer(content)
+        } else {
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(content), Expr::Integer(g_den)].into(),
+          }
+        };
+        let divided: Result<Vec<Expr>, _> = terms
+          .iter()
+          .map(|t| {
+            crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(t.clone()),
+              right: Box::new(divisor.clone()),
+            })
+          })
+          .collect();
+        if let Ok(divided) = divided {
+          let inner = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: divided.into(),
+          };
+          let product = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![content_expr, inner].into(),
+          };
+          let candidate = if g_den == 1 {
+            product
+          } else {
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(product),
+              right: Box::new(Expr::Integer(g_den)),
+            }
+          };
+          if simplify_cost_key(&candidate) <= simplify_cost_key(&best) {
+            best = candidate;
+          }
+        }
       }
     }
   }
@@ -4188,7 +4298,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
 /// True when the expression is built purely from numbers, symbols and the
 /// arithmetic heads — the shapes Factor/FactorSquareFree treat as
 /// polynomials. Sums with other functions (Sin[x], Log[x], …) are not.
-fn polynomial_like(e: &Expr) -> bool {
+pub(super) fn polynomial_like(e: &Expr) -> bool {
   use crate::syntax::BinaryOperator as B;
   match e {
     Expr::Integer(_)
@@ -6163,16 +6273,21 @@ fn try_simplify_trig_ratio(num: &Expr, den: &Expr) -> Option<Expr> {
 }
 
 pub fn simplify_division(num: &Expr, den: &Expr) -> Expr {
-  simplify_division_impl(num, den, true)
+  simplify_division_impl(num, den, true, true)
 }
 
 /// `canonicalize_sign: false` skips the wolframscript Simplify/Cancel
 /// quotient-sign canonicalization for callers whose WL counterpart keeps
 /// the raw quotient (D[ArcCoth[x^2], x] stays (2*x)/(1 - x^4)).
+/// `factor_num: false` (Cancel) keeps quotient numerators EXPANDED with
+/// only their numeric content pulled out — Cancel[(4x+2x^2)/(-3-4x+2x^2)]
+/// → (2*(2x+x^2))/(-3-4x+2x^2) — while Simplify factors them
+/// ((2x(-1+2x))/(2+3x)).
 pub(crate) fn simplify_division_impl(
   num: &Expr,
   den: &Expr,
   canonicalize_sign: bool,
+  factor_num: bool,
 ) -> Expr {
   // If same expression, return 1
   if expr_to_string(num) == expr_to_string(den) {
@@ -6224,17 +6339,164 @@ pub(crate) fn simplify_division_impl(
     basic
   };
 
-  // Try factoring the result: Factor[p/q] = Factor[p]/Factor[q] often produces
-  // a simpler form (e.g. x^2/(1-3x+3x^2-x^3) → x^2/(-1+x)^3).
+  // Try factoring the result: Factor[p/q] = Factor[p]/Factor[q] often
+  // produces a simpler form (e.g. x^2/(1-3x+3x^2-x^3) → x^2/(-1+x)^3).
+  // Wolfram only keeps a factored DENOMINATOR when it collapses to a
+  // (power of a) single factor — Simplify[1/(4x+3x^2)] stays
+  // (4x+3x^2)^(-1), never 1/(x(4+3x)) — while quotient numerators factor
+  // freely (Simplify[(4x^2-2x)/(2+3x)] → (2x(-1+2x))/(2+3x)).
   if let Ok(factored) = super::factor::factor_ast(&[basic.clone()]) {
     let fc = leaf_count(&factored);
     let bc = leaf_count(&basic);
-    if fc <= bc {
-      return factored;
+    let num_ok = factor_num || {
+      // Cancel keeps sums expanded: reject a factored numerator that
+      // SPLITS the numerator into more non-constant factors than it had
+      // (4x+2x^2 → 2x(2+x) is out) but keep content extraction over an
+      // existing product (Sqrt[1-x^2]*(-3+15x^2) → 3*Sqrt[…]*(-1+5x^2)),
+      // perfect-power collapses ((1+2n+n^2) → (1+n)^2), and full
+      // cancellations.
+      let (bn, _) = super::together::extract_num_den(&basic);
+      let (fn_, _) = super::together::extract_num_den(&factored);
+      let non_constant_count = |e: &Expr| {
+        super::together::flatten_times_args(std::slice::from_ref(e))
+          .iter()
+          .filter(|f| {
+            let mut vars = std::collections::HashSet::new();
+            collect_variables(f, &mut vars);
+            !vars.is_empty()
+          })
+          .count()
+      };
+      non_constant_count(&fn_) <= non_constant_count(&bn)
+    };
+    if fc <= bc && num_ok && factored_den_acceptable(&basic, &factored) {
+      return finish_quotient_sign(factored, canonicalize_sign);
+    }
+  }
+  // Denominator factoring rejected: handle the numerator alone — factor
+  // it (Simplify) or pull out its numeric content (Cancel).
+  {
+    let (bn, bd) = super::together::extract_num_den(&basic);
+    if !matches!(&bd, Expr::Integer(1)) && polynomial_like(&bn) {
+      if factor_num {
+        if let Ok(factored_num) = super::factor::factor_ast(&[bn.clone()])
+          && leaf_count(&factored_num) <= leaf_count(&bn)
+          && !exprs_equal(&factored_num, &bn)
+        {
+          return finish_quotient_sign(
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(factored_num),
+              right: Box::new(bd),
+            },
+            canonicalize_sign,
+          );
+        }
+      } else if let Some(content_num) = extract_numeric_content(&bn) {
+        return finish_quotient_sign(
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(content_num),
+            right: Box::new(bd),
+          },
+          canonicalize_sign,
+        );
+      }
     }
   }
 
-  basic
+  finish_quotient_sign(basic, canonicalize_sign)
+}
+
+/// Pull the integer content out of a sum, keeping the polynomial
+/// expanded: 4x + 2x^2 → Times[2, Plus[2x, x^2]] (unevaluated so the
+/// product does not redistribute). None when the content is 1 or the
+/// terms don't have rational coefficients.
+fn extract_numeric_content(e: &Expr) -> Option<Expr> {
+  let terms = super::coefficient::collect_additive_terms(e);
+  if terms.len() < 2 {
+    return None;
+  }
+  let (_, _, coeffs) = super::factor::rational_content(&terms)?;
+  if coeffs.iter().any(|(_, d)| *d != 1) {
+    return None;
+  }
+  let mut g: i128 = 0;
+  for (n, _) in &coeffs {
+    if *n != 0 {
+      let (mut a, mut b) = (g.abs(), n.abs());
+      while b != 0 {
+        let t = a % b;
+        a = b;
+        b = t;
+      }
+      g = a;
+    }
+  }
+  if g <= 1 {
+    return None;
+  }
+  let content = if coeffs.iter().all(|(n, _)| *n < 0) {
+    -g
+  } else {
+    g
+  };
+  let divided: Result<Vec<Expr>, _> = terms
+    .iter()
+    .map(|t| {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(t.clone()),
+        right: Box::new(Expr::Integer(content)),
+      })
+    })
+    .collect();
+  let divided = divided.ok()?;
+  Some(Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      Expr::Integer(content),
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: divided.into(),
+      },
+    ]
+    .into(),
+  })
+}
+
+/// Final Simplify sign normalization for a quotient (see
+/// together::extract_quotient_minus).
+fn finish_quotient_sign(e: Expr, canonicalize_sign: bool) -> Expr {
+  if !canonicalize_sign {
+    return e;
+  }
+  let (n, d) = super::together::extract_num_den(&e);
+  if matches!(&d, Expr::Integer(1)) {
+    return e;
+  }
+  super::together::extract_quotient_minus(&n, &d).unwrap_or(e)
+}
+
+/// Accept a factored quotient only when its denominator stayed unchanged
+/// or collapsed to a (constant multiple of a) single base or power —
+/// never a product of two or more non-constant factors.
+fn factored_den_acceptable(basic: &Expr, factored: &Expr) -> bool {
+  let (_, bd) = super::together::extract_num_den(basic);
+  let (_, fd) = super::together::extract_num_den(factored);
+  if exprs_equal(&bd, &fd) {
+    return true;
+  }
+  let factors = super::together::flatten_times_args(std::slice::from_ref(&fd));
+  let non_constant = factors
+    .iter()
+    .filter(|f| {
+      let mut vars = std::collections::HashSet::new();
+      collect_variables(f, &mut vars);
+      !vars.is_empty()
+    })
+    .count();
+  non_constant <= 1
 }
 
 /// Find a single variable in an expression (for univariate polynomial division).

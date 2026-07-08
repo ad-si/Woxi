@@ -12853,14 +12853,41 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
       TextBox::atom(&format!("Sqrt[{}]", expr_to_string(sqrt_arg)))
     }
 
-    // Power[base, exp]
+    // A standalone Power with exponent -1 or -1/2 renders as a fraction
+    // (`x^-1` → 1/x, `x^(-1/2)` → 1/Sqrt[x]); other negative exponents
+    // keep the superscript with the sign (`x^-2` shows ` -2` over `x`,
+    // wolframscript-verified). Inside Times every negative power moves
+    // into the display denominator instead (see render_times_textbox).
+    expr
+      if negative_power_parts(expr).is_some_and(|(_, pos)| {
+        matches!(pos, Expr::Integer(1))
+          || matches!(&pos, Expr::FunctionCall { name, args }
+            if name == "Rational"
+              && matches!(args.as_slice(), [Expr::Integer(1), Expr::Integer(2)]))
+      }) =>
+    {
+      let (base, pos_exp) = negative_power_parts(expr).unwrap();
+      let denom = if matches!(pos_exp, Expr::Integer(1)) {
+        expr_to_textbox(&base)
+      } else {
+        expr_to_textbox(&Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![base, pos_exp].into(),
+        })
+      };
+      TextBox::fraction(&TextBox::atom("1"), &denom)
+    }
+
+    // Power[base, exp]. The exponent renders in LINEAR form — Wolfram
+    // keeps superscripts one line high (`x^(2/3)` shows ` 2/3` over `x`,
+    // not a three-line fraction above the base).
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
     } => {
       let base = expr_to_textbox_base(left);
-      let exp = expr_to_textbox(right);
+      let exp = TextBox::atom(&exponent_linear_form(right));
       TextBox::superscript(&base, &exp)
     }
 
@@ -12869,19 +12896,28 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
       // Check for fraction: Power[denom, -1] inside Times will be handled by Times
       // Here handle standalone Power
       let base = expr_to_textbox_base(&args[0]);
-      let exp = expr_to_textbox(&args[1]);
+      let exp = TextBox::atom(&exponent_linear_form(&args[1]));
       TextBox::superscript(&base, &exp)
     }
 
-    // Plus[args...]
+    // Plus[args...]. A term that is itself a Plus (possible with held
+    // forms: HoldForm[1 + 1] + HoldForm[2 + 2]) parenthesizes.
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      let render_term = |e: &Expr| -> TextBox {
+        let tb = expr_to_textbox(e);
+        if is_plus_expr(e) {
+          parenthesize(&tb)
+        } else {
+          tb
+        }
+      };
       let mut parts: Vec<TextBox> = Vec::new();
-      parts.push(expr_to_textbox(&args[0]));
+      parts.push(render_term(&args[0]));
       for arg in args.iter().skip(1) {
         // Check for negative terms
         let (sign, term) = extract_sign_for_plus(arg);
         parts.push(TextBox::atom(sign));
-        parts.push(expr_to_textbox(&term));
+        parts.push(render_term(&term));
       }
       TextBox::hconcat(&parts)
     }
@@ -12923,22 +12959,37 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
       TextBox::fraction(&num, &denom)
     }
 
-    // Rational[num, denom]
+    // Rational[num, denom]. A negative rational atom parenthesizes:
+    // `-3/4` shows as `-(` 3/4 `)` with the sign on the bar row.
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
+      if let Expr::Integer(n) = &args[0]
+        && *n < 0
+      {
+        let frac = TextBox::fraction(
+          &expr_to_textbox(&Expr::Integer(-n)),
+          &expr_to_textbox(&args[1]),
+        );
+        return TextBox::hconcat(&[TextBox::atom("-"), parenthesize(&frac)]);
+      }
       let num = expr_to_textbox(&args[0]);
       let denom = expr_to_textbox(&args[1]);
       TextBox::fraction(&num, &denom)
     }
 
-    // UnaryOp Minus
+    // UnaryOp Minus. A multi-line operand (a fraction) parenthesizes so
+    // the sign reads on the bar row: `-(x/y)`.
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
     } => {
       let inner = expr_to_textbox(operand);
-      TextBox::hconcat(&[TextBox::atom("-"), inner])
+      if inner.height() > 1 {
+        TextBox::hconcat(&[TextBox::atom("-"), parenthesize(&inner)])
+      } else {
+        TextBox::hconcat(&[TextBox::atom("-"), inner])
+      }
     }
 
     // List
@@ -13020,6 +13071,22 @@ fn expr_to_textbox_base(expr: &Expr) -> TextBox {
 }
 
 /// Extract sign and unsigned term for Plus rendering.
+/// If `e` is a `Rational[n, d]` with n < 0, return `Rational[-n, d]`.
+fn negate_negative_rational(e: &Expr) -> Option<Expr> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Rational"
+    && args.len() == 2
+    && let Expr::Integer(n) = &args[0]
+    && *n < 0
+  {
+    return Some(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(-n), args[1].clone()].into(),
+    });
+  }
+  None
+}
+
 fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
   match expr {
     Expr::UnaryOp {
@@ -13027,6 +13094,40 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
       operand,
     } => (" - ", *operand.clone()),
     Expr::Integer(n) if *n < 0 => (" - ", Expr::Integer(-n)),
+    Expr::Real(f) if *f < 0.0 => (" - ", Expr::Real(-f)),
+    // Negative rational atom: 1/2 - 1/3 x renders `- 1/3 x`, not `+ -(1/3) x`.
+    _ if negate_negative_rational(expr).is_some() => {
+      (" - ", negate_negative_rational(expr).unwrap())
+    }
+    // Times with a leading negative Rational coefficient: negate it, so
+    // `1 - x/2` renders as a subtraction of `x/2`.
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && !args.is_empty()
+        && negate_negative_rational(&args[0]).is_some() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = negate_negative_rational(&args[0]).unwrap();
+      (
+        " - ",
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: new_args.into(),
+        },
+      )
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if negate_negative_rational(left).is_some() => (
+      " - ",
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(negate_negative_rational(left).unwrap()),
+        right: right.clone(),
+      },
+    ),
     Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
       (" - ", Expr::BigInteger(-n))
     }
@@ -13132,74 +13233,237 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
   }
 }
 
-/// Render Times arguments as 2D, handling fractions (Power[x, -1]).
+/// Is this expression a Plus node (either representation)?
+fn is_plus_expr(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        ..
+      }
+    )
+}
+
+/// Linear (one-line) rendering of a superscript exponent. A negative
+/// rational parenthesizes with the sign outside — `x^(-3/2)` shows
+/// ` -(3/2)` over `x` in wolframscript.
+fn exponent_linear_form(exp: &Expr) -> String {
+  if let Expr::FunctionCall { name, args } = exp
+    && name == "Rational"
+    && args.len() == 2
+    && let Expr::Integer(n) = &args[0]
+    && *n < 0
+  {
+    return format!("-({}/{})", -n, expr_to_output(&args[1]));
+  }
+  expr_to_output(exp)
+}
+
+/// If `e` is `Power[base, exp]` (either node shape) with a NEGATIVE
+/// numeric exponent, return `(base, -exp)` so the factor can move into a
+/// display denominator: `x^-1` → denominator `x`, `x^-2` → `x^2`,
+/// `x^(-1/2)` → `Sqrt[x]`.
+fn negative_power_parts(e: &Expr) -> Option<(Expr, Expr)> {
+  let (base, exp) = match e {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  match exp {
+    Expr::Integer(n) if *n < 0 => Some((base.clone(), Expr::Integer(-n))),
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      if let Expr::Integer(n) = &args[0] {
+        Some((
+          base.clone(),
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-n), args[1].clone()].into(),
+          },
+        ))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Join boxes with single-space separators, Wolfram's product row.
+fn product_row(parts: &[TextBox]) -> TextBox {
+  let mut row: Vec<TextBox> = Vec::new();
+  for (i, p) in parts.iter().enumerate() {
+    if i > 0 {
+      row.push(TextBox::atom(" "));
+    }
+    row.push(p.clone());
+  }
+  TextBox::hconcat(&row)
+}
+
+/// Is this optional coefficient literally 1 (hidden in display)?
+fn p_is_one_local(c: &Option<Expr>) -> bool {
+  matches!(c, Some(Expr::Integer(1)))
+}
+
+/// Render the factors of a product row, parenthesizing sums — but only
+/// when the row has company: ToString[2*(2 + y)] shows `2 (2 + y)`,
+/// while a LONE sum filling a fraction's numerator stays bare
+/// ((1 + x)/(1 - x) has no parens).
+fn factor_boxes(factors: &[&Expr], extra_boxes: usize) -> Vec<TextBox> {
+  let row_len = factors.len() + extra_boxes;
+  factors
+    .iter()
+    .map(|e| {
+      let tb = expr_to_textbox(e);
+      if row_len > 1 && is_plus_expr(e) {
+        parenthesize(&tb)
+      } else {
+        tb
+      }
+    })
+    .collect()
+}
+
+/// Wrap a box in parentheses on the baseline row.
+fn parenthesize(inner: &TextBox) -> TextBox {
+  TextBox::hconcat(&[
+    TextBox::atom("("),
+    inner.clone(),
+    TextBox::atom(")"),
+  ])
+}
+
+/// Render Times arguments the way Wolfram's OutputForm does (all shapes
+/// wolframscript-verified):
+///   3 x/4     →  numerator `3 x` over `4`
+///   -3 x/4    →  numerator `-3 x` over `4` (|p| ≠ 1 keeps the sign inline)
+///   -x/3      →  `-(1/3) x` (p = -1 with a rational coefficient)
+///   -x/y      →  `-(x/y)`   (p = -1, integer coefficient)
+///   -2/x      →  numerator `-2` over `x`
+///   1/(2 x)   →  `1` over `2 x`
+///   x^-2      →  `1` over `x^2` (negative powers move to the denominator)
 fn render_times_textbox(args: &[Expr]) -> TextBox {
-  // Separate numerator and denominator factors
-  let mut num_factors: Vec<&Expr> = Vec::new();
-  let mut denom_factors: Vec<&Expr> = Vec::new();
+  // Split into: exact numeric coefficient p/q, numerator factors, and
+  // denominator factors (bases of negative powers, with |exp|).
+  let mut coeff_num: Option<Expr> = None; // p (Integer or BigInteger)
+  let mut coeff_den: Option<Expr> = None; // q
+  let mut num_factors: Vec<Expr> = Vec::new();
+  let mut denom_factors: Vec<Expr> = Vec::new();
 
   for arg in args {
     match arg {
-      Expr::FunctionCall { name, args: pargs }
-        if name == "Power"
-          && pargs.len() == 2
-          && matches!(&pargs[1], Expr::Integer(-1)) =>
-      {
-        denom_factors.push(&pargs[0]);
+      Expr::Integer(_) | Expr::BigInteger(_) if coeff_num.is_none() => {
+        coeff_num = Some(arg.clone());
       }
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        right,
-        left,
-      } if matches!(right.as_ref(), Expr::Integer(-1)) => {
-        denom_factors.push(left);
+      Expr::FunctionCall { name, args: rargs }
+        if name == "Rational" && rargs.len() == 2 && coeff_num.is_none() =>
+      {
+        coeff_num = Some(rargs[0].clone());
+        coeff_den = Some(rargs[1].clone());
       }
       _ => {
-        num_factors.push(arg);
+        if let Some((base, pos_exp)) = negative_power_parts(arg) {
+          if matches!(pos_exp, Expr::Integer(1)) {
+            denom_factors.push(base);
+          } else {
+            denom_factors.push(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![base, pos_exp].into(),
+            });
+          }
+        } else {
+          num_factors.push(arg.clone());
+        }
       }
     }
   }
 
-  if denom_factors.is_empty() {
-    // No fractions - just render as product
-    let mut parts: Vec<TextBox> = Vec::new();
-    for (i, f) in num_factors.iter().enumerate() {
-      if i > 0 {
-        parts.push(TextBox::atom(" "));
-      }
-      parts.push(expr_to_textbox(f));
-    }
-    TextBox::hconcat(&parts)
-  } else {
-    // Has fractions - render as num/denom
-    let num_box = if num_factors.is_empty() {
-      TextBox::atom("1")
-    } else if num_factors.len() == 1 {
-      expr_to_textbox(num_factors[0])
-    } else {
-      let mut parts: Vec<TextBox> = Vec::new();
-      for (i, f) in num_factors.iter().enumerate() {
-        if i > 0 {
-          parts.push(TextBox::atom(" "));
-        }
-        parts.push(expr_to_textbox(f));
-      }
-      TextBox::hconcat(&parts)
-    };
-    let denom_box = if denom_factors.len() == 1 {
-      expr_to_textbox(denom_factors[0])
-    } else {
-      let mut parts: Vec<TextBox> = Vec::new();
-      for (i, f) in denom_factors.iter().enumerate() {
-        if i > 0 {
-          parts.push(TextBox::atom(" "));
-        }
-        parts.push(expr_to_textbox(f));
-      }
-      TextBox::hconcat(&parts)
-    };
-    TextBox::fraction(&num_box, &denom_box)
+  let p_is_minus_one = matches!(coeff_num, Some(Expr::Integer(-1)));
+  let p_is_one = matches!(coeff_num, Some(Expr::Integer(1)));
+  let has_den = coeff_den.is_some() || !denom_factors.is_empty();
+
+  // Row lengths decide sum parenthesization: the numerator row also
+  // carries the coefficient p when it is shown (p ≠ ±1).
+  let p_shown = coeff_num.is_some() && !p_is_one_local(&coeff_num);
+  let num_refs: Vec<&Expr> = num_factors.iter().collect();
+  let num_boxes: Vec<TextBox> =
+    factor_boxes(&num_refs, if p_shown { 1 } else { 0 });
+  let den_refs: Vec<&Expr> = denom_factors.iter().collect();
+  let mut den_boxes: Vec<TextBox> = Vec::new();
+  if let Some(q) = &coeff_den {
+    den_boxes.push(expr_to_textbox(q));
   }
+  den_boxes.extend(factor_boxes(
+    &den_refs,
+    if coeff_den.is_some() { 1 } else { 0 },
+  ));
+
+  if !has_den {
+    // Plain product row: `3 x`, `-2 x`, `-x`.
+    let mut parts: Vec<TextBox> = Vec::new();
+    if p_is_minus_one {
+      return TextBox::hconcat(&[
+        TextBox::atom("-"),
+        product_row(&num_boxes),
+      ]);
+    }
+    if let Some(p) = &coeff_num
+      && !p_is_one
+    {
+      parts.push(expr_to_textbox(p));
+    }
+    parts.extend(num_boxes);
+    return product_row(&parts);
+  }
+
+  if p_is_minus_one {
+    // The sign pulls out in front of a parenthesized fraction. With
+    // numerator factors and a rational coefficient the factors stay
+    // OUTSIDE the parens (`-x/3` → `-(1/3) x`); with an integer
+    // coefficient they form the fraction numerator (`-x/y` → `-(x/y)`).
+    if coeff_den.is_some() && !num_boxes.is_empty() {
+      let frac =
+        TextBox::fraction(&TextBox::atom("1"), &product_row(&den_boxes));
+      let mut parts =
+        vec![TextBox::hconcat(&[TextBox::atom("-"), parenthesize(&frac)])];
+      parts.extend(num_boxes);
+      return product_row(&parts);
+    }
+    let num_box = if num_boxes.is_empty() {
+      TextBox::atom("1")
+    } else {
+      product_row(&num_boxes)
+    };
+    let frac = TextBox::fraction(&num_box, &product_row(&den_boxes));
+    return TextBox::hconcat(&[TextBox::atom("-"), parenthesize(&frac)]);
+  }
+
+  // General fraction: numerator `p f1 f2` (p omitted when 1), denominator
+  // `q d1 d2` (q omitted when absent).
+  let mut num_parts: Vec<TextBox> = Vec::new();
+  if let Some(p) = &coeff_num
+    && !p_is_one
+  {
+    num_parts.push(expr_to_textbox(p));
+  }
+  num_parts.extend(num_boxes);
+  let num_box = if num_parts.is_empty() {
+    TextBox::atom("1")
+  } else {
+    product_row(&num_parts)
+  };
+  TextBox::fraction(&num_box, &product_row(&den_boxes))
 }
 
 /// Render an expression in 2D OutputForm.

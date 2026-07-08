@@ -130,6 +130,21 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
             coeffs_to_expr(&new_den, &var),
           );
         }
+
+        // A bare negative-constant denominator absorbs its sign into the
+        // expanded numerator: Cancel[(x + x^2)/(-3)] → (-x - x^2)/3, not
+        // -1/3*x*(1+x) (differential fuzzer, seed 1783537668073123846).
+        if canonicalize_sign
+          && den_coeffs.len() == 1
+          && den_coeffs[0] < 0
+          && num_coeffs.len() > 1
+        {
+          let neg_num: Vec<i128> = num_coeffs.iter().map(|c| -c).collect();
+          return crate::functions::math_ast::make_divide(
+            coeffs_to_expr(&neg_num, &var),
+            Expr::Integer(-den_coeffs[0]),
+          );
+        }
       }
 
       // Try multivariate cancellation: extract common monomial factors from
@@ -410,7 +425,12 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
       // canonicalizes an untouched quotient's denominator sign:
       // Cancel[(-4-3x^2)/(4+x-4x^2)] → (4+3x^2)/(-4-x+4x^2).
       let fallback =
-        super::simplify::simplify_division_impl(&num, &den, canonicalize_sign);
+        super::simplify::simplify_division_impl(
+          &num,
+          &den,
+          canonicalize_sign,
+          false,
+        );
       if canonicalize_sign {
         let (fnum, fden) = super::together::extract_num_den(&fallback);
         if !matches!(&fden, Expr::Integer(1))

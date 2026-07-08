@@ -808,6 +808,39 @@ fn split_numeric_complex_minus(e: &Expr) -> Option<(Expr, Expr)> {
   Some(((**left).clone(), neg_imag))
 }
 
+/// Wolfram's machine-precision fold: the operands combine as a balanced
+/// divide-and-conquer tree with ceil split (left half gets the extra
+/// element), not left-to-right. Total[Table[0.1, 10]] is exactly 1.
+/// (a left-to-right fold gives 0.9999999999999999) and
+/// Plus[22, -59, 34, 14.6] is 11.600000000000001 because 22-59 and
+/// 34+14.6 combine first. The same tree shape applies to Times
+/// (Times[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7] → 0.000504).
+fn machine_tree_fold(xs: &[f64], op: fn(f64, f64) -> f64) -> f64 {
+  match xs.len() {
+    1 => xs[0],
+    2 => op(xs[0], xs[1]),
+    n => {
+      let m = n.div_ceil(2);
+      op(
+        machine_tree_fold(&xs[..m], op),
+        machine_tree_fold(&xs[m..], op),
+      )
+    }
+  }
+}
+
+/// Machine-precision Plus over the numeric terms, in input order. Every
+/// exact term converts to f64 individually — Wolfram does NOT coalesce
+/// exact terms into a rational sum first: Plus[2^60, 1, -2^60, 0.5] is
+/// 0. (the 1 is absorbed into 2^60 in f64) and Plus[22, -59, 34, 14.6]
+/// is 11.600000000000001, not (-3 + 14.6) = 11.6.
+fn machine_sum(terms: &[f64]) -> f64 {
+  if terms.is_empty() {
+    return 0.0;
+  }
+  machine_tree_fold(terms, |a, b| a + b)
+}
+
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
@@ -1044,8 +1077,13 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     matches!(a, Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2)
   });
+  // Likewise a machine Real forces the general machine fold (which is
+  // BigInt-aware via expr_to_coeff): Plus[2^60, 1, -2^60, 0.5] is 0.
+  // because every term converts to f64 individually — the fast path
+  // would sum the integers exactly and leave `1 + 0.5` uncombined.
+  let has_real_arg = flat_args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if has_bigint && !has_rational {
+  if has_bigint && !has_rational && !has_real_arg {
     use num_bigint::BigInt;
     let mut big_sum = BigInt::from(0);
     let mut all_int = true;
@@ -1120,40 +1158,19 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return bigfloat_plus(&flat_args);
   }
 
-  // If all numeric but has Reals, use f64. Wolfram's machine fold is
-  // input-order-sensitive: exact terms coalesce into ONE exact rational
-  // sum, which seeds the f64 fold when the first numeric term is exact
-  // and is appended after the reals otherwise (Plus[1/3, 0.1, 0.7, 0.3]
-  // → 1.4333333333333333 but Plus[0.1, 0.7, 1/3, 0.3] →
-  // 1.4333333333333331; Total[{1/3,1/3,1/3,0.5}] → 1.5 exactly).
+  // If all numeric but has Reals, use f64: every term (exact or real)
+  // converts to f64 individually, in input order, and folds as the
+  // balanced machine tree (see machine_sum).
   if all_numeric && !has_bigfloat {
-    let mut exact_sum = Coeff::Exact(0, 1);
-    let mut has_exact = false;
-    let mut exact_first = false;
-    let mut reals: Vec<f64> = Vec::new();
+    let mut terms: Vec<f64> = Vec::new();
     for arg in &flat_args {
       if let Expr::Real(f) = arg {
-        reals.push(*f);
+        terms.push(*f);
       } else if let Some(c) = expr_to_coeff(arg) {
-        if !has_exact && reals.is_empty() {
-          exact_first = true;
-        }
-        exact_sum = exact_sum.add(&c);
-        has_exact = true;
+        terms.push(c.to_f64());
       }
     }
-    let mut total = if has_exact && exact_first {
-      exact_sum.to_f64()
-    } else {
-      0.0
-    };
-    for r in &reals {
-      total += r;
-    }
-    if has_exact && !exact_first {
-      total += exact_sum.to_f64();
-    }
-    return Ok(Expr::Real(total));
+    return Ok(Expr::Real(machine_sum(&terms)));
   }
   if all_numeric {
     let mut sum = 0.0;
@@ -1166,24 +1183,24 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   {
-    // Separate numeric and symbolic terms
+    // Separate numeric and symbolic terms. numeric_terms keeps every
+    // numeric operand as f64 in input order (for the machine tree fold
+    // when a Real is present); exact_sum keeps the exact rational sum
+    // (used when NO Real is present, so 1 + 1/2 + x stays 3/2 + x).
     let mut symbolic_args: Vec<Expr> = Vec::new();
     let mut has_exact = false;
-    let mut exact_first = false;
     let mut exact_sum = Coeff::Exact(0, 1);
-    let mut real_terms: Vec<f64> = Vec::new();
+    let mut numeric_terms: Vec<f64> = Vec::new();
     let mut has_real_term = false;
 
     for arg in &flat_args {
       if let Some(c) = expr_to_coeff(arg) {
-        if !has_exact && real_terms.is_empty() {
-          exact_first = true;
-        }
+        numeric_terms.push(c.to_f64());
         // Coeff::add promotes to BigInt on i128 overflow.
         exact_sum = exact_sum.add(&c);
         has_exact = true;
       } else if let Expr::Real(f) = arg {
-        real_terms.push(*f);
+        numeric_terms.push(*f);
         has_real_term = true;
       } else {
         symbolic_args.push(arg.clone());
@@ -1247,21 +1264,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
 
     // With any machine Real present, fold to f64 in Wolfram's order: the
-    // coalesced exact sum first when the first numeric term was exact
-    // (otherwise after the reals), then the reals in input order, then
-    // the numerified constants one at a time.
+    // literal numeric terms (exact and real alike, each converted to f64
+    // individually) combine as the balanced machine tree, then the
+    // numerified constants fold one at a time.
     if has_real_term {
-      let mut total = if has_exact && exact_first {
-        exact_sum.to_f64()
-      } else {
-        0.0
-      };
-      for r in &real_terms {
-        total += r;
-      }
-      if has_exact && !exact_first {
-        total += exact_sum.to_f64();
-      }
+      let mut total = machine_sum(&numeric_terms);
       for f in &numerified_tail {
         total += f;
       }
@@ -2611,6 +2618,12 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     return pa.cmp(&pb);
   }
 
+  // A reciprocal-of-a-sum term orders against other univariate terms in
+  // the same variable by base polynomial (see the helper).
+  if let Some(ord) = sum_recip_vs_univar_order(a, b) {
+    return ord;
+  }
+
   let (_, base_a) = decompose_term(a);
   let (_, base_b) = decompose_term(b);
 
@@ -3416,6 +3429,66 @@ fn cmp_is_call_like(e: &Expr) -> bool {
 
 /// `Power[base, n]` with a negative integer exponent, in either the
 /// FunctionCall or BinaryOp representation.
+/// A reciprocal-of-a-sum term (2/(-1+x), (1+x)^(-1)) orders against
+/// another univariate term in the same variable by comparing the BASE
+/// polynomials coefficient-wise from the constant term up, a bare-`x`
+/// base counting as constant 0: `(-1+x)^(-1) + x` keeps the reciprocal
+/// first, `x + (1+x)^(-1)` keeps x first, and `2/(-1+x) + x^2` leads
+/// with the reciprocal while `x^2/2 + 15/(8(1+2x))` trails it — all
+/// wolframscript-verified. Equal bases return None so the existing
+/// shared-denominator exponent rules decide.
+fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  use std::cmp::Ordering;
+  // (var, ascending base-polynomial coeffs, is_sum_reciprocal).
+  fn base_info(e: &Expr) -> Option<(String, Vec<i128>, bool)> {
+    let (_, base) = decompose_term(e);
+    if let Some((inner, _)) = cmp_neg_pow(&base) {
+      if cmp_is_sum_base(inner) {
+        let (v, c) = univar_int_coeffs(inner)?;
+        return Some((v, c, true));
+      }
+      if let Expr::Identifier(v) = inner {
+        return Some((v.clone(), vec![0, 1], false));
+      }
+      return None;
+    }
+    let var_power = |b: &Expr, e: &Expr| -> Option<String> {
+      match (b, e) {
+        (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => Some(v.clone()),
+        _ => None,
+      }
+    };
+    match &base {
+      Expr::Identifier(v) => Some((v.clone(), vec![0, 1], false)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        var_power(&args[0], &args[1]).map(|v| (v, vec![0, 1], false))
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => var_power(left, right).map(|v| (v, vec![0, 1], false)),
+      _ => None,
+    }
+  }
+  let (va, ca, ra) = base_info(a)?;
+  let (vb, cb, rb) = base_info(b)?;
+  if (!ra && !rb) || va != vb {
+    return None;
+  }
+  for i in 0..ca.len().max(cb.len()) {
+    let x = ca.get(i).copied().unwrap_or(0);
+    let y = cb.get(i).copied().unwrap_or(0);
+    match x.cmp(&y) {
+      Ordering::Equal => {}
+      ord => return Some(ord),
+    }
+  }
+  None
+}
+
 fn cmp_neg_pow(f: &Expr) -> Option<(&Expr, i128)> {
   match f {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
@@ -5764,6 +5837,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
+
   // Threaded[...] broadcasting takes precedence over ordinary list threading.
   if let Some(result) = try_threaded_op(args, ThreadedOp::Times) {
     return result;
@@ -6429,6 +6503,33 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Times is exempt from the dispatch Orderless pre-sort so the machine
+  // fold below sees the original argument order (it is order-sensitive:
+  // Times[3, 1/7, 0.1, 0.2, 0.3] ≠ Times[0.1, 0.2, 3, 1/7, 0.3]).
+  // Without a machine Real the product is order-insensitive (exact
+  // arithmetic commutes), so restore the canonical order here — the
+  // exact/symbolic paths below rely on canonically sorted input. This
+  // runs AFTER the container handlers above (Quantity, SeriesData, …),
+  // which pick their result forms from the original order.
+  let sorted_storage;
+  let args: &[Expr] = if args.iter().any(|a| matches!(a, Expr::Real(_))) {
+    args
+  } else {
+    let mut sorted = args.to_vec();
+    sorted.sort_by(|a, b| {
+      let ord = crate::functions::list_helpers_ast::compare_exprs(a, b);
+      if ord > 0 {
+        std::cmp::Ordering::Less
+      } else if ord < 0 {
+        std::cmp::Ordering::Greater
+      } else {
+        std::cmp::Ordering::Equal
+      }
+    });
+    sorted_storage = sorted;
+    &sorted_storage
+  };
+
   // BigFloat-aware product. When any factor is a precision-tagged
   // BigFloat and every factor evaluates to a BigFloat (via expr_to_bigfloat
   // — Integer, Rational, BigFloat, or one of the math constants E / Pi /
@@ -6605,15 +6706,23 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Separate into: integers, rationals, reals, and symbolic arguments
+  // Separate into: integers, rationals, reals, and symbolic arguments.
+  // real_factors keeps the machine Reals in input order, and
+  // first_numeric_exact records whether the first numeric factor was
+  // exact — Wolfram coalesces the exact factors into ONE exact product
+  // which seeds the machine fold when it comes first and multiplies
+  // after the reals otherwise (Times[3, 1/7, 0.1, 0.2, 0.3] →
+  // 0.002571428571428571 but Times[0.1, 0.2, 3, 1/7, 0.3] →
+  // 0.0025714285714285717).
   let mut int_product: i128 = 1;
   let mut int_overflow = false;
   let mut has_int = false;
   let mut rat_numer: i128 = 1;
   let mut rat_denom: i128 = 1;
   let mut has_rational = false;
-  let mut real_product: f64 = 1.0;
+  let mut real_factors: Vec<f64> = Vec::new();
   let mut any_real = false;
+  let mut first_numeric_exact: Option<bool> = None;
   let mut symbolic_args: Vec<Expr> = Vec::new();
 
   // Pre-check: is there an explicit Rational or non-unity Integer coefficient among the args?
@@ -6634,10 +6743,12 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           int_overflow = true;
         }
         has_int = true;
+        first_numeric_exact.get_or_insert(true);
       }
       Expr::Real(f) => {
-        real_product *= f;
+        real_factors.push(*f);
         any_real = true;
+        first_numeric_exact.get_or_insert(false);
       }
       Expr::FunctionCall { name, args: rargs }
         if name == "Rational" && rargs.len() == 2 =>
@@ -6652,6 +6763,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             int_overflow = true;
           }
           has_rational = true;
+          first_numeric_exact.get_or_insert(true);
         } else {
           symbolic_args.push(arg.clone());
         }
@@ -6673,6 +6785,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if let Some(rd) = rat_denom.checked_mul(pow) {
               rat_denom = rd;
               has_rational = true;
+              first_numeric_exact.get_or_insert(true);
             } else {
               int_overflow = true;
             }
@@ -6704,8 +6817,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             symbolic_args.push(arg.clone());
           }
         } else if let Some(n) = expr_to_num(arg) {
-          real_product *= n;
+          real_factors.push(n);
           any_real = true;
+          first_numeric_exact.get_or_insert(false);
         } else {
           symbolic_args.push(arg.clone());
         }
@@ -6747,21 +6861,45 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // If any Real, try to convert symbolic constants (Pi, E, etc.) to floats
+  // If any Real, try to convert symbolic constants (Pi, E, etc.) to floats.
+  // They fold LAST, one at a time (Times[0.1, Pi, 0.3, -Pi] multiplies
+  // 0.1*0.3 first) — mirroring the numerified-constant tail in Plus.
   if any_real {
+    let mut numerified_tail: Vec<f64> = Vec::new();
     let mut remaining_symbolic: Vec<Expr> = Vec::new();
     for arg in symbolic_args.drain(..) {
       if let Some(f) = try_eval_to_f64(&arg) {
-        real_product *= f;
+        numerified_tail.push(f);
       } else {
         remaining_symbolic.push(arg);
       }
     }
     symbolic_args = remaining_symbolic;
 
-    let total = (int_product as f64)
-      * (rat_numer as f64 / rat_denom as f64)
-      * real_product;
+    // Machine fold in Wolfram's order: the coalesced exact coefficient
+    // joins the tree fold as the leading factor when the first numeric
+    // factor was exact, and multiplies after the reals otherwise; the
+    // numerified constants come last.
+    let has_exact_coeff = has_int || has_rational;
+    let exact_f = Coeff::Exact(int_product, 1)
+      .mul(&Coeff::Exact(rat_numer, rat_denom))
+      .to_f64();
+    let mut fold_factors: Vec<f64> = Vec::new();
+    if has_exact_coeff && first_numeric_exact == Some(true) {
+      fold_factors.push(exact_f);
+    }
+    fold_factors.extend_from_slice(&real_factors);
+    let mut total = if fold_factors.is_empty() {
+      1.0
+    } else {
+      machine_tree_fold(&fold_factors, |a, b| a * b)
+    };
+    if has_exact_coeff && first_numeric_exact != Some(true) {
+      total *= exact_f;
+    }
+    for f in &numerified_tail {
+      total *= f;
+    }
     if symbolic_args.is_empty() {
       return Ok(Expr::Real(total));
     }

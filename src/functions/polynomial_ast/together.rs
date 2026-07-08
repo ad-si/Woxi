@@ -412,6 +412,7 @@ pub(super) fn canonicalize_quotient_sign(
   let factors = flatten_times_args(std::slice::from_ref(den));
   let mut sign: i128 = 1;
   let mut flipped_any = false;
+  let mut any_flipped_content_one = false;
   let mut new_factors: Vec<Expr> = Vec::new();
   for f in &factors {
     let (base, exp) = match f {
@@ -454,7 +455,51 @@ pub(super) fn canonicalize_quotient_sign(
       if exp % 2 != 0 {
         sign = -sign;
       }
+      let base_content = super::factor::rational_content(
+        &collect_additive_terms(&base),
+      )
+      .map(|(n, d, _)| (n.abs(), d))
+      .unwrap_or((1, 1));
+      if base_content == (1, 1) {
+        any_flipped_content_one = true;
+      }
       let neg_base = negate(&base);
+      // Simplify displays a flipped denominator with its integer content
+      // factored out (term-wise division; the whole-sum quotient would
+      // stay an unreduced Divide): Simplify[(2-x)/(5-5x)] →
+      // (-2+x)/(5*(-1+x)).
+      let neg_base = if require_negative_numerator
+        && base_content.1 == 1
+        && base_content.0 > 1
+      {
+        let divided: Result<Vec<Expr>, _> =
+          collect_additive_terms(&neg_base)
+            .iter()
+            .map(|t| {
+              crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(t.clone()),
+                right: Box::new(Expr::Integer(base_content.0)),
+              })
+            })
+            .collect();
+        match divided {
+          Ok(terms) => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(base_content.0),
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: terms.into(),
+              },
+            ]
+            .into(),
+          },
+          Err(_) => neg_base,
+        }
+      } else {
+        neg_base
+      };
       new_factors.push(if exp == 1 {
         neg_base
       } else {
@@ -480,7 +525,34 @@ pub(super) fn canonicalize_quotient_sign(
       super::simplify::collect_variables(num, &mut vars);
       vars.is_empty()
     };
-    if sign >= 0 || (!constant_num && additive_content_sign(num) != Some(-1)) {
+    // The numerator must be able to absorb the flip: a constant, a sum
+    // whose every term is nonpositive, or — for a mixed-sign numerator
+    // with a negative leading coefficient — only when the flip is
+    // "free": the flipped denominator factor has integer content 1, or
+    // the numerator carries a bare unit-negative monomial (-x) whose
+    // sign disappears. Simplify[(2-x)/(1-x)] → (-2+x)/(-1+x) and
+    // Simplify[(2-x)/(5-5x)] → (-2+x)/(5*(-1+x)) flip, but
+    // Simplify[(5-4x-3x^2)/(5-5x)] and Simplify[(5-4x)/(5-5x)] keep
+    // their form (differential fuzzer, seed 1783537668073123846; all
+    // wolframscript-verified).
+    let num_terms = collect_additive_terms(num);
+    let all_nonpositive_num = num_terms.iter().all(|t| {
+      super::factor::rational_content(std::slice::from_ref(t))
+        .is_some_and(|(n, _, _)| n <= 0)
+    });
+    let mixed_leading_neg = additive_content_sign(num) == Some(-1);
+    let has_unit_neg_term = num_terms.iter().any(|t| {
+      let mut vars = std::collections::HashSet::new();
+      super::simplify::collect_variables(t, &mut vars);
+      !vars.is_empty()
+        && super::factor::rational_content(std::slice::from_ref(t))
+          .is_some_and(|(_, _, coeffs)| coeffs.first() == Some(&(-1, 1)))
+    });
+    let mixed_flip_is_free = mixed_leading_neg
+      && (any_flipped_content_one || has_unit_neg_term);
+    if sign >= 0
+      || (!constant_num && !all_nonpositive_num && !mixed_flip_is_free)
+    {
       return None;
     }
   }
@@ -534,6 +606,69 @@ pub(super) fn canonicalize_quotient_sign(
     left: Box::new(new_num),
     right: Box::new(new_den),
   })
+}
+
+/// Wolfram's Simplify pulls a `-1` out in front of a quotient when the
+/// numerator's content sign is negative (its highest-degree coefficient
+/// for a univariate sum): Simplify[(-2-3x)/(4x+3x²)] →
+/// -((2+3x)/(4x+3x²)) and Simplify[(1-5x-3x²-x³)/(-1-2x+4x²)] →
+/// -((-1+5x+3x²+x³)/(-1-2x+4x²)). An entirely-nonpositive denominator
+/// flips too — Simplify[(2+3x)/(-4x-3x²)] → -((2+3x)/(4x+3x²)) — while
+/// a mixed-sign denominator like 1-x stays put (Simplify[x/(1-x)] keeps
+/// its form; that case is canonicalize_quotient_sign's). Two flips
+/// cancel. Returns None when nothing changes.
+pub(super) fn extract_quotient_minus(num: &Expr, den: &Expr) -> Option<Expr> {
+  let negate = |e: &Expr| {
+    expand_and_combine(&Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(e.clone()),
+    })
+  };
+  // Only UNIVARIATE polynomial sums participate: wolframscript keeps
+  // (-b + d*y)/(a - c*y) and (1 - Cos[2x])/2 exactly as they are.
+  let is_variable_sum = |e: &Expr| {
+    collect_additive_terms(e).len() >= 2
+      && !super::reduce::contains_imaginary(e)
+      && super::simplify::polynomial_like(e)
+      && {
+        let mut vars = std::collections::HashSet::new();
+        super::simplify::collect_variables(e, &mut vars);
+        vars.len() == 1
+      }
+  };
+  let all_terms_nonpositive = |e: &Expr| {
+    collect_additive_terms(e).iter().all(|t| {
+      super::factor::rational_content(std::slice::from_ref(t))
+        .is_some_and(|(n, _, _)| n <= 0)
+    })
+  };
+
+  // A numerator flip needs the denominator already in canonical
+  // (positive-leading) form: Simplify[(1-5x-3x²-x³)/(-1-2x+4x²)] pulls
+  // the minus out, but Simplify[(5-4x-3x²)/(5-5x)] keeps its form.
+  let num_flip = is_variable_sum(num)
+    && additive_content_sign(num) == Some(-1)
+    && additive_content_sign(den) == Some(1);
+  let den_flip = is_variable_sum(den) && all_terms_nonpositive(den);
+  if !num_flip && !den_flip {
+    return None;
+  }
+  let new_num = if num_flip { negate(num) } else { num.clone() };
+  let new_den = if den_flip { negate(den) } else { den.clone() };
+  let quotient = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(new_num),
+    right: Box::new(new_den),
+  };
+  if num_flip != den_flip {
+    Some(Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(quotient),
+    })
+  } else {
+    Some(quotient)
+  }
 }
 
 /// Recursively run `together_expr` on sub-expressions so that nested fractions
