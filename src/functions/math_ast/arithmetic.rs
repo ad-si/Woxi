@@ -3534,6 +3534,95 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       // Example (Times): Order[x^2*(1+x^2)^-1, x^4*(1+x^2)^-2] = -1
       // (the x^4*(1+x^2)^-2 term sorts first, because the trailing factor
       // (1+x^2)^-2 has a smaller exponent than (1+x^2)^-1).
+      // Times terms sharing a denominator base order by ascending exponent
+      // regardless of the other polynomial factors: Order puts
+      // (c+d)*(1+x)^-2 before (a+b)*(1+x)^-1 ((a+b)/(1+x) + (c+d)/(1+x)^2
+      // → (c+d)/(1+x)^2 + (a+b)/(1+x)), which the trailing-factor scan
+      // below misses because the sum numerators sort after the Power
+      // factors and get compared first. Function-call factors override the
+      // exponent rule (f[x]/y + g[x]/y^2 and Dt[x]/y - (x*Dt[y])/y^2 keep
+      // the call order), so the rule only fires for call-free terms.
+      if na == "Times" {
+        fn is_call_like(e: &Expr) -> bool {
+          match e {
+            Expr::FunctionCall { name, args } => {
+              !matches!(
+                name.as_str(),
+                "Power" | "Plus" | "Times" | "Rational" | "Complex"
+              ) || args.iter().any(is_call_like)
+            }
+            Expr::BinaryOp { left, right, .. } => {
+              is_call_like(left) || is_call_like(right)
+            }
+            Expr::UnaryOp { operand, .. } => is_call_like(operand),
+            Expr::Function { .. } | Expr::NamedFunction { .. } => true,
+            _ => false,
+          }
+        }
+        fn neg_pow(f: &Expr) -> Option<(&Expr, i128)> {
+          match f {
+            Expr::FunctionCall { name, args }
+              if name == "Power" && args.len() == 2 =>
+            {
+              match &args[1] {
+                Expr::Integer(e) if *e < 0 => Some((&args[0], *e)),
+                _ => None,
+              }
+            }
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left,
+              right,
+            } => match right.as_ref() {
+              Expr::Integer(e) if *e < 0 => Some((left.as_ref(), *e)),
+              _ => None,
+            },
+            _ => None,
+          }
+        }
+        fn contains_expr(hay: &Expr, needle: &Expr) -> bool {
+          if compare_expr_canonical(hay, needle) == Ordering::Equal {
+            return true;
+          }
+          match hay {
+            Expr::FunctionCall { args, .. } => {
+              args.iter().any(|a| contains_expr(a, needle))
+            }
+            Expr::List(items) => items.iter().any(|a| contains_expr(a, needle)),
+            Expr::BinaryOp { left, right, .. } => {
+              contains_expr(left, needle) || contains_expr(right, needle)
+            }
+            Expr::UnaryOp { operand, .. } => contains_expr(operand, needle),
+            _ => false,
+          }
+        }
+        if !aa.iter().any(is_call_like) && !ab.iter().any(is_call_like) {
+          for fa in aa.iter() {
+            if let Some((base_a, ea)) = neg_pow(fa) {
+              for fb in ab.iter() {
+                if let Some((base_b, eb)) = neg_pow(fb)
+                  && ea != eb
+                  && compare_expr_canonical(base_a, base_b) == Ordering::Equal
+                {
+                  // Numerators containing the base itself are like-powers
+                  // of it; WL keeps their input order instead of applying
+                  // the exponent rule ((1-4x)/(5x) + (x-2x^2)/(5x^2) and
+                  // both input orders of (c+x)/(1+x) vs (d+x)/(1+x)^2 stay
+                  // put).
+                  let other_contains_base = aa
+                    .iter()
+                    .chain(ab.iter())
+                    .filter(|f| neg_pow(f).is_none())
+                    .any(|f| contains_expr(f, base_a));
+                  if !other_contains_base {
+                    return ea.cmp(&eb);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
       if na == "Plus" || na == "Times" {
         let mut ia = aa.iter().rev();
         let mut ib = ab.iter().rev();

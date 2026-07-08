@@ -1075,6 +1075,12 @@ mod factor {
       // A non-unit leading coefficient stays as a constant prefactor
       ("Factor[2*x^4 + 2, Modulus -> 5]", "2*(2 + x^2)*(3 + x^2)"),
       ("Factor[x^2 + x, Modulus -> 2]", "x*(1 + x)"),
+      // Equal-degree factors order by coefficients at the first differing
+      // monomial from the top (needs the sum-vs-sum Times ordering rule)
+      (
+        "Factor[x^9 + x, Modulus -> 3]",
+        "x*(2 + x^2 + x^4)*(2 + 2*x^2 + x^4)",
+      ),
       // Repeated factors (including the derivative == 0 path f = g(x^p))
       ("Factor[(x + 1)^4, Modulus -> 2]", "(1 + x)^4"),
       ("Factor[x^6 + 1, Modulus -> 2]", "(1 + x)^2*(1 + x + x^2)^2"),

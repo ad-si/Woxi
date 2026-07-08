@@ -357,6 +357,65 @@ mod arithmetic {
       assert_eq!(interpret("a*(b + c)").unwrap(), "a*(b + c)");
     }
 
+    // Two polynomial sums order by their terms from the highest canonical
+    // monomial down; the first differing position decides (smaller monomial
+    // first, equal monomials by numerically smaller coefficient) —
+    // wolframscript-verified.
+    #[test]
+    fn sum_vs_sum_factor_order_by_top_coefficients() {
+      assert_eq!(
+        interpret("(4 - x - 5 x^2)*(-2 - 2 x - 6 x^2)").unwrap(),
+        "(-2 - 2*x - 6*x^2)*(4 - x - 5*x^2)"
+      );
+      assert_eq!(
+        interpret("(3 - 4 x - 3 x^2)*(-3 + x + 4 x^2)").unwrap(),
+        "(3 - 4*x - 3*x^2)*(-3 + x + 4*x^2)"
+      );
+      assert_eq!(interpret("(1 - x)*(2 + x)").unwrap(), "(1 - x)*(2 + x)");
+      assert_eq!(interpret("(2 + x)*(1 - x)").unwrap(), "(1 - x)*(2 + x)");
+      assert_eq!(interpret("(3 + x)*(2 + x)").unwrap(), "(2 + x)*(3 + x)");
+      assert_eq!(interpret("(1 + 2 x)*(2 + x)").unwrap(), "(2 + x)*(1 + 2*x)");
+      assert_eq!(
+        interpret("(2 + 2 x^2 + x^4)*(2 + x^2 + x^4)").unwrap(),
+        "(2 + x^2 + x^4)*(2 + 2*x^2 + x^4)"
+      );
+    }
+
+    // Plus terms sharing a denominator base order by ascending exponent
+    // (den^-2 term first) for call-free terms; function-call factors keep
+    // their own order instead — wolframscript-verified.
+    #[test]
+    fn plus_terms_with_shared_denominator_base_order_by_exponent() {
+      assert_eq!(
+        interpret("(a + b)/(1 + x) - (c + d)/(1 + x)^2").unwrap(),
+        "-((c + d)/(1 + x)^2) + (a + b)/(1 + x)"
+      );
+      assert_eq!(
+        interpret("(a + b)/(1 + x) + (c + d)/(1 + x)^2").unwrap(),
+        "(c + d)/(1 + x)^2 + (a + b)/(1 + x)"
+      );
+      assert_eq!(interpret("f[x]/y + g[x]/y^2").unwrap(), "f[x]/y + g[x]/y^2");
+      assert_eq!(interpret("Dt[x/y]").unwrap(), "Dt[x]/y - (x*Dt[y])/y^2");
+      // Numerators containing the base itself keep their input order.
+      assert_eq!(
+        interpret("(1 - 4*x)/(5*x) + (x - 2*x^2)/(5*x^2)").unwrap(),
+        "(1 - 4*x)/(5*x) + (x - 2*x^2)/(5*x^2)"
+      );
+      assert_eq!(
+        interpret("D[(x - 2 x^2)/(-5 x), x]").unwrap(),
+        "-1/5*(1 - 4*x)/x + (x - 2*x^2)/(5*x^2)"
+      );
+    }
+
+    // Same symbolic monomial with different numeric coefficients orders by
+    // coefficient ascending — wolframscript-verified.
+    #[test]
+    fn order_same_monomial_by_coefficient() {
+      assert_eq!(interpret("Order[-x, x]").unwrap(), "1");
+      assert_eq!(interpret("Order[-6*x^2, -5*x^2]").unwrap(), "1");
+      assert_eq!(interpret("Order[2*x, x]").unwrap(), "-1");
+    }
+
     #[test]
     fn bare_identifier_keeps_first_when_keys_tie() {
       // Plus[x, y].sort_key = "y" ties with `y`; bare identifier wins

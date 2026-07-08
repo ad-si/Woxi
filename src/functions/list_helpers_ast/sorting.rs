@@ -1140,6 +1140,17 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     return 0;
   }
 
+  // Terms that are the same symbolic monomial times different number-literal
+  // coefficients order by coefficient ascending: Order[-6*x^2, -5*x^2] = 1,
+  // Order[-x, x] = 1, Order[2*x, x] = -1 (wolframscript-verified).
+  {
+    let (ca, ra) = numeric_coeff_and_rest(a);
+    let (cb, rb) = numeric_coeff_and_rest(b);
+    if ca != cb && ra == rb {
+      return if ca < cb { 1 } else { -1 };
+    }
+  }
+
   // Wolfram canonical ordering: symbols and compounds are compared structurally
   // Classification: atom-like (atoms, constants, powers) sort before function calls
   let a_is_atom = is_atom_expr(a);
@@ -1252,6 +1263,64 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         wolfram_string_order(&a_str, &b_str)
       }
     }
+  }
+}
+
+/// Split a term into its leading number-literal coefficient and the
+/// canonical string of the remaining symbolic factors. Terms without a
+/// literal coefficient count as coefficient 1 over the whole expression.
+fn numeric_coeff_and_rest(e: &Expr) -> (f64, String) {
+  use crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  let literal = |x: &Expr| -> Option<f64> {
+    match x {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..) => try_eval_to_f64_with_infinity(x),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        try_eval_to_f64_with_infinity(x)
+      }
+      _ => None,
+    }
+  };
+  match e {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let (c, r) = numeric_coeff_and_rest(operand);
+      (-c, r)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      if let Some(c) = literal(&args[0]) {
+        let rest = if args.len() == 2 {
+          args[1].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: args[1..].to_vec().into(),
+          }
+        };
+        (c, crate::syntax::expr_to_string(&rest))
+      } else {
+        (1.0, crate::syntax::expr_to_string(e))
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if let Some(c) = literal(left) {
+        let (cr, r) = numeric_coeff_and_rest(right);
+        (c * cr, r)
+      } else {
+        (1.0, crate::syntax::expr_to_string(e))
+      }
+    }
+    _ => (1.0, crate::syntax::expr_to_string(e)),
   }
 }
 
