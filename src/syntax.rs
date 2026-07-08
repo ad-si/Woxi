@@ -10171,6 +10171,9 @@ fn contains_string(expr: &Expr) -> bool {
     Expr::String(_) => true,
     Expr::List(items) => items.iter().any(contains_string),
     Expr::FunctionCall { args, .. } => args.iter().any(contains_string),
+    Expr::Association(items) => items
+      .iter()
+      .any(|(k, v)| contains_string(k) || contains_string(v)),
     Expr::BinaryOp { left, right, .. } => {
       contains_string(left) || contains_string(right)
     }
