@@ -1410,6 +1410,28 @@ mod factor_multivariate {
       "(x^2 + y^2)*(x^4 - x^2*y^2 + y^4)"
     );
   }
+
+  // Regression: the multivariate content extraction dropped the sign of the
+  // integer content, yielding `4*(-x^2 + x*y - y^2)` instead of the
+  // wolframscript form `-4*(x^2 - x*y + y^2)`. The content carries the sign
+  // of the highest total-degree term (FactorTerms rule), and for |content|
+  // > 1 the negative integer stays a standalone factor instead of being
+  // absorbed into a polynomial factor.
+  #[test]
+  fn negative_integer_content_keeps_sign() {
+    assert_eq!(
+      interpret("Factor[-4*y^2 + 4*x*y - 4*x^2]").unwrap(),
+      "-4*(x^2 - x*y + y^2)"
+    );
+    assert_eq!(
+      interpret("Factor[4*y^2 - 4*x*y + 4*x^2]").unwrap(),
+      "4*(x^2 - x*y + y^2)"
+    );
+    assert_eq!(
+      interpret("Factor[-4*y^2 + 4*x*y + 4*x^2]").unwrap(),
+      "4*(x^2 + x*y - y^2)"
+    );
+  }
 }
 
 mod factor_list {
@@ -5993,6 +6015,10 @@ mod factor_terms {
       interpret("FactorTerms[2 y - 4 x y - 4 x^2 y]").unwrap(),
       "-2*(-y + 2*x*y + 2*x^2*y)"
     );
+    assert_eq!(
+      interpret("FactorTerms[-4*y^2 + 4*x*y - 4*x^2]").unwrap(),
+      "-4*(x^2 - x*y + y^2)"
+    );
   }
 
   // A -1/d rational content folds its sign into the sum
@@ -6555,6 +6581,16 @@ mod factor_square_free {
   #[test]
   fn square_free_unchanged() {
     assert_eq!(interpret("FactorSquareFree[x^6 - 1]").unwrap(), "-1 + x^6");
+  }
+
+  // Regression: negative integer content stays a standalone `-4` factor
+  // (matching wolframscript), not `-(4*(...))` or `4*(-...)`.
+  #[test]
+  fn negative_integer_content_keeps_sign() {
+    assert_eq!(
+      interpret("FactorSquareFree[-4*y^2 + 4*x*y - 4*x^2]").unwrap(),
+      "-4*(x^2 - x*y + y^2)"
+    );
   }
 
   #[test]

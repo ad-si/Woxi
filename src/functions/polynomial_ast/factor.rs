@@ -1779,7 +1779,9 @@ fn term_total_degree(term: &Expr) -> i128 {
 /// FactorTerms[2 Sin[x] - 4 Sin[y]] → 2*(Sin[x] - 2*Sin[y]).
 /// Returns (signed num_gcd, den_lcm, per-term coefficients), or None if a
 /// term has a non-rational coefficient.
-fn rational_content(terms: &[Expr]) -> Option<(i128, i128, Vec<(i128, i128)>)> {
+pub(super) fn rational_content(
+  terms: &[Expr],
+) -> Option<(i128, i128, Vec<(i128, i128)>)> {
   let mut coeffs: Vec<(i128, i128)> = Vec::new();
   for term in terms {
     coeffs.push(extract_rational_coeff(term)?);
@@ -3668,13 +3670,19 @@ fn factor_multivariate(
   let mut sorted_vars: Vec<String> = vars.into_iter().collect();
   sorted_vars.sort();
 
-  // Extract GCD of all integer coefficients
-  let gcd = extract_multivar_gcd(expanded);
-  let working = if gcd > 1 {
-    divide_expr_by_scalar(expanded, gcd)
+  // Extract signed integer content (gcd magnitude with the sign of the
+  // highest total-degree term, matching FactorTerms), so the working
+  // polynomial is the primitive part with positive canonical leading sign.
+  let content = extract_multivar_content(expanded);
+  let mut working = if content.abs() > 1 {
+    divide_expr_by_scalar(expanded, content.abs())
   } else {
     expanded.clone()
   };
+  if content < 0 {
+    let terms = collect_additive_terms(&working);
+    working = combine_and_build(terms.iter().map(negate_term).collect());
+  }
 
   // Extract common monomial factor (e.g., x^2*y from all terms)
   let (monomial_factors, working) =
@@ -3688,19 +3696,19 @@ fn factor_multivariate(
     // Try Kronecker substitution on the remaining polynomial
     match kronecker_factor_multivar(&working, &sorted_vars) {
       Some((overall_sign, factors)) if !factors.is_empty() => {
-        let overall = gcd * overall_sign;
+        let overall = content * overall_sign;
         let mut all_factors = monomial_factors;
         all_factors.extend(factors);
         return Ok(build_multivariate_result(overall, all_factors));
       }
       _ => {
         // Can't factor further; return with monomial factors
-        if monomial_factors.is_empty() && gcd == 1 {
+        if monomial_factors.is_empty() && content == 1 {
           return Ok(expanded.clone());
         }
         let mut all_factors = monomial_factors;
         all_factors.push((working.clone(), 1));
-        return Ok(build_multivariate_result(gcd, all_factors));
+        return Ok(build_multivariate_result(content, all_factors));
       }
     }
   } else if remaining_vars.len() == 1 {
@@ -3721,8 +3729,9 @@ fn factor_multivariate(
           (1, reduced)
         };
         let uni_factors = factor_integer_poly(&reduced, &var);
-        if uni_factors.len() > 1 || !monomial_factors.is_empty() || gcd > 1 {
-          let overall = gcd * coeff_gcd * sign;
+        if uni_factors.len() > 1 || !monomial_factors.is_empty() || content != 1
+        {
+          let overall = content * coeff_gcd * sign;
           let mut all_factors = monomial_factors;
           // Group and add univariate factors
           let mut grouped: Vec<(Expr, usize)> = Vec::new();
@@ -3749,7 +3758,7 @@ fn factor_multivariate(
   if !poly_factors.is_empty() || !monomial_factors.is_empty() {
     let mut all_factors = monomial_factors;
     all_factors.extend(poly_factors);
-    return Ok(build_multivariate_result(gcd, all_factors));
+    return Ok(build_multivariate_result(content, all_factors));
   }
 
   Ok(expanded.clone())
@@ -4318,14 +4327,34 @@ fn extract_common_monomial(
   (monomial_factors, remaining)
 }
 
-fn extract_multivar_gcd(expr: &Expr) -> i128 {
+/// Signed integer content of a multivariate polynomial: the coefficient
+/// gcd carrying the sign of the highest TOTAL-degree term (ties keep the
+/// first term in canonical order), matching the `rational_content` rule
+/// used by FactorTerms. Factor[-4*y^2 + 4*x*y - 4*x^2] pulls out -4, not 4.
+fn extract_multivar_content(expr: &Expr) -> i128 {
   let terms = collect_additive_terms(expr);
   let mut gcd = 0i128;
   for term in &terms {
     let c = term_integer_coeff(term);
     gcd = gcd_i128(gcd, c);
   }
-  if gcd == 0 { 1 } else { gcd.abs() }
+  if gcd == 0 {
+    return 1;
+  }
+  let mut best_deg = i128::MIN;
+  let mut sign = 1i128;
+  for term in &terms {
+    let c = term_integer_coeff(term);
+    if c == 0 {
+      continue;
+    }
+    let d = term_total_degree(term);
+    if d > best_deg {
+      best_deg = d;
+      sign = if c < 0 { -1 } else { 1 };
+    }
+  }
+  gcd.abs() * sign
 }
 
 /// Extract the integer coefficient from a multivariate term.
@@ -4460,9 +4489,12 @@ fn build_multivariate_result(
 
   let mut result_factors: Vec<Expr> = Vec::new();
 
-  // If overall is negative, absorb -1 into one of the factors with odd multiplicity
+  // If overall is exactly -1, absorb the sign into one of the factors with
+  // odd multiplicity. For |overall| > 1 the negative integer content stays
+  // a standalone factor (Factor[-4*y^2 + 4*x*y - 4*x^2] →
+  // -4*(x^2 - x*y + y^2), matching wolframscript), so no factor is negated.
   let mut remaining_overall = overall;
-  if remaining_overall < 0 {
+  if remaining_overall == -1 {
     // Find the best factor to negate: prefer one whose first variable term
     // has a negative coefficient (so negation makes the expression look more canonical)
     let mut best_idx: Option<usize> = None;
