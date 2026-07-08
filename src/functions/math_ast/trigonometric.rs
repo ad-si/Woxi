@@ -6188,54 +6188,33 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   // Collect (numerator_coeff, trig_expr_or_None_for_constant) pairs
   let mut num_terms: Vec<(i128, Option<Expr>)> = Vec::new();
 
-  if nu.is_multiple_of(2) {
+  let half_n = nu / 2;
+  let trig_fn = if nu.is_multiple_of(2) {
     // Even power
-    let half_n = nu / 2;
     // Constant term: C(n, n/2)
-    let const_binom = crate::functions::binomial_coeff(n, half_n as i128);
-    num_terms.push((const_binom, None));
-
-    // Sum terms
-    for k in 0..half_n {
-      let m = n - 2 * k as i128;
-      let binom_val = crate::functions::binomial_coeff(n, k as i128);
-      let coeff = 2 * binom_val;
-      let sign = if is_cos {
-        1
-      } else if (half_n - k).is_multiple_of(2) {
-        1
-      } else {
-        -1
-      };
-      let trig_arg = make_int_times_arg(m, m);
-      let trig_call = Expr::FunctionCall {
-        name: "Cos".to_string(),
-        args: vec![trig_arg].into(),
-      };
-      num_terms.push((sign * coeff, Some(trig_call)));
-    }
+    let binom = crate::functions::binomial_coeff(n, half_n as i128);
+    num_terms.push((binom, None));
+    "Cos"
   } else {
     // Odd power
-    let half_n = (nu - 1) / 2;
-    let trig_fn = if is_cos { "Cos" } else { "Sin" };
-    for k in 0..=half_n {
-      let m = n - 2 * k as i128;
-      let binom_val = crate::functions::binomial_coeff(n, k as i128);
-      let coeff = 2 * binom_val;
-      let sign = if is_cos {
-        1
-      } else if (half_n - k).is_multiple_of(2) {
-        1
-      } else {
-        -1
-      };
-      let trig_arg = make_int_times_arg(m, m);
-      let trig_call = Expr::FunctionCall {
-        name: trig_fn.to_string(),
-        args: vec![trig_arg].into(),
-      };
-      num_terms.push((sign * coeff, Some(trig_call)));
-    }
+    if is_cos { "Cos" } else { "Sin" }
+  };
+
+  for k in 0..nu - half_n {
+    let m = n - 2 * k as i128;
+    let binom_val = crate::functions::binomial_coeff(n, k as i128);
+    let coeff = 2 * binom_val;
+    let sign = if is_cos || (half_n - k).is_multiple_of(2) {
+      1
+    } else {
+      -1
+    };
+    let trig_arg = make_int_times_arg(m, m);
+    let trig_call = Expr::FunctionCall {
+      name: trig_fn.to_string(),
+      args: vec![trig_arg].into(),
+    };
+    num_terms.push((sign * coeff, Some(trig_call)));
   }
 
   // Compute GCD of all numerator coefficients and denom to simplify the fraction
