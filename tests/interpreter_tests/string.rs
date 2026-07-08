@@ -5459,6 +5459,30 @@ mod to_string_output_form_2d {
     );
   }
 
+  // Sum factors in a product row parenthesize — but a lone sum filling
+  // a fraction's numerator or denominator stays bare (differential
+  // fuzzer, seed 1783542791764080894; wolframscript-verified).
+  #[test]
+  fn sum_factors_parenthesize_in_products() {
+    assert_eq!(interpret("ToString[2*(2 + y)]").unwrap(), "2 (2 + y)");
+    assert_eq!(
+      interpret("ToString[3 x (1 + x)]").unwrap(),
+      "3 x (1 + x)"
+    );
+    assert_eq!(
+      interpret("ToString[Factor[4 x^2 + 2 y^2 + 4]]").unwrap(),
+      "          2    2\n2 (2 + 2 x  + y )"
+    );
+    assert_eq!(
+      interpret("ToString[1/(x*(4 + 3*x))]").unwrap(),
+      "     1\n-----------\nx (4 + 3 x)"
+    );
+    assert_eq!(
+      interpret("ToString[(1 + x)/(1 - x)]").unwrap(),
+      "1 + x\n-----\n1 - x"
+    );
+  }
+
   #[test]
   fn powers() {
     assert_eq!(interpret("ToString[x^2]").unwrap(), " 2\nx");

@@ -13311,6 +13311,30 @@ fn product_row(parts: &[TextBox]) -> TextBox {
   TextBox::hconcat(&row)
 }
 
+/// Is this optional coefficient literally 1 (hidden in display)?
+fn p_is_one_local(c: &Option<Expr>) -> bool {
+  matches!(c, Some(Expr::Integer(1)))
+}
+
+/// Render the factors of a product row, parenthesizing sums — but only
+/// when the row has company: ToString[2*(2 + y)] shows `2 (2 + y)`,
+/// while a LONE sum filling a fraction's numerator stays bare
+/// ((1 + x)/(1 - x) has no parens).
+fn factor_boxes(factors: &[&Expr], extra_boxes: usize) -> Vec<TextBox> {
+  let row_len = factors.len() + extra_boxes;
+  factors
+    .iter()
+    .map(|e| {
+      let tb = expr_to_textbox(e);
+      if row_len > 1 && is_plus_expr(e) {
+        parenthesize(&tb)
+      } else {
+        tb
+      }
+    })
+    .collect()
+}
+
 /// Wrap a box in parentheses on the baseline row.
 fn parenthesize(inner: &TextBox) -> TextBox {
   TextBox::hconcat(&[
@@ -13369,13 +13393,21 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
   let p_is_one = matches!(coeff_num, Some(Expr::Integer(1)));
   let has_den = coeff_den.is_some() || !denom_factors.is_empty();
 
+  // Row lengths decide sum parenthesization: the numerator row also
+  // carries the coefficient p when it is shown (p ≠ ±1).
+  let p_shown = coeff_num.is_some() && !p_is_one_local(&coeff_num);
+  let num_refs: Vec<&Expr> = num_factors.iter().collect();
   let num_boxes: Vec<TextBox> =
-    num_factors.iter().map(expr_to_textbox).collect();
+    factor_boxes(&num_refs, if p_shown { 1 } else { 0 });
+  let den_refs: Vec<&Expr> = denom_factors.iter().collect();
   let mut den_boxes: Vec<TextBox> = Vec::new();
   if let Some(q) = &coeff_den {
     den_boxes.push(expr_to_textbox(q));
   }
-  den_boxes.extend(denom_factors.iter().map(expr_to_textbox));
+  den_boxes.extend(factor_boxes(
+    &den_refs,
+    if coeff_den.is_some() { 1 } else { 0 },
+  ));
 
   if !has_den {
     // Plain product row: `3 x`, `-2 x`, `-x`.
