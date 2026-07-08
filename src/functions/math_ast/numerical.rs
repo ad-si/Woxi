@@ -2482,12 +2482,32 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       if p_expr.is_none() || p_val == Some(2.0) {
-        // Sqrt[Plus[item^2, ...]] (or Abs[item]^2 for unknown items)
+        // A one-element vector IS its Abs: Norm[{1 + Pi}] → 1 + Pi and
+        // Norm[{x}] → Abs[x], never Sqrt[(1 + Pi)^2]. (wolframscript
+        // parity; differential fuzzer, seed 1783520505113402110)
+        if items.len() == 1 {
+          return crate::evaluator::evaluate_function_call_ast(
+            "Abs",
+            &[items[0].clone()],
+          );
+        }
+        // Sqrt[Plus[item^2, ...]] (or Abs[item]^2 for unknown items).
+        // Wolfram squares Abs[item], so a numerically negative exact item
+        // flips sign first: Norm[{-46, -63, 1 - 81 + Pi}] carries
+        // (80 - Pi)^2, not (-80 + Pi)^2.
         let sq_items: Vec<Expr> = items
           .iter()
           .map(|item| {
             let base = if is_real_valued(item) {
-              item.clone()
+              if try_eval_to_f64(item).is_some_and(|v| v < 0.0) {
+                evaluate_expr_to_expr(&Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![Expr::Integer(-1), item.clone()].into(),
+                })
+                .unwrap_or_else(|_| item.clone())
+              } else {
+                item.clone()
+              }
             } else {
               Expr::FunctionCall {
                 name: "Abs".to_string(),

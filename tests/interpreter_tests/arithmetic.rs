@@ -3565,6 +3565,26 @@ mod expand_threading {
     );
   }
 
+  // The exact 2-norm squares Abs[item]: numerically negative exact
+  // entries flip sign inside the square, and a one-element vector IS its
+  // Abs (wolframscript-verified; differential fuzzer, seed
+  // 1783520505113402110).
+  #[test]
+  fn norm_exact_entries_square_via_abs() {
+    assert_eq!(
+      interpret("Norm[{-46, -63, Plus[Plus[1, -81], Pi]}]").unwrap(),
+      "Sqrt[6085 + (80 - Pi)^2]"
+    );
+    assert_eq!(
+      interpret("Norm[{2, Pi - 4}]").unwrap(),
+      "Sqrt[4 + (4 - Pi)^2]"
+    );
+    assert_eq!(interpret("Norm[{1 + Pi}]").unwrap(), "1 + Pi");
+    assert_eq!(interpret("Norm[{Pi - 4}]").unwrap(), "4 - Pi");
+    assert_eq!(interpret("Norm[{-3}]").unwrap(), "3");
+    assert_eq!(interpret("Norm[{x}]").unwrap(), "Abs[x]");
+  }
+
   #[test]
   fn norm_vector_general_p_symbolic_entries() {
     assert_eq!(

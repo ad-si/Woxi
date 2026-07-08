@@ -2111,6 +2111,62 @@ mod apart {
     );
   }
 
+  // Polynomial division with a NON-integer leading quotient still
+  // decomposes (the shrunk differential-fuzzer reproducers, seed
+  // 1783520505113402110; all wolframscript-verified).
+  #[test]
+  fn apart_rational_quotient() {
+    assert_eq!(
+      interpret("Apart[Divide[Plus[2, Times[-4, x]], Plus[2, Times[-5, x]]]]")
+        .unwrap(),
+      "4/5 - 2/(5*(-2 + 5*x))"
+    );
+    assert_eq!(
+      interpret("Apart[Divide[Plus[2, Times[-1, x]], Plus[0, Times[-3, x]]]]")
+        .unwrap(),
+      "1/3 - 2/(3*x)"
+    );
+    assert_eq!(
+      interpret("Apart[(x^3 + 2)/(2 x + 1)]").unwrap(),
+      "1/8 - x/4 + x^2/2 + 15/(8*(1 + 2*x))"
+    );
+    assert_eq!(
+      interpret("Apart[(3 x^2 + 2 x + 1)/(x^2 + x)]").unwrap(),
+      "3 + x^(-1) - 2/(1 + x)"
+    );
+  }
+
+  // Apart returns ordinary evaluated expressions: a variable-free
+  // argument passes through, and single-fraction results take their
+  // canonical evaluated form (not a hand-built Divide tree).
+  #[test]
+  fn apart_result_is_canonical() {
+    assert_eq!(interpret("Apart[Divide[1, 2]]").unwrap(), "1/2");
+    assert_eq!(interpret("Apart[1/(-3 x)]").unwrap(), "-1/3*1/x");
+    assert_eq!(
+      interpret("Apart[(x^2 + 1)/(x - 1)]").unwrap(),
+      "1 + 2/(-1 + x) + x"
+    );
+  }
+
+  // Reciprocal-of-sum terms order by base polynomial, constant term
+  // first — a bare-x base counts as constant 0 (wolframscript-verified).
+  #[test]
+  fn sum_reciprocal_term_order() {
+    assert_eq!(interpret("x + 1/(-1 + x)").unwrap(), "(-1 + x)^(-1) + x");
+    assert_eq!(interpret("x + 2/(-1 + x)").unwrap(), "2/(-1 + x) + x");
+    assert_eq!(interpret("x + 1/(1 + x)").unwrap(), "x + (1 + x)^(-1)");
+    assert_eq!(interpret("x^2 + 2/(-1 + x)").unwrap(), "2/(-1 + x) + x^2");
+    assert_eq!(
+      interpret("1/x + 1/(-1 + x)").unwrap(),
+      "(-1 + x)^(-1) + x^(-1)"
+    );
+    assert_eq!(
+      interpret("1/x + 1/(1 + x)").unwrap(),
+      "x^(-1) + (1 + x)^(-1)"
+    );
+  }
+
   #[test]
   fn apart_two_linear_factors() {
     assert_eq!(

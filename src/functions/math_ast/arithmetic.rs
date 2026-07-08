@@ -2618,6 +2618,12 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     return pa.cmp(&pb);
   }
 
+  // A reciprocal-of-a-sum term orders against other univariate terms in
+  // the same variable by base polynomial (see the helper).
+  if let Some(ord) = sum_recip_vs_univar_order(a, b) {
+    return ord;
+  }
+
   let (_, base_a) = decompose_term(a);
   let (_, base_b) = decompose_term(b);
 
@@ -3423,6 +3429,66 @@ fn cmp_is_call_like(e: &Expr) -> bool {
 
 /// `Power[base, n]` with a negative integer exponent, in either the
 /// FunctionCall or BinaryOp representation.
+/// A reciprocal-of-a-sum term (2/(-1+x), (1+x)^(-1)) orders against
+/// another univariate term in the same variable by comparing the BASE
+/// polynomials coefficient-wise from the constant term up, a bare-`x`
+/// base counting as constant 0: `(-1+x)^(-1) + x` keeps the reciprocal
+/// first, `x + (1+x)^(-1)` keeps x first, and `2/(-1+x) + x^2` leads
+/// with the reciprocal while `x^2/2 + 15/(8(1+2x))` trails it — all
+/// wolframscript-verified. Equal bases return None so the existing
+/// shared-denominator exponent rules decide.
+fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  use std::cmp::Ordering;
+  // (var, ascending base-polynomial coeffs, is_sum_reciprocal).
+  fn base_info(e: &Expr) -> Option<(String, Vec<i128>, bool)> {
+    let (_, base) = decompose_term(e);
+    if let Some((inner, _)) = cmp_neg_pow(&base) {
+      if cmp_is_sum_base(inner) {
+        let (v, c) = univar_int_coeffs(inner)?;
+        return Some((v, c, true));
+      }
+      if let Expr::Identifier(v) = inner {
+        return Some((v.clone(), vec![0, 1], false));
+      }
+      return None;
+    }
+    let var_power = |b: &Expr, e: &Expr| -> Option<String> {
+      match (b, e) {
+        (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => Some(v.clone()),
+        _ => None,
+      }
+    };
+    match &base {
+      Expr::Identifier(v) => Some((v.clone(), vec![0, 1], false)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        var_power(&args[0], &args[1]).map(|v| (v, vec![0, 1], false))
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => var_power(left, right).map(|v| (v, vec![0, 1], false)),
+      _ => None,
+    }
+  }
+  let (va, ca, ra) = base_info(a)?;
+  let (vb, cb, rb) = base_info(b)?;
+  if (!ra && !rb) || va != vb {
+    return None;
+  }
+  for i in 0..ca.len().max(cb.len()) {
+    let x = ca.get(i).copied().unwrap_or(0);
+    let y = cb.get(i).copied().unwrap_or(0);
+    match x.cmp(&y) {
+      Ordering::Equal => {}
+      ord => return Some(ord),
+    }
+  }
+  None
+}
+
 fn cmp_neg_pow(f: &Expr) -> Option<(&Expr, i128)> {
   match f {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {

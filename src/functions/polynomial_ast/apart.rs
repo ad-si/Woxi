@@ -65,6 +65,11 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match find_single_variable(&args[0]) {
       Some(v) => v,
       None => {
+        // A variable-free (numeric) argument is already apart:
+        // Apart[Divide[1, 2]] → 1/2, not the unevaluated call.
+        if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
+          return Ok(args[0].clone());
+        }
         return Ok(Expr::FunctionCall {
           name: "Apart".to_string(),
           args: args.to_vec().into(),
@@ -77,6 +82,15 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
+  // Apart's value is an ordinary expression: run the assembled sum
+  // through the evaluator so each term takes its canonical form
+  // (Apart[1/(-3 x)] prints -1/3*1/x, exactly like evaluating the
+  // input directly — the hand-built Divide tree printed -1/(3*x)).
+  let raw = apart_expr_raw(expr, var)?;
+  crate::evaluator::evaluate_expr_to_expr(&raw)
+}
+
+fn apart_expr_raw(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   // Extract numerator and denominator using the general-purpose extractor
   // which handles BinaryOp::Divide, Times[..., Power[..., -1]], etc.
   let (num, den) = super::together::extract_num_den(expr);
@@ -128,6 +142,53 @@ pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       if let Some(quot_coeffs) = poly_exact_divide(nc, dc) {
         return Ok(coeffs_to_expr(&quot_coeffs, var));
       }
+      // Rational-coefficient division, so a non-integer leading quotient
+      // decomposes too: Apart[(2 - 4 x)/(2 - 5 x)] → 4/5 - 2/(5*(-2 + 5*x)).
+      if let Some((quotient, remainder)) = poly_long_divide_rat(nc, dc) {
+        if remainder.iter().all(|&(n, _)| n == 0) {
+          return rat_coeffs_to_expr(&quotient, var);
+        }
+        let quot_expr = rat_coeffs_to_expr(&quotient, var)?;
+        // Clear the remainder's coefficient denominators into the
+        // fraction's denominator: r(x)/den = r_int(x)/(L*den), then let
+        // the proper-fraction path hoist the content and normalize signs.
+        let mut lcm: i128 = 1;
+        for &(_, d) in &remainder {
+          let g = i128_gcd(lcm, d);
+          lcm = match (lcm / g).checked_mul(d) {
+            Some(v) => v,
+            None => return apart_symbolic(&divide_expr, &num_expanded, &den, var),
+          };
+        }
+        let rem_int: Option<Vec<i128>> = remainder
+          .iter()
+          .map(|&(n, d)| n.checked_mul(lcm / d))
+          .collect();
+        let den_scaled: Option<Vec<i128>> =
+          dc.iter().map(|&c| c.checked_mul(lcm)).collect();
+        let (Some(rem_int), Some(den_scaled)) = (rem_int, den_scaled) else {
+          return apart_symbolic(&divide_expr, &num_expanded, &den, var);
+        };
+        let frac = Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(coeffs_to_expr(&rem_int, var)),
+          right: Box::new(coeffs_to_expr(&den_scaled, var)),
+        };
+        let apart_remainder = apart_proper_fraction(&frac, var)?;
+        // Splice the polynomial quotient in front of the partial-fraction
+        // terms as one flat sum so the result reads `q + f1 + f2`, not the
+        // parenthesized `q + (f1 + f2)`. A zero quotient is dropped rather
+        // than emitting a spurious `0 + …` term.
+        let mut parts = if matches!(quot_expr, Expr::Integer(0)) {
+          Vec::new()
+        } else {
+          vec![quot_expr]
+        };
+        flatten_plus(&apart_remainder, &mut parts);
+        return Ok(build_sum(parts));
+      }
+      // i128 overflow in the rational division: fall back to the
+      // integer-only division (best effort, matching the old behavior).
       let (quotient, remainder) = poly_long_divide(nc, dc);
       if remainder.iter().all(|&c| c == 0) {
         return Ok(coeffs_to_expr(&quotient, var));
@@ -140,11 +201,6 @@ pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         right: Box::new(den_expanded.clone()),
       };
       let apart_remainder = apart_proper_fraction(&frac, var)?;
-      // Splice the polynomial quotient in front of the partial-fraction
-      // terms as one flat sum so the result reads `q + f1 + f2`, not the
-      // parenthesized `q + (f1 + f2)`. A zero quotient (non-exact
-      // leading-coefficient division) is dropped rather than emitting a
-      // spurious `0 + …` term.
       let mut parts = if matches!(quot_expr, Expr::Integer(0)) {
         Vec::new()
       } else {
@@ -931,6 +987,123 @@ fn apart_repeated_roots(
 }
 
 /// Polynomial long division returning (quotient, remainder) as coefficient vectors
+fn i128_gcd(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = a % b;
+    a = b;
+    b = t;
+  }
+  if a == 0 { 1 } else { a }
+}
+
+/// Reduce n/d to lowest terms with a positive denominator.
+fn rat_reduce(n: i128, d: i128) -> (i128, i128) {
+  let g = i128_gcd(n, d);
+  let (mut n, mut d) = (n / g, d / g);
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  (n, d)
+}
+
+/// a - b*c over i128 fractions, reduced; None on overflow.
+fn rat_sub_mul(
+  a: (i128, i128),
+  b: (i128, i128),
+  c: (i128, i128),
+) -> Option<(i128, i128)> {
+  let bn = b.0.checked_mul(c.0)?;
+  let bd = b.1.checked_mul(c.1)?;
+  let (bn, bd) = rat_reduce(bn, bd);
+  let n = a.0.checked_mul(bd)?.checked_sub(bn.checked_mul(a.1)?)?;
+  let d = a.1.checked_mul(bd)?;
+  Some(rat_reduce(n, d))
+}
+
+/// Rational-coefficient polynomial long division: num/den → (quotient,
+/// remainder) as reduced (numerator, denominator) fraction pairs. Unlike
+/// `poly_long_divide` this never bails on a non-integer leading quotient
+/// (Apart[(2 - 4 x)/(2 - 5 x)] needs the quotient 4/5). Returns None on
+/// i128 overflow.
+fn poly_long_divide_rat(
+  num: &[i128],
+  den: &[i128],
+) -> Option<(Vec<(i128, i128)>, Vec<(i128, i128)>)> {
+  let n_deg = num.len();
+  let d_deg = den.len();
+  let lead_den = den[d_deg - 1];
+  if n_deg < d_deg || lead_den == 0 {
+    return None;
+  }
+  let mut remainder: Vec<(i128, i128)> =
+    num.iter().map(|&c| (c, 1)).collect();
+  let mut quotient: Vec<(i128, i128)> = vec![(0, 1); n_deg - d_deg + 1];
+
+  for i in (0..quotient.len()).rev() {
+    let rem_idx = i + d_deg - 1;
+    if rem_idx >= remainder.len() {
+      continue;
+    }
+    let q = rat_reduce(remainder[rem_idx].0, remainder[rem_idx].1 * lead_den);
+    quotient[i] = q;
+    for j in 0..d_deg {
+      remainder[i + j] = rat_sub_mul(remainder[i + j], q, (den[j], 1))?;
+    }
+  }
+  Some((quotient, remainder))
+}
+
+/// Build the polynomial expression for rational coefficients (ascending
+/// powers of `var`), evaluated so terms canonicalize.
+fn rat_coeffs_to_expr(
+  coeffs: &[(i128, i128)],
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  let mut terms: Vec<Expr> = Vec::new();
+  for (i, &(n, d)) in coeffs.iter().enumerate() {
+    if n == 0 {
+      continue;
+    }
+    let coeff = if d == 1 {
+      Expr::Integer(n)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
+      }
+    };
+    let term = match i {
+      0 => coeff,
+      _ => {
+        let var_pow = if i == 1 {
+          Expr::Identifier(var.to_string())
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(Expr::Identifier(var.to_string())),
+            right: Box::new(Expr::Integer(i as i128)),
+          }
+        };
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(coeff),
+          right: Box::new(var_pow),
+        }
+      }
+    };
+    terms.push(term);
+  }
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+}
+
 pub fn poly_long_divide(num: &[i128], den: &[i128]) -> (Vec<i128>, Vec<i128>) {
   let n_deg = num.len();
   let d_deg = den.len();
