@@ -1617,7 +1617,18 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     }
   }
 
-  let mut last_result = None;
+  // The outcome of the most recently executed statement. Expression results
+  // are kept as bare `Expr`s during the loop; the display pipeline (render
+  // passes, SVG typesetting, text formatting) runs once after the loop on
+  // whichever value actually becomes the program's output. Running it per
+  // statement typeset multi-million-cell intermediates just to throw the
+  // text away — `data = Import["big.csv"]; Length[data]` spent nearly all
+  // of its time formatting the discarded list.
+  enum StmtOutcome {
+    Display(syntax::Expr),
+    Text(String),
+  }
+  let mut last_result: Option<StmtOutcome> = None;
   let mut any_nonempty = false;
   let mut trailing_semicolon = false;
   let mut stmt_idx = 0;
@@ -1733,149 +1744,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             .cloned()
             .unwrap_or_else(|| syntax::Expr::Identifier("Null".to_string()));
         }
-        // If the result is an Image, render it as a PNG <img> tag
-        let result_expr = render_image_if_needed(result_expr);
-        // Render unevaluated Graphics[{...}] FunctionCalls to SVG (e.g.
-        // from VoronoiMesh, or Graphics that stayed symbolic for Show merging).
-        // Must run before other render passes that expect Expr::Graphics.
-        let result_expr = render_graphics_fc_if_needed(result_expr);
-        // Curve objects (PolarCurve, FilledPolarCurve) display as rendered
-        // graphics in visual hosts (playground, studio), like in Wolfram
-        // notebooks. The CLI keeps the symbolic echo to match wolframscript.
-        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          render_polar_curve_if_needed(result_expr)
-        } else {
-          result_expr
-        };
-        // If the result is a Sound built from Play[...] segments, synthesize a
-        // playable WAV and embed it as an <audio> element (visual hosts only —
-        // CLI mode keeps the Sound[...] expression, which renders as -Sound-).
-        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          render_sound_if_needed(result_expr)
-        } else {
-          result_expr
-        };
-        // If the result is an Audio object (file-backed or from sample data),
-        // capture it as playable audio so the visual hosts render a graphical
-        // audio player (CLI mode keeps the symbolic Audio[...] expression).
-        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          render_audio_if_needed(result_expr)
-        } else {
-          result_expr
-        };
-        // Render ComputationalMusic objects (MusicNote, MusicChord, …) as
-        // musical-staff SVGs (visual mode only — CLI keeps them symbolic).
-        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          render_music_if_needed(result_expr)
-        } else {
-          result_expr
-        };
-        // Render Molecule results as a 2-D structure diagram (visual mode
-        // only — the CLI keeps the symbolic Molecule[…] echo to match
-        // wolframscript).
-        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          render_molecule_if_needed(result_expr)
-        } else {
-          result_expr
-        };
-        // Render DateObject results (e.g. from RandomDate, Now) as the
-        // framed date panel Wolfram notebooks show (visual mode only —
-        // CLI keeps the symbolic form to match wolframscript).
-        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          render_date_object_if_needed(result_expr)
-        } else {
-          result_expr
-        };
-        // If the result is a Grid expression, render it as SVG (visual mode
-        // only — CLI mode keeps Grid[...] symbolic to match wolframscript).
-        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          render_grid_if_needed(result_expr)
-        } else {
-          result_expr
-        };
-        // If the result is a Dataset expression, render it as an SVG table
-        let result_expr = render_dataset_if_needed(result_expr);
-        // If the result is a Tabular expression, render it as an SVG table
-        let result_expr = render_tabular_if_needed(result_expr);
-        // In visual mode, render TableForm[list], MatrixForm[list], and Column[list] as SVGs
-        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          let result_expr = render_color_if_needed(result_expr);
-          let result_expr = render_tableform_if_needed(result_expr);
-          let result_expr = render_matrixform_if_needed(result_expr);
-          let result_expr = render_traditionalform_list_if_needed(result_expr);
-          let result_expr = render_column_if_needed(result_expr);
-          let result_expr = render_row_if_needed(result_expr);
-          let result_expr = render_treeform_if_needed(result_expr);
-          let result_expr = render_framed_if_needed(result_expr);
-          render_highlighted_if_needed(result_expr)
-        } else {
-          result_expr
-        };
-        // If the result is a list of Graphics objects, combine their SVGs
-        // (visual contexts only — plain `interpret` keeps the list shape so
-        // tests like Length[Table[Graphics[...], ...]] stay accurate).
-        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          render_graphics_list_if_needed(result_expr)
-        } else {
-          result_expr
-        };
-        // Top-level `Return[val]` (from Block/Module/While/For catching
-        // an internal Return) displays as the bare value `val`, matching
-        // wolframscript's REPL. The symbolic form is preserved when the
-        // Return wrapper is held (e.g. inside ToString[…, InputForm]).
-        let result_expr = match &result_expr {
-          syntax::Expr::FunctionCall { name, args }
-            if name == "Return" && args.len() == 1 =>
-          {
-            args[0].clone()
-          }
-          _ => result_expr,
-        };
-        // Generate SVG rendering of the result for playground display
-        generate_output_svg(&result_expr);
-        // Stash the top-level Expr so `%` / `Out[]` in a subsequent
-        // evaluation resolves to this cell's result. We only do this when
-        // output history is enabled — visual mode (e.g. woxi-studio) or the
-        // terminal REPL (`woxi repl`). Plain command-line semantics (a fresh
-        // process per evaluation, where `%` collapses to `Out[0]`) are
-        // preserved — matching wolframscript.
+        // Keep `%` / `Out[]` history per statement (notebook semantics:
+        // `2+2` then `% + 1` within one cell sees the intermediate 4). The
+        // final statement's entry is overwritten with the post-render value
+        // by the deferred display pipeline below.
         if output_history_enabled() {
           set_last_output(result_expr.clone());
         }
-        // In visual mode (playground), unwrap StandardForm/InputForm wrappers
-        // so they display like in a Wolfram notebook.
-        // CLI mode preserves wrappers to match wolframscript behavior.
-        let is_visual = VISUAL_MODE.with(|v| *v.borrow());
-        let output_text = if is_visual {
-          match &result_expr {
-            syntax::Expr::FunctionCall { name, args }
-              if name == "StandardForm" && args.len() == 1 =>
-            {
-              syntax::expr_to_output(&args[0])
-            }
-            syntax::Expr::FunctionCall { name, args }
-              if name == "InputForm" && args.len() == 1 =>
-            {
-              syntax::expr_to_input_form(&args[0])
-            }
-            syntax::Expr::FunctionCall { name, args }
-              if name == "Quantity" && args.len() == 2 =>
-            {
-              syntax::quantity_to_visual_string(&args[0], &args[1])
-            }
-            _ => syntax::top_level_output(&result_expr),
-          }
-        } else {
-          syntax::top_level_output(&result_expr)
-        };
-        // Convert to output string (strips quotes from strings for display).
-        // Use "\0" sentinel for the Null symbol so consumers can suppress it
-        // without confusing it with the string "Null".
-        if matches!(&result_expr, syntax::Expr::Identifier(s) if s == "Null") {
-          last_result = Some("\0".to_string());
-        } else {
-          last_result = Some(output_text);
-        }
+        last_result = Some(StmtOutcome::Display(result_expr));
         any_nonempty = true;
         // A Return inside a multi-statement program propagates past any
         // remaining statements — drop them and emit the Return value.
@@ -1885,27 +1761,27 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       }
       ProgramStmt::FunctionDefinition(node) => {
         match store_function_definition(node.clone())? {
-          Some(s) => last_result = Some(s),
-          None => last_result = Some("\0".to_string()),
+          Some(s) => last_result = Some(StmtOutcome::Text(s)),
+          None => last_result = Some(StmtOutcome::Text("\0".to_string())),
         }
         any_nonempty = true;
       }
       ProgramStmt::TagSetDelayed(node) => {
         store_tag_set_delayed(node.clone(), false)?;
-        last_result = Some("\0".to_string());
+        last_result = Some(StmtOutcome::Text("\0".to_string()));
         any_nonempty = true;
       }
       ProgramStmt::TagSet(node) => {
         if let Some(rhs_str) = store_tag_set_delayed(node.clone(), true)? {
-          last_result = Some(rhs_str);
+          last_result = Some(StmtOutcome::Text(rhs_str));
         } else {
-          last_result = Some("\0".to_string());
+          last_result = Some(StmtOutcome::Text("\0".to_string()));
         }
         any_nonempty = true;
       }
       ProgramStmt::TagUnset(node) => {
         execute_tag_unset(node.clone())?;
-        last_result = Some("\0".to_string());
+        last_result = Some(StmtOutcome::Text("\0".to_string()));
         any_nonempty = true;
       }
       ProgramStmt::TrailingSemicolon => {
@@ -1914,6 +1790,21 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     }
     stmt_idx += 1;
   }
+
+  // Deferred display pipeline: render/format only the value that becomes
+  // the program's output (see the StmtOutcome comment above). A trailing
+  // semicolon suppresses display entirely, so `Import["big.csv"];` never
+  // pays for formatting the discarded table.
+  let last_result: Option<String> = match last_result {
+    None => None,
+    Some(StmtOutcome::Text(s)) => Some(s),
+    Some(StmtOutcome::Display(_)) if trailing_semicolon => {
+      Some("\0".to_string())
+    }
+    Some(StmtOutcome::Display(result_expr)) => {
+      Some(format_top_level_result(result_expr))
+    }
+  };
 
   // Print consolidated unimplemented-function warning to stderr (top-level only)
   // Uses get_warnings_for_display() to avoid re-printing messages already shown by emit_message.
@@ -1931,6 +1822,156 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     }
   } else {
     Err(InterpreterError::EmptyInput)
+  }
+}
+
+/// Run the display pipeline on a top-level statement's evaluated value:
+/// render passes (Image/Graphics/Dataset/... wrappers), SVG typesetting for
+/// visual hosts, `%` history, and the final text formatting. Returns the
+/// output string ("\0" for Null, i.e. suppressed display).
+fn format_top_level_result(result_expr: syntax::Expr) -> String {
+  // If the result is an Image, render it as a PNG <img> tag
+  let result_expr = render_image_if_needed(result_expr);
+  // Render unevaluated Graphics[{...}] FunctionCalls to SVG (e.g.
+  // from VoronoiMesh, or Graphics that stayed symbolic for Show merging).
+  // Must run before other render passes that expect Expr::Graphics.
+  let result_expr = render_graphics_fc_if_needed(result_expr);
+  // Curve objects (PolarCurve, FilledPolarCurve) display as rendered
+  // graphics in visual hosts (playground, studio), like in Wolfram
+  // notebooks. The CLI keeps the symbolic echo to match wolframscript.
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    render_polar_curve_if_needed(result_expr)
+  } else {
+    result_expr
+  };
+  // If the result is a Sound built from Play[...] segments, synthesize a
+  // playable WAV and embed it as an <audio> element (visual hosts only —
+  // CLI mode keeps the Sound[...] expression, which renders as -Sound-).
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    render_sound_if_needed(result_expr)
+  } else {
+    result_expr
+  };
+  // If the result is an Audio object (file-backed or from sample data),
+  // capture it as playable audio so the visual hosts render a graphical
+  // audio player (CLI mode keeps the symbolic Audio[...] expression).
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    render_audio_if_needed(result_expr)
+  } else {
+    result_expr
+  };
+  // Render ComputationalMusic objects (MusicNote, MusicChord, …) as
+  // musical-staff SVGs (visual mode only — CLI keeps them symbolic).
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    render_music_if_needed(result_expr)
+  } else {
+    result_expr
+  };
+  // Render Molecule results as a 2-D structure diagram (visual mode
+  // only — the CLI keeps the symbolic Molecule[…] echo to match
+  // wolframscript).
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    render_molecule_if_needed(result_expr)
+  } else {
+    result_expr
+  };
+  // Render DateObject results (e.g. from RandomDate, Now) as the
+  // framed date panel Wolfram notebooks show (visual mode only —
+  // CLI keeps the symbolic form to match wolframscript).
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    render_date_object_if_needed(result_expr)
+  } else {
+    result_expr
+  };
+  // If the result is a Grid expression, render it as SVG (visual mode
+  // only — CLI mode keeps Grid[...] symbolic to match wolframscript).
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    render_grid_if_needed(result_expr)
+  } else {
+    result_expr
+  };
+  // If the result is a Dataset expression, render it as an SVG table
+  let result_expr = render_dataset_if_needed(result_expr);
+  // If the result is a Tabular expression, render it as an SVG table
+  let result_expr = render_tabular_if_needed(result_expr);
+  // In visual mode, render TableForm[list], MatrixForm[list], and Column[list] as SVGs
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    let result_expr = render_color_if_needed(result_expr);
+    let result_expr = render_tableform_if_needed(result_expr);
+    let result_expr = render_matrixform_if_needed(result_expr);
+    let result_expr = render_traditionalform_list_if_needed(result_expr);
+    let result_expr = render_column_if_needed(result_expr);
+    let result_expr = render_row_if_needed(result_expr);
+    let result_expr = render_treeform_if_needed(result_expr);
+    let result_expr = render_framed_if_needed(result_expr);
+    render_highlighted_if_needed(result_expr)
+  } else {
+    result_expr
+  };
+  // If the result is a list of Graphics objects, combine their SVGs
+  // (visual contexts only — plain `interpret` keeps the list shape so
+  // tests like Length[Table[Graphics[...], ...]] stay accurate).
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    render_graphics_list_if_needed(result_expr)
+  } else {
+    result_expr
+  };
+  // Top-level `Return[val]` (from Block/Module/While/For catching
+  // an internal Return) displays as the bare value `val`, matching
+  // wolframscript's REPL. The symbolic form is preserved when the
+  // Return wrapper is held (e.g. inside ToString[…, InputForm]).
+  let result_expr = match &result_expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Return" && args.len() == 1 =>
+    {
+      args[0].clone()
+    }
+    _ => result_expr,
+  };
+  // Generate SVG rendering of the result for playground display
+  generate_output_svg(&result_expr);
+  // Stash the top-level Expr so `%` / `Out[]` in a subsequent
+  // evaluation resolves to this cell's result. We only do this when
+  // output history is enabled — visual mode (e.g. woxi-studio) or the
+  // terminal REPL (`woxi repl`). Plain command-line semantics (a fresh
+  // process per evaluation, where `%` collapses to `Out[0]`) are
+  // preserved — matching wolframscript.
+  if output_history_enabled() {
+    set_last_output(result_expr.clone());
+  }
+  // In visual mode (playground), unwrap StandardForm/InputForm wrappers
+  // so they display like in a Wolfram notebook.
+  // CLI mode preserves wrappers to match wolframscript behavior.
+  let is_visual = VISUAL_MODE.with(|v| *v.borrow());
+  let output_text = if is_visual {
+    match &result_expr {
+      syntax::Expr::FunctionCall { name, args }
+        if name == "StandardForm" && args.len() == 1 =>
+      {
+        syntax::expr_to_output(&args[0])
+      }
+      syntax::Expr::FunctionCall { name, args }
+        if name == "InputForm" && args.len() == 1 =>
+      {
+        syntax::expr_to_input_form(&args[0])
+      }
+      syntax::Expr::FunctionCall { name, args }
+        if name == "Quantity" && args.len() == 2 =>
+      {
+        syntax::quantity_to_visual_string(&args[0], &args[1])
+      }
+      _ => syntax::top_level_output(&result_expr),
+    }
+  } else {
+    syntax::top_level_output(&result_expr)
+  };
+  // Convert to output string (strips quotes from strings for display).
+  // Use "\0" sentinel for the Null symbol so consumers can suppress it
+  // without confusing it with the string "Null".
+  if matches!(&result_expr, syntax::Expr::Identifier(s) if s == "Null") {
+    "\0".to_string()
+  } else {
+    output_text
   }
 }
 
@@ -2960,7 +3001,56 @@ fn unwrap_form_wrappers(expr: &syntax::Expr) -> &syntax::Expr {
 
 /// Generate an SVG rendering of the result expression and capture it.
 /// This is used by the playground to display all results with proper formatting.
+/// Upper bound on the number of atomic tokens the output-SVG typesetter
+/// will process. A larger result (e.g. a full `Import` of a big CSV) would
+/// produce a multi-hundred-MB SVG that no host can usefully display; the
+/// visual hosts fall back to the plain-text rendering when no output SVG is
+/// captured.
+const OUTPUT_SVG_MAX_TOKENS: usize = 20_000;
+
+/// Count atomic tokens in `expr`, stopping early once `budget` is
+/// exhausted. Returns true when the expression is larger than the budget.
+fn expr_exceeds_token_budget(expr: &syntax::Expr, budget: &mut usize) -> bool {
+  use syntax::Expr;
+  if *budget == 0 {
+    return true;
+  }
+  match expr {
+    Expr::List(items) => {
+      items.iter().any(|e| expr_exceeds_token_budget(e, budget))
+    }
+    Expr::FunctionCall { args, .. } => {
+      *budget = budget.saturating_sub(1);
+      args.iter().any(|e| expr_exceeds_token_budget(e, budget))
+    }
+    Expr::Association(pairs) => pairs.iter().any(|(k, v)| {
+      expr_exceeds_token_budget(k, budget)
+        || expr_exceeds_token_budget(v, budget)
+    }),
+    Expr::BinaryOp { left, right, .. } => {
+      *budget = budget.saturating_sub(1);
+      expr_exceeds_token_budget(left, budget)
+        || expr_exceeds_token_budget(right, budget)
+    }
+    Expr::UnaryOp { operand, .. } => {
+      *budget = budget.saturating_sub(1);
+      expr_exceeds_token_budget(operand, budget)
+    }
+    _ => {
+      *budget = budget.saturating_sub(1);
+      false
+    }
+  }
+}
+
 fn generate_output_svg(expr: &syntax::Expr) {
+  // Very large results are not typeset: the box conversion + glyph layout +
+  // SVG string would each be orders of magnitude bigger than the data
+  // itself (this made large CSV `Import`s appear to hang in the browser).
+  let mut budget = OUTPUT_SVG_MAX_TOKENS;
+  if expr_exceeds_token_budget(expr, &mut budget) {
+    return;
+  }
   // Skip for Graphics/Image results (they already have captured SVG/HTML)
   if matches!(expr, syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" || s == "-Image-")
     || matches!(expr, syntax::Expr::Graphics { .. })

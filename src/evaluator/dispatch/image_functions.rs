@@ -30,6 +30,26 @@ fn import_path_spec(expr: &Expr) -> Option<String> {
   }
 }
 
+/// Match Import's second argument against the row/column subset shape
+/// `{"Data", rowspec}` or `{"Data", rowspec, colspec}` (specs being
+/// integers, spans, or All). Returns the row spec and optional column spec.
+fn import_data_spec_args(elem: &Expr) -> Option<(&Expr, Option<&Expr>)> {
+  let Expr::List(items) = elem else {
+    return None;
+  };
+  if !matches!(items.first(), Some(Expr::String(s)) if s == "Data") {
+    return None;
+  }
+  let is_spec = crate::functions::csv_ast::is_position_spec;
+  match items.len() {
+    2 if is_spec(&items[1]) => Some((&items[1], None)),
+    3 if is_spec(&items[1]) && is_spec(&items[2]) => {
+      Some((&items[1], Some(&items[2])))
+    }
+    _ => None,
+  }
+}
+
 /// Import an SVG file (local or URL) as a `Graphics` expression, matching
 /// wolframscript's vector import (which prints as `-Graphics-` in the CLI
 /// and renders as the SVG itself in visual hosts).
@@ -175,15 +195,7 @@ fn import_virtual(
 
   if ext == "csv" || ext == "tsv" {
     let rows: Vec<Vec<String>> = if ext == "tsv" {
-      let trimmed = content.strip_suffix('\n').unwrap_or(&content);
-      if trimmed.is_empty() {
-        Vec::new()
-      } else {
-        trimmed
-          .split('\n')
-          .map(|line| line.split('\t').map(|s| s.to_string()).collect())
-          .collect()
-      }
+      crate::functions::csv_ast::parse_tsv(&content)
     } else {
       crate::functions::csv_ast::parse_csv(&content)
     };
@@ -689,6 +701,34 @@ pub fn dispatch_image_functions(
         if let Expr::String(elem) = &args[1] {
           return Some(import_virtual(&path, Some(elem)));
         }
+        // Row/column subsets: Import[f, {"Data", rowspec(, colspec)}].
+        if matches!(ext.as_str(), "csv" | "tsv")
+          && let Some((row_spec, col_spec)) = import_data_spec_args(&args[1])
+        {
+          let Some(bytes) = crate::wasm::virtual_file(&path) else {
+            return Some(Err(InterpreterError::EvaluationError(format!(
+              "Import: cannot open \"{}\" in the browser. Only files attached to the conversation can be imported.",
+              path
+            ))));
+          };
+          let content = match String::from_utf8(bytes) {
+            Ok(c) => c,
+            Err(_) => {
+              return Some(Err(InterpreterError::EvaluationError(format!(
+                "Import: \"{}\" is not valid UTF-8 text",
+                path
+              ))));
+            }
+          };
+          let rows = if ext == "tsv" {
+            crate::functions::csv_ast::parse_tsv(&content)
+          } else {
+            crate::functions::csv_ast::parse_csv(&content)
+          };
+          return Some(crate::functions::csv_ast::csv_import_data_spec(
+            &rows, row_spec, col_spec,
+          ));
+        }
         // ROOT element paths resolve against the virtual file store.
         if let Expr::List(items) = &args[1] {
           let is_root_fmt =
@@ -789,6 +829,15 @@ pub fn dispatch_image_functions(
       }
 
       if ext == "csv" {
+        // Row/column subsets: Import[f, {"Data", rowspec(, colspec)}].
+        #[cfg(not(target_arch = "wasm32"))]
+        if !is_url
+          && let Some((row_spec, col_spec)) = import_data_spec_args(&args[1])
+        {
+          return Some(crate::functions::csv_ast::csv_import_file_data_spec(
+            &path, row_spec, col_spec,
+          ));
+        }
         let element = match &args[1] {
           Expr::String(e) => e.clone(),
           _ => {

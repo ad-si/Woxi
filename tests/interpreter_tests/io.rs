@@ -3822,6 +3822,103 @@ mod csv_import {
     );
   }
 
+  #[test]
+  fn import_csv_data_row_span() {
+    let path = csv_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", {{"Data", 1 ;; 2}}]"#)).unwrap(),
+      "{{date, name, fruit, quantity}, {2025-09-24, John, banana, 3}}"
+    );
+  }
+
+  #[test]
+  fn import_csv_data_single_row() {
+    let path = csv_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", {{"Data", 2}}]"#)).unwrap(),
+      "{2025-09-24, John, banana, 3}"
+    );
+  }
+
+  #[test]
+  fn import_csv_data_negative_row() {
+    let path = csv_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", {{"Data", -1}}]"#)).unwrap(),
+      "{2025-08-17, Anna, pear, 1}"
+    );
+  }
+
+  #[test]
+  fn import_csv_data_cell() {
+    let path = csv_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", {{"Data", 2, 3}}]"#)).unwrap(),
+      "banana"
+    );
+  }
+
+  #[test]
+  fn import_csv_data_column() {
+    let path = csv_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", {{"Data", All, 2}}]"#)).unwrap(),
+      "{name, John, Anna, Eve, Anna, John, Anna}"
+    );
+  }
+
+  #[test]
+  fn import_csv_data_row_span_with_step() {
+    let path = csv_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", {{"Data", 2 ;; 6 ;; 2, 4}}]"#))
+        .unwrap(),
+      "{3, 2, 6}"
+    );
+  }
+
+  #[test]
+  fn import_csv_data_open_ended_span() {
+    let path = csv_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", {{"Data", 6 ;; All}}]"#)).unwrap(),
+      "{{2025-10-11, John, blue berry, 6}, {2025-08-17, Anna, pear, 1}}"
+    );
+  }
+
+  #[test]
+  fn import_csv_data_out_of_range_row_fails() {
+    let path = csv_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", {{"Data", 99}}]"#)).unwrap(),
+      "$Failed"
+    );
+  }
+
+  /// Regression test for the super-linear large-CSV Import: a compound
+  /// statement whose intermediate result is the whole table must not
+  /// typeset/format that intermediate (only the final statement's value is
+  /// displayed). 20k rows finish in well under a second when linear.
+  #[test]
+  fn import_large_csv_dimensions() {
+    use std::io::Write;
+    let dir = std::env::temp_dir().join("woxi-large-csv-test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("large.csv");
+    let mut f = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
+    writeln!(f, "id,name,score").unwrap();
+    for i in 0..20_000 {
+      writeln!(f, "{i},row{i},{}.5", i % 100).unwrap();
+    }
+    drop(f);
+    let path = path.display().to_string();
+    assert_eq!(
+      interpret(&format!(r#"d = Import["{path}"]; Dimensions[d]"#)).unwrap(),
+      "{20001, 3}"
+    );
+    std::fs::remove_file(&path).ok();
+  }
+
   /// Minimal in-process HTTP server that serves a fixed CSV body on a single
   /// request, then shuts down. Returns the URL to hit.
   #[cfg(not(target_arch = "wasm32"))]
@@ -7005,9 +7102,13 @@ mod echo_label {
 mod find_list_tests {
   use super::*;
 
-  fn setup() -> String {
+  // Each test gets its own directory: the tests in this module run in
+  // parallel within one process, so a shared (pid-keyed) directory that
+  // setup() wipes first races — one test deletes the files while another
+  // is still reading them.
+  fn setup(subdir: &str) -> String {
     let base = std::env::temp_dir()
-      .join(format!("woxi_findlist_test_{}", std::process::id()));
+      .join(format!("woxi_findlist_test_{}_{subdir}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(&base).unwrap();
     std::fs::write(
@@ -7024,7 +7125,7 @@ mod find_list_tests {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn matching_lines() {
-    let b = setup();
+    let b = setup("matching_lines");
     for (input, expected) in [
       (
         format!(r#"FindList["{b}/sample.txt", "alpha"]"#),
@@ -7065,7 +7166,7 @@ mod find_list_tests {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn missing_files_and_messages() {
-    let b = setup();
+    let b = setup("missing_files_and_messages");
     let r =
       interpret_with_stdout(&format!(r#"FindList["{b}/nofile.txt", "alpha"]"#))
         .unwrap();
