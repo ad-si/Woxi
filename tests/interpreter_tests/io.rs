@@ -280,7 +280,7 @@ mod get {
 
   #[test]
   fn nonexistent_file() {
-    let path = temp_file("nonexistent_woxi_file.wl");
+    let path = temp_file("woxi_nonexistent_file.wl");
     let result = interpret(&format!("Get[\"{path}\"]")).unwrap();
     assert_eq!(result, "$Failed");
   }
@@ -2041,7 +2041,7 @@ mod read_string {
 
   #[test]
   fn nonexistent_file() {
-    let path = temp_file("nonexistent_woxi_file.wl");
+    let path = temp_file("woxi_nonexistent_file.wl");
     assert_eq!(
       interpret(&format!("ReadString[\"{path}\"]")).unwrap(),
       "$Failed"
@@ -5688,7 +5688,7 @@ mod cases {
   fn get_1() {
     // Use a test-unique filename: get_1 and get_2 otherwise both write to
     // `$TemporaryDirectory/example_file` and race under parallel test runs.
-    let path = format!("{0}example_file_get2", std::path::MAIN_SEPARATOR_STR);
+    let path = format!("{0}woxi_example_file_get1", std::path::MAIN_SEPARATOR_STR);
     assert_case(
       &format!(
         r#"filename = $TemporaryDirectory <> "{path}"; Put[x + y, filename]; Get[filename]"#
@@ -5698,7 +5698,7 @@ mod cases {
   }
   #[test]
   fn get_2() {
-    let path = format!("{0}example_file_get2", std::path::MAIN_SEPARATOR_STR);
+    let path = format!("{0}woxi_example_file_get2", std::path::MAIN_SEPARATOR_STR);
     assert_case(
       &format!(
         r#"filename = $TemporaryDirectory <> "{path}"; Put[x + y, filename]; Get[filename]; filename = $TemporaryDirectory <> "{path}"; Put[x + y, 2x^2 + 4z!, Cos[x] + I Sin[x], filename]; Get[filename]"#
@@ -6041,7 +6041,7 @@ mod cases {
     // element forms but not the \`"Elements"\` introspection query).
     // Verify a tractable element form on a freshly written tmp .txt
     // file: \`Import[path, "Lines"]\` returns the file's lines.
-    let path = temp_file("woxi-case3270.txt");
+    let path = temp_file("woxi_case3270.txt");
     assert_case(
       &format!(
         r#"tmp = OpenWrite["{path}"]; WriteString[tmp, "hello\nworld\n"]; Close[tmp]; Import["{path}", "Lines"]"#
@@ -6054,7 +6054,7 @@ mod cases {
     // Duplicate \`ExampleData\`-dependent situation as case 3270 with
     // an extra \`"Lines"\` call. Same fix: use a tmp .txt with known
     // content and verify Import\` reads the lines.
-    let path = temp_file("woxi-case3271.txt");
+    let path = temp_file("woxi_case3271.txt");
     assert_case(
       &format!(
         r#"tmp = OpenWrite["{path}"]; WriteString[tmp, "alpha\nbeta\ngamma\n"]; Close[tmp]; Import["{path}", "Lines"]"#
