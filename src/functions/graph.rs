@@ -2461,6 +2461,118 @@ pub fn transitive_closure_graph_ast(
   })
 }
 
+/// TransitiveReductionGraph[graph | edgeList] → the minimal graph with the
+/// same reachability relation. For a directed acyclic graph this reduction is
+/// unique and is a subgraph: edge (u, v) is kept iff there is no longer path
+/// from u to v. Graphs containing a directed cycle (including any undirected
+/// edge or self-loop) are left unevaluated, since Wolfram's reduction there
+/// relies on an internal strongly-connected-component convention.
+pub fn transitive_reduction_graph_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "TransitiveReductionGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  // Accept raw edge lists like wolframscript does.
+  let graph = match &args[0] {
+    Expr::List(_) => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![args[0].clone()].into(),
+      })?
+    }
+    other => other.clone(),
+  };
+  let (vertices, edges) = match &graph {
+    Expr::FunctionCall { name, args: gargs }
+      if name == "Graph" && gargs.len() >= 2 =>
+    {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v.clone(), e.clone()),
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+
+  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+  let n = vertices.len();
+  let mut adjacency = vec![vec![false; n]; n];
+  for edge in edges.iter() {
+    if let Expr::FunctionCall { name, args: eargs } = edge
+      && eargs.len() == 2
+      && let (Some(&u), Some(&v)) =
+        (index.get(&key(&eargs[0])), index.get(&key(&eargs[1])))
+    {
+      match name.as_str() {
+        // An undirected edge behaves like a 2-cycle, which triggers the
+        // strongly-connected fallback below.
+        "DirectedEdge" => adjacency[u][v] = true,
+        "UndirectedEdge" => {
+          adjacency[u][v] = true;
+          adjacency[v][u] = true;
+        }
+        _ => return Ok(unevaluated(args)),
+      }
+    } else {
+      return Ok(unevaluated(args));
+    }
+  }
+
+  // Floyd-Warshall reachability over paths of length >= 1.
+  let mut reach = adjacency.clone();
+  for k in 0..n {
+    for i in 0..n {
+      if reach[i][k] {
+        for j in 0..n {
+          if reach[k][j] {
+            reach[i][j] = true;
+          }
+        }
+      }
+    }
+  }
+
+  // Any vertex that can reach itself lies on a cycle → not a DAG.
+  if (0..n).any(|i| reach[i][i]) {
+    return Ok(unevaluated(args));
+  }
+
+  // Keep a direct edge (i, j) only when no intermediate vertex w provides an
+  // alternative path i → w → j (safe for a DAG: such a w cannot use edge
+  // (i, j) without creating a cycle).
+  let mut reduced_edges: Vec<Expr> = Vec::new();
+  for i in 0..n {
+    for j in 0..n {
+      if !adjacency[i][j] {
+        continue;
+      }
+      let redundant =
+        (0..n).any(|w| w != i && w != j && reach[i][w] && reach[w][j]);
+      if !redundant {
+        reduced_edges.push(Expr::FunctionCall {
+          name: "DirectedEdge".to_string(),
+          args: vec![vertices[i].clone(), vertices[j].clone()].into(),
+        });
+      }
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![Expr::List(vertices), Expr::List(reduced_edges.into())].into(),
+  })
+}
+
 /// ReverseGraph[g] - the graph with every directed edge reversed (undirected
 /// edges are unchanged). The vertex list is kept as is; the edges come out
 /// stably sorted by (source position, target position) in the vertex list —

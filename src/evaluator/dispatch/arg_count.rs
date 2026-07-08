@@ -1316,6 +1316,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ExponentialPowerDistribution" => Some((3, 3)),
     "CommonestFilter" => Some((2, 2)),
     "TransitiveClosureGraph" => Some((1, 1)),
+    "TransitiveReductionGraph" => Some((1, 1)),
     "BipartiteGraphQ" => Some((1, 1)),
     "GlobalClusteringCoefficient" => Some((1, 1)),
     "MeanDegreeConnectivity" => Some((1, 1)),

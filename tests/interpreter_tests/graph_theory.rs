@@ -2403,6 +2403,83 @@ mod transitive_closure_graph {
   }
 }
 
+mod transitive_reduction_graph {
+  use super::*;
+
+  #[test]
+  fn directed_acyclic_reductions() {
+    // The redundant long edge 1->3 is dropped (reachable via 1->2->3).
+    assert_eq!(
+      interpret(
+        "EdgeList[TransitiveReductionGraph[Graph[{1 -> 2, 2 -> 3, 1 -> 3}]]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d5} 2, 2 \u{f3d5} 3}"
+    );
+    // A longer chain drops both shortcut edges 1->3 and 1->4.
+    assert_eq!(
+      interpret(
+        "EdgeList[TransitiveReductionGraph[Graph[{1 -> 2, 2 -> 3, 3 -> 4, 1 -> 4, 1 -> 3}]]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d5} 2, 2 \u{f3d5} 3, 3 \u{f3d5} 4}"
+    );
+    // Symbolic vertices behave identically.
+    assert_eq!(
+      interpret(
+        "EdgeList[TransitiveReductionGraph[Graph[{a -> b, b -> c, a -> c}]]]"
+      )
+      .unwrap(),
+      "{a \u{f3d5} b, b \u{f3d5} c}"
+    );
+  }
+
+  #[test]
+  fn output_is_sorted_by_vertex_order() {
+    // Edges given out of order still come back sorted by (source, target).
+    assert_eq!(
+      interpret(
+        "EdgeList[TransitiveReductionGraph[Graph[{1 -> 3, 2 -> 3, 1 -> 2}]]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d5} 2, 2 \u{f3d5} 3}"
+    );
+  }
+
+  #[test]
+  fn disconnected_components() {
+    assert_eq!(
+      interpret(
+        "EdgeList[TransitiveReductionGraph[Graph[{1 -> 2, 3 -> 4, 3 -> 5, 4 -> 5}]]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d5} 2, 3 \u{f3d5} 4, 4 \u{f3d5} 5}"
+    );
+  }
+
+  #[test]
+  fn graph_form_and_raw_edge_lists() {
+    assert_eq!(
+      interpret("TransitiveReductionGraph[Graph[{1 -> 2, 2 -> 3, 1 -> 3}]]")
+        .unwrap(),
+      "Graph[<3>, <2>]"
+    );
+    // Raw edge lists wrap into a Graph first, like TransitiveClosureGraph.
+    assert_eq!(
+      interpret("TransitiveReductionGraph[{1 -> 2, 2 -> 3, 1 -> 3}]").unwrap(),
+      "Graph[<3>, <2>]"
+    );
+  }
+
+  #[test]
+  fn invalid_input_unevaluated() {
+    assert_eq!(
+      interpret("TransitiveReductionGraph[x]").unwrap(),
+      "TransitiveReductionGraph[x]"
+    );
+  }
+}
+
 mod find_independent_vertex_set {
   use super::*;
 

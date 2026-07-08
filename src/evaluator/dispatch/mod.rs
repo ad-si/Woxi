@@ -4253,6 +4253,11 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::transitive_closure_graph_ast(args);
   }
 
+  // TransitiveReductionGraph[graph | edgeList] → minimal same-reachability graph
+  if name == "TransitiveReductionGraph" && args.len() == 1 {
+    return crate::functions::graph::transitive_reduction_graph_ast(args);
+  }
+
   // ReverseGraph[graph] → graph with all directed edges reversed
   if name == "ReverseGraph" && !args.is_empty() && args.len() <= 2 {
     return crate::functions::graph::reverse_graph_ast(args);
