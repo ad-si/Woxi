@@ -412,6 +412,7 @@ pub(super) fn canonicalize_quotient_sign(
   let factors = flatten_times_args(std::slice::from_ref(den));
   let mut sign: i128 = 1;
   let mut flipped_any = false;
+  let mut any_flipped_content_one = false;
   let mut new_factors: Vec<Expr> = Vec::new();
   for f in &factors {
     let (base, exp) = match f {
@@ -454,7 +455,51 @@ pub(super) fn canonicalize_quotient_sign(
       if exp % 2 != 0 {
         sign = -sign;
       }
+      let base_content = super::factor::rational_content(
+        &collect_additive_terms(&base),
+      )
+      .map(|(n, d, _)| (n.abs(), d))
+      .unwrap_or((1, 1));
+      if base_content == (1, 1) {
+        any_flipped_content_one = true;
+      }
       let neg_base = negate(&base);
+      // Simplify displays a flipped denominator with its integer content
+      // factored out (term-wise division; the whole-sum quotient would
+      // stay an unreduced Divide): Simplify[(2-x)/(5-5x)] →
+      // (-2+x)/(5*(-1+x)).
+      let neg_base = if require_negative_numerator
+        && base_content.1 == 1
+        && base_content.0 > 1
+      {
+        let divided: Result<Vec<Expr>, _> =
+          collect_additive_terms(&neg_base)
+            .iter()
+            .map(|t| {
+              crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(t.clone()),
+                right: Box::new(Expr::Integer(base_content.0)),
+              })
+            })
+            .collect();
+        match divided {
+          Ok(terms) => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(base_content.0),
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: terms.into(),
+              },
+            ]
+            .into(),
+          },
+          Err(_) => neg_base,
+        }
+      } else {
+        neg_base
+      };
       new_factors.push(if exp == 1 {
         neg_base
       } else {
@@ -480,16 +525,34 @@ pub(super) fn canonicalize_quotient_sign(
       super::simplify::collect_variables(num, &mut vars);
       vars.is_empty()
     };
-    // The numerator must be able to absorb the flip outright: a constant,
-    // or a sum whose every term is nonpositive. A mixed-sign numerator
-    // with a merely negative LEADING coefficient stays put —
-    // Simplify[(5-4x-3x^2)/(5-5x)] keeps its form (differential fuzzer,
-    // seed 1783537668073123846).
-    let all_nonpositive_num = collect_additive_terms(num).iter().all(|t| {
+    // The numerator must be able to absorb the flip: a constant, a sum
+    // whose every term is nonpositive, or — for a mixed-sign numerator
+    // with a negative leading coefficient — only when the flip is
+    // "free": the flipped denominator factor has integer content 1, or
+    // the numerator carries a bare unit-negative monomial (-x) whose
+    // sign disappears. Simplify[(2-x)/(1-x)] → (-2+x)/(-1+x) and
+    // Simplify[(2-x)/(5-5x)] → (-2+x)/(5*(-1+x)) flip, but
+    // Simplify[(5-4x-3x^2)/(5-5x)] and Simplify[(5-4x)/(5-5x)] keep
+    // their form (differential fuzzer, seed 1783537668073123846; all
+    // wolframscript-verified).
+    let num_terms = collect_additive_terms(num);
+    let all_nonpositive_num = num_terms.iter().all(|t| {
       super::factor::rational_content(std::slice::from_ref(t))
         .is_some_and(|(n, _, _)| n <= 0)
     });
-    if sign >= 0 || (!constant_num && !all_nonpositive_num) {
+    let mixed_leading_neg = additive_content_sign(num) == Some(-1);
+    let has_unit_neg_term = num_terms.iter().any(|t| {
+      let mut vars = std::collections::HashSet::new();
+      super::simplify::collect_variables(t, &mut vars);
+      !vars.is_empty()
+        && super::factor::rational_content(std::slice::from_ref(t))
+          .is_some_and(|(_, _, coeffs)| coeffs.first() == Some(&(-1, 1)))
+    });
+    let mixed_flip_is_free = mixed_leading_neg
+      && (any_flipped_content_one || has_unit_neg_term);
+    if sign >= 0
+      || (!constant_num && !all_nonpositive_num && !mixed_flip_is_free)
+    {
       return None;
     }
   }

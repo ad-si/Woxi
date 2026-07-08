@@ -6349,18 +6349,25 @@ pub(crate) fn simplify_division_impl(
     let fc = leaf_count(&factored);
     let bc = leaf_count(&basic);
     let num_ok = factor_num || {
-      // Numerator must be unchanged (modulo the sign an outer Minus
-      // pulls out: Factor gives -(x^2/(-1+x)^3) for
-      // x^2/(1-3x+3x^2-x^3), whose extracted numerator is -x^2).
+      // Cancel keeps sums expanded: reject a factored numerator that
+      // SPLITS the numerator into more non-constant factors than it had
+      // (4x+2x^2 → 2x(2+x) is out) but keep content extraction over an
+      // existing product (Sqrt[1-x^2]*(-3+15x^2) → 3*Sqrt[…]*(-1+5x^2)),
+      // perfect-power collapses ((1+2n+n^2) → (1+n)^2), and full
+      // cancellations.
       let (bn, _) = super::together::extract_num_den(&basic);
       let (fn_, _) = super::together::extract_num_den(&factored);
-      let neg_fn = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(fn_.clone()),
-      })
-      .unwrap_or_else(|_| fn_.clone());
-      exprs_equal(&bn, &fn_) || exprs_equal(&bn, &neg_fn)
+      let non_constant_count = |e: &Expr| {
+        super::together::flatten_times_args(std::slice::from_ref(e))
+          .iter()
+          .filter(|f| {
+            let mut vars = std::collections::HashSet::new();
+            collect_variables(f, &mut vars);
+            !vars.is_empty()
+          })
+          .count()
+      };
+      non_constant_count(&fn_) <= non_constant_count(&bn)
     };
     if fc <= bc && num_ok && factored_den_acceptable(&basic, &factored) {
       return finish_quotient_sign(factored, canonicalize_sign);
