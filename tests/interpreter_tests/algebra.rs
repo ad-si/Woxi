@@ -592,6 +592,31 @@ mod simplify {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
 
+  // wolframscript's Simplify flips p/q → (-p)/(-q) only when the
+  // denominator's leading sign is negative AND the numerator is constant
+  // or itself negative-signed (found by the differential fuzzer).
+  #[test]
+  fn quotient_sign_flip_is_conditional() {
+    assert_eq!(
+      interpret("Simplify[(-1 - 5 x - 5 x^2)/(-5 + 2 x - 5 x^2 - 2 x^3)]")
+        .unwrap(),
+      "(1 + 5*x + 5*x^2)/(5 - 2*x + 5*x^2 + 2*x^3)"
+    );
+    assert_eq!(interpret("Simplify[3/(1 - x)]").unwrap(), "-3/(-1 + x)");
+    assert_eq!(
+      interpret("Simplify[(2 - x)/(1 - x)]").unwrap(),
+      "(-2 + x)/(-1 + x)"
+    );
+    assert_eq!(interpret("Simplify[-x/(1 - x)]").unwrap(), "x/(-1 + x)");
+    // Positive-leading numerators keep the quotient untouched.
+    assert_eq!(
+      interpret("Simplify[(1 + x)/(1 - x)]").unwrap(),
+      "(1 + x)/(1 - x)"
+    );
+    assert_eq!(interpret("Simplify[x/(1 - x)]").unwrap(), "x/(1 - x)");
+    assert_eq!(interpret("Simplify[1/(1 - x)]").unwrap(), "(1 - x)^(-1)");
+  }
+
   // Numeric-content factoring follows the digit-weighted complexity with
   // a negative-count tie-break (found by the differential fuzzer:
   // Simplify[3 - 3x] over-factored to -3*(-1 + x)).
@@ -1615,7 +1640,8 @@ mod cancel {
     );
   }
 
-  // Shared integer content cancels without any sign normalization
+  // Shared integer content cancels; the numerator keeps its sign as long
+  // as the denominator's leading coefficient is already positive
   // (wolframscript-verified).
   #[test]
   fn integer_content_cancels_without_sign_flip() {
@@ -1628,6 +1654,28 @@ mod cancel {
       "(1 - 2*x)/(-1 + x)"
     );
     assert_eq!(interpret("Cancel[(2 - 4 x)/2]").unwrap(), "1 - 2*x");
+  }
+
+  // wolframscript's Cancel canonicalizes the quotient so the denominator's
+  // leading (highest-degree) coefficient is positive, the numerator
+  // absorbing the sign; bare reciprocals are exempt.
+  #[test]
+  fn quotient_denominator_sign_canonicalization() {
+    assert_eq!(
+      interpret("Cancel[(-4 - 3 x^2)/(4 + x - 4 x^2)]").unwrap(),
+      "(4 + 3*x^2)/(-4 - x + 4*x^2)"
+    );
+    assert_eq!(
+      interpret("Cancel[(2 - 4 x)/(2 - 2 x)]").unwrap(),
+      "(-1 + 2*x)/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Cancel[(1 + x)/(1 - x)]").unwrap(),
+      "(-1 - x)/(-1 + x)"
+    );
+    assert_eq!(interpret("Cancel[x/(1 - x)]").unwrap(), "-(x/(-1 + x))");
+    assert_eq!(interpret("Cancel[2/(2 - 2 x)]").unwrap(), "(1 - x)^(-1)");
+    assert_eq!(interpret("Cancel[1/(1 - x)]").unwrap(), "(1 - x)^(-1)");
   }
 }
 
@@ -1834,6 +1882,68 @@ mod together {
   #[test]
   fn together_basic() {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
+  }
+
+  // wolframscript canonicalizes every variable-bearing sum factor of the
+  // denominator to a positive sign (univariate: leading coefficient;
+  // multivariate: first non-numeric canonical term), the numerator
+  // absorbing the accumulated sign. Bare reciprocals stay untouched.
+  #[test]
+  fn denominator_sign_canonicalization() {
+    assert_eq!(
+      interpret("Together[(-5 + 3 x + 5 x^2)/(-1 - x)]").unwrap(),
+      "(5 - 3*x - 5*x^2)/(1 + x)"
+    );
+    assert_eq!(
+      interpret("Together[1/(2 - x) + 1/(1 + x)]").unwrap(),
+      "-3/((-2 + x)*(1 + x))"
+    );
+    assert_eq!(
+      interpret("Together[x/((1 - x)*(2 + x))]").unwrap(),
+      "-(x/((-1 + x)*(2 + x)))"
+    );
+    assert_eq!(
+      interpret("Together[1/((1 - x)*(2 - x))]").unwrap(),
+      "1/((-2 + x)*(-1 + x))"
+    );
+    assert_eq!(
+      interpret("Together[1/(1 - x) + 1/(1 - x)^2]").unwrap(),
+      "(2 - x)/(-1 + x)^2"
+    );
+    assert_eq!(interpret("Together[1/(1 - x)]").unwrap(), "(1 - x)^(-1)");
+    assert_eq!(interpret("Together[2/(1 - x)]").unwrap(), "-2/(-1 + x)");
+  }
+
+  // Multivariate denominators flip on the sign of the first non-numeric
+  // canonical term, not the highest-degree term (wolframscript-verified:
+  // b - a*c and a*c - d both stay, d - a*c flips).
+  #[test]
+  fn multivariate_denominator_sign_uses_first_symbolic_term() {
+    assert_eq!(interpret("Together[x/(b - a*c)]").unwrap(), "x/(b - a*c)");
+    assert_eq!(interpret("Together[x/(a*c - d)]").unwrap(), "x/(a*c - d)");
+    assert_eq!(
+      interpret("Together[x/(d - a*c)]").unwrap(),
+      "-(x/(a*c - d))"
+    );
+    assert_eq!(
+      interpret("Together[(1 + a)/(y - x)]").unwrap(),
+      "(-1 - a)/(x - y)"
+    );
+    assert_eq!(
+      interpret("Together[(1 + a)/(3 - c*y)]").unwrap(),
+      "(-1 - a)/(-3 + c*y)"
+    );
+    assert_eq!(interpret("Together[x/(a - c*y)]").unwrap(), "x/(a - c*y)");
+    // Complex-coefficient sums never flip.
+    assert_eq!(
+      interpret("Simplify[1/(1 - I x) + 1/(1 + I x)]").unwrap(),
+      "2/(1 + x^2)"
+    );
+    // Slot-bearing quotients keep the form Solve constructed.
+    assert_eq!(
+      interpret("Solve[(a*x + b)/(c*x + d) == y, x]").unwrap(),
+      "{{x -> (-b + d*y)/(a - c*y)}}"
+    );
   }
 
   // Together cancels a common polynomial factor between numerator and a bare

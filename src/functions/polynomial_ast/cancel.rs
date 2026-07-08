@@ -17,6 +17,17 @@ pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn cancel_expr(expr: &Expr) -> Expr {
+  cancel_expr_impl(expr, true)
+}
+
+/// Like `cancel_expr` but without the wolframscript Cancel quotient-sign
+/// canonicalization, for callers whose WL counterpart keeps the raw
+/// quotient sign (D[ArcCoth[x^2], x] stays (2*x)/(1 - x^4)).
+pub fn cancel_expr_keep_quotient_sign(expr: &Expr) -> Expr {
+  cancel_expr_impl(expr, false)
+}
+
+fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
   // Rationals are already in simplest form
   if matches!(expr, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
   {
@@ -81,9 +92,12 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
         }
 
         // No usable polynomial GCD — still cancel the positive integer
-        // content shared by numerator and denominator, with no sign
-        // normalization: wolframscript gives Cancel[(2-4x)/(2+2x)] →
-        // (1-2x)/(1+x) and Cancel[(2-4x)/(-2+2x)] → (1-2x)/(-1+x).
+        // content shared by numerator and denominator: wolframscript gives
+        // Cancel[(2-4x)/(2+2x)] → (1-2x)/(1+x) and Cancel[(2-4x)/(-2+2x)]
+        // → (1-2x)/(-1+x). The reduced quotient is then normalized so the
+        // denominator's leading coefficient is positive — except for bare
+        // reciprocals: Cancel[(2-4x)/(2-2x)] → (-1+2x)/(-1+x) but
+        // Cancel[2/(2-2x)] → (1-x)^(-1).
         let num_content = num_coeffs
           .iter()
           .copied()
@@ -96,8 +110,17 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
           .fold(0i128, gcd_i128);
         let g = gcd_i128(num_content, den_content);
         if g > 1 {
-          let new_num: Vec<i128> = num_coeffs.iter().map(|c| c / g).collect();
-          let new_den: Vec<i128> = den_coeffs.iter().map(|c| c / g).collect();
+          let mut new_num: Vec<i128> =
+            num_coeffs.iter().map(|c| c / g).collect();
+          let mut new_den: Vec<i128> =
+            den_coeffs.iter().map(|c| c / g).collect();
+          if canonicalize_sign
+            && new_den.last().map(|&c| c < 0).unwrap_or(false)
+            && new_num != [1]
+          {
+            new_num = new_num.iter().map(|c| -c).collect();
+            new_den = new_den.iter().map(|c| -c).collect();
+          }
           let num_expr = coeffs_to_expr(&new_num, &var);
           if new_den == [1] {
             return num_expr;
@@ -357,10 +380,13 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
                 return new_num_expr;
               }
               // Recursively cancel in case more simplification is possible
-              return cancel_expr(&crate::functions::math_ast::make_divide(
-                new_num_expr,
-                new_den_expr,
-              ));
+              return cancel_expr_impl(
+                &crate::functions::math_ast::make_divide(
+                  new_num_expr,
+                  new_den_expr,
+                ),
+                canonicalize_sign,
+              );
             }
           }
         }
@@ -380,8 +406,21 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
         return result;
       }
 
-      // Fall back to simplify_division
-      return simplify_division(&num, &den);
+      // Fall back to simplify_division; wolframscript's Cancel still
+      // canonicalizes an untouched quotient's denominator sign:
+      // Cancel[(-4-3x^2)/(4+x-4x^2)] → (4+3x^2)/(-4-x+4x^2).
+      let fallback =
+        super::simplify::simplify_division_impl(&num, &den, canonicalize_sign);
+      if canonicalize_sign {
+        let (fnum, fden) = super::together::extract_num_den(&fallback);
+        if !matches!(&fden, Expr::Integer(1))
+          && let Some(canon) =
+            super::together::canonicalize_quotient_sign(&fnum, &fden, false)
+        {
+          return canon;
+        }
+      }
+      return fallback;
     }
   }
   expand_and_combine(expr)

@@ -6163,6 +6163,17 @@ fn try_simplify_trig_ratio(num: &Expr, den: &Expr) -> Option<Expr> {
 }
 
 pub fn simplify_division(num: &Expr, den: &Expr) -> Expr {
+  simplify_division_impl(num, den, true)
+}
+
+/// `canonicalize_sign: false` skips the wolframscript Simplify/Cancel
+/// quotient-sign canonicalization for callers whose WL counterpart keeps
+/// the raw quotient (D[ArcCoth[x^2], x] stays (2*x)/(1 - x^4)).
+pub(crate) fn simplify_division_impl(
+  num: &Expr,
+  den: &Expr,
+  canonicalize_sign: bool,
+) -> Expr {
   // If same expression, return 1
   if expr_to_string(num) == expr_to_string(den) {
     return Expr::Integer(1);
@@ -6194,6 +6205,23 @@ pub fn simplify_division(num: &Expr, den: &Expr) -> Expr {
     result
   } else {
     crate::functions::math_ast::make_divide(num_expanded, den_expanded)
+  };
+
+  // wolframscript's Simplify flips p/q → (-p)/(-q) when the denominator's
+  // content sign is negative and the numerator is constant or itself
+  // negative-signed: Simplify[(-1-5x)/(3-x)] → (1+5x)/(-3+x) and
+  // Simplify[3/(1-x)] → -3/(-1+x), but Simplify[(1+x)/(1-x)] and
+  // Simplify[x/(1-x)] keep their form.
+  let basic = if canonicalize_sign {
+    let (bn, bd) = super::together::extract_num_den(&basic);
+    if matches!(&bd, Expr::Integer(1)) {
+      basic
+    } else {
+      super::together::canonicalize_quotient_sign(&bn, &bd, true)
+        .unwrap_or(basic)
+    }
+  } else {
+    basic
   };
 
   // Try factoring the result: Factor[p/q] = Factor[p]/Factor[q] often produces

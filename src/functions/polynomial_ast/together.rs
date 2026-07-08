@@ -15,10 +15,25 @@ pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Thread over List
   if let Expr::List(items) = &args[0] {
-    let results: Vec<Expr> = items.iter().map(together_expr).collect();
+    let results: Vec<Expr> = items
+      .iter()
+      .map(|e| canonicalize_together_result(&together_expr(e)))
+      .collect();
     return Ok(Expr::List(results.into()));
   }
-  Ok(together_expr(&args[0]))
+  Ok(canonicalize_together_result(&together_expr(&args[0])))
+}
+
+/// Apply the wolframscript quotient-sign canonicalization to a Together
+/// result. Only the user-facing `together_ast` does this — internal callers
+/// (e.g. the Simplify pipeline, whose flip rule is weaker) keep the raw
+/// quotient sign from `together_expr`.
+fn canonicalize_together_result(expr: &Expr) -> Expr {
+  let (num, den) = extract_num_den(expr);
+  if matches!(&den, Expr::Integer(1)) {
+    return expr.clone();
+  }
+  canonicalize_quotient_sign(&num, &den, false).unwrap_or_else(|| expr.clone())
 }
 
 /// Extract numerator and denominator from an expression.
@@ -325,6 +340,202 @@ pub(super) fn negate_expr(expr: &Expr) -> Expr {
   }
 }
 
+/// Sign a quotient canonicalization treats an additive expression as
+/// carrying. Univariate sums use the highest-degree term's coefficient
+/// (Cancel[(2+x)/(4+x-4x^2)] → (-2-x)/(-4-x+4x^2)); multivariate sums use
+/// the first non-numeric term in canonical order (Together[x/(b - a*c)]
+/// and x/(a*c - d) keep their denominators, x/(d - a*c) flips to a*c - d,
+/// (1+a)/(y-x) flips to x-y). None when a coefficient is non-rational.
+fn additive_content_sign(expr: &Expr) -> Option<i128> {
+  let terms = collect_additive_terms(expr);
+  let mut vars = std::collections::HashSet::new();
+  super::simplify::collect_variables(expr, &mut vars);
+  if vars.len() <= 1 {
+    return super::factor::rational_content(&terms)
+      .map(|(n, _, _)| if n < 0 { -1 } else { 1 });
+  }
+  for t in &terms {
+    let mut tv = std::collections::HashSet::new();
+    super::simplify::collect_variables(t, &mut tv);
+    if tv.is_empty() {
+      continue;
+    }
+    return super::factor::rational_content(std::slice::from_ref(t))
+      .map(|(n, _, _)| if n < 0 { -1 } else { 1 });
+  }
+  None
+}
+
+/// wolframscript canonicalizes the sign of evaluated quotients: every
+/// variable-bearing sum factor of the denominator gets a positive content
+/// sign — Together[x/((1-x)*(2+x))] → -(x/((-1+x)*(2+x))), including Power
+/// bases (Together[1/(1-x) + 1/(1-x)^2] → (2-x)/(-1+x)^2) — and the
+/// numerator absorbs the accumulated sign. A numerator of literal 1 cannot
+/// absorb an odd flip: Cancel[2/(2-2x)] stays (1-x)^(-1).
+///
+/// With `require_negative_numerator` (Simplify's weaker rule) the flip only
+/// happens when the numerator is constant or its own content sign is
+/// negative: Simplify[(-1-5x)/(3-x)] → (1+5x)/(-3+x) and Simplify[3/(1-x)]
+/// → -3/(-1+x), but Simplify[(1+x)/(1-x)] keeps its form.
+///
+/// Returns None when nothing changes.
+pub(super) fn canonicalize_quotient_sign(
+  num: &Expr,
+  den: &Expr,
+  require_negative_numerator: bool,
+) -> Option<Expr> {
+  // Slot-bearing quotients (e.g. the Möbius inverse (-b + #1*d)/(a - #1*c)
+  // built by InverseFunction) keep the form their construction produced.
+  fn contains_slot(e: &Expr) -> bool {
+    match e {
+      Expr::Slot(_) | Expr::SlotSequence(_) => true,
+      Expr::FunctionCall { args, .. } => args.iter().any(contains_slot),
+      Expr::List(items) => items.iter().any(contains_slot),
+      Expr::BinaryOp { left, right, .. } => {
+        contains_slot(left) || contains_slot(right)
+      }
+      Expr::UnaryOp { operand, .. } => contains_slot(operand),
+      _ => false,
+    }
+  }
+  if contains_slot(num) || contains_slot(den) {
+    return None;
+  }
+  let negate = |e: &Expr| {
+    expand_and_combine(&Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(e.clone()),
+    })
+  };
+
+  let factors = flatten_times_args(std::slice::from_ref(den));
+  let mut sign: i128 = 1;
+  let mut flipped_any = false;
+  let mut new_factors: Vec<Expr> = Vec::new();
+  for f in &factors {
+    let (base, exp) = match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => match right.as_ref() {
+        Expr::Integer(e) => ((**left).clone(), *e),
+        _ => {
+          new_factors.push(f.clone());
+          continue;
+        }
+      },
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        match &args[1] {
+          Expr::Integer(e) => (args[0].clone(), *e),
+          _ => {
+            new_factors.push(f.clone());
+            continue;
+          }
+        }
+      }
+      other => (other.clone(), 1),
+    };
+    // Complex-coefficient sums are never flipped: rational_content would
+    // read `1 - I*x` as negative content (the -I coefficient), but
+    // wolframscript keeps Simplify[1/(1-I x) + 1/(1+I x)] → 2/(1+x^2).
+    let flippable_sum = collect_additive_terms(&base).len() >= 2
+      && !super::reduce::contains_imaginary(&base)
+      && {
+        let mut vars = std::collections::HashSet::new();
+        super::simplify::collect_variables(&base, &mut vars);
+        !vars.is_empty()
+      };
+    if flippable_sum && additive_content_sign(&base) == Some(-1) {
+      flipped_any = true;
+      if exp % 2 != 0 {
+        sign = -sign;
+      }
+      let neg_base = negate(&base);
+      new_factors.push(if exp == 1 {
+        neg_base
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(neg_base),
+          right: Box::new(Expr::Integer(exp)),
+        }
+      });
+    } else {
+      new_factors.push(f.clone());
+    }
+  }
+  if !flipped_any {
+    return None;
+  }
+  if sign < 0 && matches!(num, Expr::Integer(1)) {
+    return None;
+  }
+  if require_negative_numerator {
+    let constant_num = {
+      let mut vars = std::collections::HashSet::new();
+      super::simplify::collect_variables(num, &mut vars);
+      vars.is_empty()
+    };
+    if sign >= 0 || (!constant_num && additive_content_sign(num) != Some(-1)) {
+      return None;
+    }
+  }
+
+  let new_den = if new_factors.len() == 1 {
+    new_factors.remove(0)
+  } else {
+    crate::functions::math_ast::sort_symbolic_factors(&mut new_factors);
+    build_product(new_factors)
+  };
+
+  let new_num = if sign >= 0 {
+    num.clone()
+  } else if collect_additive_terms(num).len() >= 2
+    || matches!(num, Expr::Integer(_) | Expr::Real(_) | Expr::UnaryOp { .. })
+    || matches!(num, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+    || additive_content_sign(num) == Some(-1)
+  {
+    negate(num)
+  } else {
+    // A sign-free monomial/product numerator can't absorb the flip; pull
+    // the sign out of the whole quotient: -(x/((-1+x)*(2+x))).
+    return Some(Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(num.clone()),
+        right: Box::new(new_den),
+      }),
+    });
+  };
+  // A numerator flipped to exactly 1 displays as a reciprocal power:
+  // Simplify[-1/(1-x)] → (-1+x)^(-1).
+  if matches!(&new_num, Expr::Integer(1))
+    && !matches!(
+      &new_den,
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      }
+    )
+  {
+    return Some(Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(new_den),
+      right: Box::new(Expr::Integer(-1)),
+    });
+  }
+  Some(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(new_num),
+    right: Box::new(new_den),
+  })
+}
+
 /// Recursively run `together_expr` on sub-expressions so that nested fractions
 /// inside Power bases, Divide operands, and Times factors are combined first.
 /// Also rewrites `1 / (a/b)` → `b/a` (Power[Divide[a,b], -1]) so the outer
@@ -509,7 +720,7 @@ fn try_reduce_to_polynomial(num: &Expr, den: &Expr) -> Option<Expr> {
   if vars.len() > 2 {
     return None;
   }
-  let cancelled = cancel_expr(&frac);
+  let cancelled = cancel_expr_keep_quotient_sign(&frac);
   if matches!(extract_num_den(&cancelled).1, Expr::Integer(1)) {
     Some(factor_numeric_content(&cancelled))
   } else {
@@ -593,7 +804,8 @@ pub fn together_expr(expr: &Expr) -> Expr {
       // A lone fraction over a bare polynomial denominator may still share a
       // polynomial factor (e.g. (x^2+x)/(x^2-1) -> x/(x-1)); cancel the GCD.
       if is_plus_polynomial(&ed) && single_variable_fraction(&en, &ed) {
-        let cancelled = super::cancel::cancel_expr(&expr_rec);
+        let cancelled =
+          super::cancel::cancel_expr_keep_quotient_sign(&expr_rec);
         if expr_to_string(&cancelled) != expr_to_string(&expr_rec) {
           return cancelled;
         }
@@ -761,7 +973,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
         left: Box::new(simplified_num.clone()),
         right: Box::new(simplified_den.clone()),
       };
-      let cancelled = super::cancel::cancel_expr(&frac);
+      let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
       if expr_to_string(&cancelled) != expr_to_string(&frac) {
         return cancelled;
       }

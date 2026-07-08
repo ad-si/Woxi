@@ -1285,6 +1285,20 @@ mod differentiate_plus_times {
     assert_eq!(interpret("D[x + 1, x]").unwrap(), "1");
   }
 
+  // The quotient-rule sum orders the squared-denominator term first
+  // (shared denominator base, ascending exponent), and D does NOT
+  // canonicalize the quotient signs — both wolframscript-verified
+  // (found by the differential fuzzer).
+  #[test]
+  fn d_rational_quotient_term_order_and_sign() {
+    assert_eq!(
+      interpret("D[(4 - x - 5 x^2)/(3 - 2 x - x^2 - 2 x^3), x]").unwrap(),
+      "-(((-2 - 2*x - 6*x^2)*(4 - x - 5*x^2))/(3 - 2*x - x^2 - 2*x^3)^2) + \
+       (-1 - 10*x)/(3 - 2*x - x^2 - 2*x^3)"
+    );
+    assert_eq!(interpret("D[ArcCoth[x^2], x]").unwrap(), "(2*x)/(1 - x^4)");
+  }
+
   #[test]
   fn high_order_derivative_of_x_x_does_not_panic() {
     // Previously D[x^x, {x, 10}] aborted with a "comparison function does

@@ -270,11 +270,15 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Differentiate the expression and cancel common factors in fractions
   let result = differentiate(&args[0], &var_name)?;
-  // Only apply Cancel when the result is a fraction to avoid expanding products
+  // Only apply Cancel when the result is a fraction to avoid expanding
+  // products. Keep the raw quotient sign: wolframscript's D does not
+  // canonicalize (D[ArcCoth[x^2], x] stays (2*x)/(1 - x^4)).
   let (_, den) =
     crate::functions::polynomial_ast::together::extract_num_den(&result);
   if !matches!(&den, Expr::Integer(1)) {
-    Ok(crate::functions::polynomial_ast::cancel_expr(&result))
+    Ok(
+      crate::functions::polynomial_ast::cancel_expr_keep_quotient_sign(&result),
+    )
   } else {
     Ok(result)
   }
