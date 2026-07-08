@@ -7107,8 +7107,10 @@ mod find_list_tests {
   // setup() wipes first races — one test deletes the files while another
   // is still reading them.
   fn setup(subdir: &str) -> String {
-    let base = std::env::temp_dir()
-      .join(format!("woxi_findlist_test_{}_{subdir}", std::process::id()));
+    let base = std::env::temp_dir().join(format!(
+      "woxi_findlist_test_{}_{subdir}",
+      std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(&base).unwrap();
     std::fs::write(
