@@ -3408,14 +3408,28 @@ mod expand_threading {
     assert_eq!(interpret("Norm[{3, 4}, 3]").unwrap(), "91^(1/3)");
   }
 
-  // Wolfram's machine-precision Plus fold is input-order-sensitive: exact
-  // terms coalesce into ONE exact sum (seeded first iff the first numeric
-  // term is exact), reals fold in input order, and numerified constants
+  // Wolfram's machine-precision Plus fold is input-order-sensitive: every
+  // numeric term (exact or real) converts to f64 individually — exact
+  // terms are NOT coalesced first — and the terms combine as a balanced
+  // divide-and-conquer tree (ceil split), while numerified constants
   // (Pi, E, …) fold one at a time at the very end — they never cancel
   // symbolically once a Real is present. All wolframscript-verified
-  // (differential fuzzer, seed 1783515124284605000).
+  // (differential fuzzer, seeds 1783515124284605000 and
+  // 1783520505113402110).
   #[test]
   fn plus_machine_fold_order() {
+    // Balanced tree: 22-59 and 34+14.6 combine first, so the integers do
+    // not coalesce to an exact -3 (which would give exactly 11.6).
+    assert_eq!(
+      interpret("Plus[22, -59, 34, 14.6]").unwrap(),
+      "11.600000000000001"
+    );
+    // Exact terms convert to f64 individually: the 1 is absorbed into
+    // 2^60 in machine precision (exact coalescing would give 1.5).
+    assert_eq!(
+      interpret("Plus[2^60, 1, -2^60, 0.5]").unwrap(),
+      "0."
+    );
     assert_eq!(
       interpret("Plus[-7.4, Subtract[38, Pi]]").unwrap(),
       "27.45840734641021"
@@ -3465,9 +3479,90 @@ mod expand_threading {
       interpret("Total[{0.1, 0.7, 0.3}]").unwrap(),
       "1.0999999999999999"
     );
-    // Exact rationals sum exactly regardless of position.
     assert_eq!(interpret("Total[{1/3, 1/3, 1/3, 0.5}]").unwrap(), "1.5");
     assert_eq!(interpret("Total[{0.5, 1/3, 1/3, 1/3}]").unwrap(), "1.5");
+    // The balanced tree sums Table[0.1, 10] to exactly 1. (left-to-right
+    // gives 0.9999999999999999) but leaves the half-ulp drift at 7 terms.
+    assert_eq!(interpret("Total[Table[0.1, 10]]").unwrap(), "1.");
+    assert_eq!(
+      interpret("Total[Table[0.1, 7]]").unwrap(),
+      "0.7000000000000001"
+    );
+    assert_eq!(
+      interpret("Total[{1, 2.2, 3, 4.4, 5, 6.6}]").unwrap(),
+      "22.2"
+    );
+    assert_eq!(
+      interpret("Total[{1, 2.2, 3, 4.4, 5, 6.6, 7}]").unwrap(),
+      "29.200000000000003"
+    );
+  }
+
+  // Mean is Total[list]/Length[list] on top of the machine tree fold
+  // (differential fuzzer, seed 1783520505113402110).
+  #[test]
+  fn mean_machine_fold_order() {
+    assert_eq!(
+      interpret("Mean[{22, -59, 34, 14.6}]").unwrap(),
+      "2.9000000000000004"
+    );
+    assert_eq!(
+      interpret("Mean[{0, -59, 34, 14.6}]").unwrap(),
+      "-2.5999999999999996"
+    );
+  }
+
+  // Wolfram's machine-precision Times mirrors Plus's balanced tree for
+  // the Real factors, but — unlike Plus — coalesces the exact factors
+  // into ONE exact product, which seeds the tree fold iff the first
+  // numeric factor is exact and multiplies after the reals otherwise.
+  // Numerified constants (Pi, E, …) multiply last, one at a time. All
+  // wolframscript-verified (differential fuzzer, seed
+  // 1783530056735545937).
+  #[test]
+  fn times_machine_fold_order() {
+    assert_eq!(
+      interpret("Times[0.1, 0.2, 0.3]").unwrap(),
+      "0.006000000000000001"
+    );
+    assert_eq!(interpret("Times[0.3, 0.2, 0.1]").unwrap(), "0.006");
+    // Balanced tree over the reals: left-to-right would give
+    // 0.0005040000000000001.
+    assert_eq!(
+      interpret("Times[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]").unwrap(),
+      "0.000504"
+    );
+    // Exact product seeds the fold when the first numeric factor is exact…
+    assert_eq!(
+      interpret("Times[3, 1/7, 0.1, 0.2, 0.3]").unwrap(),
+      "0.0025714285714285713"
+    );
+    // …and multiplies after the reals otherwise.
+    assert_eq!(
+      interpret("Times[0.1, 0.2, 3, 1/7, 0.3]").unwrap(),
+      "0.0025714285714285717"
+    );
+    assert_eq!(
+      interpret("Times[1.5, 2, 3, 0.1]").unwrap(),
+      "0.9000000000000001"
+    );
+    // Constants numerify at the end, one at a time (no Pi*Pi collapse
+    // before the reals combine).
+    assert_eq!(
+      interpret("Times[0.1, Pi, 0.3, -Pi]").unwrap(),
+      "-0.2960881320326807"
+    );
+    // The shrunk differential-fuzzer reproducer: exact -36 * (-6179/56)
+    // coalesces exactly before the real factor multiplies in.
+    assert_eq!(
+      interpret(
+        "Times[-36, Subtract[Subtract[Subtract[Divide[-13, 8], -56], \
+         Plus[83, Divide[-16, 7]]], 84], Subtract[Divide[Divide[17, 1], \
+         67], -17.5]]"
+      )
+      .unwrap(),
+      "70521.62526652453"
+    );
   }
 
   #[test]

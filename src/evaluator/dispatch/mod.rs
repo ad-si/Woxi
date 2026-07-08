@@ -629,11 +629,14 @@ pub fn evaluate_function_call_ast_inner(
   };
 
   // Apply Orderless attribute: sort arguments into canonical order.
-  // Plus is exempt: Wolfram's machine-precision fold is input-order-
-  // sensitive (Plus[0.1, 0.7, 0.3] → 1.0999999999999999 but
-  // Plus[0.1, 0.3, 0.7] → 1.1), so plus_ast must see the original
-  // argument order; it canonically sorts its own symbolic output.
+  // Plus and Times are exempt: Wolfram's machine-precision fold is
+  // input-order-sensitive (Plus[0.1, 0.7, 0.3] → 1.0999999999999999 but
+  // Plus[0.1, 0.3, 0.7] → 1.1; Times[3, 1/7, 0.1, 0.2, 0.3] →
+  // 0.002571428571428571 but Times[0.1, 0.2, 3, 1/7, 0.3] →
+  // 0.0025714285714285717), so plus_ast/times_ast must see the original
+  // argument order; both canonically sort their own symbolic output.
   let has_orderless = name != "Plus"
+    && name != "Times"
     && (is_builtin_orderless(name)
       || crate::FUNC_ATTRS.with(|m| {
         m.borrow()

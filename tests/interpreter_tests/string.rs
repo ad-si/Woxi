@@ -5405,6 +5405,81 @@ mod fortran_form_division {
   }
 }
 
+// ToString's default form is OutputForm, which typesets in 2D: rationals
+// stack as numerator/bar/denominator, exponents ride one line above the
+// base. All strings wolframscript-verified (differential fuzzer, seed
+// 1783530056735545937).
+mod to_string_output_form_2d {
+  use super::*;
+
+  #[test]
+  fn rational_atoms() {
+    assert_eq!(interpret("ToString[3/4]").unwrap(), "3\n-\n4");
+    // The shrunk fuzzer reproducer: a negative rational parenthesizes
+    // with the sign on the bar row.
+    assert_eq!(interpret("ToString[-3/4]").unwrap(), "  3\n-(-)\n  4");
+    assert_eq!(
+      interpret("ToString[{Divide[1, -29]}]").unwrap(),
+      "   1\n{-(--)}\n   29"
+    );
+    assert_eq!(interpret("ToString[75/59]").unwrap(), "75\n--\n59");
+    assert_eq!(interpret("ToString[{1/2, 5}]").unwrap(), " 1\n{-, 5}\n 2");
+  }
+
+  #[test]
+  fn fractions_in_sums() {
+    assert_eq!(interpret("ToString[1/2 + x]").unwrap(), "1\n- + x\n2");
+    assert_eq!(interpret("ToString[1 - x/2]").unwrap(), "    x\n1 - -\n    2");
+    assert_eq!(
+      interpret("ToString[2/3 + x/5]").unwrap(),
+      "2   x\n- + -\n3   5"
+    );
+    assert_eq!(
+      interpret("ToString[1/2 - 1/(3 x)]").unwrap(),
+      "1    1\n- - ---\n2   3 x"
+    );
+  }
+
+  #[test]
+  fn products_and_quotients() {
+    // Positive rational coefficients merge into one fraction…
+    assert_eq!(interpret("ToString[3 x/4]").unwrap(), "3 x\n---\n 4");
+    assert_eq!(interpret("ToString[Pi/2]").unwrap(), "Pi\n--\n2");
+    assert_eq!(interpret("ToString[x/(2 y)]").unwrap(), " x\n---\n2 y");
+    assert_eq!(interpret("ToString[1/(2 x)]").unwrap(), " 1\n---\n2 x");
+    // …and a numerator of -1 pulls the sign out in front of the parens:
+    // rational coefficients keep the factors outside, integer ones inside.
+    assert_eq!(interpret("ToString[-x/3]").unwrap(), "  1\n-(-) x\n  3");
+    assert_eq!(interpret("ToString[-x/y]").unwrap(), "  x\n-(-)\n  y");
+    assert_eq!(interpret("ToString[-2/x]").unwrap(), "-2\n--\nx");
+    assert_eq!(interpret("ToString[-3 x/4]").unwrap(), "-3 x\n----\n 4");
+    assert_eq!(
+      interpret("ToString[(1 + x)/(1 - x)]").unwrap(),
+      "1 + x\n-----\n1 - x"
+    );
+  }
+
+  #[test]
+  fn powers() {
+    assert_eq!(interpret("ToString[x^2]").unwrap(), " 2\nx");
+    // Superscripts render one line high, even for rational exponents.
+    assert_eq!(interpret("ToString[x^(2/3)]").unwrap(), " 2/3\nx");
+    assert_eq!(interpret("ToString[x^(a/b)]").unwrap(), " a/b\nx");
+    // Exponent -1 and -1/2 display as fractions; other negative
+    // exponents keep the superscript with the sign.
+    assert_eq!(interpret("ToString[x^-1]").unwrap(), "1\n-\nx");
+    assert_eq!(
+      interpret("ToString[x^(-1/2)]").unwrap(),
+      "   1\n-------\nSqrt[x]"
+    );
+    assert_eq!(interpret("ToString[x^-2]").unwrap(), " -2\nx");
+    assert_eq!(interpret("ToString[x^(-3/2)]").unwrap(), " -(3/2)\nx");
+    // Inside a product every negative power moves into the denominator.
+    assert_eq!(interpret("ToString[3 x^-2]").unwrap(), "3\n--\n 2\nx");
+    assert_eq!(interpret("ToString[Sqrt[x]]").unwrap(), "Sqrt[x]");
+  }
+}
+
 mod to_string_hold_form {
   use super::*;
 
