@@ -1123,6 +1123,68 @@ mod fourier_dct_matrix {
   }
 }
 
+mod discrete_hilbert_transform {
+  use super::*;
+
+  // Even length: clean integer/half results (WL chops vanishing bins to the
+  // exact integer 0, keeping the rest as machine reals).
+  #[test]
+  fn even_length_clean_reals() {
+    assert_eq!(
+      interpret("DiscreteHilbertTransform[{1, 2, 3, 4}]").unwrap(),
+      "{1., -1., -1., 1.}"
+    );
+    assert_eq!(
+      interpret("DiscreteHilbertTransform[{1, 0, 0, 0}]").unwrap(),
+      "{0, 0.5, 0, -0.5}"
+    );
+  }
+
+  // Vanishing transforms come back as exact integer zeros.
+  #[test]
+  fn vanishing_gives_integer_zero() {
+    assert_eq!(interpret("DiscreteHilbertTransform[{2}]").unwrap(), "{0}");
+    assert_eq!(
+      interpret("DiscreteHilbertTransform[{1, -1}]").unwrap(),
+      "{0, 0}"
+    );
+    assert_eq!(
+      interpret("DiscreteHilbertTransform[{1, 1, 1, 1}]").unwrap(),
+      "{0, 0, 0, 0}"
+    );
+  }
+
+  // Odd length, irrational entries — rounded to sidestep last-digit float
+  // drift; the rounded rationals match wolframscript exactly.
+  #[test]
+  fn odd_length_rounded() {
+    assert_eq!(
+      interpret("Round[DiscreteHilbertTransform[{1, 0, 0}], 10^-10]").unwrap(),
+      "{0, 1443375673/2500000000, -1443375673/2500000000}"
+    );
+  }
+
+  // Even length, irrational entries — rounded for the same reason.
+  #[test]
+  fn even_length_rounded() {
+    assert_eq!(
+      interpret("Round[DiscreteHilbertTransform[{1, 2, 3, 4, 5, 6}], 10^-10]")
+        .unwrap(),
+      "{1443375673/625000000, -1443375673/1250000000, -1443375673/1250000000, \
+       -1443375673/1250000000, -1443375673/1250000000, 1443375673/625000000}"
+    );
+  }
+
+  // Non-numeric argument stays unevaluated.
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("DiscreteHilbertTransform[{a, b, c}]").unwrap(),
+      "DiscreteHilbertTransform[{a, b, c}]"
+    );
+  }
+}
+
 // Regression: a residual Integer(1) left behind when radicals cancel inside a
 // product (Sqrt[1/3]*Sqrt[3] = 1) must be dropped, not printed as `*1`.
 mod times_radical_cancellation {

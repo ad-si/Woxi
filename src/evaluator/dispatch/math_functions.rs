@@ -623,6 +623,11 @@ pub fn dispatch_math_functions(
     "FourierDCT" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::fourier_dct_ast(args));
     }
+    "DiscreteHilbertTransform" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::discrete_hilbert_transform_ast(
+        args,
+      ));
+    }
     "InverseFourier" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::inverse_fourier_ast(args));
     }

@@ -4169,6 +4169,86 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(exprs.into()))
 }
 
+/// DiscreteHilbertTransform[list] — the periodic discrete Hilbert transform
+/// of a list of real numbers. Computed via the DFT: multiply the spectrum by
+/// -i on the positive-frequency half and +i on the negative-frequency half
+/// (zeroing the DC and, for even length, the Nyquist bin), then invert.
+/// Matches Wolfram's Chop behaviour: entries that vanish become the exact
+/// integer 0 while the rest stay machine-precision reals.
+pub fn discrete_hilbert_transform_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DiscreteHilbertTransform".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // Emit the ::data message and leave the expression unevaluated, matching
+  // wolframscript's handling of empty or non-real arguments.
+  let data_err = || {
+    crate::emit_message(&format!(
+      "DiscreteHilbertTransform::data: {} is empty or not a real valued numerical array.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    unevaluated()
+  };
+
+  if args.len() != 1 {
+    return unevaluated();
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return data_err(),
+  };
+
+  // Real numeric entries only.
+  let mut data: Vec<(f64, f64)> = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    match try_extract_complex_float(item) {
+      Some((re, im)) if im == 0.0 => data.push((re, 0.0)),
+      _ => return data_err(),
+    }
+  }
+
+  let n = data.len();
+
+  // Forward DFT with no scaling: X[k] = sum_r u_r exp(-2 pi i r k / n).
+  let x = dft_core(&data, 1.0, -1.0, false);
+
+  // Apply the Hilbert multiplier in the frequency domain.
+  let mut y = vec![(0.0f64, 0.0f64); n];
+  for k in 1..n {
+    let (re, im) = x[k];
+    if 2 * k < n {
+      // -i * (re + i im) = im - i re
+      y[k] = (im, -re);
+    } else if 2 * k == n {
+      // Nyquist bin (even length): zeroed.
+      y[k] = (0.0, 0.0);
+    } else {
+      // +i * (re + i im) = -im + i re
+      y[k] = (-im, re);
+    }
+  }
+
+  // Inverse DFT (scaling 1/n) recovers the real-valued transform.
+  let out = dft_core(&y, 1.0, -1.0, true);
+
+  let exprs: Vec<Expr> = out
+    .iter()
+    .map(|&(re, _im)| {
+      if re.abs() < 1e-10 {
+        Expr::Integer(0)
+      } else {
+        Expr::Real(fourier_round(re))
+      }
+    })
+    .collect();
+  Ok(Expr::List(exprs.into()))
+}
+
 fn dst_core(u: &[f64], m: i64) -> Vec<f64> {
   let n = u.len();
   let nf = n as f64;
