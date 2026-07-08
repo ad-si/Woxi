@@ -4563,7 +4563,7 @@ AiryBiPrime,Derivative of Airy function Bi,✅,pure,2.0,4747
 AiryBiZero,n-th real zero of the Airy function Bi,✅,pure,6.0,4747
 AssociationFormat,,,,10.0,4747
 CircularSymplecticMatrixDistribution,,,,10.3,4747
-DateOverlapsQ,,,,11.1,4747
+DateOverlapsQ,True when two dates or date intervals share a common calendar span,✅,pure,11.1,4747
 DefineOutputStreamMethod,,,,9.0,4747
 Devices,,🚫,,10.0,4747
 EchoLabel,Operator form of labelled Echo: EchoLabel[label][expr] prints ">> label expr" and returns expr,✅,effectful,12.2,4747

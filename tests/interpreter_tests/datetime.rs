@@ -3012,6 +3012,105 @@ mod date_within_q_tests {
   }
 }
 
+mod date_overlaps_q_tests {
+  use super::*;
+
+  #[test]
+  fn same_day_overlaps() {
+    assert_eq!(
+      interpret(
+        "DateOverlapsQ[DateObject[{2020, 1, 1}], DateObject[{2020, 1, 1}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn adjacent_units_do_not_overlap() {
+    // Consecutive days share only their boundary instant → no overlap.
+    assert_eq!(
+      interpret(
+        "DateOverlapsQ[DateObject[{2020, 1, 1}], DateObject[{2020, 1, 2}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    // Consecutive months likewise.
+    assert_eq!(
+      interpret("DateOverlapsQ[DateObject[{2020, 1}], DateObject[{2020, 2}]]")
+        .unwrap(),
+      "False"
+    );
+    // A year and the following month do not overlap.
+    assert_eq!(
+      interpret("DateOverlapsQ[DateObject[{2020}], DateObject[{2021, 1}]]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn coarser_span_contains_finer() {
+    // A day inside a year overlaps that year.
+    assert_eq!(
+      interpret("DateOverlapsQ[DateObject[{2020}], DateObject[{2020, 6, 1}]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn intervals_overlap() {
+    assert_eq!(
+      interpret(
+        "DateOverlapsQ[DateInterval[{{2020, 1, 1}, {2020, 6, 1}}], \
+         DateInterval[{{2020, 3, 1}, {2020, 9, 1}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Disjoint intervals do not overlap.
+    assert_eq!(
+      interpret(
+        "DateOverlapsQ[DateInterval[{{2020, 1, 1}, {2020, 6, 1}}], \
+         DateInterval[{{2020, 7, 1}, {2020, 9, 1}}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    // Intervals sharing an interior day (jun1) overlap.
+    assert_eq!(
+      interpret(
+        "DateOverlapsQ[DateInterval[{{2020, 1, 1}, {2020, 6, 1}}], \
+         DateInterval[{{2020, 6, 1}, {2020, 9, 1}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn mixed_object_and_interval() {
+    assert_eq!(
+      interpret(
+        "DateOverlapsQ[DateObject[{2020, 3, 15}], \
+         DateInterval[{{2020, 1, 1}, {2020, 6, 1}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_date_argument_unevaluated() {
+    assert_eq!(
+      interpret("DateOverlapsQ[5, DateObject[{2020}]]").unwrap(),
+      "DateOverlapsQ[5, DateObject[{2020}, Year]]"
+    );
+  }
+}
+
 mod time_zone_offset_tests {
   use woxi::interpret;
 

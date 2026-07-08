@@ -3733,6 +3733,152 @@ pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// DateOverlapsQ[date1, date2] — True when the calendar spans of two
+/// DateObjects or DateIntervals share a common sub-span. Spans are half-open
+/// [start, end) in absolute seconds, so adjacent calendar units (e.g. two
+/// consecutive days) do not overlap, while intervals that share an interior
+/// unit do. Non-date arguments (or instant points) stay unevaluated.
+pub fn date_overlaps_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DateOverlapsQ".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+
+  // Numeric calendar components of a date list (padded to y, mo, d, h, mi, s).
+  fn components(list: &[Expr]) -> Option<(i64, i64, i64, i64, i64, f64)> {
+    if list.is_empty() || list.len() > 6 {
+      return None;
+    }
+    let mut c = [0.0f64; 6];
+    for (i, item) in list.iter().enumerate() {
+      c[i] = match item {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(v) => *v,
+        _ => return None,
+      };
+    }
+    Some((
+      c[0] as i64,
+      if list.len() > 1 { c[1] as i64 } else { 1 },
+      if list.len() > 2 { c[2] as i64 } else { 1 },
+      if list.len() > 3 { c[3] as i64 } else { 0 },
+      if list.len() > 4 { c[4] as i64 } else { 0 },
+      if list.len() > 5 { c[5] } else { 0.0 },
+    ))
+  }
+
+  // The instant that closes a span, given its opening components and the
+  // granularity level (1 = year … 6 = second).
+  fn end_of_unit(
+    (y, mo, d, h, mi, s): (i64, i64, i64, i64, i64, f64),
+    level: usize,
+  ) -> f64 {
+    match level {
+      1 => date_to_absolute_seconds(y + 1, 1, 1, 0, 0, 0.0),
+      2 => {
+        let (ny, nm) = if mo == 12 { (y + 1, 1) } else { (y, mo + 1) };
+        date_to_absolute_seconds(ny, nm, 1, 0, 0, 0.0)
+      }
+      3 => date_to_absolute_seconds(y, mo, d, h, mi, s) + 86400.0,
+      4 => date_to_absolute_seconds(y, mo, d, h, mi, s) + 3600.0,
+      5 => date_to_absolute_seconds(y, mo, d, h, mi, s) + 60.0,
+      _ => date_to_absolute_seconds(y, mo, d, h, mi, s) + 1.0,
+    }
+  }
+
+  // Map a granularity label to its level.
+  fn granularity_level(e: Option<&Expr>) -> usize {
+    let name = match e {
+      Some(Expr::String(s)) => s.as_str(),
+      Some(Expr::Identifier(s)) => s.as_str(),
+      _ => "Day",
+    };
+    match name {
+      "Year" => 1,
+      "Month" | "Quarter" | "Week" => 2,
+      "Hour" => 4,
+      "Minute" => 5,
+      "Second" | "Instant" => 6,
+      _ => 3, // Day (default)
+    }
+  }
+
+  // All half-open spans covered by a DateObject (one) or DateInterval (one
+  // per sub-interval). `None` for anything that is not such an object.
+  fn spans(e: &Expr) -> Option<Vec<(f64, f64)>> {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    match name.as_str() {
+      "DateObject" if !args.is_empty() => {
+        let Expr::List(items) = &args[0] else {
+          return None;
+        };
+        let comps = components(items)?;
+        let start = date_to_absolute_seconds(
+          comps.0, comps.1, comps.2, comps.3, comps.4, comps.5,
+        );
+        Some(vec![(start, end_of_unit(comps, items.len()))])
+      }
+      "DateInterval" if !args.is_empty() => {
+        let Expr::List(pairs) = &args[0] else {
+          return None;
+        };
+        let level = granularity_level(args.get(1));
+        let mut out = Vec::new();
+        for pair in pairs.iter() {
+          let Expr::List(ends) = pair else {
+            return None;
+          };
+          if ends.len() != 2 {
+            return None;
+          }
+          let (Expr::List(sl), Expr::List(el)) = (&ends[0], &ends[1]) else {
+            return None;
+          };
+          let sc = components(sl)?;
+          let ec = components(el)?;
+          let start =
+            date_to_absolute_seconds(sc.0, sc.1, sc.2, sc.3, sc.4, sc.5);
+          out.push((start, end_of_unit(ec, level)));
+        }
+        if out.is_empty() {
+          return None;
+        }
+        Some(out)
+      }
+      _ => None,
+    }
+  }
+
+  let arg_error = |e: &Expr| {
+    crate::emit_message(&format!(
+      "DateOverlapsQ::arg: Argument {} is not a valid date object expression.",
+      crate::syntax::expr_to_output(e)
+    ));
+  };
+  let (Some(a), Some(b)) = (spans(&args[0]), spans(&args[1])) else {
+    if spans(&args[0]).is_none() {
+      arg_error(&args[0]);
+    } else {
+      arg_error(&args[1]);
+    }
+    return unevaluated();
+  };
+  // Two half-open spans overlap when they share positive-length interior.
+  let overlaps = a
+    .iter()
+    .any(|&(s1, e1)| b.iter().any(|&(s2, e2)| s1.max(s2) < e1.min(e2)));
+  Ok(Expr::Identifier(
+    if overlaps { "True" } else { "False" }.to_string(),
+  ))
+}
+
 /// FromJulianDate[jd] — the DateObject instant of a Julian date (days
 /// since noon on -4714-11-24, proleptic Gregorian). Exact input gives
 /// exact time components (integer seconds when whole); Real input gives a
