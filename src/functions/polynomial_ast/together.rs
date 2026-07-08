@@ -480,7 +480,16 @@ pub(super) fn canonicalize_quotient_sign(
       super::simplify::collect_variables(num, &mut vars);
       vars.is_empty()
     };
-    if sign >= 0 || (!constant_num && additive_content_sign(num) != Some(-1)) {
+    // The numerator must be able to absorb the flip outright: a constant,
+    // or a sum whose every term is nonpositive. A mixed-sign numerator
+    // with a merely negative LEADING coefficient stays put —
+    // Simplify[(5-4x-3x^2)/(5-5x)] keeps its form (differential fuzzer,
+    // seed 1783537668073123846).
+    let all_nonpositive_num = collect_additive_terms(num).iter().all(|t| {
+      super::factor::rational_content(std::slice::from_ref(t))
+        .is_some_and(|(n, _, _)| n <= 0)
+    });
+    if sign >= 0 || (!constant_num && !all_nonpositive_num) {
       return None;
     }
   }
@@ -572,8 +581,12 @@ pub(super) fn extract_quotient_minus(num: &Expr, den: &Expr) -> Option<Expr> {
     })
   };
 
-  let num_flip =
-    is_variable_sum(num) && additive_content_sign(num) == Some(-1);
+  // A numerator flip needs the denominator already in canonical
+  // (positive-leading) form: Simplify[(1-5x-3x²-x³)/(-1-2x+4x²)] pulls
+  // the minus out, but Simplify[(5-4x-3x²)/(5-5x)] keeps its form.
+  let num_flip = is_variable_sum(num)
+    && additive_content_sign(num) == Some(-1)
+    && additive_content_sign(den) == Some(1);
   let den_flip = is_variable_sum(den) && all_terms_nonpositive(den);
   if !num_flip && !den_flip {
     return None;

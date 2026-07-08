@@ -631,6 +631,54 @@ mod simplify {
     );
   }
 
+  // Sums of radicals pull out their integer content (the content goes
+  // negative only when EVERY term is negative). Differential fuzzer,
+  // seed 1783537668073123846; wolframscript-verified.
+  #[test]
+  fn radical_sum_content_extraction() {
+    assert_eq!(
+      interpret(
+        "Simplify[Plus[Times[Times[-1, Sqrt[9]], Times[4, Sqrt[5]]], \
+         Times[Sqrt[19], Sqrt[9]]]]"
+      )
+      .unwrap(),
+      "3*(-4*Sqrt[5] + Sqrt[19])"
+    );
+    assert_eq!(
+      interpret("Simplify[Plus[9, Times[Sqrt[19], 9]]]").unwrap(),
+      "9*(1 + Sqrt[19])"
+    );
+    assert_eq!(
+      interpret("Simplify[-2 - 2*Sqrt[2]]").unwrap(),
+      "-2*(1 + Sqrt[2])"
+    );
+    assert_eq!(
+      interpret("Simplify[-9 + 9*Sqrt[19]]").unwrap(),
+      "9*(-1 + Sqrt[19])"
+    );
+    assert_eq!(
+      interpret("Simplify[(3/2) + (3/2)*Sqrt[2]]").unwrap(),
+      "(3*(1 + Sqrt[2]))/2"
+    );
+    // Content 1 stays untouched.
+    assert_eq!(
+      interpret("Simplify[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "Sqrt[2] + Sqrt[3]"
+    );
+  }
+
+  // A mixed-sign numerator with a negative leading coefficient only
+  // pulls the minus out when the denominator is already in canonical
+  // positive-leading form (differential fuzzer, seed
+  // 1783537668073123846).
+  #[test]
+  fn no_flip_when_denominator_leading_negative() {
+    assert_eq!(
+      interpret("Simplify[(5 - 4 x - 3 x^2)/(5 - 5 x)]").unwrap(),
+      "(5 - 4*x - 3*x^2)/(5 - 5*x)"
+    );
+  }
+
   // Standalone polynomials factor (2*x*(-1+2*x), canonical factor order),
   // and quotient NUMERATORS factor too — but a quotient's DENOMINATOR
   // stays expanded unless it collapses to a power of a single factor.
@@ -1665,6 +1713,39 @@ mod cancel {
   #[test]
   fn cancel_simple() {
     assert_eq!(interpret("Cancel[(x^2 - 1)/(x - 1)]").unwrap(), "1 + x");
+  }
+
+  // Cancel keeps quotient numerators EXPANDED, pulling out only their
+  // numeric content — unlike Simplify, which factors them. A bare
+  // negative-constant denominator absorbs its sign into the numerator.
+  // (differential fuzzer, seed 1783537668073123846; wolframscript-verified)
+  #[test]
+  fn cancel_keeps_numerator_expanded() {
+    assert_eq!(
+      interpret(
+        "Cancel[Divide[Plus[0, Times[4, x], Times[2, Power[x, 2]]], \
+         Plus[-3, Times[-4, x], Times[2, Power[x, 2]]]]]"
+      )
+      .unwrap(),
+      "(2*(2*x + x^2))/(-3 - 4*x + 2*x^2)"
+    );
+    assert_eq!(
+      interpret("Cancel[(4 x^2 - 2 x)/(2 + 3 x)]").unwrap(),
+      "(2*(-x + 2*x^2))/(2 + 3*x)"
+    );
+    assert_eq!(
+      interpret("Cancel[Divide[Plus[0, x, Power[x, 2]], -3]]").unwrap(),
+      "(-x - x^2)/3"
+    );
+    assert_eq!(
+      interpret("Cancel[(x^2 + x)/(3 + x)]").unwrap(),
+      "(x + x^2)/(3 + x)"
+    );
+    // The perfect-power denominator collapse is kept.
+    assert_eq!(
+      interpret("Cancel[x^2/(1 - 3 x + 3 x^2 - x^3)]").unwrap(),
+      "-(x^2/(-1 + x)^3)"
+    );
   }
 
   #[test]
