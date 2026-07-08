@@ -4028,3 +4028,100 @@ mod coplanar_points {
     );
   }
 }
+
+mod convex_polygon_q {
+  use super::*;
+
+  #[test]
+  fn convex_shapes() {
+    assert_eq!(
+      interpret("ConvexPolygonQ[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]]")
+        .unwrap(),
+      "True"
+    );
+    // A triangle is always convex.
+    assert_eq!(
+      interpret("ConvexPolygonQ[Polygon[{{0, 0}, {1, 0}, {1, 1}}]]").unwrap(),
+      "True"
+    );
+    // Orientation (clockwise) does not matter.
+    assert_eq!(
+      interpret("ConvexPolygonQ[Polygon[{{0, 0}, {0, 1}, {1, 1}, {1, 0}}]]")
+        .unwrap(),
+      "True"
+    );
+    // A collinear vertex on an edge keeps the polygon convex.
+    assert_eq!(
+      interpret("ConvexPolygonQ[Polygon[{{0, 0}, {1, 0}, {2, 0}, {1, 1}}]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_convex_shapes() {
+    // A reflex vertex makes the polygon concave.
+    assert_eq!(
+      interpret(
+        "ConvexPolygonQ[Polygon[{{0, 0}, {2, 0}, {2, 2}, {1, 1}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    // A self-intersecting bowtie is not convex.
+    assert_eq!(
+      interpret("ConvexPolygonQ[Polygon[{{0, 0}, {1, 1}, {1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "False"
+    );
+    // A pentagram turns consistently but winds around twice.
+    assert_eq!(
+      interpret(
+        "ConvexPolygonQ[Polygon[{{0, 1}, {0.588, -0.809}, {-0.951, 0.309}, \
+         {0.951, 0.309}, {-0.588, -0.809}}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    // Fewer than three vertices cannot bound a polygon.
+    assert_eq!(
+      interpret("ConvexPolygonQ[Polygon[{{0, 0}, {1, 0}}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn shape_constructors() {
+    assert_eq!(
+      interpret("ConvexPolygonQ[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ConvexPolygonQ[Rectangle[{0, 0}, {2, 1}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ConvexPolygonQ[RegularPolygon[5]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_polygons_are_false() {
+    // Bare point lists, plain values, symbols and non-polygon regions all
+    // yield False rather than staying unevaluated.
+    assert_eq!(
+      interpret("ConvexPolygonQ[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("ConvexPolygonQ[5]").unwrap(), "False");
+    assert_eq!(interpret("ConvexPolygonQ[x]").unwrap(), "False");
+    assert_eq!(interpret("ConvexPolygonQ[Disk[]]").unwrap(), "False");
+    // Symbolic coordinates cannot be verified convex.
+    assert_eq!(
+      interpret("ConvexPolygonQ[Polygon[{{0, 0}, {1, 0}, {a, 1}, {0, 1}}]]")
+        .unwrap(),
+      "False"
+    );
+  }
+}

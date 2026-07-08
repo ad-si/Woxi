@@ -186,6 +186,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CoefficientArrays" => Some((2, 2)),
     "CollinearPoints" => Some((1, 1)),
     "CoplanarPoints" => Some((1, 1)),
+    "ConvexPolygonQ" => Some((1, 1)),
     "ClusteringComponents" => Some((1, 3)),
     "FindClusters" => Some((1, 3)),
     "Collect" => Some((2, 3)),

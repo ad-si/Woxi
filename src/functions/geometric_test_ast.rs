@@ -693,3 +693,111 @@ pub fn coplanar_points_ast(
   }
   Some(Ok(bool_expr(true)))
 }
+
+// ---------------------------------------------------------------------------
+// ConvexPolygonQ
+// ---------------------------------------------------------------------------
+
+/// Classification of a polygon's vertex list.
+enum PolyPoints {
+  /// A planar polygon with numeric 2D vertices.
+  TwoD(Vec<Pt>),
+  /// Numeric vertices of dimension >= 3 (left unevaluated — not handled here).
+  HigherDim,
+  /// Symbolic / malformed / non-numeric vertices → definitely not a polygon.
+  Invalid,
+}
+
+/// Read the vertex list of a `Polygon`/`Triangle` first argument.
+fn classify_polygon_points(expr: &Expr) -> PolyPoints {
+  let Expr::List(items) = expr else {
+    return PolyPoints::Invalid;
+  };
+  if items.is_empty() {
+    return PolyPoints::Invalid;
+  }
+  let mut pts = Vec::with_capacity(items.len());
+  let mut higher_dim = false;
+  for item in items.iter() {
+    let Expr::List(coords) = item else {
+      return PolyPoints::Invalid;
+    };
+    let nums: Option<Vec<f64>> = coords
+      .iter()
+      .map(super::math_ast::try_eval_to_f64)
+      .collect();
+    match nums {
+      Some(v) if v.len() == 2 => pts.push((v[0], v[1])),
+      Some(v) if v.len() >= 3 => higher_dim = true,
+      _ => return PolyPoints::Invalid,
+    }
+  }
+  if higher_dim {
+    PolyPoints::HigherDim
+  } else {
+    PolyPoints::TwoD(pts)
+  }
+}
+
+/// A closed polygon is convex iff every turn is in the same rotational
+/// direction and the total turning is a single revolution (±2π). Star
+/// polygons turn consistently but wind around more than once, and reflex
+/// vertices reverse the turn direction — both are rejected.
+fn convex_polygon(pts: &[Pt]) -> bool {
+  let n = pts.len();
+  if n < 3 {
+    return false;
+  }
+  let mut total = 0.0f64;
+  let mut sign = 0.0f64;
+  for i in 0..n {
+    let e1 = sub(pts[(i + 1) % n], pts[i]);
+    let e2 = sub(pts[(i + 2) % n], pts[(i + 1) % n]);
+    // Skip repeated (zero-length) edges.
+    if mag(e1) <= EPS || mag(e2) <= EPS {
+      continue;
+    }
+    let turn = cross(e1, e2).atan2(dot(e1, e2));
+    if turn.abs() > EPS {
+      let s = if turn > 0.0 { 1.0 } else { -1.0 };
+      if sign == 0.0 {
+        sign = s;
+      } else if s != sign {
+        return false; // reflex vertex → not convex
+      }
+    }
+    total += turn;
+  }
+  (total.abs() - 2.0 * std::f64::consts::PI).abs() <= 1e-6
+}
+
+/// ConvexPolygonQ[poly] — `True` when `poly` is a convex polygon. Handles
+/// explicit 2D `Polygon`/`Triangle` point lists (via a turning-number test)
+/// and the always-convex constructors `Rectangle`/`RegularPolygon`. Anything
+/// that is not a verifiably convex polygon — other heads, non-numeric or
+/// malformed coordinates, bare lists, non-geometric values — yields `False`.
+/// Numeric polygons of dimension >= 3 are left unevaluated.
+pub fn convex_polygon_q_ast(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 1 {
+    return None;
+  }
+  match &args[0] {
+    Expr::FunctionCall { name, .. }
+      if name == "Rectangle" || name == "RegularPolygon" =>
+    {
+      Some(Ok(bool_expr(true)))
+    }
+    Expr::FunctionCall { name, args: pargs }
+      if (name == "Polygon" || name == "Triangle") && !pargs.is_empty() =>
+    {
+      match classify_polygon_points(&pargs[0]) {
+        PolyPoints::TwoD(pts) => Some(Ok(bool_expr(convex_polygon(&pts)))),
+        PolyPoints::HigherDim => None, // unevaluated — 3D not handled here
+        PolyPoints::Invalid => Some(Ok(bool_expr(false))),
+      }
+    }
+    _ => Some(Ok(bool_expr(false))),
+  }
+}

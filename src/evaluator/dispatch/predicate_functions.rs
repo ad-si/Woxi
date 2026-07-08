@@ -684,6 +684,9 @@ pub fn dispatch_predicate_functions(
     "CoplanarPoints" if args.len() == 1 => {
       return crate::functions::geometric_test_ast::coplanar_points_ast(args);
     }
+    "ConvexPolygonQ" if args.len() == 1 => {
+      return crate::functions::geometric_test_ast::convex_polygon_q_ast(args);
+    }
     "CompositeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::composite_q_ast(args));
     }
