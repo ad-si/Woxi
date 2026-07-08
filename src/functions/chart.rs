@@ -3,30 +3,11 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, MarginOverrides, PLOT_COLORS,
-  RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg, parse_image_size,
+  BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, HistogramHeight, MarginOverrides,
+  PLOT_COLORS, RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg,
+  parse_image_size,
 };
 use crate::syntax::Expr;
-
-/// Extract a flat list of f64 values from the first argument.
-fn extract_values(arg: &Expr) -> Result<Vec<f64>, InterpreterError> {
-  let data = evaluate_expr_to_expr(arg)?;
-  match &data {
-    Expr::List(items) => {
-      let mut vals = Vec::with_capacity(items.len());
-      for item in items {
-        let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-        if let Some(f) = try_eval_to_f64(&v) {
-          vals.push(f);
-        }
-      }
-      Ok(vals)
-    }
-    _ => Err(InterpreterError::EvaluationError(
-      "Chart: first argument must be a list".into(),
-    )),
-  }
-}
 
 /// Extract grouped values from the first argument.
 /// Returns a list of groups, where each group is a list of f64 values.
@@ -1437,46 +1418,116 @@ fn render_3d_triangles(
 /// Histogram[{d1, d2, ...}] or Histogram[{d1, d2, ...}, nbins]
 /// or Histogram[{d1, d2, ...}, {{e1, e2, ...}}]
 pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let values = extract_values(&args[0])?;
-  if values.is_empty() {
+  // A flat list `{v1, v2, ...}` is one dataset; a list of lists
+  // `{{...}, {...}}` is several datasets drawn overlaid.
+  let datasets = parse_datasets(&args[0])?;
+  if datasets.is_empty() || datasets.iter().all(|d| d.is_empty()) {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
 
-  // Check if args[1] is a bin count, custom bin edges, or an option
-  let bin_spec = if args.len() > 1 {
-    let evaluated = evaluate_expr_to_expr(&args[1])?;
-    // Check for {{e1, e2, ...}} — a list containing a single list of bin edges
-    if let Expr::List(outer) = &evaluated {
-      if outer.len() == 1 {
-        if let Expr::List(inner) = &outer[0] {
-          let edges: Vec<f64> =
-            inner.iter().filter_map(try_eval_to_f64).collect();
-          if edges.len() >= 2 {
-            Some(BinSpec::Edges(edges))
-          } else {
-            None
-          }
-        } else {
-          None
-        }
-      } else {
-        None
-      }
-    } else if let Some(f) = try_eval_to_f64(&evaluated) {
-      let n = f as usize;
-      if n > 0 { Some(BinSpec::Count(n)) } else { None }
-    } else {
-      None
-    }
-  } else {
-    None
-  };
+  // Positional (non-option) args after the data: `bspec` then `hspec`.
+  let positional: Vec<&Expr> = args[1..]
+    .iter()
+    .filter(|a| !matches!(a, Expr::Rule { .. }))
+    .collect();
+
+  let bin_spec = positional.first().and_then(|e| parse_bin_spec(e));
+  let height = positional
+    .get(1)
+    .and_then(|e| parse_histogram_height(e))
+    .unwrap_or(HistogramHeight::Count);
 
   let mut opts = parse_chart_options(args);
-  let svg = generate_histogram_svg(&values, bin_spec, &mut opts)?;
-  Ok(crate::graphics_result(svg))
+  let svg =
+    generate_histogram_svg(&datasets, bin_spec.clone(), height, &mut opts)?;
+
+  // Per-dataset colors matching the rendered bars, used to build a PlotSource
+  // so `Show[Histogram[...], Plot[...]]` overlays the bars with the curves.
+  let colors: Vec<(u8, u8, u8)> = (0..datasets.len())
+    .map(|di| {
+      if !opts.chart_style.is_empty() {
+        let c = &opts.chart_style[di % opts.chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      } else {
+        PLOT_COLORS[di % PLOT_COLORS.len()]
+      }
+    })
+    .collect();
+
+  match crate::functions::plot::histogram_plot_source(
+    &datasets,
+    &bin_spec,
+    height,
+    &colors,
+    (opts.svg_width, opts.svg_height),
+  ) {
+    Some(src) => Ok(crate::graphics_result_with_source(svg, src)),
+    None => Ok(crate::graphics_result(svg)),
+  }
+}
+
+/// Parse a Histogram bin specification (`bspec`): an integer bin count,
+/// `{w}` (bin width), or `{{e1, e2, ...}}` (explicit bin edges). Anything
+/// else (e.g. `Automatic`) yields `None` (automatic binning).
+fn parse_bin_spec(arg: &Expr) -> Option<BinSpec> {
+  let evaluated = evaluate_expr_to_expr(arg).unwrap_or_else(|_| arg.clone());
+  match &evaluated {
+    Expr::List(outer) => {
+      // {{e1, e2, ...}} — a list wrapping the explicit bin edges.
+      if outer.len() == 1
+        && let Expr::List(inner) = &outer[0]
+      {
+        let edges: Vec<f64> =
+          inner.iter().filter_map(try_eval_to_f64).collect();
+        return (edges.len() >= 2).then_some(BinSpec::Edges(edges));
+      }
+      // {w} — a bin width.
+      if outer.len() == 1
+        && let Some(w) = try_eval_to_f64(&outer[0])
+      {
+        return (w > 0.0).then_some(BinSpec::Width(w));
+      }
+      // {min, max, w} — width w over an explicit range: use the width and
+      // let the shared edge builder align to it.
+      if outer.len() == 3
+        && let Some(w) = try_eval_to_f64(&outer[2])
+      {
+        return (w > 0.0).then_some(BinSpec::Width(w));
+      }
+      None
+    }
+    _ => {
+      let f = try_eval_to_f64(&evaluated)?;
+      let n = f as usize;
+      (n > 0).then_some(BinSpec::Count(n))
+    }
+  }
+}
+
+/// Parse a Histogram height specification (`hspec`) string into a
+/// `HistogramHeight`. Unknown specs fall back to plain counts.
+fn parse_histogram_height(arg: &Expr) -> Option<HistogramHeight> {
+  let s = match arg {
+    Expr::String(s) => s.as_str(),
+    Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  Some(match s {
+    "Count" => HistogramHeight::Count,
+    "CumulativeCount" => HistogramHeight::CumulativeCount,
+    "Probability" | "Relative" | "Fraction" | "PMF" => {
+      HistogramHeight::Probability
+    }
+    "PDF" => HistogramHeight::Pdf,
+    "CDF" => HistogramHeight::Cdf,
+    _ => return None,
+  })
 }
 
 /// Compute box-whisker statistics for a sorted dataset.
@@ -1507,7 +1558,7 @@ fn parse_datasets(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
     Expr::List(items) => items,
     _ => {
       return Err(InterpreterError::EvaluationError(
-        "BoxWhiskerChart: first argument must be a list".into(),
+        "Chart: first argument must be a list".into(),
       ));
     }
   };

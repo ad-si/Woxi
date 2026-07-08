@@ -4375,16 +4375,216 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
 
 /// Generate SVG for a histogram using plotters.
 /// Specifies how histogram bins are determined.
+#[derive(Clone)]
 pub enum BinSpec {
   /// A fixed number of equal-width bins.
   Count(usize),
+  /// A fixed bin width; bin boundaries are aligned to multiples of the width.
+  Width(f64),
   /// Explicit bin edges (must be sorted, at least 2 elements).
   Edges(Vec<f64>),
 }
 
+/// Histogram bar-height specification (Wolfram's `hspec`).
+#[derive(Clone, Copy, PartialEq)]
+pub enum HistogramHeight {
+  /// Raw counts per bin (the default).
+  Count,
+  /// Running total of counts up to and including each bin.
+  CumulativeCount,
+  /// Fraction of samples in each bin (`c / n`); heights sum to 1.
+  Probability,
+  /// Probability density (`c / (n * width)`); total area is 1.
+  Pdf,
+  /// Cumulative fraction of samples (`cumsum / n`); reaches 1 at the last bin.
+  Cdf,
+}
+
+/// Compute the common bin edges for one or more datasets given a bin spec.
+fn histogram_bin_edges(
+  all_values: &[f64],
+  bin_spec: &Option<BinSpec>,
+) -> Vec<f64> {
+  if let Some(BinSpec::Edges(edges)) = bin_spec {
+    let mut edges = edges.clone();
+    edges.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    return edges;
+  }
+
+  let d_min = all_values.iter().cloned().fold(f64::INFINITY, f64::min);
+  let d_max = all_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  let (d_min, d_max) = if d_min.is_finite() && d_max.is_finite() {
+    (d_min, d_max)
+  } else {
+    (0.0, 1.0)
+  };
+
+  match bin_spec {
+    Some(BinSpec::Width(w)) if *w > 0.0 => {
+      let w = *w;
+      // Align boundaries to multiples of the width (Wolfram convention),
+      // so `{1}` yields integer-aligned unit bins `[k w, (k+1) w)`.
+      let start = (d_min / w).floor() * w;
+      // Top edge: the first multiple of w strictly greater than d_max, so the
+      // largest sample gets its own bin (matching Wolfram — data 0..9 with
+      // width 1 yields the 10 bins [0,1),…,[9,10)).
+      let mut top = (d_max / w).floor() * w + w;
+      if top <= d_max + w * 1e-9 {
+        top += w;
+      }
+      let n_bins = (((top - start) / w).round() as usize).max(1);
+      (0..=n_bins).map(|i| start + i as f64 * w).collect()
+    }
+    _ => {
+      let num_bins = match bin_spec {
+        Some(BinSpec::Count(c)) if *c > 0 => *c,
+        _ => ((1.0 + (all_values.len().max(1) as f64).log2()).ceil() as usize)
+          .max(1),
+      };
+      let range = d_max - d_min;
+      let bin_width = if range.abs() < f64::EPSILON {
+        1.0
+      } else {
+        range / num_bins as f64
+      };
+      (0..=num_bins)
+        .map(|i| d_min + i as f64 * bin_width)
+        .collect()
+    }
+  }
+}
+
+/// Count how many values of `values` fall into each bin defined by `edges`.
+/// The last bin is closed on the right; all others are half-open `[lo, hi)`.
+fn histogram_bin_counts(values: &[f64], edges: &[f64]) -> Vec<usize> {
+  let num_bins = edges.len().saturating_sub(1);
+  let mut counts = vec![0usize; num_bins];
+  if num_bins == 0 {
+    return counts;
+  }
+  for &v in values {
+    for i in 0..num_bins {
+      let in_bin = if i == num_bins - 1 {
+        v >= edges[i] && v <= edges[i + 1]
+      } else {
+        v >= edges[i] && v < edges[i + 1]
+      };
+      if in_bin {
+        counts[i] += 1;
+        break;
+      }
+    }
+  }
+  counts
+}
+
+/// Convert per-bin counts into bar heights according to a height spec.
+fn histogram_bin_heights(
+  counts: &[usize],
+  edges: &[f64],
+  height: HistogramHeight,
+) -> Vec<f64> {
+  let n: usize = counts.iter().sum();
+  let n_f = n.max(1) as f64;
+  match height {
+    HistogramHeight::Count => counts.iter().map(|&c| c as f64).collect(),
+    HistogramHeight::Probability => {
+      counts.iter().map(|&c| c as f64 / n_f).collect()
+    }
+    HistogramHeight::Pdf => counts
+      .iter()
+      .enumerate()
+      .map(|(i, &c)| {
+        let w = (edges[i + 1] - edges[i]).abs();
+        if w > 0.0 { c as f64 / (n_f * w) } else { 0.0 }
+      })
+      .collect(),
+    HistogramHeight::CumulativeCount => {
+      let mut acc = 0.0;
+      counts
+        .iter()
+        .map(|&c| {
+          acc += c as f64;
+          acc
+        })
+        .collect()
+    }
+    HistogramHeight::Cdf => {
+      let mut acc = 0.0;
+      counts
+        .iter()
+        .map(|&c| {
+          acc += c as f64;
+          acc / n_f
+        })
+        .collect()
+    }
+  }
+}
+
+/// Build a `PlotSource` describing histogram bars as one filled step-outline
+/// series per dataset. This lets `Show` overlay a Histogram with plots
+/// (`Show[Histogram[...], Plot[...]]`) in a shared coordinate system, exactly
+/// as Wolfram does — the bars and any overlaid curves share the same axes.
+pub(crate) fn histogram_plot_source(
+  datasets: &[Vec<f64>],
+  bin_spec: &Option<BinSpec>,
+  height: HistogramHeight,
+  colors: &[(u8, u8, u8)],
+  image_size: (u32, u32),
+) -> Option<crate::syntax::PlotSource> {
+  let all_values: Vec<f64> =
+    datasets.iter().flat_map(|d| d.iter().copied()).collect();
+  if all_values.is_empty() {
+    return None;
+  }
+  let bin_edges = histogram_bin_edges(&all_values, bin_spec);
+  let num_bins = bin_edges.len().saturating_sub(1);
+  if num_bins == 0 {
+    return None;
+  }
+
+  let mut series = Vec::with_capacity(datasets.len());
+  let mut max_h = 0.0_f64;
+  for (di, d) in datasets.iter().enumerate() {
+    let counts = histogram_bin_counts(d, &bin_edges);
+    let heights = histogram_bin_heights(&counts, &bin_edges, height);
+    // Trace the bar silhouette: up each bar's left edge, across its top,
+    // then back down to the axis at the end. Filling to the axis paints
+    // the bars.
+    let mut points = Vec::with_capacity(num_bins * 2 + 2);
+    points.push((bin_edges[0], 0.0));
+    for i in 0..num_bins {
+      points.push((bin_edges[i], heights[i]));
+      points.push((bin_edges[i + 1], heights[i]));
+      max_h = max_h.max(heights[i]);
+    }
+    points.push((bin_edges[num_bins], 0.0));
+    let color = colors
+      .get(di)
+      .copied()
+      .unwrap_or(PLOT_COLORS[di % PLOT_COLORS.len()]);
+    series.push(crate::syntax::PlotSeriesData {
+      points,
+      color,
+      is_scatter: false,
+      filling: crate::syntax::SeriesFilling::Axis,
+    });
+  }
+
+  let y_hi = if max_h > 0.0 { max_h * 1.05 } else { 1.0 };
+  Some(crate::syntax::PlotSource {
+    series,
+    x_range: (bin_edges[0], bin_edges[num_bins]),
+    y_range: (0.0, y_hi),
+    image_size,
+  })
+}
+
 pub(crate) fn generate_histogram_svg(
-  values: &[f64],
+  datasets: &[Vec<f64>],
   bin_spec: Option<BinSpec>,
+  height: HistogramHeight,
   opts: &mut ChartOptions,
 ) -> Result<String, InterpreterError> {
   let (svg_width, svg_height, full_width) =
@@ -4392,66 +4592,35 @@ pub(crate) fn generate_histogram_svg(
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
-  // Build bin edges and counts based on the bin specification
-  let (bin_edges, counts) = match bin_spec {
-    Some(BinSpec::Edges(mut edges)) => {
-      edges.sort_by(|a, b| a.partial_cmp(b).unwrap());
-      let num_bins = edges.len() - 1;
-      let mut cnts = vec![0usize; num_bins];
-      for &v in values {
-        // Find the bin for this value
-        for i in 0..num_bins {
-          let in_bin = if i == num_bins - 1 {
-            v >= edges[i] && v <= edges[i + 1]
-          } else {
-            v >= edges[i] && v < edges[i + 1]
-          };
-          if in_bin {
-            cnts[i] += 1;
-            break;
-          }
-        }
-      }
-      (edges, cnts)
-    }
-    _ => {
-      // Use provided bin count or fall back to Sturges' rule
-      let n = values.len();
-      let num_bins = match &bin_spec {
-        Some(BinSpec::Count(c)) => *c,
-        _ => ((1.0 + (n as f64).log2()).ceil() as usize).max(1),
-      };
-      let d_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-      let d_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-      let range = d_max - d_min;
-      let bin_width = if range.abs() < f64::EPSILON {
-        1.0
-      } else {
-        range / num_bins as f64
-      };
+  // Shared bin edges spanning every dataset, then per-dataset counts and
+  // bar heights (heights depend on the height spec: Count, PDF, …).
+  let all_values: Vec<f64> =
+    datasets.iter().flat_map(|d| d.iter().copied()).collect();
+  let bin_edges = histogram_bin_edges(&all_values, &bin_spec);
+  let num_bins = bin_edges.len().saturating_sub(1);
+  if num_bins == 0 {
+    return Ok("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string());
+  }
+  let dataset_counts: Vec<Vec<usize>> = datasets
+    .iter()
+    .map(|d| histogram_bin_counts(d, &bin_edges))
+    .collect();
+  let dataset_heights: Vec<Vec<f64>> = dataset_counts
+    .iter()
+    .map(|c| histogram_bin_heights(c, &bin_edges, height))
+    .collect();
 
-      let mut cnts = vec![0usize; num_bins];
-      for &v in values {
-        let idx = ((v - d_min) / bin_width).floor() as usize;
-        cnts[idx.min(num_bins - 1)] += 1;
-      }
-
-      let edges: Vec<f64> = (0..=num_bins)
-        .map(|i| d_min + i as f64 * bin_width)
-        .collect();
-      (edges, cnts)
-    }
-  };
-
-  let num_bins = counts.len();
   // A named ChartStyle scheme colors each bin with a distinct sampled color.
   crate::functions::chart::apply_color_scheme(opts, num_bins);
-  let max_count = *counts.iter().max().unwrap_or(&1);
+  let max_height = dataset_heights
+    .iter()
+    .flat_map(|h| h.iter().copied())
+    .fold(0.0_f64, f64::max);
+  let max_height = if max_height > 0.0 { max_height } else { 1.0 };
 
   // Explicit PlotRange overrides the auto-computed extents (10% headroom
   // above the tallest bar, bins spanning exactly the edge range).
-  let (y_min, y_max) =
-    opts.plot_range_y.unwrap_or((0.0, max_count as f64 * 1.1));
+  let (y_min, y_max) = opts.plot_range_y.unwrap_or((0.0, max_height * 1.1));
   let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
   let (x_lo, x_hi) = opts
     .plot_range_x
@@ -4540,28 +4709,45 @@ pub(crate) fn generate_histogram_svg(
     // Draw contiguous histogram bars using plotters Rectangles.
     // ChartStyle colors cycle per bin (matching BarChart's per-element
     // convention); the default is a single uniform color.
-    for (i, &count) in counts.iter().enumerate() {
-      let (r, g, b) = if !opts.chart_style.is_empty() {
-        let c = &opts.chart_style[i % opts.chart_style.len()];
+    // With one dataset, ChartStyle colors cycle per bin (matching BarChart);
+    // the default is a single uniform color. With several datasets, each is
+    // drawn in its own color and overlaid semi-transparently so overlapping
+    // bars stay visible.
+    let multi = dataset_heights.len() > 1;
+    let style_color = |idx: usize| -> (u8, u8, u8) {
+      if !opts.chart_style.is_empty() {
+        let c = &opts.chart_style[idx % opts.chart_style.len()];
         (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
+      } else if multi {
+        PLOT_COLORS[idx % PLOT_COLORS.len()]
       } else {
         PLOT_COLORS[0]
-      };
-      let color = RGBColor(r, g, b);
-      let bx0 = bin_edges[i];
-      let bx1 = bin_edges[i + 1];
-      chart
-        .draw_series(std::iter::once(Rectangle::new(
-          [(bx0, 0.0), (bx1, count as f64)],
-          color.filled(),
-        )))
-        .map_err(|e| {
-          InterpreterError::EvaluationError(format!("Histogram: {e}"))
-        })?;
+      }
+    };
+    for (di, heights) in dataset_heights.iter().enumerate() {
+      for (i, &h) in heights.iter().enumerate() {
+        let (r, g, b) = if multi { style_color(di) } else { style_color(i) };
+        let color = RGBColor(r, g, b);
+        let bx0 = bin_edges[i];
+        let bx1 = bin_edges[i + 1];
+        let fill: ShapeStyle = if multi {
+          color.mix(0.55).filled()
+        } else {
+          color.filled()
+        };
+        chart
+          .draw_series(std::iter::once(Rectangle::new(
+            [(bx0, 0.0), (bx1, h)],
+            fill,
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Histogram: {e}"))
+          })?;
+      }
     }
 
     root.present().map_err(|e| {
@@ -4571,14 +4757,16 @@ pub(crate) fn generate_histogram_svg(
 
   add_bar_borders(&mut buf, RESOLUTION_SCALE);
 
-  // Inject hover tooltips with bin range and count into histogram rects
-  let hist_tooltips: Vec<String> = counts
+  // Inject hover tooltips with bin range and count into histogram rects.
+  // Order matches the draw order above (dataset-major, then bin).
+  let hist_tooltips: Vec<String> = dataset_counts
     .iter()
-    .enumerate()
-    .map(|(i, &c)| {
-      let lo = format_tooltip_value(bin_edges[i]);
-      let hi = format_tooltip_value(bin_edges[i + 1]);
-      format!("[{lo}, {hi}): {c}")
+    .flat_map(|counts| {
+      counts.iter().enumerate().map(|(i, &c)| {
+        let lo = format_tooltip_value(bin_edges[i]);
+        let hi = format_tooltip_value(bin_edges[i + 1]);
+        format!("[{lo}, {hi}): {c}")
+      })
     })
     .collect();
   inject_bar_tooltips_str(&mut buf, &hist_tooltips);
