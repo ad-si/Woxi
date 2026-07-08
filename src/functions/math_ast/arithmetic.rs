@@ -6630,6 +6630,34 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
+    // Symbolic power factors sharing a base can collapse into a pure number
+    // (e.g. `2^(-1/2)*2^(-1/2) → 1/2`, `Sqrt[2]*Sqrt[2] → 2`). Combine them
+    // now and fold any resulting exact number back into the coefficient
+    // fraction, so a product like `-1 * 2^(-1/2) * 2^(-1/2)` reduces to
+    // `Rational[-1, 2]` rather than the unfolded `Times[-1, 1/2]`.
+    if symbolic_args.len() >= 2 {
+      symbolic_args = combine_like_bases(symbolic_args)?;
+      symbolic_args.retain(|a| match a {
+        Expr::Integer(n) => {
+          big_numer *= BigInt::from(*n);
+          false
+        }
+        Expr::BigInteger(n) => {
+          big_numer *= n;
+          false
+        }
+        _ => {
+          if let Some((p, q)) = rational_parts(a) {
+            big_numer *= p;
+            big_denom *= q;
+            false
+          } else {
+            true
+          }
+        }
+      });
+    }
+
     // Reduce the fraction by gcd and fix the sign onto the numerator.
     {
       let g = bigint_gcd(&big_numer, &big_denom);
@@ -7061,6 +7089,52 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Combine like bases: x^a * x^b → x^(a+b)
   symbolic_args = combine_like_bases(symbolic_args)?;
+
+  // combine_like_bases can collapse symbolic powers into a pure number
+  // (`2^(-1/2)*2^(-1/2) → 1/2`, `Sqrt[2]*Sqrt[2] → 2`). Fold any such exact
+  // factor back into the coefficient so e.g. `-1*2^(-1/2)*2^(-1/2)` reduces to
+  // `Rational[-1, 2]` and `3*Sqrt[2]*Sqrt[2]` to `6`, rather than the unfolded
+  // `Times[-1, 1/2]` / `Times[3, 2]`. All-or-nothing: if any multiply would
+  // overflow i128 the fold is abandoned and every factor stays in place.
+  {
+    let as_int_rational = |a: &Expr| -> Option<(i128, i128)> {
+      match a {
+        Expr::Integer(n) => Some((*n, 1)),
+        Expr::FunctionCall { name, args: ra }
+          if name == "Rational" && ra.len() == 2 =>
+        {
+          match (&ra[0], &ra[1]) {
+            (Expr::Integer(p), Expr::Integer(q)) => Some((*p, *q)),
+            _ => None,
+          }
+        }
+        _ => None,
+      }
+    };
+    let mut fold_num = combined_numer;
+    let mut fold_den = combined_denom;
+    let mut any = false;
+    let mut overflow = false;
+    for a in symbolic_args.iter() {
+      if let Some((p, q)) = as_int_rational(a) {
+        match (fold_num.checked_mul(p), fold_den.checked_mul(q)) {
+          (Some(nn), Some(dd)) => {
+            fold_num = nn;
+            fold_den = dd;
+            any = true;
+          }
+          _ => {
+            overflow = true;
+            break;
+          }
+        }
+      }
+    }
+    if any && !overflow {
+      symbolic_args.retain(|a| as_int_rational(a).is_none());
+      coeff = make_rational(fold_num, fold_den);
+    }
+  }
 
   // Try to combine integer coefficient with same-base power in symbolic args.
   // Only absorb one factor of the base so the result stays in canonical form:

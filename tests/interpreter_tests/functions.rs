@@ -1041,7 +1041,7 @@ mod fourier_dct_matrix {
   fn default_two_by_two() {
     assert_eq!(
       interpret("FourierDCTMatrix[2]").unwrap(),
-      "{{1/Sqrt[2], 1/2}, {1/Sqrt[2], -(1/2)}}"
+      "{{1/Sqrt[2], 1/2}, {1/Sqrt[2], -1/2}}"
     );
   }
 
