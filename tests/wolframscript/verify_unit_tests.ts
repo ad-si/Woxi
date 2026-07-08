@@ -734,6 +734,15 @@ function main() {
     "Insphere[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]",
     // Variance symbolic: Plus ordering of BesselK terms (different ordering of positive/negative terms)
     "Variance[HyperbolicDistribution[a, b, d, m]]",
+    // LogLogistic Variance: canonical Plus/Times ordering. Symbolic form
+    // orders the inner Plus terms differently (2 g Csc[...] first vs WL's
+    // -(Pi Csc[Pi/g]^2) first); the numeric form places the Pi factor before
+    // the Plus (4 Pi (...) vs WL's 4 (...) Pi) because a Constant sorts ahead
+    // of a sum by term-priority while an Identifier sorts after it. Both are
+    // value-correct; see the variance_symbolic / variance_numeric comments in
+    // tests/interpreter_tests/distributions.rs.
+    "Variance[LogLogisticDistribution[g, s]]",
+    "Variance[LogLogisticDistribution[3, 2]]",
     // FindIntegerNullVector: sign convention is implementation-specific (LLL algorithm produces different signs)
     "FindIntegerNullVector[{2, 6}]",
     // JohnsonDistribution: Plus ordering differences (gamma + delta*f vs delta*f + gamma)
