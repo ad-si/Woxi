@@ -4168,12 +4168,38 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       let accept = if is_sum {
         simplify_cost_key(&factored) <= simplify_cost_key(&best)
       } else {
+        // Wolfram never factors a quotient's DENOMINATOR into a product
+        // of distinct factors: Simplify[1/(4x+3x^2)] stays
+        // (4x+3x^2)^(-1), not 1/(x(4+3x)). Powers still collapse
+        // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3)).
         leaf_count(&factored) <= best_c
+          && factored_den_acceptable(&best, &factored)
       };
       if accept && !exprs_equal(&factored, &best) {
-        best = factored;
+        // Canonicalize a factored POLYNOMIAL product's factor order
+        // through the evaluator: 4x^2-2x factors as 2*(-1+2x)*x but
+        // Wolfram prints 2*x*(-1+2x). Non-polynomial results (with I,
+        // E^…, Sqrt[…] factors) keep the pipeline's own ordering.
+        best = if polynomial_like(&factored) {
+          crate::evaluator::evaluate_expr_to_expr(&factored)
+            .unwrap_or(factored)
+        } else {
+          factored
+        };
         let _ = best_c;
       }
+    }
+  }
+
+  // Simplify's quotient sign extraction (see together::extract_quotient_minus):
+  // a numerator with negative content or an all-nonpositive denominator
+  // pulls a -1 out front.
+  {
+    let (n, d) = super::together::extract_num_den(&best);
+    if !matches!(&d, Expr::Integer(1))
+      && let Some(signed) = super::together::extract_quotient_minus(&n, &d)
+    {
+      best = signed;
     }
   }
 
@@ -4188,7 +4214,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
 /// True when the expression is built purely from numbers, symbols and the
 /// arithmetic heads — the shapes Factor/FactorSquareFree treat as
 /// polynomials. Sums with other functions (Sin[x], Log[x], …) are not.
-fn polynomial_like(e: &Expr) -> bool {
+pub(super) fn polynomial_like(e: &Expr) -> bool {
   use crate::syntax::BinaryOperator as B;
   match e {
     Expr::Integer(_)
@@ -6224,17 +6250,74 @@ pub(crate) fn simplify_division_impl(
     basic
   };
 
-  // Try factoring the result: Factor[p/q] = Factor[p]/Factor[q] often produces
-  // a simpler form (e.g. x^2/(1-3x+3x^2-x^3) → x^2/(-1+x)^3).
+  // Try factoring the result: Factor[p/q] = Factor[p]/Factor[q] often
+  // produces a simpler form (e.g. x^2/(1-3x+3x^2-x^3) → x^2/(-1+x)^3).
+  // Wolfram only keeps a factored DENOMINATOR when it collapses to a
+  // (power of a) single factor — Simplify[1/(4x+3x^2)] stays
+  // (4x+3x^2)^(-1), never 1/(x(4+3x)) — while quotient numerators factor
+  // freely (Simplify[(4x^2-2x)/(2+3x)] → (2x(-1+2x))/(2+3x)).
   if let Ok(factored) = super::factor::factor_ast(&[basic.clone()]) {
     let fc = leaf_count(&factored);
     let bc = leaf_count(&basic);
-    if fc <= bc {
-      return factored;
+    if fc <= bc && factored_den_acceptable(&basic, &factored) {
+      return finish_quotient_sign(factored, canonicalize_sign);
+    }
+  }
+  // Denominator factoring rejected: still try the numerator alone.
+  {
+    let (bn, bd) = super::together::extract_num_den(&basic);
+    if !matches!(&bd, Expr::Integer(1))
+      && polynomial_like(&bn)
+      && let Ok(factored_num) = super::factor::factor_ast(&[bn.clone()])
+      && leaf_count(&factored_num) <= leaf_count(&bn)
+      && !exprs_equal(&factored_num, &bn)
+    {
+      return finish_quotient_sign(
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(factored_num),
+          right: Box::new(bd),
+        },
+        canonicalize_sign,
+      );
     }
   }
 
-  basic
+  finish_quotient_sign(basic, canonicalize_sign)
+}
+
+/// Final Simplify sign normalization for a quotient (see
+/// together::extract_quotient_minus).
+fn finish_quotient_sign(e: Expr, canonicalize_sign: bool) -> Expr {
+  if !canonicalize_sign {
+    return e;
+  }
+  let (n, d) = super::together::extract_num_den(&e);
+  if matches!(&d, Expr::Integer(1)) {
+    return e;
+  }
+  super::together::extract_quotient_minus(&n, &d).unwrap_or(e)
+}
+
+/// Accept a factored quotient only when its denominator stayed unchanged
+/// or collapsed to a (constant multiple of a) single base or power —
+/// never a product of two or more non-constant factors.
+fn factored_den_acceptable(basic: &Expr, factored: &Expr) -> bool {
+  let (_, bd) = super::together::extract_num_den(basic);
+  let (_, fd) = super::together::extract_num_den(factored);
+  if exprs_equal(&bd, &fd) {
+    return true;
+  }
+  let factors = super::together::flatten_times_args(std::slice::from_ref(&fd));
+  let non_constant = factors
+    .iter()
+    .filter(|f| {
+      let mut vars = std::collections::HashSet::new();
+      collect_variables(f, &mut vars);
+      !vars.is_empty()
+    })
+    .count();
+  non_constant <= 1
 }
 
 /// Find a single variable in an expression (for univariate polynomial division).

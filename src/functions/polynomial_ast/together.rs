@@ -536,6 +536,65 @@ pub(super) fn canonicalize_quotient_sign(
   })
 }
 
+/// Wolfram's Simplify pulls a `-1` out in front of a quotient when the
+/// numerator's content sign is negative (its highest-degree coefficient
+/// for a univariate sum): Simplify[(-2-3x)/(4x+3x²)] →
+/// -((2+3x)/(4x+3x²)) and Simplify[(1-5x-3x²-x³)/(-1-2x+4x²)] →
+/// -((-1+5x+3x²+x³)/(-1-2x+4x²)). An entirely-nonpositive denominator
+/// flips too — Simplify[(2+3x)/(-4x-3x²)] → -((2+3x)/(4x+3x²)) — while
+/// a mixed-sign denominator like 1-x stays put (Simplify[x/(1-x)] keeps
+/// its form; that case is canonicalize_quotient_sign's). Two flips
+/// cancel. Returns None when nothing changes.
+pub(super) fn extract_quotient_minus(num: &Expr, den: &Expr) -> Option<Expr> {
+  let negate = |e: &Expr| {
+    expand_and_combine(&Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(e.clone()),
+    })
+  };
+  // Only UNIVARIATE polynomial sums participate: wolframscript keeps
+  // (-b + d*y)/(a - c*y) and (1 - Cos[2x])/2 exactly as they are.
+  let is_variable_sum = |e: &Expr| {
+    collect_additive_terms(e).len() >= 2
+      && !super::reduce::contains_imaginary(e)
+      && super::simplify::polynomial_like(e)
+      && {
+        let mut vars = std::collections::HashSet::new();
+        super::simplify::collect_variables(e, &mut vars);
+        vars.len() == 1
+      }
+  };
+  let all_terms_nonpositive = |e: &Expr| {
+    collect_additive_terms(e).iter().all(|t| {
+      super::factor::rational_content(std::slice::from_ref(t))
+        .is_some_and(|(n, _, _)| n <= 0)
+    })
+  };
+
+  let num_flip =
+    is_variable_sum(num) && additive_content_sign(num) == Some(-1);
+  let den_flip = is_variable_sum(den) && all_terms_nonpositive(den);
+  if !num_flip && !den_flip {
+    return None;
+  }
+  let new_num = if num_flip { negate(num) } else { num.clone() };
+  let new_den = if den_flip { negate(den) } else { den.clone() };
+  let quotient = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(new_num),
+    right: Box::new(new_den),
+  };
+  if num_flip != den_flip {
+    Some(Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(quotient),
+    })
+  } else {
+    Some(quotient)
+  }
+}
+
 /// Recursively run `together_expr` on sub-expressions so that nested fractions
 /// inside Power bases, Divide operands, and Times factors are combined first.
 /// Also rewrites `1 / (a/b)` → `b/a` (Power[Divide[a,b], -1]) so the outer

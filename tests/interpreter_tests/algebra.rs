@@ -592,6 +592,78 @@ mod simplify {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
 
+  // Simplify pulls a -1 out in front of a quotient when the univariate
+  // numerator's highest-degree coefficient is negative, or when the
+  // denominator is entirely nonpositive; two flips cancel. All
+  // wolframscript-verified (differential fuzzer, seeds
+  // 1783520505113402110 and 1783530056735545937).
+  #[test]
+  fn quotient_minus_extraction() {
+    assert_eq!(
+      interpret(
+        "Simplify[Divide[Plus[-2, Times[-3, x]], Plus[0, Times[4, x], \
+         Times[3, Power[x, 2]]]]]"
+      )
+      .unwrap(),
+      "-((2 + 3*x)/(4*x + 3*x^2))"
+    );
+    assert_eq!(
+      interpret("Simplify[(1 - 5 x - 3 x^2 - x^3)/(-1 - 2 x + 4 x^2)]")
+        .unwrap(),
+      "-((-1 + 5*x + 3*x^2 + x^3)/(-1 - 2*x + 4*x^2))"
+    );
+    assert_eq!(
+      interpret("Simplify[(2 + 3 x)/(-4 x - 3 x^2)]").unwrap(),
+      "-((2 + 3*x)/(4*x + 3*x^2))"
+    );
+    assert_eq!(
+      interpret("Simplify[(-2 - 3 x)/(-4 x - 3 x^2)]").unwrap(),
+      "(2 + 3*x)/(4*x + 3*x^2)"
+    );
+    // Multivariate and non-polynomial numerators keep their form.
+    assert_eq!(
+      interpret("Simplify[(-b + d*y)/(a - c*y)]").unwrap(),
+      "(-b + d*y)/(a - c*y)"
+    );
+    assert_eq!(
+      interpret("Simplify[(1 - Cos[2*x])/2]").unwrap(),
+      "(1 - Cos[2*x])/2"
+    );
+  }
+
+  // Standalone polynomials factor (2*x*(-1+2*x), canonical factor order),
+  // and quotient NUMERATORS factor too — but a quotient's DENOMINATOR
+  // stays expanded unless it collapses to a power of a single factor.
+  #[test]
+  fn factoring_respects_quotient_denominators() {
+    assert_eq!(interpret("Simplify[4 x^2 - 2 x]").unwrap(), "2*x*(-1 + 2*x)");
+    assert_eq!(interpret("Simplify[x^2 + x]").unwrap(), "x*(1 + x)");
+    assert_eq!(
+      interpret("Simplify[1/(4 x + 3 x^2)]").unwrap(),
+      "(4*x + 3*x^2)^(-1)"
+    );
+    assert_eq!(
+      interpret(
+        "Simplify[Divide[1, Plus[0, Times[2, x], Times[3, Power[x, 2]]]]]"
+      )
+      .unwrap(),
+      "(2*x + 3*x^2)^(-1)"
+    );
+    assert_eq!(
+      interpret("Simplify[(4 x^2 - 2 x)/(2 + 3 x)]").unwrap(),
+      "(2*x*(-1 + 2*x))/(2 + 3*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(x^2 + x)/3]").unwrap(),
+      "(x*(1 + x))/3"
+    );
+    // A denominator that IS a perfect power still factors.
+    assert_eq!(
+      interpret("Simplify[x^2/(1 - 3 x + 3 x^2 - x^3)]").unwrap(),
+      "-(x^2/(-1 + x)^3)"
+    );
+  }
+
   // wolframscript's Simplify flips p/q → (-p)/(-q) only when the
   // denominator's leading sign is negative AND the numerator is constant
   // or itself negative-signed (found by the differential fuzzer).
