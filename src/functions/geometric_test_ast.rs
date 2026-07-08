@@ -801,3 +801,80 @@ pub fn convex_polygon_q_ast(
     _ => Some(Ok(bool_expr(false))),
   }
 }
+
+// ---------------------------------------------------------------------------
+// SimplePolygonQ
+// ---------------------------------------------------------------------------
+
+/// Whether segments `p1p2` and `p3p4` cross transversally — a single interior
+/// intersection point with the endpoints strictly on opposite sides. Shared
+/// endpoints and mere touching (a vertex lying on the other segment) do not
+/// count, matching Wolfram's notion of a self-intersection.
+fn segments_properly_cross(p1: Pt, p2: Pt, p3: Pt, p4: Pt) -> bool {
+  let orient = |a: Pt, b: Pt, c: Pt| cross(sub(b, a), sub(c, a));
+  let d1 = orient(p3, p4, p1);
+  let d2 = orient(p3, p4, p2);
+  let d3 = orient(p1, p2, p3);
+  let d4 = orient(p1, p2, p4);
+  let opposite =
+    |x: f64, y: f64| (x > EPS && y < -EPS) || (x < -EPS && y > EPS);
+  opposite(d1, d2) && opposite(d3, d4)
+}
+
+/// A polygon is simple when no two non-adjacent edges cross transversally.
+fn simple_polygon(pts: &[Pt]) -> bool {
+  let n = pts.len();
+  if n < 3 {
+    return false;
+  }
+  for i in 0..n {
+    for j in (i + 1)..n {
+      // Edges i and j are adjacent when they share a vertex: consecutive
+      // edges, or the closing edge (n-1) meeting the opening edge (0).
+      let adjacent = j == i + 1 || (i == 0 && j == n - 1);
+      if adjacent {
+        continue;
+      }
+      if segments_properly_cross(
+        pts[i],
+        pts[(i + 1) % n],
+        pts[j],
+        pts[(j + 1) % n],
+      ) {
+        return false;
+      }
+    }
+  }
+  true
+}
+
+/// SimplePolygonQ[poly] — `True` when `poly` is a simple polygon (its boundary
+/// does not cross itself). Uses the same input handling as `ConvexPolygonQ`:
+/// explicit 2D `Polygon`/`Triangle` point lists are tested for transversal
+/// self-intersections, `Rectangle`/`RegularPolygon` are always simple, and
+/// any other value is `False`. Numeric polygons of dimension >= 3 are left
+/// unevaluated.
+pub fn simple_polygon_q_ast(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 1 {
+    return None;
+  }
+  match &args[0] {
+    Expr::FunctionCall { name, .. }
+      if name == "Rectangle" || name == "RegularPolygon" =>
+    {
+      Some(Ok(bool_expr(true)))
+    }
+    Expr::FunctionCall { name, args: pargs }
+      if (name == "Polygon" || name == "Triangle") && !pargs.is_empty() =>
+    {
+      match classify_polygon_points(&pargs[0]) {
+        PolyPoints::TwoD(pts) => Some(Ok(bool_expr(simple_polygon(&pts)))),
+        PolyPoints::HigherDim => None,
+        PolyPoints::Invalid => Some(Ok(bool_expr(false))),
+      }
+    }
+    _ => Some(Ok(bool_expr(false))),
+  }
+}

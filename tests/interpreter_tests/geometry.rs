@@ -4125,3 +4125,94 @@ mod convex_polygon_q {
     );
   }
 }
+
+mod simple_polygon_q {
+  use super::*;
+
+  #[test]
+  fn simple_shapes() {
+    assert_eq!(
+      interpret("SimplePolygonQ[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]]")
+        .unwrap(),
+      "True"
+    );
+    // A triangle is always simple.
+    assert_eq!(
+      interpret("SimplePolygonQ[Polygon[{{0, 0}, {1, 0}, {1, 1}}]]").unwrap(),
+      "True"
+    );
+    // Concave but non-self-intersecting is still simple.
+    assert_eq!(
+      interpret(
+        "SimplePolygonQ[Polygon[{{0, 0}, {2, 0}, {2, 2}, {1, 1}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A vertex touching a non-adjacent edge (no transversal crossing) is
+    // still considered simple.
+    assert_eq!(
+      interpret("SimplePolygonQ[Polygon[{{0, 0}, {4, 0}, {2, 0}, {2, 2}}]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn self_intersecting_shapes() {
+    // A bowtie's non-adjacent edges cross.
+    assert_eq!(
+      interpret("SimplePolygonQ[Polygon[{{0, 0}, {1, 1}, {1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "False"
+    );
+    // Two diagonals crossing transversally.
+    assert_eq!(
+      interpret("SimplePolygonQ[Polygon[{{0, 0}, {2, 2}, {2, 0}, {0, 2}}]]")
+        .unwrap(),
+      "False"
+    );
+    // A pentagram is self-intersecting.
+    assert_eq!(
+      interpret(
+        "SimplePolygonQ[Polygon[{{0, 1}, {0.588, -0.809}, {-0.951, 0.309}, \
+         {0.951, 0.309}, {-0.588, -0.809}}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    // Fewer than three vertices cannot bound a polygon.
+    assert_eq!(
+      interpret("SimplePolygonQ[Polygon[{{0, 0}, {1, 0}}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn shape_constructors() {
+    assert_eq!(
+      interpret("SimplePolygonQ[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("SimplePolygonQ[Rectangle[]]").unwrap(), "True");
+    assert_eq!(
+      interpret("SimplePolygonQ[RegularPolygon[6]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_polygons_are_false() {
+    assert_eq!(
+      interpret("SimplePolygonQ[{{0, 0}, {1, 0}, {1, 1}}]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("SimplePolygonQ[x]").unwrap(), "False");
+    assert_eq!(interpret("SimplePolygonQ[Disk[]]").unwrap(), "False");
+    assert_eq!(
+      interpret("SimplePolygonQ[Polygon[{{0, 0}, {1, 0}, {a, 1}, {0, 1}}]]")
+        .unwrap(),
+      "False"
+    );
+  }
+}

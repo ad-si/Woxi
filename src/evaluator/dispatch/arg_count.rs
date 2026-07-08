@@ -1339,6 +1339,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PathGraphQ" => Some((1, 1)),
     "PlanarGraphQ" => Some((1, 1)),
     "SimpleGraphQ" => Some((1, 1)),
+    "SimplePolygonQ" => Some((1, 1)),
     "FindClique" => Some((1, 3)),
     "FindIndependentVertexSet" => Some((1, 2)),
     "VertexComponent" => Some((2, 2)),

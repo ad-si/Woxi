@@ -4302,7 +4302,7 @@ PrimitivePolynomialQ,,,,11.1,4437
 RadonTransform,,,,11.2,4437
 ReadByteArray,,,,11.3,4437
 RogersTanimotoDissimilarity,Rogers-Tanimoto dissimilarity between binary vectors,✅,pure,6.0,4437
-SimplePolygonQ,,,,12.0,4437
+SimplePolygonQ,Tests whether a polygon with numeric vertices is non-self-intersecting,✅,pure,12.0,4437
 SolidRegionQ,,,,11.0,4437
 SystemModelSimulate,,🚫,,11.3,4437
 TrendStyle,,,,8.0,4437
