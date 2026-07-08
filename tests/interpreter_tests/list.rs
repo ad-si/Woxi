@@ -5803,6 +5803,56 @@ mod select {
       "{2, 5}"
     );
   }
+
+  #[test]
+  fn pure_function_head_no_survivors_emits_function_argb() {
+    // Select works on any expression: a pure function has head Function
+    // with one part (the raw body). When no part passes the criterion the
+    // rebuilt Function[] re-evaluates and emits Function::argb, matching
+    // wolframscript (e.g. swapped-argument Select[pred, list]).
+    for input in [
+      "Select[(# > 0 &), {82, -40, 20, Pi}]",
+      "Select[(# > 0 &), {}]",
+      "Select[(# > 0 &), NumberQ]",
+      "Select[Function[{x}, x + 1], IntegerQ]",
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), "Function[]");
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = "Function::argb: Function called with 0 arguments; \
+                      between 1 and 3 arguments are expected.";
+      assert!(
+        msgs.iter().any(|m| m.contains(expected)),
+        "expected {expected:?}, got {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn pure_function_head_keeps_matching_parts() {
+    // Surviving parts rebuild Function[...] with the head preserved.
+    clear_state();
+    // Only the body (1) is an integer: Function[1], displayed `1 & `.
+    assert_eq!(
+      interpret("Select[Function[x, 1], IntegerQ]").unwrap(),
+      "1 & "
+    );
+    // Both parts of Function[x, x] are atoms, so the function survives whole.
+    assert_eq!(
+      interpret("Select[Function[x, x], AtomQ]").unwrap(),
+      "Function[x, x]"
+    );
+    // A bracketed parameter list is a single List part.
+    assert_eq!(
+      interpret("Select[Function[{x, y}, x + y], ListQ]").unwrap(),
+      "{x, y} & "
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("Function::argb")),
+      "unexpected argb message: {msgs:?}"
+    );
+  }
 }
 
 mod discard {

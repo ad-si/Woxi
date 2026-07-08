@@ -110,6 +110,37 @@ mod arg_count_errors {
     assert!(result.warnings[0]
       .contains("Quiet::argb: Quiet called with 4 arguments; between 1 and 3 arguments are expected."));
   }
+
+  #[test]
+  fn function_zero_args_uses_argb() {
+    // Regression: Function[] previously returned silently; wolframscript
+    // emits Function::argb and leaves the expression unevaluated.
+    clear_state();
+    let result = interpret_with_stdout("Function[]").unwrap();
+    assert_eq!(result.result, "Function[]");
+    assert!(result.warnings[0].contains(
+      "Function::argb: Function called with 0 arguments; between 1 and 3 arguments are expected."
+    ));
+  }
+
+  #[test]
+  fn function_valid_arities_are_silent() {
+    // The 1-arg (pure), 2-arg (named params), and 3-arg (attributes) forms
+    // of Function must keep working without arg-count messages.
+    clear_state();
+    assert_eq!(interpret("Function[x, x^2][3]").unwrap(), "9");
+    assert_eq!(interpret("Function[{x, y}, x + y][2, 3]").unwrap(), "5");
+    assert_eq!(interpret("(#^2 &)[4]").unwrap(), "16");
+    assert_eq!(
+      interpret("f = Function[{x}, x + 1, HoldAll]; f[2]").unwrap(),
+      "3"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("Function::arg")),
+      "unexpected arg-count message: {msgs:?}"
+    );
+  }
 }
 
 mod singular_argument_tags {

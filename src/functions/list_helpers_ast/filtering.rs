@@ -36,10 +36,41 @@ pub fn select_ast(
     return Ok(Expr::Association(kept));
   }
 
-  // Select works on any expression with arguments, preserving the head
+  // Select works on any expression with arguments, preserving the head.
+  // Pure functions are ordinary expressions with head Function, so their
+  // raw parts (Slots and parameter names intact) are filtered like any
+  // other head's arguments: Select[(# > 0 &), crit] tests crit[#1 > 0].
+  let owned_items: Vec<Expr>;
   let (items, head_name): (&[Expr], Option<String>) = match list {
     Expr::List(items) => (items.as_slice(), None),
     Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
+    Expr::Function { body } => {
+      owned_items = vec![(**body).clone()];
+      (owned_items.as_slice(), Some("Function".to_string()))
+    }
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      let mut parts: Vec<Expr> = Vec::with_capacity(params.len() + 1);
+      if *bracketed {
+        // Function[{x, y}, body] has two parts: the parameter list and
+        // the body.
+        parts.push(Expr::List(
+          params
+            .iter()
+            .map(|p| Expr::Identifier(p.clone()))
+            .collect::<Vec<_>>()
+            .into(),
+        ));
+      } else {
+        parts.extend(params.iter().map(|p| Expr::Identifier(p.clone())));
+      }
+      parts.push((**body).clone());
+      owned_items = parts;
+      (owned_items.as_slice(), Some("Function".to_string()))
+    }
     _ => {
       let mut args = vec![list.clone(), pred.clone()];
       if let Some(limit) = n {
