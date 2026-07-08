@@ -17,8 +17,8 @@ use crate::syntax::Expr;
 /// Init forms: {c1, c2, ...} (cyclic) or {{c1, c2, ...}, bg} (infinite
 /// background) for 1D rules; a matrix or {matrix, bg} for 2D rules.
 ///
-/// Step specifications: t (steps 0..t), {t} (the step-t state alone),
-/// {{t}}, {{t1, t2}} and {{t1, t2, dt}} (a list of the selected states).
+/// Step specifications: t and {t} (both steps 0..t), {{t}}, {{t1, t2}} and
+/// {{t1, t2, dt}} (a list of the selected states).
 pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -51,7 +51,7 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   };
 
-  let mut exprs: Vec<Expr> = states
+  let exprs: Vec<Expr> = states
     .into_iter()
     .map(|state| {
       if rule.two_d {
@@ -72,11 +72,7 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
-  if steps.single {
-    Ok(exprs.remove(0))
-  } else {
-    Ok(Expr::List(exprs.into()))
-  }
+  Ok(Expr::List(exprs.into()))
 }
 
 struct RuleSpec {
@@ -91,8 +87,6 @@ struct RuleSpec {
 struct StepSpec {
   /// The (ascending) time steps whose states are returned.
   times: Vec<usize>,
-  /// True for the `{t}` form, which returns the single state unwrapped.
-  single: bool,
 }
 
 fn as_nonneg_int(expr: &Expr) -> Option<u128> {
@@ -278,15 +272,15 @@ fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
     Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
       Some(StepSpec {
         times: (0..=(*t as usize)).collect(),
-        single: false,
       })
     }
     Expr::List(items) if items.len() == 1 => match &items[0] {
-      // {t} — the state at step t alone.
-      Expr::Integer(t) if *t >= 0 => Some(StepSpec {
-        times: vec![usize::try_from(*t).ok()?],
-        single: true,
-      }),
+      // {t} — all steps 0 through t, identical to the bare `t` form.
+      Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
+        Some(StepSpec {
+          times: (0..=(*t as usize)).collect(),
+        })
+      }
       // {{t}}, {{t1, t2}}, {{t1, t2, dt}} — a list of the selected states.
       Expr::List(ts) if !ts.is_empty() && ts.len() <= 3 => {
         let vals: Option<Vec<u128>> = ts.iter().map(as_nonneg_int).collect();
@@ -299,7 +293,6 @@ fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
         }
         Some(StepSpec {
           times: (t1..=t2).step_by(dt).collect(),
-          single: false,
         })
       }
       _ => None,

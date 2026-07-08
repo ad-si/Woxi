@@ -84,11 +84,12 @@ mod cellular_automaton {
   }
 
   #[test]
-  fn step_spec_single_state_unwrapped() {
-    // {t} returns the step-t state alone (not wrapped in a list).
+  fn step_spec_list_t_gives_all_steps() {
+    // {t} is identical to the bare `t` form: all steps 0 through t.
     assert_eq!(
       interpret("CellularAutomaton[30, {{1}, 0}, {3}]").unwrap(),
-      "{1, 1, 0, 1, 1, 1, 1}"
+      "{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 0, 0}, \
+       {0, 1, 1, 0, 0, 1, 0}, {1, 1, 0, 1, 1, 1, 1}}"
     );
   }
 
@@ -167,15 +168,17 @@ mod cellular_automaton {
   }
 
   #[test]
-  fn two_dimensional_growth_rule_single_step() {
+  fn two_dimensional_growth_rule_steps() {
     assert_eq!(
       interpret(
         "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
          {1, 1}}, {{{1}}, 0}, {2}]"
       )
       .unwrap(),
-      "{{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}, {0, 0, 1, 0, 0}, \
-       {0, 0, 1, 0, 0}}"
+      "{{{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 0, 0}, \
+       {0, 0, 0, 0, 0}}, {{0, 0, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, \
+       {0, 0, 1, 0, 0}, {0, 0, 0, 0, 0}}, {{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, \
+       {1, 1, 1, 1, 1}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}}}"
     );
   }
 
@@ -217,8 +220,9 @@ mod cellular_automaton {
          {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}}, {1}]"
       )
       .unwrap(),
-      "{{0, 0, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, \
-       {0, 0, 0, 0, 0}}"
+      "{{{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}, \
+       {0, 0, 0, 0, 0}}, {{0, 0, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, \
+       {0, 0, 1, 0, 0}, {0, 0, 0, 0, 0}}}"
     );
   }
 

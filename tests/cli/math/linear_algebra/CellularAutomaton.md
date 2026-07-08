@@ -7,11 +7,12 @@ $ wo 'CellularAutomaton[90, {{1}, 0}, 2]'
 {{0, 0, 1, 0, 0}, {0, 1, 0, 1, 0}, {1, 0, 0, 0, 1}}
 ```
 
-The step specification `{t}` returns only the state at step `t`:
+The step specification `{{t}}` returns just the state at step `t`, wrapped in
+a list (`{t}` behaves like the bare `t` form, giving all steps `0` through `t`):
 
 ```scrut
-$ wo 'CellularAutomaton[30, {{1}, 0}, {3}]'
-{1, 1, 0, 1, 1, 1, 1}
+$ wo 'CellularAutomaton[30, {{1}, 0}, {{3}}]'
+{{1, 1, 0, 1, 1, 1, 1}}
 ```
 
 Two-dimensional rules take a weight matrix and a range specification.
