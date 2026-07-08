@@ -3542,7 +3542,7 @@ ScalePadding,,,,9.0,3636
 SmithWatermanSimilarity,Local sequence-alignment similarity score,✅,pure,7.0,3636
 TaskRemove,,🚫,,11.2,3636
 TopHatTransform,,🚫,,7.0,3636
-WarpingCorrespondence,,,,11.0,3636
+WarpingCorrespondence,Dynamic time warping alignment path between two numeric sequences,✅,pure,11.0,3636
 WindVectorData,,🚫,,10.0,3636
 AudioNormalize,,🚫,,11.0,3656
 CombinerFunction,,,,10.0,3656

@@ -3702,6 +3702,112 @@ fn warping_distance_value(a: &Expr, b: &Expr) -> Option<f64> {
   Some(dp[n][m])
 }
 
+/// Backtrace the DTW cost matrix, returning the correspondence path as a
+/// pair of 1-indexed index lists into `a` and `b`. On ties the diagonal step
+/// is preferred, then the step advancing the longer remaining sequence,
+/// matching wolframscript's WarpingCorrespondence path.
+fn warping_correspondence_path(
+  a: &Expr,
+  b: &Expr,
+) -> Option<(Vec<i128>, Vec<i128>)> {
+  let to_vec = |e: &Expr| -> Option<Vec<f64>> {
+    match e {
+      Expr::List(items) => items
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect(),
+      _ => None,
+    }
+  };
+  let a = to_vec(a)?;
+  let b = to_vec(b)?;
+  let (n, m) = (a.len(), b.len());
+  if n == 0 || m == 0 {
+    return None;
+  }
+  let inf = f64::INFINITY;
+  let mut dp = vec![vec![inf; m + 1]; n + 1];
+  dp[0][0] = 0.0;
+  for i in 1..=n {
+    for j in 1..=m {
+      let cost = (a[i - 1] - b[j - 1]).abs();
+      dp[i][j] = cost + dp[i - 1][j].min(dp[i][j - 1]).min(dp[i - 1][j - 1]);
+    }
+  }
+
+  let (mut i, mut j) = (n, m);
+  let mut pi = vec![i as i128];
+  let mut pj = vec![j as i128];
+  while i > 1 || j > 1 {
+    let diag = if i > 1 && j > 1 {
+      dp[i - 1][j - 1]
+    } else {
+      inf
+    };
+    let up = if i > 1 { dp[i - 1][j] } else { inf };
+    let left = if j > 1 { dp[i][j - 1] } else { inf };
+    let best = diag.min(up).min(left);
+    // Prefer the diagonal on ties; otherwise advance the coordinate with more
+    // remaining steps so both sequences are consumed evenly.
+    if diag <= best {
+      i -= 1;
+      j -= 1;
+    } else if up == best && (j == 1 || up <= left) {
+      i -= 1;
+    } else {
+      j -= 1;
+    }
+    pi.push(i as i128);
+    pj.push(j as i128);
+  }
+  pi.reverse();
+  pj.reverse();
+  Some((pi, pj))
+}
+
+/// WarpingCorrespondence[s1, s2] — the dynamic-time-warping alignment path
+/// between two numeric sequences, given as a pair of 1-indexed index lists.
+pub fn warping_correspondence_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "WarpingCorrespondence".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  match warping_correspondence_path(&args[0], &args[1]) {
+    Some((pi, pj)) => Ok(Expr::List(
+      vec![
+        Expr::List(
+          pi.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+        ),
+        Expr::List(
+          pj.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+        ),
+      ]
+      .into(),
+    )),
+    None => {
+      let is_numeric_vec = |e: &Expr| {
+        matches!(e, Expr::List(items) if !items.is_empty()
+          && items.iter().all(|x| crate::functions::math_ast::try_eval_to_f64(x).is_some()))
+      };
+      if let Some(bad) = args.iter().find(|a| !is_numeric_vec(a)) {
+        crate::emit_message(&format!(
+          "WarpingCorrespondence::invarg: Expecting a real-valued numeric or \
+           Boolean vector or matrix instead of {}.",
+          crate::syntax::format_expr(bad, crate::syntax::ExprForm::Output)
+        ));
+      }
+      unevaluated()
+    }
+  }
+}
+
 pub fn warping_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
     if let Some(d) = warping_distance_value(&args[0], &args[1]) {

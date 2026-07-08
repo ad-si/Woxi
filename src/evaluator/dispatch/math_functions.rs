@@ -1184,6 +1184,11 @@ pub fn dispatch_math_functions(
     "WarpingDistance" if args.len() == 2 => {
       return Some(crate::functions::math_ast::warping_distance_ast(args));
     }
+    "WarpingCorrespondence" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::warping_correspondence_ast(
+        args,
+      ));
+    }
     "ManhattanDistance" if args.len() == 2 => {
       return Some(crate::functions::math_ast::manhattan_distance_ast(args));
     }

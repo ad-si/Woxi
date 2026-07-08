@@ -3123,6 +3123,58 @@ mod expand_threading {
   }
 
   #[test]
+  fn warping_correspondence() {
+    // Identical sequences align one-to-one along the diagonal.
+    assert_eq!(
+      interpret("WarpingCorrespondence[{1, 2, 3}, {1, 2, 3}]").unwrap(),
+      "{{1, 2, 3}, {1, 2, 3}}"
+    );
+    // Repeated values in the second sequence map back to one source index.
+    assert_eq!(
+      interpret("WarpingCorrespondence[{1, 2, 3}, {1, 1, 2, 3, 3}]").unwrap(),
+      "{{1, 1, 2, 3, 3}, {1, 2, 3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("WarpingCorrespondence[{0, 1, 0}, {0, 0, 1, 1, 0}]").unwrap(),
+      "{{1, 1, 2, 2, 3}, {1, 2, 3, 4, 5}}"
+    );
+  }
+
+  #[test]
+  fn warping_correspondence_ties_and_edges() {
+    // A single value stretches over the whole other sequence.
+    assert_eq!(
+      interpret("WarpingCorrespondence[{5}, {1, 2, 3, 4, 5}]").unwrap(),
+      "{{1, 1, 1, 1, 1}, {1, 2, 3, 4, 5}}"
+    );
+    // Tie-heavy constant sequences follow Wolfram's path exactly.
+    assert_eq!(
+      interpret("WarpingCorrespondence[{1, 1, 1, 1}, {1, 1}]").unwrap(),
+      "{{1, 2, 3, 4}, {1, 1, 1, 2}}"
+    );
+    assert_eq!(
+      interpret("WarpingCorrespondence[{10, 20, 30}, {10, 30}]").unwrap(),
+      "{{1, 2, 3}, {1, 1, 2}}"
+    );
+    // Single element pair.
+    assert_eq!(
+      interpret("WarpingCorrespondence[{5}, {5}]").unwrap(),
+      "{{1}, {1}}"
+    );
+  }
+
+  #[test]
+  fn warping_correspondence_non_numeric_warns() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("WarpingCorrespondence[{1, 2}, x]").unwrap();
+    assert_eq!(r.result, "WarpingCorrespondence[{1, 2}, x]");
+    assert!(r.warnings[0].contains(
+      "WarpingCorrespondence::invarg: Expecting a real-valued numeric or \
+       Boolean vector or matrix instead of x."
+    ));
+  }
+
+  #[test]
   fn string_functions_conditional_patterns() {
     // A `/;`-conditioned string pattern (`x_ /; test`) must evaluate its test
     // per candidate match. These all returned no-match before the fix.
