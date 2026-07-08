@@ -540,6 +540,132 @@ mod nakagami_distribution {
   }
 }
 
+mod log_logistic_distribution {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("LogLogisticDistribution[2, 3]").unwrap(),
+      "LogLogisticDistribution[2, 3]"
+    );
+  }
+
+  // PDF[LogLogisticDistribution[g, s], x] = Piecewise[{{
+  //   (g x^(-1 + g))/(s^g (1 + (x/s)^g)^2), x > 0}}, 0]
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[LogLogisticDistribution[g, s], x]").unwrap(),
+      "Piecewise[{{(g*x^(-1 + g))/(s^g*(1 + (x/s)^g)^2), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[LogLogisticDistribution[2, 3], 1]").unwrap(),
+      "9/50"
+    );
+  }
+
+  // Outside the support (x <= 0) the density is 0.
+  #[test]
+  fn pdf_below_support() {
+    assert_eq!(
+      interpret("PDF[LogLogisticDistribution[2, 3], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[LogLogisticDistribution[2, 3], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  // CDF[LogLogisticDistribution[g, s], x] =
+  //   Piecewise[{{(1 + (x/s)^(-g))^(-1), x > 0}}, 0]
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[LogLogisticDistribution[g, s], x]").unwrap(),
+      "Piecewise[{{(1 + (x/s)^(-g))^(-1), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_numeric() {
+    assert_eq!(
+      interpret("CDF[LogLogisticDistribution[2, 3], 1]").unwrap(),
+      "1/10"
+    );
+  }
+
+  #[test]
+  fn cdf_below_support() {
+    assert_eq!(
+      interpret("CDF[LogLogisticDistribution[2, 3], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CDF[LogLogisticDistribution[2, 3], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  // Mean = Piecewise[{{(Pi s Csc[Pi/g])/g, g > 1}}, Indeterminate].
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[LogLogisticDistribution[g, s]]").unwrap(),
+      "Piecewise[{{(Pi*s*Csc[Pi/g])/g, g > 1}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(
+      interpret("Mean[LogLogisticDistribution[2, 3]]").unwrap(),
+      "(3*Pi)/2"
+    );
+  }
+
+  // Variance = Piecewise[{{(Pi s^2 (-(Pi Csc[Pi/g]^2) + 2 g Csc[(2 Pi)/g]))/g^2,
+  //   g > 2}}, Indeterminate]. Woxi's Times canonicalizer orders the inner Plus
+  // terms differently from WL (2 g Csc[...] first); value-correct, form only.
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[LogLogisticDistribution[g, s]]").unwrap(),
+      "Piecewise[{{(Pi*s^2*(2*g*Csc[(2*Pi)/g] - Pi*Csc[Pi/g]^2))/g^2, \
+       g > 2}}, Indeterminate]"
+    );
+  }
+
+  // Numeric variance: WL prints 4 (...) Pi, Woxi 4 Pi (...); value-correct.
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[LogLogisticDistribution[3, 2]]").unwrap(),
+      "(4*Pi*(4*Sqrt[3] - (4*Pi)/3))/9"
+    );
+  }
+
+  // g and s must both be positive.
+  #[test]
+  fn distribution_parameter_q() {
+    assert_eq!(
+      interpret("DistributionParameterQ[LogLogisticDistribution[2, 3]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DistributionParameterQ[LogLogisticDistribution[-1, 3]]")
+        .unwrap(),
+      "False"
+    );
+  }
+}
+
 mod standard_deviation_symbolic_distributions {
   use super::*;
 

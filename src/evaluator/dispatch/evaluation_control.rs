@@ -363,6 +363,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "LogLogisticDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "LogLogisticDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "HypergeometricDistribution" if args.len() == 3 => {
       return Some(Ok(Expr::FunctionCall {
         name: "HypergeometricDistribution".to_string(),
@@ -958,6 +964,10 @@ fn validate_distribution_params(name: &str, args: &[Expr]) -> bool {
     }
     "NakagamiDistribution" => {
       // NakagamiDistribution[m, w] — both positive
+      args.len() == 2 && is_positive(&args[0]) && is_positive(&args[1])
+    }
+    "LogLogisticDistribution" => {
+      // LogLogisticDistribution[g, s] — both positive
       args.len() == 2 && is_positive(&args[0]) && is_positive(&args[1])
     }
     "GammaDistribution" => {

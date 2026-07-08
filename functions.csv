@@ -3514,7 +3514,7 @@ DiscreteShift,Discrete shift of an expression (n -> n+1),✅,pure,7.0,3612
 GaugeFaceStyle,,🚫,,9.0,3612
 HilbertCurve,Line through all cells of the 2^n x 2^n grid in Hilbert order (integer grid; DataRange maps to reals),✅,pure,11.1,3612
 KumaraswamyDistribution,Kumaraswamy continuous distribution on the unit interval,✅,pure,8.0,3612
-LogLogisticDistribution,,,,8.0,3612
+LogLogisticDistribution,Log-logistic distribution with shape g and scale s,✅,pure,8.0,3612
 LongestCommonSequence,Returns the longest noncontiguous subsequence common to two strings or lists,✅,pure,7.0,3612
 NevilleThetaD,,,,3.0,3612
 NevilleThetaN,,,,3.0,3612

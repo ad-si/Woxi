@@ -220,6 +220,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GeometricDistribution" => pdf_geometric(dargs, x),
     "LogSeriesDistribution" => pdf_log_series(dargs, x),
     "NakagamiDistribution" => pdf_nakagami(dargs, x),
+    "LogLogisticDistribution" => pdf_log_logistic(dargs, x),
     "CauchyDistribution" => pdf_cauchy(dargs, x),
     "DiscreteUniformDistribution" => pdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => pdf_laplace(dargs, x),
@@ -1746,6 +1747,62 @@ fn cdf_nakagami(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   eval(piecewise(vec![(value, cond)], int(0)))
 }
 
+/// PDF[LogLogisticDistribution[g, s], x] =
+///   Piecewise[{{(g x^(-1 + g))/(s^g (1 + (x/s)^g)^2), x > 0}}, 0]
+fn pdf_log_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LogLogisticDistribution expects 2 arguments".into(),
+    ));
+  }
+  let g = dargs[0].clone();
+  let s = dargs[1].clone();
+  // numerator = g x^(-1 + g)
+  let numer = times(g.clone(), power(x.clone(), plus(int(-1), g.clone())));
+  // denominator = s^g (1 + (x/s)^g)^2
+  let denom = times(
+    power(s.clone(), g.clone()),
+    power(plus(int(1), power(divide(x.clone(), s), g)), int(2)),
+  );
+  let density = divide(numer, denom);
+  // Concrete x <= 0 is outside the support. Evaluating the density there would
+  // raise x^(-1 + g) (or (x/s)^g) at x = 0 for g < 1 and emit a spurious
+  // Power::infy message even though the piecewise selects the 0 branch.
+  if let Some(xv) = crate::functions::math_ast::expr_to_num(&x)
+    && xv <= 0.0
+  {
+    return Ok(int(0));
+  }
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(density, cond)], int(0)))
+}
+
+/// CDF[LogLogisticDistribution[g, s], x] =
+///   Piecewise[{{(1 + (x/s)^(-g))^(-1), x > 0}}, 0]
+fn cdf_log_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LogLogisticDistribution expects 2 arguments".into(),
+    ));
+  }
+  let g = dargs[0].clone();
+  let s = dargs[1].clone();
+  let value = power(
+    plus(int(1), power(divide(x.clone(), s), times(int(-1), g))),
+    int(-1),
+  );
+  // Concrete x <= 0 is outside the support; return 0 directly. At x = 0 the
+  // value has (x/s)^(-g) = 0^(-g), which would emit a spurious Power::infy
+  // message even though the piecewise selects the 0 branch.
+  if let Some(xv) = crate::functions::math_ast::expr_to_num(&x)
+    && xv <= 0.0
+  {
+    return Ok(int(0));
+  }
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
 // ─── CDF ──────────────────────────────────────────────────────────────
 
 /// CDF[dist, x] - Cumulative distribution function
@@ -1875,6 +1932,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GeometricDistribution" => cdf_geometric(dargs, x),
     "LogSeriesDistribution" => cdf_log_series(dargs, x),
     "NakagamiDistribution" => cdf_nakagami(dargs, x),
+    "LogLogisticDistribution" => cdf_log_logistic(dargs, x),
     "CauchyDistribution" => cdf_cauchy(dargs, x),
     "DiscreteUniformDistribution" => cdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => cdf_laplace(dargs, x),
@@ -4920,6 +4978,49 @@ fn distribution_mean_variance(
       let mean = divide(times(sqrt(w.clone()), poch.clone()), sqrt(m.clone()));
       // Var = w - (w Pochhammer[m, 1/2]^2)/m
       let var = minus(w.clone(), divide(times(w, power(poch, int(2))), m));
+      Ok((mean, var))
+    }
+    "LogLogisticDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "LogLogisticDistribution expects 2 arguments".into(),
+        ));
+      }
+      let g = dargs[0].clone();
+      let s = dargs[1].clone();
+      let indeterminate = || Expr::Identifier("Indeterminate".to_string());
+      let csc = |arg: Expr| Expr::FunctionCall {
+        name: "Csc".to_string(),
+        args: vec![arg].into(),
+      };
+      // Mean = Piecewise[{{(Pi s Csc[Pi/g])/g, g > 1}}, Indeterminate]
+      let mean_val = divide(
+        times(times(pi(), s.clone()), csc(divide(pi(), g.clone()))),
+        g.clone(),
+      );
+      let mean = piecewise(
+        vec![(
+          mean_val,
+          comparison(g.clone(), ComparisonOp::Greater, int(1)),
+        )],
+        indeterminate(),
+      );
+      // Var = Piecewise[{{(Pi s^2 (-(Pi Csc[Pi/g]^2) + 2 g Csc[(2 Pi)/g]))/g^2,
+      //   g > 2}}, Indeterminate]
+      let csc1 = csc(divide(pi(), g.clone()));
+      let csc2 = csc(divide(times(int(2), pi()), g.clone()));
+      let inner = plus(
+        times(int(-1), times(pi(), power(csc1, int(2)))),
+        times(times(int(2), g.clone()), csc2),
+      );
+      let var_val = divide(
+        times(times(pi(), power(s, int(2))), inner),
+        power(g.clone(), int(2)),
+      );
+      let var = piecewise(
+        vec![(var_val, comparison(g, ComparisonOp::Greater, int(2)))],
+        indeterminate(),
+      );
       Ok((mean, var))
     }
     "CauchyDistribution" => {

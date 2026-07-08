@@ -796,6 +796,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LogitModelFit" => Some((3, 3)),
     "LogLinearPlot" => Some((2, usize::MAX)),
     "LogLogPlot" => Some((2, usize::MAX)),
+    "LogLogisticDistribution" => Some((2, 2)),
     "LogNormalDistribution" => Some((2, 2)),
     "LogSeriesDistribution" => Some((1, 1)),
     "LogPlot" => Some((2, usize::MAX)),
