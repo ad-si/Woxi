@@ -625,9 +625,12 @@ mod simplify {
       interpret("Simplify[(-b + d*y)/(a - c*y)]").unwrap(),
       "(-b + d*y)/(a - c*y)"
     );
+    // Converse power reduction: (1 - Cos[2 x])/2 collapses to the power form.
+    assert_eq!(interpret("Simplify[(1 - Cos[2*x])/2]").unwrap(), "Sin[x]^2");
+    assert_eq!(interpret("Simplify[(1 + Cos[2*x])/2]").unwrap(), "Cos[x]^2");
     assert_eq!(
-      interpret("Simplify[(1 - Cos[2*x])/2]").unwrap(),
-      "(1 - Cos[2*x])/2"
+      interpret("Simplify[a (1 - Cos[2*x])/2]").unwrap(),
+      "a*Sin[x]^2"
     );
   }
 

@@ -5578,6 +5578,19 @@ fn is_plus_expr(expr: &Expr) -> bool {
 
 /// Full simplification: expand, combine like terms, simplify.
 pub fn simplify_expr(expr: &Expr) -> Expr {
+  let normal = simplify_expr_inner(expr);
+  // Converse power-reduction identity: α(1 ∓ Cos[w]) → 2α·Sin/Cos[w/2]^2.
+  // wolframscript's Simplify collapses e.g. (1 - Cos[2 x])/2 to Sin[x]^2, so
+  // offer the power form as a candidate and keep it when it has fewer leaves.
+  if let Some(reduced) = try_cos_power_reduction(expr)
+    && leaf_count(&reduced) < leaf_count(&normal)
+  {
+    return reduced;
+  }
+  normal
+}
+
+fn simplify_expr_inner(expr: &Expr) -> Expr {
   match expr {
     Expr::Integer(_)
     | Expr::Real(_)
@@ -7713,6 +7726,155 @@ fn parse_trig_monomial(term: &Expr) -> Option<(i128, i128, i128, Expr)> {
 
   let arg = trig_arg?;
   Some((coeff, sin_pow, cos_pow, arg))
+}
+
+/// The single-argument trig/hyperbolic function heads, used to reject terms
+/// that carry trig factors other than a lone first-power cosine.
+const SINGLE_ARG_TRIG_HEADS: [&str; 12] = [
+  "Sin", "Cos", "Tan", "Cot", "Sec", "Csc", "Sinh", "Cosh", "Tanh", "Coth",
+  "Sech", "Csch",
+];
+
+/// True if `expr` contains any single-argument trig/hyperbolic call.
+fn contains_trig(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (args.len() == 1 && SINGLE_ARG_TRIG_HEADS.contains(&name.as_str()))
+        || args.iter().any(contains_trig)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_trig(left) || contains_trig(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_trig(operand),
+    Expr::List(items) => items.iter().any(contains_trig),
+    _ => false,
+  }
+}
+
+/// Parse a term of the form `coeff * Cos[arg]` — a cosine to the first power
+/// with no other trig factors — into `(coeff, arg)`. Returns None when the term
+/// carries a sine, a higher cosine power, or more than one cosine.
+fn match_cos_linear_term(term: &Expr) -> Option<(Expr, Expr)> {
+  let (neg, inner) = match term {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => (true, operand.as_ref()),
+    _ => (false, term),
+  };
+  let factors = super::expand::collect_multiplicative_factors(inner);
+  let mut cos_arg: Option<Expr> = None;
+  let mut coeff_factors: Vec<Expr> = Vec::new();
+  for factor in &factors {
+    let (base, exp) = super::expand::extract_base_and_exp(factor);
+    if let Expr::FunctionCall { name, args } = &base
+      && args.len() == 1
+      && SINGLE_ARG_TRIG_HEADS.contains(&name.as_str())
+    {
+      // Only a single first-power cosine is admissible; anything else
+      // (a sine, a cosine power, a second cosine) disqualifies the term.
+      if name != "Cos" || !matches!(exp, Expr::Integer(1)) || cos_arg.is_some()
+      {
+        return None;
+      }
+      cos_arg = Some(args[0].clone());
+    } else {
+      coeff_factors.push(factor.clone());
+    }
+  }
+  let arg = cos_arg?;
+  let mut coeff = coeff_factors
+    .into_iter()
+    .reduce(|acc, f| Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(acc),
+      right: Box::new(f),
+    })
+    .unwrap_or(Expr::Integer(1));
+  if neg {
+    coeff = Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(coeff),
+    };
+  }
+  Some((simplify_expr_inner(&coeff), arg))
+}
+
+/// Converse power-reduction: recognize `α + γ·Cos[w]` where `α == -γ` (giving
+/// `α(1 - Cos[w]) = 2α·Sin[w/2]^2`) or `α == γ` (giving
+/// `α(1 + Cos[w]) = 2α·Cos[w/2]^2`). Matches for any expression `α` and angle
+/// `w`, so `(1 - Cos[2 x])/2 → Sin[x]^2` and `a (1 + Cos[2 x])/2 → a Cos[x]^2`.
+fn try_cos_power_reduction(expr: &Expr) -> Option<Expr> {
+  let expanded = expand_and_combine(expr);
+  let terms = collect_additive_terms(&expanded);
+  if terms.len() < 2 {
+    return None;
+  }
+  let mut cos_coeff: Option<Expr> = None;
+  let mut cos_arg: Option<Expr> = None;
+  let mut const_terms: Vec<Expr> = Vec::new();
+  for term in &terms {
+    if let Some((coeff, arg)) = match_cos_linear_term(term) {
+      if cos_arg.is_some() {
+        return None; // more than one cosine term
+      }
+      cos_coeff = Some(coeff);
+      cos_arg = Some(arg);
+    } else {
+      if contains_trig(term) {
+        return None; // a non-cosine trig term breaks the α + γ·Cos shape
+      }
+      const_terms.push(term.clone());
+    }
+  }
+  let arg = cos_arg?;
+  let gamma = cos_coeff?;
+  if const_terms.is_empty() {
+    return None;
+  }
+  let alpha = simplify_expr_inner(
+    &const_terms
+      .into_iter()
+      .reduce(|acc, t| Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(acc),
+        right: Box::new(t),
+      })
+      .unwrap(),
+  );
+  if matches!(alpha, Expr::Integer(0)) {
+    return None;
+  }
+  let neg_gamma = simplify_expr_inner(&Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand: Box::new(gamma.clone()),
+  });
+  let is_sin = if exprs_equal(&alpha, &neg_gamma) {
+    true
+  } else if exprs_equal(&alpha, &gamma) {
+    false
+  } else {
+    return None;
+  };
+  let half_arg = simplify_expr_inner(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(arg),
+    right: Box::new(Expr::Integer(2)),
+  });
+  let two_alpha = simplify_expr_inner(&Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(Expr::Integer(2)),
+    right: Box::new(alpha),
+  });
+  let squared = Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(Expr::FunctionCall {
+      name: if is_sin { "Sin" } else { "Cos" }.to_string(),
+      args: vec![half_arg].into(),
+    }),
+    right: Box::new(Expr::Integer(2)),
+  };
+  Some(simplify_product(&two_alpha, &squared))
 }
 
 /// Try to simplify a sum of trig monomials by:
