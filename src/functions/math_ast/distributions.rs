@@ -4963,6 +4963,33 @@ fn distribution_mean_variance(
       let var = divide(minus(int(1), p.clone()), power(p, int(2)));
       Ok((mean, var))
     }
+    // SuzukiDistribution has no closed-form PDF/CDF (wolframscript leaves the
+    // symbolic forms unevaluated and only computes the PDF numerically via
+    // integration, which is not implemented here). Its Mean and Variance are
+    // clean closed forms. The fully-symbolic Variance differs from
+    // wolframscript only in Plus term order (value-correct); every numeric
+    // parameterization agrees exactly.
+    "SuzukiDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "SuzukiDistribution expects 2 arguments".into(),
+        ));
+      }
+      let m = dargs[0].clone();
+      let n = dargs[1].clone();
+      let n2 = power(n.clone(), int(2));
+      // Mean = E^(m + n^2/2) Sqrt[Pi/2]
+      let mean = times(
+        power(e(), plus(m.clone(), divide(n2.clone(), int(2)))),
+        sqrt(divide(pi(), int(2))),
+      );
+      // Variance = E^(2 m + n^2) (2 E^(n^2) - Pi/2)
+      let var = times(
+        power(e(), plus(times(int(2), m), n2.clone())),
+        minus(times(int(2), power(e(), n2)), divide(pi(), int(2))),
+      );
+      Ok((mean, var))
+    }
     "PoissonConsulDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(

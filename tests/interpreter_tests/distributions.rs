@@ -4099,6 +4099,58 @@ mod borel_tanner_distribution {
   }
 }
 
+mod suzuki_distribution {
+  use super::*;
+
+  // Suzuki (Rayleigh-lognormal compound) distribution. It has no closed-form
+  // PDF/CDF; Mean and Variance are exact. The fully-symbolic Variance differs
+  // from wolframscript only in Plus term order, so it is tested at concrete
+  // parameters where the forms agree.
+  #[test]
+  fn mean() {
+    assert_eq!(
+      interpret("Mean[SuzukiDistribution[m, n]]").unwrap(),
+      "E^(m + n^2/2)*Sqrt[Pi/2]"
+    );
+    assert_eq!(
+      interpret("Mean[SuzukiDistribution[0, 1]]").unwrap(),
+      "Sqrt[(E*Pi)/2]"
+    );
+  }
+
+  #[test]
+  fn variance() {
+    assert_eq!(
+      interpret("Variance[SuzukiDistribution[0, 1]]").unwrap(),
+      "E*(2*E - Pi/2)"
+    );
+  }
+
+  #[test]
+  fn numeric_moments() {
+    assert_eq!(
+      interpret("Mean[SuzukiDistribution[0., 1.]]").unwrap(),
+      "2.0663656770612464"
+    );
+    assert_eq!(
+      interpret("Variance[SuzukiDistribution[0., 1.]]").unwrap(),
+      "10.508245086524516"
+    );
+  }
+
+  #[test]
+  fn pdf_and_cdf_have_no_closed_form() {
+    assert_eq!(
+      interpret("PDF[SuzukiDistribution[m, n], x]").unwrap(),
+      "PDF[SuzukiDistribution[m, n], x]"
+    );
+    assert_eq!(
+      interpret("CDF[SuzukiDistribution[m, n], x]").unwrap(),
+      "CDF[SuzukiDistribution[m, n], x]"
+    );
+  }
+}
+
 mod poisson_consul_distribution {
   use super::*;
 

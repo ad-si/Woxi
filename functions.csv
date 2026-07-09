@@ -3643,7 +3643,7 @@ NumberMultiplier,,,,3.0,3737
 PrintableASCIIQ,Tests whether a string consists only of printable ASCII characters,✅,pure,10.1,3737
 StateOutputEstimator,,,,8.0,3737
 SurvivalDistribution,,,,8.0,3737
-SuzukiDistribution,,,,8.0,3737
+SuzukiDistribution,Rayleigh-lognormal compound distribution with closed-form Mean and Variance,✅,pure,8.0,3737
 WindowOpacity,,🚫,,6.0,3737
 ApartSquareFree,Partial fractions over the denominator's syntactic factor bases without factoring them (whole part split off; lists thread),✅,pure,6.0,3755
 CircularUnitaryMatrixDistribution,,,,10.3,3755

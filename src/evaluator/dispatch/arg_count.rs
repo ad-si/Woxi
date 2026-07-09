@@ -1363,6 +1363,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NakagamiDistribution" => Some((2, 2)),
     "BorelTannerDistribution" => Some((2, 2)),
     "PoissonConsulDistribution" => Some((2, 2)),
+    "SuzukiDistribution" => Some((2, 2)),
     "BenktanderGibratDistribution" => Some((2, 2)),
     "GumbelDistribution" => Some((0, 2)),
     "ZipfDistribution" => Some((1, 2)),
