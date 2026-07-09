@@ -8549,6 +8549,457 @@ fn evaluated_matrix_product(
   expr_to_matrix(&product)
 }
 
+// ─── FrobeniusReduce ────────────────────────────────────────────────────
+
+/// Exact rational number n/d, kept normalized (d > 0, gcd(|n|, d) = 1).
+/// All arithmetic is overflow-checked; None propagates to an unevaluated
+/// FrobeniusReduce call.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct QNum {
+  n: i128,
+  d: i128,
+}
+
+impl QNum {
+  fn new(n: i128, d: i128) -> Option<QNum> {
+    if d == 0 {
+      return None;
+    }
+    let (n, d) = if d < 0 {
+      (n.checked_neg()?, d.checked_neg()?)
+    } else {
+      (n, d)
+    };
+    let g = gcd_i128(n.abs(), d).max(1);
+    Some(QNum { n: n / g, d: d / g })
+  }
+  fn zero() -> QNum {
+    QNum { n: 0, d: 1 }
+  }
+  fn is_zero(&self) -> bool {
+    self.n == 0
+  }
+  fn add(&self, o: &QNum) -> Option<QNum> {
+    QNum::new(
+      self
+        .n
+        .checked_mul(o.d)?
+        .checked_add(o.n.checked_mul(self.d)?)?,
+      self.d.checked_mul(o.d)?,
+    )
+  }
+  fn sub(&self, o: &QNum) -> Option<QNum> {
+    QNum::new(
+      self
+        .n
+        .checked_mul(o.d)?
+        .checked_sub(o.n.checked_mul(self.d)?)?,
+      self.d.checked_mul(o.d)?,
+    )
+  }
+  fn mul(&self, o: &QNum) -> Option<QNum> {
+    QNum::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
+  }
+}
+
+/// Gaussian rational re + im*I — the exact scalar field FrobeniusReduce
+/// works over (integer, rational and complex-rational matrix entries).
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct GQNum {
+  re: QNum,
+  im: QNum,
+}
+
+impl GQNum {
+  fn zero() -> GQNum {
+    GQNum {
+      re: QNum::zero(),
+      im: QNum::zero(),
+    }
+  }
+  fn one() -> GQNum {
+    GQNum {
+      re: QNum { n: 1, d: 1 },
+      im: QNum::zero(),
+    }
+  }
+  fn is_zero(&self) -> bool {
+    self.re.is_zero() && self.im.is_zero()
+  }
+  fn add(&self, o: &GQNum) -> Option<GQNum> {
+    Some(GQNum {
+      re: self.re.add(&o.re)?,
+      im: self.im.add(&o.im)?,
+    })
+  }
+  fn sub(&self, o: &GQNum) -> Option<GQNum> {
+    Some(GQNum {
+      re: self.re.sub(&o.re)?,
+      im: self.im.sub(&o.im)?,
+    })
+  }
+  fn mul(&self, o: &GQNum) -> Option<GQNum> {
+    Some(GQNum {
+      re: self.re.mul(&o.re)?.sub(&self.im.mul(&o.im)?)?,
+      im: self.re.mul(&o.im)?.add(&self.im.mul(&o.re)?)?,
+    })
+  }
+  fn div(&self, o: &GQNum) -> Option<GQNum> {
+    // (a + bI)/(c + dI) = (a + bI)(c − dI)/(c² + d²)
+    let norm = o.re.mul(&o.re)?.add(&o.im.mul(&o.im)?)?;
+    if norm.is_zero() {
+      return None;
+    }
+    let conj = GQNum {
+      re: o.re,
+      im: QNum::new(o.im.n.checked_neg()?, o.im.d)?,
+    };
+    let num = self.mul(&conj)?;
+    let inv_norm = QNum::new(norm.d, norm.n)?;
+    Some(GQNum {
+      re: num.re.mul(&inv_norm)?,
+      im: num.im.mul(&inv_norm)?,
+    })
+  }
+}
+
+/// Polynomial over the Gaussian rationals, ascending coefficients with no
+/// trailing zeros (the zero polynomial is the empty vector).
+type GPoly = Vec<GQNum>;
+
+fn gp_trim(mut p: GPoly) -> GPoly {
+  while p.last().is_some_and(GQNum::is_zero) {
+    p.pop();
+  }
+  p
+}
+
+fn gp_sub(a: &GPoly, b: &GPoly) -> Option<GPoly> {
+  let mut out = vec![GQNum::zero(); a.len().max(b.len())];
+  out[..a.len()].copy_from_slice(a);
+  for (i, c) in b.iter().enumerate() {
+    out[i] = out[i].sub(c)?;
+  }
+  Some(gp_trim(out))
+}
+
+fn gp_mul(a: &GPoly, b: &GPoly) -> Option<GPoly> {
+  if a.is_empty() || b.is_empty() {
+    return Some(Vec::new());
+  }
+  let mut out = vec![GQNum::zero(); a.len() + b.len() - 1];
+  for (i, x) in a.iter().enumerate() {
+    for (j, y) in b.iter().enumerate() {
+      out[i + j] = out[i + j].add(&x.mul(y)?)?;
+    }
+  }
+  Some(gp_trim(out))
+}
+
+/// Quotient and remainder of a by nonzero b over the field.
+fn gp_divmod(a: &GPoly, b: &GPoly) -> Option<(GPoly, GPoly)> {
+  let db = b.len().checked_sub(1)?;
+  let lead = *b.last()?;
+  let mut rem = a.clone();
+  let mut quot = vec![GQNum::zero(); a.len().saturating_sub(db)];
+  while rem.len() > db {
+    let k = rem.len() - 1 - db;
+    let c = rem.last()?.div(&lead)?;
+    quot[k] = c;
+    let mut shifted = vec![GQNum::zero(); k];
+    shifted.extend(b.iter().copied());
+    let scaled: GPoly = shifted
+      .iter()
+      .map(|x| x.mul(&c))
+      .collect::<Option<Vec<_>>>()?;
+    rem = gp_sub(&rem, &scaled)?;
+  }
+  Some((gp_trim(quot), rem))
+}
+
+/// Normalize to a monic polynomial (nonzero input).
+fn gp_monic(p: &GPoly) -> Option<GPoly> {
+  let lead = *p.last()?;
+  p.iter().map(|c| c.div(&lead)).collect()
+}
+
+/// Parse an exact scalar (Integer, Rational, complex with exact parts, or
+/// the imaginary-unit spellings) into a Gaussian rational.
+fn expr_to_gq(e: &Expr) -> Option<GQNum> {
+  match e {
+    Expr::Integer(n) => Some(GQNum {
+      re: QNum::new(*n, 1)?,
+      im: QNum::zero(),
+    }),
+    Expr::Constant(c) | Expr::Identifier(c) if c == "I" => Some(GQNum {
+      re: QNum::zero(),
+      im: QNum::new(1, 1)?,
+    }),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) => Some(GQNum {
+          re: QNum::new(*n, *d)?,
+          im: QNum::zero(),
+        }),
+        _ => None,
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      let re = expr_to_gq(&args[0])?;
+      let im = expr_to_gq(&args[1])?;
+      if !re.im.is_zero() || !im.im.is_zero() {
+        return None;
+      }
+      Some(GQNum {
+        re: re.re,
+        im: im.re,
+      })
+    }
+    // a + b*I and c*I forms that survive as unevaluated arithmetic
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut acc = GQNum::zero();
+      for a in args.iter() {
+        acc = acc.add(&expr_to_gq(a)?)?;
+      }
+      Some(acc)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut acc = GQNum::one();
+      for a in args.iter() {
+        acc = acc.mul(&expr_to_gq(a)?)?;
+      }
+      Some(acc)
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => GQNum::zero().sub(&expr_to_gq(operand)?),
+    // Complex-rational scalars can survive as unevaluated binary
+    // arithmetic, e.g. 1/2 + I/3.
+    Expr::BinaryOp { op, left, right } => {
+      let l = expr_to_gq(left)?;
+      let r = expr_to_gq(right)?;
+      match op {
+        crate::syntax::BinaryOperator::Plus => l.add(&r),
+        crate::syntax::BinaryOperator::Minus => l.sub(&r),
+        crate::syntax::BinaryOperator::Times => l.mul(&r),
+        crate::syntax::BinaryOperator::Divide => l.div(&r),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Render a Gaussian rational as an exact expression in canonical form.
+fn gq_to_expr(q: &GQNum) -> Option<Expr> {
+  let q_part = |x: &QNum| -> Expr {
+    if x.d == 1 {
+      Expr::Integer(x.n)
+    } else {
+      crate::functions::math_ast::make_rational_pub(x.n, x.d)
+    }
+  };
+  if q.im.is_zero() {
+    return Some(q_part(&q.re));
+  }
+  let complex = Expr::FunctionCall {
+    name: "Complex".to_string(),
+    args: vec![q_part(&q.re), q_part(&q.im)].into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&complex).ok()
+}
+
+/// Smith normal form of a nonsingular polynomial matrix over the Gaussian
+/// rationals, returning the monic diagonal (invariant factors, each
+/// dividing the next). None on overflow.
+fn gp_smith_diagonal(mut p: Vec<Vec<GPoly>>) -> Option<Vec<GPoly>> {
+  let n = p.len();
+  let mut diag: Vec<GPoly> = Vec::with_capacity(n);
+  for t in 0..n {
+    'reduce: loop {
+      // Pivot: nonzero entry of minimal degree in the trailing submatrix.
+      let mut pivot: Option<(usize, usize)> = None;
+      for i in t..n {
+        for j in t..n {
+          if !p[i][j].is_empty()
+            && pivot.is_none_or(|(pi, pj)| p[i][j].len() < p[pi][pj].len())
+          {
+            pivot = Some((i, j));
+          }
+        }
+      }
+      let (pi, pj) = pivot?; // xI − A is nonsingular, so a pivot exists
+      p.swap(t, pi);
+      for row in p.iter_mut() {
+        row.swap(t, pj);
+      }
+
+      // Clear the pivot column and row by polynomial division.
+      let mut dirty = false;
+      for i in t + 1..n {
+        if p[i][t].is_empty() {
+          continue;
+        }
+        let (q, _) = gp_divmod(&p[i][t], &p[t][t])?;
+        for j in t..n {
+          let scaled = gp_mul(&q, &p[t][j])?;
+          p[i][j] = gp_sub(&p[i][j], &scaled)?;
+        }
+        if !p[i][t].is_empty() {
+          dirty = true; // remainder of smaller degree: re-pick the pivot
+        }
+      }
+      for j in t + 1..n {
+        if p[t][j].is_empty() {
+          continue;
+        }
+        let (q, _) = gp_divmod(&p[t][j], &p[t][t])?;
+        for i in t..n {
+          let scaled = gp_mul(&q, &p[i][t])?;
+          p[i][j] = gp_sub(&p[i][j], &scaled)?;
+        }
+        if !p[t][j].is_empty() {
+          dirty = true;
+        }
+      }
+      if dirty {
+        continue 'reduce;
+      }
+
+      // Divisibility: the pivot must divide every remaining entry; when it
+      // does not, mixing that row into row t reduces the pivot degree on
+      // the next pass.
+      for i in t + 1..n {
+        for j in t + 1..n {
+          let (_, r) = gp_divmod(&p[i][j], &p[t][t])?;
+          if !r.is_empty() {
+            let row_i = p[i].clone();
+            for (dst, src) in p[t].iter_mut().zip(row_i.iter()) {
+              let sum = gp_sub(dst, &gp_sub(&Vec::new(), src)?)?;
+              *dst = sum;
+            }
+            continue 'reduce;
+          }
+        }
+      }
+      diag.push(gp_monic(&p[t][t])?);
+      break;
+    }
+  }
+  Some(diag)
+}
+
+/// FrobeniusReduce[m] — the Frobenius (rational canonical) form: the block
+/// diagonal of companion matrices of the invariant factors of xI − m, in
+/// divisibility-chain order (each factor divides the next). Supported for
+/// exact integer / rational / complex-rational matrices; inexact and
+/// symbolic matrices (and the Modulus option) stay unevaluated.
+pub fn frobenius_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::expr_to_string;
+  let unevaluated = || Expr::FunctionCall {
+    name: "FrobeniusReduce".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() {
+    return Ok(unevaluated());
+  }
+  // Arguments beyond the matrix must be options (rules): the first
+  // non-rule emits ::nonopt; supported ones don't exist yet (Modulus is a
+  // known gap), so any option form stays unevaluated without a message.
+  if args.len() > 1 {
+    for extra in &args[1..] {
+      let is_opt = matches!(
+        extra,
+        Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+      ) || matches!(extra, Expr::FunctionCall { name, .. } if name == "Rule" || name == "RuleDelayed");
+      if !is_opt {
+        crate::emit_message(&format!(
+          "FrobeniusReduce::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
+          expr_to_string(extra),
+          expr_to_string(&unevaluated())
+        ));
+        break;
+      }
+    }
+    return Ok(unevaluated());
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) if is_nonempty_square(&m) => m,
+    _ => return Ok(matsq_unevaluated("FrobeniusReduce", args)),
+  };
+  let n = matrix.len();
+
+  // Exact entries only.
+  let mut entries: Vec<Vec<GQNum>> = Vec::with_capacity(n);
+  for row in &matrix {
+    let mut out_row = Vec::with_capacity(n);
+    for cell in row {
+      match expr_to_gq(cell) {
+        Some(v) => out_row.push(v),
+        None => return Ok(unevaluated()),
+      }
+    }
+    entries.push(out_row);
+  }
+
+  // xI − A as a polynomial matrix.
+  let mut p: Vec<Vec<GPoly>> = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut row: Vec<GPoly> = Vec::with_capacity(n);
+    for j in 0..n {
+      let neg = match GQNum::zero().sub(&entries[i][j]) {
+        Some(v) => v,
+        None => return Ok(unevaluated()),
+      };
+      let mut poly = vec![neg];
+      if i == j {
+        poly.push(GQNum::one());
+      }
+      row.push(gp_trim(poly));
+    }
+    p.push(row);
+  }
+
+  let diag = match gp_smith_diagonal(p) {
+    Some(d) => d,
+    None => return Ok(unevaluated()),
+  };
+
+  // Companion blocks of the nontrivial invariant factors, chain order.
+  let factors: Vec<&GPoly> = diag.iter().filter(|f| f.len() > 1).collect();
+  if factors.iter().map(|f| f.len() - 1).sum::<usize>() != n {
+    return Ok(unevaluated());
+  }
+  let mut rows = vec![vec![Expr::Integer(0); n]; n];
+  let mut pos = 0;
+  for f in factors {
+    let m = f.len() - 1;
+    for i in 0..m {
+      if i > 0 {
+        rows[pos + i][pos + i - 1] = Expr::Integer(1);
+      }
+      let neg_c = match GQNum::zero().sub(&f[i]).and_then(|v| gq_to_expr(&v)) {
+        Some(e) => e,
+        None => return Ok(unevaluated()),
+      };
+      rows[pos + i][pos + m - 1] = neg_c;
+    }
+    pos += m;
+  }
+  Ok(Expr::List(
+    rows
+      .into_iter()
+      .map(|r| Expr::List(r.into()))
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
 /// CoordinateTransform[src -> dst, pt] for the named coordinate systems
 /// Polar/Cartesian (2D) and Spherical/Cylindrical/Cartesian (3D), in
 /// wolframscript's conventions (e.g. ArcTan[x, y] for the polar angle,

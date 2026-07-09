@@ -5581,6 +5581,190 @@ mod jordan_reduce {
   }
 }
 
+mod frobenius_reduce {
+  use super::*;
+
+  // All expected outputs verified against wolframscript 15.0. The result
+  // is the block diagonal of companion matrices of the invariant factors
+  // of xI - m, in divisibility-chain order.
+
+  #[test]
+  fn one_by_one() {
+    assert_eq!(interpret("FrobeniusReduce[{{5}}]").unwrap(), "{{5}}");
+  }
+
+  #[test]
+  fn single_companion_block() {
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 1}, {0, 1}}]").unwrap(),
+      "{{0, -1}, {1, 2}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{2, 0}, {0, 3}}]").unwrap(),
+      "{{0, -6}, {1, 5}}"
+    );
+    // Companion matrices are their own Frobenius form
+    assert_eq!(
+      interpret("FrobeniusReduce[{{0, -1}, {1, 0}}]").unwrap(),
+      "{{0, -1}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "FrobeniusReduce[{{5, 4, 2, 1}, {0, 1, -1, -1}, {-1, -1, 3, 0}, \
+         {1, 1, -1, 2}}]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, -32}, {1, 0, 0, 64}, {0, 1, 0, -42}, {0, 0, 1, 11}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{6, -2, 2}, {-2, 5, 0}, {2, 0, 7}}]")
+        .unwrap(),
+      "{{0, 0, 162}, {1, 0, -99}, {0, 1, 18}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{-7, 12, 5}, {4, -3, 8}, {2, 0, 1}}]")
+        .unwrap(),
+      "{{0, 0, 195}, {1, 0, 47}, {0, 1, -9}}"
+    );
+  }
+
+  #[test]
+  fn multiple_invariant_factors() {
+    // Scalar matrix: n copies of (x - 2)
+    assert_eq!(
+      interpret("FrobeniusReduce[{{2, 0}, {0, 2}}]").unwrap(),
+      "{{2, 0}, {0, 2}}"
+    );
+    // (x - 2), (x - 2)(x - 3): smaller factor first
+    assert_eq!(
+      interpret("FrobeniusReduce[{{2, 0, 0}, {0, 2, 0}, {0, 0, 3}}]").unwrap(),
+      "{{2, 0, 0}, {0, 0, -6}, {0, 1, 5}}"
+    );
+    // (x - 2), (x - 2)^2
+    assert_eq!(
+      interpret("FrobeniusReduce[{{2, 1, 0}, {0, 2, 0}, {0, 0, 2}}]").unwrap(),
+      "{{2, 0, 0}, {0, 0, -4}, {0, 1, 4}}"
+    );
+    // (x - 2)^2, (x - 2)^2
+    assert_eq!(
+      interpret(
+        "FrobeniusReduce[{{2, 1, 0, 0}, {0, 2, 0, 0}, {0, 0, 2, 1}, \
+         {0, 0, 0, 2}}]"
+      )
+      .unwrap(),
+      "{{0, -4, 0, 0}, {1, 4, 0, 0}, {0, 0, 0, -4}, {0, 0, 1, 4}}"
+    );
+    // (x - 3), (x - 3), (x - 3)^2
+    assert_eq!(
+      interpret(
+        "FrobeniusReduce[{{3, 1, 0, 0}, {0, 3, 0, 0}, {0, 0, 3, 0}, \
+         {0, 0, 0, 3}}]"
+      )
+      .unwrap(),
+      "{{3, 0, 0, 0}, {0, 3, 0, 0}, {0, 0, 0, -9}, {0, 0, 1, 6}}"
+    );
+    // (x - 2), (x - 2)(x - 3)^2 across separate eigenvalue clusters
+    assert_eq!(
+      interpret(
+        "FrobeniusReduce[{{2, 1, 0, 0, 0}, {0, 2, 0, 0, 0}, \
+         {0, 0, 2, 0, 0}, {0, 0, 0, 3, 1}, {0, 0, 0, 0, 3}}]"
+      )
+      .unwrap(),
+      "{{2, 0, 0, 0, 0}, {0, 0, 0, 0, -36}, {0, 1, 0, 0, 60}, \
+       {0, 0, 1, 0, -37}, {0, 0, 0, 1, 10}}"
+    );
+    // Block order puts the linear factor first even when the input
+    // interleaves the eigenvalues
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2, 0}, {2, 1, 0}, {0, 0, -1}}]").unwrap(),
+      "{{-1, 0, 0}, {0, 0, 3}, {0, 1, 2}}"
+    );
+  }
+
+  #[test]
+  fn singular_and_nilpotent() {
+    assert_eq!(
+      interpret("FrobeniusReduce[{{0, 0}, {0, 0}}]").unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{0, 1, 0}, {0, 0, 1}, {0, 0, 0}}]").unwrap(),
+      "{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}]").unwrap(),
+      "{{0, 0, 0}, {0, 0, 0}, {0, 1, 3}}"
+    );
+  }
+
+  #[test]
+  fn rational_matrices() {
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1/2, 1}, {0, 1/2}}]").unwrap(),
+      "{{0, -1/4}, {1, 1}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1/2, 1/3}, {1/4, 1/5}}]").unwrap(),
+      "{{0, -1/60}, {1, 7/10}}"
+    );
+  }
+
+  #[test]
+  fn complex_matrices() {
+    assert_eq!(
+      interpret("FrobeniusReduce[{{0, -I}, {I, 0}}]").unwrap(),
+      "{{0, 1}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{I, 0}, {0, 2}}]").unwrap(),
+      "{{0, -2*I}, {1, 2 + I}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{I, 1}, {0, I}}]").unwrap(),
+      "{{0, 1}, {1, 2*I}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1/2 + I/3, 1}, {0, 1/2 - I/3}}]").unwrap(),
+      "{{0, -13/36}, {1, 1}}"
+    );
+  }
+
+  #[test]
+  fn non_square_emits_matsq() {
+    clear_state();
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "FrobeniusReduce[{{1, 2, 3}, {4, 5, 6}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FrobeniusReduce::matsq: Argument {{1, 2, 3}, {4, 5, 6}} at \
+         position 1 is not a nonempty square matrix."
+      )),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn non_option_extra_argument_emits_nonopt() {
+    clear_state();
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2}, {3, 4}}, x]").unwrap(),
+      "FrobeniusReduce[{{1, 2}, {3, 4}}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FrobeniusReduce::nonopt: Options expected (instead of x) beyond \
+         position 1 in FrobeniusReduce[{{1, 2}, {3, 4}}, x]. An option \
+         must be a rule or a list of rules."
+      )),
+      "got {msgs:?}"
+    );
+  }
+}
+
 mod coordinate_transform {
   use super::*;
 

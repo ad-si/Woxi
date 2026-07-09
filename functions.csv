@@ -6215,7 +6215,7 @@ PolarDecomposition,Computes the polar decomposition into unitary and Hermitian f
 PopovDecomposition,Computes the Popov normal form of a polynomial matrix,,pure,15.0,
 RankDecomposition,Factors a matrix into two factors whose inner dimension equals its rank,✅,pure,15.0,
 DiscreteHilbertTransform,Computes the discrete Hilbert transform of a list of real numbers,✅,pure,15.0,
-FrobeniusReduce,Computes the Frobenius rational canonical form of a square matrix,,pure,15.0,
+FrobeniusReduce,Computes the Frobenius rational canonical form of a square matrix,✅,pure,15.0,
 JordanReduce,Computes the Jordan canonical form of a square matrix,✅,pure,15.0,
 PartialFractionElements,Returns the structural elements of a partial fraction decomposition,,pure,15.0,
 PartialFractions,Computes a partial fraction decomposition of a rational expression,,pure,15.0,

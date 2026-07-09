@@ -42,6 +42,7 @@ normalised to `##` in this file.
 - [`Fit`](linear_algebra/Fit.md)
 - [`FourierDCTMatrix`](linear_algebra/FourierDCTMatrix.md)
 - [`FourierMatrix`](linear_algebra/FourierMatrix.md)
+- [`FrobeniusReduce`](linear_algebra/FrobeniusReduce.md)
 - [`HadamardMatrix`](linear_algebra/HadamardMatrix.md)
 - [`HankelMatrix`](linear_algebra/HankelMatrix.md)
 - [`HermitianMatrixQ`](linear_algebra/HermitianMatrixQ.md)

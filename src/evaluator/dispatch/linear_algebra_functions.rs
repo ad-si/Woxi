@@ -2124,6 +2124,11 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "FrobeniusReduce" if !args.is_empty() => {
+      return Some(crate::functions::linear_algebra_ast::frobenius_reduce_ast(
+        args,
+      ));
+    }
     "SingularValueList" if args.len() == 1 || args.len() == 2 => {
       return Some(
         crate::functions::linear_algebra_ast::singular_value_list_ast(args),
