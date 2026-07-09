@@ -4176,6 +4176,34 @@ mod graph_metrics {
     assert_eq!(interpret("GraphDensity[x]").unwrap(), "GraphDensity[x]");
   }
 
+  // Directed graphs use n(n-1) possible ordered edges (self-loops excluded).
+  #[test]
+  fn graph_density_directed() {
+    assert_eq!(
+      interpret("GraphDensity[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]").unwrap(),
+      "1/4"
+    );
+    // The complete digraph on three vertices has density 1.
+    assert_eq!(
+      interpret(
+        "GraphDensity[Graph[{1 -> 2, 2 -> 1, 1 -> 3, 2 -> 3, 3 -> 1, 3 -> 2}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    // A directed cycle.
+    assert_eq!(
+      interpret("GraphDensity[Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1}]]")
+        .unwrap(),
+      "1/3"
+    );
+    // Self-loops do not count.
+    assert_eq!(
+      interpret("GraphDensity[Graph[{1 -> 1, 1 -> 2}]]").unwrap(),
+      "1/2"
+    );
+  }
+
   #[test]
   fn mean_graph_distance() {
     assert_eq!(

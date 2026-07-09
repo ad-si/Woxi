@@ -5013,6 +5013,58 @@ fn make_rational(num: i128, den: i128) -> Expr {
   }
 }
 
+/// GraphDensity for a graph containing directed edges: the fraction of the
+/// n(n-1) possible ordered vertex pairs that are edges (distinct edges, no
+/// self-loops). Returns `None` unless every edge is directed and the graph has
+/// at least two vertices.
+fn directed_graph_density(expr: &Expr) -> Option<Expr> {
+  let (vertices, edge_exprs) = match expr {
+    Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
+      match (&args[0], &args[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  let n = vertices.len();
+  if n <= 1 {
+    return None;
+  }
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (expr_to_string(v), i))
+    .collect();
+  let mut edges: std::collections::HashSet<(usize, usize)> =
+    std::collections::HashSet::new();
+  for e in edge_exprs.iter() {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if name != "DirectedEdge" || args.len() != 2 {
+      return None; // undirected/mixed handled by the caller
+    }
+    let (Some(&a), Some(&b)) = (
+      index.get(&expr_to_string(&args[0])),
+      index.get(&expr_to_string(&args[1])),
+    ) else {
+      return None;
+    };
+    if a != b {
+      edges.insert((a, b));
+    }
+  }
+  let m = edges.len() as i128;
+  Some(
+    crate::evaluator::evaluate_expr_to_expr(&make_rational(
+      m,
+      (n as i128) * (n as i128 - 1),
+    ))
+    .unwrap_or_else(|_| Expr::Integer(0)),
+  )
+}
+
 pub fn graph_metric_ast(
   name: &str,
   args: &[Expr],
@@ -5023,7 +5075,16 @@ pub fn graph_metric_ast(
   };
   let (n, pairs) = match parse_graph_pairs(&args[0]) {
     Some(g) => g,
-    None => return Ok(unevaluated()),
+    None => {
+      // parse_graph_pairs only accepts undirected edges; handle the
+      // directed case for the metrics that have a directed definition.
+      if name == "GraphDensity"
+        && let Some(result) = directed_graph_density(&args[0])
+      {
+        return Ok(result);
+      }
+      return Ok(unevaluated());
+    }
   };
   // Underlying simple graph
   let mut simple: Vec<(usize, usize)> = pairs
