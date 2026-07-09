@@ -3879,6 +3879,42 @@ mod graph_predicates {
     assert_eq!(interpret("MultigraphQ[CycleGraph[5]]").unwrap(), "False");
     assert_eq!(interpret("MultigraphQ[x]").unwrap(), "False");
   }
+
+  #[test]
+  fn weighted_graph_q() {
+    // Explicit edge weights make a graph weighted.
+    assert_eq!(
+      interpret(
+        "WeightedGraphQ[Graph[{1 -> 2, 2 -> 3}, EdgeWeight -> {5, 3}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Vertex weights count too.
+    assert_eq!(
+      interpret("WeightedGraphQ[Graph[{1 -> 2}, VertexWeight -> {3, 4}]]")
+        .unwrap(),
+      "True"
+    );
+    // WeightedAdjacencyGraph carries weights.
+    assert_eq!(
+      interpret("WeightedGraphQ[WeightedAdjacencyGraph[{{0, 2}, {2, 0}}]]")
+        .unwrap(),
+      "True"
+    );
+    // No weights, or EdgeWeight -> Automatic, is unweighted.
+    assert_eq!(
+      interpret("WeightedGraphQ[Graph[{1 -> 2}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("WeightedGraphQ[Graph[{1 -> 2}, EdgeWeight -> Automatic]]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("WeightedGraphQ[CycleGraph[4]]").unwrap(), "False");
+    assert_eq!(interpret("WeightedGraphQ[x]").unwrap(), "False");
+  }
 }
 
 mod planar_graph_q {

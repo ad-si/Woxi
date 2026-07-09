@@ -3814,7 +3814,7 @@ SpellingCorrection,,🚫,,2.0,3916
 SubsetEqual,,,,3.0,3916
 SymmetrizedArrayRules,,,,9.0,3916
 VerifyTestAssumptions,,,,8.0,3916
-WeightedGraphQ,,,,8.0,3916
+WeightedGraphQ,Tests whether a graph has explicit edge or vertex weights,✅,pure,8.0,3916
 AcceptanceThreshold,,🚫,,12.0,3947
 AntihermitianMatrixQ,Test whether a matrix is anti-Hermitian,✅,none,10.0,3947
 BetaNegativeBinomialDistribution,Beta negative binomial distribution (Mean and Variance),✅,pure,6.0,3947

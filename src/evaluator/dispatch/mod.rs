@@ -5251,6 +5251,35 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("False".to_string()));
   }
 
+  // WeightedGraphQ[graph] — True if the graph carries explicit edge or vertex
+  // weights (an EdgeWeight/VertexWeight option set to something other than
+  // Automatic).
+  if name == "WeightedGraphQ" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+    {
+      let has_weight = gargs.iter().any(|a| match a {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(),
+          Expr::Identifier(s) if s == "EdgeWeight" || s == "VertexWeight") =>
+        {
+          !matches!(replacement.as_ref(),
+            Expr::Identifier(s) if s == "Automatic")
+        }
+        _ => false,
+      });
+      return Ok(Expr::Identifier(
+        if has_weight { "True" } else { "False" }.to_string(),
+      ));
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
   // TreeGraphQ[graph] — True if graph is a tree (connected, n-1 edges for n vertices)
   if name == "TreeGraphQ" && args.len() == 1 {
     if let Expr::FunctionCall {
