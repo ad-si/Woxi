@@ -2039,6 +2039,7 @@ mod hankel_h1_h2 {
 
 mod cases {
   use super::super::case_helpers::assert_case;
+  use super::*;
 
   #[test]
   fn trace_evaluation_1() {
@@ -2616,37 +2617,53 @@ mod cases {
   // "attempt to multiply with overflow". All now compute exactly in BigInt.
   #[test]
   fn orthogonal_polynomials_large_args_no_overflow() {
-    assert_case(
-      "ChebyshevT[20, 100]",
+    fn check(func: &str, x: i32, expected: &str) {
+      let integer_cmd = func.replace("x", &x.to_string());
+      let integer_eval = interpret(&integer_cmd).unwrap();
+      let symbolic_cmd = format!("{} /. x -> {}", func, x);
+      let symbolic_eval = interpret(&symbolic_cmd).unwrap();
+      assert_eq!(integer_eval, expected);
+      assert_eq!(symbolic_eval, expected);
+    }
+    check(
+      "ChebyshevT[20, x]",
+      100,
       "5240259116990468658995000691115520659998000001",
     );
-    assert_case(
-      "ChebyshevU[20, 100]",
+    check(
+      "ChebyshevU[20, x]",
+      100,
       "10480780266589396254412500487570176791997800001",
     );
     // The 2-arg GegenbauerC[n, x] = (2/n) ChebyshevT[n, x].
-    assert_case(
-      "GegenbauerC[20, 100]",
+    check(
+      "GegenbauerC[20, x]",
+      100,
       "5240259116990468658995000691115520659998000001/10",
     );
-    assert_case(
-      "HermiteH[20, 100]",
+    check(
+      "HermiteH[20, x]",
+      100,
       "10386525545117654945103262993862148955882572800",
     );
-    assert_case(
-      "LegendreP[20, 100]",
+    check(
+      "LegendreP[20, x]",
+      100,
       "344448466755375665405932303356912676063833503146189/262144",
     );
-    assert_case(
-      "LaguerreL[30, 100]",
+    check(
+      "LaguerreL[30, x]",
+      100,
       "-24339078904665759996115322117737572853879/50592967951238834121",
     );
-    assert_case(
-      "GegenbauerC[20, 3, 100]",
+    check(
+      "GegenbauerC[20, 3, x]",
+      100,
       "2421164795934101825330339943310068552071828400066",
     );
-    assert_case(
-      "JacobiP[30, 1, 1, 10]",
+    check(
+      "JacobiP[30, 1, 1, x]",
+      10,
       "419741193494208093397229315014798334452635362305/1073741824",
     );
   }
