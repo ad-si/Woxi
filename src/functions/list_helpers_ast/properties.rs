@@ -290,6 +290,18 @@ pub fn tensor_contract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   };
 
+  // Accept both the list-of-pairs form {{i,j}, …} and the single-pair
+  // shorthand {i,j} (a flat list of exactly two 1-indexed integers). A flat
+  // two-integer list is unambiguously one pair, since real pairs are lists.
+  let single_pair = pairs_list.len() == 2
+    && pairs_list.iter().all(|e| expr_as_pos_int(e).is_some());
+  let owned_single = [Expr::List(pairs_list.clone())];
+  let pairs_list: &[Expr] = if single_pair {
+    &owned_single
+  } else {
+    &pairs_list[..]
+  };
+
   // Extract the tensor's shape and ensure it's a fully rectangular list.
   let Some(shape) = tensor_shape(&args[0]) else {
     return Ok(unevaluated());

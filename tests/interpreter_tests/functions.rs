@@ -3265,6 +3265,30 @@ mod tensor_contract {
       "a[1, 1, 1, 1] + a[1, 1, 2, 2] + a[2, 2, 1, 1] + a[2, 2, 2, 2]"
     );
   }
+
+  // A flat two-integer list {i, j} is the shorthand for the single-pair
+  // list-of-pairs {{i, j}} and must give the identical contraction.
+  #[test]
+  fn single_pair_shorthand_matrix_trace() {
+    assert_eq!(
+      interpret("TensorContract[{{1, 2}, {3, 4}}, {1, 2}]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("TensorContract[{{a, b}, {c, d}}, {1, 2}]").unwrap(),
+      "a + d"
+    );
+  }
+
+  #[test]
+  fn single_pair_shorthand_rank3() {
+    // T contracted on slots 1 and 2 with the {1,2} shorthand.
+    assert_eq!(
+      interpret("TensorContract[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {1, 2}]")
+        .unwrap(),
+      "{8, 10}"
+    );
+  }
 }
 
 mod clear_system_cache {
