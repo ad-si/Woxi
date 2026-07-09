@@ -4600,7 +4600,7 @@ CommunityBoundaryStyle,,,,9.0,4809
 CookieFunction,,🚫,,11.0,4809
 Copyable,,,,3.0,4809
 DamData,,🚫,,10.0,4809
-DateSelect,,,,12.2,4809
+DateSelect,Selects dates from a list or interval satisfying a criterion,✅,pure,12.2,4809
 DefaultDuplicateCellStyle,,🚫,,3.0,4809
 DeviceExecuteAsynchronous,,🚫,,10.0,4809
 DeviceObject,,🚫,,10.0,4809

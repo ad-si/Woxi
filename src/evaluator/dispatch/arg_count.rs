@@ -272,6 +272,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DateRange" => Some((2, 3)),
     "TimeObject" => Some((0, usize::MAX)),
     "DateOverlapsQ" => Some((2, 2)),
+    "DateSelect" => Some((2, 2)),
     "DateWithinQ" => Some((2, 2)),
     "DayCount" => Some((2, 3)),
     "DayName" => Some((1, 1)),

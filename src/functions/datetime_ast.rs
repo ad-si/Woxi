@@ -3733,6 +3733,92 @@ pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// DateSelect[list, crit] — the dates of `list` for which `crit[date]` is
+/// True (exactly Select). DateSelect[DateInterval[...], crit] first enumerates
+/// the interval's constituent days (Day granularity) as DateObjects. Other
+/// granularities and non-list/interval arguments are left unevaluated.
+pub fn date_select_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DateSelect".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+
+  // Build the list of candidate dates.
+  let list = match &args[0] {
+    Expr::List(_) => args[0].clone(),
+    Expr::FunctionCall { name, args: dargs }
+      if name == "DateInterval" && dargs.len() >= 2 =>
+    {
+      // Only Day-granularity intervals are enumerated here.
+      let is_day = matches!(&dargs[1], Expr::String(s) if s == "Day")
+        || matches!(&dargs[1], Expr::Identifier(s) if s == "Day");
+      if !is_day {
+        return unevaluated();
+      }
+      let Expr::List(pairs) = &dargs[0] else {
+        return unevaluated();
+      };
+      // Read the first three (y, m, d) components of a date list.
+      let ymd = |e: &Expr| -> Option<(i64, i64, i64)> {
+        let Expr::List(c) = e else { return None };
+        if c.len() < 3 {
+          return None;
+        }
+        let g = |x: &Expr| match x {
+          Expr::Integer(n) => Some(*n as i64),
+          Expr::Real(v) => Some(*v as i64),
+          _ => None,
+        };
+        Some((g(&c[0])?, g(&c[1])?, g(&c[2])?))
+      };
+      let mut days: Vec<Expr> = Vec::new();
+      for pair in pairs.iter() {
+        let Expr::List(ends) = pair else {
+          return unevaluated();
+        };
+        if ends.len() != 2 {
+          return unevaluated();
+        }
+        let (Some(s), Some(e)) = (ymd(&ends[0]), ymd(&ends[1])) else {
+          return unevaluated();
+        };
+        let start = date_to_absolute_days(s.0, s.1, s.2);
+        let end = date_to_absolute_days(e.0, e.1, e.2);
+        for abs in start..=end {
+          let (y, m, d) = absolute_days_to_date(abs);
+          let obj =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "DateObject".to_string(),
+              args: vec![Expr::List(
+                vec![
+                  Expr::Integer(y as i128),
+                  Expr::Integer(m as i128),
+                  Expr::Integer(d as i128),
+                ]
+                .into(),
+              )]
+              .into(),
+            })?;
+          days.push(obj);
+        }
+      }
+      Expr::List(days.into())
+    }
+    _ => return unevaluated(),
+  };
+
+  // Filtering is exactly Select.
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Select".to_string(),
+    args: vec![list, args[1].clone()].into(),
+  })
+}
+
 /// DateOverlapsQ[date1, date2] — True when the calendar spans of two
 /// DateObjects or DateIntervals share a common sub-span. Spans are half-open
 /// [start, end) in absolute seconds, so adjacent calendar units (e.g. two

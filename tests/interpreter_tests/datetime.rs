@@ -3353,3 +3353,66 @@ mod time_zone_convert_tests {
     )));
   }
 }
+
+mod date_select_tests {
+  use super::*;
+
+  #[test]
+  fn list_form_filters_by_criterion() {
+    assert_eq!(
+      interpret(
+        "DateSelect[{DateObject[{2020, 1, 1}], DateObject[{2020, 6, 15}], \
+         DateObject[{2021, 3, 1}]}, DateValue[#, \"Year\"] == 2020 &]"
+      )
+      .unwrap(),
+      "{DateObject[{2020, 1, 1}, Day], DateObject[{2020, 6, 15}, Day]}"
+    );
+    // Weekday criterion: 2020-01-01 was a Wednesday.
+    assert_eq!(
+      interpret(
+        "DateSelect[{DateObject[{2020, 1, 1}], DateObject[{2020, 1, 2}], \
+         DateObject[{2020, 1, 3}]}, #[\"DayName\"] == Wednesday &]"
+      )
+      .unwrap(),
+      "{DateObject[{2020, 1, 1}, Day]}"
+    );
+  }
+
+  #[test]
+  fn interval_form_enumerates_days() {
+    assert_eq!(
+      interpret(
+        "DateSelect[DateInterval[{{2020, 1, 1}, {2020, 1, 5}}], \
+         DateValue[#, \"Day\"] < 3 &]"
+      )
+      .unwrap(),
+      "{DateObject[{2020, 1, 1}, Day], DateObject[{2020, 1, 2}, Day]}"
+    );
+    // Mondays in the first ten days of March 2020: the 2nd and the 9th.
+    assert_eq!(
+      interpret(
+        "DateSelect[DateInterval[{{2020, 3, 1}, {2020, 3, 10}}], \
+         #[\"DayName\"] == Monday &]"
+      )
+      .unwrap(),
+      "{DateObject[{2020, 3, 2}, Day], DateObject[{2020, 3, 9}, Day]}"
+    );
+  }
+
+  #[test]
+  fn behaves_like_select_on_plain_lists() {
+    // With a plain list DateSelect is exactly Select.
+    assert_eq!(
+      interpret("DateSelect[{1, 2, 3}, # > 1 &]").unwrap(),
+      "{2, 3}"
+    );
+    // A criterion matching nothing returns the empty list.
+    assert_eq!(
+      interpret(
+        "DateSelect[{DateObject[{2020, 1, 1}]}, DateValue[#, \"Year\"] == 2099 &]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+}

@@ -60,6 +60,9 @@ pub fn dispatch_datetime_functions(
     "DateOverlapsQ" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_overlaps_q_ast(args));
     }
+    "DateSelect" if args.len() == 2 => {
+      return Some(crate::functions::datetime_ast::date_select_ast(args));
+    }
     "FromJulianDate" if args.len() == 1 => {
       return Some(crate::functions::datetime_ast::from_julian_date_ast(args));
     }
