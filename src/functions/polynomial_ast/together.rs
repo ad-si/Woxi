@@ -512,6 +512,30 @@ pub(super) fn canonicalize_quotient_sign(
     }
   }
   if !flipped_any {
+    // Cancel and Together fold a bare unit-negative reciprocal into its
+    // base: -1/(1+x) → (-1-x)^(-1) and -1/(-1+x) → (1-x)^(-1). (Simplify
+    // keeps -(1+x)^(-1), so this is gated to the non-Simplify callers.)
+    // Only fires when the numerator is exactly -1 and the denominator is a
+    // single sum: a product denominator keeps a rational coefficient
+    // (-1/(2+2x) → -1/2*1/(1+x)), and a negative-content sum was already
+    // handled by the flip above.
+    let den_is_bare_sum = matches!(
+      den,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        ..
+      }
+    ) || matches!(den, Expr::FunctionCall { name, .. } if name == "Plus");
+    if !require_negative_numerator
+      && matches!(num, Expr::Integer(-1))
+      && den_is_bare_sum
+    {
+      return Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(negate(den)),
+        right: Box::new(Expr::Integer(-1)),
+      });
+    }
     return None;
   }
   if sign < 0 && matches!(num, Expr::Integer(1)) {
@@ -583,16 +607,18 @@ pub(super) fn canonicalize_quotient_sign(
     });
   };
   // A numerator flipped to exactly 1 displays as a reciprocal power:
-  // Simplify[-1/(1-x)] → (-1+x)^(-1).
-  if matches!(&new_num, Expr::Integer(1))
-    && !matches!(
-      &new_den,
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        ..
-      }
-    )
-  {
+  // Simplify[-1/(1-x)] → (-1+x)^(-1). A product denominator stays a
+  // quotient (1/(2*(-1+2*x)), never (2*(-1+2*x))^(-1)) — the numeric
+  // content must show as a rational coefficient, so exclude a Times
+  // denominator in either representation (BinaryOp or FunctionCall).
+  let den_is_product = matches!(
+    &new_den,
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    }
+  ) || matches!(&new_den, Expr::FunctionCall { name, .. } if name == "Times");
+  if matches!(&new_num, Expr::Integer(1)) && !den_is_product {
     return Some(Expr::BinaryOp {
       op: BinaryOperator::Power,
       left: Box::new(new_den),
