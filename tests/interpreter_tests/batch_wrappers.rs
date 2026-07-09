@@ -5687,6 +5687,45 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("SquaresR[4, 5]").unwrap(), "48");
   }
 
+  // SavitzkyGolayMatrix — least-squares smoothing kernels. Values carry
+  // solver float noise, so they are rounded (WL and Woxi round to the same
+  // rationals); clean rational kernels are compared directly.
+  #[test]
+  fn savitzky_golay_1d_kernel() {
+    // Radius 2, degree 2: the classic {-3/35, 12/35, 17/35, 12/35, -3/35}.
+    assert_eq!(
+      interpret("Round[SavitzkyGolayMatrix[{2}, 2], 10^-6]").unwrap(),
+      "{-42857/500000, 342857/1000000, 242857/500000, 342857/1000000, \
+       -42857/500000}"
+    );
+    // Degree 0 is a plain moving average.
+    assert_eq!(
+      interpret("SavitzkyGolayMatrix[{2}, 0]").unwrap(),
+      "{0.2, 0.2, 0.2, 0.2, 0.2}"
+    );
+    // Radius 1, degree 1 is the 3-point average.
+    assert_eq!(
+      interpret("SavitzkyGolayMatrix[{1}, 1]").unwrap(),
+      "{0.3333333333333333, 0.3333333333333333, 0.3333333333333333}"
+    );
+  }
+
+  #[test]
+  fn savitzky_golay_2d_kernel() {
+    // The isotropic 2D kernel is the outer product of the 1D kernel with
+    // itself; the centre entry is (17/35)^2.
+    assert_eq!(
+      interpret("Round[SavitzkyGolayMatrix[2, 2][[3, 3]], 10^-6]").unwrap(),
+      "117959/500000"
+    );
+    // Anisotropic degree-0 kernel over a 3x3 window is uniform 1/9.
+    assert_eq!(
+      interpret("Round[SavitzkyGolayMatrix[{1, 1}, {0, 0}][[2, 2]], 10^-6]")
+        .unwrap(),
+      "111111/1000000"
+    );
+  }
+
   // HankelMatrix
   #[test]
   fn hankel_matrix_basic() {

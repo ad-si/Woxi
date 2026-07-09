@@ -238,6 +238,11 @@ pub fn dispatch_linear_algebra_functions(
     "DiskMatrix" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::disk_matrix_ast(args));
     }
+    "SavitzkyGolayMatrix" if args.len() == 2 => {
+      return Some(
+        crate::functions::linear_algebra_ast::savitzky_golay_matrix_ast(args),
+      );
+    }
     "HilbertMatrix" if args.len() == 1 => {
       // Accept either HilbertMatrix[n] (square) or HilbertMatrix[{m, n}]
       // (rectangular). Both fill entry (i, j) with 1/(i + j - 1).

@@ -3418,7 +3418,7 @@ LaminaData,,🚫,,10.0,3506
 LiouvilleLambda,Liouville lambda function (Listable),✅,pure,7.0,3506
 MenuCommandKey,,🚫,,6.0,3506
 Octahedron,,,,12.0,3506
-SavitzkyGolayMatrix,,,,10.0,3506
+SavitzkyGolayMatrix,Least-squares Savitzky-Golay smoothing kernel of a given radius and polynomial degree,✅,pure,10.0,3506
 SpearmanRankTest,,,,9.0,3506
 AASTriangle,Triangle from two angles and the side opposite the first (symbolic angles give the Csc/Cot closed form),✅,pure,10.0,3522
 BlockchainData,,🚫,,11.3,3522

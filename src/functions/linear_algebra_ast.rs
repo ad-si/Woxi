@@ -8682,3 +8682,139 @@ pub fn linear_solve_modulus_ast(
     Ok(la_vector_expr(&solutions[0]))
   }
 }
+
+/// Least-squares Savitzky-Golay smoothing kernel of radius `r` and polynomial
+/// degree `k` over a window of `2 r + 1` points. Returns the machine-precision
+/// weights that evaluate the fitted polynomial at the window centre.
+fn sg_kernel(r: usize, k: usize) -> Option<Vec<f64>> {
+  let m = 2 * r + 1;
+  let ncols = (k + 1).min(m);
+  let offs: Vec<f64> = (0..m).map(|i| i as f64 - r as f64).collect();
+  // Normal-equations matrix B = A^T A with B[p][q] = sum_i offs_i^(p+q).
+  let mut mat = vec![vec![0.0f64; ncols]; ncols];
+  for (p, row) in mat.iter_mut().enumerate() {
+    for (q, cell) in row.iter_mut().enumerate() {
+      *cell = offs.iter().map(|&o| o.powi((p + q) as i32)).sum();
+    }
+  }
+  // Solve B x = e_0 (the first row of B^-1) with partial pivoting.
+  let mut b = vec![0.0f64; ncols];
+  b[0] = 1.0;
+  for col in 0..ncols {
+    let mut piv = col;
+    for row in (col + 1)..ncols {
+      if mat[row][col].abs() > mat[piv][col].abs() {
+        piv = row;
+      }
+    }
+    if mat[piv][col].abs() < 1e-15 {
+      return None;
+    }
+    mat.swap(col, piv);
+    b.swap(col, piv);
+    let d = mat[col][col];
+    for row in (col + 1)..ncols {
+      let f = mat[row][col] / d;
+      for c in col..ncols {
+        mat[row][c] -= f * mat[col][c];
+      }
+      b[row] -= f * b[col];
+    }
+  }
+  let mut x = vec![0.0f64; ncols];
+  for i in (0..ncols).rev() {
+    let mut s = b[i];
+    for j in (i + 1)..ncols {
+      s -= mat[i][j] * x[j];
+    }
+    x[i] = s / mat[i][i];
+  }
+  // kernel[j] = sum_p x[p] * offs_j^p.
+  Some(
+    offs
+      .iter()
+      .map(|&o| (0..ncols).map(|p| x[p] * o.powi(p as i32)).sum())
+      .collect(),
+  )
+}
+
+fn sg_outer(rows: &[f64], cols: &[f64]) -> Expr {
+  Expr::List(
+    rows
+      .iter()
+      .map(|&a| {
+        Expr::List(
+          cols
+            .iter()
+            .map(|&b| Expr::Real(a * b))
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
+/// SavitzkyGolayMatrix[{r}, k] — the 1D smoothing kernel (a vector).
+/// SavitzkyGolayMatrix[r, k] — the isotropic 2D kernel (outer product of the
+/// 1D kernel with itself). SavitzkyGolayMatrix[{r1, r2}, {k1, k2}] — the
+/// anisotropic 2D kernel.
+pub fn savitzky_golay_matrix_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "SavitzkyGolayMatrix".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let as_int = |e: &Expr| -> Option<usize> {
+    match e {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      _ => None,
+    }
+  };
+  match (&args[0], &args[1]) {
+    // 1D kernel: {r}, k
+    (Expr::List(rs), kexpr) if rs.len() == 1 => {
+      let (Some(r), Some(k)) = (as_int(&rs[0]), as_int(kexpr)) else {
+        return unevaluated();
+      };
+      match sg_kernel(r, k) {
+        Some(ker) => Ok(Expr::List(
+          ker.into_iter().map(Expr::Real).collect::<Vec<_>>().into(),
+        )),
+        None => unevaluated(),
+      }
+    }
+    // Anisotropic 2D kernel: {r1, r2}, {k1, k2}
+    (Expr::List(rs), Expr::List(ks)) if rs.len() == 2 && ks.len() == 2 => {
+      let (Some(r1), Some(r2), Some(k1), Some(k2)) = (
+        as_int(&rs[0]),
+        as_int(&rs[1]),
+        as_int(&ks[0]),
+        as_int(&ks[1]),
+      ) else {
+        return unevaluated();
+      };
+      match (sg_kernel(r1, k1), sg_kernel(r2, k2)) {
+        (Some(kr), Some(kc)) => Ok(sg_outer(&kr, &kc)),
+        _ => unevaluated(),
+      }
+    }
+    // Isotropic 2D kernel: r, k
+    (rexpr, kexpr) => {
+      let (Some(r), Some(k)) = (as_int(rexpr), as_int(kexpr)) else {
+        return unevaluated();
+      };
+      match sg_kernel(r, k) {
+        Some(ker) => Ok(sg_outer(&ker, &ker)),
+        None => unevaluated(),
+      }
+    }
+  }
+}
