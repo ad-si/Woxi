@@ -722,6 +722,19 @@ mod big_integer {
   }
 
   #[test]
+  fn big_reciprocal_folds_to_rational() {
+    // A negative exponent on a BigInteger base (2^130 exceeds i128) must fold
+    // to an exact Rational, mirroring the Integer-base case, instead of
+    // lingering as an unevaluated `...^(-1)` Power. Regression for issue #215
+    // (which surfaced this as LaguerreL[3, x] /. x -> 3 printing `6/6`).
+    assert_eq!(
+      interpret("Power[2^130, -1]").unwrap(),
+      "1/1361129467683753853853498429727072845824"
+    );
+    assert_eq!(interpret("Power[2^130, -1] * 2^130").unwrap(), "1");
+  }
+
+  #[test]
   fn large_i128_subtraction() {
     // 2^67 fits in i128 but exceeds f64 precision (> 2^53)
     assert_eq!(interpret("2^67 - 1").unwrap(), "147573952589676412927");

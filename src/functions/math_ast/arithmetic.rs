@@ -9407,6 +9407,21 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // BigInteger base with negative integer exponent -> Rational. Mirrors the
+  // Integer case above so a reciprocal like `Power[BigInteger(6), -1]` folds to
+  // `1/6` rather than lingering as an unevaluated Power. Without this, a
+  // polynomial-over-factorial such as LaguerreL[3, x] (denominator built as a
+  // BigInteger) left a `Power[6, -1]` factor that failed to cancel after a
+  // numeric substitution, e.g. `LaguerreL[3, x] /. x -> 3` printing `6/6`.
+  if let (Expr::BigInteger(b), Expr::Integer(e)) = (base, exp)
+    && *e < 0
+    && *b != num_bigint::BigInt::from(0)
+  {
+    let pos_exp = (-*e) as u32;
+    let denom = num_traits::pow::pow(b.clone(), pos_exp as usize);
+    return Ok(make_rational_expr(num_bigint::BigInt::from(1), denom));
+  }
+
   // Special case: Rational^Integer -> exact rational result
   if let Expr::FunctionCall {
     name: rname,

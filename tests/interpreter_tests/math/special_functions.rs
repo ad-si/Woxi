@@ -3372,6 +3372,31 @@ mod laguerre_l {
     assert_eq!(interpret("LaguerreL[3, 1/2]").unwrap(), "-7/48");
   }
 
+  // Substituting a value into the symbolic polynomial must reduce to the same
+  // number the direct numeric path gives. The polynomial is built over its
+  // factorial denominator (a BigInteger), and `Power[BigInteger, -1]` used to
+  // linger unevaluated, so `LaguerreL[3, x] /. x -> 3` printed `6/6` instead of
+  // `1`. Regression for issue #215.
+  #[test]
+  fn substitute_reduces_like_direct_eval() {
+    assert_eq!(interpret("LaguerreL[3, x] /. x -> 3").unwrap(), "1");
+    assert_eq!(
+      interpret("LaguerreL[3, x] /. x -> 3").unwrap(),
+      interpret("LaguerreL[3, 3]").unwrap()
+    );
+  }
+
+  // Same reduction for a degree whose factorial denominator (35! here) exceeds
+  // i128, so the BigInteger reciprocal path is genuinely exercised. The
+  // symbolic-then-substitute path must agree with the direct rational path.
+  #[test]
+  fn substitute_reduces_large_n() {
+    assert_eq!(
+      interpret("LaguerreL[35, x] /. x -> 2").unwrap(),
+      interpret("LaguerreL[35, 2]").unwrap()
+    );
+  }
+
   // Non-integer (rational) n routes through the
   // `LaguerreL[n, x] = Hypergeometric1F1[-n, 1, x]` identity.
   // Regression for mathics specialfns/orthogonal.py:144.
