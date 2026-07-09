@@ -2448,10 +2448,53 @@ pub fn day_round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// The Day/Month/Year unit one step after (`forward`) or before a date given by
+/// its calendar components, as a `DateObject` at that granularity. Other
+/// granularity strings return `None`.
+fn date_granularity_step(
+  comps: &[f64],
+  gran: &str,
+  forward: bool,
+) -> Option<Result<Expr, InterpreterError>> {
+  let sign: i64 = if forward { 1 } else { -1 };
+  let y = *comps.first()? as i64;
+  let make = |v: Vec<i128>| {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "DateObject".to_string(),
+      args: vec![Expr::List(
+        v.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+      )]
+      .into(),
+    })
+  };
+  match gran {
+    "Day" => {
+      let m = *comps.get(1).unwrap_or(&1.0) as i64;
+      let d = *comps.get(2).unwrap_or(&1.0) as i64;
+      let (ny, nm, nd) =
+        absolute_days_to_date(date_to_absolute_days(y, m, d) + sign);
+      Some(make(vec![ny as i128, nm as i128, nd as i128]))
+    }
+    "Month" => {
+      let m = *comps.get(1).unwrap_or(&1.0) as i64;
+      let (ny, nm) = if forward {
+        if m >= 12 { (y + 1, 1) } else { (y, m + 1) }
+      } else if m <= 1 {
+        (y - 1, 12)
+      } else {
+        (y, m - 1)
+      };
+      Some(make(vec![ny as i128, nm as i128]))
+    }
+    "Year" => Some(make(vec![(y + sign) as i128])),
+    _ => None,
+  }
+}
+
 /// NextDate[date, weekday] — the next occurrence of the given weekday strictly
-/// after `date`, returned as a `DateObject[…, Day]`. Only the weekday-name form
-/// (symbol or string Monday…Sunday) is supported; granularity specifications
-/// and other forms are left unevaluated (like `DayRound`).
+/// after `date`, returned as a `DateObject[…, Day]`. Also NextDate[date, gran]
+/// for gran = "Day"/"Month"/"Year" gives the next such calendar unit. Other
+/// forms are left unevaluated.
 pub fn next_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -2461,6 +2504,21 @@ pub fn next_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if args.len() != 2 {
     return unevaluated();
+  }
+  // Granularity form: NextDate[date, "Day" | "Month" | "Year"].
+  if let Expr::Identifier(s) | Expr::String(s) = &args[1]
+    && matches!(s.as_str(), "Day" | "Month" | "Year")
+  {
+    let Some(date_list) = resolve_date_to_list(&args[0]) else {
+      return unevaluated();
+    };
+    let Some(comps) = extract_date_components(&date_list) else {
+      return unevaluated();
+    };
+    return match date_granularity_step(&comps, s, true) {
+      Some(r) => r,
+      None => unevaluated(),
+    };
   }
   let target_dow = match &args[1] {
     Expr::Identifier(s) | Expr::String(s) => {
@@ -2515,6 +2573,21 @@ pub fn previous_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if args.len() != 2 {
     return unevaluated();
+  }
+  // Granularity form: PreviousDate[date, "Day" | "Month" | "Year"].
+  if let Expr::Identifier(s) | Expr::String(s) = &args[1]
+    && matches!(s.as_str(), "Day" | "Month" | "Year")
+  {
+    let Some(date_list) = resolve_date_to_list(&args[0]) else {
+      return unevaluated();
+    };
+    let Some(comps) = extract_date_components(&date_list) else {
+      return unevaluated();
+    };
+    return match date_granularity_step(&comps, s, false) {
+      Some(r) => r,
+      None => unevaluated(),
+    };
   }
   let target_dow = match &args[1] {
     Expr::Identifier(s) | Expr::String(s) => {

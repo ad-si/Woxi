@@ -2351,6 +2351,42 @@ mod next_date {
       "DateObject[{2024, 6, 23}, Day]"
     );
   }
+
+  // NextDate[date, granularity] gives the next calendar unit of that
+  // granularity, returned at that granularity.
+  #[test]
+  fn next_day_granularity() {
+    // Crosses the leap day and the year boundary.
+    assert_eq!(
+      interpret(r#"NextDate[DateObject[{2024, 2, 28}], "Day"]"#).unwrap(),
+      "DateObject[{2024, 2, 29}, Day]"
+    );
+    assert_eq!(
+      interpret(r#"NextDate[DateObject[{2024, 12, 31}], "Day"]"#).unwrap(),
+      "DateObject[{2025, 1, 1}, Day]"
+    );
+  }
+
+  #[test]
+  fn next_month_granularity() {
+    assert_eq!(
+      interpret(r#"NextDate[DateObject[{2024, 2, 28}], "Month"]"#).unwrap(),
+      "DateObject[{2024, 3}, Month]"
+    );
+    // December rolls over into the next January.
+    assert_eq!(
+      interpret(r#"NextDate[DateObject[{2024, 12}], "Month"]"#).unwrap(),
+      "DateObject[{2025, 1}, Month]"
+    );
+  }
+
+  #[test]
+  fn next_year_granularity() {
+    assert_eq!(
+      interpret(r#"NextDate[DateObject[{2024, 2, 28}], "Year"]"#).unwrap(),
+      "DateObject[{2025}, Year]"
+    );
+  }
 }
 
 // PreviousDate[date, weekday] gives the previous occurrence of that weekday
@@ -2406,6 +2442,34 @@ mod previous_date {
     assert_eq!(
       interpret("PreviousDate[DateObject[{2024, 6, 22}], Sunday]").unwrap(),
       "DateObject[{2024, 6, 16}, Day]"
+    );
+  }
+
+  // PreviousDate[date, granularity] gives the previous calendar unit of that
+  // granularity, returned at that granularity.
+  #[test]
+  fn previous_day_granularity() {
+    // Steps back onto the leap day.
+    assert_eq!(
+      interpret(r#"PreviousDate[DateObject[{2024, 3, 1}], "Day"]"#).unwrap(),
+      "DateObject[{2024, 2, 29}, Day]"
+    );
+  }
+
+  #[test]
+  fn previous_month_granularity() {
+    // January steps back into the prior December.
+    assert_eq!(
+      interpret(r#"PreviousDate[DateObject[{2024, 1, 1}], "Month"]"#).unwrap(),
+      "DateObject[{2023, 12}, Month]"
+    );
+  }
+
+  #[test]
+  fn previous_year_granularity() {
+    assert_eq!(
+      interpret(r#"PreviousDate[DateObject[{2024, 2, 28}], "Year"]"#).unwrap(),
+      "DateObject[{2023}, Year]"
     );
   }
 }
