@@ -6289,13 +6289,14 @@ pub fn evaluate_function_call_ast_inner(
     }
     let mut adj = vec![vec![0.0_f64; n]; n];
     for e in edges.iter() {
-      if let Some((u, v, _directed)) =
-        crate::functions::graph::edge_endpoints(e)
+      if let Some((u, v, directed)) = crate::functions::graph::edge_endpoints(e)
         && let (Some(&i), Some(&j)) =
           (idx.get(&expr_to_string(&u)), idx.get(&expr_to_string(&v)))
       {
         adj[i][j] += 1.0;
-        if i != j {
+        // Only undirected edges contribute a reverse transition; directed
+        // edges let PageRank flow one way.
+        if !directed && i != j {
           adj[j][i] += 1.0;
         }
       }

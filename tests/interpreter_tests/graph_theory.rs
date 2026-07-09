@@ -4960,6 +4960,27 @@ mod pagerank_centrality {
       "1"
     );
   }
+
+  // Directed edges let rank flow one way: on a directed path the sink
+  // accumulates the most rank (the sink is a dangling node that teleports).
+  #[test]
+  fn directed_chain_flows_downstream() {
+    assert_eq!(
+      interpret(
+        "Round[PageRankCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]], 10^-6]"
+      )
+      .unwrap(),
+      "{29039/250000, 26861/125000, 298811/1000000, 74029/200000}"
+    );
+    // A strongly connected directed cycle is uniform.
+    assert_eq!(
+      interpret(
+        "Round[PageRankCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]], 10^-6]"
+      )
+      .unwrap(),
+      "{333333/1000000, 333333/1000000, 333333/1000000}"
+    );
+  }
 }
 
 mod edge_betweenness_centrality {
