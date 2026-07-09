@@ -4305,6 +4305,60 @@ mod group_elements {
   }
 }
 
+// GroupOrbits[group, {points}] gives the orbits of the seed points under the
+// group action: each orbit is the sorted set of images of a seed under every
+// group element, deduplicated, with the orbits sorted lexicographically.
+// Verified against wolframscript.
+mod group_orbits {
+  use super::*;
+
+  #[test]
+  fn transitive_group_single_orbit() {
+    assert_eq!(
+      interpret("GroupOrbits[SymmetricGroup[3], {1}]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("GroupOrbits[CyclicGroup[4], {1, 3}]").unwrap(),
+      "{{1, 2, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("GroupOrbits[DihedralGroup[4], {1}]").unwrap(),
+      "{{1, 2, 3, 4}}"
+    );
+  }
+
+  #[test]
+  fn seeds_in_same_orbit_are_deduplicated() {
+    assert_eq!(
+      interpret("GroupOrbits[SymmetricGroup[3], {1, 2}]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("GroupOrbits[SymmetricGroup[3], {1, 1}]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn points_outside_the_domain_are_fixed() {
+    // The orbits are sorted regardless of the seed order; points the group
+    // never moves form singleton orbits.
+    assert_eq!(
+      interpret("GroupOrbits[CyclicGroup[4], {6, 1, 5}]").unwrap(),
+      "{{1, 2, 3, 4}, {5}, {6}}"
+    );
+  }
+
+  #[test]
+  fn abelian_group_has_multiple_orbits() {
+    assert_eq!(
+      interpret("GroupOrbits[AbelianGroup[{2, 2}], {1, 3}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+}
+
 mod longitude_latitude {
   use super::*;
 

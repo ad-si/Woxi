@@ -838,6 +838,9 @@ pub fn dispatch_math_functions(
     "GroupElements" if args.len() == 1 => {
       return Some(crate::functions::math_ast::group_elements_ast(args));
     }
+    "GroupOrbits" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::group_orbits_ast(args));
+    }
     "GroupMultiplicationTable" if args.len() == 1 => {
       return Some(crate::functions::math_ast::group_multiplication_table_ast(
         args,

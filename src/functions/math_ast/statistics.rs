@@ -5156,6 +5156,88 @@ pub fn group_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated())
 }
 
+/// Image of a single point `p` under a permutation given in cycle notation
+/// `Cycles[{{…}, …}]`. Points not moved by any cycle are fixed.
+fn apply_cycles_to_point(cycles: &Expr, p: i128) -> i128 {
+  if let Expr::FunctionCall { name, args } = cycles
+    && name == "Cycles"
+    && args.len() == 1
+    && let Expr::List(cyclist) = &args[0]
+  {
+    for cyc in cyclist.iter() {
+      if let Expr::List(items) = cyc {
+        for (i, it) in items.iter().enumerate() {
+          if let Expr::Integer(v) = it
+            && *v == p
+            && let Expr::Integer(next) = &items[(i + 1) % items.len()]
+          {
+            return *next;
+          }
+        }
+      }
+    }
+  }
+  p
+}
+
+/// GroupOrbits[group, {points…}] - the orbits of the given seed points under
+/// the group action. Each orbit is the sorted set of images of a seed under
+/// every group element; duplicate orbits are removed and the result is sorted
+/// lexicographically (independent of the seed order), matching wolframscript.
+pub fn group_orbits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "GroupOrbits".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  // Seed points must be a flat list of integers.
+  let Expr::List(points) = &args[1] else {
+    return Ok(unevaluated());
+  };
+  let mut seeds: Vec<i128> = Vec::with_capacity(points.len());
+  for p in points.iter() {
+    let Expr::Integer(v) = p else {
+      return Ok(unevaluated());
+    };
+    seeds.push(*v);
+  }
+  // Group elements as a list of Cycles; anything else leaves the call
+  // unevaluated (e.g. groups GroupElements does not expand).
+  let elems = group_elements_ast(std::slice::from_ref(&args[0]))?;
+  let Expr::List(gelems) = &elems else {
+    return Ok(unevaluated());
+  };
+
+  let orbit_of = |p: i128| -> Vec<i128> {
+    let mut set: std::collections::BTreeSet<i128> =
+      std::collections::BTreeSet::new();
+    for g in gelems.iter() {
+      set.insert(apply_cycles_to_point(g, p));
+    }
+    set.into_iter().collect()
+  };
+
+  // Collect the distinct orbits of the seeds, then sort them.
+  let mut orbits: Vec<Vec<i128>> = Vec::new();
+  for &p in &seeds {
+    let orb = orbit_of(p);
+    if !orbits.contains(&orb) {
+      orbits.push(orb);
+    }
+  }
+  orbits.sort();
+
+  let result: Vec<Expr> = orbits
+    .into_iter()
+    .map(|o| {
+      Expr::List(o.into_iter().map(Expr::Integer).collect::<Vec<_>>().into())
+    })
+    .collect();
+  Ok(Expr::List(result.into()))
+}
+
 /// GroupElements[AlternatingGroup[n]] - all even permutations of {1, ..., n}
 /// in canonical cycle notation, ordered lexicographically by their image list
 /// (i.e. by PermutationList), matching wolframscript.

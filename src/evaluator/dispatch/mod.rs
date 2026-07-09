@@ -10430,7 +10430,6 @@ pub fn evaluate_function_call_ast_inner(
       | "TransformedRegion"
       | "HypoexponentialDistribution"
       | "FormulaLookup"
-      | "GroupOrbits"
       | "HalfLine"
       | "LocatorAutoCreate"
       | "LegendFunction"
