@@ -1725,3 +1725,58 @@ mod cases {
     assert_case(r#"0!"#, r#"1"#);
   }
 }
+
+mod machine_real_division {
+  use super::*;
+
+  // wolframscript evaluates a/b as Times[a, Power[b, -1]]. When the denominator
+  // is inexact (a machine Real, or an irrational constant whose reciprocal must
+  // be rounded to a machine real), the multiply-by-reciprocal double-rounds and
+  // lands one ULP away from a single IEEE division. Woxi must match byte-for-byte.
+  #[test]
+  fn real_over_real_uses_multiply_by_reciprocal() {
+    // Direct IEEE 13.522987986828882 / 84.75863032002954 == 0.15954703297787043,
+    // but wolframscript reports the reciprocal-multiply value ...046.
+    assert_eq!(
+      interpret("13.522987986828882/84.75863032002954").unwrap(),
+      "0.15954703297787046"
+    );
+    assert_eq!(
+      interpret("65.19413797500401/78.89346277843777").unwrap(),
+      "0.8263566546456889"
+    );
+    assert_eq!(
+      interpret("44.594180686074665/72.18184923084418").unwrap(),
+      "0.6178032450160481"
+    );
+  }
+
+  #[test]
+  fn real_over_symbolic_constant_double_rounds() {
+    // 15.9/Pi: direct IEEE is 5.061127190322272, reciprocal-multiply is ...725.
+    assert_eq!(interpret("15.9/Pi").unwrap(), "5.0611271903222725");
+    assert_eq!(interpret("Divide[15.9, Pi]").unwrap(), "5.0611271903222725");
+  }
+
+  // Dividing by an exact Integer/Rational is Times[a, Rational[..]] — an exact
+  // reciprocal, so the product is single-rounded (identical to direct division).
+  // The reciprocal-multiply rule must NOT touch these (regression: CentralMoment,
+  // Kurtosis, Skewness and AbsoluteCorrelation all divide by an integer count).
+  #[test]
+  fn real_over_exact_denominator_stays_direct() {
+    assert_eq!(interpret("15.9/3").unwrap(), "5.3");
+    assert_eq!(interpret("3/15.9").unwrap(), "0.18867924528301888");
+    assert_eq!(
+      interpret("CentralMoment[{1.1, 1.2, 1.4, 2.1, 2.4}, 4]").unwrap(),
+      "0.10084511999999998"
+    );
+    assert_eq!(
+      interpret("Kurtosis[{1.1, 1.2, 1.4, 2.1, 2.4}]").unwrap(),
+      "1.4209750290831373"
+    );
+    assert_eq!(
+      interpret("Skewness[{1.1, 1.2, 1.4, 2.1, 2.4}]").unwrap(),
+      "0.4070412816074878"
+    );
+  }
+}

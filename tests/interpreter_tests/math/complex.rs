@@ -1377,6 +1377,21 @@ mod log_negative_real_base {
     assert_eq!(interpret("Log2[8.0]").unwrap(), "3.");
     assert_eq!(interpret("Log10[100.0]").unwrap(), "2.");
   }
+
+  // wolframscript's two-argument Log is a dedicated primitive that evaluates as
+  // the *direct* division Log[x]/Log[base] — it does NOT round via the
+  // multiply-by-reciprocal that a user-level Divide uses. So Log[10, 100.0] is
+  // exactly 2. even though Log[100.0]/Log[10] is 1.9999999999999998. This holds
+  // for any mix of exact/inexact plain-number base and argument.
+  #[test]
+  fn two_arg_log_uses_direct_division() {
+    assert_eq!(interpret("Log[10, 100.0]").unwrap(), "2.");
+    assert_eq!(interpret("Log[2, 8.0]").unwrap(), "3.");
+    assert_eq!(interpret("Log[2.0, 8]").unwrap(), "3.");
+    assert_eq!(interpret("Log[3, 9.0]").unwrap(), "2.");
+    assert_eq!(interpret("Log[10, 50.0]").unwrap(), "1.6989700043360185");
+    assert_eq!(interpret("Log[2.5, 30.0]").unwrap(), "3.71191944144785");
+  }
 }
 
 mod re_im_constants {
