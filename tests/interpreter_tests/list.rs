@@ -17068,3 +17068,54 @@ mod angle_path_3d_tests {
     assert_eq!(interpret("AnglePath3D[x]").unwrap(), "AnglePath3D[x]");
   }
 }
+
+// PermutationReplace[expr, {p1, p2, …}] threads over a list of permutations,
+// applying each to `expr` and returning the list of results. Verified against
+// wolframscript.
+mod permutation_replace_list_of_perms {
+  use super::*;
+
+  #[test]
+  fn point_through_several_permutations() {
+    // Point 5 is fixed by both permutations.
+    assert_eq!(
+      interpret("PermutationReplace[5, {Cycles[{{1, 2}}], Cycles[{{2, 3}}]}]")
+        .unwrap(),
+      "{5, 5}"
+    );
+    // Point 1 maps to 2 under both permutations.
+    assert_eq!(
+      interpret(
+        "PermutationReplace[1, {Cycles[{{1, 2}}], Cycles[{{1, 2, 3}}]}]"
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  #[test]
+  fn list_through_several_permutations() {
+    // Each permutation is applied to the whole list {1, 2}.
+    assert_eq!(
+      interpret(
+        "PermutationReplace[{1, 2}, {Cycles[{{1, 2}}], Cycles[{{1, 2, 3}}]}]"
+      )
+      .unwrap(),
+      "{{2, 1}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn single_permutation_forms_unchanged() {
+    // A single Cycles and an integer permutation-list still act as one
+    // permutation, not a list of permutations.
+    assert_eq!(
+      interpret("PermutationReplace[1, Cycles[{{1, 2, 3}}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("PermutationReplace[{1, 2, 3}, {2, 3, 1}]").unwrap(),
+      "{2, 3, 1}"
+    );
+  }
+}

@@ -2368,6 +2368,28 @@ pub fn evaluate_function_call_ast_inner(
   // PermutationReplace[expr, perm] — replace each point by its image under perm.
   // perm may be Cycles[{...}] or a permutation list {p1, p2, ...}.
   if name == "PermutationReplace" && args.len() == 2 {
+    // A list of permutations {Cycles[…], …}: apply each to the point/list and
+    // return the list of results (PermutationReplace[e, {p1, …}] threads over
+    // the permutations). Integer permutation-lists are handled below as a
+    // single permutation, so only an all-Cycles list takes this branch.
+    if let Expr::List(perms) = &args[1]
+      && !perms.is_empty()
+      && perms.iter().all(
+        |p| matches!(p, Expr::FunctionCall { name: h, .. } if h == "Cycles"),
+      )
+    {
+      let results: Vec<Expr> = perms
+        .iter()
+        .map(|p| {
+          evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "PermutationReplace".to_string(),
+            args: vec![args[0].clone(), p.clone()].into(),
+          })
+          .unwrap_or_else(|_| args[0].clone())
+        })
+        .collect();
+      return Ok(Expr::List(results.into()));
+    }
     // Build the image map: point -> image. Points absent from the map are fixed.
     let mut images: std::collections::HashMap<i128, i128> =
       std::collections::HashMap::new();
