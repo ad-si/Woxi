@@ -35,3 +35,10 @@ $ wo 'FrobeniusReduce[{{1/2, 1/3}, {1/4, 1/5}}]'
 $ wo 'FrobeniusReduce[{{I, 0}, {0, 2}}]'
 {{0, -2*I}, {1, 2 + I}}
 ```
+
+With `Modulus -> p` the reduction happens over the prime field GF(p):
+
+```scrut
+$ wo 'FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 5]'
+{{0, 2}, {1, 0}}
+```

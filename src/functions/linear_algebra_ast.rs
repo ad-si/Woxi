@@ -8663,19 +8663,112 @@ impl GQNum {
   }
 }
 
-/// Polynomial over the Gaussian rationals, ascending coefficients with no
+/// The coefficient-field operations the polynomial Smith reduction needs:
+/// implemented by the Gaussian rationals (exact path) and the prime fields
+/// GF(p) (Modulus option). All operations are fallible so i128 overflow
+/// propagates to an unevaluated call.
+trait PField: Copy + PartialEq {
+  fn zero() -> Self;
+  fn is_zero(&self) -> bool;
+  fn add(&self, o: &Self) -> Option<Self>;
+  fn sub(&self, o: &Self) -> Option<Self>;
+  fn mul(&self, o: &Self) -> Option<Self>;
+  fn div(&self, o: &Self) -> Option<Self>;
+}
+
+impl PField for GQNum {
+  fn zero() -> Self {
+    GQNum::zero()
+  }
+  fn is_zero(&self) -> bool {
+    GQNum::is_zero(self)
+  }
+  fn add(&self, o: &Self) -> Option<Self> {
+    GQNum::add(self, o)
+  }
+  fn sub(&self, o: &Self) -> Option<Self> {
+    GQNum::sub(self, o)
+  }
+  fn mul(&self, o: &Self) -> Option<Self> {
+    GQNum::mul(self, o)
+  }
+  fn div(&self, o: &Self) -> Option<Self> {
+    GQNum::div(self, o)
+  }
+}
+
+/// Element of the prime field GF(p), stored as a canonical representative
+/// in 0..p−1. The modulus rides along in each value; mixed-modulus
+/// arithmetic never happens because a single reduction uses one p.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FpNum {
+  v: i128,
+  p: i128,
+}
+
+impl FpNum {
+  fn new(v: i128, p: i128) -> FpNum {
+    FpNum {
+      v: v.rem_euclid(p),
+      p,
+    }
+  }
+  /// Multiplicative inverse via the extended Euclidean algorithm; None
+  /// for values not coprime to p.
+  fn inverse(&self) -> Option<FpNum> {
+    let (mut r0, mut r1) = (self.p, self.v);
+    let (mut s0, mut s1) = (0i128, 1i128);
+    while r1 != 0 {
+      let q = r0 / r1;
+      (r0, r1) = (r1, r0 - q * r1);
+      (s0, s1) = (s1, s0 - q * s1);
+    }
+    if r0 != 1 {
+      return None;
+    }
+    Some(FpNum::new(s0, self.p))
+  }
+}
+
+impl PField for FpNum {
+  // zero() carries no modulus: the polynomial helpers only synthesize it
+  // for padding, and arithmetic picks up the real modulus from the other
+  // operand (max(p, 1)), so the p = 0 sentinel never reaches rem_euclid.
+  fn zero() -> Self {
+    FpNum { v: 0, p: 0 }
+  }
+  fn is_zero(&self) -> bool {
+    self.v == 0
+  }
+  fn add(&self, o: &Self) -> Option<Self> {
+    Some(FpNum::new(self.v.checked_add(o.v)?, self.p.max(o.p).max(1)))
+  }
+  fn sub(&self, o: &Self) -> Option<Self> {
+    Some(FpNum::new(self.v.checked_sub(o.v)?, self.p.max(o.p).max(1)))
+  }
+  fn mul(&self, o: &Self) -> Option<Self> {
+    Some(FpNum::new(self.v.checked_mul(o.v)?, self.p.max(o.p).max(1)))
+  }
+  fn div(&self, o: &Self) -> Option<Self> {
+    let p = self.p.max(o.p).max(1);
+    let inv = FpNum { v: o.v, p }.inverse()?;
+    self.mul(&inv)
+  }
+}
+
+/// Polynomial over a coefficient field, ascending coefficients with no
 /// trailing zeros (the zero polynomial is the empty vector).
 type GPoly = Vec<GQNum>;
 
-fn gp_trim(mut p: GPoly) -> GPoly {
-  while p.last().is_some_and(GQNum::is_zero) {
+fn gp_trim<F: PField>(mut p: Vec<F>) -> Vec<F> {
+  while p.last().is_some_and(|c| c.is_zero()) {
     p.pop();
   }
   p
 }
 
-fn gp_sub(a: &GPoly, b: &GPoly) -> Option<GPoly> {
-  let mut out = vec![GQNum::zero(); a.len().max(b.len())];
+fn gp_sub<F: PField>(a: &[F], b: &[F]) -> Option<Vec<F>> {
+  let mut out = vec![F::zero(); a.len().max(b.len())];
   out[..a.len()].copy_from_slice(a);
   for (i, c) in b.iter().enumerate() {
     out[i] = out[i].sub(c)?;
@@ -8683,11 +8776,11 @@ fn gp_sub(a: &GPoly, b: &GPoly) -> Option<GPoly> {
   Some(gp_trim(out))
 }
 
-fn gp_mul(a: &GPoly, b: &GPoly) -> Option<GPoly> {
+fn gp_mul<F: PField>(a: &[F], b: &[F]) -> Option<Vec<F>> {
   if a.is_empty() || b.is_empty() {
     return Some(Vec::new());
   }
-  let mut out = vec![GQNum::zero(); a.len() + b.len() - 1];
+  let mut out = vec![F::zero(); a.len() + b.len() - 1];
   for (i, x) in a.iter().enumerate() {
     for (j, y) in b.iter().enumerate() {
       out[i + j] = out[i + j].add(&x.mul(y)?)?;
@@ -8697,18 +8790,18 @@ fn gp_mul(a: &GPoly, b: &GPoly) -> Option<GPoly> {
 }
 
 /// Quotient and remainder of a by nonzero b over the field.
-fn gp_divmod(a: &GPoly, b: &GPoly) -> Option<(GPoly, GPoly)> {
+fn gp_divmod<F: PField>(a: &[F], b: &[F]) -> Option<(Vec<F>, Vec<F>)> {
   let db = b.len().checked_sub(1)?;
   let lead = *b.last()?;
-  let mut rem = a.clone();
-  let mut quot = vec![GQNum::zero(); a.len().saturating_sub(db)];
+  let mut rem = a.to_vec();
+  let mut quot = vec![F::zero(); a.len().saturating_sub(db)];
   while rem.len() > db {
     let k = rem.len() - 1 - db;
     let c = rem.last()?.div(&lead)?;
     quot[k] = c;
-    let mut shifted = vec![GQNum::zero(); k];
+    let mut shifted = vec![F::zero(); k];
     shifted.extend(b.iter().copied());
-    let scaled: GPoly = shifted
+    let scaled: Vec<F> = shifted
       .iter()
       .map(|x| x.mul(&c))
       .collect::<Option<Vec<_>>>()?;
@@ -8718,7 +8811,7 @@ fn gp_divmod(a: &GPoly, b: &GPoly) -> Option<(GPoly, GPoly)> {
 }
 
 /// Normalize to a monic polynomial (nonzero input).
-fn gp_monic(p: &GPoly) -> Option<GPoly> {
+fn gp_monic<F: PField>(p: &[F]) -> Option<Vec<F>> {
   let lead = *p.last()?;
   p.iter().map(|c| c.div(&lead)).collect()
 }
@@ -8817,9 +8910,11 @@ fn gq_to_expr(q: &GQNum) -> Option<Expr> {
 /// Smith normal form of a nonsingular polynomial matrix over the Gaussian
 /// rationals, returning the monic diagonal (invariant factors, each
 /// dividing the next). None on overflow.
-fn gp_smith_diagonal(mut p: Vec<Vec<GPoly>>) -> Option<Vec<GPoly>> {
+fn gp_smith_diagonal<F: PField>(
+  mut p: Vec<Vec<Vec<F>>>,
+) -> Option<Vec<Vec<F>>> {
   let n = p.len();
-  let mut diag: Vec<GPoly> = Vec::with_capacity(n);
+  let mut diag: Vec<Vec<F>> = Vec::with_capacity(n);
   for t in 0..n {
     'reduce: loop {
       // Pivot: nonzero entry of minimal degree in the trailing submatrix.
@@ -8894,11 +8989,136 @@ fn gp_smith_diagonal(mut p: Vec<Vec<GPoly>>) -> Option<Vec<GPoly>> {
   Some(diag)
 }
 
+/// The (lhs, rhs) of a rule expression in either representation.
+fn rule_parts(e: &Expr) -> Option<(&Expr, &Expr)> {
+  match e {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some((pattern, replacement)),
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  }
+}
+
+/// Assemble the companion-block matrix of a chain of monic invariant
+/// factors, rendering each negated coefficient with `to_expr`.
+fn companion_block_matrix<F: PField>(
+  diag: &[Vec<F>],
+  n: usize,
+  to_expr: impl Fn(&F) -> Option<Expr>,
+) -> Option<Expr> {
+  let factors: Vec<&Vec<F>> = diag.iter().filter(|f| f.len() > 1).collect();
+  if factors.iter().map(|f| f.len() - 1).sum::<usize>() != n {
+    return None;
+  }
+  let mut rows = vec![vec![Expr::Integer(0); n]; n];
+  let mut pos = 0;
+  for f in factors {
+    let m = f.len() - 1;
+    for i in 0..m {
+      if i > 0 {
+        rows[pos + i][pos + i - 1] = Expr::Integer(1);
+      }
+      let neg_c = to_expr(&F::zero().sub(&f[i])?)?;
+      rows[pos + i][pos + m - 1] = neg_c;
+    }
+    pos += m;
+  }
+  Some(Expr::List(
+    rows
+      .into_iter()
+      .map(|r| Expr::List(r.into()))
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
+/// Reduce an exact scalar modulo m. `Ok` is the canonical representative;
+/// `Err(true)` marks an entry that exists but is not reducible (its
+/// denominator shares a factor with m — reported via ::nmod), `Err(false)`
+/// an unsupported entry kind (complex, symbolic — silently unevaluated).
+fn expr_mod_m(e: &Expr, m: i128) -> Result<i128, bool> {
+  match e {
+    Expr::Integer(n) => Ok(n.rem_euclid(m)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(a), Expr::Integer(b)) => {
+          let inv = FpNum::new(*b, m).inverse().ok_or(true)?;
+          FpNum::new(*a, m).mul(&inv).map(|v| v.v).ok_or(false)
+        }
+        _ => Err(false),
+      }
+    }
+    // Inexact entries reduce through Rationalize (0.5 → 1/2 works mod 5,
+    // 0.1 → 1/10 does not), matching wolframscript.
+    Expr::Real(_) => {
+      let rat = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Rationalize".to_string(),
+        args: vec![e.clone()].into(),
+      })
+      .map_err(|_| false)?;
+      if matches!(rat, Expr::Real(_)) {
+        return Err(true);
+      }
+      expr_mod_m(&rat, m)
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => expr_mod_m(operand, m).map(|v| (-v).rem_euclid(m)),
+    _ => Err(false),
+  }
+}
+
+/// Emit `FrobeniusReduce::nmod` with the matrix displayed entrywise
+/// reduced modulo m (irreducible entries wrapped in PolynomialMod).
+fn emit_frobenius_nmod(matrix: &[Vec<Expr>], m: i128) {
+  let display = Expr::List(
+    matrix
+      .iter()
+      .map(|row| {
+        Expr::List(
+          row
+            .iter()
+            .map(|cell| match expr_mod_m(cell, m) {
+              Ok(v) => Expr::Integer(v),
+              Err(_) => Expr::FunctionCall {
+                name: "PolynomialMod".to_string(),
+                args: vec![cell.clone(), Expr::Integer(m)].into(),
+              },
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  crate::emit_message(&format!(
+    "FrobeniusReduce::nmod: {} is not valid modulo {}.",
+    crate::syntax::expr_to_string(&display),
+    m
+  ));
+}
+
 /// FrobeniusReduce[m] — the Frobenius (rational canonical) form: the block
 /// diagonal of companion matrices of the invariant factors of xI − m, in
 /// divisibility-chain order (each factor divides the next). Supported for
-/// exact integer / rational / complex-rational matrices; inexact and
-/// symbolic matrices (and the Modulus option) stay unevaluated.
+/// exact integer / rational / complex-rational matrices, plus
+/// Modulus -> p over GF(p) for primes (composite moduli emit ::nmod, as
+/// do entries whose denominators are not invertible). Inexact and
+/// symbolic matrices stay unevaluated.
 pub fn frobenius_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::syntax::expr_to_string;
   let unevaluated = || Expr::FunctionCall {
@@ -8908,31 +9128,97 @@ pub fn frobenius_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(unevaluated());
   }
-  // Arguments beyond the matrix must be options (rules): the first
-  // non-rule emits ::nonopt; supported ones don't exist yet (Modulus is a
-  // known gap), so any option form stays unevaluated without a message.
-  if args.len() > 1 {
-    for extra in &args[1..] {
-      let is_opt = matches!(
-        extra,
-        Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
-      ) || matches!(extra, Expr::FunctionCall { name, .. } if name == "Rule" || name == "RuleDelayed");
-      if !is_opt {
+  // Arguments beyond the matrix must be options (rules or lists of
+  // rules): the first non-rule emits ::nonopt. Unknown option names emit
+  // OptionValue::nodef (with wolframscript's internal-symbol wording) and
+  // the computation proceeds with defaults.
+  let mut modulus: Option<Expr> = None;
+  for extra in &args[1..] {
+    let rules: Vec<&Expr> = match extra {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    for item in rules {
+      let Some((lhs, rhs)) = rule_parts(item) else {
         crate::emit_message(&format!(
           "FrobeniusReduce::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
           expr_to_string(extra),
           expr_to_string(&unevaluated())
         ));
-        break;
+        return Ok(unevaluated());
+      };
+      match lhs {
+        Expr::Identifier(name) if name == "Modulus" => {
+          modulus = Some(rhs.clone());
+        }
+        other => {
+          crate::emit_message(&format!(
+            "OptionValue::nodef: Unknown option {} for System`FrobeniusDecompositionDump`iFrobeniusDecomp.",
+            expr_to_string(other)
+          ));
+        }
       }
     }
-    return Ok(unevaluated());
   }
   let matrix = match expr_to_matrix(&args[0]) {
     Some(m) if is_nonempty_square(&m) => m,
     _ => return Ok(matsq_unevaluated("FrobeniusReduce", args)),
   };
   let n = matrix.len();
+
+  // Modulus -> p: compute over GF(p). Modulus -> 0 means no modulus;
+  // 1 and composite moduli are ::nmod; anything else (including negative
+  // integers, where wolframscript crashes outright) stays unevaluated.
+  match &modulus {
+    None | Some(Expr::Integer(0)) => {}
+    Some(Expr::Integer(m)) if *m >= 1 => {
+      let m = *m;
+      let is_prime = matches!(
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "PrimeQ".to_string(),
+          args: vec![Expr::Integer(m)].into(),
+        }),
+        Ok(Expr::Identifier(ref t)) if t == "True"
+      );
+      if !is_prime {
+        emit_frobenius_nmod(&matrix, m);
+        return Ok(unevaluated());
+      }
+      let mut entries: Vec<Vec<FpNum>> = Vec::with_capacity(n);
+      for row in &matrix {
+        let mut out_row = Vec::with_capacity(n);
+        for cell in row {
+          match expr_mod_m(cell, m) {
+            Ok(v) => out_row.push(FpNum::new(v, m)),
+            Err(true) => {
+              emit_frobenius_nmod(&matrix, m);
+              return Ok(unevaluated());
+            }
+            Err(false) => return Ok(unevaluated()),
+          }
+        }
+        entries.push(out_row);
+      }
+      let p: Vec<Vec<Vec<FpNum>>> = (0..n)
+        .map(|i| {
+          (0..n)
+            .map(|j| {
+              let mut poly = vec![FpNum::new(-entries[i][j].v, m)];
+              if i == j {
+                poly.push(FpNum::new(1, m));
+              }
+              gp_trim(poly)
+            })
+            .collect()
+        })
+        .collect();
+      let result = gp_smith_diagonal(p).and_then(|diag| {
+        companion_block_matrix(&diag, n, |c: &FpNum| Some(Expr::Integer(c.v)))
+      });
+      return Ok(result.unwrap_or_else(unevaluated));
+    }
+    Some(_) => return Ok(unevaluated()),
+  }
 
   // Exact entries only.
   let mut entries: Vec<Vec<GQNum>> = Vec::with_capacity(n);
@@ -8965,39 +9251,9 @@ pub fn frobenius_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     p.push(row);
   }
 
-  let diag = match gp_smith_diagonal(p) {
-    Some(d) => d,
-    None => return Ok(unevaluated()),
-  };
-
-  // Companion blocks of the nontrivial invariant factors, chain order.
-  let factors: Vec<&GPoly> = diag.iter().filter(|f| f.len() > 1).collect();
-  if factors.iter().map(|f| f.len() - 1).sum::<usize>() != n {
-    return Ok(unevaluated());
-  }
-  let mut rows = vec![vec![Expr::Integer(0); n]; n];
-  let mut pos = 0;
-  for f in factors {
-    let m = f.len() - 1;
-    for i in 0..m {
-      if i > 0 {
-        rows[pos + i][pos + i - 1] = Expr::Integer(1);
-      }
-      let neg_c = match GQNum::zero().sub(&f[i]).and_then(|v| gq_to_expr(&v)) {
-        Some(e) => e,
-        None => return Ok(unevaluated()),
-      };
-      rows[pos + i][pos + m - 1] = neg_c;
-    }
-    pos += m;
-  }
-  Ok(Expr::List(
-    rows
-      .into_iter()
-      .map(|r| Expr::List(r.into()))
-      .collect::<Vec<_>>()
-      .into(),
-  ))
+  let result = gp_smith_diagonal(p)
+    .and_then(|diag| companion_block_matrix(&diag, n, gq_to_expr));
+  Ok(result.unwrap_or_else(unevaluated))
 }
 
 /// CoordinateTransform[src -> dst, pt] for the named coordinate systems

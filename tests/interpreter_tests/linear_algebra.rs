@@ -5763,6 +5763,162 @@ mod frobenius_reduce {
       "got {msgs:?}"
     );
   }
+
+  #[test]
+  fn modulus_prime() {
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 5]").unwrap(),
+      "{{0, 2}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 2]").unwrap(),
+      "{{0, 0}, {1, 1}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{2, 0}, {0, 3}}, Modulus -> 5]").unwrap(),
+      "{{0, 4}, {1, 0}}"
+    );
+    // Invariant-factor chain survives the reduction: (x-2), (x-2)^2 mod 3
+    assert_eq!(
+      interpret(
+        "FrobeniusReduce[{{2, 1, 0}, {0, 2, 0}, {0, 0, 2}}, Modulus -> 3]"
+      )
+      .unwrap(),
+      "{{2, 0, 0}, {0, 0, 2}, {0, 1, 1}}"
+    );
+    // Negative entries reduce to canonical representatives
+    assert_eq!(
+      interpret("FrobeniusReduce[{{-3, 2}, {7, -11}}, Modulus -> 5]").unwrap(),
+      "{{0, 1}, {1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "FrobeniusReduce[{{-7, 12, 5}, {4, -3, 8}, {2, 0, 1}}, \
+         Modulus -> 7]"
+      )
+      .unwrap(),
+      "{{0, 0, 6}, {1, 0, 5}, {0, 1, 5}}"
+    );
+  }
+
+  #[test]
+  fn modulus_rational_and_inexact_entries() {
+    // Rational entries reduce through modular inverses
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1/2, 1}, {0, 1/2}}, Modulus -> 5]").unwrap(),
+      "{{0, 1}, {1, 1}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1/2, 1}, {0, 1/3}}, Modulus -> 7]").unwrap(),
+      "{{0, 1}, {1, 2}}"
+    );
+    // Inexact entries reduce through Rationalize (0.5 -> 1/2)
+    assert_eq!(
+      interpret("FrobeniusReduce[{{0.5, 0}, {0, 2}}, Modulus -> 5]").unwrap(),
+      "{{0, 4}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1.5, 2}, {3, 4}}, Modulus -> 5]").unwrap(),
+      "{{0, 0}, {1, 3}}"
+    );
+  }
+
+  #[test]
+  fn modulus_zero_means_no_modulus() {
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 0]").unwrap(),
+      "{{0, 2}, {1, 5}}"
+    );
+  }
+
+  #[test]
+  fn modulus_composite_emits_nmod() {
+    clear_state();
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 6]").unwrap(),
+      "FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 6]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FrobeniusReduce::nmod: {{1, 2}, {3, 4}} is not valid modulo 6."
+      )),
+      "got {msgs:?}"
+    );
+    // The message shows the matrix reduced modulo m
+    clear_state();
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 4]").unwrap(),
+      "FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 4]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FrobeniusReduce::nmod: {{1, 2}, {3, 0}} is not valid modulo 4."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 1]").unwrap(),
+      "FrobeniusReduce[{{1, 2}, {3, 4}}, Modulus -> 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FrobeniusReduce::nmod: {{0, 0}, {0, 0}} is not valid modulo 1."
+      )),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn modulus_noninvertible_entry_emits_nmod() {
+    clear_state();
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1/5, 1}, {0, 2}}, Modulus -> 5]").unwrap(),
+      "FrobeniusReduce[{{1/5, 1}, {0, 2}}, Modulus -> 5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FrobeniusReduce::nmod: {{PolynomialMod[1/5, 5], 1}, {0, 2}} is \
+         not valid modulo 5."
+      )),
+      "got {msgs:?}"
+    );
+    // 0.1 rationalizes to 1/10, whose denominator is not invertible mod 5
+    clear_state();
+    assert_eq!(
+      interpret("FrobeniusReduce[{{0.1, 0}, {0, 2}}, Modulus -> 5]").unwrap(),
+      "FrobeniusReduce[{{0.1, 0}, {0, 2}}, Modulus -> 5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FrobeniusReduce::nmod: {{PolynomialMod[0.1, 5], 0}, {0, 2}} is \
+         not valid modulo 5."
+      )),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn unknown_option_emits_nodef_and_computes() {
+    clear_state();
+    assert_eq!(
+      interpret("FrobeniusReduce[{{1, 2}, {3, 4}}, Foo -> 1]").unwrap(),
+      "{{0, 2}, {1, 5}}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "OptionValue::nodef: Unknown option Foo for \
+         System`FrobeniusDecompositionDump`iFrobeniusDecomp."
+      )),
+      "got {msgs:?}"
+    );
+  }
 }
 
 mod coordinate_transform {
