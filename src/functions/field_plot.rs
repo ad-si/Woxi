@@ -1927,11 +1927,24 @@ fn hsb_to_rgb(h: f64, s: f64, b: f64) -> (u8, u8, u8) {
     4 => (t, p, b),
     _ => (b, p, q),
   };
-  (
-    (r * 255.0).round() as u8,
-    (g * 255.0).round() as u8,
-    (bl * 255.0).round() as u8,
-  )
+  (channel_to_u8(r), channel_to_u8(g), channel_to_u8(bl))
+}
+
+/// Quantize a [0,1] color channel to an 8-bit value.
+///
+/// The magnitude/argument feeding domain coloring is computed with libm's
+/// `atan2`/`pow`, whose internal `mul_add` calls compile to a hardware FMA on
+/// aarch64 but not on x86_64. That single-vs-double rounding shifts the result
+/// by ~1e-13, which is invisible in the color itself but flips the 8-bit
+/// rounding of a channel value sitting exactly on an `x.5` boundary — so the
+/// same plot renders one LSB apart on macOS and on the Linux CI runner.
+///
+/// Snapping to a 1e-9 grid (10^4× the FP noise, far below any perceptible color
+/// step) before rounding pulls both platforms onto the same side of the
+/// boundary, making the SVG bit-identical everywhere.
+fn channel_to_u8(c: f64) -> u8 {
+  let v = c * 255.0;
+  ((v * 1e9).round() / 1e9).round() as u8
 }
 
 /// ComplexPlot[f, {z, zmin, zmax}]

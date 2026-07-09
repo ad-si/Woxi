@@ -3443,7 +3443,7 @@ expression: "export_svg(\"ComplexPlot[(z^2 + 1)/(z^2 - 1), {z, -2 - 2 I, 2 + 2 I
 <rect x="1630.0" y="1150.0" width="28.0" height="30.5" fill="rgb(90,1,131)" stroke="none"/>
 <rect x="1630.0" y="1120.0" width="28.0" height="30.5" fill="rgb(82,0,130)" stroke="none"/>
 <rect x="1630.0" y="1090.0" width="28.0" height="30.5" fill="rgb(74,0,129)" stroke="none"/>
-<rect x="1630.0" y="1060.0" width="28.0" height="30.5" fill="rgb(66,0,127)" stroke="none"/>
+<rect x="1630.0" y="1060.0" width="28.0" height="30.5" fill="rgb(66,0,128)" stroke="none"/>
 <rect x="1630.0" y="1030.0" width="28.0" height="30.5" fill="rgb(59,0,126)" stroke="none"/>
 <rect x="1630.0" y="1000.0" width="28.0" height="30.5" fill="rgb(52,0,125)" stroke="none"/>
 <rect x="1630.0" y="970.0" width="28.0" height="30.5" fill="rgb(45,1,125)" stroke="none"/>
@@ -3542,7 +3542,7 @@ expression: "export_svg(\"ComplexPlot[(z^2 + 1)/(z^2 - 1), {z, -2 - 2 I, 2 + 2 I
 <rect x="1657.5" y="1180.0" width="28.0" height="30.5" fill="rgb(106,1,131)" stroke="none"/>
 <rect x="1657.5" y="1150.0" width="28.0" height="30.5" fill="rgb(97,0,130)" stroke="none"/>
 <rect x="1657.5" y="1120.0" width="28.0" height="30.5" fill="rgb(89,0,129)" stroke="none"/>
-<rect x="1657.5" y="1090.0" width="28.0" height="30.5" fill="rgb(80,0,127)" stroke="none"/>
+<rect x="1657.5" y="1090.0" width="28.0" height="30.5" fill="rgb(80,0,128)" stroke="none"/>
 <rect x="1657.5" y="1060.0" width="28.0" height="30.5" fill="rgb(73,0,126)" stroke="none"/>
 <rect x="1657.5" y="1030.0" width="28.0" height="30.5" fill="rgb(65,0,125)" stroke="none"/>
 <rect x="1657.5" y="1000.0" width="28.0" height="30.5" fill="rgb(57,1,124)" stroke="none"/>
