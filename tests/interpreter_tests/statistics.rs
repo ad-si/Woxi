@@ -4359,6 +4359,63 @@ mod group_orbits {
   }
 }
 
+// GroupElementQ[group, perm] tests whether a permutation (in cycle notation)
+// is an element of the group. Verified against wolframscript.
+mod group_element_q {
+  use super::*;
+
+  #[test]
+  fn member_permutations() {
+    assert_eq!(
+      interpret("GroupElementQ[SymmetricGroup[3], Cycles[{{1, 2}}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("GroupElementQ[SymmetricGroup[3], Cycles[{{1, 2, 3}}]]")
+        .unwrap(),
+      "True"
+    );
+    // The identity is in every group.
+    assert_eq!(
+      interpret("GroupElementQ[SymmetricGroup[3], Cycles[{}]]").unwrap(),
+      "True"
+    );
+    // The generator of C4 is a member; its non-canonical cycle form matches
+    // by permutation action.
+    assert_eq!(
+      interpret("GroupElementQ[CyclicGroup[4], Cycles[{{1, 2, 3, 4}}]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("GroupElementQ[SymmetricGroup[3], Cycles[{{2, 1}}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_member_permutations() {
+    // A permutation moving a point outside the domain is not in S3.
+    assert_eq!(
+      interpret("GroupElementQ[SymmetricGroup[3], Cycles[{{1, 4}}]]").unwrap(),
+      "False"
+    );
+    // An odd permutation is not in the cyclic group C4.
+    assert_eq!(
+      interpret("GroupElementQ[CyclicGroup[4], Cycles[{{1, 2}}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn invalid_permutation_stays_unevaluated() {
+    assert_eq!(
+      interpret("GroupElementQ[SymmetricGroup[3], foo]").unwrap(),
+      "GroupElementQ[SymmetricGroup[3], foo]"
+    );
+  }
+}
+
 mod longitude_latitude {
   use super::*;
 

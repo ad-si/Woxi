@@ -5180,6 +5180,72 @@ fn apply_cycles_to_point(cycles: &Expr, p: i128) -> i128 {
   p
 }
 
+/// The moved points (support) of a permutation given in cycle notation.
+fn cycles_support(cycles: &Expr) -> Vec<i128> {
+  let mut pts = Vec::new();
+  if let Expr::FunctionCall { name, args } = cycles
+    && name == "Cycles"
+    && args.len() == 1
+    && let Expr::List(cyclist) = &args[0]
+  {
+    for cyc in cyclist.iter() {
+      if let Expr::List(items) = cyc {
+        for it in items.iter() {
+          if let Expr::Integer(v) = it {
+            pts.push(*v);
+          }
+        }
+      }
+    }
+  }
+  pts
+}
+
+/// Whether two permutations in cycle notation are equal as functions: they
+/// must agree on every point in the union of their supports (all other points
+/// are fixed by both).
+fn perms_equal(p: &Expr, q: &Expr) -> bool {
+  let mut support = cycles_support(p);
+  support.extend(cycles_support(q));
+  support.sort_unstable();
+  support.dedup();
+  support
+    .iter()
+    .all(|&pt| apply_cycles_to_point(p, pt) == apply_cycles_to_point(q, pt))
+}
+
+/// GroupElementQ[group, perm] - True if the permutation `perm` (given in cycle
+/// notation) is an element of `group`. A non-permutation `perm` emits the
+/// `GroupElementQ::perm` message and stays unevaluated; a group that
+/// GroupElements cannot expand also stays unevaluated.
+pub fn group_element_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "GroupElementQ".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  // The second argument must be a permutation in cycle notation.
+  if !matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Cycles") {
+    crate::emit_message(&format!(
+      "GroupElementQ::perm: {} is not a valid permutation.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(unevaluated());
+  }
+  // Expand the group into its elements; leave unevaluated if GroupElements
+  // does not know how to enumerate it.
+  let elems = group_elements_ast(std::slice::from_ref(&args[0]))?;
+  let Expr::List(gelems) = &elems else {
+    return Ok(unevaluated());
+  };
+  let found = gelems.iter().any(|g| perms_equal(&args[1], g));
+  Ok(Expr::Identifier(
+    if found { "True" } else { "False" }.to_string(),
+  ))
+}
+
 /// GroupOrbits[group, {points…}] - the orbits of the given seed points under
 /// the group action. Each orbit is the sorted set of images of a seed under
 /// every group element; duplicate orbits are removed and the result is sorted
