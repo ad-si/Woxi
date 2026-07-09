@@ -4126,7 +4126,6 @@ pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn minkowski_question_mark_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use num_bigint::BigInt;
   let unevaluated = |args: &[Expr]| Expr::FunctionCall {
     name: "MinkowskiQuestionMark".to_string(),
     args: args.to_vec().into(),

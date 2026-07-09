@@ -2108,11 +2108,11 @@ pub fn barnes_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // G(n) = product_{k=0}^{n-2} k!
       // Use recurrence: G(n+1) = Gamma(n) * G(n) = (n-1)! * G(n)
       // G(1) = 1, G(2) = 1, G(3) = 1, G(4) = 2, G(5) = 12, ...
-      let mut result = num_bigint::BigInt::from(1);
-      let mut factorial = num_bigint::BigInt::from(1);
+      let mut result = BigInt::from(1);
+      let mut factorial = BigInt::from(1);
       // factorial tracks (k-1)! as we compute G(k+1) = (k-1)! * G(k)
       for k in 1..n - 1 {
-        factorial *= num_bigint::BigInt::from(k);
+        factorial *= BigInt::from(k);
         result *= &factorial;
       }
       // Try to convert to i128
