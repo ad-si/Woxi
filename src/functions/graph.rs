@@ -5310,6 +5310,75 @@ fn directed_global_clustering(expr: &Expr) -> Option<Expr> {
   )
 }
 
+/// MeanDegreeConnectivity for a graph containing directed edges: for each
+/// degree k = 0, 1, 2, ..., the mean over vertices of (total, in+out) degree k
+/// of the average degree of their neighbours. Every edge contributes one to
+/// each endpoint's degree and makes the endpoints neighbours (in or out alike).
+/// Returns `None` for anything that is not such a graph.
+fn directed_mean_degree_connectivity(expr: &Expr) -> Option<Expr> {
+  let (vertices, edge_exprs) = match expr {
+    Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
+      match (&args[0], &args[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  let n = vertices.len();
+  if n == 0 {
+    return None;
+  }
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (expr_to_string(v), i))
+    .collect();
+  let mut deg = vec![0i128; n];
+  let mut nbr_of: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for e in edge_exprs.iter() {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if (name != "DirectedEdge" && name != "UndirectedEdge") || args.len() != 2 {
+      return None;
+    }
+    let (Some(a), Some(b)) = (
+      index.get(&expr_to_string(&args[0])).copied(),
+      index.get(&expr_to_string(&args[1])).copied(),
+    ) else {
+      return None;
+    };
+    deg[a] += 1;
+    deg[b] += 1;
+    nbr_of[a].push(b);
+    nbr_of[b].push(a);
+  }
+  let maxdeg = deg.iter().copied().max().unwrap_or(0);
+  // Sum of neighbour degrees for each vertex.
+  let s: Vec<i128> = (0..n)
+    .map(|v| nbr_of[v].iter().map(|&u| deg[u]).sum())
+    .collect();
+  let mut result = Vec::with_capacity((maxdeg + 1) as usize);
+  for k in 0..=maxdeg {
+    let verts: Vec<usize> = (0..n).filter(|&v| deg[v] == k).collect();
+    if k == 0 || verts.is_empty() {
+      result.push(Expr::Integer(0));
+    } else {
+      let sum_s: i128 = verts.iter().map(|&v| s[v]).sum();
+      let count = verts.len() as i128;
+      result.push(
+        crate::evaluator::evaluate_expr_to_expr(&make_rational(
+          sum_s,
+          k * count,
+        ))
+        .unwrap_or(Expr::Integer(0)),
+      );
+    }
+  }
+  Some(Expr::List(result.into()))
+}
+
 pub fn graph_metric_ast(
   name: &str,
   args: &[Expr],
@@ -5335,6 +5404,11 @@ pub fn graph_metric_ast(
       }
       if name == "GlobalClusteringCoefficient"
         && let Some(result) = directed_global_clustering(&args[0])
+      {
+        return Ok(result);
+      }
+      if name == "MeanDegreeConnectivity"
+        && let Some(result) = directed_mean_degree_connectivity(&args[0])
       {
         return Ok(result);
       }

@@ -4213,6 +4213,53 @@ mod graph_metrics {
     );
   }
 
+  // MeanDegreeConnectivity[g] gives, for each degree k = 0, 1, 2, ..., the mean
+  // average neighbour degree over vertices of degree k.
+  #[test]
+  fn mean_degree_connectivity_undirected() {
+    // Star: leaves (degree 1) see the degree-3 centre; the centre sees leaves.
+    assert_eq!(
+      interpret("MeanDegreeConnectivity[StarGraph[4]]").unwrap(),
+      "{0, 3, 0, 1}"
+    );
+    assert_eq!(
+      interpret("MeanDegreeConnectivity[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      "{0, 2, 3/2}"
+    );
+  }
+
+  // Directed graphs use total (in+out) degree; every edge makes its endpoints
+  // neighbours regardless of direction.
+  #[test]
+  fn mean_degree_connectivity_directed() {
+    assert_eq!(
+      interpret("MeanDegreeConnectivity[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]")
+        .unwrap(),
+      "{0, 0, 2}"
+    );
+    assert_eq!(
+      interpret("MeanDegreeConnectivity[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]")
+        .unwrap(),
+      "{0, 2, 3/2}"
+    );
+    assert_eq!(
+      interpret(
+        "MeanDegreeConnectivity[Graph[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}]]"
+      )
+      .unwrap(),
+      "{0, 0, 3, 8/3}"
+    );
+    // The complete digraph on three vertices: every vertex has degree 4.
+    assert_eq!(
+      interpret(
+        "MeanDegreeConnectivity[Graph[{1 -> 2, 2 -> 1, 1 -> 3, 2 -> 3, \
+         3 -> 1, 3 -> 2}]]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 4}"
+    );
+  }
+
   #[test]
   fn mean_clustering_coefficient() {
     // (1 + 1 + 1/3 + 0)/4
