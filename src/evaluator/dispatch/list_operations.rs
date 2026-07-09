@@ -2104,6 +2104,46 @@ pub fn dispatch_list_operations(
         };
       return Some(Ok(Expr::Integer(result)));
     }
+    // LexicographicOrder[a, b] — true lexicographic order: Order of the first
+    // non-coinciding element pair (element-wise first, then shorter-list-first
+    // on a tie), unlike canonical Order which compares length first.
+    // LexicographicOrder[a, b, p] uses the ordering function p on each pair.
+    "LexicographicOrder" if args.len() == 2 || args.len() == 3 => {
+      let as_elems = |e: &Expr| -> Vec<Expr> {
+        match e {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        }
+      };
+      let a = as_elems(&args[0]);
+      let b = as_elems(&args[1]);
+      let mut result: i128 = 0;
+      for (ai, bi) in a.iter().zip(b.iter()) {
+        let o: i128 = if args.len() == 3 {
+          match crate::functions::list_helpers_ast::apply_func_to_two_args(
+            &args[2], ai, bi,
+          ) {
+            Ok(Expr::Integer(n)) => n,
+            _ => 0,
+          }
+        } else {
+          crate::functions::list_helpers_ast::compare_exprs(ai, bi) as i128
+        };
+        if o != 0 {
+          result = o;
+          break;
+        }
+      }
+      if result == 0 {
+        // On an element-wise tie the shorter list comes first.
+        result = match a.len().cmp(&b.len()) {
+          std::cmp::Ordering::Less => 1,
+          std::cmp::Ordering::Greater => -1,
+          std::cmp::Ordering::Equal => 0,
+        };
+      }
+      return Some(Ok(Expr::Integer(result)));
+    }
     "OrderedQ" if args.len() == 1 => {
       return Some(list_helpers_ast::ordered_q_ast(args));
     }

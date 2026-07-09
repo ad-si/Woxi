@@ -16775,6 +16775,77 @@ mod numerical_order {
   }
 }
 
+mod lexicographic_order {
+  use super::*;
+
+  // LexicographicOrder is the Order of the first non-coinciding element pair,
+  // 0 when the lists are identical, and shorter-list-first on a prefix tie.
+  #[test]
+  fn basic_element_wise() {
+    assert_eq!(
+      interpret("LexicographicOrder[{1, 2, 3}, {1, 3, 2}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("LexicographicOrder[{2, 1}, {1, 9}]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("LexicographicOrder[{1, 2}, {1, 2}]").unwrap(),
+      "0"
+    );
+  }
+
+  // Unlike canonical Order (which compares length first), LexicographicOrder
+  // compares element-wise first.
+  #[test]
+  fn element_wise_beats_length() {
+    assert_eq!(
+      interpret("LexicographicOrder[{1, 2, 3}, {1, 4}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("LexicographicOrder[{2, 1}, {1, 1, 1}]").unwrap(),
+      "-1"
+    );
+    // Order, in contrast, puts the shorter list first regardless of contents.
+    assert_eq!(interpret("Order[{1, 2, 3}, {1, 4}]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn prefix_and_scalar_cases() {
+    // A prefix compares as less than the longer list.
+    assert_eq!(
+      interpret("LexicographicOrder[{1, 2}, {1, 2, 3}]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("LexicographicOrder[{1}, {}]").unwrap(), "-1");
+    // Non-list arguments compare as single elements.
+    assert_eq!(
+      interpret("LexicographicOrder[\"abc\", \"abd\"]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn custom_ordering_function() {
+    assert_eq!(
+      interpret("LexicographicOrder[{1, 5}, {1, 3}, Order]").unwrap(),
+      "-1"
+    );
+    // Reversing the ordering function flips the result.
+    assert_eq!(
+      interpret("LexicographicOrder[{1, 5}, {1, 3}, -Order[#1, #2] &]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("LexicographicOrder[{1, 2, 3}, {1, 2, 3}, Order]").unwrap(),
+      "0"
+    );
+  }
+}
+
 mod coordinate_bounding_box_array_tests {
   use woxi::interpret;
 
