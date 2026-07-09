@@ -2373,6 +2373,95 @@ fn eigenvalue_sort_key(e: &Expr) -> f64 {
   }
 }
 
+/// Convert an exact rational matrix (with at least one non-integer entry)
+/// into `scale * m` as an integer matrix, where `scale` is the LCM of the
+/// entry denominators. Returns None for non-rational entries, all-integer
+/// matrices, or on i128 overflow.
+fn matrix_to_scaled_i128(
+  matrix: &[Vec<Expr>],
+) -> Option<(Vec<Vec<i128>>, i128)> {
+  let mut entries: Vec<Vec<(i128, i128)>> = Vec::with_capacity(matrix.len());
+  let mut scale: i128 = 1;
+  let mut any_rational = false;
+  for row in matrix {
+    let mut out_row: Vec<(i128, i128)> = Vec::with_capacity(row.len());
+    for cell in row {
+      let (num, den) = match cell {
+        Expr::Integer(n) => (*n, 1),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          match (&args[0], &args[1]) {
+            (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => (*n, *d),
+            _ => return None,
+          }
+        }
+        _ => return None,
+      };
+      if den != 1 {
+        any_rational = true;
+      }
+      scale = scale.checked_mul(den / gcd_i128(scale, den.abs()))?;
+      out_row.push((num, den));
+    }
+    entries.push(out_row);
+  }
+  if !any_rational {
+    return None;
+  }
+  let scale = scale.abs();
+  let mut int_matrix: Vec<Vec<i128>> = Vec::with_capacity(entries.len());
+  for row in entries {
+    let mut out_row: Vec<i128> = Vec::with_capacity(row.len());
+    for (num, den) in row {
+      out_row.push(num.checked_mul(scale / den)?);
+    }
+    int_matrix.push(out_row);
+  }
+  Some((int_matrix, scale))
+}
+
+/// Divide an exact eigenvalue expression by a positive integer, keeping
+/// wolframscript's forms: integers fold to Rationals, and a leading minus
+/// stays outside the quotient so `-Sqrt[6]/6` prints as `-(1/Sqrt[6])`.
+fn divide_exact_root(root: &Expr, d: i128) -> Option<Expr> {
+  if d == 1 {
+    return Some(root.clone());
+  }
+  match root {
+    Expr::Integer(n) => Some(simplify_fraction(*n, d)),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let pos = divide_exact_root(operand, d)?;
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), pos].into(),
+      })
+      .ok()
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(-1)) =>
+    {
+      let pos = divide_exact_root(&args[1], d)?;
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), pos].into(),
+      })
+      .ok()
+    }
+    _ => crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(root.clone()),
+      right: Box::new(Expr::Integer(d)),
+    })
+    .ok(),
+  }
+}
+
 /// Build eigenvalue expression from quadratic formula components.
 /// Given polynomial x^2 + bx + c = 0, eigenvalues are (-b ± sqrt(b²-4c))/2.
 fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
@@ -2554,6 +2643,39 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut eigenvalues = find_polynomial_roots(&coeffs);
     sort_eigenvalues(&mut eigenvalues);
     return Ok(Expr::List(eigenvalues.into()));
+  }
+
+  // Exact rational matrix: scale by the LCM of the denominators to an
+  // integer matrix (eigenvalues scale linearly), find the scaled roots
+  // exactly, and divide back — keeping 1/2 exact instead of leaking the
+  // float 0.5 from the numeric 2×2 path.
+  if let Some((int_matrix, scale)) = matrix_to_scaled_i128(&matrix) {
+    let coeffs = char_poly_coefficients(&int_matrix);
+    let mut scaled_roots = find_polynomial_roots(&coeffs);
+    // Root objects cannot be rescaled into wolframscript's form; fall
+    // through to the generic paths instead.
+    if !scaled_roots
+      .iter()
+      .any(|e| crate::syntax::expr_to_string(e).contains("Root["))
+    {
+      // A positive scale preserves the magnitude order, so sorting the
+      // scaled roots sorts the eigenvalues.
+      sort_eigenvalues(&mut scaled_roots);
+      let mut out: Vec<Expr> = Vec::with_capacity(scaled_roots.len());
+      let mut ok = true;
+      for r in &scaled_roots {
+        match divide_exact_root(r, scale) {
+          Some(v) => out.push(v),
+          None => {
+            ok = false;
+            break;
+          }
+        }
+      }
+      if ok {
+        return Ok(Expr::List(out.into()));
+      }
+    }
   }
 
   // Floating-point 2×2 path. wolframscript produces real-valued
@@ -2906,19 +3028,174 @@ fn find_polynomial_roots(coeffs: &[i128]) -> Vec<Expr> {
       roots.extend(quadratic_eigenvalues(current[1], current[0]));
     }
     _ => {
-      // Cannot solve higher degree — return as polynomial roots symbolically
-      // For now, return unevaluated Root expressions
-      // This is a limitation; most practical integer matrices will be handled above
-      for _ in 0..deg {
-        roots.push(Expr::FunctionCall {
-          name: "Root".to_string(),
-          args: current.iter().map(|&c| Expr::Integer(c)).collect(),
-        });
+      // Repeated irreducible factors: for p = ∏ qᵢ^{eᵢ} the gcd with the
+      // derivative is g = ∏ qᵢ^{eᵢ−1}, so the root multiset of p is
+      // roots(p/g) ⊎ roots(g) — recurse on both halves. This resolves e.g.
+      // the characteristic polynomial (x² − 2)² to {±Sqrt[2], ±Sqrt[2]}.
+      if let Some(g) = int_poly_gcd_with_derivative(&current)
+        && g.len() > 1
+        && g.len() < current.len()
+        && let Some(quot) = int_poly_div_exact(&current, &g)
+      {
+        roots.extend(find_polynomial_roots(&quot));
+        roots.extend(find_polynomial_roots(&g));
+      } else {
+        // Square-free irreducible remainder: represent the roots as
+        // wolframscript-shaped Root[c0 + c1*#1 + … + #1^n & , k, 0] objects.
+        roots.extend(make_root_exprs(&current));
       }
     }
   }
 
   roots
+}
+
+/// Derivative of an integer polynomial in ascending coefficient order.
+fn int_poly_derivative(p: &[i128]) -> Vec<i128> {
+  p.iter()
+    .enumerate()
+    .skip(1)
+    .map(|(i, &c)| c.checked_mul(i as i128))
+    .collect::<Option<Vec<_>>>()
+    .unwrap_or_default()
+}
+
+/// Content (gcd of all coefficients) of a nonzero integer polynomial.
+fn int_poly_content(p: &[i128]) -> i128 {
+  p.iter()
+    .fold(0i128, |acc, &c| gcd_i128(acc, c.abs()))
+    .max(1)
+}
+
+/// Primitive part: divide out the content and drop leading zeros.
+fn int_poly_primitive(p: &[i128]) -> Vec<i128> {
+  let mut out: Vec<i128> = p.to_vec();
+  while out.last() == Some(&0) {
+    out.pop();
+  }
+  if out.is_empty() {
+    return out;
+  }
+  let content = int_poly_content(&out);
+  for c in &mut out {
+    *c /= content;
+  }
+  out
+}
+
+/// Pseudo-remainder of a by b (ascending coefficients, b nonzero); returns
+/// None on i128 overflow so callers can fall back to Root objects.
+fn int_poly_pseudo_rem(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
+  let mut r: Vec<i128> = a.to_vec();
+  let db = b.len() - 1;
+  let lb = *b.last()?;
+  while r.len() > db {
+    let lr = *r.last()?;
+    let shift = r.len() - 1 - db;
+    for c in &mut r {
+      *c = c.checked_mul(lb)?;
+    }
+    for (i, &bc) in b.iter().enumerate() {
+      r[shift + i] = r[shift + i].checked_sub(lr.checked_mul(bc)?)?;
+    }
+    while r.last() == Some(&0) {
+      r.pop();
+    }
+    if r.is_empty() {
+      break;
+    }
+  }
+  Some(r)
+}
+
+/// Primitive gcd of a monic integer polynomial and its derivative,
+/// normalized to a positive leading coefficient. Returns None when the
+/// computation overflows i128.
+fn int_poly_gcd_with_derivative(p: &[i128]) -> Option<Vec<i128>> {
+  let mut a = int_poly_primitive(p);
+  let mut b = int_poly_primitive(&int_poly_derivative(p));
+  while !b.is_empty() {
+    let r = int_poly_pseudo_rem(&a, &b)?;
+    a = b;
+    b = int_poly_primitive(&r);
+  }
+  if *a.last()? < 0 {
+    for c in &mut a {
+      *c = -*c;
+    }
+  }
+  Some(a)
+}
+
+/// Exact division of integer polynomials (ascending coefficients). The
+/// divisor must divide evenly with an integer quotient; returns None
+/// otherwise (or when the divisor's leading coefficient is not ±1).
+fn int_poly_div_exact(p: &[i128], d: &[i128]) -> Option<Vec<i128>> {
+  let ld = *d.last()?;
+  if ld.abs() != 1 {
+    return None;
+  }
+  let mut rem: Vec<i128> = p.to_vec();
+  let dq = p.len().checked_sub(d.len())?;
+  let mut quot = vec![0i128; dq + 1];
+  for k in (0..=dq).rev() {
+    let coeff = rem[k + d.len() - 1] / ld;
+    quot[k] = coeff;
+    for (i, &dc) in d.iter().enumerate() {
+      rem[k + i] = rem[k + i].checked_sub(coeff.checked_mul(dc)?)?;
+    }
+  }
+  if rem.iter().any(|&c| c != 0) {
+    return None;
+  }
+  Some(quot)
+}
+
+/// Build `Root[c0 + c1*#1 + … + #1^n & , k, 0]` expressions for every root
+/// of an integer polynomial given in ascending coefficient order.
+fn make_root_exprs(coeffs: &[i128]) -> Vec<Expr> {
+  let degree = coeffs.len() - 1;
+  let slot = Expr::Slot(1);
+  let mut terms: Vec<Expr> = Vec::new();
+  for (i, &c) in coeffs.iter().enumerate() {
+    if c == 0 {
+      continue;
+    }
+    let var_pow = match i {
+      0 => None,
+      1 => Some(slot.clone()),
+      _ => Some(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![slot.clone(), Expr::Integer(i as i128)].into(),
+      }),
+    };
+    terms.push(match (var_pow, c) {
+      (None, c) => Expr::Integer(c),
+      (Some(p), 1) => p,
+      (Some(p), c) => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(c), p].into(),
+      },
+    });
+  }
+  let body = match terms.len() {
+    0 => Expr::Integer(0),
+    1 => terms.remove(0),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
+  };
+  let func = Expr::Function {
+    body: Box::new(body),
+  };
+  (1..=degree)
+    .map(|k| Expr::FunctionCall {
+      name: "Root".to_string(),
+      args: vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)]
+        .into(),
+    })
+    .collect()
 }
 
 /// Eigenvalues[matrix, k] — the k eigenvalues of largest absolute value
@@ -8011,6 +8288,265 @@ pub fn jordan_decomposition_ast(
     matrix((one.clone(), zero.clone()), (zero.clone(), w2))
   };
   Ok(Expr::List(vec![s, j].into()))
+}
+
+/// JordanReduce[m] — the Jordan canonical form of a square matrix (the
+/// second element of JordanDecomposition, without the similarity matrix),
+/// following wolframscript's block-ordering conventions:
+/// - all eigenvalues distinct: a diagonal matrix in Eigenvalues[m] order
+///   (decreasing magnitude);
+/// - any repeated eigenvalue: blocks sorted ascending by eigenvalue
+///   (real part, then imaginary part), and within one eigenvalue by
+///   ascending block size.
+/// Block sizes come from the ranks of (m − λI)^k. Matrices whose
+/// eigenvalues need Root objects stay unevaluated (wolframscript's Root
+/// ordering there is undecoded), as do inexact matrices of size ≥ 3 with
+/// repeated eigenvalues (the float eigensolver cannot separate clusters).
+pub fn jordan_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::expr_to_string;
+  let unevaluated = || Expr::FunctionCall {
+    name: "JordanReduce".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) if is_nonempty_square(&m) => m,
+    _ => return Ok(matsq_unevaluated("JordanReduce", args)),
+  };
+  let n = matrix.len();
+
+  let eig = eigenvalues_ast(&args[0..1])?;
+  let eigs: Vec<Expr> = match &eig {
+    Expr::List(items) if items.len() == n => items.to_vec(),
+    _ => return Ok(unevaluated()),
+  };
+  if eigs.iter().any(|e| expr_to_string(e).contains("Root[")) {
+    return Ok(unevaluated());
+  }
+
+  // Group structurally equal eigenvalues, keeping first-seen order.
+  let mut distinct: Vec<(Expr, usize)> = Vec::new();
+  for e in &eigs {
+    let key = expr_to_string(e);
+    match distinct.iter_mut().find(|(d, _)| expr_to_string(d) == key) {
+      Some(entry) => entry.1 += 1,
+      None => distinct.push((e.clone(), 1)),
+    }
+  }
+
+  // All eigenvalues distinct: diagonal in Eigenvalues order.
+  if distinct.len() == n {
+    let blocks: Vec<(Expr, usize)> =
+      eigs.iter().map(|e| (e.clone(), 1)).collect();
+    return Ok(build_jordan_matrix(&blocks, n));
+  }
+
+  // Inexact eigenvalues with n ≥ 3 come from the QR iteration, which is
+  // not accurate enough near repeated roots to trust the cluster values.
+  if n >= 3 && eigs.iter().any(|e| matches!(e, Expr::Real(_))) {
+    return Ok(unevaluated());
+  }
+
+  // Sort distinct eigenvalues ascending by (Re, Im); with a single
+  // distinct value (e.g. a purely symbolic defective matrix) no numeric
+  // key is needed.
+  if distinct.len() > 1 {
+    let mut keyed: Vec<((f64, f64), Expr, usize)> = Vec::new();
+    for (e, m) in &distinct {
+      match numeric_re_im(e) {
+        Some(key) if key.0.is_finite() && key.1.is_finite() => {
+          keyed.push((key, e.clone(), *m))
+        }
+        _ => return Ok(unevaluated()),
+      }
+    }
+    keyed.sort_by(|a, b| {
+      a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    distinct = keyed.into_iter().map(|(_, e, m)| (e, m)).collect();
+  }
+
+  // Jordan block sizes for each eigenvalue λ of algebraic multiplicity m:
+  // with r_k = rank((A − λI)^k) and ν_k = r_{k−1} − r_k (the number of
+  // blocks of size ≥ k), there are ν_k − ν_{k+1} blocks of size exactly k.
+  let mut blocks: Vec<(Expr, usize)> = Vec::new();
+  for (lam, mult) in &distinct {
+    if *mult == 1 {
+      blocks.push((lam.clone(), 1));
+      continue;
+    }
+    let b = match subtract_scalar_from_diagonal(&matrix, lam) {
+      Some(b) => b,
+      None => return Ok(unevaluated()),
+    };
+    let mut ranks: Vec<usize> = vec![n];
+    let mut p = b.clone();
+    loop {
+      let r = match matrix_rank_of(&p) {
+        Some(r) => r,
+        None => return Ok(unevaluated()),
+      };
+      ranks.push(r);
+      if r <= n - mult {
+        break;
+      }
+      if ranks.len() > mult + 1 {
+        return Ok(unevaluated());
+      }
+      p = match evaluated_matrix_product(&p, &b) {
+        Some(next) => next,
+        None => return Ok(unevaluated()),
+      };
+    }
+    if *ranks.last().unwrap() != n - mult {
+      return Ok(unevaluated());
+    }
+    let kmax = ranks.len() - 1;
+    let nu = |k: usize| -> usize {
+      if k > kmax { 0 } else { ranks[k - 1] - ranks[k] }
+    };
+    // Ascending block size within one eigenvalue.
+    for k in 1..=kmax {
+      let count = nu(k).saturating_sub(nu(k + 1));
+      for _ in 0..count {
+        blocks.push((lam.clone(), k));
+      }
+    }
+  }
+
+  if blocks.iter().map(|(_, s)| s).sum::<usize>() != n {
+    return Ok(unevaluated());
+  }
+  Ok(build_jordan_matrix(&blocks, n))
+}
+
+/// Assemble a Jordan matrix from `(eigenvalue, block size)` pairs laid out
+/// along the diagonal, with exact integer 0/1 filler entries.
+fn build_jordan_matrix(blocks: &[(Expr, usize)], n: usize) -> Expr {
+  let mut rows = vec![vec![Expr::Integer(0); n]; n];
+  let mut pos = 0;
+  for (lam, size) in blocks {
+    for i in 0..*size {
+      rows[pos + i][pos + i] = lam.clone();
+      if i + 1 < *size {
+        rows[pos + i][pos + i + 1] = Expr::Integer(1);
+      }
+    }
+    pos += size;
+  }
+  Expr::List(
+    rows
+      .into_iter()
+      .map(|r| Expr::List(r.into()))
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
+/// Numeric (Re, Im) key of an eigenvalue expression via Re/Im + N, or None
+/// when either part does not evaluate to a number.
+fn numeric_re_im(e: &Expr) -> Option<(f64, f64)> {
+  let component = |head: &str| -> Option<f64> {
+    let call = Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![e.clone()].into(),
+    };
+    let value = crate::evaluator::evaluate_expr_to_expr(&call).ok()?;
+    try_eval_to_f64(&value)
+  };
+  Some((component("Re")?, component("Im")?))
+}
+
+/// m − λI with every entry evaluated, or None when evaluation fails.
+/// The constant spelling `I` in λ is normalized to a `Complex[0, 1]`
+/// literal first: `Times[I, I]` with the constant spelling survives as an
+/// unreduced `I^2` in matrix products, whereas Complex × Complex does
+/// proper complex arithmetic (see jordan_decomposition_ast).
+fn subtract_scalar_from_diagonal(
+  matrix: &[Vec<Expr>],
+  lam: &Expr,
+) -> Option<Vec<Vec<Expr>>> {
+  let lam = replace_constant_i(lam);
+  let mut out: Vec<Vec<Expr>> = Vec::with_capacity(matrix.len());
+  for (i, row) in matrix.iter().enumerate() {
+    let mut new_row: Vec<Expr> = Vec::with_capacity(row.len());
+    for (j, cell) in row.iter().enumerate() {
+      if i == j {
+        let diff = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            cell.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), lam.clone()].into(),
+            },
+          ]
+          .into(),
+        };
+        new_row.push(crate::evaluator::evaluate_expr_to_expr(&diff).ok()?);
+      } else {
+        new_row.push(cell.clone());
+      }
+    }
+    out.push(new_row);
+  }
+  Some(out)
+}
+
+/// Replace the constant/identifier spelling of the imaginary unit with a
+/// `Complex[0, 1]` literal throughout an expression.
+fn replace_constant_i(e: &Expr) -> Expr {
+  let complex_i = || Expr::FunctionCall {
+    name: "Complex".to_string(),
+    args: vec![Expr::Integer(0), Expr::Integer(1)].into(),
+  };
+  match e {
+    Expr::Constant(c) if c == "I" => complex_i(),
+    Expr::Identifier(c) if c == "I" => complex_i(),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(replace_constant_i).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(replace_constant_i(left)),
+      right: Box::new(replace_constant_i(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(replace_constant_i(operand)),
+    },
+    _ => e.clone(),
+  }
+}
+
+/// Rank of a matrix via the evaluator's MatrixRank (handles exact, radical
+/// and float entries alike), or None when it does not reduce to an integer.
+fn matrix_rank_of(matrix: &[Vec<Expr>]) -> Option<usize> {
+  let call = Expr::FunctionCall {
+    name: "MatrixRank".to_string(),
+    args: vec![matrix_to_expr(matrix.to_vec())].into(),
+  };
+  match crate::evaluator::evaluate_expr_to_expr(&call).ok()? {
+    Expr::Integer(r) if r >= 0 => Some(r as usize),
+    _ => None,
+  }
+}
+
+/// Evaluated (and simplified) matrix product a.b, or None when the result
+/// is not a plain matrix.
+fn evaluated_matrix_product(
+  a: &[Vec<Expr>],
+  b: &[Vec<Expr>],
+) -> Option<Vec<Vec<Expr>>> {
+  let dot = Expr::FunctionCall {
+    name: "Dot".to_string(),
+    args: vec![matrix_to_expr(a.to_vec()), matrix_to_expr(b.to_vec())].into(),
+  };
+  let product = crate::evaluator::evaluate_expr_to_expr(&dot).ok()?;
+  expr_to_matrix(&product)
 }
 
 /// CoordinateTransform[src -> dst, pt] for the named coordinate systems

@@ -878,6 +878,48 @@ mod eigenvalues {
     assert_eq!(interpret("Eigenvalues[{{5}}]").unwrap(), "{5}");
   }
 
+  // Exact rational matrices stay exact (previously the numeric 2×2 path
+  // leaked floats like {0.5, 0.5}), and n ≥ 3 rational matrices work.
+  #[test]
+  fn eigenvalues_rational_matrices() {
+    assert_eq!(
+      interpret("Eigenvalues[{{1/2, 1}, {0, 1/2}}]").unwrap(),
+      "{1/2, 1/2}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{1, 1/2}, {1/2, 1}}]").unwrap(),
+      "{3/2, 1/2}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{1/2, 1, 0}, {0, 1/2, 0}, {0, 0, -2}}]").unwrap(),
+      "{-2, 1/2, 1/2}"
+    );
+    // Radical eigenvalues keep wolframscript's quotient forms
+    assert_eq!(
+      interpret("Eigenvalues[{{0, 1/2}, {1/3, 0}}]").unwrap(),
+      "{-(1/Sqrt[6]), 1/Sqrt[6]}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{1/2, 1/3}, {1/4, 1/5}}]").unwrap(),
+      "{(21 + Sqrt[381])/60, (21 - Sqrt[381])/60}"
+    );
+  }
+
+  // Characteristic polynomials with repeated irreducible factors (here
+  // (x² − 2)²) previously fell into a malformed Root fallback that emitted
+  // Root::argt messages; they now factor via the square-free decomposition.
+  #[test]
+  fn eigenvalues_repeated_irrational_roots() {
+    assert_eq!(
+      interpret(
+        "Eigenvalues[{{0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, \
+         {-4, 0, 4, 0}}]"
+      )
+      .unwrap(),
+      "{-Sqrt[2], -Sqrt[2], Sqrt[2], Sqrt[2]}"
+    );
+  }
+
   #[test]
   fn eigenvalues_2x2_integer() {
     assert_eq!(
@@ -5295,6 +5337,246 @@ mod jordan_decomposition {
       interpret("JordanDecomposition[{{1, 1, 0}, {0, 1, 0}, {0, 0, 2}}]")
         .unwrap(),
       "JordanDecomposition[{{1, 1, 0}, {0, 1, 0}, {0, 0, 2}}]"
+    );
+  }
+}
+
+mod jordan_reduce {
+  use super::*;
+
+  // All expected outputs verified against wolframscript 15.0.
+
+  #[test]
+  fn one_by_one() {
+    assert_eq!(interpret("JordanReduce[{{5}}]").unwrap(), "{{5}}");
+  }
+
+  #[test]
+  fn distinct_eigenvalues_use_eigenvalues_order() {
+    assert_eq!(
+      interpret("JordanReduce[{{2, 0}, {0, 3}}]").unwrap(),
+      "{{3, 0}, {0, 2}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{1, 2}, {2, 1}}]").unwrap(),
+      "{{3, 0}, {0, -1}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{2, 1, 0}, {0, 3, 0}, {0, 0, 1}}]").unwrap(),
+      "{{3, 0, 0}, {0, 2, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn complex_and_irrational_eigenvalues() {
+    assert_eq!(
+      interpret("JordanReduce[{{0, -1}, {1, 0}}]").unwrap(),
+      "{{I, 0}, {0, -I}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{1, 1}, {1, 0}}]").unwrap(),
+      "{{(1 + Sqrt[5])/2, 0}, {0, (1 - Sqrt[5])/2}}"
+    );
+  }
+
+  #[test]
+  fn defective_two_by_two() {
+    assert_eq!(
+      interpret("JordanReduce[{{1, 1}, {0, 1}}]").unwrap(),
+      "{{1, 1}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn repeated_eigenvalues_sort_ascending() {
+    // With any repeated eigenvalue the blocks sort ascending by value,
+    // not in Eigenvalues (descending-magnitude) order.
+    assert_eq!(
+      interpret("JordanReduce[{{2, 0, 0}, {0, 2, 0}, {0, 0, 1}}]").unwrap(),
+      "{{1, 0, 0}, {0, 2, 0}, {0, 0, 2}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{2, 1, 0}, {0, 2, 0}, {0, 0, 1}}]").unwrap(),
+      "{{1, 0, 0}, {0, 2, 1}, {0, 0, 2}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{5, 1, 0}, {0, 5, 0}, {0, 0, 1}}]").unwrap(),
+      "{{1, 0, 0}, {0, 5, 1}, {0, 0, 5}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{-1, 1, 0}, {0, -1, 0}, {0, 0, -5}}]").unwrap(),
+      "{{-5, 0, 0}, {0, -1, 1}, {0, 0, -1}}"
+    );
+    // Already in canonical form stays put
+    assert_eq!(
+      interpret("JordanReduce[{{1, 1, 0}, {0, 1, 0}, {0, 0, 5}}]").unwrap(),
+      "{{1, 1, 0}, {0, 1, 0}, {0, 0, 5}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{4, 1, 0}, {0, 4, 1}, {0, 0, 4}}]").unwrap(),
+      "{{4, 1, 0}, {0, 4, 1}, {0, 0, 4}}"
+    );
+  }
+
+  #[test]
+  fn general_four_by_four() {
+    assert_eq!(
+      interpret(
+        "JordanReduce[{{5, 4, 2, 1}, {0, 1, -1, -1}, {-1, -1, 3, 0}, \
+         {1, 1, -1, 2}}]"
+      )
+      .unwrap(),
+      "{{1, 0, 0, 0}, {0, 2, 0, 0}, {0, 0, 4, 1}, {0, 0, 0, 4}}"
+    );
+  }
+
+  #[test]
+  fn multiple_jordan_blocks() {
+    assert_eq!(
+      interpret(
+        "JordanReduce[{{2, 1, 0, 0}, {0, 2, 0, 0}, {0, 0, 1, 1}, \
+         {0, 0, 0, 1}}]"
+      )
+      .unwrap(),
+      "{{1, 1, 0, 0}, {0, 1, 0, 0}, {0, 0, 2, 1}, {0, 0, 0, 2}}"
+    );
+    // Same eigenvalue: smaller block first
+    assert_eq!(
+      interpret(
+        "JordanReduce[{{2, 1, 0, 0}, {0, 2, 0, 0}, {0, 0, 2, 0}, \
+         {0, 0, 0, 1}}]"
+      )
+      .unwrap(),
+      "{{1, 0, 0, 0}, {0, 2, 0, 0}, {0, 0, 2, 1}, {0, 0, 0, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "JordanReduce[{{2, 1, 0, 0}, {0, 2, 1, 0}, {0, 0, 2, 0}, \
+         {0, 0, 0, 2}}]"
+      )
+      .unwrap(),
+      "{{2, 0, 0, 0}, {0, 2, 1, 0}, {0, 0, 2, 1}, {0, 0, 0, 2}}"
+    );
+  }
+
+  #[test]
+  fn nilpotent_block() {
+    assert_eq!(
+      interpret("JordanReduce[{{0, 1, 0}, {0, 0, 0}, {0, 0, 3}}]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 0}, {0, 0, 3}}"
+    );
+  }
+
+  #[test]
+  fn rational_matrices() {
+    assert_eq!(
+      interpret("JordanReduce[{{1/2, 1, 0}, {0, 1/2, 0}, {0, 0, -2}}]")
+        .unwrap(),
+      "{{-2, 0, 0}, {0, 1/2, 1}, {0, 0, 1/2}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{3, 1, 0}, {0, 3, 0}, {0, 0, 2}} / 2]").unwrap(),
+      "{{1, 0, 0}, {0, 3/2, 1}, {0, 0, 3/2}}"
+    );
+  }
+
+  #[test]
+  fn repeated_complex_eigenvalues() {
+    // Coupled rotation blocks: two J2 blocks at -I and I, ascending by
+    // (Re, Im)
+    assert_eq!(
+      interpret(
+        "JordanReduce[{{0, -1, 1, 0}, {1, 0, 0, 1}, {0, 0, 0, -1}, \
+         {0, 0, 1, 0}}]"
+      )
+      .unwrap(),
+      "{{-I, 1, 0, 0}, {0, -I, 0, 0}, {0, 0, I, 1}, {0, 0, 0, I}}"
+    );
+    // Mixed: repeated real eigenvalue alongside a distinct complex pair
+    assert_eq!(
+      interpret(
+        "JordanReduce[{{0, -1, 0, 0}, {1, 0, 0, 0}, {0, 0, 1, 1}, \
+         {0, 0, 0, 1}}]"
+      )
+      .unwrap(),
+      "{{-I, 0, 0, 0}, {0, I, 0, 0}, {0, 0, 1, 1}, {0, 0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn repeated_irrational_eigenvalues() {
+    // Companion matrix of (x^2 - 2)^2: J2 blocks at ±Sqrt[2]
+    assert_eq!(
+      interpret(
+        "JordanReduce[{{0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, \
+         {-4, 0, 4, 0}}]"
+      )
+      .unwrap(),
+      "{{-Sqrt[2], 1, 0, 0}, {0, -Sqrt[2], 0, 0}, {0, 0, Sqrt[2], 1}, \
+       {0, 0, 0, Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn inexact_matrices() {
+    assert_eq!(
+      interpret("JordanReduce[{{1., 2.}, {3., 4.}}]").unwrap(),
+      "{{5.372281323269014, 0}, {0, -0.3722813232690143}}"
+    );
+    // Defective float 2x2: exact integer 1 on the superdiagonal
+    assert_eq!(
+      interpret("JordanReduce[{{2., 1.}, {0., 2.}}]").unwrap(),
+      "{{2., 1}, {0, 2.}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{2., 0.}, {0., 2.}}]").unwrap(),
+      "{{2., 0}, {0, 2.}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_matrices() {
+    assert_eq!(
+      interpret("JordanReduce[{{a, 0}, {0, b}}]").unwrap(),
+      "{{a, 0}, {0, b}}"
+    );
+    assert_eq!(
+      interpret("JordanReduce[{{a, 1}, {0, a}}]").unwrap(),
+      "{{a, 1}, {0, a}}"
+    );
+  }
+
+  #[test]
+  fn non_square_emits_matsq() {
+    clear_state();
+    assert_eq!(
+      interpret("JordanReduce[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "JordanReduce[{{1, 2, 3}, {4, 5, 6}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "JordanReduce::matsq: Argument {{1, 2, 3}, {4, 5, 6}} at position \
+         1 is not a nonempty square matrix."
+      )),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn wrong_arg_count_emits_argx() {
+    clear_state();
+    assert_eq!(
+      interpret("JordanReduce[{{1, 2}, {3, 4}}, x]").unwrap(),
+      "JordanReduce[{{1, 2}, {3, 4}}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "JordanReduce::argx: JordanReduce called with 2 arguments; 1 \
+         argument is expected."
+      )),
+      "got {msgs:?}"
     );
   }
 }

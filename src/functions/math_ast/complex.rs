@@ -150,6 +150,9 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     | Expr::Real(_)
     | Expr::BigInteger(_)
     | Expr::BigFloat(_, _) => return Ok(args[0].clone()),
+    // The imaginary unit also appears as the constant spelling `I`
+    // (e.g. in eigenvalue results), not only as Complex[0, 1].
+    Expr::Constant(c) if c == "I" => return Ok(Expr::Integer(0)),
     Expr::FunctionCall { name, args: inner }
       if name == "Complex" && inner.len() == 2 =>
     {
@@ -241,6 +244,9 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     | Expr::Real(_)
     | Expr::BigInteger(_)
     | Expr::BigFloat(_, _) => return Ok(Expr::Integer(0)),
+    // The imaginary unit also appears as the constant spelling `I`
+    // (e.g. in eigenvalue results), not only as Complex[0, 1].
+    Expr::Constant(c) if c == "I" => return Ok(Expr::Integer(1)),
     Expr::FunctionCall { name, args: inner }
       if name == "Complex" && inner.len() == 2 =>
     {

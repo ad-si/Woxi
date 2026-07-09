@@ -4273,6 +4273,27 @@ mod expand_threading {
     assert_eq!(interpret("Re[a]").unwrap(), "Re[a]");
   }
 
+  // Re/Im of the bare imaginary unit, including the constant spelling that
+  // eigenvalue results carry internally (previously Re[I] on an extracted
+  // eigenvalue stayed unevaluated).
+  #[test]
+  fn re_im_of_imaginary_unit() {
+    assert_eq!(interpret("Re[I]").unwrap(), "0");
+    assert_eq!(interpret("Im[I]").unwrap(), "1");
+    assert_eq!(
+      interpret("Re[Eigenvalues[{{0, -1}, {1, 0}}][[1]]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Im[Eigenvalues[{{0, -1}, {1, 0}}][[1]]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Im[Eigenvalues[{{0, -1}, {1, 0}}][[2]]]").unwrap(),
+      "-1"
+    );
+  }
+
   // Re/Im pull real coefficients out of products: Re[c x] = c Re[x].
   #[test]
   fn re_im_pull_real_coefficient() {
