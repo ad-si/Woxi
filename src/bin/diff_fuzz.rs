@@ -2,8 +2,7 @@
 //!
 //! Generates random, terminating Wolfram Language expressions built only
 //! from functions that `functions.csv` marks as implemented, evaluates each
-//! through `woxi eval` and through an oracle (`wolframscript -code`, either
-//! a local binary or the Docker HTTP bridge served by `cmd-server.js`), and
+//! through `woxi eval` and through an oracle (`wolframscript -code`), and
 //! reports every output divergence — the project's contract is that the two
 //! must match byte for byte.
 //!
@@ -60,17 +59,13 @@ struct Cli {
   #[arg(long, default_value_t = 4)]
   max_depth: u32,
 
-  /// Oracle: "auto", "wolframscript", "bridge", or "woxi" (self-check)
+  /// Oracle: "auto", "wolframscript", or "woxi" (self-check)
   #[arg(long, default_value = "auto")]
   oracle: String,
 
   /// Path of the wolframscript binary
   #[arg(long, default_value = "wolframscript")]
   wolframscript: String,
-
-  /// URL of the cmd-server.js HTTP bridge
-  #[arg(long, default_value = "http://host.docker.internal:3456/exec")]
-  bridge_url: String,
 
   /// Path of the woxi binary (default: sibling of this executable)
   #[arg(long)]
@@ -767,9 +762,6 @@ enum Oracle {
   Wolframscript {
     path: String,
   },
-  Bridge {
-    url: String,
-  },
   /// Self-check mode: woxi plays its own oracle. Expect zero divergences;
   /// useful for validating the harness plumbing without a Wolfram install.
   Woxi {
@@ -781,7 +773,6 @@ impl Oracle {
   fn describe(&self) -> String {
     match self {
       Oracle::Wolframscript { path } => format!("wolframscript ({path})"),
-      Oracle::Bridge { url } => format!("bridge ({url})"),
       Oracle::Woxi { path } => format!("woxi self-check ({})", path.display()),
     }
   }
@@ -797,42 +788,6 @@ impl Oracle {
         let mut cmd = Command::new(path);
         cmd.arg("eval").arg(code);
         run_with_timeout(cmd, timeout)
-      }
-      Oracle::Bridge { url } => {
-        // cmd-server.js executes the string through a shell, so
-        // single-quote the code POSIX-style.
-        let shell_code = code.replace('\'', r"'\''");
-        let body =
-          serde_json::json!({ "cmd": format!("wolframscript -code '{shell_code}'") })
-            .to_string();
-        let mut cmd = Command::new("curl");
-        cmd
-          .arg("-sS")
-          .arg("--max-time")
-          .arg((timeout.as_secs() + 10).to_string())
-          .arg("-X")
-          .arg("POST")
-          .arg(url)
-          .arg("-d")
-          .arg(body);
-        let raw = run_with_timeout(cmd, timeout + Duration::from_secs(15))?;
-        if raw.timed_out || raw.exit_code != Some(0) {
-          return Ok(raw);
-        }
-        // Response: {"exitCode": n, "stdout": "...", "stderr": "..."}
-        let parsed: serde_json::Value = serde_json::from_str(&raw.stdout)
-          .map_err(|e| {
-            std::io::Error::other(format!(
-              "bridge returned invalid JSON: {e}: {}",
-              raw.stdout
-            ))
-          })?;
-        Ok(RunOutput {
-          stdout: parsed["stdout"].as_str().unwrap_or_default().to_string(),
-          stderr: parsed["stderr"].as_str().unwrap_or_default().to_string(),
-          exit_code: parsed["exitCode"].as_i64().map(|c| c as i32),
-          timed_out: false,
-        })
       }
     }
   }
@@ -1127,19 +1082,9 @@ fn resolve_oracle(cli: &Cli, woxi: &Path) -> Result<Oracle, String> {
       })
       .is_ok()
   };
-  let probe_bridge = || {
-    Command::new("curl")
-      .args(["-sS", "--max-time", "5", "-o", "/dev/null", &cli.bridge_url])
-      .status()
-      .map(|s| s.success())
-      .unwrap_or(false)
-  };
   match cli.oracle.as_str() {
     "wolframscript" => Ok(Oracle::Wolframscript {
       path: cli.wolframscript.clone(),
-    }),
-    "bridge" => Ok(Oracle::Bridge {
-      url: cli.bridge_url.clone(),
     }),
     "woxi" => Ok(Oracle::Woxi {
       path: woxi.to_path_buf(),
@@ -1149,21 +1094,17 @@ fn resolve_oracle(cli: &Cli, woxi: &Path) -> Result<Oracle, String> {
         Ok(Oracle::Wolframscript {
           path: cli.wolframscript.clone(),
         })
-      } else if probe_bridge() {
-        Ok(Oracle::Bridge {
-          url: cli.bridge_url.clone(),
-        })
       } else {
         Err(
-          "no oracle reachable: wolframscript is not on PATH and the HTTP \
-           bridge did not respond — pass --oracle/--wolframscript/\
-           --bridge-url (or --oracle woxi for a plumbing self-check)"
+          "no oracle reachable: wolframscript is not on PATH — pass \
+           --oracle/--wolframscript (or --oracle woxi for a plumbing \
+           self-check)"
             .to_string(),
         )
       }
     }
     other => Err(format!(
-      "unknown --oracle '{other}' (expected auto|wolframscript|bridge|woxi)"
+      "unknown --oracle '{other}' (expected auto|wolframscript|woxi)"
     )),
   }
 }

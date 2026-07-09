@@ -64,12 +64,10 @@ cargo run --bin woxi-diff-fuzz -- --cases 500 --seed 42
 ```
 
 The oracle is auto-detected: a local `wolframscript` binary if one is on
-the `PATH`, otherwise the `cmd-server.js` HTTP bridge at
-`http://host.docker.internal:3456/exec` (for Docker dev environments).
-Override with `--oracle wolframscript|bridge|woxi`, `--wolframscript
-<path>`, or `--bridge-url <url>`. `--oracle woxi` is a self-check mode
-that uses woxi as its own oracle — useful for validating the harness
-itself (it must report zero divergences).
+the `PATH`. Override with `--oracle wolframscript|woxi` or
+`--wolframscript <path>`. `--oracle woxi` is a self-check mode that uses
+woxi as its own oracle — useful for validating the harness itself (it
+must report zero divergences).
 
 How it works:
 
