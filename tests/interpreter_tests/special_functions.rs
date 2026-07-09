@@ -4155,6 +4155,42 @@ mod stieltjes_gamma {
       "StieltjesGamma[-1]"
     );
   }
+
+  // The generalized StieltjesGamma[n, a] only has a closed form at n = 0:
+  // StieltjesGamma[0, a] = -PolyGamma[0, a]. Verified against wolframscript.
+  #[test]
+  fn generalized_order_zero() {
+    assert_eq!(
+      interpret("StieltjesGamma[0, x]").unwrap(),
+      "-PolyGamma[0, x]"
+    );
+    assert_eq!(interpret("StieltjesGamma[0, 1]").unwrap(), "EulerGamma");
+    // Integer arguments expand so the minus sign distributes.
+    assert_eq!(
+      interpret("StieltjesGamma[0, 2]").unwrap(),
+      "-1 + EulerGamma"
+    );
+    assert_eq!(
+      interpret("StieltjesGamma[0, 3]").unwrap(),
+      "-3/2 + EulerGamma"
+    );
+    assert_eq!(
+      interpret("StieltjesGamma[0, 1/2]").unwrap(),
+      "-PolyGamma[0, 1/2]"
+    );
+  }
+
+  #[test]
+  fn generalized_higher_orders_stay_symbolic() {
+    assert_eq!(
+      interpret("StieltjesGamma[1, x]").unwrap(),
+      "StieltjesGamma[1, x]"
+    );
+    assert_eq!(
+      interpret("StieltjesGamma[2, 3]").unwrap(),
+      "StieltjesGamma[2, 3]"
+    );
+  }
 }
 
 mod gamma_at_zero {

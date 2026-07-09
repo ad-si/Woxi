@@ -1813,7 +1813,7 @@ FourierSinSeries,Fourier sine series,,unevaluated,7.0,1842
 MathieuCharacteristicA,Mathieu characteristic A,,unevaluated,3.0,1842
 QuantilePlot,Quantile plot,,unevaluated,8.0,1842
 ResourceObject,Resource object,,unevaluated,11.0,1844
-StieltjesGamma,Stieltjes constants (gamma_0 is EulerGamma; N gives machine values up to order 10),✅,pure,3.0,1844
+StieltjesGamma,Stieltjes constants (gamma_0 is EulerGamma; generalized order-0 is -PolyGamma; N gives machine values up to order 10),✅,pure,3.0,1844
 DynamicWrapper,Dynamic wrapper (stays symbolic in script mode),✅,unevaluated,8.0,1846
 PolarTicks,Polar ticks option,,unevaluated,7.0,1846
 BeckmannDistribution,Beckmann distribution,,unevaluated,8.0,1849

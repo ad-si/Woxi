@@ -1910,6 +1910,46 @@ pub fn dispatch_math_functions(
         }
       }));
     }
+    // Generalized StieltjesGamma[n, a]: only n = 0 has the closed form
+    // -PolyGamma[0, a]; higher orders and symbolic n stay symbolic.
+    "StieltjesGamma" if args.len() == 2 => {
+      let unevaluated = Expr::FunctionCall {
+        name: "StieltjesGamma".to_string(),
+        args: args.to_vec().into(),
+      };
+      return Some(Ok(match &args[0] {
+        Expr::Integer(0) => {
+          // Expand distributes the minus sign so integer a matches
+          // wolframscript (e.g. StieltjesGamma[0, 2] -> -1 + EulerGamma).
+          let expr = Expr::FunctionCall {
+            name: "Expand".to_string(),
+            args: vec![Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::Integer(-1),
+                Expr::FunctionCall {
+                  name: "PolyGamma".to_string(),
+                  args: vec![Expr::Integer(0), args[1].clone()].into(),
+                },
+              ]
+              .into(),
+            }]
+            .into(),
+          };
+          crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(unevaluated)
+        }
+        Expr::Integer(n) if *n >= 1 => unevaluated,
+        Expr::Identifier(_) => unevaluated,
+        other => {
+          crate::emit_message(&format!(
+            "StieltjesGamma::intnm: Non-negative machine-sized integer \
+             expected at position 1 in StieltjesGamma[{}].",
+            crate::syntax::expr_to_string(other)
+          ));
+          unevaluated
+        }
+      }));
+    }
     // InverseCDF[dist, q] coincides with Quantile[dist, q] for the
     // closed-form distributions (numeric q only)
     "InverseCDF" if args.len() == 2 => {
