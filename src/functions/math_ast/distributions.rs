@@ -201,6 +201,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "PoissonConsulDistribution" => pdf_poisson_consul(dargs, x),
+    "MeixnerDistribution" => pdf_meixner(dargs, x),
     "LogGammaDistribution" => pdf_loggamma(dargs, x),
     "SkellamDistribution" => pdf_skellam(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1395,6 +1396,38 @@ fn pdf_poisson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 fn plus(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Plus, a, b)
+}
+
+/// PDF[MeixnerDistribution[a, b, m, d], x] =
+///   2^(2d-1) E^(b(x-m)/a) Cos[b/2]^(2d)
+///     Gamma[d - I(x-m)/a] Gamma[d + I(x-m)/a] / (a Pi Gamma[2d])
+/// Support is all reals (no Piecewise). Numeric points evaluate through the
+/// complex Gamma factors (Chop drops the residual zero imaginary part); the
+/// fully-symbolic form matches wolframscript except for the Times order of the
+/// two conjugate Gamma factors.
+fn pdf_meixner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 4 {
+    return Err(InterpreterError::EvaluationError(
+      "MeixnerDistribution expects 4 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+  let m = dargs[2].clone();
+  let d = dargs[3].clone();
+
+  let xm = minus(x, m); // x - m
+  let i = Expr::Identifier("I".to_string());
+  let iy = divide(times(i, xm.clone()), a.clone()); // I (x-m)/a
+  let two_pow = power(int(2), plus(int(-1), times(int(2), d.clone())));
+  let e_part = power(e(), divide(times(b.clone(), xm), a.clone()));
+  let cos_part =
+    power(unary_fn("Cos", divide(b, int(2))), times(int(2), d.clone()));
+  let g1 = unary_fn("Gamma", minus(d.clone(), iy.clone()));
+  let g2 = unary_fn("Gamma", plus(d.clone(), iy));
+  let numerator = times(times(times(times(two_pow, e_part), cos_part), g1), g2);
+  let denominator = times(times(a, pi()), unary_fn("Gamma", times(int(2), d)));
+  eval(divide(numerator, denominator))
 }
 
 /// PDF[PoissonConsulDistribution[m, lam], k] =
@@ -4969,6 +5002,34 @@ fn distribution_mean_variance(
     // clean closed forms. The fully-symbolic Variance differs from
     // wolframscript only in Plus term order (value-correct); every numeric
     // parameterization agrees exactly.
+    "MeixnerDistribution" => {
+      if dargs.len() != 4 {
+        return Err(InterpreterError::EvaluationError(
+          "MeixnerDistribution expects 4 arguments".into(),
+        ));
+      }
+      let a = dargs[0].clone();
+      let b = dargs[1].clone();
+      let m = dargs[2].clone();
+      let d = dargs[3].clone();
+      // Mean = m + a d Tan[b/2]
+      let mean = plus(
+        m,
+        times(
+          times(a.clone(), d.clone()),
+          unary_fn("Tan", divide(b.clone(), int(2))),
+        ),
+      );
+      // Variance = a^2 d Sec[b/2]^2 / 2
+      let var = divide(
+        times(
+          times(power(a, int(2)), d),
+          power(unary_fn("Sec", divide(b, int(2))), int(2)),
+        ),
+        int(2),
+      );
+      Ok((mean, var))
+    }
     "SuzukiDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(

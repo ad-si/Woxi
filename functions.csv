@@ -3327,7 +3327,7 @@ DeviceConfigure,,🚫,,10.0,3413
 FromEntity,,🚫,,10.0,3413
 GARCHProcess,,🚫,,10.0,3413
 GeoModel,,🚫,,10.0,3413
-MeixnerDistribution,,,,9.0,3413
+MeixnerDistribution,Meixner distribution with PDF Mean and Variance,✅,pure,9.0,3413
 PageTheme,,🚫,,11.0,3413
 PermissionsKey,,🚫,,11.0,3413
 PreemptProtect,,,,7.0,3413

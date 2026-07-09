@@ -4099,6 +4099,63 @@ mod borel_tanner_distribution {
   }
 }
 
+mod meixner_distribution {
+  use super::*;
+
+  // Meixner distribution: elementary Mean/Variance and a complex-Gamma PDF.
+  // Numeric PDF is tested via Round[Chop[N[...]]] to drop the residual zero
+  // imaginary part and sidestep last-digit complex-Gamma float noise.
+  #[test]
+  fn mean_and_variance() {
+    assert_eq!(
+      interpret("Mean[MeixnerDistribution[a, b, m, d]]").unwrap(),
+      "m + a*d*Tan[b/2]"
+    );
+    assert_eq!(
+      interpret("Variance[MeixnerDistribution[a, b, m, d]]").unwrap(),
+      "(a^2*d*Sec[b/2]^2)/2"
+    );
+    // Numeric mean: Tan[Pi/4] = 1 so mean = 0 + 2*3*1 = 6.
+    assert_eq!(
+      interpret("Mean[MeixnerDistribution[2, Pi/2, 0, 3]]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric_points() {
+    assert_eq!(
+      interpret(
+        "Round[Chop[N[PDF[MeixnerDistribution[1, 0, 0, 1], 2]]], 10^-8]"
+      )
+      .unwrap(),
+      "1493959/100000000"
+    );
+    assert_eq!(
+      interpret(
+        "Round[Chop[N[PDF[MeixnerDistribution[2, 1, 0, 1], 3]]], 10^-8]"
+      )
+      .unwrap(),
+      "930271/10000000"
+    );
+    assert_eq!(
+      interpret(
+        "Round[Chop[N[PDF[MeixnerDistribution[1, 1/2, 1, 2], 0]]], 10^-8]"
+      )
+      .unwrap(),
+      "6171561/50000000"
+    );
+  }
+
+  #[test]
+  fn cdf_has_no_closed_form() {
+    assert_eq!(
+      interpret("CDF[MeixnerDistribution[a, b, m, d], x]").unwrap(),
+      "CDF[MeixnerDistribution[a, b, m, d], x]"
+    );
+  }
+}
+
 mod suzuki_distribution {
   use super::*;
 
