@@ -279,6 +279,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "SinghMaddalaDistribution" if args.len() == 3 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "SinghMaddalaDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "WaringYuleDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "WaringYuleDistribution".to_string(),
@@ -998,6 +1004,10 @@ fn validate_distribution_params(name: &str, args: &[Expr]) -> bool {
         && is_positive(&args[0])
         && is_positive(&args[1])
         && is_probability(&args[1])
+    }
+    "SinghMaddalaDistribution" => {
+      // SinghMaddalaDistribution[q, a, b] — all parameters positive
+      args.len() == 3 && args.iter().all(is_positive)
     }
     "LogSeriesDistribution" => {
       // LogSeriesDistribution[theta] — theta in (0, 1)

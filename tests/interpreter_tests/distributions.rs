@@ -4638,6 +4638,87 @@ mod benktander_weibull_distribution {
   }
 }
 
+// SinghMaddalaDistribution[q, a, b] is the Burr XII distribution on x > 0. Its
+// moments exist only above a threshold (a q > 1 for the mean, a q > 2 for the
+// variance). Verified against wolframscript.
+mod singh_maddala_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[SinghMaddalaDistribution[q, a, b], x]").unwrap(),
+      "Piecewise[{{(a*q*x^(-1 + a)*(1 + (x/b)^a)^(-1 - q))/b^a, x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[SinghMaddalaDistribution[q, a, b], x]").unwrap(),
+      "Piecewise[{{1 - (1 + (x/b)^a)^(-q), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic_with_threshold() {
+    assert_eq!(
+      interpret("Mean[SinghMaddalaDistribution[q, a, b]]").unwrap(),
+      "Piecewise[{{(b*Gamma[1 + a^(-1)]*Gamma[-a^(-1) + q])/Gamma[q], a*q > 1}}, Indeterminate]"
+    );
+    // Below the threshold (a q = 1) the mean is Indeterminate.
+    assert_eq!(
+      interpret("Mean[SinghMaddalaDistribution[1, 1, 1]]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn pdf_and_mean_at_points() {
+    assert_eq!(
+      interpret("PDF[SinghMaddalaDistribution[2, 3, 1], 2]").unwrap(),
+      "8/243"
+    );
+    assert_eq!(
+      interpret("PDF[SinghMaddalaDistribution[2, 3, 1], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Mean[SinghMaddalaDistribution[2, 3, 1]]").unwrap(),
+      "Gamma[4/3]*Gamma[5/3]"
+    );
+  }
+
+  #[test]
+  fn variance_value() {
+    // The symbolic variance form differs from wolframscript only by Times
+    // ordering of two squared Gamma factors, so check the value.
+    assert_eq!(
+      interpret("Round[N[Variance[SinghMaddalaDistribution[3, 3, 1]]], 10^-6]")
+        .unwrap(),
+      "86137/1000000"
+    );
+  }
+
+  #[test]
+  fn parameter_validity_and_symbolic_object() {
+    assert_eq!(
+      interpret("SinghMaddalaDistribution[2, 3, 1]").unwrap(),
+      "SinghMaddalaDistribution[2, 3, 1]"
+    );
+    assert_eq!(
+      interpret("DistributionParameterQ[SinghMaddalaDistribution[2, 3, 1]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DistributionParameterQ[SinghMaddalaDistribution[2, 3, -1]]")
+        .unwrap(),
+      "False"
+    );
+  }
+}
+
 mod distribution_moments {
   use super::*;
 

@@ -245,6 +245,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ArcSinDistribution" => pdf_arcsin(dargs, x),
     "PascalDistribution" => pdf_pascal(dargs, x),
     "DagumDistribution" => pdf_dagum(dargs, x),
+    "SinghMaddalaDistribution" => pdf_singh_maddala(dargs, x),
     "HyperbolicDistribution" => pdf_hyperbolic(dargs, x),
     "NoncentralFRatioDistribution" => pdf_noncentral_f(dargs, x),
     "FRatioDistribution" => pdf_f_ratio(dargs, x),
@@ -1944,6 +1945,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ProbabilityDistribution" => cdf_probability_distribution(dargs, x),
     "BenfordDistribution" => cdf_benford(dargs, x),
     "BenktanderWeibullDistribution" => cdf_benktander_weibull(dargs, x),
+    "SinghMaddalaDistribution" => cdf_singh_maddala(dargs, x),
     "UniformSumDistribution" => cdf_uniform_sum(dargs, x),
     "BetaBinomialDistribution" => cdf_beta_binomial(dargs, x),
     "BetaPrimeDistribution" => cdf_beta_prime(dargs, x),
@@ -5338,6 +5340,7 @@ fn distribution_mean_variance(
       let var = minus(second_moment, power(mean.clone(), int(2)));
       Ok((mean, var))
     }
+    "SinghMaddalaDistribution" => singh_maddala_mean_variance(dargs),
     "NoncentralFRatioDistribution" => {
       if dargs.len() != 3 {
         return Err(InterpreterError::EvaluationError(
@@ -14563,5 +14566,103 @@ pub fn benktander_weibull_mean_variance(
     ),
   );
   let variance = eval(divide(numer, power(a.clone(), int(2))))?;
+  Ok((mean, variance))
+}
+
+/// PDF for SinghMaddalaDistribution[q, a, b] (Burr XII) on x > 0:
+/// a q x^(a-1) (1 + (x/b)^a)^(-1-q) / b^a.
+pub fn pdf_singh_maddala(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "SinghMaddalaDistribution expects 3 arguments".into(),
+    ));
+  }
+  let (q, a, b) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let aq = times(a.clone(), q.clone());
+  let x_pow = power(x.clone(), minus(a.clone(), int(1)));
+  let x_over_b_to_a = power(divide(x.clone(), b.clone()), a.clone());
+  let bracket = power(plus(int(1), x_over_b_to_a), minus(int(-1), q));
+  let b_to_a = power(b, a);
+  let density = divide(times(times(aq, x_pow), bracket), b_to_a);
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(density, cond)], int(0)))
+}
+
+/// CDF for SinghMaddalaDistribution[q, a, b] on x > 0:
+/// 1 - (1 + (x/b)^a)^(-q).
+pub fn cdf_singh_maddala(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "SinghMaddalaDistribution expects 3 arguments".into(),
+    ));
+  }
+  let (q, a, b) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let x_over_b_to_a = power(divide(x.clone(), b), a);
+  let body = minus(
+    int(1),
+    power(plus(int(1), x_over_b_to_a), times(int(-1), q)),
+  );
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(body, cond)], int(0)))
+}
+
+/// Mean and variance for SinghMaddalaDistribution[q, a, b], each valid only
+/// above a moment threshold (a q > 1 for the mean, a q > 2 for the variance)
+/// and Indeterminate otherwise.
+pub fn singh_maddala_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  if dargs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "SinghMaddalaDistribution expects 3 arguments".into(),
+    ));
+  }
+  let (q, a, b) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let gamma = |z: Expr| Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![z].into(),
+  };
+  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
+  let aq = times(a.clone(), q.clone());
+  let inv_a = divide(int(1), a.clone());
+  let two_a = divide(int(2), a.clone());
+  let g_q = gamma(q.clone());
+  let g_1_inv_a = gamma(plus(int(1), inv_a.clone()));
+  let g_q_inv_a = gamma(plus(times(int(-1), inv_a), q.clone()));
+
+  // Mean = b Gamma[1 + 1/a] Gamma[-1/a + q] / Gamma[q], for a q > 1.
+  let mean_expr = divide(
+    times(times(b.clone(), g_1_inv_a.clone()), g_q_inv_a.clone()),
+    g_q.clone(),
+  );
+  let mean = piecewise(
+    vec![(
+      mean_expr,
+      comparison(aq.clone(), ComparisonOp::Greater, int(1)),
+    )],
+    indeterminate(),
+  );
+
+  // Variance = b^2 (Gamma[1 + 2/a] Gamma[q] Gamma[-2/a + q]
+  //   - Gamma[1 + 1/a]^2 Gamma[-1/a + q]^2) / Gamma[q]^2, for a q > 2.
+  let g_2_a = gamma(plus(int(1), two_a.clone()));
+  let g_q_2a = gamma(plus(times(int(-1), two_a), q.clone()));
+  let term1 = times(times(g_2_a, g_q.clone()), g_q_2a);
+  let term2 = times(power(g_1_inv_a, int(2)), power(g_q_inv_a, int(2)));
+  let var_expr = divide(
+    times(power(b, int(2)), minus(term1, term2)),
+    power(g_q, int(2)),
+  );
+  let variance = piecewise(
+    vec![(var_expr, comparison(aq, ComparisonOp::Greater, int(2)))],
+    indeterminate(),
+  );
+
   Ok((mean, variance))
 }

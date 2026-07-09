@@ -3248,7 +3248,7 @@ FromUnixTime,Converts seconds since the Unix epoch to a DateObject,✅,pure,10.1
 GenerateAsymmetricKeyPair,,🚫,,10.1,3326
 RepeatingElement,,,,10.1,3326
 SetEnvironment,"Sets or unsets an environment variable (rule {name -> value} or list of rules; None unsets)",✅,io,9.0,3326
-SinghMaddalaDistribution,,,,8.0,3326
+SinghMaddalaDistribution,Singh-Maddala (Burr XII) distribution on positive reals,✅,pure,8.0,3326
 VertexInComponent,Vertices with a directed path to a vertex,✅,pure,8.0,3326
 CDFWavelet,Cohen-Daubechies-Feauveau 5/3 and 9/7 biorthogonal wavelets (JPEG2000),✅,pure,8.0,3344
 ClipRange,,🚫,,9.0,3344
