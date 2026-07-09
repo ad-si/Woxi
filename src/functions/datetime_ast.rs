@@ -2369,6 +2369,48 @@ const WEEKDAY_NAMES: [&str; 7] = [
   "Sunday",
 ];
 
+/// The time-zone offset a `DateObject` carries, if any. A DateObject built from
+/// a date-time list (e.g. `DateObject[{2024, 7, 8, 14, 30}]`) canonicalizes to
+/// the 4-argument form `DateObject[list, granularity, calendar, tz]`; a
+/// date-only object has no time zone. `DayRound` retains the calendar and time
+/// zone of such an input, so the rounded result reads
+/// `DateObject[{…}, Day, Gregorian, 0.]` rather than the bare `…, Day` form.
+fn date_object_timezone(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "DateObject" || args.len() < 4 {
+    return None;
+  }
+  match &args[3] {
+    tz @ (Expr::Real(_) | Expr::Integer(_)) => Some(tz.clone()),
+    _ => None,
+  }
+}
+
+/// Build the `DateObject` result of a DayRound, carrying the calendar and time
+/// zone (`Day, Gregorian, tz`) when the input object had one, otherwise the
+/// bare `DateObject[{…}, Day]` form.
+fn day_round_result(
+  y: i128,
+  m: i128,
+  d: i128,
+  tz: Option<Expr>,
+) -> Result<Expr, InterpreterError> {
+  let mut date_args = vec![Expr::List(
+    vec![Expr::Integer(y), Expr::Integer(m), Expr::Integer(d)].into(),
+  )];
+  if let Some(tz) = tz {
+    date_args.push(Expr::Identifier("Day".to_string()));
+    date_args.push(Expr::Identifier("Gregorian".to_string()));
+    date_args.push(tz);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: date_args.into(),
+  })
+}
+
 /// DayRound[date, daytype] — round `date` to the nearest day of the given day
 /// type using the default next-day convention (the next occurrence on or after
 /// `date`). Returns a `DateObject[…, Day]`. Supports weekday names (symbol or
@@ -2394,18 +2436,12 @@ pub fn day_round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if comps.len() < 3 {
       return unevaluated();
     }
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "DateObject".to_string(),
-      args: vec![Expr::List(
-        vec![
-          Expr::Integer(comps[0] as i128),
-          Expr::Integer(comps[1] as i128),
-          Expr::Integer(comps[2] as i128),
-        ]
-        .into(),
-      )]
-      .into(),
-    });
+    return day_round_result(
+      comps[0] as i128,
+      comps[1] as i128,
+      comps[2] as i128,
+      date_object_timezone(&args[0]),
+    );
   }
   if args.len() != 2 {
     return unevaluated();
@@ -2444,19 +2480,14 @@ pub fn day_round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (ny, nm, nd) =
     absolute_days_to_date(date_to_absolute_days(y, m, d) + days_forward);
 
-  // Build DateObject[{ny, nm, nd}] and let it normalize to Day granularity.
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![Expr::List(
-      vec![
-        Expr::Integer(ny as i128),
-        Expr::Integer(nm as i128),
-        Expr::Integer(nd as i128),
-      ]
-      .into(),
-    )]
-    .into(),
-  })
+  // Build the DateObject, retaining the input object's calendar and time zone
+  // (`Day, Gregorian, tz`) when it carried one.
+  day_round_result(
+    ny as i128,
+    nm as i128,
+    nd as i128,
+    date_object_timezone(&args[0]),
+  )
 }
 
 /// The Day/Month/Year unit one step after (`forward`) or before a date given by

@@ -2289,16 +2289,23 @@ mod day_round {
       interpret("DayRound[DateObject[{2024, 3, 15}]]").unwrap(),
       "DateObject[{2024, 3, 15}, Day]"
     );
+    // A date-time DateObject carries a time zone that DayRound retains.
+    assert_eq!(
+      interpret("DayRound[DateObject[{2024, 7, 8, 14, 30}]]").unwrap(),
+      "DateObject[{2024, 7, 8}, Day, Gregorian, 0.]"
+    );
   }
 
   // The "Day" day-type class floors to the containing day (every day counts),
   // matching the single-argument form regardless of the time of day.
   #[test]
   fn day_class_floors_to_containing_day() {
+    // A DateObject built from a date-time list carries a time zone; DayRound
+    // retains the calendar and time zone in the rounded result.
     assert_eq!(
       interpret(r#"DayRound[DateObject[{2024, 7, 8, 14, 30}], "Day"]"#)
         .unwrap(),
-      "DateObject[{2024, 7, 8}, Day]"
+      "DateObject[{2024, 7, 8}, Day, Gregorian, 0.]"
     );
     assert_eq!(
       interpret(r#"DayRound[{2024, 7, 8, 1, 0}, "Day"]"#).unwrap(),
