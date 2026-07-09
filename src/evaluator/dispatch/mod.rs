@@ -2306,6 +2306,67 @@ pub fn evaluate_function_call_ast_inner(
         .collect();
       return Ok(Expr::List(result.into()));
     }
+    // Permutation-list input: validate it is a permutation of {1..len}, then
+    // return it (optionally re-lengthed by the second argument, padding with
+    // fixed points or trimming trailing ones).
+    if let Expr::List(plist) = &args[0] {
+      let mut vals: Vec<i128> = Vec::with_capacity(plist.len());
+      let all_int = plist.iter().all(|e| {
+        if let Expr::Integer(v) = e {
+          vals.push(*v);
+          true
+        } else {
+          false
+        }
+      });
+      if all_int {
+        let len = vals.len() as i128;
+        let mut sorted = vals.clone();
+        sorted.sort_unstable();
+        let is_perm =
+          sorted.iter().enumerate().all(|(i, &v)| v == i as i128 + 1);
+        if !is_perm {
+          crate::emit_message(&format!(
+            "PermutationList::permlist: Invalid permutation list {}.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
+          return Ok(Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+        // Largest moved position (0 for the identity).
+        let support_max = (1..=len)
+          .rev()
+          .find(|&i| vals[(i - 1) as usize] != i)
+          .unwrap_or(0);
+        let n = match (args.len() == 2).then(|| &args[1]) {
+          Some(Expr::Integer(n)) => {
+            if *n < support_max {
+              crate::emit_message(&format!(
+                "PermutationList::lowlen: Required length {} is smaller than maximum {} of support of {}.",
+                n,
+                support_max,
+                crate::syntax::expr_to_string(&args[0])
+              ));
+              return Ok(Expr::FunctionCall {
+                name: name.to_string(),
+                args: args.to_vec().into(),
+              });
+            }
+            *n
+          }
+          _ => len,
+        };
+        let result: Vec<Expr> = (1..=n)
+          .map(|i| {
+            let v = if i <= len { vals[(i - 1) as usize] } else { i };
+            Expr::Integer(v)
+          })
+          .collect();
+        return Ok(Expr::List(result.into()));
+      }
+    }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
       args: args.to_vec().into(),

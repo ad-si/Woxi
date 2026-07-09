@@ -2574,6 +2574,50 @@ mod cycles {
     );
   }
 
+  // PermutationList also accepts a permutation list directly: it validates the
+  // list and optionally re-lengths it (padding with fixed points or trimming
+  // trailing ones). Verified against wolframscript.
+  #[test]
+  fn permutation_list_from_permutation_list() {
+    assert_eq!(
+      interpret("PermutationList[{2, 3, 1}]").unwrap(),
+      "{2, 3, 1}"
+    );
+    // Fixed points are kept when the list is already the right length.
+    assert_eq!(
+      interpret("PermutationList[{2, 1, 3, 4}]").unwrap(),
+      "{2, 1, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn permutation_list_from_list_relengthed() {
+    // Padding with trailing fixed points.
+    assert_eq!(
+      interpret("PermutationList[{2, 3, 1}, 5]").unwrap(),
+      "{2, 3, 1, 4, 5}"
+    );
+    // Trimming trailing fixed points down to the support.
+    assert_eq!(
+      interpret("PermutationList[{2, 3, 1, 4, 5}, 3]").unwrap(),
+      "{2, 3, 1}"
+    );
+  }
+
+  #[test]
+  fn permutation_list_invalid_stays_unevaluated() {
+    // Not a permutation of {1, 2, 3}.
+    assert_eq!(
+      interpret("PermutationList[{2, 3, 3}]").unwrap(),
+      "PermutationList[{2, 3, 3}]"
+    );
+    // Requested length is below the support maximum.
+    assert_eq!(
+      interpret("PermutationList[{2, 3, 1}, 2]").unwrap(),
+      "PermutationList[{2, 3, 1}, 2]"
+    );
+  }
+
   #[test]
   fn permutation_cycles_single_cycle() {
     assert_eq!(
