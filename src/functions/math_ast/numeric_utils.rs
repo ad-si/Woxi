@@ -503,7 +503,7 @@ pub fn num_to_expr(n: f64) -> Expr {
 }
 
 /// Convert a BigInt to Expr::Integer if it fits in i128, otherwise Expr::BigInteger
-pub fn bigint_to_expr(n: num_bigint::BigInt) -> Expr {
+pub fn bigint_to_expr(n: BigInt) -> Expr {
   use num_traits::ToPrimitive;
   match n.to_i128() {
     Some(i) => Expr::Integer(i),
@@ -1317,16 +1317,6 @@ pub fn regularized_beta_inc(x: f64, a: f64, b: f64) -> f64 {
     }
   }
   prefix * f
-}
-
-/// CDF of Student's t-distribution with nu degrees of freedom.
-pub fn student_t_cdf(t: f64, nu: f64) -> f64 {
-  if t == 0.0 {
-    return 0.5;
-  }
-  let x = nu / (nu + t * t);
-  let beta_val = 0.5 * regularized_beta_inc(x, nu / 2.0, 0.5);
-  if t > 0.0 { 1.0 - beta_val } else { beta_val }
 }
 
 /// Check if an expression contains Infinity (used for Abs)
