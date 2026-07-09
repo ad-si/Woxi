@@ -4854,6 +4854,53 @@ mod eigenvector_centrality {
       "1"
     );
   }
+
+  // Directed graphs use the in-adjacency and are supported only on the
+  // dominant strongly-connected component; everything else (and all of an
+  // acyclic graph) is zero.
+  #[test]
+  fn directed_supported_on_dominant_scc() {
+    // An acyclic directed graph has no cyclic component.
+    assert_eq!(
+      interpret("EigenvectorCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]")
+        .unwrap(),
+      "{0., 0., 0., 0.}"
+    );
+    // The 2-cycle {1,2} is the dominant SCC; the downstream sink 3 is zero.
+    assert_eq!(
+      interpret("EigenvectorCentrality[Graph[{1 -> 2, 2 -> 1, 2 -> 3}]]")
+        .unwrap(),
+      "{0.5, 0.5, 0.}"
+    );
+    // Here the upstream source 1 is outside the SCC {2,3} and is zero.
+    assert_eq!(
+      interpret("EigenvectorCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 2}]]")
+        .unwrap(),
+      "{0., 0.5, 0.5}"
+    );
+  }
+
+  #[test]
+  fn directed_strongly_connected() {
+    // A directed cycle is uniform.
+    assert_eq!(
+      interpret(
+        "Round[EigenvectorCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]], 10^-6]"
+      )
+      .unwrap(),
+      "{333333/1000000, 333333/1000000, 333333/1000000}"
+    );
+    // An asymmetric strongly-connected digraph: the vertex most pointed to is
+    // most central (in-adjacency).
+    assert_eq!(
+      interpret(
+        "Round[EigenvectorCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}]], \
+         10^-6]"
+      )
+      .unwrap(),
+      "{162359/500000, 122561/500000, 5377/12500}"
+    );
+  }
 }
 
 mod katz_centrality {

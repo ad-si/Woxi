@@ -6191,6 +6191,88 @@ pub fn evaluate_function_call_ast_inner(
     for (i, v) in vertices.iter().enumerate() {
       idx.insert(expr_to_string(v), i);
     }
+    let is_directed = edges.iter().any(|e| {
+      matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
+    });
+
+    if is_directed {
+      // Directed eigenvector centrality is the Perron eigenvector of the
+      // in-adjacency (a vertex is central if central vertices point to it),
+      // supported only on the dominant strongly-connected component. Vertices
+      // outside it — and every vertex of an acyclic graph — get 0.
+      let mut in_adj = vec![vec![0.0_f64; n]; n];
+      let mut has_self = vec![false; n];
+      for e in edges.iter() {
+        if let Some((u, v, _)) = crate::functions::graph::edge_endpoints(e)
+          && let (Some(&i), Some(&j)) =
+            (idx.get(&expr_to_string(&u)), idx.get(&expr_to_string(&v)))
+        {
+          in_adj[j][i] += 1.0; // edge i -> j is an in-edge to j
+          if i == j {
+            has_self[i] = true;
+          }
+        }
+      }
+      // Strongly-connected components come from ConnectedComponents.
+      let comps =
+        evaluate_function_call_ast_inner("ConnectedComponents", args)?;
+      let sccs: Vec<Vec<usize>> = match &comps {
+        Expr::List(cs) => cs
+          .iter()
+          .filter_map(|c| match c {
+            Expr::List(vs) => Some(
+              vs.iter()
+                .filter_map(|v| idx.get(&expr_to_string(v)).copied())
+                .collect(),
+            ),
+            _ => None,
+          })
+          .collect(),
+        _ => vec![],
+      };
+      // Perron eigenpair of each cyclic SCC; keep those of maximal eigenvalue.
+      let mut best_lambda = 0.0_f64;
+      let mut best: Vec<(Vec<usize>, Vec<f64>)> = Vec::new();
+      for scc in &sccs {
+        let cyclic = scc.len() > 1 || (scc.len() == 1 && has_self[scc[0]]);
+        if !cyclic {
+          continue;
+        }
+        let sub: Vec<Vec<f64>> = scc
+          .iter()
+          .map(|&ga| scc.iter().map(|&gb| in_adj[ga][gb]).collect())
+          .collect();
+        let (lambda, vec) = crate::functions::graph::perron_eigenpair(&sub);
+        if lambda > best_lambda + 1e-9 {
+          best_lambda = lambda;
+          best = vec![(scc.clone(), vec)];
+        } else if (lambda - best_lambda).abs() <= 1e-9 {
+          best.push((scc.clone(), vec));
+        }
+      }
+      let mut result = vec![0.0_f64; n];
+      if best_lambda > 1e-9 {
+        for (scc, vec) in &best {
+          for (a, &g) in scc.iter().enumerate() {
+            result[g] = vec[a];
+          }
+        }
+        let total: f64 = result.iter().sum();
+        if total != 0.0 {
+          for x in result.iter_mut() {
+            *x /= total;
+          }
+        }
+      }
+      return Ok(Expr::List(
+        result
+          .into_iter()
+          .map(Expr::Real)
+          .collect::<Vec<_>>()
+          .into(),
+      ));
+    }
+
     let mut adj = vec![vec![0.0_f64; n]; n];
     for e in edges.iter() {
       if let Some((u, v, _directed)) =

@@ -1285,6 +1285,68 @@ pub fn katz_centrality(
   Some(x)
 }
 
+/// Perron eigenvalue and (sum-1 normalized, non-negative) eigenvector of an
+/// irreducible non-negative matrix, via the same shifted power iteration used
+/// by `eigenvector_centrality`. Used for the strongly-connected components of
+/// a directed graph.
+pub fn perron_eigenpair(m: &[Vec<f64>]) -> (f64, Vec<f64>) {
+  let n = m.len();
+  if n == 0 {
+    return (0.0, vec![]);
+  }
+  if n == 1 {
+    return (m[0][0], vec![1.0]);
+  }
+  let maxrow = m
+    .iter()
+    .map(|row| row.iter().sum::<f64>())
+    .fold(0.0_f64, f64::max);
+  let c = maxrow + 1.0;
+  let mut v = vec![1.0 / n as f64; n];
+  for _ in 0..100_000 {
+    let mut w = vec![0.0_f64; n];
+    for (i, wi) in w.iter_mut().enumerate() {
+      let mut s = c * v[i];
+      for (j, vj) in v.iter().enumerate() {
+        s += m[i][j] * vj;
+      }
+      *wi = s;
+    }
+    let norm = w.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if norm == 0.0 {
+      break;
+    }
+    for x in w.iter_mut() {
+      *x /= norm;
+    }
+    let diff: f64 = v.iter().zip(&w).map(|(a, b)| (a - b).abs()).sum();
+    v = w;
+    if diff < 1e-14 {
+      break;
+    }
+  }
+  // Rayleigh quotient with the unit-norm Perron vector gives M's eigenvalue.
+  let mut mv = vec![0.0_f64; n];
+  for (i, mvi) in mv.iter_mut().enumerate() {
+    for (j, vj) in v.iter().enumerate() {
+      *mvi += m[i][j] * vj;
+    }
+  }
+  let lambda: f64 = (0..n).map(|i| v[i] * mv[i]).sum();
+  if v.iter().sum::<f64>() < 0.0 {
+    for x in v.iter_mut() {
+      *x = -*x;
+    }
+  }
+  let sum: f64 = v.iter().sum();
+  if sum != 0.0 {
+    for x in v.iter_mut() {
+      *x /= sum;
+    }
+  }
+  (lambda, v)
+}
+
 /// EigenvectorCentrality: the principal (Perron) eigenvector of the adjacency
 /// matrix, made non-negative and normalized so the entries sum to 1. The power
 /// iteration uses a spectral shift `A + c I` (c > max degree) so that the
