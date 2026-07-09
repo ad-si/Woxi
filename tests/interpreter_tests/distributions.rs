@@ -4561,6 +4561,83 @@ mod benford_distribution {
   }
 }
 
+// BenktanderWeibullDistribution[a, b] is a heavy-tailed distribution on x >= 1
+// with parameters a > 0, 0 < b <= 1. Verified against wolframscript.
+mod benktander_weibull_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[BenktanderWeibullDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{E^((a*(1 - x^b))/b)*x^(-2 + b)*(1 - b + a*x^b), x >= 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[BenktanderWeibullDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{1 - E^((a*(1 - x^b))/b)*x^(-1 + b), x >= 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_cdf_at_points() {
+    // Below the support the density and distribution are 0.
+    assert_eq!(
+      interpret("PDF[BenktanderWeibullDistribution[1, 1/2], 1/2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CDF[BenktanderWeibullDistribution[1, 1/2], 1/2]").unwrap(),
+      "0"
+    );
+    // A point in the support (x^(1/2) is exact at x = 4).
+    assert_eq!(
+      interpret("PDF[BenktanderWeibullDistribution[1, 1/2], 4]").unwrap(),
+      "5/(16*E^2)"
+    );
+    assert_eq!(
+      interpret("CDF[BenktanderWeibullDistribution[1, 1/2], 4]").unwrap(),
+      "1 - 1/(2*E^2)"
+    );
+  }
+
+  #[test]
+  fn mean_and_variance() {
+    assert_eq!(
+      interpret("Mean[BenktanderWeibullDistribution[a, b]]").unwrap(),
+      "1 + a^(-1)"
+    );
+    assert_eq!(
+      interpret("Mean[BenktanderWeibullDistribution[2, 1/2]]").unwrap(),
+      "3/2"
+    );
+    assert_eq!(
+      interpret("Variance[BenktanderWeibullDistribution[a, b]]").unwrap(),
+      "(-1 + (2*a*E^(a/b)*ExpIntegralE[1 - b^(-1), a/b])/b)/a^2"
+    );
+  }
+
+  #[test]
+  fn parameter_validity() {
+    // b must be <= 1.
+    assert_eq!(
+      interpret("DistributionParameterQ[BenktanderWeibullDistribution[1, 2]]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "DistributionParameterQ[BenktanderWeibullDistribution[1, 1/2]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
 mod distribution_moments {
   use super::*;
 

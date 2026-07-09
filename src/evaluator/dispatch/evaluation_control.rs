@@ -273,6 +273,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "BenktanderWeibullDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "BenktanderWeibullDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "WaringYuleDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "WaringYuleDistribution".to_string(),
@@ -985,6 +991,13 @@ fn validate_distribution_params(name: &str, args: &[Expr]) -> bool {
     "BenfordDistribution" => {
       // BenfordDistribution[b] — integer base b >= 2
       args.len() == 1 && matches!(&args[0], Expr::Integer(b) if *b >= 2)
+    }
+    "BenktanderWeibullDistribution" => {
+      // BenktanderWeibullDistribution[a, b] — a > 0 and 0 < b <= 1
+      args.len() == 2
+        && is_positive(&args[0])
+        && is_positive(&args[1])
+        && is_probability(&args[1])
     }
     "LogSeriesDistribution" => {
       // LogSeriesDistribution[theta] — theta in (0, 1)

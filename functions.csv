@@ -3664,7 +3664,7 @@ URLSubmit,,🚫,,11.0,3755
 WeaklyConnectedGraphComponents,,,,10.4,3755
 ASATriangle,Triangle from two angles with the included side (symbolic angles give the Csc closed form),✅,pure,10.0,3765
 AsymptoticOutputTracker,,,,10.0,3765
-BenktanderWeibullDistribution,,,,8.0,3765
+BenktanderWeibullDistribution,Benktander-Weibull heavy-tailed distribution on x >= 1,✅,pure,8.0,3765
 CelestialSystem,,,,10.0,3765
 CornerFilter,,,,8.0,3765
 FunctionSingularities,,,,12.2,3765

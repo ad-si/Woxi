@@ -199,6 +199,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GumbelDistribution" => pdf_gumbel(dargs, x),
     "ZipfDistribution" => pdf_zipf(dargs, x),
     "BenfordDistribution" => pdf_benford(dargs, x),
+    "BenktanderWeibullDistribution" => pdf_benktander_weibull(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "PoissonConsulDistribution" => pdf_poisson_consul(dargs, x),
@@ -1942,6 +1943,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match dist_name {
     "ProbabilityDistribution" => cdf_probability_distribution(dargs, x),
     "BenfordDistribution" => cdf_benford(dargs, x),
+    "BenktanderWeibullDistribution" => cdf_benktander_weibull(dargs, x),
     "UniformSumDistribution" => cdf_uniform_sum(dargs, x),
     "BetaBinomialDistribution" => cdf_beta_binomial(dargs, x),
     "BetaPrimeDistribution" => cdf_beta_prime(dargs, x),
@@ -4008,6 +4010,7 @@ fn distribution_mean_variance(
     }
     "ZipfDistribution" => zipf_mean_variance(dargs),
     "BenfordDistribution" => benford_mean_variance(dargs),
+    "BenktanderWeibullDistribution" => benktander_weibull_mean_variance(dargs),
     "GumbelDistribution" => gumbel_mean_variance(dargs),
     "SechDistribution" => sech_mean_variance(dargs),
     "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
@@ -14400,5 +14403,165 @@ pub fn benford_mean_variance(
     second_moment,
     times(int(-1), power(mean.clone(), int(2))),
   ))?;
+  Ok((mean, variance))
+}
+
+/// Whether BenktanderWeibullDistribution[a, b] has valid parameters: a > 0 and
+/// 0 < b <= 1. Symbolic parameters are treated as valid (computed symbolically).
+fn benktander_weibull_valid(a: &Expr, b: &Expr) -> bool {
+  let a_ok = ms_numeric(a).is_none_or(|v| v > 0.0);
+  let b_ok = ms_numeric(b).is_none_or(|v| v > 0.0 && v <= 1.0);
+  a_ok && b_ok
+}
+
+/// PDF for BenktanderWeibullDistribution[a, b] on x >= 1:
+/// E^((a (1 - x^b))/b) x^(b-2) (1 - b + a x^b).
+pub fn pdf_benktander_weibull(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BenktanderWeibullDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let [a, b] = dargs else {
+    return Ok(unevaluated(dargs, x));
+  };
+  if !benktander_weibull_valid(a, b) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let e = || Expr::Identifier("E".to_string());
+  // E^((a (1 - x^b))/b) x^(b-2) (1 - b + a x^b).
+  let body = |t: &Expr| -> Result<Expr, InterpreterError> {
+    let exponent = divide(
+      times(
+        a.clone(),
+        plus(int(1), times(int(-1), power(t.clone(), b.clone()))),
+      ),
+      b.clone(),
+    );
+    let e_factor = power(e(), exponent);
+    let x_factor = power(t.clone(), plus(int(-2), b.clone()));
+    let poly = plus(
+      plus(int(1), times(int(-1), b.clone())),
+      times(a.clone(), power(t.clone(), b.clone())),
+    );
+    eval(times(e_factor, times(x_factor, poly)))
+  };
+  if let Some(xv) = ms_numeric(&x) {
+    if xv < 1.0 {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  Ok(piecewise(
+    vec![(
+      body(&x)?,
+      comparison(x.clone(), ComparisonOp::GreaterEqual, int(1)),
+    )],
+    int(0),
+  ))
+}
+
+/// CDF for BenktanderWeibullDistribution[a, b] on x >= 1:
+/// 1 - E^((a (1 - x^b))/b) x^(b-1).
+pub fn cdf_benktander_weibull(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BenktanderWeibullDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let [a, b] = dargs else {
+    return Ok(unevaluated(dargs, x));
+  };
+  if !benktander_weibull_valid(a, b) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let e = || Expr::Identifier("E".to_string());
+  // 1 - E^((a (1 - x^b))/b) x^(b-1).
+  let body = |t: &Expr| -> Result<Expr, InterpreterError> {
+    let exponent = divide(
+      times(
+        a.clone(),
+        plus(int(1), times(int(-1), power(t.clone(), b.clone()))),
+      ),
+      b.clone(),
+    );
+    let e_factor = power(e(), exponent);
+    let x_factor = power(t.clone(), plus(int(-1), b.clone()));
+    eval(plus(int(1), times(int(-1), times(e_factor, x_factor))))
+  };
+  if let Some(xv) = ms_numeric(&x) {
+    if xv < 1.0 {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  Ok(piecewise(
+    vec![(
+      body(&x)?,
+      comparison(x.clone(), ComparisonOp::GreaterEqual, int(1)),
+    )],
+    int(0),
+  ))
+}
+
+/// Mean and variance for BenktanderWeibullDistribution[a, b]:
+/// Mean = 1 + 1/a; Variance = (-1 + 2 a E^(a/b) ExpIntegralE[1 - 1/b, a/b]/b)/a^2.
+pub fn benktander_weibull_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let [a, b] = dargs else {
+    return Err(InterpreterError::EvaluationError(
+      "BenktanderWeibullDistribution expects 2 arguments".into(),
+    ));
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let e = || Expr::Identifier("E".to_string());
+  let mean = eval(plus(int(1), divide(int(1), a.clone())))?;
+  // (-1 + (2 a E^(a/b) ExpIntegralE[1 - 1/b, a/b]) / b) / a^2.
+  let exp_int = call(
+    "ExpIntegralE",
+    vec![
+      plus(int(1), times(int(-1), divide(int(1), b.clone()))),
+      divide(a.clone(), b.clone()),
+    ],
+  );
+  let numer = plus(
+    int(-1),
+    divide(
+      times(
+        times(int(2), a.clone()),
+        times(power(e(), divide(a.clone(), b.clone())), exp_int),
+      ),
+      b.clone(),
+    ),
+  );
+  let variance = eval(divide(numer, power(a.clone(), int(2))))?;
   Ok((mean, variance))
 }
