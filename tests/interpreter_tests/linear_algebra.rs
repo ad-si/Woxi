@@ -5960,6 +5960,274 @@ mod frobenius_reduce {
   }
 }
 
+mod ldl_decomposition {
+  use super::*;
+
+  // All expected outputs verified against wolframscript 15.0.
+
+  #[test]
+  fn real_symmetric_structured() {
+    assert_eq!(
+      interpret("LDLDecomposition[{{4, 2}, {2, 3}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {1/2, 1}}]], \
+       DiagonalMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{4, 2}, 0}]]}"
+    );
+    // Indefinite matrices factor too (D picks up negative entries)
+    assert_eq!(
+      interpret("LDLDecomposition[{{1, 2}, {2, 1}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {2, 1}}]], \
+       DiagonalMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, -3}, 0}]]}"
+    );
+    assert_eq!(
+      interpret("LDLDecomposition[{{2, 1, 0}, {1, 2, 1}, {0, 1, 2}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {{1, 0, 0}, {1/2, 1, 0}, {0, 2/3, 1}}]], \
+       DiagonalMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {{2, 3/2, 4/3}, 0}]]}"
+    );
+    assert_eq!(
+      interpret("LDLDecomposition[{{5}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{1, 1}, \
+       {{1}}]], DiagonalMatrix[StructuredArray`StructuredData[{1, 1}, \
+       {{5}, 0}]]}"
+    );
+    assert_eq!(
+      interpret(
+        "LDLDecomposition[{{4, 2, -2, 0}, {2, 5, 3, 1}, {-2, 3, 11, 2}, \
+         {0, 1, 2, 3}}]"
+      )
+      .unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{4, 4}, \
+       {{1, 0, 0, 0}, {1/2, 1, 0, 0}, {-1/2, 1, 1, 0}, \
+       {0, 1/4, 1/6, 1}}]], \
+       DiagonalMatrix[StructuredArray`StructuredData[{4, 4}, \
+       {{4, 4, 6, 31/12}, 0}]]}"
+    );
+  }
+
+  #[test]
+  fn complex_hermitian() {
+    assert_eq!(
+      interpret("LDLDecomposition[{{2, I}, {-I, 2}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {-1/2*I, 1}}]], \
+       DiagonalMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{2, 3/2}, 0}]]}"
+    );
+    assert_eq!(
+      interpret("LDLDecomposition[{{2, 1 + I}, {1 - I, 3}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {1/2 - I/2, 1}}]], \
+       DiagonalMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{2, 2}, 0}]]}"
+    );
+  }
+
+  #[test]
+  fn rational_entries() {
+    assert_eq!(
+      interpret("LDLDecomposition[{{1/2, 1/3}, {1/3, 1/4}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {2/3, 1}}]], \
+       DiagonalMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1/2, 1/36}, 0}]]}"
+    );
+  }
+
+  #[test]
+  fn target_structure_dense() {
+    assert_eq!(
+      interpret(
+        "LDLDecomposition[{{4, 2}, {2, 3}}, TargetStructure -> \"Dense\"]"
+      )
+      .unwrap(),
+      "{{{1, 0}, {1/2, 1}}, {{4, 0}, {0, 2}}}"
+    );
+    assert_eq!(
+      interpret(
+        "LDLDecomposition[{{2, 1 + I}, {1 - I, 3}}, \
+         TargetStructure -> \"Dense\"]"
+      )
+      .unwrap(),
+      "{{{1, 0}, {1/2 - I/2, 1}}, {{2, 0}, {0, 2}}}"
+    );
+  }
+
+  #[test]
+  fn target_structure_sparse() {
+    assert_eq!(
+      interpret(
+        "LDLDecomposition[{{4, 2}, {2, 3}}, TargetStructure -> \"Sparse\"]"
+      )
+      .unwrap(),
+      "{SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 3}, \
+       {{1}, {1}, {2}}}, {1, 1/2, 1}}], \
+       SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{1}, {2}}}, \
+       {4, 2}}]}"
+    );
+    // Structural zeros inside L are dropped from the sparse form
+    assert_eq!(
+      interpret(
+        "LDLDecomposition[{{2, 1, 0}, {1, 2, 1}, {0, 1, 2}}, \
+         TargetStructure -> \"Sparse\"]"
+      )
+      .unwrap(),
+      "{SparseArray[Automatic, {3, 3}, 0, {1, {{0, 1, 3, 5}, \
+       {{1}, {1}, {2}, {2}, {3}}}, {1, 1/2, 1, 2/3, 1}}], \
+       SparseArray[Automatic, {3, 3}, 0, {1, {{0, 1, 2, 3}, \
+       {{1}, {2}, {3}}}, {2, 3/2, 4/3}}]}"
+    );
+  }
+
+  #[test]
+  fn target_structure_automatic_and_structured() {
+    let expected = "{LowerTriangularMatrix[StructuredArray`StructuredData[\
+                    {2, 2}, {{1, 0}, {1/2, 1}}]], \
+                    DiagonalMatrix[StructuredArray`StructuredData[{2, 2}, \
+                    {{4, 2}, 0}]]}";
+    assert_eq!(
+      interpret(
+        "LDLDecomposition[{{4, 2}, {2, 3}}, TargetStructure -> Automatic]"
+      )
+      .unwrap(),
+      expected
+    );
+    assert_eq!(
+      interpret(
+        "LDLDecomposition[{{4, 2}, {2, 3}}, \
+         TargetStructure -> \"Structured\"]"
+      )
+      .unwrap(),
+      expected
+    );
+  }
+
+  #[test]
+  fn non_hermitian_emits_herm() {
+    clear_state();
+    assert_eq!(
+      interpret("LDLDecomposition[{{1, 2}, {3, 4}}]").unwrap(),
+      "LDLDecomposition[{{1, 2}, {3, 4}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LDLDecomposition::herm: The matrix {{1, 2}, {3, 4}} is not \
+         Hermitian or real and symmetric."
+      )),
+      "got {msgs:?}"
+    );
+    // Symbolic matrices cannot be verified Hermitian either
+    clear_state();
+    assert_eq!(
+      interpret("LDLDecomposition[{{a, b}, {b, c}}]").unwrap(),
+      "LDLDecomposition[{{a, b}, {b, c}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LDLDecomposition::herm: The matrix {{a, b}, {b, c}} is not \
+         Hermitian or real and symmetric."
+      )),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn zero_pivot_emits_nopiv() {
+    clear_state();
+    assert_eq!(
+      interpret("LDLDecomposition[{{0, 1}, {1, 0}}]").unwrap(),
+      "LDLDecomposition[{{0, 1}, {1, 0}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LDLDecomposition::nopiv: Encountered a zero pivot while \
+         attempting LDLDecomposition on matrix {{0, 1}, {1, 0}}."
+      )),
+      "got {msgs:?}"
+    );
+    // A zero pivot in the last position is rejected too
+    clear_state();
+    assert_eq!(
+      interpret("LDLDecomposition[{{1, 1}, {1, 1}}]").unwrap(),
+      "LDLDecomposition[{{1, 1}, {1, 1}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LDLDecomposition::nopiv: Encountered a zero pivot while \
+         attempting LDLDecomposition on matrix {{1, 1}, {1, 1}}."
+      )),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn option_and_argument_messages() {
+    clear_state();
+    assert_eq!(
+      interpret("LDLDecomposition[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "LDLDecomposition[{{1, 2, 3}, {4, 5, 6}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LDLDecomposition::matsq: Argument {{1, 2, 3}, {4, 5, 6}} at \
+         position 1 is not a nonempty square matrix."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("LDLDecomposition[{{1, 2}, {2, 1}}, x]").unwrap(),
+      "LDLDecomposition[{{1, 2}, {2, 1}}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LDLDecomposition::nonopt: Options expected (instead of x) beyond \
+         position 1 in LDLDecomposition[{{1, 2}, {2, 1}}, x]. An option \
+         must be a rule or a list of rules."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("LDLDecomposition[{{4, 2}, {2, 3}}, Foo -> 1]").unwrap(),
+      "LDLDecomposition[{{4, 2}, {2, 3}}, Foo -> 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LDLDecomposition::optx: Unknown option Foo in \
+         LDLDecomposition[{{4, 2}, {2, 3}}, Foo -> 1]."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "LDLDecomposition[{{4, 2}, {2, 3}}, TargetStructure -> \"Banana\"]"
+      )
+      .unwrap(),
+      "LDLDecomposition[{{4, 2}, {2, 3}}, TargetStructure -> Banana]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LDLDecomposition::badts: Banana is not a valid target structure."
+      )),
+      "got {msgs:?}"
+    );
+  }
+}
+
 mod coordinate_transform {
   use super::*;
 

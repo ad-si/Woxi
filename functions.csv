@@ -6209,7 +6209,7 @@ MultipleHarmonicNumber,Computes finite harmonic sums over strictly ordered indic
 MultiplePolyLog,Computes the depth-k multiple polylogarithm,,pure,15.0,
 MultipleZeta,Computes multiple zeta values as nested reciprocal-power sums,,pure,15.0,
 BunchKaufmanDecomposition,Computes the Bunch-Kaufman factorization of a symmetric or Hermitian matrix,,pure,15.0,
-LDLDecomposition,Computes the LDL factorization of a Hermitian matrix,,pure,15.0,
+LDLDecomposition,Computes the LDL factorization of a Hermitian matrix,✅,pure,15.0,
 OrderedSchurDecomposition,Computes a Schur decomposition with ordered diagonal blocks,,pure,15.0,
 PolarDecomposition,Computes the polar decomposition into unitary and Hermitian factors,,pure,15.0,
 PopovDecomposition,Computes the Popov normal form of a polynomial matrix,,pure,15.0,

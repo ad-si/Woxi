@@ -8651,16 +8651,21 @@ impl GQNum {
     if norm.is_zero() {
       return None;
     }
-    let conj = GQNum {
-      re: o.re,
-      im: QNum::new(o.im.n.checked_neg()?, o.im.d)?,
-    };
-    let num = self.mul(&conj)?;
+    let num = self.mul(&o.conj())?;
     let inv_norm = QNum::new(norm.d, norm.n)?;
     Some(GQNum {
       re: num.re.mul(&inv_norm)?,
       im: num.im.mul(&inv_norm)?,
     })
+  }
+  fn conj(&self) -> GQNum {
+    GQNum {
+      re: self.re,
+      im: QNum {
+        n: -self.im.n,
+        d: self.im.d,
+      },
+    }
   }
 }
 
@@ -9255,6 +9260,304 @@ pub fn frobenius_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result = gp_smith_diagonal(p)
     .and_then(|diag| companion_block_matrix(&diag, n, gq_to_expr));
   Ok(result.unwrap_or_else(unevaluated))
+}
+
+/// Wrap a payload in `head[StructuredArray`StructuredData[{n, n}, payload]]`
+/// (the structured-array form wolframscript uses for decomposition factors).
+fn structured_matrix(head: &str, n: usize, payload: Expr) -> Expr {
+  let dims =
+    Expr::List(vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into());
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "StructuredArray`StructuredData".to_string(),
+      args: vec![dims, payload].into(),
+    }]
+    .into(),
+  }
+}
+
+/// `SparseArray[Automatic, {n, n}, 0, {1, {rowptr, colidx}, vals}]` in the
+/// CSR literal form wolframscript prints, from row-major nonzero triples.
+fn sparse_array_literal(n: usize, nonzeros: &[(usize, usize, Expr)]) -> Expr {
+  let mut rowptr: Vec<Expr> = Vec::with_capacity(n + 1);
+  let mut colidx: Vec<Expr> = Vec::with_capacity(nonzeros.len());
+  let mut vals: Vec<Expr> = Vec::with_capacity(nonzeros.len());
+  let mut count = 0i128;
+  rowptr.push(Expr::Integer(0));
+  let mut iter = nonzeros.iter().peekable();
+  for row in 0..n {
+    while let Some((i, j, v)) = iter.peek() {
+      if *i != row {
+        break;
+      }
+      colidx.push(Expr::List(vec![Expr::Integer(*j as i128 + 1)].into()));
+      vals.push(v.clone());
+      count += 1;
+      iter.next();
+    }
+    rowptr.push(Expr::Integer(count));
+  }
+  Expr::FunctionCall {
+    name: "SparseArray".to_string(),
+    args: vec![
+      Expr::Identifier("Automatic".to_string()),
+      Expr::List(
+        vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into(),
+      ),
+      Expr::Integer(0),
+      Expr::List(
+        vec![
+          Expr::Integer(1),
+          Expr::List(
+            vec![Expr::List(rowptr.into()), Expr::List(colidx.into())].into(),
+          ),
+          Expr::List(vals.into()),
+        ]
+        .into(),
+      ),
+    ]
+    .into(),
+  }
+}
+
+/// LDLDecomposition[m] — the L·D·Lᴴ factorization of an exact Hermitian
+/// (or real symmetric) matrix: L unit lower triangular, D diagonal.
+/// Returns wolframscript's structured form by default; TargetStructure
+/// -> "Dense" gives plain matrices and -> "Sparse" gives CSR SparseArray
+/// literals. Emits ::herm for non-Hermitian input, ::nopiv when a zero
+/// pivot appears (wolframscript rejects those too, even in the last
+/// position), and ::optx / ::badts / ::nonopt for bad options. Inexact
+/// matrices stay unevaluated (wolframscript's float pivots carry
+/// LAPACK-internal rounding that is not reproducible here).
+pub fn ldl_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::expr_to_string;
+  let unevaluated = || Expr::FunctionCall {
+    name: "LDLDecomposition".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() {
+    return Ok(unevaluated());
+  }
+
+  // Options: only TargetStructure is understood.
+  #[derive(PartialEq)]
+  enum Target {
+    Structured,
+    Dense,
+    Sparse,
+  }
+  let mut target = Target::Structured;
+  for extra in &args[1..] {
+    let rules: Vec<&Expr> = match extra {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    for item in rules {
+      let Some((lhs, rhs)) = rule_parts(item) else {
+        crate::emit_message(&format!(
+          "LDLDecomposition::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
+          expr_to_string(extra),
+          expr_to_string(&unevaluated())
+        ));
+        return Ok(unevaluated());
+      };
+      match lhs {
+        Expr::Identifier(name) if name == "TargetStructure" => {
+          target = match rhs {
+            Expr::String(s) if s == "Dense" => Target::Dense,
+            Expr::String(s) if s == "Sparse" => Target::Sparse,
+            Expr::String(s) if s == "Structured" => Target::Structured,
+            Expr::Identifier(a) if a == "Automatic" => Target::Structured,
+            other => {
+              let shown = match other {
+                Expr::String(s) => s.clone(),
+                e => expr_to_string(e),
+              };
+              crate::emit_message(&format!(
+                "LDLDecomposition::badts: {shown} is not a valid target structure."
+              ));
+              return Ok(unevaluated());
+            }
+          };
+        }
+        other => {
+          crate::emit_message(&format!(
+            "LDLDecomposition::optx: Unknown option {} in {}.",
+            expr_to_string(other),
+            expr_to_string(&unevaluated())
+          ));
+          return Ok(unevaluated());
+        }
+      }
+    }
+  }
+
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) if is_nonempty_square(&m) => m,
+    _ => return Ok(matsq_unevaluated("LDLDecomposition", args)),
+  };
+  let n = matrix.len();
+
+  // Exact entries only; inexact matrices are a documented gap.
+  let mut entries: Vec<Vec<GQNum>> = Vec::with_capacity(n);
+  for row in &matrix {
+    let mut out_row = Vec::with_capacity(n);
+    for cell in row {
+      match expr_to_gq(cell) {
+        Some(v) => out_row.push(v),
+        None => {
+          let has_real = matrix
+            .iter()
+            .any(|r| r.iter().any(|e| matches!(e, Expr::Real(_))));
+          if !has_real {
+            crate::emit_message(&format!(
+              "LDLDecomposition::herm: The matrix {} is not Hermitian or real and symmetric.",
+              expr_to_string(&args[0])
+            ));
+          }
+          return Ok(unevaluated());
+        }
+      }
+    }
+    entries.push(out_row);
+  }
+
+  // Hermitian check: a[i][j] must equal conj(a[j][i]) (real diagonal).
+  let hermitian =
+    (0..n).all(|i| (i..n).all(|j| entries[i][j] == entries[j][i].conj()));
+  if !hermitian {
+    crate::emit_message(&format!(
+      "LDLDecomposition::herm: The matrix {} is not Hermitian or real and symmetric.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  }
+
+  // Factorize: d_j = a_jj − Σ_k |l_jk|²·d_k;  l_ij = (a_ij − Σ_k
+  // l_ik·conj(l_jk)·d_k)/d_j. A zero pivot anywhere is ::nopiv.
+  let factor = || -> Option<Result<(Vec<Vec<GQNum>>, Vec<GQNum>), ()>> {
+    let mut l = vec![vec![GQNum::zero(); n]; n];
+    let mut d = vec![GQNum::zero(); n];
+    for j in 0..n {
+      let mut dj = entries[j][j];
+      for k in 0..j {
+        dj = dj.sub(&l[j][k].mul(&l[j][k].conj())?.mul(&d[k])?)?;
+      }
+      if dj.is_zero() {
+        return Some(Err(()));
+      }
+      d[j] = dj;
+      l[j][j] = GQNum::one();
+      for i in j + 1..n {
+        let mut x = entries[i][j];
+        for k in 0..j {
+          x = x.sub(&l[i][k].mul(&l[j][k].conj())?.mul(&d[k])?)?;
+        }
+        l[i][j] = x.div(&dj)?;
+      }
+    }
+    Some(Ok((l, d)))
+  };
+  let (l, d) = match factor() {
+    Some(Ok(ld)) => ld,
+    Some(Err(())) => {
+      crate::emit_message(&format!(
+        "LDLDecomposition::nopiv: Encountered a zero pivot while attempting LDLDecomposition on matrix {}.",
+        expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated());
+    }
+    None => return Ok(unevaluated()), // i128 overflow
+  };
+
+  // Render L as a full unit-lower-triangular matrix and D as values.
+  let mut l_rows: Vec<Expr> = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut row: Vec<Expr> = Vec::with_capacity(n);
+    for j in 0..n {
+      row.push(match j.cmp(&i) {
+        std::cmp::Ordering::Less => match gq_to_expr(&l[i][j]) {
+          Some(e) => e,
+          None => return Ok(unevaluated()),
+        },
+        std::cmp::Ordering::Equal => Expr::Integer(1),
+        std::cmp::Ordering::Greater => Expr::Integer(0),
+      });
+    }
+    l_rows.push(Expr::List(row.into()));
+  }
+  let l_full = Expr::List(l_rows.into());
+  let mut d_vals: Vec<Expr> = Vec::with_capacity(n);
+  for v in &d {
+    match gq_to_expr(v) {
+      Some(e) => d_vals.push(e),
+      None => return Ok(unevaluated()),
+    }
+  }
+
+  Ok(match target {
+    Target::Structured => Expr::List(
+      vec![
+        structured_matrix("LowerTriangularMatrix", n, l_full),
+        structured_matrix(
+          "DiagonalMatrix",
+          n,
+          Expr::List(vec![Expr::List(d_vals.into()), Expr::Integer(0)].into()),
+        ),
+      ]
+      .into(),
+    ),
+    Target::Dense => {
+      let d_rows: Vec<Expr> = (0..n)
+        .map(|i| {
+          Expr::List(
+            (0..n)
+              .map(|j| {
+                if i == j {
+                  d_vals[i].clone()
+                } else {
+                  Expr::Integer(0)
+                }
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect();
+      Expr::List(vec![l_full, Expr::List(d_rows.into())].into())
+    }
+    Target::Sparse => {
+      let mut l_nz: Vec<(usize, usize, Expr)> = Vec::new();
+      for i in 0..n {
+        for j in 0..=i {
+          let v = if i == j {
+            Expr::Integer(1)
+          } else {
+            match gq_to_expr(&l[i][j]) {
+              Some(e) => e,
+              None => return Ok(unevaluated()),
+            }
+          };
+          if !(l[i][j].is_zero() && i != j) {
+            l_nz.push((i, j, v));
+          }
+        }
+      }
+      let d_nz: Vec<(usize, usize, Expr)> = d_vals
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (i, i, v.clone()))
+        .collect();
+      Expr::List(
+        vec![
+          sparse_array_literal(n, &l_nz),
+          sparse_array_literal(n, &d_nz),
+        ]
+        .into(),
+      )
+    }
+  })
 }
 
 /// CoordinateTransform[src -> dst, pt] for the named coordinate systems
