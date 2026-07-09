@@ -503,7 +503,7 @@ pub fn num_to_expr(n: f64) -> Expr {
 }
 
 /// Convert a BigInt to Expr::Integer if it fits in i128, otherwise Expr::BigInteger
-pub fn bigint_to_expr(n: num_bigint::BigInt) -> Expr {
+pub fn bigint_to_expr(n: BigInt) -> Expr {
   use num_traits::ToPrimitive;
   match n.to_i128() {
     Some(i) => Expr::Integer(i),

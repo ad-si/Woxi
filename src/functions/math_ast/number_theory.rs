@@ -530,7 +530,7 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       use num_traits::ToPrimitive;
       let n = *f as i128;
       let exact = if n <= 1 {
-        num_bigint::BigInt::from(1)
+        BigInt::from(1)
       } else {
         let mut shift: u64 = 0;
         kg_inner(n, 1, &mut shift) << shift
@@ -1058,7 +1058,6 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Represent each Bernoulli number as a reduced (numerator, denominator)
   // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
   // i128.
-  use num_bigint::BigInt;
   fn bgcd(a: &BigInt, b: &BigInt) -> BigInt {
     let (mut a, mut b) = (a.clone().abs(), b.clone().abs());
     while b != BigInt::from(0) {
@@ -1524,14 +1523,13 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Compute Stirling numbers of the second kind for all k, in BigInt so
     // large coefficients (e.g. BellB[50, x]) don't overflow i128.
-    let zero = num_bigint::BigInt::from(0);
-    let one = num_bigint::BigInt::from(1);
+    let zero = BigInt::from(0);
+    let one = BigInt::from(1);
     let mut stirling = vec![vec![zero.clone(); n + 1]; n + 1];
     stirling[0][0] = one.clone();
     for i in 1..=n {
       for k in 1..=i {
-        stirling[i][k] = num_bigint::BigInt::from(k as i128)
-          * &stirling[i - 1][k]
+        stirling[i][k] = BigInt::from(k as i128) * &stirling[i - 1][k]
           + &stirling[i - 1][k - 1];
       }
     }
@@ -1669,17 +1667,16 @@ pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if f.fract() == 0.0 {
       let m = *f as i128;
       let exact = if m >= 0 {
-        let two_m = num_bigint::BigInt::from(2 * m);
-        let mut c = num_bigint::BigInt::from(1);
+        let two_m = BigInt::from(2 * m);
+        let mut c = BigInt::from(1);
         for i in 0..m {
-          c = c * (&two_m - num_bigint::BigInt::from(i))
-            / num_bigint::BigInt::from(i + 1);
+          c = c * (&two_m - BigInt::from(i)) / BigInt::from(i + 1);
         }
-        c / num_bigint::BigInt::from(m + 1)
+        c / BigInt::from(m + 1)
       } else if m == -1 {
-        num_bigint::BigInt::from(-1)
+        BigInt::from(-1)
       } else {
-        num_bigint::BigInt::from(0)
+        BigInt::from(0)
       };
       return Ok(Expr::Real(exact.to_f64().unwrap_or(f64::INFINITY)));
     }
@@ -1707,7 +1704,7 @@ pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // CatalanNumber[n] = Binomial[2n, n] / (n + 1), in BigInt so large results
   // (e.g. CatalanNumber[100], 57 digits) don't overflow i128.
-  let result = binomial_coeff_big(2 * n, n) / num_bigint::BigInt::from(n + 1);
+  let result = binomial_coeff_big(2 * n, n) / BigInt::from(n + 1);
   Ok(crate::functions::math_ast::bigint_to_expr(result))
 }
 
@@ -2048,7 +2045,6 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn multiple_harmonic_number_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use num_bigint::BigInt;
   let unevaluated = || Expr::FunctionCall {
     name: "MultipleHarmonicNumber".to_string(),
     args: args.to_vec().into(),
@@ -5287,8 +5283,7 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Uses deterministic witnesses for small numbers and a set of strong
 /// witnesses that provides correct results for all numbers < 3.317e24,
 /// plus additional witnesses for larger numbers.
-pub fn is_prime_bigint(n: &num_bigint::BigInt) -> bool {
-  use num_bigint::BigInt;
+pub fn is_prime_bigint(n: &BigInt) -> bool {
   use num_traits::{One, Zero};
 
   let one = BigInt::one();
@@ -5484,8 +5479,7 @@ pub fn prev_prime_before(n: i128) -> i128 {
 }
 
 /// Find the smallest prime > n for BigInt values.
-pub fn next_prime_after_bigint(n: &num_bigint::BigInt) -> num_bigint::BigInt {
-  use num_bigint::BigInt;
+pub fn next_prime_after_bigint(n: &BigInt) -> BigInt {
   use num_traits::{One, Zero};
 
   let one = BigInt::one();
@@ -8965,7 +8959,6 @@ pub fn three_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   //                      · (j3-j2+m1+t)!·(j3-j1-m2+t)!]
   // Everything below is computed in integer 2j/2m units; halve the
   // sums/differences before plugging into factorial.
-  use num_bigint::BigInt;
   fn fact(n: i128) -> BigInt {
     let mut acc = BigInt::from(1);
     for i in 2..=n {
@@ -9130,18 +9123,14 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Compute Δ²(a, b, c) = (a+b-c)!(a-b+c)!(-a+b+c)!/(a+b+c+1)! using
   // half-integer arithmetic — every triangle has an even sum so each of
   // (a±b±c)/2 is an integer.
-  fn fact(n: i128) -> num_bigint::BigInt {
-    let mut acc = num_bigint::BigInt::from(1);
+  fn fact(n: i128) -> BigInt {
+    let mut acc = BigInt::from(1);
     for i in 2..=n {
       acc *= i;
     }
     acc
   }
-  fn delta_sq_num_den(
-    a: i128,
-    b: i128,
-    c: i128,
-  ) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  fn delta_sq_num_den(a: i128, b: i128, c: i128) -> (BigInt, BigInt) {
     // Each triangle satisfies a+b+c even, so the half-integer factorials
     // collapse to integer factorials.
     let n1 = (a + b - c) / 2;
@@ -9150,7 +9139,6 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let nd = (a + b + c) / 2 + 1;
     (fact(n1) * fact(n2) * fact(n3), fact(nd))
   }
-  use num_bigint::BigInt;
   // Δ_total² = Π Δ²(triangle_i). Accumulate as (num, den).
   let mut delta_sq_num = BigInt::from(1);
   let mut delta_sq_den = BigInt::from(1);
@@ -9226,7 +9214,7 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let coeff_num = sum_num * &delta_sq_outside_num;
   let coeff_den = &sum_den * &delta_sq_outside_den;
   let coeff_expr = bigint_rational_to_expr(coeff_num, coeff_den);
-  let radicand_expr = if delta_sq_inside_den == num_bigint::BigInt::from(1) {
+  let radicand_expr = if delta_sq_inside_den == BigInt::from(1) {
     bigint_to_expr(delta_sq_inside_num)
   } else {
     crate::evaluator::evaluate_function_call_ast(
@@ -9365,10 +9353,7 @@ fn six_j_symbol_symbolic(
 /// `n == outside^2 · inside` and `inside` is square-free. Operates on
 /// BigInt directly so it works for arguments far beyond u64 range — the
 /// general `Sqrt` path trial-divides over u64.
-fn extract_perfect_square_bigint(
-  n: &num_bigint::BigInt,
-) -> (num_bigint::BigInt, num_bigint::BigInt) {
-  use num_bigint::BigInt;
+fn extract_perfect_square_bigint(n: &BigInt) -> (BigInt, BigInt) {
   use num_traits::Zero;
   if n.is_zero() {
     return (BigInt::from(1), BigInt::from(0));
@@ -9390,21 +9375,18 @@ fn extract_perfect_square_bigint(
   (outside, inside)
 }
 
-fn bigint_rational_to_expr(
-  num: num_bigint::BigInt,
-  den: num_bigint::BigInt,
-) -> Expr {
+fn bigint_rational_to_expr(num: BigInt, den: BigInt) -> Expr {
   use num_traits::Zero;
   if den.is_zero() {
     return Expr::Identifier("ComplexInfinity".to_string());
   }
   let g = bigint_gcd(num.clone().abs(), den.clone().abs());
   let (mut n, mut d) = (num / &g, den / &g);
-  if d < num_bigint::BigInt::from(0) {
+  if d < BigInt::from(0) {
     n = -n;
     d = -d;
   }
-  if d == num_bigint::BigInt::from(1) {
+  if d == BigInt::from(1) {
     return bigint_to_expr(n);
   }
   Expr::FunctionCall {
@@ -9569,26 +9551,25 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // General case via the standard CG↔3j relation:
   //   CG[{j1,m1},{j2,m2},{j,m}] = (-1)^(j1-j2+m) · Sqrt[2j+1]
   //                                · ThreeJSymbol[{j1,m1},{j2,m2},{j,-m}]
-  let neg_m3 =
-    bigint_to_expr(num_bigint::BigInt::from(-m3)).pipe_through_rational(2);
+  let neg_m3 = bigint_to_expr(BigInt::from(-m3)).pipe_through_rational(2);
   let three_j_args = vec![
     Expr::List(
       vec![
-        bigint_to_expr(num_bigint::BigInt::from(j1)).pipe_through_rational(2),
-        bigint_to_expr(num_bigint::BigInt::from(m1)).pipe_through_rational(2),
+        bigint_to_expr(BigInt::from(j1)).pipe_through_rational(2),
+        bigint_to_expr(BigInt::from(m1)).pipe_through_rational(2),
       ]
       .into(),
     ),
     Expr::List(
       vec![
-        bigint_to_expr(num_bigint::BigInt::from(j2)).pipe_through_rational(2),
-        bigint_to_expr(num_bigint::BigInt::from(m2)).pipe_through_rational(2),
+        bigint_to_expr(BigInt::from(j2)).pipe_through_rational(2),
+        bigint_to_expr(BigInt::from(m2)).pipe_through_rational(2),
       ]
       .into(),
     ),
     Expr::List(
       vec![
-        bigint_to_expr(num_bigint::BigInt::from(j3)).pipe_through_rational(2),
+        bigint_to_expr(BigInt::from(j3)).pipe_through_rational(2),
         neg_m3,
       ]
       .into(),

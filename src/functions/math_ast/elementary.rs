@@ -2,6 +2,8 @@
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
+use num_bigint::BigInt;
+use num_bigint::Sign;
 
 /// Check if an expression is known to be non-negative without assumptions.
 /// Used for simplifications like Sqrt[x^2] → x (only valid when x >= 0).
@@ -58,7 +60,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // to a BigInteger in that case.
       return Ok(match n.checked_abs() {
         Some(a) => Expr::Integer(a),
-        None => Expr::BigInteger(-num_bigint::BigInt::from(*n)),
+        None => Expr::BigInteger(-BigInt::from(*n)),
       });
     }
     Expr::Real(f) => return Ok(Expr::Real(f.abs())),
@@ -342,7 +344,7 @@ fn is_imaginary_unit(expr: &Expr) -> bool {
 fn is_positive_real_literal(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(n) => *n > 0,
-    Expr::BigInteger(n) => n > &num_bigint::BigInt::from(0),
+    Expr::BigInteger(n) => n > &BigInt::from(0),
     Expr::Real(f) => *f > 0.0,
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
@@ -785,10 +787,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// that is square-free over the bound but not itself a perfect square stays
 /// in `inside` (matching wolframscript, which also can't factor large semiprimes
 /// cheaply).
-fn extract_square_factor_big(
-  n: &num_bigint::BigInt,
-) -> (num_bigint::BigInt, num_bigint::BigInt) {
-  use num_bigint::BigInt;
+fn extract_square_factor_big(n: &BigInt) -> (BigInt, BigInt) {
   let zero = BigInt::from(0);
   let one = BigInt::from(1);
   let mut outside = BigInt::from(1);
@@ -879,7 +878,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Perfect squares: Sqrt[0]=0, Sqrt[1]=1, Sqrt[4]=2, etc.
     Expr::Integer(n) if *n >= 0 => {
       // Exact perfect square via BigInt (f64 sqrt is imprecise near i128 max).
-      let bn = num_bigint::BigInt::from(*n);
+      let bn = BigInt::from(*n);
       let r = bn.sqrt();
       if &r * &r == bn {
         return Ok(crate::functions::math_ast::bigint_to_expr(r));
@@ -910,7 +909,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         // Larger than u64: extract square factors in BigInt.
         let (outside, inside) = extract_square_factor_big(&bn);
-        if outside > num_bigint::BigInt::from(1) {
+        if outside > BigInt::from(1) {
           let sqrt_part =
             make_sqrt(crate::functions::math_ast::bigint_to_expr(inside));
           return times_ast(&[
@@ -924,13 +923,13 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Sqrt of a BigInteger: extract the largest perfect-square factor, e.g.
     // Sqrt[10^41] -> 10^20 Sqrt[10].
-    Expr::BigInteger(n) if *n >= num_bigint::BigInt::from(0) => {
+    Expr::BigInteger(n) if *n >= BigInt::from(0) => {
       let r = n.sqrt();
       if &r * &r == *n {
         return Ok(crate::functions::math_ast::bigint_to_expr(r));
       }
       let (outside, inside) = extract_square_factor_big(n);
-      if outside > num_bigint::BigInt::from(1) {
+      if outside > BigInt::from(1) {
         let sqrt_part =
           make_sqrt(crate::functions::math_ast::bigint_to_expr(inside));
         return times_ast(&[
@@ -1007,20 +1006,18 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // BigInt fallback for rational arguments whose numerator/denominator is a
       // BigInteger or exceeds u64 (e.g. Sqrt[2744*10^90/729] = 14*10^45/27 *
       // Sqrt[14], reached via Skewness/Correlation of large-integer lists).
-      let to_big = |e: &Expr| -> Option<num_bigint::BigInt> {
+      let to_big = |e: &Expr| -> Option<BigInt> {
         match e {
-          Expr::Integer(v) if *v >= 0 => Some(num_bigint::BigInt::from(*v)),
-          Expr::BigInteger(v) if *v >= num_bigint::BigInt::from(0) => {
-            Some(v.clone())
-          }
+          Expr::Integer(v) if *v >= 0 => Some(BigInt::from(*v)),
+          Expr::BigInteger(v) if *v >= BigInt::from(0) => Some(v.clone()),
           _ => None,
         }
       };
       if let (Some(nb), Some(db)) = (to_big(&rargs[0]), to_big(&rargs[1]))
-        && db > num_bigint::BigInt::from(0)
+        && db > BigInt::from(0)
       {
         use crate::functions::math_ast::{bigint_to_expr, make_rational_expr};
-        let one = num_bigint::BigInt::from(1);
+        let one = BigInt::from(1);
         let (n_out, n_in) = extract_square_factor_big(&nb);
         let (d_out, d_in) = extract_square_factor_big(&db);
         let coeff = make_rational_expr(n_out.clone(), d_out.clone());
@@ -1554,11 +1551,10 @@ fn floor_via_bigfloat(
   let frac_part = &rest[dot_pos + 1..];
   // Parse the integer part as a BigInt.
   let int_str = format!("{}{}", sign, int_part);
-  let int_bi = int_str.parse::<num_bigint::BigInt>().ok()?;
+  let int_bi = int_str.parse::<BigInt>().ok()?;
   // For Floor on a negative number with a non-zero fractional part, subtract 1.
   // For Ceiling on a positive number with a non-zero fractional part, add 1.
   let has_frac = !frac_part.chars().all(|c| c == '0');
-  use num_bigint::BigInt;
   let adjusted = if is_floor {
     if sign == "-" && has_frac {
       int_bi - BigInt::from(1)
@@ -1587,7 +1583,6 @@ fn floor_via_bigfloat(
 /// for non-exact arguments (Real, symbolic, complex), which fall through.
 fn exact_floor_ceil(arg: &Expr, is_floor: bool) -> Option<Expr> {
   use crate::functions::math_ast::{bigint_to_expr, expr_to_bigint};
-  use num_bigint::Sign;
   use num_traits::Zero;
   // Plain integers are already integral.
   if let Some(n) = expr_to_bigint(arg) {
@@ -1932,7 +1927,7 @@ pub(crate) fn f64_to_int_expr(v: f64) -> Expr {
   if v.abs() < i128::MAX as f64 {
     Expr::Integer(v as i128)
   } else if v.is_finite() {
-    match format!("{v:.0}").parse::<num_bigint::BigInt>() {
+    match format!("{v:.0}").parse::<BigInt>() {
       Ok(b) => Expr::BigInteger(b),
       Err(_) => Expr::Real(v),
     }
@@ -2019,7 +2014,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let rounded = quotient_f * a_val;
         if a_is_int
           && rounded.fract() == 0.0
-          && let Ok(b) = format!("{rounded:.0}").parse::<num_bigint::BigInt>()
+          && let Ok(b) = format!("{rounded:.0}").parse::<BigInt>()
         {
           return Ok(Expr::BigInteger(b));
         }
@@ -2203,17 +2198,16 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   // to the float branch and lose precision. Mirrors the
   // `((m % n) + n) % n` rule the small-integer path uses.
   let m_big = match m {
-    Expr::Integer(v) => Some(num_bigint::BigInt::from(*v)),
+    Expr::Integer(v) => Some(BigInt::from(*v)),
     Expr::BigInteger(v) => Some(v.clone()),
     _ => None,
   };
   let n_big = match n {
-    Expr::Integer(v) => Some(num_bigint::BigInt::from(*v)),
+    Expr::Integer(v) => Some(BigInt::from(*v)),
     Expr::BigInteger(v) => Some(v.clone()),
     _ => None,
   };
   if let (Some(mb), Some(nb)) = (m_big, n_big) {
-    use num_bigint::BigInt;
     use num_traits::Zero;
     if nb.is_zero() {
       crate::emit_message(&format!(
@@ -2569,7 +2563,6 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Exact arbitrary-precision path: if both args are Integer or
       // BigInteger, compute floor division without falling back to f64
       // (which loses precision for numbers that don't fit in 53 bits).
-      use num_bigint::BigInt;
       use num_traits::Zero;
       let as_bigint = |e: &Expr| -> Option<BigInt> {
         match e {
@@ -2589,8 +2582,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // quotient toward -infinity.
         let (mut q, r) = (&a / &b, &a % &b);
         if !r.is_zero()
-          && ((a.sign() != num_bigint::Sign::NoSign
-            && b.sign() != num_bigint::Sign::NoSign)
+          && ((a.sign() != Sign::NoSign && b.sign() != Sign::NoSign)
             && (a.sign() != b.sign()))
         {
           q -= 1;
@@ -2757,7 +2749,6 @@ fn emit_integer_exponent_ibase(b: &Expr) {
 /// IntegerExponent[n, b] - largest power of b that divides n
 /// IntegerExponent[n] - largest power of 2 that divides n
 pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use num_bigint::BigInt;
   use num_traits::Zero;
 
   if args.is_empty() || args.len() > 2 {
@@ -2812,7 +2803,7 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut count: i128 = 0;
   let mut val = n.clone();
-  if val.sign() == num_bigint::Sign::Minus {
+  if val.sign() == Sign::Minus {
     val = -val;
   }
   while !val.is_zero() && (&val % &base).is_zero() {
