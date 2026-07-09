@@ -875,6 +875,27 @@ mod big_integer {
     assert_eq!(interpret("SquareFreeQ[2.5]").unwrap(), "False");
   }
 
+  // A univariate polynomial is square-free when it has no repeated factor,
+  // i.e. gcd(p, p') is a constant. Verified against wolframscript.
+  #[test]
+  fn square_free_q_univariate_polynomial() {
+    assert_eq!(interpret("SquareFreeQ[x^2 - 1]").unwrap(), "True");
+    assert_eq!(interpret("SquareFreeQ[x^3 - x]").unwrap(), "True");
+    assert_eq!(interpret("SquareFreeQ[x^2 + 1]").unwrap(), "True");
+    assert_eq!(interpret("SquareFreeQ[x^2 - 2]").unwrap(), "True");
+    assert_eq!(interpret("SquareFreeQ[x^4 - 1]").unwrap(), "True");
+    // A bare variable and a monomial scaled by a constant are square-free.
+    assert_eq!(interpret("SquareFreeQ[x]").unwrap(), "True");
+    assert_eq!(interpret("SquareFreeQ[2 x]").unwrap(), "True");
+  }
+
+  #[test]
+  fn square_free_q_polynomial_with_repeated_factor() {
+    assert_eq!(interpret("SquareFreeQ[(x - 1)^2]").unwrap(), "False");
+    assert_eq!(interpret("SquareFreeQ[x^2 + 2 x + 1]").unwrap(), "False");
+    assert_eq!(interpret("SquareFreeQ[4 x^2 - 4 x + 1]").unwrap(), "False");
+  }
+
   #[test]
   fn odd_q_big_integer() {
     assert_eq!(interpret("OddQ[2^128 + 1]").unwrap(), "True");

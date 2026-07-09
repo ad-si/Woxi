@@ -1653,6 +1653,44 @@ fn is_squarefree_i128(n: i128) -> bool {
   true
 }
 
+/// SquareFreeQ for a univariate polynomial. In characteristic 0 a polynomial
+/// `p` is square-free exactly when `gcd(p, p')` is a constant (degree 0). Only
+/// polynomials in a single symbol are handled; `None` is returned for anything
+/// else (multivariate polynomials, rational or transcendental expressions),
+/// leaving the caller to return the call unevaluated.
+fn poly_square_free_q(expr: &Expr) -> Option<bool> {
+  use crate::evaluator::evaluate_expr_to_expr;
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
+  let call = |name: &str, args: Vec<Expr>| {
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    })
+    .ok()
+  };
+
+  // Restrict to a single symbol variable; multivariate PolynomialGCD is not
+  // reliable enough to build the square-free test on.
+  let vars_expr = call("Variables", vec![expr.clone()])?;
+  let Expr::List(vars) = &vars_expr else {
+    return None;
+  };
+  if vars.len() != 1 || !matches!(vars[0], Expr::Identifier(_)) {
+    return None;
+  }
+  let var = vars[0].clone();
+
+  // Must actually be a polynomial in that variable (excludes e.g. x + 1/x).
+  if !is_true(&call("PolynomialQ", vec![expr.clone(), var.clone()])?) {
+    return None;
+  }
+
+  let deriv = call("D", vec![expr.clone(), var.clone()])?;
+  let gcd = call("PolynomialGCD", vec![expr.clone(), deriv])?;
+  // Square-free iff the gcd carries no power of the variable.
+  Some(is_true(&call("FreeQ", vec![gcd, var])?))
+}
+
 pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1710,10 +1748,15 @@ pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(bool_expr(true))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "SquareFreeQ".to_string(),
-      args: args.to_vec().into(),
-    }),
+    // Univariate polynomials: square-free via gcd(p, p'). Falls back to
+    // unevaluated for multivariate/non-polynomial expressions.
+    other => match poly_square_free_q(other) {
+      Some(b) => Ok(bool_expr(b)),
+      None => Ok(Expr::FunctionCall {
+        name: "SquareFreeQ".to_string(),
+        args: args.to_vec().into(),
+      }),
+    },
   }
 }
 
