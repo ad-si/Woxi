@@ -553,6 +553,8 @@ function main() {
     /\bIndexGraph\[/,       // Returns Graph object (edge list vs SparseArray representation)
     /\bConnectedGraphComponents\[/, // Returns Graph objects (edge list vs SparseArray representation)
     /\bFindSpanningTree\[/, // Wolfram uses SparseArray internal Graph representation
+    /\bTransitiveReductionGraph\[/, // Returns Graph object (edge list vs SparseArray representation); CLI display Graph[<3>, <2>] matches
+    /\bTransitiveClosureGraph\[/, // Returns Graph object (edge list vs SparseArray representation); CLI display matches
     /\bMersennePrimeExponent\[/, // Woxi uses a lookup table; Wolfram computes primality of 2^p-1 which hangs for large indices
     /\bStationaryDistribution\[/, // Complex computation, Woxi keeps as inert wrapper
     /\bDatedUnit\[/,        // Version-specific evaluation behavior
