@@ -6238,16 +6238,18 @@ pub fn evaluate_function_call_ast_inner(
     for (i, v) in vertices.iter().enumerate() {
       idx.insert(expr_to_string(v), i);
     }
+    // Katz centrality solves x = alpha A^T x + beta, i.e. a vertex gains
+    // centrality from its in-neighbours. Edge u -> v therefore contributes to
+    // adj[v][u]; undirected edges contribute both ways.
     let mut adj = vec![vec![0.0_f64; n]; n];
     for e in edges.iter() {
-      if let Some((u, v, _directed)) =
-        crate::functions::graph::edge_endpoints(e)
+      if let Some((u, v, directed)) = crate::functions::graph::edge_endpoints(e)
         && let (Some(&i), Some(&j)) =
           (idx.get(&expr_to_string(&u)), idx.get(&expr_to_string(&v)))
       {
-        adj[i][j] += 1.0;
-        if i != j {
-          adj[j][i] += 1.0;
+        adj[j][i] += 1.0;
+        if !directed && i != j {
+          adj[i][j] += 1.0;
         }
       }
     }

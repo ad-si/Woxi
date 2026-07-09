@@ -4902,6 +4902,27 @@ mod katz_centrality {
       "{5/8, 5/8, 5/8, 5/8}"
     );
   }
+
+  // Katz gains centrality from in-neighbours, so directed edges matter: on a
+  // directed path each vertex accumulates alpha^k from k steps upstream.
+  #[test]
+  fn directed_uses_in_edges() {
+    assert_eq!(
+      interpret(
+        "Round[KatzCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 4}], 0.1], 10^-6]"
+      )
+      .unwrap(),
+      "{1, 11/10, 111/100, 1111/1000}"
+    );
+    // A shared target gains from both its in-neighbours.
+    assert_eq!(
+      interpret(
+        "Round[KatzCentrality[Graph[{1 -> 3, 2 -> 3, 3 -> 4}], 0.2], 10^-6]"
+      )
+      .unwrap(),
+      "{1, 7/5, 1, 32/25}"
+    );
+  }
 }
 
 mod pagerank_centrality {
