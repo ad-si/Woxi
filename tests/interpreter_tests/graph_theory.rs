@@ -2623,6 +2623,80 @@ mod vertex_component {
   }
 }
 
+mod vertex_in_out_component {
+  use super::*;
+
+  #[test]
+  fn out_component_follows_directed_edges() {
+    // Only vertices reachable from the seed along directed edges.
+    assert_eq!(
+      interpret(
+        "VertexOutComponent[Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 2}], 2]"
+      )
+      .unwrap(),
+      "{2, 3, 4}"
+    );
+    // Length-bounded: at most one step out.
+    assert_eq!(
+      interpret(
+        "VertexOutComponent[Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 2}], 2, 1]"
+      )
+      .unwrap(),
+      "{2, 3}"
+    );
+    // A plain directed chain: out-component of the middle is downstream only.
+    assert_eq!(
+      interpret("VertexOutComponent[Graph[{1 -> 2, 2 -> 3, 3 -> 4}], 3]")
+        .unwrap(),
+      "{3, 4}"
+    );
+    assert_eq!(
+      interpret("VertexOutComponent[Graph[{a -> b, b -> c}], a]").unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn in_component_follows_edges_backwards() {
+    assert_eq!(
+      interpret(
+        "VertexInComponent[Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 2}], 3]"
+      )
+      .unwrap(),
+      "{3, 2, 1, 4}"
+    );
+    assert_eq!(
+      interpret(
+        "VertexInComponent[Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 2}], 3, 1]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+    // Multiple seeds expand sequentially with shared visited state.
+    assert_eq!(
+      interpret(
+        "VertexInComponent[Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 2}], {1, 4}]"
+      )
+      .unwrap(),
+      "{1, 4, 3, 2}"
+    );
+  }
+
+  #[test]
+  fn undirected_edges_are_bidirectional() {
+    assert_eq!(
+      interpret("VertexOutComponent[Graph[{1 <-> 2, 2 <-> 3, 4 <-> 5}], 1]")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("VertexInComponent[Graph[{1 <-> 2, 2 <-> 3, 4 <-> 5}], 1]")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}
+
 mod weighted_adjacency_graph {
   use super::*;
 

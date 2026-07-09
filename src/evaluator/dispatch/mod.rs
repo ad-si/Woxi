@@ -6036,45 +6036,17 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
-  // VertexOutComponent[graph, v] — vertices reachable from v
-  if name == "VertexOutComponent"
-    && args.len() == 2
-    && let Expr::FunctionCall {
-      name: gname,
-      args: gargs,
-    } = &args[0]
-    && gname == "Graph"
-    && gargs.len() >= 2
-    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  // VertexOutComponent[graph, v(, k)] — vertices reachable from v (following
+  // directed edges forwards). VertexInComponent[graph, v(, k)] — vertices
+  // that can reach v (following them backwards).
+  if (name == "VertexOutComponent" || name == "VertexInComponent")
+    && (args.len() == 2 || args.len() == 3)
   {
-    let vertex_strs: Vec<String> =
-      vertices.iter().map(expr_to_string).collect();
-    let target = expr_to_string(&args[1]);
-    if let Some(start) = vertex_strs.iter().position(|v| v == &target) {
-      let (pg_graph, _) = build_undirected_graph(vertices, edges);
-      // BFS from start, visiting neighbors in sorted index order for deterministic output
-      let n = vertices.len();
-      let mut visited = vec![false; n];
-      let mut queue = std::collections::VecDeque::new();
-      visited[start] = true;
-      queue.push_back(start);
-      let mut component = Vec::new();
-      while let Some(v) = queue.pop_front() {
-        component.push(vertices[v].clone());
-        let mut nbrs: Vec<usize> = pg_graph
-          .neighbors(petgraph::graph::NodeIndex::new(v))
-          .map(|ni| ni.index())
-          .collect();
-        nbrs.sort_unstable();
-        for u in nbrs {
-          if !visited[u] {
-            visited[u] = true;
-            queue.push_back(u);
-          }
-        }
-      }
-      return Ok(Expr::List(component.into()));
-    }
+    return crate::functions::graph::vertex_reach_component_ast(
+      name,
+      args,
+      name == "VertexOutComponent",
+    );
   }
 
   // ClosenessCentrality[graph] — closeness centrality for each vertex

@@ -1344,6 +1344,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FindClique" => Some((1, 3)),
     "FindIndependentVertexSet" => Some((1, 2)),
     "VertexComponent" => Some((2, 2)),
+    "VertexInComponent" => Some((2, 3)),
+    "VertexOutComponent" => Some((2, 3)),
     "WeightedAdjacencyGraph" => Some((1, 3)),
     "FindMinimumCostFlow" => Some((2, 4)),
     "NearestNeighborGraph" => Some((1, 3)),

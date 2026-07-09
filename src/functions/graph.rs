@@ -2865,6 +2865,132 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// Shared engine for VertexInComponent / VertexOutComponent.
+/// `out == true` follows directed edges forwards (vertices reachable *from*
+/// the seeds); `out == false` follows them backwards (vertices that can
+/// *reach* the seeds). Undirected edges are bidirectional either way. An
+/// optional integer third argument bounds the path length. Vertices come out
+/// in seed-first BFS order with neighbours visited in vertex-list order.
+pub fn vertex_reach_component_ast(
+  name: &str,
+  args: &[Expr],
+  out: bool,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() < 2 || args.len() > 3 {
+    return Ok(unevaluated());
+  }
+  // Path-length bound (integer k). The exact-length `{k}` form is not handled.
+  let max_depth: usize = match args.get(2) {
+    None => usize::MAX,
+    Some(Expr::Integer(k)) if *k >= 0 => *k as usize,
+    Some(_) => return Ok(unevaluated()),
+  };
+
+  let graph = match &args[0] {
+    Expr::List(_) => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![args[0].clone()].into(),
+      })?
+    }
+    other => other.clone(),
+  };
+  let (vertices, edges) = match &graph {
+    Expr::FunctionCall {
+      name: g,
+      args: gargs,
+    } if g == "Graph" && gargs.len() >= 2 => match (&gargs[0], &gargs[1]) {
+      (Expr::List(v), Expr::List(e)) => (v.clone(), e.clone()),
+      _ => return Ok(unevaluated()),
+    },
+    _ => return Ok(unevaluated()),
+  };
+
+  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+  let n = vertices.len();
+  let mut nbrs: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for edge in edges.iter() {
+    if let Expr::FunctionCall {
+      name: en,
+      args: eargs,
+    } = edge
+      && (en == "DirectedEdge" || en == "UndirectedEdge")
+      && eargs.len() == 2
+      && let (Some(&u), Some(&v)) =
+        (index.get(&key(&eargs[0])), index.get(&key(&eargs[1])))
+    {
+      // Forward search follows u -> v; backward search follows v -> u.
+      let (from, to) = if out { (u, v) } else { (v, u) };
+      nbrs[from].push(to);
+      if en == "UndirectedEdge" {
+        nbrs[to].push(from);
+      }
+    } else {
+      return Ok(unevaluated());
+    }
+  }
+  for list in &mut nbrs {
+    list.sort_unstable();
+    list.dedup();
+  }
+
+  let seeds: Vec<&Expr> = match &args[1] {
+    Expr::List(items) => items.iter().collect(),
+    single => vec![single],
+  };
+  let mut seed_indices = Vec::with_capacity(seeds.len());
+  for seed in &seeds {
+    match index.get(&key(seed)) {
+      Some(&i) => seed_indices.push(i),
+      None => {
+        crate::emit_message(&format!(
+          "{}::inv: The argument {} in {} is not a valid vertex.",
+          name,
+          key(seed),
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: name.to_string(),
+            args: vec![graph.clone(), args[1].clone()].into(),
+          })
+        ));
+        return Ok(unevaluated());
+      }
+    }
+  }
+
+  let mut visited = vec![false; n];
+  let mut order: Vec<usize> = Vec::new();
+  for &start in &seed_indices {
+    if visited[start] {
+      continue;
+    }
+    visited[start] = true;
+    let mut queue = std::collections::VecDeque::from([(start, 0usize)]);
+    while let Some((v, depth)) = queue.pop_front() {
+      order.push(v);
+      if depth < max_depth {
+        for &u in &nbrs[v] {
+          if !visited[u] {
+            visited[u] = true;
+            queue.push_back((u, depth + 1));
+          }
+        }
+      }
+    }
+  }
+  Ok(Expr::List(
+    order.into_iter().map(|i| vertices[i].clone()).collect(),
+  ))
+}
+
 /// WeightedAdjacencyGraph[wmat] / WeightedAdjacencyGraph[{v...}, wmat]
 /// - graph from a weight matrix, with Infinity marking absent edges
 /// (zero is a real weight). Symmetric matrices give undirected graphs
