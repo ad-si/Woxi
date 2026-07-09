@@ -5037,6 +5037,19 @@ mod radiality_centrality {
     );
   }
 
+  // Directed distances: on a directed path the sink has radiality 0 and the
+  // source is most radial (D is the largest finite directed distance).
+  #[test]
+  fn directed_chain() {
+    assert_eq!(
+      interpret(
+        "Round[RadialityCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]], 10^-6]"
+      )
+      .unwrap(),
+      "{666667/1000000, 138889/250000, 333333/1000000, 0}"
+    );
+  }
+
   #[test]
   fn regular_graph_uniform() {
     // Every vertex of a cycle has the same radiality.

@@ -8052,6 +8052,28 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // Directed closeness uses (#reachable) / (sum of directed distances). On a
+  // directed path the sink reaches nothing (0); undirected behaviour unchanged.
+  #[test]
+  fn closeness_centrality_directed() {
+    assert_eq!(
+      interpret("ClosenessCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]")
+        .unwrap(),
+      "{0.5, 0.6666666666666666, 1., 0.}"
+    );
+    // Strongly connected cycle.
+    assert_eq!(
+      interpret("ClosenessCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]")
+        .unwrap(),
+      "{0.6666666666666666, 0.6666666666666666, 0.6666666666666666}"
+    );
+    // Disconnected: each vertex reaches only its neighbour.
+    assert_eq!(
+      interpret("ClosenessCentrality[Graph[{1 <-> 2, 3 <-> 4}]]").unwrap(),
+      "{1., 1., 1., 1.}"
+    );
+  }
+
   // EccentricityCentrality: 1 / vertex eccentricity, in vertex-list order.
   #[test]
   fn eccentricity_centrality_path3() {

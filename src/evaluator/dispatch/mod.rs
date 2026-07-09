@@ -6108,21 +6108,19 @@ pub fn evaluate_function_call_ast_inner(
     && gargs.len() >= 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
-    let n = vertices.len();
-    let (pg_graph, _pg_idx) = build_undirected_graph(vertices, edges);
-    // Closeness centrality = (n-1) / sum of distances to all other vertices
-    // ClosenessCentrality returns machine precision floats
-    let centralities: Vec<Expr> = (0..n)
-      .map(|start| {
-        let dists = bfs_all_dists_pg(
-          &pg_graph,
-          petgraph::graph::NodeIndex::new(start),
-          n,
-        );
-        let total_dist: i128 = dists.iter().filter(|&&d| d > 0).sum();
-        if total_dist > 0 {
-          let val = (n as f64 - 1.0) / (total_dist as f64);
-          Expr::Real(val)
+    // Closeness centrality of v = (number of vertices reachable from v) /
+    // (sum of directed distances to them); 0 when nothing is reachable. For a
+    // connected undirected graph this reduces to (n-1) / total distance.
+    let all_dists = graph_directed_distances(vertices, edges);
+    let centralities: Vec<Expr> = all_dists
+      .iter()
+      .map(|dists| {
+        let reachable: Vec<i128> =
+          dists.iter().filter(|&&d| d > 0).copied().collect();
+        let count = reachable.len();
+        let sum: i128 = reachable.iter().sum();
+        if count > 0 {
+          Expr::Real(count as f64 / sum as f64)
         } else {
           Expr::Real(0.0)
         }
@@ -6133,8 +6131,8 @@ pub fn evaluate_function_call_ast_inner(
 
   // RadialityCentrality[graph] — for each vertex v,
   //   (sum over reachable w of (D + 1 - d(v, w))) / ((n - 1) * D)
-  // where D is the graph diameter (largest finite shortest-path distance).
-  // Distances are undirected, matching the other centrality measures.
+  // where D is the largest finite directed shortest-path distance. Distances
+  // honour edge direction (undirected edges point both ways).
   if name == "RadialityCentrality"
     && args.len() == 1
     && let Expr::FunctionCall {
@@ -6146,12 +6144,7 @@ pub fn evaluate_function_call_ast_inner(
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let n = vertices.len();
-    let (pg_graph, _) = build_undirected_graph(vertices, edges);
-    let all_dists: Vec<Vec<i128>> = (0..n)
-      .map(|s| {
-        bfs_all_dists_pg(&pg_graph, petgraph::graph::NodeIndex::new(s), n)
-      })
-      .collect();
+    let all_dists = graph_directed_distances(vertices, edges);
     // Diameter = largest finite (positive) shortest-path distance.
     let diameter = all_dists
       .iter()
@@ -11000,18 +10993,51 @@ fn is_connected_pg(graph: &petgraph::graph::UnGraph<usize, ()>) -> bool {
 }
 
 /// BFS from start vertex using petgraph, return all distances.
-fn bfs_all_dists_pg(
-  graph: &petgraph::graph::UnGraph<usize, ()>,
-  start: petgraph::graph::NodeIndex,
-  n: usize,
-) -> Vec<i128> {
-  use petgraph::algo::dijkstra;
-  let dists = dijkstra(graph, start, None, |_| 1i128);
-  let mut result = vec![-1i128; n];
-  for (node, dist) in dists {
-    result[node.index()] = dist;
+/// All-pairs shortest-path distances honouring edge direction: directed edges
+/// only point forwards, undirected edges point both ways. `result[s][t]` is
+/// the hop distance from `s` to `t`, `0` for `s == t`, and `-1` when `t` is
+/// unreachable from `s`.
+fn graph_directed_distances(
+  vertices: &[Expr],
+  edges: &[Expr],
+) -> Vec<Vec<i128>> {
+  let n = vertices.len();
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (expr_to_string(v), i))
+    .collect();
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for edge in edges.iter() {
+    if let Expr::FunctionCall { name: en, args: ea } = edge
+      && ea.len() == 2
+      && let (Some(&u), Some(&v)) = (
+        index.get(&expr_to_string(&ea[0])),
+        index.get(&expr_to_string(&ea[1])),
+      )
+    {
+      adj[u].push(v);
+      if en == "UndirectedEdge" {
+        adj[v].push(u);
+      }
+    }
   }
-  result
+  (0..n)
+    .map(|s| {
+      let mut dist = vec![-1i128; n];
+      dist[s] = 0;
+      let mut q = std::collections::VecDeque::from([s]);
+      while let Some(u) = q.pop_front() {
+        for &w in &adj[u] {
+          if dist[w] < 0 {
+            dist[w] = dist[u] + 1;
+            q.push_back(w);
+          }
+        }
+      }
+      dist
+    })
+    .collect()
 }
 
 /// Build a rational or integer Expr from (num, den).
