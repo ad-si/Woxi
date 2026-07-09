@@ -3519,22 +3519,65 @@ pub fn connectivity_ast(
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
   let n = vkeys.len();
   let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(edge_exprs.len());
+  // Directed arcs: a directed edge a -> b is one arc; an undirected edge is
+  // two. Only used when the graph actually contains a directed edge.
+  let mut arcs: Vec<(usize, usize)> = Vec::new();
+  let mut directed = false;
   for e in edge_exprs.iter() {
     match e {
       Expr::FunctionCall {
         name: ename,
         args: eargs,
-      } if ename == "UndirectedEdge" && eargs.len() == 2 => {
+      } if (ename == "UndirectedEdge" || ename == "DirectedEdge")
+        && eargs.len() == 2 =>
+      {
         let a = vkeys.iter().position(|k| *k == expr_to_string(&eargs[0]));
         let b = vkeys.iter().position(|k| *k == expr_to_string(&eargs[1]));
         match (a, b) {
-          (Some(a), Some(b)) => pairs.push((a, b)),
+          (Some(a), Some(b)) => {
+            pairs.push((a, b));
+            if ename == "DirectedEdge" {
+              directed = true;
+              arcs.push((a, b));
+            } else {
+              arcs.push((a, b));
+              arcs.push((b, a));
+            }
+          }
           _ => return Ok(unevaluated()),
         }
       }
       _ => return Ok(unevaluated()),
     }
   }
+
+  // Directed graphs: only EdgeConnectivity[g] has a supported directed
+  // definition here — the smallest s-t edge cut over all ordered pairs (0 when
+  // the graph is not strongly connected). Other forms stay unevaluated.
+  if directed {
+    if name == "EdgeConnectivity" && args.len() == 1 {
+      if n <= 1 {
+        return Ok(unevaluated());
+      }
+      let mut min_flow = i64::MAX;
+      for s in 0..n {
+        for t in 0..n {
+          if s != t {
+            let mut cap = vec![vec![0i64; n]; n];
+            for &(a, b) in &arcs {
+              if a != b {
+                cap[a][b] += 1;
+              }
+            }
+            min_flow = min_flow.min(bfs_max_flow(&mut cap, s, t));
+          }
+        }
+      }
+      return Ok(Expr::Integer(min_flow as i128));
+    }
+    return Ok(unevaluated());
+  }
+
   let adjacent = |s: usize, t: usize| {
     pairs
       .iter()

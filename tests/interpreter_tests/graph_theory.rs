@@ -3085,6 +3085,30 @@ mod connectivity {
     );
   }
 
+  // Directed edge connectivity is the smallest s-t edge cut over all ordered
+  // vertex pairs (0 when the graph is not strongly connected).
+  #[test]
+  fn edge_connectivity_directed() {
+    assert_eq!(
+      interpret("EdgeConnectivity[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "1"
+    );
+    // The complete digraph on three vertices has two arc-disjoint s-t paths.
+    assert_eq!(
+      interpret(
+        "EdgeConnectivity[Graph[{1 -> 2, 2 -> 1, 1 -> 3, 2 -> 3, 3 -> 1, \
+         3 -> 2}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    // A directed path is not strongly connected.
+    assert_eq!(
+      interpret("EdgeConnectivity[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]").unwrap(),
+      "0"
+    );
+  }
+
   #[test]
   fn vertex_connectivity_basic() {
     assert_eq!(
