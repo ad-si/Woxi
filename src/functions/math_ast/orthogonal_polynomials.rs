@@ -352,7 +352,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x_f = try_eval_to_f64(&args[3]);
 
   if let (Some(a), Some(b), Some(x)) = (a_f, b_f, x_f) {
-    let result = jacobi_p_f64(n, a, b, x);
+    let result = jacobi_p_eval_f64(n, a, b, x);
     return Ok(Expr::Real(result));
   }
 
@@ -392,7 +392,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Evaluate the Jacobi polynomial P_n^{(a,b)}(x) numerically using
 /// the three-term recurrence relation.
-pub fn jacobi_p_f64(n: usize, a: f64, b: f64, x: f64) -> f64 {
+fn jacobi_p_eval_f64(n: usize, a: f64, b: f64, x: f64) -> f64 {
   if n == 0 {
     return 1.0;
   }
@@ -578,7 +578,9 @@ fn associated_legendre_p_ast(
     _ => {
       // Numeric evaluation fallback when no symbol is available
       if let Some(xf) = try_eval_to_f64(x_expr) {
-        return Ok(Expr::Real(associated_legendre_f64(n as i64, m as i64, xf)));
+        return Ok(Expr::Real(associated_legendre_eval_f64(
+          n as i64, m as i64, xf,
+        )));
       }
       let placeholder = "$LegendrePAssocDummy$".to_string();
       (placeholder.clone(), Expr::Identifier(placeholder), true)
@@ -687,10 +689,7 @@ fn associated_legendre_p_ast(
 }
 
 /// Evaluate P_n(p/q) as a rational number using the recurrence
-pub fn legendre_eval_rational(
-  n: usize,
-  x: (BigInt, BigInt),
-) -> (BigInt, BigInt) {
+fn legendre_eval_rational(n: usize, x: (BigInt, BigInt)) -> (BigInt, BigInt) {
   // BigInt throughout: the former i128 recurrence multiplied unchecked and
   // panicked / produced wrong values for moderate n and x (LegendreP[20, 100]).
   let (xn, xd) = x;
@@ -733,7 +732,7 @@ pub fn legendre_eval_rational(
 }
 
 /// Evaluate P_n(x) numerically using the recurrence
-pub fn legendre_eval_f64(n: usize, x: f64) -> f64 {
+fn legendre_eval_f64(n: usize, x: f64) -> f64 {
   if n == 0 {
     return 1.0;
   }
@@ -754,7 +753,7 @@ pub fn legendre_eval_f64(n: usize, x: f64) -> f64 {
 
 /// Compute the associated Legendre polynomial P_l^m(x) numerically.
 /// Uses the recurrence relation starting from P_m^m and P_{m+1}^m.
-pub fn associated_legendre_f64(l: i64, m: i64, x: f64) -> f64 {
+fn associated_legendre_eval_f64(l: i64, m: i64, x: f64) -> f64 {
   let m_abs = m.unsigned_abs() as usize;
   let l = l as usize;
 
@@ -948,7 +947,7 @@ pub fn spherical_harmonic_y_ast(
 
     // Associated Legendre polynomial P_l^m(cos θ). Our P_l^m already
     // includes the Condon–Shortley (−1)^m phase, so no extra sign here.
-    let plm = associated_legendre_f64(l as i64, m as i64, cos_theta);
+    let plm = associated_legendre_eval_f64(l as i64, m as i64, cos_theta);
 
     // Y_l^m = norm * P_l^m(cos θ) * e^(imφ)
     let re = norm * plm * (m as f64 * phi).cos();
@@ -1383,7 +1382,7 @@ fn extract_largest_square(n: i128) -> (i128, i128) {
 }
 
 /// Build the symbolic Legendre polynomial expression for P_n(x)
-pub fn legendre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+fn legendre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   if n == 0 {
     return Some(Expr::Integer(1));
   }
@@ -1467,7 +1466,7 @@ pub fn legendre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
 
 /// Compute Legendre polynomial coefficients using the recurrence relation.
 /// Returns coefficients [a_0, a_1, ..., a_n] as (numerator, denominator) pairs.
-pub fn legendre_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
+fn legendre_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
   if n == 0 {
     return Some(vec![(1, 1)]);
   }
@@ -1525,7 +1524,7 @@ pub fn legendre_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
   Some(curr)
 }
 
-pub fn lcm_i128(a: i128, b: i128) -> i128 {
+fn lcm_i128(a: i128, b: i128) -> i128 {
   let g = gcd(a.abs(), b.abs());
   if g == 0 {
     return 0;
@@ -1940,7 +1939,7 @@ fn legendre_p_value_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
 /// Evaluate Q_n(x) numerically using recurrence
 /// Q_0(x) = (1/2)*ln((1+x)/(1-x)), Q_1(x) = x*Q_0(x) - 1
 /// (n+1)*Q_{n+1}(x) = (2n+1)*x*Q_n(x) - n*Q_{n-1}(x)
-pub fn legendre_q_eval_f64(n: usize, x: f64) -> f64 {
+fn legendre_q_eval_f64(n: usize, x: f64) -> f64 {
   let q0 = 0.5 * ((1.0 + x) / (1.0 - x)).ln();
   if n == 0 {
     return q0;
@@ -2178,7 +2177,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[1] {
     Expr::Integer(x) => {
       let (num, den) =
-        chebyshev_t_eval_rational_big(n, (BigInt::from(*x), BigInt::from(1)));
+        chebyshev_t_eval_rational(n, (BigInt::from(*x), BigInt::from(1)));
       Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
@@ -2187,10 +2186,8 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
       {
-        let (num, den) = chebyshev_t_eval_rational_big(
-          n,
-          (BigInt::from(*p), BigInt::from(*q)),
-        );
+        let (num, den) =
+          chebyshev_t_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
         Ok(make_rational_expr(num, den))
       } else {
         Ok(Expr::FunctionCall {
@@ -2216,50 +2213,11 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Evaluate T_n(p/q) as a rational number using the recurrence
 /// T_0(x) = 1, T_1(x) = x, T_{n+1}(x) = 2x*T_n(x) - T_{n-1}(x)
-pub fn chebyshev_t_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
-  let (xn, xd) = x;
-  if n == 0 {
-    return (1, 1);
-  }
-  if n == 1 {
-    return (xn, xd);
-  }
-
-  let mut tm1 = (1i128, 1i128); // T_0
-  let mut t = (xn, xd); // T_1
-
-  for _ in 2..=n {
-    // T_{k} = 2x * T_{k-1} - T_{k-2}
-    // 2x * T_{k-1}: (2 * xn * t.0, xd * t.1)
-    let a_n = 2i128
-      .checked_mul(xn)
-      .and_then(|v| v.checked_mul(t.0))
-      .unwrap_or(0);
-    let a_d = xd.checked_mul(t.1).unwrap_or(1);
-
-    // a - tm1: (a_n * tm1.1 - tm1.0 * a_d, a_d * tm1.1)
-    let new_n = a_n
-      .checked_mul(tm1.1)
-      .and_then(|v| v.checked_sub(tm1.0.checked_mul(a_d)?))
-      .unwrap_or(0);
-    let new_d = a_d.checked_mul(tm1.1).unwrap_or(1);
-
-    let g = gcd(new_n.abs(), new_d.abs());
-    tm1 = t;
-    t = if g > 0 {
-      (new_n / g, new_d / g)
-    } else {
-      (new_n, new_d)
-    };
-  }
-  t
-}
-
-/// BigInt version of [`chebyshev_t_eval_rational`]: the i128 recurrence silently
-/// substituted 0 on overflow (`checked_mul(...).unwrap_or(0)`), corrupting e.g.
-/// ChebyshevT[20, 100] (whose value ≈ 5×10^45 exceeds i128). This computes the
-/// exact rational T_n(p/q) with no overflow.
-pub fn chebyshev_t_eval_rational_big(
+/// BigInt version: the i128 recurrence silently substituted 0
+/// on overflow (`checked_mul(...).unwrap_or(0)`), corrupting e.g.
+/// ChebyshevT[20, 100] (whose value ≈ 5×10^45 exceeds i128). This
+/// computes the exact rational T_n(p/q) with no overflow.
+fn chebyshev_t_eval_rational(
   n: usize,
   x: (BigInt, BigInt),
 ) -> (BigInt, BigInt) {
@@ -2290,7 +2248,7 @@ pub fn chebyshev_t_eval_rational_big(
 }
 
 /// Evaluate T_n(x) numerically
-pub fn chebyshev_t_eval_f64(n: usize, x: f64) -> f64 {
+fn chebyshev_t_eval_f64(n: usize, x: f64) -> f64 {
   if n == 0 {
     return 1.0;
   }
@@ -2310,7 +2268,7 @@ pub fn chebyshev_t_eval_f64(n: usize, x: f64) -> f64 {
 
 /// Build symbolic Chebyshev polynomial T_n(x)
 /// T_n has coefficients that can be computed via recurrence
-pub fn chebyshev_t_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+fn chebyshev_t_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   // Compute coefficients: T_n(x) = Σ c_k x^k
   let coeffs = chebyshev_t_coefficients(n)?;
 
@@ -2371,7 +2329,7 @@ pub fn chebyshev_t_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
 
 /// Compute Chebyshev T coefficients as (numerator, denominator) pairs
 /// T_n(x) = Σ c_k x^k where all c_k are integers (denom = 1)
-pub fn chebyshev_t_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
+fn chebyshev_t_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
   if n == 0 {
     return Some(vec![(1, 1)]);
   }
@@ -2449,7 +2407,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[1] {
     Expr::Integer(x) => {
       let (num, den) =
-        chebyshev_u_eval_rational_big(n, (BigInt::from(*x), BigInt::from(1)));
+        chebyshev_u_eval_rational(n, (BigInt::from(*x), BigInt::from(1)));
       Ok(make_rational_expr(num, den))
     }
     Expr::FunctionCall {
@@ -2458,10 +2416,8 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if name == "Rational" && rat_args.len() == 2 => {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
       {
-        let (num, den) = chebyshev_u_eval_rational_big(
-          n,
-          (BigInt::from(*p), BigInt::from(*q)),
-        );
+        let (num, den) =
+          chebyshev_u_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
         Ok(make_rational_expr(num, den))
       } else {
         Ok(Expr::FunctionCall {
@@ -2486,46 +2442,9 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Evaluate U_n(p/q) as a rational number
 /// U_0(x) = 1, U_1(x) = 2x, U_{n+1}(x) = 2x*U_n(x) - U_{n-1}(x)
-pub fn chebyshev_u_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
-  let (xn, xd) = x;
-  if n == 0 {
-    return (1, 1);
-  }
-  if n == 1 {
-    return (2 * xn, xd);
-  }
-
-  let mut um1 = (1i128, 1i128); // U_0
-  let mut u = (2 * xn, xd); // U_1
-
-  for _ in 2..=n {
-    // U_{k} = 2x * U_{k-1} - U_{k-2}
-    let a_n = 2i128
-      .checked_mul(xn)
-      .and_then(|v| v.checked_mul(u.0))
-      .unwrap_or(0);
-    let a_d = xd.checked_mul(u.1).unwrap_or(1);
-
-    let new_n = a_n
-      .checked_mul(um1.1)
-      .and_then(|v| v.checked_sub(um1.0.checked_mul(a_d)?))
-      .unwrap_or(0);
-    let new_d = a_d.checked_mul(um1.1).unwrap_or(1);
-
-    let g = gcd(new_n.abs(), new_d.abs());
-    um1 = u;
-    u = if g > 0 {
-      (new_n / g, new_d / g)
-    } else {
-      (new_n, new_d)
-    };
-  }
-  u
-}
-
-/// BigInt version of [`chebyshev_u_eval_rational`] (see
-/// [`chebyshev_t_eval_rational_big`] — same i128 overflow-to-0 corruption).
-pub fn chebyshev_u_eval_rational_big(
+/// BigInt version: see [`chebyshev_u_eval_rational`]
+/// — same i128 overflow-to-0 corruption).
+fn chebyshev_u_eval_rational(
   n: usize,
   x: (BigInt, BigInt),
 ) -> (BigInt, BigInt) {
@@ -2556,7 +2475,7 @@ pub fn chebyshev_u_eval_rational_big(
 }
 
 /// Evaluate U_n(x) numerically
-pub fn chebyshev_u_eval_f64(n: usize, x: f64) -> f64 {
+fn chebyshev_u_eval_f64(n: usize, x: f64) -> f64 {
   if n == 0 {
     return 1.0;
   }
@@ -2575,7 +2494,7 @@ pub fn chebyshev_u_eval_f64(n: usize, x: f64) -> f64 {
 }
 
 /// Build symbolic Chebyshev U polynomial
-pub fn chebyshev_u_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+fn chebyshev_u_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   let coeffs = chebyshev_u_coefficients(n)?;
 
   let mut terms: Vec<Expr> = Vec::new();
@@ -2633,7 +2552,7 @@ pub fn chebyshev_u_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
 
 /// Compute Chebyshev U coefficients
 /// U_0 = [1], U_1 = [0, 2], U_{n+1} = 2x*U_n - U_{n-1}
-pub fn chebyshev_u_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
+fn chebyshev_u_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
   if n == 0 {
     return Some(vec![(1, 1)]);
   }
@@ -2828,7 +2747,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Evaluate Gegenbauer C_n^lambda(p/q) as rational
 /// C_0^λ = 1, C_1^λ = 2λx, C_{k+1}^λ = (2(k+λ)x C_k^λ - (k+2λ-1) C_{k-1}^λ) / (k+1)
-pub fn gegenbauer_eval_rational(
+fn gegenbauer_eval_rational(
   n: usize,
   lam: (BigInt, BigInt),
   x: (BigInt, BigInt),
@@ -3024,7 +2943,7 @@ fn gegenbauer_c_complex(
 }
 
 /// Evaluate Gegenbauer C_n^lambda(x) numerically
-pub fn gegenbauer_eval_f64(n: usize, lam: f64, x: f64) -> f64 {
+fn gegenbauer_eval_f64(n: usize, lam: f64, x: f64) -> f64 {
   if n == 0 {
     return 1.0;
   }
@@ -3045,7 +2964,7 @@ pub fn gegenbauer_eval_f64(n: usize, lam: f64, x: f64) -> f64 {
 }
 
 /// Build symbolic Gegenbauer polynomial
-pub fn gegenbauer_polynomial_symbolic(
+fn gegenbauer_polynomial_symbolic(
   n: usize,
   lam: (i128, i128),
   x: &Expr,
@@ -3116,7 +3035,7 @@ pub fn gegenbauer_polynomial_symbolic(
 }
 
 /// Compute Gegenbauer polynomial coefficients as (numerator, denominator) pairs
-pub fn gegenbauer_coefficients(
+fn gegenbauer_coefficients(
   n: usize,
   lam: (i128, i128),
 ) -> Option<Vec<(i128, i128)>> {
@@ -3479,10 +3398,7 @@ fn generalized_laguerre_f64(n: usize, a: f64, x: f64) -> f64 {
 /// Evaluate L_n(p/q) using recurrence. BigInt throughout: the i128 version
 /// silently substituted 0 on overflow (`checked_mul(...).unwrap_or(0)`), so
 /// LaguerreL[30, 100] returned 0 instead of ≈ -2.4×10^38.
-pub fn laguerre_eval_rational(
-  n: usize,
-  x: (BigInt, BigInt),
-) -> (BigInt, BigInt) {
+fn laguerre_eval_rational(n: usize, x: (BigInt, BigInt)) -> (BigInt, BigInt) {
   let (xn, xd) = x;
   if n == 0 {
     return (BigInt::from(1), BigInt::from(1));
@@ -3521,7 +3437,7 @@ pub fn laguerre_eval_rational(
 }
 
 /// Evaluate L_n(x) numerically
-pub fn laguerre_eval_f64(n: usize, x: f64) -> f64 {
+fn laguerre_eval_f64(n: usize, x: f64) -> f64 {
   if n == 0 {
     return 1.0;
   }
@@ -3542,7 +3458,7 @@ pub fn laguerre_eval_f64(n: usize, x: f64) -> f64 {
 
 /// Build symbolic Laguerre polynomial L_n(x)
 /// Output as (c_0 + c_1*x + c_2*x^2 + ...) / n!
-pub fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   use num_traits::Zero;
   let (n_fact, coeffs) = laguerre_scaled_coefficients(n);
   let mut terms: Vec<Expr> = Vec::new();
@@ -3755,7 +3671,7 @@ fn is_fully_numeric_arg(e: &Expr) -> bool {
 /// Evaluate H_n(x) at an integer x exactly. Uses BigInt: the i128 version
 /// panicked with "attempt to multiply with overflow" for moderate n and x
 /// (e.g. HermiteH[20, 100] ≈ 10^39).
-pub fn hermite_eval_big(n: usize, x: &BigInt) -> BigInt {
+fn hermite_eval_big(n: usize, x: &BigInt) -> BigInt {
   if n == 0 {
     return BigInt::from(1);
   }
@@ -3773,7 +3689,7 @@ pub fn hermite_eval_big(n: usize, x: &BigInt) -> BigInt {
 }
 
 /// Evaluate H_n(x) numerically
-pub fn hermite_eval_f64(n: usize, x: f64) -> f64 {
+fn hermite_eval_f64(n: usize, x: f64) -> f64 {
   if n == 0 {
     return 1.0;
   }
@@ -3791,7 +3707,7 @@ pub fn hermite_eval_f64(n: usize, x: f64) -> f64 {
 }
 
 /// Build symbolic Hermite polynomial using coefficient recurrence
-pub fn hermite_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+fn hermite_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   let coeffs = hermite_coefficients(n)?;
 
   let mut terms: Vec<Expr> = Vec::new();
@@ -3846,7 +3762,7 @@ pub fn hermite_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
 }
 
 /// Compute Hermite polynomial coefficients H_n(x) = Σ c_k x^k
-pub fn hermite_coefficients(n: usize) -> Option<Vec<i128>> {
+fn hermite_coefficients(n: usize) -> Option<Vec<i128>> {
   if n == 0 {
     return Some(vec![1]);
   }
