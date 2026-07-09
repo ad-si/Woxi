@@ -286,36 +286,21 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(wrap(Vec::new()));
   }
 
-  // Try numeric accumulation first
-  let all_numeric = items.iter().all(|item| expr_to_f64(item).is_some());
-
-  if all_numeric {
-    let has_real = items.iter().any(|item| matches!(item, Expr::Real(_)));
-    let mut sum = 0.0;
-    let mut results = Vec::new();
-    for item in items {
-      sum += expr_to_f64(item).unwrap();
-      if has_real {
-        results.push(Expr::Real(sum));
-      } else {
-        results.push(f64_to_expr(sum));
-      }
-    }
-    Ok(wrap(results))
-  } else {
-    // Symbolic accumulation using Plus
-    let mut results = Vec::new();
-    let mut running_sum = items[0].clone();
+  // Accumulate via Plus so each partial sum keeps exact arithmetic and is
+  // promoted element-by-element: a prefix summing only integers stays an
+  // integer, and a Real (or Rational) only affects the sums it enters —
+  // matching Wolfram's Accumulate[{4, -50, 20.0, 12.6}] = {4, -46, -26., -13.4}.
+  let mut results = Vec::new();
+  let mut running_sum = items[0].clone();
+  results.push(running_sum.clone());
+  for item in &items[1..] {
+    running_sum = crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[running_sum, item.clone()],
+    )?;
     results.push(running_sum.clone());
-    for item in &items[1..] {
-      running_sum = crate::evaluator::evaluate_function_call_ast(
-        "Plus",
-        &[running_sum, item.clone()],
-      )?;
-      results.push(running_sum.clone());
-    }
-    Ok(wrap(results))
   }
+  Ok(wrap(results))
 }
 
 /// AST-based Differences: successive differences.

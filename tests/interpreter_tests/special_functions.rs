@@ -1762,6 +1762,21 @@ mod discriminant {
   }
 
   #[test]
+  fn degree_zero_constant() {
+    // Regression (diff-fuzz): the resultant formula does not apply when the
+    // polynomial has degree 0 (p' = 0). The root-product form leaves
+    // a_0^(2n-2) = a_0^(-2); the zero polynomial is special-cased to 0.
+    assert_eq!(interpret("Discriminant[3, x]").unwrap(), "1/9");
+    assert_eq!(interpret("Discriminant[1/2, x]").unwrap(), "4");
+    assert_eq!(interpret("Discriminant[-4, x]").unwrap(), "1/16");
+    assert_eq!(interpret("Discriminant[2.0, x]").unwrap(), "0.25");
+    assert_eq!(interpret("Discriminant[a, x]").unwrap(), "a^(-2)");
+    assert_eq!(interpret("Discriminant[0, x]").unwrap(), "0");
+    // Reduces to degree 0 after the zero-coefficient term cancels.
+    assert_eq!(interpret("Discriminant[3 + 0 x, x]").unwrap(), "1/9");
+  }
+
+  #[test]
   fn attributes() {
     assert_eq!(
       interpret("Attributes[Discriminant]").unwrap(),

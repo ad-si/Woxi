@@ -8540,6 +8540,27 @@ mod join_non_list {
   }
 
   #[test]
+  fn accumulate_promotes_reals_per_partial_sum() {
+    // Regression (diff-fuzz): a Real must only promote the partial sums it
+    // actually enters. Prefixes summing only integers stay exact integers,
+    // so 4 and -46 remain integers while later sums become reals.
+    assert_eq!(
+      interpret("Accumulate[{4, -50, 20.0, 12.6}]").unwrap(),
+      "{4, -46, -26., -13.4}"
+    );
+    assert_eq!(interpret("Accumulate[{0, 12.6}]").unwrap(), "{0, 12.6}");
+    assert_eq!(
+      interpret("Accumulate[{2, 3, 4.0, 5, 6.0}]").unwrap(),
+      "{2, 5, 9., 14., 20.}"
+    );
+    // Exact rationals stay exact rather than collapsing to floats.
+    assert_eq!(
+      interpret("Accumulate[{1/2, 1/3, 1/6}]").unwrap(),
+      "{1/2, 5/6, 1}"
+    );
+  }
+
+  #[test]
   fn accumulate_preserves_arbitrary_head() {
     // Accumulate threads through any head (not just List), preserving it.
     assert_eq!(
