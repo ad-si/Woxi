@@ -3127,6 +3127,36 @@ mod connectivity {
     );
   }
 
+  // Directed vertex connectivity is the smallest s-t vertex cut over ordered
+  // non-adjacent pairs (n-1 for the complete digraph, 0 when not strongly
+  // connected).
+  #[test]
+  fn vertex_connectivity_directed() {
+    assert_eq!(
+      interpret("VertexConnectivity[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "VertexConnectivity[Graph[{1 -> 2, 2 -> 1, 1 -> 3, 2 -> 3, 3 -> 1, \
+         3 -> 2}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    // A directed path is not strongly connected.
+    assert_eq!(
+      interpret("VertexConnectivity[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]").unwrap(),
+      "0"
+    );
+    // Vertex 2 is a cut vertex of this strongly connected digraph.
+    assert_eq!(
+      interpret("VertexConnectivity[Graph[{1 -> 2, 2 -> 1, 2 -> 3, 3 -> 2}]]")
+        .unwrap(),
+      "1"
+    );
+  }
+
   #[test]
   fn harary_graphs_are_exactly_k_connected() {
     // H_{k,n} is the minimal k-connected graph — cross-validates both

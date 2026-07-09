@@ -3497,6 +3497,27 @@ fn vertex_maxflow(
   bfs_max_flow(&mut cap, s + n, t)
 }
 
+/// Directed variant of `vertex_maxflow`: `arcs` are one-way, so arc a -> b only
+/// links the out-side of a to the in-side of b.
+fn directed_vertex_maxflow(
+  n: usize,
+  arcs: &[(usize, usize)],
+  s: usize,
+  t: usize,
+) -> i64 {
+  let inf = (n as i64 + 1) * 2;
+  let mut cap = vec![vec![0i64; 2 * n]; 2 * n];
+  for v in 0..n {
+    cap[v][v + n] = if v == s || v == t { inf } else { 1 };
+  }
+  for &(a, b) in arcs {
+    if a != b {
+      cap[a + n][b] = inf;
+    }
+  }
+  bfs_max_flow(&mut cap, s + n, t)
+}
+
 pub fn connectivity_ast(
   name: &str,
   args: &[Expr],
@@ -3551,9 +3572,9 @@ pub fn connectivity_ast(
     }
   }
 
-  // Directed graphs: only EdgeConnectivity[g] has a supported directed
-  // definition here — the smallest s-t edge cut over all ordered pairs (0 when
-  // the graph is not strongly connected). Other forms stay unevaluated.
+  // Directed graphs: EdgeConnectivity[g] is the smallest s-t edge cut, and
+  // VertexConnectivity[g] the smallest s-t vertex cut, over all ordered pairs
+  // (0 when the graph is not strongly connected). Other forms stay unevaluated.
   if directed {
     if name == "EdgeConnectivity" && args.len() == 1 {
       if n <= 1 {
@@ -3574,6 +3595,27 @@ pub fn connectivity_ast(
         }
       }
       return Ok(Expr::Integer(min_flow as i128));
+    }
+    if name == "VertexConnectivity" && args.len() == 1 {
+      if n <= 1 {
+        return Ok(Expr::Integer(0));
+      }
+      let is_arc =
+        |s: usize, t: usize| arcs.iter().any(|&(a, b)| a == s && b == t);
+      let mut best: Option<i64> = None;
+      for s in 0..n {
+        for t in 0..n {
+          if s != t && !is_arc(s, t) {
+            let f = directed_vertex_maxflow(n, &arcs, s, t);
+            best = Some(best.map_or(f, |b| b.min(f)));
+            if f == 0 {
+              return Ok(Expr::Integer(0));
+            }
+          }
+        }
+      }
+      // Every ordered pair is adjacent: complete digraph, connectivity n - 1.
+      return Ok(Expr::Integer(best.unwrap_or(n as i64 - 1) as i128));
     }
     return Ok(unevaluated());
   }
