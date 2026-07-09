@@ -198,6 +198,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BenktanderGibratDistribution" => pdf_benktander_gibrat(dargs, x),
     "GumbelDistribution" => pdf_gumbel(dargs, x),
     "ZipfDistribution" => pdf_zipf(dargs, x),
+    "BenfordDistribution" => pdf_benford(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "PoissonConsulDistribution" => pdf_poisson_consul(dargs, x),
@@ -1940,6 +1941,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match dist_name {
     "ProbabilityDistribution" => cdf_probability_distribution(dargs, x),
+    "BenfordDistribution" => cdf_benford(dargs, x),
     "UniformSumDistribution" => cdf_uniform_sum(dargs, x),
     "BetaBinomialDistribution" => cdf_beta_binomial(dargs, x),
     "BetaPrimeDistribution" => cdf_beta_prime(dargs, x),
@@ -4005,6 +4007,7 @@ fn distribution_mean_variance(
       benktander_gibrat_mean_variance(&dargs[0], &dargs[1])
     }
     "ZipfDistribution" => zipf_mean_variance(dargs),
+    "BenfordDistribution" => benford_mean_variance(dargs),
     "GumbelDistribution" => gumbel_mean_variance(dargs),
     "SechDistribution" => sech_mean_variance(dargs),
     "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
@@ -14224,4 +14227,178 @@ pub fn zipf_mean_variance(
       "ZipfDistribution expects 1 or 2 arguments".into(),
     )),
   }
+}
+
+/// PDF for BenfordDistribution[b] (Benford's law, base b): the probability of
+/// leading digit d is Log[1 + 1/d]/Log[b] for d = 1 … b-1, and 0 otherwise.
+/// Only an integer base b >= 2 is handled.
+pub fn pdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BenfordDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let [b] = dargs else {
+    return Ok(unevaluated(dargs, x));
+  };
+  let Some(bv) = ms_numeric(b) else {
+    return Ok(unevaluated(dargs, x));
+  };
+  if bv < 2.0 || bv.fract() != 0.0 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  // Log[1 + 1/d] / Log[b].
+  let body = |d: &Expr| -> Result<Expr, InterpreterError> {
+    let inner = eval(plus(int(1), divide(int(1), d.clone())))?;
+    eval(divide(
+      call("Log", vec![inner]),
+      call("Log", vec![b.clone()]),
+    ))
+  };
+  if let Some(xv) = ms_numeric(&x) {
+    let in_support = xv >= 1.0 && xv.fract() == 0.0 && xv <= bv - 1.0;
+    if !in_support {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let cond = comparison3(
+    int(1),
+    ComparisonOp::LessEqual,
+    x.clone(),
+    ComparisonOp::Less,
+    b.clone(),
+  );
+  Ok(piecewise(vec![(body(&x)?, cond)], int(0)))
+}
+
+/// CDF for BenfordDistribution[b]: the leading-digit probabilities telescope to
+/// Log[1 + Floor[x]]/Log[b] on 1 <= x < b, with 0 below 1 and 1 at or above b.
+pub fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BenfordDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let [b] = dargs else {
+    return Ok(unevaluated(dargs, x));
+  };
+  let Some(bv) = ms_numeric(b) else {
+    return Ok(unevaluated(dargs, x));
+  };
+  if bv < 2.0 || bv.fract() != 0.0 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  // Log[1 + Floor[x]] / Log[b] at the given point.
+  let body = |floor_plus_one: Expr| -> Result<Expr, InterpreterError> {
+    eval(divide(
+      call("Log", vec![floor_plus_one]),
+      call("Log", vec![b.clone()]),
+    ))
+  };
+  if let Some(xv) = ms_numeric(&x) {
+    if xv < 1.0 {
+      return Ok(int(0));
+    }
+    if xv >= bv {
+      return Ok(int(1));
+    }
+    let fl = xv.floor() as i128;
+    return body(int(fl + 1));
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let floor_x = call("Floor", vec![x.clone()]);
+  let main = body(eval(plus(int(1), floor_x))?)?;
+  Ok(piecewise(
+    vec![
+      (
+        main,
+        comparison3(
+          int(1),
+          ComparisonOp::LessEqual,
+          x.clone(),
+          ComparisonOp::Less,
+          b.clone(),
+        ),
+      ),
+      (int(0), comparison(x.clone(), ComparisonOp::Less, int(1))),
+    ],
+    int(1),
+  ))
+}
+
+/// Mean and variance for BenfordDistribution[b] (integer base). The mean has
+/// the closed form b - Log[b!]/Log[b]; the variance is the exact second-moment
+/// sum minus the squared mean (its symbolic form may differ from wolframscript
+/// while remaining value-correct).
+pub fn benford_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let [b] = dargs else {
+    return Err(InterpreterError::EvaluationError(
+      "BenfordDistribution expects 1 argument".into(),
+    ));
+  };
+  let Some(bv) = ms_numeric(b) else {
+    return Err(InterpreterError::EvaluationError(
+      "BenfordDistribution base must be an integer".into(),
+    ));
+  };
+  if bv < 2.0 || bv.fract() != 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "BenfordDistribution base must be an integer >= 2".into(),
+    ));
+  }
+  let b_int = bv as i128;
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let log_b = call("Log", vec![b.clone()]);
+  // Mean = b - Log[b!]/Log[b].
+  let factorial = eval(call("Factorial", vec![b.clone()]))?;
+  let mean = eval(plus(
+    b.clone(),
+    times(int(-1), divide(call("Log", vec![factorial]), log_b.clone())),
+  ))?;
+  // Variance = Sum[d^2 Log[1 + 1/d]/Log[b], {d, 1, b-1}] - Mean^2.
+  let mut terms: Vec<Expr> = Vec::new();
+  for d in 1..b_int {
+    let inner = eval(plus(int(1), divide(int(1), int(d))))?;
+    terms.push(times(
+      power(int(d), int(2)),
+      divide(call("Log", vec![inner]), log_b.clone()),
+    ));
+  }
+  let second_moment = eval(call("Plus", terms))?;
+  let variance = eval(plus(
+    second_moment,
+    times(int(-1), power(mean.clone(), int(2))),
+  ))?;
+  Ok((mean, variance))
 }

@@ -267,6 +267,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "BenfordDistribution" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "BenfordDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "WaringYuleDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "WaringYuleDistribution".to_string(),
@@ -975,6 +981,10 @@ fn validate_distribution_params(name: &str, args: &[Expr]) -> bool {
     "GeometricDistribution" => {
       // GeometricDistribution[p] — p in (0, 1]
       args.len() == 1 && is_probability(&args[0]) && is_positive(&args[0])
+    }
+    "BenfordDistribution" => {
+      // BenfordDistribution[b] — integer base b >= 2
+      args.len() == 1 && matches!(&args[0], Expr::Integer(b) if *b >= 2)
     }
     "LogSeriesDistribution" => {
       // LogSeriesDistribution[theta] — theta in (0, 1)

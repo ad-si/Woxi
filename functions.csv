@@ -3792,7 +3792,7 @@ WaringYuleDistribution,Waring-Yule discrete distribution; supports PDF and CDF,�
 AudioPartition,,🚫,,11.0,3916
 AudioPlay,,🚫,,11.2,3916
 BartlettWindow,Compute BartlettWindow value,✅,pure,9.0,3916
-BenfordDistribution,,,,8.0,3916
+BenfordDistribution,Benford law distribution for leading digits in base b,✅,pure,8.0,3916
 BlockchainGet,,🚫,,11.3,3916
 CellFrameLabelMargins,,🚫,,4.0,3916
 CloudExpression,,🚫,,10.4,3916

@@ -4483,6 +4483,84 @@ mod zipf_distribution {
   }
 }
 
+// BenfordDistribution[b] follows Benford's law in base b: the leading digit d
+// has probability Log[1 + 1/d]/Log[b] for d = 1 … b-1. Verified against
+// wolframscript.
+mod benford_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_at_digits() {
+    assert_eq!(
+      interpret("PDF[BenfordDistribution[10], 1]").unwrap(),
+      "Log[2]/Log[10]"
+    );
+    assert_eq!(
+      interpret("PDF[BenfordDistribution[10], 3]").unwrap(),
+      "Log[4/3]/Log[10]"
+    );
+    assert_eq!(
+      interpret("PDF[BenfordDistribution[10], 9]").unwrap(),
+      "Log[10/9]/Log[10]"
+    );
+    // Base 16.
+    assert_eq!(
+      interpret("PDF[BenfordDistribution[16], 15]").unwrap(),
+      "Log[16/15]/Log[16]"
+    );
+  }
+
+  #[test]
+  fn pdf_outside_support_is_zero() {
+    assert_eq!(interpret("PDF[BenfordDistribution[10], 0]").unwrap(), "0");
+    assert_eq!(interpret("PDF[BenfordDistribution[10], 10]").unwrap(), "0");
+    // A non-integer point is not in the discrete support.
+    assert_eq!(interpret("PDF[BenfordDistribution[10], 2.5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn cdf_telescopes() {
+    assert_eq!(
+      interpret("CDF[BenfordDistribution[10], 1]").unwrap(),
+      "Log[2]/Log[10]"
+    );
+    assert_eq!(
+      interpret("CDF[BenfordDistribution[10], 3]").unwrap(),
+      "Log[4]/Log[10]"
+    );
+    // Floors to the containing digit.
+    assert_eq!(
+      interpret("CDF[BenfordDistribution[10], 3.5]").unwrap(),
+      "Log[4]/Log[10]"
+    );
+    // Below the support the CDF is 0; at or past the top digit it is 1.
+    assert_eq!(interpret("CDF[BenfordDistribution[10], 0.5]").unwrap(), "0");
+    assert_eq!(interpret("CDF[BenfordDistribution[10], 9]").unwrap(), "1");
+    assert_eq!(interpret("CDF[BenfordDistribution[10], 12]").unwrap(), "1");
+  }
+
+  #[test]
+  fn mean_closed_form() {
+    // Mean = b - Log[b!]/Log[b]; 10! = 3628800, 16! = 20922789888000.
+    assert_eq!(
+      interpret("Mean[BenfordDistribution[10]]").unwrap(),
+      "10 - Log[3628800]/Log[10]"
+    );
+    assert_eq!(
+      interpret("Mean[BenfordDistribution[16]]").unwrap(),
+      "16 - Log[20922789888000]/Log[16]"
+    );
+  }
+
+  #[test]
+  fn distribution_object_stays_symbolic() {
+    assert_eq!(
+      interpret("BenfordDistribution[10]").unwrap(),
+      "BenfordDistribution[10]"
+    );
+  }
+}
+
 mod distribution_moments {
   use super::*;
 
