@@ -584,7 +584,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GreaterEqualThan" => Some((1, 1)),
     "GreaterThan" => Some((1, 1)),
     "GroupBy" => Some((1, 3)),
-    "GroupElements" => Some((1, 1)),
+    "GroupElements" => Some((1, 2)),
     "GroupOrbits" => Some((2, 2)),
     "GroupElementQ" => Some((2, 2)),
     "GroupElementPosition" => Some((2, 2)),

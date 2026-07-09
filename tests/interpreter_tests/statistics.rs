@@ -4303,6 +4303,59 @@ mod group_elements {
       "{Cycles[{}]}"
     );
   }
+
+  // GroupElements[group, {positions}] selects the elements at the given 1-based
+  // positions of the full element list, in the given order. Verified against
+  // wolframscript.
+  #[test]
+  fn positional_selection() {
+    // GroupElements[SymmetricGroup[3]] =
+    //   {Cycles[{}], Cycles[{{2,3}}], Cycles[{{1,2}}], Cycles[{{1,2,3}}],
+    //    Cycles[{{1,3,2}}], Cycles[{{1,3}}]}
+    assert_eq!(
+      interpret("GroupElements[SymmetricGroup[3], {1, 3}]").unwrap(),
+      "{Cycles[{}], Cycles[{{1, 2}}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[SymmetricGroup[3], {2}]").unwrap(),
+      "{Cycles[{{2, 3}}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[CyclicGroup[4], {1, 2, 4}]").unwrap(),
+      "{Cycles[{}], Cycles[{{1, 2, 3, 4}}], Cycles[{{1, 4, 3, 2}}]}"
+    );
+  }
+
+  #[test]
+  fn positional_order_preserved_and_negative_indices() {
+    // The given order is preserved; negative positions count from the end.
+    assert_eq!(
+      interpret("GroupElements[SymmetricGroup[3], {3, 1}]").unwrap(),
+      "{Cycles[{{1, 2}}], Cycles[{}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[SymmetricGroup[3], {-1}]").unwrap(),
+      "{Cycles[{{1, 3}}]}"
+    );
+    // Duplicates are allowed.
+    assert_eq!(
+      interpret("GroupElements[SymmetricGroup[3], {1, 1}]").unwrap(),
+      "{Cycles[{}], Cycles[{}]}"
+    );
+  }
+
+  #[test]
+  fn positional_out_of_range_stays_unevaluated() {
+    assert_eq!(
+      interpret("GroupElements[SymmetricGroup[3], {1, 99}]").unwrap(),
+      "GroupElements[SymmetricGroup[3], {1, 99}]"
+    );
+    // A bare integer (not a list of positions) is not the positional form.
+    assert_eq!(
+      interpret("GroupElements[SymmetricGroup[3], 3]").unwrap(),
+      "GroupElements[SymmetricGroup[3], 3]"
+    );
+  }
 }
 
 // GroupOrbits[group, {points}] gives the orbits of the seed points under the

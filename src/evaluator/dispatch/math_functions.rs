@@ -835,7 +835,7 @@ pub fn dispatch_math_functions(
     "GroupOrder" if args.len() == 1 => {
       return Some(crate::functions::math_ast::group_order_ast(args));
     }
-    "GroupElements" if args.len() == 1 => {
+    "GroupElements" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::group_elements_ast(args));
     }
     "GroupOrbits" if args.len() == 2 => {

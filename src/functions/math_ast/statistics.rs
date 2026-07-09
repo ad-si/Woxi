@@ -5111,6 +5111,41 @@ pub fn group_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "GroupElements".to_string(),
     args: args.to_vec().into(),
   };
+  // GroupElements[group, {positions…}] - the elements at the given 1-based
+  // positions of the full element list, in the given order (negative positions
+  // count from the end; out-of-range positions emit GroupElements::lrank).
+  if args.len() == 2 {
+    let Expr::List(positions) = &args[1] else {
+      return Ok(unevaluated());
+    };
+    let mut idxs: Vec<i128> = Vec::with_capacity(positions.len());
+    for p in positions.iter() {
+      let Expr::Integer(v) = p else {
+        return Ok(unevaluated());
+      };
+      idxs.push(*v);
+    }
+    let elems_expr = group_elements_ast(std::slice::from_ref(&args[0]))?;
+    let Expr::List(elems) = &elems_expr else {
+      return Ok(unevaluated());
+    };
+    let n = elems.len() as i128;
+    let mut selected: Vec<Expr> = Vec::with_capacity(idxs.len());
+    for &p in &idxs {
+      let idx0 = if p > 0 && p <= n {
+        (p - 1) as usize
+      } else if p < 0 && -p <= n {
+        (n + p) as usize
+      } else {
+        crate::emit_message(&format!(
+          "GroupElements::lrank: Rank {p} is incompatible with group of order {n}."
+        ));
+        return Ok(unevaluated());
+      };
+      selected.push(elems[idx0].clone());
+    }
+    return Ok(Expr::List(selected.into()));
+  }
   if args.len() != 1 {
     return Ok(unevaluated());
   }
