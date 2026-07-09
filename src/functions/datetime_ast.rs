@@ -2401,8 +2401,8 @@ fn day_round_result(
     vec![Expr::Integer(y), Expr::Integer(m), Expr::Integer(d)].into(),
   )];
   if let Some(tz) = tz {
-    date_args.push(Expr::Identifier("Day".to_string()));
-    date_args.push(Expr::Identifier("Gregorian".to_string()));
+    date_args.push(Expr::String("Day".to_string()));
+    date_args.push(Expr::String("Gregorian".to_string()));
     date_args.push(tz);
   }
   crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
