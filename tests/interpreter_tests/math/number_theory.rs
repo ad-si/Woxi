@@ -3786,6 +3786,26 @@ mod arithmetic_geometric_mean {
     assert_eq!(interpret("ArithmeticGeometricMean[3, 3]").unwrap(), "3");
   }
 
+  // AGM[a, a] = a for equal atomic arguments (bare symbols and constants);
+  // compound equal arguments stay unevaluated. Verified against wolframscript.
+  #[test]
+  fn equal_symbolic_atoms() {
+    assert_eq!(interpret("ArithmeticGeometricMean[a, a]").unwrap(), "a");
+    assert_eq!(interpret("ArithmeticGeometricMean[Pi, Pi]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn equal_compound_stays_unevaluated() {
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[x + 1, x + 1]").unwrap(),
+      "ArithmeticGeometricMean[1 + x, 1 + x]"
+    );
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[Sqrt[2], Sqrt[2]]").unwrap(),
+      "ArithmeticGeometricMean[Sqrt[2], Sqrt[2]]"
+    );
+  }
+
   #[test]
   fn symbolic() {
     assert_eq!(

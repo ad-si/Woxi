@@ -6151,6 +6151,17 @@ pub fn arithmetic_geometric_mean_ast(
     return Ok(args[1].clone());
   }
 
+  // AGM[a, a] = a for equal symbolic atoms (bare symbols and constants such as
+  // Pi). Compound equal arguments (e.g. x + 1, Sqrt[2]) stay unevaluated,
+  // matching wolframscript; equal numbers are handled by the numeric path
+  // below.
+  if matches!(&args[0], Expr::Identifier(_) | Expr::Constant(_))
+    && crate::syntax::expr_to_string(&args[0])
+      == crate::syntax::expr_to_string(&args[1])
+  {
+    return Ok(args[0].clone());
+  }
+
   let (fa, fb) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]));
 
   // AGM[a, a] = a. With a machine-real argument the result is a machine real.
