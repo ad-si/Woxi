@@ -37,6 +37,14 @@ $ wo 'Accumulate[{1.5, 2.5}]'
 {1.5, 4.}
 ```
 
+A real value only promotes the partial sums it enters, so earlier
+integer prefixes stay exact:
+
+```scrut
+$ wo 'Accumulate[{4, -50, 20.0, 12.6}]'
+{4, -46, -26., -13.4}
+```
+
 ```scrut
 $ wo 'Accumulate[{0, 0, 1}]'
 {0, 0, 1}

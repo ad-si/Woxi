@@ -3,6 +3,15 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// True when `e` is a numeric literal equal to zero (integer or real).
+fn is_zero_const(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(0) => true,
+    Expr::Real(r) => *r == 0.0,
+    _ => false,
+  }
+}
+
 /// Discriminant[poly, var] - polynomial discriminant
 /// Disc(p, x) = (-1)^(n(n-1)/2) / a_n * Resultant(p, p', x)
 pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -43,13 +52,6 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Compute derivative p'(x)
-  let dpoly =
-    crate::functions::calculus_ast::differentiate_expr(poly, var_name)?;
-
-  // Compute Resultant(p, p', x)
-  let res = super::resultant_ast(&[poly.clone(), dpoly, var.clone()])?;
-
   // Get degree and leading coefficient
   let expanded = expand_and_combine(poly);
   let degree = match max_power_int(&expanded, var_name) {
@@ -67,6 +69,32 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     var.clone(),
     Expr::Integer(degree),
   ])?;
+
+  // Degree 0: the resultant formula does not apply (p' = 0). Following the
+  // root-product form disc = (-1)^(n(n-1)/2) a_n^(2n-2) prod_{i<j}(r_i-r_j)^2,
+  // the empty product leaves a_0^(2*0-2) = a_0^(-2); the zero polynomial is
+  // special-cased to 0 (matching Wolfram).
+  if degree == 0 {
+    if is_zero_const(&leading_coeff) {
+      return Ok(Expr::Integer(0));
+    }
+    let inv_sq = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![leading_coeff, Expr::Integer(-2)].into(),
+    };
+    let simplified = crate::evaluator::evaluate_expr_to_expr(&inv_sq)?;
+    return match super::cancel_ast(&[simplified.clone()]) {
+      Ok(c) => Ok(c),
+      Err(_) => Ok(simplified),
+    };
+  }
+
+  // Compute derivative p'(x)
+  let dpoly =
+    crate::functions::calculus_ast::differentiate_expr(poly, var_name)?;
+
+  // Compute Resultant(p, p', x)
+  let res = super::resultant_ast(&[poly.clone(), dpoly, var.clone()])?;
 
   // sign = (-1)^(n*(n-1)/2)
   let sign_exp = degree * (degree - 1) / 2;
