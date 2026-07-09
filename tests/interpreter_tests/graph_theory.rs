@@ -3834,6 +3834,51 @@ mod graph_predicates {
     assert_eq!(interpret("EmptyGraphQ[CycleGraph[3]]").unwrap(), "False");
     assert_eq!(interpret("EmptyGraphQ[x]").unwrap(), "False");
   }
+
+  #[test]
+  fn mixed_graph_q() {
+    // Both a directed and an undirected edge → mixed.
+    assert_eq!(
+      interpret("MixedGraphQ[Graph[{1 -> 2, 2 <-> 3}]]").unwrap(),
+      "True"
+    );
+    // All-directed or all-undirected graphs are not mixed.
+    assert_eq!(
+      interpret("MixedGraphQ[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("MixedGraphQ[CycleGraph[4]]").unwrap(), "False");
+    assert_eq!(interpret("MixedGraphQ[x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn multigraph_q() {
+    // Parallel directed edges.
+    assert_eq!(
+      interpret("MultigraphQ[Graph[{1 -> 2, 1 -> 2}]]").unwrap(),
+      "True"
+    );
+    // Parallel undirected edges (CycleGraph[2] is a doubled edge).
+    assert_eq!(
+      interpret("MultigraphQ[Graph[{1, 2}, {1 <-> 2, 1 <-> 2}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("MultigraphQ[CycleGraph[2]]").unwrap(), "True");
+    // Repeated self-loops count as parallel edges.
+    assert_eq!(
+      interpret("MultigraphQ[Graph[{1 -> 1, 1 -> 1}]]").unwrap(),
+      "True"
+    );
+    // A single self-loop is not a multigraph.
+    assert_eq!(interpret("MultigraphQ[Graph[{1 -> 1}]]").unwrap(), "False");
+    // Opposite directed edges are distinct, not parallel.
+    assert_eq!(
+      interpret("MultigraphQ[Graph[{1 -> 2, 2 -> 1}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("MultigraphQ[CycleGraph[5]]").unwrap(), "False");
+    assert_eq!(interpret("MultigraphQ[x]").unwrap(), "False");
+  }
 }
 
 mod planar_graph_q {

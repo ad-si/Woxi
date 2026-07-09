@@ -5180,6 +5180,77 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("False".to_string()));
   }
 
+  // MixedGraphQ[graph] — True if the graph has both directed and undirected
+  // edges.
+  if name == "MixedGraphQ" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(edges) = &gargs[1]
+    {
+      let has_directed = edges.iter().any(|e| {
+        matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
+      });
+      let has_undirected = edges.iter().any(|e| {
+        matches!(e, Expr::FunctionCall { name, .. } if name == "UndirectedEdge")
+      });
+      return Ok(Expr::Identifier(
+        if has_directed && has_undirected {
+          "True"
+        } else {
+          "False"
+        }
+        .to_string(),
+      ));
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
+  // MultigraphQ[graph] — True if the graph has parallel edges (two edges with
+  // the same endpoints and orientation, including repeated self-loops).
+  // Directed u->v and v->u are distinct; undirected u<->v and v<->u are not.
+  if name == "MultigraphQ" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(edges) = &gargs[1]
+    {
+      let mut seen: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+      let mut multi = false;
+      for e in edges.iter() {
+        if let Expr::FunctionCall { name: en, args: ea } = e
+          && ea.len() == 2
+        {
+          let a = expr_to_string(&ea[0]);
+          let b = expr_to_string(&ea[1]);
+          let key = match en.as_str() {
+            "DirectedEdge" => format!("D\0{a}\0{b}"),
+            "UndirectedEdge" => {
+              let (x, y) = if a <= b { (&a, &b) } else { (&b, &a) };
+              format!("U\0{x}\0{y}")
+            }
+            _ => continue,
+          };
+          if !seen.insert(key) {
+            multi = true;
+            break;
+          }
+        }
+      }
+      return Ok(Expr::Identifier(
+        if multi { "True" } else { "False" }.to_string(),
+      ));
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
   // TreeGraphQ[graph] — True if graph is a tree (connected, n-1 edges for n vertices)
   if name == "TreeGraphQ" && args.len() == 1 {
     if let Expr::FunctionCall {
