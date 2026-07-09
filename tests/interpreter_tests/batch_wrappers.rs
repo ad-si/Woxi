@@ -7079,6 +7079,67 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // Directed graphs use directed distances. A directed path is not strongly
+  // connected, so radius/diameter are Infinity and centre/periphery empty;
+  // eccentricity is the greatest distance to a *reachable* vertex.
+  #[test]
+  fn eccentricity_family_directed_chain() {
+    let g = "Graph[{1 -> 2, 2 -> 3, 3 -> 4}]";
+    assert_eq!(
+      interpret(&format!("GraphDiameter[{g}]")).unwrap(),
+      "Infinity"
+    );
+    assert_eq!(interpret(&format!("GraphRadius[{g}]")).unwrap(), "Infinity");
+    assert_eq!(interpret(&format!("GraphCenter[{g}]")).unwrap(), "{}");
+    assert_eq!(interpret(&format!("GraphPeriphery[{g}]")).unwrap(), "{}");
+    // Source reaches everything; sink reaches nothing (eccentricity 0).
+    assert_eq!(
+      interpret(&format!("VertexEccentricity[{g}, 1]")).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(&format!("VertexEccentricity[{g}, 4]")).unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(&format!("EccentricityCentrality[{g}]")).unwrap(),
+      "{0.3333333333333333, 0.5, 1., 0.}"
+    );
+  }
+
+  // A strongly connected digraph has finite radius/diameter from directed
+  // distances.
+  #[test]
+  fn eccentricity_family_strongly_connected() {
+    assert_eq!(
+      interpret("GraphDiameter[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("GraphRadius[Graph[{1 -> 2, 2 -> 1, 2 -> 3, 3 -> 2}]]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("GraphCenter[Graph[{1 -> 2, 2 -> 1, 2 -> 3, 3 -> 2}]]")
+        .unwrap(),
+      "{2}"
+    );
+  }
+
+  // A disconnected undirected graph is likewise not strongly connected.
+  #[test]
+  fn eccentricity_family_disconnected() {
+    assert_eq!(
+      interpret("GraphDiameter[Graph[{1 <-> 2, 3 <-> 4}]]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("GraphCenter[Graph[{1 <-> 2, 3 <-> 4}]]").unwrap(),
+      "{}"
+    );
+  }
+
   // DegreeCentrality
   #[test]
   fn degree_centrality_complete3() {

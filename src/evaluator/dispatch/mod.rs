@@ -5754,58 +5754,106 @@ pub fn evaluate_function_call_ast_inner(
       && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     {
       let n = vertices.len();
-      let (pg_graph, _pg_idx) = build_undirected_graph(vertices, edges);
-      let vertex_strs: Vec<String> =
-        vertices.iter().map(expr_to_string).collect();
-
-      // Compute eccentricities via BFS from each vertex
-      let eccentricities: Vec<i128> = (0..n)
-        .map(|start| {
-          bfs_max_dist_pg(&pg_graph, petgraph::graph::NodeIndex::new(start))
+      let key = expr_to_string;
+      let index: std::collections::HashMap<String, usize> = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (key(v), i))
+        .collect();
+      // Directed adjacency: undirected edges point both ways.
+      let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+      for edge in edges.iter() {
+        if let Expr::FunctionCall { name: en, args: ea } = edge
+          && ea.len() == 2
+          && let (Some(&u), Some(&v)) =
+            (index.get(&key(&ea[0])), index.get(&key(&ea[1])))
+        {
+          adj[u].push(v);
+          if en == "UndirectedEdge" {
+            adj[v].push(u);
+          }
+        }
+      }
+      // Shortest-path distances from every source (BFS, -1 = unreachable).
+      let all_dists: Vec<Vec<i128>> = (0..n)
+        .map(|s| {
+          let mut dist = vec![-1i128; n];
+          dist[s] = 0;
+          let mut q = std::collections::VecDeque::from([s]);
+          while let Some(u) = q.pop_front() {
+            for &w in &adj[u] {
+              if dist[w] < 0 {
+                dist[w] = dist[u] + 1;
+                q.push_back(w);
+              }
+            }
+          }
+          dist
         })
         .collect();
+      // Eccentricity = greatest distance to a reachable vertex (0 for a sink).
+      let ecc: Vec<i128> = all_dists
+        .iter()
+        .map(|d| d.iter().filter(|&&x| x >= 0).copied().max().unwrap_or(0))
+        .collect();
+      // Radius/diameter/centre/periphery are only finite/non-empty when the
+      // graph is strongly connected (every vertex reaches every other).
+      let strongly_connected =
+        all_dists.iter().all(|d| d.iter().all(|&x| x >= 0));
+      let infinity = || Expr::Identifier("Infinity".to_string());
 
       match name {
         "GraphDiameter" => {
-          let diameter = eccentricities.iter().copied().max().unwrap_or(0);
-          return Ok(Expr::Integer(diameter));
+          return Ok(if strongly_connected {
+            Expr::Integer(ecc.iter().copied().max().unwrap_or(0))
+          } else {
+            infinity()
+          });
         }
         "GraphRadius" => {
-          let radius = eccentricities.iter().copied().min().unwrap_or(0);
-          return Ok(Expr::Integer(radius));
+          return Ok(if strongly_connected {
+            Expr::Integer(ecc.iter().copied().min().unwrap_or(0))
+          } else {
+            infinity()
+          });
         }
         "VertexEccentricity" if args.len() == 2 => {
-          let target = expr_to_string(&args[1]);
-          if let Some(idx) = vertex_strs.iter().position(|v| v == &target) {
-            return Ok(Expr::Integer(eccentricities[idx]));
+          let target = key(&args[1]);
+          if let Some(&idx) = index.get(&target) {
+            return Ok(Expr::Integer(ecc[idx]));
           }
         }
         "GraphCenter" => {
-          let min_ecc = eccentricities.iter().copied().min().unwrap_or(0);
+          if !strongly_connected {
+            return Ok(Expr::List(vec![].into()));
+          }
+          let min_ecc = ecc.iter().copied().min().unwrap_or(0);
           let center: Vec<Expr> = vertices
             .iter()
             .enumerate()
-            .filter(|(i, _)| eccentricities[*i] == min_ecc)
+            .filter(|(i, _)| ecc[*i] == min_ecc)
             .map(|(_, v)| v.clone())
             .collect();
           return Ok(Expr::List(center.into()));
         }
         "GraphPeriphery" => {
-          let max_ecc = eccentricities.iter().copied().max().unwrap_or(0);
+          if !strongly_connected {
+            return Ok(Expr::List(vec![].into()));
+          }
+          let max_ecc = ecc.iter().copied().max().unwrap_or(0);
           let periphery: Vec<Expr> = vertices
             .iter()
             .enumerate()
-            .filter(|(i, _)| eccentricities[*i] == max_ecc)
+            .filter(|(i, _)| ecc[*i] == max_ecc)
             .map(|(_, v)| v.clone())
             .collect();
           return Ok(Expr::List(periphery.into()));
         }
         "EccentricityCentrality" => {
-          // Reciprocal of each vertex's eccentricity, as a machine real
-          // (matching wolframscript), in vertex-list order.
-          let result: Vec<Expr> = eccentricities
+          // 1 / eccentricity as a machine real (0 for a sink), vertex order.
+          let result: Vec<Expr> = ecc
             .iter()
-            .map(|&e| Expr::Real(1.0 / e as f64))
+            .map(|&e| Expr::Real(if e == 0 { 0.0 } else { 1.0 / e as f64 }))
             .collect();
           return Ok(Expr::List(result.into()));
         }
@@ -10964,16 +11012,6 @@ fn bfs_all_dists_pg(
     result[node.index()] = dist;
   }
   result
-}
-
-/// BFS from start vertex using petgraph, return max distance (eccentricity).
-fn bfs_max_dist_pg(
-  graph: &petgraph::graph::UnGraph<usize, ()>,
-  start: petgraph::graph::NodeIndex,
-) -> i128 {
-  use petgraph::algo::dijkstra;
-  let dists = dijkstra(graph, start, None, |_| 1i128);
-  dists.values().copied().max().unwrap_or(0)
 }
 
 /// Build a rational or integer Expr from (num, den).
