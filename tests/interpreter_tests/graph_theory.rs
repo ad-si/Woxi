@@ -4129,6 +4129,36 @@ mod graph_metrics {
     );
   }
 
+  // Directed graphs use the directed transitivity trace(A^3) / sum A^2: a
+  // length-2 path i->j->k is closed by an edge k->i (a directed 3-cycle).
+  #[test]
+  fn global_clustering_coefficient_directed() {
+    // Every triple of a directed 3-cycle is closed.
+    assert_eq!(
+      interpret("GlobalClusteringCoefficient[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]")
+        .unwrap(),
+      "1"
+    );
+    // A transitive triangle has no directed 3-cycle.
+    assert_eq!(
+      interpret("GlobalClusteringCoefficient[Graph[{1 -> 2, 1 -> 3, 2 -> 3}]]")
+        .unwrap(),
+      "0"
+    );
+    // A directed path has no closed triple.
+    assert_eq!(
+      interpret("GlobalClusteringCoefficient[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]")
+        .unwrap(),
+      "0"
+    );
+    // A mutual pair has no length-2 path with distinct endpoints.
+    assert_eq!(
+      interpret("GlobalClusteringCoefficient[Graph[{1 -> 2, 2 -> 1}]]")
+        .unwrap(),
+      "0"
+    );
+  }
+
   #[test]
   fn mean_clustering_coefficient() {
     // (1 + 1 + 1/3 + 0)/4

@@ -5141,6 +5141,90 @@ fn directed_mean_graph_distance(expr: &Expr) -> Option<Expr> {
   )
 }
 
+/// GlobalClusteringCoefficient for a graph containing directed edges: the
+/// directed transitivity trace(A^3) / sum_{i != k} (A^2)[i][k] -- the fraction
+/// of directed length-2 paths i->j->k (distinct endpoints) that are closed by
+/// an edge k->i. Directed edges point one way; undirected edges both ways.
+/// Returns `None` for anything that is not such a graph.
+fn directed_global_clustering(expr: &Expr) -> Option<Expr> {
+  let (vertices, edge_exprs) = match expr {
+    Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
+      match (&args[0], &args[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  let n = vertices.len();
+  if n == 0 {
+    return None;
+  }
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (expr_to_string(v), i))
+    .collect();
+  // Simple 0/1 directed adjacency, self-loops excluded.
+  let mut a = vec![vec![0i128; n]; n];
+  for e in edge_exprs.iter() {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if args.len() != 2 {
+      return None;
+    }
+    let (Some(&u), Some(&v)) = (
+      index.get(&expr_to_string(&args[0])),
+      index.get(&expr_to_string(&args[1])),
+    ) else {
+      return None;
+    };
+    match name.as_str() {
+      "DirectedEdge" => {
+        if u != v {
+          a[u][v] = 1;
+        }
+      }
+      "UndirectedEdge" => {
+        if u != v {
+          a[u][v] = 1;
+          a[v][u] = 1;
+        }
+      }
+      _ => return None,
+    }
+  }
+  let matmul = |x: &[Vec<i128>], y: &[Vec<i128>]| -> Vec<Vec<i128>> {
+    let mut r = vec![vec![0i128; n]; n];
+    for i in 0..n {
+      for k in 0..n {
+        if x[i][k] != 0 {
+          for j in 0..n {
+            r[i][j] += x[i][k] * y[k][j];
+          }
+        }
+      }
+    }
+    r
+  };
+  let a2 = matmul(&a, &a);
+  let a3 = matmul(&a2, &a);
+  let num: i128 = (0..n).map(|i| a3[i][i]).sum();
+  let den: i128 = (0..n)
+    .flat_map(|i| (0..n).map(move |k| (i, k)))
+    .filter(|(i, k)| i != k)
+    .map(|(i, k)| a2[i][k])
+    .sum();
+  if den == 0 {
+    return Some(Expr::Integer(0));
+  }
+  Some(
+    crate::evaluator::evaluate_expr_to_expr(&make_rational(num, den))
+      .unwrap_or(Expr::Integer(0)),
+  )
+}
+
 pub fn graph_metric_ast(
   name: &str,
   args: &[Expr],
@@ -5161,6 +5245,11 @@ pub fn graph_metric_ast(
       }
       if name == "MeanGraphDistance"
         && let Some(result) = directed_mean_graph_distance(&args[0])
+      {
+        return Ok(result);
+      }
+      if name == "GlobalClusteringCoefficient"
+        && let Some(result) = directed_global_clustering(&args[0])
       {
         return Ok(result);
       }
