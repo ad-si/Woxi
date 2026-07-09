@@ -4284,6 +4284,47 @@ mod graph_metrics {
     );
   }
 
+  // Directed clustering: a length-2 path in -> v -> out is closed by a back
+  // arc out -> in (a directed 3-cycle through v).
+  #[test]
+  fn clustering_coefficients_directed() {
+    // Every vertex of a directed 3-cycle has local clustering 1.
+    assert_eq!(
+      interpret("LocalClusteringCoefficient[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]")
+        .unwrap(),
+      "{1, 1, 1}"
+    );
+    // A transitive triangle has no directed 3-cycle.
+    assert_eq!(
+      interpret("LocalClusteringCoefficient[Graph[{1 -> 2, 1 -> 3, 2 -> 3}]]")
+        .unwrap(),
+      "{0, 0, 0}"
+    );
+    // Mixed local values.
+    assert_eq!(
+      interpret(
+        "LocalClusteringCoefficient[Graph[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 4, \
+         4 -> 2}]]"
+      )
+      .unwrap(),
+      "{1/2, 1/2, 1, 0}"
+    );
+    // MeanClusteringCoefficient is the mean of the local coefficients.
+    assert_eq!(
+      interpret(
+        "MeanClusteringCoefficient[Graph[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 4, \
+         4 -> 2}]]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("MeanClusteringCoefficient[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]")
+        .unwrap(),
+      "0"
+    );
+  }
+
   #[test]
   fn graph_density() {
     assert_eq!(

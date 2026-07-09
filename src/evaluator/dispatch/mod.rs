@@ -6507,6 +6507,26 @@ pub fn evaluate_function_call_ast_inner(
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let n = vertices.len();
+    // Directed graphs: fraction of in -> v -> out paths closed by a back arc.
+    if let Some(local) =
+      crate::functions::graph::directed_local_clustering(&args[0])
+    {
+      let coefficients: Vec<Expr> = local
+        .into_iter()
+        .map(|(closed, total)| {
+          if total == 0 {
+            Expr::Integer(0)
+          } else {
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(closed), Expr::Integer(total)].into(),
+            })
+            .unwrap_or(Expr::Integer(0))
+          }
+        })
+        .collect();
+      return Ok(Expr::List(coefficients.into()));
+    }
     let (pg_graph, _pg_idx) = build_undirected_graph(vertices, edges);
     // Build neighbor sets for quick lookup
     let neighbor_sets: Vec<std::collections::HashSet<usize>> = (0..n)

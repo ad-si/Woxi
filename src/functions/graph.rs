@@ -5310,6 +5310,87 @@ fn directed_global_clustering(expr: &Expr) -> Option<Expr> {
   )
 }
 
+/// Directed local clustering coefficient per vertex, as (closed, total) pairs.
+/// For vertex v, `total` counts the in->v->out paths (i, k) with distinct
+/// endpoints i != k and `closed` those additionally closed by an arc k -> i (a
+/// directed 3-cycle). Undirected edges count both ways. Returns `None` unless
+/// the graph contains a directed edge.
+pub fn directed_local_clustering(expr: &Expr) -> Option<Vec<(i128, i128)>> {
+  let (vertices, edge_exprs) = match expr {
+    Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
+      match (&args[0], &args[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  let n = vertices.len();
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (expr_to_string(v), i))
+    .collect();
+  let mut in_nbrs: Vec<std::collections::HashSet<usize>> =
+    vec![std::collections::HashSet::new(); n];
+  let mut out_nbrs: Vec<std::collections::HashSet<usize>> =
+    vec![std::collections::HashSet::new(); n];
+  let mut arcs: std::collections::HashSet<(usize, usize)> =
+    std::collections::HashSet::new();
+  let mut directed = false;
+  for e in edge_exprs.iter() {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if args.len() != 2 {
+      return None;
+    }
+    let (Some(a), Some(b)) = (
+      index.get(&expr_to_string(&args[0])).copied(),
+      index.get(&expr_to_string(&args[1])).copied(),
+    ) else {
+      return None;
+    };
+    let dirs: &[(usize, usize)] = match name.as_str() {
+      "DirectedEdge" => {
+        directed = true;
+        &[(a, b)]
+      }
+      "UndirectedEdge" => &[(a, b), (b, a)],
+      _ => return None,
+    };
+    for &(x, y) in dirs {
+      if x != y {
+        out_nbrs[x].insert(y);
+        in_nbrs[y].insert(x);
+        arcs.insert((x, y));
+      }
+    }
+  }
+  if !directed {
+    return None;
+  }
+  Some(
+    (0..n)
+      .map(|v| {
+        let mut total = 0i128;
+        let mut closed = 0i128;
+        for &i in &in_nbrs[v] {
+          for &k in &out_nbrs[v] {
+            if i != k {
+              total += 1;
+              if arcs.contains(&(k, i)) {
+                closed += 1;
+              }
+            }
+          }
+        }
+        (closed, total)
+      })
+      .collect(),
+  )
+}
+
 /// MeanDegreeConnectivity for a graph containing directed edges: for each
 /// degree k = 0, 1, 2, ..., the mean over vertices of (total, in+out) degree k
 /// of the average degree of their neighbours. Every edge contributes one to
@@ -5411,6 +5492,34 @@ pub fn graph_metric_ast(
         && let Some(result) = directed_mean_degree_connectivity(&args[0])
       {
         return Ok(result);
+      }
+      if name == "MeanClusteringCoefficient"
+        && let Some(local) = directed_local_clustering(&args[0])
+        && !local.is_empty()
+      {
+        // Mean of the per-vertex directed local clustering coefficients.
+        let terms: Vec<Expr> = local
+          .iter()
+          .map(|&(c, t)| {
+            if t == 0 {
+              Expr::Integer(0)
+            } else {
+              make_rational(c, t)
+            }
+          })
+          .collect();
+        let sum = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: terms.into(),
+        };
+        let mean = Expr::FunctionCall {
+          name: "Divide".to_string(),
+          args: vec![sum, Expr::Integer(local.len() as i128)].into(),
+        };
+        return Ok(
+          crate::evaluator::evaluate_expr_to_expr(&mean)
+            .unwrap_or_else(|_| unevaluated()),
+        );
       }
       return Ok(unevaluated());
     }
