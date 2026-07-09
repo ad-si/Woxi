@@ -1833,6 +1833,38 @@ mod cancel {
     assert_eq!(interpret("Cancel[2/(2 - 2 x)]").unwrap(), "(1 - x)^(-1)");
     assert_eq!(interpret("Cancel[1/(1 - x)]").unwrap(), "(1 - x)^(-1)");
   }
+
+  // Regression (diff-fuzz seed 1783624199336595105): a reciprocal whose
+  // numerator cancels to 1 over a denominator carrying integer content
+  // keeps the content as a rational coefficient — 1/(2*(-1+2*x)), never
+  // (2*(-1+2*x))^(-1) — and a bare -1 numerator folds into a sum
+  // denominator: -1/(1+x) → (-1-x)^(-1). All wolframscript-verified.
+  #[test]
+  fn unit_numerator_reciprocal_forms() {
+    // Integer content stays a rational coefficient, not inside the power.
+    assert_eq!(
+      interpret("Cancel[-1/(2 - 4 x)]").unwrap(),
+      "1/(2*(-1 + 2*x))"
+    );
+    assert_eq!(
+      interpret("Cancel[-1/(3 - 6 x)]").unwrap(),
+      "1/(3*(-1 + 2*x))"
+    );
+    // A bare -1 numerator folds into a sum denominator.
+    assert_eq!(interpret("Cancel[-1/(1 + x)]").unwrap(), "(-1 - x)^(-1)");
+    assert_eq!(interpret("Cancel[-1/(2 + x)]").unwrap(), "(-2 - x)^(-1)");
+    assert_eq!(interpret("Cancel[-1/(x + y)]").unwrap(), "(-x - y)^(-1)");
+    assert_eq!(interpret("Cancel[-1/(-1 + x)]").unwrap(), "(1 - x)^(-1)");
+    assert_eq!(interpret("Together[-1/(1 + x)]").unwrap(), "(-1 - x)^(-1)");
+    // Boundaries: a product denominator keeps its rational coefficient, a
+    // non-unit numerator is untouched, and Simplify does NOT fold.
+    assert_eq!(
+      interpret("Cancel[-1/(2 + 2 x)]").unwrap(),
+      "-1/2*1/(1 + x)"
+    );
+    assert_eq!(interpret("Cancel[-2/(1 + x)]").unwrap(), "-2/(1 + x)");
+    assert_eq!(interpret("Simplify[-1/(1 + x)]").unwrap(), "-(1 + x)^(-1)");
+  }
 }
 
 mod expand_modulus {

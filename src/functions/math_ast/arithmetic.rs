@@ -8151,14 +8151,62 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
   if matches!(&a, Expr::Integer(0)) {
     return Expr::Integer(0);
   }
+  // 1 / b → Power[b, -1]
+  if matches!(&a, Expr::Integer(1)) {
+    // 1 / (c * rest) → (1/c) * rest^(-1): the integer content shows as a
+    // rational coefficient rather than staying inside the reciprocal base.
+    // Wolfram never displays (2*(-1+2*x))^(-1); it is 1/(2*(-1+2*x)) — the
+    // same form the evaluator yields for Power[c*rest, -1]. Cancel/Together
+    // build this quotient directly (via make_divide) without re-evaluating,
+    // so the split has to happen here.
+    if let Expr::FunctionCall { name, args } = &b
+      && name == "Times"
+    {
+      let mut int_prod: i128 = 1;
+      let mut rest: Vec<Expr> = Vec::new();
+      for f in args.iter() {
+        match f {
+          Expr::Integer(n) => int_prod = int_prod.saturating_mul(*n),
+          other => rest.push(other.clone()),
+        }
+      }
+      if int_prod != 0 && int_prod.unsigned_abs() != 1 && !rest.is_empty() {
+        let rest_expr = if rest.len() == 1 {
+          rest.remove(0)
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: rest.into(),
+          }
+        };
+        let rest_inv = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![rest_expr, Expr::Integer(-1)].into(),
+        };
+        // Sign is carried on the rational's numerator (Rational[-1, |c|]).
+        let coeff = Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![
+            Expr::Integer(int_prod.signum()),
+            Expr::Integer(int_prod.abs()),
+          ]
+          .into(),
+        };
+        return Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![coeff, rest_inv].into(),
+        };
+      }
+    }
+    return Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![b, Expr::Integer(-1)].into(),
+    };
+  }
   let b_inv = Expr::FunctionCall {
     name: "Power".to_string(),
     args: vec![b, Expr::Integer(-1)].into(),
   };
-  // 1 / b → Power[b, -1]
-  if matches!(&a, Expr::Integer(1)) {
-    return b_inv;
-  }
   // Flatten: if a is already Times, merge b_inv into its args
   if let Expr::FunctionCall { name, args } = &a
     && name == "Times"
