@@ -3866,10 +3866,14 @@ fn numeric_eigenvalues(matrix: &[Vec<f64>], n: usize) -> Vec<f64> {
     return vec![];
   }
 
-  // For n >= 3: use Faddeev-LeVerrier to get characteristic polynomial,
-  // then find roots numerically
-  let coeffs = char_poly_f64(matrix, n);
-  let mut roots = find_real_roots_f64(&coeffs);
+  // For n >= 3: Householder reduction to Hessenberg form followed by a
+  // Wilkinson-shifted QR iteration on the matrix itself. (The previous
+  // route — floating-point Faddeev–LeVerrier coefficients + companion
+  // matrix — loses half the significant digits at repeated roots, e.g.
+  // a triangular {{2,1,0},{0,2,0},{0,0,1}} came out as {1.9995…, 1.0…}.)
+  let mut h = matrix.to_vec();
+  hessenberg_reduce(&mut h, n);
+  let mut roots = qr_eigenvalues(&mut h, n);
   roots.sort_by(|a, b| {
     b.abs()
       .partial_cmp(&a.abs())
@@ -3878,158 +3882,161 @@ fn numeric_eigenvalues(matrix: &[Vec<f64>], n: usize) -> Vec<f64> {
   roots
 }
 
-/// Faddeev-LeVerrier for f64 matrix.
-fn char_poly_f64(a: &[Vec<f64>], n: usize) -> Vec<f64> {
-  let mut coeffs = vec![0.0f64; n + 1];
-  coeffs[n] = 1.0;
-  let mut m = a.to_vec();
-
-  for k in 1..=n {
-    let trace: f64 = (0..n).map(|i| m[i][i]).sum();
-    coeffs[n - k] = -trace / k as f64;
-
-    if k < n {
-      let c = coeffs[n - k];
-      let mut temp = m.clone();
-      for i in 0..n {
-        temp[i][i] += c;
-      }
-      let mut new_m = vec![vec![0.0; n]; n];
-      for i in 0..n {
-        for j in 0..n {
-          for p in 0..n {
-            new_m[i][j] += a[i][p] * temp[p][j];
-          }
-        }
-      }
-      m = new_m;
-    }
-  }
-  coeffs
-}
-
-/// Find real roots of a polynomial (ascending coefficients) using
-/// companion matrix eigenvalue approach (QR iteration).
-fn find_real_roots_f64(coeffs: &[f64]) -> Vec<f64> {
-  let degree = coeffs.len() - 1;
-  if degree == 0 {
-    return vec![];
-  }
-  if degree == 1 {
-    return vec![-coeffs[0] / coeffs[1]];
-  }
-  if degree == 2 {
-    let a = coeffs[2];
-    let b = coeffs[1];
-    let c = coeffs[0];
-    let disc = b * b - 4.0 * a * c;
-    if disc >= 0.0 {
-      let sq = disc.sqrt();
-      return vec![(-b + sq) / (2.0 * a), (-b - sq) / (2.0 * a)];
-    }
-    return vec![];
-  }
-
-  // Build companion matrix and use QR iteration
-  let n = degree;
-  let lc = coeffs[n];
-  let mut comp = vec![vec![0.0; n]; n];
-  for i in 1..n {
-    comp[i][i - 1] = 1.0;
-  }
-  for i in 0..n {
-    comp[i][n - 1] = -coeffs[i] / lc;
-  }
-
-  // QR iteration with shifts
-  qr_eigenvalues(&mut comp, n)
-}
-
-/// QR iteration to find eigenvalues of an upper Hessenberg matrix.
-fn qr_eigenvalues(h: &mut Vec<Vec<f64>>, n: usize) -> Vec<f64> {
-  let mut eigenvalues = Vec::new();
-  let mut size = n;
-
-  for _ in 0..1000 * n {
-    if size <= 1 {
-      if size == 1 {
-        eigenvalues.push(h[0][0]);
-      }
-      break;
-    }
-
-    // Check for deflation
-    let mut deflated = false;
-    for i in (1..size).rev() {
-      if h[i][i - 1].abs()
-        < 1e-14 * (h[i][i].abs() + h[i - 1][i - 1].abs()).max(1e-300)
-      {
-        // Deflate
-        eigenvalues.push(h[i][i]);
-        size = i;
-        deflated = true;
-        break;
-      }
-    }
-    if deflated {
+/// In-place Householder reduction to upper Hessenberg form. Columns whose
+/// below-subdiagonal part is exactly zero are skipped, so triangular and
+/// block-triangular inputs pass through bit-for-bit unchanged.
+fn hessenberg_reduce(a: &mut [Vec<f64>], n: usize) {
+  for k in 0..n.saturating_sub(2) {
+    let norm_x: f64 = (k + 1..n).map(|i| a[i][k] * a[i][k]).sum::<f64>().sqrt();
+    if norm_x == 0.0 || (k + 2..n).all(|i| a[i][k] == 0.0) {
       continue;
     }
-
-    // Wilkinson shift
-    let shift = h[size - 1][size - 1];
-
-    // Apply shift
-    for i in 0..size {
-      h[i][i] -= shift;
+    let alpha = if a[k + 1][k] >= 0.0 { -norm_x } else { norm_x };
+    let m = n - k - 1;
+    let mut v: Vec<f64> = (k + 1..n).map(|i| a[i][k]).collect();
+    v[0] -= alpha;
+    let vnorm2: f64 = v.iter().map(|x| x * x).sum();
+    if vnorm2 == 0.0 {
+      continue;
     }
-
-    // QR factorization via Givens rotations
-    let mut cs = Vec::new();
-    let mut sn = Vec::new();
-    for i in 0..size - 1 {
-      let a = h[i][i];
-      let b = h[i + 1][i];
-      let r = (a * a + b * b).sqrt();
-      if r < 1e-300 {
-        cs.push(1.0);
-        sn.push(0.0);
-        continue;
-      }
-      let c = a / r;
-      let s = b / r;
-      cs.push(c);
-      sn.push(s);
-      // Apply Givens rotation to rows i, i+1
-      for j in 0..size {
-        let t1 = h[i][j];
-        let t2 = h[i + 1][j];
-        h[i][j] = c * t1 + s * t2;
-        h[i + 1][j] = -s * t1 + c * t2;
+    // A ← H A with H = I − 2vvᵀ/‖v‖²
+    for j in 0..n {
+      let dot: f64 = (0..m).map(|t| v[t] * a[k + 1 + t][j]).sum();
+      let f = 2.0 * dot / vnorm2;
+      for t in 0..m {
+        a[k + 1 + t][j] -= f * v[t];
       }
     }
-
-    // R * Q (apply rotations from right)
-    for i in 0..size - 1 {
-      let c = cs[i];
-      let s = sn[i];
-      for j in 0..size {
-        let t1 = h[j][i];
-        let t2 = h[j][i + 1];
-        h[j][i] = c * t1 + s * t2;
-        h[j][i + 1] = -s * t1 + c * t2;
+    // A ← A H
+    for row in a.iter_mut().take(n) {
+      let dot: f64 = (0..m).map(|t| row[k + 1 + t] * v[t]).sum();
+      let f = 2.0 * dot / vnorm2;
+      for t in 0..m {
+        row[k + 1 + t] -= f * v[t];
       }
     }
-
-    // Undo shift
-    for i in 0..size {
-      h[i][i] += shift;
+    a[k + 1][k] = alpha;
+    for i in k + 2..n {
+      a[i][k] = 0.0;
     }
   }
+}
 
-  if size > 0 && eigenvalues.len() < n {
-    // Remaining eigenvalues
-    for i in 0..size {
-      eigenvalues.push(h[i][i]);
+/// Real eigenvalues of an upper Hessenberg matrix via shifted QR
+/// iteration with deflation. Trailing 1×1 and 2×2 blocks deflate in
+/// closed form, so clean cases (triangular, block-diagonal, defective
+/// with exact entries) produce exact values. Returns an empty vector when
+/// a complex pair appears or the iteration fails to converge — the
+/// callers then leave the expression unevaluated instead of fabricating
+/// real "eigenvalues" (the old companion-matrix path returned garbage for
+/// rotation-like matrices).
+fn qr_eigenvalues(h: &mut [Vec<f64>], n: usize) -> Vec<f64> {
+  let mut eigenvalues: Vec<f64> = Vec::new();
+  let mut hi = n; // active block occupies rows/columns 0..hi
+  let mut stagnant = 0usize;
+
+  while hi > 0 {
+    // Zero out negligible subdiagonal entries.
+    for i in 1..hi {
+      if h[i][i - 1].abs()
+        <= 1e-13 * (h[i][i].abs() + h[i - 1][i - 1].abs()).max(1e-300)
+      {
+        h[i][i - 1] = 0.0;
+      }
+    }
+    // Deflate a trailing 1×1 block.
+    if hi == 1 || h[hi - 1][hi - 2] == 0.0 {
+      eigenvalues.push(h[hi - 1][hi - 1]);
+      hi -= 1;
+      stagnant = 0;
+      continue;
+    }
+    // Deflate a trailing 2×2 block in closed form.
+    if hi == 2 || h[hi - 2][hi - 3] == 0.0 {
+      let (a, b) = (h[hi - 2][hi - 2], h[hi - 2][hi - 1]);
+      let (c, d) = (h[hi - 1][hi - 2], h[hi - 1][hi - 1]);
+      let tr = a + d;
+      let det = a * d - b * c;
+      let disc = tr * tr - 4.0 * det;
+      if disc < 0.0 {
+        return Vec::new(); // complex pair: unsupported
+      }
+      let sq = disc.sqrt();
+      eigenvalues.push((tr - sq) / 2.0);
+      eigenvalues.push((tr + sq) / 2.0);
+      hi -= 2;
+      stagnant = 0;
+      continue;
+    }
+    stagnant += 1;
+    if stagnant > 60 * n {
+      return Vec::new(); // no convergence (e.g. complex pairs upstream)
+    }
+
+    // Start of the trailing irreducible block.
+    let mut lo = hi - 1;
+    while lo > 0 && h[lo][lo - 1] != 0.0 {
+      lo -= 1;
+    }
+
+    // Wilkinson shift: the eigenvalue of the trailing 2×2 closest to the
+    // corner entry; an occasional exceptional shift breaks symmetric
+    // stagnation.
+    let (a, b) = (h[hi - 2][hi - 2], h[hi - 2][hi - 1]);
+    let (c, d) = (h[hi - 1][hi - 2], h[hi - 1][hi - 1]);
+    let shift = if stagnant.is_multiple_of(17) {
+      d + h[hi - 1][hi - 2].abs()
+    } else {
+      let tr = a + d;
+      let det = a * d - b * c;
+      let disc = tr * tr - 4.0 * det;
+      if disc >= 0.0 {
+        let sq = disc.sqrt();
+        let l1 = (tr + sq) / 2.0;
+        let l2 = (tr - sq) / 2.0;
+        if (l1 - d).abs() < (l2 - d).abs() {
+          l1
+        } else {
+          l2
+        }
+      } else {
+        d
+      }
+    };
+
+    // One shifted QR sweep on the active block via Givens rotations.
+    for i in lo..hi {
+      h[i][i] -= shift;
+    }
+    let mut rotations: Vec<(f64, f64)> = Vec::with_capacity(hi - lo);
+    for i in lo..hi - 1 {
+      let x = h[i][i];
+      let y = h[i + 1][i];
+      let r = x.hypot(y);
+      if r < 1e-300 {
+        rotations.push((1.0, 0.0));
+        continue;
+      }
+      let (cs, sn) = (x / r, y / r);
+      rotations.push((cs, sn));
+      for j in lo..hi {
+        let t1 = h[i][j];
+        let t2 = h[i + 1][j];
+        h[i][j] = cs * t1 + sn * t2;
+        h[i + 1][j] = -sn * t1 + cs * t2;
+      }
+    }
+    for (idx, (cs, sn)) in rotations.iter().enumerate() {
+      let i = lo + idx;
+      for j in lo..hi {
+        let t1 = h[j][i];
+        let t2 = h[j][i + 1];
+        h[j][i] = cs * t1 + sn * t2;
+        h[j][i + 1] = -sn * t1 + cs * t2;
+      }
+    }
+    for i in lo..hi {
+      h[i][i] += shift;
     }
   }
 
@@ -8341,12 +8348,6 @@ pub fn jordan_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let blocks: Vec<(Expr, usize)> =
       eigs.iter().map(|e| (e.clone(), 1)).collect();
     return Ok(build_jordan_matrix(&blocks, n));
-  }
-
-  // Inexact eigenvalues with n ≥ 3 come from the QR iteration, which is
-  // not accurate enough near repeated roots to trust the cluster values.
-  if n >= 3 && eigs.iter().any(|e| matches!(e, Expr::Real(_))) {
-    return Ok(unevaluated());
   }
 
   // Sort distinct eigenvalues ascending by (Re, Im); with a single

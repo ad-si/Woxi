@@ -920,6 +920,38 @@ mod eigenvalues {
     );
   }
 
+  // Float matrices with repeated eigenvalues: the old numeric route
+  // (Faddeev–LeVerrier coefficients + companion-matrix QR) lost half the
+  // significant digits at multiple roots ({1.9995…, 1.0000000000000058, …});
+  // the Hessenberg + shifted-QR solver reads clean cases off exactly.
+  #[test]
+  fn eigenvalues_float_defective_exact() {
+    assert_eq!(
+      interpret("Eigenvalues[{{2., 1., 0.}, {0., 2., 0.}, {0., 0., 1.}}]")
+        .unwrap(),
+      "{2., 2., 1.}"
+    );
+    assert_eq!(
+      interpret(
+        "Eigenvalues[{{4., 1., 0., 0.}, {0., 4., 1., 0.}, \
+         {0., 0., 4., 0.}, {0., 0., 0., 3.}}]"
+      )
+      .unwrap(),
+      "{4., 4., 4., 3.}"
+    );
+  }
+
+  // Block-diagonal float matrices deflate through the closed-form 2×2
+  // step, so small-integer-valued eigenvalues stay exact.
+  #[test]
+  fn eigenvalues_float_block_exact() {
+    assert_eq!(
+      interpret("Eigenvalues[{{1., 2., 0.}, {2., 1., 0.}, {0., 0., 5.}}]")
+        .unwrap(),
+      "{5., 3., -1.}"
+    );
+  }
+
   #[test]
   fn eigenvalues_2x2_integer() {
     assert_eq!(
@@ -5531,6 +5563,13 @@ mod jordan_reduce {
     assert_eq!(
       interpret("JordanReduce[{{2., 0.}, {0., 2.}}]").unwrap(),
       "{{2., 0}, {0, 2.}}"
+    );
+    // Defective float 3x3: the accurate eigensolver produces exact
+    // duplicates, so the Jordan-block structure comes through.
+    assert_eq!(
+      interpret("JordanReduce[{{2., 1., 0.}, {0., 2., 0.}, {0., 0., 1.}}]")
+        .unwrap(),
+      "{{1., 0, 0}, {0, 2., 1}, {0, 0, 2.}}"
     );
   }
 
