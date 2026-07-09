@@ -1155,6 +1155,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Resultant" => Some((3, 4)),
     "Reverse" => Some((1, 2)),
     "ReverseGraph" => Some((1, 2)),
+    "DirectedGraph" => Some((1, 1)),
     "ReverseSort" => Some((1, 2)),
     "ReverseSortBy" => Some((2, 2)),
     "RiemannR" => Some((1, 1)),

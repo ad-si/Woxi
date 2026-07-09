@@ -2722,6 +2722,97 @@ pub fn reverse_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// DirectedGraph[g] - the directed version of `g`. Each undirected edge
+/// becomes a pair of opposite directed edges (a self-loop stays a single
+/// directed loop); already-directed edges are kept as-is. Edges are ordered by
+/// the vertex-list positions of their endpoints, matching wolframscript. The
+/// two-argument conversion forms ("Acyclic", "Random", …) are not handled.
+pub fn directed_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "DirectedGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  let not_a_graph = || {
+    crate::emit_message(&format!(
+      "DirectedGraph::graph: A graph object is expected at position 1 in {}.",
+      crate::syntax::expr_to_string(&unevaluated())
+    ));
+    Ok(unevaluated())
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  let (vertices, edges, extra) = match &args[0] {
+    Expr::FunctionCall { name, args: gargs }
+      if name == "Graph" && gargs.len() >= 2 =>
+    {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => {
+          (v.clone(), e.clone(), gargs[2..].to_vec())
+        }
+        _ => return not_a_graph(),
+      }
+    }
+    _ => return not_a_graph(),
+  };
+
+  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+
+  // Emit directed edges, then stable-sort by the vertex-list positions of the
+  // endpoints (matching ReverseGraph's ordering convention).
+  let mut out: Vec<(usize, usize, Expr)> = Vec::with_capacity(edges.len() * 2);
+  for edge in edges.iter() {
+    let (head, a, b) = match edge {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        (name.as_str(), &eargs[0], &eargs[1])
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => ("Rule", pattern.as_ref(), replacement.as_ref()),
+      _ => return not_a_graph(),
+    };
+    // The directed orientations contributed by this edge: directed edges keep
+    // their single orientation; an undirected edge yields both directions,
+    // except a self-loop which stays a single directed loop.
+    let orientations: Vec<(&Expr, &Expr)> = match head {
+      "DirectedEdge" | "Rule" => vec![(a, b)],
+      "UndirectedEdge" if key(a) == key(b) => vec![(a, b)],
+      "UndirectedEdge" => vec![(a, b), (b, a)],
+      _ => return not_a_graph(),
+    };
+    for (from, to) in orientations {
+      match (index.get(&key(from)), index.get(&key(to))) {
+        (Some(&s), Some(&d)) => out.push((
+          s,
+          d,
+          Expr::FunctionCall {
+            name: "DirectedEdge".to_string(),
+            args: vec![from.clone(), to.clone()].into(),
+          },
+        )),
+        _ => return not_a_graph(),
+      }
+    }
+  }
+  out.sort_by_key(|(s, d, _)| (*s, *d));
+
+  let mut new_args = vec![
+    Expr::List(vertices),
+    Expr::List(out.into_iter().map(|(_, _, e)| e).collect()),
+  ];
+  new_args.extend(extra);
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: new_args.into(),
+  })
+}
+
 /// FindIndependentVertexSet[g] - one maximum independent vertex set,
 /// wrapped in a list. Among all maximum sets wolframscript returns the
 /// lexicographically first by vertex-list position (so Graph[{2 <-> 1}]

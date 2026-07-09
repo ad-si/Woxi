@@ -5543,6 +5543,81 @@ mod reverse_graph_tests {
   }
 }
 
+// DirectedGraph[g] converts g to a directed graph: each undirected edge becomes
+// a pair of opposite directed edges (a self-loop stays a single directed loop),
+// while already-directed edges are kept as-is. Edges come out sorted by the
+// vertex-list positions of their endpoints. Verified against wolframscript;
+// the `/. DirectedEdge -> List` rewrite renders the arrow edges as plain lists.
+mod directed_graph_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn undirected_edges_become_both_orientations() {
+    assert_eq!(
+      interpret(
+        "EdgeList[DirectedGraph[PathGraph[{1, 2, 3}]]] /. DirectedEdge -> List"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 1}, {2, 3}, {3, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[DirectedGraph[CycleGraph[4]]] /. DirectedEdge -> List"
+      )
+      .unwrap(),
+      "{{1, 2}, {1, 4}, {2, 1}, {2, 3}, {3, 2}, {3, 4}, {4, 1}, {4, 3}}"
+    );
+  }
+
+  #[test]
+  fn directed_edges_kept_and_mixed() {
+    // Already-directed edges are kept single.
+    assert_eq!(
+      interpret(
+        "EdgeList[DirectedGraph[Graph[{1 -> 2, 2 -> 3}]]] /. DirectedEdge -> List"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+    // An undirected edge doubles; a directed edge stays single.
+    assert_eq!(
+      interpret(
+        "EdgeList[DirectedGraph[Graph[{1 <-> 2, 2 -> 3}]]] /. DirectedEdge -> List"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 1}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn self_loop_stays_single() {
+    assert_eq!(
+      interpret(
+        "EdgeList[DirectedGraph[Graph[{1 <-> 1, 1 <-> 2}]]] /. DirectedEdge -> List"
+      )
+      .unwrap(),
+      "{{1, 1}, {1, 2}, {2, 1}}"
+    );
+  }
+
+  #[test]
+  fn result_is_directed_and_preserves_vertices() {
+    assert_eq!(
+      interpret("DirectedGraphQ[DirectedGraph[CycleGraph[3]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("VertexList[DirectedGraph[PathGraph[{1, 2, 3}]]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn non_graph_stays_unevaluated() {
+    assert_eq!(interpret("DirectedGraph[5]").unwrap(), "DirectedGraph[5]");
+  }
+}
+
 mod incidence_graph_tests {
   use woxi::interpret;
 

@@ -2203,7 +2203,7 @@ LowerCaseQ,Tests if a string consists entirely of lowercase letters,✅,pure,2.0
 StationaryWaveletTransform,Undecimated (a trous) stationary wavelet transform,✅,pure,8.0,2243
 AlgebraicNumber,Algebraic number theory,🚫,None,6.0,2246
 DateHistogram,Date visualization,🚫,None,10.2,2246
-DirectedGraph,Graph construction,🚫,None,8.0,2246
+DirectedGraph,Directed version of a graph with each undirected edge as two arcs,✅,pure,8.0,2246
 BooleanRegion,Geometric region construction,🚫,None,10.0,2251
 GraphUnion,Union of the vertices and edges of graphs,✅,pure,8.0,2251
 PrimeOmega,Count prime factors with multiplicity (Listable),✅,pure,7.0,2251

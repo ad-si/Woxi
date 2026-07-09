@@ -4346,6 +4346,10 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::reverse_graph_ast(args);
   }
 
+  if name == "DirectedGraph" && args.len() == 1 {
+    return crate::functions::graph::directed_graph_ast(args);
+  }
+
   // IncidenceGraph[m] / IncidenceGraph[vertices, m] → graph from an
   // incidence matrix
   if name == "IncidenceGraph" && !args.is_empty() && args.len() <= 2 {
