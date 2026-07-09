@@ -1319,7 +1319,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BetaNegativeBinomialDistribution" => Some((3, 3)),
     "ExpGammaDistribution" => Some((3, 3)),
     "LogGammaDistribution" => Some((3, 3)),
-    "BetaPrimeDistribution" => Some((2, 2)),
+    "BetaPrimeDistribution" => Some((2, 4)),
     "JulianDate" => Some((0, 1)),
     "NoncentralChiSquareDistribution" => Some((2, 2)),
     "MarcumQ" => Some((3, 4)),

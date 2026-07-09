@@ -3106,6 +3106,75 @@ mod beta_prime_distribution {
       "232/243"
     );
   }
+
+  // The 3-argument BetaPrimeDistribution[p, q, s] adds a scale s (power 1); the
+  // 4-argument BetaPrimeDistribution[p, q, b, a] adds a power b and scale a.
+  // Verified against wolframscript.
+  #[test]
+  fn three_arg_scale_forms() {
+    assert_eq!(
+      interpret("PDF[BetaPrimeDistribution[p, q, s], x]").unwrap(),
+      "Piecewise[{{((x/s)^(-1 + p)*(1 + x/s)^(-p - q))/(s*Beta[p, q]), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[BetaPrimeDistribution[p, q, s], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[x/(s + x), p, q], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("Mean[BetaPrimeDistribution[p, q, s]]").unwrap(),
+      "Piecewise[{{(p*s)/(-1 + q), q > 1}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("Variance[BetaPrimeDistribution[p, q, s]]").unwrap(),
+      "Piecewise[{{(p*(-1 + p + q)*s^2)/((-2 + q)*(-1 + q)^2), q > 2}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("Variance[BetaPrimeDistribution[3, 5, 2]]").unwrap(),
+      "7/4"
+    );
+  }
+
+  #[test]
+  fn four_arg_power_scale_forms() {
+    assert_eq!(
+      interpret("PDF[BetaPrimeDistribution[p, q, b, a], x]").unwrap(),
+      "Piecewise[{{(b*(x/a)^(-1 + b*p)*(1 + (x/a)^b)^(-p - q))/(a*Beta[p, q]), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[BetaPrimeDistribution[p, q, b, a], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[x^b/(a^b + x^b), p, q], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("Mean[BetaPrimeDistribution[p, q, b, a]]").unwrap(),
+      "Piecewise[{{(a*Gamma[b^(-1) + p]*Gamma[-b^(-1) + q])/(Gamma[p]*Gamma[q]), 1 < b*q}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("Variance[BetaPrimeDistribution[p, q, b, a]]").unwrap(),
+      "Piecewise[{{(a^2*(Gamma[p]*Gamma[2/b + p]*Gamma[q]*Gamma[-2/b + q] - Gamma[b^(-1) + p]^2*Gamma[-b^(-1) + q]^2))/(Gamma[p]^2*Gamma[q]^2), b*q > 2}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn generalized_at_points() {
+    assert_eq!(
+      interpret("PDF[BetaPrimeDistribution[2, 3, 1, 2], 1]").unwrap(),
+      "32/81"
+    );
+    assert_eq!(
+      interpret("CDF[BetaPrimeDistribution[2, 3, 1, 2], 2]").unwrap(),
+      "11/16"
+    );
+    assert_eq!(
+      interpret("Mean[BetaPrimeDistribution[2, 3, 2, 1]]").unwrap(),
+      "(9*Pi)/32"
+    );
+    // The value-correct variance matches even where the symbolic form is heavy.
+    assert_eq!(
+      interpret("Round[N[Variance[BetaPrimeDistribution[2, 5, 3, 1]]], 10^-6]")
+        .unwrap(),
+      "47893/1000000"
+    );
+  }
 }
 
 mod beta_regularized_exact {

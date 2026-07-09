@@ -2983,7 +2983,7 @@ SectorChart3D,,🚫,,7.0,3048
 SlideView,Slide view control (stays symbolic in script mode),✅,unevaluated,6.0,3048
 SpanMaxSize,,,,3.0,3048
 TestReport,,,,10.0,3048
-BetaPrimeDistribution,Beta prime distribution (exact PDF and CDF and conditional moments),✅,pure,8.0,3059
+BetaPrimeDistribution,Beta prime distribution with optional power and scale parameters,✅,pure,8.0,3059
 ChromaticityPlot3D,,🚫,,10.0,3059
 DefaultOptions,,,,6.0,3059
 DirichletEta,Dirichlet eta function,✅,pure,10.0,3059

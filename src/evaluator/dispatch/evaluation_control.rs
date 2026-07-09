@@ -159,7 +159,7 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
-    "BetaPrimeDistribution" if args.len() == 2 => {
+    "BetaPrimeDistribution" if (2..=4).contains(&args.len()) => {
       return Some(Ok(Expr::FunctionCall {
         name: "BetaPrimeDistribution".to_string(),
         args: args.to_vec().into(),

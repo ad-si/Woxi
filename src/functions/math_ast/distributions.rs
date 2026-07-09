@@ -4079,12 +4079,22 @@ fn distribution_mean_variance(
       let var = plus(times(int(2), nu), times(int(4), lam));
       Ok((mean, var))
     }
+    "BetaPrimeDistribution" if dargs.len() == 4 => {
+      beta_prime4_mean_variance(dargs)
+    }
     "BetaPrimeDistribution" => {
-      if dargs.len() != 2 {
+      if dargs.len() != 2 && dargs.len() != 3 {
         return Err(InterpreterError::EvaluationError(
-          "BetaPrimeDistribution expects 2 arguments".into(),
+          "BetaPrimeDistribution expects 2 to 4 arguments".into(),
         ));
       }
+      // The 3-argument form BetaPrimeDistribution[p, q, s] scales the standard
+      // mean by s and the variance by s^2.
+      let scale = if dargs.len() == 3 {
+        dargs[2].clone()
+      } else {
+        int(1)
+      };
       let (p, q) = (dargs[0].clone(), dargs[1].clone());
       // Resolve the q-conditions up front for numeric q so the dead
       // branch never evaluates (a literal p/0 would message infy)
@@ -4101,8 +4111,14 @@ fn distribution_mean_variance(
         }
         _ => None,
       };
-      let mean_value = divide(p.clone(), plus(int(-1), q.clone()));
-      // Mean = Piecewise[{{p/(q-1), q > 1}}, Infinity]
+      let mean_base = divide(p.clone(), plus(int(-1), q.clone()));
+      // Mean = Piecewise[{{p/(q-1), q > 1}}, Infinity]; the 3-arg form scales
+      // this by the scale parameter s.
+      let mean_value = if dargs.len() == 3 {
+        eval(times(scale.clone(), mean_base))?
+      } else {
+        mean_base
+      };
       let mean = match q_num {
         Some(v) if v > 1.0 => mean_value,
         Some(_) => Expr::Identifier("Infinity".to_string()),
@@ -4114,14 +4130,20 @@ fn distribution_mean_variance(
           Expr::Identifier("Infinity".to_string()),
         ),
       };
-      // Var = Piecewise[{{p(p+q-1)/((q-2)(q-1)^2), q > 2}}, Indeterminate]
-      let var_value = divide(
-        times(p.clone(), plus(plus(int(-1), p), q.clone())),
+      // Var = Piecewise[{{p(p+q-1)/((q-2)(q-1)^2), q > 2}}, Indeterminate];
+      // the 3-arg form scales this by s^2.
+      let var_base = divide(
+        times(p.clone(), plus(plus(int(-1), p.clone()), q.clone())),
         times(
           plus(int(-2), q.clone()),
           power(plus(int(-1), q.clone()), int(2)),
         ),
       );
+      let var_value = if dargs.len() == 3 {
+        eval(times(power(scale.clone(), int(2)), var_base))?
+      } else {
+        var_base
+      };
       let var = match q_num {
         Some(v) if v > 2.0 => var_value,
         Some(_) => Expr::Identifier("Indeterminate".to_string()),
@@ -9978,6 +10000,28 @@ pub fn cdf_beta_binomial(
 /// Numeric parameters evaluate the density (with 1/Beta pre-divided so
 /// rationals hoist into the numerator); symbolic parameters keep the
 /// raw Beta quotient form.
+/// Density of the generalized BetaPrimeDistribution with power `w` and scale
+/// `s`: w (x/s)^(w p - 1) (1 + (x/s)^w)^(-p - q) / (s Beta[p, q]).
+fn beta_prime_general_body(
+  p: &Expr,
+  q: &Expr,
+  w: &Expr,
+  s: &Expr,
+  x: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let xs = divide(x.clone(), s.clone());
+  let x_pow = power(xs.clone(), plus(int(-1), times(w.clone(), p.clone())));
+  let neg_pq = plus(times(int(-1), p.clone()), times(int(-1), q.clone()));
+  let bracket = power(plus(int(1), power(xs, w.clone())), neg_pq);
+  let num = times(w.clone(), times(x_pow, bracket));
+  let den = times(s.clone(), call("Beta", vec![p.clone(), q.clone()]));
+  eval(divide(num, den))
+}
+
 pub fn pdf_beta_prime(
   dargs: &[Expr],
   x: Expr,
@@ -9993,6 +10037,34 @@ pub fn pdf_beta_prime(
     ]
     .into(),
   };
+  // Generalized forms: BetaPrimeDistribution[p, q, s] (power 1, scale s) and
+  // BetaPrimeDistribution[p, q, b, a] (power b, scale a).
+  if dargs.len() == 3 || dargs.len() == 4 {
+    let (p, q, w, s) = if dargs.len() == 3 {
+      (dargs[0].clone(), dargs[1].clone(), int(1), dargs[2].clone())
+    } else {
+      (
+        dargs[0].clone(),
+        dargs[1].clone(),
+        dargs[2].clone(),
+        dargs[3].clone(),
+      )
+    };
+    let body = beta_prime_general_body(&p, &q, &w, &s, &x)?;
+    if let Some(xv) = ms_numeric(&x) {
+      if xv <= 0.0 {
+        return Ok(int(0));
+      }
+      return Ok(body);
+    }
+    if !matches!(&x, Expr::Identifier(_)) {
+      return Ok(unevaluated(dargs, x));
+    }
+    return Ok(piecewise(
+      vec![(body, comparison(x, ComparisonOp::Greater, int(0)))],
+      int(0),
+    ));
+  }
   if dargs.len() != 2 {
     return Ok(unevaluated(dargs, x));
   }
@@ -10101,6 +10173,39 @@ pub fn cdf_beta_prime(
     ]
     .into(),
   };
+  // Generalized forms: CDF = BetaRegularized[x^w/(s^w + x^w), p, q] with power
+  // w and scale s (w = 1 for the 3-argument form).
+  if dargs.len() == 3 || dargs.len() == 4 {
+    let (p, q, w, s) = if dargs.len() == 3 {
+      (dargs[0].clone(), dargs[1].clone(), int(1), dargs[2].clone())
+    } else {
+      (
+        dargs[0].clone(),
+        dargs[1].clone(),
+        dargs[2].clone(),
+        dargs[3].clone(),
+      )
+    };
+    let xw = power(x.clone(), w.clone());
+    let ratio = eval(divide(xw.clone(), plus(power(s, w.clone()), xw)))?;
+    let body = Expr::FunctionCall {
+      name: "BetaRegularized".to_string(),
+      args: vec![ratio, p, q].into(),
+    };
+    if let Some(xv) = ms_numeric(&x) {
+      if xv <= 0.0 {
+        return Ok(int(0));
+      }
+      return eval(body);
+    }
+    if !matches!(&x, Expr::Identifier(_)) {
+      return Ok(unevaluated(dargs, x));
+    }
+    return Ok(piecewise(
+      vec![(body, comparison(x, ComparisonOp::Greater, int(0)))],
+      int(0),
+    ));
+  }
   if dargs.len() != 2 {
     return Ok(unevaluated(dargs, x));
   }
@@ -14661,6 +14766,59 @@ pub fn singh_maddala_mean_variance(
   );
   let variance = piecewise(
     vec![(var_expr, comparison(aq, ComparisonOp::Greater, int(2)))],
+    indeterminate(),
+  );
+
+  Ok((mean, variance))
+}
+
+/// Mean and variance for the 4-argument BetaPrimeDistribution[p, q, b, a]
+/// (power b, scale a), each existing only above a moment threshold in b*q.
+pub fn beta_prime4_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let (p, q, b, a) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+  );
+  let gamma = |z: Expr| Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![z].into(),
+  };
+  let inf = || Expr::Identifier("Infinity".to_string());
+  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
+  let inv_b = divide(int(1), b.clone());
+  let two_b = divide(int(2), b.clone());
+  let bq = times(b.clone(), q.clone());
+  let g_p = gamma(p.clone());
+  let g_q = gamma(q.clone());
+  let g_1b_p = gamma(plus(inv_b.clone(), p.clone()));
+  let g_1b_q = gamma(plus(times(int(-1), inv_b), q.clone()));
+
+  // Mean = a Gamma[1/b + p] Gamma[-1/b + q] / (Gamma[p] Gamma[q]), for 1 < b q.
+  let mean_val = divide(
+    times(times(a.clone(), g_1b_p.clone()), g_1b_q.clone()),
+    times(g_p.clone(), g_q.clone()),
+  );
+  let mean = piecewise(
+    vec![(mean_val, comparison(int(1), ComparisonOp::Less, bq.clone()))],
+    inf(),
+  );
+
+  // Variance = a^2 (Gamma[p] Gamma[2/b + p] Gamma[q] Gamma[-2/b + q]
+  //   - Gamma[1/b + p]^2 Gamma[-1/b + q]^2) / (Gamma[p]^2 Gamma[q]^2), b q > 2.
+  let g_2b_p = gamma(plus(two_b.clone(), p.clone()));
+  let g_2b_q = gamma(plus(times(int(-1), two_b), q.clone()));
+  let term1 = times(times(times(g_p.clone(), g_2b_p), g_q.clone()), g_2b_q);
+  let term2 = times(power(g_1b_p, int(2)), power(g_1b_q, int(2)));
+  let var_val = divide(
+    times(power(a, int(2)), minus(term1, term2)),
+    times(power(g_p, int(2)), power(g_q, int(2))),
+  );
+  let variance = piecewise(
+    vec![(var_val, comparison(bq, ComparisonOp::Greater, int(2)))],
     indeterminate(),
   );
 
