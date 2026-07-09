@@ -4788,6 +4788,68 @@ mod singh_maddala_distribution {
   }
 }
 
+// ParetoDistribution's 3-argument form [k, a, m] is the Type II / Lomax
+// (scale k, location m); the 4-argument form [k, a, g, m] adds a shape g.
+// Verified against wolframscript.
+mod pareto_generalized {
+  use super::*;
+
+  #[test]
+  fn three_arg_lomax_forms() {
+    assert_eq!(
+      interpret("PDF[ParetoDistribution[k, a, m], x]").unwrap(),
+      "Piecewise[{{(a*((k - m + x)/k)^(-1 - a))/k, x >= m}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[ParetoDistribution[k, a, m], x]").unwrap(),
+      "Piecewise[{{1 - (1 + (-m + x)/k)^(-a), x >= m}}, 0]"
+    );
+    assert_eq!(
+      interpret("Mean[ParetoDistribution[k, a, m]]").unwrap(),
+      "Piecewise[{{k/(-1 + a) + m, a > 1}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("Variance[ParetoDistribution[k, a, m]]").unwrap(),
+      "Piecewise[{{(a*k^2)/((-2 + a)*(-1 + a)^2), a > 2}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("Mean[ParetoDistribution[3, 5, 1]]").unwrap(),
+      "7/4"
+    );
+    assert_eq!(
+      interpret("PDF[ParetoDistribution[1, 2, 0], 1]").unwrap(),
+      "1/4"
+    );
+  }
+
+  #[test]
+  fn four_arg_forms() {
+    assert_eq!(
+      interpret("PDF[ParetoDistribution[k, a, g, m], x]").unwrap(),
+      "Piecewise[{{(a*(-m + x)^(-1 + g^(-1))*(1 + (k/(-m + x))^(-g^(-1)))^(-1 - a))/(g*k^g^(-1)), x >= m}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[ParetoDistribution[k, a, g, m], x]").unwrap(),
+      "Piecewise[{{1 - (1 + ((-m + x)/k)^g^(-1))^(-a), x >= m}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[ParetoDistribution[1, 2, 3, 0], 4]").unwrap(),
+      "1 - (1 + 2^(2/3))^(-2)"
+    );
+    // The 4-arg Mean/Variance forms are value-correct; check the values.
+    assert_eq!(
+      interpret("Round[N[Mean[ParetoDistribution[2, 5, 2, 1]]], 10^-6]")
+        .unwrap(),
+      "1333333/1000000"
+    );
+    assert_eq!(
+      interpret("Round[N[Variance[ParetoDistribution[3, 7, 2, 1]]], 10^-6]")
+        .unwrap(),
+      "14/25"
+    );
+  }
+}
+
 mod distribution_moments {
   use super::*;
 

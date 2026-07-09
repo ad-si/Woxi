@@ -369,7 +369,7 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
-    "ParetoDistribution" if args.len() == 2 => {
+    "ParetoDistribution" if (2..=4).contains(&args.len()) => {
       return Some(Ok(Expr::FunctionCall {
         name: "ParetoDistribution".to_string(),
         args: args.to_vec().into(),

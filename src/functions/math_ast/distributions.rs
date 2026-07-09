@@ -4680,6 +4680,8 @@ fn distribution_mean_variance(
       let var = times(int(2), k);
       Ok((mean, var))
     }
+    "ParetoDistribution" if dargs.len() == 3 => pareto3_mean_variance(dargs),
+    "ParetoDistribution" if dargs.len() == 4 => pareto4_mean_variance(dargs),
     "ParetoDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
@@ -6450,6 +6452,36 @@ fn cdf_chi_square(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// PDF[ParetoDistribution[k, a], x] = Piecewise[{{a*k^a*x^(-1-a), x >= k}}, 0]
 fn pdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  // 3-argument (Type II / Lomax, scale k, location m) and 4-argument (extra
+  // shape g) generalized forms.
+  if dargs.len() == 3 || dargs.len() == 4 {
+    let (k, a, m) = (dargs[0].clone(), dargs[1].clone(), {
+      if dargs.len() == 3 {
+        dargs[2].clone()
+      } else {
+        dargs[3].clone()
+      }
+    });
+    let cond = comparison(x.clone(), ComparisonOp::GreaterEqual, m.clone());
+    let body = if dargs.len() == 3 {
+      // (a ((k - m + x)/k)^(-1 - a)) / k
+      let inner =
+        divide(plus(minus(k.clone(), m.clone()), x.clone()), k.clone());
+      divide(times(a.clone(), power(inner, minus(int(-1), a))), k)
+    } else {
+      // (a (-m + x)^(-1 + 1/g) (1 + (k/(-m + x))^(-1/g))^(-1 - a)) / (g k^(1/g))
+      let g = dargs[2].clone();
+      let inv_g = divide(int(1), g.clone());
+      let xm = minus(x.clone(), m.clone());
+      let factor1 = power(xm.clone(), plus(int(-1), inv_g.clone()));
+      let inner2 = power(divide(k.clone(), xm), times(int(-1), inv_g.clone()));
+      let factor2 = power(plus(int(1), inner2), minus(int(-1), a.clone()));
+      let num = times(a, times(factor1, factor2));
+      let den = times(g, power(k, inv_g));
+      divide(num, den)
+    };
+    return eval(piecewise(vec![(body, cond)], int(0)));
+  }
   if dargs.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "ParetoDistribution expects 2 arguments".into(),
@@ -6475,6 +6507,30 @@ fn pdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF[ParetoDistribution[k, a], x] = Piecewise[{{1 - (k/x)^a, x >= k}}, 0]
 fn cdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() == 3 || dargs.len() == 4 {
+    let (k, a, m) = (dargs[0].clone(), dargs[1].clone(), {
+      if dargs.len() == 3 {
+        dargs[2].clone()
+      } else {
+        dargs[3].clone()
+      }
+    });
+    let cond = comparison(x.clone(), ComparisonOp::GreaterEqual, m.clone());
+    let neg_a = times(int(-1), a);
+    let body = if dargs.len() == 3 {
+      // 1 - (1 + (-m + x)/k)^(-a)
+      minus(
+        int(1),
+        power(plus(int(1), divide(minus(x.clone(), m), k)), neg_a),
+      )
+    } else {
+      // 1 - (1 + ((-m + x)/k)^(1/g))^(-a)
+      let g = dargs[2].clone();
+      let ratio = power(divide(minus(x.clone(), m), k), divide(int(1), g));
+      minus(int(1), power(plus(int(1), ratio), neg_a))
+    };
+    return eval(piecewise(vec![(body, cond)], int(0)));
+  }
   if dargs.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "ParetoDistribution expects 2 arguments".into(),
@@ -14822,5 +14878,88 @@ pub fn beta_prime4_mean_variance(
     indeterminate(),
   );
 
+  Ok((mean, variance))
+}
+
+/// Mean and variance for the 3-argument ParetoDistribution[k, a, m]
+/// (Type II / Lomax, scale k, location m).
+pub fn pareto3_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let (k, a, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
+  // Mean = k/(a - 1) + m, for a > 1.
+  let mean = piecewise(
+    vec![(
+      plus(divide(k.clone(), plus(int(-1), a.clone())), m),
+      comparison(a.clone(), ComparisonOp::Greater, int(1)),
+    )],
+    indeterminate(),
+  );
+  // Variance = a k^2 / ((a - 2)(a - 1)^2), for a > 2.
+  let variance = piecewise(
+    vec![(
+      divide(
+        times(a.clone(), power(k, int(2))),
+        times(
+          plus(int(-2), a.clone()),
+          power(plus(int(-1), a.clone()), int(2)),
+        ),
+      ),
+      comparison(a, ComparisonOp::Greater, int(2)),
+    )],
+    indeterminate(),
+  );
+  Ok((mean, variance))
+}
+
+/// Mean and variance for the 4-argument ParetoDistribution[k, a, g, m]
+/// (extra shape g), each existing only above a threshold in a/g.
+pub fn pareto4_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let (k, a, g, m) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+  );
+  let gamma = |z: Expr| Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![z].into(),
+  };
+  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
+  let g_a = gamma(a.clone());
+  let g_amg = gamma(minus(a.clone(), g.clone())); // Gamma[a - g]
+  let g_1pg = gamma(plus(int(1), g.clone())); // Gamma[1 + g]
+  // Mean = m + k Gamma[a - g] Gamma[1 + g] / Gamma[a], for a > g.
+  let mean = piecewise(
+    vec![(
+      plus(
+        m,
+        divide(
+          times(times(k.clone(), g_amg.clone()), g_1pg.clone()),
+          g_a.clone(),
+        ),
+      ),
+      comparison(a.clone(), ComparisonOp::Greater, g.clone()),
+    )],
+    indeterminate(),
+  );
+  // Variance = k^2 (-(Gamma[a-g]^2 Gamma[1+g]^2) + Gamma[a] Gamma[a-2g] Gamma[1+2g])
+  //   / Gamma[a]^2, for a > 2 g.
+  let g_am2g = gamma(minus(a.clone(), times(int(2), g.clone()))); // Gamma[a - 2 g]
+  let g_1p2g = gamma(plus(int(1), times(int(2), g.clone()))); // Gamma[1 + 2 g]
+  let term_neg = times(power(g_amg, int(2)), power(g_1pg, int(2)));
+  let term_pos = times(times(g_a.clone(), g_am2g), g_1p2g);
+  let var_num =
+    times(power(k, int(2)), plus(times(int(-1), term_neg), term_pos));
+  let variance = piecewise(
+    vec![(
+      divide(var_num, power(g_a, int(2))),
+      comparison(a, ComparisonOp::Greater, times(int(2), g)),
+    )],
+    indeterminate(),
+  );
   Ok((mean, variance))
 }

@@ -1237,7 +1237,7 @@ MaximalBy,Returns elements that maximize a criterion,✅,pure,10.0,1249
 InverseCDF,Inverse cumulative distribution function (quantile) of a distribution,✅,pure,6.0,1251
 StringTemplate,Creates a template that fills slots from positional or named arguments,✅,pure,10.0,1251
 TimeObject,Represents a time of day with a granularity from a time-of-day list,✅,pure,10.0,1252
-ParetoDistribution,Represents a Pareto distribution,✅,pure,6.0,1254
+ParetoDistribution,Pareto distribution with optional location and shape parameters,✅,pure,6.0,1254
 Read,Read an object of a specified type from a stream,✅,effectful,1.0,1254
 EdgeCount,Returns the number of edges in a graph (optionally matching a pattern),✅,pure,8.0,1256
 Transparent,,🚫,,7.0,1256
