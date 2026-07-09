@@ -844,6 +844,11 @@ pub fn dispatch_math_functions(
     "GroupElementQ" if args.len() == 2 => {
       return Some(crate::functions::math_ast::group_element_q_ast(args));
     }
+    "GroupElementPosition" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::group_element_position_ast(
+        args,
+      ));
+    }
     "GroupMultiplicationTable" if args.len() == 1 => {
       return Some(crate::functions::math_ast::group_multiplication_table_ast(
         args,

@@ -4416,6 +4416,55 @@ mod group_element_q {
   }
 }
 
+// GroupElementPosition[group, perm] gives the 1-based position of a permutation
+// in GroupElements[group]. Verified against wolframscript.
+mod group_element_position {
+  use super::*;
+
+  #[test]
+  fn position_in_element_list() {
+    // GroupElements[SymmetricGroup[3]] =
+    //   {Cycles[{}], Cycles[{{2,3}}], Cycles[{{1,2}}], Cycles[{{1,2,3}}], …}
+    assert_eq!(
+      interpret("GroupElementPosition[SymmetricGroup[3], Cycles[{}]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("GroupElementPosition[SymmetricGroup[3], Cycles[{{1, 2}}]]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("GroupElementPosition[SymmetricGroup[3], Cycles[{{1, 2, 3}}]]")
+        .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("GroupElementPosition[CyclicGroup[4], Cycles[{{1, 2, 3, 4}}]]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn non_canonical_cycle_matches_by_action() {
+    assert_eq!(
+      interpret("GroupElementPosition[SymmetricGroup[3], Cycles[{{2, 1}}]]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn permutation_not_in_group_stays_unevaluated() {
+    assert_eq!(
+      interpret("GroupElementPosition[SymmetricGroup[3], Cycles[{{1, 4}}]]")
+        .unwrap(),
+      "GroupElementPosition[SymmetricGroup[3], Cycles[{{1, 4}}]]"
+    );
+  }
+}
+
 mod longitude_latitude {
   use super::*;
 

@@ -5246,6 +5246,39 @@ pub fn group_element_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// GroupElementPosition[group, perm] - the 1-based position of the permutation
+/// `perm` in `GroupElements[group]`. A non-permutation `perm` leaves the call
+/// unevaluated; a permutation that is not in the group emits the
+/// `GroupElementPosition::noin` message and stays unevaluated.
+pub fn group_element_position_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "GroupElementPosition".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  if !matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Cycles") {
+    return Ok(unevaluated());
+  }
+  let elems = group_elements_ast(std::slice::from_ref(&args[0]))?;
+  let Expr::List(gelems) = &elems else {
+    return Ok(unevaluated());
+  };
+  match gelems.iter().position(|g| perms_equal(&args[1], g)) {
+    Some(i) => Ok(Expr::Integer(i as i128 + 1)),
+    None => {
+      crate::emit_message(&format!(
+        "GroupElementPosition::noin: Permutation {} does not belong to group.",
+        crate::syntax::expr_to_string(&args[1])
+      ));
+      Ok(unevaluated())
+    }
+  }
+}
+
 /// GroupOrbits[group, {points…}] - the orbits of the given seed points under
 /// the group action. Each orbit is the sorted set of images of a seed under
 /// every group element; duplicate orbits are removed and the result is sorted

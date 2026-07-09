@@ -3985,7 +3985,7 @@ DayHemisphere,,,,10.0,4104
 DayNightTerminator,,🚫,,10.0,4104
 EntityRegister,Registers an entity store for use with Entity,✅,effectful,11.3,4104
 GenerateHTTPResponse,,🚫,,10.3,4104
-GroupElementPosition,,,,8.0,4104
+GroupElementPosition,Position of a permutation in the group element list,✅,pure,8.0,4104
 HTTPRedirect,,🚫,,10.0,4104
 HeunG,,,,12.1,4104
 ImageMarker,,🚫,,10.4,4104
