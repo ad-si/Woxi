@@ -2290,6 +2290,61 @@ mod day_round {
       "DateObject[{2024, 3, 15}, Day]"
     );
   }
+
+  // The "Day" day-type class floors to the containing day (every day counts),
+  // matching the single-argument form regardless of the time of day.
+  #[test]
+  fn day_class_floors_to_containing_day() {
+    assert_eq!(
+      interpret(r#"DayRound[DateObject[{2024, 7, 8, 14, 30}], "Day"]"#)
+        .unwrap(),
+      "DateObject[{2024, 7, 8}, Day]"
+    );
+    assert_eq!(
+      interpret(r#"DayRound[{2024, 7, 8, 1, 0}, "Day"]"#).unwrap(),
+      "DateObject[{2024, 7, 8}, Day]"
+    );
+  }
+
+  // "Weekday" advances to the next Monday–Friday on or after the date.
+  // 2024-07-06 is a Saturday, 2024-07-07 a Sunday, 2024-07-08 a Monday,
+  // 2024-07-12 a Friday.
+  #[test]
+  fn weekday_class_rounds_to_next_business_weekday() {
+    assert_eq!(
+      interpret(r#"DayRound[DateObject[{2024, 7, 6}], "Weekday"]"#).unwrap(),
+      "DateObject[{2024, 7, 8}, Day]"
+    );
+    assert_eq!(
+      interpret(r#"DayRound[DateObject[{2024, 7, 7}], "Weekday"]"#).unwrap(),
+      "DateObject[{2024, 7, 8}, Day]"
+    );
+    // A weekday stays put.
+    assert_eq!(
+      interpret(r#"DayRound[DateObject[{2024, 7, 12}], "Weekday"]"#).unwrap(),
+      "DateObject[{2024, 7, 12}, Day]"
+    );
+  }
+
+  // "Weekend" advances to the next Saturday or Sunday on or after the date.
+  #[test]
+  fn weekend_class_rounds_to_next_weekend_day() {
+    // Monday 2024-07-08 → next Saturday 2024-07-13.
+    assert_eq!(
+      interpret(r#"DayRound[DateObject[{2024, 7, 8}], "Weekend"]"#).unwrap(),
+      "DateObject[{2024, 7, 13}, Day]"
+    );
+    // Sunday stays put.
+    assert_eq!(
+      interpret(r#"DayRound[DateObject[{2024, 7, 7}], "Weekend"]"#).unwrap(),
+      "DateObject[{2024, 7, 7}, Day]"
+    );
+    // Friday 2024-07-12 → next Saturday 2024-07-13.
+    assert_eq!(
+      interpret(r#"DayRound[DateObject[{2024, 7, 12}], "Weekend"]"#).unwrap(),
+      "DateObject[{2024, 7, 13}, Day]"
+    );
+  }
 }
 
 // NextDate[date, weekday] gives the next occurrence of that weekday strictly

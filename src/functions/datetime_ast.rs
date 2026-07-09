@@ -2369,11 +2369,12 @@ const WEEKDAY_NAMES: [&str; 7] = [
   "Sunday",
 ];
 
-/// DayRound[date, daytype] — round `date` to the nearest day of the given
-/// weekday using the default next-day convention (the next occurrence on or
-/// after `date`). Returns a `DateObject[…, Day]`. Only the weekday-name form
-/// (symbol or string) is supported; calendar categories and the 3-argument
-/// rounding form are left unevaluated, matching Wolfram's package-only forms.
+/// DayRound[date, daytype] — round `date` to the nearest day of the given day
+/// type using the default next-day convention (the next occurrence on or after
+/// `date`). Returns a `DateObject[…, Day]`. Supports weekday names (symbol or
+/// string) and the calendar classes "Day", "Weekday", and "Weekend"; holiday-
+/// dependent classes (e.g. "BusinessDay") and the 3-argument rounding form are
+/// left unevaluated.
 pub fn day_round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -2409,14 +2410,8 @@ pub fn day_round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return unevaluated();
   }
-  let target_dow = match &args[1] {
-    Expr::Identifier(s) | Expr::String(s) => {
-      match WEEKDAY_NAMES.iter().position(|n| n == s) {
-        Some(i) => i as i64,
-        None => return unevaluated(),
-      }
-    }
-    _ => return unevaluated(),
+  let (Expr::Identifier(daytype) | Expr::String(daytype)) = &args[1] else {
+    return unevaluated();
   };
   let Some(date_list) = resolve_date_to_list(&args[0]) else {
     return unevaluated();
@@ -2428,8 +2423,24 @@ pub fn day_round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
   let (y, m, d) = (comps[0] as i64, comps[1] as i64, comps[2] as i64);
+  // day_of_week gives 0 = Monday … 4 = Friday, 5 = Saturday, 6 = Sunday.
   let current_dow = day_of_week(y, m, d);
-  let days_forward = (target_dow - current_dow).rem_euclid(7);
+  // Days to advance onto the next day of the requested type on or after `date`.
+  // The day-type classes "Day"/"Weekday"/"Weekend" and any weekday name are
+  // supported; holiday-dependent classes (e.g. "BusinessDay") are not.
+  let days_forward = if daytype == "Day" {
+    0
+  } else if daytype == "Weekday" {
+    (0i64..7).find(|k| (current_dow + k) % 7 <= 4).unwrap()
+  } else if daytype == "Weekend" {
+    (0i64..7).find(|k| (current_dow + k) % 7 >= 5).unwrap()
+  } else if let Some(target_dow) =
+    WEEKDAY_NAMES.iter().position(|n| n == daytype)
+  {
+    (target_dow as i64 - current_dow).rem_euclid(7)
+  } else {
+    return unevaluated();
+  };
   let (ny, nm, nd) =
     absolute_days_to_date(date_to_absolute_days(y, m, d) + days_forward);
 
