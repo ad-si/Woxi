@@ -5065,6 +5065,82 @@ fn directed_graph_density(expr: &Expr) -> Option<Expr> {
   )
 }
 
+/// MeanGraphDistance for a graph containing directed edges: the mean directed
+/// shortest-path distance over all n(n-1) ordered vertex pairs, or Infinity if
+/// any pair is unreachable. Directed edges point one way; undirected edges
+/// point both ways (so mixed graphs work too). Returns `None` for anything
+/// that is not such a graph.
+fn directed_mean_graph_distance(expr: &Expr) -> Option<Expr> {
+  let (vertices, edge_exprs) = match expr {
+    Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
+      match (&args[0], &args[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  let n = vertices.len();
+  if n <= 1 {
+    return None;
+  }
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (expr_to_string(v), i))
+    .collect();
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for e in edge_exprs.iter() {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if args.len() != 2 {
+      return None;
+    }
+    let (Some(&a), Some(&b)) = (
+      index.get(&expr_to_string(&args[0])),
+      index.get(&expr_to_string(&args[1])),
+    ) else {
+      return None;
+    };
+    match name.as_str() {
+      "DirectedEdge" => adj[a].push(b),
+      "UndirectedEdge" => {
+        adj[a].push(b);
+        adj[b].push(a);
+      }
+      _ => return None,
+    }
+  }
+  let mut total: i128 = 0;
+  for start in 0..n {
+    let mut dist = vec![usize::MAX; n];
+    dist[start] = 0;
+    let mut queue = std::collections::VecDeque::from([start]);
+    let mut reached = 1usize;
+    while let Some(u) = queue.pop_front() {
+      for &w in &adj[u] {
+        if dist[w] == usize::MAX {
+          dist[w] = dist[u] + 1;
+          reached += 1;
+          queue.push_back(w);
+        }
+      }
+    }
+    if reached != n {
+      return Some(Expr::Identifier("Infinity".to_string()));
+    }
+    total += dist.iter().map(|&d| d as i128).sum::<i128>();
+  }
+  Some(
+    crate::evaluator::evaluate_expr_to_expr(&make_rational(
+      total,
+      (n as i128) * (n as i128 - 1),
+    ))
+    .unwrap_or(Expr::Integer(0)),
+  )
+}
+
 pub fn graph_metric_ast(
   name: &str,
   args: &[Expr],
@@ -5080,6 +5156,11 @@ pub fn graph_metric_ast(
       // directed case for the metrics that have a directed definition.
       if name == "GraphDensity"
         && let Some(result) = directed_graph_density(&args[0])
+      {
+        return Ok(result);
+      }
+      if name == "MeanGraphDistance"
+        && let Some(result) = directed_mean_graph_distance(&args[0])
       {
         return Ok(result);
       }

@@ -4244,6 +4244,31 @@ mod graph_metrics {
       "MeanGraphDistance[Graph[<1>, <0>]]"
     );
   }
+
+  // Directed graphs use directed distances over ordered pairs; a non-strongly
+  // connected digraph has some unreachable pair and gives Infinity.
+  #[test]
+  fn mean_graph_distance_directed() {
+    assert_eq!(
+      interpret("MeanGraphDistance[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "3/2"
+    );
+    assert_eq!(
+      interpret("MeanGraphDistance[Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1}]]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("MeanGraphDistance[Graph[{1 -> 2, 2 -> 1, 2 -> 3, 3 -> 2}]]")
+        .unwrap(),
+      "4/3"
+    );
+    // A directed path is not strongly connected.
+    assert_eq!(
+      interpret("MeanGraphDistance[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]").unwrap(),
+      "Infinity"
+    );
+  }
 }
 
 mod graph_accessors {
