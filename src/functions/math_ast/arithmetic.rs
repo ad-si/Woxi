@@ -2,6 +2,8 @@
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::{Expr, expr_to_string};
+use num_bigint::BigInt;
+use num_bigint::Sign;
 
 /// Combine `SeriesData[var, x0, coeffs, nmin, nmax, denom]` summands that
 /// share the same `(var, x0, denom)` into a single SeriesData. The result
@@ -1084,7 +1086,6 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let has_real_arg = flat_args.iter().any(|a| matches!(a, Expr::Real(_)));
 
   if has_bigint && !has_rational && !has_real_arg {
-    use num_bigint::BigInt;
     let mut big_sum = BigInt::from(0);
     let mut all_int = true;
     let mut symbolic_args: Vec<Expr> = Vec::new();
@@ -1516,12 +1517,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
   e
 }
 
-fn bigint_gcd(
-  a: &num_bigint::BigInt,
-  b: &num_bigint::BigInt,
-) -> num_bigint::BigInt {
-  use num_bigint::BigInt;
-  use num_bigint::Sign;
+fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
   let mut a = match a.sign() {
     Sign::Minus => -a,
     _ => a.clone(),
@@ -1541,8 +1537,8 @@ fn bigint_gcd(
 /// Coefficient: either exact rational (i128 or BigInt) or approximate real
 #[derive(Clone)]
 pub enum Coeff {
-  Exact(i128, i128), // (numer, denom)
-  BigExact(num_bigint::BigInt, num_bigint::BigInt), // (numer, denom)
+  Exact(i128, i128),        // (numer, denom)
+  BigExact(BigInt, BigInt), // (numer, denom)
   Real(f64),
 }
 
@@ -1550,7 +1546,7 @@ impl Coeff {
   fn is_zero(&self) -> bool {
     match self {
       Self::Exact(n, _) => *n == 0,
-      Self::BigExact(n, _) => n.sign() == num_bigint::Sign::NoSign,
+      Self::BigExact(n, _) => n.sign() == Sign::NoSign,
       Self::Real(f) => *f == 0.0,
     }
   }
@@ -1568,8 +1564,7 @@ impl Coeff {
     match self {
       Self::Exact(n, d) => (*n < 0) != (*d < 0),
       Self::BigExact(n, d) => {
-        (n.sign() == num_bigint::Sign::Minus)
-          != (d.sign() == num_bigint::Sign::Minus)
+        (n.sign() == Sign::Minus) != (d.sign() == Sign::Minus)
       }
       Self::Real(f) => *f < 0.0,
     }
@@ -1584,12 +1579,10 @@ impl Coeff {
       Self::Real(f) => *f,
     }
   }
-  fn to_big(n: i128, d: i128) -> (num_bigint::BigInt, num_bigint::BigInt) {
-    (num_bigint::BigInt::from(n), num_bigint::BigInt::from(d))
+  fn to_big(n: i128, d: i128) -> (BigInt, BigInt) {
+    (BigInt::from(n), BigInt::from(d))
   }
   fn add(&self, other: &Self) -> Self {
-    use num_bigint::BigInt;
-
     match (self, other) {
       (Self::Exact(n1, d1), Self::Exact(n2, d2)) => {
         // Try i128 first; on overflow, promote to BigInt
@@ -1657,8 +1650,6 @@ impl Coeff {
     }
   }
   fn mul(&self, other: &Self) -> Self {
-    use num_bigint::BigInt;
-
     match (self, other) {
       (Self::Exact(n1, d1), Self::Exact(n2, d2)) => {
         if let (Some(sn), Some(sd)) = (n1.checked_mul(*n2), d1.checked_mul(*d2))
@@ -1754,7 +1745,6 @@ impl Coeff {
 /// preserves rationals whose numerator/denominator exceed i128, so Plus and
 /// friends can combine them instead of leaving them as symbolic summands.
 pub fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
-  use num_bigint::BigInt;
   match arg {
     Expr::Integer(n) => Some(Coeff::Exact(*n, 1)),
     Expr::BigInteger(n) => Some(Coeff::BigExact(n.clone(), BigInt::from(1))),
@@ -1798,7 +1788,7 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
       // Check if first arg is a BigInteger coefficient
       if let Expr::BigInteger(n) = &args[0] {
         let (inner_c, inner_base) = decompose_term(&base_from(args));
-        let outer_c = Coeff::BigExact(n.clone(), num_bigint::BigInt::from(1));
+        let outer_c = Coeff::BigExact(n.clone(), BigInt::from(1));
         return (outer_c.mul(&inner_c), inner_base);
       }
       // Check if first arg is a Real coefficient
@@ -1820,7 +1810,7 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
       }
       if let Expr::BigInteger(n) = left.as_ref() {
         let (inner_c, inner_base) = decompose_term(right);
-        let outer_c = Coeff::BigExact(n.clone(), num_bigint::BigInt::from(1));
+        let outer_c = Coeff::BigExact(n.clone(), BigInt::from(1));
         return (outer_c.mul(&inner_c), inner_base);
       }
       if let Expr::Real(f) = left.as_ref() {
@@ -6544,7 +6534,6 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let has_bigint = args.iter().any(needs_bigint_arithmetic);
 
   if has_bigint {
-    use num_bigint::BigInt;
     use num_traits::ToPrimitive;
     // Track the numeric coefficient as an exact BigInt fraction so that a
     // Rational factor's denominator cancels against a large integer (e.g.
@@ -6856,7 +6845,6 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // If overflow detected, fall back to BigInt arithmetic
   if int_overflow {
-    use num_bigint::BigInt;
     let mut big_product = BigInt::from(1);
     let mut sym_args: Vec<Expr> = Vec::new();
     for arg in args {
@@ -6980,7 +6968,6 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let combined_numer = match int_product.checked_mul(rat_numer) {
     Some(v) => v,
     None => {
-      use num_bigint::BigInt;
       let big_numer = BigInt::from(int_product) * BigInt::from(rat_numer);
       let big_denom = BigInt::from(rat_denom);
       let g = bigint_gcd(&big_numer, &big_denom);
@@ -7652,7 +7639,6 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   // For BigInteger / BigInteger (or mixed Integer/BigInteger), reduce by GCD
   {
     use crate::functions::math_ast::number_theory::bigint_gcd;
-    use num_bigint::BigInt;
     let a_big = expr_to_bigint(a);
     let b_big = expr_to_bigint(b);
     if let (Some(numer), Some(denom)) = (a_big, b_big) {
@@ -7914,7 +7900,6 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       // `#/2 &` past a 2^127 denominator must stay an exact fraction).
       _ => {
         use crate::functions::math_ast::number_theory::bigint_gcd;
-        use num_bigint::BigInt;
         use num_traits::Zero;
         let numer = BigInt::from(a_n) * BigInt::from(b_d);
         let denom = BigInt::from(a_d) * BigInt::from(b_n);
@@ -8089,41 +8074,6 @@ fn flip_unit_negative_rational_product(expr: Expr) -> Expr {
   }
 }
 
-/// Flatten nested divisions into a single numerator and denominator.
-/// (a/b)/c → (a, b*c), a/(b/c) → (a*c, b), (a/b)/(c/d) → (a*d, b*c)
-pub fn flatten_division(a: &Expr, b: &Expr) -> (Expr, Expr) {
-  // Extract (numerator, denominator) from each side
-  let (a_num, a_den) = extract_num_den(a);
-  let (b_num, b_den) = extract_num_den(b);
-
-  // a/b = (a_num/a_den) / (b_num/b_den) = (a_num * b_den) / (a_den * b_num)
-  let num = if a_den.is_none() && b_den.is_none() {
-    a_num.clone()
-  } else if let Some(bd) = &b_den {
-    // a_num * b_den
-    build_times_simple(&a_num, bd)
-  } else {
-    a_num.clone()
-  };
-
-  let den = if a_den.is_none() && b_den.is_none() {
-    b_num.clone()
-  } else if let Some(ad) = &a_den {
-    if b_den.is_some() {
-      // a_den * b_num
-      build_times_simple(ad, &b_num)
-    } else {
-      // a_den * b_num (b has no denominator)
-      build_times_simple(ad, &b_num)
-    }
-  } else {
-    // a has no denominator, b has denominator
-    b_num.clone()
-  };
-
-  (num, den)
-}
-
 /// Extract numerator and optional denominator from an expression.
 pub fn extract_num_den(e: &Expr) -> (Expr, Option<Expr>) {
   match e {
@@ -8133,26 +8083,6 @@ pub fn extract_num_den(e: &Expr) -> (Expr, Option<Expr>) {
       right,
     } => (*left.clone(), Some(*right.clone())),
     _ => (e.clone(), None),
-  }
-}
-
-/// Build Times[a, b] without full evaluation (just structural)
-pub fn build_times_simple(a: &Expr, b: &Expr) -> Expr {
-  // For simple integer multiplication, compute directly
-  if let (Expr::Integer(x), Expr::Integer(y)) = (a, b) {
-    return Expr::Integer(x * y);
-  }
-  // For 1 * x, just return x
-  if matches!(a, Expr::Integer(1)) {
-    return b.clone();
-  }
-  if matches!(b, Expr::Integer(1)) {
-    return a.clone();
-  }
-  Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
-    left: Box::new(a.clone()),
-    right: Box::new(b.clone()),
   }
 }
 
@@ -9165,7 +9095,6 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && let Some(((re_n, re_d), (im_n, im_d))) = try_extract_complex_exact(base)
     && im_n != 0
   {
-    use num_bigint::BigInt;
     use num_traits::{ToPrimitive, Zero};
 
     // BigInt GCD helper
@@ -9479,11 +9408,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // numeric substitution, e.g. `LaguerreL[3, x] /. x -> 3` printing `6/6`.
   if let (Expr::BigInteger(b), Expr::Integer(e)) = (base, exp)
     && *e < 0
-    && *b != num_bigint::BigInt::from(0)
+    && *b != BigInt::from(0)
   {
     let pos_exp = (-*e) as u32;
     let denom = num_traits::pow::pow(b.clone(), pos_exp as usize);
-    return Ok(make_rational_expr(num_bigint::BigInt::from(1), denom));
+    return Ok(make_rational_expr(BigInt::from(1), denom));
   }
 
   // Special case: Rational^Integer -> exact rational result
@@ -9602,11 +9531,9 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   {
     // b >= 0 so 0^(p/q) = 0 and 1^(p/q) = 1 are also simplified (nth_root(0)
     // = 0 and nth_root(1) = 1 are perfect powers of themselves).
-    let bb_opt: Option<num_bigint::BigInt> = match base {
-      Expr::Integer(b) if *b >= 0 => Some(num_bigint::BigInt::from(*b)),
-      Expr::BigInteger(b) if *b >= num_bigint::BigInt::from(0) => {
-        Some(b.clone())
-      }
+    let bb_opt: Option<BigInt> = match base {
+      Expr::Integer(b) if *b >= 0 => Some(BigInt::from(*b)),
+      Expr::BigInteger(b) if *b >= BigInt::from(0) => Some(b.clone()),
       _ => None,
     };
     if let Some(bb) = bb_opt {
@@ -9801,7 +9728,6 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if let (Expr::Integer(b), Expr::Integer(e)) = (base, exp)
     && *e >= 0
   {
-    use num_bigint::BigInt;
     let base_big = BigInt::from(*b);
     let result = num_traits::pow::pow(base_big, *e as usize);
     return Ok(bigint_to_expr(result));

@@ -2167,42 +2167,4 @@ fn negate_if_negative(exp: &Expr) -> Option<Expr> {
   }
 }
 
-/// Check if an expression is Power[x, -1]
-pub fn is_reciprocal(expr: &Expr) -> bool {
-  get_reciprocal_base(expr).is_some()
-}
-
-/// If expr is Power[base, -1], return Some(base), else None
-pub fn get_reciprocal_base(expr: &Expr) -> Option<Expr> {
-  match expr {
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
-      left,
-      right,
-    } => {
-      if let Expr::Integer(-1) = right.as_ref() {
-        Some(left.as_ref().clone())
-      } else {
-        match right.as_ref() {
-          Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
-            operand,
-          } if matches!(operand.as_ref(), Expr::Integer(1)) => {
-            Some(left.as_ref().clone())
-          }
-          _ => None,
-        }
-      }
-    }
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      if let Expr::Integer(-1) = &args[1] {
-        Some(args[0].clone())
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
-
 // ─── Binomial ──────────────────────────────────────────────────────
