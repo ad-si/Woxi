@@ -3495,22 +3495,48 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let m3 = central_moment_ast(&[args[0].clone(), Expr::Integer(3)])?;
   let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
-  // Compute m3 / m2^(3/2) symbolically
-  let m2_pow = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
-    left: Box::new(m2),
-    right: Box::new(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
-      left: Box::new(Expr::Integer(3)),
-      right: Box::new(Expr::Integer(2)),
-    }),
+  // Skewness = m3 * m2^(-3/2). For a numeric list wolframscript evaluates the
+  // reciprocal power *directly* (m2^(-3/2) via powf(-1.5)), not as the two-step
+  // 1/m2^(3/2); for machine-real moments those differ by one ULP. Build the
+  // m3 * m2^(-3/2) form for lists so the value matches wolframscript
+  // (Skewness[{1.1, 1.2, 1.4, 2.1, 2.4}] == 0.4070412816074878), while
+  // distributions keep the m3 / m2^(3/2) shape their symbolic output relies on.
+  let moments_inexact =
+    matches!(&m2, Expr::Real(_)) || matches!(&m3, Expr::Real(_));
+  let result = if moments_inexact {
+    let m2_pow = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(m2),
+      right: Box::new(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(-3), Expr::Integer(2)].into(),
+      }),
+    };
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(m3),
+      right: Box::new(m2_pow),
+    }
+  } else {
+    // Compute m3 / m2^(3/2) symbolically
+    let m2_pow = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(m2),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(3)),
+        right: Box::new(Expr::Integer(2)),
+      }),
+    };
+    maybe_expand_for_distribution(
+      &args[0],
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(m3),
+        right: Box::new(m2_pow),
+      },
+    )
   };
-  let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
-    left: Box::new(m3),
-    right: Box::new(m2_pow),
-  };
-  let result = maybe_expand_for_distribution(&args[0], result);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 

@@ -7952,7 +7952,24 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       if y == 0.0 {
         Ok(divide_by_zero_result(a))
       } else {
-        Ok(Expr::Real(x / y))
+        // Wolfram evaluates division a/b as Times[a, Power[b, -1]]. When the
+        // denominator is an exact number (Integer/Rational) its reciprocal is an
+        // exact rational, so the product is single-rounded — identical to a
+        // direct IEEE division (e.g. CentralMoment's sum/n). But when the
+        // denominator is inexact — a machine Real, or an irrational constant like
+        // Pi or Sqrt[2] whose reciprocal must itself be rounded to a machine real
+        // first — the reciprocal introduces a second rounding, landing one ULP
+        // away from `x / y` for roughly half of all operand pairs. Mirror that
+        // multiply-by-reciprocal so results match wolframscript byte-for-byte
+        // (e.g. 15.9/Pi, 13.52.../84.75...) without perturbing exact-denominator
+        // divisions.
+        let den_is_exact = matches!(b, Expr::Integer(_))
+          || matches!(b, Expr::FunctionCall { name, .. } if name == "Rational");
+        if den_is_exact {
+          Ok(Expr::Real(x / y))
+        } else {
+          Ok(Expr::Real(x * (1.0 / y)))
+        }
       }
     }
     _ => {

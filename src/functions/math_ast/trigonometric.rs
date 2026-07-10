@@ -3075,11 +3075,26 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(result);
       }
-      // Log[base, x] — evaluate for Real args
-      if let (Expr::Real(base), Expr::Real(x)) = (&args[0], &args[1])
-        && *base > 0.0
-        && *base != 1.0
-        && *x > 0.0
+      // Log[base, x] — numeric result whenever at least one operand is an
+      // inexact (machine Real) plain number. Wolfram's two-argument Log is a
+      // dedicated primitive that evaluates as the *direct* division
+      // Log[x]/Log[base]; unlike a user-level Divide it does NOT round through
+      // multiply-by-reciprocal, so Log[10, 100.0] == 2. exactly (whereas
+      // Log[100.0]/Log[10] == 1.9999999999999998). Handle any positive plain
+      // numeric base/argument here so the value never falls through to the
+      // generic reciprocal-multiply division below.
+      fn is_plain_number(e: &Expr) -> bool {
+        matches!(e, Expr::Integer(_) | Expr::Real(_))
+          || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+      }
+      if (matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_)))
+        && is_plain_number(&args[0])
+        && is_plain_number(&args[1])
+        && let (Some(base), Some(x)) =
+          (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+        && base > 0.0
+        && base != 1.0
+        && x > 0.0
       {
         return Ok(Expr::Real(x.ln() / base.ln()));
       }

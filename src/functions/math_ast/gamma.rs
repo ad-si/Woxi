@@ -1115,10 +1115,19 @@ fn incomplete_beta_ast(
         "Times",
         &[signed_coeff, z_pow],
       )?;
-      let summand = crate::evaluator::evaluate_function_call_ast(
-        "Divide",
-        &[numer, denom],
-      )?;
+      // This closed form is an internal numerical routine, not a user-level
+      // Divide: when both operands are machine reals compute the quotient with a
+      // plain (single-rounded) division. The language-level Divide models
+      // wolframscript's Times[a, Power[b, -1]] multiply-by-reciprocal, which
+      // would add a second rounding here and drift the incomplete-Beta value one
+      // ULP away from wolframscript (e.g. N[Beta[2, 1/2, 3]]).
+      let summand = match (&numer, &denom) {
+        (Expr::Real(nf), Expr::Real(df)) => Expr::Real(nf / df),
+        _ => crate::evaluator::evaluate_function_call_ast(
+          "Divide",
+          &[numer, denom],
+        )?,
+      };
       term.push(summand);
     }
     let closed = crate::evaluator::evaluate_function_call_ast("Plus", &term)?;
