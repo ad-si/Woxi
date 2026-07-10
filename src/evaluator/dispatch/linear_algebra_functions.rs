@@ -358,8 +358,16 @@ pub fn dispatch_linear_algebra_functions(
         if !is_square {
           return Some(Ok(Expr::Identifier("False".to_string())));
         }
-        let transpose =
-          crate::functions::list_helpers_ast::transpose_ast(&args[0]);
+        // Unitary tests ConjugateTranspose[m].m == Id; orthogonal tests
+        // the plain Transpose[m].m == Id (so {{0, I}, {I, 0}} is unitary
+        // but not orthogonal, matching wolframscript).
+        let transpose = if name == "UnitaryMatrixQ" {
+          crate::functions::linear_algebra_ast::conjugate_transpose_ast(
+            std::slice::from_ref(&args[0]),
+          )
+        } else {
+          crate::functions::list_helpers_ast::transpose_ast(&args[0])
+        };
         if let Ok(t) = transpose {
           let dot = crate::functions::linear_algebra_ast::dot_ast(&[
             t,

@@ -1303,6 +1303,37 @@ mod reverse_extended {
     );
   }
 
+  // Unitarity tests ConjugateTranspose[m].m == Id — the plain transpose
+  // previously declared complex unitary matrices non-unitary. Orthogonal
+  // keeps the plain transpose, so {{0, I}, {I, 0}} is unitary but NOT
+  // orthogonal. All outputs verified against wolframscript 15.0.
+  #[test]
+  fn unitary_matrix_q_complex_conjugate_transpose() {
+    assert_eq!(
+      interpret("UnitaryMatrixQ[{{0, I}, {I, 0}}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "UnitaryMatrixQ[{{1/Sqrt[2], I/Sqrt[2]}, {I/Sqrt[2], 1/Sqrt[2]}}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("UnitaryMatrixQ[{{1, 1}, {0, 1}}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("OrthogonalMatrixQ[{{0, I}, {I, 0}}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("OrthogonalMatrixQ[{{0, -1}, {1, 0}}]").unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn reflection_matrix_axis() {
     assert_eq!(
