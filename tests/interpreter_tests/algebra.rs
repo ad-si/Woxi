@@ -1796,6 +1796,64 @@ mod cancel {
     );
   }
 
+  // Cancel keeps an all-negative numerator inline where Simplify would
+  // pull -(...) out front (differential fuzzer, seed 8887;
+  // wolframscript-verified).
+  #[test]
+  fn cancel_keeps_negative_content_numerator() {
+    assert_eq!(
+      interpret("Cancel[(-5 - 2 x - 4 x^2)/(3 + 2 x^2 + 5 x^3)]").unwrap(),
+      "(-5 - 2*x - 4*x^2)/(3 + 2*x^2 + 5*x^3)"
+    );
+    // Simplify's minus-extraction on the same input is unchanged.
+    assert_eq!(
+      interpret("Simplify[(-5 - 2 x - 4 x^2)/(3 + 2 x^2 + 5 x^3)]").unwrap(),
+      "-((5 + 2*x + 4*x^2)/(3 + 2*x^2 + 5*x^3))"
+    );
+  }
+
+  // A flipped denominator leaves its integer content behind as a plain
+  // numeric factor, raised to the factor's power; a unit-monomial
+  // numerator hoists it into a rational prefactor
+  // (wolframscript-verified).
+  #[test]
+  fn cancel_flipped_denominator_content_forms() {
+    assert_eq!(interpret("Cancel[x/(2 - 2 x)]").unwrap(), "-1/2*x/(-1 + x)");
+    assert_eq!(
+      interpret("Cancel[(x/2)/(1 - x)]").unwrap(),
+      "-1/2*x/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Cancel[(x y)/(2 - 2 x)]").unwrap(),
+      "-1/2*(x*y)/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Cancel[(3 - 5 x)/(2 - 2 x)]").unwrap(),
+      "(-3 + 5*x)/(2*(-1 + x))"
+    );
+    assert_eq!(
+      interpret("Cancel[(3 - 5 x)/(4 - 6 x)]").unwrap(),
+      "(-3 + 5*x)/(2*(-2 + 3*x))"
+    );
+    assert_eq!(
+      interpret("Cancel[(5 x)/(2 - 2 x)]").unwrap(),
+      "(-5*x)/(2*(-1 + x))"
+    );
+    assert_eq!(
+      interpret("Cancel[(5 x)/(1 - 5 x)]").unwrap(),
+      "(-5*x)/(-1 + 5*x)"
+    );
+    // Content leaves a power as content^exp; even powers keep the sign.
+    assert_eq!(
+      interpret("Cancel[x/(2 - 2 x)^2]").unwrap(),
+      "x/(4*(-1 + x)^2)"
+    );
+    assert_eq!(
+      interpret("Cancel[x/(2 - 2 x)^3]").unwrap(),
+      "-1/8*x/(-1 + x)^3"
+    );
+  }
+
   // Shared integer content cancels; the numerator keeps its sign as long
   // as the denominator's leading coefficient is already positive
   // (wolframscript-verified).
@@ -2279,6 +2337,90 @@ mod together {
       "2*(1 + x)"
     );
     assert_eq!(interpret("Together[(2 x + 2)/(x + 1)]").unwrap(), "2");
+  }
+
+  // A flipped denominator sends the sign into the numerator's integer
+  // coefficient when it has one; numeric denominator content stays put
+  // (differential fuzzer, seed 8887; all wolframscript-verified).
+  #[test]
+  fn together_monomial_coefficient_absorbs_flip() {
+    assert_eq!(
+      interpret("Together[(5 x)/(1 - 5 x)]").unwrap(),
+      "(-5*x)/(-1 + 5*x)"
+    );
+    assert_eq!(
+      interpret("Together[(2 x)/(1 - 2 x)]").unwrap(),
+      "(-2*x)/(-1 + 2*x)"
+    );
+    assert_eq!(
+      interpret("Together[(5 x)/(6 - 3 x)]").unwrap(),
+      "(-5*x)/(3*(-2 + x))"
+    );
+    assert_eq!(
+      interpret("Together[(3 x)/(2 - 2 x)]").unwrap(),
+      "(-3*x)/(2*(-1 + x))"
+    );
+    assert_eq!(
+      interpret("Together[(5 x y)/(1 - 5 x)]").unwrap(),
+      "(-5*x*y)/(-1 + 5*x)"
+    );
+    assert_eq!(
+      interpret("Together[(5 x^2)/(1 - 5 x)]").unwrap(),
+      "(-5*x^2)/(-1 + 5*x)"
+    );
+    // A negative coefficient flips to positive the same way.
+    assert_eq!(
+      interpret("Together[(-5 x)/(1 - 5 x)]").unwrap(),
+      "(5*x)/(-1 + 5*x)"
+    );
+  }
+
+  // A unit monomial can't absorb the flip: numeric denominator content
+  // hoists into a rational prefactor, and a content-free denominator
+  // keeps the outer minus (wolframscript-verified).
+  #[test]
+  fn together_unit_monomial_flip_forms() {
+    assert_eq!(
+      interpret("Together[(x/2)/(1 - x)]").unwrap(),
+      "-1/2*x/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Together[x/(6 - 3 x)]").unwrap(),
+      "-1/3*x/(-2 + x)"
+    );
+    assert_eq!(
+      interpret("Together[(x y)/(1 - x)]").unwrap(),
+      "-((x*y)/(-1 + x))"
+    );
+    assert_eq!(
+      interpret("Together[x/((1 - x) (2 + x))]").unwrap(),
+      "-(x/((-1 + x)*(2 + x)))"
+    );
+  }
+
+  // A single fraction whose numerator shares no factor with the
+  // denominator is not recombined — the factored denominator survives
+  // (wolframscript-verified).
+  #[test]
+  fn together_keeps_factored_denominator_without_cancellation() {
+    assert_eq!(
+      interpret("Together[(5 x)/((1 - x) (2 + x))]").unwrap(),
+      "(-5*x)/((-1 + x)*(2 + x))"
+    );
+    assert_eq!(
+      interpret("Together[(x/2)/((1 - x) (2 + x))]").unwrap(),
+      "-1/2*x/((-1 + x)*(2 + x))"
+    );
+    assert_eq!(
+      interpret("Together[(5 (1 + x))/((1 - x) (2 + x))]").unwrap(),
+      "(-5*(1 + x))/((-1 + x)*(2 + x))"
+    );
+    assert_eq!(
+      interpret("Together[(5 x (1 + x))/((1 - x) (2 + x))]").unwrap(),
+      "(-5*x*(1 + x))/((-1 + x)*(2 + x))"
+    );
+    // A genuinely shared factor still folds and cancels.
+    assert_eq!(interpret("Together[x (x + y)/(x y)]").unwrap(), "(x + y)/y");
   }
 
   // Together pulls the numeric content out of a plain (fraction-free) sum,

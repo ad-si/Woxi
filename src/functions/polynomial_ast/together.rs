@@ -512,14 +512,18 @@ pub(super) fn canonicalize_quotient_sign(
       if base_content == (1, 1) {
         any_flipped_content_one = true;
       }
-      let neg_base = negate(&base);
-      // Simplify displays a flipped denominator with its integer content
-      // factored out (term-wise division; the whole-sum quotient would
-      // stay an unreduced Divide): Simplify[(2-x)/(5-5x)] →
-      // (-2+x)/(5*(-1+x)).
-      let neg_base = if require_negative_numerator
-        && base_content.1 == 1
+      let mut neg_base = negate(&base);
+      // A flipped denominator factor leaves its integer content behind as
+      // a plain numeric factor, raised to the factor's power (term-wise
+      // division; the whole-sum quotient would stay an unreduced Divide):
+      // Simplify[(2-x)/(5-5x)] → (-2+x)/(5*(-1+x)), Cancel[x/(2-2x)] →
+      // -1/2*x/(-1+x), Cancel[x/(2-2x)^2] → x/(4*(-1+x)^2); all
+      // wolframscript-verified.
+      if base_content.1 == 1
         && base_content.0 > 1
+        && exp >= 1
+        && let Ok(exp_u32) = u32::try_from(exp)
+        && let Some(content_pow) = base_content.0.checked_pow(exp_u32)
       {
         let divided: Result<Vec<Expr>, _> = collect_additive_terms(&neg_base)
           .iter()
@@ -531,23 +535,14 @@ pub(super) fn canonicalize_quotient_sign(
             })
           })
           .collect();
-        match divided {
-          Ok(terms) => Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(base_content.0),
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: terms.into(),
-              },
-            ]
-            .into(),
-          },
-          Err(_) => neg_base,
+        if let Ok(terms) = divided {
+          neg_base = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms.into(),
+          };
+          new_factors.push(Expr::Integer(content_pow));
         }
-      } else {
-        neg_base
-      };
+      }
       new_factors.push(if exp == 1 {
         neg_base
       } else {
@@ -679,10 +674,42 @@ pub(super) fn canonicalize_quotient_sign(
   {
     negate(num)
   } else {
-    // A sign-free monomial/product numerator can't absorb the flip. With
-    // flipped numeric content, the sign and content become a rational
-    // prefactor (-1/3*x/(-2+x)); otherwise pull the sign out of the
-    // whole quotient: -(x/((-1+x)*(2+x))).
+    // A monomial numerator with an integer coefficient absorbs the flip
+    // into that coefficient, and any numeric denominator content stays
+    // put: Together[(5*x)/(1-5*x)] → (-5*x)/(-1+5*x) and
+    // Together[(3*x)/(2-2*x)] → (-3*x)/(2*(-1+x)), matching
+    // wolframscript (differential fuzzer, seed 8887).
+    let num_factors = flatten_times_args(std::slice::from_ref(num));
+    if num_factors
+      .iter()
+      .any(|f| matches!(f, Expr::Integer(n) if n.abs() > 1))
+    {
+      // Negate the integer factor in place — expanding the negation
+      // would distribute over Plus factors, but wolframscript keeps
+      // Together[(5*(1+x))/((1-x)*(2+x))] → (-5*(1+x))/((-1+x)*(2+x)).
+      let mut negated = false;
+      let neg_factors: Vec<Expr> = num_factors
+        .iter()
+        .map(|f| match f {
+          Expr::Integer(n) if !negated && n.abs() > 1 => {
+            negated = true;
+            Expr::Integer(-n)
+          }
+          other => other.clone(),
+        })
+        .collect();
+      return Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(build_product(neg_factors)),
+        right: Box::new(new_den),
+      });
+    }
+    // A unit monomial can't absorb the flip. With flipped numeric
+    // content, the sign and content become a rational prefactor
+    // (-1/3*x/(-2+x)); remaining numeric denominator content hoists the
+    // same way (Together[(x/2)/(1-x)] → -1/2*x/(-1+x)); only a
+    // content-free denominator pulls the sign out of the whole
+    // quotient: -(x/((-1+x)*(2+x))) and -((x*y)/(-1+x)).
     if numeric_flip_content > 1 {
       let factors = flatten_times_args(std::slice::from_ref(&new_den));
       return Some(prefactor_form(
@@ -690,6 +717,25 @@ pub(super) fn canonicalize_quotient_sign(
         &factors,
         numeric_flip_content,
       ));
+    }
+    let den_factors = flatten_times_args(std::slice::from_ref(&new_den));
+    if let Some(k) = den_factors.iter().find_map(|f| match f {
+      Expr::Integer(n) if *n > 1 => Some(*n),
+      _ => None,
+    }) {
+      let stripped: Vec<Expr> = num_factors
+        .iter()
+        .filter(|f| !matches!(f, Expr::Integer(1)))
+        .cloned()
+        .collect();
+      let num_clean = if stripped.is_empty() {
+        Expr::Integer(1)
+      } else if stripped.len() == 1 {
+        stripped.into_iter().next().unwrap()
+      } else {
+        build_product(stripped)
+      };
+      return Some(prefactor_form(Some(num_clean), &den_factors, k));
     }
     return Some(Expr::UnaryOp {
       op: UnaryOperator::Minus,
@@ -990,6 +1036,61 @@ fn try_reduce_to_polynomial(num: &Expr, den: &Expr) -> Option<Expr> {
   }
 }
 
+/// Whether folding a single fraction can actually cancel something: a
+/// numerator factor and a denominator factor share an integer content or
+/// an identical symbolic base. wolframscript folds x*(x+y)/(x*y) → (x+y)/y
+/// and cancels the 2 in (2*x)/((2-2*x)*(2+x)), but keeps
+/// (5*x)/((1-x)*(2+x)) and (5*x*(1+x))/((1-x)*(2+x)) factored
+/// (differential fuzzer, seed 8887; all wolframscript-verified).
+fn shares_cancelable_factor(num: &Expr, den: &Expr) -> bool {
+  fn strip_power(f: &Expr) -> Expr {
+    match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(_)) => (**left).clone(),
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(_)) =>
+      {
+        args[0].clone()
+      }
+      other => other.clone(),
+    }
+  }
+  // (integer content, symbolic factor bases) of a product.
+  let side = |e: &Expr| -> (i128, Vec<String>) {
+    let mut content: i128 = 1;
+    let mut bases = Vec::new();
+    for f in flatten_times_args(std::slice::from_ref(e)) {
+      let b = strip_power(&f);
+      match &b {
+        Expr::Integer(n) => {
+          content = content.saturating_mul(n.abs().max(1));
+        }
+        _ => {
+          let terms = collect_additive_terms(&b);
+          if terms.len() >= 2
+            && let Some((n, _, _)) = super::factor::rational_content(&terms)
+          {
+            content = content.saturating_mul(n.abs().max(1));
+          }
+          bases.push(expr_to_string(&b));
+        }
+      }
+    }
+    (content, bases)
+  };
+  let (num_content, num_bases) = side(num);
+  let (den_content, den_bases) = side(den);
+  if super::factor::gcd_i128(num_content, den_content).abs() > 1 {
+    return true;
+  }
+  num_bases.iter().any(|b| den_bases.contains(b))
+}
+
 pub fn together_expr(expr: &Expr) -> Expr {
   // First recursively apply Together to sub-expressions so that nested
   // fractions (e.g. `1/(1 + 1/x)` or continued-fraction-like forms) get
@@ -1049,7 +1150,14 @@ pub fn together_expr(expr: &Expr) -> Expr {
             .iter()
             .filter(|f| !matches!(extract_num_den(f).0, Expr::Integer(1)))
             .count();
-          has_divide_node || num_contributors >= 2
+          // Multiple numerator factors alone don't justify combining:
+          // wolframscript keeps (5*x*(1+x))/((1-x)*(2+x)) factored, so
+          // only fold when something actually cancels.
+          has_divide_node
+            || (num_contributors >= 2 && {
+              let (n, d) = extract_num_den(t);
+              shares_cancelable_factor(&n, &d)
+            })
         })
         .unwrap_or(false);
     if !is_foldable_product {

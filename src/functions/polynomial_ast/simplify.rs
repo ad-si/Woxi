@@ -6284,7 +6284,7 @@ fn try_simplify_trig_ratio(num: &Expr, den: &Expr) -> Option<Expr> {
 }
 
 pub fn simplify_division(num: &Expr, den: &Expr) -> Expr {
-  simplify_division_impl(num, den, true, true)
+  simplify_division_impl(num, den, true, true, true)
 }
 
 /// `canonicalize_sign: false` skips the wolframscript Simplify/Cancel
@@ -6299,6 +6299,7 @@ pub(crate) fn simplify_division_impl(
   den: &Expr,
   canonicalize_sign: bool,
   factor_num: bool,
+  extract_minus: bool,
 ) -> Expr {
   // If same expression, return 1
   if expr_to_string(num) == expr_to_string(den) {
@@ -6381,7 +6382,10 @@ pub(crate) fn simplify_division_impl(
       non_constant_count(&fn_) <= non_constant_count(&bn)
     };
     if fc <= bc && num_ok && factored_den_acceptable(&basic, &factored) {
-      return finish_quotient_sign(factored, canonicalize_sign);
+      return finish_quotient_sign(
+        factored,
+        canonicalize_sign && extract_minus,
+      );
     }
   }
   // Denominator factoring rejected: handle the numerator alone — factor
@@ -6416,7 +6420,7 @@ pub(crate) fn simplify_division_impl(
     }
   }
 
-  finish_quotient_sign(basic, canonicalize_sign)
+  finish_quotient_sign(basic, canonicalize_sign && extract_minus)
 }
 
 /// Pull the integer content out of a sum, keeping the polynomial
