@@ -35,17 +35,6 @@ pub fn compressed_point_list(points: &[(f64, f64)]) -> String {
   compress_and_encode(&buf)
 }
 
-/// Encode a flat list of f64 values as CompressedData.
-pub fn compressed_real_list(values: &[f64]) -> String {
-  let mut buf: Vec<u8> = Vec::with_capacity(values.len() * 10 + 16);
-  buf.extend_from_slice(b"!boR");
-  write_func_header(&mut buf, "List", values.len() as u32);
-  for &v in values {
-    write_real(&mut buf, v);
-  }
-  compress_and_encode(&buf)
-}
-
 // ── Binary serialization helpers ──────────────────────────────────────
 
 fn write_func_header(buf: &mut Vec<u8>, head: &str, arg_count: u32) {
@@ -62,12 +51,6 @@ fn write_symbol(buf: &mut Vec<u8>, name: &str) {
 
 fn write_real(buf: &mut Vec<u8>, v: f64) {
   buf.push(b'r');
-  buf.extend_from_slice(&v.to_le_bytes());
-}
-
-#[allow(dead_code)]
-fn write_integer(buf: &mut Vec<u8>, v: i32) {
-  buf.push(b'i');
   buf.extend_from_slice(&v.to_le_bytes());
 }
 
@@ -119,11 +102,6 @@ pub fn opacity_box(o: f64) -> String {
 /// Convert AbsoluteThickness directive.
 pub fn abs_thickness_box(t: f64) -> String {
   format!("AbsoluteThickness[{}]", fmt_real(t))
-}
-
-/// Convert PointSize directive.
-pub fn point_size_box(s: f64) -> String {
-  format!("PointSize[{}]", fmt_real(s))
 }
 
 /// DiskBox[{cx, cy}] or DiskBox[{cx, cy}, r]
@@ -266,28 +244,6 @@ pub fn bezier_curve_box(points: &[(f64, f64)]) -> String {
     .map(|(x, y)| format!("{{{}, {}}}", fmt_real(*x), fmt_real(*y)))
     .collect();
   format!("BezierCurveBox[{{{}}}]", pts.join(", "))
-}
-
-/// EdgeForm[...] directive
-pub fn edge_form_box(color: Option<(f64, f64, f64)>) -> String {
-  match color {
-    Some((r, g, b)) => format!("EdgeForm[{}]", rgbcolor_box(r, g, b)),
-    None => "EdgeForm[None]".to_string(),
-  }
-}
-
-/// FaceForm[...] directive
-pub fn face_form_box(color: Option<(f64, f64, f64)>) -> String {
-  match color {
-    Some((r, g, b)) => format!("FaceForm[{}]", rgbcolor_box(r, g, b)),
-    None => "FaceForm[None]".to_string(),
-  }
-}
-
-/// Dashing[{d1, d2, ...}]
-pub fn dashing_box(dashes: &[f64]) -> String {
-  let ds: Vec<String> = dashes.iter().map(|d| fmt_real(*d)).collect();
-  format!("Dashing[{{{}}}]", ds.join(", "))
 }
 
 #[cfg(test)]

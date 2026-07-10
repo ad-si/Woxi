@@ -8247,18 +8247,6 @@ fn flip_unit_negative_rational_product(expr: Expr) -> Expr {
   }
 }
 
-/// Extract numerator and optional denominator from an expression.
-pub fn extract_num_den(e: &Expr) -> (Expr, Option<Expr>) {
-  match e {
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
-      left,
-      right,
-    } => (*left.clone(), Some(*right.clone())),
-    _ => (e.clone(), None),
-  }
-}
-
 /// Build the canonical form of `a / b` structurally (without evaluation).
 /// Returns `Times[a, Power[b, -1]]` as a FunctionCall.
 /// Use this when constructing symbolic results; for evaluated division use `divide_two`.

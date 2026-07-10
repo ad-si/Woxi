@@ -2224,7 +2224,6 @@ static ELEMENTS: &[Element] = &[
 pub struct ElementLayout {
   pub atomic_number: i128,
   pub abbreviation: &'static str,
-  pub standard_name: &'static str,
   pub group: Option<i128>,
   pub period: i128,
   pub block: &'static str,
@@ -2237,7 +2236,6 @@ pub fn elements_layout() -> Vec<ElementLayout> {
     .map(|e| ElementLayout {
       atomic_number: e.atomic_number,
       abbreviation: e.abbreviation,
-      standard_name: e.standard_name,
       group: e.group,
       period: e.period,
       block: e.block,

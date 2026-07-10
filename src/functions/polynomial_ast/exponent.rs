@@ -106,11 +106,6 @@ pub fn max_power_int(expr: &Expr, var: &str) -> Option<i128> {
   max_power(expr, var).and_then(|r| r.as_int())
 }
 
-/// Convenience wrapper: returns min power as integer, or None if non-integer.
-pub fn min_power_int(expr: &Expr, var: &str) -> Option<i128> {
-  min_power(expr, var).and_then(|r| r.as_int())
-}
-
 // ─── Exponent ───────────────────────────────────────────────────────
 
 /// Exponent[expr, var] - Returns the maximum power of var in expr

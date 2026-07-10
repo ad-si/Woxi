@@ -2231,7 +2231,6 @@ pub fn apply_replace_repeated_ast_with_max(
 }
 
 /// Check if two Expr values are structurally equal
-#[allow(dead_code)]
 pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
   match (a, b) {
     (Expr::Integer(x), Expr::Integer(y)) => x == y,
@@ -2254,94 +2253,6 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
         && a1.iter().zip(a2.iter()).all(|(x, y)| expr_equal(x, y))
     }
     _ => expr_to_string(a) == expr_to_string(b),
-  }
-}
-
-/// Apply a list of rules once to an expression
-#[allow(dead_code)]
-pub fn apply_rules_once(
-  expr: &Expr,
-  rules: &[(&Expr, &Expr)],
-) -> Result<Expr, InterpreterError> {
-  // Try to match each rule against the expression
-  for (pattern, replacement) in rules {
-    if let Some(bindings) = match_pattern(expr, pattern) {
-      return apply_bindings(replacement, &bindings);
-    }
-  }
-
-  // No rule matched at the top level, try to apply rules to subexpressions
-  match expr {
-    Expr::List(items) => {
-      let new_items: Result<Vec<Expr>, _> = items
-        .iter()
-        .map(|item| apply_rules_once(item, rules))
-        .collect();
-      Ok(Expr::List(new_items?.into()))
-    }
-    Expr::FunctionCall { name, args } => {
-      // For Flat functions, try subsequence matching before recursing
-      let has_flat = is_builtin_flat(name)
-        || crate::FUNC_ATTRS.with(|m| {
-          m.borrow()
-            .get(name.as_str())
-            .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-        });
-      if has_flat {
-        for (pattern, replacement) in rules {
-          if let Expr::FunctionCall {
-            name: pat_name,
-            args: pat_args,
-          } = pattern
-            && pat_name == name
-            && pat_args.len() < args.len()
-          {
-            // Try matching contiguous subsequences of args
-            let sub_len = pat_args.len();
-            for start in 0..=(args.len() - sub_len) {
-              let sub_expr = Expr::FunctionCall {
-                name: name.clone(),
-                args: args[start..start + sub_len].to_vec().into(),
-              };
-              if let Some(bindings) = match_pattern(&sub_expr, pattern) {
-                let replaced = apply_bindings(replacement, &bindings)?;
-                let mut new_args = args[..start].to_vec();
-                new_args.push(replaced);
-                new_args.extend_from_slice(&args[start + sub_len..]);
-                if new_args.len() == 1 {
-                  return Ok(new_args.into_iter().next().unwrap());
-                }
-                return Ok(Expr::FunctionCall {
-                  name: name.clone(),
-                  args: new_args.into(),
-                });
-              }
-            }
-          }
-        }
-      }
-
-      let new_args: Result<Vec<Expr>, _> = args
-        .iter()
-        .map(|arg| apply_rules_once(arg, rules))
-        .collect();
-      Ok(Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args?.into(),
-      })
-    }
-    Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
-      op: *op,
-      left: Box::new(apply_rules_once(left, rules)?),
-      right: Box::new(apply_rules_once(right, rules)?),
-    }),
-    // `!x /. x -> True` must descend into the operand like any other
-    // compound expression.
-    Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
-      op: *op,
-      operand: Box::new(apply_rules_once(operand, rules)?),
-    }),
-    _ => Ok(expr.clone()),
   }
 }
 

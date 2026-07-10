@@ -38,7 +38,6 @@ pub fn is_known_wolfram_function(name: &str) -> bool {
 /// Information about a built-in Wolfram Language function.
 pub struct BuiltinFunctionInfo {
   pub description: &'static str,
-  pub effect_level: &'static str,
 }
 
 /// Registry of all function info from functions.csv.
@@ -59,13 +58,7 @@ static BUILTIN_FUNCTION_INFO: LazyLock<
       if description.is_empty() && effect_level.is_empty() {
         return None;
       }
-      Some((
-        name,
-        BuiltinFunctionInfo {
-          description,
-          effect_level,
-        },
-      ))
+      Some((name, BuiltinFunctionInfo { description }))
     })
     .collect()
 });

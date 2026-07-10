@@ -7205,11 +7205,6 @@ pub fn grid_ast_with_parens(args: &[Expr]) -> Result<Expr, InterpreterError> {
   grid_ast_internal(args, &[], true)
 }
 
-/// Render a parenthesized grid and return the raw SVG string (for composition).
-pub fn grid_svg_with_parens(args: &[Expr]) -> Result<String, InterpreterError> {
-  grid_svg_internal(args, &[], true)
-}
-
 /// Render a grid and return the raw SVG string.
 pub fn grid_svg_with_gaps(
   args: &[Expr],
@@ -8392,66 +8387,6 @@ pub fn matrixform_3d_ast(
       x_off += cell_w + cell_gap_x;
     }
     y_off += row_h + cell_gap_y;
-  }
-
-  svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
-}
-
-/// Stack multiple SVG strings vertically with spacing, capture the result.
-pub fn stack_svgs_vertically(
-  svgs: &[String],
-) -> Result<Expr, InterpreterError> {
-  if svgs.is_empty() {
-    return Err(InterpreterError::EvaluationError("No SVGs to stack".into()));
-  }
-
-  // Parse each SVG to get its dimensions and content
-  let mut parsed: Vec<(f64, f64, String, String)> = Vec::new(); // (w, h, viewBox, innerContent)
-  for svg in svgs {
-    if let Some(p) = parse_svg_dimensions(svg) {
-      let parts: Vec<f64> = p
-        .view_box
-        .split_whitespace()
-        .filter_map(|s| s.parse().ok())
-        .collect();
-      if parts.len() >= 4 {
-        parsed.push((parts[2], parts[3], p.view_box.clone(), p.inner_content));
-      }
-    }
-  }
-
-  if parsed.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Could not parse SVGs".into(),
-    ));
-  }
-
-  let gap = 8.0_f64;
-  let max_width: f64 = parsed.iter().map(|(w, _, _, _)| *w).fold(0.0, f64::max);
-  let total_height: f64 = parsed.iter().map(|(_, h, _, _)| *h).sum::<f64>()
-    + (parsed.len() as f64 - 1.0) * gap;
-
-  let mut svg = String::with_capacity(4096);
-  svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    max_width.ceil() as u32,
-    total_height.ceil() as u32,
-    max_width.ceil() as u32,
-    total_height.ceil() as u32,
-  ));
-
-  let mut y = 0.0_f64;
-  for (w, h, vb, content) in &parsed {
-    // Center horizontally if narrower than max
-    let x = (max_width - w) / 2.0;
-    svg.push_str(&format!(
-      "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
-      x, y, w, h, vb
-    ));
-    svg.push_str(content);
-    svg.push_str("</svg>\n");
-    y += h + gap;
   }
 
   svg.push_str("</svg>");

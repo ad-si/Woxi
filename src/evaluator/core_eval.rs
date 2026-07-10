@@ -422,12 +422,6 @@ pub fn evaluate_expr_to_expr_early_dispatch(
   Ok(None)
 }
 
-/// Evaluate an Expr AST directly and return a string representation.
-/// Delegates to `evaluate_expr_to_expr` and converts the result to a string.
-pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
-  Ok(expr_to_string(&evaluate_expr_to_expr(expr)?))
-}
-
 /// Whether an expression is a valid rules slot for ReplaceAll /
 /// ReplaceRepeated: a single Rule/RuleDelayed, or a (possibly nested)
 /// list of such rules. Anything else triggers ReplaceAll::reps in

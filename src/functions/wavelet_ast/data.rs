@@ -98,10 +98,6 @@ impl Dwd {
       .map(|(_, c)| c)
   }
 
-  pub fn spec(&self) -> Option<WaveletSpec> {
-    parse_discrete_wavelet(&self.wavelet)
-  }
-
   pub fn to_expr(&self) -> Expr {
     let rules: Vec<Expr> = self
       .rules

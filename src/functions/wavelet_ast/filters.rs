@@ -16,7 +16,6 @@ pub type ExactFilter = Vec<(i64, Expr)>;
 pub struct WaveletFilters {
   pub primal_lo: Filter,
   pub dual_lo: Filter,
-  pub orthogonal: bool,
   pub primal_lo_exact: Option<ExactFilter>,
   pub dual_lo_exact: Option<ExactFilter>,
 }
@@ -26,7 +25,6 @@ impl WaveletFilters {
     WaveletFilters {
       primal_lo: lo.clone(),
       dual_lo: lo,
-      orthogonal: true,
       primal_lo_exact: exact.clone(),
       dual_lo_exact: exact,
     }
@@ -449,7 +447,6 @@ pub fn biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
   WaveletFilters {
     primal_lo: to_f64(&primal_rat),
     dual_lo: to_f64(&dual_rat),
-    orthogonal: false,
     primal_lo_exact: Some(to_exact(&primal_rat)),
     dual_lo_exact: Some(to_exact(&dual_rat)),
   }
@@ -460,7 +457,6 @@ pub fn reverse_biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
   WaveletFilters {
     primal_lo: f.dual_lo,
     dual_lo: f.primal_lo,
-    orthogonal: false,
     primal_lo_exact: f.dual_lo_exact,
     dual_lo_exact: f.primal_lo_exact,
   }
@@ -540,7 +536,6 @@ pub fn cdf_97_filters() -> WaveletFilters {
   WaveletFilters {
     primal_lo: collect(&primal_poly),
     dual_lo: collect(&dual_poly),
-    orthogonal: false,
     primal_lo_exact: None,
     dual_lo_exact: None,
   }
