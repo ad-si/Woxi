@@ -6254,6 +6254,24 @@ mod characteristic_function {
   }
 
   #[test]
+  fn chisquare_and_beta() {
+    // ChiSquare: (1 - 2 I t)^(-k/2), also folding for a numeric k.
+    assert_eq!(
+      interpret("CharacteristicFunction[ChiSquareDistribution[k], t]").unwrap(),
+      "(1 - (2*I)*t)^(-1/2*k)"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[ChiSquareDistribution[4], t]").unwrap(),
+      "(1 - (2*I)*t)^(-2)"
+    );
+    // Beta: the confluent hypergeometric function evaluated at I t.
+    assert_eq!(
+      interpret("CharacteristicFunction[BetaDistribution[a, b], t]").unwrap(),
+      "Hypergeometric1F1[a, a + b, I*t]"
+    );
+  }
+
+  #[test]
   fn numeric_argument() {
     assert_eq!(
       interpret("CharacteristicFunction[NormalDistribution[], 0]").unwrap(),
@@ -6337,6 +6355,41 @@ mod moment_generating_function {
   }
 
   #[test]
+  fn chisquare_and_beta() {
+    // ChiSquare: (1 - 2 t)^(-k/2), also folding for a numeric k.
+    assert_eq!(
+      interpret("MomentGeneratingFunction[ChiSquareDistribution[k], t]")
+        .unwrap(),
+      "(1 - 2*t)^(-1/2*k)"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[ChiSquareDistribution[6], t]")
+        .unwrap(),
+      "(1 - 2*t)^(-3)"
+    );
+    // Beta: the confluent hypergeometric function.
+    assert_eq!(
+      interpret("MomentGeneratingFunction[BetaDistribution[a, b], t]").unwrap(),
+      "Hypergeometric1F1[a, a + b, t]"
+    );
+  }
+
+  #[test]
+  fn no_mgf_is_indeterminate() {
+    // Student-t and Cauchy have no moment-generating function.
+    assert_eq!(
+      interpret("MomentGeneratingFunction[StudentTDistribution[n], t]")
+        .unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[CauchyDistribution[a, b], t]")
+        .unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
   fn numeric_argument_folds() {
     // The MGF at t = 0 is always 1.
     assert_eq!(
@@ -6413,6 +6466,28 @@ mod cumulant_generating_function {
       interpret("CumulantGeneratingFunction[GammaDistribution[a, b], t]")
         .unwrap(),
       "-(a*Log[1 - b*t])"
+    );
+    // ChiSquare derives its CGF from the (1 - 2 t)^(-k/2) MGF.
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[ChiSquareDistribution[k], t]")
+        .unwrap(),
+      "-1/2*(k*Log[1 - 2*t])"
+    );
+  }
+
+  // Distributions with no MGF have no CGF either: Log[Indeterminate] folds to
+  // Indeterminate rather than being left as a nested Log.
+  #[test]
+  fn no_cgf_is_indeterminate() {
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[StudentTDistribution[n], t]")
+        .unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[CauchyDistribution[a, b], t]")
+        .unwrap(),
+      "Indeterminate"
     );
   }
 

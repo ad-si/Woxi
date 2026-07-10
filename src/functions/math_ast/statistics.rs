@@ -6871,6 +6871,32 @@ pub fn characteristic_function_ast(
         true,
       ))
     }
+    // (1 - 2*I*t)^(-k/2)
+    ("ChiSquareDistribution", [k]) => Some((
+      pow(
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call("Times", vec![Expr::Integer(-2), i_unit(), t.clone()]),
+          ],
+        ),
+        div(neg(k.clone()), Expr::Integer(2)),
+      ),
+      false,
+    )),
+    // Hypergeometric1F1[a, a + b, I*t]
+    ("BetaDistribution", [a, b]) => Some((
+      call(
+        "Hypergeometric1F1",
+        vec![
+          a.clone(),
+          call("Plus", vec![a.clone(), b.clone()]),
+          call("Times", vec![i_unit(), t.clone()]),
+        ],
+      ),
+      false,
+    )),
     _ => None,
   };
 
@@ -7099,6 +7125,37 @@ pub fn moment_generating_function_ast(
         true,
       ))
     }
+    // (1 - 2*t)^(-k/2)
+    ("ChiSquareDistribution", [k]) => Some((
+      pow(
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call("Times", vec![Expr::Integer(-2), t.clone()]),
+          ],
+        ),
+        div(neg(k.clone()), Expr::Integer(2)),
+      ),
+      false,
+    )),
+    // Hypergeometric1F1[a, a + b, t]
+    ("BetaDistribution", [a, b]) => Some((
+      call(
+        "Hypergeometric1F1",
+        vec![
+          a.clone(),
+          call("Plus", vec![a.clone(), b.clone()]),
+          t.clone(),
+        ],
+      ),
+      false,
+    )),
+    // Student-t and Cauchy have no moment-generating function (the defining
+    // integral diverges), so Wolfram returns Indeterminate for every t.
+    ("StudentTDistribution", [_]) | ("CauchyDistribution", [_, _]) => {
+      Some((Expr::Identifier("Indeterminate".to_string()), false))
+    }
     _ => None,
   };
 
@@ -7247,6 +7304,11 @@ pub fn cumulant_generating_function_ast(
     if name == "MomentGeneratingFunction")
   {
     return Ok(unevaluated(args));
+  }
+  // A distribution with no MGF (e.g. Cauchy, Student-t) also has no CGF:
+  // Log[Indeterminate] is Indeterminate.
+  if matches!(&mgf, Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   let cgf = if let Some((base, exp)) = as_power_pair(&mgf) {
     if is_e_base(base) {
