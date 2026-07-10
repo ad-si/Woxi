@@ -2051,6 +2051,36 @@ mod minors {
   }
 }
 
+mod least_squares_complex {
+  use super::*;
+
+  // Complex matrices use the conjugate transpose in the normal equations
+  // (a plain transpose gave -1/3 instead of 1/5 for {{1}, {2 I}}), and a
+  // rank-deficient system falls back to the pseudoinverse silently (no
+  // Inverse::sing leak). All outputs verified against wolframscript 15.0.
+  #[test]
+  fn conjugate_transpose_normal_equations() {
+    clear_state();
+    assert_eq!(
+      interpret("LeastSquares[{{1}, {2*I}}, {1, 0}]").unwrap(),
+      "{1/5}"
+    );
+    assert_eq!(
+      interpret("LeastSquares[{{1, 0}, {2*I, 1}, {0, 1}}, {1, 0, 1}]").unwrap(),
+      "{1/3 + I/3, 5/6 - I/3}"
+    );
+    assert_eq!(
+      interpret("LeastSquares[{{1, I}, {2, 2*I}}, {1, 1}]").unwrap(),
+      "{3/10, (-3*I)/10}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.contains("Inverse::sing")),
+      "rank-deficient LeastSquares leaked Inverse::sing: {msgs:?}"
+    );
+  }
+}
+
 mod pseudo_inverse {
   use super::*;
 
@@ -2059,6 +2089,27 @@ mod pseudo_inverse {
     assert_eq!(
       interpret("PseudoInverse[{{1, 2}, {3, 4}}]").unwrap(),
       "{{-2, 1}, {3/2, -1/2}}"
+    );
+  }
+
+  // Complex matrices need the conjugate transpose in the Moore-Penrose
+  // formulas: with a plain transpose the Gram products degenerate
+  // (C.Transpose[C] of the row (1, I) is 0) and rank-deficient complex
+  // matrices stayed unevaluated. All outputs verified against
+  // wolframscript 15.0.
+  #[test]
+  fn complex_conjugate_transpose() {
+    assert_eq!(
+      interpret("PseudoInverse[{{1, I}, {2, 2*I}}]").unwrap(),
+      "{{1/10, 1/5}, {-1/10*I, -1/5*I}}"
+    );
+    assert_eq!(
+      interpret("PseudoInverse[{{1, I, 0}, {2, 2*I, 0}}]").unwrap(),
+      "{{1/10, 1/5}, {-1/10*I, -1/5*I}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("PseudoInverse[{{1}, {I}}]").unwrap(),
+      "{{1/2, -1/2*I}}"
     );
   }
 

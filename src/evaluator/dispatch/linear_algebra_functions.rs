@@ -84,10 +84,13 @@ pub fn dispatch_linear_algebra_functions(
       ));
     }
     "LeastSquares" if args.len() == 2 => {
-      // LeastSquares[A, b] = Inverse[Transpose[A] . A] . Transpose[A] . b
-      // when A has full column rank. For rank-deficient matrices the normal
-      // equations have no inverse; fall back to PseudoInverse[A] . b which
-      // yields the minimum-norm least-squares solution (matching Wolfram).
+      // LeastSquares[A, b] = Inverse[A^H . A] . A^H . b when A has full
+      // column rank, with A^H the conjugate transpose (a plain transpose
+      // gives wrong values for complex matrices: LeastSquares[{{1}, {2 I}},
+      // {1, 0}] is 1/5, not -1/3). For rank-deficient matrices the normal
+      // equations are singular; fall back to PseudoInverse[A] . b, the
+      // minimum-norm least-squares solution — without going through
+      // Inverse, which would emit a ::sing message wolframscript doesn't.
       let is_matrix = matches!(&args[0], Expr::List(rows)
         if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_))));
       let is_vector = matches!(&args[1], Expr::List(_));
@@ -95,7 +98,16 @@ pub fn dispatch_linear_algebra_functions(
         use crate::evaluator::evaluate_function_call_ast as eval;
         let a = args[0].clone();
         let b = args[1].clone();
-        let at = match eval("Transpose", &[a.clone()]) {
+        let complex =
+          crate::functions::linear_algebra_ast::contains_imaginary_unit(&a);
+        let at = match eval(
+          if complex {
+            "ConjugateTranspose"
+          } else {
+            "Transpose"
+          },
+          &[a.clone()],
+        ) {
           Ok(v) => v,
           Err(e) => return Some(Err(e)),
         };
@@ -107,25 +119,28 @@ pub fn dispatch_linear_algebra_functions(
           Ok(v) => v,
           Err(e) => return Some(Err(e)),
         };
-        // Try Inverse[A^T A] · A^T b. If A^T A is singular, Inverse leaves
-        // the call unevaluated as `Inverse[<matrix>]`; in that case use
-        // PseudoInverse[A] · b instead.
-        let inv_ata = match eval("Inverse", &[ata.clone()]) {
-          Ok(v) => v,
-          Err(e) => return Some(Err(e)),
-        };
-        let normal_form_failed = matches!(
-          &inv_ata,
-          Expr::FunctionCall { name, .. } if name == "Inverse"
-        );
-        if normal_form_failed {
-          let pinv = match eval("PseudoInverse", &[a]) {
+        // A singular Gram matrix (exact zero determinant) means rank
+        // deficiency: skip straight to the pseudoinverse.
+        let det_ata = eval("Det", &[ata.clone()]).ok();
+        let singular = matches!(det_ata, Some(Expr::Integer(0)))
+          || matches!(det_ata, Some(Expr::Real(v)) if v == 0.0);
+        if !singular {
+          let inv_ata = match eval("Inverse", &[ata.clone()]) {
             Ok(v) => v,
             Err(e) => return Some(Err(e)),
           };
-          return Some(eval("Dot", &[pinv, b]));
+          if !matches!(
+            &inv_ata,
+            Expr::FunctionCall { name, .. } if name == "Inverse"
+          ) {
+            return Some(eval("Dot", &[inv_ata, atb]));
+          }
         }
-        return Some(eval("Dot", &[inv_ata, atb]));
+        let pinv = match eval("PseudoInverse", &[a]) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        return Some(eval("Dot", &[pinv, b]));
       }
     }
     "Tr" if args.len() == 1 || args.len() == 2 => {

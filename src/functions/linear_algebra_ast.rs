@@ -120,13 +120,17 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(matrix_to_expr(inv));
   }
 
-  let mt = transpose_matrix(&matrix);
+  // Complex matrices need the conjugate transpose throughout — with the
+  // plain transpose the Gram products degenerate (C.Transpose[C] of the
+  // row (1, I) is 1 + I² = 0) and rank-deficient complex matrices stayed
+  // unevaluated.
+  let mt = adjoint_matrix(&matrix);
 
   // Two one-sided formulas, each needing one matrix inverse:
-  //   left:  (M^T M)^{-1} M^T   — invert the ncols×ncols product (full column rank)
-  //   right: M^T (M M^T)^{-1}   — invert the nrows×nrows product (full row rank)
+  //   left:  (M^H M)^{-1} M^H   — invert the ncols×ncols product (full column rank)
+  //   right: M^H (M M^H)^{-1}   — invert the nrows×nrows product (full row rank)
   // Invert whichever product is smaller first: for a wide matrix (ncols >
-  // nrows) M^T M is the large, rank-deficient one, so inverting it is both
+  // nrows) M^H M is the large, rank-deficient one, so inverting it is both
   // wrong and potentially very slow — prefer the right formula there, and
   // vice-versa for a tall matrix.
   let left = || {
@@ -189,14 +193,41 @@ fn rank_factor_pseudoinverse(matrix: &[Vec<Expr>]) -> Option<Expr> {
         .collect()
     })
     .collect();
-  let bt = transpose_matrix(&b);
-  let ct = transpose_matrix(&c);
+  let bt = adjoint_matrix(&b);
+  let ct = adjoint_matrix(&c);
   let btb_inv = try_invert(&mat_mul(&bt, &b))?;
   let cct_inv = try_invert(&mat_mul(&c, &ct))?;
-  // A+ = Cᵀ · (C Cᵀ)⁻¹ · (Bᵀ B)⁻¹ · Bᵀ
+  // A+ = Cᴴ · (C Cᴴ)⁻¹ · (Bᴴ B)⁻¹ · Bᴴ
   let step1 = mat_mul(&ct, &cct_inv);
   let step2 = mat_mul(&step1, &btb_inv);
   Some(matrix_to_expr(mat_mul(&step2, &bt)))
+}
+
+/// Conjugate transpose for complex matrices; plain transpose otherwise
+/// (so real and symbolic entries take the unchanged path).
+fn adjoint_matrix(matrix: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
+  let transposed = transpose_matrix(matrix);
+  if !matrix
+    .iter()
+    .any(|row| row.iter().any(contains_imaginary_unit))
+  {
+    return transposed;
+  }
+  transposed
+    .iter()
+    .map(|row| {
+      row
+        .iter()
+        .map(|e| {
+          evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Conjugate".to_string(),
+            args: vec![e.clone()].into(),
+          })
+          .unwrap_or_else(|_| e.clone())
+        })
+        .collect()
+    })
+    .collect()
 }
 
 /// Orthogonalize[{v1, v2, ...}] — orthonormalize a set of vectors with the
@@ -6806,7 +6837,7 @@ pub fn cholesky_decomposition_ast(
 
 /// Whether an expression mentions the imaginary unit in any spelling
 /// (the constant/identifier `I` or a `Complex[...]` literal).
-fn contains_imaginary_unit(e: &Expr) -> bool {
+pub(crate) fn contains_imaginary_unit(e: &Expr) -> bool {
   match e {
     Expr::Constant(c) | Expr::Identifier(c) => c == "I",
     Expr::FunctionCall { name, args } => {
