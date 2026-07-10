@@ -1387,6 +1387,11 @@ pub fn dispatch_math_functions(
     "ModularLambda" if args.len() == 1 => {
       return Some(crate::functions::math_ast::modular_lambda_ast(args));
     }
+    "WeierstrassInvariants" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::weierstrass_invariants_ast(
+        args,
+      ));
+    }
     "KleinInvariantJ" if args.len() == 1 => {
       return Some(crate::functions::math_ast::klein_invariant_j_ast(args));
     }

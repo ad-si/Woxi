@@ -4669,3 +4669,53 @@ mod modular_lambda_klein_j {
     );
   }
 }
+
+// WeierstrassInvariants[{ω1, ω2}] returns the lattice invariants {g2, g3}.
+// Numeric only when a half-period is inexact; collinear half-periods stay
+// symbolic. Expected strings verified against wolframscript.
+mod weierstrass_invariants {
+  use super::*;
+
+  #[test]
+  fn lemniscatic_lattice() {
+    // g3 vanishes for the square lattice τ = I (Chop clears the numeric noise).
+    assert_eq!(
+      interpret("Round[Chop[WeierstrassInvariants[{1.0, I}]], 10^-6]").unwrap(),
+      "{2363409/200000, 0}"
+    );
+  }
+
+  #[test]
+  fn general_lattices_and_g3_sign() {
+    // Orientation of the half-periods flips the sign of g3.
+    assert_eq!(
+      interpret("Round[Chop[WeierstrassInvariants[{2.0, 1.0 I}]], 10^-6]")
+        .unwrap(),
+      "{4062109/500000, -1110763/250000}"
+    );
+    assert_eq!(
+      interpret("Round[Chop[WeierstrassInvariants[{1.0, 2.0 I}]], 10^-6]")
+        .unwrap(),
+      "{4062109/500000, 1110763/250000}"
+    );
+  }
+
+  #[test]
+  fn collinear_stays_symbolic() {
+    // Non-independent (real-ratio) half-periods do not define a lattice.
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1.0, 1.0}]").unwrap(),
+      "WeierstrassInvariants[{1., 1.}]"
+    );
+  }
+
+  #[test]
+  fn exact_stays_symbolic() {
+    // Exact half-periods are left unevaluated (matching wolframscript, which
+    // only numericizes inexact input).
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, I}]").unwrap(),
+      "WeierstrassInvariants[{1, I}]"
+    );
+  }
+}
