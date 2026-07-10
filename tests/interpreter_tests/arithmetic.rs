@@ -7609,6 +7609,33 @@ mod zero_divisor {
       r.warnings
     );
 
+    // Message bodies show machine Reals in wolframscript's 6-significant-
+    // digit OutputForm — not the full-precision result form. A value that
+    // rounds to an integer loses its trailing dot. (Differential fuzzer,
+    // seed 71026; wolframscript-verified.)
+    let r = interpret_with_stdout("Divide[Plus[-7.9, Pi], 0]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    let expected = format!(
+      "{lead}-4.75841
+{pfx}-------- encountered.
+{lead}   0"
+    );
+    assert!(
+      r.warnings.iter().any(|w| *w == expected),
+      "real-numerator message mismatch, got: {:?}",
+      r.warnings
+    );
+    let r = interpret_with_stdout("Divide[123456.789, 0]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "123457
+"
+      ) && !w.contains("123457.")),
+      "rounded-integral message mismatch, got: {:?}",
+      r.warnings
+    );
+
     // A symbolic numerator decays to `x*(1/0)` and keeps the Power::infy form.
     let r = interpret_with_stdout("Divide[x, 0]").unwrap();
     assert_eq!(r.result, "ComplexInfinity");

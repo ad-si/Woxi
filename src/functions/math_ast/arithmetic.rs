@@ -7392,7 +7392,40 @@ pub fn divide_head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// -(--)
 ///   2
 /// ```
+/// Message bodies display machine Reals in wolframscript's 6-significant-
+/// digit OutputForm (640.2415926535898 shows as 640.242), unlike result
+/// output which keeps full precision. Only the plain-notation magnitude
+/// range is handled; scientific-notation values fall back to the full
+/// form.
+fn message_real_string(v: f64) -> Option<String> {
+  if !v.is_finite() || v == 0.0 {
+    return None;
+  }
+  let magnitude = v.abs().log10().floor() as i32;
+  if !(-5..6).contains(&magnitude) {
+    return None;
+  }
+  let decimals = (5 - magnitude).max(0) as usize;
+  let mut s = format!("{:.*}", decimals, v);
+  if s.contains('.') {
+    while s.ends_with('0') {
+      s.pop();
+    }
+    // A value that rounds to an integer loses the dot entirely
+    // (Divide[123456.789, 0] shows 123457, not 123457.).
+    if s.ends_with('.') {
+      s.pop();
+    }
+  }
+  Some(s)
+}
+
 fn numerator_box_lines(e: &Expr) -> Vec<String> {
+  if let Expr::Real(v) = e
+    && let Some(s) = message_real_string(*v)
+  {
+    return vec![s];
+  }
   if let Expr::FunctionCall { name, args } = e
     && name == "Rational"
     && args.len() == 2
