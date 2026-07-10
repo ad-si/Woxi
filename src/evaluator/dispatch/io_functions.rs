@@ -595,6 +595,23 @@ pub fn dispatch_io_functions(
         }
       }
 
+      if fmt == "SVG" {
+        let svg = expr_to_svg(&args[1]);
+        // expr_to_svg returns an empty string when a graphics head fails to
+        // render; fall back to the text rendering so the file stays valid SVG.
+        let svg = if svg.is_empty() {
+          expr_text_svg(&args[1])
+        } else {
+          svg
+        };
+        if let Err(e) = std::fs::write(&filename, &svg).map_err(|e| {
+          InterpreterError::EvaluationError(format!("Export: {e}"))
+        }) {
+          return Some(Err(e));
+        }
+        return Some(Ok(Expr::String(filename)));
+      }
+
       // Raster image formats: rasterize the SVG and write via the image crate.
       if matches!(
         fmt.as_str(),

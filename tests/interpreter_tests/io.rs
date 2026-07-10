@@ -1084,6 +1084,43 @@ mod plot {
     std::fs::remove_file(path).ok();
   }
 
+  /// Regression: Export["foo.svg", Graphics[...]] used to write the
+  /// unevaluated Graphics expression as plain text into the .svg file
+  /// instead of rendering it.
+  #[test]
+  fn export_graphics_to_svg() {
+    clear_state();
+    let path = temp_file("woxi_test_export_graphics.svg");
+    let result = interpret(&format!(
+      "Export[\"{path}\", Graphics[Line[{{{{0, 0}}, {{1, 1}}, {{2, 0}}}}]]]"
+    ))
+    .unwrap();
+    assert_eq!(result, path);
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert!(content.starts_with("<svg"));
+    assert!(content.contains("</svg>"));
+    std::fs::remove_file(path).ok();
+  }
+
+  /// Regression: symbolic (exact) coordinates such as {Pi/4, 2^(-1/2)}
+  /// produced by Table must render to SVG just like numeric ones.
+  #[test]
+  fn export_graphics_with_symbolic_coords_to_svg() {
+    clear_state();
+    let path = temp_file("woxi_test_export_symbolic.svg");
+    let result = interpret(&format!(
+      "Export[\"{path}\", \
+       Graphics[Line[Table[{{x, Sin[x]}}, {{x, 0, 2 Pi, Pi/8}}]]]]"
+    ))
+    .unwrap();
+    assert_eq!(result, path);
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert!(content.starts_with("<svg"));
+    assert!(content.contains("<polyline"));
+    assert!(!content.contains("Graphics["));
+    std::fs::remove_file(path).ok();
+  }
+
   #[test]
   fn export_string_to_file() {
     clear_state();
