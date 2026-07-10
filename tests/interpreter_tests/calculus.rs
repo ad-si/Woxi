@@ -12130,6 +12130,61 @@ mod infinite_log_series {
       "Sum[n^(-1), {n, 1, Infinity}]"
     );
   }
+
+  // Provably divergent infinite sums emit Sum::div before staying
+  // unevaluated: p-series with p <= 1, polynomial growth, constants
+  // (including symbolic ones — wolframscript treats them as generically
+  // nonzero), and rational functions at the divergence boundary.
+  // Exponentials, oscillating terms and Log-mixed terms stay silent,
+  // matching wolframscript's own behavior (2^n and Log[n]/n are silent
+  // there too). All verified against wolframscript 15.0.
+  #[test]
+  fn divergent_sums_emit_div_message() {
+    for call in [
+      "Sum[1/n, {n, 1, Infinity}]",
+      "Sum[1, {n, 1, Infinity}]",
+      "Sum[n, {n, 1, Infinity}]",
+      "Sum[1/Sqrt[n], {n, 1, Infinity}]",
+      "Sum[(n + 1)/n, {n, 1, Infinity}]",
+      "Sum[n/(n^2 + 1), {n, 1, Infinity}]",
+      "Sum[c, {n, 1, Infinity}]",
+      "Sum[5/n, {n, 1, Infinity}]",
+      "Sum[Log[n], {n, 1, Infinity}]",
+      "Sum[n^(3/2), {n, 1, Infinity}]",
+      "Sum[1/n, {n, 5, Infinity}]",
+      "Sum[1/n + 1/(n + 1), {n, 1, Infinity}]",
+    ] {
+      clear_state();
+      interpret(call).unwrap();
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs
+          .iter()
+          .any(|m| m.contains("Sum::div: Sum does not converge.")),
+        "expected Sum::div for {call}, got {msgs:?}"
+      );
+    }
+    // Silent classes: exponential/oscillating/Log-mixed terms, plus the
+    // telescoping sum whose combined form is convergent
+    for call in [
+      "Sum[2^n, {n, 1, Infinity}]",
+      "Sum[(-1)^n, {n, 1, Infinity}]",
+      "Sum[Log[n]/n, {n, 1, Infinity}]",
+      "Sum[1/n - 1/(n + 1), {n, 1, Infinity}]",
+    ] {
+      clear_state();
+      interpret(call).unwrap();
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        !msgs.iter().any(|m| m.contains("Sum::div")),
+        "no Sum::div expected for {call}, got {msgs:?}"
+      );
+    }
+    // The zero term sums to 0 exactly
+    assert_eq!(interpret("Sum[0, {n, 1, Infinity}]").unwrap(), "0");
+    // Convergent sums are unaffected
+    assert_eq!(interpret("Sum[1/n^2, {n, 1, Infinity}]").unwrap(), "Pi^2/6");
+  }
 }
 
 // Geometric series from k = 1: Sum[c r^k, {k, 1, Infinity}] = c r/(1 - r),

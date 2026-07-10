@@ -1452,6 +1452,159 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// AST-based Sum: sum of list elements or iterator sum.
+/// Whether wolframscript's Sum::div message fires for an infinite sum of
+/// this term. The provable classes: a term with no iterator dependence
+/// (nonzero constant, including a symbolic one — wolframscript treats it
+/// as generically nonzero), the bare Log[var] term, and rational-function
+/// / fractional-power terms whose asymptotic growth exponent is >= -1
+/// (the p-series divergence boundary: 1/n, 1/Sqrt[n], n^(3/2),
+/// (n^2+1)/(n^2-1) all message). Exponentials (2^n), oscillating terms
+/// ((-1)^n) and Log-mixed terms stay silent — wolframscript is silent for
+/// 2^n and Log[n]/n itself.
+fn sum_term_provably_divergent(body: &Expr, var: &str) -> bool {
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(body)
+    .unwrap_or_else(|_| body.clone());
+  if !summand_contains_var(&evaluated, var) {
+    // Constant term: divergent unless it is exactly zero.
+    return !matches!(&evaluated, Expr::Integer(0))
+      && !matches!(&evaluated, Expr::Real(r) if *r == 0.0);
+  }
+  // Bare Log[var], possibly with a nonzero numeric prefactor.
+  if let Expr::FunctionCall { name, args } = &evaluated
+    && name == "Log"
+    && args.len() == 1
+    && matches!(&args[0], Expr::Identifier(v) if v == var)
+  {
+    return true;
+  }
+  // Combine sums of fractions first so telescoping-style cancellation is
+  // visible: 1/n - 1/(n+1) is 1/(n(n+1)) (degree -2, convergent), while
+  // the termwise maximum degree would wrongly say -1.
+  let combined = crate::evaluator::evaluate_function_call_ast(
+    "Together",
+    std::slice::from_ref(&evaluated),
+  )
+  .unwrap_or(evaluated);
+  match summand_growth_degree(&combined, var) {
+    Some(d) => d >= -1.0,
+    None => false,
+  }
+}
+
+/// Whether the summand mentions the iteration variable.
+fn summand_contains_var(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::Identifier(name) => name == var,
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(|a| summand_contains_var(a, var))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      summand_contains_var(left, var) || summand_contains_var(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => summand_contains_var(operand, var),
+    _ => false,
+  }
+}
+
+/// Asymptotic growth exponent of an algebraic term in `var`: the d with
+/// term ~ c*var^d as var -> Infinity. None for anything outside the
+/// polynomial/rational/fractional-power class (exponentials with var in
+/// the exponent, Log factors, unknown functions of var).
+fn summand_growth_degree(expr: &Expr, var: &str) -> Option<f64> {
+  use crate::syntax::BinaryOperator;
+  if !summand_contains_var(expr, var) {
+    // A var-free factor is degree 0 — but reject non-numeric leaves like
+    // symbolic parameters only when they are the whole summand (handled
+    // by the constant case); as factors they don't change the growth.
+    return Some(0.0);
+  }
+  match expr {
+    Expr::Identifier(name) if name == var => Some(1.0),
+    Expr::FunctionCall { name, args } if name == "Plus" => args
+      .iter()
+      .map(|a| summand_growth_degree(a, var))
+      .collect::<Option<Vec<_>>>()
+      .map(|ds| ds.into_iter().fold(f64::NEG_INFINITY, f64::max)),
+    Expr::FunctionCall { name, args } if name == "Times" => args
+      .iter()
+      .map(|a| summand_growth_degree(a, var))
+      .sum::<Option<f64>>(),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let exp = summand_numeric_value(&args[1])?;
+      if summand_contains_var(&args[1], var) {
+        return None; // var in the exponent: exponential class
+      }
+      Some(summand_growth_degree(&args[0], var)? * exp)
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some(summand_growth_degree(&args[0], var)? * 0.5)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Some(
+      summand_growth_degree(left, var)?.max(summand_growth_degree(right, var)?),
+    ),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => Some(
+      summand_growth_degree(left, var)?.max(summand_growth_degree(right, var)?),
+    ),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Some(
+      summand_growth_degree(left, var)? + summand_growth_degree(right, var)?,
+    ),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => Some(
+      summand_growth_degree(left, var)? - summand_growth_degree(right, var)?,
+    ),
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if summand_contains_var(right, var) {
+        return None;
+      }
+      let exp = summand_numeric_value(right)?;
+      Some(summand_growth_degree(left, var)? * exp)
+    }
+    Expr::UnaryOp { operand, .. } => summand_growth_degree(operand, var),
+    _ => None,
+  }
+}
+
+/// Numeric value of a var-free exponent (integer or rational).
+fn summand_numeric_value(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+          Some(*n as f64 / *d as f64)
+        }
+        _ => None,
+      }
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Some(-summand_numeric_value(operand)?),
+    _ => None,
+  }
+}
+
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     // Sum requires at least 2 arguments
@@ -1557,7 +1710,18 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(result) = try_infinite_sum(body, &var_name, min_val)? {
           return Ok(result);
         }
-        // Could not evaluate symbolically — return unevaluated
+        // Sum of an exact zero term is 0 (wolframscript agrees).
+        if matches!(
+          crate::evaluator::evaluate_expr_to_expr(body),
+          Ok(Expr::Integer(0))
+        ) {
+          return Ok(Expr::Integer(0));
+        }
+        // Could not evaluate symbolically. wolframscript proves many of
+        // these divergent and says so before leaving the sum unevaluated.
+        if sum_term_provably_divergent(body, &var_name) {
+          crate::emit_message("Sum::div: Sum does not converge.");
+        }
         return Ok(Expr::FunctionCall {
           name: "Sum".to_string(),
           args: args.to_vec().into(),
