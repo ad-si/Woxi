@@ -2486,6 +2486,26 @@ mod bitwise_ops {
     );
   }
 
+  // Wolfram's right shift truncates toward zero, unlike the arithmetic
+  // (flooring) >> operator: BitShiftRight[-7, 1] is -3, not -4. Negative
+  // shift counts swap direction with the same truncation. All outputs
+  // verified against wolframscript 15.0.
+  #[test]
+  fn bit_shift_negative_operand_truncates() {
+    assert_eq!(interpret("BitShiftRight[-7, 1]").unwrap(), "-3");
+    assert_eq!(interpret("BitShiftRight[-1, 1]").unwrap(), "0");
+    assert_eq!(interpret("BitShiftRight[-3, 1]").unwrap(), "-1");
+    assert_eq!(interpret("BitShiftRight[-9, 2]").unwrap(), "-2");
+    assert_eq!(interpret("BitShiftRight[-7]").unwrap(), "-3");
+    assert_eq!(interpret("BitShiftRight[-7, -2]").unwrap(), "-28");
+    assert_eq!(interpret("BitShiftLeft[-7, -1]").unwrap(), "-3");
+    // BigInt operands truncate the same way
+    assert_eq!(
+      interpret("BitShiftRight[-2^100 - 1, 3]").unwrap(),
+      "-158456325028528675187087900672"
+    );
+  }
+
   #[test]
   fn bit_shift_left() {
     assert_eq!(interpret("BitShiftLeft[1, 4]").unwrap(), "16");

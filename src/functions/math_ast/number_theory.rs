@@ -5805,7 +5805,7 @@ pub fn bit_shift_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match expr_to_bigint(n_expr) {
     Some(n) => {
       if k >= 0 {
-        Ok(bigint_to_expr(n >> k as usize))
+        Ok(bigint_to_expr(truncating_shift_right(n, k as usize)))
       } else {
         Ok(bigint_to_expr(n << (-k) as usize))
       }
@@ -5815,6 +5815,15 @@ pub fn bit_shift_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     }),
   }
+}
+
+/// Wolfram's right shift truncates toward zero (BitShiftRight[-7, 1] is
+/// -3, BitShiftRight[-1, 1] is 0), unlike the arithmetic `>>` operator
+/// which floors (-7 >> 1 == -4). Division by 2^k gives the truncating
+/// behavior for either sign.
+fn truncating_shift_right(n: BigInt, k: usize) -> BigInt {
+  use num_traits::One;
+  n / (BigInt::one() << k)
 }
 
 /// BitShiftLeft[n, k] - shift n left by k bits (default k=1)
@@ -5853,7 +5862,9 @@ pub fn bit_shift_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if k >= 0 {
         Ok(bigint_to_expr(n << k as usize))
       } else {
-        Ok(bigint_to_expr(n >> (-k) as usize))
+        // Negative shifts are truncating right shifts (see
+        // truncating_shift_right): BitShiftLeft[-7, -1] is -3.
+        Ok(bigint_to_expr(truncating_shift_right(n, (-k) as usize)))
       }
     }
     None => Ok(Expr::FunctionCall {
