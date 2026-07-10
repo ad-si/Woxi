@@ -351,6 +351,10 @@ thread_local! {
 // Captured Wolfram-style messages (printed inline, tracked for Check/Quiet interaction)
 thread_local! {
     static CAPTURED_MESSAGES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Per-calculation display counts by message name (Symbol::tag), for
+    /// wolframscript's General::stop suppression of repeated messages.
+    static MESSAGE_STOP_COUNTS: RefCell<std::collections::HashMap<String, usize>> =
+      RefCell::new(std::collections::HashMap::new());
 }
 
 // Set of message tags suppressed via `Off[head::tag]`. Keys are formatted as
@@ -729,32 +733,95 @@ fn format_stack_trace() -> Option<String> {
 /// only at the specific sites whose message provably matches wolframscript's
 /// stdout (e.g. Import/MedianFilter argument errors).
 pub fn emit_message(msg: &str) {
-  // Some messages start with right-aligned context lines (e.g. Power::indet
-  // prints the exponent above the base) followed by `\n` and then the actual
-  // `Head::tag: …` line. Scan for the tag wherever it appears.
+  let _ = emit_message_core(msg);
+}
+
+/// Extract the `Symbol::tag` message name from a message string. Some
+/// messages start with right-aligned context lines (e.g. Power::indet
+/// prints the exponent above the base), so scan every line for the tag.
+fn message_name(msg: &str) -> Option<String> {
+  for line in msg.lines() {
+    if let Some(dc) = line.find("::")
+      && let Some(rest) = line[dc + 2..].find(':')
+    {
+      let name = &line[..dc + 2 + rest];
+      if !name.contains(' ') {
+        return Some(name.to_string());
+      }
+    }
+  }
+  None
+}
+
+/// Shared emission path: captures the message, applies wolframscript's
+/// General::stop suppression (the same Symbol::tag prints at most three
+/// times per calculation; the third is followed by a General::stop notice
+/// and later ones are silent), and prints to the configured stream.
+/// Returns whether the message was displayed and the General::stop line
+/// when one was announced, so `emit_message_to_stdout` can mirror both.
+fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   if message_is_off(msg) {
-    return;
+    return (false, None);
   }
   CAPTURED_MESSAGES.with(|buffer| {
     buffer.borrow_mut().push(msg.to_string());
   });
-  if !is_quiet() {
-    let to_stdout = MESSAGES_TO_STDOUT.with(|f| *f.borrow());
-    let trace = format_stack_trace();
-    if to_stdout {
-      println!();
-      println!("{}", msg);
-      if let Some(trace) = trace {
-        println!("{}", trace);
-      }
-    } else {
-      eprintln!();
-      eprintln!("{}", msg);
-      if let Some(trace) = trace {
-        eprintln!("{}", trace);
-      }
+  if is_quiet() {
+    return (false, None);
+  }
+  let mut stop_line: Option<String> = None;
+  if let Some(name) = message_name(msg)
+    && name != "General::stop"
+  {
+    let count = MESSAGE_STOP_COUNTS.with(|m| {
+      let mut m = m.borrow_mut();
+      let c = m.entry(name.clone()).or_insert(0);
+      *c += 1;
+      *c
+    });
+    if count > 3 {
+      return (false, None);
+    }
+    if count == 3 {
+      let stop = format!(
+        "General::stop: Further output of {name} will be suppressed during this calculation."
+      );
+      CAPTURED_MESSAGES.with(|buffer| {
+        buffer.borrow_mut().push(stop.clone());
+      });
+      stop_line = Some(stop);
     }
   }
+  let to_stdout = MESSAGES_TO_STDOUT.with(|f| *f.borrow());
+  let trace = format_stack_trace();
+  if to_stdout {
+    println!();
+    println!("{}", msg);
+    if let Some(trace) = trace {
+      println!("{}", trace);
+    }
+    if let Some(stop) = &stop_line {
+      println!();
+      println!("{}", stop);
+    }
+  } else {
+    eprintln!();
+    eprintln!("{}", msg);
+    if let Some(trace) = trace {
+      eprintln!("{}", trace);
+    }
+    if let Some(stop) = &stop_line {
+      eprintln!();
+      eprintln!("{}", stop);
+    }
+  }
+  (true, stop_line)
+}
+
+/// Reset the per-calculation General::stop counters (a new top-level
+/// evaluation is a new "calculation").
+pub fn reset_message_stop_counts() {
+  MESSAGE_STOP_COUNTS.with(|m| m.borrow_mut().clear());
 }
 
 /// Like [`emit_message`], but also mirrors the message — with wolframscript's
@@ -767,13 +834,18 @@ pub fn emit_message(msg: &str) {
 /// stdout for the same input; for the general diagnostic case use
 /// [`emit_message`] (see its note). Respects `Quiet[]`/`Off[]`.
 pub fn emit_message_to_stdout(msg: &str) {
-  emit_message(msg);
-  if message_is_off(msg) || is_quiet() {
+  let (shown, stop_line) = emit_message_core(msg);
+  if !shown {
     return;
   }
   capture_stdout_raw("\n");
   capture_stdout_raw(msg);
   capture_stdout_raw("\n");
+  if let Some(stop) = stop_line {
+    capture_stdout_raw("\n");
+    capture_stdout_raw(&stop);
+    capture_stdout_raw("\n");
+  }
 }
 
 /// Clears the captured graphics buffer
@@ -1172,6 +1244,7 @@ pub fn clear_state() {
   functions::entity_ast::clear_entity_stores();
   unseed_rng();
   clear_captured_stdout();
+  reset_message_stop_counts();
   clear_captured_graphics();
   clear_captured_graphicsbox();
 }
@@ -1554,10 +1627,12 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     current
   });
 
-  // Only clear buffers at top level
+  // Only clear buffers at top level; a top-level interpret call is one
+  // "calculation" for General::stop message suppression.
   if depth == 0 {
     clear_captured_stdout();
     clear_captured_warnings();
+    reset_message_stop_counts();
   }
 
   // Decrement depth on scope exit

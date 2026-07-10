@@ -614,6 +614,46 @@ mod messages {
     assert_eq!(interpret("Messages[a]").unwrap(), "{}");
   }
 
+  // wolframscript suppresses a repeated message after three displays per
+  // calculation: the third occurrence is followed by a General::stop
+  // notice and later ones stay silent. Verified against wolframscript
+  // 15.0 with Do[1/0, {5}].
+  #[test]
+  fn general_stop_suppresses_repeated_messages() {
+    clear_state();
+    assert_eq!(interpret("Do[1/0, {5}]; \"done\"").unwrap(), "done");
+    let msgs = woxi::get_captured_messages_raw();
+    let infy = msgs
+      .iter()
+      .filter(|m| m.contains("Power::infy: Infinite expression"))
+      .count();
+    // All five are captured (Check/Quiet still see them) …
+    assert_eq!(infy, 5, "all messages captured: {msgs:?}");
+    // … and exactly one General::stop notice is recorded after the third.
+    let stops: Vec<&String> = msgs
+      .iter()
+      .filter(|m| m.contains("General::stop"))
+      .collect();
+    assert_eq!(stops.len(), 1, "got {msgs:?}");
+    assert!(stops[0].contains(
+      "General::stop: Further output of Power::infy will be suppressed \
+       during this calculation."
+    ));
+    // A new top-level evaluation is a new calculation: the counter resets.
+    assert_eq!(interpret("1/0; \"again\"").unwrap(), "again");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("Power::infy: Infinite expression")),
+      "fresh calculation shows the message again: {msgs:?}"
+    );
+    assert!(
+      !msgs.iter().any(|m| m.contains("General::stop")),
+      "single occurrence must not re-announce stop: {msgs:?}"
+    );
+  }
+
   #[test]
   fn general_argr_returns_template_text() {
     // `General::argr` is one of the standard built-in messages; without
