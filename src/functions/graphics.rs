@@ -5119,8 +5119,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         }
       }
 
-      // TagBox, InterpretationBox — delegate to content
-      "TagBox" if args.len() == 2 => layout_box(&args[0], font_size),
+      // TagBox, FormBox, InterpretationBox — delegate to content.
+      // TagBox[boxes, tag, opts...] may carry trailing options such as
+      // `Editable -> True` (e.g. from TraditionalForm), so accept 2+ args.
+      "TagBox" if args.len() >= 2 => layout_box(&args[0], font_size),
+      // FormBox[boxes, TraditionalForm] — the form marker is display-only.
+      "FormBox" if !args.is_empty() => layout_box(&args[0], font_size),
       // InterpretationBox[boxes, expr, opts...] — render the boxes; the
       // interpretation expression and any trailing options (e.g.
       // `AutoDelete -> True`) are display pass-throughs.
@@ -6325,8 +6329,11 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         format!("[{}]", content)
       }
 
-      // TagBox[boxes, tag] → render boxes, ignore tag
-      "TagBox" if args.len() == 2 => boxes_to_svg(&args[0]),
+      // TagBox[boxes, tag, opts...] → render boxes, ignore tag and options
+      "TagBox" if args.len() >= 2 => boxes_to_svg(&args[0]),
+
+      // FormBox[boxes, form] → render boxes, ignore the form marker
+      "FormBox" if !args.is_empty() => boxes_to_svg(&args[0]),
 
       // InterpretationBox[display, interpretation] → render display part only
       "InterpretationBox" if args.len() >= 2 => boxes_to_svg(&args[0]),
@@ -6752,7 +6759,8 @@ pub fn estimate_box_display_width(expr: &Expr) -> f64 {
       "FrameBox" if !args.is_empty() => {
         estimate_box_display_width(&args[0]) + 2.0
       }
-      "TagBox" if args.len() == 2 => estimate_box_display_width(&args[0]),
+      "TagBox" if args.len() >= 2 => estimate_box_display_width(&args[0]),
+      "FormBox" if !args.is_empty() => estimate_box_display_width(&args[0]),
       "InterpretationBox" if args.len() >= 2 => {
         estimate_box_display_width(&args[0])
       }

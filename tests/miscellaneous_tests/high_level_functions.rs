@@ -4276,6 +4276,63 @@ mod high_level_functions {
     }
   }
 
+  mod math_svg_export_tests {
+    use super::*;
+
+    /// The typeset SVG must carry the math glyphs and fraction rules of the
+    /// expression — not a textual dump of its TagBox/FormBox wrapper.
+    fn assert_basel_svg(svg: &str) {
+      assert!(svg.starts_with("<svg"), "should be SVG markup: {svg}");
+      assert!(svg.contains('\u{2211}'), "∑ rendered: {svg}");
+      assert!(svg.contains('\u{221E}'), "∞ rendered: {svg}");
+      assert!(svg.contains('\u{03C0}'), "π rendered: {svg}");
+      // The two fractions (1/n² and π²/6) draw horizontal rule lines.
+      assert!(svg.contains("<line"), "fraction bars drawn: {svg}");
+      for wrapper in ["TagBox", "FormBox", "RowBox", "HoldForm", "Sum["] {
+        assert!(!svg.contains(wrapper), "no literal {wrapper} text: {svg}");
+      }
+    }
+
+    #[test]
+    fn test_export_string_traditional_form_math_svg() {
+      let svg = interpret(
+        "ExportString[TraditionalForm[HoldForm[Sum[1/n^2, {n, 1, Infinity}] \
+         == Pi^2/6]], \"SVG\"]",
+      )
+      .unwrap();
+      assert_basel_svg(&svg);
+    }
+
+    #[test]
+    fn test_export_traditional_form_math_svg_file() {
+      let tmp = std::env::temp_dir().join("woxi_test_math_basel_sum.svg");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(
+        "Export[\"{path}\", TraditionalForm[HoldForm[Sum[1/n^2, \
+         {{n, 1, Infinity}}] == Pi^2/6]]]"
+      ))
+      .unwrap();
+      assert_eq!(result, path);
+      let svg = std::fs::read_to_string(&tmp).unwrap();
+      assert_basel_svg(&svg);
+      std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_export_string_traditional_form_integral_svg() {
+      let svg = interpret(
+        "ExportString[TraditionalForm[HoldForm[Integrate[Exp[-x^2], \
+         {x, 0, Infinity}] == Sqrt[Pi]/2]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.starts_with("<svg"), "should be SVG markup: {svg}");
+      assert!(svg.contains('\u{222B}'), "∫ rendered: {svg}");
+      assert!(svg.contains('\u{2146}'), "ⅆ differential rendered: {svg}");
+      assert!(!svg.contains("Integrate["), "no literal head: {svg}");
+      assert!(!svg.contains("TagBox"), "no box-wrapper dump: {svg}");
+    }
+  }
+
   mod wav_export_tests {
     use super::*;
 
