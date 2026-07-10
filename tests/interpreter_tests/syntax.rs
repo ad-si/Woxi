@@ -4771,6 +4771,35 @@ mod numerator {
   fn product_without_denominator() {
     assert_eq!(interpret("Numerator[a*b*c]").unwrap(), "a*b*c");
   }
+
+  // Power[Rational, fractional] splits: Numerator[Sqrt[3/11]] → Sqrt[3]
+  // (differential fuzzer, seed 1783631489573774000; wolframscript-verified)
+  #[test]
+  fn sqrt_of_rational_splits() {
+    assert_eq!(interpret("Numerator[Sqrt[3/11]]").unwrap(), "Sqrt[3]");
+  }
+
+  #[test]
+  fn sqrt_of_rational_in_product() {
+    assert_eq!(interpret("Numerator[x*Sqrt[3/11]]").unwrap(), "Sqrt[3]*x");
+  }
+
+  #[test]
+  fn rational_power_symbolic_exponent_stays_whole() {
+    assert_eq!(interpret("Numerator[(3/11)^x]").unwrap(), "(3/11)^x");
+  }
+
+  #[test]
+  fn radical_quotient_regression() {
+    // fuzzer divergence: Sqrt[2]/Sqrt[22]*Sqrt[27] evaluates to 3*Sqrt[3/11]
+    assert_eq!(
+      interpret(
+        "Numerator[Times[Divide[Sqrt[2], Sqrt[22]], Plus[Sqrt[27], Times[0, Sqrt[20]]]]]"
+      )
+      .unwrap(),
+      "3*Sqrt[3]"
+    );
+  }
 }
 
 mod denominator {
@@ -4819,6 +4848,21 @@ mod denominator {
   #[test]
   fn product_without_denominator() {
     assert_eq!(interpret("Denominator[a*b*c]").unwrap(), "1");
+  }
+
+  // wolframscript-verified: Denominator[Sqrt[3/11]] → Sqrt[11],
+  // Denominator[5*(3/11)^(2/3)] → 11^(2/3)
+  #[test]
+  fn sqrt_of_rational_splits() {
+    assert_eq!(interpret("Denominator[Sqrt[3/11]]").unwrap(), "Sqrt[11]");
+  }
+
+  #[test]
+  fn rational_power_in_product() {
+    assert_eq!(
+      interpret("Denominator[5*(3/11)^(2/3)]").unwrap(),
+      "11^(2/3)"
+    );
   }
 }
 

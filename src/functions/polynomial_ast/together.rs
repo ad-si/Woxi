@@ -63,7 +63,134 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
   if matches!(&den, Expr::Integer(1)) {
     return expr.clone();
   }
-  canonicalize_quotient_sign(&num, &den, false).unwrap_or_else(|| expr.clone())
+  let result = canonicalize_quotient_sign(&num, &den, false)
+    .unwrap_or_else(|| expr.clone());
+  // Shared numeric content between numerator and denominator cancels:
+  // Together[(4+2x)/(6x)] → (2+x)/(3x), (4+2x)/6 → (2+x)/3
+  // (wolframscript-verified; differential fuzzer, seed
+  // 1783631489573774000).
+  let (rnum, rden) = extract_num_den(&result);
+  if matches!(&rden, Expr::Integer(1)) {
+    return result;
+  }
+  if let Some((rn, rd)) = reduce_shared_integer_content(&rnum, &rden) {
+    if matches!(&rd, Expr::Integer(1)) {
+      return rn;
+    }
+    return Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(rn),
+      right: Box::new(rd),
+    };
+  }
+  result
+}
+
+/// Cancel the gcd of a sum (or content-wrapped) numerator's integer
+/// content with the denominator's integer factor: (4+2x)/(6x) →
+/// (2+x)/(3x), (4+2x)/6 → (2+x)/3 (wolframscript Together/Cancel both
+/// reduce). Returns None when nothing cancels.
+fn reduce_shared_integer_content(
+  num: &Expr,
+  den: &Expr,
+) -> Option<(Expr, Expr)> {
+  fn gcd(a: i128, b: i128) -> i128 {
+    if b == 0 { a.abs() } else { gcd(b, a % b) }
+  }
+  let mut den_factors = flatten_times_args(std::slice::from_ref(den));
+  let (den_idx, den_int) =
+    den_factors.iter().enumerate().find_map(|(i, f)| match f {
+      Expr::Integer(k) if *k > 1 => Some((i, *k)),
+      _ => None,
+    })?;
+  // A content-wrapped numerator (Times[c, …] from an earlier hoist)
+  // cancels its coefficient against the denominator's integer factor.
+  let num_factors = flatten_times_args(std::slice::from_ref(num));
+  if num_factors.len() >= 2
+    && let Some(c) = num_factors.iter().find_map(|f| match f {
+      Expr::Integer(c) if c.abs() > 1 => Some(*c),
+      _ => None,
+    })
+  {
+    let g = gcd(c.abs(), den_int);
+    if g <= 1 {
+      return None;
+    }
+    let mut new_num_factors: Vec<Expr> = Vec::new();
+    let mut used = false;
+    for f in num_factors {
+      match f {
+        Expr::Integer(cf) if cf == c && !used => {
+          used = true;
+          if c / g != 1 {
+            new_num_factors.push(Expr::Integer(c / g));
+          }
+        }
+        // extract_num_den can leave a stray unit factor behind
+        Expr::Integer(1) => {}
+        other => new_num_factors.push(other),
+      }
+    }
+    let new_num = match new_num_factors.len() {
+      0 => Expr::Integer(1),
+      1 => new_num_factors.remove(0),
+      _ => build_product(new_num_factors),
+    };
+    if den_int / g == 1 {
+      den_factors.remove(den_idx);
+    } else {
+      den_factors[den_idx] = Expr::Integer(den_int / g);
+    }
+    let new_den = match den_factors.len() {
+      0 => Expr::Integer(1),
+      1 => den_factors.remove(0),
+      _ => build_product(den_factors),
+    };
+    return Some((new_num, new_den));
+  }
+  // A sum numerator divides its integer content termwise.
+  let num_terms = collect_additive_terms(num);
+  if num_terms.len() < 2 {
+    return None;
+  }
+  let (n, d, _) = super::factor::rational_content(&num_terms)?;
+  if d != 1 || n.abs() <= 1 {
+    return None;
+  }
+  let g = gcd(n.abs(), den_int);
+  if g <= 1 {
+    return None;
+  }
+  let divided: Result<Vec<Expr>, _> = num_terms
+    .iter()
+    .map(|t| {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(t.clone()),
+        right: Box::new(Expr::Integer(g)),
+      })
+    })
+    .collect();
+  let mut divided = divided.ok()?;
+  let new_num = if divided.len() == 1 {
+    divided.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: divided.into(),
+    }
+  };
+  if den_int / g == 1 {
+    den_factors.remove(den_idx);
+  } else {
+    den_factors[den_idx] = Expr::Integer(den_int / g);
+  }
+  let new_den = match den_factors.len() {
+    0 => Expr::Integer(1),
+    1 => den_factors.remove(0),
+    _ => build_product(den_factors),
+  };
+  Some((new_num, new_den))
 }
 
 /// Extract numerator and denominator from an expression.
@@ -440,8 +567,81 @@ pub(super) fn canonicalize_quotient_sign(
   };
 
   let factors = flatten_times_args(std::slice::from_ref(den));
+  // Together/Cancel split powered PRODUCT factors so numeric content can
+  // hoist through the power: x/(-2+2x)^2 has den (2*(-1+x))^2 → 4,
+  // (-1+x)^2 (wolframscript: x/(4*(-1+x)^2)); an odd power of a negative
+  // numeric ((-2)^3 → -8) feeds the numeric flip below.
+  let mut presplit_changed = false;
+  let factors = if require_negative_numerator {
+    factors
+  } else {
+    let mut split: Vec<Expr> = Vec::new();
+    for f in factors {
+      let (b, e) = match &f {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => match right.as_ref() {
+          Expr::Integer(e) => ((**left).clone(), *e),
+          _ => {
+            split.push(f);
+            continue;
+          }
+        },
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          match &args[1] {
+            Expr::Integer(e) => (args[0].clone(), *e),
+            _ => {
+              split.push(f);
+              continue;
+            }
+          }
+        }
+        _ => {
+          split.push(f);
+          continue;
+        }
+      };
+      let subs = flatten_times_args(std::slice::from_ref(&b));
+      if subs.len() < 2 || !(1..=40).contains(&e) {
+        split.push(f);
+        continue;
+      }
+      presplit_changed = true;
+      for sub in subs {
+        match &sub {
+          Expr::Integer(n) => match n.checked_pow(e as u32) {
+            Some(p) => split.push(Expr::Integer(p)),
+            None => split.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(sub.clone()),
+              right: Box::new(Expr::Integer(e)),
+            }),
+          },
+          _ => {
+            if e == 1 {
+              split.push(sub);
+            } else {
+              split.push(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(sub),
+                right: Box::new(Expr::Integer(e)),
+              });
+            }
+          }
+        }
+      }
+    }
+    split
+  };
   let mut sign: i128 = 1;
   let mut flipped_any = false;
+  // Structural denominator change without a sign flip (Together/Cancel
+  // content hoist: x/(5+5x) → x/(5*(1+x))).
+  let mut den_changed = presplit_changed;
   let mut any_flipped_content_one = false;
   // Positive magnitude of numeric denominator factors whose sign was
   // absorbed (Together pre-factors 2 - 2x into -2*(-1 + x); the -2 must
@@ -552,6 +752,47 @@ pub(super) fn canonicalize_quotient_sign(
           right: Box::new(Expr::Integer(exp)),
         }
       });
+    } else if !require_negative_numerator
+      && flippable_sum
+      && (1..=40).contains(&exp)
+      && let Some((n, 1, _)) =
+        super::factor::rational_content(&collect_additive_terms(&base))
+      && n > 1
+      && let Some(content_pow) = n.checked_pow(exp as u32)
+    {
+      // Positive-content hoist without a flip: Together/Cancel display
+      // x/(5+5x) as x/(5*(1+x)) (wolframscript-verified, incl. powers
+      // and multivariate sums: (2+x*y)/(4+4x*y) → (2+x*y)/(4*(1+x*y))).
+      let divided: Result<Vec<Expr>, _> = collect_additive_terms(&base)
+        .iter()
+        .map(|t| {
+          crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(t.clone()),
+            right: Box::new(Expr::Integer(n)),
+          })
+        })
+        .collect();
+      match divided {
+        Ok(terms) => {
+          den_changed = true;
+          let prim = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms.into(),
+          };
+          new_factors.push(Expr::Integer(content_pow));
+          new_factors.push(if exp == 1 {
+            prim
+          } else {
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(prim),
+              right: Box::new(Expr::Integer(exp)),
+            }
+          });
+        }
+        Err(_) => new_factors.push(f.clone()),
+      }
     } else {
       new_factors.push(f.clone());
     }
@@ -579,6 +820,21 @@ pub(super) fn canonicalize_quotient_sign(
         op: BinaryOperator::Power,
         left: Box::new(negate(den)),
         right: Box::new(Expr::Integer(-1)),
+      });
+    }
+    // No sign flip, but the denominator's structure changed (content
+    // hoist / powered-product split): rebuild the quotient.
+    if den_changed {
+      let new_den = if new_factors.len() == 1 {
+        new_factors.remove(0)
+      } else {
+        crate::functions::math_ast::sort_symbolic_factors(&mut new_factors);
+        build_product(new_factors)
+      };
+      return Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(num.clone()),
+        right: Box::new(new_den),
       });
     }
     return None;
