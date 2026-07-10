@@ -1898,6 +1898,11 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(neg_exp) = get_negative_power_exponent(factor) {
           // Power[base, negative] → skip (denominator factor)
           let _ = neg_exp;
+        } else if let Some((num_part, _)) = split_rational_power(factor) {
+          // Sqrt[3/11] contributes Sqrt[3] to the numerator
+          if !matches!(num_part, Expr::Integer(1)) {
+            num_factors.push(num_part);
+          }
         } else if let Expr::FunctionCall {
           name: rname,
           args: rargs,
@@ -1930,6 +1935,9 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // pure denominator, so its numerator is 1.
       if get_negative_power_exponent(other).is_some() {
         Ok(Expr::Integer(1))
+      } else if let Some((num_part, _)) = split_rational_power(other) {
+        // Numerator[Sqrt[3/11]] → Sqrt[3]
+        Ok(num_part)
       } else {
         Ok(other.clone())
       }
@@ -1989,6 +1997,11 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               right: Box::new(neg_exp),
             });
           }
+        } else if let Some((_, den_part)) = split_rational_power(factor) {
+          // Sqrt[3/11] contributes Sqrt[11] to the denominator
+          if !matches!(den_part, Expr::Integer(1)) {
+            denom_factors.push(den_part);
+          }
         } else if let Expr::FunctionCall {
           name: rname,
           args: rargs,
@@ -2025,6 +2038,9 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             right: Box::new(pos_exp),
           })
         }
+      } else if let Some((_, den_part)) = split_rational_power(other) {
+        // Denominator[Sqrt[3/11]] → Sqrt[11]
+        Ok(den_part)
       } else {
         Ok(Expr::Integer(1))
       }
@@ -2137,6 +2153,66 @@ fn denominator_trig(expr: &Expr) -> Option<Expr> {
 /// return Some((base, -neg_exp)) i.e. the base and the positive exponent.
 /// E.g. Power[x, -2] → Some((x, 2)), Power[x, -1] → Some((x, 1)),
 ///      Power[y, Times[-1, m]] → Some((y, m)).
+/// Split Power[Rational[p, q], e] with a POSITIVE non-integer numeric
+/// exponent into its numerator and denominator parts: wolframscript gives
+/// Numerator[Sqrt[3/11]] → Sqrt[3] and Denominator[5*(3/11)^(2/3)] →
+/// 11^(2/3). A symbolic exponent keeps the power whole
+/// (Numerator[(3/11)^x] → (3/11)^x), so only literal Rational exponents
+/// match. Returns (p^e, q^e), both evaluated.
+fn split_rational_power(expr: &Expr) -> Option<(Expr, Expr)> {
+  let (base, exp) = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  let Expr::FunctionCall {
+    name: bname,
+    args: bargs,
+  } = base
+  else {
+    return None;
+  };
+  if bname != "Rational" || bargs.len() != 2 {
+    return None;
+  }
+  let (Expr::Integer(p), Expr::Integer(q)) = (&bargs[0], &bargs[1]) else {
+    return None;
+  };
+  if *p <= 0 || *q <= 0 {
+    return None;
+  }
+  let positive_fractional = matches!(
+    exp,
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n > 0)
+        && matches!(&args[1], Expr::Integer(d) if *d > 0)
+  );
+  if !positive_fractional {
+    return None;
+  }
+  let pow = |b: i128| {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(Expr::Integer(b)),
+      right: Box::new(exp.clone()),
+    })
+    .unwrap_or_else(|_| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(Expr::Integer(b)),
+      right: Box::new(exp.clone()),
+    })
+  };
+  Some((pow(*p), pow(*q)))
+}
+
 pub fn get_negative_power_exponent(expr: &Expr) -> Option<(Expr, Expr)> {
   let (base, exp) = match expr {
     Expr::BinaryOp {
