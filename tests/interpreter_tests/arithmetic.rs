@@ -946,6 +946,34 @@ mod big_integer {
     assert_eq!(interpret("CompositeQ[2^128]").unwrap(), "True");
   }
 
+  // CompositeQ matches wolframscript's broad convention: negative composites,
+  // non-integer numbers, and composite Gaussian integers are all True; primes,
+  // units (±1, ±I), zero, and non-numbers are False.
+  #[test]
+  fn composite_q_conventions() {
+    // Negative integers mirror their absolute value.
+    assert_eq!(interpret("CompositeQ[-4]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[-2]").unwrap(), "False");
+    // Units and zero are never composite.
+    assert_eq!(interpret("CompositeQ[1]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[0]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[-1]").unwrap(), "False");
+    // Any explicit non-integer number is composite — even 1.0 and 0.0.
+    assert_eq!(interpret("CompositeQ[6.5]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[1.0]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[0.0]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[1/2]").unwrap(), "True");
+    // Gaussian integers: composite iff the norm exceeds 1.
+    assert_eq!(interpret("CompositeQ[2 I]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[3 + 4 I]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[I]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[1 + I]").unwrap(), "False");
+    // Symbols and symbolic constants are not numbers, hence not composite.
+    assert_eq!(interpret("CompositeQ[x]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[Pi]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[Sqrt[2]]").unwrap(), "False");
+  }
+
   // CompositeQ, DigitSum, IntegerReverse, DigitCount are Listable: they
   // thread element-wise over a list argument (previously CompositeQ wrongly
   // returned a single False for the whole list).

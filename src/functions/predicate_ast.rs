@@ -1180,26 +1180,54 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_expr(is_prime))
 }
 
-/// CompositeQ[n] - Tests if n is a composite (non-prime > 1) number
+/// CompositeQ[n] - Tests whether n is a composite number.
+///
+/// wolframscript's convention: a prime (real or Gaussian) is never composite;
+/// a value that is not an explicit `NumberQ` (symbols, `Pi`, `Sqrt[2]`) is
+/// never composite. Among the remaining numbers:
+///   - exact real integers are composite iff `Abs[n] > 1` (so 0 and ±1 are not);
+///   - exact Gaussian integers are composite iff their norm > 1 (so ±I are not);
+///   - every other explicit number — inexact reals/complex, non-integer
+///     rationals — is composite (e.g. `CompositeQ[6.5]`, `CompositeQ[1/2]`,
+///     and even `CompositeQ[1.0]` are all True).
 pub fn composite_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "CompositeQ expects exactly 1 argument".into(),
     ));
   }
-  // Delegate to PrimeQ and negate
-  let prime_result = prime_q_ast(args)?;
-  let is_prime = matches!(&prime_result, Expr::Identifier(s) if s == "True");
 
-  // CompositeQ is True only for n > 1 that are not prime
-  let n_gt_1 = match &args[0] {
-    Expr::Integer(n) => *n > 1,
-    Expr::BigInteger(n) => *n > num_bigint::BigInt::from(1),
-    Expr::Real(f) if f.fract() == 0.0 => *f > 1.0,
-    _ => return Ok(bool_expr(false)),
-  };
-
-  Ok(bool_expr(n_gt_1 && !is_prime))
+  // Primes (including Gaussian primes) are never composite.
+  if matches!(&prime_q_ast(args)?, Expr::Identifier(s) if s == "True") {
+    return Ok(bool_expr(false));
+  }
+  // Only explicit numbers can be composite.
+  if !matches!(&number_q_ast(args)?, Expr::Identifier(s) if s == "True") {
+    return Ok(bool_expr(false));
+  }
+  // Exact real integers: composite iff |n| > 1 (excludes 0 and ±1).
+  match &args[0] {
+    Expr::Integer(n) => return Ok(bool_expr(n.abs() > 1)),
+    Expr::BigInteger(n) => {
+      use num_traits::Signed;
+      return Ok(bool_expr(n.abs() > num_bigint::BigInt::from(1)));
+    }
+    _ => {}
+  }
+  // Exact Gaussian integers: composite iff the norm exceeds 1 (excludes ±I).
+  if let Some(((rn, rd), (in_, id))) =
+    crate::functions::math_ast::try_extract_complex_exact(&args[0])
+    && rd == 1
+    && id == 1
+    && in_ != 0
+  {
+    let norm = rn
+      .saturating_mul(rn)
+      .saturating_add(in_.saturating_mul(in_));
+    return Ok(bool_expr(norm > 1));
+  }
+  // Any other explicit number (inexact real/complex, non-integer rational).
+  Ok(bool_expr(true))
 }
 
 /// PrimePowerQ[n] - Tests if n is a power of a prime
