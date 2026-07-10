@@ -938,7 +938,13 @@ pub fn multiply_terms(a: &Expr, b: &Expr) -> Expr {
     (Expr::Integer(1), _) => b.clone(),
     (_, Expr::Integer(1)) => a.clone(),
     (Expr::Integer(0), _) | (_, Expr::Integer(0)) => Expr::Integer(0),
-    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x * y),
+    // Promote to BigInteger on i128 overflow instead of panicking.
+    (Expr::Integer(x), Expr::Integer(y)) => match x.checked_mul(*y) {
+      Some(p) => Expr::Integer(p),
+      None => Expr::BigInteger(
+        num_bigint::BigInt::from(*x) * num_bigint::BigInt::from(*y),
+      ),
+    },
     (Expr::Real(x), Expr::Real(y)) => Expr::Real(x * y),
     (Expr::Integer(x), Expr::Real(y)) | (Expr::Real(y), Expr::Integer(x)) => {
       Expr::Real(*x as f64 * y)

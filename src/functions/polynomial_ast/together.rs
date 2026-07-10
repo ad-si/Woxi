@@ -1080,7 +1080,10 @@ pub fn together_expr(expr: &Expr) -> Expr {
     // Fold integer factors together so the numeric part of the common
     // denominator is a single number: Together[x/2 + y/3] → (3x + 2y)/6,
     // not (3x + 2y)/(2*3), and Together[x/2 + y/(3 z)] → (2y + 3xz)/(6z).
-    let mut int_prod: i128 = 1;
+    // Accumulate in a BigInt: pathological intermediates (e.g. Simplify
+    // iterating on complex-radical quotients) can carry integer factors
+    // whose product overflows i128, which previously panicked here.
+    let mut int_prod = num_bigint::BigInt::from(1);
     let mut split_dens: Vec<Expr> = Vec::new();
     for f in canonical_dens.drain(..) {
       match f {
@@ -1118,8 +1121,12 @@ pub fn together_expr(expr: &Expr) -> Expr {
       }
     }
     canonical_dens = split_dens;
-    if int_prod != 1 {
-      canonical_dens.insert(0, Expr::Integer(int_prod));
+    if int_prod != num_bigint::BigInt::from(1) {
+      let folded = match i128::try_from(&int_prod) {
+        Ok(n) => Expr::Integer(n),
+        Err(_) => Expr::BigInteger(int_prod),
+      };
+      canonical_dens.insert(0, folded);
     }
     crate::functions::math_ast::sort_symbolic_factors(&mut canonical_dens);
     if canonical_dens.len() == 1 {

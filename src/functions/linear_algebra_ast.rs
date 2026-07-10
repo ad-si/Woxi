@@ -236,15 +236,34 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
   };
 
+  // Complex vectors use the Hermitian inner product Conjugate[e].v for
+  // the projections and |w|² for the norm — the plain dot product made
+  // Orthogonalize[{{1, I}, {1, -I}}] collapse to zero vectors (the
+  // "norm" of (1, I) came out 0). Real/symbolic input keeps the plain
+  // product.
+  let complex = matrix
+    .iter()
+    .any(|row| row.iter().any(contains_imaginary_unit));
+  let conj = |e: &Expr| -> Expr {
+    if !complex {
+      return e.clone();
+    }
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Conjugate".to_string(),
+      args: vec![e.clone()].into(),
+    })
+    .unwrap_or_else(|_| e.clone())
+  };
+
   let mut result: Vec<Vec<Expr>> = Vec::new();
   for v in &matrix {
     // Subtract the projections onto the previously produced orthonormal
-    // vectors: w = v - sum_e (v . e) e.
+    // vectors: w = v - sum_e <e, v> e with <e, v> = Conjugate[e].v.
     let mut w = v.clone();
     for e in &result {
       let mut dot = Expr::Integer(0);
       for i in 0..v.len() {
-        dot = eval_add(&dot, &eval_mul(&v[i], &e[i]));
+        dot = eval_add(&dot, &eval_mul(&conj(&e[i]), &v[i]));
       }
       let dot = simplify(dot);
       if matches!(dot, Expr::Integer(0)) {
@@ -255,10 +274,10 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    // normsq = w . w
+    // normsq = <w, w>
     let mut normsq = Expr::Integer(0);
     for wi in &w {
-      normsq = eval_add(&normsq, &eval_mul(wi, wi));
+      normsq = eval_add(&normsq, &eval_mul(&conj(wi), wi));
     }
     let normsq = simplify(normsq);
 
@@ -5510,10 +5529,24 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
-  // Build ArcCos[Dot[u,v] / (Norm[u] * Norm[v])] and evaluate
+  // Build ArcCos[u.Conjugate[v] / (Norm[u] * Norm[v])] and evaluate. The
+  // conjugate matters for complex vectors (VectorAngle[{1, I}, {1, -I}]
+  // is Pi/2, not 0) and wolframscript keeps a genuinely complex cosine
+  // symbolic (VectorAngle[{1, 0}, {I, 0}] = ArcCos[-I]). Real vectors
+  // skip the wrapper so the symbolic path is unchanged.
+  let complex =
+    contains_imaginary_unit(&args[0]) || contains_imaginary_unit(&args[1]);
+  let second = if complex {
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Conjugate".to_string(),
+      args: vec![args[1].clone()].into(),
+    })?
+  } else {
+    args[1].clone()
+  };
   let dot_expr = Expr::FunctionCall {
     name: "Dot".to_string(),
-    args: vec![args[0].clone(), args[1].clone()].into(),
+    args: vec![args[0].clone(), second].into(),
   };
   let norm_u = Expr::FunctionCall {
     name: "Norm".to_string(),

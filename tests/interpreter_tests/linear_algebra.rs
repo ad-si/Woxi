@@ -2489,6 +2489,24 @@ mod vector_angle {
     assert_eq!(interpret("VectorAngle[{1, 0}, {0, 1}]").unwrap(), "Pi/2");
   }
 
+  // Complex vectors use u.Conjugate[v]: the plain dot product previously
+  // made {1, I} and {1, -I} come out "parallel" (angle 0 instead of
+  // Pi/2). A genuinely complex cosine stays symbolic, exactly like
+  // wolframscript. All outputs verified against wolframscript 15.0.
+  #[test]
+  fn complex_vectors_conjugate() {
+    assert_eq!(interpret("VectorAngle[{1, I}, {1, -I}]").unwrap(), "Pi/2");
+    assert_eq!(interpret("VectorAngle[{1, I}, {I, 1}]").unwrap(), "Pi/2");
+    assert_eq!(
+      interpret("VectorAngle[{1, 0}, {I, 0}]").unwrap(),
+      "ArcCos[-I]"
+    );
+    assert_eq!(
+      interpret("VectorAngle[{I, 0}, {1, 0}]").unwrap(),
+      "ArcCos[I]"
+    );
+  }
+
   #[test]
   fn parallel_2d() {
     assert_eq!(interpret("VectorAngle[{1, 1}, {1, 1}]").unwrap(), "0");
@@ -5238,6 +5256,38 @@ mod orthogonalize {
     assert_eq!(
       interpret("Orthogonalize[{{1, 0}, {1, 1}}]").unwrap(),
       "{{1, 0}, {0, 1}}"
+    );
+  }
+
+  // Complex vectors use the Hermitian inner product: the plain dot
+  // product previously made the "norm" of (1, I) zero, collapsing
+  // Orthogonalize[{{1, I}, {1, -I}}] to all-zero vectors. All outputs
+  // verified against wolframscript 15.0.
+  #[test]
+  fn complex_vectors_hermitian_inner_product() {
+    assert_eq!(
+      interpret("Orthogonalize[{{1, I}, {2, 2*I}}]").unwrap(),
+      "{{1/Sqrt[2], I/Sqrt[2]}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("Orthogonalize[{{0, 0}, {1, I}}]").unwrap(),
+      "{{0, 0}, {1/Sqrt[2], I/Sqrt[2]}}"
+    );
+    // Value check that sidesteps a printer-form difference for
+    // -I/Sqrt[2] (wolframscript agrees this SameQ is True)
+    assert_eq!(
+      interpret(
+        "Orthogonalize[{{1, I}, {1, -I}}] === {{1/Sqrt[2], I/Sqrt[2]},          {1/Sqrt[2], -I/Sqrt[2]}}"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A 3x3 complex basis previously panicked with an integer overflow
+    // in the simplification pipeline; value-correct output now (some
+    // entries carry a form differing from wolframscript, so only
+    // termination is asserted).
+    assert!(
+      interpret("Orthogonalize[{{2, I, 0}, {0, I, 2}, {1, 1, 1}}]").is_ok()
     );
   }
 
