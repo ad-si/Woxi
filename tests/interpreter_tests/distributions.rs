@@ -1146,6 +1146,58 @@ mod probability_distribution {
     );
   }
 
+  // NExpectation[f, x ~ dist] is the numerical wrapper N[Expectation[…]].
+  // The expected strings below were verified to match wolframscript exactly.
+  #[test]
+  fn n_expectation_numeric() {
+    // Discrete mean: E[x] for Poisson[3.5] = 3.5.
+    assert_eq!(
+      interpret("NExpectation[x, x \\[Distributed] PoissonDistribution[3.5]]")
+        .unwrap(),
+      "3.5"
+    );
+    // Second moment of a standard normal = 1.
+    assert_eq!(
+      interpret(
+        "Round[NExpectation[x^2, x \\[Distributed] NormalDistribution[0, 1]], 0.0001]"
+      )
+      .unwrap(),
+      "1."
+    );
+    // Mean of ExponentialDistribution[2] = 1/2.
+    assert_eq!(
+      interpret(
+        "Round[NExpectation[x, x \\[Distributed] ExponentialDistribution[2]], 0.0001]"
+      )
+      .unwrap(),
+      "0.5"
+    );
+    // Second moment of Uniform[{0, 1}] = 1/3.
+    assert_eq!(
+      interpret(
+        "Round[NExpectation[x^2, x \\[Distributed] UniformDistribution[{0, 1}]], 0.0001]"
+      )
+      .unwrap(),
+      "0.33330000000000004"
+    );
+    // Discrete mean: E[x] for Binomial[10, 1/3] = 10/3.
+    assert_eq!(
+      interpret(
+        "NExpectation[x, x \\[Distributed] BinomialDistribution[10, 1/3]]"
+      )
+      .unwrap(),
+      "3.3333333333333335"
+    );
+    // E[Boole[x > 1]] over a standard normal = P(x > 1) ≈ 0.1587.
+    assert_eq!(
+      interpret(
+        "Round[NExpectation[Boole[x > 1], x \\[Distributed] NormalDistribution[0, 1]], 0.0001]"
+      )
+      .unwrap(),
+      "0.1587"
+    );
+  }
+
   #[test]
   fn expectation_multivariate() {
     // E[x, {x,y} ~ PD[(10-x*y^2)/64, {x,2,10}, {y,0,1}]] = 52/9.
