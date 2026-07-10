@@ -2651,6 +2651,56 @@ mod moment {
   }
 }
 
+// Raw and central moments of the chi-square distribution. Chi-square[nu] has
+// raw moments E[x^n] = Product_{i=0}^{n-1} (nu + 2 i), which wolframscript
+// prints in the factored form nu*(2 + nu)*(4 + nu)*.... The expected strings
+// were verified against wolframscript.
+mod chi_square_moments {
+  use super::*;
+
+  #[test]
+  fn raw_moments_symbolic() {
+    assert_eq!(
+      interpret("Moment[ChiSquareDistribution[k], 3]").unwrap(),
+      "k*(2 + k)*(4 + k)"
+    );
+    assert_eq!(
+      interpret("Moment[ChiSquareDistribution[k], 4]").unwrap(),
+      "k*(2 + k)*(4 + k)*(6 + k)"
+    );
+  }
+
+  #[test]
+  fn raw_moment_numeric() {
+    // 6*8*10 = 480.
+    assert_eq!(
+      interpret("Moment[ChiSquareDistribution[6], 3]").unwrap(),
+      "480"
+    );
+  }
+
+  #[test]
+  fn central_moment_third() {
+    assert_eq!(
+      interpret("CentralMoment[ChiSquareDistribution[k], 3]").unwrap(),
+      "8*k"
+    );
+    assert_eq!(
+      interpret("CentralMoment[ChiSquareDistribution[6], 3]").unwrap(),
+      "48"
+    );
+  }
+
+  #[test]
+  fn kurtosis_reduces() {
+    // Kurtosis = CentralMoment[4]/Variance^2 collapses to 3 + 12/nu.
+    assert_eq!(
+      interpret("Kurtosis[ChiSquareDistribution[k]]").unwrap(),
+      "3 + 12/k"
+    );
+  }
+}
+
 mod factorial_moment {
   use super::*;
 

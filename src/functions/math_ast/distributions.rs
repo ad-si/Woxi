@@ -8478,6 +8478,29 @@ fn distribution_raw_moment(
       })
       .ok()
     }
+    // ChiSquareDistribution[nu] = GammaDistribution[nu/2, 2], so
+    // E[x^k] = 2^k*Pochhammer[nu/2, k] = Product_{i=0}^{k-1} (nu + 2 i).
+    // wolframscript prints this as nu*(2 + nu)*(4 + nu)*...*(2(k-1) + nu).
+    "ChiSquareDistribution" if dargs.len() == 1 => {
+      let nu = dargs[0].clone();
+      let mut factors: Vec<Expr> = Vec::with_capacity(k as usize);
+      for i in 0..k {
+        factors.push(if i == 0 {
+          nu.clone()
+        } else {
+          plus(int(2 * i), nu.clone())
+        });
+      }
+      let result = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      };
+      if numeric(&nu) {
+        eval(result).ok()
+      } else {
+        Some(result)
+      }
+    }
     _ => None,
   }
 }
