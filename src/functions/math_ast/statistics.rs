@@ -3142,6 +3142,47 @@ fn distribution_moment(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
 
+  // Logistic central moments are 0 for odd n and, for even n,
+  //   (-1)^(n/2-1) * (2^n - 2) * BernoulliB[n] * Pi^n * b^n
+  // (from the central MGF Pi t / Sin[Pi t]). The generic raw-moment path does
+  // not close, so give the closed form directly; this lets Skewness reduce to
+  // 0 and Kurtosis to 21/5.
+  if let Some((_, b)) = two_params_of(dist, "LogisticDistribution") {
+    let power = |base: Expr, exp: Expr| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(base),
+      right: Box::new(exp),
+    };
+    let result = if n.rem_euclid(2) == 1 {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          // (-1)^(n/2 - 1)
+          power(Expr::Integer(-1), Expr::Integer(n / 2 - 1)),
+          // 2^n - 2 (kept symbolic so large n does not overflow)
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              power(Expr::Integer(2), Expr::Integer(n)),
+              Expr::Integer(-2),
+            ]
+            .into(),
+          },
+          Expr::FunctionCall {
+            name: "BernoulliB".to_string(),
+            args: vec![Expr::Integer(n)].into(),
+          },
+          power(Expr::Identifier("Pi".to_string()), Expr::Integer(n)),
+          power(b, Expr::Integer(n)),
+        ]
+        .into(),
+      }
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   let mean = mean_ast(&[dist.clone()])?;
   // CentralMoment = Sum_{k=0}^n Binomial[n, k] (-mean)^(n-k) E[x^k]
   let mut terms = Vec::with_capacity((n + 1) as usize);

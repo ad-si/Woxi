@@ -2741,6 +2741,45 @@ mod laplace_moments {
   }
 }
 
+// Logistic central moments follow the closed form 0 (odd n) /
+// (-1)^(n/2-1)*(2^n-2)*BernoulliB[n]*Pi^n*b^n (even n), from the central MGF
+// Pi t / Sin[Pi t]. Expected strings verified against wolframscript.
+mod logistic_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[LogisticDistribution[m, b], 2]").unwrap(),
+      "(b^2*Pi^2)/3"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LogisticDistribution[m, b], 3]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LogisticDistribution[m, b], 4]").unwrap(),
+      "(7*b^4*Pi^4)/15"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LogisticDistribution[m, b], 6]").unwrap(),
+      "(31*b^6*Pi^6)/21"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[LogisticDistribution[m, b]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Kurtosis[LogisticDistribution[m, b]]").unwrap(),
+      "21/5"
+    );
+  }
+}
+
 mod factorial_moment {
   use super::*;
 
