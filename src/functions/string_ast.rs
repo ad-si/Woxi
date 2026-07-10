@@ -9435,30 +9435,47 @@ pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let chars: Vec<char> = s.chars().collect();
   let len = chars.len() as i128;
 
-  fn resolve_index(n: i128, len: i128) -> Result<usize, InterpreterError> {
+  fn resolve_index(n: i128, len: i128) -> Option<usize> {
     let idx = if n > 0 { n - 1 } else { len + n };
     if idx < 0 || idx >= len {
-      return Err(InterpreterError::EvaluationError(format!(
-        "StringPart: index {} out of range for string of length {}",
-        n, len
-      )));
+      return None;
     }
-    Ok(idx as usize)
+    Some(idx as usize)
   }
+
+  // An out-of-range position emits ::partw and leaves the call
+  // unevaluated (a recoverable condition in wolframscript, not an
+  // evaluation abort). The message shows the offending position spec —
+  // the single index, or the whole list when any of its entries is bad.
+  let partw_unevaluated = || {
+    crate::emit_message(&format!(
+      "StringPart::partw: Part {} of {} does not exist.",
+      crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output),
+      s
+    ));
+    Expr::FunctionCall {
+      name: "StringPart".to_string(),
+      args: args.to_vec().into(),
+    }
+  };
 
   match &args[1] {
     Expr::List(indices) => {
       let mut result = Vec::new();
       for idx_expr in indices {
         let n = expr_to_int(idx_expr)?;
-        let idx = resolve_index(n, len)?;
+        let Some(idx) = resolve_index(n, len) else {
+          return Ok(partw_unevaluated());
+        };
         result.push(Expr::String(chars[idx].to_string()));
       }
       Ok(Expr::List(result.into()))
     }
     _ => {
       let n = expr_to_int(&args[1])?;
-      let idx = resolve_index(n, len)?;
+      let Some(idx) = resolve_index(n, len) else {
+        return Ok(partw_unevaluated());
+      };
       Ok(Expr::String(chars[idx].to_string()))
     }
   }
@@ -9493,9 +9510,17 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let chars2: Vec<char> = s2.chars().collect();
 
   if chars1.len() != chars2.len() {
-    return Err(InterpreterError::EvaluationError(
-      "HammingDistance: strings must have the same length".into(),
+    // Recoverable in wolframscript: ::idim plus the unevaluated call, not
+    // an evaluation abort.
+    crate::emit_message(&format!(
+      "HammingDistance::idim: {} and {} must have the same length.",
+      expr_to_str(&args[0])?,
+      expr_to_str(&args[1])?
     ));
+    return Ok(Expr::FunctionCall {
+      name: "HammingDistance".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   let dist = chars1

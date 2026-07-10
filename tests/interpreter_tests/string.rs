@@ -2435,6 +2435,51 @@ mod string_part {
     );
   }
 
+  // Out-of-range positions emit ::partw and leave the call unevaluated —
+  // previously this aborted the whole evaluation with a hard error.
+  // All outputs verified against wolframscript 15.0.
+  #[test]
+  fn out_of_range_emits_partw() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringPart["hello", 6]"#).unwrap(),
+      "StringPart[hello, 6]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(
+        |m| m.contains("StringPart::partw: Part 6 of hello does not exist.")
+      ),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringPart["hello", 0]"#).unwrap(),
+      "StringPart[hello, 0]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(
+        |m| m.contains("StringPart::partw: Part 0 of hello does not exist.")
+      ),
+      "got {msgs:?}"
+    );
+    // A bad entry in a position list reports the whole list
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringPart["hello", {1, 6}]"#).unwrap(),
+      "StringPart[hello, {1, 6}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("StringPart::partw: Part {1, 6} of hello does not exist.")),
+      "got {msgs:?}"
+    );
+    // Evaluation continues after the message
+    assert_eq!(interpret(r#"StringPart["hello", 6]; 1 + 1"#).unwrap(), "2");
+  }
+
   #[test]
   fn list_with_negative() {
     assert_eq!(
@@ -2477,6 +2522,28 @@ mod hamming_distance {
     assert_eq!(
       interpret(r#"HammingDistance["karolin", "kathrin"]"#).unwrap(),
       "3"
+    );
+  }
+
+  // Unequal lengths emit ::idim and leave the call unevaluated instead of
+  // aborting evaluation. Verified against wolframscript 15.0.
+  #[test]
+  fn unequal_lengths_emit_idim() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"HammingDistance["ab", "abc"]"#).unwrap(),
+      "HammingDistance[ab, abc]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "HammingDistance::idim: ab and abc must have the same length."
+      )),
+      "got {msgs:?}"
+    );
+    assert_eq!(
+      interpret(r#"HammingDistance["ab", "abc"]; 1 + 1"#).unwrap(),
+      "2"
     );
   }
 
