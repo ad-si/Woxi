@@ -2761,11 +2761,36 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Triangular (incl. diagonal) matrices with symbolic entries: the
   // eigenvalues are the diagonal entries, in matrix order. (All-numeric
   // matrices are handled by the integer/float paths above, which also sort,
-  // so this only fires when at least one entry is symbolic — otherwise the
-  // generic characteristic-polynomial path would print an unsimplified
-  // `(a + b ± Sqrt[a² − 2ab + b²]) / 2` instead of `{a, b}`.)
+  // so this only fires when at least one entry is symbolic or complex —
+  // otherwise the generic characteristic-polynomial path would print an
+  // unsimplified `(a + b ± Sqrt[a² − 2ab + b²]) / 2` instead of `{a, b}`.)
   if !matrix_all_numeric(&matrix) && is_triangular_matrix(&matrix) {
-    let diag: Vec<Expr> = (0..n).map(|i| matrix[i][i].clone()).collect();
+    let mut diag: Vec<Expr> = (0..n).map(|i| matrix[i][i].clone()).collect();
+    // Complex-numeric diagonals sort like wolframscript: descending
+    // magnitude, ties ascending by (Re, Im) — Eigenvalues[{{I, 0}, {0, 2}}]
+    // is {2, I} and {{2 I, 0}, {0, -2}} gives {-2, 2 I}. Genuinely symbolic
+    // entries keep matrix order.
+    let keys: Vec<Option<(f64, f64)>> =
+      diag.iter().map(numeric_re_im).collect();
+    if keys
+      .iter()
+      .all(|k| k.is_some_and(|(re, im)| re.is_finite() && im.is_finite()))
+    {
+      let mut pairs: Vec<((f64, f64), Expr)> = keys
+        .into_iter()
+        .map(Option::unwrap)
+        .zip(diag.iter().cloned())
+        .collect();
+      pairs.sort_by(|a, b| {
+        let abs_a = a.0.0.hypot(a.0.1);
+        let abs_b = b.0.0.hypot(b.0.1);
+        abs_b
+          .partial_cmp(&abs_a)
+          .unwrap_or(std::cmp::Ordering::Equal)
+          .then(a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+      });
+      diag = pairs.into_iter().map(|(_, e)| e).collect();
+    }
     return Ok(Expr::List(diag.into()));
   }
 
@@ -3416,13 +3441,154 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try integer matrix path
   if let Some(int_matrix) = matrix_to_i128(&matrix) {
-    return integer_eigenvectors(&matrix, &int_matrix, n);
+    let result = integer_eigenvectors(&matrix, &int_matrix, n)?;
+    // Real 2×2 matrices with complex eigenvalues (e.g. rotations) fall
+    // through to the exact complex path below instead of staying
+    // unevaluated.
+    let unresolved = matches!(
+      &result,
+      Expr::FunctionCall { name, .. } if name == "Eigenvectors"
+    );
+    if !unresolved || n != 2 {
+      return Ok(result);
+    }
+    if let Some(complex_result) = complex_2x2_eigenvectors(&matrix)? {
+      return Ok(complex_result);
+    }
+    return Ok(result);
+  }
+
+  // Exact complex (Gaussian-rational) 2×2 matrices.
+  if n == 2
+    && matrix
+      .iter()
+      .all(|row| row.iter().all(|e| expr_to_gq(e).is_some()))
+    && matrix
+      .iter()
+      .any(|row| row.iter().any(contains_imaginary_unit))
+    && let Some(result) = complex_2x2_eigenvectors(&matrix)?
+  {
+    return Ok(result);
   }
 
   Ok(Expr::FunctionCall {
     name: "Eigenvectors".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// Eigenvectors of an exact complex 2×2 matrix, following wolframscript's
+/// conventions (the same ones the integer path uses):
+/// - c ≠ 0: v = ((λ − d)/c, 1); an exact Gaussian-rational first component
+///   has its denominator cleared, e.g. ((1+I)/2, 1) → (1 + I, 2)
+/// - upper triangular: (1, 0) for λ = a, (b/(d − a), 1) for λ = d
+/// - diagonal: permuted basis vectors; defective matrices append a zero
+///   vector after the single eigenvector.
+/// Returns Ok(None) when the eigenvalues don't come out as a clean pair.
+fn complex_2x2_eigenvectors(
+  matrix: &[Vec<Expr>],
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::expr_to_string;
+  let (a, b) = (&matrix[0][0], &matrix[0][1]);
+  let (c, d) = (&matrix[1][0], &matrix[1][1]);
+  let eigen = eigenvalues_ast(&[matrix_to_expr(matrix.to_vec())])?;
+  let (l1, l2) = match &eigen {
+    Expr::List(ls) if ls.len() == 2 => (ls[0].clone(), ls[1].clone()),
+    _ => return Ok(None),
+  };
+  let b_zero = expr_to_gq(b).is_some_and(|v| v.is_zero());
+  let c_zero = expr_to_gq(c).is_some_and(|v| v.is_zero());
+  let repeated = expr_to_string(&l1) == expr_to_string(&l2);
+
+  let zero_row = || vec![Expr::Integer(0), Expr::Integer(0)];
+  let basis = |first: bool| {
+    if first {
+      vec![Expr::Integer(1), Expr::Integer(0)]
+    } else {
+      vec![Expr::Integer(0), Expr::Integer(1)]
+    }
+  };
+  // ((λ − d)/c, 1) — or (b/(d − a), 1) — with an exact Gaussian-rational
+  // component scaled to clear its denominator.
+  let quotient_vector =
+    |num_minuend: &Expr, num_subtrahend: &Expr, den: &Expr| {
+      let x = evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            num_minuend.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), num_subtrahend.clone()].into(),
+            },
+          ]
+          .into(),
+        }),
+        right: Box::new(den.clone()),
+      })?;
+      if let Some(gq) = expr_to_gq(&x) {
+        let q = (gq.re.d / gcd_i128(gq.re.d, gq.im.d)).checked_mul(gq.im.d);
+        if let Some(q) = q
+          && q != 1
+          && let (Some(re_n), Some(im_n)) = (
+            gq.re.n.checked_mul(q / gq.re.d),
+            gq.im.n.checked_mul(q / gq.im.d),
+          )
+        {
+          let scaled = GQNum {
+            re: QNum { n: re_n, d: 1 },
+            im: QNum { n: im_n, d: 1 },
+          };
+          if let Some(p) = gq_to_expr(&scaled) {
+            return Ok(vec![p, Expr::Integer(q)]);
+          }
+        }
+      }
+      Ok(vec![x, Expr::Integer(1)])
+    };
+
+  let vector_for = |lam: &Expr| -> Result<Vec<Expr>, InterpreterError> {
+    if !c_zero {
+      quotient_vector(lam, d, c)
+    } else if b_zero {
+      // Diagonal: basis vector for the matching slot.
+      Ok(basis(expr_to_string(lam) == expr_to_string(a)))
+    } else if expr_to_string(lam) == expr_to_string(a) {
+      Ok(basis(true))
+    } else {
+      quotient_vector(b, &Expr::Integer(0), &{
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            d.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), a.clone()].into(),
+            },
+          ]
+          .into(),
+        }
+      })
+    }
+  };
+
+  let rows: Vec<Vec<Expr>> = if repeated {
+    if b_zero && c_zero {
+      vec![basis(true), basis(false)]
+    } else {
+      vec![vector_for(&l1)?, zero_row()]
+    }
+  } else {
+    vec![vector_for(&l1)?, vector_for(&l2)?]
+  };
+  Ok(Some(Expr::List(
+    rows
+      .into_iter()
+      .map(|r| Expr::List(r.into()))
+      .collect::<Vec<_>>()
+      .into(),
+  )))
 }
 
 /// Extract rational parts (numerator, denominator) from an Expr.

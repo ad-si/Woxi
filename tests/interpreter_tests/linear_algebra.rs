@@ -878,6 +878,38 @@ mod eigenvalues {
     assert_eq!(interpret("Eigenvalues[{{5}}]").unwrap(), "{5}");
   }
 
+  // Complex-numeric triangular/diagonal matrices sort like wolframscript:
+  // descending magnitude with ties ascending by (Re, Im). Previously the
+  // triangular path returned matrix order ({I, 2} instead of {2, I}).
+  #[test]
+  fn eigenvalues_complex_diagonal_ordering() {
+    assert_eq!(
+      interpret("Eigenvalues[{{I, 0}, {0, 2}}]").unwrap(),
+      "{2, I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{I, 1}, {0, 2}}]").unwrap(),
+      "{2, I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{I, 0}, {0, 1}}]").unwrap(),
+      "{I, 1}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{2*I, 0}, {0, -2}}]").unwrap(),
+      "{-2, 2*I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{I, 0, 0}, {0, 3, 0}, {0, 0, 2}}]").unwrap(),
+      "{3, 2, I}"
+    );
+    // Symbolic diagonals keep matrix order
+    assert_eq!(
+      interpret("Eigenvalues[{{a, 0}, {0, b}}]").unwrap(),
+      "{a, b}"
+    );
+  }
+
   // Exact rational matrices stay exact (previously the numeric 2×2 path
   // leaked floats like {0.5, 0.5}), and n ≥ 3 rational matrices work.
   #[test]
@@ -1732,6 +1764,59 @@ mod eigenvectors {
   #[test]
   fn matrix_1x1() {
     assert_eq!(interpret("Eigenvectors[{{5}}]").unwrap(), "{{1}}");
+  }
+
+  // Exact complex 2x2 matrices (and real matrices with complex
+  // eigenvalues) follow the ((lambda - d)/c, 1) convention with
+  // Gaussian-rational denominators cleared, defective matrices append a
+  // zero vector, and diagonal/triangular matrices use permuted basis
+  // vectors. All outputs verified against wolframscript 15.0.
+  #[test]
+  fn complex_2x2() {
+    assert_eq!(
+      interpret("Eigenvectors[{{2, I}, {-I, 2}}]").unwrap(),
+      "{{I, 1}, {-I, 1}}"
+    );
+    // Real rotation matrices have complex eigenvectors
+    assert_eq!(
+      interpret("Eigenvectors[{{0, -1}, {1, 0}}]").unwrap(),
+      "{{I, 1}, {-I, 1}}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{0, 2}, {-2, 0}}]").unwrap(),
+      "{{-I, 1}, {I, 1}}"
+    );
+    // Denominators of Gaussian-rational components are cleared
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 1 + I}, {1 - I, 2}}]").unwrap(),
+      "{{1 + I, 2}, {-1 - I, 1}}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{I, 1}, {0, 2}}]").unwrap(),
+      "{{2 + I, 5}, {1, 0}}"
+    );
+    // Defective matrices append a zero vector
+    assert_eq!(
+      interpret("Eigenvectors[{{I, 1}, {0, I}}]").unwrap(),
+      "{{1, 0}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{2, 0}, {1 + I, 2}}]").unwrap(),
+      "{{0, 1}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{1 + I, 1}, {-1, 3 + I}}]").unwrap(),
+      "{{1, 1}, {0, 0}}"
+    );
+    // Diagonal: permuted basis vectors in Eigenvalues order
+    assert_eq!(
+      interpret("Eigenvectors[{{I, 0}, {0, 2}}]").unwrap(),
+      "{{0, 1}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{I, 0}, {0, I}}]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
   }
 
   // Eigenvectors[m, k] takes the eigenvectors for the k largest-magnitude
