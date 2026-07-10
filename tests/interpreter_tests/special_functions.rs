@@ -2203,13 +2203,15 @@ mod cases {
   #[test]
   fn six_j_symbol_symbolic_5() {
     // Audit case: SixJSymbol[{1, 2, 3}, {2, m, 2}] is non-zero for
-    // m ∈ {1, 2, 3}. Concrete values:
+    // m ∈ {1, 2, 3}. Concrete values (wolframscript-canonical radical
+    // forms: -2/(5*Sqrt[14]) merges to -Sqrt[2/7]/5 and (4*Sqrt[3/2])/35
+    // to (2*Sqrt[6])/35):
     //   m=1 → 1/(5*Sqrt[21])
-    //   m=2 → -2/(5*Sqrt[14])
-    //   m=3 → (4*Sqrt[3/2])/35
+    //   m=2 → -1/5*Sqrt[2/7]
+    //   m=3 → (2*Sqrt[6])/35
     assert_case(
       r#"SixJSymbol[{1, 2, 3}, {2, m, 2}]"#,
-      r#"Piecewise[{{1/(5*Sqrt[21]), m == 1}, {-2/(5*Sqrt[14]), m == 2}, {(4*Sqrt[3/2])/35, m == 3}}, 0]"#,
+      r#"Piecewise[{{1/(5*Sqrt[21]), m == 1}, {-1/5*Sqrt[2/7], m == 2}, {(2*Sqrt[6])/35, m == 3}}, 0]"#,
     );
   }
 

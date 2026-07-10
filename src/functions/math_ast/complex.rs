@@ -1852,6 +1852,57 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
 }
 
 /// Numerator[x] - Returns the numerator of a rational expression
+/// Split a power of a rational with a positive fractional exponent into
+/// its numerator and denominator parts: wolframscript treats (2/15)^(1/2)
+/// as 2^(1/2) * 15^(-1/2), so Numerator[Sqrt[2/15]] is Sqrt[2] and
+/// Denominator[Sqrt[2/15]] is Sqrt[15]. Returns (p^e, q^e), both evaluated.
+fn split_rational_base_power(expr: &Expr) -> Option<(Expr, Expr)> {
+  let (base, exp) = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref().clone(), right.as_ref().clone()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (args[0].clone(), args[1].clone())
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => (
+      args[0].clone(),
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      },
+    ),
+    _ => return None,
+  };
+  let positive_fraction = matches!(&exp, Expr::FunctionCall { name, args }
+    if name == "Rational"
+      && args.len() == 2
+      && matches!(&args[0], Expr::Integer(n) if *n > 0));
+  if !positive_fraction {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: bname,
+    args: bargs,
+  } = &base
+  else {
+    return None;
+  };
+  if bname != "Rational" || bargs.len() != 2 {
+    return None;
+  }
+  let part = |b: &Expr| -> Option<Expr> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(b.clone()),
+      right: Box::new(exp.clone()),
+    })
+    .ok()
+  };
+  Some((part(&bargs[0])?, part(&bargs[1])?))
+}
+
 pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1898,6 +1949,11 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(neg_exp) = get_negative_power_exponent(factor) {
           // Power[base, negative] → skip (denominator factor)
           let _ = neg_exp;
+        } else if let Some((num_part, _)) = split_rational_base_power(factor) {
+          // (p/q)^(n/d) → numerator contributes p^(n/d)
+          if !matches!(num_part, Expr::Integer(1)) {
+            num_factors.push(num_part);
+          }
         } else if let Expr::FunctionCall {
           name: rname,
           args: rargs,
@@ -1930,6 +1986,9 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // pure denominator, so its numerator is 1.
       if get_negative_power_exponent(other).is_some() {
         Ok(Expr::Integer(1))
+      } else if let Some((num_part, _)) = split_rational_base_power(other) {
+        // Numerator[Sqrt[2/15]] → Sqrt[2]
+        Ok(num_part)
       } else {
         Ok(other.clone())
       }
@@ -1989,6 +2048,11 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               right: Box::new(neg_exp),
             });
           }
+        } else if let Some((_, den_part)) = split_rational_base_power(factor) {
+          // (p/q)^(n/d) → denominator contributes q^(n/d)
+          if !matches!(den_part, Expr::Integer(1)) {
+            denom_factors.push(den_part);
+          }
         } else if let Expr::FunctionCall {
           name: rname,
           args: rargs,
@@ -2025,6 +2089,9 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             right: Box::new(pos_exp),
           })
         }
+      } else if let Some((_, den_part)) = split_rational_base_power(other) {
+        // Denominator[Sqrt[2/15]] → Sqrt[15]
+        Ok(den_part)
       } else {
         Ok(Expr::Integer(1))
       }

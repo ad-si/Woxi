@@ -2496,19 +2496,30 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
     return Ok(None);
   }
 
-  // Sort sum factors by ascending degree, ties by the descending
-  // coefficient vector (wolframscript lists (2-5x+2x²+x³) before
-  // (-5-x+5x²+5x³): leading 1 < 5). Non-sum factors keep their positions
-  // relative to each other; the final reorder pass places them against
-  // the sums (x² after (-1+x), before (1+x)).
-  let sum_key = |e: &Expr| -> Option<(usize, Vec<i128>)> {
+  // Sort sum factors by ascending degree, then ascending leading
+  // coefficient (wolframscript lists (2-5x+2x²+x³) before (-5-x+5x²+5x³):
+  // leading 1 < 5), then termwise on the nonzero (degree, coefficient)
+  // terms ascending — zero coefficients are skipped, so (-2+x³) precedes
+  // (2-4x²+x³) (constants -2 < 2) and (1+x+x³) precedes (1-x²+x³) (the x
+  // term outranks the x² term) — all wolframscript-verified. Non-sum
+  // factors keep their positions relative to each other; the final
+  // reorder pass places them against the sums (x² after (-1+x), before
+  // (1+x)).
+  let sum_key = |e: &Expr| -> Option<(usize, i128, Vec<(usize, i128)>)> {
     if !is_sum(e) {
       return None;
     }
     let var = super::simplify::find_single_variable(e)?;
     let coeffs = extract_poly_coeffs(e, &var)?;
     let deg = coeffs.len().saturating_sub(1);
-    Some((deg, coeffs.into_iter().rev().collect()))
+    let lead = coeffs.last().copied().unwrap_or(0);
+    let terms: Vec<(usize, i128)> = coeffs
+      .iter()
+      .enumerate()
+      .filter(|&(_, &c)| c != 0)
+      .map(|(i, &c)| (i, c))
+      .collect();
+    Some((deg, lead, terms))
   };
   // Symbol monomials (x, x²) start before the sums (the reorder pass
   // then applies the decoded monomial-vs-sum rule); other factors like
@@ -2529,7 +2540,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
       _ => false,
     }
   };
-  let rank = |e: &Expr| -> (u8, Option<(usize, Vec<i128>)>) {
+  let rank = |e: &Expr| -> (u8, Option<(usize, i128, Vec<(usize, i128)>)>) {
     match sum_key(e) {
       Some(k) => (1, Some(k)),
       None if is_symbol_factor(e) => (0, None),
@@ -2581,6 +2592,14 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
 }
 
 pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Monomial factors take their canonical position against sum factors
+  // (x*(-5 + 3*x), not (-5 + 3*x)*x), exactly like factor_ast.
+  Ok(reorder_factored_product(factor_square_free_ast_impl(args)?))
+}
+
+fn factor_square_free_ast_impl(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "FactorSquareFree expects exactly 1 argument".into(),
@@ -3620,6 +3639,18 @@ fn try_factor_homogeneous_binomial(expr: &Expr) -> Option<Expr> {
     .map(|d| homogeneous_cyclotomic(d, &a, &b))
     .collect();
 
+  // Pull a leading minus out of any factor whose canonical first term is
+  // negative: wolframscript writes Factor[-x^2 + y^2] as
+  // -((x - y)*(x + y)), never (-x + y)*(x + y).
+  let mut negated = false;
+  for f in &mut factors {
+    if expr_to_string(f).starts_with('-') {
+      let terms = collect_additive_terms(f);
+      *f = combine_and_build(terms.iter().map(negate_term).collect());
+      negated = !negated;
+    }
+  }
+
   // Sort factors to match wolframscript's display order:
   //   degree ASC, then term count ASC, then min coefficient ASC.
   // This puts smaller-degree factors first, then within a degree the
@@ -3640,10 +3671,19 @@ fn try_factor_homogeneous_binomial(expr: &Expr) -> Option<Expr> {
     mx.cmp(&my)
   });
 
-  if factors.len() == 1 {
-    return Some(factors.remove(0));
-  }
-  Some(build_product(factors))
+  let product = if factors.len() == 1 {
+    factors.remove(0)
+  } else {
+    build_product(factors)
+  };
+  Some(if negated {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(product),
+    }
+  } else {
+    product
+  })
 }
 
 /// Minimum integer coefficient across all additive terms of `expr`.
@@ -4493,39 +4533,14 @@ fn build_multivariate_result(
 
   let mut result_factors: Vec<Expr> = Vec::new();
 
-  // If overall is exactly -1, absorb the sign into one of the factors with
-  // odd multiplicity. For |overall| > 1 the negative integer content stays
-  // a standalone factor (Factor[-4*y^2 + 4*x*y - 4*x^2] →
-  // -4*(x^2 - x*y + y^2), matching wolframscript), so no factor is negated.
-  let mut remaining_overall = overall;
-  if remaining_overall == -1 {
-    // Find the best factor to negate: prefer one whose first variable term
-    // has a negative coefficient (so negation makes the expression look more canonical)
-    let mut best_idx: Option<usize> = None;
-    for (i, (factor, mult)) in grouped.iter().enumerate() {
-      if *mult % 2 == 1 {
-        // Check if first variable term is negative
-        let s = expr_to_string(factor);
-        let starts_negative = s.starts_with('-');
-        if starts_negative {
-          best_idx = Some(i);
-          break;
-        }
-        if best_idx.is_none() {
-          best_idx = Some(i);
-        }
-      }
-    }
-    if let Some(idx) = best_idx {
-      let terms = collect_additive_terms(&grouped[idx].0);
-      let negated: Vec<Expr> = terms.iter().map(negate_term).collect();
-      grouped[idx].0 = combine_and_build(negated);
-      remaining_overall = -remaining_overall;
-    }
-  }
-
-  if remaining_overall != 1 {
-    result_factors.push(Expr::Integer(remaining_overall));
+  // A negative overall sign stays OUTSIDE the product: wolframscript
+  // writes Factor[5*y - 3*x*y] as -((-5 + 3*x)*y), never un-normalizing a
+  // canonically-signed sum factor back to (5 - 3*x). The -1 pushed here is
+  // pulled into a UnaryOp Minus by the Times canonicalization downstream.
+  // For |overall| > 1 the negative integer content stays a standalone
+  // factor (Factor[-4*y^2 + 4*x*y - 4*x^2] → -4*(x^2 - x*y + y^2)).
+  if overall != 1 {
+    result_factors.push(Expr::Integer(overall));
   }
 
   for (factor, mult) in &grouped {

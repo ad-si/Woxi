@@ -3421,12 +3421,16 @@ fn cmp_is_call_like(e: &Expr) -> bool {
 /// FunctionCall or BinaryOp representation.
 /// A reciprocal-of-a-sum term (2/(-1+x), (1+x)^(-1)) orders against
 /// another univariate term in the same variable by comparing the BASE
-/// polynomials coefficient-wise from the constant term up, a bare-`x`
-/// base counting as constant 0: `(-1+x)^(-1) + x` keeps the reciprocal
-/// first, `x + (1+x)^(-1)` keeps x first, and `2/(-1+x) + x^2` leads
-/// with the reciprocal while `x^2/2 + 15/(8(1+2x))` trails it — all
-/// wolframscript-verified. Equal bases return None so the existing
-/// shared-denominator exponent rules decide.
+/// polynomials: lower degree first, then coefficients from the LEADING
+/// term down by signed value (missing coefficients count as 0), a bare
+/// `x^m` base flattening to the coefficients of plain `x`. All
+/// wolframscript-verified: `(-1+x)^(-1) + x` and `(1-2*x)^(-1) + x` keep
+/// the reciprocal first (negative constant / leading term sorts early),
+/// `x + (1+x)^(-1)` and `x + (-5+2*x)^(-1)` keep x first (positive
+/// constant, larger leading coefficient), `2/(-1+x) + x^2` leads with the
+/// reciprocal while `x^2/2 + 15/(8(1+2x))` trails it, and any degree-≥2
+/// base ((1+x^2)^(-1)) trails every monomial. Equal bases return None so
+/// the existing shared-denominator exponent rules decide.
 fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   use std::cmp::Ordering;
   // (var, ascending base-polynomial coeffs, is_sum_reciprocal).
@@ -3468,7 +3472,13 @@ fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   if (!ra && !rb) || va != vb {
     return None;
   }
-  for i in 0..ca.len().max(cb.len()) {
+  let degree =
+    |c: &[i128]| c.iter().rposition(|&k| k != 0).unwrap_or(0);
+  let (da, db) = (degree(&ca), degree(&cb));
+  if da != db {
+    return Some(da.cmp(&db));
+  }
+  for i in (0..=da).rev() {
     let x = ca.get(i).copied().unwrap_or(0);
     let y = cb.get(i).copied().unwrap_or(0);
     match x.cmp(&y) {
@@ -7097,6 +7107,37 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => None,
       }
     };
+    // A merged factor can itself be a product carrying a numeric
+    // coefficient (Sqrt[46]*Sqrt[10/3] → Times[2, Sqrt[115/3]] via the
+    // square extraction in sqrt_ast). Splice those inline so the numeric
+    // fold below absorbs the coefficient and the product stays flat
+    // (otherwise `3*Sqrt[46]*Sqrt[10/3]` printed as `3*2*Sqrt[115/3]`).
+    let mut i = 0;
+    while i < symbolic_args.len() {
+      let inner: Option<Vec<Expr>> = match &symbolic_args[i] {
+        Expr::FunctionCall { name, args: ta }
+          if name == "Times"
+            && ta.iter().any(|a| as_int_rational(a).is_some()) =>
+        {
+          Some(ta.iter().cloned().collect())
+        }
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left,
+          right,
+        } if as_int_rational(left).is_some()
+          || as_int_rational(right).is_some() =>
+        {
+          Some(vec![left.as_ref().clone(), right.as_ref().clone()])
+        }
+        _ => None,
+      };
+      if let Some(inner) = inner {
+        symbolic_args.splice(i..=i, inner);
+      } else {
+        i += 1;
+      }
+    }
     let mut fold_num = combined_numer;
     let mut fold_den = combined_denom;
     let mut any = false;
@@ -7226,45 +7267,95 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build final args: coefficient (if not 1) + sorted symbolic terms
   sort_symbolic_factors(&mut symbolic_args);
 
-  // Final-pass canonicalization: Rational[±1, cd] * Sqrt[Rational[p, q]] →
-  // ±Sqrt[Rational[p, q*cd^2]] reduced. Only triggers when:
-  // (1) the sqrt argument is itself a rational (avoids recursion with the
-  //     (1/d)*Sqrt[n] form which is already canonical), and
-  // (2) gcd(p, cd^2) > 1, so absorption actually reduces the inner rational
-  //     (otherwise sqrt_ast would re-extract the cd^2 factor from the
-  //     denominator and recurse). Wolfram-canonical: (1/3)*Sqrt[15/11] →
-  //     Sqrt[5/33] (absorb), (1/3)*Sqrt[5/11] stays as Sqrt[5/11]/3.
+  // Final-pass canonicalization: a rational coefficient times a square root
+  // of a positive rational merges into one canonical radical, wolframscript
+  // style — square the coefficient into the radicand, reduce the fraction,
+  // then pull the largest square factor back out of the numerator and the
+  // denominator separately:
+  //   30*Sqrt[23/15] → 2*Sqrt[345]      2/Sqrt[30]        → Sqrt[2/15]
+  //   6*Sqrt[5/3]    → 2*Sqrt[15]       (1/3)*Sqrt[15/11] → Sqrt[5/33]
+  //   (2/5)/Sqrt[14] → Sqrt[2/7]/5     (13/35)*Sqrt[35/6] → 13/Sqrt[210]
+  // Already-canonical shapes are fixed points (2*Sqrt[3], 2/Sqrt[3],
+  // Sqrt[5/3]/2, (1/3)*Sqrt[5/11] all reproduce themselves) and are left
+  // untouched to avoid rewrite recursion.
   if symbolic_args.len() == 1
-    && let Expr::FunctionCall {
-      name: rname,
-      args: rargs,
-    } = &coeff
-    && rname == "Rational"
-    && rargs.len() == 2
-    && let (Expr::Integer(cn), Expr::Integer(cd)) = (&rargs[0], &rargs[1])
-    && cn.unsigned_abs() == 1
-    && *cd > 1
-    && let Some(sqrt_arg) = is_sqrt(&symbolic_args[0])
-    && let Expr::FunctionCall {
-      name: sname,
-      args: sargs,
-    } = sqrt_arg
-    && sname == "Rational"
-    && sargs.len() == 2
-    && let (Expr::Integer(sp), Expr::Integer(sq)) = (&sargs[0], &sargs[1])
-    && *sp > 0
-    && *sq > 0
-    // Guard cd*cd against i128 overflow for a large denominator (e.g. d=10^20);
-    // on overflow this absorption optimization is simply skipped.
-    && let Some(cd_sq) = cd.checked_mul(*cd)
-    && gcd(*sp, cd_sq) > 1
-    && let Some(new_sq) = sq.checked_mul(cd_sq)
+    && let Some((cn, cd)) = (match &coeff {
+      Expr::Integer(n) => Some((*n, 1i128)),
+      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) if *d > 0 => Some((*n, *d)),
+          _ => None,
+        }
+      }
+      _ => None,
+    })
+    && cn != 0
   {
-    let absorbed = sqrt_ast(&[make_rational(*sp, new_sq)])?;
-    if *cn < 0 {
-      return times_ast(&[Expr::Integer(-1), absorbed]);
-    } else {
-      return Ok(absorbed);
+    let (base, exp) = extract_base_exponent(&symbolic_args[0]);
+    let half = match &exp {
+      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(1), Expr::Integer(2)) => Some(1),
+          (Expr::Integer(-1), Expr::Integer(2)) => Some(-1),
+          _ => None,
+        }
+      }
+      _ => None,
+    };
+    let base_frac = match &base {
+      Expr::Integer(n) if *n > 0 => Some((*n, 1i128)),
+      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) if *n > 0 && *d > 0 => {
+            Some((*n, *d))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    };
+    if let (Some(half), Some((bn, bd))) = (half, base_frac) {
+      // Radicand of the whole product squared: cn^2*bn / (cd^2*bd), with
+      // the base fraction inverted for a -1/2 exponent.
+      let (rn, rd) = if half > 0 { (bn, bd) } else { (bd, bn) };
+      let merged = cn
+        .checked_mul(cn)
+        .and_then(|c2| c2.checked_mul(rn))
+        .and_then(|num| {
+          cd.checked_mul(cd)
+            .and_then(|d2| d2.checked_mul(rd))
+            .map(|den| (num, den))
+        });
+      if let Some((mut num, mut den)) = merged {
+        let g = gcd(num.abs(), den).max(1);
+        num /= g;
+        den /= g;
+        let (s, p1) = extract_square_factor_i128(num.abs());
+        let (t, q1) = extract_square_factor_i128(den);
+        let sign = if cn < 0 { -1 } else { 1 };
+        let new_coeff = make_rational(sign * s, t);
+        if p1 == 1 && q1 == 1 {
+          // The radical vanished entirely — c*Sqrt[r] is exactly rational.
+          return Ok(new_coeff);
+        }
+        let rebuilt: Expr = if q1 == 1 {
+          sqrt_ast(&[Expr::Integer(p1)])?
+        } else {
+          sqrt_ast(&[make_rational(p1, q1)])?
+        };
+        // Only rewrite when something actually changed; canonical inputs
+        // are fixed points and must return through the generic path.
+        let coeff_str = crate::syntax::expr_to_string(&coeff);
+        let new_coeff_str = crate::syntax::expr_to_string(&new_coeff);
+        let factor_str = crate::syntax::expr_to_string(&symbolic_args[0]);
+        let rebuilt_str = crate::syntax::expr_to_string(&rebuilt);
+        if coeff_str != new_coeff_str || factor_str != rebuilt_str {
+          if matches!(&new_coeff, Expr::Integer(1)) {
+            return Ok(rebuilt);
+          }
+          return times_ast(&[new_coeff, rebuilt]);
+        }
+      }
     }
   }
 
@@ -7381,7 +7472,55 @@ pub fn divide_head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
   }
+  // wolframscript compiles the explicit `Divide[a, b]` head over machine
+  // numbers into a single IEEE division. The `/` operator is different: its
+  // Times[a, Power[b, -1]] form multiplies by the rounded reciprocal (see
+  // divide_two), which lands one ULP away for roughly half of all operand
+  // pairs — Divide[37, 1.8] is 20.555555555555554 while 37/1.8 is
+  // 20.555555555555557. Only an explicit Real denominator with a plain
+  // numeric numerator takes the direct path; symbolic numerators and inexact
+  // constants like Pi still evaluate through the reciprocal, and lists
+  // thread element-wise with the same head semantics.
+  if args.len() == 2 {
+    if args.iter().any(|a| matches!(a, Expr::List(_))) {
+      return thread_binary_over_lists(args, divide_two_head);
+    }
+    return divide_two_head(&args[0], &args[1]);
+  }
   divide_ast(args)
+}
+
+/// Division with explicit-`Divide`-head semantics: a plain-number numerator
+/// over an explicit machine-Real denominator divides directly (single
+/// rounding); everything else shares the operator path in `divide_two`.
+fn divide_two_head(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  if let Some(r) = direct_real_divide(a, b) {
+    return Ok(r);
+  }
+  divide_two(a, b)
+}
+
+/// `Divide[number, Real]` as a single IEEE division, or None when the
+/// operands don't qualify for the direct machine path.
+fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
+  let Expr::Real(y) = b else { return None };
+  if *y == 0.0 {
+    return None;
+  }
+  let x = match a {
+    Expr::Integer(_) | Expr::Real(_) => expr_to_num(a)?,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      expr_to_num(a)?
+    }
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_f64()?
+    }
+    _ => return None,
+  };
+  Some(Expr::Real(x / y))
 }
 
 /// The 2D box lines for a message numerator: one line for integers and
