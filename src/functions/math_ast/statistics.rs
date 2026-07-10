@@ -4076,6 +4076,88 @@ fn factorial_moment_of_distribution(
   }
 }
 
+/// Whether `name` appears anywhere in `expr` as an identifier.
+fn factorial_moment_uses_var(expr: &Expr, name: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == name,
+    Expr::BinaryOp { left, right, .. } => {
+      factorial_moment_uses_var(left, name)
+        || factorial_moment_uses_var(right, name)
+    }
+    Expr::UnaryOp { operand, .. } => factorial_moment_uses_var(operand, name),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| factorial_moment_uses_var(a, name))
+    }
+    Expr::List(items) => {
+      items.iter().any(|a| factorial_moment_uses_var(a, name))
+    }
+    _ => false,
+  }
+}
+
+/// General distribution factorial moment via the defining expectation
+/// E[X(X-1)...(X-r+1)]. Returns `Ok(None)` when the expectation stays
+/// symbolic (unresolved), so the caller can fall through.
+fn factorial_moment_via_expectation(
+  dist: &Expr,
+  r: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Pick a dummy variable that does not clash with a distribution parameter.
+  let var = ["x", "y", "z", "t", "w", "u", "v"]
+    .into_iter()
+    .find(|c| !factorial_moment_uses_var(dist, c))
+    .unwrap_or("x")
+    .to_string();
+  let var_expr = Expr::Identifier(var.clone());
+
+  // Falling factorial x(x-1)...(x-r+1); the empty product (r = 0) is 1.
+  let falling = if r == 0 {
+    Expr::Integer(1)
+  } else {
+    let mut factors: Vec<Expr> = Vec::with_capacity(r as usize);
+    for i in 0..r {
+      factors.push(if i == 0 {
+        var_expr.clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![var_expr.clone(), Expr::Integer(-i)].into(),
+        }
+      });
+    }
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    }
+  };
+
+  // Expand into a monomial sum so Expectation resolves each moment exactly.
+  let polynomial =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![falling].into(),
+    })?;
+
+  let distributed = Expr::FunctionCall {
+    name: "Distributed".to_string(),
+    args: vec![var_expr, dist.clone()].into(),
+  };
+  // Route through the main evaluator (rather than calling expectation_ast
+  // directly) so the exact symbolic-moment path is taken instead of the
+  // numerical-integration fallback.
+  let result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Expectation".to_string(),
+    args: vec![polynomial, distributed].into(),
+  })?;
+
+  // If Expectation could not resolve, it returns an Expectation[...] call.
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Expectation")
+  {
+    return Ok(None);
+  }
+  Ok(Some(result))
+}
+
 pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| Expr::FunctionCall {
     name: "FactorialMoment".to_string(),
@@ -4093,9 +4175,22 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && let Expr::Integer(r) = &args[1]
     && *r >= 0
-    && let Some(result) = factorial_moment_of_distribution(dist_name, dargs, *r)
   {
-    return crate::evaluator::evaluate_expr_to_expr(&result);
+    // Prefer the printed closed form for the standard discrete distributions.
+    if let Some(result) = factorial_moment_of_distribution(dist_name, dargs, *r)
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    // General fallback for any other distribution (continuous or discrete):
+    // E[X(X-1)...(X-r+1)] = Expectation[FallingFactorial(x, r), x ~ dist].
+    // The falling factorial is expanded into a monomial sum first so that
+    // Expectation resolves each moment exactly rather than via numerical
+    // integration.
+    if dist_name.ends_with("Distribution")
+      && let Some(result) = factorial_moment_via_expectation(&args[0], *r)?
+    {
+      return Ok(result);
+    }
   }
 
   let items = match &args[0] {

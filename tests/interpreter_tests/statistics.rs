@@ -2775,6 +2775,51 @@ mod factorial_moment {
       "(1 - n)*(2 - n)*n*p^3"
     );
   }
+
+  // Continuous (and other) distributions resolve through the defining
+  // expectation E[X(X-1)...(X-r+1)]. The expected strings match wolframscript.
+  #[test]
+  fn continuous_normal() {
+    // First factorial moment is the mean.
+    assert_eq!(
+      interpret("FactorialMoment[NormalDistribution[0, 1], 1]").unwrap(),
+      "0"
+    );
+    // r=2: E[x(x-1)] = E[x^2] - E[x] = (mu^2 + sigma^2) - mu.
+    assert_eq!(
+      interpret("FactorialMoment[NormalDistribution[mu, sigma], 2]").unwrap(),
+      "-mu + mu^2 + sigma^2"
+    );
+    // r=3 over a standard normal: E[x(x-1)(x-2)] = -3.
+    assert_eq!(
+      interpret("FactorialMoment[NormalDistribution[0, 1], 3]").unwrap(),
+      "-3"
+    );
+    // r=0 is always 1.
+    assert_eq!(
+      interpret("FactorialMoment[NormalDistribution[0, 1], 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn continuous_exponential_uniform_gamma() {
+    // ExponentialDistribution[1]: E[x(x-1)] = 2 - 1 = 1.
+    assert_eq!(
+      interpret("FactorialMoment[ExponentialDistribution[1], 2]").unwrap(),
+      "1"
+    );
+    // UniformDistribution[{0, 1}]: E[x(x-1)] = 1/3 - 1/2 = -1/6.
+    assert_eq!(
+      interpret("FactorialMoment[UniformDistribution[{0, 1}], 2]").unwrap(),
+      "-1/6"
+    );
+    // GammaDistribution[a, b]: symbolic parameters resolve exactly.
+    assert_eq!(
+      interpret("FactorialMoment[GammaDistribution[a, b], 2]").unwrap(),
+      "-(a*b) + a*(1 + a)*b^2"
+    );
+  }
 }
 
 mod beta_distribution {
