@@ -8485,7 +8485,7 @@ fn distribution_raw_moment(
 /// Exact expectation of a polynomial integrand: Sum[c_k * E[x^k]].
 /// Single power terms with unit coefficient return the moment verbatim
 /// (preserving raw factored templates); combinations evaluate.
-pub fn polynomial_expectation(
+fn polynomial_expectation(
   expr: &Expr,
   var: &str,
   dist_name: &str,
@@ -8628,10 +8628,7 @@ fn frac_to_rational_expr(f: (i128, i128)) -> Expr {
 /// term styles are position-dependent (the first non-unit-variance term
 /// prints as -1/q*v^2, later ones as -v^2/q), so the structure mirrors
 /// what the parser builds for those strings.
-pub fn pdf_multinormal(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -9077,7 +9074,7 @@ fn histogram_parts(
 /// where cumᵢ accumulates wᵢ·widthᵢ in the stored arithmetic (machine reals
 /// or exact rationals). A numeric point collapses to its value through
 /// ordinary evaluation.
-pub fn histogram_pdf_cdf(
+fn histogram_pdf_cdf(
   dargs: &[Expr],
   x: &Expr,
   cumulative: bool,
@@ -9233,7 +9230,7 @@ fn histogram_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
 }
 
 /// Extract (weights, values) from an empirical DataDistribution.
-pub fn data_distribution_parts(
+fn data_distribution_parts(
   dargs: &[Expr],
 ) -> Option<(Vec<(i128, i128)>, Vec<(i128, i128)>)> {
   if dargs.len() != 4 {
@@ -9296,7 +9293,7 @@ pub fn data_distribution_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
 }
 
 /// PDF (point mass) and CDF (left-closed step sum) at a numeric point.
-pub fn data_distribution_pdf_cdf(
+fn data_distribution_pdf_cdf(
   dargs: &[Expr],
   x: &Expr,
   cumulative: bool,
@@ -9341,7 +9338,7 @@ pub fn data_distribution_pdf_cdf(
 /// support conditions, and the coefficient quirks (6*E^...,
 /// E^.../Sqrt[2*Pi], (3*E^...)/Sqrt[2*Pi], and the lambda = 2 special
 /// case E^...*Sqrt[2/Pi]).
-pub fn pdf_product_distribution(
+fn pdf_product_distribution(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -9696,10 +9693,7 @@ fn coeff_power_term(num: i128, den: i128, base: &Expr, i: i128) -> Expr {
   }
 }
 
-pub fn pdf_uniform_sum(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_uniform_sum(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -9772,10 +9766,7 @@ pub fn pdf_uniform_sum(
   Ok(piecewise(pairs, int(0)))
 }
 
-pub fn cdf_uniform_sum(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_uniform_sum(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -9923,7 +9914,7 @@ fn numeric_floor(x: &Expr) -> Option<i128> {
 /// wrapped in Piecewise over 0 <= k <= n (the denominator evaluates
 /// when the parameters are numeric). Numeric k gives the exact value;
 /// non-integers and out-of-range points give 0.
-pub fn pdf_beta_binomial(
+fn pdf_beta_binomial(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10024,7 +10015,7 @@ pub fn pdf_beta_binomial(
 /// CDF[BetaBinomialDistribution[a, b, n], x] for numeric x: partial
 /// PMF sums (the symbolic form uses HypergeometricPFQ internals that
 /// stay unevaluated here).
-pub fn cdf_beta_binomial(
+fn cdf_beta_binomial(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10090,10 +10081,7 @@ fn beta_prime_general_body(
   eval(divide(num, den))
 }
 
-pub fn pdf_beta_prime(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_beta_prime(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -10226,10 +10214,7 @@ pub fn pdf_beta_prime(
 
 /// CDF[BetaPrimeDistribution[p, q], x] =
 /// Piecewise[{{BetaRegularized[x/(1+x), p, q], x > 0}}, 0].
-pub fn cdf_beta_prime(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_beta_prime(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -10314,7 +10299,7 @@ pub fn cdf_beta_prime(
 /// forms for l = 0. Odd v >= 5 with l != 0 stays unevaluated (Wolfram
 /// collapses those into growing Bessel polynomials), as do points for
 /// odd v (Wolfram switches to BesselI forms there).
-pub fn pdf_noncentral_chi_square(
+fn pdf_noncentral_chi_square(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10539,7 +10524,7 @@ pub fn pdf_noncentral_chi_square(
 /// CDF[NoncentralChiSquareDistribution[v, l], x] =
 /// Piecewise[{{MarcumQ[v/2, Sqrt[l], 0, Sqrt[x]], x > 0}}, 0], with
 /// the four-argument MarcumQ evaluating numerically for machine reals.
-pub fn cdf_noncentral_chi_square(
+fn cdf_noncentral_chi_square(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10604,7 +10589,7 @@ pub fn cdf_noncentral_chi_square(
 /// at x >= m. For k = 2 the coefficient merges into s Sqrt[2 Pi], and
 /// when both branches canonicalize identically (k = 2 with m = 0) the
 /// Piecewise collapses to the single expression, as in wolframscript.
-pub fn pdf_exponential_power(
+fn pdf_exponential_power(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10713,7 +10698,7 @@ pub fn pdf_exponential_power(
 /// CDF[ExponentialPowerDistribution[k, m, s], x] =
 /// Piecewise[{{GammaRegularized[1/k, ((m-x)/s)^k/k]/2, x < m}},
 ///           1 - GammaRegularized[1/k, ((-m+x)/s)^k/k]/2].
-pub fn cdf_exponential_power(
+fn cdf_exponential_power(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10801,7 +10786,7 @@ fn rice_numeric(e: &Expr) -> Option<f64> {
 /// Piecewise[{{E^((-a^2 - x^2)/(2 b^2)) x BesselI[0, a x/b^2]/b^2,
 /// x > 0}}, 0], evaluated so numeric parameters collapse the way
 /// wolframscript prints them.
-pub fn pdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -10866,7 +10851,7 @@ pub fn pdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF[RiceDistribution[a, b], x] =
 /// Piecewise[{{MarcumQ[1, a/b, 0, x/b], x > 0}}, 0].
-pub fn cdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -11200,10 +11185,7 @@ fn ms_z(a: &Expr, b: &Expr, x: &Expr) -> Expr {
 /// the Gumbel branch for g == 0 (full real support) and the
 /// generalized branch with support u > 0 otherwise; symbolic g keeps
 /// both pieces.
-pub fn pdf_min_stable(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -11359,10 +11341,7 @@ pub fn pdf_min_stable(
 /// CDF[MinStableDistribution[a, b, g], x]: 1 - E^(-E^((-a+x)/b)) for
 /// g == 0; 1 - E^(-u^(-1/g)) on u > 0 otherwise, with default 1 above
 /// the support for g > 0 and 0 below it for g < 0.
-pub fn cdf_min_stable(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -11472,7 +11451,7 @@ pub fn cdf_min_stable(
 /// Mean and variance for MinStableDistribution: Gumbel constants at
 /// g == 0, Gamma-function forms below the existence thresholds (g < 1
 /// for the mean, 2 g < 1 for the variance), Indeterminate beyond.
-pub fn min_stable_mean_variance(
+fn min_stable_mean_variance(
   a: &Expr,
   b: &Expr,
   g: &Expr,
@@ -11674,10 +11653,7 @@ fn msx_z(a: &Expr, b: &Expr, x: &Expr) -> Expr {
 }
 
 /// PDF[MaxStableDistribution[a, b, g], x] — mirror of MinStable.
-pub fn pdf_max_stable(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -11825,10 +11801,7 @@ pub fn pdf_max_stable(
 
 /// CDF[MaxStableDistribution[a, b, g], x] = E^(-u^(-1/g)) on u > 0,
 /// with 0 below the support for g > 0 and 1 above it for g < 0.
-pub fn cdf_max_stable(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -11946,7 +11919,7 @@ pub fn cdf_max_stable(
 
 /// Mean and variance for MaxStableDistribution (the variance matches
 /// MinStable; the mean mirrors its sign structure).
-pub fn max_stable_mean_variance(
+fn max_stable_mean_variance(
   a: &Expr,
   b: &Expr,
   g: &Expr,
@@ -12042,10 +12015,7 @@ fn triangular_params(
 /// 2(b-x)/((b-a)(b-c)) on c < x <= b, with the numeric coefficient
 /// evaluated but the (b - x) factor kept unexpanded, as wolframscript
 /// prints it.
-pub fn pdf_triangular(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_triangular(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -12171,10 +12141,7 @@ pub fn pdf_triangular(
 
 /// CDF[TriangularDistribution[{a, b}, c], x] with the quadratic pieces
 /// and a third {1, x > b} piece.
-pub fn cdf_triangular(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_triangular(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -12338,7 +12305,7 @@ pub fn cdf_triangular(
 
 /// Mean (a + b + c)/3 and variance
 /// (a^2 - a b + b^2 - a c - b c + c^2)/18 for TriangularDistribution.
-pub fn triangular_mean_variance(
+fn triangular_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let Some((a, b, c)) = triangular_params(dargs)? else {
@@ -12451,7 +12418,7 @@ fn maxwell_rational(e: &Expr) -> Option<(i128, i128)> {
 
 /// PDF[MaxwellDistribution[s], x] =
 /// Piecewise[{{Sqrt[2/Pi] x^2 E^(-x^2/(2 s^2))/s^3, x > 0}}, 0].
-pub fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -12531,7 +12498,7 @@ pub fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// CDF[MaxwellDistribution[s], x] =
 /// Piecewise[{{-Sqrt[2/Pi] x E^(-x^2/(2 s^2))/s + Erf[x/(Sqrt[2] s)],
 /// x > 0}}, 0].
-pub fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -12641,7 +12608,7 @@ pub fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// PDF[BirnbaumSaundersDistribution[a, l], x] =
 /// Piecewise[{{(1 + l x)/(2 a E^((-1 + l x)^2/(2 a^2 l x)) Sqrt[2 Pi]
 /// Sqrt[l x^3]), x > 0}}, 0].
-pub fn pdf_birnbaum_saunders(
+fn pdf_birnbaum_saunders(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -12702,7 +12669,7 @@ pub fn pdf_birnbaum_saunders(
 
 /// CDF[BirnbaumSaundersDistribution[a, l], x] =
 /// Piecewise[{{(1 + Erf[(-1 + l x)/(Sqrt[2] a Sqrt[l x])])/2, x > 0}}, 0].
-pub fn cdf_birnbaum_saunders(
+fn cdf_birnbaum_saunders(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -12754,7 +12721,7 @@ pub fn cdf_birnbaum_saunders(
 /// PDF[LevyDistribution[m, s], x] =
 /// Piecewise[{{(s/(-m + x))^(3/2)/(E^(s/(2 (-m + x))) Sqrt[2 Pi] s),
 /// -m + x > 0}}, 0].
-pub fn pdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -12805,7 +12772,7 @@ pub fn pdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF[LevyDistribution[m, s], x] =
 /// Piecewise[{{Erfc[Sqrt[s/(-m + x)]/Sqrt[2]], -m + x > 0}}, 0].
-pub fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -12850,7 +12817,7 @@ pub fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// PDF[LindleyDistribution[d], x] =
 /// Piecewise[{{(d^2 (1 + x))/((1 + d) E^(d x)), x > 0}}, 0].
-pub fn pdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -12890,7 +12857,7 @@ pub fn pdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF[LindleyDistribution[d], x] =
 /// Piecewise[{{1 - (1 + d + d x)/((1 + d) E^(d x)), x > 0}}, 0].
-pub fn cdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -12976,7 +12943,7 @@ fn wigner_params(dargs: &[Expr]) -> Option<(Expr, Expr)> {
 
 /// PDF[WignerSemicircleDistribution[a, r], x] =
 /// Piecewise[{{2 Sqrt[1 - (x-a)^2/r^2]/(Pi r), a - r < x < a + r}}, 0].
-pub fn pdf_wigner_semicircle(
+fn pdf_wigner_semicircle(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -13060,7 +13027,7 @@ pub fn pdf_wigner_semicircle(
 /// CDF[WignerSemicircleDistribution[a, r], x] =
 /// 1/2 + (x-a) Sqrt[1 - (x-a)^2/r^2]/(Pi r) + ArcSin[(x-a)/r]/Pi
 /// inside the support, 1 at and above a + r.
-pub fn cdf_wigner_semicircle(
+fn cdf_wigner_semicircle(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -13182,7 +13149,7 @@ pub fn cdf_wigner_semicircle(
 }
 
 /// Mean a and variance r^2/4 for WignerSemicircleDistribution.
-pub fn wigner_mean_variance(
+fn wigner_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let Some((a, r)) = wigner_params(dargs) else {
@@ -13231,7 +13198,7 @@ fn sech_arg(m: &Expr, s: &Expr, x: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// PDF[SechDistribution[m, s], x] = Sech[Pi (x - m)/(2 s)]/(2 s).
-pub fn pdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -13262,7 +13229,7 @@ pub fn pdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF[SechDistribution[m, s], x] =
 /// 2 ArcTan[E^(Pi (x - m)/(2 s))]/Pi.
-pub fn cdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -13299,7 +13266,7 @@ pub fn cdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Mean m and variance s^2 for SechDistribution.
-pub fn sech_mean_variance(
+fn sech_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let Some((m, s)) = sech_params(dargs) else {
@@ -13315,7 +13282,7 @@ pub fn sech_mean_variance(
 /// wolframscript's sign folding: numeric nonzero m keeps the
 /// (m - x)/s exponent, m = 0 and symbolic m flip into the
 /// 1/E^((-m + x)/s) reciprocal.
-pub fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -13433,7 +13400,7 @@ pub fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// CDF[MoyalDistribution[m, s], x] = Erfc[E^(-(x-m)/(2 s))/Sqrt[2]].
-pub fn cdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -13534,10 +13501,7 @@ pub fn moyal_mean_variance(
 /// For rational a = p/q wolframscript splits the power into
 /// p^(x-n) q^(n-x) and merges any matching prime-power part of n into
 /// the bases (n = 2, a = 1/2 gives 2^(3-x)).
-pub fn pdf_borel_tanner(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_borel_tanner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -13685,7 +13649,7 @@ pub fn pdf_borel_tanner(
 
 /// Mean n/(1 - a) and variance a n/(1 - a)^3 for
 /// BorelTannerDistribution.
-pub fn borel_tanner_mean_variance(
+fn borel_tanner_mean_variance(
   a: &Expr,
   n: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
@@ -13723,7 +13687,7 @@ fn benktander_valid(
 }
 
 /// PDF[BenktanderGibratDistribution[a, b], x] on x >= 1.
-pub fn pdf_benktander_gibrat(
+fn pdf_benktander_gibrat(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -13870,7 +13834,7 @@ pub fn pdf_benktander_gibrat(
 
 /// CDF[BenktanderGibratDistribution[a, b], x] =
 /// 1 - x^(-1 - a)(1 + 2 b Log[x]/a)/E^(b Log[x]^2) on x >= 1.
-pub fn cdf_benktander_gibrat(
+fn cdf_benktander_gibrat(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -13966,7 +13930,7 @@ pub fn cdf_benktander_gibrat(
 
 /// Mean 1 + 1/a and the Erfc-based variance for
 /// BenktanderGibratDistribution.
-pub fn benktander_gibrat_mean_variance(
+fn benktander_gibrat_mean_variance(
   a: &Expr,
   b: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
@@ -14052,7 +14016,7 @@ pub fn benktander_gibrat_mean_variance(
 
 /// PDF[GumbelDistribution[a, b], x] = E^(-E^z + z)/b with
 /// z = (x - a)/b (the minimum-extreme-value Gumbel; [] is (0, 1)).
-pub fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -14121,7 +14085,7 @@ pub fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// CDF[GumbelDistribution[a, b], x] = 1 - E^(-E^((x - a)/b)).
-pub fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -14187,7 +14151,7 @@ pub fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// Mean a - b EulerGamma and variance b^2 Pi^2/6 for
 /// GumbelDistribution.
-pub fn gumbel_mean_variance(
+fn gumbel_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let (a, b) = match dargs {
@@ -14220,7 +14184,7 @@ pub fn gumbel_mean_variance(
 /// PDF[ZipfDistribution[r], x] = x^(-1-r)/Zeta[1+r] on x >= 1;
 /// PDF[ZipfDistribution[n, r], x] uses HarmonicNumber[n, 1+r] on
 /// 1 <= x <= n.
-pub fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -14294,7 +14258,7 @@ pub fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// Mean and variance for ZipfDistribution: Zeta ratios with existence
 /// thresholds (r > 1, r > 2) for the infinite form, HarmonicNumber
 /// ratios for the bounded form.
-pub fn zipf_mean_variance(
+fn zipf_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
@@ -14411,7 +14375,7 @@ pub fn zipf_mean_variance(
 /// PDF for BenfordDistribution[b] (Benford's law, base b): the probability of
 /// leading digit d is Log[1 + 1/d]/Log[b] for d = 1 … b-1, and 0 otherwise.
 /// Only an integer base b >= 2 is handled.
-pub fn pdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -14466,7 +14430,7 @@ pub fn pdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF for BenfordDistribution[b]: the leading-digit probabilities telescope to
 /// Log[1 + Floor[x]]/Log[b] on 1 <= x < b, with 0 below 1 and 1 at or above b.
-pub fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -14535,7 +14499,7 @@ pub fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// the closed form b - Log[b!]/Log[b]; the variance is the exact second-moment
 /// sum minus the squared mean (its symbolic form may differ from wolframscript
 /// while remaining value-correct).
-pub fn benford_mean_variance(
+fn benford_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let [b] = dargs else {
@@ -14592,7 +14556,7 @@ fn benktander_weibull_valid(a: &Expr, b: &Expr) -> bool {
 
 /// PDF for BenktanderWeibullDistribution[a, b] on x >= 1:
 /// E^((a (1 - x^b))/b) x^(b-2) (1 - b + a x^b).
-pub fn pdf_benktander_weibull(
+fn pdf_benktander_weibull(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -14651,7 +14615,7 @@ pub fn pdf_benktander_weibull(
 
 /// CDF for BenktanderWeibullDistribution[a, b] on x >= 1:
 /// 1 - E^((a (1 - x^b))/b) x^(b-1).
-pub fn cdf_benktander_weibull(
+fn cdf_benktander_weibull(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -14706,7 +14670,7 @@ pub fn cdf_benktander_weibull(
 
 /// Mean and variance for BenktanderWeibullDistribution[a, b]:
 /// Mean = 1 + 1/a; Variance = (-1 + 2 a E^(a/b) ExpIntegralE[1 - 1/b, a/b]/b)/a^2.
-pub fn benktander_weibull_mean_variance(
+fn benktander_weibull_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let [a, b] = dargs else {
@@ -14744,7 +14708,7 @@ pub fn benktander_weibull_mean_variance(
 
 /// PDF for SinghMaddalaDistribution[q, a, b] (Burr XII) on x > 0:
 /// a q x^(a-1) (1 + (x/b)^a)^(-1-q) / b^a.
-pub fn pdf_singh_maddala(
+fn pdf_singh_maddala(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -14766,7 +14730,7 @@ pub fn pdf_singh_maddala(
 
 /// CDF for SinghMaddalaDistribution[q, a, b] on x > 0:
 /// 1 - (1 + (x/b)^a)^(-q).
-pub fn cdf_singh_maddala(
+fn cdf_singh_maddala(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -14788,7 +14752,7 @@ pub fn cdf_singh_maddala(
 /// Mean and variance for SinghMaddalaDistribution[q, a, b], each valid only
 /// above a moment threshold (a q > 1 for the mean, a q > 2 for the variance)
 /// and Indeterminate otherwise.
-pub fn singh_maddala_mean_variance(
+fn singh_maddala_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   if dargs.len() != 3 {
@@ -14842,7 +14806,7 @@ pub fn singh_maddala_mean_variance(
 
 /// Mean and variance for the 4-argument BetaPrimeDistribution[p, q, b, a]
 /// (power b, scale a), each existing only above a moment threshold in b*q.
-pub fn beta_prime4_mean_variance(
+fn beta_prime4_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let (p, q, b, a) = (
@@ -14895,7 +14859,7 @@ pub fn beta_prime4_mean_variance(
 
 /// Mean and variance for the 3-argument ParetoDistribution[k, a, m]
 /// (Type II / Lomax, scale k, location m).
-pub fn pareto3_mean_variance(
+fn pareto3_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let (k, a, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
@@ -14927,7 +14891,7 @@ pub fn pareto3_mean_variance(
 
 /// Mean and variance for the 4-argument ParetoDistribution[k, a, g, m]
 /// (extra shape g), each existing only above a threshold in a/g.
-pub fn pareto4_mean_variance(
+fn pareto4_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let (k, a, g, m) = (
