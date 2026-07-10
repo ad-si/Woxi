@@ -1384,6 +1384,12 @@ pub fn dispatch_math_functions(
     "DedekindEta" if args.len() == 1 => {
       return Some(crate::functions::math_ast::dedekind_eta_ast(args));
     }
+    "ModularLambda" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::modular_lambda_ast(args));
+    }
+    "KleinInvariantJ" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::klein_invariant_j_ast(args));
+    }
     "Zeta" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::zeta_ast(args));
     }

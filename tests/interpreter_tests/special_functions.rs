@@ -4615,3 +4615,57 @@ mod special_function_listability {
     );
   }
 }
+
+// ModularLambda and KleinInvariantJ — elliptic modular functions. Exact values
+// hold at the lemniscatic point tau = I; machine-precision arguments in the
+// upper half-plane evaluate numerically via the theta-function ratio. All
+// expected strings were verified against wolframscript.
+mod modular_lambda_klein_j {
+  use super::*;
+
+  #[test]
+  fn exact_lemniscatic_point() {
+    assert_eq!(interpret("ModularLambda[I]").unwrap(), "1/2");
+    assert_eq!(interpret("KleinInvariantJ[I]").unwrap(), "1");
+  }
+
+  #[test]
+  fn exact_non_special_stays_symbolic() {
+    // Like wolframscript, a non-lemniscatic exact argument is left unevaluated.
+    assert_eq!(
+      interpret("ModularLambda[2 I]").unwrap(),
+      "ModularLambda[2*I]"
+    );
+    assert_eq!(
+      interpret("KleinInvariantJ[2 I]").unwrap(),
+      "KleinInvariantJ[2*I]"
+    );
+  }
+
+  #[test]
+  fn numeric_imaginary_axis() {
+    // ModularLambda is real on the imaginary axis.
+    assert_eq!(
+      interpret("Round[ModularLambda[2.0 I], 10^-8]").unwrap(),
+      "117749/4000000"
+    );
+    assert_eq!(
+      interpret("Round[ModularLambda[1.5 I], 10^-8]").unwrap(),
+      "13389413/100000000"
+    );
+    // KleinInvariantJ[2 I] = 166.375 (Chop clears the 0.*I imaginary part).
+    assert_eq!(
+      interpret("Round[Chop[KleinInvariantJ[2.0 I]], 10^-4]").unwrap(),
+      "1331/8"
+    );
+  }
+
+  #[test]
+  fn numeric_complex_argument() {
+    // Off the imaginary axis ModularLambda is genuinely complex.
+    assert_eq!(
+      interpret("Round[Re[ModularLambda[0.5 + 2.0 I]], 10^-8]").unwrap(),
+      "22317/50000000"
+    );
+  }
+}

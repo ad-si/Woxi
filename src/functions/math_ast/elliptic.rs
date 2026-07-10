@@ -937,6 +937,138 @@ fn dedekind_eta_numeric(re: f64, im: f64) -> (f64, f64) {
   (res_re, res_im)
 }
 
+// ─── ModularLambda / KleinInvariantJ ───────────────────────────────────
+
+type C = (f64, f64);
+fn cmul(a: C, b: C) -> C {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+fn cdiv(a: C, b: C) -> C {
+  let d = b.0 * b.0 + b.1 * b.1;
+  ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+}
+fn cadd(a: C, b: C) -> C {
+  (a.0 + b.0, a.1 + b.1)
+}
+fn csub(a: C, b: C) -> C {
+  (a.0 - b.0, a.1 - b.1)
+}
+fn cscale(a: C, s: f64) -> C {
+  (a.0 * s, a.1 * s)
+}
+fn cpowi(a: C, n: u32) -> C {
+  let mut r = (1.0, 0.0);
+  for _ in 0..n {
+    r = cmul(r, a);
+  }
+  r
+}
+
+/// ModularLambda(τ) = (θ₂(0,q)/θ₃(0,q))^4 with nome q = e^(iπτ), for
+/// τ = re + im·i, im > 0. Returned as a complex (re, im).
+///     θ₂(0,q) = 2 Σ_{n≥0} q^{(n+1/2)²},  θ₃(0,q) = 1 + 2 Σ_{n≥1} q^{n²}.
+/// Since q = r·e^{iφ} with r = e^{-π·im}, φ = π·re, the exponents are real
+/// and q^e = r^e·(cos(eφ) + i·sin(eφ)).
+fn modular_lambda_numeric(re: f64, im: f64) -> C {
+  let pi = std::f64::consts::PI;
+  let r = (-pi * im).exp();
+  let phi = pi * re;
+  let mut t2: C = (0.0, 0.0);
+  let mut t3: C = (1.0, 0.0);
+  for n in 0..5000u32 {
+    let e2 = (n as f64 + 0.5).powi(2);
+    let mag2 = r.powf(e2);
+    t2 = cadd(t2, (mag2 * (e2 * phi).cos(), mag2 * (e2 * phi).sin()));
+    let mut mag3 = 0.0;
+    if n >= 1 {
+      let e3 = (n as f64).powi(2);
+      mag3 = r.powf(e3);
+      t3 = cadd(
+        t3,
+        (2.0 * mag3 * (e3 * phi).cos(), 2.0 * mag3 * (e3 * phi).sin()),
+      );
+    }
+    if mag2 < 1e-18 && (n == 0 || mag3 < 1e-18) {
+      break;
+    }
+  }
+  t2 = cscale(t2, 2.0);
+  cpowi(cdiv(t2, t3), 4)
+}
+
+/// ModularLambda[τ] — the elliptic modular lambda function.
+pub fn modular_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ModularLambda expects exactly 1 argument".into(),
+    ));
+  }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ModularLambda".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // Exact value at the lemniscatic point: λ(i) = 1/2.
+  if matches!(&args[0], Expr::Identifier(s) if s == "I") {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+    });
+  }
+  // Numeric (machine-precision) argument in the upper half-plane.
+  if expr_contains_real(&args[0])
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im > 0.0
+  {
+    let (lr, li) = modular_lambda_numeric(re, im);
+    return Ok(crate::functions::math_ast::build_complex_float_expr(lr, li));
+  }
+  unevaluated()
+}
+
+/// KleinInvariantJ[τ] — the normalized modular invariant J(τ) = j(τ)/1728.
+/// In terms of λ = ModularLambda(τ):
+///     J = (4/27)·(1 - λ + λ²)³ / (λ²·(1 - λ)²).
+pub fn klein_invariant_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KleinInvariantJ expects exactly 1 argument".into(),
+    ));
+  }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "KleinInvariantJ".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // Exact value at the lemniscatic point: J(i) = 1.
+  if matches!(&args[0], Expr::Identifier(s) if s == "I") {
+    return Ok(Expr::Integer(1));
+  }
+  if expr_contains_real(&args[0])
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im > 0.0
+  {
+    let lam = modular_lambda_numeric(re, im);
+    let one = (1.0, 0.0);
+    // 1 - λ + λ²
+    let num_base = cadd(csub(one, lam), cpowi(lam, 2));
+    let num = cscale(cpowi(num_base, 3), 4.0 / 27.0);
+    // λ²·(1 - λ)²
+    let den = cmul(cpowi(lam, 2), cpowi(csub(one, lam), 2));
+    let (jr, ji) = cdiv(num, den);
+    // wolframscript reports the j-invariant as a complex machine number even on
+    // the imaginary axis (e.g. `166.375 + 0.*I`), so keep the imaginary part.
+    return Ok(
+      crate::functions::math_ast::build_complex_float_expr_keep_real(jr, ji),
+    );
+  }
+  unevaluated()
+}
+
 // ─── EllipticExp ───────────────────────────────────────────────────────
 //
 // EllipticExp[u, {a, b}] is the inverse of EllipticLog on the elliptic

@@ -2383,7 +2383,7 @@ InverseFunctions,option for inverse computation,🚫,None,2.0,2431
 KolmogorovSmirnovTest,statistical test,🚫,None,8.0,2431
 Arrays,type system,🚫,None,9.0,2435
 ExpandDenominator,Expands the denominator of a rational expression,✅,pure,1.0,2435
-KleinInvariantJ,modular form (complex math),🚫,None,3.0,2435
+KleinInvariantJ,Normalized elliptic modular invariant J(tau) equal to j(tau)/1728 (exact at tau=I; numeric via theta ratio),✅,pure,3.0,2435
 QueueProperties,queueing theory,🚫,None,9.0,2435
 Byte,Symbol for byte type in BinaryRead/BinaryWrite,✅,pure,1.0,2438
 FeatureSpacePlot,ML visualization,🚫,None,11.1,2438
@@ -4866,7 +4866,7 @@ MaxWordGap,,,,11.0,5079
 McLaughlinGroupMcL,,,,8.0,5079
 MellinConvolve,,,,11.0,5079
 MissingDataRules,,,,10.0,5079
-ModularLambda,,,,3.0,5079
+ModularLambda,Elliptic modular lambda function lambda(tau) equal to (theta2/theta3)^4 (exact at tau=I; numeric in the upper half-plane),✅,pure,3.0,5079
 MoleculeGraph,,🚫,,12.0,5079
 MountainData,,🚫,,10.0,5079
 NegativelyOrientedPoints,,,,12.2,5079
