@@ -2109,7 +2109,7 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
-    "CholeskyDecomposition" if args.len() == 1 => {
+    "CholeskyDecomposition" if !args.is_empty() => {
       return Some(
         crate::functions::linear_algebra_ast::cholesky_decomposition_ast(args),
       );

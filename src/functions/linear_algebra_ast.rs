@@ -6590,6 +6590,61 @@ pub fn cholesky_decomposition_ast(
     args: args.to_vec().into(),
   };
 
+  // Options: only TargetStructure is understood. For Cholesky, Automatic
+  // means the plain dense matrix (unlike LDLDecomposition, whose default
+  // is the structured form).
+  #[derive(PartialEq)]
+  enum CholeskyTarget {
+    Dense,
+    Structured,
+    Sparse,
+  }
+  let mut target = CholeskyTarget::Dense;
+  for extra in &args[1..] {
+    let rules: Vec<&Expr> = match extra {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    for item in rules {
+      let Some((lhs, rhs)) = rule_parts(item) else {
+        crate::emit_message(&format!(
+          "CholeskyDecomposition::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
+          crate::syntax::expr_to_string(extra),
+          crate::syntax::expr_to_string(&unevaluated())
+        ));
+        return Ok(unevaluated());
+      };
+      match lhs {
+        Expr::Identifier(name) if name == "TargetStructure" => {
+          target = match rhs {
+            Expr::String(s) if s == "Dense" => CholeskyTarget::Dense,
+            Expr::String(s) if s == "Sparse" => CholeskyTarget::Sparse,
+            Expr::String(s) if s == "Structured" => CholeskyTarget::Structured,
+            Expr::Identifier(a) if a == "Automatic" => CholeskyTarget::Dense,
+            other => {
+              let shown = match other {
+                Expr::String(s) => s.clone(),
+                e => crate::syntax::expr_to_string(e),
+              };
+              crate::emit_message(&format!(
+                "CholeskyDecomposition::badts: {shown} is not a valid target structure."
+              ));
+              return Ok(unevaluated());
+            }
+          };
+        }
+        other => {
+          crate::emit_message(&format!(
+            "CholeskyDecomposition::optx: Unknown option {} in {}.",
+            crate::syntax::expr_to_string(other),
+            crate::syntax::expr_to_string(&unevaluated())
+          ));
+          return Ok(unevaluated());
+        }
+      }
+    }
+  }
+
   let matrix = match expr_to_matrix(&args[0]) {
     Some(m) => m,
     None => {
@@ -6611,8 +6666,12 @@ pub fn cholesky_decomposition_ast(
   }
 
   // U is upper triangular; A = U^* . U, so for j <= i:
-  //   U[j][j] = Sqrt(A[j][j] - sum_{k<j} U[k][j]^2)
-  //   U[j][i] = (A[j][i] - sum_{k<j} U[k][j] U[k][i]) / U[j][j]   (i > j)
+  //   U[j][j] = Sqrt(A[j][j] - sum_{k<j} |U[k][j]|^2)
+  //   U[j][i] = (A[j][i] - sum_{k<j} Conjugate[U[k][j]] U[k][i]) / U[j][j]
+  // The conjugates matter for complex Hermitian input (previously U[k][j]^2
+  // was used, giving Sqrt[5/2] instead of Sqrt[3/2] for {{2, I}, {-I, 2}});
+  // for exact real entries Conjugate folds away, and for symbolic entries
+  // wolframscript keeps the Conjugate wrapper too.
   // For a machine-precision (Real) matrix the strictly-lower zeros are the
   // machine zero `0.`, matching wolframscript; otherwise they are exact 0.
   let is_real = matrix
@@ -6625,11 +6684,18 @@ pub fn cholesky_decomposition_ast(
   };
   let mut u = vec![vec![zero; n]; n];
 
+  let conj = |e: &Expr| -> Result<Expr, InterpreterError> {
+    eval_expr(&Expr::FunctionCall {
+      name: "Conjugate".to_string(),
+      args: vec![e.clone()].into(),
+    })
+  };
+
   for j in 0..n {
-    // Diagonal: radicand = A[j][j] - sum_{k<j} U[k][j]^2
+    // Diagonal: radicand = A[j][j] - sum_{k<j} |U[k][j]|^2
     let mut radicand = matrix[j][j].clone();
     for k in 0..j {
-      let sq = eval_mul(&u[k][j], &u[k][j]);
+      let sq = eval_mul(&conj(&u[k][j])?, &u[k][j]);
       radicand = eval_sub(&radicand, &sq);
     }
     let radicand = eval_expr(&radicand)?;
@@ -6653,7 +6719,7 @@ pub fn cholesky_decomposition_ast(
     for i in (j + 1)..n {
       let mut numer = matrix[j][i].clone();
       for k in 0..j {
-        let prod = eval_mul(&u[k][j], &u[k][i]);
+        let prod = eval_mul(&conj(&u[k][j])?, &u[k][i]);
         numer = eval_sub(&numer, &prod);
       }
       let entry = eval_expr(&Expr::BinaryOp {
@@ -6665,12 +6731,44 @@ pub fn cholesky_decomposition_ast(
     }
   }
 
-  let result = Expr::List(
-    u.iter()
-      .map(|row| Expr::List(row.iter().map(simplify_radical_factor).collect()))
-      .collect(),
-  );
-  Ok(result)
+  let rows: Vec<Vec<Expr>> = u
+    .iter()
+    .map(|row| row.iter().map(simplify_radical_factor).collect())
+    .collect();
+  Ok(match target {
+    CholeskyTarget::Dense => Expr::List(
+      rows
+        .into_iter()
+        .map(|r| Expr::List(r.into()))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    CholeskyTarget::Structured => structured_matrix(
+      "UpperTriangularMatrix",
+      n,
+      Expr::List(
+        rows
+          .into_iter()
+          .map(|r| Expr::List(r.into()))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    ),
+    CholeskyTarget::Sparse => {
+      let is_zero = |e: &Expr| {
+        matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(v) if *v == 0.0)
+      };
+      let mut nonzeros: Vec<(usize, usize, Expr)> = Vec::new();
+      for (i, row) in rows.iter().enumerate() {
+        for (j, v) in row.iter().enumerate() {
+          if !is_zero(v) {
+            nonzeros.push((i, j, v.clone()));
+          }
+        }
+      }
+      sparse_array_literal(n, &nonzeros)
+    }
+  })
 }
 
 pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

@@ -4273,6 +4273,28 @@ mod expand_threading {
     assert_eq!(interpret("Re[a]").unwrap(), "Re[a]");
   }
 
+  // Conjugate folds numeric quotients with radical denominators; symbolic
+  // quotients stay wrapped as a whole, matching wolframscript.
+  #[test]
+  fn conjugate_numeric_quotients() {
+    assert_eq!(
+      interpret("Conjugate[(1 + I)/Sqrt[2]]").unwrap(),
+      "(1 - I)/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Conjugate[(1 - I)/Sqrt[2]]").unwrap(),
+      "(1 + I)/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Conjugate[(3 + 2 I)/5]").unwrap(),
+      "3/5 - (2*I)/5"
+    );
+    assert_eq!(
+      interpret("Conjugate[b/Sqrt[a]]").unwrap(),
+      "Conjugate[b/Sqrt[a]]"
+    );
+  }
+
   // Re/Im of the bare imaginary unit, including the constant spelling that
   // eigenvalue results carry internally (previously Re[I] on an extracted
   // eigenvalue stayed unevaluated).

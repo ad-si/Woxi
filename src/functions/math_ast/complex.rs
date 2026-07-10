@@ -712,13 +712,15 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     && name == "Times"
     && !args.is_empty()
   {
-    // Separate into known-real/I factors and symbolic factors
+    // Separate into known-real/I factors and symbolic factors. Real-valued
+    // covers radicals like 1/Sqrt[2] that the syntactic is_known_real check
+    // misses, so Conjugate[(1 + I)/Sqrt[2]] folds to (1 - I)/Sqrt[2].
     let mut real_factors: Vec<Expr> = Vec::new();
     let mut symbolic_factors: Vec<Expr> = Vec::new();
     let mut i_count: usize = 0;
 
     for arg in args {
-      if is_known_real(arg) {
+      if is_known_real(arg) || is_real_valued(arg) {
         real_factors.push(arg.clone());
       } else if matches!(arg, Expr::Identifier(n) if n == "I") {
         i_count += 1;
@@ -788,6 +790,29 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       args: vec![*left.clone(), *right.clone()].into(),
     };
     return conjugate_one(&flat);
+  }
+
+  // Numeric quotients distribute: Conjugate[(1 + I)/Sqrt[2]] =
+  // (1 - I)/Sqrt[2]. Only when both parts conjugate cleanly — symbolic
+  // quotients like b/Sqrt[a] stay wrapped as a whole, matching Wolfram.
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left,
+    right,
+  } = expr
+    && crate::functions::predicate_ast::is_numeric_q_pub(expr)
+  {
+    let num = conjugate_one(left)?;
+    let den = conjugate_one(right)?;
+    let clean =
+      |e: &Expr| !crate::syntax::expr_to_string(e).contains("Conjugate[");
+    if clean(&num) && clean(&den) {
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(num),
+        right: Box::new(den),
+      });
+    }
   }
 
   // Distribute over List (both Expr::List and FunctionCall "List")

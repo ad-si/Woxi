@@ -5960,6 +5960,136 @@ mod frobenius_reduce {
   }
 }
 
+mod cholesky_decomposition {
+  use super::*;
+
+  // All expected outputs verified against wolframscript 15.0.
+
+  // The recurrence must conjugate the pivot-row factors: previously
+  // U[k][j]^2 was used instead of |U[k][j]|^2, giving Sqrt[5/2] instead
+  // of Sqrt[3/2] for {{2, I}, {-I, 2}}.
+  #[test]
+  fn complex_hermitian_uses_conjugates() {
+    assert_eq!(
+      interpret("CholeskyDecomposition[{{2, I}, {-I, 2}}]").unwrap(),
+      "{{Sqrt[2], I/Sqrt[2]}, {0, Sqrt[3/2]}}"
+    );
+    assert_eq!(
+      interpret("CholeskyDecomposition[{{2, 1 + I}, {1 - I, 3}}]").unwrap(),
+      "{{Sqrt[2], (1 + I)/Sqrt[2]}, {0, Sqrt[2]}}"
+    );
+  }
+
+  // Symbolic entries keep the Conjugate wrapper, exactly like
+  // wolframscript (symbols are not assumed real).
+  #[test]
+  fn symbolic_keeps_conjugate_wrapper() {
+    assert_eq!(
+      interpret("CholeskyDecomposition[{{a, b}, {b, c}}]").unwrap(),
+      "{{Sqrt[a], b/Sqrt[a]}, {0, Sqrt[c - (b*Conjugate[b/Sqrt[a]])/\
+       Sqrt[a]]}}"
+    );
+  }
+
+  #[test]
+  fn target_structure_option() {
+    // Automatic and "Dense" are the plain matrix (unlike LDLDecomposition,
+    // whose default is the structured form)
+    assert_eq!(
+      interpret(
+        "CholeskyDecomposition[{{4, 2}, {2, 3}}, \
+         TargetStructure -> Automatic]"
+      )
+      .unwrap(),
+      "{{2, 1}, {0, Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "CholeskyDecomposition[{{4, 2}, {2, 3}}, \
+         TargetStructure -> \"Dense\"]"
+      )
+      .unwrap(),
+      "{{2, 1}, {0, Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "CholeskyDecomposition[{{4, 2}, {2, 3}}, \
+         TargetStructure -> \"Structured\"]"
+      )
+      .unwrap(),
+      "UpperTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{2, 1}, {0, Sqrt[2]}}]]"
+    );
+    assert_eq!(
+      interpret(
+        "CholeskyDecomposition[{{4, 2}, {2, 3}}, \
+         TargetStructure -> \"Sparse\"]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 2, 3}, \
+       {{1}, {2}, {2}}}, {2, 1, Sqrt[2]}}]"
+    );
+    // Structural zeros are dropped from the sparse form
+    assert_eq!(
+      interpret(
+        "CholeskyDecomposition[{{4, 0}, {0, 9}}, \
+         TargetStructure -> \"Sparse\"]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{1}, {2}}}, \
+       {2, 3}}]"
+    );
+  }
+
+  #[test]
+  fn option_messages() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "CholeskyDecomposition[{{4, 2}, {2, 3}}, \
+         TargetStructure -> \"Banana\"]"
+      )
+      .unwrap(),
+      "CholeskyDecomposition[{{4, 2}, {2, 3}}, TargetStructure -> Banana]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CholeskyDecomposition::badts: Banana is not a valid target \
+         structure."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CholeskyDecomposition[{{4, 2}, {2, 3}}, Foo -> 1]").unwrap(),
+      "CholeskyDecomposition[{{4, 2}, {2, 3}}, Foo -> 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CholeskyDecomposition::optx: Unknown option Foo in \
+         CholeskyDecomposition[{{4, 2}, {2, 3}}, Foo -> 1]."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CholeskyDecomposition[{{4, 2}, {2, 3}}, x]").unwrap(),
+      "CholeskyDecomposition[{{4, 2}, {2, 3}}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CholeskyDecomposition::nonopt: Options expected (instead of x) \
+         beyond position 1 in CholeskyDecomposition[{{4, 2}, {2, 3}}, x]. \
+         An option must be a rule or a list of rules."
+      )),
+      "got {msgs:?}"
+    );
+  }
+}
+
 mod ldl_decomposition {
   use super::*;
 

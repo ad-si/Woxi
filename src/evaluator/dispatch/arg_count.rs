@@ -1073,7 +1073,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "QPochhammer" => Some((1, 3)),
     "QRDecomposition" => Some((1, 1)),
     "QuadraticIrrationalQ" => Some((1, 1)),
-    "CholeskyDecomposition" => Some((1, 1)),
+    // Options (TargetStructure) ride beyond the matrix argument.
+    "CholeskyDecomposition" => Some((1, usize::MAX)),
     "SingularValueDecomposition" => Some((1, 1)),
     "JordanDecomposition" => Some((1, 1)),
     "JordanReduce" => Some((1, 1)),
