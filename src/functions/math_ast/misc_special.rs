@@ -351,6 +351,92 @@ fn mittag_leffler_series_f64(alpha: f64, beta: f64, z: f64) -> Option<f64> {
 }
 
 /// ProductLog[z] - Lambert W function (principal branch)
+/// Whether `e` is `E^(-1)` in either the BinaryOp or FunctionCall spelling.
+fn is_e_pow_neg1(e: &Expr) -> bool {
+  let is_e =
+    |x: &Expr| matches!(x, Expr::Identifier(s) | Expr::Constant(s) if s == "E");
+  match e {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => is_e(left) && matches!(right.as_ref(), Expr::Integer(-1)),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_e(&args[0]) && matches!(&args[1], Expr::Integer(-1))
+    }
+    _ => false,
+  }
+}
+
+/// Whether `e` is the exact expression `-1/E` (the branch point of W). It is
+/// represented as `Times[-1, Power[E, -1]]`, but also accept the `Divide[-1, E]`
+/// spelling defensively.
+fn is_neg_inv_e(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      matches!(&args[0], Expr::Integer(-1)) && is_e_pow_neg1(&args[1])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      matches!(left.as_ref(), Expr::Integer(-1))
+        && matches!(
+          right.as_ref(),
+          Expr::Identifier(s) | Expr::Constant(s) if s == "E"
+        )
+    }
+    _ => false,
+  }
+}
+
+/// Whether `e` contains an inexact (machine) number.
+fn product_log_is_inexact(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      product_log_is_inexact(left) || product_log_is_inexact(right)
+    }
+    Expr::UnaryOp { operand, .. } => product_log_is_inexact(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(product_log_is_inexact)
+    }
+    _ => false,
+  }
+}
+
+/// The real branch W_{-1}(z) of the Lambert W function, defined for
+/// z in [-1/e, 0), where it decreases from -1 (at -1/e) to -∞ (at 0⁻).
+/// Solves w·e^w = z by Halley's method; returns None outside the real domain.
+fn lambert_w_m1_real(z: f64) -> Option<f64> {
+  let e = std::f64::consts::E;
+  let inv_e = -1.0 / e;
+  if !z.is_finite() || z >= 0.0 || z < inv_e - 1e-12 {
+    return None;
+  }
+  if z <= inv_e + 1e-15 {
+    return Some(-1.0);
+  }
+  // Initial guess: asymptotic form near 0, square-root series near -1/e.
+  let mut w = if z > -0.3 {
+    let l1 = (-z).ln();
+    l1 - (-l1).ln()
+  } else {
+    -1.0 - (2.0 * (1.0 + e * z)).max(0.0).sqrt()
+  };
+  for _ in 0..100 {
+    let ew = w.exp();
+    let f = w * ew - z;
+    if f.abs() < 1e-15 * z.abs().max(1e-16) {
+      break;
+    }
+    let wp1 = w + 1.0;
+    w -= f / (ew * wp1 - (w + 2.0) * f / (2.0 * wp1));
+  }
+  Some(w)
+}
+
 pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -364,11 +450,31 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(&args[0], Expr::Integer(0)) {
       return product_log_ast(&args[1..]);
     }
+    // Branch k = -1 — the second real branch, W_{-1}, real on [-1/e, 0).
+    if matches!(&args[0], Expr::Integer(-1)) {
+      // Exact special value W_{-1}(-1/e) = -1.
+      if is_neg_inv_e(&args[1]) {
+        return Ok(Expr::Integer(-1));
+      }
+      // Numeric only for inexact arguments (matching wolframscript, which
+      // keeps exact arguments symbolic).
+      if product_log_is_inexact(&args[1])
+        && let Some(z) = try_eval_to_f64(&args[1])
+        && let Some(w) = lambert_w_m1_real(z)
+      {
+        return Ok(Expr::Real(w));
+      }
+    }
     // Otherwise return unevaluated
     return Ok(Expr::FunctionCall {
       name: "ProductLog".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  // ProductLog[-1/E] = -1 (principal branch at the branch point).
+  if is_neg_inv_e(&args[0]) {
+    return Ok(Expr::Integer(-1));
   }
 
   match &args[0] {
@@ -377,19 +483,6 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // ProductLog[E] = 1
     Expr::Identifier(s) if s == "E" => return Ok(Expr::Integer(1)),
     Expr::Constant(s) if s == "E" => return Ok(Expr::Integer(1)),
-    // ProductLog[-1/E] = -1
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
-      left,
-      right,
-    } => {
-      if let Expr::Integer(-1) = left.as_ref()
-        && (matches!(right.as_ref(), Expr::Identifier(s) if s == "E")
-          || matches!(right.as_ref(), Expr::Constant(s) if s == "E"))
-      {
-        return Ok(Expr::Integer(-1));
-      }
-    }
     // ProductLog[x.] for float
     Expr::Real(f) if *f >= -1.0 / std::f64::consts::E => {
       // Use iterative approximation (Halley's method)

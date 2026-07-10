@@ -895,7 +895,7 @@ Triangle,Geometric primitive representing a triangle,✅,none,10.0,901
 ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,✅,pure,1.0,902
 StringFreeQ,Tests if a string is free of a pattern,✅,pure,5.1,903
 Log2,Returns the base-2 logarithm of a number,✅,pure,7.0,904
-ProductLog,Returns the Lambert W function value,✅,pure,3.0,905
+ProductLog,Lambert W function; principal branch and the real branch k=-1 (two-argument form),✅,pure,3.0,905
 KnotData,,🚫,,6.0,906
 Invisible,Invisible display wrapper (stays symbolic),✅,unevaluated,6.0,907
 StyleData,,🚫,,3.0,908

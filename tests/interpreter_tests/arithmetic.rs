@@ -4367,6 +4367,30 @@ mod expand_threading {
   fn product_log_special_values() {
     assert_eq!(interpret("ProductLog[0]").unwrap(), "0");
     assert_eq!(interpret("ProductLog[E]").unwrap(), "1");
+    // Branch point of the principal branch: W_0(-1/e) = -1.
+    assert_eq!(interpret("ProductLog[-1/E]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn product_log_branch_minus_one() {
+    // The second real branch W_{-1}(z), real on [-1/e, 0).
+    assert_eq!(
+      interpret("ProductLog[-1, -0.1]").unwrap(),
+      "-3.577152063957297"
+    );
+    assert_eq!(
+      interpret("ProductLog[-1, -0.3]").unwrap(),
+      "-1.7813370234216275"
+    );
+    // Exact branch point: W_{-1}(-1/e) = -1.
+    assert_eq!(interpret("ProductLog[-1, -1/E]").unwrap(), "-1");
+    // Inexact branch point evaluates to the machine number -1.
+    assert_eq!(interpret("ProductLog[-1, -1.0/E]").unwrap(), "-1.");
+    // Exact (non-branch-point) argument stays symbolic, matching wolframscript.
+    assert_eq!(
+      interpret("ProductLog[-1, -1/10]").unwrap(),
+      "ProductLog[-1, -1/10]"
+    );
   }
 
   // ─── Trig with exact complex arguments ────────────────────────────
