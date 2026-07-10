@@ -183,29 +183,6 @@ pub fn parse_continuous_wavelet(e: &Expr) -> Option<ContinuousWaveletSpec> {
   }
 }
 
-/// True if `name` is one of the wavelet family heads (they stay unevaluated
-/// as their canonical form, like other symbolic constructor objects).
-pub fn is_wavelet_family_head(name: &str) -> bool {
-  matches!(
-    name,
-    "HaarWavelet"
-      | "DaubechiesWavelet"
-      | "SymletWavelet"
-      | "CoifletWavelet"
-      | "BattleLemarieWavelet"
-      | "BiorthogonalSplineWavelet"
-      | "ReverseBiorthogonalSplineWavelet"
-      | "CDFWavelet"
-      | "MeyerWavelet"
-      | "ShannonWavelet"
-      | "MexicanHatWavelet"
-      | "GaborWavelet"
-      | "DGaussianWavelet"
-      | "MorletWavelet"
-      | "PaulWavelet"
-  )
-}
-
 /// Canonical expression for a discrete wavelet spec.
 pub fn spec_to_expr(spec: &WaveletSpec) -> Expr {
   let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {

@@ -4436,6 +4436,17 @@ fn histogram_bin_edges(
       (0..=n_bins).map(|i| start + i as f64 * w).collect()
     }
     _ => {
+      // A bare bin count uses wolframscript's `userBinningN` placement,
+      // shared with `HistogramList[data, n]`.
+      if let Some(BinSpec::Count(c)) = bin_spec
+        && *c > 0
+        && let Some(bins) =
+          crate::functions::list_helpers_ast::wl_user_binning_n(
+            all_values, *c as i128,
+          )
+      {
+        return bins.f64s;
+      }
       let num_bins = match bin_spec {
         Some(BinSpec::Count(c)) if *c > 0 => *c,
         _ => ((1.0 + (all_values.len().max(1) as f64).log2()).ceil() as usize)

@@ -3087,7 +3087,8 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         matches!(e, Expr::Integer(_) | Expr::Real(_))
           || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
       }
-      if (matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_)))
+      if (matches!(&args[0], Expr::Real(_))
+        || matches!(&args[1], Expr::Real(_)))
         && is_plain_number(&args[0])
         && is_plain_number(&args[1])
         && let (Some(base), Some(x)) =

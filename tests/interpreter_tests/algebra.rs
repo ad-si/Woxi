@@ -634,6 +634,93 @@ mod simplify {
     );
   }
 
+  // Univariate polynomial quotients follow the SimplifyCount candidate
+  // selection (plain / content-extracted / minus-pulled / termwise-split
+  // / flipped). Differential fuzzer, seed 1783631489573774000; all
+  // wolframscript-verified.
+  #[test]
+  fn quotient_candidate_selection() {
+    // fuzzer divergence #1: flip wins strictly
+    assert_eq!(
+      interpret(
+        "Simplify[Divide[Plus[-5, Times[-1, x], Times[2, Power[x, 2]]], \
+         Plus[3, Times[-5, x], Times[5, Power[x, 2]], Times[-4, Power[x, \
+         3]]]]]"
+      )
+      .unwrap(),
+      "(5 + x - 2*x^2)/(-3 + 5*x - 5*x^2 + 4*x^3)"
+    );
+    // fuzzer divergence #3: flip costs more, input form kept verbatim
+    assert_eq!(
+      interpret("Simplify[(2 + 2 x - 5 x^2)/(1 - 2 x)]").unwrap(),
+      "(2 + 2*x - 5*x^2)/(1 - 2*x)"
+    );
+    // fuzzer divergence #5: numerator content extraction over a monomial
+    assert_eq!(
+      interpret("Simplify[(2 - 2 x + 2 x^2)/(5 x)]").unwrap(),
+      "(2*(1 - x + x^2))/(5*x)"
+    );
+    // flip ties keep the plain form unless its first term is negative
+    assert_eq!(
+      interpret("Simplify[(2 + 3 x)/(1 - x)]").unwrap(),
+      "(2 + 3*x)/(1 - x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(-2 + 3 x)/(1 - 2 x)]").unwrap(),
+      "(2 - 3*x)/(-1 + 2*x)"
+    );
+    // a flipped denominator displays its content extracted
+    assert_eq!(
+      interpret("Simplify[(2 - x)/(5 - 5 x)]").unwrap(),
+      "(-2 + x)/(5*(-1 + x))"
+    );
+    assert_eq!(
+      interpret("Simplify[(5 - 4 x - 3 x^2)/(5 - 5 x)]").unwrap(),
+      "(5 - 4*x - 3*x^2)/(5 - 5*x)"
+    );
+    // termwise split over monomial denominators when it costs less
+    assert_eq!(
+      interpret("Simplify[(6 - 4 x)/(5 x)]").unwrap(),
+      "-4/5 + 6/(5*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(2 + 2 x - 5 x^2)/(5 x)]").unwrap(),
+      "2/5 + 2/(5*x) - x"
+    );
+    assert_eq!(
+      interpret("Simplify[(5 + 3 x)/(5 x)]").unwrap(),
+      "3/5 + x^(-1)"
+    );
+    // …but not when the quotient (or a factored numerator) is cheaper
+    assert_eq!(
+      interpret("Simplify[(6 - 4 x)/(5 x^2)]").unwrap(),
+      "(6 - 4*x)/(5*x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[(1 + 2 n + n^2)/n^2]").unwrap(),
+      "(1 + n)^2/n^2"
+    );
+    // the pure sign normalization -a…/-b… → a…/b…
+    assert_eq!(
+      interpret("Simplify[(-2 + 2 x - 2 x^2)/(-1 + 2 x)]").unwrap(),
+      "(2 - 2*x + 2*x^2)/(1 - 2*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(-2 + 2 x - 2 x^2)/(-5 + 5 x)]").unwrap(),
+      "(2 - 2*x + 2*x^2)/(5 - 5*x)"
+    );
+    // split results keep their form (no content re-extraction without a
+    // constant term / strict SimplifyCount win)
+    assert_eq!(
+      interpret("Simplify[-4/5 + 6/(5*x)]").unwrap(),
+      "-4/5 + 6/(5*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(2 - 2 x + 2 x^2)/x]").unwrap(),
+      "2*(-1 + x^(-1) + x)"
+    );
+  }
+
   // Sums of radicals pull out their integer content (the content goes
   // negative only when EVERY term is negative). Differential fuzzer,
   // seed 1783537668073123846; wolframscript-verified.
@@ -1916,10 +2003,7 @@ mod cancel {
     assert_eq!(interpret("Together[-1/(1 + x)]").unwrap(), "(-1 - x)^(-1)");
     // Boundaries: a product denominator keeps its rational coefficient, a
     // non-unit numerator is untouched, and Simplify does NOT fold.
-    assert_eq!(
-      interpret("Cancel[-1/(2 + 2 x)]").unwrap(),
-      "-1/2*1/(1 + x)"
-    );
+    assert_eq!(interpret("Cancel[-1/(2 + 2 x)]").unwrap(), "-1/2*1/(1 + x)");
     assert_eq!(interpret("Cancel[-2/(1 + x)]").unwrap(), "-2/(1 + x)");
     assert_eq!(interpret("Simplify[-1/(1 + x)]").unwrap(), "-(1 + x)^(-1)");
   }
@@ -2183,6 +2267,88 @@ mod together {
     assert!(interpret("Simplify[Sqrt[2]*(1/3 + I/3)]").is_ok());
     assert!(interpret("FullSimplify[Sqrt[2]*(1/3 + I/3)]").is_ok());
     assert!(interpret("Simplify[(Sqrt[11]*(-4/11 + (4*I)/11))/4]").is_ok());
+  }
+
+  // A negative NUMERIC denominator factor flips too, and denominator
+  // content hoists out through sums and powers. Differential fuzzer,
+  // seed 1783631489573774000; all wolframscript-verified.
+  #[test]
+  fn denominator_numeric_content_flip_and_hoist() {
+    // fuzzer divergence #2
+    assert_eq!(
+      interpret(
+        "Together[Divide[Plus[-2, Times[-5, x], Times[-5, Power[x, 2]], \
+         Times[-5, Power[x, 3]]], Plus[-5, Times[-5, x]]]]"
+      )
+      .unwrap(),
+      "(2 + 5*x + 5*x^2 + 5*x^3)/(5*(1 + x))"
+    );
+    assert_eq!(
+      interpret("Together[(2 + x)/(-5 - 5 x)]").unwrap(),
+      "(-2 - x)/(5*(1 + x))"
+    );
+    // a sign-free monomial numerator folds the sign into the coefficient
+    assert_eq!(
+      interpret("Together[x/(-5 - 5 x)]").unwrap(),
+      "-1/5*x/(1 + x)"
+    );
+    assert_eq!(
+      interpret("Together[1/(2 - 2 x)]").unwrap(),
+      "-1/2*1/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Together[(2 x)/(-5 - 5 x)]").unwrap(),
+      "(-2*x)/(5*(1 + x))"
+    );
+    assert_eq!(
+      interpret("Together[3/(-5 - 5 x)]").unwrap(),
+      "-3/(5*(1 + x))"
+    );
+    // positive-content hoist without a flip, incl. powers + multivariate
+    assert_eq!(interpret("Together[x/(5 + 5 x)]").unwrap(), "x/(5*(1 + x))");
+    assert_eq!(interpret("Cancel[x/(5 + 5 x)]").unwrap(), "x/(5*(1 + x))");
+    assert_eq!(
+      interpret("Together[1/(2 - 2 x)^2]").unwrap(),
+      "1/(4*(-1 + x)^2)"
+    );
+    assert_eq!(
+      interpret("Cancel[(2 + x*y)/(4 + 4 x*y)]").unwrap(),
+      "(2 + x*y)/(4*(1 + x*y))"
+    );
+    assert_eq!(interpret("Cancel[x/(-5 - 5 x)]").unwrap(), "-1/5*x/(1 + x)");
+    assert_eq!(
+      interpret("Cancel[(2 + x)/(-5 - 5 x)]").unwrap(),
+      "(-2 - x)/(5*(1 + x))"
+    );
+    // shared numeric content between numerator and denominator cancels
+    assert_eq!(interpret("Together[(4 + 2 x)/6]").unwrap(), "(2 + x)/3");
+    assert_eq!(
+      interpret("Together[(4 + 2 x)/(6 x)]").unwrap(),
+      "(2 + x)/(3*x)"
+    );
+  }
+
+  // Together pulls the signed numeric content (FactorTerms sign rule)
+  // out of a quotient's sum numerator. wolframscript-verified.
+  #[test]
+  fn numerator_signed_content_extraction() {
+    assert_eq!(
+      interpret("Together[(3 - 3 x)/(5 x)]").unwrap(),
+      "(-3*(-1 + x))/(5*x)"
+    );
+    assert_eq!(
+      interpret("Together[(6 - 4 x)/(5 x^2)]").unwrap(),
+      "(-2*(-3 + 2*x))/(5*x^2)"
+    );
+    assert_eq!(
+      interpret("Together[(2 - 2 x + 2 x^2)/(1 - 2 x)]").unwrap(),
+      "(-2*(1 - x + x^2))/(-1 + 2*x)"
+    );
+    // |content| == 1 stays untouched
+    assert_eq!(
+      interpret("Together[(1 + x - x^2)/(5 x)]").unwrap(),
+      "(1 + x - x^2)/(5*x)"
+    );
   }
 
   // wolframscript canonicalizes every variable-bearing sum factor of the
