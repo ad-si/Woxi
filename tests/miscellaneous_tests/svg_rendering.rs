@@ -2718,4 +2718,61 @@ mod tests {
       );
     }
   }
+
+  // ── TagBox / FormBox pass-through ────────────────────────────────────
+  //
+  // An evaluated TraditionalForm[…] expression is a 3-argument
+  // TagBox[FormBox[boxes, TraditionalForm], TraditionalForm,
+  // Editable -> True]. The layout / SVG / width functions must all
+  // delegate to the wrapped boxes instead of dumping the wrapper as text.
+  mod tag_and_form_box_passthrough {
+    use super::*;
+
+    /// TagBox[FormBox["x", TraditionalForm], TraditionalForm,
+    /// Editable -> True] — the wrapper an evaluated TraditionalForm carries.
+    fn wrapped_atom() -> Expr {
+      Expr::FunctionCall {
+        name: "TagBox".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "FormBox".to_string(),
+            args: vec![
+              Expr::String("x".to_string()),
+              Expr::Identifier("TraditionalForm".to_string()),
+            ]
+            .into(),
+          },
+          Expr::Identifier("TraditionalForm".to_string()),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("Editable".to_string())),
+            replacement: Box::new(Expr::Identifier("True".to_string())),
+          },
+        ]
+        .into(),
+      }
+    }
+
+    #[test]
+    fn layout_box_unwraps_three_arg_tagbox_and_formbox() {
+      let wrapped = layout_box(&wrapped_atom(), 14.0);
+      let bare = layout_box(&Expr::String("x".to_string()), 14.0);
+      assert_eq!(
+        wrapped.elements, bare.elements,
+        "wrapper must be invisible in the layout"
+      );
+      assert_eq!(wrapped.width, bare.width);
+    }
+
+    #[test]
+    fn boxes_to_svg_unwraps_three_arg_tagbox_and_formbox() {
+      let svg = boxes_to_svg(&wrapped_atom());
+      assert_eq!(svg, "x", "wrapper must be invisible in the SVG: {svg}");
+    }
+
+    #[test]
+    fn estimate_width_unwraps_three_arg_tagbox_and_formbox() {
+      let w = estimate_box_display_width(&wrapped_atom());
+      assert_eq!(w, 1.0, "width is that of the wrapped content");
+    }
+  }
 }
