@@ -12151,22 +12151,51 @@ fn collect_identifier_names(
 
 /// Substitute a variable name with a value in an expression.
 pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
+  substitute_variable_impl(expr, var_name, value, false)
+}
+
+/// Rename every occurrence of a symbol — including function-call heads,
+/// which stay plain FunctionCalls under the new name — used by Module's
+/// lexical renaming of its local variables.
+pub fn rename_symbol(expr: &Expr, var_name: &str, new_name: &str) -> Expr {
+  substitute_variable_impl(
+    expr,
+    var_name,
+    &Expr::Identifier(new_name.to_string()),
+    true,
+  )
+}
+
+fn substitute_variable_impl(
+  expr: &Expr,
+  var_name: &str,
+  value: &Expr,
+  rename_heads: bool,
+) -> Expr {
   match expr {
     Expr::Identifier(name) if name == var_name => value.clone(),
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|e| substitute_variable(e, var_name, value))
+        .map(|e| substitute_variable_impl(e, var_name, value, rename_heads))
         .collect(),
     ),
     Expr::FunctionCall { name, args } => {
       let new_args: Vec<Expr> = args
         .iter()
-        .map(|e| substitute_variable(e, var_name, value))
+        .map(|e| substitute_variable_impl(e, var_name, value, rename_heads))
         .collect();
       if name == var_name {
-        // The function name matches the variable being substituted.
-        // Transform into a CurriedCall so the value is applied to the args.
+        // The function name matches the variable being substituted. When
+        // renaming (Module locals), keep a plain FunctionCall under the
+        // new name so definitions like f$1[x_] := ... still work;
+        // otherwise transform into a CurriedCall applying the value.
+        if rename_heads && let Expr::Identifier(new_name) = value {
+          return Expr::FunctionCall {
+            name: new_name.clone(),
+            args: new_args.into(),
+          };
+        }
         Expr::CurriedCall {
           func: Box::new(value.clone()),
           args: new_args,
@@ -12180,12 +12209,27 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
     }
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
-      left: Box::new(substitute_variable(left, var_name, value)),
-      right: Box::new(substitute_variable(right, var_name, value)),
+      left: Box::new(substitute_variable_impl(
+        left,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      right: Box::new(substitute_variable_impl(
+        right,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
-      operand: Box::new(substitute_variable(operand, var_name, value)),
+      operand: Box::new(substitute_variable_impl(
+        operand,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::Comparison {
       operands,
@@ -12193,14 +12237,14 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
     } => Expr::Comparison {
       operands: operands
         .iter()
-        .map(|e| substitute_variable(e, var_name, value))
+        .map(|e| substitute_variable_impl(e, var_name, value, rename_heads))
         .collect(),
       operators: operators.clone(),
     },
     Expr::CompoundExpr(exprs) => Expr::CompoundExpr(
       exprs
         .iter()
-        .map(|e| substitute_variable(e, var_name, value))
+        .map(|e| substitute_variable_impl(e, var_name, value, rename_heads))
         .collect(),
     ),
     Expr::Association(items) => Expr::Association(
@@ -12218,50 +12262,155 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
       pattern,
       replacement,
     } => Expr::Rule {
-      pattern: Box::new(substitute_variable(pattern, var_name, value)),
-      replacement: Box::new(substitute_variable(replacement, var_name, value)),
+      pattern: Box::new(substitute_variable_impl(
+        pattern,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      replacement: Box::new(substitute_variable_impl(
+        replacement,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => Expr::RuleDelayed {
-      pattern: Box::new(substitute_variable(pattern, var_name, value)),
-      replacement: Box::new(substitute_variable(replacement, var_name, value)),
+      pattern: Box::new(substitute_variable_impl(
+        pattern,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      replacement: Box::new(substitute_variable_impl(
+        replacement,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
-      expr: Box::new(substitute_variable(e, var_name, value)),
-      rules: Box::new(substitute_variable(rules, var_name, value)),
+      expr: Box::new(substitute_variable_impl(
+        e,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      rules: Box::new(substitute_variable_impl(
+        rules,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::ReplaceRepeated { expr: e, rules } => Expr::ReplaceRepeated {
-      expr: Box::new(substitute_variable(e, var_name, value)),
-      rules: Box::new(substitute_variable(rules, var_name, value)),
+      expr: Box::new(substitute_variable_impl(
+        e,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      rules: Box::new(substitute_variable_impl(
+        rules,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::Map { func, list } => Expr::Map {
-      func: Box::new(substitute_variable(func, var_name, value)),
-      list: Box::new(substitute_variable(list, var_name, value)),
+      func: Box::new(substitute_variable_impl(
+        func,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      list: Box::new(substitute_variable_impl(
+        list,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::Apply { func, list } => Expr::Apply {
-      func: Box::new(substitute_variable(func, var_name, value)),
-      list: Box::new(substitute_variable(list, var_name, value)),
+      func: Box::new(substitute_variable_impl(
+        func,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      list: Box::new(substitute_variable_impl(
+        list,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::MapApply { func, list } => Expr::MapApply {
-      func: Box::new(substitute_variable(func, var_name, value)),
-      list: Box::new(substitute_variable(list, var_name, value)),
+      func: Box::new(substitute_variable_impl(
+        func,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      list: Box::new(substitute_variable_impl(
+        list,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::PrefixApply { func, arg } => Expr::PrefixApply {
-      func: Box::new(substitute_variable(func, var_name, value)),
-      arg: Box::new(substitute_variable(arg, var_name, value)),
+      func: Box::new(substitute_variable_impl(
+        func,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      arg: Box::new(substitute_variable_impl(
+        arg,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::Postfix { expr: e, func } => Expr::Postfix {
-      expr: Box::new(substitute_variable(e, var_name, value)),
-      func: Box::new(substitute_variable(func, var_name, value)),
+      expr: Box::new(substitute_variable_impl(
+        e,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      func: Box::new(substitute_variable_impl(
+        func,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::Part { expr: e, index } => Expr::Part {
-      expr: Box::new(substitute_variable(e, var_name, value)),
-      index: Box::new(substitute_variable(index, var_name, value)),
+      expr: Box::new(substitute_variable_impl(
+        e,
+        var_name,
+        value,
+        rename_heads,
+      )),
+      index: Box::new(substitute_variable_impl(
+        index,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::Function { body } => Expr::Function {
-      body: Box::new(substitute_variable(body, var_name, value)),
+      body: Box::new(substitute_variable_impl(
+        body,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::NamedFunction {
       params,
@@ -12290,10 +12439,11 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
         for param in params {
           if value_names.contains(param) {
             let fresh = format!("{}$", param);
-            new_body = substitute_variable(
+            new_body = substitute_variable_impl(
               &new_body,
               param,
               &Expr::Identifier(fresh.clone()),
+              rename_heads,
             );
             new_params.push(fresh);
           } else {
@@ -12302,7 +12452,12 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
         }
         Expr::NamedFunction {
           params: new_params,
-          body: Box::new(substitute_variable(&new_body, var_name, value)),
+          body: Box::new(substitute_variable_impl(
+            &new_body,
+            var_name,
+            value,
+            rename_heads,
+          )),
           bracketed: *bracketed,
         }
       }
@@ -12314,9 +12469,9 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
     } => Expr::PatternOptional {
       name: name.clone(),
       head: head.clone(),
-      default: default
-        .as_ref()
-        .map(|d| Box::new(substitute_variable(d, var_name, value))),
+      default: default.as_ref().map(|d| {
+        Box::new(substitute_variable_impl(d, var_name, value, rename_heads))
+      }),
     },
     Expr::PatternTest {
       name,
@@ -12327,13 +12482,23 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
       name: name.clone(),
       head: head.clone(),
       blank_type: *blank_type,
-      test: Box::new(substitute_variable(test, var_name, value)),
+      test: Box::new(substitute_variable_impl(
+        test,
+        var_name,
+        value,
+        rename_heads,
+      )),
     },
     Expr::CurriedCall { func, args } => Expr::CurriedCall {
-      func: Box::new(substitute_variable(func, var_name, value)),
+      func: Box::new(substitute_variable_impl(
+        func,
+        var_name,
+        value,
+        rename_heads,
+      )),
       args: args
         .iter()
-        .map(|e| substitute_variable(e, var_name, value))
+        .map(|e| substitute_variable_impl(e, var_name, value, rename_heads))
         .collect(),
     },
     // Atoms that don't contain the variable

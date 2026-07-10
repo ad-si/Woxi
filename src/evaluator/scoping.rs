@@ -79,23 +79,31 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Save previous bindings and set up new ones
-  let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
-
-  for (var_name, init_expr) in &local_vars {
-    let stored = if let Some(expr) = init_expr {
-      // Evaluate the initialization expression
-      let evaluated = evaluate_expr_to_expr(expr)?;
-      StoredValue::ExprVal(evaluated)
-    } else {
-      // Uninitialized variable - generate a unique symbol
-      StoredValue::Raw(crate::functions::scoping::unique_symbol(var_name))
-    };
-
-    // Save current binding and set new one
-    let pv = ENV.with(|e| e.borrow_mut().insert(var_name.clone(), stored));
-    prev.push((var_name.clone(), pv));
+  // Module scopes lexically: each local is renamed to a fresh var$n
+  // symbol throughout the body, so a global function called from the
+  // body sees the untouched global symbol (Block, by contrast, rebinds
+  // dynamically). Initializers evaluate first, in the enclosing scope
+  // and before any renaming — Module[{a = 1, b = a}, ...] takes the
+  // OUTER a for b.
+  let mut init_values: Vec<Option<Expr>> = Vec::new();
+  for (_, init_expr) in &local_vars {
+    init_values.push(match init_expr {
+      Some(expr) => Some(evaluate_expr_to_expr(expr)?),
+      None => None,
+    });
   }
+  let mut body_owned = body_expr.clone();
+  for ((var_name, _), init) in local_vars.iter().zip(init_values) {
+    let fresh = crate::functions::scoping::unique_symbol(var_name);
+    body_owned = crate::syntax::rename_symbol(&body_owned, var_name, &fresh);
+    if let Some(value) = init {
+      // The fresh symbol is globally unique, so the binding needs no
+      // cleanup — and definitions or closures escaping the Module keep
+      // working, like Wolfram's Temporary module variables.
+      ENV.with(|e| e.borrow_mut().insert(fresh, StoredValue::ExprVal(value)));
+    }
+  }
+  let body_expr = &body_owned;
 
   // Evaluate body. Wolfram leaves Return[val] symbolic at Module's
   // boundary — wrap any ReturnValue exception into a literal `Return[val]`
@@ -110,7 +118,8 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Handle Condition in body: evaluate test while locals are still in scope
-  let result = match &result {
+
+  match &result {
     Ok(Expr::FunctionCall { name, args })
       if name == "Condition" && args.len() == 2 =>
     {
@@ -126,21 +135,7 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => result,
-  };
-
-  // Restore previous bindings (even on error/Return)
-  for (var_name, old) in prev {
-    ENV.with(|e| {
-      let mut env = e.borrow_mut();
-      if let Some(v) = old {
-        env.insert(var_name, v);
-      } else {
-        env.remove(&var_name);
-      }
-    });
   }
-
-  result
 }
 
 /// AST-based Block implementation - dynamic scoping (like Module but without unique symbols).

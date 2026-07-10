@@ -1867,6 +1867,34 @@ mod module_expr_preservation {
   }
 }
 
+mod module_lexical_scoping {
+  use super::*;
+
+  // Module renames its locals to fresh var$n symbols (lexical scoping):
+  // a global function called from the body sees the untouched global
+  // symbol, unlike Block's dynamic rebinding. Verified against
+  // wolframscript 15.0.
+  #[test]
+  fn module_is_lexical_block_is_dynamic() {
+    clear_state();
+    assert_eq!(interpret("f[] := x; Block[{x = 3}, f[]]").unwrap(), "3");
+    clear_state();
+    assert_eq!(interpret("f[] := x; Module[{x = 3}, f[]]").unwrap(), "x");
+  }
+
+  #[test]
+  fn module_initializers_use_enclosing_scope() {
+    clear_state();
+    // Nested same-name locals shadow correctly
+    assert_eq!(
+      interpret("Module[{x = 5}, x + Module[{x = 7}, x]]").unwrap(),
+      "12"
+    );
+    clear_state();
+    assert_eq!(interpret("Module[{a = 1, b = 2}, a + b]").unwrap(), "3");
+  }
+}
+
 mod module_downvalues {
   use super::*;
 
