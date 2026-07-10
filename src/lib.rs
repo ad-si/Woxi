@@ -1409,7 +1409,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       // Check if any element needs evaluation (named colors, date symbols, etc.)
       let needs_eval = trimmed[1..trimmed.len() - 1].split(',').any(|item| {
         let item = item.trim();
-        evaluator::named_color_expr_pub(item).is_some()
+        evaluator::named_color_expr(item).is_some()
           || matches!(
             item,
             "Now"
@@ -1592,7 +1592,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       return Ok(syntax::expr_to_output(&expr));
     }
     // Handle named colors (Red → RGBColor[1, 0, 0], etc.)
-    if let Some(color_expr) = evaluator::named_color_expr_pub(trimmed) {
+    if let Some(color_expr) = evaluator::named_color_expr(trimmed) {
       return Ok(syntax::expr_to_output(&color_expr));
     }
     // Thick → Thickness[Large]

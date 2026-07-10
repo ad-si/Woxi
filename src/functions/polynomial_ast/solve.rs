@@ -3862,9 +3862,9 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Order roots the way Wolfram's `Root` does: real roots first, sorted
 /// ascending, then complex roots sorted by (real, imag).
 pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
-  let pa = expr_to_complex_parts_pub(a);
-  let pb = expr_to_complex_parts_pub(b);
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
+  let pa = expr_to_complex_parts(a);
+  let pb = expr_to_complex_parts(b);
 
   match (pa, pb) {
     (Some((a_re, a_im)), Some((b_re, b_im))) => {
@@ -3901,9 +3901,9 @@ pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 /// they share real part 0. (`Root` uses a different rule that floats
 /// every real to the head; both functions are intentionally distinct.)
 pub fn solve_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
-  let pa = expr_to_complex_parts_pub(a);
-  let pb = expr_to_complex_parts_pub(b);
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
+  let pa = expr_to_complex_parts(a);
+  let pb = expr_to_complex_parts(b);
 
   match (pa, pb) {
     (Some((a_re, a_im)), Some((b_re, b_im))) => {

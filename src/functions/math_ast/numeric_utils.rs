@@ -398,10 +398,10 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Erfi" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erfi_f64),
       "DawsonF" if args.len() == 1 => try_eval_to_f64(&args[0]).map(dawson_f64),
       "FresnelS" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(super::fresnel_s_numeric_pub)
+        try_eval_to_f64(&args[0]).map(super::fresnel_s_numeric)
       }
       "FresnelC" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(super::fresnel_c_numeric_pub)
+        try_eval_to_f64(&args[0]).map(super::fresnel_c_numeric)
       }
       "InverseErf" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).and_then(|v| {

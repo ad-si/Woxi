@@ -9,7 +9,7 @@ use super::*;
 /// Mixed: numbers before strings.
 /// Extract (real, imaginary) parts from a numeric expression for sorting.
 /// Returns None for non-numeric expressions.
-fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
+pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
   use crate::functions::math_ast::try_eval_to_f64;
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
   // Pure real number (including Infinity/-Infinity)
@@ -118,11 +118,6 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     }
     _ => None,
   }
-}
-
-/// Public wrapper for expr_to_complex_parts.
-pub fn expr_to_complex_parts_pub(e: &Expr) -> Option<(f64, f64)> {
-  expr_to_complex_parts(e)
 }
 
 /// Check if an expression is Infinity or -Infinity (DirectedInfinity).

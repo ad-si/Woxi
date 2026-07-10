@@ -2759,7 +2759,7 @@ fn is_structural_zero(expr: &Expr) -> bool {
 pub fn mandelbrot_set_iteration_count_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
 
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -2860,7 +2860,7 @@ pub fn mandelbrot_set_iteration_count_ast(
   fn all_leaves_numeric(e: &Expr) -> bool {
     match e {
       Expr::List(items) => items.iter().all(all_leaves_numeric),
-      _ => expr_to_complex_parts_pub(e)
+      _ => expr_to_complex_parts(e)
         .is_some_and(|(x, y)| x.is_finite() && y.is_finite()),
     }
   }
@@ -2877,7 +2877,7 @@ pub fn mandelbrot_set_iteration_count_ast(
           .into(),
       ),
       _ => {
-        let (x, y) = expr_to_complex_parts_pub(e).unwrap();
+        let (x, y) = expr_to_complex_parts(e).unwrap();
         Expr::Integer(count(x, y, max_iter))
       }
     }
@@ -2896,7 +2896,7 @@ pub fn mandelbrot_set_iteration_count_ast(
 pub fn mandelbrot_set_member_q_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
 
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -3030,7 +3030,7 @@ pub fn mandelbrot_set_member_q_ast(
   fn all_leaves_numeric(e: &Expr) -> bool {
     match e {
       Expr::List(items) => items.iter().all(all_leaves_numeric),
-      _ => expr_to_complex_parts_pub(e)
+      _ => expr_to_complex_parts(e)
         .is_some_and(|(x, y)| x.is_finite() && y.is_finite()),
     }
   }
@@ -3048,7 +3048,7 @@ pub fn mandelbrot_set_member_q_ast(
           .into(),
       ),
       _ => {
-        let (x, y) = expr_to_complex_parts_pub(e).unwrap();
+        let (x, y) = expr_to_complex_parts(e).unwrap();
         let (is_member, hit_max) = member(x, y, max_iter);
         if hit_max {
           *msg_count += 1;

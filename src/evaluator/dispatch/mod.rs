@@ -974,7 +974,7 @@ pub fn evaluate_function_call_ast_inner(
                   positional_ctx
                     .push((param.clone(), effective_args[pi].clone()));
                 }
-                crate::evaluator::pattern_matching::push_match_context_pub(
+                crate::evaluator::pattern_matching::push_match_context(
                   &positional_ctx,
                 );
                 let match_result =
@@ -982,7 +982,7 @@ pub fn evaluate_function_call_ast_inner(
                     &canonical_arg,
                     pattern,
                   );
-                crate::evaluator::pattern_matching::pop_match_context_pub();
+                crate::evaluator::pattern_matching::pop_match_context();
                 if let Some(bindings) = match_result {
                   // Check consistency: structural bindings must not conflict
                   // with positional parameter bindings (skip the structural
@@ -1252,7 +1252,7 @@ pub fn evaluate_function_call_ast_inner(
                     positional_ctx
                       .push((param.clone(), effective_args[pi].clone()));
                   }
-                  crate::evaluator::pattern_matching::push_match_context_pub(
+                  crate::evaluator::pattern_matching::push_match_context(
                     &positional_ctx,
                   );
                   let match_result =
@@ -1260,7 +1260,7 @@ pub fn evaluate_function_call_ast_inner(
                       &canonical_arg,
                       pattern,
                     );
-                  crate::evaluator::pattern_matching::pop_match_context_pub();
+                  crate::evaluator::pattern_matching::pop_match_context();
                   if let Some(bindings) = match_result {
                     // Check consistency: structural bindings must not conflict
                     // with positional parameter bindings (skip the structural

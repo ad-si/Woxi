@@ -205,11 +205,7 @@ fn gray_level_expr(g: f64) -> Expr {
 /// Map named color identifiers to their Wolfram Language evaluation result.
 /// Basic colors → RGBColor[r, g, b] or GrayLevel[g]
 /// Light* colors → RGBColor[r, g, b] or GrayLevel[g]
-pub fn named_color_expr_pub(name: &str) -> Option<Expr> {
-  named_color_expr(name)
-}
-
-fn named_color_expr(name: &str) -> Option<Expr> {
+pub fn named_color_expr(name: &str) -> Option<Expr> {
   Some(match name {
     // Basic colors
     "Red" => rgb_color_expr(1.0, 0.0, 0.0),
