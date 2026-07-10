@@ -4235,7 +4235,7 @@ ParzenWindow,de la Vallee Poussin (Parzen) window function; piecewise cubic on [
 PersistentObject,,🚫,,11.1,4356
 StateTransformationLinearize,,,,10.0,4356
 UpperTriangularMatrixQ,True if a matrix is upper triangular,✅,pure,12.0,4356
-WeierstrassHalfPeriods,,,,3.0,4356
+WeierstrassHalfPeriods,Fundamental half-periods of the Weierstrass lattice from its invariants (numeric for the real positive-discriminant rectangular case),✅,pure,3.0,4356
 BesselYZero,Compute zeros of the Bessel function Y_n using bisection and Newton method,✅,pure,6.0,4387
 BlockchainAddressData,,🚫,,12.0,4387
 BohmanWindow,Bohman window function (1-2|x|)Cos[2Pi|x|]+Sin[2Pi|x|]/Pi on [-1/2 1/2],✅,pure,9.0,4387

@@ -4719,3 +4719,38 @@ mod weierstrass_invariants {
     );
   }
 }
+
+// WeierstrassHalfPeriods[{g2, g3}] returns the fundamental half-periods.
+// Implemented for the real positive-discriminant (rectangular-lattice) regime;
+// numeric only for inexact invariants. Expected strings verified against
+// wolframscript.
+mod weierstrass_half_periods {
+  use super::*;
+
+  #[test]
+  fn rectangular_lattices() {
+    assert_eq!(
+      interpret("Round[WeierstrassHalfPeriods[{8.0, 4.0}], 10^-6]").unwrap(),
+      "{1009453/1000000, (371103*I)/250000}"
+    );
+    assert_eq!(
+      interpret("Round[WeierstrassHalfPeriods[{13.0, 6.0}], 10^-6]").unwrap(),
+      "{56981/62500, (1120881*I)/1000000}"
+    );
+    // g3 = 0 gives a square lattice (equal real and imaginary half-periods).
+    assert_eq!(
+      interpret("Round[WeierstrassHalfPeriods[{4.0, 0.0}], 10^-6]").unwrap(),
+      "{1311029/1000000, (1311029*I)/1000000}"
+    );
+  }
+
+  #[test]
+  fn exact_stays_symbolic() {
+    // Exact invariants are left unevaluated (matching wolframscript, which only
+    // numericizes inexact input).
+    assert_eq!(
+      interpret("WeierstrassHalfPeriods[{8, 4}]").unwrap(),
+      "WeierstrassHalfPeriods[{8, 4}]"
+    );
+  }
+}

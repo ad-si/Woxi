@@ -1102,6 +1102,77 @@ pub fn weierstrass_invariants_ast(
   }
 }
 
+/// WeierstrassHalfPeriods[{g₂, g₃}] — the fundamental half-periods {ω₁, ω₂} of
+/// the lattice with the given invariants. Handled for the real, positive-
+/// discriminant regime (g₂³ − 27 g₃² > 0), where the ℘ cubic 4t³ − g₂t − g₃
+/// has three real roots e₁ > e₂ > e₃ and the lattice is rectangular:
+///     ω₁ = K(m)/√(e₁−e₃),  ω₂ = i·K(1−m)/√(e₁−e₃),  m = (e₂−e₃)/(e₁−e₃).
+/// Numeric only when an argument is inexact (matching wolframscript). The
+/// rhombic case (negative discriminant) and complex invariants stay symbolic.
+pub fn weierstrass_half_periods_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "WeierstrassHalfPeriods expects exactly 1 argument".into(),
+    ));
+  }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "WeierstrassHalfPeriods".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let items = match &args[0] {
+    Expr::List(items) if items.len() == 2 => items,
+    _ => return unevaluated(),
+  };
+  if !expr_contains_real(&items[0]) && !expr_contains_real(&items[1]) {
+    return unevaluated();
+  }
+  // Real invariants only; a complex g₂/g₃ falls back to symbolic.
+  let (g2, g3) = match (
+    crate::functions::math_ast::try_extract_complex_float(&items[0]),
+    crate::functions::math_ast::try_extract_complex_float(&items[1]),
+  ) {
+    (Some((a, ai)), Some((b, bi))) if ai == 0.0 && bi == 0.0 => (a, b),
+    _ => return unevaluated(),
+  };
+  // Positive discriminant ⇒ three real roots ⇒ rectangular lattice (this also
+  // forces g₂ > 0, so the depressed cubic is in the casus irreducibilis).
+  let disc = g2 * g2 * g2 - 27.0 * g3 * g3;
+  if disc <= 0.0 || g2 <= 0.0 {
+    return unevaluated();
+  }
+  // Roots of 4t³ − g₂t − g₃ = 0 via the trigonometric method for t³ + pt + q.
+  let p = -g2 / 4.0;
+  let q = -g3 / 4.0;
+  let pi = std::f64::consts::PI;
+  let amp = 2.0 * (-p / 3.0).sqrt();
+  let phi = ((3.0 * q) / (2.0 * p) * (-3.0 / p).sqrt())
+    .clamp(-1.0, 1.0)
+    .acos();
+  let mut e: Vec<f64> = (0..3)
+    .map(|k| amp * (phi / 3.0 - 2.0 * pi * (k as f64) / 3.0).cos())
+    .collect();
+  e.sort_by(|a, b| b.partial_cmp(a).unwrap());
+  let (e1, e2, e3) = (e[0], e[1], e[2]);
+  let d = e1 - e3;
+  let m = (e2 - e3) / d;
+  let sq = d.sqrt();
+  let omega1 = elliptic_k(m) / sq;
+  let omega2_im = elliptic_k(1.0 - m) / sq;
+  Ok(Expr::List(
+    vec![
+      Expr::Real(omega1),
+      crate::functions::math_ast::build_complex_float_expr_keep_real(
+        0.0, omega2_im,
+      ),
+    ]
+    .into(),
+  ))
+}
+
 /// ModularLambda[τ] — the elliptic modular lambda function.
 pub fn modular_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

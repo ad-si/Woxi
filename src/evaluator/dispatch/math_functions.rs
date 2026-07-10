@@ -1392,6 +1392,11 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    "WeierstrassHalfPeriods" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::weierstrass_half_periods_ast(
+        args,
+      ));
+    }
     "KleinInvariantJ" if args.len() == 1 => {
       return Some(crate::functions::math_ast::klein_invariant_j_ast(args));
     }

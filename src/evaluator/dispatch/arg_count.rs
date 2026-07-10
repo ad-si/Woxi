@@ -286,6 +286,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ModularLambda" => Some((1, 1)),
     "KleinInvariantJ" => Some((1, 1)),
     "WeierstrassInvariants" => Some((1, 1)),
+    "WeierstrassHalfPeriods" => Some((1, 1)),
     "DiracComb" => Some((1, usize::MAX)),
     // Window functions all take exactly one argument.
     "HammingWindow"
