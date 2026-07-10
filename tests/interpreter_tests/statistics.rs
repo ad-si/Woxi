@@ -2701,6 +2701,46 @@ mod chi_square_moments {
   }
 }
 
+// Laplace central moments have the closed form 0 (odd n) / n!*b^n (even n),
+// which the generic raw-moment path cannot reach (it needs incomplete Gammas).
+// The expected strings were verified against wolframscript.
+mod laplace_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[LaplaceDistribution[m, b], 2]").unwrap(),
+      "2*b^2"
+    );
+    // Odd central moments vanish (the distribution is symmetric).
+    assert_eq!(
+      interpret("CentralMoment[LaplaceDistribution[m, b], 3]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LaplaceDistribution[m, b], 4]").unwrap(),
+      "24*b^4"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LaplaceDistribution[m, b], 6]").unwrap(),
+      "720*b^6"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[LaplaceDistribution[m, b]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Kurtosis[LaplaceDistribution[m, b]]").unwrap(),
+      "6"
+    );
+  }
+}
+
 mod factorial_moment {
   use super::*;
 

@@ -3118,6 +3118,30 @@ fn distribution_moment(
     )?));
   }
 
+  // Laplace central moments are 0 for odd n and n!*b^n for even n. The generic
+  // raw-moment path only closes for small n (E[x^k] needs incomplete Gammas),
+  // so give the closed form directly. This lets Skewness reduce to 0 and
+  // Kurtosis to 6.
+  if let Some((_, b)) = two_params_of(dist, "LaplaceDistribution") {
+    let result = if n.rem_euclid(2) == 1 {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(fact_i128(n)),
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(b),
+            right: Box::new(Expr::Integer(n)),
+          },
+        ]
+        .into(),
+      }
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   let mean = mean_ast(&[dist.clone()])?;
   // CentralMoment = Sum_{k=0}^n Binomial[n, k] (-mean)^(n-k) E[x^k]
   let mut terms = Vec::with_capacity((n + 1) as usize);
