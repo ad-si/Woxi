@@ -2220,15 +2220,42 @@ pub fn set_delayed_ast(
               heads.push(Some("List".to_string()));
               blank_types.push(1);
             }
-            // `Pattern[name, _]` / `Pattern[name, _Head]` / etc. — treat as
-            // a plain named pattern.
-            _ => {
+            // `Pattern[name, _]` / `Pattern[name, _Head]` — plain named
+            // blank, fast path.
+            Expr::Identifier(n) if n.starts_with('_') => {
               let (_, head, blank_type) = extract_pattern_info(arg);
               params.push(pname);
               conditions.push(None);
               defaults.push(None);
               heads.push(head);
               blank_types.push(blank_type);
+            }
+            Expr::FunctionCall { name: bn, .. }
+              if bn == "Blank"
+                || bn == "BlankSequence"
+                || bn == "BlankNullSequence" =>
+            {
+              let (_, head, blank_type) = extract_pattern_info(arg);
+              params.push(pname);
+              conditions.push(None);
+              defaults.push(None);
+              heads.push(head);
+              blank_types.push(blank_type);
+            }
+            // Any other body (Alternatives, Except, nested patterns, …)
+            // must keep its constraint: store the whole Pattern[name,
+            // body] as a structural pattern matched at dispatch time —
+            // previously the constraint was silently dropped, so
+            // s[x : (_Integer | _Real)] matched any argument at all.
+            _ => {
+              conditions.push(Some(Expr::FunctionCall {
+                name: "__StructuralPattern__".to_string(),
+                args: vec![Expr::Identifier(pname.clone()), arg.clone()].into(),
+              }));
+              params.push(pname);
+              defaults.push(None);
+              heads.push(None);
+              blank_types.push(1);
             }
           }
         }

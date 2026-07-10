@@ -3,6 +3,43 @@ use super::*;
 mod pattern_test_conditions {
   use super::*;
 
+  // A named pattern with a non-Blank body — x : (_Integer | _Real),
+  // x : Except[...], x : {_, _} — must keep its constraint: previously
+  // the definition stored just x_ and matched anything. All outputs
+  // verified against wolframscript 15.0.
+  #[test]
+  fn named_pattern_keeps_constraint_in_definitions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"s4[x : (_Integer | _Real)] := "num"; {s4[1.5], s4[7], s4[c]}"#
+      )
+      .unwrap(),
+      "{num, num, s4[c]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("s5[x : (a | b)] := {x}; {s5[a], s5[q]}").unwrap(),
+      "{{a}, s5[q]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("s7[x : Except[_Integer]] := {x}; {s7[w], s7[3]}").unwrap(),
+      "{{w}, s7[3]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("s8[x : {_, _}] := x; {s8[{1, 2}], s8[{1, 2, 3}]}").unwrap(),
+      "{{1, 2}, s8[{1, 2, 3}]}"
+    );
+    // The long colon form of a plain blank still works
+    clear_state();
+    assert_eq!(
+      interpret(r#"s2[x : _Integer] := "int"; {s2[4], s2[c]}"#).unwrap(),
+      "{int, s2[c]}"
+    );
+  }
+
   #[test]
   fn pure_function_test_in_definition_fires() {
     // A definition pattern `x_?(purefn)` must fire during dispatch (the test
