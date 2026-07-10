@@ -5,6 +5,40 @@ use crate::syntax::Expr;
 use num_bigint::BigInt;
 use num_traits::Signed;
 
+fn nth_prime(n: usize) -> usize {
+  if n == 0 {
+    return 0; // Return 0 for invalid input
+  }
+  let mut count = 0;
+  let mut num = 1;
+  while count < n {
+    num += 1;
+    if is_prime(num) {
+      count += 1;
+    }
+  }
+  num
+}
+
+pub fn is_prime(n: usize) -> bool {
+  if n <= 1 {
+    return false;
+  }
+  if n == 2 {
+    return true;
+  }
+  if n.is_multiple_of(2) {
+    return false;
+  }
+  let sqrt_n = (n as f64).sqrt() as usize;
+  for i in (3..=sqrt_n).step_by(2) {
+    if n.is_multiple_of(i) {
+      return false;
+    }
+  }
+  true
+}
+
 /// True if `e` denotes a concrete number (an integer, real, big-float, or
 /// rational, possibly negated) rather than a symbolic expression. Used to
 /// decide whether a "not a valid index" message should fire: a concrete
@@ -2529,9 +2563,7 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // every Real argument with Prime::intpp, even an integer-valued one like
   // 3.0, so do NOT coerce Reals to integers here.
   match expr_to_i128(&args[0]) {
-    Some(n) if n >= 1 => {
-      Ok(Expr::Integer(crate::nth_prime(n as usize) as i128))
-    }
+    Some(n) if n >= 1 => Ok(Expr::Integer(nth_prime(n as usize) as i128)),
     Some(_) => {
       // Concrete non-positive integer: emit message like wolframscript
       let arg_str = crate::syntax::expr_to_string(&args[0]);
@@ -5233,7 +5265,7 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let n_usize = n as usize;
       let mut count: i128 = 0;
       for i in 2..=n_usize {
-        if crate::is_prime(i) {
+        if is_prime(i) {
           count += 1;
         }
       }
@@ -5251,7 +5283,7 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let n = f.floor() as usize;
       let mut count: i128 = 0;
       for i in 2..=n {
-        if crate::is_prime(i) {
+        if is_prime(i) {
           count += 1;
         }
       }
@@ -5266,7 +5298,7 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let n = f.floor() as usize;
         let mut count: i128 = 0;
         for i in 2..=n {
-          if crate::is_prime(i) {
+          if is_prime(i) {
             count += 1;
           }
         }
@@ -5434,7 +5466,7 @@ pub fn next_prime_after(n: i128) -> i128 {
   // For n >= 1: search upward from n+1
   if n >= 1 {
     let mut candidate = n + 1;
-    while !crate::is_prime(candidate as usize) {
+    while !is_prime(candidate as usize) {
       candidate += 1;
     }
     return candidate;
@@ -5444,7 +5476,7 @@ pub fn next_prime_after(n: i128) -> i128 {
   // Search from n+1 upward: for each candidate c, check if |c| is prime.
   if n < -2 {
     for c in (n + 1)..=-2 {
-      if c < 0 && crate::is_prime((-c) as usize) {
+      if c < 0 && is_prime((-c) as usize) {
         return c;
       }
     }
@@ -5460,7 +5492,7 @@ pub fn prev_prime_before(n: i128) -> i128 {
   if n > 2 {
     let mut candidate = n - 1;
     while candidate >= 2 {
-      if crate::is_prime(candidate as usize) {
+      if is_prime(candidate as usize) {
         return candidate;
       }
       candidate -= 1;
@@ -5476,7 +5508,7 @@ pub fn prev_prime_before(n: i128) -> i128 {
   // For n < -2: search downward among negative primes
   let mut candidate = n - 1;
   loop {
-    if crate::is_prime((-candidate) as usize) {
+    if is_prime((-candidate) as usize) {
       return candidate;
     }
     candidate -= 1;

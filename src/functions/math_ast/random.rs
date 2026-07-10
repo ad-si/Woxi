@@ -1689,7 +1689,7 @@ fn collect_primes_in_range(min: i128, max: i128) -> Vec<i128> {
   let start = if min < 2 { 2 } else { min };
   let mut primes = Vec::new();
   for n in start..=max {
-    if crate::is_prime(n as usize) {
+    if is_prime(n as usize) {
       primes.push(n);
     }
   }
@@ -1702,7 +1702,7 @@ fn is_prime_i128(n: i128) -> bool {
     return false;
   }
   if n <= usize::MAX as i128 {
-    return crate::is_prime(n as usize);
+    return is_prime(n as usize);
   }
   // For values beyond usize, use BigInt Miller-Rabin
   let big = num_bigint::BigInt::from(n);
