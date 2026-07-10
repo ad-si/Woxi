@@ -2072,6 +2072,35 @@ mod together {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
   }
 
+  // A negative numeric factor produced by denominator factoring flips
+  // out of the quotient: sum numerators negate termwise with the content
+  // staying in the denominator; monomial/unit numerators get a rational
+  // prefactor with the content leaving it. Found by the differential
+  // fuzzer; all outputs verified against wolframscript 15.0.
+  #[test]
+  fn together_negative_denominator_content() {
+    assert_eq!(
+      interpret("Together[(3 - 5*x)/(2 - 2*x)]").unwrap(),
+      "(-3 + 5*x)/(2*(-1 + x))"
+    );
+    assert_eq!(
+      interpret("Together[(3 - 5*x)/(4 - 2*x)]").unwrap(),
+      "(-3 + 5*x)/(2*(-2 + x))"
+    );
+    assert_eq!(
+      interpret("Together[(-5*x + 3*x^2 - x^3)/(-4 - 2*x - 2*x^2)]").unwrap(),
+      "(5*x - 3*x^2 + x^3)/(2*(2 + x + x^2))"
+    );
+    assert_eq!(
+      interpret("Together[1/(2 - 2*x)]").unwrap(),
+      "-1/2*1/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Together[x/(6 - 3*x)]").unwrap(),
+      "-1/3*x/(-2 + x)"
+    );
+  }
+
   // Arguments that evaluate to plain numbers stay those numbers.
   // Together[1/3 + I/3] previously spun the complex scalar through an
   // infinite Together/Cancel/Factor recursion (stack overflow); Simplify

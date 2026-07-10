@@ -443,8 +443,28 @@ pub(super) fn canonicalize_quotient_sign(
   let mut sign: i128 = 1;
   let mut flipped_any = false;
   let mut any_flipped_content_one = false;
+  // Positive magnitude of numeric denominator factors whose sign was
+  // absorbed (Together pre-factors 2 - 2x into -2*(-1 + x); the -2 must
+  // not stay in the denominator).
+  let mut numeric_flip_content: i128 = 1;
   let mut new_factors: Vec<Expr> = Vec::new();
   for f in &factors {
+    // A negative numeric factor flips outright: Together[(3-5x)/(2-2x)]
+    // is (-3+5x)/(2*(-1+x)) in wolframscript, never (3-5x)/(-2*(-1+x)).
+    // The Simplify caller (require_negative_numerator) keeps its own
+    // decoded rules and is left untouched.
+    if !require_negative_numerator
+      && let Expr::Integer(n) = f
+      && *n < 0
+    {
+      sign = -sign;
+      flipped_any = true;
+      numeric_flip_content = numeric_flip_content.saturating_mul(-n);
+      if *n != -1 {
+        new_factors.push(Expr::Integer(-n));
+      }
+      continue;
+    }
     let (base, exp) = match f {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -568,7 +588,41 @@ pub(super) fn canonicalize_quotient_sign(
     }
     return None;
   }
+  // A flipped numeric content with a numerator that can't absorb the sign
+  // termwise becomes a rational prefactor, with the content leaving the
+  // denominator: Together[1/(2-2x)] → -1/2*1/(-1+x) and
+  // Together[x/(6-3x)] → -1/3*x/(-2+x), matching wolframscript.
+  let prefactor_form =
+    |num_factor: Option<Expr>, factors: &[Expr], content: i128| -> Expr {
+      let rest: Vec<Expr> = factors
+        .iter()
+        .filter(|f| !matches!(f, Expr::Integer(n) if *n == content))
+        .cloned()
+        .collect();
+      let rest_den = if rest.len() == 1 {
+        rest.into_iter().next().unwrap()
+      } else {
+        build_product(rest)
+      };
+      let mut parts: Vec<Expr> =
+        vec![crate::functions::math_ast::make_rational_pub(-1, content)];
+      if let Some(nf) = num_factor {
+        parts.push(nf);
+      }
+      parts.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(rest_den),
+        right: Box::new(Expr::Integer(-1)),
+      });
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: parts.into(),
+      }
+    };
   if sign < 0 && matches!(num, Expr::Integer(1)) {
+    if numeric_flip_content > 1 {
+      return Some(prefactor_form(None, &new_factors, numeric_flip_content));
+    }
     return None;
   }
   if require_negative_numerator {
@@ -625,8 +679,18 @@ pub(super) fn canonicalize_quotient_sign(
   {
     negate(num)
   } else {
-    // A sign-free monomial/product numerator can't absorb the flip; pull
-    // the sign out of the whole quotient: -(x/((-1+x)*(2+x))).
+    // A sign-free monomial/product numerator can't absorb the flip. With
+    // flipped numeric content, the sign and content become a rational
+    // prefactor (-1/3*x/(-2+x)); otherwise pull the sign out of the
+    // whole quotient: -(x/((-1+x)*(2+x))).
+    if numeric_flip_content > 1 {
+      let factors = flatten_times_args(std::slice::from_ref(&new_den));
+      return Some(prefactor_form(
+        Some(num.clone()),
+        &factors,
+        numeric_flip_content,
+      ));
+    }
     return Some(Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand: Box::new(Expr::BinaryOp {
