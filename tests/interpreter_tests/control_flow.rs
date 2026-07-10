@@ -2258,6 +2258,42 @@ mod cases {
     // The two-argument form also matches the form as a pattern.
     assert_case(r#"Catch[Throw[5, b], a | b]"#, r#"5"#);
   }
+
+  // Untagged Catch[expr] catches only untagged Throws: a tagged Throw
+  // passes through to the top level with Throw::nocatch, and conversely
+  // a tagged Catch ignores an untagged Throw. Verified against
+  // wolframscript 15.0 (which aborts the rest of the evaluation, exactly
+  // like Woxi does).
+  #[test]
+  fn untagged_catch_ignores_tagged_throw() {
+    woxi::clear_state();
+    let result = woxi::interpret("Catch[Throw[1, tag]]");
+    assert_ne!(
+      result.as_deref().ok(),
+      Some("1"),
+      "tagged Throw must not be caught by untagged Catch: {result:?}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Throw::nocatch: Uncaught Throw[1, tag] returned to top level."
+      )),
+      "got {msgs:?}"
+    );
+    // Untagged Throw is still caught by untagged Catch
+    woxi::clear_state();
+    assert_eq!(woxi::interpret("Catch[2 + Throw[1]]").unwrap(), "1");
+    // ... but not by a tagged Catch, even with a Blank form
+    woxi::clear_state();
+    let result = woxi::interpret("Catch[Throw[7], _]");
+    assert_ne!(result.as_deref().ok(), Some("7"), "got {result:?}");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Throw::nocatch: Uncaught Throw[7] returned to top level.")),
+      "got {msgs:?}"
+    );
+  }
   #[test]
   fn abort_protect_returns_body() {
     // AbortProtect[expr] evaluates and returns its body (no wrapper).

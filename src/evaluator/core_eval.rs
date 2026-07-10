@@ -1708,8 +1708,10 @@ pub fn evaluate_expr_to_expr_inner(
             Ok(result) => return Ok(result),
             Err(InterpreterError::ThrowValue(val, thrown_tag)) => {
               let matched = match &tag_pattern {
-                // No form: catch everything.
-                None => true,
+                // No form: only untagged Throws are caught — a tagged
+                // Throw passes through Catch[expr] to the top level
+                // (Throw::nocatch), matching wolframscript.
+                None => thrown_tag.is_none(),
                 // A form only matches a tagged Throw whose tag matches it.
                 Some(pattern) => match &thrown_tag {
                   Some(tag) => {
