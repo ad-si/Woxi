@@ -1787,7 +1787,7 @@ pub fn split_by_ast(
 /// Convert a bin-edge expression to `f64`, accepting `Infinity` / `-Infinity`
 /// in whichever representation the evaluator preserves them.
 fn edge_to_f64(e: &Expr) -> Option<f64> {
-  if let Some(v) = expr_to_f64(e) {
+  if let Some(v) = numeric_expr_to_f64(e) {
     return Some(v);
   }
   // Bare Infinity symbol → +∞.
@@ -1841,7 +1841,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Extract numeric values from data, skip non-numeric
-  let values: Vec<f64> = data.iter().filter_map(expr_to_f64).collect();
+  let values: Vec<f64> = data.iter().filter_map(numeric_expr_to_f64).collect();
 
   let (min_val, max_val, dx) = if args.len() == 1 {
     // BinCounts[data] - default dx=1, aligned to integer boundaries
@@ -1933,7 +1933,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // BinCounts[data, {min, max, dx}]
       Expr::List(spec) if spec.len() == 3 => {
-        let min_v = match expr_to_f64(&spec[0]) {
+        let min_v = match numeric_expr_to_f64(&spec[0]) {
           Some(v) => v,
           None => {
             return Ok(Expr::FunctionCall {
@@ -1942,7 +1942,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         };
-        let max_v = match expr_to_f64(&spec[1]) {
+        let max_v = match numeric_expr_to_f64(&spec[1]) {
           Some(v) => v,
           None => {
             return Ok(Expr::FunctionCall {
@@ -1951,7 +1951,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         };
-        let dx = match expr_to_f64(&spec[2]) {
+        let dx = match numeric_expr_to_f64(&spec[2]) {
           Some(v) => v,
           None => {
             return Ok(Expr::FunctionCall {
@@ -2020,7 +2020,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Extract numeric values paired with original expressions
   let values: Vec<(f64, &Expr)> = data
     .iter()
-    .filter_map(|e| expr_to_f64(e).map(|v| (v, e)))
+    .filter_map(|e| numeric_expr_to_f64(e).map(|v| (v, e)))
     .collect();
 
   let (min_val, max_val, dx) = if args.len() == 1 {
@@ -2121,7 +2121,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::List(result_exprs.into()));
       }
       Expr::List(spec) if spec.len() == 3 => {
-        let min_v = match expr_to_f64(&spec[0]) {
+        let min_v = match numeric_expr_to_f64(&spec[0]) {
           Some(v) => v,
           None => {
             return Ok(Expr::FunctionCall {
@@ -2130,7 +2130,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         };
-        let max_v = match expr_to_f64(&spec[1]) {
+        let max_v = match numeric_expr_to_f64(&spec[1]) {
           Some(v) => v,
           None => {
             return Ok(Expr::FunctionCall {
@@ -2139,7 +2139,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         };
-        let dx = match expr_to_f64(&spec[2]) {
+        let dx = match numeric_expr_to_f64(&spec[2]) {
           Some(v) => v,
           None => {
             return Ok(Expr::FunctionCall {
@@ -2339,7 +2339,237 @@ pub(crate) fn wl_bin_spec(
   }
 }
 
+/// Bin edges for the `HistogramList[data, n]` bin-count spec, both as exact
+/// (integer/rational) or Real `Expr`s for display and as `f64`s for counting.
+pub(crate) struct NBinEdges {
+  pub(crate) exprs: Vec<Expr>,
+  pub(crate) f64s: Vec<f64>,
+}
+
+/// wolframscript's `Equal` on machine reals: equal when they agree in all
+/// but their last seven binary digits (relative tolerance 2^-46).
+fn ws_machine_eq(a: f64, b: f64) -> bool {
+  a == b || (a - b).abs() <= a.abs().max(b.abs()) * 2f64.powi(-46)
+}
+
+/// The f64 value of `mant * 10^e` (correctly rounded while `10^|e|` fits in
+/// an i128; the astronomically large/small tail falls back to `powi`).
+fn nice_width_f64(mant: i128, e: i32) -> f64 {
+  if e >= 0 {
+    match 10i128
+      .checked_pow(e as u32)
+      .and_then(|p| p.checked_mul(mant))
+    {
+      Some(v) => v as f64,
+      None => mant as f64 * 10f64.powi(e),
+    }
+  } else {
+    match 10i128.checked_pow(e.unsigned_abs()) {
+      Some(d) => mant as f64 / d as f64,
+      None => mant as f64 * 10f64.powi(e),
+    }
+  }
+}
+
+/// wolframscript's `defaultBinwidthSmoother`: snap a width to the linearly
+/// nearest of {1, 2, 5, 10}*10^Floor[Log[10, w]] (ties to the smaller),
+/// returned as an exact `(mantissa, exponent)` pair with mantissa 1/2/5.
+/// `None` when the width is ~0 (all data identical).
+fn ws_smooth_width(w: f64) -> Option<(i128, i32)> {
+  if w.abs() <= 2.0 * f64::EPSILON {
+    return None;
+  }
+  let e = (w.ln() / 10f64.ln()).floor() as i32;
+  let mut best = (1i128, e);
+  let mut best_diff = f64::INFINITY;
+  for mant in [1i128, 2, 5, 10] {
+    let diff = (nice_width_f64(mant, e) - w).abs();
+    if diff < best_diff {
+      best_diff = diff;
+      best = (mant, e);
+    }
+  }
+  Some(if best.0 == 10 { (1, best.1 + 1) } else { best })
+}
+
+/// The mantissa test from wolframscript's `BinOffset`: the granularity's
+/// `MantissaExponent` mantissa equals 0.1/0.2/0.5/1. up to machine-`Equal`
+/// tolerance (so float noise like 0.09999999999999998 still passes as 1.).
+fn ws_gran_mantissa_nice(g: f64) -> bool {
+  if !(g > 0.0) || !g.is_finite() {
+    return false;
+  }
+  let e = (g.ln() / 10f64.ln()).floor() as i32;
+  let mut m = g / 10f64.powi(e + 1);
+  while m >= 1.0 {
+    m /= 10.0;
+  }
+  while m < 0.1 {
+    m *= 10.0;
+  }
+  [0.1, 0.2, 0.5, 1.0].iter().any(|&t| ws_machine_eq(m, t))
+}
+
+/// `n * 10^e` as an exact Integer (e >= 0) or reduced Rational (e < 0).
+fn pow10_multiple_expr(n: i128, e: i32) -> Option<Expr> {
+  if e >= 0 {
+    Some(Expr::Integer(n.checked_mul(10i128.checked_pow(e as u32)?)?))
+  } else {
+    let mut num = n;
+    let mut den = 10i128.checked_pow(e.unsigned_abs())?;
+    let g = gcd_i128(num, den).max(1);
+    num /= g;
+    den /= g;
+    Some(if den == 1 {
+      Expr::Integer(num)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
+      }
+    })
+  }
+}
+
+/// All-identical data: exactly `n` machine-real bins over mean ± 1/2
+/// (wolframscript's `min === max` branch with `steps = 1/n`).
+fn zero_range_bins(values: &[f64], n: usize) -> NBinEdges {
+  let mean = values.iter().sum::<f64>() / values.len() as f64;
+  let base = mean - 0.5;
+  let inv = 1.0 / n as f64;
+  let f64s: Vec<f64> = (0..=n).map(|i| base + i as f64 * inv).collect();
+  NBinEdges {
+    exprs: f64s.iter().map(|&x| Expr::Real(x)).collect(),
+    f64s,
+  }
+}
+
+/// Bin edges for `HistogramList[data, n]`, replicating wolframscript's
+/// internal `userBinningN` exactly (decoded from the kernel's DownValues):
+///
+///   delta = (max-min)/(n-1)            (plain max-min for n == 1)
+///   delta = Max[delta, granularity]    (granularity = smallest nonzero gap
+///                                       between sorted values; exactly 1
+///                                       for single-point data)
+///   delta = smoother(delta)            (nearest of {1,2,5,10}*10^k, exact)
+///   edges = Range[Floor[(min+eps)(1+2 eps), delta],
+///                 Ceiling[(max+eps)(1+2 eps), delta], delta] - offset
+///
+/// The epsilon fudge pushes a maximum lying exactly on an edge into an extra
+/// bin (and, for negative on-edge minima, adds an extra bin below — a
+/// wolframscript quirk this reproduces faithfully). For n == 1 only the two
+/// end edges are kept. The `offset` is granularity/2 when granularity equals
+/// delta (machine-`Equal` tolerance), its mantissa is 1/2/5, and the FIRST
+/// data value is a multiple of it — that centers the bins on the values and
+/// turns the edges into machine Reals; otherwise the edges stay exact
+/// integers/rationals. `values` must be in the original data order.
+pub(crate) fn wl_user_binning_n(values: &[f64], n: i128) -> Option<NBinEdges> {
+  if values.is_empty() || !(1..=1_000_000).contains(&n) {
+    return None;
+  }
+  let nn = n as usize;
+  let min_d = values.iter().cloned().fold(f64::INFINITY, f64::min);
+  let max_d = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  if !min_d.is_finite() || !max_d.is_finite() {
+    return None;
+  }
+  let raw = if n == 1 {
+    max_d - min_d
+  } else {
+    (max_d - min_d) / (n - 1) as f64
+  };
+  let single = values.len() == 1;
+  let gran = if single {
+    1.0
+  } else {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let g = sorted
+      .windows(2)
+      .map(|w| w[1] - w[0])
+      .filter(|&d| d != 0.0)
+      .fold(f64::INFINITY, f64::min);
+    if g.is_finite() { g } else { 0.0 }
+  };
+
+  let (mant, e) = match ws_smooth_width(gran.max(raw)) {
+    None => return Some(zero_range_bins(values, nn)),
+    Some(pair) => pair,
+  };
+  let delta_f = nice_width_f64(mant, e);
+  let x_lo = (min_d + f64::EPSILON) * (1.0 + 2.0 * f64::EPSILON);
+  let x_hi = (max_d + f64::EPSILON) * (1.0 + 2.0 * f64::EPSILON);
+  let lo = (x_lo / delta_f).floor();
+  let hi = (x_hi / delta_f).ceil();
+  if !(lo.abs() < 4.0e18 && hi.abs() < 4.0e18) {
+    return None;
+  }
+  let (m_lo, m_hi) = (lo as i128, hi as i128);
+  if m_lo >= m_hi {
+    return Some(zero_range_bins(values, nn));
+  }
+  let multiples: Vec<i128> = if n == 1 {
+    vec![m_lo, m_hi]
+  } else {
+    if m_hi - m_lo > 1_000_000 {
+      return None;
+    }
+    (m_lo..=m_hi).collect()
+  };
+
+  // BinOffset[delta, granularity, Automatic, first]: half-granularity
+  // centering (using the first data value only — wolframscript's result
+  // really does depend on the data order here).
+  let centered = ws_gran_mantissa_nice(gran)
+    && ws_machine_eq(gran, delta_f)
+    && ws_machine_eq((values[0] / gran).round_ties_even() * gran, values[0]);
+
+  let mut exprs = Vec::with_capacity(multiples.len());
+  let mut f64s = Vec::with_capacity(multiples.len());
+  for &m in &multiples {
+    let num = m.checked_mul(mant)?;
+    let ef = nice_width_f64(num, e);
+    if centered && single {
+      // Single point: granularity is the exact integer 1 (and so is delta),
+      // so the half-bin offset stays exact: m - 1/2 = (2m - 1)/2.
+      exprs.push(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![
+          Expr::Integer(num.checked_mul(2)?.checked_sub(1)?),
+          Expr::Integer(2),
+        ]
+        .into(),
+      });
+      f64s.push(ef - 0.5);
+    } else if centered {
+      let o = gran / 2.0;
+      exprs.push(Expr::Real(ef - o));
+      f64s.push(ef - o);
+    } else {
+      exprs.push(pow10_multiple_expr(num, e)?);
+      f64s.push(ef);
+    }
+  }
+  Some(NBinEdges { exprs, f64s })
+}
+
+/// Count `values` into the strict half-open bins `[e_i, e_{i+1})` defined by
+/// `edges` — wolframscript's bin-count path really does drop a value lying
+/// exactly on the last edge (or outside the edges entirely).
+fn count_into_edges(values: &[f64], edges: &[f64]) -> Vec<i128> {
+  let nb = edges.len().saturating_sub(1);
+  let mut counts = vec![0i128; nb];
+  for &v in values {
+    let k = edges.partition_point(|&edge| edge <= v);
+    if k > 0 && k <= nb {
+      counts[k - 1] += 1;
+    }
+  }
+  counts
+}
+
 /// HistogramList[data] - returns {bin_edges, counts}
+/// HistogramList[data, n] - target bin count
 /// HistogramList[data, {dx}] - explicit bin width
 /// HistogramList[data, {min, max, dx}] - explicit bin specification
 pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2357,7 +2587,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let values: Vec<f64> = data.iter().filter_map(expr_to_f64).collect();
+  let values: Vec<f64> = data.iter().filter_map(numeric_expr_to_f64).collect();
 
   if values.is_empty() {
     return Ok(Expr::List(
@@ -2373,9 +2603,45 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     wl_bin_spec(&values, None)
   } else if args.len() == 2 {
     match &args[1] {
+      // HistogramList[data, n] — target bin count
+      Expr::Integer(n) if *n >= 1 => {
+        let bins = match wl_user_binning_n(&values, *n) {
+          Some(b) => b,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "HistogramList".to_string(),
+              args: args.to_vec().into(),
+            });
+          }
+        };
+        let counts = count_into_edges(&values, &bins.f64s);
+        return Ok(Expr::List(
+          vec![
+            Expr::List(bins.exprs.into()),
+            Expr::List(counts.into_iter().map(Expr::Integer).collect()),
+          ]
+          .into(),
+        ));
+      }
+      // Invalid bare bin counts emit ::hbins; a positive Real then falls
+      // back to automatic binning, everything else stays unevaluated.
+      Expr::Integer(_) | Expr::Real(_) => {
+        crate::emit_message(&format!(
+          "HistogramList::hbins: The bin specification {} cannot be used to determine either how many or which bins to use.",
+          crate::syntax::expr_to_string(&args[1])
+        ));
+        if matches!(&args[1], Expr::Real(v) if *v > 0.0) {
+          wl_bin_spec(&values, None)
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "HistogramList".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      }
       // HistogramList[data, {dx}]
       Expr::List(spec) if spec.len() == 1 => {
-        let dx = match expr_to_f64(&spec[0]) {
+        let dx = match numeric_expr_to_f64(&spec[0]) {
           Some(v) if v > 0.0 => v,
           _ => {
             return Ok(Expr::FunctionCall {
@@ -2388,7 +2654,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // HistogramList[data, {min, max, dx}]
       Expr::List(spec) if spec.len() == 3 => {
-        let min_v = match expr_to_f64(&spec[0]) {
+        let min_v = match numeric_expr_to_f64(&spec[0]) {
           Some(v) => v,
           None => {
             return Ok(Expr::FunctionCall {
@@ -2397,7 +2663,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         };
-        let max_v = match expr_to_f64(&spec[1]) {
+        let max_v = match numeric_expr_to_f64(&spec[1]) {
           Some(v) => v,
           None => {
             return Ok(Expr::FunctionCall {
@@ -2406,7 +2672,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         };
-        let dx = match expr_to_f64(&spec[2]) {
+        let dx = match numeric_expr_to_f64(&spec[2]) {
           Some(v) if v > 0.0 => v,
           _ => {
             return Ok(Expr::FunctionCall {
