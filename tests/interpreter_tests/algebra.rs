@@ -2714,6 +2714,41 @@ mod apart {
     );
   }
 
+  // A reciprocal-of-a-sum term orders against a monomial by the base
+  // polynomial: lower degree first, then coefficients from the LEADING
+  // term down (differential-fuzzer regression, seed 1783672988021454491:
+  // the 87/(4*(-5 + 2*x)) term must trail (5*x)/2, not lead it).
+  #[test]
+  fn apart_reciprocal_term_order() {
+    assert_eq!(
+      interpret(
+        "Apart[Divide[Plus[-3, Times[5, x], Times[-5, Power[x, 2]]], \
+         Plus[5, Times[-2, x]]]]"
+      )
+      .unwrap(),
+      "15/4 + (5*x)/2 + 87/(4*(-5 + 2*x))"
+    );
+    // wolframscript-verified sum orderings around reciprocal bases.
+    assert_eq!(interpret("x + 1/(-5+2 x)").unwrap(), "x + (-5 + 2*x)^(-1)");
+    assert_eq!(interpret("x + 1/(-1+x)").unwrap(), "(-1 + x)^(-1) + x");
+    assert_eq!(interpret("x + 1/(1-2 x)").unwrap(), "(1 - 2*x)^(-1) + x");
+    assert_eq!(interpret("x + 1/(1-x)").unwrap(), "(1 - x)^(-1) + x");
+    assert_eq!(interpret("x + 1/(1+x)").unwrap(), "x + (1 + x)^(-1)");
+    assert_eq!(interpret("x + 1/(1+x^2)").unwrap(), "x + (1 + x^2)^(-1)");
+    assert_eq!(
+      interpret("1/(-1+x) + 1/(-5+2 x)").unwrap(),
+      "(-1 + x)^(-1) + (-5 + 2*x)^(-1)"
+    );
+    assert_eq!(
+      interpret("1/(1+2 x) + 1/(2+x)").unwrap(),
+      "(2 + x)^(-1) + (1 + 2*x)^(-1)"
+    );
+    assert_eq!(
+      interpret("1/(3-x) + 1/(-3+x)").unwrap(),
+      "(3 - x)^(-1) + (-3 + x)^(-1)"
+    );
+  }
+
   // Apart returns ordinary evaluated expressions: a variable-free
   // argument passes through, and single-fraction results take their
   // canonical evaluated form (not a hand-built Divide tree).
@@ -7432,6 +7467,65 @@ mod factor_square_free {
   #[test]
   fn square_free_unchanged() {
     assert_eq!(interpret("FactorSquareFree[x^6 - 1]").unwrap(), "-1 + x^6");
+  }
+
+  // Sum factors sort by degree, then leading coefficient, then termwise on
+  // the nonzero (degree, coefficient) terms ascending — zero coefficients
+  // are skipped (differential-fuzzer regression, seed 1783672988021454491;
+  // all wolframscript-verified).
+  #[test]
+  fn factor_order_matches_wolframscript() {
+    assert_eq!(
+      interpret("FactorSquareFree[(2 - 4 x^2 + x^3)(-2 + x^3)]").unwrap(),
+      "(-2 + x^3)*(2 - 4*x^2 + x^3)"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(1 - x^2 + x^3)(1 + x + x^3)]").unwrap(),
+      "(1 + x + x^3)*(1 - x^2 + x^3)"
+    );
+    assert_eq!(
+      interpret(
+        "FactorSquareFree[(2 - 5 x + 2 x^2 + x^3)(-5 - x + 5 x^2 + 5 x^3)]"
+      )
+      .unwrap(),
+      "(2 - 5*x + 2*x^2 + x^3)*(-5 - x + 5*x^2 + 5*x^3)"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(-2 + x^4)(2 + x^2)]").unwrap(),
+      "(2 + x^2)*(-2 + x^4)"
+    );
+  }
+
+  // A monomial factor takes its canonical position before the sum, and the
+  // extracted -1 stays outside the product (differential-fuzzer regression,
+  // seed 424242; wolframscript-verified).
+  #[test]
+  fn multivariate_monomial_before_sum() {
+    assert_eq!(
+      interpret("InputForm[FactorSquareFree[5 y - 3 x y^2]]").unwrap(),
+      "InputForm[-(y*(-5 + 3*x*y))]"
+    );
+    assert_eq!(
+      interpret("InputForm[FactorSquareFree[5 x - 3 x^2]]").unwrap(),
+      "InputForm[-(x*(-5 + 3*x))]"
+    );
+    assert_eq!(
+      interpret("InputForm[Factor[5 y - 3 x y]]").unwrap(),
+      "InputForm[-((-5 + 3*x)*y)]"
+    );
+    assert_eq!(
+      interpret("InputForm[Factor[5 x y - 3 x^2 y^2]]").unwrap(),
+      "InputForm[-(x*y*(-5 + 3*x*y))]"
+    );
+    // The homogeneous-binomial fast path extracts the sign the same way.
+    assert_eq!(
+      interpret("InputForm[Factor[-x^2 + y^2]]").unwrap(),
+      "InputForm[-((x - y)*(x + y))]"
+    );
+    assert_eq!(
+      interpret("InputForm[Factor[x^2 - y^2]]").unwrap(),
+      "InputForm[(x - y)*(x + y)]"
+    );
   }
 
   // Regression: negative integer content stays a standalone `-4` factor

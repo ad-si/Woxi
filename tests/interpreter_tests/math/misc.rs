@@ -1779,4 +1779,143 @@ mod machine_real_division {
       "0.4070412816074878"
     );
   }
+
+  // The explicit `Divide[a, b]` head is different from the `/` operator:
+  // wolframscript compiles it to a single IEEE division when the
+  // denominator is an explicit machine Real and the numerator is a plain
+  // number, so it lands one ULP away from the operator's
+  // multiply-by-reciprocal for roughly half of all operand pairs
+  // (differential-fuzzer regression, seed 1783672988021454491).
+  #[test]
+  fn divide_head_over_real_is_direct_division() {
+    assert_eq!(
+      interpret("Divide[Divide[-37, -1.8], 95]").unwrap(),
+      "0.21637426900584794"
+    );
+    assert_eq!(interpret("Divide[-37, -1.8]").unwrap(), "20.555555555555554");
+    assert_eq!(interpret("-37/-1.8").unwrap(), "20.555555555555557");
+    assert_eq!(
+      interpret("Divide[52.75492379532281, -48.98619485211566]").unwrap(),
+      "-1.0769345109287334"
+    );
+    assert_eq!(
+      interpret("52.75492379532281/(-48.98619485211566)").unwrap(),
+      "-1.0769345109287332"
+    );
+    // A Rational numerator also divides directly under the Divide head.
+    assert_eq!(
+      interpret("Divide[42/25, 5.7744670227102635]").unwrap(),
+      "0.2909359415150815"
+    );
+    assert_eq!(
+      interpret("(42/25)/5.7744670227102635").unwrap(),
+      "0.29093594151508145"
+    );
+    // Lists thread with the same head semantics.
+    assert_eq!(
+      interpret(
+        "InputForm[Divide[{52.75492379532281, 1.}, -48.98619485211566]]"
+      )
+      .unwrap(),
+      "InputForm[{-1.0769345109287334, -0.0204139146349068}]"
+    );
+    // A symbolic numerator falls back to the reciprocal coefficient.
+    assert_eq!(
+      interpret("InputForm[Divide[x, -48.98619485211566]]").unwrap(),
+      "InputForm[-0.0204139146349068*x]"
+    );
+  }
+}
+
+mod radical_coefficient_merge {
+  use super::*;
+
+  // A rational coefficient times a square root of a positive rational
+  // merges into one canonical radical: square the coefficient into the
+  // radicand, reduce, then pull the largest square factors back out of
+  // numerator and denominator separately (differential-fuzzer regression,
+  // seed 1783672988021454491; all wolframscript-verified).
+  #[test]
+  fn coefficient_merges_into_radical() {
+    assert_eq!(interpret("InputForm[2/Sqrt[30]]").unwrap(), "InputForm[Sqrt[2/15]]");
+    assert_eq!(interpret("InputForm[6*Sqrt[5/3]]").unwrap(), "InputForm[2*Sqrt[15]]");
+    assert_eq!(interpret("InputForm[30*Sqrt[23/15]]").unwrap(), "InputForm[2*Sqrt[345]]");
+    assert_eq!(interpret("InputForm[-2/Sqrt[30]]").unwrap(), "InputForm[-Sqrt[2/15]]");
+    assert_eq!(interpret("InputForm[(3/2)*Sqrt[2/3]]").unwrap(), "InputForm[Sqrt[3/2]]");
+    assert_eq!(interpret("InputForm[2*Sqrt[1/2]]").unwrap(), "InputForm[Sqrt[2]]");
+    assert_eq!(interpret("InputForm[(1/3)*Sqrt[15/11]]").unwrap(), "InputForm[Sqrt[5/33]]");
+    assert_eq!(
+      interpret("InputForm[(2/5)/Sqrt[14]]").unwrap(),
+      "InputForm[Sqrt[2/7]/5]"
+    );
+    assert_eq!(
+      interpret("InputForm[(4/35)*Sqrt[3/2]]").unwrap(),
+      "InputForm[(2*Sqrt[6])/35]"
+    );
+    assert_eq!(
+      interpret("InputForm[(13/35)*Sqrt[35/6]]").unwrap(),
+      "InputForm[13/Sqrt[210]]"
+    );
+    assert_eq!(
+      interpret("InputForm[3*Sqrt[46]*Sqrt[10/3]]").unwrap(),
+      "InputForm[2*Sqrt[345]]"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[Times[Times[Times[3, Sqrt[2]], Sqrt[23]], \
+         Divide[Times[2, Sqrt[25]], Sqrt[30]]]]"
+      )
+      .unwrap(),
+      "InputForm[2*Sqrt[345]]"
+    );
+  }
+
+  // Already-canonical shapes are fixed points and must not be rewritten.
+  #[test]
+  fn canonical_shapes_are_fixed_points() {
+    assert_eq!(interpret("InputForm[2/Sqrt[3]]").unwrap(), "InputForm[2/Sqrt[3]]");
+    assert_eq!(interpret("InputForm[2*Sqrt[3]]").unwrap(), "InputForm[2*Sqrt[3]]");
+    assert_eq!(interpret("InputForm[Sqrt[5/3]/2]").unwrap(), "InputForm[Sqrt[5/3]/2]");
+    assert_eq!(
+      interpret("InputForm[(1/3)*Sqrt[5/11]]").unwrap(),
+      "InputForm[Sqrt[5/11]/3]"
+    );
+    assert_eq!(interpret("InputForm[1/Sqrt[3]]").unwrap(), "InputForm[1/Sqrt[3]]");
+  }
+
+  // Numerator/Denominator split a fractional power of a rational into its
+  // parts: (2/15)^(1/2) is 2^(1/2) * 15^(-1/2) (fuzzer regression:
+  // Numerator[Divide[Sqrt[2], Divide[Times[-4, Sqrt[3]], Times[-1,
+  // Sqrt[10]]]]] must give Sqrt[5], not Sqrt[5/3]).
+  #[test]
+  fn numerator_denominator_split_rational_radicand() {
+    assert_eq!(
+      interpret("InputForm[Numerator[2/Sqrt[30]]]").unwrap(),
+      "InputForm[Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("InputForm[Denominator[2/Sqrt[30]]]").unwrap(),
+      "InputForm[Sqrt[15]]"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[Numerator[Divide[Sqrt[2], Divide[Times[-4, Sqrt[3]], \
+         Times[-1, Sqrt[10]]]]]]"
+      )
+      .unwrap(),
+      "InputForm[Sqrt[5]]"
+    );
+    assert_eq!(
+      interpret("InputForm[Denominator[Sqrt[5/3]/2]]").unwrap(),
+      "InputForm[2*Sqrt[3]]"
+    );
+    assert_eq!(
+      interpret("InputForm[Numerator[(2/15)^(3/2)]]").unwrap(),
+      "InputForm[2*Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("InputForm[Denominator[(2/15)^(3/2)]]").unwrap(),
+      "InputForm[15*Sqrt[15]]"
+    );
+  }
 }

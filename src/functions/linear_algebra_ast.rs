@@ -7096,20 +7096,36 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         right: Box::new(norm.clone()),
       })?);
     }
-    q.push(qi.clone());
+    q.push(qi);
 
-    // Orthogonalize remaining columns
+    // Orthogonalize the remaining columns against the UNNORMALIZED u[i]:
+    // the projection coefficient (u_i·u_j)/(u_i·u_i) stays rational for
+    // rational input, so every intermediate column stays rational and
+    // radicals appear only in the final normalization. Projecting against
+    // the normalized q_i instead mixes radical shapes (1/Sqrt[35] vs
+    // Sqrt[5/7]) that neither woxi nor wolframscript re-combines, leaving
+    // the later norms as unsimplified nested radicals.
     for j in (i + 1)..m {
-      let proj = dot(&qi, &u[j])?;
-      r_entries[i][j] = proj.clone();
+      let unum = dot(&u[i], &u[j])?;
+      // R[i][j] = q_i·u_j = (u_i·u_j)/‖u_i‖ — one exact division.
+      r_entries[i][j] = eval_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(unum.clone()),
+        right: Box::new(norm.clone()),
+      })?;
+      let coeff = eval_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(unum),
+        right: Box::new(norm_sq.clone()),
+      })?;
       for k in 0..n {
         u[j][k] = eval_expr(&Expr::BinaryOp {
           op: BinaryOperator::Minus,
           left: Box::new(u[j][k].clone()),
           right: Box::new(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(proj.clone()),
-            right: Box::new(qi[k].clone()),
+            left: Box::new(coeff.clone()),
+            right: Box::new(u[i][k].clone()),
           }),
         })?;
       }

@@ -624,6 +624,42 @@ pub fn make_rational_pub(numer: i128, denom: i128) -> Expr {
   make_rational(numer, denom)
 }
 
+/// Extract the largest easily-found perfect-square factor from a positive
+/// i128: returns `(outside, inside)` with `n == outside^2 * inside`, so
+/// `Sqrt[n] = outside * Sqrt[inside]`. Square factors of primes below a
+/// bound come out by trial division; a leftover whole-square cofactor
+/// (e.g. a large prime squared) is caught by a final integer-sqrt check.
+/// A cofactor that is square-free over the bound but not a perfect square
+/// stays in `inside` (matching wolframscript, which also can't factor
+/// large semiprimes cheaply).
+pub fn extract_square_factor_i128(n: i128) -> (i128, i128) {
+  let mut outside: i128 = 1;
+  let mut inside = n.max(1);
+  let mut f: i128 = 2;
+  while f <= 100_000 && f.saturating_mul(f) <= inside {
+    let mut count = 0u32;
+    while inside % f == 0 {
+      inside /= f;
+      count += 1;
+    }
+    if count >= 2 {
+      outside *= f.pow(count / 2);
+    }
+    if count % 2 == 1 {
+      inside *= f;
+    }
+    f += 1;
+  }
+  if inside > 1 {
+    let r = (inside as u128).isqrt() as i128;
+    if r.saturating_mul(r) == inside {
+      outside *= r;
+      inside = 1;
+    }
+  }
+  (outside, inside)
+}
+
 pub fn make_rational(numer: i128, denom: i128) -> Expr {
   if denom == 0 {
     // Division by zero - shouldn't reach here but be safe
