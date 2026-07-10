@@ -12102,6 +12102,82 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return limit_at_infinity(&args[0], &var_name, &point);
   }
 
+  // Limit[-f] = -Limit[f]: peel a Minus wrapper (Simplify produces forms
+  // like -((Pi - z)/Sin[z])) so the exact L'Hôpital paths apply instead
+  // of the low-accuracy numeric fallback.
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = &args[0]
+  {
+    let mut inner_args = vec![(**operand).clone(), args[1].clone()];
+    if args.len() == 3 {
+      inner_args.push(args[2].clone());
+    }
+    let inner = limit_ast(&inner_args)?;
+    if !matches!(&inner, Expr::FunctionCall { name, .. } if name == "Limit") {
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(inner),
+      });
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Limit".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  // Functions with known poles (Zeta at 1, Gamma at nonpositive integers)
+  // get truncated Laurent models so pole-crossing products resolve exactly
+  // (Limit[(z-1)*Zeta[z], z -> 1] is 1); without this, the product
+  // strategies return a wrong 0 or a low-accuracy numeric probe.
+  {
+    let mut applied = false;
+    let mut gamma_applied = false;
+    let rewritten = rewrite_pole_models(
+      &args[0],
+      &var_name,
+      &point,
+      &mut applied,
+      &mut gamma_applied,
+    );
+    if applied
+      && !(gamma_applied
+        && gamma_model_pathological(&args[0], &var_name, &point))
+    {
+      // Evaluate first (unevaluated PolyGamma constants hang Simplify's
+      // rewrite loop), then Simplify so the model's pole factor cancels
+      // against the rest of the product ((z+3)*(1/(z+3) + ...) must
+      // expand before the limit, or the 0*Infinity strategies fall back
+      // to a numeric probe).
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&rewritten)
+        .unwrap_or(rewritten);
+      let simplified =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Simplify".to_string(),
+          args: vec![evaluated.clone()].into(),
+        })
+        .unwrap_or(evaluated);
+      let mut inner_args = vec![simplified, args[1].clone()];
+      if args.len() == 3 {
+        inner_args.push(args[2].clone());
+      }
+      return limit_ast(&inner_args);
+    }
+  }
+
+  // Reciprocal trig forms miss the exact quotient paths (Simplify turns
+  // (Pi+z)/Sin[z] into (Pi+z)*Csc[z], which only resolved numerically);
+  // rewrite them as Sin/Cos quotients before picking a strategy.
+  if let Some(rewritten) = rewrite_reciprocal_trig(&args[0]) {
+    let mut inner_args = vec![rewritten, args[1].clone()];
+    if args.len() == 3 {
+      inner_args.push(args[2].clone());
+    }
+    return limit_ast(&inner_args);
+  }
+
   // For one-sided limits, skip direct substitution when the expression
   // contains Piecewise, because substituting the exact boundary point may
   // select the wrong branch (e.g. the >= branch instead of the < branch).
@@ -12391,6 +12467,437 @@ fn is_numeric_complex_constant(expr: &Expr) -> bool {
 ///   Res = 1/(m-1)! * Limit[ d^(m-1)/dz^(m-1) ((z - z0)^m expr), z -> z0 ].
 /// If no finite `m` is found within the search bound (e.g. an essential
 /// singularity), the call is returned unevaluated.
+/// Rewrite reciprocal trig heads (Csc, Sec, Cot and hyperbolic versions)
+/// as Sin/Cos quotients. Returns None when nothing changed.
+fn rewrite_reciprocal_trig(e: &Expr) -> Option<Expr> {
+  fn walk(e: &Expr, changed: &mut bool) -> Expr {
+    match e {
+      Expr::FunctionCall { name, args } if args.len() == 1 => {
+        let arg = walk(&args[0], changed);
+        let recip = |head: &str| Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(Expr::FunctionCall {
+            name: head.to_string(),
+            args: vec![arg.clone()].into(),
+          }),
+          right: Box::new(Expr::Integer(-1)),
+        };
+        let quot = |num_head: &str, den_head: &str| Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::FunctionCall {
+            name: num_head.to_string(),
+            args: vec![arg.clone()].into(),
+          }),
+          right: Box::new(Expr::FunctionCall {
+            name: den_head.to_string(),
+            args: vec![arg.clone()].into(),
+          }),
+        };
+        match name.as_str() {
+          "Csc" => {
+            *changed = true;
+            recip("Sin")
+          }
+          "Sec" => {
+            *changed = true;
+            recip("Cos")
+          }
+          "Cot" => {
+            *changed = true;
+            quot("Cos", "Sin")
+          }
+          "Csch" => {
+            *changed = true;
+            recip("Sinh")
+          }
+          "Sech" => {
+            *changed = true;
+            recip("Cosh")
+          }
+          "Coth" => {
+            *changed = true;
+            quot("Cosh", "Sinh")
+          }
+          _ => Expr::FunctionCall {
+            name: name.clone(),
+            args: vec![arg].into(),
+          },
+        }
+      }
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| walk(a, changed))
+          .collect::<Vec<_>>()
+          .into(),
+      },
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(walk(left, changed)),
+        right: Box::new(walk(right, changed)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(walk(operand, changed)),
+      },
+      Expr::List(items) => {
+        Expr::List(items.iter().map(|a| walk(a, changed)).collect())
+      }
+      other => other.clone(),
+    }
+  }
+  let mut changed = false;
+  let out = walk(e, &mut changed);
+  changed.then_some(out)
+}
+
+/// Power of `var` in a monomial `c*var^k` (c free of `var`); None when the
+/// expression is not a monomial in `var`.
+fn monomial_power_in(e: &Expr, var: &str) -> Option<i128> {
+  use crate::syntax::BinaryOperator as Op;
+  if !crate::functions::polynomial_ast::contains_var(e, var) {
+    return Some(0);
+  }
+  match e {
+    Expr::Identifier(v) if v == var => Some(1),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => monomial_power_in(operand, var),
+    Expr::BinaryOp {
+      op: Op::Power,
+      left,
+      right,
+    } => match right.as_ref() {
+      Expr::Integer(k) => Some(monomial_power_in(left, var)? * k),
+      _ => None,
+    },
+    Expr::BinaryOp {
+      op: Op::Times,
+      left,
+      right,
+    } => Some(monomial_power_in(left, var)? + monomial_power_in(right, var)?),
+    Expr::BinaryOp {
+      op: Op::Divide,
+      left,
+      right,
+    } => Some(monomial_power_in(left, var)? - monomial_power_in(right, var)?),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut total = 0i128;
+      for a in args.iter() {
+        total += monomial_power_in(a, var)?;
+      }
+      Some(total)
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      match &args[1] {
+        Expr::Integer(k) => Some(monomial_power_in(&args[0], var)? * k),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Entire functions whose composition with a reciprocal monomial is safe for
+/// the essential-singularity substitution below.
+const ENTIRE_HEADS: [&str; 5] = ["Exp", "Sin", "Cos", "Sinh", "Cosh"];
+
+/// Gate for the essential-singularity substitution `u -> 1/w`: the shifted
+/// expression (singularity at `var` = 0) must be built from polynomials in
+/// `var`, monomial denominators, and whitelisted entire functions of
+/// reciprocal monomials. Any other singular structure (e.g. a 1-z
+/// denominator) makes the formal w-series the expansion at infinity, NOT the
+/// local Laurent series, so the gate must reject it even though the series
+/// machinery would happily expand it. Returns (safe, has_essential).
+fn essential_series_safe(e: &Expr, var: &str) -> (bool, bool) {
+  use crate::syntax::BinaryOperator as Op;
+  if !crate::functions::polynomial_ast::contains_var(e, var) {
+    return (true, false);
+  }
+  let both = |a: &Expr, b: &Expr| {
+    let (sa, ea) = essential_series_safe(a, var);
+    let (sb, eb) = essential_series_safe(b, var);
+    (sa && sb, ea || eb)
+  };
+  match e {
+    Expr::Identifier(v) if v == var => (true, false),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => essential_series_safe(operand, var),
+    Expr::BinaryOp {
+      op: Op::Plus | Op::Minus | Op::Times,
+      left,
+      right,
+    } => both(left, right),
+    Expr::BinaryOp {
+      op: Op::Divide,
+      left,
+      right,
+    } => {
+      if monomial_power_in(right, var).is_some() {
+        essential_series_safe(left, var)
+      } else {
+        (false, false)
+      }
+    }
+    Expr::BinaryOp {
+      op: Op::Power,
+      left,
+      right,
+    } => match right.as_ref() {
+      Expr::Integer(k) if *k >= 0 => essential_series_safe(left, var),
+      Expr::Integer(_) => (monomial_power_in(left, var).is_some(), false),
+      exp
+        if crate::functions::polynomial_ast::contains_var(exp, var)
+        // c^u with a variable exponent: essential iff u is a reciprocal
+        // monomial and the base is constant.
+        && !crate::functions::polynomial_ast::contains_var(left, var)
+          && matches!(monomial_power_in(exp, var), Some(k) if k < 0) =>
+      {
+        (true, true)
+      }
+      _ => (false, false),
+    },
+    Expr::FunctionCall { name, args }
+      if (name == "Plus" || name == "Times") && !args.is_empty() =>
+    {
+      let mut safe = true;
+      let mut ess = false;
+      for a in args.iter() {
+        let (s, e2) = essential_series_safe(a, var);
+        safe &= s;
+        ess |= e2;
+      }
+      (safe, ess)
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      essential_series_safe(
+        &Expr::BinaryOp {
+          op: Op::Power,
+          left: Box::new(args[0].clone()),
+          right: Box::new(args[1].clone()),
+        },
+        var,
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if ENTIRE_HEADS.contains(&name.as_str()) && args.len() == 1 =>
+    {
+      if matches!(monomial_power_in(&args[0], var), Some(k) if k < 0) {
+        (true, true)
+      } else {
+        (false, false)
+      }
+    }
+    _ => (false, false),
+  }
+}
+
+/// A Gamma pole model multiplied by ANOTHER pole at a nonzero point sends
+/// the downstream Simplify calls into a pathologically slow polynomial
+/// blowup with PolyGamma constants (minutes of compute where wolframscript
+/// answers instantly), so those inputs stay unevaluated. Monomial
+/// denominators at 0 (Gamma[z]/z^2) and zero factors ((z+3)*Gamma[z])
+/// simplify fast and keep the model.
+fn gamma_model_pathological(expr: &Expr, var: &str, z0: &Expr) -> bool {
+  if matches!(z0, Expr::Integer(0)) {
+    return false;
+  }
+  fn strip_modeled(e: &Expr) -> Expr {
+    match e {
+      Expr::FunctionCall { name, .. } if name == "Gamma" || name == "Zeta" => {
+        Expr::Integer(1)
+      }
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(strip_modeled).collect::<Vec<_>>().into(),
+      },
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(strip_modeled(left)),
+        right: Box::new(strip_modeled(right)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(strip_modeled(operand)),
+      },
+      other => other.clone(),
+    }
+  }
+  let stripped = strip_modeled(expr);
+  if !crate::functions::polynomial_ast::contains_var(&stripped, var) {
+    return false;
+  }
+  let saved = crate::snapshot_warnings();
+  crate::push_quiet();
+  let at_point = crate::evaluator::evaluate_expr_to_expr(
+    &crate::syntax::substitute_variable(&stripped, var, z0),
+  );
+  crate::pop_quiet();
+  crate::restore_warnings(saved);
+  match at_point {
+    Ok(v) => !is_finite_limit_value(&v),
+    Err(_) => true,
+  }
+}
+
+/// Truncated Laurent models for functions with known poles: Zeta at 1 and
+/// Gamma at nonpositive integers. Three terms each (u^-1, constant, u), so
+/// results are valid for total pole order <= 3; the caller caps the pole
+/// order accordingly. Without the models, Limit falls back to a numeric
+/// probe near the pole (Residue[Gamma[z], {z, -3}] stayed unevaluated) or
+/// even returns a wrong 0 (Residue[Zeta[z], {z, 1}]).
+fn rewrite_pole_models(
+  e: &Expr,
+  var: &str,
+  z0: &Expr,
+  applied: &mut bool,
+  gamma_applied: &mut bool,
+) -> Expr {
+  use crate::syntax::BinaryOperator as Op;
+  let value_at = |u: &Expr| -> Option<Expr> {
+    crate::evaluator::evaluate_expr_to_expr(
+      &crate::syntax::substitute_variable(u, var, z0),
+    )
+    .ok()
+  };
+  let plus = |items: Vec<Expr>| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: items.into(),
+  };
+  let times = |items: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: items.into(),
+  };
+  let pow = |b: Expr, k: i128| Expr::BinaryOp {
+    op: Op::Power,
+    left: Box::new(b),
+    right: Box::new(Expr::Integer(k)),
+  };
+  if let Expr::FunctionCall { name, args } = e
+    && args.len() == 1
+    && crate::functions::polynomial_ast::contains_var(&args[0], var)
+  {
+    let u = &args[0];
+    if name == "Zeta" && matches!(value_at(u), Some(Expr::Integer(1))) {
+      // Zeta[u] = 1/(u-1) + EulerGamma - StieltjesGamma[1]*(u-1) + O((u-1)^2)
+      *applied = true;
+      let um1 = plus(vec![u.clone(), Expr::Integer(-1)]);
+      return plus(vec![
+        pow(um1.clone(), -1),
+        Expr::Identifier("EulerGamma".to_string()),
+        times(vec![
+          Expr::Integer(-1),
+          Expr::FunctionCall {
+            name: "StieltjesGamma".to_string(),
+            args: vec![Expr::Integer(1)].into(),
+          },
+          um1,
+        ]),
+      ]);
+    }
+    if name == "Gamma"
+      && let Some(Expr::Integer(n)) = value_at(u)
+      && (-20..=0).contains(&n)
+    {
+      *gamma_applied = true;
+      // Gamma[u] near -k: (-1)^k/k! * (1/(u+k) + PolyGamma[0,k+1]
+      //   + (u+k)*(PolyGamma[0,k+1]^2 + PolyGamma[1,k+1])/2) + O((u+k)^2)
+      *applied = true;
+      let k = -n;
+      let mut fact: i128 = 1;
+      for j in 2..=k {
+        fact *= j;
+      }
+      let sign = if k % 2 == 0 { 1 } else { -1 };
+      let upk = plus(vec![u.clone(), Expr::Integer(k)]);
+      let psi0 = Expr::FunctionCall {
+        name: "PolyGamma".to_string(),
+        args: vec![Expr::Integer(0), Expr::Integer(k + 1)].into(),
+      };
+      let psi1 = Expr::FunctionCall {
+        name: "PolyGamma".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(k + 1)].into(),
+      };
+      // Emit a canonical atom (an uncanonical Rational[-1, 1] wrapper
+      // sends downstream Simplify calls into a rewrite loop), and
+      // pre-evaluate the constant coefficients: half-evaluated shapes
+      // like Times[-1, 1 - EulerGamma] inside the sum also make
+      // Simplify's rewrite loop cycle without terminating.
+      let coeff = if fact == 1 {
+        Expr::Integer(sign)
+      } else {
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(sign), Expr::Integer(fact)].into(),
+        }
+      };
+      return times(vec![
+        coeff,
+        plus(vec![
+          pow(upk.clone(), -1),
+          psi0.clone(),
+          times(vec![
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+            },
+            upk,
+            plus(vec![pow(psi0, 2), psi1]),
+          ]),
+        ]),
+      ]);
+    }
+  }
+  match e {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| rewrite_pole_models(a, var, z0, applied, gamma_applied))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(rewrite_pole_models(
+        left,
+        var,
+        z0,
+        applied,
+        gamma_applied,
+      )),
+      right: Box::new(rewrite_pole_models(
+        right,
+        var,
+        z0,
+        applied,
+        gamma_applied,
+      )),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(rewrite_pole_models(
+        operand,
+        var,
+        z0,
+        applied,
+        gamma_applied,
+      )),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| rewrite_pole_models(a, var, z0, applied, gamma_applied))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
 pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -12417,6 +12924,97 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     replacement: Box::new(point.clone()),
   };
 
+  // --- essential singularities -------------------------------------
+  // (z-z0)^m * expr has a finite-order pole for NO m at an essential
+  // singularity, and the limit loop below can even return a wrong
+  // bounded-oscillation value (z*Sin[1/z] -> 0 while the residue of
+  // Sin[1/z] is 1). When the gate holds, substitute z -> z0 + 1/w: the
+  // Laurent coefficient c_{-1} at z0 becomes the w^1 series coefficient
+  // of the composed expression, which the ordinary series machinery can
+  // extract (Exp[1/z] -> 1, z^2*Sin[1/z] -> -1/6).
+  {
+    let shifted = if matches!(&z0, Expr::Integer(0)) {
+      expr.clone()
+    } else {
+      crate::syntax::substitute_variable(
+        expr,
+        &var_name,
+        &Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(Expr::Identifier(var_name.clone())),
+          right: Box::new(z0.clone()),
+        },
+      )
+    };
+    let (series_safe, has_essential) =
+      essential_series_safe(&shifted, &var_name);
+    if has_essential {
+      if series_safe {
+        let composed = crate::syntax::substitute_variable(
+          &shifted,
+          &var_name,
+          &Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(Expr::Identifier(var_name.clone())),
+            right: Box::new(Expr::Integer(-1)),
+          },
+        );
+        let coeff =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "SeriesCoefficient".to_string(),
+            args: vec![
+              composed,
+              Expr::List(
+                vec![
+                  Expr::Identifier(var_name.clone()),
+                  Expr::Integer(0),
+                  Expr::Integer(1),
+                ]
+                .into(),
+              ),
+            ]
+            .into(),
+          });
+        if let Ok(c) = coeff
+          && !matches!(&c, Expr::FunctionCall { name, .. }
+            if name == "SeriesCoefficient" || name == "SeriesData")
+          && !contains_real(&c)
+        {
+          return Ok(c);
+        }
+      }
+      // Unsafe or unresolved essential singularity: the pole-order loop
+      // would be wrong, not just incomplete.
+      return unevaluated();
+    }
+  }
+
+  // --- known-pole Laurent models -------------------------------------
+  let mut model_applied = false;
+  let mut gamma_applied = false;
+  let modeled = rewrite_pole_models(
+    expr,
+    &var_name,
+    &z0,
+    &mut model_applied,
+    &mut gamma_applied,
+  );
+  if model_applied
+    && gamma_applied
+    && gamma_model_pathological(expr, &var_name, &z0)
+  {
+    return unevaluated();
+  }
+  // Evaluate the model before Simplify sees it: unevaluated PolyGamma
+  // constants inside the quotient send Simplify's rewrite loop into a
+  // non-terminating cycle (pre-existing; evaluation folds them to
+  // EulerGamma forms that simplify cleanly).
+  let expr = &if model_applied {
+    crate::evaluator::evaluate_expr_to_expr(&modeled).unwrap_or(modeled)
+  } else {
+    expr.clone()
+  };
+
   // Build g = (z - z0)^m * expr.
   let build_g = |m: i128| -> Expr {
     let shift = Expr::BinaryOp {
@@ -12439,7 +13037,12 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Fully simplify via the `Simplify` builtin (the internal `simplify` helper
   // does not cancel `(z - z0)^m * p / (z - z0)^m` the way the builtin does;
   // differentiating an uncancelled form would create spurious ∞ − ∞ limits).
+  // The input is evaluated first: Simplify's rewrite loop can cycle without
+  // terminating on half-canonical constructed trees (e.g. a raw
+  // Times[Power[Minus[z, -1], 1], ...] with Times[-1, 1 - EulerGamma]
+  // constants inside).
   let simplify_full = |e: Expr| -> Expr {
+    let e = crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
     crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Simplify".to_string(),
       args: vec![e].into(),
@@ -12447,8 +13050,26 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .unwrap_or_else(|_| Expr::Identifier("Indeterminate".to_string()))
   };
 
+  // The internal pole-order probes evaluate at the singularity and would
+  // print Power::infy etc.; wolframscript's Residue emits no messages.
+  struct QuietGuard((Vec<String>, Vec<String>, Vec<String>));
+  impl Drop for QuietGuard {
+    fn drop(&mut self) {
+      crate::pop_quiet();
+      crate::restore_warnings(std::mem::take(&mut self.0));
+    }
+  }
+  let _quiet = QuietGuard({
+    let saved = crate::snapshot_warnings();
+    crate::push_quiet();
+    saved
+  });
+
+  // The truncated Laurent models above carry three terms, so residues are
+  // only trustworthy up to total pole order 3 when one was substituted.
   const MAX_ORDER: i128 = 12;
-  for m in 1..=MAX_ORDER {
+  let max_order = if model_applied { 3 } else { MAX_ORDER };
+  for m in 1..=max_order {
     let g = simplify_full(build_g(m));
     let base_limit = limit_ast(&[g.clone(), rule(&z0)])?;
     if !is_finite_limit_value(&base_limit) {
@@ -12462,7 +13083,18 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       let mut deriv = g;
       for _ in 0..(m - 1) {
-        deriv = differentiate_expr(&deriv, &var_name)?;
+        // Recombine and re-simplify after each derivative: the product
+        // rule leaves cancelling pole terms like 1/(z-1) - (z-1)/(z-1)^2
+        // spread across the sum, which the limit only resolves
+        // numerically otherwise; Together folds them into one quotient.
+        let raw = differentiate_expr(&deriv, &var_name)?;
+        let together =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Together".to_string(),
+            args: vec![raw.clone()].into(),
+          })
+          .unwrap_or(raw);
+        deriv = simplify_full(together);
       }
       deriv
     };

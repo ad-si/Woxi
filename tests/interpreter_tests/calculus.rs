@@ -3756,6 +3756,46 @@ mod limit {
       "Indeterminate"
     );
   }
+
+  // Limit[-f] peels to -Limit[f] so the exact quotient paths apply
+  // instead of the low-accuracy numeric fallback
+  // (wolframscript-verified).
+  #[test]
+  fn minus_wrapper_peels() {
+    assert_eq!(
+      interpret("Limit[-((Pi - z)/Sin[z]), z -> Pi]").unwrap(),
+      "-1"
+    );
+  }
+
+  // Zeta at 1 and Gamma at nonpositive integers cross their poles via
+  // truncated Laurent models; the 0*Infinity strategies previously
+  // returned a wrong 0 for the Zeta product (wolframscript-verified).
+  #[test]
+  fn known_pole_products() {
+    assert_eq!(interpret("Limit[(z - 1)*Zeta[z], z -> 1]").unwrap(), "1");
+    assert_eq!(
+      interpret("Limit[(z + 3)*Gamma[z], z -> -3]").unwrap(),
+      "-1/6"
+    );
+    assert_eq!(
+      interpret("Limit[Zeta[z], z -> 1]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Limit[Gamma[z], z -> 0]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  // Reciprocal trig heads rewrite to Sin/Cos quotients before a strategy
+  // is picked (wolframscript-verified).
+  #[test]
+  fn reciprocal_trig_limits() {
+    assert_eq!(interpret("Limit[x*Cot[x], x -> 0]").unwrap(), "1");
+    assert_eq!(interpret("Limit[Cot[x], x -> 0]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Limit[(z + Pi)*Csc[z], z -> -Pi]").unwrap(), "-1");
+  }
 }
 
 mod residue {
@@ -3838,6 +3878,90 @@ mod residue {
   #[test]
   fn complex_pole_with_numerator() {
     assert_eq!(interpret("Residue[z/(z^2 + 1), {z, I}]").unwrap(), "1/2");
+  }
+
+  // Essential singularities: the pole-order limit loop is invalid there
+  // (z*Sin[1/z] -> 0 is a bounded-oscillation limit, not the residue);
+  // the Laurent coefficient comes from the z -> z0 + 1/w substitution
+  // (all wolframscript-verified).
+  #[test]
+  fn essential_singularity_residues() {
+    assert_eq!(interpret("Residue[Exp[1/z], {z, 0}]").unwrap(), "1");
+    assert_eq!(interpret("Residue[Exp[2/z], {z, 0}]").unwrap(), "2");
+    assert_eq!(interpret("Residue[z*Exp[1/z], {z, 0}]").unwrap(), "1/2");
+    assert_eq!(interpret("Residue[Sin[1/z], {z, 0}]").unwrap(), "1");
+    assert_eq!(interpret("Residue[Exp[1/z^2], {z, 0}]").unwrap(), "0");
+    assert_eq!(interpret("Residue[Cos[1/z]/z, {z, 0}]").unwrap(), "1");
+    assert_eq!(interpret("Residue[z^2*Sin[1/z], {z, 0}]").unwrap(), "-1/6");
+    assert_eq!(interpret("Residue[Exp[1/z] + 1/z, {z, 0}]").unwrap(), "2");
+    assert_eq!(interpret("Residue[Cosh[1/z]*z, {z, 0}]").unwrap(), "1/2");
+  }
+
+  // Gamma has simple poles at nonpositive integers with residue
+  // (-1)^n/n!, handled via a truncated Laurent model
+  // (wolframscript-verified).
+  #[test]
+  fn gamma_pole_residues() {
+    assert_eq!(interpret("Residue[Gamma[z], {z, 0}]").unwrap(), "1");
+    assert_eq!(interpret("Residue[Gamma[z], {z, -1}]").unwrap(), "-1");
+    assert_eq!(interpret("Residue[Gamma[z], {z, -3}]").unwrap(), "-1/6");
+    assert_eq!(interpret("Residue[Gamma[z], {z, -4}]").unwrap(), "1/24");
+    assert_eq!(
+      interpret("Residue[Gamma[z]/z, {z, 0}]").unwrap(),
+      "-EulerGamma"
+    );
+    assert_eq!(
+      interpret("Residue[Gamma[z]/z^2, {z, 0}]").unwrap(),
+      "(6*EulerGamma^2 + Pi^2)/12"
+    );
+    // A Gamma model times another pole at a NONZERO point hits a
+    // pathologically slow Simplify blowup (PolyGamma constants over
+    // non-monomial pole quotients), so it stays unevaluated for now
+    // (wolframscript: -1 + EulerGamma).
+    assert_eq!(
+      interpret("Residue[Gamma[z]/(z + 1), {z, -1}]").unwrap(),
+      "Residue[Gamma[z]/(1 + z), {z, -1}]"
+    );
+  }
+
+  // Zeta has a simple pole at 1 with residue 1; the wrong value 0 came
+  // from Limit mishandling the 0*Infinity product (regression:
+  // differential audit 2026-07-10, wolframscript-verified).
+  #[test]
+  fn zeta_pole_residues() {
+    assert_eq!(interpret("Residue[Zeta[z], {z, 1}]").unwrap(), "1");
+    assert_eq!(interpret("Residue[Zeta[z]/z, {z, 1}]").unwrap(), "1");
+    assert_eq!(interpret("Residue[2*Zeta[z], {z, 1}]").unwrap(), "2");
+    assert_eq!(
+      interpret("Residue[Zeta[z]/(z - 1), {z, 1}]").unwrap(),
+      "EulerGamma"
+    );
+    assert_eq!(
+      interpret("Residue[Zeta[z]/(z - 1)^2, {z, 1}]").unwrap(),
+      "-StieltjesGamma[1]"
+    );
+  }
+
+  // Reciprocal trig at shifted poles: Simplify turns (z-Pi)/Sin[z] into
+  // Csc forms that the limit only resolved numerically
+  // (wolframscript-verified).
+  #[test]
+  fn reciprocal_trig_shifted_poles() {
+    assert_eq!(interpret("Residue[1/Sin[z], {z, 0}]").unwrap(), "1");
+    assert_eq!(interpret("Residue[1/Sin[z], {z, Pi}]").unwrap(), "-1");
+    assert_eq!(interpret("Residue[1/Sin[z], {z, -Pi}]").unwrap(), "-1");
+    assert_eq!(interpret("Residue[1/Sin[z], {z, 2*Pi}]").unwrap(), "1");
+    assert_eq!(interpret("Residue[Csc[z], {z, Pi}]").unwrap(), "-1");
+    assert_eq!(interpret("Residue[Tan[z], {z, Pi/2}]").unwrap(), "-1");
+    assert_eq!(interpret("Residue[Sec[z], {z, Pi/2}]").unwrap(), "-1");
+    assert_eq!(interpret("Residue[Cot[z], {z, Pi}]").unwrap(), "1");
+    assert_eq!(interpret("Residue[1/Sin[z]^2, {z, 0}]").unwrap(), "0");
+  }
+
+  // Analytic-function residue via the Laurent picture: f[z]/z at 0.
+  #[test]
+  fn function_over_z_gives_value_at_zero() {
+    assert_eq!(interpret("Residue[f[z]/z, {z, 0}]").unwrap(), "f[0]");
   }
 }
 

@@ -1180,6 +1180,37 @@ pub fn together_expr(expr: &Expr) -> Expr {
           return cancelled;
         }
       }
+      // A nested purely numeric denominator folds to a single number:
+      // wolframscript shows Together[(a + b/6)/2] as (6*a + b)/12,
+      // never (6*a + b)/(2*6).
+      if !matches!(&ed, Expr::Integer(1)) {
+        let mut den_vars = std::collections::HashSet::new();
+        super::simplify::collect_variables(&ed, &mut den_vars);
+        den_vars.remove("I");
+        if den_vars.is_empty()
+          && let Ok(folded) = crate::evaluator::evaluate_expr_to_expr(&ed)
+          && expr_to_string(&folded) != expr_to_string(&ed)
+        {
+          let mut num_factors: Vec<Expr> =
+            flatten_times_args(std::slice::from_ref(&en))
+              .into_iter()
+              .filter(|f| !matches!(f, Expr::Integer(1)))
+              .collect();
+          let en = match num_factors.len() {
+            0 => Expr::Integer(1),
+            1 => num_factors.remove(0),
+            _ => build_product(num_factors),
+          };
+          if matches!(&folded, Expr::Integer(1)) {
+            return en;
+          }
+          return Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(en),
+            right: Box::new(folded),
+          };
+        }
+      }
       return expr_rec;
     }
   }
@@ -1193,18 +1224,53 @@ pub fn together_expr(expr: &Expr) -> Expr {
   // Compute the common denominator (LCM of all denominators)
   // Decompose each denominator into base^exp pairs and take max exp for each base
   let mut base_exp_map: Vec<(String, Expr, RatExp)> = Vec::new();
+  let mut fractional_int_exponent = false;
   for (_, den) in &fractions {
     if matches!(den, Expr::Integer(1)) {
       continue;
     }
     let den_factors = extract_den_factors(den);
     for (base, exp) in &den_factors {
+      if matches!(base, Expr::Integer(_)) && exp.1 != 1 {
+        fractional_int_exponent = true;
+      }
       let key = expr_to_string(base);
       if let Some(entry) = base_exp_map.iter_mut().find(|(k, _, _)| *k == key) {
         entry.2 = rat_max(entry.2, *exp); // Take max exponent (LCM)
       } else {
         base_exp_map.push((key, base.clone(), *exp));
       }
+    }
+  }
+
+  // Integer denominators combine by their integer LCM, not by product:
+  // Together[a/2 + b/6] is (3*a + b)/6, never (2*(3*a + b))/12. Skipped
+  // entirely when any integer base occurred with a fractional exponent
+  // (a rationalized radical like 3/2^(1/2) alongside 3/2): the merged
+  // entry would bypass the exponent arithmetic that produces the
+  // fractional missing factor 2^(1/2).
+  if !fractional_int_exponent {
+    let mut int_lcm: i128 = 1;
+    let mut merged = 0usize;
+    base_exp_map.retain(|(_, base, exp)| {
+      if let Expr::Integer(n) = base
+        && *n > 1
+        && exp.1 == 1
+        && exp.0 > 0
+        && let Ok(e) = u32::try_from(exp.0)
+        && let Some(p) = n.checked_pow(e)
+        && let Some(l) =
+          int_lcm.checked_mul(p / super::factor::gcd_i128(int_lcm, p).abs())
+      {
+        int_lcm = l;
+        merged += 1;
+        return false;
+      }
+      true
+    });
+    if merged > 0 && int_lcm > 1 {
+      base_exp_map
+        .insert(0, (int_lcm.to_string(), Expr::Integer(int_lcm), (1, 1)));
     }
   }
 
@@ -1687,8 +1753,40 @@ fn compute_missing_factor(
     }
   }
 
+  // This fraction's integer denominator content, for dividing out of the
+  // map's merged integer-LCM entry (a/2 against an LCM of 6 needs 3).
+  let den_int: i128 =
+    den_factors
+      .iter()
+      .fold(1i128, |acc, (base, exp)| match (base, exp) {
+        (Expr::Integer(n), (e, 1)) if *n > 1 && *e > 0 => u32::try_from(*e)
+          .ok()
+          .and_then(|e| n.checked_pow(e))
+          .and_then(|p| acc.checked_mul(p))
+          .unwrap_or(0),
+        _ => acc,
+      });
+  // A fractional exponent on an integer base (2^(1/2) from a rationalized
+  // radical) needs the generic exponent arithmetic — the fast integer
+  // branch would produce a whole missing factor 2 instead of 2^(1/2).
+  let den_has_frac_int = den_factors
+    .iter()
+    .any(|(base, exp)| matches!(base, Expr::Integer(_)) && exp.1 != 1);
+
   let mut missing_factors: Vec<Expr> = Vec::new();
   for (key, base, lcm_exp) in base_exp_map {
+    if let Expr::Integer(l) = base
+      && *l > 1
+      && *lcm_exp == (1, 1)
+      && !den_has_frac_int
+      && den_int > 0
+      && l % den_int == 0
+    {
+      if l / den_int > 1 {
+        missing_factors.push(Expr::Integer(l / den_int));
+      }
+      continue;
+    }
     let den_exp = den_map
       .iter()
       .find(|(k, _)| k == key)

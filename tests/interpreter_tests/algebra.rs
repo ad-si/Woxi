@@ -2423,6 +2423,33 @@ mod together {
     assert_eq!(interpret("Together[x (x + y)/(x y)]").unwrap(), "(x + y)/y");
   }
 
+  // Integer denominators combine by their integer LCM, not by product,
+  // and a nested purely numeric denominator folds to a single number
+  // (wolframscript-verified).
+  #[test]
+  fn together_integer_denominator_lcm() {
+    assert_eq!(interpret("Together[a/2 + b/6]").unwrap(), "(3*a + b)/6");
+    assert_eq!(interpret("Together[a/2 + b/12]").unwrap(), "(6*a + b)/12");
+    assert_eq!(interpret("Together[x/4 + y/6]").unwrap(), "(3*x + 2*y)/12");
+    assert_eq!(interpret("Together[x/2 + y/3]").unwrap(), "(3*x + 2*y)/6");
+    assert_eq!(interpret("Together[(a + b/6)/2]").unwrap(), "(6*a + b)/12");
+    // Rationalized radicals keep their fractional missing factors: the
+    // integer fast path must not swallow 2^(1/2)
+    // (regression: Simplify[(3/2) + (3/2)*Sqrt[2]] came out 9/2).
+    assert_eq!(
+      interpret("Together[1/2 + Sqrt[2]/2]").unwrap(),
+      "(1 + Sqrt[2])/2"
+    );
+    assert_eq!(
+      interpret("Together[x/2 + Sqrt[2]/2]").unwrap(),
+      "(Sqrt[2] + x)/2"
+    );
+    assert_eq!(
+      interpret("Together[1/2 + 1/Sqrt[2]]").unwrap(),
+      "(1 + Sqrt[2])/2"
+    );
+  }
+
   // Together pulls the numeric content out of a plain (fraction-free) sum,
   // like FactorTerms (wolframscript-verified).
   #[test]

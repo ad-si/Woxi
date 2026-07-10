@@ -1213,10 +1213,14 @@ pub fn cartesian_product(sets: &[Vec<i128>]) -> Vec<Vec<i128>> {
     return vec![vec![]];
   }
 
-  // Limit total combinations to avoid exponential blowup
-  let total: usize = sets.iter().map(|s| s.len()).product();
-  if total > 10000 {
-    return vec![];
+  // Limit total combinations to avoid exponential blowup (saturating: the
+  // count itself can overflow usize for many large divisor sets).
+  let mut total: usize = 1;
+  for s in sets {
+    total = total.saturating_mul(s.len());
+    if total > 10000 {
+      return vec![];
+    }
   }
 
   let mut result = vec![vec![]];
