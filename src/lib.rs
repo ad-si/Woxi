@@ -4885,37 +4885,3 @@ fn extract_pattern_info_from_expr(
     _ => (String::new(), None),
   }
 }
-
-fn nth_prime(n: usize) -> usize {
-  if n == 0 {
-    return 0; // Return 0 for invalid input
-  }
-  let mut count = 0;
-  let mut num = 1;
-  while count < n {
-    num += 1;
-    if is_prime(num) {
-      count += 1;
-    }
-  }
-  num
-}
-
-pub fn is_prime(n: usize) -> bool {
-  if n <= 1 {
-    return false;
-  }
-  if n == 2 {
-    return true;
-  }
-  if n.is_multiple_of(2) {
-    return false;
-  }
-  let sqrt_n = (n as f64).sqrt() as usize;
-  for i in (3..=sqrt_n).step_by(2) {
-    if n.is_multiple_of(i) {
-      return false;
-    }
-  }
-  true
-}
