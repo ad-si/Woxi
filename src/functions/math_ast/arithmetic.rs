@@ -3472,8 +3472,7 @@ fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   if (!ra && !rb) || va != vb {
     return None;
   }
-  let degree =
-    |c: &[i128]| c.iter().rposition(|&k| k != 0).unwrap_or(0);
+  let degree = |c: &[i128]| c.iter().rposition(|&k| k != 0).unwrap_or(0);
   let (da, db) = (degree(&ca), degree(&cb));
   if da != db {
     return Some(da.cmp(&db));
@@ -7281,7 +7280,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if symbolic_args.len() == 1
     && let Some((cn, cd)) = (match &coeff {
       Expr::Integer(n) => Some((*n, 1i128)),
-      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
         match (&args[0], &args[1]) {
           (Expr::Integer(n), Expr::Integer(d)) if *d > 0 => Some((*n, *d)),
           _ => None,
@@ -7293,7 +7294,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let (base, exp) = extract_base_exponent(&symbolic_args[0]);
     let half = match &exp {
-      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
         match (&args[0], &args[1]) {
           (Expr::Integer(1), Expr::Integer(2)) => Some(1),
           (Expr::Integer(-1), Expr::Integer(2)) => Some(-1),
@@ -7304,7 +7307,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let base_frac = match &base {
       Expr::Integer(n) if *n > 0 => Some((*n, 1i128)),
-      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
         match (&args[0], &args[1]) {
           (Expr::Integer(n), Expr::Integer(d)) if *n > 0 && *d > 0 => {
             Some((*n, *d))
@@ -7321,11 +7326,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let merged = cn
         .checked_mul(cn)
         .and_then(|c2| c2.checked_mul(rn))
-        .and_then(|num| {
-          cd.checked_mul(cd)
-            .and_then(|d2| d2.checked_mul(rd))
-            .map(|den| (num, den))
-        });
+        .zip(cd.checked_mul(cd).and_then(|d2| d2.checked_mul(rd)));
       if let Some((mut num, mut den)) = merged {
         let g = gcd(num.abs(), den).max(1);
         num /= g;
