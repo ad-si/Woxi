@@ -12131,6 +12131,48 @@ mod infinite_log_series {
     );
   }
 
+  // Infinite products with provable tail behavior: |term| -> Infinity
+  // emits Product::div (n, n^2, Sqrt[n], n/2, 2^n all message), and
+  // |term| -> 0 gives 0 (Product[1/n], Product[2/n], Product[2^-n]).
+  // Convergent products and symbolic constants are unaffected. All
+  // verified against wolframscript 15.0.
+  #[test]
+  fn product_tail_behavior() {
+    for call in [
+      "Product[n, {n, 1, Infinity}]",
+      "Product[n^2, {n, 1, Infinity}]",
+      "Product[Sqrt[n], {n, 1, Infinity}]",
+      "Product[n/2, {n, 1, Infinity}]",
+      "Product[-n, {n, 1, Infinity}]",
+      "Product[2^n, {n, 1, Infinity}]",
+    ] {
+      clear_state();
+      interpret(call).unwrap();
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs
+          .iter()
+          .any(|m| m.contains("Product::div: Product does not converge.")),
+        "expected Product::div for {call}, got {msgs:?}"
+      );
+    }
+    assert_eq!(interpret("Product[1/n, {n, 1, Infinity}]").unwrap(), "0");
+    assert_eq!(interpret("Product[2/n, {n, 1, Infinity}]").unwrap(), "0");
+    assert_eq!(interpret("Product[1/n^2, {n, 1, Infinity}]").unwrap(), "0");
+    assert_eq!(interpret("Product[2^(-n), {n, 1, Infinity}]").unwrap(), "0");
+    // Convergent and undecidable cases are untouched
+    assert_eq!(
+      interpret("Product[1 + 1/n^2, {n, 1, Infinity}]").unwrap(),
+      "Sinh[Pi]/Pi"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Product[c, {n, 1, Infinity}]").unwrap(),
+      "Product[c, {n, 1, Infinity}]"
+    );
+    assert!(woxi::get_captured_messages_raw().is_empty());
+  }
+
   // Provably divergent infinite sums emit Sum::div before staying
   // unevaluated: p-series with p <= 1, polynomial growth, constants
   // (including symbolic ones — wolframscript treats them as generically

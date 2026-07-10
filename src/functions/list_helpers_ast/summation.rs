@@ -1378,6 +1378,29 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return Ok(result);
           }
 
+          // Terms with provable tail behavior: |term| -> Infinity means the
+          // product diverges (Product::div, matching wolframscript for n,
+          // n^2, Sqrt[n], n/2, -n and 2^n alike), and |term| -> 0 drives
+          // the product to 0 (Product[1/n] = 0, Product[2/n] = 0).
+          if matches!(max_expr, Expr::Identifier(s) if s == "Infinity")
+            && let Some(n0) = min_concrete
+            && product_early_terms_clean(body, &var_name, n0)
+            && let Some((rate, degree)) = product_growth(body, &var_name)
+          {
+            let diverges = rate > 0.0 || (rate == 0.0 && degree > 0.0);
+            let vanishes = rate < 0.0 || (rate == 0.0 && degree < 0.0);
+            if diverges {
+              crate::emit_message("Product::div: Product does not converge.");
+              return Ok(Expr::FunctionCall {
+                name: "Product".to_string(),
+                args: args.to_vec().into(),
+              });
+            }
+            if vanishes {
+              return Ok(Expr::Integer(0));
+            }
+          }
+
           // For other symbolic cases, return unevaluated
           return Ok(Expr::FunctionCall {
             name: "Product".to_string(),
@@ -1601,6 +1624,204 @@ fn summand_numeric_value(expr: &Expr) -> Option<f64> {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
     } => Some(-summand_numeric_value(operand)?),
+    _ => None,
+  }
+}
+
+/// The first few product terms must be finite, nonzero numerics before
+/// the tail analysis may conclude anything (a zero or pole among the
+/// early factors changes the story entirely).
+fn product_early_terms_clean(body: &Expr, var: &str, n0: i128) -> bool {
+  for k in 0..5 {
+    let substituted =
+      crate::syntax::substitute_variable(body, var, &Expr::Integer(n0 + k));
+    let value = match crate::evaluator::evaluate_expr_to_expr(&substituted) {
+      Ok(v) => v,
+      Err(_) => return false,
+    };
+    match crate::functions::math_ast::n_ast(&[value]) {
+      Ok(Expr::Real(r)) if r.is_finite() && r != 0.0 => {}
+      Ok(Expr::Integer(i)) if i != 0 => {}
+      _ => return false,
+    }
+  }
+  true
+}
+
+/// Asymptotic growth of a product term as (exponential rate, algebraic
+/// degree): term ~ e^(rate*var) * var^degree. Exponential factors a^var
+/// (numeric positive a, exponent linear in var) contribute ln(a)*slope to
+/// the rate; polynomial/rational/fractional-power structure contributes
+/// to the degree. None for anything else (Log factors, a^n with
+/// non-numeric base, unknown functions of var).
+fn product_growth(expr: &Expr, var: &str) -> Option<(f64, f64)> {
+  use crate::syntax::BinaryOperator;
+  if !summand_contains_var(expr, var) {
+    return Some((0.0, 0.0));
+  }
+  match expr {
+    Expr::Identifier(name) if name == var => Some((0.0, 1.0)),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let parts: Vec<(f64, f64)> = args
+        .iter()
+        .map(|a| product_growth(a, var))
+        .collect::<Option<Vec<_>>>()?;
+      if parts.iter().any(|(r, _)| *r != 0.0) {
+        return None; // mixed exponential sums are out of scope
+      }
+      Some((
+        0.0,
+        parts
+          .into_iter()
+          .map(|(_, d)| d)
+          .fold(f64::NEG_INFINITY, f64::max),
+      ))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut rate = 0.0;
+      let mut degree = 0.0;
+      for a in args.iter() {
+        let (r, d) = product_growth(a, var)?;
+        rate += r;
+        degree += d;
+      }
+      Some((rate, degree))
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      product_growth_power(&args[0], &args[1], var)
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      let (r, d) = product_growth(&args[0], var)?;
+      if r != 0.0 {
+        return None;
+      }
+      Some((0.0, d * 0.5))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    }
+    | Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let (rl, dl) = product_growth(left, var)?;
+      let (rr, dr) = product_growth(right, var)?;
+      if rl != 0.0 || rr != 0.0 {
+        return None;
+      }
+      Some((0.0, dl.max(dr)))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let (rl, dl) = product_growth(left, var)?;
+      let (rr, dr) = product_growth(right, var)?;
+      Some((rl + rr, dl + dr))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let (rl, dl) = product_growth(left, var)?;
+      let (rr, dr) = product_growth(right, var)?;
+      Some((rl - rr, dl - dr))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => product_growth_power(left, right, var),
+    Expr::UnaryOp { operand, .. } => product_growth(operand, var),
+    _ => None,
+  }
+}
+
+/// Growth of base^exp: a var-free numeric exponent scales the base growth;
+/// a positive numeric base with a var-linear exponent is an exponential
+/// factor with rate ln(base)*slope.
+fn product_growth_power(
+  base: &Expr,
+  exp: &Expr,
+  var: &str,
+) -> Option<(f64, f64)> {
+  if !summand_contains_var(exp, var) {
+    let q = summand_numeric_value(exp)?;
+    let (r, d) = product_growth(base, var)?;
+    return Some((r * q, d * q));
+  }
+  if summand_contains_var(base, var) {
+    return None; // var in both base and exponent (n^n): out of scope
+  }
+  let a = summand_numeric_value(base)?;
+  if a <= 0.0 {
+    return None;
+  }
+  let slope = linear_slope_in(exp, var)?;
+  Some((a.ln() * slope, 0.0))
+}
+
+/// The slope k of an expression linear in var (k*var + c with numeric k).
+fn linear_slope_in(expr: &Expr, var: &str) -> Option<f64> {
+  use crate::syntax::BinaryOperator;
+  if !summand_contains_var(expr, var) {
+    return Some(0.0);
+  }
+  match expr {
+    Expr::Identifier(name) if name == var => Some(1.0),
+    Expr::FunctionCall { name, args } if name == "Plus" => args
+      .iter()
+      .map(|a| linear_slope_in(a, var))
+      .sum::<Option<f64>>(),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      // Exactly one var-bearing factor, all others numeric.
+      let mut slope: Option<f64> = None;
+      let mut coeff = 1.0;
+      for a in args.iter() {
+        if summand_contains_var(a, var) {
+          if slope.is_some() {
+            return None;
+          }
+          slope = Some(linear_slope_in(a, var)?);
+        } else {
+          coeff *= summand_numeric_value(a)?;
+        }
+      }
+      Some(coeff * slope?)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Some(linear_slope_in(left, var)? + linear_slope_in(right, var)?),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => Some(linear_slope_in(left, var)? - linear_slope_in(right, var)?),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if summand_contains_var(left, var) && summand_contains_var(right, var) {
+        return None;
+      }
+      if summand_contains_var(left, var) {
+        Some(linear_slope_in(left, var)? * summand_numeric_value(right)?)
+      } else {
+        Some(summand_numeric_value(left)? * linear_slope_in(right, var)?)
+      }
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Some(-linear_slope_in(operand, var)?),
     _ => None,
   }
 }
