@@ -7580,11 +7580,29 @@ mod part_span {
     );
   }
 
+  // Span prints in head form in every context — wolframscript 15 never
+  // uses the ;; operator in output. Verified: Print[5 ;; 2] gives
+  // Span[5, 2], Hold[l[[5 ;; 2]]] gives Hold[l[[Span[5, 2]]]].
+  #[test]
+  fn span_prints_in_head_form() {
+    assert_eq!(interpret("5 ;; 2").unwrap(), "Span[5, 2]");
+    assert_eq!(interpret("1 ;; 10 ;; 2").unwrap(), "Span[1, 10, 2]");
+    assert_eq!(interpret(";;").unwrap(), "Span[1, All]");
+    assert_eq!(
+      interpret("Hold[l[[5 ;; 2]]]").unwrap(),
+      "Hold[l[[Span[5, 2]]]]"
+    );
+  }
+
+  // The unevaluated echo shows the Span in head form — wolframscript 15
+  // prints {a, b, c, d, e}[[Span[5, 2]]] and never uses the ;; operator
+  // in output (verified directly; the previous ;; expectation encoded a
+  // Woxi-only display).
   #[test]
   fn part_span_invalid_range_stays_unevaluated() {
     assert_eq!(
       interpret("Part[{a, b, c, d, e}, 5;;2]").unwrap(),
-      "{a, b, c, d, e}[[5 ;; 2]]"
+      "{a, b, c, d, e}[[Span[5, 2]]]"
     );
   }
 
@@ -7592,7 +7610,7 @@ mod part_span {
   fn part_span_invalid_range_with_step_stays_unevaluated() {
     assert_eq!(
       interpret("Part[{a, b, c, d, e}, 5;;2;;1]").unwrap(),
-      "{a, b, c, d, e}[[5 ;; 2 ;; 1]]"
+      "{a, b, c, d, e}[[Span[5, 2, 1]]]"
     );
   }
 

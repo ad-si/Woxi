@@ -6639,25 +6639,8 @@ fn format_times_with_denominator(
 }
 
 fn expr_to_part_index_string(expr: &Expr, form: ExprForm) -> String {
-  if let Expr::FunctionCall { name, args } = expr
-    && name == "Span"
-  {
-    if args.len() == 2 {
-      return format!(
-        "{} ;; {}",
-        expr_to_string(&args[0]),
-        expr_to_string(&args[1])
-      );
-    }
-    if args.len() == 3 {
-      return format!(
-        "{} ;; {} ;; {}",
-        expr_to_string(&args[0]),
-        expr_to_string(&args[1]),
-        expr_to_string(&args[2])
-      );
-    }
-  }
+  // Span indices keep their functional head form: wolframscript prints the
+  // unevaluated l[[Span[5, 2]]], never the `;;` operator.
   format_expr(expr, form)
 }
 
@@ -10289,7 +10272,10 @@ fn in_output_form() -> bool {
 }
 
 /// Whether the current render is the inner of a FullForm wrapper (see
-/// `IN_FULL_FORM`).
+/// `IN_FULL_FORM`). Currently unreferenced — Span, the last user, now
+/// always prints in head form — but kept alongside its guard for the next
+/// form-sensitive renderer.
+#[allow(dead_code)]
 fn in_full_form() -> bool {
   IN_FULL_FORM.with(|c| c.get())
 }
@@ -10499,27 +10485,10 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         input_form_rule_rhs(&args[1])
       )
     }
-    // Span[a, b] / Span[a, b, c] render with the `;;` operator, matching
-    // wolframscript; a nested Span argument is parenthesised. Inside a FullForm
-    // wrapper Span keeps its head form, so this branch is skipped there.
-    Expr::FunctionCall { name, args }
-      if name == "Span"
-        && (args.len() == 2 || args.len() == 3)
-        && !in_full_form() =>
-    {
-      args
-        .iter()
-        .map(|a| {
-          let s = expr_to_input_form(a);
-          if matches!(a, Expr::FunctionCall { name: n, .. } if n == "Span") {
-            format!("({})", s)
-          } else {
-            s
-          }
-        })
-        .collect::<Vec<_>>()
-        .join(" ;; ")
-    }
+    // Span always renders in its functional head form — wolframscript 15
+    // never prints the `;;` operator in any output form (Print[5 ;; 2],
+    // InputForm, and the unevaluated Part echo l[[Span[5, 2]]] all show
+    // Span[...]), so no operator special case here.
     // Pattern[name, body] displays as name:body in InputForm; wrap
     // looser-binding bodies (Condition/Rule/RuleDelayed/ReplaceAll/
     // ReplaceRepeated) in parens so `s:a /; b` doesn't flip to
