@@ -1743,6 +1743,23 @@ pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// StirlingS1[n, k] - Stirling number of the first kind (signed)
+/// Unevaluated Stirling call; a concrete numeric argument that is not a
+/// non-negative machine integer emits `::intnm` with the offending
+/// position, matching wolframscript (symbolic arguments stay silent).
+fn stirling_intnm_unevaluated(fname: &str, args: &[Expr], pos: usize) -> Expr {
+  let call = Expr::FunctionCall {
+    name: fname.to_string(),
+    args: args.to_vec().into(),
+  };
+  if is_concrete_number(&args[pos - 1]) {
+    crate::emit_message(&format!(
+      "{fname}::intnm: Non-negative machine-sized integer expected at position {pos} in {}.",
+      crate::syntax::expr_to_message_form(&call)
+    ));
+  }
+  call
+}
+
 pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1751,21 +1768,11 @@ pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n as usize,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "StirlingS1".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    _ => return Ok(stirling_intnm_unevaluated("StirlingS1", args, 1)),
   };
   let k = match expr_to_i128(&args[1]) {
     Some(k) if k >= 0 => k as usize,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "StirlingS1".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    _ => return Ok(stirling_intnm_unevaluated("StirlingS1", args, 2)),
   };
 
   if k > n {
@@ -1802,21 +1809,11 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n as usize,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "StirlingS2".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    _ => return Ok(stirling_intnm_unevaluated("StirlingS2", args, 1)),
   };
   let k = match expr_to_i128(&args[1]) {
     Some(k) if k >= 0 => k as usize,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "StirlingS2".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    _ => return Ok(stirling_intnm_unevaluated("StirlingS2", args, 2)),
   };
 
   if k > n {
@@ -4302,10 +4299,19 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return euler_phi_bigint(n).map(bigint_to_expr);
   }
 
-  Ok(Expr::FunctionCall {
+  let call = Expr::FunctionCall {
     name: "EulerPhi".to_string(),
     args: args.to_vec().into(),
-  })
+  };
+  // A concrete non-integer number emits ::int like wolframscript
+  // (EulerPhi[1/2], EulerPhi[2.5]); symbolic arguments stay silent.
+  if is_concrete_number(&args[0]) {
+    crate::emit_message(&format!(
+      "EulerPhi::int: Integer expected at position 1 in {}.",
+      crate::syntax::expr_to_message_form(&call)
+    ));
+  }
+  Ok(call)
 }
 
 /// Compute Euler's totient function for a BigInt by factoring and applying

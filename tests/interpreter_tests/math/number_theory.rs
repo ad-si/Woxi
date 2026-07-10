@@ -586,6 +586,57 @@ mod euler_phi {
     assert_eq!(interpret("EulerPhi[-11] == EulerPhi[11]").unwrap(), "True");
   }
 
+  // Concrete non-integer arguments emit ::int like wolframscript;
+  // symbolic arguments stay silent.
+  #[test]
+  fn non_integer_emits_int_message() {
+    clear_state();
+    assert_eq!(interpret("EulerPhi[1/2]").unwrap(), "EulerPhi[1/2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "EulerPhi::int: Integer expected at position 1 in EulerPhi[1/2]."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(interpret("EulerPhi[x]").unwrap(), "EulerPhi[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "symbolic arg should stay silent: {msgs:?}");
+  }
+
+  // StirlingS1/StirlingS2 emit position-specific ::intnm for concrete
+  // arguments that are not non-negative machine integers, matching
+  // wolframscript; symbolic arguments stay silent.
+  #[test]
+  fn stirling_intnm_messages() {
+    for (call, pos) in [
+      ("StirlingS1[-1, 2]", 1),
+      ("StirlingS1[2, -1]", 2),
+      ("StirlingS2[-1, 2]", 1),
+      ("StirlingS2[2, -1]", 2),
+      ("StirlingS1[1/2, 2]", 1),
+    ] {
+      let fname = &call[..10];
+      let msg = format!(
+        "{fname}::intnm: Non-negative machine-sized integer expected at position {pos} in {call}."
+      );
+      clear_state();
+      assert_eq!(interpret(call).unwrap(), call);
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&msg)),
+        "expected {msg:?} for {call}, got {msgs:?}"
+      );
+    }
+    // Symbolic arguments stay silent and the values still compute
+    clear_state();
+    assert_eq!(interpret("StirlingS1[n, 2]").unwrap(), "StirlingS1[n, 2]");
+    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(interpret("StirlingS1[5, 2]").unwrap(), "-50");
+    assert_eq!(interpret("StirlingS2[5, 2]").unwrap(), "15");
+  }
+
   #[test]
   fn list_argument() {
     assert_eq!(
