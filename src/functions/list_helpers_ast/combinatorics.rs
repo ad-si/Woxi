@@ -19,12 +19,19 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (items, head): (&[Expr], Option<&str>) = match &args[0] {
     Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
+    // Rational/Complex are atoms — their internal args must not permute.
+    Expr::FunctionCall { name, args: fc_args }
+      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
+        &args[0],
+      ) =>
+    {
+      (fc_args.as_slice(), Some(name.as_str()))
+    }
     _ => {
-      crate::emit_message(&format!(
-        "Permutations::normal: Nonatomic expression expected at position 1 in {}.",
-        show(&original())
-      ));
+      crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
+        "Permutations",
+        args,
+      );
       return Ok(original());
     }
   };
@@ -186,12 +193,19 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (items, head): (&[Expr], Option<&str>) = match &args[0] {
     Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
+    // Rational/Complex are atoms — their internal args must not enumerate.
+    Expr::FunctionCall { name, args: fc_args }
+      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
+        &args[0],
+      ) =>
+    {
+      (fc_args.as_slice(), Some(name.as_str()))
+    }
     _ => {
-      crate::emit_message(&format!(
-        "Subsets::normal: Nonatomic expression expected at position 1 in {}.",
-        show(&original())
-      ));
+      crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
+        "Subsets",
+        args,
+      );
       return Ok(original());
     }
   };

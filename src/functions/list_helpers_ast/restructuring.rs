@@ -323,7 +323,10 @@ pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::List(result.into()))
     }
-    Expr::FunctionCall { name, args } => {
+    // Rational/Complex are atoms — their internal args must not flatten.
+    Expr::FunctionCall { name, args }
+      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(list) =>
+    {
       // Flatten[f[f[a, b], f[c, d]]] -> f[a, b, c, d]
       // Recursively flatten subexpressions with the same head
       let mut result = Vec::new();
@@ -333,7 +336,19 @@ pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         args: result.into(),
       })
     }
-    _ => Ok(list.clone()),
+    _ => {
+      if crate::functions::list_helpers_ast::sorting::is_atomic_arg(list) {
+        crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
+          "Flatten",
+          std::slice::from_ref(list),
+        );
+        return Ok(Expr::FunctionCall {
+          name: "Flatten".to_string(),
+          args: vec![list.clone()].into(),
+        });
+      }
+      Ok(list.clone())
+    }
   }
 }
 
@@ -728,16 +743,22 @@ pub fn flatten_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
   let subject = &args[0];
+  // Rational/Complex are atoms — their internal args must not flatten.
   let subject_head: Option<&str> = match subject {
     Expr::List(_) => Some("List"),
-    Expr::FunctionCall { name, .. } => Some(name.as_str()),
+    Expr::FunctionCall { name, .. }
+      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
+        subject,
+      ) =>
+    {
+      Some(name.as_str())
+    }
     _ => None,
   };
   let Some(subject_head) = subject_head else {
-    crate::emit_message(&format!(
-      "Flatten::normal: Nonatomic expression expected at position 1 in {}.",
-      show(&original())
-    ));
+    crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
+      "Flatten", args,
+    );
     return Ok(original());
   };
 
@@ -887,7 +908,11 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       reversed.reverse();
       Ok(Expr::Association(reversed))
     }
-    Expr::FunctionCall { name, args } => {
+    // Rational/Complex are atoms — their internal args must not reverse
+    // (Reverse[3/4] emits Reverse::normal, it does not become 4/3).
+    Expr::FunctionCall { name, args }
+      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(list) =>
+    {
       let mut reversed = args.clone();
       reversed.reverse();
       Ok(Expr::FunctionCall {
@@ -903,10 +928,10 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       replacement: pattern.clone(),
     }),
     _ => {
-      crate::emit_message(&format!(
-        "Reverse::normal: Nonatomic expression expected at position 1 in Reverse[{}].",
-        crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
-      ));
+      crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
+        "Reverse",
+        &[list.clone()],
+      );
       Ok(Expr::FunctionCall {
         name: "Reverse".to_string(),
         args: vec![list.clone()].into(),

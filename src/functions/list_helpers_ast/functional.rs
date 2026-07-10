@@ -259,12 +259,17 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   // Determine the head to wrap the result in and the items to accumulate over.
   let (items, head): (&[Expr], Option<String>) = match list {
     Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
+    // Rational/Complex are atoms — their internal args must not accumulate.
+    Expr::FunctionCall { name, args }
+      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(list) =>
+    {
+      (args.as_slice(), Some(name.clone()))
+    }
     _ => {
-      crate::emit_message(&format!(
-        "Accumulate::normal: Nonatomic expression expected at position 1 in Accumulate[{}].",
-        crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
-      ));
+      crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
+        "Accumulate",
+        std::slice::from_ref(list),
+      );
       return Ok(Expr::FunctionCall {
         name: "Accumulate".to_string(),
         args: vec![list.clone()].into(),

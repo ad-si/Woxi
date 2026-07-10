@@ -2668,6 +2668,72 @@ mod together {
       "(1 - 2*x)/(1 + x)"
     );
   }
+
+  // The result denominator presents with its content hoisted: the largest
+  // common monomial and the positive integer content move in front of the
+  // primitive polynomial (differential-fuzzer regression, seed
+  // 12223212876560045487; all wolframscript-verified).
+  #[test]
+  fn denominator_content_hoisted() {
+    assert_eq!(
+      interpret("Together[1/(x + x^2 + 4 x^3)]").unwrap(),
+      "1/(x*(1 + x + 4*x^2))"
+    );
+    assert_eq!(
+      interpret("Together[(-3 + x + 2 x^2)/(-3 x + 4 x^2 + 4 x^3)]").unwrap(),
+      "(-1 + x)/(x*(-1 + 2*x))"
+    );
+    assert_eq!(
+      interpret("Together[1/(2 + 2 x)]").unwrap(),
+      "1/(2*(1 + x))"
+    );
+    assert_eq!(
+      interpret("Together[1/(x^2 + x^4)]").unwrap(),
+      "1/(x^2*(1 + x^2))"
+    );
+    assert_eq!(
+      interpret("Together[1/(x^2 y + x y^2)]").unwrap(),
+      "1/(x*y*(x + y))"
+    );
+    assert_eq!(
+      interpret("Together[1/(6 x + 4 x^2)]").unwrap(),
+      "1/(2*x*(3 + 2*x))"
+    );
+    assert_eq!(
+      interpret("Together[1/(x^2 - x)]").unwrap(),
+      "1/((-1 + x)*x)"
+    );
+    assert_eq!(
+      interpret("Together[1/(-2 x - 2 x^2)]").unwrap(),
+      "-1/2*1/(x*(1 + x))"
+    );
+    // A content-free polynomial denominator keeps the ^(-1) display.
+    assert_eq!(
+      interpret("Together[1/(1 + x + x^2)]").unwrap(),
+      "(1 + x + x^2)^(-1)"
+    );
+    // A factored denominator stays factored, primitive factors untouched.
+    assert_eq!(
+      interpret("Together[1/((x - 1) (x + 1))]").unwrap(),
+      "1/((-1 + x)*(1 + x))"
+    );
+  }
+
+  // The polynomial GCD cancellation sees through the numeric-content
+  // wrapper on a denominator: x/(4*(x^2 + x^3)) — the canonical form of
+  // x/(4 x^2 + 4 x^3) — still cancels the shared x
+  // (wolframscript-verified).
+  #[test]
+  fn cancellation_through_numeric_content() {
+    assert_eq!(
+      interpret("Together[x/(4 x^2 + 4 x^3)]").unwrap(),
+      "1/(4*x*(1 + x))"
+    );
+    assert_eq!(
+      interpret("Together[(x + x^2)/(4 x^2 + 4 x^3)]").unwrap(),
+      "1/(4*x)"
+    );
+  }
 }
 
 mod apart {

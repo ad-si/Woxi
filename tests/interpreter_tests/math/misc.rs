@@ -1919,3 +1919,69 @@ mod radical_coefficient_merge {
     );
   }
 }
+
+mod canonical_order_radicals {
+  use super::*;
+
+  // Canonical order strips number-literal coefficients before comparing
+  // and only breaks a tie on the symbolic part by coefficient, ascending
+  // (differential-fuzzer regression, seed 8305606480288499401; all
+  // wolframscript-verified).
+  #[test]
+  fn order_strips_numeric_coefficients() {
+    assert_eq!(interpret("Order[2*Sqrt[2], Sqrt[11]]").unwrap(), "1");
+    assert_eq!(interpret("Order[-Sqrt[11], 2*Sqrt[6]]").unwrap(), "-1");
+    assert_eq!(interpret("Order[2*x, y]").unwrap(), "1");
+    assert_eq!(interpret("Order[2*x, x]").unwrap(), "-1");
+    assert_eq!(interpret("Order[-x, x]").unwrap(), "1");
+  }
+
+  // Powers of integer bases order by base ascending, then exponent
+  // ascending (wolframscript-verified).
+  #[test]
+  fn integer_base_powers_order_numerically() {
+    assert_eq!(interpret("Order[Sqrt[2], Sqrt[11]]").unwrap(), "1");
+    assert_eq!(interpret("Order[2^(1/3), Sqrt[2]]").unwrap(), "1");
+    assert_eq!(interpret("Order[Sqrt[2], 2^(2/3)]").unwrap(), "1");
+    assert_eq!(
+      interpret("Sort[{Sqrt[11], 2*Sqrt[2]}]").unwrap(),
+      "{2*Sqrt[2], Sqrt[11]}"
+    );
+    assert_eq!(interpret("Sort[{y, 2*x}]").unwrap(), "{2*x, y}");
+  }
+
+  // Times orders Plus factors by their terms from the last (canonically
+  // greatest) one backward, comparing coefficient-stripped terms first
+  // (differential-fuzzer regression, seed 8305606480288499401; all
+  // wolframscript-verified).
+  #[test]
+  fn radical_sum_factors_order() {
+    assert_eq!(
+      interpret("InputForm[(1 + Sqrt[8]) (Sqrt[11] - Sqrt[5])]").unwrap(),
+      "InputForm[(1 + 2*Sqrt[2])*(-Sqrt[5] + Sqrt[11])]"
+    );
+    assert_eq!(
+      interpret("InputForm[(Sqrt[5] - Sqrt[11]) (2 Sqrt[6] - 2 Sqrt[2])]")
+        .unwrap(),
+      "InputForm[(-2*Sqrt[2] + 2*Sqrt[6])*(Sqrt[5] - Sqrt[11])]"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[Numerator[Times[Plus[Sqrt[24], Times[-1, Sqrt[8]]], \
+         Subtract[Times[-1, Sqrt[11]], Sqrt[5]]]]]"
+      )
+      .unwrap(),
+      "InputForm[(-2*Sqrt[2] + 2*Sqrt[6])*(-Sqrt[5] - Sqrt[11])]"
+    );
+    // Coefficient tie-breaks and mixed atom/radical sums keep their
+    // established order.
+    assert_eq!(
+      interpret("InputForm[(1 + 2 Sqrt[2]) (2 + Sqrt[2])]").unwrap(),
+      "InputForm[(2 + Sqrt[2])*(1 + 2*Sqrt[2])]"
+    );
+    assert_eq!(
+      interpret("InputForm[(1 + Sqrt[7]) (Sqrt[2] + Sqrt[3])]").unwrap(),
+      "InputForm[(Sqrt[2] + Sqrt[3])*(1 + Sqrt[7])]"
+    );
+  }
+}

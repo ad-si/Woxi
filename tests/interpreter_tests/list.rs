@@ -2357,6 +2357,45 @@ mod sort_atomic_normal {
       "unexpected normal message: {msgs:?}"
     );
   }
+
+  // Rational and Complex are atoms (AtomQ[5/3] = True) despite their
+  // FunctionCall storage: list functions must emit ::normal and stay
+  // unevaluated instead of operating on the internal arguments
+  // (all wolframscript-verified).
+  #[test]
+  fn rational_and_complex_are_atomic() {
+    for (input, result, tag) in [
+      ("Sort[5/3]", "Sort[5/3]", "Sort::normal"),
+      ("Reverse[3/4]", "Reverse[3/4]", "Reverse::normal"),
+      ("First[5/3]", "First[5/3]", "First::normal"),
+      ("Last[5/3]", "Last[5/3]", "Last::normal"),
+      ("Rest[5/3]", "Rest[5/3]", "Rest::normal"),
+      ("Most[5/3]", "Most[5/3]", "Most::normal"),
+      ("Ordering[5/3]", "Ordering[5/3]", "Ordering::normal"),
+      ("Flatten[5/3]", "Flatten[5/3]", "Flatten::normal"),
+      ("Permutations[5/3]", "Permutations[5/3]", "Permutations::normal"),
+      ("Subsets[5/3]", "Subsets[5/3]", "Subsets::normal"),
+      ("Accumulate[5/3]", "Accumulate[5/3]", "Accumulate::normal"),
+      ("Sort[1 + 2 I]", "Sort[1 + 2*I]", "Sort::normal"),
+      ("Reverse[1 + 2 I]", "Reverse[1 + 2*I]", "Reverse::normal"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), result, "result of {input}");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(tag)),
+        "expected {tag} for {input}, got {msgs:?}"
+      );
+    }
+    // A default still short-circuits the message.
+    clear_state();
+    assert_eq!(interpret("First[5/3, d]").unwrap(), "d");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("::normal")),
+      "unexpected normal message: {msgs:?}"
+    );
+  }
 }
 
 mod sort_canonical {
@@ -5737,6 +5776,31 @@ mod select {
         "expected {expected:?}, got {msgs:?}"
       );
     }
+  }
+
+  // Message arguments render in 2D OutputForm: a rational spans three
+  // lines with the message text on the baseline, exactly as wolframscript
+  // prints it (differential-fuzzer regression, seeds 7793970072796924757
+  // and 969150221792443187).
+  #[test]
+  fn normal_message_renders_rationals_2d() {
+    clear_state();
+    assert_eq!(
+      interpret("Select[(EvenQ), {Divide[-15, 9], Pi}]").unwrap(),
+      "Select[EvenQ, {-5/3, Pi}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    let pad = " ".repeat(80);
+    let expected = format!(
+      "{pad}5\n\
+       Select::normal: Nonatomic expression expected at position 1 in \
+       Select[EvenQ, {{-(-), Pi}}].\n\
+       {pad}3"
+    );
+    assert!(
+      msgs.iter().any(|m| *m == expected),
+      "expected {expected:?}, got {msgs:?}"
+    );
   }
 
   #[test]
