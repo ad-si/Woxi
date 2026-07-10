@@ -2402,7 +2402,7 @@ pub fn find_shortest_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Total-order wrapper for f64 Dijkstra costs (all non-negative, finite).
 mod ordered_f64 {
   #[derive(PartialEq)]
-  pub struct OrderedF64(pub f64);
+  pub(super) struct OrderedF64(pub f64);
   impl Eq for OrderedF64 {}
   impl PartialOrd for OrderedF64 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {

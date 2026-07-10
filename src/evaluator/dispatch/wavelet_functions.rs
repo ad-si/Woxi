@@ -10,7 +10,7 @@ use crate::functions::wavelet_ast as wa;
 use crate::functions::wavelet_ast::transforms::TransformKind;
 use crate::syntax::Expr;
 
-pub fn dispatch_wavelet_functions(
+pub(super) fn dispatch_wavelet_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {

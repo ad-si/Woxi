@@ -11,7 +11,7 @@ use runtimelib::{
 use std::path::Path;
 use uuid::Uuid;
 
-pub fn run(connection_file: Option<&std::path::Path>) -> Result<()> {
+pub(crate) fn run(connection_file: Option<&std::path::Path>) -> Result<()> {
   env_logger::Builder::from_env(
     env_logger::Env::default().default_filter_or("warn"),
   )
@@ -28,7 +28,7 @@ struct WoxiKernel {
 }
 
 impl WoxiKernel {
-  pub async fn start(connection_info: &ConnectionInfo) -> Result<()> {
+  pub(crate) async fn start(connection_info: &ConnectionInfo) -> Result<()> {
     let session_id = Uuid::new_v4().to_string();
     debug!("Starting kernel with session ID: {}", session_id);
 

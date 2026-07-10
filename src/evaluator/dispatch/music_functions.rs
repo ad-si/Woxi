@@ -8,7 +8,7 @@
 #[allow(unused_imports)]
 use super::*;
 
-pub fn dispatch_music_functions(
+pub(super) fn dispatch_music_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {

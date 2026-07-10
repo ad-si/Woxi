@@ -51,6 +51,11 @@ wasm = ["dep:wasm-bindgen", "dep:getrandom", "dep:console_error_panic_hook", "de
 # skipped. They run nightly via `make test-slow`.
 slow-tests = []
 
+# `pub` items rustc can't see from outside the crate escape the dead_code
+# lint; warning on them keeps dead code detectable via plain `cargo check`.
+[lints.rust]
+unreachable_pub = "warn"
+
 [dependencies]
 anyhow = "1.0.98"
 chrono = { version = "0.4", optional = true }

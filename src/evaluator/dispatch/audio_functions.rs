@@ -10,7 +10,7 @@ use crate::InterpreterError;
 use crate::functions::audio_ast as audio;
 use crate::syntax::Expr;
 
-pub fn dispatch_audio_functions(
+pub(super) fn dispatch_audio_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {

@@ -6614,7 +6614,7 @@ fn parse_neg_power_mono_sum(terms: &[Expr]) -> Option<Vec<(i128, i128, i128)>> {
 /// their decimal digit count plus one when negative, rationals cost
 /// numerator + denominator + 1, symbols and heads cost 1.
 mod quotient_cost {
-  pub fn sc_int(n: i128) -> i64 {
+  pub(super) fn sc_int(n: i128) -> i64 {
     let digits = if n == 0 {
       1
     } else {
@@ -6622,7 +6622,7 @@ mod quotient_cost {
     };
     digits + if n < 0 { 1 } else { 0 }
   }
-  pub fn sc_rat(n: i128, d: i128) -> i64 {
+  pub(super) fn sc_rat(n: i128, d: i128) -> i64 {
     if d == 1 {
       sc_int(n)
     } else {
@@ -6635,7 +6635,7 @@ mod quotient_cost {
   }
   /// A term (n/d)·x^e as WL stores it: unit coefficients vanish, any
   /// other coefficient adds a Times head + its own cost.
-  pub fn sc_term(n: i128, d: i128, e: i128) -> i64 {
+  pub(super) fn sc_term(n: i128, d: i128, e: i128) -> i64 {
     if e == 0 {
       return sc_rat(n, d);
     }
@@ -6647,7 +6647,7 @@ mod quotient_cost {
     }
   }
   /// A sum of (coeff_num, coeff_den, exponent) terms.
-  pub fn sc_sum(terms: &[(i128, i128, i128)]) -> i64 {
+  pub(super) fn sc_sum(terms: &[(i128, i128, i128)]) -> i64 {
     let body: i64 = terms.iter().map(|&(n, d, e)| sc_term(n, d, e)).sum();
     if terms.len() == 1 { body } else { 1 + body }
   }
@@ -6656,7 +6656,7 @@ mod quotient_cost {
   /// numerator lives entirely in `coeff`; `den` is either a sum (its
   /// terms, Power exponent -1) or a monomial x^k (den_mono = Some(k),
   /// coefficient already folded into `coeff`).
-  pub fn sc_quotient(
+  pub(super) fn sc_quotient(
     coeff: (i128, i128),
     num: &[(i128, i128, i128)],
     den_sum: Option<&[(i128, i128, i128)]>,

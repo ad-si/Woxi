@@ -893,7 +893,7 @@ pub(crate) enum Mesh {
 impl Filling {
   /// Compute the y-value to fill to, given the current plot y-range.
   /// Returns `None` for `Filling::None`.
-  pub fn reference_y(&self, y_min: f64, y_max: f64) -> Option<f64> {
+  pub(crate) fn reference_y(&self, y_min: f64, y_max: f64) -> Option<f64> {
     match self {
       Filling::None => None,
       Filling::Axis => Some(0.0),
@@ -905,7 +905,7 @@ impl Filling {
 
   /// Convert to the serializable `SeriesFilling` variant stored on
   /// `PlotSeriesData` so `Show` can re-render filled regions.
-  pub fn to_series_filling(self) -> crate::syntax::SeriesFilling {
+  pub(crate) fn to_series_filling(self) -> crate::syntax::SeriesFilling {
     match self {
       Filling::None => crate::syntax::SeriesFilling::None,
       Filling::Axis => crate::syntax::SeriesFilling::Axis,

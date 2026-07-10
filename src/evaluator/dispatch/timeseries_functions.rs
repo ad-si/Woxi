@@ -8,7 +8,7 @@ use crate::InterpreterError;
 use crate::functions::timeseries_ast;
 use crate::syntax::Expr;
 
-pub fn dispatch_timeseries_functions(
+pub(super) fn dispatch_timeseries_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
