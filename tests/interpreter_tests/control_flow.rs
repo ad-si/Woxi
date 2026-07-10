@@ -425,6 +425,77 @@ mod check {
     clear_state();
     assert_eq!(interpret("Check[1/0, 1 + 1]").unwrap(), "2");
   }
+
+  // The tag-filtered form only reacts to the listed messages. All
+  // outputs verified against wolframscript 15.0.
+  #[test]
+  fn check_with_message_tags() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Check[1/0, "err", Power::infy]"#).unwrap(),
+      "err"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"Check[1/0, "err", Sum::div]"#).unwrap(),
+      "ComplexInfinity"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"Check[1/0, "err", {Sum::div, Power::infy}]"#).unwrap(),
+      "err"
+    );
+  }
+
+  // User messages fill their `1` template slots with output-form
+  // arguments and register with Check like built-in messages do.
+  #[test]
+  fn user_message_templates_and_check() {
+    clear_state();
+    interpret(r#"f::mymsg = "Custom `1` here."; Message[f::mymsg, 42];"#)
+      .unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("f::mymsg: Custom 42 here.")),
+      "template slot not filled: {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"f::mymsg = "Custom `1` here."; Check[Message[f::mymsg, 1]; 7, "caught"]"#
+      )
+      .unwrap(),
+      "caught"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"f::mymsg = "Custom `1` here."; Check[Message[f::mymsg, 1]; 7, "caught", f::mymsg]"#
+      )
+      .unwrap(),
+      "caught"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"f::mymsg = "Custom `1` here."; Check[Message[f::mymsg, 1]; 7, "caught", g::other]"#
+      )
+      .unwrap(),
+      "7"
+    );
+  }
+
+  // Messages silenced by an inner Quiet don't trigger an outer Check.
+  #[test]
+  fn check_ignores_quieted_messages() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Check[Quiet[1/0], "err"]"#).unwrap(),
+      "ComplexInfinity"
+    );
+    clear_state();
+    assert_eq!(interpret(r#"Quiet[Check[1/0, "err"]]"#).unwrap(), "err");
+  }
 }
 
 mod abort {

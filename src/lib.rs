@@ -736,6 +736,11 @@ pub fn emit_message(msg: &str) {
   let _ = emit_message_core(msg);
 }
 
+/// Public wrapper for [`message_name`], used by Check's tag filtering.
+pub fn message_name_of(msg: &str) -> Option<String> {
+  message_name(msg)
+}
+
 /// Extract the `Symbol::tag` message name from a message string. Some
 /// messages start with right-aligned context lines (e.g. Power::indet
 /// prints the exponent above the base), so scan every line for the tag.

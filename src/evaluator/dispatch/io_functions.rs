@@ -58,12 +58,23 @@ pub fn dispatch_io_functions(
           Ok(Expr::String(s)) => s.clone(),
           _ => "-- Message text not found --".to_string(),
         };
-        // Wolfram writes messages to $Messages (conceptually a side-channel,
-        // separate from the expression's return value). We emit to stderr so
-        // they don't interfere with callers that capture stdout (e.g.
-        // ToString[Message[...]] → "Null").
-        eprintln!();
-        eprintln!("{}::{}: {}", sym_name, tag, text);
+        // Fill the `1`, `2`, ... template slots with the extra arguments
+        // (rendered in output form, so strings appear unquoted), matching
+        // wolframscript: Message[f::mymsg, 42] shows "Custom 42 here.".
+        let mut filled = text;
+        for (i, arg) in args[1..].iter().enumerate() {
+          let placeholder = format!("`{}`", i + 1);
+          if filled.contains(&placeholder) {
+            let shown =
+              crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output);
+            filled = filled.replace(&placeholder, &shown);
+          }
+        }
+        // Route through emit_message so the message is captured (Check
+        // reacts to user messages), respects Quiet/Off, participates in
+        // General::stop suppression, and reaches the same stream as
+        // built-in messages.
+        crate::emit_message(&format!("{}::{}: {}", sym_name, tag, filled));
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
     }

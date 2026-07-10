@@ -1831,13 +1831,47 @@ pub fn evaluate_expr_to_expr_inner(
             Err(e) => return Err(e),
           }
         }
-        // Special handling for Check[expr, failexpr]
-        if name == "Check" && args.len() == 2 {
+        // Special handling for Check[expr, failexpr] and the tag-filtered
+        // Check[expr, failexpr, s1::t1, ...] form (tags may also come in
+        // lists). With tags, only the listed messages trigger failexpr.
+        if name == "Check" && args.len() >= 2 {
+          fn collect_message_tags(e: &Expr, out: &mut Vec<String>) {
+            match e {
+              Expr::FunctionCall { name, args }
+                if name == "MessageName" && args.len() == 2 =>
+              {
+                let sym = crate::syntax::expr_to_string(&args[0]);
+                let tag = match &args[1] {
+                  Expr::String(s) => s.clone(),
+                  other => crate::syntax::expr_to_string(other),
+                };
+                out.push(format!("{sym}::{tag}"));
+              }
+              Expr::List(items) => {
+                for item in items {
+                  collect_message_tags(item, out);
+                }
+              }
+              _ => {}
+            }
+          }
           let warnings_before = crate::get_captured_warnings().len();
+          let msgs_before = crate::get_captured_messages_raw().len();
           match evaluate_expr_to_expr(&args[0]) {
             Ok(result) => {
-              let warnings_after = crate::get_captured_warnings().len();
-              if warnings_after > warnings_before {
+              let triggered = if args.len() == 2 {
+                crate::get_captured_warnings().len() > warnings_before
+              } else {
+                let mut tags: Vec<String> = Vec::new();
+                for spec in &args[2..] {
+                  collect_message_tags(spec, &mut tags);
+                }
+                let msgs = crate::get_captured_messages_raw();
+                msgs[msgs_before.min(msgs.len())..].iter().any(|m| {
+                  crate::message_name_of(m).is_some_and(|n| tags.contains(&n))
+                })
+              };
+              if triggered {
                 return Err(InterpreterError::TailCall(Box::new(
                   args[1].clone(),
                 )));
