@@ -240,6 +240,21 @@ pub(crate) fn expr_to_f64(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// `expr_to_f64` extended with exact rationals (`Rational[n, d]`), for the
+/// histogram/bin-count family whose data wolframscript machine-numericizes.
+pub(crate) fn numeric_expr_to_f64(expr: &Expr) -> Option<f64> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Rational"
+    && args.len() == 2
+  {
+    return match (expr_to_f64(&args[0]), expr_to_f64(&args[1])) {
+      (Some(n), Some(d)) if d != 0.0 => Some(n / d),
+      _ => None,
+    };
+  }
+  expr_to_f64(expr)
+}
+
 /// Helper to convert f64 to appropriate Expr
 pub fn f64_to_expr(n: f64) -> Expr {
   if n.fract() == 0.0 && n.abs() < i128::MAX as f64 {

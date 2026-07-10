@@ -1916,10 +1916,7 @@ mod cancel {
     assert_eq!(interpret("Together[-1/(1 + x)]").unwrap(), "(-1 - x)^(-1)");
     // Boundaries: a product denominator keeps its rational coefficient, a
     // non-unit numerator is untouched, and Simplify does NOT fold.
-    assert_eq!(
-      interpret("Cancel[-1/(2 + 2 x)]").unwrap(),
-      "-1/2*1/(1 + x)"
-    );
+    assert_eq!(interpret("Cancel[-1/(2 + 2 x)]").unwrap(), "-1/2*1/(1 + x)");
     assert_eq!(interpret("Cancel[-2/(1 + x)]").unwrap(), "-2/(1 + x)");
     assert_eq!(interpret("Simplify[-1/(1 + x)]").unwrap(), "-(1 + x)^(-1)");
   }

@@ -1224,6 +1224,175 @@ mod histogram_list {
   fn symbolic_returns_unevaluated() {
     assert_eq!(interpret("HistogramList[x]").unwrap(), "HistogramList[x]");
   }
+
+  // HistogramList[data, n]: wolframscript's userBinningN — the width is
+  // (max-min)/(n-1) floored by the smallest data gap and snapped to the
+  // linearly nearest of {1,2,5,10}*10^k (ties to the smaller nice number).
+  #[test]
+  fn bin_count_spec_nice_widths() {
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3, 3, 3}, 2]").unwrap(),
+      "{{0, 2, 4}, {1, 5}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{1.5, 2.3, 4.7, 8.1, 9.9}, 3]").unwrap(),
+      "{{0, 5, 10}, {3, 2}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{1.5, 2.3, 4.7, 8.1, 9.9}, 5]").unwrap(),
+      "{{0, 2, 4, 6, 8, 10}, {1, 1, 1, 0, 2}}"
+    );
+    // Tie 1.5 between 1 and 2 goes to the smaller nice width.
+    assert_eq!(
+      interpret("HistogramList[{1, 2.5, 4}, 3]").unwrap(),
+      "{{1, 2, 3, 4, 5}, {1, 1, 0, 1}}"
+    );
+    // Rational bin widths give exact rational edges.
+    assert_eq!(
+      interpret("HistogramList[{0.1, 0.15, 0.2, 0.9}, 4]").unwrap(),
+      "{{0, 1/5, 2/5, 3/5, 4/5, 1}, {2, 1, 0, 0, 1}}"
+    );
+    // A maximum lying exactly on an edge gets pushed into an extra bin.
+    assert_eq!(
+      interpret("HistogramList[Range[100], 10]").unwrap(),
+      "{{0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110}, \
+       {9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 1}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[Range[10], 3]").unwrap(),
+      "{{0, 5, 10, 15}, {4, 5, 1}}"
+    );
+  }
+
+  // n = 1 keeps only the two end edges of the aligned cover (which is why
+  // the single bin can have a non-nice width like 4).
+  #[test]
+  fn bin_count_spec_single_bin() {
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3, 3, 3}, 1]").unwrap(),
+      "{{0, 4}, {6}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{1.5, 2.3, 4.7, 8.1, 9.9}, 1]").unwrap(),
+      "{{0, 10}, {5}}"
+    );
+  }
+
+  // The smallest gap between sorted values floors the width, so a huge n
+  // cannot make bins finer than the data resolution.
+  #[test]
+  fn bin_count_spec_granularity_floor() {
+    assert_eq!(
+      interpret("HistogramList[{1.5, 2.3, 4.7, 8.1, 9.9}, 100]").unwrap(),
+      "{{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, {1, 1, 0, 1, 0, 0, 0, 1, 1}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{0.3, 9.7}, 4]").unwrap(),
+      "{{0, 10}, {2}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{1.0, 1.3, 5.0}, 50]").unwrap(),
+      "{{1, 6/5, 7/5, 8/5, 9/5, 2, 11/5, 12/5, 13/5, 14/5, 3, 16/5, 17/5, \
+       18/5, 19/5, 4, 21/5, 22/5, 23/5, 24/5, 5, 26/5}, \
+       {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}}"
+    );
+  }
+
+  // Centering: when the smallest data gap equals the chosen width (with a
+  // 1/2/5 mantissa) and the FIRST value is a multiple of it, edges shift by
+  // half a bin and become reals. wolframscript's result really does depend
+  // on the data order, and a value on the shifted last edge is dropped.
+  #[test]
+  fn bin_count_spec_centering() {
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3, 3, 3}, 3]").unwrap(),
+      "{{0.5, 1.5, 2.5, 3.5}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3, 3, 3}, 4]").unwrap(),
+      "{{0.5, 1.5, 2.5, 3.5}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{2., 3., 4.5}, 3]").unwrap(),
+      "{{1.5, 2.5, 3.5, 4.5}, {1, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{4.5, 3., 2.}, 3]").unwrap(),
+      "{{2, 3, 4, 5}, {1, 1, 1}}"
+    );
+    // Negative on-multiple minima gain an extra bin below and lose the
+    // maximum off the shifted top edge — faithful to wolframscript.
+    assert_eq!(
+      interpret("HistogramList[{-3, -2, -1}, 3]").unwrap(),
+      "{{-4.5, -3.5, -2.5, -1.5}, {0, 1, 1}}"
+    );
+  }
+
+  // All-identical data: exactly n machine-real bins over mean ± 1/2; a
+  // single data point gets one exact half-integer bin instead.
+  #[test]
+  fn bin_count_spec_degenerate_data() {
+    assert_eq!(
+      interpret("HistogramList[{5, 5, 5}, 3]").unwrap(),
+      "{{4.5, 4.833333333333333, 5.166666666666667, 5.5}, {0, 3, 0}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{5, 5, 5}, 1]").unwrap(),
+      "{{4.5, 5.5}, {3}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{0, 0, 0}, 2]").unwrap(),
+      "{{-0.5, 0., 0.5}, {0, 3}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{7}, 3]").unwrap(),
+      "{{13/2, 15/2}, {1}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{7.5}, 3]").unwrap(),
+      "{{7, 8}, {1}}"
+    );
+  }
+
+  // Exact rational data is machine-numericized like wolframscript does
+  // (previously it was silently dropped as non-numeric).
+  #[test]
+  fn rational_data() {
+    assert_eq!(
+      interpret("HistogramList[{1/2, 3/2, 5/2, 7/2}]").unwrap(),
+      "{{0, 2, 4}, {2, 2}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{1/2, 3/2, 5/2, 7/2}, 3]").unwrap(),
+      "{{0, 1, 2, 3, 4}, {1, 1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret("BinCounts[{1/2, 3/2, 5/2}, {0, 3, 1}]").unwrap(),
+      "{1, 1, 1}"
+    );
+    assert_eq!(
+      interpret("BinLists[{1/2, 3/2, 5/2}, {0, 3, 1}]").unwrap(),
+      "{{1/2}, {3/2}, {5/2}}"
+    );
+  }
+
+  // Invalid bare bin specs emit ::hbins; a positive Real falls back to
+  // automatic binning while zero/negative specs stay unevaluated.
+  #[test]
+  fn bin_count_spec_invalid() {
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3, 3, 3}, 2.]").unwrap(),
+      "{{0.5, 1.5, 2.5, 3.5}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3, 3, 3}, 0]").unwrap(),
+      "HistogramList[{1, 2, 2, 3, 3, 3}, 0]"
+    );
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3, 3, 3}, -2]").unwrap(),
+      "HistogramList[{1, 2, 2, 3, 3, 3}, -2]"
+    );
+  }
 }
 
 mod total {
