@@ -3142,6 +3142,17 @@ fn distribution_moment(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
 
+  // The Cauchy distribution has no finite moments: every central moment of
+  // order >= 1 is Indeterminate (the raw-moment path just fails to close, so
+  // Skewness/Kurtosis would otherwise carry an unevaluated CentralMoment).
+  if two_params_of(dist, "CauchyDistribution").is_some() {
+    return Ok(Some(if n == 0 {
+      Expr::Integer(1)
+    } else {
+      Expr::Identifier("Indeterminate".to_string())
+    }));
+  }
+
   // Logistic central moments are 0 for odd n and, for even n,
   //   (-1)^(n/2-1) * (2^n - 2) * BernoulliB[n] * Pi^n * b^n
   // (from the central MGF Pi t / Sin[Pi t]). The generic raw-moment path does

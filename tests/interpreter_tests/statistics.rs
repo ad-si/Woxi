@@ -2780,6 +2780,40 @@ mod logistic_moments {
   }
 }
 
+// The Cauchy distribution has no finite moments: every central moment of order
+// >= 1 is Indeterminate, so Skewness and Kurtosis are Indeterminate too.
+mod cauchy_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[CauchyDistribution[a, b], 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("CentralMoment[CauchyDistribution[a, b], 3]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("CentralMoment[CauchyDistribution[a, b], 4]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[CauchyDistribution[a, b]]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Kurtosis[CauchyDistribution[a, b]]").unwrap(),
+      "Indeterminate"
+    );
+  }
+}
+
 mod factorial_moment {
   use super::*;
 
