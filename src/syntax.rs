@@ -104,21 +104,6 @@ impl std::iter::FromIterator<Self> for WoNum {
   }
 }
 
-pub fn wonum_to_number_str(wo_num: WoNum) -> String {
-  match wo_num {
-    WoNum::Int(x) => x.to_string(),
-    WoNum::Float(x) => x.to_string(),
-  }
-}
-
-pub fn str_to_wonum(num_str: &str) -> WoNum {
-  num_str
-    .parse::<i128>()
-    .map(WoNum::Int)
-    .or(num_str.parse::<f64>().map(WoNum::Float))
-    .unwrap()
-}
-
 impl WoNum {
   pub fn abs(self) -> Self {
     match self {

@@ -501,27 +501,3 @@ pub fn split_list_elements(inner: &str) -> Vec<String> {
 
   elements
 }
-
-/// Apply ReplaceRepeated with direct pattern and replacement strings
-pub fn apply_replace_repeated_direct(
-  expr: &str,
-  pattern: &str,
-  replacement: &str,
-) -> Result<String, InterpreterError> {
-  let mut current = expr.to_string();
-  let max_iterations = 1000; // Prevent infinite loops
-
-  for _ in 0..max_iterations {
-    let next = replace_in_expr(&current, pattern, replacement);
-
-    if next == current {
-      // No more changes, we're done
-      break;
-    }
-
-    // Re-evaluate to simplify (preserve FullForm for round-tripping)
-    current = evaluate_fullform(&next).unwrap_or(next);
-  }
-
-  Ok(current)
-}

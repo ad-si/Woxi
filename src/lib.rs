@@ -4298,66 +4298,6 @@ pub fn format_real_result(result: f64) -> String {
   syntax::format_real(result)
 }
 
-/// GCD helper function for fraction simplification
-fn gcd_i64(a: i64, b: i64) -> i64 {
-  let mut a = a.abs();
-  let mut b = b.abs();
-  while b != 0 {
-    let temp = b;
-    b = a % b;
-    a = temp;
-  }
-  a
-}
-
-/// Format a rational number as a fraction (numerator/denominator)
-pub fn format_fraction(numerator: i64, denominator: i64) -> String {
-  if denominator == 0 {
-    return "ComplexInfinity".to_string();
-  }
-  let g = gcd_i64(numerator, denominator);
-  let num = numerator / g;
-  let den = denominator / g;
-
-  // Handle sign
-  let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
-
-  if den == 1 {
-    num.to_string()
-  } else {
-    format!("{}/{}", num, den)
-  }
-}
-
-// Parse display-form strings like "{1, 2, 3}" into top-level comma-separated
-// element strings.  Returns None if `s` is not a braced list.
-pub fn parse_list_string(s: &str) -> Option<Vec<String>> {
-  if !(s.starts_with('{') && s.ends_with('}')) {
-    return None;
-  }
-  let inner = &s[1..s.len() - 1];
-  let mut parts = Vec::new();
-  let mut depth = 0usize;
-  let mut start = 0usize;
-  for (i, c) in inner.char_indices() {
-    match c {
-      '{' | '[' | '(' | '<' => depth += 1,
-      '}' | ']' | ')' | '>' => {
-        depth = depth.saturating_sub(1);
-      }
-      ',' if depth == 0 => {
-        parts.push(inner[start..i].trim().to_string());
-        start = i + 1;
-      }
-      _ => {}
-    }
-  }
-  if start < inner.len() {
-    parts.push(inner[start..].trim().to_string());
-  }
-  Some(parts)
-}
-
 fn store_function_definition(
   pair: Pair<Rule>,
 ) -> Result<Option<String>, InterpreterError> {
