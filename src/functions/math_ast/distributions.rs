@@ -8319,7 +8319,6 @@ fn distribution_raw_moment(
     matches!(e, Expr::Integer(_) | Expr::Real(_))
       || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
   };
-  let factorial = |n: i128| -> i128 { (2..=n).product() };
 
   match dist_name {
     // E[x^k] = p for every k >= 1: the support is {0, 1}, so x^k = x.
@@ -8327,7 +8326,7 @@ fn distribution_raw_moment(
     "BernoulliDistribution" if dargs.len() == 1 => Some(dargs[0].clone()),
     // E[x^k] = k!/lambda^k
     "ExponentialDistribution" if dargs.len() == 1 => {
-      eval(divide(int(factorial(k)), power(dargs[0].clone(), int(k)))).ok()
+      eval(divide(int(fact(k)), power(dargs[0].clone(), int(k)))).ok()
     }
     // E[x^k] = (a^k + a^(k-1) b + ... + b^k)/(k + 1)
     "UniformDistribution" if dargs.len() == 1 => {
@@ -9513,7 +9512,11 @@ fn uniform_sum_n(dargs: &[Expr]) -> Option<i128> {
 }
 
 fn fact(n: i128) -> i128 {
-  (2..=n).product::<i128>().max(1)
+  let mut result = 1i128;
+  for i in 2..=n {
+    result *= i;
+  }
+  result
 }
 
 /// (x - k)^p as the raw print form (-k + x)^p, or (n - k - x)^p when
@@ -9597,15 +9600,24 @@ fn inclusion_exclusion_piece(
 fn cdf_expanded_coeffs(n: i128, j: i128) -> Vec<(i128, i128)> {
   let nf = fact(n);
   let mut coeffs = vec![0i128; (n + 1) as usize];
-  for k in 0..=j {
-    let sign = if k % 2 == 0 { 1 } else { -1 };
-    let c_nk = crate::functions::binomial_coeff(n, k) * sign;
+  let mut c_nk = 1i128; // C(n,k)
+  // (-1)^0 C(n,0) (x-0)^n = x^n
+  coeffs[n as usize] = 1;
+  for k in 1..=j {
     // (x - k)^n = sum_i C(n,i) x^i (-k)^(n-i)
+    let sign = if k % 2 == 0 { 1 } else { -1 };
+    c_nk = (c_nk * (n - k + 1)) / k; // C(n,k)
+    let mut c_ni = 1i128; // C(n,i)
+    let mut mk_ni = 1i128; // (-k)^(n-i)
+    for _ in 0..n {
+      mk_ni *= -k;
+    }
     for i in 0..=n {
-      let mut term = c_nk * crate::functions::binomial_coeff(n, i);
-      for _ in 0..(n - i) {
-        term *= -k;
+      if i > 0 {
+        c_ni = (c_ni * (n - i + 1)) / i; // C(n,i)
+        mk_ni /= -k; // (-k)^(n-i)
       }
+      let term = sign * c_nk * c_ni * mk_ni;
       coeffs[i as usize] += term;
     }
   }
