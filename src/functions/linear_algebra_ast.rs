@@ -6771,6 +6771,23 @@ pub fn cholesky_decomposition_ast(
   })
 }
 
+/// Whether an expression mentions the imaginary unit in any spelling
+/// (the constant/identifier `I` or a `Complex[...]` literal).
+fn contains_imaginary_unit(e: &Expr) -> bool {
+  match e {
+    Expr::Constant(c) | Expr::Identifier(c) => c == "I",
+    Expr::FunctionCall { name, args } => {
+      name == "Complex" || args.iter().any(contains_imaginary_unit)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_imaginary_unit(left) || contains_imaginary_unit(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_imaginary_unit(operand),
+    Expr::List(items) => items.iter().any(contains_imaginary_unit),
+    _ => false,
+  }
+}
+
 pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::syntax::BinaryOperator;
 
@@ -6792,6 +6809,31 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let m = matrix[0].len(); // cols
 
+  // Complex matrices need the Hermitian inner product Σ Conjugate[aₖ]·bₖ
+  // (a plain dot product made ‖(1, I)‖² = 0 and produced ComplexInfinity
+  // garbage) and the returned q rows are conjugated so that
+  // ConjugateTranspose[q].r reconstructs the input. Real and symbolic
+  // matrices keep the plain dot product (wolframscript's symbolic QR
+  // carries Conjugate wrappers everywhere, which is out of scope here).
+  let complex = matrix
+    .iter()
+    .any(|row| row.iter().any(contains_imaginary_unit));
+  let conj = |e: &Expr| -> Result<Expr, InterpreterError> {
+    eval_expr(&Expr::FunctionCall {
+      name: "Conjugate".to_string(),
+      args: vec![e.clone()].into(),
+    })
+  };
+  let dot = |a: &[Expr], b: &[Expr]| -> Result<Expr, InterpreterError> {
+    if complex {
+      let conj_a: Vec<Expr> =
+        a.iter().map(&conj).collect::<Result<Vec<_>, _>>()?;
+      eval_dot_product(&conj_a, b)
+    } else {
+      eval_dot_product(a, b)
+    }
+  };
+
   // Extract columns
   let mut cols: Vec<Vec<Expr>> = Vec::with_capacity(m);
   for j in 0..m {
@@ -6809,7 +6851,7 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for i in 0..n.min(m) {
     // Compute norm of u[i]
-    let norm_sq = eval_dot_product(&u[i], &u[i])?;
+    let norm_sq = dot(&u[i], &u[i])?;
     let norm = eval_expr(&make_sqrt(norm_sq.clone()))?;
 
     // R[i][i] = norm
@@ -6828,7 +6870,7 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Orthogonalize remaining columns
     for j in (i + 1)..m {
-      let proj = eval_dot_product(&qi, &u[j])?;
+      let proj = dot(&qi, &u[j])?;
       r_entries[i][j] = proj.clone();
       for k in 0..n {
         u[j][k] = eval_expr(&Expr::BinaryOp {
@@ -6844,9 +6886,18 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Build Q^T (rows of Q^T = the qi vectors)
-  let qt_expr = Expr::List(
+  // Build Q^T (rows of Q^T = the qi vectors, conjugated for complex input
+  // so that ConjugateTranspose[q].r == m).
+  let q_rows: Vec<Vec<Expr>> = if complex {
     q.iter()
+      .map(|row| row.iter().map(&conj).collect::<Result<Vec<_>, _>>())
+      .collect::<Result<Vec<_>, _>>()?
+  } else {
+    q
+  };
+  let qt_expr = Expr::List(
+    q_rows
+      .iter()
       .map(|row| Expr::List(row.iter().map(simplify_radical_factor).collect()))
       .collect(),
   );

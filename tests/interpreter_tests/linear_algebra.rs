@@ -4321,6 +4321,23 @@ mod cases {
       r#"{{{1/Sqrt[35], 3/Sqrt[35], Sqrt[5/7]}, {13/Sqrt[210], 2*Sqrt[2/105], -Sqrt[5/42]}}, {{Sqrt[35], 44/Sqrt[35]}, {0, 2*Sqrt[6/35]}}}"#,
     );
   }
+  // Complex matrices use the Hermitian inner product and conjugated q
+  // rows (ConjugateTranspose[q].r == m). The plain dot product previously
+  // made the norm of (1, I) zero, producing ComplexInfinity garbage.
+  // Both expected outputs verified against wolframscript 15.0.
+  #[test]
+  fn qr_decomposition_complex_hermitian_inner_product() {
+    assert_case(
+      r#"QRDecomposition[{{2, I}, {-I, 2}}]"#,
+      r#"{{{2/Sqrt[5], I/Sqrt[5]}, {I/Sqrt[5], 2/Sqrt[5]}}, {{Sqrt[5], (4*I)/Sqrt[5]}, {0, 3/Sqrt[5]}}}"#,
+    );
+    // Value check that sidesteps a printer-form difference for -I/Sqrt[2]
+    // (wolframscript agrees this SameQ is True)
+    assert_case(
+      r#"QRDecomposition[{{1, I}, {I, 1}}] === {{{1/Sqrt[2], -I/Sqrt[2]}, {-I/Sqrt[2], 1/Sqrt[2]}}, {{Sqrt[2], 0}, {0, Sqrt[2]}}}"#,
+      r#"True"#,
+    );
+  }
   #[test]
   fn row_reduce_1() {
     assert_case(

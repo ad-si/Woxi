@@ -2072,6 +2072,32 @@ mod together {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
   }
 
+  // Arguments that evaluate to plain numbers stay those numbers.
+  // Together[1/3 + I/3] previously spun the complex scalar through an
+  // infinite Together/Cancel/Factor recursion (stack overflow); Simplify
+  // of any product with a complex-rational coefficient crashed the same
+  // way. All expected outputs verified against wolframscript 15.0.
+  #[test]
+  fn together_numeric_scalars() {
+    assert_eq!(interpret("Together[1/3 + I/3]").unwrap(), "1/3 + I/3");
+    assert_eq!(
+      interpret("Together[2*(1/3 + I/3)]").unwrap(),
+      "2/3 + (2*I)/3"
+    );
+    assert_eq!(interpret("Together[6/4]").unwrap(), "3/2");
+    // Constant expressions that are not number atoms still combine
+    assert_eq!(interpret("Together[1 - E^(-2)]").unwrap(), "(-1 + E^2)/E^2");
+  }
+
+  // Regression: these overflowed the stack via the numeric-fraction
+  // Cancel/Factor cycle before the pure-number guards existed.
+  #[test]
+  fn simplify_complex_rational_coefficient_terminates() {
+    assert!(interpret("Simplify[Sqrt[2]*(1/3 + I/3)]").is_ok());
+    assert!(interpret("FullSimplify[Sqrt[2]*(1/3 + I/3)]").is_ok());
+    assert!(interpret("Simplify[(Sqrt[11]*(-4/11 + (4*I)/11))/4]").is_ok());
+  }
+
   // wolframscript canonicalizes every variable-bearing sum factor of the
   // denominator to a positive sign (univariate: leading coefficient;
   // multivariate: first non-numeric canonical term), the numerator

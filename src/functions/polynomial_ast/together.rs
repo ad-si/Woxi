@@ -21,6 +21,30 @@ pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results.into()));
   }
+  // An argument that evaluates to a plain number is left as that number.
+  // In particular wolframscript keeps Together[1/3 + I/3] as the complex
+  // scalar 1/3 + I/3 rather than the rebuilt quotient (1 + I)/3 (which is
+  // also what the fraction-combining path spun into an infinite
+  // Together/Cancel/Factor recursion on). Constant expressions that are
+  // not number atoms still combine: Together[1 - E^(-2)] = (-1 + E^2)/E^2.
+  {
+    let mut vars = std::collections::HashSet::new();
+    super::simplify::collect_variables(&args[0], &mut vars);
+    vars.remove("I");
+    if vars.is_empty()
+      && let Ok(value) = crate::evaluator::evaluate_expr_to_expr(&args[0])
+      && (matches!(
+        &value,
+        Expr::Integer(_)
+          | Expr::Real(_)
+          | Expr::BigInteger(_)
+          | Expr::BigFloat(_, _)
+      ) || matches!(&value, Expr::FunctionCall { name, .. } if name == "Rational")
+        || crate::functions::predicate_ast::is_complex_number(&value))
+    {
+      return Ok(value);
+    }
+  }
   Ok(canonicalize_together_result(&together_expr(&args[0])))
 }
 
@@ -29,6 +53,12 @@ pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// (e.g. the Simplify pipeline, whose flip rule is weaker) keep the raw
 /// quotient sign from `together_expr`.
 fn canonicalize_together_result(expr: &Expr) -> Expr {
+  // A complex-rational scalar is an atom: wolframscript's Together leaves
+  // 1/3 + I/3 as-is rather than rebuilding it as the quotient (1 + I)/3
+  // (extract_num_den would read the rational parts as a denominator).
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Complex") {
+    return expr.clone();
+  }
   let (num, den) = extract_num_den(expr);
   if matches!(&den, Expr::Integer(1)) {
     return expr.clone();
@@ -876,6 +906,15 @@ fn try_reduce_to_polynomial(num: &Expr, den: &Expr) -> Option<Expr> {
   }
   let mut vars = std::collections::HashSet::new();
   super::simplify::collect_variables(&frac, &mut vars);
+  // The imaginary unit is not a polynomial variable.
+  vars.remove("I");
+  // A purely numeric fraction (e.g. Complex[1, 1]/3 from Together on a
+  // complex-rational scalar) has nothing polynomial to reduce — and
+  // running it through Cancel/Factor recurses forever: Factor calls
+  // Together, which rebuilds the same fraction and calls back into Cancel.
+  if vars.is_empty() {
+    return None;
+  }
   if vars.len() > 2 {
     return None;
   }
