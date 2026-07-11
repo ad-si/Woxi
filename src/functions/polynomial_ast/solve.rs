@@ -1747,6 +1747,16 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let make_rule = |solution: Expr| -> Expr {
+    // A raw `UnaryOp[Minus, …]` negation wrapper prints its operand in
+    // isolation (`-2^(-1/2)`); evaluating it collapses to the canonical
+    // `Times[-1, …]` form that wolframscript shows (`-(1/Sqrt[2])`). Only the
+    // negation wrapper needs this — already-canonical roots are left as built.
+    let solution = if matches!(solution, Expr::UnaryOp { .. }) {
+      crate::evaluator::evaluate_expr_to_expr(&solution)
+        .unwrap_or_else(|_| solution.clone())
+    } else {
+      solution
+    };
     Expr::List(
       vec![Expr::Rule {
         pattern: Box::new(Expr::Identifier(var.to_string())),

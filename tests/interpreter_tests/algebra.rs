@@ -4000,6 +4000,31 @@ mod solve {
     );
   }
 
+  // Regression: the negated reciprocal root of x^2 == 1/2 was left as a raw
+  // `UnaryOp[Minus, …]` wrapper that printed as `-2^(-1/2)`; wolframscript
+  // shows `-(1/Sqrt[2])`. Both roots must share the canonical reciprocal form.
+  #[test]
+  fn solve_negated_reciprocal_root() {
+    assert_eq!(
+      interpret("Solve[x^2 == 1/2, x]").unwrap(),
+      "{{x -> -(1/Sqrt[2])}, {x -> 1/Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 x^2 == 1, x]").unwrap(),
+      "{{x -> -(1/Sqrt[2])}, {x -> 1/Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[3 x^2 == 1, x]").unwrap(),
+      "{{x -> -(1/Sqrt[3])}, {x -> 1/Sqrt[3]}}"
+    );
+    // The same reciprocal form must survive through a two-variable system.
+    assert_eq!(
+      interpret("Solve[x^2 + y^2 == 1 && x == y, {x, y}]").unwrap(),
+      "{{x -> -(1/Sqrt[2]), y -> -(1/Sqrt[2])}, \
+       {x -> 1/Sqrt[2], y -> 1/Sqrt[2]}}"
+    );
+  }
+
   #[test]
   fn solve_sqrt_equation() {
     assert_eq!(interpret("Solve[Sqrt[x] == 3, x]").unwrap(), "{{x -> 9}}");
