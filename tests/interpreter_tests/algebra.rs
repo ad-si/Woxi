@@ -9694,6 +9694,29 @@ mod function_expand {
     );
   }
 
+  // HarmonicNumber expands to the digamma form; the generalized order gives the
+  // Zeta / HurwitzZeta difference. Verified against wolframscript.
+  #[test]
+  fn harmonic_number() {
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[n]]").unwrap(),
+      "EulerGamma + PolyGamma[0, 1 + n]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[m + 1]]").unwrap(),
+      "EulerGamma + PolyGamma[0, 2 + m]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[n, r]]").unwrap(),
+      "-HurwitzZeta[r, 1 + n] + Zeta[r]"
+    );
+    // A concrete HarmonicNumber still evaluates numerically.
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[5]]").unwrap(),
+      "137/60"
+    );
+  }
+
   // Factorial[n] (n!) expands to the Gamma function.
   #[test]
   fn factorial() {

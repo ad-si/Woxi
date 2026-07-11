@@ -293,6 +293,40 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       None
     }
 
+    // HarmonicNumber[n] -> EulerGamma + PolyGamma[0, 1 + n].
+    "HarmonicNumber" if args.len() == 1 => Some(mk_plus(
+      mk_id("EulerGamma"),
+      mk_call(
+        "PolyGamma",
+        vec![mk_int(0), mk_plus(mk_int(1), args[0].clone())],
+      ),
+    )),
+
+    // HarmonicNumber[n, r] -> Zeta[r] - HurwitzZeta[r, 1 + n], for a symbolic
+    // order r. (For an explicit integer r wolframscript reduces the
+    // HurwitzZeta further to a PolyGamma, which we leave to FunctionExpand of
+    // HurwitzZeta and do not attempt here.)
+    "HarmonicNumber" if args.len() == 2 => {
+      let is_number = matches!(
+        &args[1],
+        Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+      ) || matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Rational");
+      if is_number {
+        None
+      } else {
+        Some(mk_plus(
+          mk_call("Zeta", vec![args[1].clone()]),
+          mk_times(
+            mk_int(-1),
+            mk_call(
+              "HurwitzZeta",
+              vec![args[1].clone(), mk_plus(mk_int(1), args[0].clone())],
+            ),
+          ),
+        ))
+      }
+    }
+
     // Gamma[A]/Gamma[B] with A - B a positive integer expands to the rising
     // factorial Pochhammer[B, A - B] (e.g. Gamma[n+2]/Gamma[n] -> n*(1 + n)).
     "Times" => try_gamma_ratio_in_times(args),
