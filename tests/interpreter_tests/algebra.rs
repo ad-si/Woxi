@@ -4089,6 +4089,33 @@ mod solve {
   }
 
   #[test]
+  fn solve_general_base_exponential() {
+    // b^x == val for a concrete base > 1 gets the full 2*Pi*I/Log[b] periodic
+    // branches (previously only the principal Log[val]/Log[b] was returned).
+    assert_eq!(
+      interpret("Solve[2^x == 8, x]").unwrap(),
+      "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2] + Log[8]/Log[2], \
+       Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[10^x == 1000, x]").unwrap(),
+      "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[10] + \
+       Log[1000]/Log[10], Element[C[1], Integers]]}}"
+    );
+    // val == 1 drops the principal Log term.
+    assert_eq!(
+      interpret("Solve[2^x == 1, x]").unwrap(),
+      "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2], \
+       Element[C[1], Integers]]}}"
+    );
+    // A symbolic base has no periodic branches, matching wolframscript.
+    assert_eq!(
+      interpret("Solve[a^x == b, x]").unwrap(),
+      "{{x -> Log[b]/Log[a]}}"
+    );
+  }
+
+  #[test]
   fn solve_log_with_linear_inner() {
     // Matches wolframscript's preferred form: (-1 + E^3)/2 over
     // -((1 - E^3)/2).

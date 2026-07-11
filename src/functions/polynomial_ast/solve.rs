@@ -2658,6 +2658,24 @@ fn factor_out_constant_factors(expr: &Expr, var: &str) -> Expr {
 /// `{-1, 0, 1}` (the cases where the inverse trig has a closed-form
 /// rational multiple of `Pi`). Returns `None` for everything else so the
 /// caller falls through to the generic polynomial path.
+/// True when `e` is a concrete real literal strictly greater than 1 (positive
+/// integer ≥ 2, rational > 1, or real > 1). Used to decide whether `b^x == val`
+/// gets the full 2*Pi*I/Log[b] periodic branches: for such a base Log[b] > 0 so
+/// no sign canonicalization is needed to match wolframscript.
+fn base_is_real_gt_one(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n > 1,
+    Expr::Real(r) => *r > 1.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!((&args[0], &args[1]),
+        (Expr::Integer(p), Expr::Integer(q)) if *q > 0 && *p > *q)
+    }
+    _ => false,
+  }
+}
+
 /// Extract `(coeff, inner)` from `coeff * Abs[inner]` where `coeff` is free of
 /// `var`. Returns `None` if the expression isn't a constant multiple of a
 /// single `Abs[...]`.
@@ -3046,44 +3064,71 @@ fn try_solve_inverse_function(
       return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
     }
     if !is_constant_wrt(&exp, var) && is_constant_wrt(&base, var) {
-      // Special case E^x == val (val positive real or 1): produce the
-      // general complex solution as a ConditionalExpression, matching
-      // wolframscript:
-      //   Solve[Exp[x] == 1, x] → {{x -> ConditionalExpression[
-      //     (2*I)*Pi*C[1], Element[C[1], Integers]]}}
-      if matches!(&base, Expr::Constant(n) if n == "E")
-        && matches!(&exp, Expr::Identifier(n) if n == var)
-      {
-        // Principal part: Log[val]
-        let log_val =
+      // b^x == val (bare-var exponent, constant base): the full complex
+      // solution has 2*Pi*I/Log[b] periodicity, which wolframscript reports as
+      //   ConditionalExpression[Log[val]/Log[b] + (2*I*Pi*C[1])/Log[b], C ∈ Z]
+      //   Solve[E^x == 5, x]  → Log[5] + 2*I*Pi*C[1]          (Log[E] = 1)
+      //   Solve[2^x == 8, x]  → Log[8]/Log[2] + (2*I*Pi*C[1])/Log[2]
+      // The periodic branches are only emitted for a concrete base E or > 1; a
+      // symbolic base (or 0 < base < 1) falls through to the principal value,
+      // matching wolframscript.
+      let base_gets_period = matches!(&base, Expr::Constant(n) if n == "E")
+        || base_is_real_gt_one(&base);
+      if matches!(&exp, Expr::Identifier(n) if n == var) && base_gets_period {
+        // Log[base] (evaluates to 1 for E).
+        let log_base =
           crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
             name: "Log".to_string(),
-            args: vec![val.clone()].into(),
+            args: vec![base.clone()].into(),
           })
           .ok()?;
-        // Periodic part: 2*Pi*I*C[1]
+        // Principal part: Log[val] / Log[base].
+        let principal =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![val.clone()].into(),
+            }),
+            right: Box::new(log_base.clone()),
+          })
+          .ok()?;
+        // Periodic part: (2*Pi*I*C[1]) / Log[base].
         let c1 = Expr::FunctionCall {
           name: "C".to_string(),
           args: vec![Expr::Integer(1)].into(),
         };
-        let two_pi_i_c1 =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(2),
-              Expr::Identifier("I".to_string()),
-              Expr::Identifier("Pi".to_string()),
-              c1.clone(),
-            ]
-            .into(),
+        let periodic =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::Integer(2),
+                Expr::Identifier("I".to_string()),
+                Expr::Identifier("Pi".to_string()),
+                c1.clone(),
+              ]
+              .into(),
+            }),
+            right: Box::new(log_base),
           })
           .ok()?;
-        let general =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        // Keep the periodic term first without re-canonicalizing the sum:
+        // wolframscript lists `(2*I*Pi*C[1])/Log[b] + Log[val]/Log[b]` in that
+        // order, whereas Woxi's Plus ordering would otherwise float the
+        // principal Log term to the front. A zero principal (val == 1) drops
+        // out entirely, matching `Solve[E^x == 1, x] -> 2*I*Pi*C[1]`.
+        let principal_is_zero = matches!(&principal, Expr::Integer(0))
+          || matches!(&principal, Expr::Real(r) if *r == 0.0);
+        let general = if principal_is_zero {
+          periodic
+        } else {
+          Expr::FunctionCall {
             name: "Plus".to_string(),
-            args: vec![log_val, two_pi_i_c1].into(),
-          })
-          .ok()?;
+            args: vec![periodic, principal].into(),
+          }
+        };
         let cond = Expr::FunctionCall {
           name: "ConditionalExpression".to_string(),
           args: vec![
