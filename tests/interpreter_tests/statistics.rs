@@ -6769,6 +6769,22 @@ mod cumulant_generating_function {
     );
   }
 
+  // An E^(m t) numerator splits off as a linear term, leaving the denominator
+  // under a Log (unlike Exponential's a/(a - t), which stays a single Log).
+  #[test]
+  fn exponential_numerator_splits() {
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[LaplaceDistribution[m, b], t]")
+        .unwrap(),
+      "m*t - Log[1 - b^2*t^2]"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[LogisticDistribution[m, b], t]")
+        .unwrap(),
+      "m*t - Log[Sinc[b*Pi*t]]"
+    );
+  }
+
   #[test]
   fn power_forms() {
     assert_eq!(

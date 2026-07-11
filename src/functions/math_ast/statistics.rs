@@ -7467,6 +7467,40 @@ fn is_e_base(e: &Expr) -> bool {
   matches!(e, Expr::Constant(c) | Expr::Identifier(c) if c == "E")
 }
 
+/// The Log of a single MGF factor, using the structural rules
+///   E^X → X,  base^(-a) → -(a Log[base]),  base^exp → exp Log[base],
+///   otherwise → Log[f].
+fn cgf_term(f: &Expr) -> Expr {
+  let log = |e: Expr| Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![e].into(),
+  };
+  if let Some((base, exp)) = as_power_pair(f) {
+    if is_e_base(base) {
+      exp.clone()
+    } else if let Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } = exp
+    {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![(**operand).clone(), log(base.clone())].into(),
+        }),
+      }
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![exp.clone(), log(base.clone())].into(),
+      }
+    }
+  } else {
+    log(f.clone())
+  }
+}
+
 /// CumulantGeneratingFunction[dist, t] = Log[MomentGeneratingFunction[...]],
 /// simplified the way Wolfram prints it. For most distributions this is a
 /// structural transform of the MGF:
@@ -7589,20 +7623,23 @@ pub fn cumulant_generating_function_ast(
   if matches!(&mgf, Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
-  let cgf = if let Some((base, exp)) = as_power_pair(&mgf) {
-    if is_e_base(base) {
-      exp.clone()
-    } else if let Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
-      operand,
-    } = exp
-    {
-      neg(call("Times", vec![(**operand).clone(), log(base.clone())]))
-    } else {
-      call("Times", vec![exp.clone(), log(base.clone())])
-    }
+  // Split an E^X / den quotient the way Wolfram does, so the exponential
+  // prefactor becomes a linear term: Log[E^(m t)/(1 - b^2 t^2)] ->
+  // m t - Log[1 - b^2 t^2]. A quotient without an exponential numerator (e.g.
+  // Exponential's a/(a - t)) is left as a single Log.
+  let num_is_e_power = matches!(&mgf, Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide, left, ..
+  } if as_power_pair(left).is_some_and(|(base, _)| is_e_base(base)));
+  let cgf = if num_is_e_power
+    && let Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } = &mgf
+  {
+    call("Plus", vec![cgf_term(left), neg(cgf_term(right))])
   } else {
-    log(mgf)
+    cgf_term(&mgf)
   };
 
   if symbolic {
