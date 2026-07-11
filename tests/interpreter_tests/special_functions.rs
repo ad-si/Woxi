@@ -2594,6 +2594,24 @@ mod cases {
       r#"-3.2620959521652644 - 24.973939745527076*I"#,
     );
   }
+  // Symbolic order parameter: the Pochhammer coefficients stay factored,
+  // matching wolframscript. (Previously left unevaluated.)
+  #[test]
+  fn gegenbauer_c_symbolic_lambda() {
+    assert_case(r#"GegenbauerC[0, l, x]"#, r#"1"#);
+    assert_case(r#"GegenbauerC[1, l, x]"#, r#"2*l*x"#);
+    assert_case(r#"GegenbauerC[2, l, x]"#, r#"-l + 2*l*(1 + l)*x^2"#);
+    assert_case(
+      r#"GegenbauerC[3, l, x]"#,
+      r#"-2*l*(1 + l)*x + (4*l*(1 + l)*(2 + l)*x^3)/3"#,
+    );
+    assert_case(
+      r#"GegenbauerC[4, l, x]"#,
+      r#"(l*(1 + l))/2 - 2*l*(1 + l)*(2 + l)*x^2 + (2*l*(1 + l)*(2 + l)*(3 + l)*x^4)/3"#,
+    );
+    // A scaled argument distributes the power.
+    assert_case(r#"GegenbauerC[2, l, 2 x]"#, r#"-l + 8*l*(1 + l)*x^2"#);
+  }
   #[test]
   fn hermite_h_1() {
     assert_case(

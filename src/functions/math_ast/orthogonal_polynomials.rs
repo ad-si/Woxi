@@ -2686,10 +2686,10 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(Expr::Real(gegenbauer_eval_f64(n, lam_f, x_f)));
     }
-    return Ok(Expr::FunctionCall {
-      name: "GegenbauerC".to_string(),
-      args: args.to_vec().into(),
-    });
+    // Symbolic order parameter: build the explicit polynomial in x with the
+    // Pochhammer coefficients kept factored, matching wolframscript.
+    let poly = gegenbauer_symbolic_lambda(n, &args[1], &args[2]);
+    return crate::evaluator::evaluate_expr_to_expr(&poly);
   }
 
   let lam = lambda.unwrap();
@@ -2742,6 +2742,80 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
       }
     }
+  }
+}
+
+/// GegenbauerC[n, λ, x] for a non-negative integer n and a symbolic order λ,
+/// built from the explicit series
+///   C_n^λ(x) = Σ_{k=0}^{⌊n/2⌋} (-1)^k · Pochhammer[λ, n-k]/(k! (n-2k)!) · (2x)^{n-2k}.
+/// The Pochhammer factors λ(1+λ)…(n-k-1+λ) are kept as an unexpanded product so
+/// the result matches wolframscript's factored form.
+fn gegenbauer_symbolic_lambda(n: usize, lambda: &Expr, x: &Expr) -> Expr {
+  let fact = |m: usize| (1..=m).map(|v| v as i128).product::<i128>().max(1);
+  let gcd = |mut a: i128, mut b: i128| {
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a.abs().max(1)
+  };
+  let mut terms: Vec<Expr> = Vec::new();
+  for k in 0..=(n / 2) {
+    let power = n - 2 * k; // exponent of x
+    let m = n - k; // number of Pochhammer factors
+    // Rational coefficient (-1)^k · 2^power / (k! · power!), reduced.
+    let mut num: i128 = if k % 2 == 0 { 1 } else { -1 };
+    num *= 1i128 << power;
+    let den = fact(k) * fact(power);
+    let g = gcd(num, den);
+    let (num, den) = (num / g, den / g);
+
+    let mut factors: Vec<Expr> = Vec::new();
+    if den == 1 {
+      if num != 1 {
+        factors.push(Expr::Integer(num));
+      }
+    } else {
+      factors.push(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
+      });
+    }
+    // Pochhammer[λ, m] = λ · (1+λ) · … · (m-1+λ).
+    for i in 0..m {
+      factors.push(if i == 0 {
+        lambda.clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![Expr::Integer(i as i128), lambda.clone()].into(),
+        }
+      });
+    }
+    // x^power (omit for power 0, bare x for power 1).
+    match power {
+      0 => {}
+      1 => factors.push(x.clone()),
+      p => factors.push(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![x.clone(), Expr::Integer(p as i128)].into(),
+      }),
+    }
+    terms.push(match factors.len() {
+      0 => Expr::Integer(1),
+      1 => factors.remove(0),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      },
+    });
+  }
+  match terms.len() {
+    0 => Expr::Integer(0),
+    1 => terms.remove(0),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
   }
 }
 
