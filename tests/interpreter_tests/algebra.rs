@@ -5082,6 +5082,54 @@ mod reduce {
     assert_eq!(interpret("Reduce[True, x]").unwrap(), "True");
   }
 
+  // A linear equation with a symbolic leading coefficient must include the
+  // degenerate case where that coefficient vanishes. Expected strings verified
+  // against wolframscript.
+  #[test]
+  fn linear_parametric_coefficient() {
+    assert_eq!(
+      interpret("Reduce[a x == b, x]").unwrap(),
+      "(b == 0 && a == 0) || (a != 0 && x == b/a)"
+    );
+    // A nonzero numeric constant drops the degenerate branch.
+    assert_eq!(
+      interpret("Reduce[a x == 5, x]").unwrap(),
+      "a != 0 && x == 5/a"
+    );
+    // A zero constant makes the whole line a solution when the coefficient is 0.
+    assert_eq!(
+      interpret("Reduce[a x == 0, x]").unwrap(),
+      "a == 0 || x == 0"
+    );
+    // A shifted constant term.
+    assert_eq!(
+      interpret("Reduce[a x + c == 0, x]").unwrap(),
+      "(c == 0 && a == 0) || (a != 0 && x == -(c/a))"
+    );
+  }
+
+  // A numeric factor (or sign) on the coefficient collapses in the condition
+  // (2 a == 0 -> a == 0) but is kept in the solution value.
+  #[test]
+  fn linear_parametric_numeric_factor() {
+    assert_eq!(
+      interpret("Reduce[2 a x == b, x]").unwrap(),
+      "(b == 0 && a == 0) || (a != 0 && x == b/(2*a))"
+    );
+    assert_eq!(
+      interpret("Reduce[-a x == b, x]").unwrap(),
+      "(b == 0 && a == 0) || (a != 0 && x == -(b/a))"
+    );
+  }
+
+  // A plain numeric coefficient keeps the single-solution form (no degenerate
+  // branch) — the parametric path must not fire here.
+  #[test]
+  fn linear_numeric_coefficient_unchanged() {
+    assert_eq!(interpret("Reduce[2 x == 6, x]").unwrap(), "x == 3");
+    assert_eq!(interpret("Reduce[x == y, x]").unwrap(), "x == y");
+  }
+
   // Reduce of a trig equation over a bounded interval gives the concrete
   // in-range roots as a disjunction (or a single equation / False).
   #[test]

@@ -600,6 +600,155 @@ pub fn extract_comparison(expr: &Expr) -> Option<(Expr, Expr, CompOp)> {
 }
 
 /// Reduce an equation lhs == rhs for variable var.
+/// Strip a leading unary/`-1*` minus from `e` (used so the degenerate condition
+/// prints `b == 0` rather than `-b == 0`, matching wolframscript).
+fn strip_leading_minus(e: &Expr) -> Expr {
+  match e {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => (**operand).clone(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1)) => (**right).clone(),
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(-1)) =>
+    {
+      args[1].clone()
+    }
+    _ => e.clone(),
+  }
+}
+
+/// For an equation `expanded == 0` that is linear in `var` with a *parametric*
+/// (non-numeric) leading coefficient, produce the full solution set — including
+/// the degenerate case where the coefficient vanishes — as wolframscript does:
+///   c1*var + c0 == 0   (c1 symbolic)  ->
+///     c0 == 0              : c1 == 0 || var == 0
+///     c0 a nonzero number  : c1 != 0 && var == -c0/c1
+///     c0 parametric        : (-c0 == 0 && c1 == 0) || (c1 != 0 && var == -c0/c1)
+/// Returns None when the shape does not apply (non-linear, numeric coefficient,
+/// restricted domain) so the caller falls through to the normal Solve path.
+fn try_reduce_linear_parametric(
+  expanded: &Expr,
+  var: &str,
+  domain: Option<&str>,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Only the unrestricted (Complexes) case is handled here.
+  if domain.is_some() {
+    return Ok(None);
+  }
+  let var_expr = Expr::Identifier(var.to_string());
+  let degree = crate::functions::polynomial_ast::exponent_ast(&[
+    expanded.clone(),
+    var_expr.clone(),
+  ])?;
+  if !matches!(degree, Expr::Integer(1)) {
+    return Ok(None);
+  }
+  let c1 = crate::functions::polynomial_ast::coefficient_ast(&[
+    expanded.clone(),
+    var_expr.clone(),
+    Expr::Integer(1),
+  ])?;
+  let c0 = crate::functions::polynomial_ast::coefficient_ast(&[
+    expanded.clone(),
+    var_expr.clone(),
+    Expr::Integer(0),
+  ])?;
+  if !is_constant_wrt(&c1, var) || !is_constant_wrt(&c0, var) {
+    return Ok(None);
+  }
+  // A numeric leading coefficient has a unique, non-degenerate solution — the
+  // ordinary Solve path already handles it.
+  if is_reduce_number(&c1) {
+    return Ok(None);
+  }
+  // The condition `c1 == 0` reduces to `s == 0` when c1 is a numeric multiple of
+  // a single symbol `s`; wolframscript enumerates the sub-cases for products of
+  // several symbols, which we do not attempt here.
+  let cond_var = match primitive_condition_var(&c1) {
+    Some(s) => s,
+    None => return Ok(None),
+  };
+  // Solution branch: cond_var != 0 && var == -c0/c1  (the solution keeps the
+  // full coefficient c1, e.g. b/(2*a)). Use the full evaluator so the quotient
+  // is canonicalized the same way Solve reports it (e.g. b/(-a) -> -(b/a)).
+  let sol_value = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(negate_expr(&c0)),
+    right: Box::new(c1.clone()),
+  })?;
+  let solution = and_results(
+    &make_comparison(&cond_var, &Expr::Integer(0), CompOp::NotEqual),
+    &make_equality(&var_expr, &sol_value),
+  );
+  // c0 == 0: the whole line is a solution when the coefficient vanishes.
+  if matches!(&c0, Expr::Integer(0)) {
+    return Ok(Some(or_results(
+      &make_equality(&cond_var, &Expr::Integer(0)),
+      &make_equality(&var_expr, &Expr::Integer(0)),
+    )));
+  }
+  // Nonzero numeric constant: c1 == 0 would make the equation 0 == nonzero, so
+  // only the solution branch survives.
+  if is_reduce_number(&c0) {
+    return Ok(Some(solution));
+  }
+  // Parametric constant: keep both branches.
+  let degenerate = and_results(
+    &make_equality(&strip_leading_minus(&c0), &Expr::Integer(0)),
+    &make_equality(&cond_var, &Expr::Integer(0)),
+  );
+  Ok(Some(or_results(&degenerate, &solution)))
+}
+
+/// Whether `e` is an explicit number literal (integer, real, or rational).
+fn is_reduce_number(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
+  ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+}
+
+/// If `c1` is a numeric multiple of a single symbol `s` (e.g. `2 a`, `-a`,
+/// `a/2`), return `s` — the symbol whose vanishing is equivalent to `c1 == 0`.
+/// Returns None for a bare number or a product of several symbols.
+fn primitive_condition_var(c1: &Expr) -> Option<Expr> {
+  match c1 {
+    Expr::Identifier(_) => Some(c1.clone()),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => primitive_condition_var(operand),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => match (is_reduce_number(left), is_reduce_number(right)) {
+      (true, false) => primitive_condition_var(right),
+      (false, true) => primitive_condition_var(left),
+      _ => None,
+    },
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let non_numeric: Vec<&Expr> =
+        args.iter().filter(|a| !is_reduce_number(a)).collect();
+      match non_numeric.as_slice() {
+        [only] => primitive_condition_var(only),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 pub fn reduce_equation(
   lhs: &Expr,
   rhs: &Expr,
@@ -624,6 +773,11 @@ pub fn reduce_equation(
     } else {
       Expr::Identifier("False".to_string())
     });
+  }
+
+  // Linear equation with a symbolic leading coefficient: include the a==0 case.
+  if let Some(result) = try_reduce_linear_parametric(&expanded, var, domain)? {
+    return Ok(result);
   }
 
   // Use the Solve infrastructure to find roots
