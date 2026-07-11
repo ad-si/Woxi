@@ -46,7 +46,7 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-pub fn polylog_integer_s(
+fn polylog_integer_s(
   s: i128,
   z_expr: &Expr,
   orig_args: &[Expr],
@@ -105,7 +105,7 @@ pub fn polylog_integer_s(
 }
 
 /// PolyLog[1, z] = -Log[1-z]
-pub fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
+fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
   match z_expr {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     Expr::Integer(1) => Ok(Expr::Identifier("Infinity".to_string())),
@@ -159,7 +159,7 @@ pub fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-pub fn polylog_s1_symbolic(z_expr: &Expr) -> Result<Expr, InterpreterError> {
+fn polylog_s1_symbolic(z_expr: &Expr) -> Result<Expr, InterpreterError> {
   let one_minus_z = Expr::BinaryOp {
     op: BinaryOperator::Minus,
     left: Box::new(Expr::Integer(1)),
@@ -176,7 +176,7 @@ pub fn polylog_s1_symbolic(z_expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// PolyLog[0, z] = z/(1-z)
-pub fn polylog_s0(z_expr: &Expr) -> Result<Expr, InterpreterError> {
+fn polylog_s0(z_expr: &Expr) -> Result<Expr, InterpreterError> {
   match z_expr {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     Expr::Integer(1) => Ok(Expr::Identifier("ComplexInfinity".to_string())),
@@ -208,7 +208,7 @@ pub fn polylog_s0(z_expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// PolyLog[-n, z] for n >= 1 using Eulerian numbers
-pub fn polylog_negative_s(
+fn polylog_negative_s(
   n: usize,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -293,7 +293,7 @@ pub fn polylog_negative_s(
 }
 
 /// Compute Eulerian numbers A(n, k) for k = 0, ..., n-1
-pub fn eulerian_numbers(n: usize) -> Vec<i128> {
+fn eulerian_numbers(n: usize) -> Vec<i128> {
   if n == 0 {
     return vec![];
   }
@@ -311,7 +311,7 @@ pub fn eulerian_numbers(n: usize) -> Vec<i128> {
 }
 
 /// PolyLog[s, -1] = -(1 - 2^{1-s}) * Zeta[s] for s >= 2
-pub fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
+fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
   let s_usize = s as usize;
 
   if s % 2 == 0 {
@@ -446,7 +446,7 @@ pub fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
 ///
 ///   PolyLog[2, 1/2] = Pi^2/12 - Log[2]^2/2
 ///   PolyLog[3, 1/2] = (-2*Pi^2*Log[2] + 4*Log[2]^3 + 21*Zeta[3])/24
-pub fn polylog_at_half(s: i128) -> Option<Expr> {
+fn polylog_at_half(s: i128) -> Option<Expr> {
   let pi = Expr::Identifier("Pi".to_string());
   let log2 = Expr::FunctionCall {
     name: "Log".to_string(),
@@ -529,7 +529,7 @@ pub fn polylog_at_half(s: i128) -> Option<Expr> {
   None
 }
 
-pub fn unevaluated_polylog(s: i128, z: i128) -> Expr {
+fn unevaluated_polylog(s: i128, z: i128) -> Expr {
   Expr::FunctionCall {
     name: "PolyLog".to_string(),
     args: vec![Expr::Integer(s), Expr::Integer(z)].into(),
@@ -537,7 +537,7 @@ pub fn unevaluated_polylog(s: i128, z: i128) -> Expr {
 }
 
 /// Compute polylogarithm numerically using series summation
-pub fn polylog_numeric(s: f64, z: f64) -> f64 {
+fn polylog_numeric(s: f64, z: f64) -> f64 {
   if z == 0.0 {
     return 0.0;
   }

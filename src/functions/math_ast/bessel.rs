@@ -929,7 +929,7 @@ pub fn bessel_k(n: f64, z: f64) -> f64 {
 
 /// Compute K_0(z) and K_1(z) simultaneously using the Temme series for small z
 /// and asymptotic expansion for large z.
-pub fn bessel_k01(z: f64) -> (f64, f64) {
+fn bessel_k01(z: f64) -> (f64, f64) {
   if z <= 2.0 {
     // Series for K_0 and K_1
     let euler_gamma = 0.5772156649015329;
@@ -1082,7 +1082,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute Bessel Y_n(z) (second kind)
-pub fn bessel_y(n: f64, z: f64) -> f64 {
+fn bessel_y(n: f64, z: f64) -> f64 {
   // Handle negative integer orders: Y_{-n}(z) = (-1)^n * Y_n(z)
   if n < 0.0 && n == n.floor() {
     let n_abs = -n;
@@ -1120,7 +1120,7 @@ pub fn bessel_y(n: f64, z: f64) -> f64 {
 }
 
 /// Y_0(z) = (2/π) * (J_0(z) * (ln(z/2) + γ) + Σ (-1)^{m+1} H_m * (z/2)^{2m} / (m!)^2)
-pub fn bessel_y0(z: f64) -> f64 {
+fn bessel_y0(z: f64) -> f64 {
   let two_over_pi = 2.0 / std::f64::consts::PI;
   let euler_gamma = 0.5772156649015329;
   let half_z = z / 2.0;
@@ -1147,7 +1147,7 @@ pub fn bessel_y0(z: f64) -> f64 {
 }
 
 /// Y_1(z) = (2/π) * (J_1(z) * ln(z/2) - 1/z + Σ ...)
-pub fn bessel_y1(z: f64) -> f64 {
+fn bessel_y1(z: f64) -> f64 {
   let two_over_pi = 2.0 / std::f64::consts::PI;
   let euler_gamma = 0.5772156649015329;
   let half_z = z / 2.0;

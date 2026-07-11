@@ -1744,7 +1744,7 @@ impl Coeff {
 /// BigInteger. Unlike `expr_to_rational` (which is limited to i128) this
 /// preserves rationals whose numerator/denominator exceed i128, so Plus and
 /// friends can combine them instead of leaving them as symbolic summands.
-pub fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
+fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
   match arg {
     Expr::Integer(n) => Some(Coeff::Exact(*n, 1)),
     Expr::BigInteger(n) => Some(Coeff::BigExact(n.clone(), BigInt::from(1))),
@@ -1766,7 +1766,7 @@ pub fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
 /// Decompose a term into (coefficient, base_expression).
 /// E.g. `3*x` → (Exact(3,1), x), `x` → (Exact(1,1), x), `-x` → (Exact(-1,1), x),
 /// `1.5*x` → (Real(1.5), x), `Rational[3,4]*x` → (Exact(3,4), x).
-pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
+fn decompose_term(e: &Expr) -> (Coeff, Expr) {
   match e {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       let base_from = |args: &[Expr]| -> Expr {
@@ -1848,7 +1848,7 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
 
 /// Collect like terms: group symbolic terms by their base expression
 /// and sum their coefficients. E.g. [E, E] → [2*E], [3*x, 2*x] → [5*x].
-pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
+fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   use std::collections::BTreeMap;
 
   // Group by string representation of base → sum of coefficients
@@ -4404,7 +4404,7 @@ pub fn term_priority(e: &Expr) -> i32 {
 
 /// Sub-priority for Times factor ordering: identifiers before compound expressions.
 /// This ensures simple symbols sort before sums/products, matching Wolfram behavior.
-pub fn times_factor_subpriority(e: &Expr) -> i32 {
+fn times_factor_subpriority(e: &Expr) -> i32 {
   match e {
     // Arbitrary-precision numerics survive in `symbolic_args` rather
     // than being absorbed into the integer coefficient, so they pass
@@ -5065,7 +5065,7 @@ fn power_const_base(e: &Expr) -> Option<String> {
 
 /// Check if an additive expression contains a given identifier with a negative coefficient.
 /// For example, `(x - y)` contains `y` negated, but `(x + y)` does not.
-pub fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
+fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
   let ident_name = match ident {
     Expr::Identifier(name) => name.as_str(),
     Expr::Constant(name) => name.as_str(),
@@ -5244,7 +5244,7 @@ fn is_numeric_like(expr: &Expr) -> bool {
 
 /// x → (x, 1), x^n → (x, n), Sqrt[x] → (x, 1/2)
 /// Power[Sqrt[x], n] → (x, n/2), Power[x^a, b] → (x, a*b)
-pub fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
+fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
   match expr {
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
@@ -5448,9 +5448,7 @@ fn combine_reciprocal_trig(
 }
 
 /// Combine like bases in a list of symbolic factors: x^a * x^b → x^(a+b)
-pub fn combine_like_bases(
-  args: Vec<Expr>,
-) -> Result<Vec<Expr>, InterpreterError> {
+fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   if args.len() <= 1 {
     return Ok(args);
   }
@@ -7622,7 +7620,7 @@ fn format_infy_fraction_2d_block(
 }
 
 /// Check if an expression represents an infinite quantity
-pub fn is_infinity_like(expr: &Expr) -> bool {
+fn is_infinity_like(expr: &Expr) -> bool {
   match expr {
     Expr::Identifier(name) => name == "Infinity" || name == "ComplexInfinity",
     Expr::FunctionCall { name, .. } => name == "DirectedInfinity",
@@ -10132,7 +10130,7 @@ fn side_contributions(c: f64, a: &AroundNum) -> (f64, f64) {
 /// first-order error propagation treating each Around as independent. Returns
 /// None unless at least one argument is an Around and every other argument is a
 /// literal number (a symbolic term leaves the sum unevaluated).
-pub fn try_around_plus(args: &[Expr]) -> Option<Expr> {
+fn try_around_plus(args: &[Expr]) -> Option<Expr> {
   if !args.iter().any(|a| as_around(a).is_some()) {
     return None;
   }
@@ -10165,7 +10163,7 @@ pub fn try_around_plus(args: &[Expr]) -> Option<Expr> {
 /// absolute partials (rather than scaling a relative sum) keeps the float
 /// result aligned with wolframscript, e.g. Around[5,1]*Around[3,1] gives
 /// exactly Sqrt[34].
-pub fn try_around_times(args: &[Expr]) -> Option<Expr> {
+fn try_around_times(args: &[Expr]) -> Option<Expr> {
   if !args.iter().any(|a| as_around(a).is_some()) {
     return None;
   }
@@ -10205,7 +10203,7 @@ pub fn try_around_times(args: &[Expr]) -> Option<Expr> {
 /// Unlike Plus/Times, wolframscript does not swap the asymmetric sides for a
 /// negative derivative here — it scales both sides by the absolute partial and
 /// keeps their `{minus, plus}` order.
-pub fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
+fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
   let ar = as_around(base)?;
   let n = around_literal(exp)?;
   let value = ar.value.powf(n);
@@ -10470,7 +10468,7 @@ fn simplify_neg1_rational_power(
 }
 
 /// Thread a binary operation over lists
-pub fn thread_binary_over_lists<F>(
+fn thread_binary_over_lists<F>(
   args: &[Expr],
   op: F,
 ) -> Result<Expr, InterpreterError>
@@ -10528,7 +10526,7 @@ pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Recursively flatten all List arguments for Max/Min
-pub fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
+fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
   let mut result = Vec::new();
   for arg in args {
     match arg {

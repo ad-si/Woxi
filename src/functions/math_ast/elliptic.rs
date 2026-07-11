@@ -64,7 +64,7 @@ pub fn elliptic_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute complete elliptic integral K(m) using the arithmetic-geometric mean
-pub fn elliptic_k(m: f64) -> f64 {
+fn elliptic_k(m: f64) -> f64 {
   let mut a = 1.0;
   let mut b = (1.0 - m).sqrt();
   for _ in 0..100 {
@@ -160,7 +160,7 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Numeric inverse of the elliptic nome: the parameter m in [0, 1] with
 /// EllipticNomeQ[m] == q. The nome q(m) = exp(-Pi K(1-m)/K(m)) increases
 /// monotonically from 0 (m = 0) to 1 (m = 1), so the root is found by bisection.
-pub fn inverse_elliptic_nome_q_numeric(q: f64) -> f64 {
+fn inverse_elliptic_nome_q_numeric(q: f64) -> f64 {
   if q <= 0.0 {
     return 0.0;
   }
@@ -302,7 +302,7 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute complete elliptic integral E(m) via series expansion
 /// E(m) = (pi/2) * [1 - sum_{n=1}^inf ((2n-1)!!/(2n)!!)^2 * m^n / (2n-1)]
-pub fn elliptic_e(m: f64) -> f64 {
+fn elliptic_e(m: f64) -> f64 {
   // E(m) = (pi/2) * Σ_{n=0}^∞ ((2n)!/(2^n n!))^2 * (-m^n)/((2n-1)*4^n)
   // Simpler: E(m) = (pi/2) * [1 - Σ_{n=1}^∞ (1/2 choose n)^2 * m^n / (2n-1)]
   // Using the series: E(m) = pi/2 * Σ t_n where
@@ -569,7 +569,7 @@ pub fn elliptic_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute incomplete elliptic integral of the third kind via Simpson's rule
-pub fn elliptic_pi_f64(n: f64, phi: f64, m: f64) -> f64 {
+fn elliptic_pi_f64(n: f64, phi: f64, m: f64) -> f64 {
   if phi == 0.0 {
     return 0.0;
   }
@@ -649,7 +649,7 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute Jacobi theta function numerically via series expansion
-pub fn elliptic_theta_numeric(a: u32, z: f64, q: f64) -> f64 {
+fn elliptic_theta_numeric(a: u32, z: f64, q: f64) -> f64 {
   match a {
     1 => {
       // θ₁(z, q) = 2 Σ_{n=0}^∞ (-1)^n q^{(n+1/2)²} sin((2n+1)z)

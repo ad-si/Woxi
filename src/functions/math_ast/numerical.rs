@@ -3156,7 +3156,7 @@ pub fn power_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(power_expand_recursive(&args[0]))
 }
 
-pub fn power_expand_recursive(expr: &Expr) -> Expr {
+fn power_expand_recursive(expr: &Expr) -> Expr {
   // Helper to extract (base, exponent) from any Power representation
   let extract_power = |e: &Expr| -> Option<(Expr, Expr)> {
     match e {
@@ -3509,7 +3509,7 @@ pub fn variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(vars.into()))
 }
 
-pub fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
+fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
   match expr {
     Expr::Integer(_)
     | Expr::Real(_)
@@ -3928,7 +3928,7 @@ pub fn squared_euclidean_distance_ast(
 /// Core DFT computation shared by Fourier and InverseFourier.
 /// `sign` is +1 for Fourier, -1 for InverseFourier (before applying `b`).
 /// FourierParameters {a, b}: F_s = n^((a-1)/2) * sum_{r=0}^{n-1} u_r * exp(2*pi*i*b*(r*s)/n)
-pub fn dft_core(
+fn dft_core(
   data: &[(f64, f64)],
   param_a: f64,
   param_b: f64,
@@ -4029,7 +4029,7 @@ pub(crate) fn fft_pow2_in_place(data: &mut [(f64, f64)], exp_sign: f64) {
 
 /// Round a floating-point number to clean up near-integer/near-half values.
 /// This accounts for floating-point errors in DFT trig computations.
-pub fn fourier_round(x: f64) -> f64 {
+fn fourier_round(x: f64) -> f64 {
   if x.abs() < 1e-14 {
     return 0.0;
   }
@@ -4066,7 +4066,7 @@ pub fn fourier_result_to_expr(re: f64, im: f64, force_complex: bool) -> Expr {
 
 /// Parse FourierParameters option from args, returning (a, b).
 /// Default is {0, 1}.
-pub fn parse_fourier_parameters(
+fn parse_fourier_parameters(
   args: &[Expr],
 ) -> Result<(f64, f64), InterpreterError> {
   for arg in args {
@@ -4100,7 +4100,7 @@ pub fn parse_fourier_parameters(
 }
 
 /// Shared implementation for Fourier and InverseFourier
-pub fn fourier_impl(
+fn fourier_impl(
   func_name: &str,
   args: &[Expr],
   inverse: bool,
@@ -4457,7 +4457,7 @@ pub fn fourier_dst_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Takes a sequence of partial sums and returns an accelerated estimate.
 /// Polynomial extrapolation using Neville's algorithm.
 /// Given points (x_i, y_i) representing (1/n, S_n), extrapolate to x=0.
-pub fn neville_extrapolation(xs: &[f64], ys: &[f64]) -> f64 {
+fn neville_extrapolation(xs: &[f64], ys: &[f64]) -> f64 {
   let n = xs.len();
   if n == 0 {
     return 0.0;

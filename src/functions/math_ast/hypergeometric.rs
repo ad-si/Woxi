@@ -37,7 +37,7 @@ pub fn hypergeometric_0f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute 0F1(a; z) numerically via series expansion
-pub fn hypergeometric_0f1_f64(a: f64, z: f64) -> f64 {
+fn hypergeometric_0f1_f64(a: f64, z: f64) -> f64 {
   let mut sum = 1.0;
   let mut term = 1.0;
   for k in 0..200 {
@@ -99,7 +99,7 @@ pub fn hypergeometric_0f1_regularized_ast(
 }
 
 /// Compute regularized 0F1~(a; z) = sum_{k=0}^{inf} z^k / (Gamma(a + k) * k!)
-pub fn hypergeometric_0f1_regularized_f64(a: f64, z: f64) -> f64 {
+fn hypergeometric_0f1_regularized_f64(a: f64, z: f64) -> f64 {
   let mut sum = 0.0;
   let mut z_power = 1.0; // z^k
   let mut factorial = 1.0; // k!
@@ -1994,7 +1994,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute U(a, b, z) numerically using the relation:
 /// U(a,b,z) = Γ(1-b)/Γ(a+1-b) * M(a,b,z) + Γ(b-1)/Γ(a) * z^(1-b) * M(a+1-b,2-b,z)
 /// where M = 1F1. For integer b, use Richardson extrapolation on the b parameter.
-pub fn hypergeometric_u_f64(a: f64, b: f64, z: f64) -> f64 {
+fn hypergeometric_u_f64(a: f64, b: f64, z: f64) -> f64 {
   let b_int = b.round();
   let is_b_integer = (b - b_int).abs() < 1e-10;
 
@@ -2024,7 +2024,7 @@ pub fn hypergeometric_u_f64(a: f64, b: f64, z: f64) -> f64 {
   }
 }
 
-pub fn hypergeometric_u_nonint(a: f64, b: f64, z: f64) -> f64 {
+fn hypergeometric_u_nonint(a: f64, b: f64, z: f64) -> f64 {
   let g1b = gamma_fn(1.0 - b);
   let ga1b = gamma_fn(a + 1.0 - b);
   let gb1 = gamma_fn(b - 1.0);

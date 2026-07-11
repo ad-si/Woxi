@@ -248,7 +248,7 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Extended Euclidean algorithm: returns (gcd, s, t) where a*s + b*t = gcd
-pub fn extended_gcd_bigint(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
+fn extended_gcd_bigint(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
   use num_traits::Zero;
   if b.is_zero() {
     if a.is_zero() {
@@ -2705,7 +2705,7 @@ fn fibonacci_polynomial_ast(
   }
 }
 
-pub fn fibonacci_number_bigint(n: u128) -> BigInt {
+fn fibonacci_number_bigint(n: u128) -> BigInt {
   if n == 0 {
     return BigInt::from(0);
   }
@@ -3389,7 +3389,7 @@ fn factor_integer_rational(
   Ok(Expr::List(result.into()))
 }
 
-pub fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
+fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
   if n == 0 {
     // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1).
     return Ok(Expr::List(
@@ -3455,7 +3455,7 @@ pub fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(factors.into()))
 }
 
-pub fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
+fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
   use num_traits::{One, Signed, Zero};
 
   if n.is_zero() {
@@ -3773,7 +3773,7 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Generate all partitions of `remaining` where each part <= `max_part`,
 /// with total number of parts between `min_len` and `max_len`.
-pub fn generate_partitions(
+fn generate_partitions(
   remaining: u64,
   max_part: u64,
   max_len: u64,
@@ -3814,7 +3814,7 @@ pub fn generate_partitions(
 }
 
 /// Generate partitions using only elements from `elems` (sorted descending, positive).
-pub fn generate_partitions_restricted(
+fn generate_partitions_restricted(
   remaining: u64,
   max_len: u64,
   min_len: u64,
@@ -4339,7 +4339,7 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute Euler's totient function for a BigInt by factoring and applying
 /// φ(n) = ∏ pᵢ^(eᵢ-1) (pᵢ - 1).
-pub fn euler_phi_bigint(n: &BigInt) -> Result<BigInt, InterpreterError> {
+fn euler_phi_bigint(n: &BigInt) -> Result<BigInt, InterpreterError> {
   use num_traits::{One, Zero};
   if n.is_zero() {
     return Ok(BigInt::zero());
@@ -4434,7 +4434,7 @@ pub fn carmichael_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Carmichael lambda λ(n): the smallest m with a^m ≡ 1 (mod n) for all a
 /// coprime to n. λ(0) is defined here as 0 and λ(1) as 1.
-pub fn carmichael_lambda_u128(n: u128) -> u128 {
+fn carmichael_lambda_u128(n: u128) -> u128 {
   if n == 0 {
     return 0;
   }
@@ -4530,7 +4530,7 @@ pub fn jacobi_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute the Jacobi symbol (a/n) using the standard algorithm
-pub fn jacobi_symbol(mut a: i128, mut n: i128) -> i128 {
+fn jacobi_symbol(mut a: i128, mut n: i128) -> i128 {
   if n == 1 {
     return 1;
   }
@@ -5219,7 +5219,7 @@ fn power_mod_root_ast(
 
 /// Binary exponentiation: base^exp mod modulus (all unsigned)
 /// Uses BigUint for intermediate multiplication to avoid u128 overflow.
-pub fn mod_pow_unsigned(base: u128, mut exp: u128, modulus: u128) -> u128 {
+fn mod_pow_unsigned(base: u128, mut exp: u128, modulus: u128) -> u128 {
   use num_bigint::BigUint;
   use num_traits::ToPrimitive;
 
@@ -5240,7 +5240,7 @@ pub fn mod_pow_unsigned(base: u128, mut exp: u128, modulus: u128) -> u128 {
 }
 
 /// Extended Euclidean algorithm for modular inverse
-pub fn mod_inverse(a: i128, m: i128) -> Option<i128> {
+fn mod_inverse(a: i128, m: i128) -> Option<i128> {
   let m_abs = m.abs();
   let a = ((a % m_abs) + m_abs) % m_abs;
   let (mut old_r, mut r) = (a, m_abs);
@@ -5537,7 +5537,7 @@ pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Find the smallest prime > n (including negative primes like -2, -3, -5, ...).
-pub fn next_prime_after(n: i128) -> i128 {
+fn next_prime_after(n: i128) -> i128 {
   // For n >= 1: search upward from n+1
   if n >= 1 {
     let mut candidate = n + 1;
@@ -5562,7 +5562,7 @@ pub fn next_prime_after(n: i128) -> i128 {
 
 /// Find the largest prime < n (including negative primes).
 /// The prime sequence is: ..., -7, -5, -3, -2, 2, 3, 5, 7, 11, ...
-pub fn prev_prime_before(n: i128) -> i128 {
+fn prev_prime_before(n: i128) -> i128 {
   // For n > 2: search downward among positive primes
   if n > 2 {
     let mut candidate = n - 1;
@@ -5591,7 +5591,7 @@ pub fn prev_prime_before(n: i128) -> i128 {
 }
 
 /// Find the smallest prime > n for BigInt values.
-pub fn next_prime_after_bigint(n: &BigInt) -> BigInt {
+fn next_prime_after_bigint(n: &BigInt) -> BigInt {
   use num_traits::{One, Zero};
 
   let one = BigInt::one();
@@ -5696,7 +5696,7 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Extended GCD: returns (gcd, x, y) such that a*x + b*y = gcd
-pub fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
+fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
   use num_traits::Zero;
   if a.is_zero() {
     return (b.clone(), BigInt::zero(), BigInt::from(1));
@@ -6206,7 +6206,7 @@ pub fn partitions_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute p(n) using dynamic programming
-pub fn partitions_p(n: usize) -> BigInt {
+fn partitions_p(n: usize) -> BigInt {
   let mut dp = vec![BigInt::from(0); n + 1];
   dp[0] = BigInt::from(1);
   for k in 1..=n {
