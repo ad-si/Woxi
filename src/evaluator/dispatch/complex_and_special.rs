@@ -8804,6 +8804,14 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
       // A Tetrahedron is a 3-D solid, so its 2-area is Undefined.
       "Tetrahedron" => Ok(Expr::Identifier("Undefined".to_string())),
+      // A Parallelogram is always a planar (2-D) region, so its Area equals
+      // its RegionMeasure. Delegate to keep the two in sync.
+      "Parallelogram" => {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "RegionMeasure".to_string(),
+          args: vec![expr.clone()].into(),
+        })
+      }
       // Simplex[{p0, p1, p2}] in the plane — the triangle area |Det[edges]|/2.
       // A higher-dimensional simplex has Undefined 2-area.
       "Simplex" if args.len() == 1 => {

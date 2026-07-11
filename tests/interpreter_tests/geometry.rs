@@ -92,6 +92,29 @@ mod area {
     assert_eq!(interpret("Area[Triangle[]]").unwrap(), "1/2");
   }
 
+  // Area of a Parallelogram[p, {v1, v2}] is |Det[{v1, v2}]|, independent of the
+  // base point p; it must agree with RegionMeasure. Verified against
+  // wolframscript.
+  #[test]
+  fn parallelogram() {
+    assert_eq!(
+      interpret("Area[Parallelogram[{0, 0}, {{1, 0}, {0, 1}}]]").unwrap(),
+      "1"
+    );
+    // Base point does not affect the area.
+    assert_eq!(
+      interpret("Area[Parallelogram[{1, 1}, {{3, 0}, {0, 2}}]]").unwrap(),
+      "6"
+    );
+    // Sheared parallelogram.
+    assert_eq!(
+      interpret("Area[Parallelogram[{0, 0}, {{2, 0}, {1, 3}}]]").unwrap(),
+      "6"
+    );
+    // Parallelogram[] is the unit square.
+    assert_eq!(interpret("Area[Parallelogram[]]").unwrap(), "1");
+  }
+
   #[test]
   fn regular_polygon_hexagon() {
     // Area[RegularPolygon[n]] = n/2 * Sin[2 Pi/n]; unit circumradius.
