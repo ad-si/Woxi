@@ -1265,6 +1265,29 @@ mod dedekind_eta {
       "Gamma[1/4]/(2*Pi^(3/4))"
     );
   }
+
+  // These elliptic/modular/Carlson functions are Listable and thread over a
+  // list argument, preserving each element's exact or symbolic form.
+  #[test]
+  fn listable_threading() {
+    assert_eq!(
+      interpret("DedekindEta[{I, 2 I}]").unwrap(),
+      "{Gamma[1/4]/(2*Pi^(3/4)), DedekindEta[2*I]}"
+    );
+    assert_eq!(
+      interpret("ModularLambda[{I, 2 I}]").unwrap(),
+      "{1/2, ModularLambda[2*I]}"
+    );
+    assert_eq!(
+      interpret("CarlsonRF[1, 2, {3, 4}]").unwrap(),
+      "{CarlsonRF[1, 2, 3], CarlsonRF[1, 2, 4]}"
+    );
+    assert_eq!(
+      interpret("DirichletL[3, 2, {2, 3}]").unwrap(),
+      "{DirichletL[3, 2, 2], DirichletL[3, 2, 3]}"
+    );
+    assert_eq!(interpret("BarnesG[{2, 3, 4}]").unwrap(), "{1, 1, 2}");
+  }
 }
 
 mod elliptic_theta {
