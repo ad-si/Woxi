@@ -3194,6 +3194,35 @@ fn distribution_moment(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
 
+  // Hyperbolic-secant central moments are 0 for odd n and, for even n,
+  //   (-1)^(n/2) * EulerE[n] * s^n
+  // (the even moments are the Euler numbers). This gives Skewness 0 and
+  // Kurtosis 5.
+  if let Some((_, s)) = two_params_of(dist, "SechDistribution") {
+    let power = |base: Expr, exp: Expr| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(base),
+      right: Box::new(exp),
+    };
+    let result = if n.rem_euclid(2) == 1 {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          power(Expr::Integer(-1), Expr::Integer(n / 2)),
+          Expr::FunctionCall {
+            name: "EulerE".to_string(),
+            args: vec![Expr::Integer(n)].into(),
+          },
+          power(s, Expr::Integer(n)),
+        ]
+        .into(),
+      }
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   let mean = mean_ast(&[dist.clone()])?;
   // CentralMoment = Sum_{k=0}^n Binomial[n, k] (-mean)^(n-k) E[x^k]
   let mut terms = Vec::with_capacity((n + 1) as usize);

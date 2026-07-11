@@ -2814,6 +2814,39 @@ mod cauchy_moments {
   }
 }
 
+// The hyperbolic-secant distribution is symmetric; its even central moments are
+// the Euler numbers scaled by s^n: (-1)^(n/2)*EulerE[n]*s^n. Skewness is 0 and
+// Kurtosis is 5. Expected strings verified against wolframscript.
+mod sech_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[SechDistribution[m, s], 2]").unwrap(),
+      "s^2"
+    );
+    assert_eq!(
+      interpret("CentralMoment[SechDistribution[m, s], 3]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CentralMoment[SechDistribution[m, s], 4]").unwrap(),
+      "5*s^4"
+    );
+    assert_eq!(
+      interpret("CentralMoment[SechDistribution[m, s], 6]").unwrap(),
+      "61*s^6"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(interpret("Skewness[SechDistribution[m, s]]").unwrap(), "0");
+    assert_eq!(interpret("Kurtosis[SechDistribution[m, s]]").unwrap(), "5");
+  }
+}
+
 mod factorial_moment {
   use super::*;
 
