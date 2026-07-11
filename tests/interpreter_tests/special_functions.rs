@@ -2786,6 +2786,26 @@ mod cases {
       r#"(2520 - 4200*x + 2100*x^2 - 420*x^3 + 35*x^4 - x^5)/120"#,
     );
   }
+  // Generalized Laguerre with a symbolic order parameter: fully expanded over
+  // n!, matching wolframscript. (Previously left unevaluated.)
+  #[test]
+  fn laguerre_l_symbolic_order() {
+    assert_case(r#"LaguerreL[0, k, x]"#, r#"1"#);
+    assert_case(r#"LaguerreL[1, k, x]"#, r#"1 + k - x"#);
+    assert_case(
+      r#"LaguerreL[2, k, x]"#,
+      r#"(2 + 3*k + k^2 - 4*x - 2*k*x + x^2)/2"#,
+    );
+    assert_case(
+      r#"LaguerreL[3, a, x]"#,
+      r#"(6 + 11*a + 6*a^2 + a^3 - 18*x - 15*a*x - 3*a^2*x + 9*x^2 + 3*a*x^2 - x^3)/6"#,
+    );
+    // A scaled argument distributes the powers.
+    assert_case(
+      r#"LaguerreL[2, a, 2 x]"#,
+      r#"(2 + 3*a + a^2 - 8*x - 4*a*x + 4*x^2)/2"#,
+    );
+  }
   #[test]
   fn legendre_p_1() {
     assert_case(r#"LegendreP[4, x]"#, r#"(3 - 30*x^2 + 35*x^4)/8"#);

@@ -3443,11 +3443,53 @@ fn generalized_laguerre_l_ast(
     return Ok(Expr::Real(result));
   }
 
-  // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "LaguerreL".to_string(),
-    args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()].into(),
-  })
+  // Symbolic order a: L_n^a(x) = Σ_{k=0}^{n} Binomial[n+a, n-k] (-1)^k x^k / k!.
+  // Expand n! · (that sum) into an integer-coefficient polynomial in a and x,
+  // then divide by n! so the result prints as a single fraction the way
+  // wolframscript does (e.g. (2 + 3 a + a^2 - 4 x - 2 a x + x^2)/2).
+  let Some(n_fact) =
+    (1..=n as i128).try_fold(1i128, |acc, v| acc.checked_mul(v))
+  else {
+    // n! overflows i128 (n > 20): leave unevaluated rather than risk garbage.
+    return Ok(Expr::FunctionCall {
+      name: "LaguerreL".to_string(),
+      args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()].into(),
+    });
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let pow = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
+  let mut sum_terms: Vec<Expr> = Vec::with_capacity(n + 1);
+  for k in 0..=n {
+    let k_fact: i128 = (1..=k as i128).product::<i128>().max(1);
+    sum_terms.push(call(
+      "Times",
+      vec![
+        call(
+          "Binomial",
+          vec![
+            call("Plus", vec![Expr::Integer(n as i128), a_expr.clone()]),
+            Expr::Integer((n - k) as i128),
+          ],
+        ),
+        pow(Expr::Integer(-1), k as i128),
+        pow(x_expr.clone(), k as i128),
+        pow(Expr::Integer(k_fact), -1),
+      ],
+    ));
+  }
+  let scaled = call(
+    "Times",
+    vec![Expr::Integer(n_fact), call("Plus", sum_terms)],
+  );
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(call("Expand", vec![scaled])),
+    right: Box::new(Expr::Integer(n_fact)),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Numerical evaluation of generalized Laguerre polynomial via recurrence
