@@ -2302,7 +2302,7 @@ CylindricalDecomposition,algebraic geometry,🚫,None,5.0,2350
 FindMinValue,Finds the value at a local minimum of a function numerically,✅,pure,7.0,2350
 FromContinuedFraction,Converts a continued fraction to a number,✅,pure,4.0,2350
 InverseSurvivalFunction,Inverse survival function giving x where the survival probability equals q,✅,pure,8.0,2350
-WeierstrassInvariants,Invariants {g2 g3} of the Weierstrass elliptic function for a lattice given by its half-periods (numeric via theta constants),✅,pure,3.0,2350
+WeierstrassInvariants,Invariants {g2 g3} of the Weierstrass elliptic function for a lattice given by its half-periods (numeric via theta constants; exact closed forms for the square and hexagonal CM lattices),✅,pure,3.0,2350
 ZipfDistribution,Zipf distribution (Zeta and HarmonicNumber normalizations),✅,pure,6.0,2350
 GeoBubbleChart,geographic visualization,🚫,None,11.1,2355
 MixedUnit,unit system,🚫,None,10.4,2355

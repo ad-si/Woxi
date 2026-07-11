@@ -4769,11 +4769,57 @@ mod weierstrass_invariants {
 
   #[test]
   fn exact_stays_symbolic() {
-    // Exact half-periods are left unevaluated (matching wolframscript, which
-    // only numericizes inexact input).
+    // A generic exact lattice has no closed form, so it is left unevaluated
+    // (matching wolframscript, which only numericizes inexact input).
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, 2 I}]").unwrap(),
+      "WeierstrassInvariants[{1, 2*I}]"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, 3 I}]").unwrap(),
+      "WeierstrassInvariants[{1, 3*I}]"
+    );
+  }
+
+  // The square (lemniscatic, ω₂/ω₁ = ±I) and hexagonal (equianharmonic,
+  // ω₂/ω₁ a primitive 6th root of unity) CM lattices have exact closed-form
+  // invariants that wolframscript returns even for exact half-periods.
+  #[test]
+  fn cm_lattices_closed_form() {
+    // Square lattice: g₃ = 0, g₂ = Gamma[1/4]^8/(256 Pi^2 ω₁^4).
     assert_eq!(
       interpret("WeierstrassInvariants[{1, I}]").unwrap(),
-      "WeierstrassInvariants[{1, I}]"
+      "{Gamma[1/4]^8/(256*Pi^2), 0}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{5, 5 I}]").unwrap(),
+      "{Gamma[1/4]^8/(160000*Pi^2), 0}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1/2, I/2}]").unwrap(),
+      "{Gamma[1/4]^8/(16*Pi^2), 0}"
+    );
+    // Rotations/swaps of the square lattice give the same invariants.
+    assert_eq!(
+      interpret("WeierstrassInvariants[{I, -1}]").unwrap(),
+      "{Gamma[1/4]^8/(256*Pi^2), 0}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{2 I, 2}]").unwrap(),
+      "{Gamma[1/4]^8/(4096*Pi^2), 0}"
+    );
+    // Hexagonal lattice: g₂ = 0, g₃ = Gamma[1/3]^18/(4096 Pi^6 ω₁^6).
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, Exp[I Pi/3]}]").unwrap(),
+      "{0, Gamma[1/3]^18/(4096*Pi^6)}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, Exp[2 I Pi/3]}]").unwrap(),
+      "{0, Gamma[1/3]^18/(4096*Pi^6)}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, (1 + I Sqrt[3])/2}]").unwrap(),
+      "{0, Gamma[1/3]^18/(4096*Pi^6)}"
     );
   }
 }
