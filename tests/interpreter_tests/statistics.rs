@@ -2374,6 +2374,24 @@ mod correlation {
     );
   }
 
+  // Correlation of a multivariate distribution is its normalized covariance
+  // matrix.
+  #[test]
+  fn correlation_of_distribution() {
+    assert_eq!(
+      interpret("Correlation[BinormalDistribution[rho]]").unwrap(),
+      "{{1, rho}, {rho, 1}}"
+    );
+    // Non-unit variances normalize: Cov {{4,1},{1,9}} -> off-diag 1/Sqrt[36].
+    assert_eq!(
+      interpret(
+        "Correlation[MultinormalDistribution[{0, 0}, {{4, 1}, {1, 9}}]]"
+      )
+      .unwrap(),
+      "{{1, 1/6}, {1/6, 1}}"
+    );
+  }
+
   // A single flat vector is one variable, perfectly correlated with itself.
   #[test]
   fn correlation_single_vector() {

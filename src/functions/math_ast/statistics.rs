@@ -2724,6 +2724,43 @@ pub fn blomqvist_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   rank_statistic_forms("BlomqvistBeta", args, &pair)
 }
 
+/// Build the correlation matrix from a covariance matrix (a list of lists):
+/// Corr[i, j] = Cov[i, j] / Sqrt[Cov[i, i] * Cov[j, j]]. Returns None if the
+/// argument isn't a square numeric-or-symbolic covariance matrix.
+fn correlation_from_covariance(cov_rows: &[Expr]) -> Option<Expr> {
+  let n = cov_rows.len();
+  let mut cov: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  for r in cov_rows {
+    let Expr::List(row) = r else { return None };
+    if row.len() != n {
+      return None;
+    }
+    cov.push(row.to_vec());
+  }
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let mut result = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut row = Vec::with_capacity(n);
+    for j in 0..n {
+      // Cov[i, j] / Sqrt[Cov[i, i] * Cov[j, j]]
+      let denom = call(
+        "Power",
+        vec![
+          call("Times", vec![cov[i][i].clone(), cov[j][j].clone()]),
+          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+        ],
+      );
+      let entry = call("Times", vec![cov[i][j].clone(), denom]);
+      row.push(crate::evaluator::evaluate_expr_to_expr(&entry).ok()?);
+    }
+    result.push(Expr::List(row.into()));
+  }
+  Some(Expr::List(result.into()))
+}
+
 pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -2744,6 +2781,21 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A flat vector is one variable, so it correlates perfectly with itself.
       if items.iter().all(|r| !matches!(r, Expr::List(_))) {
         return Ok(Expr::Integer(1));
+      }
+    }
+    // A distribution's correlation matrix is its normalized covariance
+    // (Correlation[BinormalDistribution[rho]] = {{1, rho}, {rho, 1}}).
+    if !matches!(&args[0], Expr::List(_)) {
+      let cov = crate::evaluator::evaluate_function_call_ast(
+        "Covariance",
+        std::slice::from_ref(&args[0]),
+      );
+      if let Ok(Expr::List(ref rows)) = cov
+        && !rows.is_empty()
+        && rows.iter().all(|r| matches!(r, Expr::List(_)))
+        && let Some(corr) = correlation_from_covariance(rows)
+      {
+        return Ok(corr);
       }
     }
     return unevaluated();

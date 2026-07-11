@@ -1121,7 +1121,7 @@ After,,🚫,,3.0,1130
 IntegerLength,Returns the number of digits in an integer,✅,pure,6.0,1132
 StirlingS2,Returns the Stirling number of the second kind,✅,pure,1.0,1133
 BlockRandom,,🚫,,6.0,1134
-Correlation,Pearson correlation of two lists; of one data matrix gives the correlation matrix of its columns,✅,pure,6.0,1135
+Correlation,Pearson correlation of two lists; of one data matrix gives the correlation matrix of its columns; of a multivariate distribution gives its normalized covariance matrix,✅,pure,6.0,1135
 SwatchLegend,Inert legend description with color swatches consumed by Legended (produced by PeriodicTablePlot property coloring),✅,pure,9.0,1136
 TreeForm,Display an expression as a tree structure,✅,pure,1.0,1138
 UpdateInterval,,🚫,,6.0,1138
