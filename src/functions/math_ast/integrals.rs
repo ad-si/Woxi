@@ -40,7 +40,7 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute Ei(x) numerically
 /// For all x: Ei(x) = γ + ln|x| + Σ_{n=1}^∞ x^n / (n * n!)
-pub fn exp_integral_ei_numeric(x: f64) -> f64 {
+fn exp_integral_ei_numeric(x: f64) -> f64 {
   if x.abs() < 40.0 {
     // Power series: Ei(x) = γ + ln|x| + Σ x^n / (n * n!)
     let euler_gamma = 0.5772156649015329;
@@ -759,7 +759,7 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute E_n(z) = ∫_1^∞ e^{-zt}/t^n dt
-pub fn exp_integral_en(n: i64, z: f64) -> f64 {
+fn exp_integral_en(n: i64, z: f64) -> f64 {
   if n == 0 {
     // E_0(z) = e^{-z}/z
     return (-z).exp() / z;
@@ -783,7 +783,7 @@ pub fn exp_integral_en(n: i64, z: f64) -> f64 {
 }
 
 /// Compute E_1(z) via series for small z, continued fraction for large z
-pub fn exp_integral_e1(z: f64) -> f64 {
+fn exp_integral_e1(z: f64) -> f64 {
   let euler_gamma = 0.5772156649015329;
 
   if z <= 0.0 {

@@ -1256,7 +1256,7 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute Struve H_n(z) using series expansion.
 ///
 /// H_n(z) = sum_{m=0}^{inf} (-1)^m / (Gamma(m + 3/2) * Gamma(m + n + 3/2)) * (z/2)^(2m+n+1)
-pub fn struve_h(n: f64, z: f64) -> f64 {
+fn struve_h(n: f64, z: f64) -> f64 {
   // Special case: z = 0
   if z == 0.0 {
     if n >= -1.0 {
@@ -1358,7 +1358,7 @@ pub fn struve_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute modified Struve L_n(z) using series expansion.
 ///
 /// L_n(z) = sum_{m=0}^{inf} 1 / (Gamma(m + 3/2) * Gamma(m + n + 3/2)) * (z/2)^(2m+n+1)
-pub fn struve_l(n: f64, z: f64) -> f64 {
+fn struve_l(n: f64, z: f64) -> f64 {
   // Special case: z = 0
   if z == 0.0 {
     if n >= -1.0 {
@@ -1639,7 +1639,7 @@ pub fn parabolic_cylinder_d_ast(
 ///   √π / Γ((1-ν)/2) * 1F1(-ν/2, 1/2, z²/2)
 ///   - √2 * z / Γ(-ν/2) * 1F1((1-ν)/2, 3/2, z²/2)
 /// ]
-pub fn parabolic_cylinder_d(nu: f64, z: f64) -> f64 {
+fn parabolic_cylinder_d(nu: f64, z: f64) -> f64 {
   use std::f64::consts::PI;
   let z2_half = z * z / 2.0;
   let prefactor = 2.0_f64.powf(nu / 2.0) * PI.sqrt() * (-z * z / 4.0).exp();
@@ -1727,7 +1727,7 @@ pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///
 /// AngerJ[nu, z] = (1/Pi) * Integral[Cos[nu*t - z*Sin[t]], {t, 0, Pi}]
 /// For integer nu, this equals BesselJ[n, z].
-pub fn anger_j(nu: f64, z: f64) -> f64 {
+fn anger_j(nu: f64, z: f64) -> f64 {
   // For integer nu, delegate to BesselJ
   if nu == nu.floor() && nu.is_finite() {
     return bessel_j(nu, z);
@@ -1891,7 +1891,7 @@ fn weber_e_integer_closed_form(
 }
 
 /// AngerJ[ν, 0] closed form: Sin[ν*Pi] / (ν*Pi).
-pub fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
+fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
   let nu_pi = Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Times,
@@ -1910,7 +1910,7 @@ pub fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
 }
 
 /// WeberE[ν, 0] closed form: (1 - Cos[ν*Pi]) / (ν*Pi).
-pub fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
+fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
   let nu_pi = Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Times,
@@ -1936,7 +1936,7 @@ pub fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
 /// Compute WeberE[nu, z] numerically using Gauss-Legendre quadrature.
 ///
 /// E_nu(z) = (1/Pi) * Integral[Sin[nu*t - z*Sin[t]], {t, 0, Pi}]
-pub fn weber_e(nu: f64, z: f64) -> f64 {
+fn weber_e(nu: f64, z: f64) -> f64 {
   // For z = 0: WeberE[nu, 0] = (1 - Cos[nu*Pi]) / (nu*Pi)
   if z == 0.0 {
     if nu == 0.0 {

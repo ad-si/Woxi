@@ -6,7 +6,7 @@ use crate::syntax::Expr;
 /// Try to express a symbolic expression as a rational multiple of Pi: k*Pi/n.
 /// Returns Some((k, n)) in lowest terms, None if not recognized.
 /// Handles patterns: Pi, n*Pi, Pi/d, n*Pi/d, n*Degree, Degree, and FunctionCall variants.
-pub fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
+fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
   use crate::syntax::BinaryOperator;
 
   // Helper to extract an integer value
@@ -484,7 +484,7 @@ fn octant_fallback(
   })
 }
 
-pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
+fn exact_sin(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Normalize to [0, 2*Pi) i.e., k mod 2n, with k in [0, 2n)
   let period = 2 * n;
@@ -586,7 +586,7 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
 }
 
 /// Exact Cos value for k*Pi/n. Uses cos(x) = sin(Pi/2 - x).
-pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
+fn exact_cos(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // cos(k*Pi/n) = sin(Pi/2 - k*Pi/n) = sin((n - 2k)*Pi/(2n))
   // Simplify: cos(k*Pi/n) = sin((n/2 - k)*Pi/n) -- only works if n is even
@@ -678,7 +678,7 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
 
 /// Exact Tan value for k*Pi/n.
 /// Tan has period Pi, so normalize k mod n. Undefined when cos = 0.
-pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
+fn exact_tan(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Tan has period Pi, so reduce k*Pi/n mod Pi => (k mod n)*Pi/n
   let k_mod = ((k % n) + n) % n; // in [0, n)
@@ -746,7 +746,7 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
   }
 }
 
-pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
+fn exact_sec(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Sec has period 2*Pi, and Sec(-x) = Sec(x), Sec(Pi-x) = -Sec(x)
   // Reduce to [0, 2*Pi)
@@ -801,7 +801,7 @@ pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
   }
 }
 
-pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
+fn exact_csc(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Csc has period 2*Pi, Csc(-x) = -Csc(x), Csc(Pi-x) = Csc(x)
   // Reduce to [0, 2*Pi)
@@ -858,7 +858,7 @@ pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
   }
 }
 
-pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
+fn exact_cot(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Cot has period Pi, Cot(-x) = -Cot(x)
   // Reduce k*Pi/n mod Pi => (k mod n)*Pi/n
@@ -1168,7 +1168,7 @@ fn denom_integer_factor(denom: &Expr) -> Option<(i128, Option<Expr>)> {
 }
 
 /// Build a Complex float result expression from real and imaginary parts.
-pub fn build_complex_float_result(
+fn build_complex_float_result(
   re: f64,
   im: f64,
 ) -> Result<Expr, InterpreterError> {
@@ -1180,7 +1180,7 @@ pub fn build_complex_float_result(
 
 /// Check if an argument is Indeterminate or ComplexInfinity.
 /// For periodic/trig functions, both should return Indeterminate.
-pub fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
+fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
   matches!(expr, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
 }
 
@@ -1223,7 +1223,7 @@ fn extract_imaginary_factor(arg: &Expr) -> Option<Expr> {
 ///   Cot[I z]=-I Coth[z], Sec[I z]=Sech[z], Csc[I z]=-I Csch[z], and the
 ///   hyperbolic duals Cosh[I z]=Cos[z], Sinh[I z]=I Sin[z], etc.
 /// Returns None when the argument is not of the form `I*z`.
-pub fn imaginary_arg_reduction(
+fn imaginary_arg_reduction(
   func: &str,
   arg: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
@@ -3462,7 +3462,7 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if a float value matches a known ArcCos special angle
-pub fn arccos_special_value(v: f64) -> Option<Expr> {
+fn arccos_special_value(v: f64) -> Option<Expr> {
   let eps = 1e-12;
 
   // Helper to build n*Pi/d
@@ -3516,7 +3516,7 @@ pub fn arccos_special_value(v: f64) -> Option<Expr> {
 }
 
 /// Check if a float value matches a known ArcSin special angle
-pub fn arcsin_special_value(v: f64) -> Option<Expr> {
+fn arcsin_special_value(v: f64) -> Option<Expr> {
   let eps = 1e-12;
 
   // ArcSin special values (|value| -> Pi/d)
@@ -5055,7 +5055,7 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper to construct -Pi/2 matching wolframscript output format
 /// Construct Pi/n as an AST expression
-pub fn pi_over_n(n: i128) -> Expr {
+fn pi_over_n(n: i128) -> Expr {
   Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Divide,
     left: Box::new(Expr::Constant("Pi".to_string())),
@@ -5063,7 +5063,7 @@ pub fn pi_over_n(n: i128) -> Expr {
   }
 }
 
-pub fn negative_pi_over_2() -> Expr {
+fn negative_pi_over_2() -> Expr {
   Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Times,
     left: Box::new(Expr::BinaryOp {

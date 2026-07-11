@@ -604,7 +604,7 @@ fn collect_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
   }
 }
 
-pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
+fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Real-valued expressions are their own conjugate. `is_real_valued` covers
   // exact reals/constants plus any NumericQ expression that evaluates to a
   // finite real (Sqrt[2], Log[2], Sin[2], Pi^2, sums of reals, …). Complex
@@ -1667,7 +1667,7 @@ fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
 }
 
 /// Find best rational approximation using continued fractions
-pub fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
+fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
   if x == 0.0 {
     return (0, 1);
   }
@@ -1726,7 +1726,7 @@ pub fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
 
 /// Find rational with smallest denominator within tolerance.
 /// Uses continued fractions with semi-convergent checking.
-pub fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
+fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
   if x == 0.0 {
     return (0, 1);
   }

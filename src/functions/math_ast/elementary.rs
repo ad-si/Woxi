@@ -1804,7 +1804,7 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper for Floor[x, a] and Ceiling[x, a]
 /// Floor[x, a] = a * Floor[x/a], Ceiling[x, a] = a * Ceiling[x/a]
-pub fn floor_ceil_two_arg(
+fn floor_ceil_two_arg(
   x: &Expr,
   a: &Expr,
   is_floor: bool,
@@ -2477,7 +2477,7 @@ pub fn mod3_ast(
 }
 
 /// Integer floor division: floor(a / b)
-pub fn floor_div(a: i128, b: i128) -> i128 {
+fn floor_div(a: i128, b: i128) -> i128 {
   if b == 0 {
     return 0;
   }
@@ -3175,10 +3175,7 @@ pub fn chop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   chop_expr(&args[0], tolerance)
 }
 
-pub fn chop_expr(
-  expr: &Expr,
-  tolerance: f64,
-) -> Result<Expr, InterpreterError> {
+fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Real(f) => {
       if f.abs() < tolerance {

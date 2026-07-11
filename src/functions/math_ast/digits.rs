@@ -550,7 +550,7 @@ impl BigRational {
 /// Compute atan(1/k) as a BigRational using the Taylor series:
 /// atan(x) = x - x^3/3 + x^5/5 - ...
 /// For x = 1/k: atan(1/k) = 1/k - 1/(3*k^3) + 1/(5*k^5) - ...
-pub fn big_atan_recip(k: u64, terms: usize) -> BigRational {
+fn big_atan_recip(k: u64, terms: usize) -> BigRational {
   let mut result = BigRational::zero();
   let k2 = k as u128 * k as u128; // k^2 as u128
   // power_denom tracks k^(2n+1) as BigUint
@@ -572,7 +572,7 @@ pub fn big_atan_recip(k: u64, terms: usize) -> BigRational {
 
 /// Compute Pi as a BigRational using Machin's formula:
 /// Pi/4 = 4*atan(1/5) - atan(1/239)
-pub fn pi_as_big_rational(terms: usize) -> BigRational {
+fn pi_as_big_rational(terms: usize) -> BigRational {
   let atan5 = big_atan_recip(5, terms);
   let atan239 = big_atan_recip(239, terms);
   // Pi = 4 * (4*atan(1/5) - atan(1/239))
@@ -582,7 +582,7 @@ pub fn pi_as_big_rational(terms: usize) -> BigRational {
 }
 
 /// Compute E as a BigRational using the series: e = sum(1/k!, k=0..terms)
-pub fn e_as_big_rational(terms: usize) -> BigRational {
+fn e_as_big_rational(terms: usize) -> BigRational {
   let mut result = BigRational::zero();
   let mut factorial = BigUint::from_u64(1);
   for k in 0..terms {
@@ -600,7 +600,7 @@ pub fn e_as_big_rational(terms: usize) -> BigRational {
 }
 
 /// Compute the continued fraction of a BigRational, returning up to n terms.
-pub fn continued_fraction_from_big_rational(
+fn continued_fraction_from_big_rational(
   val: &BigRational,
   n: usize,
 ) -> Vec<i128> {
@@ -619,7 +619,7 @@ pub fn continued_fraction_from_big_rational(
 
 /// Try to compute a constant expression as a high-precision BigRational.
 /// Returns None if the expression is not a recognized constant.
-pub fn try_constant_as_big_rational(
+fn try_constant_as_big_rational(
   expr: &Expr,
   n_terms: usize,
 ) -> Option<BigRational> {
@@ -1774,7 +1774,7 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///   `0.05` in base 10 gives exponent `-1`.
 ///
 /// Produces exactly `num_digits` digits.
-pub fn bigfloat_to_digits_base(
+fn bigfloat_to_digits_base(
   bf: &astro_float::BigFloat,
   base: i128,
   num_digits: usize,
@@ -1901,7 +1901,7 @@ fn bigfloat_small_int_to_i128(
 /// Extract decimal digits and exponent from a BigFloat.
 /// Returns (digit_chars, decimal_exponent) where digit_chars are ASCII digit bytes
 /// and decimal_exponent is the number of integer digits (position of decimal point).
-pub fn bigfloat_to_digits(
+fn bigfloat_to_digits(
   bf: &astro_float::BigFloat,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
@@ -2906,7 +2906,7 @@ const SCALES: [&str; 7] = [
 
 /// Spell out a number 0..=999 in English words.
 /// Uses U+2010 HYPHEN for compound numbers like "twenty‐one".
-pub fn spell_below_1000(n: u64) -> String {
+fn spell_below_1000(n: u64) -> String {
   if n == 0 {
     return String::new();
   }

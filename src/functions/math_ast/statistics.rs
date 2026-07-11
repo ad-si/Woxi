@@ -337,7 +337,7 @@ pub enum TotalLevelSpec {
 
 /// Sum a list at level 1 using Plus (Apply[Plus, list])
 /// Handles nested lists by recursively adding element-wise.
-pub fn total_sum_level1(items: &[Expr]) -> Result<Expr, InterpreterError> {
+fn total_sum_level1(items: &[Expr]) -> Result<Expr, InterpreterError> {
   if items.is_empty() {
     return Ok(Expr::Integer(0));
   }
@@ -356,10 +356,7 @@ pub fn total_sum_level1(items: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Recursively add two expressions, threading over lists element-wise
-pub fn add_exprs_recursive(
-  a: &Expr,
-  b: &Expr,
-) -> Result<Expr, InterpreterError> {
+fn add_exprs_recursive(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   match (a, b) {
     (Expr::List(la), Expr::List(lb)) if la.len() == lb.len() => {
       let results: Result<Vec<Expr>, _> = la
@@ -380,7 +377,7 @@ pub fn add_exprs_recursive(
 }
 
 /// Recursively apply Total with level spec
-pub fn total_with_level(
+fn total_with_level(
   expr: &Expr,
   level_spec: &TotalLevelSpec,
 ) -> Result<Expr, InterpreterError> {
@@ -394,7 +391,7 @@ pub fn total_with_level(
 /// Total[list, {n1, n2}] - sum across levels n1 through n2 (inclusive),
 /// collapsing those levels into a scalar while preserving the structure
 /// above n1 and (implicitly) below n2.
-pub fn total_range_levels(
+fn total_range_levels(
   expr: &Expr,
   n1: usize,
   n2: usize,
@@ -420,7 +417,7 @@ pub fn total_range_levels(
 
 /// Total[list, n] - sum across levels 1 through n
 /// Level 0 means no summing, level 1 means Apply[Plus, list], etc.
-pub fn total_through_level(
+fn total_through_level(
   expr: &Expr,
   n: usize,
 ) -> Result<Expr, InterpreterError> {
@@ -446,7 +443,7 @@ pub fn total_through_level(
 
 /// Total[list, {n}] - sum at exactly level n
 /// Level 1 = sum the outermost list, level 2 = sum each sublist, etc.
-pub fn total_at_exact_level(
+fn total_at_exact_level(
   expr: &Expr,
   n: usize,
 ) -> Result<Expr, InterpreterError> {
@@ -828,7 +825,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Mean of columns in a list-of-lists (matrix)
-pub fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
+fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
   let row_vecs: Vec<&crate::ExprList> = rows
     .iter()
     .filter_map(|r| {
@@ -1149,7 +1146,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute variance symbolically
-pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
+fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = items.len();
   if n < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1167,7 +1164,7 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Variance of columns in a list-of-lists (matrix)
-pub fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
+fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
   let row_vecs: Vec<&crate::ExprList> = rows
     .iter()
     .filter_map(|r| {
@@ -4144,7 +4141,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   quantile_single(&sorted, &args[1])
 }
 
-pub fn quantile_single(
+fn quantile_single(
   sorted: &[&Expr],
   q: &Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -4194,7 +4191,7 @@ pub fn quantile_single(
 ///   else      → s[[clamp(k)]] + (c + d frac) (s[[clamp(k+1)]] - s[[clamp(k)]])
 /// where clamp pins indices to [1, n]. All arithmetic runs through the
 /// evaluator so exact rationals stay exact and machine reals propagate.
-pub fn quantile_parametric(
+fn quantile_parametric(
   sorted: &[&Expr],
   q: &Expr,
   a: &Expr,
