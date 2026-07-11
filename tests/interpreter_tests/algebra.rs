@@ -7982,6 +7982,29 @@ mod refine {
     assert_eq!(interpret("Refine[Abs[y], y > 0]").unwrap(), "y");
   }
 
+  // Regression: assumption substitution left refined sums uncombined —
+  // Floor[x] and Ceiling[x] both refine to x, giving `x + x` instead of the
+  // combined `2*x`, and `2 Abs[x]` under x < 0 gave the malformed `2*-1*x`.
+  #[test]
+  fn refined_sum_combines_like_terms() {
+    assert_eq!(
+      interpret("Simplify[Floor[x] + Ceiling[x], Element[x, Integers]]")
+        .unwrap(),
+      "2*x"
+    );
+    assert_eq!(
+      interpret("Simplify[2 Floor[x] + Ceiling[x], Element[x, Integers]]")
+        .unwrap(),
+      "3*x"
+    );
+    assert_eq!(
+      interpret("Refine[Floor[x] + Ceiling[x], Element[x, Integers]]").unwrap(),
+      "2*x"
+    );
+    // Numeric Times coefficient folds through the refined -x.
+    assert_eq!(interpret("Refine[Abs[x] + Abs[x], x < 0]").unwrap(), "-2*x");
+  }
+
   #[test]
   fn assumptions_option_form() {
     // Refine[expr, Assumptions -> cond] behaves like Refine[expr, cond].

@@ -36,7 +36,7 @@ pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let info = extract_assumption_info(&assumption_expr);
         let result = refine_expr(&args[0], &info, &assumption_expr);
-        return Ok(fold_refine_zeros(&result));
+        return Ok(normalize_refined_arith(&fold_refine_zeros(&result)));
       }
     }
     return Ok(args[0].clone());
@@ -61,7 +61,7 @@ pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Recursively simplify the expression under the assumption
   let result = refine_expr(expr, &info, assumption);
 
-  Ok(fold_refine_zeros(&result))
+  Ok(normalize_refined_arith(&fold_refine_zeros(&result)))
 }
 
 /// Fold the trivial arithmetic identities that assumption substitutions can
@@ -99,6 +99,212 @@ fn fold_refine_zeros(expr: &Expr) -> Expr {
       }
     }
     _ => expr.clone(),
+  }
+}
+
+/// Combine like additive terms and fold numeric `Times` coefficients that an
+/// assumption substitution can leave in a non-canonical shape. Refining
+/// `Floor[x] + Ceiling[x]` under `x ∈ Integers` yields the uncombined `x + x`,
+/// and `2 Abs[x]` under `x < 0` yields `2 * (-1) * x`; wolframscript returns the
+/// combined `2*x` / `-2*x`. Only Plus and Times are traversed, so heads whose
+/// value depends on the assumption/branch (Log, Sqrt, …) are never
+/// re-evaluated. A sum with no like terms to merge is returned untouched so
+/// existing canonical forms are preserved verbatim.
+fn normalize_refined_arith(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "Plus" => combine_additive(expr),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    } => combine_additive(expr),
+    Expr::FunctionCall { name, .. } if name == "Times" => {
+      let (coeff, rest) = split_numeric_coeff(expr);
+      make_coeff_term(coeff, &rest)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => {
+      let (coeff, rest) = split_numeric_coeff(expr);
+      make_coeff_term(coeff, &rest)
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Reduce a rational (num, den) to lowest terms with a positive denominator.
+fn reduce_rat((n, d): (i128, i128)) -> (i128, i128) {
+  if d == 0 {
+    return (n, d);
+  }
+  let g = super::factor::gcd_i128(n.abs(), d.abs()).max(1);
+  let (mut n, mut d) = (n / g, d / g);
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  (n, d)
+}
+
+fn mul_rat(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  reduce_rat((a.0 * b.0, a.1 * b.1))
+}
+
+fn add_rat(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  reduce_rat((a.0 * b.1 + b.0 * a.1, a.1 * b.1))
+}
+
+/// Split a term into its leading rational coefficient and the remaining
+/// (non-numeric) product. Recurses through Times and unary minus only.
+fn split_numeric_coeff(term: &Expr) -> ((i128, i128), Expr) {
+  match term {
+    Expr::Integer(n) => ((*n, 1), Expr::Integer(1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(
+          (&args[0], &args[1]),
+          (Expr::Integer(_), Expr::Integer(_))
+        ) =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        ((*n, *d), Expr::Integer(1))
+      } else {
+        unreachable!()
+      }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let ((n, d), rest) = split_numeric_coeff(operand);
+      ((-n, d), rest)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let (lc, lr) = split_numeric_coeff(left);
+      let (rc, rr) = split_numeric_coeff(right);
+      (mul_rat(lc, rc), mul_rest(lr, rr))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut coeff = (1i128, 1i128);
+      let mut rests: Vec<Expr> = Vec::new();
+      for a in args {
+        let (c, r) = split_numeric_coeff(a);
+        coeff = mul_rat(coeff, c);
+        if !matches!(r, Expr::Integer(1)) {
+          rests.push(r);
+        }
+      }
+      (coeff, rebuild_product(rests))
+    }
+    _ => ((1, 1), expr_clone_norm(term)),
+  }
+}
+
+/// Normalize the non-numeric part of a term (so nested sums inside a product
+/// also combine) while leaving atoms and opaque heads untouched.
+fn expr_clone_norm(term: &Expr) -> Expr {
+  match term {
+    Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times" => {
+      normalize_refined_arith(term)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times,
+      ..
+    } => normalize_refined_arith(term),
+    _ => term.clone(),
+  }
+}
+
+fn mul_rest(a: Expr, b: Expr) -> Expr {
+  match (matches!(a, Expr::Integer(1)), matches!(b, Expr::Integer(1))) {
+    (true, _) => b,
+    (_, true) => a,
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![a, b].into(),
+    },
+  }
+}
+
+fn rebuild_product(mut rests: Vec<Expr>) -> Expr {
+  match rests.len() {
+    0 => Expr::Integer(1),
+    1 => rests.pop().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: rests.into(),
+    },
+  }
+}
+
+/// Rebuild `coeff * rest` in the canonical shape (bare number when rest is 1,
+/// bare rest when coeff is 1, `0` when coeff is 0).
+fn make_coeff_term((n, d): (i128, i128), rest: &Expr) -> Expr {
+  let (n, d) = reduce_rat((n, d));
+  if n == 0 {
+    return Expr::Integer(0);
+  }
+  let coeff_expr = if d == 1 {
+    Expr::Integer(n)
+  } else {
+    Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
+    }
+  };
+  if matches!(rest, Expr::Integer(1)) {
+    return coeff_expr;
+  }
+  if n == 1 && d == 1 {
+    return rest.clone();
+  }
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![coeff_expr, rest.clone()].into(),
+  }
+}
+
+fn combine_additive(expr: &Expr) -> Expr {
+  let terms = collect_additive_terms(expr);
+  let mut order: Vec<String> = Vec::new();
+  let mut coeffs: std::collections::HashMap<String, (i128, i128)> =
+    std::collections::HashMap::new();
+  let mut rests: std::collections::HashMap<String, Expr> =
+    std::collections::HashMap::new();
+  for t in &terms {
+    let (c, rest) = split_numeric_coeff(t);
+    let key = expr_to_string(&rest);
+    if let Some(cc) = coeffs.get_mut(&key) {
+      *cc = add_rat(*cc, c);
+    } else {
+      order.push(key.clone());
+      coeffs.insert(key.clone(), c);
+      rests.insert(key, rest);
+    }
+  }
+  // No like terms merged: leave the sum exactly as it was.
+  if order.len() == terms.len() {
+    return expr.clone();
+  }
+  let mut out: Vec<Expr> = Vec::new();
+  for k in &order {
+    let term = make_coeff_term(coeffs[k], &rests[k]);
+    if !matches!(term, Expr::Integer(0)) {
+      out.push(term);
+    }
+  }
+  match out.len() {
+    0 => Expr::Integer(0),
+    1 => out.pop().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: out.into(),
+    },
   }
 }
 
@@ -4575,7 +4781,8 @@ fn simplify_with_assumptions(
 
   // Apply refinement using the combined assumption.
   let info = extract_assumption_info(&combined);
-  let result = refine_expr(&simplified, &info, &combined);
+  let result =
+    normalize_refined_arith(&refine_expr(&simplified, &info, &combined));
 
   // Restore previous $Assumptions
   crate::ENV.with(|e| {
