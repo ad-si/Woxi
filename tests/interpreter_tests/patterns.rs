@@ -1694,6 +1694,28 @@ mod select_first {
       "missing"
     );
   }
+
+  // Operator form: SelectFirst[crit][list] == SelectFirst[list, crit].
+  #[test]
+  fn operator_form() {
+    assert_eq!(interpret("SelectFirst[EvenQ][{1, 3, 4, 5}]").unwrap(), "4");
+  }
+
+  #[test]
+  fn operator_form_not_found() {
+    assert_eq!(
+      interpret("SelectFirst[EvenQ][{1, 3, 5}]").unwrap(),
+      "Missing[NotFound]"
+    );
+  }
+
+  #[test]
+  fn operator_form_mapped() {
+    assert_eq!(
+      interpret("Map[SelectFirst[EvenQ], {{1, 2}, {3, 5, 6}}]").unwrap(),
+      "{2, 6}"
+    );
+  }
 }
 
 mod patterns_ordered_q {
