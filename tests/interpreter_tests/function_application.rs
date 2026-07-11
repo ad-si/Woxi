@@ -2416,6 +2416,53 @@ mod append_prepend_nest_firstcase_operator_forms {
     assert_eq!(interpret("Nest[f, 3][x]").unwrap(), "f[f[f[x]]]");
   }
 
+  // NestList[f, n][x] -> NestList[f, x, n].
+  #[test]
+  fn nest_list_operator_form() {
+    assert_eq!(
+      interpret("NestList[f, 2][x]").unwrap(),
+      "{x, f[x], f[f[x]]}"
+    );
+    assert_eq!(interpret("NestList[f, 2]").unwrap(), "NestList[f, 2]");
+  }
+
+  // GatherBy[crit][list] -> GatherBy[list, crit] (order-preserving).
+  #[test]
+  fn gather_by_operator_form() {
+    assert_eq!(
+      interpret("GatherBy[EvenQ][{1, 2, 3, 4}]").unwrap(),
+      "{{1, 3}, {2, 4}}"
+    );
+    assert_eq!(
+      interpret("Map[GatherBy[EvenQ], {{1, 2, 3}, {4, 6}}]").unwrap(),
+      "{{{1, 3}, {2}}, {{4, 6}}}"
+    );
+    assert_eq!(interpret("GatherBy[EvenQ]").unwrap(), "GatherBy[EvenQ]");
+  }
+
+  // SplitBy[crit][list] -> SplitBy[list, crit].
+  #[test]
+  fn split_by_operator_form() {
+    assert_eq!(
+      interpret("SplitBy[EvenQ][{1, 3, 2, 4}]").unwrap(),
+      "{{1, 3}, {2, 4}}"
+    );
+    assert_eq!(interpret("SplitBy[EvenQ]").unwrap(), "SplitBy[EvenQ]");
+  }
+
+  // DeleteDuplicatesBy[crit][list] -> DeleteDuplicatesBy[list, crit].
+  #[test]
+  fn delete_duplicates_by_operator_form() {
+    assert_eq!(
+      interpret("DeleteDuplicatesBy[EvenQ][{1, 2, 3, 4}]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("DeleteDuplicatesBy[Mod[#, 3] &][{1, 4, 2, 7, 5}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
   #[test]
   fn first_case_operator_form() {
     assert_eq!(interpret("FirstCase[_?OddQ][{2, 4, 5, 6}]").unwrap(), "5");
