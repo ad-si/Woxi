@@ -10123,6 +10123,23 @@ mod discrete_ratio {
       r.warnings
     );
   }
+
+  // Factorial/Gamma/Pochhammer ratios collapse the same way wolframscript
+  // reduces them: (n+1)!/n! = n+1, Gamma[n+1]/Gamma[n] = n, etc. Cancel alone
+  // leaves these untouched, so DiscreteRatio applies FunctionExpand.
+  #[test]
+  fn factorial_and_gamma_ratios_reduce() {
+    assert_eq!(interpret("DiscreteRatio[n!, n]").unwrap(), "1 + n");
+    assert_eq!(interpret("DiscreteRatio[Gamma[n], n]").unwrap(), "n");
+    assert_eq!(
+      interpret("DiscreteRatio[Pochhammer[n, 3], n]").unwrap(),
+      "(3 + n)/n"
+    );
+    assert_eq!(
+      interpret("DiscreteRatio[Binomial[n, 2], n]").unwrap(),
+      "(1 + n)/(-1 + n)"
+    );
+  }
 }
 
 mod difference_quotient {

@@ -18580,7 +18580,22 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Cancel common factors to reach wolframscript's canonical ratio form
   // (Simplify would over-split e.g. (1+n)/n into 1 + 1/n).
-  crate::evaluator::evaluate_function_call_ast("Cancel", &[result])
+  let canceled =
+    crate::evaluator::evaluate_function_call_ast("Cancel", &[result])?;
+  // FunctionExpand collapses factorial/Gamma/Pochhammer ratios that Cancel
+  // leaves alone — e.g. DiscreteRatio[n!, n] = (1 + n)!/n! → 1 + n — while
+  // preserving plain rational forms like (2 + n)/n, matching wolframscript.
+  // Only adopt it when it fully reduces the ratio (no Gamma/Factorial left):
+  // for higher-order or scaled arguments (e.g. (2 n)!) woxi can't reduce the
+  // residual Gamma ratio, so keep the cancelled form rather than swap one
+  // unreduced display for another.
+  let expanded = crate::evaluator::evaluate_function_call_ast(
+    "FunctionExpand",
+    &[canceled.clone()],
+  )?;
+  let fully_reduced = !expr_mentions_head(&expanded, "Gamma")
+    && !expr_mentions_head(&expanded, "Factorial");
+  Ok(if fully_reduced { expanded } else { canceled })
 }
 
 /// DifferenceDelta[f, x] = f(x+1) - f(x)
