@@ -810,6 +810,26 @@ pub fn reverse_level_ast(
   list: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // The first argument must be a non-atomic expression. Atoms (String,
+  // Integer, Symbol, …) emit the `normal` message and leave Reverse[expr, n]
+  // unevaluated, matching Wolfram.
+  if !matches!(
+    list,
+    Expr::List(_)
+      | Expr::Association(_)
+      | Expr::FunctionCall { .. }
+      | Expr::Rule { .. }
+  ) {
+    crate::emit_message(&format!(
+      "Reverse::normal: Nonatomic expression expected at position 1 in Reverse[{}, {}].",
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(level_spec, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "Reverse".to_string(),
+      args: vec![list.clone(), level_spec.clone()].into(),
+    });
+  }
   // Parse level spec: integer n means reverse at level n,
   // {n1, n2} means reverse at levels n1 through n2
   let (min_level, max_level) = match level_spec {
@@ -832,23 +852,55 @@ pub fn reverse_level_ast(
     min_level: usize,
     max_level: usize,
   ) -> Expr {
+    let in_range = current_level >= min_level && current_level <= max_level;
     match expr {
       Expr::List(items) => {
         // First recurse into children
-        let children: Vec<Expr> = items
+        let mut children: Vec<Expr> = items
           .iter()
           .map(|item| {
             reverse_at_levels(item, current_level + 1, min_level, max_level)
           })
           .collect();
         // Then reverse at this level if it's in range
-        if current_level >= min_level && current_level <= max_level {
-          let mut reversed = children;
-          reversed.reverse();
-          Expr::List(reversed.into())
-        } else {
-          Expr::List(children.into())
+        if in_range {
+          children.reverse();
         }
+        Expr::List(children.into())
+      }
+      // Any non-List head (e.g. f[a, b, c]) reverses its arguments the same
+      // way Lists do — Reverse[f[a, b, c], 1] gives f[c, b, a].
+      Expr::FunctionCall { name, args } => {
+        let mut children: Vec<Expr> = args
+          .iter()
+          .map(|item| {
+            reverse_at_levels(item, current_level + 1, min_level, max_level)
+          })
+          .collect();
+        if in_range {
+          children.reverse();
+        }
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: children.into(),
+        }
+      }
+      // Associations reverse the order of their key->value pairs at this
+      // level; recurse into the values for deeper levels.
+      Expr::Association(pairs) => {
+        let mut children: Vec<(Expr, Expr)> = pairs
+          .iter()
+          .map(|(k, v)| {
+            (
+              k.clone(),
+              reverse_at_levels(v, current_level + 1, min_level, max_level),
+            )
+          })
+          .collect();
+        if in_range {
+          children.reverse();
+        }
+        Expr::Association(children)
       }
       _ => expr.clone(),
     }

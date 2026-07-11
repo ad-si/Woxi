@@ -8183,6 +8183,32 @@ mod join_non_list {
     );
   }
 
+  // Reverse[expr, n] operates on any head, not only Lists.
+  #[test]
+  fn reverse_level_non_list_head() {
+    assert_eq!(interpret("Reverse[f[a, b, c], 1]").unwrap(), "f[c, b, a]");
+    assert_eq!(
+      interpret("Reverse[g[{1, 2}, {3, 4}], 2]").unwrap(),
+      "g[{2, 1}, {4, 3}]"
+    );
+  }
+
+  #[test]
+  fn reverse_level_association() {
+    assert_eq!(
+      interpret("Reverse[<|a -> 1, b -> 2|>, 1]").unwrap(),
+      "<|b -> 2, a -> 1|>"
+    );
+  }
+
+  // An atomic first argument is invalid: emit the `normal` message and leave
+  // Reverse[atom, n] unevaluated (matching the 1-argument form).
+  #[test]
+  fn reverse_level_atom_unevaluated() {
+    assert_eq!(interpret("Reverse[\"hi\", 1]").unwrap(), "Reverse[hi, 1]");
+    assert_eq!(interpret("Reverse[5, 1]").unwrap(), "Reverse[5, 1]");
+  }
+
   #[test]
   fn pad_left_non_list_head() {
     assert_eq!(
