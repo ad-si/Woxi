@@ -7010,6 +7010,26 @@ pub fn characteristic_function_ast(
       ),
       false,
     )),
+    // b*E^(I*m*t)*Pi*t*Csch[b*Pi*t]
+    ("LogisticDistribution", [m, b]) => Some((
+      call(
+        "Times",
+        vec![
+          b.clone(),
+          e_it(vec![m.clone()]),
+          Expr::Identifier("Pi".to_string()),
+          t.clone(),
+          call(
+            "Csch",
+            vec![call(
+              "Times",
+              vec![b.clone(), Expr::Identifier("Pi".to_string()), t.clone()],
+            )],
+          ),
+        ],
+      ),
+      true,
+    )),
     // (1 - I*b*t)^(-a) — raw: the evaluator's canonical Times order
     // would print b*I*t
     ("GammaDistribution", [a, b]) => Some((
@@ -7311,6 +7331,20 @@ pub fn moment_generating_function_ast(
           ),
         ),
         n.clone(),
+      ),
+      true,
+    )),
+    // E^(m*t)/Sinc[b*Pi*t]
+    ("LogisticDistribution", [m, b]) => Some((
+      div(
+        e_t(vec![m.clone()]),
+        call(
+          "Sinc",
+          vec![call(
+            "Times",
+            vec![b.clone(), Expr::Identifier("Pi".to_string()), t.clone()],
+          )],
+        ),
       ),
       true,
     )),

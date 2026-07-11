@@ -6533,6 +6533,20 @@ mod characteristic_function {
   }
 
   #[test]
+  fn logistic() {
+    assert_eq!(
+      interpret("CharacteristicFunction[LogisticDistribution[m, b], t]")
+        .unwrap(),
+      "b*E^(I*m*t)*Pi*t*Csch[b*Pi*t]"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[LogisticDistribution[0, 1], t]")
+        .unwrap(),
+      "Pi*t*Csch[Pi*t]"
+    );
+  }
+
+  #[test]
   fn numeric_argument() {
     assert_eq!(
       interpret("CharacteristicFunction[NormalDistribution[], 0]").unwrap(),
@@ -6657,6 +6671,20 @@ mod moment_generating_function {
       )
       .unwrap(),
       "(p/(1 - E^t*(1 - p)))^n"
+    );
+  }
+
+  #[test]
+  fn logistic() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LogisticDistribution[m, b], t]")
+        .unwrap(),
+      "E^(m*t)/Sinc[b*Pi*t]"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LogisticDistribution[0, 1], t]")
+        .unwrap(),
+      "Sinc[Pi*t]^(-1)"
     );
   }
 
