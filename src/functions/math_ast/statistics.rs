@@ -7125,6 +7125,32 @@ pub fn characteristic_function_ast(
       ),
       true,
     )),
+    // Log[1 - E^(I*t)*p]/Log[1 - p]
+    ("LogSeriesDistribution", [p]) => Some((
+      div(
+        call(
+          "Log",
+          vec![call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), e_it(vec![]), p.clone()]),
+            ],
+          )],
+        ),
+        call(
+          "Log",
+          vec![call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), p.clone()]),
+            ],
+          )],
+        ),
+      ),
+      true,
+    )),
     _ => None,
   };
 
@@ -7431,6 +7457,32 @@ pub fn moment_generating_function_ast(
               ],
             )),
           ],
+        ),
+      ),
+      true,
+    )),
+    // Log[1 - E^t*p]/Log[1 - p]
+    ("LogSeriesDistribution", [p]) => Some((
+      div(
+        call(
+          "Log",
+          vec![call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), e_t(vec![]), p.clone()]),
+            ],
+          )],
+        ),
+        call(
+          "Log",
+          vec![call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), p.clone()]),
+            ],
+          )],
         ),
       ),
       true,

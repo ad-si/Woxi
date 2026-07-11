@@ -6533,6 +6533,14 @@ mod characteristic_function {
   }
 
   #[test]
+  fn log_series() {
+    assert_eq!(
+      interpret("CharacteristicFunction[LogSeriesDistribution[p], t]").unwrap(),
+      "Log[1 - E^(I*t)*p]/Log[1 - p]"
+    );
+  }
+
+  #[test]
   fn logistic() {
     assert_eq!(
       interpret("CharacteristicFunction[LogisticDistribution[m, b], t]")
@@ -6671,6 +6679,15 @@ mod moment_generating_function {
       )
       .unwrap(),
       "(p/(1 - E^t*(1 - p)))^n"
+    );
+  }
+
+  #[test]
+  fn log_series() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LogSeriesDistribution[p], t]")
+        .unwrap(),
+      "Log[1 - E^t*p]/Log[1 - p]"
     );
   }
 
