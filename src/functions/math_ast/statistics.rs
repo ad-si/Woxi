@@ -10,7 +10,7 @@ use crate::syntax::Expr;
 /// strings, Infinity, True) and expressions stay unevaluated with no message.
 pub fn emit_rectt_if_numeric(name: &str, args: &[Expr]) {
   if let Some(first) = args.first()
-    && crate::functions::predicate_ast::is_numeric_q_pub(first)
+    && crate::functions::predicate_ast::is_numeric_q(first)
   {
     crate::emit_message(&format!(
       "{}::rectt: Rectangular array expected at position 1 in {}.",
@@ -97,7 +97,7 @@ fn all_leaves_real_numeric(e: &Expr) -> bool {
       all_leaves_real_numeric(&args[0])
     }
     _ => {
-      crate::functions::predicate_ast::is_numeric_q_pub(e)
+      crate::functions::predicate_ast::is_numeric_q(e)
         && !crate::functions::predicate_ast::is_complex_number(e)
     }
   }
@@ -305,7 +305,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // True, x + y, f[…], rules) stays unevaluated with no message, matching
     // wolframscript.
     other => {
-      if crate::functions::predicate_ast::is_numeric_q_pub(other) {
+      if crate::functions::predicate_ast::is_numeric_q(other) {
         Ok(other.clone())
       } else {
         if matches!(other, Expr::String(_)) {
@@ -727,9 +727,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Invalid parameters (e.g. BenktanderGibratDistribution[1, 2]) emit a
       // message and leave the call unevaluated, matching wolframscript;
       // they must not surface as an evaluation error.
-      match super::distributions::distribution_mean_variance_pub(
-        dist_name, dargs,
-      ) {
+      match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((mean, _)) => crate::evaluator::evaluate_expr_to_expr(&mean),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Mean".to_string(),
@@ -741,9 +739,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "JohnsonDistribution" => {
-      match super::distributions::distribution_mean_variance_pub(
-        dist_name, dargs,
-      ) {
+      match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((mean, _)) => crate::evaluator::evaluate_expr_to_expr(&mean),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Mean".to_string(),
@@ -1043,9 +1039,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       // Invalid parameters emit a message and leave the call unevaluated
       // (matching wolframscript), never an evaluation error.
-      match super::distributions::distribution_mean_variance_pub(
-        dist_name, dargs,
-      ) {
+      match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((_, variance)) => crate::evaluator::evaluate_expr_to_expr(&variance),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Variance".to_string(),
@@ -1057,9 +1051,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "JohnsonDistribution" => {
-      match super::distributions::distribution_mean_variance_pub(
-        dist_name, dargs,
-      ) {
+      match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((_, variance)) => crate::evaluator::evaluate_expr_to_expr(&variance),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Variance".to_string(),
@@ -1244,7 +1236,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A numeric scalar isn't a rectangular array: emit StandardDeviation::rectt
   // directly and stay unevaluated, rather than delegating to Variance below
   // (which would emit Variance::rectt instead).
-  if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
+  if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
     emit_rectt_if_numeric("StandardDeviation", args);
     return Ok(Expr::FunctionCall {
       name: "StandardDeviation".to_string(),
@@ -7034,7 +7026,7 @@ pub fn characteristic_function_ast(
         call(
           "Times",
           vec![
-            crate::functions::math_ast::make_rational_pub(-1, 2),
+            crate::functions::math_ast::make_rational(-1, 2),
             pow(t.clone(), Expr::Integer(2)),
           ],
         ),

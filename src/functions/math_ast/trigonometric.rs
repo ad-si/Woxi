@@ -1099,7 +1099,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       // -((-1 + Sqrt[3])/(2 Sqrt[2])) => -1/2*(-1 + Sqrt[3])/Sqrt[2].
       if let Some((k, rest)) = denom_integer_factor(right) {
         let mut factors = vec![
-          crate::functions::math_ast::make_rational_pub(-1, k),
+          crate::functions::math_ast::make_rational(-1, k),
           (**left).clone(),
         ];
         if let Some(rest) = rest {
@@ -2825,7 +2825,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Times",
           &[
             Expr::Identifier("I".to_string()),
-            crate::functions::math_ast::make_rational_pub(1, 2),
+            crate::functions::math_ast::make_rational(1, 2),
             Expr::Constant("Pi".to_string()),
           ],
         );
@@ -2864,7 +2864,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &[
               Expr::Integer(-1),
               Expr::Identifier("I".to_string()),
-              crate::functions::math_ast::make_rational_pub(1, 2),
+              crate::functions::math_ast::make_rational(1, 2),
               Expr::Constant("Pi".to_string()),
             ],
           );
@@ -2901,7 +2901,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     name: "Sign".to_string(),
                     args: vec![coeff.clone()].into(),
                   },
-                  crate::functions::math_ast::make_rational_pub(1, 2),
+                  crate::functions::math_ast::make_rational(1, 2),
                   Expr::Identifier("I".to_string()),
                   Expr::Constant("Pi".to_string()),
                 ]

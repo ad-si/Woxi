@@ -280,7 +280,7 @@ pub fn dispatch_linear_algebra_functions(
           let mut row = Vec::with_capacity(n);
           for j in 0..n {
             let denom = (i + j + 1) as i128;
-            row.push(crate::functions::math_ast::make_rational_pub(1, denom));
+            row.push(crate::functions::math_ast::make_rational(1, denom));
           }
           rows.push(Expr::List(row.into()));
         }
@@ -2913,12 +2913,12 @@ pub fn dispatch_linear_algebra_functions(
           )));
         }
         {
-          use crate::functions::math_ast::make_rational_pub;
+          use crate::functions::math_ast::make_rational;
           let cos_pi = |num: i128, den: i128| -> Expr {
             let angle = Expr::FunctionCall {
               name: "Times".to_string(),
               args: vec![
-                make_rational_pub(num, den),
+                make_rational(num, den),
                 Expr::Identifier("Pi".to_string()),
               ]
               .into(),
@@ -2938,20 +2938,20 @@ pub fn dispatch_linear_algebra_functions(
             for j in 1..=n {
               let entry = match m {
                 1 => {
-                  let base = make_sqrt(make_rational_pub(2, n - 1));
+                  let base = make_sqrt(make_rational(2, n - 1));
                   let scale = if i == 1 || i == n {
-                    times(make_rational_pub(1, 2), base)
+                    times(make_rational(1, 2), base)
                   } else {
                     base
                   };
                   times(scale, cos_pi((i - 1) * (j - 1), n - 1))
                 }
                 2 => times(
-                  make_sqrt(make_rational_pub(1, n)),
+                  make_sqrt(make_rational(1, n)),
                   cos_pi((2 * i - 1) * (j - 1), 2 * n),
                 ),
                 3 => {
-                  let base = make_sqrt(make_rational_pub(1, n));
+                  let base = make_sqrt(make_rational(1, n));
                   let scale = if i == 1 {
                     base
                   } else {
@@ -2960,7 +2960,7 @@ pub fn dispatch_linear_algebra_functions(
                   times(scale, cos_pi((2 * j - 1) * (i - 1), 2 * n))
                 }
                 _ => times(
-                  make_sqrt(make_rational_pub(2, n)),
+                  make_sqrt(make_rational(2, n)),
                   cos_pi((2 * i - 1) * (2 * j - 1), 4 * n),
                 ),
               };

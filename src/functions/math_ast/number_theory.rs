@@ -2396,7 +2396,7 @@ pub fn alternating_harmonic_number_ast(
   let r_expr = &args[1];
   let x = &args[2];
   if !is_exact_order(r_expr)
-    || !crate::functions::predicate_ast::is_numeric_q_pub(x)
+    || !crate::functions::predicate_ast::is_numeric_q(x)
   {
     return Ok(unevaluated);
   }
@@ -2520,7 +2520,7 @@ pub fn hyper_harmonic_number_ast(
     return Ok(unevaluated);
   }
   if let Some(x) = x
-    && !crate::functions::predicate_ast::is_numeric_q_pub(x)
+    && !crate::functions::predicate_ast::is_numeric_q(x)
   {
     return Ok(unevaluated);
   }
@@ -9446,7 +9446,7 @@ fn six_j_symbol_symbolic(
       let forced = if v_2j.rem_euclid(2) == 0 {
         Expr::Integer(v_j)
       } else {
-        crate::functions::math_ast::make_rational_pub(v_2j, 2)
+        crate::functions::math_ast::make_rational(v_2j, 2)
       };
       new_items[k] = forced.clone();
       new_args[group] = Expr::List(new_items.into());
@@ -9606,7 +9606,7 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let forced_m_expr = if two_m[idx].rem_euclid(2) == 0 {
       Expr::Integer(two_m[idx] / 2)
     } else {
-      crate::functions::math_ast::make_rational_pub(two_m[idx], 2)
+      crate::functions::math_ast::make_rational(two_m[idx], 2)
     };
     // Build the concrete-m args and recurse so all the existing
     // selection-rule machinery runs.
@@ -9734,7 +9734,7 @@ impl PipeThroughRational for Expr {
       if n.rem_euclid(denom) == 0 {
         return Expr::Integer(n / denom);
       }
-      return crate::functions::math_ast::make_rational_pub(n, denom);
+      return crate::functions::math_ast::make_rational(n, denom);
     }
     self
   }

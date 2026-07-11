@@ -527,7 +527,7 @@ pub fn quantile_distribution_closed_form(
           return Some(if v.1 == 1 {
             Expr::Integer(v.0)
           } else {
-            crate::functions::math_ast::make_rational_pub(v.0, v.1)
+            crate::functions::math_ast::make_rational(v.0, v.1)
           });
         }
       }
@@ -535,7 +535,7 @@ pub fn quantile_distribution_closed_form(
         if v.1 == 1 {
           Expr::Integer(v.0)
         } else {
-          crate::functions::math_ast::make_rational_pub(v.0, v.1)
+          crate::functions::math_ast::make_rational(v.0, v.1)
         }
       })
     }
@@ -570,10 +570,8 @@ pub fn quantile_distribution_closed_form(
       }
       let (a, b) = (dargs[0].clone(), dargs[1].clone());
       let pi = Expr::Constant("Pi".to_string());
-      let q_minus_half = minus(
-        q.clone(),
-        crate::functions::math_ast::make_rational_pub(1, 2),
-      );
+      let q_minus_half =
+        minus(q.clone(), crate::functions::math_ast::make_rational(1, 2));
       let tan = Expr::FunctionCall {
         name: "Tan".to_string(),
         args: vec![times(pi, q_minus_half)].into(),
@@ -818,7 +816,7 @@ pub fn quantile_distribution_closed_form(
         args: vec![
           s,
           divide(nu.clone(), int(2)),
-          crate::functions::math_ast::make_rational_pub(1, 2),
+          crate::functions::math_ast::make_rational(1, 2),
         ]
         .into(),
       };
@@ -3939,14 +3937,6 @@ fn try_expectation_probability_distribution(
   Ok(Some(eval(integral)?))
 }
 
-/// Public wrapper for distribution_mean_variance for use by Mean/Variance
-pub fn distribution_mean_variance_pub(
-  dist_name: &str,
-  dargs: &[Expr],
-) -> Result<(Expr, Expr), InterpreterError> {
-  distribution_mean_variance(dist_name, dargs)
-}
-
 /// Parameters of a BinormalDistribution as `(m1, m2, s1, s2, rho)`.
 ///   BinormalDistribution[{m1, m2}, {s1, s2}, rho]  — full form
 ///   BinormalDistribution[rho]                       — standard (means 0,
@@ -3977,7 +3967,7 @@ pub fn binormal_params(
 }
 
 /// Returns (Mean, Variance) as symbolic expressions for known distributions.
-fn distribution_mean_variance(
+pub fn distribution_mean_variance(
   dist_name: &str,
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
@@ -8232,7 +8222,7 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let half_log_2pi = divide(plus(log_of(int(2)), log_of(pi())), int(2));
       let result = plus(
         times(
-          crate::functions::math_ast::make_rational_pub(-1, 2),
+          crate::functions::math_ast::make_rational(-1, 2),
           divide(poly, times(s.clone(), s.clone())),
         ),
         times(int(-n), plus(half_log_2pi, log_of(s.clone()))),
@@ -8640,7 +8630,7 @@ fn frac_to_rational_expr(f: (i128, i128)) -> Expr {
   if f.1 == 1 {
     Expr::Integer(f.0)
   } else {
-    crate::functions::math_ast::make_rational_pub(f.0, f.1)
+    crate::functions::math_ast::make_rational(f.0, f.1)
   }
 }
 
@@ -8725,7 +8715,7 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     } else if !first_scaled_seen {
       first_scaled_seen = true;
       times(
-        crate::functions::math_ast::make_rational_pub(-1, variances[i]),
+        crate::functions::math_ast::make_rational(-1, variances[i]),
         sq,
       )
     } else {
@@ -8770,7 +8760,7 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     let pi_pow = Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
       left: Box::new(pi()),
-      right: Box::new(crate::functions::math_ast::make_rational_pub(3, 2)),
+      right: Box::new(crate::functions::math_ast::make_rational(3, 2)),
     };
     match &sqrt_part {
       Expr::Integer(s) => Expr::FunctionCall {
@@ -8865,7 +8855,7 @@ pub fn empirical_distribution_ast(
     uniques.push(if v.1 == 1 {
       Expr::Integer(v.0)
     } else {
-      crate::functions::math_ast::make_rational_pub(v.0, v.1)
+      crate::functions::math_ast::make_rational(v.0, v.1)
     });
   }
   Ok(Expr::FunctionCall {
@@ -8909,7 +8899,7 @@ fn frac_expr((n, d): (i128, i128)) -> Expr {
   if d == 1 {
     Expr::Integer(n)
   } else {
-    crate::functions::math_ast::make_rational_pub(n, d)
+    crate::functions::math_ast::make_rational(n, d)
   }
 }
 
@@ -9311,7 +9301,7 @@ pub fn data_distribution_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
   Some(if den == 1 {
     Expr::Integer(num)
   } else {
-    crate::functions::math_ast::make_rational_pub(num, den)
+    crate::functions::math_ast::make_rational(num, den)
   })
 }
 
@@ -9349,7 +9339,7 @@ fn data_distribution_pdf_cdf(
   Some(if den == 1 {
     Expr::Integer(num)
   } else {
-    crate::functions::math_ast::make_rational_pub(num, den)
+    crate::functions::math_ast::make_rational(num, den)
   })
 }
 
@@ -9443,7 +9433,7 @@ fn pdf_product_distribution(
         let sq = pow2(v);
         terms.push(if !first_scaled_seen {
           first_scaled_seen = true;
-          times(crate::functions::math_ast::make_rational_pub(-1, 2), sq)
+          times(crate::functions::math_ast::make_rational(-1, 2), sq)
         } else {
           neg(div2(sq, int(2)))
         });

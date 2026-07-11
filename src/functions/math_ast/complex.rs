@@ -107,7 +107,7 @@ fn re_im_via_complex_expand(
   which: &str,
   arg: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  if !crate::functions::predicate_ast::is_numeric_q_pub(arg) {
+  if !crate::functions::predicate_ast::is_numeric_q(arg) {
     return None;
   }
   let expanded = match crate::evaluator::evaluate_function_call_ast(
@@ -511,7 +511,7 @@ pub fn is_real_valued(expr: &Expr) -> bool {
     return true;
   }
   // NumericQ expressions: check if they evaluate to a real number
-  if crate::functions::predicate_ast::is_numeric_q_pub(expr) {
+  if crate::functions::predicate_ast::is_numeric_q(expr) {
     // Try to evaluate numerically - if it gives a real, it's real-valued
     if let Some(val) = crate::functions::math_ast::try_eval_to_f64(expr) {
       return val.is_finite() || val.is_nan();
@@ -800,7 +800,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     left,
     right,
   } = expr
-    && crate::functions::predicate_ast::is_numeric_q_pub(expr)
+    && crate::functions::predicate_ast::is_numeric_q(expr)
   {
     let num = conjugate_one(left)?;
     let den = conjugate_one(right)?;

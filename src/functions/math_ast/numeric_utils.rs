@@ -617,13 +617,6 @@ pub fn gcd(a: i128, b: i128) -> i128 {
   a as i128
 }
 
-/// Create a rational or integer result from numerator/denominator
-/// Simplifies the fraction and returns Integer if denominator is 1
-/// Public wrapper for creating rational expressions
-pub fn make_rational_pub(numer: i128, denom: i128) -> Expr {
-  make_rational(numer, denom)
-}
-
 /// Extract the largest easily-found perfect-square factor from a positive
 /// i128: returns `(outside, inside)` with `n == outside^2 * inside`, so
 /// `Sqrt[n] = outside * Sqrt[inside]`. Square factors of primes below a
@@ -660,6 +653,8 @@ pub fn extract_square_factor_i128(n: i128) -> (i128, i128) {
   (outside, inside)
 }
 
+/// Create a rational or integer result from numerator/denominator
+/// Simplifies the fraction and returns Integer if denominator is 1
 pub fn make_rational(numer: i128, denom: i128) -> Expr {
   if denom == 0 {
     // Division by zero - shouldn't reach here but be safe

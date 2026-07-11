@@ -1485,7 +1485,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &[Expr::Integer(num), z_pow],
         )?,
         (num, den) => {
-          let rat = crate::functions::math_ast::make_rational_pub(num, den);
+          let rat = crate::functions::math_ast::make_rational(num, den);
           crate::evaluator::evaluate_function_call_ast("Times", &[rat, z_pow])?
         }
       };
@@ -2997,9 +2997,7 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               for n in 1..=(-ki) {
                 fact *= n;
               }
-              return Ok(crate::functions::math_ast::make_rational_pub(
-                1, fact,
-              ));
+              return Ok(crate::functions::math_ast::make_rational(1, fact));
             }
             let rounded = value.round();
             if (value - rounded).abs() < 1e-12 {

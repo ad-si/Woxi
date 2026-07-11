@@ -774,7 +774,7 @@ pub fn dispatch_math_functions(
             return None;
           };
           let Ok((mean, var)) =
-            crate::functions::math_ast::distribution_mean_variance_pub(cn, ca)
+            crate::functions::math_ast::distribution_mean_variance(cn, ca)
           else {
             return None;
           };
@@ -2578,8 +2578,7 @@ pub fn dispatch_math_functions(
         if base_int >= 2 {
           let denom = (base_int as f64).powi(e as i32) as i128;
           if denom > 0 {
-            let mantissa =
-              crate::functions::math_ast::make_rational_pub(*n, denom);
+            let mantissa = crate::functions::math_ast::make_rational(*n, denom);
             return Some(Ok(Expr::List(
               vec![mantissa, Expr::Integer(e)].into(),
             )));

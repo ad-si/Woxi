@@ -323,11 +323,8 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // e = w / Sqrt[normsq] = w * normsq^(-1/2).
       let inv_norm = Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![
-          normsq,
-          crate::functions::math_ast::make_rational_pub(-1, 2),
-        ]
-        .into(),
+        args: vec![normsq, crate::functions::math_ast::make_rational(-1, 2)]
+          .into(),
       };
       let e: Vec<Expr> = w
         .iter()
@@ -727,7 +724,7 @@ pub fn is_nonempty_square(m: &[Vec<Expr>]) -> bool {
 /// symbolic expressions (`x`, `a + b`, `f[x]`) stay held with no message.
 pub fn is_matsq_subject(arg: &Expr) -> bool {
   matches!(arg, Expr::List(_))
-    || crate::functions::predicate_ast::is_numeric_q_pub(arg)
+    || crate::functions::predicate_ast::is_numeric_q(arg)
 }
 
 /// Emit `<F>::matsq: Argument <m> at position 1 is not a nonempty square
@@ -1119,9 +1116,9 @@ fn eval_divide(a: &Expr, b: &Expr) -> Expr {
         let (n, d) = (x / g, y / g);
         if d < 0 {
           // Keep denominator positive
-          crate::functions::math_ast::make_rational_pub(-n, -d)
+          crate::functions::math_ast::make_rational(-n, -d)
         } else {
-          crate::functions::math_ast::make_rational_pub(n, d)
+          crate::functions::math_ast::make_rational(n, d)
         }
       }
     }
@@ -2658,7 +2655,7 @@ fn simplify_fraction(n: i128, d: i128) -> Expr {
   if d == 1 {
     Expr::Integer(n)
   } else {
-    crate::functions::math_ast::make_rational_pub(n, d)
+    crate::functions::math_ast::make_rational(n, d)
   }
 }
 
@@ -9307,7 +9304,7 @@ fn gq_to_expr(q: &GQNum) -> Option<Expr> {
     if x.d == 1 {
       Expr::Integer(x.n)
     } else {
-      crate::functions::math_ast::make_rational_pub(x.n, x.d)
+      crate::functions::math_ast::make_rational(x.n, x.d)
     }
   };
   if q.im.is_zero() {

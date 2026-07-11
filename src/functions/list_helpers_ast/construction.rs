@@ -598,7 +598,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
-      results.push(crate::functions::math_ast::make_rational_pub(cur_n, cur_d));
+      results.push(crate::functions::math_ast::make_rational(cur_n, cur_d));
 
       // cur += step: cur_n/cur_d + step_n/step_d = (cur_n*step_d + step_n*cur_d) / (cur_d*step_d)
       cur_n = cur_n * step_d + step_n * cur_d;
@@ -919,7 +919,7 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         break;
       }
 
-      results.push(crate::functions::math_ast::make_rational_pub(cur_n, cur_d));
+      results.push(crate::functions::math_ast::make_rational(cur_n, cur_d));
 
       // cur *= factor: (cur_n/cur_d) * (fac_n/fac_d) = (cur_n*fac_n) / (cur_d*fac_d)
       cur_n *= fac_n;
@@ -993,7 +993,7 @@ pub fn constant_array_ast(
       None => {
         // A concrete but invalid dimension is an error, so leave unevaluated;
         // a symbolic dimension yields a SymbolicZeros/OnesArray placeholder.
-        if crate::functions::predicate_ast::is_numeric_q_pub(d) {
+        if crate::functions::predicate_ast::is_numeric_q(d) {
           return unevaluated();
         }
         has_symbolic = true;

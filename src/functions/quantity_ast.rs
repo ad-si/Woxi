@@ -1763,7 +1763,7 @@ fn multiply_magnitude_by_rational(
       if rd == 1 {
         Ok(Expr::Integer(rn))
       } else {
-        Ok(crate::functions::math_ast::make_rational_pub(rn, rd))
+        Ok(crate::functions::math_ast::make_rational(rn, rd))
       }
     }
     // Collapse the rational scale to a f64 first so the multiplication
@@ -1776,12 +1776,12 @@ fn multiply_magnitude_by_rational(
       if let (Expr::Integer(mn), Expr::Integer(md)) = (&args[0], &args[1]) {
         let rn = mn * numer;
         let rd = md * denom;
-        Ok(crate::functions::math_ast::make_rational_pub(rn, rd))
+        Ok(crate::functions::math_ast::make_rational(rn, rd))
       } else {
         // Symbolic magnitude — wrap in Times
         Ok(crate::functions::math_ast::times_ast(&[
           magnitude.clone(),
-          crate::functions::math_ast::make_rational_pub(numer, denom),
+          crate::functions::math_ast::make_rational(numer, denom),
         ])?)
       }
     }
@@ -1790,7 +1790,7 @@ fn multiply_magnitude_by_rational(
       let factor = if denom == 1 {
         Expr::Integer(numer)
       } else {
-        crate::functions::math_ast::make_rational_pub(numer, denom)
+        crate::functions::math_ast::make_rational(numer, denom)
       };
       crate::functions::math_ast::times_ast(&[magnitude.clone(), factor])
     }
@@ -2262,7 +2262,7 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // stay unevaluated. This is what makes e.g.
     // `Quantity[1, "Hours"] / Quantity[1, "Minutes"] // UnitConvert` → 60
     // rather than the spurious `UnitConvert[60]`.
-    if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
+    if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
       return Ok(args[0].clone());
     }
     return Ok(Expr::FunctionCall {
@@ -2823,9 +2823,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(base),
-        right: Box::new(crate::functions::math_ast::make_rational_pub(
-          abs_rn, rd,
-        )),
+        right: Box::new(crate::functions::math_ast::make_rational(abs_rn, rd)),
       }
     };
 

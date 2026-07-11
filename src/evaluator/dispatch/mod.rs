@@ -8,7 +8,7 @@ pub(crate) use crate::syntax::{
 };
 #[allow(unused_imports)]
 pub(crate) use crate::{
-  ENV, InterpreterError, PART_DEPTH, StoredValue, format_real_result, interpret,
+  ENV, InterpreterError, PART_DEPTH, StoredValue, interpret,
 };
 
 pub mod arg_count;

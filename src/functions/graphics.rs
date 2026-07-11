@@ -11135,7 +11135,7 @@ fn evenly_spaced_stops(n: usize) -> Vec<Expr> {
   }
   let denom = (n - 1) as i128;
   (0..n)
-    .map(|i| crate::functions::make_rational_pub(i as i128, denom))
+    .map(|i| crate::functions::make_rational(i as i128, denom))
     .collect()
 }
 
@@ -11223,7 +11223,7 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       color.unwrap_or_else(|| Expr::FunctionCall {
         name: "Opacity".to_string(),
         args: vec![
-          crate::functions::make_rational_pub(1, 3),
+          crate::functions::make_rational(1, 3),
           Expr::FunctionCall {
             name: "ThemeColor".to_string(),
             args: vec![Expr::Identifier("Foreground".to_string())].into(),
