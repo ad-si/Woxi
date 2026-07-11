@@ -3194,6 +3194,59 @@ fn distribution_moment(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
 
+  // Uniform[{a, b}] is symmetric, with central moments 0 for odd n and
+  //   (b - a)^n / (2^n * (n + 1))   for even n.
+  // The generic raw-moment assembly leaves an un-collected polynomial mess, so
+  // give the compact closed form directly (matching wolframscript, e.g. CM4 is
+  // (-a + b)^4/80 and Kurtosis reduces to 9/5).
+  if let Expr::FunctionCall { name, args } = dist
+    && name == "UniformDistribution"
+    && args.len() == 1
+    && let Expr::List(bounds) = &args[0]
+    && bounds.len() == 2
+  {
+    let (a, b) = (bounds[0].clone(), bounds[1].clone());
+    let result = if n.rem_euclid(2) == 1 {
+      Expr::Integer(0)
+    } else {
+      let diff = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          b,
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), a].into(),
+          },
+        ]
+        .into(),
+      };
+      let num = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(diff),
+        right: Box::new(Expr::Integer(n)),
+      };
+      // 2^n * (n + 1), kept symbolic so large n does not overflow.
+      let denom = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(Expr::Integer(2)),
+            right: Box::new(Expr::Integer(n)),
+          },
+          Expr::Integer(n + 1),
+        ]
+        .into(),
+      };
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(num),
+        right: Box::new(denom),
+      }
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   // Hyperbolic-secant central moments are 0 for odd n and, for even n,
   //   (-1)^(n/2) * EulerE[n] * s^n
   // (the even moments are the Euler numbers). This gives Skewness 0 and

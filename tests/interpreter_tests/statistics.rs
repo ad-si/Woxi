@@ -2847,6 +2847,45 @@ mod sech_moments {
   }
 }
 
+// Uniform[{a, b}] is symmetric; its central moments are 0 (odd) and the compact
+// (b - a)^n/(2^n (n+1)) (even), so Kurtosis reduces to 9/5. Previously the
+// generic path left an un-collected polynomial. Verified against wolframscript.
+mod uniform_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[UniformDistribution[{a, b}], 2]").unwrap(),
+      "(-a + b)^2/12"
+    );
+    assert_eq!(
+      interpret("CentralMoment[UniformDistribution[{a, b}], 3]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CentralMoment[UniformDistribution[{a, b}], 4]").unwrap(),
+      "(-a + b)^4/80"
+    );
+    assert_eq!(
+      interpret("CentralMoment[UniformDistribution[{a, b}], 6]").unwrap(),
+      "(-a + b)^6/448"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[UniformDistribution[{a, b}]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Kurtosis[UniformDistribution[{a, b}]]").unwrap(),
+      "9/5"
+    );
+  }
+}
+
 mod factorial_moment {
   use super::*;
 
