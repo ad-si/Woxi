@@ -154,7 +154,7 @@ fn apart_expr_raw(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         // the proper-fraction path hoist the content and normalize signs.
         let mut lcm: i128 = 1;
         for &(_, d) in &remainder {
-          let g = i128_gcd(lcm, d);
+          let g = gcd_i128(lcm, d);
           lcm = match (lcm / g).checked_mul(d) {
             Some(v) => v,
             None => {
@@ -989,7 +989,7 @@ fn apart_repeated_roots(
 }
 
 /// Polynomial long division returning (quotient, remainder) as coefficient vectors
-fn i128_gcd(a: i128, b: i128) -> i128 {
+fn gcd_i128(a: i128, b: i128) -> i128 {
   let (mut a, mut b) = (a.abs(), b.abs());
   while b != 0 {
     let t = a % b;
@@ -1001,7 +1001,7 @@ fn i128_gcd(a: i128, b: i128) -> i128 {
 
 /// Reduce n/d to lowest terms with a positive denominator.
 fn rat_reduce(n: i128, d: i128) -> (i128, i128) {
-  let g = i128_gcd(n, d);
+  let g = gcd_i128(n, d);
   let (mut n, mut d) = (n / g, d / g);
   if d < 0 {
     n = -n;

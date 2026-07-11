@@ -510,7 +510,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Fraction helpers over BigInt
   type Frac = (BigInt, BigInt);
-  let gcd_big = |a: &BigInt, b: &BigInt| -> BigInt {
+  let gcd_bigint = |a: &BigInt, b: &BigInt| -> BigInt {
     let (mut a, mut b) = (a.clone(), b.clone());
     if a < BigInt::from(0) {
       a = -a;
@@ -530,7 +530,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let reduce = |num: BigInt, den: BigInt| -> Frac {
-    let g = gcd_big(&num, &den);
+    let g = gcd_bigint(&num, &den);
     let (mut n, mut d) = (num / &g, den / g);
     if d < BigInt::from(0) {
       n = -n;

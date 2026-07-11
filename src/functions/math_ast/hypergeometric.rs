@@ -1206,7 +1206,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let denom = fact(n - k) * &b_pochhammer * &k_fact;
       // coeff = n! / denom (reduce GCD).
-      fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+      fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
         use num_traits::Zero;
         let (mut a, mut b) = (a.clone(), b.clone());
         if a < BigInt::from(0) {
@@ -1222,7 +1222,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         a
       }
-      let g = bigint_gcd(&n_fact, &denom);
+      let g = gcd_bigint(&n_fact, &denom);
       let cn = &n_fact / &g;
       let cd = &denom / &g;
       let z_pow = if k == 0 {
@@ -1356,7 +1356,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Reduce by the gcd shared between numerator e^z coefficient, the
     // numerator constant, and the denominator.
     let g_all =
-      bigint_gcd(bigint_gcd(e_num.abs(), const_num.abs()), z_max.abs());
+      gcd_bigint(gcd_bigint(e_num.abs(), const_num.abs()), z_max.abs());
     let denom = if g_all != BigInt::from(0) {
       &z_max / &g_all
     } else {
@@ -1376,7 +1376,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // when the numerator has a common factor — pull that factor out so
     // the inner Plus shows the smallest integer coefficients.
     let mut outer_factor = BigInt::from(1);
-    let g_num = bigint_gcd(e_n.abs(), c_n.abs());
+    let g_num = gcd_bigint(e_n.abs(), c_n.abs());
     if g_num > BigInt::from(1) {
       outer_factor = g_num.clone();
       e_n /= &g_num;
@@ -1421,7 +1421,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
-  fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
+  fn gcd_bigint(a: BigInt, b: BigInt) -> BigInt {
     use num_traits::Zero;
     let (mut a, mut b) = (a, b);
     while !b.is_zero() {

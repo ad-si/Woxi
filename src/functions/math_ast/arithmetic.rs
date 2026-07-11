@@ -1517,7 +1517,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
   e
 }
 
-fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
   let mut a = match a.sign() {
     Sign::Minus => -a,
     _ => a.clone(),
@@ -1608,7 +1608,7 @@ impl Coeff {
         let (n2, d2) = Self::to_big(*n2, *d2);
         let mut sn = &n1 * &d2 + &n2 * &d1;
         let mut sd = d1 * d2;
-        let g = bigint_gcd(&sn, &sd);
+        let g = gcd_bigint(&sn, &sd);
         sn /= &g;
         sd /= g;
         if sd < BigInt::from(0) {
@@ -1620,7 +1620,7 @@ impl Coeff {
       (Self::BigExact(n1, d1), Self::BigExact(n2, d2)) => {
         let mut sn = n1 * d2 + n2 * d1;
         let mut sd = d1 * d2;
-        let g = bigint_gcd(&sn, &sd);
+        let g = gcd_bigint(&sn, &sd);
         sn /= &g;
         sd /= g;
         if sd < BigInt::from(0) {
@@ -1669,7 +1669,7 @@ impl Coeff {
         let (n2, d2) = Self::to_big(*n2, *d2);
         let mut sn = &n1 * &n2;
         let mut sd = d1 * d2;
-        let g = bigint_gcd(&sn, &sd);
+        let g = gcd_bigint(&sn, &sd);
         sn /= &g;
         sd /= g;
         if sd < BigInt::from(0) {
@@ -1681,7 +1681,7 @@ impl Coeff {
       (Self::BigExact(n1, d1), Self::BigExact(n2, d2)) => {
         let mut sn = n1 * n2;
         let mut sd = d1 * d2;
-        let g = bigint_gcd(&sn, &sd);
+        let g = gcd_bigint(&sn, &sd);
         sn /= &g;
         sd /= g;
         if sd < BigInt::from(0) {
@@ -6657,7 +6657,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Reduce the fraction by gcd and fix the sign onto the numerator.
     {
-      let g = bigint_gcd(&big_numer, &big_denom);
+      let g = gcd_bigint(&big_numer, &big_denom);
       if g != BigInt::from(0) {
         big_numer /= &g;
         big_denom /= &g;
@@ -6979,7 +6979,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       let big_numer = BigInt::from(int_product) * BigInt::from(rat_numer);
       let big_denom = BigInt::from(rat_denom);
-      let g = bigint_gcd(&big_numer, &big_denom);
+      let g = gcd_bigint(&big_numer, &big_denom);
       let mut sn = big_numer / &g;
       let mut sd = big_denom / g;
       if sd < BigInt::from(0) {
@@ -7811,7 +7811,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
 
   // For BigInteger / BigInteger (or mixed Integer/BigInteger), reduce by GCD
   {
-    use crate::functions::math_ast::number_theory::bigint_gcd;
+    use crate::functions::math_ast::number_theory::gcd_bigint;
     let a_big = expr_to_bigint(a);
     let b_big = expr_to_bigint(b);
     if let (Some(numer), Some(denom)) = (a_big, b_big) {
@@ -7819,7 +7819,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       if denom.is_zero() {
         return Ok(divide_by_zero_result(a));
       }
-      let g = bigint_gcd(numer.clone(), denom.clone());
+      let g = gcd_bigint(numer.clone(), denom.clone());
       let mut rn = &numer / &g;
       let mut rd = &denom / &g;
       // Normalize sign: put sign in numerator
@@ -8072,14 +8072,14 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       // preserved instead of collapsing to a lossy Real (e.g. iterating
       // `#/2 &` past a 2^127 denominator must stay an exact fraction).
       _ => {
-        use crate::functions::math_ast::number_theory::bigint_gcd;
+        use crate::functions::math_ast::number_theory::gcd_bigint;
         use num_traits::Zero;
         let numer = BigInt::from(a_n) * BigInt::from(b_d);
         let denom = BigInt::from(a_d) * BigInt::from(b_n);
         if denom.is_zero() {
           return Ok(divide_by_zero_result(a));
         }
-        let g = bigint_gcd(numer.clone(), denom.clone());
+        let g = gcd_bigint(numer.clone(), denom.clone());
         let mut rn = &numer / &g;
         let mut rd = &denom / &g;
         if rd < BigInt::from(0) {
@@ -9259,7 +9259,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     use num_traits::{ToPrimitive, Zero};
 
     // BigInt GCD helper
-    fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+    fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
       let mut a = if *a < BigInt::from(0) {
         -a.clone()
       } else {
@@ -9325,10 +9325,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let k_n = num_traits::pow::pow(k_big, *n as usize);
 
     // Reduce fractions
-    let g_re = bigint_gcd(&result_re, &k_n);
+    let g_re = gcd_bigint(&result_re, &k_n);
     let final_re_n = &result_re / &g_re;
     let final_re_d = &k_n / &g_re;
-    let g_im = bigint_gcd(&result_im, &k_n);
+    let g_im = gcd_bigint(&result_im, &k_n);
     let final_im_n = &result_im / &g_im;
     let final_im_d = &k_n / &g_im;
 

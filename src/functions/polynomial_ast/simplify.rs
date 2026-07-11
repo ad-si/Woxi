@@ -7848,14 +7848,14 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
   use num_traits::{One, Zero};
 
   // gcd of two non-negative BigInts (Euclid).
-  fn big_gcd(mut a: BigInt, mut b: BigInt) -> BigInt {
+  fn gcd_bigint(mut a: BigInt, mut b: BigInt) -> BigInt {
     while !b.is_zero() {
       let r = &a % &b;
       a = std::mem::replace(&mut b, r);
     }
     a
   }
-  fn u64_gcd(mut a: u64, mut b: u64) -> u64 {
+  fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
     while b != 0 {
       let r = a % b;
       a = std::mem::replace(&mut b, r);
@@ -7977,7 +7977,7 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
         den *= n.pow((-c) as u32);
       }
     }
-    let g = big_gcd(num.clone(), den.clone());
+    let g = gcd_bigint(num.clone(), den.clone());
     let num = &num / &g;
     let den = &den / &g;
     let q = if den.is_one() {
@@ -8005,7 +8005,7 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
     let g = logs
       .iter()
       .map(|(c, _)| c.unsigned_abs())
-      .fold(0u64, u64_gcd);
+      .fold(0u64, gcd_u64);
     if g > 1 {
       let reduced: Vec<(i64, BigInt)> = logs
         .iter()
