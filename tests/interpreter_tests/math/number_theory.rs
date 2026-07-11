@@ -491,6 +491,17 @@ mod lucas_l_builtin {
   fn lucas_symbolic_unevaluated() {
     assert_eq!(interpret("LucasL[n]").unwrap(), "LucasL[n]");
   }
+
+  // Regression: a rational argument left the polynomial terms un-summed
+  // (LucasL[4, 1/3] -> 20/9 + 19/81); the value must fold to a single
+  // rational matching wolframscript.
+  #[test]
+  fn lucas_polynomial_rational_argument() {
+    assert_eq!(interpret("LucasL[4, 1/3]").unwrap(), "199/81");
+    assert_eq!(interpret("LucasL[5, 1/2]").unwrap(), "101/32");
+    assert_eq!(interpret("LucasL[6, 1/2]").unwrap(), "297/64");
+    assert_eq!(interpret("LucasL[-3, 1/2]").unwrap(), "-13/8");
+  }
 }
 
 mod catalan_number_builtin {

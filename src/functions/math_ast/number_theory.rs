@@ -818,7 +818,12 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       prev = curr;
       curr = expanded;
     }
-    return apply_sign(curr);
+    let signed = apply_sign(curr)?;
+    // The step-wise Expand leaves a rational argument's terms un-summed
+    // (LucasL[4, 1/3] -> 20/9 + 19/81); evaluate so they fold to a single
+    // value (199/81). A symbolic polynomial is already canonical, so this is
+    // idempotent for it.
+    return crate::evaluator::evaluate_expr_to_expr(&signed);
   }
 
   // Real argument: analytic continuation
