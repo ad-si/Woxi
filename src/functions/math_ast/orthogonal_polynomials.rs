@@ -346,12 +346,21 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return jacobi_p_integer_ab(n, *ai, *bi, &args[3]);
   }
 
-  // Try numerical evaluation
+  // Numerical evaluation only when a, b or x is an inexact machine number.
+  // Exact rational a, b with an exact x keeps the closed form below
+  // (JacobiP[3, 1/2, 1/2, 1/3] = -245/432, not the float -0.5671…).
+  let is_inexact = |e: &Expr| {
+    matches!(e, Expr::Real(_) | Expr::BigFloat(_, _))
+      || crate::functions::math_ast::try_extract_complex_float(e)
+        .is_some_and(|(_, im)| im != 0.0)
+  };
+  let args_inexact =
+    is_inexact(&args[1]) || is_inexact(&args[2]) || is_inexact(&args[3]);
   let a_f = try_eval_to_f64(&args[1]);
   let b_f = try_eval_to_f64(&args[2]);
   let x_f = try_eval_to_f64(&args[3]);
 
-  if let (Some(a), Some(b), Some(x)) = (a_f, b_f, x_f) {
+  if args_inexact && let (Some(a), Some(b), Some(x)) = (a_f, b_f, x_f) {
     let result = jacobi_p_eval_f64(n, a, b, x);
     return Ok(Expr::Real(result));
   }

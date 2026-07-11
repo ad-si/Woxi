@@ -2667,6 +2667,21 @@ mod jacobi_p {
     );
   }
 
+  // Rational order parameters with an exact argument keep the exact rational
+  // value; only an inexact argument numericizes. wolframscript:
+  // JacobiP[3, 1/2, 1/2, 1/3] = -245/432 (previously returned a float).
+  #[test]
+  fn rational_ab_exact_argument() {
+    assert_eq!(interpret("JacobiP[3, 1/2, 1/2, 1/3]").unwrap(), "-245/432");
+    assert_eq!(interpret("JacobiP[2, 1/2, 3/2, 1/4]").unwrap(), "-45/64");
+    assert_eq!(interpret("JacobiP[3, 1/2, 1/2, 2]").unwrap(), "245/8");
+    // An inexact argument still numericizes.
+    assert_eq!(
+      interpret("JacobiP[3, 1/2, 1/2, 0.3]").unwrap(),
+      "-0.5381249999999999"
+    );
+  }
+
   #[test]
   fn at_zero() {
     // JacobiP[n, a, b, 0] should work
