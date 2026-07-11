@@ -780,6 +780,10 @@ function main() {
     // LegendreP[2, 1, x]: factor ordering in Times differs. Woxi emits
     // -3*Sqrt[1-x^2]*x while Wolfram emits -3*x*Sqrt[1-x^2]. Same value.
     "LegendreP[2, 1, x]",
+    // LegendreP[1, 1, 0.5] = -Sqrt[0.75]: Woxi returns the IEEE-correct
+    // -0.8660254037844386 (verified against WL's 30-digit value); Wolfram's
+    // machine result -0.8660254037844385 is 1 ULP low.
+    "LegendreP[1, 1, 0.5]",
     // LaguerreL[5, 2, x]: Woxi returns expanded form, Wolfram returns
     // the factored-over-120 form. Same polynomial.
     "LaguerreL[5, 2, x]",
@@ -1206,6 +1210,12 @@ function main() {
     // (HoldAll) bodies aren't Orderless-sorted — a broad held-expression form
     // difference, not specific to Sum.
     "Sum[1/(2 n - 1), {n, 1, Infinity}]",
+    // Residue[Gamma[z]/(z + 1), {z, -1}] = -1 + EulerGamma: a Gamma pole
+    // model times another pole at a NONZERO point produces a pathologically
+    // slow Simplify blowup (PolyGamma constants over non-monomial pole
+    // quotients), so Woxi deliberately leaves it unevaluated. See the comment
+    // in tests/interpreter_tests/calculus.rs.
+    "Residue[Gamma[z]/(z + 1), {z, -1}]",
 
     // ── Individual CAS form / gap divergences (value-correct or unimplemented) ──
 
