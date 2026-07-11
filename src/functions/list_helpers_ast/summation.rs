@@ -436,29 +436,18 @@ fn monic_int_shift(expr: &Expr, var_name: &str) -> Option<i128> {
 /// Closed form for `Product[(var + a)/(var + b), {var, 1, n}]` with
 /// non-negative integer shifts `a, b`, where `n = max_expr`. Returns `None`
 /// (leaving the product symbolic) when the body is not such a ratio.
-fn rational_telescoping_product(
-  body: &Expr,
-  var_name: &str,
+/// Closed form for `Product[(var + a)/(var + b), {var, k0, n}]` with integer
+/// shifts `a, b` (`n = max_expr`). Returns the un-evaluated ratio, or None when
+/// a factor could vanish or the constant overflows.
+fn telescope_linear_pair(
+  a: i128,
+  b: i128,
   max_expr: &Expr,
   k0: i128,
-) -> Result<Option<Expr>, InterpreterError> {
+) -> Option<Expr> {
   use crate::syntax::BinaryOperator;
-  let eval = crate::evaluator::evaluate_expr_to_expr;
-  let call = |name: &str, arg: Expr| Expr::FunctionCall {
-    name: name.to_string(),
-    args: vec![arg].into(),
-  };
-  let together = eval(&call("Together", body.clone()))?;
-  let num = eval(&call("Numerator", together.clone()))?;
-  let den = eval(&call("Denominator", together))?;
-  let (Some(a), Some(b)) = (
-    monic_int_shift(&num, var_name),
-    monic_int_shift(&den, var_name),
-  ) else {
-    return Ok(None);
-  };
   if a == b {
-    return Ok(Some(Expr::Integer(1)));
+    return Some(Expr::Integer(1));
   }
   // The factors (k + j) range over j ∈ (lo, hi]; the smallest factor value in
   // the product is k0 + lo + 1 (at k = k0, j = lo + 1). Require every factor to
@@ -467,7 +456,7 @@ fn rational_telescoping_product(
   // `a, b ≥ 0` guard.
   let (lo, hi) = (a.min(b), a.max(b));
   if k0 + lo + 1 < 1 {
-    return Ok(None);
+    return None;
   }
   // Build Π_{j=lo+1}^{hi} (n + j) and the constant Π_{j=lo+1}^{hi} (k0 + j - 1).
   let mut factors: Vec<Expr> = Vec::new();
@@ -478,17 +467,14 @@ fn rational_telescoping_product(
       left: Box::new(max_expr.clone()),
       right: Box::new(Expr::Integer(j)),
     });
-    konst = match konst.checked_mul(k0 + j - 1) {
-      Some(v) => v,
-      None => return Ok(None), // overflow — leave symbolic
-    };
+    konst = konst.checked_mul(k0 + j - 1)?; // overflow — leave symbolic
   }
   let prod = Expr::FunctionCall {
     name: "Times".to_string(),
     args: factors.into(),
   };
   // a > b: (Π (n+j)) / konst ; a < b: konst / (Π (n+j)).
-  let result = if a > b {
+  Some(if a > b {
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left: Box::new(prod),
@@ -499,6 +485,100 @@ fn rational_telescoping_product(
       op: BinaryOperator::Divide,
       left: Box::new(Expr::Integer(konst)),
       right: Box::new(prod),
+    }
+  })
+}
+
+/// Integer shifts of a monic polynomial that factors completely into monic
+/// linear integer-root factors `∏ (var + c_i)` (multiplicity repeated). Returns
+/// None when the polynomial has a non-unit content, a non-monic-linear factor
+/// (e.g. `2 var`, `var^2 + 1`) or an irrational root — leaving the product
+/// symbolic. `k` → `[0]`, `k^2 - 1` → `[-1, 1]`, `k^2` → `[0, 0]`.
+fn monic_linear_int_shifts(poly: &Expr, var_name: &str) -> Option<Vec<i128>> {
+  // Fast path: a bare monic linear polynomial (matches the old single-factor
+  // behaviour without invoking the factoriser).
+  if let Some(a) = monic_int_shift(poly, var_name) {
+    return Some(vec![a]);
+  }
+  let factor_list =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "FactorList".to_string(),
+      args: vec![poly.clone()].into(),
+    })
+    .ok()?;
+  let Expr::List(ref entries) = factor_list else {
+    return None;
+  };
+  let mut shifts: Vec<i128> = Vec::new();
+  for entry in entries.iter() {
+    let Expr::List(pair) = entry else {
+      return None;
+    };
+    if pair.len() != 2 {
+      return None;
+    }
+    let mult = match &pair[1] {
+      Expr::Integer(m) if *m >= 0 => *m,
+      _ => return None,
+    };
+    match &pair[0] {
+      // Numeric content must be a unit so the polynomial is monic.
+      Expr::Integer(1) => {}
+      Expr::Integer(_) => return None,
+      factor => {
+        let a = monic_int_shift(factor, var_name)?;
+        for _ in 0..mult {
+          shifts.push(a);
+        }
+      }
+    }
+  }
+  Some(shifts)
+}
+
+fn rational_telescoping_product(
+  body: &Expr,
+  var_name: &str,
+  max_expr: &Expr,
+  k0: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let call = |name: &str, arg: Expr| Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![arg].into(),
+  };
+  let together = eval(&call("Together", body.clone()))?;
+  let num = eval(&call("Numerator", together.clone()))?;
+  let den = eval(&call("Denominator", together))?;
+  // Factor numerator and denominator into monic linear integer-root factors.
+  //   Product[(k-1)(k+1)/k^2, {k, 2, n}] = (1/n) * ((n+1)/2) = (1+n)/(2n).
+  // Both sides must factor completely and share the same number of factors so
+  // the telescoping pairs up (equal degree ⇒ the product stays rational).
+  let (Some(mut num_shifts), Some(mut den_shifts)) = (
+    monic_linear_int_shifts(&num, var_name),
+    monic_linear_int_shifts(&den, var_name),
+  ) else {
+    return Ok(None);
+  };
+  if num_shifts.len() != den_shifts.len() {
+    return Ok(None);
+  }
+  // Pair the factors in a deterministic (sorted) order and telescope each pair.
+  num_shifts.sort_unstable();
+  den_shifts.sort_unstable();
+  let mut factors: Vec<Expr> = Vec::new();
+  for (a, b) in num_shifts.into_iter().zip(den_shifts) {
+    let Some(pair) = telescope_linear_pair(a, b, max_expr, k0) else {
+      return Ok(None);
+    };
+    factors.push(pair);
+  }
+  let result = if factors.len() == 1 {
+    factors.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
     }
   };
   Ok(Some(eval(&result)?))

@@ -1840,6 +1840,45 @@ mod product_extended {
     assert_eq!(interpret("Product[k, {k, 1, n}]").unwrap(), "n!");
   }
 
+  // Rational telescoping over a body whose numerator/denominator factor into
+  // several monic linear factors: Product[1 - 1/k^2, {k, 2, n}] = (1+n)/(2n).
+  // Previously only linear/linear ratios telescoped; the quadratic
+  // (k-1)(k+1)/k^2 was left unevaluated.
+  #[test]
+  fn quadratic_rational_telescopes() {
+    assert_eq!(
+      interpret("Product[1 - 1/k^2, {k, 2, n}]").unwrap(),
+      "(1 + n)/(2*n)"
+    );
+    assert_eq!(
+      interpret("Product[(k - 1)*(k + 1)/k^2, {k, 2, n}]").unwrap(),
+      "(1 + n)/(2*n)"
+    );
+    assert_eq!(
+      interpret("Product[(k - 2)*(k + 2)/k^2, {k, 3, n}]").unwrap(),
+      "((1 + n)*(2 + n))/(6*(-1 + n)*n)"
+    );
+    // The finite numeric case is consistent with the closed form at n = 10.
+    assert_eq!(
+      interpret("Product[1 - 1/k^2, {k, 2, 10}]").unwrap(),
+      "11/20"
+    );
+  }
+
+  // The single linear/linear ratio still telescopes as before.
+  #[test]
+  fn linear_ratio_telescopes() {
+    assert_eq!(
+      interpret("Product[(k - 1)/k, {k, 2, n}]").unwrap(),
+      "n^(-1)"
+    );
+    assert_eq!(interpret("Product[(k + 1)/k, {k, 1, n}]").unwrap(), "1 + n");
+    assert_eq!(
+      interpret("Product[(k + 2)/(k + 1), {k, 1, n}]").unwrap(),
+      "(2 + n)/2"
+    );
+  }
+
   // Product[c^i, {i, 1, n}] = c^(n*(1+n)/2) for a finite upper limit.
   #[test]
   fn power_body_finite() {
