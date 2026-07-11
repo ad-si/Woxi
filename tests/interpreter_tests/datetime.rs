@@ -3542,3 +3542,72 @@ mod date_select_tests {
     );
   }
 }
+
+mod calendar_convert {
+  use super::*;
+
+  // Gregorian → Julian: the Julian calendar runs 13 days behind Gregorian in
+  // the 1900–2099 window (12/13-day offset in earlier centuries).
+  #[test]
+  fn gregorian_to_julian_modern() {
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{2024, 3, 14}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{2024, 3, 1}, Day, Julian]"
+    );
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{2000, 1, 1}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{1999, 12, 19}, Day, Julian]"
+    );
+  }
+
+  // The offset differs across century boundaries because Julian has no
+  // century leap-year exception.
+  #[test]
+  fn gregorian_to_julian_across_centuries() {
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{1900, 3, 1}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{1900, 2, 17}, Day, Julian]"
+    );
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{2100, 3, 1}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{2100, 2, 16}, Day, Julian]"
+    );
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{1, 1, 1}], \"Julian\"]").unwrap(),
+      "DateObject[{1, 1, 3}, Day, Julian]"
+    );
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{1582, 10, 15}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{1582, 10, 5}, Day, Julian]"
+    );
+  }
+
+  // Converting to Gregorian from a (default) Gregorian source is the identity,
+  // dropping any calendar tag and reporting Day granularity.
+  #[test]
+  fn gregorian_identity() {
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{2024, 3, 14}], \"Gregorian\"]")
+        .unwrap(),
+      "DateObject[{2024, 3, 14}, Day]"
+    );
+  }
+
+  // A source already tagged with a non-Gregorian calendar is left
+  // unevaluated, matching wolframscript.
+  #[test]
+  fn non_gregorian_source_unevaluated() {
+    assert_eq!(
+      interpret(
+        "CalendarConvert[DateObject[{2024, 3, 14}, \"Julian\"], \"Gregorian\"]"
+      )
+      .unwrap(),
+      "CalendarConvert[DateObject[{2024, 3, 14}, Julian], Gregorian]"
+    );
+  }
+}

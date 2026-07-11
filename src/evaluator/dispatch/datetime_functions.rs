@@ -42,6 +42,9 @@ pub fn dispatch_datetime_functions(
     "DateString" => {
       return Some(crate::functions::datetime_ast::date_string_ast(args));
     }
+    "CalendarConvert" if args.len() == 2 => {
+      return Some(crate::functions::datetime_ast::calendar_convert_ast(args));
+    }
     "SessionTime" if args.is_empty() => {
       return Some(Ok(Expr::Real(crate::session_time())));
     }
