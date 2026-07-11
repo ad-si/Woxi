@@ -4243,6 +4243,31 @@ mod tex_form {
       interpret("ToString[Binomial[n, k], TeXForm]").unwrap(),
       "\\binom{n}{k}"
     );
+
+    // Tall content (fraction/radical/superscript) uses \left…\right so the
+    // delimiters are sized to the content, matching wolframscript. Simple
+    // content keeps the plain delimiters (the assertions above).
+    assert_eq!(
+      interpret("ToString[Floor[x/2], TeXForm]").unwrap(),
+      "\\left\\lfloor \\frac{x}{2}\\right\\rfloor"
+    );
+    assert_eq!(
+      interpret("ToString[Floor[x^2], TeXForm]").unwrap(),
+      "\\left\\lfloor x^2\\right\\rfloor"
+    );
+    assert_eq!(
+      interpret("ToString[Ceiling[Sqrt[x]], TeXForm]").unwrap(),
+      "\\left\\lceil \\sqrt{x}\\right\\rceil"
+    );
+    // Abs and Norm follow the same rule.
+    assert_eq!(
+      interpret("ToString[Abs[x/y], TeXForm]").unwrap(),
+      "\\left| \\frac{x}{y}\\right|"
+    );
+    assert_eq!(
+      interpret("ToString[Norm[a/b], TeXForm]").unwrap(),
+      "\\left\\| \\frac{a}{b}\\right\\|"
+    );
     // Subscript renders as x_1 in TeXForm (not the 2D OutputForm layout).
     assert_eq!(
       interpret("ToString[Subscript[x, 1], TeXForm]").unwrap(),

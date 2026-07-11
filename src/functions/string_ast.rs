@@ -5023,6 +5023,23 @@ pub fn expr_to_tex(expr: &Expr) -> String {
 }
 
 /// Convert an identifier to its TeX representation.
+/// Wrap already-rendered TeX in a delimiter pair (`\lfloor`/`\rfloor`, `|`/`|`,
+/// `\|`/`\|`, …). wolframscript sizes the delimiters with `\left…\right` when
+/// the content is "tall" — a fraction, radical, superscript or subscript —
+/// (Floor[x/2] → `\left\lfloor \frac{x}{2}\right\rfloor`) and uses the plain
+/// delimiters otherwise (Floor[x] → `\lfloor x\rfloor`).
+fn tex_delimited(inner: &str, ldelim: &str, rdelim: &str) -> String {
+  let tall = inner.contains("\\frac")
+    || inner.contains("\\sqrt")
+    || inner.contains('^')
+    || inner.contains('_');
+  if tall {
+    format!("\\left{} {}\\right{}", ldelim, inner, rdelim)
+  } else {
+    format!("{} {}{}", ldelim, inner, rdelim)
+  }
+}
+
 fn tex_identifier(name: &str) -> String {
   match name {
     "Pi" => "\\pi".to_string(),
@@ -5589,7 +5606,9 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       tex_atom_or_paren(&args[1])
     ),
     // Norm[v] -> \| v\| (vector bars).
-    "Norm" if args.len() == 1 => format!("\\| {}\\|", expr_to_tex(&args[0])),
+    "Norm" if args.len() == 1 => {
+      tex_delimited(&expr_to_tex(&args[0]), "\\|", "\\|")
+    }
     // Factorial2[n] -> n!! (typeset as \text{!!}).
     "Factorial2" if args.len() == 1 => {
       format!("{}\\text{{!!}}", tex_postfix_arg(&args[0]))
@@ -5940,9 +5959,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       format!("\\sqrt{{{}}}", expr_to_tex(&args[0]))
     }
     // Abs
-    "Abs" if args.len() == 1 => {
-      format!("| {}|", expr_to_tex(&args[0]))
-    }
+    "Abs" if args.len() == 1 => tex_delimited(&expr_to_tex(&args[0]), "|", "|"),
     // Rational
     "Rational" if args.len() == 2 => {
       // Pull a leading minus out of the fraction: -3/4 -> -\frac{3}{4}.
@@ -6189,10 +6206,10 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // Floor[x] -> \lfloor x\rfloor, Ceiling[x] -> \lceil x\rceil.
     "Floor" if args.len() == 1 => {
-      format!("\\lfloor {}\\rfloor", expr_to_tex(&args[0]))
+      tex_delimited(&expr_to_tex(&args[0]), "\\lfloor", "\\rfloor")
     }
     "Ceiling" if args.len() == 1 => {
-      format!("\\lceil {}\\rceil", expr_to_tex(&args[0]))
+      tex_delimited(&expr_to_tex(&args[0]), "\\lceil", "\\rceil")
     }
     // Binomial[n, k] -> \binom{n}{k}.
     "Binomial" if args.len() == 2 => {
