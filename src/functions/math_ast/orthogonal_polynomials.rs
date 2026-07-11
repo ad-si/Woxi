@@ -645,8 +645,13 @@ fn associated_legendre_p_ast(
   let (var_name, working_x, needs_back_sub) = match x_expr {
     Expr::Identifier(s) => (s.clone(), x_expr.clone(), false),
     _ => {
-      // Numeric evaluation fallback when no symbol is available
-      if let Some(xf) = try_eval_to_f64(x_expr) {
+      // Numeric fallback only for an inexact machine number. An exact numeric
+      // x (0, 1/2, Cos[Pi/2]) substitutes into the symbolic polynomial so the
+      // result stays exact, matching wolframscript (LegendreP[1, 1, 0] = -1,
+      // LegendreP[2, 1, 1/2] = -3 Sqrt[3]/4 — not floats).
+      if expr_has_inexact_real(x_expr)
+        && let Some(xf) = try_eval_to_f64(x_expr)
+      {
         return Ok(Expr::Real(associated_legendre_eval_f64(
           n as i64, m as i64, xf,
         )));
@@ -888,6 +893,21 @@ fn associated_legendre_eval_f64(l: i64, m: i64, x: f64) -> f64 {
 }
 
 /// SphericalHarmonicY[l, m, theta, phi] - Spherical harmonic function
+/// True when an expression carries an inexact (machine-precision) real, so a
+/// closed-form special function should numericize. Exact arguments (integers,
+/// rationals, Pi, …) stay symbolic to match wolframscript.
+fn expr_has_inexact_real(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_has_inexact_real),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_has_inexact_real(left) || expr_has_inexact_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_has_inexact_real(operand),
+    _ => false,
+  }
+}
+
 pub fn spherical_harmonic_y_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {

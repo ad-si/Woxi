@@ -1585,6 +1585,22 @@ mod legendre_p {
     assert_eq!(interpret("LegendreP[2, 3, x]").unwrap(), "0");
   }
 
+  // An exact numeric argument keeps the exact symbolic value; only an inexact
+  // (machine) argument numericizes. wolframscript: LegendreP[1, 1, 0] = -1
+  // (previously returned the float -1.).
+  #[test]
+  fn associated_legendre_exact_argument() {
+    assert_eq!(interpret("LegendreP[1, 1, 0]").unwrap(), "-1");
+    assert_eq!(interpret("LegendreP[2, 1, 1/2]").unwrap(), "(-3*Sqrt[3])/4");
+    assert_eq!(interpret("LegendreP[2, 2, 1/2]").unwrap(), "9/4");
+    assert_eq!(interpret("LegendreP[3, 2, 1/2]").unwrap(), "45/8");
+    // An inexact argument still numericizes.
+    assert_eq!(
+      interpret("LegendreP[1, 1, 0.5]").unwrap(),
+      "-0.8660254037844386"
+    );
+  }
+
   #[test]
   fn associated_complex_branch_z_gt_one() {
     // wolframscript: LegendreP[1.6, 3.1, 1.5]
