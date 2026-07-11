@@ -4147,6 +4147,11 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // like `2 Log[2]` -> `Log[4]` or summed like `Log[2]+Log[3]` -> `Log[6]`) into
   // a single Log when that reduces its digit-aware complexity measure.
   let assumed = try_merge_logs(&assumed).unwrap_or(assumed);
+  // A Boolean expression gets minimized when that reduces the leaf count —
+  // the same cost model wolframscript uses: Simplify[a && a] -> a,
+  // Simplify[(a || b) && (a || !b)] -> a, but Xor/Implies stay because their
+  // minimized (DNF) form is larger.
+  let assumed = try_boolean_minimize(&assumed).unwrap_or(assumed);
   // If simplification exposed a singularity like `0^(-1)` (e.g. after
   // cancelling `Sin[x]^2 + Cos[x]^2 − 1`), re-evaluate so it collapses to
   // `ComplexInfinity`. Limited to this pattern to avoid re-canonicalizing
@@ -4155,6 +4160,50 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&assumed).or(Ok(assumed));
   }
   Ok(assumed)
+}
+
+/// Whether `expr`'s head is a Boolean connective (And/Or/Not/Xor/…), so
+/// Simplify should consider the Boolean-minimized form.
+fn is_boolean_head(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::And | BinaryOperator::Or,
+      ..
+    } => true,
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      ..
+    } => true,
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "And"
+        | "Or"
+        | "Not"
+        | "Xor"
+        | "Nand"
+        | "Nor"
+        | "Implies"
+        | "Equivalent"
+        | "Xnor"
+    ),
+    _ => false,
+  }
+}
+
+/// Minimize a Boolean expression via `BooleanMinimize`, returning the result
+/// only when it has strictly fewer leaves than the input — matching
+/// wolframscript's cost model (idempotent/absorption forms collapse, but
+/// Xor/Implies stay since their DNF is larger, and ties keep the input).
+fn try_boolean_minimize(expr: &Expr) -> Option<Expr> {
+  if !is_boolean_head(expr) {
+    return None;
+  }
+  let minimized = crate::evaluator::evaluate_function_call_ast(
+    "BooleanMinimize",
+    std::slice::from_ref(expr),
+  )
+  .ok()?;
+  (leaf_count(&minimized) < leaf_count(expr)).then_some(minimized)
 }
 
 /// Try transformations whose only payoff is a smaller leaf count

@@ -592,6 +592,29 @@ mod simplify {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
 
+  // Simplify minimizes a Boolean expression when that reduces the leaf count
+  // (idempotence/complementarity/absorption), but keeps Xor/Implies whose DNF
+  // expansion is larger — matching wolframscript's cost model.
+  #[test]
+  fn boolean_minimization() {
+    assert_eq!(interpret("Simplify[a && a]").unwrap(), "a");
+    assert_eq!(interpret("Simplify[a || a]").unwrap(), "a");
+    assert_eq!(interpret("Simplify[a && ! a]").unwrap(), "False");
+    assert_eq!(interpret("Simplify[a || ! a]").unwrap(), "True");
+    assert_eq!(interpret("Simplify[a && b && a]").unwrap(), "a && b");
+    assert_eq!(interpret("Simplify[(a || b) && (a || ! b)]").unwrap(), "a");
+    assert_eq!(interpret("Simplify[a || (a && b)]").unwrap(), "a");
+    // Xor and Implies stay because minimizing them enlarges the expression.
+    assert_eq!(interpret("Simplify[Xor[a, b]]").unwrap(), "Xor[a, b]");
+    assert_eq!(
+      interpret("Simplify[Implies[a, b]]").unwrap(),
+      "Implies[a, b]"
+    );
+    // Non-reducible Boolean expressions and arithmetic are unchanged.
+    assert_eq!(interpret("Simplify[a && b]").unwrap(), "a && b");
+    assert_eq!(interpret("Simplify[a + a]").unwrap(), "2*a");
+  }
+
   // Simplify pulls a -1 out in front of a quotient when the univariate
   // numerator's highest-degree coefficient is negative, or when the
   // denominator is entirely nonpositive; two flips cancel. All
