@@ -12027,6 +12027,61 @@ fn abs_deriv_to_sign(expr: &Expr) -> Expr {
   }
 }
 
+/// A function head that Limit may safely substitute through: a structural or
+/// arithmetic head, or any built-in function. An undefined user symbol (e.g.
+/// `f`) is not — its continuity at the limit point is unknown.
+fn limit_head_is_continuous_safe(name: &str) -> bool {
+  matches!(
+    name,
+    "Plus"
+      | "Times"
+      | "Power"
+      | "Subtract"
+      | "Divide"
+      | "Minus"
+      | "Rational"
+      | "Complex"
+      | "List"
+  ) || crate::evaluator::get_builtin_function_info(name).is_some()
+}
+
+/// True when `expr` applies an unknown (non-built-in) function to a
+/// subexpression involving `var`, so its limit at a finite point can't be found
+/// by substitution (`f[x]`, `Sin[f[x]]`, `g[x] h[x]`) — but not `f[0]`, whose
+/// argument is free of `var`.
+fn contains_unknown_function_of_var(expr: &Expr, var: &str) -> bool {
+  use crate::functions::polynomial_ast::contains_var;
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if !limit_head_is_continuous_safe(name)
+        && args.iter().any(|a| contains_var(a, var))
+      {
+        return true;
+      }
+      args
+        .iter()
+        .any(|a| contains_unknown_function_of_var(a, var))
+    }
+    Expr::CurriedCall { func, args } => {
+      contains_unknown_function_of_var(func, var)
+        || args
+          .iter()
+          .any(|a| contains_unknown_function_of_var(a, var))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_unknown_function_of_var(left, var)
+        || contains_unknown_function_of_var(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => {
+      contains_unknown_function_of_var(operand, var)
+    }
+    Expr::List(items) => items
+      .iter()
+      .any(|i| contains_unknown_function_of_var(i, var)),
+    _ => false,
+  }
+}
+
 pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -12083,6 +12138,18 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // expression itself (Limit[Log[a], x -> 0] = Log[a], at any point).
   if !crate::functions::polynomial_ast::contains_var(&args[0], &var_name) {
     return Ok(args[0].clone());
+  }
+
+  // A limit whose expression applies an unknown (undefined) function to
+  // something involving the limit variable stays unevaluated: the function
+  // could be discontinuous at the point, so wolframscript does not substitute.
+  // Limit[f[x], x -> 0] is kept, but Limit[f[0] + x, x -> 0] = f[0] (the f[0]
+  // argument is a var-free constant, so only the `+ x` term is substituted).
+  if contains_unknown_function_of_var(&args[0], &var_name) {
+    return Ok(Expr::FunctionCall {
+      name: "Limit".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // Handle limits at Infinity
@@ -12396,6 +12463,28 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Limit".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// The limit of `(z - z0)^m * f` used by `residue_ast`. Residue assumes the
+/// non-pole part is analytic at `z0`, so when the limit of an unknown-function
+/// factor stays symbolic (`Limit[f[z], z -> 0]`, since Limit itself no longer
+/// substitutes into undefined functions), the analytic value equals the direct
+/// substitution — giving `Residue[f[z]/z, {z, 0}] = f[0]`, `.../z^2 = f'[0]`.
+fn analytic_residue_limit(
+  expr: &Expr,
+  var_name: &str,
+  z0: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let rule = Expr::Rule {
+    pattern: Box::new(Expr::Identifier(var_name.to_string())),
+    replacement: Box::new(z0.clone()),
+  };
+  let lim = limit_ast(&[expr.clone(), rule])?;
+  if !matches!(&lim, Expr::FunctionCall { name, .. } if name == "Limit") {
+    return Ok(lim);
+  }
+  let sub = crate::syntax::substitute_variable(expr, var_name, z0);
+  crate::evaluator::evaluate_expr_to_expr(&sub)
 }
 
 /// Returns true if a (resolved) limit result is a finite value — i.e. it is
@@ -12919,11 +13008,6 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return unevaluated(),
   };
 
-  let rule = |point: &Expr| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(var_name.clone())),
-    replacement: Box::new(point.clone()),
-  };
-
   // --- essential singularities -------------------------------------
   // (z-z0)^m * expr has a finite-order pole for NO m at an essential
   // singularity, and the limit loop below can even return a wrong
@@ -13071,7 +13155,7 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let max_order = if model_applied { 3 } else { MAX_ORDER };
   for m in 1..=max_order {
     let g = simplify_full(build_g(m));
-    let base_limit = limit_ast(&[g.clone(), rule(&z0)])?;
+    let base_limit = analytic_residue_limit(&g, &var_name, &z0)?;
     if !is_finite_limit_value(&base_limit) {
       continue;
     }
@@ -13099,7 +13183,7 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       deriv
     };
 
-    let limit_val = limit_ast(&[to_limit, rule(&z0)])?;
+    let limit_val = analytic_residue_limit(&to_limit, &var_name, &z0)?;
     if !is_finite_limit_value(&limit_val) {
       // Differentiation/limit didn't resolve cleanly — give up.
       return unevaluated();

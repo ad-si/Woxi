@@ -2775,6 +2775,32 @@ mod limit {
     assert_eq!(interpret("Limit[x^2, x -> 3]").unwrap(), "9");
   }
 
+  // An unknown function of the limit variable can be discontinuous at the
+  // point, so wolframscript keeps the limit unevaluated rather than
+  // substituting f[0]. A var-free argument (f[0]) is a constant and still
+  // substitutes.
+  #[test]
+  fn limit_unknown_function_stays_unevaluated() {
+    assert_eq!(
+      interpret("Limit[f[x], x -> 0]").unwrap(),
+      "Limit[f[x], x -> 0]"
+    );
+    assert_eq!(
+      interpret("Limit[f[x] + 1, x -> 0]").unwrap(),
+      "Limit[1 + f[x], x -> 0]"
+    );
+    assert_eq!(
+      interpret("Limit[g[x] h[x], x -> 0]").unwrap(),
+      "Limit[g[x]*h[x], x -> 0]"
+    );
+    assert_eq!(
+      interpret("Limit[Sin[f[x]], x -> 0]").unwrap(),
+      "Limit[Sin[f[x]], x -> 0]"
+    );
+    // f[0] is a var-free constant, so only the `+ x` term is substituted.
+    assert_eq!(interpret("Limit[f[0] + x, x -> 0]").unwrap(), "f[0]");
+  }
+
   #[test]
   fn limit_free_of_variable() {
     // The limit of an expression not involving the limit variable is itself.
