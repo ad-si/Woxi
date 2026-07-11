@@ -2764,6 +2764,26 @@ mod cases {
     // Exact rational argument stays exact (not 0.1875).
     assert_case(r#"JacobiP[2, 1, 1, 1/2]"#, r#"3/16"#);
   }
+  // n >= 2 with rational (non-integer) order parameters and symbolic x:
+  // wolframscript's factored (x - 1) form. (Previously left unevaluated.)
+  #[test]
+  fn jacobi_p_rational_ab() {
+    assert_case(
+      r#"JacobiP[2, 1/2, 1/2, x]"#,
+      r#"15/8 + 5*(-1 + x) + (5*(-1 + x)^2)/2"#,
+    );
+    assert_case(
+      r#"JacobiP[3, 1, 2, x]"#,
+      r#"4 + 21*(-1 + x) + 28*(-1 + x)^2 + (21*(-1 + x)^3)/2"#,
+    );
+    assert_case(
+      r#"JacobiP[2, 3/2, 1/2, x]"#,
+      r#"35/8 + (35*(-1 + x))/4 + (15*(-1 + x)^2)/4"#,
+    );
+    // A fully symbolic order is left unevaluated (Woxi's Times/Plus ordering
+    // would not match wolframscript there).
+    assert_case(r#"JacobiP[2, a, b, x]"#, r#"JacobiP[2, a, b, x]"#);
+  }
 
   #[test]
   fn laguerre_l_1() {

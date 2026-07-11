@@ -382,12 +382,81 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::functions::math_ast::times_ast(&[half, numer]);
   }
 
-  // Try rational evaluation for integer/rational a, b, x
-  // For now, return unevaluated for symbolic args
+  // n >= 2 with rational (non-integer) a, b and a non-numeric x: build the
+  // (x - 1) expansion the way wolframscript prints it. Restricted to exact
+  // rational a, b because with those the Pochhammer coefficients collapse to
+  // numbers, so the sum keeps wolframscript's term/factor order; a fully
+  // symbolic a/b would reorder under Woxi's Times/Plus canonicalization.
+  let is_exact_rational = |e: &Expr| {
+    matches!(e, Expr::Integer(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if is_exact_rational(&args[1]) && is_exact_rational(&args[2]) {
+    return jacobi_p_rational_ab(n, &args[1], &args[2], &args[3]);
+  }
   Ok(Expr::FunctionCall {
     name: "JacobiP".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// P_n^{(a,b)}(x) for n >= 2 and exact rational order parameters, in
+/// wolframscript's factored (x - 1) form:
+///   P_n^{(a,b)}(x) = Σ_{s=0}^{n} c_s (x - 1)^s,
+///   c_s = Pochhammer[1+a+s, n-s] · Pochhammer[1+a+b+n, s] / (2^s s! (n-s)!).
+fn jacobi_p_rational_ab(
+  n: usize,
+  a: &Expr,
+  b: &Expr,
+  x: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  // const + a, and const + a + b.
+  let plus_a = |c: i128| call("Plus", vec![Expr::Integer(c), a.clone()]);
+  let plus_ab =
+    |c: i128| call("Plus", vec![Expr::Integer(c), a.clone(), b.clone()]);
+  let x_minus_1 = call("Plus", vec![Expr::Integer(-1), x.clone()]);
+
+  let mut terms: Vec<Expr> = Vec::with_capacity(n + 1);
+  for s in 0..=n {
+    // Denominator 2^s · s! · (n-s)!.
+    let s_fact: i128 = (1..=s as i128).product::<i128>().max(1);
+    let ns_fact: i128 = (1..=(n - s) as i128).product::<i128>().max(1);
+    let Some(den) = (1i128 << s)
+      .checked_mul(s_fact)
+      .and_then(|v| v.checked_mul(ns_fact))
+    else {
+      return Ok(call(
+        "JacobiP",
+        vec![Expr::Integer(n as i128), a.clone(), b.clone(), x.clone()],
+      ));
+    };
+
+    let mut factors: Vec<Expr> = Vec::new();
+    factors.push(call("Rational", vec![Expr::Integer(1), Expr::Integer(den)]));
+    // Pochhammer[1+a+s, n-s] = (1+s+a)(2+s+a)…(n+a).
+    for j in 0..(n - s) {
+      factors.push(plus_a((1 + s + j) as i128));
+    }
+    // Pochhammer[1+a+b+n, s] = (1+n+a+b)(2+n+a+b)…(s+n+a+b).
+    for i in 0..s {
+      factors.push(plus_ab((1 + n + i) as i128));
+    }
+    // (x - 1)^s.
+    match s {
+      0 => {}
+      1 => factors.push(x_minus_1.clone()),
+      p => factors.push(call(
+        "Power",
+        vec![x_minus_1.clone(), Expr::Integer(p as i128)],
+      )),
+    }
+    terms.push(call("Times", factors));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
 }
 
 /// Evaluate the Jacobi polynomial P_n^{(a,b)}(x) numerically using
