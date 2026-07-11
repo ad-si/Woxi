@@ -3826,10 +3826,12 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // rather than staying as `-12 (1 + I) + 8 (1 + I)^3`. Symbolic x
         // keeps the polynomial form unchanged.
         if is_fully_numeric_arg(&args[1]) {
-          return crate::evaluator::evaluate_function_call_ast(
-            "Expand",
-            &[expr],
-          );
+          // Expand collapses `(1 + I)^3` etc.; evaluate the result so the
+          // resulting numeric sum folds to a single number (HermiteH[3, 1/2]
+          // = -5, not the un-summed -6 + 1).
+          let expanded =
+            crate::evaluator::evaluate_function_call_ast("Expand", &[expr])?;
+          return crate::evaluator::evaluate_expr_to_expr(&expanded);
         }
         // Evaluate (not Expand) the substituted polynomial: a monomial argument
         // like `2 x` distributes `(2 x)^k` to `2^k x^k` (matching wolframscript),

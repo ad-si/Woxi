@@ -3714,6 +3714,18 @@ mod hermite_h {
     // expanded to `-28 + 4 I` matching wolframscript.
     assert_eq!(interpret("HermiteH[3, 1 + I]").unwrap(), "-28 + 4*I");
   }
+
+  // Regression: a rational argument left the substituted terms un-summed
+  // (`HermiteH[3, 1/2]` -> `-6 + 1`); the numeric sum must fold to a single
+  // exact value matching wolframscript.
+  #[test]
+  fn rational_argument_folds_to_single_value() {
+    assert_eq!(interpret("HermiteH[3, 1/2]").unwrap(), "-5");
+    assert_eq!(interpret("HermiteH[3, 1/3]").unwrap(), "-100/27");
+    assert_eq!(interpret("HermiteH[4, 1/2]").unwrap(), "1");
+    assert_eq!(interpret("HermiteH[5, 1/3]").unwrap(), "8312/243");
+    assert_eq!(interpret("HermiteH[6, 1/2]").unwrap(), "31");
+  }
 }
 
 mod airy_ai {
