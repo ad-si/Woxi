@@ -1846,9 +1846,11 @@ mod eigenvectors {
       interpret("Eigenvectors[{{I, 0}, {0, 2}}]").unwrap(),
       "{{0, 1}, {1, 0}}"
     );
+    // Scalar matrix I·Id: eigenspace is all of C^2, so wolframscript returns
+    // the reversed-basis NullSpace order, matching the real scalar path.
     assert_eq!(
       interpret("Eigenvectors[{{I, 0}, {0, I}}]").unwrap(),
-      "{{1, 0}, {0, 1}}"
+      "{{0, 1}, {1, 0}}"
     );
   }
 

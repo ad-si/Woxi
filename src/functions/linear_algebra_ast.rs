@@ -3584,7 +3584,10 @@ fn complex_2x2_eigenvectors(
 
   let rows: Vec<Vec<Expr>> = if repeated {
     if b_zero && c_zero {
-      vec![basis(true), basis(false)]
+      // Scalar matrix (c·Id): the eigenspace is all of C^2, so the vectors
+      // come from NullSpace[0], which wolframscript returns in reversed-basis
+      // order ({{0, 1}, {1, 0}}) — matching the real/integer scalar path.
+      vec![basis(false), basis(true)]
     } else {
       vec![vector_for(&l1)?, zero_row()]
     }
