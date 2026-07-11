@@ -588,6 +588,39 @@ mod diagonal_matrix {
     );
   }
 
+  // The 3-argument form DiagonalMatrix[list, k, m] forces an m×m matrix,
+  // padding (or clipping) instead of the auto-sized len + |k|.
+  #[test]
+  fn explicit_dimension() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2, 3}, 0, 4]").unwrap(),
+      "{{1, 0, 0, 0}, {0, 2, 0, 0}, {0, 0, 3, 0}, {0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2}, 0, 3]").unwrap(),
+      "{{1, 0, 0}, {0, 2, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2, 3}, 1, 4]").unwrap(),
+      "{{0, 1, 0, 0}, {0, 0, 2, 0}, {0, 0, 0, 3}, {0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2, 3}, -1, 4]").unwrap(),
+      "{{0, 0, 0, 0}, {1, 0, 0, 0}, {0, 2, 0, 0}, {0, 0, 3, 0}}"
+    );
+    // An explicit dimension smaller than the diagonal clips it.
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2, 3, 4, 5}, 0, 3]").unwrap(),
+      "{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}"
+    );
+    // Inexact promotion still applies with an explicit dimension.
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2., 3}, 0, 4]").unwrap(),
+      "{{1., 0., 0., 0.}, {0., 2., 0., 0.}, {0., 0., 3., 0.}, \
+       {0., 0., 0., 0.}}"
+    );
+  }
+
   #[test]
   fn offset_neg2() {
     assert_eq!(

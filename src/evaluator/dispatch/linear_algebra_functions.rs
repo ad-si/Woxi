@@ -203,7 +203,7 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(build_ones_tensor(&dims)));
       }
     }
-    "DiagonalMatrix" if args.len() == 1 || args.len() == 2 => {
+    "DiagonalMatrix" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::linear_algebra_ast::diagonal_matrix_ast(
         args,
       ));

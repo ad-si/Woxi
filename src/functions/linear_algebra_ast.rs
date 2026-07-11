@@ -1437,9 +1437,9 @@ pub fn vandermonde_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// DiagonalMatrix[list] - diagonal matrix from a list
 pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "DiagonalMatrix expects 1 or 2 arguments".into(),
+      "DiagonalMatrix expects 1, 2 or 3 arguments".into(),
     ));
   }
   let diag = match &args[0] {
@@ -1451,22 +1451,33 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let k: i128 = if args.len() == 2 {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DiagonalMatrix".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let k: i128 = if args.len() >= 2 {
     match &args[1] {
       Expr::Integer(v) => *v,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "DiagonalMatrix".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
+      _ => return unevaluated(),
     }
   } else {
     0
   };
   let n = diag.len();
-  let size = n + k.unsigned_abs() as usize;
   let k_abs = k.unsigned_abs() as usize;
+  // DiagonalMatrix[list, k, m] forces an m×m square matrix instead of the
+  // auto-sized (len + |k|); entries that fall outside the m×m grid are
+  // dropped. wolframscript: DiagonalMatrix[{1,2,3}, 0, 4] pads to 4×4.
+  let size = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(m) if *m >= 0 => *m as usize,
+      _ => return unevaluated(),
+    }
+  } else {
+    n + k_abs
+  };
   // An inexact diagonal makes the whole matrix inexact: the off-diagonal
   // fill is the machine real 0. rather than the exact Integer 0, and any
   // exact numeric diagonal entry is promoted to a Real too
@@ -1498,8 +1509,9 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for i in 0..size {
     let mut row = vec![zero.clone(); size];
     if k >= 0 {
-      // Super-diagonal: element j goes at row j, column j + k
-      if i < n {
+      // Super-diagonal: element j goes at row j, column j + k. Bounds-check
+      // the column so an explicit size that clips the diagonal is honoured.
+      if i < n && i + k_abs < size {
         row[i + k_abs] = promote(&diag[i]);
       }
     } else {
