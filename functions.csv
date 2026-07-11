@@ -1799,7 +1799,7 @@ RealExponent,Returns the base-b real exponent Log[b Abs[x]] of x as a machine re
 TriangularDistribution,Triangular distribution (piecewise PDF and CDF and moments),✅,pure,6.0,1827
 BinaryWrite,Write binary data,✅,io,5.1,1833
 CheckboxBar,Checkbox bar control (stays symbolic in script mode),✅,unevaluated,6.0,1833
-DuplicateFreeQ,Test if list has no duplicates,✅,computation,10.0,1833
+DuplicateFreeQ,Test if list has no duplicates,✅,pure,10.0,1833
 OutputForm,Converts expression to output form,✅,pure,1.0,1833
 RandomPermutation,Random permutation of n points returned as a Cycles object,✅,contextual,8.0,1833
 TooltipDelay,Tooltip delay option,,unevaluated,7.0,1833

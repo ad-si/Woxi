@@ -823,6 +823,9 @@ pub fn dispatch_predicate_functions(
     "SubsetQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::predicate_ast::subset_q_ast(args));
     }
+    "DuplicateFreeQ" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::predicate_ast::duplicate_free_q_ast(args));
+    }
     "PossibleZeroQ" => {
       if args.len() != 1 {
         crate::emit_message(&format!(

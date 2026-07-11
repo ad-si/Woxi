@@ -8155,4 +8155,69 @@ mod high_level_functions {
       assert_eq!(interpret("PfaffianDet[5]").unwrap(), "PfaffianDet[5]");
     }
   }
+
+  mod duplicate_free_q_tests {
+    use super::*;
+
+    #[test]
+    fn test_has_duplicates() {
+      assert_eq!(
+        interpret("DuplicateFreeQ[{1, 7, 8, 4, 3, 4, 1, 9, 9, 2}]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn test_no_duplicates() {
+      assert_eq!(interpret("DuplicateFreeQ[{1, 2, 3, 4}]").unwrap(), "True");
+    }
+
+    #[test]
+    fn test_empty_and_singleton() {
+      assert_eq!(interpret("DuplicateFreeQ[{}]").unwrap(), "True");
+      assert_eq!(interpret("DuplicateFreeQ[{5}]").unwrap(), "True");
+    }
+
+    #[test]
+    fn test_symbolic_duplicates() {
+      assert_eq!(interpret("DuplicateFreeQ[{a, b, a}]").unwrap(), "False");
+    }
+
+    #[test]
+    fn test_integer_and_real_distinct() {
+      // Default test is SameQ, so 1.0 and 1 are not duplicates.
+      assert_eq!(interpret("DuplicateFreeQ[{1.0, 1, 2}]").unwrap(), "True");
+    }
+
+    #[test]
+    fn test_non_list_head() {
+      // Works on any non-atomic expression, not only Lists.
+      assert_eq!(interpret("DuplicateFreeQ[f[1, 2, 2]]").unwrap(), "False");
+    }
+
+    #[test]
+    fn test_custom_test_no_duplicates() {
+      // Increasing list: Greater never holds on a retained/earlier element.
+      assert_eq!(
+        interpret("DuplicateFreeQ[{1, 2, 3, 4, 5, 6}, Greater]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn test_custom_test_with_duplicates() {
+      // 1 and -1 have equal absolute values → considered duplicates.
+      assert_eq!(
+        interpret("DuplicateFreeQ[{1, -1, 2, -3}, (Abs[#1] == Abs[#2]) &]")
+          .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn test_atom_unevaluated() {
+      // Atomic argument leaves the call unevaluated.
+      assert_eq!(interpret("DuplicateFreeQ[3]").unwrap(), "DuplicateFreeQ[3]");
+    }
+  }
 }

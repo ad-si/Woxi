@@ -2667,6 +2667,65 @@ fn intersecting_or_disjoint(
   ))
 }
 
+/// DuplicateFreeQ[list] - True if `list` has no duplicated elements (default
+/// test is SameQ). DuplicateFreeQ[list, test] treats two elements as duplicates
+/// when `test[x, y]` gives True, following DeleteDuplicates order (the retained
+/// element is the first argument). Works on any non-atomic expression, not only
+/// Lists; atoms leave the call unevaluated after emitting the `normal` message.
+pub fn duplicate_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Ok(Expr::FunctionCall {
+      name: "DuplicateFreeQ".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  // The subject must be a non-atomic expression (List or any head[...]).
+  let elements: &[Expr] = match &args[0] {
+    Expr::List(items) => items,
+    Expr::FunctionCall { args: inner, .. } => inner,
+    _ => {
+      crate::emit_message(&format!(
+        "DuplicateFreeQ::normal: Nonatomic expression expected at position 1 in DuplicateFreeQ[{}].",
+        crate::syntax::expr_to_output(&args[0])
+      ));
+      return Ok(Expr::FunctionCall {
+        name: "DuplicateFreeQ".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  if args.len() == 2 {
+    // Custom test: an element is a duplicate when `test[kept, elem]` is True
+    // for some earlier retained element.
+    let test = &args[1];
+    let mut kept: Vec<&Expr> = Vec::new();
+    for elem in elements {
+      let is_dup = kept.iter().any(|x| {
+        matches!(
+          crate::functions::list_helpers_ast::apply_func_to_two_args(test, x, elem),
+          Ok(Expr::Identifier(ref s)) if s == "True"
+        )
+      });
+      if is_dup {
+        return Ok(bool_expr(false));
+      }
+      kept.push(elem);
+    }
+    return Ok(bool_expr(true));
+  }
+
+  // Default: structural (SameQ) equality, compared via canonical rendering.
+  let mut seen: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
+  for elem in elements {
+    if !seen.insert(crate::syntax::expr_to_string(elem)) {
+      return Ok(bool_expr(false));
+    }
+  }
+  Ok(bool_expr(true))
+}
+
 /// PossibleZeroQ[expr] - Tests if expr is possibly zero
 /// Uses symbolic simplification and numeric evaluation to determine
 /// whether an expression could be zero.
