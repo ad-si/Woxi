@@ -102,6 +102,24 @@ fn mk_ratio(n: i128, d: i128) -> Expr {
 /// Try to expand a specific function call. Returns None if no expansion applies.
 fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
   match name {
+    // HurwitzZeta[m, a] with an integer m >= 2 → (-1)^m/(m-1)! PolyGamma[m-1, a].
+    "HurwitzZeta" if args.len() == 2 => {
+      if let Expr::Integer(m) = &args[0]
+        && *m >= 2
+      {
+        let coeff = mk_div(
+          mk_power(mk_int(-1), mk_int(*m)),
+          mk_call("Factorial", vec![mk_int(*m - 1)]),
+        );
+        Some(mk_times(
+          coeff,
+          mk_call("PolyGamma", vec![mk_int(*m - 1), args[1].clone()]),
+        ))
+      } else {
+        None
+      }
+    }
+
     // Pochhammer[a, n] → Gamma[a + n] / Gamma[a]
     "Pochhammer" if args.len() == 2 => {
       let a = &args[0];
@@ -302,29 +320,19 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       ),
     )),
 
-    // HarmonicNumber[n, r] -> Zeta[r] - HurwitzZeta[r, 1 + n], for a symbolic
-    // order r. (For an explicit integer r wolframscript reduces the
-    // HurwitzZeta further to a PolyGamma, which we leave to FunctionExpand of
-    // HurwitzZeta and do not attempt here.)
+    // HarmonicNumber[n, r] -> Zeta[r] - HurwitzZeta[r, 1 + n]. For an integer
+    // order r >= 2 the HurwitzZeta is itself reduced to a PolyGamma (reusing the
+    // HurwitzZeta rule above), giving e.g. Pi^2/6 - PolyGamma[1, 1 + n].
     "HarmonicNumber" if args.len() == 2 => {
-      let is_number = matches!(
-        &args[1],
-        Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
-      ) || matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Rational");
-      if is_number {
-        None
-      } else {
-        Some(mk_plus(
-          mk_call("Zeta", vec![args[1].clone()]),
-          mk_times(
-            mk_int(-1),
-            mk_call(
-              "HurwitzZeta",
-              vec![args[1].clone(), mk_plus(mk_int(1), args[0].clone())],
-            ),
-          ),
-        ))
-      }
+      let r = &args[1];
+      let arg = mk_plus(mk_int(1), args[0].clone());
+      let hurwitz =
+        try_expand_function("HurwitzZeta", &[r.clone(), arg.clone()])
+          .unwrap_or_else(|| mk_call("HurwitzZeta", vec![r.clone(), arg]));
+      Some(mk_plus(
+        mk_call("Zeta", vec![r.clone()]),
+        mk_times(mk_int(-1), hurwitz),
+      ))
     }
 
     // Gamma[A]/Gamma[B] with A - B a positive integer expands to the rising

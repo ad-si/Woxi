@@ -9710,10 +9710,41 @@ mod function_expand {
       interpret("FunctionExpand[HarmonicNumber[n, r]]").unwrap(),
       "-HurwitzZeta[r, 1 + n] + Zeta[r]"
     );
+    // An integer order reduces the HurwitzZeta to a PolyGamma.
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[n, 2]]").unwrap(),
+      "Pi^2/6 - PolyGamma[1, 1 + n]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[n, 3]]").unwrap(),
+      "PolyGamma[2, 1 + n]/2 + Zeta[3]"
+    );
     // A concrete HarmonicNumber still evaluates numerically.
     assert_eq!(
       interpret("FunctionExpand[HarmonicNumber[5]]").unwrap(),
       "137/60"
+    );
+  }
+
+  // HurwitzZeta[m, a] with an integer m >= 2 reduces to a PolyGamma.
+  #[test]
+  fn hurwitz_zeta() {
+    assert_eq!(
+      interpret("FunctionExpand[HurwitzZeta[2, a]]").unwrap(),
+      "PolyGamma[1, a]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HurwitzZeta[3, a]]").unwrap(),
+      "-1/2*PolyGamma[2, a]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HurwitzZeta[4, a]]").unwrap(),
+      "PolyGamma[3, a]/6"
+    );
+    // A symbolic order is left unchanged.
+    assert_eq!(
+      interpret("FunctionExpand[HurwitzZeta[s, a]]").unwrap(),
+      "HurwitzZeta[s, a]"
     );
   }
 
