@@ -5084,6 +5084,30 @@ mod tex_form {
     assert_eq!(interpret("ToString[f[x], TeXForm]").unwrap(), "f(x)");
   }
 
+  // A built-in function with no special TeX rule keeps WL square brackets
+  // (Round[x] -> \text{Round}[x]), while an unknown user function uses math
+  // parentheses (myf[x] -> \text{myf}(x)) — matching wolframscript.
+  #[test]
+  fn builtin_uses_square_brackets_unknown_uses_parens() {
+    assert_eq!(
+      interpret("ToString[Round[x], TeXForm]").unwrap(),
+      "\\text{Round}[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Quotient[a, b], TeXForm]").unwrap(),
+      "\\text{Quotient}[a,b]"
+    );
+    assert_eq!(
+      interpret("ToString[IntegerPart[x], TeXForm]").unwrap(),
+      "\\text{IntegerPart}[x]"
+    );
+    // Unknown multi-letter user function keeps parentheses.
+    assert_eq!(
+      interpret("ToString[myf[x], TeXForm]").unwrap(),
+      "\\text{myf}(x)"
+    );
+  }
+
   #[test]
   fn integrate_of_user_function() {
     assert_eq!(

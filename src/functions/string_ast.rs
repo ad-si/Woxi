@@ -6219,17 +6219,22 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         expr_to_tex(&args[1])
       )
     }
-    // Default: render as function name with parenthesized args. Single-letter
-    // names render bare (matches wolframscript: f[x] -> f(x)); multi-letter
-    // names use \text{} to distinguish them from implicit products.
+    // Default rendering. wolframscript keeps WL square brackets for a built-in
+    // function that has no special TeX rule (Round[x] -> \text{Round}[x],
+    // Quotient[a, b] -> \text{Quotient}[a, b]), but renders an unknown/user
+    // function with math parentheses (f[x] -> f(x), myf[x] -> \text{myf}(x)).
     _ => {
       let args_tex: Vec<String> = args.iter().map(expr_to_tex).collect();
-      let head = if name.chars().count() == 1 {
-        name.to_string()
+      if crate::evaluator::get_builtin_function_info(name).is_some() {
+        format!("\\text{{{}}}[{}]", name, args_tex.join(","))
       } else {
-        format!("\\text{{{}}}", name)
-      };
-      format!("{}({})", head, args_tex.join(","))
+        let head = if name.chars().count() == 1 {
+          name.to_string()
+        } else {
+          format!("\\text{{{}}}", name)
+        };
+        format!("{}({})", head, args_tex.join(","))
+      }
     }
   }
 }
