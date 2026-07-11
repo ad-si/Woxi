@@ -7580,9 +7580,10 @@ mod part_span {
     );
   }
 
-  // Span prints in head form in every context — wolframscript 15 never
-  // uses the ;; operator in output. Verified: Print[5 ;; 2] gives
-  // Span[5, 2], Hold[l[[5 ;; 2]]] gives Hold[l[[Span[5, 2]]]].
+  // Span prints in head form in OutputForm — wolframscript 15's OutputForm
+  // (bare echo, Print) shows Span[5, 2], never the ;; operator. Verified:
+  // Print[5 ;; 2] gives Span[5, 2], Hold[l[[5 ;; 2]]] gives
+  // Hold[l[[Span[5, 2]]]].
   #[test]
   fn span_prints_in_head_form() {
     assert_eq!(interpret("5 ;; 2").unwrap(), "Span[5, 2]");
@@ -7591,6 +7592,31 @@ mod part_span {
     assert_eq!(
       interpret("Hold[l[[5 ;; 2]]]").unwrap(),
       "Hold[l[[Span[5, 2]]]]"
+    );
+  }
+
+  // Span prints with the ;; operator in InputForm — wolframscript 15's
+  // ToString[5 ;; 2, InputForm] gives "5 ;; 2", the Part echo gives
+  // {...}[[5 ;; 2]], but a FullForm wrapper keeps the head form.
+  #[test]
+  fn span_prints_operator_in_input_form() {
+    assert_eq!(
+      interpret("ToString[(5 ;; 2), InputForm]").unwrap(),
+      "5 ;; 2"
+    );
+    assert_eq!(
+      interpret("ToString[(1 ;; 10 ;; 2), InputForm]").unwrap(),
+      "1 ;; 10 ;; 2"
+    );
+    assert_eq!(interpret("ToString[(;;), InputForm]").unwrap(), "1 ;; All");
+    assert_eq!(
+      interpret("ToString[(Hold[l[[5 ;; 2]]]), InputForm]").unwrap(),
+      "Hold[l[[5 ;; 2]]]"
+    );
+    // Nested Span argument is parenthesised on re-render.
+    assert_eq!(
+      interpret("ToString[Span[1, Span[2, 3]], InputForm]").unwrap(),
+      "1 ;; (2 ;; 3)"
     );
   }
 
