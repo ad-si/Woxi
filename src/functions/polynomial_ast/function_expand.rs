@@ -212,6 +212,18 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       mk_call("ArcSin", vec![mk_call("Sqrt", vec![args[0].clone()])]),
     )),
 
+    // InverseGudermannian[x] → Log[Tan[Pi/4 + x/2]]
+    "InverseGudermannian" if args.len() == 1 => Some(mk_call(
+      "Log",
+      vec![mk_call(
+        "Tan",
+        vec![mk_plus(
+          mk_times(mk_ratio(1, 4), mk_id("Pi")),
+          mk_times(mk_ratio(1, 2), args[0].clone()),
+        )],
+      )],
+    )),
+
     // Sinc[x] → Sin[x] / x
     "Sinc" if args.len() == 1 => Some(mk_div(
       mk_call("Sin", vec![args[0].clone()]),

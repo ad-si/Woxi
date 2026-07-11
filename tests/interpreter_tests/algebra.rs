@@ -9587,6 +9587,25 @@ mod function_expand {
   }
 
   #[test]
+  fn inverse_gudermannian() {
+    // wolframscript: FunctionExpand[InverseGudermannian[x]] gives the standard
+    // identity Log[Tan[Pi/4 + x/2]]. Plain InverseGudermannian[x] stays held.
+    assert_eq!(
+      interpret("FunctionExpand[InverseGudermannian[x]]").unwrap(),
+      "Log[Tan[Pi/4 + x/2]]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[InverseGudermannian[y]]").unwrap(),
+      "Log[Tan[Pi/4 + y/2]]"
+    );
+    // Numeric argument still evaluates to the same value as the direct call.
+    assert_eq!(
+      interpret("FunctionExpand[InverseGudermannian[0.5]]").unwrap(),
+      "0.5222381032784403"
+    );
+  }
+
+  #[test]
   fn inverse_haversine_complex_numeric() {
     // 2 * ArcSin[Sqrt[z]] for complex z must be correctly-rounded to match
     // wolframscript bit-for-bit (regression for mathics
