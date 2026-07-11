@@ -6522,6 +6522,17 @@ mod characteristic_function {
   }
 
   #[test]
+  fn negative_binomial() {
+    assert_eq!(
+      interpret(
+        "CharacteristicFunction[NegativeBinomialDistribution[n, p], t]"
+      )
+      .unwrap(),
+      "(p/(1 - E^(I*t)*(1 - p)))^n"
+    );
+  }
+
+  #[test]
   fn numeric_argument() {
     assert_eq!(
       interpret("CharacteristicFunction[NormalDistribution[], 0]").unwrap(),
@@ -6635,6 +6646,17 @@ mod moment_generating_function {
       interpret("MomentGeneratingFunction[LaplaceDistribution[0, 1], t]")
         .unwrap(),
       "(1 - t^2)^(-1)"
+    );
+  }
+
+  #[test]
+  fn negative_binomial() {
+    assert_eq!(
+      interpret(
+        "MomentGeneratingFunction[NegativeBinomialDistribution[n, p], t]"
+      )
+      .unwrap(),
+      "(p/(1 - E^t*(1 - p)))^n"
     );
   }
 

@@ -6980,6 +6980,36 @@ pub fn characteristic_function_ast(
       ),
       false,
     )),
+    // (p/(1 - E^(I*t)*(1 - p)))^n
+    ("NegativeBinomialDistribution", [n, p]) => Some((
+      pow(
+        div(
+          p.clone(),
+          call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call(
+                "Times",
+                vec![
+                  Expr::Integer(-1),
+                  e_it(vec![]),
+                  call(
+                    "Plus",
+                    vec![
+                      Expr::Integer(1),
+                      call("Times", vec![Expr::Integer(-1), p.clone()]),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        n.clone(),
+      ),
+      false,
+    )),
     // (1 - I*b*t)^(-a) — raw: the evaluator's canonical Times order
     // would print b*I*t
     ("GammaDistribution", [a, b]) => Some((
@@ -7264,6 +7294,23 @@ pub fn moment_generating_function_ast(
             call("Times", vec![Expr::Integer(-1), e_t(vec![]), one_minus(p)]),
           ],
         ),
+      ),
+      true,
+    )),
+    // (p/(1 - E^t*(1 - p)))^n
+    ("NegativeBinomialDistribution", [n, p]) => Some((
+      pow(
+        div(
+          p.clone(),
+          call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), e_t(vec![]), one_minus(p)]),
+            ],
+          ),
+        ),
+        n.clone(),
       ),
       true,
     )),
