@@ -9933,6 +9933,20 @@ mod cases {
     assert_case(r#"Maximize[-2 x^2 - 3 x + 5, x]"#, r#"{49/8, {x -> -3/4}}"#);
   }
   #[test]
+  fn maximize_unsolved_keeps_original_objective() {
+    // When Maximize can't solve a constrained problem it echoes the call
+    // unevaluated; it must show the user's original objective, not the
+    // internally-negated one (was `Maximize[{-(x*y), ...}]`).
+    assert_case(
+      r#"Maximize[{x y, Sin[x] + Sin[y] == 1}, {x, y}]"#,
+      r#"Maximize[{x*y, Sin[x] + Sin[y] == 1}, {x, y}]"#,
+    );
+    assert_case(
+      r#"Maximize[{x y z, Sin[x] + Sin[y] + Sin[z] == 1}, {x, y, z}]"#,
+      r#"Maximize[{x*y*z, Sin[x] + Sin[y] + Sin[z] == 1}, {x, y, z}]"#,
+    );
+  }
+  #[test]
   fn minimize() {
     assert_case(r#"Minimize[2 x^2 - 3 x + 5, x]"#, r#"{31/8, {x -> 3/4}}"#);
   }

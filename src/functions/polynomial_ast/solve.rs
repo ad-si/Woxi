@@ -6075,6 +6075,20 @@ fn minimize_constrained(
     f.clone()
   };
 
+  // When Maximize can't solve the problem the sub-solvers echo the call
+  // unevaluated, but embed the internally-negated objective `f_inner`. Restore
+  // the user's original objective so the echo matches wolframscript
+  // (Maximize[{x*y, …}] rather than Maximize[{-(x*y), …}]).
+  let restore = |result: Expr| -> Expr {
+    if maximize
+      && let Expr::FunctionCall { name, .. } = &result
+      && name == func_name
+    {
+      return substitute_expr(&result, &f_inner, f);
+    }
+    result
+  };
+
   // Try ILP if any Element[x, Integers] constraint is present
   if constraints
     .iter()
@@ -6082,23 +6096,29 @@ fn minimize_constrained(
     && let Some(result) =
       minimize_try_ilp(&f_inner, &constraints, vars, maximize, func_name)?
   {
-    return Ok(result);
+    return Ok(restore(result));
   }
 
   // Single variable with simple bound constraints
   if vars.len() == 1 {
     let var = &vars[0];
-    return minimize_constrained_1d(
+    return Ok(restore(minimize_constrained_1d(
       &f_inner,
       &constraints,
       var,
       maximize,
       func_name,
-    );
+    )?));
   }
 
   // Multi-variable: try linear programming for linear constraints + linear/quadratic objective
-  minimize_constrained_nd(&f_inner, &constraints, vars, maximize, func_name)
+  Ok(restore(minimize_constrained_nd(
+    &f_inner,
+    &constraints,
+    vars,
+    maximize,
+    func_name,
+  )?))
 }
 
 /// Try Integer Linear Programming. Returns Some(result) if ILP was solved, None if unsupported.
