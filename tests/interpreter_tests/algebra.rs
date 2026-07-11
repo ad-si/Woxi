@@ -9208,6 +9208,24 @@ mod minimal_polynomial {
     );
   }
 
+  // MinimalPolynomial is Listable: it threads over a list (or matrix) of
+  // algebraic numbers in the first argument.
+  #[test]
+  fn threads_over_list() {
+    assert_eq!(
+      interpret("MinimalPolynomial[{2, 3}, x]").unwrap(),
+      "{-2 + x, -3 + x}"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[{Sqrt[2], Sqrt[3]}, x]").unwrap(),
+      "{-2 + x^2, -3 + x^2}"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[{{2, 0}, {0, 2}}, x]").unwrap(),
+      "{{-2 + x, x}, {x, -2 + x}}"
+    );
+  }
+
   #[test]
   fn cube_root_2() {
     assert_eq!(

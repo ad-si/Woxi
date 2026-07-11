@@ -108,6 +108,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "HarmonicNumber"
       | "AlternatingHarmonicNumber"
       | "HyperHarmonicNumber"
+      | "MinimalPolynomial"
       | "ContinuedFraction"
       | "Boole"
       | "BitLength"
