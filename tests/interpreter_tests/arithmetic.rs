@@ -8019,6 +8019,27 @@ mod abs_simplifications {
     // Rational components.
     assert_eq!(interpret("Abs[1/2 + 1/2 I]").unwrap(), "1/Sqrt[2]");
   }
+
+  // Machine-precision complex numbers: `a. + b. I` stays Complex in Wolfram
+  // (Head Complex), so Abs is a machine real — including when the imaginary
+  // part is exactly 0. (`5. + 0. I`), and when the magnitude lands on a whole
+  // number (`5.`, not `5`).
+  #[test]
+  fn abs_machine_complex() {
+    // Nonzero imaginary part: result is a machine real, even on whole numbers.
+    assert_eq!(interpret("Abs[3. + 4. I]").unwrap(), "5.");
+    assert_eq!(interpret("Abs[3.0 + I]").unwrap(), "3.1622776601683795");
+    // Zero imaginary part (regression: previously stayed unevaluated).
+    assert_eq!(interpret("Abs[5. + 0. I]").unwrap(), "5.");
+    assert_eq!(interpret("Abs[-2. + 0. I]").unwrap(), "2.");
+    assert_eq!(interpret("Abs[0. + 0. I]").unwrap(), "0.");
+    assert_eq!(interpret("Abs[1.5 + 0. I]").unwrap(), "1.5");
+    // The now-evaluated magnitude flows into further computation.
+    assert_eq!(
+      interpret("Sqrt[Abs[5. + 0. I]]").unwrap(),
+      "2.23606797749979"
+    );
+  }
 }
 
 // Sign is multiplicative: it pulls the sign of each real-constant factor out

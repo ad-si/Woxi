@@ -205,10 +205,22 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   // Handle floating-point complex numbers: Abs[3.0 + I] = sqrt(10)
-  if let Some((re, im)) = try_extract_complex_f64(&args[0])
-    && im != 0.0
-  {
-    return Ok(num_to_expr((re * re + im * im).sqrt()));
+  if let Some((re, im)) = try_extract_complex_f64(&args[0]) {
+    if im != 0.0 {
+      // Exact complex numbers are handled above, so reaching here means a
+      // machine-precision value: the magnitude stays a machine real even when
+      // it lands on a whole number (Abs[3. + 4. I] = 5., not 5).
+      return Ok(Expr::Real((re * re + im * im).sqrt()));
+    }
+    // A machine-precision complex whose imaginary part is exactly 0. — e.g.
+    // `5. + 0.*I`, which stays Complex[5., 0.] in Wolfram rather than folding
+    // to a real. Its Abs is |re| as a machine real (`5.`, matching
+    // wolframscript). Guard on the presence of the imaginary unit so a
+    // genuinely real symbolic sum (Sqrt[2] - 3) is not floatified here but
+    // keeps its exact form via the fallback below.
+    if mentions_imaginary_unit(&args[0]) {
+      return Ok(Expr::Real(re.abs()));
+    }
   }
   // Fallback for a real-valued numeric expression that wasn't simplified
   // above (e.g. a sum like Sqrt[2] - 3): |x| exactly. Negative values are
