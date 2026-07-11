@@ -5915,6 +5915,32 @@ mod log_gamma {
 mod anger_j_tests {
   use super::*;
 
+  // These functions are Listable in the Wolfram Language and thread over a
+  // list argument (previously stayed unevaluated).
+  #[test]
+  fn listable_threading() {
+    assert_eq!(
+      interpret("AngerJ[1, {1, 2}]").unwrap(),
+      "{BesselJ[1, 1], BesselJ[1, 2]}"
+    );
+    assert_eq!(
+      interpret("KelvinBer[{1, 2}]").unwrap(),
+      "{KelvinBer[0, 1], KelvinBer[0, 2]}"
+    );
+    assert_eq!(
+      interpret("KelvinBei[{1, 2}]").unwrap(),
+      "{KelvinBei[0, 1], KelvinBei[0, 2]}"
+    );
+    assert_eq!(
+      interpret("WeberE[1, {1, 2}]").unwrap(),
+      "{2/Pi - StruveH[1, 1], 2/Pi - StruveH[1, 2]}"
+    );
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[{1, 2}, 3]").unwrap(),
+      "{ArithmeticGeometricMean[1, 3], ArithmeticGeometricMean[2, 3]}"
+    );
+  }
+
   // AngerJ[n, z] = BesselJ[n, z] for integer n
   #[test]
   fn integer_order_equals_bessel_j() {
