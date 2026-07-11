@@ -324,6 +324,29 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &[a_list[0].clone(), b_list[0].clone(), z.clone()],
     );
   }
+
+  // p=2, q=1 form is exactly Hypergeometric2F1, which carries its own
+  // closed-form reductions (e.g. 2F1[1,1,2,z] = -Log[1-z]/z). Delegate, but
+  // only adopt the delegated result when 2F1 actually reduces to a closed
+  // form: Wolfram does not auto-convert an un-reducible symbolic pFq to
+  // Hypergeometric2F1, so in that case we fall through and keep the input as
+  // HypergeometricPFQ.
+  if a_list.len() == 2 && b_list.len() == 1 {
+    let reduced =
+      crate::functions::math_ast::hypergeometric::hypergeometric2f1_ast(&[
+        a_list[0].clone(),
+        a_list[1].clone(),
+        b_list[0].clone(),
+        z.clone(),
+      ])?;
+    let is_bare_2f1 = matches!(
+      &reduced,
+      Expr::FunctionCall { name, .. } if name == "Hypergeometric2F1"
+    );
+    if !is_bare_2f1 {
+      return Ok(reduced);
+    }
+  }
   // 3F2[{1, 1, 2}, {3, 3}, z] closed form. Partial-fractioning the
   // collapsed series Σ 4·z^k/((k+1)(k+2)^2) over the standard sums
   //   Σ z^k/(k+1) = -Log[1-z]/z,

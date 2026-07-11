@@ -5242,6 +5242,55 @@ mod hypergeometric_pfq {
       "1"
     );
   }
+
+  // p=2, q=1 is exactly Hypergeometric2F1: when the 2F1 has a symbolic
+  // closed form, HypergeometricPFQ must reduce to it.
+  #[test]
+  fn two_one_delegates_to_2f1_symbolic() {
+    // 2F1[1, 1, 2, z] = -Log[1 - z]/z
+    assert_eq!(
+      interpret("HypergeometricPFQ[{1, 1}, {2}, z]").unwrap(),
+      "-(Log[1 - z]/z)"
+    );
+    // 2F1[2, 3, 4, x]
+    assert_eq!(
+      interpret("HypergeometricPFQ[{2, 3}, {4}, x]").unwrap(),
+      "(3*(-2*x + x^2 - 2*Log[1 - x] + 2*x*Log[1 - x]))/((-1 + x)*x^3)"
+    );
+    // 2F1[1, 2, 4, x]
+    assert_eq!(
+      interpret("HypergeometricPFQ[{1, 2}, {4}, x]").unwrap(),
+      "(-3*(-2*x + x^2 - 2*Log[1 - x] + 2*x*Log[1 - x]))/x^3"
+    );
+  }
+
+  // A negative-integer upper parameter terminates the series into a
+  // polynomial (handled before the 2F1 delegation, matching Wolfram's form).
+  #[test]
+  fn two_one_terminating_polynomial() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{-2, 3}, {4}, z]").unwrap(),
+      "1 - (3*z)/2 + (3*z^2)/5"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{-3, 2}, {1}, z]").unwrap(),
+      "1 - 6*z + 9*z^2 - 4*z^3"
+    );
+  }
+
+  // When the underlying 2F1 has no closed form, Wolfram keeps the input as
+  // HypergeometricPFQ rather than converting it to Hypergeometric2F1.
+  #[test]
+  fn two_one_unreducible_stays_pfq() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{1/2, 1/2}, {3/2}, z]").unwrap(),
+      "HypergeometricPFQ[{1/2, 1/2}, {3/2}, z]"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{3, 1}, {2}, x]").unwrap(),
+      "HypergeometricPFQ[{3, 1}, {2}, x]"
+    );
+  }
 }
 
 mod riemann_r {
