@@ -2824,6 +2824,63 @@ mod insphere {
   }
 }
 
+// AngleBisector[{q1, p, q2}] — the interior-angle bisector at p, returned as
+// InfiniteLine[p, Normalize[q1 - p] + Normalize[q2 - p]]. Verified against
+// wolframscript.
+mod angle_bisector {
+  use super::*;
+
+  #[test]
+  fn right_angle_at_origin() {
+    // Two axis-aligned unit legs bisect along {1, 1}.
+    assert_eq!(
+      interpret("AngleBisector[{{1, 0}, {0, 0}, {0, 1}}]").unwrap(),
+      "InfiniteLine[{0, 0}, {1, 1}]"
+    );
+    // Direction is normalized per leg, so leg lengths don't matter.
+    assert_eq!(
+      interpret("AngleBisector[{{4, 0}, {0, 0}, {0, 3}}]").unwrap(),
+      "InfiniteLine[{0, 0}, {1, 1}]"
+    );
+  }
+
+  #[test]
+  fn irrational_direction_is_simplified() {
+    // 60° leg: bisector direction {3/2, Sqrt[3]/2}.
+    assert_eq!(
+      interpret("AngleBisector[{{1, 0}, {0, 0}, {1, Sqrt[3]}}]").unwrap(),
+      "InfiniteLine[{0, 0}, {3/2, Sqrt[3]/2}]"
+    );
+    // 1/Sqrt[2] + 1/Sqrt[2] must collapse to Sqrt[2], not 2/Sqrt[2].
+    assert_eq!(
+      interpret("AngleBisector[{{2, 0}, {1, 1}, {2, 2}}]").unwrap(),
+      "InfiniteLine[{1, 1}, {Sqrt[2], 0}]"
+    );
+  }
+
+  #[test]
+  fn non_origin_vertex() {
+    assert_eq!(
+      interpret("AngleBisector[{{5, 5}, {0, 0}, {5, -5}}]").unwrap(),
+      "InfiniteLine[{0, 0}, {Sqrt[2], 0}]"
+    );
+  }
+
+  #[test]
+  fn non_2d_or_malformed_stays_unevaluated() {
+    // 3-D points are not handled (matches wolframscript).
+    assert_eq!(
+      interpret("AngleBisector[{{1, 0, 0}, {0, 0, 0}, {0, 1, 0}}]").unwrap(),
+      "AngleBisector[{{1, 0, 0}, {0, 0, 0}, {0, 1, 0}}]"
+    );
+    // A two-point list is not the {q1, p, q2} form.
+    assert_eq!(
+      interpret("AngleBisector[{{1, 0}, {0, 0}}]").unwrap(),
+      "AngleBisector[{{1, 0}, {0, 0}}]"
+    );
+  }
+}
+
 // BoundingRegion[pts] — the smallest axis-aligned box: Rectangle for 2D points,
 // Cuboid for 1D or >=3D. Min/Max are exact and stay symbolic when needed.
 mod bounding_region {

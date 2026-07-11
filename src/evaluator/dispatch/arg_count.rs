@@ -29,6 +29,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "AlternatingFactorial" => Some((1, 1)),
     "And" => Some((0, usize::MAX)),
     "AngerJ" => Some((2, 2)),
+    "AngleBisector" => Some((1, 1)),
     "AngularGauge" => Some((2, usize::MAX)),
     "AntihermitianMatrixQ" => Some((1, 1)),
     "AntisymmetricMatrixQ" => Some((1, 1)),

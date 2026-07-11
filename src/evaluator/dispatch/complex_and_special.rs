@@ -2063,6 +2063,11 @@ pub fn dispatch_complex_and_special(
     "Circumsphere" if args.len() == 1 => {
       return Some(compute_circumsphere(&args[0]));
     }
+    // AngleBisector[{q1, p, q2}] — the interior-angle bisector at p, as an
+    // InfiniteLine through p (2-D points only).
+    "AngleBisector" if args.len() == 1 => {
+      return Some(compute_angle_bisector(&args[0]));
+    }
     // TriangleCenter[tri] / TriangleCenter[tri, ctype] — named triangle center
     "TriangleCenter" if args.len() == 1 || args.len() == 2 => {
       return Some(compute_triangle_center(args));
@@ -10900,6 +10905,75 @@ fn compute_bounding_region(expr: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::FunctionCall {
     name: head.to_string(),
     args: vec![Expr::List(mins.into()), Expr::List(maxs.into())].into(),
+  })
+}
+
+/// AngleBisector[{q1, p, q2}] — the bisector of the interior angle at `p`
+/// formed by the rays p→q1 and p→q2, returned as `InfiniteLine[p, dir]` where
+/// `dir = Normalize[q1 - p] + Normalize[q2 - p]`. Only 2-D points are handled
+/// (wolframscript leaves higher-dimensional or malformed input unevaluated).
+fn compute_angle_bisector(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let uneval = || {
+    Ok(Expr::FunctionCall {
+      name: "AngleBisector".to_string(),
+      args: vec![expr.clone()].into(),
+    })
+  };
+  let Expr::List(pts) = expr else {
+    return uneval();
+  };
+  if pts.len() != 3 {
+    return uneval();
+  }
+  // Each of q1, p, q2 must be a 2-element coordinate list.
+  let mut coords: Vec<&crate::ExprList> = Vec::with_capacity(3);
+  for pt in pts.iter() {
+    let Expr::List(c) = pt else {
+      return uneval();
+    };
+    if c.len() != 2 {
+      return uneval();
+    }
+    coords.push(c);
+  }
+  let (q1, p, q2) = (coords[0], coords[1], coords[2]);
+
+  // Normalize[qi - p] for i in {1, 2}, as a 2-vector expression.
+  let normalized_leg = |q: &crate::ExprList| -> Expr {
+    let diff = Expr::List(
+      vec![
+        Expr::FunctionCall {
+          name: "Subtract".to_string(),
+          args: vec![q[0].clone(), p[0].clone()].into(),
+        },
+        Expr::FunctionCall {
+          name: "Subtract".to_string(),
+          args: vec![q[1].clone(), p[1].clone()].into(),
+        },
+      ]
+      .into(),
+    );
+    Expr::FunctionCall {
+      name: "Normalize".to_string(),
+      args: vec![diff].into(),
+    }
+  };
+
+  // dir = Simplify[Normalize[q1 - p] + Normalize[q2 - p]]. Simplify reaches
+  // wolframscript's canonical radical form (e.g. 1/Sqrt[2] + 1/Sqrt[2] ->
+  // Sqrt[2]), which plain Plus evaluation leaves as 2/Sqrt[2].
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![normalized_leg(q1), normalized_leg(q2)].into(),
+  };
+  let dir = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Simplify".to_string(),
+    args: vec![sum].into(),
+  })?;
+
+  Ok(Expr::FunctionCall {
+    name: "InfiniteLine".to_string(),
+    args: vec![Expr::List(p.clone()), dir].into(),
   })
 }
 
