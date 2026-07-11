@@ -3952,40 +3952,6 @@ pub fn gcd_i128(a: i128, b: i128) -> i128 {
   a
 }
 
-/// Extract numerator from Integer or Rational expr
-pub fn expr_numerator(e: &Expr) -> Option<i128> {
-  match e {
-    Expr::Integer(n) => Some(*n),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let Expr::Integer(n) = &args[0] {
-        Some(*n)
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
-
-/// Extract denominator from Integer or Rational expr
-pub fn expr_denominator(e: &Expr) -> Option<i128> {
-  match e {
-    Expr::Integer(_) => Some(1),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let Expr::Integer(d) = &args[1] {
-        Some(*d)
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
-
 /// Floor of a rational number num/den
 pub fn rational_floor(num: i128, den: i128) -> i128 {
   if den == 0 {
