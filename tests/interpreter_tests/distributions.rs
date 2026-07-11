@@ -1566,6 +1566,68 @@ mod find_distribution_parameters {
   }
 }
 
+mod mixture_distribution {
+  use super::*;
+
+  // Mean of a mixture is the weight-normalized average of the component means.
+  #[test]
+  fn mean_is_weighted_average() {
+    assert_eq!(
+      interpret(
+        "Mean[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[5, 1]}]]"
+      )
+      .unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[MixtureDistribution[{1, 3}, \
+         {NormalDistribution[0, 1], NormalDistribution[8, 1]}]]"
+      )
+      .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[MixtureDistribution[{2, 1}, \
+         {PoissonDistribution[3], PoissonDistribution[9]}]]"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+
+  // Variance via the law of total variance.
+  #[test]
+  fn variance_law_of_total_variance() {
+    assert_eq!(
+      interpret(
+        "Variance[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[0, 2]}]]"
+      )
+      .unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[6, 1]}]]"
+      )
+      .unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[MixtureDistribution[{1, 1}, \
+         {PoissonDistribution[2], PoissonDistribution[4]}]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+}
+
 mod parameter_mixture_distribution {
   use super::*;
 

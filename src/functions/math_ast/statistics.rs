@@ -475,6 +475,90 @@ pub fn total_at_exact_level(
 }
 
 /// Mean[list] - Arithmetic mean
+/// For MixtureDistribution[{w1, …}, {d1, …}], combine a per-component quantity
+/// `q(d_i)` (mean, PDF, CDF, …) into the weight-normalized sum
+/// `Σ w_i q(d_i) / Σ w_i`. Returns None if the weights/components are malformed
+/// or a component quantity can't be evaluated to a value (i.e. stays a
+/// symbolic function call), so the caller leaves the whole thing unevaluated.
+fn mixture_weighted_component_quantity(
+  dargs: &[Expr],
+  quantity: impl Fn(&Expr) -> Result<Expr, InterpreterError>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let (Expr::List(weights), Expr::List(dists)) = (&dargs[0], &dargs[1]) else {
+    return Ok(None);
+  };
+  if weights.is_empty() || weights.len() != dists.len() {
+    return Ok(None);
+  }
+  let call = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: a.into(),
+  };
+  let mut terms: Vec<Expr> = Vec::with_capacity(weights.len());
+  for (w, d) in weights.iter().zip(dists.iter()) {
+    let q = quantity(d)?;
+    // If the component quantity didn't resolve (still a Mean[…]/PDF[…] head),
+    // bail so the mixture call stays unevaluated too.
+    if matches!(&q, Expr::FunctionCall { name, .. }
+      if name == "Mean" || name == "Variance" || name == "PDF" || name == "CDF")
+    {
+      return Ok(None);
+    }
+    terms.push(call("Times", vec![w.clone(), q]));
+  }
+  let numer = call("Plus", terms);
+  let denom = call("Plus", weights.to_vec());
+  let result = call(
+    "Times",
+    vec![numer, call("Power", vec![denom, Expr::Integer(-1)])],
+  );
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
+}
+
+/// Variance of MixtureDistribution via the law of total variance:
+/// Var = Σ (w_i/W)(σ_i² + μ_i²) − (Σ (w_i/W) μ_i)².
+fn mixture_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
+  let (Expr::List(weights), Expr::List(dists)) = (&dargs[0], &dargs[1]) else {
+    return Ok(None);
+  };
+  if weights.is_empty() || weights.len() != dists.len() {
+    return Ok(None);
+  }
+  let call = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: a.into(),
+  };
+  let resolved = |q: &Expr| {
+    !matches!(q, Expr::FunctionCall { name, .. }
+      if name == "Mean" || name == "Variance")
+  };
+  // Σ w_i (σ_i² + μ_i²) and Σ w_i μ_i.
+  let mut ex2_terms: Vec<Expr> = Vec::with_capacity(weights.len());
+  let mut mean_terms: Vec<Expr> = Vec::with_capacity(weights.len());
+  for (w, d) in weights.iter().zip(dists.iter()) {
+    let mu = mean_ast(std::slice::from_ref(d))?;
+    let var = variance_ast(std::slice::from_ref(d))?;
+    if !resolved(&mu) || !resolved(&var) {
+      return Ok(None);
+    }
+    let mu2 = call("Power", vec![mu.clone(), Expr::Integer(2)]);
+    ex2_terms
+      .push(call("Times", vec![w.clone(), call("Plus", vec![var, mu2])]));
+    mean_terms.push(call("Times", vec![w.clone(), mu]));
+  }
+  let w_total = call("Plus", weights.to_vec());
+  let inv_w = call("Power", vec![w_total, Expr::Integer(-1)]);
+  // E[X²] = (Σ w_i (σ_i²+μ_i²)) / W ; μ = (Σ w_i μ_i) / W.
+  let ex2 = call("Times", vec![call("Plus", ex2_terms), inv_w.clone()]);
+  let mean = call("Times", vec![call("Plus", mean_terms), inv_w]);
+  let mean2 = call("Power", vec![mean, Expr::Integer(2)]);
+  let result = call(
+    "Plus",
+    vec![ex2, call("Times", vec![Expr::Integer(-1), mean2])],
+  );
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
+}
+
 pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -668,6 +752,22 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: dargs.clone(),
           }]
           .into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "MixtureDistribution" && dargs.len() == 2 => {
+      // Mean of a mixture is the weight-normalized average of the component
+      // means: Σ w_i Mean[dist_i] / Σ w_i.
+      match mixture_weighted_component_quantity(dargs, |d| {
+        mean_ast(std::slice::from_ref(d))
+      })? {
+        Some(mean) => Ok(mean),
+        None => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
         }),
       }
     }
@@ -968,6 +1068,20 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: dargs.clone(),
           }]
           .into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "MixtureDistribution" && dargs.len() == 2 => {
+      // Law of total variance for a mixture:
+      //   Var = Σ (w_i/W)(σ_i² + μ_i²) − (Σ (w_i/W) μ_i)²
+      match mixture_variance(dargs)? {
+        Some(v) => Ok(v),
+        None => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
         }),
       }
     }
