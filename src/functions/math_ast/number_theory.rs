@@ -4500,14 +4500,10 @@ pub fn jacobi_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // m must be a positive odd integer
-  if m <= 0 || m % 2 == 0 {
-    return Err(InterpreterError::EvaluationError(
-      "JacobiSymbol: second argument must be a positive odd integer".into(),
-    ));
-  }
-
-  Ok(Expr::Integer(jacobi_symbol(n, m)))
+  // wolframscript defines JacobiSymbol[a, n] for all integers n via the
+  // Kronecker-symbol extension (even/zero/negative n included); for odd
+  // positive n it coincides with the ordinary Jacobi symbol.
+  Ok(Expr::Integer(kronecker_symbol(n, m)))
 }
 
 /// Compute the Jacobi symbol (a/n) using the standard algorithm
@@ -4541,6 +4537,61 @@ pub fn jacobi_symbol(mut a: i128, mut n: i128) -> i128 {
   }
 
   if n == 1 { result } else { 0 }
+}
+
+/// Compute the Kronecker symbol (a/n), the extension of the Jacobi symbol to
+/// all integers n (including even, zero and negative). wolframscript defines
+/// both `JacobiSymbol[a, n]` and `KroneckerSymbol[a, n]` by this same symbol.
+pub fn kronecker_symbol(a: i128, n: i128) -> i128 {
+  if n == 0 {
+    return if a == 1 || a == -1 { 1 } else { 0 };
+  }
+  if n == 1 {
+    return 1;
+  }
+  if n == -1 {
+    return if a < 0 { -1 } else { 1 };
+  }
+
+  // (a/2): 0 for even a, +1 for a ≡ ±1 (mod 8), -1 for a ≡ ±3 (mod 8).
+  if n == 2 {
+    if a % 2 == 0 {
+      return 0;
+    }
+    let a_mod_8 = a.rem_euclid(8);
+    return if a_mod_8 == 1 || a_mod_8 == 7 { 1 } else { -1 };
+  }
+  if n == -2 {
+    return kronecker_symbol(a, -1) * kronecker_symbol(a, 2);
+  }
+
+  // For negative n, factor out the sign.
+  if n < 0 {
+    return kronecker_symbol(a, -1) * kronecker_symbol(a, -n);
+  }
+
+  // n > 2 and positive. Factor out the powers of 2, then use the Jacobi symbol
+  // for the remaining odd part.
+  let mut n_rem = n;
+  let mut result: i128 = 1;
+
+  let mut twos = 0;
+  while n_rem % 2 == 0 {
+    n_rem /= 2;
+    twos += 1;
+  }
+  if twos > 0 {
+    let k2 = kronecker_symbol(a, 2);
+    for _ in 0..twos {
+      result *= k2;
+    }
+  }
+
+  if n_rem > 1 {
+    result *= jacobi_symbol(a, n_rem);
+  }
+
+  result
 }
 
 /// CoprimeQ[a, b, ...] - Tests if integers are pairwise coprime

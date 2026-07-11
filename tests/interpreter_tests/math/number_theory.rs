@@ -2819,6 +2819,37 @@ mod jacobi_symbol {
       "JacobiSymbol[x, 5]"
     );
   }
+
+  #[test]
+  fn even_denominator_kronecker_extension() {
+    // wolframscript extends JacobiSymbol[a, n] to even n via the Kronecker
+    // symbol: (a/2) = 0 for even a, +1 for a ≡ ±1 (mod 8), -1 for a ≡ ±3.
+    assert_eq!(interpret("JacobiSymbol[3, 4]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[5, 8]").unwrap(), "-1");
+    assert_eq!(interpret("JacobiSymbol[7, 12]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[3, 2]").unwrap(), "-1");
+    assert_eq!(interpret("JacobiSymbol[2, 6]").unwrap(), "0");
+  }
+
+  #[test]
+  fn zero_and_negative_denominator() {
+    // (a/0) = 1 iff a = ±1, else 0; negative n factors out (a/-1).
+    assert_eq!(interpret("JacobiSymbol[1, 0]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[2, 0]").unwrap(), "0");
+    assert_eq!(interpret("JacobiSymbol[-1, 0]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[15, -4]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[-3, 4]").unwrap(), "1");
+  }
+
+  #[test]
+  fn matches_kronecker_symbol() {
+    // For every integer pair JacobiSymbol coincides with KroneckerSymbol.
+    assert_eq!(
+      interpret("Table[JacobiSymbol[a, n], {a, -6, 6}, {n, -6, 6}]").unwrap(),
+      interpret("Table[KroneckerSymbol[a, n], {a, -6, 6}, {n, -6, 6}]")
+        .unwrap()
+    );
+  }
 }
 
 mod real_digits {

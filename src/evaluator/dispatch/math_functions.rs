@@ -4616,7 +4616,7 @@ pub fn dispatch_math_functions(
       if let (Some(a), Some(n)) =
         (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
       {
-        let result = kronecker_symbol(a, n);
+        let result = crate::functions::kronecker_symbol(a, n);
         return Some(Ok(Expr::Integer(result)));
       }
     }
@@ -7969,59 +7969,6 @@ fn pow_mod(mut base: u64, mut exp: u64, modulus: u64) -> u64 {
 }
 
 /// Kronecker symbol — generalization of Jacobi symbol to all integers
-fn kronecker_symbol(a: i128, n: i128) -> i128 {
-  if n == 0 {
-    return if a == 1 || a == -1 { 1 } else { 0 };
-  }
-  if n == 1 {
-    return 1;
-  }
-  if n == -1 {
-    return if a < 0 { -1 } else { 1 };
-  }
-
-  // Handle n == 2
-  if n == 2 {
-    if a % 2 == 0 {
-      return 0;
-    }
-    let a_mod_8 = a.rem_euclid(8);
-    return if a_mod_8 == 1 || a_mod_8 == 7 { 1 } else { -1 };
-  }
-  if n == -2 {
-    return kronecker_symbol(a, -1) * kronecker_symbol(a, 2);
-  }
-
-  // For negative n, factor out the sign
-  if n < 0 {
-    return kronecker_symbol(a, -1) * kronecker_symbol(a, -n);
-  }
-
-  // n > 2 and positive. Factor out powers of 2 from n.
-  let mut n_rem = n;
-  let mut result: i128 = 1;
-
-  // Extract factor of 2
-  let mut twos = 0;
-  while n_rem % 2 == 0 {
-    n_rem /= 2;
-    twos += 1;
-  }
-  if twos > 0 {
-    let k2 = kronecker_symbol(a, 2);
-    for _ in 0..twos {
-      result *= k2;
-    }
-  }
-
-  // Now n_rem is odd and positive, use Jacobi symbol
-  if n_rem > 1 {
-    result *= crate::functions::jacobi_symbol(a, n_rem);
-  }
-
-  result
-}
-
 /// Count representations of n as sum of k squares (brute force recursion)
 fn count_squares_r(
   k: usize,
