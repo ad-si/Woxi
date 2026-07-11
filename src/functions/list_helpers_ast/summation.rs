@@ -524,7 +524,7 @@ fn explicit_real(e: &Expr) -> Option<f64> {
   }
 }
 
-fn i128_gcd(a: i128, b: i128) -> i128 {
+fn gcd_i128(a: i128, b: i128) -> i128 {
   let (mut a, mut b) = (a.abs(), b.abs());
   while b != 0 {
     let t = a % b;
@@ -566,7 +566,7 @@ fn integer_coefficient_list(poly: &Expr, var_name: &str) -> Option<Vec<i128>> {
     items.iter().map(coeff_to_ratio).collect::<Option<_>>()?;
   let mut lcm: i128 = 1;
   for &(_, d) in &ratios {
-    let g = i128_gcd(lcm, d);
+    let g = gcd_i128(lcm, d);
     lcm = (lcm / g).checked_mul(d.abs())?;
   }
   let mut out = Vec::with_capacity(ratios.len());

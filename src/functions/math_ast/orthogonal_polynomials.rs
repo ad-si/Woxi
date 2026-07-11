@@ -129,13 +129,13 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
   let mut content = BigInt::from(0);
   let mut bail = false;
   for_each_plus_term(&poly, &mut |t| match integer_coeff_of_term(t) {
-    Some(c) => content = bigint_gcd(content.clone(), c.abs()),
+    Some(c) => content = gcd_bigint(content.clone(), c.abs()),
     None => bail = true,
   });
   if bail {
     return Ok(expr);
   }
-  let g = bigint_gcd(content, d.abs());
+  let g = gcd_bigint(content, d.abs());
   if g <= BigInt::from(1) {
     return Ok(expr);
   }
@@ -718,7 +718,7 @@ fn legendre_eval_rational(n: usize, x: (BigInt, BigInt)) -> (BigInt, BigInt) {
     let diff_n = &term1_n * &term2_d - &term2_n * &term1_d;
     let diff_d = &term1_d * &term2_d * (&m_i + BigInt::from(1));
 
-    let g = bigint_gcd(diff_n.clone(), diff_d.clone());
+    let g = gcd_bigint(diff_n.clone(), diff_d.clone());
     let next_n = &diff_n / &g;
     let next_d = &diff_d / &g;
 
@@ -2236,7 +2236,7 @@ fn chebyshev_t_eval_rational(
     let a_d = &xd * &t.1;
     let new_n = &a_n * &tm1.1 - &tm1.0 * &a_d;
     let new_d = &a_d * &tm1.1;
-    let g = bigint_gcd(new_n.clone(), new_d.clone());
+    let g = gcd_bigint(new_n.clone(), new_d.clone());
     tm1 = t;
     t = if g != BigInt::from(0) {
       (&new_n / &g, &new_d / &g)
@@ -2463,7 +2463,7 @@ fn chebyshev_u_eval_rational(
     let a_d = &xd * &u.1;
     let new_n = &a_n * &um1.1 - &um1.0 * &a_d;
     let new_d = &a_d * &um1.1;
-    let g = bigint_gcd(new_n.clone(), new_d.clone());
+    let g = gcd_bigint(new_n.clone(), new_d.clone());
     um1 = u;
     u = if g != BigInt::from(0) {
       (&new_n / &g, &new_d / &g)
@@ -2760,7 +2760,7 @@ fn gegenbauer_eval_rational(
   // C_1 = 2λx = (2*lam_n*x_n, lam_d*x_d)
   let c1_n = BigInt::from(2) * &lam.0 * &x.0;
   let c1_d = &lam.1 * &x.1;
-  let g = bigint_gcd(c1_n.clone(), c1_d.clone());
+  let g = gcd_bigint(c1_n.clone(), c1_d.clone());
   let c1 = if g != BigInt::from(0) {
     (&c1_n / &g, &c1_d / &g)
   } else {
@@ -2799,7 +2799,7 @@ fn gegenbauer_eval_rational(
     let new_n = diff_n;
     let new_d = diff_d * (&kk + BigInt::from(1));
 
-    let g = bigint_gcd(new_n.clone(), new_d.clone());
+    let g = gcd_bigint(new_n.clone(), new_d.clone());
     cm1 = c;
     c = if g != BigInt::from(0) {
       (&new_n / &g, &new_d / &g)
@@ -3425,7 +3425,7 @@ fn laguerre_eval_rational(n: usize, x: (BigInt, BigInt)) -> (BigInt, BigInt) {
     let sub_n = &a_n * b_d - &b_n * &a_d;
     let sub_d = &a_d * b_d * (&kf + BigInt::from(1));
 
-    let g = bigint_gcd(sub_n.clone(), sub_d.clone());
+    let g = gcd_bigint(sub_n.clone(), sub_d.clone());
     lm1 = l;
     l = if g != BigInt::from(0) {
       (&sub_n / &g, &sub_d / &g)

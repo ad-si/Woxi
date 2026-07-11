@@ -58,7 +58,7 @@ fn is_concrete_number(e: &Expr) -> bool {
   }
 }
 
-pub fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
+pub fn gcd_bigint(a: BigInt, b: BigInt) -> BigInt {
   use num_traits::Zero;
   let (mut a, mut b) = (a.abs(), b.abs());
   while !b.is_zero() {
@@ -240,8 +240,8 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut num_gcd = fractions[0].0.clone().abs();
   let mut den_lcm = fractions[0].1.clone().abs();
   for (n, d) in &fractions[1..] {
-    num_gcd = bigint_gcd(num_gcd, n.clone());
-    den_lcm = bigint_lcm(den_lcm, d.clone());
+    num_gcd = gcd_bigint(num_gcd, n.clone());
+    den_lcm = lcm_bigint(den_lcm, d.clone());
   }
 
   Ok(make_rational_expr(num_gcd, den_lcm))
@@ -408,8 +408,8 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut num_lcm = fractions[0].0.clone().abs();
   let mut den_gcd = fractions[0].1.clone().abs();
   for (n, d) in &fractions[1..] {
-    num_lcm = bigint_lcm(num_lcm, n.clone());
-    den_gcd = bigint_gcd(den_gcd, d.clone());
+    num_lcm = lcm_bigint(num_lcm, n.clone());
+    den_gcd = gcd_bigint(den_gcd, d.clone());
   }
 
   Ok(make_rational_expr(num_lcm, den_gcd))
@@ -441,12 +441,12 @@ fn expr_to_fraction(expr: &Expr) -> Option<(BigInt, BigInt)> {
 }
 
 /// LCM helper for BigInts. LCM(0, _) = LCM(_, 0) = 0.
-fn bigint_lcm(a: BigInt, b: BigInt) -> BigInt {
+fn lcm_bigint(a: BigInt, b: BigInt) -> BigInt {
   use num_traits::Zero;
   if a.is_zero() || b.is_zero() {
     return BigInt::from(0);
   }
-  let g = bigint_gcd(a.clone(), b.clone());
+  let g = gcd_bigint(a.clone(), b.clone());
   (a.abs() / g) * b.abs()
 }
 
@@ -459,7 +459,7 @@ pub fn make_rational_expr(num: BigInt, den: BigInt) -> Expr {
     // callers see the same surface behaviour.
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let g = bigint_gcd(num.clone(), den.clone());
+  let g = gcd_bigint(num.clone(), den.clone());
   let mut n = num / &g;
   let mut d = den / g;
   if d < BigInt::from(0) {
@@ -1092,7 +1092,7 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Represent each Bernoulli number as a reduced (numerator, denominator)
   // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
   // i128.
-  fn bgcd(a: &BigInt, b: &BigInt) -> BigInt {
+  fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
     let (mut a, mut b) = (a.clone().abs(), b.clone().abs());
     while b != BigInt::from(0) {
       let t = b.clone();
@@ -1102,7 +1102,7 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     a
   }
   fn reduce(num: BigInt, den: BigInt) -> (BigInt, BigInt) {
-    let mut g = bgcd(&num, &den);
+    let mut g = gcd_bigint(&num, &den);
     if g == BigInt::from(0) {
       g = BigInt::from(1);
     }
@@ -2008,7 +2008,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute as exact rational: sum of 1/k^r for k = 1 to n
   // Use BigInt numerator and denominator
-  fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+  fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
     use num_traits::Zero;
     let mut a = if *a < BigInt::zero() {
       -a.clone()
@@ -2039,7 +2039,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       num = &num * &k_pow + &den;
       den = &den * &k_pow;
       // Reduce
-      let g = bigint_gcd(&num, &den);
+      let g = gcd_bigint(&num, &den);
       use num_traits::One;
       if g > BigInt::one() {
         num /= &g;
@@ -2331,7 +2331,7 @@ pub fn alternating_harmonic_number_ast(
           };
           num = &num * &k_pow + signed;
           den = &den * &k_pow;
-          let g = bigint_gcd(num.clone(), den.clone());
+          let g = gcd_bigint(num.clone(), den.clone());
           use num_traits::One;
           if g > BigInt::one() {
             num /= &g;
@@ -5934,13 +5934,13 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Compute GCD of all elements
-  fn gcd(a: i128, b: i128) -> i128 {
-    if b == 0 { a.abs() } else { gcd(b, a % b) }
+  fn gcd_i128(a: i128, b: i128) -> i128 {
+    if b == 0 { a.abs() } else { gcd_i128(b, a % b) }
   }
 
   let mut g = nums[0];
   for &n in &nums[1..] {
-    g = gcd(g, n);
+    g = gcd_i128(g, n);
   }
 
   // If GCD > 1, infinitely many integers can't be represented
@@ -9429,7 +9429,7 @@ fn bigint_rational_to_expr(num: BigInt, den: BigInt) -> Expr {
   if den.is_zero() {
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let g = bigint_gcd(num.clone().abs(), den.clone().abs());
+  let g = gcd_bigint(num.clone().abs(), den.clone().abs());
   let (mut n, mut d) = (num / &g, den / &g);
   if d < BigInt::from(0) {
     n = -n;

@@ -1624,7 +1624,7 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
     v
   }
 
-  fn big_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+  fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
     let mut a = a.abs();
     let mut b = b.abs();
     while !b.is_zero() {
@@ -1638,7 +1638,7 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
   fn content_reduce(v: &[BigInt]) -> Vec<BigInt> {
     let mut g = BigInt::ZERO;
     for c in v {
-      g = big_gcd(&g, c);
+      g = gcd_bigint(&g, c);
     }
     if g > BigInt::from(1) {
       v.iter().map(|c| c / &g).collect()

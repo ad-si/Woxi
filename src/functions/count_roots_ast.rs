@@ -27,7 +27,7 @@ struct Rat {
   d: BigInt, // invariant: d > 0, gcd(|n|, d) == 1
 }
 
-fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
   let mut a = a.abs();
   let mut b = b.abs();
   while !b.is_zero() {
@@ -45,7 +45,7 @@ impl Rat {
       n = -n;
       d = -d;
     }
-    let g = bigint_gcd(&n, &d);
+    let g = gcd_bigint(&n, &d);
     if !g.is_zero() && !g.is_one() {
       n /= &g;
       d /= &g;
