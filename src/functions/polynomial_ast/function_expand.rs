@@ -293,8 +293,91 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       None
     }
 
+    // Gamma[A]/Gamma[B] with A - B a positive integer expands to the rising
+    // factorial Pochhammer[B, A - B] (e.g. Gamma[n+2]/Gamma[n] -> n*(1 + n)).
+    "Times" => try_gamma_ratio_in_times(args),
+
     _ => None,
   }
+}
+
+/// If `f` is `Gamma[B]^(-1)` (in either the FunctionCall or BinaryOp Power
+/// spelling), return the argument `B`.
+fn reciprocal_gamma_arg(f: &Expr) -> Option<Expr> {
+  let (base, exp) = match f {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  if !matches!(exp, Expr::Integer(-1)) {
+    return None;
+  }
+  match base {
+    Expr::FunctionCall { name, args } if name == "Gamma" && args.len() == 1 => {
+      Some(args[0].clone())
+    }
+    _ => None,
+  }
+}
+
+/// In a product of `factors`, cancel a `Gamma[A] * Gamma[B]^(-1)` pair whose
+/// arguments differ by a positive integer `k = A - B`, replacing it with
+/// `Pochhammer[B, k]` (which evaluates to the product B (B+1) ... (B+k-1)).
+fn try_gamma_ratio_in_times(factors: &[Expr]) -> Option<Expr> {
+  let mut num: Option<(usize, Expr)> = None;
+  let mut den: Option<(usize, Expr)> = None;
+  for (i, f) in factors.iter().enumerate() {
+    if num.is_none()
+      && let Expr::FunctionCall { name, args } = f
+      && name == "Gamma"
+      && args.len() == 1
+    {
+      num = Some((i, args[0].clone()));
+    } else if den.is_none()
+      && let Some(b) = reciprocal_gamma_arg(f)
+    {
+      den = Some((i, b));
+    }
+  }
+  let (ni, a) = num?;
+  let (di, b) = den?;
+  // k = A - B must be an integer.
+  let diff = crate::evaluator::evaluate_expr_to_expr(&mk_plus(
+    a.clone(),
+    mk_times(mk_int(-1), b.clone()),
+  ))
+  .ok()?;
+  let k = match diff {
+    Expr::Integer(k) => k,
+    _ => return None,
+  };
+  // Gamma[A]/Gamma[B] = Pochhammer[B, k] for k > 0, 1/Pochhammer[A, -k] for
+  // k < 0, and 1 for k == 0.
+  let poch = match k.cmp(&0) {
+    std::cmp::Ordering::Greater => mk_call("Pochhammer", vec![b, mk_int(k)]),
+    std::cmp::Ordering::Less => {
+      mk_power(mk_call("Pochhammer", vec![a, mk_int(-k)]), mk_int(-1))
+    }
+    std::cmp::Ordering::Equal => mk_int(1),
+  };
+  let mut rest: Vec<Expr> = factors
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != ni && *i != di)
+    .map(|(_, f)| f.clone())
+    .collect();
+  rest.push(poch);
+  Some(if rest.len() == 1 {
+    rest.remove(0)
+  } else {
+    mk_call("Times", rest)
+  })
 }
 
 /// Expand Binomial[n, k] for specific small integer k values.

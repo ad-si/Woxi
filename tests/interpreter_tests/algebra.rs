@@ -9656,6 +9656,44 @@ mod function_expand {
     assert_eq!(interpret("FunctionExpand[Gamma[1/2]]").unwrap(), "Sqrt[Pi]");
   }
 
+  // Gamma[A]/Gamma[B] with A - B a positive integer collapses to the rising
+  // factorial; a negative difference gives its reciprocal. Expected strings
+  // verified against wolframscript.
+  #[test]
+  fn gamma_ratio() {
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n + 1]/Gamma[n]]").unwrap(),
+      "n"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n + 2]/Gamma[n]]").unwrap(),
+      "n*(1 + n)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n + 3]/Gamma[n]]").unwrap(),
+      "n*(1 + n)*(2 + n)"
+    );
+    // A numeric prefactor survives.
+    assert_eq!(
+      interpret("FunctionExpand[2 Gamma[n + 1]/Gamma[n]]").unwrap(),
+      "2*n"
+    );
+    // Reciprocal ratio.
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n]/Gamma[n + 1]]").unwrap(),
+      "n^(-1)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n]/Gamma[n + 2]]").unwrap(),
+      "1/(n*(1 + n))"
+    );
+    // A lone Gamma is left unchanged (it is only the ratio that collapses).
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n + 1]]").unwrap(),
+      "Gamma[1 + n]"
+    );
+  }
+
   // Factorial[n] (n!) expands to the Gamma function.
   #[test]
   fn factorial() {
