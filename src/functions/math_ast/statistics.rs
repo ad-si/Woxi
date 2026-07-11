@@ -7055,6 +7055,26 @@ pub fn characteristic_function_ast(
       ),
       false,
     )),
+    // E^(I*m*t)/(1 + b^2*t^2)
+    ("LaplaceDistribution", [m, b]) => Some((
+      div(
+        e_it(vec![m.clone()]),
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call(
+              "Times",
+              vec![
+                pow(b.clone(), Expr::Integer(2)),
+                pow(t.clone(), Expr::Integer(2)),
+              ],
+            ),
+          ],
+        ),
+      ),
+      true,
+    )),
     _ => None,
   };
 
@@ -7314,6 +7334,26 @@ pub fn moment_generating_function_ast(
     ("StudentTDistribution", [_]) | ("CauchyDistribution", [_, _]) => {
       Some((Expr::Identifier("Indeterminate".to_string()), false))
     }
+    // E^(m*t)/(1 - b^2*t^2)
+    ("LaplaceDistribution", [m, b]) => Some((
+      div(
+        e_t(vec![m.clone()]),
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            neg(call(
+              "Times",
+              vec![
+                pow(b.clone(), Expr::Integer(2)),
+                pow(t.clone(), Expr::Integer(2)),
+              ],
+            )),
+          ],
+        ),
+      ),
+      true,
+    )),
     _ => None,
   };
 

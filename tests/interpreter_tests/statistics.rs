@@ -6507,6 +6507,21 @@ mod characteristic_function {
   }
 
   #[test]
+  fn laplace() {
+    assert_eq!(
+      interpret("CharacteristicFunction[LaplaceDistribution[m, b], t]")
+        .unwrap(),
+      "E^(I*m*t)/(1 + b^2*t^2)"
+    );
+    // Numeric parameters fold.
+    assert_eq!(
+      interpret("CharacteristicFunction[LaplaceDistribution[0, 2], t]")
+        .unwrap(),
+      "(1 + 4*t^2)^(-1)"
+    );
+  }
+
+  #[test]
   fn numeric_argument() {
     assert_eq!(
       interpret("CharacteristicFunction[NormalDistribution[], 0]").unwrap(),
@@ -6606,6 +6621,20 @@ mod moment_generating_function {
     assert_eq!(
       interpret("MomentGeneratingFunction[BetaDistribution[a, b], t]").unwrap(),
       "Hypergeometric1F1[a, a + b, t]"
+    );
+  }
+
+  #[test]
+  fn laplace() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LaplaceDistribution[m, b], t]")
+        .unwrap(),
+      "E^(m*t)/(1 - b^2*t^2)"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LaplaceDistribution[0, 1], t]")
+        .unwrap(),
+      "(1 - t^2)^(-1)"
     );
   }
 
