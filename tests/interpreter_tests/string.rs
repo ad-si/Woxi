@@ -4156,6 +4156,46 @@ mod tex_form {
     assert_eq!(interpret("ToString[3/4, TeXForm]").unwrap(), "\\frac{3}{4}");
   }
 
+  // A rational coefficient p/q folds into the fraction: wolframscript renders
+  // `Sqrt[x]/2` as `\frac{\sqrt{x}}{2}`, not `\frac{1}{2}\sqrt{x}`.
+  #[test]
+  fn rational_coefficient_folds_into_fraction() {
+    assert_eq!(interpret("ToString[x/2, TeXForm]").unwrap(), "\\frac{x}{2}");
+    assert_eq!(
+      interpret("ToString[3 x/2, TeXForm]").unwrap(),
+      "\\frac{3 x}{2}"
+    );
+    assert_eq!(
+      interpret("ToString[Sqrt[x]/2, TeXForm]").unwrap(),
+      "\\frac{\\sqrt{x}}{2}"
+    );
+    assert_eq!(
+      interpret("ToString[x y/2, TeXForm]").unwrap(),
+      "\\frac{x y}{2}"
+    );
+    // The rational denominator merges with other denominator factors.
+    assert_eq!(
+      interpret("ToString[2 x/(3 y), TeXForm]").unwrap(),
+      "\\frac{2 x}{3 y}"
+    );
+    // A negative coefficient keeps the sign outside the fraction.
+    assert_eq!(
+      interpret("ToString[-Sqrt[x]/2, TeXForm]").unwrap(),
+      "-\\frac{\\sqrt{x}}{2}"
+    );
+    // A single parenthesised-sum factor still folds (with its parens).
+    assert_eq!(
+      interpret("ToString[3 (a + b)/2, TeXForm]").unwrap(),
+      "\\frac{3 (a+b)}{2}"
+    );
+    // But a product of several factors including a sum keeps the coefficient
+    // separate, matching wolframscript.
+    assert_eq!(
+      interpret("ToString[Sum[i, {i, 1, n}], TeXForm]").unwrap(),
+      "\\frac{1}{2} n (n+1)"
+    );
+  }
+
   // A Plus factor inside a product must be parenthesized.
   #[test]
   fn product_with_plus_factor() {

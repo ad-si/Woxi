@@ -5143,16 +5143,66 @@ fn tex_parens_plain(expr: &Expr) -> String {
 /// Handle n-ary Times in TeX, splitting into \frac when negative-integer
 /// Power factors are present (matching Wolfram TeXForm).
 fn tex_times_nary(args: &[Expr]) -> String {
+  use crate::syntax::BinaryOperator::{Minus, Plus};
+  let tex_needs_product_parens = |arg: &Expr| -> bool {
+    matches!(
+      arg,
+      Expr::BinaryOp {
+        op: Plus | Minus,
+        ..
+      }
+    ) || matches!(arg, Expr::FunctionCall { name, args }
+        if name == "Plus" && args.len() >= 2)
+  };
+
   // Check for -1 leading factor
-  let (negate, factors) = if matches!(&args[0], Expr::Integer(-1)) {
+  let (mut negate, factors) = if matches!(&args[0], Expr::Integer(-1)) {
     (true, &args[1..])
   } else {
     (false, args)
   };
 
-  // Partition into numerator factors and denominator factors
+  // A leading rational coefficient p/q (q > 1) is folded into the fraction —
+  // wolframscript renders `Sqrt[x]/2` as `\frac{\sqrt{x}}{2}`, not
+  // `\frac{1}{2}\sqrt{x}`, and `2 x/(3 y)` as `\frac{2 x}{3 y}`. The exception
+  // is a product of several factors that includes a parenthesised sum, where
+  // wolframscript keeps the coefficient separate (`(1/2)(a+b)c` →
+  // `\frac{1}{2} c (a+b)`).
+  let mut rat_num: Option<i128> = None; // |p|, folded into the numerator
+  let mut rat_den: Option<i128> = None; // q, folded into the denominator
+  let mut leading_rational: Option<&Expr> = None;
+  let factors: &[Expr] = if let Some(
+    first @ Expr::FunctionCall { name, args: ra },
+  ) = factors.first()
+    && name == "Rational"
+    && ra.len() == 2
+    && let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1])
+    && q.abs() > 1
+  {
+    let rest = &factors[1..];
+    let has_plus = rest.iter().any(&tex_needs_product_parens);
+    if rest.len() <= 1 || !has_plus {
+      if *p < 0 {
+        negate = !negate;
+      }
+      rat_num = Some(p.abs());
+      rat_den = Some(q.abs());
+      rest
+    } else {
+      // Keep the coefficient as a standalone \frac{p}{q} factor.
+      leading_rational = Some(first);
+      rest
+    }
+  } else {
+    factors
+  };
+
+  // Partition remaining factors into numerator factors and denominator factors
   let mut numer_args: Vec<&Expr> = Vec::new();
   let mut denom: Vec<String> = Vec::new();
+  if let Some(d) = rat_den {
+    denom.push(d.to_string());
+  }
   for arg in factors {
     if let Some((base, pos_exp)) = as_neg_int_power(arg) {
       denom.push(tex_denom_factor(base, pos_exp));
@@ -5164,29 +5214,27 @@ fn tex_times_nary(args: &[Expr]) -> String {
   // A `Plus`/`Minus` factor in a multi-factor product needs parentheses, e.g.
   // `a (b+c)`. A lone numerator factor (the whole numerator of a fraction, or
   // a single product term) is already grouped by its brace, so it must not.
-  let multi = numer_args.len() > 1;
-  let tex_needs_product_parens = |arg: &Expr| -> bool {
-    use crate::syntax::BinaryOperator::{Minus, Plus};
-    matches!(
-      arg,
-      Expr::BinaryOp {
-        op: Plus | Minus,
-        ..
-      }
-    ) || matches!(arg, Expr::FunctionCall { name, args }
-        if name == "Plus" && args.len() >= 2)
-  };
-  let numer: Vec<String> = numer_args
-    .iter()
-    .map(|arg| {
-      let tex = expr_to_tex(arg);
-      if multi && tex_needs_product_parens(arg) {
-        format!("({})", tex)
-      } else {
-        tex
-      }
-    })
-    .collect();
+  // A folded integer coefficient (rat_num > 1) or a standalone \frac coefficient
+  // counts as another factor for this decision.
+  let extra_lead =
+    matches!(rat_num, Some(n) if n > 1) || leading_rational.is_some();
+  let multi = numer_args.len() > 1 || (extra_lead && !numer_args.is_empty());
+  let mut numer: Vec<String> = Vec::new();
+  if let Some(r) = leading_rational {
+    numer.push(expr_to_tex(r));
+  } else if let Some(n) = rat_num
+    && n > 1
+  {
+    numer.push(n.to_string());
+  }
+  numer.extend(numer_args.iter().map(|arg| {
+    let tex = expr_to_tex(arg);
+    if multi && tex_needs_product_parens(arg) {
+      format!("({})", tex)
+    } else {
+      tex
+    }
+  }));
 
   let sign = if negate { "-" } else { "" };
 
