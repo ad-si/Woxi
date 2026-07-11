@@ -615,6 +615,19 @@ mod simplify {
     assert_eq!(interpret("Simplify[a + a]").unwrap(), "2*a");
   }
 
+  // An And/Or of repeated comparison predicates (opaque to BooleanMinimize)
+  // collapses to the single predicate when every operand is identical.
+  #[test]
+  fn boolean_predicate_idempotence() {
+    assert_eq!(interpret("Simplify[a > 2 && a > 2]").unwrap(), "a > 2");
+    assert_eq!(interpret("Simplify[a > 2 || a > 2]").unwrap(), "a > 2");
+    assert_eq!(interpret("Simplify[a == 1 && a == 1]").unwrap(), "a == 1");
+    assert_eq!(
+      interpret("Simplify[a > 2 && a > 2 && a > 2]").unwrap(),
+      "a > 2"
+    );
+  }
+
   // Simplify pulls a -1 out in front of a quotient when the univariate
   // numerator's highest-degree coefficient is negative, or when the
   // denominator is entirely nonpositive; two flips cancel. All

@@ -4147,6 +4147,11 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // like `2 Log[2]` -> `Log[4]` or summed like `Log[2]+Log[3]` -> `Log[6]`) into
   // a single Log when that reduces its digit-aware complexity measure.
   let assumed = try_merge_logs(&assumed).unwrap_or(assumed);
+  // Idempotence for And/Or of repeated predicates that BooleanMinimize leaves
+  // opaque: Simplify[a > 2 && a > 2] -> a > 2, Simplify[a == 1 || a == 1] ->
+  // a == 1. Only collapses when every operand of a connective is identical,
+  // where the surviving order is unambiguous.
+  let assumed = collapse_duplicate_boolean(&assumed);
   // A Boolean expression gets minimized when that reduces the leaf count —
   // the same cost model wolframscript uses: Simplify[a && a] -> a,
   // Simplify[(a || b) && (a || !b)] -> a, but Xor/Implies stay because their
@@ -4160,6 +4165,58 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&assumed).or(Ok(assumed));
   }
   Ok(assumed)
+}
+
+/// Flatten a nested And/Or chain into its leaf operands.
+fn flatten_boolean(expr: &Expr, op_name: &str, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp { op, left, right }
+      if matches!(
+        (op, op_name),
+        (BinaryOperator::And, "And") | (BinaryOperator::Or, "Or")
+      ) =>
+    {
+      flatten_boolean(left, op_name, out);
+      flatten_boolean(right, op_name, out);
+    }
+    Expr::FunctionCall { name, args } if name == op_name => {
+      for a in args.iter() {
+        flatten_boolean(a, op_name, out);
+      }
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+/// Collapse an And/Or whose operands are *all* structurally identical to that
+/// single operand (`a > 2 && a > 2` → `a > 2`). Only the all-identical case is
+/// handled: distinct-operand deduplication is left alone because wolframscript
+/// reorders those (even `x > 0 && x > 0 && y < 1` → `y < 1 && x > 0`) in a way
+/// that isn't a simple sort, so a partial dedup would give a different order.
+fn collapse_duplicate_boolean(expr: &Expr) -> Expr {
+  let op_name = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      ..
+    } => "And",
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      ..
+    } => "Or",
+    Expr::FunctionCall { name, .. } if name == "And" || name == "Or" => name,
+    _ => return expr.clone(),
+  };
+  let mut operands: Vec<Expr> = Vec::new();
+  flatten_boolean(expr, op_name, &mut operands);
+  if operands.len() < 2 {
+    return expr.clone();
+  }
+  let first = expr_to_string(&operands[0]);
+  if operands.iter().all(|o| expr_to_string(o) == first) {
+    operands.into_iter().next().unwrap()
+  } else {
+    expr.clone()
+  }
 }
 
 /// Whether `expr`'s head is a Boolean connective (And/Or/Not/Xor/…), so
