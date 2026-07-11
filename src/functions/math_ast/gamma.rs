@@ -1914,6 +1914,78 @@ fn marcum_q_numeric(m: f64, a: f64, b: f64) -> f64 {
   sum
 }
 
+/// Owen's T function, T(h, a) = (1/2π) ∫₀ᵃ e^(-h²(1+x²)/2)/(1+x²) dx, by
+/// composite Simpson quadrature. It is even in h and odd in a.
+fn owen_t_numeric(h: f64, a: f64) -> f64 {
+  if a == 0.0 {
+    return 0.0;
+  }
+  let a_abs = a.abs();
+  let h2 = h * h;
+  let f = |x: f64| (-0.5 * h2 * (1.0 + x * x)).exp() / (1.0 + x * x);
+  // Even panel count; scale resolution with the interval length.
+  let n = (((a_abs * 4000.0).round() as usize).clamp(2000, 1_000_000) / 2) * 2;
+  let step = a_abs / n as f64;
+  let mut sum = f(0.0) + f(a_abs);
+  for i in 1..n {
+    let x = i as f64 * step;
+    sum += if i.is_multiple_of(2) { 2.0 } else { 4.0 } * f(x);
+  }
+  let integral = sum * step / 3.0;
+  a.signum() * integral / (2.0 * std::f64::consts::PI)
+}
+
+/// OwenT[h, a] — Owen's T function. Exact values: T(h, 0) = 0 and, for an exact
+/// h = 0, T(0, a) = ArcTan[a]/(2π). Otherwise it evaluates numerically when an
+/// argument is inexact, and stays symbolic for exact non-special arguments
+/// (matching wolframscript).
+pub fn owen_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "OwenT".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let (h, a) = (&args[0], &args[1]);
+  let has_real = args.iter().any(|e| matches!(e, Expr::Real(_)));
+
+  // T(h, 0) = 0.
+  if is_expr_zero(a) {
+    return Ok(if has_real {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+  // Exact h = 0: T(0, a) = ArcTan[a]/(2π).
+  if matches!(h, Expr::Integer(0)) && !has_real {
+    return Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "ArcTan".to_string(),
+        args: vec![a.clone()].into(),
+      }),
+      right: Box::new(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(2), Expr::Identifier("Pi".to_string())].into(),
+      }),
+    });
+  }
+  // Numeric evaluation requires an inexact argument.
+  if has_real
+    && let (Some(hv), Some(av)) = (
+      crate::functions::math_ast::numeric_utils::try_eval_to_f64(h),
+      crate::functions::math_ast::numeric_utils::try_eval_to_f64(a),
+    )
+  {
+    return Ok(Expr::Real(owen_t_numeric(hv, av)));
+  }
+  unevaluated()
+}
+
 /// Compute Q(a, z) = 1 - P(a, z) numerically
 pub(crate) fn gamma_regularized_numeric(a: f64, z: f64) -> f64 {
   if z <= 0.0 {

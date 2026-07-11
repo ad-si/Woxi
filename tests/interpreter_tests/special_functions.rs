@@ -4754,3 +4754,47 @@ mod weierstrass_half_periods {
     );
   }
 }
+
+// Owen's T function T(h, a): numeric for inexact arguments (odd in a, even in
+// h) with exact values at h = 0 and a = 0. Verified against wolframscript.
+mod owen_t {
+  use super::*;
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("Round[OwenT[1.0, 0.5], 10^-10]").unwrap(),
+      "430646911/10000000000"
+    );
+    assert_eq!(
+      interpret("Round[OwenT[0.5, 1.0], 10^-10]").unwrap(),
+      "106671063/1000000000"
+    );
+    assert_eq!(
+      interpret("Round[OwenT[1.0, 3.0], 10^-10]").unwrap(),
+      "792995047/10000000000"
+    );
+  }
+
+  #[test]
+  fn symmetries() {
+    // Odd in the second argument, even in the first.
+    assert_eq!(
+      interpret("OwenT[1.0, -0.5] == -OwenT[1.0, 0.5]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("OwenT[-1.0, 0.5] == OwenT[1.0, 0.5]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn exact_special_cases() {
+    assert_eq!(interpret("OwenT[2.0, 0.0]").unwrap(), "0.");
+    assert_eq!(interpret("OwenT[h, 0]").unwrap(), "0");
+    assert_eq!(interpret("OwenT[0, a]").unwrap(), "ArcTan[a]/(2*Pi)");
+    // Exact, non-special arguments stay symbolic.
+    assert_eq!(interpret("OwenT[1, 1/2]").unwrap(), "OwenT[1, 1/2]");
+  }
+}

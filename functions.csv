@@ -4412,7 +4412,7 @@ LaplacianPDETerm,,,,12.2,4567
 LibraryFunctionError,,,,8.0,4567
 MinimalStateSpaceModel,,,,8.0,4567
 MinimumTimeIncrement,,,,10.0,4567
-OwenT,,,,8.0,4567
+OwenT,Owen T function T(h a) equal to the integral of a bivariate-normal orthant (numeric for inexact arguments; exact for h=0 or a=0),✅,pure,8.0,4567
 PaddingSize,,,,11.0,4567
 PingTime,,🚫,,11.0,4567
 PsychrometricPropertyData,,🚫,,11.1,4567

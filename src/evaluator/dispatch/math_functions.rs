@@ -1543,6 +1543,9 @@ pub fn dispatch_math_functions(
     "MarcumQ" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::math_ast::marcum_q_ast(args));
     }
+    "OwenT" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::owen_t_ast(args));
+    }
     "GammaRegularized" if args.len() == 2 => {
       return Some(crate::functions::math_ast::gamma_regularized_ast(args));
     }

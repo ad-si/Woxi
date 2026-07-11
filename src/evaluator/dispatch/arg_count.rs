@@ -1329,6 +1329,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "JulianDate" => Some((0, 1)),
     "NoncentralChiSquareDistribution" => Some((2, 2)),
     "MarcumQ" => Some((3, 4)),
+    "OwenT" => Some((2, 2)),
     "ExponentialPowerDistribution" => Some((3, 3)),
     "CommonestFilter" => Some((2, 2)),
     "TransitiveClosureGraph" => Some((1, 1)),
