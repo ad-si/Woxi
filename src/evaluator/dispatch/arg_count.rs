@@ -1014,6 +1014,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PermutationPower" => Some((2, 2)),
     "Permutations" => Some((1, 2)),
     "PermutationSupport" => Some((1, 1)),
+    "PerpendicularBisector" => Some((1, 2)),
     "PerfectNumber" => Some((1, 1)),
     "RamanujanTau" => Some((1, 1)),
     "RamanujanTauTheta" => Some((1, 1)),

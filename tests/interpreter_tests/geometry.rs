@@ -2881,6 +2881,58 @@ mod angle_bisector {
   }
 }
 
+// PerpendicularBisector[{p1, p2}] — the segment's perpendicular bisector as
+// InfiniteLine[midpoint, {dy, -dx}] with {dx, dy} = p2 - p1. Verified against
+// wolframscript.
+mod perpendicular_bisector {
+  use super::*;
+
+  #[test]
+  fn horizontal_and_vertical_segments() {
+    assert_eq!(
+      interpret("PerpendicularBisector[{{0, 0}, {2, 0}}]").unwrap(),
+      "InfiniteLine[{1, 0}, {0, -2}]"
+    );
+    // A rational midpoint stays exact.
+    assert_eq!(
+      interpret("PerpendicularBisector[{{0, 0}, {0, 1}}]").unwrap(),
+      "InfiniteLine[{0, 1/2}, {1, 0}]"
+    );
+  }
+
+  #[test]
+  fn oblique_segments() {
+    assert_eq!(
+      interpret("PerpendicularBisector[{{0, 0}, {4, 2}}]").unwrap(),
+      "InfiniteLine[{2, 1}, {2, -4}]"
+    );
+    assert_eq!(
+      interpret("PerpendicularBisector[{{1, 1}, {3, 5}}]").unwrap(),
+      "InfiniteLine[{2, 3}, {4, -2}]"
+    );
+  }
+
+  #[test]
+  fn line_wrapper_form() {
+    assert_eq!(
+      interpret("PerpendicularBisector[Line[{{-1, -1}, {1, 1}}]]").unwrap(),
+      "InfiniteLine[{0, 0}, {2, -2}]"
+    );
+  }
+
+  #[test]
+  fn non_2d_or_malformed_stays_unevaluated() {
+    assert_eq!(
+      interpret("PerpendicularBisector[{{0, 0, 0}, {2, 0, 0}}]").unwrap(),
+      "PerpendicularBisector[{{0, 0, 0}, {2, 0, 0}}]"
+    );
+    assert_eq!(
+      interpret("PerpendicularBisector[{{2, 3}}]").unwrap(),
+      "PerpendicularBisector[{{2, 3}}]"
+    );
+  }
+}
+
 // BoundingRegion[pts] — the smallest axis-aligned box: Rectangle for 2D points,
 // Cuboid for 1D or >=3D. Min/Max are exact and stay symbolic when needed.
 mod bounding_region {

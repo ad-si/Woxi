@@ -4544,7 +4544,7 @@ NetStateObject,,🚫,,11.3,4707
 NumberFieldClassNumber,,,,6.0,4707
 NumberFieldRootsOfUnity,,,,6.0,4707
 OptionalElement,,,,10.1,4707
-PerpendicularBisector,,,,12.0,4707
+PerpendicularBisector,Perpendicular bisector of a segment as an InfiniteLine,✅,pure,12.0,4707
 PlaceholderLayer,,🚫,,12.2,4707
 PolyhedronCoordinates,,🚫,,12.0,4707
 PowerSymmetricPolynomial,Power sum symmetric polynomial in given data (scalar or tuple exponent spec),✅,pure,8.0,4707

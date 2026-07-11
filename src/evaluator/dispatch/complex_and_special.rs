@@ -2068,6 +2068,11 @@ pub fn dispatch_complex_and_special(
     "AngleBisector" if args.len() == 1 => {
       return Some(compute_angle_bisector(&args[0]));
     }
+    // PerpendicularBisector[{p1, p2}] — the perpendicular bisector of the
+    // segment, as an InfiniteLine through its midpoint (2-D points only).
+    "PerpendicularBisector" if args.len() == 1 => {
+      return Some(compute_perpendicular_bisector(&args[0]));
+    }
     // TriangleCenter[tri] / TriangleCenter[tri, ctype] — named triangle center
     "TriangleCenter" if args.len() == 1 || args.len() == 2 => {
       return Some(compute_triangle_center(args));
@@ -10905,6 +10910,82 @@ fn compute_bounding_region(expr: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::FunctionCall {
     name: head.to_string(),
     args: vec![Expr::List(mins.into()), Expr::List(maxs.into())].into(),
+  })
+}
+
+/// PerpendicularBisector[{p1, p2}] / PerpendicularBisector[Line[{p1, p2}]] —
+/// the perpendicular bisector of the segment p1–p2, returned as
+/// `InfiniteLine[midpoint, {dy, -dx}]` where `{dx, dy} = p2 - p1` and
+/// `midpoint = (p1 + p2)/2`. Only 2-D points are handled (wolframscript leaves
+/// higher-dimensional or malformed input unevaluated).
+fn compute_perpendicular_bisector(
+  expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let uneval = || {
+    Ok(Expr::FunctionCall {
+      name: "PerpendicularBisector".to_string(),
+      args: vec![expr.clone()].into(),
+    })
+  };
+  // Accept either a bare {p1, p2} list or a Line[{p1, p2}] wrapper.
+  let pts = match expr {
+    Expr::List(pts) => pts,
+    Expr::FunctionCall { name, args } if name == "Line" && args.len() == 1 => {
+      match &args[0] {
+        Expr::List(pts) => pts,
+        _ => return uneval(),
+      }
+    }
+    _ => return uneval(),
+  };
+  if pts.len() != 2 {
+    return uneval();
+  }
+  let mut coords: Vec<&crate::ExprList> = Vec::with_capacity(2);
+  for pt in pts.iter() {
+    let Expr::List(c) = pt else {
+      return uneval();
+    };
+    if c.len() != 2 {
+      return uneval();
+    }
+    coords.push(c);
+  }
+  let (p1, p2) = (coords[0], coords[1]);
+
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let sub = |a: &Expr, b: &Expr| Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![a.clone(), b.clone()].into(),
+  };
+  let midpoint_coord = |a: &Expr, b: &Expr| Expr::FunctionCall {
+    name: "Divide".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![a.clone(), b.clone()].into(),
+      },
+      Expr::Integer(2),
+    ]
+    .into(),
+  };
+
+  // Midpoint = ((p1 + p2)/2).
+  let mid = Expr::List(
+    vec![
+      eval(midpoint_coord(&p1[0], &p2[0]))?,
+      eval(midpoint_coord(&p1[1], &p2[1]))?,
+    ]
+    .into(),
+  );
+  // Direction perpendicular to p2 - p1 = {dx, dy}: {dy, -dx}.
+  let dir = Expr::List(
+    vec![eval(sub(&p2[1], &p1[1]))?, eval(sub(&p1[0], &p2[0]))?].into(),
+  );
+
+  Ok(Expr::FunctionCall {
+    name: "InfiniteLine".to_string(),
+    args: vec![mid, dir].into(),
   })
 }
 
