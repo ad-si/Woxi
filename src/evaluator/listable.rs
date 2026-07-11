@@ -96,6 +96,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "EulerPhi"
       | "CarmichaelLambda"
       | "MoebiusMu"
+      | "MangoldtLambda"
       | "Divisors"
       | "DivisorSigma"
       | "BernoulliB"

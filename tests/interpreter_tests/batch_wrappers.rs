@@ -4718,6 +4718,14 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("MangoldtLambda[1]").unwrap(), "0");
   }
   #[test]
+  fn mangoldt_lambda_threads_over_list() {
+    // MangoldtLambda is Listable, so it threads over a list argument.
+    assert_eq!(
+      interpret("MangoldtLambda[{2, 3, 4, 5, 6}]").unwrap(),
+      "{Log[2], Log[3], Log[2], Log[5], 0}"
+    );
+  }
+  #[test]
   fn liouville_lambda_basic() {
     assert_eq!(interpret("LiouvilleLambda[6]").unwrap(), "1");
   }
