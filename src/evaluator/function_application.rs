@@ -601,6 +601,11 @@ pub fn apply_function_to_arg(
           | "Prepend"
           | "FirstCase"
           | "SubsetReplace"
+          | "ContainsAll"
+          | "ContainsAny"
+          | "ContainsNone"
+          | "ContainsOnly"
+          | "ContainsExactly"
       ) && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
@@ -1441,6 +1446,11 @@ pub fn apply_curried_call(
           | "Prepend"
           | "FirstCase"
           | "SubsetReplace"
+          | "ContainsAll"
+          | "ContainsAny"
+          | "ContainsNone"
+          | "ContainsOnly"
+          | "ContainsExactly"
       ) && func_args.len() == 1
         && args.len() == 1
       {

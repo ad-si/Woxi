@@ -2022,7 +2022,7 @@ NoncentralStudentTDistribution,Non-central Student t distribution,🚫,,6.0,2057
 Quartics,Option for Solve controlling whether quartic formulas are used,✅,pure,1.0,2057
 MachineNumberQ,Test whether an expression is a machine-precision real number,✅,1,2.0,2059
 TextString,Convert any expression to a human-readable string,✅,1,10.0,2059
-ContainsAny,Test if any elements of the second list appear in the first,✅,none,10.2,2061
+ContainsAny,Test if any elements of the second list appear in the first,✅,pure,10.2,2061
 ImagePerspectiveTransformation,Perspective transform on image,🚫,,8.0,2061
 Atom,Represents an atom in a molecule (chemistry),✅,pure,12.0,2065
 InverseSeries,Computes the reversion (inverse) of a power series,✅,pure,1.0,2065
@@ -2242,7 +2242,7 @@ BoundingRegion,Smallest axis-aligned bounding box of a point list (Rectangle in 
 CellDingbat,Notebook UI,🚫,None,3.0,2286
 DistributionParameterAssumptions,Probability distribution,🚫,None,8.0,2286
 WheelGraph,Wheel graph with a hub vertex joined to a cycle of rim vertices,✅,pure,8.0,2286
-ContainsAll,Test if a list contains all elements of another list,✅,1,10.2,2289
+ContainsAll,Test if a list contains all elements of another list,✅,pure,10.2,2289
 HypergeometricDistribution,Hypergeometric distribution (sampling without replacement); supports PDF Mean and Variance,✅,pure,6.0,2289
 SystemsModelLabels,Control systems,🚫,None,8.0,2289
 JoinAcross,Joins lists of associations on a common key,✅,None,10.0,2292
@@ -2854,7 +2854,7 @@ ShortRightArrow,,🚫,,3.0,2911
 ColumnLines,,🚫,,3.0,2914
 DatedUnit,Associates a unit with a specific date for time-aware calculations,✅,pure,10.0,2914
 QuantityQ,Tests if an expression is a quantity,✅,pure,9.0,2914
-ContainsNone,Test if none of the elements of the second list appear in the first,✅,none,10.2,2921
+ContainsNone,Test if none of the elements of the second list appear in the first,✅,pure,10.2,2921
 CrossEntropyLossLayer,,🚫,,11.0,2921
 GaugeStyle,,🚫,,9.0,2921
 QuantityDistribution,Probability distribution with physical units,✅,pure,10.4,2921
@@ -4001,7 +4001,7 @@ AttachCell,,,,12.2,4138
 AudioBlockMap,,🚫,,11.0,4138
 BioSequenceComplement,,🚫,,12.2,4138
 BottomHatTransform,,🚫,,7.0,4138
-ContainsExactly,Test if two lists contain exactly the same elements,✅,none,10.2,4138
+ContainsExactly,Test if two lists contain exactly the same elements,✅,pure,10.2,4138
 ControllerMethod,,,,6.0,4138
 CriticalityFailureImportance,,,,9.0,4138
 DirichletTransform,,,,7.0,4138

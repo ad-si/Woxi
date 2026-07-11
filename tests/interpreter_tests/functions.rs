@@ -854,6 +854,42 @@ mod contains_all {
       "False"
     );
   }
+
+  // Operator (curried) forms: f[list2][list1] == f[list1, list2].
+  #[test]
+  fn contains_operator_forms() {
+    assert_eq!(
+      interpret("ContainsExactly[{a, b, c}][{c, b, a}]").unwrap(),
+      "True"
+    );
+    // ContainsAll[{a,b,c}][{a,b}] == ContainsAll[{a,b}, {a,b,c}] -> {a,b}
+    // does not contain c.
+    assert_eq!(
+      interpret("ContainsAll[{a, b, c}][{a, b}]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("ContainsAny[{a, b}][{b, z}]").unwrap(), "True");
+    assert_eq!(interpret("ContainsNone[{x, y}][{a, b}]").unwrap(), "True");
+    // ContainsOnly[{a,b}][{a,b,c}] == ContainsOnly[{a,b,c}, {a,b}] -> c is
+    // not among the allowed elements.
+    assert_eq!(
+      interpret("ContainsOnly[{a, b}][{a, b, c}]").unwrap(),
+      "False"
+    );
+  }
+
+  // Operator forms compose with Map/Select.
+  #[test]
+  fn contains_operator_forms_mapped() {
+    assert_eq!(
+      interpret("Map[ContainsAll[{1, 2, 3}], {{1, 2}, {1, 4}}]").unwrap(),
+      "{False, False}"
+    );
+    assert_eq!(
+      interpret("Select[{{1, 2}, {5, 6}}, ContainsAny[{1, 9}]]").unwrap(),
+      "{{1, 2}}"
+    );
+  }
 }
 
 mod missing_q {
