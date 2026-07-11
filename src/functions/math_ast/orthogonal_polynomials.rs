@@ -3533,9 +3533,17 @@ fn generalized_laguerre_l_ast(
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
-  // For non-integer a or numeric evaluation, try float
-  if let (Some(af), Some(xf)) =
-    (try_eval_to_f64(a_expr), try_eval_to_f64(x_expr))
+  // Numerical fallback only when a or x is an inexact machine number. Exact
+  // rational a with an exact x keeps the exact value via the closed form
+  // below (LaguerreL[3, 1/2, 1/3] = 1189/1296, not the float 0.9174…).
+  let is_inexact = |e: &Expr| {
+    matches!(e, Expr::Real(_) | Expr::BigFloat(_, _))
+      || crate::functions::math_ast::try_extract_complex_float(e)
+        .is_some_and(|(_, im)| im != 0.0)
+  };
+  if (is_inexact(a_expr) || is_inexact(x_expr))
+    && let (Some(af), Some(xf)) =
+      (try_eval_to_f64(a_expr), try_eval_to_f64(x_expr))
   {
     let result = generalized_laguerre_f64(n, af, xf);
     return Ok(Expr::Real(result));

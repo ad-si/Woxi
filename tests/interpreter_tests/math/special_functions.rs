@@ -3490,6 +3490,22 @@ mod laguerre_l {
       "(120 - 240*x + 120*x^2 - 20*x^3 + x^4)/24"
     );
   }
+
+  // A rational order a with an exact argument keeps the exact rational value;
+  // only an inexact argument numericizes. wolframscript:
+  // LaguerreL[3, 1/2, 1/3] = 1189/1296 (previously returned a float).
+  #[test]
+  fn generalized_laguerre_rational_order_exact_argument() {
+    assert_eq!(interpret("LaguerreL[3, 1/2, 1/3]").unwrap(), "1189/1296");
+    assert_eq!(interpret("LaguerreL[2, 3/2, 1/3]").unwrap(), "235/72");
+    assert_eq!(interpret("LaguerreL[2, 1/2, 1/4]").unwrap(), "41/32");
+    assert_eq!(interpret("LaguerreL[4, 1/2, 1/3]").unwrap(), "21265/31104");
+    // An inexact argument still numericizes.
+    assert_eq!(
+      interpret("LaguerreL[3, 1/2, 0.3]").unwrap(),
+      "1.0279999999999998"
+    );
+  }
 }
 
 mod beta_fn {
