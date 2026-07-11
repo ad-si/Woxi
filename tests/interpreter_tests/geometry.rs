@@ -2783,6 +2783,47 @@ mod circumsphere {
   }
 }
 
+// Insphere[{p1, …, p_{n+1}}] — the sphere inscribed in the simplex spanned by
+// the points, given as Sphere[incenter, inradius]. Exact rational inputs stay
+// exact. (The Triangle[…]/Tetrahedron[…] wrapper forms share the same code.)
+mod insphere {
+  use super::*;
+
+  #[test]
+  fn right_triangle_3_4_5() {
+    // Incircle of the 3-4-5 triangle: incenter {1, 1}, inradius 1.
+    assert_eq!(
+      interpret("Insphere[{{0, 0}, {4, 0}, {0, 3}}]").unwrap(),
+      "Sphere[{1, 1}, 1]"
+    );
+  }
+
+  #[test]
+  fn right_triangle_6_8_10() {
+    assert_eq!(
+      interpret("Insphere[{{0, 0}, {6, 0}, {0, 8}}]").unwrap(),
+      "Sphere[{2, 2}, 2]"
+    );
+  }
+
+  #[test]
+  fn translated_triangle() {
+    assert_eq!(
+      interpret("Insphere[{{1, 1}, {5, 1}, {1, 4}}]").unwrap(),
+      "Sphere[{2, 2}, 1]"
+    );
+  }
+
+  #[test]
+  fn matches_triangle_wrapper() {
+    // The raw point-list form and the Triangle[…] wrapper agree.
+    let raw = interpret("Insphere[{{0, 0}, {4, 0}, {0, 3}}]").unwrap();
+    let wrapped =
+      interpret("Insphere[Triangle[{{0, 0}, {4, 0}, {0, 3}}]]").unwrap();
+    assert_eq!(raw, wrapped);
+  }
+}
+
 // BoundingRegion[pts] — the smallest axis-aligned box: Rectangle for 2D points,
 // Cuboid for 1D or >=3D. Min/Max are exact and stay symbolic when needed.
 mod bounding_region {

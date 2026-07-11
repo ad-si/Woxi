@@ -11055,6 +11055,34 @@ fn solve_float_system(
 
 fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
+    // Raw point-list form: Insphere[{p1, …, p_{n+1}}] — the sphere inscribed
+    // in the simplex spanned by the points. Handles a triangle (3 points in
+    // 2D) and a tetrahedron (4 points in 3D), reusing the same exact helpers
+    // as the Triangle[…] / Tetrahedron[…] wrapper forms.
+    Expr::List(vertices) => {
+      let pts: Vec<&[Expr]> = vertices
+        .iter()
+        .filter_map(|v| {
+          if let Expr::List(coords) = v {
+            Some(coords.as_slice())
+          } else {
+            None
+          }
+        })
+        .collect();
+      if pts.len() == vertices.len() {
+        if pts.len() == 3 && pts.iter().all(|p| p.len() == 2) {
+          return insphere_triangle_2d(pts[0], pts[1], pts[2]);
+        }
+        if pts.len() == 4 && pts.iter().all(|p| p.len() == 3) {
+          return insphere_tetrahedron(pts[0], pts[1], pts[2], pts[3]);
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "Insphere".to_string(),
+        args: vec![expr.clone()].into(),
+      })
+    }
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Triangle" if args.len() == 1 => {
         if let Expr::List(vertices) = &args[0]
