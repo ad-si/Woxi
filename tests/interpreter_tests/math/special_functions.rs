@@ -8090,6 +8090,23 @@ mod ramanujan_tau {
   fn symbolic_unevaluated() {
     assert_eq!(interpret("RamanujanTau[n]").unwrap(), "RamanujanTau[n]");
   }
+
+  // Listable: threads over a list argument (Attributes includes Listable).
+  #[test]
+  fn threads_over_list() {
+    assert_eq!(
+      interpret("RamanujanTau[{1, 2, 3}]").unwrap(),
+      "{1, -24, 252}"
+    );
+    // Other Listable special functions thread too.
+    assert_eq!(interpret("SquaresR[2, {5, 25}]").unwrap(), "{8, 12}");
+    assert_eq!(interpret("PrimitiveRoot[{7, 11}]").unwrap(), "{3, 2}");
+    assert_eq!(
+      interpret("ZernikeR[{2, 4}, 0, r]").unwrap(),
+      "{-1 + 2*r^2, 1 - 6*r^2 + 6*r^4}"
+    );
+    assert_eq!(interpret("QFactorial[{2, 3}, 2]").unwrap(), "{3, 21}");
+  }
 }
 
 mod hypergeometric_1f1_regularized {
