@@ -856,7 +856,7 @@ pub(super) fn canonicalize_quotient_sign(
         build_product(rest)
       };
       let mut parts: Vec<Expr> =
-        vec![crate::functions::math_ast::make_rational_pub(-1, content)];
+        vec![crate::functions::math_ast::make_rational(-1, content)];
       if let Some(nf) = num_factor {
         parts.push(nf);
       }

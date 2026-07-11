@@ -1950,7 +1950,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 name: "Power".to_string(),
                 args: vec![
                   Expr::Integer(-1),
-                  crate::functions::math_ast::make_rational_pub(p, q),
+                  crate::functions::math_ast::make_rational(p, q),
                 ]
                 .into(),
               }
@@ -2870,7 +2870,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   };
   let neg_half_pi = Expr::BinaryOp {
     op: BinaryOperator::Times,
-    left: Box::new(crate::functions::math_ast::make_rational_pub(-1, 2)),
+    left: Box::new(crate::functions::math_ast::make_rational(-1, 2)),
     right: Box::new(pi.clone()),
   };
   let half_pi = Expr::BinaryOp {

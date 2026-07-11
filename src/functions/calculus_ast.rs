@@ -4352,7 +4352,7 @@ fn make_neg_divided(expr: Expr, divisor: Expr) -> Expr {
     },
     Expr::Integer(n) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Times,
-      left: Box::new(crate::functions::math_ast::make_rational_pub(-1, *n)),
+      left: Box::new(crate::functions::math_ast::make_rational(-1, *n)),
       right: Box::new(expr),
     },
     _ => Expr::BinaryOp {
@@ -6197,9 +6197,7 @@ fn try_integrate_rational(
       } else {
         Expr::BinaryOp {
           op: BinaryOperator::Times,
-          left: Box::new(crate::functions::math_ast::make_rational_pub(
-            abs_an, ad,
-          )),
+          left: Box::new(crate::functions::math_ast::make_rational(abs_an, ad)),
           right: Box::new(log_expr.clone()),
         }
       };
@@ -6833,9 +6831,7 @@ fn build_coeff_times_expr(num: i128, den: i128, expr: Expr) -> Expr {
   } else {
     Expr::BinaryOp {
       op: BinaryOperator::Times,
-      left: Box::new(crate::functions::math_ast::make_rational_pub(
-        abs_num, den,
-      )),
+      left: Box::new(crate::functions::math_ast::make_rational(abs_num, den)),
       right: Box::new(expr),
     }
   };
@@ -10568,9 +10564,7 @@ fn limit_at_infinity(
         let pf = l_ext * q as f64;
         let p = pf.round();
         if (pf - p).abs() < 1e-6 {
-          return Ok(crate::functions::math_ast::make_rational_pub(
-            p as i128, q,
-          ));
+          return Ok(crate::functions::math_ast::make_rational(p as i128, q));
         }
       }
       // Check for known constants
@@ -10767,7 +10761,7 @@ fn exp_growth_limit_at_infinity(
     let pf = f2 * q as f64;
     let p = pf.round();
     if (pf - p).abs() < 1e-7 {
-      return Some(crate::functions::math_ast::make_rational_pub(p as i128, q));
+      return Some(crate::functions::math_ast::make_rational(p as i128, q));
     }
   }
   None
@@ -14062,7 +14056,7 @@ fn rat_to_expr(r: (i128, i128)) -> Expr {
   if r.1 == 1 {
     Expr::Integer(r.0)
   } else {
-    crate::functions::math_ast::make_rational_pub(r.0, r.1)
+    crate::functions::math_ast::make_rational(r.0, r.1)
   }
 }
 
@@ -15335,7 +15329,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if den == 1 {
             Expr::Integer(num)
           } else {
-            crate::functions::math_ast::make_rational_pub(num, den)
+            crate::functions::math_ast::make_rational(num, den)
           }
         }
         // Handle Rational[n, d] / factorial → Rational[n, d*factorial] simplified
@@ -15346,7 +15340,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && matches!(&rargs[1], Expr::Integer(_)) =>
         {
           if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
-            crate::functions::math_ast::make_rational_pub(*n, d * factorial)
+            crate::functions::math_ast::make_rational(*n, d * factorial)
           } else {
             Expr::BinaryOp {
               op: crate::syntax::BinaryOperator::Divide,

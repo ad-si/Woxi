@@ -2179,7 +2179,7 @@ fn chebyshev_general_exact(
     _ => return None,
   };
   // A half-integer order rewrites for any x; other orders only for numeric x.
-  if q != 2 && !crate::functions::predicate_ast::is_numeric_q_pub(x_expr) {
+  if q != 2 && !crate::functions::predicate_ast::is_numeric_q(x_expr) {
     return None;
   }
   // ChebyshevU[n, 1] = n + 1 (the Sin/Sqrt form is 0/0 there).

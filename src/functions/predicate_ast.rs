@@ -563,11 +563,7 @@ pub fn numeric_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if an expression is numeric (can be numerically evaluated)
-pub fn is_numeric_q_pub(expr: &Expr) -> bool {
-  is_numeric_q(expr)
-}
-
-fn is_numeric_q(expr: &Expr) -> bool {
+pub fn is_numeric_q(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(_)
     | Expr::BigInteger(_)
@@ -702,7 +698,7 @@ fn sign_via_numeric(expr: &Expr, cmp: impl Fn(f64) -> bool) -> Option<bool> {
   // Only fire when NumericQ would succeed — that's how Wolfram decides
   // it can numerically evaluate. Avoids forcing Negative[a] to True or
   // anything weird for unevaluated user symbols.
-  if !is_numeric_q_pub(expr) {
+  if !is_numeric_q(expr) {
     return None;
   }
   let val = super::math_ast::try_eval_to_f64(expr)?;

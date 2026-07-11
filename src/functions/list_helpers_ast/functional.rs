@@ -1048,7 +1048,7 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let times = Expr::Identifier("Times".to_string());
   let is_scalar = |e: &Expr| -> bool {
     !matches!(e, Expr::List(_))
-      && crate::functions::predicate_ast::is_numeric_q_pub(e)
+      && crate::functions::predicate_ast::is_numeric_q(e)
   };
 
   // Pull scalars out; they distribute over the tensor part via Times.

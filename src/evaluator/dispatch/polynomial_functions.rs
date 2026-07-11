@@ -1287,6 +1287,6 @@ fn sinusoid_extremum(expr: &Expr, var: &str, maximize: bool) -> Option<Expr> {
   Some(if value.1 == 1 {
     Expr::Integer(value.0)
   } else {
-    crate::functions::math_ast::make_rational_pub(value.0, value.1)
+    crate::functions::math_ast::make_rational(value.0, value.1)
   })
 }

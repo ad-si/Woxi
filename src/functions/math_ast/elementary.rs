@@ -1995,7 +1995,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Some(num), Some(den)) =
         (expr_to_i128(&rargs[0]), expr_to_i128(&rargs[1]))
       {
-        return Ok(make_rational_pub(n * num, den));
+        return Ok(make_rational(n * num, den));
       }
     }
 
@@ -2074,8 +2074,8 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::math_ast::try_extract_complex_exact(&args[0])
     && in_ != 0
   {
-    let re_rat = make_rational_pub(rn, rd);
-    let im_rat = make_rational_pub(in_, id);
+    let re_rat = make_rational(rn, rd);
+    let im_rat = make_rational(in_, id);
     let re_rounded = round_ast(&[re_rat])?;
     let im_rounded = round_ast(&[im_rat])?;
     return crate::evaluator::evaluate_function_call_ast(
@@ -4041,7 +4041,7 @@ pub fn heaviside_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // 1 - |n/d| = (|d| - |n|) / |d|
         let num = abs_d - abs_n;
-        return Ok(crate::functions::math_ast::make_rational_pub(num, abs_d));
+        return Ok(crate::functions::math_ast::make_rational(num, abs_d));
       }
       Ok(Expr::FunctionCall {
         name: "HeavisideLambda".to_string(),

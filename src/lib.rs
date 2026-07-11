@@ -1341,13 +1341,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         if is_visual_mode() {
           generate_output_svg(&syntax::Expr::Real(n));
         }
-        return Ok(format_real_result(n));
+        return Ok(syntax::format_real(n));
       }
     } else {
       if is_visual_mode() {
         generate_output_svg(&syntax::Expr::Real(n));
       }
-      return Ok(format_real_result(n));
+      return Ok(syntax::format_real(n));
     }
   }
   // Check for quoted string - return content without quotes (like wolframscript)
@@ -4291,11 +4291,6 @@ pub fn interpret_with_stdout(
     sound,
     warnings,
   })
-}
-
-/// Format a result as a real number (with trailing dot for whole numbers)
-pub fn format_real_result(result: f64) -> String {
-  syntax::format_real(result)
 }
 
 fn store_function_definition(

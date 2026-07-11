@@ -87,7 +87,7 @@ pub fn dispatch_structural(
         if d == 0 {
           return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
         }
-        return Some(Ok(crate::functions::math_ast::make_rational_pub(n, d)));
+        return Some(Ok(crate::functions::math_ast::make_rational(n, d)));
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Rational".to_string(),

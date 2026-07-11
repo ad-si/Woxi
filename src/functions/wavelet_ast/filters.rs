@@ -82,7 +82,7 @@ fn wl(code: &str) -> Expr {
 }
 
 fn rational(num: i128, den: i128) -> Expr {
-  crate::functions::math_ast::make_rational_pub(num, den)
+  crate::functions::math_ast::make_rational(num, den)
 }
 
 // ---------------------------------------------------------------------------

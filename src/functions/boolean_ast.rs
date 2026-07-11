@@ -582,7 +582,7 @@ pub fn infinity_equal_verdict(a: &Expr, b: &Expr) -> Option<Option<bool>> {
     (None, None) => None,
     (Some(_), None) | (None, Some(_)) => {
       let finite = if ka.is_some() { b } else { a };
-      if crate::functions::predicate_ast::is_numeric_q_pub(finite) {
+      if crate::functions::predicate_ast::is_numeric_q(finite) {
         Some(Some(false))
       } else {
         None // symbolic operand — leave to the normal machinery

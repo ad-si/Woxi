@@ -2972,7 +2972,7 @@ fn try_direct_linear_pde_body(
 /// `-b/a` reduced to either an `Integer` (if `a` divides `b`) or a
 /// `Rational` literal. Sign is folded into the numerator.
 fn make_neg_b_over_a(b: i128, a: i128) -> Expr {
-  use crate::functions::math_ast::make_rational_pub;
+  use crate::functions::math_ast::make_rational;
   let g = gcd_i128(b.abs(), a.abs());
   let g = if g == 0 { 1 } else { g };
   let (num, den) = (-b / g, a / g);
@@ -2980,12 +2980,12 @@ fn make_neg_b_over_a(b: i128, a: i128) -> Expr {
   if den == 1 {
     Expr::Integer(num)
   } else {
-    make_rational_pub(num, den)
+    make_rational(num, den)
   }
 }
 
 fn make_c_over_a(c: i128, a: i128) -> Expr {
-  use crate::functions::math_ast::make_rational_pub;
+  use crate::functions::math_ast::make_rational;
   let g = gcd_i128(c.abs(), a.abs());
   let g = if g == 0 { 1 } else { g };
   let (num, den) = (c / g, a / g);
@@ -2993,7 +2993,7 @@ fn make_c_over_a(c: i128, a: i128) -> Expr {
   if den == 1 {
     Expr::Integer(num)
   } else {
-    make_rational_pub(num, den)
+    make_rational(num, den)
   }
 }
 

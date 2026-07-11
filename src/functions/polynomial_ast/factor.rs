@@ -3104,8 +3104,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         }
         if !consumed {
           // No integer factor matched — prepend 1/div as a Rational.
-          new_args
-            .insert(0, crate::functions::math_ast::make_rational_pub(1, div));
+          new_args.insert(0, crate::functions::math_ast::make_rational(1, div));
         }
         crate::functions::math_ast::times_ast(&new_args)
           .unwrap_or_else(|_| term.clone())

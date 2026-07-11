@@ -2568,7 +2568,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Norm[2/3] -> 2/3, Norm[3 + 4 I] -> 5). For a non-numeric scalar (x,
     // a + b I, …) wolframscript leaves Norm unevaluated.
     _ => {
-      if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
+      if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
         crate::evaluator::evaluate_function_call_ast("Abs", &[args[0].clone()])
       } else {
         Ok(Expr::FunctionCall {

@@ -765,7 +765,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
     // Median[dist] = Quantile[dist, 1/2]; delegate to the closed-form quantile
     // for the gamma family. (BetaDistribution is handled by an earlier arm.)
     "GammaDistribution" | "ChiSquareDistribution" => {
-      let half = crate::functions::math_ast::make_rational_pub(1, 2);
+      let half = crate::functions::math_ast::make_rational(1, 2);
       crate::functions::math_ast::quantile_distribution_closed_form(
         name, dargs, &half,
       )

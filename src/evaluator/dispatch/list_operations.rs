@@ -49,7 +49,7 @@ fn listrp_invalid_atom(e: &Expr) -> bool {
     Expr::List(_) => false,
     Expr::String(_) | Expr::Association(_) => true,
     Expr::Identifier(s) if s == "True" || s == "False" => true,
-    _ => crate::functions::predicate_ast::is_numeric_q_pub(e),
+    _ => crate::functions::predicate_ast::is_numeric_q(e),
   }
 }
 
@@ -3567,7 +3567,7 @@ pub fn dispatch_list_operations(
           crate::functions::quantile_distribution_closed_form(
             dn,
             da,
-            &crate::functions::math_ast::make_rational_pub(1, 2),
+            &crate::functions::math_ast::make_rational(1, 2),
           )
       {
         return Some(Ok(result));

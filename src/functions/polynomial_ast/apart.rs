@@ -67,7 +67,7 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         // A variable-free (numeric) argument is already apart:
         // Apart[Divide[1, 2]] → 1/2, not the unevaluated call.
-        if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
+        if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
           return Ok(args[0].clone());
         }
         return Ok(Expr::FunctionCall {

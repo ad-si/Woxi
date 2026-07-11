@@ -821,7 +821,7 @@ fn build_general_solution(
       let root_expr = if rd == 1 {
         Expr::Integer(rn)
       } else {
-        crate::functions::math_ast::make_rational_pub(rn, rd)
+        crate::functions::math_ast::make_rational(rn, rd)
       };
       let exponent = if single_root {
         // `-1 + n` (constant first) to match wolframscript's display order.
@@ -1302,7 +1302,7 @@ fn build_solution(
       let root_expr = if rd == 1 {
         Expr::Integer(rn)
       } else {
-        crate::functions::math_ast::make_rational_pub(rn, rd)
+        crate::functions::math_ast::make_rational(rn, rd)
       };
       factors.push(Expr::BinaryOp {
         op: BinaryOperator::Power,

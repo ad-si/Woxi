@@ -8511,7 +8511,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let y_expr = if yd == 1 {
       Expr::Integer(yn)
     } else {
-      crate::functions::math_ast::make_rational_pub(yn, yd)
+      crate::functions::math_ast::make_rational(yn, yd)
     };
     let neg_one_pow = Expr::FunctionCall {
       name: "Power".to_string(),
@@ -8559,7 +8559,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let y_expr = if yd == 1 {
       Expr::Integer(yn)
     } else {
-      crate::functions::math_ast::make_rational_pub(yn, yd)
+      crate::functions::math_ast::make_rational(yn, yd)
     };
     let neg_one_pow = Expr::FunctionCall {
       name: "Power".to_string(),
@@ -10454,7 +10454,7 @@ fn simplify_neg1_rational_power(
     let rq = q / g2;
     let inner = Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![Expr::Integer(-1), make_rational_pub(rp, rq)].into(),
+      args: vec![Expr::Integer(-1), make_rational(rp, rq)].into(),
     };
     return Ok(negate_expr(inner));
   }
@@ -10465,7 +10465,7 @@ fn simplify_neg1_rational_power(
   // 0 < p < q: return (-1)^(p/q)
   Ok(Expr::FunctionCall {
     name: "Power".to_string(),
-    args: vec![Expr::Integer(-1), make_rational_pub(p, q)].into(),
+    args: vec![Expr::Integer(-1), make_rational(p, q)].into(),
   })
 }
 

@@ -1451,7 +1451,7 @@ pub fn graph_reciprocity(edges: &[Expr]) -> Option<Expr> {
       ku == kv || dir_set.contains(&(kv, ku))
     })
     .count();
-  Some(crate::functions::math_ast::make_rational_pub(
+  Some(crate::functions::math_ast::make_rational(
     reciprocated as i128,
     parsed.len() as i128,
   ))
