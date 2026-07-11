@@ -5744,7 +5744,7 @@ fn unit_to_box_form(unit: &Expr, magnitude: &Expr) -> Expr {
   }
 
   // Handle Power in both BinaryOp and FunctionCall form
-  if let Some((base, exp)) = crate::functions::graphics::as_power_pub(unit) {
+  if let Some((base, exp)) = crate::functions::graphics::as_power(unit) {
     let base_box = unit_to_box_form_inner(base);
     let exp_box = expr_to_box_form(exp);
     return Expr::FunctionCall {
@@ -5834,7 +5834,7 @@ fn unit_to_box_form_inner(unit: &Expr) -> Expr {
   use crate::functions::quantity_ast::unit_to_abbreviation;
   use crate::syntax::BinaryOperator;
 
-  if let Some((base, exp)) = crate::functions::graphics::as_power_pub(unit) {
+  if let Some((base, exp)) = crate::functions::graphics::as_power(unit) {
     let base_box = unit_to_box_form_inner(base);
     let exp_box = expr_to_box_form(exp);
     return Expr::FunctionCall {

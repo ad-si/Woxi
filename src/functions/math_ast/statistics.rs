@@ -8572,7 +8572,7 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Index of the element with the smallest total distance to the others
 /// (earliest wins ties), using the automatic metric described above.
 fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
 
   let n = keys.len();
   if n == 1 {
@@ -8580,7 +8580,7 @@ fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
   }
 
   let numeric_parts = |e: &Expr| -> Option<(f64, f64)> {
-    if let Some(p) = expr_to_complex_parts_pub(e) {
+    if let Some(p) = expr_to_complex_parts(e) {
       return Some(p);
     }
     let evaluated =
@@ -8589,7 +8589,7 @@ fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
         args: vec![e.clone()].into(),
       })
       .ok()?;
-    expr_to_complex_parts_pub(&evaluated)
+    expr_to_complex_parts(&evaluated)
   };
 
   // Distance matrix column sums for whichever metric applies.

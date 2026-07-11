@@ -34,21 +34,12 @@ fn lhs_condition_definitely_fails(bindings: &[(String, Expr)]) -> bool {
   })
 }
 
-fn push_match_context(bindings: &[(String, Expr)]) {
+pub fn push_match_context(bindings: &[(String, Expr)]) {
   MATCH_CONTEXT.with(|ctx| ctx.borrow_mut().push(bindings.to_vec()));
 }
 
-fn pop_match_context() {
+pub fn pop_match_context() {
   MATCH_CONTEXT.with(|ctx| ctx.borrow_mut().pop());
-}
-
-/// Public wrappers for use from dispatch code.
-pub fn push_match_context_pub(bindings: &[(String, Expr)]) {
-  push_match_context(bindings);
-}
-
-pub fn pop_match_context_pub() {
-  pop_match_context();
 }
 
 /// Check if bindings are compatible with all outer context bindings.

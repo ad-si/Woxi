@@ -6109,7 +6109,7 @@ fn resolve_color_value(
     }
     // Named color (Red, Blue, etc.)
     Expr::Identifier(name) => {
-      if let Some(color_expr) = crate::evaluator::named_color_expr_pub(name) {
+      if let Some(color_expr) = crate::evaluator::named_color_expr(name) {
         resolve_color_value(&color_expr)
       } else {
         Err(InterpreterError::EvaluationError(format!(

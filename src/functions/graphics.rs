@@ -4382,11 +4382,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Extract the base and exponent from a Power expression (either BinaryOp or FunctionCall form).
 /// Public accessor for `as_power` — used by `expr_to_box_form` for unit handling.
-pub fn as_power_pub(expr: &Expr) -> Option<(&Expr, &Expr)> {
-  as_power(expr)
-}
-
-fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
+pub fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
   match expr {
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,

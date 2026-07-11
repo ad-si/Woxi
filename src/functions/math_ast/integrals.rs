@@ -291,7 +291,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute S(x) = ∫₀ˣ sin(π t²/2) dt numerically
 /// Uses the identity: S(x) = Im[(1+i)/2 · erf(√π/2 · (1+i) · x)]
-fn fresnel_s_numeric(x: f64) -> f64 {
+pub fn fresnel_s_numeric(x: f64) -> f64 {
   if x == 0.0 {
     return 0.0;
   }
@@ -411,7 +411,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute C(x) = ∫₀ˣ cos(π t²/2) dt numerically
 /// Uses the identity: C(x) = Re[(1+i)/2 · erf(√π/2 · (1+i) · x)]
-fn fresnel_c_numeric(x: f64) -> f64 {
+pub fn fresnel_c_numeric(x: f64) -> f64 {
   if x == 0.0 {
     return 0.0;
   }
@@ -598,16 +598,6 @@ fn erf_complex_taylor(a: f64, b: f64) -> (f64, f64) {
     sum_im += terms_im[i];
   }
   (two_over_sqrt_pi * sum_re, two_over_sqrt_pi * sum_im)
-}
-
-/// Public wrapper for FresnelS numeric computation (used by try_eval_to_f64)
-pub fn fresnel_s_numeric_pub(x: f64) -> f64 {
-  fresnel_s_numeric(x)
-}
-
-/// Public wrapper for FresnelC numeric computation (used by try_eval_to_f64)
-pub fn fresnel_c_numeric_pub(x: f64) -> f64 {
-  fresnel_c_numeric(x)
 }
 
 /// SinIntegral[z] - Sine integral Si(z)
