@@ -1873,6 +1873,22 @@ pub fn digamma(mut x: f64) -> f64 {
 
 /// HarmonicNumber[n] - Returns the nth harmonic number H_n = 1 + 1/2 + ... + 1/n.
 /// HarmonicNumber[n, r] - Returns the generalized harmonic number H_{n,r} = Sum[1/k^r, {k,1,n}].
+/// True when an expression carries an inexact (machine-precision) real, so
+/// HarmonicNumber should numericize. Exact arguments — integers, rationals and
+/// exact irrationals like Sqrt[2] or Pi — stay symbolic, matching wolframscript
+/// (HarmonicNumber[1/2] is kept unevaluated, HarmonicNumber[0.5] is not).
+fn harmonic_arg_is_inexact(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(harmonic_arg_is_inexact),
+    Expr::BinaryOp { left, right, .. } => {
+      harmonic_arg_is_inexact(left) || harmonic_arg_is_inexact(right)
+    }
+    Expr::UnaryOp { operand, .. } => harmonic_arg_is_inexact(operand),
+    _ => false,
+  }
+}
+
 pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1911,10 +1927,12 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Handle real/float argument: H(x) = digamma(x+1) + EulerGamma
+  // Handle inexact real argument: H(x) = digamma(x+1) + EulerGamma. Only a
+  // machine-precision real numericizes; exact non-integer arguments (1/2,
+  // Sqrt[2], Pi, …) stay symbolic like wolframscript.
   if args.len() == 1
+    && harmonic_arg_is_inexact(&args[0])
     && let Some(x) = expr_to_num(&args[0])
-    && expr_to_i128(&args[0]).is_none()
   {
     // Real input - use digamma approximation
     // Euler-Mascheroni constant

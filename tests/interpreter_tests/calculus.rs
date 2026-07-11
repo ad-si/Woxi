@@ -3023,6 +3023,30 @@ mod limit {
     assert_eq!(interpret("HarmonicNumber[10]").unwrap(), "7381/2520");
   }
 
+  // Regression: an exact non-integer argument must stay symbolic (only a
+  // machine-precision real numericizes). wolframscript keeps HarmonicNumber[1/2]
+  // unevaluated but HarmonicNumber[0.5] is a float.
+  #[test]
+  fn harmonic_number_exact_non_integer_stays_symbolic() {
+    assert_eq!(
+      interpret("HarmonicNumber[1/2]").unwrap(),
+      "HarmonicNumber[1/2]"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[3/2]").unwrap(),
+      "HarmonicNumber[3/2]"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[Sqrt[2]]").unwrap(),
+      "HarmonicNumber[Sqrt[2]]"
+    );
+    // A machine real still numericizes.
+    assert_eq!(
+      interpret("HarmonicNumber[3.0]").unwrap(),
+      "1.8333333333333335"
+    );
+  }
+
   // Product 0 * Infinity at a finite point: the L'Hopital rewrite must use the
   // 0/0 orientation (Log[2-x]/Cot[Pi x/2]) — the Infinity/Infinity orientation
   // differentiates Tan into ever-larger expressions that never resolve. This
