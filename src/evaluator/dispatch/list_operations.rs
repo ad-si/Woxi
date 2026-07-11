@@ -6978,35 +6978,22 @@ pub fn dispatch_list_operations(
         args: args.to_vec().into(),
       }));
     }
-    // SubsetMap[f, list, positions] — apply f to elements at positions, put
-    // results back. `positions` may be a list of integer positions or a Span
-    // (e.g. `2 ;; 5`).
+    // SubsetMap[f, list, positions] — apply f to the elements at `positions`
+    // collectively and put the results back. `positions` may be:
+    //   * a Span (`2 ;; 5`) or `All` → level-1 positions
+    //   * a flat list of integers (`{2, 4}`) → separate level-1 positions
+    //   * a list of position paths (`{{1,1},{2,2}}` or `{{2},{4}}`)
+    //   * a Part-style multi-level spec (`{All, 2}`, `{1 ;; 2, 3}`) → the
+    //     covered deep positions, in row-major order
     "SubsetMap" if args.len() == 3 => {
-      if let Expr::List(items) = &args[1] {
+      if matches!(&args[1], Expr::List(_)) {
         let f = &args[0];
-        // Resolve the positions from either a list or a Span. Each entry of a
-        // position list is a position spec: a bare integer `i` or a
-        // single-element list `{i}` (Extract-style), both meaning position i.
-        let pos_indices: Vec<usize> = match &args[2] {
-          Expr::List(positions) => positions
-            .iter()
-            .filter_map(|p| match p {
-              Expr::Integer(v) => Some(*v as usize),
-              Expr::List(inner) if inner.len() == 1 => match &inner[0] {
-                Expr::Integer(v) => Some(*v as usize),
-                _ => None,
-              },
-              _ => None,
-            })
-            .collect(),
-          Expr::FunctionCall { name, args: sp } if name == "Span" => {
-            span_to_positions(sp, items.len())?
-          }
-          _ => return None,
-        };
-        let subset: Vec<Expr> = pos_indices
+        let subject = &args[1];
+        let paths = subsetmap_positions(subject, &args[2])?;
+        // Extract the elements at those positions, in spec order.
+        let subset: Vec<Expr> = paths
           .iter()
-          .filter_map(|&idx| items.get(idx - 1).cloned())
+          .filter_map(|p| get_at_path(subject, p))
           .collect();
         // Apply f to the extracted sublist (as a single list argument).
         let mapped =
@@ -7019,14 +7006,17 @@ pub fn dispatch_list_operations(
         // sublist; otherwise SubsetMap can't put the elements back and emits
         // `newls`, leaving the call unevaluated (matching wolframscript).
         match &mapped {
-          Expr::List(mapped_items) if mapped_items.len() == subset.len() => {
-            let mut result = items.clone();
-            for (i, &pos) in pos_indices.iter().enumerate() {
-              if pos >= 1 && pos <= result.len() {
-                result[pos - 1] = mapped_items[i].clone();
+          Expr::List(mapped_items)
+            if mapped_items.len() == subset.len()
+              && subset.len() == paths.len() =>
+          {
+            let mut result = subject.clone();
+            for (path, val) in paths.iter().zip(mapped_items.iter()) {
+              if let Some(updated) = set_at_path(&result, path, val) {
+                result = updated;
               }
             }
-            return Some(Ok(Expr::List(result)));
+            return Some(Ok(result));
           }
           _ => {
             crate::emit_message(&format!(
@@ -7091,6 +7081,179 @@ fn span_to_positions(span_args: &[Expr], len: usize) -> Option<Vec<usize>> {
     }
   }
   Some(positions)
+}
+
+/// Length of a `List` expression (children count), or `None` for non-lists.
+fn list_len_expr(e: &Expr) -> Option<usize> {
+  match e {
+    Expr::List(items) => Some(items.len()),
+    _ => None,
+  }
+}
+
+/// Fetch the 1-based child of a `List` (negative counts from the end).
+fn list_child(e: &Expr, one_based: i128) -> Option<Expr> {
+  if let Expr::List(items) = e {
+    let n = items.len() as i128;
+    let idx = if one_based < 0 {
+      n + one_based
+    } else {
+      one_based - 1
+    };
+    if idx >= 0 && idx < n {
+      return Some(items[idx as usize].clone());
+    }
+  }
+  None
+}
+
+/// Follow a 1-based position path into nested `List`s.
+fn get_at_path(e: &Expr, path: &[i128]) -> Option<Expr> {
+  let mut cur = e.clone();
+  for &p in path {
+    cur = list_child(&cur, p)?;
+  }
+  Some(cur)
+}
+
+/// Return a copy of `e` with the element at `path` replaced by `val`.
+fn set_at_path(e: &Expr, path: &[i128], val: &Expr) -> Option<Expr> {
+  let Some((&head, rest)) = path.split_first() else {
+    return Some(val.clone());
+  };
+  if let Expr::List(items) = e {
+    let n = items.len() as i128;
+    let idx = if head < 0 { n + head } else { head - 1 };
+    if idx < 0 || idx >= n {
+      return None;
+    }
+    let mut v = items.to_vec();
+    let child = set_at_path(&v[idx as usize], rest, val)?;
+    v[idx as usize] = child;
+    return Some(Expr::List(v.into()));
+  }
+  None
+}
+
+/// Resolve a SubsetMap position specification into concrete 1-based position
+/// paths (see the `"SubsetMap"` dispatch arm for the accepted spec forms).
+fn subsetmap_positions(subject: &Expr, spec: &Expr) -> Option<Vec<Vec<i128>>> {
+  match spec {
+    // `All` selects every level-1 position.
+    Expr::Identifier(s) if s == "All" => {
+      let n = list_len_expr(subject)? as i128;
+      Some((1..=n).map(|i| vec![i]).collect())
+    }
+    // A Span expands to the level-1 positions it covers.
+    Expr::FunctionCall { name, args: sp } if name == "Span" => {
+      let n = list_len_expr(subject)?;
+      Some(
+        span_to_positions(sp, n)?
+          .into_iter()
+          .map(|i| vec![i as i128])
+          .collect(),
+      )
+    }
+    // A bare integer is a single level-1 position.
+    Expr::Integer(n) => Some(vec![vec![*n]]),
+    // A flat list of integers: each is a separate level-1 position. (This is
+    // where SubsetMap diverges from Part/Extract, which read `{2, 4}` as one
+    // deep position.)
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|e| matches!(e, Expr::Integer(_))) =>
+    {
+      Some(
+        items
+          .iter()
+          .map(|e| match e {
+            Expr::Integer(n) => vec![*n],
+            _ => unreachable!(),
+          })
+          .collect(),
+      )
+    }
+    // A list whose entries are all lists: each inner list is one position
+    // path (`{{1,1},{2,2}}` deep, `{{2},{4}}` level-1).
+    Expr::List(items) if items.iter().all(|e| matches!(e, Expr::List(_))) => {
+      let mut paths = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        let Expr::List(inner) = item else {
+          unreachable!()
+        };
+        let mut path = Vec::with_capacity(inner.len());
+        for c in inner.iter() {
+          match c {
+            Expr::Integer(n) => path.push(*n),
+            _ => return None,
+          }
+        }
+        paths.push(path);
+      }
+      Some(paths)
+    }
+    // Any other list is a Part-style multi-level spec (e.g. `{All, 2}`).
+    Expr::List(items) => expand_part_spec(subject, &items.to_vec()),
+    _ => None,
+  }
+}
+
+/// Expand a Part-style multi-level position spec (each level being an
+/// integer, `All`, a Span, or a list of integers) into the covered position
+/// paths, in row-major order.
+fn expand_part_spec(
+  subject: &Expr,
+  level_specs: &[Expr],
+) -> Option<Vec<Vec<i128>>> {
+  fn indices_at(node: &Expr, spec: &Expr) -> Option<Vec<i128>> {
+    let n = list_len_expr(node)? as i128;
+    let clamp = |k: i128| -> Option<i128> {
+      let idx = if k < 0 { n + k + 1 } else { k };
+      (idx >= 1 && idx <= n).then_some(idx)
+    };
+    match spec {
+      Expr::Identifier(s) if s == "All" => Some((1..=n).collect()),
+      Expr::Integer(k) => clamp(*k).map(|i| vec![i]),
+      Expr::FunctionCall { name, args: sp } if name == "Span" => Some(
+        span_to_positions(sp, n as usize)?
+          .into_iter()
+          .map(|i| i as i128)
+          .collect(),
+      ),
+      Expr::List(ks) => {
+        let mut out = Vec::with_capacity(ks.len());
+        for k in ks.iter() {
+          match k {
+            Expr::Integer(k) => out.push(clamp(*k)?),
+            _ => return None,
+          }
+        }
+        Some(out)
+      }
+      _ => None,
+    }
+  }
+  fn recurse(
+    node: &Expr,
+    specs: &[Expr],
+    prefix: &mut Vec<i128>,
+    out: &mut Vec<Vec<i128>>,
+  ) -> Option<()> {
+    let Some((first, rest)) = specs.split_first() else {
+      out.push(prefix.clone());
+      return Some(());
+    };
+    for i in indices_at(node, first)? {
+      let child = list_child(node, i)?;
+      prefix.push(i);
+      recurse(&child, rest, prefix, out)?;
+      prefix.pop();
+    }
+    Some(())
+  }
+  let mut out = Vec::new();
+  recurse(subject, level_specs, &mut Vec::new(), &mut out)?;
+  Some(out)
 }
 
 /// Extract a value from an association by key string

@@ -2697,7 +2697,7 @@ CellGrouping,,🚫,,3.0,2755
 ImageColorSpace,Returns the color space of an image,✅,pure,8.0,2755
 MarkovProcessProperties,,🚫,,9.0,2755
 SierpinskiMesh,,🚫,,11.1,2755
-SubsetMap,Map a function over a subset of a list (positions given as a list or a span) and recombine,✅,pure,12.0,2755
+SubsetMap,Map a function over a subset of a list at flat/deep/span/Part-style positions and recombine,✅,pure,12.0,2755
 XMLObject,represents an XML object,✅,Symbolic,4.2,2755
 AbsArgPlot,,🚫,,12.0,2762
 BulletGauge,,🚫,,9.0,2762

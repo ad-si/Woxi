@@ -17158,3 +17158,107 @@ mod permutation_replace_list_of_perms {
     );
   }
 }
+
+mod subset_map {
+  use super::*;
+
+  #[test]
+  fn flat_integer_positions() {
+    // A flat list of integers names separate level-1 positions; f is applied
+    // to the collected sublist and the result written back in order.
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {x1, x2, x3, x4, x5, x6}, {2, 4}]")
+        .unwrap(),
+      "{x1, x4, x3, x2, x5, x6}"
+    );
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {10, 20, 30, 40}, {2, 4}]").unwrap(),
+      "{10, 40, 30, 20}"
+    );
+  }
+
+  #[test]
+  fn rotate_three_positions() {
+    assert_eq!(
+      interpret("SubsetMap[RotateLeft, {x1, x2, x3, x4, x5, x6}, {2, 4, 5}]")
+        .unwrap(),
+      "{x1, x4, x3, x5, x2, x6}"
+    );
+  }
+
+  #[test]
+  fn span_positions() {
+    assert_eq!(
+      interpret("SubsetMap[Accumulate, {1, 2, 3, 4, 5, 6}, 2 ;; 5]").unwrap(),
+      "{1, 2, 5, 9, 14, 6}"
+    );
+  }
+
+  #[test]
+  fn single_element_position_lists() {
+    // {{2}, {4}} names level-1 positions 2 and 4.
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {{1, 2, 3}, {4, 5, 6}}, {1, 2}]").unwrap(),
+      "{{4, 5, 6}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "SubsetMap[Reverse, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {{1}, {3}}]"
+      )
+      .unwrap(),
+      "{{7, 8, 9}, {4, 5, 6}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn deep_diagonal_positions() {
+    // {{1,1},{2,2},{3,3}} are deep positions into a matrix; reversing the
+    // diagonal swaps the corner elements.
+    assert_eq!(
+      interpret(
+        "SubsetMap[Reverse, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {{1, 1}, {2, 2}, {3, 3}}]"
+      )
+      .unwrap(),
+      "{{9, 2, 3}, {4, 5, 6}, {7, 8, 1}}"
+    );
+  }
+
+  #[test]
+  fn part_style_column_spec() {
+    // {All, 2} is a Part-style spec selecting the whole second column.
+    assert_eq!(
+      interpret(
+        "SubsetMap[Accumulate, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {All, 2}]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {4, 7, 6}, {7, 15, 9}}"
+    );
+  }
+
+  #[test]
+  fn operator_form() {
+    // SubsetMap[f, positions] is the operator form applied to an expression.
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {{1, 1}, {2, 2}}][{{1, 2, 3}, {4, 5, 6}}]")
+        .unwrap(),
+      "{{5, 2, 3}, {4, 1, 6}}"
+    );
+  }
+
+  #[test]
+  fn length_mismatch_stays_unevaluated() {
+    // When f does not return a list of the extracted length, SubsetMap emits
+    // ::newls and returns unevaluated (matches wolframscript).
+    assert_eq!(
+      interpret("SubsetMap[f, {10, 20, 30, 40}, {{2}, {4}}]").unwrap(),
+      "SubsetMap[f, {10, 20, 30, 40}, {{2}, {4}}]"
+    );
+    assert_eq!(
+      interpret(
+        "SubsetMap[Total, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {All, 1}]"
+      )
+      .unwrap(),
+      "SubsetMap[Total, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {All, 1}]"
+    );
+  }
+}
