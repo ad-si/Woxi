@@ -483,6 +483,13 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    // HalfSpace[n] normalizes to HalfSpace[n, 0] (wolframscript-verified).
+    "HalfSpace" if args.len() == 1 && matches!(&args[0], Expr::List(_)) => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "HalfSpace".to_string(),
+        args: vec![args[0].clone(), Expr::Integer(0)].into(),
+      }));
+    }
     // SphericalShell normalizes to its full form
     // SphericalShell[center, {rinner, router}]: the default shell is
     // {1/2, 1}, a single radius r means {r/2, r}, and a bare radius pair

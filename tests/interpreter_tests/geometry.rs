@@ -5052,3 +5052,270 @@ mod spherical_shell_and_capsule {
     assert_eq!(interpret("RegionDimension[CapsuleShape[]]").unwrap(), "3");
   }
 }
+
+// DiskSegment[{x, y}, r | {rx, ry}, {θ1, θ2}] — circular / elliptical
+// segments. All outputs verified against wolframscript.
+mod disk_segment {
+  use super::*;
+
+  #[test]
+  fn area() {
+    // A 0..Pi segment is the half disk.
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {0, Pi}]]").unwrap(),
+      "Pi/2"
+    );
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {0, Pi/2}]]").unwrap(),
+      "(-2 + Pi)/4"
+    );
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 2, {0, Pi/3}]]").unwrap(),
+      "(-3*Sqrt[3] + 2*Pi)/3"
+    );
+    // The area is center-independent and angle-shift-invariant.
+    assert_eq!(
+      interpret("Area[DiskSegment[{1, 2}, 3, {0, Pi}]]").unwrap(),
+      "(9*Pi)/2"
+    );
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {-Pi/4, 3*Pi/4}]]").unwrap(),
+      "Pi/2"
+    );
+  }
+
+  #[test]
+  fn area_symbolic_radii() {
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, r, {0, Pi/2}]]").unwrap(),
+      "((-2 + Pi)*r^2)/4"
+    );
+    // Elliptical segment: rx ry (dtheta - Sin[dtheta])/2.
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, {r1, r2}, {0, Pi/3}]]").unwrap(),
+      "((-3*Sqrt[3] + 2*Pi)*r1*r2)/12"
+    );
+  }
+
+  #[test]
+  fn area_angle_edge_cases() {
+    // Reversed angles are Undefined.
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {Pi, 0}]]").unwrap(),
+      "Undefined"
+    );
+    // wolframscript's UnitStep closed form double-counts at exactly
+    // 2 Pi (both steps fire) and clamps to Pi r^2 above — replicated.
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {0, 2*Pi}]]").unwrap(),
+      "2*Pi"
+    );
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {0, 3*Pi}]]").unwrap(),
+      "Pi"
+    );
+    // Invalid shapes stay unevaluated.
+    assert_eq!(
+      interpret("Area[DiskSegment[]]").unwrap(),
+      "Area[DiskSegment[]]"
+    );
+  }
+
+  #[test]
+  fn centroid() {
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{0, 0}, 1, {0, Pi}]]").unwrap(),
+      "{0, 4/(3*Pi)}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{0, 0}, 1, {0, Pi/2}]]").unwrap(),
+      "{1/(3*(-1 + Pi/2)), 1/(3*(-1 + Pi/2))}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{1, 2}, 3, {0, Pi}]]").unwrap(),
+      "{1, 2 + 4/Pi}"
+    );
+    // Elliptical: each axis scales by its semiaxis.
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{0, 0}, {3, 2}, {0, Pi}]]")
+        .unwrap(),
+      "{0, 8/(3*Pi)}"
+    );
+    // The full-angle segment is the whole disk.
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{0, 0}, 1, {0, 2*Pi}]]").unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn perimeter() {
+    // Chord + arc.
+    assert_eq!(
+      interpret("Perimeter[DiskSegment[{0, 0}, 1, {0, Pi}]]").unwrap(),
+      "2 + Pi"
+    );
+    assert_eq!(
+      interpret("Perimeter[DiskSegment[{0, 0}, 2, {0, Pi/3}]]").unwrap(),
+      "2 + (2*Pi)/3"
+    );
+    assert_eq!(
+      interpret("Perimeter[DiskSegment[{0, 0}, 1, {0, 2*Pi}]]").unwrap(),
+      "2*Pi"
+    );
+    // Elliptical perimeters need elliptic integrals — unevaluated.
+    assert_eq!(
+      interpret("Perimeter[DiskSegment[{0, 0}, {3, 2}, {0, Pi}]]").unwrap(),
+      "Perimeter[DiskSegment[{0, 0}, {3, 2}, {0, Pi}]]"
+    );
+  }
+
+  #[test]
+  fn region_measure_and_dimension() {
+    // wolframscript's RegionMeasure for any valid DiskSegment is the
+    // constant 2 (its dimension, not its area) — replicated.
+    assert_eq!(
+      interpret("RegionMeasure[DiskSegment[{0, 0}, 1, {0, Pi}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[DiskSegment[{0, 0}, 5, {0, Pi/4}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionDimension[DiskSegment[{0, 0}, 1, {0, Pi/3}]]").unwrap(),
+      "2"
+    );
+    // The argumentless form is invalid and stays unevaluated.
+    assert_eq!(
+      interpret("RegionDimension[DiskSegment[]]").unwrap(),
+      "RegionDimension[DiskSegment[]]"
+    );
+  }
+}
+
+// HalfSpace[n, c] / HalfSpace[n, p] — the closed half-space n.x <= c
+// (n.(x - p) <= 0). All outputs verified against wolframscript.
+mod half_space {
+  use super::*;
+
+  #[test]
+  fn constructor_normalizes() {
+    assert_eq!(
+      interpret("HalfSpace[{1, 0}]").unwrap(),
+      "HalfSpace[{1, 0}, 0]"
+    );
+  }
+
+  #[test]
+  fn region_member() {
+    // Point form: n.(x - p) <= 0, boundary included.
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{-1, -1, 1}, {0, 0, 0}], {1, 1, 0}]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{-1, -1, 1}, {0, 0, 0}], {0, 0, 1}]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{-1, -1, 1}, {0, 0, 0}], {0, 0, 0}]")
+        .unwrap(),
+      "True"
+    );
+    // Scalar form: n.x <= c.
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{1, 0}, 2], {1, 5}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{1, 0}, 2], {3, 0}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{1, 0}, 2], {2, 7}]").unwrap(),
+      "True"
+    );
+    // Symbolic points stay unevaluated (wolframscript produces a
+    // Reduce-normalized condition Woxi does not model).
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{1, 0}, 2], {x, y}]").unwrap(),
+      "RegionMember[HalfSpace[{1, 0}, 2], {x, y}]"
+    );
+  }
+
+  #[test]
+  fn measures_are_infinite() {
+    assert_eq!(
+      interpret("RegionDimension[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionDimension[HalfSpace[{-1, -1, 1}, {0, 0, 0}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Volume[HalfSpace[{-1, -1, 1}, {0, 0, 0}]]").unwrap(),
+      "Infinity"
+    );
+    // Dimension mismatches are Undefined.
+    assert_eq!(
+      interpret("Volume[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(interpret("Area[HalfSpace[{1, 0}, 2]]").unwrap(), "Infinity");
+    assert_eq!(
+      interpret("Area[HalfSpace[{-1, -1, 1}, {0, 0, 0}]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(
+      interpret("BoundedRegionQ[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn region_distance() {
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{1, 0}, 2], {5, 0}]").unwrap(),
+      "3"
+    );
+    // Boundary and interior points have distance 0.
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{1, 0}, 2], {1, 0}]").unwrap(),
+      "0"
+    );
+    // Exact radical forms.
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{1, 1}, 0], {1, 1}]").unwrap(),
+      "Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{1, 1}, 0], {1, 2}]").unwrap(),
+      "3/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{-1, -1, 1}, {0, 0, 0}], {1, 1, 3}]")
+        .unwrap(),
+      "1/Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn centroid_is_indeterminate() {
+    assert_eq!(
+      interpret("RegionCentroid[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "{Indeterminate, Indeterminate}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[HalfSpace[{-1, -1, 1}, {0, 0, 0}]]").unwrap(),
+      "{Indeterminate, Indeterminate, Indeterminate}"
+    );
+  }
+}

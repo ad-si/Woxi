@@ -6319,6 +6319,27 @@ fn compute_region_member(
         });
       boolean(inside)
     }
+    // HalfSpace[n, c] / HalfSpace[n, p] — closed half-space n.x <= c.
+    "HalfSpace" => {
+      let Some((normal, bound)) = half_space_parts(args) else {
+        return unevaluated();
+      };
+      if pt.len() != normal.len() {
+        return unevaluated();
+      }
+      let n_f: Option<Vec<f64>> = normal
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect();
+      let (Some(n_f), Some(c_f)) =
+        (n_f, crate::functions::math_ast::try_eval_to_f64(&bound))
+      else {
+        return unevaluated();
+      };
+      let dot: f64 = n_f.iter().zip(&pt).map(|(a, b)| a * b).sum();
+      let scale = n_f.iter().map(|x| x.abs()).fold(1.0f64, f64::max);
+      boolean(dot <= c_f + EPS * scale.max(c_f.abs()))
+    }
     // Triangle/Polygon: a closed 2D region. A point is a member when it is
     // inside or on the boundary.
     "Triangle" | "Polygon" if args.len() == 1 => {
@@ -6848,6 +6869,59 @@ fn compute_region_distance(
 
   let expr = match name.as_str() {
     "Point" if args.len() == 1 => euclid(point.clone(), args[0].clone()),
+    // HalfSpace — 0 inside, (n.x - c)/Norm[n] outside.
+    "HalfSpace" => {
+      let Some((normal, bound)) = half_space_parts(args) else {
+        return unevaluated();
+      };
+      let Expr::List(pt) = point else {
+        return unevaluated();
+      };
+      if pt.len() != normal.len() {
+        return unevaluated();
+      }
+      let pt: Vec<Expr> = pt.iter().cloned().collect();
+      let dot = half_space_dot(&normal, &pt)?;
+      // Signed excess n.x - c decides the side.
+      let excess =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            dot,
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), bound].into(),
+            },
+          ]
+          .into(),
+        })?;
+      let Some(excess_f) = crate::functions::math_ast::try_eval_to_f64(&excess)
+      else {
+        return unevaluated();
+      };
+      if excess_f <= 0.0 {
+        return Ok(Expr::Integer(0));
+      }
+      let norm_sq: Vec<Expr> = normal
+        .iter()
+        .map(|a| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![a.clone(), Expr::Integer(2)].into(),
+        })
+        .collect();
+      let norm = call(
+        "Sqrt",
+        vec![Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: norm_sq.into(),
+        }],
+      );
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(excess),
+        right: Box::new(norm),
+      });
+    }
     "Disk" | "Ball" => {
       let dim = if name == "Ball" { 3 } else { 2 };
       let center = args.first().cloned().unwrap_or_else(|| zeros(dim));
@@ -7949,6 +8023,14 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
       "CapsuleShape" if capsule_height_sq_radius(args).is_some() => {
         return or_unevaluated(compute_volume(expr));
       }
+      // wolframscript's RegionMeasure for any valid DiskSegment is
+      // (quirkily) the constant 2 — its dimension, not its area.
+      // Replicated for conformance.
+      "DiskSegment"
+        if disk_segment_parts(args).is_some_and(|(.., d)| d >= 0.0) =>
+      {
+        return Ok(Expr::Integer(2));
+      }
       // A simplex's measure is in its intrinsic dimension: for n vertices in
       // (n-1)-space it is |Det[edges]| / (n-1)! (triangle area, tetrahedron
       // volume, ...).
@@ -8072,6 +8154,16 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
       "Disk" | "Rectangle" | "Triangle" | "Polygon" | "RegularPolygon"
       | "Annulus" | "Parallelogram" | "HalfPlane" | "InfinitePlane"
       | "Torus" => return Ok(Expr::Integer(2)),
+      // DiskSegment needs a valid argument shape (DiskSegment[] stays
+      // unevaluated in wolframscript).
+      "DiskSegment" if disk_segment_parts(args).is_some() => {
+        return Ok(Expr::Integer(2));
+      }
+      // A half-space has the dimension of its ambient space.
+      "HalfSpace" if half_space_parts(args).is_some() => {
+        let (normal, _) = half_space_parts(args).unwrap();
+        return Ok(Expr::Integer(normal.len() as i128));
+      }
       "Circle" | "Line" | "HalfLine" | "InfiniteLine" => {
         return Ok(Expr::Integer(1));
       }
@@ -8580,6 +8672,92 @@ fn torus_parts(args: &[Expr]) -> Option<(Vec<Expr>, Expr, Expr)> {
     }
     _ => None,
   }
+}
+
+/// Parses HalfSpace[n, c] / HalfSpace[n, p] into (normal, bound) with the
+/// point form converted to the scalar bound c = n.p, so membership is
+/// n.x <= c in both cases.
+fn half_space_parts(args: &[Expr]) -> Option<(Vec<Expr>, Expr)> {
+  match args {
+    [Expr::List(n), second] if !n.is_empty() => {
+      let normal: Vec<Expr> = n.iter().cloned().collect();
+      let bound = match second {
+        Expr::List(p) if p.len() == normal.len() => {
+          half_space_dot(&normal, &p.iter().cloned().collect::<Vec<_>>())
+            .ok()?
+        }
+        Expr::List(_) => return None,
+        c => c.clone(),
+      };
+      Some((normal, bound))
+    }
+    _ => None,
+  }
+}
+
+/// The exact dot product n.x of a half-space normal with a point.
+fn half_space_dot(
+  normal: &[Expr],
+  point: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let terms: Vec<Expr> = normal
+    .iter()
+    .zip(point.iter())
+    .map(|(a, b)| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![a.clone(), b.clone()].into(),
+    })
+    .collect();
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+}
+
+/// Parses DiskSegment[{x, y}, r | {rx, ry}, {θ1, θ2}] into
+/// (center, rx, ry, θ1, θ2, Δθ as f64). rx == ry for the circular case.
+/// Angles must be concrete; None otherwise.
+fn disk_segment_parts(
+  args: &[Expr],
+) -> Option<(Vec<Expr>, Expr, Expr, Expr, Expr, f64)> {
+  match args {
+    [Expr::List(c), r, Expr::List(th)] if c.len() == 2 && th.len() == 2 => {
+      let (rx, ry) = match r {
+        Expr::List(rr) if rr.len() == 2 => (rr[0].clone(), rr[1].clone()),
+        Expr::List(_) => return None,
+        _ => (r.clone(), r.clone()),
+      };
+      let t1 = crate::functions::math_ast::try_eval_to_f64(&th[0])?;
+      let t2 = crate::functions::math_ast::try_eval_to_f64(&th[1])?;
+      Some((
+        c.iter().cloned().collect(),
+        rx,
+        ry,
+        th[0].clone(),
+        th[1].clone(),
+        t2 - t1,
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// The exact angular width θ2 - θ1 of a disk segment.
+fn disk_segment_dtheta(
+  th1: &Expr,
+  th2: &Expr,
+) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      th2.clone(),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), th1.clone()].into(),
+      },
+    ]
+    .into(),
+  })
 }
 
 /// Parses a normalized SphericalShell[{x, y, z}, {r1, r2}] into its radii
@@ -9445,6 +9623,19 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
         };
         return crate::evaluator::evaluate_expr_to_expr(&vol);
       }
+      // A 3-D half-space has infinite volume; other dimensions have no
+      // 3-volume.
+      "HalfSpace" if half_space_parts(args).is_some() => {
+        let (normal, _) = half_space_parts(args).unwrap();
+        return Ok(Expr::Identifier(
+          if normal.len() == 3 {
+            "Infinity"
+          } else {
+            "Undefined"
+          }
+          .to_string(),
+        ));
+      }
       // SphericalShell[c, {r1, r2}] — (4 Pi (r2^3 - r1^3))/3.
       "SphericalShell" if spherical_shell_radii(args).is_some() => {
         let (r1, r2) = spherical_shell_radii(args).unwrap();
@@ -9810,6 +10001,94 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           name: "Area".to_string(),
           args: vec![expr.clone()].into(),
         })
+      }
+      // A 2-D half-space has infinite area; other dimensions have no
+      // 2-area.
+      "HalfSpace" if half_space_parts(args).is_some() => {
+        let (normal, _) = half_space_parts(args).unwrap();
+        Ok(Expr::Identifier(
+          if normal.len() == 2 {
+            "Infinity"
+          } else {
+            "Undefined"
+          }
+          .to_string(),
+        ))
+      }
+      // DiskSegment[{x, y}, r | {rx, ry}, {θ1, θ2}] — the circular
+      // (elliptical) segment area rx ry (Δθ - Sin[Δθ])/2. wolframscript's
+      // closed form uses two UnitSteps that BOTH fire at Δθ == 2 Pi
+      // (giving 2 Pi rx ry) and clamp to Pi rx ry above — replicated.
+      "DiskSegment" => {
+        let Some((_, rx, ry, th1, th2, d)) = disk_segment_parts(args) else {
+          return Ok(Expr::FunctionCall {
+            name: "Area".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        };
+        if d < 0.0 {
+          return Ok(Expr::Identifier("Undefined".to_string()));
+        }
+        let factor = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![rx, ry].into(),
+        };
+        const TWO_PI: f64 = std::f64::consts::TAU;
+        let area = if (d - TWO_PI).abs() < 1e-12 {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(2),
+              Expr::Constant("Pi".to_string()),
+              factor,
+            ]
+            .into(),
+          }
+        } else if d > TWO_PI {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Constant("Pi".to_string()), factor].into(),
+          }
+        } else {
+          let dt = disk_segment_dtheta(&th1, &th2)?;
+          // Together hoists the rational content of Δθ - Sin[Δθ] so the
+          // display matches wolframscript ((-2 + Pi)/4, not
+          // (-1 + Pi/2)/2).
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                factor,
+                Expr::FunctionCall {
+                  name: "Together".to_string(),
+                  args: vec![Expr::FunctionCall {
+                    name: "Plus".to_string(),
+                    args: vec![
+                      dt.clone(),
+                      Expr::FunctionCall {
+                        name: "Times".to_string(),
+                        args: vec![
+                          Expr::Integer(-1),
+                          Expr::FunctionCall {
+                            name: "Sin".to_string(),
+                            args: vec![dt].into(),
+                          },
+                        ]
+                        .into(),
+                      },
+                    ]
+                    .into(),
+                  }]
+                  .into(),
+                },
+              ]
+              .into(),
+            }),
+            right: Box::new(Expr::Integer(2)),
+          }
+        };
+        crate::evaluator::evaluate_expr_to_expr(&area)
       }
       // Circle has no area (it's 1D)
       "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
@@ -10233,6 +10512,107 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
       // A SphericalShell is centered at its center argument.
       "SphericalShell" if spherical_shell_radii(args).is_some() => {
         crate::evaluator::evaluate_expr_to_expr(&args[0].clone())
+      }
+      // An unbounded half-space has no centroid: a list of Indeterminate.
+      "HalfSpace" if half_space_parts(args).is_some() => {
+        let (normal, _) = half_space_parts(args).unwrap();
+        Ok(Expr::List(
+          vec![Expr::Identifier("Indeterminate".to_string()); normal.len()]
+            .into(),
+        ))
+      }
+      // DiskSegment — the segment centroid lies on the angular bisector
+      // at distance 4 r Sin[Δθ/2]^3 / (3 (Δθ - Sin[Δθ])) from the center
+      // (each axis scaled by its semiaxis for the elliptical case).
+      "DiskSegment"
+        if disk_segment_parts(args).is_some_and(|(.., d)| d > 1e-12) =>
+      {
+        let (c, rx, ry, th1, th2, _) = disk_segment_parts(args).unwrap();
+        let dt = disk_segment_dtheta(&th1, &th2)?;
+        let mid = Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![th1, th2].into(),
+          }),
+          right: Box::new(Expr::Integer(2)),
+        };
+        let half_dt = Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(dt.clone()),
+          right: Box::new(Expr::Integer(2)),
+        };
+        // Unit-circle offset 4 Sin[Δθ/2]^3 / (3 (Δθ - Sin[Δθ])).
+        let offset = Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(4),
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Sin".to_string(),
+                    args: vec![half_dt].into(),
+                  },
+                  Expr::Integer(3),
+                ]
+                .into(),
+              },
+            ]
+            .into(),
+          }),
+          right: Box::new(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(3),
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  dt.clone(),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![
+                      Expr::Integer(-1),
+                      Expr::FunctionCall {
+                        name: "Sin".to_string(),
+                        args: vec![dt].into(),
+                      },
+                    ]
+                    .into(),
+                  },
+                ]
+                .into(),
+              },
+            ]
+            .into(),
+          }),
+        };
+        let component =
+          |center: &Expr, semi: &Expr, trig: &str| Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              center.clone(),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  semi.clone(),
+                  offset.clone(),
+                  Expr::FunctionCall {
+                    name: trig.to_string(),
+                    args: vec![mid.clone()].into(),
+                  },
+                ]
+                .into(),
+              },
+            ]
+            .into(),
+          };
+        crate::evaluator::evaluate_expr_to_expr(&Expr::List(
+          vec![component(&c[0], &rx, "Cos"), component(&c[1], &ry, "Sin")]
+            .into(),
+        ))
       }
       // A CapsuleShape is centered at the midpoint of its axis.
       "CapsuleShape" if capsule_height_sq_radius(args).is_some() => {
@@ -11106,6 +11486,44 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
   };
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // DiskSegment (circular only) — chord + arc:
+      // 2 r Sin[Δθ/2] + r Δθ. Elliptical segments need elliptic
+      // integrals and stay unevaluated.
+      "DiskSegment" => {
+        let Some((_, rx, _ry, th1, th2, d)) = disk_segment_parts(args) else {
+          return unevaluated();
+        };
+        // Elliptical case: the radius argument is a list.
+        if matches!(&args[1], Expr::List(_)) || d < 0.0 {
+          return unevaluated();
+        }
+        let dt = disk_segment_dtheta(&th1, &th2)?;
+        let half_dt = Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(dt.clone()),
+          right: Box::new(Expr::Integer(2)),
+        };
+        let chord = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(2),
+            rx.clone(),
+            Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: vec![half_dt].into(),
+            },
+          ]
+          .into(),
+        };
+        let arc = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![rx, dt].into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![chord, arc].into(),
+        })
+      }
       // Disk[{x, y}, r] -> 2*Pi*r, Disk[] -> 2*Pi
       "Disk" => {
         if args.is_empty() || args.len() == 1 {
