@@ -7030,6 +7030,63 @@ mod solve_periodic_bounded {
        Element[C[1], Integers]]}}"
     );
   }
+
+  // A |rhs| > 1 for Sin/Cos still solves symbolically via ArcSin/ArcCos (the
+  // inverse is complex-valued), matching wolframscript rather than staying
+  // unevaluated.
+  #[test]
+  fn cos_out_of_range_symbolic() {
+    assert_eq!(
+      interpret("Solve[Cos[x] == 2, x]").unwrap(),
+      "{{x -> ConditionalExpression[-ArcCos[2] + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[ArcCos[2] + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  #[test]
+  fn cos_out_of_range_rational() {
+    assert_eq!(
+      interpret("Solve[Cos[x] == 3/2, x]").unwrap(),
+      "{{x -> ConditionalExpression[-ArcCos[3/2] + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[ArcCos[3/2] + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  #[test]
+  fn sin_out_of_range_symbolic() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == 3, x]").unwrap(),
+      "{{x -> ConditionalExpression[Pi - ArcSin[3] + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[ArcSin[3] + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  // For a symbolic ArcSin right-hand side wolframscript lists the
+  // `Pi - ArcSin[c]` branch first; when it simplifies to a multiple of Pi the
+  // pair is in ascending value order instead.
+  #[test]
+  fn sin_symbolic_rhs_branch_order() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == 1/3, x]").unwrap(),
+      "{{x -> ConditionalExpression[Pi - ArcSin[1/3] + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[ArcSin[1/3] + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  #[test]
+  fn sin_special_rhs_ascending_order() {
+    // Simplifies to Pi/6 and 5*Pi/6 → ascending order.
+    assert_eq!(
+      interpret("Solve[Sin[x] == 1/2, x]").unwrap(),
+      "{{x -> ConditionalExpression[Pi/6 + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[(5*Pi)/6 + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
 }
 
 mod solve_always {

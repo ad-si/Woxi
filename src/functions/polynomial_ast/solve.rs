@@ -2903,12 +2903,11 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     _ => None,
   };
   if rhs_special.is_none() {
-    // General case: rhs must be a numeric constant, and within [-1, 1] for
-    // Sin/Cos (where the real inverse exists).
-    let c = crate::functions::math_ast::try_eval_to_f64(rhs)?;
-    if matches!(trig_name, "Sin" | "Cos") && c.abs() > 1.0 {
-      return None;
-    }
+    // General case: rhs must be a numeric constant. A magnitude > 1 for
+    // Sin/Cos is still solved symbolically via ArcSin/ArcCos (the inverse is
+    // complex-valued), matching wolframscript's ConditionalExpression form —
+    // e.g. Solve[Cos[x] == 2, x] -> ±ArcCos[2] + 2*Pi*C[1].
+    let _c = crate::functions::math_ast::try_eval_to_f64(rhs)?;
   }
 
   let var_expr = Expr::Identifier(var.to_string());
@@ -3020,10 +3019,19 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     // Sin; -ArcCos[c] + 2πC, ArcCos[c] + 2πC for Cos; ArcTan[c] + πC for Tan.
     ("Sin", None) => {
       let a = inverse("ArcSin");
-      vec![
-        plus(a.clone(), two_pi_c1.clone()),
-        plus(eval(plus(pi.clone(), negate(a))), two_pi_c1.clone()),
-      ]
+      let arcsin_sol = plus(a.clone(), two_pi_c1.clone());
+      let pi_minus_sol =
+        plus(eval(plus(pi.clone(), negate(a.clone()))), two_pi_c1.clone());
+      // wolframscript orders the two branches by canonical form: when
+      // `ArcSin[c]` stays symbolic (|c| is not a special value) it lists
+      // `Pi - ArcSin[c]` first; when it simplifies to a concrete multiple of Pi
+      // the pair is in ascending value order (`ArcSin[c]` first, since
+      // `ArcSin[c] < Pi - ArcSin[c]` for every real c).
+      if matches!(&a, Expr::FunctionCall { name, .. } if name == "ArcSin") {
+        vec![pi_minus_sol, arcsin_sol]
+      } else {
+        vec![arcsin_sol, pi_minus_sol]
+      }
     }
     ("Cos", None) => {
       let a = inverse("ArcCos");
