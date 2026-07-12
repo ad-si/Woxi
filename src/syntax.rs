@@ -10150,6 +10150,16 @@ fn negate_neg_numeric_coeff(e: &Expr) -> Option<Expr> {
 }
 
 pub fn expr_to_input_form(expr: &Expr) -> String {
+  // Grow the stack when running low so rendering a deeply nested expression
+  // (e.g. the script-mode display of Nest[f, x, 500], or FullForm of it) does
+  // not overflow. The recursion re-enters this public entry, so every level is
+  // checked. Mirrors the guard on format_expr / evaluate_expr_to_expr.
+  stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
+    expr_to_input_form_impl(expr)
+  })
+}
+
+fn expr_to_input_form_impl(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
   match expr {
     Expr::String(s) => {

@@ -3700,6 +3700,26 @@ mod symbolic_equal {
       "True"
     );
   }
+
+  // Rendering a deeply nested result — the plain script-mode display, FullForm,
+  // and a ReplaceAll result — must not overflow the stack. Regression: the SVG
+  // typesetting pre-pass and expr_to_input_form recursed unbounded.
+  #[test]
+  fn deeply_nested_render_no_overflow() {
+    assert_eq!(interpret("Nest[f, x, 3]").unwrap(), "f[f[f[x]]]");
+    // Depth 600 result renders as f[f[...f[x]...]]: each level is "f[" + "]"
+    // (3 chars) plus the single "x".
+    let out = interpret("Nest[f, x, 600]").unwrap();
+    assert_eq!(out.len(), 600 * 3 + 1);
+    assert!(out.starts_with("f[f[f["));
+    // FullForm of a deep expression renders without overflow.
+    let ff = interpret("FullForm[Nest[f, x, 600]]").unwrap();
+    assert!(ff.contains("f[f["));
+    // Stripping the outer f via ReplaceAll then rendering the result.
+    let stripped =
+      interpret("ReplaceAll[Nest[f, x, 600], f[a_] -> a]").unwrap();
+    assert_eq!(stripped.len(), 599 * 3 + 1);
+  }
 }
 
 mod solve {

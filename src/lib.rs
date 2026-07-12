@@ -3091,30 +3091,47 @@ const OUTPUT_SVG_MAX_TOKENS: usize = 20_000;
 /// Count atomic tokens in `expr`, stopping early once `budget` is
 /// exhausted. Returns true when the expression is larger than the budget.
 fn expr_exceeds_token_budget(expr: &syntax::Expr, budget: &mut usize) -> bool {
+  expr_exceeds_token_budget_depth(expr, budget, 0)
+}
+
+/// Deeply-nested results (e.g. `Nest[f, x, 500]`) are treated as exceeding the
+/// budget once they pass `MAX_SVG_DEPTH`. This both bounds this counter's own
+/// recursion and makes `generate_output_svg` skip typesetting expressions too
+/// deep for the (unbounded-recursion) box renderer — which would otherwise
+/// overflow the stack.
+fn expr_exceeds_token_budget_depth(
+  expr: &syntax::Expr,
+  budget: &mut usize,
+  depth: usize,
+) -> bool {
   use syntax::Expr;
-  if *budget == 0 {
+  const MAX_SVG_DEPTH: usize = 256;
+  if *budget == 0 || depth > MAX_SVG_DEPTH {
     return true;
   }
+  let d = depth + 1;
   match expr {
-    Expr::List(items) => {
-      items.iter().any(|e| expr_exceeds_token_budget(e, budget))
-    }
+    Expr::List(items) => items
+      .iter()
+      .any(|e| expr_exceeds_token_budget_depth(e, budget, d)),
     Expr::FunctionCall { args, .. } => {
       *budget = budget.saturating_sub(1);
-      args.iter().any(|e| expr_exceeds_token_budget(e, budget))
+      args
+        .iter()
+        .any(|e| expr_exceeds_token_budget_depth(e, budget, d))
     }
     Expr::Association(pairs) => pairs.iter().any(|(k, v)| {
-      expr_exceeds_token_budget(k, budget)
-        || expr_exceeds_token_budget(v, budget)
+      expr_exceeds_token_budget_depth(k, budget, d)
+        || expr_exceeds_token_budget_depth(v, budget, d)
     }),
     Expr::BinaryOp { left, right, .. } => {
       *budget = budget.saturating_sub(1);
-      expr_exceeds_token_budget(left, budget)
-        || expr_exceeds_token_budget(right, budget)
+      expr_exceeds_token_budget_depth(left, budget, d)
+        || expr_exceeds_token_budget_depth(right, budget, d)
     }
     Expr::UnaryOp { operand, .. } => {
       *budget = budget.saturating_sub(1);
-      expr_exceeds_token_budget(operand, budget)
+      expr_exceeds_token_budget_depth(operand, budget, d)
     }
     _ => {
       *budget = budget.saturating_sub(1);
