@@ -67,6 +67,35 @@ mod dot {
     assert_eq!(interpret("a . b").unwrap(), "a . b");
   }
 
+  // Dot is variadic: Dot[x] returns x; Dot[a, b, c, …] chains pairwise dots
+  // left-to-right (a.b.c = (a.b).c), matching wolframscript.
+  #[test]
+  fn dot_single_argument_returns_argument() {
+    assert_eq!(interpret("Dot[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn dot_three_matrices_and_vector() {
+    assert_eq!(
+      interpret("Dot[{{1, 0}, {0, 1}}, {{1, 2}, {3, 4}}, {5, 6}]").unwrap(),
+      "{17, 39}"
+    );
+  }
+
+  #[test]
+  fn dot_three_matrices() {
+    assert_eq!(
+      interpret("Dot[{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}, {{1, 0}, {0, 1}}]")
+        .unwrap(),
+      "{{19, 22}, {43, 50}}"
+    );
+  }
+
+  #[test]
+  fn dot_multiple_symbolic_chains() {
+    assert_eq!(interpret("Dot[a, b, c]").unwrap(), "a . b . c");
+  }
+
   // A SparseArray operand is densified so Dot behaves like the dense case.
   #[test]
   fn sparse_matrix_dot_vector() {

@@ -378,7 +378,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     // the first arg is non-image.
     "DominantColors" => Some((1, 4)),
     "ArrayDot" => Some((3, 3)),
-    "Dot" => Some((2, 2)),
+    "Dot" => Some((1, usize::MAX)),
     "DotProduct" => Some((2, 3)),
     "Downsample" => Some((2, 3)),
     "Drop" => Some((2, 3)),

@@ -44,6 +44,28 @@ pub fn dispatch_linear_algebra_functions(
     "Dot" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::dot_ast(args));
     }
+    // Dot[x] returns its single argument unchanged; Dot[a, b, c, …] chains
+    // pairwise dots left-to-right (a.b.c = (a.b).c), matching wolframscript.
+    "Dot" if args.len() == 1 => {
+      return Some(Ok(args[0].clone()));
+    }
+    "Dot" if args.len() >= 3 => {
+      let mut acc =
+        match crate::functions::linear_algebra_ast::dot_ast(&args[..2]) {
+          Ok(v) => v,
+          e => return Some(e),
+        };
+      for next in &args[2..] {
+        acc = match crate::functions::linear_algebra_ast::dot_ast(&[
+          acc,
+          next.clone(),
+        ]) {
+          Ok(v) => v,
+          e => return Some(e),
+        };
+      }
+      return Some(Ok(acc));
+    }
     "ArrayDot" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::array_dot_ast(args));
     }
