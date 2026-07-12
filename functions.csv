@@ -2591,7 +2591,7 @@ CantorMesh,Create a 1D or 2D Cantor set mesh at a given level of iteration,✅,p
 Capitalize,Capitalizes letters in a string (first word or AllWords/FirstWord/LongWords),✅,pure,10.1,2650
 GeoCenter,,🚫,,10.0,2650
 HeaderLines,option for header lines in imports,✅,Symbolic,10.0,2650
-IntersectingQ,Test whether two lists share any element,✅,none,10.0,2650
+IntersectingQ,Test whether two lists share any element,✅,pure,10.0,2650
 LatticeReduce,LLL lattice basis reduction,✅,pure,1.0,2650
 Splice,Splice a list into an enclosing list,✅,1,12.1,2650
 StateFeedbackGains,Requires control systems framework (StateSpaceModel),🚫,None,8.0,2650
@@ -2774,7 +2774,7 @@ TransposeLayer,,🚫,,11.1,2828
 ContainsOnly,Tests if a list contains only specified elements,✅,pure,10.2,2837
 CoordinateChartData,,🚫,,9.0,2837
 Dated,Symbolic wrapper associating a value with a date,✅,pure,11.0,2837
-DisjointQ,True if lists share no common elements,✅,1,10.0,2837
+DisjointQ,True if lists share no common elements,✅,pure,10.0,2837
 FormObject,,🚫,,10.0,2837
 ImageCorrespondingPoints,,🚫,,8.0,2837
 PositiveSemidefiniteMatrixQ,Test whether a matrix is positive semidefinite,✅,none,10.0,2837

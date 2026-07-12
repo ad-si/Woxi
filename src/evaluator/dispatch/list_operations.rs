@@ -1428,6 +1428,32 @@ pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // The set-membership predicates compare associations by their VALUES as sets
+  // (like SubsetQ/DisjointQ), and either argument may be a list or association.
+  // Convert association operands to their value lists and retry.
+  if matches!(
+    name,
+    "ContainsAll"
+      | "ContainsAny"
+      | "ContainsNone"
+      | "ContainsOnly"
+      | "ContainsExactly"
+  ) && (args.len() == 2 || args.len() == 3)
+    && args[..2].iter().any(|a| matches!(a, Expr::Association(_)))
+  {
+    let converted: Vec<Expr> = args
+      .iter()
+      .enumerate()
+      .map(|(i, a)| match a {
+        Expr::Association(pairs) if i < 2 => {
+          Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect())
+        }
+        other => other.clone(),
+      })
+      .collect();
+    return dispatch_list_operations(name, &converted);
+  }
+
   match name {
     "Map" | "ParallelMap" if args.len() == 2 => {
       return Some(list_helpers_ast::map_ast(&args[0], &args[1]));

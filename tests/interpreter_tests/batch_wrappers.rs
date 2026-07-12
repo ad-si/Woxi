@@ -5608,6 +5608,22 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // On associations DisjointQ/IntersectingQ compare the VALUES as sets; either
+  // argument may be a list or an association.
+  #[test]
+  fn intersecting_disjoint_on_associations() {
+    assert_eq!(
+      interpret("DisjointQ[<|a -> 1, b -> 2|>, <|c -> 3, d -> 4|>]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("IntersectingQ[<|a -> 1, b -> 2|>, <|c -> 2|>]").unwrap(),
+      "True"
+    );
+    // Mixed association/list, compared by value.
+    assert_eq!(interpret("DisjointQ[<|a -> 1|>, {2, 3}]").unwrap(), "True");
+  }
+
   // AlternatingFactorial
   #[test]
   fn alternating_factorial_0() {

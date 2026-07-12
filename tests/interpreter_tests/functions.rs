@@ -890,6 +890,32 @@ mod contains_all {
       "{{1, 2}}"
     );
   }
+
+  // On associations the Contains* family compares the VALUES as sets; either
+  // argument may be a list or an association.
+  #[test]
+  fn contains_family_on_associations() {
+    assert_eq!(
+      interpret("ContainsAll[<|a -> 1, b -> 2|>, <|c -> 1|>]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsAny[<|a -> 1|>, <|b -> 1, c -> 5|>]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsExactly[<|a -> 1, b -> 2|>, {2, 1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsNone[<|a -> 1, b -> 2|>, {2, 3}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("ContainsOnly[<|a -> 1, b -> 5|>, {1, 2, 3}]").unwrap(),
+      "False"
+    );
+  }
 }
 
 mod missing_q {

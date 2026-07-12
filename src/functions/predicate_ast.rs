@@ -2486,6 +2486,18 @@ fn head_name(e: &Expr) -> String {
 /// the unevaluated call; matching nonatomic heads (List or any common
 /// head) yield their elements.
 #[allow(clippy::type_complexity)]
+/// Set-style predicates (SubsetQ, DisjointQ, IntersectingQ) compare the VALUES
+/// of an association as a set, so convert an association argument to its list
+/// of values and leave anything else untouched.
+fn assoc_to_value_list(e: &Expr) -> Expr {
+  match e {
+    Expr::Association(pairs) => {
+      Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect())
+    }
+    other => other.clone(),
+  }
+}
+
 fn same_head_elements<'a>(
   fname: &str,
   args: &'a [Expr],
@@ -2542,15 +2554,8 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // On associations, SubsetQ compares the VALUES as sets, and either argument
   // may be a list or an association (`SubsetQ[<|a->1,b->2|>, <|a->1|>]` is True).
   // Convert associations to their value lists so the shared logic applies.
-  let assoc_to_values = |e: &Expr| -> Expr {
-    match e {
-      Expr::Association(pairs) => {
-        Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect())
-      }
-      other => other.clone(),
-    }
-  };
-  let pair_args = [assoc_to_values(&args[0]), assoc_to_values(&args[1])];
+  let pair_args =
+    [assoc_to_value_list(&args[0]), assoc_to_value_list(&args[1])];
   let (superset, subset) = match same_head_elements("SubsetQ", &pair_args) {
     Ok(Some(pair)) => pair,
     Ok(None) => {
@@ -2647,7 +2652,11 @@ fn intersecting_or_disjoint(
   } else {
     None
   };
-  let (a, b) = match same_head_elements(fname, &args[..2]) {
+  // Associations are compared by their VALUES as sets (like SubsetQ), and
+  // either argument may be a list or an association.
+  let pair_args =
+    [assoc_to_value_list(&args[0]), assoc_to_value_list(&args[1])];
+  let (a, b) = match same_head_elements(fname, &pair_args) {
     Ok(Some(pair)) => pair,
     Ok(None) => {
       return Ok(Expr::FunctionCall {
@@ -2655,7 +2664,12 @@ fn intersecting_or_disjoint(
         args: args.to_vec().into(),
       });
     }
-    Err(unevaluated) => return Ok(unevaluated),
+    Err(_) => {
+      return Ok(Expr::FunctionCall {
+        name: fname.to_string(),
+        args: args.to_vec().into(),
+      });
+    }
   };
   let has_common = if let Some(test) = same_test {
     // A common element exists iff some pair satisfies test[x, y] (x from the
