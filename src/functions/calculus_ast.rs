@@ -15924,8 +15924,13 @@ fn adaptive_simpson(
   // — for an integrand that never meets the tolerance (e.g. the oscillatory
   // Sin[x]/x transformed onto a finite interval) this never terminates in
   // practice. Cap the total number of subdivision nodes so NIntegrate always
-  // returns in bounded time, falling back to the current estimate.
-  let budget = std::cell::Cell::new(50_000u64);
+  // returns in bounded time, falling back to the current estimate. Convergent
+  // integrands stop at `error.abs() < tol` long before this ceiling, so it only
+  // bounds the divergent fallback; keep it small enough that even in a debug
+  // build the fallback returns in ~1s (each node re-interprets the integrand
+  // expression, which is slow unoptimized) rather than brushing the test
+  // harness's per-test timeout under parallel CI load.
+  let budget = std::cell::Cell::new(10_000u64);
   adaptive_simpson_rec(f, a, b, tol, whole, fa, fm, fb, max_depth, &budget)
 }
 
