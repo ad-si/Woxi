@@ -860,6 +860,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Handle TimeObject + Quantity[n, time-unit]: shift the time of day.
+  if let Some(result) = try_time_object_plus_quantity(args) {
+    return result;
+  }
+
   // Combine multiple `SeriesData[var, x0, …]` summands sharing the same
   // (var, x0) into a single SeriesData. Truncates to the minimum order.
   if let Some(result) = try_series_data_plus(args)? {
@@ -10986,6 +10991,140 @@ fn try_date_object_subtraction(
 }
 
 /// Adds one or more calendar-unit `Quantity` time spans to a single
+/// `TimeObject[{h, m, s}, ...] + Quantity[n, unit]` shifts the time of day by
+/// the given duration (Seconds/Minutes/Hours/Days), wrapping around a 24-hour
+/// day. Subtraction arrives as a negated quantity. The result keeps the input's
+/// granularity (from its field count) and carries a `0.` time-zone field, e.g.
+/// `TimeObject[{14, 30, 0}, ...] + Quantity[90, "Minutes"]` ->
+/// `TimeObject[{16, 0, 0}, Instant, 0.]`.
+fn try_time_object_plus_quantity(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() < 2 {
+    return None;
+  }
+  // (total seconds since midnight, number of fields) for a TimeObject.
+  fn time_object_seconds(e: &Expr) -> Option<(f64, usize)> {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "TimeObject"
+      && !args.is_empty()
+      && let Expr::List(items) = &args[0]
+      && (1..=3).contains(&items.len())
+    {
+      let mut comps = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        match it {
+          Expr::Integer(n) => comps.push(*n as f64),
+          Expr::Real(r) => comps.push(*r),
+          _ => return None,
+        }
+      }
+      let total = comps.first().copied().unwrap_or(0.0) * 3600.0
+        + comps.get(1).copied().unwrap_or(0.0) * 60.0
+        + comps.get(2).copied().unwrap_or(0.0);
+      return Some((total, comps.len()));
+    }
+    None
+  }
+  // A time-valued Quantity (possibly negated via Times[-1, ...]) in seconds.
+  fn time_quantity_seconds(e: &Expr) -> Option<f64> {
+    if let Expr::FunctionCall { name, args: ta } = e
+      && name == "Times"
+      && ta.len() == 2
+      && matches!(&ta[0], Expr::Integer(-1))
+    {
+      return time_quantity_seconds(&ta[1]).map(|s| -s);
+    }
+    if let Expr::FunctionCall { name, args: qa } = e
+      && name == "Quantity"
+      && qa.len() == 2
+      && let Expr::String(unit) = &qa[1]
+    {
+      let val = match &qa[0] {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(r) => *r,
+        _ => return None,
+      };
+      let factor = match unit.as_str() {
+        "Seconds" | "Second" => 1.0,
+        "Minutes" | "Minute" => 60.0,
+        "Hours" | "Hour" => 3600.0,
+        "Days" | "Day" => 86400.0,
+        _ => return None,
+      };
+      return Some(val * factor);
+    }
+    None
+  }
+
+  let mut to_idx = None;
+  for (i, a) in args.iter().enumerate() {
+    if matches!(a, Expr::FunctionCall { name, .. } if name == "TimeObject") {
+      if to_idx.is_some() {
+        return None; // more than one TimeObject
+      }
+      to_idx = Some(i);
+    }
+  }
+  let to_idx = to_idx?;
+  let (base, fields) = time_object_seconds(&args[to_idx])?;
+  let mut delta = 0.0;
+  for (i, a) in args.iter().enumerate() {
+    if i == to_idx {
+      continue;
+    }
+    delta += time_quantity_seconds(a)?; // any non-time summand aborts
+  }
+  let total = (base + delta).rem_euclid(86400.0);
+
+  let field = |v: f64| -> Expr {
+    if v.fract() == 0.0 {
+      Expr::Integer(v as i128)
+    } else {
+      Expr::Real(v)
+    }
+  };
+  let (comps, granularity): (Vec<Expr>, &str) = match fields {
+    1 => (
+      vec![Expr::Integer((total / 3600.0).floor() as i128)],
+      "Hour",
+    ),
+    2 => {
+      let tm = (total / 60.0).floor();
+      let h = (tm / 60.0).floor();
+      (
+        vec![
+          Expr::Integer(h as i128),
+          Expr::Integer((tm - h * 60.0) as i128),
+        ],
+        "Minute",
+      )
+    }
+    _ => {
+      let h = (total / 3600.0).floor();
+      let rem = total - h * 3600.0;
+      let m = (rem / 60.0).floor();
+      (
+        vec![
+          Expr::Integer(h as i128),
+          Expr::Integer(m as i128),
+          field(rem - m * 60.0),
+        ],
+        "Instant",
+      )
+    }
+  };
+  Some(Ok(Expr::FunctionCall {
+    name: "TimeObject".to_string(),
+    args: vec![
+      Expr::List(comps.into()),
+      Expr::String(granularity.to_string()),
+      Expr::Real(0.0),
+    ]
+    .into(),
+  }))
+}
+
 /// `DateObject`: e.g. `DateObject[{2024, 7, 4}] + Quantity[1, "Days"]` shifts
 /// the date to July 5. Subtraction arrives here as a negated quantity
 /// (`Quantity[-n, unit]`). Only the calendar units Days/Weeks/Months/Years are

@@ -1588,6 +1588,35 @@ mod time_object {
     );
   }
 
+  // TimeObject + Quantity[duration] shifts the time of day (wrapping around a
+  // 24h day); the result carries a 0. time-zone field.
+  #[test]
+  fn time_object_plus_quantity() {
+    assert_case(
+      r#"TimeObject[{14, 30, 0}] + Quantity[90, "Minutes"]"#,
+      r#"TimeObject[{16, 0, 0}, Instant, 0.]"#,
+    );
+    // Wraps past midnight.
+    assert_case(
+      r#"TimeObject[{23, 30, 0}] + Quantity[60, "Minutes"]"#,
+      r#"TimeObject[{0, 30, 0}, Instant, 0.]"#,
+    );
+    // Subtraction and commutativity.
+    assert_case(
+      r#"TimeObject[{10, 0, 0}] - Quantity[2, "Hours"]"#,
+      r#"TimeObject[{8, 0, 0}, Instant, 0.]"#,
+    );
+    assert_case(
+      r#"Quantity[15, "Minutes"] + TimeObject[{9, 0, 0}]"#,
+      r#"TimeObject[{9, 15, 0}, Instant, 0.]"#,
+    );
+    // Minute granularity is preserved.
+    assert_case(
+      r#"TimeObject[{14, 30}] + Quantity[1, "Hours"]"#,
+      r#"TimeObject[{15, 30}, Minute, 0.]"#,
+    );
+  }
+
   #[test]
   fn time_object_keeps_fractional_seconds() {
     assert_case(
