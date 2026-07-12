@@ -4892,6 +4892,34 @@ mod simplify_assumptions {
   fn assuming_eq_does_not_substitute_into_bare_power() {
     assert_eq!(interpret("Assuming[n == 1, x^n]").unwrap(), "x^n");
   }
+
+  // Under an inequality assumption `n > 0`, the lower-limit boundary term
+  // `0^(1 + n)` resolves to 0 (Re[1 + n] > 0), so the symbolic power integral
+  // simplifies to `1/(1 + n)` — matching wolframscript. Both the `Assuming`
+  // wrapper and the `Assumptions ->` option must honour this.
+  #[test]
+  fn assuming_positive_integrate_x_n() {
+    assert_eq!(
+      interpret("Assuming[n > 0, Integrate[x^n, {x, 0, 1}]]").unwrap(),
+      "(1 + n)^(-1)"
+    );
+  }
+
+  #[test]
+  fn integrate_x_n_assumptions_option_positive() {
+    assert_eq!(
+      interpret("Integrate[x^n, {x, 0, 1}, Assumptions -> n > 0]").unwrap(),
+      "(1 + n)^(-1)"
+    );
+  }
+
+  #[test]
+  fn assuming_positive_integrate_x_a_upper_two() {
+    assert_eq!(
+      interpret("Assuming[a > 0, Integrate[x^a, {x, 0, 2}]]").unwrap(),
+      "2^(1 + a)/(1 + a)"
+    );
+  }
 }
 
 // Regression: Simplify should collapse nested continued-fraction-like
@@ -8254,6 +8282,22 @@ mod refine {
         .unwrap(),
       "x"
     );
+  }
+
+  // 0^k resolves to 0 when the exponent is provably positive (Re[k] > 0).
+  #[test]
+  fn refine_zero_to_positive_power() {
+    assert_eq!(interpret("Refine[0^k, k > 0]").unwrap(), "0");
+    assert_eq!(interpret("Refine[0^(1 + n), n > 0]").unwrap(), "0");
+    assert_eq!(interpret("Simplify[0^(1 + n), n > 0]").unwrap(), "0");
+  }
+
+  // Without a positivity guarantee the power stays unevaluated: `n > 0` does
+  // not force `n - 1 > 0`, and with no assumption `0^(1 + n)` is undetermined.
+  #[test]
+  fn refine_zero_power_undetermined_stays() {
+    assert_eq!(interpret("Refine[0^(1 + n)]").unwrap(), "0^(1 + n)");
+    assert_eq!(interpret("Refine[0^(n - 1), n > 0]").unwrap(), "0^(-1 + n)");
   }
 
   #[test]

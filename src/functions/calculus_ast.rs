@@ -675,6 +675,13 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         left: Box::new(at_hi),
         right: Box::new(at_lo),
       });
+      // Resolve boundary terms like `0^(1 + n)` using any active assumptions
+      // (e.g. from an enclosing `Assuming[n > 0, …]` / the `Assumptions` option):
+      // `0^k -> 0` when `k` is provably positive. A no-op when no assumptions
+      // are active. Matches wolframscript's Integrate[x^n, {x, 0, 1}] under
+      // `n > 0` giving `1/(1 + n)` rather than leaving the `0^(1+n)` term.
+      let result =
+        crate::functions::polynomial_ast::apply_active_assumptions(&result);
       let result =
         crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result);
       // Divergent improper integral: if at least one bound is infinite and

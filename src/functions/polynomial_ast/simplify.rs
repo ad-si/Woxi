@@ -998,6 +998,39 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
     }
 
+    // 0^k → 0 when the exponent is provably positive (Re[k] > 0).
+    // e.g. Refine[0^(1 + n), n > 0] = 0, which lets Integrate[x^n, {x, 0, 1}]
+    // under `n > 0` drop the lower-limit term. Matches wolframscript.
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(0)) => {
+      let refined_exp = refine_expr(right, info, assumption);
+      if is_known_positive(&refined_exp, info) {
+        return Expr::Integer(0);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Integer(0)),
+        right: Box::new(refined_exp),
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(0)) =>
+    {
+      let refined_exp = refine_expr(&args[1], info, assumption);
+      if is_known_positive(&refined_exp, info) {
+        return Expr::Integer(0);
+      }
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![Expr::Integer(0), refined_exp].into(),
+      }
+    }
+
     // Abs[u]^n → u^n when n is a positive even integer and u is real.
     // For real u, |u|^2 = u^2 (and any even power). Odd powers stay |u|^n.
     // e.g. Simplify[Abs[x]^2, x ∈ Reals] = x^2, Abs[2 x]^2 = 4 x^2.
@@ -4816,7 +4849,7 @@ fn current_assumptions() -> Option<Expr> {
 /// `Simplify[expr, assum]`) to the given already-simplified expression by
 /// running it through `refine_expr`. Returns the original expression unchanged
 /// when no assumptions are active.
-fn apply_active_assumptions(expr: &Expr) -> Expr {
+pub(crate) fn apply_active_assumptions(expr: &Expr) -> Expr {
   if let Some(assumption_expr) = current_assumptions() {
     let info = extract_assumption_info(&assumption_expr);
     // Re-combine additive/multiplicative terms after refinement, so e.g.
