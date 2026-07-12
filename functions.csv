@@ -1338,7 +1338,7 @@ GeoDistance,Geodesic distance between two geo positions as a Quantity,✅,pure,7
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1.0,1353
 Signature,Sign of the permutation that canonically sorts the parts of any non-atomic expression (0 if any are equal),✅,pure,1.0,1353
 CForm,Format expression as C code,✅,pure,1.0,1354
-Permute,Permute elements of a list,✅,pure,8.0,1355
+Permute,Permute the elements of any expression by a permutation,✅,pure,8.0,1355
 Padding,Option specifying padding scheme for array and image operations,✅,pure,7.0,1357
 UnitVector,Generate a unit vector with a 1 at a specified position,✅,pure,6.0,1357
 DeleteFile,Delete a file from the filesystem,✅,effectful,2.0,1359

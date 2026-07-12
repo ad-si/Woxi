@@ -2176,8 +2176,24 @@ pub fn evaluate_function_call_ast_inner(
 
   // Permute[list, perm] — permute list elements
   if name == "Permute" && args.len() == 2 {
-    if let Expr::List(list) = &args[0] {
-      // Permute[list, {p1, p2, ...}] — permutation list form
+    // Permute operates on any non-atomic expression, not just Lists; the
+    // result keeps the original head (e.g. Permute[f[a,b,c], perm] -> f[...]).
+    let head_and_items: Option<(Option<&String>, &[Expr])> = match &args[0] {
+      Expr::List(list) => Some((None, list)),
+      Expr::FunctionCall { name: h, args: a } => Some((Some(h), a)),
+      _ => None,
+    };
+    if let Some((head, list)) = head_and_items {
+      let rebuild = |v: Vec<Expr>| -> Expr {
+        match head {
+          None => Expr::List(v.into()),
+          Some(h) => Expr::FunctionCall {
+            name: h.clone(),
+            args: v.into(),
+          },
+        }
+      };
+      // Permute[expr, {p1, p2, ...}] — permutation list form
       // Element at position i goes to position perm[i]
       if let Expr::List(perm) = &args[1] {
         if perm.len() != list.len() {
@@ -2204,9 +2220,9 @@ pub fn evaluate_function_call_ast_inner(
             });
           }
         }
-        return Ok(Expr::List(result.into()));
+        return Ok(rebuild(result));
       }
-      // Permute[list, Cycles[{...}]] — cycle notation
+      // Permute[expr, Cycles[{...}]] — cycle notation
       if let Expr::FunctionCall {
         name: cname,
         args: cargs,
@@ -2215,7 +2231,7 @@ pub fn evaluate_function_call_ast_inner(
         && cargs.len() == 1
         && let Expr::List(cycle_list) = &cargs[0]
       {
-        let mut result = list.clone();
+        let mut result = list.to_vec();
         for cycle in cycle_list {
           if let Expr::List(c) = cycle {
             let indices: Vec<usize> = c
@@ -2238,7 +2254,7 @@ pub fn evaluate_function_call_ast_inner(
             }
           }
         }
-        return Ok(Expr::List(result));
+        return Ok(rebuild(result));
       }
     }
     return Ok(Expr::FunctionCall {

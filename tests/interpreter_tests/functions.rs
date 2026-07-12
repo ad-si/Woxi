@@ -2905,6 +2905,27 @@ mod permute {
       "{a, b, c}"
     );
   }
+
+  // Permute operates on any head, not only Lists; the result keeps the head.
+  #[test]
+  fn non_list_head_cycles() {
+    assert_eq!(
+      interpret("Permute[f[a, b, c], Cycles[{{1, 2, 3}}]]").unwrap(),
+      "f[c, a, b]"
+    );
+    assert_eq!(
+      interpret("Permute[g[x, y, z], Cycles[{{1, 3}}]]").unwrap(),
+      "g[z, y, x]"
+    );
+  }
+
+  #[test]
+  fn non_list_head_list_form() {
+    assert_eq!(
+      interpret("Permute[f[a, b, c, d], {2, 3, 4, 1}]").unwrap(),
+      "f[d, a, b, c]"
+    );
+  }
 }
 
 mod delete_file {
