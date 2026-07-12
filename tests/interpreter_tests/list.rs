@@ -6833,6 +6833,45 @@ mod pick {
       "<|a -> 1, c -> 3|>"
     );
   }
+
+  // Pick operates on any head, not only Lists; the result keeps the first
+  // argument's head and the selector's own head is irrelevant.
+  #[test]
+  fn pick_non_list_head() {
+    assert_eq!(
+      interpret("Pick[f[1, 2, 3], f[True, False, True]]").unwrap(),
+      "f[1, 3]"
+    );
+    assert_eq!(
+      interpret("Pick[g[a, b, c, d], g[1, 0, 1, 0], 1]").unwrap(),
+      "g[a, c]"
+    );
+  }
+
+  #[test]
+  fn pick_mismatched_heads() {
+    // Only structure/length matter — the selector head need not match.
+    assert_eq!(
+      interpret("Pick[f[1, 2, 3], {True, False, True}]").unwrap(),
+      "f[1, 3]"
+    );
+    assert_eq!(
+      interpret("Pick[{1, 2, 3}, f[True, False, True]]").unwrap(),
+      "{1, 3}"
+    );
+    assert_eq!(
+      interpret("Pick[f[1, 2, 3], g[True, False, True]]").unwrap(),
+      "f[1, 3]"
+    );
+  }
+
+  #[test]
+  fn pick_non_list_head_nested() {
+    assert_eq!(
+      interpret("Pick[f[a, {b, c}, d], f[1, {1, 0}, 0], 1]").unwrap(),
+      "f[a, {b}]"
+    );
+  }
 }
 
 mod rest_nonlist {
