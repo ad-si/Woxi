@@ -46,6 +46,53 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::Association(results?))
     }
+    // Map over a rank-1 SparseArray applies f to each element while keeping the
+    // sparse structure: f is applied to every stored value and to the default
+    // value (Map[f, SparseArray[..]] -> SparseArray[.., f[default], {.., {f[v1],
+    // ..}}]), matching Wolfram. Without this, the generic head branch below would
+    // map f over the internal representation (Automatic, dims, ...) and corrupt
+    // it. Higher-rank arrays map over their (sub-array) rows, so we densify and
+    // map as a list — value-correct via Normal.
+    Expr::FunctionCall {
+      name,
+      args: sa_args,
+    } if name == "SparseArray" => {
+      let canonical =
+        crate::functions::list_helpers_ast::sparse_array_normalize_ast(
+          sa_args,
+        )?;
+      if let Expr::FunctionCall { name: cn, args: ca } = &canonical
+        && cn == "SparseArray"
+        && ca.len() == 4
+        && matches!(&ca[0], Expr::Identifier(s) if s == "Automatic")
+        && let Expr::List(dims) = &ca[1]
+        && dims.len() == 1
+        && let Expr::List(structure) = &ca[3]
+        && structure.len() == 3
+        && let Expr::List(values) = &structure[2]
+      {
+        let new_default = apply_func_ast(func, &ca[2])?;
+        let new_values: Result<Vec<Expr>, _> =
+          values.iter().map(|v| apply_func_ast(func, v)).collect();
+        let new_structure = Expr::List(
+          vec![
+            structure[0].clone(),
+            structure[1].clone(),
+            Expr::List(new_values?.into()),
+          ]
+          .into(),
+        );
+        return Ok(Expr::FunctionCall {
+          name: "SparseArray".to_string(),
+          args: vec![ca[0].clone(), ca[1].clone(), new_default, new_structure]
+            .into(),
+        });
+      }
+      // Rank >= 2 (or an unrecognized structure): densify and map as a list.
+      let dense =
+        crate::functions::list_helpers_ast::sparse_array_ast(sa_args)?;
+      map_ast(func, &dense)
+    }
     // Rational / Complex are atoms: Map at level 1 returns them unchanged.
     _ if crate::functions::predicate_ast::is_atomic_number(list) => {
       Ok(list.clone())

@@ -8862,6 +8862,38 @@ mod join_non_list {
     );
   }
 
+  // Map over a rank-1 SparseArray applies f to stored values and default,
+  // keeping the sparse structure.
+  #[test]
+  fn map_sparse_array_vector() {
+    assert_eq!(
+      interpret("Normal[Map[#^2 &, SparseArray[{1 -> 2, 2 -> 3}, 3]]]")
+        .unwrap(),
+      "{4, 9, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[Map[f, SparseArray[{1 -> 2, 2 -> 3}, 3]]]").unwrap(),
+      "{f[2], f[3], f[0]}"
+    );
+  }
+
+  // Map over a higher-rank SparseArray maps over its rows.
+  #[test]
+  fn map_sparse_array_matrix() {
+    assert_eq!(
+      interpret(
+        "Normal[Map[f, SparseArray[{{1, 1} -> 2, {2, 2} -> 3}, {2, 2}]]]"
+      )
+      .unwrap(),
+      "{f[{2, 0}], f[{0, 3}]}"
+    );
+    assert_eq!(
+      interpret("Map[Total, SparseArray[{{1, 1} -> 2, {2, 2} -> 3}, {2, 2}]]")
+        .unwrap(),
+      "{2, 3}"
+    );
+  }
+
   #[test]
   fn map_level_range() {
     assert_eq!(
