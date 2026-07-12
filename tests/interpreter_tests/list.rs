@@ -2428,6 +2428,32 @@ mod sort_atomic_normal {
 mod sort_canonical {
   use super::*;
 
+  // Compatible Quantities sort by their physical value, not structurally.
+  #[test]
+  fn sort_quantities_by_value() {
+    assert_eq!(
+      interpret(
+        r#"Sort[{Quantity[3, "Meters"], Quantity[100, "Centimeters"], Quantity[2, "Meters"]}]"#
+      )
+      .unwrap(),
+      "{Quantity[100, Centimeters], Quantity[2, Meters], Quantity[3, Meters]}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Sort[{Quantity[90, "Minutes"], Quantity[1, "Hours"], Quantity[30, "Minutes"]}]"#
+      )
+      .unwrap(),
+      "{Quantity[30, Minutes], Quantity[1, Hours], Quantity[90, Minutes]}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Ordering[{Quantity[3, "Meters"], Quantity[100, "Centimeters"], Quantity[2, "Meters"]}]"#
+      )
+      .unwrap(),
+      "{2, 3, 1}"
+    );
+  }
+
   #[test]
   fn sort_strings_case_insensitive() {
     assert_eq!(

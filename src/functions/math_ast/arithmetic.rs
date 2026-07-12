@@ -3707,6 +3707,15 @@ fn cross_shape_shared_denom_order(
 fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   use std::cmp::Ordering;
 
+  // Two compatible Quantities sort by their physical value (converting to a
+  // common unit), so Sort[{3 m, 100 cm, 2 m}] -> {100 cm, 2 m, 3 m}. A tie in
+  // value falls through to the structural comparison below.
+  if let Some(ord) = crate::functions::quantity_ast::try_quantity_compare(a, b)
+    && ord != Ordering::Equal
+  {
+    return ord;
+  }
+
   if let Some(ord) = cross_shape_shared_denom_order(a, b) {
     return ord;
   }

@@ -169,6 +169,15 @@ fn exact_real_cmp(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
 }
 
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // Two compatible Quantities sort by their physical value (converted to a
+  // common unit): Sort[{3 m, 100 cm, 2 m}] -> {100 cm, 2 m, 3 m}. A tie in
+  // value falls through to the structural comparison below.
+  if let Some(ord) = crate::functions::quantity_ast::try_quantity_compare(a, b)
+    && ord != std::cmp::Ordering::Equal
+  {
+    return ord;
+  }
+
   // Handle Infinity/-Infinity separately: they sort after all finite numbers
   let a_inf = is_infinity_expr(a);
   let b_inf = is_infinity_expr(b);
