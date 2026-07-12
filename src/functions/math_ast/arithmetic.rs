@@ -10203,6 +10203,9 @@ fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
 /// Around through it. None for functions without a smooth real derivative here.
 fn around_func_and_deriv(name: &str, a: f64) -> Option<(f64, f64)> {
   let v = match name {
+    // |a| with derivative Sign(a); at a == 0 the slope is 0 (Sign[0] == 0), so
+    // the uncertainty collapses: Abs[Around[0, δ]] -> Around[0, 0].
+    "Abs" | "RealAbs" => (a.abs(), if a == 0.0 { 0.0 } else { a.signum() }),
     "Sqrt" => (a.sqrt(), 0.5 / a.sqrt()),
     "Exp" => (a.exp(), a.exp()),
     "Log" => (a.ln(), 1.0 / a),

@@ -6949,6 +6949,24 @@ mod batch_inert_symbols_2 {
     );
   }
 
+  // Abs propagates via Sign: Abs[Around[a, d]] = Around[|a|, d] for a != 0.
+  #[test]
+  fn around_abs() {
+    assert_eq!(interpret("Abs[Around[-5, 1]]").unwrap(), "Around[5., 1.]");
+    assert_eq!(interpret("Abs[Around[5, 1]]").unwrap(), "Around[5., 1.]");
+    assert_eq!(
+      interpret("RealAbs[Around[-4, 1]]").unwrap(),
+      "Around[4., 1.]"
+    );
+    // At the origin Sign is 0, so the uncertainty collapses to a bare 0.
+    assert_eq!(interpret("Abs[Around[0, 2]]").unwrap(), "0.");
+    // A negative center flips the asymmetric uncertainty sides.
+    assert_eq!(
+      interpret("Abs[Around[-5, {1, 2}]]").unwrap(),
+      "Around[5., {2., 1.}]"
+    );
+  }
+
   // A zero (propagated or given) uncertainty collapses to the bare value.
   #[test]
   fn around_zero_uncertainty_collapses() {
