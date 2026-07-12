@@ -3027,7 +3027,7 @@ FindEquationalProof,,,,11.3,3094
 IndexGraph,Replace graph vertices with integer indices,✅,pure,8.0,3094
 MenuView,Menu view control (stays symbolic in script mode),✅,unevaluated,6.0,3094
 MinStableDistribution,Min-stable (GEV-min) distribution with shape-cased forms,✅,pure,8.0,3094
-NHoldAll,,,,3.0,3094
+NHoldAll,Attribute preventing N from numericizing any argument,✅,pure,3.0,3094
 Vee,Symbolic vee (logical or / join) operator with Unicode display,✅,pure,3.0,3094
 BinarySerialize,Serializes an expression to WXF binary bytes as a ByteArray,✅,pure,11.1,3108
 DatePattern,,,,6.0,3108
@@ -3261,7 +3261,7 @@ GoldenAngle,The golden angle constant Pi(3 - Sqrt[5]),✅,pure,10.2,3344
 GroupStabilizer,Pointwise stabilizer subgroup with canonical generators (named groups; forced PermutationGroup cases),✅,pure,8.0,3344
 InputStream,Input stream object,✅,effectful,2.0,3344
 JacobiCS,Jacobi elliptic function cs (cn/sn),✅,pure,1.0,3344
-NHoldRest,,,,3.0,3344
+NHoldRest,Attribute preventing N from numericizing all but the first argument,✅,pure,3.0,3344
 PageFooters,,🚫,,4.0,3344
 ProbitModelFit,,,,7.0,3344
 RootIntervals,,,,6.0,3344
@@ -3638,7 +3638,7 @@ LongLeftRightArrow,,,,3.0,3737
 ManagedLibraryExpressionID,,,,10.0,3737
 MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
 MomentEvaluate,,,,8.0,3737
-NHoldFirst,,,,3.0,3737
+NHoldFirst,Attribute preventing N from numericizing the first argument,✅,pure,3.0,3737
 NumberMultiplier,,,,3.0,3737
 PrintableASCIIQ,Tests whether a string consists only of printable ASCII characters,✅,pure,10.1,3737
 StateOutputEstimator,,,,8.0,3737

@@ -5543,3 +5543,55 @@ mod cuboid_centroid {
     );
   }
 }
+
+// MomentOfInertia for polygons — exact signed fan decomposition.
+// wolframscript's MomentOfInertia is exact for polygons (its
+// RegionMoment is only machine-precision quadrature there, so that one
+// stays unevaluated). All outputs verified against wolframscript.
+mod polygon_moment_of_inertia {
+  use super::*;
+
+  #[test]
+  fn exact_polygon_inertia() {
+    // Non-convex pentagon about its centroid.
+    assert_eq!(
+      interpret(
+        "MomentOfInertia[Polygon[{{0, 0}, {2, 0}, {2, 2}, {1, 1}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "{{37/54, 0}, {0, 7/6}}"
+    );
+    assert_eq!(
+      interpret(
+        "MomentOfInertia[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], {0, 0}]"
+      )
+      .unwrap(),
+      "{{1/3, -1/4}, {-1/4, 1/3}}"
+    );
+    // Clockwise vertex order is orientation-corrected.
+    assert_eq!(
+      interpret("MomentOfInertia[Polygon[{{0, 1}, {0, 0}, {1, 0}}]]").unwrap(),
+      "{{1/36, 1/72}, {1/72, 1/36}}"
+    );
+    // Axis form.
+    assert_eq!(
+      interpret(
+        "MomentOfInertia[Polygon[{{0, 0}, {2, 0}, {2, 2}, {1, 1}, {0, 2}}], {0, 0}, {0, 1}]"
+      )
+      .unwrap(),
+      "25/6"
+    );
+  }
+
+  #[test]
+  fn region_moment_for_polygons_stays_unevaluated() {
+    // wolframscript returns machine-precision quadrature values here
+    // (e.g. 3.366666189468263 with visible error); Woxi does not model
+    // that and leaves the call unevaluated.
+    assert_eq!(
+      interpret("RegionMoment[Polygon[{{0, 0}, {1, 0}, {0, 1}}], {1, 1}]")
+        .unwrap(),
+      "RegionMoment[Polygon[{{0, 0}, {1, 0}, {0, 1}}], {1, 1}]"
+    );
+  }
+}

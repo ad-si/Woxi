@@ -8952,72 +8952,168 @@ fn compute_region_moment(
     // Affine map to the unit simplex: x = v0 + u d1 + v d2 with
     // Integrate[u^a v^b] = a! b!/(a + b + 2)!, times |det|.
     MomentShape::Tri { v } => {
-      let (i_pow, j_pow) = (powers[0], powers[1]);
-      let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
-        ev(&plus(vec![a.clone(), times(vec![int_e(-1), b.clone()])]))
-      };
-      let d1 = [sub(&v[1][0], &v[0][0])?, sub(&v[1][1], &v[0][1])?];
-      let d2 = [sub(&v[2][0], &v[0][0])?, sub(&v[2][1], &v[0][1])?];
-      let det = ev(&plus(vec![
-        times(vec![d1[0].clone(), d2[1].clone()]),
-        times(vec![int_e(-1), d1[1].clone(), d2[0].clone()]),
-      ]))?;
+      let (det, sum) = triangle_moment_parts(&v, powers[0], powers[1])?;
       let abs_det = ev(&Expr::FunctionCall {
         name: "Abs".to_string(),
         args: vec![det].into(),
       })?;
-      let factorial = |m: i128| -> i128 { (1..=m).product::<i128>().max(1) };
-      let multinom = |m: i128, a: i128, b: i128| -> i128 {
-        factorial(m) / (factorial(a) * factorial(b) * factorial(m - a - b))
-      };
-      let mut terms: Vec<Expr> = Vec::new();
-      for k2 in 0..=i_pow {
-        for k3 in 0..=(i_pow - k2) {
-          let k1 = i_pow - k2 - k3;
-          if k1 > 0 && is_zero(&v[0][0]) {
-            continue;
-          }
-          for l2 in 0..=j_pow {
-            for l3 in 0..=(j_pow - l2) {
-              let l1 = j_pow - l2 - l3;
-              if l1 > 0 && is_zero(&v[0][1]) {
-                continue;
-              }
-              let a = k2 + l2;
-              let b = k3 + l3;
-              // multinom_i * multinom_j * a! b!/(a+b+2)! as one exact
-              // rational.
-              let num = multinom(i_pow, k2, k3)
-                * multinom(j_pow, l2, l3)
-                * factorial(a)
-                * factorial(b);
-              let den = factorial(a + b + 2);
-              let g = {
-                let mut x = num;
-                let mut y = den;
-                while y != 0 {
-                  let t = x % y;
-                  x = y;
-                  y = t;
-                }
-                x.max(1)
-              };
-              terms.push(times(vec![
-                ratio(int_e(num / g), int_e(den / g)),
-                pow(&v[0][0], k1),
-                pow(&d1[0], k2),
-                pow(&d2[0], k3),
-                pow(&v[0][1], l1),
-                pow(&d1[1], l2),
-                pow(&d2[1], l3),
-              ]));
-            }
-          }
-        }
-      }
-      ev(&times(vec![abs_det, plus(terms)]))
+      ev(&times(vec![abs_det, sum]))
     }
   }
+}
+
+/// The moment of the triangle (v0, v1, v2) split as (det, sum): the true
+/// moment is Abs[det]·sum and the orientation-SIGNED moment (used for
+/// polygon fan decomposition) is det·sum. Uses the affine map to the unit
+/// simplex with Integrate[u^a v^b] = a! b!/(a + b + 2)! and exact
+/// multinomial expansion.
+fn triangle_moment_parts(
+  v: &[[Expr; 2]],
+  i_pow: i128,
+  j_pow: i128,
+) -> Result<(Expr, Expr), InterpreterError> {
+  let ev = |e: &Expr| crate::evaluator::evaluate_expr_to_expr(e);
+  let int_e = Expr::Integer;
+  let times = |fs: Vec<Expr>| {
+    let fs: Vec<Expr> = fs
+      .into_iter()
+      .filter(|f| !matches!(f, Expr::Integer(1)))
+      .collect();
+    match fs.len() {
+      0 => Expr::Integer(1),
+      1 => fs.into_iter().next().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: fs.into(),
+      },
+    }
+  };
+  let plus = |ts: Vec<Expr>| match ts.len() {
+    0 => Expr::Integer(0),
+    1 => ts.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: ts.into(),
+    },
+  };
+  let pow = |b: &Expr, e: i128| -> Expr {
+    match e {
+      0 => Expr::Integer(1),
+      1 => b.clone(),
+      _ => Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![b.clone(), Expr::Integer(e)].into(),
+      },
+    }
+  };
+  let ratio = |num: Expr, den: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(num),
+    right: Box::new(den),
+  };
+  let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+  let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
+    ev(&plus(vec![a.clone(), times(vec![int_e(-1), b.clone()])]))
+  };
+  let d1 = [sub(&v[1][0], &v[0][0])?, sub(&v[1][1], &v[0][1])?];
+  let d2 = [sub(&v[2][0], &v[0][0])?, sub(&v[2][1], &v[0][1])?];
+  let det = ev(&plus(vec![
+    times(vec![d1[0].clone(), d2[1].clone()]),
+    times(vec![int_e(-1), d1[1].clone(), d2[0].clone()]),
+  ]))?;
+  let factorial = |m: i128| -> i128 { (1..=m).product::<i128>().max(1) };
+  let multinom = |m: i128, a: i128, b: i128| -> i128 {
+    factorial(m) / (factorial(a) * factorial(b) * factorial(m - a - b))
+  };
+  let mut terms: Vec<Expr> = Vec::new();
+  for k2 in 0..=i_pow {
+    for k3 in 0..=(i_pow - k2) {
+      let k1 = i_pow - k2 - k3;
+      if k1 > 0 && is_zero(&v[0][0]) {
+        continue;
+      }
+      for l2 in 0..=j_pow {
+        for l3 in 0..=(j_pow - l2) {
+          let l1 = j_pow - l2 - l3;
+          if l1 > 0 && is_zero(&v[0][1]) {
+            continue;
+          }
+          let a = k2 + l2;
+          let b = k3 + l3;
+          // multinom_i * multinom_j * a! b!/(a+b+2)! as one exact
+          // rational.
+          let num = multinom(i_pow, k2, k3)
+            * multinom(j_pow, l2, l3)
+            * factorial(a)
+            * factorial(b);
+          let den = factorial(a + b + 2);
+          let g = {
+            let mut x = num;
+            let mut y = den;
+            while y != 0 {
+              let t = x % y;
+              x = y;
+              y = t;
+            }
+            x.max(1)
+          };
+          terms.push(times(vec![
+            ratio(int_e(num / g), int_e(den / g)),
+            pow(&v[0][0], k1),
+            pow(&d1[0], k2),
+            pow(&d2[0], k3),
+            pow(&v[0][1], l1),
+            pow(&d1[1], l2),
+            pow(&d2[1], l3),
+          ]));
+        }
+      }
+    }
+  }
+  Ok((det, plus(terms)))
+}
+
+/// The exact raw moment of a simple polygon about the origin, via the
+/// orientation-signed fan decomposition from the first vertex. Requires
+/// numerically evaluable vertices (the overall orientation sign must be
+/// decidable); returns None otherwise. Used by MomentOfInertia — NOT by
+/// RegionMoment, where wolframscript returns machine-precision quadrature
+/// values instead of exact ones.
+fn polygon_raw_moment(
+  verts: &[[Expr; 2]],
+  i_pow: i128,
+  j_pow: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let ev = |e: &Expr| crate::evaluator::evaluate_expr_to_expr(e);
+  let mut signed_terms: Vec<Expr> = Vec::new();
+  let mut signed_area_2 = 0.0f64;
+  for t in 1..verts.len() - 1 {
+    let tri = [verts[0].clone(), verts[t].clone(), verts[t + 1].clone()];
+    let (det, sum) = triangle_moment_parts(&tri, i_pow, j_pow)?;
+    let Some(det_f) = crate::functions::math_ast::try_eval_to_f64(&det) else {
+      return Ok(None);
+    };
+    signed_area_2 += det_f;
+    signed_terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![det, sum].into(),
+    });
+  }
+  if signed_area_2 == 0.0 {
+    return Ok(None);
+  }
+  let mut factors: Vec<Expr> = Vec::new();
+  if signed_area_2 < 0.0 {
+    factors.push(Expr::Integer(-1));
+  }
+  factors.push(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: signed_terms.into(),
+  });
+  Ok(Some(ev(&Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: factors.into(),
+  })?))
 }
 
 /// The embedding dimension of a region supported by MomentOfInertia, and
@@ -9029,6 +9125,14 @@ fn moment_region_dim(region: &Expr) -> Option<usize> {
   };
   match name.as_str() {
     "Disk" | "Rectangle" | "Triangle" => Some(2),
+    "Polygon"
+      if args.len() == 1
+        && matches!(&args[0], Expr::List(pts) if pts.len() >= 3
+          && pts.iter().all(
+            |p| matches!(p, Expr::List(c) if c.len() == 2))) =>
+    {
+      Some(2)
+    }
     "Ball" | "Cuboid" => Some(3),
     _ => None,
   }
@@ -9120,8 +9224,8 @@ fn translate_region(region: &Expr, pt: &[Expr]) -> Option<Expr> {
         args: vec![shift_point(&lo)?, shift_point(&hi)?].into(),
       })
     }
-    "Triangle" => {
-      let verts: Vec<Vec<Expr>> = if args.is_empty() {
+    "Triangle" | "Polygon" => {
+      let verts: Vec<Vec<Expr>> = if name == "Triangle" && args.is_empty() {
         vec![
           vec![Expr::Integer(0), Expr::Integer(0)],
           vec![Expr::Integer(1), Expr::Integer(0)],
@@ -9129,7 +9233,11 @@ fn translate_region(region: &Expr, pt: &[Expr]) -> Option<Expr> {
         ]
       } else if args.len() == 1
         && let Expr::List(pts) = &args[0]
-        && pts.len() == 3
+        && (if name == "Triangle" {
+          pts.len() == 3
+        } else {
+          pts.len() >= 3
+        })
         && pts
           .iter()
           .all(|p| matches!(p, Expr::List(c) if c.len() == n))
@@ -9147,7 +9255,7 @@ fn translate_region(region: &Expr, pt: &[Expr]) -> Option<Expr> {
       let shifted: Option<Vec<Expr>> =
         verts.iter().map(|v| shift_point(v)).collect();
       Some(Expr::FunctionCall {
-        name: "Triangle".to_string(),
+        name: name.clone(),
         args: vec![Expr::List(shifted?.into())].into(),
       })
     }
@@ -9186,9 +9294,34 @@ fn compute_moment_of_inertia(
   let Some(translated) = translate_region(region, &pt) else {
     return unevaluated();
   };
-  // Raw moment of the translated region; None when RegionMoment could not
-  // evaluate it.
+  // Raw moment of the translated region; None when it could not be
+  // evaluated. Polygons use the exact signed fan decomposition (which
+  // RegionMoment deliberately does NOT expose — wolframscript's
+  // RegionMoment returns machine-precision quadrature values for
+  // polygons, but its MomentOfInertia is exact).
+  let polygon_verts: Option<Vec<[Expr; 2]>> = match &translated {
+    Expr::FunctionCall { name, args }
+      if name == "Polygon" && args.len() == 1 =>
+    {
+      match &args[0] {
+        Expr::List(pts) => Some(
+          pts
+            .iter()
+            .map(|p| {
+              let Expr::List(c) = p else { unreachable!() };
+              [c[0].clone(), c[1].clone()]
+            })
+            .collect(),
+        ),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
   let raw = |spec: Vec<i128>| -> Result<Option<Expr>, InterpreterError> {
+    if let Some(verts) = &polygon_verts {
+      return polygon_raw_moment(verts, spec[0], spec[1]);
+    }
     let spec_expr = Expr::List(
       spec
         .into_iter()

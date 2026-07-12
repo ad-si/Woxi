@@ -1325,3 +1325,86 @@ mod cases {
     );
   }
 }
+
+// The NHold attribute family — which argument slots N may numericize.
+// All outputs verified against wolframscript. (NHoldAll already had
+// coverage above; NHoldFirst/NHoldRest did not.)
+mod nhold_attributes {
+  use super::*;
+
+  #[test]
+  fn nhold_first_and_rest() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[g, NHoldFirst]; N[g[2, 1/3, 1/4]]").unwrap(),
+      "g[2, 0.3333333333333333, 0.25]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[h, NHoldRest]; N[h[2, 1/3, 1/4]]").unwrap(),
+      "h[2., 1/3, 1/4]"
+    );
+    // The first argument is held even when it is the only one.
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[g, NHoldFirst]; N[g[1/3]]").unwrap(),
+      "g[1/3]"
+    );
+  }
+
+  #[test]
+  fn held_arguments_are_not_descended_into() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SetAttributes[f, NHoldAll]; SetAttributes[g, NHoldFirst]; \
+         N[f[g[1/3]]]"
+      )
+      .unwrap(),
+      "f[g[1/3]]"
+    );
+    // The protection is per-subtree: siblings still numericize.
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, NHoldAll]; N[{f[1/2], 1/2}]").unwrap(),
+      "{f[1/2], 0.5}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, NHoldAll]; N[f[1/2] + 1/2]").unwrap(),
+      "0.5 + f[1/2]"
+    );
+  }
+
+  #[test]
+  fn precision_and_clearing() {
+    // The precision form holds too; numericized parts carry the
+    // requested precision.
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, NHoldAll]; N[f[2, 1/3], 20]").unwrap(),
+      "f[2, 1/3]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[h, NHoldRest]; N[h[2, 1/3], 20]").unwrap(),
+      "h[2.`20., 1/3]"
+    );
+    // ClearAttributes restores normal numericization.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SetAttributes[f, NHoldAll]; ClearAttributes[f, NHoldAll]; N[f[1/3]]"
+      )
+      .unwrap(),
+      "f[0.3333333333333333]"
+    );
+    // NHold combines with other attributes.
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[k, {NHoldFirst, Listable}]; Attributes[k]")
+        .unwrap(),
+      "{Listable, NHoldFirst}"
+    );
+  }
+}
