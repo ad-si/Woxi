@@ -7727,18 +7727,6 @@ fn count_overlapping_substring(hay: &str, needle: &str) -> usize {
   count
 }
 
-/// Count overlapping regex matches — one per char start position where the
-/// (start-anchored) regex matches.
-fn count_overlapping_regex(anchored: &regex::Regex, hay: &str) -> usize {
-  let mut count = 0;
-  for (i, _) in hay.char_indices() {
-    if anchored.is_match(&hay[i..]) {
-      count += 1;
-    }
-  }
-  count
-}
-
 /// StringFreeQ[s, sub] - check if string does NOT contain substring or pattern
 /// StringFreeQ[s, sub, IgnoreCase -> True] - case-insensitive
 pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
