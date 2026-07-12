@@ -3611,3 +3611,57 @@ mod calendar_convert {
     );
   }
 }
+
+mod from_date_string {
+  use super::*;
+
+  #[test]
+  fn iso_date() {
+    assert_eq!(
+      interpret(r#"FromDateString["2026-07-15"]"#).unwrap(),
+      "DateObject[{2026, 7, 15}, Day]"
+    );
+  }
+
+  #[test]
+  fn month_name_forms() {
+    assert_eq!(
+      interpret(r#"FromDateString["July 4, 1776"]"#).unwrap(),
+      "DateObject[{1776, 7, 4}, Day]"
+    );
+    assert_eq!(
+      interpret(r#"FromDateString["Jan 1 2000"]"#).unwrap(),
+      "DateObject[{2000, 1, 1}, Day]"
+    );
+    // Day-first ordering and ordinal day suffixes.
+    assert_eq!(
+      interpret(r#"FromDateString["4th July 1776"]"#).unwrap(),
+      "DateObject[{1776, 7, 4}, Day]"
+    );
+    assert_eq!(
+      interpret(r#"FromDateString["Jan 8th, 2022"]"#).unwrap(),
+      "DateObject[{2022, 1, 8}, Day]"
+    );
+  }
+
+  #[test]
+  fn datetime_and_year_granularity() {
+    assert_eq!(
+      interpret(r#"FromDateString["2026-07-15 14:30:00"]"#).unwrap(),
+      "DateObject[{2026, 7, 15, 14, 30, 0}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret(r#"FromDateString["2026"]"#).unwrap(),
+      "DateObject[{2026}, Year]"
+    );
+  }
+
+  // DateObject now parses natural-language month-name strings too.
+  #[test]
+  fn date_object_parses_month_name() {
+    assert_eq!(
+      interpret(r#"DateObject["July 4, 1776"]"#).unwrap(),
+      "DateObject[{1776, 7, 4}, Day]"
+    );
+  }
+}

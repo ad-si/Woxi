@@ -546,7 +546,7 @@ pub(crate) fn extract_date_components(expr: &Expr) -> Option<Vec<f64>> {
 }
 
 /// Parse a natural language date string like "6 June 1991"
-fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
+pub(crate) fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
   let months = [
     "january",
     "february",
@@ -562,10 +562,23 @@ fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
     "december",
   ];
 
+  // Parse a day token, stripping a trailing comma and any ordinal suffix
+  // ("4", "8th," and "1st" all yield the numeric day).
+  let parse_day = |tok: &str| -> Option<i64> {
+    let t = tok.trim_end_matches(',');
+    let t = t
+      .strip_suffix("st")
+      .or_else(|| t.strip_suffix("nd"))
+      .or_else(|| t.strip_suffix("rd"))
+      .or_else(|| t.strip_suffix("th"))
+      .unwrap_or(t);
+    t.parse::<i64>().ok()
+  };
+
   let parts: Vec<&str> = s.split_whitespace().collect();
   if parts.len() == 3 {
     // Try "Day Month Year" format
-    if let Ok(day) = parts[0].parse::<i64>() {
+    if let Some(day) = parse_day(parts[0]) {
       let month_lower = parts[1].to_lowercase();
       if let Some(month_idx) =
         months.iter().position(|m| m.starts_with(&*month_lower))
@@ -578,14 +591,10 @@ fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
     let month_lower = parts[0].to_lowercase();
     if let Some(month_idx) =
       months.iter().position(|m| m.starts_with(&*month_lower))
+      && let Some(day) = parse_day(parts[1])
+      && let Ok(year) = parts[2].parse::<i64>()
     {
-      // Remove trailing comma from day if present
-      let day_str = parts[1].trim_end_matches(',');
-      if let Ok(day) = day_str.parse::<i64>()
-        && let Ok(year) = parts[2].parse::<i64>()
-      {
-        return Some((year, (month_idx + 1) as i64, day));
-      }
+      return Some((year, (month_idx + 1) as i64, day));
     }
   }
 

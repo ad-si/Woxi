@@ -213,6 +213,16 @@ pub fn dispatch_datetime_functions(
       )));
     }
     // DateObject is a data container — normalize granularity
+    // FromDateString["string"] gives the DateObject for a date string. For the
+    // common single-argument forms it is equivalent to DateObject["string"].
+    "FromDateString"
+      if args.len() == 1 && matches!(&args[0], Expr::String(_)) =>
+    {
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "DateObject",
+        args,
+      ));
+    }
     "DateObject" => {
       // DateObject[] → current instant (same shape as `Now`)
       if args.is_empty() {
@@ -255,10 +265,26 @@ pub fn dispatch_datetime_functions(
       }
       // DateObject["2024-03-15"] — parse an ISO date/time string into a
       // component list and let the list logic below tag the granularity.
+      // Natural-language forms like "July 4, 1776" or "Jan 1 2000" fall back
+      // to the month-name parser.
       if args.len() == 1
         && let Expr::String(s) = &args[0]
       {
-        match crate::functions::datetime_ast::parse_iso_date_components(s) {
+        let components =
+          crate::functions::datetime_ast::parse_iso_date_components(s).or_else(
+            || {
+              crate::functions::datetime_ast::parse_date_string(s).map(
+                |(y, m, d)| {
+                  vec![
+                    Expr::Integer(y as i128),
+                    Expr::Integer(m as i128),
+                    Expr::Integer(d as i128),
+                  ]
+                },
+              )
+            },
+          );
+        match components {
           Some(components) => {
             return Some(crate::evaluator::evaluate_function_call_ast(
               "DateObject",
