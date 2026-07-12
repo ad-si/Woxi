@@ -59,6 +59,19 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(out);
   }
 
+  // Reduce[bounds && extra_constraints, x, Integers]: when the conjunction
+  // pins `x` to a finite integer interval AND carries a further constraint
+  // (`Mod[x, n] == k`, `x != v`, …) that the plain interval enumeration
+  // cannot express, enumerate the interval and keep the integers for which
+  // the whole constraint holds. Matches
+  //   Reduce[Mod[x,3]==1 && 0<=x<=10, x, Integers] -> x==1||x==4||x==7||x==10.
+  if domain == Some("Integers")
+    && vars.len() == 1
+    && let Some(out) = try_reduce_bounded_integer_filtered(expr, &vars[0])
+  {
+    return Ok(out);
+  }
+
   let result = reduce_expr(expr, &vars, domain)?;
 
   // Over the integers, a bounded two-sided interval is enumerated as the
@@ -214,6 +227,180 @@ fn enumerate_integer_interval(result: &Expr, var: &str) -> Option<Expr> {
       operators: vec![ComparisonOp::Equal],
     })
     .collect();
+  Some(build_or(terms))
+}
+
+/// If `c` is a purely numeric bound on `var` — a two-sided `Inequality[lo, op,
+/// var, op, hi]` or a one-sided comparison `var op const` / `const op var` with
+/// `op` one of `<`, `<=`, `>`, `>=` — return its `(lower, upper)` integer
+/// contributions (either may be `None`). Returns `None` for anything that is
+/// not a linear bound on the bare variable (e.g. `Mod[x, n] == k`, `x != v`,
+/// `x^2 < 10`), signalling an "extra" constraint to the caller.
+fn numeric_var_bounds(
+  c: &Expr,
+  var: &str,
+) -> Option<(Option<i64>, Option<i64>)> {
+  use crate::syntax::ComparisonOp;
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(s) if s == var);
+  // lo op x -> lower bound; x op hi -> upper bound.
+  let lower_from = |op: ComparisonOp, v: f64| -> Option<i64> {
+    match op {
+      ComparisonOp::Less => Some((v.floor() as i64) + 1),
+      ComparisonOp::LessEqual => Some(v.ceil() as i64),
+      _ => None,
+    }
+  };
+  let upper_from = |op: ComparisonOp, v: f64| -> Option<i64> {
+    match op {
+      ComparisonOp::Less => Some((v.ceil() as i64) - 1),
+      ComparisonOp::LessEqual => Some(v.floor() as i64),
+      _ => None,
+    }
+  };
+  // Two-sided Inequality[lo, op1, var, op2, hi].
+  if let Expr::FunctionCall { name, args } = c
+    && name == "Inequality"
+    && args.len() == 5
+    && is_var(&args[2])
+  {
+    let lo = crate::functions::math_ast::try_eval_to_f64(&args[0])?;
+    let hi = crate::functions::math_ast::try_eval_to_f64(&args[4])?;
+    let op1 = comparison_op_of(&args[1])?;
+    let op2 = comparison_op_of(&args[3])?;
+    return Some((lower_from(op1, lo), upper_from(op2, hi)));
+  }
+  // Chained comparison `lo op x op hi` or one-sided `var op const` /
+  // `const op var`. The variable must appear at exactly one position and be
+  // flanked only by numeric constants and ordering operators.
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = c
+    && operands.len() >= 2
+    && operators.len() == operands.len() - 1
+    && operators.iter().all(|op| {
+      matches!(
+        op,
+        ComparisonOp::Less
+          | ComparisonOp::LessEqual
+          | ComparisonOp::Greater
+          | ComparisonOp::GreaterEqual
+      )
+    })
+  {
+    let var_positions: Vec<usize> = (0..operands.len())
+      .filter(|&k| is_var(&operands[k]))
+      .collect();
+    if var_positions.len() != 1 {
+      return None;
+    }
+    let k = var_positions[0];
+    let mut lower: Option<i64> = None;
+    let mut upper: Option<i64> = None;
+    // Left neighbor: `o[k-1] op var`.
+    if k > 0 {
+      let v = crate::functions::math_ast::try_eval_to_f64(&operands[k - 1])?;
+      match operators[k - 1] {
+        ComparisonOp::Less | ComparisonOp::LessEqual => {
+          lower = lower_from(operators[k - 1], v);
+        }
+        ComparisonOp::Greater => upper = Some((v.ceil() as i64) - 1),
+        ComparisonOp::GreaterEqual => upper = Some(v.floor() as i64),
+        _ => return None,
+      }
+    }
+    // Right neighbor: `var op o[k+1]`.
+    if k + 1 < operands.len() {
+      let v = crate::functions::math_ast::try_eval_to_f64(&operands[k + 1])?;
+      match operators[k] {
+        ComparisonOp::Less | ComparisonOp::LessEqual => {
+          upper = upper_from(operators[k], v);
+        }
+        ComparisonOp::Greater => lower = Some((v.floor() as i64) + 1),
+        ComparisonOp::GreaterEqual => lower = Some(v.ceil() as i64),
+        _ => return None,
+      }
+    }
+    return Some((lower, upper));
+  }
+  None
+}
+
+fn comparison_op_of(e: &Expr) -> Option<crate::syntax::ComparisonOp> {
+  use crate::syntax::ComparisonOp;
+  match e {
+    Expr::Identifier(s) => match s.as_str() {
+      "Less" => Some(ComparisonOp::Less),
+      "LessEqual" => Some(ComparisonOp::LessEqual),
+      "Greater" => Some(ComparisonOp::Greater),
+      "GreaterEqual" => Some(ComparisonOp::GreaterEqual),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// `Reduce[bounds && extra, x, Integers]` where the conjunction bounds `x` to a
+/// finite integer interval and carries at least one non-bound constraint:
+/// enumerate the interval and keep the integers for which the full constraint
+/// evaluates `True`, returning `x == v1 || … || x == vk` (or `False`). Returns
+/// `None` when no finite two-sided range is derivable or there is no extra
+/// constraint — the plain interval paths handle those with their own format.
+fn try_reduce_bounded_integer_filtered(expr: &Expr, var: &str) -> Option<Expr> {
+  use crate::syntax::ComparisonOp;
+  // Inexact bounds make wolframscript warn (Reduce::ratnz); leave them alone.
+  if contains_inexact_literal(expr) {
+    return None;
+  }
+  let mut conjuncts = Vec::new();
+  collect_and_constraints(expr, &mut conjuncts);
+  if conjuncts.len() < 2 {
+    return None;
+  }
+  let mut lower: Option<i64> = None;
+  let mut upper: Option<i64> = None;
+  let mut has_extra = false;
+  for c in &conjuncts {
+    if let Some((lo, hi)) = numeric_var_bounds(c, var) {
+      if let Some(l) = lo {
+        lower = Some(lower.map_or(l, |cur| cur.max(l)));
+      }
+      if let Some(h) = hi {
+        upper = Some(upper.map_or(h, |cur| cur.min(h)));
+      }
+    } else {
+      has_extra = true;
+    }
+  }
+  let lower = lower?;
+  let upper = upper?;
+  if !has_extra {
+    return None;
+  }
+  if upper < lower {
+    return Some(Expr::Identifier("False".to_string()));
+  }
+  if (upper as i128 - lower as i128) > 100_000 {
+    return None;
+  }
+  let mut terms: Vec<Expr> = Vec::new();
+  for i in lower..=upper {
+    let subst =
+      crate::syntax::substitute_variable(expr, var, &Expr::Integer(i as i128));
+    let evaled = crate::evaluator::evaluate_expr_to_expr(&subst).ok()?;
+    if matches!(&evaled, Expr::Identifier(s) if s == "True") {
+      terms.push(Expr::Comparison {
+        operands: vec![
+          Expr::Identifier(var.to_string()),
+          Expr::Integer(i as i128),
+        ],
+        operators: vec![ComparisonOp::Equal],
+      });
+    }
+  }
+  if terms.is_empty() {
+    return Some(Expr::Identifier("False".to_string()));
+  }
   Some(build_or(terms))
 }
 

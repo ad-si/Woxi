@@ -5840,6 +5840,69 @@ mod reduce {
     );
   }
 
+  // Over the integers, a bounded interval carrying an extra `Mod[x, n] == k`
+  // constraint enumerates the interval and keeps the congruent integers,
+  // matching wolframscript:
+  //   Reduce[Mod[x,3]==1 && 0<=x<=10, x, Integers]
+  //     -> x == 1 || x == 4 || x == 7 || x == 10.
+  #[test]
+  fn integers_bounded_with_mod_constraint() {
+    assert_eq!(
+      interpret("Reduce[Mod[x, 3] == 1 && 0 <= x <= 10, x, Integers]").unwrap(),
+      "x == 1 || x == 4 || x == 7 || x == 10"
+    );
+    assert_eq!(
+      interpret("Reduce[Mod[x, 2] == 0 && 1 <= x <= 8, x, Integers]").unwrap(),
+      "x == 2 || x == 4 || x == 6 || x == 8"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_with_mod_constraint_strict() {
+    assert_eq!(
+      interpret("Reduce[Mod[x, 3] == 1 && 0 < x < 10, x, Integers]").unwrap(),
+      "x == 1 || x == 4 || x == 7"
+    );
+    assert_eq!(
+      interpret("Reduce[Mod[x, 3] == 1 && 0 < x < 3, x, Integers]").unwrap(),
+      "x == 1"
+    );
+  }
+
+  // The bound may be written with the variable on the right (`10 >= x >= 0`).
+  #[test]
+  fn integers_bounded_with_mod_reversed_chain() {
+    assert_eq!(
+      interpret("Reduce[10 >= x >= 0 && Mod[x, 4] == 2, x, Integers]").unwrap(),
+      "x == 2 || x == 6 || x == 10"
+    );
+  }
+
+  // An empty residue class within the range collapses to False.
+  #[test]
+  fn integers_bounded_with_mod_constraint_empty() {
+    assert_eq!(
+      interpret("Reduce[Mod[x, 5] == 0 && 1 <= x <= 4, x, Integers]").unwrap(),
+      "False"
+    );
+  }
+
+  // Excluded values (`x != v`) are filtered out of the enumerated interval,
+  // matching wolframscript:
+  //   Reduce[1<=x<=4 && x!=2, x, Integers] -> x == 1 || x == 3 || x == 4.
+  #[test]
+  fn integers_bounded_with_unequal_constraints() {
+    assert_eq!(
+      interpret("Reduce[1 <= x <= 4 && x != 2, x, Integers]").unwrap(),
+      "x == 1 || x == 3 || x == 4"
+    );
+    assert_eq!(
+      interpret("Reduce[1 <= x <= 10 && x != 3 && x != 7, x, Integers]")
+        .unwrap(),
+      "x == 1 || x == 2 || x == 4 || x == 5 || x == 6 || x == 8 || x == 9 || x == 10"
+    );
+  }
+
   // Without the Integers domain a one-sided bound is left as the bare
   // comparison.
   #[test]
