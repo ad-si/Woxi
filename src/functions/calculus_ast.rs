@@ -19337,15 +19337,15 @@ fn signed_stirling_first_row(n: usize) -> Vec<i128> {
   // Start at row 0: s(0, 0) = 1, all other s(0, k) = 0.
   let mut row = vec![0i128; n + 1];
   row[0] = 1;
+  let mut next = vec![0i128; n + 1];
   // Build up row by row using s(m+1, k) = s(m, k-1) - m * s(m, k).
   for m in 0..n {
-    let mut next = vec![0i128; n + 1];
     for k in 0..=(m + 1) {
       let from_left = if k > 0 { row[k - 1] } else { 0 };
-      let from_above = row.get(k).copied().unwrap_or(0);
+      let from_above = row[k];
       next[k] = from_left - (m as i128) * from_above;
     }
-    row = next;
+    (row, next) = (next, row);
   }
   row
 }
