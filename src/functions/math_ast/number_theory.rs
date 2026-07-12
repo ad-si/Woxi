@@ -1541,21 +1541,26 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if args.len() == 1 {
-    // Bell number B_n
+    // Bell number B_n via the Bell triangle
     if n == 0 {
       return Ok(Expr::Integer(1));
     }
-    // Compute using B[n] = Sum[Binomial[n-1, k] B[k], {k, 0, n-1}]
-    let mut bell = vec![BigInt::from(0); n + 1];
-    bell[0] = BigInt::from(1);
+    // Compute using the Bell triangle (first column of each row), in BigInt
+    // so large Bell numbers (e.g. BellB[50], 48 digits) don't overflow i128.
+    let zero = BigInt::from(0);
+    let one = BigInt::from(1);
+    let mut row = vec![zero.clone(); n + 1];
+    row[0] = one.clone();
+    let mut next = vec![zero.clone(); n + 1];
     for i in 1..=n {
-      for k in 0..=i - 1 {
-        bell[i] =
-          &bell[i] + binomial_coeff_big((i - 1) as i128, k as i128) * &bell[k];
+      next[0] = &row[i - 1] - &row[0];
+      for j in 1..=i {
+        next[j] = &next[j - 1] + &row[j - 1];
       }
+      (row, next) = (next, row);
     }
 
-    Ok(crate::functions::math_ast::bigint_to_expr(bell[n].clone()))
+    Ok(crate::functions::math_ast::bigint_to_expr(row[n].clone()))
   } else {
     // Bell polynomial B_n(x) = sum_{k=0}^{n} S(n,k) * x^k
     // where S(n,k) is the Stirling number of the second kind
@@ -1566,19 +1571,21 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // large coefficients (e.g. BellB[50, x]) don't overflow i128.
     let zero = BigInt::from(0);
     let one = BigInt::from(1);
-    let mut stirling = vec![vec![zero.clone(); n + 1]; n + 1];
-    stirling[0][0] = one.clone();
+    let mut row = vec![zero.clone(); n + 1];
+    row[0] = one.clone();
+    let mut next = vec![zero.clone(); n + 1];
     for i in 1..=n {
-      for k in 1..=i {
-        stirling[i][k] = BigInt::from(k as i128) * &stirling[i - 1][k]
-          + &stirling[i - 1][k - 1];
+      next[0] = zero.clone();
+      for j in 1..=i {
+        next[j] = &row[j - 1] + BigInt::from(j as i128) * &row[j];
       }
+      (row, next) = (next, row);
     }
     // Build polynomial: sum_{k=0}^{n} S(n,k) * x^k
     let x = &args[1];
     let mut terms = Vec::new();
     for k in 0..=n {
-      let s = stirling[n][k].clone();
+      let s = row[k].clone();
       if s == zero {
         continue;
       }
@@ -1796,15 +1803,17 @@ pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Use DP table with BigInt to avoid overflow
   let zero = BigInt::from(0);
   let one = BigInt::from(1);
-  let mut table = vec![vec![zero.clone(); k + 1]; n + 1];
-  table[0][0] = one;
+  let mut row = vec![zero.clone(); k + 1];
+  row[0] = one.clone();
+  let mut next = vec![zero.clone(); k + 1];
   for i in 1..=n {
+    next[0] = zero.clone();
     for j in 1..=k.min(i) {
-      table[i][j] =
-        &table[i - 1][j - 1] - BigInt::from(i - 1) * &table[i - 1][j];
+      next[j] = &row[j - 1] - BigInt::from(i - 1) * &row[j];
     }
+    (row, next) = (next, row);
   }
-  Ok(bigint_to_expr(table[n][k].clone()))
+  Ok(bigint_to_expr(row[k].clone()))
 }
 
 /// StirlingS2[n, k] - Stirling number of the second kind
@@ -1836,14 +1845,17 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // S(n,k) = k*S(n-1,k) + S(n-1,k-1)
   let zero = BigInt::from(0);
   let one = BigInt::from(1);
-  let mut table = vec![vec![zero.clone(); k + 1]; n + 1];
-  table[0][0] = one;
+  let mut row = vec![zero.clone(); k + 1];
+  row[0] = one.clone();
+  let mut next = vec![zero.clone(); k + 1];
   for i in 1..=n {
+    next[0] = zero.clone();
     for j in 1..=k.min(i) {
-      table[i][j] = BigInt::from(j) * &table[i - 1][j] + &table[i - 1][j - 1];
+      next[j] = BigInt::from(j) * &row[j] + &row[j - 1];
     }
+    (row, next) = (next, row);
   }
-  Ok(bigint_to_expr(table[n][k].clone()))
+  Ok(bigint_to_expr(row[k].clone()))
 }
 
 /// Digamma function approximation using the asymptotic series.
