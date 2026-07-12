@@ -1781,7 +1781,7 @@ TreeGraph,Tree graph from directed edges with tree layout visualization,✅,pure
 PadeApproximant,Rational (Pade) approximation from a power series,✅,pure,6.0,1809
 FillingTransform,Morphological filling,,unevaluated,8.0,1810
 SamplingPeriod,Sampling period option,,unevaluated,8.0,1811
-Cube,Cube primitive,,unevaluated,12.0,1815
+Cube,Regular hexahedron primitive consumed by Volume/SurfaceArea/RegionMeasure/RegionCentroid,✅,unevaluated,12.0,1815
 FindCycle,Find cycles in a graph or list of edges returning each cycle as a list of edges,✅,pure,10.0,1815
 TimeSeriesForecast,Time series forecast,,unevaluated,9.0,1815
 WordFrequencyData,,🚫,,10.4,1815
@@ -2313,7 +2313,7 @@ KirchhoffMatrix,Builds the Kirchhoff (Laplacian) matrix of a graph,✅,none,8.0,
 ListPlay,audio playback,🚫,None,2.0,2360
 SmoothHistogram3D,3D visualization,🚫,None,8.0,2360
 SyntaxQ,Test if a string is valid Wolfram Language syntax,✅,1,2.0,2360
-SurfaceArea,geometric computation,🚫,None,12.0,2361
+SurfaceArea,Total boundary area of a 3D solid region,✅,pure,12.0,2361
 CloudPut,cloud storage,🚫,None,10.0,2367
 ExponentialMovingAverage,Computes exponential moving average of a list,✅,None,6.0,2367
 GeoDirection,Initial bearing from one geo position to another,✅,pure,7.0,2367
@@ -3056,7 +3056,7 @@ ImageLevels,,🚫,,8.0,3121
 InverseFourierSinTransform,Inverse Fourier sine transform (the sine transform is an involution),✅,pure,4.0,3121
 LocalTime,,,,10.0,3121
 CycleIndexPolynomial,Cycle index polynomial of a permutation group in given variables,✅,pure,9.0,3124
-Dodecahedron,,,,12.0,3124
+Dodecahedron,Regular dodecahedron primitive consumed by Volume/SurfaceArea/RegionMeasure/RegionCentroid,✅,unevaluated,12.0,3124
 EulerianGraphQ,Test whether a graph has an Eulerian circuit,✅,pure,8.0,3124
 CellEventActions,,🚫,,6.0,3134
 CharacterCounts,Returns an association of character frequencies in a string (or each string of a list); two-arg form counts character n-grams,✅,pure,10.1,3134
@@ -3294,7 +3294,7 @@ GeoArea,,🚫,,10.3,3378
 GraphRadius,Minimum vertex eccentricity,✅,1,8.0,3378
 GroupMultiplicationTable,Multiplication table as element indices in GroupElements order,✅,pure,8.0,3378
 HeatTransferPDEComponent,,,,12.2,3378
-Icosahedron,,,,12.0,3378
+Icosahedron,Regular icosahedron primitive consumed by Volume/SurfaceArea/RegionMeasure/RegionCentroid,✅,unevaluated,12.0,3378
 ProcessConnection,,🚫,,10.0,3378
 SetPermissions,,🚫,,10.2,3378
 VertexContract,Merge a set of vertices of a graph into a single vertex,✅,pure,10.0,3378
@@ -3417,7 +3417,7 @@ GraphPower,Graph connecting vertices within a given distance,✅,pure,8.0,3506
 LaminaData,,🚫,,10.0,3506
 LiouvilleLambda,Liouville lambda function (Listable),✅,pure,7.0,3506
 MenuCommandKey,,🚫,,6.0,3506
-Octahedron,,,,12.0,3506
+Octahedron,Regular octahedron primitive consumed by Volume/SurfaceArea/RegionMeasure/RegionCentroid,✅,unevaluated,12.0,3506
 SavitzkyGolayMatrix,Least-squares Savitzky-Golay smoothing kernel of a given radius and polynomial degree,✅,pure,10.0,3506
 SpearmanRankTest,,,,9.0,3506
 AASTriangle,Triangle from two angles and the side opposite the first (symbolic angles give the Csc/Cot closed form),✅,pure,10.0,3522

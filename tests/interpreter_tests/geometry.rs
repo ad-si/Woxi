@@ -4389,3 +4389,313 @@ mod simple_polygon_q {
     );
   }
 }
+
+// Platonic-solid primitives (Cube, Octahedron, Dodecahedron, Icosahedron,
+// and the regular-Tetrahedron forms) consumed by Volume, SurfaceArea,
+// RegionMeasure, RegionCentroid, and RegionDimension. All outputs verified
+// against wolframscript.
+mod platonic_solid_primitives {
+  use super::*;
+
+  #[test]
+  fn heads_stay_unevaluated() {
+    assert_eq!(interpret("Dodecahedron[]").unwrap(), "Dodecahedron[]");
+    assert_eq!(interpret("Icosahedron[2]").unwrap(), "Icosahedron[2]");
+    assert_eq!(
+      interpret("Cube[{1, 2, 3}, 2]").unwrap(),
+      "Cube[{1, 2, 3}, 2]"
+    );
+    assert_eq!(interpret("Octahedron[a]").unwrap(), "Octahedron[a]");
+  }
+
+  #[test]
+  fn unit_volumes() {
+    assert_eq!(
+      interpret("Volume[Dodecahedron[]]").unwrap(),
+      "(15 + 7*Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret("Volume[Icosahedron[]]").unwrap(),
+      "(5*(3 + Sqrt[5]))/12"
+    );
+    assert_eq!(interpret("Volume[Cube[]]").unwrap(), "1");
+    assert_eq!(
+      interpret("Volume[Tetrahedron[2]]").unwrap(),
+      "(2*Sqrt[2])/3"
+    );
+    assert_eq!(interpret("Volume[Octahedron[2]]").unwrap(), "(8*Sqrt[2])/3");
+  }
+
+  #[test]
+  fn scaled_volumes() {
+    assert_eq!(
+      interpret("Volume[Dodecahedron[2]]").unwrap(),
+      "2*(15 + 7*Sqrt[5])"
+    );
+    assert_eq!(
+      interpret("Volume[Icosahedron[3]]").unwrap(),
+      "(45*(3 + Sqrt[5]))/4"
+    );
+    assert_eq!(interpret("Volume[Cube[2]]").unwrap(), "8");
+    assert_eq!(
+      interpret("Volume[Dodecahedron[a]]").unwrap(),
+      "((15 + 7*Sqrt[5])*a^3)/4"
+    );
+  }
+
+  #[test]
+  fn center_and_rotation_forms() {
+    // Volume ignores the center and a {θ, ϕ} rotation spec.
+    assert_eq!(
+      interpret("Volume[Dodecahedron[{1, 2, 3}, 2]]").unwrap(),
+      "2*(15 + 7*Sqrt[5])"
+    );
+    assert_eq!(
+      interpret("Volume[Dodecahedron[{1, 2}]]").unwrap(),
+      "(15 + 7*Sqrt[5])/4"
+    );
+    assert_eq!(interpret("Volume[Cube[{1, 2}, 3]]").unwrap(), "27");
+    // A 3-element scalar list is a center, also for Tetrahedron.
+    assert_eq!(
+      interpret("Volume[Tetrahedron[{1, 2, 3}]]").unwrap(),
+      "1/(6*Sqrt[2])"
+    );
+  }
+
+  #[test]
+  fn invalid_forms_stay_unevaluated() {
+    // A concrete non-positive edge is invalid.
+    assert_eq!(
+      interpret("Volume[Dodecahedron[-2]]").unwrap(),
+      "Volume[Dodecahedron[-2]]"
+    );
+    // The rotated-and-centered 3-argument form stays unevaluated.
+    assert_eq!(
+      interpret("Volume[Dodecahedron[{Pi/3, Pi/4}, {1, 2, 3}, 2]]").unwrap(),
+      "Volume[Dodecahedron[{Pi/3, Pi/4}, {1, 2, 3}, 2]]"
+    );
+  }
+
+  #[test]
+  fn surface_areas() {
+    assert_eq!(
+      interpret("SurfaceArea[Dodecahedron[]]").unwrap(),
+      "3*Sqrt[5*(5 + 2*Sqrt[5])]"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Icosahedron[]]").unwrap(),
+      "5*Sqrt[3]"
+    );
+    assert_eq!(interpret("SurfaceArea[Tetrahedron[]]").unwrap(), "Sqrt[3]");
+    assert_eq!(interpret("SurfaceArea[Cube[2]]").unwrap(), "24");
+    assert_eq!(
+      interpret("SurfaceArea[Octahedron[3]]").unwrap(),
+      "18*Sqrt[3]"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Dodecahedron[a]]").unwrap(),
+      "3*Sqrt[5*(5 + 2*Sqrt[5])]*a^2"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Dodecahedron[{1, 2, 3}, 2]]").unwrap(),
+      "12*Sqrt[5*(5 + 2*Sqrt[5])]"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Icosahedron[{1, 2}, a]]").unwrap(),
+      "5*Sqrt[3]*a^2"
+    );
+  }
+
+  #[test]
+  fn region_measure_is_volume() {
+    assert_eq!(
+      interpret("RegionMeasure[Dodecahedron[]]").unwrap(),
+      "(15 + 7*Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[Icosahedron[2]]").unwrap(),
+      "(10*(3 + Sqrt[5]))/3"
+    );
+    assert_eq!(interpret("RegionMeasure[Cube[2]]").unwrap(), "8");
+    assert_eq!(
+      interpret("RegionMeasure[Tetrahedron[]]").unwrap(),
+      "1/(6*Sqrt[2])"
+    );
+  }
+
+  #[test]
+  fn region_centroid() {
+    assert_eq!(
+      interpret("RegionCentroid[Dodecahedron[]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Dodecahedron[{1, 2, 3}, 2]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Icosahedron[{1/2, 0, -1}, 3]]").unwrap(),
+      "{1/2, 0, -1}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Icosahedron[2]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Tetrahedron[{1, 2, 3}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // The explicit-vertex form still averages the vertices.
+    assert_eq!(
+      interpret(
+        "RegionCentroid[Tetrahedron[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]]"
+      )
+      .unwrap(),
+      "{1/4, 1/4, 1/4}"
+    );
+  }
+
+  #[test]
+  fn region_dimension() {
+    assert_eq!(interpret("RegionDimension[Dodecahedron[]]").unwrap(), "3");
+    assert_eq!(interpret("RegionDimension[Icosahedron[]]").unwrap(), "3");
+  }
+}
+
+// SurfaceArea for the non-Platonic solids, plus Undefined for regions of
+// intrinsic dimension < 3. All wolframscript-verified.
+mod surface_area {
+  use super::*;
+
+  #[test]
+  fn ball() {
+    assert_eq!(interpret("SurfaceArea[Ball[]]").unwrap(), "4*Pi");
+    assert_eq!(
+      interpret("SurfaceArea[Ball[{1, 2, 3}, r]]").unwrap(),
+      "4*Pi*r^2"
+    );
+    // A 2-D ball is a disk: no surface area.
+    assert_eq!(
+      interpret("SurfaceArea[Ball[{0, 0}, 1]]").unwrap(),
+      "Undefined"
+    );
+  }
+
+  #[test]
+  fn cuboid() {
+    assert_eq!(interpret("SurfaceArea[Cuboid[]]").unwrap(), "6");
+    assert_eq!(
+      interpret("SurfaceArea[Cuboid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
+      "22"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Cuboid[{0, 0}, {1, 2}]]").unwrap(),
+      "Undefined"
+    );
+  }
+
+  #[test]
+  fn cylinder_and_cone() {
+    assert_eq!(interpret("SurfaceArea[Cylinder[]]").unwrap(), "6*Pi");
+    assert_eq!(
+      interpret("SurfaceArea[Cylinder[{{0, 0, 0}, {0, 0, 3}}, 2]]").unwrap(),
+      "20*Pi"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Cone[]]").unwrap(),
+      "(1 + Sqrt[5])*Pi"
+    );
+  }
+
+  #[test]
+  fn explicit_tetrahedron() {
+    assert_eq!(
+      interpret(
+        "SurfaceArea[Tetrahedron[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]]"
+      )
+      .unwrap(),
+      "(3 + Sqrt[3])/2"
+    );
+    assert_eq!(
+      interpret(
+        "SurfaceArea[Tetrahedron[{{0, 0, 0}, {1, 2, 0}, {0, 1, 3}, {2, 0, 1}}]]"
+      )
+      .unwrap(),
+      "(5*Sqrt[2] + Sqrt[21] + Sqrt[41] + Sqrt[46])/2"
+    );
+  }
+
+  #[test]
+  fn lower_dimensional_regions_are_undefined() {
+    assert_eq!(interpret("SurfaceArea[Sphere[]]").unwrap(), "Undefined");
+    assert_eq!(interpret("SurfaceArea[Disk[]]").unwrap(), "Undefined");
+    assert_eq!(
+      interpret("SurfaceArea[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "Undefined"
+    );
+  }
+}
+
+// Area of a triangle embedded in 3-space (half the cross-product norm),
+// in wolframscript's canonical radical forms.
+mod triangle_area_3d {
+  use super::*;
+
+  #[test]
+  fn triangle_3d() {
+    assert_eq!(
+      interpret("Area[Triangle[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Area[Triangle[{{0, 0, 0}, {1, 0, 0}, {0, 1, 1}}]]").unwrap(),
+      "1/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Area[Triangle[{{0, 0, 0}, {1, 2, 0}, {0, 1, 3}}]]").unwrap(),
+      "Sqrt[23/2]"
+    );
+  }
+}
+
+// Sqrt of a fully numeric product containing a sum keeps the radical
+// merged: wolframscript only extracts the perfect-square part.
+mod numeric_radicand_no_split {
+  use super::*;
+
+  #[test]
+  fn stays_merged() {
+    assert_eq!(
+      interpret("Sqrt[5*(5 + 2*Sqrt[5])]*a^2").unwrap(),
+      "Sqrt[5*(5 + 2*Sqrt[5])]*a^2"
+    );
+    assert_eq!(
+      interpret("Sqrt[2*(1 + Sqrt[2])]*a").unwrap(),
+      "Sqrt[2*(1 + Sqrt[2])]*a"
+    );
+  }
+
+  #[test]
+  fn extracts_square_part() {
+    assert_eq!(
+      interpret("Sqrt[12*(1 + Sqrt[2])]").unwrap(),
+      "2*Sqrt[3*(1 + Sqrt[2])]"
+    );
+    assert_eq!(
+      interpret("Sqrt[12*(1 + Sqrt[2])]*a").unwrap(),
+      "2*Sqrt[3*(1 + Sqrt[2])]*a"
+    );
+    assert_eq!(
+      interpret("Sqrt[4*(1 + Sqrt[2])]").unwrap(),
+      "2*Sqrt[1 + Sqrt[2]]"
+    );
+  }
+
+  #[test]
+  fn three_halves_exponent_still_distributes() {
+    assert_eq!(
+      interpret("(2*(1 + Sqrt[2]))^(3/2)").unwrap(),
+      "2*Sqrt[2]*(1 + Sqrt[2])^(3/2)"
+    );
+  }
+}

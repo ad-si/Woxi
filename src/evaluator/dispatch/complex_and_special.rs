@@ -1999,6 +1999,10 @@ pub fn dispatch_complex_and_special(
     "Volume" if args.len() == 1 => {
       return Some(compute_volume(strip_region_wrapper(&args[0])));
     }
+    // SurfaceArea[region] — total boundary area of a 3-D solid
+    "SurfaceArea" if args.len() == 1 => {
+      return Some(compute_surface_area(strip_region_wrapper(&args[0])));
+    }
     // RegionMeasure[region] — n-dim measure for explicit regions
     "RegionMeasure" if args.len() == 1 => {
       return Some(compute_region_measure(strip_region_wrapper(&args[0])));
@@ -7601,10 +7605,21 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
       "Cuboid" | "Cylinder" | "Cone" | "Parallelepiped" => {
         return or_unevaluated(compute_volume(expr));
       }
+      // Platonic-solid primitives are 3-D solids: volume.
+      "Cube" | "Hexahedron" | "Octahedron" | "Dodecahedron" | "Icosahedron"
+        if platonic_center_edge(args).is_some() =>
+      {
+        return or_unevaluated(compute_volume(expr));
+      }
       // A simplex's measure is in its intrinsic dimension: for n vertices in
       // (n-1)-space it is |Det[edges]| / (n-1)! (triangle area, tetrahedron
       // volume, ...).
       "Tetrahedron" | "Simplex" => {
+        // The regular-tetrahedron primitive forms ([], [l], [center, l], …)
+        // measure as their volume.
+        if name == "Tetrahedron" && platonic_center_edge(args).is_some() {
+          return or_unevaluated(compute_volume(expr));
+        }
         if args.len() == 1
           && let Expr::List(pts) = &args[0]
           && let Some(edges) = simplex_edges(pts)
@@ -7722,7 +7737,8 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
       "Circle" | "Line" | "HalfLine" | "InfiniteLine" => {
         return Ok(Expr::Integer(1));
       }
-      "Cylinder" | "Cone" | "Tetrahedron" | "FilledTorus" => {
+      "Cylinder" | "Cone" | "Tetrahedron" | "FilledTorus" | "Cube"
+      | "Hexahedron" | "Octahedron" | "Dodecahedron" | "Icosahedron" => {
         return Ok(Expr::Integer(3));
       }
       "Point" => return Ok(Expr::Integer(0)),
@@ -8227,6 +8243,379 @@ fn torus_parts(args: &[Expr]) -> Option<(Vec<Expr>, Expr, Expr)> {
   }
 }
 
+/// Parses the arguments of a Platonic-solid primitive (Cube, Octahedron,
+/// Dodecahedron, Icosahedron, Tetrahedron) into (center, edge length):
+///   Head[]                     → origin, 1
+///   Head[l]                    → origin, l
+///   Head[{θ, ϕ}]               → origin, 1  (rotation — metrics invariant)
+///   Head[{x, y, z}]            → center, 1
+///   Head[{θ, ϕ} | {x, y, z}, l] → center-or-origin, l
+/// Returns None for any other shape — including Tetrahedron's explicit
+/// four-vertex form (handled separately by the callers), three or more
+/// arguments (wolframscript leaves the rotated-and-centered form
+/// unevaluated), and a concrete non-positive edge (Volume[Dodecahedron[-2]]
+/// stays unevaluated in wolframscript).
+fn platonic_center_edge(args: &[Expr]) -> Option<(Vec<Expr>, Expr)> {
+  let origin = || vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)];
+  let is_scalar = |e: &Expr| {
+    !matches!(e, Expr::List(_) | Expr::String(_) | Expr::Rule { .. })
+  };
+  // Some(Some(c)) → explicit center; Some(None) → rotation spec (origin).
+  let center_of = |e: &Expr| -> Option<Option<Vec<Expr>>> {
+    match e {
+      Expr::List(items) if items.len() == 2 && items.iter().all(is_scalar) => {
+        Some(None)
+      }
+      Expr::List(items) if items.len() == 3 && items.iter().all(is_scalar) => {
+        Some(Some(items.iter().cloned().collect()))
+      }
+      _ => None,
+    }
+  };
+  let (center, edge) = match args {
+    [] => (origin(), Expr::Integer(1)),
+    [e] if is_scalar(e) => (origin(), e.clone()),
+    [c] => match center_of(c)? {
+      Some(cv) => (cv, Expr::Integer(1)),
+      None => (origin(), Expr::Integer(1)),
+    },
+    [c, l] if is_scalar(l) => match center_of(c)? {
+      Some(cv) => (cv, l.clone()),
+      None => (origin(), l.clone()),
+    },
+    _ => return None,
+  };
+  if let Some(v) = crate::functions::math_ast::expr_to_num(&edge)
+    && v <= 0.0
+  {
+    return None;
+  }
+  Some((center, edge))
+}
+
+/// A unit-edge Platonic metric (volume or surface area, given as WL source)
+/// scaled by edge^power.
+fn platonic_scaled_metric(
+  unit_src: &str,
+  edge: &Expr,
+  power: i128,
+) -> Result<Expr, InterpreterError> {
+  let unit = crate::functions::string_ast::parse_program_to_expr(unit_src)?;
+  let scaled = if matches!(edge, Expr::Integer(1)) {
+    unit
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        unit,
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![edge.clone(), Expr::Integer(power)].into(),
+        },
+      ]
+      .into(),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&scaled)
+}
+
+/// SurfaceArea[reg] — the total boundary area of a 3-D solid. Regions of
+/// intrinsic dimension < 3 are Undefined (wolframscript-verified for
+/// Sphere, Disk, Triangle, and 2-D Cuboid/Ball).
+fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "SurfaceArea".to_string(),
+      args: vec![expr.clone()].into(),
+    })
+  };
+  let undefined = || Ok(Expr::Identifier("Undefined".to_string()));
+  let Expr::FunctionCall { name, args } = expr else {
+    return unevaluated();
+  };
+  match name.as_str() {
+    "Cube" | "Hexahedron" | "Octahedron" | "Dodecahedron" | "Icosahedron"
+    | "Tetrahedron" => {
+      if let Some((_, edge)) = platonic_center_edge(args)
+        && let Some(unit) =
+          crate::functions::polyhedron_data::unit_surface_area_src(name)
+      {
+        return platonic_scaled_metric(unit, &edge, 2);
+      }
+      // Tetrahedron[{p1, p2, p3, p4}] — the sum of the four triangular
+      // face areas, assembled as (Σ 2·area_i)/2 so the radicals combine
+      // over the common denominator like wolframscript's
+      // (5*Sqrt[2] + Sqrt[21] + Sqrt[41] + Sqrt[46])/2.
+      if name == "Tetrahedron"
+        && args.len() == 1
+        && let Expr::List(pts) = &args[0]
+        && pts.len() == 4
+        && pts
+          .iter()
+          .all(|p| matches!(p, Expr::List(c) if c.len() == 3))
+      {
+        let faces = [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]];
+        // 2·area of a face = Sqrt[m1^2 + m2^2 + m3^2] (cross-product norm).
+        let terms: Vec<Expr> = faces
+          .iter()
+          .map(|f| {
+            let (Expr::List(p1), Expr::List(p2), Expr::List(p3)) =
+              (&pts[f[0]], &pts[f[1]], &pts[f[2]])
+            else {
+              unreachable!("verified 3-coordinate lists above");
+            };
+            let diff = |a: &Expr, b: &Expr| Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                a.clone(),
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![Expr::Integer(-1), b.clone()].into(),
+                },
+              ]
+              .into(),
+            };
+            let u: Vec<Expr> = (0..3).map(|d| diff(&p2[d], &p1[d])).collect();
+            let v: Vec<Expr> = (0..3).map(|d| diff(&p3[d], &p1[d])).collect();
+            let minor = |i: usize, j: usize| Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![u[i].clone(), v[j].clone()].into(),
+                },
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![Expr::Integer(-1), u[j].clone(), v[i].clone()]
+                    .into(),
+                },
+              ]
+              .into(),
+            };
+            let sq = |e: Expr| Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![e, Expr::Integer(2)].into(),
+            };
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![sq(minor(1, 2)), sq(minor(2, 0)), sq(minor(0, 1))]
+                  .into(),
+              }]
+              .into(),
+            }
+          })
+          .collect();
+        return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms.into(),
+          }),
+          right: Box::new(Expr::Integer(2)),
+        });
+      }
+      unevaluated()
+    }
+    // Ball[c, r] — 4 Pi r^2, defined only for the 3-D ball.
+    "Ball" => {
+      let (n, radius) = match args.as_slice() {
+        [] => (3usize, Expr::Integer(1)),
+        [Expr::List(center)] => (center.len(), Expr::Integer(1)),
+        [Expr::List(center), r] => (center.len(), r.clone()),
+        _ => return unevaluated(),
+      };
+      if n != 3 {
+        return undefined();
+      }
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(4),
+          Expr::Constant("Pi".to_string()),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![radius, Expr::Integer(2)].into(),
+          },
+        ]
+        .into(),
+      })
+    }
+    // Cuboid — 2 (|d1 d2| + |d1 d3| + |d2 d3|); only the 3-D box has a
+    // surface area.
+    "Cuboid" => {
+      let diffs: Vec<Expr> = match args.as_slice() {
+        [] => vec![Expr::Integer(1); 3],
+        [Expr::List(p)] => {
+          if p.len() != 3 {
+            return undefined();
+          }
+          vec![Expr::Integer(1); 3]
+        }
+        [Expr::List(p1), Expr::List(p2)] if p1.len() == p2.len() => {
+          if p1.len() != 3 {
+            return undefined();
+          }
+          p1.iter()
+            .zip(p2.iter())
+            .map(|(a, b)| Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                b.clone(),
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![Expr::Integer(-1), a.clone()].into(),
+                },
+              ]
+              .into(),
+            })
+            .collect()
+        }
+        _ => return unevaluated(),
+      };
+      let pair = |i: usize, j: usize| Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![diffs[i].clone(), diffs[j].clone()].into(),
+        }]
+        .into(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(2),
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![pair(0, 1), pair(0, 2), pair(1, 2)].into(),
+          },
+        ]
+        .into(),
+      })
+    }
+    // Cylinder — 2 Pi r (r + h); Cone — Pi r (r + Sqrt[r^2 + h^2]).
+    "Cylinder" | "Cone" => {
+      let Some((height_sq, radius)) = cylinder_height_sq_radius(args) else {
+        return unevaluated();
+      };
+      let height = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![height_sq.clone()].into(),
+      };
+      let r_plus = if name == "Cylinder" {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![radius.clone(), height].into(),
+        }
+      } else {
+        // slant height Sqrt[r^2 + h^2]
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            radius.clone(),
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Power".to_string(),
+                    args: vec![radius.clone(), Expr::Integer(2)].into(),
+                  },
+                  height_sq,
+                ]
+                .into(),
+              }]
+              .into(),
+            },
+          ]
+          .into(),
+        }
+      };
+      let mut factors = vec![];
+      if name == "Cylinder" {
+        factors.push(Expr::Integer(2));
+      }
+      factors.push(Expr::Constant("Pi".to_string()));
+      factors.push(radius);
+      factors.push(r_plus);
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      })
+    }
+    // Regions of intrinsic dimension < 3 have no surface area.
+    "Sphere" | "Disk" | "Rectangle" | "Triangle" | "Polygon"
+    | "RegularPolygon" | "Circle" | "Line" | "Point" | "Annulus"
+    | "Parallelogram" => undefined(),
+    _ => unevaluated(),
+  }
+}
+
+/// The squared axis length and radius of a Cylinder/Cone spec:
+/// Head[] → endpoints {0,0,±1}, r = 1; Head[{p1, p2}] → r = 1;
+/// Head[{p1, p2}, r].
+fn cylinder_height_sq_radius(args: &[Expr]) -> Option<(Expr, Expr)> {
+  let (p1, p2, radius): (Vec<Expr>, Vec<Expr>, Expr) = match args {
+    [] => (
+      vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(-1)],
+      vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)],
+      Expr::Integer(1),
+    ),
+    [Expr::List(points)] | [Expr::List(points), _] if points.len() == 2 => {
+      let (Expr::List(p1), Expr::List(p2)) = (&points[0], &points[1]) else {
+        return None;
+      };
+      if p1.len() != p2.len() || p1.is_empty() {
+        return None;
+      }
+      let radius = if args.len() == 2 {
+        args[1].clone()
+      } else {
+        Expr::Integer(1)
+      };
+      (
+        p1.iter().cloned().collect(),
+        p2.iter().cloned().collect(),
+        radius,
+      )
+    }
+    _ => return None,
+  };
+  let squares: Vec<Expr> = p1
+    .iter()
+    .zip(p2.iter())
+    .map(|(a, b)| Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            a.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), b.clone()].into(),
+            },
+          ]
+          .into(),
+        },
+        Expr::Integer(2),
+      ]
+      .into(),
+    })
+    .collect();
+  let sum_sq = if squares.len() == 1 {
+    squares.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: squares.into(),
+    }
+  };
+  Some((sum_sq, radius))
+}
+
 fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Cylinder[]/Cylinder[{p1, p2}]/Cylinder[{p1, p2}, r]:
   //   Volume = Pi * r^2 * Sqrt[Sum_i (p2_i - p1_i)^2].
@@ -8508,6 +8897,18 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
         };
         return crate::evaluator::evaluate_expr_to_expr(&vol);
       }
+      // Platonic-solid primitives: Volume = (unit-edge volume) * l^3.
+      "Cube" | "Hexahedron" | "Octahedron" | "Dodecahedron" | "Icosahedron"
+      | "Tetrahedron"
+        if platonic_center_edge(args).is_some()
+          && crate::functions::polyhedron_data::unit_volume_src(name)
+            .is_some() =>
+      {
+        let (_, edge) = platonic_center_edge(args).unwrap();
+        let unit =
+          crate::functions::polyhedron_data::unit_volume_src(name).unwrap();
+        return platonic_scaled_metric(unit, &edge, 3);
+      }
       // Tetrahedron[{p1, p2, p3, p4}] / Simplex of 4 points in 3-space:
       //   Volume = |Det[{p2-p1, p3-p1, p4-p1}]| / 6.
       "Tetrahedron" | "Simplex" if args.len() == 1 => {
@@ -8763,6 +9164,73 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
                 .into(),
               },
             ]
+            .into(),
+          };
+          return crate::evaluator::evaluate_expr_to_expr(&area_expr);
+        }
+        // Triangle embedded in 3-space: half the norm of the cross product
+        // of two edge vectors.
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() == 3
+          && let (Expr::List(p1), Expr::List(p2), Expr::List(p3)) =
+            (&pts[0], &pts[1], &pts[2])
+          && p1.len() == 3
+          && p2.len() == 3
+          && p3.len() == 3
+        {
+          let diff = |a: &Expr, b: &Expr| Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              a.clone(),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), b.clone()].into(),
+              },
+            ]
+            .into(),
+          };
+          let u: Vec<Expr> = (0..3).map(|d| diff(&p2[d], &p1[d])).collect();
+          let v: Vec<Expr> = (0..3).map(|d| diff(&p3[d], &p1[d])).collect();
+          let minor = |i: usize, j: usize| Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![u[i].clone(), v[j].clone()].into(),
+              },
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), u[j].clone(), v[i].clone()]
+                  .into(),
+              },
+            ]
+            .into(),
+          };
+          let sq = |e: Expr| Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![e, Expr::Integer(2)].into(),
+          };
+          // Sqrt[(m1^2 + m2^2 + m3^2)/4] — the 1/4 inside the radical
+          // reproduces wolframscript's canonical forms (Sqrt[23/2],
+          // 1/Sqrt[2], Sqrt[3]/2, …).
+          let area_expr = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(4)].into(),
+                },
+                Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![sq(minor(1, 2)), sq(minor(2, 0)), sq(minor(0, 1))]
+                    .into(),
+                },
+              ]
+              .into(),
+            }]
             .into(),
           };
           return crate::evaluator::evaluate_expr_to_expr(&area_expr);
@@ -9194,6 +9662,15 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           })
           .collect();
         crate::evaluator::evaluate_expr_to_expr(&Expr::List(coords.into()))
+      }
+      // Platonic-solid primitives are centered at their center argument
+      // (origin by default; a rotation spec keeps the origin).
+      "Cube" | "Hexahedron" | "Octahedron" | "Dodecahedron" | "Icosahedron"
+      | "Tetrahedron"
+        if platonic_center_edge(args).is_some() =>
+      {
+        let (center, _) = platonic_center_edge(args).unwrap();
+        crate::evaluator::evaluate_expr_to_expr(&Expr::List(center.into()))
       }
       // Tetrahedron / Simplex — the centroid is the mean of the vertices.
       "Tetrahedron" | "Simplex" => {

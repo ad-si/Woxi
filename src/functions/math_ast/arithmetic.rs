@@ -9197,6 +9197,98 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
             _ => false,
           }
         }
+        // A fully numeric radicand containing a sum (e.g. 5*(5 + 2*Sqrt[5]))
+        // does not distribute under Sqrt: wolframscript only extracts the
+        // perfect-square part of the numeric factor and keeps the residue
+        // merged inside the radical — Sqrt[12*(1 + Sqrt[2])] gives
+        // 2*Sqrt[3*(1 + Sqrt[2])] and Sqrt[5*(5 + 2*Sqrt[5])] stays put,
+        // while (2*(1 + Sqrt[2]))^(3/2) still distributes fully.
+        fn is_numeric_with_sums(e: &Expr) -> bool {
+          match e {
+            Expr::FunctionCall { name, args }
+              if matches!(name.as_str(), "Plus" | "Sqrt") =>
+            {
+              args.iter().all(is_numeric_with_sums)
+            }
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              left,
+              right,
+            } => is_numeric_with_sums(left) && is_numeric_with_sums(right),
+            Expr::UnaryOp {
+              op: UnaryOperator::Minus,
+              operand,
+            } => is_numeric_with_sums(operand),
+            _ => is_numeric_like_extended(e),
+          }
+        }
+        fn contains_sum(e: &Expr) -> bool {
+          match e {
+            Expr::FunctionCall { name, args } => {
+              name == "Plus" || args.iter().any(contains_sum)
+            }
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            } => true,
+            Expr::BinaryOp { left, right, .. } => {
+              contains_sum(left) || contains_sum(right)
+            }
+            Expr::UnaryOp { operand, .. } => contains_sum(operand),
+            _ => false,
+          }
+        }
+        let numeric_sum_radicand = matches!(
+          (&rargs[0], &rargs[1]),
+          (Expr::Integer(1), Expr::Integer(2))
+        ) && matches!(&numeric, Expr::Integer(_))
+          && rest.iter().all(is_numeric_with_sums)
+          && rest.iter().any(contains_sum);
+        if numeric_sum_radicand
+          && let Expr::Integer(c) = &numeric
+          && *c <= 1_000_000_000_000
+        {
+          // Largest s with s^2 | c.
+          let mut s: i128 = 1;
+          let mut k: i128 = 2;
+          let mut m = *c;
+          while k * k <= m {
+            while m % (k * k) == 0 {
+              m /= k * k;
+              s *= k;
+            }
+            k += 1;
+          }
+          if s == 1 {
+            // Nothing to extract: keep the radical merged (skip the
+            // distribution below and every later rewrite of this power).
+            return Ok(Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![base.clone()].into(),
+            });
+          }
+          let r = *c / (s * s);
+          let mut radicand_factors: Vec<Expr> = Vec::new();
+          if r != 1 {
+            radicand_factors.push(Expr::Integer(r));
+          }
+          radicand_factors.extend(rest.iter().cloned());
+          let radicand = if radicand_factors.len() == 1 {
+            radicand_factors.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: radicand_factors.into(),
+            }
+          };
+          return times_ast(&[
+            Expr::Integer(s),
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![radicand].into(),
+            },
+          ]);
+        }
         let rest_has_nonnumeric =
           rest.iter().any(|f| !is_numeric_like_extended(f));
         let pow_numeric_has_coeff = match &pow_numeric {
