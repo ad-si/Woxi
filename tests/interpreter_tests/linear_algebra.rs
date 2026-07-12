@@ -7639,3 +7639,50 @@ mod sparse_array_matrix_functions {
     );
   }
 }
+
+mod sparse_array_arithmetic {
+  use super::*;
+
+  // A SparseArray combined with a dense list threads element-wise as its dense
+  // form, rather than being broadcast whole against each list element.
+  #[test]
+  fn sparse_plus_dense_vector() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 2 -> 3}, 3] + {1, 1, 1}").unwrap(),
+      "{6, 4, 1}"
+    );
+    assert_eq!(
+      interpret("{1, 1, 1} + SparseArray[{1 -> 5, 2 -> 3}, 3]").unwrap(),
+      "{6, 4, 1}"
+    );
+  }
+
+  #[test]
+  fn sparse_times_dense_vector() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 2 -> 3}, 3] * {2, 2, 2}").unwrap(),
+      "{10, 6, 0}"
+    );
+  }
+
+  #[test]
+  fn sparse_minus_dense_vector() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 2 -> 3}, 3] - {1, 2, 3}").unwrap(),
+      "{4, 1, -3}"
+    );
+    assert_eq!(
+      interpret("{10, 20, 30} - SparseArray[{1 -> 5}, 3]").unwrap(),
+      "{5, 20, 30}"
+    );
+  }
+
+  // Function-call (Listable) form threads the same way.
+  #[test]
+  fn sparse_plus_dense_function_form() {
+    assert_eq!(
+      interpret("Plus[SparseArray[{1 -> 5, 2 -> 3}, 3], {1, 1, 1}]").unwrap(),
+      "{6, 4, 1}"
+    );
+  }
+}

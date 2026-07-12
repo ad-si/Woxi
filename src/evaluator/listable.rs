@@ -280,6 +280,30 @@ pub fn thread_listable(
     return Ok(None);
   }
 
+  // A SparseArray threaded against a genuine dense list behaves as its dense
+  // form (e.g. `SparseArray[{1->5,2->3},3] + {1,1,1}` == `{6,4,1}`); without
+  // this the opaque SparseArray would be paired whole with each list element.
+  // Only densify when a real list is present, so a lone SparseArray argument is
+  // left for the sparse-aware handlers.
+  let densified: Vec<Expr>;
+  let args: &[Expr] = if args.iter().any(
+    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray"),
+  ) {
+    densified = args
+      .iter()
+      .map(|a| match a {
+        Expr::FunctionCall { name, args: sa } if name == "SparseArray" => {
+          crate::functions::list_helpers_ast::sparse_array_ast(sa)
+            .unwrap_or_else(|_| a.clone())
+        }
+        other => other.clone(),
+      })
+      .collect();
+    &densified
+  } else {
+    args
+  };
+
   // Find the list length (all lists must have the same length)
   let mut list_len = None;
   for arg in args {
