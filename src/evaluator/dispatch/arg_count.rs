@@ -1311,6 +1311,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StudentTDistribution" => Some((1, 3)),
     "Subgraph" => Some((2, 2)),
     "Subdivide" => Some((1, 3)),
+    "FindDivisions" => Some((2, 2)),
     "Subfactorial" => Some((1, 1)),
     "FareySequence" => Some((1, 2)),
     "NumberDigit" => Some((2, 3)),

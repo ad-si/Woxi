@@ -1274,7 +1274,7 @@ VertexDegree,Returns the degree of vertices in a graph,✅,1,8.0,1287
 OverTilde,Displays expression with tilde above,✅,1,6.0,1288
 ReliefPlot,,🚫,,6.0,1289
 TableSpacing,,🚫,,2.0,1290
-FindDivisions,,🚫,,7.0,1291
+FindDivisions,Finds nice numbers dividing an interval into about n equal parts,✅,pure,7.0,1291
 FileExistsQ,Tests whether a file or directory exists,✅,2,7.0,1293
 FrontEndToken,,🚫,,3.0,1293
 GeometricMean,Returns the geometric mean of a list or an association's values,✅,pure,6.0,1294

@@ -3509,6 +3509,122 @@ fn subdivide_scalar_at(
   evaluate_expr_to_expr(&result)
 }
 
+/// Extract an exact (numerator, denominator) pair from an Integer or Rational.
+fn expr_to_rational_pair(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Round a raw step up to the nearest "nice" number m * 10^k with
+/// m in {1, 2, 2.5, 5}, returned as an exact (numerator, denominator).
+fn nice_step_rational(raw: f64) -> Option<(i128, i128)> {
+  if !(raw.is_finite() && raw > 0.0) {
+    return None;
+  }
+  let mut k = raw.log10().floor() as i32;
+  // Guard against floating-point error in the exponent.
+  while 10f64.powi(k) > raw * (1.0 + 1e-9) {
+    k -= 1;
+  }
+  while 10f64.powi(k + 1) <= raw * (1.0 + 1e-9) {
+    k += 1;
+  }
+  let mantissa = raw / 10f64.powi(k);
+  let eps = 1.0 + 1e-9;
+  // (num, den) of the nice mantissa, plus an extra power of ten when the
+  // mantissa rounds up past 5 into the next decade.
+  let (mn, md, extra) = if mantissa <= 1.0 * eps {
+    (1i128, 1i128, 0)
+  } else if mantissa <= 2.0 * eps {
+    (2, 1, 0)
+  } else if mantissa <= 2.5 * eps {
+    (5, 2, 0)
+  } else if mantissa <= 5.0 * eps {
+    (5, 1, 0)
+  } else {
+    (1, 1, 1)
+  };
+  let k = k + extra;
+  let (mut sn, mut sd) = (mn, md);
+  if k >= 0 {
+    sn = sn.checked_mul(10i128.checked_pow(k as u32)?)?;
+  } else {
+    sd = sd.checked_mul(10i128.checked_pow((-k) as u32)?)?;
+  }
+  let g = gcd_i128(sn.abs(), sd.abs()).max(1);
+  Some((sn / g, sd / g))
+}
+
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+  while b != 0 {
+    (a, b) = (b, a % b);
+  }
+  a.abs()
+}
+
+/// FindDivisions[{xmin, xmax}, n] — about n "nice" numbers dividing the interval
+/// into equally spaced parts, using step sizes of the form {1,2,2.5,5}*10^k.
+/// Division endpoints may fall just outside [xmin, xmax]. Only the exact
+/// (integer/rational endpoint) 2-argument form is supported; other forms and
+/// non-numeric endpoints stay unevaluated.
+pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "FindDivisions".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let range = match &args[0] {
+    Expr::List(items) if items.len() == 2 => items,
+    _ => return unevaluated(),
+  };
+  let n = match &args[1] {
+    Expr::Integer(n) if *n > 0 => *n,
+    _ => return unevaluated(),
+  };
+  let (Some((min_n, min_d)), Some((max_n, max_d))) = (
+    expr_to_rational_pair(&range[0]),
+    expr_to_rational_pair(&range[1]),
+  ) else {
+    return unevaluated();
+  };
+
+  // raw step = (xmax - xmin) / n, as f64 for the nice-number selection.
+  let xmin_f = min_n as f64 / min_d as f64;
+  let xmax_f = max_n as f64 / max_d as f64;
+  let raw = (xmax_f - xmin_f) / n as f64;
+  let Some((sn, sd)) = nice_step_rational(raw) else {
+    return unevaluated();
+  };
+
+  // Indices of the first and last multiples of `step` covering [xmin, xmax].
+  // xmin/step = xmin_n*sd/(xmin_d*sn); floor for the first, ceil for the last.
+  let first = (min_n * sd).div_euclid(min_d * sn);
+  let last = -((-(max_n * sd)).div_euclid(max_d * sn));
+  if last < first || (last - first) > 100_000 {
+    return unevaluated();
+  }
+  let mut items = Vec::with_capacity((last - first + 1) as usize);
+  for i in first..=last {
+    items.push(make_rational(i * sn, sd));
+  }
+  Ok(Expr::List(items.into()))
+}
+
 /// Ramp[x] - returns max(0, x)
 /// Ramp[list] - maps over lists
 pub fn ramp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
