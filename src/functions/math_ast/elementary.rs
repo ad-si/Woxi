@@ -1802,6 +1802,23 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Extract numerator/denominator from Integer or Rational expr
+fn expr_fraction(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Helper for Floor[x, a] and Ceiling[x, a]
 /// Floor[x, a] = a * Floor[x/a], Ceiling[x, a] = a * Ceiling[x/a]
 fn floor_ceil_two_arg(
@@ -1817,12 +1834,8 @@ fn floor_ceil_two_arg(
     return build_complex_result(re_r, im_r);
   }
   // Try rational arithmetic first for exact results
-  if let (Some(xn), Some(xd), Some(an), Some(ad)) = (
-    expr_numerator(x),
-    expr_denominator(x),
-    expr_numerator(a),
-    expr_denominator(a),
-  ) {
+  if let (Some((xn, xd)), Some((an, ad))) = (expr_fraction(x), expr_fraction(a))
+  {
     if an == 0 {
       // Floor[x, 0] or Ceiling[x, 0] → Indeterminate
       return Ok(Expr::Identifier("Indeterminate".to_string()));
@@ -1858,7 +1871,7 @@ fn floor_ceil_two_arg(
   // a * Floor[x/a] via the single-argument Floor/Ceiling, which resolves both
   // exact transcendentals and floats to an integer. Falls through when the
   // quotient does not reduce to an integer (e.g. a symbolic x).
-  if let (Some(an), Some(ad)) = (expr_numerator(a), expr_denominator(a))
+  if let Some((an, ad)) = expr_fraction(a)
     && an != 0
   {
     // q = x / a = x * (ad / an)
