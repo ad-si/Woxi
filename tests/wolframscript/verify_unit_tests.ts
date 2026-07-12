@@ -1014,6 +1014,14 @@ function main() {
     // transforms/sums, Piecewise/DiscreteDelta results, sum-to-product
     // factoring). Woxi's own unit tests assert the unevaluated/symbolic result.
     "Solve[x + y == 3]", // underdetermined linear system
+    // 2F1 closed forms Woxi keeps as HypergeometricPFQ: Wolfram reduces
+    // 2F1(1/2, 1/2; 3/2; z) -> ArcSin[Sqrt[z]]/Sqrt[z] (a tabulated special
+    // identity Woxi does not carry) and 2F1(3, 1; 2; x) -> (2-x)/(2(-1+x)^2)
+    // (value-correct via the Euler transform, but the denominator-factoring /
+    // power-base sign of the rational form diverges — a Together canonical-form
+    // rabbit hole). Woxi's unit tests assert the unevaluated PFQ form.
+    "HypergeometricPFQ[{1/2, 1/2}, {3/2}, z]",
+    "HypergeometricPFQ[{3, 1}, {2}, x]",
     "GroebnerBasis[{Sin[x]}, {x}]", // non-polynomial generator passthrough
     "PadeApproximant[1/(1 - x), {x, 0, {2, 2}}]", // rank-deficient Padé system
     "TrigFactor[Sin[2 x] + Sin[4 x]]", // sum-to-product factoring
