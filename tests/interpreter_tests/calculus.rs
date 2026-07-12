@@ -8171,6 +8171,38 @@ mod trig_to_exp {
   }
 
   #[test]
+  fn csc_to_exp() {
+    // Csc[x] = -2*I/(E^(-I*x) - E^(I*x)); the imaginary-exponent denominator
+    // renders identically to wolframscript.
+    assert_eq!(
+      interpret("TrigToExp[Csc[x]]").unwrap(),
+      "(-2*I)/(E^(-I*x) - E^(I*x))"
+    );
+  }
+
+  #[test]
+  fn csc_to_exp_double_angle() {
+    assert_eq!(
+      interpret("TrigToExp[Csc[2 y]]").unwrap(),
+      "(-2*I)/(E^((-2*I)*y) - E^((2*I)*y))"
+    );
+  }
+
+  // Csc composed with its reciprocal collapses to 1 after conversion.
+  #[test]
+  fn csc_times_sin_to_exp() {
+    assert_eq!(interpret("TrigToExp[Sin[x] Csc[x]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn csc_to_exp_input_form() {
+    assert_eq!(
+      interpret("ToString[TrigToExp[Csc[x]], InputForm]").unwrap(),
+      "(-2*I)/(E^((-I)*x) - E^(I*x))"
+    );
+  }
+
+  #[test]
   fn sech_to_exp() {
     assert_eq!(interpret("TrigToExp[Sech[x]]").unwrap(), "2/(E^(-x) + E^x)");
   }

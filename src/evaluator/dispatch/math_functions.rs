@@ -7675,6 +7675,20 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             power(plus(&[e_ix, e_nix]), Expr::Integer(-1)),
           ])
         }
+        // Csc[x] = -2*I/(E^(-I*x) - E^(I*x))
+        "Csc" => {
+          let ix = times(&[i.clone(), arg.clone()]);
+          let e_ix = power(e.clone(), ix.clone());
+          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
+          times(&[
+            Expr::Integer(-2),
+            i,
+            power(
+              plus(&[e_nix, times(&[Expr::Integer(-1), e_ix])]),
+              Expr::Integer(-1),
+            ),
+          ])
+        }
         // Cot[x] = -I*(E^(-I*x) + E^(I*x))/(E^(-I*x) - E^(I*x))
         "Cot" => {
           let ix = times(&[i.clone(), arg.clone()]);
@@ -7817,13 +7831,13 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             times(&[half.clone(), log_of(plus(&[Expr::Integer(1), x_inv]))]),
           ])
         }
-        // NOTE: Coth, Csch and Csc are intentionally left to the default
-        // recursive branch. Their exponential forms are value-correct but the
-        // result contains a negative E-power (`-E^(-x)`) or a complex
-        // coefficient over a reciprocal, both of which Woxi's core renderer
-        // canonicalizes differently from wolframscript (`-(1/E^x)` and
-        // `c*(…)^(-1)` rather than `-E^(-x)` and `c/(…)`). See the documented
-        // complex-coeff / negative-E-exponent display divergence.
+        // NOTE: Coth and Csch are intentionally left to the default recursive
+        // branch. Their exponential forms are value-correct but the denominator
+        // contains a negative *real* E-power (`-E^(-x)`), which Woxi's core
+        // renderer canonicalizes as `-(1/E^x)` rather than wolframscript's
+        // `-E^(-x)`. See the documented negative-E-exponent display divergence.
+        // (Csc is handled above: its denominator uses imaginary exponents
+        // `E^(-I*x) - E^(I*x)`, which render identically to wolframscript.)
         // ArcSin, ArcCos, ArcCsch and ArcSech are likewise omitted: their Log
         // arguments are a Plus whose term order Woxi canonicalizes differently
         // (e.g. `Sqrt[1-x^2] + I x` vs wolframscript's `I x + Sqrt[1-x^2]`).
