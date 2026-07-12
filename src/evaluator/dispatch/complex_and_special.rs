@@ -2007,6 +2007,14 @@ pub fn dispatch_complex_and_special(
     "RegionMeasure" if args.len() == 1 => {
       return Some(compute_region_measure(strip_region_wrapper(&args[0])));
     }
+    // RegionMoment[region, {i1, …, in}] — the polynomial moment
+    // Integrate[x1^i1 ⋯ xn^in, region]
+    "RegionMoment" if args.len() == 2 => {
+      return Some(compute_region_moment(
+        strip_region_wrapper(&args[0]),
+        &args[1],
+      ));
+    }
     "RegionMember" if args.len() == 2 => {
       return Some(compute_region_member(
         strip_region_wrapper(&args[0]),
@@ -8671,6 +8679,337 @@ fn torus_parts(args: &[Expr]) -> Option<(Vec<Expr>, Expr, Expr)> {
       Some((center.to_vec(), r1, r2))
     }
     _ => None,
+  }
+}
+
+/// RegionMoment[reg, {i1, …, in}] — the polynomial moment
+/// Integrate[x1^i1 ⋯ xn^in, reg], exactly, for Disk/Ball (any center and
+/// radius, both possibly symbolic), Rectangle/Cuboid (symbolic corners
+/// allowed), and Triangle (default or explicit vertices).
+fn compute_region_moment(
+  region: &Expr,
+  spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionMoment".to_string(),
+      args: vec![region.clone(), spec.clone()].into(),
+    })
+  };
+  let ev = |e: &Expr| crate::evaluator::evaluate_expr_to_expr(e);
+  let int_e = |n: i128| Expr::Integer(n);
+  let times = |fs: Vec<Expr>| {
+    let fs: Vec<Expr> = fs
+      .into_iter()
+      .filter(|f| !matches!(f, Expr::Integer(1)))
+      .collect();
+    match fs.len() {
+      0 => Expr::Integer(1),
+      1 => fs.into_iter().next().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: fs.into(),
+      },
+    }
+  };
+  let plus = |ts: Vec<Expr>| match ts.len() {
+    0 => Expr::Integer(0),
+    1 => ts.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: ts.into(),
+    },
+  };
+  let pow = |b: &Expr, e: i128| -> Expr {
+    match e {
+      0 => Expr::Integer(1),
+      1 => b.clone(),
+      _ => Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![b.clone(), Expr::Integer(e)].into(),
+      },
+    }
+  };
+  let ratio = |num: Expr, den: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(num),
+    right: Box::new(den),
+  };
+  let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+
+  // The supported region kinds with their embedding dimension.
+  enum MomentShape {
+    Round { center: Vec<Expr>, radius: Expr },
+    AxisBox { lo: Vec<Expr>, hi: Vec<Expr> },
+    Tri { v: Vec<[Expr; 2]> },
+  }
+  let Expr::FunctionCall { name, args } = region else {
+    return unevaluated();
+  };
+  let coords = |e: &Expr| -> Option<Vec<Expr>> {
+    match e {
+      Expr::List(items) if !items.is_empty() => {
+        Some(items.iter().cloned().collect())
+      }
+      _ => None,
+    }
+  };
+  let shape = match name.as_str() {
+    "Disk" | "Ball" => {
+      let default_dim = if name == "Ball" { 3 } else { 2 };
+      let center = match args.first() {
+        None => vec![Expr::Integer(0); default_dim],
+        Some(c) => match coords(c) {
+          Some(c) => c,
+          None => return unevaluated(),
+        },
+      };
+      let radius = match args.get(1) {
+        None => Expr::Integer(1),
+        Some(Expr::List(_)) => return unevaluated(),
+        Some(r) => r.clone(),
+      };
+      if args.len() > 2 {
+        return unevaluated();
+      }
+      MomentShape::Round { center, radius }
+    }
+    "Rectangle" | "Cuboid" => {
+      let default_dim = if name == "Cuboid" { 3 } else { 2 };
+      let (lo, hi) = match (args.first(), args.get(1)) {
+        (None, _) => (
+          vec![Expr::Integer(0); default_dim],
+          vec![Expr::Integer(1); default_dim],
+        ),
+        (Some(c1), None) => {
+          let lo = match coords(c1) {
+            Some(c) => c,
+            None => return unevaluated(),
+          };
+          let hi: Result<Vec<Expr>, InterpreterError> = lo
+            .iter()
+            .map(|x| {
+              ev(&Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![x.clone(), Expr::Integer(1)].into(),
+              })
+            })
+            .collect();
+          (lo, hi?)
+        }
+        (Some(c1), Some(c2)) => match (coords(c1), coords(c2)) {
+          (Some(lo), Some(hi)) if lo.len() == hi.len() => (lo, hi),
+          _ => return unevaluated(),
+        },
+      };
+      if args.len() > 2 {
+        return unevaluated();
+      }
+      MomentShape::AxisBox { lo, hi }
+    }
+    "Triangle" => {
+      let verts: Vec<[Expr; 2]> = if args.is_empty() {
+        vec![
+          [Expr::Integer(0), Expr::Integer(0)],
+          [Expr::Integer(1), Expr::Integer(0)],
+          [Expr::Integer(0), Expr::Integer(1)],
+        ]
+      } else if args.len() == 1
+        && let Expr::List(pts) = &args[0]
+        && pts.len() == 3
+        && pts
+          .iter()
+          .all(|p| matches!(p, Expr::List(c) if c.len() == 2))
+      {
+        pts
+          .iter()
+          .map(|p| {
+            let Expr::List(c) = p else { unreachable!() };
+            [c[0].clone(), c[1].clone()]
+          })
+          .collect()
+      } else {
+        return unevaluated();
+      };
+      MomentShape::Tri { v: verts }
+    }
+    _ => return unevaluated(),
+  };
+  let dim = match &shape {
+    MomentShape::Round { center, .. } => center.len(),
+    MomentShape::AxisBox { lo, .. } => lo.len(),
+    MomentShape::Tri { .. } => 2,
+  };
+
+  // The moment spec: a list of non-negative integers of length dim.
+  let powers: Option<Vec<i128>> = match spec {
+    Expr::List(items) if items.len() == dim => items
+      .iter()
+      .map(|e| match e {
+        Expr::Integer(n) if *n >= 0 => Some(*n),
+        _ => None,
+      })
+      .collect(),
+    _ => None,
+  };
+  let Some(powers) = powers else {
+    crate::emit_message(
+      "RegionMoment::mexp: Invalid moment index specification at position 2 in 2. A list of non-negative integers matching the embedding dimension is expected.",
+    );
+    return unevaluated();
+  };
+  if powers.iter().sum::<i128>() > 24 {
+    return unevaluated();
+  }
+
+  match shape {
+    // Π (hi^(p+1) - lo^(p+1))/(p+1), per axis.
+    MomentShape::AxisBox { lo, hi } => {
+      let factors: Vec<Expr> = powers
+        .iter()
+        .zip(lo.iter().zip(hi.iter()))
+        .map(|(&p, (l, h))| {
+          ratio(
+            plus(vec![pow(h, p + 1), times(vec![int_e(-1), pow(l, p + 1)])]),
+            int_e(p + 1),
+          )
+        })
+        .collect();
+      ev(&times(factors))
+    }
+    // Binomial expansion about the center; the centered unit-ball moment
+    // with all-even exponents k is Π Gamma[(k_i+1)/2] / Gamma[Σ(k_i+1)/2
+    // + 1], scaled by r^(Σk + n).
+    MomentShape::Round { center, radius } => {
+      let n = center.len();
+      let mut terms: Vec<Expr> = Vec::new();
+      let mut k = vec![0i128; n];
+      'outer: loop {
+        // Skip terms with an odd centered exponent (they integrate to 0)
+        // and terms multiplied by a literal-zero center power.
+        let all_even = k.iter().all(|ki| ki % 2 == 0);
+        let zero_factor = k
+          .iter()
+          .zip(powers.iter().zip(center.iter()))
+          .any(|(ki, (pi, ci))| ki < pi && is_zero(ci));
+        if all_even && !zero_factor {
+          let mut factors: Vec<Expr> = Vec::new();
+          let mut gamma_num: Vec<Expr> = Vec::new();
+          let mut half_sum_num: i128 = 0;
+          fn binom_i128(n: i128, k: i128) -> i128 {
+            let k = k.min(n - k);
+            let mut acc: i128 = 1;
+            for t in 0..k {
+              acc = acc * (n - t) / (t + 1);
+            }
+            acc
+          }
+          for i in 0..n {
+            let (pi, ki, ci) = (powers[i], k[i], &center[i]);
+            let binom = binom_i128(pi, ki);
+            if binom != 1 {
+              factors.push(int_e(binom));
+            }
+            factors.push(pow(ci, pi - ki));
+            gamma_num.push(Expr::FunctionCall {
+              name: "Gamma".to_string(),
+              args: vec![ratio(int_e(ki + 1), int_e(2))].into(),
+            });
+            half_sum_num += ki + 1;
+          }
+          let k_sum: i128 = k.iter().sum();
+          factors.push(pow(&radius, k_sum + n as i128));
+          let gamma_den = Expr::FunctionCall {
+            name: "Gamma".to_string(),
+            args: vec![plus(vec![
+              ratio(int_e(half_sum_num), int_e(2)),
+              int_e(1),
+            ])]
+            .into(),
+          };
+          factors.push(ratio(times(gamma_num), gamma_den));
+          terms.push(times(factors));
+        }
+        // Odometer over 0..=powers.
+        for i in 0..n {
+          if k[i] < powers[i] {
+            k[i] += 1;
+            continue 'outer;
+          }
+          k[i] = 0;
+        }
+        break;
+      }
+      ev(&plus(terms))
+    }
+    // Affine map to the unit simplex: x = v0 + u d1 + v d2 with
+    // Integrate[u^a v^b] = a! b!/(a + b + 2)!, times |det|.
+    MomentShape::Tri { v } => {
+      let (i_pow, j_pow) = (powers[0], powers[1]);
+      let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
+        ev(&plus(vec![a.clone(), times(vec![int_e(-1), b.clone()])]))
+      };
+      let d1 = [sub(&v[1][0], &v[0][0])?, sub(&v[1][1], &v[0][1])?];
+      let d2 = [sub(&v[2][0], &v[0][0])?, sub(&v[2][1], &v[0][1])?];
+      let det = ev(&plus(vec![
+        times(vec![d1[0].clone(), d2[1].clone()]),
+        times(vec![int_e(-1), d1[1].clone(), d2[0].clone()]),
+      ]))?;
+      let abs_det = ev(&Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![det].into(),
+      })?;
+      let factorial = |m: i128| -> i128 { (1..=m).product::<i128>().max(1) };
+      let multinom = |m: i128, a: i128, b: i128| -> i128 {
+        factorial(m) / (factorial(a) * factorial(b) * factorial(m - a - b))
+      };
+      let mut terms: Vec<Expr> = Vec::new();
+      for k2 in 0..=i_pow {
+        for k3 in 0..=(i_pow - k2) {
+          let k1 = i_pow - k2 - k3;
+          if k1 > 0 && is_zero(&v[0][0]) {
+            continue;
+          }
+          for l2 in 0..=j_pow {
+            for l3 in 0..=(j_pow - l2) {
+              let l1 = j_pow - l2 - l3;
+              if l1 > 0 && is_zero(&v[0][1]) {
+                continue;
+              }
+              let a = k2 + l2;
+              let b = k3 + l3;
+              // multinom_i * multinom_j * a! b!/(a+b+2)! as one exact
+              // rational.
+              let num = multinom(i_pow, k2, k3)
+                * multinom(j_pow, l2, l3)
+                * factorial(a)
+                * factorial(b);
+              let den = factorial(a + b + 2);
+              let g = {
+                let mut x = num;
+                let mut y = den;
+                while y != 0 {
+                  let t = x % y;
+                  x = y;
+                  y = t;
+                }
+                x.max(1)
+              };
+              terms.push(times(vec![
+                ratio(int_e(num / g), int_e(den / g)),
+                pow(&v[0][0], k1),
+                pow(&d1[0], k2),
+                pow(&d2[0], k3),
+                pow(&v[0][1], l1),
+                pow(&d1[1], l2),
+                pow(&d2[1], l3),
+              ]));
+            }
+          }
+        }
+      }
+      ev(&times(vec![abs_det, plus(terms)]))
+    }
   }
 }
 

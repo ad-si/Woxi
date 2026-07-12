@@ -5319,3 +5319,121 @@ mod half_space {
     );
   }
 }
+
+// RegionMoment[reg, {i1, …, in}] — exact polynomial moments.
+// All outputs verified against wolframscript.
+mod region_moment {
+  use super::*;
+
+  #[test]
+  fn unit_disk_moments() {
+    assert_eq!(interpret("RegionMoment[Disk[], {0, 0}]").unwrap(), "Pi");
+    assert_eq!(interpret("RegionMoment[Disk[], {2, 0}]").unwrap(), "Pi/4");
+    assert_eq!(interpret("RegionMoment[Disk[], {2, 2}]").unwrap(), "Pi/24");
+    assert_eq!(interpret("RegionMoment[Disk[], {4, 0}]").unwrap(), "Pi/8");
+    // Odd exponents vanish by symmetry.
+    assert_eq!(interpret("RegionMoment[Disk[], {1, 0}]").unwrap(), "0");
+    assert_eq!(interpret("RegionMoment[Disk[], {1, 1}]").unwrap(), "0");
+    assert_eq!(interpret("RegionMoment[Disk[], {1, 2}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn scaled_and_shifted_disks_and_balls() {
+    assert_eq!(
+      interpret("RegionMoment[Disk[{0, 0}, r], {2, 0}]").unwrap(),
+      "(Pi*r^4)/4"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Disk[{1, 2}, 3], {1, 0}]").unwrap(),
+      "9*Pi"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Disk[{1, 2}, 3], {2, 1}]").unwrap(),
+      "(117*Pi)/2"
+    );
+    // Symbolic centers work through the binomial expansion.
+    assert_eq!(
+      interpret("RegionMoment[Disk[{cx, cy}, r], {1, 0}]").unwrap(),
+      "cx*Pi*r^2"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Ball[], {0, 0, 0}]").unwrap(),
+      "(4*Pi)/3"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Ball[], {2, 0, 0}]").unwrap(),
+      "(4*Pi)/15"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Ball[{0, 0, 0}, r], {2, 2, 4}]").unwrap(),
+      "(4*Pi*r^11)/3465"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Ball[{1, 0, -1}, 2], {2, 0, 1}]").unwrap(),
+      "(-96*Pi)/5"
+    );
+  }
+
+  #[test]
+  fn boxes() {
+    assert_eq!(
+      interpret("RegionMoment[Rectangle[], {1, 1}]").unwrap(),
+      "1/4"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Rectangle[{-1, -1}, {1, 1}], {2, 2}]").unwrap(),
+      "4/9"
+    );
+    // Symbolic corners.
+    assert_eq!(
+      interpret("RegionMoment[Rectangle[{0, 0}, {a, b}], {1, 2}]").unwrap(),
+      "(a^2*b^3)/6"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Cuboid[], {1, 1, 2}]").unwrap(),
+      "1/12"
+    );
+  }
+
+  #[test]
+  fn triangles() {
+    assert_eq!(
+      interpret("RegionMoment[Triangle[], {1, 1}]").unwrap(),
+      "1/24"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Triangle[{{0, 0}, {2, 0}, {0, 3}}], {1, 0}]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Triangle[{{1, 1}, {3, 2}, {2, 5}}], {2, 1}]")
+        .unwrap(),
+      "2387/60"
+    );
+    // Symbolic vertices keep the |det| factor symbolic.
+    assert_eq!(
+      interpret("RegionMoment[Triangle[{{0, 0}, {a, 0}, {0, b}}], {1, 0}]")
+        .unwrap(),
+      "(a*Abs[a*b])/6"
+    );
+  }
+
+  #[test]
+  fn invalid_specs_emit_mexp() {
+    clear_state();
+    let r = interpret_with_stdout("RegionMoment[Disk[], {-1, 0}]").unwrap();
+    assert_eq!(r.result, "RegionMoment[Disk[{0, 0}], {-1, 0}]");
+    assert!(r.warnings[0].contains(
+      "RegionMoment::mexp: Invalid moment index specification at position \
+       2 in 2. A list of non-negative integers matching the embedding \
+       dimension is expected."
+    ));
+
+    // A spec of the wrong length also fails.
+    clear_state();
+    let r = interpret_with_stdout("RegionMoment[Disk[], {1, 2, 3}]").unwrap();
+    assert_eq!(r.result, "RegionMoment[Disk[{0, 0}], {1, 2, 3}]");
+    assert!(r.warnings[0].contains("RegionMoment::mexp"));
+  }
+}

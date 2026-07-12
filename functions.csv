@@ -3126,7 +3126,7 @@ EntityPropertyClass,,🚫,,10.0,3200
 FoldWhile,Folds while a test holds returning the first failing value,✅,pure,12.2,3200
 MouseAnnotation,,🚫,,6.0,3200
 RectangleChart3D,,🚫,,7.0,3200
-RegionMoment,,,,10.4,3200
+RegionMoment,Polynomial moment integral of coordinates over a region,✅,pure,10.4,3200
 StringPadRight,Pads a string on the right to a specified length; a bare list of strings is padded to the longest,✅,pure,10.1,3200
 CellLabelAutoDelete,,🚫,,3.0,3215
 CloudDirectory,,🚫,,10.0,3215
