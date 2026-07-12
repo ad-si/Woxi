@@ -887,6 +887,19 @@ mod map_indexed {
     );
   }
 
+  // MapIndexed threads over any head, keeping it.
+  #[test]
+  fn non_list_head() {
+    assert_eq!(
+      interpret("MapIndexed[f, g[x, y]]").unwrap(),
+      "g[f[x, {1}], f[y, {2}]]"
+    );
+    assert_eq!(
+      interpret("MapIndexed[#2 &, h[a, b, c]]").unwrap(),
+      "h[{1}, {2}, {3}]"
+    );
+  }
+
   #[test]
   fn association_mixed_keys() {
     assert_eq!(

@@ -705,8 +705,11 @@ pub fn map_indexed_ast(
   func: &Expr,
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  // MapIndexed threads over any non-atomic head, keeping it: List gives a
+  // List, and a general head[...] gives head[f[e1, {1}], f[e2, {2}], ...].
+  let (head, items): (Option<&String>, &[Expr]) = match list {
+    Expr::List(items) => (None, items),
+    Expr::FunctionCall { name, args } => (Some(name), args),
     // On an association, f is applied to each value with the index {Key[key]},
     // keeping the keys: <|k -> f[v, {Key[k]}], ...|>.
     Expr::Association(pairs) => {
@@ -741,9 +744,18 @@ pub fn map_indexed_ast(
       apply_func_to_two_args(func, item, &index)
     })
     .collect();
-  let results: Vec<Expr> =
-    results?.into_iter().filter(|e| !is_nothing(e)).collect();
-  Ok(Expr::List(results.into()))
+  match head {
+    // `Nothing` is auto-removed only from Lists, not general heads.
+    None => {
+      let results: Vec<Expr> =
+        results?.into_iter().filter(|e| !is_nothing(e)).collect();
+      Ok(Expr::List(results.into()))
+    }
+    Some(h) => Ok(Expr::FunctionCall {
+      name: h.clone(),
+      args: results?.into(),
+    }),
+  }
 }
 
 /// Detect a Heads -> True option, either as Expr::Rule or Expr::FunctionCall.
