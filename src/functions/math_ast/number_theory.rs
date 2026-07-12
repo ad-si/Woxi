@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 use num_bigint::BigInt;
 use num_traits::Signed;
 
@@ -51,7 +53,7 @@ fn is_concrete_number(e: &Expr) -> bool {
     | Expr::BigFloat(_, _) => true,
     Expr::FunctionCall { name, .. } => name == "Rational",
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_concrete_number(operand),
     _ => false,
@@ -90,8 +92,8 @@ fn emit_gcd_lcm_exact_message(name: &str, args: &[Expr]) {
     crate::emit_message(&format!(
       "{}::exact: Argument {} in {} is not an exact number.",
       name,
-      crate::syntax::expr_to_string(inexact),
-      crate::syntax::expr_to_string(&call),
+      expr_to_string(inexact),
+      expr_to_string(&call),
     ));
   }
 }
@@ -1249,7 +1251,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
         z.clone()
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(z.clone()),
           right: Box::new(Expr::Integer(k as i128)),
         }
@@ -1258,13 +1260,13 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
         power
       } else if cn == -cd {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(-1)),
           right: Box::new(power),
         }
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(coeff_expr),
           right: Box::new(power),
         }
@@ -1280,7 +1282,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   let mut result = terms[0].clone();
   for term in &terms[1..] {
     result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(result),
       right: Box::new(term.clone()),
     };
@@ -1468,7 +1470,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
         z.clone()
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(z.clone()),
           right: Box::new(Expr::Integer(k as i128)),
         }
@@ -1479,13 +1481,13 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       } else if cn == -cd {
         // coefficient is -1
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(-1)),
           right: Box::new(power),
         }
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(coeff_expr),
           right: Box::new(power),
         }
@@ -1501,7 +1503,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   let mut result = terms[0].clone();
   for term in &terms[1..] {
     result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(result),
       right: Box::new(term.clone()),
     };
@@ -1589,14 +1591,14 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           x.clone()
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(coeff),
             right: Box::new(x.clone()),
           }
         }
       } else {
         let power = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(x.clone()),
           right: Box::new(Expr::Integer(k as i128)),
         };
@@ -1604,7 +1606,7 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           power
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(coeff),
             right: Box::new(power),
           }
@@ -1619,7 +1621,7 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut result = terms[0].clone();
     for term in &terms[1..] {
       result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(result),
         right: Box::new(term.clone()),
       };
@@ -1646,7 +1648,7 @@ pub fn pauli_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let i_expr = Expr::Identifier("I".to_string());
   let neg_i = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(i_expr.clone()),
   };
@@ -1963,7 +1965,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Build the BinaryOp Power form (k^j), which Sum's closed-form path
       // recognises; FunctionCall Power[k, j] would be left unevaluated.
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(k.clone()),
         right: Box::new(Expr::Integer(j)),
       }
@@ -2131,7 +2133,7 @@ pub fn multiple_harmonic_number_ast(
     // A non-list second argument is a usage error in wolframscript.
     crate::emit_message(&format!(
       "MultipleHarmonicNumber::list: List expected at position 2 in {}.",
-      crate::syntax::expr_to_string(&unevaluated())
+      expr_to_string(&unevaluated())
     ));
     return Ok(unevaluated());
   };
@@ -2146,7 +2148,7 @@ pub fn multiple_harmonic_number_ast(
   ) {
     let Some((&s, rest)) = exps.split_first() else {
       terms.push(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(bigint_to_expr(denom.clone())),
       });
@@ -2211,7 +2213,7 @@ pub fn alternating_harmonic_number_ast(
     let mut terms = Vec::new();
     for k in 1..=n {
       let k_pow = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(Expr::Integer(k)),
         right: Box::new(neg_r.clone()),
       };
@@ -2221,7 +2223,7 @@ pub fn alternating_harmonic_number_ast(
       }
       if let Some(x) = x {
         factors.push(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(x.clone()),
           right: Box::new(Expr::Integer(k)),
         });
@@ -2268,7 +2270,7 @@ pub fn alternating_harmonic_number_ast(
         }
         // Eta[r] in wolframscript's form: ((-2 + 2^r) Zeta[r])/2^r
         let two_pow_r = |exp: Expr| Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(2)),
           right: Box::new(exp),
         };
@@ -2489,7 +2491,7 @@ pub fn hyper_harmonic_number_ast(
   // for symbolic s and x (e.g. HyperHarmonicNumber[0, 5, s] -> 5^(-s)).
   if r == 0 {
     let n_pow = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Integer(n)),
       right: Box::new(neg_s(&s)),
     };
@@ -2498,7 +2500,7 @@ pub fn hyper_harmonic_number_ast(
         name: "Times".to_string(),
         args: vec![
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(x.clone()),
             right: Box::new(Expr::Integer(n)),
           },
@@ -2539,14 +2541,14 @@ pub fn hyper_harmonic_number_ast(
   for k in 1..=n {
     let coeff = bigint_to_expr(binom(n - k + r - 1, r - 1));
     let k_pow = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Integer(k)),
       right: Box::new(neg_s.clone()),
     };
     let mut factors = vec![coeff];
     if let Some(x) = x {
       factors.push(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(x.clone()),
         right: Box::new(Expr::Integer(k)),
       });
@@ -2582,7 +2584,7 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(n) if n >= 1 => Ok(Expr::Integer(nth_prime(n as usize) as i128)),
     Some(_) => {
       // Concrete non-positive integer: emit message like wolframscript
-      let arg_str = crate::syntax::expr_to_string(&args[0]);
+      let arg_str = expr_to_string(&args[0]);
       crate::emit_message(&format!(
         "Prime::intpp: Positive integer argument expected in Prime[{}].",
         arg_str
@@ -2593,7 +2595,7 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Concrete non-integer numeric (e.g. 1.5): emit message like wolframscript
       // Symbolic arguments return unevaluated silently
       if matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _)) {
-        let arg_str = crate::syntax::expr_to_string(&args[0]);
+        let arg_str = expr_to_string(&args[0]);
         crate::emit_message(&format!(
           "Prime::intpp: Positive integer argument expected in Prime[{}].",
           arg_str
@@ -4700,9 +4702,7 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Binomial[k, k] = 1 for any k (including symbolic), matching wolframscript.
   // Inexact arguments (machine reals) yield 1. rather than the exact integer.
-  if crate::syntax::expr_to_string(&args[0])
-    == crate::syntax::expr_to_string(&args[1])
-  {
+  if expr_to_string(&args[0]) == expr_to_string(&args[1]) {
     let inexact = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
       || matches!(&args[1], Expr::Real(_) | Expr::BigFloat(_, _));
     return Ok(if inexact {
@@ -5063,8 +5063,8 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if modulus.is_zero() {
         crate::emit_message(&format!(
           "PowerMod::divz: The argument 0 in PowerMod[{}, {}, 0] should be nonzero.",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&args[1])
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
         ));
         return Ok(Expr::FunctionCall {
           name: "PowerMod".to_string(),
@@ -5085,8 +5085,8 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               crate::emit_message(&format!(
                 "PowerMod::ninv: {} is not invertible modulo {}.",
-                crate::syntax::expr_to_string(&args[0]),
-                crate::syntax::expr_to_string(&args[2])
+                expr_to_string(&args[0]),
+                expr_to_string(&args[2])
               ));
               Ok(Expr::FunctionCall {
                 name: "PowerMod".to_string(),
@@ -5154,7 +5154,7 @@ fn power_mod_root_ast(
       args: args.to_vec().into(),
     })
   };
-  let exp_str = || crate::syntax::expr_to_string(&args[1]);
+  let exp_str = || expr_to_string(&args[1]);
   let (Some(a), Some(m)) = (expr_to_bigint(&args[0]), expr_to_bigint(&args[2]))
   else {
     return unevaluated();
@@ -5162,7 +5162,7 @@ fn power_mod_root_ast(
   if m.is_zero() {
     crate::emit_message(&format!(
       "PowerMod::divz: The argument 0 in PowerMod[{}, {}, 0] should be nonzero.",
-      crate::syntax::expr_to_string(&args[0]),
+      expr_to_string(&args[0]),
       exp_str()
     ));
     return unevaluated();
@@ -5209,8 +5209,8 @@ fn power_mod_root_ast(
       crate::emit_message(&format!(
         "PowerMod::root: The equation x^{} = {} (mod {}) has no integer solutions.",
         n,
-        crate::syntax::expr_to_string(&args[0]),
-        crate::syntax::expr_to_string(&args[2])
+        expr_to_string(&args[0]),
+        expr_to_string(&args[2])
       ));
       unevaluated()
     }
@@ -5662,8 +5662,8 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "ModularInverse::intnz: Nonzero integer expected at position 2 in \
        ModularInverse[{}, {}].",
-      crate::syntax::expr_to_string(&args[0]),
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[0]),
+      expr_to_string(&args[1])
     ));
     return unevaluated();
   }
@@ -5680,8 +5680,8 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !gcd.abs().is_one() {
     crate::emit_message(&format!(
       "ModularInverse::ninv: {} is not invertible modulo {}.",
-      crate::syntax::expr_to_string(&args[0]),
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[0]),
+      expr_to_string(&args[1])
     ));
     return unevaluated();
   }
@@ -5974,7 +5974,7 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if items.is_empty() {
     crate::emit_message(&format!(
       "FrobeniusNumber::coef: The first argument {} of FrobeniusNumber should be a nonempty list of positive integers.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(Expr::FunctionCall {
       name: "FrobeniusNumber".to_string(),
@@ -5992,7 +5992,7 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         crate::emit_message(&format!(
           "FrobeniusNumber::coef: The first argument {} of FrobeniusNumber should be a nonempty list of positive integers.",
-          crate::syntax::expr_to_string(&args[0])
+          expr_to_string(&args[0])
         ));
         return Ok(Expr::FunctionCall {
           name: "FrobeniusNumber".to_string(),
@@ -6088,7 +6088,7 @@ pub fn frobenius_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let coef_err = || {
     crate::emit_message(&format!(
       "FrobeniusSolve::coef: The first argument {} of FrobeniusSolve should be a nonempty list of positive integers.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok::<Expr, InterpreterError>(Expr::FunctionCall {
       name: "FrobeniusSolve".to_string(),
@@ -6126,7 +6126,7 @@ pub fn frobenius_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           crate::emit_message(&format!(
             "FrobeniusSolve::nsol: The number {} of requested solutions should be a positive integer.",
-            crate::syntax::expr_to_string(&args[2])
+            expr_to_string(&args[2])
           ));
           return Ok(Expr::FunctionCall {
             name: "FrobeniusSolve".to_string(),
@@ -6273,8 +6273,7 @@ pub fn arithmetic_geometric_mean_ast(
   // matching wolframscript; equal numbers are handled by the numeric path
   // below.
   if matches!(&args[0], Expr::Identifier(_) | Expr::Constant(_))
-    && crate::syntax::expr_to_string(&args[0])
-      == crate::syntax::expr_to_string(&args[1])
+    && expr_to_string(&args[0]) == expr_to_string(&args[1])
   {
     return Ok(args[0].clone());
   }
@@ -9236,8 +9235,8 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if c < (a - b).abs() || c > a + b || (a + b + c).rem_euclid(2) != 0 {
       crate::emit_message(&format!(
         "SixJSymbol::tri: SixJSymbol[{}, {}] is not triangular.",
-        crate::syntax::expr_to_string(&args[0]),
-        crate::syntax::expr_to_string(&args[1])
+        expr_to_string(&args[0]),
+        expr_to_string(&args[1])
       ));
       return Ok(Expr::Integer(0));
     }
@@ -9458,7 +9457,7 @@ fn six_j_symbol_symbolic(
     let forced_value = Expr::Integer(v_2j / 2);
     let cond = Expr::Comparison {
       operands: vec![Expr::Identifier(sym_name.clone()), forced_value],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     branches.push(Expr::List(vec![value, cond].into()));
   }
@@ -9523,7 +9522,7 @@ fn bigint_rational_to_expr(num: BigInt, den: BigInt) -> Expr {
 fn two_half_int_signed(expr: &Expr) -> Option<i128> {
   // UnaryOp::Minus wrapping an integer/rational.
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = expr
   {
@@ -9627,7 +9626,7 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let condition = Expr::Comparison {
       operands: vec![Expr::Identifier(sym_name.clone()), forced_m_expr],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     let branch = Expr::List(vec![value, condition].into());
     let pw_args = Expr::List(vec![branch].into());
@@ -9761,7 +9760,7 @@ pub fn farey_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(_) if args.len() == 1 => {
       crate::emit_message(&format!(
         "FareySequence::intpm: Positive machine-sized integer expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated(args))
+        expr_to_string(&unevaluated(args))
       ));
       return Ok(Expr::Identifier("Null".to_string()));
     }
@@ -9792,7 +9791,7 @@ pub fn farey_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "FareySequence::rank: Farey sequence rank {} at position 2 of {} is expected to be a positive integer less than or equal to {}.",
           rank,
-          crate::syntax::expr_to_string(&unevaluated(args)),
+          expr_to_string(&unevaluated(args)),
           terms.len()
         ));
         return Ok(unevaluated(args));
@@ -9837,7 +9836,7 @@ pub fn fibonorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ if is_non_integer_number => {
       crate::emit_message(&format!(
         "Fibonorial::intnm: Non-negative machine-sized integer expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated(args))
+        expr_to_string(&unevaluated(args))
       ));
       Ok(unevaluated(args))
     }

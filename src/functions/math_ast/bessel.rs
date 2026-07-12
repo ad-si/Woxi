@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 
 /// True if `z_expr` is `<zero_name>[order, k, ...]` whose first argument equals
 /// `n_expr` AND both `order` and `k` are concrete positive integers — the only
@@ -168,11 +168,9 @@ fn half_int_bessel_i(
 fn is_plus_expr(e: &Expr) -> bool {
   match e {
     Expr::FunctionCall { name, .. } if name == "Plus" => true,
-    Expr::BinaryOp { op, .. } => matches!(
-      op,
-      crate::syntax::BinaryOperator::Plus
-        | crate::syntax::BinaryOperator::Minus
-    ),
+    Expr::BinaryOp { op, .. } => {
+      matches!(op, BinaryOperator::Plus | BinaryOperator::Minus)
+    }
     _ => false,
   }
 }

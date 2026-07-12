@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 
 /// RandomInteger[max] or RandomInteger[{min, max}] - Random integer
 pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -242,7 +242,6 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// or RandomComplex[range, dims]. Real and imaginary parts are drawn
 /// uniformly from the specified rectangle.
 pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   use rand::Rng;
 
   fn complex_parts(expr: &Expr) -> Option<(f64, f64)> {
@@ -363,10 +362,10 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       rng.gen_range(im_lo..im_hi)
     };
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(Expr::Real(re)),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Real(im)),
         right: Box::new(Expr::Identifier("I".to_string())),
       }),
