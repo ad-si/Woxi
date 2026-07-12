@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// RSolve[{recurrence, initial_conditions...}, a, n]
 /// RSolve[recurrence, a[n], n] — single equation, return rule for `a[n]`
@@ -155,7 +155,7 @@ fn collect_terms_with_forcing(
       e.clone()
     } else {
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(e.clone()),
       }
     });
@@ -220,7 +220,7 @@ fn collect_terms_with_forcing(
       )
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => collect_terms_with_forcing(
       operand, func_name, var_name, -sign, terms, forcing,
@@ -296,7 +296,7 @@ fn solve_first_order_arithmetic(
   let d = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
     op: BinaryOperator::Divide,
     left: Box::new(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(forcing_total),
     }),
     right: Box::new(Expr::Integer(c_hi)),
@@ -660,7 +660,7 @@ fn build_first_order_with_ic(
     power
   } else if v == -1 {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(power),
     }
   } else {
@@ -764,7 +764,7 @@ fn build_partial_solution(
     r2_pow_n.clone()
   } else if v == -1 {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(r2_pow_n.clone()),
     }
   } else {
@@ -777,7 +777,7 @@ fn build_partial_solution(
 
   // Term 3: -C[1] * r_2^n
   let neg_c1_r2n = Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(if matches!(&r2_pow_n, Expr::Integer(1)) {
       c1.clone()
     } else {
@@ -934,7 +934,7 @@ fn collect_recurrence_terms(
         && collect_recurrence_terms(right, func_name, var_name, -sign, terms)
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => collect_recurrence_terms(operand, func_name, var_name, -sign, terms),
     // A zero constant contributes nothing (e.g. `a[n+2] - a[n] == 0`)
@@ -1340,7 +1340,7 @@ fn build_solution(
     };
     if num < 0 {
       term = Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(term),
       };
     }

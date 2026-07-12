@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 /// Wolfram canonical ordering for expressions.
 /// For strings: case-insensitive first, then lowercase before uppercase for ties.
@@ -24,7 +25,7 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
   match e {
     // Pure imaginary: n*I (BinaryOp form)
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -42,7 +43,7 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     }
     // a + b*I (BinaryOp form)
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => {
@@ -55,7 +56,7 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     }
     // a - b*I (BinaryOp form)
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left,
       right,
     } => {
@@ -108,7 +109,7 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     Expr::Identifier(name) if name == "I" => Some((0.0, 1.0)),
     // Negated: -I, -(a+bI)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       if let Some((re, im)) = expr_to_complex_parts(operand) {
@@ -1291,7 +1292,7 @@ fn numeric_coeff_and_rest(e: &Expr) -> (f64, String) {
   };
   match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (c, r) = numeric_coeff_and_rest(operand);
@@ -1313,7 +1314,7 @@ fn numeric_coeff_and_rest(e: &Expr) -> (f64, String) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -1339,15 +1340,15 @@ fn sum_highest_term_negates(sum: &Expr, atom: &Expr) -> bool {
       args.last().cloned()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       right,
       ..
     } => Some(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: right.clone(),
     }),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       right,
       ..
     } => Some((**right).clone()),
@@ -1356,7 +1357,7 @@ fn sum_highest_term_negates(sum: &Expr, atom: &Expr) -> bool {
   let Some(last) = last else { return false };
   let negated_inner = match &last {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some((**operand).clone()),
     Expr::FunctionCall { name, args }
@@ -1367,7 +1368,7 @@ fn sum_highest_term_negates(sum: &Expr, atom: &Expr) -> bool {
       Some(args[1].clone())
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(n) if *n < 0) => {
@@ -1405,7 +1406,7 @@ fn is_power_expr(e: &Expr) -> bool {
   matches!(
     e,
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       ..
     }
   ) || matches!(e, Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2)

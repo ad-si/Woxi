@@ -2764,7 +2764,7 @@ fn string_pattern_to_regex_inner(
 
     // Alternatives as BinaryOp (e.g. pat1 | pat2)
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       left,
       right,
     } => {
@@ -5032,7 +5032,6 @@ fn pad_bigfloat_to_precision(digits: &str, prec: f64) -> String {
 }
 
 pub fn expr_to_tex(expr: &Expr) -> String {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   // HoldForm[x] is a display wrapper; render its content transparently.
   if let Expr::FunctionCall { name, args } = expr
     && name == "HoldForm"
@@ -5272,7 +5271,7 @@ fn as_neg_int_power(expr: &Expr) -> Option<(&Expr, i128)> {
       None
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -5334,7 +5333,7 @@ fn tex_parens_plain(expr: &Expr) -> String {
 /// Handle n-ary Times in TeX, splitting into \frac when negative-integer
 /// Power factors are present (matching Wolfram TeXForm).
 fn tex_times_nary(args: &[Expr]) -> String {
-  use crate::syntax::BinaryOperator::{Minus, Plus};
+  use BinaryOperator::{Minus, Plus};
   let tex_needs_product_parens = |arg: &Expr| -> bool {
     matches!(
       arg,
@@ -5448,7 +5447,7 @@ fn tex_times_nary(args: &[Expr]) -> String {
 fn tex_power(base: &Expr, exp: &Expr) -> String {
   // Special case: Power[x, 1/2] → \sqrt{x}
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left,
     right,
   } = exp
@@ -5600,7 +5599,6 @@ fn tex_derivative(
 /// Classify a logical operator for TeX parenthesization, returning
 /// `(kind, precedence)` for And/Or/Xor/Implies/Not (higher binds tighter).
 fn tex_logic_op(expr: &Expr) -> Option<(&'static str, u8)> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
       "And" if args.len() >= 2 => Some(("And", 20)),
@@ -5746,7 +5744,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       let lhs = if matches!(
         &args[0],
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Alternatives,
+          op: BinaryOperator::Alternatives,
           ..
         }
       ) {
@@ -6426,7 +6424,6 @@ pub fn expr_to_mathml(expr: &Expr) -> String {
 
 /// Render a single expression as a MathML fragment at the given indentation depth.
 fn mathml_inner(expr: &Expr, depth: usize) -> String {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   let indent = " ".repeat(depth);
 
   match expr {
@@ -6789,8 +6786,6 @@ pub fn expr_to_box_form(expr: &Expr) -> String {
 /// Convert an expression to its box form representation.
 /// All atoms are string-quoted to match Wolfram's box format.
 pub fn expr_to_boxes(expr: &Expr) -> String {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
-
   match expr {
     // Simple atoms — all quoted in box form
     Expr::Integer(n) => format!("\"{}\"", n),

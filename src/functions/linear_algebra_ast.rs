@@ -5,7 +5,7 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{make_sqrt, try_eval_to_f64};
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// Transpose a matrix (Vec<Vec<Expr>>)
 fn transpose_matrix(m: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
@@ -407,7 +407,7 @@ fn fallback_plus(a: &Expr, b: &Expr) -> Expr {
   match crate::functions::math_ast::plus_ast(&[a.clone(), b.clone()]) {
     Ok(r) => r,
     Err(_) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(a.clone()),
       right: Box::new(b.clone()),
     },
@@ -422,7 +422,7 @@ fn eval_mul(a: &Expr, b: &Expr) -> Expr {
         match crate::functions::math_ast::times_ast(&[a.clone(), b.clone()]) {
           Ok(r) => r,
           Err(_) => Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(a.clone()),
             right: Box::new(b.clone()),
           },
@@ -436,7 +436,7 @@ fn eval_mul(a: &Expr, b: &Expr) -> Expr {
     _ => match crate::functions::math_ast::times_ast(&[a.clone(), b.clone()]) {
       Ok(r) => r,
       Err(_) => Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(a.clone()),
         right: Box::new(b.clone()),
       },
@@ -461,7 +461,7 @@ fn fallback_sub(a: &Expr, b: &Expr) -> Expr {
   match crate::functions::math_ast::subtract_ast(&[a.clone(), b.clone()]) {
     Ok(r) => r,
     Err(_) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(a.clone()),
       right: Box::new(b.clone()),
     },
@@ -1143,7 +1143,7 @@ fn eval_divide(a: &Expr, b: &Expr) -> Expr {
       match crate::functions::math_ast::divide_ast(&[a.clone(), b.clone()]) {
         Ok(r) => r,
         Err(_) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(a.clone()),
           right: Box::new(b.clone()),
         },
@@ -1806,12 +1806,12 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![conj_v, v.clone()].into(),
     };
     let scalar = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(dot_cv_u),
       right: Box::new(dot_cv_v),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(scalar),
       right: Box::new(v),
     };
@@ -2507,7 +2507,7 @@ fn divide_exact_root(root: &Expr, d: i128) -> Option<Expr> {
   match root {
     Expr::Integer(n) => Some(simplify_fraction(*n, d)),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let pos = divide_exact_root(operand, d)?;
@@ -2530,7 +2530,7 @@ fn divide_exact_root(root: &Expr, d: i128) -> Option<Expr> {
       .ok()
     }
     _ => crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(root.clone()),
       right: Box::new(Expr::Integer(d)),
     })
@@ -2609,7 +2609,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
     }
     // Otherwise keep the quotient form (3 + I*Sqrt[11])/2
     let halved = |num: Expr| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(num),
       right: Box::new(Expr::Integer(2)),
     };
@@ -2882,7 +2882,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![a, d].into(),
     };
     let lambda_minus = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
@@ -2897,7 +2897,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       right: Box::new(Expr::Integer(2)),
     };
     let lambda_plus = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![trace, sqrt_disc].into(),
@@ -3539,7 +3539,7 @@ fn complex_2x2_eigenvectors(
   let quotient_vector =
     |num_minuend: &Expr, num_subtrahend: &Expr, den: &Expr| {
       let x = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
@@ -6842,8 +6842,6 @@ pub fn fitted_model_normal(
 pub fn cholesky_decomposition_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   let unevaluated = || Expr::FunctionCall {
     name: "CholeskyDecomposition".to_string(),
     args: args.to_vec().into(),
@@ -7048,8 +7046,6 @@ pub(crate) fn contains_imaginary_unit(e: &Expr) -> bool {
 }
 
 pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   let matrix = match expr_to_matrix(&args[0]) {
     Some(m) => m,
     None => {
@@ -7320,7 +7316,6 @@ pub fn singular_value_decomposition_ast(
 /// pass through unchanged.
 fn simplify_radical_factor(expr: &Expr) -> Expr {
   use crate::functions::math_ast::{gcd, make_rational, sqrt_ast, times_ast};
-  use crate::syntax::BinaryOperator;
   let extract_int = |e: &Expr| -> Option<i128> {
     if let Expr::Integer(n) = e {
       Some(*n)
@@ -7388,7 +7383,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
   let mut other: Vec<Expr> = Vec::new();
   for f in &factors {
     if let Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } = f
     {
@@ -7594,7 +7589,6 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
 
 /// Helper: evaluate a dot product of two vectors
 fn eval_dot_product(a: &[Expr], b: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let mut sum = Expr::Integer(0);
   for (ai, bi) in a.iter().zip(b.iter()) {
     let prod = Expr::BinaryOp {
@@ -8580,7 +8574,7 @@ pub fn jordan_decomposition_ast(
     let result = simplify(simplify(evaluate_expr_to_expr(&e)?)?)?;
     let inner = match &result {
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => Some(operand.as_ref()),
       Expr::FunctionCall { name, args }
@@ -8598,7 +8592,7 @@ pub fn jordan_decomposition_ast(
           Some(args.iter().cloned().collect())
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left,
           right,
         } => {
@@ -8634,7 +8628,7 @@ pub fn jordan_decomposition_ast(
   let repeated = same(&l1, &l2);
 
   let div = |n: Expr, dn: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(n),
     right: Box::new(dn),
   };
@@ -9298,7 +9292,7 @@ fn expr_to_gq(e: &Expr) -> Option<GQNum> {
       Some(acc)
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => GQNum::zero().sub(&expr_to_gq(operand)?),
     // Complex-rational scalars can survive as unevaluated binary
@@ -9307,10 +9301,10 @@ fn expr_to_gq(e: &Expr) -> Option<GQNum> {
       let l = expr_to_gq(left)?;
       let r = expr_to_gq(right)?;
       match op {
-        crate::syntax::BinaryOperator::Plus => l.add(&r),
-        crate::syntax::BinaryOperator::Minus => l.sub(&r),
-        crate::syntax::BinaryOperator::Times => l.mul(&r),
-        crate::syntax::BinaryOperator::Divide => l.div(&r),
+        BinaryOperator::Plus => l.add(&r),
+        BinaryOperator::Minus => l.sub(&r),
+        BinaryOperator::Times => l.mul(&r),
+        BinaryOperator::Divide => l.div(&r),
         _ => None,
       }
     }
@@ -9504,7 +9498,7 @@ fn expr_mod_m(e: &Expr, m: i128) -> Result<i128, bool> {
       expr_mod_m(&rat, m)
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => expr_mod_m(operand, m).map(|v| (-v).rem_euclid(m)),
     _ => Err(false),
@@ -10030,7 +10024,7 @@ pub fn coordinate_transform_ast(
     args: fargs.into(),
   };
   let sq = |e: &Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(e.clone()),
     right: Box::new(Expr::Integer(2)),
   };

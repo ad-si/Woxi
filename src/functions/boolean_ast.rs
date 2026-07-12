@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// Helper to check if an Expr is True or False
 fn as_bool(expr: &Expr) -> Option<bool> {
@@ -77,7 +77,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Double negation: Not[Not[x]] → x. The inner operand is already in
       // normal form (it was produced by evaluating the inner Not).
       if let Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Not,
+        op: UnaryOperator::Not,
         operand,
       } = &evaluated
       {
@@ -103,7 +103,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
       Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Not,
+        op: UnaryOperator::Not,
         operand: Box::new(evaluated),
       })
     }
@@ -1165,7 +1165,7 @@ fn normalize_not(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Not,
+        op: UnaryOperator::Not,
         operand: Box::new(normalize_not(&args[0])),
       }
     }
@@ -1194,7 +1194,7 @@ fn to_dnf(expr: &Expr) -> Expr {
 fn dnf_literal(e: &Expr) -> (String, bool, Expr) {
   match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => (
       crate::syntax::expr_to_string(operand),
@@ -1326,7 +1326,7 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
           atom.clone()
         } else {
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Not,
+            op: UnaryOperator::Not,
             operand: Box::new(atom.clone()),
           }
         }
@@ -1533,7 +1533,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
     }
     // Convert UnaryOp(Not, x) to FunctionCall("Not", [x]) for uniform processing
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => {
       let inner = eliminate_connectives(operand);
@@ -1558,7 +1558,7 @@ fn apply_not_inward(inner: &Expr) -> Expr {
     }
     // Not[Not[a]] → a (handles UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => push_not_inward(operand),
     // Not[And[a, b, ...]] → Or[Not[a], Not[b], ...]
@@ -1608,7 +1608,7 @@ fn push_not_inward(expr: &Expr) -> Expr {
     }
     // Handle Not as UnaryOp
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => apply_not_inward(operand),
     Expr::FunctionCall { name, args } => {
@@ -1955,7 +1955,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 (0, crate::syntax::expr_to_string(&args[0]))
               }
               Expr::UnaryOp {
-                op: crate::syntax::UnaryOperator::Not,
+                op: UnaryOperator::Not,
                 operand,
               } => (0, crate::syntax::expr_to_string(operand)),
               _ => (1, crate::syntax::expr_to_string(e)),
@@ -2334,7 +2334,7 @@ fn implicants_to_expr(
           literals.push(var);
         } else {
           literals.push(Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Not,
+            op: UnaryOperator::Not,
             operand: Box::new(var),
           });
         }
@@ -2557,7 +2557,7 @@ fn exactly_k_dnf(vars: &[String], k: usize) -> Expr {
         literals.push(var);
       } else {
         literals.push(Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Not,
+          op: UnaryOperator::Not,
           operand: Box::new(var),
         });
       }
@@ -2588,7 +2588,7 @@ fn at_most_k_dnf(vars: &[String], kmax: usize) -> Expr {
     let mut literals: Vec<Expr> = Vec::with_capacity(s.len());
     for &i in s {
       literals.push(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Not,
+        op: UnaryOperator::Not,
         operand: Box::new(Expr::Identifier(vars[i].clone())),
       });
     }
@@ -2621,7 +2621,7 @@ fn minterms_to_dnf(vars: &[String], count_set: &[usize]) -> Expr {
           literals.push(var);
         } else {
           literals.push(Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Not,
+            op: UnaryOperator::Not,
             operand: Box::new(var),
           });
         }
@@ -2853,7 +2853,7 @@ fn collect_boolean_variable_exprs(expr: &Expr, out: &mut Vec<Expr>) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::And | crate::syntax::BinaryOperator::Or,
+      op: BinaryOperator::And | BinaryOperator::Or,
       left,
       right,
     } => {
@@ -2861,7 +2861,7 @@ fn collect_boolean_variable_exprs(expr: &Expr, out: &mut Vec<Expr>) {
       collect_boolean_variable_exprs(right, out);
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => {
       collect_boolean_variable_exprs(operand, out);
@@ -3208,7 +3208,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vars[i].clone()
           } else {
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Not,
+              op: UnaryOperator::Not,
               operand: Box::new(vars[i].clone()),
             }
           }
@@ -3440,7 +3440,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vars[i].clone()
           } else {
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Not,
+              op: UnaryOperator::Not,
               operand: Box::new(vars[i].clone()),
             }
           }

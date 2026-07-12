@@ -14,7 +14,7 @@
 
 use crate::InterpreterError;
 use crate::functions::calculus_ast::is_constant_wrt;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| Expr::FunctionCall {
@@ -242,7 +242,7 @@ fn collect_factors(
       .iter()
       .all(|a| collect_factors(a, n_var, inverted, parts)),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -250,7 +250,7 @@ fn collect_factors(
         && collect_factors(right, n_var, inverted, parts)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -307,7 +307,7 @@ fn collect_factors(
             true
           }
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand,
           } if matches!(operand.as_ref(), Expr::Identifier(e) if e == n_var) => {
             true
@@ -383,7 +383,7 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
       Some((args[0].clone(), args[1].clone()))
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some(((**left).clone(), (**right).clone())),
@@ -417,7 +417,7 @@ fn times(factors: Vec<Expr>) -> Expr {
 
 fn divide(num: Expr, den: Expr) -> Expr {
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(num),
     right: Box::new(den),
   }
@@ -425,7 +425,7 @@ fn divide(num: Expr, den: Expr) -> Expr {
 
 fn power(base: Expr, exp: i128) -> Expr {
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(base),
     right: Box::new(Expr::Integer(exp)),
   }
@@ -433,7 +433,7 @@ fn power(base: Expr, exp: i128) -> Expr {
 
 fn negate(e: Expr) -> Expr {
   Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(e),
   }
 }
@@ -518,7 +518,7 @@ fn poly_coeffs(expr: &Expr, var: &str) -> Option<Vec<Frac>> {
     }
     Expr::Identifier(v) if v == var => Some(vec![(0, 1), (1, 1)]),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some(poly_neg(&poly_coeffs(operand, var)?)),
     Expr::FunctionCall { name, args } if name == "Plus" => {
@@ -536,19 +536,19 @@ fn poly_coeffs(expr: &Expr, var: &str) -> Option<Vec<Frac>> {
       Some(acc)
     }
     Expr::BinaryOp { op, left, right } => match op {
-      crate::syntax::BinaryOperator::Plus => Some(poly_add(
+      BinaryOperator::Plus => Some(poly_add(
         &poly_coeffs(left, var)?,
         &poly_coeffs(right, var)?,
       )),
-      crate::syntax::BinaryOperator::Minus => Some(poly_add(
+      BinaryOperator::Minus => Some(poly_add(
         &poly_coeffs(left, var)?,
         &poly_neg(&poly_coeffs(right, var)?),
       )),
-      crate::syntax::BinaryOperator::Times => Some(poly_mul(
+      BinaryOperator::Times => Some(poly_mul(
         &poly_coeffs(left, var)?,
         &poly_coeffs(right, var)?,
       )),
-      crate::syntax::BinaryOperator::Power => {
+      BinaryOperator::Power => {
         if let Expr::Integer(k) = right.as_ref()
           && *k >= 1
         {
@@ -604,14 +604,14 @@ fn poly_trim(mut p: Vec<Frac>) -> Vec<Frac> {
 fn split_fraction(expr: &Expr) -> (i128, Expr, Expr) {
   match expr {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (s, n, d) = split_fraction(operand);
       (-s, n, d)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -635,7 +635,7 @@ fn split_fraction(expr: &Expr) -> (i128, Expr, Expr) {
             base
           } else {
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(base),
               right: Box::new(Expr::Integer(-e)),
             }
@@ -699,7 +699,7 @@ pub fn inverse_z_transform_ast(
         Some(1)
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left,
         right,
       } if matches!(right.as_ref(), Expr::Identifier(v) if *v == z_var) => {
@@ -724,13 +724,13 @@ pub fn inverse_z_transform_ast(
     };
     return Ok(match c {
       Some(1) => Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(factorial_n),
         right: Box::new(Expr::Integer(-1)),
       },
       Some(c) => divide(
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(c)),
           right: Box::new(n.clone()),
         },
@@ -778,7 +778,7 @@ pub fn inverse_z_transform_ast(
     };
     sign = norm_sign;
     let a_pow_n = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(a.clone()),
       right: Box::new(n.clone()),
     };
@@ -817,7 +817,7 @@ pub fn inverse_z_transform_ast(
       return Ok(times(vec![
         a_pow_n,
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(n.clone()),
           right: Box::new(Expr::Integer(2)),
         },
@@ -991,7 +991,7 @@ fn format_inverse_result(
   }
 
   let power = |b: Expr, e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(b),
     right: Box::new(e),
   };
@@ -1103,7 +1103,7 @@ fn times_factors(expr: &Expr) -> Vec<Expr> {
       args.iter().flat_map(times_factors).collect()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -1164,12 +1164,12 @@ pub fn fourier_coefficient_ast(
     args: fs.into(),
   };
   let div = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(a),
     right: Box::new(b),
   };
   let pow = |b: Expr, e: i128| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(b),
     right: Box::new(Expr::Integer(e)),
   };
@@ -1238,7 +1238,7 @@ pub fn fourier_coefficient_ast(
     }
   };
   let m1n = || Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(n_arg.clone()),
   };
@@ -1357,19 +1357,19 @@ pub fn fourier_sin_cos_coefficient_ast(
     args: ts.into(),
   };
   let div = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(a),
     right: Box::new(b),
   };
   let pow = |b: Expr, e: i128| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(b),
     right: Box::new(Expr::Integer(e)),
   };
   let pi = || Expr::Constant("Pi".to_string());
   let n_e = || n_arg.clone();
   let m1 = || Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(n_arg.clone()),
   };

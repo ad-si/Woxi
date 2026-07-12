@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 use std::cell::RefCell;
 
 // Thread-local stack of accumulated bindings from outer FunctionCall arg loops.
@@ -285,7 +286,7 @@ pub fn contains_pattern(expr: &Expr) -> bool {
     | Expr::PatternOptional { .. }
     | Expr::PatternTest { .. } => true,
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       ..
     } => true,
     Expr::FunctionCall { name, .. } if name == "Alternatives" => true,
@@ -350,7 +351,7 @@ pub fn try_ast_pattern_replace(
 /// Plus or Times) into its operand list, e.g. `(a + b) + c` → `[a, b, c]`.
 fn collect_flat_binary_operands(
   expr: &Expr,
-  op: &crate::syntax::BinaryOperator,
+  op: &BinaryOperator,
   out: &mut Vec<Expr>,
 ) {
   if let Expr::BinaryOp {
@@ -615,10 +616,8 @@ fn lookup_user_default(
 }
 
 /// Map a BinaryOperator to the corresponding Wolfram Language function name.
-pub fn binary_op_to_func_name(
-  op: &crate::syntax::BinaryOperator,
-) -> &'static str {
-  use crate::syntax::BinaryOperator;
+pub fn binary_op_to_func_name(op: &BinaryOperator) -> &'static str {
+  use BinaryOperator;
   match op {
     BinaryOperator::Plus => "Plus",
     BinaryOperator::Times => "Times",
@@ -3539,7 +3538,7 @@ fn match_pattern_impl(
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       left: alt_left,
       right: alt_right,
     } => {

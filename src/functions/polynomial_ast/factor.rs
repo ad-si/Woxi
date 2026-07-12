@@ -77,12 +77,12 @@ fn reorder_factored_product(result: Expr) -> Expr {
   }
   // A negated product (-((1+x)*…)) reorders its inner factors the same way.
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = &result
   {
     return Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(reorder_factored_product(operand.as_ref().clone())),
     };
   }
@@ -1477,7 +1477,7 @@ pub fn decompose_product(
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -1485,7 +1485,7 @@ pub fn decompose_product(
       decompose_product(right, pairs, numeric_coeff);
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -1495,7 +1495,7 @@ pub fn decompose_product(
         *numeric_coeff = crate::functions::math_ast::times_ast(&[
           numeric_coeff.clone(),
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: left.clone(),
             right: right.clone(),
           },
@@ -1533,7 +1533,7 @@ pub fn decompose_product(
       .unwrap_or(expr.clone());
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       // -expr: multiply coeff by -1 and decompose inner
@@ -1651,7 +1651,7 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
     }
     // Negation
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (n, d) = extract_rational_coeff(operand)?;
@@ -1687,7 +1687,7 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
             }
           }
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand,
           } => match operand.as_ref() {
             Expr::Integer(n) => num *= -n,
@@ -1738,7 +1738,7 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
 fn term_total_degree(term: &Expr) -> i128 {
   let inner = match term {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => operand.as_ref(),
     other => other,
@@ -1854,7 +1854,7 @@ fn divide_terms_by(
       Some(v) => match new_n {
         1 => v,
         -1 => Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(v),
         },
         _ => Expr::BinaryOp {
@@ -2079,7 +2079,7 @@ fn extract_non_numeric_factors(term: &Expr) -> Vec<Expr> {
       vec![] // Rational is purely numeric
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => extract_non_numeric_factors(operand),
     Expr::BinaryOp {
@@ -2092,7 +2092,7 @@ fn extract_non_numeric_factors(term: &Expr) -> Vec<Expr> {
         .filter(|f| {
           !matches!(f, Expr::Integer(_) | Expr::Real(_))
             && !matches!(f, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
-            && !matches!(f, Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand } if matches!(operand.as_ref(), Expr::Integer(_) | Expr::Real(_)))
+            && !matches!(f, Expr::UnaryOp { op: UnaryOperator::Minus, operand } if matches!(operand.as_ref(), Expr::Integer(_) | Expr::Real(_)))
         })
         .collect()
     }
@@ -2131,7 +2131,7 @@ fn multivariate_square_free(
   let factored = factor_ast(&[expanded.clone()])?;
   let (mut negated, product) = match &factored {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => (true, operand.as_ref().clone()),
     other => (false, other.clone()),
@@ -2277,7 +2277,7 @@ fn multivariate_square_free(
   };
   Ok(if negated {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(result),
     }
   } else {
@@ -2297,7 +2297,7 @@ fn decompose_content_factors(
   let (mut num, mut den) = (1i128, 1i128);
   let work = match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       num = -1;
@@ -2366,7 +2366,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
   // negation of either. Everything else uses the expand-based paths.
   let inner = match expr {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => operand.as_ref(),
     other => other,
@@ -2583,7 +2583,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
   let product = reorder_factored_product(product);
   Ok(Some(if negate {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(product),
     }
   } else {
@@ -2721,7 +2721,7 @@ fn factor_square_free_ast_impl(
   };
   Ok(if negate {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(product),
     }
   } else {
@@ -2949,7 +2949,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
   let summands: Vec<Expr> = match expanded {
     Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => {
@@ -2966,7 +2966,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
     match term {
       Expr::Integer(n) => Some(*n),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => term_coeff(operand).map(|c| -c),
       Expr::FunctionCall { name, args } if name == "Times" => {
@@ -2976,7 +2976,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
           if let Expr::Integer(n) = a {
             coeff *= n;
           } else if let Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand,
           } = a
             && let Expr::Integer(n) = operand.as_ref()
@@ -2987,7 +2987,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         Some(coeff)
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => match (left.as_ref(), right.as_ref()) {
@@ -3032,7 +3032,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         &summands[i],
         Expr::Integer(_)
           | Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             ..
           }
       ) && match &summands[i] {
@@ -3075,13 +3075,13 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         }
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => {
         let inner = divide_term(operand, div);
         crate::functions::math_ast::times_ast(&[Expr::Integer(-1), inner])
           .unwrap_or_else(|_| Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand: Box::new(divide_term(operand, div)),
           })
       }
@@ -3130,7 +3130,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
 fn collect_times_factors(expr: &Expr) -> Vec<Expr> {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -3151,7 +3151,7 @@ fn collect_plus(expr: &Expr, out: &mut Vec<Expr>) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => {
