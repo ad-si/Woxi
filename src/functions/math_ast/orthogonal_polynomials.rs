@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use num_bigint::BigInt;
 
 /// Visit every additive term of a polynomial expression, flattening nested and
@@ -33,7 +33,7 @@ fn integer_coeff_of_term(t: &Expr) -> Option<BigInt> {
     Expr::Integer(c) => Some(BigInt::from(*c)),
     Expr::BigInteger(c) => Some(c.clone()),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => integer_coeff_of_term(operand).map(|c| -c),
     Expr::FunctionCall { name, .. } if name == "Rational" => None,
@@ -697,10 +697,10 @@ fn associated_legendre_p_ast(
       name: "Power".to_string(),
       args: vec![
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(Expr::Integer(1)),
           right: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(x_expr.clone()),
             right: Box::new(Expr::Integer(2)),
           }),
@@ -716,10 +716,10 @@ fn associated_legendre_p_ast(
       name: "Power".to_string(),
       args: vec![
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(Expr::Integer(1)),
           right: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(x_expr.clone()),
             right: Box::new(Expr::Integer(2)),
           }),
@@ -735,15 +735,15 @@ fn associated_legendre_p_ast(
       sqrt_part
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(Expr::Integer(1)),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: Box::new(x_expr.clone()),
                 right: Box::new(Expr::Integer(2)),
               }),
@@ -759,10 +759,10 @@ fn associated_legendre_p_ast(
 
   // Build: sign * factor * deriv
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(sign)),
     right: Box::new(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(factor),
       right: Box::new(deriv),
     }),
@@ -1902,11 +1902,10 @@ fn legendre_q_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
 /// through to the unevaluated form when any argument fails to reduce
 /// to a complex `(re, im)` pair.
 fn legendre_q_associated_ast(
-  n_expr: &crate::syntax::Expr,
-  m_expr: &crate::syntax::Expr,
-  z_expr: &crate::syntax::Expr,
-) -> Result<crate::syntax::Expr, crate::InterpreterError> {
-  use crate::syntax::Expr;
+  n_expr: &Expr,
+  m_expr: &Expr,
+  z_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "LegendreQ".to_string(),
     args: vec![n_expr.clone(), m_expr.clone(), z_expr.clone()].into(),
@@ -2072,7 +2071,6 @@ fn chebyshev_general_numeric(
   n_expr: &Expr,
   x_expr: &Expr,
 ) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
   fn has_real_literal(e: &Expr) -> bool {
     match e {
       Expr::Real(_) | Expr::BigFloat(_, _) => true,
@@ -2165,7 +2163,6 @@ fn chebyshev_general_exact(
   n_expr: &Expr,
   x_expr: &Expr,
 ) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
   // n must be a non-integer rational p/q (q > 1).
   let q = match n_expr {
     Expr::FunctionCall { name, args }
@@ -3485,7 +3482,7 @@ fn generalized_laguerre_l_ast(
           x_expr.clone()
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(x_expr.clone()),
             right: Box::new(Expr::Integer(k as i128)),
           }
@@ -3494,13 +3491,13 @@ fn generalized_laguerre_l_ast(
           power
         } else if scaled == -1 {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(-1)),
             right: Box::new(power),
           }
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(coeff_expr),
             right: Box::new(power),
           }
@@ -3516,7 +3513,7 @@ fn generalized_laguerre_l_ast(
     let mut numer = terms[0].clone();
     for term in &terms[1..] {
       numer = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(numer),
         right: Box::new(term.clone()),
       };
@@ -3525,7 +3522,7 @@ fn generalized_laguerre_l_ast(
       numer
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(numer),
         right: Box::new(Expr::Integer(common_denom)),
       }
@@ -3591,7 +3588,7 @@ fn generalized_laguerre_l_ast(
     vec![Expr::Integer(n_fact), call("Plus", sum_terms)],
   );
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(call("Expand", vec![scaled])),
     right: Box::new(Expr::Integer(n_fact)),
   };
@@ -4025,7 +4022,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
   let is_cos_theta_sq = |e: &Expr| -> bool {
     let (base, exp) = match e {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } => (left.as_ref(), right.as_ref()),
@@ -4045,7 +4042,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
     // Match: 1 - Cos[θ]^2 in either `BinaryOp::Minus` or
     // `Plus[1, Times[-1, Cos[θ]^2]]` shape.
     if let Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left,
       right,
     } = e
@@ -4127,7 +4124,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
   }
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -4137,7 +4134,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
         return sin_pow(e2);
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(rewrite_sqrt_one_minus_cos_sq(left, theta)),
         right: Box::new(rewrite_sqrt_one_minus_cos_sq(right, theta)),
       }

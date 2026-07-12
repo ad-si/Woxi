@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{
+  BinaryOperator, Expr, ExprForm, UnaryOperator, expr_to_string,
+};
 use num_bigint::BigInt;
 use num_bigint::Sign;
 
@@ -298,7 +300,7 @@ fn negative_literal_abs(f: &Expr) -> Option<Expr> {
 fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some((left.as_ref(), right.as_ref())),
@@ -312,7 +314,7 @@ fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
 fn power_with_real_exponent(expr: &Expr) -> Option<(&Expr, &Expr)> {
   let (base, exp) = match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => (left.as_ref(), right.as_ref()),
@@ -380,7 +382,7 @@ fn collect_times_factors<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) -> bool {
       true
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -447,7 +449,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // product whose only I-mentioning factor is I itself).
   let power_parts: Option<(&Expr, &Expr)> = match &args[0] {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some((left.as_ref(), right.as_ref())),
@@ -497,7 +499,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Check for -Infinity (UnaryOp::Minus applied to Infinity)
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = &args[0]
     && matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity")
@@ -568,7 +570,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left,
           right,
         } => inner(left) && !mentions_imaginary_unit(right),
@@ -673,7 +675,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let z_expr = build_complex_expr(rn, rd, in_, id);
         let abs_expr = make_sqrt(make_rational(abs2_n, abs2_d));
         return Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(z_expr),
           right: Box::new(abs_expr),
         });
@@ -869,7 +871,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // canonicalisation (Sqrt[I] = (-1)^(1/4), Sqrt[-I] = -(-1)^(3/4)) applies.
   if matches!(&args[0], Expr::Identifier(s) if s == "I")
     || matches!(&args[0],
-      Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand }
+      Expr::UnaryOp { op: UnaryOperator::Minus, operand }
         if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I"))
   {
     return crate::functions::math_ast::power_two(
@@ -1068,7 +1070,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Sqrt[base^(2n)] → base^n only when base is known non-negative
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: base,
       right: exp,
     } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0 && n % 2 == 0)
@@ -1080,7 +1082,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(*base.clone());
         } else {
           return Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: base.clone(),
             right: Box::new(Expr::Integer(half)),
           });
@@ -1090,7 +1092,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Sqrt of a product: Sqrt[n * expr^2 * ...] → simplify factors
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       ..
     }
     | Expr::FunctionCall { name: _, args: _ }
@@ -1112,7 +1114,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           // expr^2 → move expr outside only if expr is known non-negative
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: base,
             right: exp,
           } if matches!(exp.as_ref(), Expr::Integer(2))
@@ -1123,7 +1125,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // expr^(2n) → move expr^n outside (for any even n, including negative)
           // only if expr is known non-negative
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: base,
             right: exp,
           } if matches!(exp.as_ref(), Expr::Integer(n) if n % 2 == 0 && *n != 0)
@@ -1135,7 +1137,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 outside.push(*base.clone());
               } else {
                 outside.push(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Power,
+                  op: BinaryOperator::Power,
                   left: base.clone(),
                   right: Box::new(Expr::Integer(half)),
                 });
@@ -1158,7 +1160,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 outside.push(pargs[0].clone());
               } else {
                 outside.push(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Power,
+                  op: BinaryOperator::Power,
                   left: Box::new(pargs[0].clone()),
                   right: Box::new(Expr::Integer(half)),
                 });
@@ -1273,7 +1275,7 @@ fn extract_int_coeff(term: &Expr) -> Option<(i128, Expr)> {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (c, base) = extract_int_coeff(operand)?;
@@ -1455,7 +1457,7 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_literal_zero(degree) {
     crate::emit_message(&format!(
       "Surd::indet: Indeterminate expression Surd[{}, 0] encountered.",
-      crate::syntax::expr_to_string(base)
+      expr_to_string(base)
     ));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -2037,7 +2039,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if !a_is_real && !a_is_int {
         // Symbolic: return n * a
         return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(n)),
           right: Box::new(eval_a),
         });
@@ -2202,7 +2204,7 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   if is_literal_zero(n) {
     crate::emit_message(&format!(
       "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-      crate::syntax::expr_to_string(m)
+      expr_to_string(m)
     ));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -2224,7 +2226,7 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     if nb.is_zero() {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        crate::syntax::expr_to_string(m)
+        expr_to_string(m)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2244,7 +2246,7 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       // Mod[m, 0] => Indeterminate
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        crate::syntax::expr_to_string(m)
+        expr_to_string(m)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2270,14 +2272,14 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     if b == 0.0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        crate::syntax::expr_to_string(m)
+        expr_to_string(m)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     // floor_quot = Floor[m/n]; evaluating the quotient first lets exact
     // cancellations (e.g. 2*Pi/Pi -> 2) happen so the floor is exact.
     let quotient = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(m.clone()),
       right: Box::new(n.clone()),
     };
@@ -2287,10 +2289,10 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     };
     // result = m - n*Floor[m/n]
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(m.clone()),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(n.clone()),
         right: Box::new(floor_quot),
       }),
@@ -2308,7 +2310,7 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     && (m_im != 0 || n_im != 0)
   {
     let quotient = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(m.clone()),
       right: Box::new(n.clone()),
     };
@@ -2317,10 +2319,10 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       args: vec![quotient].into(),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(m.clone()),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(n.clone()),
         right: Box::new(round_quot),
       }),
@@ -2333,7 +2335,7 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     if b == 0.0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        crate::syntax::expr_to_string(m)
+        expr_to_string(m)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2375,8 +2377,8 @@ pub fn mod3_ast(
   if is_literal_zero(n) {
     crate::emit_message(&format!(
       "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-      crate::syntax::expr_to_string(m),
-      crate::syntax::expr_to_string(d)
+      expr_to_string(m),
+      expr_to_string(d)
     ));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -2387,8 +2389,8 @@ pub fn mod3_ast(
     if nn == 0 && nd != 0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-        crate::syntax::expr_to_string(m),
-        crate::syntax::expr_to_string(d)
+        expr_to_string(m),
+        expr_to_string(d)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2418,19 +2420,19 @@ pub fn mod3_ast(
     if b == 0.0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-        crate::syntax::expr_to_string(m),
-        crate::syntax::expr_to_string(d)
+        expr_to_string(m),
+        expr_to_string(d)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     // floor_quot = Floor[(m - d)/n]
     let diff = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(m.clone()),
       right: Box::new(d.clone()),
     };
     let quotient = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(diff),
       right: Box::new(n.clone()),
     };
@@ -2440,10 +2442,10 @@ pub fn mod3_ast(
     };
     // result = m - n*Floor[(m - d)/n]
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(m.clone()),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(n.clone()),
         right: Box::new(floor_quot),
       }),
@@ -2458,8 +2460,8 @@ pub fn mod3_ast(
     if b == 0.0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-        crate::syntax::expr_to_string(m),
-        crate::syntax::expr_to_string(d)
+        expr_to_string(m),
+        expr_to_string(d)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2506,7 +2508,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       is_literal_zero(&args[0])
     };
-    let call = crate::syntax::expr_to_string(&Expr::FunctionCall {
+    let call = expr_to_string(&Expr::FunctionCall {
       name: "Quotient".to_string(),
       args: args.to_vec().into(),
     });
@@ -2626,7 +2628,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // the identity Mod[m, n] = m - n*Quotient[m, n]. Building the symbolic
         // Round and evaluating it also normalises the display to `a + b*I`.
         let quotient = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(args[0].clone()),
           right: Box::new(args[1].clone()),
         };
@@ -2754,7 +2756,7 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn emit_integer_exponent_ibase(b: &Expr) {
   crate::emit_message(&format!(
     "IntegerExponent::ibase: Base {} is not an integer greater than 1.",
-    crate::syntax::format_expr(b, crate::syntax::ExprForm::Output)
+    crate::syntax::format_expr(b, ExprForm::Output)
   ));
 }
 
@@ -3274,7 +3276,7 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if cube_part > 1 {
         // CubeRoot[n] = cube_part * CubeRoot[remainder]
         let cube_root_remainder = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(remainder as i128)),
           right: Box::new(Expr::FunctionCall {
             name: "Rational".to_string(),
@@ -3282,7 +3284,7 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }),
         };
         let result = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(sign * cube_part as i128)),
           right: Box::new(cube_root_remainder),
         };
@@ -3292,7 +3294,7 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Sign[n] * abs[n]^(1/3) (matching wolframscript: CubeRoot[-5]
         // -> -5^(1/3), i.e. -(5^(1/3)), not the complex (-5)^(1/3)).
         let pow = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(abs_n as i128)),
           right: Box::new(Expr::FunctionCall {
             name: "Rational".to_string(),
@@ -3301,7 +3303,7 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         if sign < 0 {
           Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(-1)),
             right: Box::new(pow),
           })
@@ -3341,7 +3343,7 @@ fn is_concrete_number(e: &Expr) -> bool {
     | Expr::BigFloat(_, _) => true,
     Expr::FunctionCall { name, .. } => name == "Rational",
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_concrete_number(operand),
     _ => false,
@@ -3382,10 +3384,7 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::emit_message(&format!(
             "Subdivide::sdmint: The number of subdivisions given in position {} of {} should be a positive machine-sized integer.",
             args.len(),
-            crate::syntax::format_expr(
-              &unevaluated(),
-              crate::syntax::ExprForm::Output
-            )
+            crate::syntax::format_expr(&unevaluated(), ExprForm::Output)
           ));
           return Ok(unevaluated());
         }
@@ -3400,10 +3399,7 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "Subdivide::sdmint: The number of subdivisions given in position {} of {} should be a positive machine-sized integer.",
         args.len(),
-        crate::syntax::format_expr(
-          &unevaluated(),
-          crate::syntax::ExprForm::Output
-        )
+        crate::syntax::format_expr(&unevaluated(), ExprForm::Output)
       ));
       return Ok(unevaluated());
     }
@@ -3470,7 +3466,6 @@ fn subdivide_scalar_at(
   n: i128,
 ) -> Result<Expr, InterpreterError> {
   use crate::evaluator::evaluate_expr_to_expr;
-  use crate::syntax::BinaryOperator;
 
   if i == 0 {
     return Ok(xmin.clone());
@@ -3558,9 +3553,9 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // First check if any are symbolic (non-numeric)
   let mut has_symbolic = false;
   let mut all_equal = true;
-  let first_str = crate::syntax::expr_to_string(&args[0]);
+  let first_str = expr_to_string(&args[0]);
   for arg in &args[1..] {
-    let s = crate::syntax::expr_to_string(arg);
+    let s = expr_to_string(arg);
     if s != first_str {
       all_equal = false;
       // Check if both are numeric and compare numerically
@@ -3645,11 +3640,8 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(v) if v < 0.0 => return Ok(Expr::Integer(0)),
         Some(_) => {} // >= 0: contributes 1, drop it
         None => {
-          let s = crate::syntax::expr_to_string(arg);
-          if !remaining
-            .iter()
-            .any(|e| crate::syntax::expr_to_string(e) == s)
-          {
+          let s = expr_to_string(arg);
+          if !remaining.iter().any(|e| expr_to_string(e) == s) {
             remaining.push(arg.clone());
           }
         }
@@ -3678,7 +3670,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
     Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(1)),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => match operand.as_ref() {
       Expr::Constant(c) if matches!(c.as_str(), "Pi" | "E" | "Degree") => {
@@ -3708,7 +3700,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(-1)) => match right.as_ref() {

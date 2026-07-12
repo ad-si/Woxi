@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// ExpIntegralEi[x] - Exponential integral Ei(x)
 pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -188,7 +188,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Helper: negate FresnelS (odd function)
   let negate_fresnel_s = |inner: Expr| -> Expr {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::FunctionCall {
         name: "FresnelS".to_string(),
         args: vec![inner].into(),
@@ -223,7 +223,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // FresnelS[-x] = -FresnelS[x] (UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       // Check for -Infinity first
@@ -310,7 +310,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Helper: negate FresnelC (odd function)
   let negate_fresnel_c = |inner: Expr| -> Expr {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::FunctionCall {
         name: "FresnelC".to_string(),
         args: vec![inner].into(),
@@ -344,7 +344,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // FresnelC[-x] = -FresnelC[x] (UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       // Check for -Infinity first
@@ -720,7 +720,6 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // arguments are handled here; a machine-Real argument folds to the same value
   // the numeric path below would give.
   if matches!(n_expr, Expr::Integer(0)) {
-    use crate::syntax::BinaryOperator;
     let exp_neg_z = Expr::FunctionCall {
       name: "Exp".to_string(),
       args: vec![Expr::BinaryOp {

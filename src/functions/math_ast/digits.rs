@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 use num_bigint::BigInt;
 use num_traits::Signed;
 
@@ -670,7 +670,7 @@ fn extract_sqrt_integer(expr: &Expr) -> Option<i128> {
       None
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -709,7 +709,7 @@ fn extract_reciprocal_sqrt_integer(expr: &Expr) -> Option<i128> {
       None
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -739,7 +739,7 @@ fn extract_quadratic_irrational(
   // overall Rational coefficient and whatever Plus-sum remains.
   let (inner_owned, scale_num, scale_den): (Expr, i128, i128) = match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -789,7 +789,7 @@ fn extract_quadratic_irrational(
   let mut d: i128 = 0;
   let terms: Vec<&Expr> = match inner {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => vec![left.as_ref(), right.as_ref()],
@@ -814,7 +814,7 @@ fn extract_quadratic_irrational(
     // k * Sqrt[d] — canonically as Times[k, Sqrt[d]].
     let (coeff, sqrt_expr) = match t {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => (left.as_ref(), right.as_ref()),
@@ -2161,7 +2161,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => *n < 0,
     Expr::Real(f) => *f < 0.0,
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       ..
     } => true,
     _ => false,
@@ -3560,7 +3560,7 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
         Expr::Integer(-n)
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::Integer(-n)),
           right: Box::new(Expr::Integer(-d)),
         }
@@ -3569,7 +3569,7 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
       Expr::Integer(n)
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(n)),
         right: Box::new(Expr::Integer(d)),
       }
@@ -3959,7 +3959,7 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let psv = |args: &[Expr]| {
     crate::emit_message(&format!(
       "NumberDecompose::psv: {} is not a list of nonincreasing positive numbers.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     Ok(unevaluated(args))
   };
@@ -4061,8 +4061,8 @@ pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if coeff_exprs.len() > unit_exprs.len() {
     crate::emit_message(&format!(
       "NumberCompose::ulen: List {} of coefficients cannot be longer than list {} of units.",
-      crate::syntax::expr_to_string(&args[0]),
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[0]),
+      expr_to_string(&args[1])
     ));
     return Ok(unevaluated(args));
   }
@@ -4089,7 +4089,7 @@ pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let psv = |args: &[Expr]| {
     crate::emit_message(&format!(
       "NumberCompose::psv: {} is not a list of nonincreasing positive numbers.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     Ok(unevaluated(args))
   };
@@ -4163,7 +4163,7 @@ pub fn minkowski_question_mark_ast(
       let golden = matches!(other, Expr::Identifier(s) | Expr::Constant(s) if s == "GoldenRatio");
       let neg_golden = match other {
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand,
         } => matches!(
           operand.as_ref(),
@@ -4342,7 +4342,7 @@ pub fn from_roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       crate::emit_message(&format!(
         "FromRomanNumeral::string: String expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated(args))
+        expr_to_string(&unevaluated(args))
       ));
       Ok(unevaluated(args))
     }
@@ -4381,8 +4381,8 @@ pub fn thue_morse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "ThueMorse::nnintprm: Parameter {} at position 1 in {} is expected \
            to be a non-negative integer.",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&unevaluated(args))
+          expr_to_string(&args[0]),
+          expr_to_string(&unevaluated(args))
         ));
       }
       Ok(unevaluated(args))
@@ -4416,8 +4416,8 @@ pub fn rudin_shapiro_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "RudinShapiro::nnintprm: Parameter {} at position 1 in {} is \
            expected to be a non-negative integer.",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&unevaluated(args))
+          expr_to_string(&args[0]),
+          expr_to_string(&unevaluated(args))
         ));
       }
       Ok(unevaluated(args))

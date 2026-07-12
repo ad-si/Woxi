@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// AiryAi[x] - Airy function of the first kind
 pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -292,7 +292,7 @@ pub fn airy_ai_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Integer(0)) {
     let result = airy_build_value((2, 3), (1, 3), true)?;
     return crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(result),
     });
   }
@@ -401,7 +401,7 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .into(),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(power_3),
       right: Box::new(gamma),
     };
@@ -514,7 +514,7 @@ fn airy_build_value(
     gamma
   };
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(power_3),
     right: Box::new(denom),
   };
@@ -662,7 +662,7 @@ fn scorer_value_at_zero(numer: i128) -> Result<Expr, InterpreterError> {
     args: vec![Expr::Integer(3), three_sixth, gamma].into(),
   };
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(Expr::Integer(numer)),
     right: Box::new(denom),
   };

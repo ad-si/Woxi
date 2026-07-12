@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use num_bigint::BigInt;
 
 /// Pochhammer[a, n] - Rising factorial (Pochhammer symbol): a * (a+1) * ... * (a+n-1)
@@ -297,7 +297,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let g0 = gamma_incomplete_upper(a, z0)?;
       let g1 = gamma_incomplete_upper(a, z1)?;
       return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(g0),
         right: Box::new(g1),
       });
@@ -324,7 +324,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
       return Ok(Expr::Identifier("Indeterminate".to_string()));
@@ -1963,7 +1963,7 @@ pub fn owen_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Exact h = 0: T(0, a) = ArcTan[a]/(2π).
   if matches!(h, Expr::Integer(0)) && !has_real {
     return Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::FunctionCall {
         name: "ArcTan".to_string(),
         args: vec![a.clone()].into(),
@@ -2273,7 +2273,7 @@ pub fn log_barnes_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(args));
   }
   let neg_infinity = || Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(Expr::Identifier("Infinity".to_string())),
   };
   match &args[0] {

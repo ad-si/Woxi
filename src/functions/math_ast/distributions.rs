@@ -2,7 +2,9 @@
 use super::*;
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 
 /// Helper to build a binary operation expression
 fn binop(op: BinaryOperator, left: Expr, right: Expr) -> Expr {
@@ -363,11 +365,11 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(Expr::Identifier("E".to_string())),
             right: Box::new(divide(
               Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: Box::new(x.clone()),
                 right: Box::new(int(2)),
               },
@@ -423,8 +425,7 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       if p_pair.len() != 2
         || s_pair.len() != 2
-        || crate::syntax::expr_to_string(&p_pair[1])
-          != crate::syntax::expr_to_string(&s_pair[1])
+        || expr_to_string(&p_pair[1]) != expr_to_string(&s_pair[1])
       {
         return Ok(unevaluated(args));
       }
@@ -455,7 +456,7 @@ fn match_erfc_half(expr: &Expr) -> Option<Expr> {
   };
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } if matches!(right.as_ref(), Expr::Integer(2)) => erfc_arg(left),
@@ -493,7 +494,7 @@ pub fn quantile_distribution_closed_form(
   }
   let infinity = || Expr::Identifier("Infinity".to_string());
   let neg_infinity = || Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(infinity()),
   };
   let is_exact_q = !matches!(q, Expr::Real(_));
@@ -709,7 +710,7 @@ pub fn quantile_distribution_closed_form(
           _ => vec![sqrt2, s.clone(), inverse_erfc],
         };
         let term = Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(Expr::FunctionCall {
             name: "Times".to_string(),
             args: factors.into(),
@@ -881,7 +882,7 @@ pub fn inverse_survival_closed_form(
   let is_exact_q = !matches!(q, Expr::Real(_));
   let infinity = || Expr::Identifier("Infinity".to_string());
   let neg_infinity = || Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(infinity()),
   };
 
@@ -2118,7 +2119,7 @@ fn cdf_exponential(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       e(),
       times(
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(lambda),
         },
         x.clone(),
@@ -2308,7 +2309,7 @@ fn pdf_gamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let exp_part = power(
     e(),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(divide(x.clone(), beta.clone())),
     },
   );
@@ -2409,7 +2410,7 @@ fn pdf_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // (1 + E^(...))^2
   let denom_sq = power(
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(int(1)),
       right: Box::new(exp_val.clone()),
     },
@@ -2431,7 +2432,7 @@ fn cdf_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   let exp_val = power(e(), divide(minus(m, x), s));
   let denom = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(int(1)),
     right: Box::new(exp_val),
   };
@@ -2456,7 +2457,7 @@ fn pdf_inverse_chi_square(
   let x_part = power(
     power(x.clone(), int(-1)),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(int(1)),
       right: Box::new(divide(n.clone(), int(2))),
     },
@@ -2519,9 +2520,9 @@ fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let xb_part = power(
     xb.clone(),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(int(1)),
         right: Box::new(a.clone()),
       }),
@@ -2533,7 +2534,7 @@ fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       xb,
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(a.clone()),
       },
     ),
@@ -2563,11 +2564,11 @@ fn cdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let value = power(
     e(),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(power(
         divide(shifted, b),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(a),
         },
       )),
@@ -2594,9 +2595,9 @@ fn pdf_extreme_value(
   let ab = divide(minus(a.clone(), x), b.clone());
   // E^(-E^((a-x)/b) + (a-x)/b)
   let exp_arg = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(power(e(), ab.clone())),
     }),
     right: Box::new(ab),
@@ -2622,7 +2623,7 @@ fn cdf_extreme_value(
   eval(power(
     e(),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(power(e(), ab)),
     },
   ))
@@ -2649,7 +2650,7 @@ fn pdf_gompertz_makeham(
   let inner = times(minus(int(1), e_lx), x0.clone());
   // l*x + (1 - E^(l*x))*x0
   let exp_arg = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(lx),
     right: Box::new(inner),
   };
@@ -2741,7 +2742,7 @@ fn cdf_inverse_gaussian(
     times(
       sqrt_lx,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(m.clone()),
         right: Box::new(x.clone()),
       },
@@ -2756,7 +2757,7 @@ fn cdf_inverse_gaussian(
     int(2),
   );
   let value = eval(Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(erfc1),
     right: Box::new(times(exp_part, erfc2)),
   })?;
@@ -3471,7 +3472,7 @@ fn extract_mgf_pattern(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
       args[1].clone()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -4973,7 +4974,7 @@ pub fn distribution_mean_variance(
       let b_gamma = times(b.clone(), gamma_1_minus_inv_a.clone());
       let mean_value = match &mu {
         Some(m) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(m.clone()),
           right: Box::new(b_gamma),
         },
@@ -5571,9 +5572,7 @@ pub fn distribution_mean_variance(
 /// Check if expression is var^n
 fn is_power_of_var(expr: &Expr, var: &str, n: i128) -> bool {
   match expr {
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Power =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Power => {
       matches!(left.as_ref(), Expr::Identifier(v) if v == var)
         && matches!(right.as_ref(), Expr::Integer(k) if *k == n)
     }
@@ -5588,9 +5587,7 @@ fn extract_linear(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
     // Pure variable: x → (1, 0)
     Expr::Identifier(n) if n == var => Some((int(1), int(0))),
     // a * x
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Times =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Times => {
       if matches!(right.as_ref(), Expr::Identifier(n) if n == var)
         && !contains_var(left, var)
       {
@@ -5604,9 +5601,7 @@ fn extract_linear(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
       }
     }
     // a + b (try linear decomposition)
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Plus =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Plus => {
       // If left is linear in var and right is constant (or vice versa)
       if !contains_var(right, var)
         && let Some((a, b)) = extract_linear(left, var)
@@ -5622,9 +5617,7 @@ fn extract_linear(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
       }
       None
     }
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Minus =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Minus => {
       if !contains_var(right, var)
         && let Some((a, b)) = extract_linear(left, var)
       {
@@ -6266,7 +6259,7 @@ fn cdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     args: vec![x.clone()].into(),
   };
   let arg = Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(divide(minus(log_x, mu), times(sqrt(int(2)), sigma))),
   };
   let cdf_val = divide(
@@ -6486,7 +6479,7 @@ fn pdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       x.clone(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(plus(int(1), a)),
       },
     ),
@@ -6590,7 +6583,7 @@ fn cdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(power(xb, a)),
       },
     ),
@@ -6689,7 +6682,7 @@ fn pdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(divide(abs_diff, b.clone())),
       },
     ),
@@ -6715,7 +6708,7 @@ fn cdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       power(
         e(),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(divide(diff, b)),
         },
       ),
@@ -6740,7 +6733,7 @@ fn pdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(divide(power(x.clone(), int(2)), times(int(2), s2))),
       },
     ),
@@ -6763,7 +6756,7 @@ fn cdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(divide(power(x.clone(), int(2)), times(int(2), s2))),
       },
     ),
@@ -6916,7 +6909,7 @@ fn pdf_multivariate_poisson(
   let neg_mu1_mu2_over_mu0 = eval(times(
     int(-1),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(times(mu1.clone(), mu2.clone())),
       right: Box::new(mu0.clone()),
     },
@@ -6951,7 +6944,7 @@ fn pdf_multivariate_poisson(
   let denominator = times(times(exp_sum, x_fact), y_fact);
 
   let pdf_val = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(numerator),
     right: Box::new(denominator),
   };
@@ -7480,10 +7473,7 @@ fn pdf_arcsin(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // condition: a < x < b
   let cond = Expr::Comparison {
     operands: vec![a, x, b],
-    operators: vec![
-      crate::syntax::ComparisonOp::Less,
-      crate::syntax::ComparisonOp::Less,
-    ],
+    operators: vec![ComparisonOp::Less, ComparisonOp::Less],
   };
 
   eval(piecewise(vec![(density, cond)], int(0)))
@@ -7680,7 +7670,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // (-mu + x): Wolfram canonical ordering
   let neg_mu_plus_x = plus(
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(mu.clone()),
     },
     x.clone(),
@@ -7753,7 +7743,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       let mu_plus_sigma_minus_x = plus(
         plus(mu.clone(), sigma.clone()),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(x.clone()),
         },
       );
@@ -7828,7 +7818,7 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // t = (-mu + x) / sigma (canonical ordering)
   let neg_mu_plus_x = plus(
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(mu.clone()),
     },
     x.clone(),
@@ -7851,7 +7841,7 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       let mu_plus_sigma_minus_x = plus(
         plus(mu.clone(), sigma.clone()),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(x.clone()),
         },
       );
@@ -7869,11 +7859,11 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   // Distribute negative sign: (-gamma - delta*h) / Sqrt[2]
   let neg_gamma = Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(gamma.clone()),
   };
   let neg_delta_h = Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(times(delta.clone(), h_of_t.clone())),
   };
   let erfc_arg = divide(plus(neg_gamma, neg_delta_h), sqrt(int(2)));
@@ -8057,7 +8047,7 @@ fn additive_terms(expr: &Expr) -> Vec<Expr> {
       out
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => {
@@ -8246,7 +8236,7 @@ fn extract_polynomial_in_var(
       args.iter().cloned().collect()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => vec![(**left).clone(), (**right).clone()],
@@ -8269,7 +8259,7 @@ fn extract_polynomial_in_var(
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } if matches!(left.as_ref(), Expr::Identifier(v) if v == var) => {
@@ -8683,16 +8673,16 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
 
   let pow2 = |e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(e),
     right: Box::new(int(2)),
   };
   let neg = |e: Expr| Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(e),
   };
   let div2 = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(a),
     right: Box::new(b),
   };
@@ -8731,7 +8721,7 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     int(2),
   );
   let e_pow = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(Expr::Identifier("E".to_string())),
     right: Box::new(exponent),
   };
@@ -8758,7 +8748,7 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       args: vec![int(2 * det)].into(),
     })?;
     let pi_pow = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(pi()),
       right: Box::new(crate::functions::math_ast::make_rational(3, 2)),
     };
@@ -9404,16 +9394,16 @@ fn pdf_product_distribution(
   }
 
   let neg = |e: Expr| Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(e),
   };
   let pow2 = |e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(e),
     right: Box::new(int(2)),
   };
   let div2 = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(a),
     right: Box::new(b),
   };
@@ -9447,13 +9437,13 @@ fn pdf_product_distribution(
         });
         conds.push(Expr::Comparison {
           operands: vec![v, int(0)],
-          operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
+          operators: vec![ComparisonOp::GreaterEqual],
         });
       }
     }
   }
   let e_pow = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(Expr::Identifier("E".to_string())),
     right: Box::new(Expr::FunctionCall {
       name: "Plus".to_string(),
@@ -9676,7 +9666,7 @@ fn coeff_power_term(num: i128, den: i128, base: &Expr, i: i128) -> Expr {
   // Pull the sign out so Plus prints "- (3*x)/2" instead of "+ (-3*x)/2"
   if num < 0 {
     return Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(coeff_power_term(-num, den, base, i)),
     };
   }
@@ -10699,9 +10689,7 @@ fn pdf_exponential_power(
   } else {
     return Ok(unevaluated(dargs, x));
   };
-  if crate::syntax::expr_to_string(&b_plus)
-    == crate::syntax::expr_to_string(&b_minus)
-  {
+  if expr_to_string(&b_plus) == expr_to_string(&b_minus) {
     return Ok(b_plus);
   }
   let cond = comparison(x, ComparisonOp::GreaterEqual, m);
@@ -11049,17 +11037,14 @@ pub fn rice_mean_variance(
       eval(times(int(rd), e_half))?
     };
     // Single-factor denominators print without parentheses
-    let den_str = crate::syntax::expr_to_string(&denominator);
+    let den_str = expr_to_string(&denominator);
     let den_str = if den_str.contains('*') {
       format!("({den_str})")
     } else {
       den_str
     };
-    let mean = Expr::Raw(format!(
-      "({})/{}",
-      crate::syntax::expr_to_string(&numerator),
-      den_str
-    ));
+    let mean =
+      Expr::Raw(format!("({})/{}", expr_to_string(&numerator), den_str));
     // Var = base - Pi sum^2 / (q^2 2 e^k / b^2)
     let base = eval(plus(pow2(a), times(int(2), pow2(b))))?;
     let denom = eval(divide(
@@ -11068,9 +11053,9 @@ pub fn rice_mean_variance(
     ))?;
     let var = Expr::Raw(format!(
       "{} - (Pi*({})^2)/({})",
-      crate::syntax::expr_to_string(&base),
-      crate::syntax::expr_to_string(&sum),
-      crate::syntax::expr_to_string(&denom)
+      expr_to_string(&base),
+      expr_to_string(&sum),
+      expr_to_string(&denom)
     ));
     return Ok((mean, var));
   }
@@ -11390,7 +11375,7 @@ fn cdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     one_minus(power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(power(
           u,
           call("Times", vec![int(-1), power(g.clone(), int(-1))]),
@@ -11705,7 +11690,7 @@ fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
           "Plus",
           vec![
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
+              op: UnaryOperator::Minus,
               operand: Box::new(power(e(), z)),
             },
             call("Times", vec![int(-1), neg_za]),
@@ -11756,7 +11741,7 @@ fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
           "Plus",
           vec![
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
+              op: UnaryOperator::Minus,
               operand: Box::new(power(e(), z.clone())),
             },
             z,
@@ -11838,7 +11823,7 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(power(e(), msx_z(&a, &b, at))),
       },
     )
@@ -11848,7 +11833,7 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(power(
           u,
           call("Times", vec![int(-1), power(g.clone(), int(-1))]),
@@ -11873,7 +11858,7 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       Ok(power(
         e(),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(power(e(), z)),
         },
       ))
@@ -12545,7 +12530,7 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         ))?,
       );
       let term1 = Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(maxwell_term(sq, sp, at.clone(), e_part)),
       };
       let erf = call(
@@ -12937,10 +12922,7 @@ pub fn maxwell_mean_variance(
   } else {
     // wolframscript puts the Pi-sum factor first; assembled raw since
     // evaluation would reorder it
-    Expr::Raw(format!(
-      "((-8 + 3*Pi)*{}^2)/Pi",
-      crate::syntax::expr_to_string(s)
-    ))
+    Expr::Raw(format!("((-8 + 3*Pi)*{}^2)/Pi", expr_to_string(s)))
   };
   Ok((mean, var))
 }
@@ -13689,9 +13671,9 @@ fn benktander_valid(
         eval(divide(times(a.clone(), plus(a.clone(), int(1))), int(2)))?;
       crate::emit_message(&format!(
         "BenktanderGibratDistribution::lsseq: Parameter {} at position 2 in {} is expected to be less than or equal to {}.",
-        crate::syntax::expr_to_string(b),
-        crate::syntax::expr_to_string(context),
-        crate::syntax::expr_to_string(&bound_expr)
+        expr_to_string(b),
+        expr_to_string(context),
+        expr_to_string(&bound_expr)
       ));
       return Ok(false);
     }
@@ -14071,7 +14053,7 @@ fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       "Plus",
       vec![
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(power(e(), z.clone())),
         },
         z,
@@ -14144,7 +14126,7 @@ fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
             power(
               e(),
               Expr::UnaryOp {
-                op: crate::syntax::UnaryOperator::Minus,
+                op: UnaryOperator::Minus,
                 operand: Box::new(power(e(), z)),
               },
             ),

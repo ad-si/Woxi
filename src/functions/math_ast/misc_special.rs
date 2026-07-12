@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 use num_bigint::BigInt;
 
 /// QPochhammer[a, q, n] — q-Pochhammer symbol.
@@ -357,7 +357,7 @@ fn is_e_pow_neg1(e: &Expr) -> bool {
     |x: &Expr| matches!(x, Expr::Identifier(s) | Expr::Constant(s) if s == "E");
   match e {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => is_e(left) && matches!(right.as_ref(), Expr::Integer(-1)),
@@ -377,7 +377,7 @@ fn is_neg_inv_e(e: &Expr) -> bool {
       matches!(&args[0], Expr::Integer(-1)) && is_e_pow_neg1(&args[1])
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -599,9 +599,9 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !upper_ok || !lower_ok {
     crate::emit_message(&format!(
       "MeijerG::hdiv: MeijerG[{}, {}, {}] does not exist. Arguments are not consistent.",
-      crate::syntax::expr_to_string(&args[0]),
-      crate::syntax::expr_to_string(&args[1]),
-      crate::syntax::expr_to_string(&args[2])
+      expr_to_string(&args[0]),
+      expr_to_string(&args[1]),
+      expr_to_string(&args[2])
     ));
     return Ok(Expr::FunctionCall {
       name: "MeijerG".to_string(),
@@ -1828,7 +1828,6 @@ fn weber_e_integer_closed_form(
   n: i128,
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let m = n.unsigned_abs() as i128; // |n|
   let fact = |k: i128| -> BigInt {
     let mut r = BigInt::from(1);
@@ -1894,7 +1893,7 @@ fn weber_e_integer_closed_form(
 fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
   let nu_pi = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(nu.clone()),
     right: Box::new(pi.clone()),
   };
@@ -1903,7 +1902,7 @@ fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
     args: vec![nu_pi.clone()].into(),
   };
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(sin_nu_pi),
     right: Box::new(nu_pi),
   }
@@ -1913,7 +1912,7 @@ fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
 fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
   let nu_pi = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(nu.clone()),
     right: Box::new(pi.clone()),
   };
@@ -1922,12 +1921,12 @@ fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
     args: vec![nu_pi.clone()].into(),
   };
   let one_minus_cos = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Minus,
+    op: BinaryOperator::Minus,
     left: Box::new(Expr::Integer(1)),
     right: Box::new(cos_nu_pi),
   };
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(one_minus_cos),
     right: Box::new(nu_pi),
   }
@@ -2732,12 +2731,12 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if exprs_structurally_equal(&args[0], &args[3]) {
     let one = Expr::Integer(1);
     let one_minus_x = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(one.clone()),
       right: Box::new(args[4].clone()),
     };
     let one_minus_y = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(one.clone()),
       right: Box::new(args[5].clone()),
     };
@@ -2750,12 +2749,12 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![one_minus_y, args[2].clone()].into(),
     };
     let denom = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(factor_x),
       right: Box::new(factor_y),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(one),
       right: Box::new(denom),
     };
@@ -2770,7 +2769,7 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn exprs_structurally_equal(a: &Expr, b: &Expr) -> bool {
-  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  expr_to_string(a) == expr_to_string(b)
 }
 
 /// Compute F1(a, b1, b2; c; x, y) using double series
@@ -3225,8 +3224,8 @@ pub fn perfect_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       crate::emit_message(&format!(
         "PerfectNumber::pintprm: Parameter {} at position 1 in PerfectNumber[{}] is expected to be a positive integer.",
-        crate::syntax::expr_to_string(&args[0]),
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0]),
+        expr_to_string(&args[0])
       ));
       return Ok(Expr::FunctionCall {
         name: "PerfectNumber".to_string(),
@@ -3590,7 +3589,7 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut counts: HashMap<String, i128> = HashMap::new();
   let mut order: Vec<String> = Vec::new();
   for item in items.iter() {
-    let key = crate::syntax::expr_to_string(item);
+    let key = expr_to_string(item);
     if let Some(c) = counts.get_mut(&key) {
       *c += 1;
     } else {
@@ -3599,7 +3598,7 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let n = items.len() as i128;
-  let base_str = base.map(crate::syntax::expr_to_string);
+  let base_str = base.map(expr_to_string);
 
   // Build: Log[n] + (1/n) Sum[-c_i Log[c_i]], rebasing each Log to the given
   // base when one is supplied. Use the two-argument `Log[base, x]` form rather
@@ -3670,7 +3669,7 @@ pub fn real_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     || matches!(&abs_expr, Expr::Real(f) if *f == 0.0)
   {
     return Ok(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     });
   }
