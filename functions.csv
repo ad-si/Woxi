@@ -3066,7 +3066,7 @@ FileHash,,✅,,6.0,3134
 HararyGraph,Minimal k-connected Harary graph on n vertices,✅,pure,8.0,3134
 InitializationCell,,🚫,,3.0,3134
 NegativeDefiniteMatrixQ,Test whether a matrix is negative definite,✅,none,10.0,3134
-RegionDisjoint,,,,11.1,3134
+RegionDisjoint,Tests whether geometric regions are pairwise disjoint,✅,pure,11.1,3134
 AnatomyPlot3D,,🚫,,11.0,3143
 Dendrogram,Constructs a dendrogram from the hierarchical clustering of data,✅,pure,10.4,3143
 FactorSquareFree,Square-free factorization of a polynomial,✅,pure,1.0,3143

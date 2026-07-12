@@ -2013,6 +2013,9 @@ pub fn dispatch_complex_and_special(
         &args[1],
       ));
     }
+    "RegionDisjoint" => {
+      return Some(compute_region_disjoint(args));
+    }
     "RegionDistance" if args.len() == 2 => {
       return Some(compute_region_distance(
         strip_region_wrapper(&args[0]),
@@ -6332,6 +6335,330 @@ fn compute_region_member(
     }
     _ => unevaluated(),
   }
+}
+
+/// A region shape supported by RegionDisjoint, reduced to floats.
+enum DisjointShape {
+  /// Disk/Ball (solid) or Circle/Sphere (shell).
+  Round {
+    center: Vec<f64>,
+    r: f64,
+    shell: bool,
+  },
+  /// Rectangle/Cuboid with lo ≤ hi per axis.
+  AxisBox { lo: Vec<f64>, hi: Vec<f64> },
+  /// Triangle/Polygon in the plane (solid).
+  Poly { verts: Vec<[f64; 2]> },
+  /// A single point.
+  Dot { p: Vec<f64> },
+}
+
+impl DisjointShape {
+  fn dim(&self) -> usize {
+    match self {
+      DisjointShape::Round { center, .. } => center.len(),
+      DisjointShape::AxisBox { lo, .. } => lo.len(),
+      DisjointShape::Poly { .. } => 2,
+      DisjointShape::Dot { p } => p.len(),
+    }
+  }
+}
+
+/// Parse a region expression into a DisjointShape (floats), or None if the
+/// region kind / argument shape is unsupported.
+fn disjoint_shape(expr: &Expr) -> Option<DisjointShape> {
+  let to_vec = |e: &Expr| -> Option<Vec<f64>> {
+    if let Expr::List(items) = e {
+      items
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect()
+    } else {
+      None
+    }
+  };
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  match name.as_str() {
+    "Disk" | "Ball" | "Circle" | "Sphere" => {
+      let default_dim = if name == "Ball" || name == "Sphere" {
+        3
+      } else {
+        2
+      };
+      let center = match args.first() {
+        None => vec![0.0; default_dim],
+        Some(c) => to_vec(c)?,
+      };
+      // A radius list is an ellipse/ellipsoid — unsupported.
+      let r = match args.get(1) {
+        None => 1.0,
+        Some(Expr::List(_)) => return None,
+        Some(r) => crate::functions::math_ast::try_eval_to_f64(r)?,
+      };
+      if args.len() > 2 || r <= 0.0 {
+        return None;
+      }
+      Some(DisjointShape::Round {
+        center,
+        r,
+        shell: matches!(name.as_str(), "Circle" | "Sphere"),
+      })
+    }
+    "Rectangle" | "Cuboid" => {
+      let default_dim = if name == "Cuboid" { 3 } else { 2 };
+      let (c1, c2) = match (args.first(), args.get(1)) {
+        (None, _) => (vec![0.0; default_dim], vec![1.0; default_dim]),
+        (Some(c1), None) => {
+          let c1 = to_vec(c1)?;
+          let c2: Vec<f64> = c1.iter().map(|x| x + 1.0).collect();
+          (c1, c2)
+        }
+        (Some(c1), Some(c2)) => (to_vec(c1)?, to_vec(c2)?),
+      };
+      if args.len() > 2 || c1.len() != c2.len() || c1.is_empty() {
+        return None;
+      }
+      let lo: Vec<f64> = c1.iter().zip(&c2).map(|(a, b)| a.min(*b)).collect();
+      let hi: Vec<f64> = c1.iter().zip(&c2).map(|(a, b)| a.max(*b)).collect();
+      Some(DisjointShape::AxisBox { lo, hi })
+    }
+    "Triangle" | "Polygon" => {
+      let verts: Vec<[f64; 2]> = if name == "Triangle" && args.is_empty() {
+        vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+      } else if args.len() == 1
+        && let Expr::List(vs) = &args[0]
+      {
+        polygon_verts_f64(vs)?
+      } else {
+        return None;
+      };
+      if verts.len() < 3 {
+        return None;
+      }
+      Some(DisjointShape::Poly { verts })
+    }
+    "Point" if args.len() == 1 => Some(DisjointShape::Dot {
+      p: to_vec(&args[0])?,
+    }),
+    _ => None,
+  }
+}
+
+/// Distance from point `p` to the closed segment `a`–`b` (2-D).
+fn seg_point_dist(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> f64 {
+  let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+  let len2 = dx * dx + dy * dy;
+  let t = if len2 == 0.0 {
+    0.0
+  } else {
+    (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2).clamp(0.0, 1.0)
+  };
+  let (cx, cy) = (a[0] + t * dx, a[1] + t * dy);
+  ((p[0] - cx).powi(2) + (p[1] - cy).powi(2)).sqrt()
+}
+
+/// Minimum distance between the closed segments `p1`–`p2` and `q1`–`q2`
+/// (0 when they cross or touch).
+fn seg_seg_dist(p1: [f64; 2], p2: [f64; 2], q1: [f64; 2], q2: [f64; 2]) -> f64 {
+  let cross = |o: [f64; 2], a: [f64; 2], b: [f64; 2]| {
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  };
+  let d1 = cross(p1, p2, q1);
+  let d2 = cross(p1, p2, q2);
+  let d3 = cross(q1, q2, p1);
+  let d4 = cross(q1, q2, p2);
+  if d1 * d2 < 0.0 && d3 * d4 < 0.0 {
+    return 0.0; // proper crossing
+  }
+  seg_point_dist(p1, p2, q1)
+    .min(seg_point_dist(p1, p2, q2))
+    .min(seg_point_dist(q1, q2, p1))
+    .min(seg_point_dist(q1, q2, p2))
+}
+
+/// Distance from point `p` to the SOLID polygon (0 when inside or on the
+/// boundary).
+fn poly_point_dist(verts: &[[f64; 2]], p: [f64; 2], eps: f64) -> f64 {
+  if point_in_polygon_2d(verts, p, eps) {
+    return 0.0;
+  }
+  let mut best = f64::INFINITY;
+  for i in 0..verts.len() {
+    let j = (i + 1) % verts.len();
+    best = best.min(seg_point_dist(verts[i], verts[j], p));
+  }
+  best
+}
+
+/// Whether two solid polygons intersect (share any point, boundaries
+/// included).
+fn polys_intersect(a: &[[f64; 2]], b: &[[f64; 2]], eps: f64) -> bool {
+  if a.iter().any(|v| point_in_polygon_2d(b, *v, eps))
+    || b.iter().any(|v| point_in_polygon_2d(a, *v, eps))
+  {
+    return true;
+  }
+  for i in 0..a.len() {
+    let i2 = (i + 1) % a.len();
+    for j in 0..b.len() {
+      let j2 = (j + 1) % b.len();
+      if seg_seg_dist(a[i], a[i2], b[j], b[j2]) <= eps {
+        return true;
+      }
+    }
+  }
+  false
+}
+
+/// Whether two supported shapes share at least one point (regions are
+/// closed, so touching counts as intersecting). Shapes living in different
+/// ambient dimensions never intersect (wolframscript-verified:
+/// RegionDisjoint[Disk[], Ball[]] is True).
+fn disjoint_shapes_intersect(a: &DisjointShape, b: &DisjointShape) -> bool {
+  use DisjointShape::{AxisBox, Dot, Poly, Round};
+  const EPS: f64 = 1e-9;
+  if a.dim() != b.dim() {
+    return false;
+  }
+  let dist = |p: &[f64], q: &[f64]| -> f64 {
+    p.iter()
+      .zip(q)
+      .map(|(x, y)| (x - y) * (x - y))
+      .sum::<f64>()
+      .sqrt()
+  };
+  // Distance from a point to the closed box, and to its farthest point.
+  let box_min_dist = |lo: &[f64], hi: &[f64], p: &[f64]| -> f64 {
+    p.iter()
+      .zip(lo.iter().zip(hi))
+      .map(|(x, (l, h))| {
+        let d = if x < l {
+          l - x
+        } else if x > h {
+          x - h
+        } else {
+          0.0
+        };
+        d * d
+      })
+      .sum::<f64>()
+      .sqrt()
+  };
+  let box_max_dist = |lo: &[f64], hi: &[f64], p: &[f64]| -> f64 {
+    p.iter()
+      .zip(lo.iter().zip(hi))
+      .map(|(x, (l, h))| (x - l).abs().max((x - h).abs()).powi(2))
+      .sum::<f64>()
+      .sqrt()
+  };
+  match (a, b) {
+    (Dot { p }, Dot { p: q }) => dist(p, q) <= EPS,
+    (Dot { p }, Round { center, r, shell })
+    | (Round { center, r, shell }, Dot { p }) => {
+      let d = dist(p, center);
+      if *shell {
+        (d - r).abs() <= EPS
+      } else {
+        d <= r + EPS
+      }
+    }
+    (Dot { p }, AxisBox { lo, hi }) | (AxisBox { lo, hi }, Dot { p }) => {
+      box_min_dist(lo, hi, p) <= EPS
+    }
+    (Dot { p }, Poly { verts }) | (Poly { verts }, Dot { p }) => {
+      point_in_polygon_2d(verts, [p[0], p[1]], EPS)
+    }
+    (
+      Round {
+        center: c1,
+        r: r1,
+        shell: s1,
+      },
+      Round {
+        center: c2,
+        r: r2,
+        shell: s2,
+      },
+    ) => {
+      let d = dist(c1, c2);
+      match (s1, s2) {
+        (false, false) => d <= r1 + r2 + EPS,
+        (true, true) => (r1 - r2).abs() - EPS <= d && d <= r1 + r2 + EPS,
+        // Shell of radius rs vs solid of radius rd: the nearest shell
+        // point to the solid's center is at |d - rs|.
+        (true, false) => (d - r1).abs() <= r2 + EPS,
+        (false, true) => (d - r2).abs() <= r1 + EPS,
+      }
+    }
+    (Round { center, r, shell }, AxisBox { lo, hi })
+    | (AxisBox { lo, hi }, Round { center, r, shell }) => {
+      let mind = box_min_dist(lo, hi, center);
+      if *shell {
+        mind <= r + EPS && *r <= box_max_dist(lo, hi, center) + EPS
+      } else {
+        mind <= r + EPS
+      }
+    }
+    (Round { center, r, shell }, Poly { verts })
+    | (Poly { verts }, Round { center, r, shell }) => {
+      let c = [center[0], center[1]];
+      let mind = poly_point_dist(verts, c, EPS);
+      if *shell {
+        let maxd = verts
+          .iter()
+          .map(|v| ((v[0] - c[0]).powi(2) + (v[1] - c[1]).powi(2)).sqrt())
+          .fold(0.0f64, f64::max);
+        mind <= r + EPS && *r <= maxd + EPS
+      } else {
+        mind <= r + EPS
+      }
+    }
+    (AxisBox { lo: l1, hi: h1 }, AxisBox { lo: l2, hi: h2 }) => l1
+      .iter()
+      .zip(h1)
+      .zip(l2.iter().zip(h2))
+      .all(|((l1, h1), (l2, h2))| l1 <= &(h2 + EPS) && l2 <= &(h1 + EPS)),
+    (AxisBox { lo, hi }, Poly { verts })
+    | (Poly { verts }, AxisBox { lo, hi }) => {
+      let corners = vec![
+        [lo[0], lo[1]],
+        [hi[0], lo[1]],
+        [hi[0], hi[1]],
+        [lo[0], hi[1]],
+      ];
+      polys_intersect(&corners, verts, EPS)
+    }
+    (Poly { verts: v1 }, Poly { verts: v2 }) => polys_intersect(v1, v2, EPS),
+  }
+}
+
+/// RegionDisjoint[reg1, reg2, …] — True when the regions are pairwise
+/// disjoint. Zero regions are vacuously disjoint; a single supported
+/// region is too. Unsupported arguments leave the call unevaluated.
+fn compute_region_disjoint(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let shapes: Option<Vec<DisjointShape>> = args
+    .iter()
+    .map(|a| disjoint_shape(strip_region_wrapper(a)))
+    .collect();
+  let Some(shapes) = shapes else {
+    if args.is_empty() {
+      return Ok(Expr::Identifier("True".to_string()));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "RegionDisjoint".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  for i in 0..shapes.len() {
+    for j in i + 1..shapes.len() {
+      if disjoint_shapes_intersect(&shapes[i], &shapes[j]) {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+    }
+  }
+  Ok(Expr::Identifier("True".to_string()))
 }
 
 /// Nearest point of a `Line[{v1, v2, …}]` (a segment or polyline) to `point`,

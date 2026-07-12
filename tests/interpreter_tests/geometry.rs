@@ -4699,3 +4699,218 @@ mod numeric_radicand_no_split {
     );
   }
 }
+
+// RegionDisjoint[reg1, reg2, …] — pairwise disjointness of geometric
+// regions. Regions are closed, so touching counts as intersecting.
+// All outputs verified against wolframscript.
+mod region_disjoint {
+  use super::*;
+
+  #[test]
+  fn solid_round_regions() {
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{3, 0}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{1, 0}]]").unwrap(),
+      "False"
+    );
+    // Tangent disks share a boundary point.
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{2, 0}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Ball[{0, 0, 0}], Ball[{3, 0, 0}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Ball[{0, 0, 0}], Ball[{1, 1, 1}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn shells() {
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[], Circle[{4, 0}]]").unwrap(),
+      "True"
+    );
+    // Concentric circles of different radii never meet.
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[], Circle[{0, 0}, 3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[], Circle[]]").unwrap(),
+      "False"
+    );
+    // The circle IS part of the closed unit disk's boundary.
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[], Disk[]]").unwrap(),
+      "False"
+    );
+    // A smaller circle lies strictly inside the solid disk.
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[{0, 0}, 1/2], Disk[]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Sphere[], Sphere[{5, 0, 0}]]").unwrap(),
+      "True"
+    );
+    // A small ball strictly inside the unit sphere shell misses it.
+    assert_eq!(
+      interpret("RegionDisjoint[Sphere[], Ball[{0, 0, 0}, 1/4]]").unwrap(),
+      "True"
+    );
+    // A huge circle around a rectangle misses the solid rectangle.
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Circle[{1/2, 1/2}, 10]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn boxes() {
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Rectangle[{2, 2}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Rectangle[{1/2, 1/2}]]").unwrap(),
+      "False"
+    );
+    // Rectangles sharing an edge are not disjoint.
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Rectangle[{1, 0}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Cuboid[], Cuboid[{2, 2, 2}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Cuboid[], Cuboid[{1, 0, 0}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Cuboid[], Ball[{3, 3, 3}, 1]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Disk[{3, 3}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn polygons() {
+    assert_eq!(
+      interpret("RegionDisjoint[Triangle[], Disk[{1, 1}, 1/2]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDisjoint[Triangle[], Triangle[{{2, 2}, {3, 2}, {2, 3}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Triangle[], Rectangle[{2, 0}]]").unwrap(),
+      "True"
+    );
+    // The triangle touches Rectangle[{1, 0}] at the vertex {1, 0}.
+    assert_eq!(
+      interpret("RegionDisjoint[Triangle[], Rectangle[{1, 0}]]").unwrap(),
+      "False"
+    );
+    // Containment in both directions intersects.
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{1/4, 1/4}, 1/8], Triangle[]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Triangle[], Disk[{1/4, 1/4}, 5]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDisjoint[Triangle[{{-10, -10}, {20, -10}, {0, 20}}], Rectangle[]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDisjoint[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}}], Polygon[{{1, 1}, {2, 1}, {2, 2}, {1, 2}}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    // A big circle shell around the triangle misses it; a small one
+    // inside it crosses the interior.
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[{1/4, 1/4}, 5], Triangle[]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[{1/4, 1/4}, 1/8], Triangle[]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn points() {
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{0, 0}], Point[{1, 0}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{0, 0}], Point[{0, 0}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{0, 0}], Disk[]]").unwrap(),
+      "False"
+    );
+    // Membership on a shell is exact: {1, 0} lies ON the unit circle,
+    // {1/2, 0} strictly inside misses it.
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{1, 0}], Circle[]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{1/2, 0}], Circle[]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn n_ary_and_edge_cases() {
+    // Pairwise over three regions.
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{3, 0}], Disk[{6, 0}]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{3, 0}], Disk[{1, 0}]]")
+        .unwrap(),
+      "False"
+    );
+    // Zero or one region is vacuously disjoint.
+    assert_eq!(interpret("RegionDisjoint[]").unwrap(), "True");
+    assert_eq!(interpret("RegionDisjoint[Disk[]]").unwrap(), "True");
+    // Regions in different ambient dimensions never intersect.
+    assert_eq!(interpret("RegionDisjoint[Disk[], Ball[]]").unwrap(), "True");
+    // Unsupported arguments stay unevaluated.
+    assert_eq!(interpret("RegionDisjoint[x]").unwrap(), "RegionDisjoint[x]");
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[], x]").unwrap(),
+      "RegionDisjoint[Disk[{0, 0}], x]"
+    );
+  }
+}
