@@ -1537,7 +1537,7 @@ UndoTrackedVariables,Variables tracked for undo,✅,pure,10.0,1559
 VectorColorFunction,Color function for vector plots,✅,pure,7.0,1559
 NotebookGet,Get notebook expression,✅,pure,3.0,1562
 StringToStream,Creates an input stream from a string,✅,pure,2.0,1562
-SubsetQ,Tests if one list is a subset of another,✅,pure,10.0,1562
+SubsetQ,Tests if one list or association is a subset of another,✅,pure,10.0,1562
 Visible,Visibility option,✅,pure,3.0,1563
 TruncatedDistribution,Truncated probability distribution,✅,pure,8.0,1564
 NotebookFind,Search in a notebook,,unevaluated,3.0,1565

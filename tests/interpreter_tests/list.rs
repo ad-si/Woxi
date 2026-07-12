@@ -5973,6 +5973,35 @@ mod subset_q {
     assert_eq!(interpret("SubsetQ[{a, b, c}, {a, c}]").unwrap(), "True");
   }
 
+  // On associations SubsetQ compares the VALUES as sets; either side may be a
+  // list or an association.
+  #[test]
+  fn associations_by_value() {
+    assert_eq!(
+      interpret("SubsetQ[<|a -> 1, b -> 2|>, <|a -> 1|>]").unwrap(),
+      "True"
+    );
+    // The value, not the key, is what matters.
+    assert_eq!(
+      interpret("SubsetQ[<|a -> 1, b -> 2|>, <|c -> 1|>]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("SubsetQ[<|a -> 1, b -> 2|>, <|a -> 9|>]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn associations_mixed_with_lists() {
+    assert_eq!(
+      interpret("SubsetQ[<|a -> 1, b -> 2|>, {1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("SubsetQ[{1, 2, 3}, <|a -> 2|>]").unwrap(), "True");
+    assert_eq!(interpret("SubsetQ[<|a -> 1|>, {}]").unwrap(), "True");
+  }
+
   // SubsetQ[super, sub, SameTest -> f]: every sub element y must satisfy
   // f[x, y] for some super element x.
   #[test]

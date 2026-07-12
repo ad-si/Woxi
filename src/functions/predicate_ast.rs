@@ -2539,7 +2539,19 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     None
   };
-  let (superset, subset) = match same_head_elements("SubsetQ", &args[..2]) {
+  // On associations, SubsetQ compares the VALUES as sets, and either argument
+  // may be a list or an association (`SubsetQ[<|a->1,b->2|>, <|a->1|>]` is True).
+  // Convert associations to their value lists so the shared logic applies.
+  let assoc_to_values = |e: &Expr| -> Expr {
+    match e {
+      Expr::Association(pairs) => {
+        Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect())
+      }
+      other => other.clone(),
+    }
+  };
+  let pair_args = [assoc_to_values(&args[0]), assoc_to_values(&args[1])];
+  let (superset, subset) = match same_head_elements("SubsetQ", &pair_args) {
     Ok(Some(pair)) => pair,
     Ok(None) => {
       return Ok(Expr::FunctionCall {
@@ -2547,7 +2559,12 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec().into(),
       });
     }
-    Err(unevaluated) => return Ok(unevaluated),
+    Err(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "SubsetQ".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
   };
   if let Some(test) = same_test {
     // Every subset element y must be equivalent to some superset element x,
