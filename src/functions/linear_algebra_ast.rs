@@ -476,6 +476,23 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Densify any SparseArray operand to its Normal (dense nested-list) form and
+  // retry, so `SparseArray[...] . vec` and friends behave like the dense case.
+  let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  if is_sparse(&args[0]) || is_sparse(&args[1]) {
+    let densify = |e: &Expr| -> Expr {
+      if let Expr::FunctionCall { name, args: sa } = e
+        && name == "SparseArray"
+      {
+        crate::functions::list_helpers_ast::sparse_array_ast(sa)
+          .unwrap_or_else(|_| e.clone())
+      } else {
+        e.clone()
+      }
+    };
+    return dot_ast(&[densify(&args[0]), densify(&args[1])]);
+  }
+
   // TransformationFunction[M1] . TransformationFunction[M2] →
   //   TransformationFunction[M1.M2]  (compose affine transforms)
   let extract_tf = |e: &Expr| -> Option<Expr> {

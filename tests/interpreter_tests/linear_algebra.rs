@@ -67,6 +67,44 @@ mod dot {
     assert_eq!(interpret("a . b").unwrap(), "a . b");
   }
 
+  // A SparseArray operand is densified so Dot behaves like the dense case.
+  #[test]
+  fn sparse_matrix_dot_vector() {
+    assert_eq!(
+      interpret("SparseArray[{{1, 1} -> 2, {2, 2} -> 3}, {2, 2}] . {1, 1}")
+        .unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn sparse_vector_dot_vector() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 2 -> 3}, 3] . {1, 1, 1}").unwrap(),
+      "8"
+    );
+  }
+
+  #[test]
+  fn vector_dot_sparse_vector() {
+    assert_eq!(
+      interpret("{1, 2} . SparseArray[{1 -> 5, 2 -> 3}, 2]").unwrap(),
+      "11"
+    );
+  }
+
+  #[test]
+  fn sparse_dot_sparse() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{1, 1} -> 1, {2, 2} -> 1}, {2, 2}] . \
+         SparseArray[{{1, 1} -> 2, {2, 2} -> 3}, {2, 2}]]"
+      )
+      .unwrap(),
+      "{{2, 0}, {0, 3}}"
+    );
+  }
+
   #[test]
   fn dot_display_infix() {
     // Dot[a, b] should display as infix a . b
