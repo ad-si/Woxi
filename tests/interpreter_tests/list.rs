@@ -2827,6 +2827,18 @@ mod partition {
     );
   }
 
+  // Degenerate block size 0 with an explicit positive offset d yields
+  // Floor[Length/d] + 1 empty blocks (the 2-argument form still errors).
+  #[test]
+  fn zero_block_size_with_offset() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3}, 0, 1]").unwrap(),
+      "{{}, {}, {}, {}}"
+    );
+    assert_eq!(interpret("Partition[{1, 2, 3}, 0, 2]").unwrap(), "{{}, {}}");
+    assert_eq!(interpret("Partition[{}, 0, 1]").unwrap(), "{{}}");
+  }
+
   #[test]
   fn with_offset() {
     assert_eq!(

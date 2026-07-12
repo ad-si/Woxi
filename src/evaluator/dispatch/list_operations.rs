@@ -2454,6 +2454,26 @@ pub fn dispatch_list_operations(
         }
         return Some(Ok(wrap(chunks)));
       }
+      // Degenerate block size 0 with an explicit positive offset d yields
+      // Floor[Length/d] + 1 empty blocks (Partition[{1,2,3}, 0, 1] ->
+      // {{}, {}, {}, {}}), matching Wolfram. The 2-argument form still errors.
+      if args.len() == 3
+        && matches!(&args[1], Expr::Integer(0))
+        && let Some(d) = positive_machine(&args[2])
+      {
+        let wrap = |elems: Vec<Expr>| -> Expr {
+          match subject_head {
+            Some(h) => Expr::FunctionCall {
+              name: h.to_string(),
+              args: elems.into(),
+            },
+            None => Expr::List(elems.into()),
+          }
+        };
+        let count = items.len() as i128 / d + 1;
+        let blocks: Vec<Expr> = (0..count).map(|_| wrap(Vec::new())).collect();
+        return Some(Ok(wrap(blocks)));
+      }
       if let Some(n) = positive_machine(&args[1]) {
         let d = if args.len() >= 3 {
           match positive_machine(&args[2]) {
