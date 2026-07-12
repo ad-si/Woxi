@@ -3019,7 +3019,7 @@ ToSphericalCoordinates,Converts Cartesian coordinates to spherical,✅,None,10.1
 VectorColorFunctionScaling,,,,7.0,3083
 ViewRange,,🚫,,6.0,3083
 ComplexVectorPlot,,🚫,,12.1,3094
-Duration,,,,11.0,3094
+Duration,Duration of an audio sound or time series object as a Quantity,✅,pure,11.0,3094
 EdgeCapacity,,,,9.0,3094
 EdgeQ,True if edge exists in graph,✅,1,8.0,3094
 EvaluatePacket,,🚫,,3.0,3094

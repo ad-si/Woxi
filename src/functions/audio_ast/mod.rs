@@ -357,3 +357,152 @@ pub fn decode_wav(bytes: &[u8]) -> Option<AudioData> {
     rate: rate as f64,
   })
 }
+
+/// Duration[obj] / Duration[obj, unit] — the duration of an Audio, Sound,
+/// or TimeSeries object as a Quantity of Seconds (converted with
+/// UnitConvert when a unit is given). Anything that is not a duration
+/// object emits Duration::durinv, like wolframscript; Video/DateInterval
+/// (valid objects Woxi cannot measure yet) stay silently unevaluated.
+pub fn duration_ast(args: &[Expr]) -> Result<Expr, crate::InterpreterError> {
+  let unev = || Ok(unevaluated("Duration", args));
+  if args.is_empty() || args.len() > 2 {
+    return unev();
+  }
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let seconds = |value: Expr| Expr::FunctionCall {
+    name: "Quantity".to_string(),
+    args: vec![value, Expr::String("Seconds".to_string())].into(),
+  };
+  let durinv = |e: &Expr| {
+    crate::emit_message(&format!(
+      "Duration::durinv: Expecting an audio, sound, video, time series or date interval object instead of {}.",
+      crate::syntax::expr_to_string(e)
+    ));
+  };
+
+  let Expr::FunctionCall { name, args: oargs } = &args[0] else {
+    durinv(&args[0]);
+    return unev();
+  };
+  let base: Option<Expr> = match name.as_str() {
+    // TimeSeries[{{t1, v1}, ...}] — tmax - tmin, exactly. Other
+    // constructor forms have date-inference semantics Woxi does not
+    // model and stay unevaluated.
+    "TimeSeries" => {
+      let times: Option<Vec<&Expr>> = match oargs.first() {
+        Some(Expr::List(items))
+          if oargs.len() == 1
+            && !items.is_empty()
+            && items
+              .iter()
+              .all(|p| matches!(p, Expr::List(c) if c.len() == 2)) =>
+        {
+          Some(
+            items
+              .iter()
+              .map(|p| {
+                let Expr::List(c) = p else { unreachable!() };
+                &c[0]
+              })
+              .collect(),
+          )
+        }
+        _ => None,
+      };
+      times.and_then(|times| {
+        let keyed: Option<Vec<(f64, &Expr)>> = times
+          .iter()
+          .map(|t| {
+            crate::functions::math_ast::try_eval_to_f64(t).map(|f| (f, *t))
+          })
+          .collect();
+        let keyed = keyed?;
+        let (mut lo, mut hi) = (keyed[0], keyed[0]);
+        for k in &keyed {
+          if k.0 < lo.0 {
+            lo = *k;
+          }
+          if k.0 > hi.0 {
+            hi = *k;
+          }
+        }
+        let span = ev(&Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            hi.1.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), lo.1.clone()].into(),
+            },
+          ]
+          .into(),
+        })
+        .ok()?;
+        Some(seconds(span))
+      })
+    }
+    // Audio — sample count / sample rate, as machine precision.
+    "Audio" => parse_audio(&args[0]).and_then(|audio| {
+      let len = audio.channels.first().map(|c| c.len())?;
+      Some(seconds(Expr::Real(len as f64 / audio.rate)))
+    }),
+    // Sound — SoundNote durations play sequentially and sum (default
+    // note duration 1), as machine precision. Interval-form notes have
+    // absolute-placement semantics and stay unevaluated; Play-based
+    // sounds measure their synthesized samples.
+    "Sound" => {
+      fn note_durations(e: &Expr, total: &mut f64) -> Option<()> {
+        match e {
+          Expr::List(items) => {
+            for item in items.iter() {
+              note_durations(item, total)?;
+            }
+            Some(())
+          }
+          Expr::FunctionCall { name, args } if name == "SoundNote" => {
+            match args.get(1) {
+              None => {
+                *total += 1.0;
+                Some(())
+              }
+              Some(d) => {
+                let v = crate::functions::math_ast::try_eval_to_f64(d)?;
+                *total += v;
+                Some(())
+              }
+            }
+          }
+          _ => None,
+        }
+      }
+      let mut total = 0.0f64;
+      let all_notes =
+        oargs.len() == 1 && note_durations(&oargs[0], &mut total).is_some();
+      if all_notes {
+        Some(seconds(Expr::Real(total)))
+      } else {
+        crate::functions::sound::sound_to_samples(&args[0]).map(
+          |(samples, rate)| {
+            seconds(Expr::Real(samples.len() as f64 / rate as f64))
+          },
+        )
+      }
+    }
+    // Valid duration objects Woxi cannot measure yet: no message.
+    "Video" | "DateInterval" | "Play" => None,
+    _ => {
+      durinv(&args[0]);
+      return unev();
+    }
+  };
+  let Some(quantity) = base else {
+    return unev();
+  };
+  if args.len() == 2 {
+    return ev(&Expr::FunctionCall {
+      name: "UnitConvert".to_string(),
+      args: vec![quantity, args[1].clone()].into(),
+    });
+  }
+  ev(&quantity)
+}

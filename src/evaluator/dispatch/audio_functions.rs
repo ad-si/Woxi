@@ -15,6 +15,7 @@ pub(super) fn dispatch_audio_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
+    "Duration" => Some(audio::duration_ast(args)),
     "AudioAmplify" => Some(audio::edit::audio_amplify_ast(args)),
     "AudioTrim" => Some(audio::edit::audio_trim_ast(args)),
     "AudioJoin" => Some(audio::edit::audio_join_ast(args)),

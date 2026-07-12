@@ -669,3 +669,82 @@ fn audio_from_wav_file_measurable() {
   assert_eq!(interpret(&code).unwrap(), "Quantity[0.0005, Seconds]");
   std::fs::remove_file(&path).ok();
 }
+
+// Duration[obj] / Duration[obj, unit] — all outputs verified against
+// wolframscript.
+mod duration {
+  use super::*;
+
+  #[test]
+  fn time_series() {
+    // tmax - tmin, exact.
+    assert_eq!(
+      interpret("Duration[TimeSeries[{{1, 5}, {3, 6}, {7, 9}}]]").unwrap(),
+      "Quantity[6, Seconds]"
+    );
+  }
+
+  #[test]
+  fn audio() {
+    // Sample count over sample rate, machine precision.
+    assert_eq!(
+      interpret("Duration[Audio[{0.1, 0.2, 0.3, 0.4}, SampleRate -> 2]]")
+        .unwrap(),
+      "Quantity[2., Seconds]"
+    );
+    assert_eq!(
+      interpret("Duration[Audio[Table[0., 44100]]]").unwrap(),
+      "Quantity[1., Seconds]"
+    );
+  }
+
+  #[test]
+  fn sound_notes_sum_sequentially() {
+    assert_eq!(
+      interpret("Duration[Sound[SoundNote[\"C\", 1.5]]]").unwrap(),
+      "Quantity[1.5, Seconds]"
+    );
+    // The default note duration is 1; results are machine precision.
+    assert_eq!(
+      interpret("Duration[Sound[SoundNote[\"C\"]]]").unwrap(),
+      "Quantity[1., Seconds]"
+    );
+    assert_eq!(
+      interpret("Duration[Sound[{SoundNote[\"C\"], SoundNote[\"E\", 2]}]]")
+        .unwrap(),
+      "Quantity[3., Seconds]"
+    );
+    assert_eq!(
+      interpret("Duration[Sound[{SoundNote[\"C\", 3], SoundNote[\"E\", 2]}]]")
+        .unwrap(),
+      "Quantity[5., Seconds]"
+    );
+  }
+
+  #[test]
+  fn unit_conversion() {
+    assert_eq!(
+      interpret(
+        "Duration[Audio[{0.1, 0.2, 0.3, 0.4}, SampleRate -> 2], \"Milliseconds\"]"
+      )
+      .unwrap(),
+      "Quantity[2000., Milliseconds]"
+    );
+  }
+
+  #[test]
+  fn non_objects_emit_durinv() {
+    clear_state();
+    let r = interpret_with_stdout("Duration[x]").unwrap();
+    assert_eq!(r.result, "Duration[x]");
+    assert!(r.warnings[0].contains(
+      "Duration::durinv: Expecting an audio, sound, video, time series or \
+       date interval object instead of x."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("Duration[5]").unwrap();
+    assert_eq!(r.result, "Duration[5]");
+    assert!(r.warnings[0].contains("Duration::durinv"));
+  }
+}
