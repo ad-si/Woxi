@@ -5523,6 +5523,21 @@ mod minimize {
     );
   }
 
+  // Objectives with negative powers (Laurent/rational) must not overflow when
+  // extracting polynomial coefficients. x^2 + 1/x^2 has minimum 2 at x = +/-1;
+  // the complex roots (+/-I) of the critical equation must be ignored.
+  #[test]
+  fn rational_objective_ignores_complex_critical_points() {
+    assert_eq!(
+      interpret("Minimize[x^2 + 1/x^2, x]").unwrap(),
+      "{2, {x -> -1}}"
+    );
+    assert_eq!(
+      interpret("Minimize[x^2/(1 + x^2), x]").unwrap(),
+      "{0, {x -> 0}}"
+    );
+  }
+
   // A non-symbol in the variable slot (a constraint, equation, or literal)
   // emits <func>::ivar and stays unevaluated, rather than raising a hard
   // error.

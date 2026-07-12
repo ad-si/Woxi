@@ -1720,6 +1720,17 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // A negative maximum power means a Laurent/rational expression (e.g. only
+  // x^-2 terms). The coefficient extraction below builds an empty `0..=degree`
+  // range, and the later `degree as usize` cast would index out of bounds, so
+  // bail out with the unevaluated Solve.
+  if degree < 0 {
+    return Ok(Expr::FunctionCall {
+      name: "Solve".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // Extract coefficients for each power of var
   let mut coeffs: Vec<Expr> = Vec::new();
   for d in 0..=degree {
@@ -5386,13 +5397,22 @@ fn reduce_fraction(n: i128, d: i128) -> (i128, i128) {
 /// Returns None if not a polynomial with integer coefficients.
 fn minimize_extract_int_coeffs(poly: &Expr, var: &str) -> Option<Vec<i128>> {
   let expanded = expand_and_combine(poly);
-  let degree = max_power_int(&expanded, var)? as usize;
+  // A negative max power means a Laurent/rational expression (e.g. 1/x^2), not
+  // a plain polynomial; bail out (also avoids `degree + 1` overflowing when the
+  // sentinel -1 is cast to usize).
+  let degree_raw = max_power_int(&expanded, var)?;
+  if degree_raw < 0 {
+    return None;
+  }
+  let degree = degree_raw as usize;
   let terms = collect_additive_terms(&expanded);
-  // Pre-check: ensure all terms are polynomial in var (sentinel -1 = non-polynomial)
+  // Pre-check: ensure all terms are polynomial in var. A negative power is
+  // either the sentinel -1 (var appears non-polynomially, e.g. E^x, Sin[x]) or
+  // a genuine negative exponent (x^-2); neither is a plain polynomial.
   for term in &terms {
     let (power, _) = term_var_power_and_coeff(term, var);
-    if power == -1 {
-      return None; // term contains var non-polynomially (e.g. E^x, Sin[x])
+    if power < 0 {
+      return None;
     }
   }
   let mut coeffs = vec![0i128; degree + 1];
@@ -5494,6 +5514,28 @@ fn minimize_neg_infinity_result(vars: &[String], maximize: bool) -> Expr {
 }
 
 /// Single-variable unconstrained minimize.
+/// True if `e` is a genuinely complex value: it contains the imaginary unit
+/// (via `contains_complex`) or a `Complex[re, im]` node with a nonzero imaginary
+/// part (which `contains_complex` alone does not detect).
+fn minimize_cp_is_complex(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      let im_zero = matches!(&args[1], Expr::Integer(0))
+        || matches!(&args[1], Expr::Real(r) if *r == 0.0);
+      !im_zero || args.iter().any(minimize_cp_is_complex)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(minimize_cp_is_complex),
+    Expr::List(items) => items.iter().any(minimize_cp_is_complex),
+    Expr::BinaryOp { left, right, .. } => {
+      minimize_cp_is_complex(left) || minimize_cp_is_complex(right)
+    }
+    Expr::UnaryOp { operand, .. } => minimize_cp_is_complex(operand),
+    _ => contains_complex(e),
+  }
+}
+
 /// Collect every `Abs[g]` subexpression argument `g` that depends on `var`.
 fn collect_abs_args(e: &Expr, var: &str, out: &mut Vec<Expr>) {
   match e {
@@ -5631,6 +5673,11 @@ fn minimize_single_var(
   let mut best_x: Option<Expr> = None;
 
   for cp in &critical_points {
+    // Real-variable optimization ignores complex critical points (e.g. x = ±I
+    // among the roots of x^4 == 1 for Minimize[x^2 + 1/x^2, x]).
+    if minimize_cp_is_complex(cp) {
+      continue;
+    }
     let fval_exact = minimize_eval_exact(&f_inner, var, cp)?;
     let fval_num = minimize_try_f64(&fval_exact);
 

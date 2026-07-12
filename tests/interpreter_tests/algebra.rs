@@ -3712,6 +3712,16 @@ mod solve {
     assert_eq!(interpret("Solve[3*x + 9 == 0, x]").unwrap(), "{{x -> -3}}");
   }
 
+  // A Laurent equation (negative powers only) must not overflow / panic when
+  // computing the polynomial degree; x^-2 == -1 solves to x = +/-I.
+  #[test]
+  fn negative_power_equation() {
+    assert_eq!(
+      interpret("Solve[x^-2 + 1 == 0, x]").unwrap(),
+      "{{x -> -I}, {x -> I}}"
+    );
+  }
+
   #[test]
   fn quadratic_integer_roots() {
     assert_eq!(
