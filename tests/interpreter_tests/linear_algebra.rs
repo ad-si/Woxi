@@ -7686,11 +7686,13 @@ mod sparse_array_arithmetic {
     );
   }
 
+  // Times preserves the zero pattern (0 * x == 0), so a SparseArray multiplied
+  // by a dense vector stays a SparseArray rather than densifying.
   #[test]
   fn sparse_times_dense_vector() {
     assert_eq!(
       interpret("SparseArray[{1 -> 5, 2 -> 3}, 3] * {2, 2, 2}").unwrap(),
-      "{10, 6, 0}"
+      "SparseArray[Automatic, {3}, 0, {1, {{0, 2}, {{1}, {2}}}, {10, 6}}]"
     );
   }
 

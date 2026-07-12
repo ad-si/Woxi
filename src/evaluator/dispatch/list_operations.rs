@@ -8766,7 +8766,7 @@ fn array_depth(expr: &Expr) -> usize {
 /// (cases 470 and 473), so the layout exactly matches wolframscript's
 /// CSR-like inner form: `{1, {{rowPtr}, {colIndices…}}, {values…}}` for
 /// rank ≥ 2 and `{1, {{0, count}, {{idx}…}}, {values…}}` for rank 1.
-fn dense_to_sparse_array_with_default(
+pub(crate) fn dense_to_sparse_array_with_default(
   expr: &Expr,
   default: &Expr,
 ) -> Option<Expr> {

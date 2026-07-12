@@ -177,6 +177,22 @@ pub fn thread_binary_op(
       other => other.clone(),
     }
   };
+  // Times preserves a SparseArray's zero pattern (0 * x == 0): multiplying a
+  // SparseArray by a scalar or a dense list yields another SparseArray rather
+  // than densifying, matching wolframscript
+  // (`SparseArray[{1->5,2->3},3] * {2,2,2}` -> SparseArray[…, {10, 6}], and
+  // `2 * SparseArray[…]` scales the stored values instead of staying inert).
+  if op == BinaryOperator::Times && (is_sparse(left) || is_sparse(right)) {
+    let product = thread_binary_op(&densify(left), &densify(right), op)?;
+    return Ok(
+      crate::evaluator::dispatch::list_operations::dense_to_sparse_array_with_default(
+        &product,
+        &Expr::Integer(0),
+      )
+      .unwrap_or(product),
+    );
+  }
+
   if is_sparse(left) && matches!(right, Expr::List(_)) {
     return thread_binary_op(&densify(left), right, op);
   }
