@@ -5089,6 +5089,25 @@ mod eliminate {
     assert_eq!(result, "x == 2");
   }
 
+  // Wolfram keeps the eliminated equation as a primitive polynomial rather
+  // than solving for the variable: 2 x == 3, not x == 3/2. Content that
+  // divides evenly still collapses (3 x == 6 -> x == 2).
+  #[test]
+  fn eliminate_keeps_primitive_polynomial() {
+    assert_eq!(
+      interpret("Eliminate[{x + y == 1, x - y == 2}, y]").unwrap(),
+      "2*x == 3"
+    );
+    assert_eq!(
+      interpret("Eliminate[{5 x + y == 2, y == 0}, y]").unwrap(),
+      "5*x == 2"
+    );
+    assert_eq!(
+      interpret("Eliminate[{2 x + y == 5, x - y == 1}, y]").unwrap(),
+      "x == 2"
+    );
+  }
+
   #[test]
   fn eliminate_with_product() {
     // Eliminate x from {a == x + y, b == x*y}

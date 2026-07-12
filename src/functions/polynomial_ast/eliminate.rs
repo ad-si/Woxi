@@ -171,6 +171,14 @@ pub fn contains_var(expr: &Expr, var: &str) -> bool {
   !is_constant_wrt(expr, var)
 }
 
+/// Greatest common divisor of two non-negative integers.
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+  while b != 0 {
+    (a, b) = (b, a % b);
+  }
+  a.abs()
+}
+
 /// Eliminate one variable from a system of equations
 pub fn eliminate_one_variable(
   equations: &[Expr],
@@ -687,6 +695,39 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
 
     let coeff = simplify(coeff);
     let rest = simplify(rest);
+
+    // With integer coefficients, Wolfram keeps the eliminated equation as a
+    // primitive polynomial (content-reduced, positive leading coefficient)
+    // rather than solving for the variable: `2 x == 3`, not `x == 3/2`. Only
+    // when the content divides the constant evenly does it become `x == k`.
+    if let (Expr::Integer(c), Expr::Integer(r)) = (&coeff, &rest) {
+      let (mut c, mut r) = (*c, *r);
+      if c < 0 {
+        c = -c;
+        r = -r;
+      }
+      let g = {
+        let g = gcd_i128(c.abs(), r.abs());
+        if g == 0 { 1 } else { g }
+      };
+      let c = c / g;
+      let r = r / g;
+      // c*var + r == 0  =>  c*var == -r
+      let lhs = if c == 1 {
+        Expr::Identifier(var.clone())
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(c)),
+          right: Box::new(Expr::Identifier(var.clone())),
+        }
+      };
+      return Expr::Comparison {
+        operands: vec![lhs, Expr::Integer(-r)],
+        operators: vec![crate::syntax::ComparisonOp::Equal],
+      };
+    }
+
     let neg_rest = simplify(expand_and_combine(&negate_expr(&rest)));
 
     let val = match &coeff {
