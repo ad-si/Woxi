@@ -1379,6 +1379,7 @@ mod interpreter_tests {
   mod timeseries;
   mod turing_machine;
   mod wavelets;
+  mod wxf;
 }
 
 #[cfg(test)]

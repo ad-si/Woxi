@@ -76,6 +76,7 @@ pub mod voronoi;
 pub mod wavelet_ast;
 pub mod wikidata_ast;
 pub mod wl_serialize;
+pub mod wxf_ast;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod xlsx_ast;
 pub mod ztransform_ast;

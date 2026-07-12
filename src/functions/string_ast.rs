@@ -11914,7 +11914,7 @@ pub fn byte_array_to_string_ast(
 
 /// Extract the bytes of a ByteArray, which stores its data either as a base64
 /// string or as a list of integer byte values.
-fn byte_array_bytes(expr: &Expr) -> Option<Vec<u8>> {
+pub fn byte_array_bytes(expr: &Expr) -> Option<Vec<u8>> {
   if let Expr::FunctionCall { name, args } = expr
     && name == "ByteArray"
     && args.len() == 1
