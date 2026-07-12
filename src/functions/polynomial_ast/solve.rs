@@ -2850,7 +2850,7 @@ fn try_solve_abs_eq(
       // ({x -> -a} before {x -> a}); numeric cases are reordered by
       // sort_solutions anyway.
       let neg = crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(eff.clone()),
       })
       .ok()?;
@@ -2985,7 +2985,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   };
   let negate = |e: Expr| {
     eval(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(e),
     })
   };
@@ -3005,7 +3005,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
       // Wolframscript returns the two-solution list `{x -> -Pi + 2*Pi*C[1],
       // x -> Pi + 2*Pi*C[1]}` even though they coincide modulo 2*Pi.
       let neg_pi = Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(pi.clone()),
       };
       vec![
@@ -5089,7 +5089,7 @@ fn minimize_eval_exact(
     return Ok(simplified);
   }
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = &simplified
   {
@@ -5572,18 +5572,18 @@ fn minimize_neg_infinity_result(vars: &[String], maximize: bool) -> Expr {
     Expr::Identifier("Infinity".to_string())
   } else {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   };
   let x_val = if maximize {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   } else {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   };
@@ -8930,7 +8930,7 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
       .or_else(|| named_constant_value(name).map(NumNode::Const)),
     Expr::Constant(name) => named_constant_value(name).map(NumNode::Const),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some(NumNode::Neg(Box::new(c(operand)?))),
     Expr::BinaryOp { op, left, right } => {
@@ -9124,7 +9124,7 @@ fn nminimize_infeasible_result(
 
   let inf = if maximize {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   } else {
@@ -9150,7 +9150,7 @@ fn nminimize_unbounded_result(vars: &[String], maximize: bool) -> Expr {
     Expr::Identifier("Infinity".to_string())
   } else {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   };

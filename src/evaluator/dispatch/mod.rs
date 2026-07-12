@@ -3407,12 +3407,12 @@ pub fn evaluate_function_call_ast_inner(
       for (j, bj) in b_coeffs.iter().enumerate() {
         if i >= j {
           let term = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(bj.clone()),
             right: Box::new(data[i - j].clone()),
           };
           sum = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(sum),
             right: Box::new(term),
           };
@@ -3421,19 +3421,19 @@ pub fn evaluate_function_call_ast_inner(
       for (k, ak) in a_coeffs.iter().enumerate().skip(1) {
         if i >= k {
           let term = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(ak.clone()),
             right: Box::new(output[i - k].clone()),
           };
           sum = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Minus,
+            op: BinaryOperator::Minus,
             left: Box::new(sum),
             right: Box::new(term),
           };
         }
       }
       let result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(sum),
         right: Box::new(a_coeffs[0].clone()),
       };
@@ -3790,7 +3790,7 @@ pub fn evaluate_function_call_ast_inner(
           let mut out = Vec::with_capacity(items.len());
           for x in items.iter() {
             let diff = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(x.clone()),
               right: Box::new(median.clone()),
             };
@@ -3818,12 +3818,12 @@ pub fn evaluate_function_call_ast_inner(
           let mut out = Vec::with_capacity(items.len());
           for x in items.iter() {
             let diff = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(x.clone()),
               right: Box::new(mean.clone()),
             };
             let sq = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(diff),
               right: Box::new(Expr::Integer(2)),
             };
@@ -3838,7 +3838,7 @@ pub fn evaluate_function_call_ast_inner(
           args: vec![squared_diffs].into(),
         };
         let variance = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(sum_sq),
           right: Box::new(Expr::Integer(n)),
         };
@@ -9199,7 +9199,7 @@ pub fn evaluate_function_call_ast_inner(
                 conds.push(Expr::Comparison {
                   operands: vec![
                     Expr::BinaryOp {
-                      op: crate::syntax::BinaryOperator::Minus,
+                      op: BinaryOperator::Minus,
                       left: Box::new(fargs[i].clone()),
                       right: Box::new(fargs[j].clone()),
                     },
@@ -9242,7 +9242,7 @@ pub fn evaluate_function_call_ast_inner(
                 conds.push(Expr::Comparison {
                   operands: vec![
                     Expr::BinaryOp {
-                      op: crate::syntax::BinaryOperator::Minus,
+                      op: BinaryOperator::Minus,
                       left: Box::new(fargs[i].clone()),
                       right: Box::new(fargs[j].clone()),
                     },
@@ -9460,7 +9460,7 @@ pub fn evaluate_function_call_ast_inner(
       let mut terms: Vec<Expr> = Vec::with_capacity(r);
       for j in 0..r {
         terms.push(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(window[j].clone()),
           right: Box::new(items[i + j].clone()),
         });
@@ -9470,7 +9470,7 @@ pub fn evaluate_function_call_ast_inner(
         args: terms.into(),
       };
       let avg = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(sum),
         right: Box::new(divisor.clone()),
       };
@@ -10225,12 +10225,12 @@ pub fn evaluate_function_call_ast_inner(
     // Apply radius if present
     let (x_comp, y_comp) = if let Some(r) = r {
       let rx = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(r.clone()),
         right: Box::new(cos_expr),
       })?;
       let ry = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(r),
         right: Box::new(sin_expr),
       })?;
@@ -10242,12 +10242,12 @@ pub fn evaluate_function_call_ast_inner(
     // Apply center offset if present
     let (final_x, final_y) = if let Some((cx, cy)) = center {
       let fx = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(cx),
         right: Box::new(x_comp),
       })?;
       let fy = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(cy),
         right: Box::new(y_comp),
       })?;
@@ -10307,16 +10307,16 @@ pub fn evaluate_function_call_ast_inner(
     // Base angle theta0: explicit, or the default Pi/2 - (n-1)*Pi/n.
     let pi = || Expr::Identifier("Pi".to_string());
     let base = theta.unwrap_or_else(|| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(pi()),
         right: Box::new(Expr::Integer(2)),
       }),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer((n - 1) as i128)),
           right: Box::new(pi()),
         }),
@@ -10327,12 +10327,12 @@ pub fn evaluate_function_call_ast_inner(
     for k in 0..n {
       // angle_k = base + 2*k*Pi/n
       let angle = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(base.clone()),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(k as i128 * 2)),
             right: Box::new(pi()),
           }),
@@ -10341,10 +10341,10 @@ pub fn evaluate_function_call_ast_inner(
       };
       // coordinate = center + radius * trig(angle)
       let coord = |trig: &str, c: &Expr| Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(c.clone()),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(radius.clone()),
           right: Box::new(Expr::FunctionCall {
             name: trig.to_string(),

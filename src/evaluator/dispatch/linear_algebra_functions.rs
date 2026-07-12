@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::make_sqrt;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 pub fn dispatch_linear_algebra_functions(
   name: &str,
@@ -467,22 +468,22 @@ pub fn dispatch_linear_algebra_functions(
                 Expr::Integer(0)
               };
               let vi_vj = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(v[i].clone()),
                 right: Box::new(v[j].clone()),
               };
               let two_vi_vj = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(Expr::Integer(2)),
                 right: Box::new(vi_vj),
               };
               let frac = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(two_vi_vj),
                 right: Box::new(dot_vv.clone()),
               };
               let entry = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Minus,
+                op: BinaryOperator::Minus,
                 left: Box::new(delta),
                 right: Box::new(frac),
               };
@@ -519,7 +520,7 @@ pub fn dispatch_linear_algebra_functions(
             args: vec![args[1].clone(), args[1].clone()].into(),
           };
           let s_minus_1 = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Minus,
+            op: BinaryOperator::Minus,
             left: Box::new(s.clone()),
             right: Box::new(Expr::Integer(1)),
           };
@@ -533,22 +534,22 @@ pub fn dispatch_linear_algebra_functions(
                 Expr::Integer(0)
               };
               let vi_vj = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(v[i].clone()),
                 right: Box::new(v[j].clone()),
               };
               let numer = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(s_minus_1.clone()),
                 right: Box::new(vi_vj),
               };
               let frac = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(numer),
                 right: Box::new(dot_vv.clone()),
               };
               let sum = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(delta),
                 right: Box::new(frac),
               };
@@ -1586,12 +1587,12 @@ pub fn dispatch_linear_algebra_functions(
         let nv = sqrt(plus(sq(&v[0]), sq(&v[1])));
         let denom = times(nu, nv);
         let cos_t = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(dot),
           right: Box::new(denom.clone()),
         };
         let sin_t = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(cross),
           right: Box::new(denom),
         };
@@ -1882,10 +1883,10 @@ pub fn dispatch_linear_algebra_functions(
           // Translation column: ci - si*ci = ci*(1 - si)
           if let Some(c) = center {
             let translation = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(c[i].clone()),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(scales[i].clone()),
                 right: Box::new(c[i].clone()),
               }),
@@ -2167,7 +2168,7 @@ pub fn dispatch_linear_algebra_functions(
                 Ok(d) => {
                   let sign = if (i + j) % 2 == 0 { 1 } else { -1 };
                   let cofactor = evaluate_expr_to_expr(&Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Times,
+                    op: BinaryOperator::Times,
                     left: Box::new(Expr::Integer(sign)),
                     right: Box::new(d),
                   })
@@ -2488,10 +2489,10 @@ pub fn dispatch_linear_algebra_functions(
               })
               .unwrap_or(matrix[j][i].clone());
               let diff = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(matrix[i][j].clone()),
                 right: Box::new(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Times,
+                  op: BinaryOperator::Times,
                   left: Box::new(Expr::Integer(-1)),
                   right: Box::new(conj),
                 }),
@@ -2529,7 +2530,7 @@ pub fn dispatch_linear_algebra_functions(
               })
               .unwrap_or(matrix[j][i].clone());
               let sum = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(matrix[i][j].clone()),
                 right: Box::new(conj),
               })
@@ -2822,7 +2823,7 @@ pub fn dispatch_linear_algebra_functions(
             evaluate_expr_to_expr(&sqrt_n_expr).unwrap_or(sqrt_n_expr);
           // Compute 1/Sqrt[n] once (evaluated)
           let inv_sqrt_n_expr = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
+            op: BinaryOperator::Divide,
             left: Box::new(Expr::Integer(1)),
             right: Box::new(sqrt_n.clone()),
           };
@@ -2849,7 +2850,7 @@ pub fn dispatch_linear_algebra_functions(
                     } else {
                       // v / Sqrt[n]
                       let entry = Expr::BinaryOp {
-                        op: crate::syntax::BinaryOperator::Divide,
+                        op: BinaryOperator::Divide,
                         left: Box::new(Expr::Integer(v)),
                         right: Box::new(sqrt_n.clone()),
                       };
@@ -4206,7 +4207,7 @@ fn matrix_power_block_symbolic(rows: &[Expr], n_expr: &Expr) -> Option<Expr> {
         let entry = matrix[i][i].clone();
         result[i][i] =
           match crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(entry),
             right: Box::new(n_expr.clone()),
           }) {
@@ -4252,7 +4253,6 @@ fn matrix_power_2x2_symbolic_block(
   m: &[[Expr; 2]; 2],
   n_expr: &Expr,
 ) -> Option<[[Expr; 2]; 2]> {
-  use crate::syntax::BinaryOperator;
   // Extract integer entries.
   let a = crate::functions::math_ast::expr_to_i128(&m[0][0])?;
   let b = crate::functions::math_ast::expr_to_i128(&m[0][1])?;
@@ -4599,7 +4599,7 @@ fn rotation_transform_3d_axis(
   let u: Vec<Expr> = axis
     .iter()
     .map(|a| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(a.clone()),
       right: Box::new(norm.clone()),
     })
@@ -4811,7 +4811,7 @@ fn lyapunov_solve_common(
         }
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => {
         let q = parse_matrix_entry_recur(operand)?;

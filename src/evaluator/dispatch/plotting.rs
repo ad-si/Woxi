@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 /// Wrap a plot function call in Quiet mode so that messages emitted during
 /// function sampling (e.g. Power::indet for 0^0) are suppressed and discarded.
@@ -290,10 +291,10 @@ pub fn dispatch_plotting(
       let yv = "y".to_string();
       // Substitute z -> x + I*y in f.
       let xy_expr = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Identifier(xv.clone())),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Identifier("I".to_string())),
           right: Box::new(Expr::Identifier(yv.clone())),
         }),
@@ -379,19 +380,19 @@ pub fn dispatch_plotting(
                 args: vec![r.clone()].into(),
               };
               let corner_lo = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(neg_r.clone()),
                 right: Box::new(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Times,
+                  op: BinaryOperator::Times,
                   left: Box::new(neg_r.clone()),
                   right: Box::new(Expr::Identifier("I".to_string())),
                 }),
               };
               let corner_hi = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(r.clone()),
                 right: Box::new(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Times,
+                  op: BinaryOperator::Times,
                   left: Box::new(r),
                   right: Box::new(Expr::Identifier("I".to_string())),
                 }),
@@ -406,10 +407,10 @@ pub fn dispatch_plotting(
       let xv = "x".to_string();
       let yv = "y".to_string();
       let xy_expr = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Identifier(xv.clone())),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Identifier("I".to_string())),
           right: Box::new(Expr::Identifier(yv.clone())),
         }),

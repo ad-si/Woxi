@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::is_sqrt;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 /// Check if the result of differentiation contains a
 /// `Derivative[...][func_name][...]` pattern (as CurriedCall),
@@ -43,7 +44,7 @@ fn contains_unresolved_derivative(expr: &Expr, func_name: &str) -> bool {
 fn match_slot_power(body: &Expr) -> Option<i128> {
   let (base, exp) = match body {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => (left.as_ref(), right.as_ref()),
@@ -78,7 +79,7 @@ pub fn build_var_power_derivative_chain(
   }
   let dn = k - n;
   let times = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(a),
     right: Box::new(b),
   };
@@ -94,7 +95,7 @@ pub fn build_var_power_derivative_chain(
       var_expr.clone()
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(var_expr.clone()),
         right: Box::new(Expr::Integer(dn)),
       }
@@ -122,7 +123,6 @@ pub fn extract_var_power_factor(
   var: &str,
 ) -> Option<(Expr, i128)> {
   use crate::functions::calculus_ast::is_constant_wrt;
-  use crate::syntax::BinaryOperator;
 
   // `var` (i.e. `var^1`).
   if matches!(expr, Expr::Identifier(s) if s == var) {
@@ -939,7 +939,6 @@ fn as_func_args(expr: &Expr) -> Option<(&str, Vec<&Expr>)> {
       Some((name.as_str(), args.iter().collect()))
     }
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       let name = match op {
         BinaryOperator::Plus => "Plus",
         BinaryOperator::Minus => "Plus", // a - b is Plus[a, Times[-1, b]]
@@ -1518,8 +1517,6 @@ fn inverse_laplace_2d(
   x: &str,
   y: &str,
 ) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
-
   // F = 1/(p*q): extract num/den and check denominator = p*q.
   let (num, den) =
     crate::functions::polynomial_ast::together::extract_num_den(expr);
@@ -1795,7 +1792,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         || matches!(
           fargs[1],
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             ..
           }
         );
@@ -2100,7 +2097,6 @@ fn extract_s_squared_plus_const(expr: &Expr, s: &str) -> Option<Expr> {
 fn normalize_to_func_calls(expr: &Expr) -> Expr {
   match expr {
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       let left = normalize_to_func_calls(left);
       let right = normalize_to_func_calls(right);
       match op {
@@ -2142,7 +2138,7 @@ fn normalize_to_func_calls(expr: &Expr) -> Expr {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let inner = normalize_to_func_calls(operand);
@@ -2450,7 +2446,7 @@ fn inverse_mellin_inner(
 ) -> Option<(Expr, bool)> {
   let neg = |e: Expr| make_times(vec![Expr::Integer(-1), e]);
   let e_pow = |e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(Expr::Identifier("E".to_string())),
     right: Box::new(e),
   };
@@ -2671,7 +2667,7 @@ fn inverse_mellin_inner(
       && is_pi(&consts[0])
     {
       let result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Constant("Pi".to_string())),
         right: Box::new(make_plus(vec![
           Expr::Constant("Pi".to_string()),
@@ -2757,10 +2753,10 @@ fn inverse_mellin_inner(
           let mut rest = consts.clone();
           rest.remove(pos);
           let result = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(make_plus(vec![Expr::Integer(1), x.clone()])),
             right: Box::new(Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
+              op: UnaryOperator::Minus,
               operand: Box::new(a_part.clone()),
             }),
           };
@@ -4037,7 +4033,7 @@ fn collect_domain_constraints(
   match expr {
     // Division: denominator != 0
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -4054,7 +4050,7 @@ fn collect_domain_constraints(
     // Power with negative exponent: base != 0
     // Power with fractional exponent (sqrt): base >= 0
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -4066,7 +4062,7 @@ fn collect_domain_constraints(
         let is_negative_power = match right.as_ref() {
           Expr::Integer(n) => *n < 0,
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             ..
           } => true,
           _ => false,
@@ -4161,7 +4157,7 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
       ComparisonOp::NotEqual => {
         // Try to solve lhs == rhs for roots
         let diff = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(lhs.clone()),
           right: Box::new(rhs.clone()),
         };
@@ -4335,7 +4331,7 @@ fn expr_to_f64(e: &Expr) -> Option<f64> {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(f) => Some(*f),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => expr_to_f64(operand).map(|v| -v),
     Expr::FunctionCall { name, args }
@@ -4380,7 +4376,6 @@ fn contains_variable(expr: &Expr, var: &str) -> bool {
 /// Returns `None` for anything else (left unevaluated), matching wolframscript's
 /// support for these forms.
 fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
   let Expr::List(parts) = spec else {
     return None;
   };
@@ -4660,8 +4655,6 @@ fn gf_inner(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // Case 0: expr doesn't depend on n => constant * 1/(1-x)
   if !depends_on(expr, n) {
     // c/(1-x)
@@ -4842,7 +4835,6 @@ fn gf_inner(
 /// Extract shift from expression like n+1, n+2, etc.
 /// Returns (shift, variable_name) if the expression is var + constant.
 fn extract_shift<'a>(expr: &'a Expr, var: &str) -> Option<(i64, &'a str)> {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -4890,8 +4882,6 @@ fn gf_power(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // Case: a^n where a doesn't depend on n => 1/(1 - a*x)
   if matches!(exp, Expr::Identifier(name) if name == n) && !depends_on(base, n)
   {
@@ -4963,8 +4953,6 @@ fn gf_power(
 /// Uses the formula involving Eulerian numbers: result = Sum[A(k,j) * x^(j+1), j=0..k-1] / (1-x)^(k+1)
 /// where A(k,j) are the Eulerian numbers.
 fn gf_n_power_k(k: i128, x: &Expr) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // Compute Eulerian numbers A(k, j) for j = 0..k-1
   let k_usize = k as usize;
   let eulerian = compute_eulerian_numbers(k_usize);
@@ -5073,8 +5061,6 @@ fn gf_plus(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // Collect all terms
   let terms = collect_plus_terms(expr);
 
@@ -5101,7 +5087,6 @@ fn gf_plus(
 
 /// Collect all additive terms from a Plus expression tree
 fn collect_plus_terms(expr: &Expr) -> Vec<&Expr> {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -5125,8 +5110,6 @@ fn gf_times(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // Collect all multiplicative factors
   let factors = collect_times_factors(expr);
 
@@ -5226,7 +5209,6 @@ fn gf_times(
 
 /// Collect all multiplicative factors from a Times expression tree
 fn collect_times_factors(expr: &Expr) -> Vec<&Expr> {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -5251,8 +5233,6 @@ fn gf_binomial(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // Binomial[n, k] where k is constant: x^k/(-1+x)^(k+1) (with sign adjustment)
   // Canonical Wolfram form uses (-1+x) as base.
   // (1-x)^(k+1) = (-1)^(k+1) * (-1+x)^(k+1), so negate numerator when (k+1) is odd.
@@ -5336,8 +5316,6 @@ fn gf_divide(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // 1/(n+k) for a positive integer k:
   //   Sum[x^m/(m+k), {m,0,Inf}]
   //     = (-Log[1-x]/x - Sum[x^(m-1)/m, {m,1,k-1}]) / x^(k-1)
@@ -5465,8 +5443,6 @@ fn egf_poly_part(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // Constant (doesn't depend on n) => P(x) = constant
   if !depends_on(expr, n) {
     return Ok(Some(expr.clone()));
@@ -5602,8 +5578,6 @@ fn egf_inner(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // First try the polynomial approach: EGF = E^x * P(x)
   // This produces properly factored results like E^x*(1+x) instead of E^x + E^x*x
   if let Some(poly) = egf_poly_part(expr, n, x)? {
@@ -5792,7 +5766,6 @@ fn egf_plus(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let terms = egf_collect_plus_terms(expr);
   let mut results = Vec::new();
   for term in &terms {
@@ -5819,7 +5792,6 @@ fn egf_times(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let factors = egf_collect_times_factors(expr);
 
   let mut constants = Vec::new();
@@ -5879,8 +5851,6 @@ fn egf_power(
   n: &str,
   x: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // Case: c^n where c doesn't depend on n => e^(c*x)
   if !depends_on(base, n) && matches!(exp, Expr::Identifier(name) if name == n)
   {
@@ -5917,7 +5887,6 @@ fn egf_power(
 
 /// Collect all terms from a Plus expression.
 fn egf_collect_plus_terms(expr: &Expr) -> Vec<&Expr> {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -5937,7 +5906,6 @@ fn egf_collect_plus_terms(expr: &Expr) -> Vec<&Expr> {
 
 /// Collect all factors from a Times expression.
 fn egf_collect_times_factors(expr: &Expr) -> Vec<&Expr> {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -5967,8 +5935,6 @@ fn egf_expr_to_nonneg_int(expr: &Expr) -> Option<usize> {
 /// For k >= 1, factors out x: x * (S(k,1) + S(k,2)*x + ... + S(k,k)*x^(k-1))
 /// to match Wolfram's canonical form (e.g. E^x*x*(1+x) instead of E^x*(x+x^2)).
 fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
-  use crate::syntax::BinaryOperator;
-
   let stirling = egf_stirling_numbers(k);
 
   // k=0: S(0,0)=1, polynomial is just 1
@@ -6918,7 +6884,7 @@ fn extract_neg_linear_coeff(expr: &Expr, t: &str) -> Option<Expr> {
   }
   // Check if it's -t directly: BinaryOp Times(-1, t)
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left,
     right,
   } = expr

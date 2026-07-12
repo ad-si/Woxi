@@ -553,7 +553,7 @@ fn extract_element_vars(expr: &Expr) -> Vec<String> {
     Expr::Identifier(name) => vec![name.clone()],
     // Alternatives as BinaryOp: a | b
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       left,
       right,
     } => {
@@ -4344,7 +4344,7 @@ fn log_collapse_candidate(expr: &Expr) -> Option<Expr> {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -4397,14 +4397,14 @@ fn contains_zero_negative_power(expr: &Expr) -> bool {
       || matches!(
         e,
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           ..
         }
       )
   }
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -4496,8 +4496,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       || matches!(
         &best,
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus
-            | crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
           ..
         }
       );
@@ -4605,7 +4604,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           .iter()
           .map(|t| {
             crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
+              op: BinaryOperator::Divide,
               left: Box::new(t.clone()),
               right: Box::new(divisor.clone()),
             })
@@ -4624,7 +4623,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
             product
           } else {
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
+              op: BinaryOperator::Divide,
               left: Box::new(product),
               right: Box::new(Expr::Integer(g_den)),
             }
@@ -4690,7 +4689,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
 /// arithmetic heads — the shapes Factor/FactorSquareFree treat as
 /// polynomials. Sums with other functions (Sin[x], Log[x], …) are not.
 pub(super) fn polynomial_like(e: &Expr) -> bool {
-  use crate::syntax::BinaryOperator as B;
+  use BinaryOperator as B;
   match e {
     Expr::Integer(_)
     | Expr::BigInteger(_)
@@ -5271,8 +5270,7 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
     || matches!(
       &trig_simplified,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus
-          | crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
         ..
       }
     );
@@ -6288,7 +6286,7 @@ fn flatten_assumption_atoms(expr: &Expr) -> Vec<Expr> {
       args.iter().flat_map(flatten_assumption_atoms).collect()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::And,
+      op: BinaryOperator::And,
       left,
       right,
     } => {
@@ -6508,7 +6506,7 @@ pub fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, String)> {
   // Negated term `-f[arg]^2` (a UnaryOp Minus, as produced when collecting the
   // terms of `a - b`): negate the coefficient of the inner term.
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = term
   {

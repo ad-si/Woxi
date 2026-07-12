@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 pub fn dispatch_complex_and_special(
   name: &str,
@@ -118,7 +119,7 @@ pub fn dispatch_complex_and_special(
         // If real part is 0, return b*I
         if matches!(real, Expr::Integer(0)) {
           return Some(Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(imag.clone()),
             right: Box::new(Expr::Identifier("I".to_string())),
           }));
@@ -126,7 +127,7 @@ pub fn dispatch_complex_and_special(
         // If imaginary is 1, return a + I
         if matches!(imag, Expr::Integer(1)) {
           return Some(Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(real.clone()),
             right: Box::new(Expr::Identifier("I".to_string())),
           }));
@@ -159,10 +160,10 @@ pub fn dispatch_complex_and_special(
         // raw a + b*I BinaryOp shape so structural pattern matching against
         // Plus/Times complex trees still works.
         return Some(Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(real.clone()),
           right: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(imag.clone()),
             right: Box::new(Expr::Identifier("I".to_string())),
           }),
@@ -231,7 +232,7 @@ pub fn dispatch_complex_and_special(
         }
         Expr::Integer(-1) => {
           return Some(Ok(Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand: Box::new(Expr::Identifier("Infinity".to_string())),
           }));
         }
@@ -250,7 +251,7 @@ pub fn dispatch_complex_and_special(
             }
             if v < 0.0 {
               return Some(Ok(Expr::UnaryOp {
-                op: crate::syntax::UnaryOperator::Minus,
+                op: UnaryOperator::Minus,
                 operand: Box::new(Expr::Identifier("Infinity".to_string())),
               }));
             }
@@ -266,7 +267,7 @@ pub fn dispatch_complex_and_special(
                 return Some(Ok(Expr::Identifier("Infinity".to_string())));
               } else if re_n < 0 {
                 return Some(Ok(Expr::UnaryOp {
-                  op: crate::syntax::UnaryOperator::Minus,
+                  op: UnaryOperator::Minus,
                   operand: Box::new(Expr::Identifier("Infinity".to_string())),
                 }));
               } else {
@@ -304,7 +305,7 @@ pub fn dispatch_complex_and_special(
                 }
               };
               let normalized = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(args[0].clone()),
                 right: Box::new(make_sqrt(sqrt_arg)),
               };
@@ -318,7 +319,7 @@ pub fn dispatch_complex_and_special(
               }
               if matches!(&normalized, Expr::Integer(-1)) {
                 return Some(Ok(Expr::UnaryOp {
-                  op: crate::syntax::UnaryOperator::Minus,
+                  op: UnaryOperator::Minus,
                   operand: Box::new(Expr::Identifier("Infinity".to_string())),
                 }));
               }
@@ -338,17 +339,17 @@ pub fn dispatch_complex_and_special(
             && !is_zero_expr(&im)
           {
             let re_sq = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(re.clone()),
               right: Box::new(Expr::Integer(2)),
             };
             let im_sq = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(im.clone()),
               right: Box::new(Expr::Integer(2)),
             };
             let mag_sq = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(re_sq),
               right: Box::new(im_sq),
             };
@@ -357,7 +358,7 @@ pub fn dispatch_complex_and_special(
               Err(e) => return Some(Err(e)),
             };
             let direction = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
+              op: BinaryOperator::Divide,
               left: Box::new(args[0].clone()),
               right: Box::new(make_sqrt(mag_sq)),
             };
@@ -393,7 +394,7 @@ pub fn dispatch_complex_and_special(
                 }
                 if nre < 0.0 {
                   return Some(Ok(Expr::UnaryOp {
-                    op: crate::syntax::UnaryOperator::Minus,
+                    op: UnaryOperator::Minus,
                     operand: Box::new(Expr::Identifier("Infinity".to_string())),
                   }));
                 }
@@ -401,12 +402,12 @@ pub fn dispatch_complex_and_special(
               // Build `re + im*I` so the regular Times printer handles
               // sign placement and `0. + r*I` Re/Im split.
               let im_term = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(Expr::Real(nim)),
                 right: Box::new(Expr::Identifier("I".to_string())),
               };
               let direction = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(Expr::Real(nre)),
                 right: Box::new(im_term),
               };
@@ -2375,7 +2376,7 @@ pub fn dispatch_complex_and_special(
         args: vec![Expr::Integer(n as i128)].into(),
       };
       let std_err = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(std_dev),
         right: Box::new(sqrt_n),
       };
@@ -3306,13 +3307,11 @@ fn needs_paren_in_product(expr: &Expr) -> bool {
           && args.len() >= 2
           && matches!(&args[0], Expr::Integer(n) if *n < 0))
     }
-    Expr::BinaryOp { op, .. } => matches!(
-      op,
-      crate::syntax::BinaryOperator::Plus
-        | crate::syntax::BinaryOperator::Minus
-    ),
+    Expr::BinaryOp { op, .. } => {
+      matches!(op, BinaryOperator::Plus | BinaryOperator::Minus)
+    }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       ..
     } => true,
     _ => false,
@@ -3977,8 +3976,8 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     // UnaryOp: -x → RowBox[{"-", box(x)}], !x → RowBox[{"!", box(x)}]
     Expr::UnaryOp { op, operand } => {
       let op_str = match op {
-        crate::syntax::UnaryOperator::Minus => "-",
-        crate::syntax::UnaryOperator::Not => "!",
+        UnaryOperator::Minus => "-",
+        UnaryOperator::Not => "!",
       };
       Expr::FunctionCall {
         name: "RowBox".to_string(),
@@ -3991,22 +3990,17 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     // BinaryOp::Plus/Minus/Times/And/Or/StringJoin/Alternatives
     Expr::BinaryOp { op, left, right }
-      if !matches!(
-        op,
-        crate::syntax::BinaryOperator::Power
-          | crate::syntax::BinaryOperator::Divide
-      ) =>
+      if !matches!(op, BinaryOperator::Power | BinaryOperator::Divide) =>
     {
       let (op_str, spaced) = match op {
-        crate::syntax::BinaryOperator::Plus => ("+", true),
-        crate::syntax::BinaryOperator::Minus => ("-", true),
-        crate::syntax::BinaryOperator::Times => (" ", false),
-        crate::syntax::BinaryOperator::And => ("&&", true),
-        crate::syntax::BinaryOperator::Or => ("||", true),
-        crate::syntax::BinaryOperator::StringJoin => ("<>", false),
-        crate::syntax::BinaryOperator::Alternatives => ("|", true),
-        crate::syntax::BinaryOperator::Power
-        | crate::syntax::BinaryOperator::Divide => unreachable!(),
+        BinaryOperator::Plus => ("+", true),
+        BinaryOperator::Minus => ("-", true),
+        BinaryOperator::Times => (" ", false),
+        BinaryOperator::And => ("&&", true),
+        BinaryOperator::Or => ("||", true),
+        BinaryOperator::StringJoin => ("<>", false),
+        BinaryOperator::Alternatives => ("|", true),
+        BinaryOperator::Power | BinaryOperator::Divide => unreachable!(),
       };
       let sep = if spaced {
         op_str.to_string()
@@ -4016,7 +4010,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // Additive operands of a product need parens so `(-5+n) (-4+n)`
       // doesn't render as `-5+n -4+n` (issue #135).
       let box_operand = |e: &Expr| {
-        if matches!(op, crate::syntax::BinaryOperator::Times) {
+        if matches!(op, BinaryOperator::Times) {
           box_with_paren_if_needed(e)
         } else {
           expr_to_box_form(e)
@@ -4380,7 +4374,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     // BinaryOp::Divide → FractionBox
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => Expr::FunctionCall {
@@ -4389,7 +4383,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     },
     // BinaryOp::Power with rational exponents
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -5156,7 +5150,6 @@ fn tf_flatten_additive(expr: &Expr, neg: bool, out: &mut Vec<(bool, Expr)>) {
 
 /// Flatten a multiplicative expression into its factors.
 fn tf_flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -5178,14 +5171,13 @@ fn tf_flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
 /// Does this term need parentheses when placed as a factor in a product or
 /// as the base of a power?
 fn tf_needs_paren_factor(expr: &Expr) -> bool {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus | BinaryOperator::Minus,
       ..
     } => true,
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       ..
     } => true,
     Expr::Comparison { .. } => true,
@@ -5240,8 +5232,7 @@ fn tf_power(base: &Expr, exp: &Expr) -> Expr {
     || matches!(
       base,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power
-          | crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Power | BinaryOperator::Divide,
         ..
       }
     )
@@ -5379,8 +5370,7 @@ fn tf_integrate(args: &[Expr]) -> Expr {
   let body_needs_paren = matches!(
     &args[0],
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus
-        | crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
       ..
     }
   ) || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus");
@@ -5442,7 +5432,7 @@ fn tf_derivative(args: &[Expr]) -> Expr {
     || matches!(
       body,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         ..
       }
     )
@@ -5744,7 +5734,6 @@ pub fn expr_to_box_form_traditional(expr: &Expr) -> Expr {
 /// (division, multiplication, powers).
 fn unit_to_box_form(unit: &Expr, magnitude: &Expr) -> Expr {
   use crate::functions::quantity_ast::unit_to_abbreviation;
-  use crate::syntax::BinaryOperator;
 
   // Helper: abbreviate a single unit identifier
   fn abbrev(s: &str, mag: &Expr) -> Expr {
@@ -5842,7 +5831,6 @@ fn unit_to_box_form(unit: &Expr, magnitude: &Expr) -> Expr {
 /// Like `unit_to_box_form` but without singularization (for compound sub-units).
 fn unit_to_box_form_inner(unit: &Expr) -> Expr {
   use crate::functions::quantity_ast::unit_to_abbreviation;
-  use crate::syntax::BinaryOperator;
 
   if let Some((base, exp)) = crate::functions::graphics::as_power(unit) {
     let base_box = unit_to_box_form_inner(base);
@@ -6065,7 +6053,7 @@ fn make_inactive_head(head: &str, args: Vec<Expr>, wrap: bool) -> Expr {
 
 /// Flatten an associative binary chain (Plus/Times/And/Or/...) of `op` rooted
 /// at `expr` into its operand list, in left-to-right order.
-fn flatten_binop(expr: &Expr, op: crate::syntax::BinaryOperator) -> Vec<Expr> {
+fn flatten_binop(expr: &Expr, op: BinaryOperator) -> Vec<Expr> {
   if let Expr::BinaryOp { op: o, left, right } = expr
     && *o == op
   {
@@ -6097,7 +6085,7 @@ fn negate_plus_term(e: &Expr, filter: Option<&str>) -> Expr {
 /// operands, in left-to-right order. A `0` left operand of a subtraction
 /// (Woxi's encoding of unary minus) contributes no term.
 fn collect_plus_terms(expr: &Expr, out: &mut Vec<Expr>, filter: Option<&str>) {
-  use crate::syntax::BinaryOperator as B;
+  use BinaryOperator as B;
   match expr {
     Expr::BinaryOp {
       op: B::Plus,
@@ -6130,7 +6118,7 @@ fn inactivate_expr(expr: &Expr, filter: Option<&str>) -> Expr {
   let inact = |e: &Expr| inactivate_expr(e, filter);
   match expr {
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator as B;
+      use BinaryOperator as B;
       match op {
         B::Times | B::And | B::Or | B::StringJoin | B::Alternatives => {
           let head = match op {
@@ -6176,12 +6164,12 @@ fn inactivate_expr(expr: &Expr, filter: Option<&str>) -> Expr {
     }
     Expr::UnaryOp { op, operand } => match op {
       // -a  →  Times[-1, a]
-      crate::syntax::UnaryOperator::Minus => make_inactive_head(
+      UnaryOperator::Minus => make_inactive_head(
         "Times",
         vec![Expr::Integer(-1), inact(operand)],
         wants("Times"),
       ),
-      crate::syntax::UnaryOperator::Not => {
+      UnaryOperator::Not => {
         make_inactive_head("Not", vec![inact(operand)], wants("Not"))
       }
     },
@@ -6352,7 +6340,7 @@ fn line_nearest_point(
   pt: &[Expr],
   n: usize,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator::{Divide, Minus, Plus, Times};
+  use BinaryOperator::{Divide, Minus, Plus, Times};
   if verts.len() < 2 {
     return Ok(None);
   }
@@ -6502,7 +6490,6 @@ fn compute_region_distance(
   region: &Expr,
   point: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let unevaluated = || {
     Ok(Expr::FunctionCall {
       name: "RegionDistance".to_string(),
@@ -6658,7 +6645,6 @@ fn compute_region_nearest(
   region: &Expr,
   point: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let unevaluated = || {
     Ok(Expr::FunctionCall {
       name: "RegionNearest".to_string(),
@@ -6818,7 +6804,6 @@ fn compute_signed_region_distance(
   region: &Expr,
   point: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let unevaluated = || {
     Ok(Expr::FunctionCall {
       name: "SignedRegionDistance".to_string(),
@@ -7360,7 +7345,7 @@ fn compute_shortest_curve_distance(
         dot
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(dot),
           right: Box::new(call(
             "Power",
@@ -7480,7 +7465,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           .into(),
         };
         let volume = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(product),
           right: Box::new(Expr::Integer(3)),
         };
@@ -7574,7 +7559,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           return unevaluated();
         };
         let half = |e: Expr| Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(e),
           right: Box::new(Expr::Integer(2)),
         };
@@ -7655,7 +7640,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           _ => return unevaluated(),
         };
         let half_n = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::Integer(n as i128)),
           right: Box::new(Expr::Integer(2)),
         };
@@ -7676,7 +7661,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           .into(),
         };
         let measure = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![pi_pow, r_pow].into(),
@@ -7871,7 +7856,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
   {
     let inf = || Expr::Identifier("Infinity".to_string());
     let neg_inf = || Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     };
     let mut bounds = Vec::with_capacity(p1.len());
@@ -7968,7 +7953,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
       && let Some((center, r1, r2)) = torus_parts(args)
     {
       let tube = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::FunctionCall {
           name: "Subtract".to_string(),
           args: vec![r2.clone(), r1].into(),
@@ -8131,7 +8116,7 @@ fn det_measure(
     abs
   } else {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(abs),
       right: Box::new(Expr::Integer(divisor)),
     }
@@ -8345,7 +8330,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
     };
     if name == "Cone" {
       volume = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(volume),
         right: Box::new(Expr::Integer(3)),
       };
@@ -8470,7 +8455,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
         }
         // (4 Pi r^3) / 3
         let vol = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![
@@ -8507,7 +8492,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
           return undefined();
         }
         let vol = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![
@@ -9197,7 +9182,7 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
             args: vec![
               p[d].clone(),
               Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(Expr::FunctionCall {
                   name: "Plus".to_string(),
                   args: vec![v1[d].clone(), v2[d].clone()].into(),
@@ -11360,7 +11345,7 @@ fn insphere_times(a: Expr, b: Expr) -> Expr {
 /// Helper: build a - b
 fn insphere_minus(a: Expr, b: Expr) -> Expr {
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Minus,
+    op: BinaryOperator::Minus,
     left: Box::new(a),
     right: Box::new(b),
   }
@@ -11933,7 +11918,7 @@ pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
         })
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -11948,10 +11933,10 @@ pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
         pull_i_factor(&times_expr)
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => pull_i_factor(operand).map(|r| Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(r),
       }),
       _ => None,
@@ -11965,7 +11950,7 @@ pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -11983,7 +11968,7 @@ pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left,
         right,
       } => {
@@ -11991,13 +11976,13 @@ pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
         collect_plus(right, out);
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left,
         right,
       } => {
         collect_plus(left, out);
         out.push(Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new((**right).clone()),
         });
       }

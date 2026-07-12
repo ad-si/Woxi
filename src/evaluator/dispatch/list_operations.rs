@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::list_helpers_ast;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 /// Parse the `m` argument of NestWhile[f, x, test, m, ...]. Returns `All` for
 /// the symbol `All`, `Last(n)` for a positive integer, and `None` otherwise.
@@ -2828,9 +2829,9 @@ pub fn dispatch_list_operations(
           var.clone()
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
+              op: UnaryOperator::Minus,
               operand: Box::new(x0.clone()),
             }),
             right: Box::new(var.clone()),
@@ -2870,7 +2871,7 @@ pub fn dispatch_list_operations(
             Some(base.clone())
           } else {
             Some(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(base.clone()),
               right: Box::new(Expr::Integer(power)),
             })
@@ -2883,7 +2884,7 @@ pub fn dispatch_list_operations(
             Some(bp) => {
               // Evaluate the Times to get canonical form
               let t = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(coeff_normalised),
                 right: Box::new(bp),
               };
@@ -2916,7 +2917,7 @@ pub fn dispatch_list_operations(
         let result = terms
           .into_iter()
           .reduce(|acc, t| Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(acc),
             right: Box::new(t),
           })
@@ -3296,7 +3297,7 @@ pub fn dispatch_list_operations(
           let mut next = Vec::with_capacity(current.len() - 1);
           for i in 1..current.len() {
             let ratio = match evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
+              op: BinaryOperator::Divide,
               left: Box::new(current[i].clone()),
               right: Box::new(current[i - 1].clone()),
             }) {

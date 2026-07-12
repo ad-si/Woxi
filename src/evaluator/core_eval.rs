@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 thread_local! {
   /// Symbols currently being looked up — prevents infinite recursion when
@@ -993,7 +994,7 @@ pub fn evaluate_expr_to_expr_inner(
               Expr::Integer(-1)
             };
             let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(current_val.clone()),
               right: Box::new(delta),
             })?;
@@ -1019,7 +1020,7 @@ pub fn evaluate_expr_to_expr_inner(
               Expr::Integer(-1)
             };
             let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(current_val.clone()),
               right: Box::new(delta),
             })?;
@@ -1258,10 +1259,10 @@ pub fn evaluate_expr_to_expr_inner(
           && args.len() == 2
         {
           let op = match name.as_str() {
-            "AddTo" => crate::syntax::BinaryOperator::Plus,
-            "SubtractFrom" => crate::syntax::BinaryOperator::Minus,
-            "TimesBy" => crate::syntax::BinaryOperator::Times,
-            "DivideBy" => crate::syntax::BinaryOperator::Divide,
+            "AddTo" => BinaryOperator::Plus,
+            "SubtractFrom" => BinaryOperator::Minus,
+            "TimesBy" => BinaryOperator::Times,
+            "DivideBy" => BinaryOperator::Divide,
             _ => unreachable!(),
           };
           if let Expr::Identifier(var_name) = &args[0] {

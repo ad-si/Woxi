@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 /// AnglePath[{θ1, θ2, ...}] - path with unit steps and cumulative turning angles.
 /// AnglePath[{{r1, θ1}, {r2, θ2}, ...}] - path with specified step lengths.
@@ -287,7 +288,6 @@ fn parse_initial_spec(expr: &Expr) -> Option<(Expr, Expr)> {
 /// parses: `Plus[1, Times[-1, Power[var, -4]]]`, `1 + Power[var, -4]*-1`,
 /// `1 - 1/var^4` (BinaryOp), etc.
 fn body_is_one_minus_one_over_var_quartic(body: &Expr, var_name: &str) -> bool {
-  use crate::syntax::BinaryOperator;
   let is_var_to_neg_four = |e: &Expr| -> bool {
     if let Expr::BinaryOp {
       op: BinaryOperator::Power,
@@ -445,7 +445,6 @@ fn telescope_linear_pair(
   max_expr: &Expr,
   k0: i128,
 ) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
   if a == b {
     return Some(Expr::Integer(1));
   }
@@ -739,7 +738,6 @@ fn infinite_integer_root_product(
   var_name: &str,
   n0: i128,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   if n0 < 1 {
     return Ok(None);
   }
@@ -835,7 +833,7 @@ fn linear_shift_of_var(body: &Expr, var_name: &str) -> Option<Expr> {
       args.iter().collect()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => vec![left.as_ref(), right.as_ref()],
@@ -869,7 +867,6 @@ fn linear_shift_of_var(body: &Expr, var_name: &str) -> Option<Expr> {
 }
 
 fn body_is_one_plus_one_over_var_squared(body: &Expr, var_name: &str) -> bool {
-  use crate::syntax::BinaryOperator;
   let is_var_squared = |e: &Expr| -> bool {
     matches!(
       e,
@@ -1082,7 +1079,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 .into(),
               })?;
             let power = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(body.clone()),
               right: Box::new(count),
             };
@@ -1116,7 +1113,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   return Ok(n_factorial);
                 }
                 return Ok(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Divide,
+                  op: BinaryOperator::Divide,
                   left: Box::new(n_factorial),
                   right: Box::new(Expr::Integer(denom)),
                 });
@@ -1130,9 +1127,9 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   min_expr.clone(),
                   // 1 - min + max
                   Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Plus,
+                    op: BinaryOperator::Plus,
                     left: Box::new(Expr::BinaryOp {
-                      op: crate::syntax::BinaryOperator::Minus,
+                      op: BinaryOperator::Minus,
                       left: Box::new(Expr::Integer(1)),
                       right: Box::new(min_expr.clone()),
                     }),
@@ -1155,7 +1152,6 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && !max_is_infinity
             && let Some(a) = linear_shift_of_var(body, &var_name)
           {
-            use crate::syntax::BinaryOperator;
             let one_plus_a =
               crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
                 op: BinaryOperator::Plus,
@@ -1228,7 +1224,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && max_concrete.is_none()
             && !max_is_infinity
             && let Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: base,
               right: exp,
             } = body
@@ -1238,12 +1234,12 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               // Product[c^i, {i, 1, n}] = c^((n*(1+n))/2)
               let n = max_expr.clone();
               let exponent = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Times,
+                  op: BinaryOperator::Times,
                   left: Box::new(n.clone()),
                   right: Box::new(Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Plus,
+                    op: BinaryOperator::Plus,
                     left: Box::new(Expr::Integer(1)),
                     right: Box::new(n),
                   }),
@@ -1251,7 +1247,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 right: Box::new(Expr::Integer(2)),
               };
               return Ok(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: base.clone(),
                 right: Box::new(exponent),
               });
@@ -1261,7 +1257,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if matches!(base.as_ref(), Expr::Identifier(name) if name == &var_name)
             {
               return Ok(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: Box::new(Expr::FunctionCall {
                   name: "Factorial".to_string(),
                   args: vec![max_expr.clone()].into(),
@@ -1285,7 +1281,6 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 body, &var_name,
               )
           {
-            use crate::syntax::BinaryOperator;
             // p = (d body / d var) * var / body — the exponent of a monomial.
             let p_expr = Expr::FunctionCall {
               name: "Simplify".to_string(),
@@ -1392,7 +1387,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && body_is_one_plus_one_over_var_squared(body, &var_name)
           {
             return Ok(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
+              op: BinaryOperator::Divide,
               left: Box::new(Expr::FunctionCall {
                 name: "Sinh".to_string(),
                 args: vec![Expr::Constant("Pi".to_string())].into(),
@@ -1411,13 +1406,13 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && body_is_one_minus_one_over_var_quartic(body, &var_name)
           {
             return Ok(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
+              op: BinaryOperator::Divide,
               left: Box::new(Expr::FunctionCall {
                 name: "Sinh".to_string(),
                 args: vec![Expr::Constant("Pi".to_string())].into(),
               }),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(Expr::Integer(4)),
                 right: Box::new(Expr::Constant("Pi".to_string())),
               }),
@@ -1537,7 +1532,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut result = values.remove(0);
         for val in values {
           result = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(result),
             right: Box::new(val),
           };
@@ -1614,7 +1609,6 @@ fn summand_contains_var(expr: &Expr, var: &str) -> bool {
 /// polynomial/rational/fractional-power class (exponentials with var in
 /// the exponent, Log factors, unknown functions of var).
 fn summand_growth_degree(expr: &Expr, var: &str) -> Option<f64> {
-  use crate::syntax::BinaryOperator;
   if !summand_contains_var(expr, var) {
     // A var-free factor is degree 0 — but reject non-numeric leaves like
     // symbolic parameters only when they are the whole summand (handled
@@ -1701,7 +1695,7 @@ fn summand_numeric_value(expr: &Expr) -> Option<f64> {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some(-summand_numeric_value(operand)?),
     _ => None,
@@ -1735,7 +1729,6 @@ fn product_early_terms_clean(body: &Expr, var: &str, n0: i128) -> bool {
 /// to the degree. None for anything else (Log factors, a^n with
 /// non-numeric base, unknown functions of var).
 fn product_growth(expr: &Expr, var: &str) -> Option<(f64, f64)> {
-  use crate::syntax::BinaryOperator;
   if !summand_contains_var(expr, var) {
     return Some((0.0, 0.0));
   }
@@ -1848,7 +1841,6 @@ fn product_growth_power(
 
 /// The slope k of an expression linear in var (k*var + c with numeric k).
 fn linear_slope_in(expr: &Expr, var: &str) -> Option<f64> {
-  use crate::syntax::BinaryOperator;
   if !summand_contains_var(expr, var) {
     return Some(0.0);
   }
@@ -1899,7 +1891,7 @@ fn linear_slope_in(expr: &Expr, var: &str) -> Option<f64> {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some(-linear_slope_in(operand, var)?),
     _ => None,
@@ -2109,7 +2101,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let diff = crate::functions::math_ast::plus_ast(&[
           items[2].clone(),
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand: Box::new(items[1].clone()),
           },
         ]);
@@ -2127,7 +2119,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 min_eval.clone()
               } else {
                 crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Plus,
+                  op: BinaryOperator::Plus,
                   left: Box::new(min_eval.clone()),
                   right: Box::new(Expr::Integer(j)),
                 })?
@@ -2289,7 +2281,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn collect_times_factors(e: &Expr, out: &mut Vec<Expr>) {
   match e {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -2309,7 +2301,7 @@ fn collect_times_factors(e: &Expr, out: &mut Vec<Expr>) {
 fn power_with_exponent_var(f: &Expr, var_name: &str) -> Option<Expr> {
   match f {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } if matches!(right.as_ref(), Expr::Identifier(s) if s == var_name) => {
@@ -2337,7 +2329,6 @@ fn try_binomial_theorem_sum(
   max_expr: &Expr,
 ) -> Option<Expr> {
   use crate::functions::polynomial_ast::contains_var;
-  use crate::syntax::BinaryOperator;
 
   let mut factors = Vec::new();
   collect_times_factors(body, &mut factors);
@@ -2428,8 +2419,6 @@ fn try_symbolic_sum(
   min_concrete: Option<i128>,
   _max_concrete: Option<i128>,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // If body doesn't contain the iteration variable, it's a constant sum:
   // Sum[c, {var, min, max}] = c * (max - min + 1)
   if !crate::functions::polynomial_ast::contains_var(body, var_name) {
@@ -3008,8 +2997,6 @@ fn is_leibniz_body(body: &Expr, var_name: &str) -> bool {
 /// and symbolic (not a plain number), and `var` appears only as the exponent.
 /// Returns `(coefficient, base)`.
 fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
-  use crate::syntax::BinaryOperator;
-
   // Flatten the multiplicative factors of `body`. A `Divide` contributes its
   // denominator as a reciprocal factor `denominator^(-1)`.
   fn collect(e: &Expr, out: &mut Vec<Expr>) {
@@ -3181,7 +3168,6 @@ fn match_geometric_symbolic_exp(
   var_name: &str,
 ) -> Option<(Expr, Expr)> {
   use crate::functions::calculus_ast::is_constant_wrt;
-  use crate::syntax::BinaryOperator;
 
   let mut factors = Vec::new();
   collect_times_factors(body, &mut factors);
@@ -3385,7 +3371,7 @@ fn is_times_expr(e: &Expr) -> bool {
   matches!(
     e,
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       ..
     }
   ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Times")
@@ -3394,7 +3380,6 @@ fn is_times_expr(e: &Expr) -> bool {
 /// If `exp` is `c * var` for a constant `c` (and `var` appears exactly once),
 /// return `c`; otherwise None. `var` alone gives `1`.
 fn linear_coeff_of_var(exp: &Expr, var_name: &str) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
   fn collect_times(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::BinaryOp {
@@ -3445,7 +3430,6 @@ fn linear_coeff_of_var(exp: &Expr, var_name: &str) -> Option<Expr> {
 /// series Sum[base^k/k, {k,1,Infinity}] = -Log[1 - base]. Reciprocal forms such
 /// as `1/(2^n n)` and `2^(-n)/n` are normalised to base `1/2`.
 fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
-  use crate::syntax::BinaryOperator;
   // Push 1/e as multiplicative factors, distributing over products and folding
   // one level of power so 1/(2^n n) yields [2^(-n), n^(-1)].
   fn recip(e: &Expr, out: &mut Vec<Expr>) {
@@ -3640,8 +3624,6 @@ fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
 /// `base` and inside the factorial. Returns `(coefficient, base)`; the base
 /// defaults to `1` when there is no explicit `base^var` factor (e.g. `1/k!`).
 fn match_exponential_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
-  use crate::syntax::BinaryOperator;
-
   fn collect(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::BinaryOp {
@@ -4166,7 +4148,6 @@ fn try_infinite_sum(
     && crate::functions::math_ast::try_eval_to_f64(&base)
       .is_none_or(|bf| bf.abs() < 1.0)
   {
-    use crate::syntax::BinaryOperator;
     let one_minus_base = Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left: Box::new(Expr::Integer(1)),
@@ -4193,7 +4174,6 @@ fn try_infinite_sum(
     && let Some((coeff, eff_base)) =
       match_geometric_symbolic_exp(body, var_name)
   {
-    use crate::syntax::BinaryOperator;
     let neg_one_plus_base = Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left: Box::new(Expr::Integer(-1)),
@@ -4219,7 +4199,6 @@ fn try_infinite_sum(
     && let Some(bf) = crate::functions::math_ast::try_eval_to_f64(&base)
     && bf.abs() < 1.0
   {
-    use crate::syntax::BinaryOperator;
     let one_minus_base = Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left: Box::new(Expr::Integer(1)),
@@ -4255,7 +4234,6 @@ fn try_infinite_sum(
     && let Some((coeff, base)) = match_geometric_base(body, var_name)
     && crate::functions::math_ast::try_eval_to_f64(&base).is_none()
   {
-    use crate::syntax::BinaryOperator;
     let base_pow_min = if min == 1 {
       base.clone()
     } else {
@@ -4317,7 +4295,6 @@ fn try_infinite_sum(
   if min == 1
     && let Some((coeff, base)) = match_log_geometric(body, var_name)
   {
-    use crate::syntax::BinaryOperator;
     // The Mercator series Sum[base^k/k] converges on the real interval
     // [-1, 1): base == 1 is the divergent harmonic series, |base| > 1
     // diverges, but base == -1 converges conditionally to -Log[2]. (A
@@ -4399,7 +4376,6 @@ fn try_infinite_sum(
       && !is_exact
       && crate::functions::math_ast::try_eval_to_f64(&r).is_none()
     {
-      use crate::syntax::BinaryOperator;
       let denom = Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(Expr::BinaryOp {
@@ -4421,7 +4397,7 @@ fn try_infinite_sum(
   // Try Leibniz formula: Sum[(-1)^k / (2k+1), {k, 0, Infinity}] = Pi/4
   if min == 0 && is_leibniz_body(body, var_name) {
     return Ok(Some(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::Constant("Pi".to_string())),
       right: Box::new(Expr::Integer(4)),
     }));
@@ -4467,7 +4443,7 @@ fn try_infinite_sum(
       args: vec![Expr::Integer(s as i128)].into(),
     };
     let a_pow = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(a),
       right: Box::new(Expr::Integer(-(s as i128))),
     };
@@ -4549,7 +4525,6 @@ fn try_infinite_sum(
 
   // Sum[1/c^i, {i, 1, Infinity}] = 1/(c-1) for integer c > 1
   // Detect body = 1/c^var (Divide form)
-  use crate::syntax::BinaryOperator;
   if let Expr::BinaryOp {
     op: BinaryOperator::Divide,
     left,
@@ -4582,7 +4557,6 @@ fn collect_factors(
   den: &mut Vec<Expr>,
   invert: bool,
 ) {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -4641,7 +4615,6 @@ fn match_alternating_reciprocal_power(
   body: &Expr,
   var_name: &str,
 ) -> Option<(i32, i64)> {
-  use crate::syntax::BinaryOperator;
   let mut num: Vec<Expr> = Vec::new();
   let mut den: Vec<Expr> = Vec::new();
   collect_factors(body, &mut num, &mut den, false);
@@ -4705,7 +4678,6 @@ fn match_reciprocal_power_general(
   expr: &Expr,
   var_name: &str,
 ) -> Option<(Expr, i64)> {
-  use crate::syntax::BinaryOperator;
   let has_var =
     |e: &Expr| crate::functions::polynomial_ast::contains_var(e, var_name);
   match expr {
@@ -4761,7 +4733,6 @@ fn match_scaled_reciprocal_power(
   body: &Expr,
   var_name: &str,
 ) -> Option<(Expr, i64)> {
-  use crate::syntax::BinaryOperator;
   let mut num: Vec<Expr> = Vec::new();
   let mut den: Vec<Expr> = Vec::new();
   collect_factors(body, &mut num, &mut den, false);
@@ -4818,7 +4789,6 @@ fn match_odd_reciprocal(
   var_name: &str,
   min: i128,
 ) -> Option<(bool, i32, i64)> {
-  use crate::syntax::BinaryOperator;
   let mut num: Vec<Expr> = Vec::new();
   let mut den: Vec<Expr> = Vec::new();
   collect_factors(body, &mut num, &mut den, false);
@@ -4879,8 +4849,6 @@ fn match_odd_reciprocal(
 }
 
 fn match_reciprocal_power(body: &Expr, var_name: &str) -> Option<i64> {
-  use crate::syntax::BinaryOperator;
-
   match body {
     // Direct Power[var, -s]
     Expr::BinaryOp {
@@ -4947,8 +4915,6 @@ fn match_reciprocal_power(body: &Expr, var_name: &str) -> Option<i64> {
 
 /// Match Power[Power[var, s], -1] or Power[var, -s]
 fn match_power_inverse(expr: &Expr, var_name: &str) -> Option<i64> {
-  use crate::syntax::BinaryOperator;
-
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
@@ -4999,7 +4965,7 @@ fn get_integer(expr: &Expr) -> Option<i128> {
       n.to_i128()
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => match operand.as_ref() {
       Expr::Integer(n) => Some(-n),
@@ -5021,8 +4987,6 @@ fn is_one(expr: &Expr) -> bool {
 /// Compute ζ(2k) = |B_{2k}| * (2π)^{2k} / (2 * (2k)!) as a symbolic expression.
 /// Returns Pi^(2k) * rational_coefficient.
 fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   // Get B_s using bernoulli_b_ast
   let b_s =
     crate::functions::math_ast::bernoulli_b_ast(&[Expr::Integer(s as i128)])?;

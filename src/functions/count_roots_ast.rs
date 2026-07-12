@@ -13,7 +13,7 @@
 //! Real-valued bounds) returns the call unevaluated.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 
@@ -398,7 +398,6 @@ fn is_pos_infinity(e: &Expr) -> bool {
 /// Detect `-Infinity` across the forms the parser/evaluator may produce:
 /// `Times[-1, Infinity]` (FunctionCall or BinaryOp) and `-Infinity` (UnaryOp).
 fn is_neg_infinity(e: &Expr) -> bool {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   let is_neg = |x: &Expr| {
     matches!(x, Expr::Integer(n) if *n < 0)
       || matches!(x, Expr::Real(r) if *r < 0.0)

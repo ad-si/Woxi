@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 use std::cell::Cell;
 
 thread_local! {
@@ -473,7 +474,7 @@ fn count_pattern_specificity(pat: &Expr) -> u32 {
 /// flattening nested applications of the same operator.
 fn collect_binary_children(
   expr: &Expr,
-  target_op: &crate::syntax::BinaryOperator,
+  target_op: &BinaryOperator,
 ) -> Vec<Expr> {
   match expr {
     Expr::BinaryOp { op, left, right } if op == target_op => {
@@ -686,7 +687,7 @@ fn normalize_structural_pattern(pattern: &Expr) -> Expr {
 pub fn canonicalize_divide_in_expr(expr: &Expr) -> Expr {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -699,14 +700,14 @@ pub fn canonicalize_divide_in_expr(expr: &Expr) -> Expr {
           } else {
             crate::functions::math_ast::times_ast(&[left.clone(), den_inv])
               .unwrap_or_else(|_| Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(left),
                 right: Box::new(right),
               })
           }
         }
         Err(_) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(left),
           right: Box::new(right),
         },
@@ -1163,7 +1164,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // place so a tight `Do[s = s <> c, …]` accumulator stays linear in
     // total work instead of paying an O(N) copy on every iteration.
     if let Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::StringJoin,
+      op: BinaryOperator::StringJoin,
       left,
       right,
     } = rhs
@@ -1773,7 +1774,7 @@ pub fn set_delayed_ast(
   // Protected.` and returns `$Failed`. Detect the BinaryOp head
   // here so the message and return value match.
   if let Expr::BinaryOp { op, .. } = lhs {
-    use crate::syntax::BinaryOperator as B;
+    use BinaryOperator as B;
     let tag = match op {
       B::Plus | B::Minus => Some("Plus"),
       B::Times | B::Divide => Some("Times"),
@@ -3058,50 +3059,50 @@ pub fn tag_set_delayed_ast(
     Expr::FunctionCall { name, args } => (name.clone(), args.to_vec()),
     Expr::BinaryOp { op, left, right } => {
       let (name, args) = match op {
-        crate::syntax::BinaryOperator::Plus => {
+        BinaryOperator::Plus => {
           ("Plus".to_string(), collect_binary_children(lhs, op))
         }
-        crate::syntax::BinaryOperator::Times => {
+        BinaryOperator::Times => {
           ("Times".to_string(), collect_binary_children(lhs, op))
         }
-        crate::syntax::BinaryOperator::Alternatives => {
+        BinaryOperator::Alternatives => {
           ("Alternatives".to_string(), collect_binary_children(lhs, op))
         }
-        crate::syntax::BinaryOperator::Minus => (
+        BinaryOperator::Minus => (
           "Plus".to_string(),
           vec![
             left.as_ref().clone(),
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
+              op: BinaryOperator::Times,
               left: Box::new(Expr::Integer(-1)),
               right: right.clone(),
             },
           ],
         ),
-        crate::syntax::BinaryOperator::Divide => (
+        BinaryOperator::Divide => (
           "Times".to_string(),
           vec![
             left.as_ref().clone(),
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: right.clone(),
               right: Box::new(Expr::Integer(-1)),
             },
           ],
         ),
-        crate::syntax::BinaryOperator::Power => (
+        BinaryOperator::Power => (
           "Power".to_string(),
           vec![left.as_ref().clone(), right.as_ref().clone()],
         ),
-        crate::syntax::BinaryOperator::And => (
+        BinaryOperator::And => (
           "And".to_string(),
           vec![left.as_ref().clone(), right.as_ref().clone()],
         ),
-        crate::syntax::BinaryOperator::Or => (
+        BinaryOperator::Or => (
           "Or".to_string(),
           vec![left.as_ref().clone(), right.as_ref().clone()],
         ),
-        crate::syntax::BinaryOperator::StringJoin => (
+        BinaryOperator::StringJoin => (
           "StringJoin".to_string(),
           vec![left.as_ref().clone(), right.as_ref().clone()],
         ),
@@ -3110,11 +3111,11 @@ pub fn tag_set_delayed_ast(
     }
     Expr::UnaryOp { op, operand } => {
       let (name, args) = match op {
-        crate::syntax::UnaryOperator::Minus => (
+        UnaryOperator::Minus => (
           "Times".to_string(),
           vec![Expr::Integer(-1), operand.as_ref().clone()],
         ),
-        crate::syntax::UnaryOperator::Not => {
+        UnaryOperator::Not => {
           ("Not".to_string(), vec![operand.as_ref().clone()])
         }
       };
@@ -3457,19 +3458,17 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
   match lhs {
     Expr::BinaryOp { op, left, right } => {
       let head = match op {
-        crate::syntax::BinaryOperator::Plus
-        | crate::syntax::BinaryOperator::Minus => "Plus",
-        crate::syntax::BinaryOperator::Times
-        | crate::syntax::BinaryOperator::Divide => "Times",
-        crate::syntax::BinaryOperator::Power => "Power",
+        BinaryOperator::Plus | BinaryOperator::Minus => "Plus",
+        BinaryOperator::Times | BinaryOperator::Divide => "Times",
+        BinaryOperator::Power => "Power",
         _ => return lhs.clone(),
       };
       let right_expr = match op {
-        crate::syntax::BinaryOperator::Minus => Expr::FunctionCall {
+        BinaryOperator::Minus => Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![Expr::Integer(-1), (**right).clone()].into(),
         },
-        crate::syntax::BinaryOperator::Divide => Expr::FunctionCall {
+        BinaryOperator::Divide => Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![(**right).clone(), Expr::Integer(-1)].into(),
         },

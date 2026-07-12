@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// Helper to create boolean result
 fn bool_expr(b: bool) -> Expr {
@@ -44,7 +44,7 @@ fn is_numeric_expr(expr: &Expr) -> bool {
     Expr::Identifier(name) if name == "I" => true,
     // n * I or I * n
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -64,8 +64,7 @@ fn is_numeric_expr(expr: &Expr) -> bool {
     }
     // a + b*I or a - b*I
     Expr::BinaryOp {
-      op:
-        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
       left,
       right,
     } => is_numeric_expr(left) && is_numeric_expr(right),
@@ -77,12 +76,12 @@ fn is_numeric_expr(expr: &Expr) -> bool {
     }
     // Unary minus
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_numeric_expr(operand),
     // a / b where both are numeric
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => is_numeric_expr(left) && is_numeric_expr(right),
@@ -367,7 +366,6 @@ fn sqrt_of_rational(rad: &Expr) -> Option<QuadNum> {
 /// quadratic field. Returns `None` for anything outside (machine reals,
 /// symbols, non-real radicals, higher-degree algebraics, …).
 fn as_quad_num(expr: &Expr) -> Option<QuadNum> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   // Sqrt[r] (matches both the Power[r, 1/2] and Sqrt[r] representations).
   if let Some(rad) = crate::functions::is_sqrt(expr) {
     return sqrt_of_rational(rad);
@@ -774,7 +772,7 @@ fn is_known_positive(expr: &Expr) -> Option<bool> {
       _ => None,
     },
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_known_positive(operand).map(|p| !p),
     // Times[-1, x] is negative of x (e.g. -Pi parses as Times[-1, Pi])
@@ -786,7 +784,7 @@ fn is_known_positive(expr: &Expr) -> Option<bool> {
       is_known_positive(&args[1]).map(|p| !p)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(-1)) => {
@@ -836,7 +834,7 @@ fn is_known_negative(expr: &Expr) -> Option<bool> {
       _ => None,
     },
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_known_positive(operand),
     // Times[-1, x] is negative of x (e.g. -Pi parses as Times[-1, Pi])
@@ -848,7 +846,7 @@ fn is_known_negative(expr: &Expr) -> Option<bool> {
       is_known_positive(&args[1])
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(-1)) => is_known_positive(right),
@@ -910,7 +908,7 @@ fn is_nonnegative_abs_form(expr: &Expr) -> bool {
       args.iter().collect()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => vec![left.as_ref(), right.as_ref()],
@@ -1579,11 +1577,11 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Check if operator's head matches the form symbol
         if let Expr::Identifier(s) = form {
           let matches = match op {
-            crate::syntax::BinaryOperator::Plus => s == "Plus",
-            crate::syntax::BinaryOperator::Minus => s == "Plus",
-            crate::syntax::BinaryOperator::Times => s == "Times",
-            crate::syntax::BinaryOperator::Power => s == "Power",
-            crate::syntax::BinaryOperator::Divide => s == "Times",
+            BinaryOperator::Plus => s == "Plus",
+            BinaryOperator::Minus => s == "Plus",
+            BinaryOperator::Times => s == "Times",
+            BinaryOperator::Power => s == "Power",
+            BinaryOperator::Divide => s == "Times",
             _ => false,
           };
           if matches {
@@ -1621,7 +1619,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(
       form,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Alternatives,
+        op: BinaryOperator::Alternatives,
         ..
       }
     ) {
@@ -1952,12 +1950,12 @@ pub fn is_directed_infinity(expr: &Expr) -> bool {
       args.iter().any(is_inf_sym)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => is_inf_sym(left) || is_inf_sym(right),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_inf_sym(operand),
     _ => false,
@@ -2021,7 +2019,6 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Rule { .. } => "Rule",
     Expr::RuleDelayed { .. } => "RuleDelayed",
     Expr::BinaryOp { op, left, .. } => {
-      use crate::syntax::BinaryOperator;
       match op {
         BinaryOperator::Plus => "Plus",
         BinaryOperator::Minus => "Plus", // Minus is represented as Plus internally
@@ -2041,13 +2038,10 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         BinaryOperator::Alternatives => "Alternatives",
       }
     }
-    Expr::UnaryOp { op, .. } => {
-      use crate::syntax::UnaryOperator;
-      match op {
-        UnaryOperator::Minus => "Times",
-        UnaryOperator::Not => "Not",
-      }
-    }
+    Expr::UnaryOp { op, .. } => match op {
+      UnaryOperator::Minus => "Times",
+      UnaryOperator::Not => "Not",
+    },
     Expr::Comparison { operators, .. } => {
       use crate::syntax::ComparisonOp;
       // A uniform chain (all operators the same) has head equal to that operator.

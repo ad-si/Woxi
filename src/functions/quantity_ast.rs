@@ -1,6 +1,6 @@
 use crate::InterpreterError;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 use std::collections::BTreeMap;
 
 // ─── Unit dimension system ──────────────────────────────────────────────────
@@ -754,8 +754,6 @@ fn rational_pow(numer: i128, denom: i128, exp: i64) -> (i128, i128) {
 /// E.g. "KilometersPerHour" → Kilometers / Hours,
 ///      "MetersPerSecondSquared" → Meters / Seconds^2
 fn resolve_per_unit(s: &str) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
-
   // Split on "Per" (only the first occurrence)
   let idx = s.find("Per")?;
   if idx == 0 {
@@ -819,8 +817,6 @@ fn resolve_per_unit(s: &str) -> Option<Expr> {
 
 /// Resolve common unit abbreviation strings to full unit names.
 fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
-
   // Simple abbreviations → single unit
   let simple = match s {
     "m" => "Meters",
@@ -1080,7 +1076,6 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       None
     }
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       match op {
         BinaryOperator::Divide => {
           let mut left_info = decompose_unit_expr(left)?;
@@ -1271,8 +1266,6 @@ fn simplify_compound_unit(
 /// Build a unit Expr from simplified components.
 /// Positive exponents go in numerator, negative in denominator.
 fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
-  use crate::syntax::BinaryOperator;
-
   // wolframscript orders the factors of a compound unit alphabetically by
   // name (e.g. `Hours*Watts`, `Amperes*Seconds`), so sort the numerator and
   // denominator parts by unit name rather than by dimension signature.
@@ -1488,12 +1481,12 @@ fn canonical_unit_name(name: &str) -> &str {
 pub fn format_expand_compound_unit(name: &str) -> Option<Expr> {
   match name {
     "KilowattHours" => Some(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(Expr::String("Hours".to_string())),
       right: Box::new(Expr::String("Kilowatts".to_string())),
     }),
     "WattHours" => Some(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(Expr::String("Hours".to_string())),
       right: Box::new(Expr::String("Watts".to_string())),
     }),
@@ -1979,11 +1972,10 @@ fn known_unit_q_recursive(unit: &Expr) -> bool {
     Expr::Integer(n) => *n == 1,
     Expr::String(s) => get_unit_info(s).is_some(),
     Expr::BinaryOp { op, left, right } => match op {
-      crate::syntax::BinaryOperator::Times
-      | crate::syntax::BinaryOperator::Divide => {
+      BinaryOperator::Times | BinaryOperator::Divide => {
         known_unit_q_recursive(left) && known_unit_q_recursive(right)
       }
-      crate::syntax::BinaryOperator::Power => {
+      BinaryOperator::Power => {
         known_unit_q_recursive(left)
           && matches!(right.as_ref(), Expr::Integer(_))
       }
@@ -2187,7 +2179,6 @@ fn temp_output_unit(scale: &str) -> &'static str {
 fn try_temperature_convert(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let Some((mag, unit)) = is_quantity(&args[0]) else {
     return Ok(None);
   };
@@ -2704,7 +2695,7 @@ pub fn try_quantity_divide(
         Some(Ok(new_mag))
       } else {
         let raw_compound = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(unit_a.clone()),
           right: Box::new(unit_b.clone()),
         };
@@ -2744,7 +2735,7 @@ pub fn try_quantity_divide(
           Err(e) => return Some(Err(e)),
         };
       let inv_unit = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(unit.clone()),
         right: Box::new(Expr::Integer(-1)),
       };
@@ -2787,8 +2778,6 @@ fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
 /// into its base components, multiplying each exponent by p/q, and rebuilding.
 /// Returns None if the unit cannot be decomposed.
 fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
-
   let info = decompose_unit_expr(unit)?;
   let mut numer_parts: Vec<Expr> = Vec::new();
   let mut denom_parts: Vec<Expr> = Vec::new();
@@ -2893,7 +2882,7 @@ pub fn try_quantity_power(
 
   // Fallback: wrap unit in Power without simplification
   let new_unit = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(unit.clone()),
     right: Box::new(exp.clone()),
   };
