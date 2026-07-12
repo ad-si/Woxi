@@ -2015,6 +2015,13 @@ pub fn dispatch_complex_and_special(
         &args[1],
       ));
     }
+    // MomentOfInertia[reg] / [reg, pt] / [reg, pt, v]
+    "MomentOfInertia" if (1..=3).contains(&args.len()) => {
+      return Some(compute_moment_of_inertia(
+        strip_region_wrapper(&args[0]),
+        args,
+      ));
+    }
     "RegionMember" if args.len() == 2 => {
       return Some(compute_region_member(
         strip_region_wrapper(&args[0]),
@@ -9013,6 +9020,271 @@ fn compute_region_moment(
   }
 }
 
+/// The embedding dimension of a region supported by MomentOfInertia, and
+/// the same region translated by -pt (so moments about pt become raw
+/// moments about the origin of the translated region).
+fn moment_region_dim(region: &Expr) -> Option<usize> {
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  match name.as_str() {
+    "Disk" | "Rectangle" | "Triangle" => Some(2),
+    "Ball" | "Cuboid" => Some(3),
+    _ => None,
+  }
+  .map(|default| match name.as_str() {
+    "Disk" | "Ball" => match args.first() {
+      Some(Expr::List(c)) => c.len(),
+      _ => default,
+    },
+    "Rectangle" | "Cuboid" => match args.first() {
+      Some(Expr::List(c)) => c.len(),
+      _ => default,
+    },
+    _ => default,
+  })
+}
+
+fn translate_region(region: &Expr, pt: &[Expr]) -> Option<Expr> {
+  let shift = |coord: &Expr, delta: &Expr| -> Option<Expr> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        coord.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), delta.clone()].into(),
+        },
+      ]
+      .into(),
+    })
+    .ok()
+  };
+  let shift_point = |p: &[Expr]| -> Option<Expr> {
+    let coords: Option<Vec<Expr>> =
+      p.iter().zip(pt.iter()).map(|(c, d)| shift(c, d)).collect();
+    Some(Expr::List(coords?.into()))
+  };
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  let n = pt.len();
+  match name.as_str() {
+    "Disk" | "Ball" => {
+      let center = match args.first() {
+        None => vec![Expr::Integer(0); n],
+        Some(Expr::List(c)) if c.len() == n => c.iter().cloned().collect(),
+        _ => return None,
+      };
+      let radius = match args.get(1) {
+        None => Expr::Integer(1),
+        Some(Expr::List(_)) => return None,
+        Some(r) => r.clone(),
+      };
+      if args.len() > 2 {
+        return None;
+      }
+      Some(Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![shift_point(&center)?, radius].into(),
+      })
+    }
+    "Rectangle" | "Cuboid" => {
+      let (lo, hi): (Vec<Expr>, Vec<Expr>) = match (args.first(), args.get(1)) {
+        (None, _) if args.is_empty() => {
+          (vec![Expr::Integer(0); n], vec![Expr::Integer(1); n])
+        }
+        (Some(Expr::List(p)), None) if p.len() == n => {
+          let lo: Vec<Expr> = p.iter().cloned().collect();
+          let hi: Option<Vec<Expr>> = lo
+            .iter()
+            .map(|x| {
+              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![x.clone(), Expr::Integer(1)].into(),
+              })
+              .ok()
+            })
+            .collect();
+          (lo, hi?)
+        }
+        (Some(Expr::List(p1)), Some(Expr::List(p2)))
+          if p1.len() == n && p2.len() == n =>
+        {
+          (p1.iter().cloned().collect(), p2.iter().cloned().collect())
+        }
+        _ => return None,
+      };
+      Some(Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![shift_point(&lo)?, shift_point(&hi)?].into(),
+      })
+    }
+    "Triangle" => {
+      let verts: Vec<Vec<Expr>> = if args.is_empty() {
+        vec![
+          vec![Expr::Integer(0), Expr::Integer(0)],
+          vec![Expr::Integer(1), Expr::Integer(0)],
+          vec![Expr::Integer(0), Expr::Integer(1)],
+        ]
+      } else if args.len() == 1
+        && let Expr::List(pts) = &args[0]
+        && pts.len() == 3
+        && pts
+          .iter()
+          .all(|p| matches!(p, Expr::List(c) if c.len() == n))
+      {
+        pts
+          .iter()
+          .map(|p| {
+            let Expr::List(c) = p else { unreachable!() };
+            c.iter().cloned().collect()
+          })
+          .collect()
+      } else {
+        return None;
+      };
+      let shifted: Option<Vec<Expr>> =
+        verts.iter().map(|v| shift_point(v)).collect();
+      Some(Expr::FunctionCall {
+        name: "Triangle".to_string(),
+        args: vec![Expr::List(shifted?.into())].into(),
+      })
+    }
+    _ => None,
+  }
+}
+
+/// MomentOfInertia[reg] (about the centroid), MomentOfInertia[reg, pt],
+/// and MomentOfInertia[reg, pt, v]: the inertia matrix
+/// I_ab = Integrate[delta_ab |x - pt|^2 - (x - pt)_a (x - pt)_b, reg],
+/// or the scalar v.I.v / v.v about the axis through pt in direction v.
+fn compute_moment_of_inertia(
+  region: &Expr,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "MomentOfInertia".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let Some(dim) = moment_region_dim(region) else {
+    return unevaluated();
+  };
+  let pt: Vec<Expr> = if args.len() >= 2 {
+    match &args[1] {
+      Expr::List(p) if p.len() == dim => p.iter().cloned().collect(),
+      _ => return unevaluated(),
+    }
+  } else {
+    match compute_region_centroid(region)? {
+      Expr::List(ref c) if c.len() == dim => c.iter().cloned().collect(),
+      _ => return unevaluated(),
+    }
+  };
+  let Some(translated) = translate_region(region, &pt) else {
+    return unevaluated();
+  };
+  // Raw moment of the translated region; None when RegionMoment could not
+  // evaluate it.
+  let raw = |spec: Vec<i128>| -> Result<Option<Expr>, InterpreterError> {
+    let spec_expr = Expr::List(
+      spec
+        .into_iter()
+        .map(Expr::Integer)
+        .collect::<Vec<_>>()
+        .into(),
+    );
+    let m = compute_region_moment(&translated, &spec_expr)?;
+    if matches!(&m, Expr::FunctionCall { name, .. } if name == "RegionMoment") {
+      Ok(None)
+    } else {
+      Ok(Some(m))
+    }
+  };
+  // Second moments per axis and product moments.
+  let mut m2: Vec<Expr> = Vec::with_capacity(dim);
+  for k in 0..dim {
+    let mut spec = vec![0i128; dim];
+    spec[k] = 2;
+    match raw(spec)? {
+      Some(m) => m2.push(m),
+      None => return unevaluated(),
+    }
+  }
+  let mut entries: Vec<Vec<Expr>> = vec![vec![Expr::Integer(0); dim]; dim];
+  for a in 0..dim {
+    for b in 0..dim {
+      let entry = if a == b {
+        let others: Vec<Expr> = (0..dim)
+          .filter(|k| *k != a)
+          .map(|k| m2[k].clone())
+          .collect();
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: others.into(),
+        }
+      } else {
+        let mut spec = vec![0i128; dim];
+        spec[a] = 1;
+        spec[b] = 1;
+        match raw(spec)? {
+          Some(m) => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), m].into(),
+          },
+          None => return unevaluated(),
+        }
+      };
+      entries[a][b] = crate::evaluator::evaluate_expr_to_expr(&entry)?;
+    }
+  }
+  if args.len() < 3 {
+    return Ok(Expr::List(
+      entries
+        .into_iter()
+        .map(|row| Expr::List(row.into()))
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
+  // Axis form: v.I.v / v.v.
+  let Expr::List(v) = &args[2] else {
+    return unevaluated();
+  };
+  if v.len() != dim {
+    return unevaluated();
+  }
+  let mut num_terms: Vec<Expr> = Vec::new();
+  for a in 0..dim {
+    for b in 0..dim {
+      num_terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![v[a].clone(), v[b].clone(), entries[a][b].clone()].into(),
+      });
+    }
+  }
+  let den_terms: Vec<Expr> = v
+    .iter()
+    .map(|c| Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![c.clone(), Expr::Integer(2)].into(),
+    })
+    .collect();
+  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: num_terms.into(),
+    }),
+    right: Box::new(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: den_terms.into(),
+    }),
+  })
+}
+
 /// Parses HalfSpace[n, c] / HalfSpace[n, p] into (normal, bound) with the
 /// point form converted to the scalar bound c = n.p, so membership is
 /// n.x <= c in both cases.
@@ -10708,6 +10980,55 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
         Ok(args[0].clone())
       }
       // Rectangle[{x1, y1}, {x2, y2}] — centroid is midpoint
+      // Cuboid — the centroid is the midpoint of its corners.
+      "Cuboid" => {
+        let half = || Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+        };
+        let (lo, hi): (Vec<Expr>, Option<Vec<Expr>>) =
+          match (args.first(), args.get(1)) {
+            (None, _) => (vec![Expr::Integer(0); 3], None),
+            (Some(Expr::List(p)), None) if !p.is_empty() => {
+              (p.iter().cloned().collect(), None)
+            }
+            (Some(Expr::List(p1)), Some(Expr::List(p2)))
+              if p1.len() == p2.len() && !p1.is_empty() =>
+            {
+              (
+                p1.iter().cloned().collect(),
+                Some(p2.iter().cloned().collect()),
+              )
+            }
+            _ => return unevaluated(),
+          };
+        let coords: Vec<Expr> = match hi {
+          // Cuboid[] / Cuboid[p]: unit cube, centroid p + 1/2 per axis.
+          None => lo
+            .iter()
+            .map(|l| Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![l.clone(), half()].into(),
+            })
+            .collect(),
+          Some(hi) => lo
+            .iter()
+            .zip(hi.iter())
+            .map(|(l, h)| Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                half(),
+                Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![l.clone(), h.clone()].into(),
+                },
+              ]
+              .into(),
+            })
+            .collect(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&Expr::List(coords.into()))
+      }
       "Rectangle" => {
         if args.is_empty() {
           // Rectangle[] = Rectangle[{0,0},{1,1}]

@@ -5437,3 +5437,109 @@ mod region_moment {
     assert!(r.warnings[0].contains("RegionMoment::mexp"));
   }
 }
+
+// MomentOfInertia[reg] / [reg, pt] / [reg, pt, v] — inertia matrices and
+// axis moments. All outputs verified against wolframscript.
+mod moment_of_inertia {
+  use super::*;
+
+  #[test]
+  fn about_the_centroid() {
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[]]").unwrap(),
+      "{{(8*Pi)/15, 0, 0}, {0, (8*Pi)/15, 0}, {0, 0, (8*Pi)/15}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Disk[]]").unwrap(),
+      "{{Pi/4, 0}, {0, Pi/4}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Rectangle[]]").unwrap(),
+      "{{1/12, 0}, {0, 1/12}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Cuboid[]]").unwrap(),
+      "{{1/6, 0, 0}, {0, 1/6, 0}, {0, 0, 1/6}}"
+    );
+    // Symbolic side lengths.
+    assert_eq!(
+      interpret("MomentOfInertia[Rectangle[{0, 0}, {a, b}]]").unwrap(),
+      "{{(a*b^3)/12, 0}, {0, (a^3*b)/12}}"
+    );
+    // The triangle has a nonzero product of inertia.
+    assert_eq!(
+      interpret("MomentOfInertia[Triangle[]]").unwrap(),
+      "{{1/36, 1/72}, {1/72, 1/36}}"
+    );
+    // An off-center region is measured about its own centroid.
+    assert_eq!(
+      interpret("MomentOfInertia[Disk[{2, 0}]]").unwrap(),
+      "{{Pi/4, 0}, {0, Pi/4}}"
+    );
+  }
+
+  #[test]
+  fn about_a_point() {
+    // Parallel-axis growth away from the centroid.
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[], {1, 1, 0}]").unwrap(),
+      "{{(28*Pi)/15, (-4*Pi)/3, 0}, {(-4*Pi)/3, (28*Pi)/15, 0}, {0, 0, (16*Pi)/5}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Disk[{2, 0}], {0, 0}]").unwrap(),
+      "{{Pi/4, 0}, {0, (17*Pi)/4}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Triangle[], {0, 0}]").unwrap(),
+      "{{1/12, -1/24}, {-1/24, 1/12}}"
+    );
+  }
+
+  #[test]
+  fn about_an_axis() {
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[], {0, 0, 0}, {0, 0, 1}]").unwrap(),
+      "(8*Pi)/15"
+    );
+    // Symbolic radius through an oblique axis.
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[{0, 0, 0}, r], {0, 0, 0}, {1, 1, 1}]")
+        .unwrap(),
+      "(8*Pi*r^5)/15"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[{1, 2, 3}, 2], {1, 2, 3}, {1, 0, 0}]")
+        .unwrap(),
+      "(256*Pi)/15"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Disk[], {0, 0}, {0, 1}]").unwrap(),
+      "Pi/4"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Rectangle[], {0, 0}, {1, 1}]").unwrap(),
+      "1/12"
+    );
+  }
+}
+
+// RegionCentroid[Cuboid[...]] — the corner midpoint (was a gap).
+mod cuboid_centroid {
+  use super::*;
+
+  #[test]
+  fn midpoints() {
+    assert_eq!(
+      interpret("RegionCentroid[Cuboid[]]").unwrap(),
+      "{1/2, 1/2, 1/2}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Cuboid[{0, 0, 0}, {a, b, c}]]").unwrap(),
+      "{a/2, b/2, c/2}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Cuboid[{1, 2, 3}]]").unwrap(),
+      "{3/2, 5/2, 7/2}"
+    );
+  }
+}

@@ -2962,7 +2962,7 @@ BitSet,Set a bit in an integer,✅,pure,6.0,3031
 DeBruijnGraph,Generate a De Bruijn graph with m symbols and n dimensions,✅,pure,8.0,3031
 MeshCellHighlight,,🚫,,10.2,3031
 MeshCellIndex,,🚫,,10.0,3031
-MomentOfInertia,,,,10.4,3031
+MomentOfInertia,Moment of inertia matrix or axis moment of a region,✅,pure,10.4,3031
 NetMeasurements,,🚫,,12.0,3031
 URLEncode,Percent-encode a string for use in URLs,✅,pure,10.0,3031
 WaveletImagePlot,Pyramid image plot of 2D wavelet coefficients,✅,graphics,8.0,3031
