@@ -483,6 +483,88 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    // SphericalShell normalizes to its full form
+    // SphericalShell[center, {rinner, router}]: the default shell is
+    // {1/2, 1}, a single radius r means {r/2, r}, and a bare radius pair
+    // gets the origin center. (wolframscript-verified.)
+    "SphericalShell" if args.len() <= 2 => {
+      let origin = || {
+        Expr::List(
+          vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)].into(),
+        )
+      };
+      let normalized = match args {
+        [] => Some((
+          origin(),
+          Expr::List(
+            vec![
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+              },
+              Expr::Integer(1),
+            ]
+            .into(),
+          ),
+        )),
+        [Expr::List(radii)] if radii.len() == 2 => {
+          Some((origin(), args[0].clone()))
+        }
+        [r] if !matches!(r, Expr::List(_)) => {
+          let half = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(r.clone()),
+            right: Box::new(Expr::Integer(2)),
+          });
+          match half {
+            Ok(half) => {
+              Some((origin(), Expr::List(vec![half, r.clone()].into())))
+            }
+            Err(_) => None,
+          }
+        }
+        _ => None,
+      };
+      return Some(Ok(match normalized {
+        Some((center, radii)) => Expr::FunctionCall {
+          name: "SphericalShell".to_string(),
+          args: vec![center, radii].into(),
+        },
+        None => Expr::FunctionCall {
+          name: "SphericalShell".to_string(),
+          args: args.to_vec().into(),
+        },
+      }));
+    }
+    // CapsuleShape[] / CapsuleShape[r] normalize to the full form with the
+    // default x-axis endpoints {{-1, 0, 0}, {1, 0, 0}}.
+    "CapsuleShape" if args.len() <= 2 => {
+      let default_points = || {
+        let pt = |x: i128| {
+          Expr::List(
+            vec![Expr::Integer(x), Expr::Integer(0), Expr::Integer(0)].into(),
+          )
+        };
+        Expr::List(vec![pt(-1), pt(1)].into())
+      };
+      let normalized = match args {
+        [] => Some((default_points(), Expr::Integer(1))),
+        [r] if !matches!(r, Expr::List(_)) => {
+          Some((default_points(), r.clone()))
+        }
+        _ => None,
+      };
+      return Some(Ok(match normalized {
+        Some((points, r)) => Expr::FunctionCall {
+          name: "CapsuleShape".to_string(),
+          args: vec![points, r].into(),
+        },
+        None => Expr::FunctionCall {
+          name: "CapsuleShape".to_string(),
+          args: args.to_vec().into(),
+        },
+      }));
+    }
     "ArcSinDistribution" if args.is_empty() => {
       // Default: ArcSinDistribution[{0, 1}]
       return Some(Ok(Expr::FunctionCall {

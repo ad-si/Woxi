@@ -7938,6 +7938,17 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
       {
         return or_unevaluated(compute_volume(expr));
       }
+      // wolframscript's RegionMeasure for a SphericalShell is (quirkily)
+      // NOT its volume but 4 Pi (r2^2 - r1^2) — replicated for
+      // conformance.
+      "SphericalShell" if spherical_shell_radii(args).is_some() => {
+        let (r1, r2) = spherical_shell_radii(args).unwrap();
+        return spherical_shell_measure(&r1, &r2, 2, 1);
+      }
+      // A CapsuleShape measures as its volume.
+      "CapsuleShape" if capsule_height_sq_radius(args).is_some() => {
+        return or_unevaluated(compute_volume(expr));
+      }
       // A simplex's measure is in its intrinsic dimension: for n vertices in
       // (n-1)-space it is |Det[edges]| / (n-1)! (triangle area, tetrahedron
       // volume, ...).
@@ -8065,7 +8076,8 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Integer(1));
       }
       "Cylinder" | "Cone" | "Tetrahedron" | "FilledTorus" | "Cube"
-      | "Hexahedron" | "Octahedron" | "Dodecahedron" | "Icosahedron" => {
+      | "Hexahedron" | "Octahedron" | "Dodecahedron" | "Icosahedron"
+      | "SphericalShell" | "CapsuleShape" => {
         return Ok(Expr::Integer(3));
       }
       "Point" => return Ok(Expr::Integer(0)),
@@ -8570,6 +8582,147 @@ fn torus_parts(args: &[Expr]) -> Option<(Vec<Expr>, Expr, Expr)> {
   }
 }
 
+/// Parses a normalized SphericalShell[{x, y, z}, {r1, r2}] into its radii
+/// (sorted ascending when both are concrete, since wolframscript treats
+/// the pair as unordered numerically).
+fn spherical_shell_radii(args: &[Expr]) -> Option<(Expr, Expr)> {
+  match args {
+    [Expr::List(c), Expr::List(rr)] if c.len() == 3 && rr.len() == 2 => {
+      let (r1, r2) = (rr[0].clone(), rr[1].clone());
+      if let (Some(a), Some(b)) = (
+        crate::functions::math_ast::expr_to_num(&r1),
+        crate::functions::math_ast::expr_to_num(&r2),
+      ) && a > b
+      {
+        return Some((r2, r1));
+      }
+      Some((r1, r2))
+    }
+    _ => None,
+  }
+}
+
+/// Parses a normalized CapsuleShape[{p1, p2}, r] with 3-D endpoints into
+/// (squared axis length, radius).
+fn capsule_height_sq_radius(args: &[Expr]) -> Option<(Expr, Expr)> {
+  match args {
+    [Expr::List(points), r] if points.len() == 2 => {
+      let (Expr::List(p1), Expr::List(p2)) = (&points[0], &points[1]) else {
+        return None;
+      };
+      if p1.len() != 3 || p2.len() != 3 {
+        return None;
+      }
+      let squares: Vec<Expr> = p1
+        .iter()
+        .zip(p2.iter())
+        .map(|(a, b)| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                a.clone(),
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![Expr::Integer(-1), b.clone()].into(),
+                },
+              ]
+              .into(),
+            },
+            Expr::Integer(2),
+          ]
+          .into(),
+        })
+        .collect();
+      Some((
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: squares.into(),
+        },
+        r.clone(),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// The volume of a SphericalShell with the given radii, in wolframscript's
+/// displayed form (4*Pi*(-r1^p + r2^p))/den — p = 3, den = 3 for Volume;
+/// the p = 2, den = 1 variant is wolframscript's (quirky) RegionMeasure.
+fn spherical_shell_measure(
+  r1: &Expr,
+  r2: &Expr,
+  p: i128,
+  den: i128,
+) -> Result<Expr, InterpreterError> {
+  let pow = |b: &Expr, e: i128| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![b.clone(), Expr::Integer(e)].into(),
+  };
+  let diff = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), pow(r1, p)].into(),
+      },
+      pow(r2, p),
+    ]
+    .into(),
+  };
+  let product = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(4), Expr::Constant("Pi".to_string()), diff].into(),
+  };
+  let measure = if den == 1 {
+    product
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(product),
+      right: Box::new(Expr::Integer(den)),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&measure)
+}
+
+/// The volume of a CapsuleShape: Pi r^2 h + (4 Pi r^3)/3.
+fn capsule_volume(
+  height_sq: &Expr,
+  radius: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let pow = |b: &Expr, e: i128| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![b.clone(), Expr::Integer(e)].into(),
+  };
+  let height = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![height_sq.clone()].into(),
+  };
+  let cylinder = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Constant("Pi".to_string()), pow(radius, 2), height].into(),
+  };
+  let sphere = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Integer(4),
+        Expr::Constant("Pi".to_string()),
+        pow(radius, 3),
+      ]
+      .into(),
+    }),
+    right: Box::new(Expr::Integer(3)),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![cylinder, sphere].into(),
+  })
+}
+
 /// Parses the arguments of a Platonic-solid primitive (Cube, Octahedron,
 /// Dodecahedron, Icosahedron, Tetrahedron) into (center, edge length):
 ///   Head[]                     → origin, 1
@@ -8870,6 +9023,74 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Times".to_string(),
         args: factors.into(),
+      })
+    }
+    // SphericalShell — the boundary is BOTH spheres: 4 Pi (r1^2 + r2^2).
+    // Only the numeric case: wolframscript hangs on symbolic radii.
+    "SphericalShell" => {
+      let Some((r1, r2)) = spherical_shell_radii(args) else {
+        return unevaluated();
+      };
+      if crate::functions::math_ast::expr_to_num(&r1).is_none()
+        || crate::functions::math_ast::expr_to_num(&r2).is_none()
+      {
+        return unevaluated();
+      }
+      let sq = |b: &Expr| Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![b.clone(), Expr::Integer(2)].into(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(4),
+          Expr::Constant("Pi".to_string()),
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![sq(&r1), sq(&r2)].into(),
+          },
+        ]
+        .into(),
+      })
+    }
+    // CapsuleShape — 2 Pi r h + 4 Pi r^2, numeric parameters only.
+    "CapsuleShape" => {
+      let Some((h_sq, r)) = capsule_height_sq_radius(args) else {
+        return unevaluated();
+      };
+      if crate::functions::math_ast::try_eval_to_f64(&h_sq).is_none()
+        || crate::functions::math_ast::try_eval_to_f64(&r).is_none()
+      {
+        return unevaluated();
+      }
+      let side = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(2),
+          Expr::Constant("Pi".to_string()),
+          r.clone(),
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![h_sq].into(),
+          },
+        ]
+        .into(),
+      };
+      let caps = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(4),
+          Expr::Constant("Pi".to_string()),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![r, Expr::Integer(2)].into(),
+          },
+        ]
+        .into(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![side, caps].into(),
       })
     }
     // Regions of intrinsic dimension < 3 have no surface area.
@@ -9223,6 +9444,16 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
           right: Box::new(Expr::Integer(3)),
         };
         return crate::evaluator::evaluate_expr_to_expr(&vol);
+      }
+      // SphericalShell[c, {r1, r2}] — (4 Pi (r2^3 - r1^3))/3.
+      "SphericalShell" if spherical_shell_radii(args).is_some() => {
+        let (r1, r2) = spherical_shell_radii(args).unwrap();
+        return spherical_shell_measure(&r1, &r2, 3, 3);
+      }
+      // CapsuleShape[{p1, p2}, r] — Pi r^2 h + (4 Pi r^3)/3.
+      "CapsuleShape" if capsule_height_sq_radius(args).is_some() => {
+        let (h_sq, r) = capsule_height_sq_radius(args).unwrap();
+        return capsule_volume(&h_sq, &r);
       }
       // Platonic-solid primitives: Volume = (unit-edge volume) * l^3.
       "Cube" | "Hexahedron" | "Octahedron" | "Dodecahedron" | "Icosahedron"
@@ -9998,6 +10229,17 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
       {
         let (center, _) = platonic_center_edge(args).unwrap();
         crate::evaluator::evaluate_expr_to_expr(&Expr::List(center.into()))
+      }
+      // A SphericalShell is centered at its center argument.
+      "SphericalShell" if spherical_shell_radii(args).is_some() => {
+        crate::evaluator::evaluate_expr_to_expr(&args[0].clone())
+      }
+      // A CapsuleShape is centered at the midpoint of its axis.
+      "CapsuleShape" if capsule_height_sq_radius(args).is_some() => {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: vec![args[0].clone()].into(),
+        })
       }
       // Tetrahedron / Simplex — the centroid is the mean of the vertices.
       "Tetrahedron" | "Simplex" => {

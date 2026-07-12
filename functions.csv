@@ -2907,7 +2907,7 @@ RandomPolyhedron,,,,12.0,2971
 TextSearch,,🚫,,10.2,2971
 TextTranslation,,🚫,,11.1,2971
 VertexComponent,Vertices that can reach the given vertices (BFS order),✅,pure,8.0,2971
-CapsuleShape,,,,10.2,2978
+CapsuleShape,Filled capsule region between two points consumed by Volume/SurfaceArea/RegionCentroid,✅,pure,10.2,2978
 FindIndependentVertexSet,Maximum independent vertex set (lexicographic by vertex order),✅,pure,8.0,2978
 HighpassFilter,Apply a highpass filter to data,✅,pure,9.0,2978
 KeyMemberQ,True if key exists in association,✅,1,10.3,2978
@@ -3003,7 +3003,7 @@ Links,,🚫,,3.0,3070
 Postfix,Symbol for postfix display formatting,✅,pure,1.0,3070
 SeriesTermGoal,,,,12.1,3070
 ShowGroupOpener,,🚫,,6.0,3070
-SphericalShell,,,,10.2,3070
+SphericalShell,Filled spherical shell region between two radii consumed by Volume/SurfaceArea/RegionCentroid,✅,pure,10.2,3070
 UpArrow,,,,3.0,3070
 AudioSampleRate,,🚫,,11.0,3083
 Canvas,,🚫,,12.2,3083

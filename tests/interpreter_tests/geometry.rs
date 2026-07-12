@@ -4914,3 +4914,141 @@ mod region_disjoint {
     );
   }
 }
+
+// SphericalShell and CapsuleShape region primitives. All outputs verified
+// against wolframscript.
+mod spherical_shell_and_capsule {
+  use super::*;
+
+  #[test]
+  fn constructors_normalize() {
+    assert_eq!(
+      interpret("SphericalShell[]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {1/2, 1}]"
+    );
+    // A single radius r means inner radius r/2.
+    assert_eq!(
+      interpret("SphericalShell[3]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {3/2, 3}]"
+    );
+    assert_eq!(
+      interpret("SphericalShell[a]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {a/2, a}]"
+    );
+    assert_eq!(
+      interpret("SphericalShell[{2, 5}]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {2, 5}]"
+    );
+    // The default capsule lies on the x axis.
+    assert_eq!(
+      interpret("CapsuleShape[]").unwrap(),
+      "CapsuleShape[{{-1, 0, 0}, {1, 0, 0}}, 1]"
+    );
+    assert_eq!(
+      interpret("CapsuleShape[r]").unwrap(),
+      "CapsuleShape[{{-1, 0, 0}, {1, 0, 0}}, r]"
+    );
+    // Unknown arities pass through untouched.
+    assert_eq!(
+      interpret("SphericalShell[{0, 0, 0}, {2, 5}, 7]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {2, 5}, 7]"
+    );
+  }
+
+  #[test]
+  fn shell_volume() {
+    assert_eq!(interpret("Volume[SphericalShell[]]").unwrap(), "(7*Pi)/6");
+    assert_eq!(
+      interpret("Volume[SphericalShell[{1, 2, 3}, {2, 5}]]").unwrap(),
+      "156*Pi"
+    );
+    // The radius pair is unordered for concrete values.
+    assert_eq!(
+      interpret("Volume[SphericalShell[{0, 0, 0}, {5, 2}]]").unwrap(),
+      "156*Pi"
+    );
+    assert_eq!(
+      interpret("Volume[SphericalShell[{0, 0, 0}, {r1, r2}]]").unwrap(),
+      "(4*Pi*(-r1^3 + r2^3))/3"
+    );
+  }
+
+  #[test]
+  fn shell_region_measure_quirk() {
+    // wolframscript's RegionMeasure for a SphericalShell is NOT its
+    // volume but 4 Pi (r2^2 - r1^2) — replicated for conformance.
+    assert_eq!(
+      interpret("RegionMeasure[SphericalShell[]]").unwrap(),
+      "3*Pi"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[SphericalShell[{0, 0, 0}, {2, 5}]]").unwrap(),
+      "84*Pi"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[SphericalShell[{0, 0, 0}, {r1, r2}]]").unwrap(),
+      "4*Pi*(-r1^2 + r2^2)"
+    );
+  }
+
+  #[test]
+  fn shell_surface_area_and_centroid() {
+    // The boundary is both spheres.
+    assert_eq!(
+      interpret("SurfaceArea[SphericalShell[{0, 0, 0}, {2, 5}]]").unwrap(),
+      "116*Pi"
+    );
+    assert_eq!(interpret("SurfaceArea[SphericalShell[]]").unwrap(), "5*Pi");
+    // Symbolic radii stay unevaluated (wolframscript itself hangs there).
+    assert_eq!(
+      interpret("SurfaceArea[SphericalShell[{0, 0, 0}, {a, b}]]").unwrap(),
+      "SurfaceArea[SphericalShell[{0, 0, 0}, {a, b}]]"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[SphericalShell[{1, 2, 3}, {2, 5}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(interpret("RegionDimension[SphericalShell[]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn capsule_volume() {
+    assert_eq!(interpret("Volume[CapsuleShape[]]").unwrap(), "(10*Pi)/3");
+    assert_eq!(
+      interpret("Volume[CapsuleShape[r]]").unwrap(),
+      "2*Pi*r^2 + (4*Pi*r^3)/3"
+    );
+    assert_eq!(
+      interpret("Volume[CapsuleShape[{{0, 0, 0}, {0, 0, 3}}, 2]]").unwrap(),
+      "(68*Pi)/3"
+    );
+    // A 2-D point pair (a stadium) stays unevaluated, as in wolframscript.
+    assert_eq!(
+      interpret("Volume[CapsuleShape[{{0, 0}, {3, 0}}, 1]]").unwrap(),
+      "Volume[CapsuleShape[{{0, 0}, {3, 0}}, 1]]"
+    );
+  }
+
+  #[test]
+  fn capsule_measures() {
+    assert_eq!(
+      interpret("RegionCentroid[CapsuleShape[{{0, 0, 0}, {0, 0, 3}}, 2]]")
+        .unwrap(),
+      "{0, 0, 3/2}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[CapsuleShape[]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[CapsuleShape[{{0, 0, 0}, {0, 0, 3}}, 2]]")
+        .unwrap(),
+      "28*Pi"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[CapsuleShape[]]").unwrap(),
+      "(10*Pi)/3"
+    );
+    assert_eq!(interpret("RegionDimension[CapsuleShape[]]").unwrap(), "3");
+  }
+}
