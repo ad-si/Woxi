@@ -3694,3 +3694,50 @@ mod from_date_string {
     );
   }
 }
+
+mod date_time_ordering {
+  use woxi::interpret;
+
+  // DateObject / TimeObject support the ordering comparisons (< > <= >=) by
+  // comparing absolute time / time-of-day.
+  #[test]
+  fn date_object_ordering() {
+    assert_eq!(
+      interpret("DateObject[{2026, 1, 1}] < DateObject[{2026, 6, 1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 6, 1}] > DateObject[{2026, 1, 1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 6, 1}] < DateObject[{2026, 1, 1}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 1, 1}] <= DateObject[{2026, 1, 1}]")
+        .unwrap(),
+      "True"
+    );
+    // Sub-day resolution via time components.
+    assert_eq!(
+      interpret(
+        "DateObject[{2026, 1, 1, 10, 30, 0}] < DateObject[{2026, 1, 1, 14, 0, 0}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn time_object_ordering() {
+    assert_eq!(
+      interpret("TimeObject[{10, 0, 0}] < TimeObject[{14, 0, 0}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("TimeObject[{14, 0, 0}] <= TimeObject[{10, 0, 0}]").unwrap(),
+      "False"
+    );
+  }
+}

@@ -2866,6 +2866,61 @@ pub fn resolve_date_to_list(expr: &Expr) -> Option<Expr> {
   }
 }
 
+/// A numeric ordering key for a `DateObject` (absolute seconds since the epoch)
+/// or a `TimeObject` (seconds since midnight), tagged with a kind (0 = date,
+/// 1 = time) so the two domains are never ordered against each other. Used by
+/// the `<`/`>`/`<=`/`>=` comparisons and Max/Min. Returns None for anything else.
+pub fn datetime_order_key(e: &Expr) -> Option<(f64, u8)> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name == "DateObject" {
+    let resolved = resolve_date_to_list(e)?;
+    let Expr::List(items) = &resolved else {
+      return None;
+    };
+    let nums: Vec<f64> = items
+      .iter()
+      .map(|it| match it {
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::Real(r) => Some(*r),
+        _ => None,
+      })
+      .collect::<Option<Vec<_>>>()?;
+    let g = |i: usize, d: f64| nums.get(i).copied().unwrap_or(d);
+    return Some((
+      date_to_absolute_seconds(
+        g(0, 0.0) as i64,
+        g(1, 1.0) as i64,
+        g(2, 1.0) as i64,
+        g(3, 0.0) as i64,
+        g(4, 0.0) as i64,
+        g(5, 0.0),
+      ),
+      0,
+    ));
+  }
+  if name == "TimeObject"
+    && !args.is_empty()
+    && let Expr::List(items) = &args[0]
+    && (1..=3).contains(&items.len())
+  {
+    let mut comps = Vec::with_capacity(items.len());
+    for it in items.iter() {
+      comps.push(match it {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(r) => *r,
+        _ => return None,
+      });
+    }
+    let secs = comps.first().copied().unwrap_or(0.0) * 3600.0
+      + comps.get(1).copied().unwrap_or(0.0) * 60.0
+      + comps.get(2).copied().unwrap_or(0.0);
+    return Some((secs, 1));
+  }
+  None
+}
+
 // ─── DayPlus ────────────────────────────────────────────────────────
 
 /// DayPlus[date, n] - adds n days to a date and returns DateObject

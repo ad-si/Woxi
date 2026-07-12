@@ -2593,6 +2593,34 @@ pub fn evaluate_expr_to_expr_inner(
           continue;
         }
 
+        // Ordering comparisons on DateObject / TimeObject: compare by absolute
+        // time (dates) or seconds-since-midnight (times of day). Both operands
+        // must be the same kind. A determinable result is used; anything else
+        // falls through to the normal (unevaluated) handling.
+        if matches!(
+          op,
+          ComparisonOp::Less
+            | ComparisonOp::LessEqual
+            | ComparisonOp::Greater
+            | ComparisonOp::GreaterEqual
+        ) && let (Some((lv, lk)), Some((rv, rk))) = (
+          crate::functions::datetime_ast::datetime_order_key(left),
+          crate::functions::datetime_ast::datetime_order_key(right),
+        ) && lk == rk
+        {
+          let ok = match op {
+            ComparisonOp::Less => lv < rv,
+            ComparisonOp::LessEqual => lv <= rv,
+            ComparisonOp::Greater => lv > rv,
+            ComparisonOp::GreaterEqual => lv >= rv,
+            _ => true,
+          };
+          if !ok {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+          continue;
+        }
+
         // Enharmonic MusicPitch equality (WL 15): two `MusicPitch` objects
         // compare equal by their sounding MIDI pitch, so `MusicPitch["C#"]`
         // equals `MusicPitch["Db"]`. Only `Equal` has this rule — Wolfram
