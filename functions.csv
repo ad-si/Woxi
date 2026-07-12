@@ -3134,7 +3134,7 @@ ConnectedMeshComponents,,🚫,,10.0,3215
 EigenvectorCentrality,Eigenvector centrality of graph vertices from the principal adjacency eigenvector,✅,pure,8.0,3215
 GreaterEqualThan,Operator form of GreaterEqual,✅,none,10.3,3215
 HalfSpace,,,,10.2,3215
-NegativeMultinomialDistribution,,,,8.0,3215
+NegativeMultinomialDistribution,Multivariate discrete distribution counting failures of k types before n successes,✅,none,8.0,3215
 NumeratorDenominator,Gives the numerator and denominator as a pair,✅,pure,12.0,3215
 ResourceSearch,,🚫,,11.0,3215
 ReverseSortBy,Sort in reverse order by a function,✅,none,12.0,3215

@@ -232,6 +232,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LaplaceDistribution" => pdf_laplace(dargs, x),
     "RayleighDistribution" => pdf_rayleigh(dargs, x),
     "MultinomialDistribution" => pdf_multinomial(dargs, x),
+    "NegativeMultinomialDistribution" => pdf_negative_multinomial(dargs, x),
     "DirichletDistribution" => pdf_dirichlet(dargs, x),
     "NegativeBinomialDistribution" => pdf_negative_binomial(dargs, x),
     "MultivariatePoissonDistribution" => pdf_multivariate_poisson(dargs, x),
@@ -1881,6 +1882,7 @@ fn is_multivariate_distribution(name: &str) -> bool {
       | "BinormalDistribution"
       | "MultivariatePoissonDistribution"
       | "MultinomialDistribution"
+      | "NegativeMultinomialDistribution"
       | "DirichletDistribution"
       | "ProductDistribution"
       | "CopulaDistribution"
@@ -2006,6 +2008,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "DiscreteUniformDistribution" => cdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => cdf_laplace(dargs, x),
     "RayleighDistribution" => cdf_rayleigh(dargs, x),
+    "NegativeMultinomialDistribution" => cdf_negative_multinomial(dargs, x),
     "HalfNormalDistribution" => cdf_half_normal(dargs, x),
     "ChiDistribution" => cdf_chi(dargs, x),
     "LogisticDistribution" => cdf_logistic(dargs, x),
@@ -6799,6 +6802,9 @@ fn pdf_multinomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       "PDF[MultinomialDistribution[...]]: length of x must match length of probabilities".into(),
     ));
   }
+  if any_concrete_non_integer(&xs) {
+    return Ok(int(0));
+  }
 
   // Build the multinomial coefficient as product of binomials:
   // Binomial[x1+x2, x2] * Binomial[x1+x2+x3, x3] * ...
@@ -6848,6 +6854,193 @@ fn pdf_multinomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
 
   eval(piecewise(vec![(pdf_val, combined_cond)], int(0)))
+}
+
+/// True if any component of a discrete multivariate point is a concrete
+/// number that is not an exact integer. wolframscript's multivariate discrete
+/// PDFs are 0 there — including at integer-valued Reals like `2.`.
+fn any_concrete_non_integer(xs: &[Expr]) -> bool {
+  xs.iter().any(|xi| {
+    !matches!(xi, Expr::Integer(_) | Expr::BigInteger(_))
+      && crate::functions::math_ast::expr_to_num(xi).is_some()
+  })
+}
+
+/// Parses `NegativeMultinomialDistribution[n, {p1, …, pk}]` arguments into
+/// `(n, probs)`.
+fn negative_multinomial_params(
+  dargs: &[Expr],
+) -> Result<(Expr, crate::ExprList), InterpreterError> {
+  match dargs {
+    [n, Expr::List(probs)] if !probs.is_empty() => {
+      Ok((n.clone(), probs.clone()))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "NegativeMultinomialDistribution expects a parameter n and a list of failure probabilities".into(),
+    )),
+  }
+}
+
+/// The complement `1 - p1 - … - pk` of the failure probabilities, grouped as
+/// `1 - (p1 + … + pk)` so machine-precision parameters fold in
+/// wolframscript's order (1 - (0.2 + 0.4) ≠ 1 - 0.2 - 0.4 in f64).
+fn negative_multinomial_success(probs: &[Expr]) -> Expr {
+  let mut sum = probs[0].clone();
+  for p in probs.iter().skip(1) {
+    sum = plus(sum, p.clone());
+  }
+  minus(int(1), sum)
+}
+
+/// PDF[NegativeMultinomialDistribution[n, {p1, ..., pk}], {x1, ..., xk}]
+/// = (1 - p1 - ... - pk)^n * p1^x1 * ... * pk^xk
+///   * Pochhammer[n, x1 + ... + xk] / (x1! * ... * xk!)
+///   when all xi >= 0
+/// = 0 otherwise
+fn pdf_negative_multinomial(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let (n, probs) = negative_multinomial_params(dargs)?;
+  let xs = match &x {
+    Expr::List(items) if items.len() == probs.len() => items.clone(),
+    _ => {
+      // A point of the wrong shape stays unevaluated, as in wolframscript.
+      return Ok(Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "NegativeMultinomialDistribution".to_string(),
+            args: dargs.to_vec().into(),
+          },
+          x,
+        ]
+        .into(),
+      });
+    }
+  };
+  if any_concrete_non_integer(&xs) {
+    return Ok(int(0));
+  }
+
+  // Numerator: (1 - Σp)^n * p1^x1 * ... * pk^xk * Pochhammer[n, Σx]
+  let mut numer = power(negative_multinomial_success(&probs), n.clone());
+  for (p, xi) in probs.iter().zip(xs.iter()) {
+    numer = times(numer, power(p.clone(), xi.clone()));
+  }
+  let mut sum_xs = xs[0].clone();
+  for xi in xs.iter().skip(1) {
+    sum_xs = plus(sum_xs, xi.clone());
+  }
+  numer = times(
+    numer,
+    Expr::FunctionCall {
+      name: "Pochhammer".to_string(),
+      args: vec![n, sum_xs].into(),
+    },
+  );
+
+  // Denominator: x1! * ... * xk!
+  let mut denom = factorial(xs[0].clone());
+  for xi in xs.iter().skip(1) {
+    denom = times(denom, factorial(xi.clone()));
+  }
+  let pdf_val = divide(numer, denom);
+
+  // Support: all xi >= 0.
+  let conditions: Vec<Expr> = xs
+    .iter()
+    .map(|xi| comparison(xi.clone(), ComparisonOp::GreaterEqual, int(0)))
+    .collect();
+  let combined_cond = if conditions.len() == 1 {
+    conditions.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "And".to_string(),
+      args: conditions.into(),
+    }
+  };
+
+  eval(piecewise(vec![(pdf_val, combined_cond)], int(0)))
+}
+
+/// CDF[NegativeMultinomialDistribution[n, {p1, ..., pk}], {x1, ..., xk}]
+/// for a fully numeric distribution and point: the finite sum of the PDF
+/// over the integer grid 0 <= i_j <= Floor[x_j]. Symbolic arguments stay
+/// unevaluated (wolframscript's combined closed form for symbolic n is a
+/// canonicalization rabbit hole).
+fn cdf_negative_multinomial(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "NegativeMultinomialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Ok((n, probs)) = negative_multinomial_params(dargs) else {
+    return unevaluated(x);
+  };
+  if crate::functions::math_ast::expr_to_num(&n).is_none()
+    || probs
+      .iter()
+      .any(|p| crate::functions::math_ast::expr_to_num(p).is_none())
+  {
+    return unevaluated(x);
+  }
+  let Expr::List(xs) = &x else {
+    return unevaluated(x);
+  };
+  if xs.len() != probs.len() {
+    return unevaluated(x);
+  }
+  let mut bounds: Vec<i64> = Vec::with_capacity(xs.len());
+  for xi in xs.iter() {
+    let Some(v) = crate::functions::math_ast::expr_to_num(xi) else {
+      return unevaluated(x.clone());
+    };
+    let f = v.floor();
+    if f < 0.0 {
+      return Ok(int(0));
+    }
+    bounds.push(f as i64);
+  }
+
+  // Row-major walk over the grid, accumulating PDF terms.
+  let mut point = vec![0i64; bounds.len()];
+  let mut total: Option<Expr> = None;
+  loop {
+    let point_expr =
+      Expr::List(point.iter().map(|&i| Expr::Integer(i as i128)).collect());
+    let term = pdf_negative_multinomial(dargs, point_expr)?;
+    total = Some(match total {
+      Some(acc) => plus(acc, term),
+      None => term,
+    });
+    // Advance the mixed-radix counter (last component fastest).
+    let mut dim = point.len();
+    let mut advanced = false;
+    while dim > 0 {
+      dim -= 1;
+      if point[dim] < bounds[dim] {
+        point[dim] += 1;
+        advanced = true;
+        break;
+      }
+      point[dim] = 0;
+    }
+    if !advanced {
+      return eval(total.expect("grid is never empty"));
+    }
+  }
 }
 
 /// PDF[MultivariatePoissonDistribution[μ_0, {μ_1, μ_2}], {x, y}] for the
@@ -6992,6 +7185,67 @@ pub fn multinomial_mean_variance(
   }
 
   Ok((Expr::List(means.into()), Expr::List(variances.into())))
+}
+
+/// Returns (Mean list, Variance list) for
+/// NegativeMultinomialDistribution[n, {p1, …, pk}] with q = 1 - p1 - … - pk:
+/// Mean_i = n p_i / q, Variance_i = n p_i (1 - Σ_{j≠i} p_j) / q^2.
+pub fn negative_multinomial_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let (n, probs) = negative_multinomial_params(dargs)?;
+  let q = negative_multinomial_success(&probs);
+
+  let mut means = Vec::with_capacity(probs.len());
+  let mut variances = Vec::with_capacity(probs.len());
+  for p in probs.iter() {
+    means.push(eval(divide(times(n.clone(), p.clone()), q.clone()))?);
+    // The numerator factor 1 - Σ_{j≠i} p_j is built as q + p_i: symbolically
+    // it cancels to wolframscript's subtracted form, and for machine floats
+    // it reproduces wolframscript's fold order (1 - (0.2 + 0.4) + 0.2 differs
+    // from 1 - 0.4 in the last bit).
+    let others = plus(q.clone(), p.clone());
+    variances.push(eval(divide(
+      times(times(n.clone(), p.clone()), others),
+      power(q.clone(), int(2)),
+    ))?);
+  }
+
+  Ok((Expr::List(means.into()), Expr::List(variances.into())))
+}
+
+/// Covariance[NegativeMultinomialDistribution[n, {p1, …, pk}]] is the k×k
+/// matrix with diagonal n (p_i^2/q^2 + p_i/q) and off-diagonal n p_i p_j / q^2
+/// where q = 1 - p1 - … - pk.
+pub fn negative_multinomial_covariance(
+  dargs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (n, probs) = negative_multinomial_params(dargs)?;
+  let q = negative_multinomial_success(&probs);
+
+  let mut rows = Vec::with_capacity(probs.len());
+  for (i, pi) in probs.iter().enumerate() {
+    let mut row = Vec::with_capacity(probs.len());
+    for (j, pj) in probs.iter().enumerate() {
+      let entry = if i == j {
+        times(
+          n.clone(),
+          plus(
+            divide(power(pi.clone(), int(2)), power(q.clone(), int(2))),
+            divide(pi.clone(), q.clone()),
+          ),
+        )
+      } else {
+        divide(
+          times(times(n.clone(), pi.clone()), pj.clone()),
+          power(q.clone(), int(2)),
+        )
+      };
+      row.push(eval(entry)?);
+    }
+    rows.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(rows.into()))
 }
 
 /// Mean and Variance for MultivariatePoissonDistribution[theta0, {theta1, ..., thetan}]

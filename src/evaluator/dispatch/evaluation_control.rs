@@ -465,6 +465,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "NegativeMultinomialDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "NegativeMultinomialDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "MultivariatePoissonDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "MultivariatePoissonDistribution".to_string(),

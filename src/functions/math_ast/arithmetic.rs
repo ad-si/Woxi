@@ -3488,6 +3488,149 @@ fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   None
 }
 
+/// Orders two shared-sum-base terms with pure-power numerators of the SAME
+/// variable, `x^αs/Q^s` (shallow) vs `x^αd/Q^d` (deep, d > s), by comparing
+/// the leading monomials over the common denominator Q^d: the shallow term's
+/// key is x^αs · (leading addend of Q)^(d-s), the deep term's is x^αd.
+/// Smaller total degree first; on a degree tie a key in a LATER variable is
+/// larger, and same-monomial keys compare by signed coefficient (deep first
+/// on a coefficient tie). All wolframscript-verified:
+/// x/(1+x) + x^2/(1+x)^2 reorders deep-first while x/(1-x) + x^2/(1-x)^2
+/// stays put (negative leading coefficient), p1/(1-p1-p2) trails
+/// p1^2/(1-p1-p2)^2 but p2/(1-p1-p2) leads p2^2/(1-p1-p2)^2 (p2 is the
+/// base's last variable), x^2/(1-x) leads x^3/(1-x)^2, and
+/// x/(1+x^2) + x^2/(1+x^2)^2 reorders deep-first (squared leading addend).
+/// Returns None when the shapes don't fit so the caller falls back to the
+/// plain ascending-exponent rule.
+fn same_var_sum_base_order(
+  num_a: &Expr,
+  ea: i128,
+  num_b: &Expr,
+  eb: i128,
+  base: &Expr,
+) -> Option<std::cmp::Ordering> {
+  use std::cmp::Ordering;
+  // A numerator factor as (var, positive degree).
+  fn var_power(e: &Expr) -> Option<(&str, i128)> {
+    match e {
+      Expr::Identifier(v) => Some((v, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Identifier(v), Expr::Integer(k)) if *k > 0 => Some((v, *k)),
+          _ => None,
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => match (left.as_ref(), right.as_ref()) {
+        (Expr::Identifier(v), Expr::Integer(k)) if *k > 0 => Some((v, *k)),
+        _ => None,
+      },
+      _ => None,
+    }
+  }
+  // The last addend of the sum base with its accumulated sign.
+  fn last_addend(e: &Expr) -> (i128, &Expr) {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Plus" && !args.is_empty() =>
+      {
+        last_addend(args.last().unwrap())
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        right,
+        ..
+      } => last_addend(right),
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        right,
+        ..
+      } => {
+        let (s, t) = last_addend(right);
+        (-s, t)
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        let (s, t) = last_addend(operand);
+        (-s, t)
+      }
+      _ => (1, e),
+    }
+  }
+  // An addend as (integer coefficient, var, positive degree).
+  fn monom(e: &Expr) -> Option<(i128, &str, i128)> {
+    if let Some((v, k)) = var_power(e) {
+      return Some((1, v, k));
+    }
+    let (c, inner) = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() == 2 =>
+      {
+        match &args[0] {
+          Expr::Integer(c) => (*c, &args[1]),
+          _ => return None,
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => match left.as_ref() {
+        Expr::Integer(c) => (*c, right.as_ref()),
+        _ => return None,
+      },
+      _ => return None,
+    };
+    var_power(inner).map(|(v, k)| (c, v, k))
+  }
+
+  let (va, da) = var_power(num_a)?;
+  let (vb, db) = var_power(num_b)?;
+  if va != vb || ea == eb {
+    return None;
+  }
+  // Shallow = exponent closer to 0 (both are negative).
+  let ((alpha_s, es, a_is_shallow), (alpha_d, ed)) = if ea > eb {
+    ((da, ea, true), (db, eb))
+  } else {
+    ((db, eb, false), (da, ea))
+  };
+  let delta = es - ed;
+  if delta > 8 {
+    return None;
+  }
+  let (sign, term) = last_addend(base);
+  let (c, vl, m) = monom(term)?;
+  let c = c.checked_mul(sign)?;
+  let shallow_first = |sf: bool| {
+    Some(if sf == a_is_shallow {
+      Ordering::Less
+    } else {
+      Ordering::Greater
+    })
+  };
+  let deg_s = alpha_s + m * delta;
+  if deg_s != alpha_d {
+    return shallow_first(deg_s < alpha_d);
+  }
+  if vl != va {
+    // The shallow key ends in a later variable, so it is larger.
+    return shallow_first(false);
+  }
+  let c_key = c.checked_pow(u32::try_from(delta).ok()?)?;
+  if c_key == 1 {
+    return shallow_first(false);
+  }
+  shallow_first(c_key < 1)
+}
+
 fn cmp_neg_pow(f: &Expr) -> Option<(&Expr, i128)> {
   match f {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
@@ -4035,6 +4178,23 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
                       }
                       (true, true) => {
                         if na_f.len() == 1 && nb_f.len() == 1 {
+                          // Two monomial numerators (no sum factor) follow
+                          // the leading-monomial-over-common-denominator
+                          // rule (ascending exponent when the shapes don't
+                          // fit it): x/(1+x) + x^2/(1+x)^2 reorders to
+                          // x^2/(1+x)^2 + x/(1+x). Only sum numerators
+                          // compare as polynomials ((2+x)/(3+x) stays
+                          // before (5+x)/(3+x)^2).
+                          if !cmp_is_sum_base(na_f[0])
+                            && !cmp_is_sum_base(nb_f[0])
+                          {
+                            if let Some(ord) = same_var_sum_base_order(
+                              na_f[0], ea, nb_f[0], eb, base_a,
+                            ) {
+                              return ord;
+                            }
+                            return ea.cmp(&eb);
+                          }
                           let cmp = compare_expr_canonical(na_f[0], nb_f[0]);
                           if cmp != Ordering::Equal {
                             return cmp;

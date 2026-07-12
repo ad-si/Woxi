@@ -3659,6 +3659,310 @@ mod multinomial_distribution {
       "{Sqrt[n*(1 - p1)*p1], Sqrt[n*(1 - p2)*p2], Sqrt[n*(1 - p3)*p3]}"
     );
   }
+
+  #[test]
+  fn pdf_zero_at_non_integer_point() {
+    // Discrete multivariate PDFs are 0 at any non-integer component,
+    // including integer-valued Reals like 2.
+    assert_eq!(
+      interpret(
+        "PDF[MultinomialDistribution[5, {1/2, 1/3, 1/6}], {3/2, 2, 3/2}]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[MultinomialDistribution[5, {1/2, 1/3, 1/6}], {2., 2, 1}]")
+        .unwrap(),
+      "0"
+    );
+  }
+}
+
+mod negative_multinomial_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("NegativeMultinomialDistribution[5, {1/5, 2/5}]").unwrap(),
+      "NegativeMultinomialDistribution[5, {1/5, 2/5}]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[n, {p1, p2}], {x1, x2}]")
+        .unwrap(),
+      "Piecewise[{{(p1^x1*(1 - p1 - p2)^n*p2^x2*Pochhammer[n, x1 + x2])/(x1!*x2!), x1 >= 0 && x2 >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic_three_components() {
+    assert_eq!(
+      interpret(
+        "PDF[NegativeMultinomialDistribution[n, {p1, p2, p3}], {x1, x2, x3}]"
+      )
+      .unwrap(),
+      "Piecewise[{{(p1^x1*p2^x2*(1 - p1 - p2 - p3)^n*p3^x3*Pochhammer[n, x1 + x2 + x3])/(x1!*x2!*x3!), x1 >= 0 && x2 >= 0 && x3 >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_exact() {
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1, 2}]")
+        .unwrap(),
+      "2688/78125"
+    );
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {0, 0}]")
+        .unwrap(),
+      "32/3125"
+    );
+  }
+
+  #[test]
+  fn pdf_outside_support() {
+    // Negative and non-integer points (including integer-valued Reals)
+    // have probability 0.
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {-1, 2}]")
+        .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {3/2, 2}]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1., 2}]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn pdf_wrong_length_unevaluated() {
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1}]")
+        .unwrap(),
+      "PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1}]"
+    );
+  }
+
+  #[test]
+  fn cdf_exact() {
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1, 2}]")
+        .unwrap(),
+      "9728/78125"
+    );
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {0, 0}]")
+        .unwrap(),
+      "32/3125"
+    );
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {5, 6}]")
+        .unwrap(),
+      "21246699776/30517578125"
+    );
+  }
+
+  #[test]
+  fn cdf_floors_non_integer_points() {
+    assert_eq!(
+      interpret(
+        "CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {3/2, 2}]"
+      )
+      .unwrap(),
+      "9728/78125"
+    );
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {-1, 2}]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic_unevaluated() {
+    // wolframscript folds the symbolic sum into a combined power form;
+    // Woxi keeps symbolic arguments unevaluated instead.
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[n, {p1, p2}], {x1, x2}]")
+        .unwrap(),
+      "CDF[NegativeMultinomialDistribution[n, {p1, p2}], {x1, x2}]"
+    );
+  }
+
+  #[test]
+  fn mean_exact() {
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[5, {1/5, 2/5}]]")
+        .unwrap(),
+      "{5/2, 5}"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[n, {p1, p2}]]").unwrap(),
+      "{(n*p1)/(1 - p1 - p2), (n*p2)/(1 - p1 - p2)}"
+    );
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[n, {p1, p2, p3}]]")
+        .unwrap(),
+      "{(n*p1)/(1 - p1 - p2 - p3), (n*p2)/(1 - p1 - p2 - p3), (n*p3)/(1 - p1 - p2 - p3)}"
+    );
+  }
+
+  #[test]
+  fn mean_machine_precision() {
+    // Matches wolframscript's float fold order bit for bit.
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[5, {0.2, 0.4}]]")
+        .unwrap(),
+      "{2.5000000000000004, 5.000000000000001}"
+    );
+  }
+
+  #[test]
+  fn variance_exact() {
+    assert_eq!(
+      interpret("Variance[NegativeMultinomialDistribution[5, {1/5, 2/5}]]")
+        .unwrap(),
+      "{15/4, 10}"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[NegativeMultinomialDistribution[n, {p1, p2}]]")
+        .unwrap(),
+      "{(n*p1*(1 - p2))/(1 - p1 - p2)^2, (n*(1 - p1)*p2)/(1 - p1 - p2)^2}"
+    );
+    assert_eq!(
+      interpret("Variance[NegativeMultinomialDistribution[n, {p1, p2, p3}]]")
+        .unwrap(),
+      "{(n*p1*(1 - p2 - p3))/(1 - p1 - p2 - p3)^2, (n*p2*(1 - p1 - p3))/(1 - p1 - p2 - p3)^2, (n*(1 - p1 - p2)*p3)/(1 - p1 - p2 - p3)^2}"
+    );
+  }
+
+  #[test]
+  fn variance_machine_precision() {
+    assert_eq!(
+      interpret("Variance[NegativeMultinomialDistribution[5, {0.2, 0.4}]]")
+        .unwrap(),
+      "{3.7500000000000013, 10.000000000000005}"
+    );
+  }
+
+  #[test]
+  fn standard_deviation_exact() {
+    assert_eq!(
+      interpret(
+        "StandardDeviation[NegativeMultinomialDistribution[5, {1/5, 2/5}]]"
+      )
+      .unwrap(),
+      "{Sqrt[15]/2, Sqrt[10]}"
+    );
+  }
+
+  #[test]
+  fn covariance_exact() {
+    assert_eq!(
+      interpret("Covariance[NegativeMultinomialDistribution[5, {1/5, 2/5}]]")
+        .unwrap(),
+      "{{15/4, 5/2}, {5/2, 10}}"
+    );
+  }
+
+  #[test]
+  fn covariance_symbolic() {
+    // Note the diagonal asymmetry: the p1 entry leads with its squared
+    // term while the p2 entry (the base's last variable) leads with the
+    // linear one — wolframscript's canonical Plus order does the same.
+    assert_eq!(
+      interpret("Covariance[NegativeMultinomialDistribution[n, {p1, p2}]]")
+        .unwrap(),
+      "{{n*(p1^2/(1 - p1 - p2)^2 + p1/(1 - p1 - p2)), (n*p1*p2)/(1 - p1 - p2)^2}, {(n*p1*p2)/(1 - p1 - p2)^2, n*(p2/(1 - p1 - p2) + p2^2/(1 - p1 - p2)^2)}}"
+    );
+  }
+
+  #[test]
+  fn covariance_machine_precision() {
+    assert_eq!(
+      interpret("Covariance[NegativeMultinomialDistribution[5, {0.2, 0.4}]]")
+        .unwrap(),
+      "{{3.750000000000001, 2.5000000000000018}, {2.5000000000000018, 10.000000000000004}}"
+    );
+  }
+
+  #[test]
+  fn single_component() {
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[5, {1/5}]]").unwrap(),
+      "{5/4}"
+    );
+  }
+
+  #[test]
+  fn shared_denominator_power_term_order() {
+    // Regression: same-variable monomial numerators over powers of a
+    // shared sum base order by the leading monomial over the common
+    // denominator, matching wolframscript. Sum numerators keep the
+    // polynomial comparison.
+    assert_eq!(
+      interpret("x/(1 + x) + x^2/(1 + x)^2").unwrap(),
+      "x^2/(1 + x)^2 + x/(1 + x)"
+    );
+    // Negative leading coefficient keeps the shallow term first.
+    assert_eq!(
+      interpret("x/(1 - x) + x^2/(1 - x)^2").unwrap(),
+      "x/(1 - x) + x^2/(1 - x)^2"
+    );
+    // The base's LAST variable leads linear-first, earlier variables
+    // squared-first.
+    assert_eq!(
+      interpret("x/(1 - x - y) + x^2/(1 - x - y)^2").unwrap(),
+      "x^2/(1 - x - y)^2 + x/(1 - x - y)"
+    );
+    assert_eq!(
+      interpret("y/(1 - x - y) + y^2/(1 - x - y)^2").unwrap(),
+      "y/(1 - x - y) + y^2/(1 - x - y)^2"
+    );
+    // Squared leading addend raises the shallow key's degree.
+    assert_eq!(
+      interpret("x/(1 + x^2) + x^2/(1 + x^2)^2").unwrap(),
+      "x^2/(1 + x^2)^2 + x/(1 + x^2)"
+    );
+    assert_eq!(
+      interpret("x^2/(1 - x) + x^3/(1 - x)^2").unwrap(),
+      "x^2/(1 - x) + x^3/(1 - x)^2"
+    );
+    assert_eq!(
+      interpret("x/(1 + x) + x^3/(1 + x)^3").unwrap(),
+      "x^3/(1 + x)^3 + x/(1 + x)"
+    );
+    // Sum numerators compare as polynomials.
+    assert_eq!(
+      interpret("(2 + x)/(3 + x) + (5 + x)/(3 + x)^2").unwrap(),
+      "(2 + x)/(3 + x) + (5 + x)/(3 + x)^2"
+    );
+    assert_eq!(
+      interpret("(5 + x)/(3 + x) + (2 + x)/(3 + x)^2").unwrap(),
+      "(2 + x)/(3 + x)^2 + (5 + x)/(3 + x)"
+    );
+  }
 }
 
 mod dirichlet_distribution {
