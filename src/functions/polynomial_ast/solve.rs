@@ -5529,17 +5529,37 @@ fn minimize_poly_bounded_below(f: &Expr, var: &str) -> Option<bool> {
 }
 
 /// Check if f is bounded below by evaluating numerically at large values.
+///
+/// A single large test point is not enough: a linearly unbounded objective such
+/// as `-Abs[x]` reaches only `-1e6` at `x = 1e6`, so a fixed `-1e8` threshold
+/// would wrongly call it bounded. Instead probe a sequence of increasing
+/// magnitudes in each direction; if the objective is still strictly decreasing
+/// and already deeply negative at the largest magnitude, it runs off to
+/// -Infinity (e.g. `Minimize[-Abs[x], x]` -> {-Infinity, {x -> -Infinity}}).
 fn minimize_bounded_below_numerical(f: &Expr, var: &str) -> bool {
-  let test_points: &[f64] = &[-1e6, 1e6];
-  let threshold = -1e8;
-  for &x in test_points {
-    let substituted =
-      crate::syntax::substitute_variable(f, var, &Expr::Real(x));
-    if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&substituted)
-      && let Some(val) = minimize_try_f64(&evaled)
-      && val < threshold
-    {
-      return false;
+  let mags: &[f64] = &[1e2, 1e4, 1e6, 1e8];
+  for &sign in &[-1.0_f64, 1.0] {
+    let mut vals = Vec::with_capacity(mags.len());
+    for &m in mags {
+      let substituted =
+        crate::syntax::substitute_variable(f, var, &Expr::Real(sign * m));
+      match crate::evaluator::evaluate_expr_to_expr(&substituted)
+        .ok()
+        .and_then(|e| minimize_try_f64(&e))
+      {
+        Some(val) => vals.push(val),
+        None => {
+          vals.clear();
+          break;
+        }
+      }
+    }
+    if vals.len() == mags.len() {
+      let last = vals[vals.len() - 1];
+      let prev = vals[vals.len() - 2];
+      if last < prev && last < -1e6 {
+        return false;
+      }
     }
   }
   true

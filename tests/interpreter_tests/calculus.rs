@@ -5531,13 +5531,18 @@ mod minimize {
     );
   }
 
-  // A concave Abs kink is a maximum, not a minimum: don't report it as the
-  // minimum (the true minimum here is unbounded); leave it unevaluated.
+  // A concave Abs kink is a maximum, not a minimum: the objective runs off to
+  // -Infinity, so Minimize reports the unbounded result rather than mistaking
+  // the kink for a minimum.
   #[test]
   fn concave_abs_not_reported_as_minimum() {
     assert_eq!(
       interpret("Minimize[-Abs[x], x]").unwrap(),
-      "Minimize[-Abs[x], x]"
+      "{-Infinity, {x -> -Infinity}}"
+    );
+    assert_eq!(
+      interpret("Minimize[-Abs[x - 5], x]").unwrap(),
+      "{-Infinity, {x -> -Infinity}}"
     );
   }
 
