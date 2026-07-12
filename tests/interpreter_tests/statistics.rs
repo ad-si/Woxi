@@ -8668,3 +8668,144 @@ mod factorial_central_mgf_tests {
     );
   }
 }
+
+mod wishart_matrix_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("WishartMatrixDistribution[10, {{1, 1/3}, {1/3, 1}}]").unwrap(),
+      "WishartMatrixDistribution[10, {{1, 1/3}, {1/3, 1}}]"
+    );
+    // The constructor never validates — even non-symmetric matrices
+    // echo silently (wolframscript-verified).
+    assert_eq!(
+      interpret("WishartMatrixDistribution[nu, {{1, 2}, {3, 4}}]").unwrap(),
+      "WishartMatrixDistribution[nu, {{1, 2}, {3, 4}}]"
+    );
+  }
+
+  #[test]
+  fn mean_is_nu_sigma() {
+    assert_eq!(
+      interpret(
+        "Mean[WishartMatrixDistribution[3, DiagonalMatrix[{2, 1, 3}]]]"
+      )
+      .unwrap(),
+      "{{6, 0, 0}, {0, 3, 0}, {0, 0, 9}}"
+    );
+    assert_eq!(
+      interpret("Mean[WishartMatrixDistribution[10, {{1, 1/3}, {1/3, 1}}]]")
+        .unwrap(),
+      "{{10, 10/3}, {10/3, 10}}"
+    );
+    // Non-integer and machine-precision degrees of freedom.
+    assert_eq!(
+      interpret("Mean[WishartMatrixDistribution[5/2, {{1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "{{5/2, 0}, {0, 5/2}}"
+    );
+    assert_eq!(
+      interpret("Mean[WishartMatrixDistribution[2.5, {{1., 0.}, {0., 1.}}]]")
+        .unwrap(),
+      "{{2.5, 0.}, {0., 2.5}}"
+    );
+    // nu == p is allowed (nu > p - 1).
+    assert_eq!(
+      interpret("Mean[WishartMatrixDistribution[2, {{4, 0}, {0, 9}}]]")
+        .unwrap(),
+      "{{8, 0}, {0, 18}}"
+    );
+  }
+
+  #[test]
+  fn variance() {
+    // Variance_ij = nu (sigma_ij^2 + sigma_ii sigma_jj).
+    assert_eq!(
+      interpret(
+        "Variance[WishartMatrixDistribution[10, {{1, 1/3}, {1/3, 1}}]]"
+      )
+      .unwrap(),
+      "{{20, 100/9}, {100/9, 20}}"
+    );
+    assert_eq!(
+      interpret("Variance[WishartMatrixDistribution[5, {{4, 0}, {0, 9}}]]")
+        .unwrap(),
+      "{{160, 180}, {180, 810}}"
+    );
+    assert_eq!(
+      interpret("Variance[WishartMatrixDistribution[5/2, {{1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "{{5, 5/2}, {5/2, 5}}"
+    );
+  }
+
+  #[test]
+  fn moments_validate_parameters() {
+    // Symbolic or non-positive-definite scale matrices emit posdefprm.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[WishartMatrixDistribution[nu, {{a, b}, {b, c}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Mean[WishartMatrixDistribution[nu, {{a, b}, {b, c}}]]"
+    );
+    assert!(r.warnings[0].contains(
+      "WishartMatrixDistribution::posdefprm: The value {{a, b}, {b, c}} at \
+       position 2 in WishartMatrixDistribution[nu, {{a, b}, {b, c}}] is \
+       expected to be a symmetric positive definite matrix."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[WishartMatrixDistribution[10, {{1, 2}, {3, 4}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Mean[WishartMatrixDistribution[10, {{1, 2}, {3, 4}}]]"
+    );
+    assert!(r.warnings[0].contains("WishartMatrixDistribution::posdefprm"));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "Variance[WishartMatrixDistribution[10, {{-1, 0}, {0, 1}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Variance[WishartMatrixDistribution[10, {{-1, 0}, {0, 1}}]]"
+    );
+    assert!(r.warnings[0].contains("WishartMatrixDistribution::posdefprm"));
+
+    // A symbolic nu (or nu <= p - 1) with a valid matrix emits bprm.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[WishartMatrixDistribution[nu, {{1, 0}, {0, 1}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Mean[WishartMatrixDistribution[nu, {{1, 0}, {0, 1}}]]"
+    );
+    assert!(r.warnings[0].contains(
+      "WishartMatrixDistribution::bprm: The parameters of distribution \
+       WishartMatrixDistribution[nu, {{1, 0}, {0, 1}}] are not valid. Use \
+       DistributionParameterAssumptions to obtain the parameter assumptions."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[WishartMatrixDistribution[1, {{1, 0}, {0, 1}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Mean[WishartMatrixDistribution[1, {{1, 0}, {0, 1}}]]"
+    );
+    assert!(r.warnings[0].contains("WishartMatrixDistribution::bprm"));
+  }
+}

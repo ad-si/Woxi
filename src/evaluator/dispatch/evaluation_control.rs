@@ -471,6 +471,14 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    // The constructor never validates (wolframscript echoes even
+    // non-symmetric matrices silently); Mean/Variance validate.
+    "WishartMatrixDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "WishartMatrixDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "MultivariatePoissonDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "MultivariatePoissonDistribution".to_string(),

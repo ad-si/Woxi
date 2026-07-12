@@ -782,6 +782,20 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "WishartMatrixDistribution" && dargs.len() == 2 => {
+      // Invalid parameters have already emitted their message; the call
+      // stays unevaluated.
+      match super::distributions::wishart_mean_variance(dargs) {
+        Ok((mean, _)) => Ok(mean),
+        Err(_) => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "DirichletDistribution" => {
       let (mean, _) = super::distributions::dirichlet_mean_variance(dargs)?;
       Ok(mean)
@@ -1097,6 +1111,20 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (_, variance) =
         super::distributions::negative_multinomial_mean_variance(dargs)?;
       Ok(variance)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "WishartMatrixDistribution" && dargs.len() == 2 => {
+      // Invalid parameters have already emitted their message; the call
+      // stays unevaluated.
+      match super::distributions::wishart_mean_variance(dargs) {
+        Ok((_, variance)) => Ok(variance),
+        Err(_) => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
     }
     Expr::FunctionCall {
       name: dist_name,

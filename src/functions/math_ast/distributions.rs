@@ -7248,6 +7248,148 @@ pub fn negative_multinomial_covariance(
   Ok(Expr::List(rows.into()))
 }
 
+/// Returns (Mean matrix, Variance matrix) for
+/// WishartMatrixDistribution[ν, Σ]: Mean = ν Σ,
+/// Variance_ij = ν (σ_ij^2 + σ_ii σ_jj).
+///
+/// Validation mirrors wolframscript's moment-time checks (the constructor
+/// itself never validates): a non-numeric / non-symmetric /
+/// non-positive-definite Σ emits `posdefprm`; then a non-numeric ν or
+/// ν <= p - 1 emits `bprm`. On either failure returns Err so the caller
+/// leaves the call unevaluated.
+pub fn wishart_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let dist_str = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "WishartMatrixDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  let fail = |msg: String| -> Result<(Expr, Expr), InterpreterError> {
+    crate::emit_message(&msg);
+    Err(InterpreterError::EvaluationError(
+      "invalid WishartMatrixDistribution parameters".into(),
+    ))
+  };
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "WishartMatrixDistribution expects 2 arguments".into(),
+    ));
+  }
+  let (nu, sigma) = (&dargs[0], &dargs[1]);
+
+  // Σ: square, numeric, symmetric, positive definite.
+  let posdefprm = |s: &Expr| {
+    format!(
+      "WishartMatrixDistribution::posdefprm: The value {} at position 2 in {} is expected to be a symmetric positive definite matrix.",
+      crate::syntax::expr_to_string(s),
+      dist_str()
+    )
+  };
+  let Expr::List(rows) = sigma else {
+    return fail(posdefprm(sigma));
+  };
+  let p = rows.len();
+  let mut sig = vec![vec![0.0f64; p]; p];
+  let mut sig_exprs: Vec<Vec<Expr>> = Vec::with_capacity(p);
+  for (i, row) in rows.iter().enumerate() {
+    let Expr::List(cells) = row else {
+      return fail(posdefprm(sigma));
+    };
+    if cells.len() != p {
+      return fail(posdefprm(sigma));
+    }
+    let mut row_exprs = Vec::with_capacity(p);
+    for (j, cell) in cells.iter().enumerate() {
+      let Some(v) = crate::functions::math_ast::try_eval_to_f64(cell) else {
+        return fail(posdefprm(sigma));
+      };
+      sig[i][j] = v;
+      row_exprs.push(cell.clone());
+    }
+    sig_exprs.push(row_exprs);
+  }
+  let scale = sig.iter().flatten().fold(1.0f64, |acc, x| acc.max(x.abs()));
+  let tol = 1e-9 * scale;
+  for i in 0..p {
+    for j in 0..i {
+      if (sig[i][j] - sig[j][i]).abs() > tol {
+        return fail(posdefprm(sigma));
+      }
+    }
+  }
+  // Positive definiteness via leading principal minors (Sylvester).
+  for k in 1..=p {
+    let mut m: Vec<Vec<f64>> = (0..k).map(|i| sig[i][..k].to_vec()).collect();
+    // Gaussian elimination determinant.
+    let mut det = 1.0f64;
+    for col in 0..k {
+      let pivot = (col..k)
+        .max_by(|&a, &b| {
+          m[a][col]
+            .abs()
+            .partial_cmp(&m[b][col].abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap();
+      if m[pivot][col].abs() < 1e-12 * scale.max(1.0) {
+        det = 0.0;
+        break;
+      }
+      if pivot != col {
+        m.swap(pivot, col);
+        det = -det;
+      }
+      det *= m[col][col];
+      for r in col + 1..k {
+        let f = m[r][col] / m[col][col];
+        for c in col..k {
+          m[r][c] -= f * m[col][c];
+        }
+      }
+    }
+    if det <= 0.0 {
+      return fail(posdefprm(sigma));
+    }
+  }
+
+  // ν: numeric with ν > p - 1.
+  let bprm = || {
+    format!(
+      "WishartMatrixDistribution::bprm: The parameters of distribution {} are not valid. Use DistributionParameterAssumptions to obtain the parameter assumptions.",
+      dist_str()
+    )
+  };
+  let Some(nu_f) = crate::functions::math_ast::try_eval_to_f64(nu) else {
+    return fail(bprm());
+  };
+  if nu_f <= (p as f64) - 1.0 {
+    return fail(bprm());
+  }
+
+  let mut mean_rows = Vec::with_capacity(p);
+  let mut var_rows = Vec::with_capacity(p);
+  for i in 0..p {
+    let mut mean_row = Vec::with_capacity(p);
+    let mut var_row = Vec::with_capacity(p);
+    for j in 0..p {
+      mean_row.push(eval(times(nu.clone(), sig_exprs[i][j].clone()))?);
+      // ν (σ_ij^2 + σ_ii σ_jj)
+      var_row.push(eval(times(
+        nu.clone(),
+        plus(
+          power(sig_exprs[i][j].clone(), int(2)),
+          times(sig_exprs[i][i].clone(), sig_exprs[j][j].clone()),
+        ),
+      ))?);
+    }
+    mean_rows.push(Expr::List(mean_row.into()));
+    var_rows.push(Expr::List(var_row.into()));
+  }
+  Ok((Expr::List(mean_rows.into()), Expr::List(var_rows.into())))
+}
+
 /// Mean and Variance for MultivariatePoissonDistribution[theta0, {theta1, ..., thetan}]
 /// Mean = {theta0 + theta1, ..., theta0 + thetan}
 /// Variance = {theta0 + theta1, ..., theta0 + thetan} (same as mean)

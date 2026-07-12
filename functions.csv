@@ -3105,7 +3105,7 @@ PermutationLength,Number of non-fixed points in a permutation,✅,1,8.0,3176
 Printout3D,,🚫,,11.0,3176
 UnixTime,Returns the current Unix timestamp (seconds since 1970-01-01),✅,effectful,10.1,3176
 WaveletMatrixPlot,Pyramid matrix plot of 2D wavelet coefficients,✅,graphics,8.0,3176
-WishartMatrixDistribution,,,,10.3,3176
+WishartMatrixDistribution,Matrix distribution of scatter matrices with given covariance and degrees of freedom,✅,none,10.3,3176
 AllowedHeads,,,,12.0,3191
 BilateralFilter,,🚫,,8.0,3191
 DirectedGraphQ,Test whether a graph is a directed graph,✅,pure,8.0,3191
