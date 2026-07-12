@@ -403,6 +403,59 @@ mod union_sorting {
   }
 }
 
+mod set_operations_on_associations {
+  use super::*;
+
+  // Union merges by key (last value wins for a shared key), preserving
+  // first-seen key order, and returns an association.
+  #[test]
+  fn union_merges_by_key() {
+    assert_eq!(
+      interpret("Union[<|a -> 1, b -> 2|>, <|c -> 3|>]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+    assert_eq!(
+      interpret("Union[<|a -> 1, b -> 2|>, <|a -> 9, c -> 3|>]").unwrap(),
+      "<|a -> 9, b -> 2, c -> 3|>"
+    );
+    // Key order follows first appearance, not sorting.
+    assert_eq!(
+      interpret("Union[<|b -> 2, a -> 1|>, <|c -> 3|>]").unwrap(),
+      "<|b -> 2, a -> 1, c -> 3|>"
+    );
+  }
+
+  // Intersection keeps key->value pairs common to every association.
+  #[test]
+  fn intersection_by_pairs() {
+    assert_eq!(
+      interpret(
+        "Intersection[<|a -> 1, b -> 2, c -> 3|>, <|b -> 9, c -> 9, d -> 9|>]"
+      )
+      .unwrap(),
+      "<||>"
+    );
+    assert_eq!(
+      interpret("Intersection[<|a -> 1, b -> 2, c -> 3|>, <|a -> 1, b -> 9|>]")
+        .unwrap(),
+      "<|a -> 1|>"
+    );
+  }
+
+  // Complement removes the first association's pairs that appear in any other.
+  #[test]
+  fn complement_by_pairs() {
+    assert_eq!(
+      interpret("Complement[<|a -> 1, b -> 2, c -> 3|>, <|b -> 9|>]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+    assert_eq!(
+      interpret("Complement[<|a -> 1, b -> 2|>, <|b -> 2|>]").unwrap(),
+      "<|a -> 1|>"
+    );
+  }
+}
+
 mod subsequences {
   use super::*;
 

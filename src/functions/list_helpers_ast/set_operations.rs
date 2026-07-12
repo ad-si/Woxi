@@ -320,8 +320,58 @@ fn sort_canonical(items: &mut [Expr]) {
   });
 }
 
+/// If every argument is an Association, return their `(key, value)` pair
+/// slices; otherwise None. Used by the set operations, which on associations
+/// operate on key->value pairs (Intersection/Complement) or key-merge (Union)
+/// and return an association rather than a list.
+fn all_association_pairs(lists: &[Expr]) -> Option<Vec<&[(Expr, Expr)]>> {
+  if lists.is_empty() {
+    return None;
+  }
+  let mut out = Vec::with_capacity(lists.len());
+  for l in lists {
+    match l {
+      Expr::Association(pairs) => out.push(pairs.as_slice()),
+      _ => return None,
+    }
+  }
+  Some(out)
+}
+
+/// True if `pairs` contains a key->value pair structurally equal to (k, v).
+fn pairs_contain(pairs: &[(Expr, Expr)], k: &Expr, v: &Expr) -> bool {
+  let (ks, vs) = (
+    crate::syntax::expr_to_string(k),
+    crate::syntax::expr_to_string(v),
+  );
+  pairs.iter().any(|(k2, v2)| {
+    crate::syntax::expr_to_string(k2) == ks
+      && crate::syntax::expr_to_string(v2) == vs
+  })
+}
+
 pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   use std::collections::HashSet;
+
+  // On associations, Union merges by key (the last association's value wins for
+  // a shared key) preserving first-seen key order, and returns an association.
+  if let Some(assocs) = all_association_pairs(lists) {
+    use std::collections::HashMap;
+    let mut order: Vec<String> = Vec::new();
+    let mut map: HashMap<String, (Expr, Expr)> = HashMap::new();
+    for pairs in &assocs {
+      for (k, v) in pairs.iter() {
+        let ks = crate::syntax::expr_to_string(k);
+        if !map.contains_key(&ks) {
+          order.push(ks.clone());
+        }
+        map.insert(ks, (k.clone(), v.clone()));
+      }
+    }
+    let result: Vec<(Expr, Expr)> =
+      order.iter().map(|ks| map[ks].clone()).collect();
+    return Ok(Expr::Association(result));
+  }
 
   let (slices, head, same_test) = match collect_set_subjects("Union", lists) {
     Ok(t) => t,
@@ -389,6 +439,18 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   if lists.is_empty() {
     return Ok(Expr::List(vec![].into()));
+  }
+
+  // On associations, Intersection keeps the key->value pairs of the first
+  // association that appear (as pairs) in every other association, in the first
+  // association's order, and returns an association.
+  if let Some(assocs) = all_association_pairs(lists) {
+    let result: Vec<(Expr, Expr)> = assocs[0]
+      .iter()
+      .filter(|(k, v)| assocs[1..].iter().all(|p| pairs_contain(p, k, v)))
+      .cloned()
+      .collect();
+    return Ok(Expr::Association(result));
   }
 
   // SameTest -> fn makes two elements "equal" iff `fn[a, b]` evaluates
@@ -510,6 +572,18 @@ fn intersection_with_same_test(
 pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   if lists.is_empty() {
     return Ok(Expr::List(vec![].into()));
+  }
+
+  // On associations, Complement keeps the first association's key->value pairs
+  // that appear (as pairs) in none of the other associations, in the first
+  // association's order, and returns an association.
+  if let Some(assocs) = all_association_pairs(lists) {
+    let result: Vec<(Expr, Expr)> = assocs[0]
+      .iter()
+      .filter(|(k, v)| !assocs[1..].iter().any(|p| pairs_contain(p, k, v)))
+      .cloned()
+      .collect();
+    return Ok(Expr::Association(result));
   }
 
   use std::collections::HashSet;

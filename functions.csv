@@ -212,7 +212,7 @@ SplineClosed,Option for closing B-spline curves,✅,pure,7.0,215
 SlotSequence,Represents a sequence of arguments in a pure function,✅,pure,1.0,216
 Append,Adds an element to the end of a list,✅,pure,1.0,217
 Position,Finds all positions of a pattern in a list,✅,pure,1.0,218
-Union,Returns sorted union of lists,✅,pure,1.0,219
+Union,Returns sorted union of lists or a key-merge of associations,✅,pure,1.0,219
 While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,220
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using Newton's method,✅,pure,1.0,222
@@ -407,7 +407,7 @@ FillingStyle,Option for specifying the style of plot filling,✅,pure,6.0,410
 Control,Represents a standalone interactive control such as a slider or popup menu bound to a variable,✅,pure,7.0,411
 WorkingPrecision,Option for numerical precision,✅,pure,1.0,412
 Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1.0,413
-Complement,Returns elements in first list but not in others,✅,pure,1.0,414
+Complement,Returns elements in first list or association not in the others,✅,pure,1.0,414
 Dashing,Sets line dashing in graphics,✅,pure,1.0,416
 StreamPlot,Creates a streamline plot of a vector field,✅,pure,7.0,416
 Animate,Animated version of an expression (stays symbolic in script mode),✅,unevaluated,6.0,417
@@ -546,7 +546,7 @@ Locator,Interactive locator object,✅,none,6.0,549
 AddTo,Adds a value to a variable,✅,stateful,1.0,550
 EllipticTheta,Jacobi theta function,✅,pure,1.0,551
 MatrixPlot,Plots a matrix as a colored grid,✅,pure,6.0,552
-Intersection,Returns sorted intersection of lists,✅,pure,1.0,553
+Intersection,Returns sorted intersection of lists or associations,✅,pure,1.0,553
 Erf,Returns the error function value,✅,pure,1.0,554
 ImageDimensions,Returns the dimensions of an image,✅,pure,7.0,555
 InputField,Input field for interactive interfaces,✅,none,6.0,556
