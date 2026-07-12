@@ -5494,6 +5494,61 @@ fn minimize_neg_infinity_result(vars: &[String], maximize: bool) -> Expr {
 }
 
 /// Single-variable unconstrained minimize.
+/// Collect every `Abs[g]` subexpression argument `g` that depends on `var`.
+fn collect_abs_args(e: &Expr, var: &str, out: &mut Vec<Expr>) {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      if name == "Abs"
+        && args.len() == 1
+        && !crate::functions::calculus_ast::is_constant_wrt(&args[0], var)
+      {
+        out.push(args[0].clone());
+      }
+      for a in args.iter() {
+        collect_abs_args(a, var, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_abs_args(left, var, out);
+      collect_abs_args(right, var, out);
+    }
+    Expr::UnaryOp { operand, .. } => collect_abs_args(operand, var, out),
+    Expr::List(items) => {
+      for it in items.iter() {
+        collect_abs_args(it, var, out);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// The `var` values where an `Abs` argument in `f` vanishes — the kink points of
+/// a piecewise-linear/convex objective, which are candidate (non-smooth) minima.
+fn minimize_abs_breakpoints(f: &Expr, var: &str) -> Vec<Expr> {
+  let mut abs_args = Vec::new();
+  collect_abs_args(f, var, &mut abs_args);
+  let mut points = Vec::new();
+  for g in abs_args {
+    let eq = Expr::Comparison {
+      operands: vec![g, Expr::Integer(0)],
+      operators: vec![crate::syntax::ComparisonOp::Equal],
+    };
+    let solved = solve_ast(&[eq, Expr::Identifier(var.to_string())]);
+    if let Ok(Expr::List(sol_sets)) = &solved {
+      for sol_set in sol_sets.iter() {
+        if let Expr::List(rules) = sol_set {
+          for rule in rules.iter() {
+            if let Expr::Rule { replacement, .. } = rule {
+              points.push((**replacement).clone());
+            }
+          }
+        }
+      }
+    }
+  }
+  points
+}
+
 fn minimize_single_var(
   f: &Expr,
   var: &str,
@@ -5531,7 +5586,36 @@ fn minimize_single_var(
   }
 
   // Find critical points: solve df == 0
-  let critical_points = minimize_find_critical_points_1d(&df, var, &f_inner)?;
+  let mut critical_points =
+    minimize_find_critical_points_1d(&df, var, &f_inner)?;
+
+  // Abs[g(x)] has a non-smooth kink where g(x) == 0; the derivative-based
+  // search never sees it (d/dx Abs = Sign is never zero). Add those breakpoints
+  // as candidate minimizers so e.g. Minimize[Abs[x - 3], x] -> {0, {x -> 3}}.
+  // Only keep a breakpoint that is a genuine local minimum (the objective does
+  // not dip below it in a small neighbourhood); this rejects concave kinks such
+  // as the maximum of -Abs[x], where the true minimum is unbounded.
+  let eval_num = |xval: &Expr| -> Option<f64> {
+    minimize_eval_exact(&f_inner, var, xval)
+      .ok()
+      .and_then(|e| minimize_try_f64(&e))
+  };
+  for bp in minimize_abs_breakpoints(&f_inner, var) {
+    let bp_str = expr_to_string(&bp);
+    if critical_points.iter().any(|c| expr_to_string(c) == bp_str) {
+      continue;
+    }
+    let (Some(x0), Some(v0)) = (minimize_try_f64(&bp), eval_num(&bp)) else {
+      continue;
+    };
+    let left = eval_num(&Expr::Real(x0 - 1e-4));
+    let right = eval_num(&Expr::Real(x0 + 1e-4));
+    let is_local_min = left.is_some_and(|l| l >= v0 - 1e-9)
+      && right.is_some_and(|r| r >= v0 - 1e-9);
+    if is_local_min {
+      critical_points.push(bp);
+    }
+  }
 
   if critical_points.is_empty() {
     // Bounded function with no critical points: return unevaluated

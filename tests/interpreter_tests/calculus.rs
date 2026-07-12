@@ -5479,6 +5479,50 @@ mod minimize {
     );
   }
 
+  // The kink of Abs[g(x)] (where g == 0) is the minimizer of a convex objective.
+  #[test]
+  fn abs_kink_minimum() {
+    assert_eq!(
+      interpret("Minimize[Abs[x - 3], x]").unwrap(),
+      "{0, {x -> 3}}"
+    );
+    assert_eq!(interpret("Minimize[Abs[x], x]").unwrap(), "{0, {x -> 0}}");
+    assert_eq!(
+      interpret("Minimize[Abs[x + 2] + 1, x]").unwrap(),
+      "{1, {x -> -2}}"
+    );
+    assert_eq!(
+      interpret("Minimize[Abs[2*x - 4], x]").unwrap(),
+      "{0, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Minimize[3*Abs[x - 1], x]").unwrap(),
+      "{0, {x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn abs_kink_maximum() {
+    assert_eq!(
+      interpret("Maximize[-Abs[x - 5], x]").unwrap(),
+      "{0, {x -> 5}}"
+    );
+    assert_eq!(
+      interpret("Maximize[10 - Abs[x], x]").unwrap(),
+      "{10, {x -> 0}}"
+    );
+  }
+
+  // A concave Abs kink is a maximum, not a minimum: don't report it as the
+  // minimum (the true minimum here is unbounded); leave it unevaluated.
+  #[test]
+  fn concave_abs_not_reported_as_minimum() {
+    assert_eq!(
+      interpret("Minimize[-Abs[x], x]").unwrap(),
+      "Minimize[-Abs[x], x]"
+    );
+  }
+
   // A non-symbol in the variable slot (a constraint, equation, or literal)
   // emits <func>::ivar and stays unevaluated, rather than raising a hard
   // error.
