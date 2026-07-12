@@ -2077,6 +2077,95 @@ mod ignore_case {
 mod string_patterns {
   use super::*;
 
+  // A repeated pattern name in a string pattern (`x_ ~~ x_`) is a
+  // back-reference: both occurrences must match the *same* substring. The Rust
+  // `regex` crate has no native backreferences, so Woxi records the repeated
+  // captures and verifies they compare equal after matching. These must hold
+  // across every string-matching function, matching wolframscript.
+  #[test]
+  fn backreference_string_match_q() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["aa", x_ ~~ x_]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["ab", x_ ~~ x_]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn backreference_string_replace() {
+    assert_eq!(
+      interpret(r#"StringReplace["hello", a_ ~~ a_ -> "!"]"#).unwrap(),
+      "he!o"
+    );
+    assert_eq!(
+      interpret(r#"StringReplace["aabbcc", x_ ~~ x_ -> "*"]"#).unwrap(),
+      "***"
+    );
+  }
+
+  #[test]
+  fn backreference_string_count_and_position() {
+    assert_eq!(interpret(r#"StringCount["abcc", x_ ~~ x_]"#).unwrap(), "1");
+    assert_eq!(
+      interpret(r#"StringPosition["abcc", x_ ~~ x_]"#).unwrap(),
+      "{{3, 4}}"
+    );
+  }
+
+  #[test]
+  fn backreference_string_split() {
+    // Delimiter never matches (no equal adjacent pair) → whole string kept.
+    assert_eq!(
+      interpret(r#"StringSplit["aXbYc", x_ ~~ x_]"#).unwrap(),
+      "{aXbYc}"
+    );
+    assert_eq!(
+      interpret(r#"StringSplit["aXXbYYc", x_ ~~ x_]"#).unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn backreference_string_free_contains_starts_ends() {
+    assert_eq!(interpret(r#"StringFreeQ["ab", x_ ~~ x_]"#).unwrap(), "True");
+    assert_eq!(
+      interpret(r#"StringContainsQ["abcc", x_ ~~ x_]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringStartsQ["aab", x_ ~~ x_]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringStartsQ["abc", x_ ~~ x_]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"StringEndsQ["abcc", x_ ~~ x_]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn backreference_string_delete_and_trim() {
+    assert_eq!(
+      interpret(r#"StringDelete["abcc", x_ ~~ x_]"#).unwrap(),
+      "ab"
+    );
+    assert_eq!(
+      interpret(r#"StringTrim["aabxyaa", x_ ~~ x_]"#).unwrap(),
+      "bxy"
+    );
+    // Ends aren't equal pairs → nothing trimmed.
+    assert_eq!(
+      interpret(r#"StringTrim["abxyab", x_ ~~ x_]"#).unwrap(),
+      "abxyab"
+    );
+  }
+
   #[test]
   fn repeated_parsing() {
     // Repeated[x] displays as x..

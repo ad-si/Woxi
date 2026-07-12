@@ -810,12 +810,18 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // string literals (and lists of them) use the literal-delimiter path below;
   // any non-literal delimiter — a bare pattern, or a list that contains one
   // (e.g. {DigitCharacter}) — goes through the pattern → regex converter.
-  let regex_from_pattern = if let Some(p) = extract_regex_pattern(&args[1]) {
-    Some(p)
+  let (regex_from_pattern, split_constraints): (
+    Option<String>,
+    Vec<(String, String)>,
+  ) = if let Some(p) = extract_regex_pattern(&args[1]) {
+    (Some(p), Vec::new())
   } else if !is_literal_string_pattern(&args[1]) {
-    string_pattern_to_regex(&args[1])
+    match string_pattern_to_regex_with_state(&args[1]) {
+      Some((p, c)) => (Some(p), c),
+      None => (None, Vec::new()),
+    }
   } else {
-    None
+    (None, Vec::new())
   };
   if let Some(pat) = regex_from_pattern {
     let regex_pat = if ignore_case {
@@ -829,7 +835,26 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         e
       ))
     })?;
-    let parts: Vec<Expr> = if let Some(n) = max_parts {
+    let parts: Vec<Expr> = if !split_constraints.is_empty() {
+      // Delimiter has a back-reference (`x_ ~~ x_`): the `regex` crate's
+      // `split` can't enforce it, so split on constraint-satisfying spans.
+      let spans = find_constraint_spans(&re, &split_constraints, &s, false);
+      let mut pieces: Vec<Expr> = Vec::new();
+      let mut last = 0usize;
+      let mut splits = 0usize;
+      for (start, end) in spans {
+        if let Some(n) = max_parts
+          && splits + 1 >= n
+        {
+          break;
+        }
+        pieces.push(Expr::String(s[last..start].to_string()));
+        last = end;
+        splits += 1;
+      }
+      pieces.push(Expr::String(s[last..].to_string()));
+      pieces
+    } else if let Some(n) = max_parts {
       re.splitn(&s, n)
         .map(|p| Expr::String(p.to_string()))
         .collect()
@@ -954,7 +979,9 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+  if let Some((regex_pat, constraints)) =
+    string_pattern_to_regex_with_state(&args[1])
+  {
     let full_pat = if ignore_case {
       format!("(?i)^(?:{})", regex_pat)
     } else {
@@ -964,7 +991,12 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+      if full_match_with_constraints(&re, &constraints, &s) {
+        "True"
+      } else {
+        "False"
+      }
+      .to_string(),
     ));
   }
 
@@ -1002,7 +1034,9 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+  if let Some((regex_pat, constraints)) =
+    string_pattern_to_regex_with_state(&args[1])
+  {
     let full_pat = if ignore_case {
       format!("(?i)(?:{})$", regex_pat)
     } else {
@@ -1012,7 +1046,12 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+      if full_match_with_constraints(&re, &constraints, &s) {
+        "True"
+      } else {
+        "False"
+      }
+      .to_string(),
     ));
   }
 
@@ -1051,17 +1090,12 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let full_pat = if ignore_case {
-      format!("(?i){}", regex_pat)
-    } else {
-      regex_pat
-    };
-    let re = compile_regex(&full_pat).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-    })?;
+  if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
+    let (re, constraints) = compiled?;
+    let present =
+      !find_constraint_spans(&re, &constraints, &s, false).is_empty();
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+      if present { "True" } else { "False" }.to_string(),
     ));
   }
 
@@ -1234,6 +1268,9 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       /// groups. Only RegularExpression patterns do this; a plain literal
       /// pattern (e.g. compiled for IgnoreCase) keeps `$n` verbatim.
       expand_dollar: bool,
+      /// Back-reference constraints (repeated pattern names must capture equal
+      /// substrings), e.g. from `x_ ~~ x_`. Empty for literal/regex patterns.
+      constraints: Vec<(String, String)>,
     },
     /// Regex pattern with a delayed replacement expression (RuleDelayed).
     /// Captured named groups are substituted into the expression before evaluation.
@@ -1244,6 +1281,8 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       regex: regex::Regex,
       replacement_expr: Expr,
       condition: Option<Expr>,
+      /// Back-reference constraints (see `Regex::constraints`).
+      constraints: Vec<(String, String)>,
     },
   }
 
@@ -1278,8 +1317,8 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let inner_pattern = &args[0];
       let test = &args[1];
-      let regex_str =
-        string_pattern_to_regex(inner_pattern).ok_or_else(|| {
+      let (regex_str, constraints) =
+        string_pattern_to_regex_with_state(inner_pattern).ok_or_else(|| {
           InterpreterError::EvaluationError(
             "StringReplace: unsupported conditional pattern".into(),
           )
@@ -1299,6 +1338,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         regex: re,
         replacement_expr: replacement_expr.clone(),
         condition: Some(test.clone()),
+        constraints,
       });
     }
 
@@ -1321,6 +1361,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement_expr: replacement_expr.clone(),
           condition: None,
+          constraints: Vec::new(),
         });
       }
       let replacement = expr_to_str(replacement_expr)?;
@@ -1336,6 +1377,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement,
           expand_dollar: false,
+          constraints: Vec::new(),
         });
       }
       return Ok(ReplaceRule::Simple {
@@ -1345,7 +1387,9 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // For complex patterns (Alternatives, StringExpression, etc.), use regex
-    if let Some(regex_str) = string_pattern_to_regex(pattern_expr) {
+    if let Some((regex_str, constraints)) =
+      string_pattern_to_regex_with_state(pattern_expr)
+    {
       let regex_str = if ignore_case {
         format!("(?i){}", regex_str)
       } else {
@@ -1370,6 +1414,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement_expr: replacement_expr.clone(),
           condition: None,
+          constraints,
         });
       }
 
@@ -1380,6 +1425,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement_expr: replacement_expr.clone(),
           condition: None,
+          constraints,
         });
       }
 
@@ -1393,6 +1439,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           pattern_expr,
           Expr::FunctionCall { name, .. } if name == "RegularExpression"
         ),
+        constraints,
       });
     }
 
@@ -1411,6 +1458,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement,
           expand_dollar: false,
+          constraints: Vec::new(),
         });
       }
       return Ok(ReplaceRule::Simple {
@@ -1504,6 +1552,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             regex,
             replacement,
             expand_dollar,
+            constraints,
           } => {
             // Use captures_at on the full string so anchors like ^ and \b can
             // inspect surrounding characters. Require the match to start
@@ -1512,6 +1561,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               && let Some(m) = caps.get(0)
               && m.start() == i
               && !m.as_str().is_empty()
+              && caps_satisfy_constraints(&caps, constraints)
             {
               if *expand_dollar {
                 result.push_str(&expand_dollar_replacement(replacement, &caps));
@@ -1528,11 +1578,13 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             regex,
             replacement_expr,
             condition,
+            constraints,
           } => {
             if let Some(caps) = regex.captures_at(s, i)
               && let Some(m) = caps.get(0)
               && m.start() == i
               && !m.as_str().is_empty()
+              && caps_satisfy_constraints(&caps, constraints)
             {
               // A `/;` condition must hold for this match. Substitute the
               // captured names into it and evaluate; skip the rule otherwise.
@@ -1808,13 +1860,16 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // them) use the exact literal path below; RegularExpression and every other
   // string pattern (character classes, Alternatives, `_?test`, lists
   // containing patterns, …) go through the shared pattern → regex converter.
-  let regex_pat = extract_regex_pattern(&args[1]).or_else(|| {
-    if is_literal_string_pattern(&args[1]) {
-      None
+  let (regex_pat, pat_constraints): (Option<String>, Vec<(String, String)>) =
+    if let Some(rp) = extract_regex_pattern(&args[1]) {
+      (Some(rp), Vec::new())
+    } else if is_literal_string_pattern(&args[1]) {
+      (None, Vec::new())
+    } else if let Some((rp, c)) = string_pattern_to_regex_with_state(&args[1]) {
+      (Some(rp), c)
     } else {
-      string_pattern_to_regex(&args[1])
-    }
-  });
+      (None, Vec::new())
+    };
 
   let s_chars: Vec<char> = s.chars().collect();
   // For each match: (start_index_0based, length_in_chars)
@@ -1864,9 +1919,11 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let byte_offset: usize =
           s_chars[..start_char].iter().map(|c| c.len_utf8()).sum();
         let substr = &s[byte_offset..];
-        if let Some(m) = re.find(substr)
+        if let Some(caps) = re.captures(substr)
+          && let Some(m) = caps.get(0)
           && m.start() == 0
-          && !m.is_empty()
+          && !m.as_str().is_empty()
+          && caps_satisfy_constraints(&caps, &pat_constraints)
         {
           let match_chars = m.as_str().chars().count();
           raw_matches.push((start_char, match_chars));
@@ -1984,7 +2041,9 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
-  if let Some(regex_str) = string_pattern_to_regex(&args[1]) {
+  if let Some((regex_str, constraints)) =
+    string_pattern_to_regex_with_state(&args[1])
+  {
     let case_flag = if ignore_case { "(?i)" } else { "" };
     let full_regex = format!("{}^(?:{})$", case_flag, regex_str);
     let re = compile_regex(&full_regex).map_err(|e| {
@@ -1994,7 +2053,12 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ))
     })?;
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+      if full_match_with_constraints(&re, &constraints, &s) {
+        "True"
+      } else {
+        "False"
+      }
+      .to_string(),
     ));
   }
 
@@ -2137,8 +2201,12 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let trimmed = s.strip_prefix(patt.as_str()).unwrap_or(&s);
     let trimmed = trimmed.strip_suffix(patt.as_str()).unwrap_or(trimmed);
     Ok(Expr::String(trimmed.to_string()))
-  } else if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    // String pattern (Repeated, Whitespace, etc.): use regex
+  } else if let Some((regex_pat, constraints)) =
+    string_pattern_to_regex_with_state(&args[1])
+  {
+    // String pattern (Repeated, Whitespace, etc.): use regex, stripping a
+    // leading and a trailing match only when it satisfies any back-reference
+    // constraints (`x_ ~~ x_`).
     let start_re =
       compile_regex(&format!("^(?:{})", regex_pat)).map_err(|e| {
         InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
@@ -2147,9 +2215,25 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       compile_regex(&format!("(?:{})$", regex_pat)).map_err(|e| {
         InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
       })?;
-    let trimmed = start_re.replace(&s, "");
-    let trimmed = end_re.replace(&trimmed, "");
-    Ok(Expr::String(trimmed.into_owned()))
+    let after_start = if let Some(caps) = start_re.captures(&s)
+      && let Some(m) = caps.get(0)
+      && !m.as_str().is_empty()
+      && caps_satisfy_constraints(&caps, &constraints)
+    {
+      s[m.end()..].to_string()
+    } else {
+      s.clone()
+    };
+    let trimmed = if let Some(caps) = end_re.captures(&after_start)
+      && let Some(m) = caps.get(0)
+      && !m.as_str().is_empty()
+      && caps_satisfy_constraints(&caps, &constraints)
+    {
+      after_start[..m.start()].to_string()
+    } else {
+      after_start
+    };
+    Ok(Expr::String(trimmed))
   } else {
     // Unrecognized pattern: return unevaluated
     Ok(Expr::FunctionCall {
@@ -2457,6 +2541,96 @@ fn maybe_named_group(
   } else {
     state.first_body.insert(name.to_string(), body.to_string());
     format!("(?P<{}>{})", name, body)
+  }
+}
+
+/// Do the regex `caps` satisfy all back-reference `constraints` — i.e. every
+/// repeated Wolfram pattern name (`x_ ~~ … ~~ x_`) captured equal substrings?
+/// The `regex` crate has no native backreferences, so `maybe_named_group`
+/// records these `(orig, dup)` capture-name pairs and matching sites verify
+/// them here. A missing capture (optional group didn't participate) is treated
+/// as satisfied.
+pub(crate) fn caps_satisfy_constraints(
+  caps: &regex::Captures,
+  constraints: &[(String, String)],
+) -> bool {
+  constraints.iter().all(|(orig, dup)| {
+    match (caps.name(orig), caps.name(dup)) {
+      (Some(a), Some(b)) => a.as_str() == b.as_str(),
+      _ => true,
+    }
+  })
+}
+
+/// Compile a string-pattern expression to a regex plus its back-reference
+/// constraints, applying the `(?i)` case-insensitivity flag when requested.
+/// Returns `None` when `expr` is not a recognised string pattern.
+fn compile_string_pattern(
+  expr: &Expr,
+  ignore_case: bool,
+) -> Option<Result<(regex::Regex, Vec<(String, String)>), InterpreterError>> {
+  let (regex_str, constraints) = string_pattern_to_regex_with_state(expr)?;
+  let regex_str = if ignore_case {
+    format!("(?i){}", regex_str)
+  } else {
+    regex_str
+  };
+  Some(
+    compile_regex(&regex_str)
+      .map(|re| (re, constraints))
+      .map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid string pattern: {}",
+          e
+        ))
+      }),
+  )
+}
+
+/// Find all non-empty match spans (byte ranges) of `re` in `s` that satisfy the
+/// back-reference `constraints`. Scans left to right; with `overlapping` it
+/// advances one character past each match start, otherwise past the whole
+/// match. This is the constraint-aware analogue of `re.find_iter`.
+fn find_constraint_spans(
+  re: &regex::Regex,
+  constraints: &[(String, String)],
+  s: &str,
+  overlapping: bool,
+) -> Vec<(usize, usize)> {
+  let mut spans = Vec::new();
+  let mut i = 0;
+  while i < s.len() {
+    if let Some(caps) = re.captures_at(s, i)
+      && let Some(m) = caps.get(0)
+      && m.start() == i
+      && !m.as_str().is_empty()
+      && caps_satisfy_constraints(&caps, constraints)
+    {
+      spans.push((m.start(), m.end()));
+      let ch = s[i..].chars().next().unwrap();
+      i = if overlapping {
+        i + ch.len_utf8()
+      } else {
+        m.end()
+      };
+    } else {
+      let ch = s[i..].chars().next().unwrap();
+      i += ch.len_utf8();
+    }
+  }
+  spans
+}
+
+/// True if `re` (anchored with `^…$` by the caller) matches all of `s` while
+/// satisfying the back-reference `constraints`.
+fn full_match_with_constraints(
+  re: &regex::Regex,
+  constraints: &[(String, String)],
+  s: &str,
+) -> bool {
+  match re.captures(s) {
+    Some(caps) => caps_satisfy_constraints(&caps, constraints),
+    None => false,
   }
 }
 
@@ -7498,30 +7672,9 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try regex-based pattern first (handles RegularExpression, string patterns,
   // lists-of-patterns as alternatives, etc.)
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let count = if overlaps {
-      // Overlapping matches: count every start position where the pattern
-      // matches, anchored at that position.
-      let anchored_pat = if ignore_case {
-        format!("^(?i:{})", regex_pat)
-      } else {
-        format!("^(?:{})", regex_pat)
-      };
-      let anchored = compile_regex(&anchored_pat).map_err(|e| {
-        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-      })?;
-      count_overlapping_regex(&anchored, &s)
-    } else {
-      let full = if ignore_case {
-        format!("(?i:{})", regex_pat)
-      } else {
-        regex_pat
-      };
-      let re = compile_regex(&full).map_err(|e| {
-        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-      })?;
-      re.find_iter(&s).count()
-    };
+  if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
+    let (re, constraints) = compiled?;
+    let count = find_constraint_spans(&re, &constraints, &s, overlaps).len();
     return Ok(Expr::Integer(count as i128));
   }
 
@@ -7612,17 +7765,12 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let full_pat = if ignore_case {
-      format!("(?i){}", regex_pat)
-    } else {
-      regex_pat
-    };
-    let re = compile_regex(&full_pat).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-    })?;
+  if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
+    let (re, constraints) = compiled?;
+    let present =
+      !find_constraint_spans(&re, &constraints, &s, false).is_empty();
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "False" } else { "True" }.to_string(),
+      if present { "False" } else { "True" }.to_string(),
     ));
   }
 
@@ -8699,16 +8847,19 @@ pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Reuse the shared string-pattern → regex conversion so character classes
   // (DigitCharacter, …), blanks, alternation lists, and string literals all
   // work, matching StringReplace[s, patt -> ""].
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let full = if ignore_case {
-      format!("(?i:{})", regex_pat)
-    } else {
-      regex_pat
-    };
-    let re = compile_regex(&full).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-    })?;
-    return Ok(Expr::String(re.replace_all(&s, "").into_owned()));
+  if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
+    let (re, constraints) = compiled?;
+    // Delete every non-overlapping match honoring back-reference constraints
+    // (`x_ ~~ x_`); keep the text between them.
+    let spans = find_constraint_spans(&re, &constraints, &s, false);
+    let mut out = String::with_capacity(s.len());
+    let mut last = 0usize;
+    for (start, end) in spans {
+      out.push_str(&s[last..start]);
+      last = end;
+    }
+    out.push_str(&s[last..]);
+    return Ok(Expr::String(out));
   }
 
   // Fallback: plain substring deletion (single pattern or list of literals).
