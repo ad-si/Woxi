@@ -15931,9 +15931,16 @@ fn adaptive_simpson(
   let m = (a + b) / 2.0;
   let fm = f(m)?;
   let whole = (b - a) / 6.0 * (fa + 4.0 * fm + fb);
-  adaptive_simpson_rec(f, a, b, tol, whole, fa, fm, fb, max_depth)
+  // A binary refinement to depth `max_depth` can visit up to 2^max_depth nodes
+  // — for an integrand that never meets the tolerance (e.g. the oscillatory
+  // Sin[x]/x transformed onto a finite interval) this never terminates in
+  // practice. Cap the total number of subdivision nodes so NIntegrate always
+  // returns in bounded time, falling back to the current estimate.
+  let budget = std::cell::Cell::new(50_000u64);
+  adaptive_simpson_rec(f, a, b, tol, whole, fa, fm, fb, max_depth, &budget)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn adaptive_simpson_rec(
   f: &dyn Fn(f64) -> Option<f64>,
   a: f64,
@@ -15944,6 +15951,7 @@ fn adaptive_simpson_rec(
   fm: f64,
   fb: f64,
   depth: u32,
+  budget: &std::cell::Cell<u64>,
 ) -> Option<f64> {
   let m = (a + b) / 2.0;
   let m1 = (a + m) / 2.0;
@@ -15956,13 +15964,37 @@ fn adaptive_simpson_rec(
   let refined = left + right;
   let error = (refined - whole) / 15.0;
 
-  if depth == 0 || error.abs() < tol {
+  // Stop refining at the depth limit, when converged, or when the global node
+  // budget is exhausted (the latter bounds wall-clock for non-converging
+  // integrands).
+  if depth == 0 || error.abs() < tol || budget.get() == 0 {
     Some(refined + error)
   } else {
-    let left_result =
-      adaptive_simpson_rec(f, a, m, tol / 2.0, left, fa, fm1, fm, depth - 1)?;
-    let right_result =
-      adaptive_simpson_rec(f, m, b, tol / 2.0, right, fm, fm2, fb, depth - 1)?;
+    budget.set(budget.get() - 1);
+    let left_result = adaptive_simpson_rec(
+      f,
+      a,
+      m,
+      tol / 2.0,
+      left,
+      fa,
+      fm1,
+      fm,
+      depth - 1,
+      budget,
+    )?;
+    let right_result = adaptive_simpson_rec(
+      f,
+      m,
+      b,
+      tol / 2.0,
+      right,
+      fm,
+      fm2,
+      fb,
+      depth - 1,
+      budget,
+    )?;
     Some(left_result + right_result)
   }
 }

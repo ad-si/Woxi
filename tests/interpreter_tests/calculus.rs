@@ -4415,6 +4415,24 @@ mod nintegrate {
     );
   }
 
+  // A convergent oscillatory integral over a semi-infinite domain.
+  // ∫₀^∞ e^(-x) sin(x) dx = 1/2.
+  #[test]
+  fn nintegrate_oscillatory_semi_infinite() {
+    assert_approx("NIntegrate[Exp[-x] Sin[x], {x, 0, Infinity}]", 0.5, 1e-6);
+  }
+
+  // A non-converging oscillatory integrand (Sin[x]/x over [0, ∞) transformed
+  // onto a finite interval) must not hang: the adaptive quadrature is bounded
+  // by a node budget, so N[...] terminates and returns a real number.
+  #[test]
+  fn nintegrate_non_converging_terminates() {
+    assert_eq!(
+      interpret("NumberQ[N[Integrate[Sin[x]/x, {x, 0, Infinity}]]]").unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn nintegrate_infinite_rational() {
     // ∫_{-∞}^∞ 1/(1+x²) dx = π
