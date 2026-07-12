@@ -6012,6 +6012,40 @@ mod dsolve {
     );
   }
 
+  // An equation with no derivative of the dependent function is purely
+  // algebraic: DSolve reduces to Solve for the dependent function, matching
+  // wolframscript.
+  #[test]
+  fn algebraic_no_derivative_linear() {
+    assert_eq!(
+      interpret("DSolve[y[x] + 2 == 5, y[x], x]").unwrap(),
+      "{{y[x] -> 3}}"
+    );
+    assert_eq!(
+      interpret("DSolve[2 y[x] == x, y[x], x]").unwrap(),
+      "{{y[x] -> x/2}}"
+    );
+  }
+
+  #[test]
+  fn algebraic_no_derivative_quadratic() {
+    assert_eq!(
+      interpret("DSolve[y[x]^2 == 4, y[x], x]").unwrap(),
+      "{{y[x] -> -2}, {y[x] -> 2}}"
+    );
+  }
+
+  #[test]
+  fn algebraic_no_derivative_system() {
+    assert_eq!(
+      interpret(
+        "DSolve[{y[x] + z[x] == 1, y[x] - z[x] == 3}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "{{y[x] -> 2, z[x] -> -1}}"
+    );
+  }
+
   #[test]
   fn unsolvable_ode_stays_unevaluated() {
     // A nonlinear ODE Woxi can't classify must return the unevaluated DSolve

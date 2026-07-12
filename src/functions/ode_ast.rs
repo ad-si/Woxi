@@ -40,6 +40,20 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let dep_arg = &args[1];
   let indep_var = &args[2];
 
+  // Purely algebraic case: when the equation(s) contain no derivatives of the
+  // dependent function, DSolve reduces to Solve for the dependent function(s),
+  // e.g. DSolve[y[x] + 2 == 5, y[x], x] -> {{y[x] -> 3}}. Delegate to Solve,
+  // which treats the applications `y[x]` as generalized unknowns.
+  if !contains_derivative(eqns_arg) {
+    let solved =
+      crate::functions::solve_ast(&[eqns_arg.clone(), dep_arg.clone()])?;
+    // Only accept a genuine solution list; otherwise fall through so the ODE
+    // machinery (or the unevaluated fallback) handles it.
+    if matches!(&solved, Expr::List(_)) {
+      return Ok(solved);
+    }
+  }
+
   // PDE branch: `DSolve[eqn, f, {x, y}]` (or `DSolve[eqn, f[x, y], {x, y}]`)
   // for a first-order linear PDE in two variables. Three recognised
   // shapes:
@@ -485,6 +499,34 @@ struct OdeTerm {
 // ─── ODE Parsing Helpers ───────────────────────────────────────────────
 
 /// Normalize equation: lhs == rhs → lhs - rhs (everything on left side)
+/// Does `expr` contain any derivative anywhere — a `Derivative[...]` head
+/// (i.e. `y'[x]`, `y''[x]`, … which parse to `Derivative[n][y][x]`) or a `D[…]`
+/// operator? Used to distinguish a genuine ODE/PDE from a purely algebraic
+/// equation in the dependent function.
+fn contains_derivative(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Derivative"
+        || name == "D"
+        || args.iter().any(contains_derivative)
+    }
+    // Derivative[n][y][x] parses to a nested CurriedCall whose innermost head
+    // is FunctionCall("Derivative", …); traverse both func and args.
+    Expr::CurriedCall { func, args } => {
+      contains_derivative(func) || args.iter().any(contains_derivative)
+    }
+    Expr::List(items) => items.iter().any(contains_derivative),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_derivative(left) || contains_derivative(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_derivative(operand),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(contains_derivative)
+    }
+    _ => false,
+  }
+}
+
 fn normalize_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
   match eq {
     Expr::Comparison {

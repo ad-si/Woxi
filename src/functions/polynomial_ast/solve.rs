@@ -1089,6 +1089,62 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Pre-pass: generalized variables. Solve[eqns, f[x]] (or a variable list
+  // containing such applications) treats the whole application `f[x]` as the
+  // unknown, matching wolframscript. Replace every function-application target
+  // with a fresh bare symbol, solve, then map the fresh symbols back to the
+  // original applications in the result. Only triggers when a target is a
+  // FunctionCall, so ordinary bare-symbol solves are unaffected.
+  {
+    let targets: Vec<Expr> = match &args[1] {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    };
+    if targets
+      .iter()
+      .any(|t| matches!(t, Expr::FunctionCall { .. }))
+    {
+      let ctx =
+        format!("{}{}", expr_to_string(&args[0]), expr_to_string(&args[1]));
+      let mut subs: Vec<(Expr, Expr)> = Vec::new();
+      let mut fresh_targets: Vec<Expr> = Vec::new();
+      for (i, t) in targets.iter().enumerate() {
+        if matches!(t, Expr::FunctionCall { .. }) {
+          let mut k = i;
+          let mut name = format!("WoxiSolveVar{k}");
+          while ctx.contains(&name) {
+            k += 1000;
+            name = format!("WoxiSolveVar{k}");
+          }
+          let sym = Expr::Identifier(name);
+          subs.push((t.clone(), sym.clone()));
+          fresh_targets.push(sym);
+        } else {
+          fresh_targets.push(t.clone());
+        }
+      }
+      let mut new_eqns = args[0].clone();
+      for (from, to) in &subs {
+        new_eqns = substitute_expr(&new_eqns, from, to);
+      }
+      let new_var_arg = match &args[1] {
+        Expr::List(_) => Expr::List(fresh_targets.into()),
+        _ => fresh_targets.into_iter().next().unwrap(),
+      };
+      let mut new_args = vec![new_eqns, new_var_arg];
+      if args.len() == 3 {
+        new_args.push(args[2].clone());
+      }
+      let result = solve_ast(&new_args)?;
+      // Map the fresh symbols back to the original applications.
+      let mut mapped = result;
+      for (from, to) in &subs {
+        mapped = substitute_expr(&mapped, to, from);
+      }
+      return Ok(mapped);
+    }
+  }
+
   // Pre-pass: turn an And-of-equations into a List of equations so the
   // multi-equation path picks them up. Wolfram lets users write
   // Solve[a == b && c == d, ...] interchangeably with the list form.

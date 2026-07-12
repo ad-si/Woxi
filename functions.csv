@@ -56,7 +56,7 @@ Log,Returns the natural logarithm of a number,✅,pure,1.0,58
 Line,Represents a line graphics primitive,✅,pure,1.0,59
 Apply,Applies a function to list elements as arguments,✅,pure,1.0,60
 Style,Applies styling to an expression for display,✅,pure,6.0,61
-Solve,Solves an equation or system of equations,✅,pure,1.0,62
+Solve,Solves an equation or system of equations (unknowns may be applied functions like y[x] treated as generalized variables),✅,pure,1.0,62
 Out,Gives the expression on the nth output line in an interactive session,✅,contextual,1.0,63
 Abs,Returns the absolute value of a number,✅,pure,1.0,64
 Red,Named color evaluating to RGBColor[1 0 0],✅,pure,5.1,65
@@ -81,7 +81,7 @@ Element,Test or assert membership of an expression in a mathematical domain,✅,
 Thickness,Sets relative line thickness in graphics,✅,pure,1.0,85
 Evaluate,Forces evaluation of an expression,✅,pure,2.0,86
 Row,Displays elements in a row,✅,pure,6.0,87
-DSolve,Solves ordinary differential equations symbolically,✅,pure,2.0,88
+DSolve,Solves ordinary differential equations symbolically (an equation with no derivative reduces to Solve for the dependent function),✅,pure,2.0,88
 Disk,Represents a filled disk or sector graphics primitive,✅,pure,2.0,89
 Blue,Named color evaluating to RGBColor[0 0 1],✅,pure,5.1,90
 PatternTest,Tests whether a pattern matches using a predicate function (pattern?test),✅,pure,1.0,91

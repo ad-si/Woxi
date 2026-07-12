@@ -3732,6 +3732,41 @@ mod solve {
     assert_eq!(interpret("Solve[3*x + 9 == 0, x]").unwrap(), "{{x -> -3}}");
   }
 
+  // Generalized variables: an applied function `y[x]` is a valid unknown and
+  // is solved for as a whole, matching wolframscript.
+  #[test]
+  fn generalized_variable_linear() {
+    assert_eq!(
+      interpret("Solve[y[x] + 2 == 5, y[x]]").unwrap(),
+      "{{y[x] -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 y[x] == x, y[x]]").unwrap(),
+      "{{y[x] -> x/2}}"
+    );
+  }
+
+  #[test]
+  fn generalized_variable_quadratic() {
+    assert_eq!(
+      interpret("Solve[y[x]^2 == 4, y[x]]").unwrap(),
+      "{{y[x] -> -2}, {y[x] -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[a[t]^2 == 9, a[t]]").unwrap(),
+      "{{a[t] -> -3}, {a[t] -> 3}}"
+    );
+  }
+
+  #[test]
+  fn generalized_variable_system() {
+    assert_eq!(
+      interpret("Solve[{y[x] + z[x] == 1, y[x] - z[x] == 3}, {y[x], z[x]}]")
+        .unwrap(),
+      "{{y[x] -> 2, z[x] -> -1}}"
+    );
+  }
+
   // A Laurent equation (negative powers only) must not overflow / panic when
   // computing the polynomial degree; x^-2 == -1 solves to x = +/-I.
   #[test]
