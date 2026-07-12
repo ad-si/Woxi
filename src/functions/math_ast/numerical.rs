@@ -6658,17 +6658,32 @@ fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
   if k < 1 {
     return None;
   }
-  let poly_body = match poly_arg {
-    Expr::Function { body } => body.as_ref(),
-    _ => return None,
+  // Two accepted first-argument shapes for Root[f, k]:
+  //   * pure function `#^3 - 2 &` (Slot/`#1` is the root variable), or
+  //   * an ordinary polynomial expression in a single symbol, e.g. `x^3 - 2`.
+  let (poly_in_var, var): (Expr, String) = match poly_arg {
+    Expr::Function { body } => {
+      let var = "__root_x__".to_string();
+      let sub = crate::syntax::substitute_variable(
+        body.as_ref(),
+        "#1",
+        &Expr::Identifier(var.clone()),
+      );
+      (substitute_slot_with_identifier(&sub, 1, &var), var)
+    }
+    _ => {
+      let mut vars = std::collections::HashSet::new();
+      collect_expr_vars(poly_arg, &mut vars);
+      if vars.len() != 1 {
+        return None;
+      }
+      let var = vars.into_iter().next().unwrap();
+      (poly_arg.clone(), var)
+    }
   };
-  let var = "__root_x__";
-  let poly_in_var =
-    substitute_variable(poly_body, "#1", &Expr::Identifier(var.to_string()));
-  let poly_in_var = substitute_slot_with_identifier(&poly_in_var, 1, var);
   let expanded =
     crate::functions::polynomial_ast::expand_and_combine(&poly_in_var);
-  let coeffs_i = extract_poly_coeffs(&expanded, var)?;
+  let coeffs_i = extract_poly_coeffs(&expanded, &var)?;
   if coeffs_i.len() < 2 {
     return None;
   }
@@ -6707,6 +6722,38 @@ fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
       ]
       .into(),
     })
+  }
+}
+
+/// Collect the free symbol names in `expr` (skipping the boolean/null
+/// literals). Used to infer the root variable of an expression-form
+/// `Root[x^3 - 2, k]`.
+fn collect_expr_vars(
+  expr: &Expr,
+  vars: &mut std::collections::HashSet<String>,
+) {
+  match expr {
+    Expr::Identifier(name)
+      if name != "True" && name != "False" && name != "Null" =>
+    {
+      vars.insert(name.clone());
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_expr_vars(left, vars);
+      collect_expr_vars(right, vars);
+    }
+    Expr::UnaryOp { operand, .. } => collect_expr_vars(operand, vars),
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_expr_vars(a, vars);
+      }
+    }
+    Expr::List(items) => {
+      for i in items {
+        collect_expr_vars(i, vars);
+      }
+    }
+    _ => {}
   }
 }
 

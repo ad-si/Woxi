@@ -9200,6 +9200,38 @@ mod root {
     );
   }
 
+  // Root also accepts an ordinary polynomial expression in one symbol (not
+  // only a pure function). N[Root[x^3 - 2, 1]] finds the real cube root of 2.
+  #[test]
+  fn numerical_value_expression_form_cube_root() {
+    assert_eq!(
+      interpret("N[Root[x^3 - 2, 1]]").unwrap(),
+      "1.2599210498948732"
+    );
+  }
+
+  #[test]
+  fn numerical_value_expression_form_sqrt_ordering() {
+    // x^2 - 2 → roots -Sqrt[2], Sqrt[2] in increasing order.
+    assert_eq!(
+      interpret("N[Root[x^2 - 2, 1]]").unwrap(),
+      "-1.4142135623730951"
+    );
+    assert_eq!(
+      interpret("N[Root[x^2 - 2, 2]]").unwrap(),
+      "1.4142135623730951"
+    );
+  }
+
+  #[test]
+  fn numerical_value_expression_form_casus_irreducibilis() {
+    // x^3 - x - 1 has one real root; no radical form, so N finds it numerically.
+    assert_eq!(
+      interpret("N[Root[x^3 - x - 1, 1]]").unwrap(),
+      "1.324717957244746"
+    );
+  }
+
   // A quartic with four real roots is returned in increasing order.
   #[test]
   fn numerical_value_quartic_all_real() {
