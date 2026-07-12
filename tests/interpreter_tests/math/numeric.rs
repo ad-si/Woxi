@@ -2079,16 +2079,43 @@ mod find_divisions {
     );
   }
 
-  // Unsupported forms (list count, spacing-constrained range) stay unevaluated.
+  // Nested subdivision counts {n1, n2, ...}: level 0 is the major grid, each
+  // deeper level subdivides the intervals above it, grouped by parent interval.
   #[test]
-  fn unsupported_forms_unevaluated() {
+  fn nested_subdivision_counts() {
     assert_eq!(
       interpret("FindDivisions[{0, 10}, {5, 2}]").unwrap(),
-      "FindDivisions[{0, 10}, {5, 2}]"
+      "{{0, 2, 4, 6, 8, 10}, {{0, 1, 2}, {2, 3, 4}, {4, 5, 6}, {6, 7, 8}, \
+       {8, 9, 10}}}"
     );
     assert_eq!(
+      interpret("FindDivisions[{0, 10}, {5, 2, 2}]").unwrap(),
+      "{{0, 2, 4, 6, 8, 10}, {{0, 1, 2}, {2, 3, 4}, {4, 5, 6}, {6, 7, 8}, \
+       {8, 9, 10}}, {{{0, 1/2, 1}, {1, 3/2, 2}}, {{2, 5/2, 3}, {3, 7/2, 4}}, \
+       {{4, 9/2, 5}, {5, 11/2, 6}}, {{6, 13/2, 7}, {7, 15/2, 8}}, \
+       {{8, 17/2, 9}, {9, 19/2, 10}}}}"
+    );
+  }
+
+  // 3-element {xmin, xmax, dx} range: steps are constrained to integer
+  // multiples of the spacing unit dx.
+  #[test]
+  fn spacing_constrained_range() {
+    assert_eq!(
       interpret("FindDivisions[{0, 10, 1}, 5]").unwrap(),
-      "FindDivisions[{0, 10, 1}, 5]"
+      "{0, 2, 4, 6, 8, 10}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 10, 3}, 5]").unwrap(),
+      "{0, 3, 6, 9, 12}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 14, 2}, 5]").unwrap(),
+      "{0, 4, 8, 12, 16}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 1, 1/3}, 5]").unwrap(),
+      "{0, 1/3, 2/3, 1}"
     );
   }
 }

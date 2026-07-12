@@ -3573,11 +3573,118 @@ fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
   a.abs()
 }
 
+/// Reduce a (numerator, denominator) pair to lowest terms with a positive
+/// denominator.
+fn reduce_rat(n: i128, d: i128) -> (i128, i128) {
+  let s = if d < 0 { -1 } else { 1 };
+  let (n, d) = (n * s, d * s);
+  let g = gcd_i128(n.abs(), d).max(1);
+  (n / g, d / g)
+}
+
+fn rat_to_f64((n, d): (i128, i128)) -> f64 {
+  n as f64 / d as f64
+}
+
+/// The rational points dividing [min, max] into steps of exact size `step`
+/// (a positive rational), with endpoints snapped to the nearest step multiple
+/// covering the interval. Returns `None` when the point count is implausibly
+/// large (guards against pathological inputs).
+fn division_points(
+  min: (i128, i128),
+  max: (i128, i128),
+  step: (i128, i128),
+) -> Option<Vec<(i128, i128)>> {
+  let (sn, sd) = step;
+  // value/step = value_n*sd / (value_d*sn); floor for first, ceil for last.
+  let first = (min.0 * sd).div_euclid(min.1 * sn);
+  let last = -((-(max.0 * sd)).div_euclid(max.1 * sn));
+  if last < first || (last - first) > 100_000 {
+    return None;
+  }
+  let mut pts = Vec::with_capacity((last - first + 1) as usize);
+  for i in first..=last {
+    pts.push(reduce_rat(i * sn, sd));
+  }
+  Some(pts)
+}
+
+/// Round a positive rational to the nearest integer (half to even) with a
+/// minimum of 1 — used to pick how many `dx` units make up a division step.
+fn round_half_even_min1((n, d): (i128, i128)) -> i128 {
+  let f = n.div_euclid(d);
+  let r = n - f * d; // 0 <= r < d
+  let twice = 2 * r;
+  let m = if twice < d {
+    f
+  } else if twice > d {
+    f + 1
+  } else if f % 2 == 0 {
+    f
+  } else {
+    f + 1
+  };
+  m.max(1)
+}
+
+/// The nice division step for `n` parts of [min, max]. With `dx = Some(..)`,
+/// the step is constrained to an integer multiple of `dx` (the 3-element
+/// {xmin, xmax, dx} range form): the raw step is measured in `dx` units,
+/// rounded to a nice count of units, and scaled back.
+fn find_divisions_step(
+  min: (i128, i128),
+  max: (i128, i128),
+  n: i128,
+  dx: Option<(i128, i128)>,
+) -> Option<(i128, i128)> {
+  let raw = (rat_to_f64(max) - rat_to_f64(min)) / n as f64;
+  match dx {
+    None => nice_step_rational(raw),
+    Some((dn, dd)) => {
+      let units = raw * dd as f64 / dn as f64;
+      let nice = nice_step_rational(units)?;
+      let m = round_half_even_min1(nice);
+      Some(reduce_rat(m * dn, dd))
+    }
+  }
+}
+
+/// The nested FindDivisions[{xmin, xmax}, {n1, n2, ...}] output: a list with
+/// one level per count. Level 0 is the flat major grid; each deeper level
+/// subdivides the intervals of the level above, grouped by parent interval.
+fn nested_divisions(
+  min: (i128, i128),
+  max: (i128, i128),
+  counts: &[i128],
+) -> Option<Vec<Expr>> {
+  let step = find_divisions_step(min, max, counts[0], None)?;
+  let major = division_points(min, max, step)?;
+  let mut levels = vec![Expr::List(
+    major.iter().map(|&(n, d)| make_rational(n, d)).collect(),
+  )];
+  if counts.len() == 1 {
+    return Some(levels);
+  }
+  // Recursively subdivide each consecutive major interval with the remaining
+  // counts, then merge the per-interval results level by level.
+  let mut sub_results = Vec::with_capacity(major.len().saturating_sub(1));
+  for w in major.windows(2) {
+    sub_results.push(nested_divisions(w[0], w[1], &counts[1..])?);
+  }
+  for level in 0..(counts.len() - 1) {
+    let merged: Vec<Expr> =
+      sub_results.iter().map(|sr| sr[level].clone()).collect();
+    levels.push(Expr::List(merged.into()));
+  }
+  Some(levels)
+}
+
 /// FindDivisions[{xmin, xmax}, n] — about n "nice" numbers dividing the interval
 /// into equally spaced parts, using step sizes of the form {1,2,2.5,5}*10^k.
-/// Division endpoints may fall just outside [xmin, xmax]. Only the exact
-/// (integer/rational endpoint) 2-argument form is supported; other forms and
-/// non-numeric endpoints stay unevaluated.
+/// Also supports FindDivisions[{xmin, xmax, dx}, n] (steps constrained to
+/// multiples of dx) and FindDivisions[{xmin, xmax}, {n1, n2, ...}] (recursive
+/// nested subdivision). Division endpoints may fall just outside [xmin, xmax].
+/// Non-numeric endpoints stay unevaluated.
 pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -3589,40 +3696,56 @@ pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
   let range = match &args[0] {
-    Expr::List(items) if items.len() == 2 => items,
+    Expr::List(items) if items.len() == 2 || items.len() == 3 => items,
     _ => return unevaluated(),
   };
-  let n = match &args[1] {
-    Expr::Integer(n) if *n > 0 => *n,
-    _ => return unevaluated(),
-  };
-  let (Some((min_n, min_d)), Some((max_n, max_d))) = (
+  let (Some(min), Some(max)) = (
     expr_to_rational_pair(&range[0]),
     expr_to_rational_pair(&range[1]),
   ) else {
     return unevaluated();
   };
+  let (min, max) = (reduce_rat(min.0, min.1), reduce_rat(max.0, max.1));
 
-  // raw step = (xmax - xmin) / n, as f64 for the nice-number selection.
-  let xmin_f = min_n as f64 / min_d as f64;
-  let xmax_f = max_n as f64 / max_d as f64;
-  let raw = (xmax_f - xmin_f) / n as f64;
-  let Some((sn, sd)) = nice_step_rational(raw) else {
-    return unevaluated();
+  // Optional spacing unit dx (the 3-element range form). Must be positive.
+  let dx = if range.len() == 3 {
+    match expr_to_rational_pair(&range[2]) {
+      Some(d) if d.0 > 0 => Some(reduce_rat(d.0, d.1)),
+      _ => return unevaluated(),
+    }
+  } else {
+    None
   };
 
-  // Indices of the first and last multiples of `step` covering [xmin, xmax].
-  // xmin/step = xmin_n*sd/(xmin_d*sn); floor for the first, ceil for the last.
-  let first = (min_n * sd).div_euclid(min_d * sn);
-  let last = -((-(max_n * sd)).div_euclid(max_d * sn));
-  if last < first || (last - first) > 100_000 {
-    return unevaluated();
+  match &args[1] {
+    Expr::Integer(n) if *n > 0 => {
+      let Some(step) = find_divisions_step(min, max, *n, dx) else {
+        return unevaluated();
+      };
+      let Some(pts) = division_points(min, max, step) else {
+        return unevaluated();
+      };
+      Ok(Expr::List(
+        pts.iter().map(|&(n, d)| make_rational(n, d)).collect(),
+      ))
+    }
+    // Nested subdivision counts {n1, n2, ...}. The dx spacing constraint is not
+    // combined with nested counts (leave that form unevaluated).
+    Expr::List(counts) if dx.is_none() && !counts.is_empty() => {
+      let mut ns = Vec::with_capacity(counts.len());
+      for c in counts.iter() {
+        match c {
+          Expr::Integer(n) if *n > 0 => ns.push(*n),
+          _ => return unevaluated(),
+        }
+      }
+      match nested_divisions(min, max, &ns) {
+        Some(levels) => Ok(Expr::List(levels.into())),
+        None => unevaluated(),
+      }
+    }
+    _ => unevaluated(),
   }
-  let mut items = Vec::with_capacity((last - first + 1) as usize);
-  for i in first..=last {
-    items.push(make_rational(i * sn, sd));
-  }
-  Ok(Expr::List(items.into()))
 }
 
 /// Ramp[x] - returns max(0, x)
