@@ -1951,11 +1951,13 @@ mod function_interpolation {
     assert_eq!(result, "True");
   }
 
+  // FunctionInterpolation is not HoldAll in Wolfram (unlike Plot3D): its
+  // attributes are just {Protected, ReadProtected}.
   #[test]
   fn attributes() {
     assert_eq!(
       interpret("Attributes[FunctionInterpolation]").unwrap(),
-      "{HoldAll, Protected, ReadProtected}"
+      "{Protected, ReadProtected}"
     );
   }
 }

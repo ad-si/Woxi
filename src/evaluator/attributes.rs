@@ -319,10 +319,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ShearingTransform"
     | "AffineTransform"
     | "NetGraph"
+    | "FunctionInterpolation"
     | "CMYKColor" => {
       vec!["Protected", "ReadProtected"]
     }
-    "Plot3D" | "FunctionInterpolation" => {
+    "Plot3D" => {
       vec!["HoldAll", "Protected", "ReadProtected"]
     }
 
