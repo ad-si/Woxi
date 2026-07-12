@@ -3501,7 +3501,7 @@ pub fn variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For List input, sort in canonical order (alphabetical);
   // for non-List input, preserve first-appearance order (matching Wolfram).
   if matches!(&args[0], Expr::List(_)) {
-    vars.sort_by(|a, b| expr_to_string(a).cmp(&expr_to_string(b)));
+    vars.sort_by_key(expr_to_string);
   }
   Ok(Expr::List(vars.into()))
 }
