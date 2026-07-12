@@ -6,6 +6,40 @@ pub fn dispatch_linear_algebra_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // Several matrix routines below only understand dense nested lists. When a
+  // SparseArray is passed, densify it to its Normal form and retry, matching
+  // Wolfram (compare the Dot handling in dot_ast).
+  if matches!(
+    name,
+    "Det"
+      | "Eigenvalues"
+      | "Eigenvectors"
+      | "MatrixRank"
+      | "CharacteristicPolynomial"
+      | "LinearSolve"
+      | "Minors"
+  ) {
+    let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+    if args.iter().any(is_sparse) {
+      let densify = |e: &Expr| -> Expr {
+        if let Expr::FunctionCall { name, args: sa } = e
+          && name == "SparseArray"
+        {
+          crate::functions::list_helpers_ast::sparse_array_ast(sa)
+            .unwrap_or_else(|_| e.clone())
+        } else {
+          e.clone()
+        }
+      };
+      let dense: Vec<Expr> = args.iter().map(densify).collect();
+      // Only retry if densification actually removed every SparseArray, to
+      // avoid recursing forever on a form we could not expand.
+      if !dense.iter().any(is_sparse) {
+        return dispatch_linear_algebra_functions(name, &dense);
+      }
+    }
+  }
+
   match name {
     "Dot" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::dot_ast(args));

@@ -7583,3 +7583,59 @@ mod modulus_option {
     );
   }
 }
+
+mod sparse_array_matrix_functions {
+  use super::*;
+
+  // Matrix routines densify a SparseArray operand and behave like the dense
+  // case, matching Wolfram.
+  const SA: &str =
+    "SparseArray[{{1, 1} -> 2, {1, 2} -> 1, {2, 2} -> 3}, {2, 2}]";
+
+  #[test]
+  fn det() {
+    assert_eq!(interpret(&format!("Det[{SA}]")).unwrap(), "6");
+  }
+
+  #[test]
+  fn eigenvalues() {
+    assert_eq!(interpret(&format!("Eigenvalues[{SA}]")).unwrap(), "{3, 2}");
+  }
+
+  #[test]
+  fn eigenvectors() {
+    assert_eq!(
+      interpret(&format!("Eigenvectors[{SA}]")).unwrap(),
+      "{{1, 1}, {1, 0}}"
+    );
+  }
+
+  #[test]
+  fn matrix_rank() {
+    assert_eq!(interpret(&format!("MatrixRank[{SA}]")).unwrap(), "2");
+  }
+
+  #[test]
+  fn characteristic_polynomial() {
+    assert_eq!(
+      interpret(&format!("CharacteristicPolynomial[{SA}, x]")).unwrap(),
+      "6 - 5*x + x^2"
+    );
+  }
+
+  #[test]
+  fn linear_solve() {
+    assert_eq!(
+      interpret(&format!("LinearSolve[{SA}, {{1, 1}}]")).unwrap(),
+      "{1/3, 1/3}"
+    );
+  }
+
+  #[test]
+  fn minors() {
+    assert_eq!(
+      interpret(&format!("Minors[{SA}]")).unwrap(),
+      "{{2, 1}, {0, 3}}"
+    );
+  }
+}
