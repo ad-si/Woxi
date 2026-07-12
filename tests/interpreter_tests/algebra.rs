@@ -4792,6 +4792,25 @@ mod simplify_assumptions {
     );
   }
 
+  // Refinement under an active Assuming must re-combine additive terms, so the
+  // refined `x + x` collapses to `2 x` — matching the explicit-assumption form
+  // Simplify[expr, x > 0].
+  #[test]
+  fn assuming_recombines_refined_sum() {
+    assert_eq!(
+      interpret("Assuming[x > 0, Simplify[Sqrt[x^2] + Abs[x]]]").unwrap(),
+      "2*x"
+    );
+    assert_eq!(
+      interpret("Assuming[x > 0, Simplify[2 Sqrt[x^2] + 3 Abs[x]]]").unwrap(),
+      "5*x"
+    );
+    assert_eq!(
+      interpret("Assuming[x < 0, Simplify[Sqrt[x^2] + Abs[x]]]").unwrap(),
+      "-2*x"
+    );
+  }
+
   #[test]
   fn assuming_combines_with_inner_simplify_assumption() {
     // Outer Assuming and inner direct assumption should combine via And.

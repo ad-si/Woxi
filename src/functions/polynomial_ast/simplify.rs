@@ -4819,7 +4819,11 @@ fn current_assumptions() -> Option<Expr> {
 fn apply_active_assumptions(expr: &Expr) -> Expr {
   if let Some(assumption_expr) = current_assumptions() {
     let info = extract_assumption_info(&assumption_expr);
-    refine_expr(expr, &info, &assumption_expr)
+    // Re-combine additive/multiplicative terms after refinement, so e.g.
+    // `Assuming[x > 0, Simplify[Sqrt[x^2] + Abs[x]]]` collapses the refined
+    // `x + x` to `2 x` — matching the explicit-assumption path
+    // `Simplify[Sqrt[x^2] + Abs[x], x > 0]`.
+    normalize_refined_arith(&refine_expr(expr, &info, &assumption_expr))
   } else {
     expr.clone()
   }
