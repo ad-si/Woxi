@@ -2467,7 +2467,7 @@ pub fn dispatch_math_functions(
     "IntegerDigits" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::integer_digits_ast(args));
     }
-    "NumberExpand" if args.len() == 1 || args.len() == 2 => {
+    "NumberExpand" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::number_expand_ast(args));
     }
     "NumberDecompose" if args.len() == 2 => {

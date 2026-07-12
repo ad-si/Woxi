@@ -1315,7 +1315,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Subfactorial" => Some((1, 1)),
     "FareySequence" => Some((1, 2)),
     "NumberDigit" => Some((2, 3)),
-    "NumberExpand" => Some((1, 2)),
+    "NumberExpand" => Some((1, 3)),
     "NumberDecompose" => Some((2, 2)),
     "NumberCompose" => Some((2, 2)),
     "Fibonorial" => Some((1, 1)),

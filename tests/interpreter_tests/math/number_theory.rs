@@ -5265,6 +5265,25 @@ mod number_expand {
     assert_case(r#"NumberExpand[5/2]"#, r#"{5/2}"#);
   }
 
+  // NumberExpand[x, b, len] gives exactly len elements: shorter than the digit
+  // count sums the low terms into the last, longer pads with trailing zeros.
+  #[test]
+  fn explicit_length() {
+    assert_case(r#"NumberExpand[12345, 10, 2]"#, r#"{10000, 2345}"#);
+    assert_case(r#"NumberExpand[12345, 10, 3]"#, r#"{10000, 2000, 345}"#);
+    assert_case(
+      r#"NumberExpand[12345, 10, 5]"#,
+      r#"{10000, 2000, 300, 40, 5}"#,
+    );
+    assert_case(r#"NumberExpand[12345, 10, 1]"#, r#"{12345}"#);
+    assert_case(r#"NumberExpand[255, 2, 3]"#, r#"{128, 64, 63}"#);
+    // len exceeding the digit count pads with trailing zeros.
+    assert_case(r#"NumberExpand[7, 10, 3]"#, r#"{7, 0, 0}"#);
+    assert_case(r#"NumberExpand[0, 10, 3]"#, r#"{0, 0, 0}"#);
+    // Sign is carried into the summed tail.
+    assert_case(r#"NumberExpand[-157, 10, 2]"#, r#"{-100, -57}"#);
+  }
+
   #[test]
   fn invalid_input_handling() {
     // Integer base below 2 messages NumberExpand::rbase (even when the

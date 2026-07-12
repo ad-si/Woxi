@@ -3860,11 +3860,11 @@ pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "NumberExpand".to_string(),
     args: args.to_vec().into(),
   };
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Ok(unevaluated(args));
   }
   // Base validation happens before the value is looked at
-  let base: i128 = if args.len() == 2 {
+  let base: i128 = if args.len() >= 2 {
     match &args[1] {
       Expr::Integer(b) if *b >= 2 => *b,
       Expr::Integer(b) => {
@@ -3878,12 +3878,20 @@ pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     10
   };
+  // Optional length: the result has exactly `len` elements. When `len` exceeds
+  // the digit count the expansion is padded with trailing zeros; when it is
+  // smaller, the low-order terms are summed into the final element.
+  let len: Option<usize> = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(l) if *l >= 1 => Some(*l as usize),
+      _ => return Ok(unevaluated(args)),
+    }
+  } else {
+    None
+  };
 
   match &args[0] {
     Expr::Integer(n) => {
-      if *n == 0 {
-        return Ok(Expr::List(vec![Expr::Integer(0)].into()));
-      }
       let sign = n.signum();
       let mut digits: Vec<i128> = Vec::new();
       let mut num = n.unsigned_abs();
@@ -3892,14 +3900,28 @@ pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         digits.push((num % base_u) as i128);
         num /= base_u;
       }
-      // digits[i] sits at place base^i; emit highest place first
-      let terms: Vec<Expr> = digits
+      // digits[i] sits at place base^i; collect the place-value terms with the
+      // highest place first.
+      let mut terms: Vec<i128> = digits
         .iter()
         .enumerate()
         .rev()
-        .map(|(place, d)| Expr::Integer(sign * d * base.pow(place as u32)))
+        .map(|(place, d)| sign * d * base.pow(place as u32))
         .collect();
-      Ok(Expr::List(terms.into()))
+      if terms.is_empty() {
+        terms.push(0); // n == 0
+      }
+      if let Some(len) = len {
+        if len >= terms.len() {
+          terms.resize(len, 0); // pad with trailing zeros
+        } else {
+          // Keep the top len-1 terms; fold the remainder into the last.
+          let tail: i128 = terms[len - 1..].iter().sum();
+          terms.truncate(len - 1);
+          terms.push(tail);
+        }
+      }
+      Ok(Expr::List(terms.into_iter().map(Expr::Integer).collect()))
     }
     Expr::FunctionCall { name, .. } if name == "Rational" => {
       Ok(Expr::List(vec![args[0].clone()].into()))
