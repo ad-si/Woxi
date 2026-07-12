@@ -85,7 +85,7 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Solve an equation for a variable, returning the value expression.
 /// For `lhs == rhs`, rearranges to isolate `var`:
 ///   a*var + rest = 0 → var = -rest/a
-pub fn solve_for_var(eq: &Expr, var: &str) -> Option<Expr> {
+fn solve_for_var(eq: &Expr, var: &str) -> Option<Expr> {
   let (lhs, rhs) = extract_eq_sides(eq)?;
 
   // Convert to standard form: lhs - rhs = 0
@@ -148,7 +148,7 @@ pub fn solve_for_var(eq: &Expr, var: &str) -> Option<Expr> {
 }
 
 /// Extract (lhs, rhs) from an equation expression
-pub fn extract_eq_sides(eq: &Expr) -> Option<(Expr, Expr)> {
+fn extract_eq_sides(eq: &Expr) -> Option<(Expr, Expr)> {
   match eq {
     Expr::Comparison {
       operands,
@@ -180,7 +180,7 @@ fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
 }
 
 /// Eliminate one variable from a system of equations
-pub fn eliminate_one_variable(
+fn eliminate_one_variable(
   equations: &[Expr],
   var: &str,
 ) -> Result<Vec<Expr>, InterpreterError> {
@@ -244,7 +244,7 @@ pub fn eliminate_one_variable(
 }
 
 /// Simplify an equation by evaluating both sides
-pub fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
+fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
   match eq {
     Expr::Comparison {
       operands,
@@ -273,7 +273,7 @@ pub fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if an equation is trivially true (e.g., True, or 0 == 0)
-pub fn is_trivially_true(eq: &Expr) -> bool {
+fn is_trivially_true(eq: &Expr) -> bool {
   match eq {
     Expr::Identifier(s) if s == "True" => true,
     Expr::Comparison {
@@ -539,7 +539,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Recursively extract leaf coefficients from a polynomial expression.
 /// For each variable in vars (starting at var_idx), extract CoefficientList,
 /// then recurse on remaining variables for each coefficient.
-pub fn extract_leaf_coefficients(
+fn extract_leaf_coefficients(
   poly_str: &str,
   vars: &[String],
   var_idx: usize,
@@ -575,7 +575,7 @@ pub fn extract_leaf_coefficients(
 }
 
 /// Collect all identifiers from an expression that are NOT in the excluded set
-pub fn collect_free_vars_sa(
+fn collect_free_vars_sa(
   expr: &Expr,
   excluded: &[String],
   result: &mut std::collections::BTreeSet<String>,

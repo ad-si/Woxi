@@ -571,7 +571,7 @@ pub fn polynomial_lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// prints it: the unexpanded product of (a/gcd mod p) and (b mod p), with
 /// the evaluator's canonical Times ordering (equal factors merge into a
 /// power, e.g. (1 + x)^2).
-pub fn polynomial_lcm_modulus(
+fn polynomial_lcm_modulus(
   a: &Expr,
   b: &Expr,
   p: i128,

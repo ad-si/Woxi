@@ -371,7 +371,7 @@ pub fn poly_divide_symbolic(
 }
 
 /// Build a division expression
-pub fn build_div(a: &Expr, b: &Expr) -> Expr {
+fn build_div(a: &Expr, b: &Expr) -> Expr {
   if expr_to_string(b) == "1" {
     return a.clone();
   }
@@ -406,7 +406,7 @@ pub fn build_sub(a: &Expr, b: &Expr) -> Expr {
 }
 
 /// Build polynomial from symbolic coefficients
-pub fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
+fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
   let mut terms = Vec::new();
   for (i, coeff) in coeffs.iter().enumerate() {
     let c_str = expr_to_string(coeff);

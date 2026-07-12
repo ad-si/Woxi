@@ -412,7 +412,7 @@ pub fn flatten_times_args(args: &[Expr]) -> Vec<Expr> {
 }
 
 /// Check if an expression is a negative integer and return its absolute value
-pub fn get_negative_integer(expr: &Expr) -> Option<i64> {
+fn get_negative_integer(expr: &Expr) -> Option<i64> {
   match expr {
     Expr::Integer(n) if *n < 0 => Some((-*n) as i64),
     Expr::UnaryOp {
@@ -428,7 +428,7 @@ pub fn get_negative_integer(expr: &Expr) -> Option<i64> {
 
 /// Check if an expression is a negative exponent (integer or rational)
 /// and return the negated (positive) exponent.
-pub fn get_negative_exponent(expr: &Expr) -> Option<Expr> {
+fn get_negative_exponent(expr: &Expr) -> Option<Expr> {
   // Try integer first
   if let Some(neg) = get_negative_integer(expr) {
     return Some(Expr::Integer(neg as i128));

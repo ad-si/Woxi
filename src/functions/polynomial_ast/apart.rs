@@ -81,7 +81,7 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   apart_expr(&args[0], &var)
 }
 
-pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
+fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   // Apart's value is an ordinary expression: run the assembled sum
   // through the evaluator so each term takes its canonical form
   // (Apart[1/(-3 x)] prints -1/3*1/x, exactly like evaluating the
@@ -220,7 +220,7 @@ fn apart_expr_raw(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
 }
 
 /// Perform partial fraction decomposition for a proper fraction (deg(num) < deg(den))
-pub fn apart_proper_fraction(
+fn apart_proper_fraction(
   expr: &Expr,
   var: &str,
 ) -> Result<Expr, InterpreterError> {

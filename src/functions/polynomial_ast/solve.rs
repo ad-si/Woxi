@@ -4030,7 +4030,7 @@ pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 /// `{-1, 0, -I, I, 1}` — `-I` and `I` slot between `0` and `1` because
 /// they share real part 0. (`Root` uses a different rule that floats
 /// every real to the head; both functions are intentionally distinct.)
-pub fn solve_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+fn solve_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   use crate::functions::list_helpers_ast::expr_to_complex_parts;
   let pa = expr_to_complex_parts(a);
   let pb = expr_to_complex_parts(b);
@@ -4578,7 +4578,7 @@ fn find_root_complex_newton(
 }
 
 /// Evaluate an expression numerically at a specific value of var.
-pub fn find_root_eval_at(
+fn find_root_eval_at(
   expr: &Expr,
   var: &str,
   x: f64,
@@ -4615,7 +4615,7 @@ pub fn find_root_eval_at(
 }
 
 /// Parse a number from an expression for FindRoot starting point.
-pub fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
+fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(*n as f64),
     Expr::Real(r) => Ok(*r),
@@ -8327,7 +8327,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
 }
 
 /// Convert an evaluated expression to f64
-pub fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
+fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(*n as f64),
     Expr::Real(r) => Ok(*r),

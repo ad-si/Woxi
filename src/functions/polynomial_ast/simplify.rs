@@ -5210,7 +5210,7 @@ fn denest_nested_radicals(expr: &Expr) -> Expr {
   denest_one_sqrt(&recursed).unwrap_or(recursed)
 }
 
-pub fn full_simplify_expr(expr: &Expr) -> Expr {
+fn full_simplify_expr(expr: &Expr) -> Expr {
   // Thread over Lists
   if let Expr::List(items) = expr {
     let results: Vec<Expr> = items.iter().map(full_simplify_expr).collect();
@@ -6179,7 +6179,7 @@ fn simplify_expr_inner(expr: &Expr) -> Expr {
 /// If cond matches $Assumptions → return Simplify[value]
 /// If $Assumptions negates cond → return Undefined
 /// Otherwise → ConditionalExpression[Simplify[value], cond]
-pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
+fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
   // `cond` may already be a literal True/False (e.g. after Refine reduced it
   // against the current assumptions). Collapse those before doing further
   // work.
@@ -6502,7 +6502,7 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
 
 /// Try to extract (coefficient, argument, head) from a term like
 /// `coeff * Sin[arg]^2` where head is "Sin"/"Cos"/"Cosh"/"Sinh".
-pub fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, String)> {
+fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, String)> {
   // Negated term `-f[arg]^2` (a UnaryOp Minus, as produced when collecting the
   // terms of `a - b`): negate the coefficient of the inner term.
   if let Expr::UnaryOp {
@@ -6550,7 +6550,7 @@ pub fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, String)> {
 
 /// Match Sin/Cos/Cosh/Sinh of an argument squared, returning
 /// (head, arg) — e.g. `Cosh[x]^2 → ("Cosh", x)`.
-pub fn match_trig_squared(expr: &Expr) -> Option<(&str, Expr)> {
+fn match_trig_squared(expr: &Expr) -> Option<(&str, Expr)> {
   let (base, exp) = match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
@@ -6575,7 +6575,7 @@ pub fn match_trig_squared(expr: &Expr) -> Option<(&str, Expr)> {
 }
 
 /// Simplify a product, combining powers.
-pub fn simplify_product(a: &Expr, b: &Expr) -> Expr {
+fn simplify_product(a: &Expr, b: &Expr) -> Expr {
   // x * x → x^2
   if expr_to_string(a) == expr_to_string(b) {
     return Expr::BinaryOp {
@@ -6622,7 +6622,7 @@ pub fn simplify_product(a: &Expr, b: &Expr) -> Expr {
 }
 
 /// Extract base and exponent from a power expression.
-pub fn extract_base_exp(expr: &Expr) -> (Expr, Expr) {
+fn extract_base_exp(expr: &Expr) -> (Expr, Expr) {
   extract_base_and_exp(expr)
 }
 
@@ -7690,11 +7690,7 @@ pub(super) fn collect_variables(
 
 /// Try polynomial long division of num/den in a single variable.
 /// Returns Some(quotient) if den divides num exactly.
-pub fn poly_divide_single_var(
-  num: &Expr,
-  den: &Expr,
-  var: &str,
-) -> Option<Expr> {
+fn poly_divide_single_var(num: &Expr, den: &Expr, var: &str) -> Option<Expr> {
   let num_coeffs = extract_poly_coeffs(num, var)?;
   let den_coeffs = extract_poly_coeffs(den, var)?;
 
@@ -9019,7 +9015,7 @@ fn try_cos_power_reduction(expr: &Expr) -> Option<Expr> {
 /// 2. Substituting Sin²=1-Cos² to get a polynomial in Cos
 /// 3. Applying TrigReduce for power reduction to multiple-angle form
 /// 4. Factoring the result
-pub fn try_trig_polynomial_simplify(expr: &Expr) -> Option<Expr> {
+fn try_trig_polynomial_simplify(expr: &Expr) -> Option<Expr> {
   let terms = collect_additive_terms(expr);
   if terms.len() < 2 {
     return None;
