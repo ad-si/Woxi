@@ -4,7 +4,7 @@ use woxi::functions::graphics::{
   estimate_box_display_width, estimate_display_width, expr_to_svg_markup,
   layout_box, layout_to_svg,
 };
-use woxi::syntax::{BinaryOperator, Expr};
+use woxi::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 mod tests {
   use super::*;
@@ -969,7 +969,7 @@ mod tests {
     #[test]
     fn box_unary_minus() {
       let expr = Expr::UnaryOp {
-        op: woxi::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(Expr::Identifier("x".to_string())),
       };
       let boxes = expr_to_box_form(&expr);
@@ -980,7 +980,7 @@ mod tests {
     #[test]
     fn box_unary_not() {
       let expr = Expr::UnaryOp {
-        op: woxi::syntax::UnaryOperator::Not,
+        op: UnaryOperator::Not,
         operand: Box::new(Expr::Identifier("p".to_string())),
       };
       let boxes = expr_to_box_form(&expr);
@@ -997,7 +997,7 @@ mod tests {
           Expr::Identifier("a".to_string()),
           Expr::Identifier("b".to_string()),
         ],
-        operators: vec![woxi::syntax::ComparisonOp::Less],
+        operators: vec![ComparisonOp::Less],
       };
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);

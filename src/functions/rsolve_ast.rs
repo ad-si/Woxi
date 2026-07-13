@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 /// RSolve[{recurrence, initial_conditions...}, a, n]
 /// RSolve[recurrence, a[n], n] — single equation, return rule for `a[n]`
@@ -485,7 +485,7 @@ fn extract_equation(expr: &Expr) -> Option<(Expr, Expr)> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Some((operands[0].clone(), operands[1].clone()))
     }

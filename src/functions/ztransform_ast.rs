@@ -14,7 +14,7 @@
 
 use crate::InterpreterError;
 use crate::functions::calculus_ast::is_constant_wrt;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| Expr::FunctionCall {
@@ -1288,7 +1288,7 @@ pub fn fourier_coefficient_ast(
   // Symbolic n: Piecewise[{{zero_piece, n == 0}}, general]
   let cond = Expr::Comparison {
     operands: vec![n_arg.clone(), Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   };
   Ok(Expr::FunctionCall {
     name: "Piecewise".to_string(),

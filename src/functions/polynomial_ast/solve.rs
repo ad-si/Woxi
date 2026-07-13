@@ -142,7 +142,7 @@ fn try_nsolve_quadratic(
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Expr::BinaryOp {
         op: BinaryOperator::Minus,
@@ -427,7 +427,7 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   Expr::Identifier(var.clone()),
                   *replacement.clone(),
                 ],
-                operators: vec![crate::syntax::ComparisonOp::Equal],
+                operators: vec![ComparisonOp::Equal],
               });
             }
           }
@@ -499,7 +499,7 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Expr::BinaryOp {
         op: BinaryOperator::Minus,
@@ -587,7 +587,7 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     conds.push(Expr::Comparison {
       operands: vec![Expr::Identifier(var.clone()), rhs],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     });
   }
   if conds.len() == 1 {
@@ -803,7 +803,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operators,
     } = expr
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal
+      && operators[0] == ComparisonOp::Equal
       && operands.len() == 2
     {
       return Some(Expr::Rule {
@@ -1175,15 +1175,17 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // path (which understands constraints) handles cases like
   // `m^2 == 4 && m > 0`.
   fn all_equalities(items: &[Expr]) -> bool {
-    items.iter().all(|e| matches!(
-      e,
-      Expr::Comparison { operators, .. }
-        if operators.iter().all(|o| matches!(o, crate::syntax::ComparisonOp::Equal))
-    ) || matches!(
-      e,
-      Expr::FunctionCall { name, args }
-        if name == "Equal" && args.len() == 2
-    ))
+    items.iter().all(|e| {
+      matches!(
+        e,
+        Expr::Comparison { operators, .. }
+          if operators.iter().all(|o| matches!(o, ComparisonOp::Equal))
+      ) || matches!(
+        e,
+        Expr::FunctionCall { name, args }
+          if name == "Equal" && args.len() == 2
+      )
+    })
   }
   let args_owned: Vec<Expr>;
   let args = match &args[0] {
@@ -1609,7 +1611,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           operators,
         } if operands.len() == 2
           && operators.len() == 1
-          && operators[0] == crate::syntax::ComparisonOp::Equal =>
+          && operators[0] == ComparisonOp::Equal =>
         {
           (operands[0].clone(), operands[1].clone(), true)
         }
@@ -1682,7 +1684,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       // lhs - rhs
       Expr::BinaryOp {
@@ -2367,7 +2369,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             let factor_eq = Expr::Comparison {
               operands: vec![factor.clone(), Expr::Integer(0)],
-              operators: vec![crate::syntax::ComparisonOp::Equal],
+              operators: vec![ComparisonOp::Equal],
             };
             if let Ok(Expr::List(ref sols)) =
               solve_ast(&[factor_eq, args[1].clone()])
@@ -2798,7 +2800,7 @@ fn try_solve_abs_eq(
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       (operands[0].clone(), operands[1].clone())
     }
@@ -2830,7 +2832,7 @@ fn try_solve_abs_eq(
   let solve_branch = |value: Expr| -> Option<Vec<Expr>> {
     let branch_eq = Expr::Comparison {
       operands: vec![inner.clone(), value],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     let r = solve_ast(&[branch_eq, Expr::Identifier(var.to_string())]).ok()?;
     match r {
@@ -3058,7 +3060,7 @@ fn try_solve_inverse_function(
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       (operands[0].clone(), operands[1].clone())
     }
@@ -3134,7 +3136,7 @@ fn try_solve_inverse_function(
         crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
       let new_eq = Expr::Comparison {
         operands: vec![base, simplified_rhs],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       };
       return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
     }
@@ -3243,7 +3245,7 @@ fn try_solve_inverse_function(
         crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
       let new_eq = Expr::Comparison {
         operands: vec![exp, simplified_rhs],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       };
       return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
     }
@@ -3350,7 +3352,7 @@ fn try_solve_inverse_function(
     // Build the new equation: inner == simplified_rhs
     let new_eq = Expr::Comparison {
       operands: vec![inner.clone(), simplified_rhs],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
 
     // Recursively solve the resulting equation
@@ -3586,7 +3588,7 @@ fn try_solve_factoring_powers(
       // Recursively solve
       let new_eq = Expr::Comparison {
         operands: vec![remaining, Expr::Integer(0)],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       };
       return Some(solve_ast(&[new_eq, args[1].clone()]));
     }
@@ -3677,7 +3679,7 @@ fn build_eq_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
   };
   Expr::Comparison {
     operands: vec![poly_expr, Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   }
 }
 
@@ -3934,7 +3936,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Solve the polynomial equation poly == 0
   let eq = Expr::Comparison {
     operands: vec![poly, Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   };
 
   let solutions = solve_ast(&[eq, Expr::Identifier(var_name.into())])?;
@@ -4299,7 +4301,7 @@ fn build_find_root_func(arg: &Expr) -> Expr {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Expr::BinaryOp {
         op: BinaryOperator::Minus,
@@ -5657,7 +5659,7 @@ fn minimize_abs_breakpoints(f: &Expr, var: &str) -> Vec<Expr> {
   for g in abs_args {
     let eq = Expr::Comparison {
       operands: vec![g, Expr::Integer(0)],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     let solved = solve_ast(&[eq, Expr::Identifier(var.to_string())]);
     if let Ok(Expr::List(sol_sets)) = &solved {
@@ -5823,7 +5825,7 @@ fn minimize_find_critical_points_1d(
   // Fallback: try Solve[df == 0, var]
   let df_eq = Expr::Comparison {
     operands: vec![df.clone(), Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   };
   match solve_ast(&[df_eq, Expr::Identifier(var.to_string())]) {
     Ok(solutions) => {
@@ -5946,7 +5948,7 @@ fn minimize_multi_var(
   for (i, var) in vars.iter().enumerate() {
     let grad_eq = Expr::Comparison {
       operands: vec![grad[i].clone(), Expr::Integer(0)],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     match solve_ast(&[grad_eq, Expr::Identifier(var.clone())]) {
       Ok(sol) => {
@@ -7880,7 +7882,7 @@ pub fn extract_eq_and_ineq_parts(expr: &Expr) -> (Option<Expr>, Vec<Expr>) {
       &c,
       Expr::Comparison { operators, .. }
         if operators.len() == 1
-          && operators[0] == crate::syntax::ComparisonOp::Equal
+          && operators[0] == ComparisonOp::Equal
     );
     if is_eq && eq_part.is_none() {
       eq_part = Some(c);
@@ -8025,7 +8027,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
         operands,
         operators,
       } if operators.len() == 1
-        && operators[0] == crate::syntax::ComparisonOp::Equal
+        && operators[0] == ComparisonOp::Equal
         && operands.len() == 2 =>
       {
         (&operands[0], &operands[1])
@@ -9048,7 +9050,7 @@ fn named_constant_value(name: &str) -> Option<f64> {
 /// constraint expression, e.g. `x*y >= 1` or `-3 <= x`.
 struct AtomicComparison {
   left: Expr,
-  op: crate::syntax::ComparisonOp,
+  op: ComparisonOp,
   right: Expr,
 }
 

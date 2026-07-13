@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::BinaryOperator;
+use crate::syntax::{BinaryOperator, ComparisonOp};
 
 /// AST-based Module implementation to avoid interpret() recursion
 pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -851,7 +851,7 @@ fn apply_assumption_substitutions(body: &Expr, assumption: &Expr) -> Expr {
         operators,
       } if operands.len() == 2
         && operators.len() == 1
-        && operators[0] == crate::syntax::ComparisonOp::Equal =>
+        && operators[0] == ComparisonOp::Equal =>
       {
         if let Expr::Identifier(var) = &operands[0] {
           out.push((var.clone(), operands[1].clone()));

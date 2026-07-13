@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::ComparisonOp;
 
 /// AST-based Map: apply function to each element of a list or association.
 /// Map[f, {a, b, c}] -> {f[a], f[b], f[c]}
@@ -226,7 +227,6 @@ fn map_decompose(expr: &Expr) -> Option<(String, Vec<Expr>)> {
 
 /// Rebuild a mapped composite from its canonical head and new children.
 fn rewrap(head: &str, children: Vec<Expr>) -> Expr {
-  use crate::syntax::ComparisonOp;
   // Relational heads must be rebuilt as `Expr::Comparison` so they render
   // infix (`f[a] == f[b]`), not as `Equal[f[a], f[b]]`.
   let cmp_op = match head {

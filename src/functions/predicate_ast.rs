@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 /// Helper to create boolean result
 fn bool_expr(b: bool) -> Expr {
@@ -599,7 +599,7 @@ pub fn is_numeric_q(expr: &Expr) -> bool {
                   operators,
                 } = cond
                 && operators.len() == 1
-                && operators[0] == crate::syntax::ComparisonOp::SameQ
+                && operators[0] == ComparisonOp::SameQ
                 && operands.len() == 2
                 && let Expr::Identifier(cond_val) = &operands[1]
                 && cond_val == name
@@ -2043,7 +2043,6 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       UnaryOperator::Not => "Not",
     },
     Expr::Comparison { operators, .. } => {
-      use crate::syntax::ComparisonOp;
       // A uniform chain (all operators the same) has head equal to that operator.
       // A mixed chain has head "Inequality". A single-op comparison also uses
       // the operator name directly.

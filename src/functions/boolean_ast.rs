@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 /// Helper to check if an Expr is True or False
 fn as_bool(expr: &Expr) -> Option<bool> {
@@ -110,10 +110,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn negate_comparison_op(
-  op: &crate::syntax::ComparisonOp,
-) -> Option<crate::syntax::ComparisonOp> {
-  use crate::syntax::ComparisonOp;
+fn negate_comparison_op(op: &ComparisonOp) -> Option<ComparisonOp> {
   match op {
     ComparisonOp::Equal => Some(ComparisonOp::NotEqual),
     ComparisonOp::NotEqual => Some(ComparisonOp::Equal),
@@ -532,10 +529,7 @@ pub fn all_components_equal(a: &Expr, b: &Expr) -> bool {
 /// (`a < b`, `a == b == c`) rather than keeping the `Less[a, b]` head. Build
 /// the `Expr::Comparison` node the formatter renders that way; the evaluator's
 /// Comparison arm treats it as a stable fixpoint for symbolic operands.
-fn symbolic_comparison_chain(
-  args: &[Expr],
-  op: crate::syntax::ComparisonOp,
-) -> Expr {
+fn symbolic_comparison_chain(args: &[Expr], op: ComparisonOp) -> Expr {
   Expr::Comparison {
     operands: args.to_vec(),
     operators: vec![op; args.len().saturating_sub(1)],
@@ -607,10 +601,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("False".to_string()));
       }
       Some(None) => {
-        return Ok(symbolic_comparison_chain(
-          args,
-          crate::syntax::ComparisonOp::Equal,
-        ));
+        return Ok(symbolic_comparison_chain(args, ComparisonOp::Equal));
       }
       _ => {}
     }
@@ -657,10 +648,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.iter().any(
     |a| matches!(a, Expr::FunctionCall { name, .. } if name == "MusicPitch"),
   ) {
-    return Ok(symbolic_comparison_chain(
-      args,
-      crate::syntax::ComparisonOp::Equal,
-    ));
+    return Ok(symbolic_comparison_chain(args, ComparisonOp::Equal));
   }
 
   // Check if all args are numeric
@@ -754,10 +742,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Only stay symbolic if at least one arg has free symbols
   if args.iter().any(crate::evaluator::has_free_symbols) {
-    Ok(symbolic_comparison_chain(
-      args,
-      crate::syntax::ComparisonOp::Equal,
-    ))
+    Ok(symbolic_comparison_chain(args, ComparisonOp::Equal))
   } else {
     // No free symbols, not identical → False
     Ok(Expr::Identifier("False".to_string()))
@@ -786,10 +771,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Some(Some(false)) => infinity_decided += 1,
         Some(None) => {
-          return Ok(symbolic_comparison_chain(
-            args,
-            crate::syntax::ComparisonOp::NotEqual,
-          ));
+          return Ok(symbolic_comparison_chain(args, ComparisonOp::NotEqual));
         }
         None => {}
       }
@@ -837,10 +819,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.iter().any(
     |a| matches!(a, Expr::FunctionCall { name, .. } if name == "MusicPitch"),
   ) {
-    return Ok(symbolic_comparison_chain(
-      args,
-      crate::syntax::ComparisonOp::NotEqual,
-    ));
+    return Ok(symbolic_comparison_chain(args, ComparisonOp::NotEqual));
   }
 
   // Check if all args are numeric
@@ -852,10 +831,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Only stay symbolic if at least one arg has free symbols
   if has_free {
-    Ok(symbolic_comparison_chain(
-      args,
-      crate::syntax::ComparisonOp::NotEqual,
-    ))
+    Ok(symbolic_comparison_chain(args, ComparisonOp::NotEqual))
   } else {
     // No free symbols, pairwise different → True
     Ok(Expr::Identifier("True".to_string()))

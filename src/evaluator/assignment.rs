@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 use std::cell::Cell;
 
 thread_local! {
@@ -196,9 +196,7 @@ fn condition_is_literal_arg(c: &Expr) -> bool {
       Some(Expr::FunctionCall { name, .. }) if name == "Length"
     );
     !is_length_check
-      && operators
-        .iter()
-        .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+      && operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
   } else {
     false
   }
@@ -416,9 +414,7 @@ fn count_specificity_clauses(c: &Expr) -> u32 {
     Expr::Comparison {
       operators,
       operands,
-    } if operators
-      .iter()
-      .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+    } if operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
       && matches!(
         operands.first(),
         Some(Expr::FunctionCall { name, .. }) if name == "Length"
@@ -1397,7 +1393,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
               operators,
             }) = c
               && operators.len() == 1
-              && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+              && matches!(operators[0], ComparisonOp::SameQ)
               && operands.len() == 2
               && let Expr::Identifier(name) = &operands[0]
               && !params.is_empty()
@@ -1559,7 +1555,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // Condition: _dvN === eval_arg (using SameQ for exact matching)
         conditions.push(Some(Expr::Comparison {
           operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-          operators: vec![crate::syntax::ComparisonOp::SameQ],
+          operators: vec![ComparisonOp::SameQ],
         }));
         params.push(param_name);
         heads.push(None);
@@ -1592,7 +1588,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       && conditions.iter().all(|c| {
         matches!(c, Some(Expr::Comparison { operators, .. })
           if operators.len() == 1
-            && operators[0] == crate::syntax::ComparisonOp::SameQ)
+            && operators[0] == ComparisonOp::SameQ)
       });
     if all_literal_sameq {
       let mut arg_exprs = Vec::with_capacity(conditions.len());
@@ -2292,7 +2288,7 @@ pub fn set_delayed_ast(
               let eval_arg = evaluate_expr_to_expr(arg)?;
               conditions.push(Some(Expr::Comparison {
                 operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-                operators: vec![crate::syntax::ComparisonOp::SameQ],
+                operators: vec![ComparisonOp::SameQ],
               }));
               params.push(param_name);
               blank_types.push(1);
@@ -2602,17 +2598,11 @@ fn build_list_pattern_match(
   // - Trailing `__` (BlankSequence): Length >= N (consumes ≥1).
   // - Trailing `___` (BlankNullSequence): Length >= N-1 (consumes ≥0).
   let len_cmp = if !trailing_seq {
-    (crate::syntax::ComparisonOp::SameQ, patterns.len() as i128)
+    (ComparisonOp::SameQ, patterns.len() as i128)
   } else if trailing_seq_blank == 2 {
-    (
-      crate::syntax::ComparisonOp::GreaterEqual,
-      patterns.len() as i128,
-    )
+    (ComparisonOp::GreaterEqual, patterns.len() as i128)
   } else {
-    (
-      crate::syntax::ComparisonOp::GreaterEqual,
-      (patterns.len() - 1) as i128,
-    )
+    (ComparisonOp::GreaterEqual, (patterns.len() - 1) as i128)
   };
   let mut rule_conds: Vec<Expr> = vec![Expr::Comparison {
     operands: vec![
@@ -2796,9 +2786,7 @@ fn reconstruct_list_param(
       {
         if let Some(Expr::Integer(n)) = operands.get(1) {
           length = Some(*n);
-          fixed = operators
-            .iter()
-            .any(|o| matches!(o, crate::syntax::ComparisonOp::SameQ));
+          fixed = operators.iter().any(|o| matches!(o, ComparisonOp::SameQ));
         }
       }
       Expr::FunctionCall { name, args }
@@ -2899,9 +2887,7 @@ pub fn reconstruct_list_downvalue(
       operands,
       operators,
     }) = cond
-      && operators
-        .iter()
-        .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+      && operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
       && let Some(lit) = operands.get(1)
     {
       pattern_args.push(lit.clone());
@@ -3159,7 +3145,7 @@ pub fn tag_set_delayed_ast(
               },
               Expr::Integer(inner_args.len() as i128),
             ],
-            operators: vec![crate::syntax::ComparisonOp::SameQ],
+            operators: vec![ComparisonOp::SameQ],
           }));
         } else {
           conditions.push(None);
@@ -3182,7 +3168,7 @@ pub fn tag_set_delayed_ast(
             if let Some(prev_expr) = seen_pattern_vars.get(&pat_name) {
               extra_conditions.push(Expr::Comparison {
                 operands: vec![prev_expr.clone(), part_expr.clone()],
-                operators: vec![crate::syntax::ComparisonOp::SameQ],
+                operators: vec![ComparisonOp::SameQ],
               });
             } else {
               seen_pattern_vars.insert(pat_name.clone(), part_expr.clone());
@@ -3223,7 +3209,7 @@ pub fn tag_set_delayed_ast(
           let eval_arg = evaluate_expr_to_expr(arg)?;
           conditions.push(Some(Expr::Comparison {
             operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-            operators: vec![crate::syntax::ComparisonOp::SameQ],
+            operators: vec![ComparisonOp::SameQ],
           }));
           params.push(param_name);
           defaults.push(None);
@@ -3267,13 +3253,16 @@ pub fn tag_set_delayed_ast(
     }
     if !attached && !conditions.is_empty() {
       // All slots have conditions - combine with first non-SameQ one using And
-      let combine_idx = conditions.iter().position(|c| {
-        !matches!(
-          c,
-          Some(Expr::Comparison { operators, .. })
-          if operators.iter().any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
-        )
-      }).unwrap_or(0);
+      let combine_idx = conditions
+        .iter()
+        .position(|c| {
+          !matches!(
+            c,
+            Some(Expr::Comparison { operators, .. })
+            if operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
+          )
+        })
+        .unwrap_or(0);
       let existing = conditions[combine_idx].take().unwrap();
       conditions[combine_idx] = Some(Expr::FunctionCall {
         name: "And".to_string(),

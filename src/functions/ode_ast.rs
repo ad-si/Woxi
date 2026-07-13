@@ -5,7 +5,7 @@
 
 use crate::InterpreterError;
 use crate::functions::math_ast::make_sqrt;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 
@@ -534,7 +534,7 @@ fn normalize_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       let lhs = &operands[0];
       let rhs = &operands[1];
@@ -563,7 +563,7 @@ fn is_initial_condition(expr: &Expr, y_name: &str, x_name: &str) -> bool {
   } = expr
     && operands.len() == 2
     && operators.len() == 1
-    && operators[0] == crate::syntax::ComparisonOp::Equal
+    && operators[0] == ComparisonOp::Equal
   {
     let lhs = &operands[0];
     // y[val]
@@ -650,7 +650,7 @@ fn parse_numeric_initial_condition(
   } = expr
     && operands.len() == 2
     && operators.len() == 1
-    && operators[0] == crate::syntax::ComparisonOp::Equal
+    && operators[0] == ComparisonOp::Equal
   {
     let lhs = &operands[0];
 
@@ -1737,7 +1737,7 @@ fn apply_initial_conditions(
     } = ic
       && operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal
+      && operators[0] == ComparisonOp::Equal
     {
       let lhs = &operands[0];
       let rhs = &operands[1];
@@ -1794,7 +1794,7 @@ fn apply_initial_conditions(
       // Create equation: evaluated == rhs
       let equation = Expr::Comparison {
         operands: vec![evaluated, rhs.clone()],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       };
       equations.push(equation);
     }
@@ -3290,7 +3290,7 @@ fn pde_split_equation(eqn: &Expr) -> Option<(Expr, Expr)> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Some((operands[0].clone(), operands[1].clone()))
     }

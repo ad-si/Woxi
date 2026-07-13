@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 
 use crate::functions::calculus_ast::simplify;
 
@@ -424,14 +426,14 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
       let right = &operands[1];
 
       // x > c where c >= 0 → positive (strictly)
-      if matches!(op, crate::syntax::ComparisonOp::Greater)
+      if matches!(op, ComparisonOp::Greater)
         && let Expr::Identifier(name) = left
         && is_nonnegative_constant(right)
       {
         info.positive_vars.push(name.clone());
       }
       // x >= c where c > 0 → positive; where c == 0 → nonnegative
-      if matches!(op, crate::syntax::ComparisonOp::GreaterEqual)
+      if matches!(op, ComparisonOp::GreaterEqual)
         && let Expr::Identifier(name) = left
         && is_nonnegative_constant(right)
       {
@@ -443,14 +445,14 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
       }
 
       // c < x where c >= 0 → positive
-      if matches!(op, crate::syntax::ComparisonOp::Less)
+      if matches!(op, ComparisonOp::Less)
         && let Expr::Identifier(name) = right
         && is_nonnegative_constant(left)
       {
         info.positive_vars.push(name.clone());
       }
       // c <= x where c > 0 → positive; where c == 0 → nonnegative
-      if matches!(op, crate::syntax::ComparisonOp::LessEqual)
+      if matches!(op, ComparisonOp::LessEqual)
         && let Expr::Identifier(name) = right
         && is_nonnegative_constant(left)
       {
@@ -464,11 +466,9 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
       // x < c where c <= 0 → negative (x < c <= 0).
       // x <= c where c < 0  → negative; where c == 0 → nonpositive.
       if let Expr::Identifier(name) = left {
-        if matches!(op, crate::syntax::ComparisonOp::Less)
-          && is_nonpositive_constant(right)
-        {
+        if matches!(op, ComparisonOp::Less) && is_nonpositive_constant(right) {
           info.negative_vars.push(name.clone());
-        } else if matches!(op, crate::syntax::ComparisonOp::LessEqual) {
+        } else if matches!(op, ComparisonOp::LessEqual) {
           if is_negative_constant(right) {
             info.negative_vars.push(name.clone());
           } else if is_zero_constant(right) {
@@ -480,11 +480,10 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
       // c > x where c <= 0 → negative.
       // c >= x where c < 0  → negative; where c == 0 → nonpositive.
       if let Expr::Identifier(name) = right {
-        if matches!(op, crate::syntax::ComparisonOp::Greater)
-          && is_nonpositive_constant(left)
+        if matches!(op, ComparisonOp::Greater) && is_nonpositive_constant(left)
         {
           info.negative_vars.push(name.clone());
-        } else if matches!(op, crate::syntax::ComparisonOp::GreaterEqual) {
+        } else if matches!(op, ComparisonOp::GreaterEqual) {
           if is_negative_constant(left) {
             info.negative_vars.push(name.clone());
           } else if is_zero_constant(left) {
@@ -631,20 +630,20 @@ fn check_comparison_under_assumption(
       if info.positive_vars.contains(var_name) {
         // x is positive
         match op {
-          crate::syntax::ComparisonOp::Greater if rhs_is_zero => {
+          ComparisonOp::Greater if rhs_is_zero => {
             return Some(true);
           }
-          crate::syntax::ComparisonOp::GreaterEqual
+          ComparisonOp::GreaterEqual
             if is_nonnegative_constant(right) && rhs_is_zero =>
           {
             return Some(true);
           }
-          crate::syntax::ComparisonOp::Less
+          ComparisonOp::Less
             if is_nonnegative_constant(right) && rhs_is_zero =>
           {
             return Some(false);
           }
-          crate::syntax::ComparisonOp::LessEqual
+          ComparisonOp::LessEqual
             if is_nonpositive_constant(right) && rhs_is_zero =>
           {
             return Some(false);
@@ -655,20 +654,20 @@ fn check_comparison_under_assumption(
       if info.negative_vars.contains(var_name) {
         // x is negative
         match op {
-          crate::syntax::ComparisonOp::Less if rhs_is_zero => {
+          ComparisonOp::Less if rhs_is_zero => {
             return Some(true);
           }
-          crate::syntax::ComparisonOp::LessEqual
+          ComparisonOp::LessEqual
             if is_nonpositive_constant(right) && rhs_is_zero =>
           {
             return Some(true);
           }
-          crate::syntax::ComparisonOp::Greater
+          ComparisonOp::Greater
             if is_nonpositive_constant(right) && rhs_is_zero =>
           {
             return Some(false);
           }
-          crate::syntax::ComparisonOp::GreaterEqual
+          ComparisonOp::GreaterEqual
             if is_nonnegative_constant(right) && rhs_is_zero =>
           {
             return Some(false);
@@ -680,10 +679,10 @@ fn check_comparison_under_assumption(
         // x <= 0: x > 0 is impossible, x <= 0 holds. The strict/nonstrict
         // lower cases (x < 0, x >= 0) stay undetermined since x may be 0.
         match op {
-          crate::syntax::ComparisonOp::Greater if rhs_is_zero => {
+          ComparisonOp::Greater if rhs_is_zero => {
             return Some(false);
           }
-          crate::syntax::ComparisonOp::LessEqual if rhs_is_zero => {
+          ComparisonOp::LessEqual if rhs_is_zero => {
             return Some(true);
           }
           _ => {}
@@ -692,10 +691,10 @@ fn check_comparison_under_assumption(
       if info.nonnegative_vars.contains(var_name) {
         // x >= 0: x < 0 is impossible, x >= 0 holds.
         match op {
-          crate::syntax::ComparisonOp::Less if rhs_is_zero => {
+          ComparisonOp::Less if rhs_is_zero => {
             return Some(false);
           }
-          crate::syntax::ComparisonOp::GreaterEqual if rhs_is_zero => {
+          ComparisonOp::GreaterEqual if rhs_is_zero => {
             return Some(true);
           }
           _ => {}
@@ -713,18 +712,16 @@ fn check_comparison_under_assumption(
         && let Expr::Integer(bound_val) = &bound
       {
         match op {
-          crate::syntax::ComparisonOp::Greater if *bound_val > *rhs_val => {
+          ComparisonOp::Greater if *bound_val > *rhs_val => {
             return Some(true);
           }
-          crate::syntax::ComparisonOp::GreaterEqual
-            if *bound_val >= *rhs_val =>
-          {
+          ComparisonOp::GreaterEqual if *bound_val >= *rhs_val => {
             return Some(true);
           }
-          crate::syntax::ComparisonOp::Less if *bound_val >= *rhs_val => {
+          ComparisonOp::Less if *bound_val >= *rhs_val => {
             return Some(false);
           }
-          crate::syntax::ComparisonOp::LessEqual if *bound_val > *rhs_val => {
+          ComparisonOp::LessEqual if *bound_val > *rhs_val => {
             return Some(false);
           }
           _ => {}
@@ -736,12 +733,12 @@ fn check_comparison_under_assumption(
     // Check if we can determine the sign of the LHS expression
     if matches!(right, Expr::Integer(0)) {
       match op {
-        crate::syntax::ComparisonOp::Greater
+        ComparisonOp::Greater
           if is_provably_positive_under_assumptions(left, info) =>
         {
           return Some(true);
         }
-        crate::syntax::ComparisonOp::GreaterEqual
+        ComparisonOp::GreaterEqual
           if is_provably_nonneg_under_assumptions(left, info) =>
         {
           return Some(true);
@@ -850,19 +847,15 @@ fn get_lower_bound(var_name: &str, assumption: &Expr) -> Option<Expr> {
       // var > c or var >= c
       if matches!(
         operators[0],
-        crate::syntax::ComparisonOp::Greater
-          | crate::syntax::ComparisonOp::GreaterEqual
+        ComparisonOp::Greater | ComparisonOp::GreaterEqual
       ) && let Expr::Identifier(name) = &operands[0]
         && name == var_name
       {
         return Some(operands[1].clone());
       }
       // c < var or c <= var
-      if matches!(
-        operators[0],
-        crate::syntax::ComparisonOp::Less
-          | crate::syntax::ComparisonOp::LessEqual
-      ) && let Expr::Identifier(name) = &operands[1]
+      if matches!(operators[0], ComparisonOp::Less | ComparisonOp::LessEqual)
+        && let Expr::Identifier(name) = &operands[1]
         && name == var_name
       {
         return Some(operands[0].clone());
@@ -886,7 +879,7 @@ fn get_lower_bound(var_name: &str, assumption: &Expr) -> Option<Expr> {
 /// comparison in the assumptions: `Some(1)` when `a >= b` is known, `Some(-1)`
 /// when `a <= b` is known, `None` otherwise. Used to collapse Max/Min.
 fn compare_operands(a: &Expr, b: &Expr, info: &AssumptionInfo) -> Option<i32> {
-  use crate::syntax::ComparisonOp::{Greater, GreaterEqual, Less, LessEqual};
+  use ComparisonOp::{Greater, GreaterEqual, Less, LessEqual};
   let a_s = expr_to_string(a);
   let b_s = expr_to_string(b);
   for asm in &info.raw_assumptions {
@@ -2510,10 +2503,7 @@ fn check_arctan_range_in_assumption(assumption: &Expr) -> bool {
       // Check pattern: -Pi/2 < Re[x] < Pi/2
       matches!(
         (&operators[0], &operators[1]),
-        (
-          crate::syntax::ComparisonOp::Less,
-          crate::syntax::ComparisonOp::Less
-        )
+        (ComparisonOp::Less, ComparisonOp::Less)
       ) && is_negative_pi_over_2(&operands[0])
         && is_pi_over_2(&operands[2])
     }
@@ -2702,10 +2692,7 @@ fn is_var_in_open_range(
       && operators.len() == 2
       && matches!(
         (&operators[0], &operators[1]),
-        (
-          crate::syntax::ComparisonOp::Less,
-          crate::syntax::ComparisonOp::Less
-        )
+        (ComparisonOp::Less, ComparisonOp::Less)
       )
     {
       // Pattern: lo_expr < var < hi_expr
@@ -2807,10 +2794,8 @@ fn extract_bounds_for_var(
       if let Expr::Identifier(name) = &operands[1]
         && name == var_name
       {
-        let lo_strict =
-          matches!(operators[0], crate::syntax::ComparisonOp::Less);
-        let hi_strict =
-          matches!(operators[1], crate::syntax::ComparisonOp::Less);
+        let lo_strict = matches!(operators[0], ComparisonOp::Less);
+        let hi_strict = matches!(operators[1], ComparisonOp::Less);
         return Some((
           operands[0].clone(),
           lo_strict,
@@ -2878,7 +2863,7 @@ fn find_mod_value_in_assumptions(
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && matches!(operators[0], crate::syntax::ComparisonOp::Equal) =>
+      && matches!(operators[0], ComparisonOp::Equal) =>
     {
       // Check if one side is Mod[expr, m]
       if is_mod_of(expr, m, &operands[0]) {
@@ -3116,7 +3101,7 @@ fn check_algebraic_comparison(
 
     // For >= 0 comparisons: check if left - right is provably non-negative
     match op {
-      crate::syntax::ComparisonOp::GreaterEqual => {
+      ComparisonOp::GreaterEqual => {
         if matches!(right, Expr::Integer(0))
           && is_provably_nonnegative(left, info)
         {
@@ -3133,7 +3118,7 @@ fn check_algebraic_comparison(
           return Some(true);
         }
       }
-      crate::syntax::ComparisonOp::Equal => {
+      ComparisonOp::Equal => {
         // Try substitution from equation assumptions
         if let Some(result) =
           check_equation_by_substitution(left, right, op, info, assumption)
@@ -3141,7 +3126,7 @@ fn check_algebraic_comparison(
           return Some(result);
         }
       }
-      crate::syntax::ComparisonOp::Less => {
+      ComparisonOp::Less => {
         // Try substitution-based reasoning
         if let Some(result) =
           check_inequality_by_substitution(left, right, op, info, assumption)
@@ -3490,7 +3475,7 @@ fn term_bivariate_powers_and_coeff(
 fn check_equation_by_substitution(
   left: &Expr,
   right: &Expr,
-  _op: &crate::syntax::ComparisonOp,
+  _op: &ComparisonOp,
   _info: &AssumptionInfo,
   assumption: &Expr,
 ) -> Option<bool> {
@@ -3532,7 +3517,7 @@ fn check_equation_by_substitution(
 fn check_inequality_by_substitution(
   left: &Expr,
   right: &Expr,
-  _op: &crate::syntax::ComparisonOp,
+  _op: &ComparisonOp,
   info: &AssumptionInfo,
   assumption: &Expr,
 ) -> Option<bool> {
@@ -3967,16 +3952,16 @@ fn extract_inequality_constraints_inner(
       operands,
       operators,
     } if operands.len() == 2 && operators.len() == 1 => match &operators[0] {
-      crate::syntax::ComparisonOp::LessEqual => {
+      ComparisonOp::LessEqual => {
         result.push((operands[0].clone(), operands[1].clone(), true));
       }
-      crate::syntax::ComparisonOp::Less => {
+      ComparisonOp::Less => {
         result.push((operands[0].clone(), operands[1].clone(), false));
       }
-      crate::syntax::ComparisonOp::GreaterEqual => {
+      ComparisonOp::GreaterEqual => {
         result.push((operands[1].clone(), operands[0].clone(), true));
       }
-      crate::syntax::ComparisonOp::Greater => {
+      ComparisonOp::Greater => {
         result.push((operands[1].clone(), operands[0].clone(), false));
       }
       _ => {}
@@ -4008,7 +3993,7 @@ fn extract_equation_substitutions_inner(
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && matches!(operators[0], crate::syntax::ComparisonOp::Equal) =>
+      && matches!(operators[0], ComparisonOp::Equal) =>
     {
       // Try to solve for a variable
       // Simple case: a + b == 0 → b = -a
@@ -6139,7 +6124,7 @@ fn simplify_expr_inner(expr: &Expr) -> Expr {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && matches!(operators[0], crate::syntax::ComparisonOp::Equal) =>
+      && matches!(operators[0], ComparisonOp::Equal) =>
     {
       let lhs = simplify_expr(&operands[0]);
       let rhs = simplify_expr(&operands[1]);
@@ -6302,7 +6287,6 @@ fn flatten_assumption_atoms(expr: &Expr) -> Vec<Expr> {
 /// `/`Less`/etc. node. Returns `None` for anything we can't read as a
 /// single-variable bound on a numeric constant.
 fn extract_var_bound(expr: &Expr) -> Option<(String, &'static str, f64)> {
-  use crate::syntax::ComparisonOp;
   let to_op = |op: &ComparisonOp| -> &'static str {
     match op {
       ComparisonOp::Less => "<",
