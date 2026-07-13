@@ -217,6 +217,43 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    // IdentityMatrix[n, SparseArray] returns the identity as a SparseArray.
+    "IdentityMatrix"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Identifier(s) if s == "SparseArray") =>
+    {
+      let dense =
+        match crate::functions::linear_algebra_ast::identity_matrix_ast(
+          std::slice::from_ref(&args[0]),
+        ) {
+          Ok(d) => d,
+          err => return Some(err),
+        };
+      // A dense identity contains no structural zeros to preserve, so the
+      // usual SparseArray conversion produces the same CSR form as
+      // wolframscript's IdentityMatrix[n, SparseArray].
+      return Some(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: "SparseArray".to_string(),
+          args: vec![dense].into(),
+        },
+      ));
+    }
+    // IdentityMatrix[n, type] with an unsupported structural type (neither a
+    // list nor SparseArray) stays unevaluated with wolframscript's message.
+    "IdentityMatrix"
+      if args.len() == 2 && !matches!(&args[1], Expr::List(_)) =>
+    {
+      let call = Expr::FunctionCall {
+        name: "IdentityMatrix".to_string(),
+        args: args.to_vec().into(),
+      };
+      crate::emit_message(&format!(
+        "IdentityMatrix::targ: Argument {} at position 2 should be a list or sparse array.",
+        crate::syntax::expr_to_string(&args[1])
+      ));
+      return Some(Ok(call));
+    }
     "UnitVector" if args.len() == 1 || args.len() == 2 => {
       // UnitVector[k] is shorthand for UnitVector[2, k].
       let (n_opt, k_opt) = if args.len() == 1 {

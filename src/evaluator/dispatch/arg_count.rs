@@ -643,7 +643,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Identity" => Some((1, 1)),
     "Once" => Some((1, 2)),
     "CompanionMatrix" => Some((1, 2)),
-    "IdentityMatrix" => Some((1, 1)),
+    "IdentityMatrix" => Some((1, 2)),
     "PermutationMatrix" => Some((1, 1)),
     "VandermondeMatrix" => Some((1, 1)),
     "If" => Some((2, 4)),

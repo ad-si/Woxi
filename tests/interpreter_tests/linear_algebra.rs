@@ -594,6 +594,30 @@ mod identity_matrix {
       "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
     );
   }
+
+  #[test]
+  fn identity_sparse_array() {
+    // IdentityMatrix[n, SparseArray] returns the identity as a SparseArray in
+    // the same CSR form as SparseArray[IdentityMatrix[n]].
+    assert_eq!(
+      interpret("IdentityMatrix[3, SparseArray]").unwrap(),
+      "SparseArray[Automatic, {3, 3}, 0, {1, {{0, 1, 2, 3}, \
+       {{1}, {2}, {3}}}, {1, 1, 1}}]"
+    );
+    assert_eq!(
+      interpret("IdentityMatrix[1, SparseArray]").unwrap(),
+      "SparseArray[Automatic, {1, 1}, 0, {1, {{0, 1}, {{1}}}, {1}}]"
+    );
+    // Normal densifies back to the identity, and it dots like the identity.
+    assert_eq!(
+      interpret("Normal[IdentityMatrix[3, SparseArray]]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("IdentityMatrix[3, SparseArray] . {a, b, c}").unwrap(),
+      "{a, b, c}"
+    );
+  }
 }
 
 mod diagonal_matrix {
