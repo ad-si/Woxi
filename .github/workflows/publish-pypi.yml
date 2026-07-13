@@ -45,7 +45,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           manylinux: auto
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: woxi-py/dist
@@ -75,7 +75,7 @@ jobs:
         with:
           working-directory: woxi-py
           args: --release --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: wheels-macos-${{ matrix.platform.arch }}
           path: woxi-py/dist
@@ -89,7 +89,7 @@ jobs:
           working-directory: woxi-py
           target: x64
           args: --release --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: wheels-windows-x64
           path: woxi-py/dist
@@ -112,7 +112,7 @@ jobs:
           python3 -m venv venv
           venv/bin/pip install woxi-py/dist/woxi-*.tar.gz
           venv/bin/python -c "import woxi; assert woxi.interpret('Plus[1, 2]') == '3'"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: sdist
           path: woxi-py/dist
@@ -126,7 +126,7 @@ jobs:
       # Required for PyPI Trusted Publishing (OIDC).
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
