@@ -4621,6 +4621,37 @@ mod cases {
       r#"0"#,
     );
   }
+  // FromDigits[{digits, {p1, p2, ...}}] threads the decimal-point position over
+  // the list, returning one value per position.
+  #[test]
+  fn from_digits_position_list() {
+    use woxi::interpret;
+    assert_eq!(
+      interpret("FromDigits[{{1, 0, 1}, {-1}}]").unwrap(),
+      "{101/10000}"
+    );
+    assert_eq!(
+      interpret("FromDigits[{{1, 0, 1}, {-1, 2, 5}}]").unwrap(),
+      "{101/10000, 101/10, 10100}"
+    );
+    // With an explicit base.
+    assert_eq!(
+      interpret("FromDigits[{{1, 0, 1}, {2}}, 2]").unwrap(),
+      "{5/2}"
+    );
+    // An empty position list yields an empty list.
+    assert_eq!(interpret("FromDigits[{{1, 0, 1}, {}}]").unwrap(), "{}");
+    // Both elements being lists is the same threaded form.
+    assert_eq!(
+      interpret("FromDigits[{{1, 2}, {3, 4}}]").unwrap(),
+      "{120, 1200}"
+    );
+    // The scalar-position form is unchanged.
+    assert_eq!(
+      interpret("FromDigits[{{1, 0, 1}, -1}]").unwrap(),
+      "101/10000"
+    );
+  }
   #[test]
   fn integer_digits_1() {
     assert_case(r#"IntegerDigits[76543]"#, r#"{7, 6, 5, 4, 3}"#);

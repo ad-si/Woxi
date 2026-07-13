@@ -2663,6 +2663,26 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Handle {digit_list, {p1, p2, ...}} form: a list of decimal-point positions
+  // threads FromDigits over each position, returning the list of results, e.g.
+  // FromDigits[{{1, 0, 1}, {-1, 2}}] = {101/10000, 101/10}. Matches
+  // wolframscript; an empty position list yields an empty list.
+  if items.len() == 2
+    && matches!(&items[0], Expr::List(_))
+    && let Expr::List(positions) = &items[1]
+  {
+    let mut results = Vec::with_capacity(positions.len());
+    for p in positions.iter() {
+      let inner = Expr::List(vec![items[0].clone(), p.clone()].into());
+      let mut call_args = vec![inner];
+      if args.len() == 2 {
+        call_args.push(args[1].clone());
+      }
+      results.push(from_digits_ast(&call_args)?);
+    }
+    return Ok(Expr::List(results.into()));
+  }
+
   // Handle {digit_list, exponent} form (output of RealDigits)
   // FromDigits[{{d1,d2,...,dn}, e}] = (d1*base^(e-1) + d2*base^(e-2) + ... + dn*base^(e-n))
   if items.len() == 2
