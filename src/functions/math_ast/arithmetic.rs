@@ -7942,11 +7942,7 @@ fn is_infinity_like(expr: &Expr) -> bool {
 /// before the box, e.g. `"Power::infy: Infinite expression "`. The numerator
 /// and denominator are centered within a box whose width is the longer of the
 /// two, and the dash run spans that width.
-pub(crate) fn format_infy_fraction_2d(
-  prefix: &str,
-  num: &str,
-  denom: &str,
-) -> String {
+fn format_infy_fraction_2d(prefix: &str, num: &str, denom: &str) -> String {
   let base_lead = prefix.len();
   let width = num.chars().count().max(denom.chars().count());
   let dashes = "-".repeat(width);

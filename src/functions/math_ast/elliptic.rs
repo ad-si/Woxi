@@ -1591,7 +1591,7 @@ fn jacobi_theta1_prime0(q: f64) -> f64 {
 }
 
 /// Numeric Neville theta θs/θc/θd/θn at real z, m ∈ [0, 1].
-pub fn neville_theta_numeric(kind: char, z: f64, m: f64) -> Option<f64> {
+fn neville_theta_numeric(kind: char, z: f64, m: f64) -> Option<f64> {
   if !(0.0..=1.0).contains(&m) || !z.is_finite() {
     return None;
   }
