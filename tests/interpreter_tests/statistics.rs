@@ -9309,3 +9309,64 @@ mod first_passage_time_distribution {
     );
   }
 }
+
+// Wiener and geometric Brownian motion process time slices. All outputs
+// verified against wolframscript.
+mod continuous_process_slices {
+  use super::*;
+
+  #[test]
+  fn wiener_process() {
+    // WienerProcess[] normalizes to WienerProcess[0, 1].
+    assert_eq!(interpret("WienerProcess[]").unwrap(), "WienerProcess[0, 1]");
+    assert_eq!(interpret("Mean[WienerProcess[m, s][t]]").unwrap(), "m*t");
+    assert_eq!(
+      interpret("Variance[WienerProcess[m, s][t]]").unwrap(),
+      "s^2*t"
+    );
+    assert_eq!(
+      interpret("PDF[WienerProcess[m, s][t], x]").unwrap(),
+      "1/(E^((-(m*t) + x)^2/(2*s^2*t))*Sqrt[2*Pi]*s*Sqrt[t])"
+    );
+    assert_eq!(interpret("Mean[WienerProcess[][t]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Variance[WienerProcess[1/10, 1/2][4]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn geometric_brownian_motion() {
+    assert_eq!(
+      interpret("GeometricBrownianMotionProcess[m, s, x0]").unwrap(),
+      "GeometricBrownianMotionProcess[m, s, x0]"
+    );
+    // The slice is LogNormal with drift (m - s^2/2) t + Log[x0]; the
+    // moments keep wolframscript's unsimplified exponent forms.
+    assert_eq!(
+      interpret("Mean[GeometricBrownianMotionProcess[m, s, x0][t]]").unwrap(),
+      "E^((s^2*t)/2 + (m - s^2/2)*t)*x0"
+    );
+    assert_eq!(
+      interpret("Mean[GeometricBrownianMotionProcess[1/10, 1/2, 1][3]]")
+        .unwrap(),
+      "E^(3/10)"
+    );
+    assert_eq!(
+      interpret("PDF[GeometricBrownianMotionProcess[m, s, x0][t], x]").unwrap(),
+      "Piecewise[{{1/(E^((-((m - s^2/2)*t) + Log[x] - Log[x0])^2/(2*s^2*t))*Sqrt[2*Pi]*s*Sqrt[t]*x), x > 0}}, 0]"
+    );
+    // Numeric values pin the variance and CDF (their symbolic forms
+    // differ only in known Times/exponent ordering).
+    assert_eq!(
+      interpret("N[Variance[GeometricBrownianMotionProcess[1/10, 1/2, 1][3]]]")
+        .unwrap(),
+      "2.0353067303064654"
+    );
+    assert_eq!(
+      interpret("N[CDF[GeometricBrownianMotionProcess[1/10, 1/2, 1][3], 2]]")
+        .unwrap(),
+      "0.8124551558563821"
+    );
+  }
+}

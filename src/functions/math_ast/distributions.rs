@@ -118,15 +118,19 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2
     && let Expr::CurriedCall { func, args: targs } = dist
     && let Expr::FunctionCall { name, args: dargs } = func.as_ref()
-    && name == "DiscreteMarkovProcess"
     && targs.len() == 1
   {
-    return dmp_step_pdf(dargs, &targs[0], &args[1]).map(|r| {
-      r.unwrap_or_else(|| Expr::FunctionCall {
-        name: "PDF".to_string(),
-        args: args.to_vec().into(),
-      })
-    });
+    if name == "DiscreteMarkovProcess" {
+      return dmp_step_pdf(dargs, &targs[0], &args[1]).map(|r| {
+        r.unwrap_or_else(|| Expr::FunctionCall {
+          name: "PDF".to_string(),
+          args: args.to_vec().into(),
+        })
+      });
+    }
+    if let Some(slice) = process_slice_distribution(name, dargs, &targs[0]) {
+      return pdf_ast(&[slice, args[1].clone()]);
+    }
   }
 
   // Extract distribution name and parameters
@@ -1956,6 +1960,16 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let dist = &args[0];
+
+  // CDF over process time slices delegates to the slice distribution.
+  if args.len() == 2
+    && let Expr::CurriedCall { func, args: targs } = dist
+    && let Expr::FunctionCall { name, args: dargs } = func.as_ref()
+    && targs.len() == 1
+    && let Some(slice) = process_slice_distribution(name, dargs, &targs[0])
+  {
+    return cdf_ast(&[slice, args[1].clone()]);
+  }
 
   let (dist_name, dargs) = match dist {
     Expr::FunctionCall { name, args: dargs } => {
@@ -7207,6 +7221,58 @@ fn pdf_failure_distribution(
       ]
       .into(),
     })
+  }
+}
+
+/// The time-slice distribution of a continuous random process:
+/// WienerProcess[m, s][t] is NormalDistribution[m t, s Sqrt[t]] and
+/// GeometricBrownianMotionProcess[m, s, x0][t] is
+/// LogNormalDistribution[(m - s^2/2) t + Log[x0], s Sqrt[t]] — built in
+/// exactly those shapes so the delegated moments and PDF match
+/// wolframscript's displays.
+pub fn process_slice_distribution(
+  proc_name: &str,
+  dargs: &[Expr],
+  t: &Expr,
+) -> Option<Expr> {
+  let sqrt_t = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![t.clone()].into(),
+  };
+  match proc_name {
+    "WienerProcess" if dargs.len() == 2 => Some(Expr::FunctionCall {
+      name: "NormalDistribution".to_string(),
+      args: vec![
+        times(dargs[0].clone(), t.clone()),
+        times(dargs[1].clone(), sqrt_t),
+      ]
+      .into(),
+    }),
+    "GeometricBrownianMotionProcess" if dargs.len() == 3 => {
+      let (m, s, x0) = (&dargs[0], &dargs[1], &dargs[2]);
+      let drift = plus(
+        m.clone(),
+        times(
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
+          },
+          power(s.clone(), int(2)),
+        ),
+      );
+      let mu = plus(
+        times(drift, t.clone()),
+        Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![x0.clone()].into(),
+        },
+      );
+      Some(Expr::FunctionCall {
+        name: "LogNormalDistribution".to_string(),
+        args: vec![mu, times(s.clone(), sqrt_t)].into(),
+      })
+    }
+    _ => None,
   }
 }
 

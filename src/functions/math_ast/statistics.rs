@@ -879,6 +879,20 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
       mean_ast(&[Expr::List(values.into())])
     }
+    // Random-process time slices delegate to their slice distribution.
+    Expr::CurriedCall { func, args: targs } if targs.len() == 1 => {
+      if let Expr::FunctionCall { name, args: dargs } = func.as_ref()
+        && let Some(slice) = super::distributions::process_slice_distribution(
+          name, dargs, &targs[0],
+        )
+      {
+        return mean_ast(&[slice]);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Mean".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
     _ => {
       emit_rectt_if_numeric("Mean", args);
       Ok(Expr::FunctionCall {
@@ -1279,6 +1293,20 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::FunctionCall {
         name: "Quantity".to_string(),
         args: vec![inner_var, unit_sq].into(),
+      })
+    }
+    // Random-process time slices delegate to their slice distribution.
+    Expr::CurriedCall { func, args: targs } if targs.len() == 1 => {
+      if let Expr::FunctionCall { name, args: dargs } = func.as_ref()
+        && let Some(slice) = super::distributions::process_slice_distribution(
+          name, dargs, &targs[0],
+        )
+      {
+        return variance_ast(&[slice]);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Variance".to_string(),
+        args: args.to_vec().into(),
       })
     }
     _ => {

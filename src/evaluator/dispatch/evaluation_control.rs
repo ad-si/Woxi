@@ -471,6 +471,22 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    // WienerProcess[] normalizes to WienerProcess[0, 1]
+    // (wolframscript-verified).
+    "WienerProcess" if args.is_empty() => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "WienerProcess".to_string(),
+        args: vec![Expr::Integer(0), Expr::Integer(1)].into(),
+      }));
+    }
+    // Random-process objects are symbolic; their time slices proc[t]
+    // are consumed by PDF/CDF/Mean/Variance.
+    "WienerProcess" | "GeometricBrownianMotionProcess" => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // DiscreteMarkovProcess and its distribution wrappers are symbolic
     // objects consumed by PDF/CDF/Mean/Variance.
     "DiscreteMarkovProcess"
