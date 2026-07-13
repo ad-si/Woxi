@@ -4731,3 +4731,206 @@ mod distance_transform {
     ));
   }
 }
+
+// FillingTransform semantics decoded from wolframscript probes: the plain
+// form floods from the border with 4-connectivity; the depth form is a
+// reconstruction with interior marker I+h and 8-connectivity; the marker
+// form interpolates per pixel between the image and its plain fill by the
+// largest marker value in each 4-connected basin (f32 lerp F*m + I*(1-m)).
+mod filling_transform {
+  use super::*;
+
+  #[test]
+  fn binary_hole_filling() {
+    // Enclosed zeros fill; zeros touching the border stay.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[FillingTransform[Image[{{1, 1, 1, 1, 1}, {1, 0, 0, 1, 0}, \
+         {1, 0, 0, 1, 1}, {1, 1, 1, 1, 1}}]]]"
+      )
+      .unwrap(),
+      "{{1., 1., 1., 1., 1.}, {1., 1., 1., 1., 0.}, {1., 1., 1., 1., 1.}, \
+        {1., 1., 1., 1., 1.}}"
+    );
+    // Diagonal contact does not connect background to the border
+    // (4-connectivity), so this hole still fills.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[FillingTransform[Image[{{1, 1, 1}, {1, 0, 1}, {1, 1, 0}}]]]"
+      )
+      .unwrap(),
+      "{{1., 1., 1.}, {1., 1., 1.}, {1., 1., 0.}}"
+    );
+  }
+
+  #[test]
+  fn grayscale_fill_and_types() {
+    // Basins rise to their 4-connected pour-out level.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[FillingTransform[Image[{{0.5, 0.6, 0.7, 0.8}, \
+         {0.6, 0.2, 0.3, 0.7}, {0.7, 0.4, 0.2, 0.6}, {0.8, 0.7, 0.6, 0.5}}]]]"
+      )
+      .unwrap(),
+      "{{0.5, 0.6000000238418579, 0.699999988079071, 0.800000011920929}, \
+        {0.6000000238418579, 0.6000000238418579, 0.6000000238418579, 0.699999988079071}, \
+        {0.699999988079071, 0.6000000238418579, 0.6000000238418579, 0.6000000238418579}, \
+        {0.800000011920929, 0.699999988079071, 0.6000000238418579, 0.5}}"
+    );
+    // Per-channel independent filling for multichannel images.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "rgb = Image[Table[If[r == 2 && c == 2, {0.2, 0.1, 0.4}, \
+         {0.9, 0.5, 0.9}], {r, 3}, {c, 3}]]; \
+         ImageData[FillingTransform[rgb]][[2, 2]]"
+      )
+      .unwrap(),
+      "{0.8999999761581421, 0.5, 0.8999999761581421}"
+    );
+    // The image type is preserved (with quantization for Byte).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "b = FillingTransform[Image[{{200, 200, 200}, {200, 50, 200}, \
+         {200, 200, 200}}, \"Byte\"]]; {ImageType[b], ImageData[b, \"Byte\"]}"
+      )
+      .unwrap(),
+      "{Byte, {{200, 200, 200}, {200, 200, 200}, {200, 200, 200}}}"
+    );
+  }
+
+  #[test]
+  fn depth_form() {
+    // Fill level is basin minimum + h, capped by the 8-connected
+    // pour-out level (the corner pixel 0.5 caps this basin).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "gray2 = Image[{{0.5, 0.6, 0.7, 0.8}, {0.6, 0.2, 0.3, 0.7}, \
+         {0.7, 0.4, 0.2, 0.6}, {0.8, 0.7, 0.6, 0.5}}]; \
+         {ImageData[FillingTransform[gray2, 0.2]][[2]], \
+          ImageData[FillingTransform[gray2, 1.]][[2]]}"
+      )
+      .unwrap(),
+      "{{0.6000000238418579, 0.4000000059604645, 0.4000000059604645, \
+         0.699999988079071}, \
+        {0.6000000238418579, 0.5, 0.5, 0.699999988079071}}"
+    );
+    // A diagonal border pixel caps via 8-connectivity in the depth form
+    // even though the plain form (4-connectivity) fills fully.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{0.9, 0.9, 0.9}, {0.9, 0.4, 0.9}, {0.7, 0.9, 0.9}}]; \
+         {ImageData[FillingTransform[i, 2.]][[2, 2]], \
+          ImageData[FillingTransform[i]][[2, 2]]}"
+      )
+      .unwrap(),
+      "{0.699999988079071, 0.8999999761581421}"
+    );
+    // Bit input becomes Real32; Byte results stay quantized; h = 0 is a
+    // valid no-op.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "bit = Image[{{1, 1, 1}, {1, 0, 1}, {1, 1, 1}}, \"Bit\"]; \
+         d = FillingTransform[bit, 0.4]; \
+         by = FillingTransform[Image[{{200, 200, 200}, {200, 50, 200}, \
+          {200, 200, 200}}, \"Byte\"], 0.2]; \
+         {ImageType[d], ImageData[d][[2, 2]], ImageType[by], \
+          ImageData[by][[2, 2]], \
+          ImageData[FillingTransform[Image[{{0.9, 0.9, 0.9}, {0.9, 0.2, 0.9}, \
+           {0.9, 0.9, 0.9}}], 0]][[2, 2]]}"
+      )
+      .unwrap(),
+      "{Real32, 0.4000000059604645, Byte, 0.396078431372549, \
+        0.20000000298023224}"
+    );
+  }
+
+  #[test]
+  fn marker_form() {
+    // Only basins containing a nonzero marker pixel fill; a fractional
+    // marker interpolates between image and fill (f32 lerp).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Image[{{0.9, 0.9, 0.9}, {0.9, 0.2, 0.9}, {0.9, 0.9, 0.9}}]; \
+         Table[ImageData[FillingTransform[g, Image[{{0, 0, 0}, {0, mv, 0}, \
+          {0, 0, 0}}]]][[2, 2]], {mv, {0.1, 0.5, 0.9, 1., 2.}}]"
+      )
+      .unwrap(),
+      "{0.26999998092651367, 0.550000011920929, 0.8299999237060547, \
+        0.8999999761581421, 0.8999999761581421}"
+    );
+    // The largest marker value in the basin applies per pixel:
+    // I + (F - I) scales each pixel individually.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i5 = Image[{{0.9, 0.9, 0.9, 0.9, 0.9}, {0.9, 0.2, 0.3, 0.2, 0.9}, \
+         {0.9, 0.9, 0.9, 0.9, 0.9}}]; \
+         ImageData[FillingTransform[i5, Image[{{0, 0, 0, 0, 0}, \
+          {0, 0.3, 0, 0.8, 0}, {0, 0, 0, 0, 0}}]]][[2]]"
+      )
+      .unwrap(),
+      "{0.8999999761581421, 0.7599999904632568, 0.7799999713897705, \
+        0.7599999904632568, 0.8999999761581421}"
+    );
+    // Result type: Real64 stays Real64, everything else becomes Real32.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "m3 = Image[{{0, 0, 0}, {0, 0.3, 0}, {0, 0, 0}}]; \
+         by = FillingTransform[Image[{{230, 230, 230}, {230, 50, 230}, \
+          {230, 230, 230}}, \"Byte\"], m3]; \
+         r = FillingTransform[Image[{{0.9, 0.9, 0.9}, {0.9, 0.2, 0.9}, \
+          {0.9, 0.9, 0.9}}, \"Real64\"], m3]; \
+         {ImageType[by], ImageData[by][[2, 2]], ImageType[r], \
+          ImageData[r][[2, 2]]}"
+      )
+      .unwrap(),
+      "{Real32, 0.4078431725502014, Real64, 0.4100000083446503}"
+    );
+    // A marker with mismatched dimensions marks nothing; a multichannel
+    // marker echoes unevaluated.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Image[{{0.9, 0.9, 0.9}, {0.9, 0.2, 0.9}, {0.9, 0.9, 0.9}}]; \
+         {ImageData[FillingTransform[g, Image[{{1, 0}}]]][[2, 2]], \
+          FillingTransform[g, Image[{{{1, 0, 0}}}]]}"
+      )
+      .unwrap(),
+      "{0.20000000298023224, FillingTransform[-Image-, -Image-]}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r = interpret_with_stdout("FillingTransform[5]").unwrap();
+    assert_eq!(r.result, "FillingTransform[5]");
+    assert!(r.warnings[0].contains(
+      "FillingTransform::imginv: Expecting an image or graphics instead of 5."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("FillingTransform[Image[{{1}}], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "FillingTransform::arg2: Expecting either a marker or depth \
+       specification as the second argument instead of x."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("FillingTransform[Image[{{1}}], -0.5]").unwrap();
+    assert!(r.warnings[0].contains(
+      "FillingTransform::invh: The height specification -0.5 must be positive."
+    ));
+  }
+}

@@ -4367,6 +4367,281 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Priority-flood morphological reconstruction by erosion over `mask`
+/// (per channel plane): the result is the smallest R >= mask with
+/// R <= marker that is stable under neighborhood erosion. Used by
+/// FillingTransform; `corner_neighbors` selects 4- vs 8-connectivity.
+fn reconstruct_by_erosion(
+  mask: &[f64],
+  marker: &[f64],
+  w: usize,
+  h: usize,
+  corner_neighbors: bool,
+) -> Vec<f64> {
+  use std::cmp::Reverse;
+  use std::collections::BinaryHeap;
+  let mut r: Vec<f64> =
+    mask.iter().zip(marker).map(|(&i, &m)| i.max(m)).collect();
+  // Pixel values are non-negative, so the IEEE bit pattern orders them.
+  let mut heap: BinaryHeap<(Reverse<u64>, usize)> =
+    (0..r.len()).map(|i| (Reverse(r[i].to_bits()), i)).collect();
+  let mut done = vec![false; r.len()];
+  while let Some((Reverse(bits), i)) = heap.pop() {
+    if done[i] || f64::from_bits(bits) > r[i] {
+      continue;
+    }
+    done[i] = true;
+    let (x, y) = (i % w, i / w);
+    let mut relax =
+      |nx: isize, ny: isize, heap: &mut BinaryHeap<(Reverse<u64>, usize)>| {
+        if nx < 0 || ny < 0 || nx >= w as isize || ny >= h as isize {
+          return;
+        }
+        let j = ny as usize * w + nx as usize;
+        let cand = mask[j].max(r[i]);
+        if cand < r[j] {
+          r[j] = cand;
+          heap.push((Reverse(cand.to_bits()), j));
+        }
+      };
+    let (xi, yi) = (x as isize, y as isize);
+    relax(xi - 1, yi, &mut heap);
+    relax(xi + 1, yi, &mut heap);
+    relax(xi, yi - 1, &mut heap);
+    relax(xi, yi + 1, &mut heap);
+    if corner_neighbors {
+      relax(xi - 1, yi - 1, &mut heap);
+      relax(xi + 1, yi - 1, &mut heap);
+      relax(xi - 1, yi + 1, &mut heap);
+      relax(xi + 1, yi + 1, &mut heap);
+    }
+  }
+  r
+}
+
+/// Marker plane for hole filling: the image itself on the border,
+/// `interior` (a large value or mask + h) inside.
+fn filling_marker(mask: &[f64], w: usize, h: usize, add: f64) -> Vec<f64> {
+  (0..mask.len())
+    .map(|i| {
+      let (x, y) = (i % w, i / w);
+      if x == 0 || y == 0 || x == w - 1 || y == h - 1 {
+        mask[i]
+      } else if add.is_infinite() {
+        f64::INFINITY
+      } else {
+        mask[i] + add
+      }
+    })
+    .collect()
+}
+
+/// FillingTransform[img] / [img, h] / [img, marker] — fill extended
+/// minima (holes) per channel. Decoded from wolframscript probes:
+/// - plain form: flood from the border with 4-connectivity;
+/// - depth form: reconstruction with interior marker mask+h and
+///   8-connectivity; Bit becomes Real32, Byte/Bit16 stay quantized;
+/// - marker form: per-pixel I + (F - I) * m where F is the plain fill
+///   and m is the largest (clamped) marker value in each 4-connected
+///   basin; the result is Real64 for Real64 inputs and Real32 otherwise.
+pub fn filling_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::ImageType;
+  let unevaluated = || Expr::FunctionCall {
+    name: "FillingTransform".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    image_type,
+    ..
+  } = args[0]
+  else {
+    crate::emit_message(&format!(
+      "FillingTransform::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let n = w * h;
+
+  // Snap stored values to f32 unless the image genuinely holds f64,
+  // mirroring wolframscript's Real32 storage of non-Real64 images.
+  let snap = |v: f64, t: ImageType| -> f64 {
+    if t == ImageType::Real64 {
+      v
+    } else {
+      (v as f32) as f64
+    }
+  };
+
+  enum Second {
+    None,
+    Depth(f64),
+    Marker(Vec<f64>),
+  }
+  let second = if args.len() == 2 {
+    match &args[1] {
+      Expr::Image {
+        width: mw,
+        height: mh,
+        channels: mc,
+        data: mdata,
+        image_type: mt,
+        ..
+      } => {
+        if *mc != 1 {
+          // Multichannel markers echo unevaluated without a message.
+          return Ok(unevaluated());
+        }
+        // The largest clamped marker value per 4-connected basin scales
+        // the fill; positions outside a smaller marker read as zero.
+        let (mw, mh) = (*mw as usize, *mh as usize);
+        let mut m = vec![0.0f64; n];
+        for y in 0..h.min(mh) {
+          for x in 0..w.min(mw) {
+            m[y * w + x] = snap(mdata[y * mw + x], *mt).clamp(0.0, 1.0);
+          }
+        }
+        Second::Marker(m)
+      }
+      e => match crate::functions::math_ast::try_eval_to_f64(e) {
+        Some(v) if v >= 0.0 => Second::Depth(v),
+        Some(_) => {
+          crate::emit_message(&format!(
+            "FillingTransform::invh: The height specification {} must be positive.",
+            crate::syntax::expr_to_string(e)
+          ));
+          return Ok(unevaluated());
+        }
+        None => {
+          crate::emit_message(&format!(
+            "FillingTransform::arg2: Expecting either a marker or depth specification as the second argument instead of {}.",
+            crate::syntax::expr_to_string(e)
+          ));
+          return Ok(unevaluated());
+        }
+      },
+    }
+  } else {
+    Second::None
+  };
+
+  let corner = matches!(second, Second::Depth(_));
+  let mut out = vec![0.0f64; n * ch];
+  for c in 0..ch {
+    let mask: Vec<f64> =
+      (0..n).map(|i| snap(data[i * ch + c], image_type)).collect();
+    let plane: Vec<f64> = match &second {
+      Second::None => {
+        let marker = filling_marker(&mask, w, h, f64::INFINITY);
+        reconstruct_by_erosion(&mask, &marker, w, h, corner)
+      }
+      Second::Depth(d) => {
+        let marker = filling_marker(&mask, w, h, *d);
+        reconstruct_by_erosion(&mask, &marker, w, h, corner)
+      }
+      Second::Marker(m) => {
+        let marker = filling_marker(&mask, w, h, f64::INFINITY);
+        let f = reconstruct_by_erosion(&mask, &marker, w, h, corner);
+        // Label 4-connected basins (F > mask) and take each basin's
+        // largest marker value.
+        let mut label = vec![usize::MAX; n];
+        let mut basin_m: Vec<f64> = Vec::new();
+        for start in 0..n {
+          if label[start] != usize::MAX || f[start] <= mask[start] {
+            continue;
+          }
+          let id = basin_m.len();
+          basin_m.push(0.0);
+          let mut stack = vec![start];
+          label[start] = id;
+          while let Some(i) = stack.pop() {
+            basin_m[id] = basin_m[id].max(m[i]);
+            let (x, y) = (i % w, i / w);
+            for (nx, ny) in [
+              (x.wrapping_sub(1), y),
+              (x + 1, y),
+              (x, y.wrapping_sub(1)),
+              (x, y + 1),
+            ] {
+              if nx >= w || ny >= h {
+                continue;
+              }
+              let j = ny * w + nx;
+              if label[j] == usize::MAX && f[j] > mask[j] {
+                label[j] = id;
+                stack.push(j);
+              }
+            }
+          }
+        }
+        (0..n)
+          .map(|i| {
+            if label[i] == usize::MAX {
+              mask[i]
+            } else {
+              // Linear interpolation between the image and its plain
+              // fill: F*m + I*(1-m), in f32 arithmetic unless Real64
+              // (each operation rounds — this matches wolframscript
+              // bit-exact where I + (F-I)*m does not).
+              let mv = basin_m[label[i]];
+              if image_type == ImageType::Real64 {
+                let m = (mv as f32) as f64;
+                f[i] * m + mask[i] * (1.0 - m)
+              } else {
+                let m = mv as f32;
+                let r = f[i] as f32 * m + mask[i] as f32 * (1.0 - m);
+                r as f64
+              }
+            }
+          })
+          .collect()
+      }
+    };
+    for i in 0..n {
+      out[i * ch + c] = plane[i];
+    }
+  }
+
+  let out_type = match &second {
+    Second::None => image_type,
+    Second::Depth(_) => match image_type {
+      ImageType::Bit => ImageType::Real32,
+      t => t,
+    },
+    Second::Marker(_) => match image_type {
+      ImageType::Real64 => ImageType::Real64,
+      _ => ImageType::Real32,
+    },
+  };
+  // Quantized types keep their quantization for the depth form.
+  if matches!(second, Second::Depth(_)) {
+    let scale = match out_type {
+      ImageType::Byte => Some(255.0),
+      ImageType::Bit16 => Some(65535.0),
+      _ => None,
+    };
+    if let Some(s) = scale {
+      for v in &mut out {
+        *v = (*v * s).round() / s;
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width,
+    height,
+    channels,
+    data: Arc::new(out),
+    image_type: out_type,
+  })
+}
+
 /// One-dimensional squared-distance transform (Felzenszwalb-Huttenlocher
 /// lower-envelope-of-parabolas pass). `f` holds source costs, `d` results.
 fn edt_pass_1d(f: &[f64], d: &mut [f64]) {
