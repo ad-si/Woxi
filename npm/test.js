@@ -37,10 +37,12 @@ test("state persists across calls until clear()", () => {
 test("evaluateAll returns structured output items", () => {
   woxi.clear();
   const items = woxi.evaluateAll('Print["out"]\n1 + 1');
-  assert.deepEqual(items, [
-    { type: "print", text: "out" },
-    { type: "text", text: "2" },
-  ]);
+  assert.equal(items.length, 2);
+  assert.deepEqual(items[0], { type: "print", text: "out" });
+  assert.equal(items[1].type, "text");
+  assert.equal(items[1].text, "2");
+  // Text items also carry an SVG rendering of the result.
+  assert.match(items[1].svg, /^<svg/);
 });
 
 test("evaluateAll returns graphics items with SVG", () => {
@@ -58,7 +60,9 @@ test("splitStatements splits top-level statements", () => {
 test("evaluateStatement evaluates a single statement", () => {
   woxi.clear();
   const items = woxi.evaluateStatement("3 * 4");
-  assert.deepEqual(items, [{ type: "text", text: "12" }]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].type, "text");
+  assert.equal(items[0].text, "12");
 });
 
 test("getGraphics returns the SVG of the last evaluation", () => {
