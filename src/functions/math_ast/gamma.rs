@@ -1336,6 +1336,25 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
+    // Float a == 1. expands the same way but with a machine-real
+    // leading 1. and an exact inner (1 - z), matching wolframscript:
+    // BetaRegularized[z, 1., 2.] → 1. - (1 - z)^2.
+    if matches!(a_expr, Expr::Real(r) if *r == 1.0) {
+      let one_minus_z =
+        plus(Expr::Integer(1), times(Expr::Integer(-1), z_expr.clone()));
+      let result = plus(
+        Expr::Real(1.0),
+        times(Expr::Integer(-1), power(one_minus_z, b_expr.clone())),
+      );
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    if matches!(b_expr, Expr::Real(r) if *r == 1.0) {
+      // wolframscript shows 0. + z^a here; Woxi's Plus folds the
+      // machine-real zero away, so this renders as plain z^a
+      // (documented divergence).
+      let result = plus(Expr::Real(0.0), power(z_expr.clone(), a_expr.clone()));
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
     if matches!(b_expr, Expr::Integer(1)) {
       // z^a - 0^a
       let result = plus(

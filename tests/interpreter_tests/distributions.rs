@@ -6684,3 +6684,134 @@ E^((-1 + a)^2/(2*b))*Sqrt[Pi]*Erfc[(-1 + a)/(2*Sqrt[b])]^2))/(4*b)"
     ));
   }
 }
+
+// HotellingTSquareDistribution: scaled F distribution. Numeric
+// parameters collapse to wolframscript's rational/radical forms
+// (nested ((m+x)^-1)^(k/2) powers for odd p); moments are conditional
+// with Indeterminate outside the existence region. Verified against
+// wolframscript.
+mod hotelling_t_square_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_and_cdf() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[2, 5], x]").unwrap(),
+      "Piecewise[{{50/(5 + x)^3, x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HotellingTSquareDistribution[2, 5], x]").unwrap(),
+      "Piecewise[{{1 - (1 - (4*x)/(5*(4 + (4*x)/5)))^2, x > 0}}, 0]"
+    );
+    // Odd p keeps the nested half-integer power.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[3, 4], x]").unwrap(),
+      "Piecewise[{{6*Sqrt[x]*((4 + x)^(-1))^(5/2), x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HotellingTSquareDistribution[3, 4], x]").unwrap(),
+      "Piecewise[{{(x/(2 + x/2))^(3/2)/(2*Sqrt[2]), x > 0}}, 0]"
+    );
+    // Symbolic parameters keep the Beta / BetaRegularized templates.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[p, m], x]").unwrap(),
+      "Piecewise[{{((x/m)^(p/2)*(m/(m + x))^((1 + m)/2))/\
+(x*Beta[p/2, (1 + m - p)/2]), x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HotellingTSquareDistribution[p, m], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[((1 + m - p)*x)/(m*(1 + m - p + \
+((1 + m - p)*x)/m)), p/2, (1 + m - p)/2], x > 0}}, 0]"
+    );
+    // Integer-valued float parameters keep an exact-valued coefficient.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[2., 5.], x]").unwrap(),
+      "Piecewise[{{50.*((5. + x)^(-1))^3., x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HotellingTSquareDistribution[2., 5.], x]").unwrap(),
+      "Piecewise[{{1. - (1 - (0.8*x)/(4. + 0.8*x))^2., x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[2, 5], 3]").unwrap(),
+      "25/256"
+    );
+  }
+
+  #[test]
+  fn conditional_moments() {
+    // No spurious Power::infy at existence boundaries.
+    clear_state();
+    let r = interpret_with_stdout(
+      "{Mean[HotellingTSquareDistribution[2, 5]], \
+        Variance[HotellingTSquareDistribution[2, 5]], \
+        Mean[HotellingTSquareDistribution[3, 4]], \
+        Variance[HotellingTSquareDistribution[2, 9]]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{5, Indeterminate, Indeterminate, 18}");
+    assert!(r.warnings.is_empty());
+
+    clear_state();
+    assert_eq!(
+      interpret("Mean[HotellingTSquareDistribution[p, m]]").unwrap(),
+      "Piecewise[{{(m*p)/(-1 + m - p), -1 + m - p > 0}}, Indeterminate]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[HotellingTSquareDistribution[p, m]]").unwrap(),
+      "Piecewise[{{(2*(-1 + m)*m^2*p)/((-3 + m - p)*(1 - m + p)^2), \
+        m > 3 + p}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[HotellingTSquareDistribution[-1, 5], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "HotellingTSquareDistribution::posprm: Parameter -1 at position 1 in \
+       HotellingTSquareDistribution[-1, 5] is expected to be positive."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[HotellingTSquareDistribution[2], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "HotellingTSquareDistribution::argr: HotellingTSquareDistribution \
+       called with 1 argument; 2 arguments are expected."
+    ));
+  }
+}
+
+// BetaRegularized expands for float a == 1. / b == 1. like exact
+// (wolframscript: 1. - (1 - z)^2.).
+mod beta_regularized_float_expansion {
+  use super::*;
+
+  #[test]
+  fn float_unit_parameters_expand() {
+    clear_state();
+    assert_eq!(
+      interpret("BetaRegularized[z, 1., 2.]").unwrap(),
+      "1. - (1 - z)^2."
+    );
+    // Exact non-unit parameters stay unevaluated, like wolframscript.
+    clear_state();
+    assert_eq!(
+      interpret("BetaRegularized[z, 2., 3.]").unwrap(),
+      "BetaRegularized[z, 2., 3.]"
+    );
+  }
+}

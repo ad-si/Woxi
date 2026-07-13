@@ -3369,7 +3369,7 @@ DynamicEvaluationTimeout,,🚫,,8.0,3462
 FileSize,Returns the size of a file as Quantity[bytes;"Bytes"] with a Real magnitude; accepts File wrappers,✅,io,11.2,3462
 GaussianUnitaryMatrixDistribution,,,,10.3,3462
 HolidayCalendar,,,,9.0,3462
-HotellingTSquareDistribution,,,,8.0,3462
+HotellingTSquareDistribution,Hotelling T-squared distribution,✅,pure,8.0,3462
 JacobiNS,Jacobi elliptic function ns (1/sn),✅,pure,1.0,3462
 KaiserWindow,,,,9.0,3462
 ListVectorDensityPlot,,🚫,,7.0,3462

@@ -248,6 +248,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "HyperexponentialDistribution" => pdf_hyperexponential(dargs, x),
     "VonMisesDistribution" => pdf_vonmises(dargs, x),
     "BeniniDistribution" => pdf_benini(dargs, x),
+    "HotellingTSquareDistribution" => pdf_hotelling(dargs, x),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -2067,6 +2068,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "CoxianDistribution" => cdf_coxian(dargs, x),
     "HyperexponentialDistribution" => cdf_hyperexponential(dargs, x),
     "BeniniDistribution" => cdf_benini(dargs, x),
+    "HotellingTSquareDistribution" => cdf_hotelling(dargs, x),
     "FailureDistribution" => cdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => cdf_first_passage(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
@@ -4080,6 +4082,7 @@ pub fn distribution_mean_variance(
     }
     "HyperexponentialDistribution" => hyperexponential_mean_variance(dargs),
     "BeniniDistribution" => benini_mean_variance(dargs),
+    "HotellingTSquareDistribution" => hotelling_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7906,6 +7909,263 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Validation for HotellingTSquareDistribution[p, m]: both parameters
+/// must be positive numbers (posprm); wrong arity emits argr. Messages
+/// come from consuming functions.
+fn hotelling_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 2 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "HotellingTSquareDistribution::argr: HotellingTSquareDistribution called with {} {}; 2 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  for pos in 0..2 {
+    if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
+      crate::emit_message(&format!(
+        "HotellingTSquareDistribution::posprm: Parameter {} at position {} in {} is expected to be positive.",
+        crate::syntax::expr_to_string(&dargs[pos]),
+        pos + 1,
+        crate::syntax::expr_to_string(&Expr::FunctionCall {
+          name: "HotellingTSquareDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        })
+      ));
+      return None;
+    }
+  }
+  Some(())
+}
+
+/// PDF[HotellingTSquareDistribution[p, m], x]. Numeric parameters use
+/// the collapsed C x^(p/2-1) ((m+x)^-1)^((1+m)/2) form wolframscript
+/// produces; symbolic parameters keep the Beta template.
+fn pdf_hotelling(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HotellingTSquareDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = hotelling_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (pp, m) = (dargs[0].clone(), dargs[1].clone());
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let half = |e: Expr| divide(e, int(2));
+  let beta = Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: vec![
+      half(pp.clone()),
+      half(plus(plus(int(1), m.clone()), times(int(-1), pp.clone()))),
+    ]
+    .into(),
+  };
+  let value = if num(&pp).is_some() && num(&m).is_some() {
+    // Integer-valued float parameters compute the coefficient exactly
+    // and refloat it (5.^2/Beta[1., 2.] must be 50., not 50.00000...2).
+    let exactify = |e: &Expr| -> Expr {
+      match e {
+        Expr::Real(r) if r.fract() == 0.0 && r.abs() < 1e15 => int(*r as i128),
+        other => other.clone(),
+      }
+    };
+    let any_float = matches!(&pp, Expr::Real(_)) || matches!(&m, Expr::Real(_));
+    let (pe, me) = (exactify(&pp), exactify(&m));
+    let coeff_expr = divide(
+      power(
+        me.clone(),
+        half(plus(plus(int(1), me.clone()), times(int(-1), pe.clone()))),
+      ),
+      Expr::FunctionCall {
+        name: "Beta".to_string(),
+        args: vec![
+          half(pe.clone()),
+          half(plus(plus(int(1), me.clone()), times(int(-1), pe))),
+        ]
+        .into(),
+      },
+    );
+    let coeff_exact = eval(coeff_expr)?;
+    let coeff = if any_float
+      && !matches!(&coeff_exact, Expr::Real(_))
+      && let Some(v) = num(&coeff_exact)
+    {
+      Expr::Real(v)
+    } else if any_float {
+      coeff_exact
+    } else {
+      eval(divide(
+        power(
+          m.clone(),
+          half(plus(plus(int(1), m.clone()), times(int(-1), pp.clone()))),
+        ),
+        beta,
+      ))?
+    };
+    let expo = eval(plus(half(pp.clone()), int(-1)))?;
+    let tail = power(
+      power(plus(m.clone(), x.clone()), int(-1)),
+      half(plus(int(1), m.clone())),
+    );
+    let is_zero = num(&expo).is_some_and(|v| v == 0.0);
+    if is_zero {
+      times(coeff, tail)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coeff, power(x.clone(), expo), tail].into(),
+      }
+    }
+  } else {
+    divide(
+      times(
+        power(divide(x.clone(), m.clone()), half(pp.clone())),
+        power(
+          divide(m.clone(), plus(m.clone(), x.clone())),
+          half(plus(int(1), m.clone())),
+        ),
+      ),
+      times(x.clone(), beta),
+    )
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[HotellingTSquareDistribution[p, m], x] via the BetaRegularized
+/// template (which expands itself for a == 1 or b == 1).
+fn cdf_hotelling(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HotellingTSquareDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = hotelling_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (pp, m) = (dargs[0].clone(), dargs[1].clone());
+  let half = |e: Expr| divide(e, int(2));
+  let k = plus(plus(int(1), m.clone()), times(int(-1), pp.clone()));
+  let z = divide(
+    times(k.clone(), x.clone()),
+    times(
+      m.clone(),
+      plus(k.clone(), divide(times(k.clone(), x.clone()), m.clone())),
+    ),
+  );
+  let value = Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: vec![z, half(pp), half(k)].into(),
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Mean and Variance of HotellingTSquareDistribution as conditional
+/// Piecewise expressions (Indeterminate outside the existence region).
+fn hotelling_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = hotelling_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "HotellingTSquareDistribution: invalid parameters".into(),
+    ));
+  };
+  let (pp, m) = (dargs[0].clone(), dargs[1].clone());
+  let indet = Expr::Identifier("Indeterminate".to_string());
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let numeric = num(&pp).zip(num(&m));
+  // Mean: (m p)/(-1 + m - p) when -1 + m - p > 0. For numeric
+  // parameters the condition is decided up front so a dead branch never
+  // evaluates (avoiding spurious Power::infy at the boundary).
+  let dof = plus(plus(int(-1), m.clone()), times(int(-1), pp.clone()));
+  let mean_value = divide(times(m.clone(), pp.clone()), dof.clone());
+  let mean = match numeric {
+    Some((pv, mv)) => {
+      if mv - pv - 1.0 > 0.0 {
+        eval(mean_value)?
+      } else {
+        indet.clone()
+      }
+    }
+    None => eval(piecewise_with_default(
+      vec![(mean_value, comparison(dof, ComparisonOp::Greater, int(0)))],
+      indet.clone(),
+    ))?,
+  };
+  // Variance: 2 (-1+m) m^2 p / ((-3+m-p)(1-m+p)^2) when m > 3 + p.
+  let var_num = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      int(2),
+      plus(int(-1), m.clone()),
+      power(m.clone(), int(2)),
+      pp.clone(),
+    ]
+    .into(),
+  };
+  let var_den = times(
+    plus(plus(int(-3), m.clone()), times(int(-1), pp.clone())),
+    power(
+      plus(plus(int(1), times(int(-1), m.clone())), pp.clone()),
+      int(2),
+    ),
+  );
+  let var_value = divide(var_num, var_den);
+  let variance = match numeric {
+    Some((pv, mv)) => {
+      if mv > 3.0 + pv {
+        eval(var_value)?
+      } else {
+        indet
+      }
+    }
+    None => eval(piecewise_with_default(
+      vec![(
+        var_value,
+        comparison(m, ComparisonOp::Greater, plus(int(3), pp)),
+      )],
+      indet,
+    ))?,
+  };
+  Ok((mean, variance))
+}
+
+/// Piecewise with an explicit default value.
+fn piecewise_with_default(cases: Vec<(Expr, Expr)>, default: Expr) -> Expr {
+  let pairs: Vec<Expr> = cases
+    .into_iter()
+    .map(|(v, c)| Expr::List(vec![v, c].into()))
+    .collect();
+  Expr::FunctionCall {
+    name: "Piecewise".to_string(),
+    args: vec![Expr::List(pairs.into()), default].into(),
+  }
 }
 
 /// Validation for BeniniDistribution[α, β, σ]: α and β must be
