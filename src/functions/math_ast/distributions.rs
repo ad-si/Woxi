@@ -208,6 +208,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MeixnerDistribution" => pdf_meixner(dargs, x),
     "LogGammaDistribution" => pdf_loggamma(dargs, x),
     "SkellamDistribution" => pdf_skellam(dargs, x),
+    "HypoexponentialDistribution" => pdf_hypoexponential(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
     "BinomialDistribution" => pdf_binomial(dargs, x),
     "HypergeometricDistribution" => pdf_hypergeometric(dargs, x),
@@ -1986,6 +1987,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => cdf_exponential(dargs, x),
     "PoissonDistribution" => cdf_poisson(dargs, x),
     "SkellamDistribution" => cdf_skellam(dargs, x),
+    "HypoexponentialDistribution" => cdf_hypoexponential(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
     "BinomialDistribution" => cdf_binomial(dargs, x),
     "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
@@ -6864,6 +6866,144 @@ fn any_concrete_non_integer(xs: &[Expr]) -> bool {
     !matches!(xi, Expr::Integer(_) | Expr::BigInteger(_))
       && crate::functions::math_ast::expr_to_num(xi).is_some()
   })
+}
+
+/// The rates of a HypoexponentialDistribution[{λ1, …, λn}] when all are
+/// concrete and pairwise distinct — the precondition for the
+/// distinct-rate closed forms below. (Repeated rates need Erlang-style
+/// terms wolframscript produces, e.g. 4 x E^(-2 x) for {2, 2}; those and
+/// symbolic rates stay unevaluated.)
+fn hypoexponential_distinct_rates(dargs: &[Expr]) -> Option<Vec<(Expr, f64)>> {
+  match dargs {
+    [Expr::List(rates)] if !rates.is_empty() => {
+      let keyed: Option<Vec<(Expr, f64)>> = rates
+        .iter()
+        .map(|r| {
+          crate::functions::math_ast::try_eval_to_f64(r).map(|f| (r.clone(), f))
+        })
+        .collect();
+      let keyed = keyed?;
+      for i in 0..keyed.len() {
+        for j in 0..i {
+          if keyed[i].1 == keyed[j].1 {
+            return None;
+          }
+        }
+      }
+      Some(keyed)
+    }
+    _ => None,
+  }
+}
+
+/// The distinct-rate mixture coefficients c_i = Π_{j≠i} λj/(λj − λi),
+/// as exact expressions.
+fn hypoexponential_coefficients(
+  rates: &[(Expr, f64)],
+) -> Result<Vec<Expr>, InterpreterError> {
+  let mut coeffs = Vec::with_capacity(rates.len());
+  for i in 0..rates.len() {
+    let mut num: Vec<Expr> = Vec::new();
+    let mut den: Vec<Expr> = Vec::new();
+    for j in 0..rates.len() {
+      if j == i {
+        continue;
+      }
+      num.push(rates[j].0.clone());
+      den.push(minus(rates[j].0.clone(), rates[i].0.clone()));
+    }
+    let product = |fs: Vec<Expr>| -> Expr {
+      match fs.len() {
+        0 => int(1),
+        1 => fs.into_iter().next().unwrap(),
+        _ => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: fs.into(),
+        },
+      }
+    };
+    coeffs.push(eval(divide(product(num), product(den)))?);
+  }
+  Ok(coeffs)
+}
+
+/// PDF[HypoexponentialDistribution[{λ1, …}], x] for distinct concrete
+/// rates: Piecewise[{{Σ c_i λ_i E^(-λ_i x), x > 0}}, 0].
+fn pdf_hypoexponential(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HypoexponentialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(rates) = hypoexponential_distinct_rates(dargs) else {
+    return unevaluated(x);
+  };
+  let coeffs = hypoexponential_coefficients(&rates)?;
+  let terms: Vec<Expr> = rates
+    .iter()
+    .zip(coeffs.iter())
+    .map(|((rate, _), c)| {
+      times(
+        times(c.clone(), rate.clone()),
+        power(e(), times(times(int(-1), rate.clone()), x.clone())),
+      )
+    })
+    .collect();
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[HypoexponentialDistribution[{λ1, …}], x] for distinct concrete
+/// rates: Piecewise[{{1 - Σ c_i E^(-λ_i x), x > 0}}, 0].
+fn cdf_hypoexponential(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HypoexponentialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(rates) = hypoexponential_distinct_rates(dargs) else {
+    return unevaluated(x);
+  };
+  let coeffs = hypoexponential_coefficients(&rates)?;
+  let mut terms: Vec<Expr> = vec![int(1)];
+  for ((rate, _), c) in rates.iter().zip(coeffs.iter()) {
+    terms.push(times(
+      times(int(-1), c.clone()),
+      power(e(), times(times(int(-1), rate.clone()), x.clone())),
+    ));
+  }
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
 }
 
 /// Parses `NegativeMultinomialDistribution[n, {p1, …, pk}]` arguments into

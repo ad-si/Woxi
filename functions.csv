@@ -3039,7 +3039,7 @@ PlayRange,,🚫,,2.0,3108
 PreviousCell,,🚫,,10.0,3108
 RadialAxisPlot,,🚫,,12.2,3108
 SatisfiabilityInstances,Instance ordering and free-variable fill follow WL-internal BDD structure (not reproducible black-box),🚫,pure,7.0,3108
-StandbyDistribution,,,,9.0,3108
+StandbyDistribution,Lifetime distribution of a cold standby system of components,✅,none,9.0,3108
 SummationLayer,,🚫,,11.0,3108
 Typed,,,,12.0,3108
 AlphaChannel,,🚫,,8.0,3121

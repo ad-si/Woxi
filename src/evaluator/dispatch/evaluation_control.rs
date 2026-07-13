@@ -471,6 +471,40 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    // StandbyDistribution[Exp[λ1], {Exp[λ2], …}] with perfect switching
+    // normalizes to HypoexponentialDistribution[{λ1, λ2, …}]
+    // (wolframscript-verified, also for symbolic rates). Other component
+    // kinds and the switching-probability/switch-distribution forms stay
+    // unevaluated.
+    "StandbyDistribution" => {
+      let rate = |e: &Expr| -> Option<Expr> {
+        match e {
+          Expr::FunctionCall { name, args }
+            if name == "ExponentialDistribution" && args.len() == 1 =>
+          {
+            Some(args[0].clone())
+          }
+          _ => None,
+        }
+      };
+      if args.len() == 2
+        && let Some(r1) = rate(&args[0])
+        && let Expr::List(rest) = &args[1]
+        && !rest.is_empty()
+        && let Some(mut rates) =
+          rest.iter().map(&rate).collect::<Option<Vec<Expr>>>()
+      {
+        rates.insert(0, r1);
+        return Some(Ok(Expr::FunctionCall {
+          name: "HypoexponentialDistribution".to_string(),
+          args: vec![Expr::List(rates.into())].into(),
+        }));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "StandbyDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // The constructor never validates (wolframscript echoes even
     // non-symmetric matrices silently); Mean/Variance validate.
     "WishartMatrixDistribution" if args.len() == 2 => {

@@ -8875,3 +8875,98 @@ mod absolute_correlation_function {
     ));
   }
 }
+
+// StandbyDistribution and the HypoexponentialDistribution closed forms it
+// normalizes to. All outputs verified against wolframscript.
+mod standby_distribution {
+  use super::*;
+
+  #[test]
+  fn all_exponential_normalizes_to_hypoexponential() {
+    assert_eq!(
+      interpret(
+        "StandbyDistribution[ExponentialDistribution[2], {ExponentialDistribution[3]}]"
+      )
+      .unwrap(),
+      "HypoexponentialDistribution[{2, 3}]"
+    );
+    // Also with symbolic rates and several standby components.
+    assert_eq!(
+      interpret(
+        "StandbyDistribution[ExponentialDistribution[a], {ExponentialDistribution[b], ExponentialDistribution[c]}]"
+      )
+      .unwrap(),
+      "HypoexponentialDistribution[{a, b, c}]"
+    );
+    // Non-exponential components stay unevaluated.
+    assert_eq!(
+      interpret(
+        "StandbyDistribution[GammaDistribution[2, 3], {ExponentialDistribution[5]}]"
+      )
+      .unwrap(),
+      "StandbyDistribution[GammaDistribution[2, 3], {ExponentialDistribution[5]}]"
+    );
+  }
+
+  #[test]
+  fn moments_sum_over_components() {
+    assert_eq!(
+      interpret(
+        "Mean[StandbyDistribution[ExponentialDistribution[a], {ExponentialDistribution[b]}]]"
+      )
+      .unwrap(),
+      "a^(-1) + b^(-1)"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[StandbyDistribution[ExponentialDistribution[2], {ExponentialDistribution[3], ExponentialDistribution[4]}]]"
+      )
+      .unwrap(),
+      "13/12"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[StandbyDistribution[ExponentialDistribution[2], {ExponentialDistribution[3]}]]"
+      )
+      .unwrap(),
+      "13/36"
+    );
+    // Mixed component kinds still sum their moments.
+    assert_eq!(
+      interpret(
+        "Mean[StandbyDistribution[GammaDistribution[2, 3], {ExponentialDistribution[5]}]]"
+      )
+      .unwrap(),
+      "31/5"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[StandbyDistribution[GammaDistribution[2, 3], {ExponentialDistribution[5]}]]"
+      )
+      .unwrap(),
+      "451/25"
+    );
+  }
+
+  #[test]
+  fn hypoexponential_pdf_and_cdf() {
+    assert_eq!(
+      interpret("PDF[HypoexponentialDistribution[{2, 3}], x]").unwrap(),
+      "Piecewise[{{-6/E^(3*x) + 6/E^(2*x), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[HypoexponentialDistribution[{2, 3, 4}], x]").unwrap(),
+      "Piecewise[{{12/E^(4*x) - 24/E^(3*x) + 12/E^(2*x), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[HypoexponentialDistribution[{2, 3}], x]").unwrap(),
+      "Piecewise[{{1 + 2/E^(3*x) - 3/E^(2*x), x > 0}}, 0]"
+    );
+    // Repeated rates need Erlang-style terms (wolframscript gives
+    // 4 x E^(-2 x) for {2, 2}) — unevaluated here.
+    assert_eq!(
+      interpret("PDF[HypoexponentialDistribution[{2, 2}], x]").unwrap(),
+      "PDF[HypoexponentialDistribution[{2, 2}], x]"
+    );
+  }
+}

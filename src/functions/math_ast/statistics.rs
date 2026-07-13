@@ -796,6 +796,21 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "StandbyDistribution" && dargs.len() == 2 => {
+      // Cold-standby lifetimes add, so component moments sum. (The
+      // all-exponential case never reaches here — the constructor
+      // rewrites it to HypoexponentialDistribution.)
+      match standby_component_moments(dargs, mean_ast)? {
+        Some(total) => Ok(total),
+        None => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "DirichletDistribution" => {
       let (mean, _) = super::distributions::dirichlet_mean_variance(dargs)?;
       Ok(mean)
@@ -844,6 +859,40 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   }
+}
+
+/// The sum of a per-component moment (Mean or Variance) over the
+/// components of StandbyDistribution[d1, {d2, …}]. Returns Ok(None) when
+/// any component moment stays unevaluated, so the caller echoes the call.
+fn standby_component_moments(
+  dargs: &[Expr],
+  moment: fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::List(rest) = &dargs[1] else {
+    return Ok(None);
+  };
+  if rest.is_empty() {
+    return Ok(None);
+  }
+  let mut components = vec![dargs[0].clone()];
+  components.extend(rest.iter().cloned());
+  let mut terms = Vec::with_capacity(components.len());
+  for comp in &components {
+    let m = moment(std::slice::from_ref(comp))?;
+    // A moment that came back as the unevaluated call means the
+    // component distribution is unsupported.
+    if matches!(&m, Expr::FunctionCall { name, .. }
+      if name == "Mean" || name == "Variance")
+    {
+      return Ok(None);
+    }
+    terms.push(m);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+  .map(Some)
 }
 
 /// Mean of columns in a list-of-lists (matrix)
@@ -1121,6 +1170,19 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match super::distributions::wishart_mean_variance(dargs) {
         Ok((_, variance)) => Ok(variance),
         Err(_) => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "StandbyDistribution" && dargs.len() == 2 => {
+      // Independent lifetimes add, so variances sum too.
+      match standby_component_moments(dargs, variance_ast)? {
+        Some(total) => Ok(total),
+        None => Ok(Expr::FunctionCall {
           name: "Variance".to_string(),
           args: args.to_vec().into(),
         }),
