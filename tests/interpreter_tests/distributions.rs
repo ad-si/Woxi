@@ -7299,3 +7299,92 @@ mod hoyt_distribution {
     ));
   }
 }
+
+// CompoundPoissonDistribution[λ, dist]: Mean = λ E[X] and
+// Variance = λ E[X²], delegating to the inner distribution's moments;
+// the PDF stays unevaluated even in wolframscript. The univ message for
+// non-distribution inner arguments replicates wolframscript's literal
+// missing-template fallback.
+mod compound_poisson_distribution {
+  use super::*;
+
+  #[test]
+  fn moments_delegate() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[CompoundPoissonDistribution[l, ExponentialDistribution[a]]], \
+          Variance[CompoundPoissonDistribution[l, ExponentialDistribution[a]]]}"
+      )
+      .unwrap(),
+      "{l/a, (2*l)/a^2}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[CompoundPoissonDistribution[2, GammaDistribution[3, 4]]], \
+          Variance[CompoundPoissonDistribution[2, GammaDistribution[3, 4]]], \
+          Mean[CompoundPoissonDistribution[2.5, PoissonDistribution[3]]]}"
+      )
+      .unwrap(),
+      "{24, 384, 7.5}"
+    );
+    // Discrete and location-scale inner distributions.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Variance[CompoundPoissonDistribution[l, PoissonDistribution[m]]], \
+          Variance[CompoundPoissonDistribution[l, NormalDistribution[m, s]]]}"
+      )
+      .unwrap(),
+      "{l*(m + m^2), l*(m^2 + s^2)}"
+    );
+    // No closed-form PDF.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PDF[CompoundPoissonDistribution[2, ExponentialDistribution[3]], x]"
+      )
+      .unwrap(),
+      "PDF[CompoundPoissonDistribution[2, ExponentialDistribution[3]], x]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[CompoundPoissonDistribution[-2, ExponentialDistribution[3]]]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "CompoundPoissonDistribution::posprm: Parameter -2 at position 1"
+    ));
+
+    // wolframscript's own message template is missing; the literal
+    // fallback text matches.
+    clear_state();
+    let r =
+      interpret_with_stdout("Mean[CompoundPoissonDistribution[2, 5]]").unwrap();
+    assert!(r.warnings[0].contains(
+      "CompoundPoissonDistribution::univ: -- Message text not found -- \
+       (5) (2) (CompoundPoissonDistribution[2, 5])"
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("Mean[CompoundPoissonDistribution[2]]").unwrap();
+    assert!(r.warnings[0].contains(
+      "CompoundPoissonDistribution::argr: CompoundPoissonDistribution \
+       called with 1 argument; 2 arguments are expected."
+    ));
+
+    // Constructors echo silently.
+    clear_state();
+    let r = interpret_with_stdout(
+      "CompoundPoissonDistribution[-2, ExponentialDistribution[3]]",
+    )
+    .unwrap();
+    assert!(r.warnings.is_empty());
+  }
+}

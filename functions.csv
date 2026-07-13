@@ -3527,7 +3527,7 @@ BoundaryMeshRegionQ,,,,10.0,3636
 ButtonSource,,🚫,,3.0,3636
 CalloutStyle,,🚫,,11.0,3636
 ColorBalance,,🚫,,10.2,3636
-CompoundPoissonDistribution,,,,9.0,3636
+CompoundPoissonDistribution,Poisson-compounded sum distribution,✅,pure,9.0,3636
 DoubleLeftRightArrow,,,,3.0,3636
 EvaluationData,,🚫,,10.0,3636
 FailureQ,Tests whether an expression is a failure object such as $Failed or Failure[...],✅,pure,10.2,3636

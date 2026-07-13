@@ -4093,6 +4093,7 @@ pub fn distribution_mean_variance(
     "TsallisQGaussianDistribution" => tsallis_qgaussian_mean_variance(dargs),
     "VarianceGammaDistribution" => variance_gamma_mean_variance(dargs),
     "HoytDistribution" => hoyt_mean_variance(dargs),
+    "CompoundPoissonDistribution" => compound_poisson_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7919,6 +7920,78 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Mean and Variance of CompoundPoissonDistribution[λ, dist]:
+/// λ E[X] and λ E[X²] = λ (Var[X] + E[X]²), delegating to the inner
+/// distribution's moments. The PDF has no closed form and stays
+/// unevaluated (as in wolframscript).
+fn compound_poisson_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let bail = || {
+    Err(InterpreterError::EvaluationError(
+      "CompoundPoissonDistribution: invalid parameters".into(),
+    ))
+  };
+  if dargs.len() != 2 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "CompoundPoissonDistribution::argr: CompoundPoissonDistribution called with {} {}; 2 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return bail();
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist_str = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "CompoundPoissonDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if num(&dargs[0]).is_some_and(|v| v <= 0.0) {
+    crate::emit_message(&format!(
+      "CompoundPoissonDistribution::posprm: Parameter {} at position 1 in {} is expected to be positive.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist_str()
+    ));
+    return bail();
+  }
+  let Expr::FunctionCall {
+    name: inner_name,
+    args: inner_args,
+  } = &dargs[1]
+  else {
+    // wolframscript's own message template is missing here; it prints
+    // the raw fallback, which we replicate verbatim.
+    crate::emit_message(&format!(
+      "CompoundPoissonDistribution::univ: -- Message text not found -- ({}) ({}) ({})",
+      crate::syntax::expr_to_string(&dargs[1]),
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist_str()
+    ));
+    return bail();
+  };
+  if !inner_name.ends_with("Distribution") {
+    crate::emit_message(&format!(
+      "CompoundPoissonDistribution::univ: -- Message text not found -- ({}) ({}) ({})",
+      crate::syntax::expr_to_string(&dargs[1]),
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist_str()
+    ));
+    return bail();
+  }
+  // Unknown inner distributions bail silently to an unevaluated echo.
+  let (im, iv) = distribution_mean_variance(inner_name, inner_args)?;
+  let lam = dargs[0].clone();
+  let mean = eval(times(lam.clone(), im.clone()))?;
+  let variance = eval(times(lam, plus(iv, power(im, int(2)))))?;
+  Ok((mean, variance))
 }
 
 /// Validation for HoytDistribution[q, ω]: q in (0, 1] (pprobprm),
