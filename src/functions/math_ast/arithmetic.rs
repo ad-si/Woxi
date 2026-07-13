@@ -10968,9 +10968,37 @@ pub fn try_eval_to_f64_with_infinity(expr: &Expr) -> Option<f64> {
 }
 
 /// Max[args...] or Max[list] - Maximum value
+/// If any argument is a SparseArray, return the argument list with every
+/// SparseArray replaced by its dense form (so Max/Min compare over the
+/// expanded elements). Returns `None` when no argument is a SparseArray.
+fn densify_sparse_args(args: &[Expr]) -> Option<Vec<Expr>> {
+  if !args.iter().any(
+    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray"),
+  ) {
+    return None;
+  }
+  let mut out = Vec::with_capacity(args.len());
+  let mut changed = false;
+  for a in args {
+    match crate::functions::list_helpers_ast::densify_sparse_array(a) {
+      Some(dense) => {
+        out.push(dense);
+        changed = true;
+      }
+      None => out.push(a.clone()),
+    }
+  }
+  changed.then_some(out)
+}
+
 pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Identifier("-Infinity".to_string()));
+  }
+
+  // Any SparseArray argument is compared over its dense elements.
+  if let Some(dense) = densify_sparse_args(args) {
+    return max_ast(&dense);
   }
 
   // Handle Interval in Max
@@ -11049,6 +11077,11 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Identifier("Infinity".to_string()));
+  }
+
+  // Any SparseArray argument is compared over its dense elements.
+  if let Some(dense) = densify_sparse_args(args) {
+    return min_ast(&dense);
   }
 
   // Handle Interval in Min

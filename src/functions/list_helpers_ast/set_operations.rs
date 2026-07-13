@@ -883,6 +883,12 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Commonest expects 1 or 2 arguments".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) = super::densify_sparse_array(&args[0]) {
+    let mut new_args = args.to_vec();
+    new_args[0] = dense;
+    return commonest_ast(&new_args);
+  }
   let items = match &args[0] {
     Expr::List(items) => items,
     // Commonest only accepts a list (not even an Association): any other

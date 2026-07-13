@@ -9870,4 +9870,60 @@ mod sparse_array_input {
       "Sqrt[11/3]"
     );
   }
+
+  #[test]
+  fn geometric_mean_and_rms_densify() {
+    // GeometricMean of {2, 8} is 4.
+    assert_eq!(
+      interpret("GeometricMean[SparseArray[{1 -> 2, 2 -> 8}, 2]]").unwrap(),
+      "4"
+    );
+    // RootMeanSquare of {3, 4} is 5/Sqrt[2].
+    assert_eq!(
+      interpret("RootMeanSquare[SparseArray[{1 -> 3, 2 -> 4}, 2]]").unwrap(),
+      "5/Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn quantile_densifies() {
+    // Dense form is {5, 3, 0, 0}; the 1/2 quantile is 0.
+    assert_eq!(
+      interpret("Quantile[SparseArray[{1 -> 5, 2 -> 3}, 4], 0.5]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn commonest_densifies() {
+    // Dense form is {5, 0, 0}; the commonest value is 0.
+    assert_eq!(
+      interpret("Commonest[SparseArray[{1 -> 5}, 3]]").unwrap(),
+      "{0}"
+    );
+    // Dense form is {5, 5, 2, 0, 0}; 5 and 0 tie, ordered by first appearance.
+    assert_eq!(
+      interpret("Commonest[SparseArray[{1 -> 5, 2 -> 5, 3 -> 2}, 5]]").unwrap(),
+      "{5, 0}"
+    );
+  }
+
+  #[test]
+  fn max_and_min_densify() {
+    assert_eq!(interpret("Max[SparseArray[{1 -> 5}, 3]]").unwrap(), "5");
+    assert_eq!(interpret("Min[SparseArray[{1 -> 5}, 3]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Max[SparseArray[{1 -> 5, 3 -> 9}, 4]]").unwrap(),
+      "9"
+    );
+    // A SparseArray mixed with a plain scalar argument.
+    assert_eq!(
+      interpret("Max[SparseArray[{1 -> 5}, 3], 10]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("Min[SparseArray[{1 -> 5}, 3], -2]").unwrap(),
+      "-2"
+    );
+  }
 }

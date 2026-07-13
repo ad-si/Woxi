@@ -1757,6 +1757,12 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "GeometricMean expects exactly 1 argument".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return geometric_mean_ast(&[dense]);
+  }
   match &args[0] {
     Expr::List(items) => {
       // An empty list stays unevaluated (matching wolframscript) rather than
@@ -4084,6 +4090,12 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "RootMeanSquare expects exactly 1 argument".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return root_mean_square_ast(&[dense]);
+  }
   match &args[0] {
     Expr::List(items) => {
       // An empty list stays unevaluated (matching wolframscript).
@@ -4209,6 +4221,14 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Quantile expects 2 or 3 arguments".into(),
     ));
+  }
+  // A SparseArray data argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = dense;
+    return quantile_ast(&new_args);
   }
   // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
