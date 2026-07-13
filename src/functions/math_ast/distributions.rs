@@ -241,6 +241,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "SkellamDistribution" => pdf_skellam(dargs, x),
     "HypoexponentialDistribution" => pdf_hypoexponential(dargs, x),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
+    "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
     "BinomialDistribution" => pdf_binomial(dargs, x),
     "HypergeometricDistribution" => pdf_hypergeometric(dargs, x),
@@ -2046,6 +2047,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "SkellamDistribution" => cdf_skellam(dargs, x),
     "HypoexponentialDistribution" => cdf_hypoexponential(dargs, x),
     "FailureDistribution" => cdf_failure_distribution(dargs, x),
+    "FirstPassageTimeDistribution" => cdf_first_passage(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
     "BinomialDistribution" => cdf_binomial(dargs, x),
     "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
@@ -7205,6 +7207,322 @@ fn pdf_failure_distribution(
       ]
       .into(),
     })
+  }
+}
+
+/// Parses FirstPassageTimeDistribution[DiscreteMarkovProcess[i0, m], j]
+/// into (i0, transition rows, n, target j). Only the integer-initial-state
+/// form is supported.
+struct Fptd {
+  i0: usize,
+  rows: Vec<Vec<Expr>>,
+  n: usize,
+  target: usize,
+}
+
+fn fptd_parts(dargs: &[Expr]) -> Option<Fptd> {
+  let [proc, Expr::Integer(j)] = dargs else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args } = proc else {
+    return None;
+  };
+  if name != "DiscreteMarkovProcess" || args.len() != 2 {
+    return None;
+  }
+  let Expr::Integer(i0) = &args[0] else {
+    return None;
+  };
+  let Expr::List(rows) = &args[1] else {
+    return None;
+  };
+  let n = rows.len();
+  if n == 0 || *i0 < 1 || (*i0 as usize) > n || *j < 1 || (*j as usize) > n {
+    return None;
+  }
+  let mut mat = Vec::with_capacity(n);
+  for r in rows.iter() {
+    let Expr::List(cells) = r else { return None };
+    if cells.len() != n {
+      return None;
+    }
+    mat.push(cells.iter().cloned().collect());
+  }
+  Some(Fptd {
+    i0: *i0 as usize - 1,
+    rows: mat,
+    n,
+    target: *j as usize - 1,
+  })
+}
+
+/// The taboo pieces of a first-passage problem: the sub-matrix Q over the
+/// non-target states, the jump-to-target column r, the start vector over
+/// the non-target states (the initial unit vector for i0 != j, or the
+/// target row's off-target part for the first-return case), and the
+/// direct first-step probability f_1.
+struct FptdTaboo {
+  q: Vec<Vec<Expr>>,
+  r: Vec<Expr>,
+  start: Vec<Expr>,
+  f1: Expr,
+}
+
+fn fptd_taboo(f: &Fptd) -> FptdTaboo {
+  let others: Vec<usize> = (0..f.n).filter(|&k| k != f.target).collect();
+  let q: Vec<Vec<Expr>> = others
+    .iter()
+    .map(|&a| others.iter().map(|&b| f.rows[a][b].clone()).collect())
+    .collect();
+  let r: Vec<Expr> = others
+    .iter()
+    .map(|&a| f.rows[a][f.target].clone())
+    .collect();
+  if f.i0 == f.target {
+    // First return: one step from the target, then the taboo walk.
+    FptdTaboo {
+      q,
+      r,
+      start: others
+        .iter()
+        .map(|&b| f.rows[f.target][b].clone())
+        .collect(),
+      f1: f.rows[f.target][f.target].clone(),
+    }
+  } else {
+    let pos = others.iter().position(|&k| k == f.i0).unwrap();
+    let start: Vec<Expr> = (0..others.len())
+      .map(|k| Expr::Integer(if k == pos { 1 } else { 0 }))
+      .collect();
+    FptdTaboo {
+      f1: f.rows[f.i0][f.target].clone(),
+      q,
+      r,
+      start,
+    }
+  }
+}
+
+/// f_k for k = 1..=count, exactly, via iterated vector-matrix products.
+fn fptd_probs(f: &Fptd, count: usize) -> Result<Vec<Expr>, InterpreterError> {
+  let taboo = fptd_taboo(f);
+  let dot_vec =
+    |v: &[Expr], m: &[Vec<Expr>]| -> Result<Vec<Expr>, InterpreterError> {
+      let dim = v.len();
+      (0..dim)
+        .map(|b| {
+          let terms: Vec<Expr> = (0..dim)
+            .map(|a| times(v[a].clone(), m[a][b].clone()))
+            .collect();
+          eval(Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms.into(),
+          })
+        })
+        .collect()
+    };
+  let inner = |v: &[Expr], r: &[Expr]| -> Result<Expr, InterpreterError> {
+    let terms: Vec<Expr> = v
+      .iter()
+      .zip(r.iter())
+      .map(|(a, b)| times(a.clone(), b.clone()))
+      .collect();
+    eval(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    })
+  };
+  let mut out = Vec::with_capacity(count);
+  if count == 0 {
+    return Ok(out);
+  }
+  out.push(eval(taboo.f1.clone())?);
+  // For i0 != j: f_k = start.Q^(k-1).r; the start vector already encodes
+  // one absorbed step in the return case (f_k = start.Q^(k-2).r there).
+  let mut v = taboo.start.clone();
+  for k in 2..=count {
+    if f.i0 == f.target && k == 2 {
+      // v is already the post-first-step distribution.
+    } else {
+      v = dot_vec(&v, &taboo.q)?;
+    }
+    out.push(inner(&v, &taboo.r)?);
+  }
+  Ok(out)
+}
+
+/// The exact hitting-time moments: (mean, variance) of the first passage
+/// (or first return) time, via (I - Q) h = 1 and (I - Q) m2 = 1 + 2 Q h.
+fn fptd_moments(f: &Fptd) -> Result<Option<(Expr, Expr)>, InterpreterError> {
+  let taboo = fptd_taboo(f);
+  let dim = taboo.q.len();
+  let i_minus_q: Vec<Expr> = (0..dim)
+    .map(|a| {
+      Expr::List(
+        (0..dim)
+          .map(|b| {
+            let mut entry = times(int(-1), taboo.q[a][b].clone());
+            if a == b {
+              entry = plus(int(1), entry);
+            }
+            entry
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    })
+    .collect();
+  let solve = |rhs: Vec<Expr>| -> Result<Option<Vec<Expr>>, InterpreterError> {
+    let solved = eval(Expr::FunctionCall {
+      name: "LinearSolve".to_string(),
+      args: vec![Expr::List(i_minus_q.clone().into()), Expr::List(rhs.into())]
+        .into(),
+    })?;
+    match solved {
+      Expr::List(ref v) if v.len() == dim => {
+        Ok(Some(v.iter().cloned().collect()))
+      }
+      _ => Ok(None),
+    }
+  };
+  let Some(h) = solve(vec![int(1); dim])? else {
+    return Ok(None);
+  };
+  // rhs2 = 1 + 2 (Q h)
+  let mut rhs2 = Vec::with_capacity(dim);
+  for a in 0..dim {
+    let qh: Vec<Expr> = (0..dim)
+      .map(|b| times(taboo.q[a][b].clone(), h[b].clone()))
+      .collect();
+    rhs2.push(eval(plus(
+      int(1),
+      times(
+        int(2),
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: qh.into(),
+        },
+      ),
+    ))?);
+  }
+  let Some(m2) = solve(rhs2)? else {
+    return Ok(None);
+  };
+  let inner = |v: &[Expr], w: &[Expr]| -> Expr {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: v
+        .iter()
+        .zip(w.iter())
+        .map(|(a, b)| times(a.clone(), b.clone()))
+        .collect::<Vec<_>>()
+        .into(),
+    }
+  };
+  let (mean, second) = if f.i0 == f.target {
+    // E[T] = 1 + p.h; E[T^2] = 1 + 2 p.h + p.m2 (p = target row off j).
+    let ph = inner(&taboo.start, &h);
+    let pm2 = inner(&taboo.start, &m2);
+    (
+      eval(plus(int(1), ph.clone()))?,
+      eval(plus(plus(int(1), times(int(2), ph)), pm2))?,
+    )
+  } else {
+    let others: Vec<usize> = (0..f.n).filter(|&k| k != f.target).collect();
+    let pos = others.iter().position(|&k| k == f.i0).unwrap();
+    (h[pos].clone(), m2[pos].clone())
+  };
+  let variance =
+    eval(plus(second, times(int(-1), power(mean.clone(), int(2)))))?;
+  Ok(Some((mean, variance)))
+}
+
+/// PDF[FirstPassageTimeDistribution[...], t] for a concrete t: f_t for
+/// positive integers, 0 elsewhere. Symbolic t (wolframscript produces
+/// eigendecomposition closed forms) stays unevaluated.
+fn pdf_first_passage(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "FirstPassageTimeDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(f) = fptd_parts(dargs) else {
+    return unevaluated(x);
+  };
+  match crate::functions::math_ast::try_eval_to_f64(&x) {
+    Some(v) => {
+      if v < 1.0 || v.fract() != 0.0 || v > 100_000.0 {
+        return Ok(int(0));
+      }
+      let k = v as usize;
+      let probs = fptd_probs(&f, k)?;
+      Ok(probs.into_iter().next_back().unwrap_or(int(0)))
+    }
+    None => unevaluated(x),
+  }
+}
+
+/// CDF[FirstPassageTimeDistribution[...], t] for a concrete t: the sum of
+/// f_1..f_Floor[t].
+fn cdf_first_passage(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "FirstPassageTimeDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(f) = fptd_parts(dargs) else {
+    return unevaluated(x);
+  };
+  match crate::functions::math_ast::try_eval_to_f64(&x) {
+    Some(v) => {
+      if v < 1.0 {
+        return Ok(int(0));
+      }
+      let k = (v.floor() as usize).min(100_000);
+      let probs = fptd_probs(&f, k)?;
+      eval(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: probs.into(),
+      })
+    }
+    None => unevaluated(x),
+  }
+}
+
+/// Mean/Variance accessors used by the statistics dispatch.
+pub fn fptd_mean(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
+  match fptd_parts(dargs) {
+    Some(f) => Ok(fptd_moments(&f)?.map(|(m, _)| m)),
+    None => Ok(None),
+  }
+}
+
+pub fn fptd_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
+  match fptd_parts(dargs) {
+    Some(f) => Ok(fptd_moments(&f)?.map(|(_, v)| v)),
+    None => Ok(None),
   }
 }
 

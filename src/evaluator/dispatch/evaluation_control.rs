@@ -471,9 +471,11 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
-    // DiscreteMarkovProcess and the StationaryDistribution wrapper are
-    // symbolic objects consumed by PDF/Mean.
-    "DiscreteMarkovProcess" | "StationaryDistribution" => {
+    // DiscreteMarkovProcess and its distribution wrappers are symbolic
+    // objects consumed by PDF/CDF/Mean/Variance.
+    "DiscreteMarkovProcess"
+    | "StationaryDistribution"
+    | "FirstPassageTimeDistribution" => {
       return Some(Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec().into(),

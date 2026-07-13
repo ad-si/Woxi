@@ -9191,3 +9191,121 @@ mod discrete_markov_process {
     );
   }
 }
+
+// FirstPassageTimeDistribution for discrete Markov processes. All
+// outputs verified against wolframscript.
+mod first_passage_time_distribution {
+  use super::*;
+
+  #[test]
+  fn first_passage_probabilities() {
+    // From state 1 to state 2: stay-then-jump geometric tail.
+    for (t, expected) in [("1", "1/2"), ("2", "1/4"), ("3", "1/8")] {
+      assert_eq!(
+        interpret(&format!(
+          "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{{{1/2, 1/2}}, {{1/3, 2/3}}}}], 2], {t}]"
+        ))
+        .unwrap(),
+        expected
+      );
+    }
+    // Zero and non-integer times have no mass; the CDF floors.
+    assert_eq!(
+      interpret(
+        "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], 0]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], 3/2]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], 3]"
+      )
+      .unwrap(),
+      "7/8"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], 5/2]"
+      )
+      .unwrap(),
+      "3/4"
+    );
+  }
+
+  #[test]
+  fn first_return_case() {
+    // Target == initial state means the first RETURN time; its mean is
+    // 1/pi_1.
+    assert_eq!(
+      interpret(
+        "Mean[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 1]]"
+      )
+      .unwrap(),
+      "5/2"
+    );
+    for (t, expected) in [("1", "1/2"), ("2", "1/6"), ("3", "1/9")] {
+      assert_eq!(
+        interpret(&format!(
+          "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{{{1/2, 1/2}}, {{1/3, 2/3}}}}], 1], {t}]"
+        ))
+        .unwrap(),
+        expected
+      );
+    }
+    assert_eq!(
+      interpret(
+        "Variance[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 1]]"
+      )
+      .unwrap(),
+      "21/4"
+    );
+  }
+
+  #[test]
+  fn exact_moments() {
+    assert_eq!(
+      interpret(
+        "Mean[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{0, 1/2, 1/2}, {1/2, 0, 1/2}, {1/2, 1/2, 0}}], 3]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{0, 1/2, 1/2}, {1/2, 0, 1/2}, {1/2, 1/2, 0}}], 3]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    // Symbolic times need eigendecomposition closed forms — unevaluated.
+    assert_eq!(
+      interpret(
+        "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], x]"
+      )
+      .unwrap(),
+      "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], x]"
+    );
+  }
+}

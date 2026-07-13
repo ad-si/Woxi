@@ -796,6 +796,18 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "FirstPassageTimeDistribution" && dargs.len() == 2 => {
+      match super::distributions::fptd_mean(dargs)? {
+        Some(mean) => Ok(mean),
+        None => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "StationaryDistribution" && dargs.len() == 1 => {
       // Mean of a Markov chain's stationary distribution: Σ k π_k.
       if let Expr::FunctionCall { name, args: mp } = &dargs[0]
@@ -1186,6 +1198,18 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match super::distributions::wishart_mean_variance(dargs) {
         Ok((_, variance)) => Ok(variance),
         Err(_) => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "FirstPassageTimeDistribution" && dargs.len() == 2 => {
+      match super::distributions::fptd_variance(dargs)? {
+        Some(variance) => Ok(variance),
+        None => Ok(Expr::FunctionCall {
           name: "Variance".to_string(),
           args: args.to_vec().into(),
         }),
