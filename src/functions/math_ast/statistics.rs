@@ -6819,6 +6819,87 @@ pub fn covariance_function_data(
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
 }
 
+/// AbsoluteCorrelationFunction[data, hspec] — the non-centered second
+/// moment estimate Σ x_t x_(t+|h|) / n (plain products, no conjugation —
+/// wolframscript-verified on complex data). hspec is an integer lag,
+/// {hmax} (lags 0..hmax), or {h1, h2} (lags h1..h2); a lag magnitude at
+/// or beyond the data length emits bdlag.
+pub fn absolute_correlation_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "AbsoluteCorrelationFunction".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let Expr::List(items) = &args[0] else {
+    return unevaluated();
+  };
+  if items.is_empty() || !all_numeric_scalars(items) {
+    return unevaluated();
+  }
+  let n = items.len();
+  let bdlag = || {
+    crate::emit_message(&format!(
+      "AbsoluteCorrelationFunction::bdlag: The lag specification {} should be a symbol, an integer with magnitude less than the length of the data or a range specification indicating such integers.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+  };
+  let single = |h: i128| -> Result<Expr, InterpreterError> {
+    let h_us = h.unsigned_abs() as usize;
+    let terms: Vec<Expr> = (0..(n - h_us))
+      .map(|t| Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(items[t].clone()),
+        right: Box::new(items[t + h_us].clone()),
+      })
+      .collect();
+    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      }),
+      right: Box::new(Expr::Integer(n as i128)),
+    })
+  };
+  let lags: Vec<i128> = match &args[1] {
+    Expr::Integer(h) => vec![*h],
+    Expr::List(spec) => {
+      let ints: Option<Vec<i128>> = spec
+        .iter()
+        .map(|e| match e {
+          Expr::Integer(v) => Some(*v),
+          _ => None,
+        })
+        .collect();
+      match ints.as_deref() {
+        Some([hmax]) => (0..=*hmax).collect(),
+        Some([h1, h2]) if h1 <= h2 => (*h1..=*h2).collect(),
+        _ => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  if lags.iter().any(|h| h.unsigned_abs() >= n as u128) {
+    bdlag();
+    return unevaluated();
+  }
+  let mut values = Vec::with_capacity(lags.len());
+  for h in &lags {
+    values.push(single(*h)?);
+  }
+  if matches!(&args[1], Expr::Integer(_)) {
+    Ok(values.into_iter().next().unwrap())
+  } else {
+    Ok(Expr::List(values.into()))
+  }
+}
+
 /// CovarianceFunction[proc, s, t] gives the autocovariance Cov[X_s, X_t]
 /// for the stochastic process `proc`. This implementation handles
 /// ARMA(p, q) processes for (p, q) ∈ {(1,0), (0,1), (1,1)}, returning

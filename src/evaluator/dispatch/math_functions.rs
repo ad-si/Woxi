@@ -1908,6 +1908,9 @@ pub fn dispatch_math_functions(
     "CorrelationFunction" if args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_function_ast(args));
     }
+    "AbsoluteCorrelationFunction" => {
+      return Some(crate::functions::absolute_correlation_function_ast(args));
+    }
     // StieltjesGamma[0] is EulerGamma; positive integers and symbols stay
     // symbolic (N picks up the machine values via try_eval_to_f64); other
     // arguments emit StieltjesGamma::intnm like wolframscript

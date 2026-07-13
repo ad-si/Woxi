@@ -8809,3 +8809,69 @@ mod wishart_matrix_distribution {
     assert!(r.warnings[0].contains("WishartMatrixDistribution::bprm"));
   }
 }
+
+// AbsoluteCorrelationFunction[data, hspec] — the non-centered second
+// moment estimate Sum x_t x_(t+|h|) / n. All outputs verified against
+// wolframscript.
+mod absolute_correlation_function {
+  use super::*;
+
+  #[test]
+  fn single_lags() {
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 1]").unwrap(),
+      "8"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 0]").unwrap(),
+      "11"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "26/5"
+    );
+    // The largest valid lag uses a single product.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 4]").unwrap(),
+      "1"
+    );
+    // Negative lags are symmetric.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, -1]").unwrap(),
+      "8"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1., 2., 3., 4.}, 1]").unwrap(),
+      "5."
+    );
+  }
+
+  #[test]
+  fn range_specs() {
+    // {hmax} means lags 0 through hmax.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, {2}]").unwrap(),
+      "{11, 8, 26/5}"
+    );
+    // {h1, h2} is an inclusive lag range.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, {1, 3}]")
+        .unwrap(),
+      "{8, 26/5, 14/5}"
+    );
+  }
+
+  #[test]
+  fn out_of_range_lags_emit_bdlag() {
+    clear_state();
+    let r =
+      interpret_with_stdout("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 5]")
+        .unwrap();
+    assert_eq!(r.result, "AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 5]");
+    assert!(r.warnings[0].contains(
+      "AbsoluteCorrelationFunction::bdlag: The lag specification 5 should \
+       be a symbol, an integer with magnitude less than the length of the \
+       data or a range specification indicating such integers."
+    ));
+  }
+}
