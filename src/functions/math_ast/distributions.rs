@@ -249,6 +249,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "VonMisesDistribution" => pdf_vonmises(dargs, x),
     "BeniniDistribution" => pdf_benini(dargs, x),
     "HotellingTSquareDistribution" => pdf_hotelling(dargs, x),
+    "TukeyLambdaDistribution" => tukey_lambda_pdf_cdf(dargs, x, true),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -2069,6 +2070,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "HyperexponentialDistribution" => cdf_hyperexponential(dargs, x),
     "BeniniDistribution" => cdf_benini(dargs, x),
     "HotellingTSquareDistribution" => cdf_hotelling(dargs, x),
+    "TukeyLambdaDistribution" => tukey_lambda_pdf_cdf(dargs, x, false),
     "FailureDistribution" => cdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => cdf_first_passage(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
@@ -4083,6 +4085,7 @@ pub fn distribution_mean_variance(
     "HyperexponentialDistribution" => hyperexponential_mean_variance(dargs),
     "BeniniDistribution" => benini_mean_variance(dargs),
     "HotellingTSquareDistribution" => hotelling_mean_variance(dargs),
+    "TukeyLambdaDistribution" => tukey_lambda_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7909,6 +7912,288 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Arity check for TukeyLambdaDistribution (1 or 3 arguments).
+fn tukey_lambda_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() == 1 || dargs.len() == 3 {
+    return Some(());
+  }
+  let word = if dargs.len() == 1 {
+    "argument"
+  } else {
+    "arguments"
+  };
+  crate::emit_message(&format!(
+    "TukeyLambdaDistribution::argt: TukeyLambdaDistribution called with {} {}; 1 or 3 arguments are expected.",
+    dargs.len(),
+    word
+  ));
+  None
+}
+
+/// PDF/CDF of TukeyLambdaDistribution for the λ values wolframscript
+/// has closed forms for (0, 1/2, 1, 2, -1, exact or float). Other λ
+/// (including the Root-object λ=3 case) stay unevaluated. The 3-arg
+/// location-scale form substitutes (x-μ)/σ into the branch values and
+/// conditions and divides the PDF Piecewise by σ, as wolframscript does.
+fn tukey_lambda_pdf_cdf(
+  dargs: &[Expr],
+  x: Expr,
+  want_pdf: bool,
+) -> Result<Expr, InterpreterError> {
+  let head = if want_pdf { "PDF" } else { "CDF" };
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "TukeyLambdaDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = tukey_lambda_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let lam = dargs[0].clone();
+  let Some(lv) = crate::functions::math_ast::try_eval_to_f64(&lam) else {
+    return unevaluated(x);
+  };
+  let scaled = dargs.len() == 3;
+  // The variable the closed forms are written in: x or (x - μ)/σ.
+  let y: Expr = if scaled {
+    eval(divide(
+      plus(times(int(-1), dargs[1].clone()), x.clone()),
+      dargs[2].clone(),
+    ))?
+  } else {
+    x.clone()
+  };
+  let sq = |e: &Expr| power(e.clone(), int(2));
+  let lam2y2 = |lam: &Expr, y: &Expr| times(sq(lam), sq(y));
+  // (value, condition) pairs plus default per λ; None = no closed form.
+  let e_neg = |arg: Expr| power(e(), times(int(-1), arg));
+  let branches: Option<(Vec<(Expr, Expr)>, Expr)> = if lv == 0.0 {
+    // Logistic: full support, no Piecewise.
+    let value = if want_pdf {
+      if scaled {
+        // E^((μ-x)/σ)/(σ (1 + E^((μ-x)/σ))^2)
+        let z = eval(divide(
+          plus(dargs[1].clone(), times(int(-1), x.clone())),
+          dargs[2].clone(),
+        ))?;
+        divide(
+          power(e(), z.clone()),
+          times(dargs[2].clone(), sq(&plus(int(1), power(e(), z)))),
+        )
+      } else {
+        times(
+          e_neg(y.clone()),
+          power(plus(int(1), e_neg(y.clone())), int(-2)),
+        )
+      }
+    } else {
+      power(plus(int(1), e_neg(y.clone())), int(-1))
+    };
+    return eval(value);
+  } else if lv == 0.5 {
+    let c = eval(lam2y2(&lam, &y))?;
+    let cond = comparison3(
+      int(-2),
+      ComparisonOp::LessEqual,
+      y.clone(),
+      ComparisonOp::LessEqual,
+      int(2),
+    );
+    if want_pdf {
+      let v = divide(
+        plus(int(1), times(int(-1), c.clone())),
+        times(
+          int(2),
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![plus(int(2), times(int(-1), c))].into(),
+          },
+        ),
+      );
+      Some((vec![(v, cond)], int(0)))
+    } else {
+      let inner = plus(
+        int(4),
+        times(
+          y.clone(),
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![plus(int(8), times(int(-1), sq(&y)))].into(),
+          },
+        ),
+      );
+      // Float λ folds the 1/8 into a 0.125 prefactor, like wolframscript.
+      let v = if matches!(&lam, Expr::Real(_)) {
+        times(Expr::Real(0.125), inner)
+      } else {
+        divide(inner, int(8))
+      };
+      let below = comparison(y.clone(), ComparisonOp::Less, int(-2));
+      Some((vec![(v, cond), (int(0), below)], int(1)))
+    }
+  } else if lv == 1.0 || lv == 2.0 {
+    // Support bounds stay exact even for float λ (wolframscript shows
+    // -1 <= x <= 1 for λ = 1.).
+    let half_width = if lv == 1.0 {
+      int(1)
+    } else {
+      divide(int(1), int(2))
+    };
+    let half_width = eval(half_width)?;
+    let lo = eval(times(int(-1), half_width.clone()))?;
+    let cond = comparison3(
+      lo.clone(),
+      ComparisonOp::LessEqual,
+      y.clone(),
+      ComparisonOp::LessEqual,
+      half_width,
+    );
+    if want_pdf {
+      let v = eval(divide(lam.clone(), int(2)))?;
+      Some((vec![(v, cond)], int(0)))
+    } else {
+      let v = divide(plus(int(1), times(lam.clone(), y.clone())), int(2));
+      let below = comparison(y.clone(), ComparisonOp::Less, lo);
+      Some((vec![(v, cond), (int(0), below)], int(1)))
+    }
+  } else if lv == -1.0 {
+    let cond = comparison(y.clone(), ComparisonOp::NotEqual, int(0));
+    if want_pdf {
+      let v = divide(
+        plus(
+          int(1),
+          times(
+            int(-1),
+            power(
+              Expr::FunctionCall {
+                name: "Sqrt".to_string(),
+                args: vec![plus(int(1), divide(sq(&y), int(4)))].into(),
+              },
+              int(-1),
+            ),
+          ),
+        ),
+        sq(&y),
+      );
+      Some((vec![(v, cond)], divide(int(1), int(8))))
+    } else {
+      let v = divide(
+        plus(
+          plus(int(-2), y.clone()),
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![plus(int(4), sq(&y))].into(),
+          },
+        ),
+        times(int(2), y.clone()),
+      );
+      Some((vec![(v, cond)], divide(int(1), int(2))))
+    }
+  } else {
+    None
+  };
+  let Some((cases, default)) = branches else {
+    return unevaluated(x);
+  };
+  // Branch values evaluate; conditions keep the substituted variable raw.
+  let mut evaled: Vec<(Expr, Expr)> = Vec::new();
+  for (v, c) in cases {
+    evaled.push((eval(v)?, c));
+  }
+  let pw = eval(piecewise_with_default(
+    evaled.into_iter().collect::<Vec<_>>(),
+    eval(default)?,
+  ))?;
+  if want_pdf && scaled {
+    Ok(times(pw, power(dargs[2].clone(), int(-1))))
+  } else {
+    Ok(pw)
+  }
+}
+
+/// Mean and Variance of TukeyLambdaDistribution: Mean is 0 (or μ) for
+/// λ > -1; Variance uses the factorial template
+/// (-2 λ!² + 2 (2λ)!)/(λ² (1+2λ)!) for λ > -1/2.
+fn tukey_lambda_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = tukey_lambda_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "TukeyLambdaDistribution: invalid arity".into(),
+    ));
+  };
+  let lam = dargs[0].clone();
+  let indet = Expr::Identifier("Indeterminate".to_string());
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let mu = if dargs.len() == 3 {
+    dargs[1].clone()
+  } else {
+    int(0)
+  };
+  let fact = |e: Expr| Expr::FunctionCall {
+    name: "Factorial".to_string(),
+    args: vec![e].into(),
+  };
+  let var_core = divide(
+    plus(
+      times(int(-2), power(fact(lam.clone()), int(2))),
+      times(int(2), fact(times(int(2), lam.clone()))),
+    ),
+    times(
+      power(lam.clone(), int(2)),
+      fact(plus(int(1), times(int(2), lam.clone()))),
+    ),
+  );
+  let sigma2 = if dargs.len() == 3 {
+    times(power(dargs[2].clone(), int(2)), var_core.clone())
+  } else {
+    var_core.clone()
+  };
+  match num(&lam) {
+    Some(lv) => {
+      let mean = if lv > -1.0 { eval(mu)? } else { indet.clone() };
+      let variance = if lv == 0.0 {
+        // Logistic limit: the factorial template divides by λ².
+        let core =
+          divide(power(Expr::Constant("Pi".to_string()), int(2)), int(3));
+        let scaled_core = if dargs.len() == 3 {
+          times(power(dargs[2].clone(), int(2)), core)
+        } else {
+          core
+        };
+        eval(scaled_core)?
+      } else if lv > -0.5 {
+        eval(sigma2)?
+      } else {
+        indet
+      };
+      Ok((mean, variance))
+    }
+    None => {
+      let mean = eval(piecewise_with_default(
+        vec![(mu, comparison(lam.clone(), ComparisonOp::Greater, int(-1)))],
+        indet.clone(),
+      ))?;
+      let variance = eval(piecewise_with_default(
+        vec![(
+          sigma2,
+          comparison(lam, ComparisonOp::Greater, divide(int(-1), int(2))),
+        )],
+        indet,
+      ))?;
+      Ok((mean, variance))
+    }
+  }
 }
 
 /// Validation for HotellingTSquareDistribution[p, m]: both parameters

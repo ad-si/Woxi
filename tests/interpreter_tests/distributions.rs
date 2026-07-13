@@ -6815,3 +6815,138 @@ mod beta_regularized_float_expansion {
     );
   }
 }
+
+// TukeyLambdaDistribution: quantile-defined; wolframscript has closed
+// forms only for λ in {0, 1/2, 1, 2, -1} (exact or float) and this
+// implementation mirrors exactly that set (λ = 3 gives Root objects in
+// WS and stays unevaluated here; other λ are unevaluated in both).
+mod tukey_lambda_distribution {
+  use super::*;
+
+  #[test]
+  fn special_lambda_pdfs() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[0], x]").unwrap(),
+      "1/(E^x*(1 + E^(-x))^2)"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[1/2], x]").unwrap(),
+      "Piecewise[{{(1 - x^2/4)/(2*Sqrt[2 - x^2/4]), -2 <= x <= 2}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[TukeyLambdaDistribution[1], x], \
+          PDF[TukeyLambdaDistribution[2], x]}"
+      )
+      .unwrap(),
+      "{Piecewise[{{1/2, -1 <= x <= 1}}, 0], \
+        Piecewise[{{1, -1/2 <= x <= 1/2}}, 0]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[-1], x]").unwrap(),
+      "Piecewise[{{(1 - 1/Sqrt[1 + x^2/4])/x^2, x != 0}}, 1/8]"
+    );
+    // Float λ folds coefficients but keeps exact support bounds.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[0.5], x]").unwrap(),
+      "Piecewise[{{(1 - 0.25*x^2)/(2*Sqrt[2 - 0.25*x^2]), -2 <= x <= 2}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[TukeyLambdaDistribution[1.], x], \
+          PDF[TukeyLambdaDistribution[2.], x]}"
+      )
+      .unwrap(),
+      "{Piecewise[{{0.5, -1 <= x <= 1}}, 0], \
+        Piecewise[{{1., -1/2 <= x <= 1/2}}, 0]}"
+    );
+    // Other λ stay unevaluated (λ = 3 is Root-valued in wolframscript).
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[1/3], x]").unwrap(),
+      "PDF[TukeyLambdaDistribution[1/3], x]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[1/2], 1]").unwrap(),
+      "3/(4*Sqrt[7])"
+    );
+  }
+
+  #[test]
+  fn cdfs_and_location_scale() {
+    clear_state();
+    assert_eq!(
+      interpret("CDF[TukeyLambdaDistribution[0], x]").unwrap(),
+      "(1 + E^(-x))^(-1)"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{CDF[TukeyLambdaDistribution[1], x], \
+          CDF[TukeyLambdaDistribution[-1], x]}"
+      )
+      .unwrap(),
+      "{Piecewise[{{(1 + x)/2, -1 <= x <= 1}, {0, x < -1}}, 1], \
+        Piecewise[{{(-2 + x + Sqrt[4 + x^2])/(2*x), x != 0}}, 1/2]}"
+    );
+    // Location-scale: values substitute (x-μ)/σ, the PDF Piecewise is
+    // divided by σ, and conditions keep the raw substituted variable.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[1/2, 3, 2], x]").unwrap(),
+      "Piecewise[{{(1 - (-3 + x)^2/16)/(2*Sqrt[2 - (-3 + x)^2/16]), \
+        -2 <= (-3 + x)/2 <= 2}}, 0]/2"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[TukeyLambdaDistribution[1/2, 3, 2], x]").unwrap(),
+      "Piecewise[{{(4 + (Sqrt[8 - (-3 + x)^2/4]*(-3 + x))/2)/8, \
+        -2 <= (-3 + x)/2 <= 2}, {0, (-3 + x)/2 < -2}}, 1]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[0, 3, 2], x]").unwrap(),
+      "E^((3 - x)/2)/(2*(1 + E^((3 - x)/2))^2)"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[TukeyLambdaDistribution[1/2]], \
+          Variance[TukeyLambdaDistribution[1/2]], \
+          Variance[TukeyLambdaDistribution[0]], \
+          Variance[TukeyLambdaDistribution[3]], \
+          Mean[TukeyLambdaDistribution[1/2, 3, 2]]}"
+      )
+      .unwrap(),
+      "{0, 2*(2 - Pi/2), Pi^2/3, 19/630, 3}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[TukeyLambdaDistribution[l]]").unwrap(),
+      "Piecewise[{{0, l > -1}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn arity_message() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[TukeyLambdaDistribution[1, 2], x]").unwrap();
+    assert_eq!(r.result, "PDF[TukeyLambdaDistribution[1, 2], x]");
+    assert!(r.warnings[0].contains(
+      "TukeyLambdaDistribution::argt: TukeyLambdaDistribution called with \
+       2 arguments; 1 or 3 arguments are expected."
+    ));
+  }
+}

@@ -3322,7 +3322,7 @@ LevyDistribution,Levy heavy-tailed distribution (infinite moments with radical P
 MeanShift,,🚫,,8.0,3402
 MedianDeviation,Median absolute deviation from the median,✅,pure,6.0,3402
 ShowCellTags,,🚫,,3.0,3402
-TukeyLambdaDistribution,,,,8.0,3402
+TukeyLambdaDistribution,Tukey lambda quantile-defined distribution,✅,pure,8.0,3402
 DeviceConfigure,,🚫,,10.0,3413
 FromEntity,,🚫,,10.0,3413
 GARCHProcess,,🚫,,10.0,3413
