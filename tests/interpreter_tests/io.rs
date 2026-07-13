@@ -7269,3 +7269,39 @@ mod find_list_tests {
     )));
   }
 }
+
+// PrintTemporary behaves exactly like Print in script mode (the
+// notebook "temporary cell" erasure does not apply) and returns Null.
+// Verified against wolframscript.
+mod print_temporary {
+  use super::*;
+
+  #[test]
+  fn prints_and_returns_null() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "PrintTemporary[\"hello\"]; x = PrintTemporary[1 + 1]; \
+       PrintTemporary[\"a\", \"b\", 3]; InputForm[x]",
+    )
+    .unwrap();
+    assert_eq!(r.stdout, "hello\n2\nab3\n");
+    assert_eq!(r.result, "Null");
+  }
+
+  #[test]
+  fn empty_call_prints_a_blank_line() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PrintTemporary[]; Print[\"after\"]").unwrap();
+    assert_eq!(r.stdout, "\nafter\n");
+  }
+
+  #[test]
+  fn attributes() {
+    clear_state();
+    assert_eq!(
+      interpret("Attributes[PrintTemporary]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}

@@ -559,7 +559,9 @@ pub fn dispatch_plotting(
     "WordCloud" if !args.is_empty() => {
       Some(crate::functions::chart::word_cloud_ast(args))
     }
-    "Print" => {
+    // PrintTemporary prints like Print in script mode (the notebook
+    // "temporary cell" behavior does not apply) and returns Null.
+    "Print" | "PrintTemporary" => {
       if args.is_empty() {
         if !crate::is_quiet_print() {
           println!();

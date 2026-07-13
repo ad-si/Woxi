@@ -1839,7 +1839,7 @@ ButtonFunction,Button function option,,unevaluated,3.0,1866
 SystemOptions,System options,,unevaluated,6.0,1867
 FrobeniusSolve,Returns non-negative integer solutions to a Frobenius equation,✅,pure,6.0,1869
 Sunday,Day of the week symbol,✅,unevaluated,9.0,1869
-PrintTemporary,Print temporary expression,,unevaluated,6.0,1870
+PrintTemporary,Print like Print in script mode,✅,io,6.0,1870
 Constants,Option for Simplify specifying which symbols are constants,✅,pure,1.0,1873
 GeneratedParameters,Generated parameters option,,unevaluated,5.0,1873
 ImageValue,Bilinear pixel value lookup in an image,✅,pure,8.0,1873

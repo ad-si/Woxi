@@ -658,6 +658,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // NHoldAll + Protected + ReadProtected
     "InverseFunction" => vec!["NHoldAll", "Protected", "ReadProtected"],
+    "PrintTemporary" => vec!["Protected", "ReadProtected"],
 
     // Protected + ReadProtected (additional)
     "Sound"
