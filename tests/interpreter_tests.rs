@@ -1179,6 +1179,31 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_mixed_radix_quantity_stays_symbolic() {
+    clear_state();
+    // MixedRadixQuantity[digits, radixList] is an inert container: wolframscript
+    // leaves it symbolic (arguments evaluate, the head stays) and emits no
+    // message. It must NOT produce a "not yet implemented" warning.
+    let r =
+      interpret_with_stdout("MixedRadixQuantity[{1, 2, 3}, {60, 60}]").unwrap();
+    assert_eq!(r.result, "MixedRadixQuantity[{1, 2, 3}, {60, 60}]");
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+      "unexpected warning: {:?}",
+      r.warnings
+    );
+    // N threads into the arguments while the head is preserved.
+    assert_eq!(
+      interpret("N[MixedRadixQuantity[{1, 2, 3}, {60, 60}]]").unwrap(),
+      "MixedRadixQuantity[{1., 2., 3.}, {60., 60.}]"
+    );
+    assert_eq!(
+      interpret("Head[MixedRadixQuantity[{1, 2, 3}, {60, 60}]]").unwrap(),
+      "MixedRadixQuantity"
+    );
+  }
+
+  #[test]
   fn notation_wrappers_stay_symbolic_without_warning() {
     // Notation/display wrapper heads stay unevaluated as their canonical form
     // in wolframscript and must NOT emit a spurious "not yet implemented"

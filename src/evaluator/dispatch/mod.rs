@@ -10600,6 +10600,7 @@ pub fn evaluate_function_call_ast_inner(
       | "DotEqual"
       | "NumberMarks"
       | "MixedRadix"
+      | "MixedRadixQuantity"
       | "XMLObject"
       | "UnderoverscriptBox"
       | "ForwardBackward"

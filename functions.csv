@@ -4680,7 +4680,7 @@ MassFluxValue,,,,12.2,4881
 MatchLocalNames,,,,2.0,4881
 MineralData,,🚫,,10.0,4881
 MissingStyle,,,,10.0,4881
-MixedRadixQuantity,,,,9.0,4881
+MixedRadixQuantity,Represents a quantity given as digits in a mixed-radix base,✅,Symbolic,9.0,4881
 MoleculeRecognize,,🚫,,12.1,4881
 NestedGreaterGreater,,,,3.0,4881
 NonlocalMeansFilter,,,,9.0,4881
