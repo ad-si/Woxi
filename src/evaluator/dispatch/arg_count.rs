@@ -670,6 +670,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     // Image-arg check fires before arg-count, so widen here.
     "ImageRotate" => Some((1, usize::MAX)),
     "ImageSubtract" => Some((2, usize::MAX)),
+    "ImagePartition" => Some((2, 3)),
     "ImageTake" => Some((2, 3)),
     "ImageType" => Some((1, 1)),
     "Implies" => Some((2, 2)),

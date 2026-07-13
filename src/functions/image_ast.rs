@@ -4703,27 +4703,222 @@ fn as_rational(e: &Expr) -> Option<(i64, i64)> {
   }
 }
 
-/// ImagePartition[img, n] / [img, n, d] — image tile partition stub.
-/// Real image partitioning isn't implemented yet; this stub only matches
-/// wolframscript's behavior for non-image input (emits ImagePartition::imginv
-/// and returns the call unevaluated) so doctests like
-/// `ImagePartition[hedy, 256]` (no image present) line up.
+/// One axis of an ImagePartition size spec.
+enum PartitionAxisMode {
+  /// Plain size `n`: top-left anchored grid, only complete blocks kept.
+  Full(usize),
+  /// `{n}` form: centered grid, partial edge blocks are kept (clipped).
+  Clipped(usize),
+}
+
+/// A positive block size / offset component: numeric, floored, >= 1.
+fn partition_positive_int(e: &Expr) -> Option<usize> {
+  let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+  if !v.is_finite() {
+    return None;
+  }
+  let f = v.floor();
+  if f >= 1.0 && f <= u32::MAX as f64 {
+    Some(f as usize)
+  } else {
+    None
+  }
+}
+
+/// Parse one element of a two-element size spec: `n` or `{n}`.
+fn partition_size_elem(e: &Expr) -> Option<PartitionAxisMode> {
+  match e {
+    Expr::List(items) if items.len() == 1 => {
+      partition_positive_int(&items[0]).map(PartitionAxisMode::Clipped)
+    }
+    Expr::List(_) => None,
+    _ => partition_positive_int(e).map(PartitionAxisMode::Full),
+  }
+}
+
+/// Parse the full size spec (2nd argument) into per-axis (x, y) modes.
+fn partition_size_spec(
+  spec: &Expr,
+) -> Option<(PartitionAxisMode, PartitionAxisMode)> {
+  match spec {
+    Expr::List(items) if items.len() == 1 => {
+      // {s} (and {{s}}) apply the clipped mode to both axes.
+      let n = match &items[0] {
+        Expr::List(inner) if inner.len() == 1 => {
+          partition_positive_int(&inner[0])?
+        }
+        Expr::List(_) => return None,
+        e => partition_positive_int(e)?,
+      };
+      Some((PartitionAxisMode::Clipped(n), PartitionAxisMode::Clipped(n)))
+    }
+    Expr::List(items) if items.len() == 2 => Some((
+      partition_size_elem(&items[0])?,
+      partition_size_elem(&items[1])?,
+    )),
+    Expr::List(_) => None,
+    e => {
+      let n = partition_positive_int(e)?;
+      Some((PartitionAxisMode::Full(n), PartitionAxisMode::Full(n)))
+    }
+  }
+}
+
+/// Block positions along one axis as (start, length), top/left to
+/// bottom/right, already clipped to the image extent.
+fn partition_axis_blocks(
+  dim: usize,
+  mode: &PartitionAxisMode,
+  step: usize,
+) -> Vec<(usize, usize)> {
+  match *mode {
+    PartitionAxisMode::Full(w) => {
+      let w = w.min(dim);
+      let mut blocks = Vec::new();
+      let mut x = 0;
+      while x + w <= dim {
+        blocks.push((x, w));
+        x += step;
+      }
+      blocks
+    }
+    PartitionAxisMode::Clipped(w) => {
+      // A grid of ceil(dim/step) blocks is centered on the image (odd
+      // overhang goes to the leading edge); the kept blocks are every grid
+      // position whose center lies within the closed image interval,
+      // clipped to the image extent.
+      let n = dim.div_ceil(step);
+      let span = w + (n - 1) * step;
+      let overhang = span.saturating_sub(dim) as i64;
+      let (w_i, step_i) = (w as i64, step as i64);
+      let mut x = -((overhang + 1) / 2);
+      while 2 * (x - step_i) + w_i >= 0 {
+        x -= step_i;
+      }
+      let mut blocks = Vec::new();
+      while 2 * x + w_i <= 2 * dim as i64 {
+        let start = x.max(0) as usize;
+        let end = ((x + w_i) as usize).min(dim);
+        if end > start {
+          blocks.push((start, end - start));
+        }
+        x += step_i;
+      }
+      blocks
+    }
+  }
+}
+
+/// ImagePartition[img, s], [img, {w, h}], [img, sizes, offsets].
+/// Size components are `n` (complete blocks only) or `{n}` (centered grid
+/// keeping clipped partial blocks); sizes and offsets are floored, offsets
+/// clamped to >= 1. Decoded from wolframscript probes.
 pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if !matches!(&args[0], Expr::Image { .. }) {
+  let unevaluated = || Expr::FunctionCall {
+    name: "ImagePartition".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    image_type,
+  } = args[0]
+  else {
     crate::emit_message(&format!(
       "ImagePartition::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "ImagePartition".to_string(),
-      args: args.to_vec().into(),
-    });
-  }
-  // Image input: leave unevaluated for now (real partitioning TBD).
-  Ok(Expr::FunctionCall {
-    name: "ImagePartition".to_string(),
-    args: args.to_vec().into(),
-  })
+    return Ok(unevaluated());
+  };
+
+  let Some((mode_x, mode_y)) = partition_size_spec(&args[1]) else {
+    crate::emit_message(&format!(
+      "ImagePartition::arg2: {} is not a valid size specification for image partitions.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(unevaluated());
+  };
+
+  let (dx, dy) = if args.len() == 3 {
+    let invalid = |shown: &str| {
+      crate::emit_message(&format!(
+        "ImagePartition::arg3: {} is not a positive number or a pair of positive numbers.",
+        shown
+      ));
+    };
+    // Positivity is checked on the raw value; the effective step is
+    // max(1, floor(d)). Invalid scalars are shown normalized to a pair.
+    let step_of = |e: &Expr| -> Option<usize> {
+      let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+      if v > 0.0 {
+        Some((v.floor() as usize).max(1))
+      } else {
+        None
+      }
+    };
+    match &args[2] {
+      Expr::List(items) if items.len() == 2 => {
+        match (step_of(&items[0]), step_of(&items[1])) {
+          (Some(a), Some(b)) => (a, b),
+          _ => {
+            invalid(&crate::syntax::expr_to_string(&args[2]));
+            return Ok(unevaluated());
+          }
+        }
+      }
+      Expr::List(_) => {
+        invalid(&crate::syntax::expr_to_string(&args[2]));
+        return Ok(unevaluated());
+      }
+      e => match step_of(e) {
+        Some(d) => (d, d),
+        None => {
+          let shown = crate::syntax::expr_to_string(e);
+          invalid(&format!("{{{}, {}}}", shown, shown));
+          return Ok(unevaluated());
+        }
+      },
+    }
+  } else {
+    // Default offsets are the (floored) block sizes.
+    let size = |m: &PartitionAxisMode| match *m {
+      PartitionAxisMode::Full(n) | PartitionAxisMode::Clipped(n) => n,
+    };
+    (size(&mode_x), size(&mode_y))
+  };
+
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let cols = partition_axis_blocks(w, &mode_x, dx);
+  let rows = partition_axis_blocks(h, &mode_y, dy);
+
+  let grid: Vec<Expr> = rows
+    .iter()
+    .map(|&(y0, bh)| {
+      Expr::List(
+        cols
+          .iter()
+          .map(|&(x0, bw)| {
+            let mut block = Vec::with_capacity(bw * bh * ch);
+            for y in y0..y0 + bh {
+              let base = (y * w + x0) * ch;
+              block.extend_from_slice(&data[base..base + bw * ch]);
+            }
+            Expr::Image {
+              width: bw as u32,
+              height: bh as u32,
+              channels,
+              data: Arc::new(block),
+              image_type,
+            }
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    })
+    .collect();
+  Ok(Expr::List(grid.into()))
 }
 
 pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

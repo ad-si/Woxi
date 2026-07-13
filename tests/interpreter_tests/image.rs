@@ -4174,3 +4174,220 @@ mod crossing_detect {
     );
   }
 }
+
+// ImagePartition semantics decoded from wolframscript probes: plain sizes
+// keep only complete top-left-anchored blocks (sizes clamped to the image),
+// {n} sizes use a centered grid keeping clipped partial blocks, sizes and
+// offsets are floored, offsets are clamped to >= 1.
+mod image_partition {
+  use super::*;
+
+  const IMG: &str = "img = Image[Table[(10 r + c)/100., {r, 4}, {c, 5}]]; ";
+
+  #[test]
+  fn full_blocks_and_data() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}}, {{2, 2}, {2, 2}}}"
+    );
+    // Byte images keep their type and exact pixel values, row-major.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "bimg = Image[Table[Mod[10 r + c, 256], {r, 4}, {c, 6}], \"Byte\"]; \
+         Map[ImageData[#, \"Byte\"] &, ImagePartition[bimg, 3], {2}]"
+      )
+      .unwrap(),
+      "{{{{11, 12, 13}, {21, 22, 23}, {31, 32, 33}}, \
+         {{14, 15, 16}, {24, 25, 26}, {34, 35, 36}}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "bimg = Image[Table[Mod[10 r + c, 256], {r, 4}, {c, 6}], \"Byte\"]; \
+         Map[ImageType, ImagePartition[bimg, 3], {2}]"
+      )
+      .unwrap(),
+      "{{Byte, Byte}}"
+    );
+  }
+
+  #[test]
+  fn rectangular_sizes_and_offsets() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{3, 2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{3, 2}}, {{3, 2}}}"
+    );
+    // Overlapping blocks via explicit offsets.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2, {{1, 2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}, {2, 2}, {2, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2, 1], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}, {2, 2}, {2, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}}, \
+        {{2, 2}, {2, 2}, {2, 2}, {2, 2}}}"
+    );
+  }
+
+  #[test]
+  fn sizes_are_floored_and_clamped() {
+    // 2.7 floors to 2; block sizes larger than the image are clamped.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2.7], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}}, {{2, 2}, {2, 2}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 6], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{5, 4}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{6, 2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{5, 2}}, {{5, 2}}}"
+    );
+    // Fractional offsets are floored with a minimum step of 1.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2, 0.5], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}, {2, 2}, {2, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}}, \
+        {{2, 2}, {2, 2}, {2, 2}, {2, 2}}}"
+    );
+  }
+
+  #[test]
+  fn clipped_mode_keeps_partial_blocks() {
+    // {s} centers the grid and keeps clipped partial edge blocks.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{1, 2}, {2, 2}, {2, 2}}, {{1, 2}, {2, 2}, {2, 2}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img7 = Image[Table[c/10., {r, 2}, {c, 7}]]; \
+         Map[ImageDimensions, ImagePartition[img7, {3}], {2}]"
+      )
+      .unwrap(),
+      "{{{2, 2}, {3, 2}, {2, 2}}}"
+    );
+    // Odd overhang goes to the leading (top/left) edge.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img7 = Image[Table[c/10., {r, 2}, {c, 7}]]; \
+         Map[ImageDimensions, ImagePartition[img7, {5}], {2}]"
+      )
+      .unwrap(),
+      "{{{3, 2}, {4, 2}}}"
+    );
+    // Per-axis mixing of full and clipped modes.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{{{2}}, 2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{1, 2}, {2, 2}, {2, 2}}, {{1, 2}, {2, 2}, {2, 2}}}"
+    );
+    // Clipped mode with an explicit offset keeps every grid block whose
+    // center falls within the image, including duplicates.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{2}}, 3], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 1}, {2, 1}}, {{2, 2}, {2, 2}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{10}}, 2], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{5, 4}, {5, 4}, {5, 4}}, {{5, 4}, {5, 4}, {5, 4}}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r = interpret_with_stdout("ImagePartition[Image[{{0.5}}], 0]").unwrap();
+    assert_eq!(r.result, "ImagePartition[-Image-, 0]");
+    assert!(r.warnings[0].contains(
+      "ImagePartition::arg2: 0 is not a valid size specification for image partitions."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImagePartition[Image[{{0.5}}], {2, All}]")
+      .unwrap();
+    assert!(r.warnings[0].contains(
+      "ImagePartition::arg2: {2, All} is not a valid size specification"
+    ));
+
+    // Invalid scalar offsets are shown normalized to a pair.
+    clear_state();
+    let r =
+      interpret_with_stdout("ImagePartition[Image[{{0.5}}], 2, -1]").unwrap();
+    assert!(r.warnings[0].contains(
+      "ImagePartition::arg3: {-1, -1} is not a positive number or a pair of positive numbers."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("ImagePartition[Image[{{0.5}}], 2, {1.5, x}]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "ImagePartition::arg3: {1.5, x} is not a positive number or a pair of positive numbers."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImagePartition[5, 0]").unwrap();
+    assert_eq!(r.result, "ImagePartition[5, 0]");
+    assert!(r.warnings[0].contains(
+      "ImagePartition::imginv: Expecting an image or graphics instead of 5."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImagePartition[Image[{{0.5}}]]").unwrap();
+    assert_eq!(r.result, "ImagePartition[-Image-]");
+    assert!(r.warnings[0].contains(
+      "ImagePartition::argtu: ImagePartition called with 1 argument; 2 or 3 arguments are expected."
+    ));
+  }
+}
