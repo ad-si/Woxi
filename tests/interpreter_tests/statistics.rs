@@ -9634,3 +9634,117 @@ mod process_covariance_function {
     );
   }
 }
+
+// CorrelationFunction / AbsoluteCorrelationFunction closed forms for
+// the random-process family. All outputs verified against wolframscript.
+mod process_correlation_functions {
+  use super::*;
+
+  #[test]
+  fn correlation_function() {
+    // The scale cancels for the Brownian/counting cases.
+    for proc in [
+      "WienerProcess[m, s]",
+      "PoissonProcess[l]",
+      "BinomialProcess[p]",
+    ] {
+      assert_eq!(
+        interpret(&format!("CorrelationFunction[{proc}, t1, t2]")).unwrap(),
+        "Min[t1, t2]/Sqrt[t1*t2]",
+        "{proc}"
+      );
+    }
+    assert_eq!(
+      interpret(
+        "CorrelationFunction[OrnsteinUhlenbeckProcess[m, s, th], t1, t2]"
+      )
+      .unwrap(),
+      "E^(-(th*Abs[t1 - t2]))"
+    );
+    assert_eq!(
+      interpret("CorrelationFunction[BernoulliProcess[p], t1, t2]").unwrap(),
+      "KroneckerDelta[t1, t2]"
+    );
+    assert_eq!(
+      interpret(
+        "CorrelationFunction[WhiteNoiseProcess[NormalDistribution[m, s]], t1, t2]"
+      )
+      .unwrap(),
+      "DiscreteDelta[-t1 + t2]"
+    );
+    assert_eq!(
+      interpret(
+        "CorrelationFunction[GeometricBrownianMotionProcess[m, s, x0], t1, t2]"
+      )
+      .unwrap(),
+      "(-1 + E^(s^2*Min[t1, t2]))/(Sqrt[-1 + E^(s^2*t1)]*Sqrt[-1 + E^(s^2*t2)])"
+    );
+    assert_eq!(
+      interpret("CorrelationFunction[WienerProcess[1/10, 2], 3, 5]").unwrap(),
+      "Sqrt[3/5]"
+    );
+    // The bridge's symbolic numerator differs only in Plus term order
+    // from wolframscript; concrete times agree exactly.
+    assert_eq!(
+      interpret(
+        "CorrelationFunction[BrownianBridgeProcess[1, {0, 0}, {4, 0}], 1, 2]"
+      )
+      .unwrap(),
+      "1/Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn absolute_correlation_function() {
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[WienerProcess[m, s], t1, t2]")
+        .unwrap(),
+      "m^2*t1*t2 + s^2*Min[t1, t2]"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[PoissonProcess[l], t1, t2]")
+        .unwrap(),
+      "l^2*t1*t2 + l*Min[t1, t2]"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteCorrelationFunction[OrnsteinUhlenbeckProcess[m, s, th], t1, t2]"
+      )
+      .unwrap(),
+      "m^2 + s^2/(2*E^(th*Abs[t1 - t2])*th)"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[BinomialProcess[p], t1, t2]")
+        .unwrap(),
+      "p^2*t1*t2 + (1 - p)*p*Min[t1, t2]"
+    );
+    // Bernoulli distinguishes equal and unequal times.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[BernoulliProcess[p], t1, t2]")
+        .unwrap(),
+      "Piecewise[{{p, t1 == t2}, {p^2, t1 != t2}}, 0]"
+    );
+    // wolframscript reports plain covariance for white noise here.
+    assert_eq!(
+      interpret(
+        "AbsoluteCorrelationFunction[WhiteNoiseProcess[NormalDistribution[m, s]], t1, t2]"
+      )
+      .unwrap(),
+      "s^2*DiscreteDelta[-t1 + t2]"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteCorrelationFunction[GeometricBrownianMotionProcess[m, s, x0], t1, t2]"
+      )
+      .unwrap(),
+      "E^(m*(t1 + t2) + s^2*Min[t1, t2])*x0^2"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteCorrelationFunction[BrownianBridgeProcess[1, {0, 2}, {4, 6}], 1, 2]"
+      )
+      .unwrap(),
+      "25/2"
+    );
+  }
+}

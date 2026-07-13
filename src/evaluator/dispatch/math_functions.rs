@@ -1926,6 +1926,32 @@ pub fn dispatch_math_functions(
         args: args.to_vec().into(),
       }));
     }
+    "CorrelationFunction" if args.len() == 3 => {
+      if let Some(result) =
+        crate::functions::math_ast::statistics_process_correlation(
+          &args[0], &args[1], &args[2],
+        )
+      {
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "CorrelationFunction".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    "AbsoluteCorrelationFunction" if args.len() == 3 => {
+      if let Some(result) =
+        crate::functions::math_ast::statistics_process_absolute_correlation(
+          &args[0], &args[1], &args[2],
+        )
+      {
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "AbsoluteCorrelationFunction".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "AbsoluteCorrelationFunction" => {
       return Some(crate::functions::absolute_correlation_function_ast(args));
     }

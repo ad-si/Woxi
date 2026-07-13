@@ -67,3 +67,20 @@ pub fn distributions_slice(
 ) -> Option<crate::syntax::Expr> {
   distributions::process_slice_distribution(proc_name, dargs, t)
 }
+
+/// Public accessors for the process correlation closed forms.
+pub fn statistics_process_correlation(
+  proc: &crate::syntax::Expr,
+  t1: &crate::syntax::Expr,
+  t2: &crate::syntax::Expr,
+) -> Option<crate::syntax::Expr> {
+  statistics::process_correlation(proc, t1, t2)
+}
+
+pub fn statistics_process_absolute_correlation(
+  proc: &crate::syntax::Expr,
+  t1: &crate::syntax::Expr,
+  t2: &crate::syntax::Expr,
+) -> Option<crate::syntax::Expr> {
+  statistics::process_absolute_correlation(proc, t1, t2)
+}

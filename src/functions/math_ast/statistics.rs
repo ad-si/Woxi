@@ -7170,6 +7170,248 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
   }
 }
 
+/// CorrelationFunction[proc, t1, t2] closed forms (Cov normalized by the
+/// slice standard deviations), in wolframscript's display shapes.
+pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = proc else {
+    return None;
+  };
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let bin = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let times2 = |a: Expr, b: Expr| bin(BinaryOperator::Times, a, b);
+  let plus2 = |a: Expr, b: Expr| bin(BinaryOperator::Plus, a, b);
+  let neg = |a: Expr| times2(Expr::Integer(-1), a);
+  let sq = |a: &Expr| bin(BinaryOperator::Power, a.clone(), Expr::Integer(2));
+  let min = call("Min", vec![t1.clone(), t2.clone()]);
+  match (name.as_str(), args.as_slice()) {
+    // The scale cancels for all three counting/Brownian cases.
+    ("WienerProcess", [_, _])
+    | ("PoissonProcess", [_])
+    | ("BinomialProcess", [_]) => Some(bin(
+      BinaryOperator::Divide,
+      min,
+      call("Sqrt", vec![times2(t1.clone(), t2.clone())]),
+    )),
+    ("OrnsteinUhlenbeckProcess", [_, _, th]) => Some(bin(
+      BinaryOperator::Power,
+      Expr::Constant("E".to_string()),
+      neg(times2(
+        th.clone(),
+        call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
+      )),
+    )),
+    ("BernoulliProcess", [_]) => {
+      Some(call("KroneckerDelta", vec![t1.clone(), t2.clone()]))
+    }
+    ("WhiteNoiseProcess", [_]) => Some(call(
+      "DiscreteDelta",
+      vec![plus2(neg(t1.clone()), t2.clone())],
+    )),
+    // The bridge numerator is the covariance numerator expanded via
+    // Max + Min == t1 + t2 and Max Min == t1 t2.
+    ("BrownianBridgeProcess", [_, Expr::List(p1), Expr::List(p2)])
+      if p1.len() == 2 && p2.len() == 2 =>
+    {
+      let (ta, tb) = (&p1[0], &p2[0]);
+      let numer = plus2(
+        plus2(
+          neg(times2(t1.clone(), t2.clone())),
+          times2(
+            ta.clone(),
+            plus2(plus2(t1.clone(), t2.clone()), neg(tb.clone())),
+          ),
+        ),
+        times2(plus2(neg(ta.clone()), tb.clone()), min),
+      );
+      let leg = |t: &Expr| {
+        call(
+          "Sqrt",
+          vec![times2(
+            plus2(t.clone(), neg(ta.clone())),
+            plus2(neg(t.clone()), tb.clone()),
+          )],
+        )
+      };
+      Some(bin(BinaryOperator::Divide, numer, times2(leg(t1), leg(t2))))
+    }
+    ("GeometricBrownianMotionProcess", [_, sp, _]) => {
+      let bump = |arg: Expr| {
+        plus2(
+          Expr::Integer(-1),
+          bin(
+            BinaryOperator::Power,
+            Expr::Constant("E".to_string()),
+            times2(sq(sp), arg),
+          ),
+        )
+      };
+      Some(bin(
+        BinaryOperator::Divide,
+        bump(min),
+        times2(
+          call("Sqrt", vec![bump(t1.clone())]),
+          call("Sqrt", vec![bump(t2.clone())]),
+        ),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// AbsoluteCorrelationFunction[proc, t1, t2] closed forms
+/// (Mean[t1] Mean[t2] + Cov[t1, t2]) in wolframscript's display shapes.
+pub fn process_absolute_correlation(
+  proc: &Expr,
+  t1: &Expr,
+  t2: &Expr,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = proc else {
+    return None;
+  };
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let bin = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let times2 = |a: Expr, b: Expr| bin(BinaryOperator::Times, a, b);
+  let plus2 = |a: Expr, b: Expr| bin(BinaryOperator::Plus, a, b);
+  let neg = |a: Expr| times2(Expr::Integer(-1), a);
+  let sq = |a: &Expr| bin(BinaryOperator::Power, a.clone(), Expr::Integer(2));
+  let min = call("Min", vec![t1.clone(), t2.clone()]);
+  match (name.as_str(), args.as_slice()) {
+    ("WienerProcess", [m, sp]) => Some(plus2(
+      times2(times2(sq(m), t1.clone()), t2.clone()),
+      times2(sq(sp), min),
+    )),
+    ("PoissonProcess", [l]) => Some(plus2(
+      times2(times2(sq(l), t1.clone()), t2.clone()),
+      times2(l.clone(), min),
+    )),
+    ("BinomialProcess", [pp]) => Some(plus2(
+      times2(times2(sq(pp), t1.clone()), t2.clone()),
+      times2(
+        times2(plus2(Expr::Integer(1), neg(pp.clone())), pp.clone()),
+        min,
+      ),
+    )),
+    ("OrnsteinUhlenbeckProcess", [m, sp, th]) => {
+      let decay = bin(
+        BinaryOperator::Power,
+        Expr::Constant("E".to_string()),
+        times2(
+          th.clone(),
+          call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
+        ),
+      );
+      Some(plus2(
+        sq(m),
+        bin(
+          BinaryOperator::Divide,
+          sq(sp),
+          times2(times2(Expr::Integer(2), decay), th.clone()),
+        ),
+      ))
+    }
+    // wolframscript reports the plain covariance here (no mean-squared
+    // term) — replicated.
+    ("WhiteNoiseProcess", [dist]) => {
+      let var = variance_ast(std::slice::from_ref(dist)).ok()?;
+      if matches!(&var, Expr::FunctionCall { name, .. } if name == "Variance") {
+        return None;
+      }
+      Some(times2(
+        var,
+        call("DiscreteDelta", vec![plus2(neg(t1.clone()), t2.clone())]),
+      ))
+    }
+    ("BernoulliProcess", [pp]) => {
+      let eq = Expr::Comparison {
+        operands: vec![t1.clone(), t2.clone()],
+        operators: vec![ComparisonOp::Equal],
+      };
+      let ne = Expr::Comparison {
+        operands: vec![t1.clone(), t2.clone()],
+        operators: vec![ComparisonOp::NotEqual],
+      };
+      Some(call(
+        "Piecewise",
+        vec![
+          Expr::List(
+            vec![
+              Expr::List(vec![pp.clone(), eq].into()),
+              Expr::List(vec![sq(pp), ne].into()),
+            ]
+            .into(),
+          ),
+          Expr::Integer(0),
+        ],
+      ))
+    }
+    ("GeometricBrownianMotionProcess", [m, sp, x0]) => Some(times2(
+      bin(
+        BinaryOperator::Power,
+        Expr::Constant("E".to_string()),
+        plus2(
+          times2(m.clone(), plus2(t1.clone(), t2.clone())),
+          times2(sq(sp), min),
+        ),
+      ),
+      sq(x0),
+    )),
+    ("BrownianBridgeProcess", [sp, Expr::List(p1), Expr::List(p2)])
+      if p1.len() == 2 && p2.len() == 2 =>
+    {
+      let (ta, a) = (&p1[0], &p1[1]);
+      let (tb, b) = (&p2[0], &p2[1]);
+      let span = plus2(neg(ta.clone()), tb.clone());
+      let mean_at = |t: &Expr| {
+        plus2(
+          a.clone(),
+          bin(
+            BinaryOperator::Divide,
+            times2(
+              plus2(neg(a.clone()), b.clone()),
+              plus2(t.clone(), neg(ta.clone())),
+            ),
+            span.clone(),
+          ),
+        )
+      };
+      let mean_product = times2(mean_at(t1), mean_at(t2));
+      let cov = times2(
+        sq(sp),
+        plus2(
+          bin(
+            BinaryOperator::Divide,
+            plus2(
+              neg(times2(t1.clone(), t2.clone())),
+              times2(
+                ta.clone(),
+                plus2(plus2(t1.clone(), t2.clone()), neg(tb.clone())),
+              ),
+            ),
+            span,
+          ),
+          min,
+        ),
+      );
+      Some(plus2(mean_product, cov))
+    }
+    _ => None,
+  }
+}
+
 /// Extract `(ar_list, ma_list, variance)` from an `ARMAProcess[...]` call,
 /// stripping a leading scalar constant if present.
 fn extract_arma_params(proc: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Expr)> {
