@@ -219,14 +219,32 @@ mod binary_serialize {
   }
 
   #[test]
-  fn symbolic_complex_products_stay_unevaluated() {
-    // A product folds its numeric factor INTO the Complex atom in
-    // wolframscript (Times[Complex[0, 3], x]) whereas Woxi keeps them
-    // separate (Times[3, Complex[0, 1], x]), so it bails out instead of
-    // producing wrong bytes.
+  fn symbolic_complex_products_fold_into_complex_atom() {
+    // A product folds ALL its numeric factors INTO one leading Complex atom
+    // in wolframscript (Times[Complex[0, 3], x]) whereas Woxi keeps them
+    // separate internally (Times[3, Complex[0, 1], x]). Woxi re-folds them on
+    // serialization so the bytes match WS exactly (Times[Complex[0, 3], x],
+    // verified against `Normal[BinarySerialize[3*I*x]]`).
     assert_eq!(
-      interpret("BinarySerialize[3*I*x]").unwrap(),
-      "BinarySerialize[(3*I)*x]"
+      interpret("Normal[BinarySerialize[3*I*x]]").unwrap(),
+      "{56, 58, 102, 2, 115, 5, 84, 105, 109, 101, 115, 102, 2, 115, 7, 67, \
+       111, 109, 112, 108, 101, 120, 67, 0, 67, 3, 115, 8, 71, 108, 111, 98, \
+       97, 108, 96, 120}"
+    );
+    // Several numeric factors collapse into a single Complex atom too
+    // (2*3*I*x is Times[Complex[0, 6], x]).
+    assert_eq!(
+      interpret("Normal[BinarySerialize[2*3*I*x]]").unwrap(),
+      "{56, 58, 102, 2, 115, 5, 84, 105, 109, 101, 115, 102, 2, 115, 7, 67, \
+       111, 109, 112, 108, 101, 120, 67, 0, 67, 6, 115, 8, 71, 108, 111, 98, \
+       97, 108, 96, 120}"
+    );
+    // If the imaginary parts cancel (I*I) the folded factor is the real -1,
+    // giving Times[-1, x].
+    assert_eq!(
+      interpret("Normal[BinarySerialize[I*I*x]]").unwrap(),
+      "{56, 58, 102, 2, 115, 5, 84, 105, 109, 101, 115, 67, 255, 115, 8, 71, \
+       108, 111, 98, 97, 108, 96, 120}"
     );
   }
 }

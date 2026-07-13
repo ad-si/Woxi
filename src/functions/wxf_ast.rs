@@ -138,6 +138,23 @@ fn numeric_complex_parts(expr: &Expr) -> Option<(Expr, Expr)> {
   Some((re, im))
 }
 
+/// A purely real numeric literal (Integer/BigInteger/Real/Rational, possibly
+/// negated). Used to identify the numeric factors of a Times that fold into a
+/// leading Complex atom alongside the complex factors.
+fn is_real_numeric_literal(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      args.len() == 2 && args.iter().all(is_real_numeric_literal)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_real_numeric_literal(operand),
+    _ => false,
+  }
+}
+
 /// Serialize one expression. Returns None for expression kinds outside the
 /// supported subset (the caller then leaves the whole call unevaluated
 /// rather than emitting wrong bytes).
@@ -204,14 +221,42 @@ fn write_expr(out: &mut Vec<u8>, expr: &Expr) -> Option<()> {
         out.extend_from_slice(&bytes);
         return Some(());
       }
-      // A product with a numeric-complex term folds its numeric factor INTO
-      // the Complex atom in wolframscript (3*I*x is Times[Complex[0, 3], x])
-      // whereas Woxi keeps them separate (Times[3, Complex[0, 1], x]); bail
-      // rather than emit wrong bytes.
+      // A product with a numeric-complex factor folds ALL its numeric
+      // factors INTO a single leading Complex atom in wolframscript
+      // (3*I*x is Times[Complex[0, 3], x]) whereas Woxi keeps them separate
+      // internally (Times[3, Complex[0, 1], x]). Re-fold here so the bytes
+      // match: multiply every numeric factor (reals and complexes alike)
+      // into one Complex[re, im] atom and emit it ahead of the symbolic
+      // factors, in their original order.
       if name == "Times"
         && args.iter().any(|a| numeric_complex_parts(a).is_some())
       {
-        return None;
+        let (numeric, symbolic): (Vec<Expr>, Vec<Expr>) =
+          args.iter().cloned().partition(|a| {
+            is_real_numeric_literal(a) || numeric_complex_parts(a).is_some()
+          });
+        let folded = crate::functions::math_ast::times_ast(&numeric).ok()?;
+        // If the imaginary parts cancelled (e.g. I*I), `folded` is real and
+        // the ordinary path below serializes it correctly.
+        if numeric_complex_parts(&folded).is_some() {
+          if symbolic.is_empty() {
+            return write_expr(out, &folded);
+          }
+          write_function_header(out, "Times", 1 + symbolic.len());
+          write_expr(out, &folded)?;
+          for arg in &symbolic {
+            write_expr(out, arg)?;
+          }
+          return Some(());
+        }
+        // Fall through: reconstruct the fully-real product and serialize it.
+        let mut rebuilt = vec![folded];
+        rebuilt.extend(symbolic);
+        write_function_header(out, "Times", rebuilt.len());
+        for arg in &rebuilt {
+          write_expr(out, arg)?;
+        }
+        return Some(());
       }
       write_function_header(out, name, args.len());
       // wolframscript's canonical Plus order sorts the numeric Complex atom
