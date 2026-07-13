@@ -26,6 +26,10 @@ default-run = "woxi"
 # embedded via include_str!/include_bytes! and must stay, as must
 # benches/interpreter.rs (an explicitly declared [[bench]] target).
 exclude = [
+  # .cargo/config.toml links with lld from the nix dev shell; a source
+  # build of the packaged crate (e.g. `pip install woxi` from the sdist
+  # on an arm64 Mac) must use the system linker instead.
+  "/.cargo",
   "/tests/*/",
   "/tests/woxi",
   "/tests/zensical.toml",

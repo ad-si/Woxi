@@ -55,16 +55,19 @@ jobs:
     strategy:
       matrix:
         platform:
-          # Each runner builds for its native architecture. No explicit
-          # `target:` — passing one makes maturin-action configure Apple
-          # cross-linking with `-fuse-ld=lld`, which the runners' clang
-          # does not ship ("invalid linker name in argument '-fuse-ld=lld'").
-          - runner: macos-13 # x86_64
+          # Each runner builds for its native architecture (macos-13 is
+          # x86_64, macos-latest is arm64), so no `target:` is needed.
+          - runner: macos-13
             arch: x86_64
-          - runner: macos-latest # arm64
+          - runner: macos-latest
             arch: aarch64
     steps:
       - uses: actions/checkout@v5
+      - name: Use the system linker
+        # .cargo/config.toml links aarch64-apple-darwin host builds with
+        # lld from the nix dev shell, which the GitHub runners don't have
+        # ("invalid linker name in argument '-fuse-ld=lld'").
+        run: rm .cargo/config.toml
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: woxi-py
