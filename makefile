@@ -270,6 +270,42 @@ wasm-build-production:
 		--features wasm
 
 
+# npm package (npm/): Node.js bindings built with wasm-pack.
+# Real file target like $(WASM_PKG): only recompiles when a source input
+# is newer than the bundle.
+NPM_WASM_PKG := npm/pkg/woxi_bg.wasm
+
+$(NPM_WASM_PKG): $(WASM_SRCS)
+	# Invalidate cargo's fingerprint to force recompilation of the woxi crate.
+	touch src/lib.rs
+	wasm-pack build \
+		-d npm/pkg \
+		--target nodejs \
+		--release \
+		-- \
+		--no-default-features \
+		--features wasm
+	# wasm-pack emits its own package.json/.gitignore/README for pkg/, but the
+	# published package is npm/ itself - drop them to avoid a nested package.
+	rm -f npm/pkg/package.json npm/pkg/.gitignore npm/pkg/README.md
+
+.PHONY: npm-build
+npm-build: $(NPM_WASM_PKG)
+
+.PHONY: npm-test
+npm-test: npm-build
+	cd npm && node --test
+
+# Dry run of the npm publishing step (shows the tarball contents).
+.PHONY: npm-pack
+npm-pack: npm-build
+	cd npm && npm pack --dry-run
+
+.PHONY: npm-publish
+npm-publish: npm-test
+	cd npm && npm publish
+
+
 .PHONY: jupyterlite-kernel-build
 jupyterlite-kernel-build:
 	cd jupyterlite-woxi-kernel && npm install && npx tsc
