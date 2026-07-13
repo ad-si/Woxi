@@ -209,6 +209,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LogGammaDistribution" => pdf_loggamma(dargs, x),
     "SkellamDistribution" => pdf_skellam(dargs, x),
     "HypoexponentialDistribution" => pdf_hypoexponential(dargs, x),
+    "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
     "BinomialDistribution" => pdf_binomial(dargs, x),
     "HypergeometricDistribution" => pdf_hypergeometric(dargs, x),
@@ -271,6 +272,31 @@ pub fn survival_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if args.len() == 1 {
     // SurvivalFunction[dist] — symbolic pure form, leave unevaluated.
+    return Ok(Expr::FunctionCall {
+      name: "SurvivalFunction".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  // FailureDistribution has its own survival shape:
+  // Piecewise[{{1, t < 0}}, 1 - cdfvalue] (wolframscript-verified).
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "FailureDistribution"
+  {
+    if let Some((value, _)) = failure_distribution_cdf_value(dargs, &args[1])? {
+      let complement = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          int(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![int(-1), value].into(),
+          },
+        ]
+        .into(),
+      };
+      let below = comparison(args[1].clone(), ComparisonOp::Less, int(0));
+      return eval(piecewise(vec![(int(1), below)], complement));
+    }
     return Ok(Expr::FunctionCall {
       name: "SurvivalFunction".to_string(),
       args: args.to_vec().into(),
@@ -1988,6 +2014,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "PoissonDistribution" => cdf_poisson(dargs, x),
     "SkellamDistribution" => cdf_skellam(dargs, x),
     "HypoexponentialDistribution" => cdf_hypoexponential(dargs, x),
+    "FailureDistribution" => cdf_failure_distribution(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
     "BinomialDistribution" => cdf_binomial(dargs, x),
     "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
@@ -6866,6 +6893,288 @@ fn any_concrete_non_integer(xs: &[Expr]) -> bool {
     !matches!(xi, Expr::Integer(_) | Expr::BigInteger(_))
       && crate::functions::math_ast::expr_to_num(xi).is_some()
   })
+}
+
+/// The composed CDF value of a FailureDistribution boolean tree over
+/// component CDFs (independent events, each used once): a leaf index maps
+/// to its component CDF, And multiplies CDFs, Or complements the product
+/// of complements. Returns (value, strict) where `strict` is true when
+/// any component support condition was strict (t > 0).
+///
+/// Emits FailureDistribution::nonunate for negations; duplicated events
+/// (which wolframscript resolves exactly) and non-And/Or structure return
+/// None so the caller stays unevaluated.
+fn failure_distribution_cdf_value(
+  dargs: &[Expr],
+  t: &Expr,
+) -> Result<Option<(Expr, bool)>, InterpreterError> {
+  let [bexpr, Expr::List(pairs)] = dargs else {
+    return Ok(None);
+  };
+  // Component CDF value branches, keyed by index.
+  let mut comp: Vec<Option<(Expr, bool)>> = vec![None; pairs.len() + 1];
+  for p in pairs.iter() {
+    let Expr::List(kv) = p else { return Ok(None) };
+    let (Expr::Integer(idx), dist) = (&kv[0], &kv[1]) else {
+      return Ok(None);
+    };
+    let idx = *idx as usize;
+    if idx == 0 || idx >= comp.len() {
+      return Ok(None);
+    }
+    let c = cdf_ast(&[dist.clone(), t.clone()])?;
+    // Expect Piecewise[{{v, t >= 0 | t > 0}}, 0].
+    let Expr::FunctionCall { name, args } = &c else {
+      return Ok(None);
+    };
+    if name != "Piecewise" || args.len() != 2 {
+      return Ok(None);
+    }
+    let Expr::List(cases) = &args[0] else {
+      return Ok(None);
+    };
+    if cases.len() != 1 {
+      return Ok(None);
+    }
+    let Expr::List(pair) = &cases[0] else {
+      return Ok(None);
+    };
+    let strict = match &pair[1] {
+      Expr::Comparison { operators, .. } if operators.len() == 1 => {
+        matches!(operators[0], ComparisonOp::Greater)
+      }
+      _ => return Ok(None),
+    };
+    comp[idx] = Some((pair[0].clone(), strict));
+  }
+
+  // Negations are not positive unate.
+  fn has_not(e: &Expr) -> bool {
+    match e {
+      Expr::UnaryOp { op, operand } => {
+        matches!(op, UnaryOperator::Not) || has_not(operand)
+      }
+      Expr::FunctionCall { name, args } => {
+        name == "Not" || args.iter().any(has_not)
+      }
+      Expr::BinaryOp { left, right, .. } => has_not(left) || has_not(right),
+      _ => false,
+    }
+  }
+  if has_not(bexpr) {
+    crate::emit_message(&format!(
+      "FailureDistribution::nonunate: The Boolean expression {} is not positive unate. Use UnateQ to test if a Boolean expression is unate.",
+      crate::syntax::expr_to_string(bexpr).trim()
+    ));
+    return Ok(None);
+  }
+  // Each event may appear only once (wolframscript resolves repeats
+  // exactly; the independence product rules below would not).
+  fn leaves(e: &Expr, out: &mut Vec<i128>) -> bool {
+    match e {
+      Expr::Integer(i) => {
+        out.push(*i);
+        true
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::And | BinaryOperator::Or,
+        left,
+        right,
+      } => leaves(left, out) && leaves(right, out),
+      Expr::FunctionCall { name, args } if name == "And" || name == "Or" => {
+        args.iter().all(|a| leaves(a, out))
+      }
+      _ => false,
+    }
+  }
+  let mut seen = Vec::new();
+  if !leaves(bexpr, &mut seen) {
+    return Ok(None);
+  }
+  {
+    let mut sorted = seen.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    if sorted.len() != seen.len() {
+      return Ok(None);
+    }
+  }
+
+  fn compose(
+    e: &Expr,
+    comp: &[Option<(Expr, bool)>],
+    strict: &mut bool,
+  ) -> Option<Expr> {
+    let product = |fs: Vec<Expr>| -> Expr {
+      match fs.len() {
+        1 => fs.into_iter().next().unwrap(),
+        _ => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: fs.into(),
+        },
+      }
+    };
+    let complement = |f: Expr| -> Expr {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), f].into(),
+          },
+        ]
+        .into(),
+      }
+    };
+    let children = |e: &Expr| -> Option<(bool, Vec<Expr>)> {
+      match e {
+        Expr::BinaryOp {
+          op: op @ (BinaryOperator::And | BinaryOperator::Or),
+          left,
+          right,
+        } => Some((
+          matches!(op, BinaryOperator::And),
+          vec![left.as_ref().clone(), right.as_ref().clone()],
+        )),
+        Expr::FunctionCall { name, args } if name == "And" || name == "Or" => {
+          Some((name == "And", args.iter().cloned().collect()))
+        }
+        _ => None,
+      }
+    };
+    match e {
+      Expr::Integer(i) => {
+        let (v, s) = comp.get(*i as usize)?.clone()?;
+        if s {
+          *strict = true;
+        }
+        Some(v)
+      }
+      _ => {
+        let (is_and, kids) = children(e)?;
+        let parts: Option<Vec<Expr>> =
+          kids.iter().map(|k| compose(k, comp, strict)).collect();
+        let parts = parts?;
+        if is_and {
+          Some(product(parts))
+        } else {
+          Some(complement(product(
+            parts.into_iter().map(complement).collect(),
+          )))
+        }
+      }
+    }
+  }
+  let mut strict = false;
+  match compose(bexpr, &comp, &mut strict) {
+    Some(value) => Ok(Some((value, strict))),
+    None => Ok(None),
+  }
+}
+
+/// CDF[FailureDistribution[…], t] — Piecewise[{{composed, t >= 0}}, 0]
+/// (strict t > 0 when any component support is strict).
+fn cdf_failure_distribution(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "FailureDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  // Compose against a symbolic variable (component CDFs keep their
+  // Piecewise shape there), then substitute a concrete point at the end.
+  let var = match &x {
+    Expr::Identifier(_) => x.clone(),
+    _ => Expr::Identifier("t".to_string()),
+  };
+  let Some((value, strict)) = failure_distribution_cdf_value(dargs, &var)?
+  else {
+    return unevaluated(x);
+  };
+  let op = if strict {
+    ComparisonOp::Greater
+  } else {
+    ComparisonOp::GreaterEqual
+  };
+  let cond = comparison(var.clone(), op, int(0));
+  let result = eval(piecewise(vec![(value, cond)], int(0)))?;
+  if matches!(&x, Expr::Identifier(_)) {
+    Ok(result)
+  } else {
+    eval(Expr::FunctionCall {
+      name: "ReplaceAll".to_string(),
+      args: vec![
+        result,
+        Expr::Rule {
+          pattern: Box::new(var),
+          replacement: Box::new(x),
+        },
+      ]
+      .into(),
+    })
+  }
+}
+
+/// PDF[FailureDistribution[…], t] — the derivative of the composed CDF,
+/// on t > 0.
+fn pdf_failure_distribution(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "FailureDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  // The derivative needs a symbolic variable to differentiate against.
+  let var = match &x {
+    Expr::Identifier(_) => x.clone(),
+    _ => Expr::Identifier("t".to_string()),
+  };
+  let Some((value, _)) = failure_distribution_cdf_value(dargs, &var)? else {
+    return unevaluated(x);
+  };
+  let deriv = eval(Expr::FunctionCall {
+    name: "D".to_string(),
+    args: vec![value, var.clone()].into(),
+  })?;
+  let cond = comparison(var.clone(), ComparisonOp::Greater, int(0));
+  let result = eval(piecewise(vec![(deriv, cond)], int(0)))?;
+  if matches!(&x, Expr::Identifier(_)) {
+    Ok(result)
+  } else {
+    // Numeric evaluation point: substitute after differentiating.
+    eval(Expr::FunctionCall {
+      name: "ReplaceAll".to_string(),
+      args: vec![
+        result,
+        Expr::Rule {
+          pattern: Box::new(var),
+          replacement: Box::new(x),
+        },
+      ]
+      .into(),
+    })
+  }
 }
 
 /// The rates of a HypoexponentialDistribution[{λ1, …, λn}] when all are

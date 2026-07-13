@@ -2949,7 +2949,7 @@ CommonestFilter,Replace elements by the commonest value in their neighborhood,�
 ComplexStreamPlot,,🚫,,12.1,3020
 DagumDistribution,Dagum distribution for income and wealth modeling,✅,pure,8.0,3020
 DiskSegment,Circular or elliptical disk segment region consumed by Area/Perimeter/RegionCentroid,✅,pure,10.2,3020
-FailureDistribution,,,,9.0,3020
+FailureDistribution,Failure distribution of a system defined by a Boolean structure over component lifetimes,✅,none,9.0,3020
 FirstPassageTimeDistribution,,,,9.0,3020
 FisherRatioTest,One-sample variance ratio test (chi-square two-sided p-value),✅,pure,8.0,3020
 HammingWindow,Compute HammingWindow value,✅,pure,9.0,3020

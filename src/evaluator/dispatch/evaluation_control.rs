@@ -471,6 +471,71 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    // FailureDistribution[bexpr, {{x1, d1}, …}] normalizes the event
+    // variables to their positional indices (x || y becomes 1 || 2),
+    // exactly as wolframscript displays it. Validation (positive
+    // unateness) happens at CDF/PDF time, not here.
+    "FailureDistribution" if args.len() == 2 => {
+      fn substitute(e: &Expr, map: &[(String, i128)]) -> Expr {
+        match e {
+          Expr::Identifier(v) => {
+            for (name, idx) in map {
+              if name == v {
+                return Expr::Integer(*idx);
+              }
+            }
+            e.clone()
+          }
+          Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+            op: *op,
+            left: Box::new(substitute(left, map)),
+            right: Box::new(substitute(right, map)),
+          },
+          Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+            op: *op,
+            operand: Box::new(substitute(operand, map)),
+          },
+          Expr::FunctionCall { name, args }
+            if name == "And" || name == "Or" || name == "Not" =>
+          {
+            Expr::FunctionCall {
+              name: name.clone(),
+              args: args.iter().map(|a| substitute(a, map)).collect(),
+            }
+          }
+          _ => e.clone(),
+        }
+      }
+      if let Expr::List(pairs) = &args[1]
+        && !pairs.is_empty()
+        && pairs.iter().all(|p| {
+          matches!(p, Expr::List(kv)
+            if kv.len() == 2 && matches!(&kv[0], Expr::Identifier(_)))
+        })
+      {
+        let mut map: Vec<(String, i128)> = Vec::new();
+        let mut new_pairs: Vec<Expr> = Vec::new();
+        for (i, p) in pairs.iter().enumerate() {
+          let Expr::List(kv) = p else { unreachable!() };
+          let Expr::Identifier(v) = &kv[0] else {
+            unreachable!()
+          };
+          map.push((v.clone(), i as i128 + 1));
+          new_pairs.push(Expr::List(
+            vec![Expr::Integer(i as i128 + 1), kv[1].clone()].into(),
+          ));
+        }
+        return Some(Ok(Expr::FunctionCall {
+          name: "FailureDistribution".to_string(),
+          args: vec![substitute(&args[0], &map), Expr::List(new_pairs.into())]
+            .into(),
+        }));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "FailureDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // StandbyDistribution[Exp[λ1], {Exp[λ2], …}] with perfect switching
     // normalizes to HypoexponentialDistribution[{λ1, λ2, …}]
     // (wolframscript-verified, also for symbolic rates). Other component

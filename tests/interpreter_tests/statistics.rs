@@ -8970,3 +8970,105 @@ mod standby_distribution {
     );
   }
 }
+
+// FailureDistribution — Boolean system reliability. All outputs verified
+// against wolframscript.
+mod failure_distribution {
+  use super::*;
+
+  #[test]
+  fn constructor_normalizes_events_to_indices() {
+    assert_eq!(
+      interpret(
+        "FailureDistribution[x || y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}]"
+      )
+      .unwrap(),
+      "FailureDistribution[1 || 2, {{1, ExponentialDistribution[a]}, {2, ExponentialDistribution[b]}}]"
+    );
+  }
+
+  #[test]
+  fn cdf_composition() {
+    // Parallel failure (And): the CDFs multiply.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x && y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{(1 - E^(-(a*t)))*(1 - E^(-(b*t))), t >= 0}}, 0]"
+    );
+    // Series failure (Or) with concrete rates.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x || y, {{x, ExponentialDistribution[2]}, {y, ExponentialDistribution[3]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{1 - E^(-5*t), t >= 0}}, 0]"
+    );
+    // Mixed component families; a strict component support makes the
+    // combined condition strict.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x && y, {{x, ExponentialDistribution[2]}, {y, WeibullDistribution[2, 3]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{(1 - E^(-2*t))*(1 - E^(-1/9*t^2)), t > 0}}, 0]"
+    );
+    // Concrete evaluation points substitute into the value branch.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x && y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}], 5]"
+      )
+      .unwrap(),
+      "(1 - E^(-5*a))*(1 - E^(-5*b))"
+    );
+  }
+
+  #[test]
+  fn survival_and_pdf() {
+    // SurvivalFunction has its own piecewise shape.
+    assert_eq!(
+      interpret(
+        "SurvivalFunction[FailureDistribution[x && y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{1, t < 0}}, 1 - (1 - E^(-(a*t)))*(1 - E^(-(b*t)))]"
+    );
+    // The PDF is the derivative of the composed CDF.
+    assert_eq!(
+      interpret(
+        "PDF[FailureDistribution[x && y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{(b*(1 - E^(-(a*t))))/E^(b*t) + (a*(1 - E^(-(b*t))))/E^(a*t), t > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn validation() {
+    // Negated events are not positive unate.
+    clear_state();
+    let r = interpret_with_stdout(
+      "CDF[FailureDistribution[!x, {{x, ExponentialDistribution[2]}}], t]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "CDF[FailureDistribution[ !1, {{1, ExponentialDistribution[2]}}], t]"
+    );
+    assert!(r.warnings[0].contains(
+      "FailureDistribution::nonunate: The Boolean expression !1 is not \
+       positive unate. Use UnateQ to test if a Boolean expression is unate."
+    ));
+
+    // Repeated events need wolframscript's exact (non-independent)
+    // resolution — unevaluated here.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x || x, {{x, ExponentialDistribution[2]}}], t]"
+      )
+      .unwrap(),
+      "CDF[FailureDistribution[1 || 1, {{1, ExponentialDistribution[2]}}], t]"
+    );
+  }
+}
