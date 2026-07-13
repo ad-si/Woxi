@@ -6981,6 +6981,70 @@ fn any_concrete_non_integer(xs: &[Expr]) -> bool {
   })
 }
 
+/// Simplify a positive-unate And/Or tree (integer leaves) by flattening
+/// nested same-head nodes and applying idempotency (dropping structurally
+/// duplicate children). A node that collapses to a single child returns that
+/// child. This is reliability-preserving, so a tree whose only repeats are
+/// idempotency-reducible (e.g. Or[1, 1] -> 1) becomes a distinct-leaf tree
+/// on which the independence product rules are exact.
+fn simplify_positive_boolean(e: &Expr) -> Expr {
+  // Some(true) = And, Some(false) = Or, None = not a boolean junction.
+  fn junction(e: &Expr) -> Option<bool> {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        ..
+      } => Some(true),
+      Expr::BinaryOp {
+        op: BinaryOperator::Or,
+        ..
+      } => Some(false),
+      Expr::FunctionCall { name, .. } if name == "And" => Some(true),
+      Expr::FunctionCall { name, .. } if name == "Or" => Some(false),
+      _ => None,
+    }
+  }
+  fn children(e: &Expr) -> Vec<Expr> {
+    match e {
+      Expr::BinaryOp { left, right, .. } => {
+        vec![left.as_ref().clone(), right.as_ref().clone()]
+      }
+      Expr::FunctionCall { args, .. } => args.iter().cloned().collect(),
+      _ => vec![],
+    }
+  }
+  let Some(is_and) = junction(e) else {
+    return e.clone();
+  };
+  // Simplify children, flattening any of the same head.
+  let mut kids: Vec<Expr> = Vec::new();
+  for c in children(e) {
+    let sc = simplify_positive_boolean(&c);
+    if junction(&sc) == Some(is_and) {
+      kids.extend(children(&sc));
+    } else {
+      kids.push(sc);
+    }
+  }
+  // Idempotency: drop structurally duplicate children.
+  let mut uniq: Vec<Expr> = Vec::new();
+  for k in kids {
+    if !uniq
+      .iter()
+      .any(|u| crate::evaluator::pattern_matching::expr_equal(u, &k))
+    {
+      uniq.push(k);
+    }
+  }
+  if uniq.len() == 1 {
+    return uniq.into_iter().next().unwrap();
+  }
+  Expr::FunctionCall {
+    name: if is_and { "And" } else { "Or" }.to_string(),
+    args: uniq.into(),
+  }
+}
+
 /// The composed CDF value of a FailureDistribution boolean tree over
 /// component CDFs (independent events, each used once): a leaf index maps
 /// to its component CDF, And multiplies CDFs, Or complements the product
@@ -7054,6 +7118,13 @@ fn failure_distribution_cdf_value(
     ));
     return Ok(None);
   }
+  // Collapse idempotency-reducible repeats (Or[a, a] -> a, And[a, a] -> a,
+  // plus flattening of nested same-head And/Or) so that duplicated events —
+  // which wolframscript resolves exactly and the independence product rules
+  // below would get wrong — reduce to a distinct-leaf tree where those rules
+  // are exact. Genuine cross-term repeats (e.g. Or[And[1, 2], And[1, 3]])
+  // survive the reduction and still bail out via the dedup check below.
+  let bexpr = &simplify_positive_boolean(bexpr);
   // Each event may appear only once (wolframscript resolves repeats
   // exactly; the independence product rules below would not).
   fn leaves(e: &Expr, out: &mut Vec<i128>) -> bool {

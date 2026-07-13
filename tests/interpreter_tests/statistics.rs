@@ -9061,14 +9061,38 @@ mod failure_distribution {
        positive unate. Use UnateQ to test if a Boolean expression is unate."
     ));
 
-    // Repeated events need wolframscript's exact (non-independent)
-    // resolution — unevaluated here.
+    // Idempotency-reducible repeats (Or[x, x] -> x) collapse to a distinct-
+    // leaf tree, so the CDF/PDF resolve exactly like wolframscript.
     assert_eq!(
       interpret(
         "CDF[FailureDistribution[x || x, {{x, ExponentialDistribution[2]}}], t]"
       )
       .unwrap(),
-      "CDF[FailureDistribution[1 || 1, {{1, ExponentialDistribution[2]}}], t]"
+      "Piecewise[{{1 - E^(-2*t), t >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[FailureDistribution[x || x, {{x, ExponentialDistribution[2]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{2/E^(2*t), t > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x && x, {{x, ExponentialDistribution[2]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{1 - E^(-2*t), t >= 0}}, 0]"
+    );
+
+    // Genuine cross-term repeats (the shared event 1 cannot be removed by
+    // idempotency) still need wolframscript's exact resolution — unevaluated.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[(x || y) && (x || z), {{x, ExponentialDistribution[2]}, {y, ExponentialDistribution[3]}, {z, ExponentialDistribution[5]}}], t]"
+      )
+      .unwrap(),
+      "CDF[FailureDistribution[(1 || 2) && (1 || 3), {{1, ExponentialDistribution[2]}, {2, ExponentialDistribution[3]}, {3, ExponentialDistribution[5]}}], t]"
     );
   }
 }
