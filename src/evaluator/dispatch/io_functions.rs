@@ -540,22 +540,6 @@ pub fn dispatch_io_functions(
           ))));
         }
       };
-      // Handle Image export
-      if let Expr::Image {
-        width,
-        height,
-        channels,
-        data,
-        ..
-      } = &args[1]
-      {
-        if let Err(e) = crate::functions::image_ast::export_image(
-          &filename, *width, *height, *channels, data,
-        ) {
-          return Some(Err(e));
-        }
-        return Some(Ok(Expr::String(filename)));
-      }
       // Determine the export format from the explicit third argument or,
       // failing that, from the filename extension.
       let explicit_fmt = args.get(2).and_then(|a| {
@@ -570,6 +554,36 @@ pub fn dispatch_io_functions(
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_uppercase());
       let fmt = explicit_fmt.or(ext_fmt).unwrap_or_default();
+
+      // Handle Image export.  Vector formats (SVG) wrap the raster in a
+      // base64-encoded PNG <image> element so the file is a valid SVG;
+      // every other format is written as a raster file by the image crate.
+      if let Expr::Image {
+        width,
+        height,
+        channels,
+        data,
+        ..
+      } = &args[1]
+      {
+        if fmt == "SVG" {
+          let svg = crate::functions::image_ast::image_to_html_img(
+            *width, *height, *channels, data,
+          );
+          if let Err(e) = std::fs::write(&filename, &svg).map_err(|e| {
+            InterpreterError::EvaluationError(format!("Export: {e}"))
+          }) {
+            return Some(Err(e));
+          }
+          return Some(Ok(Expr::String(filename)));
+        }
+        if let Err(e) = crate::functions::image_ast::export_image(
+          &filename, *width, *height, *channels, data,
+        ) {
+          return Some(Err(e));
+        }
+        return Some(Ok(Expr::String(filename)));
+      }
 
       if fmt == "XLSX" {
         if let Err(e) =
@@ -3664,6 +3678,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       crate::functions::molecule_render::molecule_to_svg(&mp_args[0])
         .unwrap_or_else(|| expr_text_svg(expr))
     }
+    // Image[…] — embed the raster as a base64 PNG inside an <image> element
+    // so the SVG stays a valid vector wrapper around the pixel data.
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => crate::functions::image_ast::image_to_html_img(
+      *width, *height, *channels, data,
+    ),
     other => expr_text_svg(other),
   }
 }

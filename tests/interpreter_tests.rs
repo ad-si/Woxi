@@ -886,6 +886,50 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_export_image_to_svg_embeds_png() {
+    // Exporting an Image to an .svg file must produce a valid SVG that wraps
+    // the raster pixels as a base64-encoded PNG <image> element, rather than
+    // erroring because the image crate has no SVG raster encoder.
+    clear_state();
+    let path = std::env::temp_dir().join("woxi_test_export_image.svg");
+    let _ = std::fs::remove_file(&path);
+    let code = format!(
+      "Export[\"{}\", Image[ConstantArray[{{0, 1, 0.5}}, {{4, 4}}]]]",
+      path.display()
+    );
+    // Export returns the filename it wrote to.
+    assert_eq!(interpret(&code).unwrap(), path.display().to_string());
+
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(
+      svg.starts_with("<svg"),
+      "not an SVG: {}",
+      &svg[..40.min(svg.len())]
+    );
+    assert!(
+      svg.contains("width='4'") && svg.contains("height='4'"),
+      "wrong dims"
+    );
+    assert!(
+      svg.contains("data:image/png;base64,"),
+      "raster not embedded as a base64 PNG"
+    );
+    std::fs::remove_file(&path).ok();
+  }
+
+  #[test]
+  fn test_export_string_image_svg_embeds_png() {
+    // ExportString[image, "SVG"] uses the same embedded-PNG rendering.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Image[ConstantArray[{0, 1, 0.5}, {2, 2}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("data:image/png;base64,"));
+  }
+
+  #[test]
   fn test_audio_missing_file_still_renders_player_chrome() {
     // A file-backed Audio whose file cannot be read (missing here; any local
     // path in the browser playground) still renders the player chrome: the
