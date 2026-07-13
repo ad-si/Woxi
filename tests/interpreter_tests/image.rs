@@ -4934,3 +4934,113 @@ mod filling_transform {
     ));
   }
 }
+
+// Image constructor conformance decoded from wolframscript probes: any
+// channel count is accepted (single-element pixels collapse to
+// grayscale), integer types read raw values on their own scale with
+// half-even rounding and clamping, Image[image, type] re-quantizes the
+// normalized data, and malformed arrays emit imgarray with an
+// unevaluated echo.
+mod image_constructor_conformance {
+  use super::*;
+
+  #[test]
+  fn arbitrary_channel_counts() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i2 = Image[{{{0.9, 0.5}, {0.2, 0.1}}, {{0.3, 0.7}, {0.4, 0.6}}}]; \
+         {ImageChannels[i2], ImageColorSpace[i2], ImageData[i2][[1, 1]]}"
+      )
+      .unwrap(),
+      "{2, Automatic, {0.8999999761581421, 0.5}}"
+    );
+    // Single-element pixels collapse to a plain grayscale image.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i1 = Image[{{{0.9}, {0.2}}, {{0.3}, {0.4}}}]; \
+         {ImageChannels[i1], ImageData[i1]}"
+      )
+      .unwrap(),
+      "{1, {{0.8999999761581421, 0.20000000298023224}, \
+        {0.30000001192092896, 0.4000000059604645}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("ImageChannels[Image[{{{0.1, 0.2, 0.3, 0.4, 0.5}}}]]").unwrap(),
+      "5"
+    );
+    // ColorSeparate splits 2-channel images.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Map[ImageData, ColorSeparate[Image[{{{0.9, 0.5}, {0.2, 0.1}}}]]]"
+      )
+      .unwrap(),
+      "{{{0.8999999761581421, 0.20000000298023224}}, \
+        {{0.5, 0.10000000149011612}}}"
+    );
+  }
+
+  #[test]
+  fn integer_types_quantize_raw_values() {
+    // Values are read on the type's own scale: reals round half-even
+    // and clamp into range.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[Image[{{0.5, 0.998}}, \"Byte\"], \"Byte\"], \
+          ImageData[Image[{{2.5, 3.5, -0.5}}, \"Byte\"], \"Byte\"], \
+          ImageData[Image[{{300, -5}}, \"Byte\"], \"Byte\"], \
+          ImageData[Image[{{0.3, 0.8}}, \"Bit\"]], \
+          ImageData[Image[{{2, -1}}, \"Bit\"]], \
+          ImageData[Image[{{0.5, 70000}}, \"Bit16\"], \"Bit16\"]}"
+      )
+      .unwrap(),
+      "{{{0, 1}}, {{2, 4, 0}}, {{255, 0}}, {{0, 1}}, {{1, 0}}, {{0, 65535}}}"
+    );
+    // Untyped real input stores raw values without clamping.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Image[{{0.5, 2.5, -0.5}}]]").unwrap(),
+      "{{0.5, 2.5, -0.5}}"
+    );
+    // Image[image, type] re-quantizes the NORMALIZED data instead.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Image[Image[{{0.5}}], \"Byte\"], \"Byte\"]")
+        .unwrap(),
+      "{{128}}"
+    );
+  }
+
+  #[test]
+  fn malformed_arrays_emit_imgarray() {
+    clear_state();
+    let r = interpret_with_stdout("Image[{{x}}]").unwrap();
+    assert_eq!(r.result, "Image[{{x}}]");
+    assert!(r.warnings[0].contains(
+      "Image::imgarray: The specified argument {{x}} should be an array of \
+       rank 2 or 3 with machine-sized numbers."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("Image[{{{0.1, 0.2}, {0.3}}}]").unwrap();
+    assert!(r.warnings[0].contains("Image::imgarray"));
+
+    clear_state();
+    let r = interpret_with_stdout("Image[{}]").unwrap();
+    assert!(r.warnings[0].contains(
+      "Image::imgarray: The specified argument {} should be an array"
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("Image[{{0.5}}, \"Foo\"]").unwrap();
+    assert_eq!(r.result, "Image[{{0.5}}, Foo]");
+    assert!(r.warnings[0].contains(
+      "Image::imgdtype: The specified data type Foo should be \"Bit\", \
+       \"Byte\", \"Bit16\", \"Real32\" or \"Real64\"."
+    ));
+  }
+}

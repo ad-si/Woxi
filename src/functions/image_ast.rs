@@ -121,11 +121,13 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Image expects at least 1 argument".into(),
     ));
   }
+  let unevaluated = || Expr::FunctionCall {
+    name: "Image".to_string(),
+    args: args.to_vec().into(),
+  };
 
   // Image[image] is idempotent: wolframscript returns the inner image
-  // unchanged. Only honour the shortcut when no extra positional args
-  // are present (an explicit type or option ought to fall through to
-  // the construction path).
+  // unchanged.
   if args.len() == 1
     && let Expr::Image { .. } = &args[0]
   {
@@ -133,7 +135,6 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // The second positional arg is a type tag (string or identifier).
-  // Anything beyond that must be a Rule-form option.
   let parse_type = |e: &Expr| -> Option<ImageType> {
     let s = match e {
       Expr::String(s) | Expr::Identifier(s) => Some(s.as_str()),
@@ -151,9 +152,26 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut requested_type: Option<ImageType> = None;
   let mut opt_start = 1;
-  if let Some(ty) = args.get(1).and_then(parse_type) {
-    requested_type = Some(ty);
-    opt_start = 2;
+  if let Some(second) = args.get(1)
+    && !matches!(second, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  {
+    match parse_type(second) {
+      Some(ty) => {
+        requested_type = Some(ty);
+        opt_start = 2;
+      }
+      None => {
+        let shown = match second {
+          Expr::String(s) => s.clone(),
+          e => crate::syntax::expr_to_string(e),
+        };
+        crate::emit_message(&format!(
+          "Image::imgdtype: The specified data type {} should be \"Bit\", \"Byte\", \"Bit16\", \"Real32\" or \"Real64\".",
+          shown
+        ));
+        return Ok(unevaluated());
+      }
+    }
   }
 
   // Treat the remaining args as options. Only Rule/RuleDelayed shapes are
@@ -166,6 +184,41 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::expr_to_string(opt)
       )));
     }
+  }
+
+  // Image[image, type] re-quantizes the NORMALIZED data into the new
+  // type (unlike raw list input, which is read on the type's own scale).
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    color_space,
+    ..
+  } = args[0]
+  {
+    let ty = requested_type.unwrap_or(ImageType::Real32);
+    let quant = match ty {
+      ImageType::Bit => Some(1.0),
+      ImageType::Byte => Some(255.0),
+      ImageType::Bit16 => Some(65535.0),
+      _ => None,
+    };
+    let new_data: Vec<f64> = match quant {
+      Some(m) => data
+        .iter()
+        .map(|&v| (v * m).round_ties_even().clamp(0.0, m) / m)
+        .collect(),
+      None => data.as_ref().clone(),
+    };
+    return Ok(Expr::Image {
+      color_space,
+      width,
+      height,
+      channels,
+      data: Arc::new(new_data),
+      image_type: ty,
+    });
   }
 
   // `Image[NumericArray[data, type]]` — unwrap to the nested list and
@@ -184,6 +237,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => None,
         };
         requested_type = match s {
+          Some("Bit") => Some(ImageType::Bit),
           Some("Byte") | Some("UnsignedInteger8") => Some(ImageType::Byte),
           Some("Bit16") | Some("UnsignedInteger16") => Some(ImageType::Bit16),
           Some("Real32") => Some(ImageType::Real32),
@@ -197,156 +251,103 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => other,
   };
 
-  // The argument should be a 2D or 3D nested list
-  let rows = match raw_arg {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Image expects a nested list of pixel data".into(),
-      ));
-    }
+  // Parse a strictly rectangular rank-2 or rank-3 numeric array. Any
+  // shape or value problem gets wolframscript's imgarray message and an
+  // unevaluated echo.
+  let invalid = || {
+    crate::emit_message(&format!(
+      "Image::imgarray: The specified argument {} should be an array of rank 2 or 3 with machine-sized numbers.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  };
+  let parsed = parse_image_array(raw_arg);
+  let Some((width, height, channels, mut data)) = parsed else {
+    invalid();
+    return Ok(unevaluated());
   };
 
+  // Integer-typed images read raw values on their own scale (a real 0.5
+  // with "Byte" is the byte value 0.5, rounded half-even and clamped) and
+  // store them normalized to [0, 1].
+  let quant: Option<f64> = match requested_type {
+    Some(ImageType::Bit) => Some(1.0),
+    Some(ImageType::Byte) => Some(255.0),
+    Some(ImageType::Bit16) => Some(65535.0),
+    _ => None,
+  };
+  if let Some(m) = quant {
+    for v in &mut data {
+      *v = v.round_ties_even().clamp(0.0, m) / m;
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width,
+    height,
+    channels,
+    data: Arc::new(data),
+    image_type: requested_type.unwrap_or(ImageType::Real32),
+  })
+}
+
+/// Extract (width, height, channels, row-major interleaved data) from a
+/// rectangular rank-2 or rank-3 nested list; None for anything malformed.
+/// A rank-3 array with single-element pixels collapses to one channel.
+fn parse_image_array(arg: &Expr) -> Option<(u32, u32, u8, Vec<f64>)> {
+  let Expr::List(rows) = arg else { return None };
   if rows.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Image: pixel data must not be empty".into(),
-    ));
+    return None;
   }
-
-  // Determine if this is grayscale (2D: {{v,...},...}) or color (3D: {{{r,g,b},...},...})
-  let first_row = match &rows[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Image expects a 2D or 3D nested list".into(),
-      ));
-    }
+  let Expr::List(first_row) = &rows[0] else {
+    return None;
   };
-
   if first_row.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Image: rows must not be empty".into(),
-    ));
+    return None;
   }
-
-  // Check first element of first row: if it's a List, we have color channels
+  let width = first_row.len();
+  let height = rows.len();
   let is_color = matches!(&first_row[0], Expr::List(_));
-
-  let height = rows.len() as u32;
-
-  // Normalize integer-typed pixel values into the [0, 1] f64 buffer.
-  // Storage is always normalized; image_type only affects display precision
-  // and the implicit /255 (or /65535) applied on input.
-  let divisor: f64 = match requested_type {
-    Some(ImageType::Byte) => 255.0,
-    Some(ImageType::Bit16) => 65535.0,
-    _ => 1.0,
-  };
-
-  if is_color {
-    // Color image: {{{r,g,b}, ...}, ...}
-    let width = first_row.len() as u32;
-    let channels = match &first_row[0] {
-      Expr::List(pixel) => pixel.len() as u8,
-      _ => unreachable!(),
-    };
-    if channels != 3 && channels != 4 {
-      return Err(InterpreterError::EvaluationError(format!(
-        "Image: color pixels must have 3 (RGB) or 4 (RGBA) channels, got {}",
-        channels
-      )));
+  let channels = if is_color {
+    match &first_row[0] {
+      Expr::List(pixel) if !pixel.is_empty() => pixel.len(),
+      _ => return None,
     }
-
-    let expected_len =
-      (width as usize) * (height as usize) * (channels as usize);
-    let mut data = Vec::with_capacity(expected_len);
-
-    for (i, row) in rows.iter().enumerate() {
-      let row_items = match row {
-        Expr::List(items) => items,
-        _ => {
-          return Err(InterpreterError::EvaluationError(format!(
-            "Image: row {} is not a list",
-            i
-          )));
-        }
-      };
-      if row_items.len() as u32 != width {
-        return Err(InterpreterError::EvaluationError(format!(
-          "Image: row {} has {} pixels, expected {}",
-          i,
-          row_items.len(),
-          width
-        )));
-      }
-      for pixel in row_items {
-        let pixel_vals = match pixel {
-          Expr::List(vals) => vals,
-          _ => {
-            return Err(InterpreterError::EvaluationError(
-              "Image: each pixel must be a list of channel values".into(),
-            ));
-          }
-        };
-        if pixel_vals.len() as u8 != channels {
-          return Err(InterpreterError::EvaluationError(format!(
-            "Image: pixel has {} channels, expected {}",
-            pixel_vals.len(),
-            channels
-          )));
-        }
-        for v in pixel_vals {
-          data.push(expr_to_f64(v)? / divisor);
-        }
-      }
-    }
-
-    Ok(Expr::Image {
-      color_space: None,
-      width,
-      height,
-      channels,
-      data: Arc::new(data),
-      image_type: requested_type.unwrap_or(ImageType::Real32),
-    })
   } else {
-    // Grayscale image: {{v, v, ...}, ...}
-    let width = first_row.len() as u32;
-    let expected_len = (width as usize) * (height as usize);
-    let mut data = Vec::with_capacity(expected_len);
+    1
+  };
+  if channels > u8::MAX as usize {
+    return None;
+  }
 
-    for (i, row) in rows.iter().enumerate() {
-      let row_items = match row {
-        Expr::List(items) => items,
-        _ => {
-          return Err(InterpreterError::EvaluationError(format!(
-            "Image: row {} is not a list",
-            i
-          )));
+  let mut data = Vec::with_capacity(width * height * channels);
+  let leaf = |e: &Expr| -> Option<f64> {
+    if matches!(e, Expr::List(_)) {
+      return None;
+    }
+    let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+    v.is_finite().then_some(v)
+  };
+  for row in rows.iter() {
+    let Expr::List(items) = row else { return None };
+    if items.len() != width {
+      return None;
+    }
+    for cell in items.iter() {
+      if is_color {
+        let Expr::List(pixel) = cell else { return None };
+        if pixel.len() != channels {
+          return None;
         }
-      };
-      if row_items.len() as u32 != width {
-        return Err(InterpreterError::EvaluationError(format!(
-          "Image: row {} has {} values, expected {}",
-          i,
-          row_items.len(),
-          width
-        )));
-      }
-      for v in row_items {
-        data.push(expr_to_f64(v)? / divisor);
+        for v in pixel.iter() {
+          data.push(leaf(v)?);
+        }
+      } else {
+        data.push(leaf(cell)?);
       }
     }
-
-    Ok(Expr::Image {
-      color_space: None,
-      width,
-      height,
-      channels: 1,
-      data: Arc::new(data),
-      image_type: requested_type.unwrap_or(ImageType::Real32),
-    })
   }
+  Some((width as u32, height as u32, channels as u8, data))
 }
 
 /// Helper: extract f64 from Expr, resolving constants and arithmetic
