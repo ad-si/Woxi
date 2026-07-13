@@ -43,6 +43,7 @@ exclude = [
   "/scripts",
   "/woxi-studio",
   "/woxi-py",
+  "/npm",
   "/fuzz",
   "/.claude",
   "/.vscode",
