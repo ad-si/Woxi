@@ -6139,6 +6139,7 @@ fn is_denominator_factor(expr: &Expr) -> bool {
   };
   match exponent {
     Expr::Integer(n) => *n < 0,
+    Expr::Real(r) => *r < 0.0,
     Expr::FunctionCall { name: rn, args: ra }
       if rn == "Rational" && ra.len() == 2 =>
     {
@@ -6147,7 +6148,8 @@ fn is_denominator_factor(expr: &Expr) -> bool {
     Expr::FunctionCall { name: tn, args: ta }
       if tn == "Times"
         && !ta.is_empty()
-        && matches!(&ta[0], Expr::Integer(n) if *n < 0) =>
+        && (matches!(&ta[0], Expr::Integer(n) if *n < 0)
+          || matches!(&ta[0], Expr::Real(r) if *r < 0.0)) =>
     {
       true
     }
@@ -6200,6 +6202,7 @@ fn denominator_form(expr: &Expr) -> Expr {
   };
   let pos_exp = match exponent {
     Expr::Integer(n) => Expr::Integer(-n),
+    Expr::Real(r) => Expr::Real(-r),
     Expr::FunctionCall { name: rn, args: ra }
       if rn == "Rational" && ra.len() == 2 =>
     {
@@ -6207,6 +6210,22 @@ fn denominator_form(expr: &Expr) -> Expr {
         Expr::FunctionCall {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(-n), ra[1].clone()].into(),
+        }
+      } else {
+        unreachable!()
+      }
+    }
+    Expr::FunctionCall { name: tn, args: ta }
+      if tn == "Times"
+        && ta.len() >= 2
+        && matches!(&ta[0], Expr::Real(r) if *r < 0.0) =>
+    {
+      if let Expr::Real(r) = &ta[0] {
+        let mut new_args = vec![Expr::Real(-r)];
+        new_args.extend_from_slice(&ta[1..]);
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: new_args.into(),
         }
       } else {
         unreachable!()

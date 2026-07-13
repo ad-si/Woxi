@@ -6349,3 +6349,132 @@ mod coxian_distribution {
     ));
   }
 }
+
+// HyperexponentialDistribution: a plain mixture of exponentials
+// (PDF = Σ p_i λ_i E^(-λ_i x)); numeric rates merge duplicates and sort
+// descending, symbolic parameters keep wolframscript's (λ p) term
+// shapes. All outputs verified against wolframscript.
+mod hyperexponential_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_and_cdf() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HyperexponentialDistribution[{1/3, 2/3}, {2, 5}], x]")
+        .unwrap(),
+      "Piecewise[{{10/(3*E^(5*x)) + 2/(3*E^(2*x)), x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HyperexponentialDistribution[{1/3, 2/3}, {2, 5}], x]")
+        .unwrap(),
+      "Piecewise[{{1 - 2/(3*E^(5*x)) - 1/(3*E^(2*x)), x >= 0}}, 0]"
+    );
+    // Repeated rates merge their coefficients.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HyperexponentialDistribution[{1/2, 1/2}, {2, 2}], x]")
+        .unwrap(),
+      "Piecewise[{{2/E^(2*x), x >= 0}}, 0]"
+    );
+    // Float parameters keep wolframscript's denominator rendering.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HyperexponentialDistribution[{0.3, 0.7}, {2., 5.}], x]")
+        .unwrap(),
+      "Piecewise[{{3.5/E^(5.*x) + 0.6/E^(2.*x), x >= 0}}, 0]"
+    );
+    // Symbolic parameters evaluate too.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HyperexponentialDistribution[{p1, p2}, {l1, l2}], x]")
+        .unwrap(),
+      "Piecewise[{{(l1*p1)/E^(l1*x) + (l2*p2)/E^(l2*x), x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[HyperexponentialDistribution[{1/3, 2/3}, {2, 5}], 1], \
+          CDF[HyperexponentialDistribution[{1/3, 2/3}, {2, 5}], -1]}"
+      )
+      .unwrap(),
+      "{10/(3*E^5) + 2/(3*E^2), 0}"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "d = HyperexponentialDistribution[{1/3, 2/3}, {2, 5}]; \
+         {Mean[d], Variance[d], StandardDeviation[d]}"
+      )
+      .unwrap(),
+      "{3/10, 13/100, Sqrt[13]/10}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[HyperexponentialDistribution[{p1, p2}, {l1, l2}]]")
+        .unwrap(),
+      "p1/l1 + p2/l2"
+    );
+    // The 1-ULP float sum 0.3 + 0.7 is accepted as summing to 1.
+    clear_state();
+    assert_eq!(
+      interpret("Mean[HyperexponentialDistribution[{0.3, 0.7}, {2., 5.}]]")
+        .unwrap(),
+      "0.29"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "PDF[HyperexponentialDistribution[{1/3, 1/3}, {2, 5}], x]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "HyperexponentialDistribution::vprobprm: The value {1/3, 1/3} at \
+       position 1 in HyperexponentialDistribution[{1/3, 1/3}, {2, 5}] is \
+       expected to be a list of non-negative numbers summing to 1."
+    ));
+
+    // A numeric negative weight fires even next to symbolic ones.
+    clear_state();
+    let r = interpret_with_stdout(
+      "PDF[HyperexponentialDistribution[{-1, p}, {2, 5}], x]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains("HyperexponentialDistribution::vprobprm"));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "PDF[HyperexponentialDistribution[{1/2, 1/2}, {2, -5}], x]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "HyperexponentialDistribution::vrpos: The value {2, -5} at position 2"
+    ));
+
+    // Length mismatch fires before the rate check.
+    clear_state();
+    let r = interpret_with_stdout(
+      "PDF[HyperexponentialDistribution[{1/2}, {2, -5}], x]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "HyperexponentialDistribution::eqln: The values {1/2} and {2, -5} at \
+       positions 1 and 2"
+    ));
+
+    // Invalid constructors echo silently.
+    clear_state();
+    let r =
+      interpret_with_stdout("HyperexponentialDistribution[{2, -1}, {2, 5}]")
+        .unwrap();
+    assert!(r.warnings.is_empty());
+  }
+}

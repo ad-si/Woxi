@@ -3424,7 +3424,7 @@ AASTriangle,Triangle from two angles and the side opposite the first (symbolic a
 BlockchainData,,🚫,,11.3,3522
 CramerVonMisesTest,,,,8.0,3522
 Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,pure,1.0,3522
-HyperexponentialDistribution,,,,9.0,3522
+HyperexponentialDistribution,Mixture of exponential distributions,✅,pure,9.0,3522
 InteractiveTradingChart,,🚫,,8.0,3522
 JacobiND,Jacobi elliptic function nd (1/dn),✅,pure,1.0,3522
 KeySortBy,Sorts an association by applying a function to its keys; supports the operator form KeySortBy[f][assoc],✅,pure,10.0,3522

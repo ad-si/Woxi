@@ -245,6 +245,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "SkellamDistribution" => pdf_skellam(dargs, x),
     "HypoexponentialDistribution" => pdf_hypoexponential(dargs, x),
     "CoxianDistribution" => pdf_coxian(dargs, x),
+    "HyperexponentialDistribution" => pdf_hyperexponential(dargs, x),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -2062,6 +2063,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "SkellamDistribution" => cdf_skellam(dargs, x),
     "HypoexponentialDistribution" => cdf_hypoexponential(dargs, x),
     "CoxianDistribution" => cdf_coxian(dargs, x),
+    "HyperexponentialDistribution" => cdf_hyperexponential(dargs, x),
     "FailureDistribution" => cdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => cdf_first_passage(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
@@ -4059,6 +4061,7 @@ pub fn distribution_mean_variance(
       &erlang_gamma_dargs(dargs)?,
     ),
     "CoxianDistribution" => coxian_mean_variance(dargs),
+    "HyperexponentialDistribution" => hyperexponential_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7885,6 +7888,215 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Validated HyperexponentialDistribution arguments (probs, rates).
+/// Emits eqln / vprobprm / vrpos (in that order) and returns None on
+/// failure; non-list shapes fail silently. The probability sum check
+/// only applies when every weight is numeric, with a 1-ULP style
+/// tolerance for floats (wolframscript accepts 0.3 + 0.7).
+fn hyperexponential_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  let [Expr::List(probs), Expr::List(rates)] = dargs else {
+    return None;
+  };
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "HyperexponentialDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if probs.len() != rates.len() {
+    crate::emit_message(&format!(
+      "HyperexponentialDistribution::eqln: The values {} and {} at positions 1 and 2 in {} are expected to have the same length.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let vals: Vec<Option<f64>> = probs.iter().map(&num).collect();
+  let negative = vals.iter().any(|v| v.is_some_and(|v| v < 0.0));
+  let bad_sum = vals.iter().all(|v| v.is_some())
+    && (vals.iter().map(|v| v.unwrap()).sum::<f64>() - 1.0).abs() > 1e-13;
+  if negative || bad_sum {
+    crate::emit_message(&format!(
+      "HyperexponentialDistribution::vprobprm: The value {} at position 1 in {} is expected to be a list of non-negative numbers summing to 1.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist()
+    ));
+    return None;
+  }
+  if rates.iter().any(|r| num(r).is_some_and(|v| v <= 0.0)) {
+    crate::emit_message(&format!(
+      "HyperexponentialDistribution::vrpos: The value {} at position 2 in {} is expected to be a list of positive numbers.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  Some((probs.to_vec(), rates.to_vec()))
+}
+
+/// Per-rate coefficient sums of the hyperexponential mixture when all
+/// rates are numeric: groups repeated rates (coefficients merge) and
+/// orders by descending rate. `scale_by_rate` selects PDF (p λ) vs
+/// CDF (p) coefficients.
+fn hyperexponential_numeric_terms(
+  probs: &[Expr],
+  rates: &[Expr],
+  scale_by_rate: bool,
+) -> Option<Vec<(Expr, Expr)>> {
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let vals: Vec<f64> = rates.iter().map(num).collect::<Option<_>>()?;
+  let mut groups: Vec<(f64, Expr, Vec<Expr>)> = Vec::new();
+  for (i, v) in vals.iter().enumerate() {
+    let coeff = if scale_by_rate {
+      times(probs[i].clone(), rates[i].clone())
+    } else {
+      probs[i].clone()
+    };
+    match groups.iter_mut().find(|(gv, ..)| gv == v) {
+      Some((.., cs)) => cs.push(coeff),
+      None => groups.push((*v, rates[i].clone(), vec![coeff])),
+    }
+  }
+  groups.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+  groups
+    .into_iter()
+    .map(|(_, rate, cs)| {
+      let sum = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: cs.into(),
+      };
+      eval(sum).ok().map(|c| (c, rate))
+    })
+    .collect()
+}
+
+/// PDF[HyperexponentialDistribution[{p...}, {λ...}], x]:
+/// Piecewise[{{Σ p_i λ_i E^(-λ_i x), x >= 0}}, 0]. Numeric rates merge
+/// and sort descending; symbolic rates keep the given order with the
+/// (λ p) coefficient shape wolframscript uses.
+fn pdf_hyperexponential(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HyperexponentialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some((probs, rates)) = hyperexponential_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let terms: Vec<Expr> =
+    match hyperexponential_numeric_terms(&probs, &rates, true) {
+      Some(groups) => groups
+        .into_iter()
+        .map(|(c, rate)| coxian_exp_term(c, None, &rate, &x))
+        .collect(),
+      None => probs
+        .iter()
+        .zip(rates.iter())
+        .map(|(p, l)| coxian_exp_term(times(l.clone(), p.clone()), None, l, &x))
+        .collect(),
+    };
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[HyperexponentialDistribution[{p...}, {λ...}], x]:
+/// Piecewise[{{1 - Σ p_i E^(-λ_i x), x >= 0}}, 0].
+fn cdf_hyperexponential(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HyperexponentialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some((probs, rates)) = hyperexponential_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let mut terms: Vec<Expr> = vec![int(1)];
+  match hyperexponential_numeric_terms(&probs, &rates, false) {
+    Some(groups) => {
+      for (c, rate) in groups {
+        let neg = eval(times(int(-1), c))?;
+        terms.push(coxian_exp_term(neg, None, &rate, &x));
+      }
+    }
+    None => {
+      for (p, l) in probs.iter().zip(rates.iter()) {
+        terms.push(coxian_exp_term(times(int(-1), p.clone()), None, l, &x));
+      }
+    }
+  }
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Mean = Σ p_i/λ_i and Variance = 2 Σ p_i/λ_i² - Mean², in
+/// wolframscript's symbolic shapes.
+fn hyperexponential_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some((probs, rates)) = hyperexponential_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "HyperexponentialDistribution: invalid parameters".into(),
+    ));
+  };
+  let term =
+    |p: &Expr, l: &Expr, k: i128| times(p.clone(), power(l.clone(), int(k)));
+  let mean = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: probs
+      .iter()
+      .zip(rates.iter())
+      .map(|(p, l)| term(p, l, -1))
+      .collect::<Vec<_>>()
+      .into(),
+  };
+  let second = times(
+    int(2),
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: probs
+        .iter()
+        .zip(rates.iter())
+        .map(|(p, l)| term(p, l, -2))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+  );
+  let variance = plus(second, times(int(-1), power(mean.clone(), int(2))));
+  Ok((eval(mean)?, eval(variance)?))
 }
 
 /// Validated CoxianDistribution arguments: (alphas, rates) with
