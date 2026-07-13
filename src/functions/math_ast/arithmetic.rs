@@ -5685,9 +5685,40 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
       continue;
     }
     let (base_i, exp_i) = extract_base_exponent(&result[i]);
+    let is_negative_exp = matches!(
+      &exp_i,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2
+          && matches!(&args[0], Expr::Integer(n) if *n < 0)
+    );
+    // Numeric-like base products of identifier constants (Pi as an
+    // Identifier rather than Constant). wolframscript merges these when
+    // they sit in a DENOMINATOR (1/(Sqrt[Pi] Sqrt[4 Pi]) → 1/(2 Pi)),
+    // but numerator radicals prefer the coefficient-folding route
+    // (Sqrt[2] Sqrt[Pi]/2 stays for Sqrt[Pi/2]).
+    fn numeric_like_with_idents(e: &Expr) -> bool {
+      match e {
+        Expr::Identifier(name) => matches!(
+          name.as_str(),
+          "Pi"
+            | "E"
+            | "EulerGamma"
+            | "GoldenRatio"
+            | "Catalan"
+            | "Degree"
+            | "Glaisher"
+            | "Khinchin"
+        ),
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          args.iter().all(numeric_like_with_idents)
+        }
+        other => is_numeric_like(other),
+      }
+    }
     // Only combine bases that are numeric-like (integers, constants, or products thereof)
     // This avoids combining purely symbolic expressions like Sqrt[x]*Sqrt[y]
-    let is_combinable_base = is_numeric_like(&base_i);
+    let is_combinable_base = is_numeric_like(&base_i)
+      || (is_negative_exp && numeric_like_with_idents(&base_i));
     let is_rational_exp = matches!(
       &exp_i,
       Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
@@ -5703,7 +5734,9 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
         continue;
       }
       let (base_j, exp_j) = extract_base_exponent(&result[j]);
-      if is_numeric_like(&base_j) && expr_to_string(&exp_j) == exp_key {
+      let combinable_j = is_numeric_like(&base_j)
+        || (is_negative_exp && numeric_like_with_idents(&base_j));
+      if combinable_j && expr_to_string(&exp_j) == exp_key {
         bases_to_multiply.push(base_j);
         used[j] = true;
       }
@@ -5712,7 +5745,117 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
       combined.push(result[i].clone());
     } else {
       let product = times_ast(&bases_to_multiply)?;
-      combined.push(power_two(&product, &exp_i)?);
+      // A merged radicand that is a perfect square (integer square times
+      // even powers of named constants, e.g. 4 Pi^2) extracts fully:
+      // 1/(Sqrt[Pi] Sqrt[4 Pi]) → 1/Sqrt[4 Pi^2] → 1/(2 Pi).
+      let extracted = (|| -> Option<Expr> {
+        let half = match &exp_i {
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            match (&args[0], &args[1]) {
+              (Expr::Integer(n), Expr::Integer(2)) if n.abs() == 1 => *n,
+              _ => return None,
+            }
+          }
+          _ => return None,
+        };
+        let mut int_part: i128 = 1;
+        let mut const_pows: Vec<(String, i128)> = Vec::new();
+        let mut stack = vec![product.clone()];
+        while let Some(f) = stack.pop() {
+          match &f {
+            Expr::Integer(n) if *n > 0 => {
+              int_part = int_part.checked_mul(*n)?;
+            }
+            Expr::Identifier(name) | Expr::Constant(name) => {
+              match const_pows.iter_mut().find(|(n, _)| n == name) {
+                Some((_, k)) => *k += 1,
+                None => const_pows.push((name.clone(), 1)),
+              }
+            }
+            Expr::FunctionCall { name, args } if name == "Times" => {
+              stack.extend(args.iter().cloned());
+            }
+            Expr::FunctionCall { name, args }
+              if name == "Power"
+                && args.len() == 2
+                && matches!(&args[1], Expr::Integer(k) if *k > 0) =>
+            {
+              let Expr::Integer(k) = args[1] else {
+                return None;
+              };
+              match &args[0] {
+                Expr::Identifier(name) | Expr::Constant(name) => {
+                  match const_pows.iter_mut().find(|(n, _)| n == name) {
+                    Some((_, kk)) => *kk += k,
+                    None => const_pows.push((name.clone(), k)),
+                  }
+                }
+                _ => return None,
+              }
+            }
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left,
+              right,
+            } => {
+              stack.push(left.as_ref().clone());
+              stack.push(right.as_ref().clone());
+            }
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left,
+              right,
+            } if matches!(right.as_ref(), Expr::Integer(k) if *k > 0) => {
+              let Expr::Integer(k) = right.as_ref() else {
+                return None;
+              };
+              match left.as_ref() {
+                Expr::Identifier(name) | Expr::Constant(name) => {
+                  match const_pows.iter_mut().find(|(n, _)| n == name) {
+                    Some((_, kk)) => *kk += k,
+                    None => const_pows.push((name.clone(), *k)),
+                  }
+                }
+                _ => return None,
+              }
+            }
+            _ => return None,
+          }
+        }
+        let root = (int_part as f64).sqrt().round() as i128;
+        if root * root != int_part || const_pows.iter().any(|(_, k)| k % 2 != 0)
+        {
+          return None;
+        }
+        let mut factors: Vec<Expr> = Vec::new();
+        if root != 1 {
+          factors.push(Expr::Integer(root));
+        }
+        for (name, k) in const_pows {
+          let base = Expr::Identifier(name);
+          factors.push(if k == 2 {
+            base
+          } else {
+            power_two(&base, &Expr::Integer(k / 2)).ok()?
+          });
+        }
+        let extracted = match factors.len() {
+          0 => Expr::Integer(1),
+          1 => factors.into_iter().next().unwrap(),
+          _ => times_ast(&factors).ok()?,
+        };
+        if half > 0 {
+          Some(extracted)
+        } else {
+          power_two(&extracted, &Expr::Integer(-1)).ok()
+        }
+      })();
+      match extracted {
+        Some(e) => combined.push(e),
+        None => combined.push(power_two(&product, &exp_i)?),
+      }
     }
   }
 

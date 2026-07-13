@@ -3474,7 +3474,7 @@ SphericalHankelH2,Spherical Hankel function of the second kind,✅,pure,6.0,3566
 SplicedDistribution,,,,9.0,3566
 SymmetrizedIndependentComponents,,,,9.0,3566
 TelegraphProcess,,🚫,,9.0,3566
-TsallisQGaussianDistribution,,,,9.0,3566
+TsallisQGaussianDistribution,Tsallis q-Gaussian distribution,✅,pure,9.0,3566
 UnsetShared,,,,7.0,3566
 VonMisesDistribution,Von Mises circular distribution,✅,pure,8.0,3566
 AbortKernels,,🚫,,7.0,3578

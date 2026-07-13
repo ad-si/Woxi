@@ -250,6 +250,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BeniniDistribution" => pdf_benini(dargs, x),
     "HotellingTSquareDistribution" => pdf_hotelling(dargs, x),
     "TukeyLambdaDistribution" => tukey_lambda_pdf_cdf(dargs, x, true),
+    "TsallisQGaussianDistribution" => tsallis_qgaussian_pdf(dargs, x),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -2071,6 +2072,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BeniniDistribution" => cdf_benini(dargs, x),
     "HotellingTSquareDistribution" => cdf_hotelling(dargs, x),
     "TukeyLambdaDistribution" => tukey_lambda_pdf_cdf(dargs, x, false),
+    "TsallisQGaussianDistribution" => tsallis_qgaussian_cdf(dargs, x),
     "FailureDistribution" => cdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => cdf_first_passage(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
@@ -4086,6 +4088,7 @@ pub fn distribution_mean_variance(
     "BeniniDistribution" => benini_mean_variance(dargs),
     "HotellingTSquareDistribution" => hotelling_mean_variance(dargs),
     "TukeyLambdaDistribution" => tukey_lambda_mean_variance(dargs),
+    "TsallisQGaussianDistribution" => tsallis_qgaussian_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7912,6 +7915,348 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Validation for TsallisQGaussianDistribution[μ, β, q]: β positive
+/// (posprm, position 2), q < 3 (lss, position 3), arity 3 (argrx).
+fn tsallis_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 3 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "TsallisQGaussianDistribution::argrx: TsallisQGaussianDistribution called with {} {}; 3 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "TsallisQGaussianDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if num(&dargs[1]).is_some_and(|v| v <= 0.0) {
+    crate::emit_message(&format!(
+      "TsallisQGaussianDistribution::posprm: Parameter {} at position 2 in {} is expected to be positive.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  if num(&dargs[2]).is_some_and(|v| v >= 3.0) {
+    crate::emit_message(&format!(
+      "TsallisQGaussianDistribution::lss: Parameter {} at position 3 in {} is expected to be less than 3.",
+      crate::syntax::expr_to_string(&dargs[2]),
+      dist()
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// Shared subtrees of the Tsallis q-Gaussian closed forms.
+struct TsallisParts {
+  gaussian: Expr,
+  branch_wide: Expr,
+  branch_compact: Expr,
+  compact_arg: Expr,
+}
+
+fn tsallis_parts(m: &Expr, b: &Expr, q: &Expr, x: &Expr) -> TsallisParts {
+  let sqrt = |e: Expr| Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![e].into(),
+  };
+  let gamma = |e: Expr| Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![e].into(),
+  };
+  let two_pi = times(int(2), Expr::Constant("Pi".to_string()));
+  let m_minus_x = plus(m.clone(), times(int(-1), x.clone()));
+  let qm1 = plus(int(-1), q.clone());
+  let one_mq = plus(int(1), times(int(-1), q.clone()));
+  // Gaussian branch: 1/(b E^((m-x)^2/(2 b^2)) Sqrt[2 Pi])
+  let gaussian = power(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        b.clone(),
+        power(
+          e(),
+          divide(
+            power(m_minus_x.clone(), int(2)),
+            times(int(2), power(b.clone(), int(2))),
+          ),
+        ),
+        sqrt(two_pi.clone()),
+      ]
+      .into(),
+    },
+    int(-1),
+  );
+  // (1 + (-1+q)(m-x)^2/(2 b^2))^((1-q)^-1)
+  let core = power(
+    plus(
+      int(1),
+      divide(
+        times(qm1.clone(), power(m_minus_x.clone(), int(2))),
+        times(int(2), power(b.clone(), int(2))),
+      ),
+    ),
+    power(one_mq.clone(), int(-1)),
+  );
+  // 1 < q < 3 branch
+  let branch_wide = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        sqrt(qm1.clone()),
+        core.clone(),
+        gamma(power(qm1.clone(), int(-1))),
+      ]
+      .into(),
+    },
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        b.clone(),
+        sqrt(two_pi.clone()),
+        gamma(divide(
+          plus(int(3), times(int(-1), q.clone())),
+          times(int(2), qm1.clone()),
+        )),
+      ]
+      .into(),
+    },
+  );
+  // q < 1 branch
+  let branch_compact = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        sqrt(one_mq.clone()),
+        core,
+        gamma(plus(divide(int(3), int(2)), power(one_mq.clone(), int(-1)))),
+      ]
+      .into(),
+    },
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        b.clone(),
+        sqrt(two_pi),
+        gamma(plus(int(1), power(one_mq.clone(), int(-1)))),
+      ]
+      .into(),
+    },
+  );
+  // (Sqrt[(1-q)/b^2] (-m+x))/Sqrt[2]
+  let compact_arg = divide(
+    times(
+      sqrt(divide(one_mq, power(b.clone(), int(2)))),
+      plus(times(int(-1), m.clone()), x.clone()),
+    ),
+    sqrt(int(2)),
+  );
+  TsallisParts {
+    gaussian,
+    branch_wide,
+    branch_compact,
+    compact_arg,
+  }
+}
+
+/// PDF[TsallisQGaussianDistribution[μ, β, q], x]: numeric exact q picks
+/// its branch (Gaussian at q == 1, full-support power law for 1 < q < 3,
+/// compact support for q < 1); symbolic q keeps the three-branch
+/// Piecewise. Float parameters stay unevaluated (wolframscript's float
+/// artifacts are not reproducible).
+fn tsallis_qgaussian_pdf(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "TsallisQGaussianDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = tsallis_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (m, b, q) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  if dargs.iter().any(|e| {
+    !coxian_exact(e) && crate::functions::math_ast::try_eval_to_f64(e).is_some()
+  }) {
+    return unevaluated(x);
+  }
+  let parts = tsallis_parts(&m, &b, &q, &x);
+  match crate::functions::math_ast::try_eval_to_f64(&q) {
+    Some(qv) if qv == 1.0 => eval(parts.gaussian),
+    Some(qv) if qv > 1.0 => eval(parts.branch_wide),
+    Some(_) => {
+      let cond = comparison3(
+        int(-1),
+        ComparisonOp::LessEqual,
+        eval(parts.compact_arg)?,
+        ComparisonOp::LessEqual,
+        int(1),
+      );
+      eval(piecewise(vec![(eval(parts.branch_compact)?, cond)], int(0)))
+    }
+    None => {
+      let q_eq_1 = comparison(q.clone(), ComparisonOp::Equal, int(1));
+      let q_mid = comparison3(
+        int(1),
+        ComparisonOp::Less,
+        q.clone(),
+        ComparisonOp::Less,
+        int(3),
+      );
+      let q_low = Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left: Box::new(comparison(q.clone(), ComparisonOp::Less, int(1))),
+        right: Box::new(comparison3(
+          int(-1),
+          ComparisonOp::LessEqual,
+          parts.compact_arg,
+          ComparisonOp::LessEqual,
+          int(1),
+        )),
+      };
+      eval(piecewise(
+        vec![
+          (parts.gaussian, q_eq_1),
+          (parts.branch_wide, q_mid),
+          (parts.branch_compact, q_low),
+        ],
+        int(0),
+      ))
+    }
+  }
+}
+
+/// CDF[TsallisQGaussianDistribution[μ, β, q], x]: q == 1 uses the Erf
+/// closed form; symbolic q keeps the Hypergeometric2F1 template; other
+/// numeric q stay unevaluated (wolframscript's per-q hypergeometric
+/// collapses are not reproduced).
+fn tsallis_qgaussian_cdf(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "TsallisQGaussianDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = tsallis_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (m, b, q) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let erf_form = divide(
+    plus(
+      int(1),
+      Expr::FunctionCall {
+        name: "Erf".to_string(),
+        args: vec![divide(
+          plus(times(int(-1), m.clone()), x.clone()),
+          times(
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![int(2)].into(),
+            },
+            b.clone(),
+          ),
+        )]
+        .into(),
+      },
+    ),
+    int(2),
+  );
+  match crate::functions::math_ast::try_eval_to_f64(&q) {
+    Some(qv) if qv == 1.0 => eval(erf_form),
+    Some(_) => unevaluated(x),
+    None => unevaluated(x),
+  }
+}
+
+/// Mean and Variance of TsallisQGaussianDistribution: Mean = μ for
+/// q < 2; Variance = 2β²/(5-3q) for q < 5/3, Infinity for
+/// 5/3 <= q < 2, Indeterminate otherwise.
+fn tsallis_qgaussian_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = tsallis_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "TsallisQGaussianDistribution: invalid parameters".into(),
+    ));
+  };
+  let (m, b, q) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let indet = Expr::Identifier("Indeterminate".to_string());
+  let inf = Expr::Identifier("Infinity".to_string());
+  let var_core = divide(
+    times(int(2), power(b.clone(), int(2))),
+    plus(int(5), times(int(-3), q.clone())),
+  );
+  match crate::functions::math_ast::try_eval_to_f64(&q) {
+    Some(qv) => {
+      let mean = if qv < 2.0 { eval(m)? } else { indet.clone() };
+      let variance = if qv < 5.0 / 3.0 {
+        eval(var_core)?
+      } else if qv < 2.0 {
+        inf
+      } else {
+        indet
+      };
+      Ok((mean, variance))
+    }
+    None => {
+      let mean = eval(piecewise_with_default(
+        vec![(m, comparison(q.clone(), ComparisonOp::Less, int(2)))],
+        indet.clone(),
+      ))?;
+      let variance = eval(piecewise_with_default(
+        vec![
+          (
+            var_core,
+            comparison(q.clone(), ComparisonOp::Less, divide(int(5), int(3))),
+          ),
+          (
+            inf,
+            comparison3(
+              divide(int(5), int(3)),
+              ComparisonOp::LessEqual,
+              q,
+              ComparisonOp::Less,
+              int(2),
+            ),
+          ),
+        ],
+        indet,
+      ))?;
+      Ok((mean, variance))
+    }
+  }
 }
 
 /// Arity check for TukeyLambdaDistribution (1 or 3 arguments).

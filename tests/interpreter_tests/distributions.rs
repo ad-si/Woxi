@@ -6950,3 +6950,131 @@ mod tukey_lambda_distribution {
     ));
   }
 }
+
+// TsallisQGaussianDistribution: numeric exact q selects its branch
+// (Gaussian at q == 1, full-support power law for 1 < q < 3, compact
+// support for q < 1); the numeric collapses match wolframscript
+// byte-exact (including 1/(2 Pi ...) radical extraction). Float
+// parameters and numeric CDFs with q != 1 are deliberately unevaluated
+// (WS float artifacts / per-q 2F1 collapses are not reproduced).
+mod tsallis_q_gaussian_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_branches() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[0, 2, 1], x]").unwrap(),
+      "1/(2*E^(x^2/8)*Sqrt[2*Pi])"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[0, 2, 3/2], x]").unwrap(),
+      "1/(2*Pi*(1 + x^2/16)^2)"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[1, 3, 1/2], x]").unwrap(),
+      "Piecewise[{{(5*(1 - (1 - x)^2/36)^2)/32, -1 <= (-1 + x)/6 <= 1}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[0, 1, 0], x]").unwrap(),
+      "Piecewise[{{(3*(1 - x^2/2))/(4*Sqrt[2]), -1 <= x/Sqrt[2] <= 1}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[0, 2, 3/2], 4]").unwrap(),
+      "1/(8*Pi)"
+    );
+  }
+
+  #[test]
+  fn cdf_gaussian_case_only() {
+    clear_state();
+    assert_eq!(
+      interpret("CDF[TsallisQGaussianDistribution[0, 2, 1], x]").unwrap(),
+      "(1 + Erf[x/(2*Sqrt[2])])/2"
+    );
+    // Other numeric q have per-q hypergeometric collapses in WS and stay
+    // unevaluated here.
+    clear_state();
+    assert_eq!(
+      interpret("CDF[TsallisQGaussianDistribution[0, 2, 3/2], x]").unwrap(),
+      "CDF[TsallisQGaussianDistribution[0, 2, 3/2], x]"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[TsallisQGaussianDistribution[0, 2, 3/2]], \
+          Variance[TsallisQGaussianDistribution[0, 2, 3/2]], \
+          Variance[TsallisQGaussianDistribution[0, 2, 17/10]], \
+          Variance[TsallisQGaussianDistribution[0, 2, 5/3]], \
+          Mean[TsallisQGaussianDistribution[0, 2, 5/2]], \
+          Variance[TsallisQGaussianDistribution[0, 2, 5/2]]}"
+      )
+      .unwrap(),
+      "{0, 16, Infinity, Infinity, Indeterminate, Indeterminate}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[TsallisQGaussianDistribution[m, b, q]]").unwrap(),
+      "Piecewise[{{m, q < 2}}, Indeterminate]"
+    );
+    // The Infinity band renders as an Inequality chain.
+    clear_state();
+    assert_eq!(
+      interpret("Variance[TsallisQGaussianDistribution[m, b, q]]").unwrap(),
+      "Piecewise[{{(2*b^2)/(5 - 3*q), q < 5/3}, \
+        {Infinity, Inequality[5/3, LessEqual, q, Less, 2]}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[TsallisQGaussianDistribution[0, 2, 3], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "TsallisQGaussianDistribution::lss: Parameter 3 at position 3 in \
+       TsallisQGaussianDistribution[0, 2, 3] is expected to be less than 3."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[TsallisQGaussianDistribution[0, -2, 3/2], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "TsallisQGaussianDistribution::posprm: Parameter -2 at position 2"
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[TsallisQGaussianDistribution[2, 3/2], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "TsallisQGaussianDistribution::argrx: TsallisQGaussianDistribution \
+       called with 2 arguments; 3 arguments are expected."
+    ));
+  }
+}
+
+// Denominator radical products of named constants merge and extract
+// perfect squares: 1/(Sqrt[Pi] Sqrt[4 Pi]) is 1/(2 Pi) in wolframscript.
+// Numerator products keep the coefficient-folding route (Sqrt[2/Pi]).
+mod denominator_radical_extraction {
+  use super::*;
+
+  #[test]
+  fn reciprocal_radicals_merge() {
+    clear_state();
+    assert_eq!(interpret("1/(Sqrt[Pi]*Sqrt[4*Pi])").unwrap(), "1/(2*Pi)");
+    clear_state();
+    assert_eq!(interpret("Sqrt[2]*Sqrt[2*Pi]").unwrap(), "2*Sqrt[Pi]");
+  }
+}
