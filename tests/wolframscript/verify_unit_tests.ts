@@ -1332,9 +1332,17 @@ function main() {
   const woxiResults: { expr: string; woxiResult: string; idx: number }[] = [];
   for (let i = 0; i < tested; i++) {
     const { expr, setup } = cases[i];
-    // For expressions with setup, prepend setup code
+    // For expressions with setup, prepend setup code. Drop setup entries that
+    // are in EXACT_EXPR_SKIP: those are skipped precisely because wolframscript
+    // hangs or diverges on them, and a skip-listed setup expression would hang
+    // the batch even though the case's own expr is fine (they set no state).
     const fullExpr = setup
-      ? [...setup.filter((s) => !s.includes("\n")), expr].join("; ")
+      ? [
+          ...setup.filter(
+            (s) => !s.includes("\n") && !EXACT_EXPR_SKIP.has(s)
+          ),
+          expr,
+        ].join("; ")
       : expr;
     const result = runWoxi(fullExpr);
     woxiResults.push({ expr: fullExpr, woxiResult: result, idx: i });
