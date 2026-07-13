@@ -1,9 +1,12 @@
 # Build Python wheels for the woxi package (woxi-py) and publish them
 # to PyPI.
 #
-# Wheels + sdist are built on every push to main and for version tags /
-# manual runs, so breakage surfaces early. Publishing only happens for
-# tags starting with "v" (e.g. v0.2.0) or manual workflow dispatch.
+# The expensive release-profile wheel matrix (linux/macos/windows) only
+# runs for version tags starting with "v" (e.g. v0.2.0) or manual
+# workflow dispatch. On every push to main and on PRs, only the cheap
+# sdist job runs — it compiles the crate and verifies the import, so
+# breakage still surfaces early without spending CI minutes on five
+# platform builds. Publishing only happens for tags / manual dispatch.
 #
 # Publishing uses PyPI Trusted Publishing (OIDC) — no API token needed.
 # One-time setup on pypi.org: project "woxi" → Settings → Publishing →
@@ -29,6 +32,8 @@ env:
 
 jobs:
   linux:
+    # Release wheels only for tags / manual dispatch (see header comment).
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -51,6 +56,7 @@ jobs:
           path: woxi-py/dist
 
   macos:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -81,6 +87,7 @@ jobs:
           path: woxi-py/dist
 
   windows:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
