@@ -244,6 +244,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LogGammaDistribution" => pdf_loggamma(dargs, x),
     "SkellamDistribution" => pdf_skellam(dargs, x),
     "HypoexponentialDistribution" => pdf_hypoexponential(dargs, x),
+    "CoxianDistribution" => pdf_coxian(dargs, x),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -2060,6 +2061,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "PoissonDistribution" => cdf_poisson(dargs, x),
     "SkellamDistribution" => cdf_skellam(dargs, x),
     "HypoexponentialDistribution" => cdf_hypoexponential(dargs, x),
+    "CoxianDistribution" => cdf_coxian(dargs, x),
     "FailureDistribution" => cdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => cdf_first_passage(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
@@ -4056,6 +4058,7 @@ pub fn distribution_mean_variance(
       "GammaDistribution",
       &erlang_gamma_dargs(dargs)?,
     ),
+    "CoxianDistribution" => coxian_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7882,6 +7885,381 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Validated CoxianDistribution arguments: (alphas, rates) with
+/// len(rates) == len(alphas) + 1. Emits wolframscript's eqln2 /
+/// vprobprm2 / vrpos messages (in that order) and returns None when a
+/// check fails; non-list shapes fail silently.
+fn coxian_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  let [Expr::List(alphas), Expr::List(rates)] = dargs else {
+    return None;
+  };
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "CoxianDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if rates.len() != alphas.len() + 1 {
+    crate::emit_message(&format!(
+      "CoxianDistribution::eqln2: The length of {} at position 2 should be 1 more than the length of {} at position 1 in {}.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist()
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  if alphas
+    .iter()
+    .any(|a| num(a).is_some_and(|v| !(0.0..=1.0).contains(&v)))
+  {
+    crate::emit_message(&format!(
+      "CoxianDistribution::vprobprm2: The value {} at position 1 in {} is expected to be a list of numbers between 0 and 1, inclusive.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist()
+    ));
+    return None;
+  }
+  if rates.iter().any(|r| num(r).is_some_and(|v| v <= 0.0)) {
+    crate::emit_message(&format!(
+      "CoxianDistribution::vrpos: The value {} at position 2 in {} is expected to be a list of positive numbers.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  Some((alphas.to_vec(), rates.to_vec()))
+}
+
+/// Phase-exit weights of a Coxian distribution as unevaluated exprs:
+/// w_k = α1···α_{k-1}(1-α_k) for k < m and w_m = α1···α_{m-1}, shaped
+/// to reproduce wolframscript's symbolic moment forms.
+fn coxian_weights(alphas: &[Expr]) -> Vec<Expr> {
+  let m = alphas.len() + 1;
+  let one_minus = |a: &Expr| plus(int(1), times(int(-1), a.clone()));
+  let product = |fs: Vec<Expr>| -> Expr {
+    match fs.len() {
+      0 => int(1),
+      1 => fs.into_iter().next().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: fs.into(),
+      },
+    }
+  };
+  (1..=m)
+    .map(|k| {
+      let mut fs: Vec<Expr> = alphas[..k - 1].to_vec();
+      if k < m {
+        fs.push(one_minus(&alphas[k - 1]));
+      }
+      product(fs)
+    })
+    .collect()
+}
+
+/// Mean and variance of CoxianDistribution[{α...}, {λ...}] in
+/// wolframscript's symbolic shapes: Mean = Σ w_k (1/λ1 + … + 1/λk) and
+/// E[X²] uses 2 w_1/λ1² for the first phase.
+fn coxian_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some((alphas, rates)) = coxian_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "CoxianDistribution: invalid parameters".into(),
+    ));
+  };
+  let weights = coxian_weights(&alphas);
+  let inv_sum = |k: usize| -> Expr {
+    if k == 1 {
+      power(rates[0].clone(), int(-1))
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: rates[..k]
+          .iter()
+          .map(|r| power(r.clone(), int(-1)))
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    }
+  };
+  let m = rates.len();
+  let mean_terms: Vec<Expr> = (1..=m)
+    .map(|k| times(weights[k - 1].clone(), inv_sum(k)))
+    .collect();
+  let mean = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: mean_terms.clone().into(),
+  };
+  let e2_terms: Vec<Expr> = (1..=m)
+    .map(|k| {
+      if k == 1 {
+        times(
+          times(int(2), weights[0].clone()),
+          power(rates[0].clone(), int(-2)),
+        )
+      } else {
+        let mut parts: Vec<Expr> = rates[..k]
+          .iter()
+          .map(|r| power(r.clone(), int(-2)))
+          .collect();
+        parts.push(power(inv_sum(k), int(2)));
+        times(
+          weights[k - 1].clone(),
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: parts.into(),
+          },
+        )
+      }
+    })
+    .collect();
+  let mut var_terms = e2_terms;
+  var_terms.push(times(int(-1), power(mean.clone(), int(2))));
+  let variance = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: var_terms.into(),
+  };
+  Ok((eval(mean)?, eval(variance)?))
+}
+
+/// True for expressions that evaluate to an exact number (no machine
+/// reals anywhere) — the precondition for the Coxian closed forms.
+fn coxian_exact(e: &Expr) -> bool {
+  fn no_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(..) => false,
+      Expr::List(items) => items.iter().all(no_real),
+      Expr::FunctionCall { args, .. } => args.iter().all(no_real),
+      Expr::BinaryOp { left, right, .. } => no_real(left) && no_real(right),
+      Expr::UnaryOp { operand, .. } => no_real(operand),
+      _ => true,
+    }
+  }
+  no_real(e) && crate::functions::math_ast::try_eval_to_f64(e).is_some()
+}
+
+/// Coxian rate layout for the closed forms: Some(true) if all rates are
+/// exact and pairwise distinct, Some(false) if exact and all equal;
+/// None otherwise (mixed repetition and symbolic/float rates stay
+/// unevaluated like the hypoexponential Erlang gap).
+fn coxian_rate_layout(alphas: &[Expr], rates: &[Expr]) -> Option<bool> {
+  if !alphas.iter().all(coxian_exact) || !rates.iter().all(coxian_exact) {
+    return None;
+  }
+  let vals: Vec<f64> = rates
+    .iter()
+    .map(|r| crate::functions::math_ast::try_eval_to_f64(r).unwrap())
+    .collect();
+  let distinct = vals
+    .iter()
+    .enumerate()
+    .all(|(i, v)| vals[..i].iter().all(|w| w != v));
+  let equal = vals.iter().all(|v| *v == vals[0]);
+  if distinct {
+    Some(true)
+  } else if equal {
+    Some(false)
+  } else {
+    None
+  }
+}
+
+/// Per-exponential coefficients of the Coxian density/survival for
+/// pairwise-distinct rates: pdf = Σ_i λi C_i e^(-λi x) and
+/// 1 - CDF = Σ_i D_i e^(-λi x) with D_i = Σ_{k>i} w_k Π_{j≤k, j≠i}
+/// λj/(λj - λi); C_i shares the sum but scaled by λi.
+fn coxian_distinct_coefficients(
+  alphas: &[Expr],
+  rates: &[Expr],
+) -> Result<Vec<Expr>, InterpreterError> {
+  let weights = coxian_weights(alphas);
+  let m = rates.len();
+  let mut coeffs = Vec::with_capacity(m);
+  for i in 0..m {
+    let mut sum_terms: Vec<Expr> = Vec::new();
+    for (k, w) in weights.iter().enumerate().skip(i) {
+      // component k+1 uses rates[0..=k]
+      let mut fs: Vec<Expr> = vec![w.clone()];
+      for (j, r) in rates[..=k].iter().enumerate() {
+        if j == i {
+          continue;
+        }
+        fs.push(divide(r.clone(), minus(r.clone(), rates[i].clone())));
+      }
+      sum_terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: fs.into(),
+      });
+    }
+    coeffs.push(eval(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: sum_terms.into(),
+    })?);
+  }
+  Ok(coeffs)
+}
+
+/// Exponential factor E^(-λ x) (optionally with an x power in front).
+fn coxian_exp_term(
+  coeff: Expr,
+  xpow: Option<Expr>,
+  rate: &Expr,
+  x: &Expr,
+) -> Expr {
+  let e_part = power(e(), times(times(int(-1), rate.clone()), x.clone()));
+  match xpow {
+    Some(p) => times(times(coeff, p), e_part),
+    None => times(coeff, e_part),
+  }
+}
+
+/// PDF[CoxianDistribution[...], x] for exact all-distinct or all-equal
+/// rates; Piecewise[{{Σ terms, x >= 0}}, 0] with terms in descending
+/// rate order (distinct) or ascending x power (equal rates).
+fn pdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "CoxianDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some((alphas, rates)) = coxian_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let Some(distinct) = coxian_rate_layout(&alphas, &rates) else {
+    return unevaluated(x);
+  };
+  let terms: Vec<Expr> = if distinct {
+    let coeffs = coxian_distinct_coefficients(&alphas, &rates)?;
+    let mut order: Vec<usize> = (0..rates.len()).collect();
+    let val = |i: usize| {
+      crate::functions::math_ast::try_eval_to_f64(&rates[i]).unwrap()
+    };
+    order.sort_by(|&a, &b| val(b).partial_cmp(&val(a)).unwrap());
+    order
+      .iter()
+      .map(|&i| {
+        let c = eval(times(coeffs[i].clone(), rates[i].clone()))?;
+        Ok(coxian_exp_term(c, None, &rates[i], &x))
+      })
+      .collect::<Result<_, InterpreterError>>()?
+  } else {
+    // All-equal rates: Σ_k w_k λ^k x^(k-1) e^(-λ x)/(k-1)!.
+    let weights = coxian_weights(&alphas);
+    let lam = &rates[0];
+    (1..=rates.len())
+      .map(|k| {
+        let mut fact = int(1);
+        for j in 2..k {
+          fact = times(fact, int(j as i128));
+        }
+        let c = eval(divide(
+          times(weights[k - 1].clone(), power(lam.clone(), int(k as i128))),
+          fact,
+        ))?;
+        let xpow = if k == 1 {
+          None
+        } else if k == 2 {
+          Some(x.clone())
+        } else {
+          Some(power(x.clone(), int((k - 1) as i128)))
+        };
+        Ok(coxian_exp_term(c, xpow, lam, &x))
+      })
+      .collect::<Result<_, InterpreterError>>()?
+  };
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[CoxianDistribution[...], x] for exact all-distinct or all-equal
+/// rates. The all-equal form reproduces wolframscript's Piecewise
+/// default of 1 (a WS quirk: CDF[..., -1] is 1 there).
+fn cdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "CoxianDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some((alphas, rates)) = coxian_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let Some(distinct) = coxian_rate_layout(&alphas, &rates) else {
+    return unevaluated(x);
+  };
+  let mut terms: Vec<Expr> = vec![int(1)];
+  let default;
+  if distinct {
+    let coeffs = coxian_distinct_coefficients(&alphas, &rates)?;
+    let mut order: Vec<usize> = (0..rates.len()).collect();
+    let val = |i: usize| {
+      crate::functions::math_ast::try_eval_to_f64(&rates[i]).unwrap()
+    };
+    order.sort_by(|&a, &b| val(b).partial_cmp(&val(a)).unwrap());
+    for &i in &order {
+      let c = eval(times(int(-1), coeffs[i].clone()))?;
+      terms.push(coxian_exp_term(c, None, &rates[i], &x));
+    }
+    default = int(0);
+  } else {
+    // Survival of the equal-rate mixture: Σ_j (Σ_{k>j} w_k) λ^j x^j
+    // e^(-λ x)/j! subtracted from 1.
+    let weights = coxian_weights(&alphas);
+    let lam = &rates[0];
+    let m = rates.len();
+    for j in 0..m {
+      let mut fact = int(1);
+      for f in 2..=j {
+        fact = times(fact, int(f as i128));
+      }
+      let wsum = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: weights[j..].to_vec().into(),
+      };
+      let c = eval(times(
+        int(-1),
+        divide(times(wsum, power(lam.clone(), int(j as i128))), fact),
+      ))?;
+      let xpow = if j == 0 {
+        None
+      } else if j == 1 {
+        Some(x.clone())
+      } else {
+        Some(power(x.clone(), int(j as i128)))
+      };
+      terms.push(coxian_exp_term(c, xpow, lam, &x));
+    }
+    default = int(1);
+  }
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], default))
 }
 
 /// The rates of a HypoexponentialDistribution[{λ1, …, λn}] when all are

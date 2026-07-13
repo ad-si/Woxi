@@ -3169,7 +3169,7 @@ NightHemisphere,,,,10.0,3242
 NonNegativeReals,Domain of non-negative real numbers,✅,pure,12.0,3242
 RealSign,Returns the sign assuming real input,✅,pure,11.1,3242
 CloudObjectURLType,,🚫,,12.0,3257
-CoxianDistribution,,,,9.0,3257
+CoxianDistribution,Coxian phase-type distribution,✅,pure,9.0,3257
 EstimatedBackground,,,,10.0,3257
 GatedRecurrentLayer,,🚫,,11.1,3257
 InverseFourierSequenceTransform,,,,7.0,3257

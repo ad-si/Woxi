@@ -6193,3 +6193,159 @@ mod lindley_distribution {
     assert_eq!(interpret("CDF[LindleyDistribution[1], 0]").unwrap(), "0");
   }
 }
+
+// CoxianDistribution semantics decoded from wolframscript probes: a
+// mixture of hypoexponential prefixes weighted by exit probabilities
+// w_k = a1...a_{k-1}(1-a_k). PDF/CDF cover exact all-distinct and
+// all-equal rates (mixed repetition shares the hypoexponential Erlang
+// gap and stays unevaluated); the all-equal CDF reproduces WS's
+// Piecewise default of 1. Constructors echo silently; consumers emit
+// the validation messages.
+mod coxian_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_and_cdf_distinct_rates() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[CoxianDistribution[{1/2}, {2, 3}], x]").unwrap(),
+      "Piecewise[{{-3/E^(3*x) + 4/E^(2*x), x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[CoxianDistribution[{1/2}, {2, 3}], x]").unwrap(),
+      "Piecewise[{{1 + E^(-3*x) - 2/E^(2*x), x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[CoxianDistribution[{1/3, 1/4}, {2, 3, 5}], x]").unwrap(),
+      "Piecewise[{{5/(12*E^(5*x)) - 11/(4*E^(3*x)) + 11/(3*E^(2*x)), \
+        x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[CoxianDistribution[{1/2}, {2, 3}], 1], \
+          CDF[CoxianDistribution[{1/2}, {2, 3}], 2], \
+          CDF[CoxianDistribution[{1/2}, {2, 3}], -1]}"
+      )
+      .unwrap(),
+      "{-3/E^3 + 4/E^2, 1 + E^(-6) - 2/E^4, 0}"
+    );
+  }
+
+  #[test]
+  fn equal_rates_use_erlang_terms() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[CoxianDistribution[{1/2}, {2, 2}], x]").unwrap(),
+      "Piecewise[{{E^(-2*x) + (2*x)/E^(2*x), x >= 0}}, 0]"
+    );
+    // The all-equal CDF carries wolframscript's quirky default 1, so
+    // CDF at negative arguments is 1.
+    clear_state();
+    assert_eq!(
+      interpret("CDF[CoxianDistribution[{1/2}, {2, 2}], x]").unwrap(),
+      "Piecewise[{{1 - E^(-2*x) - x/E^(2*x), x >= 0}}, 1]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{CDF[CoxianDistribution[{1/2}, {2, 2}], -1], \
+          PDF[CoxianDistribution[{1/2}, {2, 2}], -1], \
+          CDF[CoxianDistribution[{1/2}, {2, 2}], 1]}"
+      )
+      .unwrap(),
+      "{1, 0, 1 - 2/E^2}"
+    );
+    // Mixed repeated/distinct rates stay unevaluated (hypoexponential
+    // Erlang-form gap).
+    clear_state();
+    assert_eq!(
+      interpret("PDF[CoxianDistribution[{1/2, 1/3}, {2, 2, 3}], x]").unwrap(),
+      "PDF[CoxianDistribution[{1/2, 1/3}, {2, 2, 3}], x]"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[CoxianDistribution[{1/2}, {2, 3}]], \
+          Variance[CoxianDistribution[{1/2}, {2, 3}]], \
+          StandardDeviation[CoxianDistribution[{1/2}, {2, 3}]]}"
+      )
+      .unwrap(),
+      "{2/3, 1/3, 1/Sqrt[3]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[CoxianDistribution[{1/3, 1/4}, {2, 3, 5}]], \
+          Variance[CoxianDistribution[{1/3, 1/4}, {2, 3, 5}]], \
+          StandardDeviation[CoxianDistribution[{1/2, 1/3}, {2, 3, 5}]], \
+          Mean[CoxianDistribution[{1/2}, {2, 2}]], \
+          Variance[CoxianDistribution[{1/2}, {2, 2}]]}"
+      )
+      .unwrap(),
+      "{113/180, 10547/32400, Sqrt[107/3]/10, 3/4, 7/16}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[CoxianDistribution[{0.5}, {2., 3.}]]").unwrap(),
+      "0.6666666666666666"
+    );
+    // Symbolic parameters keep wolframscript's unexpanded shapes.
+    clear_state();
+    assert_eq!(
+      interpret("Mean[CoxianDistribution[{a}, {l1, l2}]]").unwrap(),
+      "(1 - a)/l1 + a*(l1^(-1) + l2^(-1))"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[CoxianDistribution[{a1, a2}, {l1, l2, l3}]]").unwrap(),
+      "(1 - a1)/l1 + a1*(1 - a2)*(l1^(-1) + l2^(-1)) + \
+       a1*a2*(l1^(-1) + l2^(-1) + l3^(-1))"
+    );
+  }
+
+  #[test]
+  fn constructors_echo_and_consumers_validate() {
+    // Invalid constructors echo silently; consuming functions emit the
+    // validation messages.
+    clear_state();
+    let r = interpret_with_stdout("CoxianDistribution[{2}, {2, 3}]").unwrap();
+    assert_eq!(r.result, "CoxianDistribution[{2}, {2, 3}]");
+    assert!(r.warnings.is_empty());
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[CoxianDistribution[{2}, {2, 3}], x]").unwrap();
+    assert_eq!(r.result, "PDF[CoxianDistribution[{2}, {2, 3}], x]");
+    assert!(r.warnings[0].contains(
+      "CoxianDistribution::vprobprm2: The value {2} at position 1 in \
+       CoxianDistribution[{2}, {2, 3}] is expected to be a list of numbers \
+       between 0 and 1, inclusive."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[CoxianDistribution[{1/2}, {2, 3, 4}], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "CoxianDistribution::eqln2: The length of {2, 3, 4} at position 2 \
+       should be 1 more than the length of {1/2} at position 1 in \
+       CoxianDistribution[{1/2}, {2, 3, 4}]."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("Mean[CoxianDistribution[{1/2}, {-2, 3}]]")
+      .unwrap();
+    assert!(r.warnings[0].contains(
+      "CoxianDistribution::vrpos: The value {-2, 3} at position 2 in \
+       CoxianDistribution[{1/2}, {-2, 3}] is expected to be a list of \
+       positive numbers."
+    ));
+  }
+}
