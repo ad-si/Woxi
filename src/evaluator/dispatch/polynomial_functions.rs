@@ -573,6 +573,9 @@ pub fn dispatch_polynomial_functions(
         crate::functions::polynomial_ast::interpolating_polynomial_ast(args),
       );
     }
+    "NumberFieldDiscriminant" if args.len() == 1 => {
+      return Some(crate::functions::number_field_discriminant_ast(args));
+    }
     "MinimalPolynomial" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::minimal_polynomial_ast(
         args,

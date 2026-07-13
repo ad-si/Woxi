@@ -6408,3 +6408,63 @@ mod integer_digits_string_messages {
     assert_eq!(interpret("IntegerDigits[255, 16]").unwrap(), "{15, 15}");
   }
 }
+
+// NumberFieldDiscriminant — discriminants of algebraic number fields.
+// All outputs verified against wolframscript.
+mod number_field_discriminant {
+  use super::*;
+
+  #[test]
+  fn quadratic_fields() {
+    // Fundamental discriminants: 4d for d == 2, 3 (mod 4), d otherwise.
+    assert_eq!(interpret("NumberFieldDiscriminant[Sqrt[2]]").unwrap(), "8");
+    assert_eq!(interpret("NumberFieldDiscriminant[Sqrt[5]]").unwrap(), "5");
+    assert_eq!(interpret("NumberFieldDiscriminant[I]").unwrap(), "-4");
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[Sqrt[-5]]").unwrap(),
+      "-20"
+    );
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[GoldenRatio]").unwrap(),
+      "5"
+    );
+    // Non-squarefree radicands reduce to their field.
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[Sqrt[12]]").unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[(1 + Sqrt[13])/2]").unwrap(),
+      "13"
+    );
+  }
+
+  #[test]
+  fn rationals_and_cubics() {
+    // Rational numbers generate Q itself.
+    assert_eq!(interpret("NumberFieldDiscriminant[3]").unwrap(), "1");
+    assert_eq!(interpret("NumberFieldDiscriminant[1/2]").unwrap(), "1");
+    // Pure cubics whose equation order is maximal (Dedekind's criterion
+    // at every squared prime, including the derivative-vanishes-mod-p
+    // branch for p = 3).
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[2^(1/3)]").unwrap(),
+      "-108"
+    );
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[5^(1/3)]").unwrap(),
+      "-675"
+    );
+  }
+
+  #[test]
+  fn non_algebraic_input() {
+    clear_state();
+    let r = interpret_with_stdout("NumberFieldDiscriminant[x]").unwrap();
+    assert_eq!(r.result, "NumberFieldDiscriminant[x]");
+    assert!(r.warnings[0].contains(
+      "NumberFieldDiscriminant::nalg: x is not an explicit algebraic \
+       number."
+    ));
+  }
+}
