@@ -1303,6 +1303,10 @@ function main() {
     // evaluating Poisson to Around[4., 2.] where Wolfram keeps it symbolic.
     "Around[UniformDistribution[{0, 1}]]",
     "Around[PoissonDistribution[4]]",
+    // SurfaceArea of a spherical shell with symbolic radii: wolframscript itself
+    // hangs (never terminates) on this integral, causing the batch to ETIMEDOUT.
+    // Woxi intentionally keeps it unevaluated to match.
+    "SurfaceArea[SphericalShell[{0, 0, 0}, {a, b}]]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
