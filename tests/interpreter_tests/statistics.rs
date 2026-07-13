@@ -9504,3 +9504,70 @@ mod counting_process_slices {
     );
   }
 }
+
+// SliceDistribution — materializes process time slices. All outputs
+// verified against wolframscript.
+mod slice_distribution {
+  use super::*;
+
+  #[test]
+  fn continuous_processes() {
+    assert_eq!(
+      interpret("SliceDistribution[WienerProcess[m, s], t]").unwrap(),
+      "NormalDistribution[m*t, s*Sqrt[t]]"
+    );
+    assert_eq!(
+      interpret(
+        "SliceDistribution[GeometricBrownianMotionProcess[m, s, x0], t]"
+      )
+      .unwrap(),
+      "LogNormalDistribution[(m - s^2/2)*t + Log[x0], s*Sqrt[t]]"
+    );
+    assert_eq!(
+      interpret("SliceDistribution[OrnsteinUhlenbeckProcess[m, s, th], t]")
+        .unwrap(),
+      "NormalDistribution[m, s/(Sqrt[2]*Sqrt[th])]"
+    );
+    // The bridge keeps its scale factor outside the radical.
+    assert_eq!(
+      interpret(
+        "SliceDistribution[BrownianBridgeProcess[s, {t1, a}, {t2, b}], t]"
+      )
+      .unwrap(),
+      "NormalDistribution[(b*(t - t1))/(-t1 + t2) + (a*(-t + t2))/(-t1 + t2), s*Sqrt[((t - t1)*(-t + t2))/(-t1 + t2)]]"
+    );
+    // Concrete times evaluate the parameters.
+    assert_eq!(
+      interpret("SliceDistribution[WienerProcess[1/10, 2], 4]").unwrap(),
+      "NormalDistribution[2/5, 4]"
+    );
+  }
+
+  #[test]
+  fn counting_and_noise_processes() {
+    assert_eq!(
+      interpret("SliceDistribution[PoissonProcess[l], t]").unwrap(),
+      "PoissonDistribution[l*t]"
+    );
+    assert_eq!(
+      interpret("SliceDistribution[BinomialProcess[p], t]").unwrap(),
+      "BinomialDistribution[t, p]"
+    );
+    assert_eq!(
+      interpret("SliceDistribution[BernoulliProcess[p], t]").unwrap(),
+      "BernoulliDistribution[p]"
+    );
+    assert_eq!(
+      interpret(
+        "SliceDistribution[WhiteNoiseProcess[NormalDistribution[m, s]], t]"
+      )
+      .unwrap(),
+      "NormalDistribution[m, s]"
+    );
+    // Non-processes stay unevaluated.
+    assert_eq!(
+      interpret("SliceDistribution[x, t]").unwrap(),
+      "SliceDistribution[x, t]"
+    );
+  }
+}

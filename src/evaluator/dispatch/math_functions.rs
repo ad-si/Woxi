@@ -1908,6 +1908,24 @@ pub fn dispatch_math_functions(
     "CorrelationFunction" if args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_function_ast(args));
     }
+    // SliceDistribution[proc, t] materializes the process time-slice
+    // distribution.
+    "SliceDistribution" if args.len() == 2 => {
+      if let Expr::FunctionCall {
+        name: pname,
+        args: dargs,
+      } = &args[0]
+        && let Some(slice) = crate::functions::math_ast::distributions_slice(
+          pname, dargs, &args[1],
+        )
+      {
+        return Some(crate::evaluator::evaluate_expr_to_expr(&slice));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "SliceDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "AbsoluteCorrelationFunction" => {
       return Some(crate::functions::absolute_correlation_function_ast(args));
     }

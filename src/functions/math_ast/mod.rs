@@ -57,3 +57,13 @@ pub use triangles::*;
 pub use trigonometric::*;
 pub use weierstrass::*;
 pub use zeta_functions::*;
+
+/// Public accessor for the process time-slice distribution (used by
+/// SliceDistribution).
+pub fn distributions_slice(
+  proc_name: &str,
+  dargs: &[crate::syntax::Expr],
+  t: &crate::syntax::Expr,
+) -> Option<crate::syntax::Expr> {
+  distributions::process_slice_distribution(proc_name, dargs, t)
+}

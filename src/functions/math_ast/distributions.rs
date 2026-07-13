@@ -7344,17 +7344,19 @@ pub fn process_slice_distribution(
         divide(times(a.clone(), down.clone()), span.clone()),
         divide(times(b.clone(), up.clone()), span.clone()),
       );
-      let var = divide(times(times(power(sp.clone(), int(2)), up), down), span);
+      // The scale factor stays outside the radical, matching
+      // wolframscript's SliceDistribution display
+      // s*Sqrt[((t - t1)*(-t + t2))/(-t1 + t2)].
+      let sigma = times(
+        sp.clone(),
+        Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![divide(times(up, down), span)].into(),
+        },
+      );
       Some(Expr::FunctionCall {
         name: "NormalDistribution".to_string(),
-        args: vec![
-          mu,
-          Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![var].into(),
-          },
-        ]
-        .into(),
+        args: vec![mu, sigma].into(),
       })
     }
     "GeometricBrownianMotionProcess" if dargs.len() == 3 => {

@@ -2912,7 +2912,7 @@ FindIndependentVertexSet,Maximum independent vertex set (lexicographic by vertex
 HighpassFilter,Apply a highpass filter to data,✅,pure,9.0,2978
 KeyMemberQ,True if key exists in association,✅,1,10.3,2978
 KroneckerSymbol,Generalized Jacobi (Kronecker) symbol (Listable),✅,pure,6.0,2978
-SliceDistribution,,,,9.0,2978
+SliceDistribution,Time-slice distribution of a random process,✅,pure,9.0,2978
 TraceOriginal,,,,2.0,2978
 DirichletCharacter,j-th Dirichlet character modulo k at n (Wolfram indexing),✅,pure,7.0,2986
 FindMinimumCostFlow,Minimum cost of a maximum flow over a cost matrix,✅,pure,9.0,2986
