@@ -9072,3 +9072,122 @@ mod failure_distribution {
     );
   }
 }
+
+// DiscreteMarkovProcess — step distributions and the stationary
+// distribution. All outputs verified against wolframscript.
+mod discrete_markov_process {
+  use super::*;
+
+  #[test]
+  fn constructor_echoes() {
+    assert_eq!(
+      interpret("DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]").unwrap(),
+      "DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]"
+    );
+  }
+
+  #[test]
+  fn step_distributions() {
+    // t = 0 is the initial state; the Boole terms put the state first.
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][0], x]"
+      )
+      .unwrap(),
+      "Boole[1 == x]"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][1], x]"
+      )
+      .unwrap(),
+      "Boole[1 == x]/2 + Boole[2 == x]/2"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][3], x]"
+      )
+      .unwrap(),
+      "(29*Boole[1 == x])/72 + (43*Boole[2 == x])/72"
+    );
+    // Concrete states give the exact probability; out-of-range gives 0.
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][3], 1]"
+      )
+      .unwrap(),
+      "29/72"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][2], 5]"
+      )
+      .unwrap(),
+      "0"
+    );
+    // Probability-vector initial states work too.
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[{1/4, 3/4}, {{1/2, 1/2}, {1/3, 2/3}}][1], x]"
+      )
+      .unwrap(),
+      "(3*Boole[1 == x])/8 + (5*Boole[2 == x])/8"
+    );
+  }
+
+  #[test]
+  fn stationary_distribution() {
+    // Exact solve of pi.P == pi with total probability 1.
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]], 1]"
+      )
+      .unwrap(),
+      "2/5"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]], 2]"
+      )
+      .unwrap(),
+      "3/5"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[{1, 0, 0}, {{0, 1/2, 1/2}, {1/2, 0, 1/2}, {1/2, 1/2, 0}}]], 2]"
+      )
+      .unwrap(),
+      "1/3"
+    );
+    // The symbolic form is a Piecewise over the state range; these
+    // Boole terms put x first, and the condition is an Inequality call.
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]], x]"
+      )
+      .unwrap(),
+      "Piecewise[{{(2*Boole[x == 1])/5 + (3*Boole[x == 2])/5, Inequality[1, LessEqual, x, LessEqual, 2]}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]], 5]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]]]"
+      )
+      .unwrap(),
+      "8/5"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[StationaryDistribution[DiscreteMarkovProcess[{1, 0, 0}, {{0, 1/2, 1/2}, {1/2, 0, 1/2}, {1/2, 1/2, 0}}]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+}

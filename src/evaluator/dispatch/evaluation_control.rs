@@ -471,6 +471,14 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    // DiscreteMarkovProcess and the StationaryDistribution wrapper are
+    // symbolic objects consumed by PDF/Mean.
+    "DiscreteMarkovProcess" | "StationaryDistribution" => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // StateSpaceModel[{a, b, c, d}] is a symbolic control-system object:
     // it echoes unevaluated and is consumed by ObservabilityMatrix /
     // ControllabilityMatrix.

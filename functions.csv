@@ -1636,7 +1636,7 @@ NetModel,Neural net model,,unevaluated,11.1,1660
 RotationAction,Rotation action option,,unevaluated,6.0,1661
 BoundaryDiscretizeGraphics,Boundary discretize graphics,,unevaluated,10.0,1665
 ClearAttributes,Removes attributes from a symbol,✅,stateful,1.0,1665
-DiscreteMarkovProcess,Discrete Markov process,,unevaluated,9.0,1665
+DiscreteMarkovProcess,Discrete-time finite-state Markov process consumed by PDF/StationaryDistribution,✅,unevaluated,9.0,1665
 Ket,Dirac ket notation (stays symbolic),✅,unevaluated,13.3,1665
 TradingChart,Financial trading chart,,unevaluated,8.0,1666
 ArrayQ,Tests if an expression is a full array,✅,pure,5.0,1668

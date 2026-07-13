@@ -113,6 +113,22 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let dist = &args[0];
 
+  // PDF[DiscreteMarkovProcess[...][t], x] — the state distribution after
+  // t steps, as a Boole sum.
+  if args.len() == 2
+    && let Expr::CurriedCall { func, args: targs } = dist
+    && let Expr::FunctionCall { name, args: dargs } = func.as_ref()
+    && name == "DiscreteMarkovProcess"
+    && targs.len() == 1
+  {
+    return dmp_step_pdf(dargs, &targs[0], &args[1]).map(|r| {
+      r.unwrap_or_else(|| Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: args.to_vec().into(),
+      })
+    });
+  }
+
   // Extract distribution name and parameters
   let (dist_name, dargs) = match dist {
     Expr::FunctionCall { name, args: dargs } => {
@@ -125,6 +141,21 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // PDF[StationaryDistribution[DiscreteMarkovProcess[...]], x].
+  if dist_name == "StationaryDistribution"
+    && args.len() == 2
+    && dargs.len() == 1
+    && let Expr::FunctionCall { name, args: mp } = &dargs[0]
+    && name == "DiscreteMarkovProcess"
+  {
+    return dmp_stationary_pdf(mp, &args[1]).map(|r| {
+      r.unwrap_or_else(|| Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: args.to_vec().into(),
+      })
+    });
+  }
 
   if args.len() == 1 {
     // PDF[dist] - return unevaluated for now
@@ -7175,6 +7206,187 @@ fn pdf_failure_distribution(
       .into(),
     })
   }
+}
+
+/// Parses DiscreteMarkovProcess[i0 | p0, m] into the initial probability
+/// row vector and the (square, expression-valued) transition matrix.
+fn dmp_parts(dargs: &[Expr]) -> Option<(Vec<Expr>, Expr, usize)> {
+  if dargs.len() != 2 {
+    return None;
+  }
+  let Expr::List(rows) = &dargs[1] else {
+    return None;
+  };
+  let n = rows.len();
+  if n == 0
+    || rows
+      .iter()
+      .any(|r| !matches!(r, Expr::List(c) if c.len() == n))
+  {
+    return None;
+  }
+  let p0: Vec<Expr> = match &dargs[0] {
+    Expr::Integer(i0) if *i0 >= 1 && (*i0 as usize) <= n => (1..=n)
+      .map(|k| Expr::Integer(if k as i128 == *i0 { 1 } else { 0 }))
+      .collect(),
+    Expr::List(probs) if probs.len() == n => probs.iter().cloned().collect(),
+    _ => return None,
+  };
+  Some((p0, dargs[1].clone(), n))
+}
+
+/// Boole-sum Σ p_k Boole[lhs_k], skipping zero-probability terms.
+fn boole_sum(probs: &[Expr], term_lhs: impl Fn(usize) -> (Expr, Expr)) -> Expr {
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, p) in probs.iter().enumerate() {
+    if matches!(p, Expr::Integer(0)) {
+      continue;
+    }
+    let (l, r) = term_lhs(k + 1);
+    let boole = Expr::FunctionCall {
+      name: "Boole".to_string(),
+      args: vec![comparison(l, ComparisonOp::Equal, r)].into(),
+    };
+    terms.push(if matches!(p, Expr::Integer(1)) {
+      boole
+    } else {
+      times(p.clone(), boole)
+    });
+  }
+  match terms.len() {
+    0 => int(0),
+    1 => terms.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
+  }
+}
+
+/// PDF[DiscreteMarkovProcess[...][t], x] = Σ (p0.m^t)_k Boole[k == x].
+fn dmp_step_pdf(
+  dargs: &[Expr],
+  t: &Expr,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some((p0, m, _)) = dmp_parts(dargs) else {
+    return Ok(None);
+  };
+  let Expr::Integer(steps) = t else {
+    return Ok(None);
+  };
+  if *steps < 0 {
+    return Ok(None);
+  }
+  let probs_expr = if *steps == 0 {
+    Expr::List(p0.into())
+  } else {
+    eval(Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: vec![
+        Expr::List(p0.into()),
+        Expr::FunctionCall {
+          name: "MatrixPower".to_string(),
+          args: vec![m, Expr::Integer(*steps)].into(),
+        },
+      ]
+      .into(),
+    })?
+  };
+  let Expr::List(probs) = &probs_expr else {
+    return Ok(None);
+  };
+  let probs: Vec<Expr> = probs.iter().cloned().collect();
+  // wolframscript writes these terms with the state first: Boole[1 == x].
+  let sum = boole_sum(&probs, |k| (int(k as i128), x.clone()));
+  Ok(Some(eval(sum)?))
+}
+
+/// The stationary distribution π of a DiscreteMarkovProcess (πP = π,
+/// Σπ = 1), solved exactly.
+fn dmp_stationary(
+  dargs: &[Expr],
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  let Some((_, m, n)) = dmp_parts(dargs) else {
+    return Ok(None);
+  };
+  let Expr::List(rows) = &m else {
+    return Ok(None);
+  };
+  // Equations: Σ_i π_i (P[i][j] − δ_ij) = 0 for j < n−1, plus Σ π_i = 1.
+  let mut sys_rows: Vec<Expr> = Vec::with_capacity(n);
+  for j in 0..n.saturating_sub(1) {
+    let mut row: Vec<Expr> = Vec::with_capacity(n);
+    for (i, r) in rows.iter().enumerate() {
+      let Expr::List(cells) = r else {
+        return Ok(None);
+      };
+      let mut entry = cells[j].clone();
+      if i == j {
+        entry = plus(entry, int(-1));
+      }
+      row.push(eval(entry)?);
+    }
+    sys_rows.push(Expr::List(row.into()));
+  }
+  sys_rows.push(Expr::List(vec![int(1); n].into()));
+  let mut rhs: Vec<Expr> = vec![int(0); n];
+  rhs[n - 1] = int(1);
+  let solved = eval(Expr::FunctionCall {
+    name: "LinearSolve".to_string(),
+    args: vec![Expr::List(sys_rows.into()), Expr::List(rhs.into())].into(),
+  })?;
+  match solved {
+    Expr::List(ref pi) if pi.len() == n => {
+      Ok(Some(pi.iter().cloned().collect()))
+    }
+    _ => Ok(None),
+  }
+}
+
+/// PDF[StationaryDistribution[DiscreteMarkovProcess[...]], x]: a numeric
+/// x gives π_x directly; a symbolic x gives wolframscript's
+/// Piecewise[{{Σ π_k Boole[x == k], Inequality[1, LessEqual, x,
+/// LessEqual, n]}}, 0] form (the terms here put x first).
+fn dmp_stationary_pdf(
+  dargs: &[Expr],
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some(pi) = dmp_stationary(dargs)? else {
+    return Ok(None);
+  };
+  let n = pi.len();
+  let sum = boole_sum(&pi, |k| (x.clone(), int(k as i128)));
+  let cond = Expr::FunctionCall {
+    name: "Inequality".to_string(),
+    args: vec![
+      int(1),
+      Expr::Identifier("LessEqual".to_string()),
+      x.clone(),
+      Expr::Identifier("LessEqual".to_string()),
+      int(n as i128),
+    ]
+    .into(),
+  };
+  Ok(Some(eval(piecewise(vec![(sum, cond)], int(0)))?))
+}
+
+/// Mean[StationaryDistribution[DiscreteMarkovProcess[...]]] = Σ k π_k.
+pub fn dmp_stationary_mean(
+  dargs: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some(pi) = dmp_stationary(dargs)? else {
+    return Ok(None);
+  };
+  let terms: Vec<Expr> = pi
+    .iter()
+    .enumerate()
+    .map(|(k, p)| times(int(k as i128 + 1), p.clone()))
+    .collect();
+  Ok(Some(eval(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })?))
 }
 
 /// The rates of a HypoexponentialDistribution[{λ1, …, λn}] when all are

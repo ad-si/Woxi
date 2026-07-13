@@ -796,6 +796,22 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "StationaryDistribution" && dargs.len() == 1 => {
+      // Mean of a Markov chain's stationary distribution: Σ k π_k.
+      if let Expr::FunctionCall { name, args: mp } = &dargs[0]
+        && name == "DiscreteMarkovProcess"
+        && let Some(mean) = super::distributions::dmp_stationary_mean(mp)?
+      {
+        return Ok(mean);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Mean".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "StandbyDistribution" && dargs.len() == 2 => {
       // Cold-standby lifetimes add, so component moments sum. (The
       // all-exponential case never reaches here — the constructor
