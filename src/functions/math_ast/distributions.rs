@@ -251,6 +251,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "HotellingTSquareDistribution" => pdf_hotelling(dargs, x),
     "TukeyLambdaDistribution" => tukey_lambda_pdf_cdf(dargs, x, true),
     "TsallisQGaussianDistribution" => tsallis_qgaussian_pdf(dargs, x),
+    "VarianceGammaDistribution" => variance_gamma_pdf(dargs, x),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -4089,6 +4090,7 @@ pub fn distribution_mean_variance(
     "HotellingTSquareDistribution" => hotelling_mean_variance(dargs),
     "TukeyLambdaDistribution" => tukey_lambda_mean_variance(dargs),
     "TsallisQGaussianDistribution" => tsallis_qgaussian_mean_variance(dargs),
+    "VarianceGammaDistribution" => variance_gamma_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7915,6 +7917,211 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Validation for VarianceGammaDistribution[λ, α, β, μ]: λ, α positive
+/// (posprm); numeric |β| >= α → bprm; arity 4 (argrx).
+fn variance_gamma_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 4 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "VarianceGammaDistribution::argrx: VarianceGammaDistribution called with {} {}; 4 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "VarianceGammaDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  for pos in 0..2 {
+    if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
+      crate::emit_message(&format!(
+        "VarianceGammaDistribution::posprm: Parameter {} at position {} in {} is expected to be positive.",
+        crate::syntax::expr_to_string(&dargs[pos]),
+        pos + 1,
+        dist()
+      ));
+      return None;
+    }
+  }
+  if let (Some(a), Some(b)) = (num(&dargs[1]), num(&dargs[2]))
+    && b.abs() >= a
+  {
+    crate::emit_message(&format!(
+      "VarianceGammaDistribution::bprm: The parameters of distribution {} are not valid. Use DistributionParameterAssumptions to obtain the parameter assumptions.",
+      dist()
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// PDF[VarianceGammaDistribution[λ, α, β, μ], x]: three branches
+/// (x > μ, x < μ, and the finite point value at x == μ for λ > 1/2)
+/// with default Infinity; half-integer BesselK collapses for integer λ.
+fn variance_gamma_pdf(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "VarianceGammaDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = variance_gamma_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (l, a, b, m) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+  );
+  let sqrt_pi = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::Constant("Pi".to_string())].into(),
+  };
+  let gamma_l = Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![l.clone()].into(),
+  };
+  let half_minus_l = plus(divide(int(1), int(2)), times(int(-1), l.clone()));
+  let a2b2 = times(
+    plus(a.clone(), times(int(-1), b.clone())),
+    plus(a.clone(), b.clone()),
+  );
+  // Branch value for a signed distance d = ±(x - μ).
+  let branch = |d: Expr| -> Expr {
+    divide(
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          power(int(2), half_minus_l.clone()),
+          power(a.clone(), half_minus_l.clone()),
+          power(a2b2.clone(), l.clone()),
+          power(
+            e(),
+            times(b.clone(), plus(times(int(-1), m.clone()), x.clone())),
+          ),
+          power(d.clone(), plus(divide(int(-1), int(2)), l.clone())),
+          Expr::FunctionCall {
+            name: "BesselK".to_string(),
+            args: vec![
+              plus(divide(int(-1), int(2)), l.clone()),
+              times(a.clone(), d),
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      },
+      times(sqrt_pi.clone(), gamma_l.clone()),
+    )
+  };
+  let above = branch(plus(times(int(-1), m.clone()), x.clone()));
+  let below = branch(plus(m.clone(), times(int(-1), x.clone())));
+  let point = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        power(a.clone(), plus(int(1), times(int(-2), l.clone()))),
+        power(a2b2, l.clone()),
+        Expr::FunctionCall {
+          name: "Gamma".to_string(),
+          args: vec![plus(divide(int(-1), int(2)), l.clone())].into(),
+        },
+      ]
+      .into(),
+    },
+    times(times(int(2), sqrt_pi), gamma_l),
+  );
+  let inf = Expr::Identifier("Infinity".to_string());
+  let cond_above = comparison(x.clone(), ComparisonOp::Greater, m.clone());
+  let cond_below = comparison(x.clone(), ComparisonOp::Less, m.clone());
+  match crate::functions::math_ast::try_eval_to_f64(&l) {
+    Some(lv) => {
+      // The point branch folds into the default when λ is numeric.
+      let default = if lv > 0.5 { eval(point)? } else { inf };
+      eval(piecewise_with_default(
+        vec![(eval(above)?, cond_above), (eval(below)?, cond_below)],
+        default,
+      ))
+    }
+    None => {
+      let cond_point = Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left: Box::new(comparison(x.clone(), ComparisonOp::Equal, m)),
+        right: Box::new(comparison(
+          l,
+          ComparisonOp::Greater,
+          divide(int(1), int(2)),
+        )),
+      };
+      eval(piecewise_with_default(
+        vec![
+          (above, cond_above),
+          (below, cond_below),
+          (point, cond_point),
+        ],
+        inf,
+      ))
+    }
+  }
+}
+
+/// Mean = 2βλ/((α-β)(α+β)) + μ and
+/// Variance = 2(α²+β²)λ/((α-β)²(α+β)²).
+fn variance_gamma_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = variance_gamma_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "VarianceGammaDistribution: invalid parameters".into(),
+    ));
+  };
+  let (l, a, b, m) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+  );
+  let amb = plus(a.clone(), times(int(-1), b.clone()));
+  let apb = plus(a.clone(), b.clone());
+  let mean = plus(
+    divide(
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![int(2), b.clone(), l.clone()].into(),
+      },
+      times(amb.clone(), apb.clone()),
+    ),
+    m,
+  );
+  let variance = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![int(2), plus(power(a, int(2)), power(b, int(2))), l].into(),
+    },
+    times(power(amb, int(2)), power(apb, int(2))),
+  );
+  Ok((eval(mean)?, eval(variance)?))
 }
 
 /// Validation for TsallisQGaussianDistribution[μ, β, q]: β positive

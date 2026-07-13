@@ -89,10 +89,13 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Closed-form rules at half-integer orders. Use the standard recurrence
   //   J_{n+1}(z) = (2n/z) J_n(z) - J_{n-1}(z)
   // anchored at J_{±1/2}. Walks numerically through the integer m in n = m/2.
+  // wolframscript only expands when the argument contains free symbols;
+  // exact numeric arguments (6, 2/3, Pi) stay unevaluated.
   if let Some((n_num, n_den)) =
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
     && (n_num.unsigned_abs() <= 51)
+    && crate::functions::math_ast::try_eval_to_f64(z_expr).is_none()
     && let Some(result) = half_int_bessel_j(n_num, z_expr)?
   {
     return Ok(result);
@@ -668,10 +671,12 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Closed-form rules at half-integer orders. Anchored at I_{±1/2}; the
   // recurrence I_{n+1}(z) = I_{n-1}(z) - (2n/z) I_n(z) (sign-flipped vs J).
+  // Exact numeric arguments stay unevaluated (wolframscript).
   if let Some((n_num, n_den)) =
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
     && (n_num.unsigned_abs() <= 51)
+    && crate::functions::math_ast::try_eval_to_f64(z_expr).is_none()
     && let Some(result) = half_int_bessel_i(n_num, z_expr)?
   {
     return Ok(result);
@@ -753,10 +758,12 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Closed-form rules at half-integer orders. K_{1/2}(z) = K_{-1/2}(z) =
   // Sqrt[Pi/(2z)] * E^(-z); K_{n+1}(z) = (2n/z) K_n(z) + K_{n-1}(z).
   // K is symmetric: K_{-n}(z) = K_n(z).
+  // Exact numeric arguments stay unevaluated (wolframscript).
   if let Some((n_num, n_den)) =
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
     && (n_num.unsigned_abs() <= 51)
+    && crate::functions::math_ast::try_eval_to_f64(z_expr).is_none()
     && let Some(result) = half_int_bessel_k(n_num, z_expr)?
   {
     return Ok(result);
@@ -1057,6 +1064,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && n_den == 2
     && (n_num.unsigned_abs() <= 51)
     && (-n_num) % 2 != 0
+    && crate::functions::math_ast::try_eval_to_f64(z_expr).is_none()
   {
     let k = (n_num - 1).div_euclid(2);
     let sign: i128 = if k.rem_euclid(2) == 0 { -1 } else { 1 };

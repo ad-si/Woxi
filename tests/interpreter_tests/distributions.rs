@@ -7078,3 +7078,139 @@ mod denominator_radical_extraction {
     assert_eq!(interpret("Sqrt[2]*Sqrt[2*Pi]").unwrap(), "2*Sqrt[Pi]");
   }
 }
+
+// VarianceGammaDistribution: Bessel-type distribution with a
+// three-branch PDF (default Infinity — the x == μ density diverges for
+// λ <= 1/2). Integer λ collapses the half-integer BesselK for x > μ;
+// exact-numeric-argument BesselK calls stay unevaluated like
+// wolframscript. (The x < μ integer-λ branch is value-correct but
+// form-diverges via the known Sqrt-product-split gap.)
+mod variance_gamma_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    // The symbolic template matches wolframscript byte-exact.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VarianceGammaDistribution[l, a, b, m], x]").unwrap(),
+      "Piecewise[{{(2^(1/2 - l)*a^(1/2 - l)*((a - b)*(a + b))^l*\
+E^(b*(-m + x))*(-m + x)^(-1/2 + l)*BesselK[-1/2 + l, a*(-m + x)])/\
+(Sqrt[Pi]*Gamma[l]), x > m}, {(2^(1/2 - l)*a^(1/2 - l)*\
+((a - b)*(a + b))^l*E^(b*(-m + x))*(m - x)^(-1/2 + l)*\
+BesselK[-1/2 + l, a*(m - x)])/(Sqrt[Pi]*Gamma[l]), x < m}, \
+{(a^(1 - 2*l)*((a - b)*(a + b))^l*Gamma[-1/2 + l])/(2*Sqrt[Pi]*Gamma[l]), \
+x == m && l > 1/2}}, Infinity]"
+    );
+    // λ = 1 collapses the upper branch to an elementary form; the point
+    // value becomes the Piecewise default.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VarianceGammaDistribution[1, 3, 1, 0], x]")
+        .unwrap()
+        .split(", x > 0")
+        .next()
+        .unwrap(),
+      "Piecewise[{{4/(3*E^(2*x))"
+    );
+    // λ = 1/2 keeps BesselK[0, ...] and the default is Infinity.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VarianceGammaDistribution[1/2, 3, 1, 0], x]").unwrap(),
+      "Piecewise[{{(2*Sqrt[2]*E^x*BesselK[0, 3*x])/Pi, x > 0}, \
+        {(2*Sqrt[2]*E^x*BesselK[0, -3*x])/Pi, x < 0}}, Infinity]"
+    );
+    // Exact numeric points keep half-integer BesselK unevaluated.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[VarianceGammaDistribution[2, 3, 1, 0], 2], \
+          PDF[VarianceGammaDistribution[1, 3, 1, 0], -2]}"
+      )
+      .unwrap(),
+      "{(64*E^2*BesselK[3/2, 6])/(3*Sqrt[3*Pi]), \
+        (8*BesselK[1/2, 6])/(E^2*Sqrt[3*Pi])}"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[VarianceGammaDistribution[l, a, b, m]], \
+          Variance[VarianceGammaDistribution[l, a, b, m]]}"
+      )
+      .unwrap(),
+      "{(2*b*l)/((a - b)*(a + b)) + m, \
+        (2*(a^2 + b^2)*l)/((a - b)^2*(a + b)^2)}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[VarianceGammaDistribution[2, 3, 1, 0]], \
+          Variance[VarianceGammaDistribution[2, 3, 1, 0]], \
+          Mean[VarianceGammaDistribution[2, 3, 1, 5]]}"
+      )
+      .unwrap(),
+      "{1/2, 5/8, 11/2}"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    // |β| >= α is rejected by the joint parameter check.
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[VarianceGammaDistribution[2, 1, 3, 0], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "VarianceGammaDistribution::bprm: The parameters of distribution \
+       VarianceGammaDistribution[2, 1, 3, 0] are not valid. Use \
+       DistributionParameterAssumptions to obtain the parameter assumptions."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[VarianceGammaDistribution[-2, 3, 1, 0], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "VarianceGammaDistribution::posprm: Parameter -2 at position 1"
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[VarianceGammaDistribution[2, 3, 1], x]")
+      .unwrap();
+    assert!(r.warnings[0].contains(
+      "VarianceGammaDistribution::argrx: VarianceGammaDistribution called \
+       with 3 arguments; 4 arguments are expected."
+    ));
+  }
+}
+
+// Half-integer Bessel functions expand only for arguments containing
+// free symbols; exact numeric arguments (including Pi) stay unevaluated
+// as in wolframscript.
+mod bessel_half_integer_numeric_args {
+  use super::*;
+
+  #[test]
+  fn exact_numeric_arguments_stay_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{BesselK[3/2, 6], BesselI[3/2, 6], BesselJ[3/2, 6], \
+          BesselY[3/2, 6], BesselK[1/2, Pi], BesselK[3/2, 2/3]}"
+      )
+      .unwrap(),
+      "{BesselK[3/2, 6], BesselI[3/2, 6], BesselJ[3/2, 6], \
+        BesselY[3/2, 6], BesselK[1/2, Pi], BesselK[3/2, 2/3]}"
+    );
+    // Symbolic arguments still expand.
+    clear_state();
+    assert_eq!(
+      interpret("BesselK[3/2, 3*x]").unwrap(),
+      "(Sqrt[Pi/6]*(1 + 1/(3*x)))/(E^(3*x)*Sqrt[x])"
+    );
+  }
+}
