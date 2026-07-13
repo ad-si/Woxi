@@ -4368,6 +4368,124 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// ImageValue[img, {x, y}] / [img, {pos1, pos2, ...}] — bilinear sample
+/// in the image coordinate system (x from the left edge, y up from the
+/// bottom edge, pixel centers at half-integers) with zero padding
+/// outside. Real32 images compute in f32, everything else in f64.
+pub fn image_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::ImageType;
+  let unevaluated = || Expr::FunctionCall {
+    name: "ImageValue".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    image_type,
+    ..
+  } = args[0]
+  else {
+    crate::emit_message(&format!(
+      "ImageValue::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+
+  let coord = |e: &Expr| -> Option<(f64, f64)> {
+    let Expr::List(xy) = e else { return None };
+    if xy.len() != 2 {
+      return None;
+    }
+    let x = crate::functions::math_ast::try_eval_to_f64(&xy[0])?;
+    let y = crate::functions::math_ast::try_eval_to_f64(&xy[1])?;
+    (x.is_finite() && y.is_finite()).then_some((x, y))
+  };
+
+  // Distinguish a single point {x, y} from a list of points.
+  enum Spec {
+    One((f64, f64)),
+    Many(Vec<(f64, f64)>),
+  }
+  let spec = (|| -> Option<Spec> {
+    match &args[1] {
+      Expr::List(items)
+        if items.len() == 2 && !matches!(&items[0], Expr::List(_)) =>
+      {
+        Some(Spec::One(coord(&args[1])?))
+      }
+      Expr::List(items) => {
+        let pts: Option<Vec<_>> = items.iter().map(coord).collect();
+        Some(Spec::Many(pts?))
+      }
+      _ => None,
+    }
+  })();
+  let Some(spec) = spec else {
+    crate::emit_message(&format!(
+      "ImageValue::imgrng: The specified argument {} should be an image, a graphics object or a list of coordinates.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(unevaluated());
+  };
+
+  // Pixel accessor by 0-based column and bottom-based row, 0 outside.
+  let pixel = |col: i64, brow: i64, c: usize| -> f64 {
+    if col < 0 || brow < 0 || col >= w as i64 || brow >= h as i64 {
+      0.0
+    } else {
+      let row = h - 1 - brow as usize;
+      data[(row * w + col as usize) * ch + c]
+    }
+  };
+  // Tensor-product weighted sum in f64. Real32 images snap their pixel
+  // values to f32 and round the final result to f32 (pinned against
+  // wolframscript to the last bit; a nested-lerp form differs by 1 ULP).
+  let real32 = image_type == ImageType::Real32;
+  let sample = |x: f64, y: f64, c: usize| -> f64 {
+    let gx = x - 0.5;
+    let gy = y - 0.5;
+    let (j0f, k0f) = (gx.floor(), gy.floor());
+    let (fx, fy) = (gx - j0f, gy - k0f);
+    let (j0, k0) = (j0f as i64, k0f as i64);
+    let p = |dj: i64, dk: i64| {
+      let v = pixel(j0 + dj, k0 + dk, c);
+      if real32 { (v as f32) as f64 } else { v }
+    };
+    let v = (1.0 - fx) * (1.0 - fy) * p(0, 0)
+      + fx * (1.0 - fy) * p(1, 0)
+      + (1.0 - fx) * fy * p(0, 1)
+      + fx * fy * p(1, 1);
+    if real32 { (v as f32) as f64 } else { v }
+  };
+  let value_at = |x: f64, y: f64| -> Expr {
+    if ch == 1 {
+      Expr::Real(sample(x, y, 0))
+    } else {
+      Expr::List(
+        (0..ch)
+          .map(|c| Expr::Real(sample(x, y, c)))
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    }
+  };
+
+  Ok(match spec {
+    Spec::One((x, y)) => value_at(x, y),
+    Spec::Many(pts) => Expr::List(
+      pts
+        .iter()
+        .map(|&(x, y)| value_at(x, y))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+  })
+}
+
 /// Priority-flood morphological reconstruction by erosion over `mask`
 /// (per channel plane): the result is the smallest R >= mask with
 /// R <= marker that is stable under neighborhood erosion. Used by

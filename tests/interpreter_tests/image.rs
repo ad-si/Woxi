@@ -5044,3 +5044,100 @@ mod image_constructor_conformance {
     ));
   }
 }
+
+// ImageValue semantics decoded from wolframscript probes: bilinear
+// tensor-product sampling in the image coordinate system (x from the
+// left, y up from the bottom, pixel centers at half-integers) with zero
+// padding outside; Real32 images snap pixels to f32 and round the
+// result to f32, all other types compute in plain f64.
+mod image_value {
+  use super::*;
+
+  const IMG: &str = "img = Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}]; ";
+
+  #[test]
+  fn bilinear_sampling() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}{{ImageValue[img, {{1, 1}}], ImageValue[img, {{1.5, 1.5}}], \
+          ImageValue[img, {{1.2, 1.8}}], \
+          ImageValue[img, {{1.2345678, 1.7654321}}]}}"
+      ))
+      .unwrap(),
+      "{0.30000001192092896, 0.20000000298023224, 0.11900000274181366, \
+        0.12741579115390778}"
+    );
+    // Positions outside blend with zero padding; fully outside gives 0.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}{{ImageValue[img, {{3, 2}}], ImageValue[img, {{0, 0}}], \
+          ImageValue[img, {{5, 5}}]}}"
+      ))
+      .unwrap(),
+      "{0.07500000298023224, 0.10000000149011612, 0.}"
+    );
+    // A list of positions gives a list of values; multichannel images
+    // give channel-value lists.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}ImageValue[img, {{{{1, 1}}, {{3, 2}}, {{1.5, 1.5}}}}]"
+      ))
+      .unwrap(),
+      "{0.30000001192092896, 0.07500000298023224, 0.20000000298023224}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageValue[Image[{{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}}], {2, 1}]"
+      )
+      .unwrap(),
+      "{0.10000000149011612, 0.125, 0.15000000596046448}"
+    );
+  }
+
+  #[test]
+  fn non_real32_types_compute_in_f64() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageValue[Image[{{10, 200}}, \"Byte\"], {1, 0.5}]").unwrap(),
+      "0.4117647058823529"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageValue[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}, \"Real64\"], \
+         {1.2, 1.8}]"
+      )
+      .unwrap(),
+      "0.119"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("ImageValue[Image[{{0.5}}], {x, 1}]").unwrap();
+    assert_eq!(r.result, "ImageValue[-Image-, {x, 1}]");
+    assert!(r.warnings[0].contains(
+      "ImageValue::imgrng: The specified argument {x, 1} should be an \
+       image, a graphics object or a list of coordinates."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImageValue[5, {1, 1}]").unwrap();
+    assert!(r.warnings[0].contains(
+      "ImageValue::imginv: Expecting an image or graphics instead of 5."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImageValue[Image[{{0.5}}]]").unwrap();
+    assert!(r.warnings[0].contains(
+      "ImageValue::argtu: ImageValue called with 1 argument; 2 or 3 \
+       arguments are expected."
+    ));
+  }
+}
