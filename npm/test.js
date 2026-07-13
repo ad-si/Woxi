@@ -5,8 +5,6 @@
 
 const assert = require("node:assert/strict")
 const test = require("node:test")
-const path = require("node:path")
-const { execFileSync } = require("node:child_process")
 
 const woxi = require("./index.js")
 
@@ -89,32 +87,4 @@ test("setVirtualFile accepts binary data", () => {
   woxi.setVirtualFile("bytes.txt", new TextEncoder().encode("hi"))
   assert.equal(woxi.evaluate('Import["bytes.txt"]'), "hi")
   woxi.clearVirtualFiles()
-})
-
-test("cli evaluates expressions", () => {
-  const cli = path.join(__dirname, "cli.js")
-  const out = execFileSync(process.execPath, [cli, "eval", "Plus[1, 2]"], {
-    encoding: "utf8",
-  })
-  assert.equal(out, "3\n")
-})
-
-test("cli reads code from stdin with `eval -`", () => {
-  const cli = path.join(__dirname, "cli.js")
-  const out = execFileSync(process.execPath, [cli, "eval", "-"], {
-    encoding: "utf8",
-    input: "9 / 3",
-  })
-  assert.equal(out, "3\n")
-})
-
-test("cli exits non-zero on evaluation errors", () => {
-  const cli = path.join(__dirname, "cli.js")
-  assert.throws(
-    () => execFileSync(process.execPath, [cli, "eval", "1 +"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }),
-    (err) => err.status === 1,
-  )
 })

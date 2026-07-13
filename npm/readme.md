@@ -73,16 +73,6 @@ woxi.evaluate('Import["data.csv"]')  //=> "{{a, b}, {1, 2}}"
 `Import["https://…"]` fetches over HTTP automatically.
 
 
-### CLI
-
-The package installs a `woxi` command backed by the same WebAssembly build:
-
-```sh
-npx woxi eval 'Plus[1, 2]'
-npx woxi script.wls
-```
-
-
 ## API
 
 | Function                     | Description                                       |

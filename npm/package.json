@@ -24,13 +24,9 @@
   },
   "main": "index.js",
   "types": "index.d.ts",
-  "bin": {
-    "woxi": "cli.js"
-  },
   "files": [
     "index.js",
     "index.d.ts",
-    "cli.js",
     "pkg/"
   ],
   "engines": {
