@@ -204,19 +204,34 @@ fn write_expr(out: &mut Vec<u8>, expr: &Expr) -> Option<()> {
         out.extend_from_slice(&bytes);
         return Some(());
       }
-      // A sum with a numeric-complex term would serialize in Woxi's Plus
-      // order (complex last) where wolframscript sorts the Complex atom
-      // first; a product folds its numeric factor INTO the Complex atom
-      // (3*I*x is Times[Complex[0, 3], x]). Bail on both rather than emit
-      // wrong bytes.
-      if matches!(name.as_str(), "Plus" | "Times")
+      // A product with a numeric-complex term folds its numeric factor INTO
+      // the Complex atom in wolframscript (3*I*x is Times[Complex[0, 3], x])
+      // whereas Woxi keeps them separate (Times[3, Complex[0, 1], x]); bail
+      // rather than emit wrong bytes.
+      if name == "Times"
         && args.iter().any(|a| numeric_complex_parts(a).is_some())
       {
         return None;
       }
       write_function_header(out, name, args.len());
-      for arg in args.iter() {
-        write_expr(out, arg)?;
+      // wolframscript's canonical Plus order sorts the numeric Complex atom
+      // ahead of the symbolic terms (Plus[Complex[0, 3], x]); Woxi keeps it
+      // last (Plus[x, Complex[0, 3]]). Emit the complex atom(s) first so the
+      // bytes match. Real numeric terms already sort first in both engines.
+      if name == "Plus"
+        && args.iter().any(|a| numeric_complex_parts(a).is_some())
+      {
+        let (cplx, rest): (Vec<Expr>, Vec<Expr>) = args
+          .iter()
+          .cloned()
+          .partition(|a| numeric_complex_parts(a).is_some());
+        for arg in cplx.iter().chain(rest.iter()) {
+          write_expr(out, arg)?;
+        }
+      } else {
+        for arg in args.iter() {
+          write_expr(out, arg)?;
+        }
       }
     }
     Expr::CurriedCall { func, args } => {

@@ -200,13 +200,33 @@ mod binary_serialize {
   }
 
   #[test]
-  fn symbolic_complex_sums_stay_unevaluated() {
-    // Woxi's internal Plus/Times ordering of complex terms diverges from
-    // wolframscript's Complex folding, so these bail out instead of
+  fn symbolic_complex_sum_serializes_complex_atom_first() {
+    // wolframscript's canonical Plus order places the numeric Complex atom
+    // ahead of the symbolic term (Plus[Complex[0, 3], x]); Woxi keeps it last
+    // internally but reorders it on serialization so the bytes match WS
+    // exactly (verified against `Normal[BinarySerialize[x + 3*I]]`).
+    assert_eq!(
+      interpret("Normal[BinarySerialize[x + 3*I]]").unwrap(),
+      "{56, 58, 102, 2, 115, 4, 80, 108, 117, 115, 102, 2, 115, 7, 67, 111, \
+       109, 112, 108, 101, 120, 67, 0, 67, 3, 115, 8, 71, 108, 111, 98, 97, \
+       108, 96, 120}"
+    );
+    // And it round-trips back to the original complex sum.
+    assert_eq!(
+      interpret("BinaryDeserialize[BinarySerialize[x + 3*I]]").unwrap(),
+      "x + 3*I"
+    );
+  }
+
+  #[test]
+  fn symbolic_complex_products_stay_unevaluated() {
+    // A product folds its numeric factor INTO the Complex atom in
+    // wolframscript (Times[Complex[0, 3], x]) whereas Woxi keeps them
+    // separate (Times[3, Complex[0, 1], x]), so it bails out instead of
     // producing wrong bytes.
     assert_eq!(
-      interpret("BinarySerialize[x + 3*I]").unwrap(),
-      "BinarySerialize[x + 3*I]"
+      interpret("BinarySerialize[3*I*x]").unwrap(),
+      "BinarySerialize[(3*I)*x]"
     );
   }
 }
