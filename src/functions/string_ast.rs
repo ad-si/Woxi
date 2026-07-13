@@ -5359,7 +5359,7 @@ fn as_neg_int_power(expr: &Expr) -> Option<(&Expr, i128)> {
       }
       // Also handle UnaryOp Minus wrapping an integer
       if let Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } = right.as_ref()
         && let Expr::Integer(n) = operand.as_ref()
@@ -7242,7 +7242,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ToExpression[InterpretationBox[boxes, expr]] returns the interpreted
   // expression directly (the second argument), evaluated. This matches
   // wolframscript: `ToExpression[InterpretationBox["Four", 4]]` → 4.
-  if let crate::syntax::Expr::FunctionCall {
+  if let Expr::FunctionCall {
     name,
     args: ib_args,
   } = &args[0]
@@ -7251,7 +7251,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let interpreted = crate::evaluator::evaluate_expr_to_expr(&ib_args[1])?;
     if args.len() == 3 {
-      let wrapped = crate::syntax::Expr::FunctionCall {
+      let wrapped = Expr::FunctionCall {
         name: crate::syntax::expr_to_string(&args[2]),
         args: vec![interpreted].into(),
       };
@@ -7276,7 +7276,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ToExpression["1+1", InputForm, Hold] is Hold[1 + 1], not Hold[2].
   if args.len() == 3 {
     let parsed = parse_program_to_expr(&s)?;
-    let wrapped = crate::syntax::Expr::FunctionCall {
+    let wrapped = Expr::FunctionCall {
       name: crate::syntax::expr_to_string(&args[2]),
       args: vec![parsed].into(),
     };

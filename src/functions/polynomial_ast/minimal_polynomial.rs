@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::math_ast::{expr_to_f64, expr_to_i128, is_sqrt};
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
 /// in the variable x.
@@ -170,7 +170,7 @@ fn compute_minpoly_coeffs(
 
     // Unary minus
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       // minpoly(-α) = minpoly(α) with x replaced by -x
@@ -229,7 +229,7 @@ fn compute_minpoly_coeffs(
     } => {
       // a - b = a + (-b)
       let neg_right = Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new((**right).clone()),
       };
       let sum_expr = Expr::BinaryOp {
@@ -1026,7 +1026,7 @@ fn collect_rad_poly(expr: &Expr, depth: usize) -> Option<RadPoly> {
       power(&args[0], &args[1])
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some(rad_scale(&collect_rad_poly(operand, depth + 1)?, (-1, 1))),
     Expr::BinaryOp { op, left, right } => match op {

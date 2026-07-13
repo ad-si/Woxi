@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 pub fn dispatch_datetime_functions(
   name: &str,
@@ -82,7 +83,7 @@ pub fn dispatch_datetime_functions(
           || matches!(
             e,
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
+              op: UnaryOperator::Minus,
               ..
             }
           )
@@ -133,7 +134,7 @@ pub fn dispatch_datetime_functions(
         return Some(Ok(zones[0].clone()));
       }
       return Some(crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(zones[0].clone()),
         right: Box::new(zones[1].clone()),
       }));

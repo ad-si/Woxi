@@ -931,7 +931,7 @@ fn exact_cot(k: i64, n: i64) -> Option<Expr> {
 /// keeps wolframscript's "-2 - Sqrt[3]" form rather than "-(2 + Sqrt[3])".
 fn canonicalize_exact_trig_value(
   exact: Expr,
-) -> Result<Expr, crate::InterpreterError> {
+) -> Result<Expr, InterpreterError> {
   if let Expr::UnaryOp {
     op: UnaryOperator::Minus,
     operand,
@@ -4055,7 +4055,7 @@ fn hyperbolic_of_log(
   name: &str,
   arg: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use crate::syntax::BinaryOperator as B;
+  use BinaryOperator as B;
   let u = match arg {
     Expr::FunctionCall { name: n, args } if n == "Log" && args.len() == 1 => {
       &args[0]

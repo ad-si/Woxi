@@ -1109,7 +1109,7 @@ fn struve_half_integer_closed_form(
   two_nu: i64,
   z: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use crate::syntax::BinaryOperator as B;
+  use BinaryOperator as B;
   let bin = |op, a: Expr, b: Expr| Expr::BinaryOp {
     op,
     left: Box::new(a),

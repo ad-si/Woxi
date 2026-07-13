@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 pub fn dispatch_complex_and_special(
   name: &str,
@@ -763,18 +763,17 @@ pub fn dispatch_complex_and_special(
             crate::StoredValue::ExprVal(e) => expr_to_string(&e),
             crate::StoredValue::Raw(val) => val,
             crate::StoredValue::Association(items) => {
-              let items_expr: Vec<(crate::syntax::Expr, crate::syntax::Expr)> =
-                items
-                  .iter()
-                  .map(|(k, v)| {
-                    let key_expr = crate::syntax::string_to_expr(k)
-                      .unwrap_or(crate::syntax::Expr::Identifier(k.clone()));
-                    let val_expr = crate::syntax::string_to_expr(v)
-                      .unwrap_or(crate::syntax::Expr::Raw(v.clone()));
-                    (key_expr, val_expr)
-                  })
-                  .collect();
-              expr_to_string(&crate::syntax::Expr::Association(items_expr))
+              let items_expr: Vec<(Expr, Expr)> = items
+                .iter()
+                .map(|(k, v)| {
+                  let key_expr = crate::syntax::string_to_expr(k)
+                    .unwrap_or(Expr::Identifier(k.clone()));
+                  let val_expr = crate::syntax::string_to_expr(v)
+                    .unwrap_or(Expr::Raw(v.clone()));
+                  (key_expr, val_expr)
+                })
+                .collect();
+              expr_to_string(&Expr::Association(items_expr))
             }
           };
           lines.push(format!("{} = {}", sym, val_str));
@@ -873,9 +872,7 @@ pub fn dispatch_complex_and_special(
             // Check if this is a specific-value definition (SameQ conditions)
             let has_sameq_conds = conds.iter().any(|c| {
               if let Some(Expr::Comparison { operators, .. }) = c {
-                operators
-                  .iter()
-                  .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+                operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
               } else {
                 false
               }
@@ -892,9 +889,9 @@ pub fn dispatch_complex_and_special(
                     operators,
                     ..
                   }) = c
-                    && operators.iter().any(|op| {
-                      matches!(op, crate::syntax::ComparisonOp::SameQ)
-                    })
+                    && operators
+                      .iter()
+                      .any(|op| matches!(op, ComparisonOp::SameQ))
                     && operands.len() == 2
                     && matches!(&operands[0], Expr::Identifier(n) if n == p)
                   {
@@ -987,14 +984,14 @@ pub fn dispatch_complex_and_special(
             // SameQ condition on this slot. Reconstruct via the same
             // helper used by DefaultValues.
             let lit = _conds.iter().find_map(|c| {
-              if let Some(crate::syntax::Expr::Comparison {
+              if let Some(Expr::Comparison {
                 operands,
                 operators,
               }) = c
                 && operators.len() == 1
-                && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+                && matches!(operators[0], ComparisonOp::SameQ)
                 && operands.len() == 2
-                && let crate::syntax::Expr::Identifier(name) = &operands[0]
+                && let Expr::Identifier(name) = &operands[0]
                 && name == p
               {
                 Some(expr_to_string(&operands[1]))
@@ -1178,20 +1175,17 @@ pub fn dispatch_complex_and_special(
               crate::StoredValue::ExprVal(e) => expr_to_string(&e),
               crate::StoredValue::Raw(val) => val,
               crate::StoredValue::Association(items) => {
-                let items_expr: Vec<(
-                  crate::syntax::Expr,
-                  crate::syntax::Expr,
-                )> = items
+                let items_expr: Vec<(Expr, Expr)> = items
                   .iter()
                   .map(|(k, v)| {
                     let key_expr = crate::syntax::string_to_expr(k)
-                      .unwrap_or(crate::syntax::Expr::Identifier(k.clone()));
+                      .unwrap_or(Expr::Identifier(k.clone()));
                     let val_expr = crate::syntax::string_to_expr(v)
-                      .unwrap_or(crate::syntax::Expr::Raw(v.clone()));
+                      .unwrap_or(Expr::Raw(v.clone()));
                     (key_expr, val_expr)
                   })
                   .collect();
-                expr_to_string(&crate::syntax::Expr::Association(items_expr))
+                expr_to_string(&Expr::Association(items_expr))
               }
             };
             lines.push(format!("{} = {}", sym, val_str));
@@ -1204,9 +1198,7 @@ pub fn dispatch_complex_and_special(
             {
               let has_sameq_conds = conds.iter().any(|c| {
                 if let Some(Expr::Comparison { operators, .. }) = c {
-                  operators
-                    .iter()
-                    .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+                  operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
                 } else {
                   false
                 }
@@ -1222,9 +1214,9 @@ pub fn dispatch_complex_and_special(
                       operators,
                       ..
                     }) = c
-                      && operators.iter().any(|op| {
-                        matches!(op, crate::syntax::ComparisonOp::SameQ)
-                      })
+                      && operators
+                        .iter()
+                        .any(|op| matches!(op, ComparisonOp::SameQ))
                       && operands.len() == 2
                       && matches!(&operands[0], Expr::Identifier(n) if n == p)
                     {
@@ -3031,7 +3023,7 @@ fn lookup_usage_message(sym: &str) -> Option<String> {
         operators,
       }) = c
         && operators.len() == 1
-        && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+        && matches!(operators[0], ComparisonOp::SameQ)
         && operands.len() == 2
         && let Expr::Identifier(pname) = &operands[0]
       {
@@ -3102,17 +3094,17 @@ fn format_user_information(
       crate::StoredValue::ExprVal(e) => expr_to_string(&e),
       crate::StoredValue::Raw(val) => val,
       crate::StoredValue::Association(items) => {
-        let items_expr: Vec<(crate::syntax::Expr, crate::syntax::Expr)> = items
+        let items_expr: Vec<(Expr, Expr)> = items
           .iter()
           .map(|(k, v)| {
             let key_expr = crate::syntax::string_to_expr(k)
-              .unwrap_or(crate::syntax::Expr::Identifier(k.clone()));
-            let val_expr = crate::syntax::string_to_expr(v)
-              .unwrap_or(crate::syntax::Expr::Raw(v.clone()));
+              .unwrap_or(Expr::Identifier(k.clone()));
+            let val_expr =
+              crate::syntax::string_to_expr(v).unwrap_or(Expr::Raw(v.clone()));
             (key_expr, val_expr)
           })
           .collect();
-        expr_to_string(&crate::syntax::Expr::Association(items_expr))
+        expr_to_string(&Expr::Association(items_expr))
       }
     };
     format!(
@@ -3136,9 +3128,7 @@ fn format_user_information(
               operands,
               operators,
             })) = conds.get(i)
-              && operators
-                .iter()
-                .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+              && operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
               && let Some(literal_val) = operands.get(1)
             {
               return expr_to_string(literal_val);
@@ -3406,7 +3396,6 @@ fn to_graphics_boxes(expr: &Expr) -> Expr {
 /// FunctionCall head (Plus / Times / Power; Subtract → Plus[a, Times[-1,
 /// b]]; Divide → Times[a, Power[b, -1]]; UnaryMinus → Times[-1, x]).
 fn expr_to_full_box_form(expr: &Expr) -> Expr {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   // Atoms.
   match expr {
     Expr::Integer(n) => {
@@ -4055,14 +4044,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       parts.push(expr_to_box_form(&operands[0]));
       for (i, op) in operators.iter().enumerate() {
         let op_str = match op {
-          crate::syntax::ComparisonOp::Equal => "==",
-          crate::syntax::ComparisonOp::NotEqual => "!=",
-          crate::syntax::ComparisonOp::Less => "<",
-          crate::syntax::ComparisonOp::LessEqual => "<=",
-          crate::syntax::ComparisonOp::Greater => ">",
-          crate::syntax::ComparisonOp::GreaterEqual => ">=",
-          crate::syntax::ComparisonOp::SameQ => "===",
-          crate::syntax::ComparisonOp::UnsameQ => "=!=",
+          ComparisonOp::Equal => "==",
+          ComparisonOp::NotEqual => "!=",
+          ComparisonOp::Less => "<",
+          ComparisonOp::LessEqual => "<=",
+          ComparisonOp::Greater => ">",
+          ComparisonOp::GreaterEqual => ">=",
+          ComparisonOp::SameQ => "===",
+          ComparisonOp::UnsameQ => "=!=",
         };
         parts.push(Expr::String(op_str.to_string()));
         parts.push(expr_to_box_form(&operands[i + 1]));
@@ -5138,7 +5127,6 @@ fn tf_is_zero(expr: &Expr) -> bool {
 /// Plus/Minus and unary minus and dropping literal `0` terms. Each entry is
 /// `(is_negative, term)`.
 fn tf_flatten_additive(expr: &Expr, neg: bool, out: &mut Vec<(bool, Expr)>) {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -5649,7 +5637,6 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
 
 /// Core TraditionalForm typesetter: expression → 2D box tree.
 fn tf(expr: &Expr) -> Expr {
-  use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
   match expr {
     Expr::Identifier(s) | Expr::Constant(s) => tf_string(&tf_symbol(s)),
     Expr::FunctionCall { name, args } => tf_call(name, args),
@@ -6200,7 +6187,7 @@ fn inactivate_expr(expr: &Expr, filter: Option<&str>) -> Expr {
       operands,
       operators,
     } if operators.len() == 1 && operands.len() == 2 => {
-      use crate::syntax::ComparisonOp as C;
+      use ComparisonOp as C;
       let head = match operators[0] {
         C::Equal => "Equal",
         C::NotEqual => "Unequal",

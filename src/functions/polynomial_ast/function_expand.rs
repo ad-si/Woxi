@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 
 /// FunctionExpand[expr] — expand special mathematical functions into simpler forms.
 pub fn function_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -363,7 +363,7 @@ fn reciprocal_gamma_arg(f: &Expr) -> Option<Expr> {
       (&args[0], &args[1])
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => (left.as_ref(), right.as_ref()),

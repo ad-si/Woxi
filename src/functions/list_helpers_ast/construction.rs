@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 /// AST-based Table: generate a table of values.
 /// Table[expr, {i, min, max}] -> {expr with i=min, ..., expr with i=max}
@@ -774,12 +775,12 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           min_expr.clone()
         } else {
           let k_times_step = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(k)),
             right: Box::new(step_expr.clone()),
           };
           let sum = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(min_expr.clone()),
             right: Box::new(k_times_step),
           };
@@ -1027,7 +1028,7 @@ pub fn constant_array_ast(
     },
     Expr::Integer(1) => ones(),
     _ => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(elem.clone()),
       right: Box::new(ones()),
     },

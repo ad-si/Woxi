@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// True if `e` contains an inexact (machine) number. Elliptic functions
 /// numericize only when an argument is inexact; exact (integer/rational)
@@ -1691,7 +1691,7 @@ pub fn neville_theta_ast(
       Some(ta[1].clone())
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some((**operand).clone()),
     _ => None,

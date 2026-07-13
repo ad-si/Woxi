@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 /// PolynomialGCD[p1, p2, ...] - greatest common divisor of polynomials
 pub fn polynomial_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -460,7 +460,7 @@ fn poly_integer_content(
           int_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&abs)?);
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           ..
         } => {
           // Rational number - include it
@@ -543,12 +543,12 @@ fn normalize_poly_sign(
     Expr::Integer(n) => *n < 0,
     Expr::Real(f) => *f < 0.0,
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       ..
     } => matches!(left.as_ref(), Expr::Integer(n) if *n < 0),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       ..
     } => true,
     _ => {

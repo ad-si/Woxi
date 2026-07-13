@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 pub fn dispatch_evaluation_control(
   name: &str,
@@ -694,7 +695,7 @@ pub fn dispatch_evaluation_control(
         }
         [r] if !matches!(r, Expr::List(_)) => {
           let half = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
+            op: BinaryOperator::Divide,
             left: Box::new(r.clone()),
             right: Box::new(Expr::Integer(2)),
           });

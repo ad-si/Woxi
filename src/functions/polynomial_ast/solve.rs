@@ -2,7 +2,9 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
@@ -266,7 +268,6 @@ fn complex_pow(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
 /// `Times[-1, Power[-1, 1/3]]` — fully numericize instead of leaking a
 /// symbolic `Power` into NSolve's output.
 fn eval_complex_full(expr: &Expr) -> Option<(f64, f64)> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   // Reuse the existing extractor for everything but Power.
   if let Some(v) = crate::functions::math_ast::try_extract_complex_float(expr) {
     return Some(v);
@@ -2863,7 +2864,6 @@ fn try_solve_abs_eq(
 }
 
 fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
-  use crate::syntax::ComparisonOp;
   // Extract lhs == rhs.
   let (lhs, rhs) = match eq {
     Expr::Comparison {
@@ -6757,7 +6757,6 @@ fn minimize_constrained_1d(
         operands,
         operators,
       } if operands.len() == 2 && operators.len() == 1 => {
-        use crate::syntax::ComparisonOp;
         let lhs = &operands[0];
         let rhs = &operands[1];
         match &operators[0] {
@@ -6977,7 +6976,6 @@ fn minimize_satisfies_constraints(
   vars: &[String],
   vals: &[f64],
 ) -> bool {
-  use crate::syntax::ComparisonOp;
   for con in constraints {
     if let Expr::Comparison {
       operands,
@@ -7023,7 +7021,6 @@ fn minimize_satisfies_constraints(
 /// True if `con` is a strict comparison (`<` or `>`), as opposed to `<=`/`>=`
 /// or `==`. Used by integer enumeration to exclude boundary integers.
 fn constraint_is_strict(con: &Expr) -> bool {
-  use crate::syntax::ComparisonOp;
   matches!(con, Expr::Comparison { operators, .. }
     if operators.len() == 1
       && matches!(operators[0], ComparisonOp::Greater | ComparisonOp::Less))
@@ -7033,7 +7030,6 @@ fn minimize_extract_linear_constraint(
   con: &Expr,
   vars: &[String],
 ) -> Option<(Vec<f64>, f64, i32)> {
-  use crate::syntax::ComparisonOp;
   let (operands, operators) = match con {
     Expr::Comparison {
       operands,
@@ -7314,7 +7310,6 @@ fn minimize_lp_2d(
     let lhs = &operands[0];
     let rhs = &operands[1];
 
-    use crate::syntax::ComparisonOp;
     let sense = match &operators[0] {
       ComparisonOp::GreaterEqual => 1,
       ComparisonOp::LessEqual => -1,
@@ -8934,7 +8929,7 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
       operand,
     } => Some(NumNode::Neg(Box::new(c(operand)?))),
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator::*;
+      use BinaryOperator::*;
       let l = Box::new(c(left)?);
       let r = Box::new(c(right)?);
       match op {
@@ -9184,7 +9179,7 @@ fn constraint_violation(
   vars: &[String],
   point: &[f64],
 ) -> f64 {
-  use crate::syntax::ComparisonOp::*;
+  use ComparisonOp::*;
   let mut total = 0.0;
   for c in comparisons {
     let l = eval_expr_at_point(&c.left, vars, point);
@@ -9438,7 +9433,7 @@ fn nminimize_penalty(
 
   // Total constraint violation at a point (0 when feasible).
   let violation = |point: &[f64]| -> f64 {
-    use crate::syntax::ComparisonOp::*;
+    use ComparisonOp::*;
     let mut total = 0.0;
     for (c, compiled) in comparisons.iter().zip(cmp_compiled.iter()) {
       let (l, r) = match compiled {
@@ -9646,7 +9641,6 @@ fn extract_bound_from_comparison(
   vars: &[String],
   bounds: &mut [(f64, f64)],
 ) -> Result<(), InterpreterError> {
-  use crate::syntax::ComparisonOp;
   if let Expr::Comparison {
     operands,
     operators,

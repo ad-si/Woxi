@@ -3898,7 +3898,7 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // PolyaAeppli: Kurtosis = 3 + (1 + 10 p + p^2)/((1 + p) t).
   if let Some((t, p)) = two_params_of(&args[0], "PolyaAeppliDistribution") {
-    use crate::syntax::BinaryOperator as B;
+    use BinaryOperator as B;
     let bin = |op, l, r| Expr::BinaryOp {
       op,
       left: Box::new(l),
@@ -3984,7 +3984,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // PolyaAeppli: Skewness = (1 + 4 p + p^2)/((1 + p) Sqrt[(1 + p) t]).
   if let Some((t, p)) = two_params_of(&args[0], "PolyaAeppliDistribution") {
-    use crate::syntax::BinaryOperator as B;
+    use BinaryOperator as B;
     let bin = |op, l, r| Expr::BinaryOp {
       op,
       left: Box::new(l),

@@ -2,6 +2,8 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
+use crate::syntax::Expr;
+
 mod airy;
 mod arithmetic;
 mod bessel;
@@ -63,32 +65,32 @@ pub use zeta_functions::*;
 /// SliceDistribution).
 pub fn distributions_slice(
   proc_name: &str,
-  dargs: &[crate::syntax::Expr],
-  t: &crate::syntax::Expr,
-) -> Option<crate::syntax::Expr> {
+  dargs: &[Expr],
+  t: &Expr,
+) -> Option<Expr> {
   distributions::process_slice_distribution(proc_name, dargs, t)
 }
 
 /// Public accessors for the process correlation closed forms.
 pub fn statistics_process_correlation(
-  proc: &crate::syntax::Expr,
-  t1: &crate::syntax::Expr,
-  t2: &crate::syntax::Expr,
-) -> Option<crate::syntax::Expr> {
+  proc: &Expr,
+  t1: &Expr,
+  t2: &Expr,
+) -> Option<Expr> {
   statistics::process_correlation(proc, t1, t2)
 }
 
 pub fn statistics_process_absolute_correlation(
-  proc: &crate::syntax::Expr,
-  t1: &crate::syntax::Expr,
-  t2: &crate::syntax::Expr,
-) -> Option<crate::syntax::Expr> {
+  proc: &Expr,
+  t1: &Expr,
+  t2: &Expr,
+) -> Option<Expr> {
   statistics::process_absolute_correlation(proc, t1, t2)
 }
 
 /// Public accessor for BiweightMidvariance.
 pub fn statistics_biweight_midvariance(
-  args: &[crate::syntax::Expr],
-) -> Result<crate::syntax::Expr, crate::InterpreterError> {
+  args: &[Expr],
+) -> Result<Expr, crate::InterpreterError> {
   statistics::biweight_midvariance_ast(args)
 }

@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// Decompose a BinaryOp or UnaryOp expression into canonical Wolfram
 /// (head_name, args) form so that First/Rest/Part/etc. can operate on them.
@@ -10,20 +11,17 @@ use super::*;
 /// Flatten a chained binary operator (Plus/Times/And/Or/StringJoin/Alternatives)
 /// into its full n-ary argument list. e.g. `(((1+2)+3)+4)` → `[1, 2, 3, 4]`.
 fn flatten_assoc_binop(
-  op: crate::syntax::BinaryOperator,
-  left: &crate::syntax::Expr,
-  right: &crate::syntax::Expr,
-) -> Vec<crate::syntax::Expr> {
+  op: BinaryOperator,
+  left: &Expr,
+  right: &Expr,
+) -> Vec<Expr> {
   let mut out = flatten_assoc_one(op, left);
   out.extend(flatten_assoc_one(op, right));
   out
 }
 
-fn flatten_assoc_one(
-  op: crate::syntax::BinaryOperator,
-  expr: &crate::syntax::Expr,
-) -> Vec<crate::syntax::Expr> {
-  if let crate::syntax::Expr::BinaryOp {
+fn flatten_assoc_one(op: BinaryOperator, expr: &Expr) -> Vec<Expr> {
+  if let Expr::BinaryOp {
     op: inner_op,
     left,
     right,
@@ -37,7 +35,6 @@ fn flatten_assoc_one(
 }
 
 pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::BinaryOp { op, left, right } => {
       let (head, args) = match op {

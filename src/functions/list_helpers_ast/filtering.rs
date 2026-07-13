@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 /// AST-based Select: filter elements where predicate returns True.
 /// Select[{a, b, c}, pred] -> elements where pred[elem] is True
@@ -679,7 +680,7 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
     }
     // Alternatives: a | b - matches if either side matches
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       left,
       right,
     } => matches_pattern_ast(expr, left) || matches_pattern_ast(expr, right),

@@ -1,4 +1,5 @@
 use crate::InterpreterError;
+use crate::syntax::BinaryOperator;
 use crate::syntax::{Expr, ImageType};
 use std::sync::Arc;
 
@@ -5980,7 +5981,7 @@ fn extract_image_weight(
 
   // w * Image or Image * w
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left,
     right,
   } = expr

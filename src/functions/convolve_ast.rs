@@ -11,7 +11,7 @@
 //! (e.g. Sqrt[Pi/2]/E^(y^2/2), (y*UnitStep[y])/E^(2*y)).
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 type Frac = (i128, i128);
 
@@ -94,12 +94,12 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: factors.into(),
   };
   let div = |n: Expr, d: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(n),
     right: Box::new(d),
   };
   let pow = |b: Expr, e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(b),
     right: Box::new(e),
   };
@@ -164,7 +164,7 @@ fn exp_step_rate(expr: &Expr, x_var: &str) -> Option<Frac> {
       args.iter().collect()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => vec![left, right],
@@ -198,7 +198,7 @@ fn exp_exponent(expr: &Expr) -> Option<Expr> {
       Some(args[0].clone())
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => is_e(left).then(|| (**right).clone()),
@@ -224,7 +224,7 @@ fn neg_coeff_of(exponent: &Expr, x_var: &str, deg: i128) -> Option<Frac> {
             && matches!(&args[1], Expr::Integer(d) if *d == deg)
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left,
           right,
         } => {
@@ -237,7 +237,7 @@ fn neg_coeff_of(exponent: &Expr, x_var: &str, deg: i128) -> Option<Frac> {
   };
   match exponent {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       if x_pow_matches(operand) {
@@ -260,7 +260,7 @@ fn neg_coeff_of(exponent: &Expr, x_var: &str, deg: i128) -> Option<Frac> {
       negative_frac(&args[0])
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
