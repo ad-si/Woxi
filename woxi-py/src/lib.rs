@@ -82,9 +82,17 @@ impl EvaluationResult {
       "EvaluationResult(result={:?}, stdout={:?}, graphics={}, svg={}, sound={}, warnings={:?})",
       self.result,
       self.stdout,
-      if self.graphics.is_some() { "<svg>" } else { "None" },
+      if self.graphics.is_some() {
+        "<svg>"
+      } else {
+        "None"
+      },
       if self.svg.is_some() { "<svg>" } else { "None" },
-      if self.sound.is_some() { "<sound>" } else { "None" },
+      if self.sound.is_some() {
+        "<sound>"
+      } else {
+        "None"
+      },
       self.warnings,
     )
   }
