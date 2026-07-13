@@ -17,6 +17,9 @@ version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/ad-si/Woxi"
+# `cargo run -- eval '…'` should run the interpreter CLI, not the
+# woxi-diff-fuzz helper binary.
+default-run = "woxi"
 # Keep packages built from this crate (crates.io and the PyPI sdist,
 # which vendors this crate via maturin) down to what's needed to
 # compile it. tests/SUMMARY.md, functions.csv, and resources/ are
