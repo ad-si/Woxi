@@ -1013,10 +1013,7 @@ fn apply_func_as_head(
 /// Outer[f, list1, list2, ...] - generalized outer product.
 /// Threads through any shared head (not just `List`). All arguments must have
 /// the same head; if they differ, the call is returned unevaluated.
-pub fn outer_ast(
-  func: &Expr,
-  lists: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn outer_ast(func: &Expr, lists: &[Expr]) -> Result<Expr, InterpreterError> {
   outer_ast_with_levels(func, lists, &[])
 }
 

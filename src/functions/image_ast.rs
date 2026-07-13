@@ -5784,7 +5784,7 @@ pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
 /// Anything with exotic glyphs outside the embedded fonts will fall
 /// through to `load_system_fonts()`.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
+fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.load_font_data(
     include_bytes!(
       "../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"

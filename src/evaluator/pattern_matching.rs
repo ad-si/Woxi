@@ -193,7 +193,7 @@ pub fn association_nested_access(
 }
 
 /// Parse an association string like "<|a -> 1, b -> 2|>" into pairs
-pub fn parse_association_string(
+fn parse_association_string(
   s: &str,
 ) -> Result<Vec<(String, String)>, InterpreterError> {
   if !s.starts_with("<|") || !s.ends_with("|>") {
@@ -221,7 +221,7 @@ pub fn parse_association_string(
 /// `<|…|>` associations, lists, or bracketed calls belong to the current
 /// item. Depth is tracked on the two-character `<|` / `|>` delimiters (a
 /// bare `>` also appears in every `->` and must not affect nesting).
-pub fn split_association_items(s: &str) -> Vec<String> {
+fn split_association_items(s: &str) -> Vec<String> {
   let mut items = Vec::new();
   let mut current = String::new();
   let mut depth = 0i64;
@@ -336,7 +336,7 @@ pub fn contains_pattern(expr: &Expr) -> bool {
 
 /// Try AST-based structural pattern matching for a single rule on an expression.
 /// Returns Some(result) if the pattern matched and was replaced.
-pub fn try_ast_pattern_replace(
+fn try_ast_pattern_replace(
   expr: &Expr,
   pattern: &Expr,
   replacement: &Expr,
@@ -563,7 +563,7 @@ pub fn is_symbol_protected(name: &str) -> bool {
   })
 }
 
-pub fn has_one_identity(name: &str) -> bool {
+fn has_one_identity(name: &str) -> bool {
   let builtin = get_builtin_attributes(name);
   if builtin.contains(&"OneIdentity") {
     return true;
@@ -616,7 +616,7 @@ fn lookup_user_default(
 }
 
 /// Map a BinaryOperator to the corresponding Wolfram Language function name.
-pub fn binary_op_to_func_name(op: &BinaryOperator) -> &'static str {
+fn binary_op_to_func_name(op: &BinaryOperator) -> &'static str {
   use BinaryOperator;
   match op {
     BinaryOperator::Plus => "Plus",
@@ -631,7 +631,7 @@ pub fn binary_op_to_func_name(op: &BinaryOperator) -> &'static str {
 /// Try OneIdentity matching: when a pattern is f[args...] and f has OneIdentity,
 /// match a non-f expression by filling in defaults for PatternOptional args
 /// and matching the expression against the remaining required pattern slot.
-pub fn try_one_identity_match(
+fn try_one_identity_match(
   expr: &Expr,
   pat_name: &str,
   pat_args: &[Expr],
@@ -761,7 +761,7 @@ pub fn try_one_identity_match(
 }
 
 /// Try to match a single expression against a structural pattern.
-pub fn try_ast_pattern_replace_single(
+fn try_ast_pattern_replace_single(
   value: &Expr,
   pattern: &Expr,
   replacement: &Expr,
@@ -866,7 +866,7 @@ pub fn try_ast_pattern_replace_single(
 /// Extract the pattern Expr and optional /; condition string from a rule's pattern field.
 /// Handles Expr::Raw("pattern_str /; condition_str") by parsing the pattern part
 /// and returning the condition string separately.
-pub fn extract_pattern_and_condition(pattern: &Expr) -> (Expr, Option<String>) {
+fn extract_pattern_and_condition(pattern: &Expr) -> (Expr, Option<String>) {
   match pattern {
     Expr::Raw(s) if s.contains(" /; ") => {
       // Split on " /; " to get pattern and condition
@@ -1228,7 +1228,7 @@ fn set_partitions(n: usize, k: usize) -> Vec<Vec<Vec<usize>>> {
 /// fewer args than the expression. Partitions expr_args into pat_args.len()
 /// non-empty groups. Groups of size 1 are passed through (OneIdentity), larger
 /// groups are wrapped in the Flat function.
-pub fn try_flat_partition_match(
+fn try_flat_partition_match(
   pat_name: &str,
   pat_args: &[Expr],
   expr_args: &[Expr],
@@ -1487,7 +1487,7 @@ fn enumerate_partitions_with_sizes(
 
 /// Find a subset of `sub_len` arguments from `args` at `indices` that matches the pattern args
 /// when wrapped in a function call. Returns the matched indices and bindings.
-pub fn find_orderless_subset_match(
+fn find_orderless_subset_match(
   func_name: &str,
   args: &[Expr],
   indices: &[usize],
@@ -1881,7 +1881,7 @@ fn try_symbol_replace_all(
 
 /// Try Flat subsequence replacement. For a Flat function f, matches f[a,b] within f[a,b,c]
 /// by trying contiguous subsequences. Recursively applies to subexpressions.
-pub fn try_flat_replace_all(
+fn try_flat_replace_all(
   expr: &Expr,
   pattern: &Expr,
   replacement: &Expr,
@@ -3847,7 +3847,7 @@ pub fn resolve_identifier_to_func_name(name: &str) -> Option<String> {
 /// Apply ReplaceAll with multiple rules at the AST level.
 /// For each sub-expression, try each rule; the first matching rule wins.
 /// If no rule matches the whole node, recurse into children.
-pub fn apply_replace_all_multi_ast(
+fn apply_replace_all_multi_ast(
   expr: &Expr,
   rules: &[(&Expr, &Expr)],
 ) -> Result<Expr, InterpreterError> {

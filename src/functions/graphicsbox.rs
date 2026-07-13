@@ -16,7 +16,7 @@ use std::io::Write;
 ///   `!boR` header + `f` tag + count + `s` tag + "List" + nested `f`/`r` items
 ///
 /// Then: `"1:" + base64(zlib(binary))`
-pub fn compressed_point_list(points: &[(f64, f64)]) -> String {
+fn compressed_point_list(points: &[(f64, f64)]) -> String {
   let mut buf: Vec<u8> = Vec::with_capacity(points.len() * 20 + 32);
 
   // Magic header

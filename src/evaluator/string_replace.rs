@@ -3,7 +3,7 @@ use super::*;
 
 /// Replace pattern with replacement in an expression string
 /// This handles symbolic replacement (e.g., replacing 'a' with 'x' in '{a, b}')
-pub fn replace_in_expr(expr: &str, pattern: &str, replacement: &str) -> String {
+fn replace_in_expr(expr: &str, pattern: &str, replacement: &str) -> String {
   // For function call patterns like f[2], we need more sophisticated matching
   if pattern.contains('[') && pattern.contains(']') {
     // Function call pattern - do literal replacement
@@ -138,11 +138,7 @@ pub enum WolframPattern {
 
 /// Replace a variable name with a value, respecting word boundaries
 /// This avoids replacing 'i' inside strings like "Fizz"
-pub fn replace_var_with_value(
-  text: &str,
-  var_name: &str,
-  value: &str,
-) -> String {
+fn replace_var_with_value(text: &str, var_name: &str, value: &str) -> String {
   let mut result = String::new();
   let var_chars: Vec<char> = var_name.chars().collect();
   let chars: Vec<char> = text.chars().collect();
@@ -312,7 +308,7 @@ pub fn apply_replace_all_direct(
 }
 
 /// Split a list's inner content by commas, respecting nested structures
-pub fn split_list_elements(inner: &str) -> Vec<String> {
+fn split_list_elements(inner: &str) -> Vec<String> {
   let mut elements = Vec::new();
   let mut current = String::new();
   let mut depth = 0;

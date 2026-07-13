@@ -319,7 +319,7 @@ fn is_non_integer_rational(e: &Expr) -> bool {
 }
 
 /// Check if an expression is a member of a given domain
-pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
+fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
   // Infinity, -Infinity and ComplexInfinity are DirectedInfinity objects, not
   // members of any number domain (Reals, Integers, Complexes, …). Without this
   // guard Infinity matches the real/complex constant arms below.
@@ -552,7 +552,7 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
 }
 
 /// Simple primality check for small numbers
-pub fn is_prime_simple(n: i128) -> bool {
+fn is_prime_simple(n: i128) -> bool {
   if n < 2 {
     return false;
   }
@@ -725,7 +725,7 @@ pub fn not_element_ast(
 }
 
 /// Collect all alternatives from a nested Alternatives expression
-pub fn collect_alternatives(expr: &Expr) -> Vec<Expr> {
+fn collect_alternatives(expr: &Expr) -> Vec<Expr> {
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Alternatives,

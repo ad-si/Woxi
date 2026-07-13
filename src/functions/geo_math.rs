@@ -22,13 +22,13 @@ fn geodesic() -> &'static Geodesic {
 }
 
 /// Geodesic distance in meters between two `(lat, lon)` points in degrees.
-pub fn distance_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+fn distance_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
   geodesic().inverse(lat1, lon1, lat2, lon2)
 }
 
 /// Initial bearing (azimuth) in degrees from point 1 to point 2, in the range
 /// `(-180, 180]`, measured clockwise from true north — matching WL.
-pub fn azimuth_deg(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+fn azimuth_deg(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
   // The 4-tuple inverse returns (s12, azi1, azi2, a12).
   let (_s, az1, _az2, _a12): (f64, f64, f64, f64) =
     geodesic().inverse(lat1, lon1, lat2, lon2);

@@ -12970,7 +12970,7 @@ fn bspline_point_to_real(e: &Expr) -> Expr {
 
 /// Clamped, uniform knot vector for `n` control points of degree `p`:
 /// `p + 1` leading zeros, evenly-spaced interior knots, `p + 1` trailing ones.
-pub fn bspline_clamped_knots(n: usize, p: usize) -> Vec<f64> {
+fn bspline_clamped_knots(n: usize, p: usize) -> Vec<f64> {
   let mut knots = vec![0.0; p + 1];
   let segments = n - p; // interior knots = segments - 1
   for i in 1..segments {

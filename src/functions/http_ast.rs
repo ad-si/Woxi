@@ -140,7 +140,7 @@ fn emit_notprop(spec: &Expr, arg_count: usize) {
 
 /// `HTTPRequest[…]["property"]` — extract a property of the request object.
 /// Returns `None` for unknown properties.
-pub fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
+fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
   let (url, assoc): (Option<&str>, Option<&[(Expr, Expr)]>) = match func_args {
     [Expr::String(u)] => (Some(u.as_str()), None),
     [Expr::Association(pairs)] => (None, Some(pairs)),

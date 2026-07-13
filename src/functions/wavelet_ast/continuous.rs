@@ -47,7 +47,7 @@ fn hermite_he(n: u32, x: f64) -> f64 {
 }
 
 /// Numeric wavelet function psi(t) -> (re, im).
-pub fn psi_numeric(
+fn psi_numeric(
   spec: &ContinuousWaveletSpec,
 ) -> Option<Box<dyn Fn(f64) -> (f64, f64)>> {
   let pi = std::f64::consts::PI;

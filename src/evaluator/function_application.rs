@@ -124,7 +124,7 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Largest slot index `n` referenced by `#n`/`##n` in `expr`. Returns 0 when
 /// the body uses no slots. SlotSequence `##` (== `##1`) counts as slot 1.
-pub fn max_slot_index(expr: &Expr) -> usize {
+fn max_slot_index(expr: &Expr) -> usize {
   fn walk(e: &Expr, max: &mut usize) {
     match e {
       Expr::Slot(n) | Expr::SlotSequence(n) if *n > *max => {
@@ -276,7 +276,7 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
 }
 
 /// Split an expression by its head. E.g., split_by_head(a + b, "Plus") = [a, b]
-pub fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
+fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
   match expr {
     Expr::FunctionCall { name, args } if name == head => args.to_vec(),
     Expr::List(items) if head == "List" => items.to_vec(),

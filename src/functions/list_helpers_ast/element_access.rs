@@ -656,7 +656,7 @@ fn span_to_take_spec(span: &Expr) -> Option<Expr> {
   Some(Expr::List(spec.into()))
 }
 
-pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   // Handle All: return the list unchanged
   if matches!(n, Expr::Identifier(name) if name == "All") {
     return Ok(list.clone());

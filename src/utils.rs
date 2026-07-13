@@ -1,6 +1,6 @@
 use rand::distributions::{Alphanumeric, Distribution};
 
-pub fn rand_str(length: usize) -> String {
+fn rand_str(length: usize) -> String {
   let rng = rand::thread_rng();
   let characters: Vec<char> = Alphanumeric
     .sample_iter(rng)

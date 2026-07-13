@@ -6417,7 +6417,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
 
 /// Convert a Wolfram expression to MathML (presentation MathML).
 /// Returns the complete `<math>...</math>` block with proper indentation.
-pub fn expr_to_mathml(expr: &Expr) -> String {
+fn expr_to_mathml(expr: &Expr) -> String {
   let inner = mathml_inner(expr, 1);
   format!("<math>\n{}\n</math>\n", inner)
 }
@@ -7000,7 +7000,7 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
 /// `` `` `` placeholders are replaced sequentially, `` `n` `` with the nth argument.
 /// Out-of-range indices leave the placeholder literal in the output and
 /// emit a StringForm::sfr warning, matching wolframscript.
-pub fn format_string_form(template: &str, values: &[Expr]) -> String {
+fn format_string_form(template: &str, values: &[Expr]) -> String {
   let mut result = String::new();
   let chars: Vec<char> = template.chars().collect();
   let len = chars.len();
@@ -9863,7 +9863,7 @@ pub fn word_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Build an association of n-gram counts in first-occurrence order (the order
 /// Counts uses), as the two-argument CharacterCounts/LetterCounts forms do.
-pub fn ngram_counts(grams: Vec<String>) -> Expr {
+fn ngram_counts(grams: Vec<String>) -> Expr {
   let mut counts: Vec<(String, i128)> = Vec::new();
   let mut seen: std::collections::HashMap<String, usize> =
     std::collections::HashMap::new();
@@ -10446,7 +10446,7 @@ fn inflate_compressed(s: &str) -> Result<Vec<u8>, InterpreterError> {
 /// Turn a `"1:..."` compressed string into the original expression. Handles
 /// wolframscript's binary `!boR` serialization (packed arrays, nested
 /// expressions) as well as woxi's text serialization.
-pub fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
+fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
   let bytes = inflate_compressed(s)?;
 
   if let Some(expr) = crate::functions::wl_serialize::deserialize(&bytes) {
@@ -11269,7 +11269,7 @@ fn parse_template_expression(body: &str) -> Option<Expr> {
 /// `TemplateSlot[n]`. A `<* expr *>` section becomes `TemplateExpression[expr]`
 /// with `#`/`#key` slot references rewritten to `TemplateSlot`. An unterminated
 /// backtick is kept as a literal character, matching wolframscript.
-pub fn parse_template_parts(template: &str) -> Vec<Expr> {
+fn parse_template_parts(template: &str) -> Vec<Expr> {
   let chars: Vec<char> = template.chars().collect();
   let mut parts: Vec<Expr> = Vec::new();
   let mut literal = String::new();
@@ -11454,7 +11454,7 @@ fn template_slot_value(key: &Expr, args: &Expr) -> Option<Expr> {
 /// association (by key name); each `TemplateExpression[expr]` has its slots
 /// substituted, is evaluated, and the result rendered. Returns the combined
 /// string.
-pub fn template_object_apply(
+fn template_object_apply(
   parts: &[Expr],
   args: &Expr,
 ) -> Result<Expr, InterpreterError> {

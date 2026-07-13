@@ -317,7 +317,7 @@ pub fn same_q_real_bigfloat(a: &Expr, b: &Expr) -> bool {
 /// representable doubles map to adjacent integers. Mapping the raw bits to a
 /// sign-magnitude-ordered key makes the comparison correct across the
 /// exponent boundaries and across zero.
-pub fn within_one_ulp(a: f64, b: f64) -> bool {
+fn within_one_ulp(a: f64, b: f64) -> bool {
   if a == b {
     return true;
   }

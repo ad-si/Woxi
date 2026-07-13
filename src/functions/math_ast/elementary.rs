@@ -2210,7 +2210,7 @@ pub fn try_as_rational(expr: &Expr) -> Option<(i128, i128)> {
 }
 
 /// Mod[m, n] - 2-argument form
-pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   // Mod[m, 0] => Indeterminate for any m (including symbolic), matching
   // wolframscript. The numeric branches below also guard against zero, but
   // this catches the case where m is symbolic and never reaches them.
@@ -2381,11 +2381,7 @@ fn mod_contains_inexact(expr: &Expr) -> bool {
 }
 
 /// Mod[m, n, d] - 3-argument form: m - n * Floor[(m - d) / n]
-pub fn mod3_ast(
-  m: &Expr,
-  n: &Expr,
-  d: &Expr,
-) -> Result<Expr, InterpreterError> {
+fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
   // Mod[m, 0, d] => Indeterminate for any m (including symbolic).
   if is_literal_zero(n) {
     crate::emit_message(&format!(

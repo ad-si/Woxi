@@ -9,7 +9,7 @@ pub enum ExprForm {
 }
 
 /// Format a floating-point number for FullForm display.
-pub fn format_real_helper(f: f64) -> String {
+fn format_real_helper(f: f64) -> String {
   if f.fract() == 0.0 && f.abs() < 1e15 {
     format!("{:.1}", f)
   } else {

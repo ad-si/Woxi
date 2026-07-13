@@ -54,7 +54,7 @@ fn array_dimensions(e: &Expr) -> Option<Vec<usize>> {
 
 /// Whether `e` is a rectangular array — a list whose elements all share the
 /// same dimensions (recursively). Scalars are trivially rectangular.
-pub fn is_rectangular_array(e: &Expr) -> bool {
+fn is_rectangular_array(e: &Expr) -> bool {
   array_dimensions(e).is_some()
 }
 
@@ -62,7 +62,7 @@ pub fn is_rectangular_array(e: &Expr) -> bool {
 /// depth), emit `<F>::rectt: Rectangular array expected at position 1 in
 /// <call>.` and return the unevaluated call. Returns `None` for a valid
 /// rectangular array or a non-list argument.
-pub fn rectt_if_ragged(name: &str, args: &[Expr]) -> Option<Expr> {
+fn rectt_if_ragged(name: &str, args: &[Expr]) -> Option<Expr> {
   if matches!(args.first(), Some(Expr::List(_)))
     && !is_rectangular_array(&args[0])
   {

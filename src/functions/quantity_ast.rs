@@ -1478,7 +1478,7 @@ fn canonical_unit_name(name: &str) -> &str {
 
 /// Expand compound energy units to their product form (matching Wolfram canonical output).
 /// Used at format time to display entity-resolved compound units.
-pub fn format_expand_compound_unit(name: &str) -> Option<Expr> {
+fn format_expand_compound_unit(name: &str) -> Option<Expr> {
   match name {
     "KilowattHours" => Some(Expr::BinaryOp {
       op: BinaryOperator::Times,

@@ -739,7 +739,7 @@ pub fn is_nonempty_square(m: &[Vec<Expr>]) -> bool {
 /// Whether `arg` should trigger a `::matsq` message — a concrete non-matrix
 /// argument (a list, or a numeric value such as 5, Pi, 3/4). Bare symbols and
 /// symbolic expressions (`x`, `a + b`, `f[x]`) stay held with no message.
-pub fn is_matsq_subject(arg: &Expr) -> bool {
+fn is_matsq_subject(arg: &Expr) -> bool {
   matches!(arg, Expr::List(_))
     || crate::functions::predicate_ast::is_numeric_q(arg)
 }

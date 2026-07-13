@@ -932,7 +932,7 @@ pub fn emit_nonatomic_normal_message(name: &str, args: &[Expr]) {
 /// compared element by element (shorter lists are a tie-break, not pulled to
 /// the front), so `{2}` sorts between `{1, 9}` and `{3}`. Non-list expressions
 /// fall back to the canonical order.
-pub fn lexicographic_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+fn lexicographic_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   if let (Expr::List(la), Expr::List(lb)) = (a, b) {
     for (ai, bi) in la.iter().zip(lb.iter()) {
       let ord = lexicographic_cmp(ai, bi);

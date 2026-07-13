@@ -34,7 +34,7 @@ pub fn wind_to_expr(wind: &[u8]) -> Expr {
   )
 }
 
-pub fn expr_to_wind(e: &Expr) -> Option<Vec<u8>> {
+fn expr_to_wind(e: &Expr) -> Option<Vec<u8>> {
   let Expr::List(items) = e else { return None };
   let mut wind = Vec::new();
   for i in items.iter() {

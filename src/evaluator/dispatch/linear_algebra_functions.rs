@@ -4465,7 +4465,7 @@ fn elementary_rotation(axis: i128, angle: &Expr) -> Expr {
 /// EulerMatrix[{a, b, c}] - rotation matrix R(a).R(b).R(c) using the default
 /// {3, 2, 3} (ZYZ) axis convention. EulerMatrix[{a, b, c}, {n1, n2, n3}]
 /// uses the explicitly given axis sequence.
-pub fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let angles = match &args[0] {
     Expr::List(items) if items.len() == 3 => items,
     _ => {
@@ -4521,9 +4521,7 @@ pub fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the angle list, so this is EulerMatrix with both the angles and the axes
 /// reversed: RollPitchYawMatrix[{α,β,γ}, {p,q,r}] = EulerMatrix[{γ,β,α},
 /// {r,q,p}] (verified symbolically against wolframscript).
-pub fn roll_pitch_yaw_matrix_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn roll_pitch_yaw_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let angles = match &args[0] {
     Expr::List(items) if items.len() == 3 => items,
     other => {
@@ -5118,11 +5116,11 @@ fn lyapunov_symbolic_diagonal(
   Some(Ok(Expr::List(out_rows.into())))
 }
 
-pub fn lyapunov_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn lyapunov_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   lyapunov_solve_common("LyapunovSolve", args, false)
 }
 
-pub fn discrete_lyapunov_solve_ast(
+fn discrete_lyapunov_solve_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   lyapunov_solve_common("DiscreteLyapunovSolve", args, true)

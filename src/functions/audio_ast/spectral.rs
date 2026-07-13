@@ -65,7 +65,7 @@ fn spectral_input(expr: &Expr) -> Option<(Vec<f64>, f64, bool)> {
 
 /// Default STFT partition for a signal of n samples, per the Wolfram
 /// documentation: window size m = 2^⌈log₂ √n⌉, offset ⌈m/3⌉.
-pub fn default_partition(n: usize) -> (usize, usize) {
+fn default_partition(n: usize) -> (usize, usize) {
   let m = 2usize
     .pow((n as f64).sqrt().log2().ceil().max(0.0) as u32)
     .max(1);
