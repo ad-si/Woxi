@@ -7043,6 +7043,9 @@ pub fn covariance_function_ast(
       args: args.to_vec().into(),
     });
   }
+  if let Some(result) = process_covariance(&args[0], &args[1], &args[2]) {
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
   if let Some(result) = arma_covariance(&args[0], &args[1], &args[2]) {
     // Re-evaluate so the inner Times/Divide combine into canonical
     // negative-power form. Without this, the printer renders sub-terms
@@ -7053,6 +7056,118 @@ pub fn covariance_function_ast(
     name: "CovarianceFunction".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// CovarianceFunction[proc, t1, t2] closed forms for the directly
+/// parameterized random processes (all wolframscript-verified).
+fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = proc else {
+    return None;
+  };
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let times2 = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let plus2 = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let neg = |a: Expr| times2(Expr::Integer(-1), a);
+  let sq = |a: &Expr| Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(a.clone()),
+    right: Box::new(Expr::Integer(2)),
+  };
+  let min = call("Min", vec![t1.clone(), t2.clone()]);
+  let max = call("Max", vec![t1.clone(), t2.clone()]);
+  match (name.as_str(), args.as_slice()) {
+    ("WienerProcess", [_, sp]) => Some(times2(sq(sp), min)),
+    ("PoissonProcess", [l]) => Some(times2(l.clone(), min)),
+    ("BinomialProcess", [pp]) => Some(times2(
+      times2(plus2(Expr::Integer(1), neg(pp.clone())), pp.clone()),
+      min,
+    )),
+    // Only equal times covary for the independent-step processes.
+    ("BernoulliProcess", [pp]) => {
+      let value = times2(plus2(Expr::Integer(1), neg(pp.clone())), pp.clone());
+      let cond = Expr::Comparison {
+        operands: vec![t1.clone(), t2.clone()],
+        operators: vec![ComparisonOp::Equal],
+      };
+      Some(call(
+        "Piecewise",
+        vec![
+          Expr::List(vec![Expr::List(vec![value, cond].into())].into()),
+          Expr::Integer(0),
+        ],
+      ))
+    }
+    ("WhiteNoiseProcess", [dist]) => {
+      let var = variance_ast(std::slice::from_ref(dist)).ok()?;
+      if matches!(&var, Expr::FunctionCall { name, .. } if name == "Variance") {
+        return None;
+      }
+      Some(times2(
+        var,
+        call("DiscreteDelta", vec![plus2(neg(t1.clone()), t2.clone())]),
+      ))
+    }
+    // Stationary Ornstein-Uhlenbeck: s^2 E^(-th |t1 - t2|) / (2 th).
+    ("OrnsteinUhlenbeckProcess", [_, sp, th]) => {
+      let decay = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Constant("E".to_string())),
+        right: Box::new(times2(
+          th.clone(),
+          call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
+        )),
+      };
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(sq(sp)),
+        right: Box::new(times2(times2(Expr::Integer(2), decay), th.clone())),
+      })
+    }
+    // Brownian bridge: s^2 (tb - Max)(Min - ta)/(tb - ta).
+    ("BrownianBridgeProcess", [sp, Expr::List(p1), Expr::List(p2)])
+      if p1.len() == 2 && p2.len() == 2 =>
+    {
+      let (ta, tb) = (&p1[0], &p2[0]);
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(times2(
+          times2(sq(sp), plus2(tb.clone(), neg(max))),
+          plus2(neg(ta.clone()), min),
+        )),
+        right: Box::new(plus2(neg(ta.clone()), tb.clone())),
+      })
+    }
+    // Geometric Brownian motion:
+    // x0^2 E^(m (t1 + t2)) (E^(s^2 Min) - 1).
+    ("GeometricBrownianMotionProcess", [m, sp, x0]) => {
+      let growth = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Constant("E".to_string())),
+        right: Box::new(times2(m.clone(), plus2(t1.clone(), t2.clone()))),
+      };
+      let bump = plus2(
+        Expr::Integer(-1),
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Constant("E".to_string())),
+          right: Box::new(times2(sq(sp), min)),
+        },
+      );
+      Some(times2(times2(growth, bump), sq(x0)))
+    }
+    _ => None,
+  }
 }
 
 /// Extract `(ar_list, ma_list, variance)` from an `ARMAProcess[...]` call,

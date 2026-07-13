@@ -9571,3 +9571,66 @@ mod slice_distribution {
     );
   }
 }
+
+// CovarianceFunction[proc, t1, t2] closed forms for the random-process
+// family. All outputs verified against wolframscript.
+mod process_covariance_function {
+  use super::*;
+
+  #[test]
+  fn brownian_family() {
+    assert_eq!(
+      interpret("CovarianceFunction[WienerProcess[m, s], t1, t2]").unwrap(),
+      "s^2*Min[t1, t2]"
+    );
+    assert_eq!(
+      interpret("CovarianceFunction[WienerProcess[1/10, 2], 3, 5]").unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret(
+        "CovarianceFunction[OrnsteinUhlenbeckProcess[m, s, th], t1, t2]"
+      )
+      .unwrap(),
+      "s^2/(2*E^(th*Abs[t1 - t2])*th)"
+    );
+    assert_eq!(
+      interpret(
+        "CovarianceFunction[BrownianBridgeProcess[s, {ta, a}, {tb, b}], t1, t2]"
+      )
+      .unwrap(),
+      "(s^2*(tb - Max[t1, t2])*(-ta + Min[t1, t2]))/(-ta + tb)"
+    );
+    assert_eq!(
+      interpret(
+        "CovarianceFunction[GeometricBrownianMotionProcess[m, s, x0], t1, t2]"
+      )
+      .unwrap(),
+      "E^(m*(t1 + t2))*(-1 + E^(s^2*Min[t1, t2]))*x0^2"
+    );
+  }
+
+  #[test]
+  fn counting_and_noise_family() {
+    assert_eq!(
+      interpret("CovarianceFunction[PoissonProcess[l], t1, t2]").unwrap(),
+      "l*Min[t1, t2]"
+    );
+    assert_eq!(
+      interpret("CovarianceFunction[BinomialProcess[p], t1, t2]").unwrap(),
+      "(1 - p)*p*Min[t1, t2]"
+    );
+    // Independent steps only covary at equal times.
+    assert_eq!(
+      interpret("CovarianceFunction[BernoulliProcess[p], t1, t2]").unwrap(),
+      "Piecewise[{{(1 - p)*p, t1 == t2}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "CovarianceFunction[WhiteNoiseProcess[NormalDistribution[m, s]], t1, t2]"
+      )
+      .unwrap(),
+      "s^2*DiscreteDelta[-t1 + t2]"
+    );
+  }
+}
