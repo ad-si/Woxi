@@ -55,20 +55,23 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-13
-            target: x86_64
-          - runner: macos-latest
-            target: aarch64
+          # Each runner builds for its native architecture. No explicit
+          # `target:` — passing one makes maturin-action configure Apple
+          # cross-linking with `-fuse-ld=lld`, which the runners' clang
+          # does not ship ("invalid linker name in argument '-fuse-ld=lld'").
+          - runner: macos-13 # x86_64
+            arch: x86_64
+          - runner: macos-latest # arm64
+            arch: aarch64
     steps:
       - uses: actions/checkout@v5
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: woxi-py
-          target: ${{ matrix.platform.target }}
           args: --release --out dist
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.platform.target }}
+          name: wheels-macos-${{ matrix.platform.arch }}
           path: woxi-py/dist
 
   windows:
