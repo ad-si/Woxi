@@ -252,6 +252,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "TukeyLambdaDistribution" => tukey_lambda_pdf_cdf(dargs, x, true),
     "TsallisQGaussianDistribution" => tsallis_qgaussian_pdf(dargs, x),
     "VarianceGammaDistribution" => variance_gamma_pdf(dargs, x),
+    "HoytDistribution" => hoyt_pdf(dargs, x),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -4091,6 +4092,7 @@ pub fn distribution_mean_variance(
     "TukeyLambdaDistribution" => tukey_lambda_mean_variance(dargs),
     "TsallisQGaussianDistribution" => tsallis_qgaussian_mean_variance(dargs),
     "VarianceGammaDistribution" => variance_gamma_mean_variance(dargs),
+    "HoytDistribution" => hoyt_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7917,6 +7919,153 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Validation for HoytDistribution[q, ω]: q in (0, 1] (pprobprm),
+/// ω positive (posprm), arity 2 (argr).
+fn hoyt_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 2 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "HoytDistribution::argr: HoytDistribution called with {} {}; 2 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "HoytDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if num(&dargs[0]).is_some_and(|v| !(v > 0.0 && v <= 1.0)) {
+    crate::emit_message(&format!(
+      "HoytDistribution::pprobprm: Parameter {} at position 1 in {} is expected to be positive and less than or equal to 1.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist()
+    ));
+    return None;
+  }
+  if num(&dargs[1]).is_some_and(|v| v <= 0.0) {
+    crate::emit_message(&format!(
+      "HoytDistribution::posprm: Parameter {} at position 2 in {} is expected to be positive.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// PDF[HoytDistribution[q, ω], x] =
+/// (1+q²) x BesselI[0, (1-q⁴)x²/(4q²ω)] E^(-(1+q²)²x²/(4q²ω))/(q ω)
+/// on x > 0.
+fn hoyt_pdf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HoytDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = hoyt_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (q, w) = (dargs[0].clone(), dargs[1].clone());
+  let q2 = power(q.clone(), int(2));
+  let one_plus_q2 = plus(int(1), q2.clone());
+  let four_q2_w = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![int(4), q2.clone(), w.clone()].into(),
+  };
+  let x2 = power(x.clone(), int(2));
+  let bessel = Expr::FunctionCall {
+    name: "BesselI".to_string(),
+    args: vec![
+      int(0),
+      divide(
+        times(
+          plus(int(1), times(int(-1), power(q.clone(), int(4)))),
+          x2.clone(),
+        ),
+        four_q2_w.clone(),
+      ),
+    ]
+    .into(),
+  };
+  let gaussian = power(
+    e(),
+    times(
+      int(-1),
+      divide(times(power(one_plus_q2.clone(), int(2)), x2), four_q2_w),
+    ),
+  );
+  let value = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![one_plus_q2, x.clone(), bessel, gaussian].into(),
+    },
+    times(q, w),
+  );
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Mean = Sqrt[2/π] Sqrt[ω/(1+q²)] EllipticE[1-q²] and
+/// Variance = ω (1 - 2 EllipticE[1-q²]²/(π (1+q²))).
+fn hoyt_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = hoyt_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "HoytDistribution: invalid parameters".into(),
+    ));
+  };
+  let (q, w) = (dargs[0].clone(), dargs[1].clone());
+  let one_plus_q2 = plus(int(1), power(q.clone(), int(2)));
+  let elliptic = Expr::FunctionCall {
+    name: "EllipticE".to_string(),
+    args: vec![plus(int(1), times(int(-1), power(q, int(2))))].into(),
+  };
+  let sqrt = |e: Expr| Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![e].into(),
+  };
+  let mean = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      sqrt(divide(int(2), Expr::Constant("Pi".to_string()))),
+      sqrt(divide(w.clone(), one_plus_q2.clone())),
+      elliptic.clone(),
+    ]
+    .into(),
+  };
+  let variance = times(
+    w,
+    plus(
+      int(1),
+      times(
+        int(-1),
+        divide(
+          times(int(2), power(elliptic, int(2))),
+          times(Expr::Constant("Pi".to_string()), one_plus_q2),
+        ),
+      ),
+    ),
+  );
+  Ok((eval(mean)?, eval(variance)?))
 }
 
 /// Validation for VarianceGammaDistribution[λ, α, β, μ]: λ, α positive

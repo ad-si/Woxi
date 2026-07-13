@@ -7214,3 +7214,88 @@ mod bessel_half_integer_numeric_args {
     );
   }
 }
+
+// HoytDistribution: Nakagami-q fading distribution with BesselI PDF and
+// EllipticE moments. CDF needs MarcumQ and stays unevaluated. Verified
+// against wolframscript.
+mod hoyt_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HoytDistribution[q, w], x]").unwrap(),
+      "Piecewise[{{((1 + q^2)*x*BesselI[0, ((1 - q^4)*x^2)/(4*q^2*w)])/\
+(E^(((1 + q^2)^2*x^2)/(4*q^2*w))*q*w), x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HoytDistribution[1/2, 2], x]").unwrap(),
+      "Piecewise[{{(5*x*BesselI[0, (15*x^2)/32])/(4*E^((25*x^2)/32)), \
+        x > 0}}, 0]"
+    );
+    // q = 1 collapses to the Rayleigh form.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HoytDistribution[1, 2], x]").unwrap(),
+      "Piecewise[{{x/E^(x^2/2), x > 0}}, 0]"
+    );
+    // Exact points keep BesselI unevaluated.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HoytDistribution[1/2, 2], 1]").unwrap(),
+      "(5*BesselI[0, 15/32])/(4*E^(25/32))"
+    );
+  }
+
+  #[test]
+  fn moments_and_cdf() {
+    clear_state();
+    assert_eq!(
+      interpret("Mean[HoytDistribution[q, w]]").unwrap(),
+      "Sqrt[2/Pi]*Sqrt[w/(1 + q^2)]*EllipticE[1 - q^2]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[HoytDistribution[q, w]]").unwrap(),
+      "w*(1 - (2*EllipticE[1 - q^2]^2)/(Pi*(1 + q^2)))"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[HoytDistribution[1/2, 2]]").unwrap(),
+      "2*(1 - (8*EllipticE[3/4]^2)/(5*Pi))"
+    );
+    // CDF needs MarcumQ and stays unevaluated in Woxi.
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HoytDistribution[q, w], x]").unwrap(),
+      "CDF[HoytDistribution[q, w], x]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r = interpret_with_stdout("PDF[HoytDistribution[2, 2], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "HoytDistribution::pprobprm: Parameter 2 at position 1 in \
+       HoytDistribution[2, 2] is expected to be positive and less than or \
+       equal to 1."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[HoytDistribution[1/2, -2], x]").unwrap();
+    assert!(
+      r.warnings[0]
+        .contains("HoytDistribution::posprm: Parameter -2 at position 2")
+    );
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[HoytDistribution[1/2], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "HoytDistribution::argr: HoytDistribution called with 1 argument; \
+       2 arguments are expected."
+    ));
+  }
+}

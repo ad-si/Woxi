@@ -3551,7 +3551,7 @@ GaussianOrthogonalMatrixDistribution,,,,10.3,3656
 GeoScaleBar,,🚫,,10.0,3656
 HTTPResponse,Symbolic HTTP response object produced by URLRead; stays unevaluated,✅,unevaluated,10.0,3656
 HilbertFilter,,,,9.0,3656
-HoytDistribution,,,,8.0,3656
+HoytDistribution,Hoyt fading amplitude distribution,✅,pure,8.0,3656
 JacobiNC,Jacobi elliptic function nc (1/cn),✅,pure,1.0,3656
 LCHColor,,,,10.0,3656
 LocationEquivalenceTest,,,,8.0,3656
