@@ -24,7 +24,7 @@ fn is_inexact(e: &Expr) -> bool {
 }
 
 /// R_C(x, y) — degenerate Carlson integral.
-pub(crate) fn carlson_rc(x: f64, y: f64) -> f64 {
+fn carlson_rc(x: f64, y: f64) -> f64 {
   const ERRTOL: f64 = 0.0012;
   const C1: f64 = 0.3;
   const C2: f64 = 1.0 / 7.0;
@@ -51,7 +51,7 @@ pub(crate) fn carlson_rc(x: f64, y: f64) -> f64 {
 }
 
 /// R_F(x, y, z) — symmetric elliptic integral of the first kind.
-pub(crate) fn carlson_rf(x: f64, y: f64, z: f64) -> f64 {
+fn carlson_rf(x: f64, y: f64, z: f64) -> f64 {
   const ERRTOL: f64 = 0.0025;
   const C1: f64 = 1.0 / 24.0;
   const C2: f64 = 0.1;
@@ -82,7 +82,7 @@ pub(crate) fn carlson_rf(x: f64, y: f64, z: f64) -> f64 {
 
 /// R_D(x, y, z) — symmetric elliptic integral of the second kind (R_J with the
 /// last two arguments equal: R_D(x, y, z) = R_J(x, y, z, z)).
-pub(crate) fn carlson_rd(x: f64, y: f64, z: f64) -> f64 {
+fn carlson_rd(x: f64, y: f64, z: f64) -> f64 {
   const ERRTOL: f64 = 0.0015;
   const C1: f64 = 3.0 / 14.0;
   const C2: f64 = 1.0 / 6.0;
@@ -128,7 +128,7 @@ pub(crate) fn carlson_rd(x: f64, y: f64, z: f64) -> f64 {
 /// R_J(x, y, z, p) — symmetric elliptic integral of the third kind. Only the
 /// principal branch p > 0 is implemented here; for p <= 0 the caller leaves the
 /// expression unevaluated.
-pub(crate) fn carlson_rj(x: f64, y: f64, z: f64, p: f64) -> f64 {
+fn carlson_rj(x: f64, y: f64, z: f64, p: f64) -> f64 {
   const ERRTOL: f64 = 0.0015;
   const C1: f64 = 3.0 / 14.0;
   const C2: f64 = 1.0 / 3.0;
@@ -182,7 +182,7 @@ pub(crate) fn carlson_rj(x: f64, y: f64, z: f64, p: f64) -> f64 {
 /// R_G(x, y, z) — symmetric elliptic integral of the second kind, evaluated via
 /// 2 R_G = z R_F(x, y, z) - (1/3)(x - z)(y - z) R_D(x, y, z) + sqrt(x y / z),
 /// choosing the largest argument as z to avoid division by a vanishing value.
-pub(crate) fn carlson_rg(x: f64, y: f64, z: f64) -> f64 {
+fn carlson_rg(x: f64, y: f64, z: f64) -> f64 {
   // Order so that c is the largest (used as the formula's z); R_D is symmetric
   // in its first two arguments.
   let mut v = [x, y, z];

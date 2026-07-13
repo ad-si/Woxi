@@ -1950,7 +1950,7 @@ fn bankers_round(n: f64) -> f64 {
 /// `BigInteger` when the magnitude exceeds the `i128` range (a plain `as i128`
 /// cast would saturate to `i128::MAX`). `{:.0}` renders the float's exact
 /// integer value without scientific notation.
-pub(crate) fn f64_to_int_expr(v: f64) -> Expr {
+fn f64_to_int_expr(v: f64) -> Expr {
   if v.abs() < i128::MAX as f64 {
     Expr::Integer(v as i128)
   } else if v.is_finite() {

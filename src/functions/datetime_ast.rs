@@ -204,7 +204,7 @@ pub fn day_count_weekday_ast(
 }
 
 /// Convert a date {y,m,d} to absolute days since 1900-01-01 (day 0)
-pub(crate) fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
+fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
   let mut total_days: i64 = 0;
 
   if year >= 1900 {
@@ -387,7 +387,7 @@ pub fn calendar_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Convert absolute days since 1900-01-01 to {year, month, day}
-pub(crate) fn absolute_days_to_date(mut days: i64) -> (i64, i64, i64) {
+fn absolute_days_to_date(mut days: i64) -> (i64, i64, i64) {
   let mut year: i64 = 1900;
 
   if days >= 0 {

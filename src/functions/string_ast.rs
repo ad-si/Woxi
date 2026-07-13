@@ -24,7 +24,7 @@ thread_local! {
 /// exists. Identical pattern strings always produce identical compiled
 /// regexes, so caching is observationally indistinguishable from
 /// recompiling — only faster.
-pub(crate) fn compile_regex(pat: &str) -> Result<regex::Regex, regex::Error> {
+fn compile_regex(pat: &str) -> Result<regex::Regex, regex::Error> {
   use regex::Regex;
   REGEX_CACHE.with(|c| {
     if let Some(re) = c.borrow().get(pat) {
@@ -2550,7 +2550,7 @@ fn maybe_named_group(
 /// records these `(orig, dup)` capture-name pairs and matching sites verify
 /// them here. A missing capture (optional group didn't participate) is treated
 /// as satisfied.
-pub(crate) fn caps_satisfy_constraints(
+fn caps_satisfy_constraints(
   caps: &regex::Captures,
   constraints: &[(String, String)],
 ) -> bool {

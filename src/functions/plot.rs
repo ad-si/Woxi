@@ -307,7 +307,7 @@ pub(crate) fn split_into_segments(
 /// Clip line segments to a y-range, interpolating at boundaries.
 /// Points outside the range are removed and the line is split,
 /// with interpolated points added at the boundary crossings.
-pub(crate) fn clip_segments_to_y_range(
+fn clip_segments_to_y_range(
   segments: Vec<Vec<(f64, f64)>>,
   y_min: f64,
   y_max: f64,
@@ -401,7 +401,7 @@ pub(crate) fn nice_step(range: f64, target_labels: usize) -> f64 {
 /// y-axis/frame label just left of the tick column instead of at the far edge
 /// of the (fixed-width) gutter — so narrow ticks (e.g. single digits) don't
 /// leave a large gap.
-pub(crate) fn max_y_tick_label_chars(y_min: f64, y_max: f64) -> usize {
+fn max_y_tick_label_chars(y_min: f64, y_max: f64) -> usize {
   let step = nice_step(y_max - y_min, 5);
   if step <= 0.0 || !step.is_finite() {
     return 3;
@@ -465,7 +465,7 @@ pub(crate) enum DateStep {
 }
 
 /// Compute a nice step for date axis ticks based on the range in seconds.
-pub(crate) fn nice_date_step_spec(range_seconds: f64) -> DateStep {
+fn nice_date_step_spec(range_seconds: f64) -> DateStep {
   let range_days = range_seconds / 86400.0;
   let range_years = range_days / 365.25;
 
@@ -566,7 +566,7 @@ pub(crate) fn generate_date_ticks(x_min: f64, x_max: f64) -> Vec<f64> {
 }
 
 /// Approximate step in seconds for date ticks (used for tick count estimation).
-pub(crate) fn nice_date_step(range_seconds: f64) -> f64 {
+fn nice_date_step(range_seconds: f64) -> f64 {
   match nice_date_step_spec(range_seconds) {
     DateStep::Years(n) => (n as f64) * 365.25 * 86400.0,
     DateStep::Months(n) => (n as f64) * 30.44 * 86400.0,
@@ -690,7 +690,7 @@ pub(crate) fn format_tick(v: f64) -> String {
 /// The extension is drawn from `minor_len` to `major_len` along the tick
 /// direction, so it connects seamlessly with the plotters-drawn tick.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn inject_major_tick_extensions(
+fn inject_major_tick_extensions(
   buf: &mut String,
   plot_x0: f64,
   plot_y0: f64,
@@ -771,7 +771,7 @@ pub(crate) fn inject_major_tick_extensions(
 /// `x_axis` / `y_axis` each supply `(min, max, major_step)`. Minor ticks are
 /// drawn at `major_step / 5` intervals. When an axis is `None` the
 /// corresponding frame line is still drawn, but without tick marks.
-pub(crate) fn inject_top_right_frame(
+fn inject_top_right_frame(
   buf: &mut String,
   plot_x0: f64,
   plot_y0: f64,
@@ -4120,7 +4120,7 @@ fn legend_plot_area_width(vb_w: f64, opts: &PlotOptions) -> f64 {
 
 /// Inject a legend into an SVG plot. Depending on `legend_position`, the legend
 /// is placed on the right (default), top, or bottom of the plot.
-pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
+fn inject_legend(buf: &mut String, opts: &PlotOptions) {
   if opts.plot_legends.is_empty() {
     return;
   }
@@ -5145,7 +5145,7 @@ pub(crate) fn generate_axes_only_opts(
 /// Add a border to filled chart bars in the SVG.
 /// Plotters' SVG backend doesn't support stroke-width on rects,
 /// so we post-process the SVG to add it.
-pub(crate) fn add_bar_borders(buf: &mut String, stroke_width: u32) {
+fn add_bar_borders(buf: &mut String, stroke_width: u32) {
   // The first <rect> is the background, skip it.
   // All subsequent filled rects (with stroke="none") are bars.
   let marker = "stroke=\"none\"/>";
@@ -5257,7 +5257,7 @@ pub(crate) fn rewrite_svg_header(
 /// polyline — identified by the exact stroke color of its series — is
 /// tagged with the filter attribute. Shadow parameters are scaled by
 /// RESOLUTION_SCALE to match the oversampled render coordinates.
-pub(crate) fn inject_drop_shadows(
+fn inject_drop_shadows(
   buf: &mut String,
   plot_style: &[SeriesStyle],
   n_series: usize,

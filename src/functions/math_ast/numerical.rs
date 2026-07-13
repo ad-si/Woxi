@@ -5282,10 +5282,7 @@ fn compute_khinchin(
 /// to `decimal_digits` decimal places, as a "0.ddd…" string. Computed
 /// exactly: enough base-b digits accumulate into a big integer M so that
 /// M/b^K determines the requested decimal digits, then long-divided.
-pub(crate) fn champernowne_decimal_digits(
-  base: i128,
-  decimal_digits: usize,
-) -> String {
+fn champernowne_decimal_digits(base: i128, decimal_digits: usize) -> String {
   use num_bigint::BigInt;
   let k_needed = ((decimal_digits as f64 + 2.0) * std::f64::consts::LN_10
     / (base as f64).ln())

@@ -1526,7 +1526,7 @@ fn beta_regularized_numeric(x: f64, a: f64, b: f64) -> f64 {
 /// [0, 1] such that `beta_regularized_numeric(z, a, b) == s`. Because I_z(a, b)
 /// increases monotonically from 0 (at z = 0) to 1 (at z = 1), the root is found
 /// by bisection.
-pub(crate) fn inverse_beta_regularized_numeric(s: f64, a: f64, b: f64) -> f64 {
+fn inverse_beta_regularized_numeric(s: f64, a: f64, b: f64) -> f64 {
   if s <= 0.0 {
     return 0.0;
   }
@@ -2064,7 +2064,7 @@ pub(crate) fn gamma_regularized_numeric(a: f64, z: f64) -> f64 {
 /// returns z such that `gamma_regularized_numeric(a, z) == q`. Because Q(a, z)
 /// decreases monotonically from 1 (at z = 0) to 0 (as z -> Infinity), the root
 /// is found by bracketing then bisection.
-pub(crate) fn inverse_gamma_regularized_numeric(a: f64, q: f64) -> f64 {
+fn inverse_gamma_regularized_numeric(a: f64, q: f64) -> f64 {
   if q <= 0.0 {
     return f64::INFINITY;
   }

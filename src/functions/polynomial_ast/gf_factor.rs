@@ -333,7 +333,7 @@ pub(super) fn gf_factor_coeffs(
 
 /// Recognize `expr` as a univariate integer-coefficient polynomial;
 /// returns its variable name and ascending coefficients.
-pub(super) fn univariate_int_coeffs(
+fn univariate_int_coeffs(
   expr: &Expr,
 ) -> Result<Option<(String, Vec<i128>)>, InterpreterError> {
   use crate::functions::math_ast::expr_to_i128;
@@ -376,7 +376,7 @@ pub(super) fn univariate_int_coeffs(
   Ok(Some((var, coeffs)))
 }
 
-pub(super) fn gf_poly_to_expr(
+fn gf_poly_to_expr(
   coeffs: &[i128],
   var: &str,
 ) -> Result<Expr, InterpreterError> {
@@ -410,7 +410,7 @@ pub(super) fn gf_poly_to_expr(
 }
 
 /// The factored `Times` presentation used by Factor and PolynomialLCM.
-pub(super) fn gf_factored_expr(
+fn gf_factored_expr(
   constant: i128,
   factors: &[(Vec<i128>, usize)],
   var: &str,

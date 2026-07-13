@@ -133,7 +133,7 @@ pub(super) fn poly_to_coeffs_mod(
   Ok(coeffs)
 }
 
-pub(super) fn mod_norm(a: i128, p: i128) -> i128 {
+fn mod_norm(a: i128, p: i128) -> i128 {
   ((a % p) + p) % p
 }
 
@@ -155,13 +155,13 @@ pub(super) fn mod_inv(a: i128, p: i128) -> i128 {
 }
 
 /// Drop high-degree zero coefficients, keeping at least `[0]`.
-pub(super) fn trim_high(c: &mut Vec<i128>) {
+fn trim_high(c: &mut Vec<i128>) {
   while c.len() > 1 && *c.last().unwrap() == 0 {
     c.pop();
   }
 }
 
-pub(super) fn is_zero_poly(c: &[i128]) -> bool {
+fn is_zero_poly(c: &[i128]) -> bool {
   c.iter().all(|&x| x == 0)
 }
 
@@ -206,7 +206,7 @@ fn poly_rem_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
 }
 
 /// Product of two coefficient vectors over GF(p) (polynomial multiplication).
-pub(super) fn poly_mul_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
+fn poly_mul_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
   if is_zero_poly(a) || is_zero_poly(b) {
     return vec![0];
   }
@@ -221,7 +221,7 @@ pub(super) fn poly_mul_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
 }
 
 /// Difference `a - b` of two coefficient vectors over GF(p).
-pub(super) fn poly_sub_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
+fn poly_sub_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
   let n = a.len().max(b.len());
   let mut res = vec![0i128; n];
   for (i, ri) in res.iter_mut().enumerate() {
