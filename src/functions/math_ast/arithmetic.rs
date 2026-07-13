@@ -1281,6 +1281,17 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       final_args.push(exact_sum.to_expr());
     }
 
+    // wolframscript's canonical Plus order treats a pure-imaginary numeric
+    // term as a number, sorting it ahead of the symbolic terms — e.g.
+    // `x + 3*I` → `3*I + x`, `a + b + 3*I` → `3*I + a + b`. Woxi keeps the
+    // imaginary term in its native `k*I` form (so the renderer stays happy)
+    // but reorders it to the front. Only when there is no real numeric
+    // prefix: with a nonzero real part wolframscript folds both into a single
+    // Complex atom `(re + im*I)`, which Woxi cannot represent inside a Plus.
+    let hoist_imaginary = !has_real_term
+      && exact_sum.is_zero()
+      && !flat_args.iter().any(|a| matches!(a, Expr::BigFloat(_, _)));
+
     // When the sum has any Real (or BigFloat) component, promote the
     // integer/rational coefficient of any imaginary symbolic term to a
     // Real. Wolfram's `1. + 2 I` evaluates to `Complex[1., 2.]`, not
@@ -1334,6 +1345,20 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|i| sorted_symbolic[i].clone())
         .collect(),
     };
+
+    // Hoist a pure-imaginary numeric term to the front so it sorts like the
+    // number it is (`x + 3*I` → `3*I + x`). See `hoist_imaginary` above.
+    if hoist_imaginary
+      && let Some(idx) = sorted_symbolic.iter().position(|t| {
+        let (c, base) = decompose_term(t);
+        matches!(&base, Expr::Identifier(s) if s == "I")
+          && !matches!(c, Coeff::Real(_))
+      })
+      && idx != 0
+    {
+      let term = sorted_symbolic.remove(idx);
+      sorted_symbolic.insert(0, term);
+    }
 
     // Underflow[] floats ahead of the numeric coefficient too — Wolfram
     // prints `1 - Underflow[]` as `Underflow[] + 1`. Splice any Underflow[]

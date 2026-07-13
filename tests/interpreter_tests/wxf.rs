@@ -202,19 +202,20 @@ mod binary_serialize {
   #[test]
   fn symbolic_complex_sum_serializes_complex_atom_first() {
     // wolframscript's canonical Plus order places the numeric Complex atom
-    // ahead of the symbolic term (Plus[Complex[0, 3], x]); Woxi keeps it last
-    // internally but reorders it on serialization so the bytes match WS
-    // exactly (verified against `Normal[BinarySerialize[x + 3*I]]`).
+    // ahead of the symbolic term (Plus[Complex[0, 3], x]); Woxi matches this
+    // ordering, so the bytes agree exactly (verified against
+    // `Normal[BinarySerialize[x + 3*I]]`).
     assert_eq!(
       interpret("Normal[BinarySerialize[x + 3*I]]").unwrap(),
       "{56, 58, 102, 2, 115, 4, 80, 108, 117, 115, 102, 2, 115, 7, 67, 111, \
        109, 112, 108, 101, 120, 67, 0, 67, 3, 115, 8, 71, 108, 111, 98, 97, \
        108, 96, 120}"
     );
-    // And it round-trips back to the original complex sum.
+    // And it round-trips back to the complex sum, with the pure-imaginary
+    // numeric term sorted ahead of the symbol like wolframscript.
     assert_eq!(
       interpret("BinaryDeserialize[BinarySerialize[x + 3*I]]").unwrap(),
-      "x + 3*I"
+      "3*I + x"
     );
   }
 
