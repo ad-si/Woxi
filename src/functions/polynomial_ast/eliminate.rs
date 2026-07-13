@@ -2,7 +2,7 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, expr_to_string};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, expr_to_string};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
@@ -155,7 +155,7 @@ fn extract_eq_sides(eq: &Expr) -> Option<(Expr, Expr)> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Some((operands[0].clone(), operands[1].clone()))
     }
@@ -251,13 +251,13 @@ fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       let lhs = simplify(expand_and_combine(&operands[0]));
       let rhs = simplify(expand_and_combine(&operands[1]));
       Ok(Expr::Comparison {
         operands: vec![lhs, rhs],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       })
     }
     Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
@@ -265,7 +265,7 @@ fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
       let rhs = simplify(expand_and_combine(&args[1]));
       Ok(Expr::Comparison {
         operands: vec![lhs, rhs],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       })
     }
     other => Ok(simplify(expand_and_combine(other))),
@@ -281,7 +281,7 @@ fn is_trivially_true(eq: &Expr) -> bool {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       expr_to_string(&operands[0]) == expr_to_string(&operands[1])
     }
@@ -346,7 +346,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       // lhs == rhs => lhs - rhs
       let lhs_str = expr_to_string(&operands[0]);
@@ -724,7 +724,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
       };
       return Expr::Comparison {
         operands: vec![lhs, Expr::Integer(-r)],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       };
     }
 
@@ -740,7 +740,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
 
     return Expr::Comparison {
       operands: vec![Expr::Identifier(var.clone()), val],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
   }
 
@@ -812,7 +812,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
 
     return Expr::Comparison {
       operands: vec![lhs_expr, rhs_expr],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
   }
 
@@ -826,7 +826,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
 
   Expr::Comparison {
     operands: vec![expanded_neg, Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   }
 }
 

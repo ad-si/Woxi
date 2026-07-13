@@ -2,7 +2,9 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::make_sqrt;
@@ -124,7 +126,6 @@ fn contains_inexact_literal(e: &Expr) -> bool {
 ///   var <= c  -> Element[var, Integers] && var <= floor(c)
 /// Returns `None` for any other shape, inexact bounds, or `==`/`!=`.
 fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
-  use crate::syntax::ComparisonOp;
   let Expr::Comparison {
     operands,
     operators,
@@ -180,7 +181,6 @@ fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
 /// any other shape, non-numeric bounds, or an enumeration that would be too
 /// large.
 fn enumerate_integer_interval(result: &Expr, var: &str) -> Option<Expr> {
-  use crate::syntax::ComparisonOp;
   let Expr::FunctionCall { name, args } = result else {
     return None;
   };
@@ -240,7 +240,6 @@ fn numeric_var_bounds(
   c: &Expr,
   var: &str,
 ) -> Option<(Option<i64>, Option<i64>)> {
-  use crate::syntax::ComparisonOp;
   let is_var = |e: &Expr| matches!(e, Expr::Identifier(s) if s == var);
   // lo op x -> lower bound; x op hi -> upper bound.
   let lower_from = |op: ComparisonOp, v: f64| -> Option<i64> {
@@ -326,8 +325,7 @@ fn numeric_var_bounds(
   None
 }
 
-fn comparison_op_of(e: &Expr) -> Option<crate::syntax::ComparisonOp> {
-  use crate::syntax::ComparisonOp;
+fn comparison_op_of(e: &Expr) -> Option<ComparisonOp> {
   match e {
     Expr::Identifier(s) => match s.as_str() {
       "Less" => Some(ComparisonOp::Less),
@@ -347,7 +345,6 @@ fn comparison_op_of(e: &Expr) -> Option<crate::syntax::ComparisonOp> {
 /// `None` when no finite two-sided range is derivable or there is no extra
 /// constraint — the plain interval paths handle those with their own format.
 fn try_reduce_bounded_integer_filtered(expr: &Expr, var: &str) -> Option<Expr> {
-  use crate::syntax::ComparisonOp;
   // Inexact bounds make wolframscript warn (Reduce::ratnz); leave them alone.
   if contains_inexact_literal(expr) {
     return None;
@@ -429,7 +426,7 @@ fn is_trig_equation(eq: &Expr, var: &str) -> bool {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       &operands[0]
     }
@@ -652,8 +649,8 @@ fn expand_numeric_two_sided_bound(expr: &Expr, var: &str) -> Option<Expr> {
     left: Box::new(left),
     right: Box::new(right),
   };
-  let is_ineq_op = |op: crate::syntax::ComparisonOp| {
-    use crate::syntax::ComparisonOp::*;
+  let is_ineq_op = |op: ComparisonOp| {
+    use ComparisonOp::*;
     matches!(op, Less | LessEqual | Greater | GreaterEqual)
   };
 
@@ -760,12 +757,12 @@ pub fn extract_comparison(expr: &Expr) -> Option<(Expr, Expr, CompOp)> {
       operators,
     } if operands.len() == 2 && operators.len() == 1 => {
       let op = match operators[0] {
-        crate::syntax::ComparisonOp::Equal => CompOp::Equal,
-        crate::syntax::ComparisonOp::NotEqual => CompOp::NotEqual,
-        crate::syntax::ComparisonOp::Less => CompOp::Less,
-        crate::syntax::ComparisonOp::LessEqual => CompOp::LessEqual,
-        crate::syntax::ComparisonOp::Greater => CompOp::Greater,
-        crate::syntax::ComparisonOp::GreaterEqual => CompOp::GreaterEqual,
+        ComparisonOp::Equal => CompOp::Equal,
+        ComparisonOp::NotEqual => CompOp::NotEqual,
+        ComparisonOp::Less => CompOp::Less,
+        ComparisonOp::LessEqual => CompOp::LessEqual,
+        ComparisonOp::Greater => CompOp::Greater,
+        ComparisonOp::GreaterEqual => CompOp::GreaterEqual,
         _ => return None,
       };
       Some((operands[0].clone(), operands[1].clone(), op))
@@ -970,7 +967,7 @@ fn reduce_equation(
   // Use the Solve infrastructure to find roots
   let eq_expr = Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   };
   let solve_result = solve_ast(&[eq_expr, Expr::Identifier(var.to_string())])?;
 
@@ -1095,7 +1092,7 @@ fn reduce_not_equal(
   let _ = domain;
   Ok(Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],
-    operators: vec![crate::syntax::ComparisonOp::NotEqual],
+    operators: vec![ComparisonOp::NotEqual],
   })
 }
 
@@ -1682,7 +1679,7 @@ fn reduce_quadratic_inequality(
         }
         CompOp::Greater if ai > 0 => Ok(Expr::Comparison {
           operands: vec![Expr::Identifier(var.to_string()), root],
-          operators: vec![crate::syntax::ComparisonOp::NotEqual],
+          operators: vec![ComparisonOp::NotEqual],
         }),
         CompOp::LessEqual if ai > 0 => {
           Ok(make_equality(&Expr::Identifier(var.to_string()), &root))
@@ -1704,7 +1701,7 @@ fn reduce_quadratic_inequality(
         }
         CompOp::Less if ai < 0 => Ok(Expr::Comparison {
           operands: vec![Expr::Identifier(var.to_string()), root],
-          operators: vec![crate::syntax::ComparisonOp::NotEqual],
+          operators: vec![ComparisonOp::NotEqual],
         }),
         CompOp::GreaterEqual if ai < 0 => {
           Ok(make_equality(&Expr::Identifier(var.to_string()), &root))
@@ -1878,7 +1875,7 @@ fn try_factor_and_reduce_inequality(
   // Try using Solve to find roots, then determine sign intervals
   let eq = Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   };
   let solve_result =
     solve_ast(&[eq, Expr::Identifier(var.to_string())]).ok()?;
@@ -2324,7 +2321,6 @@ fn reduce_combined_inequalities(
       && operators.len() == 2
       && operands.len() == 3
     {
-      use crate::syntax::ComparisonOp;
       let mid = &operands[1];
       if expr_to_string(mid) == var {
         let low_inc = matches!(
@@ -2531,7 +2527,7 @@ pub fn reduce_multi_var_and(
   if let Some((i, var, lhs, rhs, _deg)) = best {
     let eq = Expr::Comparison {
       operands: vec![lhs, rhs],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     let solve_result = solve_ast(&[eq, Expr::Identifier(var.to_string())])?;
 
@@ -2865,7 +2861,7 @@ fn try_reduce_exists_quadratic_linear(
   let bound = inv_q(&k)?;
   Some(Expr::Comparison {
     operands: vec![Expr::Identifier(param.clone()), rational_to_expr(&bound)],
-    operators: vec![crate::syntax::ComparisonOp::LessEqual],
+    operators: vec![ComparisonOp::LessEqual],
   })
 }
 
@@ -3076,10 +3072,10 @@ fn extract_le_form(e: &Expr) -> Option<(Expr, Expr)> {
     && operators.len() == 1
   {
     match &operators[0] {
-      crate::syntax::ComparisonOp::LessEqual => {
+      ComparisonOp::LessEqual => {
         Some((operands[0].clone(), operands[1].clone()))
       }
-      crate::syntax::ComparisonOp::GreaterEqual => {
+      ComparisonOp::GreaterEqual => {
         Some((operands[1].clone(), operands[0].clone()))
       }
       _ => None,
@@ -3098,10 +3094,10 @@ fn extract_ge_form(e: &Expr) -> Option<(Expr, Expr)> {
     && operators.len() == 1
   {
     match &operators[0] {
-      crate::syntax::ComparisonOp::GreaterEqual => {
+      ComparisonOp::GreaterEqual => {
         Some((operands[0].clone(), operands[1].clone()))
       }
-      crate::syntax::ComparisonOp::LessEqual => {
+      ComparisonOp::LessEqual => {
         Some((operands[1].clone(), operands[0].clone()))
       }
       _ => None,

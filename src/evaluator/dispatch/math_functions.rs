@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::make_sqrt;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 
 /// Columnwise quartile-family statistic for a matrix argument.
 ///
@@ -5171,7 +5171,7 @@ pub fn dispatch_math_functions(
         operators,
       } = &args[0]
         && operands.len() == 2
-        && operators.first() == Some(&crate::syntax::ComparisonOp::Equal)
+        && operators.first() == Some(&ComparisonOp::Equal)
         && !is_zero_literal(&operands[1])
       {
         let rhs = operands[1].clone();
@@ -5187,7 +5187,7 @@ pub fn dispatch_math_functions(
           }
           let cond = Expr::Comparison {
             operands: vec![rhs, Expr::Integer(0)],
-            operators: vec![crate::syntax::ComparisonOp::NotEqual],
+            operators: vec![ComparisonOp::NotEqual],
           };
           let branch = Expr::List(vec![divided, cond].into());
           let pw = Expr::FunctionCall {
@@ -8123,14 +8123,14 @@ fn guard_equation_scale(
     relation,
     Expr::Comparison { operands, operators }
       if operands.len() == 2
-        && operators.first() == Some(&crate::syntax::ComparisonOp::Equal)
+        && operators.first() == Some(&ComparisonOp::Equal)
   );
   if !is_equation || is_nonzero_number(scalar) {
     return Ok(scaled);
   }
   let cond = Expr::Comparison {
     operands: vec![scalar.clone(), Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::NotEqual],
+    operators: vec![ComparisonOp::NotEqual],
   };
   let branch = Expr::List(vec![scaled, cond].into());
   let pw = Expr::FunctionCall {
@@ -8172,7 +8172,7 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
     return None;
   }
   // The second argument must be an equation for the pairing to be meaningful.
-  if v_operators.first() != Some(&crate::syntax::ComparisonOp::Equal) {
+  if v_operators.first() != Some(&ComparisonOp::Equal) {
     return None;
   }
   // Multiplying/dividing an inequality requires sign-dependent reasoning
@@ -8180,7 +8180,7 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
   // Piecewise. Only handle the clean case where the first relation is an
   // equation; Add/Subtract preserve any relation's direction.
   if matches!(op, SideOp::Multiply | SideOp::Divide)
-    && operators.first() != Some(&crate::syntax::ComparisonOp::Equal)
+    && operators.first() != Some(&ComparisonOp::Equal)
   {
     return None;
   }
@@ -8234,7 +8234,7 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
     SideOp::Divide => {
       let cond = Expr::Comparison {
         operands: vec![v_ops[0].clone(), Expr::Integer(0)],
-        operators: vec![crate::syntax::ComparisonOp::NotEqual],
+        operators: vec![ComparisonOp::NotEqual],
       };
       let branch = Expr::List(vec![paired, cond].into());
       Some(Expr::FunctionCall {

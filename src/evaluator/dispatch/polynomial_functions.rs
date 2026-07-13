@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::BinaryOperator;
+use crate::syntax::{BinaryOperator, ComparisonOp};
 
 pub fn dispatch_polynomial_functions(
   name: &str,
@@ -776,7 +776,7 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && matches!(operators[0], crate::syntax::ComparisonOp::Equal) =>
+      && matches!(operators[0], ComparisonOp::Equal) =>
     {
       (operands[0].clone(), operands[1].clone())
     }
@@ -848,12 +848,12 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
         if k == 1 {
           Expr::Comparison {
             operands: vec![Expr::Identifier(name.clone()), Expr::Integer(*v)],
-            operators: vec![crate::syntax::ComparisonOp::Equal],
+            operators: vec![ComparisonOp::Equal],
           }
         } else {
           Expr::Comparison {
             operands: vec![Expr::Identifier(name.clone()), Expr::Integer(*v)],
-            operators: vec![crate::syntax::ComparisonOp::Equal],
+            operators: vec![ComparisonOp::Equal],
           }
         }
       })
@@ -935,11 +935,11 @@ fn try_constrained_linear_disk(name: &str, args: &[Expr]) -> Option<Expr> {
       && operators.len() == 1
       && matches!(
         operators[0],
-        crate::syntax::ComparisonOp::LessEqual
-          | crate::syntax::ComparisonOp::Less
-          | crate::syntax::ComparisonOp::GreaterEqual
-          | crate::syntax::ComparisonOp::Greater
-          | crate::syntax::ComparisonOp::Equal
+        ComparisonOp::LessEqual
+          | ComparisonOp::Less
+          | ComparisonOp::GreaterEqual
+          | ComparisonOp::Greater
+          | ComparisonOp::Equal
       ) =>
     {
       let c = crate::functions::math_ast::expr_to_f64(&operands[1])?;
@@ -1064,11 +1064,11 @@ fn try_constrained_linear_disk_symbolic(
       && operators.len() == 1
       && matches!(
         operators[0],
-        crate::syntax::ComparisonOp::LessEqual
-          | crate::syntax::ComparisonOp::Less
-          | crate::syntax::ComparisonOp::GreaterEqual
-          | crate::syntax::ComparisonOp::Greater
-          | crate::syntax::ComparisonOp::Equal
+        ComparisonOp::LessEqual
+          | ComparisonOp::Less
+          | ComparisonOp::GreaterEqual
+          | ComparisonOp::Greater
+          | ComparisonOp::Equal
       ) =>
     {
       (operands[0].clone(), operands[1].clone())

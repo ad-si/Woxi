@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 
 /// Shared AllTrue/AnyTrue/NoneTrue implementation: apply the predicate
 /// to every element at exactly the requested level (default 1) and
@@ -494,7 +494,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       let cond = Expr::Comparison {
         operands: vec![p, half],
-        operators: vec![crate::syntax::ComparisonOp::Greater],
+        operators: vec![ComparisonOp::Greater],
       };
       let pair = Expr::List(vec![Expr::Integer(1), cond].into());
       let cases = Expr::List(vec![pair].into());

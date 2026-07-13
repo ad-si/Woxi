@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::ComparisonOp;
 
 /// True if `expr` contains any Real or BigFloat node — used to decide
 /// between exact and inexact number predicates.
@@ -206,7 +207,6 @@ pub fn dispatch_predicate_functions(
       // `ToString[Inequality[0, LessEqual, x, LessEqual, 1], InputForm]`
       // still renders the head form.
       if args.len() >= 5 && args.len() % 2 == 1 {
-        use crate::syntax::ComparisonOp;
         let op_names: Vec<Option<&str>> = args
           .iter()
           .enumerate()
@@ -733,10 +733,7 @@ pub fn dispatch_predicate_functions(
           // Symbolic: a <= x <= b (chained inequality, like wolframscript).
           let chained = Expr::Comparison {
             operands: vec![range[0].clone(), x.clone(), range[1].clone()],
-            operators: vec![
-              crate::syntax::ComparisonOp::LessEqual,
-              crate::syntax::ComparisonOp::LessEqual,
-            ],
+            operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
           };
           return Some(crate::evaluator::evaluate_expr_to_expr(&chained));
         } else if is_list_of_ranges {
@@ -781,10 +778,7 @@ pub fn dispatch_predicate_functions(
             }
             clauses.push(Expr::Comparison {
               operands: vec![pair[0].clone(), x.clone(), pair[1].clone()],
-              operators: vec![
-                crate::syntax::ComparisonOp::LessEqual,
-                crate::syntax::ComparisonOp::LessEqual,
-              ],
+              operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
             });
           }
           if shape_ok {
@@ -920,7 +914,7 @@ pub fn dispatch_predicate_functions(
                 operators,
               }) = c
                 && operators.len() == 1
-                && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+                && matches!(operators[0], ComparisonOp::SameQ)
                 && operands.len() == 2
                 && let Expr::Identifier(name) = &operands[0]
                 && name == &params[0]
@@ -941,7 +935,7 @@ pub fn dispatch_predicate_functions(
                 operators,
               }) = c
                 && operators.len() == 1
-                && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+                && matches!(operators[0], ComparisonOp::SameQ)
                 && operands.len() == 2
                 && let Expr::Identifier(name) = &operands[0]
                 && name == &params[1]
@@ -1101,7 +1095,7 @@ pub fn dispatch_predicate_functions(
                 operators,
               }) = c
                 && operators.len() == 1
-                && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+                && matches!(operators[0], ComparisonOp::SameQ)
                 && operands.len() == 2
                 && let Expr::Identifier(name) = &operands[0]
                 && name == param
@@ -1218,9 +1212,9 @@ pub fn dispatch_predicate_functions(
                       operands,
                       operators,
                     })) = conds.get(i)
-                      && operators.iter().any(|op| {
-                        matches!(op, crate::syntax::ComparisonOp::SameQ)
-                      })
+                      && operators
+                        .iter()
+                        .any(|op| matches!(op, ComparisonOp::SameQ))
                       && let Some(literal_val) = operands.get(1)
                     {
                       return literal_val.clone();
@@ -1698,7 +1692,7 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::Function {
         body: Box::new(Expr::Comparison {
           operands: vec![Expr::Slot(1), args[0].clone()],
-          operators: vec![crate::syntax::ComparisonOp::Equal],
+          operators: vec![ComparisonOp::Equal],
         }),
       }));
     }
@@ -1706,7 +1700,7 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::Function {
         body: Box::new(Expr::Comparison {
           operands: vec![Expr::Slot(1), args[0].clone()],
-          operators: vec![crate::syntax::ComparisonOp::NotEqual],
+          operators: vec![ComparisonOp::NotEqual],
         }),
       }));
     }
@@ -1714,7 +1708,7 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::Function {
         body: Box::new(Expr::Comparison {
           operands: vec![Expr::Slot(1), args[0].clone()],
-          operators: vec![crate::syntax::ComparisonOp::Greater],
+          operators: vec![ComparisonOp::Greater],
         }),
       }));
     }
@@ -1722,7 +1716,7 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::Function {
         body: Box::new(Expr::Comparison {
           operands: vec![Expr::Slot(1), args[0].clone()],
-          operators: vec![crate::syntax::ComparisonOp::Less],
+          operators: vec![ComparisonOp::Less],
         }),
       }));
     }
@@ -1730,7 +1724,7 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::Function {
         body: Box::new(Expr::Comparison {
           operands: vec![Expr::Slot(1), args[0].clone()],
-          operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
+          operators: vec![ComparisonOp::GreaterEqual],
         }),
       }));
     }
@@ -1738,7 +1732,7 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::Function {
         body: Box::new(Expr::Comparison {
           operands: vec![Expr::Slot(1), args[0].clone()],
-          operators: vec![crate::syntax::ComparisonOp::LessEqual],
+          operators: vec![ComparisonOp::LessEqual],
         }),
       }));
     }

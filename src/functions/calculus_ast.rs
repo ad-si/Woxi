@@ -5,7 +5,7 @@
 
 use crate::InterpreterError;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 thread_local! {
   /// Active `NonConstants` context for `D`. Holds the symbol names that must be
@@ -3585,7 +3585,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                     Expr::Integer(0),
                     Expr::Comparison {
                       operands: vec![args[0].clone(), Expr::Integer(0)],
-                      operators: vec![crate::syntax::ComparisonOp::NotEqual],
+                      operators: vec![ComparisonOp::NotEqual],
                     },
                   ]
                   .into(),
@@ -3621,7 +3621,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                     Expr::Identifier("Indeterminate".to_string()),
                     Expr::Comparison {
                       operands: vec![args[0].clone(), Expr::Integer(0)],
-                      operators: vec![crate::syntax::ComparisonOp::Equal],
+                      operators: vec![ComparisonOp::Equal],
                     },
                   ]
                   .into(),
@@ -3649,7 +3649,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           if matches!(dz, Expr::Integer(0)) {
             return Ok(Expr::Integer(0));
           }
-          let clause = |val: Expr, op: crate::syntax::ComparisonOp| {
+          let clause = |val: Expr, op: ComparisonOp| {
             Expr::List(
               vec![
                 val,
@@ -3666,11 +3666,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             args: vec![
               Expr::List(
                 vec![
-                  clause(Expr::Integer(0), crate::syntax::ComparisonOp::Less),
-                  clause(
-                    Expr::Integer(1),
-                    crate::syntax::ComparisonOp::Greater,
-                  ),
+                  clause(Expr::Integer(0), ComparisonOp::Less),
+                  clause(Expr::Integer(1), ComparisonOp::Greater),
                 ]
                 .into(),
               ),
@@ -10933,7 +10930,6 @@ fn parse_direction(option: &Expr) -> Option<LimitDirection> {
 /// `x < c` ↔ `x ≥ c`, in either order. Used by Integrate[Piecewise[…]] to
 /// collapse two complementary pieces into one piece + default.
 fn conditions_are_complementary(a: &Expr, b: &Expr) -> bool {
-  use crate::syntax::ComparisonOp;
   let extract = |c: &Expr| -> Option<(Expr, ComparisonOp, Expr)> {
     if let Expr::Comparison {
       operands,
@@ -11052,7 +11048,6 @@ fn piecewise_condition_bounds(
   cond: &Expr,
   var: &str,
 ) -> Option<(Option<Expr>, Option<Expr>)> {
-  use crate::syntax::ComparisonOp;
   let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
   let is_abs_var = |e: &Expr| {
     matches!(e,
@@ -11163,10 +11158,8 @@ fn negate_bound(c: &Expr) -> Expr {
   }
 }
 
-fn flip_comparison_op(
-  op: crate::syntax::ComparisonOp,
-) -> crate::syntax::ComparisonOp {
-  use crate::syntax::ComparisonOp::*;
+fn flip_comparison_op(op: ComparisonOp) -> ComparisonOp {
+  use ComparisonOp::*;
   match op {
     Less => Greater,
     LessEqual => GreaterEqual,
@@ -11176,8 +11169,8 @@ fn flip_comparison_op(
   }
 }
 
-fn comparison_op_from_symbol(e: &Expr) -> Option<crate::syntax::ComparisonOp> {
-  use crate::syntax::ComparisonOp::*;
+fn comparison_op_from_symbol(e: &Expr) -> Option<ComparisonOp> {
+  use ComparisonOp::*;
   match e {
     Expr::Identifier(s) => match s.as_str() {
       "Less" => Some(Less),
@@ -15074,7 +15067,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && matches!(&operands[0], Expr::Identifier(v) if v == &var_name)
             && matches!(&operands[1], Expr::Integer(0))
             && operators.len() == 1
-            && matches!(&operators[0], crate::syntax::ComparisonOp::Less)
+            && matches!(&operators[0], ComparisonOp::Less)
           {
             assume_negative = true;
           }
@@ -17244,7 +17237,7 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operands,
       operators,
     } if operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal
+      && operators[0] == ComparisonOp::Equal
       && operands.len() == 2 =>
     {
       // f == g becomes f - g
@@ -17439,7 +17432,7 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: vec![
       Expr::Comparison {
         operands: vec![poly_expr, Expr::Integer(0)],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       },
       Expr::Identifier("AsymptoticSolve$t".to_string()),
     ]

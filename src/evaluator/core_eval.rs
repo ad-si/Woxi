@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::BinaryOperator;
+use crate::syntax::{BinaryOperator, ComparisonOp};
 
 thread_local! {
   /// Symbols currently being looked up — prevents infinite recursion when
@@ -1200,9 +1200,9 @@ pub fn evaluate_expr_to_expr_inner(
                           operands,
                           operators,
                         })) = conds.get(i)
-                          && operators.iter().any(|op| {
-                            matches!(op, crate::syntax::ComparisonOp::SameQ)
-                          })
+                          && operators
+                            .iter()
+                            .any(|op| matches!(op, ComparisonOp::SameQ))
                           && let Some(literal_val) = operands.get(1)
                         {
                           return literal_val.clone();

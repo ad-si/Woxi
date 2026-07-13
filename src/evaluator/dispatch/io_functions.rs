@@ -2505,7 +2505,7 @@ pub fn dispatch_io_functions(
                   } = cond
                   && operators
                     .iter()
-                    .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+                    .any(|op| matches!(op, ComparisonOp::SameQ))
                   && operands.len() == 2
                 {
                   // Literal value dispatch: use the value directly

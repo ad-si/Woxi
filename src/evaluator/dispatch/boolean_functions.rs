@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::ComparisonOp;
 
 pub fn dispatch_boolean_functions(
   name: &str,
@@ -86,7 +87,6 @@ pub fn dispatch_boolean_functions(
     // as the operator syntax, so e.g. the ComplexInfinity `nord` messages
     // fire identically for LessEqual[1/0, 0] and 1/0 <= 0.
     "Less" | "Greater" | "LessEqual" | "GreaterEqual" if args.len() >= 2 => {
-      use crate::syntax::ComparisonOp;
       let op = match name {
         "Less" => ComparisonOp::Less,
         "Greater" => ComparisonOp::Greater,

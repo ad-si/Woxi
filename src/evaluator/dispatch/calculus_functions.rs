@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::is_sqrt;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 
 /// Check if the result of differentiation contains a
 /// `Derivative[...][func_name][...]` pattern (as CurriedCall),
@@ -4043,7 +4043,7 @@ fn collect_domain_constraints(
       if contains_variable(right, var) {
         constraints.push(Expr::Comparison {
           operands: vec![right.as_ref().clone(), Expr::Integer(0)],
-          operators: vec![crate::syntax::ComparisonOp::NotEqual],
+          operators: vec![ComparisonOp::NotEqual],
         });
       }
     }
@@ -4070,7 +4070,7 @@ fn collect_domain_constraints(
         if is_negative_power {
           constraints.push(Expr::Comparison {
             operands: vec![left.as_ref().clone(), Expr::Integer(0)],
-            operators: vec![crate::syntax::ComparisonOp::NotEqual],
+            operators: vec![ComparisonOp::NotEqual],
           });
         }
 
@@ -4086,7 +4086,7 @@ fn collect_domain_constraints(
         if is_half_power {
           constraints.push(Expr::Comparison {
             operands: vec![left.as_ref().clone(), Expr::Integer(0)],
-            operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
+            operators: vec![ComparisonOp::GreaterEqual],
           });
         }
       }
@@ -4103,7 +4103,7 @@ fn collect_domain_constraints(
       if contains_variable(arg, var) {
         constraints.push(Expr::Comparison {
           operands: vec![arg.clone(), Expr::Integer(0)],
-          operators: vec![crate::syntax::ComparisonOp::Greater],
+          operators: vec![ComparisonOp::Greater],
         });
       }
     }
@@ -4114,7 +4114,7 @@ fn collect_domain_constraints(
       if contains_variable(sqrt_arg, var) {
         constraints.push(Expr::Comparison {
           operands: vec![sqrt_arg.clone(), Expr::Integer(0)],
-          operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
+          operators: vec![ComparisonOp::GreaterEqual],
         });
       }
     }
@@ -4140,8 +4140,6 @@ fn collect_domain_constraints(
 /// - `-1 + x >= 0` → `x >= 1`
 /// - `x^2 - 1 != 0` → `x < -1 || Inequality[-1, Less, x, Less, 1] || x > 1`
 fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
-  use crate::syntax::ComparisonOp;
-
   if let Expr::Comparison {
     operands,
     operators,

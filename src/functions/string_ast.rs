@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes, avoiding string round-trips.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -5216,7 +5216,6 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       operands,
       operators,
     } => {
-      use crate::syntax::ComparisonOp;
       let mut result = expr_to_tex(&operands[0]);
       for (i, op) in operators.iter().enumerate() {
         let op_tex = match op {
