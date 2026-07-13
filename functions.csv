@@ -4491,7 +4491,7 @@ FrameBoxOptions,,🚫,,4.0,4660
 FrontEndDynamicExpression,,🚫,,8.0,4660
 GalleryView,,🚫,,11.0,4660
 GenerateDigitalSignature,,🚫,,12.0,4660
-GraphLinkEfficiency,,,,9.0,4660
+GraphLinkEfficiency,Link efficiency 1 minus mean graph distance over edge count,✅,pure,9.0,4660
 ImageFileFilter,,🚫,,9.0,4660
 IncludeMetaInformation,,,,11.0,4660
 MailServerConnect,,🚫,,11.3,4660

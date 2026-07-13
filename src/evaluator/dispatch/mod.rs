@@ -5786,6 +5786,7 @@ pub fn evaluate_function_call_ast_inner(
       | "GraphDensity"
       | "MeanGraphDistance"
       | "MeanDegreeConnectivity"
+      | "GraphLinkEfficiency"
   ) && args.len() == 1
   {
     return crate::functions::graph::graph_metric_ast(name, args);

@@ -5974,3 +5974,52 @@ mod find_fundamental_cycles_tests {
     )));
   }
 }
+
+// GraphLinkEfficiency = 1 - MeanGraphDistance/EdgeCount (decoded from
+// wolframscript's exact rationals). All outputs verified against
+// wolframscript.
+mod graph_link_efficiency {
+  use super::*;
+
+  #[test]
+  fn connected_graphs() {
+    assert_eq!(
+      interpret("GraphLinkEfficiency[CycleGraph[3]]").unwrap(),
+      "2/3"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[CycleGraph[5]]").unwrap(),
+      "7/10"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[CompleteGraph[4]]").unwrap(),
+      "5/6"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[PathGraph[Range[4]]]").unwrap(),
+      "4/9"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[StarGraph[4]]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn disconnected_and_invalid() {
+    // An infinite mean distance makes the efficiency -Infinity — also
+    // for directed graphs that are not strongly connected.
+    assert_eq!(
+      interpret("GraphLinkEfficiency[Graph[{1 <-> 2, 3 <-> 4}]]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[x]").unwrap(),
+      "GraphLinkEfficiency[x]"
+    );
+  }
+}

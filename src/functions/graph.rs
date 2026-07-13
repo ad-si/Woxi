@@ -5559,6 +5559,32 @@ pub fn graph_metric_ast(
     name: name.to_string(),
     args: args.to_vec().into(),
   };
+  // GraphLinkEfficiency = 1 - MeanGraphDistance/EdgeCount (decoded from
+  // wolframscript's exact rationals; disconnected graphs give -Infinity
+  // through the infinite mean distance).
+  if name == "GraphLinkEfficiency" {
+    let mgd = graph_metric_ast("MeanGraphDistance", args)?;
+    if matches!(&mgd, Expr::FunctionCall { name, .. } if name == "MeanGraphDistance")
+    {
+      return Ok(unevaluated());
+    }
+    let ec = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "EdgeCount".to_string(),
+      args: vec![args[0].clone()].into(),
+    })?;
+    if !matches!(&ec, Expr::Integer(m) if *m > 0) {
+      return Ok(unevaluated());
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(mgd),
+        right: Box::new(ec),
+      }),
+    });
+  }
   let (n, pairs) = match parse_graph_pairs(&args[0]) {
     Some(g) => g,
     None => {
