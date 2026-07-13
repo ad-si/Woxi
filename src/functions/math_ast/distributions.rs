@@ -7248,6 +7248,95 @@ pub fn process_slice_distribution(
       ]
       .into(),
     }),
+    // OrnsteinUhlenbeckProcess[m, s, th] starts in stationarity
+    // (time-independent slice); the 4-argument form starts at x0.
+    "OrnsteinUhlenbeckProcess" if dargs.len() == 3 => {
+      let (m, sp, th) = (&dargs[0], &dargs[1], &dargs[2]);
+      Some(Expr::FunctionCall {
+        name: "NormalDistribution".to_string(),
+        args: vec![
+          m.clone(),
+          divide(
+            sp.clone(),
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![times(int(2), th.clone())].into(),
+            },
+          ),
+        ]
+        .into(),
+      })
+    }
+    "OrnsteinUhlenbeckProcess" if dargs.len() == 4 => {
+      let (m, sp, th, x0) = (&dargs[0], &dargs[1], &dargs[2], &dargs[3]);
+      let decay = power(
+        Expr::Constant("E".to_string()),
+        times(times(int(-1), th.clone()), t.clone()),
+      );
+      let mu = plus(
+        m.clone(),
+        times(plus(x0.clone(), times(int(-1), m.clone())), decay),
+      );
+      let var = divide(
+        times(
+          plus(
+            int(1),
+            times(
+              int(-1),
+              power(
+                Expr::Constant("E".to_string()),
+                times(times(int(-2), th.clone()), t.clone()),
+              ),
+            ),
+          ),
+          power(sp.clone(), int(2)),
+        ),
+        times(int(2), th.clone()),
+      );
+      Some(Expr::FunctionCall {
+        name: "NormalDistribution".to_string(),
+        args: vec![
+          mu,
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![var].into(),
+          },
+        ]
+        .into(),
+      })
+    }
+    // BrownianBridgeProcess[s, {t1, a}, {t2, b}] — the interpolating
+    // Gaussian bridge.
+    "BrownianBridgeProcess" if dargs.len() == 3 => {
+      let sp = &dargs[0];
+      let (Expr::List(p1), Expr::List(p2)) = (&dargs[1], &dargs[2]) else {
+        return None;
+      };
+      if p1.len() != 2 || p2.len() != 2 {
+        return None;
+      }
+      let (t1, a) = (&p1[0], &p1[1]);
+      let (t2, b) = (&p2[0], &p2[1]);
+      let span = plus(t2.clone(), times(int(-1), t1.clone()));
+      let up = plus(t.clone(), times(int(-1), t1.clone()));
+      let down = plus(t2.clone(), times(int(-1), t.clone()));
+      let mu = plus(
+        divide(times(a.clone(), down.clone()), span.clone()),
+        divide(times(b.clone(), up.clone()), span.clone()),
+      );
+      let var = divide(times(times(power(sp.clone(), int(2)), up), down), span);
+      Some(Expr::FunctionCall {
+        name: "NormalDistribution".to_string(),
+        args: vec![
+          mu,
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![var].into(),
+          },
+        ]
+        .into(),
+      })
+    }
     "GeometricBrownianMotionProcess" if dargs.len() == 3 => {
       let (m, s, x0) = (&dargs[0], &dargs[1], &dargs[2]);
       let drift = plus(

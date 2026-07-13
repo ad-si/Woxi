@@ -9370,3 +9370,78 @@ mod continuous_process_slices {
     );
   }
 }
+
+// Ornstein-Uhlenbeck and Brownian-bridge process time slices. All
+// outputs verified against wolframscript.
+mod ou_and_brownian_bridge_slices {
+  use super::*;
+
+  #[test]
+  fn ornstein_uhlenbeck() {
+    // The 3-argument form starts in stationarity: time-independent.
+    assert_eq!(
+      interpret("Mean[OrnsteinUhlenbeckProcess[m, s, th][t]]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("Variance[OrnsteinUhlenbeckProcess[m, s, th][t]]").unwrap(),
+      "s^2/(2*th)"
+    );
+    assert_eq!(
+      interpret("PDF[OrnsteinUhlenbeckProcess[m, s, th][t], x]").unwrap(),
+      "Sqrt[th]/(E^((th*(-m + x)^2)/s^2)*Sqrt[Pi]*s)"
+    );
+    assert_eq!(
+      interpret("Variance[OrnsteinUhlenbeckProcess[1, 2, 3][2]]").unwrap(),
+      "2/3"
+    );
+    // The 4-argument form starts at x0 and relaxes toward m.
+    assert_eq!(
+      interpret("Mean[OrnsteinUhlenbeckProcess[m, s, th, x0][t]]").unwrap(),
+      "m + (-m + x0)/E^(t*th)"
+    );
+    assert_eq!(
+      interpret("Variance[OrnsteinUhlenbeckProcess[m, s, th, x0][t]]").unwrap(),
+      "((1 - E^(-2*t*th))*s^2)/(2*th)"
+    );
+  }
+
+  #[test]
+  fn brownian_bridge() {
+    // Constructor normalization and the 1-argument arity error.
+    assert_eq!(
+      interpret("BrownianBridgeProcess[]").unwrap(),
+      "BrownianBridgeProcess[1, {0, 0}, {1, 0}]"
+    );
+    assert_eq!(
+      interpret("BrownianBridgeProcess[{t1, a}, {t2, b}]").unwrap(),
+      "BrownianBridgeProcess[1, {t1, a}, {t2, b}]"
+    );
+    clear_state();
+    let r = interpret_with_stdout("BrownianBridgeProcess[s]").unwrap();
+    assert_eq!(r.result, "BrownianBridgeProcess[s]");
+    assert!(r.warnings[0].contains(
+      "BrownianBridgeProcess::argtu: BrownianBridgeProcess called with 1 \
+       argument; 2 or 3 arguments are expected."
+    ));
+    // The slice interpolates linearly with bridge variance.
+    assert_eq!(
+      interpret("Mean[BrownianBridgeProcess[s, {t1, a}, {t2, b}][t]]").unwrap(),
+      "(b*(t - t1))/(-t1 + t2) + (a*(-t + t2))/(-t1 + t2)"
+    );
+    assert_eq!(
+      interpret("Variance[BrownianBridgeProcess[s, {t1, a}, {t2, b}][t]]")
+        .unwrap(),
+      "(s^2*(t - t1)*(-t + t2))/(-t1 + t2)"
+    );
+    assert_eq!(
+      interpret("Variance[BrownianBridgeProcess[2, {0, 0}, {3, 0}][1]]")
+        .unwrap(),
+      "8/3"
+    );
+    assert_eq!(
+      interpret("Mean[BrownianBridgeProcess[1, {0, 2}, {4, 6}][1]]").unwrap(),
+      "3"
+    );
+  }
+}

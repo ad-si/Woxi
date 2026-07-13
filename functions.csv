@@ -2114,7 +2114,7 @@ CircleMinus,Symbolic circle-minus operator displayed with the Unicode glyph,✅,
 DiscreteLimit,Discrete limit of sequence,✅,pure,11.2,2152
 FixedOrder,Fixed ordering pattern constraint,🚫,,10.1,2157
 GraphDistanceMatrix,Matrix of shortest-path distances between all pairs of graph vertices,✅,1,8.0,2157
-OrnsteinUhlenbeckProcess,OU stochastic process,🚫,,9.0,2157
+OrnsteinUhlenbeckProcess,Ornstein-Uhlenbeck process with Normal time slices,✅,unevaluated,9.0,2157
 PolynomialQuotientRemainder,Quotient and remainder of polynomial division,✅,1,6.0,2157
 SignificanceLevel,Statistical significance level option,🚫,,8.0,2157
 Annuity,Financial annuity (passthrough used by TimeValue),✅,pure,8.0,2162
@@ -3191,7 +3191,7 @@ QuadraticOptimization,,,,12.0,3265
 SampledSoundFunction,,🚫,,2.0,3265
 StringExtract,Extracts fields (by position or span) split by whitespace or chained delimiter rules,✅,pure,10.1,3265
 Tilde,Symbolic tilde relation operator with Unicode display,✅,pure,3.0,3265
-BrownianBridgeProcess,,🚫,,9.0,3280
+BrownianBridgeProcess,Brownian bridge process with Normal time slices,✅,unevaluated,9.0,3280
 ChannelSend,,🚫,,11.0,3280
 CreateUUID,,,,10.0,3280
 DeviceWrite,,🚫,,10.0,3280

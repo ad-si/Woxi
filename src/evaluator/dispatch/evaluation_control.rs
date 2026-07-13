@@ -479,9 +479,38 @@ pub fn dispatch_evaluation_control(
         args: vec![Expr::Integer(0), Expr::Integer(1)].into(),
       }));
     }
+    // BrownianBridgeProcess[] and the two-point form normalize with the
+    // default variance scale 1; a single argument is an arity error
+    // (wolframscript-verified argtu message).
+    "BrownianBridgeProcess" => {
+      let is_pt = |e: &Expr| matches!(e, Expr::List(p) if p.len() == 2);
+      let normalized: Vec<Expr> = match args {
+        [] => vec![
+          Expr::Integer(1),
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+          Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
+        ],
+        [p1, p2] if is_pt(p1) && is_pt(p2) => {
+          vec![Expr::Integer(1), p1.clone(), p2.clone()]
+        }
+        [_] => {
+          crate::emit_message(
+            "BrownianBridgeProcess::argtu: BrownianBridgeProcess called with 1 argument; 2 or 3 arguments are expected.",
+          );
+          args.to_vec()
+        }
+        _ => args.to_vec(),
+      };
+      return Some(Ok(Expr::FunctionCall {
+        name: "BrownianBridgeProcess".to_string(),
+        args: normalized.into(),
+      }));
+    }
     // Random-process objects are symbolic; their time slices proc[t]
     // are consumed by PDF/CDF/Mean/Variance.
-    "WienerProcess" | "GeometricBrownianMotionProcess" => {
+    "WienerProcess"
+    | "GeometricBrownianMotionProcess"
+    | "OrnsteinUhlenbeckProcess" => {
       return Some(Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec().into(),
