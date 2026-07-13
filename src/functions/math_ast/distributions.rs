@@ -4094,6 +4094,7 @@ pub fn distribution_mean_variance(
     "VarianceGammaDistribution" => variance_gamma_mean_variance(dargs),
     "HoytDistribution" => hoyt_mean_variance(dargs),
     "CompoundPoissonDistribution" => compound_poisson_mean_variance(dargs),
+    "WakebyDistribution" => wakeby_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7920,6 +7921,223 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Validation for WakebyDistribution[α, β, γ, δ, μ]: α and γ positive
+/// (posprm at positions 1 and 3), arity 5 (argrx).
+fn wakeby_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 5 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "WakebyDistribution::argrx: WakebyDistribution called with {} {}; 5 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "WakebyDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  for pos in [0usize, 2] {
+    if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
+      crate::emit_message(&format!(
+        "WakebyDistribution::posprm: Parameter {} at position {} in {} is expected to be positive.",
+        crate::syntax::expr_to_string(&dargs[pos]),
+        pos + 1,
+        dist()
+      ));
+      return None;
+    }
+  }
+  Some(())
+}
+
+/// The Wakeby quantile expression
+/// m + a (1 - (1-q)^b)/b - g (1 - (1-q)^(-d))/d.
+fn wakeby_quantile_body(dargs: &[Expr], q: &Expr) -> Expr {
+  let (a, b, g, d, m) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+    dargs[4].clone(),
+  );
+  let one_minus_q = plus(int(1), times(int(-1), q.clone()));
+  let rise =
+    |expo: Expr| plus(int(1), times(int(-1), power(one_minus_q.clone(), expo)));
+  plus(
+    plus(m, divide(times(a, rise(b.clone())), b)),
+    times(
+      int(-1),
+      divide(times(g, rise(times(int(-1), d.clone()))), d),
+    ),
+  )
+}
+
+/// Quantile[WakebyDistribution[...], q]: the quantile-defined form,
+/// wrapped in ConditionalExpression[Piecewise[...], 0 <= q <= 1] for
+/// symbolic q; numeric q evaluates the applicable branch directly.
+pub fn wakeby_quantile(
+  dargs: &[Expr],
+  q: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Quantile".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "WakebyDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        q.clone(),
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = wakeby_checked(dargs) else {
+    return unevaluated();
+  };
+  let inf = Expr::Identifier("Infinity".to_string());
+  match crate::functions::math_ast::try_eval_to_f64(q) {
+    Some(qv) if qv > 0.0 && qv < 1.0 => eval(wakeby_quantile_body(dargs, q)),
+    Some(qv) if qv == 0.0 => eval(dargs[4].clone()),
+    Some(qv) if qv == 1.0 => Ok(inf),
+    Some(_) => unevaluated(),
+    None => {
+      let body = wakeby_quantile_body(dargs, q);
+      let pw = piecewise_with_default(
+        vec![
+          (
+            eval(body)?,
+            comparison3(
+              int(0),
+              ComparisonOp::Less,
+              q.clone(),
+              ComparisonOp::Less,
+              int(1),
+            ),
+          ),
+          (
+            eval(dargs[4].clone())?,
+            comparison(q.clone(), ComparisonOp::LessEqual, int(0)),
+          ),
+        ],
+        inf,
+      );
+      Ok(Expr::FunctionCall {
+        name: "ConditionalExpression".to_string(),
+        args: vec![
+          pw,
+          comparison3(
+            int(0),
+            ComparisonOp::LessEqual,
+            q.clone(),
+            ComparisonOp::LessEqual,
+            int(1),
+          ),
+        ]
+        .into(),
+      })
+    }
+  }
+}
+
+/// Mean (d < 1) and Variance (d < 1/2) of WakebyDistribution, with
+/// Indeterminate outside the existence regions.
+fn wakeby_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = wakeby_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "WakebyDistribution: invalid parameters".into(),
+    ));
+  };
+  let (a, b, g, d, m) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+    dargs[4].clone(),
+  );
+  let indet = Expr::Identifier("Indeterminate".to_string());
+  let one_plus_b = plus(int(1), b.clone());
+  let mean_body = plus(
+    plus(
+      divide(a.clone(), one_plus_b.clone()),
+      divide(g.clone(), plus(int(1), times(int(-1), d.clone()))),
+    ),
+    m,
+  );
+  let dm1 = plus(int(-1), d.clone());
+  let var_body = plus(
+    plus(
+      divide(
+        power(a.clone(), int(2)),
+        times(
+          power(one_plus_b.clone(), int(2)),
+          plus(int(1), times(int(2), b.clone())),
+        ),
+      ),
+      times(
+        int(-1),
+        divide(
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![int(2), a, g.clone()].into(),
+          },
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              one_plus_b,
+              plus(plus(int(1), b), times(int(-1), d.clone())),
+              dm1.clone(),
+            ]
+            .into(),
+          },
+        ),
+      ),
+    ),
+    times(
+      int(-1),
+      divide(
+        power(g, int(2)),
+        times(power(dm1, int(2)), plus(int(-1), times(int(2), d.clone()))),
+      ),
+    ),
+  );
+  match crate::functions::math_ast::try_eval_to_f64(&d) {
+    Some(dv) => {
+      let mean = if dv < 1.0 {
+        eval(mean_body)?
+      } else {
+        indet.clone()
+      };
+      let variance = if dv < 0.5 { eval(var_body)? } else { indet };
+      Ok((mean, variance))
+    }
+    None => {
+      let mean = eval(piecewise_with_default(
+        vec![(mean_body, comparison(d.clone(), ComparisonOp::Less, int(1)))],
+        indet.clone(),
+      ))?;
+      let variance = eval(piecewise_with_default(
+        vec![(
+          var_body,
+          comparison(d, ComparisonOp::Less, divide(int(1), int(2))),
+        )],
+        indet,
+      ))?;
+      Ok((mean, variance))
+    }
+  }
 }
 
 /// Mean and Variance of CompoundPoissonDistribution[λ, dist]:

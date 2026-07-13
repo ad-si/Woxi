@@ -684,6 +684,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "VarianceGammaDistribution"
         | "HoytDistribution"
         | "CompoundPoissonDistribution"
+        | "WakebyDistribution"
         | "VonMisesDistribution"
         | "InverseGaussianDistribution"
         | "LogisticDistribution"
@@ -1123,6 +1124,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "VarianceGammaDistribution"
         | "HoytDistribution"
         | "CompoundPoissonDistribution"
+        | "WakebyDistribution"
         | "InverseGammaDistribution"
         | "InverseGaussianDistribution"
         | "LogisticDistribution"
@@ -4200,6 +4202,14 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut new_args = args.to_vec();
     new_args[0] = gamma;
     return quantile_ast(&new_args);
+  }
+  // Quantile[WakebyDistribution[...], q] — quantile-defined form.
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "WakebyDistribution"
+    && args.len() == 2
+    && !matches!(&args[1], Expr::List(_))
+  {
+    return super::distributions::wakeby_quantile(dargs, &args[1]);
   }
   // Quantile[dist, {p1, p2, ...}] for a distribution head threads over the
   // probability list (the second argument of Quantile is always a scalar

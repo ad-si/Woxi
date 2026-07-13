@@ -7388,3 +7388,86 @@ mod compound_poisson_distribution {
     assert!(r.warnings.is_empty());
   }
 }
+
+// WakebyDistribution: quantile-defined 5-parameter distribution. The
+// symbolic Quantile keeps wolframscript's ConditionalExpression +
+// Piecewise wrapper; PDF/CDF stay unevaluated in both engines. (The
+// symbolic Mean/Variance term ORDER diverges — known Plus-ordering gap
+// — so tests pin the numeric forms.)
+mod wakeby_distribution {
+  use super::*;
+
+  #[test]
+  fn quantile_forms() {
+    clear_state();
+    assert_eq!(
+      interpret("Quantile[WakebyDistribution[a, b, g, d, m], q]").unwrap(),
+      "ConditionalExpression[Piecewise[{{m + (a*(1 - (1 - q)^b))/b - \
+(g*(1 - (1 - q)^(-d)))/d, 0 < q < 1}, {m, q <= 0}}, Infinity], \
+0 <= q <= 1]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Quantile[WakebyDistribution[1, 2, 3, 1/2, 0], 1/2], \
+          Quantile[WakebyDistribution[1, 2, 3, 1/2, 0], 0], \
+          Quantile[WakebyDistribution[1, 2, 3, 1/2, 0], 1]}"
+      )
+      .unwrap(),
+      "{3/8 - 6*(1 - Sqrt[2]), 0, Infinity}"
+    );
+    // No closed-form PDF/CDF.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[WakebyDistribution[a, b, g, d, m], x]").unwrap(),
+      "PDF[WakebyDistribution[a, b, g, d, m], x]"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[WakebyDistribution[1, 2, 3, 1/2, 0]], \
+          Variance[WakebyDistribution[1, 2, 3, 1/2, 0]], \
+          Mean[WakebyDistribution[1, 2, 3, 2, 0]], \
+          Mean[WakebyDistribution[0.5, 2., 3., 0.25, 1.]]}"
+      )
+      .unwrap(),
+      "{19/3, Indeterminate, Indeterminate, 5.166666666666667}"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Quantile[WakebyDistribution[-1, 2, 3, 1/2, 0], q]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "WakebyDistribution::posprm: Parameter -1 at position 1 in \
+       WakebyDistribution[-1, 2, 3, 1/2, 0] is expected to be positive."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "Quantile[WakebyDistribution[1, 2, -3, 1/2, 0], q]",
+    )
+    .unwrap();
+    assert!(
+      r.warnings[0]
+        .contains("WakebyDistribution::posprm: Parameter -3 at position 3")
+    );
+
+    clear_state();
+    let r =
+      interpret_with_stdout("Quantile[WakebyDistribution[1, 2, 3, 1/2], q]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "WakebyDistribution::argrx: WakebyDistribution called with 4 \
+       arguments; 5 arguments are expected."
+    ));
+  }
+}
