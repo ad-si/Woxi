@@ -2650,6 +2650,77 @@ fn is_single_char_atom(re: &str) -> bool {
 
 /// Convert a Wolfram string pattern expression to a regex pattern string.
 /// Returns None if the expression is not a recognized string pattern.
+/// The regex for one DatePattern element name, or None for strings that
+/// are not element names (they match literally). Ranges are purely
+/// numeric — wolframscript accepts "31/4" and "2/30" (no calendar logic)
+/// but rejects month 13, day 32, hour 24, minute/second 60.
+fn date_pattern_element_regex(name: &str) -> Option<&'static str> {
+  Some(match name {
+    "Year" => "[0-9]{1,4}",
+    "Month" => "(?:0?[1-9]|1[0-2])",
+    "Day" => "(?:0?[1-9]|[12][0-9]|3[01])",
+    "Hour" | "Hour24" => "(?:[01]?[0-9]|2[0-3])",
+    "Hour12" => "(?:0?[1-9]|1[0-2])",
+    "Minute" => "(?:[0-5]?[0-9])",
+    "Second" => "(?:[0-5]?[0-9])",
+    // Case-insensitive, longest alternatives first so StringCases
+    // captures full names.
+    "DayName" => {
+      "(?i:monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)"
+    }
+    "MonthName" => {
+      "(?i:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)"
+    }
+    _ => return None,
+  })
+}
+
+/// DatePattern[{e1, e2, …}] / DatePattern[{…}, sep] as a regex. Element
+/// names become their field regexes; other strings match literally. A
+/// single separator (the default class [/-.:], or the given pattern)
+/// is required between two adjacent field elements — never next to a
+/// literal (wolframscript-verified: "2024-01/05" matches Year/Month/Day,
+/// "2024--01--05" and "2024 01 05" do not).
+fn date_pattern_to_regex(
+  args: &crate::ExprList,
+  seen: &mut PatternState,
+) -> Option<String> {
+  if args.is_empty() || args.len() > 2 {
+    return None;
+  }
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let sep = match args.get(1) {
+    None => "[/\\-.:]".to_string(),
+    Some(sep_pat) => string_pattern_to_regex_inner(sep_pat, seen)?,
+  };
+  let mut out = String::new();
+  let mut prev_was_element = false;
+  for item in items.iter() {
+    let Expr::String(s) = item else {
+      return None;
+    };
+    match date_pattern_element_regex(s) {
+      Some(field) => {
+        if prev_was_element {
+          out.push_str(&sep);
+        }
+        out.push_str(field);
+        prev_was_element = true;
+      }
+      None => {
+        out.push_str(&regex::escape(s));
+        prev_was_element = false;
+      }
+    }
+  }
+  Some(out)
+}
+
 fn string_pattern_to_regex_inner(
   expr: &Expr,
   seen: &mut PatternState,
@@ -2792,6 +2863,12 @@ fn string_pattern_to_regex_inner(
         .map(|a| string_pattern_to_regex_inner(a, seen))
         .collect();
       parts.map(|ps| format!("(?:{})", ps.join("|")))
+    }
+
+    // DatePattern[{elements…}] / DatePattern[{…}, sep] — date fields with
+    // separators.
+    Expr::FunctionCall { name, args } if name == "DatePattern" => {
+      date_pattern_to_regex(args, seen)
     }
 
     // StringExpression[pat1, pat2, ...] = pat1 ~~ pat2 ~~ ...

@@ -11476,3 +11476,187 @@ mod longest_common_sequence_positions_tests {
     );
   }
 }
+
+// DatePattern[{elements…}] / DatePattern[{…}, sep] in string patterns.
+// All outputs verified against wolframscript.
+mod date_pattern {
+  use super::*;
+
+  #[test]
+  fn basic_dates_and_times() {
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"3/15/1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"00:38:16\", DatePattern[{\"Hour\", \"Minute\", \"Second\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Single-digit fields and two-digit years are fine.
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"24/1/5\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"5:3:2\", DatePattern[{\"Hour\", \"Minute\", \"Second\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn default_separators() {
+    // The default separator is exactly one of / - . : — mixed freely,
+    // but spaces, doubling, or no separator do not match.
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"2024-01/05\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"2024.01.05\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    for bad in ["20240105", "2024 01 05", "2024--01--05"] {
+      assert_eq!(
+        interpret(&format!(
+          "StringMatchQ[\"{bad}\", DatePattern[{{\"Year\", \"Month\", \"Day\"}}]]"
+        ))
+        .unwrap(),
+        "False",
+        "{bad} should not match"
+      );
+    }
+  }
+
+  #[test]
+  fn explicit_separator() {
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"3-15-1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}, \"-\"]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"3/15/1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}, \"-\"]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn field_ranges_are_validated() {
+    // Month 13, hour 24/25, second 60, and zero fields fail; but there
+    // is no calendar logic (April 31 matches).
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"13/45/1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"25:00:00\", DatePattern[{\"Hour\", \"Minute\", \"Second\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"23:59:60\", DatePattern[{\"Hour\", \"Minute\", \"Second\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"0/0/1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"31/4/2024\", DatePattern[{\"Day\", \"Month\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Years are 1 to 4 digits.
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"197/1/5\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"19845/1/5\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn names_and_literal_elements() {
+    // Literal strings in the element list are separators; day and month
+    // names match case-insensitively.
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"Wed, 15 Nov 2006\", DatePattern[{\"DayName\", \", \", \"Day\", \" \", \"MonthName\", \" \", \"Year\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"wed, 15 nov 2006\", DatePattern[{\"DayName\", \", \", \"Day\", \" \", \"MonthName\", \" \", \"Year\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("StringMatchQ[\"MONDAY\", DatePattern[{\"DayName\"}]]")
+        .unwrap(),
+      "True"
+    );
+    // Unknown element names are literals.
+    assert_eq!(
+      interpret("StringMatchQ[\"x\", DatePattern[{\"Foo\"}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn string_cases_extraction() {
+    assert_eq!(
+      interpret(
+        "StringCases[\"due 3/15/1984 or 12/1/22\", DatePattern[{\"Month\", \"Day\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "{3/15/1984, 12/1/22}"
+    );
+  }
+}

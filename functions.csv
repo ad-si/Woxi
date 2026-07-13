@@ -3030,7 +3030,7 @@ MinStableDistribution,Min-stable (GEV-min) distribution with shape-cased forms,�
 NHoldAll,Attribute preventing N from numericizing any argument,✅,pure,3.0,3094
 Vee,Symbolic vee (logical or / join) operator with Unicode display,✅,pure,3.0,3094
 BinarySerialize,Serializes an expression to WXF binary bytes as a ByteArray,✅,pure,11.1,3108
-DatePattern,,,,6.0,3108
+DatePattern,String pattern matching date elements with separators,✅,pure,6.0,3108
 GeoVariant,,🚫,,10.0,3108
 KCoreComponents,Connected components of the k-core as vertex lists,✅,pure,8.0,3108
 MaxStableDistribution,Max-stable (GEV) distribution with shape-cased forms,✅,pure,8.0,3108
