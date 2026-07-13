@@ -12,6 +12,7 @@ mod digits;
 mod distributions;
 mod elementary;
 mod elliptic;
+pub use elliptic::neville_theta_ast;
 pub(crate) mod gamma;
 mod hypergeometric;
 pub(crate) mod integrals;

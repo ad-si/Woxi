@@ -1542,3 +1542,186 @@ fn legendre_p_and_deriv(n: usize, x: f64) -> (f64, f64) {
   let dp = (n as f64) * (x * p1 - p0) / (x * x - 1.0);
   (p1, dp)
 }
+
+/// Jacobi theta series θ1..θ4 at (v, q), plus θ1'(0, q).
+fn jacobi_theta1(v: f64, q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 0..40 {
+    let e = (n as f64) + 0.5;
+    let term = q.powf(e * e) * ((2 * n + 1) as f64 * v).sin();
+    sum += if n % 2 == 0 { term } else { -term };
+  }
+  2.0 * sum
+}
+
+fn jacobi_theta2(v: f64, q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 0..40 {
+    let e = (n as f64) + 0.5;
+    sum += q.powf(e * e) * ((2 * n + 1) as f64 * v).cos();
+  }
+  2.0 * sum
+}
+
+fn jacobi_theta3(v: f64, q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 1..40 {
+    sum += q.powf((n * n) as f64) * (2.0 * n as f64 * v).cos();
+  }
+  1.0 + 2.0 * sum
+}
+
+fn jacobi_theta4(v: f64, q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 1..40 {
+    let term = q.powf((n * n) as f64) * (2.0 * n as f64 * v).cos();
+    sum += if n % 2 == 0 { term } else { -term };
+  }
+  1.0 + 2.0 * sum
+}
+
+fn jacobi_theta1_prime0(q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 0..40 {
+    let e = (n as f64) + 0.5;
+    let term = (2 * n + 1) as f64 * q.powf(e * e);
+    sum += if n % 2 == 0 { term } else { -term };
+  }
+  2.0 * sum
+}
+
+/// Numeric Neville theta θs/θc/θd/θn at real z, m ∈ [0, 1].
+pub fn neville_theta_numeric(kind: char, z: f64, m: f64) -> Option<f64> {
+  if !(0.0..=1.0).contains(&m) || !z.is_finite() {
+    return None;
+  }
+  if m == 0.0 {
+    return Some(match kind {
+      's' => z.sin(),
+      'c' => z.cos(),
+      _ => 1.0,
+    });
+  }
+  if m == 1.0 {
+    return Some(match kind {
+      's' => z.sinh(),
+      'n' => z.cosh(),
+      _ => 1.0,
+    });
+  }
+  let k = elliptic_k(m);
+  let kp = elliptic_k(1.0 - m);
+  let q = (-std::f64::consts::PI * kp / k).exp();
+  let v = std::f64::consts::PI * z / (2.0 * k);
+  Some(match kind {
+    's' => {
+      2.0 * k * jacobi_theta1(v, q)
+        / (std::f64::consts::PI * jacobi_theta1_prime0(q))
+    }
+    'c' => jacobi_theta2(v, q) / jacobi_theta2(0.0, q),
+    'd' => jacobi_theta3(v, q) / jacobi_theta3(0.0, q),
+    _ => jacobi_theta4(v, q) / jacobi_theta4(0.0, q),
+  })
+}
+
+/// NevilleThetaS/C/D/N[z, m]: exact special values at z == 0, m == 0,
+/// m == 1; odd/even parity extraction on literal negative arguments;
+/// machine evaluation for real z and m in [0, 1]; everything else stays
+/// unevaluated (matching wolframscript, which keeps exact arguments
+/// symbolic).
+pub fn neville_theta_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let kind = name.as_bytes()[12].to_ascii_lowercase() as char;
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    let word = if args.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "{}::argr: {} called with {} {}; 2 arguments are expected.",
+      name,
+      name,
+      args.len(),
+      word
+    ));
+    return unevaluated();
+  }
+  let (z, m) = (&args[0], &args[1]);
+  let trig = |head: &str, arg: Expr| {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![arg].into(),
+    })
+  };
+  // z == 0: {s, c, d, n} → {0, 1, 1, 1}.
+  if matches!(z, Expr::Integer(0)) {
+    return Ok(Expr::Integer(if kind == 's' { 0 } else { 1 }));
+  }
+  // m == 0: {Sin[z], Cos[z], 1, 1}; m == 1: {Sinh[z], 1, 1, Cosh[z]}.
+  if matches!(m, Expr::Integer(0)) {
+    return match kind {
+      's' => trig("Sin", z.clone()),
+      'c' => trig("Cos", z.clone()),
+      _ => Ok(Expr::Integer(1)),
+    };
+  }
+  if matches!(m, Expr::Integer(1)) {
+    return match kind {
+      's' => trig("Sinh", z.clone()),
+      'n' => trig("Cosh", z.clone()),
+      _ => Ok(Expr::Integer(1)),
+    };
+  }
+  // Parity: θs is odd, the others even.
+  let negated = match z {
+    Expr::FunctionCall { name: tn, args: ta }
+      if tn == "Times"
+        && ta.len() == 2
+        && matches!(&ta[0], Expr::Integer(-1)) =>
+    {
+      Some(ta[1].clone())
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Some((**operand).clone()),
+    _ => None,
+  };
+  if let Some(pos) = negated {
+    let inner = Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![pos, m.clone()].into(),
+    };
+    let flipped = crate::evaluator::evaluate_expr_to_expr(&inner)?;
+    return if kind == 's' {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), flipped].into(),
+      })
+    } else {
+      Ok(flipped)
+    };
+  }
+  // Machine evaluation only when a Real is present (exact numeric
+  // arguments stay symbolic in wolframscript).
+  let has_real = matches!(z, Expr::Real(_)) || matches!(m, Expr::Real(_));
+  if has_real
+    && let (Some(zv), Some(mv)) = (
+      crate::functions::math_ast::try_eval_to_f64(z),
+      crate::functions::math_ast::try_eval_to_f64(m),
+    )
+    && let Some(v) = neville_theta_numeric(kind, zv, mv)
+  {
+    return Ok(Expr::Real(v));
+  }
+  unevaluated()
+}

@@ -4904,3 +4904,90 @@ mod owen_t {
     assert_eq!(interpret("OwenT[1, 1/2]").unwrap(), "OwenT[1, 1/2]");
   }
 }
+
+// Neville theta functions: exact special values at z == 0 / m == 0 /
+// m == 1, odd/even parity extraction, machine evaluation for real
+// arguments (exact arguments stay symbolic like wolframscript).
+// ULP-sensitive float values assert through the Round technique.
+mod neville_theta {
+  use super::*;
+
+  #[test]
+  fn special_values_and_parity() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[z, 0], NevilleThetaC[z, 0], NevilleThetaD[z, 0], \
+          NevilleThetaN[z, 0]}"
+      )
+      .unwrap(),
+      "{Sin[z], Cos[z], 1, 1}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[z, 1], NevilleThetaC[z, 1], NevilleThetaD[z, 1], \
+          NevilleThetaN[z, 1]}"
+      )
+      .unwrap(),
+      "{Sinh[z], 1, 1, Cosh[z]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[0, m], NevilleThetaC[0, m], NevilleThetaD[0, m], \
+          NevilleThetaN[0, m]}"
+      )
+      .unwrap(),
+      "{0, 1, 1, 1}"
+    );
+    // θs is odd, the others even; exact arguments stay symbolic.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[-z, m], NevilleThetaC[-z, m], \
+          NevilleThetaN[1/2, 1/3]}"
+      )
+      .unwrap(),
+      "{-NevilleThetaS[z, m], NevilleThetaC[z, m], NevilleThetaN[1/2, 1/3]}"
+    );
+  }
+
+  #[test]
+  fn machine_evaluation() {
+    // Bit-stable float points.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[0.5, 0.3], NevilleThetaS[2., 0.7], \
+          NevilleThetaD[2., 0.7], NevilleThetaN[2., 0.7]}"
+      )
+      .unwrap(),
+      "{0.4828708375384975, 1.3489052898920963, 0.740926161305894, \
+        1.3500568185364288}"
+    );
+    // ULP-sensitive points via Round (both engines agree at 10 digits).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Round[NevilleThetaC[0.5, 0.3]*10^10], \
+          Round[NevilleThetaD[0.5, 0.3]*10^10], \
+          Round[NevilleThetaN[0.5, 0.3]*10^10], \
+          Round[NevilleThetaC[2., 0.7]*10^10]}"
+      )
+      .unwrap(),
+      "{8964776434, 9833041936, 10182516442, 557488312}"
+    );
+  }
+
+  #[test]
+  fn arity_message() {
+    clear_state();
+    let r = interpret_with_stdout("NevilleThetaS[z]").unwrap();
+    assert_eq!(r.result, "NevilleThetaS[z]");
+    assert!(r.warnings[0].contains(
+      "NevilleThetaS::argr: NevilleThetaS called with 1 argument; \
+       2 arguments are expected."
+    ));
+  }
+}

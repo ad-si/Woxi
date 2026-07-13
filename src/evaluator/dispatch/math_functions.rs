@@ -1335,6 +1335,9 @@ pub fn dispatch_math_functions(
     "MittagLefflerE" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::mittag_leffler_e_ast(args));
     }
+    "NevilleThetaS" | "NevilleThetaC" | "NevilleThetaD" | "NevilleThetaN" => {
+      return Some(crate::functions::math_ast::neville_theta_ast(name, args));
+    }
     "EllipticK" if args.len() == 1 => {
       return Some(crate::functions::math_ast::elliptic_k_ast(args));
     }

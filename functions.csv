@@ -3339,7 +3339,7 @@ JacobiDS,Jacobi elliptic function ds (dn/sn),✅,pure,1.0,3427
 KnapsackSolve,,,,11.0,3427
 LQRegulatorGains,,,,8.0,3427
 MeanAbsoluteLossLayer,,🚫,,11.0,3427
-NevilleThetaS,,,,3.0,3427
+NevilleThetaS,Neville theta S function,✅,pure,3.0,3427
 NextCell,,,,10.0,3427
 PairedTTest,,,,8.0,3427
 PointFigureChart,,🚫,,8.0,3427
@@ -3402,7 +3402,7 @@ GraphDisjointUnion,Disjoint union of graphs with vertices relabeled to consecuti
 KagiChart,,🚫,,8.0,3491
 LessEqualThan,Operator form of LessEqual,✅,none,10.3,3491
 MorphologicalBranchPoints,,🚫,,8.0,3491
-NevilleThetaC,,,,3.0,3491
+NevilleThetaC,Neville theta C function,✅,pure,3.0,3491
 NoneTrue,Checks if no element in a list is true,✅,pure,10.0,3491
 NotebookApply,,🚫,,3.0,3491
 NumericalOrder,Orders two expressions by numeric value falling back to canonical order,✅,pure,11.1,3491
@@ -3516,8 +3516,8 @@ HilbertCurve,Line through all cells of the 2^n x 2^n grid in Hilbert order (inte
 KumaraswamyDistribution,Kumaraswamy continuous distribution on the unit interval,✅,pure,8.0,3612
 LogLogisticDistribution,Log-logistic distribution with shape g and scale s,✅,pure,8.0,3612
 LongestCommonSequence,Returns the longest noncontiguous subsequence common to two strings or lists,✅,pure,7.0,3612
-NevilleThetaD,,,,3.0,3612
-NevilleThetaN,,,,3.0,3612
+NevilleThetaD,Neville theta D function,✅,pure,3.0,3612
+NevilleThetaN,Neville theta N function,✅,pure,3.0,3612
 SatisfiabilityCount,Number of satisfying assignments of a Boolean expression,✅,pure,7.0,3612
 StadiumShape,Two-dimensional stadium region,✅,pure,10.2,3612
 BernoulliProcess,Bernoulli process with time-independent Bernoulli slices,✅,unevaluated,9.0,3636
