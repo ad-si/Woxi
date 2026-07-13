@@ -6459,3 +6459,151 @@ fn cmc_distance(
   let de2 = term_l * term_l + term_c * term_c + delta_h2 / (s_h * s_h);
   de2.sqrt() / 100.0
 }
+
+/// CrossingDetect[array | image] / CrossingDetect[..., delta] — marks the
+/// zero crossings: after treating values with |v| < delta as zero, an
+/// element is 1 exactly when its value is positive and some 8-neighbor is
+/// negative (wolframscript-verified, including that zeros neither mark
+/// nor trigger). Arrays give a binary SparseArray; a single-channel image
+/// gives a binary ("Bit") image.
+pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "CrossingDetect".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  let delta = match args.get(1) {
+    None => 0.0,
+    Some(d) => match crate::functions::math_ast::try_eval_to_f64(d) {
+      Some(v) if v >= 0.0 => v,
+      _ => return unevaluated(),
+    },
+  };
+  let zeroed = |v: f64| if v.abs() < delta { 0.0 } else { v };
+  let crossings = |grid: &Vec<Vec<f64>>| -> Vec<Vec<i128>> {
+    let h = grid.len();
+    let w = grid.first().map(|r| r.len()).unwrap_or(0);
+    let mut out = vec![vec![0i128; w]; h];
+    for r in 0..h {
+      for c in 0..w {
+        let v = zeroed(grid[r][c]);
+        if v <= 0.0 {
+          continue;
+        }
+        'search: for dr in -1i64..=1 {
+          for dc in -1i64..=1 {
+            if dr == 0 && dc == 0 {
+              continue;
+            }
+            let (nr, nc) = (r as i64 + dr, c as i64 + dc);
+            if nr < 0 || nc < 0 || nr >= h as i64 || nc >= w as i64 {
+              continue;
+            }
+            if zeroed(grid[nr as usize][nc as usize]) < 0.0 {
+              out[r][c] = 1;
+              break 'search;
+            }
+          }
+        }
+      }
+    }
+    out
+  };
+  let num = |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e);
+
+  match &args[0] {
+    // Single-channel image → binary image.
+    Expr::Image {
+      width,
+      height,
+      channels: 1,
+      data,
+      ..
+    } => {
+      let (w, h) = (*width as usize, *height as usize);
+      let grid: Vec<Vec<f64>> =
+        (0..h).map(|r| data[r * w..(r + 1) * w].to_vec()).collect();
+      let marked = crossings(&grid);
+      let out: Vec<f64> = marked
+        .iter()
+        .flat_map(|row| row.iter().map(|&b| b as f64))
+        .collect();
+      Ok(Expr::Image {
+        width: *width,
+        height: *height,
+        channels: 1,
+        data: std::sync::Arc::new(out),
+        image_type: crate::syntax::ImageType::Bit,
+      })
+    }
+    // 1-D numeric list → binary SparseArray vector.
+    Expr::List(items)
+      if !items.is_empty() && items.iter().all(|e| num(e).is_some()) =>
+    {
+      let row: Vec<f64> = items.iter().map(|e| num(e).unwrap()).collect();
+      let marked = crossings(&vec![row]);
+      let dense = Expr::List(
+        marked[0]
+          .iter()
+          .map(|&b| Expr::Integer(b))
+          .collect::<Vec<_>>()
+          .into(),
+      );
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: vec![dense].into(),
+      })
+    }
+    // 2-D numeric matrix → binary SparseArray matrix. (In one dimension
+    // the 8-neighborhood reduces to the two adjacent elements.)
+    Expr::List(rows)
+      if !rows.is_empty()
+        && rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+    {
+      let mut grid: Vec<Vec<f64>> = Vec::with_capacity(rows.len());
+      let mut width: Option<usize> = None;
+      for r in rows.iter() {
+        let Expr::List(cells) = r else {
+          return unevaluated();
+        };
+        if *width.get_or_insert(cells.len()) != cells.len() || cells.is_empty()
+        {
+          return unevaluated();
+        }
+        let mut vals = Vec::with_capacity(cells.len());
+        for c in cells.iter() {
+          match num(c) {
+            Some(v) => vals.push(v),
+            None => return unevaluated(),
+          }
+        }
+        grid.push(vals);
+      }
+      let marked = crossings(&grid);
+      let dense = Expr::List(
+        marked
+          .iter()
+          .map(|row| {
+            Expr::List(
+              row
+                .iter()
+                .map(|&b| Expr::Integer(b))
+                .collect::<Vec<_>>()
+                .into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      );
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: vec![dense].into(),
+      })
+    }
+    _ => unevaluated(),
+  }
+}

@@ -3142,7 +3142,7 @@ RunThrough,Symbol for running external commands,✅,effectful,1.0,3215
 UsingFrontEnd,,🚫,,7.0,3215
 ZeroTest,Option for testing zero equivalence,✅,pure,1.0,3215
 BooleanMinterms,Disjunction of minterms from True/False rows or indices (descending index order),✅,pure,7.0,3224
-CrossingDetect,,,,8.0,3224
+CrossingDetect,Marks zero crossings in an array or image as a binary result,✅,pure,8.0,3224
 DateFunction,,,,6.0,3224
 DateObjectQ,True if the expression is a well-formed DateObject,✅,pure,10.0,3224
 FilteredEntityClass,,🚫,,12.0,3224

@@ -4069,3 +4069,108 @@ mod structural_numeric_unequal {
     );
   }
 }
+
+// CrossingDetect — zero crossings of arrays and images. All outputs
+// verified against wolframscript.
+mod crossing_detect {
+  use super::*;
+
+  #[test]
+  fn one_dimensional_crossings() {
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{4, 0, 1, -2, 1, -2, -3, -1, 3}]]")
+        .unwrap(),
+      "{0, 0, 1, 0, 1, 0, 0, 0, 1}"
+    );
+    // A positive element next to a negative one marks the positive side.
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{1, -1}]]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{-1, 1}]]").unwrap(),
+      "{0, 1}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{1, -1, 1, -1}]]").unwrap(),
+      "{1, 0, 1, 0}"
+    );
+    // No crossings without a sign change; zeros neither mark nor
+    // trigger.
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{1, 2, 3}]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{-1, 0, 1}]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{0, -1}]]").unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn delta_zeroes_small_values() {
+    // |v| < delta is treated as zero — strictly, so delta 1 keeps the
+    // plus-or-minus-1 values alive.
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{4, 0, 1, -2, 1, -2, -3, -1, 3}, 1]]")
+        .unwrap(),
+      "{0, 0, 1, 0, 1, 0, 0, 0, 1}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{4, 0, 1, -2, 1, -2, -3, -1, 3}, 3/2]]")
+        .unwrap(),
+      "{0, 0, 0, 0, 0, 0, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn matrices_use_the_eight_neighborhood() {
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{{1, -1}, {1, 1}}]]").unwrap(),
+      "{{1, 0}, {1, 1}}"
+    );
+    // Diagonal neighbors count: every corner sees the negative center.
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{{1, 1, 1}, {1, -5, 1}, {1, 1, 1}}]]")
+        .unwrap(),
+      "{{1, 1, 1}, {1, 0, 1}, {1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[CrossingDetect[{{-1, -1, -1}, {-1, 5, -1}, {-1, -1, -1}}]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn array_input_returns_sparse_arrays() {
+    assert_eq!(
+      interpret("CrossingDetect[{1, -1}]").unwrap(),
+      "SparseArray[Automatic, {2}, 0, {1, {{0, 1}, {{1}}}, {1}}]"
+    );
+    assert_eq!(
+      interpret("CrossingDetect[{{1, -1}, {-1, -1}}]").unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{1}}}, {1}}]"
+    );
+  }
+
+  #[test]
+  fn image_input_returns_a_bit_image() {
+    assert_eq!(
+      interpret("ImageData[CrossingDetect[Image[{{0.5, -0.5}, {-0.5, 0.5}}]]]")
+        .unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("ImageType[CrossingDetect[Image[{{0.5, -0.5}, {-0.5, 0.5}}]]]")
+        .unwrap(),
+      "Bit"
+    );
+  }
+}

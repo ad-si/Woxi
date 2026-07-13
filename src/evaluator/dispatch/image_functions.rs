@@ -296,6 +296,9 @@ pub fn dispatch_image_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
+    "CrossingDetect" => {
+      return Some(crate::functions::image_ast::crossing_detect_ast(args));
+    }
     "Image" if !args.is_empty() => {
       // Invalid image data shouldn't error — return unevaluated so wrapping
       // predicates like ImageQ can still classify it as False.
