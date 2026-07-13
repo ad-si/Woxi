@@ -965,6 +965,11 @@ function main() {
     // only {Protected, ReadProtected}; once Manipulate is mentioned, HoldAll
     // is added automatically. Same root cause as Attributes[Plot3D] above.
     "Attributes[Manipulate]",
+    // Attributes[FunctionInterpolation]: in a fresh wolframscript kernel it has
+    // only {Protected, ReadProtected} (Woxi matches this); once
+    // FunctionInterpolation is used the autoloaded definition adds HoldAll.
+    // Same batch-pollution root cause as Attributes[Plot3D]/Attributes[Manipulate].
+    "Attributes[FunctionInterpolation]",
     // Expectation[x*y, Distributed[{x, y}, BinormalDistribution[r]]] = r;
     // Wolfram computes the covariance/correlation moment directly, Woxi
     // keeps the call symbolic (no joint-distribution evaluator yet).
@@ -1007,6 +1012,45 @@ function main() {
     // Sqrt[2]*Sqrt[InverseGammaRegularized[3/2, 0, 1/2]], Wolfram fuses the
     // square roots to Sqrt[2*InverseGammaRegularized[3/2, 0, 1/2]].
     "Median[ChiDistribution[3]]",
+    // Benini PDF/CDF with symbolic α: value-correct form divergence. Wolfram
+    // keeps the survival factor as a single exponential
+    // E^(-(a*Log[x/s]) - b*Log[x/s]^2); Woxi's core evaluator folds
+    // E^(-a*Log[x/s]) back into (x/s)^(-a), yielding the equivalent
+    // 1/(E^(b*Log[x/s]^2)*(x/s)^a). Reconciling would require suppressing the
+    // general E^(k*Log[y]) -> y^k normalization (a risky core-normalizer change).
+    "PDF[BeniniDistribution[a, b, s], x]",
+    "CDF[BeniniDistribution[a, b, s], x]",
+    // Distribution/geometry closed forms Woxi keeps unevaluated where Wolfram
+    // computes a special-function or numerically-factored result. Each is a
+    // scoped feature gap documented at the corresponding unit test:
+    //  - Coxian PDF with a repeated phase rate needs Erlang-style terms and
+    //    Wolfram's Together-factored form (same rabbit hole as the
+    //    Hypoexponential {2, 2} case below).
+    "PDF[CoxianDistribution[{1/2, 1/3}, {2, 2, 3}], x]",
+    //  - Hypoexponential PDF with repeated rates: Wolfram folds the Erlang
+    //    terms into a single E^(-max*x)-denominator fraction (e.g.
+    //    (12*(1 - E^x + E^x*x))/E^(3*x)); matching that factoring is a
+    //    Together/Simplify form-divergence rabbit hole.
+    "PDF[HypoexponentialDistribution[{2, 2}], x]",
+    //  - TsallisQGaussian CDF for q != 1 needs the incomplete-Beta /
+    //    hypergeometric machinery Woxi has not wired for the CDF.
+    "CDF[TsallisQGaussianDistribution[0, 2, 3/2], x]",
+    //  - Hoyt CDF is expressed via MarcumQ, which Woxi does not implement.
+    "CDF[HoytDistribution[q, w], x]",
+    //  - FirstPassageTime PDF with a symbolic argument needs the Markov-chain
+    //    eigendecomposition closed form (2^(-x) for this 2-state chain).
+    "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], x]",
+    //  - DiskSegment perimeter for an *elliptical* disk needs the elliptic
+    //    integral EllipticE (6 + 4*EllipticE[-5/4]); the circular cases match.
+    "Perimeter[DiskSegment[{0, 0}, {3, 2}, {0, Pi}]]",
+    //  - HalfSpace symbolic membership requires Wolfram's Reduce
+    //    linear-inequality canonicalization (Element[x | y, Reals] && x <= 2,
+    //    with sign-flip / coefficient-division normalization for general n).
+    "RegionMember[HalfSpace[{1, 0}, 2], {x, y}]",
+    //  - RegionMoment for a Polygon: Wolfram uses numerical quadrature whose
+    //    last-ULP noise (e.g. {2,0} -> 0.08333333333333331, off from exact
+    //    1/12) cannot be reproduced; Woxi keeps polygon moments exact/inert.
+    "RegionMoment[Polygon[{{0, 0}, {1, 0}, {0, 1}}], {1, 1}]",
 
     // ───────────────────────────────────────────────────────────────────────
     // CAS capabilities Woxi returns unevaluated where Wolfram computes a closed
@@ -1095,6 +1139,13 @@ function main() {
     // PermutationProduct prints with the private-use centred-dot infix glyph
     // (U+F3DE); Woxi keeps the call symbolic with the standard head.
     "PermutationProduct[{2, 1, 4}, {1, 3, 2}]",
+
+    // FailureDistribution constructor: wolframscript wraps each normalized
+    // event index in an invisible private-use glyph (U+F7D7) in its InputForm
+    // output (e.g. "\[F7D7]1 || \[F7D7]2"), so the printed forms can never
+    // match byte-for-byte. Woxi emits the plain indices (structurally identical).
+    // Same un-matchable rendering artifact as the PermutationProduct glyph above.
+    "FailureDistribution[x || y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}]",
 
     // Symbol[]-in-Set: Woxi's dynamic_variable_names feature assigns to `xy`
     // (returns 99); Wolfram's Set holds Symbol["xy"] literally so `xy` stays
