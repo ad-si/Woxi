@@ -1766,7 +1766,7 @@ PaneSelector,Pane selector control (stays symbolic in script mode),✅,unevaluat
 URLExecute,Execute URL request,,unevaluated,10.0,1794
 FileBaseName,Returns the base name of a file (without directory and extension),✅,pure,7.0,1796
 SequencePosition,Finds positions of subsequences matching a pattern in a list (overlapping by default; supports a count limit and the Overlaps option),✅,pure,10.1,1796
-ColorCombine,Combine color channels,,unevaluated,7.0,1800
+ColorCombine,Combine color channels into a multichannel image,✅,pure,7.0,1800
 CoordinatesToolOptions,Coordinates tool options,,unevaluated,7.0,1800
 Highlighted,Display wrapper that draws a colored background behind its argument,✅,pure,10.4,1800
 TextGrid,Displays data in a text grid layout,✅,pure,10.3,1800

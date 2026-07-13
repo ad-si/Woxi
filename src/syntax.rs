@@ -122,6 +122,9 @@ pub enum Expr {
     channels: u8,
     data: std::sync::Arc<Vec<f64>>,
     image_type: ImageType,
+    /// Explicit color-space tag (e.g. from ColorCombine[imgs, "HSB"]).
+    /// `None` reports as `Automatic` from ImageColorSpace.
+    color_space: Option<&'static str>,
   },
   /// Graphics output: holds SVG string, displays as -Graphics- (or -Graphics3D- if is_3d).
   /// `source` optionally carries the raw plot series data so that
@@ -724,6 +727,7 @@ impl Clone for Expr {
       Self::Constant(s) => return Self::Constant(s.clone()),
       Self::Raw(s) => return Self::Raw(s.clone()),
       Self::Image {
+        color_space,
         width,
         height,
         channels,
@@ -731,6 +735,7 @@ impl Clone for Expr {
         image_type,
       } => {
         return Self::Image {
+          color_space: *color_space,
           width: *width,
           height: *height,
           channels: *channels,
@@ -812,12 +817,14 @@ impl Clone for Expr {
           Self::Constant(s) => results.push(Self::Constant(s.clone())),
           Self::Raw(s) => results.push(Self::Raw(s.clone())),
           Self::Image {
+            color_space,
             width,
             height,
             channels,
             data,
             image_type,
           } => results.push(Self::Image {
+            color_space: *color_space,
             width: *width,
             height: *height,
             channels: *channels,
@@ -11172,6 +11179,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     }
     // Image: produce NumericArray InputForm
     Expr::Image {
+      color_space: _,
       width,
       height,
       channels,

@@ -382,6 +382,9 @@ pub fn dispatch_image_functions(
     "ColorQuantize" if args.len() == 2 => {
       return Some(crate::functions::image_ast::color_quantize_ast(args));
     }
+    "ColorCombine" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::image_ast::color_combine_ast(args));
+    }
     "ColorSeparate" if args.len() == 1 => {
       return Some(crate::functions::image_ast::color_separate_ast(args));
     }

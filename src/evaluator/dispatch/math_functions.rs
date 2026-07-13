@@ -8253,6 +8253,7 @@ fn image_min_max_filter(
   use_min: bool,
 ) -> Option<Expr> {
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -8296,6 +8297,7 @@ fn image_min_max_filter(
     }
   }
   Some(Expr::Image {
+    color_space: None,
     width: *width,
     height: *height,
     channels: *channels,

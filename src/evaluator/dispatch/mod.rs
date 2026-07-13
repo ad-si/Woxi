@@ -3307,6 +3307,7 @@ pub fn evaluate_function_call_ast_inner(
     // per channel. The result preserves dimensions, channels, and
     // image_type.
     if let Expr::Image {
+      color_space: _,
       width,
       height,
       channels,
@@ -3384,6 +3385,7 @@ pub fn evaluate_function_call_ast_inner(
         }
       }
       return Ok(Expr::Image {
+        color_space: None,
         width: *width,
         height: *height,
         channels: *channels,
@@ -11272,6 +11274,7 @@ fn rational_to_expr(num: i128, den: i128) -> Expr {
 /// `is_darker` = true for Darker, false for Lighter.
 fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -11324,6 +11327,7 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
       })
       .collect();
     return Some(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -11811,6 +11815,7 @@ fn blend_images(colors: &[Expr], weight: Option<&Expr>) -> Option<Expr> {
     new_data.push(v);
   }
   Some(Expr::Image {
+    color_space: None,
     width: w,
     height: h,
     channels: ch,
@@ -12239,6 +12244,7 @@ fn morphological_op(
     crate::functions::math_ast::try_eval_to_f64(radius_expr)? as usize;
 
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -12262,6 +12268,7 @@ fn morphological_op(
       }
     }
     return Some(Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,

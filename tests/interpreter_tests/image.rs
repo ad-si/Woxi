@@ -4391,3 +4391,199 @@ mod image_partition {
     ));
   }
 }
+
+// ColorCombine semantics decoded from wolframscript probes: channels of the
+// inputs interleave (multichannel inputs concatenate), the optional
+// colorspace argument only tags the result and must match the channel
+// count, and the result type is the highest input type.
+mod color_combine {
+  use super::*;
+
+  #[test]
+  fn combines_grayscale_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ColorCombine[{Image[{{0.1, 0.2}, {0.3, 0.4}}], \
+           Image[{{0.5, 0.6}, {0.7, 0.8}}], Image[{{0.9, 1.0}, {0.15, 0.25}}]}]]"
+      )
+      .unwrap(),
+      "{{{0.10000000149011612, 0.5, 0.8999999761581421}, \
+         {0.20000000298023224, 0.6000000238418579, 1.}}, \
+        {{0.30000001192092896, 0.699999988079071, 0.15000000596046448}, \
+         {0.4000000059604645, 0.800000011920929, 0.25}}}"
+    );
+    // A single image gives a single-channel (grayscale) result; two give
+    // a plain 2-channel image.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageChannels[ColorCombine[{Image[{{0.1}}]}]], \
+          ImageChannels[ColorCombine[{Image[{{0.1}}], Image[{{0.2}}]}]], \
+          ImageColorSpace[ColorCombine[{Image[{{0.1}}], Image[{{0.2}}]}]]}"
+      )
+      .unwrap(),
+      "{1, 2, Automatic}"
+    );
+    // Multichannel inputs concatenate their channels.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ColorCombine[{Image[{{{0.1, 0.2, 0.3}}}], Image[{{0.4}}]}]]"
+      )
+      .unwrap(),
+      "{{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896, \
+          0.4000000059604645}}}"
+    );
+  }
+
+  #[test]
+  fn colorspace_argument_tags_the_result() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = {Image[{{0.1}}], Image[{{0.2}}], Image[{{0.3}}]}; \
+         {ImageColorSpace[ColorCombine[g, \"HSB\"]], \
+          ImageColorSpace[ColorCombine[g, \"RGB\"]], \
+          ImageColorSpace[ColorCombine[{Image[{{0.1}}]}, \"Grayscale\"]]}"
+      )
+      .unwrap(),
+      "{HSB, RGB, Grayscale}"
+    );
+    // The data itself is not converted by the tag.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ColorCombine[{Image[{{0.1}}], Image[{{0.2}}], \
+           Image[{{0.3}}]}, \"HSB\"]]"
+      )
+      .unwrap(),
+      "{{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896}}}"
+    );
+    // The tag survives assignment, ImageTake, and ImagePartition, and
+    // ColorSeparate results are untagged again.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "h = ColorCombine[{Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}], \
+           Image[{{0.5, 0.6}}]}, \"HSB\"]; \
+         {ImageColorSpace[h], ImageColorSpace[ImageTake[h, 1]], \
+          ImageColorSpace[ImagePartition[h, 1][[1, 1]]], \
+          Map[ImageColorSpace, ColorSeparate[h]]}"
+      )
+      .unwrap(),
+      "{HSB, HSB, HSB, {Automatic, Automatic, Automatic}}"
+    );
+  }
+
+  #[test]
+  fn type_promotion() {
+    // Byte + Byte stays Byte with exact values.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = ColorCombine[{Image[{{10, 20}, {30, 40}}, \"Byte\"], \
+           Image[{{50, 60}, {70, 80}}, \"Byte\"]}]; \
+         {ImageType[c], ImageData[c, \"Byte\"]}"
+      )
+      .unwrap(),
+      "{Byte, {{{10, 50}, {20, 60}}, {{30, 70}, {40, 80}}}}"
+    );
+    // Real32 channels are snapped to single precision inside a Real64
+    // result; Byte channels convert exactly.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = ColorCombine[{Image[{{0.1}}], Image[{{0.1}}, \"Real64\"]}]; \
+         {ImageType[c], ImageData[c]}"
+      )
+      .unwrap(),
+      "{Real64, {{{0.10000000149011612, 0.1}}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = ColorCombine[{Image[{{10}}, \"Byte\"], \
+           Image[{{0.1}}, \"Real64\"]}]; \
+         {ImageType[c], ImageData[c]}"
+      )
+      .unwrap(),
+      "{Real64, {{{0.0392156862745098, 0.1}}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = ColorCombine[{Image[{{0, 1}}, \"Bit\"], \
+           Image[{{50, 60}}, \"Byte\"]}]; \
+         {ImageType[c], ImageData[c]}"
+      )
+      .unwrap(),
+      "{Byte, {{{0., 0.19607843137254902}, {1., 0.23529411764705882}}}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    // Mismatched dimensions, non-image entries, empty or non-list input.
+    clear_state();
+    let r = interpret_with_stdout(
+      "ColorCombine[{Image[{{0.1}}], Image[{{0.1, 0.2}}]}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "ColorCombine[{-Image-, -Image-}]");
+    assert!(r.warnings[0].contains(
+      "ColorCombine::ccbinput: {-Image-, -Image-} should be a list of images \
+       with the same image dimensions."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ColorCombine[{Image[{{0.1}}], 5}]").unwrap();
+    assert!(r.warnings[0].contains(
+      "ColorCombine::ccbinput: {-Image-, 5} should be a list of images"
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ColorCombine[5]").unwrap();
+    assert!(
+      r.warnings[0]
+        .contains("ColorCombine::ccbinput: 5 should be a list of images")
+    );
+
+    // Invalid colorspace fires before the list check; strings render bare.
+    clear_state();
+    let r = interpret_with_stdout("ColorCombine[5, \"Foo\"]").unwrap();
+    assert_eq!(r.result, "ColorCombine[5, Foo]");
+    assert!(r.warnings[0].contains(
+      "ColorCombine::imgcstype: Foo is an invalid color space specification."
+    ));
+
+    // A symbol is not a valid colorspace either.
+    clear_state();
+    let r = interpret_with_stdout(
+      "ColorCombine[{Image[{{0.1}}], Image[{{0.2}}], Image[{{0.3}}]}, RGB]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "ColorCombine::imgcstype: RGB is an invalid color space specification."
+    ));
+
+    // Channel-count mismatch with the requested colorspace.
+    clear_state();
+    let r = interpret_with_stdout(
+      "ColorCombine[{Image[{{0.1}}], Image[{{0.2}}]}, \"RGB\"]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "ColorCombine::imgcsmis: The specified color space RGB and the number \
+       of channels 2 are not compatible."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ColorCombine[{Image[{{0.1}}]}, \"RGB\", 3]")
+      .unwrap();
+    assert!(r.warnings[0].contains(
+      "ColorCombine::argt: ColorCombine called with 3 arguments; 1 or 2 \
+       arguments are expected."
+    ));
+  }
+}
