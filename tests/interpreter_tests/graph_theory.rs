@@ -5175,6 +5175,24 @@ mod katz_centrality {
     );
   }
 
+  // A length-n third argument is a per-vertex bias vector: it solves
+  // (I - alpha A^T) x = beta rather than scaling a constant.
+  #[test]
+  fn beta_vector_is_per_vertex_bias() {
+    assert_eq!(
+      interpret(
+        "Round[KatzCentrality[PathGraph[{1, 2, 3}], 0.5, {1, 2, 3}], 10^-6]"
+      )
+      .unwrap(),
+      "{5, 8, 7}"
+    );
+    assert_eq!(
+      interpret("Round[KatzCentrality[CycleGraph[3], 0.1, {1, 2, 3}], 10^-6]")
+        .unwrap(),
+      "{1590909/1000000, 5/2, 3409091/1000000}"
+    );
+  }
+
   // Katz gains centrality from in-neighbours, so directed edges matter: on a
   // directed path each vertex accumulates alpha^k from k steps upstream.
   #[test]

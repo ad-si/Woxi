@@ -1233,26 +1233,31 @@ pub fn pagerank_centrality(adj: &[Vec<f64>], alpha: f64) -> Option<Vec<f64>> {
   solve_linear_f64(sys, b)
 }
 
-/// KatzCentrality: solves (I - alpha A) x = beta * 1 for x, the Katz centrality
-/// vector x_i = alpha Σ_j A_ij x_j + beta. Uses Gaussian elimination with
-/// partial pivoting; returns `None` if the system is singular.
+/// KatzCentrality: solves (I - alpha A) x = beta for x, the Katz centrality
+/// vector x_i = alpha Σ_j A_ij x_j + beta_i. `beta` is the per-vertex bias
+/// vector (a scalar beta is expanded to `{beta, …}` by the caller). Uses
+/// Gaussian elimination with partial pivoting; returns `None` if the system is
+/// singular or `beta` has the wrong length.
 pub fn katz_centrality(
   adj: &[Vec<f64>],
   alpha: f64,
-  beta: f64,
+  beta: &[f64],
 ) -> Option<Vec<f64>> {
   let n = adj.len();
   if n == 0 {
     return Some(vec![]);
   }
-  // Augmented matrix M = I - alpha A and right-hand side b = beta * 1.
+  if beta.len() != n {
+    return None;
+  }
+  // Augmented matrix M = I - alpha A and right-hand side b = beta.
   let mut m = vec![vec![0.0_f64; n]; n];
   for (i, row) in m.iter_mut().enumerate() {
     for (j, mij) in row.iter_mut().enumerate() {
       *mij = (if i == j { 1.0 } else { 0.0 }) - alpha * adj[i][j];
     }
   }
-  let mut b = vec![beta; n];
+  let mut b = beta.to_vec();
   for col in 0..n {
     let mut piv = col;
     for r in (col + 1)..n {

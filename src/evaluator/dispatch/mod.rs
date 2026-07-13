@@ -6413,12 +6413,28 @@ pub fn evaluate_function_call_ast_inner(
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     && let Some(alpha) = crate::functions::math_ast::expr_to_f64(&args[1])
   {
-    let beta = if args.len() == 3 {
-      crate::functions::math_ast::expr_to_f64(&args[2]).unwrap_or(1.0)
-    } else {
-      1.0
-    };
     let n = vertices.len();
+    // beta defaults to 1 for every vertex; a scalar third argument is used for
+    // all vertices, and a length-n list gives a per-vertex bias vector.
+    let beta: Vec<f64> = if args.len() == 3 {
+      match &args[2] {
+        Expr::List(bs) if bs.len() == n => {
+          let vals: Option<Vec<f64>> = bs
+            .iter()
+            .map(crate::functions::math_ast::expr_to_f64)
+            .collect();
+          match vals {
+            Some(v) => v,
+            None => vec![1.0; n],
+          }
+        }
+        other => {
+          vec![crate::functions::math_ast::expr_to_f64(other).unwrap_or(1.0); n]
+        }
+      }
+    } else {
+      vec![1.0; n]
+    };
     let mut idx: std::collections::HashMap<String, usize> =
       std::collections::HashMap::new();
     for (i, v) in vertices.iter().enumerate() {
@@ -6440,7 +6456,7 @@ pub fn evaluate_function_call_ast_inner(
       }
     }
     if let Some(centrality) =
-      crate::functions::graph::katz_centrality(&adj, alpha, beta)
+      crate::functions::graph::katz_centrality(&adj, alpha, &beta)
     {
       return Ok(Expr::List(
         centrality
