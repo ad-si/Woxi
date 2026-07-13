@@ -5595,3 +5595,77 @@ mod polygon_moment_of_inertia {
     );
   }
 }
+
+// StadiumShape: the 2-D capsule analog. Constructors self-normalize to
+// the full {{p1, p2}, r} form; Area factors out the Pi coefficient only
+// when it divides the rectangle term (RegionMeasure keeps the plain
+// sum); membership is closed point-to-segment distance. Verified
+// against wolframscript.
+mod stadium_shape {
+  use super::*;
+
+  #[test]
+  fn constructor_normalization() {
+    clear_state();
+    assert_eq!(
+      interpret("{StadiumShape[], StadiumShape[3]}").unwrap(),
+      "{StadiumShape[{{-1, 0}, {1, 0}}, 1], \
+        StadiumShape[{{-1, 0}, {1, 0}}, 3]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("StadiumShape[{{0, 0}, {4, 0}}, 2]").unwrap(),
+      "StadiumShape[{{0, 0}, {4, 0}}, 2]"
+    );
+  }
+
+  #[test]
+  fn measures() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StadiumShape[{{0, 0}, {4, 0}}, 2]; \
+         {Area[s], RegionMeasure[s], Perimeter[s], RegionCentroid[s], \
+          RegionDimension[s], RegionEmbeddingDimension[s]}"
+      )
+      .unwrap(),
+      "{4*(4 + Pi), 16 + 4*Pi, 8 + 4*Pi, {2, 0}, 2, 2}"
+    );
+    // The Pi coefficient hoists only when it divides the rectangle term;
+    // a degenerate segment leaves a plain disk.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Area[StadiumShape[{{0, 0}, {1, 0}}, 3]], \
+          Area[StadiumShape[{{0, 0}, {3, 0}}, 1]], \
+          Area[StadiumShape[{{0, 0}, {0, 0}}, 3]]}"
+      )
+      .unwrap(),
+      "{6 + 9*Pi, 6 + Pi, 9*Pi}"
+    );
+    // Symbolic radius keeps the unfactored forms.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s2 = StadiumShape[{{1, 1}, {3, 5}}, r]; \
+         {Area[s2], Perimeter[s2], RegionCentroid[s2]}"
+      )
+      .unwrap(),
+      "{4*Sqrt[5]*r + Pi*r^2, 4*Sqrt[5] + 2*Pi*r, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn membership() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StadiumShape[{{0, 0}, {4, 0}}, 2]; \
+         {RegionMember[s, {1, 1}], RegionMember[s, {5, 2}], \
+          RegionMember[s, {-1, 1.5}], RegionMember[s, {4, 2}]}"
+      )
+      .unwrap(),
+      "{True, False, True, True}"
+    );
+  }
+}

@@ -6272,6 +6272,38 @@ fn compute_region_member(
   };
 
   match name.as_str() {
+    // Point-in-stadium: distance from the point to the segment is at
+    // most r (closed region). Numeric data only.
+    "StadiumShape" if stadium_parts(args).is_some() => {
+      let (p1, p2, r) = stadium_parts(args).unwrap();
+      let num = crate::functions::math_ast::try_eval_to_f64;
+      let pt = match point {
+        Expr::List(items) if items.len() == 2 => items,
+        _ => return unevaluated(),
+      };
+      let vals: Option<Vec<f64>> = p1
+        .iter()
+        .chain(p2.iter())
+        .chain(pt.iter())
+        .map(num)
+        .collect();
+      let (Some(v), Some(rv)) = (vals, num(&r)) else {
+        return unevaluated();
+      };
+      let (ax, ay, bx, by, px, py) = (v[0], v[1], v[2], v[3], v[4], v[5]);
+      let (dx, dy) = (bx - ax, by - ay);
+      let len2 = dx * dx + dy * dy;
+      let t = if len2 == 0.0 {
+        0.0
+      } else {
+        (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
+      };
+      let (cx, cy) = (ax + t * dx, ay + t * dy);
+      let d2 = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+      Ok(Expr::Identifier(
+        if d2 <= rv * rv { "True" } else { "False" }.to_string(),
+      ))
+    }
     "Disk" | "Ball" | "Circle" | "Sphere" => {
       let default_dim = if name == "Ball" || name == "Sphere" {
         3
@@ -7918,6 +7950,10 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
 
   if let Expr::FunctionCall { name, args } = expr {
     match name.as_str() {
+      "StadiumShape" if stadium_parts(args).is_some() => {
+        let (p1, p2, r) = stadium_parts(args).unwrap();
+        return stadium_area(&p1, &p2, &r, false);
+      }
       // 2-dimensional regions: area.
       "Disk" | "Rectangle" | "Triangle" | "Polygon" => {
         return or_unevaluated(compute_area(expr));
@@ -8165,6 +8201,9 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
   };
   if let Expr::FunctionCall { name, args } = expr {
     match name.as_str() {
+      "StadiumShape" if stadium_parts(args).is_some() => {
+        return Ok(Expr::Integer(2));
+      }
       // Regions of fixed intrinsic dimension.
       "Disk" | "Rectangle" | "Triangle" | "Polygon" | "RegularPolygon"
       | "Annulus" | "Parallelogram" | "HalfPlane" | "InfinitePlane"
@@ -8254,6 +8293,9 @@ fn compute_region_embedding_dimension(
 ) -> Result<Expr, InterpreterError> {
   if let Expr::FunctionCall { name, args } = expr {
     match name.as_str() {
+      "StadiumShape" if stadium_parts(args).is_some() => {
+        return Ok(Expr::Integer(2));
+      }
       "Torus" | "FilledTorus" => {
         if torus_parts(args).is_some() {
           return Ok(Expr::Integer(3));
@@ -9526,6 +9568,110 @@ fn spherical_shell_radii(args: &[Expr]) -> Option<(Expr, Expr)> {
 
 /// Parses a normalized CapsuleShape[{p1, p2}, r] with 3-D endpoints into
 /// (squared axis length, radius).
+/// The two 2-D endpoints and the radius of StadiumShape[{{...},{...}}, r].
+fn stadium_parts(args: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>, Expr)> {
+  match args {
+    [Expr::List(points), r] if points.len() == 2 => {
+      let (Expr::List(p1), Expr::List(p2)) = (&points[0], &points[1]) else {
+        return None;
+      };
+      if p1.len() != 2 || p2.len() != 2 {
+        return None;
+      }
+      Some((p1.to_vec(), p2.to_vec(), r.clone()))
+    }
+    _ => None,
+  }
+}
+
+/// Segment length Sqrt[(x1-x2)^2 + (y1-y2)^2] as an expression.
+fn stadium_length(p1: &[Expr], p2: &[Expr]) -> Expr {
+  let squares: Vec<Expr> = p1
+    .iter()
+    .zip(p2.iter())
+    .map(|(a, b)| Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            a.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), b.clone()].into(),
+            },
+          ]
+          .into(),
+        },
+        Expr::Integer(2),
+      ]
+      .into(),
+    })
+    .collect();
+  Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: squares.into(),
+    }]
+    .into(),
+  }
+}
+
+/// Stadium area 2 L r + Pi r^2. `hoist` factors the numeric content out
+/// like wolframscript's Area (16 + 4 Pi shows as 4 (4 + Pi)); Area uses
+/// it, RegionMeasure keeps the plain sum.
+fn stadium_area(
+  p1: &[Expr],
+  p2: &[Expr],
+  r: &Expr,
+  hoist: bool,
+) -> Result<Expr, InterpreterError> {
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let length = stadium_length(p1, p2);
+  let rect = ev(&Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(2), length, r.clone()].into(),
+  })?;
+  let cap_coeff = ev(&Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![r.clone(), Expr::Integer(2)].into(),
+  })?;
+  // wolframscript factors out the whole Pi coefficient — but only when
+  // it divides the rectangle term (16 + 4 Pi → 4 (4 + Pi); 6 + 9 Pi
+  // stays as is).
+  if hoist
+    && let (Expr::Integer(a), Expr::Integer(b)) = (&rect, &cap_coeff)
+    && *a > 0
+    && *b > 1
+    && *a % *b == 0
+  {
+    return Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Integer(*b),
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![Expr::Integer(*a / *b), Expr::Constant("Pi".to_string())]
+            .into(),
+        },
+      ]
+      .into(),
+    });
+  }
+  ev(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      rect,
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Constant("Pi".to_string()), cap_coeff].into(),
+      },
+    ]
+    .into(),
+  })
+}
+
 fn capsule_height_sq_radius(args: &[Expr]) -> Option<(Expr, Expr)> {
   match args {
     [Expr::List(points), r] if points.len() == 2 => {
@@ -10442,6 +10588,10 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
 fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
+      "StadiumShape" if stadium_parts(args).is_some() => {
+        let (p1, p2, r) = stadium_parts(args).unwrap();
+        stadium_area(&p1, &p2, &r, true)
+      }
       // Disk[] = Pi, Disk[center, r] = Pi*r^2, Disk[center, {a, b}] = Pi*a*b
       "Disk" => {
         if args.is_empty() || (args.len() == 1) {
@@ -11071,6 +11221,22 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
   };
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
+      "StadiumShape" if stadium_parts(args).is_some() => {
+        let (p1, p2, _) = stadium_parts(args).unwrap();
+        let mid: Vec<Expr> = p1
+          .iter()
+          .zip(p2.iter())
+          .map(|(a, b)| Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![a.clone(), b.clone()].into(),
+            }),
+            right: Box::new(Expr::Integer(2)),
+          })
+          .collect();
+        crate::evaluator::evaluate_expr_to_expr(&Expr::List(mid.into()))
+      }
       // Point[{x, y, ...}] — centroid is the point itself
       "Point" if args.len() == 1 => {
         if let Expr::List(_) = &args[0] {
@@ -12279,6 +12445,27 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
   };
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // Stadium boundary: two straight sides plus the full circle,
+      // 2 L + 2 Pi r.
+      "StadiumShape" if stadium_parts(args).is_some() => {
+        let (p1, p2, r) = stadium_parts(args).unwrap();
+        let length = stadium_length(&p1, &p2);
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(2), length].into(),
+            },
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string()), r]
+                .into(),
+            },
+          ]
+          .into(),
+        })
+      }
       // DiskSegment (circular only) — chord + arc:
       // 2 r Sin[Δθ/2] + r Δθ. Elliptical segments need elliptic
       // integrals and stay unevaluated.

@@ -3519,7 +3519,7 @@ LongestCommonSequence,Returns the longest noncontiguous subsequence common to tw
 NevilleThetaD,,,,3.0,3612
 NevilleThetaN,,,,3.0,3612
 SatisfiabilityCount,Number of satisfying assignments of a Boolean expression,✅,pure,7.0,3612
-StadiumShape,,,,10.2,3612
+StadiumShape,Two-dimensional stadium region,✅,pure,10.2,3612
 BernoulliProcess,Bernoulli process with time-independent Bernoulli slices,✅,unevaluated,9.0,3636
 BinaryDeserialize,Reconstructs an expression from WXF binary bytes,✅,pure,11.1,3636
 BlackmanWindow,Compute BlackmanWindow value,✅,pure,9.0,3636

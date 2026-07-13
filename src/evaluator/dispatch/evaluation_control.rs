@@ -718,6 +718,32 @@ pub fn dispatch_evaluation_control(
         },
       }));
     }
+    // StadiumShape[] / StadiumShape[r] normalize to the full form with the
+    // default endpoints {{-1, 0}, {1, 0}} (the 2-D capsule analog).
+    "StadiumShape" if args.len() <= 2 => {
+      let default_points = || {
+        let pt =
+          |x: i128| Expr::List(vec![Expr::Integer(x), Expr::Integer(0)].into());
+        Expr::List(vec![pt(-1), pt(1)].into())
+      };
+      let normalized = match args {
+        [] => Some((default_points(), Expr::Integer(1))),
+        [r] if !matches!(r, Expr::List(_)) => {
+          Some((default_points(), r.clone()))
+        }
+        _ => None,
+      };
+      return Some(Ok(match normalized {
+        Some((points, r)) => Expr::FunctionCall {
+          name: "StadiumShape".to_string(),
+          args: vec![points, r].into(),
+        },
+        None => Expr::FunctionCall {
+          name: "StadiumShape".to_string(),
+          args: args.to_vec().into(),
+        },
+      }));
+    }
     // CapsuleShape[] / CapsuleShape[r] normalize to the full form with the
     // default x-axis endpoints {{-1, 0, 0}, {1, 0, 0}}.
     "CapsuleShape" if args.len() <= 2 => {
