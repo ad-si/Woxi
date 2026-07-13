@@ -691,6 +691,11 @@ function main() {
     "PDF[CauchyDistribution[0, 1], 0]",
     // Term ordering in Times: s^2*(2 - Pi/2) vs (2 - Pi/2)*s^2
     "Variance[RayleighDistribution[s]]",
+    // FailureDistribution read-once CDF: value matches, but the two complement
+    // factors sort differently — Woxi (1 - E^(-3*t))*(1 - E^(-5*t)), Wolfram
+    // (1 - E^(-5*t))*(1 - E^(-3*t)). Same canonical Times factor-ordering
+    // divergence as the entries above.
+    "CDF[FailureDistribution[(x || y) && (x || z), {{x, ExponentialDistribution[2]}, {y, ExponentialDistribution[3]}, {z, ExponentialDistribution[5]}}], t]",
     // Complex polynomial algebra (not yet implemented)
     "CoefficientRules[x, y]",
     "PolynomialReduce[x, y]",

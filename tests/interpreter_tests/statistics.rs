@@ -9085,14 +9085,20 @@ mod failure_distribution {
       "Piecewise[{{1 - E^(-2*t), t >= 0}}, 0]"
     );
 
-    // Genuine cross-term repeats (the shared event 1 cannot be removed by
-    // idempotency) still need wolframscript's exact resolution — unevaluated.
+    // Genuine cross-term repeats: the shared event 1 appears in both branches
+    // of (1 || 2) && (1 || 3), so the naive independence product rules would
+    // double-count it. Reducing the Boolean function to its read-once form
+    // (1 || (2 && 3)) via BooleanMinimize makes independence exact, matching
+    // wolframscript's value. (Woxi orders the two complement factors as
+    // (1 - E^(-3*t))*(1 - E^(-5*t)); wolframscript writes the E^(-5*t) factor
+    // first — a general Times factor-ordering divergence, so the verify
+    // harness skip-lists this exact case.)
     assert_eq!(
       interpret(
         "CDF[FailureDistribution[(x || y) && (x || z), {{x, ExponentialDistribution[2]}, {y, ExponentialDistribution[3]}, {z, ExponentialDistribution[5]}}], t]"
       )
       .unwrap(),
-      "CDF[FailureDistribution[(1 || 2) && (1 || 3), {{1, ExponentialDistribution[2]}, {2, ExponentialDistribution[3]}, {3, ExponentialDistribution[5]}}], t]"
+      "Piecewise[{{1 - (1 - (1 - E^(-3*t))*(1 - E^(-5*t)))/E^(2*t), t >= 0}}, 0]"
     );
   }
 }

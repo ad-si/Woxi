@@ -7045,6 +7045,57 @@ fn simplify_positive_boolean(e: &Expr) -> Expr {
   }
 }
 
+/// Rewrite an index-leaf positive Boolean expression into an equivalent
+/// read-once form via `BooleanMinimize`. The integer leaves are mapped to
+/// fresh symbols (BooleanMinimize ignores bare integers), minimized, then
+/// mapped back. Returns `None` if minimization fails or the result is not a
+/// pure And/Or/index tree. The caller checks whether the result is actually
+/// read-once.
+fn failure_read_once_form(bexpr: &Expr) -> Option<Expr> {
+  fn map_leaves(e: &Expr, f: &dyn Fn(&Expr) -> Option<Expr>) -> Expr {
+    if let Some(r) = f(e) {
+      return r;
+    }
+    match e {
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(map_leaves(left, f)),
+        right: Box::new(map_leaves(right, f)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(map_leaves(operand, f)),
+      },
+      Expr::FunctionCall { name, args }
+        if name == "And" || name == "Or" || name == "Not" =>
+      {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(|a| map_leaves(a, f)).collect(),
+        }
+      }
+      _ => e.clone(),
+    }
+  }
+  const PREFIX: &str = "\u{1}fdvar";
+  let to_symbol = map_leaves(bexpr, &|e| match e {
+    Expr::Integer(i) => Some(Expr::Identifier(format!("{PREFIX}{i}"))),
+    _ => None,
+  });
+  let minimized = eval(Expr::FunctionCall {
+    name: "BooleanMinimize".to_string(),
+    args: vec![to_symbol].into(),
+  })
+  .ok()?;
+  Some(map_leaves(&minimized, &|e| match e {
+    Expr::Identifier(s) => s
+      .strip_prefix(PREFIX)
+      .and_then(|n| n.parse::<i128>().ok())
+      .map(Expr::Integer),
+    _ => None,
+  }))
+}
+
 /// The composed CDF value of a FailureDistribution boolean tree over
 /// component CDFs (independent events, each used once): a leaf index maps
 /// to its component CDF, And multiplies CDFs, Or complements the product
@@ -7124,9 +7175,10 @@ fn failure_distribution_cdf_value(
   // below would get wrong — reduce to a distinct-leaf tree where those rules
   // are exact. Genuine cross-term repeats (e.g. Or[And[1, 2], And[1, 3]])
   // survive the reduction and still bail out via the dedup check below.
-  let bexpr = &simplify_positive_boolean(bexpr);
-  // Each event may appear only once (wolframscript resolves repeats
-  // exactly; the independence product rules below would not).
+  let simplified = simplify_positive_boolean(bexpr);
+  // Each event may appear only once (the independence product rules below
+  // treat the branches as independent). A leaf appearing more than once is a
+  // shared event; the rules would double-count it.
   fn leaves(e: &Expr, out: &mut Vec<i128>) -> bool {
     match e {
       Expr::Integer(i) => {
@@ -7144,18 +7196,33 @@ fn failure_distribution_cdf_value(
       _ => false,
     }
   }
-  let mut seen = Vec::new();
-  if !leaves(bexpr, &mut seen) {
-    return Ok(None);
-  }
-  {
+  let read_once = |e: &Expr| -> bool {
+    let mut seen = Vec::new();
+    if !leaves(e, &mut seen) {
+      return false;
+    }
     let mut sorted = seen.clone();
     sorted.sort_unstable();
     sorted.dedup();
-    if sorted.len() != seen.len() {
-      return Ok(None);
-    }
-  }
+    sorted.len() == seen.len()
+  };
+  // If events repeat across the tree (e.g. Or[And[1, 2], And[1, 3]]) the
+  // independence product rules would double-count the shared event.
+  // wolframscript resolves such trees by rewriting them into an equivalent
+  // read-once form — (1 || 2) && (1 || 3) becomes 1 || (2 && 3) — and then
+  // applies independence. Reproduce that by minimizing the Boolean function;
+  // if the minimized form is read-once, compose against it. Otherwise stay
+  // unevaluated.
+  let bexpr = if read_once(&simplified) {
+    simplified
+  } else if let Some(reduced) =
+    failure_read_once_form(&simplified).filter(read_once)
+  {
+    reduced
+  } else {
+    return Ok(None);
+  };
+  let bexpr = &bexpr;
 
   fn compose(
     e: &Expr,
