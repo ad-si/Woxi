@@ -7717,3 +7717,85 @@ mod sparse_array_arithmetic {
     );
   }
 }
+
+// StateSpaceModel objects and their structural control matrices.
+// All outputs verified against wolframscript.
+mod control_systems {
+  use super::*;
+
+  #[test]
+  fn state_space_model_echoes() {
+    assert_eq!(
+      interpret(
+        "StateSpaceModel[{{{0, 1}, {-1, -1}}, {{0}, {1}}, {{1, 0}}, {{0}}}]"
+      )
+      .unwrap(),
+      "StateSpaceModel[{{{0, 1}, {-1, -1}}, {{0}, {1}}, {{1, 0}}, {{0}}}]"
+    );
+  }
+
+  #[test]
+  fn observability_matrix() {
+    assert_eq!(
+      interpret(
+        "ObservabilityMatrix[StateSpaceModel[{{{0, 1}, {-1, -1}}, {{0}, {1}}, {{1, 0}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    // Symbolic entries flow through the iterated Dot products.
+    assert_eq!(
+      interpret(
+        "ObservabilityMatrix[StateSpaceModel[{{{a, b}, {c, d}}, {{1}, {0}}, {{1, 0}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 0}, {a, b}}"
+    );
+    assert_eq!(
+      interpret(
+        "ObservabilityMatrix[StateSpaceModel[{{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}, {{1}, {1}, {1}}, {{1, 1, 1}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 1, 1}, {1, 2, 3}, {1, 4, 9}}"
+    );
+    // A multi-output c stacks its row blocks.
+    assert_eq!(
+      interpret(
+        "ObservabilityMatrix[StateSpaceModel[{{{1, 1}, {0, 1}}, {{1}, {1}}, {{1, 0}, {0, 1}}, {{0}, {0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 1}, {1, 1}, {0, 1}}"
+    );
+    // Non-models stay unevaluated.
+    assert_eq!(
+      interpret("ObservabilityMatrix[x]").unwrap(),
+      "ObservabilityMatrix[x]"
+    );
+  }
+
+  #[test]
+  fn controllability_matrix() {
+    assert_eq!(
+      interpret(
+        "ControllabilityMatrix[StateSpaceModel[{{{0, 1}, {-1, -1}}, {{0}, {1}}, {{1, 0}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{0, 1}, {1, -1}}"
+    );
+    assert_eq!(
+      interpret(
+        "ControllabilityMatrix[StateSpaceModel[{{{a, b}, {c, d}}, {{1}, {0}}, {{1, 0}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{1, a}, {0, c}}"
+    );
+    // A multi-input b joins its column blocks.
+    assert_eq!(
+      interpret(
+        "ControllabilityMatrix[StateSpaceModel[{{{1, 1}, {0, 1}}, {{1, 0}, {0, 1}}, {{1, 0}}, {{0, 0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 0, 1, 1}, {0, 1, 0, 1}}"
+    );
+  }
+}

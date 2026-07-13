@@ -45,6 +45,15 @@ pub fn dispatch_linear_algebra_functions(
     "Dot" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::dot_ast(args));
     }
+    // ObservabilityMatrix[ssm] stacks {c, c.a, ..., c.a^(n-1)};
+    // ControllabilityMatrix[ssm] joins {b, a.b, ..., a^(n-1).b} columnwise.
+    "ObservabilityMatrix" | "ControllabilityMatrix" if args.len() == 1 => {
+      return Some(control_structure_matrix(
+        name,
+        &args[0],
+        name == "ObservabilityMatrix",
+      ));
+    }
     // Dot[x] returns its single argument unchanged; Dot[a, b, c, …] chains
     // pairwise dots left-to-right (a.b.c = (a.b).c), matching wolframscript.
     "Dot" if args.len() == 1 => {
@@ -5126,4 +5135,122 @@ pub fn discrete_lyapunov_solve_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   lyapunov_solve_common("DiscreteLyapunovSolve", args, true)
+}
+
+/// The observability / controllability matrix of a
+/// StateSpaceModel[{a, b, c, d}]: rows {c, c.a, ..., c.a^(n-1)} stacked,
+/// or columns {b, a.b, ..., a^(n-1).b} joined. Exact and symbolic-safe
+/// (built from iterated Dot products).
+fn control_structure_matrix(
+  fname: &str,
+  ssm: &Expr,
+  observability: bool,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: fname.to_string(),
+      args: vec![ssm.clone()].into(),
+    })
+  };
+  // Parse StateSpaceModel[{a, b, c, d}] (d optional for our purposes).
+  let Expr::FunctionCall { name, args } = ssm else {
+    return unevaluated();
+  };
+  if name != "StateSpaceModel" || args.len() != 1 {
+    return unevaluated();
+  }
+  let Expr::List(mats) = &args[0] else {
+    return unevaluated();
+  };
+  if mats.len() < 3 {
+    return unevaluated();
+  }
+  let rows_of = |m: &Expr| -> Option<Vec<Expr>> {
+    match m {
+      Expr::List(rows)
+        if !rows.is_empty()
+          && rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+      {
+        Some(rows.iter().cloned().collect())
+      }
+      _ => None,
+    }
+  };
+  let (Some(a_rows), Some(b_rows), Some(c_rows)) =
+    (rows_of(&mats[0]), rows_of(&mats[1]), rows_of(&mats[2]))
+  else {
+    return unevaluated();
+  };
+  let n = a_rows.len();
+  // a must be square n x n; c must have n columns; b must have n rows.
+  if a_rows
+    .iter()
+    .any(|r| !matches!(r, Expr::List(c) if c.len() == n))
+  {
+    return unevaluated();
+  }
+  let dot = |x: &Expr, y: &Expr| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: vec![x.clone(), y.clone()].into(),
+    })
+  };
+  let a = mats[0].clone();
+  if observability {
+    if c_rows
+      .iter()
+      .any(|r| !matches!(r, Expr::List(cols) if cols.len() == n))
+    {
+      return unevaluated();
+    }
+    // Stack the row blocks of c, c.a, c.a^2, ...
+    let mut block = mats[2].clone();
+    let mut out_rows: Vec<Expr> = Vec::with_capacity(n * c_rows.len());
+    for k in 0..n {
+      if k > 0 {
+        block = dot(&block, &a)?;
+      }
+      let Expr::List(rows) = &block else {
+        return unevaluated();
+      };
+      out_rows.extend(rows.iter().cloned());
+    }
+    Ok(Expr::List(out_rows.into()))
+  } else {
+    if b_rows.len() != n {
+      return unevaluated();
+    }
+    // Join the column blocks of b, a.b, a^2.b, ... — assemble per row.
+    let mut block = mats[1].clone();
+    let mut blocks: Vec<Vec<Expr>> = Vec::with_capacity(n);
+    for k in 0..n {
+      if k > 0 {
+        block = dot(&a, &block)?;
+      }
+      let Expr::List(rows) = &block else {
+        return unevaluated();
+      };
+      let mut block_rows = Vec::with_capacity(n);
+      for r in rows.iter() {
+        let Expr::List(cols) = r else {
+          return unevaluated();
+        };
+        block_rows
+          .push(Expr::List(cols.iter().cloned().collect::<Vec<_>>().into()));
+      }
+      blocks.push(block_rows.into_iter().collect());
+    }
+    let mut out_rows: Vec<Expr> = Vec::with_capacity(n);
+    for i in 0..n {
+      let mut row: Vec<Expr> = Vec::new();
+      for block_rows in &blocks {
+        let Expr::List(cols) = &block_rows[i] else {
+          return unevaluated();
+        };
+        row.extend(cols.iter().cloned());
+      }
+      out_rows.push(Expr::List(row.into()));
+    }
+    Ok(Expr::List(out_rows.into()))
+  }
 }

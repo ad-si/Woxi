@@ -471,6 +471,15 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    // StateSpaceModel[{a, b, c, d}] is a symbolic control-system object:
+    // it echoes unevaluated and is consumed by ObservabilityMatrix /
+    // ControllabilityMatrix.
+    "StateSpaceModel" => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "StateSpaceModel".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // FailureDistribution[bexpr, {{x1, d1}, …}] normalizes the event
     // variables to their positional indices (x || y becomes 1 || 2),
     // exactly as wolframscript displays it. Validation (positive
