@@ -1187,6 +1187,13 @@ pub fn map_thread_ast(
     }
   };
 
+  // Level 0: no threading — apply the function directly to the top-level
+  // elements, i.e. MapThread[f, {a1, …, ak}, 0] = f[a1, …, ak]. The elements
+  // need not be lists in this case.
+  if level == Some(0) {
+    return apply_func_to_n_args(func, outer_items);
+  }
+
   if outer_items.is_empty() {
     return Ok(Expr::List(vec![].into()));
   }

@@ -2201,7 +2201,9 @@ pub fn dispatch_list_operations(
     "MapThread" if args.len() == 2 || args.len() == 3 => {
       let level = if args.len() == 3 {
         match &args[2] {
-          Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+          // Level 0 means "no threading": f is applied directly to the
+          // top-level arguments (handled inside map_thread_ast).
+          Expr::Integer(n) if *n >= 0 => Some(*n as usize),
           _ => None,
         }
       } else {

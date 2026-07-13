@@ -1833,6 +1833,22 @@ mod cases {
       r#"{f[a, 1], f[b, 2], f[c, 3]}"#,
     );
   }
+  // Level 0 does no threading: f is applied directly to the top-level
+  // arguments, MapThread[f, {a1, …, ak}, 0] = f[a1, …, ak].
+  #[test]
+  fn map_thread_level_0() {
+    assert_case(
+      r#"MapThread[f, {{1, 2}, {3, 4}}, 0]"#,
+      r#"f[{1, 2}, {3, 4}]"#,
+    );
+    // Elements need not be lists at level 0.
+    assert_case(r#"MapThread[f, {a, b, c}, 0]"#, r#"f[a, b, c]"#);
+    // A listable function still applies to the whole sublists.
+    assert_case(
+      r#"MapThread[Plus, {{1, 2, 3}, {4, 5, 6}}, 0]"#,
+      r#"{5, 7, 9}"#,
+    );
+  }
   #[test]
   fn thread_1() {
     assert_case(r#"Thread[f[{a, b, c}]]"#, r#"{f[a], f[b], f[c]}"#);
