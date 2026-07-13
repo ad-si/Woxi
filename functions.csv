@@ -3435,7 +3435,7 @@ SkeletonTransform,,🚫,,8.0,3522
 StandardDeviationFilter,Replaces each element with the sample standard deviation of its radius-r neighborhood (1D list or 2D array),✅,pure,7.0,3522
 TransitiveReductionGraph,Minimal graph preserving the reachability of a directed acyclic graph,✅,pure,10.0,3522
 UtilityFunction,,,,10.0,3522
-BeniniDistribution,,,,8.0,3537
+BeniniDistribution,Benini log-quadratic hazard distribution,✅,pure,8.0,3537
 CoxModelFit,,,,9.0,3537
 EdgeConnectivity,Minimum edge cut size (s-t form uses edge-disjoint paths),✅,pure,9.0,3537
 EntropyFilter,,🚫,,7.0,3537

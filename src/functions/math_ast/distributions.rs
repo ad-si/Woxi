@@ -247,6 +247,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "CoxianDistribution" => pdf_coxian(dargs, x),
     "HyperexponentialDistribution" => pdf_hyperexponential(dargs, x),
     "VonMisesDistribution" => pdf_vonmises(dargs, x),
+    "BeniniDistribution" => pdf_benini(dargs, x),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -2065,6 +2066,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "HypoexponentialDistribution" => cdf_hypoexponential(dargs, x),
     "CoxianDistribution" => cdf_coxian(dargs, x),
     "HyperexponentialDistribution" => cdf_hyperexponential(dargs, x),
+    "BeniniDistribution" => cdf_benini(dargs, x),
     "FailureDistribution" => cdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => cdf_first_passage(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
@@ -4077,6 +4079,7 @@ pub fn distribution_mean_variance(
       ))
     }
     "HyperexponentialDistribution" => hyperexponential_mean_variance(dargs),
+    "BeniniDistribution" => benini_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -7903,6 +7906,247 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Validation for BeniniDistribution[α, β, σ]: α and β must be
+/// non-negative (nnegprm), σ positive (posprm); wrong arity emits argrx.
+/// All messages come from consuming functions.
+fn benini_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 3 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "BeniniDistribution::argrx: BeniniDistribution called with {} {}; 3 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "BeniniDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  for pos in 0..2 {
+    if num(&dargs[pos]).is_some_and(|v| v < 0.0) {
+      crate::emit_message(&format!(
+        "BeniniDistribution::nnegprm: Parameter {} at position {} in {} is expected to be non-negative.",
+        crate::syntax::expr_to_string(&dargs[pos]),
+        pos + 1,
+        dist()
+      ));
+      return None;
+    }
+  }
+  if num(&dargs[2]).is_some_and(|v| v <= 0.0) {
+    crate::emit_message(&format!(
+      "BeniniDistribution::posprm: Parameter {} at position 3 in {} is expected to be positive.",
+      crate::syntax::expr_to_string(&dargs[2]),
+      dist()
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// Log[x/σ], the building block of the Benini closed forms.
+fn benini_log(x: &Expr, sigma: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![divide(x.clone(), sigma.clone())].into(),
+  }
+}
+
+/// PDF[BeniniDistribution[α, β, σ], x]. Numeric α uses the split form
+/// σ^α x^(-α) (2/x + ...) E^(-β Log²) wolframscript shows; symbolic α
+/// keeps the whole exponential E^(-α Log - β Log²).
+fn pdf_benini(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "BeniniDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = benini_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let lg = benini_log(&x, &sg);
+  let hazard = plus(
+    times(a.clone(), power(x.clone(), int(-1))),
+    times(
+      times(times(int(2), b.clone()), lg.clone()),
+      power(x.clone(), int(-1)),
+    ),
+  );
+  let quad = power(
+    e(),
+    times(times(int(-1), b.clone()), power(lg.clone(), int(2))),
+  );
+  let value = if crate::functions::math_ast::try_eval_to_f64(&a).is_some() {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        power(sg.clone(), a.clone()),
+        hazard,
+        quad,
+        power(x.clone(), times(int(-1), a)),
+      ]
+      .into(),
+    }
+  } else {
+    times(
+      power(
+        e(),
+        plus(
+          times(times(int(-1), a), lg.clone()),
+          times(times(int(-1), b), power(lg, int(2))),
+        ),
+      ),
+      hazard,
+    )
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, sg);
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[BeniniDistribution[α, β, σ], x] = 1 - σ^α x^(-α) E^(-β Log²)
+/// (numeric α) or 1 - E^(-α Log - β Log²) (symbolic α).
+fn cdf_benini(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "BeniniDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = benini_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let lg = benini_log(&x, &sg);
+  let survival = if crate::functions::math_ast::try_eval_to_f64(&a).is_some() {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        power(sg.clone(), a.clone()),
+        power(
+          e(),
+          times(times(int(-1), b.clone()), power(lg.clone(), int(2))),
+        ),
+        power(x.clone(), times(int(-1), a)),
+      ]
+      .into(),
+    }
+  } else {
+    power(
+      e(),
+      plus(
+        times(times(int(-1), a), lg.clone()),
+        times(times(int(-1), b), power(lg, int(2))),
+      ),
+    )
+  };
+  let value = plus(int(1), times(int(-1), survival));
+  let cond = comparison(x, ComparisonOp::GreaterEqual, sg);
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Mean and Variance of BeniniDistribution in wolframscript's Erfc
+/// template shapes.
+fn benini_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = benini_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "BeniniDistribution: invalid parameters".into(),
+    ));
+  };
+  let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let sqrt_pi = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::Constant("Pi".to_string())].into(),
+  };
+  let sqrt_b = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![b.clone()].into(),
+  };
+  // Shared pieces for shift k: E^((-k+a)^2/(4β)) and Erfc[(-k+a)/(2√β)].
+  let shifted = |k: i128, denom_scale: i128| -> (Expr, Expr) {
+    let base = plus(int(-k), a.clone());
+    let expo = power(
+      e(),
+      divide(
+        power(base.clone(), int(2)),
+        times(int(denom_scale), b.clone()),
+      ),
+    );
+    let erfc = Expr::FunctionCall {
+      name: "Erfc".to_string(),
+      args: vec![divide(base, times(int(2), sqrt_b.clone()))].into(),
+    };
+    (expo, erfc)
+  };
+  let (e1, erfc1) = shifted(1, 4);
+  let mean = plus(
+    sg.clone(),
+    divide(
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![e1.clone(), sqrt_pi.clone(), sg.clone(), erfc1.clone()]
+          .into(),
+      },
+      times(int(2), sqrt_b.clone()),
+    ),
+  );
+  let (e2, erfc2) = shifted(2, 4);
+  let (e1w, _) = shifted(1, 2);
+  let t1 = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![int(4), sqrt_b.clone(), e2, erfc2].into(),
+  };
+  let t2 = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![int(-4), sqrt_b, e1, erfc1.clone()].into(),
+  };
+  let t3 = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![int(-1), e1w, sqrt_pi.clone(), power(erfc1, int(2))].into(),
+  };
+  let variance = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        sqrt_pi,
+        power(sg, int(2)),
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![t1, t2, t3].into(),
+        },
+      ]
+      .into(),
+    },
+    times(int(4), b),
+  );
+  Ok((eval(mean)?, eval(variance)?))
 }
 
 /// Validation for VonMisesDistribution[μ, κ]: emits argr when the

@@ -6565,3 +6565,122 @@ mod von_mises_distribution {
     assert!(r.warnings.is_empty());
   }
 }
+
+// BeniniDistribution: log-quadratic hazard on [σ, ∞). Numeric α uses
+// the split σ^α x^(-α) form, symbolic α keeps the full exponential;
+// moments follow wolframscript's Erfc templates. Verified against
+// wolframscript.
+mod benini_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_and_cdf() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[3, 2, 7], x]").unwrap(),
+      "Piecewise[{{(343*(3/x + (4*Log[x/7])/x))/(E^(2*Log[x/7]^2)*x^3), \
+        x >= 7}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[BeniniDistribution[3, 2, 7], x]").unwrap(),
+      "Piecewise[{{1 - 343/(E^(2*Log[x/7]^2)*x^3), x >= 7}}, 0]"
+    );
+    // Fractional α: σ^α and x^(-α) render as radicals.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[1/2, 1, 2], x]").unwrap(),
+      "Piecewise[{{(Sqrt[2]*(1/(2*x) + (2*Log[x/2])/x))/(E^Log[x/2]^2*\
+Sqrt[x]), x >= 2}}, 0]"
+    );
+    // Symbolic parameters keep the unsplit exponential form.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[a, b, s], x]").unwrap(),
+      "Piecewise[{{(a/x + (2*b*Log[x/s])/x)/(E^(b*Log[x/s]^2)*(x/s)^a), \
+        x >= s}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[BeniniDistribution[a, b, s], x]").unwrap(),
+      "Piecewise[{{1 - 1/(E^(b*Log[x/s]^2)*(x/s)^a), x >= s}}, 0]"
+    );
+    // Float parameters fold; below the support the density is 0.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[0.5, 1., 2.], x]").unwrap(),
+      "Piecewise[{{(1.4142135623730951*(0.5/x + (2.*Log[0.5*x])/x))/\
+(E^(1.*Log[0.5*x]^2)*x^0.5), x >= 2.}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[3, 2, 7], 5]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret("Mean[BeniniDistribution[3, 2, 7]]").unwrap(),
+      "7 + (7*Sqrt[(E*Pi)/2]*Erfc[1/Sqrt[2]])/2"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[BeniniDistribution[1, 2, 3]]").unwrap(),
+      "3 + (3*Sqrt[Pi/2])/2"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[BeniniDistribution[2, 3, 5]]").unwrap(),
+      "(25*Sqrt[Pi]*(4*Sqrt[3] - 4*Sqrt[3]*E^(1/12)*Erfc[1/(2*Sqrt[3])] - \
+        E^(1/6)*Sqrt[Pi]*Erfc[1/(2*Sqrt[3])]^2))/12"
+    );
+    // The general symbolic templates.
+    clear_state();
+    assert_eq!(
+      interpret("Mean[BeniniDistribution[a, b, s]]").unwrap(),
+      "s + (E^((-1 + a)^2/(4*b))*Sqrt[Pi]*s*Erfc[(-1 + a)/(2*Sqrt[b])])/\
+(2*Sqrt[b])"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[BeniniDistribution[a, b, s]]").unwrap(),
+      "(Sqrt[Pi]*s^2*(4*Sqrt[b]*E^((-2 + a)^2/(4*b))*Erfc[(-2 + a)/\
+(2*Sqrt[b])] - 4*Sqrt[b]*E^((-1 + a)^2/(4*b))*Erfc[(-1 + a)/(2*Sqrt[b])] - \
+E^((-1 + a)^2/(2*b))*Sqrt[Pi]*Erfc[(-1 + a)/(2*Sqrt[b])]^2))/(4*b)"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[BeniniDistribution[0.5, 1., 2.]]").unwrap(),
+      "4.408130900895511"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[BeniniDistribution[-1, 2, 3], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "BeniniDistribution::nnegprm: Parameter -1 at position 1 in \
+       BeniniDistribution[-1, 2, 3] is expected to be non-negative."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[BeniniDistribution[2, 1, -3], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "BeniniDistribution::posprm: Parameter -3 at position 3 in \
+       BeniniDistribution[2, 1, -3] is expected to be positive."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[BeniniDistribution[2, 1], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "BeniniDistribution::argrx: BeniniDistribution called with 2 \
+       arguments; 3 arguments are expected."
+    ));
+  }
+}

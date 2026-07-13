@@ -8601,12 +8601,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         if let Some(sqrt_arg) = crate::functions::is_sqrt(expr) {
           return format!("Sqrt[{}]", fmt(sqrt_arg));
         }
-        // OutputForm-only: Power[base, Rational[-1, 2]] → 1/Sqrt[base]
-        if is_output
-          && let Expr::FunctionCall {
-            name: rname,
-            args: rargs,
-          } = &args[1]
+        // Power[base, Rational[-1, 2]] → 1/Sqrt[base] (wolframscript uses
+        // this in InputForm too, e.g. Erfc[1/Sqrt[2]]^2)
+        if let Expr::FunctionCall {
+          name: rname,
+          args: rargs,
+        } = &args[1]
           && rname == "Rational"
           && rargs.len() == 2
           && matches!(&rargs[0], Expr::Integer(-1))
@@ -8723,20 +8723,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         OutputFormGuard(IN_OUTPUT_FORM.with(|c| c.replace(true)));
       format_expr(expr, ExprForm::Input)
     }
-    // BinaryOp::Power with Rational[-1, 2] exponent → 1/Sqrt[base] (OutputForm only)
+    // BinaryOp::Power with Rational[-1, 2] exponent → 1/Sqrt[base]
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
-    } if is_output
-      && matches!(
-        right.as_ref(),
-        Expr::FunctionCall { name, args }
-          if name == "Rational"
-            && args.len() == 2
-            && matches!(&args[0], Expr::Integer(-1))
-            && matches!(&args[1], Expr::Integer(2))
-      ) =>
+    } if matches!(
+      right.as_ref(),
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(-1))
+          && matches!(&args[1], Expr::Integer(2))
+    ) =>
     {
       let base_str = expr_to_output(left);
       format!("1/Sqrt[{}]", base_str)
