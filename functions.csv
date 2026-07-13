@@ -3503,7 +3503,7 @@ SaveConnection,,🚫,,12.0,3593
 SequenceFoldList,Fold over a list keeping an n-element history at each step and returning all results,✅,pure,10.2,3593
 ShapiroWilkTest,,,,8.0,3593
 SpearmanRho,Spearman rank-correlation coefficient of two lists,✅,pure,9.0,3593
-ApplyTo,,,,12.2,3612
+ApplyTo,Apply a function to a variable value in place,✅,stateful,12.2,3612
 BandstopFilter,Apply a bandstop filter to data,✅,pure,9.0,3612
 BlockchainBlockData,,🚫,,11.3,3612
 CloudAccountData,,🚫,,10.0,3612

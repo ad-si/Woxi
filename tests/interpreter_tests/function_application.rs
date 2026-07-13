@@ -2805,3 +2805,50 @@ mod once_wrapper {
     assert_eq!(interpret("Once[5 + 5, \"KernelSession\"]").unwrap(), "10");
   }
 }
+
+// ApplyTo[x, f] / x //= f: applies f to the held variable's value,
+// reassigns, and returns the new value. Verified against wolframscript.
+mod apply_to {
+  use super::*;
+
+  #[test]
+  fn applies_and_reassigns() {
+    clear_state();
+    assert_eq!(
+      interpret("x = 5; ApplyTo[x, f]; InputForm[x]").unwrap(),
+      "InputForm[f[5]]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("y = {1, 2, 3}; y //= Reverse; y").unwrap(),
+      "{3, 2, 1}"
+    );
+    // Returns the new value; pure functions and operator forms apply.
+    clear_state();
+    assert_eq!(interpret("w = 2; w //= (# + 10 &)").unwrap(), "12");
+    clear_state();
+    assert_eq!(
+      interpret("lst = {5, 6}; lst //= Map[g]; lst").unwrap(),
+      "{g[5], g[6]}"
+    );
+    // Neighboring operators are unaffected.
+    clear_state();
+    assert_eq!(interpret("{a // f, 3/2}").unwrap(), "{f[a], 3/2}");
+  }
+
+  #[test]
+  fn attributes_and_rvalue() {
+    clear_state();
+    assert_eq!(
+      interpret("Attributes[ApplyTo]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+    clear_state();
+    let r = interpret_with_stdout("ApplyTo[z, g]").unwrap();
+    assert_eq!(r.result, "ApplyTo[z, g]");
+    assert!(r.warnings[0].contains(
+      "ApplyTo::rvalue: z is not a variable with a value, so its value \
+       cannot be changed."
+    ));
+  }
+}

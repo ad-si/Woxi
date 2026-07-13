@@ -268,6 +268,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ClearAttributes" | "AssociateTo" | "KeyDropFrom" | "Inactivate" => {
       vec!["HoldFirst", "Protected"]
     }
+    "ApplyTo" => vec!["HoldFirst", "Protected"],
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
     "SetDelayed" | "TagSetDelayed" | "UpSetDelayed" => {
       vec!["HoldAll", "Protected", "SequenceHold"]

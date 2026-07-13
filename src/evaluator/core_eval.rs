@@ -1251,6 +1251,50 @@ pub fn evaluate_expr_to_expr_inner(
         {
           return dispatch::evaluate_function_call_ast(name, args);
         }
+        // ApplyTo[x, f] (x //= f): set x to f[x] and return the new
+        // value. HoldFirst; an unset variable emits rvalue.
+        if name == "ApplyTo" && args.len() == 2 {
+          if let Expr::Identifier(var_name) = &args[0] {
+            let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+            let current_val = match current {
+              Some(StoredValue::ExprVal(e)) => e,
+              Some(StoredValue::Raw(s)) => {
+                crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
+              }
+              _ => {
+                crate::emit_message(&format!(
+                  "ApplyTo::rvalue: {} is not a variable with a value, so its value cannot be changed.",
+                  var_name
+                ));
+                return Ok(Expr::FunctionCall {
+                  name: name.clone(),
+                  args: args.clone(),
+                });
+              }
+            };
+            let func = evaluate_expr_to_expr(&args[1])?;
+            let new_val =
+              crate::evaluator::function_application::apply_function_to_arg(
+                &func,
+                &current_val,
+              )?;
+            ENV.with(|e| {
+              e.borrow_mut().insert(
+                var_name.clone(),
+                StoredValue::ExprVal(new_val.clone()),
+              );
+            });
+            return Ok(new_val);
+          }
+          crate::emit_message(&format!(
+            "ApplyTo::rvalue: {} is not a variable with a value, so its value cannot be changed.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
+          return Ok(Expr::FunctionCall {
+            name: name.clone(),
+            args: args.clone(),
+          });
+        }
         // Special handling for AddTo, SubtractFrom, TimesBy, DivideBy - x += y, x -= y, etc.
         if (name == "AddTo"
           || name == "SubtractFrom"

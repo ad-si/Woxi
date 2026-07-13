@@ -2832,6 +2832,16 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         args: vec![var].into(),
       }
     }
+    Rule::ApplyToOp => {
+      // x //= f -> ApplyTo[x, f]
+      let mut inner = pair.into_inner();
+      let var = pair_to_expr(inner.next().unwrap());
+      let func = pair_to_expr(inner.next().unwrap());
+      Expr::FunctionCall {
+        name: "ApplyTo".to_string(),
+        args: vec![var, func].into(),
+      }
+    }
     Rule::AddTo => {
       // x += y -> AddTo[x, y]
       let mut inner = pair.into_inner();
