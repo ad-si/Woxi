@@ -1,5 +1,7 @@
+#[cfg(not(target_arch = "wasm32"))]
 use rand::distributions::{Alphanumeric, Distribution};
 
+#[cfg(not(target_arch = "wasm32"))]
 fn rand_str(length: usize) -> String {
   let rng = rand::thread_rng();
   let characters: Vec<char> = Alphanumeric
