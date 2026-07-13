@@ -6468,3 +6468,23 @@ mod number_field_discriminant {
     ));
   }
 }
+
+// Exact Bessel calls numericize under Real contagion, matching
+// wolframscript (BesselK/BesselY bit-exact; BesselI/BesselJ have a
+// pre-existing 1-2 ULP backend divergence so only K/Y assert values).
+mod bessel_real_contagion {
+  use super::*;
+
+  #[test]
+  fn bessel_values_fold_in_real_products() {
+    clear_state();
+    assert_eq!(
+      interpret("{2. + BesselK[1, 2], 2. + BesselY[1, 2]}").unwrap(),
+      "{2.1398658818165224, 1.8929675684590626}"
+    );
+    // BesselI/BesselJ numericize too (values within ULPs of WS).
+    clear_state();
+    let r = interpret("2.*BesselI[0, 3]").unwrap();
+    assert!(r.starts_with("9.7615851717300"), "got {r}");
+  }
+}

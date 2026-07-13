@@ -6478,3 +6478,90 @@ mod hyperexponential_distribution {
     assert!(r.warnings.is_empty());
   }
 }
+
+// VonMisesDistribution: only the PDF and Mean have closed forms in
+// wolframscript — CDF, Variance, and StandardDeviation stay unevaluated
+// even for numeric parameters. Verified against wolframscript.
+mod von_mises_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VonMisesDistribution[2, 3], x]").unwrap(),
+      "Piecewise[{{E^(3*Cos[2 - x])/(2*Pi*BesselI[0, 3]), \
+        2 - Pi <= x <= 2 + Pi}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VonMisesDistribution[m, k], x]").unwrap(),
+      "Piecewise[{{E^(k*Cos[m - x])/(2*Pi*BesselI[0, k]), \
+        m - Pi <= x <= m + Pi}}, 0]"
+    );
+    // Float parameters fold the normalizing constant and the support
+    // bounds numerically.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VonMisesDistribution[0.5, 2.], x]").unwrap(),
+      "Piecewise[{{0.06981749835322985*E^(2.*Cos[0.5 - x]), \
+        -2.641592653589793 <= x <= 3.641592653589793}}, 0]"
+    );
+    // Outside the support the density is 0.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VonMisesDistribution[2, 3], 8]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn only_mean_has_a_closed_form() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[VonMisesDistribution[m, k]], Mean[VonMisesDistribution[0.5, 2.]]}"
+      )
+      .unwrap(),
+      "{m, 0.5}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[VonMisesDistribution[m, k], x]").unwrap(),
+      "CDF[VonMisesDistribution[m, k], x]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[VonMisesDistribution[2, 3]]").unwrap(),
+      "Variance[VonMisesDistribution[2, 3]]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("StandardDeviation[VonMisesDistribution[2, 3]]").unwrap(),
+      "StandardDeviation[VonMisesDistribution[2, 3]]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[VonMisesDistribution[2, -1], x]").unwrap();
+    assert_eq!(r.result, "PDF[VonMisesDistribution[2, -1], x]");
+    assert!(r.warnings[0].contains(
+      "VonMisesDistribution::nnegprm: Parameter -1 at position 2 in \
+       VonMisesDistribution[2, -1] is expected to be non-negative."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[VonMisesDistribution[2], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "VonMisesDistribution::argr: VonMisesDistribution called with 1 \
+       argument; 2 arguments are expected."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("VonMisesDistribution[2, -1]").unwrap();
+    assert!(r.warnings.is_empty());
+  }
+}

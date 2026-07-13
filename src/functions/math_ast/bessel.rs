@@ -1080,7 +1080,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute Bessel Y_n(z) (second kind)
-fn bessel_y(n: f64, z: f64) -> f64 {
+pub fn bessel_y(n: f64, z: f64) -> f64 {
   // Handle negative integer orders: Y_{-n}(z) = (-1)^n * Y_n(z)
   if n < 0.0 && n == n.floor() {
     let n_abs = -n;

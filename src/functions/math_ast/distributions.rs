@@ -246,6 +246,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "HypoexponentialDistribution" => pdf_hypoexponential(dargs, x),
     "CoxianDistribution" => pdf_coxian(dargs, x),
     "HyperexponentialDistribution" => pdf_hyperexponential(dargs, x),
+    "VonMisesDistribution" => pdf_vonmises(dargs, x),
     "FailureDistribution" => pdf_failure_distribution(dargs, x),
     "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -4061,6 +4062,20 @@ pub fn distribution_mean_variance(
       &erlang_gamma_dargs(dargs)?,
     ),
     "CoxianDistribution" => coxian_mean_variance(dargs),
+    "VonMisesDistribution" => {
+      let Some(()) = vonmises_checked(dargs) else {
+        return Err(InterpreterError::EvaluationError(
+          "VonMisesDistribution: invalid parameters".into(),
+        ));
+      };
+      // Only the mean has a closed form; Variance/StandardDeviation
+      // stay unevaluated in wolframscript (VonMises is not listed for
+      // the variance dispatch, so the second component is unused).
+      Ok((
+        dargs[0].clone(),
+        Expr::Identifier("Indeterminate".to_string()),
+      ))
+    }
     "HyperexponentialDistribution" => hyperexponential_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
@@ -7888,6 +7903,88 @@ pub fn dmp_stationary_mean(
     name: "Plus".to_string(),
     args: terms.into(),
   })?))
+}
+
+/// Validation for VonMisesDistribution[μ, κ]: emits argr when the
+/// argument count is off and nnegprm when κ is a negative number (all
+/// from consuming functions; the constructor echoes silently).
+fn vonmises_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 2 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "VonMisesDistribution::argr: VonMisesDistribution called with {} {}; 2 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  if num(&dargs[1]).is_some_and(|v| v < 0.0) {
+    crate::emit_message(&format!(
+      "VonMisesDistribution::nnegprm: Parameter {} at position 2 in {} is expected to be non-negative.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      crate::syntax::expr_to_string(&Expr::FunctionCall {
+        name: "VonMisesDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      })
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// PDF[VonMisesDistribution[μ, κ], x] =
+/// Piecewise[{{E^(κ Cos[μ - x])/(2 π BesselI[0, κ]), μ-π <= x <= μ+π}}, 0].
+/// CDF has no closed form and stays unevaluated, as in wolframscript.
+fn pdf_vonmises(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "VonMisesDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = vonmises_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (m, k) = (dargs[0].clone(), dargs[1].clone());
+  let pi = Expr::Constant("Pi".to_string());
+  let cos = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![plus(m.clone(), times(int(-1), x.clone()))].into(),
+  };
+  let bessel = Expr::FunctionCall {
+    name: "BesselI".to_string(),
+    args: vec![int(0), k.clone()].into(),
+  };
+  let value = times(
+    power(e(), times(k, cos)),
+    power(
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![int(2), pi.clone(), bessel].into(),
+      },
+      int(-1),
+    ),
+  );
+  let cond = comparison3(
+    minus(m.clone(), pi.clone()),
+    ComparisonOp::LessEqual,
+    x,
+    ComparisonOp::LessEqual,
+    plus(m, pi),
+  );
+  eval(piecewise(vec![(value, cond)], int(0)))
 }
 
 /// Validated HyperexponentialDistribution arguments (probs, rates).

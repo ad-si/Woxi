@@ -677,6 +677,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "HypoexponentialDistribution"
         | "CoxianDistribution"
         | "HyperexponentialDistribution"
+        | "VonMisesDistribution"
         | "InverseGaussianDistribution"
         | "LogisticDistribution"
         | "GeometricDistribution"

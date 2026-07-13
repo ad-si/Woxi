@@ -387,6 +387,33 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         .and_then(|v| if v >= 1.0 { Some(v.acosh()) } else { None }),
       "ArcTanh" if args.len() == 1 => try_eval_to_f64(&args[0])
         .and_then(|v| if v.abs() < 1.0 { Some(v.atanh()) } else { None }),
+      // Bessel functions with exact numeric arguments stay symbolic but
+      // must numericize under Real contagion (2.*BesselI[0, 3] is a
+      // machine real in wolframscript).
+      "BesselI" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let z = try_eval_to_f64(&args[1])?;
+        let v = crate::functions::math_ast::bessel::bessel_i(n, z);
+        v.is_finite().then_some(v)
+      }
+      "BesselJ" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let z = try_eval_to_f64(&args[1])?;
+        let v = crate::functions::math_ast::bessel::bessel_j(n, z);
+        v.is_finite().then_some(v)
+      }
+      "BesselK" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let z = try_eval_to_f64(&args[1])?;
+        let v = crate::functions::math_ast::bessel::bessel_k(n, z);
+        v.is_finite().then_some(v)
+      }
+      "BesselY" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let z = try_eval_to_f64(&args[1])?;
+        let v = crate::functions::math_ast::bessel::bessel_y(n, z);
+        v.is_finite().then_some(v)
+      }
       "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sqrt()),
       "Abs" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.abs()),
       "Exp" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.exp()),
