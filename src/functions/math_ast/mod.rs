@@ -84,3 +84,10 @@ pub fn statistics_process_absolute_correlation(
 ) -> Option<crate::syntax::Expr> {
   statistics::process_absolute_correlation(proc, t1, t2)
 }
+
+/// Public accessor for BiweightMidvariance.
+pub fn statistics_biweight_midvariance(
+  args: &[crate::syntax::Expr],
+) -> Result<crate::syntax::Expr, crate::InterpreterError> {
+  statistics::biweight_midvariance_ast(args)
+}

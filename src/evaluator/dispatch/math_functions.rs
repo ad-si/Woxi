@@ -1955,6 +1955,11 @@ pub fn dispatch_math_functions(
     "AbsoluteCorrelationFunction" => {
       return Some(crate::functions::absolute_correlation_function_ast(args));
     }
+    "BiweightMidvariance" => {
+      return Some(
+        crate::functions::math_ast::statistics_biweight_midvariance(args),
+      );
+    }
     // StieltjesGamma[0] is EulerGamma; positive integers and symbols stay
     // symbolic (N picks up the machine values via try_eval_to_f64); other
     // arguments emit StieltjesGamma::intnm like wolframscript

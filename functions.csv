@@ -4270,7 +4270,7 @@ AnnuityDue,Annuity paying at interval start: TimeValue is (1+i)^q times the ordi
 AskAppend,,🚫,,10.4,4437
 AudioLength,,🚫,,11.0,4437
 AutoIndent,,,,3.0,4437
-BiweightMidvariance,,,,11.1,4437
+BiweightMidvariance,Robust biweight midvariance dispersion estimate of data,✅,pure,11.1,4437
 CentralFeature,Element minimizing total distance to all others (Euclidean/EditDistance/equality metric),✅,pure,11.1,4437
 CepstrogramArray,,🚫,,11.1,4437
 CodeAssistOptions,,🚫,,10.0,4437

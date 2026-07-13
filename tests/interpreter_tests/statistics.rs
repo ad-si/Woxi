@@ -9748,3 +9748,46 @@ mod process_correlation_functions {
     );
   }
 }
+
+// BiweightMidvariance — robust dispersion. All outputs verified against
+// wolframscript (exact rationals; machine-float inputs differ in the
+// last bit and are not pinned).
+mod biweight_midvariance {
+  use super::*;
+
+  #[test]
+  fn exact_values() {
+    assert_eq!(
+      interpret("BiweightMidvariance[{1, 2, 3, 4, 5}]").unwrap(),
+      "363144328/158090645"
+    );
+    // Robust against the outlier.
+    assert_eq!(
+      interpret("BiweightMidvariance[{1, 2, 3, 4, 100}]").unwrap(),
+      "10302415/5077803"
+    );
+    // Explicit scaling constant (the default is 9).
+    assert_eq!(
+      interpret("BiweightMidvariance[{1, 2, 3, 4, 5}, 6]").unwrap(),
+      "5694929/2016010"
+    );
+    assert_eq!(interpret("BiweightMidvariance[{1, 2}]").unwrap(), "100/361");
+    assert_eq!(
+      interpret("BiweightMidvariance[{1, 2}, 9]").unwrap(),
+      "100/361"
+    );
+  }
+
+  #[test]
+  fn degenerate_and_invalid() {
+    // Zero MAD is Indeterminate.
+    assert_eq!(
+      interpret("BiweightMidvariance[{2, 2, 2, 2}]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("BiweightMidvariance[x]").unwrap(),
+      "BiweightMidvariance[x]"
+    );
+  }
+}

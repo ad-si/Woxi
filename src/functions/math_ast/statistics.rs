@@ -7170,6 +7170,110 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
   }
 }
 
+/// BiweightMidvariance[data] / BiweightMidvariance[data, c] — the robust
+/// dispersion estimate
+///   n Σ_{|u|<1} (x - M)^2 (1 - u^2)^4 / (Σ_{|u|<1} (1 - u^2)(1 - 5 u^2))^2
+/// with u = (x - M)/(c MAD), M the median, MAD the median absolute
+/// deviation, and default c = 9 (formula hand-verified against
+/// wolframscript's exact rationals). MAD == 0 gives Indeterminate.
+pub fn biweight_midvariance_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "BiweightMidvariance".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  let Expr::List(items) = &args[0] else {
+    return unevaluated();
+  };
+  if items.is_empty() || !all_numeric_scalars(items) {
+    return unevaluated();
+  }
+  let c = match args.get(1) {
+    None => Expr::Integer(9),
+    Some(e) if crate::functions::math_ast::try_eval_to_f64(e).is_some() => {
+      e.clone()
+    }
+    _ => return unevaluated(),
+  };
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let bin = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let median = ev(&call("Median", vec![args[0].clone()]))?;
+  let deviations: Vec<Expr> = items
+    .iter()
+    .map(|x| {
+      call(
+        "Abs",
+        vec![bin(BinaryOperator::Minus, x.clone(), median.clone())],
+      )
+    })
+    .collect();
+  let mad = ev(&call("Median", vec![Expr::List(deviations.into())]))?;
+  match crate::functions::math_ast::try_eval_to_f64(&mad) {
+    Some(v) if v != 0.0 => {}
+    Some(_) => return Ok(Expr::Identifier("Indeterminate".to_string())),
+    None => return unevaluated(),
+  }
+  let scale = bin(BinaryOperator::Times, c, mad);
+  let mut num_terms: Vec<Expr> = Vec::new();
+  let mut den_terms: Vec<Expr> = Vec::new();
+  for x in items.iter() {
+    let dev = bin(BinaryOperator::Minus, x.clone(), median.clone());
+    let u = ev(&bin(BinaryOperator::Divide, dev.clone(), scale.clone()))?;
+    let Some(u_f) = crate::functions::math_ast::try_eval_to_f64(&u) else {
+      return unevaluated();
+    };
+    if u_f.abs() >= 1.0 {
+      continue;
+    }
+    let u2 = bin(BinaryOperator::Power, u.clone(), Expr::Integer(2));
+    let one_minus = bin(BinaryOperator::Minus, Expr::Integer(1), u2.clone());
+    num_terms.push(bin(
+      BinaryOperator::Times,
+      bin(BinaryOperator::Power, dev, Expr::Integer(2)),
+      bin(BinaryOperator::Power, one_minus.clone(), Expr::Integer(4)),
+    ));
+    den_terms.push(bin(
+      BinaryOperator::Times,
+      one_minus,
+      bin(
+        BinaryOperator::Minus,
+        Expr::Integer(1),
+        bin(BinaryOperator::Times, Expr::Integer(5), u2),
+      ),
+    ));
+  }
+  if den_terms.is_empty() {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  let total = |ts: Vec<Expr>| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: ts.into(),
+  };
+  ev(&bin(
+    BinaryOperator::Divide,
+    bin(
+      BinaryOperator::Times,
+      Expr::Integer(items.len() as i128),
+      total(num_terms),
+    ),
+    bin(BinaryOperator::Power, total(den_terms), Expr::Integer(2)),
+  ))
+}
+
 /// CorrelationFunction[proc, t1, t2] closed forms (Cov normalized by the
 /// slice standard deviations), in wolframscript's display shapes.
 pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
