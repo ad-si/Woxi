@@ -13714,6 +13714,36 @@ fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
           args: vec![expr.clone()].into(),
         })
       }
+      // Simplex[{p0, …, pk}] — the k-simplex spanned by its vertices. A 2-simplex
+      // (3 points in 2D) is a triangle and a 3-simplex (4 points in 3D) is a
+      // tetrahedron, so both reuse the same exact helpers as the corresponding
+      // Triangle[…]/Tetrahedron[…] wrapper forms.
+      "Simplex" if args.len() == 1 => {
+        if let Expr::List(vertices) = &args[0] {
+          let pts: Vec<&[Expr]> = vertices
+            .iter()
+            .filter_map(|v| {
+              if let Expr::List(coords) = v {
+                Some(coords.as_slice())
+              } else {
+                None
+              }
+            })
+            .collect();
+          if pts.len() == vertices.len() {
+            if pts.len() == 3 && pts.iter().all(|p| p.len() == 2) {
+              return insphere_triangle_2d(pts[0], pts[1], pts[2]);
+            }
+            if pts.len() == 4 && pts.iter().all(|p| p.len() == 3) {
+              return insphere_tetrahedron(pts[0], pts[1], pts[2], pts[3]);
+            }
+          }
+        }
+        Ok(Expr::FunctionCall {
+          name: "Insphere".to_string(),
+          args: vec![expr.clone()].into(),
+        })
+      }
       _ => {
         // Normalize no-arg primitives like Disk[] → Disk[{0,0}]
         let normalized = if args.is_empty()

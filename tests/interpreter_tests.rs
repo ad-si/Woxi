@@ -1156,6 +1156,29 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_insphere_simplex() {
+    clear_state();
+    // A 2-simplex is a triangle; Insphere[Simplex[...]] must match the
+    // Triangle[...] wrapper form. 3-4-5 right triangle → incircle of radius 1
+    // centred at {1, 1}; 6-8-10 right triangle → radius 2 centred at {2, 2}.
+    assert_eq!(
+      interpret("Insphere[Simplex[{{0, 0}, {4, 0}, {0, 3}}]]").unwrap(),
+      "Sphere[{1, 1}, 1]"
+    );
+    assert_eq!(
+      interpret("Insphere[Simplex[{{0, 0}, {6, 0}, {0, 8}}]]").unwrap(),
+      "Sphere[{2, 2}, 2]"
+    );
+    // A 3-simplex is a tetrahedron; Simplex and Tetrahedron wrappers must
+    // agree on the inscribed sphere for the same vertices.
+    let verts = "{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}";
+    assert_eq!(
+      interpret(&format!("Insphere[Simplex[{verts}]]")).unwrap(),
+      interpret(&format!("Insphere[Tetrahedron[{verts}]]")).unwrap()
+    );
+  }
+
+  #[test]
   fn notation_wrappers_stay_symbolic_without_warning() {
     // Notation/display wrapper heads stay unevaluated as their canonical form
     // in wolframscript and must NOT emit a spurious "not yet implemented"
