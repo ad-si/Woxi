@@ -9821,3 +9821,53 @@ mod biweight_midvariance {
     );
   }
 }
+
+// Statistics functions densify a SparseArray argument and behave like the
+// equivalent dense list, matching wolframscript.
+mod sparse_array_input {
+  use super::*;
+
+  #[test]
+  fn mean_densifies() {
+    // Dense form is {6, 3, 0, 0}; mean 9/4.
+    assert_eq!(
+      interpret("Mean[SparseArray[{1 -> 6, 2 -> 3}, 4]]").unwrap(),
+      "9/4"
+    );
+    // 2-D: column means of {{2, 0}, {4, 0}}.
+    assert_eq!(
+      interpret("Mean[SparseArray[{{1, 1} -> 2, {2, 1} -> 4}, {2, 2}]]")
+        .unwrap(),
+      "{3, 0}"
+    );
+  }
+
+  #[test]
+  fn median_densifies() {
+    // Dense form is {5, 0, 0}; median 0.
+    assert_eq!(interpret("Median[SparseArray[{1 -> 5}, 3]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn variance_densifies() {
+    // Dense form is {2, 4, 6}; variance 4.
+    assert_eq!(
+      interpret("Variance[SparseArray[{1 -> 2, 2 -> 4, 3 -> 6}, 3]]").unwrap(),
+      "4"
+    );
+    // Dense form is {5, 0, 0}; variance 25/3.
+    assert_eq!(
+      interpret("Variance[SparseArray[{1 -> 5}, 3]]").unwrap(),
+      "25/3"
+    );
+  }
+
+  #[test]
+  fn standard_deviation_densifies() {
+    // Dense form is {2, 4, 0, 0}; standard deviation Sqrt[11/3].
+    assert_eq!(
+      interpret("StandardDeviation[SparseArray[{1 -> 2, 2 -> 4}, 4]]").unwrap(),
+      "Sqrt[11/3]"
+    );
+  }
+}

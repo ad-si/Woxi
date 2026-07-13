@@ -904,6 +904,10 @@ fn median_sort_key(e: &Expr) -> Option<f64> {
 
 /// AST-based Median: calculate median of a list.
 pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) = super::densify_sparse_array(list) {
+    return median_ast(&dense);
+  }
   // Distribution-form input: Median[dist] → quantile at p = 1/2.
   if let Expr::FunctionCall { name, args } = list
     && let Some(med) = distribution_median(name, args)

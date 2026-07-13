@@ -564,6 +564,12 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Mean expects exactly 1 argument".into(),
     ));
   }
+  // A SparseArray argument is averaged over its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return mean_ast(&[dense]);
+  }
   // A ragged / mixed-depth list is not a rectangular array: emit ::rectt
   // and stay unevaluated rather than producing a bogus column-wise result.
   if let Some(uneval) = rectt_if_ragged("Mean", args) {
@@ -998,6 +1004,12 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Variance expects exactly 1 argument".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return variance_ast(&[dense]);
+  }
   if let Some(uneval) = rectt_if_ragged("Variance", args) {
     return Ok(uneval);
   }
@@ -1405,6 +1417,12 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "StandardDeviation expects exactly 1 argument".into(),
     ));
+  }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return standard_deviation_ast(&[dense]);
   }
   if let Some(uneval) = rectt_if_ragged("StandardDeviation", args) {
     return Ok(uneval);

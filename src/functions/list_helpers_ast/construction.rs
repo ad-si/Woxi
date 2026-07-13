@@ -2584,6 +2584,25 @@ fn build_dense_from_rules(
   Expr::List(result.into())
 }
 
+/// If `expr` is a `SparseArray[...]`, return its dense nested-list form so
+/// callers (statistics functions, etc.) can operate on the expanded array.
+/// Returns `None` when `expr` is not a SparseArray or when densification
+/// fails to reduce it to a non-SparseArray (so the caller leaves it alone).
+pub fn densify_sparse_array(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args: sa } = expr else {
+    return None;
+  };
+  if name != "SparseArray" {
+    return None;
+  }
+  let dense = sparse_array_ast(sa).ok()?;
+  if matches!(&dense, Expr::FunctionCall { name, .. } if name == "SparseArray")
+  {
+    return None;
+  }
+  Some(dense)
+}
+
 /// Expand a SparseArray (any recognized form) into a dense nested list.
 /// Called by `Normal[SparseArray[...]]`.
 pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
