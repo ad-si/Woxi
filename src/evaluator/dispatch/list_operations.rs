@@ -5526,6 +5526,24 @@ pub fn dispatch_list_operations(
     // SequenceCount[list, sublist] — count non-overlapping occurrences. The
     // sublist elements may be patterns (e.g. `_Symbol`, `{__Symbol}`).
     "SequenceCount" if args.len() == 2 || args.len() == 3 => {
+      // Unlike SequenceCases/SequencePosition/SequenceReplace, SequenceCount
+      // has no max-count argument: any third argument must be an option (a
+      // rule, or a list of rules). A bare non-rule value is rejected with
+      // nonopt and the call stays unevaluated, matching wolframscript.
+      if let Some(opt) = args.get(2)
+        && !matches!(opt, Expr::Rule { .. } | Expr::List(_))
+      {
+        let call = Expr::FunctionCall {
+          name: "SequenceCount".to_string(),
+          args: args.to_vec().into(),
+        };
+        crate::emit_message(&format!(
+          "SequenceCount::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
+          crate::syntax::expr_to_string(opt),
+          crate::syntax::expr_to_string(&call)
+        ));
+        return Some(Ok(call));
+      }
       if let (Expr::List(list), Expr::List(sub)) = (&args[0], &args[1]) {
         if sub.is_empty() {
           return Some(Ok(Expr::Integer(0)));

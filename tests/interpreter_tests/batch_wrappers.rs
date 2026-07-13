@@ -4290,6 +4290,23 @@ mod batch_unevaluated_wrappers_2 {
       "3"
     );
   }
+  // SequenceCount has no max-count argument (unlike SequenceCases): a bare
+  // non-option third argument is rejected with nonopt and stays unevaluated,
+  // matching wolframscript.
+  #[test]
+  fn sequence_count_nonoption_third_arg() {
+    let r =
+      interpret_with_stdout("SequenceCount[{1, 2, 1, 2, 1, 2}, {1, 2}, 2]")
+        .unwrap();
+    assert_eq!(r.result, "SequenceCount[{1, 2, 1, 2, 1, 2}, {1, 2}, 2]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("SequenceCount::nonopt")),
+      "expected nonopt message, got {:?}",
+      r.warnings
+    );
+  }
   // Pattern element matching.
   #[test]
   fn sequence_count_blank_sequence_runs() {
