@@ -489,7 +489,7 @@ fn try_reduce_bounded_trig(
 }
 
 /// Extract variable names from the second argument of Reduce.
-pub fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
+fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
   match expr {
     Expr::Identifier(name) => {
       // Check it's not a constant
@@ -516,7 +516,7 @@ pub fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
 }
 
 /// Core reduction logic.
-pub fn reduce_expr(
+fn reduce_expr(
   expr: &Expr,
   vars: &[String],
   domain: Option<&str>,
@@ -712,7 +712,7 @@ fn expand_numeric_two_sided_bound(expr: &Expr, var: &str) -> Option<Expr> {
 }
 
 /// Reduce a single constraint in one variable.
-pub fn reduce_single_var(
+fn reduce_single_var(
   expr: &Expr,
   var: &str,
   domain: Option<&str>,
@@ -936,7 +936,7 @@ fn primitive_condition_var(c1: &Expr) -> Option<Expr> {
   }
 }
 
-pub fn reduce_equation(
+fn reduce_equation(
   lhs: &Expr,
   rhs: &Expr,
   var: &str,
@@ -1064,7 +1064,7 @@ pub fn reduce_equation(
 }
 
 /// Reduce a != b for variable var.
-pub fn reduce_not_equal(
+fn reduce_not_equal(
   lhs: &Expr,
   rhs: &Expr,
   var: &str,
@@ -1212,7 +1212,7 @@ fn try_reduce_arc_degrees(
 }
 
 /// Reduce an inequality (lhs op rhs) for one variable.
-pub fn reduce_inequality(
+fn reduce_inequality(
   lhs: &Expr,
   rhs: &Expr,
   op: CompOp,
@@ -1495,7 +1495,7 @@ fn try_reduce_abs_not_equal(
 }
 
 /// Evaluate a constant inequality (no variable present).
-pub fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Expr {
+fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Expr {
   // Try to get a numeric value
   if let Some(n) = expr_to_number(val) {
     let result = match op {
@@ -1535,7 +1535,7 @@ pub fn expr_to_number(expr: &Expr) -> Option<f64> {
 }
 
 /// Reduce a linear inequality (a*x + b op 0)
-pub fn reduce_linear_inequality(
+fn reduce_linear_inequality(
   poly: &Expr,
   var: &str,
   op: CompOp,
@@ -1597,7 +1597,7 @@ pub fn reduce_linear_inequality(
 }
 
 /// Reduce a quadratic inequality (a*x^2 + b*x + c op 0)
-pub fn reduce_quadratic_inequality(
+fn reduce_quadratic_inequality(
   poly: &Expr,
   var: &str,
   op: CompOp,
@@ -1807,7 +1807,7 @@ pub fn reduce_quadratic_inequality(
 }
 
 /// Make a quadratic root expression: (nb + so*Sqrt[si]) / den
-pub fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
+fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
   let g = gcd_i128(gcd_i128(nb, so).abs(), den.abs()).abs();
   let nb = nb / g;
   let so = so / g;
@@ -1849,7 +1849,7 @@ pub fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
 }
 
 /// Order two roots so that the smaller one comes first.
-pub fn order_roots(r1: Expr, r2: Expr) -> (Expr, Expr) {
+fn order_roots(r1: Expr, r2: Expr) -> (Expr, Expr) {
   if let (Some(v1), Some(v2)) = (expr_to_number(&r1), expr_to_number(&r2)) {
     if v1 <= v2 { (r1, r2) } else { (r2, r1) }
   } else {
@@ -1868,7 +1868,7 @@ pub fn order_roots(r1: Expr, r2: Expr) -> (Expr, Expr) {
 }
 
 /// Try to factor and solve higher-degree polynomial inequalities.
-pub fn try_factor_and_reduce_inequality(
+fn try_factor_and_reduce_inequality(
   lhs: &Expr,
   rhs: &Expr,
   op: CompOp,
@@ -2012,7 +2012,7 @@ pub fn try_factor_and_reduce_inequality(
 }
 
 /// Evaluate a polynomial at a specific point.
-pub fn eval_poly_at(poly: &Expr, var: &str, x: f64) -> f64 {
+fn eval_poly_at(poly: &Expr, var: &str, x: f64) -> f64 {
   let substituted =
     crate::syntax::substitute_variable(poly, var, &Expr::Real(x));
   let simplified = simplify(substituted);
@@ -2020,7 +2020,7 @@ pub fn eval_poly_at(poly: &Expr, var: &str, x: f64) -> f64 {
 }
 
 /// Check if a sign value matches the comparison operator (compared to 0).
-pub fn sign_matches(val: f64, op: CompOp) -> bool {
+fn sign_matches(val: f64, op: CompOp) -> bool {
   match op {
     CompOp::Less => val < 0.0,
     CompOp::LessEqual => val <= 0.0,
@@ -2032,7 +2032,7 @@ pub fn sign_matches(val: f64, op: CompOp) -> bool {
 }
 
 /// Handle And conjunction of two constraints.
-pub fn reduce_and(
+fn reduce_and(
   left: &Expr,
   right: &Expr,
   vars: &[String],
@@ -2199,7 +2199,7 @@ pub fn collect_and_constraints(expr: &Expr, out: &mut Vec<Expr>) {
 }
 
 /// Collect equalities (var == val) from an And expression.
-pub fn collect_and_equalities(expr: &Expr) -> Vec<(String, Expr)> {
+fn collect_and_equalities(expr: &Expr) -> Vec<(String, Expr)> {
   let mut result = Vec::new();
   let mut constraints = Vec::new();
   collect_and_constraints(expr, &mut constraints);
@@ -2233,7 +2233,7 @@ pub fn collect_or_terms(expr: &Expr) -> Vec<Expr> {
 }
 
 /// Try to combine multiple inequalities on the same variable.
-pub fn reduce_combined_inequalities(
+fn reduce_combined_inequalities(
   ineqs: &[Expr],
   var: &str,
   domain: Option<&str>,
@@ -2445,7 +2445,7 @@ pub fn reduce_combined_inequalities(
 }
 
 /// Update a bound, keeping the tighter one.
-pub fn update_bound(
+fn update_bound(
   current: Option<(Expr, bool)>,
   new_val: Expr,
   inclusive: bool,
@@ -2473,7 +2473,7 @@ pub fn update_bound(
 }
 
 /// Handle multi-variable systems.
-pub fn reduce_multi_var(
+fn reduce_multi_var(
   expr: &Expr,
   vars: &[String],
   domain: Option<&str>,
@@ -2678,7 +2678,7 @@ pub fn reduce_multi_var_and(
 }
 
 /// Check if a value is in a given domain.
-pub fn is_in_domain(expr: &Expr, domain: &str) -> bool {
+fn is_in_domain(expr: &Expr, domain: &str) -> bool {
   match domain {
     "Reals" => {
       // Check that the expression doesn't contain I (imaginary unit)

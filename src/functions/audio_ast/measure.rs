@@ -10,7 +10,7 @@ use crate::syntax::Expr;
 /// One channel's worth of a measurement, as an expression.
 /// Frequency-valued properties are Quantity["Hertz"], time-valued ones
 /// Quantity["Seconds"], counts Integers, everything else Reals.
-pub fn channel_property(prop: &str, xs: &[f64], rate: f64) -> Option<Expr> {
+fn channel_property(prop: &str, xs: &[f64], rate: f64) -> Option<Expr> {
   let n = xs.len();
   if n == 0 {
     return None;

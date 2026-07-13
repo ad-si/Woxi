@@ -262,7 +262,7 @@ pub fn find_label_index(exprs: &[Expr], goto_tag: &Expr) -> Option<usize> {
 /// Prepare arguments for iterating functions (Sum, Product, NSum).
 /// The body (args[0]) is kept unevaluated to preserve the iteration variable.
 /// Iterator specs (args[1..]) have their bounds evaluated but variable names preserved.
-pub fn prepare_iterating_function_args(
+fn prepare_iterating_function_args(
   args: &[Expr],
 ) -> Result<Vec<Expr>, InterpreterError> {
   let mut result = Vec::new();
@@ -296,7 +296,7 @@ pub fn prepare_iterating_function_args(
 /// Early dispatch for FunctionCall in evaluate_expr_to_expr — handles held functions
 /// before argument evaluation. Returns Some(result) if handled, None otherwise.
 #[inline(never)]
-pub fn evaluate_expr_to_expr_early_dispatch(
+fn evaluate_expr_to_expr_early_dispatch(
   name: &str,
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {

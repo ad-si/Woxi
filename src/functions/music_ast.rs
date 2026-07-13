@@ -123,7 +123,7 @@ pub fn pitch_name_to_midi(name: &str) -> Option<i128> {
 /// Convert a frequency in Hertz to the nearest MIDI note number in 12-tone
 /// equal temperament, with A4 (MIDI 69) tuned to 440 Hz. Returns `None` for
 /// non-positive or non-finite frequencies, which have no pitch.
-pub fn frequency_to_midi(freq: f64) -> Option<i128> {
+fn frequency_to_midi(freq: f64) -> Option<i128> {
   if freq <= 0.0 || !freq.is_finite() {
     return None;
   }

@@ -3640,7 +3640,7 @@ fn find_clusters_with_k(
 /// Falls back to the unevaluated form for inputs that
 /// `ClusteringComponents` can't label (e.g. non-numeric data or shapes
 /// the underlying algorithm doesn't yet handle).
-pub fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   // Rule-style inputs: `{key -> val, ...}` and `keys -> vals` — cluster by
   // the *keys* and emit the matching values, ordered with the high-key
   // cluster first (matching wolframscript's

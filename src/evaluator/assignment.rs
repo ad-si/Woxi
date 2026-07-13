@@ -105,7 +105,7 @@ pub fn register_user_print_form(name: &str) {
   });
 }
 
-pub fn suppress_specificity_sort() -> bool {
+fn suppress_specificity_sort() -> bool {
   SUPPRESS_SPECIFICITY_SORT.with(|c| c.get())
 }
 
@@ -214,7 +214,7 @@ fn condition_is_literal_arg(c: &Expr) -> bool {
 /// Wolfram, where a guarded rule like `f[n_Integer, _] := 0 /; n < 0` is tried
 /// before an unguarded but otherwise-more-specific rule like
 /// `f[n_Integer, r_Integer] := …`.
-pub fn pattern_specificity_score(
+fn pattern_specificity_score(
   blank_types: &[u8],
   heads: &[Option<String>],
   conditions: &[Option<Expr>],
@@ -763,7 +763,7 @@ fn reorder_orderless_pattern_args(pattern: Expr) -> Expr {
 
 /// Helper for Attributes[f] = value / Attributes[f] := value
 /// Extracts attribute symbols from value, validates, and sets them on the symbol.
-pub fn set_attributes_from_value(
+fn set_attributes_from_value(
   sym_name: &str,
   rhs_value: &Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -821,7 +821,7 @@ pub fn set_attributes_from_value(
 /// wrappers are stripped) and replay it as an individual `lhs := rhs` so
 /// the rules get installed in FUNC_DEFS via the regular SetDelayed path.
 /// Iteration order is preserved (no specificity sorting), matching Wolfram.
-pub fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
+fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
   let rules: Vec<Expr> = match rhs {
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
@@ -903,7 +903,7 @@ pub fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Helper for Options[f] = value — set options for symbol f
-pub fn set_options_from_value(
+fn set_options_from_value(
   sym_name: &str,
   rhs_value: &Expr,
 ) -> Result<Expr, InterpreterError> {

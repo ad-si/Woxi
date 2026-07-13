@@ -1205,7 +1205,7 @@ use pest::iterators::Pair;
 /// Extract the exponent expression from an `ImplicitPowerSuffix` pair.
 /// Handles `^expr`, `^-expr`, and forms with a `PartIndexSuffix` after the
 /// term (e.g. `^m[[1]]` → `Part[m, 1]`, `^-m[[1]]` → `-Part[m, 1]`).
-pub fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
+fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
   let inners: Vec<_> = pair.into_inner().collect();
   let first = inners[0].clone();
   let mut expr = match first.as_rule() {

@@ -298,7 +298,7 @@ thread_local! {
 
 /// Stash an evaluated expression so subsequent `%` / `Out[]` references
 /// can resolve to it. Called from `interpret_with_stdout` after success.
-pub fn set_last_output(expr: syntax::Expr) {
+fn set_last_output(expr: syntax::Expr) {
   LAST_OUTPUT_EXPR.with(|c| *c.borrow_mut() = Some(expr));
 }
 
@@ -642,7 +642,7 @@ pub fn get_captured_messages_raw() -> Vec<String> {
 }
 
 /// Returns true if currently inside a Quiet[] evaluation
-pub fn is_quiet() -> bool {
+fn is_quiet() -> bool {
   QUIET_LEVEL.with(|level| *level.borrow() > 0)
 }
 
@@ -825,7 +825,7 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
 
 /// Reset the per-calculation General::stop counters (a new top-level
 /// evaluation is a new "calculation").
-pub fn reset_message_stop_counts() {
+fn reset_message_stop_counts() {
   MESSAGE_STOP_COUNTS.with(|m| m.borrow_mut().clear());
 }
 
@@ -880,7 +880,7 @@ pub fn graphics_result(svg: String) -> syntax::Expr {
 
 /// Like `graphics_result` but reports `head` (e.g. `GeoGraphics`) from `Head`
 /// instead of the default `Graphics`. The SVG renders identically.
-pub fn graphics_result_with_head(svg: String, head: &str) -> syntax::Expr {
+fn graphics_result_with_head(svg: String, head: &str) -> syntax::Expr {
   capture_graphics(&svg);
   syntax::Expr::Graphics {
     svg,
@@ -923,7 +923,7 @@ pub fn get_captured_graphics() -> Option<String> {
 }
 
 /// Gets all captured graphics SVGs
-pub fn get_all_captured_graphics() -> Vec<String> {
+fn get_all_captured_graphics() -> Vec<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().clone())
 }
 
@@ -973,7 +973,7 @@ fn clear_captured_sound() {
 }
 
 /// Stores synthesized audio as a base64-encoded WAV (from Play/Sound).
-pub fn capture_sound(wav_base64: &str) {
+fn capture_sound(wav_base64: &str) {
   capture_audio(AudioOutput {
     base64: wav_base64.to_string(),
     mime: "audio/wav".to_string(),
@@ -982,7 +982,7 @@ pub fn capture_sound(wav_base64: &str) {
 }
 
 /// Stores playable audio (e.g. from a file-backed Audio object).
-pub fn capture_audio(audio: AudioOutput) {
+fn capture_audio(audio: AudioOutput) {
   CAPTURED_SOUND.with(|buffer| {
     *buffer.borrow_mut() = Some(audio);
   });
@@ -3554,7 +3554,7 @@ fn scientific_to_caret(text: &str) -> String {
 /// U+005E. Because U+02C6 is a Unicode letter (category Lm), the grammar would
 /// otherwise swallow it into an identifier (e.g. `xˆ2` → symbol `xˆ`), so we
 /// fix it at the source. Characters inside string literals are left untouched.
-pub fn normalize_circumflex_operator(input: &str) -> String {
+fn normalize_circumflex_operator(input: &str) -> String {
   if !input.contains('\u{02C6}') {
     return input.to_string();
   }
@@ -3583,7 +3583,7 @@ pub fn normalize_circumflex_operator(input: &str) -> String {
   result
 }
 
-pub fn expand_char_escapes(input: &str) -> String {
+fn expand_char_escapes(input: &str) -> String {
   // Fast path: no backslash means nothing to do.
   if !input.contains('\\') {
     return input.to_string();

@@ -279,7 +279,7 @@ pub fn import_audio_file(path: &str) -> Result<Expr, crate::InterpreterError> {
 /// Decode a RIFF/WAVE byte stream into per-channel samples in [-1, 1].
 /// Supports PCM (8/16/24/32-bit integer) and IEEE-float (32/64-bit) data,
 /// including WAVE_FORMAT_EXTENSIBLE headers.
-pub fn decode_wav(bytes: &[u8]) -> Option<AudioData> {
+fn decode_wav(bytes: &[u8]) -> Option<AudioData> {
   if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
     return None;
   }

@@ -305,7 +305,7 @@ pub fn partition_multi_dim_ast(
 }
 
 /// Flatten[expr, n, head] - flatten expressions with a specific head
-pub fn flatten_head_ast(
+fn flatten_head_ast(
   list: &Expr,
   depth: i128,
   head: &str,
@@ -393,7 +393,7 @@ fn head_children<'a>(expr: &'a Expr, head: &str) -> Option<&'a [Expr]> {
 
 /// Number of levels that can be flattened together: levels at which every
 /// node has the target head. Empty nodes allow any depth below them.
-pub fn flatten_together_depth(expr: &Expr, head: &str) -> usize {
+fn flatten_together_depth(expr: &Expr, head: &str) -> usize {
   match head_children(expr, head) {
     None => 0,
     Some(items) => {
@@ -414,7 +414,7 @@ pub fn flatten_together_depth(expr: &Expr, head: &str) -> usize {
   }
 }
 
-pub fn flatten_dims_ast(
+fn flatten_dims_ast(
   list: &Expr,
   dim_spec: &[Vec<usize>],
   head: &str,

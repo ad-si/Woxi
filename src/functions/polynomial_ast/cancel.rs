@@ -777,7 +777,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
 }
 
 /// Find the single variable that appears in either or both expressions
-pub fn find_single_variable_both(a: &Expr, b: &Expr) -> Option<String> {
+fn find_single_variable_both(a: &Expr, b: &Expr) -> Option<String> {
   let mut vars = std::collections::HashSet::new();
   collect_variables(a, &mut vars);
   collect_variables(b, &mut vars);
@@ -834,7 +834,7 @@ pub fn poly_gcd(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
 }
 
 /// Compute pseudo-remainder of polynomial division
-pub fn poly_pseudo_remainder(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
+fn poly_pseudo_remainder(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
   if b.is_empty() || b.iter().all(|&c| c == 0) {
     return None;
   }

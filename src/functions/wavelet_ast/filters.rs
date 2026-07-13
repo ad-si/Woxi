@@ -315,7 +315,7 @@ fn poly_roots(coeffs: &[f64]) -> Vec<C64> {
 /// Daubechies extremal-phase lowpass filter of order n (2n coefficients,
 /// indices 0..2n-1, summing to 1) via spectral factorization of the
 /// half-band polynomial P(y) = Sum C(n-1+k, k) y^k.
-pub fn daubechies_lowpass(n: usize) -> Filter {
+fn daubechies_lowpass(n: usize) -> Filter {
   if n == 1 {
     return vec![(0, 0.5), (1, 0.5)];
   }

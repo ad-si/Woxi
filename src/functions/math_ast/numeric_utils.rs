@@ -561,7 +561,7 @@ pub fn expr_to_bigint(e: &Expr) -> Option<BigInt> {
 /// their ratio is representable (e.g. `2^2000 / 3^1000`). A naive
 /// `num.to_f64() / den.to_f64()` would compute `inf / inf = NaN` there.
 /// Returns None when `den` is zero.
-pub fn big_rational_to_f64(num: &BigInt, den: &BigInt) -> Option<f64> {
+fn big_rational_to_f64(num: &BigInt, den: &BigInt) -> Option<f64> {
   use num_traits::{Signed, ToPrimitive, Zero};
   if den.is_zero() {
     return None;
