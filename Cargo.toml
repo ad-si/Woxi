@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "woxi-studio"]
+members = [".", "woxi-studio", "woxi-py"]
 # Unscoped commands at the root (`cargo build`, `make test`, CI) build only
 # the interpreter; woxi-studio (iced → wgpu/winit, 100+ extra crates) is
 # built explicitly via `-p woxi-studio` / `make install-macos-app`.
@@ -17,6 +17,42 @@ version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/ad-si/Woxi"
+# `cargo run -- eval '…'` should run the interpreter CLI, not the
+# woxi-diff-fuzz helper binary.
+default-run = "woxi"
+# Keep packages built from this crate (crates.io and the PyPI sdist,
+# which vendors this crate via maturin) down to what's needed to
+# compile it. tests/SUMMARY.md, functions.csv, and resources/ are
+# embedded via include_str!/include_bytes! and must stay, as must
+# benches/interpreter.rs (an explicitly declared [[bench]] target).
+exclude = [
+  # .cargo/config.toml links with lld from the nix dev shell; a source
+  # build of the packaged crate (e.g. `pip install woxi` from the sdist
+  # on an arm64 Mac) must use the system linker instead.
+  "/.cargo",
+  "/tests/*/",
+  "/tests/woxi",
+  "/tests/zensical.toml",
+  "/images",
+  "/files",
+  "/datasets",
+  "/examples",
+  "/entity_types",
+  "/jupyterlite-woxi-kernel",
+  "/kernelspec",
+  "/scripts",
+  "/woxi-studio",
+  "/woxi-py",
+  "/npm",
+  "/fuzz",
+  "/.claude",
+  "/.vscode",
+  "/.github",
+  "/.sprite",
+  "/Dockerfile",
+  "/flake.nix",
+  "/flake.lock",
+]
 
 # Differential fuzzer comparing woxi against wolframscript
 # (see fuzz/README.md and `make fuzz-diff`).
@@ -31,7 +67,6 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["cli"]
 cli = [
-  "dep:chrono",
   "dep:clap",
   "dep:dirs",
   "dep:env_logger",
@@ -58,7 +93,6 @@ unreachable_pub = "warn"
 
 [dependencies]
 anyhow = "1.0.98"
-chrono = { version = "0.4", optional = true }
 clap = { version = "4.3", features = ["derive"], optional = true }
 dirs = { version = "6.0.0", optional = true }
 env_logger = { version = "0.11", optional = true }
@@ -142,6 +176,11 @@ features = ["text"]
 libc = "0.2"
 calamine = "0.34"
 rust_xlsxwriter = { version = "0.94", default-features = false }
+# All chrono call sites are `#[cfg(not(target_arch = "wasm32"))]`, not
+# cli-gated, so chrono must be available whenever the library itself is
+# built for a native target (e.g. the woxi-py Python extension, which
+# uses `default-features = false`).
+chrono = "0.4"
 chrono-tz = "0.10"
 
 [dev-dependencies]

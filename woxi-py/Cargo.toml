@@ -1,0 +1,29 @@
+[package]
+name = "woxi-py"
+description = "Python bindings for Woxi, an interpreter for a subset of the Wolfram Language"
+keywords = ["wolfram", "wolfram-language", "mathematica", "cas", "math"]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/ad-si/Woxi"
+# Distributed via PyPI (maturin builds wheels from this crate), not crates.io.
+publish = false
+
+[lib]
+# The compiled extension module is imported as `woxi._woxi`; the pure-Python
+# wrapper package in python/woxi re-exports its public API.
+name = "_woxi"
+crate-type = ["cdylib"]
+
+[dependencies]
+# No `cli` feature: the Python package only needs the interpreter library,
+# not clap/tokio/zeromq and the rest of the CLI/Jupyter dependency tree.
+woxi = { path = "..", default-features = false }
+# abi3-py310 produces one wheel per platform that works on all
+# CPython >= 3.10 instead of one wheel per Python minor version.
+pyo3 = { version = "0.27", features = ["abi3-py310"] }
+
+[features]
+# Enabled by maturin (see pyproject.toml). Kept behind a feature so plain
+# `cargo check`/`cargo test` in the workspace still link against libpython.
+extension-module = ["pyo3/extension-module"]
