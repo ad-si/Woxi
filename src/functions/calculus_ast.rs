@@ -14692,7 +14692,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // that special functions (ExpIntegralEi, Log, …) keep their dedicated
   // asymptotic handlers further below.
   fn is_rational_function(expr: &Expr) -> bool {
-    use crate::syntax::{BinaryOperator as B, UnaryOperator as U};
+    use {BinaryOperator as B, UnaryOperator as U};
     match expr {
       Expr::Integer(_)
       | Expr::Real(_)

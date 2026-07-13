@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::BinaryOperator;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 use std::cell::RefCell;
 
 // Thread-local stack of accumulated bindings from outer FunctionCall arg loops.
@@ -3649,7 +3649,6 @@ fn match_pattern_impl(
 /// ComplexInfinity → DirectedInfinity[]. Returns None for anything else (and
 /// for an already-explicit DirectedInfinity[…], which needs no rewriting).
 fn directed_infinity_canonical(expr: &Expr) -> Option<Expr> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   let is_inf = |e: &Expr| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity");
   let di = |dir: Vec<Expr>| Expr::FunctionCall {
     name: "DirectedInfinity".to_string(),
@@ -3689,7 +3688,6 @@ fn directed_infinity_canonical(expr: &Expr) -> Option<Expr> {
 }
 
 pub fn get_expr_head(expr: &Expr) -> String {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   // Check for complex numbers before general matching,
   // so that e.g. 2I (stored as Times[2, I]) is recognized as Complex
   if crate::functions::predicate_ast::is_complex_number(expr) {

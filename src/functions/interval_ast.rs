@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 use std::cmp::Ordering;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -222,7 +222,7 @@ pub fn coth_csch_interval(head: &str, expr: &Expr) -> Option<Expr> {
   }
   let inf = || Expr::Identifier("Infinity".to_string());
   let neg_inf = || Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(Expr::Identifier("Infinity".to_string())),
   };
@@ -296,7 +296,7 @@ pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
   let period = std::f64::consts::PI;
   let inf = || Expr::Identifier("Infinity".to_string());
   let neg_inf = || Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(Expr::Identifier("Infinity".to_string())),
   };
@@ -353,7 +353,7 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
   };
   let inf = || Expr::Identifier("Infinity".to_string());
   let neg_inf = || Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(Expr::Identifier("Infinity".to_string())),
   };

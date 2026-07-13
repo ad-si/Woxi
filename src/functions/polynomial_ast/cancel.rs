@@ -158,7 +158,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
         let terms = collect_additive_terms(&num);
         if terms.len() >= 2 {
           // For each term, extract base→exp map of its multiplicative factors
-          type BaseExpMap = Vec<(String, crate::syntax::Expr, i128)>;
+          type BaseExpMap = Vec<(String, Expr, i128)>;
           fn term_base_exp(term: &Expr) -> BaseExpMap {
             let factors = collect_multiplicative_factors(term);
             let mut map: BaseExpMap = Vec::new();

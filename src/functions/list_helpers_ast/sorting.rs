@@ -1463,7 +1463,6 @@ pub fn expr_sort_key(e: &Expr) -> String {
       crate::syntax::expr_to_string(e)
     }
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       match op {
         BinaryOperator::Power => {
           // Power: sort key is the base (recurse for compound bases)

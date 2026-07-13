@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 fn expr_to_i64(expr: &Expr) -> Option<i64> {
   match expr {
@@ -676,7 +677,6 @@ pub fn extract_part_ast(
     // Strings are atoms in Wolfram Language — Part[string, n] for n ≠ 0
     // returns unevaluated (handled by the fallback arm below).
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       // Decompose BinaryOp into head + args consistent with Head[]
       let (head_name, parts): (&str, Vec<Expr>) = match op {
         BinaryOperator::Plus => ("Plus", vec![*left.clone(), *right.clone()]),
@@ -729,7 +729,6 @@ pub fn extract_part_ast(
       }
     }
     Expr::UnaryOp { op, operand } => {
-      use crate::syntax::UnaryOperator;
       let (head_name, parts): (&str, Vec<Expr>) = match op {
         UnaryOperator::Minus => {
           ("Times", vec![Expr::Integer(-1), *operand.clone()])

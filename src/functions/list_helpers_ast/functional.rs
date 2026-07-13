@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 /// AST-based Fold/FoldList: fold a function over a list.
 /// Fold[f, x, {a, b, c}] -> f[f[f[x, a], b], c]
@@ -728,7 +729,6 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
     Expr::List(items) => Some(items.to_vec()),
     Expr::FunctionCall { args, .. } => Some(args.to_vec()),
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       match op {
         // a - b → Plus[a, Times[-1, b]]
         BinaryOperator::Minus => Some(vec![
@@ -961,8 +961,8 @@ fn apply_at_level_recursive(
   }
 }
 
-fn binary_op_to_name(op: crate::syntax::BinaryOperator) -> &'static str {
-  use crate::syntax::BinaryOperator::*;
+fn binary_op_to_name(op: BinaryOperator) -> &'static str {
+  use BinaryOperator::*;
   match op {
     Plus => "Plus",
     Minus => "Subtract",
@@ -976,8 +976,8 @@ fn binary_op_to_name(op: crate::syntax::BinaryOperator) -> &'static str {
   }
 }
 
-fn unary_op_to_name(op: crate::syntax::UnaryOperator) -> &'static str {
-  use crate::syntax::UnaryOperator::*;
+fn unary_op_to_name(op: UnaryOperator) -> &'static str {
+  use UnaryOperator::*;
   match op {
     Minus => "Times",
     Not => "Not",

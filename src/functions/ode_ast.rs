@@ -5,7 +5,7 @@
 
 use crate::InterpreterError;
 use crate::functions::math_ast::make_sqrt;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 
@@ -725,7 +725,7 @@ fn collect_additive_terms(
       collect_additive_terms(right, y_name, x_name, !negated, terms)?;
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       collect_additive_terms(operand, y_name, x_name, !negated, terms)?;
@@ -1014,7 +1014,7 @@ fn negate_expr(expr: &Expr) -> Expr {
     Expr::Integer(n) => Expr::Integer(-n),
     Expr::Real(f) => Expr::Real(-f),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => *operand.clone(),
     _ => Expr::BinaryOp {
@@ -1654,7 +1654,7 @@ fn make_exp_term_expr(coeff: &Expr, x_name: &str) -> Expr {
   let exponent = match coeff {
     Expr::Integer(1) => x,
     Expr::Integer(-1) => Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(x),
     },
     _ => Expr::BinaryOp {
@@ -2076,7 +2076,7 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
     Expr::Constant(name) if name == "E" => Ok(std::f64::consts::E),
     Expr::Constant(name) if name == "Pi" => Ok(std::f64::consts::PI),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Ok(-expr_to_f64(operand)?),
     Expr::BinaryOp { op, left, right } => {
@@ -2938,7 +2938,7 @@ fn try_direct_linear_pde_body(
   let mut c = match &rhs {
     Expr::Integer(n) => *n,
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => match operand.as_ref() {
       Expr::Integer(n) => -*n,

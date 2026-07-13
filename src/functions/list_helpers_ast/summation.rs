@@ -3246,8 +3246,6 @@ fn match_geometric_symbolic_exp(
 /// (the last from a `k/r^k` division). Other factors reject the match.
 /// Used for Sum[k^p r^k, {k, 1, Infinity}] = PolyLog[-p, r].
 fn match_arith_geometric(body: &Expr, var_name: &str) -> Option<(i128, Expr)> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
-
   fn collect(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::BinaryOp {

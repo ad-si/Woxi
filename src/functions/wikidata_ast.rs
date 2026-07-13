@@ -16,7 +16,7 @@
 //! - strings, external ids and monolingual texts → plain strings
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 
 /// `ExternalIdentifier[type, id]` / `ExternalIdentifier[type, id, assoc]` —
 /// inert symbolic construct; the arguments are kept exactly as given.
@@ -563,7 +563,7 @@ fn time_to_date_object(
 fn unit_to_expr(label: &str) -> Expr {
   match label.split_once(" per ") {
     Some((num, den)) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::String(unit_name(num))),
       right: Box::new(Expr::String(unit_name(den))),
     },

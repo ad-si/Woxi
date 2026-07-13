@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 /// MapAll[f, expr] - apply f to every subexpression in expr (bottom-up)
 pub fn map_all_ast(f: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -251,7 +252,7 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
         Expr::Integer(0)
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(factor),
           right: Box::new(chain),
         }
@@ -2237,7 +2238,7 @@ fn apply_transformation_function(
     if !matches!(&h, Expr::Integer(1)) {
       for comp in &mut result {
         *comp = evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(comp.clone()),
           right: Box::new(h.clone()),
         })?;

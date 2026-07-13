@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 use super::coefficient::collect_additive_terms;
 use super::coefficient::term_var_power_and_coeff;
@@ -237,7 +237,7 @@ fn expr_to_rat(expr: &Expr) -> Option<Rat> {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (n, d) = expr_to_rat(operand)?;

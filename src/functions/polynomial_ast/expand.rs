@@ -985,7 +985,6 @@ fn is_numeric_scalar(e: &Expr) -> bool {
 /// own output, leaving the shared `combine_product_factors` (used by Simplify)
 /// untouched.
 fn fold_term_numerics(expr: &Expr) -> Expr {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -1249,7 +1248,7 @@ fn sort_var_factors_canonical(factors: &mut [Expr]) {
     match e {
       Expr::Identifier(_) | Expr::Constant(_) => 0,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         ..
       } => factor_subpriority(left),

@@ -2,7 +2,7 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 /// Dash length for the "Small" named size in Dashing directives.
 /// This is the default dash segment length used by Dashed, Dotted, etc.
@@ -4385,7 +4385,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some((left.as_ref(), right.as_ref())),
@@ -4398,7 +4398,6 @@ pub fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
 
 /// Check if expression is an additive form (Plus/Minus) for parenthesization.
 fn is_additive_expr(e: &Expr) -> bool {
-  use crate::syntax::BinaryOperator;
   matches!(
     e,
     Expr::BinaryOp {
@@ -5453,7 +5452,6 @@ pub fn has_fraction(expr: &Expr) -> bool {
 /// E.g. `"Meters"/"Seconds"` → `m/s`, `"Meters"^2` → `m²` (with superscript).
 fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
   use crate::functions::quantity_ast::unit_to_abbreviation;
-  use crate::syntax::BinaryOperator;
 
   // Handle Power in both BinaryOp and FunctionCall form
   if let Some((base, exp)) = as_power(unit) {
@@ -5583,9 +5581,7 @@ fn digit_group_extra_width(digit_count: usize) -> f64 {
 /// Recursively handles all expression types so that Power expressions
 /// anywhere in the tree are rendered with `<tspan>` superscripts.
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
-  use crate::syntax::{
-    BinaryOperator, ComparisonOp, UnaryOperator, expr_to_output,
-  };
+  use crate::syntax::{ComparisonOp, expr_to_output};
 
   // Power → superscript (handles both BinaryOp and FunctionCall forms)
   if let Some((base, exp)) = as_power(expr) {
@@ -5928,7 +5924,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 /// accounting for superscript sizing (exponents rendered at ~70% width).
 /// Recursively mirrors `expr_to_svg_markup` structure.
 pub fn estimate_display_width(expr: &Expr) -> f64 {
-  use crate::syntax::{BinaryOperator, expr_to_output};
+  use crate::syntax::expr_to_output;
 
   if let Some((base, exp)) = as_power(expr) {
     let parens = if is_additive_expr(base) { 2.0 } else { 0.0 };
@@ -6152,7 +6148,6 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 /// Estimate the display width of an abbreviated unit expression.
 fn estimate_unit_abbrev_width(unit: &Expr) -> f64 {
   use crate::functions::quantity_ast::unit_to_abbreviation;
-  use crate::syntax::BinaryOperator;
 
   if let Some((base, exp)) = as_power(unit) {
     return estimate_unit_abbrev_width(base)
@@ -11161,7 +11156,7 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         is_number(&args[0]) && is_number(&args[1])
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => is_number(operand),
       _ => false,
@@ -13421,7 +13416,6 @@ fn display_node_to_json(node: &DisplayNode) -> String {
 #[cfg(test)]
 mod manipulate_label_tests {
   use super::*;
-  use crate::syntax::Expr;
 
   fn call(name: &str, args: Vec<Expr>) -> Expr {
     Expr::FunctionCall {

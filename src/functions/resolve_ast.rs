@@ -6,7 +6,7 @@
 //! c > 0 return their conditions.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| Expr::FunctionCall {
@@ -506,8 +506,6 @@ fn walk_monomial(
   coeff: &mut Q,
   vp: &mut Option<(String, i128)>,
 ) -> Option<()> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
-
   if let Some((n, d)) = expr_to_rational(e) {
     *coeff = coeff.mul(Q::new(n, d));
     return Some(());

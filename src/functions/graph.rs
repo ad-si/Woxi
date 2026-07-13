@@ -1,6 +1,6 @@
 use crate::InterpreterError;
 use crate::functions::graphics::{Color, graphics_ast, parse_color};
-use crate::syntax::{Expr, expr_to_output, expr_to_string};
+use crate::syntax::{BinaryOperator, Expr, expr_to_output, expr_to_string};
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
@@ -5576,10 +5576,10 @@ pub fn graph_metric_ast(
       return Ok(unevaluated());
     }
     return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(Expr::Integer(1)),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(mgd),
         right: Box::new(ec),
       }),

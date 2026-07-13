@@ -182,7 +182,7 @@ fn wrap_with_sqrt_factor_rationalised(
   p: &Expr,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
+  use Expr::*;
   // Build Distribute[2*p, Plus] / (Sqrt[2*Pi] * Sqrt[z]).
   let two_p = FunctionCall {
     name: "Times".to_string(),
@@ -305,7 +305,7 @@ fn bessel_poly_recurrence(
   sign: BesselSign,
   forward: bool,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
+  use Expr::*;
   // Coefficient on the (m/z) * P_m term and on P_{other}.
   let (a_coef, b_coef): (i128, i128) = match (sign, forward) {
     (BesselSign::J, _) => (coef, -1), // (m/z) P_m - P_other
@@ -342,7 +342,7 @@ fn wrap_with_sqrt_factor(
   p: &Expr,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
+  use Expr::*;
   let expr = FunctionCall {
     name: "Times".to_string(),
     args: vec![
@@ -805,7 +805,7 @@ fn bessel_k_polynomial(
   let mut curr = Expr::Integer(1); // P_{1}
   let mut m_cur: i128 = 1;
   while m_cur < m {
-    use crate::syntax::Expr::*;
+    use Expr::*;
     // P_{m_cur+2} = (m_cur/z) * curr + prev
     let next_expr = FunctionCall {
       name: "Plus".to_string(),
@@ -841,7 +841,7 @@ fn wrap_bessel_k_factor(
   p: &Expr,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
+  use Expr::*;
   let expr = FunctionCall {
     name: "Times".to_string(),
     args: vec![
@@ -1223,7 +1223,7 @@ fn coulomb_wave_reduce(
   args: &[Expr],
   kind: CoulombKind,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
+  use Expr::*;
   let name = match kind {
     CoulombKind::F => "CoulombF",
     CoulombKind::G => "CoulombG",

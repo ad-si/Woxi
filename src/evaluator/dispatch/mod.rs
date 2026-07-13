@@ -961,8 +961,7 @@ pub fn evaluate_function_call_ast_inner(
                   );
                 // Push positional parameter bindings as context so inner
                 // Orderless matching can check compatibility (e.g. x_Symbol=r).
-                let mut positional_ctx: Vec<(String, crate::syntax::Expr)> =
-                  Vec::new();
+                let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
                 for (pi, param) in params.iter().enumerate() {
                   if pi == idx
                     || pi >= effective_args.len()
@@ -1239,8 +1238,7 @@ pub fn evaluate_function_call_ast_inner(
                     );
                   // Push positional parameter bindings as context so inner
                   // Orderless matching can check compatibility.
-                  let mut positional_ctx: Vec<(String, crate::syntax::Expr)> =
-                    Vec::new();
+                  let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
                   for (pi, param) in params.iter().enumerate() {
                     if pi == idx
                       || pi >= effective_args.len()
@@ -12042,8 +12040,6 @@ fn chromatic_poly_coeffs(n: usize, edges: &[(usize, usize)]) -> Vec<i128> {
 
 /// Convert polynomial coefficients to an expression in variable k.
 fn poly_to_expr(coeffs: &[i128], k: &Expr) -> Expr {
-  use crate::syntax::BinaryOperator;
-
   let mut terms: Vec<Expr> = Vec::new();
   for (i, &c) in coeffs.iter().enumerate() {
     if c == 0 {

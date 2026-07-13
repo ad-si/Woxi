@@ -9,7 +9,7 @@
 //! wolframscript does for already-factored or non-trig input.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 pub fn trig_factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -44,14 +44,14 @@ fn plus(ts: Vec<Expr>) -> Expr {
 
 fn neg(e: Expr) -> Expr {
   Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(e),
   }
 }
 
 fn div(a: Expr, b: i128) -> Expr {
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(a),
     right: Box::new(Expr::Integer(b)),
   }
@@ -75,7 +75,7 @@ fn half_diff(p: &Expr, q: &Expr) -> Expr {
 
 fn pow2(e: Expr) -> Expr {
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(e),
     right: Box::new(Expr::Integer(2)),
   }
@@ -184,7 +184,7 @@ fn trig_of(e: &Expr) -> Option<(bool, Expr)> {
 fn negated(e: &Expr) -> Option<&Expr> {
   match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some(operand),
     Expr::FunctionCall { name, args }
@@ -333,7 +333,7 @@ fn factor(expr: &Expr) -> Option<Expr> {
       return Some((is_sin, negd, u));
     }
     if let Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } = inner
@@ -375,7 +375,7 @@ fn halved(arg: &Expr) -> Option<Expr> {
       })
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(2)) => Some((**right).clone()),

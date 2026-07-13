@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 
 /// ToRadicals[expr] — convert Root objects to explicit radical expressions.
 pub fn to_radicals_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -149,7 +149,7 @@ fn get_slot_power_degree(expr: &Expr) -> Option<usize> {
       None
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -187,7 +187,7 @@ fn classify_term(term: &Expr) -> Option<(usize, Expr)> {
       Some((&args[0], &args[1]))
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => Some((left.as_ref(), right.as_ref())),

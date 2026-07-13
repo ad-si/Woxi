@@ -7,7 +7,7 @@
 
 use crate::InterpreterError;
 use crate::functions::geographics::{position_to_latlon, positions_from_arg};
-use crate::syntax::Expr;
+use crate::syntax::{Expr, UnaryOperator};
 use geographiclib_rs::{DirectGeodesic, Geodesic, InverseGeodesic};
 use std::sync::OnceLock;
 
@@ -348,7 +348,7 @@ fn to_angle(expr: &Expr) -> Option<AngleVal> {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => to_angle(operand).map(|v| match v {
       AngleVal::Exact(p, q) => AngleVal::Exact(-p, q),
