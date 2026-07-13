@@ -1626,6 +1626,58 @@ mod mixture_distribution {
       "4"
     );
   }
+
+  // PDF of a mixture is the weight-normalized sum of the component PDFs, with
+  // the weight distributed into each term (matching wolframscript's form).
+  #[test]
+  fn pdf_is_weighted_sum() {
+    assert_eq!(
+      interpret(
+        "PDF[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[3, 1]}], 0]"
+      )
+      .unwrap(),
+      "1/(2*Sqrt[2*Pi]) + 1/(2*E^(9/2)*Sqrt[2*Pi])"
+    );
+    // Discrete components with unequal weights.
+    assert_eq!(
+      interpret(
+        "PDF[MixtureDistribution[{1, 1}, \
+         {PoissonDistribution[2], PoissonDistribution[5]}], 3]"
+      )
+      .unwrap(),
+      "125/(12*E^5) + 2/(3*E^2)"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[MixtureDistribution[{1, 3}, \
+         {UniformDistribution[{0, 1}], UniformDistribution[{0, 2}]}], 1/2]"
+      )
+      .unwrap(),
+      "5/8"
+    );
+  }
+
+  // CDF of a mixture is the weight-normalized sum of the component CDFs.
+  #[test]
+  fn cdf_is_weighted_sum() {
+    assert_eq!(
+      interpret(
+        "CDF[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[3, 1]}], 0]"
+      )
+      .unwrap(),
+      "1/4 + Erfc[3/Sqrt[2]]/4"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[MixtureDistribution[{1, 1}, \
+         {BernoulliDistribution[1/2], BernoulliDistribution[1/3]}], 0]"
+      )
+      .unwrap(),
+      "7/12"
+    );
+  }
 }
 
 mod parameter_mixture_distribution {

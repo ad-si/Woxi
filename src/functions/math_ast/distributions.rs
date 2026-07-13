@@ -169,6 +169,21 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // PDF[MixtureDistribution[{w1, …}, {d1, …}], x] is the weight-normalized sum
+  // of the component PDFs: Σ w_i PDF[d_i, x] / Σ w_i.
+  if dist_name == "MixtureDistribution" && dargs.len() == 2 {
+    let x = args[1].clone();
+    return Ok(
+      super::statistics::mixture_weighted_component_quantity(dargs, |d| {
+        pdf_ast(&[d.clone(), x.clone()])
+      })?
+      .unwrap_or_else(|| Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: args.to_vec().into(),
+      }),
+    );
+  }
+
   // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
   if dist_name == "ErlangDistribution" && dargs.len() == 2 {
     let gamma = Expr::FunctionCall {
@@ -1997,6 +2012,21 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "CDF".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  // CDF[MixtureDistribution[{w1, …}, {d1, …}], x] is the weight-normalized sum
+  // of the component CDFs: Σ w_i CDF[d_i, x] / Σ w_i.
+  if dist_name == "MixtureDistribution" && dargs.len() == 2 {
+    let x = args[1].clone();
+    return Ok(
+      super::statistics::mixture_weighted_component_quantity(dargs, |d| {
+        cdf_ast(&[d.clone(), x.clone()])
+      })?
+      .unwrap_or_else(|| Expr::FunctionCall {
+        name: "CDF".to_string(),
+        args: args.to_vec().into(),
+      }),
+    );
   }
 
   // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]

@@ -1314,7 +1314,7 @@ ListStepPlot,Plots data as a step function,✅,pure,10.2,1327
 Larger,Font size directive for making text larger,✅,none,6.0,1328
 AngleBracket,Symbolic representation of angle brackets,✅,,3.0,1329
 GeoPath,Geographic path primitive for GeoGraphics,✅,pure,10.0,1330
-MixtureDistribution,Mixture of component distributions with given weights; Mean and Variance combine the components,✅,pure,8.0,1331
+MixtureDistribution,Mixture of component distributions with given weights; Mean Variance PDF and CDF combine the components,✅,pure,8.0,1331
 RemoveBackground,,🚫,,10.0,1332
 Hash,Computes a hash of a string using MD2/MD5/SHA/SHA256/SHA384/SHA512/CRC32/Adler32,✅,pure,1.0,1333
 DeleteSmallComponents,,🚫,,8.0,1334

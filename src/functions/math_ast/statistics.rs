@@ -477,7 +477,7 @@ fn total_at_exact_level(
 /// `Σ w_i q(d_i) / Σ w_i`. Returns None if the weights/components are malformed
 /// or a component quantity can't be evaluated to a value (i.e. stays a
 /// symbolic function call), so the caller leaves the whole thing unevaluated.
-fn mixture_weighted_component_quantity(
+pub(crate) fn mixture_weighted_component_quantity(
   dargs: &[Expr],
   quantity: impl Fn(&Expr) -> Result<Expr, InterpreterError>,
 ) -> Result<Option<Expr>, InterpreterError> {
@@ -491,6 +491,13 @@ fn mixture_weighted_component_quantity(
     name: name.to_string(),
     args: a.into(),
   };
+  // Distribute the normalizing weight into every term — Σ (w_i/W) q(d_i) —
+  // rather than dividing the summed numerator, so the result matches
+  // wolframscript's form (e.g. `1/(2 Sqrt[2 Pi]) + …` instead of `(… )/2`).
+  let inv_w = call(
+    "Power",
+    vec![call("Plus", weights.to_vec()), Expr::Integer(-1)],
+  );
   let mut terms: Vec<Expr> = Vec::with_capacity(weights.len());
   for (w, d) in weights.iter().zip(dists.iter()) {
     let q = quantity(d)?;
@@ -501,14 +508,9 @@ fn mixture_weighted_component_quantity(
     {
       return Ok(None);
     }
-    terms.push(call("Times", vec![w.clone(), q]));
+    terms.push(call("Times", vec![w.clone(), inv_w.clone(), q]));
   }
-  let numer = call("Plus", terms);
-  let denom = call("Plus", weights.to_vec());
-  let result = call(
-    "Times",
-    vec![numer, call("Power", vec![denom, Expr::Integer(-1)])],
-  );
+  let result = call("Plus", terms);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
 }
 
