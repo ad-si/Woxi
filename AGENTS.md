@@ -11,6 +11,9 @@ This repo contains several related sub-projects:
     - JupyterLite instance with an integrated Woxi kernel (tests/jupyterlite)
 - Woxi Studio
     - A native notebook editor for Wolfram Language `.nb` files, built with `iced` (woxi-studio)
+- Woxi for Python
+    - PyO3/maturin-based Python package wrapping the interpreter,
+      published to PyPI as `woxi` (woxi-py)
 
 
 ## Environment

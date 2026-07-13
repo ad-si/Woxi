@@ -62,6 +62,24 @@ const { evaluate } = require("woxi")
 evaluate("Plus[1, 2]")  //=> "3"
 ```
 
+### Python
+
+Woxi is also available [on PyPI](https://pypi.org/project/woxi/)
+as a Python package with pre-built wheels:
+
+```sh
+pip install woxi
+```
+
+```python
+import woxi
+
+woxi.interpret("Plus[1, 2]")  # => '3'
+```
+
+See [woxi-py/readme.md](woxi-py/readme.md) for the full Python API.
+
+
 ### From Source
 
 If you want to build Woxi from source, you need to have Rust installed.

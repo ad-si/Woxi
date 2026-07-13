@@ -67,6 +67,17 @@ test-shebang: install-cli
 	test "$$(./tests/woxi/hello_world.wls)" = 'Hello World!'
 
 
+# Build the woxi Python package (woxi-py) into a local virtualenv with
+# maturin and run its pytest suite.
+.PHONY: test-python
+test-python:
+	python3 -m venv woxi-py/.venv
+	woxi-py/.venv/bin/pip install --quiet maturin pytest
+	cd woxi-py && VIRTUAL_ENV=$(CURDIR)/woxi-py/.venv \
+		.venv/bin/maturin develop --quiet
+	woxi-py/.venv/bin/python -m pytest woxi-py/tests --quiet
+
+
 .PHONY: test-scripts-wolframscript
 test-scripts-wolframscript:
 	@echo "Testing scripts with wolframscript against snapshots …"
