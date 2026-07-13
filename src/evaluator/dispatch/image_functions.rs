@@ -382,6 +382,11 @@ pub fn dispatch_image_functions(
     "ColorQuantize" if args.len() == 2 => {
       return Some(crate::functions::image_ast::color_quantize_ast(args));
     }
+    "MorphologicalBinarize" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::morphological_binarize_ast(
+        args,
+      ));
+    }
     "ImageValue" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_value_ast(args));
     }

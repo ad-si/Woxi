@@ -5141,3 +5141,125 @@ mod image_value {
     ));
   }
 }
+
+// MorphologicalBinarize semantics decoded from wolframscript probes:
+// hysteresis thresholding — seeds strictly above t2 grow through
+// 8-connected pixels strictly above t1 on f32-snapped values; scalar t
+// means {0.8 t, t}, {t} means {t, t}; multichannel pixels compare on
+// their channel mean (not luminance). The Otsu-default 1-arg form is
+// deliberately unimplemented (WS-internal iterative thresholding).
+mod morphological_binarize {
+  use super::*;
+
+  #[test]
+  fn hysteresis_thresholding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "b = MorphologicalBinarize[Image[{{0.1, 0.55, 0.9}, {0.2, 0.65, 0.3}, \
+         {0.9, 0.05, 0.75}}], {0.5, 0.8}]; {ImageType[b], ImageData[b]}"
+      )
+      .unwrap(),
+      "{Bit, {{0, 1, 1}, {0, 1, 0}, {1, 0, 1}}}"
+    );
+    // Weak pixels connect to seeds through diagonals (8-connectivity).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[MorphologicalBinarize[Image[{{0.9, 0.1, 0.1}, \
+         {0.1, 0.6, 0.1}, {0.1, 0.1, 0.1}}], {0.5, 0.8}]]"
+      )
+      .unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 0}}"
+    );
+    // Comparisons are strict on f32-snapped values: a stored 0.8 seeds
+    // at t2 = 0.8 because 0.8f32 > 0.8.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[MorphologicalBinarize[Image[{{0.8, 0.1}}], {0.5, 0.8}]]"
+      )
+      .unwrap(),
+      "{{1, 0}}"
+    );
+  }
+
+  #[test]
+  fn scalar_and_one_element_thresholds() {
+    // Scalar t means {0.8 t, t}: at t = 0.6 the weak cut is 0.48.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[MorphologicalBinarize[Image[{{0.48, 0.9}}], 0.6]], \
+          ImageData[MorphologicalBinarize[Image[{{0.5, 0.9}}], 0.6]], \
+          ImageData[MorphologicalBinarize[Image[{{0.63, 0.9}}], 0.8]], \
+          ImageData[MorphologicalBinarize[Image[{{0.66, 0.9}}], 0.8]]}"
+      )
+      .unwrap(),
+      "{{{0, 1}}, {{1, 1}}, {{0, 1}}, {{1, 1}}}"
+    );
+    // {t} means {t, t}.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[MorphologicalBinarize[Image[{{0.55, 0.9}}], {0.6}]], \
+          ImageData[MorphologicalBinarize[Image[{{0.61, 0.9}}], {0.6}]]}"
+      )
+      .unwrap(),
+      "{{{0, 1}}, {{1, 1}}}"
+    );
+  }
+
+  #[test]
+  fn multichannel_uses_channel_mean() {
+    // Pure red has mean 1/3: it seeds at t2 = 0.32 but not at 0.34.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "rgb = Image[{{{1, 0, 0}, {0, 0, 0}}}]; \
+         {ImageData[MorphologicalBinarize[rgb, {0.01, 0.32}]], \
+          ImageData[MorphologicalBinarize[rgb, {0.01, 0.34}]]}"
+      )
+      .unwrap(),
+      "{{{1, 0}}, {{0, 0}}}"
+    );
+    // Byte pixels compare on the normalized scale.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[MorphologicalBinarize[Image[{{50, 200, 130}}, \"Byte\"], \
+         {0.4, 0.7}]]"
+      )
+      .unwrap(),
+      "{{0, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("MorphologicalBinarize[Image[{{1}}], x]").unwrap();
+    assert_eq!(r.result, "MorphologicalBinarize[-Image-, x]");
+    assert!(r.warnings[0].contains(
+      "MorphologicalBinarize::bdarg2: Invalid threshold specification x."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "MorphologicalBinarize[Image[{{1}}], {0.5, 0.6, 0.7}]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "MorphologicalBinarize::bdarg2: Invalid threshold specification \
+       {0.5, 0.6, 0.7}."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("MorphologicalBinarize[5, 0.5]").unwrap();
+    assert!(r.warnings[0].contains(
+      "MorphologicalBinarize::imginv: Expecting an image or graphics \
+       instead of 5."
+    ));
+  }
+}

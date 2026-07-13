@@ -4368,6 +4368,97 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// MorphologicalBinarize[img, {t1, t2}] / [img, t] — hysteresis
+/// binarization: pixels strictly above t2 seed regions that grow through
+/// 8-connected pixels strictly above t1. A scalar t means {0.8 t, t},
+/// a one-element list {t} means {t, t}. Multichannel pixels compare on
+/// their channel MEAN (f32; unlike DistanceTransform's luminance).
+/// The parameterless Otsu-default form is deliberately not implemented
+/// (FindThreshold's iterative binning is WS-internal).
+pub fn morphological_binarize_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "MorphologicalBinarize".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    ..
+  } = args[0]
+  else {
+    crate::emit_message(&format!(
+      "MorphologicalBinarize::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let thresholds = match &args[1] {
+    Expr::List(ts) if ts.len() == 1 => num(&ts[0]).map(|t| (t, t)),
+    Expr::List(ts) if ts.len() == 2 => num(&ts[0]).zip(num(&ts[1])),
+    Expr::List(_) => None,
+    e => num(e).map(|t| (0.8 * t, t)),
+  };
+  let Some((t1, t2)) = thresholds else {
+    crate::emit_message(&format!(
+      "MorphologicalBinarize::bdarg2: Invalid threshold specification {}.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(unevaluated());
+  };
+
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let n = w * h;
+  let gray = |i: usize| -> f64 {
+    let px = &data[i * ch..(i + 1) * ch];
+    if ch >= 3 {
+      let m = (px[0] as f32 + px[1] as f32 + px[2] as f32) / 3.0f32;
+      m as f64
+    } else {
+      (px[0] as f32) as f64
+    }
+  };
+
+  // Seed pixels flood through weak pixels with 8-connectivity.
+  let mut out = vec![0.0f64; n];
+  let mut stack: Vec<usize> = Vec::new();
+  for i in 0..n {
+    if gray(i) > t2 {
+      out[i] = 1.0;
+      stack.push(i);
+    }
+  }
+  while let Some(i) = stack.pop() {
+    let (x, y) = ((i % w) as isize, (i / w) as isize);
+    for dy in -1..=1isize {
+      for dx in -1..=1isize {
+        let (nx, ny) = (x + dx, y + dy);
+        if nx < 0 || ny < 0 || nx >= w as isize || ny >= h as isize {
+          continue;
+        }
+        let j = ny as usize * w + nx as usize;
+        if out[j] == 0.0 && gray(j) > t1 {
+          out[j] = 1.0;
+          stack.push(j);
+        }
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width,
+    height,
+    channels: 1,
+    data: Arc::new(out),
+    image_type: crate::syntax::ImageType::Bit,
+  })
+}
+
 /// ImageValue[img, {x, y}] / [img, {pos1, pos2, ...}] — bilinear sample
 /// in the image coordinate system (x from the left edge, y up from the
 /// bottom edge, pixel centers at half-integers) with zero padding
