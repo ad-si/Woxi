@@ -4367,6 +4367,147 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// One-dimensional squared-distance transform (Felzenszwalb-Huttenlocher
+/// lower-envelope-of-parabolas pass). `f` holds source costs, `d` results.
+fn edt_pass_1d(f: &[f64], d: &mut [f64]) {
+  let n = f.len();
+  let mut v = vec![0usize; n];
+  let mut z = vec![0.0f64; n + 1];
+  let mut k = 0usize;
+  z[0] = f64::NEG_INFINITY;
+  z[1] = f64::INFINITY;
+  for q in 1..n {
+    loop {
+      let vk = v[k];
+      let s = ((f[q] + (q * q) as f64) - (f[vk] + (vk * vk) as f64))
+        / (2.0 * (q - vk) as f64);
+      if s <= z[k] {
+        k -= 1;
+      } else {
+        k += 1;
+        v[k] = q;
+        z[k] = s;
+        z[k + 1] = f64::INFINITY;
+        break;
+      }
+    }
+  }
+  k = 0;
+  for (q, dq) in d.iter_mut().enumerate() {
+    while z[k + 1] < q as f64 {
+      k += 1;
+    }
+    let diff = q as f64 - v[k] as f64;
+    *dq = diff * diff + f[v[k]];
+  }
+}
+
+/// Marker cost for foreground pixels: far larger than any possible
+/// squared pixel distance, small enough to stay exact through the passes.
+const EDT_FAR: f64 = 1e18;
+
+/// DistanceTransform[img] / [img, t] — each foreground pixel becomes its
+/// Euclidean distance to the nearest background pixel (the image border
+/// does not count as background). Foreground is luminance strictly above
+/// t (default 0), evaluated on f32-snapped pixel values. When the image
+/// has no background pixel at all, wolframscript returns all-1 values.
+/// Exact non-machine thresholds (e.g. 1/2) trigger image-dependent
+/// garbage in wolframscript and are deliberately given sane numeric
+/// semantics here instead.
+pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "DistanceTransform".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    ..
+  } = args[0]
+  else {
+    crate::emit_message(&format!(
+      "DistanceTransform::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let t = if args.len() == 2 {
+    match crate::functions::math_ast::try_eval_to_f64(&args[1]) {
+      Some(v) => v,
+      None => {
+        crate::emit_message(&format!(
+          "DistanceTransform::rthres: The specified threshold value {} should represent a real number.",
+          crate::syntax::expr_to_string(&args[1])
+        ));
+        return Ok(unevaluated());
+      }
+    }
+  } else {
+    0.0
+  };
+
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let n = w * h;
+  // Foreground test on the f32-snapped luminance (channels 3/4 use the
+  // 0.299/0.587/0.114 weights in f32 arithmetic; 2 channels are
+  // gray+alpha). The threshold itself stays in f64.
+  let luminance = |i: usize| -> f64 {
+    let px = &data[i * ch..(i + 1) * ch];
+    let l32 = if ch >= 3 {
+      0.299f32 * px[0] as f32
+        + 0.587f32 * px[1] as f32
+        + 0.114f32 * px[2] as f32
+    } else {
+      px[0] as f32
+    };
+    l32 as f64
+  };
+
+  let mut cost: Vec<f64> = (0..n)
+    .map(|i| if luminance(i) > t { EDT_FAR } else { 0.0 })
+    .collect();
+  if cost.iter().all(|&c| c > 0.0) {
+    // No background pixel anywhere: wolframscript yields all-1 values.
+    return Ok(Expr::Image {
+      color_space: None,
+      width,
+      height,
+      channels: 1,
+      data: Arc::new(vec![1.0; n]),
+      image_type: crate::syntax::ImageType::Real32,
+    });
+  }
+
+  // Column pass then row pass over squared distances.
+  let mut buf = vec![0.0f64; h.max(w)];
+  let mut out = vec![0.0f64; n];
+  for x in 0..w {
+    let col: Vec<f64> = (0..h).map(|y| cost[y * w + x]).collect();
+    edt_pass_1d(&col, &mut buf[..h]);
+    for y in 0..h {
+      out[y * w + x] = buf[y];
+    }
+  }
+  for y in 0..h {
+    let row: Vec<f64> = (0..w).map(|x| out[y * w + x]).collect();
+    edt_pass_1d(&row, &mut buf[..w]);
+    for x in 0..w {
+      cost[y * w + x] = buf[x].sqrt();
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width,
+    height,
+    channels: 1,
+    data: Arc::new(cost),
+    image_type: crate::syntax::ImageType::Real32,
+  })
+}
+
 /// Valid ColorCombine color-space names with their required channel count
 /// (decoded from wolframscript: imgcstype for anything else).
 const COLOR_COMBINE_SPACES: &[(&str, usize)] = &[

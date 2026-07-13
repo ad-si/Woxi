@@ -1737,7 +1737,7 @@ ExportForm,Export form wrapper,,unevaluated,10.0,1763
 ParallelSubmit,Submit parallel task,,unevaluated,7.0,1764
 Application,Application wrapper,,unevaluated,12.2,1766
 FindFile,Find file,✅,unevaluated,7.0,1766
-DistanceTransform,Distance transform,,unevaluated,7.0,1768
+DistanceTransform,Euclidean distance transform of an image,✅,pure,7.0,1768
 DialogInput,Dialog input,,unevaluated,6.0,1770
 TimelinePlot,Plots dates and date intervals as events on a horizontal timeline,✅,pure,10.1,1770
 PassEventsDown,Pass events down option,,unevaluated,6.0,1771

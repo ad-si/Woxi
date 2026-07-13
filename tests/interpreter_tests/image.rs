@@ -4587,3 +4587,147 @@ mod color_combine {
     ));
   }
 }
+
+// DistanceTransform semantics decoded from wolframscript probes: exact
+// Euclidean distance to the nearest background pixel (borders are not
+// background), foreground = f32-snapped luminance strictly above t
+// (default 0, f64), Real32 single-channel result, and the all-foreground
+// quirk returning 1 everywhere. Exact non-machine thresholds trigger
+// image-dependent garbage in wolframscript (WS-internal UB) and get sane
+// numeric semantics instead.
+mod distance_transform {
+  use super::*;
+
+  #[test]
+  fn euclidean_distances() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[DistanceTransform[Image[{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, \
+         {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}]]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 0., 0.}, {0., 1., 1., 1., 0.}, {0., 1., 2., 1., 0.}, \
+        {0., 1., 1., 1., 0.}, {0., 0., 0., 0., 0.}}"
+    );
+    // Diagonal neighbors give sqrt(2) (f32-rounded); the image border
+    // does not count as background.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[DistanceTransform[Image[{{0, 0, 0, 0}, {0, 1, 1, 0}, \
+         {0, 1, 1, 0}, {1, 1, 1, 1}}]]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 0.}, {0., 1., 1., 0.}, {0., 1., 1., 0.}, \
+        {1., 1.4142135381698608, 1.4142135381698608, 1.}}"
+    );
+    // Distances are not clipped.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0, 1, 1, 1, 1, 1, 1}}]]]")
+        .unwrap(),
+      "{{0., 1., 2., 3., 4., 5., 6.}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "d = DistanceTransform[Image[{{0, 1}}]]; \
+         {ImageType[d], ImageChannels[d], ImageColorSpace[d]}"
+      )
+      .unwrap(),
+      "{Real32, 1, Automatic}"
+    );
+  }
+
+  #[test]
+  fn all_foreground_gives_ones() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[DistanceTransform[Image[ConstantArray[1, {5, 5}]]]]"
+      )
+      .unwrap(),
+      "{{1., 1., 1., 1., 1.}, {1., 1., 1., 1., 1.}, {1., 1., 1., 1., 1.}, \
+        {1., 1., 1., 1., 1.}, {1., 1., 1., 1., 1.}}"
+    );
+    // A negative threshold makes even 0-pixels foreground.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0, 1, 1}}], -1]]")
+        .unwrap(),
+      "{{1., 1., 1.}}"
+    );
+  }
+
+  #[test]
+  fn thresholds() {
+    // Strictly above t, on normalized values.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0.2, 0.5, 0.9}}], 0.5]]")
+        .unwrap(),
+      "{{0., 0., 1.}}"
+    );
+    // Byte pixels compare on the normalized scale.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "b = Image[{{0, 100, 200}}, \"Byte\"]; \
+         {ImageData[DistanceTransform[b]], \
+          ImageData[DistanceTransform[b, 150]], \
+          ImageData[DistanceTransform[b, 0.5]]}"
+      )
+      .unwrap(),
+      "{{{0., 1., 2.}}, {{0., 0., 0.}}, {{0., 0., 1.}}}"
+    );
+    // Pixel values are f32-snapped before the compare, so a stored 0.3
+    // is strictly above the threshold 0.3.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0.3, 0.1}}], 0.3]]")
+        .unwrap(),
+      "{{1., 0.}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0.5, 0.25}}], 0.5]]")
+        .unwrap(),
+      "{{0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn rgb_uses_luminance() {
+    // 0.299 R + 0.587 G + 0.114 B: pure red is background at t = 0.3
+    // but foreground at t = 0.29.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[DistanceTransform[Image[{{{1, 0, 0}, {0, 0, 0}}}], 0.29]], \
+          ImageData[DistanceTransform[Image[{{{1, 0, 0}, {0, 0, 0}}}], 0.3]]}"
+      )
+      .unwrap(),
+      "{{{1., 0.}}, {{0., 0.}}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r = interpret_with_stdout("DistanceTransform[5]").unwrap();
+    assert_eq!(r.result, "DistanceTransform[5]");
+    assert!(r.warnings[0].contains(
+      "DistanceTransform::imginv: Expecting an image or graphics instead of 5."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("DistanceTransform[Image[{{1}}], x]").unwrap();
+    assert_eq!(r.result, "DistanceTransform[-Image-, x]");
+    assert!(r.warnings[0].contains(
+      "DistanceTransform::rthres: The specified threshold value x should \
+       represent a real number."
+    ));
+  }
+}
