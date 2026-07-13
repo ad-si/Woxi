@@ -7248,6 +7248,26 @@ pub fn process_slice_distribution(
       ]
       .into(),
     }),
+    // Counting and noise processes with directly parameterized slices.
+    "PoissonProcess" if dargs.len() == 1 => Some(Expr::FunctionCall {
+      name: "PoissonDistribution".to_string(),
+      args: vec![times(dargs[0].clone(), t.clone())].into(),
+    }),
+    "BinomialProcess" if dargs.len() == 1 => Some(Expr::FunctionCall {
+      name: "BinomialDistribution".to_string(),
+      args: vec![t.clone(), dargs[0].clone()].into(),
+    }),
+    // A Bernoulli process' slice does not depend on the time.
+    "BernoulliProcess" if dargs.len() == 1 => Some(Expr::FunctionCall {
+      name: "BernoulliDistribution".to_string(),
+      args: vec![dargs[0].clone()].into(),
+    }),
+    // White noise is the underlying distribution at every time.
+    "WhiteNoiseProcess"
+      if dargs.len() == 1 && matches!(dargs[0], Expr::FunctionCall { .. }) =>
+    {
+      Some(dargs[0].clone())
+    }
     // OrnsteinUhlenbeckProcess[m, s, th] starts in stationarity
     // (time-independent slice); the 4-argument form starts at x0.
     "OrnsteinUhlenbeckProcess" if dargs.len() == 3 => {

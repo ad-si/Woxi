@@ -9445,3 +9445,62 @@ mod ou_and_brownian_bridge_slices {
     );
   }
 }
+
+// Poisson/Binomial/Bernoulli/white-noise process time slices. All
+// outputs verified against wolframscript.
+mod counting_process_slices {
+  use super::*;
+
+  #[test]
+  fn poisson_process() {
+    assert_eq!(interpret("Mean[PoissonProcess[l][t]]").unwrap(), "l*t");
+    assert_eq!(interpret("Variance[PoissonProcess[l][t]]").unwrap(), "l*t");
+    assert_eq!(
+      interpret("PDF[PoissonProcess[l][t], x]").unwrap(),
+      "Piecewise[{{(l*t)^x/(E^(l*t)*x!), x >= 0}}, 0]"
+    );
+    assert_eq!(interpret("Mean[PoissonProcess[2][3]]").unwrap(), "6");
+    clear_state();
+    let r = interpret_with_stdout("PoissonProcess[]").unwrap();
+    assert_eq!(r.result, "PoissonProcess[]");
+    assert!(r.warnings[0].contains(
+      "PoissonProcess::argx: PoissonProcess called with 0 arguments; 1 \
+       argument is expected."
+    ));
+  }
+
+  #[test]
+  fn binomial_and_bernoulli_processes() {
+    assert_eq!(interpret("Mean[BinomialProcess[p][t]]").unwrap(), "p*t");
+    assert_eq!(
+      interpret("Variance[BinomialProcess[p][t]]").unwrap(),
+      "(1 - p)*p*t"
+    );
+    // The slice keeps the symbolic step count in the support condition.
+    assert_eq!(
+      interpret("PDF[BinomialProcess[p][t], x]").unwrap(),
+      "Piecewise[{{(1 - p)^(t - x)*p^x*Binomial[t, x], 0 <= x <= t}}, 0]"
+    );
+    // The Bernoulli process slice does not depend on the time.
+    assert_eq!(interpret("Mean[BernoulliProcess[p][t]]").unwrap(), "p");
+    assert_eq!(
+      interpret("PDF[BernoulliProcess[p][t], x]").unwrap(),
+      "Piecewise[{{1 - p, x == 0}, {p, x == 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn white_noise_process() {
+    // White noise slices to its underlying distribution at every time.
+    assert_eq!(
+      interpret("Variance[WhiteNoiseProcess[NormalDistribution[m, s]][t]]")
+        .unwrap(),
+      "s^2"
+    );
+    assert_eq!(
+      interpret("PDF[WhiteNoiseProcess[NormalDistribution[m, s]][t], x]")
+        .unwrap(),
+      "1/(E^((-m + x)^2/(2*s^2))*Sqrt[2*Pi]*s)"
+    );
+  }
+}

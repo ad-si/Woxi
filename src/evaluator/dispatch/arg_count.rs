@@ -1032,6 +1032,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Pochhammer" => Some((2, 2)),
     "Point" => Some((1, 1)),
     "PoissonDistribution" => Some((1, 1)),
+    "PoissonProcess" => Some((1, 1)),
     "PolarPlot" => Some((2, usize::MAX)),
     "PolyGamma" => Some((1, 2)),
     "PolyLog" => Some((2, 2)),

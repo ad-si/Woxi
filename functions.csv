@@ -2215,7 +2215,7 @@ StateResponse,Control systems,🚫,None,8.0,2254
 FullRegion,Geometric region,🚫,None,10.0,2260
 PairedBarChart,Chart visualization,🚫,None,8.0,2260
 Path,Graph theory path,🚫,None,4.0,2260
-PoissonProcess,Stochastic process,🚫,None,9.0,2260
+PoissonProcess,Poisson counting process with Poisson time slices,✅,unevaluated,9.0,2260
 UnitaryMatrixQ,Tests whether a matrix is unitary,✅,None,10.0,2260
 BarcodeImage,Barcode generation,🚫,None,10.0,2263
 MeshRefinementFunction,Numerical mesh option,🚫,None,10.0,2263
@@ -2435,7 +2435,7 @@ Regularization,,🚫,,7.0,2483
 ColorProfileData,,🚫,,9.0,2487
 DegreeCentrality,Degree centrality of graph vertices,✅,1,8.0,2487
 TransferFunctionPoles,,🚫,,8.0,2487
-WhiteNoiseProcess,,🚫,,10.0,2487
+WhiteNoiseProcess,White noise process sliced as its underlying distribution,✅,unevaluated,10.0,2487
 EulerAngles,Extract Euler angles from rotation matrix,✅,none,10.2,2491
 SemanticImportString,,🚫,,10.0,2491
 SystemsModelStateFeedbackConnect,,🚫,,8.0,2491
@@ -2444,7 +2444,7 @@ ImageType,Returns the data type of an image,✅,pure,7.0,2495
 ResetDirectory,resets the current directory to the previous one set by SetDirectory,✅,io,2.0,2495
 SpanFromBoth,,🚫,,6.0,2495
 AudioData,,🚫,,11.0,2503
-BinomialProcess,,🚫,,9.0,2503
+BinomialProcess,Binomial counting process with Binomial time slices,✅,unevaluated,9.0,2503
 ExponentialGeneratingFunction,Compute the exponential generating function of a sequence,✅,pure,7.0,2503
 GeoIdentify,,🚫,,10.0,2503
 HilbertMatrix,Generate a Hilbert matrix of given size,✅,1,6.0,2503
@@ -3520,7 +3520,7 @@ NevilleThetaD,,,,3.0,3612
 NevilleThetaN,,,,3.0,3612
 SatisfiabilityCount,Number of satisfying assignments of a Boolean expression,✅,pure,7.0,3612
 StadiumShape,,,,10.2,3612
-BernoulliProcess,,🚫,,9.0,3636
+BernoulliProcess,Bernoulli process with time-independent Bernoulli slices,✅,unevaluated,9.0,3636
 BinaryDeserialize,Reconstructs an expression from WXF binary bytes,✅,pure,11.1,3636
 BlackmanWindow,Compute BlackmanWindow value,✅,pure,9.0,3636
 BoundaryMeshRegionQ,,,,10.0,3636

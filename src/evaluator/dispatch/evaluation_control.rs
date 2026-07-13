@@ -510,7 +510,11 @@ pub fn dispatch_evaluation_control(
     // are consumed by PDF/CDF/Mean/Variance.
     "WienerProcess"
     | "GeometricBrownianMotionProcess"
-    | "OrnsteinUhlenbeckProcess" => {
+    | "OrnsteinUhlenbeckProcess"
+    | "PoissonProcess"
+    | "BinomialProcess"
+    | "BernoulliProcess"
+    | "WhiteNoiseProcess" => {
       return Some(Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec().into(),
