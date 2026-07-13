@@ -55,9 +55,12 @@ jobs:
     strategy:
       matrix:
         platform:
-          # Each runner builds for its native architecture (macos-13 is
-          # x86_64, macos-latest is arm64), so no `target:` is needed.
-          - runner: macos-13
+          # Each runner builds for its native architecture, so no
+          # `target:` is needed. macos-15-intel is the only remaining
+          # x86_64 image (macos-13 was retired 2025-12); it is supported
+          # until August 2027, after which the x86_64 wheel needs to be
+          # cross-compiled or dropped.
+          - runner: macos-15-intel
             arch: x86_64
           - runner: macos-latest
             arch: aarch64
