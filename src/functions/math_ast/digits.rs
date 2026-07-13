@@ -2821,14 +2821,24 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// IntegerReverse[n] - reverse the digits of an integer in base 10.
 /// IntegerReverse[n, b] - reverse the digits of n in base b.
+/// IntegerReverse[n, b, len] - reverse exactly the `len` least-significant
+/// base-b digits of n (padding with leading zeros), matching
+/// FromDigits[Reverse[IntegerDigits[n, b, len]], b].
 pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "IntegerReverse expects 1 or 2 arguments".into(),
+      "IntegerReverse expects 1, 2, or 3 arguments".into(),
     ));
   }
 
-  let base = if args.len() == 2 {
+  let uneval = || {
+    Ok(Expr::FunctionCall {
+      name: "IntegerReverse".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  let base = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
       Some(_) => {
@@ -2836,15 +2846,30 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "IntegerReverse: base must be at least 2".into(),
         ));
       }
-      None => {
-        return Ok(Expr::FunctionCall {
-          name: "IntegerReverse".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
+      None => return uneval(),
     }
   } else {
     10
+  };
+
+  // Optional digit-count: reverse exactly `len` low-order digits.
+  let len = if args.len() == 3 {
+    match expr_to_i128(&args[2]) {
+      Some(l) if l >= 0 => Some(l),
+      Some(_) => {
+        crate::emit_message(&format!(
+          "IntegerReverse::intpm: Positive machine-sized integer expected at position 3 in {}.",
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "IntegerReverse".to_string(),
+            args: args.to_vec().into(),
+          })
+        ));
+        return uneval();
+      }
+      None => return uneval(),
+    }
+  } else {
+    None
   };
 
   // Handle BigInteger
@@ -2853,17 +2878,27 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut abs_n = if n < BigInt::zero() { -n } else { n };
     let base_big = BigInt::from(base);
     let mut result = BigInt::zero();
-    while abs_n > BigInt::zero() {
-      result = result * &base_big + (&abs_n % &base_big);
-      abs_n /= &base_big;
+    match len {
+      // Fixed digit count: take exactly `len` low-order digits, most
+      // significant last, so leading zeros participate in the reversal.
+      Some(len) => {
+        for _ in 0..len {
+          result = result * &base_big + (&abs_n % &base_big);
+          abs_n /= &base_big;
+        }
+      }
+      // Reverse all significant digits.
+      None => {
+        while abs_n > BigInt::zero() {
+          result = result * &base_big + (&abs_n % &base_big);
+          abs_n /= &base_big;
+        }
+      }
     }
     return Ok(bigint_to_expr(result));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "IntegerReverse".to_string(),
-    args: args.to_vec().into(),
-  })
+  uneval()
 }
 
 const ONES: [&str; 20] = [

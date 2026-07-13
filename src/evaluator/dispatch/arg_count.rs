@@ -696,7 +696,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "IntegerPart" => Some((1, 1)),
     "IntegerPartitions" => Some((1, 4)),
     "IntegerQ" => Some((1, 1)),
-    "IntegerReverse" => Some((1, 2)),
+    "IntegerReverse" => Some((1, 3)),
     "IntegerString" => Some((1, 3)),
     "Integrate" => Some((2, 100)),
     "InterpolatingPolynomial" => Some((2, 2)),

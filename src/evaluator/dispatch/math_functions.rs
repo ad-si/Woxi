@@ -1178,7 +1178,7 @@ pub fn dispatch_math_functions(
     "IntegerLength" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::integer_length_ast(args));
     }
-    "IntegerReverse" if !args.is_empty() && args.len() <= 2 => {
+    "IntegerReverse" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::integer_reverse_ast(args));
     }
     "Rescale" if !args.is_empty() && args.len() <= 3 => {

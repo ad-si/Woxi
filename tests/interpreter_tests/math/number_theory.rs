@@ -826,6 +826,43 @@ mod integer_reverse {
   fn zero() {
     assert_eq!(interpret("IntegerReverse[0]").unwrap(), "0");
   }
+
+  // IntegerReverse[n, b, len] reverses exactly the `len` least-significant
+  // base-b digits, padding shorter numbers with leading zeros and dropping
+  // digits beyond `len` for longer ones.
+  #[test]
+  fn fixed_length() {
+    // 123 padded to 5 digits (00123) reversed is 32100.
+    assert_eq!(interpret("IntegerReverse[123, 10, 5]").unwrap(), "32100");
+    // Only the low 2 digits of 1234 (34) participate: reversed to 43.
+    assert_eq!(interpret("IntegerReverse[1234, 10, 2]").unwrap(), "43");
+    // Base 2: 5 = 0101 reversed to 1010 = 10.
+    assert_eq!(interpret("IntegerReverse[5, 2, 4]").unwrap(), "10");
+    // Base 16: 255 = 00FF reversed to FF00 = 65280.
+    assert_eq!(interpret("IntegerReverse[255, 16, 4]").unwrap(), "65280");
+    // Length 0 gives 0; the sign of n is ignored.
+    assert_eq!(interpret("IntegerReverse[123, 10, 0]").unwrap(), "0");
+    assert_eq!(interpret("IntegerReverse[-123, 10, 5]").unwrap(), "32100");
+    // Listable over the first argument.
+    assert_eq!(
+      interpret("IntegerReverse[{12, 340}, 10, 3]").unwrap(),
+      "{210, 43}"
+    );
+  }
+
+  // A negative digit count is rejected with intpm and stays unevaluated.
+  #[test]
+  fn fixed_length_negative_rejected() {
+    let r = woxi::interpret_with_stdout("IntegerReverse[123, 10, -2]").unwrap();
+    assert_eq!(r.result, "IntegerReverse[123, 10, -2]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("IntegerReverse::intpm")),
+      "expected intpm message, got {:?}",
+      r.warnings
+    );
+  }
 }
 
 // All expected values verified against wolframscript 15.0.
