@@ -225,6 +225,26 @@ mod table_symbolic_bounds {
     assert_eq!(interpret("Table[i, i]").unwrap(), "Table[i, i]");
   }
 
+  // A zero step never terminates, so Table/Do reject it with iterb and stay
+  // unevaluated rather than raising an evaluation error (or looping).
+  #[test]
+  fn zero_step_stays_unevaluated() {
+    let r = woxi::interpret_with_stdout("Table[i, {i, 1, 3, 0}]").unwrap();
+    assert_eq!(r.result, "Table[i, {i, 1, 3, 0}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains("Table::iterb")),
+      "expected iterb message, got {:?}",
+      r.warnings
+    );
+    let d = woxi::interpret_with_stdout("Do[Print[i], {i, 1, 3, 0}]").unwrap();
+    assert_eq!(d.result, "Do[Print[i], {i, 1, 3, 0}]");
+    assert!(
+      d.warnings.iter().any(|w| w.contains("Do::iterb")),
+      "expected iterb message, got {:?}",
+      d.warnings
+    );
+  }
+
   // In a multi-iterator Table, an inner iterator with symbolic bounds leaves
   // the whole call unevaluated.
   #[test]

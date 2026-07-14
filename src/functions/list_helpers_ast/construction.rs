@@ -95,6 +95,15 @@ pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
         if let Expr::Identifier(v) = &items[0] {
           bound_vars.push(v.clone());
         }
+        // A zero step `{i, min, max, 0}` never terminates: Table/Do reject it
+        // with iterb rather than looping forever (matching wolframscript).
+        if items.len() >= 4 {
+          let step = crate::evaluator::evaluate_expr_to_expr(&items[3])
+            .unwrap_or_else(|_| items[3].clone());
+          if crate::functions::math_ast::try_eval_to_f64(&step) == Some(0.0) {
+            return iterb(iter);
+          }
+        }
         let second = crate::evaluator::evaluate_expr_to_expr(&items[1])
           .unwrap_or_else(|_| items[1].clone());
         if matches!(second, Expr::List(_)) {
