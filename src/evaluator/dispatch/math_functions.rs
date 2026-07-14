@@ -933,6 +933,19 @@ pub fn dispatch_math_functions(
       }
       if let Expr::List(elems) = &args[0] {
         let n = elems.len();
+        // The trimming fraction must be a non-negative number < 0.5, or a list
+        // of two non-negative numbers summing to < 1; otherwise emit arg2 and
+        // stay unevaluated (rather than silently mis-trimming).
+        let arg2_error = || {
+          crate::emit_message(&format!(
+            "TrimmedMean::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
+            crate::syntax::expr_to_string(&args[1])
+          ));
+          Some(Ok(Expr::FunctionCall {
+            name: "TrimmedMean".to_string(),
+            args: args.to_vec().into(),
+          }))
+        };
         let (trim_lo, trim_hi) = match args.get(1) {
           None => {
             let t = (n as f64 * 0.05).floor() as usize;
@@ -945,6 +958,9 @@ pub fn dispatch_math_functions(
             let Some(f2) = expr_to_f64(&fs[1]) else {
               return None;
             };
+            if f1 < 0.0 || f2 < 0.0 || f1 + f2 >= 1.0 {
+              return arg2_error();
+            }
             (
               (n as f64 * f1).floor() as usize,
               (n as f64 * f2).floor() as usize,
@@ -954,6 +970,9 @@ pub fn dispatch_math_functions(
             let Some(f) = expr_to_f64(other) else {
               return None;
             };
+            if !(0.0..0.5).contains(&f) {
+              return arg2_error();
+            }
             let t = (n as f64 * f).floor() as usize;
             (t, t)
           }

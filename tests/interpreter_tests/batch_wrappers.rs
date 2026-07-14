@@ -5203,6 +5203,27 @@ mod batch_unevaluated_wrappers_2 {
       "11/2"
     );
   }
+  // An out-of-range trimming fraction (>= 0.5, negative, or a pair summing to
+  // >= 1) emits arg2 and stays unevaluated instead of silently mis-trimming.
+  #[test]
+  fn trimmed_mean_invalid_fraction_emits_arg2() {
+    for input in [
+      "TrimmedMean[{1, 2, 3, 4}, 1/2]",
+      "TrimmedMean[{1, 2, 3, 4}, -0.1]",
+      "TrimmedMean[{1, 2, 3, 4}, {0.6, 0.5}]",
+      "TrimmedMean[{1, 2, 3, 4}, {0.5, 0.5}]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("TrimmedMean::arg2")),
+        "expected arg2 for {input}, got {:?}",
+        r.warnings
+      );
+    }
+    // A valid fraction still computes.
+    assert_eq!(interpret("TrimmedMean[{1, 2, 3, 4}, 1/4]").unwrap(), "5/2");
+  }
   #[test]
   fn winsorized_mean_basic() {
     assert_eq!(
