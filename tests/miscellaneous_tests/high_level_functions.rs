@@ -7898,7 +7898,7 @@ mod high_level_functions {
     fn attributes_match_wolframscript() {
       assert_eq!(
         interpret("Attributes[ParallelDo]").unwrap(),
-        "{HoldAll, Protected}"
+        "{Protected, ReadProtected}"
       );
     }
 

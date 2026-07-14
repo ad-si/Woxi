@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 /// AnglePath[{θ1, θ2, ...}] - path with unit steps and cumulative turning angles.
 /// AnglePath[{{r1, θ1}, {r2, θ2}, ...}] - path with specified step lengths.
@@ -26,18 +26,12 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "AnglePath::init: Invalid angle path initialization {}.",
         crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
       ));
-      return Ok(Expr::FunctionCall {
-        name: "AnglePath".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("AnglePath", args));
     };
     let step_items = match &args[1] {
       Expr::List(items) => items.clone(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "AnglePath".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("AnglePath", args));
       }
     };
     (Some(pos), Some(theta), step_items.to_vec())
@@ -45,10 +39,7 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let step_items = match &args[0] {
       Expr::List(items) => items.clone(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "AnglePath".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("AnglePath", args));
       }
     };
     (None, None, step_items.to_vec())
@@ -946,10 +937,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let items = match &args[0] {
       Expr::List(items) => items,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Product".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Product", args));
       }
     };
 
@@ -958,10 +946,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(n) = expr_to_f64(item) {
         product *= n;
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "Product".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Product", args));
       }
     }
     return Ok(f64_to_expr(product));
@@ -993,10 +978,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let var_name = match &items[0] {
           Expr::Identifier(name) => name.clone(),
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Product".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Product", args));
           }
         };
 
@@ -1014,10 +996,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if let Some(n) = expr_to_f64(&val) {
                 product *= n;
               } else {
-                return Ok(Expr::FunctionCall {
-                  name: "Product".to_string(),
-                  args: args.to_vec().into(),
-                });
+                return Ok(unevaluated("Product", args));
               }
             }
             return Ok(f64_to_expr(product));
@@ -1436,10 +1415,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             if !(-1.0..=1.0).contains(&c) {
               crate::emit_message("Product::div: Product does not converge.");
-              return Ok(Expr::FunctionCall {
-                name: "Product".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("Product", args));
             }
           }
 
@@ -1466,10 +1442,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let vanishes = rate < 0.0 || (rate == 0.0 && degree < 0.0);
             if diverges {
               crate::emit_message("Product::div: Product does not converge.");
-              return Ok(Expr::FunctionCall {
-                name: "Product".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("Product", args));
             }
             if vanishes {
               return Ok(Expr::Integer(0));
@@ -1477,10 +1450,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
 
           // For other symbolic cases, return unevaluated
-          return Ok(Expr::FunctionCall {
-            name: "Product".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Product", args));
         }
 
         let (min, max) = bounds.unwrap();
@@ -1543,10 +1513,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Product".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Product", args))
 }
 
 /// AST-based Sum: sum of list elements or iterator sum.
@@ -1901,10 +1868,7 @@ fn linear_slope_in(expr: &Expr, var: &str) -> Option<f64> {
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     // Sum requires at least 2 arguments
-    return Ok(Expr::FunctionCall {
-      name: "Sum".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Sum", args));
   }
 
   // Indefinite sum: Sum[f[i], i] → ∑_{k=0}^{i-1} f[k] (the antidifference F
@@ -1961,10 +1925,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Sum".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Sum", args));
         }
       };
 
@@ -2015,10 +1976,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if sum_term_provably_divergent(body, &var_name) {
           crate::emit_message("Sum::div: Sum does not converge.");
         }
-        return Ok(Expr::FunctionCall {
-          name: "Sum".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Sum", args));
       }
 
       // Fast path: Sum[Factorial[var], {var, min, max(, step)}] with integer
@@ -2150,10 +2108,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // Evaluate to simplify the symbolic result
             return crate::evaluator::evaluate_expr_to_expr(&result);
           }
-          return Ok(Expr::FunctionCall {
-            name: "Sum".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Sum", args));
         }
       }
 
@@ -2266,10 +2221,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Sum".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Sum", args))
 }
 
 /// Try to evaluate a known infinite series Sum[body, {var, min, Infinity}].
@@ -5098,12 +5050,7 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
 /// radical coordinates like wolframscript's. Invalid specifications emit
 /// ::steps.
 pub fn angle_path_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "AnglePath3D".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("AnglePath3D", args));
   if args.len() != 1 {
     return unevaluated();
   }
@@ -5112,10 +5059,7 @@ pub fn angle_path_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "AnglePath3D::steps: Invalid steps specification {}.",
       crate::syntax::expr_to_output(&args[0])
     ));
-    Ok(Expr::FunctionCall {
-      name: "AnglePath3D".to_string(),
-      args: args.to_vec().into(),
-    })
+    unevaluated()
   };
   let Expr::List(steps) = &args[0] else {
     return steps_err();

@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// Decompose a BinaryOp or UnaryOp expression into canonical Wolfram
 /// (head_name, args) form so that First/Rest/Part/etc. can operate on them.
@@ -1478,10 +1478,7 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
 /// inapplicable specs, ::partw / ::partd for bad paths, and ::keyw
 /// (yielding Missing[KeyAbsent, …]) for absent keys.
 pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Extract".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Extract", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
   let subject = &args[0];
@@ -2037,10 +2034,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output),
         crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
       ));
-      return Ok(Expr::FunctionCall {
-        name: "Delete".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Delete", args));
     }
   };
   let items = items_owned.as_slice();
@@ -2062,10 +2056,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           pos,
           crate::syntax::expr_to_string(&args[0])
         ));
-        return Ok(Expr::FunctionCall {
-          name: "Delete".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Delete", args));
       }
       let deleted = delete_at_position_general(items, pos, head_name)?;
       return crate::evaluator::evaluate_expr_to_expr(&deleted);
@@ -2108,10 +2099,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let raw: Vec<i128> =
               inner.iter().filter_map(expr_to_i128).collect();
             if raw.len() != inner.len() || raw.is_empty() {
-              return Ok(Expr::FunctionCall {
-                name: "Delete".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("Delete", args));
             }
             // Normalize each index against the original structure
             let mut cursor = args[0].clone();
@@ -2126,19 +2114,13 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     crate::syntax::ExprForm::Output
                   )
                 ));
-                return Ok(Expr::FunctionCall {
-                  name: "Delete".to_string(),
-                  args: args.to_vec().into(),
-                });
+                return Ok(unevaluated("Delete", args));
               };
               let len = sub_items.len() as i128;
               let pos_ix = if ix > 0 { ix } else { len + ix + 1 };
               if pos_ix < 1 || pos_ix > len {
                 partw_path(&raw);
-                return Ok(Expr::FunctionCall {
-                  name: "Delete".to_string(),
-                  args: args.to_vec().into(),
-                });
+                return Ok(unevaluated("Delete", args));
               }
               norm.push(pos_ix);
               if depth + 1 < raw.len() {
@@ -2166,10 +2148,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Ok(v) => result = v,
               Err(_) => {
                 partw_path(pos);
-                return Ok(Expr::FunctionCall {
-                  name: "Delete".to_string(),
-                  args: args.to_vec().into(),
-                });
+                return Ok(unevaluated("Delete", args));
               }
             }
           }
@@ -2216,10 +2195,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     )
                   ));
                 }
-                return Ok(Expr::FunctionCall {
-                  name: "Delete".to_string(),
-                  args: args.to_vec().into(),
-                });
+                return Ok(unevaluated("Delete", args));
               }
             }
           }
@@ -2235,10 +2211,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Delete".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Delete", args))
 }
 
 /// Delete element at a single flat position in an expression
@@ -2263,10 +2236,7 @@ fn delete_at_position_general(
     (len + pos) as usize
   } else {
     // Position 0 = delete the head, return Sequence[args...]
-    return Ok(Expr::FunctionCall {
-      name: "Sequence".to_string(),
-      args: items.to_vec().into(),
-    });
+    return Ok(unevaluated("Sequence", items));
   };
   if idx >= items.len() {
     return Ok(wrap(items.to_vec()));

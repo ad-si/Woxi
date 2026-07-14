@@ -1,4 +1,4 @@
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Infer the TypeSystem type for an expression.
 fn infer_type(expr: &Expr) -> Expr {
@@ -196,10 +196,7 @@ pub fn dataset_query(
 
   // Fallback: return unevaluated
   Ok(Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "Dataset".to_string(),
-      args: func_args.to_vec().into(),
-    }),
+    func: Box::new(unevaluated("Dataset", func_args)),
     args: args.to_vec(),
   })
 }
@@ -218,9 +215,6 @@ pub fn dataset_ast(args: &[Expr]) -> Expr {
     }
   } else {
     // Already has type info or other args — return as-is
-    Expr::FunctionCall {
-      name: "Dataset".to_string(),
-      args: args.to_vec().into(),
-    }
+    unevaluated("Dataset", args)
   }
 }

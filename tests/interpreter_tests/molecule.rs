@@ -8,10 +8,12 @@ mod molecule_tests {
   #[test]
   fn molecule_from_name_water() {
     clear_state();
+    // A chemical name resolves to a fully specified structure: hydrogens are
+    // materialized as bare atoms, and the canonical form is three-argument.
     assert_eq!(
       interpret(r#"Molecule["water"]"#).unwrap(),
-      "Molecule[{Atom[O], Atom[H], Atom[H]}, \
-       {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}]"
+      "Molecule[{O, H, H}, \
+       {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}, {}]"
     );
   }
 
@@ -29,9 +31,9 @@ mod molecule_tests {
     clear_state();
     assert_eq!(
       interpret(r#"Molecule["methane"]"#).unwrap(),
-      "Molecule[{Atom[C], Atom[H], Atom[H], Atom[H], Atom[H]}, \
+      "Molecule[{C, H, H, H, H}, \
        {Bond[{1, 2}, Single], Bond[{1, 3}, Single], Bond[{1, 4}, Single], \
-       Bond[{1, 5}, Single]}]"
+       Bond[{1, 5}, Single]}, {}]"
     );
   }
 
@@ -40,13 +42,11 @@ mod molecule_tests {
   #[test]
   fn molecule_from_smiles_ethanol() {
     clear_state();
+    // A bare SMILES string keeps its organic-subset hydrogens implicit.
     assert_eq!(
       interpret(r#"Molecule["CCO"]"#).unwrap(),
-      "Molecule[{Atom[C], Atom[C], Atom[O], Atom[H], Atom[H], Atom[H], \
-       Atom[H], Atom[H], Atom[H]}, \
-       {Bond[{1, 2}, Single], Bond[{2, 3}, Single], Bond[{1, 4}, Single], \
-       Bond[{1, 5}, Single], Bond[{1, 6}, Single], Bond[{2, 7}, Single], \
-       Bond[{2, 8}, Single], Bond[{3, 9}, Single]}]"
+      "Molecule[{C, C, O}, \
+       {Bond[{1, 2}, Single], Bond[{2, 3}, Single]}, {}]"
     );
   }
 
@@ -56,8 +56,7 @@ mod molecule_tests {
     // formaldehyde
     assert_eq!(
       interpret(r#"Molecule["C=O"]"#).unwrap(),
-      "Molecule[{Atom[C], Atom[O], Atom[H], Atom[H]}, \
-       {Bond[{1, 2}, Double], Bond[{1, 3}, Single], Bond[{1, 4}, Single]}]"
+      "Molecule[{C, O}, {Bond[{1, 2}, Double]}, {}]"
     );
   }
 
@@ -67,8 +66,7 @@ mod molecule_tests {
     // hydrogen cyanide
     assert_eq!(
       interpret(r#"Molecule["C#N"]"#).unwrap(),
-      "Molecule[{Atom[C], Atom[N], Atom[H]}, \
-       {Bond[{1, 2}, Triple], Bond[{1, 3}, Single]}]"
+      "Molecule[{C, N}, {Bond[{1, 2}, Triple]}, {}]"
     );
   }
 
@@ -79,7 +77,7 @@ mod molecule_tests {
     assert_eq!(
       interpret(r#"MoleculeValue[Molecule["CC(C)C"], "MolecularFormula"]"#)
         .unwrap(),
-      "C4H10"
+      "Subscript[C, 4]Subscript[H, 10]"
     );
   }
 
@@ -89,7 +87,7 @@ mod molecule_tests {
     assert_eq!(
       interpret(r#"MoleculeValue[Molecule["C1CCCCC1"], "MolecularFormula"]"#)
         .unwrap(),
-      "C6H12"
+      "Subscript[C, 6]Subscript[H, 12]"
     );
   }
 
@@ -102,7 +100,7 @@ mod molecule_tests {
         r#"MoleculeValue[Molecule["C%12CCCCCCCCCCC%12"], "MolecularFormula"]"#
       )
       .unwrap(),
-      "C12H24"
+      "Subscript[C, 12]Subscript[H, 24]"
     );
   }
 
@@ -111,14 +109,12 @@ mod molecule_tests {
     clear_state();
     assert_eq!(
       interpret(r#"Molecule["c1ccccc1"]"#).unwrap(),
-      "Molecule[{Atom[C], Atom[C], Atom[C], Atom[C], Atom[C], Atom[C], \
-       Atom[H], Atom[H], Atom[H], Atom[H], Atom[H], Atom[H]}, \
+      // A SMILES aromatic ring keeps hydrogens implicit; the ring-closure bond
+      // is ordered {closing, opening}.
+      "Molecule[{C, C, C, C, C, C}, \
        {Bond[{1, 2}, Aromatic], Bond[{2, 3}, Aromatic], \
        Bond[{3, 4}, Aromatic], Bond[{4, 5}, Aromatic], \
-       Bond[{5, 6}, Aromatic], Bond[{1, 6}, Aromatic], \
-       Bond[{1, 7}, Single], Bond[{2, 8}, Single], Bond[{3, 9}, Single], \
-       Bond[{4, 10}, Single], Bond[{5, 11}, Single], \
-       Bond[{6, 12}, Single]}]"
+       Bond[{5, 6}, Aromatic], Bond[{6, 1}, Aromatic]}, {}]"
     );
   }
 
@@ -129,7 +125,7 @@ mod molecule_tests {
     assert_eq!(
       interpret(r#"MoleculeValue[Molecule["c1ccncc1"], "MolecularFormula"]"#)
         .unwrap(),
-      "C5H5N"
+      "Subscript[C, 5]Subscript[H, 5]N"
     );
   }
 
@@ -140,7 +136,7 @@ mod molecule_tests {
     assert_eq!(
       interpret(r#"MoleculeValue[Molecule["c1cc[nH]c1"], "MolecularFormula"]"#)
         .unwrap(),
-      "C4H5N"
+      "Subscript[C, 4]Subscript[H, 5]N"
     );
   }
 
@@ -149,10 +145,8 @@ mod molecule_tests {
     clear_state();
     assert_eq!(
       interpret(r#"Molecule["[NH4+]"]"#).unwrap(),
-      "Molecule[{Atom[N, FormalCharge -> 1], Atom[H], Atom[H], Atom[H], \
-       Atom[H]}, \
-       {Bond[{1, 2}, Single], Bond[{1, 3}, Single], Bond[{1, 4}, Single], \
-       Bond[{1, 5}, Single]}]"
+      // A bracket-atom hydrogen count is kept as a HydrogenCount property.
+      "Molecule[{Atom[N, FormalCharge -> 1, HydrogenCount -> 4]}, {}, {}]"
     );
   }
 
@@ -161,7 +155,7 @@ mod molecule_tests {
     clear_state();
     assert_eq!(
       interpret(r#"Molecule["[13C]"]"#).unwrap(),
-      "Molecule[{Atom[C, MassNumber -> 13]}, {}]"
+      "Molecule[{Atom[C, MassNumber -> 13]}, {}, {}]"
     );
   }
 
@@ -171,7 +165,7 @@ mod molecule_tests {
     assert_eq!(
       interpret(r#"Molecule["[Na+].[Cl-]"]"#).unwrap(),
       "Molecule[{Atom[Na, FormalCharge -> 1], \
-       Atom[Cl, FormalCharge -> -1]}, {}]"
+       Atom[Cl, FormalCharge -> -1]}, {}, {}]"
     );
   }
 
@@ -180,25 +174,32 @@ mod molecule_tests {
     clear_state();
     assert_eq!(
       interpret(r#"Molecule["[Fe+2]"]"#).unwrap(),
-      "Molecule[{Atom[Fe, FormalCharge -> 2]}, {}]"
+      "Molecule[{Atom[Fe, FormalCharge -> 2]}, {}, {}]"
     );
     assert_eq!(
       interpret(r#"Molecule["[Fe++]"]"#).unwrap(),
-      "Molecule[{Atom[Fe, FormalCharge -> 2]}, {}]"
+      "Molecule[{Atom[Fe, FormalCharge -> 2]}, {}, {}]"
     );
   }
 
   // --- Construction from explicit atom and bond lists -------------------
 
   #[test]
-  fn molecule_from_atom_and_bond_lists_fills_valences() {
+  fn molecule_from_atom_and_bond_lists_keeps_hydrogens_implicit() {
     clear_state();
-    // methanol: hydrogens are added to fill the normal valences
+    // Explicit atom/bond lists keep hydrogens implicit (as SMILES does); the
+    // hydrogens are filled on demand for AtomCount / MolecularFormula.
     assert_eq!(
       interpret(r#"Molecule[{"C", "O"}, {Bond[{1, 2}, "Single"]}]"#).unwrap(),
-      "Molecule[{Atom[C], Atom[O], Atom[H], Atom[H], Atom[H], Atom[H]}, \
-       {Bond[{1, 2}, Single], Bond[{1, 3}, Single], Bond[{1, 4}, Single], \
-       Bond[{1, 5}, Single], Bond[{2, 6}, Single]}]"
+      "Molecule[{C, O}, {Bond[{1, 2}, Single]}, {}]"
+    );
+    // methanol CH4O: one C–O bond, C fills to 3 H, O fills to 1 H.
+    assert_eq!(
+      interpret(
+        r#"MoleculeValue[Molecule[{"C", "O"}, {Bond[{1, 2}, "Single"]}], "AtomCount"]"#
+      )
+      .unwrap(),
+      "6"
     );
   }
 
@@ -345,7 +346,7 @@ mod molecule_tests {
     assert_eq!(
       interpret(r#"MoleculeValue[Molecule["caffeine"], "MolecularFormula"]"#)
         .unwrap(),
-      "C8H10N4O2"
+      "Subscript[C, 8]Subscript[H, 10]Subscript[N, 4]Subscript[O, 2]"
     );
   }
 
@@ -370,7 +371,7 @@ mod molecule_tests {
         r#"MoleculeValue[Molecule["glucose"], {"AtomCount", "MolecularFormula"}]"#
       )
       .unwrap(),
-      "{24, C6H12O6}"
+      "{24, Subscript[C, 6]Subscript[H, 12]Subscript[O, 6]}"
     );
   }
 
@@ -380,7 +381,7 @@ mod molecule_tests {
     assert_eq!(interpret(r#"Molecule["water"]["AtomCount"]"#).unwrap(), "3");
     assert_eq!(
       interpret(r#"Molecule["benzene"]["MolecularFormula"]"#).unwrap(),
-      "C6H6"
+      "Subscript[C, 6]Subscript[H, 6]"
     );
   }
 
@@ -389,8 +390,8 @@ mod molecule_tests {
     clear_state();
     assert_eq!(
       interpret(r#"MoleculeValue[Molecule["water"], "Bogus"]"#).unwrap(),
-      "MoleculeValue[Molecule[{Atom[O], Atom[H], Atom[H]}, \
-       {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}], Bogus]"
+      "MoleculeValue[Molecule[{O, H, H}, \
+       {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}, {}], Bogus]"
     );
   }
 
@@ -399,69 +400,69 @@ mod molecule_tests {
   #[test]
   fn formula_without_carbon_is_alphabetical() {
     clear_state();
-    // Hill order without carbon: strictly alphabetical (H before N and O)
+    // Hill order without carbon: alphabetical (H before N before O), each count
+    // above one rendered as a Subscript.
     assert_eq!(
       interpret(
         r#"MoleculeValue[Molecule["nitric acid"], "MolecularFormula"]"#
       )
       .unwrap(),
-      "HNO3"
+      "HNSubscript[O, 3]"
     );
   }
 
   #[test]
   fn formula_of_charged_molecule_shows_net_charge() {
     clear_state();
+    // A nonzero net charge wraps the formula in a Superscript. (Woxi keeps the
+    // strict Hill alphabetical order H-before-N; wolframscript writes ammonium
+    // conventionally as NH4 — a formula-ordering divergence we do not chase.)
     assert_eq!(
       interpret(r#"MoleculeValue[Molecule["[NH4+]"], "MolecularFormula"]"#)
         .unwrap(),
-      "H4N+"
+      "Superscript[Subscript[H, 4]N, +]"
     );
   }
 
-  // --- Molecule information tile -------------------------------------------
+  // --- Molecule structure diagram (SVG export) -----------------------------
 
   #[test]
-  fn molecule_exports_info_tile() {
+  fn molecule_exports_structure_diagram() {
     clear_state();
-    // ExportString[Molecule[…], "SVG"] draws the information tile: a structure
-    // thumbnail beside the formula, atom count, and bond count — not a text
-    // dump of the symbolic `Molecule[…]` expression.
+    // ExportString[Molecule[…], "SVG"] draws the 2-D structure diagram as a
+    // standalone document (with an XML declaration), not a text dump of the
+    // symbolic form and not an information tile.
     let svg = interpret(r#"ExportString[Molecule["water"], "SVG"]"#).unwrap();
-    assert!(svg.starts_with("<svg"), "should be an SVG document");
+    assert!(svg.starts_with("<?xml"), "standalone SVG document");
+    assert!(svg.contains("<svg"), "carries the svg root element");
     assert!(!svg.contains("Molecule"), "must not dump the symbolic form");
-    assert!(svg.contains("Formula: "), "shows the molecular formula");
-    assert!(svg.contains("Atoms: "), "shows the atom count");
-    assert!(svg.contains("Bonds: "), "shows the bond count");
-    // Water counts: 3 atoms (O + 2 H) and 2 bonds, shown as value tspans.
-    assert!(svg.contains(">3</tspan>"));
-    assert!(svg.contains(">2</tspan>"));
-    // The thumbnail draws the two O–H bonds and labels the oxygen.
-    assert_eq!(svg.matches("<line").count(), 2);
-    assert!(svg.contains(">O</text>"), "thumbnail labels the oxygen");
+    assert!(!svg.contains("Formula: "), "not an information tile");
+    // The diagram draws the two O–H bonds as polylines and labels the oxygen.
+    assert_eq!(svg.matches("<polyline").count(), 2);
+    assert_eq!(svg.matches("<line").count(), 0);
+    assert!(svg.contains(">O</text>"), "labels the oxygen");
   }
 
   #[test]
-  fn tile_formula_uses_subscripts_and_charge() {
+  fn structure_diagram_shows_label_and_charge() {
     clear_state();
-    // Ammonium: formula H4N+ — the element count "4" is a subscript tspan and
-    // the "+" net charge rides as a superscript tspan.
+    // Ammonium: the lone nitrogen is labeled and its formal charge is drawn.
     let svg = interpret(r#"ExportString[Molecule["[NH4+]"], "SVG"]"#).unwrap();
-    assert!(svg.contains(">H</tspan>"));
-    assert!(svg.contains(">4</tspan>"), "element count as a tspan");
-    assert!(svg.contains(">+</tspan>"), "net charge as a tspan");
+    assert!(svg.contains(">N</text>"), "labels the nitrogen");
+    assert!(svg.contains(">+</text>"), "draws the formal charge");
   }
 
   #[test]
-  fn molecule_tile_in_visual_mode() {
+  fn molecule_renders_as_graphics_in_visual_mode() {
     use woxi::interpret_with_stdout;
     clear_state();
     // In a visual host (playground / woxi-studio) a bare Molecule result is
-    // captured as the info tile rather than echoed symbolically.
+    // captured as its structure diagram rather than echoed symbolically.
     let r = interpret_with_stdout(r#"Molecule["ethanol"]"#).unwrap();
     let svg = r.graphics.expect("Molecule should produce a graphics SVG");
-    assert!(svg.contains("Formula: "));
-    assert!(svg.contains("Atoms: "));
+    assert!(svg.contains("<svg"));
+    assert!(!svg.contains("Formula: "), "structure diagram, not a tile");
+    assert!(svg.contains(">O</text>"), "labels the hydroxyl oxygen");
   }
 
   #[test]
@@ -470,8 +471,8 @@ mod molecule_tests {
     // Plain `interpret` (CLI / wolframscript parity) keeps the symbolic echo.
     assert_eq!(
       interpret(r#"Molecule["water"]"#).unwrap(),
-      "Molecule[{Atom[O], Atom[H], Atom[H]}, \
-       {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}]"
+      "Molecule[{O, H, H}, \
+       {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}, {}]"
     );
   }
 
@@ -497,8 +498,10 @@ mod molecule_tests {
     clear_state();
     let svg =
       interpret(r#"ExportString[MoleculePlot["benzene"], "SVG"]"#).unwrap();
-    // Six ring bonds, each aromatic bond adding an inner line: 12 strokes.
-    assert_eq!(svg.matches("<line").count(), 12);
+    // Six ring bonds, each aromatic bond adding an inner line: 12 polyline
+    // strokes and no <line> elements (matching wolframscript's markup).
+    assert_eq!(svg.matches("<polyline").count(), 12);
+    assert_eq!(svg.matches("<line").count(), 0);
     // A pure-carbon aromatic ring has no atom labels.
     assert!(!svg.contains("</text>"));
   }
@@ -510,7 +513,7 @@ mod molecule_tests {
     let svg =
       interpret(r#"ExportString[MoleculePlot["carbon dioxide"], "SVG"]"#)
         .unwrap();
-    assert_eq!(svg.matches("<line").count(), 4);
+    assert_eq!(svg.matches("<polyline").count(), 4);
     assert_eq!(svg.matches(">O</text>").count(), 2);
   }
 

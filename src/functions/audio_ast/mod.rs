@@ -19,7 +19,7 @@ pub mod spectral;
 
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::sound;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// In-memory view of an audio object: per-channel samples plus the sample
 /// rate in Hz. Channels are non-empty and equally long.
@@ -167,15 +167,6 @@ pub fn make_audio(audio: &AudioData) -> Expr {
       },
     ]
     .into(),
-  }
-}
-
-/// The unevaluated form `name[args…]`, returned when arguments don't match
-/// (wolframscript likewise leaves the expression symbolic).
-pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
   }
 }
 

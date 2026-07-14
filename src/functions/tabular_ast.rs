@@ -1,4 +1,4 @@
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Create a Failure expression for Tabular/ToTabular errors.
 fn make_tabular_failure(
@@ -131,10 +131,7 @@ pub fn tabular_ast(args: &[Expr]) -> Expr {
     && let Expr::FunctionCall { name, .. } = &args[1]
     && name == "TabularSchema"
   {
-    return Expr::FunctionCall {
-      name: "Tabular".to_string(),
-      args: args.to_vec().into(),
-    };
+    return unevaluated("Tabular", args);
   }
 
   let data = &args[0];
@@ -163,10 +160,7 @@ pub fn tabular_ast(args: &[Expr]) -> Expr {
 
     _ => {
       // Return unevaluated for unsupported forms
-      Expr::FunctionCall {
-        name: "Tabular".to_string(),
-        args: args.to_vec().into(),
-      }
+      unevaluated("Tabular", args)
     }
   }
 }
@@ -306,10 +300,7 @@ fn tabular_from_flat_list(items: &[Expr], args: &[Expr]) -> Expr {
 /// {"a" -> {1,2}, "b" -> {3,4}} => Tabular[<|"a" -> {1,2}, "b" -> {3,4}|>]
 pub fn to_tabular_ast(args: &[Expr]) -> Expr {
   if args.is_empty() {
-    return Expr::FunctionCall {
-      name: "ToTabular".to_string(),
-      args: args.to_vec().into(),
-    };
+    return unevaluated("ToTabular", args);
   }
   if args.len() < 2 {
     // ToTabular[data] without orientation — check if data is a list of rules
@@ -324,10 +315,7 @@ pub fn to_tabular_ast(args: &[Expr]) -> Expr {
         &args[0],
       );
     }
-    return Expr::FunctionCall {
-      name: "ToTabular".to_string(),
-      args: args.to_vec().into(),
-    };
+    return unevaluated("ToTabular", args);
   }
 
   let orientation = &args[1];
@@ -336,10 +324,7 @@ pub fn to_tabular_ast(args: &[Expr]) -> Expr {
   let is_columns = matches!(orientation, Expr::String(s) if s == "Columns");
 
   if !is_columns {
-    return Expr::FunctionCall {
-      name: "ToTabular".to_string(),
-      args: args.to_vec().into(),
-    };
+    return unevaluated("ToTabular", args);
   }
 
   match &args[0] {
@@ -369,10 +354,7 @@ pub fn to_tabular_ast(args: &[Expr]) -> Expr {
     Expr::Association(pairs) if !pairs.is_empty() => {
       tabular_from_column_association(pairs, &[args[0].clone()])
     }
-    _ => Expr::FunctionCall {
-      name: "ToTabular".to_string(),
-      args: args.to_vec().into(),
-    },
+    _ => unevaluated("ToTabular", args),
   }
 }
 

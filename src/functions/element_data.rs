@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Data for a single element.
 struct Element {
@@ -2758,23 +2758,14 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let elem = match find_element(&args[0]) {
         Some(e) => e,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "ElementData".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("ElementData", args));
         }
       };
       match &args[1] {
         Expr::String(prop) => Ok(get_property(elem, prop)),
-        _ => Ok(Expr::FunctionCall {
-          name: "ElementData".to_string(),
-          args: args.to_vec().into(),
-        }),
+        _ => Ok(unevaluated("ElementData", args)),
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "ElementData".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("ElementData", args)),
   }
 }

@@ -24,10 +24,10 @@ $ wo 'FindShortestCurve[Disk[], {1/10, 4/5}, {-1/2, 0}]'
 Line[{{1/10, 4/5}, {-1/2, 0}}]
 ```
 
-Curve regions are treated as meshes: the result is the machine-precision
-path along the polyline.
+Curve regions are treated as meshes: interior mesh vertices are returned at
+machine precision, while the two query points are kept verbatim.
 
 ```scrut
 $ wo 'FindShortestCurve[Line[{{1, 0}, {2, 1}, {3, 0}, {4, 1}}], {1, 0}, {3, 0}]'
-Line[{{1., 0.}, {2., 1.}, {3., 0.}}]
+Line[{{1, 0}, {2., 1.}, {3, 0}}]
 ```

@@ -11,7 +11,7 @@
 //! (e.g. Sqrt[Pi/2]/E^(y^2/2), (y*UnitStep[y])/E^(2*y)).
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 type Frac = (i128, i128);
 
@@ -46,10 +46,7 @@ fn frac_to_expr(f: Frac) -> Expr {
 }
 
 pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "Convolve".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("Convolve", args);
   if args.len() != 4 {
     return Ok(unevaluated(args));
   }

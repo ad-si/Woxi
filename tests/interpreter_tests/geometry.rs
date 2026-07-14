@@ -3145,7 +3145,8 @@ mod find_shortest_curve {
   }
 
   // Curve regions are treated as meshes: the sub-path along the polyline,
-  // at machine precision, starting at the first query point.
+  // with the interior mesh vertices at machine precision and the two query
+  // points kept verbatim (starting at the first query point).
   #[test]
   fn polyline_path() {
     assert_eq!(
@@ -3154,7 +3155,7 @@ mod find_shortest_curve {
          {1, 0}, {3, 0}]"
       )
       .unwrap(),
-      "Line[{{1., 0.}, {2., 1.}, {3., 0.}}]"
+      "Line[{{1, 0}, {2., 1.}, {3, 0}}]"
     );
     assert_eq!(
       interpret(
@@ -3162,7 +3163,16 @@ mod find_shortest_curve {
          {3, 0}, {1, 0}]"
       )
       .unwrap(),
-      "Line[{{3., 0.}, {2., 1.}, {1., 0.}}]"
+      "Line[{{3, 0}, {2., 1.}, {1, 0}}]"
+    );
+    // Query points in the middle of a segment stay exact too (here rationals).
+    assert_eq!(
+      interpret(
+        "FindShortestCurve[Line[{{1, 0}, {2, 1}, {3, 0}, {4, 1}}], \
+         {3/2, 1/2}, {3, 0}]"
+      )
+      .unwrap(),
+      "Line[{{3/2, 1/2}, {2., 1.}, {3, 0}}]"
     );
   }
 
@@ -3172,7 +3182,7 @@ mod find_shortest_curve {
     assert_eq!(
       interpret("FindShortestCurve[Line[{{0, 0}, {4, 0}}], {1, 0}, {3, 0}]")
         .unwrap(),
-      "Line[{{1., 0.}, {3., 0.}}]"
+      "Line[{{1, 0}, {3, 0}}]"
     );
   }
 
@@ -3186,16 +3196,17 @@ mod find_shortest_curve {
          {1, 0}, {0, 1}]"
       )
       .unwrap(),
-      "Line[{{1., 0.}, {0., 0.}, {0., 1.}}]"
+      "Line[{{1, 0}, {0., 0.}, {0, 1}}]"
     );
   }
 
-  // One-dimensional mesh-style chains match wolframscript's Line[{{0.}, {1.}}].
+  // One-dimensional mesh-style chains: the query points are the endpoints and
+  // stay verbatim, matching wolframscript's Line[{{0}, {1}}].
   #[test]
   fn one_dimensional_chain() {
     assert_eq!(
       interpret("FindShortestCurve[Line[{{0}, {1}}], {0}, {1}]").unwrap(),
-      "Line[{{0.}, {1.}}]"
+      "Line[{{0}, {1}}]"
     );
   }
 

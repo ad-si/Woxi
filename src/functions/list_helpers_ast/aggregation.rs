@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
 
 /// Shared AllTrue/AnyTrue/NoneTrue implementation: apply the predicate
 /// to every element at exactly the requested level (default 1) and
@@ -20,10 +20,7 @@ fn quantifier_ast(
     match &args[2] {
       Expr::Integer(n) if (0..=i64::MAX as i128).contains(n) => *n as usize,
       _ => {
-        let call = Expr::FunctionCall {
-          name: fname.to_string(),
-          args: args.to_vec().into(),
-        };
+        let call = unevaluated(fname, args);
         crate::emit_message(&format!(
           "{}::intnm: Non-negative machine-sized integer expected at position 3 in {}.",
           fname,
@@ -101,10 +98,7 @@ pub fn all_match_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[2] {
       Expr::Integer(n) if *n >= 0 => *n as usize,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "AllMatch".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("AllMatch", args));
       }
     }
   } else {
@@ -134,10 +128,7 @@ pub fn any_match_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[2] {
       Expr::Integer(n) if *n >= 0 => *n as usize,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "AnyMatch".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("AnyMatch", args));
       }
     }
   } else {
@@ -617,14 +608,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       let quantile_call = Expr::FunctionCall {
         name: "Quantile".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "ExponentialDistribution".to_string(),
-            args: dargs.to_vec().into(),
-          },
-          half,
-        ]
-        .into(),
+        args: vec![unevaluated("ExponentialDistribution", dargs), half].into(),
       };
       crate::evaluator::evaluate_expr_to_expr(&quantile_call).ok()
     }
@@ -1344,10 +1328,7 @@ pub fn take_smallest_ast(
 ///   MinMax[list, Scaled[d]]     → {min - d*r,  max + d*r}  with r = max - min
 pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
-    return Ok(Expr::FunctionCall {
-      name: "MinMax".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("MinMax", args));
   }
   // MinMax of an Interval is {Min[iv], Max[iv]}; reuse the list path so the
   // optional expansion second argument still applies.
@@ -1367,19 +1348,13 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       new_args[0] = Expr::List(vec![mn, mx].into());
       return min_max_ast(&new_args);
     }
-    return Ok(Expr::FunctionCall {
-      name: "MinMax".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("MinMax", args));
   }
   let list = &args[0];
   let items = match list {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MinMax".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("MinMax", args));
     }
   };
 
@@ -1838,10 +1813,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BinCounts".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BinCounts", args));
     }
   };
 
@@ -1916,10 +1888,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v = if let Some(v) = edge_to_f64(e) {
             v
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "BinCounts".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("BinCounts", args));
           };
           numeric_edges.push(v);
         }
@@ -1941,44 +1910,29 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let min_v = match numeric_expr_to_f64(&spec[0]) {
           Some(v) => v,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "BinCounts".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("BinCounts", args));
           }
         };
         let max_v = match numeric_expr_to_f64(&spec[1]) {
           Some(v) => v,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "BinCounts".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("BinCounts", args));
           }
         };
         let dx = match numeric_expr_to_f64(&spec[2]) {
           Some(v) => v,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "BinCounts".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("BinCounts", args));
           }
         };
         (min_v, max_v, dx)
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "BinCounts".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("BinCounts", args));
       }
     }
   } else {
-    return Ok(Expr::FunctionCall {
-      name: "BinCounts".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BinCounts", args));
   };
 
   if dx <= 0.0 {
@@ -2015,10 +1969,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(
         "BinLists::vectmat: The first argument is expected to be a unit-compatible vector or a matrix with unit-compatible columns.",
       );
-      return Ok(Expr::FunctionCall {
-        name: "BinLists".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BinLists", args));
     }
   };
 
@@ -2104,10 +2055,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v = if let Some(v) = edge_to_f64(e) {
             v
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "BinLists".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("BinLists", args));
           };
           numeric_edges.push(v);
         }
@@ -2129,44 +2077,29 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let min_v = match numeric_expr_to_f64(&spec[0]) {
           Some(v) => v,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "BinLists".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("BinLists", args));
           }
         };
         let max_v = match numeric_expr_to_f64(&spec[1]) {
           Some(v) => v,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "BinLists".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("BinLists", args));
           }
         };
         let dx = match numeric_expr_to_f64(&spec[2]) {
           Some(v) => v,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "BinLists".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("BinLists", args));
           }
         };
         (min_v, max_v, dx)
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "BinLists".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("BinLists", args));
       }
     }
   } else {
-    return Ok(Expr::FunctionCall {
-      name: "BinLists".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BinLists", args));
   };
 
   if dx <= 0.0 {
@@ -2585,10 +2518,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "HistogramList::ldata: {} is not a valid dataset or list of datasets.",
         crate::syntax::expr_to_string(&args[0])
       ));
-      return Ok(Expr::FunctionCall {
-        name: "HistogramList".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HistogramList", args));
     }
   };
 
@@ -2613,10 +2543,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let bins = match wl_user_binning_n(&values, *n) {
           Some(b) => b,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "HistogramList".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("HistogramList", args));
           }
         };
         let counts = count_into_edges(&values, &bins.f64s);
@@ -2638,10 +2565,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if matches!(&args[1], Expr::Real(v) if *v > 0.0) {
           wl_bin_spec(&values, None)
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "HistogramList".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("HistogramList", args));
         }
       }
       // HistogramList[data, {dx}]
@@ -2649,10 +2573,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let dx = match numeric_expr_to_f64(&spec[0]) {
           Some(v) if v > 0.0 => v,
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "HistogramList".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("HistogramList", args));
           }
         };
         wl_bin_spec(&values, Some(dx))
@@ -2662,44 +2583,29 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let min_v = match numeric_expr_to_f64(&spec[0]) {
           Some(v) => v,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "HistogramList".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("HistogramList", args));
           }
         };
         let max_v = match numeric_expr_to_f64(&spec[1]) {
           Some(v) => v,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "HistogramList".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("HistogramList", args));
           }
         };
         let dx = match numeric_expr_to_f64(&spec[2]) {
           Some(v) if v > 0.0 => v,
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "HistogramList".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("HistogramList", args));
           }
         };
         (min_v, max_v, dx, false)
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "HistogramList".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("HistogramList", args));
       }
     }
   } else {
-    return Ok(Expr::FunctionCall {
-      name: "HistogramList".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("HistogramList", args));
   };
 
   if dx <= 0.0 {
@@ -2809,30 +2715,21 @@ pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match take_count_or_upto(&args[2], pairs.len()) {
       Some(n) => return take_by_assoc(pairs, &args[1], n, true),
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "TakeLargestBy".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("TakeLargestBy", args));
       }
     }
   }
   let list = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "TakeLargestBy".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("TakeLargestBy", args));
     }
   };
   let f = &args[1];
   let n = match take_count_or_upto(&args[2], list.len()) {
     Some(n) => n,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "TakeLargestBy".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("TakeLargestBy", args));
     }
   };
 
@@ -2874,30 +2771,21 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match take_count_or_upto(&args[2], pairs.len()) {
       Some(n) => return take_by_assoc(pairs, &args[1], n, false),
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "TakeSmallestBy".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("TakeSmallestBy", args));
       }
     }
   }
   let list = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "TakeSmallestBy".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("TakeSmallestBy", args));
     }
   };
   let f = &args[1];
   let n = match take_count_or_upto(&args[2], list.len()) {
     Some(n) => n,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "TakeSmallestBy".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("TakeSmallestBy", args));
     }
   };
 
@@ -2938,10 +2826,7 @@ pub fn all_same_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "AllSameBy".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("AllSameBy", args));
     }
   };
   if items.is_empty() {
@@ -3268,10 +3153,7 @@ pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let k = match kexp {
       Expr::Integer(n) if *n >= 1 => *n as usize,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "FindClusters".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("FindClusters", args));
       }
     };
     return find_clusters_with_k(&args[0], k, args);
@@ -3351,10 +3233,7 @@ fn find_clusters_distance_fn(
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FindClusters".to_string(),
-        args: raw_args.to_vec().into(),
-      });
+      return Ok(unevaluated("FindClusters", raw_args));
     }
   };
   if items.is_empty() {
@@ -3546,10 +3425,7 @@ fn find_clusters_with_k(
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FindClusters".to_string(),
-        args: raw_args.to_vec().into(),
-      });
+      return Ok(unevaluated("FindClusters", raw_args));
     }
   };
   if items.is_empty() {
@@ -3585,10 +3461,7 @@ fn find_clusters_with_k(
     if items.iter().all(|e| matches!(e, Expr::String(_))) {
       return Ok(agglomerative_cluster_strings(&items, k));
     }
-    return Ok(Expr::FunctionCall {
-      name: "FindClusters".to_string(),
-      args: raw_args.to_vec().into(),
-    });
+    return Ok(unevaluated("FindClusters", raw_args));
   }
   // Sort indices by value to find gaps in ascending value order.
   let n = values.len();

@@ -13,7 +13,7 @@
 //! Real-valued bounds) returns the call unevaluated.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 
@@ -440,12 +440,7 @@ fn parse_bound(e: &Expr) -> Option<ParsedBound> {
 // ---------------------------------------------------------------------------
 
 pub fn count_roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "CountRoots".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("CountRoots", args));
 
   if args.len() != 2 {
     return unevaluated();

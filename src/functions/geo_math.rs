@@ -7,7 +7,7 @@
 
 use crate::InterpreterError;
 use crate::functions::geographics::{position_to_latlon, positions_from_arg};
-use crate::syntax::{Expr, UnaryOperator};
+use crate::syntax::{Expr, UnaryOperator, unevaluated};
 use geographiclib_rs::{DirectGeodesic, Geodesic, InverseGeodesic};
 use std::sync::OnceLock;
 
@@ -66,14 +66,6 @@ fn geo_position(lat: f64, lon: f64) -> Expr {
     name: "GeoPosition".to_string(),
     args: vec![Expr::List(vec![Expr::Real(lat), Expr::Real(lon)].into())]
       .into(),
-  }
-}
-
-/// Leave the call symbolic (unevaluated) when arguments don't match.
-fn unevaluated(name: &str, args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
   }
 }
 
@@ -503,12 +495,7 @@ fn parse_dms_string(s: &str) -> Option<AngleVal> {
 /// DMS strings parse and re-format. The optional second argument is the
 /// number of decimals on the seconds (default 3).
 pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DMSString".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DMSString", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }

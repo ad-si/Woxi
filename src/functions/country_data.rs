@@ -14,7 +14,7 @@
 //! self-contained, reproducible country dataset.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// A single sovereign country: a canonical display name, its population in
 /// number of people, and alternate spellings/abbreviations that should
@@ -314,10 +314,7 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       country_property(name, property)
         .unwrap_or_else(|| missing("UnknownCountry", name)),
     ),
-    _ => Ok(Expr::FunctionCall {
-      name: "CountryData".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("CountryData", args)),
   }
 }
 

@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 /// Extract key-value pair from a Rule expression for use in associations.
 fn extract_rule_pair(expr: &Expr) -> Option<(Expr, Expr)> {
@@ -610,10 +611,7 @@ fn flatten_dims_ast(
 /// permutation specs are validated in order ::flpi (form), ::flrep
 /// (repeats), ::fldep (depth); all return the call unevaluated.
 pub fn flatten_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Flatten".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Flatten", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1285,10 +1283,7 @@ fn riffle_build(items: &[Expr], sep: &Expr, positions: &[i128]) -> Expr {
 /// Invalid input emits ::listrp / ::rspec / ::sepos / ::npos / ::inclen
 /// like wolframscript and returns the call unevaluated.
 pub fn riffle_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Riffle".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Riffle", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1520,10 +1515,7 @@ pub fn rotate_unified_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let is_left = fname == "RotateLeft";
-  let original = || Expr::FunctionCall {
-    name: fname.to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated(fname, args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1762,10 +1754,7 @@ fn pad_level(
 /// wolframscript and returns the call unevaluated.
 pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_left = fname == "PadLeft";
-  let original = || Expr::FunctionCall {
-    name: fname.to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated(fname, args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
   let ilsm = |pos: usize| {
@@ -1937,10 +1926,7 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(_) => None, // List head
     Expr::FunctionCall { name, .. } => Some(name.as_str()),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Join".to_string(),
-        args: lists.to_vec().into(),
-      });
+      return Ok(unevaluated("Join", lists));
     }
   };
 
@@ -1970,10 +1956,7 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
             i + 1,
           ));
         }
-        return Ok(Expr::FunctionCall {
-          name: "Join".to_string(),
-          args: lists.to_vec().into(),
-        });
+        return Ok(unevaluated("Join", lists));
       }
     }
   }

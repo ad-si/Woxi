@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 use num_bigint::BigInt;
 
 /// Visit every additive term of a polynomial expression, flattening nested and
@@ -327,10 +327,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "JacobiP".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("JacobiP", args));
     }
   };
 
@@ -403,10 +400,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_exact_rational(&args[1]) && is_exact_rational(&args[2]) {
     return jacobi_p_rational_ab(n, &args[1], &args[2], &args[3]);
   }
-  Ok(Expr::FunctionCall {
-    name: "JacobiP".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiP", args))
 }
 
 /// P_n^{(a,b)}(x) for n >= 2 and exact rational order parameters, in
@@ -537,10 +531,7 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Real(value));
         }
       }
-      return Ok(Expr::FunctionCall {
-        name: "LegendreP".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LegendreP", args));
     }
   };
 
@@ -561,10 +552,7 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           legendre_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
         Ok(make_rational_expr(num, den))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "LegendreP".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("LegendreP", args))
       }
     }
     Expr::Real(f) => {
@@ -580,10 +568,7 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
         reduce_poly_over_integer(evaluated)
       } else {
-        Ok(Expr::FunctionCall {
-          name: "LegendreP".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("LegendreP", args))
       }
     }
   }
@@ -959,10 +944,7 @@ pub fn spherical_harmonic_y_ast(
         let leg_val = match crate::evaluator::evaluate_expr_to_expr(&leg_call) {
           Ok(Expr::Real(v)) => v,
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "SphericalHarmonicY".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("SphericalHarmonicY", args));
           }
         };
         // Normalization: Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
@@ -977,19 +959,13 @@ pub fn spherical_harmonic_y_ast(
         let g_num = match crate::evaluator::evaluate_expr_to_expr(&g_num_call) {
           Ok(Expr::Real(v)) => v,
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "SphericalHarmonicY".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("SphericalHarmonicY", args));
           }
         };
         let g_den = match crate::evaluator::evaluate_expr_to_expr(&g_den_call) {
           Ok(Expr::Real(v)) => v,
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "SphericalHarmonicY".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("SphericalHarmonicY", args));
           }
         };
         let norm = ((2.0 * lf + 1.0) / (4.0 * std::f64::consts::PI) * g_num
@@ -1005,10 +981,7 @@ pub fn spherical_harmonic_y_ast(
         }
         return Ok(build_complex_float_expr(re, im));
       }
-      return Ok(Expr::FunctionCall {
-        name: "SphericalHarmonicY".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SphericalHarmonicY", args));
     }
   };
 
@@ -1019,10 +992,7 @@ pub fn spherical_harmonic_y_ast(
 
   // l < 0 → undefined, return unevaluated
   if l < 0 {
-    return Ok(Expr::FunctionCall {
-      name: "SphericalHarmonicY".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SphericalHarmonicY", args));
   }
 
   // Try numerical evaluation
@@ -1711,10 +1681,7 @@ pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Real(q));
         }
       }
-      return Ok(Expr::FunctionCall {
-        name: "LegendreQ".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LegendreQ", args));
     }
   };
 
@@ -2262,10 +2229,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(result) = chebyshev_general_exact("T", &args[0], &args[1]) {
         return Ok(result);
       }
-      return Ok(Expr::FunctionCall {
-        name: "ChebyshevT".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ChebyshevT", args));
     }
   };
 
@@ -2285,10 +2249,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           chebyshev_t_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
         Ok(make_rational_expr(num, den))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "ChebyshevT".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("ChebyshevT", args))
       }
     }
     Expr::Real(f) => Ok(Expr::Real(chebyshev_t_eval_f64(n, *f))),
@@ -2297,10 +2258,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(expr) = chebyshev_t_polynomial_symbolic(n, &args[1]) {
         crate::evaluator::evaluate_expr_to_expr(&expr)
       } else {
-        Ok(Expr::FunctionCall {
-          name: "ChebyshevT".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("ChebyshevT", args))
       }
     }
   }
@@ -2492,10 +2450,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(result) = chebyshev_general_exact("U", &args[0], &args[1]) {
         return Ok(result);
       }
-      return Ok(Expr::FunctionCall {
-        name: "ChebyshevU".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ChebyshevU", args));
     }
   };
 
@@ -2515,10 +2470,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           chebyshev_u_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
         Ok(make_rational_expr(num, den))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "ChebyshevU".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("ChebyshevU", args))
       }
     }
     Expr::Real(f) => Ok(Expr::Real(chebyshev_u_eval_f64(n, *f))),
@@ -2526,10 +2478,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(expr) = chebyshev_u_polynomial_symbolic(n, &args[1]) {
         crate::evaluator::evaluate_expr_to_expr(&expr)
       } else {
-        Ok(Expr::FunctionCall {
-          name: "ChebyshevU".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("ChebyshevU", args))
       }
     }
   }
@@ -2748,10 +2697,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "GegenbauerC".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("GegenbauerC", args));
     }
   };
 
@@ -2812,10 +2758,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
         Ok(make_rational_expr(num, den))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "GegenbauerC".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("GegenbauerC", args))
       }
     }
     Expr::Real(f) => {
@@ -2831,10 +2774,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
         reduce_poly_over_integer(evaluated)
       } else {
-        Ok(Expr::FunctionCall {
-          name: "GegenbauerC".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("GegenbauerC", args))
       }
     }
   }
@@ -3319,10 +3259,7 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if matches!(evaluated, Expr::Real(_) | Expr::BigFloat(_, _)) {
         return Ok(evaluated);
       }
-      return Ok(Expr::FunctionCall {
-        name: "LaguerreL".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LaguerreL", args));
     }
   };
 
@@ -3342,10 +3279,7 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           laguerre_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
         Ok(make_rational_expr(num, den))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "LaguerreL".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("LaguerreL", args))
       }
     }
     Expr::Real(f) => Ok(Expr::Real(laguerre_eval_f64(n, *f))),
@@ -3357,10 +3291,7 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
         reduce_poly_over_integer(evaluated)
       } else {
-        Ok(Expr::FunctionCall {
-          name: "LaguerreL".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("LaguerreL", args))
       }
     }
   }
@@ -3813,16 +3744,10 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Real(result));
         }
       }
-      return Ok(Expr::FunctionCall {
-        name: "HermiteH".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HermiteH", args));
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "HermiteH".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HermiteH", args));
     }
   };
 
@@ -3852,10 +3777,7 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // while a sum argument like `1 + x` keeps `(1 + x)^k` factored.
         crate::evaluator::evaluate_expr_to_expr(&expr)
       } else {
-        Ok(Expr::FunctionCall {
-          name: "HermiteH".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("HermiteH", args))
       }
     }
   }
@@ -4200,10 +4122,7 @@ pub fn zernike_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (Expr::Integer(n), Expr::Integer(m)) if *n >= 0 && *m >= 0 => ((*n), (*m)),
     // Negative / non-integer orders are left unevaluated by wolframscript.
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ZernikeR".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ZernikeR", args));
     }
   };
 
@@ -4217,10 +4136,7 @@ pub fn zernike_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let coeffs = match zernike_r_coefficients(n, m) {
     Some(c) => c,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "ZernikeR".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ZernikeR", args));
     }
   };
 
@@ -4232,10 +4148,7 @@ pub fn zernike_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1]) {
         Ok(zernike_eval_rational(&coeffs, (*p, *q)))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "ZernikeR".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("ZernikeR", args))
       }
     }
     Expr::Real(f) => Ok(Expr::Real(zernike_eval_f64(&coeffs, *f))),

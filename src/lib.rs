@@ -2254,15 +2254,13 @@ fn render_music_if_needed(expr: syntax::Expr) -> syntax::Expr {
   expr
 }
 
-/// If `expr` is a `Molecule[…]`, render it as the compact information tile
-/// (structure thumbnail + formula + atom/bond counts) Wolfram notebooks show,
-/// and capture it as graphics. The full 2-D structure diagram is instead
-/// produced by `MoleculePlot[…]`. Visual hosts only — the CLI keeps the
-/// symbolic `Molecule[…]` echo to match wolframscript.
+/// If `expr` is a `Molecule[…]`, render its 2-D structure diagram and capture
+/// it as graphics, the way Wolfram notebooks display a molecule. Visual hosts
+/// only — the CLI keeps the symbolic `Molecule[…]` echo to match wolframscript.
 fn render_molecule_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if let syntax::Expr::FunctionCall { ref name, .. } = expr
     && name == "Molecule"
-    && let Some(svg) = functions::molecule_render::molecule_tile_svg(&expr)
+    && let Some(svg) = functions::molecule_render::molecule_to_svg(&expr)
   {
     return graphics_result_with_head(svg, "Molecule");
   }

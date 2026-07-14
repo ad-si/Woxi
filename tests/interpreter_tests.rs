@@ -901,9 +901,10 @@ mod interpreter_tests {
     assert_eq!(interpret(&code).unwrap(), path.display().to_string());
 
     let svg = std::fs::read_to_string(&path).unwrap();
+    // Matches wolframscript, which opens the file with the XML declaration.
     assert!(
-      svg.starts_with("<svg"),
-      "not an SVG: {}",
+      svg.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg"),
+      "not an SVG document: {}",
       &svg[..40.min(svg.len())]
     );
     assert!(
@@ -925,7 +926,9 @@ mod interpreter_tests {
       "ExportString[Image[ConstantArray[{0, 1, 0.5}, {2, 2}]], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.starts_with("<svg"));
+    assert!(
+      svg.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg")
+    );
     assert!(svg.contains("data:image/png;base64,"));
   }
 
@@ -1306,9 +1309,11 @@ mod interpreter_tests {
       ("ControlActive[1, 2]", "2"),
       ("ControlActive[1 + 1, 2 + 2]", "4"),
       ("ControlActive[\"fast\", \"slow\"]", "slow"),
-      // Non-two-argument forms have no active/normal split, so they stay
+      // ControlActive[] with no arguments queries whether a control is being
+      // actively manipulated; outside a notebook nothing is, so it is False.
+      ("ControlActive[]", "False"),
+      // Other non-two-argument forms have no active/normal split, so they stay
       // symbolic (and must not warn about being unimplemented).
-      ("ControlActive[]", "ControlActive[]"),
       ("ControlActive[5]", "ControlActive[5]"),
     ];
     for (input, expected) in cases {
@@ -1319,6 +1324,69 @@ mod interpreter_tests {
         "unexpected 'not yet implemented' warning for {input}: {:?}",
         r.warnings
       );
+    }
+  }
+
+  #[test]
+  fn polar_curves_stay_symbolic_in_script_mode() {
+    // PolarCurve / FilledPolarCurve are lightweight graphics primitives that
+    // the playground and Woxi Studio render as graphics. In the plain CLI
+    // (script mode) they stay unevaluated as their canonical form — rather
+    // than being lowered to a ParametricRegion the way wolframscript does —
+    // so the visual hosts can draw them.
+    let cases = [
+      (
+        "PolarCurve[1 + Cos[t], {t, 0, 2 Pi}]",
+        "PolarCurve[1 + Cos[t], {t, 0, 2*Pi}]",
+      ),
+      (
+        "FilledPolarCurve[PolarCurve[Sin[2 t], {t, 0, 2 Pi}]]",
+        "FilledPolarCurve[PolarCurve[Sin[2*t], {t, 0, 2*Pi}]]",
+      ),
+      (
+        "FilledPolarCurve[1 - Cos[t], t]",
+        "FilledPolarCurve[1 - Cos[t], t]",
+      ),
+      // Wrapped in Graphics the head is Graphics (they render as a curve /
+      // filled region in visual hosts).
+      (
+        "Head[Graphics[PolarCurve[1 + Cos[t], {t, 0, 2 Pi}]]]",
+        "Graphics",
+      ),
+      (
+        "Head[Graphics[FilledPolarCurve[PolarCurve[Sin[2 t], {t, 0, 2 Pi}]]]]",
+        "Graphics",
+      ),
+      (
+        "Head[Graphics[FilledPolarCurve[1 - Cos[t], t]]]",
+        "Graphics",
+      ),
+    ];
+    for (input, expected) in cases {
+      assert_eq!(
+        interpret(input).unwrap(),
+        expected,
+        "result mismatch for {input}"
+      );
+    }
+  }
+
+  #[test]
+  fn held_graphics_argument_summarizes_as_graphics_placeholder() {
+    // A Graphics[...] argument held inside a symbolic wrapper (LocatorPane,
+    // ClickPane) still summarizes to the -Graphics- placeholder in OutputForm,
+    // matching wolframscript — the full Graphics expression is only shown by
+    // InputForm / FullForm.
+    let cases = [
+      (
+        "LocatorPane[Dynamic[p], Graphics[Point[p]]]",
+        "LocatorPane[Dynamic[p], -Graphics-]",
+      ),
+      ("ClickPane[Graphics[{}], f]", "ClickPane[-Graphics-, f]"),
+    ];
+    for (input, expected) in cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, expected, "result mismatch for {input}");
     }
   }
 

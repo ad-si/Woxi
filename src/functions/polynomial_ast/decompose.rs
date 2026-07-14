@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 use super::coefficient::collect_additive_terms;
 use super::coefficient::term_var_power_and_coeff;
@@ -17,10 +17,7 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let var = match &args[1] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Decompose".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Decompose", args));
     }
   };
 
@@ -32,10 +29,7 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(c) => c,
     None => {
       // Not a polynomial, return unevaluated
-      return Ok(Expr::FunctionCall {
-        name: "Decompose".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Decompose", args));
     }
   };
 

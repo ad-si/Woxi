@@ -6,7 +6,7 @@ use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, PLOT_COLORS, RESOLUTION_SCALE,
   format_date_tick, generate_date_ticks, parse_image_size,
 };
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Default display width of a TimelinePlot in pixels.
 const DEFAULT_TLP_WIDTH: u32 = 360;
@@ -53,10 +53,7 @@ pub fn timeline_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let events = parse_events(&args[0]);
   if events.is_empty() {
     // Mirror Wolfram: return unevaluated for data we cannot interpret.
-    return Ok(Expr::FunctionCall {
-      name: "TimelinePlot".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("TimelinePlot", args));
   }
 
   let svg = render_timeline_svg(&events, svg_width, full_width);

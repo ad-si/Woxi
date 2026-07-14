@@ -7554,16 +7554,28 @@ fn polyline_shortest_path(
 
 /// A polyline path as a machine-precision Line[…] expression, matching the
 /// mesh-based (numeric) results wolframscript produces for curve regions.
-fn polyline_path_to_line(path: &[Vec<f64>]) -> Expr {
+/// The two query points `s` and `t` are the path's first and last vertices;
+/// wolframscript returns them verbatim (exactly as supplied), so they are
+/// kept as their original expressions while the interior mesh vertices are
+/// emitted at machine precision.
+fn polyline_path_to_line(path: &[Vec<f64>], s: &Expr, t: &Expr) -> Expr {
+  let last = path.len().saturating_sub(1);
   Expr::FunctionCall {
     name: "Line".to_string(),
     args: vec![Expr::List(
       path
         .iter()
-        .map(|p| {
-          Expr::List(
-            p.iter().map(|&x| Expr::Real(x)).collect::<Vec<_>>().into(),
-          )
+        .enumerate()
+        .map(|(i, p)| {
+          if i == 0 {
+            s.clone()
+          } else if i == last {
+            t.clone()
+          } else {
+            Expr::List(
+              p.iter().map(|&x| Expr::Real(x)).collect::<Vec<_>>().into(),
+            )
+          }
         })
         .collect::<Vec<_>>()
         .into(),
@@ -7701,7 +7713,7 @@ fn compute_find_shortest_curve(
         return unevaluated();
       };
       match polyline_shortest_path(&verts, &sf, &tf) {
-        Some((path, _)) => Ok(polyline_path_to_line(&path)),
+        Some((path, _)) => Ok(polyline_path_to_line(&path, s, t)),
         None => unevaluated(),
       }
     }

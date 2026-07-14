@@ -59,6 +59,12 @@ pub fn dispatch_boolean_functions(
     "ControlActive" if args.len() == 2 => {
       return Some(Ok(args[1].clone()));
     }
+    // ControlActive[] with no arguments queries whether a control is currently
+    // being actively manipulated. Outside an interactive notebook nothing is,
+    // so it evaluates to False, matching wolframscript in script mode.
+    "ControlActive" if args.is_empty() => {
+      return Some(Ok(Expr::Identifier("False".to_string())));
+    }
     "SameQ" => {
       return Some(crate::functions::boolean_ast::same_q_ast(args));
     }

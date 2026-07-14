@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// TuringMachine[rule, init, steps]
 ///
@@ -11,10 +11,7 @@ use crate::syntax::Expr;
 /// Tape uses periodic boundaries.
 pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "TuringMachine".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("TuringMachine", args));
   }
 
   // Parse rule specification
@@ -27,10 +24,7 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let steps = match &args[2] {
     Expr::Integer(n) => *n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "TuringMachine".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("TuringMachine", args));
     }
   };
 

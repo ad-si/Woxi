@@ -4,6 +4,7 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  unevaluated,
 };
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
@@ -400,10 +401,7 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let var = match &args[1] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Roots".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Roots", args));
     }
   };
 
@@ -465,10 +463,7 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     // Solve returned unevaluated
-    _ => Ok(Expr::FunctionCall {
-      name: "Roots".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("Roots", args)),
   }
 }
 
@@ -485,10 +480,7 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let var = match &args[1] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NRoots".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NRoots", args));
     }
   };
 
@@ -517,17 +509,11 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NRoots".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NRoots", args));
     }
   };
 
-  let unevaluated = || Expr::FunctionCall {
-    name: "NRoots".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("NRoots", args);
 
   // Expand and pull out polynomial coefficients in x.
   let expanded_raw = expand_and_combine(&poly);
@@ -954,10 +940,7 @@ pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `solve_ast` returns either a list of rule-lists like {{var->val}, {var->val2}}
   // or stays unevaluated. If it stayed symbolic, mirror that for SolveValues.
   let Expr::List(solution_sets) = &solutions else {
-    return Ok(Expr::FunctionCall {
-      name: "SolveValues".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SolveValues", args));
   };
 
   // The rules inside Solve's output use the dedicated `Expr::Rule` variant
@@ -966,26 +949,17 @@ pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut values = Vec::with_capacity(solution_sets.len());
   for branch in solution_sets.iter() {
     let Expr::List(rules) = branch else {
-      return Ok(Expr::FunctionCall {
-        name: "SolveValues".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SolveValues", args));
     };
     if rules.len() != 1 {
       // Multi-variable Solve: take the values in order so SolveValues mirrors
       // wolframscript's `{{val_x, val_y}, …}` output. But the actuarial
       // example uses only single-variable Solve, so fall back symbolically
       // if we see something more elaborate.
-      return Ok(Expr::FunctionCall {
-        name: "SolveValues".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SolveValues", args));
     }
     let Expr::Rule { replacement, .. } = &rules[0] else {
-      return Ok(Expr::FunctionCall {
-        name: "SolveValues".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SolveValues", args));
     };
     values.push((**replacement).clone());
   }
@@ -1078,10 +1052,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return match var_arg {
       Some(va) => solve_ast(&[args[0].clone(), va]),
-      None => Ok(Expr::FunctionCall {
-        name: "Solve".to_string(),
-        args: args.to_vec().into(),
-      }),
+      None => Ok(unevaluated("Solve", args)),
     };
   }
   if args.len() < 2 || args.len() > 3 {
@@ -1388,10 +1359,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .any(|v| max_degree_of_var(e, v).unwrap_or(0) >= 3)
         })
       {
-        return Ok(Expr::FunctionCall {
-          name: "Solve".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Solve", args));
       }
       // Fall back to Reduce's multi-variable elimination for nonlinear systems
       let constraints: Vec<Expr> = eqs.clone();
@@ -1501,10 +1469,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       // None succeeded — return unevaluated
-      return Ok(Expr::FunctionCall {
-        name: "Solve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Solve", args));
     }
   }
 
@@ -1597,10 +1562,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Solve::ivar: {} is not a valid variable.",
         name
       ));
-      return Ok(Expr::FunctionCall {
-        name: "Solve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Solve", args));
     }
     target_expr => {
       // Non-identifier solve target (e.g., f[x + y])
@@ -1653,10 +1615,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
       }
-      return Ok(Expr::FunctionCall {
-        name: "Solve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Solve", args));
     }
   };
 
@@ -1671,10 +1630,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Solve::ivar: {} is not a valid variable.",
       var
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Solve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Solve", args));
   }
 
   // Extract equation: lhs == rhs → lhs - rhs
@@ -1717,10 +1673,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Solve::naqs: {} is not a quantified system of equations and inequalities.",
         expr_str
       ));
-      return Ok(Expr::FunctionCall {
-        name: "Solve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Solve", args));
     }
   };
 
@@ -1772,10 +1725,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(result) = try_solve_factoring_powers(&expanded, var, args) {
         return result;
       }
-      return Ok(Expr::FunctionCall {
-        name: "Solve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Solve", args));
     }
   };
 
@@ -1784,10 +1734,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // range, and the later `degree as usize` cast would index out of bounds, so
   // bail out with the unevaluated Solve.
   if degree < 0 {
-    return Ok(Expr::FunctionCall {
-      name: "Solve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Solve", args));
   }
 
   // Extract coefficients for each power of var
@@ -2389,10 +2336,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(rs) = make_root_solutions(&coeffs, var) {
         return Ok(rs);
       }
-      Ok(Expr::FunctionCall {
-        name: "Solve".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Solve", args))
     }
   }
 }
@@ -3748,12 +3692,7 @@ fn rs_subst_slot(expr: &Expr, k: usize, name: &str) -> Expr {
 /// non-polynomial `form`) — for which wolframscript substitutes explicit
 /// radical roots — are left unevaluated.
 pub fn root_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "RootSum".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("RootSum", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -3883,10 +3822,7 @@ pub fn root_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "Root".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Root", args));
   }
 
   // Root[f, k, 0] is the exact form (same as Root[f, k]). Root[f, k, 1]
@@ -3895,19 +3831,13 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // closed form.
   if args.len() == 3 && !matches!(&args[2], Expr::Integer(0) | Expr::Integer(1))
   {
-    return Ok(Expr::FunctionCall {
-      name: "Root".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Root", args));
   }
 
   let k = match &args[1] {
     Expr::Integer(n) => *n,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Root".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Root", args));
     }
   };
 
@@ -3921,10 +3851,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = match &args[0] {
     Expr::Function { body } => body,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Root".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Root", args));
     }
   };
 
@@ -4856,10 +4783,7 @@ pub fn minimize_ast(
       "{func_name}::ivar: {} is not a valid variable.",
       expr_to_string(bad)
     ));
-    return Ok(Expr::FunctionCall {
-      name: func_name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(func_name, args));
   }
 
   // Parse variable list: x, {x}, {x, y}, or {n[1], n[2], ...}
@@ -7724,10 +7648,7 @@ pub fn find_minimum_ast(
       "{func_name}::nrnum: The function value {} is not a real number at {}.",
       value_str, var_str,
     ));
-    return Ok(Expr::FunctionCall {
-      name: func_name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(func_name, args));
   }
 
   let sign = if maximize { -1.0 } else { 1.0 };
@@ -8438,19 +8359,16 @@ pub fn nminimize_ast(
     // whichever feasible candidate has the better objective value.
     let sym_name = if maximize { "Maximize" } else { "Minimize" };
     let symbolic =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: sym_name.to_string(),
-        args: args.to_vec().into(),
-      })
-      .ok()
-      .filter(|sym| matches!(sym, Expr::List(items) if items.len() == 2))
-      .and_then(|sym| {
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "N".to_string(),
-          args: vec![sym].into(),
-        })
+      crate::evaluator::evaluate_expr_to_expr(&unevaluated(sym_name, args))
         .ok()
-      });
+        .filter(|sym| matches!(sym, Expr::List(items) if items.len() == 2))
+        .and_then(|sym| {
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "N".to_string(),
+            args: vec![sym].into(),
+          })
+          .ok()
+        });
 
     // Symbolic first: when it produces an exact, optimal answer we want to
     // keep it rather than overwrite it with float noise from the numeric
@@ -8845,19 +8763,17 @@ pub fn nminimize_ast(
   // so the exact result wins over the numeric noise while genuinely better
   // numeric optima are still preferred.
   let sym_name = if maximize { "Maximize" } else { "Minimize" };
-  let symbolic = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: sym_name.to_string(),
-    args: args.to_vec().into(),
-  })
-  .ok()
-  .filter(|sym| matches!(sym, Expr::List(items) if items.len() == 2))
-  .and_then(|sym| {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "N".to_string(),
-      args: vec![sym].into(),
-    })
-    .ok()
-  });
+  let symbolic =
+    crate::evaluator::evaluate_expr_to_expr(&unevaluated(sym_name, args))
+      .ok()
+      .filter(|sym| matches!(sym, Expr::List(items) if items.len() == 2))
+      .and_then(|sym| {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "N".to_string(),
+          args: vec![sym].into(),
+        })
+        .ok()
+      });
 
   let candidates: Vec<Expr> =
     [symbolic, Some(numeric)].into_iter().flatten().collect();

@@ -11,11 +11,12 @@ Common recognised formats include `"CSV"`, `"TSV"`, `"JSON"`, `"Text"`,
 ### Exporting an image to SVG
 
 Exporting an `Image` to an `.svg` file wraps the raster in a base64-encoded
-PNG `<image>` element, keeping the file a valid SVG.
+PNG `<image>` element, keeping the file a valid SVG.  The file opens with the
+XML declaration, matching wolframscript.
 
 ```scrut
-$ wo 'Export["green.svg", Image[ConstantArray[{0, 1, 0.5}, {2, 2}]]]; StringTake[ReadString["green.svg"], 4]'
-<svg
+$ wo 'Export["green.svg", Image[ConstantArray[{0, 1, 0.5}, {2, 2}]]]; StringTake[ReadString["green.svg"], 5]'
+<?xml
 ```
 
 ### Common options

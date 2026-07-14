@@ -28,11 +28,12 @@ $ wo 'Around[NormalDistribution[3, 2]]'
 Around[3., 2.]
 ```
 
-`Around[interval]` treats the interval as a uniform distribution.
+`Around[interval]` centers on the interval midpoint with an uncertainty of
+half the interval width.
 
 ```scrut
 $ wo 'Around[Interval[{2, 4}]]'
-Around[3., 0.5773502691896258]
+Around[3., 1.]
 ```
 
 Arithmetic propagates the uncertainty, treating each `Around` as independent.
@@ -51,7 +52,7 @@ Asymmetric uncertainties are propagated per side; a negative coefficient
 swaps the two sides.
 
 ```scrut
-$ wo '-Around[5, {0.1, 0.2}]'
+$ wo 'Times[-1, Around[5, {0.1, 0.2}]]'
 Around[-5., {0.2, 0.1}]
 ```
 

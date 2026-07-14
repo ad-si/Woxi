@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 /// Wolfram canonical ordering for expressions.
 /// For strings: case-insensitive first, then lowercase before uppercase for ties.
@@ -516,12 +516,7 @@ pub fn position_extreme_ast(
   } else {
     "PositionSmallest"
   };
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated(name, args));
   let Some(Expr::List(items)) = args.first() else {
     return unevaluated();
   };
@@ -572,10 +567,7 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {
       emit_nonatomic_normal_message("Ordering", args);
-      return Ok(Expr::FunctionCall {
-        name: "Ordering".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Ordering", args));
     }
   };
 
@@ -670,10 +662,7 @@ pub fn ordering_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => items.as_slice(),
     Expr::FunctionCall { args: fc_args, .. } => fc_args.as_slice(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "OrderingBy".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("OrderingBy", args));
     }
   };
 
@@ -961,10 +950,7 @@ pub fn emit_nonatomic_normal_message(name: &str, args: &[Expr]) {
       "{}::normal: Nonatomic expression expected at position 1 in ",
       name
     ),
-    &Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    },
+    &unevaluated(name, args),
     ".",
   ));
 }
@@ -1051,10 +1037,7 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Ok(Expr::Identifier("True".to_string()))
   } else {
-    Ok(Expr::FunctionCall {
-      name: "OrderedQ".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("OrderedQ", args))
   }
 }
 
@@ -1439,10 +1422,7 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> (f64, Option<Expr>) {
         let rest = if args.len() == 2 {
           args[1].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: args[1..].to_vec().into(),
-          }
+          unevaluated("Times", &args[1..])
         };
         (c, Some(rest))
       } else {

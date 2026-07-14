@@ -5,7 +5,9 @@
 
 use crate::InterpreterError;
 use crate::functions::math_ast::make_sqrt;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 
@@ -19,10 +21,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Err(InterpreterError::EvaluationError(msg))
       if msg.starts_with("DSolve:") =>
     {
-      Ok(Expr::FunctionCall {
-        name: "DSolve".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("DSolve", args))
     }
     other => other,
   }
@@ -30,10 +29,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "DSolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DSolve", args));
   }
 
   let eqns_arg = &args[0];
@@ -102,10 +98,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x_name = match indep_var {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DSolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DSolve", args));
     }
   };
 
@@ -117,25 +110,16 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if xn == &x_name {
           (name.clone(), false)
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "DSolve".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("DSolve", args));
         }
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "DSolve".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DSolve", args));
       }
     }
     // y form → return y -> Function[{x}, expr]
     Expr::Identifier(name) => (name.clone(), true),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DSolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DSolve", args));
     }
   };
 
@@ -144,10 +128,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       // First item should be the ODE, rest are initial conditions
       if items.is_empty() {
-        return Ok(Expr::FunctionCall {
-          name: "DSolve".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DSolve", args));
       }
       let mut ics = Vec::new();
       let mut ode = None;
@@ -157,10 +138,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           if ode.is_some() {
             // Multiple ODEs not supported
-            return Ok(Expr::FunctionCall {
-              name: "DSolve".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("DSolve", args));
           }
           ode = Some(item.clone());
         }
@@ -168,10 +146,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match ode {
         Some(o) => (o, ics),
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "DSolve".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("DSolve", args));
         }
       }
     }
@@ -189,10 +164,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let max_order = terms.iter().map(|t| t.order).max().unwrap_or(0);
   if max_order == 0 {
     // Not actually an ODE
-    return Ok(Expr::FunctionCall {
-      name: "DSolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DSolve", args));
   }
 
   // Check if all coefficients are constant w.r.t. x
@@ -217,10 +189,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     solve_constant_coefficient_ode(&terms, max_order as usize, &x_name)?
   } else {
     // Unsupported
-    return Ok(Expr::FunctionCall {
-      name: "DSolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DSolve", args));
   };
 
   // Apply initial conditions if any
@@ -269,10 +238,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Also NDSolve[{eqn, ic1, ...}, y, {x, xmin, xmax}]
 pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "NDSolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NDSolve", args));
   }
 
   let eqns_arg = &args[0];
@@ -285,10 +251,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let xn = match &items[0] {
         Expr::Identifier(name) => name.clone(),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "NDSolve".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("NDSolve", args));
         }
       };
       let xmin =
@@ -298,10 +261,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (xn, xmin, xmax)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NDSolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NDSolve", args));
     }
   };
 
@@ -312,24 +272,15 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if xn == &x_name {
           (name.clone(), false)
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "NDSolve".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("NDSolve", args));
         }
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "NDSolve".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("NDSolve", args));
       }
     }
     Expr::Identifier(name) => (name.clone(), true),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NDSolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NDSolve", args));
     }
   };
 
@@ -350,10 +301,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       initial_conditions.push((order, x_val, y_val));
     } else {
       if ode_expr.is_some() {
-        return Ok(Expr::FunctionCall {
-          name: "NDSolve".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("NDSolve", args));
       }
       ode_expr = Some(item.clone());
     }
@@ -362,10 +310,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ode = match ode_expr {
     Some(e) => e,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "NDSolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NDSolve", args));
     }
   };
 
@@ -375,10 +320,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let max_order = terms.iter().map(|t| t.order).max().unwrap_or(0) as usize;
 
   if max_order == 0 || initial_conditions.len() != max_order {
-    return Ok(Expr::FunctionCall {
-      name: "NDSolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NDSolve", args));
   }
 
   // Build the RHS function: solve for highest derivative
@@ -398,10 +340,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x0 = match ics_by_order[0] {
     Some((xv, _)) => xv,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "NDSolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NDSolve", args));
     }
   };
 
@@ -410,10 +349,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match ic {
       Some((_, yv)) => y0.push(*yv),
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "NDSolve".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("NDSolve", args));
       }
     }
   }
@@ -430,10 +366,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // We need to handle the case where x0 != x_min
   // For simplicity, we require x0 == x_min (or very close)
   if (x0 - x_min).abs() > 1e-10 {
-    return Ok(Expr::FunctionCall {
-      name: "NDSolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NDSolve", args));
   }
 
   data_points.push((x, state[0]));
@@ -896,10 +829,7 @@ fn classify_product_term(
     let product = if factors.len() == 1 {
       factors[0].clone()
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: factors.to_vec().into(),
-      }
+      unevaluated("Times", factors)
     };
     if !is_free_of_y(&product, y_name) {
       return Err(InterpreterError::EvaluationError(format!(
@@ -2137,10 +2067,7 @@ pub fn interpolation_ast(
   head: &str,
 ) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: head.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(head, args));
   }
 
   // Extract InterpolationOrder option (default 3)
@@ -2192,10 +2119,7 @@ pub fn interpolation_ast(
           crate::syntax::ExprForm::Output
         )
       ));
-      return Ok(Expr::FunctionCall {
-        name: head.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(head, args));
     }
   };
 
@@ -2209,10 +2133,7 @@ pub fn interpolation_ast(
         crate::syntax::ExprForm::Output
       )
     ));
-    return Ok(Expr::FunctionCall {
-      name: head.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(head, args));
   }
 
   // ListInterpolation of a rectangular numeric matrix is a 2-D grid (values on
@@ -2552,10 +2473,7 @@ pub fn evaluate_interpolating_function(
     _ => {
       // Can't evaluate symbolically — return unevaluated
       return Ok(Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "InterpolatingFunction".to_string(),
-          args: func_args.to_vec().into(),
-        }),
+        func: Box::new(unevaluated("InterpolatingFunction", func_args)),
         args: call_args.to_vec(),
       });
     }

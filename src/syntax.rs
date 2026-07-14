@@ -6711,6 +6711,22 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "Sound" && !args.is_empty() {
         return "-Sound-".to_string();
       }
+      // A raw (held, unevaluated) Graphics[...] / Graphics3D[...] call still
+      // summarizes to -Graphics-/-Graphics3D- in OutputForm, matching
+      // wolframscript. This applies wherever the call sits — including a
+      // Graphics argument held inside a symbolic wrapper such as
+      // LocatorPane[Dynamic[p], Graphics[...]] or ClickPane[Graphics[...], f].
+      // (InputForm/FullForm still print the full expression.)
+      if is_output
+        && !args.is_empty()
+        && (name == "Graphics" || name == "Graphics3D")
+      {
+        return if name == "Graphics3D" {
+          "-Graphics3D-".to_string()
+        } else {
+          "-Graphics-".to_string()
+        };
+      }
       // PercentForm[x] — wolframscript renders a non-negative machine real
       // as a percentage: x*100 with a trailing "%" (and the trailing decimal
       // point dropped, so 0.25 -> 25%, 0.999 -> 99.9%). Integers, rationals,
@@ -14037,5 +14053,12 @@ pub fn replace_identifier_in_expr(
         .collect(),
     ),
     _ => expr.clone(),
+  }
+}
+
+pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
   }
 }

@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 // ─── Apart ──────────────────────────────────────────────────────────
 
@@ -54,10 +54,7 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[1] {
       Expr::Identifier(name) => name.clone(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Apart".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Apart", args));
       }
     }
   } else {
@@ -70,10 +67,7 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
           return Ok(args[0].clone());
         }
-        return Ok(Expr::FunctionCall {
-          name: "Apart".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Apart", args));
       }
     }
   };
@@ -1477,10 +1471,7 @@ fn apart_symbolic(
 /// whole part of improper fractions is split off first.
 pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
-    return Ok(Expr::FunctionCall {
-      name: "ApartSquareFree".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ApartSquareFree", args));
   }
   // Thread over lists, like Apart.
   if let Expr::List(items) = &args[0] {
@@ -1504,10 +1495,7 @@ pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[1] {
       Expr::Identifier(name) => name.clone(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "ApartSquareFree".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("ApartSquareFree", args));
       }
     }
   } else {

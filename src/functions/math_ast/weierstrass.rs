@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 // Format a `Power::infy` warning in wolframscript's 2D layout, e.g.
 // `0^-3` renders as:
@@ -53,10 +53,7 @@ pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (g2, g3) = match &args[1] {
     Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "WeierstrassP".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("WeierstrassP", args));
     }
   };
 
@@ -79,10 +76,7 @@ pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Symbolic: return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "WeierstrassP".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("WeierstrassP", args))
 }
 
 /// WeierstrassPPrime[u, {g2, g3}] - Derivative of Weierstrass elliptic function ℘'(u; g₂, g₃)
@@ -99,10 +93,7 @@ pub fn weierstrass_p_prime_ast(
   let (g2, g3) = match &args[1] {
     Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "WeierstrassPPrime".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("WeierstrassPPrime", args));
     }
   };
 
@@ -125,10 +116,7 @@ pub fn weierstrass_p_prime_ast(
   }
 
   // Symbolic: return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "WeierstrassPPrime".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("WeierstrassPPrime", args))
 }
 
 /// Compute WeierstrassPPrime numerically via central difference of WeierstrassP
@@ -270,10 +258,7 @@ pub fn inverse_weierstrass_p_ast(
   let (g2, g3) = match &args[1] {
     Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "InverseWeierstrassP".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("InverseWeierstrassP", args));
     }
   };
 
@@ -281,19 +266,13 @@ pub fn inverse_weierstrass_p_ast(
   let g2_f = match try_eval_to_f64(g2) {
     Some(v) => v,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "InverseWeierstrassP".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("InverseWeierstrassP", args));
     }
   };
   let g3_f = match try_eval_to_f64(g3) {
     Some(v) => v,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "InverseWeierstrassP".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("InverseWeierstrassP", args));
     }
   };
 
@@ -306,19 +285,13 @@ pub fn inverse_weierstrass_p_ast(
       let p_f = match try_eval_to_f64(&items[0]) {
         Some(v) => v,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "InverseWeierstrassP".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("InverseWeierstrassP", args));
         }
       };
       let pp_f = match try_eval_to_f64(&items[1]) {
         Some(v) => v,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "InverseWeierstrassP".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("InverseWeierstrassP", args));
         }
       };
       let u = inverse_weierstrass_p_with_prime(p_f, pp_f, g2_f, g3_f);
@@ -333,15 +306,9 @@ pub fn inverse_weierstrass_p_ast(
           if !matches!(&args[0], Expr::Real(_))
             && !matches!(&args[0], Expr::Integer(_))
           {
-            return Ok(Expr::FunctionCall {
-              name: "InverseWeierstrassP".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("InverseWeierstrassP", args));
           }
-          return Ok(Expr::FunctionCall {
-            name: "InverseWeierstrassP".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("InverseWeierstrassP", args));
         }
       };
       // Need at least one Real for numeric eval
@@ -349,10 +316,7 @@ pub fn inverse_weierstrass_p_ast(
         || matches!(g2, Expr::Real(_))
         || matches!(g3, Expr::Real(_));
       if !has_real {
-        return Ok(Expr::FunctionCall {
-          name: "InverseWeierstrassP".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("InverseWeierstrassP", args));
       }
       let (u, pp) = inverse_weierstrass_p_numeric(p_f, g2_f, g3_f);
       Ok(Expr::List(vec![Expr::Real(u), Expr::Real(pp)].into()))

@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, expr_to_string};
+use crate::syntax::{BinaryOperator, Expr, expr_to_string, unevaluated};
 
 /// Split `[p, q, x]` or `[p, q, x, Modulus -> n]` into the three positional
 /// arguments and an optional modulus.
@@ -45,10 +45,7 @@ pub fn polynomial_remainder_ast(
   let var = match &pos[2] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PolynomialRemainder".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PolynomialRemainder", args));
     }
   };
   if let Some(m) = modulus {
@@ -72,10 +69,7 @@ pub fn polynomial_quotient_ast(
   let var = match &pos[2] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PolynomialQuotient".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PolynomialQuotient", args));
     }
   };
   if let Some(m) = modulus {
@@ -99,10 +93,7 @@ pub fn polynomial_quotient_remainder_ast(
   let var = match &pos[2] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PolynomialQuotientRemainder".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PolynomialQuotientRemainder", args));
     }
   };
   if let Some(m) = modulus {
@@ -123,18 +114,13 @@ pub fn polynomial_quotient_remainder_ast(
 /// Only the single-variable case is handled; a multivariable variable list is
 /// returned unevaluated.
 pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "PolynomialReduce".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || unevaluated("PolynomialReduce", args);
   if args.len() != 3 {
-    return unevaluated();
+    return Ok(unevaluated());
   }
   let divisors: Vec<Expr> = match &args[1] {
     Expr::List(items) => items.to_vec(),
-    _ => return unevaluated(),
+    _ => return Ok(unevaluated()),
   };
   // Multivariate form: {x1, x2, …} with two or more variables uses
   // lexicographic multivariate division (via the Gröbner machinery).
@@ -145,26 +131,23 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for v in vs {
       match v {
         Expr::Identifier(name) => vars.push(name.clone()),
-        _ => return unevaluated(),
+        _ => return Ok(unevaluated()),
       }
     }
     return Ok(
       crate::functions::groebner_ast::polynomial_reduce_multivar(
         &args[0], &divisors, &vars,
       )
-      .unwrap_or_else(|| Expr::FunctionCall {
-        name: "PolynomialReduce".to_string(),
-        args: args.to_vec().into(),
-      }),
+      .unwrap_or_else(|| unevaluated()),
     );
   }
   let var = match &args[2] {
     Expr::Identifier(v) => v.clone(),
     Expr::List(vs) if vs.len() == 1 => match &vs[0] {
       Expr::Identifier(v) => v.clone(),
-      _ => return unevaluated(),
+      _ => return Ok(unevaluated()),
     },
-    _ => return unevaluated(),
+    _ => return Ok(unevaluated()),
   };
 
   let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
@@ -219,7 +202,7 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let lc = coeff(&de, deg);
         div_info.push(Some((deg, lc, de)));
       }
-      None => return unevaluated(), // not a polynomial in `var`
+      None => return Ok(unevaluated()), // not a polynomial in `var`
     }
   }
 
@@ -232,11 +215,11 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   while !is_zero(&p) {
     guard += 1;
     if guard > 100_000 {
-      return unevaluated();
+      return Ok(unevaluated());
     }
     let dp = match exponent(&p) {
       Some(d) => d,
-      None => return unevaluated(),
+      None => return Ok(unevaluated()),
     };
     let lcp = coeff(&p, dp);
 

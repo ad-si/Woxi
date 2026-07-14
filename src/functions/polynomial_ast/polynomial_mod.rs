@@ -1,14 +1,11 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// PolynomialMod[poly, m] — reduce all integer coefficients in poly modulo m.
 pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "PolynomialMod".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PolynomialMod", args));
   }
 
   let m = match &args[1] {

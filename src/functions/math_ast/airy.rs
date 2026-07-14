@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// AiryAi[x] - Airy function of the first kind
 pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -40,10 +40,7 @@ pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(crate::functions::math_ast::build_complex_float_expr(ar, ai));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "AiryAi".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AiryAi", args))
 }
 
 /// True if the expression tree contains a Real or BigFloat node.
@@ -188,10 +185,7 @@ pub fn airy_bi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(crate::functions::math_ast::build_complex_float_expr(br, bi));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "AiryBi".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AiryBi", args))
 }
 
 /// Complex Airy Bi via the same power series as `airy_ai_complex`,
@@ -303,10 +297,7 @@ pub fn airy_ai_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(airy_ai_prime(x_f)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "AiryAiPrime".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AiryAiPrime", args))
 }
 
 /// Compute Ai'(x) using power series and asymptotic expansion
@@ -414,10 +405,7 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(airy_bi_prime(x_f)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "AiryBiPrime".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AiryBiPrime", args))
 }
 
 /// Compute Bi'(x) using the same series as Ai' but with different sign
@@ -577,10 +565,7 @@ pub fn airy_ai_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "AiryAiZero expects exactly 1 argument".into(),
     ));
   }
-  Ok(Expr::FunctionCall {
-    name: "AiryAiZero".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AiryAiZero", args))
 }
 
 /// AiryBiZero[n] - n-th real zero of AiryBi. Stays symbolic until N[].
@@ -590,10 +575,7 @@ pub fn airy_bi_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "AiryBiZero expects exactly 1 argument".into(),
     ));
   }
-  Ok(Expr::FunctionCall {
-    name: "AiryBiZero".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AiryBiZero", args))
 }
 
 /// Numeric evaluation of AiryAiZero[n] for use by N[]. Accepts a
@@ -684,10 +666,7 @@ pub fn scorer_hi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::Real(scorer_hi(x)));
   }
-  Ok(Expr::FunctionCall {
-    name: "ScorerHi".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ScorerHi", args))
 }
 
 /// ScorerGi[x] — inhomogeneous Airy function solving y'' - x y = -1/Pi.
@@ -706,8 +685,5 @@ pub fn scorer_gi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::Real(airy_bi(x) - scorer_hi(x)));
   }
-  Ok(Expr::FunctionCall {
-    name: "ScorerGi".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ScorerGi", args))
 }

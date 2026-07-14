@@ -4,12 +4,15 @@ Graphics primitive representing the polar curve with radius `r` as a
 function of the angle `t` over the range `t0` to `t1`:
 `PolarCurve[r, {t, t0, t1}]`.
 
-In the CLI it stays symbolic on its own (graphical front ends like the
-playground and Woxi Studio render it as a graphic, like Wolfram notebooks):
+In the CLI Woxi keeps it symbolic on its own so the graphical front ends (the
+playground and Woxi Studio) can render it as a graphic, like Wolfram notebooks
+do. (`wolframscript` instead lowers it to a `Region[ParametricRegion[…]]`, so
+this bare form is documentation only and not part of the conformance sweep; it
+is covered by the `polar_curves_stay_symbolic_in_script_mode` unit test.)
 
-```scrut
-$ wo 'PolarCurve[1 + Cos[t], {t, 0, 2 Pi}]'
-PolarCurve[1 + Cos[t], {t, 0, 2*Pi}]
+```wolfram
+PolarCurve[1 + Cos[t], {t, 0, 2 Pi}]
+(* Woxi: PolarCurve[1 + Cos[t], {t, 0, 2*Pi}] *)
 ```
 
 Inside `Graphics` it is rendered as a curve:

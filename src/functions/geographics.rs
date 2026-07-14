@@ -21,7 +21,7 @@
 
 use crate::InterpreterError;
 use crate::functions::graphics::{Color, expr_to_f64, parse_color};
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -1054,10 +1054,7 @@ pub fn geo_nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::List(vec![country_entity(c)].into()));
     }
   }
-  Ok(Expr::FunctionCall {
-    name: "GeoNearest".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("GeoNearest", args))
 }
 
 /// Squared distance (in degrees) from `(lat, lon)` to the nearest boundary
@@ -1105,10 +1102,7 @@ pub fn geo_region_value_plot_ast(
     crate::evaluator::evaluate_expr_to_expr(&args[0])?
   };
   let Expr::List(rules) = &content else {
-    return Ok(Expr::FunctionCall {
-      name: "GeoRegionValuePlot".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("GeoRegionValuePlot", args));
   };
   // Collect (entity, value) pairs.
   let mut pairs: Vec<(Expr, f64)> = Vec::new();
@@ -1124,10 +1118,7 @@ pub fn geo_region_value_plot_ast(
     }
   }
   if pairs.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "GeoRegionValuePlot".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("GeoRegionValuePlot", args));
   }
   let lo = pairs.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
   let hi = pairs.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
@@ -1470,12 +1461,7 @@ fn ring_area_deg2(ring: &[(f64, f64)]) -> f64 {
 /// `pos -> w` or `WeightedData[locs, wts]`. Returns a `GeoGraphics` object;
 /// `PlotLegends -> Automatic` adds a color-scale legend.
 pub fn geo_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "GeoHistogram".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("GeoHistogram", args));
   if args.is_empty() {
     return unevaluated();
   }

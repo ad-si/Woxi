@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// Check if an expression contains any float-valued components (Real or BigFloat).
 fn contains_float(expr: &Expr) -> bool {
@@ -81,10 +81,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       // Positive odd integer >= 3 or overflow: return unevaluated
-      Ok(Expr::FunctionCall {
-        name: "Zeta".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Zeta", args))
     }
     Expr::Real(f) => {
       // Zeta has a simple pole at s = 1: Zeta[1.] = ComplexInfinity (like the
@@ -113,10 +110,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       // Symbolic argument: return unevaluated
-      Ok(Expr::FunctionCall {
-        name: "Zeta".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Zeta", args))
     }
   }
 }
@@ -133,12 +127,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn hurwitz_zeta_public_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "HurwitzZeta".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("HurwitzZeta", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -291,10 +280,7 @@ fn hurwitz_zeta_ast(
           }
         }
         // Symbolic a: return unevaluated
-        return Ok(Expr::FunctionCall {
-          name: "Zeta".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Zeta", args));
       }
 
       // Zeta[-n, a] for non-negative integer n: uses Bernoulli polynomials
@@ -313,10 +299,7 @@ fn hurwitz_zeta_ast(
             }
           }
         }
-        return Ok(Expr::FunctionCall {
-          name: "Zeta".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Zeta", args));
       }
 
       // Positive integer s >= 2 with positive integer a:
@@ -343,16 +326,10 @@ fn hurwitz_zeta_ast(
               sum_num = new_num / g;
               sum_den = new_den / g;
             } else {
-              return Ok(Expr::FunctionCall {
-                name: "Zeta".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("Zeta", args));
             }
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "Zeta".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Zeta", args));
           }
         }
         let sum_rational = make_rational(sum_num, sum_den);
@@ -375,10 +352,7 @@ fn hurwitz_zeta_ast(
       }
 
       // Return unevaluated
-      Ok(Expr::FunctionCall {
-        name: "Zeta".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Zeta", args))
     }
     Expr::Real(s_f) => {
       // Numeric evaluation
@@ -400,10 +374,7 @@ fn hurwitz_zeta_ast(
             let result = hurwitz_zeta_numeric(s, a);
             return Ok(Expr::Real(result));
           }
-          Ok(Expr::FunctionCall {
-            name: "Zeta".to_string(),
-            args: args.to_vec().into(),
-          })
+          Ok(unevaluated("Zeta", args))
         }
         _ => {
           if contains_float(a_expr)
@@ -413,10 +384,7 @@ fn hurwitz_zeta_ast(
             let result = hurwitz_zeta_numeric(s, re);
             return Ok(Expr::Real(result));
           }
-          Ok(Expr::FunctionCall {
-            name: "Zeta".to_string(),
-            args: args.to_vec().into(),
-          })
+          Ok(unevaluated("Zeta", args))
         }
       }
     }
@@ -429,10 +397,7 @@ fn hurwitz_zeta_ast(
         let result = hurwitz_zeta_numeric(s_f, a_f);
         return Ok(Expr::Real(result));
       }
-      Ok(Expr::FunctionCall {
-        name: "Zeta".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Zeta", args))
     }
   }
 }
@@ -987,16 +952,10 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(z) = extract_f64(z_expr_from_args(&args[1])) {
           return Ok(Expr::Real(polygamma_numeric(*f as usize, z)));
         }
-        return Ok(Expr::FunctionCall {
-          name: "PolyGamma".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("PolyGamma", args));
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "PolyGamma".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("PolyGamma", args));
       }
     },
     _ => {
@@ -1007,10 +966,7 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if n_val < 0 {
-    return Ok(Expr::FunctionCall {
-      name: "PolyGamma".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PolyGamma", args));
   }
   let n = n_val as usize;
 
@@ -1437,10 +1393,7 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Symbolic: return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "LerchPhi".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("LerchPhi", args))
 }
 
 /// HurwitzLerchPhi[z, s, a] - the Hurwitz-Lerch transcendent
@@ -1448,12 +1401,7 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// at a non-positive integer `a`, where the singular k = -a term is included
 /// and the value is ComplexInfinity (LerchPhi instead omits that term).
 pub fn hurwitz_lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let symbolic = || {
-    Ok(Expr::FunctionCall {
-      name: "HurwitzLerchPhi".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let symbolic = || Ok(unevaluated("HurwitzLerchPhi", args));
   if args.len() != 3 {
     return symbolic();
   }
@@ -1664,20 +1612,14 @@ fn lerch_phi_numeric(z: f64, s: f64, a: f64) -> f64 {
 /// Computed via Möbius inversion: P(s) = sum_{k=1}^∞ μ(k)/k * log(ζ(ks)).
 pub fn prime_zeta_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "PrimeZetaP".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PrimeZetaP", args));
   }
 
   // Only evaluate numerically for Real (approximate) arguments
   let s = match &args[0] {
     Expr::Real(v) if *v > 1.0 => *v,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PrimeZetaP".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PrimeZetaP", args));
     }
   };
 
@@ -1841,10 +1783,7 @@ pub fn riemann_siegel_z_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(riemann_siegel_z_numeric(t)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "RiemannSiegelZ".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("RiemannSiegelZ", args))
 }
 
 /// RiemannSiegelTheta[t] — the Riemann-Siegel theta function for real t.
@@ -1866,10 +1805,7 @@ pub fn riemann_siegel_theta_ast(
     return Ok(Expr::Real(v));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "RiemannSiegelTheta".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("RiemannSiegelTheta", args))
 }
 
 /// RamanujanTauTheta[t] — the Riemann-Siegel-style theta function for the
@@ -1995,10 +1931,7 @@ pub fn ramanujan_tau_z_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Real(t) = &args[0] {
     return Ok(Expr::Real(ramanujan_tau_z_numeric(*t)));
   }
-  Ok(Expr::FunctionCall {
-    name: "RamanujanTauZ".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("RamanujanTauZ", args))
 }
 
 /// RamanujanTauL[s] — numeric for real/complex machine input, symbolic for
@@ -2024,10 +1957,7 @@ pub fn ramanujan_tau_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       v.0, v.1,
     ));
   }
-  Ok(Expr::FunctionCall {
-    name: "RamanujanTauL".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("RamanujanTauL", args))
 }
 
 /// RamanujanTauTheta[t] — numeric for real (machine) input, symbolic otherwise.
@@ -2044,10 +1974,7 @@ pub fn ramanujan_tau_theta_ast(
     let v = if v == 0.0 { 0.0 } else { v };
     return Ok(Expr::Real(v));
   }
-  Ok(Expr::FunctionCall {
-    name: "RamanujanTauTheta".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("RamanujanTauTheta", args))
 }
 
 /// DirichletEta[s] — the Dirichlet eta function: (1 - 2^(1-s)) * Zeta[s]

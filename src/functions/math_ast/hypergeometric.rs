@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, expr_to_string};
+use crate::syntax::{BinaryOperator, Expr, expr_to_string, unevaluated};
 
 /// Hypergeometric0F1[a, z] - confluent hypergeometric limit function
 /// 0F1(a; z) = Σ z^k / (k! * Pochhammer(a,k)) for k = 0, 1, 2, ...
@@ -30,10 +30,7 @@ pub fn hypergeometric_0f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(hypergeometric_0f1_f64(a, z)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Hypergeometric0F1".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Hypergeometric0F1", args))
 }
 
 /// Compute 0F1(a; z) numerically via series expansion
@@ -92,10 +89,7 @@ pub fn hypergeometric_0f1_regularized_ast(
     return Ok(Expr::Real(hypergeometric_0f1_regularized_f64(a, z)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Hypergeometric0F1Regularized".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Hypergeometric0F1Regularized", args))
 }
 
 /// Compute regularized 0F1~(a; z) = sum_{k=0}^{inf} z^k / (Gamma(a + k) * k!)
@@ -135,19 +129,13 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let a_list = match &args[0] {
     Expr::List(v) => v.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "HypergeometricPFQ".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HypergeometricPFQ", args));
     }
   };
   let b_list = match &args[1] {
     Expr::List(v) => v.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "HypergeometricPFQ".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HypergeometricPFQ", args));
     }
   };
   let z = &args[2];
@@ -513,10 +501,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   };
   if z_val.is_none() {
-    return Ok(Expr::FunctionCall {
-      name: "HypergeometricPFQ".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("HypergeometricPFQ", args));
   }
   let z_val = z_val.unwrap();
 
@@ -569,10 +554,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // For p > q+1 and |z| >= 1, the series diverges
     if z_val.abs() >= 1.0 && a_vals.len() > b_vals.len() + 1 {
-      return Ok(Expr::FunctionCall {
-        name: "HypergeometricPFQ".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HypergeometricPFQ", args));
     }
     let result = hypergeometric_pfq_numeric(&a_vals, &b_vals, z_val);
     if result.is_infinite() {
@@ -581,10 +563,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "HypergeometricPFQ".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("HypergeometricPFQ", args))
 }
 
 /// Compute generalized hypergeometric function pFq numerically via series
@@ -739,10 +718,7 @@ pub fn hypergeometric_pfq_regularized_ast(
   let b_list = match &args[1] {
     Expr::List(v) => v.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "HypergeometricPFQRegularized".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HypergeometricPFQRegularized", args));
     }
   };
 
@@ -757,10 +733,7 @@ pub fn hypergeometric_pfq_regularized_ast(
   // If it stays symbolic, return regularized form
   match &pfq_result {
     Expr::FunctionCall { name, .. } if name == "HypergeometricPFQ" => {
-      return Ok(Expr::FunctionCall {
-        name: "HypergeometricPFQRegularized".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HypergeometricPFQRegularized", args));
     }
     _ => {}
   }
@@ -790,10 +763,7 @@ pub fn hypergeometric_pfq_regularized_ast(
       {
         return Ok(result);
       }
-      return Ok(Expr::FunctionCall {
-        name: "HypergeometricPFQRegularized".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HypergeometricPFQRegularized", args));
     }
     return Ok(Expr::Identifier("Infinity".to_string()));
   }
@@ -869,10 +839,7 @@ pub fn hypergeometric_2f1_regularized_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 4 {
-    return Ok(Expr::FunctionCall {
-      name: "Hypergeometric2F1Regularized".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Hypergeometric2F1Regularized", args));
   }
   let a = args[0].clone();
   let b = args[1].clone();
@@ -902,10 +869,7 @@ pub fn hypergeometric_2f1_regularized_ast(
   if let Expr::FunctionCall { name, .. } = &result
     && name == "HypergeometricPFQRegularized"
   {
-    return Ok(Expr::FunctionCall {
-      name: "Hypergeometric2F1Regularized".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Hypergeometric2F1Regularized", args));
   }
 
   Ok(result)
@@ -1565,10 +1529,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Hypergeometric1F1".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Hypergeometric1F1", args))
 }
 
 /// Accurate real U(a, b, z) for `b` a positive integer (b = n + 1, n ≥ 0)
@@ -1984,10 +1945,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "HypergeometricU".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("HypergeometricU", args))
 }
 
 /// Compute U(a, b, z) numerically using the relation:
@@ -2293,10 +2251,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Hypergeometric2F1".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Hypergeometric2F1", args))
 }
 
 /// True if the expression has the surface form `Times[neg_int, …]` —
@@ -2844,10 +2799,7 @@ pub fn hypergeometric_1f1_regularized_ast(
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Hypergeometric1F1Regularized".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Hypergeometric1F1Regularized", args))
 }
 
 /// WhittakerM[k, m, z] - Whittaker M function.
@@ -2882,10 +2834,7 @@ pub fn whittaker_m_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // re == 0 (m = -1/2): no closed-form simplification, fall through.
     }
-    return Ok(Expr::FunctionCall {
-      name: "WhittakerM".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("WhittakerM", args));
   }
 
   // Numeric evaluation: complex double precision covers real & complex args.
@@ -2938,10 +2887,7 @@ pub fn whittaker_m_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated symbolic form.
-  Ok(Expr::FunctionCall {
-    name: "WhittakerM".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("WhittakerM", args))
 }
 
 /// WhittakerW[k, m, z] - Whittaker W function.
@@ -3026,10 +2972,7 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    return Ok(Expr::FunctionCall {
-      name: "WhittakerW".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("WhittakerW", args));
   }
 
   // Numeric evaluation: an argument is "inexact" when it carries a
@@ -3077,10 +3020,7 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated symbolic form.
-  Ok(Expr::FunctionCall {
-    name: "WhittakerW".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("WhittakerW", args))
 }
 
 /// Evaluate WhittakerW[k, m, z] in double-precision complex arithmetic.

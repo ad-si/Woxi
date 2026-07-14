@@ -1,7 +1,7 @@
 use crate::InterpreterError;
 use crate::functions::expr_form::{ExprForm, decompose_expr};
 use crate::functions::graphics::graphics_ast;
-use crate::syntax::{Expr, expr_to_output, expr_to_string};
+use crate::syntax::{Expr, expr_to_output, expr_to_string, unevaluated};
 use std::collections::HashMap;
 
 /// A node in the expression tree
@@ -164,10 +164,7 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let layout = layout_tree(&tree, leaf_step);
 
   if layout.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "TreeForm".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("TreeForm", args));
   }
 
   // Compute coordinate-space bounding box (including box extents)
@@ -368,10 +365,7 @@ pub fn tree_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let edges = match &args[0] {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "TreeGraph".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("TreeGraph", args));
     }
   };
 
@@ -403,10 +397,7 @@ pub fn tree_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if edge_pairs.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "TreeGraph".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("TreeGraph", args));
   }
 
   // Build adjacency: find root (node that appears as src but never as dst)

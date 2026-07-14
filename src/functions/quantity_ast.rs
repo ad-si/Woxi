@@ -1,6 +1,6 @@
 use crate::InterpreterError;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 use std::collections::BTreeMap;
 
 // ─── Unit dimension system ──────────────────────────────────────────────────
@@ -1803,10 +1803,7 @@ pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Quantity::unkunit: Unable to interpret unit specification {}.",
           crate::syntax::expr_to_output(&args[0])
         ));
-        return Ok(Expr::FunctionCall {
-          name: "Quantity".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Quantity", args));
       }
       // Quantity["Meters"] → Quantity[1, Meters]
       let unit = args[0].clone();
@@ -1857,10 +1854,7 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect();
         return Ok(Expr::List(mapped?.into()));
       }
-      Ok(Expr::FunctionCall {
-        name: "QuantityMagnitude".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("QuantityMagnitude", args))
     }
     2 => {
       // QuantityMagnitude[Quantity[m, u], target_unit] → convert, return magnitude
@@ -1871,10 +1865,7 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let (Some(from), Some(to)) = (from_name, to_name) {
           return convert_magnitude(mag, from, to);
         }
-        return Ok(Expr::FunctionCall {
-          name: "QuantityMagnitude".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("QuantityMagnitude", args));
       }
       // Thread over a list of quantities; pass the target unit through.
       if let Expr::List(items) = &args[0] {
@@ -1884,10 +1875,7 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect();
         return Ok(Expr::List(mapped?.into()));
       }
-      Ok(Expr::FunctionCall {
-        name: "QuantityMagnitude".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("QuantityMagnitude", args))
     }
     _ => Err(InterpreterError::EvaluationError(
       "QuantityMagnitude expects 1 or 2 arguments".into(),
@@ -1931,10 +1919,7 @@ pub fn quantity_unit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((_mag, unit)) = is_quantity(&args[0]) {
     Ok(unit_idents_to_strings(unit))
   } else {
-    Ok(Expr::FunctionCall {
-      name: "QuantityUnit".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("QuantityUnit", args))
   }
 }
 
@@ -2256,10 +2241,7 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
       return Ok(args[0].clone());
     }
-    return Ok(Expr::FunctionCall {
-      name: "UnitConvert".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("UnitConvert", args));
   }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2273,10 +2255,7 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // E.g. Kilometers/Seconds^2 is symbolic, not a unit specification.
     // Only string-based units like "Kilometers/Seconds^2" work.
     if is_compound_unit_expr(unit) && has_bare_identifier_units(unit) {
-      return Ok(Expr::FunctionCall {
-        name: "UnitConvert".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("UnitConvert", args));
     }
 
     // Try compound unit decomposition for both sides
@@ -2307,16 +2286,10 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     } else {
       // Fallback: return unevaluated
-      Ok(Expr::FunctionCall {
-        name: "UnitConvert".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("UnitConvert", args))
     }
   } else {
-    Ok(Expr::FunctionCall {
-      name: "UnitConvert".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("UnitConvert", args))
   }
 }
 
@@ -2327,12 +2300,7 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// keyed on the name reproduces. Volume folds into `LengthUnit` raised to the
 /// third power.
 pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "UnitDimensions".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("UnitDimensions", args));
   if args.len() != 1 {
     return unevaluated();
   }

@@ -7,16 +7,18 @@ guide render as interactive widgets inside a Jupyter notebook or the
 notebook to live in, so they stay unevaluated as their canonical form rather
 than producing an interactive object.
 
-Animation heads:
+Animation heads stay unevaluated as their canonical form. (`wolframscript`
+instead expands them into a large internal `Manipulate[…]` object — and
+`ListAnimate` even into one containing a non-deterministic gensym symbol — so
+these are documentation only and not part of the conformance sweep; they are
+covered by the `control_wrappers_stay_symbolic_without_warning` unit test.)
 
-```scrut
-$ wo 'Animate[x^2, {x, 0, 5}]'
+```wolfram
 Animate[x^2, {x, 0, 5}]
-```
+(* Woxi: Animate[x^2, {x, 0, 5}] *)
 
-```scrut
-$ wo 'ListAnimate[{1, 2, 3}]'
 ListAnimate[{1, 2, 3}]
+(* Woxi: ListAnimate[{1, 2, 3}] *)
 ```
 
 Selection-bar controls:
@@ -69,10 +71,10 @@ Animator[{0, 10}]
 
 ```scrut
 $ wo 'LocatorPane[Dynamic[p], Graphics[Point[p]]]'
-LocatorPane[Dynamic[p], Graphics[Point[p]]]
+LocatorPane[Dynamic[p], -Graphics-]
 ```
 
 ```scrut
 $ wo 'ClickPane[Graphics[{}], f]'
-ClickPane[Graphics[{}], f]
+ClickPane[-Graphics-, f]
 ```

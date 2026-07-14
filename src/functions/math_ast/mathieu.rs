@@ -15,7 +15,7 @@
 //! agreement should compare ratios `MathieuSPrime(a, q, z) /
 //! MathieuSPrime(a, q, 0)` (these match to numerical precision).
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 fn try_real_f64(e: &Expr) -> Option<f64> {
   match e {
@@ -77,10 +77,7 @@ fn integrate_mathieu(
 /// `sin(√a · z)` at q = 0 (BC `y(0) = 0`, `y'(0) = √a`).
 pub fn mathieu_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "MathieuS".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("MathieuS", args));
   }
   let (a, q, z) = match (
     try_real_f64(&args[0]),
@@ -89,17 +86,11 @@ pub fn mathieu_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ) {
     (Some(a), Some(q), Some(z)) => (a, q, z),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MathieuS".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("MathieuS", args));
     }
   };
   if a < 0.0 {
-    return Ok(Expr::FunctionCall {
-      name: "MathieuS".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("MathieuS", args));
   }
   let yp0 = a.sqrt();
   let (y, _) = integrate_mathieu(a, q, z, 0.0, yp0);
@@ -109,10 +100,7 @@ pub fn mathieu_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// MathieuSPrime[a, q, z] — derivative of MathieuS w.r.t. z.
 pub fn mathieu_s_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "MathieuSPrime".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("MathieuSPrime", args));
   }
   let (a, q, z) = match (
     try_real_f64(&args[0]),
@@ -121,17 +109,11 @@ pub fn mathieu_s_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ) {
     (Some(a), Some(q), Some(z)) => (a, q, z),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MathieuSPrime".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("MathieuSPrime", args));
     }
   };
   if a < 0.0 {
-    return Ok(Expr::FunctionCall {
-      name: "MathieuSPrime".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("MathieuSPrime", args));
   }
   let yp0 = a.sqrt();
   let (_, yp) = integrate_mathieu(a, q, z, 0.0, yp0);

@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::evaluator::pattern_matching::expr_equal;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
@@ -55,10 +55,7 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Coefficient::ivar: {} is not a valid variable.",
       crate::syntax::expr_to_message_form(&args[1])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Coefficient".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Coefficient", args));
   }
 
   // SeriesData input: reduce via `Normal` first so the ordinary polynomial
@@ -110,10 +107,7 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && matches!(&form_factors[0], Expr::Identifier(_));
     if !form_factors.is_empty() && !is_bare_symbol {
       if args.len() == 3 && !matches!(&args[2], Expr::Integer(1)) {
-        return Ok(Expr::FunctionCall {
-          name: "Coefficient".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Coefficient", args));
       }
       return coefficient_of_general_form(&args[0], &form_factors);
     }
@@ -131,10 +125,7 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[2] {
       Expr::Integer(n) => *n,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Coefficient".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Coefficient", args));
       }
     }
   } else {
@@ -501,10 +492,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "CoefficientList::ivar: {} is not a valid variable.",
       crate::syntax::expr_to_message_form(&args[1])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "CoefficientList".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("CoefficientList", args));
   }
 
   // SeriesData input: reduce via `Normal` first so the ordinary polynomial
@@ -526,10 +514,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match item {
         Expr::Identifier(name) => var_names.push(name.as_str()),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "CoefficientList".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("CoefficientList", args));
         }
       }
     }
@@ -539,10 +524,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match max_power_int(&expanded, v) {
         Some(d) => shape.push(d + 1),
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "CoefficientList".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("CoefficientList", args));
         }
       }
     }
@@ -552,10 +534,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "CoefficientList".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("CoefficientList", args));
     }
   };
 
@@ -566,10 +545,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let degree = match max_power_int(&expanded, var) {
     Some(d) => d,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "CoefficientList".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("CoefficientList", args));
     }
   };
 
@@ -887,10 +863,7 @@ pub fn monomial_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect(),
     Expr::Identifier(name) => vec![name.clone()],
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MonomialList".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("MonomialList", args));
     }
   };
 
@@ -1004,10 +977,7 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect(),
     Expr::Identifier(name) => vec![name.clone()],
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "CoefficientRules".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("CoefficientRules", args));
     }
   };
 
@@ -1112,10 +1082,7 @@ pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         match item {
           Expr::Identifier(name) => v.push(name.clone()),
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "CoefficientArrays".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("CoefficientArrays", args));
           }
         }
       }
@@ -1123,17 +1090,11 @@ pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Identifier(name) => vec![name.clone()],
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "CoefficientArrays".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("CoefficientArrays", args));
     }
   };
   if vars.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "CoefficientArrays".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("CoefficientArrays", args));
   }
   // Multi-polynomial form: `CoefficientArrays[{p1, p2, …}, vars]` returns
   // SparseArrays of shape `[m, n, …, n]` where `m` is the polynomial
