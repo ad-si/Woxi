@@ -3464,6 +3464,20 @@ mod random_choice {
     assert_eq!(interpret("RandomChoice[{1, 2, 3}, {0}]").unwrap(), "{}");
   }
 
+  // An empty choice list emits lrwl and stays unevaluated (not a hard error).
+  #[test]
+  fn empty_list_emits_lrwl() {
+    for input in ["RandomChoice[{}]", "RandomChoice[{}, 3]"] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("RandomChoice::lrwl")),
+        "expected lrwl for {input}, got {:?}",
+        r.warnings
+      );
+    }
+  }
+
   // A negative or non-integer dimension emits ::array and stays unevaluated,
   // rather than raising a hard evaluation error.
   #[test]
@@ -5138,6 +5152,20 @@ mod random_complex {
       "True"
     );
   }
+
+  // A reversed corner range {2 + 2 I, 0} is ordered per component rather than
+  // panicking on an empty sampling range.
+  #[test]
+  fn reversed_corner_range_is_ordered() {
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomComplex[{2 + 2 I, 0}, 50], \
+         0 <= Re[#] <= 2 && 0 <= Im[#] <= 2 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod random_date {
@@ -5456,6 +5484,16 @@ mod random_integer {
         "AllTrue[RandomInteger[PoissonDistribution[5], 200], IntegerQ[#] && # >= 0 &]"
       )
       .unwrap(),
+      "True"
+    );
+  }
+
+  // A reversed range {max, min} is ordered before sampling, rather than
+  // raising an error (RandomInteger[{5, 2}] draws from [2, 5]).
+  #[test]
+  fn reversed_range_is_ordered() {
+    assert_eq!(
+      interpret("AllTrue[RandomInteger[{5, 2}, 100], 2 <= # <= 5 &]").unwrap(),
       "True"
     );
   }

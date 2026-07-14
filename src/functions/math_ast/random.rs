@@ -54,16 +54,10 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) if items.len() == 2 => {
         if let (Expr::Integer(min), Expr::Integer(max)) = (&items[0], &items[1])
         {
-          if min > max {
-            Err(InterpreterError::EvaluationError(
-              "RandomInteger: min must be <= max".into(),
-            ))
-          } else {
-            let (min, max) = (*min, *max);
-            Ok(Expr::Integer(crate::with_rng(|rng| {
-              rng.gen_range(min..=max)
-            })))
-          }
+          // A reversed range {max, min} is ordered before sampling, matching
+          // wolframscript (RandomInteger[{5, 2}] draws from [2, 5]).
+          let (lo, hi) = (*min.min(max), *min.max(max));
+          Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(lo..=hi))))
         } else {
           Err(InterpreterError::EvaluationError(
             "RandomInteger: range must be integers".into(),
@@ -113,11 +107,8 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
 
-      if min > max {
-        return Err(InterpreterError::EvaluationError(
-          "RandomInteger: min must be <= max".into(),
-        ));
-      }
+      // A reversed range is ordered before sampling (wolframscript parity).
+      let (min, max) = (min.min(max), min.max(max));
 
       fn make_random_int_array(dims: &[usize], min: i128, max: i128) -> Expr {
         let n = dims[0];
@@ -356,6 +347,10 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     im_lo: f64,
     im_hi: f64,
   ) -> Expr {
+    // Order each corner's bounds so a reversed range (e.g. {2 + 2 I, 0}) is
+    // sampled over [0, 2] rather than panicking on an empty range.
+    let (re_lo, re_hi) = (re_lo.min(re_hi), re_lo.max(re_hi));
+    let (im_lo, im_hi) = (im_lo.min(im_hi), im_lo.max(im_hi));
     let re = if re_lo == re_hi {
       re_lo
     } else {
@@ -901,9 +896,16 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[0] {
       Expr::List(items) if !items.is_empty() => items.as_ref(),
       Expr::List(_) => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomChoice: list cannot be empty".into(),
+        // An empty choice list emits lrwl and stays unevaluated rather than
+        // raising a hard error (wolframscript parity).
+        crate::emit_message(&format!(
+          "RandomChoice::lrwl: The items for choice {} should be a nonempty list or a rule weights -> choices.",
+          crate::syntax::expr_to_string(&args[0])
         ));
+        return Ok(Expr::FunctionCall {
+          name: "RandomChoice".to_string(),
+          args: args.to_vec().into(),
+        });
       }
       _ => {
         return Ok(Expr::FunctionCall {
