@@ -5248,6 +5248,30 @@ mod batch_unevaluated_wrappers_2 {
       "21/2"
     );
   }
+  // An out-of-range winsorizing fraction emits arg2 and stays unevaluated
+  // instead of silently mis-winsorizing.
+  #[test]
+  fn winsorized_mean_invalid_fraction_emits_arg2() {
+    for input in [
+      "WinsorizedMean[{1, 2, 3, 4}, 1/2]",
+      "WinsorizedMean[{1, 2, 3, 4}, -0.1]",
+      "WinsorizedMean[{1, 2, 3, 4}, {0.6, 0.5}]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings
+          .iter()
+          .any(|w| w.contains("WinsorizedMean::arg2")),
+        "expected arg2 for {input}, got {:?}",
+        r.warnings
+      );
+    }
+    assert_eq!(
+      interpret("WinsorizedMean[{1, 2, 3, 4}, 0.25]").unwrap(),
+      "5/2"
+    );
+  }
   #[test]
   fn trimmed_variance_basic() {
     assert_eq!(
@@ -5283,6 +5307,38 @@ mod batch_unevaluated_wrappers_2 {
         .unwrap(),
       "85/18"
     );
+  }
+
+  // An out-of-range fraction emits arg2 for the variance variants too.
+  #[test]
+  fn trimmed_winsorized_variance_invalid_fraction_emits_arg2() {
+    let cases = [
+      (
+        "TrimmedVariance[{1, 2, 3, 4}, 0.7]",
+        "TrimmedVariance::arg2",
+      ),
+      (
+        "TrimmedVariance[{1, 2, 3, 4}, -0.1]",
+        "TrimmedVariance::arg2",
+      ),
+      (
+        "WinsorizedVariance[{1, 2, 3, 4}, 0.7]",
+        "WinsorizedVariance::arg2",
+      ),
+      (
+        "WinsorizedVariance[{1, 2, 3, 4}, -0.1]",
+        "WinsorizedVariance::arg2",
+      ),
+    ];
+    for (input, tag) in cases {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(tag)),
+        "expected {tag} for {input}, got {:?}",
+        r.warnings
+      );
+    }
   }
 
   // The winsorized count is Floor[f*n], not a rounded value. With n=5 and
