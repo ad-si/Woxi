@@ -2051,6 +2051,35 @@ mod expand_radical_terms {
   }
 }
 
+mod simplify_radical_content {
+  use super::*;
+
+  // Simplify follows the exact SimplifyCount for radical sums: a common
+  // radical factor extracts on a strict win, numeric content extracts on
+  // a strict win or a unit-cofactor tie, everything else stays expanded
+  // (differential fuzzer, seeds 14799314084710522344 and
+  // 12449481718952209155; all wolframscript-verified).
+  #[test]
+  fn radical_and_content_extraction() {
+    assert_eq!(
+      interpret("Simplify[-Sqrt[8] - (Sqrt[2] - Sqrt[10])]").unwrap(),
+      "Sqrt[2]*(-3 + Sqrt[5])"
+    );
+    assert_eq!(
+      interpret("Simplify[Sqrt[4]*(-4*Sqrt[30]) - (-2)*Sqrt[8]]").unwrap(),
+      "4*Sqrt[2] - 8*Sqrt[30]"
+    );
+    assert_eq!(
+      interpret("Simplify[Sqrt[2] + Sqrt[10]]").unwrap(),
+      "Sqrt[2] + Sqrt[10]"
+    );
+    assert_eq!(
+      interpret("Simplify[9 + 9*Sqrt[19]]").unwrap(),
+      "9*(1 + Sqrt[19])"
+    );
+  }
+}
+
 mod quotient_term_plus_order {
   use super::*;
 

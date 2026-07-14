@@ -1100,6 +1100,13 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
 
+  // Every string contains the empty pattern: StringContainsQ["", ""] and
+  // StringContainsQ["ab", ""] are True (wolframscript-verified;
+  // differential fuzzer, seed 11333804031743244357).
+  if matches!(&args[1], Expr::String(sub) if sub.is_empty()) {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
   // Try regex-based pattern first
   if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
     let (re, constraints) = compiled?;
@@ -7850,6 +7857,12 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
+
+  // No string is free of the empty pattern: StringFreeQ["", ""] is False
+  // (wolframscript-verified).
+  if matches!(&args[1], Expr::String(sub) if sub.is_empty()) {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
 
   // Try regex-based pattern first
   if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {

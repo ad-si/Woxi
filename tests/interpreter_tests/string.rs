@@ -7364,6 +7364,17 @@ mod string_count_patterns {
     assert_eq!(interpret(r#"StringCount["", "a"]"#).unwrap(), "0");
   }
 
+  // Every string contains the empty pattern; none is free of it
+  // (differential fuzzer, seed 11333804031743244357;
+  // wolframscript-verified).
+  #[test]
+  fn empty_pattern_containment() {
+    assert_eq!(interpret(r#"StringContainsQ["", ""]"#).unwrap(), "True");
+    assert_eq!(interpret(r#"StringContainsQ["to1", ""]"#).unwrap(), "True");
+    assert_eq!(interpret(r#"StringFreeQ["", ""]"#).unwrap(), "False");
+    assert_eq!(interpret(r#"StringFreeQ["ab", ""]"#).unwrap(), "False");
+  }
+
   #[test]
   fn count_with_regex() {
     assert_eq!(
