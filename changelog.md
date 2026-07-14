@@ -1,6 +1,6 @@
 # Changelog
 
-# 2026-07-05 - 0.2.0
+# 2026-07-14 - 0.2.0
 
 Between 0.1.0 and 0.2.0 Woxi grew from a minimal interpreter into a broad
 computer algebra system covering a large subset of the Wolfram Language.
@@ -46,7 +46,8 @@ The list only includes the most prominent additions rather than every function.
     `EllipticPi`, `EllipticTheta`, `EllipticNomeQ`, `JacobiSN`/`JacobiCN`/`JacobiDN`,
     `JacobiAmplitude`, `JacobiEpsilon`, `JacobiZeta`, all twelve inverse Jacobi
     functions (`InverseJacobiSN`, `InverseJacobiCN`, …), `WeierstrassP`,
-    `ArithmeticGeometricMean`.
+    `WeierstrassInvariants`, `WeierstrassHalfPeriods`, the Neville theta
+    functions, `ModularLambda`, `KleinInvariantJ`, `ArithmeticGeometricMean`.
 - Gamma, zeta and related: `Gamma` (incomplete and regularized), `LogGamma`,
     `PolyGamma`, `Beta`/`BetaRegularized`, `Pochhammer`, `FactorialPower`,
     `BarnesG`, `LogBarnesG`, `Hyperfactorial`, `Zeta`, `HurwitzZeta`, `PrimeZetaP`,
@@ -58,8 +59,8 @@ The list only includes the most prominent additions rather than every function.
 - Error, exponential-integral and Airy functions: `Erf`, `Erfc`, `Erfi`,
     `InverseErf`/`InverseErfc`, `FresnelS`/`FresnelC`/`FresnelF`/`FresnelG`,
     `ExpIntegralE`, `LogIntegral`, `SinIntegral`/`CosIntegral`,
-    `ExpIntegralEi`, `SinhIntegral`/`CoshIntegral`, `DawsonF`, `AiryAi`/`AiryBi`
-    (and their derivatives `AiryAiPrime`/`AiryBiPrime`).
+    `ExpIntegralEi`, `SinhIntegral`/`CoshIntegral`, `DawsonF`, `OwenT`,
+    `AiryAi`/`AiryBi` (and their derivatives `AiryAiPrime`/`AiryBiPrime`).
 - Orthogonal polynomials and misc: `LegendreP`/`LegendreQ`, `HermiteH`,
     `LaguerreL`, `GegenbauerC`, `ChebyshevT`/`ChebyshevU`, `JacobiP`,
     `SphericalHarmonicY`, `ZernikeR`, `ClebschGordan`, `ThreeJSymbol`,
@@ -83,10 +84,27 @@ The list only includes the most prominent additions rather than every function.
     `BinomialDistribution`/`NegativeBinomialDistribution`, `GeometricDistribution`,
     `HypergeometricDistribution`, `ZipfDistribution`, `SkellamDistribution`,
     `PERTDistribution`, `DagumDistribution`, `RiceDistribution`,
-    `InverseGaussianDistribution`, `MoyalDistribution`, `StableDistribution` and
-    many more, plus meta-distributions
+    `InverseGaussianDistribution`, `MoyalDistribution`, `StableDistribution`,
+    `VonMisesDistribution`, `HoytDistribution`, `NakagamiDistribution`,
+    `LogLogisticDistribution`, `LogSeriesDistribution`, `MeixnerDistribution`,
+    `TukeyLambdaDistribution`, `TsallisQGaussianDistribution`, `WakebyDistribution`,
+    `SinghMaddalaDistribution`, `BenktanderWeibullDistribution`,
+    `BenfordDistribution`, `PoissonConsulDistribution`,
+    `CompoundPoissonDistribution`, `CoxianDistribution`,
+    `HyperexponentialDistribution`, `HotellingTSquareDistribution`,
+    `DirichletDistribution`, `WishartMatrixDistribution`,
+    `NegativeMultinomialDistribution`, `HistogramDistribution` and
+    many more, plus reliability distributions (`FailureDistribution`,
+    `StandbyDistribution`, `FirstPassageTimeDistribution`) and meta-distributions
     (`TransformedDistribution`, `ProductDistribution`, `CensoredDistribution`,
-    `EmpiricalDistribution`, `MixtureDistribution`, `QuantityDistribution`).
+    `EmpiricalDistribution`, `MixtureDistribution`, `SliceDistribution`,
+    `QuantityDistribution`).
+- Random processes: `WienerProcess`, `GeometricBrownianMotionProcess`,
+    `OrnsteinUhlenbeckProcess`, `BrownianBridgeProcess`, `PoissonProcess`,
+    `DiscreteMarkovProcess` and the Bernoulli/Binomial/WhiteNoise processes, with
+    time slices, `CovarianceFunction`, `CorrelationFunction` and
+    `AbsoluteCorrelationFunction`; plus `StateSpaceModel`, `ObservabilityMatrix`
+    and `ControllabilityMatrix` for linear systems.
 - Descriptive statistics: `Mean`, `Median`, `Commonest`, `Quantile`,
     `Quartiles`, `InterquartileRange`, `Variance`, `StandardDeviation`,
     `GeometricMean`, `HarmonicMean`, `ContraharmonicMean`, `RootMeanSquare`,
@@ -126,17 +144,21 @@ The list only includes the most prominent additions rather than every function.
     `FactorSquareFree`, `FactorTerms`, `Decompose`, `MonomialList`,
     `CoefficientList`/`CoefficientRules`/`FromCoefficientRules`,
     `InterpolatingPolynomial`, `CharacteristicPolynomial`, `HornerForm`,
-    `SymmetricPolynomial`, `SymmetricReduction`, `ToRadicals`, modular polynomial
-    arithmetic over GF(p).
+    `SymmetricPolynomial`, `PowerSymmetricPolynomial`, `SymmetricReduction`,
+    `SubresultantPolynomials`/`SubresultantPolynomialRemainders`, `ToRadicals`,
+    `NumberFieldDiscriminant`, `AlgebraicNumber` norm/trace/`AlgebraicUnitQ`, and
+    modular polynomial arithmetic over GF(p).
 
 ## Linear algebra & tensors
 
 - Decompositions and solvers: `LinearSolve`, `LeastSquares`, `RowReduce`,
-    `Inverse`, `PseudoInverse`, `Det`, `MatrixRank`, `NullSpace`, `Eigenvalues`,
-    `Eigenvectors`, `Eigensystem`, `LUDecomposition`, `QRDecomposition`,
-    `CholeskyDecomposition`, `JordanDecomposition`, `SchurDecomposition`,
-    `HermiteDecomposition`, `SmithDecomposition`, `SingularValueList`,
-    `Orthogonalize`, `LatticeReduce`.
+    `Inverse`, `PseudoInverse`, `Det`, `PfaffianDet`, `MatrixRank`, `NullSpace`,
+    `Eigenvalues`, `Eigenvectors`, `Eigensystem`, `LUDecomposition`,
+    `QRDecomposition`, `CholeskyDecomposition`, `LDLDecomposition`,
+    `JordanDecomposition`, `SchurDecomposition`, `HermiteDecomposition`,
+    `SmithDecomposition`, `FrobeniusReduce` (rational canonical form),
+    `SingularValueList`, `Orthogonalize`, `LatticeReduce`, and `Modulus`-option
+    solvers over GF(p).
 - Matrix functions and constructors: `MatrixPower`, `MatrixExp`, `MatrixLog`,
     `MatrixFunction`, `DrazinInverse`, `Adjugate`, `RankDecomposition`,
     `LyapunovSolve`/`DiscreteLyapunovSolve`, `IdentityMatrix`, `DiagonalMatrix`,
@@ -147,8 +169,8 @@ The list only includes the most prominent additions rather than every function.
     `OrthogonalMatrixQ`, `UnitaryMatrixQ`, …).
 - Vectors and tensors: `Dot`, `Cross`, `Norm`, `Normalize`, `Projection`,
     `VectorAngle`, `KroneckerProduct`, `Outer`, `Inner`, `TensorProduct`,
-    `TensorWedge`, `TensorTranspose`, `LeviCivitaTensor`, `SparseArray` and
-    numerous distance functions.
+    `TensorWedge`, `TensorTranspose`, `ArrayDot`, `LeviCivitaTensor`,
+    `SparseArray` and numerous distance functions.
 
 ## Integral transforms & signal processing
 
@@ -156,12 +178,14 @@ The list only includes the most prominent additions rather than every function.
     `LaplaceTransform`/`InverseLaplaceTransform`, `ZTransform`/`InverseZTransform`,
     `MellinTransform`/`InverseMellinTransform`, discrete `Fourier`/`InverseFourier`
     (Cooley–Tukey FFT), `Convolve`, `DiscreteConvolve`, `ListConvolve`,
-    `ListCorrelate`, Fourier series coefficients, `DiscreteHadamardTransform`.
+    `ListCorrelate`, Fourier series coefficients, `DiscreteHadamardTransform`,
+    `DiscreteHilbertTransform`.
 - Filters and resampling: `LowpassFilter`, `HighpassFilter`, `BandpassFilter`,
     `BandstopFilter`, `WienerFilter`, `TotalVariationFilter`, `MeanFilter`,
     `MedianFilter`, `MinFilter`/`MaxFilter`, `Upsample`/`Downsample`,
-    `PeakDetect`/`FindPeaks`, waveform generators (`SawtoothWave`, `SquareWave`,
-    `TriangleWave`) and a full set of window functions.
+    `PeakDetect`/`FindPeaks`, `CrossingDetect`, `SavitzkyGolayMatrix`, waveform
+    generators (`SawtoothWave`, `SquareWave`, `TriangleWave`) and a full set of
+    window functions.
 - Wavelet analysis: the wavelet families (`HaarWavelet`, `DaubechiesWavelet`,
     `SymletWavelet`, `CoifletWavelet`, `MeyerWavelet`, `MexicanHatWavelet`,
     `MorletWavelet`, …), the transforms (`DiscreteWaveletTransform`,
@@ -177,19 +201,23 @@ The list only includes the most prominent additions rather than every function.
     named graphs (`CompleteGraph`, `PathGraph`, `CycleGraph`, `WheelGraph`,
     `StarGraph`, `HypercubeGraph`, `PetersenGraph`, `KaryTree`, `TuranGraph`,
     `DeBruijnGraph`, `CirculantGraph`, …), adjacency/incidence conversions,
-    `Subgraph`, `LineGraph`, `NeighborhoodGraph`, and edge/vertex editing.
+    `Subgraph`, `LineGraph`, `NeighborhoodGraph`, `DirectedGraph`,
+    `TransitiveReductionGraph`, and edge/vertex editing.
 - Metrics and algorithms: `DegreeCentrality`, `BetweennessCentrality`,
     `ClosenessCentrality`, `EigenvectorCentrality`, `KatzCentrality`,
-    `PageRankCentrality`, `GraphDistance`, `FindShortestPath`,
+    `PageRankCentrality`, `RadialityCentrality`, `GraphLinkEfficiency`,
+    `GraphDistance`, `FindShortestPath`,
     `FindSpanningTree`, `FindCycle`, `FindMaximumFlow`, `FindMinimumCostFlow`,
     `FindClique`, `FindVertexCover`, `ConnectedComponents`,
     `WeaklyConnectedComponents`, `TuttePolynomial`, `ChromaticPolynomial`,
     `GraphDiameter`/`GraphRadius`/`GraphCenter`/`GraphPeriphery`, and a family of
     graph predicates.
 - Group theory: `SymmetricGroup`, `AlternatingGroup`, `DihedralGroup`,
-    `CyclicGroup`, `CycleIndexPolynomial`, `GroupMultiplicationTable`,
-    `GroupStabilizer`, and permutation operations (`PermutationProduct`,
-    `PermutationPower`, `InversePermutation`, `FindPermutation`, `Cycles`).
+    `CyclicGroup`, the Mathieu groups (`M11`, `M12`, `M22`, `M23`, `M24`),
+    `CycleIndexPolynomial`, `GroupMultiplicationTable`, `GroupStabilizer`,
+    `GroupOrbits`, `GroupElementPosition`, and permutation operations
+    (`PermutationProduct`, `PermutationPower`, `InversePermutation`,
+    `FindPermutation`, `Cycles`).
 
 ## Lists, associations & functional programming
 
@@ -226,7 +254,8 @@ The list only includes the most prominent additions rather than every function.
 ## Dates, times, units & quantities
 
 - Date/time: `DateObject`, `DateList`, `DateString`, `DateValue`, `DateRange`,
-    `DatePlus`, `DayName`, `DayCount`, `DayRange`, `DateWithinQ`, `Now`, `Today`,
+    `DatePlus`, `DayName`, `DayCount`, `DayRange`, `DateWithinQ`, `DateOverlapsQ`,
+    `DateSelect`, `DatePattern`, `Duration`, `CalendarConvert`, `Now`, `Today`,
     `TimeObject`, `TimeSeries`/`TemporalData`, `AbsoluteTime`/`FromAbsoluteTime`,
     `UnixTime`, `JulianDate`, `TimeZoneConvert`/`TimeZoneOffset` (DST-aware named
     IANA zones), `$TimeZone`, and `DateObject` + `Quantity` arithmetic.
@@ -237,12 +266,17 @@ The list only includes the most prominent additions rather than every function.
 ## Geometry & regions
 
 - Regions and measures: `RegionMeasure`, `Area`, `Volume`, `Perimeter`,
-    `ArcLength`, `RegionCentroid`, `RegionNearest`, `RegionDistance`,
-    `RegionMember`, `BoundingRegion`, `MeshRegion`, `VoronoiMesh`, `ArrayMesh`,
+    `SurfaceArea`, `ArcLength`, `RegionCentroid`, `RegionMoment`,
+    `MomentOfInertia`, `RegionNearest`, `RegionDistance`, `RegionMember`,
+    `RegionDisjoint`, `BoundingRegion`, `MeshRegion`, `VoronoiMesh`, `ArrayMesh`,
     `CantorMesh` and morphological operations.
 - Constructors and transforms: `Triangle` (AAS/ASA/SAS/SSS, including symbolic
     angles), `TriangleCenter`/`TriangleMeasurement`, `Simplex`, `Ball`,
-    `Ellipsoid`, `RegularPolygon`, coordinate-bounding utilities, and the affine
+    `Ellipsoid`, `RegularPolygon`, the Platonic-solid primitives, `SphericalShell`,
+    `CapsuleShape`, `StadiumShape`, `DiskSegment`, `HalfSpace`, `Insphere`,
+    `AngleBisector`/`PerpendicularBisector`, the geometric predicates
+    (`CollinearPoints`, `CoplanarPoints`, `ConvexPolygonQ`, `SimplePolygonQ`),
+    coordinate-bounding utilities, and the affine
     transformation family (`TranslationTransform`, `RotationTransform`,
     `ScalingTransform`, `ShearingTransform`, `ReflectionTransform`,
     `AffineTransform`, `EulerMatrix`, `RollPitchYawMatrix`).
@@ -275,9 +309,11 @@ The list only includes the most prominent additions rather than every function.
 - Images: an `Image`/`Image3D` type with data access, arithmetic
     (`ImageAdd`/`ImageSubtract`/`ImageMultiply`, `Blend`), filters (`GaussianFilter`,
     `MedianFilter`, `ImageConvolve`, …), geometry (`ImageResize`, `ImageRotate`,
-    `ImageReflect`, `ImageTrim`, `Thumbnail`), color operations
-    (`ColorConvert`, `ColorSeparate`, `ColorNegate`, `ColorDistance`),
-    `ImageCollage`/`ImageAssemble`, `Rasterize` and image import.
+    `ImageReflect`, `ImageTrim`, `ImagePartition`, `Thumbnail`), color operations
+    (`ColorConvert`, `ColorSeparate`, `ColorCombine`, `ColorNegate`,
+    `ColorDistance`), analysis (`ImageValue`, `DistanceTransform`,
+    `FillingTransform`, `MorphologicalBinarize`),
+    `ImageCollage`/`ImageAssemble`, `Rasterize`, and image import/SVG export.
 - Audio: the Audio Processing guide — editing (`AudioAmplify`, `AudioTrim`,
     `AudioJoin`, `AudioPitchShift`), analysis (`AudioMeasurements`,
     `AudioLocalMeasurements`, `AudioIntervals`), the short-time Fourier transform,
@@ -296,9 +332,10 @@ The list only includes the most prominent additions rather than every function.
     (`GeoDistance`, `GeoPath`, `GeoDestination`, `GeoAntipode`), plus
     `Molecule`/`MoleculeValue` and `WikidataData`.
 - Import/Export: `Import`/`ImportString` and `Export`/`ExportString` for CSV,
-    TSV, Table, Text, JSON, XLSX, XML and image/SVG formats, `Dataset`,
-    `$ImportFormats`/`$ExportFormats`, and `Hash` (MD5, SHA, CRC32, … with
-    multiple output encodings), `BaseEncode`/`BaseDecode`.
+    TSV, Table, Text, JSON, XLSX, XML, image/SVG and CERN ROOT formats, `Dataset`,
+    `BinarySerialize`/`BinaryDeserialize` (WXF), `$ImportFormats`/`$ExportFormats`,
+    and `Hash` (MD5, SHA, CRC32, … with multiple output encodings),
+    `BaseEncode`/`BaseDecode`.
 - Files, streams and system: file-path utilities
     (`FileNameJoin`/`FileNameSplit`/`FileNameTake`, `DirectoryName`,
     `FileExistsQ`, `FileNames`, `SetDirectory`, `CreateFile`, `CopyFile`,
@@ -320,7 +357,8 @@ The list only includes the most prominent additions rather than every function.
     `Clear`/`ClearAll`/`Remove`, `Options`/`SetOptions`/`OptionValue`.
 - Scoping and control flow: `Module`, `Block`, `With`, `If`, `Which`, `Switch`,
     `For`, `While`, `Do`, `Break`, `Continue`, `Return`, `Goto`/`Label`,
-    `CompoundExpression`, `Hold`/`HoldForm`/`ReleaseHold`, `Evaluate`,
+    `CompoundExpression`, `ApplyTo` (`//=`), `PrintTemporary`,
+    `Hold`/`HoldForm`/`ReleaseHold`, `Evaluate`,
     `Sequence` flattening, `Catch`/`Throw`, `Quiet`, `Check`, `TimeConstrained`,
     `MemoryConstrained`, and `Message`/`MessageName` diagnostics matching
     `wolframscript`.
@@ -385,6 +423,13 @@ The list only includes the most prominent additions rather than every function.
     encodes the session into the URL.
 - JupyterLite: an integrated Woxi kernel with graphical `Plot`/SVG output and
     `?symbol` support, embedded in the docs.
+
+## Language bindings
+
+- Woxi for Python: a PyO3/maturin package (published to PyPI as `woxi`) that
+    wraps the interpreter, evaluating Wolfram Language expressions from Python.
+- Node.js: an npm package with WebAssembly bindings for running Woxi in
+    JavaScript/Node.js environments.
 
 # 2025-05-08 - 0.1.0
 
