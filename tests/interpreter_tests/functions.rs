@@ -3886,6 +3886,57 @@ mod array_rules {
     );
   }
 
+  // Normal[expr, h] normalizes only objects whose head is h (or in the list
+  // h), leaving everything else untouched.
+  #[test]
+  fn normal_selective_head() {
+    // An Association becomes its list of rules.
+    assert_eq!(
+      interpret("Normal[<|a -> 1, b -> 2|>, Association]").unwrap(),
+      "{a -> 1, b -> 2}"
+    );
+    // A SparseArray is only densified when SparseArray is the requested head.
+    assert_eq!(
+      interpret("Normal[SparseArray[{1 -> 5}, 3], SparseArray]").unwrap(),
+      "{5, 0, 0}"
+    );
+    // With a non-matching head, the object is left as-is: only the
+    // Association converts, the SparseArray stays.
+    assert_eq!(
+      interpret("Normal[{<|a -> 1|>, SparseArray[{1 -> 5}, 2]}, Association]")
+        .unwrap(),
+      "{{a -> 1}, SparseArray[Automatic, {2}, 0, \
+       {1, {{0, 1}, {{1}}}, {5}}]}"
+    );
+    // A list of heads normalizes each of those heads.
+    assert_eq!(
+      interpret(
+        "Normal[{SparseArray[{1 -> 5}, 2], <|a -> 1|>}, \
+         {SparseArray, Association}]"
+      )
+      .unwrap(),
+      "{{5, 0}, {a -> 1}}"
+    );
+    // Conversion is shallow: a nested Association inside a converted one is
+    // left alone.
+    assert_eq!(
+      interpret("Normal[<|a -> <|b -> 1|>|>, Association]").unwrap(),
+      "{a -> <|b -> 1|>}"
+    );
+    // Recursion descends into ordinary function arguments.
+    assert_eq!(
+      interpret("Normal[f[<|a -> 1|>], Association]").unwrap(),
+      "f[{a -> 1}]"
+    );
+    // But not into the values of an unmatched Association.
+    assert_eq!(
+      interpret("Normal[<|a -> SparseArray[{1 -> 5}, 2]|>, SparseArray]")
+        .unwrap(),
+      "<|a -> SparseArray[Automatic, {2}, 0, \
+       {1, {{0, 1}, {{1}}}, {5}}]|>"
+    );
+  }
+
   // Canonical form is idempotent under re-normalization.
   #[test]
   fn sparse_array_canonical_idempotent() {

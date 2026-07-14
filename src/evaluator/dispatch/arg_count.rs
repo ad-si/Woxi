@@ -947,7 +947,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Nor" => Some((0, usize::MAX)),
     "NorlundB" => Some((2, 3)),
     "Norm" => Some((1, 2)),
-    "Normal" => Some((1, 1)),
+    "Normal" => Some((1, 2)),
     "Normalize" => Some((1, 2)),
     "NormalizedSquaredEuclideanDistance" => Some((2, 2)),
     "NormalMatrixQ" => Some((1, 1)),

@@ -2893,6 +2893,19 @@ pub fn dispatch_list_operations(
       }
       return Some(Ok(evaluate_expr_to_expr(&converted).unwrap_or(converted)));
     }
+    // Normal[expr, h] normalizes only objects whose head is h (or in the list
+    // h), leaving everything else — including the values of an untouched
+    // Association — as-is.
+    "Normal" if args.len() == 2 => {
+      let heads = normal_head_spec_names(&args[1]);
+      if heads.is_empty() {
+        return Some(Ok(Expr::FunctionCall {
+          name: "Normal".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      return Some(Ok(normal_with_heads(&args[0], &heads)));
+    }
     "First" if args.len() == 1 || args.len() == 2 => {
       let default = if args.len() == 2 {
         Some(&args[1])
@@ -7346,6 +7359,108 @@ fn pad_array(
 /// Convert Associations to Lists of rules within an expression.
 /// Recurses into FunctionCall args and List items but not into Rule values,
 /// matching Wolfram's Normal behavior.
+/// The head-name string of `expr` for `Normal[expr, h]` matching.
+fn normal_head_name(expr: &Expr) -> &str {
+  match expr {
+    Expr::Association(_) => "Association",
+    Expr::List(_) => "List",
+    Expr::FunctionCall { name, .. } => name,
+    _ => "",
+  }
+}
+
+/// Extract the requested head name(s) from the second argument of
+/// `Normal[expr, h]`: either a single symbol or a list of symbols.
+fn normal_head_spec_names(spec: &Expr) -> Vec<String> {
+  match spec {
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|x| match x {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect(),
+    Expr::Identifier(n) => vec![n.clone()],
+    _ => Vec::new(),
+  }
+}
+
+/// Shallowly normalize a matched object: an Association becomes its list of
+/// rules (values untouched) and a SparseArray/NumericArray/ByteArray unwraps
+/// to its dense/list payload. Other heads are returned unchanged.
+fn normal_shallow(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Association(pairs) => {
+      let rules: Vec<Expr> = pairs
+        .iter()
+        .map(|(k, v)| match v {
+          Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } if crate::syntax::assoc_marker_matches(k, pattern) => {
+            Expr::RuleDelayed {
+              pattern: Box::new(k.clone()),
+              replacement: replacement.clone(),
+            }
+          }
+          _ => Expr::Rule {
+            pattern: Box::new(k.clone()),
+            replacement: Box::new(v.clone()),
+          },
+        })
+        .collect();
+      Expr::List(rules.into())
+    }
+    Expr::FunctionCall { name, args } if name == "Association" => {
+      Expr::List(args.clone())
+    }
+    Expr::FunctionCall { name, args } if name == "SparseArray" => {
+      list_helpers_ast::sparse_array_ast(args).unwrap_or_else(|_| expr.clone())
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "NumericArray" || name == "ByteArray") && args.len() == 1 =>
+    {
+      normal_convert_associations(&args[0])
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// `Normal[expr, heads]` — recursively normalize only objects whose head is in
+/// `heads`. A matched object is converted shallowly (its contents are not
+/// re-processed); otherwise recursion descends into List elements and ordinary
+/// (non-hold) function arguments but not into the values of an unmatched
+/// Association.
+fn normal_with_heads(expr: &Expr, heads: &[String]) -> Expr {
+  if heads.iter().any(|h| h == normal_head_name(expr)) {
+    return normal_shallow(expr);
+  }
+  let is_hold = |name: &str| {
+    matches!(
+      name,
+      "Hold" | "HoldForm" | "HoldComplete" | "HoldPattern" | "HoldAllComplete"
+    )
+  };
+  match expr {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| normal_with_heads(e, heads))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::FunctionCall { name, args } if !is_hold(name) => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|e| normal_with_heads(e, heads))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    _ => expr.clone(),
+  }
+}
+
 fn normal_convert_associations(expr: &Expr) -> Expr {
   match expr {
     Expr::Association(pairs) => {
