@@ -261,23 +261,24 @@ fn idwt_step_1d(
   x
 }
 
-/// Stationary (a trous) analysis at dilation 2^level:
-/// out[t] = Sqrt[2] Sum_i f_i x[(t + 2^level i) mod n].
+/// Stationary (a trous) analysis at dilation 2^level. Unlike the decimated
+/// transform, Wolfram's stationary transform convolves with sum-1 normalized
+/// filters (no Sqrt[2] factor): out[t] = Sum_i f_i x[(t - 2^level i) mod n].
 fn swt_step_1d(x: &[f64], filter: &Filter, dilation: i64) -> Vec<f64> {
   let n = x.len() as i64;
-  let s2 = std::f64::consts::SQRT_2;
   (0..n)
     .map(|t| {
-      s2 * filter
+      filter
         .iter()
-        .map(|&(i, c)| c * x[(t + dilation * i).rem_euclid(n) as usize])
+        .map(|&(i, c)| c * x[(t - dilation * i).rem_euclid(n) as usize])
         .sum::<f64>()
     })
     .collect()
 }
 
-/// Stationary synthesis (adjoint averaged over the two phases):
-/// x[t] = (1/Sqrt[2]) Sum_i (p_i a[(t - D i) mod n] + g_i d[(t - D i) mod n]).
+/// Stationary synthesis: adjoint of `swt_step_1d` over the two-times-redundant
+/// coefficients. x[t] = Sum_i (p_i a[(t + D i) mod n] + g_i d[(t + D i) mod n]);
+/// the sum-1 lowpass/highpass split (Sum f^2 = 1/2 each) makes this exact.
 fn iswt_step_1d(
   approx: &[f64],
   detail: &[f64],
@@ -287,17 +288,16 @@ fn iswt_step_1d(
   let n = approx.len() as i64;
   let synth_lo = &filters.primal_lo;
   let synth_hi = highpass_from(&filters.dual_lo);
-  let inv_s2 = 1.0 / std::f64::consts::SQRT_2;
   (0..n)
     .map(|t| {
       let mut acc = 0.0;
       for &(i, c) in synth_lo.iter() {
-        acc += c * approx[(t - dilation * i).rem_euclid(n) as usize];
+        acc += c * approx[(t + dilation * i).rem_euclid(n) as usize];
       }
       for &(i, c) in synth_hi.iter() {
-        acc += c * detail[(t - dilation * i).rem_euclid(n) as usize];
+        acc += c * detail[(t + dilation * i).rem_euclid(n) as usize];
       }
-      inv_s2 * acc
+      acc
     })
     .collect()
 }

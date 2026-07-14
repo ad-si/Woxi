@@ -269,8 +269,8 @@ fn eval(e: Expr) -> Expr {
   crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
 }
 
-/// Sqrt[2] * Sum coef_i * x_i, evaluated to canonical form.
-fn symbolic_dot(pairs: Vec<(Expr, Expr)>) -> Expr {
+/// Sum coef_i * x_i, evaluated to canonical form.
+fn symbolic_dot_plain(pairs: Vec<(Expr, Expr)>) -> Expr {
   let terms: Vec<Expr> = pairs
     .into_iter()
     .map(|(c, x)| Expr::FunctionCall {
@@ -279,15 +279,16 @@ fn symbolic_dot(pairs: Vec<(Expr, Expr)>) -> Expr {
     })
     .collect();
   eval(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+}
+
+/// Sqrt[2] * Sum coef_i * x_i, evaluated to canonical form.
+fn symbolic_dot(pairs: Vec<(Expr, Expr)>) -> Expr {
+  eval(Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![
-      sqrt2(),
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      },
-    ]
-    .into(),
+    args: vec![sqrt2(), symbolic_dot_plain(pairs)].into(),
   })
 }
 
@@ -325,6 +326,8 @@ fn symbolic_dwt_step(x: &[Expr], filter: &[(i64, Expr)]) -> Vec<Expr> {
     .collect()
 }
 
+/// Stationary analysis mirrors `swt_step_1d`: convolution with sum-1 filters
+/// (no Sqrt[2]), out[t] = Sum_i c_i x[(t - dilation i) mod n].
 fn symbolic_swt_step(
   x: &[Expr],
   filter: &[(i64, Expr)],
@@ -333,13 +336,13 @@ fn symbolic_swt_step(
   let n = x.len() as i64;
   (0..n)
     .map(|t| {
-      symbolic_dot(
+      symbolic_dot_plain(
         filter
           .iter()
           .map(|(i, c)| {
             (
               c.clone(),
-              x[(t + dilation * i).rem_euclid(n) as usize].clone(),
+              x[(t - dilation * i).rem_euclid(n) as usize].clone(),
             )
           })
           .collect(),
@@ -898,18 +901,8 @@ fn symbolic_idwt_step(
 ) -> Vec<Expr> {
   let (synth_lo, synth_hi) = synth;
   let (analysis_lo, analysis_hi) = analysis;
-  let inv_sqrt2 = eval(Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![
-      Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(2)].into(),
-      },
-      Expr::Integer(-1),
-    ]
-    .into(),
-  });
   if kind.is_stationary() {
+    // Adjoint of the sum-1 convolution analysis (no Sqrt[2]): correlation.
     let dilation = 1i64 << level;
     let nn = a.len() as i64;
     return (0..nn)
@@ -920,7 +913,7 @@ fn symbolic_idwt_step(
             name: "Times".to_string(),
             args: vec![
               c.clone(),
-              a[(t - dilation * i).rem_euclid(nn) as usize].clone(),
+              a[(t + dilation * i).rem_euclid(nn) as usize].clone(),
             ]
             .into(),
           });
@@ -930,21 +923,14 @@ fn symbolic_idwt_step(
             name: "Times".to_string(),
             args: vec![
               c.clone(),
-              d[(t - dilation * i).rem_euclid(nn) as usize].clone(),
+              d[(t + dilation * i).rem_euclid(nn) as usize].clone(),
             ]
             .into(),
           });
         }
         eval(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            inv_sqrt2.clone(),
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: terms.into(),
-            },
-          ]
-          .into(),
+          name: "Plus".to_string(),
+          args: terms.into(),
         })
       })
       .collect();

@@ -536,12 +536,50 @@ mod wavelets {
 
   #[test]
   fn swt_level1_values() {
+    // The stationary transform convolves with sum-1 filters (no Sqrt[2]).
     assert_eq!(
       interpret(
         "StationaryWaveletTransform[{1, 2, 3, 4}, HaarWavelet[], 1][{0}, \"Values\"]"
       )
       .unwrap(),
-      "{2.121320343559643, 3.5355339059327378, 4.949747468305833, 3.5355339059327378}"
+      "{{2.5, 1.5, 2.5, 3.5}}"
+    );
+    assert_eq!(
+      interpret(
+        "StationaryWaveletTransform[{1, 2, 3, 4}, HaarWavelet[], 1][{1}, \"Values\"]"
+      )
+      .unwrap(),
+      "{{-1.5, 0.5, 0.5, 0.5}}"
+    );
+  }
+
+  #[test]
+  fn swt_level2_atrous_dilation() {
+    // Level 2 convolves the level-1 approximation with the filter dilated by 2.
+    assert_eq!(
+      interpret(
+        "StationaryWaveletTransform[{1, 2, 3, 4, 5, 6, 7, 8}, HaarWavelet[], 2][{0, 0}, \"Values\"]"
+      )
+      .unwrap(),
+      "{{5.5, 4.5, 3.5, 2.5, 3.5, 4.5, 5.5, 6.5}}"
+    );
+  }
+
+  #[test]
+  fn swt_exact_symbolic() {
+    assert_eq!(
+      interpret(
+        "Normal[StationaryWaveletTransform[{a, b, c, d}, HaarWavelet[], 1, WorkingPrecision -> Infinity]]"
+      )
+      .unwrap(),
+      "{{0} -> {a/2 + d/2, a/2 + b/2, b/2 + c/2, c/2 + d/2}, {1} -> {a/2 - d/2, -1/2*a + b/2, -1/2*b + c/2, -1/2*c + d/2}}"
+    );
+    assert_eq!(
+      interpret(
+        "Simplify[InverseWaveletTransform[StationaryWaveletTransform[{a, b, c, d}, HaarWavelet[], 1, WorkingPrecision -> Infinity]]]"
+      )
+      .unwrap(),
+      "{a, b, c, d}"
     );
   }
 
