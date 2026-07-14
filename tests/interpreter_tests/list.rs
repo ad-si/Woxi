@@ -9908,6 +9908,43 @@ mod array_flatten {
       "{{1, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 1, 0}, {0, 0, 0, 0, 1}}"
     );
   }
+
+  // ArrayFlatten[a, r] glues a depth-2r block array; r = 1 concatenates the
+  // top-level blocks along their first axis.
+  #[test]
+  fn rank_one_concatenates_blocks() {
+    assert_eq!(
+      interpret("ArrayFlatten[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, 1]")
+        .unwrap(),
+      "{{1, 2}, {3, 4}, {5, 6}, {7, 8}}"
+    );
+    assert_eq!(
+      interpret("ArrayFlatten[{{{{1, 2}}, {{3, 4}}}}, 1]").unwrap(),
+      "{{{1, 2}}, {{3, 4}}}"
+    );
+    assert_eq!(
+      interpret("ArrayFlatten[{IdentityMatrix[2], 2 IdentityMatrix[2]}, 1]")
+        .unwrap(),
+      "{{1, 0}, {0, 1}, {2, 0}, {0, 2}}"
+    );
+  }
+
+  // Explicit r = 2 is the default, including scalar-zero block padding.
+  #[test]
+  fn rank_two_matches_default() {
+    assert_eq!(
+      interpret("ArrayFlatten[{{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}}, 2]")
+        .unwrap(),
+      "{{1, 2, 5, 6}, {3, 4, 7, 8}}"
+    );
+    assert_eq!(
+      interpret(
+        "ArrayFlatten[{{IdentityMatrix[2], 0}, {0, IdentityMatrix[2]}}, 2]"
+      )
+      .unwrap(),
+      "{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}"
+    );
+  }
 }
 
 mod pdf {

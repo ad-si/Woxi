@@ -497,7 +497,7 @@ PlotMarkers,Option for specifying markers on plot points,✅,pure,6.0,500
 Through,Distributes a list of functions over arguments,✅,pure,1.0,501
 HoldAll,Attribute specifying all args are held,✅,pure,1.0,502
 GenomeData,,🚫,,7.0,503
-ArrayFlatten,Flatten a matrix of sub-matrices into a single matrix,✅,pure,6.0,504
+ArrayFlatten,Flatten a matrix of sub-matrices into a single matrix with an optional block rank r,✅,pure,6.0,504
 Tr,Computes the trace of a matrix or array with an optional combiner function and index level (sum of main-diagonal entries by default),✅,pure,4.0,505
 MeshFunctions,Option for specifying mesh line functions in plots,✅,pure,6.0,506
 Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507

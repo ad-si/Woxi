@@ -2962,6 +2962,30 @@ pub fn dispatch_list_operations(
     "ArrayFlatten" if args.len() == 1 => {
       return Some(array_flatten_ast(&args[0]));
     }
+    // ArrayFlatten[a, r] glues a depth-2r block array. It is defined as
+    // Flatten[a, {{1, r+1}, {2, r+2}, ..., {r, 2r}}]. r = 2 is the default,
+    // whose dedicated path also pads scalar (e.g. 0) blocks; other ranks use
+    // the level-spec Flatten equivalence.
+    "ArrayFlatten" if args.len() == 2 => {
+      let Some(r) = expr_to_i128(&args[1]).filter(|r| *r >= 1) else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "ArrayFlatten".to_string(),
+          args: args.to_vec().into(),
+        }));
+      };
+      if r == 2 {
+        return Some(array_flatten_ast(&args[0]));
+      }
+      let spec: Vec<Expr> = (1..=r)
+        .map(|i| {
+          Expr::List(vec![Expr::Integer(i), Expr::Integer(i + r)].into())
+        })
+        .collect();
+      return Some(list_helpers_ast::flatten_unified_ast(&[
+        args[0].clone(),
+        Expr::List(spec.into()),
+      ]));
+    }
     "Flatten" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::flatten_unified_ast(args));
     }
