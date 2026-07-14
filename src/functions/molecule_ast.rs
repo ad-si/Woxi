@@ -14,7 +14,7 @@ use crate::InterpreterError;
 use crate::functions::element_data::{
   abbreviation_for_atomic_number, is_element_abbreviation,
 };
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum BondKind {
@@ -887,13 +887,6 @@ fn molecular_formula(graph: &MolGraph) -> String {
 // ---------------------------------------------------------------------------
 // Public entry points
 // ---------------------------------------------------------------------------
-
-fn unevaluated(name: &str, args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  }
-}
 
 /// Molecule[spec] / Molecule[{atoms…}, {bonds…}] — build the canonical
 /// molecule expression.

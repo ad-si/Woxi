@@ -9,7 +9,7 @@
 //! lengths pass through fine.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, expr_to_output};
+use crate::syntax::{BinaryOperator, Expr, expr_to_output, unevaluated};
 
 fn fc(name: &str, args: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
@@ -181,12 +181,7 @@ fn two_angle_triangle(
   side_is_included: bool,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: head.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated(head, args));
   // Numeric angles must be positive with a sum below Pi; symbolic angles
   // evaluate symbolically (wolframscript computes `AASTriangle[a, Pi/3, 1]`
   // via its trig canonicalization).
@@ -275,10 +270,7 @@ fn two_angle_triangle(
 /// AASTriangle[α, β, a] — angles α, β and the side a opposite α.
 pub fn aas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "AASTriangle".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("AASTriangle", args));
   }
   two_angle_triangle("AASTriangle", &args[0], &args[1], &args[2], false, args)
 }
@@ -286,10 +278,7 @@ pub fn aas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ASATriangle[α, c, β] — angles α, β with the included side c.
 pub fn asa_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "ASATriangle".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ASATriangle", args));
   }
   two_angle_triangle("ASATriangle", &args[0], &args[2], &args[1], true, args)
 }
@@ -298,12 +287,7 @@ pub fn asa_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// side comes from the law of cosines; the apex is written with the
 /// (b² - a b Cos[γ])/c and a b Sin[γ]/c forms wolframscript displays.
 pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "SASTriangle".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("SASTriangle", args));
   if args.len() != 3 {
     return unevaluated();
   }
@@ -380,12 +364,7 @@ pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn triangle_measurement_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "TriangleMeasurement".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("TriangleMeasurement", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }

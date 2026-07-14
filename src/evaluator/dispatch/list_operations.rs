@@ -1,14 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::list_helpers_ast;
-use crate::syntax::{BinaryOperator, UnaryOperator};
-
-fn unevaluated(name: &str, args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  }
-}
+use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 /// Parse the `m` argument of NestWhile[f, x, test, m, ...]. Returns `All` for
 /// the symbol `All`, `Last(n)` for a positive integer, and `None` otherwise.

@@ -4,7 +4,7 @@
 //! pairs versus the two corner points `{mins, maxs}`.
 
 use crate::InterpreterError;
-use crate::syntax::{Expr, UnaryOperator, expr_to_output};
+use crate::syntax::{Expr, UnaryOperator, expr_to_output, unevaluated};
 
 /// One coordinate value: an exact rational (p/q, q > 0) or a machine real.
 /// Grids over exact bounds with exact steps stay exact (`Into[2]` of a unit
@@ -289,12 +289,7 @@ fn build_array(
 pub fn coordinate_bounds_array_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "CoordinateBoundsArray".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("CoordinateBoundsArray", args));
   if args.is_empty() || args.len() > 3 {
     return unevaluated();
   }
@@ -332,12 +327,7 @@ pub fn coordinate_bounds_array_ast(
 pub fn coordinate_bounding_box_array_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "CoordinateBoundingBoxArray".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("CoordinateBoundingBoxArray", args));
   if args.is_empty() || args.len() > 3 {
     return unevaluated();
   }

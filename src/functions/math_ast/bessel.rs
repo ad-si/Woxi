@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// True if `z_expr` is `<zero_name>[order, k, ...]` whose first argument equals
 /// `n_expr` AND both `order` and `k` are concrete positive integers — the only
@@ -122,10 +122,7 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "BesselJ".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("BesselJ", args))
 }
 
 /// Compute BesselJ[m/2, z] for odd integer m using the recurrence
@@ -423,10 +420,7 @@ pub fn bessel_j_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated (symbolic)
-  Ok(Expr::FunctionCall {
-    name: "BesselJZero".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("BesselJZero", args))
 }
 
 /// BesselYZero[n, k] — k-th positive zero of the Bessel function Y_n
@@ -465,10 +459,7 @@ pub fn bessel_y_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = bessel_y_zero(n, k as usize);
     return Ok(Expr::Real(result));
   }
-  Ok(Expr::FunctionCall {
-    name: "BesselYZero".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("BesselYZero", args))
 }
 
 /// Find the k-th positive zero of Y_n(x) using bisection + Newton's method.
@@ -681,10 +672,7 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  Ok(Expr::FunctionCall {
-    name: "BesselI".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("BesselI", args))
 }
 
 /// Compute I_n(z) using series: I_n(z) = Σ (z/2)^{2m+n} / (m! * Γ(n+m+1))
@@ -768,10 +756,7 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  Ok(Expr::FunctionCall {
-    name: "BesselK".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("BesselK", args))
 }
 
 /// Compute BesselK[m/2, z] for odd integer m. Anchors P_1 = P_{-1} = 1
@@ -1078,10 +1063,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return wrap_with_sqrt_factor(&p_signed, z_expr);
   }
 
-  Ok(Expr::FunctionCall {
-    name: "BesselY".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("BesselY", args))
 }
 
 /// Compute Bessel Y_n(z) (second kind)
@@ -1226,12 +1208,7 @@ fn coulomb_wave_reduce(
     CoulombKind::H1 => "CoulombH1",
     CoulombKind::H2 => "CoulombH2",
   };
-  let uneval = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let uneval = || Ok(unevaluated(name, args));
   if args.len() != 3 {
     return uneval();
   }
@@ -1303,10 +1280,7 @@ fn coulomb_wave_reduce(
 
 pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "SphericalBesselJ".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SphericalBesselJ", args));
   }
 
   let n_expr = &args[0];
@@ -1373,10 +1347,7 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated for symbolic case
-  Ok(Expr::FunctionCall {
-    name: "SphericalBesselJ".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("SphericalBesselJ", args))
 }
 
 /// Helper to build a Hankel-type function from two Bessel-type results
@@ -1431,10 +1402,7 @@ fn build_hankel(
     };
     return crate::evaluator::evaluate_expr_to_expr(&expr);
   }
-  Ok(Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated(name, args))
 }
 
 /// SphericalBesselY[n, z] — spherical Bessel function of the second kind.
@@ -1445,10 +1413,7 @@ fn build_hankel(
 /// Falls back to Sqrt[Pi/(2z)] * BesselY[n + 1/2, z] for non-integer `n`.
 pub fn spherical_bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "SphericalBesselY".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SphericalBesselY", args));
   }
 
   let n_expr = &args[0];
@@ -1501,10 +1466,7 @@ pub fn spherical_bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated for symbolic case
-  Ok(Expr::FunctionCall {
-    name: "SphericalBesselY".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("SphericalBesselY", args))
 }
 
 /// HankelH1[n, z] = BesselJ[n, z] + I * BesselY[n, z]
@@ -1723,10 +1685,7 @@ pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (ber, _) = ber_bei_nu_series(nu, x);
       return Ok(Expr::Real(ber));
     }
-    return Ok(Expr::FunctionCall {
-      name: "KelvinBer".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("KelvinBer", args));
   }
   if let Some(x) = match &args[0] {
     Expr::Real(f) => Some(*f),
@@ -1773,10 +1732,7 @@ pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (_, bei) = ber_bei_nu_series(nu, x);
       return Ok(Expr::Real(bei));
     }
-    return Ok(Expr::FunctionCall {
-      name: "KelvinBei".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("KelvinBei", args));
   }
   if let Some(x) = match &args[0] {
     Expr::Real(f) => Some(*f),
@@ -2017,10 +1973,7 @@ pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(Expr::Real(ker));
     }
-    return Ok(Expr::FunctionCall {
-      name: "KelvinKer".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("KelvinKer", args));
   }
   if let Some(x) = match &args[0] {
     Expr::Real(f) if *f > 0.0 => Some(*f),
@@ -2069,10 +2022,7 @@ pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(Expr::Real(kei));
     }
-    return Ok(Expr::FunctionCall {
-      name: "KelvinKei".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("KelvinKei", args));
   }
   if let Some(x) = match &args[0] {
     Expr::Real(f) if *f > 0.0 => Some(*f),

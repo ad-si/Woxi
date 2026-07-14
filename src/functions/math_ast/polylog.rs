@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// PolyLog[s, z] - Polylogarithm function Li_s(z)
 pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -40,10 +40,7 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
 
-  Ok(Expr::FunctionCall {
-    name: "PolyLog".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("PolyLog", args))
 }
 
 fn polylog_integer_s(
@@ -98,10 +95,7 @@ fn polylog_integer_s(
     _ => {}
   }
 
-  Ok(Expr::FunctionCall {
-    name: "PolyLog".to_string(),
-    args: orig_args.to_vec().into(),
-  })
+  Ok(unevaluated("PolyLog", orig_args))
 }
 
 /// PolyLog[1, z] = -Log[1-z]
