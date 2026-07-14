@@ -567,7 +567,7 @@ pub fn dispatch_io_functions(
       } = &args[1]
       {
         if fmt == "SVG" {
-          let svg = crate::functions::image_ast::image_to_html_img(
+          let svg = crate::functions::image_ast::image_to_svg_document(
             *width, *height, *channels, data,
           );
           if let Err(e) = std::fs::write(&filename, &svg).map_err(|e| {
@@ -3686,7 +3686,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       channels,
       data,
       ..
-    } => crate::functions::image_ast::image_to_html_img(
+    } => crate::functions::image_ast::image_to_svg_document(
       *width, *height, *channels, data,
     ),
     other => expr_text_svg(other),

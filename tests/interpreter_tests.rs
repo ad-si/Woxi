@@ -901,9 +901,10 @@ mod interpreter_tests {
     assert_eq!(interpret(&code).unwrap(), path.display().to_string());
 
     let svg = std::fs::read_to_string(&path).unwrap();
+    // Matches wolframscript, which opens the file with the XML declaration.
     assert!(
-      svg.starts_with("<svg"),
-      "not an SVG: {}",
+      svg.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg"),
+      "not an SVG document: {}",
       &svg[..40.min(svg.len())]
     );
     assert!(
@@ -925,7 +926,9 @@ mod interpreter_tests {
       "ExportString[Image[ConstantArray[{0, 1, 0.5}, {2, 2}]], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.starts_with("<svg"));
+    assert!(
+      svg.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg")
+    );
     assert!(svg.contains("data:image/png;base64,"));
   }
 

@@ -109,6 +109,25 @@ pub fn image_to_html_img(
   )
 }
 
+/// A standalone SVG *document* wrapping an image's raster as a base64 PNG.
+///
+/// Same body as [`image_to_html_img`], but prefixed with the XML declaration
+/// that wolframscript emits for `Export[…, "SVG"]` / `ExportString[img,
+/// "SVG"]`.  Use this for file/string export (where the SVG stands alone);
+/// use [`image_to_html_img`] for inline HTML display, where a leading
+/// `<?xml?>` processing instruction would be invalid.
+pub fn image_to_svg_document(
+  width: u32,
+  height: u32,
+  channels: u8,
+  data: &[f64],
+) -> String {
+  format!(
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{}",
+    image_to_html_img(width, height, channels, data)
+  )
+}
+
 // ─── Core functions (Phase 1) ──────────────────────────────────────────────
 
 /// Image[data] / Image[data, type] / Image[data, type, opts…] — construct
