@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// True if `e` contains an inexact (machine) number. Elliptic functions
 /// numericize only when an argument is inexact; exact (integer/rational)
@@ -50,16 +50,10 @@ pub fn elliptic_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Real(elliptic_k(*f)))
       } else {
         // m > 1 requires complex numbers, return unevaluated
-        Ok(Expr::FunctionCall {
-          name: "EllipticK".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("EllipticK", args))
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "EllipticK".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("EllipticK", args)),
   }
 }
 
@@ -110,10 +104,7 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Real(q))
       } else {
         // m > 1: complex result, return unevaluated for now
-        Ok(Expr::FunctionCall {
-          name: "EllipticNomeQ".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("EllipticNomeQ", args))
       }
     }
     // Symbolic special case: EllipticNomeQ[1/2] = E^(-Pi) (since K(1/2)=K(1-1/2)=K(1/2))
@@ -145,15 +136,9 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Real(q));
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "EllipticNomeQ".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("EllipticNomeQ", args))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "EllipticNomeQ".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("EllipticNomeQ", args)),
   }
 }
 
@@ -211,10 +196,7 @@ pub fn inverse_elliptic_nome_q_ast(
       {
         return Ok(Expr::Real(inverse_elliptic_nome_q_numeric(q)));
       }
-      Ok(Expr::FunctionCall {
-        name: "InverseEllipticNomeQ".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("InverseEllipticNomeQ", args))
     }
   }
 }
@@ -259,10 +241,7 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Real(elliptic_e_incomplete(phi, m)));
     }
 
-    return Ok(Expr::FunctionCall {
-      name: "EllipticE".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EllipticE", args));
   }
 
   // One-argument form: EllipticE[m] - complete elliptic integral
@@ -287,16 +266,10 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if *f < 1.0 {
         Ok(Expr::Real(elliptic_e(*f)))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "EllipticE".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("EllipticE", args))
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "EllipticE".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("EllipticE", args)),
   }
 }
 
@@ -374,10 +347,7 @@ pub fn jacobi_zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(e_phi_m - (e_m / k_m) * f_phi_m));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiZeta".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiZeta", args))
 }
 
 /// Compute incomplete elliptic integral E(phi, m) via Simpson's rule
@@ -439,10 +409,7 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(elliptic_f(phi, m)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "EllipticF".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("EllipticF", args))
 }
 
 /// At parameter m == 0, EllipticF[phi, 0] = EllipticE[phi, 0] = phi and
@@ -562,10 +529,7 @@ pub fn elliptic_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::FunctionCall {
-    name: "EllipticPi".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("EllipticPi", args))
 }
 
 /// Compute incomplete elliptic integral of the third kind via Simpson's rule
@@ -606,10 +570,7 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // an integer-valued Real so the numeric path still fires.
     Expr::Real(f) if f.fract() == 0.0 && *f >= 1.0 && *f <= 4.0 => *f as u32,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "EllipticTheta".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("EllipticTheta", args));
     }
   };
 
@@ -642,10 +603,7 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated (symbolic)
-  Ok(Expr::FunctionCall {
-    name: "EllipticTheta".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("EllipticTheta", args))
 }
 
 /// Compute Jacobi theta function numerically via series expansion
@@ -724,10 +682,7 @@ pub fn elliptic_theta_prime_ast(
   let a_val = match &args[0] {
     Expr::Integer(n) if *n >= 1 && *n <= 4 => *n as u32,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "EllipticThetaPrime".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("EllipticThetaPrime", args));
     }
   };
 
@@ -738,10 +693,7 @@ pub fn elliptic_theta_prime_ast(
     return Ok(Expr::Real(elliptic_theta_prime_numeric(a_val, z_f, q_f)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "EllipticThetaPrime".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("EllipticThetaPrime", args))
 }
 
 /// Compute derivative of Jacobi theta function numerically via series expansion
@@ -872,10 +824,7 @@ pub fn dedekind_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "DedekindEta".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("DedekindEta", args))
 }
 
 fn expr_contains_real(expr: &Expr) -> bool {
@@ -1155,12 +1104,7 @@ pub fn weierstrass_invariants_ast(
       "WeierstrassInvariants expects exactly 1 argument".into(),
     ));
   }
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "WeierstrassInvariants".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("WeierstrassInvariants", args));
   let periods = match &args[0] {
     Expr::List(items) if items.len() == 2 => items,
     _ => return unevaluated(),
@@ -1211,12 +1155,7 @@ pub fn weierstrass_half_periods_ast(
       "WeierstrassHalfPeriods expects exactly 1 argument".into(),
     ));
   }
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "WeierstrassHalfPeriods".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("WeierstrassHalfPeriods", args));
   let items = match &args[0] {
     Expr::List(items) if items.len() == 2 => items,
     _ => return unevaluated(),
@@ -1274,12 +1213,7 @@ pub fn modular_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ModularLambda expects exactly 1 argument".into(),
     ));
   }
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ModularLambda".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("ModularLambda", args));
   // Exact value at the lemniscatic point: λ(i) = 1/2.
   if matches!(&args[0], Expr::Identifier(s) if s == "I") {
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -1308,12 +1242,7 @@ pub fn klein_invariant_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "KleinInvariantJ expects exactly 1 argument".into(),
     ));
   }
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "KleinInvariantJ".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("KleinInvariantJ", args));
   // Exact value at the lemniscatic point: J(i) = 1.
   if matches!(&args[0], Expr::Identifier(s) if s == "I") {
     return Ok(Expr::Integer(1));
@@ -1356,18 +1285,12 @@ pub fn klein_invariant_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 pub fn elliptic_exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "EllipticExp".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EllipticExp", args));
   }
   let u = match expr_to_real_f64(&args[0]) {
     Some(v) => v,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "EllipticExp".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("EllipticExp", args));
     }
   };
   let (a, b) = match &args[1] {
@@ -1375,18 +1298,12 @@ pub fn elliptic_exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match (expr_to_real_f64(&items[0]), expr_to_real_f64(&items[1])) {
         (Some(a), Some(b)) => (a, b),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "EllipticExp".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("EllipticExp", args));
         }
       }
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "EllipticExp".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("EllipticExp", args));
     }
   };
   if u == 0.0 {
@@ -1400,17 +1317,11 @@ pub fn elliptic_exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Only numericize when an argument is inexact; exact arguments stay symbolic.
   if !(expr_is_inexact(&args[0]) || expr_is_inexact(&args[1])) {
-    return Ok(Expr::FunctionCall {
-      name: "EllipticExp".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EllipticExp", args));
   }
   match elliptic_exp_real(u, a, b) {
     Some((x, y)) => Ok(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())),
-    None => Ok(Expr::FunctionCall {
-      name: "EllipticExp".to_string(),
-      args: args.to_vec().into(),
-    }),
+    None => Ok(unevaluated("EllipticExp", args)),
   }
 }
 
@@ -1634,12 +1545,7 @@ pub fn neville_theta_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let kind = name.as_bytes()[12].to_ascii_lowercase() as char;
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated(name, args));
   if args.len() != 2 {
     let word = if args.len() == 1 {
       "argument"

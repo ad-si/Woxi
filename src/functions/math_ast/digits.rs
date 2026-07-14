@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
+};
 use num_bigint::BigInt;
 use num_traits::Signed;
 
@@ -17,20 +19,14 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_bigint(&args[0]) {
     Some(n) => n.abs(),
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "DigitCount".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DigitCount", args));
     }
   };
   let base = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "DigitCount".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DigitCount", args));
       }
     }
   } else {
@@ -58,10 +54,7 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let d = match expr_to_i128(&args[2]) {
       Some(d) => d as usize,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "DigitCount".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DigitCount", args));
       }
     };
     let count = digits.iter().filter(|&&x| x == d).count();
@@ -94,10 +87,7 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_bigint(&args[0]) {
     Some(n) => n.abs(),
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "DigitSum".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DigitSum", args));
     }
   };
   // DigitSum[n, MixedRadix[{b1, b2, ..., bk}]]
@@ -113,18 +103,12 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut base_vals: Vec<BigInt> = Vec::with_capacity(bases.len());
     for b in bases.iter() {
       let Some(bi) = expr_to_i128(b) else {
-        return Ok(Expr::FunctionCall {
-          name: "DigitSum".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DigitSum", args));
       };
       // A MixedRadix specification may legitimately contain a radix of 1
       // (e.g. MixedRadix[{60, 60, 1}]); only reject non-positive radices.
       if bi < 1 {
-        return Ok(Expr::FunctionCall {
-          name: "DigitSum".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DigitSum", args));
       }
       base_vals.push(BigInt::from(bi));
     }
@@ -148,10 +132,7 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "DigitSum".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DigitSum", args));
       }
     }
   } else {
@@ -1083,12 +1064,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A whole-number Real (Rationalize gives an integer) is left unevaluated, as
   // is a non-positive/non-integer second argument.
   if matches!(&args[0], Expr::Real(_)) {
-    let unevaluated = || {
-      Ok(Expr::FunctionCall {
-        name: "ContinuedFraction".to_string(),
-        args: args.to_vec().into(),
-      })
-    };
+    let unevaluated = || Ok(unevaluated("ContinuedFraction", args));
     let n_cap: Option<usize> = if args.len() == 2 {
       match &args[1] {
         Expr::Integer(n) if *n > 0 => Some(*n as usize),
@@ -1181,10 +1157,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let n = match &args[1] {
       Expr::Integer(n) if *n > 0 => *n as usize,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "ContinuedFraction".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("ContinuedFraction", args));
       }
     };
 
@@ -1211,10 +1184,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::FunctionCall {
-    name: "ContinuedFraction".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ContinuedFraction", args))
 }
 
 /// Greatest common divisor of two non-negative integers.
@@ -1435,10 +1405,7 @@ pub fn from_continued_fraction_ast(
   let elements = match &args[0] {
     Expr::List(elems) => elems,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FromContinuedFraction".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("FromContinuedFraction", args));
     }
   };
 
@@ -1473,10 +1440,7 @@ pub fn from_continued_fraction_ast(
       }
       _ => {}
     }
-    return Ok(Expr::FunctionCall {
-      name: "FromContinuedFraction".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("FromContinuedFraction", args));
   }
 
   // Collect all integers
@@ -1485,10 +1449,7 @@ pub fn from_continued_fraction_ast(
     match elem {
       Expr::Integer(n) => ints.push(*n),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "FromContinuedFraction".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("FromContinuedFraction", args));
       }
     }
   }
@@ -1546,10 +1507,7 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let unevaluated = || Expr::FunctionCall {
-    name: "IntegerDigits".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("IntegerDigits", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -2374,10 +2332,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(v) => v,
     Err(_) => {
       // Non-numeric expression (e.g. bare symbol): return unevaluated.
-      return Ok(Expr::FunctionCall {
-        name: "RealDigits".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("RealDigits", args));
     }
   };
 
@@ -2537,10 +2492,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let digits = match &args[0] {
       Expr::List(items) => items,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "FromDigits".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("FromDigits", args));
       }
     };
     if digits.is_empty() {
@@ -2588,10 +2540,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let items = match &args[0] {
       Expr::List(items) => items.clone(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "FromDigits".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("FromDigits", args));
       }
     };
     if items.is_empty() {
@@ -2641,10 +2590,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if ch.is_ascii_uppercase() {
         (ch as i128) - ('A' as i128) + 10
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "FromDigits".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("FromDigits", args));
       };
       // Wolfram allows digit values >= base (overflow digits)
       // e.g. FromDigits["a0"] in base 10 gives 10*10+0 = 100
@@ -2656,10 +2602,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FromDigits".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("FromDigits", args));
     }
   };
 
@@ -2787,10 +2730,7 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(items.len() as i128));
     }
     // IntegerDigits left it unevaluated (e.g. bad radix) — mirror that.
-    return Ok(Expr::FunctionCall {
-      name: "IntegerLength".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("IntegerLength", args));
   }
 
   let base_i128 = if args.len() == 2 {
@@ -2801,16 +2741,10 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "IntegerLength::ibase: Base {} is not an integer greater than 1.",
           b
         ));
-        return Ok(Expr::FunctionCall {
-          name: "IntegerLength".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("IntegerLength", args));
       }
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "IntegerLength".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("IntegerLength", args));
       }
     }
   } else {
@@ -2833,10 +2767,7 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(count));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "IntegerLength".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("IntegerLength", args))
 }
 
 /// IntegerReverse[n] - reverse the digits of an integer in base 10.
@@ -2851,12 +2782,7 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let uneval = || {
-    Ok(Expr::FunctionCall {
-      name: "IntegerReverse".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let uneval = || Ok(unevaluated("IntegerReverse", args));
 
   let base = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
@@ -2879,10 +2805,7 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(_) => {
         crate::emit_message(&format!(
           "IntegerReverse::intpm: Positive machine-sized integer expected at position 3 in {}.",
-          crate::syntax::expr_to_string(&Expr::FunctionCall {
-            name: "IntegerReverse".to_string(),
-            args: args.to_vec().into(),
-          })
+          crate::syntax::expr_to_string(&unevaluated("IntegerReverse", args))
         ));
         return uneval();
       }
@@ -3382,12 +3305,7 @@ fn integer_name_german(n: i128, ordinal: bool) -> Option<String> {
 }
 
 pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "IntegerName".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("IntegerName", args));
 
   // IntegerName works on lists; thread over the first argument, carrying any
   // second argument (the name type) along.
@@ -3488,10 +3406,7 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(&args[0]) {
     Some(v) => v,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "RomanNumeral".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("RomanNumeral", args));
     }
   };
 
@@ -3504,10 +3419,7 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For values >= 5000, Wolfram uses display forms with overscript bars.
   // We support up to 4999 with plain Roman numerals.
   if abs_n >= 5000 {
-    return Ok(Expr::FunctionCall {
-      name: "RomanNumeral".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("RomanNumeral", args));
   }
 
   const VALUES: [(u64, &str); 13] = [
@@ -3550,10 +3462,7 @@ pub fn convergents_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let elements = match &cf_list {
     Expr::List(elems) => elems,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Convergents".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Convergents", args));
     }
   };
 
@@ -3567,10 +3476,7 @@ pub fn convergents_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match elem {
       Expr::Integer(n) => ints.push(*n),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Convergents".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Convergents", args));
       }
     }
   }
@@ -3642,10 +3548,7 @@ fn gcd_convergents(a: i128, b: i128) -> i128 {
 pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use num_bigint::BigUint;
   use num_traits::{One, ToPrimitive};
-  let unevaluated = || Expr::FunctionCall {
-    name: "NumberDigit".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("NumberDigit", args);
   if args.len() != 2 && args.len() != 3 {
     return Ok(unevaluated());
   }
@@ -3911,10 +3814,7 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// and machine reals stay unevaluated (the real-number expansion with
 /// its trailing machine-precision residual term is not implemented).
 pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "NumberExpand".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("NumberExpand", args);
   if args.is_empty() || args.len() > 3 {
     return Ok(unevaluated(args));
   }
@@ -3992,10 +3892,7 @@ pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// positive numbers (NumberDecompose::psv otherwise, but only once the
 /// value itself is numeric); symbolic input stays unevaluated.
 pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "NumberDecompose".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("NumberDecompose", args);
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }
@@ -4117,10 +4014,7 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// units, so `NumberCompose[{1, 2, 3}, {100, 10, 1}]` is `123` and the shorter
 /// `NumberCompose[{1, 2}, {100, 10, 1}]` is `12`.
 pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "NumberCompose".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("NumberCompose", args);
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }
@@ -4203,10 +4097,7 @@ pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn minkowski_question_mark_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "MinkowskiQuestionMark".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("MinkowskiQuestionMark", args);
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
@@ -4366,10 +4257,7 @@ pub fn minkowski_question_mark_ast(
 /// Other characters emit FromRomanNumeral::nrom; non-strings emit
 /// FromRomanNumeral::string.
 pub fn from_roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "FromRomanNumeral".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("FromRomanNumeral", args);
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
@@ -4432,10 +4320,7 @@ pub fn from_roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// arguments produce a message and stay unevaluated (matching wolframscript);
 /// symbolic arguments echo silently.
 pub fn thue_morse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "ThueMorse".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("ThueMorse", args);
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
@@ -4472,10 +4357,7 @@ pub fn thue_morse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// expansion of n. Defined only for non-negative integers; negative or
 /// non-integer arguments stay unevaluated (matching wolframscript).
 pub fn rudin_shapiro_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "RudinShapiro".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("RudinShapiro", args);
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }

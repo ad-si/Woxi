@@ -3,7 +3,7 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, ExprForm, UnaryOperator, expr_to_output,
-  expr_to_string, format_expr,
+  expr_to_string, format_expr, unevaluated,
 };
 
 /// If the first argument is a numeric scalar, emit
@@ -18,13 +18,7 @@ pub fn emit_rectt_if_numeric(name: &str, args: &[Expr]) {
     crate::emit_message(&format!(
       "{}::rectt: Rectangular array expected at position 1 in {}.",
       name,
-      format_expr(
-        &Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        },
-        ExprForm::Output
-      )
+      format_expr(&unevaluated(name, args), ExprForm::Output)
     ));
   }
 }
@@ -69,18 +63,9 @@ fn rectt_if_ragged(name: &str, args: &[Expr]) -> Option<Expr> {
     crate::emit_message(&format!(
       "{}::rectt: Rectangular array expected at position 1 in {}.",
       name,
-      format_expr(
-        &Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        },
-        ExprForm::Output
-      )
+      format_expr(&unevaluated(name, args), ExprForm::Output)
     ));
-    Some(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
+    Some(unevaluated(name, args))
   } else {
     None
   }
@@ -121,18 +106,9 @@ pub fn rectn_if_not_real_rectangular(
     crate::emit_message(&format!(
       "{}::rectn: A rectangular array of real numbers is expected at position 1 in {}.",
       name,
-      format_expr(
-        &Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        },
-        ExprForm::Output
-      )
+      format_expr(&unevaluated(name, args), ExprForm::Output)
     ));
-    Some(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
+    Some(unevaluated(name, args))
   } else {
     None
   }
@@ -142,25 +118,22 @@ pub fn rectn_if_not_real_rectangular(
 /// Total[list, n] - Sum across levels 1 through n
 /// Total[list, {n}] - Sum at exactly level n
 pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "Total".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("Total", args);
   // A wrong argument count leaves the call unevaluated (with a message),
   // matching wolframscript, rather than raising an evaluation error.
   if args.is_empty() {
     crate::emit_message(
       "Total::argt: Total called with 0 arguments; 1 or 2 arguments are expected.",
     );
-    return Ok(unevaluated());
+    return Ok(uneval());
   }
   if args.len() > 2 {
     crate::emit_message(&format!(
       "Total::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
       format_expr(&args[2], ExprForm::Output),
-      format_expr(&unevaluated(), ExprForm::Output)
+      format_expr(&uneval(), ExprForm::Output)
     ));
-    return Ok(unevaluated());
+    return Ok(uneval());
   }
 
   // A SparseArray argument is summed over its dense form.
@@ -216,10 +189,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(n) = resolve_level(&items[0]) {
           TotalLevelSpec::Exact(n)
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "Total".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Total", args));
         }
       }
       // Total[list, {n1, n2}] - sum across levels n1 through n2
@@ -229,10 +199,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           TotalLevelSpec::Range(n1, n2)
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "Total".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Total", args));
         }
       }
       // Total[list, Infinity]
@@ -244,10 +211,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(n) = resolve_level(&args[1]) {
           TotalLevelSpec::Through(n)
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "Total".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Total", args));
         }
       }
     }
@@ -266,10 +230,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Total::tllen: Lists of unequal length in {} cannot be added.",
         format_expr(&args[0], ExprForm::Output)
       ));
-      Ok(Expr::FunctionCall {
-        name: "Total".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Total", args))
     }
     other => other,
   };
@@ -311,19 +272,10 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if matches!(other, Expr::String(_)) {
           crate::emit_message(&format!(
             "Total::normal: Nonatomic expression expected at position 1 in {}.",
-            format_expr(
-              &Expr::FunctionCall {
-                name: "Total".to_string(),
-                args: args.to_vec().into(),
-              },
-              ExprForm::Output
-            )
+            format_expr(&unevaluated("Total", args), ExprForm::Output)
           ));
         }
-        Ok(Expr::FunctionCall {
-          name: "Total".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("Total", args))
       }
     }
   }
@@ -745,10 +697,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // they must not surface as an evaluation error.
       match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((mean, _)) => crate::evaluator::evaluate_expr_to_expr(&mean),
-        Err(_) => Ok(Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: args.to_vec().into(),
-        }),
+        Err(_) => Ok(unevaluated("Mean", args)),
       }
     }
     Expr::FunctionCall {
@@ -777,10 +726,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         mean_ast(std::slice::from_ref(d))
       })? {
         Some(mean) => Ok(mean),
-        None => Ok(Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("Mean", args)),
       }
     }
     Expr::FunctionCall {
@@ -806,10 +752,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // stays unevaluated.
       match super::distributions::wishart_mean_variance(dargs) {
         Ok((mean, _)) => Ok(mean),
-        Err(_) => Ok(Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: args.to_vec().into(),
-        }),
+        Err(_) => Ok(unevaluated("Mean", args)),
       }
     }
     Expr::FunctionCall {
@@ -818,10 +761,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if dist_name == "FirstPassageTimeDistribution" && dargs.len() == 2 => {
       match super::distributions::fptd_mean(dargs)? {
         Some(mean) => Ok(mean),
-        None => Ok(Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("Mean", args)),
       }
     }
     Expr::FunctionCall {
@@ -835,10 +775,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(mean);
       }
-      Ok(Expr::FunctionCall {
-        name: "Mean".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Mean", args))
     }
     Expr::FunctionCall {
       name: dist_name,
@@ -849,10 +786,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // rewrites it to HypoexponentialDistribution.)
       match standby_component_moments(dargs, mean_ast)? {
         Some(total) => Ok(total),
-        None => Ok(Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("Mean", args)),
       }
     }
     Expr::FunctionCall {
@@ -877,10 +811,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Mean[BinormalDistribution[{m1, m2}, …]] = {m1, m2}.
       match super::distributions::binormal_params(dargs) {
         Some((m1, m2, ..)) => Ok(Expr::List(vec![m1, m2].into())),
-        None => Ok(Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("Mean", args)),
       }
     }
     Expr::FunctionCall {
@@ -907,17 +838,11 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return mean_ast(&[slice]);
       }
-      Ok(Expr::FunctionCall {
-        name: "Mean".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Mean", args))
     }
     _ => {
       emit_rectt_if_numeric("Mean", args);
-      Ok(Expr::FunctionCall {
-        name: "Mean".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Mean", args))
     }
   }
 }
@@ -1088,10 +1013,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Symbolic/complex path: compute Variance = Sum[Abs[xi - mean]^2] / (n-1)
         return variance_symbolic(items);
       }
-      Ok(Expr::FunctionCall {
-        name: "Variance".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Variance", args))
     }
     Expr::FunctionCall {
       name: dist_name,
@@ -1186,10 +1108,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // (matching wolframscript), never an evaluation error.
       match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((_, variance)) => crate::evaluator::evaluate_expr_to_expr(&variance),
-        Err(_) => Ok(Expr::FunctionCall {
-          name: "Variance".to_string(),
-          args: args.to_vec().into(),
-        }),
+        Err(_) => Ok(unevaluated("Variance", args)),
       }
     }
     Expr::FunctionCall {
@@ -1216,10 +1135,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       //   Var = Σ (w_i/W)(σ_i² + μ_i²) − (Σ (w_i/W) μ_i)²
       match mixture_variance(dargs)? {
         Some(v) => Ok(v),
-        None => Ok(Expr::FunctionCall {
-          name: "Variance".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("Variance", args)),
       }
     }
     Expr::FunctionCall {
@@ -1246,10 +1162,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // stays unevaluated.
       match super::distributions::wishart_mean_variance(dargs) {
         Ok((_, variance)) => Ok(variance),
-        Err(_) => Ok(Expr::FunctionCall {
-          name: "Variance".to_string(),
-          args: args.to_vec().into(),
-        }),
+        Err(_) => Ok(unevaluated("Variance", args)),
       }
     }
     Expr::FunctionCall {
@@ -1258,10 +1171,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if dist_name == "FirstPassageTimeDistribution" && dargs.len() == 2 => {
       match super::distributions::fptd_variance(dargs)? {
         Some(variance) => Ok(variance),
-        None => Ok(Expr::FunctionCall {
-          name: "Variance".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("Variance", args)),
       }
     }
     Expr::FunctionCall {
@@ -1271,10 +1181,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Independent lifetimes add, so variances sum too.
       match standby_component_moments(dargs, variance_ast)? {
         Some(total) => Ok(total),
-        None => Ok(Expr::FunctionCall {
-          name: "Variance".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("Variance", args)),
       }
     }
     Expr::FunctionCall {
@@ -1308,10 +1215,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vec![sq(s1), sq(s2)].into(),
           ))
         }
-        None => Ok(Expr::FunctionCall {
-          name: "Variance".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("Variance", args)),
       }
     }
     Expr::FunctionCall {
@@ -1339,17 +1243,11 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return variance_ast(&[slice]);
       }
-      Ok(Expr::FunctionCall {
-        name: "Variance".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Variance", args))
     }
     _ => {
       emit_rectt_if_numeric("Variance", args);
-      Ok(Expr::FunctionCall {
-        name: "Variance".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Variance", args))
     }
   }
 }
@@ -1440,20 +1338,14 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         expr_to_string(&args[0])
       ));
     }
-    return Ok(Expr::FunctionCall {
-      name: "StandardDeviation".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("StandardDeviation", args));
   }
   // A numeric scalar isn't a rectangular array: emit StandardDeviation::rectt
   // directly and stay unevaluated, rather than delegating to Variance below
   // (which would emit Variance::rectt instead).
   if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
     emit_rectt_if_numeric("StandardDeviation", args);
-    return Ok(Expr::FunctionCall {
-      name: "StandardDeviation".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("StandardDeviation", args));
   }
   // StandardDeviation[BinormalDistribution[…, {s1, s2}, …]] = {s1, s2}. Return
   // the sigmas directly rather than Sqrt[s1^2], which Woxi cannot reduce for a
@@ -1471,10 +1363,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::FunctionCall { name, .. } = &var
     && name == "Variance"
   {
-    return Ok(Expr::FunctionCall {
-      name: "StandardDeviation".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("StandardDeviation", args));
   }
   match &var {
     Expr::List(items) => {
@@ -1511,10 +1400,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {
       emit_rectt_if_numeric("StandardDeviation", args);
-      Ok(Expr::FunctionCall {
-        name: "StandardDeviation".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("StandardDeviation", args))
     }
   }
 }
@@ -1768,10 +1654,7 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // An empty list stays unevaluated (matching wolframscript) rather than
       // raising an error.
       if items.is_empty() {
-        return Ok(Expr::FunctionCall {
-          name: "GeometricMean".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("GeometricMean", args));
       }
       // List-of-lists (matrix) → column-wise geometric mean.
       if items.iter().all(|item| matches!(item, Expr::List(_))) {
@@ -1796,10 +1679,7 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(v) = try_eval_to_f64(item) {
           vals.push(v);
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "GeometricMean".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("GeometricMean", args));
         }
       }
       let n_f = vals.len() as f64;
@@ -1813,10 +1693,7 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         num_to_expr(result)
       })
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "GeometricMean".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("GeometricMean", args)),
   }
 }
 
@@ -1875,10 +1752,7 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       // An empty list stays unevaluated (matching wolframscript).
       if items.is_empty() {
-        return Ok(Expr::FunctionCall {
-          name: "HarmonicMean".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("HarmonicMean", args));
       }
       // Try all-integer exact path using rational arithmetic
       let mut all_int = true;
@@ -1938,10 +1812,7 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             vals.push(v);
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "HarmonicMean".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("HarmonicMean", args));
           }
         }
         let n = vals.len() as f64;
@@ -1957,10 +1828,7 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // x^(-1), which matches wolframscript's display form.
       harmonic_mean_symbolic(items)
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "HarmonicMean".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("HarmonicMean", args)),
   }
 }
 
@@ -2035,12 +1903,7 @@ fn harmonic_mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn contraharmonic_mean_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ContraharmonicMean".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("ContraharmonicMean", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
@@ -2089,12 +1952,7 @@ pub fn absolute_correlation_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   use crate::evaluator::evaluate_function_call_ast;
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "AbsoluteCorrelation".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("AbsoluteCorrelation", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
@@ -2273,10 +2131,7 @@ fn symbolic_covariance(
       right: Box::new(Expr::Integer(2)),
     }
   } else {
-    let sum_x = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: xs.to_vec().into(),
-    };
+    let sum_x = unevaluated("Plus", xs);
     let mut terms = Vec::with_capacity(n);
     for (x, y) in xs.iter().zip(ys.iter()) {
       let coeff = Expr::BinaryOp {
@@ -2319,12 +2174,7 @@ fn covariance_two(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Covariance[list1, list2] - sample covariance of two equal-length lists.
 /// Covariance[matrix] - covariance matrix of the columns of an n×p matrix.
 pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Covariance".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("Covariance", args));
 
   // Covariance[DirichletDistribution[{α1, …}]] is the k×k moment matrix.
   if args.len() == 1
@@ -2530,12 +2380,7 @@ fn average_ranks(items: &[Expr]) -> Option<Vec<Expr>> {
 /// lists. Mismatched lengths or non-numeric vectors emit the `::rctneqln`
 /// message and stay unevaluated.
 pub fn spearman_rho_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "SpearmanRho".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("SpearmanRho", args));
   let rctneqln = || {
     crate::emit_message(
       "SpearmanRho::rctneqln: The arguments to SpearmanRho are not a pair of vectors or matrices of equal length.",
@@ -2570,12 +2415,7 @@ pub fn spearman_rho_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// yield a machine-real result. Constant data (zero variance in either vector)
 /// emits `KendallTau::zrvr` and returns Indeterminate.
 pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "KendallTau".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("KendallTau", args));
   let rctneqln = || {
     crate::emit_message(
       "KendallTau::rctneqln: The arguments to KendallTau are not a pair of vectors or matrices of equal length.",
@@ -2684,12 +2524,7 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// matrices give the cross matrix. Lists shorter than 5 emit `::dtlnth`;
 /// length mismatches and non-numeric data emit `::rctneqln`.
 pub fn hoeffding_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "HoeffdingD".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("HoeffdingD", args));
   let rctneqln = || {
     crate::emit_message(
       "HoeffdingD::rctneqln: The arguments to HoeffdingD are not a pair of vectors or matrices of equal length.",
@@ -2875,12 +2710,7 @@ fn rank_statistic_forms(
   args: &[Expr],
   pair: &dyn Fn(&[f64], &[f64], bool) -> Result<Expr, InterpreterError>,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated(name, args));
   let rctneqln = || {
     crate::emit_message(&format!(
       "{name}::rctneqln: The arguments to {name} are not a pair of vectors or matrices of equal length.",
@@ -3110,12 +2940,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return correlation_ast(&new_args);
   }
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Correlation".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let uneval = || Ok(unevaluated("Correlation", args));
   // Single-argument form.
   if args.len() == 1 {
     if let Expr::List(items) = &args[0]
@@ -3146,10 +2971,10 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(corr);
       }
     }
-    return unevaluated();
+    return uneval();
   }
   if args.len() != 2 {
-    return unevaluated();
+    return uneval();
   }
   // Matrix form: Correlation[A, B] for m×n A and m×p B → cross-correlation
   // matrix R[i, j] = Correlation(column_i(A), column_j(B)).
@@ -3185,10 +3010,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (xs, ys)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Correlation".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Correlation", args));
     }
   };
   // Require all elements to be numeric; otherwise leave unevaluated. A
@@ -3248,10 +3070,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         right: Box::new(denom),
       });
     }
-    return Ok(Expr::FunctionCall {
-      name: "Correlation".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Correlation", args));
   }
   // If any input is a machine-precision Real, fall through to a direct
   // f64 computation: the result is a machine number either way, and the
@@ -3276,10 +3095,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let denom = (var_x * var_y).sqrt();
     if denom == 0.0 {
       // Wolfram emits Correlation::zerosd and leaves the expression unevaluated.
-      return Ok(Expr::FunctionCall {
-        name: "Correlation".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Correlation", args));
     }
     return Ok(num_to_expr(cov / denom));
   }
@@ -3296,10 +3112,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let (Some(vx), Some(vy)) = (expr_to_num(&var_x), expr_to_num(&var_y))
     && (vx == 0.0 || vy == 0.0)
   {
-    return Ok(Expr::FunctionCall {
-      name: "Correlation".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Correlation", args));
   }
   let var_product = Expr::BinaryOp {
     op: BinaryOperator::Times,
@@ -3737,10 +3550,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "CentralMoment".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("CentralMoment", args));
   }
   // A matrix reduces column-wise: the r-th central moment of each column.
   // (This also fixes Kurtosis/Skewness of a matrix, which build on it.)
@@ -3773,30 +3583,21 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "CentralMoment".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("CentralMoment", args));
     }
   };
   let r_expr = &args[1];
   let r = match expr_to_num(r_expr) {
     Some(r) => r as i32,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "CentralMoment".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("CentralMoment", args));
     }
   };
 
   // Check if all items are numeric (integer or rational or real)
   let all_numeric = items.iter().all(|item| expr_to_num(item).is_some());
   if !all_numeric {
-    return Ok(Expr::FunctionCall {
-      name: "CentralMoment".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("CentralMoment", args));
   }
 
   // Compute mean symbolically to preserve exact arithmetic
@@ -3843,12 +3644,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// All arithmetic is carried out symbolically so exact rational results are
 /// preserved.
 pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let symbolic = || {
-    Ok(Expr::FunctionCall {
-      name: "Cumulant".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let symbolic = || Ok(unevaluated("Cumulant", args));
   if args.len() != 2 {
     return symbolic();
   }
@@ -3953,10 +3749,7 @@ fn cumulant_from_raw_moments(
 /// Kurtosis[list] - CentralMoment[list, 4] / CentralMoment[list, 2]^2
 pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "Kurtosis".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Kurtosis", args));
   }
   // Skellam: Kurtosis = 3 + 1/(a+b). Built directly because the generic
   // moment-ratio Expand mangles the multi-parameter denominator.
@@ -4032,10 +3825,7 @@ fn maybe_expand_for_distribution(arg: &Expr, result: Expr) -> Expr {
 /// Skewness[list] - CentralMoment[list, 3] / CentralMoment[list, 2]^(3/2)
 pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "Skewness".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Skewness", args));
   }
   // Skellam: Skewness = (a-b)/(a+b)^(3/2). Built directly so the compact form
   // is preserved (the generic moment-ratio Expand would distribute it).
@@ -4176,10 +3966,7 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       // An empty list stays unevaluated (matching wolframscript).
       if items.is_empty() {
-        return Ok(Expr::FunctionCall {
-          name: "RootMeanSquare".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("RootMeanSquare", args));
       }
       // Try all-integer exact path
       let mut all_int = true;
@@ -4229,25 +4016,16 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if let Some(v) = expr_to_num(item) {
             vals.push(v);
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "RootMeanSquare".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("RootMeanSquare", args));
           }
         }
         let n = vals.len() as f64;
         let mean_sq = vals.iter().map(|x| x * x).sum::<f64>() / n;
         return Ok(num_to_expr(mean_sq.sqrt()));
       }
-      Ok(Expr::FunctionCall {
-        name: "RootMeanSquare".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("RootMeanSquare", args))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "RootMeanSquare".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("RootMeanSquare", args)),
   }
 }
 
@@ -4326,10 +4104,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Quantile::nquan: The Quantile specification {} should be a number or a list of numbers between 0 and 1.",
       crate::syntax::expr_to_string(&args[1])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Quantile".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Quantile", args));
   }
   // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
@@ -4381,19 +4156,13 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (r0[0].clone(), r0[1].clone(), r1[0].clone(), r1[1].clone())
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Quantile".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Quantile", args));
       }
     };
     let items = match &args[0] {
       Expr::List(items) if !items.is_empty() => items,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Quantile".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Quantile", args));
       }
     };
     let mut sorted: Vec<&Expr> = items.iter().collect();
@@ -4433,10 +4202,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Quantile".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Quantile", args));
     }
   };
 
@@ -4588,10 +4354,7 @@ fn quantile_parametric(
 /// Moment[data, r] — the r-th raw moment: Sum[x_i^r] / n.
 pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "Moment".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Moment", args));
   }
 
   // Distribution form: Moment[dist, n] = E[x^n].
@@ -4604,10 +4367,7 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Moment".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Moment", args));
     }
   };
 
@@ -4789,12 +4549,9 @@ fn factorial_moment_via_expectation(
 }
 
 pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "FactorialMoment".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("FactorialMoment", args);
   if args.len() != 2 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
 
   // Distribution factorial moment E[X(X-1)...(X-r+1)] for a non-negative
@@ -4825,7 +4582,7 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(uneval()),
   };
 
   let factorial_power = |x: &Expr, r: &Expr| {
@@ -4843,7 +4600,7 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for item in items {
         let coords = match item {
           Expr::List(coords) if coords.len() == orders.len() => coords,
-          _ => return Ok(unevaluated(args)),
+          _ => return Ok(uneval()),
         };
         let mut factors = Vec::with_capacity(coords.len());
         for (x, r) in coords.iter().zip(orders.iter()) {
@@ -4903,10 +4660,7 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "MeanDeviation".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("MeanDeviation", args))
   }
 }
 
@@ -4938,10 +4692,7 @@ pub fn median_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let devs_list = Expr::List(abs_devs.into());
     crate::functions::list_helpers_ast::median_ast(&devs_list)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "MedianDeviation".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("MedianDeviation", args))
   }
 }
 
@@ -4968,10 +4719,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(v) = try_eval_to_f64(other) {
           v
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "LocationTest".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("LocationTest", args));
         }
       }
     }
@@ -4984,10 +4732,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[2] {
       Expr::String(s) => s.clone(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "LocationTest".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("LocationTest", args));
       }
     }
   } else {
@@ -5024,10 +4769,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (t_stat, df) = one_sample_t_test(&vals, mu0);
       format_location_test_result(t_stat, df, &property, "T")
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "LocationTest".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("LocationTest", args)),
   }
 }
 
@@ -5219,20 +4961,14 @@ fn t_test_p_value(t_stat: f64, df: f64) -> f64 {
 /// Likelihood[dist, {x1, x2, ...}] - product of PDF[dist, xi] for each xi
 pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "Likelihood".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Likelihood", args));
   }
 
   let dist = &args[0];
   let data = match &args[1] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Likelihood".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Likelihood", args));
     }
   };
 
@@ -5294,10 +5030,7 @@ pub fn pearson_chi_square_test_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
-    return Ok(Expr::FunctionCall {
-      name: "PearsonChiSquareTest".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PearsonChiSquareTest", args));
   }
 
   let data = match &args[0] {
@@ -5307,19 +5040,13 @@ pub fn pearson_chi_square_test_ast(
         if let Some(v) = try_eval_to_f64(item) {
           vals.push(v);
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "PearsonChiSquareTest".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("PearsonChiSquareTest", args));
         }
       }
       vals
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PearsonChiSquareTest".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PearsonChiSquareTest", args));
     }
   };
 
@@ -5363,17 +5090,11 @@ pub fn pearson_chi_square_test_ast(
           )
         }
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "PearsonChiSquareTest".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("PearsonChiSquareTest", args));
         }
       },
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "PearsonChiSquareTest".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("PearsonChiSquareTest", args));
       }
     }
   } else {
@@ -5499,10 +5220,7 @@ fn gamma_cf(a: f64, x: f64) -> f64 {
 /// Longitude[GeoPosition[{lat, lon}]] or Longitude[{lat, lon}] → Quantity[lon, "AngularDegrees"]
 pub fn longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "Longitude".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Longitude", args));
   }
   let coords = extract_geo_coords(&args[0]);
   match coords {
@@ -5510,20 +5228,14 @@ pub fn longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Quantity".to_string(),
       args: vec![lon, Expr::String("AngularDegrees".to_string())].into(),
     }),
-    None => Ok(Expr::FunctionCall {
-      name: "Longitude".to_string(),
-      args: args.to_vec().into(),
-    }),
+    None => Ok(unevaluated("Longitude", args)),
   }
 }
 
 /// Latitude[GeoPosition[{lat, lon}]] or Latitude[{lat, lon}] → Quantity[lat, "AngularDegrees"]
 pub fn latitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "Latitude".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Latitude", args));
   }
   let coords = extract_geo_coords(&args[0]);
   match coords {
@@ -5531,10 +5243,7 @@ pub fn latitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Quantity".to_string(),
       args: vec![lat, Expr::String("AngularDegrees".to_string())].into(),
     }),
-    None => Ok(Expr::FunctionCall {
-      name: "Latitude".to_string(),
-      args: args.to_vec().into(),
-    }),
+    None => Ok(unevaluated("Latitude", args)),
   }
 }
 
@@ -5561,10 +5270,7 @@ fn extract_geo_coords(expr: &Expr) -> Option<(Expr, Expr)> {
 /// LatitudeLongitude[GeoPosition[{lat, lon}]] → {Quantity[lat, "AngularDegrees"], Quantity[lon, "AngularDegrees"]}
 pub fn latitude_longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "LatitudeLongitude".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("LatitudeLongitude", args));
   }
   match extract_geo_coords(&args[0]) {
     Some((lat, lon)) => Ok(Expr::List(
@@ -5580,10 +5286,7 @@ pub fn latitude_longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     )),
-    None => Ok(Expr::FunctionCall {
-      name: "LatitudeLongitude".to_string(),
-      args: args.to_vec().into(),
-    }),
+    None => Ok(unevaluated("LatitudeLongitude", args)),
   }
 }
 
@@ -5714,10 +5417,7 @@ fn mathieu_generators_expr(name: &str) -> Option<Expr> {
 /// GroupGenerators[group] - return a list of generators for the given group
 pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "GroupGenerators".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("GroupGenerators", args));
   }
 
   if let Expr::FunctionCall { name, args: gargs } = &args[0]
@@ -5752,10 +5452,7 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let n = match &gargs[0] {
         Expr::Integer(n) if *n >= min_n => *n as usize,
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "GroupGenerators".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("GroupGenerators", args));
         }
       };
       match name.as_str() {
@@ -5763,16 +5460,10 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "CyclicGroup" => Ok(cyclic_group_generators(n)),
         "DihedralGroup" => Ok(dihedral_group_generators(n)),
         "AlternatingGroup" => Ok(alternating_group_generators(n)),
-        _ => Ok(Expr::FunctionCall {
-          name: "GroupGenerators".to_string(),
-          args: args.to_vec().into(),
-        }),
+        _ => Ok(unevaluated("GroupGenerators", args)),
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "GroupGenerators".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("GroupGenerators", args)),
   }
 }
 
@@ -5810,10 +5501,7 @@ fn abelian_group_generators(factors: &[usize]) -> Expr {
 
 /// GroupOrder[group] - the number of elements in a group.
 pub fn group_order_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GroupOrder".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GroupOrder", args);
   if args.len() != 1 {
     return Ok(unevaluated());
   }
@@ -5876,10 +5564,7 @@ pub fn group_order_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// GroupElements[group] - list of all elements in a group as cycle notation.
 pub fn group_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GroupElements".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GroupElements", args);
   // GroupElements[group, {positions…}] - the elements at the given 1-based
   // positions of the full element list, in the given order (negative positions
   // count from the end; out-of-range positions emit GroupElements::lrank).
@@ -6093,10 +5778,7 @@ fn perms_equal(p: &Expr, q: &Expr) -> bool {
 /// `GroupElementQ::perm` message and stays unevaluated; a group that
 /// GroupElements cannot expand also stays unevaluated.
 pub fn group_element_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GroupElementQ".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GroupElementQ", args);
   if args.len() != 2 {
     return Ok(unevaluated());
   }
@@ -6127,10 +5809,7 @@ pub fn group_element_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn group_element_position_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GroupElementPosition".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GroupElementPosition", args);
   if args.len() != 2 {
     return Ok(unevaluated());
   }
@@ -6158,10 +5837,7 @@ pub fn group_element_position_ast(
 /// every group element; duplicate orbits are removed and the result is sorted
 /// lexicographically (independent of the seed order), matching wolframscript.
 pub fn group_orbits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GroupOrbits".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GroupOrbits", args);
   if args.len() != 2 {
     return Ok(unevaluated());
   }
@@ -6541,10 +6217,7 @@ pub fn discrete_asymptotic_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
-    return Ok(Expr::FunctionCall {
-      name: "DiscreteAsymptotic".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DiscreteAsymptotic", args));
   }
 
   // Parse second argument: must be Rule[var, Infinity] or Expr::Rule { var, Infinity }
@@ -6557,10 +6230,7 @@ pub fn discrete_asymptotic_ast(
           s.clone()
         }
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "DiscreteAsymptotic".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("DiscreteAsymptotic", args));
         }
       }
     }
@@ -6572,27 +6242,18 @@ pub fn discrete_asymptotic_ast(
         s.clone()
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "DiscreteAsymptotic".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DiscreteAsymptotic", args));
       }
     },
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DiscreteAsymptotic".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DiscreteAsymptotic", args));
     }
   };
 
   let expr = &args[0];
   match discrete_asymptotic_leading(expr, &var_name) {
     Some(result) => crate::evaluator::evaluate_expr_to_expr(&result),
-    None => Ok(Expr::FunctionCall {
-      name: "DiscreteAsymptotic".to_string(),
-      args: args.to_vec().into(),
-    }),
+    None => Ok(unevaluated("DiscreteAsymptotic", args)),
   }
 }
 
@@ -7127,12 +6788,7 @@ pub fn covariance_function_data(
 pub fn absolute_correlation_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "AbsoluteCorrelationFunction".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("AbsoluteCorrelationFunction", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -7208,10 +6864,7 @@ pub fn covariance_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "CovarianceFunction".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("CovarianceFunction", args));
   }
   if let Some(result) = process_covariance(&args[0], &args[1], &args[2]) {
     return crate::evaluator::evaluate_expr_to_expr(&result);
@@ -7222,10 +6875,7 @@ pub fn covariance_function_ast(
     // as the parser's literal `Times[-1, x/y]` instead of `-((x*y)/z)`.
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
-  Ok(Expr::FunctionCall {
-    name: "CovarianceFunction".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("CovarianceFunction", args))
 }
 
 /// CovarianceFunction[proc, t1, t2] closed forms for the directly
@@ -7349,12 +6999,7 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
 pub fn biweight_midvariance_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "BiweightMidvariance".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("BiweightMidvariance", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
@@ -7894,12 +7539,9 @@ fn cov_arma11(a: &Expr, b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
 pub fn characteristic_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "CharacteristicFunction".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("CharacteristicFunction", args);
   if args.len() != 2 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let t = args[1].clone();
 
@@ -7935,7 +7577,7 @@ pub fn characteristic_function_ast(
 
   let (dist_name, dargs) = match &args[0] {
     Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(uneval()),
   };
 
   // Raw templates only make sense while everything stays symbolic
@@ -8254,7 +7896,7 @@ pub fn characteristic_function_ast(
     // folds to 1.
     Some((expr, raw)) if raw && symbolic => Ok(expr),
     Some((expr, _)) => crate::evaluator::evaluate_expr_to_expr(&expr),
-    None => Ok(unevaluated(args)),
+    None => Ok(uneval()),
   }
 }
 
@@ -8267,12 +7909,9 @@ pub fn characteristic_function_ast(
 pub fn moment_generating_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "MomentGeneratingFunction".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("MomentGeneratingFunction", args);
   if args.len() != 2 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let t = args[1].clone();
 
@@ -8318,7 +7957,7 @@ pub fn moment_generating_function_ast(
 
   let (dist_name, dargs) = match &args[0] {
     Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(uneval()),
   };
 
   fn is_symbolic_param(e: &Expr) -> bool {
@@ -8586,7 +8225,7 @@ pub fn moment_generating_function_ast(
   match template {
     Some((expr, raw)) if raw && symbolic => Ok(expr),
     Some((expr, _)) => crate::evaluator::evaluate_expr_to_expr(&expr),
-    None => Ok(unevaluated(args)),
+    None => Ok(uneval()),
   }
 }
 
@@ -8658,12 +8297,9 @@ fn cgf_term(f: &Expr) -> Expr {
 pub fn cumulant_generating_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "CumulantGeneratingFunction".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("CumulantGeneratingFunction", args);
   if args.len() != 2 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let t = args[1].clone();
 
@@ -8693,7 +8329,7 @@ pub fn cumulant_generating_function_ast(
 
   let (dist_name, dargs) = match &args[0] {
     Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(uneval()),
   };
 
   fn is_symbolic_param(e: &Expr) -> bool {
@@ -8761,7 +8397,7 @@ pub fn cumulant_generating_function_ast(
   if matches!(&mgf, Expr::FunctionCall { name, .. }
     if name == "MomentGeneratingFunction")
   {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   // A distribution with no MGF (e.g. Cauchy, Student-t) also has no CGF:
   // Log[Indeterminate] is Indeterminate.
@@ -8801,12 +8437,9 @@ pub fn cumulant_generating_function_ast(
 pub fn factorial_moment_generating_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "FactorialMomentGeneratingFunction".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("FactorialMomentGeneratingFunction", args);
   if args.len() != 2 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let log_t = Expr::FunctionCall {
     name: "Log".to_string(),
@@ -8852,7 +8485,7 @@ pub fn factorial_moment_generating_function_ast(
   if matches!(&mgf, Expr::FunctionCall { name, .. }
     if name == "MomentGeneratingFunction")
   {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   crate::evaluator::evaluate_expr_to_expr(&mgf)
 }
@@ -8862,25 +8495,22 @@ pub fn factorial_moment_generating_function_ast(
 pub fn central_moment_generating_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "CentralMomentGeneratingFunction".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("CentralMomentGeneratingFunction", args);
   if args.len() != 2 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let mgf = moment_generating_function_ast(args)?;
   if matches!(&mgf, Expr::FunctionCall { name, .. }
     if name == "MomentGeneratingFunction")
   {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let mean = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
     name: "Mean".to_string(),
     args: vec![args[0].clone()].into(),
   })?;
   if matches!(&mean, Expr::FunctionCall { name, .. } if name == "Mean") {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let damp_exponent =
     crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -9025,27 +8655,24 @@ pub fn central_moment_generating_function_ast(
 pub fn correlation_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "CorrelationFunction".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("CorrelationFunction", args);
   if args.len() != 2 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let data = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(uneval()),
   };
   let is_numeric = |e: &Expr| {
     matches!(e, Expr::Integer(_) | Expr::Real(_))
       || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
   };
   if !data.iter().all(is_numeric) {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let k = match &args[1] {
     Expr::Integer(k) => *k,
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(uneval()),
   };
   let n = data.len() as i128;
   if k.abs() >= n {
@@ -9054,7 +8681,7 @@ pub fn correlation_function_ast(
        symbol, an integer with magnitude less than the length of the data \
        or a range specification indicating such integers.",
     ));
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let lag = k.unsigned_abs() as usize;
 
@@ -9116,22 +8743,16 @@ pub fn correlation_function_ast(
 /// Erfc[|z|/Sqrt[2]] with z = (mean - mu0)/Sqrt[var/n]. Properties:
 /// "PValue" (default) and "TestStatistic".
 pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "ZTest".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("ZTest", args);
   if args.is_empty() || args.len() > 4 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let bad_data = |args: &[Expr]| {
     crate::emit_message(&format!(
       "ZTest::rctndm1: The argument {} at position 1 should be a rectangular array of real numbers with length greater than the dimension of the array or two such arrays of equal dimensionality.",
       expr_to_string(&args[0])
     ));
-    Ok(Expr::FunctionCall {
-      name: "ZTest".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("ZTest", args))
   };
   let data: Vec<f64> = match &args[0] {
     Expr::List(items) if items.len() >= 2 => {
@@ -9154,7 +8775,7 @@ pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(e) => {
       match crate::functions::math_ast::numeric_utils::try_eval_to_f64(e) {
         Some(v) if v > 0.0 => Some(v),
-        _ => return Ok(unevaluated(args)),
+        _ => return Ok(uneval()),
       }
     }
   }
@@ -9166,7 +8787,7 @@ pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(e) => {
       match crate::functions::math_ast::numeric_utils::try_eval_to_f64(e) {
         Some(v) => v,
-        None => return Ok(unevaluated(args)),
+        None => return Ok(uneval()),
       }
     }
   };
@@ -9183,7 +8804,7 @@ pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ),
     )),
     Some(Expr::String(p)) if p == "TestStatistic" => Ok(Expr::Real(z)),
-    _ => Ok(unevaluated(args)),
+    _ => Ok(uneval()),
   }
 }
 
@@ -9194,22 +8815,16 @@ pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// two-sided 2 Min[F[T], 1 - F[T]]. A non-positive or non-numeric
 /// second argument emits FisherRatioTest::sigmnt.
 pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "FisherRatioTest".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("FisherRatioTest", args);
   if args.is_empty() || args.len() > 3 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let bad_data = |args: &[Expr]| {
     crate::emit_message(&format!(
       "FisherRatioTest::vctnln1: The argument {} at position 1 should be a vector of real numbers with length greater than 1 or a list containing two such vectors.",
       expr_to_string(&args[0])
     ));
-    Ok(Expr::FunctionCall {
-      name: "FisherRatioTest".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("FisherRatioTest", args))
   };
   let data: Vec<f64> = match &args[0] {
     Expr::List(items) if items.len() >= 2 => {
@@ -9234,7 +8849,7 @@ pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             "FisherRatioTest::sigmnt: The argument {} should be a positive number.",
             expr_to_string(&args[1])
           ));
-          return Ok(unevaluated(args));
+          return Ok(uneval());
         }
       }
     }
@@ -9248,7 +8863,7 @@ pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(Expr::String(p)) if p == "TestStatistic" => {
       return Ok(Expr::Real(t));
     }
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(uneval()),
   }
   // Two-sided p-value from the chi-square(n-1) CDF
   let upper = crate::functions::math_ast::gamma::gamma_regularized_numeric(
@@ -9319,21 +8934,12 @@ fn cycles_expr_lengths(e: &Expr) -> Option<Vec<usize>> {
 pub fn cycle_index_polynomial_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "CycleIndexPolynomial".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("CycleIndexPolynomial", args);
   if args.len() != 2 {
-    return Ok(unevaluated());
+    return Ok(uneval());
   }
   let call_str = || {
-    format_expr(
-      &Expr::FunctionCall {
-        name: "CycleIndexPolynomial".to_string(),
-        args: args.to_vec().into(),
-      },
-      ExprForm::Output,
-    )
+    format_expr(&unevaluated("CycleIndexPolynomial", args), ExprForm::Output)
   };
 
   // Resolve the group to (element list, degree of the action)
@@ -9375,7 +8981,7 @@ pub fn cycle_index_polynomial_ast(
         "CycleIndexPolynomial::grp: {} is not a valid group.",
         format_expr(&args[0], ExprForm::Output)
       ));
-      return Ok(unevaluated());
+      return Ok(uneval());
     }
   };
   let vars = match &args[1] {
@@ -9385,16 +8991,16 @@ pub fn cycle_index_polynomial_ast(
         "CycleIndexPolynomial::list: List expected at position 2 in {}.",
         call_str()
       ));
-      return Ok(unevaluated());
+      return Ok(uneval());
     }
   };
   let element_list = match &elements {
     Expr::List(items) => items,
-    _ => return Ok(unevaluated()),
+    _ => return Ok(uneval()),
   };
   let order = element_list.len() as i128;
   if order == 0 {
-    return Ok(unevaluated());
+    return Ok(uneval());
   }
 
   // Aggregate cycle types: counts of (multiplicity per cycle length)
@@ -9403,7 +9009,7 @@ pub fn cycle_index_polynomial_ast(
   for e in element_list.iter() {
     let lengths = match cycles_expr_lengths(e) {
       Some(l) => l,
-      None => return Ok(unevaluated()),
+      None => return Ok(uneval()),
     };
     let moved: usize = lengths.iter().sum();
     let mut mult = vec![0usize; degree + 1];
@@ -9628,10 +9234,7 @@ fn looks_like_group(e: &Expr) -> bool {
 pub fn group_multiplication_table_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GroupMultiplicationTable".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GroupMultiplicationTable", args);
   let Some((images, _)) = group_element_images(&args[0]) else {
     if !looks_like_group(&args[0]) {
       crate::emit_message(&format!(
@@ -9670,10 +9273,7 @@ pub fn group_multiplication_table_ast(
 /// PermutationGroup form follows wolframscript's internal Schreier-Sims
 /// generator selection and is not replicated.
 pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GroupStabilizer".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GroupStabilizer", args);
   if !looks_like_group(&args[0]) {
     crate::emit_message(&format!(
       "GroupStabilizer::grp: {} is not a valid group.",
@@ -9824,10 +9424,7 @@ fn erlang_b_symbolic(
       expr_to_output(&args[0]),
       expr_to_output(&args[1]),
     ));
-    return Some(Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    }));
+    return Some(Ok(unevaluated(name, args)));
   }
   let (c, a) = (args[0].clone(), args[1].clone());
   // a^c * E^(-a) / Gamma[1 + c, a]
@@ -9943,12 +9540,7 @@ fn erlang_common(
     }
   }
 
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated(name, args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -10098,24 +9690,14 @@ pub fn erlang_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the earliest element. Rule forms ({k...} -> {v...} or {k -> v, ...})
 /// return the value belonging to the central key.
 pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "CentralFeature".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
-  let call_display = || {
-    expr_to_string(&Expr::FunctionCall {
-      name: "CentralFeature".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let uneval = || Ok(unevaluated("CentralFeature", args));
+  let call_display = || expr_to_string(&unevaluated("CentralFeature", args));
 
   if args.is_empty() {
     crate::emit_message(
       "CentralFeature::argx: CentralFeature called with 0 arguments; 1 argument is expected.",
     );
-    return unevaluated();
+    return uneval();
   }
   for extra in &args[1..] {
     let is_opt = matches!(
@@ -10128,7 +9710,7 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         expr_to_string(extra),
         call_display()
       ));
-      return unevaluated();
+      return uneval();
     }
   }
 
@@ -10136,7 +9718,7 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Wrapped data forms Woxi does not model (e.g. WeightedData) stay
   // silently unevaluated instead of wrongly emitting `near1`.
   if matches!(data, Expr::FunctionCall { name, .. } if name == "WeightedData") {
-    return unevaluated();
+    return uneval();
   }
   let near1 = || {
     crate::emit_message(&format!(
@@ -10155,7 +9737,7 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => {
         near1();
-        return unevaluated();
+        return uneval();
       }
     },
     Expr::List(items) if !items.is_empty() => {
@@ -10179,7 +9761,7 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {
       near1();
-      return unevaluated();
+      return uneval();
     }
   };
 

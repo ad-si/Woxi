@@ -3,6 +3,7 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, expr_to_string, substitute_variable,
+  unevaluated,
 };
 
 pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -34,10 +35,7 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             "N::precbd: Requested precision {} is not a machine-sized real number between $MinPrecision and $MaxPrecision.",
             expr_to_string(other)
           ));
-          return Ok(Expr::FunctionCall {
-            name: "N".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("N", args));
         }
       }
     };
@@ -648,10 +646,7 @@ pub fn bigfloat_to_string(
 /// preserved verbatim.
 pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "SetPrecision".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SetPrecision", args));
   }
   let expr = &args[0];
   let target = &args[1];
@@ -668,10 +663,7 @@ pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         v
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "SetPrecision".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("SetPrecision", args));
       }
     }
   };
@@ -818,10 +810,7 @@ fn leaf_to_bigfloat(
 /// accuracy-form `0``accuracy`. Mirrors SetPrecision but the precision is
 /// computed per leaf from its magnitude.
 pub fn set_accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "SetAccuracy".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("SetAccuracy", args);
   if args.len() != 2 {
     return Ok(unevaluated());
   }
@@ -2123,10 +2112,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &mut ok,
       );
       if !ok || vals.is_empty() {
-        return Ok(Expr::FunctionCall {
-          name: "Rescale".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Rescale", args));
       }
       let min_f = vals.iter().cloned().fold(f64::INFINITY, f64::min);
       let max_f = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -2149,10 +2135,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
     // Single non-list value needs {xmin, xmax}
-    return Ok(Expr::FunctionCall {
-      name: "Rescale".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Rescale", args));
   }
 
   // Handle list first argument: Rescale[{x1, x2, ...}, range] maps over elements
@@ -2172,10 +2155,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let range = match &args[1] {
     Expr::List(r) if r.len() == 2 => r,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Rescale".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Rescale", args));
     }
   };
 
@@ -2183,22 +2163,14 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[2] {
       Expr::List(r) if r.len() == 2 => (&r[0], &r[1]),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Rescale".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Rescale", args));
       }
     }
   } else {
     (&Expr::Integer(0) as &Expr, &Expr::Integer(1) as &Expr)
   };
 
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Rescale".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("Rescale", args));
 
   // A literal exact number: Integer, BigInteger, Real or Rational[p, q].
   let is_numeric_literal = |e: &Expr| -> bool {
@@ -2305,10 +2277,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(
       "Norm::nvm: The first Norm argument should be a scalar, vector or matrix.",
     );
-    return Ok(Expr::FunctionCall {
-      name: "Norm".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Norm", args));
   }
   // Determine the norm parameter p
   let p_expr = if args.len() == 2 {
@@ -2341,10 +2310,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::expr_to_string(p)
       ));
     }
-    Ok(Expr::FunctionCall {
-      name: "Norm".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("Norm", args))
   };
 
   // Norm[matrix, "Frobenius"] — sqrt of sum of squared absolute values
@@ -2407,10 +2373,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(
         "Norm::nvm: The first Norm argument should be a scalar, vector or matrix.",
       );
-      return Ok(Expr::FunctionCall {
-        name: "Norm".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Norm", args));
     }
     let ncols = mat[0].len();
     if ncols > 0 && mat.iter().all(|r| r.len() == ncols) {
@@ -2495,10 +2458,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match try_eval_to_f64(item) {
             Some(v) => vals.push(v),
             None => {
-              return Ok(Expr::FunctionCall {
-                name: "Norm".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("Norm", args));
             }
           }
         }
@@ -2673,10 +2633,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
         crate::evaluator::evaluate_function_call_ast("Abs", &[args[0].clone()])
       } else {
-        Ok(Expr::FunctionCall {
-          name: "Norm".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("Norm", args))
       }
     }
   }
@@ -2856,10 +2813,7 @@ pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Non-numeric arguments remain unevaluated.
-    return Ok(Expr::FunctionCall {
-      name: "Unitize".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Unitize", args));
   }
 
   match &args[0] {
@@ -2885,10 +2839,7 @@ pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(Expr::Integer(1));
       }
-      Ok(Expr::FunctionCall {
-        name: "Unitize".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Unitize", args))
     }
   }
 }
@@ -3115,10 +3066,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             min_finite = Some(min_finite.map_or(v, |m| m.min(v)));
           }
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Accuracy".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Accuracy", args));
           }
         }
       }
@@ -3145,10 +3093,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             // Some child still couldn't be reduced to a number — keep the
             // call symbolic rather than guess.
-            return Ok(Expr::FunctionCall {
-              name: "Accuracy".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Accuracy", args));
           }
         }
       }
@@ -3680,29 +3625,20 @@ fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
 /// LinearRecurrence[ker, init, {n}] - returns the list containing only the nth element.
 pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "LinearRecurrence".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("LinearRecurrence", args));
   }
 
   let kernel = match &args[0] {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LinearRecurrence".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LinearRecurrence", args));
     }
   };
 
   let init = match &args[1] {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LinearRecurrence".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LinearRecurrence", args));
     }
   };
 
@@ -3713,10 +3649,7 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(n) = expr_to_i128(&items[0]) {
         (n as usize, Some((n as usize, n as usize)))
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "LinearRecurrence".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("LinearRecurrence", args));
       }
     }
     Expr::List(items) if items.len() == 2 => {
@@ -3725,17 +3658,11 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         (nmax as usize, Some((nmin as usize, nmax as usize)))
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "LinearRecurrence".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("LinearRecurrence", args));
       }
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LinearRecurrence".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LinearRecurrence", args));
     }
   };
 
@@ -3869,12 +3796,7 @@ fn warping_correspondence_path(
 pub fn warping_correspondence_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "WarpingCorrespondence".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("WarpingCorrespondence", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -3926,10 +3848,7 @@ pub fn warping_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   }
-  Ok(Expr::FunctionCall {
-    name: "WarpingDistance".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("WarpingDistance", args))
 }
 
 pub fn euclidean_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -4219,10 +4138,7 @@ fn fourier_impl(
         func_name,
         expr_to_string(&args[0])
       ));
-      return Ok(Expr::FunctionCall {
-        name: func_name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(func_name, args));
     }
   };
 
@@ -4237,10 +4153,7 @@ fn fourier_impl(
         func_name,
         expr_to_string(&args[0])
       ));
-      return Ok(Expr::FunctionCall {
-        name: func_name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(func_name, args));
     }
   }
 
@@ -4337,10 +4250,7 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "FourierDCT::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
       expr_to_string(&args[0])
     ));
-    Ok(Expr::FunctionCall {
-      name: "FourierDCT".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("FourierDCT", args))
   };
 
   let items = match &args[0] {
@@ -4383,12 +4293,7 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn discrete_hilbert_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DiscreteHilbertTransform".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DiscreteHilbertTransform", args));
   // Emit the ::data message and leave the expression unevaluated, matching
   // wolframscript's handling of empty or non-real arguments.
   let data_err = || {
@@ -4517,10 +4422,7 @@ pub fn fourier_dst_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "FourierDST::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
       expr_to_string(&args[0])
     ));
-    Ok(Expr::FunctionCall {
-      name: "FourierDST".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("FourierDST", args))
   };
 
   let items = match &args[0] {
@@ -4584,10 +4486,7 @@ fn neville_extrapolation(xs: &[f64], ys: &[f64]) -> f64 {
 /// NSum[expr, {i, min, max}] - Numerical summation
 pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
-    return Ok(Expr::FunctionCall {
-      name: "NSum".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NSum", args));
   }
 
   let body = &args[0];
@@ -4596,37 +4495,25 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match iter_spec {
     Expr::List(items) if items.len() >= 2 => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NSum".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NSum", args));
     }
   };
 
   let var_name = match &items[0] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NSum".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NSum", args));
     }
   };
 
   if items.len() < 3 {
-    return Ok(Expr::FunctionCall {
-      name: "NSum".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NSum", args));
   }
 
   let min_val = match try_eval_to_f64(&items[1]) {
     Some(v) => v as i64,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "NSum".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NSum", args));
     }
   };
 
@@ -4651,10 +4538,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let term = match try_eval_to_f64(&val) {
         Some(f) => f,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "NSum".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("NSum", args));
         }
       };
 
@@ -4685,10 +4569,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let max_val = match try_eval_to_f64(&items[2]) {
     Some(v) => v as i64,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "NSum".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NSum", args));
     }
   };
 
@@ -4700,10 +4581,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let term = match try_eval_to_f64(&val) {
       Some(f) => f,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "NSum".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("NSum", args));
       }
     };
     sum += term;
@@ -4715,10 +4593,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// NProduct[f, {i, imin, imax}] - Numerical product
 pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
-    return Ok(Expr::FunctionCall {
-      name: "NProduct".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NProduct", args));
   }
 
   let body = &args[0];
@@ -4727,37 +4602,25 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match iter_spec {
     Expr::List(items) if items.len() >= 2 => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NProduct".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NProduct", args));
     }
   };
 
   let var_name = match &items[0] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NProduct".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NProduct", args));
     }
   };
 
   if items.len() < 3 {
-    return Ok(Expr::FunctionCall {
-      name: "NProduct".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NProduct", args));
   }
 
   let min_val = match try_eval_to_f64(&items[1]) {
     Some(v) => v as i64,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "NProduct".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NProduct", args));
     }
   };
 
@@ -4791,17 +4654,11 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let term = match eval_term(i)? {
         Some(f) => f,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "NProduct".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("NProduct", args));
         }
       };
       if term <= 0.0 || !term.is_finite() {
-        return Ok(Expr::FunctionCall {
-          name: "NProduct".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("NProduct", args));
       }
       log_product += term.ln();
       if k + 1 >= next_sample {
@@ -4855,10 +4712,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let max_val = match try_eval_to_f64(&items[2]) {
     Some(v) => v as i64,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "NProduct".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NProduct", args));
     }
   };
 
@@ -4867,10 +4721,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let term = match eval_term(i)? {
       Some(f) => f,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "NProduct".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("NProduct", args));
       }
     };
     product *= term;
@@ -5450,19 +5301,13 @@ pub fn list_fourier_sequence_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "ListFourierSequenceTransform".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ListFourierSequenceTransform", args));
   }
 
   let list = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ListFourierSequenceTransform".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ListFourierSequenceTransform", args));
     }
   };
 
@@ -5535,10 +5380,7 @@ pub fn window_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // For exact rational arguments, try exact evaluation
@@ -5560,10 +5402,7 @@ pub fn window_function_ast(
   let x = match try_eval_to_f64(&args[0]) {
     Some(v) => v,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(name, args));
     }
   };
 
@@ -5604,10 +5443,7 @@ pub fn window_function_ast(
         + 5388.0 / 18608.0 * (4.0 * pi * x).cos()
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(name, args));
     }
   };
 
@@ -5636,10 +5472,7 @@ pub fn window_function_ast(
 /// evaluated symbolically (so Cos simplifies to wolframscript's radical forms,
 /// e.g. TukeyWindow[1/4] -> (1 + 1/Sqrt[2])/2); Real arguments numericize.
 pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "TukeyWindow".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("TukeyWindow", args);
   if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated());
   }
@@ -5753,10 +5586,7 @@ fn window_arg_inexact(e: &Expr) -> bool {
 /// Exact arguments give the exact polynomial value (e.g. ParzenWindow[1/3] ->
 /// 2/27); Real arguments numericize.
 pub fn parzen_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "ParzenWindow".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("ParzenWindow", args);
   if args.len() != 1 {
     return Ok(unevaluated());
   }
@@ -5829,10 +5659,7 @@ pub fn parzen_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Exact arguments give E^(rational) (e.g. GaussianWindow[1/4] -> E^(-25/72));
 /// Real arguments numericize.
 pub fn gaussian_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GaussianWindow".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GaussianWindow", args);
   if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated());
   }
@@ -5883,10 +5710,7 @@ pub fn gaussian_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// (1 - 2|x|) Cos[2 Pi |x|] + Sin[2 Pi |x|] / Pi. Exact arguments evaluate the
 /// symbolic form (e.g. BohmanWindow[1/4] -> 1/Pi); Real arguments numericize.
 pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "BohmanWindow".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("BohmanWindow", args);
   if args.len() != 1 {
     return Ok(unevaluated());
   }
@@ -5979,10 +5803,7 @@ fn approximate_rational(val: f64) -> Option<(i128, i128)> {
 /// Default order n = length of data. Default SampleRate = 1.
 pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 4 {
-    return Ok(Expr::FunctionCall {
-      name: "BandpassFilter".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BandpassFilter", args));
   }
 
   // Extract {omega1, omega2}
@@ -5991,28 +5812,19 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let o1 = match try_eval_to_f64(&freqs[0]) {
         Some(v) => v,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "BandpassFilter".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("BandpassFilter", args));
         }
       };
       let o2 = match try_eval_to_f64(&freqs[1]) {
         Some(v) => v,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "BandpassFilter".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("BandpassFilter", args));
         }
       };
       (o1, o2)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BandpassFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BandpassFilter", args));
     }
   };
 
@@ -6098,10 +5910,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BandpassFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BandpassFilter", args));
     }
   };
 
@@ -6230,19 +6039,13 @@ fn convolve_edge_padded_symbolic(data: &[Expr], kernel: &[f64]) -> Vec<Expr> {
 /// Applies a lowpass FIR filter using a windowed-sinc kernel with exact Hamming window.
 pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 4 {
-    return Ok(Expr::FunctionCall {
-      name: "LowpassFilter".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("LowpassFilter", args));
   }
 
   let omega_c = match try_eval_to_f64(&args[1]) {
     Some(v) => v,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "LowpassFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LowpassFilter", args));
     }
   };
 
@@ -6330,20 +6133,14 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LowpassFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LowpassFilter", args));
     }
   };
   let order = explicit_order.unwrap_or(items.len());
 
   let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
   if data.len() != items.len() {
-    return Ok(Expr::FunctionCall {
-      name: "LowpassFilter".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("LowpassFilter", args));
   }
 
   let kernel = lowpass_kernel(order, wc);
@@ -6385,19 +6182,13 @@ fn lowpass_kernel(n: usize, omega_c: f64) -> Vec<f64> {
 /// Applies a highpass FIR filter using a windowed-sinc kernel with exact Hamming window.
 pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 4 {
-    return Ok(Expr::FunctionCall {
-      name: "HighpassFilter".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("HighpassFilter", args));
   }
 
   let omega_c = match try_eval_to_f64(&args[1]) {
     Some(v) => v,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "HighpassFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HighpassFilter", args));
     }
   };
 
@@ -6481,20 +6272,14 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "HighpassFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("HighpassFilter", args));
     }
   };
   let order = explicit_order.unwrap_or(items.len());
 
   let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
   if data.len() != items.len() {
-    return Ok(Expr::FunctionCall {
-      name: "HighpassFilter".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("HighpassFilter", args));
   }
 
   let kernel = highpass_kernel(order, wc);
@@ -6531,10 +6316,7 @@ fn highpass_kernel(n: usize, omega_c: f64) -> Vec<f64> {
 /// Applies a bandstop (notch) FIR filter.
 pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 4 {
-    return Ok(Expr::FunctionCall {
-      name: "BandstopFilter".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BandstopFilter", args));
   }
 
   let (omega1, omega2) = match &args[1] {
@@ -6542,28 +6324,19 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let o1 = match try_eval_to_f64(&freqs[0]) {
         Some(v) => v,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "BandstopFilter".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("BandstopFilter", args));
         }
       };
       let o2 = match try_eval_to_f64(&freqs[1]) {
         Some(v) => v,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "BandstopFilter".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("BandstopFilter", args));
         }
       };
       (o1, o2)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BandstopFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BandstopFilter", args));
     }
   };
 
@@ -6648,20 +6421,14 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BandstopFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BandstopFilter", args));
     }
   };
   let order = explicit_order.unwrap_or(items.len());
 
   let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
   if data.len() != items.len() {
-    return Ok(Expr::FunctionCall {
-      name: "BandstopFilter".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BandstopFilter", args));
   }
 
   let kernel = bandstop_kernel(order, w1, w2);
@@ -7142,10 +6909,7 @@ pub fn cosine_sum_window_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated(name, args);
   if args.len() != 1 {
     return Ok(unevaluated());
   }
@@ -7240,18 +7004,13 @@ pub fn cosine_sum_window_ast(
 /// starting index (default 0). An empty list gives {}; non-list first
 /// arguments emit ::arg1 and echo, like wolframscript.
 pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ListZTransform".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let uneval = || Ok(unevaluated("ListZTransform", args));
   let Expr::List(items) = &args[0] else {
     crate::emit_message(&format!(
       "ListZTransform::arg1: Expected a numeric array instead of {}.",
       crate::syntax::expr_to_output(&args[0])
     ));
-    return unevaluated();
+    return uneval();
   };
   if items.is_empty() {
     return Ok(Expr::List(vec![].into()));
@@ -7259,7 +7018,7 @@ pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let shift: i128 = match args.get(2) {
     None => 0,
     Some(Expr::Integer(n)) => *n,
-    Some(_) => return unevaluated(),
+    Some(_) => return uneval(),
   };
   let terms: Vec<Expr> = items
     .iter()
@@ -7294,24 +7053,16 @@ pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn discrete_hadamard_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DiscreteHadamardTransform".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let uneval = || Ok(unevaluated("DiscreteHadamardTransform", args));
   if args.len() != 1 {
-    return unevaluated();
+    return uneval();
   }
   let data_err = || {
     crate::emit_message(&format!(
       "DiscreteHadamardTransform::data: {} is not a numerical array.",
       crate::syntax::expr_to_output(&args[0])
     ));
-    Ok(Expr::FunctionCall {
-      name: "DiscreteHadamardTransform".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("DiscreteHadamardTransform", args))
   };
   let Expr::List(items) = &args[0] else {
     return data_err();
@@ -7332,7 +7083,7 @@ pub fn discrete_hadamard_transform_ast(
   }
   let n = 1usize << bits;
   if n > 1 << 16 {
-    return unevaluated();
+    return uneval();
   }
   // Natural-order row for sequency slot s: bitreverse(gray(s)).
   let natural_row = |s: usize| -> usize {
@@ -7412,23 +7163,18 @@ pub fn parametric_window_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let uneval = || Ok(unevaluated(name, args));
   let max_args = if name == "BartlettHannWindow" { 1 } else { 2 };
   if args.is_empty() || args.len() > max_args {
-    return unevaluated();
+    return uneval();
   }
   let Some(x) = try_eval_to_f64(&args[0]) else {
-    return unevaluated();
+    return uneval();
   };
   let is_real = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..))
     || matches!(args.get(1), Some(Expr::Real(_) | Expr::BigFloat(..)));
   if !x.is_finite() {
-    return unevaluated();
+    return uneval();
   }
   if x.abs() > 0.5 {
     return Ok(if is_real {
@@ -7440,7 +7186,7 @@ pub fn parametric_window_ast(
   // The α parameter (Cauchy/Poisson only; default 3).
   let alpha_expr = args.get(1).cloned().unwrap_or(Expr::Integer(3));
   let Some(alpha) = try_eval_to_f64(&alpha_expr) else {
-    return unevaluated();
+    return uneval();
   };
   let eval = crate::evaluator::evaluate_expr_to_expr;
   let fc = |n: &str, a: Vec<Expr>| Expr::FunctionCall {

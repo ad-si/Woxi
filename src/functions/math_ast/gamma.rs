@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 use num_bigint::BigInt;
 
 /// Pochhammer[a, n] - Rising factorial (Pochhammer symbol): a * (a+1) * ... * (a+n-1)
@@ -122,10 +122,7 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       crate::evaluator::evaluate_expr_to_expr(&result)
     } else {
-      Ok(Expr::FunctionCall {
-        name: "Pochhammer".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Pochhammer", args))
     }
   } else {
     // Exact numeric a with a non-integer rational b (integer b is handled
@@ -172,10 +169,7 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    Ok(Expr::FunctionCall {
-      name: "Pochhammer".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("Pochhammer", args))
   }
 }
 
@@ -188,10 +182,7 @@ pub fn factorial_power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "FactorialPower expects 2 or 3 arguments".into(),
     ));
   }
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "FactorialPower".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("FactorialPower", args);
 
   let Some(k) = expr_to_i128(&args[1]) else {
     return Ok(unevaluated(args));
@@ -302,10 +293,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         right: Box::new(g1),
       });
     }
-    return Ok(Expr::FunctionCall {
-      name: "Gamma".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Gamma", args));
   }
 
   // Two-argument form: Gamma[a, z] = upper incomplete gamma function
@@ -427,10 +415,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(gamma_half_expr(numer, denom, is_neg));
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "Gamma".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Gamma", args))
     }
     _ => {
       // Complex floating-point argument: use the Lanczos approximation.
@@ -448,10 +433,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           gr, gi,
         ));
       }
-      Ok(Expr::FunctionCall {
-        name: "Gamma".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Gamma", args))
     }
   }
 }
@@ -1048,10 +1030,7 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Beta".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Beta", args))
 }
 
 /// Beta[z, a, b] — incomplete Beta function.
@@ -1176,10 +1155,7 @@ fn log_gamma_stirling(z: f64) -> f64 {
 /// LogGamma[z] — logarithm of the gamma function.
 pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "LogGamma".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("LogGamma", args));
   }
 
   let z = &args[0];
@@ -1257,10 +1233,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated for symbolic case
-  Ok(Expr::FunctionCall {
-    name: "LogGamma".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("LogGamma", args))
 }
 
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
@@ -1425,10 +1398,7 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "BetaRegularized".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("BetaRegularized", args))
 }
 
 /// Check if an expression is a positive number
@@ -1553,12 +1523,7 @@ fn inverse_beta_regularized_numeric(s: f64, a: f64, b: f64) -> f64 {
 pub fn inverse_beta_regularized_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let symbolic = || {
-    Ok(Expr::FunctionCall {
-      name: "InverseBetaRegularized".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let symbolic = || Ok(unevaluated("InverseBetaRegularized", args));
 
   // Generalized 4-arg form InverseBetaRegularized[z0, s, a, b] solves
   // BetaRegularized[z0, z, a, b] = I_z(a, b) - I_z0(a, b) == s for z, i.e.
@@ -1772,10 +1737,7 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "GammaRegularized".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("GammaRegularized", args))
 }
 
 /// MarcumQ[m, a, b] / MarcumQ[m, a, b0, b1] — generalized Marcum Q.
@@ -1786,10 +1748,7 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Poisson-weighted incomplete-gamma series; the four-argument form is
 /// the difference Q(m,a,b0) - Q(m,a,b1).
 pub fn marcum_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "MarcumQ".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("MarcumQ", args);
   if args.len() != 3 && args.len() != 4 {
     return Ok(unevaluated(args));
   }
@@ -1959,12 +1918,7 @@ fn owen_t_numeric(h: f64, a: f64) -> f64 {
 /// argument is inexact, and stays symbolic for exact non-special arguments
 /// (matching wolframscript).
 pub fn owen_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "OwenT".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("OwenT", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -2098,12 +2052,7 @@ fn inverse_gamma_regularized_numeric(a: f64, q: f64) -> f64 {
 pub fn inverse_gamma_regularized_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let symbolic = || {
-    Ok(Expr::FunctionCall {
-      name: "InverseGammaRegularized".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let symbolic = || Ok(unevaluated("InverseGammaRegularized", args));
 
   // 3-arg form InverseGammaRegularized[a, z0, q] solves
   // GammaRegularized[a, z0, z] = Q(a, z0) - Q(a, z) == q for z, i.e.
@@ -2221,15 +2170,9 @@ pub fn barnes_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if name == "Rational" && fargs.len() == 2 =>
     {
       // For N[BarnesG[rational]], return unevaluated; N[] will handle conversion
-      Ok(Expr::FunctionCall {
-        name: "BarnesG".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("BarnesG", args))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "BarnesG".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("BarnesG", args)),
   }
 }
 
@@ -2284,10 +2227,7 @@ fn log_barnes_g_float(z: f64) -> f64 {
 /// LogBarnesG[5.] as 2.4849066497880052 while Log[12.] is
 /// 2.4849066497880004).
 pub fn log_barnes_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "LogBarnesG".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("LogBarnesG", args);
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }

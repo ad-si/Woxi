@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, Expr, ExprForm, UnaryOperator, expr_to_string,
+  BinaryOperator, Expr, ExprForm, UnaryOperator, expr_to_string, unevaluated,
 };
 use num_bigint::BigInt;
 use num_bigint::Sign;
@@ -240,10 +240,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(args[0].clone());
   }
-  Ok(Expr::FunctionCall {
-    name: "Abs".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Abs", args))
 }
 
 /// True iff `expr` mentions the imaginary unit `I` (either as the symbol
@@ -787,10 +784,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![sign_base, exp.clone()].into(),
     });
   }
-  Ok(Expr::FunctionCall {
-    name: "Sign".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Sign", args))
 }
 
 /// Extract the largest easily-found perfect-square factor from a non-negative
@@ -1273,10 +1267,7 @@ fn extract_int_coeff(term: &Expr) -> Option<(i128, Expr)> {
         let base = if args.len() == 2 {
           args[1].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: args[1..].to_vec().into(),
-          }
+          unevaluated("Times", &args[1..])
         };
         Some((*n, base))
       } else {
@@ -1519,19 +1510,13 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         -((-x).powf(1.0 / n))
       } else if x < 0.0 {
         // Even root of negative number - return symbolic
-        return Ok(Expr::FunctionCall {
-          name: "Surd".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Surd", args));
       } else {
         x.powf(1.0 / n)
       };
       Ok(num_to_expr(result))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Surd".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("Surd", args)),
   }
 }
 
@@ -1738,10 +1723,7 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if let Some(r) = try_symbolic_complex_rounding(&args[0], floor_ast) {
     Ok(r)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "Floor".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("Floor", args))
   }
 }
 
@@ -1806,10 +1788,7 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if let Some(r) = try_symbolic_complex_rounding(&args[0], ceiling_ast) {
     Ok(r)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "Ceiling".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("Ceiling", args))
   }
 }
 
@@ -2082,10 +2061,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::Real(rounded));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Round".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Round", args));
   }
   // Complex[re, im]: round real and imaginary parts separately
   if let Expr::FunctionCall { name, args: cargs } = &args[0]
@@ -2130,10 +2106,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if let Some(r) = try_symbolic_complex_rounding(&args[0], round_ast) {
     Ok(r)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "Round".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("Round", args))
   }
 }
 
@@ -2526,10 +2499,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       is_literal_zero(&args[0])
     };
-    let call = expr_to_string(&Expr::FunctionCall {
-      name: "Quotient".to_string(),
-      args: args.to_vec().into(),
-    });
+    let call = expr_to_string(&unevaluated("Quotient", args));
     if numerator_is_zero {
       crate::emit_message(&format!(
         "Quotient::indet: Indeterminate expression {call} encountered."
@@ -2574,10 +2544,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::Integer(((a - c) / b).floor() as i128));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Quotient".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Quotient", args));
   }
 
   // 2-argument form: Quotient[n, m] = Floor[n / m]
@@ -2656,10 +2623,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         crate::evaluator::evaluate_expr_to_expr(&round_quot)
       } else {
-        Ok(Expr::FunctionCall {
-          name: "Quotient".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("Quotient", args))
       }
     }
   }
@@ -2686,12 +2650,7 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Clip".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("Clip", args));
 
   // Special values that don't compare like an ordinary real.
   match &args[0] {
@@ -2794,10 +2753,7 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(k) => BigInt::from(*k),
     Expr::BigInteger(k) => k.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "IntegerExponent".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("IntegerExponent", args));
     }
   };
   let base: BigInt = if args.len() == 2 {
@@ -2807,10 +2763,7 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A non-integer base is invalid: emit IntegerExponent::ibase.
       _ => {
         emit_integer_exponent_ibase(&args[1]);
-        return Ok(Expr::FunctionCall {
-          name: "IntegerExponent".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("IntegerExponent", args));
       }
     }
   } else {
@@ -2823,10 +2776,7 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // invalid; the default base 10 is always valid.
   if args.len() == 2 && base <= BigInt::from(1) {
     emit_integer_exponent_ibase(&args[1]);
-    return Ok(Expr::FunctionCall {
-      name: "IntegerExponent".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("IntegerExponent", args));
   }
 
   if n.is_zero() {
@@ -2964,10 +2914,7 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Truncate towards zero
         return Ok(Expr::Integer(n / d));
       }
-      Ok(Expr::FunctionCall {
-        name: "IntegerPart".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("IntegerPart", args))
     }
     _ => {
       if let Some(f) = try_eval_to_f64(&args[0]) {
@@ -2977,10 +2924,7 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         Ok(r)
       } else {
-        Ok(Expr::FunctionCall {
-          name: "IntegerPart".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("IntegerPart", args))
       }
     }
   }
@@ -3088,10 +3032,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         return Ok(make_rational(frac_n, *d));
       }
-      Ok(Expr::FunctionCall {
-        name: "FractionalPart".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("FractionalPart", args))
     }
     _ => {
       // For symbolic expressions that contain no Real/BigFloat literal but
@@ -3145,10 +3086,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(Expr::Real(frac))
         }
       } else {
-        Ok(Expr::FunctionCall {
-          name: "FractionalPart".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("FractionalPart", args))
       }
     }
   }
@@ -3182,10 +3120,7 @@ pub fn chop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match try_eval_to_f64(&args[1]) {
       Some(t) => t,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "Chop".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Chop", args));
       }
     }
   } else {
@@ -3388,10 +3323,7 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 3.0). A concrete number that is not a positive integer triggers the
   // Subdivide::sdmint message and leaves the call unevaluated; a symbolic n is
   // left unevaluated silently.
-  let unevaluated = || Expr::FunctionCall {
-    name: "Subdivide".to_string(),
-    args: args.to_vec().into(),
-  };
+  let uneval = || unevaluated("Subdivide", args);
   let n_val = match &n_expr {
     Expr::Integer(n) if *n > 0 => *n,
     Expr::BigInteger(b) => {
@@ -3402,9 +3334,9 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::emit_message(&format!(
             "Subdivide::sdmint: The number of subdivisions given in position {} of {} should be a positive machine-sized integer.",
             args.len(),
-            crate::syntax::format_expr(&unevaluated(), ExprForm::Output)
+            crate::syntax::format_expr(&uneval(), ExprForm::Output)
           ));
-          return Ok(unevaluated());
+          return Ok(uneval());
         }
       }
     }
@@ -3417,12 +3349,12 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "Subdivide::sdmint: The number of subdivisions given in position {} of {} should be a positive machine-sized integer.",
         args.len(),
-        crate::syntax::format_expr(&unevaluated(), ExprForm::Output)
+        crate::syntax::format_expr(&uneval(), ExprForm::Output)
       ));
-      return Ok(unevaluated());
+      return Ok(uneval());
     }
     // Symbolic n: leave unevaluated without a message.
-    _ => return Ok(unevaluated()),
+    _ => return Ok(uneval()),
   };
 
   // Fast path: both endpoints are integers
@@ -3444,10 +3376,7 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Both must be lists of the same length
     if let (Expr::List(xmin_items), Expr::List(xmax_items)) = (&xmin, &xmax) {
       if xmin_items.len() != xmax_items.len() {
-        return Ok(Expr::FunctionCall {
-          name: "Subdivide".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Subdivide", args));
       }
       let dim = xmin_items.len();
       let mut result_items = Vec::with_capacity(n_val as usize + 1);
@@ -3462,10 +3391,7 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::List(result_items.into()));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Subdivide".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Subdivide", args));
   }
 
   // Scalar, general (symbolic or float) endpoints
@@ -3691,12 +3617,7 @@ fn nested_divisions(
 /// nested subdivision). Division endpoints may fall just outside [xmin, xmax].
 /// Non-numeric endpoints stay unevaluated.
 pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "FindDivisions".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("FindDivisions", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -3779,10 +3700,7 @@ pub fn ramp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => match crate::functions::math_ast::try_eval_to_f64(other) {
       Some(v) if v >= 0.0 => Ok(other.clone()),
       Some(_) => Ok(Expr::Integer(0)),
-      None => Ok(Expr::FunctionCall {
-        name: "Ramp".to_string(),
-        args: args.to_vec().into(),
-      }),
+      None => Ok(unevaluated("Ramp", args)),
     },
   }
 }
@@ -3799,10 +3717,7 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return match &args[0] {
       Expr::Integer(n) => Ok(Expr::Integer(if *n == 0 { 1 } else { 0 })),
       Expr::Real(f) => Ok(Expr::Integer(if *f == 0.0 { 1 } else { 0 })),
-      _ => Ok(Expr::FunctionCall {
-        name: "KroneckerDelta".to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => Ok(unevaluated("KroneckerDelta", args)),
     };
   }
 
@@ -3830,10 +3745,7 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   if has_symbolic {
-    Ok(Expr::FunctionCall {
-      name: "KroneckerDelta".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("KroneckerDelta", args))
   } else if all_equal {
     Ok(Expr::Integer(1))
   } else {
@@ -3866,10 +3778,7 @@ pub fn discrete_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   if has_symbolic {
-    Ok(Expr::FunctionCall {
-      name: "DiscreteDelta".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("DiscreteDelta", args))
   } else {
     Ok(Expr::Integer(1))
   }
@@ -3920,10 +3829,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => Ok(Expr::Integer(if *f >= 0.0 { 1 } else { 0 })),
     Expr::Constant(c) => match c.as_str() {
       "Pi" | "E" | "Degree" => Ok(Expr::Integer(1)),
-      _ => Ok(Expr::FunctionCall {
-        name: "UnitStep".to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => Ok(unevaluated("UnitStep", args)),
     },
     Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(1)),
     Expr::UnaryOp {
@@ -3934,10 +3840,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Integer(0))
       }
       Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(0)),
-      _ => Ok(Expr::FunctionCall {
-        name: "UnitStep".to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => Ok(unevaluated("UnitStep", args)),
     },
     // Times[-1, x] pattern (e.g. -Pi parses as Times[-1, Pi])
     Expr::FunctionCall { name, args: fargs }
@@ -3950,10 +3853,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(Expr::Integer(0))
         }
         Expr::Identifier(n) if n == "Infinity" => Ok(Expr::Integer(0)),
-        _ => Ok(Expr::FunctionCall {
-          name: "UnitStep".to_string(),
-          args: args.to_vec().into(),
-        }),
+        _ => Ok(unevaluated("UnitStep", args)),
       }
     }
     Expr::BinaryOp {
@@ -3965,10 +3865,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Integer(0))
       }
       Expr::Identifier(n) if n == "Infinity" => Ok(Expr::Integer(0)),
-      _ => Ok(Expr::FunctionCall {
-        name: "UnitStep".to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => Ok(unevaluated("UnitStep", args)),
     },
     Expr::List(items) => {
       let results: Result<Vec<Expr>, InterpreterError> =
@@ -3980,10 +3877,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => match crate::functions::math_ast::try_eval_to_f64(other) {
       Some(v) if v >= 0.0 => Ok(Expr::Integer(1)),
       Some(_) => Ok(Expr::Integer(0)),
-      None => Ok(Expr::FunctionCall {
-        name: "UnitStep".to_string(),
-        args: args.to_vec().into(),
-      }),
+      None => Ok(unevaluated("UnitStep", args)),
     },
   }
 }
@@ -4075,10 +3969,7 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Constant(c) => match c.as_str() {
       "Pi" | "E" | "Degree" => Ok(Expr::Integer(1)),
-      _ => Ok(Expr::FunctionCall {
-        name: "HeavisideTheta".to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => Ok(unevaluated("HeavisideTheta", args)),
     },
     Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(1)),
     // Exact rationals and real-valued symbolic numerics (Sqrt[2] - 2, …):
@@ -4086,10 +3977,7 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => match crate::functions::math_ast::try_eval_to_f64(other) {
       Some(v) if v > 0.0 => Ok(Expr::Integer(1)),
       Some(v) if v < 0.0 => Ok(Expr::Integer(0)),
-      _ => Ok(Expr::FunctionCall {
-        name: "HeavisideTheta".to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => Ok(unevaluated("HeavisideTheta", args)),
     },
   }
 }
@@ -4115,10 +4003,7 @@ pub fn dirac_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // If all args are zero, or mixed with symbolic, stay symbolic
-  Ok(Expr::FunctionCall {
-    name: "DiracDelta".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("DiracDelta", args))
 }
 
 /// UnitBox[x] = 1 for |x| <= 1/2, 0 otherwise
@@ -4143,15 +4028,9 @@ pub fn unit_box_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let abs_val = (*n as f64 / *d as f64).abs();
         return Ok(Expr::Integer(if abs_val <= 0.5 { 1 } else { 0 }));
       }
-      Ok(Expr::FunctionCall {
-        name: "UnitBox".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("UnitBox", args))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "UnitBox".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("UnitBox", args)),
   }
 }
 
@@ -4167,10 +4046,7 @@ pub fn heaviside_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let v = f.abs();
       if (v - 0.5).abs() < f64::EPSILON {
         // At boundary, return unevaluated
-        Ok(Expr::FunctionCall {
-          name: "HeavisidePi".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("HeavisidePi", args))
       } else if v < 0.5 {
         Ok(Expr::Integer(1))
       } else {
@@ -4188,25 +4064,16 @@ pub fn heaviside_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let d_abs = d.unsigned_abs();
         return if two_n_abs == d_abs {
           // At boundary, return unevaluated
-          Ok(Expr::FunctionCall {
-            name: "HeavisidePi".to_string(),
-            args: args.to_vec().into(),
-          })
+          Ok(unevaluated("HeavisidePi", args))
         } else if two_n_abs < d_abs {
           Ok(Expr::Integer(1))
         } else {
           Ok(Expr::Integer(0))
         };
       }
-      Ok(Expr::FunctionCall {
-        name: "HeavisidePi".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("HeavisidePi", args))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "HeavisidePi".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("HeavisidePi", args)),
   }
 }
 
@@ -4253,15 +4120,9 @@ pub fn unit_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Integer(0));
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "UnitTriangle".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("UnitTriangle", args))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "UnitTriangle".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("UnitTriangle", args)),
   }
 }
 
@@ -4301,14 +4162,8 @@ pub fn heaviside_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let num = abs_d - abs_n;
         return Ok(crate::functions::math_ast::make_rational(num, abs_d));
       }
-      Ok(Expr::FunctionCall {
-        name: "HeavisideLambda".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("HeavisideLambda", args))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "HeavisideLambda".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("HeavisideLambda", args)),
   }
 }

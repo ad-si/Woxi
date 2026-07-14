@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// Emit the `<Name>::array` message and return the call unevaluated for an
 /// invalid dimension specification (a negative integer, a non-integer, or a
@@ -11,10 +11,7 @@ fn random_array_dims_error(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let call = Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  };
+  let call = unevaluated(name, args);
   crate::emit_message(&format!(
     "{}::array: The array dimensions {} given in position 2 of {} should be a list of non-negative machine-sized integers giving the dimensions for the result.",
     name,
@@ -460,15 +457,9 @@ pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Ok(Expr::List(out.into()))
       }
-      _ => Ok(Expr::FunctionCall {
-        name: "RandomColor".to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => Ok(unevaluated("RandomColor", args)),
     },
-    _ => Ok(Expr::FunctionCall {
-      name: "RandomColor".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("RandomColor", args)),
   }
 }
 
@@ -530,15 +521,9 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Ok(Expr::List(out.into()))
       }
-      _ => Ok(Expr::FunctionCall {
-        name: "RandomDate".to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => Ok(unevaluated("RandomDate", args)),
     },
-    _ => Ok(Expr::FunctionCall {
-      name: "RandomDate".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("RandomDate", args)),
   }
 }
 
@@ -595,15 +580,9 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Ok(Expr::List(out.into()))
       }
-      _ => Ok(Expr::FunctionCall {
-        name: "RandomDate".to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => Ok(unevaluated("RandomDate", args)),
     },
-    _ => Ok(Expr::FunctionCall {
-      name: "RandomDate".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("RandomDate", args)),
   }
 }
 
@@ -763,12 +742,7 @@ pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   }
 
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "RandomTime".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("RandomTime", args));
 
   // Split the arguments into an optional spec and an optional count.
   let (interval, count): (Option<(f64, f64)>, Option<i128>) = match args {
@@ -824,10 +798,7 @@ pub fn random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Real" => random_real_ast(&rest),
     "Integer" => random_integer_ast(&rest),
     "Complex" => random_complex_ast(&rest),
-    _ => Ok(Expr::FunctionCall {
-      name: "Random".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("Random", args)),
   }
 }
 
@@ -854,10 +825,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (Expr::List(weights), Expr::List(values)) =
           (pattern.as_ref(), replacement.as_ref())
         else {
-          return Ok(Expr::FunctionCall {
-            name: "RandomChoice".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("RandomChoice", args));
         };
         if weights.is_empty() || weights.len() != values.len() {
           return Err(InterpreterError::EvaluationError(
@@ -902,16 +870,10 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "RandomChoice::lrwl: The items for choice {} should be a nonempty list or a rule weights -> choices.",
           crate::syntax::expr_to_string(&args[0])
         ));
-        return Ok(Expr::FunctionCall {
-          name: "RandomChoice".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("RandomChoice", args));
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "RandomChoice".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("RandomChoice", args));
       }
     }
   };
@@ -1000,10 +962,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (Expr::List(weights), Expr::List(values)) =
         (pattern.as_ref(), replacement.as_ref())
       else {
-        return Ok(Expr::FunctionCall {
-          name: "RandomSample".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("RandomSample", args));
       };
       if weights.is_empty() || weights.len() != values.len() {
         return Err(InterpreterError::EvaluationError(
@@ -1036,10 +995,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[0] {
       Expr::List(items) => items.as_ref(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "RandomSample".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("RandomSample", args));
       }
     }
   };
@@ -1087,10 +1043,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "RandomSample::intnm: Non-negative machine-sized integer expected at position 2 in RandomSample[{}].",
           arg_strs.join(", "),
         ));
-        return Ok(Expr::FunctionCall {
-          name: "RandomSample".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("RandomSample", args));
       }
     };
     if n > items.len() {
@@ -1199,10 +1152,7 @@ pub fn random_permutation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "RandomPermutation".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("RandomPermutation", args));
     }
   };
 
@@ -1212,10 +1162,7 @@ pub fn random_permutation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let k = match &args[1] {
         Expr::Integer(k) if *k >= 0 => *k as usize,
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "RandomPermutation".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("RandomPermutation", args));
         }
       };
       let perms: Vec<Expr> =
@@ -1446,10 +1393,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           (mu1, mu2, sigma1, sigma2, r)
         }
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "RandomVariate".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("RandomVariate", args));
         }
       };
       if !(-1.0..=1.0).contains(&rho) {
@@ -1531,10 +1475,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "RandomVariate".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("RandomVariate", args)),
   }
 }
 
@@ -1552,12 +1493,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // positive integer emits `RandomPrime::intp` and an otherwise-valid interval
   // that contains no primes emits `RandomPrime::noprime`. In both cases it
   // returns the expression unevaluated.
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "RandomPrime".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let uneval = || Ok(unevaluated("RandomPrime", args));
 
   // Parse the range from first argument
   let (min, max) = match &args[0] {
@@ -1566,7 +1502,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "RandomPrime::intp: {imax} is not a positive integer."
         ));
-        return unevaluated();
+        return uneval();
       }
       (2i128, *imax)
     }
@@ -1575,7 +1511,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "RandomPrime::intp: {} is not a positive integer.",
         crate::syntax::expr_to_string(&args[0])
       ));
-      return unevaluated();
+      return uneval();
     }
     Expr::List(items) if items.len() == 2 => {
       // Both bounds must be positive integers; report the first offender.
@@ -1587,20 +1523,20 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               "RandomPrime::intp: {} is not a positive integer.",
               crate::syntax::expr_to_string(it)
             ));
-            return unevaluated();
+            return uneval();
           }
           // A symbolic bound stays unevaluated (no message), matching WL.
-          _ => return unevaluated(),
+          _ => return uneval(),
         }
       }
       if let (Expr::Integer(a), Expr::Integer(b)) = (&items[0], &items[1]) {
         // wolframscript orders the bounds, so {5, 2} samples from [2, 5].
         ((*a).min(*b), (*a).max(*b))
       } else {
-        return unevaluated();
+        return uneval();
       }
     }
-    _ => return unevaluated(),
+    _ => return uneval(),
   };
 
   // The second arg may be a positive integer (length of a flat list)
@@ -1615,10 +1551,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "RandomPrime::posdim: The dimensions parameter {} is expected to be a positive integer or a list of positive integers.",
       crate::syntax::expr_to_string(&args[1])
     ));
-    Ok(Expr::FunctionCall {
-      name: "RandomPrime".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("RandomPrime", args))
   };
   let dims: Vec<usize> = if args.len() == 2 {
     match &args[1] {
@@ -1669,7 +1602,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(
         "RandomPrime::noprime: There are no primes in the specified interval.",
       );
-      return unevaluated();
+      return uneval();
     }
     if dims.is_empty() {
       let idx = crate::with_rng(|rng| rng.gen_range(0..primes.len()));
@@ -1689,7 +1622,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(
         "RandomPrime::noprime: There are no primes in the specified interval.",
       );
-      return unevaluated();
+      return uneval();
     }
     let mut results = Vec::with_capacity(count);
     for _ in 0..count {
@@ -1771,10 +1704,7 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
   use rand::seq::SliceRandom;
 
-  let unevaluated = || Expr::FunctionCall {
-    name: "RandomGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("RandomGraph", args);
 
   // Split positional args from trailing Rule options.
   let mut positional: Vec<&Expr> = Vec::new();

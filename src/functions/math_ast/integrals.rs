@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// ExpIntegralEi[x] - Exponential integral Ei(x)
 pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -30,10 +30,7 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Integer(0));
       }
       // Unevaluated
-      Ok(Expr::FunctionCall {
-        name: "ExpIntegralEi".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("ExpIntegralEi", args))
     }
   }
 }
@@ -116,10 +113,7 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
       // Unevaluated
-      Ok(Expr::FunctionCall {
-        name: "CosIntegral".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("CosIntegral", args))
     }
   }
 }
@@ -266,10 +260,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ],
         );
       }
-      Ok(Expr::FunctionCall {
-        name: "FresnelS".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("FresnelS", args))
     }
     // FresnelS[-n] for negative integer
     Expr::Integer(n) if *n < 0 => Ok(negate_fresnel_s(Expr::Integer(-*n))),
@@ -281,10 +272,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(crate::functions::math_ast::make_rational(-1, 2));
       }
       // Unevaluated
-      Ok(Expr::FunctionCall {
-        name: "FresnelS".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("FresnelS", args))
     }
   }
 }
@@ -386,10 +374,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ],
         );
       }
-      Ok(Expr::FunctionCall {
-        name: "FresnelC".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("FresnelC", args))
     }
     // FresnelC[-n] for negative integer
     Expr::Integer(n) if *n < 0 => Ok(negate_fresnel_c(Expr::Integer(-*n))),
@@ -401,10 +386,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(crate::functions::math_ast::make_rational(-1, 2));
       }
       // Unevaluated
-      Ok(Expr::FunctionCall {
-        name: "FresnelC".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("FresnelC", args))
     }
   }
 }
@@ -636,10 +618,7 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
       // Unevaluated
-      Ok(Expr::FunctionCall {
-        name: "SinIntegral".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("SinIntegral", args))
     }
   }
 }
@@ -751,10 +730,7 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "ExpIntegralE".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ExpIntegralE", args))
 }
 
 /// Compute E_n(z) = ∫_1^∞ e^{-zt}/t^n dt
@@ -859,10 +835,7 @@ pub fn log_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Real(result))
     }
     // Unevaluated
-    _ => Ok(Expr::FunctionCall {
-      name: "LogIntegral".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("LogIntegral", args)),
   }
 }
 
@@ -881,10 +854,7 @@ pub fn riemann_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Numeric evaluation for real values
     Expr::Real(x) if *x > 0.0 => Ok(Expr::Real(riemann_r_numeric(*x))),
     // Unevaluated for symbolic and other args
-    _ => Ok(Expr::FunctionCall {
-      name: "RiemannR".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("RiemannR", args)),
   }
 }
 
@@ -944,10 +914,7 @@ pub fn sinh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
       // Unevaluated
-      Ok(Expr::FunctionCall {
-        name: "SinhIntegral".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("SinhIntegral", args))
     }
   }
 }
@@ -1045,10 +1012,7 @@ pub fn cosh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("Infinity".to_string()));
       }
       // Unevaluated
-      Ok(Expr::FunctionCall {
-        name: "CoshIntegral".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("CoshIntegral", args))
     }
   }
 }
@@ -1113,12 +1077,7 @@ pub fn fresnel_fg_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated(name, args));
   if args.len() != 1 {
     return unevaluated();
   }
