@@ -514,7 +514,7 @@ pub fn is_real_valued(expr: &Expr) -> bool {
 }
 
 /// Helper: check if an expression is a known real value (Integer, Real, or Rational)
-pub fn is_known_real(expr: &Expr) -> bool {
+fn is_known_real(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => true,
     Expr::Constant(c) if c == "Pi" || c == "E" => true,

@@ -11396,7 +11396,7 @@ fn exponent_f64(exp: &Expr) -> Option<f64> {
 /// 30 - log10(2), Sqrt[N[2,30]] has 30 - log10(1/2)). Returns None (deferring to
 /// the symbolic/complex path) when the exponent is not a plain real, or the
 /// base is negative with a non-integer exponent (a complex result).
-pub fn try_bigfloat_power(
+fn try_bigfloat_power(
   base: &Expr,
   exp: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
