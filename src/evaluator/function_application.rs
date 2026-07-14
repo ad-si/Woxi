@@ -348,6 +348,31 @@ pub fn apply_apply_ast(
     Expr::List(items) => items.clone(),
     // Apply replaces the head of any expression: f @@ Plus[a, b, c] → f[a, b, c]
     Expr::FunctionCall { args, .. } => args.clone(),
+    // Some heads stay as (possibly nested) BinaryOp nodes rather than
+    // FunctionCall nodes — notably Alternatives (`a | b | c`). Flatten
+    // same-operator chains so `List @@ (a | b | c)` → {a, b, c}, matching WS.
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator;
+      fn flatten(op: &BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
+        if let Expr::BinaryOp {
+          op: inner,
+          left,
+          right,
+        } = e
+          && inner == op
+          && !matches!(op, BinaryOperator::Power)
+        {
+          flatten(op, left, out);
+          flatten(op, right, out);
+          return;
+        }
+        out.push(e.clone());
+      }
+      let mut parts = Vec::new();
+      flatten(op, left, &mut parts);
+      flatten(op, right, &mut parts);
+      parts.into()
+    }
     _ => {
       // Atoms have no children; Apply on an atom returns the atom unchanged
       return Ok(list.clone());

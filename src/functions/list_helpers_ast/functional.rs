@@ -752,7 +752,38 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
             ])
           }
         }
-        // Plus, Times, Power, And, Or, etc.
+        // Flat (associative) operators such as Alternatives (`a | b | c`) are
+        // stored as nested BinaryOp chains but are conceptually a single
+        // n-ary head, so flatten same-operator nestings into siblings —
+        // matching WS where `a | b | c` is Alternatives[a, b, c]. Power is
+        // right-associative and genuinely binary (`a^b^c` = a^(b^c)), so it
+        // keeps its two operands.
+        BinaryOperator::Plus
+        | BinaryOperator::Times
+        | BinaryOperator::And
+        | BinaryOperator::Or
+        | BinaryOperator::StringJoin
+        | BinaryOperator::Alternatives => {
+          fn flatten(op: &BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
+            if let Expr::BinaryOp {
+              op: inner,
+              left,
+              right,
+            } = e
+              && inner == op
+            {
+              flatten(op, left, out);
+              flatten(op, right, out);
+              return;
+            }
+            out.push(e.clone());
+          }
+          let mut parts = Vec::new();
+          flatten(op, left, &mut parts);
+          flatten(op, right, &mut parts);
+          Some(parts)
+        }
+        // Power (right-associative, binary) and any remaining operators.
         _ => Some(vec![left.as_ref().clone(), right.as_ref().clone()]),
       }
     }

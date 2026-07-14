@@ -289,6 +289,21 @@ mod function_head {
   }
 
   #[test]
+  fn apply_over_alternatives_operator_form() {
+    // `a | b | c` is Alternatives[a, b, c] (a flat, associative head stored as
+    // a nested BinaryOp); Apply must flatten it. Matches wolframscript.
+    assert_eq!(interpret("List @@ (a | b)").unwrap(), "{a, b}");
+    assert_eq!(interpret("List @@ (a | b | c)").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("Plus @@ (a | b | c)").unwrap(), "a + b + c");
+  }
+
+  #[test]
+  fn apply_over_alternatives_function_form() {
+    assert_eq!(interpret("Apply[List, a | b | c]").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("Apply[Times, a | b | c]").unwrap(), "a*b*c");
+  }
+
+  #[test]
   fn apply_negative_levelspec() {
     // Negative level -k selects subexpressions of Depth k (here -3 means
     // Depth 3 subexpressions). For {{{{{a}}}}} (Depth 6), {2, -3} = {2, 3}.
