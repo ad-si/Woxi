@@ -3744,6 +3744,34 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     });
   }
+  // A matrix reduces column-wise: the r-th central moment of each column.
+  // (This also fixes Kurtosis/Skewness of a matrix, which build on it.)
+  if let Expr::List(rows) = &args[0]
+    && !rows.is_empty()
+    && rows
+      .iter()
+      .all(|r| matches!(r, Expr::List(c) if !c.is_empty()))
+  {
+    let cols: Vec<&crate::ExprList> = rows
+      .iter()
+      .filter_map(|r| match r {
+        Expr::List(c) => Some(c),
+        _ => None,
+      })
+      .collect();
+    let ncols = cols[0].len();
+    if cols.iter().all(|c| c.len() == ncols) {
+      let mut result = Vec::with_capacity(ncols);
+      for j in 0..ncols {
+        let column: Vec<Expr> = cols.iter().map(|c| c[j].clone()).collect();
+        result.push(central_moment_ast(&[
+          Expr::List(column.into()),
+          args[1].clone(),
+        ])?);
+      }
+      return Ok(Expr::List(result.into()));
+    }
+  }
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {

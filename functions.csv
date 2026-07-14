@@ -1332,7 +1332,7 @@ ExtentSize,,🚫,,8.0,1345
 CoshIntegral,Hyperbolic cosine integral Chi(z),✅,pure,3.0,1347
 SampleRate,,🚫,,2.0,1347
 LegendLayout,,🚫,,9.0,1348
-CentralMoment,Computes the k-th central moment of a list or distribution,✅,pure,6.0,1349
+CentralMoment,Computes the k-th central moment of a list distribution or (column-wise) matrix,✅,pure,6.0,1349
 FaceGrids,Option for Graphics3D specifying grid lines on bounding box faces,✅,pure,2.0,1351
 GeoDistance,Geodesic distance between two geo positions as a Quantity,✅,pure,7.0,1351
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1.0,1353

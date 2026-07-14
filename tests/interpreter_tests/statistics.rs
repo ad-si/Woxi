@@ -10006,3 +10006,42 @@ mod sparse_array_scalar_reductions {
     );
   }
 }
+
+// CentralMoment (and therefore Kurtosis/Skewness) reduces a matrix
+// column-wise, matching wolframscript.
+mod matrix_central_moment {
+  use super::*;
+
+  #[test]
+  fn central_moment_columns() {
+    assert_eq!(
+      interpret("CentralMoment[{{1, 2}, {3, 4}, {5, 6}}, 2]").unwrap(),
+      "{8/3, 8/3}"
+    );
+    assert_eq!(
+      interpret("CentralMoment[{{1, 2}, {3, 4}, {5, 6}}, 3]").unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn kurtosis_and_skewness_columns() {
+    assert_eq!(
+      interpret("Kurtosis[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]").unwrap(),
+      "{41/25, 41/25}"
+    );
+    assert_eq!(
+      interpret("Skewness[{{1, 2}, {3, 4}, {5, 6}}]").unwrap(),
+      "{0, 0}"
+    );
+    // A genuinely asymmetric column has a nonzero skewness.
+    assert_eq!(
+      interpret("Skewness[{{1, 2}, {3, 4}, {5, 100}}]").unwrap(),
+      "{0, 113975/(2353*Sqrt[4706])}"
+    );
+    assert_eq!(
+      interpret("Kurtosis[{{1, 10}, {3, 4}, {5, 6}, {7, 2}}]").unwrap(),
+      "{41/25, 323/175}"
+    );
+  }
+}
