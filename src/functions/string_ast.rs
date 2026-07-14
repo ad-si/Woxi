@@ -7741,6 +7741,14 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
   let overlaps = has_overlaps_option(args);
 
+  // The empty pattern matches at every character boundary:
+  // StringCount["ab", ""] = 3, StringCount["", ""] = 1
+  // (wolframscript-verified; differential fuzzer, seed
+  // 8863040114037283151).
+  if matches!(&args[1], Expr::String(sub) if sub.is_empty()) {
+    return Ok(Expr::Integer(s.chars().count() as i128 + 1));
+  }
+
   // A conditional pattern (`patt /; test`) needs per-match evaluation of the
   // test; delegate to StringCases (which handles it) and count the matches.
   if let Expr::FunctionCall { name, .. } = &args[1]
@@ -7763,7 +7771,11 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Fallback to plain string matching.
   let sub = expr_to_str(&args[1])?;
   if sub.is_empty() {
-    return Ok(Expr::Integer(0));
+    // The empty pattern matches at every character boundary:
+    // StringCount["ab", ""] = 3, StringCount["", ""] = 1
+    // (wolframscript-verified; differential fuzzer, seed
+    // 8863040114037283151).
+    return Ok(Expr::Integer(s.chars().count() as i128 + 1));
   }
   let (hay, needle) = if ignore_case {
     (s.to_lowercase(), sub.to_lowercase())

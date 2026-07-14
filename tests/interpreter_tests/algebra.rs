@@ -2043,6 +2043,68 @@ mod cancel {
     assert_eq!(interpret("Cancel[-2/(1 + x)]").unwrap(), "-2/(1 + x)");
     assert_eq!(interpret("Simplify[-1/(1 + x)]").unwrap(), "-(1 + x)^(-1)");
   }
+
+  // A unit numerator has nothing to cancel: the fraction returns unchanged,
+  // keeping factored denominators factored and expanded ones expanded
+  // (differential fuzzer, seed 7037214829039037119; all
+  // wolframscript-verified).
+  #[test]
+  fn unit_numerator_returns_input_unchanged() {
+    assert_eq!(interpret("Cancel[1/(2 + 2 x)]").unwrap(), "(2 + 2*x)^(-1)");
+    assert_eq!(interpret("Cancel[1/(2 - 2 x)]").unwrap(), "(2 - 2*x)^(-1)");
+    assert_eq!(interpret("Cancel[1/(x^2 - x)]").unwrap(), "(-x + x^2)^(-1)");
+    assert_eq!(
+      interpret("Cancel[1/((x - 1) (x + 1))]").unwrap(),
+      "1/((-1 + x)*(1 + x))"
+    );
+    assert_eq!(
+      interpret("Cancel[1/(x (x + 1))]").unwrap(),
+      "1/(x*(1 + x))"
+    );
+    // A nested fraction bypasses the unit-numerator shortcut (and stays
+    // in wolframscript's uncombined display).
+    assert_eq!(
+      interpret("Cancel[1/(x + 1/x)]").unwrap(),
+      "(x^(-1) + x)^(-1)"
+    );
+  }
+
+  // With a non-unit numerator the result denominator presents with its
+  // content hoisted, and an untouched factored input keeps its shape
+  // (wolframscript-verified).
+  #[test]
+  fn denominator_content_hoisted() {
+    assert_eq!(
+      interpret("Cancel[(x + 1)/(4 x + 5 x^2)]").unwrap(),
+      "(1 + x)/(x*(4 + 5*x))"
+    );
+    assert_eq!(
+      interpret("Cancel[2/(4 x + 5 x^2)]").unwrap(),
+      "2/(x*(4 + 5*x))"
+    );
+    assert_eq!(
+      interpret("Cancel[(x + 2)/(x^2 - x)]").unwrap(),
+      "(2 + x)/((-1 + x)*x)"
+    );
+    assert_eq!(
+      interpret("Cancel[(x + 1)/(x^2 + x^4)]").unwrap(),
+      "(1 + x)/(x^2*(1 + x^2))"
+    );
+    assert_eq!(
+      interpret("Cancel[(x + 1)/((x - 1) (x + 2))]").unwrap(),
+      "(1 + x)/((-1 + x)*(2 + x))"
+    );
+    assert_eq!(
+      interpret("Cancel[x/(4 x^2 + 4 x^3)]").unwrap(),
+      "1/(4*x*(1 + x))"
+    );
+    // A single-Plus (or power-of-one) denominator keeps cancel's own sign
+    // normalization instead of preserving the input shape.
+    assert_eq!(
+      interpret("Cancel[2/(1 - 2 x)^2]").unwrap(),
+      "2/(-1 + 2*x)^2"
+    );
+  }
 }
 
 mod expand_modulus {
@@ -2780,6 +2842,25 @@ mod apart {
     assert_eq!(
       interpret("Apart[1/(x^2 - 1)]").unwrap(),
       "1/(2*(-1 + x)) - 1/(2*(1 + x))"
+    );
+  }
+
+  // Denominators with rational (non-integer) roots decompose through the
+  // general linear-system path (differential fuzzer, seed
+  // 10107924694092248000; all wolframscript-verified).
+  #[test]
+  fn apart_rational_roots() {
+    assert_eq!(
+      interpret("Apart[(5 + 3 x)/(-1 - 2 x + 3 x^2)]").unwrap(),
+      "2/(-1 + x) - 3/(1 + 3*x)"
+    );
+    assert_eq!(
+      interpret("Apart[1/(x + 3 x^2)]").unwrap(),
+      "x^(-1) - 3/(1 + 3*x)"
+    );
+    assert_eq!(
+      interpret("Apart[1/((2 x - 1) (x + 2))]").unwrap(),
+      "-1/5*1/(2 + x) + 2/(5*(-1 + 2*x))"
     );
   }
 

@@ -670,9 +670,15 @@ fn apart_general(
       factors.push(c);
     }
   }
-  // Two-or-more factor instances, at least one non-linear; otherwise the linear
-  // residue path handles it (or the fraction is already irreducible).
-  if factors.len() < 2 || !factors.iter().any(|c| c.len() >= 3) {
+  // Two-or-more factor instances, and at least one the integer-root residue
+  // path can't handle: a non-linear factor, or a non-monic linear factor
+  // (rational root, e.g. 3*x + 1 — differential fuzzer, seed
+  // 10107924694092248000). The all-monic-linear case stays on the existing
+  // (well-tested) linear path.
+  let needs_general = factors.iter().any(|c| {
+    c.len() >= 3 || (c.len() == 2 && c.last().map(|&l| l.abs() != 1) == Some(true))
+  });
+  if factors.len() < 2 || !needs_general {
     return None;
   }
 

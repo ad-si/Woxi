@@ -2640,6 +2640,12 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     return ord;
   }
 
+  // Two rational terms over reciprocal-sum denominators (the quotient-rule
+  // shape C/Q + A*B/Q^2) compare by exponent vectors (see the helper).
+  if let Some(ord) = quotient_sum_terms_vector_order(a, b) {
+    return ord;
+  }
+
   let (_, base_a) = decompose_term(a);
   let (_, base_b) = decompose_term(b);
 
@@ -3456,6 +3462,162 @@ fn cmp_is_call_like(e: &Expr) -> bool {
 /// reciprocal while `x^2/2 + 15/(8(1+2x))` trails it, and any degree-≥2
 /// base ((1+x^2)^(-1)) trails every monomial. Equal bases return None so
 /// the existing shared-denominator exponent rules decide.
+/// Order two univariate rational Plus terms that BOTH carry a
+/// reciprocal-sum factor — the quotient-rule shape `C/Q + A*B/Q^2` — by
+/// their exponent vectors over the canonically ordered bases (the bare
+/// variable and every sum factor), comparing the LAST (canonically
+/// greatest) base first with exponents ascending. wolframscript-verified:
+/// (-2+8x)/(-5-4x+4x^2) precedes ((-4+8x)*(5-2x+4x^2))/(-5-4x+4x^2)^2
+/// (the greatest base 5-2x+4x^2 carries exponent 0 vs 1) while
+/// (-4+8x)/(-5-4x+4x^2)^2 precedes (-2+8x)/(-5-4x+4x^2) (that base is
+/// absent from both, so the denominator exponents -2 < -1 decide) —
+/// differential fuzzer, seed 4040222378236757762. Returns None when the
+/// shapes don't fit or every exponent ties.
+fn quotient_sum_terms_vector_order(
+  a: &Expr,
+  b: &Expr,
+) -> Option<std::cmp::Ordering> {
+  use std::cmp::Ordering;
+  fn collect_factors(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for x in args.iter() {
+          collect_factors(x, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        collect_factors(left, out);
+        collect_factors(right, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  // (variable, per-base [ascending coeffs → exponent], saw a negative-exp
+  // sum base).
+  type BaseVec = Vec<(Vec<i128>, i128)>;
+  fn term_vector(e: &Expr) -> Option<(String, BaseVec, bool)> {
+    let (_, base) = decompose_term(e);
+    let mut factors = Vec::new();
+    collect_factors(&base, &mut factors);
+    let mut var: Option<String> = None;
+    let mut items: BaseVec = Vec::new();
+    let mut has_neg_sum = false;
+    for f in &factors {
+      let (fb, n): (&Expr, i128) = match f {
+        Expr::FunctionCall { name, args }
+          if name == "Power"
+            && args.len() == 2
+            && matches!(&args[1], Expr::Integer(_)) =>
+        {
+          match &args[1] {
+            Expr::Integer(n) => (&args[0], *n),
+            _ => unreachable!(),
+          }
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } if matches!(right.as_ref(), Expr::Integer(_)) => match right.as_ref()
+        {
+          Expr::Integer(n) => (left.as_ref(), *n),
+          _ => unreachable!(),
+        },
+        other => (other, 1),
+      };
+      let (v, coeffs, is_sum) = if let Expr::Identifier(v) = fb {
+        (v.clone(), vec![0, 1], false)
+      } else if cmp_is_sum_base(fb) {
+        let (v, c) = univar_int_coeffs(fb)?;
+        (v, c, true)
+      } else {
+        return None;
+      };
+      match &var {
+        None => var = Some(v),
+        Some(v0) if *v0 == v => {}
+        _ => return None,
+      }
+      if is_sum && n < 0 {
+        has_neg_sum = true;
+      }
+      if let Some(entry) = items.iter_mut().find(|(k, _)| *k == coeffs) {
+        entry.1 += n;
+      } else {
+        items.push((coeffs, n));
+      }
+    }
+    Some((var?, items, has_neg_sum))
+  }
+  let (va, ia, na) = term_vector(a)?;
+  let (vb, ib, nb) = term_vector(b)?;
+  if va != vb || !na || !nb {
+    return None;
+  }
+  // Canonical base order: degree ascending, then the PRESENT terms from
+  // the leading one down as (degree, coefficient) pairs — smaller term
+  // degree first, then coefficient ascending, zero coefficients skipped.
+  // 1+x^2 precedes 3-x+x^2 (its second term is the constant, degree 0,
+  // vs -x at degree 1), while -5-4x+4x^2 precedes 5-2x+4x^2 on the
+  // shared-slot coefficients -4 < -2 (wolframscript-verified).
+  let base_cmp = |x: &Vec<i128>, y: &Vec<i128>| -> Ordering {
+    let deg = |c: &Vec<i128>| c.iter().rposition(|&k| k != 0).unwrap_or(0);
+    let (dx, dy) = (deg(x), deg(y));
+    if dx != dy {
+      return dx.cmp(&dy);
+    }
+    let terms = |c: &Vec<i128>| -> Vec<(usize, i128)> {
+      (0..c.len())
+        .rev()
+        .filter(|&i| c[i] != 0)
+        .map(|i| (i, c[i]))
+        .collect()
+    };
+    let (tx, ty) = (terms(x), terms(y));
+    for (a, b) in tx.iter().zip(ty.iter()) {
+      match a.0.cmp(&b.0) {
+        Ordering::Equal => {}
+        o => return o,
+      }
+      match a.1.cmp(&b.1) {
+        Ordering::Equal => {}
+        o => return o,
+      }
+    }
+    tx.len().cmp(&ty.len())
+  };
+  let mut bases: Vec<Vec<i128>> = Vec::new();
+  for (k, _) in ia.iter().chain(ib.iter()) {
+    if !bases.contains(k) {
+      bases.push(k.clone());
+    }
+  }
+  bases.sort_by(|x, y| base_cmp(x, y));
+  // Walk the bases from the canonically GREATEST down. The term whose
+  // greatest base is smaller comes first — a zero exponent (base absent)
+  // beats any nonzero one — and on a shared leading base the exponents
+  // compare ascending (1/Q^2 before 1/Q, x before x^2).
+  for key in bases.iter().rev() {
+    let ea = ia.iter().find(|(k, _)| k == key).map(|(_, n)| *n).unwrap_or(0);
+    let eb = ib.iter().find(|(k, _)| k == key).map(|(_, n)| *n).unwrap_or(0);
+    if ea == eb {
+      continue;
+    }
+    if ea == 0 {
+      return Some(Ordering::Less);
+    }
+    if eb == 0 {
+      return Some(Ordering::Greater);
+    }
+    return Some(ea.cmp(&eb));
+  }
+  None
+}
+
 fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   use std::cmp::Ordering;
   // (var, ascending base-polynomial coeffs, is_sum_reciprocal).

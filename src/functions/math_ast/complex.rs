@@ -1570,63 +1570,136 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   } else {
-    // Rationalize[x] with no tolerance.
-    //
-    // 1. If x is within ~10×machine-epsilon of a small-denominator rational
-    //    (denom ≤ 1000), return that rational. This catches 0.6666...6 → 2/3.
-    // 2. Otherwise compute the exact decimal-to-fraction p/10^n.
-    //    - If the simplified denom is huge AND x is close (~1e-5) to some
-    //      simple fraction (denom ≤ 3), return x as Real (the input is
-    //      ambiguous, e.g. 0.333333).
-    //    - If the simplified denom is huge with no close simple fraction
-    //      (e.g. N[Pi] → 3.141592653589793), return x as Real.
-    //    - Otherwise return the rational p/q.
-    let near_small_tol = (x.abs() * 10.0 * f64::EPSILON).max(f64::MIN_POSITIVE);
-    let (sn, sd) = find_rational_smallest_denom(x, near_small_tol);
-    if sd > 0
-      && sd <= 1000
-      && (sn as f64 / sd as f64 - x).abs() <= near_small_tol
-    {
-      return Ok(if sd == 1 {
-        Expr::Integer(sn as i128)
-      } else {
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(sn as i128), Expr::Integer(sd as i128)]
-            .into(),
-        }
-      });
-    }
-
-    let (numer, denom) = decimal_to_fraction(x);
-    if denom == 1 {
-      return Ok(Expr::Integer(numer as i128));
-    }
-
-    if denom > 500_000 {
-      // Ambiguity: x is very close to a fraction with denom ≤ 3 — return
-      // the float to signal that the input is not exactly that fraction.
-      for d in [2i64, 3] {
-        let n = (x * d as f64).round() as i64;
-        if n != 0 {
-          let approx = n as f64 / d as f64;
-          if (approx - x).abs() < 1e-5 {
-            return Ok(num_to_expr(x));
-          }
-        }
+    // Rationalize[x] with no tolerance: walk the continued-fraction
+    // convergents of x's exact binary value and accept the first h/k that
+    // reproduces x to machine precision (within a few ulps) with k < 10^6.
+    // The exact binary fraction itself is accepted only when it is small
+    // (k ≤ 2^31 with a small numerator), so N[Pi] and 1.234567 stay Real
+    // while N[1/2^31] → 1/2^31. Boundaries verified against wolframscript:
+    // N[123456/999983] and N[123457/999997] rationalize, 1.234567 (q=10^6),
+    // N[999999/1000003], N[1/2^40], and N[1000001/2^30] do not
+    // (differential fuzzer, seed 15336548261066338105).
+    match rationalize_machine_default(x) {
+      Some((n, d)) if d == num_bigint::BigInt::from(1) => {
+        Ok(crate::functions::math_ast::bigint_to_expr(n))
       }
-      // Even the decimal expansion needs many digits and x is not near a
-      // tiny fraction — looks like an opaque float (e.g. N[Pi]).
-      if denom > 100_000_000 {
-        return Ok(num_to_expr(x));
-      }
-    }
-
-    Ok(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(numer as i128), Expr::Integer(denom as i128)]
+      Some((n, d)) => Ok(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![
+          crate::functions::math_ast::bigint_to_expr(n),
+          crate::functions::math_ast::bigint_to_expr(d),
+        ]
         .into(),
-    })
+      }),
+      None => Ok(num_to_expr(x)),
+    }
+  }
+}
+
+/// The exact binary fraction of a finite double: `x = n/d` with `d > 0`.
+fn f64_exact_ratio(x: f64) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
+  use num_bigint::BigInt;
+  if !x.is_finite() {
+    return None;
+  }
+  let bits = x.to_bits();
+  let neg = bits >> 63 == 1;
+  let exp = ((bits >> 52) & 0x7ff) as i64;
+  let frac = bits & ((1u64 << 52) - 1);
+  let (mant, e) = if exp == 0 {
+    (frac, -1074i64)
+  } else {
+    (frac | (1u64 << 52), exp - 1075)
+  };
+  let mut n = BigInt::from(mant);
+  if neg {
+    n = -n;
+  }
+  if e >= 0 {
+    Some((n << e as usize, BigInt::from(1)))
+  } else {
+    Some((n, BigInt::from(1) << (-e) as usize))
+  }
+}
+
+/// Wolfram's default Rationalize acceptance for a machine real (see the
+/// caller for the wolframscript-verified boundaries). Returns the accepted
+/// rational, or None when x should stay a Real.
+///
+/// The rule: walk the continued-fraction convergents h/k of x's exact
+/// binary value and accept the first one that reproduces x to machine
+/// precision (within 4 ulps, or exactly) with |h|·k ≤ 2^39. The size
+/// bound was bracketed against wolframscript: N[1/2^38] and
+/// Rationalize[1234567.5] → 2469135/2 rationalize while N[1/2^40],
+/// N[1000001/2^30], 1.234567 (|h|·k ≈ 1.2*10^12), and
+/// N[999999/1000003] stay Real. An input suspiciously close to a half or
+/// third — closer than 10^-5 but NOT machine-close, like 0.333333 or
+/// 0.499999 — is ambiguous and stays Real (0.142857, one step further
+/// from any t ≤ 3 fraction, still rationalizes to 142857/1000000).
+fn rationalize_machine_default(
+  x: f64,
+) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
+  use num_bigint::BigInt;
+  use num_traits::{Signed, Zero};
+  let (num, den) = f64_exact_ratio(x)?;
+  let ulp = (x.abs() * f64::EPSILON).max(f64::MIN_POSITIVE);
+
+  // Ambiguity guard: within 10^-5 of a nonzero s/2 or s/3 without being
+  // that value to machine precision. Nearness to zero doesn't count —
+  // N[1/2^38] still rationalizes.
+  for t in [2.0f64, 3.0] {
+    let s = (x * t).round();
+    let err = (x - s / t).abs();
+    if s != 0.0 && err > 4.0 * ulp && err < 1e-5 {
+      return None;
+    }
+  }
+
+  let size_bound = BigInt::from(1u64) << 39;
+
+  // Continued-fraction convergents h/k of num/den.
+  let (mut p, mut q) = (num.clone(), den.clone());
+  let (mut h_prev, mut k_prev) = (BigInt::zero(), BigInt::from(1));
+  let (mut h_cur, mut k_cur) = (BigInt::from(1), BigInt::zero());
+  // Machine-close means |num*k - h*den| / (den*k) ≤ 4*ulp(x). ulp(x) is
+  // exactly 2^e for the same e that scales the mantissa, so
+  // 4*ulp*den = 4*2^max(e,0) exactly (den = 2^-e when e < 0).
+  let ulp_times_den: BigInt = if den > BigInt::from(1) {
+    BigInt::from(1)
+  } else {
+    // den == 1: x = m*2^e with e ≥ 0; recover 2^e from num/mantissa scale.
+    let bits = x.to_bits();
+    let exp = ((bits >> 52) & 0x7ff) as i64;
+    BigInt::from(1) << (exp - 1075).max(0) as usize
+  };
+  loop {
+    if q.is_zero() {
+      return None;
+    }
+    // Floor division (q is always positive here; the first p may be
+    // negative for a negative x).
+    let mut a = &p / &q;
+    if (&p % &q) != BigInt::zero() && p < BigInt::zero() {
+      a -= 1;
+    }
+    let r = &p - &a * &q;
+    let h_next = &a * &h_cur + &h_prev;
+    let k_next = &a * &k_cur + &k_prev;
+    if k_next > BigInt::zero() {
+      if h_next.abs() * &k_next > size_bound {
+        return None;
+      }
+      let err_num = (&num * &k_next - &h_next * &den).abs();
+      if err_num <= BigInt::from(4) * &k_next * &ulp_times_den {
+        return Some((h_next, k_next));
+      }
+    }
+    h_prev = h_cur;
+    k_prev = k_cur;
+    h_cur = h_next;
+    k_cur = k_next;
+    p = q;
+    q = r;
   }
 }
 

@@ -59,6 +59,27 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "Complex") {
     return expr.clone();
   }
+  // A fraction that cancelled to a numeric scalar can come back
+  // unevaluated (Times[-1, Power[2, -1]] renders -(1/2)); wolframscript
+  // shows the plain rational -1/2 (differential fuzzer, seed
+  // 6342268670418763375). Symbolic constants (E, Pi) don't evaluate to a
+  // number literal, so quotients like (-1 + E^2)/E^2 pass through.
+  {
+    let mut vars = std::collections::HashSet::new();
+    super::simplify::collect_variables(expr, &mut vars);
+    vars.remove("I");
+    if vars.is_empty()
+      && let Ok(value) = crate::evaluator::evaluate_expr_to_expr(expr)
+      && (matches!(
+        &value,
+        Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_)
+      ) || matches!(&value, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2)
+        || crate::functions::predicate_ast::is_complex_number(&value))
+    {
+      return value;
+    }
+  }
   let (num, den) = extract_num_den(expr);
   if matches!(&den, Expr::Integer(1)) {
     return expr.clone();
@@ -96,7 +117,7 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
 /// Rewrites Divide right-hand sides and `Power[base, -1]` factors in place,
 /// preserving the surrounding quotient shape (e.g. the `-1/2*1/(...)` form
 /// produced by the sign canonicalization).
-fn hoist_result_denominator_content(expr: &Expr) -> Expr {
+pub(super) fn hoist_result_denominator_content(expr: &Expr) -> Expr {
   // A bare reciprocal of a single factor displays as den^(-1)
   // ((1 + x + x^2)^(-1)), but the reciprocal of a PRODUCT — whether the
   // content hoist created it or it arrived factored — displays as a

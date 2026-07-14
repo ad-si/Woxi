@@ -7353,6 +7353,17 @@ mod longest_ordered_sequence_tests {
 mod string_count_patterns {
   use woxi::interpret;
 
+  // The empty pattern matches at every character boundary
+  // (differential fuzzer, seed 8863040114037283151;
+  // wolframscript-verified).
+  #[test]
+  fn empty_pattern_counts_boundaries() {
+    assert_eq!(interpret(r#"StringCount["", ""]"#).unwrap(), "1");
+    assert_eq!(interpret(r#"StringCount["a", ""]"#).unwrap(), "2");
+    assert_eq!(interpret(r#"StringCount["ab", ""]"#).unwrap(), "3");
+    assert_eq!(interpret(r#"StringCount["", "a"]"#).unwrap(), "0");
+  }
+
   #[test]
   fn count_with_regex() {
     assert_eq!(

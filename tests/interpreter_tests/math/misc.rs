@@ -2023,3 +2023,87 @@ mod canonical_order_radicals {
     );
   }
 }
+
+mod expand_radical_terms {
+  use super::*;
+
+  // Expand re-runs radical-bearing terms through Times so numeric
+  // radicals merge and take their canonical position (differential
+  // fuzzer, seed 6493139821400918028; all wolframscript-verified).
+  #[test]
+  fn radical_products_merge() {
+    assert_eq!(
+      interpret("Expand[(Sqrt[26] - Sqrt[28]) (Sqrt[21] Sqrt[3])]").unwrap(),
+      "-42 + 3*Sqrt[182]"
+    );
+    assert_eq!(
+      interpret("Expand[(Sqrt[2] + Sqrt[3]) (Sqrt[5] + Sqrt[7])]").unwrap(),
+      "Sqrt[10] + Sqrt[14] + Sqrt[15] + Sqrt[21]"
+    );
+    assert_eq!(
+      interpret("Expand[(x + Sqrt[2]) (x + Sqrt[8])]").unwrap(),
+      "4 + 3*Sqrt[2]*x + x^2"
+    );
+    assert_eq!(
+      interpret("Expand[(1 + Sqrt[2])^2]").unwrap(),
+      "3 + 2*Sqrt[2]"
+    );
+  }
+}
+
+mod quotient_term_plus_order {
+  use super::*;
+
+  // Rational terms over reciprocal-sum denominators order by their
+  // greatest base: the term missing the canonically greatest base comes
+  // first; on a shared leading base the exponents compare ascending
+  // (differential fuzzer, seed 4040222378236757762; all
+  // wolframscript-verified).
+  #[test]
+  fn quotient_rule_shape() {
+    assert_eq!(
+      interpret(
+        "D[(5 - 2 x + 4 x^2)/(-5 - 4 x + 4 x^2), x]"
+      )
+      .unwrap(),
+      "(-2 + 8*x)/(-5 - 4*x + 4*x^2) - \
+       ((-4 + 8*x)*(5 - 2*x + 4*x^2))/(-5 - 4*x + 4*x^2)^2"
+    );
+    assert_eq!(
+      interpret(
+        "(-2 + 8 x)/(-5 - 4 x + 4 x^2) - \
+         (-4 + 8 x)/(-5 - 4 x + 4 x^2)^2"
+      )
+      .unwrap(),
+      "-((-4 + 8*x)/(-5 - 4*x + 4*x^2)^2) + (-2 + 8*x)/(-5 - 4*x + 4*x^2)"
+    );
+    assert_eq!(
+      interpret(
+        "(-2 + 8 x)/(-5 - 4 x + 4 x^2) - \
+         (5 - 2 x + 4 x^2)/(-5 - 4 x + 4 x^2)^2"
+      )
+      .unwrap(),
+      "(-2 + 8*x)/(-5 - 4*x + 4*x^2) - (5 - 2*x + 4*x^2)/(-5 - 4*x + 4*x^2)^2"
+    );
+    // The Apart tail: polynomial terms first, the reciprocal term last.
+    assert_eq!(
+      interpret("Apart[(1 + 5 x - 3 x^2 + 3 x^3)/(1 - 2 x)]").unwrap(),
+      "-17/8 + (3*x)/4 - (3*x^2)/2 - 25/(8*(-1 + 2*x))"
+    );
+  }
+
+  // D keeps a chain-rule reciprocal composed — no integer-content
+  // cancellation through the squared denominator — while still cancelling
+  // shared SYMBOLIC factors (differential fuzzer, seed
+  // 15005068122302321648; all wolframscript-verified).
+  #[test]
+  fn d_reciprocal_keeps_composed_shape() {
+    assert_eq!(
+      interpret("D[3/(2 + 4 x - 4 x^2), x]").unwrap(),
+      "(-3*(4 - 8*x))/(2 + 4*x - 4*x^2)^2"
+    );
+    assert_eq!(interpret("D[4/(2 + 4 x), x]").unwrap(), "-16/(2 + 4*x)^2");
+    assert_eq!(interpret("D[2/(2 + 2 x), x]").unwrap(), "-4/(2 + 2*x)^2");
+    assert_eq!(interpret("D[Log[x^2], x]").unwrap(), "2/x");
+  }
+}

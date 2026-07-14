@@ -4455,10 +4455,27 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   // Candidate 3: Expand — wolframscript prefers `-1 + x^2` over
   // `(x-1)*(x+1)` because the expanded form has fewer leaves. Apply to the
   // current `best` so an Expand also runs on the combined-fraction form the
-  // Together candidate may have produced.
+  // Together candidate may have produced. A variable-free quotient accepts
+  // the expansion only when it clears every denominator ((2 + Sqrt[8])/2 →
+  // 1 + Sqrt[2]); a SPLIT that keeps fractional terms stays combined —
+  // wolframscript's SimplifyCount keeps (-5 + 3*Sqrt[21])/(3*Sqrt[319])
+  // over Sqrt[21/319] - 5/(3*Sqrt[319]) (23 vs 24; differential fuzzer,
+  // seed 1783701001211583055).
   if let Ok(expanded) = super::expand::expand_ast(&[best.clone()]) {
+    let constant_quotient = {
+      let mut vars = std::collections::HashSet::new();
+      collect_variables(&best, &mut vars);
+      vars.remove("I");
+      vars.is_empty()
+        && !matches!(
+          super::together::extract_num_den(&best).1,
+          Expr::Integer(1)
+        )
+    };
+    let splits_fraction =
+      constant_quotient && contains_fractional_power(&expanded);
     let ec = leaf_count(&expanded);
-    if ec < best_c {
+    if !splits_fraction && ec < best_c {
       best = expanded;
       best_c = ec;
     }
@@ -8048,6 +8065,39 @@ fn simplify_abs_products(expr: &Expr) -> Expr {
   } else {
     other_factors.push(combined_abs);
     build_product(other_factors)
+  }
+}
+
+/// True when the expression still carries a division anywhere — a Divide
+/// node or a Power with a negative (integer or rational) exponent.
+fn contains_fractional_power(e: &Expr) -> bool {
+  let neg_exp = |x: &Expr| -> bool {
+    matches!(x, Expr::Integer(n) if *n < 0)
+      || matches!(x, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2
+            && matches!(&args[0], Expr::Integer(n) if *n < 0))
+  };
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      ..
+    } => true,
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => neg_exp(right) || contains_fractional_power(left),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      neg_exp(&args[1]) || contains_fractional_power(&args[0])
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_fractional_power(left) || contains_fractional_power(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_fractional_power(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_fractional_power)
+    }
+    _ => false,
   }
 }
 
