@@ -376,6 +376,71 @@ pub(crate) fn bigfloat_powi(
   }
 }
 
+/// `Exp[x]` for a precision-tagged BigFloat `x`. Computes e^x in astro-float
+/// and tracks precision as `input_prec - log10(|x|)` (matching wolframscript:
+/// Exp[N[1,30]] keeps precision 30, Exp[N[10,30]] drops to 29). Returns None
+/// when `x` is zero (handled elsewhere) so the caller can defer.
+pub fn bigfloat_exp(
+  digits: &str,
+  prec: f64,
+) -> Option<Result<Expr, InterpreterError>> {
+  use astro_float::{BigFloat, Consts, Radix, RoundingMode};
+  let x_val: f64 = digits.parse().ok()?;
+  if x_val == 0.0 {
+    return None;
+  }
+  let rm = RoundingMode::ToEven;
+  let bits = nominal_bits(prec.ceil() as usize);
+  let mut cc = match Consts::new() {
+    Ok(c) => c,
+    Err(e) => {
+      return Some(Err(InterpreterError::EvaluationError(format!("{}", e))));
+    }
+  };
+  let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
+  let result = x.exp(bits, rm, &mut cc);
+  let result_prec = prec - x_val.abs().log10();
+  let max_fraction_digits =
+    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+  match bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc) {
+    Ok(s) => Some(Ok(Expr::BigFloat(s, result_prec))),
+    Err(e) => Some(Err(e)),
+  }
+}
+
+/// `Log[x]` (natural log) for a precision-tagged BigFloat `x > 0`. Computes
+/// ln(x) in astro-float and tracks precision as `input_prec + log10(|ln x|)`
+/// (matching wolframscript: Log[N[2,30]] has precision 30 + log10(ln 2)).
+/// Returns None for non-positive `x` (complex/zero result — deferred) or when
+/// `x == 1` (ln = 0, special-cased by the caller).
+pub fn bigfloat_log(
+  digits: &str,
+  prec: f64,
+) -> Option<Result<Expr, InterpreterError>> {
+  use astro_float::{BigFloat, Consts, Radix, RoundingMode};
+  let x_val: f64 = digits.parse().ok()?;
+  if x_val <= 0.0 || x_val == 1.0 {
+    return None;
+  }
+  let rm = RoundingMode::ToEven;
+  let bits = nominal_bits(prec.ceil() as usize);
+  let mut cc = match Consts::new() {
+    Ok(c) => c,
+    Err(e) => {
+      return Some(Err(InterpreterError::EvaluationError(format!("{}", e))));
+    }
+  };
+  let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
+  let result = x.ln(bits, rm, &mut cc);
+  let result_prec = prec + x_val.ln().abs().log10();
+  let max_fraction_digits =
+    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+  match bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc) {
+    Ok(s) => Some(Ok(Expr::BigFloat(s, result_prec))),
+    Err(e) => Some(Err(e)),
+  }
+}
+
 /// Arbitrary-precision Gamma via Spouge's approximation.
 ///
 /// `Γ(z+1) = (z+a)^(z+1/2) · e^{−(z+a)} · √(2π) · (c₀ + Σ_{k=1}^{a−1} c_k/(z+k))`

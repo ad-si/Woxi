@@ -8724,6 +8724,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if let Some(result) = try_bigfloat_power(base, exp) {
     return result;
   }
+  // E raised to an arbitrary-precision exponent: E^N[1,30] = Exp[N[1,30]].
+  if matches!(base, Expr::Constant(c) if c == "E")
+    && matches!(exp, Expr::BigFloat(_, _))
+  {
+    return crate::functions::math_ast::trigonometric::exp_ast(
+      std::slice::from_ref(exp),
+    );
+  }
 
   // SeriesData ^ n (positive integer n): repeated Cauchy product, so e.g.
   // (Series[…])^2 squares the series. A pure O-term (empty coefficients) just

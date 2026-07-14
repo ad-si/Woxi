@@ -9241,3 +9241,57 @@ mod bigfloat_power {
     assert!(r.contains("`30.30102999566398"), "wrong precision tag: {r}");
   }
 }
+
+mod bigfloat_exp_log {
+  use super::*;
+
+  // Exp/Log on a BigFloat argument used to be left unevaluated (E^1.`30.,
+  // Log[2.`30.]). Cases whose result has few significant digits match
+  // wolframscript byte-for-byte.
+  #[test]
+  fn exp_of_one_matches_ws() {
+    assert_eq!(
+      interpret("Exp[N[1, 30]]").unwrap(),
+      "2.718281828459045235360287471352662497757247093699959574967`30."
+    );
+  }
+
+  #[test]
+  fn e_power_bigfloat_routes_to_exp() {
+    // E^N[1,30] must reduce like Exp[N[1,30]] rather than staying E^1.`30.
+    assert_eq!(
+      interpret("E^N[1, 30]").unwrap(),
+      interpret("Exp[N[1, 30]]").unwrap()
+    );
+  }
+
+  #[test]
+  fn log_of_two_matches_ws() {
+    assert_eq!(
+      interpret("Log[N[2, 30]]").unwrap(),
+      "0.6931471805599453094172321214581765680755001343602552541208`29.84082546104514"
+    );
+  }
+
+  #[test]
+  fn exp_tracks_precision() {
+    // Exp[N[10,30]] precision drops to 30 - log10(10) = 29.
+    let r = interpret("Exp[N[10, 30]]").unwrap();
+    assert!(
+      r.starts_with("22026.4657948067165169579006452842443663535"),
+      "value: {r}"
+    );
+    assert!(r.ends_with("`29."), "precision tag: {r}");
+  }
+
+  #[test]
+  fn log_tracks_precision() {
+    // Log[N[100,30]] precision rises to 30 + log10(Log[100]).
+    let r = interpret("Log[N[100, 30]]").unwrap();
+    assert!(
+      r.starts_with("4.60517018598809136803598290936872841520220297725"),
+      "value: {r}"
+    );
+    assert!(r.contains("`30.6632456843634"), "precision tag: {r}");
+  }
+}

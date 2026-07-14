@@ -2098,6 +2098,16 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::Real(f.exp()))
     }
+    // Arbitrary-precision argument: compute e^x at the tracked precision
+    // instead of leaving `E^1.`30.` unevaluated.
+    Expr::BigFloat(digits, prec) => {
+      if let Some(result) =
+        crate::functions::math_ast::numerical::bigfloat_exp(digits, *prec)
+      {
+        return result;
+      }
+      power_two(&Expr::Constant("E".to_string()), &args[0])
+    }
     _ => power_two(&Expr::Constant("E".to_string()), &args[0]),
   }
 }
@@ -3016,6 +3026,14 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           left: Box::new(Expr::Integer(-1)),
           right: Box::new(log_inv),
         });
+      }
+      // Arbitrary-precision argument: compute ln(x) at the tracked precision
+      // instead of leaving `Log[2.`30.]` unevaluated.
+      if let Expr::BigFloat(digits, prec) = &args[0]
+        && let Some(result) =
+          crate::functions::math_ast::numerical::bigfloat_log(digits, *prec)
+      {
+        return result;
       }
       if let Expr::Real(f) = &args[0] {
         if *f > 0.0 {
