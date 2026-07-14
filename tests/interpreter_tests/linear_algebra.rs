@@ -4862,6 +4862,15 @@ mod cases {
       r#"Sqrt[Abs[Subscript[a, 1, 1]]^2 + Abs[Subscript[a, 1, 2]]^2 + Abs[Subscript[a, 2, 1]]^2 + Abs[Subscript[a, 2, 2]]^2]"#,
     );
   }
+  // For a vector or scalar the "Frobenius" norm is the ordinary 2-norm
+  // (Abs for a scalar), not a p-norm with the string treated as p.
+  #[test]
+  fn norm_frobenius_vector_and_scalar() {
+    assert_case(r#"Norm[{3, 4}, "Frobenius"]"#, r#"5"#);
+    assert_case(r#"Norm[{1, 2, 2}, "Frobenius"]"#, r#"3"#);
+    assert_case(r#"Norm[-5, "Frobenius"]"#, r#"5"#);
+    assert_case(r#"Norm[{1., 2.}, "Frobenius"]"#, r#"2.23606797749979"#);
+  }
   #[test]
   fn norm_empty_vector_emits_nvm() {
     // Norm[{}] has no value: it stays unevaluated (with Norm::nvm) rather

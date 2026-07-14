@@ -2292,6 +2292,12 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return norm_ast(&[Expr::List(flat.into())]);
   }
 
+  // For a vector or scalar the Frobenius norm is just the ordinary 2-norm
+  // (Abs for a scalar); only the matrix case above needs special handling.
+  if matches!(&p_expr, Some(Expr::String(s)) if s == "Frobenius") {
+    return norm_ast(std::slice::from_ref(&args[0]));
+  }
+
   // Matrix norms: args[0] is a rectangular list of lists. These differ from
   // the element-wise vector norms below:
   //   p = 1        → maximum absolute column sum
