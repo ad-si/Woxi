@@ -1001,9 +1001,17 @@ pub fn constant_array_ast(
     match nonneg_dim(d) {
       Some(n) => concrete_dims.push(n),
       None => {
-        // A concrete but invalid dimension is an error, so leave unevaluated;
-        // a symbolic dimension yields a SymbolicZeros/OnesArray placeholder.
+        // A concrete but invalid dimension (negative, non-integer, too large)
+        // makes wolframscript emit `::ilsmn` and leave the call unevaluated; a
+        // symbolic dimension yields a SymbolicZeros/OnesArray placeholder.
         if crate::functions::predicate_ast::is_numeric_q(d) {
+          crate::emit_message(&format!(
+            "ConstantArray::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
+            crate::syntax::expr_to_string(&Expr::FunctionCall {
+              name: "ConstantArray".to_string(),
+              args: vec![elem.clone(), dims.clone()].into(),
+            })
+          ));
           return unevaluated();
         }
         has_symbolic = true;

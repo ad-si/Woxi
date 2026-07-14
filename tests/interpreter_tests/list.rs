@@ -4184,6 +4184,27 @@ mod constant_array {
     );
   }
 
+  // A concrete invalid dimension also emits the ilsmn message (not just an
+  // unevaluated result), matching wolframscript.
+  #[test]
+  fn invalid_dimension_emits_ilsmn() {
+    for input in [
+      "ConstantArray[x, -1]",
+      "ConstantArray[x, {2, -1}]",
+      "ConstantArray[x, 2.5]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings
+          .iter()
+          .any(|w| w.contains("ConstantArray::ilsmn")),
+        "expected ilsmn message for {input}, got {:?}",
+        r.warnings
+      );
+    }
+  }
+
   // A symbolic dimension yields a SymbolicZerosArray/SymbolicOnesArray
   // placeholder, matching wolframscript.
   #[test]
