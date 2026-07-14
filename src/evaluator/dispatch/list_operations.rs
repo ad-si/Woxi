@@ -8061,7 +8061,9 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut d = Vec::new();
       for item in items {
         match item {
-          Expr::Integer(n) if *n > 0 => d.push(*n as usize),
+          // A zero dimension is valid: the reshaped array has an empty axis
+          // there (ArrayReshape[src, {2, 0}] = {{}, {}}).
+          Expr::Integer(n) if *n >= 0 => d.push(*n as usize),
           _ => {
             return Ok(unevaluated("ArrayReshape", args));
           }

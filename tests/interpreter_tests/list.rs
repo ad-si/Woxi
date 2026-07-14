@@ -10582,6 +10582,34 @@ mod array_reshape {
       "{{a, b}, {c, d}}"
     );
   }
+
+  #[test]
+  fn zero_single_dimension_gives_empty_list() {
+    assert_eq!(interpret("ArrayReshape[{}, {0}]").unwrap(), "{}");
+    assert_eq!(interpret("ArrayReshape[{5}, {0}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn zero_trailing_dimension_gives_empty_rows() {
+    assert_eq!(interpret("ArrayReshape[{}, {2, 0}]").unwrap(), "{{}, {}}");
+    assert_eq!(
+      interpret("ArrayReshape[{1, 2, 3, 4}, {2, 0}]").unwrap(),
+      "{{}, {}}"
+    );
+  }
+
+  #[test]
+  fn zero_leading_dimension_gives_empty_list() {
+    assert_eq!(interpret("ArrayReshape[Range[6], {0, 3}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn zero_middle_dimension_gives_empty_rows() {
+    assert_eq!(
+      interpret("ArrayReshape[{1, 2, 3}, {2, 0, 4}]").unwrap(),
+      "{{}, {}}"
+    );
+  }
 }
 
 mod position_index {
