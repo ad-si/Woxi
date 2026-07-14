@@ -209,7 +209,7 @@ pub fn dispatch_linear_algebra_functions(
         return Some(eval("Dot", &[pinv, b]));
       }
     }
-    "Tr" if args.len() == 1 || args.len() == 2 => {
+    "Tr" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::linear_algebra_ast::tr_ast(args));
     }
     "IdentityMatrix" if args.len() == 1 => {

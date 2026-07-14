@@ -543,6 +543,51 @@ mod tr {
     );
   }
 
+  // Tr[t, f, n] contracts the first n indices: it combines the slices
+  // t[[i, i, ..., i (n times), ...]] with f, clamping n to the rank.
+  #[test]
+  fn trace_with_level() {
+    // n = 2 is the ordinary matrix trace.
+    assert_eq!(interpret("Tr[{{1, 2}, {3, 4}}, Plus, 2]").unwrap(), "5");
+    // n = 1 combines the top-level rows: Plus[{1, 2}, {3, 4}] = {4, 6}.
+    assert_eq!(
+      interpret("Tr[{{1, 2}, {3, 4}}, Plus, 1]").unwrap(),
+      "{4, 6}"
+    );
+    // A different combiner and List collector.
+    assert_eq!(interpret("Tr[{{1, 2}, {3, 4}}, Times, 2]").unwrap(), "4");
+    assert_eq!(
+      interpret("Tr[{{1, 2}, {3, 4}}, List, 2]").unwrap(),
+      "{1, 4}"
+    );
+    // Non-square: the diagonal length is min(2, 3) = 2.
+    assert_eq!(
+      interpret("Tr[{{1, 2, 3}, {4, 5, 6}}, Plus, 2]").unwrap(),
+      "6"
+    );
+    // Rank-3: n = 2 leaves the third index free, giving slice lists.
+    assert_eq!(
+      interpret("Tr[Array[a, {2, 2, 2}], List, 2]").unwrap(),
+      "{{a[1, 1, 1], a[1, 1, 2]}, {a[2, 2, 1], a[2, 2, 2]}}"
+    );
+    // n above the rank is clamped, and n on a vector combines all entries.
+    assert_eq!(interpret("Tr[{{1, 2}, {3, 4}}, Plus, 3]").unwrap(), "5");
+    assert_eq!(interpret("Tr[{1, 2, 3}, Plus, 2]").unwrap(), "6");
+  }
+
+  // A zero level is rejected with Tr::intnz and stays unevaluated.
+  #[test]
+  fn trace_zero_level_rejected() {
+    let r =
+      woxi::interpret_with_stdout("Tr[{{1, 2}, {3, 4}}, Plus, 0]").unwrap();
+    assert_eq!(r.result, "Tr[{{1, 2}, {3, 4}}, Plus, 0]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains("Tr::intnz")),
+      "expected intnz message, got {:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn trace_rank_three_with_times() {
     assert_eq!(

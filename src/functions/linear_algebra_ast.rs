@@ -1198,9 +1198,9 @@ fn diagonal_element(expr: &Expr, i: usize, depth: usize) -> Option<Expr> {
 /// this is the sum of all entries; for a matrix it is the usual trace. With a
 /// second argument f, the combining head f is used in place of Plus.
 pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "Tr expects 1 or 2 arguments".into(),
+      "Tr expects 1, 2, or 3 arguments".into(),
     ));
   }
 
@@ -1217,23 +1217,6 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // The combining function f (default: Plus) is applied to the whole
-  // sequence of diagonal elements at once as f[d1, d2, ..., dn], not
-  // pairwise — so Tr[m, List] returns a list of the diagonal.
-  let combine_name: String = if args.len() == 2 {
-    match &args[1] {
-      Expr::Identifier(name) => name.clone(),
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Tr".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
-    }
-  } else {
-    "Plus".to_string()
-  };
-
   let unevaluated = || {
     Ok(Expr::FunctionCall {
       name: "Tr".to_string(),
@@ -1241,21 +1224,59 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
   };
 
+  // The combining function f (default: Plus) is applied to the whole
+  // sequence of diagonal elements at once as f[d1, d2, ..., dn], not
+  // pairwise — so Tr[m, List] returns a list of the diagonal.
+  let combine_name: String = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Identifier(name) => name.clone(),
+      _ => return unevaluated(),
+    }
+  } else {
+    "Plus".to_string()
+  };
+
+  // Optional level n: the generalized trace runs over the first n indices,
+  // combining the resulting slices. n is clamped to the tensor rank; a zero
+  // level is rejected with Tr::intnz, matching wolframscript.
+  let level: Option<usize> = if args.len() == 3 {
+    match expr_to_i128(&args[2]) {
+      Some(n) if n >= 1 => Some(n as usize),
+      Some(_) => {
+        crate::emit_message(&format!(
+          "Tr::intnz: Nonzero integer expected at position 3 in {}.",
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "Tr".to_string(),
+            args: args.to_vec().into(),
+          })
+        ));
+        return unevaluated();
+      }
+      None => return unevaluated(),
+    }
+  } else {
+    None
+  };
+
   // Collect the diagonal entries (or, for a plain vector, all entries).
   let diag: Vec<Expr> = if let Some(vec) = expr_to_vector(&args[0]) {
+    // A rank-1 vector: the diagonal over any (clamped) level is every entry.
     vec
   } else if matches!(&args[0], Expr::List(_)) {
-    // Rank >= 2 array: the main diagonal a[[i, i, ..., i]] over all levels,
-    // i = 1..min(dimensions). (A rank-2 matrix reduces to the usual trace.)
+    // Rank >= 2 array: the main diagonal a[[i, i, ..., i]] over the first
+    // `n` levels (default: all levels), i = 1..min(first n dimensions). For
+    // n < rank each diagonal entry is the remaining sub-array (slice). A
+    // rank-2 matrix with the default level reduces to the usual trace.
     let shape = array_shape(&args[0]);
     if shape.len() < 2 {
       return unevaluated();
     }
     let rank = shape.len();
-    let min_dim = *shape.iter().min().unwrap();
+    let depth = level.unwrap_or(rank).min(rank);
+    let min_dim = *shape[..depth].iter().min().unwrap();
     let mut d = Vec::with_capacity(min_dim);
     for i in 0..min_dim {
-      match diagonal_element(&args[0], i, rank) {
+      match diagonal_element(&args[0], i, depth) {
         Some(e) => d.push(e),
         None => return unevaluated(),
       }

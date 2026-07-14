@@ -1462,7 +1462,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ToSphericalCoordinates" => Some((1, 1)),
     "ToString" => Some((1, 2)),
     "ToUpperCase" => Some((1, 1)),
-    "Tr" => Some((1, 2)),
+    "Tr" => Some((1, 3)),
     "TraditionalForm" => Some((1, 1)),
     "TransformationMatrix" => Some((1, 1)),
     "TranslationTransform" => Some((1, 1)),
