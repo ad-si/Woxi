@@ -1009,8 +1009,12 @@ pub fn pfaffian_det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (i..n).all(|j| is_zero_expr(&eval_add(&matrix[i][j], &matrix[j][i])))
   });
   if !antisymmetric {
+    // PfaffianDet ships in wolframscript only as a resource function whose
+    // ::asymm message text is not registered, so wolframscript prints the
+    // "-- Message text not found --" placeholder (and no trailing period).
+    // Match that verbatim for conformance.
     crate::emit_message(&format!(
-      "PfaffianDet::asymm: Argument at position 1 is not antisymmetric ({}).",
+      "PfaffianDet::asymm: -- Message text not found -- ({})",
       crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
     ));
     return Ok(unevaluated());

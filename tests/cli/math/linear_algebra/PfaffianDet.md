@@ -24,5 +24,7 @@ A non-antisymmetric argument stays unevaluated:
 
 ```scrut
 $ wo 'PfaffianDet[{{5, 7}, {2, 9}}]'
+
+PfaffianDet::asymm: -- Message text not found -- ({{5, 7}, {2, 9}})
 PfaffianDet[{{5, 7}, {2, 9}}]
 ```
