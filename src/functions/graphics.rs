@@ -12586,7 +12586,7 @@ pub fn manipulate_block_code(
 /// [`crate::with_scoped_globals`]). The control is disabled only when the
 /// condition evaluates to the literal `False`; a symbolic or errored result
 /// fails open (enabled) so a control never becomes permanently stuck.
-fn manipulate_condition_enabled(condition: &str) -> bool {
+pub fn manipulate_condition_enabled(condition: &str) -> bool {
   match crate::interpret(condition) {
     Ok(result) => result.trim() != "False",
     Err(_) => true,
@@ -13092,7 +13092,7 @@ pub fn render_manipulate_display(
 /// evaluation rather than one interpreter call per cell — the difference
 /// between 1 and (rows × cols) `Block` evaluations for a large grid, which is
 /// what keeps a toggle responsive.
-fn build_manipulate_display(
+pub fn build_manipulate_display(
   display_code: &str,
   bindings: &[(String, String)],
 ) -> DisplayNode {
