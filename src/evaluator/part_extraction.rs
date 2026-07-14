@@ -33,6 +33,38 @@ fn part_take_unevaluated(expr: &Expr, index: &Expr) -> Expr {
   }
 }
 
+/// `a | b | c` (Alternatives) is a flat, associative head in WL but is stored
+/// as a nested BinaryOp chain. Rewrite it into a flattened
+/// `Alternatives[a, b, c]` FunctionCall so positional operations (Part, Take,
+/// …) see all operands as siblings, matching wolframscript. Returns `None`
+/// when `expr` is not such a chain.
+pub fn flatten_alternatives_binop(expr: &Expr) -> Option<Expr> {
+  fn gather(e: &Expr, out: &mut Vec<Expr>) -> bool {
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left,
+      right,
+    } = e
+    {
+      gather(left, out);
+      gather(right, out);
+      true
+    } else {
+      out.push(e.clone());
+      false
+    }
+  }
+  let mut parts = Vec::new();
+  if gather(expr, &mut parts) {
+    Some(Expr::FunctionCall {
+      name: "Alternatives".to_string(),
+      args: parts.into(),
+    })
+  } else {
+    None
+  }
+}
+
 fn part_take_warn(expr: &Expr, start: i64, end: i64) {
   let expr_str = crate::syntax::expr_to_string(expr);
   crate::emit_message(&format!(
@@ -305,6 +337,12 @@ pub fn extract_part_ast(
   expr: &Expr,
   index: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Normalize a nested Alternatives chain (`a | b | c`) into a flat
+  // Alternatives[a, b, c] so positional access matches wolframscript.
+  if let Some(flat) = flatten_alternatives_binop(expr) {
+    return extract_part_ast(&flat, index);
+  }
+
   // A 1-D SparseArray indexed by an integer yields the scalar entry at that
   // position. (Spans/higher-rank keep sub-arrays sparse and fall through.)
   if matches!(index, Expr::Integer(_) | Expr::BigInteger(_))

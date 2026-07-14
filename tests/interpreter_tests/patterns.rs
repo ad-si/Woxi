@@ -931,6 +931,26 @@ mod alternatives {
   }
 
   #[test]
+  fn alternatives_part_flattens_chain() {
+    // `a | b | c` is the flat, associative head Alternatives[a, b, c]; Part
+    // must index into all three operands, not the outer binary node.
+    assert_eq!(interpret("Part[a | b | c, 1]").unwrap(), "a");
+    assert_eq!(interpret("Part[a | b | c, 2]").unwrap(), "b");
+    assert_eq!(interpret("Part[a | b | c, 3]").unwrap(), "c");
+    assert_eq!(interpret("Part[a | b | c, -1]").unwrap(), "c");
+    assert_eq!(interpret("Part[a | b | c, {1, 3}]").unwrap(), "a | c");
+  }
+
+  #[test]
+  fn alternatives_take_drop_flatten_chain() {
+    assert_eq!(interpret("Take[a | b | c, 2]").unwrap(), "a | b");
+    assert_eq!(interpret("Take[a | b | c, {2, 3}]").unwrap(), "b | c");
+    assert_eq!(interpret("Drop[a | b | c, 1]").unwrap(), "b | c");
+    assert_eq!(interpret("Drop[a | b | c, -1]").unwrap(), "a | b");
+    assert_eq!(interpret("Drop[a | b | c, {2}]").unwrap(), "a | c");
+  }
+
+  #[test]
   fn alternatives_cases_function_form() {
     assert_eq!(
       interpret("Cases[{1, 2, 3, 4, 5}, Alternatives[1, 3, 5]]").unwrap(),

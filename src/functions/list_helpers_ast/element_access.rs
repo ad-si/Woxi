@@ -654,6 +654,11 @@ fn span_to_take_spec(span: &Expr) -> Option<Expr> {
 }
 
 fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // Normalize a nested Alternatives chain (`a | b | c`) into a flat
+  // Alternatives[a, b, c] so Take sees all operands as siblings, matching WS.
+  if let Some(flat) = crate::evaluator::flatten_alternatives_binop(list) {
+    return take_ast(&flat, n);
+  }
   // Handle All: return the list unchanged
   if matches!(n, Expr::Identifier(name) if name == "All") {
     return Ok(list.clone());
@@ -842,6 +847,11 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Drop: drop first n elements.
 pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // Normalize a nested Alternatives chain (`a | b | c`) into a flat
+  // Alternatives[a, b, c] so Drop sees all operands as siblings, matching WS.
+  if let Some(flat) = crate::evaluator::flatten_alternatives_binop(list) {
+    return drop_ast(&flat, n);
+  }
   // A Span spec (i;;j;;k) maps onto the {i, j, k} list form.
   if let Some(spec) = span_to_take_spec(n) {
     return drop_ast(list, &spec);
