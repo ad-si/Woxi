@@ -1328,6 +1328,69 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn polar_curves_stay_symbolic_in_script_mode() {
+    // PolarCurve / FilledPolarCurve are lightweight graphics primitives that
+    // the playground and Woxi Studio render as graphics. In the plain CLI
+    // (script mode) they stay unevaluated as their canonical form — rather
+    // than being lowered to a ParametricRegion the way wolframscript does —
+    // so the visual hosts can draw them.
+    let cases = [
+      (
+        "PolarCurve[1 + Cos[t], {t, 0, 2 Pi}]",
+        "PolarCurve[1 + Cos[t], {t, 0, 2*Pi}]",
+      ),
+      (
+        "FilledPolarCurve[PolarCurve[Sin[2 t], {t, 0, 2 Pi}]]",
+        "FilledPolarCurve[PolarCurve[Sin[2*t], {t, 0, 2*Pi}]]",
+      ),
+      (
+        "FilledPolarCurve[1 - Cos[t], t]",
+        "FilledPolarCurve[1 - Cos[t], t]",
+      ),
+      // Wrapped in Graphics the head is Graphics (they render as a curve /
+      // filled region in visual hosts).
+      (
+        "Head[Graphics[PolarCurve[1 + Cos[t], {t, 0, 2 Pi}]]]",
+        "Graphics",
+      ),
+      (
+        "Head[Graphics[FilledPolarCurve[PolarCurve[Sin[2 t], {t, 0, 2 Pi}]]]]",
+        "Graphics",
+      ),
+      (
+        "Head[Graphics[FilledPolarCurve[1 - Cos[t], t]]]",
+        "Graphics",
+      ),
+    ];
+    for (input, expected) in cases {
+      assert_eq!(
+        interpret(input).unwrap(),
+        expected,
+        "result mismatch for {input}"
+      );
+    }
+  }
+
+  #[test]
+  fn held_graphics_argument_summarizes_as_graphics_placeholder() {
+    // A Graphics[...] argument held inside a symbolic wrapper (LocatorPane,
+    // ClickPane) still summarizes to the -Graphics- placeholder in OutputForm,
+    // matching wolframscript — the full Graphics expression is only shown by
+    // InputForm / FullForm.
+    let cases = [
+      (
+        "LocatorPane[Dynamic[p], Graphics[Point[p]]]",
+        "LocatorPane[Dynamic[p], -Graphics-]",
+      ),
+      ("ClickPane[Graphics[{}], f]", "ClickPane[-Graphics-, f]"),
+    ];
+    for (input, expected) in cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, expected, "result mismatch for {input}");
+    }
+  }
+
+  #[test]
   fn drop_shadowing_canonicalizes_with_defaults() {
     // DropShadowing arguments are matched positionally in the order
     // offset (2-element numeric list), radius (number), color (color
