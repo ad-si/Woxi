@@ -354,7 +354,7 @@ fn try_as_integer(expr: &Expr) -> Option<i128> {
 
 /// Compute base^n for integer n, handling negative exponents.
 /// Uses BigFloat::powi for the absolute value, then inverts if needed.
-fn bigfloat_powi(
+pub(crate) fn bigfloat_powi(
   base: &astro_float::BigFloat,
   n: i128,
   bits: usize,

@@ -9197,3 +9197,47 @@ mod fresnel_fg_tests {
     assert_eq!(interpret("FresnelF[0.75]").unwrap(), "0.3342840193756982");
   }
 }
+
+mod bigfloat_power {
+  use super::*;
+
+  // Power/Sqrt on an arbitrary-precision (BigFloat) base used to be left
+  // unevaluated (e.g. `2.`30.^2`). Integer-exponent results with few
+  // significant digits match wolframscript byte-for-byte.
+  #[test]
+  fn integer_exponent_matches_ws() {
+    assert_eq!(interpret("N[2, 30]^2").unwrap(), "4.`29.69897000433602");
+    assert_eq!(interpret("N[2, 30]^3").unwrap(), "8.`29.522878745280337");
+    assert_eq!(interpret("N[10, 50]^2").unwrap(), "100.`49.69897000433602");
+    assert_eq!(interpret("N[5, 40]^2").unwrap(), "25.`39.69897000433602");
+  }
+
+  #[test]
+  fn negative_exponent_matches_ws() {
+    assert_eq!(interpret("N[2, 30]^(-1)").unwrap(), "0.5`30.");
+  }
+
+  #[test]
+  fn sqrt_of_bigfloat_evaluates() {
+    // Previously returned Sqrt[2.`30.] unevaluated. Now computes the value
+    // with the correct precision tag (30 - log10(1/2)); the leading digits
+    // match sqrt(2) exactly (trailing guard digits, like the rest of Woxi's
+    // BigFloat display, are not asserted).
+    let r = interpret("Sqrt[N[2, 30]]").unwrap();
+    assert!(
+      r.starts_with("1.41421356237309504880168872420969807856967187537"),
+      "unexpected Sqrt value: {r}"
+    );
+    assert!(r.contains("`30.30102999566398"), "wrong precision tag: {r}");
+  }
+
+  #[test]
+  fn fractional_exponent_evaluates() {
+    let r = interpret("N[2, 30]^(1/2)").unwrap();
+    assert!(
+      r.starts_with("1.41421356237309504880168872420969807856967187537"),
+      "unexpected value: {r}"
+    );
+    assert!(r.contains("`30.30102999566398"), "wrong precision tag: {r}");
+  }
+}

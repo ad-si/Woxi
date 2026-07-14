@@ -867,6 +867,15 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity") {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
+  // Sqrt of an arbitrary-precision BigFloat: delegate to Power[base, 1/2] so
+  // the precision-tracked bigfloat path computes it (rather than leaving
+  // `Sqrt[2.`30.]` unevaluated).
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return crate::functions::math_ast::power_two(
+      &args[0],
+      &make_rational(1, 2),
+    );
+  }
   // Sqrt[I] / Sqrt[-I]: delegate to Power[base, 1/2] so the imaginary-unit
   // canonicalisation (Sqrt[I] = (-1)^(1/4), Sqrt[-I] = -(-1)^(3/4)) applies.
   if matches!(&args[0], Expr::Identifier(s) if s == "I")

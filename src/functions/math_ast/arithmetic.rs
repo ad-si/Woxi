@@ -8719,6 +8719,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // Arbitrary-precision base (BigFloat) raised to a real power: compute the
+  // value and track precision, instead of leaving `2.`30.^2` unevaluated.
+  if let Some(result) = try_bigfloat_power(base, exp) {
+    return result;
+  }
+
   // SeriesData ^ n (positive integer n): repeated Cauchy product, so e.g.
   // (Series[…])^2 squares the series. A pure O-term (empty coefficients) just
   // scales its order: O[x^(a/d)]^n = O[x^(n*a/d)].
@@ -11301,6 +11307,111 @@ fn factor_precision_contribution(e: &Expr) -> Option<f64> {
     }
     _ => None,
   }
+}
+
+/// Numeric value of an exponent expression as f64, for the precision formula
+/// `result_prec = base_prec - log10(|exp|)`. Handles the exact-number shapes a
+/// Power exponent can take (Integer, BigInteger, Rational, Real, BigFloat).
+fn exponent_f64(exp: &Expr) -> Option<f64> {
+  match exp {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::BigInteger(n) => n.to_string().parse::<f64>().ok(),
+    Expr::Real(f) => Some(*f),
+    Expr::BigFloat(s, _) => s.parse::<f64>().ok(),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let a = exponent_f64(&args[0])?;
+      let b = exponent_f64(&args[1])?;
+      if b == 0.0 { None } else { Some(a / b) }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => exponent_f64(operand).map(|v| -v),
+    _ => None,
+  }
+}
+
+/// `base^exp` where `base` is a precision-tagged BigFloat and `exp` is a real
+/// number. Computes the value in astro-float and tracks the result precision as
+/// `base_prec - log10(|exp|)` (matching wolframscript: N[2,30]^2 has precision
+/// 30 - log10(2), Sqrt[N[2,30]] has 30 - log10(1/2)). Returns None (deferring to
+/// the symbolic/complex path) when the exponent is not a plain real, or the
+/// base is negative with a non-integer exponent (a complex result).
+pub fn try_bigfloat_power(
+  base: &Expr,
+  exp: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  use astro_float::{Consts, RoundingMode};
+
+  let base_prec = match base {
+    Expr::BigFloat(_, p) if *p > 0.0 => *p,
+    _ => return None,
+  };
+  let exp_val = exponent_f64(exp)?;
+  if exp_val == 0.0 {
+    return Some(Ok(Expr::Integer(1)));
+  }
+  let int_exp = match exp {
+    Expr::Integer(n) => Some(*n),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => match operand.as_ref() {
+      Expr::Integer(n) => Some(-n),
+      _ => None,
+    },
+    _ => None,
+  };
+
+  let rm = RoundingMode::ToEven;
+  let bits = crate::functions::math_ast::numerical::nominal_bits(
+    base_prec.ceil() as usize,
+  );
+  let mut cc = match Consts::new() {
+    Ok(c) => c,
+    Err(e) => {
+      return Some(Err(InterpreterError::EvaluationError(format!("{}", e))));
+    }
+  };
+  let base_bf = match crate::functions::math_ast::numerical::expr_to_bigfloat(
+    base, bits, rm, &mut cc,
+  ) {
+    Ok(b) => b,
+    Err(e) => return Some(Err(e)),
+  };
+
+  let result = if let Some(n) = int_exp {
+    crate::functions::math_ast::numerical::bigfloat_powi(&base_bf, n, bits, rm)
+  } else {
+    // Non-integer exponent on a negative base is complex — defer.
+    if base_bf.is_negative() {
+      return None;
+    }
+    let exp_bf = match crate::functions::math_ast::numerical::expr_to_bigfloat(
+      exp, bits, rm, &mut cc,
+    ) {
+      Ok(e) => e,
+      Err(e) => return Some(Err(e)),
+    };
+    base_bf.pow(&exp_bf, bits, rm, &mut cc)
+  };
+
+  let result_prec = base_prec - exp_val.abs().log10();
+  let max_fraction_digits =
+    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+  let result_str =
+    match crate::functions::math_ast::numerical::bigfloat_to_string(
+      &result,
+      Some(max_fraction_digits),
+      rm,
+      &mut cc,
+    ) {
+      Ok(s) => s,
+      Err(e) => return Some(Err(e)),
+    };
+  Some(Ok(Expr::BigFloat(result_str, result_prec)))
 }
 
 /// Multiply BigFloat-tagged numbers with precision tracking. Mirrors
