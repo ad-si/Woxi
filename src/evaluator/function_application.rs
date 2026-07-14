@@ -278,9 +278,29 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
 
 /// Split an expression by its head. E.g., split_by_head(a + b, "Plus") = [a, b]
 fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
+  use crate::syntax::BinaryOperator;
+  // Operators like `|` (Alternatives) or `+` (Plus) are stored as (possibly
+  // nested) BinaryOp nodes rather than FunctionCall nodes. Map the operator to
+  // its head name so Distribute can split e.g. `a | b | c` into {a, b, c}.
+  let binop_head = |op: &BinaryOperator| -> Option<&'static str> {
+    match op {
+      BinaryOperator::Plus => Some("Plus"),
+      BinaryOperator::Times => Some("Times"),
+      BinaryOperator::And => Some("And"),
+      BinaryOperator::Or => Some("Or"),
+      BinaryOperator::StringJoin => Some("StringJoin"),
+      BinaryOperator::Alternatives => Some("Alternatives"),
+      _ => None,
+    }
+  };
   match expr {
     Expr::FunctionCall { name, args } if name == head => args.to_vec(),
     Expr::List(items) if head == "List" => items.to_vec(),
+    Expr::BinaryOp { op, left, right } if binop_head(op) == Some(head) => {
+      let mut parts = split_by_head(left, head);
+      parts.extend(split_by_head(right, head));
+      parts
+    }
     _ => vec![expr.clone()],
   }
 }

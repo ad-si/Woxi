@@ -6499,6 +6499,30 @@ mod distribute {
       "{{1, 3}, {1, 4}, {2, 3}, {2, 4}}"
     );
   }
+
+  #[test]
+  fn distribute_over_alternatives() {
+    assert_eq!(
+      interpret("Distribute[f[a | b, c | d], Alternatives]").unwrap(),
+      "f[a, c] | f[a, d] | f[b, c] | f[b, d]"
+    );
+  }
+
+  #[test]
+  fn distribute_over_alternatives_single_side() {
+    assert_eq!(
+      interpret("Distribute[f[a | b, c], Alternatives]").unwrap(),
+      "f[a, c] | f[b, c]"
+    );
+  }
+
+  #[test]
+  fn distribute_over_alternatives_chain() {
+    assert_eq!(
+      interpret("Distribute[f[a | b | e, c | d], Alternatives]").unwrap(),
+      "f[a, c] | f[a, d] | f[b, c] | f[b, d] | f[e, c] | f[e, d]"
+    );
+  }
 }
 
 mod polynomial_remainder {
