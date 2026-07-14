@@ -1629,6 +1629,58 @@ mod high_level_functions {
         "{{5, -1}, {4, 0}}"
       );
     }
+    // Infinity as an upper bound means "no bound" — same as All.
+    #[test]
+    fn test_integer_partitions_infinity() {
+      assert_eq!(
+        interpret("IntegerPartitions[5, Infinity]").unwrap(),
+        interpret("IntegerPartitions[5, All]").unwrap()
+      );
+      assert_eq!(
+        interpret("IntegerPartitions[5, {2, Infinity}]").unwrap(),
+        "{{4, 1}, {3, 2}, {3, 1, 1}, {2, 2, 1}, {2, 1, 1, 1}, {1, 1, 1, 1, 1}}"
+      );
+    }
+    // {nmin, nmax, dn} keeps only part counts nmin, nmin+dn, ….
+    #[test]
+    fn test_integer_partitions_length_step() {
+      assert_eq!(
+        interpret("IntegerPartitions[5, {1, 3, 2}]").unwrap(),
+        "{{5}, {3, 1, 1}, {2, 2, 1}}"
+      );
+      assert_eq!(
+        interpret("IntegerPartitions[6, {1, 4, 2}]").unwrap(),
+        "{{6}, {4, 1, 1}, {3, 2, 1}, {2, 2, 2}}"
+      );
+    }
+    // The empty partition of 0 is included when 0 parts are allowed.
+    #[test]
+    fn test_integer_partitions_zero_boundary() {
+      assert_eq!(interpret("IntegerPartitions[0, 2]").unwrap(), "{{}}");
+      assert_eq!(interpret("IntegerPartitions[0, All]").unwrap(), "{{}}");
+      assert_eq!(interpret("IntegerPartitions[0, {1, 2}]").unwrap(), "{}");
+    }
+    // An invalid length spec at position 2 emits nninfseq and stays
+    // unevaluated.
+    #[test]
+    fn test_integer_partitions_invalid_length_spec() {
+      for input in [
+        "IntegerPartitions[5, -1]",
+        "IntegerPartitions[5, 2.5]",
+        "IntegerPartitions[5, {-1, 3}]",
+        "IntegerPartitions[5, k]",
+      ] {
+        let r = woxi::interpret_with_stdout(input).unwrap();
+        assert_eq!(r.result, input, "result mismatch for {input}");
+        assert!(
+          r.warnings
+            .iter()
+            .any(|w| w.contains("IntegerPartitions::nninfseq")),
+          "expected nninfseq for {input}, got {:?}",
+          r.warnings
+        );
+      }
+    }
   }
 
   mod save_tests {

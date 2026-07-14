@@ -3609,46 +3609,80 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n = n as u64;
 
-  // Parse length constraints from second arg
-  let (min_len, max_len) = if args.len() >= 2 {
+  // Positive infinity, either the symbol Infinity or DirectedInfinity[1].
+  let is_pos_inf = |e: &Expr| {
+    matches!(e, Expr::Identifier(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, args: a }
+        if name == "DirectedInfinity"
+          && a.len() == 1
+          && matches!(&a[0], Expr::Integer(1)))
+  };
+  // An invalid length spec at position 2 emits nninfseq and stays unevaluated.
+  let nninfseq = || {
+    crate::emit_message(&format!(
+      "IntegerPartitions::nninfseq: Position 2 of {} must be All, Infinity, nmax, {{nmin}}, {{nmin, nmax}} or {{nmin, nmax, dn}}, where nmin is a non-negative integer, nmax is a non-negative integer or Infinity, and dn is a nonzero integer.",
+      crate::syntax::expr_to_string(&Expr::FunctionCall {
+        name: "IntegerPartitions".to_string(),
+        args: args.to_vec().into(),
+      })
+    ));
+    Ok(Expr::FunctionCall {
+      name: "IntegerPartitions".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // Parse length constraints from the second arg into
+  // (min parts, max parts, part-count step).
+  let (min_len, max_len, len_step): (u64, u64, u64) = if args.len() >= 2 {
     match &args[1] {
-      // IntegerPartitions[n, k] — at most k parts
-      e if expr_to_i128(e).is_some_and(|k| k >= 0) => {
-        (1, expr_to_i128(e).unwrap() as u64)
-      }
-      // IntegerPartitions[n, All] — no constraint
-      Expr::Identifier(s) if s == "All" => (1, n.max(1)),
-      // IntegerPartitions[n, {k}] — exactly k parts
-      Expr::List(lst) if lst.len() == 1 => match expr_to_i128(&lst[0]) {
-        Some(k) if k >= 0 => (k as u64, k as u64),
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "IntegerPartitions".to_string(),
-            args: args.to_vec().into(),
-          });
-        }
+      // IntegerPartitions[n, All] / [n, Infinity] — no bounds (0..n parts, so
+      // the empty partition of 0 is included).
+      Expr::Identifier(s) if s == "All" => (0, n.max(1), 1),
+      e if is_pos_inf(e) => (0, n.max(1), 1),
+      // IntegerPartitions[n, k] — at most k parts (0..k, so 0 parts qualify).
+      e if expr_to_i128(e).is_some() => match expr_to_i128(e).unwrap() {
+        k if k >= 0 => (0, k as u64, 1),
+        _ => return nninfseq(),
       },
-      // IntegerPartitions[n, {kmin, kmax}] — range of parts
+      // IntegerPartitions[n, {k}] — exactly k parts.
+      Expr::List(lst) if lst.len() == 1 => match expr_to_i128(&lst[0]) {
+        Some(k) if k >= 0 => (k as u64, k as u64, 1),
+        _ => return nninfseq(),
+      },
+      // IntegerPartitions[n, {kmin, kmax}] — range of parts (kmax may be
+      // Infinity, meaning no upper bound).
       Expr::List(lst) if lst.len() == 2 => {
-        match (expr_to_i128(&lst[0]), expr_to_i128(&lst[1])) {
-          (Some(lo), Some(hi)) if lo >= 0 && hi >= 0 => (lo as u64, hi as u64),
-          _ => {
-            return Ok(Expr::FunctionCall {
-              name: "IntegerPartitions".to_string(),
-              args: args.to_vec().into(),
-            });
+        let hi = if is_pos_inf(&lst[1]) {
+          Some(n as i128)
+        } else {
+          expr_to_i128(&lst[1])
+        };
+        match (expr_to_i128(&lst[0]), hi) {
+          (Some(lo), Some(hi)) if lo >= 0 && hi >= 0 => {
+            (lo as u64, hi as u64, 1)
           }
+          _ => return nninfseq(),
         }
       }
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "IntegerPartitions".to_string(),
-          args: args.to_vec().into(),
-        });
+      // IntegerPartitions[n, {kmin, kmax, dn}] — part counts kmin, kmin+dn, …
+      Expr::List(lst) if lst.len() == 3 => {
+        let hi = if is_pos_inf(&lst[1]) {
+          Some(n as i128)
+        } else {
+          expr_to_i128(&lst[1])
+        };
+        match (expr_to_i128(&lst[0]), hi, expr_to_i128(&lst[2])) {
+          (Some(lo), Some(hi), Some(dn)) if lo >= 0 && hi >= 0 && dn > 0 => {
+            (lo as u64, hi as u64, dn as u64)
+          }
+          _ => return nninfseq(),
+        }
       }
+      _ => return nninfseq(),
     }
   } else {
-    (1, n.max(1))
+    (1, n.max(1), 1)
   };
 
   // Parse allowed elements from third arg
@@ -3713,6 +3747,27 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
+  // When a part-count step is in effect the count limit must be applied after
+  // filtering by step, so let the generators run unbounded in that case.
+  let gen_max = if len_step == 1 { max_results } else { None };
+  // Keep only partitions whose length matches the step, then truncate.
+  let apply_step = |lens: Vec<Vec<u64>>| -> Vec<Vec<u64>> {
+    let mut kept: Vec<Vec<u64>> = if len_step == 1 {
+      lens
+    } else {
+      lens
+        .into_iter()
+        .filter(|p| (p.len() as u64 - min_len).is_multiple_of(len_step))
+        .collect()
+    };
+    if len_step != 1
+      && let Some(m) = max_results
+    {
+      kept.truncate(m);
+    }
+    kept
+  };
+
   // Special case: n == 0
   // The only partition of 0 is the empty partition {}, which has 0 parts
   if n == 0 {
@@ -3736,8 +3791,15 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       0,
       &mut current_signed,
       &mut result_signed,
-      max_results,
+      gen_max,
     );
+    if len_step != 1 {
+      result_signed
+        .retain(|p| (p.len() as u64 - min_len).is_multiple_of(len_step));
+      if let Some(m) = max_results {
+        result_signed.truncate(m);
+      }
+    }
     return Ok(Expr::List(
       result_signed
         .into_iter()
@@ -3759,7 +3821,7 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         0,
         &mut current,
         &mut result,
-        max_results,
+        gen_max,
       );
     }
     None => {
@@ -3770,11 +3832,12 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         min_len,
         &mut current,
         &mut result,
-        max_results,
+        gen_max,
       );
     }
   }
 
+  let result = apply_step(result);
   Ok(Expr::List(
     result
       .into_iter()
