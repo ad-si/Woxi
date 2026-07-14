@@ -4308,6 +4308,31 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     new_args[0] = dense;
     return quantile_ast(&new_args);
   }
+  // The probability q must lie in [0, 1]. A numeric q outside that range is
+  // always rejected with nquan (rather than silently computing a clamped
+  // result). For plain data a symbolic q is also rejected, whereas a
+  // distribution accepts a symbolic q (yielding a ConditionalExpression).
+  let q_invalid = |e: &Expr, data_is_list: bool| -> bool {
+    match crate::functions::math_ast::try_eval_to_f64(e) {
+      Some(v) => !(0.0..=1.0).contains(&v),
+      None => data_is_list,
+    }
+  };
+  let data_is_list = matches!(&args[0], Expr::List(_));
+  let invalid = match &args[1] {
+    Expr::List(ps) => ps.iter().any(|p| q_invalid(p, data_is_list)),
+    other => q_invalid(other, data_is_list),
+  };
+  if invalid {
+    crate::emit_message(&format!(
+      "Quantile::nquan: The Quantile specification {} should be a number or a list of numbers between 0 and 1.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "Quantile".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
     && name == "ErlangDistribution"

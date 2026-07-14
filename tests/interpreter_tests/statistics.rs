@@ -6227,6 +6227,29 @@ mod cases {
   fn quartiles() {
     assert_case(r#"Quartiles[Range[25]]"#, r#"{27 / 4, 13, 77 / 4}"#);
   }
+  // A probability outside [0, 1] (or a symbolic one for plain data) is
+  // rejected with nquan and stays unevaluated, rather than silently
+  // computing a clamped result.
+  #[test]
+  fn quantile_out_of_range_emits_nquan() {
+    for input in [
+      "Quantile[{1, 2, 3, 4, 5}, 1.5]",
+      "Quantile[{1, 2, 3, 4, 5}, -0.5]",
+      "Quantile[{1, 2, 3, 4, 5}, {0.25, 0.5, 1.5}]",
+      "Quantile[{1, 2, 3, 4, 5}, q]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("Quantile::nquan")),
+        "expected nquan for {input}, got {:?}",
+        r.warnings
+      );
+    }
+    // Valid probabilities (including the 0 and 1 endpoints) still compute.
+    assert_case(r#"Quantile[{1, 2, 3, 4, 5}, 0]"#, r#"1"#);
+    assert_case(r#"Quantile[{1, 2, 3, 4, 5}, 1]"#, r#"5"#);
+  }
   #[test]
   fn mean_1() {
     assert_case(r#"Mean[{26, 64, 36}]"#, r#"42"#);
