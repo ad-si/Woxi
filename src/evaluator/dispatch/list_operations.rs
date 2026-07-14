@@ -3301,7 +3301,25 @@ pub fn dispatch_list_operations(
     "FixedPointList" if args.len() >= 2 => {
       let (pos, same_test) = split_same_test_option(args);
       let max_iter = if pos.len() == 3 {
-        expr_to_i128(&pos[2])
+        // The iteration bound must be a non-negative integer; anything else
+        // (e.g. All) is rejected with intnm rather than silently ignored,
+        // which would otherwise run to the internal iteration cap.
+        match expr_to_i128(&pos[2]) {
+          Some(n) if n >= 0 => Some(n),
+          _ => {
+            crate::emit_message(&format!(
+              "FixedPointList::intnm: Non-negative machine-sized integer expected at position 3 in {}.",
+              crate::syntax::expr_to_string(&Expr::FunctionCall {
+                name: "FixedPointList".to_string(),
+                args: args.to_vec().into(),
+              })
+            ));
+            return Some(Ok(Expr::FunctionCall {
+              name: "FixedPointList".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        }
       } else {
         None
       };

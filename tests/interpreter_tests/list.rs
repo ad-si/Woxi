@@ -13516,6 +13516,36 @@ mod cases {
       r#"{14, 7, 22, 11, 34, 17, 52, 26, 13, 40, 20, 10, 5, 16, 8, 4, 2, 1, 1}"#,
     );
   }
+  // A non-integer iteration bound (e.g. All) is rejected with intnm and stays
+  // unevaluated, rather than running to the internal iteration cap.
+  #[test]
+  fn fixed_point_list_invalid_bound() {
+    let r =
+      woxi::interpret_with_stdout("FixedPointList[#/2 &, 8, All]").unwrap();
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("FixedPointList::intnm")),
+      "expected intnm message, got {:?}",
+      r.warnings
+    );
+    assert!(
+      r.result.starts_with("FixedPointList["),
+      "expected unevaluated call, got {}",
+      r.result
+    );
+    // A negative bound is likewise rejected.
+    let neg =
+      woxi::interpret_with_stdout("FixedPointList[#/2 &, 8, -1]").unwrap();
+    assert!(
+      neg
+        .warnings
+        .iter()
+        .any(|w| w.contains("FixedPointList::intnm")),
+      "expected intnm message for negative bound, got {:?}",
+      neg.warnings
+    );
+  }
   #[test]
   fn fold_1() {
     assert_case(r#"Fold[Plus, 5, {1, 1, 1}]"#, r#"8"#);
