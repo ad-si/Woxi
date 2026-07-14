@@ -22,10 +22,17 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    match as_bool(&evaluated) {
-      Some(false) => return Ok(Expr::Identifier("False".to_string())),
-      Some(true) => {} // Skip True values
-      None => remaining.push(evaluated),
+    // And is Flat: splice nested And (whether stored as a FunctionCall or a
+    // `&&` BinaryOp chain) so `a && b && c` is And[a, b, c], not the nested
+    // And[And[a, b], c] the parser builds. Matches wolframscript.
+    let mut pieces = Vec::new();
+    splice_flat_head(&evaluated, BinaryOperator::And, "And", &mut pieces);
+    for piece in pieces {
+      match as_bool(&piece) {
+        Some(false) => return Ok(Expr::Identifier("False".to_string())),
+        Some(true) => {} // Skip True values
+        None => remaining.push(piece),
+      }
     }
   }
   match remaining.len() {
@@ -38,15 +45,44 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Flatten a Flat boolean head: if `expr` is `head[...]` (as a FunctionCall or
+/// a nested `op` BinaryOp chain), append its leaf operands to `out`; otherwise
+/// append `expr` itself.
+fn splice_flat_head(
+  expr: &Expr,
+  op: BinaryOperator,
+  head: &str,
+  out: &mut Vec<Expr>,
+) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == head => {
+      for a in args.iter() {
+        splice_flat_head(a, op, head, out);
+      }
+    }
+    Expr::BinaryOp { op: o, left, right } if *o == op => {
+      splice_flat_head(left, op, head, out);
+      splice_flat_head(right, op, head, out);
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
 /// Or[expr1, expr2, ...] - Logical OR
 pub fn or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    match as_bool(&evaluated) {
-      Some(true) => return Ok(Expr::Identifier("True".to_string())),
-      Some(false) => {} // Skip False values
-      None => remaining.push(evaluated),
+    // Or is Flat: splice nested Or (FunctionCall or `||` BinaryOp chain) so
+    // `a || b || c` is Or[a, b, c] rather than Or[Or[a, b], c].
+    let mut pieces = Vec::new();
+    splice_flat_head(&evaluated, BinaryOperator::Or, "Or", &mut pieces);
+    for piece in pieces {
+      match as_bool(&piece) {
+        Some(true) => return Ok(Expr::Identifier("True".to_string())),
+        Some(false) => {} // Skip False values
+        None => remaining.push(piece),
+      }
     }
   }
   match remaining.len() {

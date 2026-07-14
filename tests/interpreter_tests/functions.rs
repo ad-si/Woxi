@@ -5191,6 +5191,44 @@ mod named_logical_operators {
   }
 }
 
+mod and_or_flat_chains {
+  use super::*;
+
+  #[test]
+  fn and_operator_chain_is_flat() {
+    // And is Flat: a && b && c is And[a, b, c] (Length 3), not the nested
+    // And[And[a, b], c] the parser builds. Matches wolframscript.
+    assert_eq!(interpret("Length[a && b && c]").unwrap(), "3");
+    assert_eq!(interpret("Length[a && b && c && d]").unwrap(), "4");
+    assert_eq!(interpret("List @@ (a && b && c)").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn or_operator_chain_is_flat() {
+    assert_eq!(interpret("Length[a || b || c]").unwrap(), "3");
+    assert_eq!(interpret("List @@ (a || b || c)").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn and_or_short_circuit_still_works() {
+    assert_eq!(interpret("True && a && b").unwrap(), "a && b");
+    assert_eq!(interpret("a && False && b").unwrap(), "False");
+    assert_eq!(interpret("a || True || b").unwrap(), "True");
+  }
+
+  #[test]
+  fn nested_and_groups_flatten() {
+    assert_eq!(interpret("Length[(a && b) && (c && d)]").unwrap(), "4");
+    assert_eq!(interpret("Length[And[a && b, c]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn mixed_and_or_keeps_precedence() {
+    // && binds tighter than ||: a && b || c is Or[And[a, b], c] (Length 2).
+    assert_eq!(interpret("Length[a && b || c]").unwrap(), "2");
+  }
+}
+
 mod implies_simplification {
   use super::*;
 
