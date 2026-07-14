@@ -12,5 +12,7 @@ out-of-range position leaves the call unevaluated:
 
 ```scrut
 $ wo 'StringInsert["abc", "X", 5]'
+
+StringInsert::ins: Cannot insert at position 5 in abc.
 StringInsert[abc, X, 5]
 ```
