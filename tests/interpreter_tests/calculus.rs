@@ -8429,6 +8429,30 @@ mod interpolation {
     assert!((val - 4.0).abs() < 0.001, "Expected 4.0, got {}", val);
   }
 
+  // A single data point is a constant interpolation (order reduced to 0):
+  // the function returns that value for any input.
+  #[test]
+  fn single_point_is_constant() {
+    assert_eq!(interpret("Interpolation[{5}][1]").unwrap(), "5");
+    assert_eq!(interpret("Interpolation[{5}][100]").unwrap(), "5");
+    assert_eq!(
+      interpret("Head[Interpolation[{7}]]").unwrap(),
+      "InterpolatingFunction"
+    );
+  }
+
+  // An empty data list emits innd and stays unevaluated (not a hard error).
+  #[test]
+  fn empty_data_emits_innd() {
+    let r = woxi::interpret_with_stdout("Interpolation[{}]").unwrap();
+    assert_eq!(r.result, "Interpolation[{}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains("Interpolation::innd")),
+      "expected innd, got {:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn interpolation_between_points() {
     // Test interpolation at a point between data values

@@ -2200,9 +2200,19 @@ pub fn interpolation_ast(
   };
 
   if data_list.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Interpolation: need at least one data point".into(),
+    // An empty data list is not interpolatable: emit innd and stay
+    // unevaluated (wolframscript parity) rather than raising a hard error.
+    crate::emit_message(&format!(
+      "Interpolation::innd: First argument in {} does not contain a list of data and coordinates.",
+      crate::syntax::format_expr(
+        &data_evaluated,
+        crate::syntax::ExprForm::Output
+      )
     ));
+    return Ok(Expr::FunctionCall {
+      name: head.to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // ListInterpolation of a rectangular numeric matrix is a 2-D grid (values on
@@ -2239,13 +2249,10 @@ pub fn interpolation_ast(
   points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
   let n = points.len();
-  if n < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Interpolation: need at least 2 data points".into(),
-    ));
-  }
 
-  // Clamp order to valid range
+  // Clamp order to valid range. A single data point is allowed: the order is
+  // reduced to 0 (with inhr) and the result is a constant interpolation,
+  // matching wolframscript.
   let mut order = interp_order.max(1).min(3) as usize;
   if order >= n {
     let reduced = n - 1;
@@ -2565,10 +2572,21 @@ pub fn evaluate_interpolating_function(
   };
 
   let n = data_points.len();
-  if n < 2 {
+  if n == 0 {
     return Err(InterpreterError::EvaluationError(
       "InterpolatingFunction: not enough data points".into(),
     ));
+  }
+  if n == 1 {
+    // A single data point is a constant interpolation: return the stored y
+    // (preserving its Integer/Real type) for any input.
+    if let Expr::List(pair) = &data_points[0]
+      && pair.len() == 2
+    {
+      return Ok(pair[1].clone());
+    }
+    let (_, y) = extract_point(&data_points[0])?;
+    return Ok(real_or_integer(y));
   }
 
   // Extract all points for interpolation
