@@ -2026,7 +2026,7 @@ ContainsAny,Test if any elements of the second list appear in the first,✅,pure
 ImagePerspectiveTransformation,Perspective transform on image,🚫,,8.0,2061
 Atom,Represents an atom in a molecule (chemistry),✅,pure,12.0,2065
 InverseSeries,Computes the reversion (inverse) of a power series,✅,pure,1.0,2065
-RootMeanSquare,Returns the root mean square of a list,✅,pure,6.0,2065
+RootMeanSquare,Returns the root mean square of a list or the column-wise root mean square of a matrix,✅,pure,6.0,2065
 SquareMatrixQ,Test if an expression is a square matrix,✅,none,10.0,2065
 CholeskyDecomposition,Returns the upper-triangular Cholesky factor U of a Hermitian positive-definite matrix such that ConjugateTranspose[U].U equals the input,✅,None,5.0,2067
 IntegerReverse,Reverses the digits of an integer in base b optionally over a fixed digit count (Listable),✅,pure,10.3,2067

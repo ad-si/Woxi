@@ -4125,6 +4125,27 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return root_mean_square_ast(&[dense]);
   }
+  // A matrix (list of lists) is reduced column-wise: RootMeanSquare[data] =
+  // Sqrt[Mean[data^2]], where the element-wise square and column-wise Mean
+  // give one value per column.
+  if let Expr::List(items) = &args[0]
+    && !items.is_empty()
+    && items.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let squared = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![args[0].clone(), Expr::Integer(2)].into(),
+    };
+    let mean = Expr::FunctionCall {
+      name: "Mean".to_string(),
+      args: vec![squared].into(),
+    };
+    let sqrt = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![mean].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&sqrt);
+  }
   match &args[0] {
     Expr::List(items) => {
       // An empty list stays unevaluated (matching wolframscript).

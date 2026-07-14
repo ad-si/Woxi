@@ -741,6 +741,20 @@ mod root_mean_square {
   fn rms_integer_radical_reduced() {
     assert_eq!(interpret("RootMeanSquare[{6, 8}]").unwrap(), "5*Sqrt[2]");
   }
+
+  // A matrix is reduced column-wise: Sqrt[Mean[data^2]] per column.
+  #[test]
+  fn rms_matrix_is_column_wise() {
+    assert_eq!(interpret("RootMeanSquare[{{3, 4}}]").unwrap(), "{3, 4}");
+    assert_eq!(
+      interpret("RootMeanSquare[{{1, 2}, {3, 4}}]").unwrap(),
+      "{Sqrt[5], Sqrt[10]}"
+    );
+    assert_eq!(
+      interpret("RootMeanSquare[{{1, 2}, {3, 4}, {5, 6}}]").unwrap(),
+      "{Sqrt[35/3], 2*Sqrt[14/3]}"
+    );
+  }
 }
 
 mod rescale {
