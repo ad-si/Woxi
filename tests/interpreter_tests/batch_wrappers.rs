@@ -919,6 +919,49 @@ mod batch_unevaluated_wrappers_2 {
       "(a || c) && (a || d) && (b || c) && (b || d)"
     );
   }
+  // The "AND"/"OR" forms express the result with only And+Not or Or+Not,
+  // eliminating the other connective by De Morgan.
+  #[test]
+  fn boolean_convert_and_or_forms() {
+    // AND form: no Or connective may appear.
+    assert_eq!(
+      interpret(r#"BooleanConvert[Implies[a, b], "AND"]"#).unwrap(),
+      " !(a &&  !b)"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a || b, "AND"]"#).unwrap(),
+      " !( !a &&  !b)"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a && b, "AND"]"#).unwrap(),
+      "a && b"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a && b || c, "AND"]"#).unwrap(),
+      " !( !a &&  !c) &&  !( !b &&  !c)"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[Xor[a, b], "AND"]"#).unwrap(),
+      " !(a && b) &&  !( !a &&  !b)"
+    );
+    // OR form: no And connective may appear.
+    assert_eq!(
+      interpret(r#"BooleanConvert[a && b, "OR"]"#).unwrap(),
+      " !( !a ||  !b)"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a || b, "OR"]"#).unwrap(),
+      "a || b"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a && b || c, "OR"]"#).unwrap(),
+      " !( !a ||  !b) || c"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[Xor[a, b], "OR"]"#).unwrap(),
+      " !( !a || b) ||  !(a ||  !b)"
+    );
+  }
   #[test]
   fn boolean_counting_function_exactly_k() {
     // {k} → exactly k vars true. Natural DNF of size-k minterms, in lex

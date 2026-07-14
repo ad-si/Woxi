@@ -1904,9 +1904,71 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
 
 // ─── BooleanConvert ────────────────────────────────────────────────
 
+/// Negate a boolean literal, collapsing double negation: `Not[x] -> x`,
+/// `x -> Not[x]`.
+fn bc_negate_literal(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
+      args[0].clone()
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand,
+    } => (**operand).clone(),
+    _ => Expr::FunctionCall {
+      name: "Not".to_string(),
+      args: vec![e.clone()].into(),
+    },
+  }
+}
+
+/// Rewrite one clause with the given head (`Or` for the AND form, `And` for
+/// the OR form) as `Not[<dual>[negated literals]]` via De Morgan; other
+/// clauses (bare literals) are returned unchanged.
+fn bc_demorgan_clause(clause: &Expr, clause_head: &str, dual: &str) -> Expr {
+  if let Expr::FunctionCall { name, args } = clause
+    && name == clause_head
+  {
+    let negated: Vec<Expr> = args.iter().map(bc_negate_literal).collect();
+    return Expr::FunctionCall {
+      name: "Not".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: dual.to_string(),
+        args: negated.into(),
+      }]
+      .into(),
+    };
+  }
+  clause.clone()
+}
+
+/// Convert a normal form to an "AND"/"OR"-only form. `top` is the connective
+/// joining the clauses (`And` for the AND form built from CNF, `Or` for the
+/// OR form built from DNF); `clause_head`/`dual` are the connective inside a
+/// clause and its De Morgan dual.
+fn bc_to_single_connective(
+  nf: &Expr,
+  top: &str,
+  clause_head: &str,
+  dual: &str,
+) -> Expr {
+  match nf {
+    Expr::FunctionCall { name, args } if name == top => Expr::FunctionCall {
+      name: top.to_string(),
+      args: args
+        .iter()
+        .map(|c| bc_demorgan_clause(c, clause_head, dual))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    // A single clause (or a bare literal) is rewritten on its own.
+    other => bc_demorgan_clause(other, clause_head, dual),
+  }
+}
+
 /// BooleanConvert[expr] or BooleanConvert[expr, form]
 /// Convert boolean expressions to different normal forms.
-/// Supported forms: "DNF", "CNF", or default (eliminate compound connectives).
+/// Supported forms: "DNF", "CNF", "AND", "OR", or default (DNF).
 pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1972,13 +2034,17 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       sort_boolean_expr(&normalize_not(&cnf))
     }
     "OR" => {
-      let eliminated = eliminate_connectives(expr);
-      let negated = push_not_inward(&eliminated);
-      sort_boolean_expr(&normalize_not(&negated))
+      // Express with Or and Not only: take the DNF and rewrite every
+      // conjunctive clause And[l…] as Not[Or[!l…]] (De Morgan). normalize_not
+      // renders the introduced Not[…] wrappers with the `!` operator.
+      let dnf = canonicalize_dnf(&normalize_not(&to_dnf(expr)));
+      normalize_not(&bc_to_single_connective(&dnf, "Or", "And", "Or"))
     }
     "AND" => {
-      let cnf = to_cnf(expr);
-      sort_boolean_expr(&normalize_not(&cnf))
+      // Express with And and Not only: take the CNF and rewrite every
+      // disjunctive clause Or[l…] as Not[And[!l…]] (De Morgan).
+      let cnf = sort_boolean_expr(&normalize_not(&to_cnf(expr)));
+      normalize_not(&bc_to_single_connective(&cnf, "And", "Or", "And"))
     }
     _ => {
       return Ok(Expr::FunctionCall {
