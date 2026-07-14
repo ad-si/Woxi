@@ -13987,3 +13987,10 @@ pub fn replace_identifier_in_expr(
     _ => expr.clone(),
   }
 }
+
+pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  }
+}

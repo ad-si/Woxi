@@ -8,7 +8,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// True if `e` contains an inexact (machine) number anywhere.
 fn is_inexact(e: &Expr) -> bool {
@@ -205,12 +205,7 @@ fn carlson_ast(
   arity: usize,
   f: impl Fn(&[f64]) -> Option<f64>,
 ) -> Result<Expr, InterpreterError> {
-  let symbolic = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let symbolic = || Ok(unevaluated(name, args));
   if args.len() != arity {
     return symbolic();
   }

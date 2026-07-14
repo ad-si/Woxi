@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
+};
 use num_bigint::BigInt;
 use num_bigint::Sign;
 
@@ -7716,10 +7718,7 @@ pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     times_ast(&[Expr::Integer(-1), args[0].clone()])
   } else {
     // Return unevaluated (like Wolfram) — error message emitted by centralized arg_count check
-    Ok(Expr::FunctionCall {
-      name: "Minus".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("Minus", args))
   }
 }
 
@@ -10941,10 +10940,7 @@ where
 /// Subtract[a, b] - Returns a - b
 pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "Subtract".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Subtract", args));
   }
   // Subtract[a, b] = a + (-1 * b)
   let negated_b = times_ast(&[Expr::Integer(-1), args[1].clone()])?;

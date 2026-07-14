@@ -8,7 +8,7 @@
 //! unevaluated.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 use std::collections::BTreeMap;
 
 type Frac = (i128, i128);
@@ -347,15 +347,9 @@ fn is_prime_i128(n: i128) -> bool {
   true
 }
 
-fn unevaluated_call(name: &str, args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  }
-}
-
 pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| unevaluated_call("GroebnerBasis", args);
+  let full_args = args;
+  let uneval = || unevaluated("GroebnerBasis", full_args);
   // GroebnerBasis[polys, vars, Modulus -> p] computes over GF(p);
   // Modulus -> 0 is ordinary arithmetic, and composite moduli (which
   // would need strong Z/m bases) stay unevaluated.
@@ -364,15 +358,13 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match groebner_modulus_option(&args[2]) {
       Some(0) => return groebner_basis_ast(&args[..2]),
       Some(p) if is_prime_i128(p) => modulus = Some(p),
-      _ => return Ok(unevaluated(args)),
+      _ => return Ok(uneval()),
     }
   } else if args.len() != 2 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
   let _guard = modulus.map(set_modulus);
-  let full_args = args;
   let args = &args[..2];
-  let unevaluated = |_: &[Expr]| unevaluated_call("GroebnerBasis", full_args);
   let polys_in: Vec<Expr> = match &args[0] {
     Expr::List(items) if !items.is_empty() => items.iter().cloned().collect(),
     single => vec![single.clone()],
@@ -383,16 +375,16 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for v in items {
         match v {
           Expr::Identifier(name) => out.push(name.clone()),
-          _ => return Ok(unevaluated(args)),
+          _ => return Ok(uneval()),
         }
       }
       out
     }
     Expr::Identifier(name) => vec![name.clone()],
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(uneval()),
   };
   if vars.is_empty() || vars.len() > 6 {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   }
 
   // Parse the input polynomials
@@ -406,7 +398,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr_to_poly(&expanded, &vars) {
       Some(poly) if !poly.is_empty() => basis.push(poly),
       Some(_) => {} // zero polynomial contributes nothing
-      None => return Ok(unevaluated(args)),
+      None => return Ok(uneval()),
     }
   }
   if basis.is_empty() {
@@ -480,7 +472,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(reduced)
   })();
   let Some(mut reduced) = result else {
-    return Ok(unevaluated(args));
+    return Ok(uneval());
   };
 
   // Trivial ideal: any nonzero constant
@@ -506,10 +498,10 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let monic;
     let p = if let Some(pm) = modulus {
       let Some((_, lc)) = leading(p) else {
-        return Ok(unevaluated(args));
+        return Ok(uneval());
       };
       let Some(inv) = mod_inverse(lc.0, pm) else {
-        return Ok(unevaluated(args));
+        return Ok(uneval());
       };
       let mut q = Poly::new();
       for (k, &c) in p {
@@ -573,7 +565,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })();
     match rendered {
       Some(e) => out.push(e),
-      None => return Ok(unevaluated(args)),
+      None => return Ok(uneval()),
     }
   }
   Ok(Expr::List(out.into()))

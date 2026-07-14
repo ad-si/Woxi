@@ -11,7 +11,7 @@ pub mod tables;
 pub mod transforms;
 
 use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{Expr, expr_to_string, unevaluated};
 
 /// A validated discrete wavelet family (one that has filter coefficients
 /// and works with the discrete transforms).
@@ -376,11 +376,4 @@ fn single_filter_result(
       .collect()
   };
   Ok(Expr::List(pairs.into()))
-}
-
-pub(crate) fn unevaluated(name: &str, args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  }
 }

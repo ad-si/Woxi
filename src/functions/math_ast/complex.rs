@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// True if `t` carries the imaginary unit `I` as a direct factor (possibly
 /// nested inside Times/negation): `I`, `b I`, `-2 b I`, etc.
@@ -216,10 +216,7 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Symbolic: return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Re".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Re", args))
 }
 
 /// Im[z] - Imaginary part of a complex number (for real numbers, returns 0)
@@ -306,10 +303,7 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Symbolic: return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Im".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Im", args))
 }
 
 /// Flatten a product into its leaf factors, descending through nested Times
@@ -1335,10 +1329,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(im.atan2(re)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Arg".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Arg", args))
 }
 
 /// Helper: create a rational multiple of Pi as an expression.
@@ -1533,10 +1524,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         Some(x) => x,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "Rationalize".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Rationalize", args));
         }
       }
     }
