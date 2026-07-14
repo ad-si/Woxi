@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::make_sqrt;
-use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
 
 /// Columnwise quartile-family statistic for a matrix argument.
 ///
@@ -50,10 +50,7 @@ fn columnwise_quartile_stat(
       // A still-symbolic result means a column wasn't numeric; leave the whole
       // call unevaluated rather than emitting a half-symbolic list.
       Ok(v) if matches!(&v, Expr::FunctionCall { name: n, .. } if n == name) => {
-        return Some(Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated(name, args)));
       }
       Ok(v) => out.push(v),
       Err(e) => return Some(Err(e)),
@@ -122,10 +119,7 @@ pub fn dispatch_math_functions(
           }
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "RankedMax".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("RankedMax", args)));
     }
     "RankedMin" if args.len() == 2 => {
       // Lists rank their elements; associations rank their values.
@@ -152,10 +146,7 @@ pub fn dispatch_math_functions(
           }
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "RankedMin".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("RankedMin", args)));
     }
     "Quantile" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::quantile_ast(args));
@@ -194,10 +185,7 @@ pub fn dispatch_math_functions(
         if all_ok && results.len() == 3 {
           return Some(Ok(Expr::List(results.into())));
         }
-        return Some(Ok(Expr::FunctionCall {
-          name: "Quartiles".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("Quartiles", args)));
       }
       // Quartiles uses Quantile with parameters {{1/2, 0}, {0, 1}}
       // Formula: pos = 1/2 + n*q, then linear interpolation
@@ -210,10 +198,7 @@ pub fn dispatch_math_functions(
       }
       if let Expr::List(items) = &args[0] {
         if items.is_empty() {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Quartiles".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Quartiles", args)));
         }
         // Sort numerically
         let mut sorted = items.clone();
@@ -278,10 +263,7 @@ pub fn dispatch_math_functions(
               }
             } else {
               // Symbolic fallback
-              results.push(Expr::FunctionCall {
-                name: "Quartiles".to_string(),
-                args: args.to_vec().into(),
-              });
+              results.push(unevaluated("Quartiles", args));
               break;
             }
           }
@@ -426,10 +408,7 @@ pub fn dispatch_math_functions(
             }
             return Some(Ok(args[0].clone()));
           }
-          return Some(Ok(Expr::FunctionCall {
-            name: "RealAbs".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("RealAbs", args)));
         }
       }
     }
@@ -484,10 +463,7 @@ pub fn dispatch_math_functions(
               0
             })));
           }
-          return Some(Ok(Expr::FunctionCall {
-            name: "RealSign".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("RealSign", args)));
         }
       }
     }
@@ -529,10 +505,7 @@ pub fn dispatch_math_functions(
       // QuotientRemainder[n, 0] stays unevaluated (wolframscript), unlike the
       // 2-list {Quotient, Mod} we would otherwise assemble.
       if crate::functions::math_ast::is_literal_zero(&args[1]) {
-        return Some(Ok(Expr::FunctionCall {
-          name: "QuotientRemainder".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("QuotientRemainder", args)));
       }
       let q = match crate::functions::math_ast::quotient_ast(args) {
         Ok(v) => v,
@@ -941,10 +914,7 @@ pub fn dispatch_math_functions(
             "TrimmedMean::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
             crate::syntax::expr_to_string(&args[1])
           ));
-          Some(Ok(Expr::FunctionCall {
-            name: "TrimmedMean".to_string(),
-            args: args.to_vec().into(),
-          }))
+          Some(Ok(unevaluated("TrimmedMean", args)))
         };
         let (trim_lo, trim_hi) = match args.get(1) {
           None => {
@@ -985,10 +955,7 @@ pub fn dispatch_math_functions(
             fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
           });
           let trimmed = &sorted[trim_lo..n - trim_hi];
-          let sum_expr = Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: trimmed.to_vec().into(),
-          };
+          let sum_expr = unevaluated("Plus", trimmed);
           let result = Expr::BinaryOp {
             op: BinaryOperator::Divide,
             left: Box::new(sum_expr),
@@ -1013,10 +980,7 @@ pub fn dispatch_math_functions(
             "WinsorizedMean::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
             crate::syntax::expr_to_string(&args[1])
           ));
-          Some(Ok(Expr::FunctionCall {
-            name: "WinsorizedMean".to_string(),
-            args: args.to_vec().into(),
-          }))
+          Some(Ok(unevaluated("WinsorizedMean", args)))
         };
         let (trim_lo, trim_hi) = match &args[1] {
           Expr::List(fs) if fs.len() == 2 => {
@@ -1087,10 +1051,7 @@ pub fn dispatch_math_functions(
             "TrimmedVariance::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
             crate::syntax::expr_to_string(&args[1])
           ));
-          Some(Ok(Expr::FunctionCall {
-            name: "TrimmedVariance".to_string(),
-            args: args.to_vec().into(),
-          }))
+          Some(Ok(unevaluated("TrimmedVariance", args)))
         };
         let (trim_lo, trim_hi) = match args.get(1) {
           None => {
@@ -1148,10 +1109,7 @@ pub fn dispatch_math_functions(
             "WinsorizedVariance::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
             crate::syntax::expr_to_string(&args[1])
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "WinsorizedVariance".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("WinsorizedVariance", args)));
         }
         let n = elems.len();
         let trim = (n as f64 * frac).floor() as usize;
@@ -1617,10 +1575,7 @@ pub fn dispatch_math_functions(
         };
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "BetaRegularized".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BetaRegularized", args)));
     }
     "MarcumQ" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::math_ast::marcum_q_ast(args));
@@ -1680,10 +1635,7 @@ pub fn dispatch_math_functions(
         };
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "GammaRegularized".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("GammaRegularized", args)));
     }
     "Hypergeometric1F1Regularized" if args.len() == 3 => {
       return Some(
@@ -1838,10 +1790,7 @@ pub fn dispatch_math_functions(
         };
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Beta".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Beta", args)));
     }
     "LogIntegral" if args.len() == 1 => {
       return Some(crate::functions::math_ast::log_integral_ast(args));
@@ -2002,10 +1951,7 @@ pub fn dispatch_math_functions(
       {
         return Some(crate::evaluator::evaluate_expr_to_expr(&slice));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "SliceDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("SliceDistribution", args)));
     }
     "CorrelationFunction" if args.len() == 3 => {
       if let Some(result) =
@@ -2015,10 +1961,7 @@ pub fn dispatch_math_functions(
       {
         return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "CorrelationFunction".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("CorrelationFunction", args)));
     }
     "AbsoluteCorrelationFunction" if args.len() == 3 => {
       if let Some(result) =
@@ -2028,10 +1971,7 @@ pub fn dispatch_math_functions(
       {
         return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "AbsoluteCorrelationFunction".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("AbsoluteCorrelationFunction", args)));
     }
     "AbsoluteCorrelationFunction" => {
       return Some(crate::functions::absolute_correlation_function_ast(args));
@@ -2045,10 +1985,7 @@ pub fn dispatch_math_functions(
     // symbolic (N picks up the machine values via try_eval_to_f64); other
     // arguments emit StieltjesGamma::intnm like wolframscript
     "StieltjesGamma" if args.len() == 1 => {
-      let unevaluated = Expr::FunctionCall {
-        name: "StieltjesGamma".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = unevaluated("StieltjesGamma", args);
       return Some(Ok(match &args[0] {
         Expr::Integer(0) => Expr::Identifier("EulerGamma".to_string()),
         Expr::Integer(n) if *n >= 1 => unevaluated,
@@ -2066,10 +2003,7 @@ pub fn dispatch_math_functions(
     // Generalized StieltjesGamma[n, a]: only n = 0 has the closed form
     // -PolyGamma[0, a]; higher orders and symbolic n stay symbolic.
     "StieltjesGamma" if args.len() == 2 => {
-      let unevaluated = Expr::FunctionCall {
-        name: "StieltjesGamma".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = unevaluated("StieltjesGamma", args);
       return Some(Ok(match &args[0] {
         Expr::Integer(0) => {
           // Expand distributes the minus sign so integer a matches
@@ -2136,10 +2070,7 @@ pub fn dispatch_math_functions(
       {
         return Some(Ok(result));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "InverseCDF".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("InverseCDF", args)));
     }
     "InverseSurvivalFunction" if args.len() == 2 => {
       if let Expr::FunctionCall {
@@ -2153,10 +2084,7 @@ pub fn dispatch_math_functions(
       {
         return Some(Ok(result));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "InverseSurvivalFunction".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("InverseSurvivalFunction", args)));
     }
     "Probability" if args.len() == 2 || args.len() == 3 => {
       // The optional third argument is `Assumptions -> …`, which we
@@ -2476,10 +2404,7 @@ pub fn dispatch_math_functions(
         }
       }
       if contains_arcsin(&result) {
-        return Some(Ok(Expr::FunctionCall {
-          name: "InverseHaversine".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("InverseHaversine", args)));
       }
       return Some(Ok(result));
     }
@@ -2646,10 +2571,7 @@ pub fn dispatch_math_functions(
         match try_eval_to_f64(&args[1]) {
           Some(b) if b > 0.0 && b != 1.0 => b,
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "MantissaExponent".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("MantissaExponent", args)));
           }
         }
       } else {
@@ -2659,10 +2581,7 @@ pub fn dispatch_math_functions(
       let val_num: f64 = match try_eval_to_f64(&args[0]) {
         Some(v) => v,
         None => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "MantissaExponent".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("MantissaExponent", args)));
         }
       };
       if val_num == 0.0 {
@@ -2864,10 +2783,7 @@ pub fn dispatch_math_functions(
             m += 1;
           }
           // Leave unevaluated when unsolvable.
-          return Some(Ok(Expr::FunctionCall {
-            name: "MultiplicativeOrder".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("MultiplicativeOrder", args)));
         }
       }
     }
@@ -2908,10 +2824,7 @@ pub fn dispatch_math_functions(
           }
         }
         // No primitive root >= k: leave unevaluated.
-        return Some(Ok(Expr::FunctionCall {
-          name: "PrimitiveRoot".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("PrimitiveRoot", args)));
       }
     }
     // PrimitiveRoot[n] — smallest primitive root modulo n
@@ -2922,10 +2835,7 @@ pub fn dispatch_math_functions(
             "PrimitiveRoot::intg: Integer greater than 1 expected at position 1 in PrimitiveRoot[{}].",
             n
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "PrimitiveRoot".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("PrimitiveRoot", args)));
         }
         let n_val = *n;
         // Smallest primitive root modulo `m` (g with multiplicative order
@@ -2984,10 +2894,7 @@ pub fn dispatch_math_functions(
           Some(g) => return Some(Ok(Expr::Integer(g))),
           None => {
             // No primitive root exists (e.g., n=8, n=12).
-            return Some(Ok(Expr::FunctionCall {
-              name: "PrimitiveRoot".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("PrimitiveRoot", args)));
           }
         }
       }
@@ -3082,10 +2989,7 @@ pub fn dispatch_math_functions(
         let _ = BigInt::zero();
         return Some(Ok(Expr::Integer(bit)));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "BitGet".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BitGet", args)));
     }
     "Numerator" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::numerator_ast(args));
@@ -3103,10 +3007,7 @@ pub fn dispatch_math_functions(
       // It evaluates when d, n are integers with 0 <= n <= d and x is numeric;
       // otherwise it stays unevaluated (the lone x-independent exception is
       // d == n == 0, which is 1 for any x).
-      let unevaluated = || Expr::FunctionCall {
-        name: "BernsteinBasis".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("BernsteinBasis", args);
       let (Some(d), Some(n)) = (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
       else {
         return Some(Ok(unevaluated()));
@@ -4206,10 +4107,8 @@ pub fn dispatch_math_functions(
       // CoordinateBounds: {{xmin, ymin, ...}, {xmax, ymax, ...}}, i.e.
       // Transpose[CoordinateBounds[...]]. Delegating reuses all of
       // CoordinateBounds' padding handling (scalar / per-dim / pair / Scaled).
-      let bounds = evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "CoordinateBounds".to_string(),
-        args: args.to_vec().into(),
-      });
+      let bounds =
+        evaluate_expr_to_expr(&unevaluated("CoordinateBounds", args));
       if let Ok(Expr::List(per_dim)) = &bounds
         && !per_dim.is_empty()
         && per_dim
@@ -4234,10 +4133,7 @@ pub fn dispatch_math_functions(
           vec![Expr::List(mins.into()), Expr::List(maxs.into())].into(),
         )));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "CoordinateBoundingBox".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("CoordinateBoundingBox", args)));
     }
     "ChessboardDistance" | "ChebyshevDistance" if args.len() == 2 => {
       // ChessboardDistance[{a1,...,an}, {b1,...,bn}] = Max[Abs[a1-b1], ..., Abs[an-bn]]
@@ -4619,10 +4515,7 @@ pub fn dispatch_math_functions(
           "MaxFilter::arg1: The first argument {} should be a rectangular array, image or video.",
           crate::syntax::expr_to_string(&args[0])
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "MaxFilter".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("MaxFilter", args)));
       }
     }
     "MinFilter" if args.len() == 2 => {
@@ -4652,10 +4545,7 @@ pub fn dispatch_math_functions(
           "MinFilter::arg1: The first argument {} should be a rectangular array, image or video.",
           crate::syntax::expr_to_string(&args[0])
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "MinFilter".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("MinFilter", args)));
       }
     }
     "Upsample" if args.len() == 2 => {
@@ -5597,10 +5487,7 @@ pub fn dispatch_math_functions(
       if args.iter().any(definite_non_integer) {
         return Some(Ok(Expr::Integer(0)));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "DiracComb".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DiracComb", args)));
     }
     // ChampernowneNumber[] / ChampernowneNumber[b] — a numeric constant
     // that stays symbolic until numericized with N. Non-integer or < 2
@@ -5619,10 +5506,7 @@ pub fn dispatch_math_functions(
           ));
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "ChampernowneNumber".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ChampernowneNumber", args)));
     }
     "CantorStaircase" if args.len() == 1 => {
       return Some(cantor_staircase_ast(&args[0]));
@@ -8015,17 +7899,11 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
 }
 
 fn times(factors: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: factors.to_vec().into(),
-  }
+  unevaluated("Times", factors)
 }
 
 fn plus(terms: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.to_vec().into(),
-  }
+  unevaluated("Plus", terms)
 }
 
 fn power(base: Expr, exp: Expr) -> Expr {
@@ -8414,10 +8292,7 @@ fn standardize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(
         "Standardize::vectmat: The first argument is expected to be a vector or matrix.",
       );
-      return Ok(Expr::FunctionCall {
-        name: "Standardize".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Standardize", args));
     }
   };
 

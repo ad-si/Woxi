@@ -6298,10 +6298,7 @@ fn denominator_form(expr: &Expr) -> Expr {
           if ta.len() == 2 {
             ta[1].clone()
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: ta[1..].to_vec().into(),
-            }
+            unevaluated("Times", &ta[1..])
           }
         } else {
           // Times[-n, a, b, ...] → Times[n, a, b, ...]
@@ -7860,10 +7857,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 if fa.len() == 2 {
                   fa[1].clone()
                 } else {
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: fa[1..].to_vec().into(),
-                  }
+                  unevaluated("Times", &fa[1..])
                 }
               }
               Expr::UnaryOp {
@@ -8003,10 +7997,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           let rest = if args.len() == 2 {
             args[1].clone()
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: args[1..].to_vec().into(),
-            }
+            unevaluated("Times", &args[1..])
           };
           let rest_str = fmt(&rest);
           // If rest is a multi-factor Times (no denominator), wrap in parens.
@@ -11148,10 +11139,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
                 if targs.len() == 2 {
                   targs[1].clone()
                 } else {
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: targs[1..].to_vec().into(),
-                  }
+                  unevaluated("Times", &targs[1..])
                 }
               }
               Some(new_coeff) => {

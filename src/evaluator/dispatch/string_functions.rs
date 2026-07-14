@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 pub fn dispatch_string_functions(
   name: &str,
@@ -82,10 +83,7 @@ pub fn dispatch_string_functions(
           "StringPosition::strse: A string or list of strings is expected at position 1 in StringPosition[{}].",
           arg_strs.join(", "),
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "StringPosition".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("StringPosition", args)));
       }
       return Some(crate::functions::string_ast::string_position_ast(args));
     }
@@ -110,10 +108,7 @@ pub fn dispatch_string_functions(
     // Display wrapper: stays unevaluated in script-mode echo (rendering
     // happens through ToString), without the not-yet-implemented warning
     "PaddedForm" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "PaddedForm".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("PaddedForm", args)));
     }
     "ToExpression" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::to_expression_ast(args));
@@ -178,10 +173,7 @@ pub fn dispatch_string_functions(
     "StringFreeQ" if args.len() == 1 => {
       // Operator form: StringFreeQ[pattern] is a curried predicate that will
       // be applied to a string via the outer call (see function_application.rs).
-      return Some(Ok(Expr::FunctionCall {
-        name: "StringFreeQ".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("StringFreeQ", args)));
     }
     "StringFreeQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_free_q_ast(args));
@@ -216,10 +208,7 @@ pub fn dispatch_string_functions(
           "FromCharacterCode::intnm: Non-negative machine-sized integer expected at position 1 in FromCharacterCode[{}].",
           crate::syntax::expr_to_string(&args[0]),
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "FromCharacterCode".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FromCharacterCode", args)));
       }
       // With a "UTF8"/"UTF-8" encoding the integers are UTF-8 *bytes*, not
       // code points: decode the byte sequence into characters. (Other
@@ -380,10 +369,7 @@ pub fn dispatch_string_functions(
               words.truncate(*n as usize);
             }
             _ => {
-              return Some(Ok(Expr::FunctionCall {
-                name: "TextWords".to_string(),
-                args: args.to_vec().into(),
-              }));
+              return Some(Ok(unevaluated("TextWords", args)));
             }
           }
         }

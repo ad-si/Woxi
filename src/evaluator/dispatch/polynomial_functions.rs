@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp};
+use crate::syntax::{BinaryOperator, ComparisonOp, unevaluated};
 
 pub fn dispatch_polynomial_functions(
   name: &str,
@@ -253,10 +253,7 @@ pub fn dispatch_polynomial_functions(
           crate::emit_message(
             "FindRoot::nlnum: The function value is not a number at the starting point.",
           );
-          return Some(Ok(Expr::FunctionCall {
-            name: "FindRoot".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("FindRoot", args)));
         }
         other => return Some(other),
       }

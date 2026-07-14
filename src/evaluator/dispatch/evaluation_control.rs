@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::BinaryOperator;
+use crate::syntax::{BinaryOperator, unevaluated};
 
 pub fn dispatch_evaluation_control(
   name: &str,
@@ -8,28 +8,16 @@ pub fn dispatch_evaluation_control(
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
     "HoldForm" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "HoldForm".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("HoldForm", args)));
     }
     "Hold" if !args.is_empty() => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "Hold".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Hold", args)));
     }
     "HoldComplete" if !args.is_empty() => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "HoldComplete".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("HoldComplete", args)));
     }
     "Unevaluated" if !args.is_empty() => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "Unevaluated".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Unevaluated", args)));
     }
     "ReleaseHold" if args.len() == 1 => {
       // ReleaseHold removes Hold/HoldForm/HoldComplete/HoldPattern wrappers
@@ -73,16 +61,10 @@ pub fn dispatch_evaluation_control(
     // into the surrounding context. Matches wolframscript's
     // `Hold[Evaluate[1, 2]]` → `Hold[1, 2]`.
     "Evaluate" => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "Sequence".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Sequence", args)));
     }
     "RegularExpression" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "RegularExpression".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("RegularExpression", args)));
     }
     "UniformDistribution" if args.len() <= 1 => {
       let uni_args = if args.is_empty() {
@@ -107,214 +89,109 @@ pub fn dispatch_evaluation_control(
       }));
     }
     "ExponentialDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "ExponentialDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ExponentialDistribution", args)));
     }
     "PoissonDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "PoissonDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("PoissonDistribution", args)));
     }
     "BernoulliDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "BernoulliDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BernoulliDistribution", args)));
     }
     "InverseGammaDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "InverseGammaDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("InverseGammaDistribution", args)));
     }
     "GammaDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "GammaDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("GammaDistribution", args)));
     }
     "MultinormalDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "MultinormalDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("MultinormalDistribution", args)));
     }
     "ProductDistribution" if args.len() >= 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "ProductDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ProductDistribution", args)));
     }
     "UniformSumDistribution" if args.len() == 1 || args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "UniformSumDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("UniformSumDistribution", args)));
     }
     "BetaBinomialDistribution" if args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "BetaBinomialDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BetaBinomialDistribution", args)));
     }
     "BetaPrimeDistribution" if (2..=4).contains(&args.len()) => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "BetaPrimeDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BetaPrimeDistribution", args)));
     }
     "NoncentralChiSquareDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "NoncentralChiSquareDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("NoncentralChiSquareDistribution", args)));
     }
     "ExponentialPowerDistribution" if args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "ExponentialPowerDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ExponentialPowerDistribution", args)));
     }
     "RiceDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "RiceDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("RiceDistribution", args)));
     }
     "MinStableDistribution" if args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "MinStableDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("MinStableDistribution", args)));
     }
     "MaxStableDistribution" if args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "MaxStableDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("MaxStableDistribution", args)));
     }
     "TriangularDistribution" if args.len() <= 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "TriangularDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("TriangularDistribution", args)));
     }
     "MaxwellDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "MaxwellDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("MaxwellDistribution", args)));
     }
     "WignerSemicircleDistribution" if args.len() == 1 || args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "WignerSemicircleDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("WignerSemicircleDistribution", args)));
     }
     "SechDistribution" if args.len() <= 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "SechDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("SechDistribution", args)));
     }
     "MoyalDistribution" if args.len() <= 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "MoyalDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("MoyalDistribution", args)));
     }
     "BorelTannerDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "BorelTannerDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BorelTannerDistribution", args)));
     }
     "PoissonConsulDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "PoissonConsulDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("PoissonConsulDistribution", args)));
     }
     "SuzukiDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "SuzukiDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("SuzukiDistribution", args)));
     }
     "MeixnerDistribution" if args.len() == 4 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "MeixnerDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("MeixnerDistribution", args)));
     }
     "BenktanderGibratDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "BenktanderGibratDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BenktanderGibratDistribution", args)));
     }
     "GumbelDistribution" if args.len() <= 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "GumbelDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("GumbelDistribution", args)));
     }
     "ZipfDistribution" if args.len() == 1 || args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "ZipfDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ZipfDistribution", args)));
     }
     "BenfordDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "BenfordDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BenfordDistribution", args)));
     }
     "BenktanderWeibullDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "BenktanderWeibullDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BenktanderWeibullDistribution", args)));
     }
     "SinghMaddalaDistribution" if args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "SinghMaddalaDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("SinghMaddalaDistribution", args)));
     }
     "WaringYuleDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "WaringYuleDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("WaringYuleDistribution", args)));
     }
     "Query" if !args.is_empty() => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "Query".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Query", args)));
     }
     "BetaDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "BetaDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BetaDistribution", args)));
     }
     "StudentTDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "StudentTDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("StudentTDistribution", args)));
     }
     "LogNormalDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "LogNormalDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("LogNormalDistribution", args)));
     }
     "LogisticDistribution" => {
       let logistic_args = if args.is_empty() {
@@ -328,22 +205,13 @@ pub fn dispatch_evaluation_control(
       }));
     }
     "GompertzMakehamDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "GompertzMakehamDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("GompertzMakehamDistribution", args)));
     }
     "InverseGaussianDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "InverseGaussianDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("InverseGaussianDistribution", args)));
     }
     "FrechetDistribution" if args.len() == 2 || args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "FrechetDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FrechetDistribution", args)));
     }
     "ExtremeValueDistribution" => {
       let evd_args = if args.is_empty() {
@@ -359,64 +227,34 @@ pub fn dispatch_evaluation_control(
       }));
     }
     "InverseChiSquareDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "InverseChiSquareDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("InverseChiSquareDistribution", args)));
     }
     "ChiSquareDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "ChiSquareDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ChiSquareDistribution", args)));
     }
     "ParetoDistribution" if (2..=4).contains(&args.len()) => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "ParetoDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ParetoDistribution", args)));
     }
     "WeibullDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "WeibullDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("WeibullDistribution", args)));
     }
     "GeometricDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "GeometricDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("GeometricDistribution", args)));
     }
     "LogSeriesDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "LogSeriesDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("LogSeriesDistribution", args)));
     }
     "NakagamiDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "NakagamiDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("NakagamiDistribution", args)));
     }
     "LogLogisticDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "LogLogisticDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("LogLogisticDistribution", args)));
     }
     "HypergeometricDistribution" if args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "HypergeometricDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("HypergeometricDistribution", args)));
     }
     "BinormalDistribution" if (1..=3).contains(&args.len()) => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "BinormalDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("BinormalDistribution", args)));
     }
     "CauchyDistribution" => {
       let cauchy_args = if args.is_empty() {
@@ -430,10 +268,7 @@ pub fn dispatch_evaluation_control(
       }));
     }
     "DiscreteUniformDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "DiscreteUniformDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DiscreteUniformDistribution", args)));
     }
     "LaplaceDistribution" => {
       let laplace_args = if args.is_empty() {
@@ -449,28 +284,16 @@ pub fn dispatch_evaluation_control(
       }));
     }
     "RayleighDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "RayleighDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("RayleighDistribution", args)));
     }
     "NegativeBinomialDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "NegativeBinomialDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("NegativeBinomialDistribution", args)));
     }
     "MultinomialDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "MultinomialDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("MultinomialDistribution", args)));
     }
     "NegativeMultinomialDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "NegativeMultinomialDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("NegativeMultinomialDistribution", args)));
     }
     // WienerProcess[] normalizes to WienerProcess[0, 1]
     // (wolframscript-verified).
@@ -516,29 +339,20 @@ pub fn dispatch_evaluation_control(
     | "BinomialProcess"
     | "BernoulliProcess"
     | "WhiteNoiseProcess" => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     // DiscreteMarkovProcess and its distribution wrappers are symbolic
     // objects consumed by PDF/CDF/Mean/Variance.
     "DiscreteMarkovProcess"
     | "StationaryDistribution"
     | "FirstPassageTimeDistribution" => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     // StateSpaceModel[{a, b, c, d}] is a symbolic control-system object:
     // it echoes unevaluated and is consumed by ObservabilityMatrix /
     // ControllabilityMatrix.
     "StateSpaceModel" => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "StateSpaceModel".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("StateSpaceModel", args)));
     }
     // FailureDistribution[bexpr, {{x1, d1}, …}] normalizes the event
     // variables to their positional indices (x || y becomes 1 || 2),
@@ -600,10 +414,7 @@ pub fn dispatch_evaluation_control(
             .into(),
         }));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "FailureDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FailureDistribution", args)));
     }
     // StandbyDistribution[Exp[λ1], {Exp[λ2], …}] with perfect switching
     // normalizes to HypoexponentialDistribution[{λ1, λ2, …}]
@@ -634,30 +445,18 @@ pub fn dispatch_evaluation_control(
           args: vec![Expr::List(rates.into())].into(),
         }));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "StandbyDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("StandbyDistribution", args)));
     }
     // The constructor never validates (wolframscript echoes even
     // non-symmetric matrices silently); Mean/Variance validate.
     "WishartMatrixDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "WishartMatrixDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("WishartMatrixDistribution", args)));
     }
     "MultivariatePoissonDistribution" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "MultivariatePoissonDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("MultivariatePoissonDistribution", args)));
     }
     "DirichletDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "DirichletDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DirichletDistribution", args)));
     }
     // HalfSpace[n] normalizes to HalfSpace[n, 0] (wolframscript-verified).
     "HalfSpace" if args.len() == 1 && matches!(&args[0], Expr::List(_)) => {
@@ -713,10 +512,7 @@ pub fn dispatch_evaluation_control(
           name: "SphericalShell".to_string(),
           args: vec![center, radii].into(),
         },
-        None => Expr::FunctionCall {
-          name: "SphericalShell".to_string(),
-          args: args.to_vec().into(),
-        },
+        None => unevaluated("SphericalShell", args),
       }));
     }
     // StadiumShape[] / StadiumShape[r] normalize to the full form with the
@@ -739,10 +535,7 @@ pub fn dispatch_evaluation_control(
           name: "StadiumShape".to_string(),
           args: vec![points, r].into(),
         },
-        None => Expr::FunctionCall {
-          name: "StadiumShape".to_string(),
-          args: args.to_vec().into(),
-        },
+        None => unevaluated("StadiumShape", args),
       }));
     }
     // CapsuleShape[] / CapsuleShape[r] normalize to the full form with the
@@ -768,10 +561,7 @@ pub fn dispatch_evaluation_control(
           name: "CapsuleShape".to_string(),
           args: vec![points, r].into(),
         },
-        None => Expr::FunctionCall {
-          name: "CapsuleShape".to_string(),
-          args: args.to_vec().into(),
-        },
+        None => unevaluated("CapsuleShape", args),
       }));
     }
     "ArcSinDistribution" if args.is_empty() => {
@@ -783,22 +573,13 @@ pub fn dispatch_evaluation_control(
       }));
     }
     "ArcSinDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "ArcSinDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ArcSinDistribution", args)));
     }
     "HalfNormalDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "HalfNormalDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("HalfNormalDistribution", args)));
     }
     "ChiDistribution" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "ChiDistribution".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ChiDistribution", args)));
     }
     "StableDistribution"
       if args.len() == 2 || args.len() == 4 || args.len() == 5 =>
@@ -842,10 +623,7 @@ pub fn dispatch_evaluation_control(
         )));
       }
       // Not a recognized distribution — return unevaluated
-      return Some(Ok(Expr::FunctionCall {
-        name: "DistributionParameterQ".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DistributionParameterQ", args)));
     }
     // ByteArray[{b1, b2, ...}] — create a byte array from a list of unsigned bytes
     // ByteArray["base64string"] — create a byte array from base64
@@ -865,10 +643,7 @@ pub fn dispatch_evaluation_control(
                 crate::emit_message(
                   "ByteArray::lend: The argument at position 1 in ByteArray[...] should be a vector of unsigned byte values or a Base64-encoded string.",
                 );
-                return Some(Ok(Expr::FunctionCall {
-                  name: "ByteArray".to_string(),
-                  args: args.to_vec().into(),
-                }));
+                return Some(Ok(unevaluated("ByteArray", args)));
               }
             }
           }
@@ -893,10 +668,7 @@ pub fn dispatch_evaluation_control(
               crate::emit_message(
                 "ByteArray::lend: The argument at position 1 in ByteArray[...] should be a vector of unsigned byte values or a Base64-encoded string.",
               );
-              return Some(Ok(Expr::FunctionCall {
-                name: "ByteArray".to_string(),
-                args: args.to_vec().into(),
-              }));
+              return Some(Ok(unevaluated("ByteArray", args)));
             }
           }
         }
@@ -905,10 +677,7 @@ pub fn dispatch_evaluation_control(
             "ByteArray::lend: The argument at position 1 in ByteArray[{}] should be a vector of unsigned byte values or a Base64-encoded string.",
             crate::syntax::expr_to_string(&args[0])
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "ByteArray".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("ByteArray", args)));
         }
       }
     }
@@ -937,10 +706,7 @@ pub fn dispatch_evaluation_control(
           }));
         }
         None => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "NumericArray".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("NumericArray", args)));
         }
       }
     }

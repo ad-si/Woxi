@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 pub fn dispatch_structural(
   name: &str,
@@ -29,10 +30,7 @@ pub fn dispatch_structural(
             true,
           ),
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "Function".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("Function", args)));
           }
         };
         return Some(Ok(Expr::NamedFunction {
@@ -42,10 +40,7 @@ pub fn dispatch_structural(
         }));
       }
       _ => {
-        return Some(Ok(Expr::FunctionCall {
-          name: "Function".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("Function", args)));
       }
     },
     "Compile" if args.len() == 2 => {
@@ -67,10 +62,7 @@ pub fn dispatch_structural(
         }
         Expr::Identifier(name) => vec![name.clone()],
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Compile".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Compile", args)));
         }
       };
       let var_exprs: Vec<Expr> =
@@ -89,10 +81,7 @@ pub fn dispatch_structural(
         }
         return Some(Ok(crate::functions::math_ast::make_rational(n, d)));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Rational", args)));
     }
     "Module" => return Some(module_ast(args)),
     "Block" => return Some(block_ast(args)),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::syntax::unevaluated;
 
 /// Returns the valid argument count range (min, max) for a known built-in function.
 /// Returns None if the function is not in the table.
@@ -1605,8 +1606,5 @@ pub fn check_arg_count(
 
   crate::emit_message(&msg);
 
-  Some(Ok(Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  }))
+  Some(Ok(unevaluated(name, args)))
 }

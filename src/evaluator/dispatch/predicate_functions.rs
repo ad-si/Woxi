@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::ComparisonOp;
+use crate::syntax::{ComparisonOp, unevaluated};
 
 /// True if `expr` contains any Real or BigFloat node — used to decide
 /// between exact and inexact number predicates.
@@ -419,10 +419,7 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(match &args[0] {
         Expr::Identifier(name) if name == "True" => Expr::Integer(1),
         Expr::Identifier(name) if name == "False" => Expr::Integer(0),
-        _ => Expr::FunctionCall {
-          name: "Boole".to_string(),
-          args: args.to_vec().into(),
-        },
+        _ => unevaluated("Boole", args),
       }));
     }
     "DigitQ" if args.len() == 1 => {
@@ -537,10 +534,7 @@ pub fn dispatch_predicate_functions(
       // symbol is False. A BigInteger is left unevaluated so a genuine large
       // perfect number is never misreported.
       if matches!(&args[0], Expr::BigInteger(_)) {
-        return Some(Ok(Expr::FunctionCall {
-          name: "PerfectNumberQ".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("PerfectNumberQ", args)));
       }
       return Some(Ok(Expr::Identifier("False".to_string())));
     }
@@ -561,10 +555,7 @@ pub fn dispatch_predicate_functions(
           &Expr::Identifier(name.clone()),
         ));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Symbol".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Symbol", args)));
     }
     // SymbolName[sym] - Get the name of a symbol as a string.
     // For context-qualified identifiers like `a`b`x`, return only the
@@ -575,10 +566,7 @@ pub fn dispatch_predicate_functions(
         let leaf = name.rsplit('`').next().unwrap_or(name).to_string();
         return Some(Ok(Expr::String(leaf)));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "SymbolName".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("SymbolName", args)));
     }
     // Unique[] - generate a unique symbol $nnn
     // Unique[x] - generate a unique symbol x$nnn
@@ -615,10 +603,7 @@ pub fn dispatch_predicate_functions(
                 result.push(Expr::Identifier(sym_name));
               }
               _ => {
-                return Some(Ok(Expr::FunctionCall {
-                  name: "Unique".to_string(),
-                  args: args.to_vec().into(),
-                }));
+                return Some(Ok(unevaluated("Unique", args)));
               }
             }
           }
@@ -629,10 +614,7 @@ pub fn dispatch_predicate_functions(
             "Unique::usym: {} is not a symbol or a valid symbol name.",
             crate::syntax::expr_to_string(&args[0])
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "Unique".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Unique", args)));
         }
       }
     }
@@ -796,10 +778,7 @@ pub fn dispatch_predicate_functions(
       if let Expr::List(range) = &args[0]
         && range.len() == 2
       {
-        return Some(Ok(Expr::FunctionCall {
-          name: "Between".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("Between", args)));
       }
     }
     "MemberQ" if args.len() == 2 || args.len() == 3 => {
@@ -826,10 +805,7 @@ pub fn dispatch_predicate_functions(
           "PossibleZeroQ::argx: PossibleZeroQ called with {} arguments; 1 argument is expected.",
           args.len()
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "PossibleZeroQ".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("PossibleZeroQ", args)));
       }
       return Some(crate::functions::predicate_ast::possible_zero_q_ast(args));
     }
@@ -1287,22 +1263,13 @@ pub fn dispatch_predicate_functions(
       return Some(crate::functions::predicate_ast::full_form_ast(&args[0]));
     }
     "CForm" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "CForm".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("CForm", args)));
     }
     "TeXForm" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "TeXForm".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("TeXForm", args)));
     }
     "FortranForm" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "FortranForm".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FortranForm", args)));
     }
     // Attributes[symbol] - returns the attributes of a built-in symbol
     "Attributes" if args.len() == 1 => {
@@ -1311,10 +1278,7 @@ pub fn dispatch_predicate_functions(
         Expr::Constant(name) => name.as_str(),
         Expr::String(name) => name.as_str(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Attributes".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Attributes", args)));
         }
       };
       // Check user-defined attributes first, then combine with built-in
@@ -1354,10 +1318,7 @@ pub fn dispatch_predicate_functions(
         Expr::Identifier(name) => (name.clone(), false),
         Expr::String(name) => (name.clone(), true),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Context".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Context", args)));
         }
       };
       // Context-qualified symbols (e.g. `b` `c`) carry their context in
@@ -1377,10 +1338,7 @@ pub fn dispatch_predicate_functions(
           || crate::FUNC_DEFS.with(|m| m.borrow().contains_key(&sym_name))
           || crate::FUNC_ATTRS.with(|m| m.borrow().contains_key(&sym_name));
         if !exists {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Context".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Context", args)));
         }
       }
       // User-defined symbols are in Global` context
@@ -1402,10 +1360,7 @@ pub fn dispatch_predicate_functions(
       let pattern = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Contexts".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Contexts", args)));
         }
       };
       // Convert glob (* wildcards) to a simple matcher.
@@ -1604,10 +1559,7 @@ pub fn dispatch_predicate_functions(
         Expr::Identifier(n) => (n.clone(), false),
         Expr::String(s) => (s.clone(), true),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "OptionValue".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("OptionValue", args)));
         }
       };
       // Helper: match rule key against lookup_key
@@ -1678,10 +1630,7 @@ pub fn dispatch_predicate_functions(
         }
         return Some(Ok(Expr::Identifier("False".to_string())));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "NameQ".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("NameQ", args)));
     }
     // Share[expr] - memory optimization, returns 0 (no-op in Woxi)
     "Share" => {

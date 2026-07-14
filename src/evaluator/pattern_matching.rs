@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 use std::cell::RefCell;
 
 // Thread-local stack of accumulated bindings from outer FunctionCall arg loops.
@@ -1505,13 +1505,9 @@ fn find_orderless_subset_match(
         name: func_name.to_string(),
         args: perm.into(),
       };
-      if let Some(bindings) = match_pattern(
-        &sub_expr,
-        &Expr::FunctionCall {
-          name: func_name.to_string(),
-          args: pat_args.to_vec().into(),
-        },
-      ) {
+      if let Some(bindings) =
+        match_pattern(&sub_expr, &unevaluated(func_name, pat_args))
+      {
         return Some((combo, bindings));
       }
     }
@@ -2622,10 +2618,7 @@ fn match_args_with_sequences(
             } else if count == 1 {
               seq_args[0].clone()
             } else {
-              Expr::FunctionCall {
-                name: "Sequence".to_string(),
-                args: seq_args.to_vec().into(),
-              }
+              unevaluated("Sequence", seq_args)
             };
             elem_bindings.insert(0, (seq.name.clone(), bound_value));
           }
@@ -2663,10 +2656,7 @@ fn match_args_with_sequences(
           } else if count == 1 {
             seq_args[0].clone()
           } else {
-            Expr::FunctionCall {
-              name: "Sequence".to_string(),
-              args: seq_args.to_vec().into(),
-            }
+            unevaluated("Sequence", seq_args)
           };
           rest_bindings.insert(0, (seq.name.clone(), bound_value));
         }

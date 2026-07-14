@@ -1827,10 +1827,7 @@ pub fn dispatch_list_operations(
       }
       let init = items[0].clone();
       let rest = match head {
-        Some(h) => Expr::FunctionCall {
-          name: h.to_string(),
-          args: items[1..].to_vec().into(),
-        },
+        Some(h) => unevaluated(h, &items[1..]),
         None => Expr::List(items[1..].to_vec().into()),
       };
       return Some(list_helpers_ast::fold_ast(&args[0], &init, &rest));
@@ -2892,10 +2889,7 @@ pub fn dispatch_list_operations(
     "Normal" if args.len() == 2 => {
       let heads = normal_head_spec_names(&args[1]);
       if heads.is_empty() {
-        return Some(Ok(Expr::FunctionCall {
-          name: "Normal".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("Normal", args)));
       }
       return Some(Ok(normal_with_heads(&args[0], &heads)));
     }
@@ -2961,10 +2955,7 @@ pub fn dispatch_list_operations(
     // the level-spec Flatten equivalence.
     "ArrayFlatten" if args.len() == 2 => {
       let Some(r) = expr_to_i128(&args[1]).filter(|r| *r >= 1) else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "ArrayFlatten".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("ArrayFlatten", args)));
       };
       if r == 2 {
         return Some(array_flatten_ast(&args[0]));
@@ -3283,10 +3274,7 @@ pub fn dispatch_list_operations(
       }
       let init = items[0].clone();
       let rest = match head {
-        Some(h) => Expr::FunctionCall {
-          name: h.to_string(),
-          args: items[1..].to_vec().into(),
-        },
+        Some(h) => unevaluated(h, &items[1..]),
         None => Expr::List(items[1..].to_vec().into()),
       };
       return Some(list_helpers_ast::fold_list_ast(&args[0], &init, &rest));
@@ -3302,15 +3290,12 @@ pub fn dispatch_list_operations(
           _ => {
             crate::emit_message(&format!(
               "FixedPointList::intnm: Non-negative machine-sized integer expected at position 3 in {}.",
-              crate::syntax::expr_to_string(&Expr::FunctionCall {
-                name: "FixedPointList".to_string(),
-                args: args.to_vec().into(),
-              })
+              crate::syntax::expr_to_string(&unevaluated(
+                "FixedPointList",
+                args
+              ))
             ));
-            return Some(Ok(Expr::FunctionCall {
-              name: "FixedPointList".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("FixedPointList", args)));
           }
         }
       } else {
@@ -5581,10 +5566,7 @@ pub fn dispatch_list_operations(
       if let Some(opt) = args.get(2)
         && !matches!(opt, Expr::Rule { .. } | Expr::List(_))
       {
-        let call = Expr::FunctionCall {
-          name: "SequenceCount".to_string(),
-          args: args.to_vec().into(),
-        };
+        let call = unevaluated("SequenceCount", args);
         crate::emit_message(&format!(
           "SequenceCount::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
           crate::syntax::expr_to_string(opt),

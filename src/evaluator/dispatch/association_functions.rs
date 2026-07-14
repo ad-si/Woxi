@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 pub fn dispatch_association_functions(
   name: &str,
@@ -75,10 +76,7 @@ pub fn dispatch_association_functions(
               "AssociationThread::idim: {} and {} must have the same length.",
               keys_str, vals_str,
             ));
-            Ok(Expr::FunctionCall {
-              name: "AssociationThread".to_string(),
-              args: args.to_vec().into(),
-            })
+            Ok(unevaluated("AssociationThread", args))
           }
           other => other,
         },
@@ -175,10 +173,7 @@ fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut pairs = Vec::new();
   for arg in args {
     if !ingest(&mut pairs, arg)? {
-      return Ok(Expr::FunctionCall {
-        name: "Association".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Association", args));
     }
   }
   Ok(Expr::Association(pairs))

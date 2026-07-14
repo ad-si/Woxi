@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::BinaryOperator;
+use crate::syntax::{BinaryOperator, unevaluated};
 
 /// Wrap a plot function call in Quiet mode so that messages emitted during
 /// function sampling (e.g. Power::indet for 0^0) are suppressed and discarded.
@@ -148,10 +148,7 @@ pub fn dispatch_plotting(
     }
     "TreeForm" if !args.is_empty() => {
       // TreeForm stays as a wrapper in OutputForm (matching wolframscript)
-      Some(Ok(Expr::FunctionCall {
-        name: "TreeForm".to_string(),
-        args: args.to_vec().into(),
-      }))
+      Some(Ok(unevaluated("TreeForm", args)))
     }
     "TreeGraph" if !args.is_empty() => {
       Some(crate::functions::tree_form::tree_graph_ast(args))
@@ -218,10 +215,7 @@ pub fn dispatch_plotting(
             "ListLinePlot::lpn: {} is not a list of numbers or pairs of numbers.",
             crate::syntax::expr_to_string(&evaluated)
           ));
-          Some(Ok(Expr::FunctionCall {
-            name: "ListLinePlot".to_string(),
-            args: args.to_vec().into(),
-          }))
+          Some(Ok(unevaluated("ListLinePlot", args)))
         }
         _ => Some(quiet_plot(|| {
           crate::functions::list_plot::list_line_plot_ast(args)
